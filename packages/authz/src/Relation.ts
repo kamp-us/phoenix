@@ -26,5 +26,16 @@ export class RelationStore extends Context.Service<
 	RelationStore,
 	{
 		readonly has: (tuple: Relation) => Effect.Effect<boolean>;
+
+		// The batched form of {@link has} over a set of subjects sharing one
+		// `(relation, object)`: returns the subset that hold the tuple, in ONE store
+		// read instead of N per-subject `has` calls. Same direct-tuple semantics as
+		// `has` (no ancestry walk), so a by-id membership join over `subjects` is a
+		// single round-trip, not an in-batch N+1.
+		readonly hasSubjects: (query: {
+			readonly subjects: ReadonlyArray<string>;
+			readonly relation: string;
+			readonly object: Resource;
+		}) => Effect.Effect<ReadonlySet<string>>;
 	}
 >()("authz/RelationStore") {}

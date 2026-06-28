@@ -13,7 +13,7 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {RelationStore, resource} from "@kampus/authz";
-import {and, eq} from "drizzle-orm";
+import {and, eq, inArray} from "drizzle-orm";
 import {Effect, Layer} from "effect";
 import {createDrizzle, Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -78,6 +78,60 @@ describe("RelationStore.has — existence maps the lookup result to a boolean", 
 			assert.strictEqual(yield* program, 2);
 		}),
 	);
+});
+
+describe("RelationStore.hasSubjects — batched membership over a subject set (#1360)", () => {
+	it.effect("returns exactly the subjects present in the read rows", () =>
+		Effect.gen(function* () {
+			const store = yield* RelationStore;
+			const mods = yield* store.hasSubjects({
+				subjects: ["u1", "u2", "u3"],
+				relation: "moderates",
+				object: platform,
+			});
+			assert.deepStrictEqual([...mods].sort(), ["u1", "u3"]);
+		}).pipe(Effect.provide(storeLayer(countingAccess([{subject: "u1"}, {subject: "u3"}]).access))),
+	);
+
+	it.effect("short-circuits to an empty set with NO store read for an empty subject set", () =>
+		Effect.gen(function* () {
+			const {access, calls} = countingAccess([{subject: "u1"}]);
+			const program = Effect.gen(function* () {
+				const store = yield* RelationStore;
+				const mods = yield* store.hasSubjects({
+					subjects: [],
+					relation: "moderates",
+					object: platform,
+				});
+				return {size: mods.size, calls: calls()};
+			}).pipe(Effect.provide(storeLayer(access)));
+			const {size, calls: n} = yield* program;
+			assert.strictEqual(size, 0);
+			assert.strictEqual(n, 0);
+		}),
+	);
+
+	it("compiles to one IN-list read over relation_tuple (statement pin, no engine)", () => {
+		const db: DrizzleDb = createDrizzle({} as D1Database);
+		const {sql, params} = db
+			.select({subject: schema.relationTuple.subject})
+			.from(schema.relationTuple)
+			.where(
+				and(
+					inArray(schema.relationTuple.subject, ["u1", "u2"]),
+					eq(schema.relationTuple.relation, "moderates"),
+					eq(schema.relationTuple.object, objectKey(platform)),
+				),
+			)
+			.toSQL();
+		assert.match(sql, /from "relation_tuple"/i);
+		assert.match(sql, /"subject" in \(\?, \?\)/i);
+		assert.match(sql, /"relation" = \?/i);
+		assert.match(sql, /"object" = \?/i);
+		assert.include(params as unknown[], "u1");
+		assert.include(params as unknown[], "u2");
+		assert.include(params as unknown[], "platform:kampus");
+	});
 });
 
 describe("RelationStore.has — query shape (statement pin, no engine)", () => {

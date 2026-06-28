@@ -7,7 +7,7 @@
  * fail-closed shape `user.role` had.
  */
 import {key as objectKey, RelationStore} from "@kampus/authz";
-import {and, eq} from "drizzle-orm";
+import {and, eq, inArray} from "drizzle-orm";
 import {Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -38,6 +38,24 @@ export const RelationStoreLive = Layer.effect(RelationStore)(
 						.get(),
 				);
 				return row !== undefined;
+			}),
+
+			hasSubjects: Effect.fn("RelationStore.hasSubjects")(function* ({subjects, relation, object}) {
+				if (subjects.length === 0) return new Set<string>();
+				const rows = yield* run((db) =>
+					db
+						.select({subject: schema.relationTuple.subject})
+						.from(schema.relationTuple)
+						.where(
+							and(
+								inArray(schema.relationTuple.subject, [...subjects]),
+								eq(schema.relationTuple.relation, relation),
+								eq(schema.relationTuple.object, objectKey(object)),
+							),
+						)
+						.all(),
+				);
+				return new Set(rows.map((row) => row.subject));
 			}),
 		};
 	}),

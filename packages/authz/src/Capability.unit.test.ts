@@ -74,6 +74,16 @@ const run = <A, E>(
 								t.id === tuple.object.id,
 						),
 					),
+				hasSubjects: ({subjects, object}) =>
+					Effect.succeed(
+						new Set(
+							subjects.filter((subject) =>
+								(env.tuples ?? []).some(
+									(t) => t.subject === subject && t.type === object.type && t.id === object.id,
+								),
+							),
+						),
+					),
 			}),
 		),
 	);

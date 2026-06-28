@@ -13,15 +13,15 @@ import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
-import {Kunye} from "../kunye/Kunye.ts";
-import {isModerator, Moderate, requireModeration} from "../kunye/moderate.ts";
+import {Moderate, requireModeration} from "../kunye/moderate.ts";
 import {VOUCH_CONCURRENT_CAP} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {requireVouch, Vouch, voucherOf} from "../kunye/vouch.ts";
 import {UserNotFound, UsernameAlreadySet, UsernameInvalidErrors, UsernameTaken} from "./errors.ts";
 import {Pasaport} from "./Pasaport.ts";
-import {toAccountDeletionReceipt, toPromotionReceipt, toUser} from "./shapers.ts";
+import {toAccountDeletionReceipt, toPromotionReceipt} from "./shapers.ts";
 import {resolveTandem} from "./tandem.ts";
+import {toTrustedUser} from "./trusted-user.ts";
 import {AccountDeletionReceiptView, PromotionReceiptView, UserView} from "./views.ts";
 
 /**
@@ -85,22 +85,16 @@ export const mutations = {
 		Effect.fn("user.setUsername")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pasaport = yield* Pasaport;
-			const kunye = yield* Kunye;
 			const result = yield* pasaport.setUsername({userId: user.id, value: input.value});
-			// email comes from the session; the rest from the service result. `tier` is
-			// the TRUSTED rank from `Kunye.tierOf` (stored column), never the session
-			// field (#1297); `isModerator` is the SELF mod signal off the `moderates`
-			// relation tuple (#1320) — both keep this `User` shape identical to `me`'s.
-			const tier = yield* kunye.tierOf(user.id);
-			const isMod = yield* isModerator(user.id);
-			return toUser({
+			// email comes from the session, the rest from the service result; the trusted
+			// standing (tier + moderator signal) and the `User` shape come from the one
+			// shared `toTrustedUser` home `me` also routes through (#1297/#1320).
+			return yield* toTrustedUser({
 				id: result.userId,
 				email: user.email,
 				name: result.displayName,
 				image: result.image,
 				username: result.username,
-				tier,
-				isModerator: isMod,
 			});
 		}),
 	),

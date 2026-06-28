@@ -63,6 +63,10 @@ const relationStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationSt
 	Layer.succeed(RelationStore, {
 		has: (tuple) =>
 			Effect.succeed(tuple.relation === "moderates" && holders.includes(tuple.subject)),
+		hasSubjects: ({subjects, relation}) =>
+			Effect.succeed(
+				new Set(relation === "moderates" ? subjects.filter((s) => holders.includes(s)) : []),
+			),
 	});
 
 const kunyeOf = (
@@ -296,6 +300,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					makePasaportStub(),
 					Layer.succeed(RelationStore, {
 						has: () => Effect.die(new Error("flag OFF must not check authority")),
+						hasSubjects: () => Effect.die(new Error("flag OFF must not check authority")),
 					}),
 					kunyeOf({"u-yazar": "yazar"}),
 					agentAuthorityStub,

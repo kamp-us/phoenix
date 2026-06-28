@@ -46,6 +46,14 @@ const access = (
 							tuple.object.type === "platform" &&
 							(opts.mods ?? []).includes(tuple.subject),
 					),
+				hasSubjects: ({subjects, relation, object}) =>
+					Effect.succeed(
+						new Set(
+							relation === "moderates" && object.type === "platform"
+								? subjects.filter((s) => (opts.mods ?? []).includes(s))
+								: [],
+						),
+					),
 			}),
 		),
 	);
@@ -102,7 +110,10 @@ describe("divan gate — yazar OR mod, collapse-to-allow", () => {
 					karmaOf: () => Effect.die(new Error("x")),
 					rootOf: (id: string) => Effect.succeed(id),
 				}),
-				Effect.provideService(RelationStore, {has: () => Effect.succeed(false)}),
+				Effect.provideService(RelationStore, {
+					has: () => Effect.succeed(false),
+					hasSubjects: () => Effect.succeed(new Set<string>()),
+				}),
 			),
 		);
 		assert.isTrue(Exit.isSuccess(exit));

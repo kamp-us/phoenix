@@ -38,6 +38,14 @@ const discharge = (actor: Actor, holders: ReadonlyArray<string>): Exit.Exit<Gran
 							tuple.object.type === "platform" &&
 							holders.includes(tuple.subject),
 					),
+				hasSubjects: ({subjects, relation, object}) =>
+					Effect.succeed(
+						new Set(
+							relation === "admin" && object.type === "platform"
+								? subjects.filter((subject) => holders.includes(subject))
+								: [],
+						),
+					),
 			}),
 		),
 	);
