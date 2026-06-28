@@ -12,7 +12,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as L from "./EntityLifecycle.ts";
-import {sandboxVisibleWhere} from "./SandboxVisibility.ts";
+import {publicLiveWhere, sandboxVisibleWhere} from "./SandboxVisibility.ts";
 
 const at = new Date("2026-06-25T00:00:00.000Z");
 const AUTHOR = "caylak-author";
@@ -92,5 +92,17 @@ describe("sandboxVisibleWhere — the SQL predicate mirrors the decision shape",
 
 	it("an anonymous viewer gets a restricting predicate (public only)", () => {
 		assert.isDefined(sandboxVisibleWhere(cols, viewers.anonymous));
+	});
+});
+
+describe("publicLiveWhere — the removed+sandbox aggregate predicate", () => {
+	const cols = {sandboxedAt: {} as never, authorId: {} as never, removedAt: {} as never};
+
+	it("is defined for every viewer kind — the removal guard always restricts", () => {
+		// even a moderator (no sandbox restriction) still gets `isNull(removedAt)`, so the
+		// aggregate is never undefined — it always excludes removed content.
+		for (const viewer of Object.values(viewers)) {
+			assert.isDefined(publicLiveWhere(cols, viewer));
+		}
 	});
 });
