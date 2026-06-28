@@ -15,9 +15,10 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
-import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
+import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
+	publicLiveWhere,
 	resolveSandboxViewer,
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
@@ -462,11 +463,16 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.from(schema.termRecord)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
-			// Public stats count LIVE content only: a sandboxed çaylak definition
-			// (#1205) is pending, excluded from the landing totals like a removed one.
-			const publicDefWhere = and(
-				isNull(schema.definitionRecord.removedAt),
-				isNull(schema.definitionRecord.sandboxedAt),
+			// Public counts are LIVE-only for the anonymous viewer — sourced from the
+			// shared seam (#1359/#1407), not re-derived here. Definitions carry no draft
+			// dimension, so `publicLiveWhere` (removed + sandbox) is the full rule.
+			const publicDefWhere = publicLiveWhere(
+				{
+					removedAt: schema.definitionRecord.removedAt,
+					sandboxedAt: schema.definitionRecord.sandboxedAt,
+					authorId: schema.definitionRecord.authorId,
+				},
+				anonymousViewer,
 			);
 			const totalDefsRow = yield* run((db) =>
 				db

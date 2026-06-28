@@ -5,10 +5,13 @@
  * live COUNTs + the write clock (ADR 0082), and `makePersistPanoStats` is the thin
  * port that gathers the COUNTs and upserts.
  */
-import {and, isNull, sql} from "drizzle-orm";
+import {sql} from "drizzle-orm";
 import {Effect} from "effect";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
+import {publicLiveWhere} from "../lifecycle/SandboxVisibility.ts";
+import {publicLivePostWhere} from "./PostVisibility.ts";
 
 /** The three live COUNTs the pano-stats fold reads. */
 export interface PanoStatsCounts {
@@ -44,31 +47,48 @@ export const recomputePanoStats = (counts: PanoStatsCounts, now: Date): PanoStat
  */
 export const makePersistPanoStats = (run: DrizzleAccessOrDie["run"]) =>
 	Effect.fn("Pano.recomputePanoStats")(function* (now: Date) {
-		// Public stats count LIVE content only: a sandboxed çaylak post/comment
-		// (#1205) is pending, excluded from the landing totals like a removed one.
+		// Public counts are LIVE-only for the anonymous viewer, sourced from the shared
+		// seam (#1359/#1407): posts route through the post-aware predicate so drafts are
+		// excluded too (a draft-only author never inflates the totals); comments have no
+		// draft dimension and use the base public-live predicate.
+		const postWhere = publicLivePostWhere(
+			{
+				removedAt: schema.postRecord.removedAt,
+				sandboxedAt: schema.postRecord.sandboxedAt,
+				authorId: schema.postRecord.authorId,
+				isDraft: schema.postRecord.isDraft,
+			},
+			anonymousViewer,
+		);
+		const commentWhere = publicLiveWhere(
+			{
+				removedAt: schema.commentRecord.removedAt,
+				sandboxedAt: schema.commentRecord.sandboxedAt,
+				authorId: schema.commentRecord.authorId,
+			},
+			anonymousViewer,
+		);
 		const totalPosts = yield* run((db) =>
 			db
 				.select({n: sql<number>`COUNT(*)`})
 				.from(schema.postRecord)
-				.where(and(isNull(schema.postRecord.removedAt), isNull(schema.postRecord.sandboxedAt)))
+				.where(postWhere)
 				.then((r) => Number(r[0]?.n ?? 0)),
 		);
 		const totalComments = yield* run((db) =>
 			db
 				.select({n: sql<number>`COUNT(*)`})
 				.from(schema.commentRecord)
-				.where(
-					and(isNull(schema.commentRecord.removedAt), isNull(schema.commentRecord.sandboxedAt)),
-				)
+				.where(commentWhere)
 				.then((r) => Number(r[0]?.n ?? 0)),
 		);
 		const totalAuthors = yield* run((db) =>
 			db
 				.run(
 					sql`SELECT COUNT(DISTINCT author_id) as n FROM (
-							SELECT author_id FROM post_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
+							SELECT author_id FROM post_record WHERE ${postWhere}
 							UNION
-							SELECT author_id FROM comment_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
+							SELECT author_id FROM comment_record WHERE ${commentWhere}
 						)`,
 				)
 				.then((r) => Number((r.results[0] as {n: number} | undefined)?.n ?? 0)),
