@@ -28,13 +28,30 @@
  * cold-DO transport rejection surfaces as a DEFECT (die), not an `RpcCallError`
  * failure. The defect slips past {@link withColdStartRetry} (it keys on the
  * FAILURE channel) and the route's `LiveTransportError`→503 boundary, escaping as
- * a raw HTTP 500. {@link withColdStartRetryFetch} closes the seam: it lifts that
- * transport defect into the same `RpcCallError`-shaped failure the RPC methods
- * raise, so the ONE bounded-retry + `LiveTransportError` path covers both
- * channels. Safe by construction — a remote app error INSIDE the DO's `fetch`
- * comes back as a 500-status *Response* (alchemy's worker renders the failed
- * Effect to HTTP), never a promise rejection; only transport/readiness failure
- * rejects, so a defect on THIS call is a cold-start signal, not a masked bug.
+ * a raw HTTP 500. {@link withColdStartRetryFetch} closes the seam: it lifts a
+ * cold-DO transport defect into the same `RpcCallError`-shaped failure the RPC
+ * methods raise, so the ONE bounded-retry + `LiveTransportError` path covers both
+ * channels.
+ *
+ * THE DISCRIMINANT PROBLEM (#1367): the defect channel has NO clean positive
+ * discriminant, unlike the RPC channel's `isRpcCallError` tag-check. Grounded in
+ * alchemy `Cloudflare/Fetcher.ts` `fromCloudflareFetcher`: the server branch is
+ * `pipe(…, Effect.flatMap(Effect.promise(fetcher.fetch)), Effect.map(HttpServerResponse.fromWeb))`
+ * with no `Effect.catch`. So TWO unrelated failures both surface here as an
+ * indistinct die: (a) the cold-DO transport rejection (the `Effect.promise`
+ * rejects), and (b) a marshaling die from the later `Effect.map` step
+ * (`HttpServerResponse.fromWeb` throwing on a malformed response). A BLANKET
+ * `Effect.catchDefect` that lifts EVERY defect as the transport error would
+ * reinterpret (b) as a transient 503 and retry it 5× — re-opening, inverted, the
+ * exact failure-masking ADR 0095 closed on the RPC channel. But the promise
+ * rejection carries no `_tag` and no documented `.retryable` flag (verified absent
+ * from `@cloudflare/workers-types`), so no positive "this IS the cold-DO rejection"
+ * predicate exists; and re-raising every *unrecognized* defect would instead
+ * re-raise the genuine (also opaque) cold-DO rejection and regress the ADR 0095
+ * resilience. The reconciliation is {@link isNonTransportDefect}: a CONSERVATIVE
+ * guard that re-raises only the V8 code-defect classes — which a transport layer
+ * never throws to signal a rejection — and lifts the residual. See its docblock
+ * for the residual this leaves and why it is the safe arm.
  *
  * Schedule shape grounds in effect-smol `LLMS.md` §"Working with Schedules"
  * (`ai-docs/src/06_schedule/10_schedules.ts`): `retryBackoffWithLimit` =
@@ -64,13 +81,24 @@ export class LiveTransportError extends Schema.TaggedErrorClass<LiveTransportErr
 }
 
 /**
- * The runtime shape of alchemy's `RpcCallError` (`Data.TaggedError("RpcCallError")`,
- * `makeRpcStub`'s `tryPromise` catch). The class is internal to alchemy
- * (`Cloudflare/Workers/Rpc`, off the public export path), so we model the seam
- * structurally rather than import it.
+ * The runtime shape of alchemy's `RpcCallError`, modeled structurally because the
+ * class is internal to alchemy (`Cloudflare/Workers/Rpc`, off the public export
+ * path) and cannot be imported as a value or a type.
+ *
+ * GROUNDED against the dep source: alchemy `Cloudflare/Workers/Rpc.ts` defines
+ * `RpcCallError = Data.TaggedError("RpcCallError")<{readonly method: string;
+ * readonly cause: unknown}>`, raised by `makeRpcStub`'s
+ * `Effect.tryPromise({catch: (cause) => new RpcCallError({method, cause})})`. The
+ * `method` field is part of alchemy's real emitted shape — modeled here (not just
+ * `{_tag, cause}`) so this interface mirrors the dep's contract faithfully and the
+ * unit test can pin against the true field set (#1367 facet 2). Because the class
+ * is unexported, an upstream rename/rewrap cannot be a phoenix *compile* failure;
+ * the pin is a unit assertion against this grounded fixture, kept in sync with the
+ * cited `Rpc.ts` source.
  */
 interface RpcCallErrorShape {
 	readonly _tag: "RpcCallError";
+	readonly method?: string;
 	readonly cause: unknown;
 }
 
@@ -79,6 +107,37 @@ const isRpcCallError = (error: unknown): error is RpcCallErrorShape =>
 	typeof error === "object" &&
 	error !== null &&
 	(error as {_tag?: unknown})._tag === "RpcCallError";
+
+/**
+ * The conservative defect guard for the `.fetch` channel (#1367). Returns `true`
+ * for a defect that is PROVABLY not a cold-DO transport rejection, so the caller
+ * re-raises it (fail-fast 500) instead of masking it as a retried 503.
+ *
+ * The match set is the V8 *code-defect* constructors — `RangeError` (stack
+ * overflow, invalid length), `ReferenceError` (undefined access), `SyntaxError`
+ * (parse, incl. a JSON marshaling die), `EvalError`, `URIError`. These are thrown
+ * by buggy code (e.g. alchemy's `Effect.map(HttpServerResponse.fromWeb)` step on a
+ * malformed response), never by a transport layer to signal that a cold/unreachable
+ * DO rejected — workerd surfaces DO transport/readiness failures as a plain `Error`
+ * (e.g. "Network connection lost."), not one of these subclasses. So re-raising
+ * them carries ZERO risk of regressing the ADR 0095 cold-start retry.
+ *
+ * RESIDUAL (documented, not hidden): `TypeError` is deliberately EXCLUDED. A
+ * marshaling die can be a `TypeError`, but so can a network-shaped rejection, and
+ * since the genuine cold-DO rejection is itself opaque (a bare `Error`/`TypeError`
+ * with no discriminant), re-raising `TypeError` would risk regressing AC3 (the
+ * cold-start path must still fire). It — and any bare `Error` — therefore stays in
+ * the retried bucket. This guard does not make the channel perfectly precise (no
+ * predicate can, given alchemy passes the rejection through opaquely); it flips the
+ * default from "mask EVERY defect" to "fail fast on the unambiguous code defects",
+ * which is the safe, grounded improvement over the prior blanket catch.
+ */
+export const isNonTransportDefect = (cause: unknown): boolean =>
+	cause instanceof RangeError ||
+	cause instanceof ReferenceError ||
+	cause instanceof SyntaxError ||
+	cause instanceof EvalError ||
+	cause instanceof URIError;
 
 /**
  * Capped exponential backoff: ~100ms, 200, 400, 800ms across up to 4 retries
@@ -114,9 +173,15 @@ export const withColdStartRetry = <A, E>(
  * surfaces a cold-DO transport rejection as a DEFECT (alchemy's
  * `Effect.promise`-wrapped fetcher — see module docblock §"THE SECOND CHANNEL",
  * #1048), so {@link withColdStartRetry}'s failure-channel key never sees it. We
- * first lift that defect into an `RpcCallError`-shaped FAILURE, then route it
+ * lift a transport defect into an `RpcCallError`-shaped FAILURE, then route it
  * through the identical bounded-retry + {@link LiveTransportError} path — so the
  * open path warms up and renders 503 exactly like the RPC seam, never a raw 500.
+ *
+ * GUARDED, not blanket (#1367): an unambiguous code defect ({@link isNonTransportDefect}
+ * — a marshaling/`Effect.map` die, etc.) is RE-RAISED unchanged so it fails fast as
+ * a 500, never masked as a retried 503. Only the residual defect is lifted as the
+ * transport failure. See §"THE DISCRIMINANT PROBLEM" for why this conservative arm
+ * is the safe one and the residual it leaves.
  *
  * The declared `E` (the `.fetch` `HttpServerError`/`RequestError` request-framing
  * channel) passes through untouched: the route deliberately `orDie`s that (a real
@@ -129,12 +194,10 @@ export const withColdStartRetryFetch = <A, E>(
 	retryTransportFailure(
 		method,
 		call.pipe(
-			// A defect on `.fetch` can ONLY be the cold-DO transport rejection (a remote
-			// app error returns a 500 *Response*, not a rejection — module docblock), so
-			// reinterpret it to the same failure the RPC seam already raises. The declared
-			// `E` stays on its own channel, never lifted.
 			Effect.catchDefect((cause) =>
-				Effect.fail({_tag: "RpcCallError", cause} satisfies RpcCallErrorShape),
+				isNonTransportDefect(cause)
+					? Effect.die(cause)
+					: Effect.fail({_tag: "RpcCallError", cause} satisfies RpcCallErrorShape),
 			),
 		) as Effect.Effect<A, E | RpcCallErrorShape, never>,
 	) as Effect.Effect<A, E | LiveTransportError, never>;
