@@ -959,8 +959,12 @@ if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md"
 
   # (b) the PR BODY declares the dark-ship flag key explicitly (a `Flag:`/`Flag key:` line naming a
   #     kebab-case key) — covers gating behind a flag a PRIOR PR already declared (not in THIS diff).
+  #     The leading-prefix allowance absorbs only COSMETIC markdown — leading whitespace, an optional
+  #     ATX header (`#{1,6}`, so `## Flag:` / `### Flag key:` match, #1293), and `**` bold — while the
+  #     key grammar `[a-z0-9]+(-[a-z0-9]+)+` is untouched, so prose containing "flag" and a non-kebab
+  #     key still miss.
   FLAG_IN_BODY=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""' \
-    | grep -Eiq '^[[:space:]]*\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' && echo yes || echo no)
+    | grep -Eiq '^[[:space:]]*(#{1,6}[[:space:]]*)?\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' && echo yes || echo no)
 
   if [ "$FLAG_IN_DIFF" = yes ] || [ "$FLAG_IN_BODY" = yes ]; then
     # deployed-dark (a real flag shipped) → add the linked issue to the release queue for a human flip (#602)
