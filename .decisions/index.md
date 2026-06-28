@@ -121,4 +121,5 @@ One row per ADR. Read the file for the why.
 | [0114](0114-test-import-closure-gates-test-consumed-packages.md) | Gate Worker-Irrelevant-but-Test-Consumed `packages/**` via a Computed Test-Import Closure in `@kampus/worker-relevance` | accepted | 2026-06-28 |
 | [0115](0115-agent-distinguishable-claim-marker.md) | The agent-distinguishable claim marker — a session-id-stamped claim comment (tiebreak on earliest authorized claim, recognized by `CLAUDE_CODE_SESSION_ID`) claimed pre-spawn, the one contract three lock surfaces adopt | accepted | 2026-06-27 |
 | [0116](0116-spawn-guard-durable-default-pin.md) | Spawn-Guard's Unset-Inherit Path Falls Back to a Committed DEFAULT_PIN, Not an Uncommitted Operator-Shell WORKFLOW_MODEL | accepted | 2026-06-27 |
+| [0117](0117-stats-write-at-source-mutation-site.md) | Denormalized Aggregate Stats Are Written at the Source-Mutation Site, Not Behind the Query Feature | accepted | 2026-06-28 |
 | [0118](0118-error-crash-monitoring-sentry-saas.md) | Error/crash monitoring is Sentry's free SaaS tier (worker + SPA + Effect), with GlitchTip as the same-protocol self-host escape hatch | accepted | 2026-06-28 |

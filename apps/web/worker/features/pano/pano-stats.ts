@@ -4,6 +4,8 @@
  * operations. A pure fold (`recomputePanoStats`) decides the row from the three
  * live COUNTs + the write clock (ADR 0082), and `makePersistPanoStats` is the thin
  * port that gathers the COUNTs and upserts.
+ *
+ * Write owned by the source-mutation path, not the query-only stats feature (ADR 0117).
  */
 import {sql} from "drizzle-orm";
 import {Effect} from "effect";

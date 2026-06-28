@@ -456,7 +456,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			]);
 		});
 
-		// Refresh `sozluk_stats` totals; runs after every write that could affect them.
+		// Refresh `sozluk_stats` totals; runs after every write that could affect them
+		// (write owned by the source-mutation path, not the query-only stats feature — ADR 0117).
 		const recomputeSozlukStats = Effect.fn("Sozluk.recomputeSozlukStats")(function* (now: Date) {
 			const totalTermsRow = yield* run((db) =>
 				db
