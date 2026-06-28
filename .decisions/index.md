@@ -119,4 +119,5 @@ One row per ADR. Read the file for the why.
 | [0112](0112-token-measurement-no-quality-compromise-methodology.md) | Token-Cost Reduction Methodology — A Frozen Task Set, a Reproducible Token Meter, and a No-Quality-Compromise Gate (Quality Regression Vetoes the Lever) | accepted | 2026-06-27 |
 | [0113](0113-draft-composes-at-pano-seam.md) | Draft-Private-to-Author Composes at the Pano Read Seam, Not the Shared Lifecycle Union | accepted | 2026-06-27 |
 | [0114](0114-test-import-closure-gates-test-consumed-packages.md) | Gate Worker-Irrelevant-but-Test-Consumed `packages/**` via a Computed Test-Import Closure in `@kampus/worker-relevance` | accepted | 2026-06-28 |
+| [0115](0115-agent-distinguishable-claim-marker.md) | The agent-distinguishable claim marker — a session-id-stamped claim comment (tiebreak on earliest authorized claim, recognized by `CLAUDE_CODE_SESSION_ID`) claimed pre-spawn, the one contract three lock surfaces adopt | accepted | 2026-06-27 |
 | [0117](0117-stats-write-at-source-mutation-site.md) | Denormalized Aggregate Stats Are Written at the Source-Mutation Site, Not Behind the Query Feature | accepted | 2026-06-28 |

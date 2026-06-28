@@ -54,6 +54,22 @@ node packages/pipeline-cli/src/bin.ts version
 node packages/pipeline-cli/src/bin.ts <tool> …
 ```
 
+### `token-spend` — offline per-stage token-spend reporter (#1382)
+
+Reconstructs a pipeline stage's billed token spend from its sub-agent transcript
+(`<session>/subagents/agent-<id>.jsonl`) and prints the `formatSessionCost` headline over
+the four-component breakdown — the one-command replacement for the hand-run `jq` in
+[`.patterns/token-economics-measurement.md`](../../.patterns/token-economics-measurement.md)
+§2. Claude Code does not persist its `cost.total_tokens` into the transcript, so the total
+is summed from the per-message `usage` components over assistant messages
+(`input + cache_creation + cache_read + output`); `cache_read` is kept on its own line as
+the per-turn context-bloat signal, with `ex-cache-read` as the cross-run comparator. Reuses
+`spawn-guard`'s `formatSessionCost` core read-only.
+
+```bash
+node packages/pipeline-cli/src/bin.ts token-spend <session>/subagents/agent-<id>.jsonl
+```
+
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
 pnpm --filter @kampus/pipeline-cli test
