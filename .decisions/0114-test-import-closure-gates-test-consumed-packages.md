@@ -141,7 +141,7 @@ set that runs, never narrows it.
 
 The implementing PR edits `@kampus/worker-relevance` and/or
 `.github/workflows/ci.yml` — **control-plane** surface (ADR
-[0053](0053-control-plane-changes-require-human-merge.md)) → **human merge**, never
+[0053](0053-control-plane-boundary.md)) → **human merge**, never
 auto-ship, even on green CI. It is filed as **#1450** (`status:needs-triage`); this
 ADR records the decision, and the implementation routes through triage and a human
 merge per ADR 0053.
