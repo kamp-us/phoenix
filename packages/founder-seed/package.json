@@ -2,7 +2,7 @@
 	"name": "@kampus/founder-seed",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Offline direct-D1 CLI that mints the founder cohort (the role='moderator' users) as (id, \"moderates\", \"platform\") relation tuples (ADR 0107) — the offline tuple-assignment path, never a runtime worker route",
+	"description": "Offline direct-D1 CLI that mints the founding author-mod cohort (FOUNDER_COHORT) as both moderator (role + (id, \"moderates\", \"platform\") tuple, ADR 0107) and yazar (the user.tier, #1203) — the offline promotion path, never a runtime worker route",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"
