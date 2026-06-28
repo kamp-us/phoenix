@@ -11,6 +11,7 @@
  */
 import {createHTTPTransport} from "react-fate";
 import {createFateClient} from "react-fate/client";
+import {isTransientLiveError} from "./liveRetry.ts";
 
 const LIVE_URL = "/fate/live";
 
@@ -32,13 +33,26 @@ const noopLive = {
 	subscribeConnection: () => () => undefined,
 };
 
-export const createClient = ({authenticated}: {authenticated: boolean}) => {
+export const createClient = ({
+	authenticated,
+	onTransientLiveError,
+}: {
+	authenticated: boolean;
+	// Fired on the server's graceful cold-start signal (LIVE_UNAVAILABLE/503) so the
+	// global live pin can re-attempt the connect on a bounded back-off (ADR 0095).
+	onTransientLiveError?: (error: unknown) => void;
+}) => {
 	const client = createFateClient({
 		url: "/fate",
 		liveUrl: LIVE_URL,
 		fetch: cookieFetch,
-		// Live errors are out-of-band (the stream is best-effort); surface to console.
-		onLiveError: (error) => console.error("[fate] live", error),
+		// A cold-start LIVE_UNAVAILABLE/503 is a transient back-off signal, not a fatal
+		// drop (ADR 0095): route it to the pin's retry. Every other live error is
+		// out-of-band (the stream is best-effort) and stays on the console surface.
+		onLiveError: (error) =>
+			isTransientLiveError(error)
+				? onTransientLiveError?.(error)
+				: console.error("[fate] live", error),
 	});
 
 	const transport = liveTransportOf(client);
