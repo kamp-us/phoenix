@@ -61,7 +61,7 @@ const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const TITLE_MIN = 5;
 
-/** Turkish copy for the validation codes the submit form surfaces inline. */
+/** Turkish copy for the wire codes the submit form surfaces inline. */
 const messageForCode = (code: FateWireCode, fallback: string): string => {
 	switch (code) {
 		case "TITLE_REQUIRED":
@@ -78,6 +78,14 @@ const messageForCode = (code: FateWireCode, fallback: string): string => {
 			return "geçersiz bağlantı";
 		case "TOO_SHORT":
 			return `başlık en az ${TITLE_MIN} karakter olmalı`;
+		case "DRAFTS_DISABLED":
+			return "taslaklar şu an devre dışı";
+		case "VALIDATION_ERROR":
+			return "girdiğin bilgiler geçersiz";
+		case "USER_NOT_FOUND":
+			return "kullanıcı bulunamadı";
+		case "BAD_REQUEST":
+			return "geçersiz istek";
 		default:
 			return fallback;
 	}
