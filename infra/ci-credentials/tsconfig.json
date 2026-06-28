@@ -15,5 +15,10 @@
 		// resource types reference the workers runtime types.
 		"types": ["@cloudflare/workers-types", "node"]
 	},
-	"include": ["github.ts"]
+	"include": [
+		"github.ts",
+		"permission-groups.ts",
+		"permission-groups.unit.test.ts",
+		"vitest.config.ts"
+	]
 }

@@ -5,7 +5,8 @@
 	"type": "module",
 	"scripts": {
 		"deploy:ci-credentials": "alchemy deploy github.ts",
-		"typecheck": "tsgo -p tsconfig.json"
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"alchemy": "catalog:",
@@ -14,9 +15,11 @@
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:",
 		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
 		"@typescript/native-preview": "catalog:",
-		"typescript": "catalog:"
+		"typescript": "catalog:",
+		"vitest": "catalog:"
 	},
 	"volta": {
 		"node": "26.2.0"

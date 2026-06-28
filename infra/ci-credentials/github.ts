@@ -56,6 +56,7 @@ import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import {permissionGroupNames} from "./permission-groups.ts";
 
 const OWNER = "kamp-us";
 const REPOSITORY = "phoenix";
@@ -76,35 +77,29 @@ export default Alchemy.Stack(
 		const accountId = yield* Effect.orDie(Config.string("CLOUDFLARE_ACCOUNT_ID"));
 		const alchemyPassword = yield* Effect.orDie(Config.redacted("ALCHEMY_PASSWORD"));
 
-		// Scoped to exactly what `alchemy deploy` touches: the worker (its DOs and
-		// uploaded `dist/client` assets ride on the script), the alchemy
-		// state-store worker, the D1 database, KV (state-store metadata), tail
-		// logs, read access to account settings, and Workers R2 Storage for
-		// imge's object bucket (#106, ADR 0044). No Queues — phoenix doesn't use
-		// them yet; add groups here as usage grows.
+		// Scoped to exactly what `alchemy deploy` touches. The grant set is DERIVED
+		// from `CI_TOKEN_PERMISSION_GROUPS` in `./permission-groups.ts`, where each
+		// permission is paired with the `apps/web/alchemy.run.ts` resource it's granted
+		// for — so the list is no longer a prose-coupled second copy of the stack's
+		// resources, and a group can't be added without naming what backs it (#1437).
+		// `permission-groups.unit.test.ts` fails on any ahead-of-resource over-grant.
 		//
-		// Secrets Store Read+Write is NOT optional: `Cloudflare.state()` (the
-		// hosted state store) keeps its worker's bearer token + AES encryption key
-		// in the account-wide Cloudflare Secrets Store, and adopts/refreshes them
-		// on *every* deploy. Without these the very first deploy call (the
-		// state-store bootstrap) fails with Cloudflare error 10000 "Authentication
-		// error" — even though the token authenticates fine for D1/Workers.
+		// `Workers R2 Storage Write` was dropped here: no `Cloudflare.R2Bucket` exists
+		// in the stack to back it (ADR 0044's imge bucket is designed-not-built). It
+		// re-lands as a row in `permission-groups.ts` alongside the first real R2
+		// resource. Secrets Store Read+Write stays and is NOT optional — see that
+		// module's row for `Cloudflare.state()` (the hosted state store keeps its
+		// worker's bearer token + AES key in the account Secrets Store and
+		// adopts/refreshes them on every deploy; without these the state-store
+		// bootstrap fails with Cloudflare error 10000 even though the token
+		// authenticates for D1/Workers).
 		const apiToken = yield* Cloudflare.AccountApiToken("phoenix-ci-token", {
 			name: "phoenix-ci",
 			accountId,
 			policies: [
 				{
 					effect: "allow",
-					permissionGroups: [
-						"Workers Scripts Write",
-						"Workers KV Storage Write",
-						"Workers R2 Storage Write",
-						"D1 Write",
-						"Workers Tail Read",
-						"Account Settings Read",
-						"Secrets Store Read",
-						"Secrets Store Write",
-					],
+					permissionGroups: permissionGroupNames(),
 					resources: {[`com.cloudflare.api.account.${accountId}`]: "*"},
 				},
 			],
