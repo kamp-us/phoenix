@@ -1,0 +1,41 @@
+name: workflow-contract
+
+# CI gate for #1219: every `.claude/workflows/*.js` executor script must conform to
+# the Workflow runtime's load shape — `export const meta = {…}` (a pure object literal
+# carrying at least name + description) plus a top-level body, and NO `export default`
+# / function wrapper. Bug #1217 was exactly this: a script that cleared `node --check`
+# (valid ES-module syntax) and `review-code` (correct logic) yet was non-launchable
+# because the runtime rejects a default export (`SyntaxError: Unexpected keyword
+# 'export'`), failing only at the first live `Workflow({ scriptPath })`. This guard
+# catches that at review, not at live-drive. It fails closed (ADR 0092): a present-but-
+# unparseable or violating script reds; an empty set passes. It reuses pipeline-cli's
+# `workflow-contract check` mode — the scan lives once in the tool.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check every .claude/workflows/*.js conforms to the runtime contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when a .claude/workflows/*.js violates the runtime contract (the report
+      # is on stderr), or when a present script can't be parsed (fail-closed). See #1219.
+      - name: Check every .claude/workflows/*.js conforms to the runtime contract
+        run: node packages/pipeline-cli/src/bin.ts workflow-contract check
