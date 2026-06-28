@@ -16,7 +16,7 @@ const die =
 		Effect.die(new Error(`VouchLedger.${method} touched an unexpected method`));
 
 const failOnContact: VouchLedgerShape = {
-	record: die("record"),
+	castVouch: die("castVouch"),
 	has: die("has"),
 	activeCountFor: die("activeCountFor"),
 	hasActiveFor: die("hasActiveFor"),

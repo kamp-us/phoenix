@@ -206,20 +206,26 @@ const promoteGated = Effect.fn("user.promoteGated")(function* (input: typeof Pro
 });
 
 // The post-gate vouch body — runnable only with a `Vouch` `Grant` in R
-// (`requireVouch` provides it). Enforces the concurrent-vouch cap (D5), records the
-// vouch (the vouching actor preserved via `voucherOf`), then runs the order-independent
-// `resolveTandem` — the SAME promotion path the karma side (#1288) fires, so a vouch
-// placed while karma is already over the bar promotes immediately and a below-bar vouch
-// is recorded but flips nothing (it waits for the karma-side trigger). The cap is
-// checked only for a NEW vouch: a re-vouch of an already-vouched candidate is the
-// idempotent no-op (`has` true) and never consumes a fresh slot.
+// (`requireVouch` provides it). The concurrent-vouch cap (D5) is enforced atomically
+// INSIDE `VouchLedger.castVouch` (#1362, ADR 0013) — the resolver no longer reads the
+// active count and re-derives the cap, it just maps the outcome: `capReached` →
+// `VouchLimitReached`, otherwise the vouch landed (the vouching actor preserved via
+// `voucherOf`) and we run the order-independent `resolveTandem` — the SAME promotion
+// path the karma side (#1288) fires, so a vouch placed while karma is already over the
+// bar promotes immediately and a below-bar vouch is recorded but flips nothing (it waits
+// for the karma-side trigger). `alreadyVouched` is the idempotent re-vouch — a success
+// that consumes no fresh slot, so `vouchRecorded` is false.
 const vouchGated = Effect.fn("user.vouchGated")(function* (input: typeof VouchInput.Type) {
 	const grant = yield* Vouch;
 	const voucherId = yield* voucherOf(grant);
 
 	const ledger = yield* VouchLedger;
-	const alreadyVouched = yield* ledger.has({voucherId, candidateId: input.candidateId});
-	if (!alreadyVouched && (yield* ledger.activeCountFor(voucherId)) >= VOUCH_CONCURRENT_CAP) {
+	const {outcome} = yield* ledger.castVouch({
+		voucherId,
+		candidateId: input.candidateId,
+		now: new Date(),
+	});
+	if (outcome === "capReached") {
 		return yield* Effect.fail(
 			new VouchLimitReached({
 				message: `En fazla ${VOUCH_CONCURRENT_CAP} kişiye aynı anda kefil olabilirsin.`,
@@ -228,14 +234,12 @@ const vouchGated = Effect.fn("user.vouchGated")(function* (input: typeof VouchIn
 		);
 	}
 
-	const {recorded} = yield* ledger.record({
-		voucherId,
-		candidateId: input.candidateId,
-		now: new Date(),
-	});
-
 	const {promoted} = yield* resolveTandem(input.candidateId);
-	return toPromotionReceipt({userId: input.candidateId, promoted, vouchRecorded: recorded});
+	return toPromotionReceipt({
+		userId: input.candidateId,
+		promoted,
+		vouchRecorded: outcome === "recorded",
+	});
 });
 
 // The post-gate withdraw body — runnable only with a `Vouch` `Grant` in R. Deletes the
