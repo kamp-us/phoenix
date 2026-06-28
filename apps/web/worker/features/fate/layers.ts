@@ -12,60 +12,44 @@
  * moved here, from a per-request runtime.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
-import {type AgentAuthority, CurrentActor, type RelationStore} from "@kampus/authz";
+import {CurrentActor} from "@kampus/authz";
 import {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import type {Database} from "../../db/Database.ts";
-import type {Drizzle} from "../../db/Drizzle.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
-import {type Divan, DivanLive} from "../divan/Divan.ts";
-import {type Flags, FlagsLive} from "../flagship/Flags.ts";
+import {DivanLive} from "../divan/Divan.ts";
+import {FlagsLive} from "../flagship/Flags.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
 import {AgentAuthorityV1} from "../kunye/AgentAuthorityV1.ts";
-import {type Kunye, KunyeLive} from "../kunye/Kunye.ts";
+import {KunyeLive} from "../kunye/Kunye.ts";
 import {RelationStoreLive} from "../kunye/RelationStore.ts";
-import {type VouchLedger, VouchLedgerLive} from "../kunye/VouchLedger.ts";
-import {type Bookmark, BookmarkLive} from "../pano/Bookmark.ts";
-import {type Pano, PanoLive} from "../pano/Pano.ts";
+import {VouchLedgerLive} from "../kunye/VouchLedger.ts";
+import {BookmarkLive} from "../pano/Bookmark.ts";
+import {PanoLive} from "../pano/Pano.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
-import {makePasaportLive, type Pasaport} from "../pasaport/Pasaport.ts";
-import {type Report, ReportLive} from "../report/Report.ts";
-import {type Search, SearchLive} from "../search/Search.ts";
-import {type Sozluk, SozlukLive} from "../sozluk/Sozluk.ts";
-import {type Stats, StatsLive} from "../stats/Stats.ts";
-import {KarmaBump, type Vote, VoteLive} from "../vote/Vote.ts";
+import {makePasaportLive} from "../pasaport/Pasaport.ts";
+import {ReportLive} from "../report/Report.ts";
+import {SearchLive} from "../search/Search.ts";
+import {SozlukLive} from "../sozluk/Sozluk.ts";
+import {StatsLive} from "../stats/Stats.ts";
+import {KarmaBump, VoteLive} from "../vote/Vote.ts";
 import {fateConfig} from "./config.ts";
 
-export type WorkerFateServices =
-	| Drizzle
-	| Pasaport
-	| Vote
-	| Sozluk
-	| Pano
-	| Stats
-	| Search
-	| Report
-	| Bookmark
-	| Flags
-	// The authz ports the moderation gate discharges against (ADR 0107): the
-	// `moderates` relation read (`RelationStoreLive` ← D1) and the dormant
-	// agent-attenuation seam (`AgentAuthorityV1`). `CurrentActor` is NOT here —
-	// it is per-request, registered separately below.
-	| RelationStore
-	| AgentAuthority
-	// Künye standing (ADR 0107 §4) — the earned-authorship read side. Mounted now
-	// that the çaylak sandbox (#1205) is its first consumer (`Kunye.tierOf` decides
-	// sandbox-on-create); previously declared but dormant.
-	| Kunye
-	// The authorship-vouch ledger (#1206) — the `user.vouch` mutation's recorded-act
-	// store, the D1 write side of the çaylak→yazar promotion's vouch path.
-	| VouchLedger
-	// The divan read model (#1287) — the yazar-OR-mod-gated proving-ground roster over
-	// the `sandboxBacklogWhere` backlog (#1205), composing the Sözlük/Pano sandboxed
-	// reads. Gated at the fate resolver + behind `PHOENIX_AUTHORSHIP_LOOP`.
-	| Divan;
+/**
+ * The worker's fate service list — DERIVED from {@link makeFateLayer}'s
+ * `Layer.mergeAll(...)` success channel so the list is declared exactly ONCE (the
+ * runtime composition is the single source of truth; #1340). Adding/removing a
+ * feature service is now one edit — its `*Live` in `makeFateLayer` — not a union
+ * member kept in lockstep with the composition by eye.
+ *
+ * The per-service rationale (which ADR/issue each service answers to) lives at its
+ * `*Live` entry in `makeFateLayer`'s body. `CurrentActor` is deliberately absent
+ * from this set: it is per-request, registered separately on {@link PhoenixFateLive}
+ * (`[CurrentActor]`, ADR 0107 §7), so it never enters the build-time success channel.
+ */
+export type WorkerFateServices = Layer.Success<typeof makeFateLayer>;
 
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -148,11 +132,7 @@ const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statement: karmaBumpStat
  * group via `provideMerge` — discharging Pano's requirement while keeping
  * `Bookmark` in {@link WorkerFateServices} for the routes that resolve it directly.
  */
-export const makeFateLayer: Layer.Layer<
-	WorkerFateServices,
-	never,
-	Database | BetterAuth.BetterAuth | Flagship | RuntimeContext
-> = Layer.mergeAll(
+export const makeFateLayer = Layer.mergeAll(
 	// `DivanLive` composes the Sözlük + pano sandboxed reads (#1287), so it is provided
 	// THIS content group's `Sozluk`/`Pano` outputs via `provideMerge` (which keeps them
 	// in the output for the routes too) — one built instance, not a second copy.
