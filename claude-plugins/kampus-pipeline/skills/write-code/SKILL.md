@@ -738,6 +738,58 @@ chore (workflow Steps 4–7), never a `write-code` step.
 
 ---
 
+## Step 4c — Self-deslop your own freshly-generated diff (a pre-push self-check, never a gate)
+
+Before you push (Step 5), run the **`deslop-comments` discipline over the lines this diff
+changed** — and only those lines. AI-generated code reliably over-comments: narration of
+obvious control flow, comments that restate the symbol they sit on, separator/banner
+comments, and docblocks that re-derive a *why* an ADR already owns. CLAUDE.md's "Comments
+earn their place or die" is the standing rule, but nothing in the autonomous loop enforced
+it on fresh churn — so the wall landed in merged PRs (#1242). This step is that
+enforcement, run by the author on its own output at the cheapest point.
+
+**Apply the existing skill — don't re-derive its rubric.** The category rules (CUT /
+COLLAPSE / MIGRATE / KEEP), the one test ("would the next agent be wrong, slower, or
+surprised without this comment, in a way the code itself doesn't already tell them?"), and
+the hard nevers (never touch code, never strip a `TODO`/pragma/license header, never invent
+an ADR number) live in
+[`../deslop-comments/SKILL.md`](../deslop-comments/SKILL.md) — read it and follow it
+verbatim. Two scope narrowings apply here because this is an in-flight build, not a
+whole-codebase pass:
+
+- **Changed lines only.** Deslop the comments *your diff added or touched*
+  (`git diff origin/main...HEAD` for the committed range, plus any working-tree changes) —
+  not pre-existing comments elsewhere in the files you edited. A drive-by deslop of
+  untouched code widens the diff `review-code` must verify and isn't the issue's scope.
+- **Preserve load-bearing notes.** The carve-out is the point: a local invariant at its
+  enforcement site, a workaround + its forcing constraint, a deliberate-looking-wrong guard,
+  a pragma rationale, an ADR pointer — these stay. Cut slop, keep the note that tells the
+  next agent something the code can't. If a docblock carries real unhomed *why*, collapse it
+  to a pointer or migrate it per the skill's MIGRATE fork — never silently delete it.
+
+After deslopping, commit the comment-only change (gate it on `wt_preflight` like every other
+commit) so the pushed head carries the cleaned diff.
+
+> **This is a self-check, not the gate — the split-role firewall holds.** Deslopping your
+> *own* diff before push is exactly the "re-reading your own diff to self-check before you
+> push is fine" carve-out from the intro. It is a self-edit, not a review: you do **not**
+> run `review-code`/`review-doc`/`review-skill` on your PR, and you do **not** emit a
+> `review-*` verdict marker. The independent gate still judges the result with fresh eyes —
+> this step only keeps the wall out of what it judges.
+
+> **Placement rationale (why self-deslop here, not in the review gate).** The deslop
+> discipline is wired into write-code as a pre-push self-check — placement (a) — rather than
+> as a `review-code` comment-density finding (b) or both (c). Reason: it is the lightest fit
+> that closes #1242's invocation gap. write-code already sanctions self-checking the diff
+> before push, so a deslop pass adds **no new gate round-trip** and **no new firewall
+> surface**; routing it through `review-code` instead would promote a *style* convention into
+> a fail→repair gating loop and pull a non-gate-critical concern into the §CP-classified
+> review skill. Comment density is a self-correctable authoring concern, not a correctness
+> contract the independent gate must adjudicate — so it belongs at the author's seat. A full
+> ADR isn't warranted for a within-skill placement call; this note is the record.
+
+---
+
 ## Step 5 — Open a PR that closes the issue
 
 Open the PR with **`Fixes #N` in the body** so merging auto-closes the issue (this is
