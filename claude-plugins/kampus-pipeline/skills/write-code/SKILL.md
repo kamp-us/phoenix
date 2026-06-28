@@ -688,23 +688,46 @@ gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/nu
 # ship dark ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
 ```
 
-When it **does** fire, ship dark per the dark-ship procedure — **don't re-derive the mechanics**:
-declare the default-off flag and gate the new path following
-[`.patterns/feature-flags-agent-workflow.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/feature-flags-agent-workflow.md)
-(the ship-behind-flag workflow, #514), naming the flag by the grammar in
-[`.patterns/feature-flags-schema-lifecycle.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/feature-flags-schema-lifecycle.md)
-(`<product>-<feature>-<purpose>`, kebab-case, #513). The load-bearing invariant those patterns own
-is **default = safe-state**, the three facets `review-code` Step 3b will verify, so build to make
-each checkable from the outside:
+When it **does** fire, ship dark per the dark-ship procedure — **don't re-derive the mechanics**.
+The change gates behind a default-off flag, which is **one of two shapes** that this step treats
+**identically** from here on:
 
-- **Declare it default-off** — a `FlagshipFlag(..., { defaultVariation: "off", … })` in
+- **Newly-declared in this diff** — no suitable flag exists yet, so you mint one: declare a
+  default-off flag and gate the new path following
+  [`.patterns/feature-flags-agent-workflow.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/feature-flags-agent-workflow.md)
+  (the ship-behind-flag workflow, #514), naming the flag by the grammar in
+  [`.patterns/feature-flags-schema-lifecycle.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/feature-flags-schema-lifecycle.md)
+  (`<product>-<feature>-<purpose>`, kebab-case, #513).
+- **Gated behind a flag a PRIOR PR already declared** — the flag resource is **not in this diff**
+  (an earlier PR minted it; you only add the gated path under the existing key). The #1277/#1205
+  shape: a feature gated behind the prior-PR #1204 authorship flag.
+
+Whichever shape applies, **capture the exact kebab-case flag key as `FLAG_KEY`** — it is the single
+fact that flows out of this step. The load-bearing invariant the patterns own is **default =
+safe-state**, the three facets `review-code` Step 3b will verify, so build to make each checkable
+from the outside:
+
+- **Declare it default-off** (newly-declared shape only) — a
+  `FlagshipFlag(..., { defaultVariation: "off", … })` in
   `apps/web/worker/db/resources.ts` (workflow Step 1), with the per-flag metadata (owner,
-  originating issue, removal trigger) that lets it be retired later.
+  originating issue, removal trigger) that lets it be retired later. In the prior-PR shape the
+  declaration already exists upstream — don't re-declare it; just reference its key.
 - **Gate the new path with the safe read default** — server `flags.get*(key, false)` and client
   `useFlag(key, false)` / `<FlagGate fallback={…}>`, so the new path is unreachable until the flip
   and any Flagship outage degrades to the **old** path (workflow Step 2).
 - **No leak** — every entry into the new behavior sits behind the gate: no default-on, no inverted
   gate, no ungated client path.
+
+**Emit `FLAG_KEY` into the PR body — the producer half of ship-it's release-queue detector.**
+ship-it Step 5b queues `status:awaiting-release` on the merged PR iff one of two PR-ground-truth
+signals fires: (a) the diff *adds* a flag declaration, or (b) the PR body carries a plain
+`Flag: <key>` line. Signal (a) is **absent by construction in the prior-PR shape** (the flag
+declaration lives in an earlier diff), so signal (b) is the **only** signal that survives across
+PRs — and it survives only if write-code *writes* it. So whenever this step fires — **either
+shape, one consistent producer rule, never two** — **carry `FLAG_KEY` into Step 5's PR-body
+construction as a plain `Flag: <FLAG_KEY>` line** (see Step 5). Without it, a prior-PR dark ship is
+structurally invisible to Step 5b and silently skips the agents-deploy / humans-release flag-flip
+gate ADR 0083 exists to enforce (#1282).
 
 The PR then ships dark the normal way (Step 5): the diff is `apps/web/**`, **not** control-plane, so
 `review-code`'s PASS auto-ships it on green CI — and it reaches production **off** because both the
@@ -747,8 +770,31 @@ any other ref) and the full case-insensitive landmine keyword set — lives in t
 re-derive it. Operationally: one closing keyword, on the target, full stop — and the `(c)`
 guard below mechanizes "the closing-keyword set is exactly `{N}`" as the pre-push self-check.
 
+**If Step 4b fired, add a plain `Flag: <FLAG_KEY>` line to the body.** This is the producer half
+of ship-it's release-queue detector (§Step 4b): whenever the change ships gated behind a flag — the
+newly-declared shape **and** the prior-PR shape, one consistent rule — emit a body line naming the
+exact kebab-case key you captured as `FLAG_KEY`. Write it as a **plain** line, no markdown header or
+list prefix:
+
+```
+Flag: <FLAG_KEY>
+```
+
+The exact shape matters: it must match ship-it Step 5b's `FLAG_IN_BODY` grep
+(`^[[:space:]]*\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+`),
+so the key is lowercase kebab-case and the line starts with a bare `Flag:` (or `Flag key:`) — **not**
+`## Flag:`, `- Flag:`, or `**Flag:**` (a `##`/`-` prefix breaks the leading-anchor match). This is
+the only signal that survives when the flag was declared in a **prior** PR, so without it that dark
+ship is invisible to Step 5b (#1282). **Conversely, an ungated PR — no Step-4b dark feature — emits
+NO `Flag:` line**, so Step 5b correctly no-ops and no phantom `status:awaiting-release` is queued (no
+regression of #1257/#1271). In the graceful-absence case (no `product-development-cycle.md` / no flag
+substrate, ADR 0062) Step 4b never fires, so there is no `FLAG_KEY` and no `Flag:` line — the PR
+ships normally.
+
 ```bash
 wt_preflight && git push -u origin "$BRANCH"   # gate the push ([per-mutation preflight]); same per-run branch from Step 4
+# The body carries `Fixes #N` always; ADD the `Flag: <FLAG_KEY>` line BELOW it ONLY when Step 4b
+# fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it entirely for an ungated PR.
 gh pr create \
   --base main \
   --title "<concise PR title>" \
@@ -756,6 +802,7 @@ gh pr create \
 <short summary of what changed and why>
 
 Fixes #<N>
+Flag: <FLAG_KEY>
 EOF
 )"
 ```
@@ -791,6 +838,15 @@ STRAY=$(gh api repos/$REPO/pulls/<PR> --jq '.body' \
 [ -z "$STRAY" ] \
   && echo "no stray close directives — closing-keyword set is exactly {#<N>}" \
   || echo "STRAY CLOSE DIRECTIVE(S) on $(printf '#%s ' $STRAY)— rewrite these sibling refs to a non-closing form (addresses/relates to/see #M) before opening/patching the PR"
+# (d) DARK-SHIP GUARD, REST-only: IF Step 4b fired, the body MUST carry a `Flag:` line that
+#     matches ship-it Step 5b's FLAG_IN_BODY grep verbatim — else the prior-PR dark ship is dropped
+#     from the release queue (#1282). Run this check ONLY when Step 4b fired (FLAG_KEY is set).
+if [ -n "$FLAG_KEY" ]; then
+  gh api repos/$REPO/pulls/<PR> --jq '.body' \
+    | grep -Eiq '^[[:space:]]*\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' \
+    && echo "dark-ship Flag: line present and matches ship-it Step 5b — release queue will fire" \
+    || echo "MISSING/MALFORMED Flag: line — Step 4b fired but the body has no matching plain 'Flag: <key>' line; patch it in before stopping (#1282)"
+fi
 ```
 
 If (b) reports a broken seam, the body's mention was non-closing (a `Refs`/bare-`#N` slip):
@@ -800,7 +856,9 @@ since shipping the PR with a broken seam is exactly the #647 stall. If (c) repor
 close directive, a sibling/related `#M` carries a closing keyword that will wrongly auto-close
 `#M` on merge — patch the body the same way to downgrade each stray `#M` to its non-closing
 form (`addresses`/`relates to`/`see #M`) and re-run (c), since shipping it is exactly the
-#1259 silent-auto-close.
+#1259 silent-auto-close. If (d) reports a missing/malformed `Flag:` line on a Step-4b dark ship,
+patch the body via REST to add the plain `Flag: <FLAG_KEY>` line and re-run (d), since shipping it
+without the line silently drops the dark ship from ship-it's release queue (#1282).
 
 ---
 
