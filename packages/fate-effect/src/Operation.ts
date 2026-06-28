@@ -338,6 +338,37 @@ export function list<Item>(
  * Build a mutation entry: the definition's Schema validates the wire input
  * before the handler runs, and the handler's error channel is checked against
  * the declared union at this call site.
+ *
+ * The operation contract is deliberately asymmetric — `E` is bound to the
+ * declared union, `A` (success) is not bound to the declared `type:` view — and
+ * that asymmetry is intrinsic, not an omission (investigated #1366):
+ *
+ *  - `E extends DefinitionErrors<D>` works because `error:` is a `Schema.Top`,
+ *    whose decoded instance type is recoverable as `S["Type"]` (effect-smol
+ *    `Schema.ts` `Top`, the `readonly "Type"` member) — an identity projection
+ *    ({@link DefinitionErrors}). `type:` is a {@link TypeRef} (a wire type-NAME
+ *    ref, or a bare string), carrying no decoded-instance surface to project `A`
+ *    against; there is no `S["Type"]` analogue for the success view.
+ *  - Even were `type:` narrowed to the `FateDataView` class, the worker success
+ *    type is not a function of that class alone: `WorkerEntity<View, DateKeys,
+ *    Override>` (`DataView.ts`) needs two per-view arguments — the timestamp
+ *    `string`→`Date` correction and the optional/relation override — that encode
+ *    worker-vs-wire knowledge living only in the shaper's `=> WorkerEntity<…>`
+ *    return annotation, not in the definition. `const D` does recover the View
+ *    class through the widened `TypeRef`, but the missing piece is that delta,
+ *    not the type-ref narrowing, so binding `A` would re-state the convention at
+ *    the definition, not remove it.
+ *  - The success channel is intentionally heterogeneous: a full entity, an
+ *    id-only eviction ref `{__typename, id}` the client drops, or `null` (no
+ *    result). Even the weaker `A extends {__typename: DefinitionTypeName<D>}` is
+ *    false against correct handlers (`null` has no `__typename`; an inline
+ *    eviction ref's literal is often widened to `string`).
+ *
+ * So `__typename`/shape alignment between a handler's result and its declared
+ * view rests on the **shaper convention** — route the result through a shaper
+ * annotated `=> WorkerEntity<typeof SomeView>` (e.g. pano `shapers.ts`); that
+ * annotation, where the `DateKeys`/`Override` delta lives, is the enforcement
+ * seam, and skipping it (a hand-built inline result) has no compile guard.
  */
 export function mutation<const D extends MutationDefinition, A, E extends DefinitionErrors<D>, R>(
 	definition: D,
