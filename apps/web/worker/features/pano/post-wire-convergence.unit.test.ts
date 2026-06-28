@@ -105,6 +105,26 @@ describe("Pano Post wire shaper — by-id and keyset summaries converge (#1161, 
 		assert.strictEqual(toPost(toPostSummaryKeysetRow(keysetRowOf(record))).body, null);
 	});
 
+	it("null `bodyExcerpt` → both paths emit `body: null` through the shaper", () => {
+		const record = baseRecord(null);
+
+		assert.strictEqual(toPost(toPostSummaryRow(record)).body, null);
+		assert.strictEqual(toPost(toPostSummaryKeysetRow(keysetRowOf(record))).body, null);
+	});
+
+	it("non-empty `bodyExcerpt` → rides the wire verbatim through the shaper", () => {
+		const record = baseRecord("ilk birkaç kelime…");
+
+		// Pin the literal value (not merely cross-path agreement): a mapper that
+		// mangled a non-empty excerpt identically on both paths would pass the
+		// field-agreement case yet must fail here.
+		assert.strictEqual(toPost(toPostSummaryRow(record)).body, "ilk birkaç kelime…");
+		assert.strictEqual(
+			toPost(toPostSummaryKeysetRow(keysetRowOf(record))).body,
+			"ilk birkaç kelime…",
+		);
+	});
+
 	it("the shaper emits the canonical `{__typename, …}` shape with viewer-scalar defaults", () => {
 		const wire = toPost(toPostSummaryRow(baseRecord("özet")));
 
