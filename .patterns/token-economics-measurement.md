@@ -403,6 +403,97 @@ provisions out-of-band at ≈0 metered tokens and the store is already shared, s
 change wins. The only realizable in-repo saving is removing the *redundant* reinstall/symlink behavior
 the report observed, addressed by documentation (above), not a harness change this repo cannot make.
 
+## 6. Cross-stage context reuse — reviewer/shipper re-read of coder context (measured/reasoned-negative, NO-GO)
+
+The **cross-stage reuse lever** ([#1485](https://github.com/kamp-us/phoenix/issues/1485)) asks a
+different question from the §5 read-economics child ([#1373](https://github.com/kamp-us/phoenix/issues/1373),
+*intra*-subagent excerpt-vs-whole-read, ≈0): can the **reviewer and shipper re-use the source the
+coder already loaded** in the prior stage, rather than re-reading it — and is there a form of that
+reuse that does **not** weaken the review gate's independent re-read? The premise is that a
+meaningful fraction of reviewer/shipper spend is re-reading context the coder had loaded. This
+section measures that premise on the frozen set and reasons it against the split-role firewall. The
+outcome is **NO-GO** — two independent, each-sufficient blockers, mirroring §4 sub-levers 2 & 3 and §5.
+
+### Measurement — what the reviewer actually re-reads of the coder's load (from the §1/§2 transcripts)
+
+Attributed from the same real `claude-opus-4-8` sub-agent transcripts §2/§5 use (`write-code #1223
+agent-a734c4b6dc387a613`, `review-code #1199 agent-ad29433525afd436`), so the numbers rest on the
+billed totals reconstructed exactly there (2,076,940 / 1,325,645):
+
+| Quantity | Measured | Source |
+|---|---:|---|
+| **Source the coder loaded** (whole-file `Read` of non-skill source) | `biome.jsonc` ~505 tok | §5 read table — the only source `Read` in the write-code run |
+| **Whole-file source the reviewer re-reads** | **0 tok** | §5 read table — review-code's only `Read` is its own `ship-it` skill excerpt (133 tok); it reads **no** whole-file source |
+| Reviewer diff-context ingest (one-time) | ~8,645 tok Bash (`gh api` diffs) + ~911 tok (2 `Explore` `Agent` sub-agents) | §5 non-`Read` ingest line |
+| Reviewer `cache_read` (86% of 1.33M billed) | scaffolding 574,380 (43%) + task-tail 569,843 (57%) | [audit](./token-economics-audit.md) scaffolding/task-tail split |
+
+The premise does not survive the measurement. **The reviewer re-reads zero whole-file source the
+coder loaded.** It reaches the artifact through the **PR-head diff** via scoped `gh api` Bash +
+`Explore` sub-agents — never by re-loading the coder's source files. The reviewer's dominant spend
+(`cache_read`, 86% of billed) is its *own* resident scaffolding (43%, Rank 1) plus a task-tail that
+is the diff + the reviewer's accumulating **independent** reasoning re-charged across 31 turns —
+neither is "source the coder loaded." The only genuine cross-stage overlap is **the diff itself**
+(the changed lines), which the reviewer **must** read from the head to verify, and which it would
+read identically whether or not the coder ever existed. The coder's non-diff source load on the
+frozen set (`biome.jsonc`, ~505 tok) is not re-read by the reviewer **at all**.
+
+### Blocker 1 (token) — there is no shared cross-session cache, so reuse cannot be "free amortization"
+
+The issue's framing — "prompt-cache economics could amortize the re-read" — is foreclosed by the
+already-measured fact (audit Rank 4; §4 sub-levers 2 & 3): **separate sub-agent sessions share no
+prompt-prefix cache.** Cross-stage reuse therefore cannot be a free cache hit; it would require
+**injecting the coder's loaded context into the reviewer's prompt**, which is paid as fresh
+`cache_creation` input in the reviewer and then re-read as `cache_read` on every one of its ~31 turns
+— it **inflates** billed tokens unless it *replaces* reads the reviewer would otherwise pay. The
+reads it could replace are ≈0 (measured: the reviewer whole-file-reads no coder source; the diff it
+must read from the head regardless). So the token saving available from cross-stage reuse on the
+frozen set is **≈0 at best, negative if implemented as context injection** — the same structural
+result as §4's cross-spawn sub-levers, here confirmed for the specific reviewer/shipper case.
+
+### Blocker 2 (quality) — every reuse that *could* save collapses the fresh-eyes firewall
+
+The review gate's value **is** the reviewer's independent adversarial read **from the PR head**. This
+is structural, not advisory: `review-code/SKILL.md` mandates "**Source ALL code under review from the
+PR head — never the launched checkout's working copy**" (and `review-doc` the same for prose), the
+verdict is SHA-bound to that head (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)),
+fetched into a dedicated ref (ADR [0056](https://github.com/kamp-us/phoenix/blob/main/.decisions/0056-bundle-storage-transport.md)),
+and the reviewer "comes to this **fresh**, with no sunk-cost attachment to the implementation." Reuse
+is evaluated against that firewall:
+
+- **Reuse the coder's reasoning / conclusions** — the only form with real tokens to save — is
+  *exactly* what collapses the firewall: the reviewer would inherit the coder's framing instead of
+  re-deriving it, the self-evaluation bias the split-role gate exists to exclude. A measured
+  accuracy regression, which ADR [0112](https://github.com/kamp-us/phoenix/blob/main/.decisions/0112-token-measurement-no-quality-compromise-methodology.md) §4
+  **vetoes outright** regardless of token win.
+- **Reuse only the coder's file *list* (not its conclusions)** — the narrowest candidate — is either
+  a no-op or harmful. The changed-files set is already carried by the PR diff (`gh api …/files`),
+  which the reviewer derives independently and free from the head; reusing the coder's list adds no
+  token saving (the diff already names every touched file) **and** anchors the reviewer to the files
+  the coder *touched*, suppressing the blast-radius axis — a good review reads files the diff did
+  **not** touch (callers, tests, docs) to catch what the coder **missed**. Anchoring the review's
+  gaze to the coder's own file list narrows it to the coder's framing: the precise bias the firewall
+  exists to prevent. No-op when redundant, accuracy-regressing when it bites.
+
+There is no middle form: every reuse is either **what the diff already carries independently** (no
+saving — the reviewer reads it from the head regardless) or **the coder's framing/conclusions**
+(firewall collapse → accuracy regression → §4 veto). The shipper is the same shape: `ship-it` reads
+the diff + CI checks from the head and asserts the SHA-bound PASS — its only overlap with the coder's
+load is the diff it must confirm to know what it merges; there is no transferable coder source load.
+
+### Net recorded delta (against the §2 baseline)
+
+| Lever | Measured/reasoned before/after | Quality gate (§3 / firewall) | Outcome |
+|---|---|---|---|
+| cross-stage context reuse (reviewer/shipper re-use of coder load) | **≈0 tok/run** — the reviewer re-reads **0** whole-file source the coder loaded (measured); no shared cross-session cache (Rank 4) so any reuse is context-injection that *adds* tokens; the only overlap (the diff) is read from the head regardless | independence is load-bearing and structural ("source ALL from the PR head", ADR 0058, fresh-eyes); the only token-saving reuse is the coder's framing/conclusions → firewall collapse → §4 veto; file-list-only reuse is redundant-or-anchoring | **NO-GO — measured/reasoned-negative recorded** |
+
+**Net: cross-stage reuse is irreconcilable with the firewall, and on the frozen set there is nothing
+to reuse anyway.** An independence-preserving form does **not** exist: the part of the coder's load
+that is safe to share (the diff) the reviewer already reads independently from the head for ≈free, and
+the part that would save tokens (the coder's framing) is exactly what the fresh-eyes gate must not
+inherit. This is distinct from #1373 (intra-subagent excerpt-vs-whole-read, also ≈0) but lands at the
+same root cause the audit established: pipeline spend is **resident scaffolding (Rank 1) + each
+stage's own independent diff-read**, not transferable cross-stage source. No skill change is made.
+
 ## Tooling gap (follow-up)
 
 Per-stage token spend **is** individually attributable offline — each stage sub-agent has its own
