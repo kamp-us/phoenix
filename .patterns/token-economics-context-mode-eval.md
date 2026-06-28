@@ -48,7 +48,7 @@ a hosted analytics surface (`ctx_insight` → `context-mode.com/insight`).
 **Technically installable: yes.** context-mode is built first-class for Claude Code (it is the lead
 platform in its README), so "can it be installed at all" is not the blocker — the integration *shape*
 is well defined: a host/session-level Claude Code plugin (MCP server + the six hooks), optionally a
-`~/.claude/settings.json` statusline edit. It would **wrap** our tool layer (intercepting
+statusline edit to the operator's Claude Code user settings. It would **wrap** our tool layer (intercepting
 `Bash`/`Read`/`WebFetch`), not replace any of our skills, and would **add** the 11 `ctx_*` tools to
 the toolset. But four fit frictions, the first decisive, argue against adopting it for *our* setup:
 
@@ -92,8 +92,8 @@ injected `CLAUDE.md` footprint (audit Rank 1). Adopting an external ELv2 host de
 
 ### 2. Host/session-level install collides with repo-as-config (ADR 0062)
 
-context-mode installs into the Claude Code **host** (`/plugin install`, `~/.claude/settings.json`),
-not as a repo-committed artifact. Our pipeline is deliberately **repo-as-config** (ADR
+context-mode installs into the Claude Code **host** (`/plugin install`, plus the operator's
+Claude Code user settings for the statusline), not as a repo-committed artifact. Our pipeline is deliberately **repo-as-config** (ADR
 [0062](../.decisions/0062-repo-as-config-plugin.md)): the operable surface lives in the repo
 (`claude-plugins/kampus-pipeline/**`, `.claude/**`) so a checkout *is* the configuration. A
 fleet-wide context-mode dependency is a host-level change applied to every operator/runner out of
@@ -124,10 +124,11 @@ The apparatus §2 demands a **measured** before/after on a representative frozen
 was obtainable in this evaluation lane, and per the epic's no-fabrication discipline no number is
 invented here.** The concrete reasons:
 
-- **Install is host-level and restart-gated.** Enabling context-mode requires `/plugin install` (or a
-  `~/.claude/settings.json` edit) on the Claude Code host followed by a restart/`/reload-plugins`. It
-  cannot take effect mid-session, and a worktree doc-subagent has neither the host plugin surface nor
-  the authority to edit the operator's `~/.claude/` (also a no-local-paths / self-mod boundary).
+- **Install is host-level and restart-gated.** Enabling context-mode requires `/plugin install` (or an
+  edit to the operator's Claude Code user settings) on the Claude Code host followed by a
+  restart/`/reload-plugins`. It cannot take effect mid-session, and a worktree doc-subagent has
+  neither the host plugin surface nor the authority to edit the operator's user-level Claude config
+  (also a no-local-paths / self-mod boundary).
 - **The §2 procedure requires spawning instrumented stage subagents.** A real before/after means
   running the frozen-set stage agent (triage #1227 / write-code #1223 / review-code #1199) **with and
   without** context-mode and capturing each run's `cost.total_tokens`. This lane has no agent-spawn
