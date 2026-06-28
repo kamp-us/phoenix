@@ -43,7 +43,6 @@ const baseRecord = (bodyExcerpt: string | null): PostRecord => ({
 	removedReason: null,
 	sandboxedAt: null,
 	isDraft: null,
-	lastEventId: "",
 });
 
 // The keyset path selects exactly this column subset (the `listPostsConnection`

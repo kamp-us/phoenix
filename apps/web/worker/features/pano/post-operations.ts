@@ -543,7 +543,6 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				lastActivityAt: now,
 				removedAt: null,
 				sandboxedAt: input.sandboxedAt ?? null,
-				lastEventId: "",
 			}),
 			...syncPostSearch(db, postId, title),
 		]);
@@ -628,7 +627,6 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 					lastActivityAt: now,
 					removedAt: null,
 					isDraft: true,
-					lastEventId: "",
 				}),
 			);
 		}

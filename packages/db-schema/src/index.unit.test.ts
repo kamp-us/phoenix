@@ -31,7 +31,6 @@ describe("shared read-model schema", () => {
 				"first_at",
 				"last_activity_at",
 				"last_edit_at",
-				"last_event_id",
 			].sort(),
 		);
 	});
@@ -54,7 +53,6 @@ describe("shared read-model schema", () => {
 				"removed_by",
 				"removed_reason",
 				"sandboxed_at",
-				"last_event_id",
 			].sort(),
 		);
 		expect(cols).toContain("removed_at");
@@ -86,7 +84,6 @@ describe("shared read-model schema", () => {
 				"removed_reason",
 				"sandboxed_at",
 				"is_draft",
-				"last_event_id",
 			].sort(),
 		);
 		expect(cols).toContain("is_draft");
@@ -113,7 +110,6 @@ describe("shared read-model schema", () => {
 				"removed_by",
 				"removed_reason",
 				"sandboxed_at",
-				"last_event_id",
 			].sort(),
 		);
 		expect(cols).toContain("removed_at");

@@ -263,9 +263,6 @@ export const userProfile = sqliteTable(
 		postCount: integer("post_count").notNull().default(0),
 		commentCount: integer("comment_count").notNull().default(0),
 		updatedAt: timestamp("updated_at").notNull(),
-		// Convergence guard owned by identity events (UserProfileChanged);
-		// counter-touching steps (VoteRecorded, …) leave it alone.
-		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [index("user_profile_username").on(t.username)],
 );
