@@ -44,6 +44,7 @@
  * prefixing it with `NS` would push it over the min length and defeat the boundary it proves.
  * It returns `[]` via the short-circuit regardless of the corpus, so it stays correct.
  */
+import {key, platform} from "@kampus/authz";
 import {beforeAll, describe, expect, it} from "vitest";
 import {integrationStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
@@ -73,8 +74,14 @@ async function searchTerms(args: Record<string, unknown>): Promise<Connection<Te
 	return res.data as Connection<TermNode>;
 }
 
-async function searchPosts(args: Record<string, unknown>): Promise<Connection<PostNode>> {
-	const res = await h.fate({kind: "list", name: "searchPosts", args, select: ["id", "title"]});
+async function searchPosts(
+	args: Record<string, unknown>,
+	opts?: {cookie?: string},
+): Promise<Connection<PostNode>> {
+	const res = await h.fate(
+		{kind: "list", name: "searchPosts", args, select: ["id", "title"]},
+		opts,
+	);
 	expect(res.ok).toBe(true);
 	if (!res.ok) throw new Error(`searchPosts failed: ${res.error.code}`);
 	return res.data as Connection<PostNode>;
@@ -262,5 +269,106 @@ describe("searchTerms — title-only scope (guards against scope creep)", () => 
 		});
 		const c = await searchTerms({query: `${NS} govde`});
 		expect(c.items).toEqual([]);
+	});
+});
+
+describe("searchPosts — çaylak sandbox read-mask over real FTS5 (#1358 p0 leak)", () => {
+	// The end-to-end half of #1358's AC4 that the rendered-SQL unit test cannot give:
+	// the mask is `id IN (<visible post_record ids>)`, so only a real FTS5 engine
+	// proves a sandboxed row indexed in `post_search` is actually excluded from a
+	// non-author/non-moderator viewer's results AND from the keyset/pagination slots
+	// (the #1312 count/keyset vector), while staying visible to its author and a mod.
+	//
+	// A post is sandboxed by stamping `post_record.sandboxed_at` — the column the
+	// çaylak write path sets via `sandboxedAtForAuthor` (kunye/sandbox.ts), gated in
+	// prod behind the default-off authorship-loop flag. That flag has no HTTP handle
+	// in the harness, so the sandbox state is minted with a setup-only `execD1` UPDATE:
+	// the same off-the-binding real-D1 seam `setLastActivityAt` uses for the
+	// server-stamped clock and the founder-seed moderation grant uses for the
+	// `moderates` tuple. The row stays FTS-indexed; only the read-time mask hides it —
+	// exactly the keyset-filter path AC3 documents.
+	const TOKEN = `${NS} mahzen${STAMP}`;
+	let liveAId = "";
+	let liveBId = "";
+	let sandboxedId = "";
+	let moderator: {userId: string; cookie: string};
+	let other: {userId: string; cookie: string};
+
+	beforeAll(async () => {
+		moderator = await h.signUp(`${NS}-${STAMP}-mod@test.local`, "hunter2hunter2", "mod");
+		other = await h.signUp(`${NS}-${STAMP}-other@test.local`, "hunter2hunter2", "uye");
+
+		// Grant the moderator platform-moderation authority the prod way — a direct
+		// `moderates` / `key(platform)` relation tuple (ADR 0107, the founder-seed mint),
+		// so `currentSandboxViewer`'s `Moderate.over(platform)` probe resolves to a Grant.
+		await h.execD1("INSERT INTO relation_tuple (subject, relation, object) VALUES (?, ?, ?)", [
+			moderator.userId,
+			"moderates",
+			key(platform),
+		]);
+
+		// Two live posts + one to-be-sandboxed, all authored by `author` and all
+		// matching TOKEN, so the masked row competes in the SAME FTS result set.
+		liveAId = await seedPost(`${TOKEN} canli a`);
+		liveBId = await seedPost(`${TOKEN} canli b`);
+		sandboxedId = await seedPost(`${TOKEN} karantina`);
+
+		// Stamp the sandbox marker directly. `sandboxed_at` is an epoch-second integer
+		// (timestamp mode); any non-null value sandboxes the row — the predicate only
+		// tests `sandboxed_at IS NULL`.
+		const changed = await h.execD1("UPDATE post_record SET sandboxed_at = ? WHERE id = ?", [
+			Math.floor(Date.now() / 1000),
+			sandboxedId,
+		]);
+		expect(changed).toBe(1);
+	});
+
+	it("excludes the sandboxed post from an anonymous viewer's results (the core leak)", async () => {
+		const ids = (await searchPosts({query: TOKEN})).items.map((e) => e.node.id);
+		expect(ids).toContain(liveAId);
+		expect(ids).toContain(liveBId);
+		expect(ids).not.toContain(sandboxedId);
+	});
+
+	it("excludes the sandboxed post from a signed-in non-author member", async () => {
+		// The member arm is `sandboxed_at IS NULL OR author_id = :viewerId`; a different
+		// member must NOT match the author arm, so they see the live-only set, like anon.
+		const ids = (await searchPosts({query: TOKEN}, {cookie: other.cookie})).items.map(
+			(e) => e.node.id,
+		);
+		expect(ids).not.toContain(sandboxedId);
+		expect(ids).toContain(liveAId);
+		expect(ids).toContain(liveBId);
+	});
+
+	it("allocates no count/pagination slot to the sandboxed row (the #1312 vector)", async () => {
+		// Only the two live posts are visible to anon, so a first:2 page is the FULL set:
+		// `hasNext` must be false. A hydrate-only mask (the bug) would let the sandboxed
+		// row occupy a keyset slot under the `LIMIT first+1` fetch (and the `count(*)`),
+		// flipping `hasNext` true and/or holing the page — the count/keyset leak this
+		// guards. The visible predicate rides count, cursor-rank, and the keyed fetch
+		// alike (Search.ts `ftsKeysetKeys`), so the slot proof is the count proof.
+		const c = await searchPosts({query: TOKEN, first: 2});
+		const ids = c.items.map((e) => e.node.id);
+		expect(c.items.length).toBe(2);
+		expect(new Set(ids)).toEqual(new Set([liveAId, liveBId]));
+		expect(ids).not.toContain(sandboxedId);
+		expect(c.pagination.hasNext).toBe(false);
+	});
+
+	it("shows the author their own sandboxed post in results", async () => {
+		const c = await searchPosts({query: TOKEN}, {cookie: author.cookie});
+		const ids = c.items.map((e) => e.node.id);
+		expect(ids).toContain(sandboxedId);
+		expect(ids).toContain(liveAId);
+		expect(ids).toContain(liveBId);
+		expect(c.items.length).toBe(3);
+	});
+
+	it("shows a moderator the sandboxed post in results", async () => {
+		const c = await searchPosts({query: TOKEN}, {cookie: moderator.cookie});
+		const ids = c.items.map((e) => e.node.id);
+		expect(ids).toContain(sandboxedId);
+		expect(c.items.length).toBe(3);
 	});
 });
