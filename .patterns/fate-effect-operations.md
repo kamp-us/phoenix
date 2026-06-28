@@ -82,6 +82,17 @@ How phoenix mutations are shaped, beyond the constructor mechanics:
 
   Every publish method is `Effect<void>` (`E = never`) — a failed publish cannot fail the committed mutation; the swallow-with-log lives inside the implementation ([fate-effect-server.md](./fate-effect-server.md)). Publish the **already shaped** entity/node inline as `data`/`node`: the handler shaped it for the response, so the live event carries resolved data and clients mask it to their own selection. The mutating client gets the entity returned directly; live events update *other* clients. See [fate-live-views.md](./fate-live-views.md).
 
+- **A create-time node broadcast takes a `PublishDecision` — the sandbox gate is type-level, not a convention** ([#1280](https://github.com/kamp-us/phoenix/issues/1280), applying [ADR 0107](../.decisions/0107-capability-authz-framework.md)'s make-the-mistake-untypeable to the sandbox/fate-live boundary). The `appendNode` / `prependNode` wrappers (the node-broadcast methods in `live.ts`) require a third argument, a branded `PublishDecision` from `features/kunye/sandbox.ts`:
+
+  ```ts
+  // a çaylak-sandboxable create: discharge the sandbox check
+  yield* live.post.feed.prependNode(post.id, {node: post}, decidePublish(sandboxedAt));
+  // a Removed → Live restore: already public by construction, no sandbox state
+  yield* live.post.feed.appendNode(post.id, {node: post}, alwaysLive);
+  ```
+
+  `PublishDecision` is opaque (a phantom-brand `never` field makes it unconstructible outside `sandbox.ts`), so the **only** ways to obtain one are `decidePublish(sandboxedAt)` — broadcast iff the row is live (`sandboxedAt === null`), suppress otherwise — and `alwaysLive`, the explicit escape hatch for the `Removed → Live` restore paths ([ADR 0096](../.decisions/0096-uniform-soft-delete-substrate.md) §4) that re-enter already-public content. The wrapper consumes the decision through `broadcastIf` (run the publish or `Effect.void`), so a sandboxed row never reaches the viewer-blind public topic ([#1205](https://github.com/kamp-us/phoenix/issues/1205) AC#2). The win over the prior convention-level `publishIfLive(sandboxedAt, publish)` ternary: a new create mutation **cannot forget the check** — omitting the decision is a missing-argument compile error, and the brand blocks fabricating a "broadcast" without going through the gate. `deleteEdge` / `update` / `delete` carry no new node payload, so they stay ungated.
+
 ## What not to do
 
 - Don't author handlers as raw generators or `() => Effect.gen(...)` — the documented form is `Effect.fn("<wire name>")(function* ...)`; the types only accept Effect-returning functions.

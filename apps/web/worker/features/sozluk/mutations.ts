@@ -14,7 +14,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
-import {publishIfLive, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {alwaysLive, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -93,10 +93,9 @@ export const mutations = {
 			// `definition.delete` removes from) so every open term page updates live —
 			// but only when the definition is live: the topic is viewer-blind, so a
 			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
-			yield* publishIfLive(
-				sandboxedAt,
-				live.definition.term(input.termSlug).appendNode(definition.id, {node: definition}),
-			);
+			yield* live.definition
+				.term(input.termSlug)
+				.appendNode(definition.id, {node: definition}, decidePublish(sandboxedAt));
 			return definition;
 		}),
 	),
@@ -222,7 +221,9 @@ export const mutations = {
 					updatedAt: restored.updatedAt,
 					myVote: restored.myVote ?? null,
 				});
-				yield* live.definition.term(slug).appendNode(restored.id, {node});
+				// Restore re-enters already-public content (`Removed → Live`, ADR 0096 §4):
+				// Live by construction, no sandbox state to discharge → `alwaysLive` (#1280).
+				yield* live.definition.term(slug).appendNode(restored.id, {node}, alwaysLive);
 			}
 			return toTermFromPage(page);
 		}),

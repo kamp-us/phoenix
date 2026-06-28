@@ -10,10 +10,16 @@
  * typename is the SAME string (`DefinitionView.typeName === "Definition"`), just
  * sourced from the view. The `changed` hint stays a per-resolver argument (it is
  * mutation-specific and does not reach the wire; see `fate-live/live-publisher.ts`).
+ *
+ * `appendNode` (the create-time node broadcast, the #1205 leak surface) takes a
+ * `PublishDecision` and gates through `broadcastIf` — so a resolver cannot broadcast
+ * a node to this viewer-blind public topic without discharging the sandbox check
+ * (#1280). `deleteEdge` carries no node payload, so it stays ungated.
  */
 
 import type {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {LiveTopic} from "../fate-live/protocol.ts";
+import {broadcastIf, type PublishDecision} from "../kunye/sandbox.ts";
 import {DefinitionView} from "./views.ts";
 
 const DEFINITION = DefinitionView.typeName;
@@ -31,8 +37,11 @@ export const sozlukLive = (live: WorkerLivePublisher) => ({
 		term: (slug: string) => {
 			const topic = live.topic(LiveTopic.termDefinitions, {id: slug});
 			return {
-				appendNode: (id: string | number, options?: {node?: unknown; eventId?: string}) =>
-					topic.appendNode(DEFINITION, id, options),
+				appendNode: (
+					id: string | number,
+					options: {node?: unknown; eventId?: string},
+					decision: PublishDecision,
+				) => broadcastIf(decision, topic.appendNode(DEFINITION, id, options)),
 				deleteEdge: (id: string | number, options?: {eventId?: string}) =>
 					topic.deleteEdge(DEFINITION, id, options),
 			};
