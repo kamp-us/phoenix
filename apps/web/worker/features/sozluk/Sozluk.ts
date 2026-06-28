@@ -426,7 +426,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						firstAt: summary.firstAt,
 						lastActivityAt: now,
 						lastEditAt: summary.lastEditAt,
-						lastEventId: "",
 					})
 					.onConflictDoUpdate({
 						target: schema.termRecord.slug,
@@ -797,7 +796,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					removedBy: null,
 					removedReason: null,
 					sandboxedAt: input.sandboxedAt ?? null,
-					lastEventId: "",
 				}),
 			);
 

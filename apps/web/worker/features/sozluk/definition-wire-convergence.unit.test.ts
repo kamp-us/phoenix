@@ -30,7 +30,6 @@ const baseRecord = (): DefinitionRecord => ({
 	removedBy: null,
 	removedReason: null,
 	sandboxedAt: null,
-	lastEventId: "",
 });
 
 describe("Sözlük Definition wire shaper — derived from the one column→field map (#1268, mirrors #1265)", () => {

@@ -34,9 +34,6 @@
  * `CREATE VIRTUAL TABLE`), and `apps/web/worker/db/drizzle.config.ts` reads this
  * graph for migration generation — adding them would make drizzle-kit try to
  * generate a migration for a table the FTS migration already owns.
- *
- * `last_event_id` columns are the projection-era convergent-overwrite guard,
- * vestigial under d1-direct (ADR 0009) but kept to hold the read-side stable.
  */
 import {sql} from "drizzle-orm";
 import {index, integer, sqliteTable, text} from "drizzle-orm/sqlite-core";
@@ -62,8 +59,6 @@ export const termRecord = sqliteTable(
 		firstAt: timestamp("first_at"),
 		lastActivityAt: timestamp("last_activity_at"),
 		lastEditAt: timestamp("last_edit_at"),
-		// Convergent-overwrite guard: `WHERE last_event_id < excluded.last_event_id`.
-		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
 		index("term_record_recent").on(t.lastActivityAt),
@@ -77,9 +72,6 @@ export const termRecord = sqliteTable(
  * (ADR 0009) — the per-term DO is no longer the source of truth. Denormalized
  * with term slug + title so the profile feed renders without joining
  * `term_record`; `body_excerpt` is a denormalized truncation for the feed card.
- *
- * `last_event_id` is vestigial (projection-era convergence guard, unused under
- * d1-direct); kept to hold the read-side schema stable until a cleanup pass.
  */
 export const definitionRecord = sqliteTable(
 	"definition_record",
@@ -108,7 +100,6 @@ export const definitionRecord = sqliteTable(
 		// unrepresentable, and `toColumns` never emits `sandboxed_at` AND `removed_at`
 		// both non-null. Services never read this raw.
 		sandboxedAt: timestamp("sandboxed_at"),
-		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
 		// WHERE author_id = ? ORDER BY created_at DESC (profile feed).
@@ -163,7 +154,6 @@ export const postRecord = sqliteTable(
 		// partial unique index (`post_record_one_draft_per_author`, migration 0004)
 		// enforces one draft per author. Drafts are excluded from public feeds.
 		isDraft: integer("is_draft", {mode: "boolean"}),
-		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
 		index("post_record_hot").on(t.hotScore),
@@ -189,9 +179,6 @@ export const postRecord = sqliteTable(
  * canonical body kept for restore + moderator review); the `[silindi]` tombstone
  * is a VIEW rendering of that state, not a body the delete path writes (ADR 0096
  * §5). A removed leaf comment is also a `Removed` row now — no hard delete.
- *
- * `last_event_id` is vestigial (projection-era convergence guard, unused under
- * d1-direct); kept to hold the read-side schema stable until a cleanup pass.
  */
 export const commentRecord = sqliteTable(
 	"comment_record",
@@ -216,7 +203,6 @@ export const commentRecord = sqliteTable(
 		removedReason: text("removed_reason"),
 		// The çaylak mod-only sandbox marker (#1205) — see `definition_record`.
 		sandboxedAt: timestamp("sandboxed_at"),
-		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
 		// WHERE author_id = ? ORDER BY created_at DESC (profile feed).

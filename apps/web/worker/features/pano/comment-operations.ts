@@ -372,7 +372,6 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				updatedAt: now,
 				removedAt: null,
 				sandboxedAt: input.sandboxedAt ?? null,
-				lastEventId: "",
 			}),
 		);
 
