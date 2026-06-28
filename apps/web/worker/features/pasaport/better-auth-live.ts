@@ -93,7 +93,10 @@ export const deriveAuthUrlConfig = (environment: Environment): BetterAuthOptions
 				baseURL: "http://localhost:3000",
 				trustedOrigins: ["http://localhost:3000", "http://localhost:5173"],
 			}
-		: environment === "preview"
+		: // `audit` shares preview's deployed-direct topology (#1511): the rite-audit stage
+			// is served from `*.kampusinfra.workers.dev`, NOT the prod apex, so it must use
+			// the dynamic `allowedHosts` mechanism rather than fall through to the apex pin.
+			environment === "preview" || environment === "audit"
 			? {baseURL: {allowedHosts: ["*.kampusinfra.workers.dev"]}}
 			: {baseURL: `https://${PHOENIX_APEX_HOSTNAME}`};
 

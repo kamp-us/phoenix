@@ -11,6 +11,7 @@
 import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {PANO_DRAFT_SAVE, PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
+import {AUDIT_ENVIRONMENT} from "../../environment.ts";
 
 /**
  * The Cloudflare Flagship app — the container the worker's feature flags live in
@@ -134,8 +135,45 @@ export const AUTHORSHIP_LOOP_FLAG = {
 } as const;
 
 /**
- * No targeting rules — a plain boolean dark-ship/kill-switch. `appId` is resolved
- * at deploy (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ * The environment-targeting force-on rule for the authorship loop (#1511, epic
+ * #1510 — the rite-audit harness gating prerequisite). The dedicated audit stage's
+ * non-interactive force-on seam: a single rule that serves `on` IFF the request's
+ * `environment` attribute equals the `audit` deploy class (sourced from the
+ * `ENVIRONMENT` config by `makeRequestFlagsContext`, mapped from the `audit` stage
+ * by `environmentForStage`). So a stage deployed with `ENVIRONMENT=audit` reads the
+ * flag on with zero human interaction.
+ *
+ * Prod-never is STRUCTURAL, not a convention: a `production` deploy carries
+ * `environment: "production"`, and `equals "audit"` cannot match it; the only stage
+ * that maps to `audit` is the dedicated `audit` stage (`environmentForStage` maps
+ * `prod`→`production`, every other stage→`preview`), so no env value or config can
+ * make this rule fire in production. Per-PR `preview` stages carry
+ * `environment: "preview"` and never match either. The flag's `defaultVariation`
+ * stays `off`, so everything outside the audit class is the unchanged dark-ship safe
+ * state (ADR 0083) — this rule adds ZERO production behavior change.
+ *
+ * Single-sourced as a typed constant so the audit-only / prod-never invariant is
+ * unit-inspectable (`authorship-loop-force-on.invariant.test.ts`) off the SAME
+ * record the factory ships. The `: FlagshipFlagRule[]` annotation contextually types
+ * the `equals` operator literal against the operator union (per
+ * `.patterns/feature-flags-targeting.md`'s sanctioned taxonomy).
+ */
+export const AUTHORSHIP_LOOP_RULES: Cloudflare.FlagshipFlagRule[] = [
+	{
+		priority: 1,
+		conditions: [{attribute: "environment", operator: "equals", value: AUDIT_ENVIRONMENT}],
+		serveVariation: "on",
+	},
+];
+
+/**
+ * The audit-only force-on rule (`AUTHORSHIP_LOOP_RULES`) layered over the default-off
+ * dark-ship config. `appId` is resolved at deploy (see `demoTargetingFlag` for why
+ * it's a factory, not a module constant).
  */
 export const authorshipLoopFlag = (appId: Input<string>) =>
-	Cloudflare.FlagshipFlag("phoenix_authorship_loop", {appId, ...AUTHORSHIP_LOOP_FLAG});
+	Cloudflare.FlagshipFlag("phoenix_authorship_loop", {
+		appId,
+		...AUTHORSHIP_LOOP_FLAG,
+		rules: AUTHORSHIP_LOOP_RULES,
+	});
