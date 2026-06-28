@@ -1,0 +1,38 @@
+name: readme-guard
+
+# CI gate for #938/#939: every `packages/*` workspace package must carry a
+# `README.md` (what it is, why it exists, how to use it). Nothing enforced this, so
+# two packages drifted README-less (ci-required, worker-relevance) — the same
+# silent-drift class as the schema-mirror (#859) and node:sqlite (#930) incidents.
+# This job scopes to real workspace members (dirs with a package.json) so it ignores
+# dead-shell dirs, and fails closed if it scans zero members (ADR 0092). It reuses
+# pipeline-cli's `readme-guard check` mode — the scan lives once in the tool.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check every packages/* member has a README.md
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when a real packages/* member lacks a README.md (the report is on
+      # stderr), or when zero members are in scope (fail-closed). See #938/#939.
+      - name: Check every packages/* member has a README
+        run: node packages/pipeline-cli/src/bin.ts readme-guard check

@@ -21,6 +21,7 @@ import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
 import {ghPhoenixCommand} from "./tools/gh-phoenix/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {readGuardCommand} from "./tools/read-guard/command.ts";
+import {readmeGuardCommand} from "./tools/readme-guard/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
 import {structuredOutputGuardCommand} from "./tools/structured-output-guard/command.ts";
 import {worktreeGuardCommand} from "./tools/worktree-guard/command.ts";
@@ -64,6 +65,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	epicLedgerCommand,
 	decisionsIndexCommand,
 	readGuardCommand,
+	readmeGuardCommand,
 	worktreeGuardCommand,
 	spawnGuardCommand,
 	leakGuardCommand,
