@@ -1,0 +1,34 @@
+{
+	"name": "@kampus/audit-run",
+	"version": "0.0.0",
+	"private": true,
+	"description": "The on-demand single-entry rite-audit run (#1517, epic #1510 capstone) — one command provisions the audit stage (@kampus/audit-stage), invokes the agentic rite-audit explorer over the flag-on stage as an injected walk seam, aggregates + archives the dated verdict (@kampus/audit-verdict), and ALWAYS tears the stage down (even on a mid-run audit failure), surfacing the per-dimension verdict to the operator. A pure unit-tested orchestration core + a thin Effect bin (the founder-seed/preview-seed idiom).",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run --project unit",
+		"test:unit": "vitest run --project unit",
+		"run-audit": "node src/bin.ts run"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"@kampus/audit-stage": "workspace:*",
+		"@kampus/audit-verdict": "workspace:*",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
