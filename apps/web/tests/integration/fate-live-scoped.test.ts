@@ -98,5 +98,11 @@ describe("live views — /fate/live (args-scoped)", () => {
 		expect(payload.event.edge.node.body).toBe("canlı tanım");
 
 		await reader.cancel();
-	}, 30_000);
+		// No per-test timeout override: inherit the 120s integration default. The
+		// prior 30s clamp was tighter than the harness's own cold-DO readiness budget
+		// (openSse + liveControl each poll up to SSE_READY_DEADLINE_MS = 60s), so a
+		// cold connection+topic DO under CI load could spend the whole 30s in those
+		// sanctioned readiness polls before the assertions ran — a flake, not a
+		// fan-out defect (the #714 register-race replay buffer guarantees delivery).
+	});
 });
