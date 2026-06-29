@@ -1,44 +1,33 @@
 /**
  * Sözlük wire-entity shapers — `Term` / `Definition`. Every
  * `{__typename, …}` literal is built here once so the read/list/write paths
- * can't drift out of agreement. Shapers take already-resolved field values, not
- * service rows: each source (`TermPage`, `TermSummaryRow`, a vote result) names
- * its fields differently, so the row→wire mapping stays at the call site and the
- * shaper owns only the wire shape.
+ * can't drift out of agreement.
  *
- * `Definition` is the one exception — its row mapper (`toDefinitionRow`), this
- * wire shaper's input type (`DefinitionRow`), and the `DefinitionView` field list
- * all derive from the single column→field map in `definition-fields.ts` (#1126
- * AC#1, deferred from #1159; the sözlük mirror of pano's #1161 collapse in PR
- * #1265), so a one-field change touches that map, not a parallel restatement.
- * `toDefinition` here takes the map-derived `DefinitionRow` and just stamps
- * `__typename` + the `myVote` viewer-scalar default onto its already-wire-named
- * fields.
+ * Both entities take their wire-named field set from a single column→field map —
+ * `Definition` from `definition-fields.ts` (#1126), `Term` from `term-fields.ts`
+ * (#1544) — so the row mapper (`toDefinitionRow` / `toTermSummaryRow`), the wire
+ * shaper's input type (`DefinitionRow` / `TermSummaryRow`), and the view field
+ * list all derive from one declaration: a one-field change touches that map, not a
+ * parallel restatement. Each `toX` here takes the map-derived row and stamps
+ * `__typename` (+ `Definition`'s `myVote` viewer-scalar default) onto the
+ * already-wire-named fields. `toTermFromPage` adapts the detail `TermPage` source
+ * onto the same row shape at the call site.
  */
 
 import type {DefinitionRow} from "./definition-fields.ts";
 import type {TermPage} from "./Sozluk.ts";
+import type {TermSummaryRow} from "./term-fields.ts";
 import type {Definition, Term} from "./views.ts";
 
 export type {DefinitionRow};
 
-export interface TermFields {
-	slug: string;
-	title: string;
-	count: number;
-	totalScore: number;
-	excerpt: string | null;
-	firstAt: Date | null;
-	lastEdit: Date | null;
-	firstLetter: string;
-	definitionCount: number;
-	lastActivityAt: Date | null;
-}
-
-// `id` === `slug` (the client's normalization key for a term is its slug).
-export const toTerm = (r: TermFields): Term => ({
+// `toTerm`'s input is the map-derived `TermSummaryRow` (the intrinsic wire-named
+// fields) — not a parallel interface — so the wire shaper's field set can't drift
+// from the row mapper (`toTermSummaryRow`) or `termViewFields`. `id` === `slug`
+// (the client's normalization key for a term is its slug).
+export const toTerm = (r: TermSummaryRow): Term => ({
 	__typename: "Term",
-	id: r.slug,
+	id: r.id,
 	slug: r.slug,
 	title: r.title,
 	count: r.count,
@@ -59,6 +48,7 @@ export const toTerm = (r: TermFields): Term => ({
  */
 export const toTermFromPage = (page: TermPage): Term =>
 	toTerm({
+		id: page.slug,
 		slug: page.slug,
 		title: page.title,
 		count: page.totalDefinitions,

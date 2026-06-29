@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema";
 import {type KeysetPage, toConnection} from "../fate/connection.ts";
 import {type ListSort, Sozluk} from "./Sozluk.ts";
 import {toTerm} from "./shapers.ts";
-import type {TermSummaryRow} from "./term-summary.ts";
+import type {TermSummaryRow} from "./term-fields.ts";
 import {TermView} from "./views.ts";
 
 const toListSort = (value: string | undefined): ListSort =>
