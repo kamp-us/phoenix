@@ -124,7 +124,7 @@ dimension over the one provisioned stage, in order, collecting each `DimensionRe
 | --- | --- | --- |
 | `functional-rite` | [`dimensions/functional-rite.md`](./dimensions/functional-rite.md) | active (this child, #1513) |
 | `a11y` | `dimensions/a11y.md` | planned (#1514) |
-| `sandbox-leak` | `dimensions/sandbox-leak.md` | planned (#1515) |
+| `sandbox-leak` | [`dimensions/sandbox-leak.md`](./dimensions/sandbox-leak.md) | active (#1515) |
 
 ## The run procedure
 
