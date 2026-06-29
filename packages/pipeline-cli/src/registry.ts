@@ -27,6 +27,7 @@ import {readmeGuardCommand} from "./tools/readme-guard/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
 import {structuredOutputGuardCommand} from "./tools/structured-output-guard/command.ts";
 import {tokenSpendCommand} from "./tools/token-spend/command.ts";
+import {trivialDiffCommand} from "./tools/trivial-diff/command.ts";
 import {workflowContractCommand} from "./tools/workflow-contract/command.ts";
 import {worktreeGuardCommand} from "./tools/worktree-guard/command.ts";
 import {worktreeSweepCommand} from "./tools/worktree-sweep/command.ts";
@@ -84,4 +85,5 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	worktreeSweepCommand,
 	codeownersCpCommand,
 	tokenSpendCommand,
+	trivialDiffCommand,
 ];
