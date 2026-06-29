@@ -4,13 +4,13 @@
  * (`.patterns/fate-effect-operations.md`).
  */
 
-import type {Tier} from "../kunye/standing.ts";
 import {
 	CONTRIBUTION_VARIANT_FIELD_NAMES,
 	type ContributionNode,
 	type ContributionRow,
-	type ProfileRow,
 } from "./Pasaport.ts";
+import type {ProfileRow} from "./profile-fields.ts";
+import type {UserFields} from "./user-fields.ts";
 import type {
 	AccountDeletionReceipt,
 	AuthorshipStanding,
@@ -18,22 +18,6 @@ import type {
 	PromotionReceipt,
 	User,
 } from "./views.ts";
-
-export interface UserFields {
-	id: string;
-	email: string;
-	name: string | null;
-	image: string | null;
-	username: string | null;
-	// The read-time authorship rank, resolved through `Kunye.tierOf` (#1297) — never
-	// the untrusted session field. `Tier` (not `StoredTier`) so a row-missing principal
-	// shapes as `visitor`.
-	tier: Tier;
-	// The SELF moderator signal (#1320), resolved off the `moderates` relation tuple
-	// (`kunye/moderate.ts`'s `isModerator`) — server-authoritative, the viewer's own
-	// status, never a `user.role` column (ADR 0107).
-	isModerator: boolean;
-}
 
 export const toUser = (r: UserFields): User => ({
 	__typename: "User",
