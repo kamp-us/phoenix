@@ -1,0 +1,31 @@
+{
+	"name": "@kampus/audit-verdict",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Aggregate the rite-audit rubric dimensions (functional · accessibility · sandbox-leak) into one dated, run-over-run-comparable verdict and archive it repo-relative for mechanical diffing (#1516, epic #1510). A pure unit-tested core + a thin Effect bin (the founder-seed/preview-seed idiom).",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run --project unit",
+		"test:unit": "vitest run --project unit",
+		"archive": "node src/bin.ts archive"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
