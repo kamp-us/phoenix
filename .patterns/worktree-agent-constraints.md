@@ -32,7 +32,7 @@ worktree-creation logic and can land worktrees outside `.claude/` (a base path w
 no `.claude/` substring would dodge the protected-path guard entirely). Adopting it
 is NOT free: phoenix's own `@kampus/worktree-guard` hardcodes the base segment
 `WORKTREE_SEGMENT = "/.claude/worktrees/"` in three places —
-`packages/worktree-guard/src/bash-pin.ts`, `path-resolve.ts`, and `reap.ts` — and
+`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`, `path-resolve.ts`, and `reap.ts` — and
 the biome config + [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
 key on the same string; all would have to track the new base in lockstep, or the
 cwd-pin, path-resolve, and reap logic stop recognizing managed worktrees. That is a
@@ -67,7 +67,7 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   checkout. A bare `git`/edit command therefore hits the *primary* tree (and a
   `git switch`/`checkout` mis-branches it). `@kampus/worktree-guard`'s `pre-bash`
   hook auto-prepends `cd "$WORKTREE_ROOT" && …` to commands with no leading `cd`
-  (`packages/worktree-guard/src/bash-pin.ts`), but confirm `pwd` before any git
+  (`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`), but confirm `pwd` before any git
   mutation regardless. See [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
   for the related lint-path footgun (bare `biome check .` resolves to the worktree
   CWD and silently matches the `!**/.claude/worktrees` exclusion → false green).
@@ -121,7 +121,7 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   footguns at once.
 
 - **`read-guard` is NOT a blocker here** — it already fails OPEN for any target
-  under `.claude/worktrees/` (`packages/read-guard/src/bin.ts`, #781), because a
+  under `.claude/worktrees/` (`packages/pipeline-cli/src/tools/read-guard/read-guard.ts`, #781), because a
   worktree subagent's own `Read`s live in a separate transcript the hook can't see,
   so it can't soundly attribute them. The remaining denial is purely the harness
   self-mod classifier, which `read-guard` does not control.

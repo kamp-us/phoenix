@@ -35,9 +35,9 @@ Runs on every `pull_request`. Concurrency-grouped on the ref with `cancel-in-pro
 - **Stamps `commit`** with `github.event.pull_request.head.sha` and **fails closed on drift**: after the adapter emits `manifest.json`, the workflow asserts `manifest.commit == head SHA` and exits red if it doesn't. A crabbox or adapter failure also fails the step red — never a silent green.
 - **Uploads** `bundle/` (manifest + staged JUnit) as a GH Actions artifact named **`run-evidence`** with `if-no-files-found: error`.
 
-## Adapter — `@kampus/crabbox-manifest` (`packages/crabbox-manifest/`)
+## Adapter — the `crabbox-manifest` tool (`packages/pipeline-cli/src/tools/crabbox-manifest/`)
 
-A standalone product-code package (outside `.claude`/`.github`) that maps a crabbox run to a manifest. It's a pure transform with a thin CLI: read inputs, fold, emit JSON to stdout or `--output`; persistence and the gate read are not its job.
+A `@kampus/pipeline-cli` subcommand (outside `.claude`/`.github`) that maps a crabbox run to a manifest. It's a pure transform with a thin CLI: read inputs, fold, emit JSON to stdout or `--output`; persistence and the gate read are not its job.
 
 - **`Manifest.ts`** — the domain: the manifest as `effect/Schema`.
 - **`crabbox.ts`** — the trust boundary: decodes untrusted crabbox run-summary JSON and parses the JUnit (tolerantly — a missing/garbage JUnit degrades to a zeroed `tests` block, never a crash).
@@ -53,7 +53,7 @@ How the fields are derived:
 
 ## The manifest contract (ADR 0054 §2)
 
-One JSON manifest plus referenced artifacts. Defined as `effect/Schema` in `packages/crabbox-manifest/src/Manifest.ts`:
+One JSON manifest plus referenced artifacts. Defined as `effect/Schema` in `packages/pipeline-cli/src/tools/crabbox-manifest/Manifest.ts`:
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
