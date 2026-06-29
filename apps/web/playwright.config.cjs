@@ -55,6 +55,12 @@ const AUTHED_SPECS = /25-authed-smoke\.spec\.ts$/;
 
 module.exports = defineConfig({
 	testDir: "./tests/e2e",
+	// Preview-readiness gate (#1500): poll the per-PR preview until it is warm
+	// (topbar rendered + auth router non-404) before any project runs, so the
+	// first-touched smoke specs / auth-setup don't false-red on the cold start.
+	// Bounded — a persistent failure still reds the gate; no-op when E2E_BASE_URL
+	// is unset (local `pnpm dev` is already warm).
+	globalSetup: require.resolve("./tests/e2e/_setup/preview-ready.cjs"),
 	timeout: 15_000,
 	// Inner fail-fast backstop nested under the e2e job's 25-min `timeout-minutes`
 	// (#660/#685): caps the WHOLE `playwright test` run even if no single step's own
