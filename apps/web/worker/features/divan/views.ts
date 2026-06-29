@@ -45,7 +45,7 @@ export class DivanCaylakView extends FateDataView<DivanCaylakViewRow>()("DivanCa
 	postCount: true,
 	commentCount: true,
 	totalCount: true,
-}) {}
+} as const satisfies {[K in keyof DivanCaylakViewRow]: true}) {}
 
 export const divanCaylakDataView = DivanCaylakView.view;
 
@@ -67,7 +67,7 @@ export class DivanBacklogItemView extends FateDataView<DivanBacklogItemViewRow>(
 	authorId: true,
 	createdAt: true,
 	preview: true,
-}) {}
+} as const satisfies {[K in keyof DivanBacklogItemViewRow]: true}) {}
 
 export const divanBacklogItemDataView = DivanBacklogItemView.view;
 
@@ -92,7 +92,7 @@ export class DivanVoteReceiptView extends FateDataView<DivanVoteReceiptViewRow>(
 	id: true,
 	score: true,
 	myVote: true,
-}) {}
+} as const satisfies {[K in keyof DivanVoteReceiptViewRow]: true}) {}
 
 export const divanVoteReceiptDataView = DivanVoteReceiptView.view;
 
