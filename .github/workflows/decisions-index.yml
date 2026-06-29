@@ -1,22 +1,37 @@
 name: decisions-index
 
-# The CI gate for ADR 0066: `.decisions/index.md` is generated output, so this
-# job fails a PR when the committed index is stale (does not match the generated
-# one), when two ADR files share an `id`, or when a file's `NNNN[a]` filename prefix
-# disagrees with its front-matter `id` (the number-collision class — #1471). The
-# filename invariant makes the id check also catch two files sharing a `0114-*.md`
-# prefix. It reuses pipeline-cli's `decisions-index check` mode — the derivation
-# lives once in the tool (buildIndex), never re-grepped here.
+# The `.decisions/index.md` lifecycle for ADR 0066, split so adding an ADR is a
+# purely-additive, conflict-free PR (issue #1492):
+#
+#   - On a PR (`validate`): assert the ADR files have no duplicate `id` and no
+#     filename/front-matter number mismatch (the #1471 number-collision class). It
+#     does NOT require the committed index to be regenerated in the PR — the index
+#     stopped being committed per-PR, so two ADR PRs that each only add their own
+#     `.decisions/NNNN-*.md` no longer collide on the shared generated index.
+#   - On merge to main (`regenerate`): rewrite `.decisions/index.md` from the ADR
+#     files and commit it. The index is derived output, so regenerating from main's
+#     tip after every merge keeps it correct and in canonical order without any PR
+#     ever carrying (or conflicting on) it.
+#
+# The derivation lives once in pipeline-cli (`buildIndex`), never re-grepped here.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 concurrency:
+  # On main, serialize the regenerate jobs (cancel-in-progress false) so concurrent
+  # merges produce one correct index without racing pushes; PR validate runs cancel.
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+permissions:
+  contents: write
+
 jobs:
-  check:
-    name: check .decisions/index.md is fresh + no duplicate/mismatched ADR number
+  validate:
+    if: github.event_name == 'pull_request'
+    name: validate ADR files — no duplicate/mismatched ADR number
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -30,8 +45,56 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 on a stale index, a duplicate ADR id, or a filename/front-matter
-      # number mismatch (reason on stderr); any other non-zero means the run could
-      # not complete. See ADR 0066.
-      - name: Check decisions index
-        run: node packages/pipeline-cli/src/bin.ts decisions-index check
+      # Exit 1 on a duplicate ADR id or a filename/front-matter number mismatch
+      # (reason on stderr); any other non-zero means the run could not complete.
+      # No index-freshness check — the index is regenerated on merge. See ADR 0066 / #1492.
+      - name: Validate decisions ADR files
+        run: node packages/pipeline-cli/src/bin.ts decisions-index validate
+
+  regenerate:
+    if: github.event_name == 'push'
+    name: regenerate .decisions/index.md on merge to main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Regenerate the index from the ADR files on main's tip and commit it if it
+      # changed. On a non-fast-forward push (a concurrent merge moved main) reset to
+      # the new tip and regenerate — the index is fully derived, so reset+regenerate
+      # is always correct and never conflicts. A GITHUB_TOKEN push does not re-trigger
+      # this workflow (no loop). See ADR 0066 / #1492.
+      - name: Regenerate and commit the index
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          commit_msg="docs(decisions): regenerate .decisions/index.md on merge (ADR 0066, #1492)"
+          for attempt in 1 2 3; do
+            node packages/pipeline-cli/src/bin.ts decisions-index generate
+            if git diff --quiet -- .decisions/index.md; then
+              echo "index.md already fresh — nothing to commit"
+              exit 0
+            fi
+            git add .decisions/index.md
+            git commit -m "$commit_msg"
+            if git push origin "HEAD:${{ github.event.repository.default_branch }}"; then
+              echo "pushed regenerated index (attempt $attempt)"
+              exit 0
+            fi
+            echo "push rejected — main moved; resetting to its tip and regenerating (attempt $attempt)"
+            git fetch origin "${{ github.event.repository.default_branch }}"
+            git reset --hard "origin/${{ github.event.repository.default_branch }}"
+          done
+          echo "failed to push regenerated index after retries" >&2
+          exit 1

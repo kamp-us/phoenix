@@ -106,3 +106,31 @@ because it would not fix the `ship-it` path it appears to target.
 - **`merge=union` is on record as rejected** for this specific friction, so a future
   reader doesn't re-propose the one-line `.gitattributes` fix without re-discovering that
   GitHub ignores it server-side.
+
+## Update (2026-06-29, issue [#1492](https://github.com/kamp-us/phoenix/issues/1492)) — the index is no longer committed in PRs
+
+The original design generated the index but still **committed it in each ADR PR** and
+gated PRs on its freshness (`decisions-index check`). That re-introduced the same
+serialization the generator was meant to remove, one level up: the index is a single
+regenerated file, so two concurrent ADR PRs collide on it at merge, and each collision
+moves the head and forces a fresh `review-code` + `review-doc` of the loser (PR #1488
+bounced twice in ~20 minutes against 0114–0118, all in flight the same day). Generating
+a shared file but still committing it per-PR keeps the shared textual anchor.
+
+The fix completes the "index is derived output" intent: **ADR PRs stop carrying the
+index entirely.** It is regenerated and committed **on merge to main** by the
+`regenerate` job of `.github/workflows/decisions-index.yml` (the changelog-on-release
+commit-back pattern, ADR [0069](0069-derived-changelog-from-shipped-work.md)), so adding an ADR
+is purely additive (`.decisions/NNNN-*.md` only) and conflict-free.
+
+- The PR gate is now `decisions-index validate` — it parses every ADR file and fails on
+  a **duplicate `id`** or a **filename/front-matter number mismatch** (the #1471
+  number-collision guard, preserved) but does **not** check index freshness. `check`
+  (the old freshness gate) survives as a local "did I regenerate?" helper, no longer
+  wired into the PR build.
+- `.decisions/index.md` stays a **committed file on `main`** (the README and glossary
+  link to it), but it is maintained by CI-on-merge, not by PRs — never hand-edited, never
+  staged in an ADR PR.
+- The ADR-**number** race (#1471 / #1452) is untouched and remains independent: the
+  `/adr` number-claim lock reads ADR **filenames** in open PRs, and `validate` still
+  reddens a duplicate `id` once two same-numbered files land on `main`.

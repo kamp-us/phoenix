@@ -15,7 +15,7 @@ import {join} from "node:path";
 import {afterEach, assert, beforeEach, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit} from "effect";
 import {buildIndex} from "./decisions-index.ts";
-import {CheckFailed, checkIndex, generateIndex} from "./gate.ts";
+import {CheckFailed, checkIndex, generateIndex, validateAdrs} from "./gate.ts";
 
 let dir: string;
 beforeEach(() => {
@@ -71,6 +71,52 @@ describe("checkIndex — the CI exit-code gate over a fake .decisions dir (ADR 0
 			const error = Cause.squash(exit.cause);
 			assert.isTrue(error instanceof CheckFailed);
 			if (error instanceof CheckFailed) assert.include(error.reason, "0001");
+		}
+	});
+});
+
+describe("validateAdrs — the PR gate after the index stopped being committed per-PR (#1492)", () => {
+	it("PASSES even when the committed index.md is stale (freshness is no longer required)", async () => {
+		// The whole point of #1492: a PR that adds an ADR but does NOT regenerate the
+		// index must pass the PR gate. `checkIndex` would FAIL this; `validateAdrs` passes.
+		writeAdr(adr("0001", "First"));
+		writeIndex("# Decisions\n\nstale, not regenerated in this PR\n");
+
+		const exit = await run(validateAdrs(dir));
+		assert.isTrue(Exit.isSuccess(exit));
+	});
+
+	it("PASSES when there is no committed index.md at all", async () => {
+		writeAdr(adr("0001", "First"));
+		writeAdr(adr("0002", "Second"));
+
+		const exit = await run(validateAdrs(dir));
+		assert.isTrue(Exit.isSuccess(exit));
+	});
+
+	it("FAILS on a duplicate ADR id (the #1471 number-collision guard is preserved)", async () => {
+		writeAdr(adr("0001", "First", "a"));
+		writeAdr(adr("0001", "Dup", "b"));
+
+		const exit = await run(validateAdrs(dir));
+		assert.isTrue(Exit.isFailure(exit));
+		if (Exit.isFailure(exit)) {
+			const error = Cause.squash(exit.cause);
+			assert.isTrue(error instanceof CheckFailed);
+			if (error instanceof CheckFailed) assert.include(error.reason, "0001");
+		}
+	});
+
+	it("FAILS on a filename/front-matter number mismatch", async () => {
+		// Filename prefix 0007 disagrees with front-matter id 0009 — a NumberMismatchError
+		// folded into CheckFailed by `build`.
+		writeAdr({name: "0007-mismatch.md", text: adr("0009", "Mismatch").text});
+
+		const exit = await run(validateAdrs(dir));
+		assert.isTrue(Exit.isFailure(exit));
+		if (Exit.isFailure(exit)) {
+			const error = Cause.squash(exit.cause);
+			assert.isTrue(error instanceof CheckFailed);
 		}
 	});
 });
