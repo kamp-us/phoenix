@@ -145,7 +145,7 @@ if [ "${RUNEV:-0}" -gt 0 ]; then
 	say "$PASS" "run-evidence producer present — ship-it guard 2 runs in strict mode"
 else
 	say "$WARN" "no run-evidence producer — ship-it guard 2 degrades to checks-green (ADR 0086)"
-	fix "optional: ship .github/workflows/run-evidence.yml + packages/crabbox-manifest for SHA-bound evidence"
+	fix "optional: ship .github/workflows/run-evidence.yml + packages/pipeline-cli/src/tools/crabbox-manifest for SHA-bound evidence"
 fi
 
 # ── Verdict ─────────────────────────────────────────────────────────────────
