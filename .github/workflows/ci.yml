@@ -160,7 +160,8 @@ jobs:
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
             # Source the `packages-tests` job covers (#760): every `packages/**`
-            # file (a guard/tooling change), plus the lockfile and root configs
+            # file (a guard/tooling change) plus `infra/**` (the CI-credential stack's
+            # permission-group guard, #1437), plus the lockfile and root configs
             # whose change can alter how the suites resolve/run, and this workflow
             # itself (so a CI edit keeps the gate self-covering). A docs/skills-only
             # or apps/web-only PR touches none of these → `packages` false → the job
@@ -168,6 +169,7 @@ jobs:
             # change runs `unit` but legitimately not-applicable-skips `packages-tests`.
             packages:
               - 'packages/**'
+              - 'infra/**'
               - 'pnpm-workspace.yaml'
               - 'tsconfig*.json'
               - 'pnpm-lock.yaml'
@@ -299,12 +301,14 @@ jobs:
   # regression in any gate guard's logic (incl. the #786 ci-required verdict
   # helper that runs HERE) shipped uncaught. This runs them as a REQUIRED gate.
   #
-  # Discovery-based: `pnpm --filter './packages/**' run test` runs the `test`
-  # script of every package that declares one, so a new `packages/<x>` with tests
-  # is gated with no workflow edit. These are node-pool unit suites (ADR 0082): no
-  # DB, no worker deploy, no creds — fast (~7s, ~500 tests), no sharding. Run FULL
-  # (no `--changed`): the `packages` path filter already scopes the JOB, and a
-  # full run has no zero-selection hole (ADR 0092) — same posture as `unit`.
+  # Discovery-based: the filter runs the `test` script of every package that
+  # declares one, so a new `packages/<x>` with tests is gated with no workflow edit.
+  # `@kampus/infra` (the CI-credential stack, #1437) is named explicitly alongside
+  # the `./packages/**` glob so its permission-group guard suite runs here too.
+  # These are node-pool unit suites (ADR 0082): no DB, no worker deploy, no creds —
+  # fast (~7s, ~500 tests), no sharding. Run FULL (no `--changed`): the `packages`
+  # path filter already scopes the JOB, and a full run has no zero-selection hole
+  # (ADR 0092) — same posture as `unit`.
   #
   # Unlike `ci-required`'s zero-dep bin, the suites need their deps, so this job
   # installs (`--frozen-lockfile`). Run-ness is single-sourced from
@@ -327,7 +331,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm --filter './packages/**' run test
+      - run: pnpm --filter './packages/**' --filter @kampus/infra run test
 
   skills:
     name: validate skill frontmatter
