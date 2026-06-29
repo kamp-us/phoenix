@@ -25,7 +25,7 @@ export class ReportReceiptView extends FateDataView<ReportReceiptViewRow>()("Rep
 	targetKind: true,
 	targetId: true,
 	created: true,
-}) {}
+} satisfies {[K in keyof ReportReceiptViewRow]: true}) {}
 
 export const reportReceiptDataView = ReportReceiptView.view;
 
@@ -54,7 +54,7 @@ export class OpenReportView extends FateDataView<OpenReportViewRow>()("OpenRepor
 	reportCount: true,
 	reason: true,
 	firstReportedAt: true,
-}) {}
+} satisfies {[K in keyof OpenReportViewRow]: true}) {}
 
 export const openReportDataView = OpenReportView.view;
 
@@ -81,7 +81,7 @@ export class ResolveReceiptView extends FateDataView<ResolveReceiptViewRow>()("R
 	resolution: true,
 	targetRemoved: true,
 	collapsed: true,
-}) {}
+} satisfies {[K in keyof ResolveReceiptViewRow]: true}) {}
 
 export const resolveReceiptDataView = ResolveReceiptView.view;
 
