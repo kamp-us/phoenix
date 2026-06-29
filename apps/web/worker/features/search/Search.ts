@@ -24,7 +24,7 @@ import {forwardPage, resolveCursor} from "../../db/keyset.ts";
 import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import type {PostSummaryRow} from "../pano/Pano.ts";
 import {postVisibleWhere} from "../pano/PostVisibility.ts";
-import {type TermSummaryRow, termSummaryColumns, toTermSummaryRow} from "../sozluk/term-summary.ts";
+import {type TermSummaryRow, termSummaryColumns, toTermSummaryRow} from "../sozluk/term-fields.ts";
 import {toMatchExpression} from "./normalize.ts";
 
 const DEFAULT_FIRST = 20;

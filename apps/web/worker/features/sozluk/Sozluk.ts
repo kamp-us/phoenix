@@ -45,10 +45,10 @@ import {
 	type TermSummaryRow,
 	termSummaryColumns,
 	toTermSummaryRow,
-} from "./term-summary.ts";
+} from "./term-fields.ts";
 
 export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-fields.ts";
-export type {TermConnectionPage, TermSummaryRow} from "./term-summary.ts";
+export type {TermConnectionPage, TermSummaryRow} from "./term-fields.ts";
 
 /** Body length cap for definitions — surfaced as `BODY_TOO_LONG` on overflow. */
 export const DEFINITION_BODY_MAX = 10_000;

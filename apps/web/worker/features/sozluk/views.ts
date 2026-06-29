@@ -11,7 +11,8 @@ import {viewOrderBy} from "../../db/ordering.ts";
 import type {ViewRow} from "../fate/view-types.ts";
 import {definitionViewFields} from "./definition-fields.ts";
 import {DEFINITION_ORDERING} from "./ordering.ts";
-import type {DefinitionRow, TermSummaryRow} from "./Sozluk.ts";
+import type {DefinitionRow} from "./Sozluk.ts";
+import {type TermSummaryRow, termViewFields} from "./term-fields.ts";
 
 // Mapped restatements of the service rows so they're `Record<string, unknown>`-
 // assignable (the plain row interfaces are not). Exported because the
@@ -26,22 +27,14 @@ export class DefinitionView extends FateDataView<DefinitionViewRow>()("Definitio
 ) {}
 
 /**
- * `Term` — a dictionary headword. The view is over `TermSummaryRow`; the
- * detail-page `term(slug)` resolver reshapes its `TermPage` into the same shape.
+ * `Term` — a dictionary headword. The scalar fields derive from
+ * `term-fields.ts`'s column→field map, so they can't drift from the row mapper /
+ * wire shaper (#1544). The view is over `TermSummaryRow`; the detail-page
+ * `term(slug)` resolver reshapes its `TermPage` into the same shape.
  * `definitions.orderBy` derives from `DEFINITION_ORDERING` (ADR 0019).
  */
 export class TermView extends FateDataView<TermViewRow>()("Term")({
-	id: true,
-	slug: true,
-	title: true,
-	count: true,
-	totalScore: true,
-	excerpt: true,
-	firstAt: true,
-	lastEdit: true,
-	firstLetter: true,
-	definitionCount: true,
-	lastActivityAt: true,
+	...termViewFields,
 	definitions: FateDataView.list(DefinitionView, {orderBy: viewOrderBy(DEFINITION_ORDERING)}),
 }) {}
 
