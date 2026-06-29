@@ -94,31 +94,88 @@ first `rePlan`, acquire the `status:planning` epic-lock; release it when you rea
 park, on every exit path including failure** (ADR
 [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md)).
 
-**Acquire (one bash step, fails closed).** Re-read the lock label; if it's held, back off and
-stop — don't flip, don't loop. Otherwise `POST` it — and **only treat the lock as acquired if
-that `POST` actually succeeds**. A failed acquire (the 422 returned when `status:planning` hasn't
-been created in the repo — it's a canonical lock label, see ADR
-[0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md) §Setup and the formats doc's status-label table
-— or any transient `gh` IO fault) must **not** fall through to the gate flip: it backs off and
-exits 0, so a missing label or a flaky write never lets you flip unlocked. **The back-off `exit 0`
-is deliberate** (a held lock or a setup gap is not a review-plan *failure*) — but it shares the
-exit code of a clean PASS, so a caller keying on exit status alone cannot tell "gated" from
-"backed off, did nothing"; the echo is the signal, so a wrapper must read it (or re-run) rather
-than treat `exit 0` as "the epic was gated".
+**Acquire (fails closed, two layers).** The lock is **coarse label + agent-distinguishable
+claim**, per ADR [0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md)
+(#1452) and the `### The status:planning epic-lock` contract in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md): the `status:planning` label
+alone is the coarse "is this epic being planned at all?" gate, but under the single shared
+`usirin` login two runs that both read it absent both `POST` the same shared label and neither
+can tell it won the post-`/labels` TOCTOU (the #1359 double-plan; here the same login degeneracy
+lets a `plan-epic` run and a `review-plan` run co-acquire one epic's lock). So after `POST`ing the
+label you post the §7 claim-comment primitive on the epic and resolve to **exactly one holder by
+the earliest authorized claim** (ADR 0115 §2) — the **same** contract `plan-epic` uses; this is
+the `review-plan` consumer of the canonical §`status:planning` claim, never a second
+implementation. Every step **fails closed**: a held label, a missing label (the 422 when
+`status:planning` hasn't been created in the repo — a canonical lock label, see ADR
+[0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md) §Setup and the formats doc's status-label table),
+a missing `CLAUDE_CODE_SESSION_ID`, a failed claim post, or a lost resolution must **not** fall
+through to the gate flip or the loop's first `rePlan` — each backs off and exits 0, so a missing
+label, a flaky write, or a co-acquire loss never lets you flip/loop unlocked. **The back-off
+`exit 0` is deliberate** (a held lock, a setup gap, or a lost race is not a review-plan *failure*)
+— but it shares the exit code of a clean PASS, so a caller keying on exit status alone cannot tell
+"gated" from "backed off, did nothing"; the echo is the signal, so a wrapper must read it (or
+re-run) rather than treat `exit 0` as "the epic was gated".
 
 ```bash
-# acquire: defer to a lock already held; otherwise POST it — and proceed ONLY if the POST succeeds
+# 0. fail-closed on a missing session id: the claim is the ONLY agent-distinguishable signal under
+#    the shared `usirin` login — with no token a co-acquire is unresolvable, so we never flip/loop.
+if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
+  echo "no CLAUDE_CODE_SESSION_ID in env — cannot post an agent-distinguishable planning claim. DO NOT flip, DO NOT loop."
+  exit 0
+fi
+
+# 1. coarse gate: defer to a label already held (Rule 0 — never evict a holder that was there first).
 HELD=$(gh api repos/$REPO/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
 # gh --jq prints "" (not "null") for a jq null, so test non-empty: index() is a numeric position when held, empty when absent.
 if [ -n "$HELD" ]; then
   echo "epic #<EPIC> is being planned by another run (status:planning held) — DO NOT flip, DO NOT loop."
   exit 0   # the held lock is the holder's, not ours — do NOT release it. Re-run later.
 fi
+
+# 2. POST the coarse label — proceed ONLY if it lands (fails closed on a 422 missing label / IO fault).
 if ! gh api repos/$REPO/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
   echo "could not acquire status:planning on epic #<EPIC> (422 missing label? transient gh fault?) — DO NOT flip, DO NOT loop."
   exit 0   # FAILS CLOSED: the POST didn't land, so we DON'T hold the lock — never flip/loop unlocked.
 fi
-# Lock held. WE acquired it, so WE must release it — on EVERY terminal path (below).
+
+# 3. post OUR agent-distinguishable claim ON THE EPIC (the §7 claim-comment primitive, ADR 0115 §1).
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+MYCLAIM=$(gh api repos/$REPO/issues/<EPIC>/comments -f "body=claim: $CLAUDE_CODE_SESSION_ID · $NOW" --jq .id)
+if [ -z "$MYCLAIM" ]; then
+  # FAILS CLOSED: we can't prove ownership, so we must not flip/loop. Leave the shared label (a co-racer
+  # may legitimately win on it) — never DELETE it here; a leaked label is human-cleared, a double-plan is not.
+  echo "failed to post the planning claim on epic #<EPIC> — DO NOT flip, DO NOT loop (the status:planning label may be leaked; a human clears it)."
+  exit 0
+fi
+
+# 4. checkpoint GET — resolve co-acquirers to ONE holder: EARLIEST AUTHORIZED claim wins (ADR 0115 §2).
+cf=$(mktemp); gh api "repos/$REPO/issues/<EPIC>/comments?per_page=100" --paginate > "$cf"
+# authors of any claim marker on the epic
+claimAuthors=$(jq -r '[.[] | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*[0-9a-f-]{36}\\b")) | .user.login] | unique | .[]' "$cf")
+# keep only write+ collaborators (the ADR 0055 trust root) — a forged claim from a non-collaborator is ignored.
+authorized='[]'
+while IFS= read -r a; do
+  [ -z "$a" ] && continue
+  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
+  case "$perm" in admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;; esac
+done <<<"$claimAuthors"
+# the EARLIEST authorized claim — min (created_at, comment id) — is the canonical winner; read its session.
+WINSID=$(jq -r --argjson authorized "$authorized" '
+  [.[] | select(.user.login | IN($authorized[]))
+       | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*[0-9a-f-]{36}\\b"))
+       | {sid: (.body | capture("(?i)^\\s*\\**\\s*claim:\\s*(?<s>[0-9a-f-]{36})").s), at: .created_at, id: .id}]
+  | sort_by([.at, .id]) | first | .sid // ""' "$cf")
+
+# 5. we win ONLY if the earliest authorized claim is ours. Else retract OUR claim and back off — NEVER the label.
+if [ "$WINSID" != "$CLAUDE_CODE_SESSION_ID" ]; then
+  echo "lost the status:planning co-acquire on epic #<EPIC> (earliest authorized claim is another run's) — DO NOT flip, DO NOT loop."
+  # comment-scoped DELETE (no issue number) — the issue-scoped form 404s and LEAKS the claim (#1548).
+  gh api -X DELETE repos/$REPO/issues/comments/$MYCLAIM >/dev/null 2>&1 \
+    || echo "WARNING: failed to retract our planning claim $MYCLAIM on epic #<EPIC> — retract it by hand."
+  exit 0   # do NOT DELETE the shared status:planning label — the WINNER still holds it.
+fi
+# WON. WE hold the lock (label + earliest claim). WE must release BOTH our claim and the label
+# on EVERY terminal path (below).
 ```
 
 **Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
@@ -130,10 +187,20 @@ snippet; it is an action **you** take, deliberately, on the way out — run this
 you reach **any** terminal state (PASS-and-flipped, parked, or a fault mid-flight):
 
 ```bash
-# release: run on EVERY exit path AFTER a successful acquire (PASS/flip, park, or fault mid-flight).
-# Do NOT fire-and-forget — a silently-failed DELETE LEAKS the lock and wedges the epic, the exact
-# catastrophe this design prevents. A 404 is benign (label already gone — released, or never
-# landed); ANY other failure means the lock may still be held, so surface it LOUDLY.
+# release: run on EVERY exit path AFTER a WON acquire (PASS/flip, park, or fault mid-flight). Two parts.
+
+# (a) retract OUR own planning-claim comment(s). Re-find them by OUR session id — the acquire's
+#     $MYCLAIM was captured in a PRIOR bash process and is gone here (each call is its own shell).
+#     Use the comment-scoped DELETE (no issue number) — the issue-scoped form 404s and LEAKS it (#1548).
+cf=$(mktemp); gh api "repos/$REPO/issues/<EPIC>/comments?per_page=100" --paginate > "$cf"
+for cid in $(jq -r --arg me "$CLAUDE_CODE_SESSION_ID" '.[] | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*" + $me + "\\b")) | .id' "$cf"); do
+  gh api -X DELETE repos/$REPO/issues/comments/$cid >/dev/null 2>&1 \
+    || echo "WARNING: failed to retract our planning claim $cid on epic #<EPIC> — clear it by hand."
+done
+
+# (b) release the coarse label. Do NOT fire-and-forget — a silently-failed DELETE LEAKS the lock and
+#     wedges the epic, the exact catastrophe this design prevents. A 404 is benign (label already gone —
+#     released, or never landed); ANY other failure means the lock may still be held, so surface it LOUDLY.
 if ! relerr=$(gh api -X DELETE repos/$REPO/issues/<EPIC>/labels/status:planning 2>&1); then
   case "$relerr" in
     *"HTTP 404"*|*"Label does not exist"*) : ;;  # already released / never acquired — nothing to free
@@ -144,21 +211,26 @@ fi
 
 The release fires on **every** terminal path on purpose: the gate and the convergence loop can
 raise (a RePlanError, a gh IO fault, an aborted agent), and the convergence loop in particular
-can fail mid-flight, so this is not hypothetical. As an LLM agent you must still issue the
-`DELETE` before you stop on those paths — a release that fires only on the clean
-PASS-and-flipped-or-parked fall-through LEAKS the lock on the raise path (wedging the epic against
-every later plan-epic/review-plan run until a human clears it — #264). **Only release a lock YOU
-acquired** (the success branch above), never the held lock you backed off from. A leaked lock is
-silent and only a human clears it.
+can fail mid-flight, so this is not hypothetical. As an LLM agent you must still issue **both**
+`DELETE`s — your own claim comment **and** the label — before you stop on those paths; a release
+that fires only on the clean PASS-and-flipped-or-parked fall-through LEAKS the lock on the raise
+path (wedging the epic against every later plan-epic/review-plan run until a human clears it —
+#264). **Only release a lock YOU won** (the step-5 win branch above), never the held label you
+backed off from and never a co-acquire loser's shared label — the loser retracts only its **own**
+claim comment (acquire step 5) and leaves the label, which the winner still holds. A leaked lock
+is silent and only a human clears it.
 
-`POST .../labels` is **not** compare-and-swap (no `If-Match`), so this is
-**detect-and-serialize, not a mutex** (the §7/#260 TOCTOU over the whole child set): it
-serializes the *common* flip-vs-supersede interleaving, and the residual is backstopped by
-plan-epic's epic-body splice+recheck (#261) and the convergence loop's signature checkpoint
-(below). Don't claim a guarantee the label API can't give. **Holding the lock is also what
-makes "two convergence loops on one epic" unrepresentable** (#264, race X4): a second
-`review-plan` finds the lock held and backs off before its first `rePlan`, so only one loop
-ever drives an epic.
+Neither `POST .../labels` nor the comment API is compare-and-swap (no `If-Match`), so this is
+**detect-and-serialize, not a mutex** (the §7/#260 TOCTOU over the whole child set): the label is
+the coarse availability signal and the **earliest authorized claim** resolves the co-acquirers to
+one holder, serializing the *common* flip-vs-supersede interleaving; the residual co-acquire
+window is backstopped by plan-epic's epic-body splice+recheck (#261) and the convergence loop's
+signature checkpoint (below). Don't claim a guarantee the API can't give — claim "of any set of
+co-acquirers, exactly one plans; every loser self-retracts and backs off." **Resolving to one
+holder is also what makes "two convergence loops on one epic" unrepresentable** (#264, race X4): a
+second `review-plan` either finds the label held and backs off, or co-acquires and loses the
+earliest-authorized-claim tiebreak, before its first `rePlan` — so only one loop ever drives an
+epic.
 
 ---
 
