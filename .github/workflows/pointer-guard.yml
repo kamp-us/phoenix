@@ -1,0 +1,38 @@
+name: pointer-guard
+
+# CI gate for #988: backticked repo-path pointers in `**/CLAUDE.md` must resolve on
+# disk. The `doc-links` gate (#638) validates markdown `[text](path)` links and masks
+# code spans by construction, so a backticked prose pointer ("operate from the repo
+# root, never `apps/web`", a pointer at `apps/web/worker/dom/settings.ts`) rots
+# unseen when its file is renamed/moved — the same silent-drift class as the dead
+# README (#939) and guard-path (#955) incidents. This job reads exactly the code
+# spans doc-links masks, fails closed on any non-resolving repo-root-relative
+# pointer, and fails closed on zero CLAUDE.md in scope (ADR 0092). It reuses
+# pipeline-cli's `pointer-guard check` mode — the scan lives once in the tool.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check CLAUDE.md path pointers resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 on a stale CLAUDE.md pointer (the file:line → path report is on
+      # stderr), or when zero CLAUDE.md files are in scope (fail-closed). See #988.
+      - name: Check CLAUDE.md path pointers resolve
+        run: node packages/pipeline-cli/src/bin.ts pointer-guard check
