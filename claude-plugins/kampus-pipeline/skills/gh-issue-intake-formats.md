@@ -187,7 +187,10 @@ comment (the agent-distinguishable claim marker, ADR
   ADR 0115 removes); if no authorized claim resolves, no run wins.
 
 - **The loser retracts its own claim, never the shared label.** A co-acquire loser **`DELETE`s
-  its own planning-claim comment** and backs off — it does **not** `DELETE` the `status:planning`
+  its own planning-claim comment** — via the **comment-scoped** endpoint
+  `DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}` (no issue number; the
+  issue-scoped `issues/{n}/comments/{id}` form **404s** and leaks the claim, wedging the epic —
+  #1548) — and backs off — it does **not** `DELETE` the `status:planning`
   label, which the **winner still holds**. Unlike §7's per-login assignees (where each agent
   removes *its own* assignee), the label is a **single shared token both runs `POST`ed**, so
   deleting it would unlock the winner and reopen the double-plan. The release-on-every-exit

@@ -172,7 +172,7 @@ WINSID=$(jq -r --argjson authorized "$authorized" '
 # 5. we win ONLY if the earliest authorized claim is ours. Else retract OUR claim and back off — NEVER the label.
 if [ "$WINSID" != "$CLAUDE_CODE_SESSION_ID" ]; then
   echo "lost the status:planning co-acquire on epic #<EPIC> (earliest authorized claim is another run's) — BACK OFF, do not mutate."
-  gh api -X DELETE repos/$REPO/issues/<EPIC>/comments/$MYCLAIM >/dev/null 2>&1 \
+  gh api -X DELETE repos/$REPO/issues/comments/$MYCLAIM >/dev/null 2>&1 \
     || echo "WARNING: failed to retract our planning claim $MYCLAIM on epic #<EPIC> — retract it by hand."
   exit 0   # do NOT DELETE the shared status:planning label — the WINNER still holds it.
 fi
@@ -196,7 +196,7 @@ or a failure/abort mid-mutation):
 #     $MYCLAIM was captured in a PRIOR bash process and is gone here (each call is its own shell).
 cf=$(mktemp); gh api "repos/$REPO/issues/<EPIC>/comments?per_page=100" --paginate > "$cf"
 for cid in $(jq -r --arg me "$CLAUDE_CODE_SESSION_ID" '.[] | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*" + $me + "\\b")) | .id' "$cf"); do
-  gh api -X DELETE repos/$REPO/issues/<EPIC>/comments/$cid >/dev/null 2>&1 \
+  gh api -X DELETE repos/$REPO/issues/comments/$cid >/dev/null 2>&1 \
     || echo "WARNING: failed to retract our planning claim $cid on epic #<EPIC> — clear it by hand."
 done
 
