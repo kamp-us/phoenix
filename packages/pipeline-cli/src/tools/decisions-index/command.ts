@@ -1,11 +1,18 @@
 /**
- * The `decisions-index` tool — `pipeline-cli decisions-index <generate|check>`.
+ * The `decisions-index` tool — `pipeline-cli decisions-index <generate|validate|check>`.
  *
  * The author + CI surface for ADR 0066, moved into the pipeline-cli registry
  * (epic #994, Phase 2 / #997):
- *   pipeline-cli decisions-index generate          # rewrite .decisions/index.md
- *   pipeline-cli decisions-index check             # CI gate: exit non-zero on stale / dup id
+ *   pipeline-cli decisions-index generate          # rewrite .decisions/index.md (on-merge job + local)
+ *   pipeline-cli decisions-index validate          # PR gate: exit non-zero on a duplicate / mismatched id (no freshness check — #1492)
+ *   pipeline-cli decisions-index check             # local: exit non-zero on a stale committed index or dup id
  *   pipeline-cli decisions-index <mode> --dir <d>  # point at a specific .decisions dir
+ *
+ * `validate` vs `check` (issue #1492): the index stopped being committed per-PR, so
+ * the PR gate is `validate` (ADR-file validity only — keeps the #1471 dup-id guard
+ * without requiring a regenerated index in the PR). `generate` runs on merge to main
+ * to keep the committed index fresh; `check` (the old freshness gate) survives as a
+ * local "did I regenerate?" helper but is no longer wired into the PR build.
  *
  * Exit-code contract (preserved from the package's former `bin.ts`): 0 = clean,
  * any non-zero = failure. `CheckFailed` is the expected gate-fail — its reason
@@ -21,7 +28,7 @@ import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "./decisions-index.ts";
 import type {CheckFailed} from "./gate.ts";
-import {checkIndex, generateIndex} from "./gate.ts";
+import {checkIndex, generateIndex, validateAdrs} from "./gate.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;
 const DECISIONS_DIR = ".decisions";
@@ -80,6 +87,18 @@ const generate = Command.make(
 	}),
 ).pipe(Command.withDescription("Regenerate .decisions/index.md from the ADR files"));
 
+const validate = Command.make(
+	"validate",
+	{dir: dirFlag},
+	Effect.fn(function* ({dir: dirOpt}) {
+		yield* validateAdrs(resolveDir(dirOpt)).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+	}),
+).pipe(
+	Command.withDescription(
+		"PR gate: verify the ADR files have no duplicate or mismatched id (no index-freshness check)",
+	),
+);
+
 const check = Command.make(
 	"check",
 	{dir: dirFlag},
@@ -91,6 +110,6 @@ const check = Command.make(
 );
 
 export const decisionsIndexCommand = Command.make("decisions-index").pipe(
-	Command.withSubcommands([generate, check]),
+	Command.withSubcommands([generate, validate, check]),
 	Command.withDescription("Generate .decisions/index.md from the ADR files (ADR 0066)"),
 );

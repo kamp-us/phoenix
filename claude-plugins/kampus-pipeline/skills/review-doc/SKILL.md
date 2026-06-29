@@ -413,12 +413,17 @@ Run each, scoped to the files the PR touches:
      (the why belongs in `.decisions/`).
    - **Prose** (README and friends) states current-state-for-builders, not retired
      context (CLAUDE.md "Doc surfaces").
-2. **Index row exists + status matches.** A new/changed **ADR** has a matching row in
-   [`.decisions/index.md`](https://github.com/kamp-us/phoenix/blob/main/.decisions/index.md), and the row's **Status column
-   matches the file's frontmatter `status`** (a file marked `accepted` whose index row
-   still says `proposed` is a FAIL). A new **pattern** has its row in
-   [`.patterns/index.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/index.md). Verify the row is in the diff (or
-   already present and consistent), not merely assumed.
+2. **Index row.** For an **ADR**, do **not** require an `.decisions/index.md` row in the
+   PR — that index is generated output regenerated and committed **on merge to main**, not
+   per-PR (ADR [0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md) / issue #1492),
+   so an ADR PR is purely additive and a **missing or stale index row is expected, not a
+   FAIL**. Verify instead that the ADR file's **frontmatter `status`** is correct (it is the
+   source the on-merge generator renders into the row); an `index.md` row committed in an ADR
+   PR is a non-blocking smell to flag (it reintroduces the conflict surface #1492 removed),
+   not a FAIL. A new **pattern** still has a hand-maintained row in
+   [`.patterns/index.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/index.md)
+   (that index is not generated) — verify the row is in the diff or already present and
+   consistent, not merely assumed.
 3. **Links resolve.** Every relative link the diff adds points at a path that **exists**
    (check the target file is in the repo at the PR head). A dead in-repo link is a FAIL.
    In-repo links must be standard markdown relative paths, not Obsidian `[[wikilinks]]`
@@ -449,11 +454,11 @@ Run each, scoped to the files the PR touches:
    from the diff hunk the hit sits in.
 5. **Supersession noted + cross-linked.** If this doc replaces or amends a prior decision,
    the **superseding** doc names what it supersedes *and* the **superseded** doc is updated
-   to point forward (its frontmatter/status and its index row reflect
-   `superseded by [NNNN]`). A new ADR that obsoletes an old one without touching the old
+   to point forward (its **frontmatter `status`** reflects `superseded by [NNNN]` — the
+   on-merge generator carries that into the index row, so don't require the row in the PR
+   itself, per check 2 / #1492). A new ADR that obsoletes an old one without touching the old
    one's status is a FAIL — the cross-link must close both ways (see how
-   [`0049`](https://github.com/kamp-us/phoenix/blob/main/.decisions/0049-pipeline-ships-code-not-itself.md) and the index
-   handle the chain).
+   [`0049`](https://github.com/kamp-us/phoenix/blob/main/.decisions/0049-pipeline-ships-code-not-itself.md) handles the chain).
 6. **Status sanity.** The `status` is a real value in the house vocabulary (`proposed`,
    `accepted`, `superseded`/`superseded by …`, `amended-in-part by …`, `retired`,
    `reference`) and is *coherent* with the content — e.g. an ADR that announces a settled
@@ -463,7 +468,7 @@ Build the hygiene findings into the same evidence shape as the AC table:
 
 ```
 - [PASS] House-format — ADR has Context/Decision/Consequences (.decisions/0053-*.md)
-- [FAIL] Index row — file is `accepted` but .decisions/index.md row reads `proposed`
+- [PASS] Index row — ADR frontmatter status `accepted`; index regenerated on merge, not in PR (#1492)
 - [PASS] No leaked paths — grep of added lines clean
 ```
 

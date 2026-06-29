@@ -51,6 +51,22 @@ export const build = (files: ReadonlyArray<AdrFile>): Effect.Effect<string, Chec
 				: new CheckFailed({reason: String((cause as Error)?.message ?? cause)}),
 	});
 
+/**
+ * The PR-time gate after the index stopped being committed per-PR (ADR 0066, issue
+ * #1492). It parses every ADR file via `build` — so a duplicate id, a
+ * filename/front-matter number mismatch, or a malformed file still fails the build
+ * (the #1471 number-collision guard is preserved) — but it does **not** compare
+ * against the committed `index.md`. Dropping the freshness comparison is the point:
+ * ADR PRs no longer carry the regenerated index, so they can't collide on it; the
+ * index is regenerated and committed on merge to main instead (the `decisions-index`
+ * workflow's push job). The built markdown is discarded — validation is the only effect.
+ */
+export const validateAdrs = (dir: string): Effect.Effect<void, IoError | CheckFailed> =>
+	Effect.gen(function* () {
+		yield* readAdrFiles(dir).pipe(Effect.flatMap(build));
+		yield* Console.log("decisions-index: ADR files valid (no duplicate or mismatched id)");
+	});
+
 /** Rewrite `<dir>/index.md` from the ADR files. */
 export const generateIndex = (dir: string): Effect.Effect<void, IoError | CheckFailed> =>
 	Effect.gen(function* () {
