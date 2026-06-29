@@ -70,6 +70,28 @@ the per-turn context-bloat signal, with `ex-cache-read` as the cross-run compara
 node packages/pipeline-cli/src/bin.ts token-spend <session>/subagents/agent-<id>.jsonl
 ```
 
+### `pointer-guard` — fail-closed stale-pointer gate for `**/CLAUDE.md` (#988)
+
+Reads the **backticked repo-path pointers** in every git-tracked `CLAUDE.md`
+("operate from the repo root, never `apps/web`"; a pointer at
+`apps/web/worker/dom/settings.ts`) and exits non-zero when one no longer resolves
+on disk — the reference class `doc-links` (#638) cannot see, because it validates
+markdown `[text](path)` links and *masks* code spans by construction. The two gates
+are complementary: `doc-links` reads link targets and masks code; `pointer-guard`
+reads code spans and ignores link syntax.
+
+Precision over recall: it flags a token only when it is an unambiguous
+repo-root-relative path (begins with a known top-level segment — `apps/`,
+`packages/`, `.patterns/`, …; no scheme / glob / call / placeholder syntax), so a
+`catalog:` / `type:bug` / `pnpm dev` / bare basename is left alone. Scoped to
+`**/CLAUDE.md` — `.decisions/**` (immutable history that legitimately cites moved
+code) and `.patterns/**` (which also cite external dependency source trees) are out
+of scope. Fails closed on zero CLAUDE.md in scope (ADR 0092).
+
+```bash
+node packages/pipeline-cli/src/bin.ts pointer-guard check
+```
+
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
 pnpm --filter @kampus/pipeline-cli test
