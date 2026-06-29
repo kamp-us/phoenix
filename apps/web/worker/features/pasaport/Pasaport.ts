@@ -15,7 +15,6 @@ import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
-import type {StoredTier} from "../kunye/standing.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {
 	resolveSandboxViewer,
@@ -33,7 +32,14 @@ import {
 	UsernameTooShort,
 } from "./errors.ts";
 import {contributionOrdering} from "./ordering.ts";
+import type {ProfileRow} from "./profile-fields.ts";
+import {toUserRow, type UserRow} from "./user-fields.ts";
 import {checkUsername} from "./username-rule.ts";
+
+// `UserRow`/`ProfileRow` are single-sourced in their field-map modules (#1545);
+// re-exported here so cross-feature callers keep their `./Pasaport.ts` import.
+export type {ProfileRow} from "./profile-fields.ts";
+export type {UserRow} from "./user-fields.ts";
 
 // The worker-level better-auth instance handle (NOT the per-request session — that
 // is `CurrentUser`, ADR 0042). Phoenix never specializes the better-auth options at
@@ -41,18 +47,6 @@ import {checkUsername} from "./username-rule.ts";
 // `BetterAuth` tag's `auth` field.
 export type BetterAuthInstance = BetterAuth;
 export type Session = NonNullable<Awaited<ReturnType<BetterAuthInstance["api"]["getSession"]>>>;
-
-export interface UserRow {
-	id: string;
-	email: string;
-	name: string | null;
-	image: string | null;
-	username: string | null;
-	// Server-managed authorship tier (ADR 0107 §4), read here so `Kunye.tierOf`
-	// resolves the GLOBAL account-level standing off D1 at the point of use rather
-	// than from session state. `çaylak | yazar` only — an account is always ≥ çaylak.
-	tier: StoredTier;
-}
 
 /**
  * The minimal identity tuple a batched roster read needs per çaylak — the display
@@ -73,17 +67,6 @@ export interface SetUsernameResult {
 	username: string;
 	displayName: string | null;
 	image: string | null;
-}
-
-export interface ProfileRow {
-	userId: string;
-	username: string;
-	displayName: string | null;
-	image: string | null;
-	totalKarma: number;
-	definitionCount: number;
-	postCount: number;
-	commentCount: number;
 }
 
 // The shared discriminant + identity fields every contribution variant carries.
@@ -500,14 +483,7 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 				getUserById: Effect.fn("Pasaport.getUserById")(function* (userId: string) {
 					const row = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
 					if (!row) return null;
-					return {
-						id: row.id,
-						email: row.email,
-						name: row.name ?? null,
-						image: row.image ?? null,
-						username: row.username ?? null,
-						tier: row.tier,
-					} satisfies UserRow;
+					return toUserRow(row);
 				}),
 
 				getUsersByIds: Effect.fn("Pasaport.getUsersByIds")(function* (
@@ -517,17 +493,7 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					const rows = yield* run((db) =>
 						db.query.user.findMany({where: {id: {in: [...userIds]}}}),
 					);
-					return rows.map(
-						(row) =>
-							({
-								id: row.id,
-								email: row.email,
-								name: row.name ?? null,
-								image: row.image ?? null,
-								username: row.username ?? null,
-								tier: row.tier,
-							}) satisfies UserRow,
-					);
+					return rows.map(toUserRow);
 				}),
 
 				getProfileIdentitiesByIds: Effect.fn("Pasaport.getProfileIdentitiesByIds")(function* (

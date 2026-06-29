@@ -8,24 +8,17 @@
  */
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
-import type {Tier} from "../kunye/standing.ts";
 import {CONTRIBUTION_VIEW_ORDER_BY} from "./ordering.ts";
-import type {ContributionRow, ProfileRow, UserRow} from "./Pasaport.ts";
+import type {ContributionRow} from "./Pasaport.ts";
+import {type ProfileRow, profileViewFields} from "./profile-fields.ts";
+import {type UserFields, userViewFields} from "./user-fields.ts";
 
 // Exported because the `Fate.source` entries surface the row type in their
-// declarations (TS2883 portability). The `Profile` view row adds the client
-// normalization key `id` (=== `userId`, stamped by the resolver).
-//
-// `tier` is widened from the stored `StoredTier` (`çaylak | yazar`) to the
-// read-time `Tier` (`visitor | çaylak | yazar`): the `me` resolver reads it via
-// `Kunye.tierOf`, which ranks a row-missing principal as `visitor`, so the wire
-// value spans the full ladder even though the column itself never stores it.
-//
-// `isModerator` (#1320) is the SELF moderator signal — not a stored column either:
-// the resolver reads it from the `moderates` `relation_tuple` (the same tuple
-// `Moderate.over(platform)` discharges, ADR 0107 §4), so it joins onto the wire row
-// here, never on `UserRow`.
-export type UserViewRow = ViewRow<Omit<UserRow, "tier"> & {tier: Tier; isModerator: boolean}>;
+// declarations (TS2883 portability). The `User` wire row is `UserFields`
+// (`user-fields.ts`, which carries the `tier` widening + the `isModerator`
+// relation-tuple join); the `Profile` view row adds the client normalization key
+// `id` (=== `userId`, stamped by the resolver).
+export type UserViewRow = ViewRow<UserFields>;
 export type ProfileViewRow = ViewRow<ProfileRow & {id: string}>;
 export type ContributionViewRow = ViewRow<ContributionRow>;
 
@@ -44,15 +37,7 @@ export type ContributionViewRow = ViewRow<ContributionRow>;
 // ever the viewer's OWN mod status. Like `tier` it is always present (the divan
 // "yazar yap" affordance is gated frontend-side); a dual-role yazar+moderator reads
 // `tier: "yazar"` + `isModerator: true`, which `tier` alone cannot express.
-export class UserView extends FateDataView<UserViewRow>()("User")({
-	id: true,
-	email: true,
-	name: true,
-	image: true,
-	username: true,
-	tier: true,
-	isModerator: true,
-}) {}
+export class UserView extends FateDataView<UserViewRow>()("User")(userViewFields) {}
 
 // The **discriminant** view for the profile contributions feed: fate has no
 // union type, so the variants' fields are flattened onto one row keyed by a
@@ -85,15 +70,7 @@ export class ContributionView extends FateDataView<ContributionViewRow>()("Contr
 // stays for callers reading the raw per-type id (the source `byId` is keyed by it).
 // `contributions.orderBy` derives from `contributionOrdering` (ADR 0019).
 export class ProfileView extends FateDataView<ProfileViewRow>()("Profile")({
-	id: true,
-	userId: true,
-	username: true,
-	displayName: true,
-	image: true,
-	totalKarma: true,
-	definitionCount: true,
-	postCount: true,
-	commentCount: true,
+	...profileViewFields,
 	contributions: FateDataView.list(ContributionView, {orderBy: CONTRIBUTION_VIEW_ORDER_BY}),
 }) {}
 
@@ -109,7 +86,7 @@ export class AccountDeletionReceiptView extends FateDataView<AccountDeletionRece
 )({
 	id: true,
 	deleted: true,
-}) {}
+} satisfies {[K in keyof AccountDeletionReceiptViewRow]: true}) {}
 
 // The çaylak→yazar promotion acknowledgement (#1206) — NOT a re-resolved entity
 // (the promotion's effects, the flipped tier + the swept backlog, are read through
@@ -132,7 +109,7 @@ export class PromotionReceiptView extends FateDataView<PromotionReceiptViewRow>(
 	userId: true,
 	promoted: true,
 	vouchRecorded: true,
-}) {}
+} satisfies {[K in keyof PromotionReceiptViewRow]: true}) {}
 
 // The çaylak-SELF authorship-standing aggregate (#1316, epic #1202) — the
 // "yazarlığa giden yol" read the #1291 status block consumes about ITSELF. The
@@ -163,7 +140,7 @@ export class AuthorshipStandingView extends FateDataView<AuthorshipStandingViewR
 	bar: true,
 	vouchExists: true,
 	inReviewCount: true,
-}) {}
+} satisfies {[K in keyof AuthorshipStandingViewRow]: true}) {}
 
 // The plain kernel `dataView()` values, for cross-feature surfaces (the
 // `fate/views.ts` `Root` map + barrel re-exports).
