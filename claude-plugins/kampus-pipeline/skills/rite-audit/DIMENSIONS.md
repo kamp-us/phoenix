@@ -16,16 +16,16 @@ suggestion — keep it the single source of these shapes; do not redefine them p
 A dimension is one Markdown file, `dimensions/<id>.md`, that declares exactly four things:
 
 1. **`id`** — a stable kebab-case identifier (`functional-rite`, `a11y`, `sandbox-leak`). This is
-   the verdict key #1516 groups on and the value the SKILL.md *Active dimensions* table registers.
-   It must equal the file's basename.
+   the `dimension` component of the verdict key #1516 groups on (see *The verdict key* below) and
+   the value the SKILL.md *Active dimensions* table registers. It must equal the file's basename.
 2. **`surfaces`** — the subset of the SKILL.md route map this dimension walks. Naming them up
    front bounds the dimension and lets a reader see its blast radius.
 3. **`probe`** — the explorer steps it runs, each as `drive → observe`. These are instructions to
    the LLM driving the Playwright MCP, expressed against the **shared primitives** below — never
    re-deriving the run context, route map, or driver.
 4. **`rubric`** — an **ordered list of named checks**. Each check is one falsifiable assertion and
-   emits **exactly one** `Finding`. The check name is stable across runs so findings are
-   comparable run-over-run (#1516 diffs on `dimension` + `check`).
+   emits **exactly one** `Finding` *per surface it walks*. The check name is stable across runs so
+   findings are comparable run-over-run (#1516 diffs on the verdict key — see below).
 
 ## The shared primitives (consumed, never re-derived)
 
@@ -59,6 +59,19 @@ interface Finding {
   evidence: string;    // screenshot ref / selector / quoted text backing `observed`
 }
 ```
+
+### The verdict key — the (dimension, check, surface) TRIPLE
+
+#1516 groups and diffs findings on the **(`dimension`, `check`, `surface`) triple**, never on
+`(dimension, check)` alone. A single rubric check runs across **several surfaces** — a dimension
+emits one `Finding` *per surface it walks* (the a11y and sandbox-leak dimensions assert the same
+check on `/auth`, `/divan`, `/pano`, … and emit a `Finding` for each). Keying on the pair would
+**collide** those distinct findings into one — a regression on `/divan` would mask a pass on
+`/auth`, or overwrite it in the diff. The `surface` field exists precisely to make the key a
+triple: `(dimension, check, surface)` is unique per emitted `Finding`, so the verdict keeps every
+per-surface finding distinct and a two-run diff attributes a change to the exact surface that
+moved. Use `"n/a"` for `surface` only when a check is genuinely surface-independent; even then it
+participates in the key, so a surface-less check still has a unique triple.
 
 ### Status semantics — the story-11 invariant, shared by all dimensions
 
