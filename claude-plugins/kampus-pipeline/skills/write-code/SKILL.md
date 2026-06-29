@@ -453,7 +453,7 @@ MYCLAIM=$(gh api repos/$REPO/issues/<N>/comments \
 #    Proceed to implement IFF the earliest authorized claim is mine; else RETRACT my own claim
 #    comment AND self-unassign, then re-pick (never co-occupy, never delete another agent's claim).
 if [ "$WINSID" != "$CLAUDE_CODE_SESSION_ID" ]; then
-  gh api -X DELETE repos/$REPO/issues/<N>/comments/$MYCLAIM >/dev/null 2>&1
+  gh api -X DELETE repos/$REPO/issues/comments/$MYCLAIM >/dev/null 2>&1
   gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null 2>&1
   echo "lost the claim tiebreak on #$N to an earlier authorized claim — back off, re-pick."
   exit 0   # → re-run Step 1
