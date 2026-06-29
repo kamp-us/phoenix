@@ -232,8 +232,22 @@ stop. If the diff is **mixed skill + code/docs** (a `skills/**` change *and* `ap
 `packages` code or a `.decisions`/`.patterns` doc, none of it gate-critical), it needs the
 matching gate per class: you verify the skill class here and emit the `review-skill` marker;
 `review-code`/`review-doc` verify their classes and emit theirs. `ship-it` requires the latest
-PASS in **each** namespace present before it merges — so verify the skills, emit `review-skill`,
-and note the other gate(s) must also pass.
+PASS in **each** namespace present before it merges — so verify the skills, emit `review-skill`.
+
+**But a mixed-class PR's review is not complete until every present namespace has a current-head
+verdict — resolve them all in one pass (the routing-completeness rule).** It is not enough to
+emit `review-skill` and merely *note* that the other gate(s) "must also pass": a note left to a
+later pass is exactly the gap that costs a mixed PR an extra review→ship round-trip — one
+namespace's PASS lands, `ship-it` fail-closes on the still-missing other namespace, and the PR
+bounces back for a second review pass (#1460 / the PR #1442 incident). Routing by artifact class
+means "run the matching gate for **every** non-blocking class the diff spans," not "pick one and
+stop." So after you verify the skills and emit `review-skill`, **ensure `review-code` (code) and
+`review-doc` (docs) are also run against this same head before the review is reported complete**
+— load and follow the sibling gate(s) in this pass, or have the routing dispatch fan out to them,
+so the PR reaches `ship-it` with a current-head PASS standing in each present namespace.
+`ship-it`'s per-present-class requirement (its Step 2) is unchanged — it remains the
+**fail-closed late catch** for a genuinely-missing namespace, not the *first* place the second
+namespace is discovered.
 
 ---
 

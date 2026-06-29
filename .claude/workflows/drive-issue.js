@@ -208,10 +208,17 @@ while (true) {
 	phase("Review");
 	log(`Reviewing PR #${pr} @ ${headSha} (round ${round})`);
 	verdict = await agent(
-		`Review PR #${pr}. You are the reviewer — classify the artifact and route to the matching review skill ` +
-			`(review-code for source, review-doc for docs, review-skill for skills/agents), verify it against its ` +
-			`linked issue's acceptance criteria one criterion at a time, and land a SHA-bound verdict comment on the PR. ` +
-			`Return { verdict: "PASS"|"FAIL", sha: "<reviewed head sha>", classes: ["<the review class(es) you ran>"] }.`,
+		`Review PR #${pr}. You are the reviewer — classify the FULL diff against every artifact class, then run the ` +
+			`matching review gate for EVERY non-blocking class the diff spans, IN THIS ONE PASS (review-code for source, ` +
+			`review-doc for docs, review-skill for skills/agents). A mixed code+docs (or code+skill, etc.) PR is NOT done ` +
+			`when one namespace passes: routing means "run the gate for every present class," not "pick one and stop." ` +
+			`Verify each present class against the linked issue's acceptance criteria one criterion at a time, and land a ` +
+			`SHA-bound verdict comment on the PR in EVERY present namespace (a review-code AND a review-doc marker for a ` +
+			`mixed code+docs PR), all bound to the same current head, so the PR reaches ship-it with a current-head PASS ` +
+			`standing in each present namespace and never bounces back for a second review pass (#1460). Return ` +
+			`verdict "PASS" ONLY when every present namespace's current-head verdict is PASS; "FAIL" if any present ` +
+			`namespace failed. ` +
+			`Return { verdict: "PASS"|"FAIL", sha: "<reviewed head sha>", classes: ["<every review class you ran, one per present namespace>"] }.`,
 		{ agentType: "reviewer", isolation: "worktree", schema: reviewSchema },
 	);
 	log(`Review verdict for PR #${pr}: ${verdict.verdict} @ ${verdict.sha}`);

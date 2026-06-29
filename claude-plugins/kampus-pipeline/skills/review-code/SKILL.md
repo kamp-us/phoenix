@@ -187,6 +187,24 @@ present before it merges (the same mixed-class split `review-doc` Step 0 spells 
 that *also* touches a gate-critical skill is still control plane regardless — that's the
 merge-blocking flag below (§CP), a separate axis from this routing decision (ADR 0073 §4).
 
+**A mixed-class PR's review is not complete until every present namespace has a current-head
+verdict — resolve them all in one pass (the routing-completeness rule).** Routing by artifact
+class is not "pick one class and stop": it is "run the matching gate for **every** non-blocking
+artifact class the diff spans," so the PR reaches `ship-it` with a current-head PASS already
+standing in each present namespace. Emitting your own `review-code` marker covers **only** the
+code class; the doc/skill classes the diff also touches still need their gates run **in the same
+review pass**. Do not stop at the `review-code` marker and merely *note* that `review-doc`/`review-skill`
+"must also pass" — that note, left to a later pass, is exactly the gap that costs a mixed PR an
+extra review→ship round-trip (a `review-code: PASS` lands, `ship-it` fail-closes on the missing
+`review-doc`, the PR bounces back for a second review pass — #1460 / the PR #1442 incident). So
+when you finish the code class on a mixed PR, **ensure the gate for every other present class is
+also run against this same head before the review is reported complete** — load and follow the
+sibling gate(s) (`review-doc` for the docs class, `review-skill` for the skills class) in this
+pass, or have the routing dispatch fan out to them, so each present namespace carries a
+current-head verdict. `ship-it`'s per-present-class requirement (its Step 2) is unchanged — it
+remains the **fail-closed late catch**, the safety net for a genuinely-missing namespace, not the
+*first* place the second namespace is discovered.
+
 ### The trust split: head = code under test, base = the reviewer's instructions (ADR 0052)
 
 You are reviewing the PR head, but you must never let it review *you*. The head's

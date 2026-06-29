@@ -564,6 +564,22 @@ The polarity of the **newest current-head** event in each namespace is the only 
 decides — an old PASS behind a newer FAIL never ships, an old FAIL behind a newer PASS does not
 block, and a PASS bound to a *stale* head never ships at all.
 
+**This per-present-class requirement iterates over EVERY class Step 0 found — never just one.**
+The merge is gated on the **conjunction** across all present namespaces: a mixed code+docs PR
+clears guard 1 **only** when the review-code namespace AND the review-doc namespace each resolve
+to a current-head PASS; a single namespace's PASS while another present namespace is
+empty/stale/FAIL **refuses** (`unverified (no review-doc PASS)`, etc.). This is the **fail-closed
+late catch** — the safety net, deliberately preserved unchanged. It is **not** meant to be the
+*first* place a second required namespace is discovered: the routing review gate upstream now
+resolves **every** present namespace in one pass (the *routing-completeness rule* in
+`review-code`/`review-doc`/`review-skill` Step 0 — run the matching gate for every non-blocking
+class the diff spans, not just one), so a well-routed mixed PR arrives here with a current-head
+PASS already standing in each namespace and merges without a bounce-back (#1460 / the PR #1442
+incident — a `review-code: PASS` with no `review-doc`, correctly refused here for the empty docs
+namespace, but only after a wasted review→ship round-trip the upstream routing now prevents).
+ship-it's refusal stays exactly as above — it remains the last line of defense for a genuinely
+missing or stale namespace, never weakened to route around an upstream routing miss.
+
 #### A rebase/force-push staleness refusal means "re-review, then ship" — not "stuck"
 
 The most common way to hit `unverified (verdict not bound to current head)` is **a rebase
