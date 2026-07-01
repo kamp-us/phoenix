@@ -92,6 +92,26 @@ of scope. Fails closed on zero CLAUDE.md in scope (ADR 0092).
 node packages/pipeline-cli/src/bin.ts pointer-guard check
 ```
 
+### `trivial-diff` — deterministic fail-closed trivial-diff classifier (ADR 0120 §1, #1557)
+
+Classifies a unified diff as `trivial` / `non-trivial` for the right-sized fan-out
+([ADR 0120](../../.decisions/0120-stage-right-sizing-trivial-diff-lighter-gate.md) §1, epic
+[#1527](https://github.com/kamp-us/phoenix/issues/1527)). A diff is `trivial` only when a hard
+AND of mechanical bounds clears: a single changed file that is doc/comment-only or under the
+line bound `N` (1), with no new surface — dependency/manifest/migration/schema/config path or a
+new `export`/`import`/`require(` module edge (2), and no control-plane path (3). The boundary is
+the **live** `CONTROL_PLANE_RE`, re-resolved from `origin/main` at run time (REST raw,
+`?ref=main`) — never a snapshot. Fail-closed by construction: a failed bound, a parse error, or
+an unreadable boundary all return `non-trivial`, so a miss over-routes to the full (correct)
+fan-out, never under-gates. The verdict word prints to **stdout**, the deciding reason to
+**stderr**. This child builds the predicate only — it is **not** wired into the executor (#1559)
+and adoption of the lighter gate is measurement-gated (ADR 0112, #1560).
+
+```bash
+git diff origin/main... | node packages/pipeline-cli/src/bin.ts trivial-diff classify
+node packages/pipeline-cli/src/bin.ts trivial-diff classify --diff-file d.patch --max-lines 20
+```
+
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
 pnpm --filter @kampus/pipeline-cli test
