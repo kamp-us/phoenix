@@ -20,6 +20,8 @@ interface FunnelSummaryRow {
 	promotionRate: number;
 	/** First-contribution rate (#1591): share of human çaylaks with ≥ 1 sandboxed contribution, in `[0, 1]`. */
 	firstContributionRate: number;
+	/** Vouch rate (#1592): share of human çaylaks who received ≥ 1 vouch (kefil), in `[0, 1]`. */
+	vouchRate: number;
 }
 
 export type FunnelSummaryViewRow = ViewRow<FunnelSummaryRow>;
@@ -30,6 +32,7 @@ export class FunnelSummaryView extends FateDataView<FunnelSummaryViewRow>()("Fun
 	yazarCount: true,
 	promotionRate: true,
 	firstContributionRate: true,
+	vouchRate: true,
 }) {}
 
 export const funnelSummaryDataView = FunnelSummaryView.view;

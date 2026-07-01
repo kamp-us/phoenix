@@ -1,7 +1,8 @@
 /**
- * `FunnelSummary` — the conversion readout's card (#1589): the two headline rates —
- * the promotion rate (#1593) and the first-contribution rate (#1591) — over the two
- * tier counts (çaylak, yazar) the founder/mod front page renders. Reads the gated
+ * `FunnelSummary` — the conversion readout's card (#1589): the three headline rates —
+ * the promotion rate (#1593), the first-contribution rate (#1591), and the vouch rate
+ * (#1592) — over the two tier counts (çaylak, yazar) the founder/mod front page
+ * renders. Reads the gated
  * `funnel.summary` DESTINATION (founder/mod, behind `phoenix-funnel-readout`); a
  * non-mod read denies the invisible `UNAUTHORIZED`, caught by the page's `<Screen>`.
  *
@@ -20,6 +21,7 @@ const FunnelSummaryView = view<FunnelSummaryEntity>()({
 	yazarCount: true,
 	promotionRate: true,
 	firstContributionRate: true,
+	vouchRate: true,
 });
 
 const funnelRequest = {
@@ -57,6 +59,12 @@ export function FunnelSummary() {
 				<figcaption className="kp-funnel__headline-label">ilk katkı oranı</figcaption>
 				<p className="kp-funnel__headline-value" data-testid="funnel-first-contribution-rate">
 					{formatRate(summary.firstContributionRate)}
+				</p>
+			</figure>
+			<figure className="kp-funnel__headline">
+				<figcaption className="kp-funnel__headline-label">kefil oranı</figcaption>
+				<p className="kp-funnel__headline-value" data-testid="funnel-vouch-rate">
+					{formatRate(summary.vouchRate)}
 				</p>
 			</figure>
 			<dl className="kp-funnel__counts">
