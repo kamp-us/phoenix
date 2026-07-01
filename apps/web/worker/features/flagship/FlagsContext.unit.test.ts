@@ -174,7 +174,9 @@ describe("environment-targeting degrades safe on error", () => {
 			withStage("development"),
 			Effect.provide(
 				flagsOver(() =>
-					Effect.fail(new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined})),
+					Effect.fail(
+						new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}),
+					),
 				),
 			),
 		),

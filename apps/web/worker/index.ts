@@ -290,19 +290,13 @@ export default Phoenix.make(
 				// the binding.
 				BetterAuthLive.pipe(
 					Layer.provideMerge(DatabaseLive),
-					Layer.provide(
-						EmailSenderLive.pipe(
-							Layer.provide(Cloudflare.Email.SendBinding),
-						),
-					),
+					Layer.provide(EmailSenderLive.pipe(Layer.provide(Cloudflare.Email.SendBinding))),
 				),
 				// The `Flagship` seam (`bind()`-in-init) resolves through alchemy's
 				// Flagship binding graph: `FlagshipBindingLive` turns the app resource
 				// into the `FlagshipClient`, `FlagshipBindingPolicyLive` registers the
 				// policy it needs (epic #488). `WorkerEnvironment` is ambient.
-				FlagshipLive.pipe(
-					Layer.provide(Cloudflare.Flagship.ReadFlagsBinding),
-				),
+				FlagshipLive.pipe(Layer.provide(Cloudflare.Flagship.ReadFlagsBinding)),
 			).pipe(Layer.provideMerge(Cloudflare.D1.QueryDatabaseBinding)),
 		),
 	),

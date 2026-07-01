@@ -89,7 +89,9 @@ describe("Flags.getBoolean", () => {
 		}).pipe(
 			Effect.provide(
 				flagsOver(() =>
-					Effect.fail(new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined})),
+					Effect.fail(
+						new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}),
+					),
 				),
 			),
 		),
@@ -105,7 +107,9 @@ describe("Flags.getBoolean", () => {
 		}).pipe(
 			Effect.provide(
 				flagsOver(() =>
-					Effect.fail(new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined})),
+					Effect.fail(
+						new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}),
+					),
 				),
 			),
 		),

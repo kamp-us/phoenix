@@ -188,7 +188,9 @@ describe("Flags — safe default with targeting context (#511)", () => {
 		}).pipe(
 			Effect.provide(
 				flagsOver(() =>
-					Effect.fail(new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined})),
+					Effect.fail(
+						new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}),
+					),
 				),
 			),
 		),
