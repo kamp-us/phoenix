@@ -56,7 +56,7 @@ unreadable/uncompilable live boundary all resolve to `non-trivial` — there is 
 `claude-plugins/kampus-pipeline/skills/review-trivial/SKILL.md` is a **reduced-prompt** verify
 path a trivially-classified diff can take instead of the full fan-out. It is still an
 **independent, fail-closed gate** run by a reviewer (never the author — the split-role firewall
-of ADR [0052](../.decisions/0052-split-role-review-firewall.md) is unchanged):
+of ADR [0052](../.decisions/0052-review-code-config-isolation.md) is unchanged):
 
 - **Step 0 re-affirms triviality independently and fail-closed** — it re-resolves the live
   `CONTROL_PLANE_RE` under its own eyes; a control-plane path, an unreadable boundary, a
