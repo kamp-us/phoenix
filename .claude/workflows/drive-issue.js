@@ -29,6 +29,29 @@ if (!Number.isInteger(issue) || issue <= 0) {
 	);
 }
 
+// Trivial-diff tier (ADR 0120 §2-§4). The right-sized fan-out routes a trivially-classified
+// PR to the lighter `review-trivial` gate instead of the full `review-code`/`review-doc`/
+// `review-skill` fan-out. It is wired here but stays OFF BY DEFAULT: adoption is gated behind
+// child #1560's two-axis measurement (a measured token win AND held gate-accuracy, a quality
+// regression vetoing the lever — ADR 0112). Off ⇒ every PR takes the full fan-out exactly as
+// before, a pure no-op. #1560 flips it for measurement via `KAMPUS_TRIVIAL_TIER=on` or
+// `args.trivialTier=true`; this child claims NO token win — it only makes the branch measurable.
+const TRIVIAL_TIER_ENABLED =
+	(typeof process !== "undefined" && !!process.env && process.env.KAMPUS_TRIVIAL_TIER === "on") ||
+	!!(args && typeof args === "object" && args.trivialTier === true);
+
+// Default-deny tier routing (ADR 0120 §3). The LIGHTER path is selected ONLY on the full
+// positive conjunction — the tier is enabled AND the classifier ran OK AND its verdict is
+// exactly `trivial`. Any other state — tier disabled, classifier error/unparseable, a
+// `non-trivial` verdict, or an unrecognized verdict word — falls back to the FULL fan-out, so a
+// misclassification can only ever over-pay the full (correct) cost, never under-gate. This
+// mirrors the unit-tested canonical predicate `selectReviewTier` in
+// packages/pipeline-cli/src/tools/trivial-diff/route.ts; it is inlined (not imported) because a
+// workflow script — top-level return + injected globals — is not importable as a module.
+function selectReviewTier(trivialTierEnabled, classifierOk, verdict) {
+	return trivialTierEnabled && classifierOk && verdict === "trivial" ? "lighter" : "full";
+}
+
 // 1. Classify — a lightweight READ of the already-triaged `type:` label to route.
 // Deliberately NOT the triager agent: triager is needs-triage INTAKE and would
 // mutate; the executor only reads the label to route it (epic -> planner).
@@ -201,13 +224,36 @@ const repairSchema = {
 	required: ["headSha"],
 	additionalProperties: false,
 };
+// The lighter gate may DECLINE (re-affirm fail-closed: the diff is not actually trivial), a
+// plain note, not a verdict — the executor then re-routes it to the full path this round.
+const trivialReviewSchema = {
+	type: "object",
+	properties: {
+		verdict: { enum: ["PASS", "FAIL", "DECLINED"] },
+		sha: { type: "string" },
+		classes: { type: "array", items: { type: "string" } },
+	},
+	required: ["verdict", "sha"],
+	additionalProperties: false,
+};
+// The tier-classifier probe (ADR 0120 §1). Consumes the trivial-diff classifier's stdout
+// verdict via its CLI contract — never its internals — and is fail-closed: any failure to run
+// or parse the classifier returns { classifierOk: false }, which the default-deny predicate
+// routes to the full path.
+const tierSchema = {
+	type: "object",
+	properties: {
+		verdict: { type: "string" },
+		classifierOk: { type: "boolean" },
+	},
+	required: ["verdict", "classifierOk"],
+	additionalProperties: false,
+};
 
-let round = 0;
-let verdict;
-while (true) {
-	phase("Review");
-	log(`Reviewing PR #${pr} @ ${headSha} (round ${round})`);
-	verdict = await agent(
+// The full fan-out review (the unchanged default path). Extracted so both the default route
+// and the lighter gate's fail-closed fallback dispatch the identical reviewer.
+const runFullReview = () =>
+	agent(
 		`Review PR #${pr}. You are the reviewer — classify the FULL diff against every artifact class, then run the ` +
 			`matching review gate for EVERY non-blocking class the diff spans, IN THIS ONE PASS (review-code for source, ` +
 			`review-doc for docs, review-skill for skills/agents). A mixed code+docs (or code+skill, etc.) PR is NOT done ` +
@@ -221,7 +267,59 @@ while (true) {
 			`Return { verdict: "PASS"|"FAIL", sha: "<reviewed head sha>", classes: ["<every review class you ran, one per present namespace>"] }.`,
 		{ agentType: "reviewer", isolation: "worktree", schema: reviewSchema },
 	);
-	log(`Review verdict for PR #${pr}: ${verdict.verdict} @ ${verdict.sha}`);
+
+let round = 0;
+let verdict;
+while (true) {
+	// Tier branch (ADR 0120 §2-§3): classify the PR diff and route the Review phase. Default-deny
+	// / fail-closed — only an explicit `trivial` from an OK classifier while the tier is enabled
+	// takes the lighter `review-trivial` gate; every other state (incl. the tier's off-by-default
+	// state) takes the full fan-out. The classify probe runs only when the tier is enabled, so
+	// off ⇒ zero added cost and behaviour identical to the pre-tier executor.
+	let tier = "full";
+	if (TRIVIAL_TIER_ENABLED) {
+		phase("Classify");
+		log(`Classifying PR #${pr} @ ${headSha} diff for the trivial tier (ADR 0120 §1)`);
+		const cls = await agent(
+			`Classify the diff of PR #${pr} on the pipeline target repo with the deterministic trivial-diff classifier — ` +
+				`consume ONLY its stdout-verdict CLI contract (ADR 0120 §1), never its internals. All GitHub ops via ` +
+				`\`gh api\` REST, never GraphQL; resolve the repo as ` +
+				`\${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}. Procedure: fetch the PR's ` +
+				`unified diff with \`gh api repos/$REPO/pulls/${pr} -H 'Accept: application/vnd.github.v3.diff'\`, then pipe it ` +
+				`to \`node packages/pipeline-cli/src/bin.ts trivial-diff classify --repo "$REPO"\` (the diff on stdin). Read the ` +
+				`single verdict WORD the CLI prints to STDOUT — \`trivial\` or \`non-trivial\`. This is a READ-ONLY probe: do NOT ` +
+				`edit, comment, review, label, or merge anything. FAIL-CLOSED: if you cannot fetch the diff, run the CLI, or parse ` +
+				`a clean \`trivial\`/\`non-trivial\` word from stdout for ANY reason, return { verdict: "non-trivial", classifierOk: false }. ` +
+				`On a clean run return { verdict: "<the stdout word>", classifierOk: true }.`,
+			{ schema: tierSchema },
+		);
+		tier = selectReviewTier(true, cls.classifierOk === true, cls.verdict);
+		log(`Tier for PR #${pr}: ${tier} (classifier verdict=${cls.verdict}, ok=${cls.classifierOk})`);
+	}
+
+	phase("Review");
+	log(`Reviewing PR #${pr} @ ${headSha} (round ${round}, ${tier} gate)`);
+	if (tier === "lighter") {
+		verdict = await agent(
+			`Review PR #${pr}. You are the reviewer — route to the LIGHTER gate: load and follow the review-trivial skill ` +
+				`(ADR 0120 §2). A deterministic classifier already established this diff is trivial; re-affirm that fail-closed ` +
+				`under your own eyes, run the tight scoped checklist over the small diff, and land a SHA-bound PASS/FAIL verdict ` +
+				`in the EXISTING review-code/review-doc/review-skill namespace for the diff's artifact class (never a new ` +
+				`marker). If the diff is NOT actually trivial (control-plane present, boundary unreadable, not small/single-concern, ` +
+				`or a new surface), DECLINE per review-trivial Step 0 — emit the plain not-trivial note, post NO verdict marker, and ` +
+				`return verdict "DECLINED" so the executor re-routes to the full path. ` +
+				`Return { verdict: "PASS"|"FAIL"|"DECLINED", sha: "<reviewed head sha>", classes: ["<the one namespace you gated, or empty on DECLINED>"] }.`,
+			{ agentType: "reviewer", isolation: "worktree", schema: trivialReviewSchema },
+		);
+		if (verdict.verdict === "DECLINED") {
+			log(`review-trivial declined PR #${pr} (not actually trivial) — falling back to the full fan-out (ADR 0120 §3)`);
+			tier = "full";
+			verdict = await runFullReview();
+		}
+	} else {
+		verdict = await runFullReview();
+	}
+	log(`Review verdict for PR #${pr}: ${verdict.verdict} @ ${verdict.sha} (${tier} gate)`);
 
 	if (verdict.verdict === "PASS") break;
 	if (round >= 2) break; // freeze-after-2: stop after 2 repair attempts.
