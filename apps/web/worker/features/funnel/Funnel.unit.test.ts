@@ -25,6 +25,7 @@ import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, relations} from "../../db/Drizzle.ts";
 import {
 	computeFirstContribution,
+	computeTimeToPromotion,
 	computeVouchRate,
 	contributingCaylaksQuery,
 	Funnel,
@@ -34,7 +35,15 @@ import {
 	type TierCountRow,
 	tierPopulationQuery,
 	vouchedCaylaksQuery,
+	yazarPromotionTimesQuery,
 } from "./Funnel.ts";
+
+const DAY = 1000 * 60 * 60 * 24;
+/** A yazar row `d` days after `base` (default: registered at epoch, promoted `d` days later). */
+const yazarAfterDays = (d: number, base = 0) => ({
+	createdAt: new Date(base),
+	promotedAt: new Date(base + d * DAY),
+});
 
 // A real drizzle client over a no-op D1 — used ONLY to render the query's `.toSQL()`;
 // it never executes.
@@ -276,6 +285,127 @@ describe("Funnel.vouchRate — the read through the Drizzle seam", () => {
 			assert.deepStrictEqual(vouch, {caylakCount: 0, vouchedCount: 0, rate: 0});
 		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[], [{count: 0}]])))),
 	);
+});
+
+describe("computeTimeToPromotion — median registration→yazar over measurable yazars (#1594)", () => {
+	it("odd population ⇒ the middle duration (in ms)", () => {
+		const result = computeTimeToPromotion([
+			yazarAfterDays(2),
+			yazarAfterDays(10),
+			yazarAfterDays(4),
+		]);
+		assert.deepStrictEqual(result, {
+			medianMs: 4 * DAY,
+			measuredCount: 3,
+			notYetMeasurableCount: 0,
+		});
+	});
+
+	it("even population ⇒ the mean of the two central durations", () => {
+		const result = computeTimeToPromotion([
+			yazarAfterDays(2),
+			yazarAfterDays(4),
+			yazarAfterDays(6),
+			yazarAfterDays(12),
+		]);
+		// sorted: 2, 4, 6, 12 days → median = (4 + 6) / 2 = 5 days
+		assert.strictEqual(result.medianMs, 5 * DAY);
+		assert.strictEqual(result.measuredCount, 4);
+	});
+
+	it("null promoted_at yazars are excluded from the median and counted as not-yet-measurable", () => {
+		const result = computeTimeToPromotion([
+			yazarAfterDays(3),
+			{createdAt: new Date(0), promotedAt: null},
+			yazarAfterDays(9),
+			{createdAt: new Date(0), promotedAt: null},
+		]);
+		assert.strictEqual(result.medianMs, 6 * DAY); // (3 + 9) / 2
+		assert.strictEqual(result.measuredCount, 2);
+		assert.strictEqual(result.notYetMeasurableCount, 2);
+	});
+
+	it("empty population ⇒ null median (never NaN), zero counts", () => {
+		const result = computeTimeToPromotion([]);
+		assert.deepStrictEqual(result, {
+			medianMs: null,
+			measuredCount: 0,
+			notYetMeasurableCount: 0,
+		});
+	});
+
+	it("all yazars pre-instrumentation (null promoted_at) ⇒ null median, all not-yet-measurable", () => {
+		const result = computeTimeToPromotion([
+			{createdAt: new Date(0), promotedAt: null},
+			{createdAt: new Date(0), promotedAt: null},
+		]);
+		assert.strictEqual(result.medianMs, null);
+		assert.strictEqual(result.measuredCount, 0);
+		assert.strictEqual(result.notYetMeasurableCount, 2);
+	});
+
+	it("a null created_at with a set promoted_at is a defensive skip (not measured, not counted)", () => {
+		const result = computeTimeToPromotion([
+			yazarAfterDays(5),
+			{createdAt: null, promotedAt: new Date(DAY)},
+		]);
+		assert.strictEqual(result.medianMs, 5 * DAY);
+		assert.strictEqual(result.measuredCount, 1);
+		assert.strictEqual(result.notYetMeasurableCount, 0);
+	});
+});
+
+describe("Funnel.timeToPromotion — the read through the Drizzle seam", () => {
+	it.effect("folds the yazar timestamp rows the seam returns into the median", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const result = yield* funnel.timeToPromotion();
+			assert.deepStrictEqual(result, {
+				medianMs: 4 * DAY,
+				measuredCount: 3,
+				notYetMeasurableCount: 1,
+			});
+		}).pipe(
+			Effect.provide(
+				funnelLayer(
+					scriptedSequence([
+						[
+							yazarAfterDays(2),
+							yazarAfterDays(4),
+							yazarAfterDays(10),
+							{createdAt: new Date(0), promotedAt: null},
+						],
+					]),
+				),
+			),
+		),
+	);
+
+	it.effect("an empty seam yields a null median (no measurable yazar yet)", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const result = yield* funnel.timeToPromotion();
+			assert.strictEqual(result.medianMs, null);
+			assert.isFalse(Number.isNaN(result.medianMs));
+		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[]])))),
+	);
+});
+
+describe("yazarPromotionTimesQuery — human yazars' promotion/registration stamps (rendered SQL)", () => {
+	const {sql, params} = yazarPromotionTimesQuery(renderDb).toSQL();
+
+	it("selects promoted_at and created_at over the user table", () => {
+		assert.match(sql, /from\s+"user"/i);
+		assert.match(sql, /"promoted_at"/i);
+		assert.match(sql, /"created_at"/i);
+	});
+
+	it("filters to human yazars", () => {
+		assert.match(sql, /"user"\."type"\s*=\s*\?/i);
+		assert.match(sql, /"user"\."tier"\s*=\s*\?/i);
+		assert.include(params, "human");
+		assert.include(params, "yazar");
+	});
 });
 
 describe("vouchedCaylaksQuery — human çaylaks with an authorship_vouch candidate row (rendered SQL)", () => {

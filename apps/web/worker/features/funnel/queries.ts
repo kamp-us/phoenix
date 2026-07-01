@@ -44,6 +44,7 @@ const summaryGated = Effect.fn("funnel.summaryGated")(function* () {
 	const population = yield* funnel.tierPopulation();
 	const {rate: firstContributionRate} = yield* funnel.firstContribution();
 	const {rate: vouchRate} = yield* funnel.vouchRate();
+	const {medianMs, notYetMeasurableCount} = yield* funnel.timeToPromotion();
 	return {
 		__typename: "FunnelSummary" as const,
 		id: FUNNEL_SUMMARY_ID,
@@ -52,6 +53,8 @@ const summaryGated = Effect.fn("funnel.summaryGated")(function* () {
 		promotionRate: promotionRate(population),
 		firstContributionRate,
 		vouchRate,
+		timeToPromotionMedianMs: medianMs,
+		timeToPromotionNotYetMeasurable: notYetMeasurableCount,
 	};
 });
 
