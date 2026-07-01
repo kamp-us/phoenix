@@ -11,12 +11,12 @@ catalog:
   '@cloudflare/workers-types': ^4.20260629.1
   '@distilled.cloud/cloudflare': 0.25.2
   '@effect/language-service': ^0.85.1
-  '@effect/platform-bun': 4.0.0-beta.78
-  '@effect/platform-node': 4.0.0-beta.78
-  '@effect/sql-d1': 4.0.0-beta.78
-  '@effect/sql-pg': 4.0.0-beta.78
+  '@effect/platform-bun': 4.0.0-beta.83
+  '@effect/platform-node': 4.0.0-beta.83
+  '@effect/sql-d1': 4.0.0-beta.83
+  '@effect/sql-pg': 4.0.0-beta.83
   '@effect/tsgo': ^0.5.2
-  '@effect/vitest': 4.0.0-beta.78
+  '@effect/vitest': 4.0.0-beta.83
   '@nkzw/fate': 1.3.1
   '@playwright/test': ^1.59.1
   '@sentry/cloudflare': 10.62.0
@@ -35,7 +35,7 @@ catalog:
   better-call: 1.3.5
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
-  effect: 4.0.0-beta.78
+  effect: 4.0.0-beta.83
   jsdom: ^26.1.0
   lefthook: ^2.1.9
   react: 19.2.6
@@ -49,6 +49,29 @@ catalog:
   zod: 4.4.3
 
 cleanupUnusedCatalogs: true
+
+# Pin the whole effect family to the catalog (beta.83) tree-wide. Consumers peer the
+# effect packages at open ranges (`drizzle-orm` rc.4 → `@effect/sql-*`/`effect`
+# `>=4.0.0-beta.83`; `@distilled.cloud/cloudflare-*` → `@effect/platform-*`/`effect`
+# `>=4.0.0-beta.78`), and the seed/audit/infra packages that pull them don't declare
+# those peers directly — so pnpm otherwise resolves each peer to the highest published
+# (beta.92) and drags second effect-family copies in, a dual install that breaks
+# drizzle's `SQLiteTable` type identity across the two effect copies. The floor is
+# capped at beta.83 because alchemy@2.0.0-beta.56 calls the `ConfigProvider.get` that
+# effect removed in beta.84 (a runtime break, tests only). Re-visit on the next alchemy
+# bump to lift toward the current effect beta.
+overrides:
+  '@effect/platform-bun': 'catalog:'
+  '@effect/platform-node': 'catalog:'
+  '@effect/sql-d1': 'catalog:'
+  '@effect/sql-pg': 'catalog:'
+  '@effect/vitest': 'catalog:'
+  effect: 'catalog:'
+  # Transitive (dep of @effect/platform-node/bun via a `^4.0.0-beta.83` caret, so pnpm
+  # floats it to the highest published beta.92, which peers effect@beta.92 — the last
+  # source of the second effect copy). Not a catalog member, so pin it explicitly to the
+  # coordinated beta; keep in lockstep with the catalog on the next effect bump.
+  '@effect/platform-node-shared': '4.0.0-beta.83'
 
 onlyBuiltDependencies:
   - '@parcel/watcher'

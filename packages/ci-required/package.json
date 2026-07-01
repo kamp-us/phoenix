@@ -17,6 +17,7 @@
 		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
 		"@typescript/native-preview": "catalog:",
+		"effect": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	},
