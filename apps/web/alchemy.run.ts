@@ -42,6 +42,7 @@ import {
 	authorshipLoopFlag,
 	demoTargetingFlag,
 	Flagship,
+	funnelReadoutFlag,
 	panoDraftSaveFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
@@ -66,6 +67,9 @@ export default Alchemy.Stack(
 		// The earned-authorship loop (çaylak→yazar) dark-ship flag, default-off
 		// (#1204, epic #1202) — the single seam the authorship-loop epic gates behind.
 		yield* authorshipLoopFlag(flagship.appId);
+		// The conversion-funnel readout dark-ship flag, default-off (#1589) — the
+		// founder/mod tier-count surface gates behind this key until a human release.
+		yield* funnelReadoutFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

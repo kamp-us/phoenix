@@ -16,6 +16,7 @@ import {searchTarget} from "./lib/searchTarget";
 import {ThemeProvider, useTheme} from "./lib/theme";
 import {AuthPage} from "./pages/AuthPage";
 import {DivanPage} from "./pages/DivanPage";
+import {FunnelPage} from "./pages/FunnelPage";
 import {LandingPage} from "./pages/LandingPage";
 import {NotFoundPage} from "./pages/NotFoundPage";
 import {PanoFeed} from "./pages/PanoFeed";
@@ -155,6 +156,9 @@ export function App() {
 					{/* The divan reviewer workspace (#1290) — the page self-gates on the
 					    authorship-loop flag (off ⇒ 404), so the route is dark by default. */}
 					<Route path="/divan" element={<DivanPage />} />
+					{/* The founder/mod conversion readout (#1589) — the page self-gates on
+					    the funnel-readout flag (off ⇒ 404), so the route is dark by default. */}
+					<Route path="/funnel" element={<FunnelPage />} />
 					<Route path="/profile" element={<ProfilePage />} />
 					<Route path="/u/:username" element={<UserProfilePage />} />
 					<Route path="*" element={<NotFoundPage />} />
