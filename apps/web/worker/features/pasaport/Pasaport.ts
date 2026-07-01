@@ -894,10 +894,12 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 
 /**
  * The atomic çaylak→yazar promotion (#1206). In order:
- *  1.   Flip `user.tier` `çaylak → yazar`. The `tier = 'çaylak'` WHERE is the
- *       idempotency guard: an already-yazar (or unknown) account matches 0 rows, so
- *       re-running promotes nothing — and it is the read of `changes` that reports
- *       `promoted`.
+ *  1.   Flip `user.tier` `çaylak → yazar` and stamp `promoted_at := now` (#1590) in
+ *       the SAME statement. The `tier = 'çaylak'` WHERE is the idempotency guard: an
+ *       already-yazar (or unknown) account matches 0 rows, so re-running promotes
+ *       nothing — and because the `promoted_at` SET rides that same guarded UPDATE, a
+ *       non-promoting call stamps nothing (the timestamp is set iff the tier actually
+ *       flips). It is the read of `changes` that reports `promoted`.
  *  2–4. Resolve the account's sandboxed backlog (#1205): `sandboxed_at := null` on
  *       its definitions / posts / comments that are still sandboxed and not removed.
  *       The WHERE is exactly the #1205 {@link sandboxBacklogWhere} read model scoped
@@ -911,7 +913,7 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 function buildPromotionStatements(db: DrizzleDb, userId: string, now: Date) {
 	const promoteTier = db
 		.update(schema.user)
-		.set({tier: "yazar", updatedAt: now})
+		.set({tier: "yazar", promotedAt: now, updatedAt: now})
 		.where(and(eq(schema.user.id, userId), eq(schema.user.tier, "çaylak")));
 
 	const sweep = (

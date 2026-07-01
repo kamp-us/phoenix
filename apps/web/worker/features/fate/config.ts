@@ -29,6 +29,7 @@
 import {FateServer} from "@kampus/fate-effect";
 import {fateModule as divanModule} from "../divan/fate-module.ts";
 import {liveBusConfig} from "../fate-live/event-bus.ts";
+import {fateModule as funnelModule} from "../funnel/fate-module.ts";
 import {fateModule as panoModule} from "../pano/fate-module.ts";
 import {fateModule as pasaportModule} from "../pasaport/fate-module.ts";
 import {fateModule as reportModule} from "../report/fate-module.ts";
@@ -48,6 +49,7 @@ export const modules = [
 	searchModule,
 	reportModule,
 	divanModule,
+	funnelModule,
 ];
 
 export const fateConfig = FateServer.config({

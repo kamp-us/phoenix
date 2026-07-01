@@ -18,3 +18,12 @@ export const PANO_DRAFT_SAVE = "pano-draft-save";
  * loop ships dark until a human flips it at release (ADR 0083).
  */
 export const PHOENIX_AUTHORSHIP_LOOP = "phoenix-authorship-loop";
+
+/**
+ * Conversion-funnel readout dark-ship flag (#1589). The founder/mod aggregate
+ * tier-count surface (`/funnel` + the `funnel.summary` read) gates behind this key;
+ * default-off so the readout reaches production dark until a human flips it at
+ * release (ADR 0083). Its OWN key, not the `phoenix-authorship-loop` seam — the
+ * funnel is a separate mod-only destination with its own lifecycle.
+ */
+export const PHOENIX_FUNNEL_READOUT = "phoenix-funnel-readout";

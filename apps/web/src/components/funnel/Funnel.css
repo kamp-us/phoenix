@@ -1,0 +1,99 @@
+/* funnel readout surface (#1589) — the founder/mod conversion-metrics page. Role
+   tokens only; state is carried by text + shape, never color alone. No custom
+   animation — reduced-motion is satisfied by default and by the global reset
+   (styles/global.css). */
+
+.kp-funnel {
+	display: flex;
+	justify-content: center;
+	padding: var(--s-4) var(--s-3);
+}
+
+.kp-funnel__inner {
+	width: 100%;
+	max-width: 720px;
+}
+
+.kp-funnel__masthead {
+	margin-bottom: var(--s-4);
+}
+
+.kp-funnel__title {
+	margin: 0;
+	font: var(--t-h1);
+	color: var(--text-primary);
+}
+
+.kp-funnel__lead {
+	margin: var(--s-1) 0 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-funnel__panel {
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius-md);
+	padding: var(--s-4);
+}
+
+.kp-funnel__loading,
+.kp-funnel__error {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-funnel__headline {
+	margin: 0 0 var(--s-4);
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-funnel__headline-label {
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-funnel__headline-value {
+	margin: 0;
+	font: var(--t-h1);
+	color: var(--text-primary);
+	font-variant-numeric: tabular-nums;
+}
+
+.kp-funnel__headline-note {
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-funnel__counts {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: var(--s-3);
+	margin: 0;
+}
+
+@media (max-width: 480px) {
+	.kp-funnel__counts {
+		grid-template-columns: 1fr;
+	}
+}
+
+.kp-funnel__metric {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-funnel__metric-label {
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-funnel__metric-value {
+	margin: 0;
+	font: var(--t-h1);
+	color: var(--text-primary);
+	font-variant-numeric: tabular-nums;
+}

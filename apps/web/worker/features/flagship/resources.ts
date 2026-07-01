@@ -10,7 +10,11 @@
  */
 import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import {PANO_DRAFT_SAVE, PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
+import {
+	PANO_DRAFT_SAVE,
+	PHOENIX_AUTHORSHIP_LOOP,
+	PHOENIX_FUNNEL_READOUT,
+} from "../../../src/flags/keys.ts";
 import {AUDIT_ENVIRONMENT} from "../../environment.ts";
 
 /**
@@ -69,7 +73,7 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 		],
 	});
 
-export {PANO_DRAFT_SAVE, PHOENIX_AUTHORSHIP_LOOP};
+export {PANO_DRAFT_SAVE, PHOENIX_AUTHORSHIP_LOOP, PHOENIX_FUNNEL_READOUT};
 
 /**
  * The pano `taslak` (draft-save) dark-ship flag config (#746) — the feature-flag
@@ -177,3 +181,36 @@ export const authorshipLoopFlag = (appId: Input<string>) =>
 		...AUTHORSHIP_LOOP_FLAG,
 		rules: AUTHORSHIP_LOOP_RULES,
 	});
+
+/**
+ * The conversion-funnel readout dark-ship flag config (#1589) — the founder/mod
+ * tier-count surface gates behind this key. Default-OFF so the readout reaches
+ * production dark; flipping it on is the human release act (ADR 0083). Its own key
+ * (not `phoenix-authorship-loop`) so the funnel destination has an independent
+ * lifecycle.
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           funnel (the conversion-readout founder/mod surface)
+ *   - originating:     #1589 (the çaylak→yazar conversion readout)
+ *   - removal trigger: once the funnel readout graduates to on at 100% and stable
+ *                      for one release, retire the flag and inline the surface.
+ */
+export const FUNNEL_READOUT_FLAG = {
+	key: PHOENIX_FUNNEL_READOUT,
+	description:
+		"conversion-funnel readout dark-ship (#1589). owner: funnel. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const funnelReadoutFlag = (appId: Input<string>) =>
+	Cloudflare.FlagshipFlag("phoenix_funnel_readout", {appId, ...FUNNEL_READOUT_FLAG});

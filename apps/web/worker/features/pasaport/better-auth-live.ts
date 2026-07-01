@@ -55,6 +55,10 @@ type AdditionalUserFields = NonNullable<NonNullable<BetterAuthOptions["user"]>["
  *     only by the server promotion path (#1206) / founding seed. A fresh registration
  *     defaults to `çaylak` (the `user.tier` column default) — `input:false` is what
  *     keeps it un-escalatable at sign-up.
+ *   - `promotedAt` — when the account was promoted to `yazar` (#1590), stamped only by
+ *     `Pasaport.promoteToYazar`. `input:false` (like `tier`) keeps it un-writable from
+ *     the wire; `returned:false` keeps the value off the surfaced session/user object —
+ *     the readout is a separate concern (epic Child F), out of scope here.
  *
  * Extracted as a pure value so the `input:false` invariant is unit-assertable
  * (`additional-user-fields.unit.test.ts`) rather than buried in the Layer's Effect.
@@ -63,6 +67,7 @@ export const additionalUserFields = {
 	username: {type: "string", required: false, input: false},
 	role: {type: "string", required: false, input: false},
 	tier: {type: "string", required: false, input: false},
+	promotedAt: {type: "date", required: false, input: false, returned: false},
 } satisfies AdditionalUserFields;
 
 /**

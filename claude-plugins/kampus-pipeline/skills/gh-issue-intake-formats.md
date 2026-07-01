@@ -426,6 +426,46 @@ for the why (agents deploy / humans release) and ADR
 [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)
 for the portability guarantee the graceful-absence contract delivers.
 
+## The PR `area:*` signal — a join-free product/infra tag for the ship digest
+
+The **product-vs-infra split** is the top level of the founder-facing `ship-digest` readout
+(`pipeline-cli ship-digest`) — did this shipped work touch a kamp.us **product** surface, or the
+pipeline / infra **substrate**? That split lives naturally on the **issue** (via its milestone /
+campaign), but a **merged PR carries no milestone** — milestones live on issues only. So the digest
+would have to recover the split by a fragile **PR→issue→milestone join** on every readout. The
+`area:*` **PR label** is the cheap tag that makes the split **join-free**: stamp the merged work's
+section directly on the PR, and the digest reads it without touching the issue graph.
+
+**The convention.** A merged PR may carry **exactly one** of two labels:
+
+| Label | Meaning |
+|---|---|
+| `area:product` | The work touches a **kamp.us user-facing product** surface (sözlük / pano / the web app). |
+| `area:infra` | The work touches the **pipeline / infra / platform substrate** — no user-facing surface. |
+
+**Who applies it.** `ship-it` stamps it **at merge**, echoing the section the PR's linked
+`Fixes #N` issue already implies (its milestone / product surface) — the merge authority is the one
+point that reliably knows the PR↔issue link, so it echoes the signal onto the PR join-free for
+later readouts. A **human** may set it earlier (on the PR at open) when the section is obvious;
+`triage` does **not** — it operates on issues, not PRs, and this is a PR-level tag. It is **not**
+enforced by any gate (retrofitting it onto historical PRs, and any enforcement guard, are
+explicitly out of scope — a later chore if wanted).
+
+**The absent-default (tolerant read).** The label is **optional**: a PR without an `area:*` label
+is well-formed, not a defect (the same tolerant-read stance as a missing `milestone`). When it is
+absent the `ship-digest` gather falls back to the **PR→issue→milestone join** to recover the
+section, and when *that* yields nothing the digest defaults the entry to **`Product`** (the
+reader's default frame) — never dropped. So the signal only ever makes the readout *richer and
+cheaper*; its absence degrades cleanly to the pre-convention join behaviour, never worse.
+
+**Who reads it.** `ship-digest` is the consumer. Its pure core resolves each entry's section with a
+**PR-signal-preferred precedence** (`resolveSection` in
+`packages/pipeline-cli/src/tools/ship-digest/digest.ts`): the entry's `area` (the PR `area:*`
+signal, join-free) wins; when absent the gather-supplied `joinedArea` (the PR→issue→milestone join
+fallback) is consulted; when neither is present it defaults to `Product`. The `/what-shipped`
+gather is what populates `area` from the PR label (join-free) and `joinedArea` from the join when
+the label is missing.
+
 ---
 
 ## 1. The `## Dependencies` grammar

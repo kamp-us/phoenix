@@ -120,6 +120,55 @@ describe("Pasaport.promoteToYazar — atomic, idempotent backlog sweep", () => {
 	);
 
 	it.effect(
+		"the SAME guarded UPDATE stamps promoted_at (#1590) — both promotion paths funnel through `promoteToYazar`, so this is the single stamp site for mod-direct AND vouch-tandem",
+		() => {
+			const cap = capturingBatch(1);
+			return Effect.gen(function* () {
+				const pasaport = yield* Pasaport;
+				yield* pasaport.promoteToYazar({userId: "u-caylak"});
+
+				// `promoted_at` is stamped inside statement 0 — the tier flip — so it commits
+				// in the same guarded UPDATE (WHERE tier = 'çaylak') and the same atomic batch.
+				const tier = cap.statements()[0];
+				assert.isTrue(tier !== undefined);
+				if (tier === undefined) return;
+				const sql = tier.sql.toLowerCase();
+				assert.match(sql, /set[\s\S]*"promoted_at"\s*=\s*\?/); // stamps promoted_at…
+				assert.match(sql, /where[\s\S]*"tier"/); // …only when the tier actually flips (guarded)
+
+				// And it is the ONLY statement that touches promoted_at — no unconditional
+				// write exists, so a non-promoting call (statement 0 matches 0 rows) stamps
+				// nothing and promoted_at stays null.
+				const stmtsTouchingPromotedAt = cap
+					.statements()
+					.filter((s) => s.sql.toLowerCase().includes("promoted_at"));
+				assert.strictEqual(stmtsTouchingPromotedAt.length, 1);
+			}).pipe(Effect.provide(pasaportOver(cap.access)));
+		},
+	);
+
+	it.effect(
+		"a non-promoting call (already-yazar / unknown) leaves promoted_at null — the only promoted_at write is the guarded UPDATE that matched 0 rows",
+		() => {
+			// `capturingBatch(0)` scripts the guarded tier UPDATE to match 0 rows (already
+			// yazar). The stamp rides that same guarded statement, so 0 changes ⇒ 0 rows
+			// stamped ⇒ promoted_at untouched (null preserved).
+			const cap = capturingBatch(0);
+			return Effect.gen(function* () {
+				const pasaport = yield* Pasaport;
+				const {promoted} = yield* pasaport.promoteToYazar({userId: "u-yazar-already"});
+				assert.isFalse(promoted);
+
+				const promotedAtWrites = cap
+					.statements()
+					.filter((s) => s.sql.toLowerCase().includes("promoted_at"));
+				assert.strictEqual(promotedAtWrites.length, 1); // exactly one write site…
+				assert.match(promotedAtWrites[0]?.sql.toLowerCase() ?? "", /where[\s\S]*"tier"/); // …and it is tier-guarded, so 0-row matches stamp nothing
+			}).pipe(Effect.provide(pasaportOver(cap.access)));
+		},
+	);
+
+	it.effect(
 		"each content sweep clears sandboxed_at only for sandboxed, not-removed, owned rows",
 		() => {
 			const cap = capturingBatch(1);
