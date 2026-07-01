@@ -189,6 +189,53 @@ jobs:
           # time. A future auth-less app sets `needs-auth: false` and never reads it.
           BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}
 
+      # Make "prod serves" — not "apply exited 0" — the prod deploy's success signal
+      # (issue #1436). `alchemy deploy` exiting 0 proves only that the apply reconciled;
+      # a cleanly-applied stack can still serve a broken worker (bad binding, failed
+      # migration side-effect, un-provisioned TLS — the #983 class) and go live green.
+      # PR previews are already behaviorally verified (ci.yml e2e hits the preview URL),
+      # so prod — the one environment users actually hit — had the weakest gate. This is
+      # the prod-side analogue of the cleanup job's teardown-verify (#813): a real
+      # post-action behavioral gate that fails loudly rather than pass silently.
+      #
+      # Prod-only by construction: gated on `github.event_name == 'push'` (the sole push
+      # trigger is main → STAGE=prod, per the env block above), so PR `pr-<n>` previews —
+      # already covered by ci.yml e2e — never run it. Bounded retry absorbs Cloudflare's
+      # post-deploy propagation window (a just-deployed worker can 5xx/DNS-miss for a few
+      # seconds), mirroring the teardown-verify's retry loop; on exhaustion it FAILS the
+      # job (no false-green) — an unreachable prod, a non-200, or a body whose `status`
+      # is not "ok" (the health handler returns `{status:"ok",…}`, see
+      # apps/web/worker/http/health.ts) all red the deploy run.
+      - name: Verify prod serves — GET /api/health (${{ matrix.app }})
+        if: github.event_name == 'push' && steps.deploy.outputs.url != ''
+        env:
+          PROD_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -uo pipefail
+          healthy=""
+          last=""
+          # Retry across CF's propagation window (same shape as the teardown-verify loop):
+          # increasing back-off, break the moment prod answers healthy.
+          for attempt in 1 2 3 4 5 6; do
+            code="$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 20 \
+              "${PROD_URL}/api/health" || echo 000)"
+            status="$(jq -r '.status // ""' /tmp/health.json 2>/dev/null || echo "")"
+            last="http=${code} status=${status}"
+            if [ "$code" = "200" ] && [ "$status" = "ok" ]; then
+              healthy=yes
+              break
+            fi
+            echo "attempt ${attempt}: prod not healthy yet (${last}); retrying"
+            sleep $((attempt * 5))
+          done
+          if [ -z "$healthy" ]; then
+            echo "::error::prod health gate FAILED (issue #1436) — ${PROD_URL}/api/health did not serve a healthy 200 (last: ${last})."
+            echo "alchemy deploy exited 0 but prod does not serve. Failing so the broken deploy surfaces instead of going live green."
+            cat /tmp/health.json 2>/dev/null || true
+            exit 1
+          fi
+          echo "prod health verified: ${PROD_URL}/api/health → 200 status=ok"
+
       # Resolve the deployed web stage's D1 UUID so the e2e job (ci.yml, #522) can
       # seed it before running the unauth read specs. The seed needs the physical
       # database id; alchemy's per-stage D1 carries a random 16-char suffix
