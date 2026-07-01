@@ -22,6 +22,13 @@ interface FunnelSummaryRow {
 	firstContributionRate: number;
 	/** Vouch rate (#1592): share of human çaylaks who received ≥ 1 vouch (kefil), in `[0, 1]`. */
 	vouchRate: number;
+	/**
+	 * Median registration→yazar time in ms (#1594), or `null` when no yazar is yet
+	 * measurable (empty measured population).
+	 */
+	timeToPromotionMedianMs: number | null;
+	/** Human yazars excluded from the median for a null `promoted_at` (#1594). */
+	timeToPromotionNotYetMeasurable: number;
 }
 
 export type FunnelSummaryViewRow = ViewRow<FunnelSummaryRow>;
@@ -33,6 +40,8 @@ export class FunnelSummaryView extends FateDataView<FunnelSummaryViewRow>()("Fun
 	promotionRate: true,
 	firstContributionRate: true,
 	vouchRate: true,
+	timeToPromotionMedianMs: true,
+	timeToPromotionNotYetMeasurable: true,
 }) {}
 
 export const funnelSummaryDataView = FunnelSummaryView.view;

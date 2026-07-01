@@ -22,7 +22,11 @@ const FunnelSummaryView = view<FunnelSummaryEntity>()({
 	promotionRate: true,
 	firstContributionRate: true,
 	vouchRate: true,
+	timeToPromotionMedianMs: true,
+	timeToPromotionNotYetMeasurable: true,
 });
+
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 const funnelRequest = {
 	"funnel.summary": {view: FunnelSummaryView},
@@ -41,6 +45,14 @@ function formatRate(rate: number): string {
 		minimumFractionDigits: 1,
 		maximumFractionDigits: 1,
 	});
+}
+
+/** Median time-to-promotion as a Turkish-locale day count (e.g. `12,3 gün`), or a
+ * legible "henüz ölçülemiyor" when no yazar is measurable yet (`null`). */
+function formatMedianDays(medianMs: number | null): string {
+	if (medianMs === null) return "henüz ölçülemiyor";
+	const days = medianMs / MS_PER_DAY;
+	return `${days.toLocaleString("tr-TR", {minimumFractionDigits: 1, maximumFractionDigits: 1})} gün`;
 }
 
 export function FunnelSummary() {
@@ -66,6 +78,20 @@ export function FunnelSummary() {
 				<p className="kp-funnel__headline-value" data-testid="funnel-vouch-rate">
 					{formatRate(summary.vouchRate)}
 				</p>
+			</figure>
+			<figure className="kp-funnel__headline">
+				<figcaption className="kp-funnel__headline-label">yazara geçiş süresi (medyan)</figcaption>
+				<p className="kp-funnel__headline-value" data-testid="funnel-time-to-promotion">
+					{formatMedianDays(summary.timeToPromotionMedianMs)}
+				</p>
+				{summary.timeToPromotionNotYetMeasurable > 0 && (
+					<figcaption
+						className="kp-funnel__headline-note"
+						data-testid="funnel-time-to-promotion-not-measurable"
+					>
+						{formatCount(summary.timeToPromotionNotYetMeasurable)} yazar henüz ölçülemiyor
+					</figcaption>
+				)}
 			</figure>
 			<dl className="kp-funnel__counts">
 				<div className="kp-funnel__metric">

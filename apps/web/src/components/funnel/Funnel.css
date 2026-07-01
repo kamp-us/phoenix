@@ -62,6 +62,11 @@
 	font-variant-numeric: tabular-nums;
 }
 
+.kp-funnel__headline-note {
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
 .kp-funnel__counts {
 	display: grid;
 	grid-template-columns: repeat(2, 1fr);

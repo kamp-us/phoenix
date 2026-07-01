@@ -77,6 +77,33 @@ export interface VouchRate {
 }
 
 /**
+ * The time-to-promotion metric (#1594): how long the loop takes from registration
+ * to yazar, measured `promoted_at − created_at` over human yazars that carry a
+ * non-null `promoted_at` (i.e. promoted since instrumentation landed, #1590). A
+ * single legible product number — the **median** — not a histogram engine.
+ *
+ * Founding-cohort / pre-instrumentation yazars carry a null `promoted_at` (no
+ * source of truth back-computes their promotion time — that is why #1590 stamps
+ * forward only) and are **excluded from the median** and surfaced as an explicit
+ * {@link notYetMeasurableCount}, never silently dropped.
+ */
+export interface TimeToPromotion {
+	/**
+	 * The median of `promoted_at − created_at` in milliseconds over measurable
+	 * yazars, or `null` when none are measurable yet (empty measured population —
+	 * a well-formed "no number yet", never a `NaN`).
+	 */
+	readonly medianMs: number | null;
+	/** The measured population: human yazars with a non-null `promoted_at`. */
+	readonly measuredCount: number;
+	/**
+	 * Human yazars excluded for a null `promoted_at` (founding-cohort /
+	 * pre-instrumentation) — the "not yet measurable" count, surfaced not dropped.
+	 */
+	readonly notYetMeasurableCount: number;
+}
+
+/**
  * The humans-only tier-population query — a `GROUP BY tier` count over the `user`
  * table filtered to `type = 'human'`. Extracted as a pure builder (not inlined in
  * the service) so the humans-only filter is unit-inspectable via `.toSQL()` with no
@@ -201,6 +228,67 @@ export const computeVouchRate = (caylakCount: number, vouchedCount: number): Vou
 	rate: caylakCount === 0 ? 0 : vouchedCount / caylakCount,
 });
 
+/**
+ * Select the promotion/registration timestamps of every human yazar — the raw input
+ * to the median fold. Extracted as a pure builder (the `tierPopulationQuery` idiom)
+ * so the humans-only + yazar-only predicate is `.toSQL()`-inspectable with no engine
+ * (ADR 0082 T1/T2). The median itself lives in TS ({@link computeTimeToPromotion}),
+ * not SQLite — there is no portable median aggregate, and the population is small
+ * (yazars, not all users), so pulling the timestamps and folding is the simpler seam.
+ */
+export const yazarPromotionTimesQuery = (db: DrizzleDb) =>
+	db
+		.select({promotedAt: schema.user.promotedAt, createdAt: schema.user.createdAt})
+		.from(schema.user)
+		.where(and(eq(schema.user.type, "human"), eq(schema.user.tier, "yazar")));
+
+/** One human-yazar row for the time-to-promotion fold: its two nullable stamps. */
+export interface YazarPromotionTimeRow {
+	readonly promotedAt: Date | null;
+	readonly createdAt: Date | null;
+}
+
+/** The median of a numeric list, or `null` when empty. Even population ⇒ the mean of
+ * the two central values (the input need not be pre-sorted). */
+const median = (values: ReadonlyArray<number>): number | null => {
+	if (values.length === 0) return null;
+	const sorted = [...values].sort((a, b) => a - b);
+	const mid = sorted.length >> 1;
+	// `sorted` is non-empty and `mid < length`, so both indexes are in-bounds — the
+	// `?? 0` only satisfies `noUncheckedIndexedAccess`, it can never be reached.
+	return sorted.length % 2 === 1
+		? (sorted[mid] ?? 0)
+		: ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+};
+
+/**
+ * Fold the human-yazar timestamp rows onto {@link TimeToPromotion}: measure
+ * `promoted_at − created_at` (ms) for yazars with a non-null `promoted_at`, take
+ * the median, and count the null-`promoted_at` yazars as `notYetMeasurableCount`.
+ * A yazar with a non-null `promoted_at` but a null `created_at` is a data anomaly
+ * (registration stamp is always set) — it yields no measurable duration, so it is
+ * defensively skipped from the median without being counted as pre-instrumentation.
+ */
+export const computeTimeToPromotion = (
+	rows: ReadonlyArray<YazarPromotionTimeRow>,
+): TimeToPromotion => {
+	const durations: number[] = [];
+	let notYetMeasurableCount = 0;
+	for (const row of rows) {
+		if (row.promotedAt === null) {
+			notYetMeasurableCount++;
+			continue;
+		}
+		if (row.createdAt === null) continue;
+		durations.push(row.promotedAt.getTime() - row.createdAt.getTime());
+	}
+	return {
+		medianMs: median(durations),
+		measuredCount: durations.length,
+		notYetMeasurableCount,
+	};
+};
+
 export class Funnel extends Context.Service<
 	Funnel,
 	{
@@ -210,6 +298,8 @@ export class Funnel extends Context.Service<
 		readonly firstContribution: () => Effect.Effect<FirstContribution>;
 		/** The vouch rate over the human-çaylak population (#1592). */
 		readonly vouchRate: () => Effect.Effect<VouchRate>;
+		/** The median registration→yazar time over measurable yazars (#1594). */
+		readonly timeToPromotion: () => Effect.Effect<TimeToPromotion>;
 	}
 >()("@kampus/funnel/Funnel") {}
 
@@ -233,6 +323,10 @@ export const FunnelLive = Layer.effect(Funnel)(
 				const {caylakCount} = foldTierPopulation(tierRows);
 				const rows = yield* run((db) => vouchedCaylaksQuery(db));
 				return computeVouchRate(caylakCount, rows[0]?.count ?? 0);
+			}),
+			timeToPromotion: Effect.fn("Funnel.timeToPromotion")(function* () {
+				const rows = yield* run((db) => yazarPromotionTimesQuery(db));
+				return computeTimeToPromotion(rows);
 			}),
 		};
 	}),
