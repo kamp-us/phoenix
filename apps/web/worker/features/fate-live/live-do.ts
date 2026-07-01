@@ -12,7 +12,7 @@
  *
  * Cross-role calls go through the DO's OWN namespace, resolved once in the outer
  * (per-instance) init and held in the closure. Same class referencing its own
- * namespace = no sibling cycle, so the Layer requires only `Worker` (ADR 0123 —
+ * namespace = no sibling cycle, so the Layer requires only `Worker` (ADR 0124 —
  * the beta.59 self-namespace resolution). The RPC methods' `R` is `RuntimeContext`
  * (beta.59 colored DO storage + cross-role stubs), discharged at the worker call
  * seam and, in unit tests, via `RuntimeContext.phantom`.
@@ -786,7 +786,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
  * The `LiveDO` implementation Layer (ADR 0028). The DO's OWN namespace is
  * resolved once in the outer (per-instance) init for cross-role addressing —
  * void's `this.env[binding]` pattern — via `Cloudflare.DurableObject`, the
- * beta.59 self-namespace yield (ADR 0123, superseding ADR 0037's removed
+ * beta.59 self-namespace yield (ADR 0124, superseding ADR 0037's removed
  * `DurableObjectNamespaceScope`). The requirement is discharged at the yield
  * site (see below), so the Layer stays `Layer<LiveDO, never, Worker>`; the RPC
  * methods themselves are `RuntimeContext`-colored (beta.59) and discharged at
@@ -805,11 +805,11 @@ export const LiveDOLive = LiveDO.make(
 		// leaves the self-scope in `Req` (it's not a `DurableObjectServices` member)
 		// even though it's provided at runtime, so we narrow the whole Effect to
 		// `Effect<LiveNamespace>` (success widened to this DO's namespace, `R` narrowed
-		// to `never`), grounded in that runtime provision (ADR 0123). `DurableObjectClass`
+		// to `never`), grounded in that runtime provision (ADR 0124). `DurableObjectClass`
 		// and `Effect` don't structurally overlap, so a lone `as` won't convert — the
 		// double cast is the only spelling, and it's laundering a KNOWN-provided service,
 		// not an unverified value.
-		// biome-ignore lint/plugin: discharges the self-scope `Req` that `.make` provides at runtime (alchemy DurableObject.js:640) but leaves in the type — the beta.59 typing gap ADR 0123 records; no value is fabricated, the runtime yield is unchanged.
+		// biome-ignore lint/plugin: discharges the self-scope `Req` that `.make` provides at runtime (alchemy DurableObject.js:640) but leaves in the type — the beta.59 typing gap ADR 0124 records; no value is fabricated, the runtime yield is unchanged.
 		const live = yield* Cloudflare.DurableObject as unknown as Effect.Effect<LiveNamespace>;
 		// The shared-init gen RETURNS the per-instance Effect (run once per instance
 		// wake). `return yield*` would run per-instance setup during shared init.

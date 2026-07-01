@@ -31,7 +31,7 @@ import {topicsForPublish, topicsForSubscribe} from "./protocol.ts";
 
 // alchemy beta.59 colored the DO storage methods (and every `LiveRpcSurface`
 // method that touches `state.storage` or hops cross-role) with `RuntimeContext`
-// (ADR 0123). The KV-only `do-state` fake is pure `Effect.sync`, so nothing
+// (ADR 0124). The KV-only `do-state` fake is pure `Effect.sync`, so nothing
 // actually reads the context at runtime — `RuntimeContext.phantom` discharges the
 // type requirement so these in-process unit runs stay `Effect.runPromise`-able.
 const run = <A>(effect: Effect.Effect<A, never, RuntimeContext>): Promise<A> =>

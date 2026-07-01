@@ -127,3 +127,4 @@ One row per ADR. Read the file for the why.
 | [0120](0120-stage-right-sizing-trivial-diff-lighter-gate.md) | Right-Size the Pipeline Fan-Out to Diff Complexity — A Trivially-Classified Diff Routes to a Lighter-but-Still-Fail-Closed Gate (Adopt Behind an ADR 0112 Measurement Gate; Bounded in the Spirit of 0070) | accepted | 2026-06-28 |
 | [0121](0121-email-verification-non-gating-v1.md) | Email verification stays non-gating under v1 — a sent-but-advisory signal, not an access gate | accepted | 2026-06-28 |
 | [0122](0122-username-immutable-v1.md) | Username stays immutable under v1 — a deliberate set-once @handle, not a changeable field | accepted | 2026-06-28 |
+| [0124](0124-livedo-self-addressing-beta59-runtime-scope.md) | LiveDO cross-role self-addressing on alchemy beta.59 — resolve the self-namespace at runtime, discharge the phantom Req leak | accepted | 2026-07-01 |

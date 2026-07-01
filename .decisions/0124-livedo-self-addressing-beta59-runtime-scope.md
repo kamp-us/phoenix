@@ -1,12 +1,12 @@
 ---
-id: 0123
+id: 0124
 title: LiveDO cross-role self-addressing on alchemy beta.59 — resolve the self-namespace at runtime, discharge the phantom Req leak
 status: accepted
 date: 2026-07-01
 tags: [live, durable-objects, alchemy, effect]
 ---
 
-# 0123 — LiveDO cross-role self-addressing on alchemy beta.59
+# 0124 — LiveDO cross-role self-addressing on alchemy beta.59
 
 ## Context
 
