@@ -1,24 +1,39 @@
 #!/usr/bin/env node
 /**
  * `cf-utils` — the human-operated Cloudflare Flagship read/flip CLI (`effect/unstable/cli`,
- * mirroring `@kampus/moderator-grant`/`@kampus/orphan-sweep`). This slice ships `flag list`:
- * enumerate every Flagship flag across every env and print them as a `flag × env` table.
+ * mirroring `@kampus/moderator-grant`/`@kampus/orphan-sweep`). Two surfaces today:
  *
- *   node src/bin.ts flag list
+ *   node src/bin.ts flag list                              enumerate every flag × env
+ *   node src/bin.ts flag set <key> on|off --env <env>      dry-run the served-value flip
+ *   node src/bin.ts flag set <key> on|off --env <env> --execute   apply it
  *   $CLOUDFLARE_API_TOKEN   the minted CF token (read by CredentialsFromEnv)
- *   $CLOUDFLARE_ACCOUNT_ID  the account to enumerate
+ *   $CLOUDFLARE_ACCOUNT_ID  the account to operate on
  *
- * The thin shell delegates to the pure core (`flag.ts`) via the injectable read client
+ * `flag set` is the human release act (ADR 0083, "agents deploy, humans release"): it flips a
+ * flag's served/default value from the terminal instead of the dashboard, scriptably and with
+ * a trail. It DRY-RUNS by default — reads current state, prints the `current → target` diff,
+ * and writes NOTHING; the mutation happens only under `--execute` (mirroring orphan-sweep). The
+ * write must never be invoked by the pipeline autonomously.
+ *
+ * The thin shell delegates to the pure core (`flag.ts`) via the injectable clients
  * (`flagship.ts`); an unreachable/unauthorized CF surfaces a typed error (rendered by
  * `NodeRuntime.runMain`), never a raw stack trace.
  */
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Layer} from "effect";
-import {Command} from "effect/unstable/cli";
+import {Argument, Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import {renderFlagTable} from "./flag.ts";
-import {FlagshipRead, FlagshipReadLive} from "./flagship.ts";
+import {
+	computeFlipPlan,
+	decodeEnv,
+	FlagEnvNotFound,
+	type FlagTarget,
+	findAppForEnv,
+	renderFlagTable,
+	renderFlipPlan,
+} from "./flag.ts";
+import {FlagshipRead, FlagshipReadLive, FlagshipWrite, FlagshipWriteLive} from "./flagship.ts";
 
 const list = Command.make(
 	"list",
@@ -32,9 +47,70 @@ const list = Command.make(
 	Command.withDescription("List every Flagship flag × env (key, env, enabled, default value)"),
 );
 
+const keyArg = Argument.string("key").pipe(
+	Argument.withDescription("the flag key to flip (e.g. authorship-loop)"),
+);
+const stateArg = Argument.choice("state", ["on", "off"] as const).pipe(
+	Argument.withDescription("the served/default value to set — on or off"),
+);
+const envFlag = Flag.string("env").pipe(
+	Flag.withDescription("the env to flip the flag in (e.g. prod)"),
+);
+const executeFlag = Flag.boolean("execute").pipe(
+	Flag.withDescription(
+		"actually apply the flip (default: dry-run — print the diff, write nothing)",
+	),
+);
+
+const set = Command.make(
+	"set",
+	{key: keyArg, state: stateArg, env: envFlag, execute: executeFlag},
+	Effect.fn(function* ({key, state, env, execute}) {
+		const target = state as FlagTarget;
+		const read = yield* FlagshipRead;
+
+		// Resolve the app for the env FIRST — an unknown env fails not-found before any read/write.
+		const apps = yield* read.listApps();
+		const app = findAppForEnv(apps, env);
+		if (app === undefined) {
+			const knownEnvs = [
+				...new Set(apps.map((a) => decodeEnv(a.name)).filter((e): e is string => e !== undefined)),
+			].sort();
+			return yield* new FlagEnvNotFound({env, knownEnvs});
+		}
+
+		// Read the current served variation (an unknown key fails FlagshipFlagNotFound here, still
+		// before any write), then compute + render the pure flip plan.
+		const current = yield* read.getAppFlag(app.id, key);
+		const plan = computeFlipPlan({key, env, currentVariation: current.defaultVariation, target});
+		yield* Console.log(renderFlipPlan(plan));
+
+		if (!execute) {
+			yield* Console.log("  (dry-run — pass --execute to apply; the flag is unchanged)");
+			return;
+		}
+		if (!plan.changed) {
+			yield* Console.log("  (already at target — nothing to write)");
+			return;
+		}
+
+		const write = yield* FlagshipWrite;
+		const updated = yield* write.setFlagDefault({
+			appId: app.id,
+			flagKey: key,
+			targetVariation: target,
+		});
+		yield* Console.log(`  applied — ${key} @ ${env} now serves "${updated.defaultVariation}"`);
+	}),
+).pipe(
+	Command.withDescription(
+		"Flip a flag's served/default value in an env (dry-run by default; --execute to apply)",
+	),
+);
+
 const flag = Command.make("flag").pipe(
-	Command.withSubcommands([list]),
-	Command.withDescription("Read Flagship flags across every env"),
+	Command.withSubcommands([list, set]),
+	Command.withDescription("Read and flip Flagship flags across every env"),
 );
 
 const cli = Command.make("cf-utils").pipe(
@@ -42,9 +118,10 @@ const cli = Command.make("cf-utils").pipe(
 	Command.withDescription("Human-operated Cloudflare Flagship read/flip CLI"),
 );
 
-// The read client runs over the env-credentialed REST transport (the d1-rest convention);
-// `provideMerge(NodeServices.layer)` keeps the Node services the CLI runtime needs (argv, stdout).
-const AppLayer = FlagshipReadLive.pipe(
+// The read + write clients run over the env-credentialed REST transport (the d1-rest
+// convention); `provideMerge(NodeServices.layer)` keeps the Node services the CLI runtime
+// needs (argv, stdout).
+const AppLayer = Layer.mergeAll(FlagshipReadLive, FlagshipWriteLive).pipe(
 	Layer.provide(Layer.merge(CredentialsFromEnv, FetchHttpClient.layer)),
 	Layer.provideMerge(NodeServices.layer),
 );

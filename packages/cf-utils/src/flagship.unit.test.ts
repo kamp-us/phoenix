@@ -12,7 +12,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, type Exit, Layer} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
-import {FlagshipRead, FlagshipReadLive} from "./flagship.ts";
+import {FlagshipRead, FlagshipReadLive, FlagshipWrite, FlagshipWriteLive} from "./flagship.ts";
 
 const app = (id: string, name: string) => ({
 	id,
@@ -142,5 +142,84 @@ describe("FlagshipRead.listFlagStates — decode flags × env over a stubbed tra
 
 		// No row ever came from the foreign app.
 		assert.isUndefined(rows.find((r) => r.env === undefined));
+	});
+});
+
+// The flip seam over a STUBBED transport — no real CF write in the unit tier (the #1609
+// acceptance). The stub replays a GET of the current flag, then captures the PUT body so the
+// test proves the write moves ONLY `default_variation` and passes `enabled`/`variations`/
+// `rules` through verbatim.
+const currentFlag = flag("authorship-loop", true, "off", {off: false, on: true});
+
+let capturedPut: {readonly method: string; readonly body: Record<string, unknown>} | undefined;
+
+const writeStub: Layer.Layer<HttpClient.HttpClient> = Layer.succeed(HttpClient.HttpClient)(
+	HttpClient.make((request, url) => {
+		const isFlag = /\/flagship\/apps\/[^/]+\/flags\/authorship-loop$/.test(url.pathname);
+		let payload: unknown = {success: false, errors: [{code: 7003, message: "unrouted path"}]};
+		if (isFlag && request.method === "GET") {
+			payload = {result: currentFlag, success: true, errors: []};
+		} else if (isFlag && request.method === "PUT") {
+			const body =
+				request.body._tag === "Uint8Array"
+					? (JSON.parse(new TextDecoder().decode(request.body.body)) as Record<string, unknown>)
+					: {};
+			capturedPut = {method: request.method, body};
+			payload = {
+				result: {...currentFlag, default_variation: body.default_variation},
+				success: true,
+				errors: [],
+			};
+		}
+		return Effect.succeed(
+			HttpClientResponse.fromWeb(
+				request,
+				new Response(JSON.stringify(payload), {
+					status: 200,
+					headers: {"content-type": "application/json"},
+				}),
+			),
+		);
+	}),
+);
+
+const writeDeps = FlagshipWriteLive.pipe(
+	Layer.provide(Layer.merge(fromApiToken({apiToken: "unit-test-token"}), writeStub)),
+);
+
+const runSetFlagDefault = (targetVariation: string): Promise<Exit.Exit<unknown, unknown>> => {
+	const saved = process.env[ACCOUNT_KEY];
+	process.env[ACCOUNT_KEY] = "acct-test";
+	capturedPut = undefined;
+	return Effect.runPromiseExit(
+		FlagshipWrite.pipe(
+			Effect.flatMap((client) =>
+				client.setFlagDefault({appId: "app-prod", flagKey: "authorship-loop", targetVariation}),
+			),
+			Effect.provide(writeDeps),
+		),
+	).finally(() => {
+		if (saved === undefined) delete process.env[ACCOUNT_KEY];
+		else process.env[ACCOUNT_KEY] = saved;
+	});
+};
+
+describe("FlagshipWrite.setFlagDefault — flip the served value over a stubbed transport", () => {
+	it("reads then PUTs, moving ONLY default_variation and passing enabled/variations/rules through", async () => {
+		const exit = await runSetFlagDefault("on");
+		assert.strictEqual(exit._tag, "Success");
+		if (exit._tag !== "Success") return;
+
+		// The write happened via PUT, carrying the new served value.
+		assert.strictEqual(capturedPut?.method, "PUT");
+		assert.strictEqual(capturedPut?.body.default_variation, "on");
+		// Everything else round-trips verbatim — no targeting-rule / enable edits (#1609 scope).
+		assert.strictEqual(capturedPut?.body.enabled, true);
+		assert.deepStrictEqual(capturedPut?.body.variations, {off: false, on: true});
+		assert.deepStrictEqual(capturedPut?.body.rules, []);
+
+		// The returned flag reflects the confirmed new served value.
+		const updated = exit.value as {defaultVariation: string};
+		assert.strictEqual(updated.defaultVariation, "on");
 	});
 });
