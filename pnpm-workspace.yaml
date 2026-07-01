@@ -8,11 +8,12 @@ catalog:
   '@base-ui/react': ^1.4.1
   '@better-auth/core': 1.6.10
   '@biomejs/biome': ^2.4.15
-  '@cloudflare/workers-types': ^4.20260509.1
+  '@cloudflare/workers-types': ^4.20260629.1
   '@distilled.cloud/cloudflare': 0.25.2
   '@effect/language-service': ^0.85.1
   '@effect/platform-bun': 4.0.0-beta.78
   '@effect/platform-node': 4.0.0-beta.78
+  '@effect/sql-d1': 4.0.0-beta.78
   '@effect/sql-pg': 4.0.0-beta.78
   '@effect/tsgo': ^0.5.2
   '@effect/vitest': 4.0.0-beta.78
@@ -32,8 +33,8 @@ catalog:
   alchemy: 2.0.0-beta.56
   better-auth: ^1.6.10
   better-call: 1.3.5
-  drizzle-kit: 1.0.0-rc.3
-  drizzle-orm: 1.0.0-rc.3
+  drizzle-kit: 1.0.0-rc.4
+  drizzle-orm: 1.0.0-rc.4
   effect: 4.0.0-beta.78
   jsdom: ^26.1.0
   lefthook: ^2.1.9

@@ -31,6 +31,7 @@
 		"@better-auth/core": "catalog:",
 		"@effect/platform-bun": "catalog:",
 		"@effect/platform-node": "catalog:",
+		"@effect/sql-d1": "catalog:",
 		"@effect/sql-pg": "catalog:",
 		"@nkzw/fate": "catalog:",
 		"@sentry/cloudflare": "catalog:",
