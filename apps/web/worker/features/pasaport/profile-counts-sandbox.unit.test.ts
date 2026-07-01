@@ -33,7 +33,6 @@ import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
-import * as schema from "../../db/drizzle/schema.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
@@ -97,7 +96,7 @@ function scriptedAccess(
 	binding: D1Database,
 	results: ReadonlyArray<unknown>,
 ): {access: DrizzleAccess; builderSql: string[]} {
-	const renderDb = drizzle(binding, {schema, relations});
+	const renderDb = drizzle(binding, {relations});
 	const builderSql: string[] = [];
 	const state = {i: 0};
 	const access: DrizzleAccess = {

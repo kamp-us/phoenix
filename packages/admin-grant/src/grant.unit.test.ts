@@ -13,6 +13,7 @@
  */
 import {and, eq, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
+import {defineRelations} from "drizzle-orm/relations";
 import {assert, describe, it} from "vitest";
 import {ADMIN, PLATFORM} from "./grant.ts";
 import {grantSchema as schema} from "./schema.ts";
@@ -22,7 +23,7 @@ import {grantSchema as schema} from "./schema.ts";
 // engine" shape — same idiom as moderator-grant's `grant.unit.test.ts`).
 // biome-ignore lint/plugin: a no-op stand-in (statement-building never touches the binding) can't be structurally typed as the full `D1Database` interface; nothing here calls a binding method.
 const inertD1 = {} as unknown as D1Database;
-const db = drizzle(inertD1, {schema});
+const db = drizzle(inertD1, {relations: defineRelations(schema)});
 
 describe("the admin grant is keyed on the canonical platform node", () => {
 	it("ADMIN is the `admin` relation and PLATFORM is key(platform) = 'platform:platform'", () => {

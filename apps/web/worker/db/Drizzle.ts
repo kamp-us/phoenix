@@ -26,7 +26,7 @@ import * as schema from "../db/drizzle/schema.ts";
 export const relations = defineRelations(schema);
 
 /** Carries both `schema` and `relations` generics so `db.query` and `db.select()` are typed. */
-export type DrizzleDb = ReturnType<typeof drizzle<typeof schema, typeof relations>>;
+export type DrizzleDb = ReturnType<typeof drizzle<typeof relations>>;
 
 /**
  * The schema-agnostic surface the FTS dual-write builders need: just
@@ -110,7 +110,7 @@ export const orDieAccess = (access: DrizzleAccess): DrizzleAccessOrDie => ({
 export class Drizzle extends Context.Service<Drizzle, DrizzleAccess>()("@kampus/Drizzle") {}
 
 /** The single place `drizzle(db, {schema, relations})` is called (worker init + tests). */
-export const createDrizzle = (db: D1Database): DrizzleDb => drizzle(db, {schema, relations});
+export const createDrizzle = (db: D1Database): DrizzleDb => drizzle(db, {relations});
 
 /**
  * The single home of the `run` / `batch` bodies — the promise → Effect boundary

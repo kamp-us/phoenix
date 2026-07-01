@@ -3,7 +3,7 @@
  * 0082 §irreducible-integration names for the write→sync→read dual-write loop).
  *
  * `@kampus/fts-backfill`'s pure core is unit-tested (`buildBackfillStatements`,
- * #534) — byte-correct statements against `SQLiteSyncDialect`, no DB. That proves
+ * #534) — byte-correct statements against `SQLiteDialect`, no DB. That proves
  * what the backfill *writes*, never that a backfilled row is *findable* by a query
  * that folds the same way on D1's FTS5 (≠ `node:sqlite`'s). This test runs the REAL
  * shipped bin (`fts-backfill run --database-id <id> --account-id <acct>`) as a

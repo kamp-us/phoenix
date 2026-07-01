@@ -1,16 +1,16 @@
 /**
  * Unit coverage for the shared keyset primitives. Predicates are rendered to
- * SQLite text + params via `SQLiteSyncDialect` so the tests assert the actual
+ * SQLite text + params via `SQLiteDialect` so the tests assert the actual
  * comparison operators and column order, not just a structural shape.
  */
 
 import type {SQL} from "drizzle-orm";
-import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
+import {SQLiteDialect} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
 import {commentRecord, definitionRecord, postRecord, termRecord} from "./drizzle/schema";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "./keyset";
 
-const dialect = new SQLiteSyncDialect();
+const dialect = new SQLiteDialect();
 const render = (sql: SQL) => dialect.sqlToQuery(sql);
 
 describe("keysetAfter", () => {

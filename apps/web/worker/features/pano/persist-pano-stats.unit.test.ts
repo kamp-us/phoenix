@@ -12,13 +12,13 @@
  * is unit-reachable here.
  */
 import {describe, it} from "@effect/vitest";
-import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
+import {SQLiteDialect} from "drizzle-orm/sqlite-core";
 import {Effect} from "effect";
 import {assert} from "vitest";
 import type {DrizzleAccessOrDie, DrizzleDb} from "../../db/Drizzle.ts";
 import {makePersistPanoStats} from "./pano-stats.ts";
 
-const dialect = new SQLiteSyncDialect();
+const dialect = new SQLiteDialect();
 
 // makePersistPanoStats issues four `run`s in order: the three live COUNTs (posts,
 // comments, authors) then the `pano_stats` upsert. The first three replay canned

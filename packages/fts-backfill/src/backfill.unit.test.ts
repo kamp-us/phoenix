@@ -9,7 +9,7 @@
  * a builder that isn't batch-preparable throws there, so a regression to a
  * non-batchable item shape (e.g. re-wrapping through `db.run(sql)`) fails here, not
  * only on remote D1. To assert the rendered SQL/params we render each builder's
- * `getSQL()` via `SQLiteSyncDialect`.
+ * `getSQL()` via `SQLiteDialect`.
  *
  * The load-bearing assertion is that the indexed `norm` equals the worker's OWN
  * `normalizeSearchText(title)` — importing the canonical fold here pins the
@@ -18,11 +18,11 @@
  */
 import {createDrizzle} from "@kampus/web/db/Drizzle";
 import {normalizeSearchText} from "@kampus/web/features/search/normalize";
-import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
+import {SQLiteDialect} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
 import {buildBackfillStatements, type SourceRow} from "./backfill.ts";
 
-const dialect = new SQLiteSyncDialect();
+const dialect = new SQLiteDialect();
 const renderStmt = (stmt: {getSQL: () => never}) => dialect.sqlToQuery(stmt.getSQL());
 
 /**

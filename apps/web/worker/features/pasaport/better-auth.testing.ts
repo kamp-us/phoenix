@@ -12,6 +12,7 @@ import {type Auth, type BetterAuthOptions, betterAuth as makeBetterAuth} from "b
 import {drizzleAdapter} from "better-auth/adapters/drizzle";
 import {bearer} from "better-auth/plugins";
 import {drizzle} from "drizzle-orm/d1";
+import {defineRelations} from "drizzle-orm/relations";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
@@ -32,7 +33,7 @@ import * as schema from "../../db/drizzle/schema.ts";
  * Returns a concrete `Auth<{…}>`; callers widen to the generic `Auth` (see {@link layerTest}).
  */
 export function makeRealAuthForTest(d1: D1Database) {
-	const db = drizzle(d1, {schema});
+	const db = drizzle(d1, {relations: defineRelations(schema)});
 	return makeBetterAuth({
 		emailAndPassword: {enabled: true},
 		database: drizzleAdapter(db, {provider: "sqlite", schema}),

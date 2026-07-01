@@ -13,11 +13,11 @@
  */
 import {createDrizzle, type DrizzleDb} from "@kampus/web/db/Drizzle";
 import {syncTermSearch} from "@kampus/web/features/search/fts-sync";
-import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
+import {SQLiteDialect} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
 import {backfill} from "./backfill.ts";
 
-const dialect = new SQLiteSyncDialect();
+const dialect = new SQLiteDialect();
 const renderStmt = (stmt: {getSQL: () => never}) => dialect.sqlToQuery(stmt.getSQL());
 
 /** One recorded statement as it reaches the D1 binding's batch contract. */

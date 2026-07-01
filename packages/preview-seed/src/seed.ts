@@ -20,6 +20,7 @@
 import {normalizeSearchText} from "@kampus/web/features/search/normalize";
 import {eq} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
+import {defineRelations} from "drizzle-orm/relations";
 import {buildFixtures} from "./fixtures.ts";
 import {
 	definitionRecord,
@@ -30,9 +31,14 @@ import {
 	termSearch,
 } from "./schema.ts";
 
-export type SeedDb = ReturnType<typeof drizzle<typeof seedSchema>>;
+// RQB v2 (drizzle 1.0): drizzle() takes `relations`, not `schema` (ADR: #727). This
+// seed runs no relational `.with` traversal, so empty `defineRelations(seedSchema)` just
+// registers the tables — mirrors apps/web worker/db/Drizzle.ts.
+const relations = defineRelations(seedSchema);
 
-export const makeSeedDb = (d1: D1Database): SeedDb => drizzle(d1, {schema: seedSchema});
+export type SeedDb = ReturnType<typeof drizzle<typeof relations>>;
+
+export const makeSeedDb = (d1: D1Database): SeedDb => drizzle(d1, {relations});
 
 /** How many rows of each kind the seed wrote — surfaced by the bin for a legible CI log. */
 export interface SeedReport {

@@ -13,6 +13,7 @@
  */
 import {and, eq, inArray, ne, or, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
+import {defineRelations} from "drizzle-orm/relations";
 import {assert, describe, it} from "vitest";
 import {seedSchema as schema} from "./schema.ts";
 import {FOUNDER_ROLE, FOUNDER_TIER, MODERATES, PLATFORM, seedFounders} from "./seed.ts";
@@ -22,7 +23,7 @@ import {FOUNDER_ROLE, FOUNDER_TIER, MODERATES, PLATFORM, seedFounders} from "./s
 // engine" shape — same idiom as moderator-grant's `grant.unit.test.ts`).
 // biome-ignore lint/plugin: a no-op stand-in (statement-building never touches the binding) can't be structurally typed as the full `D1Database` interface; nothing here calls a binding method.
 const inertD1 = {} as unknown as D1Database;
-const db = drizzle(inertD1, {schema});
+const db = drizzle(inertD1, {relations: defineRelations(schema)});
 
 describe("an empty cohort is a clean no-op (short-circuits before any DB call)", () => {
 	it("returns all-zero counts without touching the binding", async () => {
