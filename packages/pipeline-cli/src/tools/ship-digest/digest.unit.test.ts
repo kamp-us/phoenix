@@ -2,6 +2,8 @@ import {assert, describe, it} from "@effect/vitest";
 import {
 	deriveShipDigest,
 	groupEntries,
+	type ReleaseState,
+	resolveReleaseState,
 	resolveSection,
 	type ShipEntry,
 	sectionFor,
@@ -201,5 +203,133 @@ describe("deriveShipDigest — founder-facing rendered digest", () => {
 	it("ends with a trailing newline", () => {
 		const md = deriveShipDigest([entry({pr: 1, area: "product", type: "feature"})], WINDOW);
 		assert.isTrue(md.endsWith("\n"));
+	});
+});
+
+describe("resolveReleaseState — merged-vs-live-to-users axis (ADR 0123)", () => {
+	it("passes through each known state", () => {
+		for (const state of ["live", "awaiting-release", "dark"] as const) {
+			assert.strictEqual(resolveReleaseState(state), state);
+		}
+	});
+
+	it("is case- and whitespace-insensitive", () => {
+		assert.strictEqual(resolveReleaseState("  DARK "), "dark");
+		assert.strictEqual(resolveReleaseState("Awaiting-Release"), "awaiting-release");
+	});
+
+	it("defaults an absent state to unknown, never live", () => {
+		const resolved: ReleaseState = resolveReleaseState(undefined);
+		assert.strictEqual(resolved, "unknown");
+	});
+
+	it("maps a blank or unrecognized state to unknown, never live", () => {
+		assert.strictEqual(resolveReleaseState("   "), "unknown");
+		assert.strictEqual(resolveReleaseState("mystery"), "unknown");
+	});
+});
+
+describe("deriveShipDigest — live/dark inline annotation per entry", () => {
+	it("annotates a live entry", () => {
+		const md = deriveShipDigest(
+			[entry({pr: 1, area: "product", type: "feature", title: "live thing", releaseState: "live"})],
+			WINDOW,
+		);
+		assert.include(md, "- live thing (#1) — live");
+	});
+
+	it("annotates a dark entry", () => {
+		const md = deriveShipDigest(
+			[entry({pr: 2, area: "product", type: "feature", title: "dark thing", releaseState: "dark"})],
+			WINDOW,
+		);
+		assert.include(md, "- dark thing (#2) — dark");
+	});
+
+	it("annotates an awaiting-release entry", () => {
+		const md = deriveShipDigest(
+			[
+				entry({
+					pr: 3,
+					area: "product",
+					type: "feature",
+					title: "queued thing",
+					releaseState: "awaiting-release",
+				}),
+			],
+			WINDOW,
+		);
+		assert.include(md, "- queued thing (#3) — awaiting release");
+	});
+
+	it("annotates a merged entry with no resolvable state as unknown, never live", () => {
+		const md = deriveShipDigest(
+			[entry({pr: 4, area: "product", type: "feature", title: "mystery thing"})],
+			WINDOW,
+		);
+		assert.include(md, "- mystery thing (#4) — release state unknown");
+		assert.notInclude(md, "- mystery thing (#4) — live");
+	});
+});
+
+describe("deriveShipDigest — the currently-dark / awaiting-release callout section", () => {
+	it("surfaces dark and awaiting-release work in a distinct callout, grouped by state", () => {
+		const md = deriveShipDigest(
+			[
+				entry({pr: 1, area: "product", type: "feature", title: "dark feat", releaseState: "dark"}),
+				entry({
+					pr: 2,
+					area: "product",
+					type: "feature",
+					title: "queued feat",
+					releaseState: "awaiting-release",
+				}),
+				entry({pr: 3, area: "product", type: "feature", title: "live feat", releaseState: "live"}),
+			],
+			WINDOW,
+		);
+		assert.include(md, "## Currently dark — awaiting your release");
+		assert.include(md, "### dark");
+		assert.include(md, "- dark feat (#1)");
+		assert.include(md, "### awaiting release");
+		assert.include(md, "- queued feat (#2)");
+	});
+
+	it("places the dark callout before the Product/Infra grouping", () => {
+		const md = deriveShipDigest(
+			[entry({pr: 1, area: "product", type: "feature", title: "dark feat", releaseState: "dark"})],
+			WINDOW,
+		);
+		assert.isBelow(
+			md.indexOf("## Currently dark — awaiting your release"),
+			md.indexOf("## Product"),
+		);
+	});
+
+	it("does not list a live entry in the dark callout", () => {
+		const md = deriveShipDigest(
+			[entry({pr: 9, area: "product", type: "feature", title: "live only", releaseState: "live"})],
+			WINDOW,
+		);
+		assert.notInclude(md, "## Currently dark — awaiting your release");
+	});
+
+	it("does not assert an unknown-state entry as awaiting-release in the callout", () => {
+		const md = deriveShipDigest(
+			[entry({pr: 7, area: "product", type: "feature", title: "mystery only"})],
+			WINDOW,
+		);
+		assert.notInclude(md, "## Currently dark — awaiting your release");
+	});
+
+	it("omits the callout entirely when nothing is dark or awaiting-release", () => {
+		const md = deriveShipDigest(
+			[
+				entry({pr: 1, area: "product", type: "feature", title: "a", releaseState: "live"}),
+				entry({pr: 2, area: "infra", type: "chore", title: "b", releaseState: "live"}),
+			],
+			WINDOW,
+		);
+		assert.notInclude(md, "Currently dark");
 	});
 });
