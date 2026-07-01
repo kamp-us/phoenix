@@ -42,12 +42,14 @@ const summaryGated = Effect.fn("funnel.summaryGated")(function* () {
 	yield* ViewFunnel;
 	const funnel = yield* Funnel;
 	const population = yield* funnel.tierPopulation();
+	const {rate: firstContributionRate} = yield* funnel.firstContribution();
 	return {
 		__typename: "FunnelSummary" as const,
 		id: FUNNEL_SUMMARY_ID,
 		caylakCount: population.caylakCount,
 		yazarCount: population.yazarCount,
 		promotionRate: promotionRate(population),
+		firstContributionRate,
 	};
 });
 

@@ -1,7 +1,8 @@
 /**
  * `FunnelSummary` — the conversion-funnel readout's one data view (#1589): the
  * current tier population (çaylak + yazar counts) plus the headline promotion rate
- * (#1593) as a singleton entity the mod front page reads with `useRequest`. The
+ * (#1593) and the first-contribution rate (#1591) as a singleton entity the mod front
+ * page reads with `useRequest`. The
  * client normalizes by `record.id`, so the
  * entity carries a stable synthetic `id` (`"summary"`, stamped by
  * `queries.funnelSummary`) — there's only ever one row, so it collapses to a single
@@ -17,6 +18,8 @@ interface FunnelSummaryRow {
 	yazarCount: number;
 	/** The headline promotion rate (#1593), a fraction in `[0, 1]`. */
 	promotionRate: number;
+	/** First-contribution rate (#1591): share of human çaylaks with ≥ 1 sandboxed contribution, in `[0, 1]`. */
+	firstContributionRate: number;
 }
 
 export type FunnelSummaryViewRow = ViewRow<FunnelSummaryRow>;
@@ -26,6 +29,7 @@ export class FunnelSummaryView extends FateDataView<FunnelSummaryViewRow>()("Fun
 	caylakCount: true,
 	yazarCount: true,
 	promotionRate: true,
+	firstContributionRate: true,
 }) {}
 
 export const funnelSummaryDataView = FunnelSummaryView.view;

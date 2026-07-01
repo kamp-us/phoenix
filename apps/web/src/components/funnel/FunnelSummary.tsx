@@ -1,11 +1,11 @@
 /**
- * `FunnelSummary` — the conversion readout's card (#1589): the headline promotion
- * rate (#1593) over the two tier counts (çaylak, yazar) the founder/mod front page
- * renders. Reads the gated `funnel.summary` DESTINATION (founder/mod, behind
- * `phoenix-funnel-readout`); a non-mod read denies the invisible `UNAUTHORIZED`,
- * caught by the page's `<Screen>`.
+ * `FunnelSummary` — the conversion readout's card (#1589): the two headline rates —
+ * the promotion rate (#1593) and the first-contribution rate (#1591) — over the two
+ * tier counts (çaylak, yazar) the founder/mod front page renders. Reads the gated
+ * `funnel.summary` DESTINATION (founder/mod, behind `phoenix-funnel-readout`); a
+ * non-mod read denies the invisible `UNAUTHORIZED`, caught by the page's `<Screen>`.
  *
- * a11y (#1202 baseline): the headline rate is a labelled figure (`<figure>` +
+ * a11y (#1202 baseline): each headline rate is a labelled figure (`<figure>` +
  * `<figcaption>`), and the counts are a real description list (`<dl>`) so each number
  * carries an accessible label (the term names the tier, the count is its definition);
  * the numbers are text, never color-coded; copy is lowercase Turkish.
@@ -19,6 +19,7 @@ const FunnelSummaryView = view<FunnelSummaryEntity>()({
 	caylakCount: true,
 	yazarCount: true,
 	promotionRate: true,
+	firstContributionRate: true,
 });
 
 const funnelRequest = {
@@ -50,6 +51,12 @@ export function FunnelSummary() {
 				<figcaption className="kp-funnel__headline-label">yazar dönüşüm oranı</figcaption>
 				<p className="kp-funnel__headline-value" data-testid="funnel-promotion-rate">
 					{formatRate(summary.promotionRate)}
+				</p>
+			</figure>
+			<figure className="kp-funnel__headline">
+				<figcaption className="kp-funnel__headline-label">ilk katkı oranı</figcaption>
+				<p className="kp-funnel__headline-value" data-testid="funnel-first-contribution-rate">
+					{formatRate(summary.firstContributionRate)}
 				</p>
 			</figure>
 			<dl className="kp-funnel__counts">

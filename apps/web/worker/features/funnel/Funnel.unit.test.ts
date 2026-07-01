@@ -1,8 +1,8 @@
 /**
- * `Funnel` read-model coverage (#1589, #1593) — the tier-population counts, the
- * headline promotion rate, and the humans-only filter, the decisions that are
- * wrong-or-right with no engine (ADR 0082 T1/T2). The `Drizzle` seam is substituted
- * directly (the `Report` / `promotion-sweep` idiom):
+ * `Funnel` read-model coverage (#1589, #1593, #1591) — the tier-population counts,
+ * the headline promotion rate, the first-contribution rate, and the humans-only
+ * filter, the decisions that are wrong-or-right with no engine (ADR 0082 T1/T2). The
+ * `Drizzle` seam is substituted directly (the `Report` / `promotion-sweep` idiom):
  *
  *   - **counts** — a scripted `run` feeds grouped rows to `foldTierPopulation`
  *     THROUGH the real `FunnelLive` service, proving çaylak/yazar map to the right
@@ -10,6 +10,10 @@
  *   - **promotion rate** — `promotionRate` derives yazar / (çaylak + yazar) from the
  *     population, both directly and end-to-end over the seam, covering the
  *     zero-population edge (`0`, never a `NaN`).
+ *   - **first-contribution rate** — `computeFirstContribution` folds the çaylak count
+ *     and contributing-çaylak count into the rate (zero-population edge → `0`), read
+ *     end-to-end through the two-call seam; `contributingCaylaksQuery`'s rendered SQL
+ *     is asserted to gate on human çaylaks with a `sandboxed_at IS NOT NULL` row.
  *   - **humans-only** — the query's rendered SQL (`.toSQL()` over a no-op D1) is
  *     asserted to filter `type = 'human'` and group by `tier`, so bot/system rows
  *     are excluded by construction. No engine executes.
@@ -19,6 +23,8 @@ import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, relations} from "../../db/Drizzle.ts";
 import {
+	computeFirstContribution,
+	contributingCaylaksQuery,
 	Funnel,
 	FunnelLive,
 	foldTierPopulation,
@@ -63,6 +69,17 @@ const scriptedRows = (rows: ReadonlyArray<TierCountRow>): DrizzleAccess => ({
 
 const funnelLayer = (access: DrizzleAccess) =>
 	FunnelLive.pipe(Layer.provide(Layer.succeed(Drizzle, access)));
+
+// A `Drizzle` seam that dispenses queued responses in order — `firstContribution`
+// issues two reads (the tier population, then the contributing-çaylak count), so it
+// needs a distinct payload per call, not the single-shape `scriptedRows` above.
+const scriptedSequence = (responses: ReadonlyArray<ReadonlyArray<unknown>>): DrizzleAccess => {
+	let call = 0;
+	return {
+		run: <A>(_fn: (db: never) => Promise<A>) => Effect.succeed((responses[call++] ?? []) as A),
+		batch: () => Effect.die(new Error("Funnel issues no batch")),
+	};
+};
 
 describe("foldTierPopulation — grouped rows → the two counts", () => {
 	it("maps çaylak and yazar rows to their fields", () => {
@@ -142,6 +159,83 @@ describe("Funnel.tierPopulation → promotionRate — end to end over the Drizzl
 			assert.strictEqual(promotionRate(population), 0);
 		}).pipe(Effect.provide(funnelLayer(scriptedRows([])))),
 	);
+});
+
+describe("computeFirstContribution — rate over the çaylak population (#1591)", () => {
+	it("rate = contributing / çaylak", () => {
+		assert.deepStrictEqual(computeFirstContribution(8, 2), {
+			caylakCount: 8,
+			contributingCount: 2,
+			rate: 0.25,
+		});
+	});
+
+	it("zero çaylaks ⇒ rate 0, never a divide-by-zero (empty-population edge)", () => {
+		assert.deepStrictEqual(computeFirstContribution(0, 0), {
+			caylakCount: 0,
+			contributingCount: 0,
+			rate: 0,
+		});
+	});
+
+	it("all çaylaks contributing ⇒ rate 1", () => {
+		assert.deepStrictEqual(computeFirstContribution(5, 5), {
+			caylakCount: 5,
+			contributingCount: 5,
+			rate: 1,
+		});
+	});
+});
+
+describe("Funnel.firstContribution — the read through the Drizzle seam", () => {
+	it.effect("folds the tier + contributing counts into the rate", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const contribution = yield* funnel.firstContribution();
+			assert.deepStrictEqual(contribution, {caylakCount: 10, contributingCount: 3, rate: 0.3});
+		}).pipe(
+			Effect.provide(
+				funnelLayer(
+					// call 1: tier population → 10 çaylaks; call 2: contributing count → 3
+					scriptedSequence([
+						[
+							{tier: "çaylak", count: 10},
+							{tier: "yazar", count: 6},
+						],
+						[{count: 3}],
+					]),
+				),
+			),
+		),
+	);
+
+	it.effect("no çaylaks ⇒ 0 rate (zero-population edge, no divide-by-zero)", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const contribution = yield* funnel.firstContribution();
+			assert.deepStrictEqual(contribution, {caylakCount: 0, contributingCount: 0, rate: 0});
+		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[], [{count: 0}]])))),
+	);
+});
+
+describe("contributingCaylaksQuery — human çaylaks with a sandboxed contribution (rendered SQL)", () => {
+	const {sql, params} = contributingCaylaksQuery(renderDb).toSQL();
+
+	it("counts over the user table, filtered to human çaylaks", () => {
+		assert.match(sql, /from\s+"user"/i);
+		assert.match(sql, /count\(\*\)/i);
+		assert.match(sql, /"user"\."type"\s*=\s*\?/i);
+		assert.match(sql, /"user"\."tier"\s*=\s*\?/i);
+		assert.include(params, "human");
+		assert.include(params, "çaylak");
+	});
+
+	it("gates on a sandboxed contribution across the three content tables", () => {
+		assert.match(sql, /"definition_record"/i);
+		assert.match(sql, /"post_record"/i);
+		assert.match(sql, /"comment_record"/i);
+		assert.match(sql, /"sandboxed_at"\s+is\s+not\s+null/i);
+	});
 });
 
 describe("tierPopulationQuery — humans-only, grouped by tier (rendered SQL)", () => {
