@@ -7,11 +7,15 @@ import {
 	computeFlipPlan,
 	decodeEnv,
 	decodeFlagState,
+	distinctKeys,
 	FlagEnvNotFound,
+	FlagKeyNotFound,
 	findAppForEnv,
 	type RawFlag,
+	renderFlagDetail,
 	renderFlagTable,
 	renderFlipPlan,
+	selectStatesForKey,
 } from "./flag.ts";
 
 describe("decodeEnv — Flagship app physical name → env", () => {
@@ -136,6 +140,90 @@ describe("FlagEnvNotFound — the typed, legible not-found", () => {
 		const err = new FlagEnvNotFound({env: "staging", knownEnvs: ["prod", "pr-9"]});
 		assert.match(err.message, /staging/);
 		assert.match(err.message, /prod, pr-9/);
+	});
+});
+
+describe("selectStatesForKey — the per-key slice of flag list", () => {
+	const rows = [
+		decodeFlagState("prod", flag({key: "new-nav"})),
+		decodeFlagState("pr-9", flag({key: "new-nav"})),
+		decodeFlagState("prod", flag({key: "beta-banner", enabled: false, defaultVariation: "off"})),
+	];
+
+	it("keeps only the rows for the named key, across every env", () => {
+		const slice = selectStatesForKey(rows, "new-nav");
+		assert.strictEqual(slice.length, 2);
+		assert.deepStrictEqual(slice.map((r) => r.env).sort(), ["pr-9", "prod"]);
+	});
+
+	it("returns an empty slice for a key present in no env (the not-found trigger)", () => {
+		assert.strictEqual(selectStatesForKey(rows, "ghost").length, 0);
+	});
+});
+
+describe("distinctKeys — the known-flags hint", () => {
+	it("lists each distinct key once, sorted", () => {
+		const rows = [
+			decodeFlagState("prod", flag({key: "new-nav"})),
+			decodeFlagState("pr-9", flag({key: "new-nav"})),
+			decodeFlagState("prod", flag({key: "beta-banner"})),
+		];
+		assert.deepStrictEqual(distinctKeys(rows), ["beta-banner", "new-nav"]);
+	});
+
+	it("is empty for no rows", () => {
+		assert.deepStrictEqual(distinctKeys([]), []);
+	});
+});
+
+describe("FlagKeyNotFound — the typed, legible env-less not-found", () => {
+	it("names the unknown key and lists the known ones", () => {
+		const err = new FlagKeyNotFound({key: "ghost", knownKeys: ["new-nav", "beta-banner"]});
+		assert.match(err.message, /ghost/);
+		assert.match(err.message, /new-nav, beta-banner/);
+	});
+
+	it("renders (none) when no flags exist at all", () => {
+		const err = new FlagKeyNotFound({key: "ghost", knownKeys: []});
+		assert.match(err.message, /\(none\)/);
+	});
+});
+
+describe("renderFlagDetail — the single-flag --env view", () => {
+	it("shows key, env, enabled, served default value, and every variation", () => {
+		const detail = renderFlagDetail(
+			"prod",
+			flag({
+				key: "authorship-loop",
+				enabled: true,
+				defaultVariation: "off",
+				variations: {off: false, on: true},
+			}),
+		);
+		assert.match(detail, /flag:\s+authorship-loop/);
+		assert.match(detail, /env:\s+prod/);
+		assert.match(detail, /enabled:\s+on/);
+		// the served value is the variation's resolved value, not just its name
+		assert.match(detail, /serves:\s+off = false/);
+		assert.match(detail, /off = false/);
+		assert.match(detail, /on = true/);
+	});
+
+	it("renders enabled:off for a disabled flag (its default value still resolves)", () => {
+		const detail = renderFlagDetail(
+			"pr-7",
+			flag({enabled: false, defaultVariation: "off", variations: {off: false, on: true}}),
+		);
+		assert.match(detail, /enabled:\s+off/);
+		assert.match(detail, /serves:\s+off = false/);
+	});
+
+	it("shows (none) for the served value when the variation is absent (a malformed flag)", () => {
+		const detail = renderFlagDetail(
+			"prod",
+			flag({defaultVariation: "ghost", variations: {on: true}}),
+		);
+		assert.match(detail, /serves:\s+ghost = \(none\)/);
 	});
 });
 

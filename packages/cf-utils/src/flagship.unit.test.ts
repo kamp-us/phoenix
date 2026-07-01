@@ -145,6 +145,86 @@ describe("FlagshipRead.listFlagStates — decode flags × env over a stubbed tra
 	});
 });
 
+// The single-flag read seam over a STUBBED transport — no real CF in the unit tier. The stub
+// routes the get path to the flag envelope for a known key, and a 404 "Flag not found" CF
+// error envelope for any other key, so the REAL SDK error-matcher path decodes
+// FlagshipFlagNotFound. This is `flag get <key> --env <env>`'s resolution + not-found mapping.
+const getStub: Layer.Layer<HttpClient.HttpClient> = Layer.succeed(HttpClient.HttpClient)(
+	HttpClient.make((request, url) => {
+		const m = /\/flagship\/apps\/[^/]+\/flags\/([^/]+)$/.exec(url.pathname);
+		if (m && m[1] === "new-nav" && request.method === "GET") {
+			return Effect.succeed(
+				HttpClientResponse.fromWeb(
+					request,
+					new Response(
+						JSON.stringify({
+							result: flag("new-nav", true, "on", {on: true, off: false}),
+							success: true,
+							errors: [],
+						}),
+						{status: 200, headers: {"content-type": "application/json"}},
+					),
+				),
+			);
+		}
+		// Unknown key → the CF 404 not-found envelope the SDK matcher decodes to FlagshipFlagNotFound.
+		return Effect.succeed(
+			HttpClientResponse.fromWeb(
+				request,
+				new Response(
+					JSON.stringify({success: false, errors: [{code: 1004, message: "Flag not found"}]}),
+					{status: 404, headers: {"content-type": "application/json"}},
+				),
+			),
+		);
+	}),
+);
+
+const getDeps = FlagshipReadLive.pipe(
+	Layer.provide(Layer.merge(fromApiToken({apiToken: "unit-test-token"}), getStub)),
+);
+
+const runGetAppFlag = (flagKey: string): Promise<Exit.Exit<unknown, unknown>> => {
+	const saved = process.env[ACCOUNT_KEY];
+	process.env[ACCOUNT_KEY] = "acct-test";
+	return Effect.runPromiseExit(
+		FlagshipRead.pipe(
+			Effect.flatMap((client) => client.getAppFlag("app-prod", flagKey)),
+			Effect.provide(getDeps),
+		),
+	).finally(() => {
+		if (saved === undefined) delete process.env[ACCOUNT_KEY];
+		else process.env[ACCOUNT_KEY] = saved;
+	});
+};
+
+describe("FlagshipRead.getAppFlag — single-flag resolution over a stubbed transport", () => {
+	it("resolves a known flag to its raw envelope (key, enabled, defaultVariation, variations)", async () => {
+		const exit = await runGetAppFlag("new-nav");
+		assert.strictEqual(exit._tag, "Success");
+		if (exit._tag !== "Success") return;
+		const raw = exit.value as {
+			key: string;
+			enabled: boolean;
+			defaultVariation: string;
+			variations: Record<string, unknown>;
+		};
+		assert.strictEqual(raw.key, "new-nav");
+		assert.strictEqual(raw.enabled, true);
+		assert.strictEqual(raw.defaultVariation, "on");
+		assert.deepStrictEqual(raw.variations, {on: true, off: false});
+	});
+
+	it("fails with a typed FlagshipFlagNotFound for an unknown key (never an empty result or a throw)", async () => {
+		const exit = await runGetAppFlag("ghost");
+		assert.strictEqual(exit._tag, "Failure");
+		if (exit._tag !== "Failure") return;
+		// The typed not-found rides the E channel — assert its tag surfaced, not a raw throw.
+		const rendered = JSON.stringify(exit.cause);
+		assert.match(rendered, /FlagshipFlagNotFound/);
+	});
+});
+
 // The flip seam over a STUBBED transport — no real CF write in the unit tier (the #1609
 // acceptance). The stub replays a GET of the current flag, then captures the PUT body so the
 // test proves the write moves ONLY `default_variation` and passes `enabled`/`variations`/
