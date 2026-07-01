@@ -9,7 +9,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
-import {FlagshipError} from "alchemy/Cloudflare";
+import {Flagship as CfFlagship} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
 import {Flags, type FlagsAccess, FlagsLive, withDevOverrides} from "./Flags.ts";
 import {anonymousFlagsContext, FlagsContext} from "./FlagsContext.ts";
@@ -89,7 +89,7 @@ describe("Flags.getBoolean", () => {
 		}).pipe(
 			Effect.provide(
 				flagsOver(() =>
-					Effect.fail(new FlagshipError({message: "binding unavailable", cause: undefined})),
+					Effect.fail(new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined})),
 				),
 			),
 		),
@@ -105,7 +105,7 @@ describe("Flags.getBoolean", () => {
 		}).pipe(
 			Effect.provide(
 				flagsOver(() =>
-					Effect.fail(new FlagshipError({message: "binding unavailable", cause: undefined})),
+					Effect.fail(new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined})),
 				),
 			),
 		),
@@ -130,7 +130,7 @@ describe("Flags.getBoolean", () => {
 });
 
 const flagshipError = () =>
-	Effect.fail(new FlagshipError({message: "binding unavailable", cause: undefined}));
+	Effect.fail(new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}));
 
 /**
  * The typed-read analog of `stubFlagship`: the boolean read dies (these suites

@@ -24,7 +24,7 @@ export class Database extends Context.Service<Database, D1Database>()("@kampus/D
 export const DatabaseLive = Layer.effect(
 	Database,
 	Effect.gen(function* () {
-		const connection = yield* Cloudflare.D1Connection.bind(PhoenixDb);
+		const connection = yield* Cloudflare.D1.QueryDatabase(PhoenixDb);
 		return yield* connection.raw;
 	}),
 );

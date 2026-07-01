@@ -8,12 +8,12 @@
  * rules that consume it land in #511; this child supplies the seam.
  *
  * The domain shape (`userId`) is deliberately NOT alchemy's
- * `FlagshipEvaluationContext` — `toEvaluationContext` maps it at the boundary so
+ * `Flagship.EvaluationContext` — `toEvaluationContext` maps it at the boundary so
  * the provider's wire shape never leaks into the domain surface (the clean
  * OpenFeature seam, #506).
  */
 import {CurrentUser} from "@kampus/fate-effect";
-import type {FlagshipEvaluationContext} from "alchemy/Cloudflare";
+import type {Flagship} from "alchemy/Cloudflare";
 import {Context, Effect} from "effect";
 import {AppConfig} from "../../config.ts";
 import {type FlagOverrides, parseOverrideCookie} from "./dev-override.ts";
@@ -146,7 +146,7 @@ export const encodeRoles = (roles: readonly string[]): string =>
  */
 export function toEvaluationContext(
 	context: FlagsContextValue,
-): FlagshipEvaluationContext | undefined {
+): Flagship.EvaluationContext | undefined {
 	const wire: Record<string, string> = {};
 	if (context.userId !== undefined) wire.targetingKey = context.userId;
 	if (context.roles !== undefined && context.roles.length > 0)

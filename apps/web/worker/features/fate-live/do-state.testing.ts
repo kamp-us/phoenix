@@ -24,17 +24,18 @@ export function makeDurableObjectStateForTest(options?: {
 	const kv = new Map<string, unknown>();
 	let alarm: number | null = null;
 
-	// Each method is a generic `Effect` closure cast to its precise `Storage[...]`
-	// member signature — member-typed casts, never `as any`, so the fake's shape
-	// stays aligned with the real DO-state signature.
+	// Each method is a generic `Effect` closure widened to its `Storage[...]` member
+	// signature. alchemy beta.59 gave the DO storage methods `RuntimeContext` + an
+	// options overload the KV-only fake does not model, so the cast widens through
+	// `unknown` (the same widen-once idiom the makeD1Rest/sqlite-d1 fakes use).
 	type Storage = LiveDoState["storage"];
 
 	const storage: Storage = {
-		get: (<T>(key: string) => Effect.sync(() => kv.get(key) as T | undefined)) as Storage["get"],
+		get: (<T>(key: string) => Effect.sync(() => kv.get(key) as T | undefined)) as unknown as Storage["get"],
 		put: (<T>(key: string, value: T) =>
 			Effect.sync(() => {
 				kv.set(key, value);
-			})) as Storage["put"],
+			})) as unknown as Storage["put"],
 		// MUST accept both a single key and an array (publish bulk-deletes rows).
 		delete: ((keyOrKeys: string | ReadonlyArray<string>) =>
 			Effect.sync(() => {
@@ -42,7 +43,7 @@ export function makeDurableObjectStateForTest(options?: {
 				for (const key of keys) {
 					kv.delete(key);
 				}
-			})) as Storage["delete"],
+			})) as unknown as Storage["delete"],
 		// A prefix-filtered COPY (not the live Map, so callers can't mutate the store).
 		list: (<T>({prefix}: {readonly prefix: string}) =>
 			Effect.sync(() => {
@@ -53,12 +54,12 @@ export function makeDurableObjectStateForTest(options?: {
 					}
 				}
 				return out;
-			})) as Storage["list"],
-		getAlarm: (() => Effect.sync(() => alarm)) as Storage["getAlarm"],
+			})) as unknown as Storage["list"],
+		getAlarm: (() => Effect.sync(() => alarm)) as unknown as Storage["getAlarm"],
 		setAlarm: ((scheduledTime: number) =>
 			Effect.sync(() => {
 				alarm = scheduledTime;
-			})) as Storage["setAlarm"],
+			})) as unknown as Storage["setAlarm"],
 	} as Storage;
 
 	const state: LiveDoState = {

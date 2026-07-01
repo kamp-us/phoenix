@@ -10,7 +10,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
-import {FlagshipError} from "alchemy/Cloudflare";
+import {Flagship as CfFlagship} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import {encodeOverrideCookieValue, FLAG_OVERRIDE_COOKIE} from "./dev-override.ts";
@@ -174,7 +174,7 @@ describe("environment-targeting degrades safe on error", () => {
 			withStage("development"),
 			Effect.provide(
 				flagsOver(() =>
-					Effect.fail(new FlagshipError({message: "binding unavailable", cause: undefined})),
+					Effect.fail(new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined})),
 				),
 			),
 		),

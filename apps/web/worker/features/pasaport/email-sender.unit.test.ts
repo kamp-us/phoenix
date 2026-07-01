@@ -2,7 +2,7 @@
  * Unit coverage for the `EmailSender` port (ADR 0101). Drives both adapters
  * over substituted seams — no binding, no network:
  *
- *   - `EmailSenderCloudflareLive` over a FAKE `SendEmailBinding`: asserts it
+ *   - `EmailSenderCloudflareLive` over a FAKE `Email.Send`: asserts it
  *     calls the binding's `.send` with the correct from/to/subject/body shape,
  *     and that a binding failure is swallowed (the public `send` is `E = never`,
  *     so a delivery failure never throws into better-auth);
@@ -12,7 +12,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {RuntimeContext} from "alchemy";
-import {SendEmailBinding, type SendEmailClient, SendEmailError} from "alchemy/Cloudflare";
+import {Email} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
 import {
 	EMAIL_FROM,
@@ -30,22 +30,22 @@ const runtimeContext = Layer.succeed(RuntimeContext)({
 	set: (id) => Effect.succeed(id),
 });
 
-type SentMessage = Parameters<SendEmailClient["send"]>[0];
+type SentMessage = Parameters<Email.SendClient["send"]>[0];
 
 /**
- * A fake `SendEmailBinding`: `SendEmail.bind(descriptor)` resolves to a client
+ * A fake `Email.Send`: `SendEmail.bind(descriptor)` resolves to a client
  * whose `send` is supplied by the test. `raw`/`sendRaw` die so an accidental
  * call is loud.
  */
 const fakeBinding = (
-	onSend: (message: SentMessage) => Effect.Effect<{messageId: string}, SendEmailError>,
-): Layer.Layer<SendEmailBinding> =>
-	Layer.succeed(SendEmailBinding)(
-		SendEmailBinding.of(() =>
-			Effect.succeed<SendEmailClient>({
-				raw: Effect.die("SendEmailBinding.raw not exercised"),
+	onSend: (message: SentMessage) => Effect.Effect<{messageId: string}, Email.SendEmailError>,
+): Layer.Layer<Email.Send> =>
+	Layer.succeed(Email.Send)(
+		Email.Send.of(() =>
+			Effect.succeed<Email.SendClient>({
+				raw: Effect.die("Email.Send.raw not exercised"),
 				send: (message) => onSend(message),
-				sendRaw: () => Effect.die("SendEmailBinding.sendRaw not exercised"),
+				sendRaw: () => Effect.die("Email.Send.sendRaw not exercised"),
 			}),
 		),
 	);
@@ -125,7 +125,7 @@ describe("EmailSenderCloudflareLive", () => {
 				Effect.provide(
 					EmailSenderCloudflareLive.pipe(
 						Layer.provide(
-							fakeBinding(() => Effect.fail(new SendEmailError({message: "binding boom"}))),
+							fakeBinding(() => Effect.fail(new Email.SendEmailError({message: "binding boom"}))),
 						),
 						Layer.provide(runtimeContext),
 					),

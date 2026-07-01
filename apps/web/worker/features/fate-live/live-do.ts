@@ -21,6 +21,7 @@
  * `revision`. The reap alarm deletes ALL a connection's rows on the FIRST
  * failed probe — no consecutive-miss counter.
  */
+import type {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -98,14 +99,14 @@ export interface LiveRpcSurface {
 		readonly ownerId: string | undefined;
 		readonly limits: LiveLimits;
 		readonly lastEventId?: string;
-	}) => Effect.Effect<{readonly ok: boolean}, never, never>;
+	}) => Effect.Effect<{readonly ok: boolean}, never, RuntimeContext>;
 	readonly unsubscribe: (input: {
 		readonly subId: string;
-	}) => Effect.Effect<{readonly ok: true}, never, never>;
-	readonly deliver: (input: DeliverInput) => Effect.Effect<DeliverResult, never, never>;
+	}) => Effect.Effect<{readonly ok: true}, never, RuntimeContext>;
+	readonly deliver: (input: DeliverInput) => Effect.Effect<DeliverResult, never, RuntimeContext>;
 	readonly check: (input: {
 		readonly subscriptions: ReadonlyArray<SubscriberRow>;
-	}) => Effect.Effect<{readonly stale: ReadonlyArray<number>}, never, never>;
+	}) => Effect.Effect<{readonly stale: ReadonlyArray<number>}, never, RuntimeContext>;
 	readonly register: (input: {
 		readonly row: SubscriberRow;
 		readonly limits: LiveLimits;
@@ -117,18 +118,18 @@ export interface LiveRpcSurface {
 		// time-grace bound alone.
 		readonly epochStartedAt?: number;
 		readonly lastEventId?: string;
-	}) => Effect.Effect<{readonly ok: boolean}, never, never>;
+	}) => Effect.Effect<{readonly ok: boolean}, never, RuntimeContext>;
 	readonly unregister: (input: {
 		readonly row: SubscriberRow;
-	}) => Effect.Effect<{readonly ok: true}, never, never>;
+	}) => Effect.Effect<{readonly ok: true}, never, RuntimeContext>;
 	readonly publish: (input: {
 		readonly topicKey: string;
 		readonly frame: DeliverFrame;
 		readonly limits: LiveLimits;
-	}) => Effect.Effect<{readonly delivered: number}, never, never>;
+	}) => Effect.Effect<{readonly delivered: number}, never, RuntimeContext>;
 }
 
-export class LiveDO extends Cloudflare.DurableObjectNamespace<LiveDO, LiveRpcSurface>()("LiveDO") {}
+export class LiveDO extends Cloudflare.DurableObject<LiveDO, LiveRpcSurface>()("LiveDO") {}
 
 type LiveNamespace = Effect.Success<typeof LiveDO>;
 
@@ -781,7 +782,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 
 /**
  * The `LiveDO` implementation Layer (ADR 0028). The DO's OWN namespace is
- * resolved once in init from `Cloudflare.DurableObjectNamespaceScope` (the local,
+ * resolved once in init from `Cloudflare.DurableObjectScope` (the local,
  * scriptName-less self-binding `.make()` provides) and captured for cross-role
  * addressing — void's `this.env[binding]` pattern. Because it's the local binding
  * (not a cross-script `.from(scriptName)`) it works under `alchemy dev`, requires
@@ -793,9 +794,9 @@ export const LiveDOLive = LiveDO.make(
 		// addressing. NOT `LiveDO.from("phoenix")`: any `.from(...)` declares a
 		// CROSS-SCRIPT binding, which under `alchemy dev` routes through the
 		// dev-registry proxy and dies with `Worker "phoenix" not found`. The scope is
-		// typed generically (`DurableObjectNamespace<unknown>`), so we widen it once
+		// typed generically (`DurableObject<unknown>`), so we widen it once
 		// to this DO's `LiveRpcSurface` — a pure type widening, the only `as` here.
-		const live = (yield* Cloudflare.DurableObjectNamespaceScope) as LiveNamespace;
+		const live = (yield* Cloudflare.DurableObject) as LiveNamespace;
 		// The shared-init gen RETURNS the per-instance Effect (run once per instance
 		// wake). `return yield*` would run per-instance setup during shared init.
 		// @effect-diagnostics-next-line effect/returnEffectInGen:off

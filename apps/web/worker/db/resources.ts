@@ -15,7 +15,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
  * table name so the applied-set bookkeeping stays compatible; alchemy applies
  * pending migrations on deploy.
  */
-export const PhoenixDb = Cloudflare.D1Database("phoenix_db", {
+export const PhoenixDb = Cloudflare.D1.Database("phoenix_db", {
 	migrationsDir: "./worker/db/drizzle/migrations",
 	migrationsTable: "drizzle_migrations",
 });

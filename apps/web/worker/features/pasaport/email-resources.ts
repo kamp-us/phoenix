@@ -38,8 +38,8 @@ export const provisionEmailSending = Effect.gen(function* () {
 	// Adopt the existing apex zone for its `zoneId`; a zone carries no ownership
 	// markers, so alchemy refuses to take it over without `adopt(true)`. Zones
 	// default to retain on removal — destroying the stack never deletes it.
-	const zone = yield* Cloudflare.Zone("kampus_zone", {name: KAMPUS_ZONE_NAME}).pipe(adopt(true));
-	const sending = yield* Cloudflare.EmailSendingSubdomain("phoenix_email_sending", {
+	const zone = yield* Cloudflare.Zone.Zone("kampus_zone", {name: KAMPUS_ZONE_NAME}).pipe(adopt(true));
+	const sending = yield* Cloudflare.Email.SendingSubdomain("phoenix_email_sending", {
 		zoneId: zone.zoneId,
 		name: SENDING_SUBDOMAIN,
 	});
