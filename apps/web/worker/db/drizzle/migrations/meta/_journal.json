@@ -113,6 +113,13 @@
       "when": 1788500000000,
       "tag": "0015_drop_last_event_id",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1790000000000,
+      "tag": "0016_yazar_promoted_at",
+      "breakpoints": true
     }
   ]
 }
