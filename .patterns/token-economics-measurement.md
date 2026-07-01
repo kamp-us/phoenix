@@ -494,6 +494,127 @@ inherit. This is distinct from #1373 (intra-subagent excerpt-vs-whole-read, also
 same root cause the audit established: pipeline spend is **resident scaffolding (Rank 1) + each
 stage's own independent diff-read**, not transferable cross-stage source. No skill change is made.
 
+## 7. Applied-lever results — #1560 trivial-tier adoption gate (measured; HOLD — flip stays OFF)
+
+The **right-sized fan-out lever** (ADR [0120](../.decisions/0120-stage-right-sizing-trivial-diff-lighter-gate.md),
+epic [#1527](https://github.com/kamp-us/phoenix/issues/1527)) routes a *trivially-classified* PR
+through a **lighter, still-fail-closed** gate ([`review-trivial`](../claude-plugins/kampus-pipeline/skills/review-trivial/SKILL.md),
+#1558) instead of the full `review-code`/`review-doc`/`review-skill` fan-out — the classifier
+(#1557) and the executor wiring (#1559, tier **off by default**) are already on `main`. This child
+([#1560](https://github.com/kamp-us/phoenix/issues/1560)) is the ADR 0112 adoption gate: it measures
+**both axes on a frozen corpus** and flips the tier on **only if both hold**. The measured numbers
+live here + on #1560, never on ADR 0120 (which claims no number, per ADR 0112's division of surfaces).
+
+**Verdict: HOLD — the tier stays OFF (dormant).** The offline axes are strong-positive, but ADR
+0112's two-axis bar requires a *measured* `cost.total_tokens` token win **and** a *measured*
+gate-accuracy no-regression, and each has one component that only a **live pipeline run** (real model
+spend across paired review agents) can produce — which a background worktree agent cannot perform.
+Per ADR 0112 (*no adoption on an unmeasured saving; a quality regression vetoes regardless*),
+under-claiming beats a premature flip: the branch stays a no-op until the live confirmation lands.
+
+### Axis 1 — token delta (measured resident-scaffolding proxy; authoritative `cost.total_tokens` pending a live run)
+
+The gate's dominant cost is its **resident scaffolding** — the skill re-charged every turn as
+`cache_read` (§2, audit Rank 1) — and it is exactly what differs between the two paths on the *same*
+trivial PR (the diff read, the `gh api` calls, the head fetch are identical). So the reproducible
+offline delta is the skill-size delta, translated to billed tokens by the §4 mechanism
+(`cache_read` × resident turns). Measured on-disk (reproducible: `wc -c` on each skill, `~tok = bytes/4`):
+
+| Gate (resident skill) | bytes | lines | ~tokens | ADR 0079 specialist sub-agent fan-out? |
+|---|---:|---:|---:|---|
+| `review-code/SKILL.md` (full) | 91,113 | 1,341 | ~22,778 | **yes** — spawns the claim-vs-ground-truth / dangling-reference / omitted-case specialists |
+| `review-doc/SKILL.md` (full) | 51,202 | 797 | ~12,800 | yes (doc specialists) |
+| `review-skill/SKILL.md` (full) | 46,882 | 732 | ~11,720 | yes |
+| **`review-trivial/SKILL.md` (lighter)** | **19,296** | **317** | **~4,824** | **no** — explicitly drops the fan-out (§2 of the skill) |
+
+- **Resident-scaffolding delta (code-class trivial PR): −17,954 tok/turn (−78.8%)** — `review-code`
+  ~22,778 → `review-trivial` ~4,824. Doc-class: −7,976 tok/turn (−62.3% vs `review-doc`).
+- **Plus the entirely-avoided ADR 0079 specialist fan-out.** `review-code` spawns additional metered
+  sub-agent sessions (each its own `cost.total_tokens`); `review-trivial` runs none — a further
+  *multiplicative* saving the resident-delta above does not even count.
+- **Projected billed saving (§4 mechanism).** Against the §2 `review-code` baseline (PR #1199 =
+  1,325,645 billed over 31 turns), a −17,954 tok resident core shifts the whole `cache_read` tail
+  down by 17,954/turn. Even at a conservative ~half-resident (~15 of 31 turns): ≈17,954 × 15 ≈
+  **269k tok/review saved (~20% of the baseline)**, before the avoided fan-out. This is a *projection*
+  from the measured resident delta (the exact discipline §4 sub-lever 1 used), not the authoritative
+  per-review aggregate.
+- **What needs a live run:** the authoritative `cost.total_tokens` for a `review-trivial` run vs a
+  `review-code` run on the **same** trivial PR (the §2 spawn-guard procedure over two real
+  transcripts). No `review-trivial` transcript exists yet — the offline reconstruction has nothing to
+  sum. The proxy strongly predicts a large win; ADR 0112 requires the measured aggregate to *adopt*.
+
+### Axis 2 — gate-accuracy (the veto): frozen corpus, deterministic classes MEASURED-clean; agentic no-regression pending a live run
+
+A frozen 7-fixture corpus (reproducible — the diffs are named below, run through the classifier CLI
+and the `review-trivial` Step-2 scans). Three bad-**trivial** changes the lighter gate must catch,
+one clean-trivial control, and three bad-**non-trivial** changes it must route *away* to the full path:
+
+| Fixture | Change | Classifier verdict (routes to) | Gate outcome (measured) |
+|---|---|---|---|
+| `f1` wrong-one-liner | `README.md`: "before" → "after" (inverts meaning) | **trivial** → lighter | routed correctly; catch is **agentic** (skill Step-2.1 "Right one-liner vs AC") — *live run* |
+| `f2` leaked-secret | `docs/setup.md`: adds `OPENAI_API_KEY=sk-…` + `ghp_…` | **trivial** → lighter | **CAUGHT** — Step-2.2 secret scan hits → FAIL |
+| `f3` leaked-local-path | `.patterns/setup.md`: adds an absolute macOS-home clone path + a tilde-home dotfile path (the no-local-paths class) | **trivial** → lighter | **CAUGHT** — Step-2.3 local-path scan hits → FAIL |
+| `f4` clean-trivial | `README.md`: "reborn" → "reborn." | **trivial** → lighter | clean on all scans → PASS-eligible |
+| `f5` control-plane | `.github/workflows/ci.yml` one-line | **non-trivial** → full | routed away (never under-gated) |
+| `f6` multi-file | two `*.md` files | **non-trivial** → full | routed away |
+| `f7` new-surface | `packages/foo/src/util.ts`: adds `export const` | **non-trivial** → full | routed away |
+
+Reproduce (frozen corpus above → the two mechanical checks):
+
+```bash
+# routing — the deterministic classifier, live CONTROL_PLANE_RE from origin/main:
+node packages/pipeline-cli/src/bin.ts trivial-diff classify --repo kamp-us/phoenix --diff-file <fixture.patch>
+# the lighter gate's own deterministic Step-2 scans over the added lines (review-trivial/SKILL.md):
+grep -E '^\+' f.patch | grep -vE '^\+\+\+' | grep -niE 'api[_-]?key|secret|token|password|BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[0-9A-Za-z]{30,}|xox[baprs]-|-----BEGIN'
+grep -E '^\+' f.patch | grep -vE '^\+\+\+' | grep -nE '(~/|/Users/|/home/|/private/var/folders/|[A-Za-z]:\\\\)'
+```
+
+**The finding — two of the three named failure classes clear with provably NO regression; one is
+agentic and unmeasured offline:**
+
+1. **Routing: 7/7 correct (deterministic).** Every bad-**non-trivial** change (control-plane,
+   multi-file, new-surface) routes to the **full** path — a misclassification can only over-pay, never
+   under-gate (ADR 0120 §3, confirmed empirically).
+2. **Leaked-secret + leaked-local-path: CAUGHT, no regression by construction.** The Step-2 secret and
+   local-path scans are **byte-identical mechanical greps** the full gate runs too — the "lighter"
+   path does not reduce them. So for these two of the three ADR 0120 §2 named classes there is
+   **provably zero gate-accuracy regression**: the lighter gate FAILs them for the same deterministic
+   reason the full gate would.
+3. **Wrong-one-liner (and hidden in-scope defect): the one unmeasured class — needs a live run.** The
+   lighter gate routes it correctly and the skill **mandates** the Step-2.1 "Right one-liner vs the AC"
+   check (conjunctive, default-deny). But that catch is **agentic**, and it is exactly the dimension
+   `review-trivial` **reduces** — it drops the full gate's ADR 0079 specialist fan-out. Whether a live
+   `review-trivial` reviewer FAILs a wrong one-liner (and a hidden in-scope defect) as reliably as the
+   full `review-code` fan-out is the **precise thing the ADR 0112 quality veto guards**, and it
+   **cannot be established offline** — it requires a live verdict-parity comparison (`review-trivial`
+   vs `review-code` on a corpus of real trivial PRs, confirming the lighter gate reaches the same FAIL,
+   with no missed finding).
+
+### Quality gate (§3) — the agentic no-regression is the open axis; deterministic classes preserved
+
+Two of three named bad-trivial classes (secret, local-path) are preserved **by construction** (same
+mechanical scan). The third (wrong-one-liner / hidden-defect) rides on the reduced agentic fan-out and
+is **unmeasured** — so the §3 no-compromise gate is **not yet clearable**. ADR 0112 §4 vetoes adoption
+while a quality axis is unmeasured, independent of the token win.
+
+### Net recorded delta (against the §2 baseline)
+
+| Axis | Measured | Status |
+|---|---|---|
+| token (resident-scaffolding proxy) | **−17,954 tok/turn (−78.8%)** code-class resident skill; **−7,976 (−62.3%)** doc-class; + entirely-avoided ADR 0079 specialist fan-out; projected ≈269k tok/review (~20%) at conservative half-resident | **strong-positive proxy** — authoritative `cost.total_tokens` pending a live paired run |
+| gate-accuracy (veto) | routing 7/7 correct; leaked-secret + leaked-local-path CAUGHT with **zero regression by construction** (identical mechanical scan); wrong-one-liner routed + skill-mandated but **agentic catch unmeasured** | **not yet cleared** — the agentic no-regression needs a live `review-trivial`-vs-`review-code` verdict-parity run |
+
+**Net: HOLD — the trivial tier stays OFF (`KAMPUS_TRIVIAL_TIER` unset; `drive-issue.js` untouched).**
+Both axes lean adopt, but ADR 0112 requires *measured* wins on both, and the two authoritative
+measurements — the paired `cost.total_tokens` and the agentic gate no-regression — each require a
+**live pipeline run** this offline harness cannot produce. The exact remaining live measurement, in
+one place: on a small corpus of real trivial PRs, run the tier ON (`KAMPUS_TRIVIAL_TIER=on`), capture
+`cost.total_tokens` for the `review-trivial` run and a matched `review-code` run on the same PR, and
+confirm verdict-parity (every FAIL the full gate would raise, the lighter gate also raises). Both green
+→ flip the default on in `drive-issue.js` (a §CP control-plane change + human merge); a verdict-parity
+miss → veto and keep it off. This mirrors §5/§6's *ship only what wins; under-claiming beats a
+regression* discipline: no flip on an unmeasured axis.
+
 ## Tooling gap (follow-up)
 
 Per-stage token spend **is** individually attributable offline — each stage sub-agent has its own
