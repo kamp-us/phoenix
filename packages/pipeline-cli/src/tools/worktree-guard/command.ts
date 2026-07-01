@@ -127,13 +127,16 @@ const preBash = Command.make(
 		const command = str(toolInput.command);
 		const decision = pinBash({worktreeRoot: WORKTREE_ROOT, command});
 		if (decision.kind === "allow") return yield* allow();
+		if (decision.kind === "refuse") return yield* deny(`worktree-guard: ${decision.reason}`);
 		return yield* allow(
 			{...toolInput, command: decision.command},
 			`worktree-guard: ${decision.reason}`,
 		);
 	}),
 ).pipe(
-	Command.withDescription('PreToolUse Bash: prepend `cd "$WORKTREE_ROOT" &&` when no explicit cd'),
+	Command.withDescription(
+		"PreToolUse Bash: cd-pin to $WORKTREE_ROOT; refuse a bare HEAD-moving git op (#1571)",
+	),
 );
 
 const preEnter = Command.make(
