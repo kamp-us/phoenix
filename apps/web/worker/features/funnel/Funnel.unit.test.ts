@@ -1,7 +1,8 @@
 /**
- * `Funnel` read-model coverage (#1589, #1593, #1591) — the tier-population counts,
- * the headline promotion rate, the first-contribution rate, and the humans-only
- * filter, the decisions that are wrong-or-right with no engine (ADR 0082 T1/T2). The
+ * `Funnel` read-model coverage (#1589, #1593, #1591, #1592) — the tier-population
+ * counts, the headline promotion rate, the first-contribution rate, the vouch rate,
+ * and the humans-only filter, the decisions that are wrong-or-right with no engine
+ * (ADR 0082 T1/T2). The
  * `Drizzle` seam is substituted directly (the `Report` / `promotion-sweep` idiom):
  *
  *   - **counts** — a scripted `run` feeds grouped rows to `foldTierPopulation`
@@ -24,6 +25,7 @@ import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, relations} from "../../db/Drizzle.ts";
 import {
 	computeFirstContribution,
+	computeVouchRate,
 	contributingCaylaksQuery,
 	Funnel,
 	FunnelLive,
@@ -31,6 +33,7 @@ import {
 	promotionRate,
 	type TierCountRow,
 	tierPopulationQuery,
+	vouchedCaylaksQuery,
 } from "./Funnel.ts";
 
 // A real drizzle client over a no-op D1 — used ONLY to render the query's `.toSQL()`;
@@ -216,6 +219,82 @@ describe("Funnel.firstContribution — the read through the Drizzle seam", () =>
 			assert.deepStrictEqual(contribution, {caylakCount: 0, contributingCount: 0, rate: 0});
 		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[], [{count: 0}]])))),
 	);
+});
+
+describe("computeVouchRate — rate over the çaylak population (#1592)", () => {
+	it("rate = vouched / çaylak", () => {
+		assert.deepStrictEqual(computeVouchRate(8, 2), {
+			caylakCount: 8,
+			vouchedCount: 2,
+			rate: 0.25,
+		});
+	});
+
+	it("zero çaylaks ⇒ rate 0, never a divide-by-zero (empty-population edge)", () => {
+		assert.deepStrictEqual(computeVouchRate(0, 0), {
+			caylakCount: 0,
+			vouchedCount: 0,
+			rate: 0,
+		});
+	});
+
+	it("all çaylaks vouched ⇒ rate 1", () => {
+		assert.deepStrictEqual(computeVouchRate(5, 5), {
+			caylakCount: 5,
+			vouchedCount: 5,
+			rate: 1,
+		});
+	});
+});
+
+describe("Funnel.vouchRate — the read through the Drizzle seam", () => {
+	it.effect("folds the tier + vouched counts into the rate", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const vouch = yield* funnel.vouchRate();
+			assert.deepStrictEqual(vouch, {caylakCount: 10, vouchedCount: 4, rate: 0.4});
+		}).pipe(
+			Effect.provide(
+				funnelLayer(
+					// call 1: tier population → 10 çaylaks; call 2: vouched count → 4
+					scriptedSequence([
+						[
+							{tier: "çaylak", count: 10},
+							{tier: "yazar", count: 6},
+						],
+						[{count: 4}],
+					]),
+				),
+			),
+		),
+	);
+
+	it.effect("no çaylaks ⇒ 0 rate (zero-population edge, no divide-by-zero)", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const vouch = yield* funnel.vouchRate();
+			assert.deepStrictEqual(vouch, {caylakCount: 0, vouchedCount: 0, rate: 0});
+		}).pipe(Effect.provide(funnelLayer(scriptedSequence([[], [{count: 0}]])))),
+	);
+});
+
+describe("vouchedCaylaksQuery — human çaylaks with an authorship_vouch candidate row (rendered SQL)", () => {
+	const {sql, params} = vouchedCaylaksQuery(renderDb).toSQL();
+
+	it("counts over the user table, filtered to human çaylaks", () => {
+		assert.match(sql, /from\s+"user"/i);
+		assert.match(sql, /count\(\*\)/i);
+		assert.match(sql, /"user"\."type"\s*=\s*\?/i);
+		assert.match(sql, /"user"\."tier"\s*=\s*\?/i);
+		assert.include(params, "human");
+		assert.include(params, "çaylak");
+	});
+
+	it("gates on membership in the authorship_vouch candidate set", () => {
+		assert.match(sql, /"authorship_vouch"/i);
+		assert.match(sql, /"candidate_id"/i);
+		assert.match(sql, /"user"\."id"\s+in/i);
+	});
 });
 
 describe("contributingCaylaksQuery — human çaylaks with a sandboxed contribution (rendered SQL)", () => {
