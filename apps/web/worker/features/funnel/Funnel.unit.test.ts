@@ -1,12 +1,15 @@
 /**
- * `Funnel` read-model coverage (#1589) — the tier-population counts and the
- * humans-only filter, the two decisions that are wrong-or-right with no engine
- * (ADR 0082 T1/T2). The `Drizzle` seam is substituted directly (the `Report` /
- * `promotion-sweep` idiom):
+ * `Funnel` read-model coverage (#1589, #1593) — the tier-population counts, the
+ * headline promotion rate, and the humans-only filter, the decisions that are
+ * wrong-or-right with no engine (ADR 0082 T1/T2). The `Drizzle` seam is substituted
+ * directly (the `Report` / `promotion-sweep` idiom):
  *
  *   - **counts** — a scripted `run` feeds grouped rows to `foldTierPopulation`
  *     THROUGH the real `FunnelLive` service, proving çaylak/yazar map to the right
  *     fields and an absent tier reads `0`.
+ *   - **promotion rate** — `promotionRate` derives yazar / (çaylak + yazar) from the
+ *     population, both directly and end-to-end over the seam, covering the
+ *     zero-population edge (`0`, never a `NaN`).
  *   - **humans-only** — the query's rendered SQL (`.toSQL()` over a no-op D1) is
  *     asserted to filter `type = 'human'` and group by `tier`, so bot/system rows
  *     are excluded by construction. No engine executes.
@@ -19,6 +22,7 @@ import {
 	Funnel,
 	FunnelLive,
 	foldTierPopulation,
+	promotionRate,
 	type TierCountRow,
 	tierPopulationQuery,
 } from "./Funnel.ts";
@@ -96,6 +100,47 @@ describe("Funnel.tierPopulation — the read through the Drizzle seam", () => {
 				),
 			),
 		),
+	);
+});
+
+describe("promotionRate — the headline share promoted çaylak→yazar (#1593)", () => {
+	it("is yazar / (çaylak + yazar)", () => {
+		assert.strictEqual(promotionRate({caylakCount: 3, yazarCount: 1}), 0.25);
+		assert.strictEqual(promotionRate({caylakCount: 0, yazarCount: 4}), 1);
+		assert.strictEqual(promotionRate({caylakCount: 4, yazarCount: 0}), 0);
+	});
+
+	it("an empty population reads 0, not NaN (fresh DB / zero-population edge)", () => {
+		const rate = promotionRate({caylakCount: 0, yazarCount: 0});
+		assert.strictEqual(rate, 0);
+		assert.isFalse(Number.isNaN(rate));
+	});
+});
+
+describe("Funnel.tierPopulation → promotionRate — end to end over the Drizzle seam", () => {
+	it.effect("derives the headline rate from the counts the seam returns", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const population = yield* funnel.tierPopulation();
+			assert.strictEqual(promotionRate(population), 0.2);
+		}).pipe(
+			Effect.provide(
+				funnelLayer(
+					scriptedRows([
+						{tier: "çaylak", count: 8},
+						{tier: "yazar", count: 2},
+					]),
+				),
+			),
+		),
+	);
+
+	it.effect("an empty seam yields the zero-population rate (0, not NaN)", () =>
+		Effect.gen(function* () {
+			const funnel = yield* Funnel;
+			const population = yield* funnel.tierPopulation();
+			assert.strictEqual(promotionRate(population), 0);
+		}).pipe(Effect.provide(funnelLayer(scriptedRows([])))),
 	);
 });
 

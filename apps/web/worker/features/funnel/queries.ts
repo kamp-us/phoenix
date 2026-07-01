@@ -24,7 +24,7 @@ import {PHOENIX_FUNNEL_READOUT} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied} from "../kunye/errors.ts";
-import {Funnel} from "./Funnel.ts";
+import {Funnel, promotionRate} from "./Funnel.ts";
 import {requireFunnelAccess, ViewFunnel} from "./gate.ts";
 
 const FUNNEL_SUMMARY_ID = "summary";
@@ -41,12 +41,13 @@ const readoutOn = Effect.gen(function* () {
 const summaryGated = Effect.fn("funnel.summaryGated")(function* () {
 	yield* ViewFunnel;
 	const funnel = yield* Funnel;
-	const {caylakCount, yazarCount} = yield* funnel.tierPopulation();
+	const population = yield* funnel.tierPopulation();
 	return {
 		__typename: "FunnelSummary" as const,
 		id: FUNNEL_SUMMARY_ID,
-		caylakCount,
-		yazarCount,
+		caylakCount: population.caylakCount,
+		yazarCount: population.yazarCount,
+		promotionRate: promotionRate(population),
 	};
 });
 

@@ -43,6 +43,25 @@
 	margin: 0;
 }
 
+.kp-funnel__headline {
+	margin: 0 0 var(--s-4);
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-funnel__headline-label {
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-funnel__headline-value {
+	margin: 0;
+	font: var(--t-h1);
+	color: var(--text-primary);
+	font-variant-numeric: tabular-nums;
+}
+
 .kp-funnel__counts {
 	display: grid;
 	grid-template-columns: repeat(2, 1fr);

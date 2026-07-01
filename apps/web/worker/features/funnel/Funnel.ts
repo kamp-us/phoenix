@@ -1,9 +1,11 @@
 /**
  * `Funnel` — the conversion-funnel read model (#1589, the çaylak→yazar readout's
- * tracer bullet). One read today, {@link Funnel.tierPopulation}: the current tier
+ * tracer bullet). Its one read, {@link Funnel.tierPopulation}, is the current tier
  * population — how many accounts sit at each rung of the authorship ladder
  * (`çaylak`, `yazar`) — the simplest funnel number the Phase-2 rate/time metrics
- * extend off this same service.
+ * extend off this same service. The first such extension, {@link promotionRate}
+ * (#1593), derives the loop's headline number from that population: the share of the
+ * human earned-authorship population that has crossed to `yazar`.
  *
  * Humans-only by construction: the count filters `user.type = 'human'`, so the
  * seeded `system` sentinel (ADR 0097) and any `bot` account (agents, v1.1) never
@@ -58,6 +60,17 @@ export const foldTierPopulation = (rows: ReadonlyArray<TierCountRow>): TierPopul
 		caylakCount: byTier.get("çaylak") ?? 0,
 		yazarCount: byTier.get("yazar") ?? 0,
 	};
+};
+
+/**
+ * The loop's headline number (#1593): the share of the earned-authorship human
+ * population that crossed to `yazar` — `yazar / (çaylak + yazar)`, a fraction in
+ * `[0, 1]`. An empty population (`çaylak + yazar === 0`) reads as `0` rather than a
+ * `NaN` division-by-zero, so a fresh DB is a well-formed `0%`, not a broken number.
+ */
+export const promotionRate = ({caylakCount, yazarCount}: TierPopulation): number => {
+	const earned = caylakCount + yazarCount;
+	return earned === 0 ? 0 : yazarCount / earned;
 };
 
 export class Funnel extends Context.Service<
