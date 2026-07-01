@@ -57,6 +57,14 @@ export const user = sqliteTable("user", {
 	tier: text("tier", {enum: [...STORED_TIERS]})
 		.notNull()
 		.default("çaylak"),
+	// When the account was promoted `çaylak → yazar` (#1590). Null = never promoted,
+	// or promoted before this column existed (the founding cohort predates it — v1
+	// measures time-to-promotion forward only, no backfill). Stamped atomically inside
+	// `Pasaport.promoteToYazar` in the same batch as the `tier` flip (ADR 0013/0014),
+	// so it can only be set on the exact write that flips the tier — server-only, never
+	// client-writable (declared `input:false` + `returned:false` to better-auth,
+	// `better-auth-live.ts`). A thin nullable signal, NOT an analytics/event stream.
+	promotedAt: timestamp("promoted_at"),
 	emailVerified: integer("email_verified", {mode: "boolean"}),
 	// Public handle: 3–30 chars, lowercase ASCII + digits + `-`, no leading/
 	// trailing `-`. UNIQUE allows multiple NULLs (SQLite) so unbooted accounts coexist.
