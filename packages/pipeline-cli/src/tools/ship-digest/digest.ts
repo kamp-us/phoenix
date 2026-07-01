@@ -67,8 +67,18 @@ export interface ShipEntry {
 	readonly type?: string | undefined;
 	/** The strategic milestone title this work shipped under, or undefined. */
 	readonly milestone?: string | undefined;
-	/** `product` or `infra` — the top-level section; absent/unknown ⇒ Product. */
+	/**
+	 * The PR's own product/infra signal — `product` or `infra`, set join-free from the merged
+	 * PR's `area:*` label (the convention in `gh-issue-intake-formats.md`). The PREFERRED
+	 * source; absent/unknown ⇒ consult `joinedArea`, then default Product.
+	 */
 	readonly area?: string | undefined;
+	/**
+	 * The area recovered by the gather's PR→issue→milestone join — the FALLBACK signal, used
+	 * only when the PR carries no direct `area:*` label. Prefer `area` (join-free) over this;
+	 * absent here too ⇒ default Product. See `resolveSection`.
+	 */
+	readonly joinedArea?: string | undefined;
 }
 
 /** The `--since` window the digest reports over, rendered into the heading. */
@@ -79,11 +89,29 @@ export interface DigestWindow {
 	readonly until: string;
 }
 
-/** Map an entry's `area` to its top-level section; absent/unrecognized ⇒ Product. */
+/** Map a raw area string to its top-level section; absent/unrecognized ⇒ Product. */
 export const sectionFor = (area: string | undefined): Section => {
 	if (area === undefined) return "Product";
 	const normalized = area.trim().toLowerCase();
 	return normalized === "infra" ? "Infra" : "Product";
+};
+
+/**
+ * Resolve an entry's top-level section with the PR-signal-preferred precedence of the
+ * `area:*` PR-label convention (issue #1598, documented in `gh-issue-intake-formats.md`):
+ * the PR's own product/infra signal (`entry.area`, set join-free from the merged PR's
+ * `area:*` label) wins; when it is absent the gather's PR→issue→milestone join fallback
+ * (`entry.joinedArea`) is consulted; when neither is present the digest defaults to
+ * `Product`. A present-but-blank signal is treated as absent (trimmed); each usable signal
+ * is classified through `sectionFor`. This is where "prefer the PR signal, fall back to the
+ * join" lives — the join-free readout and its graceful degradation to child #1595's behavior.
+ */
+export const resolveSection = (entry: ShipEntry): Section => {
+	const pr = entry.area?.trim();
+	if (pr !== undefined && pr !== "") return sectionFor(pr);
+	const joined = entry.joinedArea?.trim();
+	if (joined !== undefined && joined !== "") return sectionFor(joined);
+	return "Product";
 };
 
 /** The milestone bucket key for an entry — its title, or `Uncategorized` when absent/blank. */
@@ -130,7 +158,7 @@ export const groupEntries = (entries: ReadonlyArray<ShipEntry>): ReadonlyArray<S
 	// section -> milestone -> type -> entries
 	const bySection = new Map<Section, Map<string, Map<string, ShipEntry[]>>>();
 	for (const entry of entries) {
-		const section = sectionFor(entry.area);
+		const section = resolveSection(entry);
 		const mKey = milestoneKey(entry.milestone);
 		const tKey = typeKey(entry.type);
 		const milestones = bySection.get(section) ?? new Map<string, Map<string, ShipEntry[]>>();
