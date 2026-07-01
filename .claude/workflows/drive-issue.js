@@ -259,6 +259,7 @@ const shipped = await agent(
 		`Return { merged: true|false, sha: "<merge commit sha if merged>", reviewedReady: true|false, reason: "<refusal reason if not merged>" }.`,
 	{
 		agentType: "shipper",
+		isolation: "worktree",
 		schema: {
 			type: "object",
 			properties: {
