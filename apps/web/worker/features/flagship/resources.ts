@@ -213,4 +213,4 @@ export const FUNNEL_READOUT_FLAG = {
  * (see `demoTargetingFlag` for why it's a factory, not a module constant).
  */
 export const funnelReadoutFlag = (appId: Input<string>) =>
-	Cloudflare.FlagshipFlag("phoenix_funnel_readout", {appId, ...FUNNEL_READOUT_FLAG});
+	Cloudflare.Flagship.Flag("phoenix_funnel_readout", {appId, ...FUNNEL_READOUT_FLAG});
