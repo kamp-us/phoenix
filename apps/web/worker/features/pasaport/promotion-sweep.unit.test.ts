@@ -29,7 +29,6 @@ import {
 	relations,
 	type Stmt,
 } from "../../db/Drizzle.ts";
-import * as schema from "../../db/drizzle/schema.ts";
 import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
 // A real drizzle client over a no-op D1 — used ONLY to render the batch statements'
@@ -58,7 +57,7 @@ const noopD1 = {
 		return [];
 	},
 } as unknown as D1Database;
-const renderDb = drizzle(noopD1, {schema, relations});
+const renderDb = drizzle(noopD1, {relations});
 
 const inertAuth = {} as BetterAuthInstance;
 

@@ -22,7 +22,6 @@ import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
-import * as schema from "../../db/drizzle/schema.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {Pano, PanoLive} from "./Pano.ts";
@@ -53,7 +52,7 @@ const noopD1 = {
 		return [];
 	},
 } as unknown as D1Database;
-const renderDb = drizzle(noopD1, {schema, relations});
+const renderDb = drizzle(noopD1, {relations});
 
 const hasToSQL = (v: unknown): v is {toSQL: () => {sql: string; params: unknown[]}} =>
 	typeof v === "object" && v !== null && typeof (v as {toSQL?: unknown}).toSQL === "function";

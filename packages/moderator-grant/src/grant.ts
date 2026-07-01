@@ -11,7 +11,13 @@
  */
 import {eq, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
+import {defineRelations} from "drizzle-orm/relations";
 import {grantSchema as schema} from "./schema.ts";
+
+// RQB v2 (drizzle 1.0): drizzle() takes `relations`, not `schema` (ADR: #727). No
+// relational `.with` traversal here, so empty `defineRelations(schema)` just registers
+// the tables — mirrors apps/web worker/db/Drizzle.ts.
+const relations = defineRelations(schema);
 
 export type Role = "member" | "moderator";
 
@@ -26,9 +32,9 @@ export interface GrantResult {
 	selector: Selector;
 }
 
-export type GrantDb = ReturnType<typeof drizzle<typeof schema>>;
+export type GrantDb = ReturnType<typeof drizzle<typeof relations>>;
 
-export const makeGrantDb = (d1: D1Database): GrantDb => drizzle(d1, {schema});
+export const makeGrantDb = (d1: D1Database): GrantDb => drizzle(d1, {relations});
 
 const whereSelector = (selector: Selector) =>
 	selector.by === "id"

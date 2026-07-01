@@ -30,7 +30,6 @@ import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
-import * as schema from "../../db/drizzle/schema.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
@@ -57,7 +56,7 @@ const noopD1 = {
 		return [];
 	},
 } as unknown as D1Database;
-const renderDb = drizzle(noopD1, {schema, relations});
+const renderDb = drizzle(noopD1, {relations});
 
 const inertAuth = {} as BetterAuthInstance;
 

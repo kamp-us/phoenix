@@ -26,8 +26,14 @@
 import {key, platform} from "@kampus/authz";
 import {and, eq, inArray, ne, or, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
+import {defineRelations} from "drizzle-orm/relations";
 import {FOUNDER_COHORT} from "./cohort.ts";
 import {seedSchema as schema} from "./schema.ts";
+
+// RQB v2 (drizzle 1.0): drizzle() takes `relations`, not `schema` (ADR: #727). This
+// pack runs no relational `.with` traversal, so empty `defineRelations(schema)` just
+// registers the tables — mirrors apps/web worker/db/Drizzle.ts.
+const relations = defineRelations(schema);
 
 export const MODERATES = "moderates";
 export const PLATFORM = key(platform);
@@ -54,9 +60,9 @@ export interface FounderTuple {
 	readonly object: string;
 }
 
-export type SeedDb = ReturnType<typeof drizzle<typeof schema>>;
+export type SeedDb = ReturnType<typeof drizzle<typeof relations>>;
 
-export const makeSeedDb = (d1: D1Database): SeedDb => drizzle(d1, {schema});
+export const makeSeedDb = (d1: D1Database): SeedDb => drizzle(d1, {relations});
 
 const EMPTY: SeedResult = {cohort: 0, matched: 0, promoted: 0, inserted: 0};
 

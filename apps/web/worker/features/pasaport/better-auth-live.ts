@@ -23,6 +23,7 @@ import {drizzleAdapter} from "better-auth/adapters/drizzle";
 import {bearer, magicLink} from "better-auth/plugins";
 import type {} from "better-call";
 import {drizzle} from "drizzle-orm/d1";
+import {defineRelations} from "drizzle-orm/relations";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -136,7 +137,7 @@ export const BetterAuthLive = Layer.effect(
 		const authUrlConfig = deriveAuthUrlConfig(environment);
 
 		const auth = yield* Effect.gen(function* () {
-			const db = drizzle(raw, {schema});
+			const db = drizzle(raw, {relations: defineRelations(schema)});
 			return makeBetterAuth({
 				emailAndPassword: {enabled: true},
 				database: drizzleAdapter(db, {provider: "sqlite", schema}),

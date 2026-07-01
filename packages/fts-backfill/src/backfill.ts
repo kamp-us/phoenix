@@ -26,11 +26,17 @@ import type {FtsSyncDb, Stmt} from "@kampus/web/db/Drizzle";
 import {syncPostSearch, syncTermSearch} from "@kampus/web/features/search/fts-sync";
 import {isNull} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
+import {defineRelations} from "drizzle-orm/relations";
 import {backfillSchema, postRecord, termRecord} from "./schema.ts";
 
-export type BackfillDb = ReturnType<typeof drizzle<typeof backfillSchema>>;
+// RQB v2 (drizzle 1.0): drizzle() takes `relations`, not `schema` (ADR: #727). The
+// backfill runs no relational `.with` traversal, so empty `defineRelations(backfillSchema)`
+// just registers the tables — mirrors apps/web worker/db/Drizzle.ts.
+const relations = defineRelations(backfillSchema);
 
-export const makeBackfillDb = (d1: D1Database): BackfillDb => drizzle(d1, {schema: backfillSchema});
+export type BackfillDb = ReturnType<typeof drizzle<typeof relations>>;
+
+export const makeBackfillDb = (d1: D1Database): BackfillDb => drizzle(d1, {relations});
 
 /** One source row to index: the FTS key (slug/id) and the title indexed into `norm`. */
 export interface SourceRow {

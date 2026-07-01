@@ -18,7 +18,6 @@ import {drizzle} from "drizzle-orm/d1";
 import {type Context, Effect, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
-import * as schema from "../../db/drizzle/schema.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Sozluk, SozlukLive, type TermSummaryDefRow} from "./Sozluk.ts";
 
@@ -45,7 +44,7 @@ const noopD1 = {
 		return [];
 	},
 } as unknown as D1Database;
-const renderDb = drizzle(noopD1, {schema, relations});
+const renderDb = drizzle(noopD1, {relations});
 
 // editDefinition doesn't touch Vote (it's consulted on the vote/aggregate paths),
 // so an inert instance satisfies the layer dependency without an implementation.

@@ -18,13 +18,13 @@
  *     here, not only in remote integration.
  */
 
-import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
+import {SQLiteDialect} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
 import {createDrizzle, type DrizzleDb} from "../../db/Drizzle.ts";
 import {removePostSearch, removeTermSearch, syncPostSearch, syncTermSearch} from "./fts-sync";
 import {normalizeSearchText} from "./normalize";
 
-const dialect = new SQLiteSyncDialect();
+const dialect = new SQLiteDialect();
 const renderStmt = (stmt: {getSQL: () => never}) => dialect.sqlToQuery(stmt.getSQL());
 
 /**
@@ -108,13 +108,18 @@ describe("ftsBatchItems shape — batch-safe against D1's real batch builder (#8
 		expect(built[1]?.params).toEqual(["t", normalizeSearchText("Başlık")]);
 	});
 
-	it("a parametrized db.run(sql) item is NOT batch-safe (the #863 regression it guards)", async () => {
-		const {db} = recordingD1();
+	it("a parametrized db.run(sql) item is batch-safe under drizzle rc.4 (the #863 rc.3 defect, fixed upstream)", async () => {
+		const {db, built} = recordingD1();
 		const {sql} = await import("drizzle-orm");
-		// db.run(sql) yields a SQLiteRaw whose _prepare() has no `.stmt`; D1's batch
-		// builder throws on `preparedQuery.stmt.bind(...)` for a parametrized item.
+		// #863 was an rc.3 defect: `db.run(sql)`'s SQLiteRaw prepared WITHOUT a `.stmt`,
+		// so D1's batch builder threw on `preparedQuery.stmt.bind(...)` for a parametrized
+		// item (a 500 on real D1). rc.4's `d1/session.ts` `prepareQuery` ALWAYS prepares
+		// `stmt = client.prepare(query.sql)`, so the raw now carries a real `.stmt` and
+		// binds in `batch()` like any query-builder item — the hazard is fixed upstream.
 		const raw = db.run(sql`INSERT INTO term_search (slug, norm) VALUES (${"t"}, ${"n"})`);
-		await expect(db.batch([raw] as never)).rejects.toThrow();
+		await expect(db.batch([raw] as never)).resolves.toBeDefined();
+		expect(built).toHaveLength(1);
+		expect(built[0]?.params).toEqual(["t", "n"]);
 	});
 
 	it("folds a single-statement removal (delete path) into one batch item", async () => {

@@ -27,7 +27,6 @@ import {
 	relations,
 	type Stmt,
 } from "../../db/Drizzle.ts";
-import * as schema from "../../db/drizzle/schema.ts";
 import {VOUCH_CONCURRENT_CAP} from "./standing.ts";
 import {VouchLedger, VouchLedgerLive} from "./VouchLedger.ts";
 
@@ -56,7 +55,7 @@ const noopD1 = {
 		return [];
 	},
 } as unknown as D1Database;
-const renderDb = drizzle(noopD1, {schema, relations});
+const renderDb = drizzle(noopD1, {relations});
 
 // Captures the batch's two rendered statements (guarded insert, existence probe) and
 // answers with a scripted result: the insert's `meta.changes` and whether the existence
@@ -207,7 +206,7 @@ function capturingRun(): {
 			return [];
 		},
 	} as unknown as D1Database;
-	const db = drizzle(capturingD1, {schema, relations});
+	const db = drizzle(capturingD1, {relations});
 	const access: DrizzleAccess = makeDrizzleAccess(db);
 	return {
 		access,
