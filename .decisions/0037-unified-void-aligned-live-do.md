@@ -54,7 +54,11 @@ void-aligned rewrite, not a mechanical re-merge of the pre-0025 one-class form.
   A misrouted call (e.g. `register` on a `connection:` instance) hits an
   instance whose role doesn't match and harmlessly returns a no-op result —
   void has no role guard either.
-- **`DurableObjectNamespaceScope` self-namespace.** The DO's OWN namespace is
+- **`DurableObjectNamespaceScope` self-namespace.** *(Superseded for the alchemy
+  beta.59 substrate by [0123](0123-livedo-self-addressing-beta59-runtime-scope.md):
+  beta.59 removed `DurableObjectNamespaceScope`; the self-namespace is now resolved
+  at per-instance runtime via `Cloudflare.DurableObject` with a localized `Req`
+  discharge. The one-class/two-role shape here still stands.)* The DO's OWN namespace is
   resolved **once in shared init** from `Cloudflare.DurableObjectNamespaceScope`
   (the LOCAL, scriptName-less self-binding that `.make()` provides) and held in
   the closure for cross-role addressing

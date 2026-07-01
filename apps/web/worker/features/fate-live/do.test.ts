@@ -8,6 +8,7 @@
  * so a topic→connection `deliver` and a connection→topic `register` hop between
  * the real instances, proving the acceptance criteria without workerd.
  */
+import {RuntimeContext} from "alchemy";
 import {Effect} from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {describe, expect, it} from "vitest";
@@ -28,7 +29,13 @@ import type {
 } from "./protocol.ts";
 import {topicsForPublish, topicsForSubscribe} from "./protocol.ts";
 
-const run = <A>(effect: Effect.Effect<A, never, never>): Promise<A> => Effect.runPromise(effect);
+// alchemy beta.59 colored the DO storage methods (and every `LiveRpcSurface`
+// method that touches `state.storage` or hops cross-role) with `RuntimeContext`
+// (ADR 0123). The KV-only `do-state` fake is pure `Effect.sync`, so nothing
+// actually reads the context at runtime — `RuntimeContext.phantom` discharges the
+// type requirement so these in-process unit runs stay `Effect.runPromise`-able.
+const run = <A>(effect: Effect.Effect<A, never, RuntimeContext>): Promise<A> =>
+	Effect.runPromise(Effect.provide(effect, RuntimeContext.phantom));
 
 /** Generous limits — none of these caps is the thing under test. */
 const LIMITS: LiveLimits = {
