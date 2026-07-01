@@ -1,5 +1,11 @@
 import {assert, describe, it} from "@effect/vitest";
-import {deriveShipDigest, groupEntries, type ShipEntry, sectionFor} from "./digest.ts";
+import {
+	deriveShipDigest,
+	groupEntries,
+	resolveSection,
+	type ShipEntry,
+	sectionFor,
+} from "./digest.ts";
 
 const entry = (over: Partial<ShipEntry> & {pr: number}): ShipEntry => ({
 	title: `entry ${over.pr}`,
@@ -30,7 +36,51 @@ describe("sectionFor — area → Product/Infra split", () => {
 	});
 });
 
+describe("resolveSection — PR signal preferred, join fallback (issue #1598)", () => {
+	it("uses the PR area signal when present (join-free), no issue needed", () => {
+		assert.strictEqual(resolveSection(entry({pr: 1, area: "infra"})), "Infra");
+		assert.strictEqual(resolveSection(entry({pr: 2, area: "product"})), "Product");
+	});
+
+	it("prefers the PR area signal over the join fallback when both are present", () => {
+		assert.strictEqual(
+			resolveSection(entry({pr: 1, area: "product", joinedArea: "infra"})),
+			"Product",
+		);
+		assert.strictEqual(
+			resolveSection(entry({pr: 2, area: "infra", joinedArea: "product"})),
+			"Infra",
+		);
+	});
+
+	it("falls back to the PR→issue→milestone join area when the PR signal is absent", () => {
+		assert.strictEqual(resolveSection(entry({pr: 1, joinedArea: "infra"})), "Infra");
+		assert.strictEqual(resolveSection(entry({pr: 2, joinedArea: "product"})), "Product");
+	});
+
+	it("treats a blank PR signal as absent and consults the join fallback", () => {
+		assert.strictEqual(resolveSection(entry({pr: 1, area: "   ", joinedArea: "infra"})), "Infra");
+	});
+
+	it("defaults to Product when neither signal is present", () => {
+		assert.strictEqual(resolveSection(entry({pr: 1})), "Product");
+	});
+});
+
 describe("groupEntries — product/infra → milestone → type", () => {
+	it("groups by the PR signal join-free, and by the join fallback when it is absent", () => {
+		const groups = groupEntries([
+			entry({pr: 1, area: "infra", type: "chore"}),
+			entry({pr: 2, joinedArea: "infra", type: "chore"}),
+			entry({pr: 3, area: "product", type: "feature"}),
+		]);
+		const infra = groups.find((g) => g.section === "Infra");
+		const infraPrs = infra?.milestones.flatMap((m) =>
+			m.types.flatMap((t) => t.entries.map((e) => e.pr)),
+		);
+		assert.deepStrictEqual(infraPrs?.sort(), [1, 2]);
+	});
+
 	it("splits entries into Product before Infra", () => {
 		const groups = groupEntries([
 			entry({pr: 1, area: "infra", type: "chore"}),

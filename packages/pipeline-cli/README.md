@@ -63,9 +63,15 @@ version sections, this groups **product vs infra** at the top level, then by **m
 entry with no milestone / area / type is surfaced under `Uncategorized`, never dropped.
 
 The tool is the pure projection only: it consumes a pre-gathered entries JSON (each
-`{issue?, pr, title, type?, milestone?, area?}`), decoded with a `Schema` at the boundary
-(a malformed/unreadable file is a typed non-zero exit). The git-log `--since` + `gh`
+`{issue?, pr, title, type?, milestone?, area?, joinedArea?}`), decoded with a `Schema` at the
+boundary (a malformed/unreadable file is a typed non-zero exit). The git-log `--since` + `gh`
 issue/milestone gather is the `/what-shipped` skill's job, not this tool's.
+
+The product/infra split prefers the **PR `area:*` signal** (`area`, set join-free from the merged
+PR's `area:product` / `area:infra` label — the convention in
+[`gh-issue-intake-formats.md`](../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)),
+falling back to the gather's PR→issue→milestone join area (`joinedArea`) when the PR carries no
+label, then defaulting to `Product` — see `resolveSection` in `digest.ts`.
 
 ```bash
 node packages/pipeline-cli/src/bin.ts ship-digest derive --entries <file> --since <YYYY-MM-DD> [--until <YYYY-MM-DD>] [--out <file>]
