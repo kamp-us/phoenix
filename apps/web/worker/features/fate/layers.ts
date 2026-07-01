@@ -22,6 +22,7 @@ import {DrizzleLive} from "../../db/Drizzle.ts";
 import {DivanLive} from "../divan/Divan.ts";
 import {FlagsLive} from "../flagship/Flags.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
+import {FunnelLive} from "../funnel/Funnel.ts";
 import {AgentAuthorityV1} from "../kunye/AgentAuthorityV1.ts";
 import {KunyeLive} from "../kunye/Kunye.ts";
 import {RelationStoreLive} from "../kunye/RelationStore.ts";
@@ -151,6 +152,10 @@ export const makeFateLayer = Layer.mergeAll(
 	// discharged by `provideMerge(DrizzleLive)`.
 	SearchLive,
 	ReportLive,
+	// The conversion-funnel read model (#1589) — a humans-only tier-population count
+	// over the `user` table, depending only on `Drizzle` (discharged below), so it
+	// merges flat like `Stats`/`Search`/`Report`.
+	FunnelLive,
 	// The authz ports the moderation gate (`report.resolve`/`restore`/`listOpen`)
 	// discharges `Moderate.over(platform)` against: `RelationStoreLive` reads the
 	// `moderates` tuple off the same `Drizzle` seam (discharged below), and
