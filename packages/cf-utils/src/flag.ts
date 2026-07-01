@@ -98,6 +98,33 @@ export class FlagEnvNotFound extends Data.TaggedError("FlagEnvNotFound")<{
 	}
 }
 
+/**
+ * No flag with the requested key exists in ANY env — the typed, legible not-found the
+ * env-less `flag get <key>` fails with when its per-key slice of `flag list` is empty, so a
+ * mistyped key surfaces loud (never a silent empty table). Carries the keys that DO resolve so
+ * the message points the operator at a valid one. The `--env`-scoped `flag get` instead fails
+ * with the SDK's `FlagshipFlagNotFound` straight off the single-flag read.
+ */
+export class FlagKeyNotFound extends Data.TaggedError("FlagKeyNotFound")<{
+	readonly key: string;
+	readonly knownKeys: ReadonlyArray<string>;
+}> {
+	override get message(): string {
+		const known = this.knownKeys.length > 0 ? this.knownKeys.join(", ") : "(none)";
+		return `no flag "${this.key}" in any env — known flags: ${known}`;
+	}
+}
+
+/** The per-key slice of the `flag list` rows — a flag's state in every env it's defined in. */
+export const selectStatesForKey = (
+	rows: ReadonlyArray<FlagState>,
+	key: string,
+): ReadonlyArray<FlagState> => rows.filter((r) => r.key === key);
+
+/** Every distinct flag key present across the listed rows, sorted — the `known flags` hint. */
+export const distinctKeys = (rows: ReadonlyArray<FlagState>): ReadonlyArray<string> =>
+	[...new Set(rows.map((r) => r.key))].sort();
+
 /** The two served states a `flag set` flip targets — the `{off,on}` variation keys. */
 export type FlagTarget = "on" | "off";
 
@@ -192,4 +219,28 @@ export const renderFlagTable = (rows: ReadonlyArray<FlagState>): string => {
 			.join("  ")
 			.trimEnd();
 	return [line(header), ...body.map(line)].join("\n");
+};
+
+/**
+ * Render one flag's full state in a single env as a legible key/value block — the
+ * `flag get <key> --env <env>` view. Shows the served/default value (the value
+ * `defaultVariation` resolves to), `enabled`, and every variation with its value, so the
+ * pre-flip confirmation read shows exactly what an env serves and what it could serve.
+ */
+export const renderFlagDetail = (env: string, flag: RawFlag): string => {
+	const served = renderValue(flag.variations[flag.defaultVariation]);
+	const label = (l: string) => pad(`${l}:`, 12);
+	const variationKeys = Object.keys(flag.variations).sort();
+	const variations =
+		variationKeys.length > 0
+			? variationKeys.map((v) => `  ${v} = ${renderValue(flag.variations[v])}`)
+			: ["  (none)"];
+	return [
+		`${label("flag")}${flag.key}`,
+		`${label("env")}${env}`,
+		`${label("enabled")}${flag.enabled ? "on" : "off"}`,
+		`${label("serves")}${flag.defaultVariation} = ${served}`,
+		`${label("variations")}`.trimEnd(),
+		...variations,
+	].join("\n");
 };

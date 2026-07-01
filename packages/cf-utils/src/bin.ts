@@ -4,6 +4,8 @@
  * mirroring `@kampus/moderator-grant`/`@kampus/orphan-sweep`). Two surfaces today:
  *
  *   node src/bin.ts flag list                              enumerate every flag × env
+ *   node src/bin.ts flag get <key> --env <env>             read one flag's state in an env
+ *   node src/bin.ts flag get <key>                         read that flag across every env
  *   node src/bin.ts flag set <key> on|off --env <env>      dry-run the served-value flip
  *   node src/bin.ts flag set <key> on|off --env <env> --execute   apply it
  *   $CLOUDFLARE_API_TOKEN   the minted CF token (read by CredentialsFromEnv)
@@ -27,11 +29,15 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {
 	computeFlipPlan,
 	decodeEnv,
+	distinctKeys,
 	FlagEnvNotFound,
+	FlagKeyNotFound,
 	type FlagTarget,
 	findAppForEnv,
+	renderFlagDetail,
 	renderFlagTable,
 	renderFlipPlan,
+	selectStatesForKey,
 } from "./flag.ts";
 import {FlagshipRead, FlagshipReadLive, FlagshipWrite, FlagshipWriteLive} from "./flagship.ts";
 
@@ -49,6 +55,51 @@ const list = Command.make(
 
 const keyArg = Argument.string("key").pipe(
 	Argument.withDescription("the flag key to flip (e.g. authorship-loop)"),
+);
+const getKeyArg = Argument.string("key").pipe(
+	Argument.withDescription("the flag key to read (e.g. authorship-loop)"),
+);
+const getEnvFlag = Flag.string("env").pipe(
+	Flag.optional,
+	Flag.withDescription("the env to read the flag in (e.g. prod); omit for every env"),
+);
+
+const get = Command.make(
+	"get",
+	{key: getKeyArg, env: getEnvFlag},
+	Effect.fn(function* ({key, env}) {
+		const read = yield* FlagshipRead;
+
+		// No --env: the per-key slice of `flag list` across every env. An unknown key yields an
+		// empty slice → fail FlagKeyNotFound (loud, listing the known keys), never a blank table.
+		if (env._tag === "None") {
+			const rows = yield* read.listFlagStates();
+			const slice = selectStatesForKey(rows, key);
+			if (slice.length === 0) {
+				return yield* new FlagKeyNotFound({key, knownKeys: distinctKeys(rows)});
+			}
+			yield* Console.log(renderFlagTable(slice));
+			return;
+		}
+
+		// --env: resolve the app for that env FIRST — an unknown env fails FlagEnvNotFound before
+		// the read; then the single-flag read surfaces the SDK's FlagshipFlagNotFound on a bad key.
+		const target = env.value;
+		const apps = yield* read.listApps();
+		const app = findAppForEnv(apps, target);
+		if (app === undefined) {
+			const knownEnvs = [
+				...new Set(apps.map((a) => decodeEnv(a.name)).filter((e): e is string => e !== undefined)),
+			].sort();
+			return yield* new FlagEnvNotFound({env: target, knownEnvs});
+		}
+		const flag = yield* read.getAppFlag(app.id, key);
+		yield* Console.log(renderFlagDetail(target, flag));
+	}),
+).pipe(
+	Command.withDescription(
+		"Read a single flag's state in an env (or across every env when --env is omitted)",
+	),
 );
 const stateArg = Argument.choice("state", ["on", "off"] as const).pipe(
 	Argument.withDescription("the served/default value to set — on or off"),
@@ -109,7 +160,7 @@ const set = Command.make(
 );
 
 const flag = Command.make("flag").pipe(
-	Command.withSubcommands([list, set]),
+	Command.withSubcommands([list, get, set]),
 	Command.withDescription("Read and flip Flagship flags across every env"),
 );
 
