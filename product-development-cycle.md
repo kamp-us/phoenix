@@ -87,6 +87,19 @@ naming grammar and lifecycle discipline are
 [.patterns/feature-flags-schema-lifecycle.md](.patterns/feature-flags-schema-lifecycle.md).
 Read those for the *how* — this doc does not restate them.
 
+### The review step (3) can be right-sized to the diff
+
+Step 3's review is not always the full fan-out. A **trivially-classified** PR can route through
+the lighter `review-trivial` gate instead of the full `review-code` / `review-doc` /
+`review-skill` fan-out — the **trivial-diff tier** (ADR
+[0120](.decisions/0120-stage-right-sizing-trivial-diff-lighter-gate.md)). The lighter gate is a
+*reduced-prompt but still fail-closed* independent gate, never a skipped gate, and routing is
+default-deny: anything but a positive trivial classification (and the tier being on) falls back
+to the full path. The tier is **off by default**, with adoption gated behind #1560's two-axis
+measurement (ADR [0112](.decisions/0112-token-measurement-no-quality-compromise-methodology.md)) —
+so today every PR still takes the full fan-out. How the three pieces compose is
+[.patterns/right-sized-fan-out-trivial-tier.md](.patterns/right-sized-fan-out-trivial-tier.md).
+
 ## The release queue: the deploy → release handoff
 
 A deployed-dark feature surfaces to the human releasers via a **`status:awaiting-release`
