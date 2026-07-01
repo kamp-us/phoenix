@@ -35,6 +35,7 @@ const EntrySchema = Schema.Struct({
 	milestone: Schema.optional(Schema.String),
 	area: Schema.optional(Schema.String),
 	joinedArea: Schema.optional(Schema.String),
+	releaseState: Schema.optional(Schema.String),
 });
 
 const EntriesSchema = Schema.Array(EntrySchema);

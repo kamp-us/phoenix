@@ -63,15 +63,25 @@ version sections, this groups **product vs infra** at the top level, then by **m
 entry with no milestone / area / type is surfaced under `Uncategorized`, never dropped.
 
 The tool is the pure projection only: it consumes a pre-gathered entries JSON (each
-`{issue?, pr, title, type?, milestone?, area?, joinedArea?}`), decoded with a `Schema` at the
-boundary (a malformed/unreadable file is a typed non-zero exit). The git-log `--since` + `gh`
-issue/milestone gather is the `/what-shipped` skill's job, not this tool's.
+`{issue?, pr, title, type?, milestone?, area?, joinedArea?, releaseState?}`), decoded with a
+`Schema` at the boundary (a malformed/unreadable file is a typed non-zero exit). The git-log
+`--since` + `gh` issue/milestone gather is the `/what-shipped` skill's job, not this tool's.
 
 The product/infra split prefers the **PR `area:*` signal** (`area`, set join-free from the merged
 PR's `area:product` / `area:infra` label — the convention in
 [`gh-issue-intake-formats.md`](../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)),
 falling back to the gather's PR→issue→milestone join area (`joinedArea`) when the PR carries no
 label, then defaulting to `Product` — see `resolveSection` in `digest.ts`.
+
+The digest also carries the **merged-vs-live-to-users axis** (#1597): each entry's
+`releaseState` (`live` / `awaiting-release` / `dark` / `unknown`) drives an inline live/dark
+annotation per entry and a distinct **"Currently dark — awaiting your release"** callout that
+lists the merged-but-not-yet-live work. Per
+[ADR 0123](../../.decisions/0123-ship-digest-live-axis-from-authoritative-flagship-state.md)
+the *sourcing* of that state is the `/what-shipped` gather's IO job — it reads authoritative
+Cloudflare Flagship values via `cf-utils` for flag-gated work and treats non-flag-gated work as
+live at merge; this pure core consumes the state as passed-in input. A merged item with no
+resolvable state is surfaced as `unknown`, never silently treated as live.
 
 ```bash
 node packages/pipeline-cli/src/bin.ts ship-digest derive --entries <file> --since <YYYY-MM-DD> [--until <YYYY-MM-DD>] [--out <file>]

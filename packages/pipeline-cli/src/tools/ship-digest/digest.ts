@@ -15,6 +15,16 @@
  * is surfaced under the product tree's `Uncategorized` milestone / `Uncategorized` type, per
  * the "flag, never drop" rule the changelog core also honors. The git-log/`gh` gather that
  * builds the entries JSON is the `/what-shipped` skill's job; this core never touches IO.
+ *
+ * The **merged-vs-live-to-users axis** (issue #1597, stories 3/4) rides on top of that
+ * grouping: each entry carries a `releaseState` — `live` / `awaiting-release` / `dark` /
+ * `unknown` — and the render adds (a) an inline live/dark annotation per entry and (b) a
+ * distinct "currently dark — awaiting your release" callout listing the not-yet-live work.
+ * Per ADR 0123 the *sourcing* of that state is the `/what-shipped` gather's IO job (it reads
+ * authoritative Cloudflare Flagship values via `cf-utils` for flag-gated work, merged-equals-
+ * live for non-flag-gated work); this core stays pure and consumes the state as passed-in
+ * input. A merged item with no resolvable state is surfaced as `unknown`, never silently
+ * treated as live (the `resolveReleaseState` default).
  */
 
 /**
@@ -56,6 +66,30 @@ const TYPE_LABEL: Readonly<Record<string, string>> = {
 /** The fallback bucket name shared by the milestone and type axes for a missing key. */
 export const UNCATEGORIZED = "Uncategorized";
 
+/**
+ * The merged-vs-live-to-users axis (ADR 0123). Ordered most-live → least-known:
+ * - `live` — served to users now (a flag-gated feature whose Flagship value is on, or
+ *   non-flag-gated work that is live at merge).
+ * - `awaiting-release` — merged and queued, not yet flipped live to users.
+ * - `dark` — merged behind a default-off flag; live only once a human flips it (ADR 0083).
+ * - `unknown` — no resolvable flag/release state; surfaced, NEVER silently treated as live.
+ * The state is sourced by the `/what-shipped` gather (ADR 0123); this core consumes it.
+ */
+export const RELEASE_STATE_ORDER = ["live", "awaiting-release", "dark", "unknown"] as const;
+
+export type ReleaseState = (typeof RELEASE_STATE_ORDER)[number];
+
+/** The inline annotation rendered after each entry's backlink for its release state. */
+const RELEASE_STATE_LABEL: Readonly<Record<ReleaseState, string>> = {
+	live: "live",
+	"awaiting-release": "awaiting release",
+	dark: "dark",
+	unknown: "release state unknown",
+};
+
+/** The release states the "currently dark — awaiting your release" callout collects. */
+const NOT_YET_LIVE: ReadonlyArray<ReleaseState> = ["dark", "awaiting-release"];
+
 export interface ShipEntry {
 	/** The closed issue number, when the merged work traces to one. */
 	readonly issue?: number | undefined;
@@ -79,6 +113,12 @@ export interface ShipEntry {
 	 * absent here too ⇒ default Product. See `resolveSection`.
 	 */
 	readonly joinedArea?: string | undefined;
+	/**
+	 * The merged-vs-live-to-users state the gather resolved (ADR 0123) — a `ReleaseState`
+	 * string (`live` / `awaiting-release` / `dark` / `unknown`). Absent or unrecognized ⇒
+	 * `unknown` (never assumed live). See `resolveReleaseState`.
+	 */
+	readonly releaseState?: string | undefined;
 }
 
 /** The `--since` window the digest reports over, rendered into the heading. */
@@ -112,6 +152,19 @@ export const resolveSection = (entry: ShipEntry): Section => {
 	const joined = entry.joinedArea?.trim();
 	if (joined !== undefined && joined !== "") return sectionFor(joined);
 	return "Product";
+};
+
+/**
+ * Resolve an entry's merged-vs-live-to-users state (ADR 0123). Case- and
+ * whitespace-insensitive; an absent, blank, or unrecognized value resolves to `unknown` —
+ * the "never silently treated as live" default the live axis exists to enforce.
+ */
+export const resolveReleaseState = (state: string | undefined): ReleaseState => {
+	if (state === undefined) return "unknown";
+	const normalized = state.trim().toLowerCase();
+	return (RELEASE_STATE_ORDER as ReadonlyArray<string>).includes(normalized)
+		? (normalized as ReleaseState)
+		: "unknown";
 };
 
 /** The milestone bucket key for an entry — its title, or `Uncategorized` when absent/blank. */
@@ -196,15 +249,41 @@ export const groupEntries = (entries: ReadonlyArray<ShipEntry>): ReadonlyArray<S
 /** The `(#NNN)` backlink — the merged PR (always present) is the primary reference. */
 const backlink = (entry: ShipEntry): string => `(#${entry.pr})`;
 
-const renderEntry = (entry: ShipEntry): string => `- ${entry.title} ${backlink(entry)}`;
+/** An entry's inline live/dark annotation, e.g. ` — dark` or ` — awaiting release`. */
+const releaseAnnotation = (entry: ShipEntry): string =>
+	` — ${RELEASE_STATE_LABEL[resolveReleaseState(entry.releaseState)]}`;
+
+const renderEntry = (entry: ShipEntry): string =>
+	`- ${entry.title} ${backlink(entry)}${releaseAnnotation(entry)}`;
 
 const typeLabel = (type: string): string => TYPE_LABEL[type] ?? type;
 
 /**
+ * The "currently dark — awaiting your release" callout: the entries that merged but are not
+ * yet live to users (`dark` behind a default-off flag, or `awaiting-release`), grouped by
+ * state in `NOT_YET_LIVE` order, input order preserved within a state. Returns `""` (the
+ * callout is omitted) when nothing is not-yet-live — an all-live window has no dark work to
+ * surface. `unknown` is deliberately not collected here: it is surfaced inline per entry, not
+ * asserted as awaiting-release.
+ */
+const renderDarkCallout = (entries: ReadonlyArray<ShipEntry>): string => {
+	const blocks = NOT_YET_LIVE.flatMap((state) => {
+		const inState = entries.filter((entry) => resolveReleaseState(entry.releaseState) === state);
+		if (inState.length === 0) return [];
+		const lines = inState.map((entry) => `- ${entry.title} ${backlink(entry)}`).join("\n");
+		return [`### ${RELEASE_STATE_LABEL[state]}\n\n${lines}`];
+	});
+	if (blocks.length === 0) return "";
+	return `## Currently dark — awaiting your release\n\n${blocks.join("\n\n")}`;
+};
+
+/**
  * Render a founder-facing ship digest for a window: a `# Ship digest — since … → until`
- * heading, then a `## Product` / `## Infra` section per non-empty section, each with
- * `### <milestone>` groups and `#### <Type>` blocks. An empty window emits the heading plus
- * a "nothing shipped" note (an empty window is a fact, not an error).
+ * heading, then — when any work is not yet live — a `## Currently dark — awaiting your
+ * release` callout, then a `## Product` / `## Infra` section per non-empty section, each with
+ * `### <milestone>` groups and `#### <Type>` blocks whose entries carry an inline live/dark
+ * annotation. An empty window emits the heading plus a "nothing shipped" note (an empty
+ * window is a fact, not an error).
  */
 export const deriveShipDigest = (
 	entries: ReadonlyArray<ShipEntry>,
@@ -215,6 +294,7 @@ export const deriveShipDigest = (
 	if (sections.length === 0) {
 		return `${head}\n\n_Nothing shipped in this window._\n`;
 	}
+	const darkCallout = renderDarkCallout(entries);
 	const sectionBlocks = sections.map((sectionGroup) => {
 		const milestoneBlocks = sectionGroup.milestones.map((milestoneGroup) => {
 			const typeBlocks = milestoneGroup.types.map((typeGroup) => {
@@ -225,5 +305,6 @@ export const deriveShipDigest = (
 		});
 		return `## ${sectionGroup.section}\n\n${milestoneBlocks.join("\n\n")}`;
 	});
-	return `${head}\n\n${sectionBlocks.join("\n\n")}\n`;
+	const blocks = darkCallout === "" ? sectionBlocks : [darkCallout, ...sectionBlocks];
+	return `${head}\n\n${blocks.join("\n\n")}\n`;
 };
