@@ -74,17 +74,18 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
 
 - **A bare `git checkout`/`switch` can detach the *shared primary* HEAD — never run
   one; address git at your worktree explicitly.** This is the cwd-reset bullet's most
-  damaging instance, and it bites a class the `pre-bash` pin does **not** cover. A
-  worktree agent that is *armed* by `@kampus/worktree-guard` has its bare commands
-  prepended with `cd "$WORKTREE_ROOT" && …`, so its stray `git checkout` at worst
-  detaches the *worktree's* own HEAD. But a **review/ship agent shares the primary
-  checkout's git state** (the "review/ship agents share the primary checkout" footgun),
-  where `bash-pin` is not arming it — so its bare `git checkout <pr-head-sha>`, run after
-  a between-calls cwd reset, executes in the **primary** tree and detaches the shared
+  damaging instance. A worktree agent *armed* by `@kampus/worktree-guard` has its
+  non-HEAD-moving bare commands prepended with `cd "$WORKTREE_ROOT" && …`; a bare
+  **HEAD-moving** op (`checkout`/`switch`/`reset`/`rebase`) that is not scoped to the
+  worktree is now **refused outright** by the `pre-bash` guard (the enforced guard route
+  below), because cd-pinning it would only relocate the HEAD move into the worktree rather
+  than surface the mistake. The class this closes: a bare `git checkout <pr-head-sha>`, run
+  after a between-calls cwd reset, executes in the **primary** tree and detaches the shared
   `main`. That silently breaks a sibling puller's `git merge --ff-only origin/main` (it
   stalls on a detached HEAD / non-ff), with the symptom (puller stuck, merged work not
-  propagating) far from the cause. It recurs on every review/ship agent that checks out a
-  PR head (#1103). The rule, mandatory for **every** worktree/review/ship agent:
+  propagating) far from the cause. It recurred on every review/ship agent that checked out a
+  PR head from a shared checkout (#1103, then #1494). The rule, mandatory for **every**
+  worktree/review/ship agent:
   - **Capture `WT="$(git rev-parse --show-toplevel)"` once at spawn** (right after the
     opening worktree preflight passes) and run **ALL** git ops as `git -C "$WT" …`, so a
     cwd reset can never silently relocate the command into the primary tree.
@@ -98,15 +99,24 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
     `git -C "$WT" rev-parse --show-toplevel` must equal `$WT`, never the primary — exactly
     as the Step-4 fail-closed preflight asserts.
 
-  **Fix shape (the #1103 owner's call):** the chosen fix is **spawn-prompt / agent-def
-  hardening** — encode the `git -C "$WT"` rule + the no-bare-checkout prohibition in the
-  reviewer/shipper/coder agent definitions and here — **not** a `worktree-guard` `pre-bash`
-  refusal of detached-SHA checkouts on the primary. The guard route was the alternative
-  (arm review/ship agents with the same pin, or refuse/rewrite the offending call); it is
-  deferred because review/ship agents are documented read-only on git working state, so the
-  durable enforcement belongs in *who never issues the bare checkout*, not in a guard that
-  rewrites it after the fact. Re-open the guard route only if a recurrence shows the prose
-  rule is insufficient.
+  **Fix shape (the guard route is now enforced — belt *and* braces):** the prose-only
+  hardening from #1276 (the `git -C "$WT"` rule + the no-bare-checkout prohibition in the
+  agent defs and here) **did not hold** — the detach recurred twice on 2026-06-28, the day
+  after #1276 merged (#1494). That recurrence is exactly the trigger the earlier note
+  reserved ("re-open the guard route only if a recurrence shows the prose rule is
+  insufficient"), so the deferred **guard route is now taken** (#1571). The owner's
+  arm-vs-refuse ruling is **REFUSE**: `@kampus/worktree-guard`'s `pre-bash` core
+  (`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`, `pinBash`) now returns a
+  `refuse` decision — surfaced as a `permissionDecision: "deny"` — for a bare HEAD-moving
+  git op that is **not** scoped to the agent's worktree. The refusal is **scoped to guarded
+  agents**: it fires only when `$WORKTREE_ROOT` names a managed worktree (an
+  `isolation:worktree` subagent running this hook). The orchestrator's own shell carries no
+  `$WORKTREE_ROOT` and runs no such hook, so its legitimate `git checkout main`
+  (ff-pull/reattach) is **never** intercepted. The safe form the refusal points agents to —
+  `git -C "$WT" <op> …`, or `git -C "$WT" fetch origin pull/<N>/head && git -C "$WT" checkout
+  FETCH_HEAD` for a PR head — is recognized as worktree-scoped and **allowed**. The prose
+  rule above is now the **belt** to the guard's **braces**: the guard mechanically blocks the
+  bare op, the prose tells you the shape to write instead.
 
 - **Run root `pnpm` scripts as `pnpm -w <script>` (or from the worktree root),
   never from a subdir.** A root-level script (`pnpm lint`, `pnpm typecheck`, …) run

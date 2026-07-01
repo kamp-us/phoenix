@@ -75,6 +75,27 @@ describe("worktree-guard pre-bash — PreToolUse envelope", () => {
 		const out = JSON.parse(stdout.trim());
 		assert.strictEqual(out.hookSpecificOutput.updatedInput.command, `cd "${WT}" && git status`);
 	}, 30_000);
+
+	it("DENIES a bare HEAD-moving git op that would detach the shared primary (#1571)", async () => {
+		const {stdout} = await run(
+			"pre-bash",
+			{tool_name: "Bash", tool_input: {command: "git checkout 1a2b3c4"}},
+			{WORKTREE_ROOT: WT},
+		);
+		const out = JSON.parse(stdout.trim());
+		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "deny");
+		assert.match(out.hookSpecificOutput.permissionDecisionReason, /git -C "\$WT"/);
+	}, 30_000);
+
+	it("does NOT deny the orchestrator's bare `git checkout main` (no $WORKTREE_ROOT)", async () => {
+		const {stdout} = await run(
+			"pre-bash",
+			{tool_name: "Bash", tool_input: {command: "git checkout main"}},
+			{WORKTREE_ROOT: ""},
+		);
+		const out = JSON.parse(stdout.trim());
+		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
+	}, 30_000);
 });
 
 describe("worktree-guard pre-enter — hard-block nested worktree", () => {

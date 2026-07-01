@@ -1,5 +1,5 @@
 import {assert, describe, it} from "@effect/vitest";
-import {hasLeadingCd, pinBash} from "./bash-pin.ts";
+import {hasLeadingCd, inspectGitHeadMove, pinBash} from "./bash-pin.ts";
 
 const WT = "/Users/dev/code/phoenix/.claude/worktrees/wf_abc123";
 
@@ -42,5 +42,110 @@ describe("pinBash — no-op when not a managed worktree agent (fail-open)", () =
 			pinBash({worktreeRoot: "/some/bespoke/wt", command: "git status"}).kind,
 			"allow",
 		);
+	});
+});
+
+describe("pinBash — refuse a bare HEAD-moving git op in a guarded worktree (#1571)", () => {
+	// (a) a bare HEAD-move from a guarded agent would escape to the shared primary → REFUSE
+	it("refuses a bare `git checkout <sha>` (would detach the shared primary HEAD)", () => {
+		const d = pinBash({worktreeRoot: WT, command: "git checkout 1a2b3c4"});
+		assert.strictEqual(d.kind, "refuse");
+		if (d.kind === "refuse") assert.match(d.reason, /git -C "\$WT"/);
+	});
+	it("refuses bare `git switch`, `git reset --hard`, and `git rebase`", () => {
+		assert.strictEqual(pinBash({worktreeRoot: WT, command: "git switch main"}).kind, "refuse");
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: "git reset --hard origin/main"}).kind,
+			"refuse",
+		);
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: "git rebase origin/main"}).kind,
+			"refuse",
+		);
+	});
+
+	// (b) the safe `git -C "$WT" …` form → ALLOW (scoped; `-C` overrides cwd, no pin needed)
+	it('allows the safe `git -C "$WT" checkout FETCH_HEAD` form', () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: 'git -C "$WT" checkout FETCH_HEAD'}).kind,
+			"allow",
+		);
+	});
+	it("allows a HEAD-move scoped by a literal path under the worktree root", () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: `git -C ${WT} checkout FETCH_HEAD`}).kind,
+			"allow",
+		);
+	});
+	it('allows `git -C "$WORKTREE_ROOT" reset --hard` (env-var scope form)', () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: 'git -C "$WORKTREE_ROOT" reset --hard FETCH_HEAD'}).kind,
+			"allow",
+		);
+	});
+
+	// (c) a worktree agent's cd-pinned command → unchanged (leading cd is honored as-is)
+	it('leaves a `cd "$WT" && git checkout …` command as allow (its own cwd)', () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: `cd "${WT}" && git checkout FETCH_HEAD`}).kind,
+			"allow",
+		);
+	});
+
+	// (d) a non-guarded / orchestrator context → NOT refused (the reattach `git checkout main` survives)
+	it("does NOT refuse a bare HEAD-move when $WORKTREE_ROOT is unset (orchestrator reattach)", () => {
+		assert.strictEqual(pinBash({worktreeRoot: "", command: "git checkout main"}).kind, "allow");
+	});
+	it("does NOT refuse a bare HEAD-move for a non-managed root (bare orchestrator shell)", () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: "/some/bespoke/wt", command: "git checkout main"}).kind,
+			"allow",
+		);
+	});
+
+	// (e) non-HEAD-moving git ops (status/log/fetch) → permitted (cd-pinned, never refused)
+	it("does not refuse non-HEAD-moving git ops — status/log/fetch are cd-pinned, not refused", () => {
+		for (const cmd of ["git status", "git log --oneline", "git fetch origin main"]) {
+			const d = pinBash({worktreeRoot: WT, command: cmd});
+			assert.strictEqual(d.kind, "rewrite", `${cmd} should be cd-pinned, not refused`);
+			if (d.kind === "rewrite") assert.strictEqual(d.command, `cd "${WT}" && ${cmd}`);
+		}
+	});
+	it("does not misfire on a HEAD-move keyword buried in a non-git command", () => {
+		// `checkout` as an argument, not a git subcommand, must not trip the refusal
+		assert.strictEqual(pinBash({worktreeRoot: WT, command: "echo checkout"}).kind, "rewrite");
+	});
+});
+
+describe("inspectGitHeadMove — the pure parse (branch-by-branch)", () => {
+	it("flags a bare head-move as head-move + unscoped", () => {
+		assert.deepStrictEqual(inspectGitHeadMove("git checkout 1a2b", WT), {
+			isHeadMove: true,
+			worktreeScoped: false,
+		});
+	});
+	it("flags a -C worktree head-move as head-move + scoped", () => {
+		assert.deepStrictEqual(inspectGitHeadMove('git -C "$WT" switch main', WT), {
+			isHeadMove: true,
+			worktreeScoped: true,
+		});
+	});
+	it("does not flag a `-C <primary>` head-move as worktree-scoped (fail-closed)", () => {
+		assert.deepStrictEqual(inspectGitHeadMove("git -C /main/checkout reset --hard", WT), {
+			isHeadMove: true,
+			worktreeScoped: false,
+		});
+	});
+	it("does not flag a non-head-moving git op", () => {
+		assert.deepStrictEqual(inspectGitHeadMove("git status", WT), {
+			isHeadMove: false,
+			worktreeScoped: false,
+		});
+	});
+	it("does not flag a non-git command", () => {
+		assert.deepStrictEqual(inspectGitHeadMove("ls -la", WT), {
+			isHeadMove: false,
+			worktreeScoped: false,
+		});
 	});
 });
