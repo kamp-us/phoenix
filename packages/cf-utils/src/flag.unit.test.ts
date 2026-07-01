@@ -3,7 +3,16 @@
  * renderer. No IO, no CF — every case is a deterministic transform.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {decodeEnv, decodeFlagState, type RawFlag, renderFlagTable} from "./flag.ts";
+import {
+	computeFlipPlan,
+	decodeEnv,
+	decodeFlagState,
+	FlagEnvNotFound,
+	findAppForEnv,
+	type RawFlag,
+	renderFlagTable,
+	renderFlipPlan,
+} from "./flag.ts";
 
 describe("decodeEnv — Flagship app physical name → env", () => {
 	it("decodes the prod app", () => {
@@ -63,6 +72,70 @@ describe("decodeFlagState — resolve a flag's default value in an env", () => {
 			flag({defaultVariation: "ghost", variations: {on: true}}),
 		);
 		assert.strictEqual(state.defaultValue, undefined);
+	});
+});
+
+describe("computeFlipPlan — current → target flip (pure)", () => {
+	it("marks a real flip as changed", () => {
+		const plan = computeFlipPlan({
+			key: "authorship-loop",
+			env: "prod",
+			currentVariation: "off",
+			target: "on",
+		});
+		assert.deepStrictEqual(plan, {
+			key: "authorship-loop",
+			env: "prod",
+			currentVariation: "off",
+			targetVariation: "on",
+			changed: true,
+		});
+	});
+
+	it("marks a no-op flip (already at target) as unchanged — the confirmed --execute no-op", () => {
+		const plan = computeFlipPlan({key: "beta", env: "prod", currentVariation: "on", target: "on"});
+		assert.strictEqual(plan.changed, false);
+	});
+});
+
+describe("renderFlipPlan", () => {
+	it("renders a real flip as a current → target diff", () => {
+		const line = renderFlipPlan(
+			computeFlipPlan({key: "authorship-loop", env: "prod", currentVariation: "off", target: "on"}),
+		);
+		assert.match(line, /authorship-loop @ prod: off → on/);
+	});
+
+	it("renders a no-op flip as 'already <target> (no change)'", () => {
+		const line = renderFlipPlan(
+			computeFlipPlan({key: "beta", env: "prod", currentVariation: "on", target: "on"}),
+		);
+		assert.match(line, /already on \(no change\)/);
+	});
+});
+
+describe("findAppForEnv — resolve the Flagship app serving an env", () => {
+	const apps = [
+		{id: "app-prod", name: "phoenix-phoenix-flags-prod-abc123"},
+		{id: "app-pr9", name: "phoenix-phoenix-flags-pr-9-deadbe"},
+		{id: "app-foreign", name: "some-other-account-app"},
+	];
+
+	it("finds the app whose decoded env matches", () => {
+		assert.strictEqual(findAppForEnv(apps, "prod")?.id, "app-prod");
+		assert.strictEqual(findAppForEnv(apps, "pr-9")?.id, "app-pr9");
+	});
+
+	it("returns undefined for an env no app serves (and never matches a foreign app)", () => {
+		assert.isUndefined(findAppForEnv(apps, "staging"));
+	});
+});
+
+describe("FlagEnvNotFound — the typed, legible not-found", () => {
+	it("names the unknown env and lists the known ones", () => {
+		const err = new FlagEnvNotFound({env: "staging", knownEnvs: ["prod", "pr-9"]});
+		assert.match(err.message, /staging/);
+		assert.match(err.message, /prod, pr-9/);
 	});
 });
 

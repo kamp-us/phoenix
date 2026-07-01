@@ -15,6 +15,8 @@
  * `${stack}-${id}-${stage}-${suffix}`, `_`→`-` lowercased).
  */
 
+import {Data} from "effect";
+
 const STACK = "phoenix";
 
 /**
@@ -80,6 +82,76 @@ export const decodeFlagState = (env: string, flag: RawFlag): FlagState => ({
 	defaultVariation: flag.defaultVariation,
 	defaultValue: flag.variations[flag.defaultVariation],
 });
+
+/**
+ * No Flagship app serves the requested env — the typed, legible not-found `flag set` fails
+ * with BEFORE any read/write, so an unknown `--env` never reaches the mutation. Carries the
+ * envs that DO resolve, so the message points the operator at a valid one.
+ */
+export class FlagEnvNotFound extends Data.TaggedError("FlagEnvNotFound")<{
+	readonly env: string;
+	readonly knownEnvs: ReadonlyArray<string>;
+}> {
+	override get message(): string {
+		const known = this.knownEnvs.length > 0 ? this.knownEnvs.join(", ") : "(none)";
+		return `no Flagship app for env "${this.env}" — known envs: ${known}`;
+	}
+}
+
+/** The two served states a `flag set` flip targets — the `{off,on}` variation keys. */
+export type FlagTarget = "on" | "off";
+
+/**
+ * The flip plan `flag set` renders and (with `--execute`) applies: the flag's current served
+ * variation and the target one in a single env. `changed` is the safety-legible summary —
+ * `false` when the flag already serves the target (an `--execute` is then a confirmed no-op,
+ * never a spurious write). This is a pure value; computing it touches no network.
+ */
+export interface FlipPlan {
+	readonly key: string;
+	readonly env: string;
+	readonly currentVariation: string;
+	readonly targetVariation: FlagTarget;
+	readonly changed: boolean;
+}
+
+/**
+ * Compute the `current → target` flip plan for one flag in one env. Pure: it decides only
+ * whether the served variation moves, off the flag's current `defaultVariation` and the
+ * requested target — the `updateAppFlag` write is a separate integration boundary.
+ */
+export const computeFlipPlan = (input: {
+	readonly key: string;
+	readonly env: string;
+	readonly currentVariation: string;
+	readonly target: FlagTarget;
+}): FlipPlan => ({
+	key: input.key,
+	env: input.env,
+	currentVariation: input.currentVariation,
+	targetVariation: input.target,
+	changed: input.currentVariation !== input.target,
+});
+
+/**
+ * Find the Flagship app serving a given env, keyed on `decodeEnv` of each app's physical
+ * name (a foreign app decodes to no env and is never matched). Generic over `{name}` so the
+ * pure core stays free of the read client's `FlagshipApp` type. `undefined` ⇒ no app for that
+ * env — the caller fails not-found BEFORE any write.
+ */
+export const findAppForEnv = <T extends {readonly name: string}>(
+	apps: ReadonlyArray<T>,
+	env: string,
+): T | undefined => apps.find((app) => decodeEnv(app.name) === env);
+
+/**
+ * Render the flip plan as a legible one-line `current → target` diff. A no-op flip (already
+ * at target) reads as such so a dry-run makes the "nothing to do" case obvious.
+ */
+export const renderFlipPlan = (plan: FlipPlan): string =>
+	plan.changed
+		? `flag ${plan.key} @ ${plan.env}: ${plan.currentVariation} → ${plan.targetVariation}`
+		: `flag ${plan.key} @ ${plan.env}: already ${plan.targetVariation} (no change)`;
 
 const renderValue = (value: unknown): string => {
 	if (typeof value === "string") {

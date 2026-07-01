@@ -76,6 +76,79 @@ export class FlagshipRead extends Context.Service<
 
 const accountId = Config.string("CLOUDFLARE_ACCOUNT_ID");
 
+/**
+ * The write client's error channel: the `updateAppFlag`/`getAppFlag` typed faults
+ * (transport/auth + `FlagshipFlagNotFound`/`FlagshipAppNotFound`) plus the `ConfigError`
+ * from resolving `$CLOUDFLARE_ACCOUNT_ID`. All typed, all in `E`.
+ */
+export type FlagshipWriteError =
+	| flagship.GetAppFlagError
+	| flagship.UpdateAppFlagError
+	| Config.ConfigError;
+
+/**
+ * `FlagshipWrite` — the injectable flip seam. `setFlagDefault` is the ONE mutation `cf-utils`
+ * performs: it reads the flag's current full envelope (so an unknown key fails
+ * `FlagshipFlagNotFound` BEFORE any write), then re-writes it with only `defaultVariation`
+ * moved to the target `{off,on}` variation — `enabled`, `rules`, and `variations` pass
+ * through unchanged (targeting-rule edits are out of scope, #1609). No new transport: it
+ * rides the same ambient `Credentials | HttpClient` as `FlagshipReadLive`.
+ */
+export class FlagshipWrite extends Context.Service<
+	FlagshipWrite,
+	{
+		readonly setFlagDefault: (input: {
+			readonly appId: string;
+			readonly flagKey: string;
+			readonly targetVariation: string;
+		}) => Effect.Effect<RawFlag, FlagshipWriteError>;
+	}
+>()("@kampus/cf-utils/FlagshipWrite") {}
+
+export const FlagshipWriteLive: Layer.Layer<FlagshipWrite, never, Credentials | HttpClient> =
+	Layer.effect(FlagshipWrite)(
+		Effect.gen(function* () {
+			const context = yield* Effect.context<Credentials | HttpClient>();
+			const withCtx = <A, E>(
+				effect: Effect.Effect<A, E, Credentials | HttpClient>,
+			): Effect.Effect<A, E> => Effect.provide(effect, context);
+
+			const setFlagDefault = (input: {
+				readonly appId: string;
+				readonly flagKey: string;
+				readonly targetVariation: string;
+			}) =>
+				withCtx(
+					Effect.gen(function* () {
+						const acct = yield* accountId;
+						// Read-before-write: fail not-found on an unknown key BEFORE mutating, and carry the
+						// current envelope forward so only defaultVariation moves.
+						const current = yield* flagship.getAppFlag({
+							appId: input.appId,
+							flagKey: input.flagKey,
+							accountId: acct,
+						});
+						const updated = yield* flagship.updateAppFlag({
+							appId: input.appId,
+							flagKey: input.flagKey,
+							accountId: acct,
+							key: current.key,
+							enabled: current.enabled,
+							defaultVariation: input.targetVariation,
+							variations: current.variations,
+							// Rules pass through opaquely — this slice flips only the served value; the Get and
+							// Update rule shapes differ only in a nullable `rollout.attribute`, structurally
+							// identical for a verbatim round-trip.
+							rules: current.rules as flagship.UpdateAppFlagRequest["rules"],
+						});
+						return toRawFlag(updated);
+					}),
+				);
+
+			return {setFlagDefault};
+		}),
+	);
+
 export const FlagshipReadLive: Layer.Layer<FlagshipRead, never, Credentials | HttpClient> =
 	Layer.effect(FlagshipRead)(
 		Effect.gen(function* () {
