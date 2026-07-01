@@ -54,6 +54,23 @@ node packages/pipeline-cli/src/bin.ts version
 node packages/pipeline-cli/src/bin.ts <tool> …
 ```
 
+### `ship-digest` — the merged-since founder projection (#1595)
+
+Renders a **founder-facing** ship digest for a `--since` window from a pre-gathered
+merged-work entries JSON. Unlike `changelog-derive`'s builder-oriented Keep-a-Changelog
+version sections, this groups **product vs infra** at the top level, then by **milestone**
+(`Uncategorized` when none), then by **`type:*`** — a readout a non-builder can scan. An
+entry with no milestone / area / type is surfaced under `Uncategorized`, never dropped.
+
+The tool is the pure projection only: it consumes a pre-gathered entries JSON (each
+`{issue?, pr, title, type?, milestone?, area?}`), decoded with a `Schema` at the boundary
+(a malformed/unreadable file is a typed non-zero exit). The git-log `--since` + `gh`
+issue/milestone gather is the `/what-shipped` skill's job, not this tool's.
+
+```bash
+node packages/pipeline-cli/src/bin.ts ship-digest derive --entries <file> --since <YYYY-MM-DD> [--until <YYYY-MM-DD>] [--out <file>]
+```
+
 ### `token-spend` — offline per-stage token-spend reporter (#1382)
 
 Reconstructs a pipeline stage's billed token spend from its sub-agent transcript

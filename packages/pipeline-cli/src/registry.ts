@@ -24,6 +24,7 @@ import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {pointerGuardCommand} from "./tools/pointer-guard/command.ts";
 import {readGuardCommand} from "./tools/read-guard/command.ts";
 import {readmeGuardCommand} from "./tools/readme-guard/command.ts";
+import {shipDigestCommand} from "./tools/ship-digest/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
 import {structuredOutputGuardCommand} from "./tools/structured-output-guard/command.ts";
 import {tokenSpendCommand} from "./tools/token-spend/command.ts";
@@ -86,4 +87,5 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	codeownersCpCommand,
 	tokenSpendCommand,
 	trivialDiffCommand,
+	shipDigestCommand,
 ];
