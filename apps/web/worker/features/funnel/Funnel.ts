@@ -3,9 +3,11 @@
  * tracer bullet). Its one read, {@link Funnel.tierPopulation}, is the current tier
  * population — how many accounts sit at each rung of the authorship ladder
  * (`çaylak`, `yazar`) — the simplest funnel number the Phase-2 rate/time metrics
- * extend off this same service. The first such extension, {@link promotionRate}
- * (#1593), derives the loop's headline number from that population: the share of the
- * human earned-authorship population that has crossed to `yazar`.
+ * extend off this same service. {@link promotionRate} (#1593) derives the loop's
+ * headline number from that population — the share of the human earned-authorship
+ * population that has crossed to `yazar`; {@link Funnel.firstContribution} (#1591)
+ * adds the first-contribution rate — the share of human çaylaks with ≥ 1 sandboxed
+ * contribution, the newcomer-engagement signal.
  *
  * Humans-only by construction: the count filters `user.type = 'human'`, so the
  * seeded `system` sentinel (ADR 0097) and any `bot` account (agents, v1.1) never
@@ -17,7 +19,7 @@
  * domain-boundary rule, `.patterns/effect-errors.md`) and the public signature
  * carries no error — the gate + flag live at the fate resolver, not in the read.
  */
-import {count, eq} from "drizzle-orm";
+import {and, count, eq, inArray, isNotNull, or} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -34,6 +36,23 @@ export interface TierPopulation {
 export interface TierCountRow {
 	readonly tier: string;
 	readonly count: number;
+}
+
+/**
+ * The first-contribution metric (#1591): among human çaylaks, how many have made
+ * ≥ 1 sandboxed contribution — the engagement signal answering "do newcomers
+ * contribute at all, or lurk?" (the epic's named risk).
+ */
+export interface FirstContribution {
+	/** The denominator: human accounts at the `çaylak` floor. */
+	readonly caylakCount: number;
+	/** The numerator: human çaylaks with ≥ 1 sandboxed contribution. */
+	readonly contributingCount: number;
+	/**
+	 * `contributingCount / caylakCount`, in `[0, 1]`. `0` when there are no çaylaks
+	 * (an empty population is a well-formed 0% rate, never a divide-by-zero).
+	 */
+	readonly rate: number;
 }
 
 /**
@@ -73,11 +92,69 @@ export const promotionRate = ({caylakCount, yazarCount}: TierPopulation): number
 	return earned === 0 ? 0 : yazarCount / earned;
 };
 
+/**
+ * Count the human çaylaks with ≥ 1 sandboxed contribution — a `çaylak`-tier human
+ * whose id authors any `sandboxed_at IS NOT NULL` row across the three content
+ * tables (definition / post / comment). The sandbox marker is the çaylak-sandbox
+ * seam of `kunye/sandbox.ts` (`sandboxedAtForAuthor`); this reuses that existing
+ * column and adds no new write. Extracted as a pure builder (the `tierPopulationQuery`
+ * idiom) so the humans-only + çaylak-only + sandboxed-authorship predicate is
+ * `.toSQL()`-inspectable with no engine (ADR 0082 T1/T2).
+ */
+export const contributingCaylaksQuery = (db: DrizzleDb) =>
+	db
+		.select({count: count()})
+		.from(schema.user)
+		.where(
+			and(
+				eq(schema.user.type, "human"),
+				eq(schema.user.tier, "çaylak"),
+				or(
+					inArray(
+						schema.user.id,
+						db
+							.select({id: schema.definitionRecord.authorId})
+							.from(schema.definitionRecord)
+							.where(isNotNull(schema.definitionRecord.sandboxedAt)),
+					),
+					inArray(
+						schema.user.id,
+						db
+							.select({id: schema.postRecord.authorId})
+							.from(schema.postRecord)
+							.where(isNotNull(schema.postRecord.sandboxedAt)),
+					),
+					inArray(
+						schema.user.id,
+						db
+							.select({id: schema.commentRecord.authorId})
+							.from(schema.commentRecord)
+							.where(isNotNull(schema.commentRecord.sandboxedAt)),
+					),
+				),
+			),
+		);
+
+/**
+ * Fold the two counts onto {@link FirstContribution}, guarding the zero-population
+ * edge: with no çaylaks the rate is `0`, never a divide-by-zero (ADR 0040 seam).
+ */
+export const computeFirstContribution = (
+	caylakCount: number,
+	contributingCount: number,
+): FirstContribution => ({
+	caylakCount,
+	contributingCount,
+	rate: caylakCount === 0 ? 0 : contributingCount / caylakCount,
+});
+
 export class Funnel extends Context.Service<
 	Funnel,
 	{
 		/** The current human tier population (çaylak + yazar counts). */
 		readonly tierPopulation: () => Effect.Effect<TierPopulation>;
+		/** The first-contribution rate over the human-çaylak population (#1591). */
+		readonly firstContribution: () => Effect.Effect<FirstContribution>;
 	}
 >()("@kampus/funnel/Funnel") {}
 
@@ -89,6 +166,12 @@ export const FunnelLive = Layer.effect(Funnel)(
 			tierPopulation: Effect.fn("Funnel.tierPopulation")(function* () {
 				const rows = yield* run((db) => tierPopulationQuery(db));
 				return foldTierPopulation(rows);
+			}),
+			firstContribution: Effect.fn("Funnel.firstContribution")(function* () {
+				const tierRows = yield* run((db) => tierPopulationQuery(db));
+				const {caylakCount} = foldTierPopulation(tierRows);
+				const rows = yield* run((db) => contributingCaylaksQuery(db));
+				return computeFirstContribution(caylakCount, rows[0]?.count ?? 0);
 			}),
 		};
 	}),

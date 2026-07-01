@@ -21,6 +21,7 @@ const die =
 
 const failOnContact: FunnelShape = {
 	tierPopulation: die("tierPopulation"),
+	firstContribution: die("firstContribution"),
 };
 
 export const makeFunnelStub = (overrides: Partial<FunnelShape> = {}): Layer.Layer<Funnel> =>
