@@ -6,9 +6,11 @@ import * as React from "react";
  * comment-anchor `/pano/:id#comment-<id>`); the button resolves it to an absolute URL
  * and copies it to the clipboard, locking into visible "kopyalandı" feedback (or
  * "kopyalanamadı" when the clipboard write is denied — insecure context, permission).
- * Where the platform offers a native share sheet (`navigator.share`, mobile/PWA) it
- * invokes that instead. Reused by every share surface (pano post/comment, sözlük
- * definition), so no page-specific link logic lives in the shared content components.
+ * The native share sheet is used only on a coarse-pointer surface (mobile/PWA), where
+ * it is the better affordance; every desktop browser — including Safari macOS, which
+ * *implements* the Web Share API on desktop — copies to the clipboard (#1635). Reused
+ * by every share surface (pano post/comment, sözlük definition), so no page-specific
+ * link logic lives in the shared content components.
  */
 
 export type ShareOutcome = "shared" | "copied" | "error";
@@ -17,11 +19,33 @@ function absoluteUrl(path: string): string {
 	return new URL(path, window.location.origin).toString();
 }
 
+/**
+ * Whether to invoke the native share sheet rather than copy to the clipboard. The
+ * native branch fires only on a **coarse-pointer** surface (mobile/PWA) that *also*
+ * has a usable Web Share API — never on mere API presence, because Safari macOS
+ * desktop implements the API yet must copy like every other desktop browser (#1635).
+ * Pure over its inputs, so the branch selection is unit-tested without a DOM.
+ */
+export function shouldUseNativeShare(input: {
+	hasShare: boolean;
+	canShareUrl: boolean;
+	coarsePointer: boolean;
+}): boolean {
+	return input.coarsePointer && input.hasShare && input.canShareUrl;
+}
+
+function coarsePointer(): boolean {
+	return typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+}
+
 async function shareOrCopy(url: string): Promise<ShareOutcome> {
-	// A native share sheet is the better affordance on the surfaces that have one
-	// (mobile/PWA); a desktop browser falls through to the clipboard. `canShare`
-	// guards against the URL-less `navigator.share` stub some browsers expose.
-	if (typeof navigator.share === "function" && navigator.canShare?.({url})) {
+	const useNative = shouldUseNativeShare({
+		// `canShare` guards against the URL-less `navigator.share` stub some browsers expose.
+		hasShare: typeof navigator.share === "function",
+		canShareUrl: navigator.canShare?.({url}) ?? false,
+		coarsePointer: coarsePointer(),
+	});
+	if (useNative) {
 		try {
 			await navigator.share({url});
 			return "shared";
