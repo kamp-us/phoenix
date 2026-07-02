@@ -9,13 +9,17 @@
  * the `fetch` handler.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
+import {wrapRequestHandler} from "@sentry/cloudflare";
 import {RuntimeContext, Stage} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {ALCHEMY_PHASE} from "alchemy/Phase";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import {AppConfig, envBindings} from "./config.ts";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import {AppConfig, ENV_BINDINGS, envBindings, sentryDsn} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
 import {customHostname, resolveStateMode} from "./env.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
@@ -32,6 +36,7 @@ import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
 import {makeAppLive} from "./http/app.ts";
 import {workerFirstGlobs} from "./http/worker-routes.ts";
+import {workerOptions} from "./lib/sentry.ts";
 
 /**
  * Lift a publish-side `PublishMessage` to the `DeliverFrame` `LiveDO.publish`
@@ -75,6 +80,13 @@ const phoenixProps =
 	// fetch handler is identical to a domain-less worker; the Custom Domain (proxied DNS
 	// + TLS on the `kamp.us` zone) is purely a deploy concern.
 	Effect.gen(function* () {
+		// Deploy-time-only DSN source (ADR 0118, #1502): read off `process.env` here in
+		// the alchemy CLI process, NOT via a `Config` — the binding is what carries the
+		// value to workerd. Absent-safe: unset ⇒ no `SENTRY_DSN` binding is added below,
+		// so the runtime read (`sentryDsn`, config.ts) resolves `None` and the worker
+		// Sentry path stays inert.
+		const sentryDsnValue = process.env[ENV_BINDINGS.sentryDsn];
+
 		const props = {
 			main: import.meta.filename,
 			// Pin the local dev port. `alchemy dev` defaults to 1337 but can silently fall back
@@ -93,6 +105,10 @@ const phoenixProps =
 				// The Flagship app resource maps to the native `Flagship` runtime binding
 				// via `InferEnv` (epic #488); the worker `bind()`s it in init below.
 				FLAGS: FlagshipResource,
+				// Optional Sentry DSN (ADR 0118, #1502): bound `secret_text` (a redacted
+				// value) ONLY when a DSN is present in the deploy env, so an unset DSN adds
+				// no binding at all. Single-sourced name via `ENV_BINDINGS.sentryDsn` (#1432).
+				...(sentryDsnValue ? {[ENV_BINDINGS.sentryDsn]: Redacted.make(sentryDsnValue)} : {}),
 			},
 			assets: {
 				// The built SPA shell (`vite build` emits `dist/client`, ADR 0030; path is
@@ -267,8 +283,58 @@ export default Phoenix.make(
 			environment: appEnvironment,
 		});
 
+		// The optional Sentry DSN, read once in init off the auto-wired ConfigProvider.
+		// `None` when no `SENTRY_DSN` binding was added at deploy (config.ts) — the gate
+		// that keeps the worker Sentry path structurally inert.
+		const dsn = yield* sentryDsn;
+
 		// ── RUNTIME PHASE (per request) ──
-		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
+		// `AppLive.pipe(toHttpEffect)` is an `Effect` yielding the request `HttpEffect`;
+		// alchemy owns the raw request→Response conversion (ADR 0027). There is no
+		// `ExportedHandler` to hand `@sentry/cloudflare` the standard `withSentry`
+		// recipe, so error capture is wired at THIS Effect boundary instead (ADR 0118,
+		// #1502): when a DSN is present, wrap the request `HttpEffect` in
+		// `wrapRequestHandler` (real client init + isolate-safe transport + flush bound
+		// to `ctx.waitUntil`). `Cloudflare.makeRequestEffect` reuses alchemy's OWN
+		// `HttpServerResponse`→web conversion (incl. the SSE scope transfer) so the
+		// wrapped handler returns a web `Response`; `HttpServerResponse.fromWeb` hands it
+		// back for alchemy's outer conversion. No DSN ⇒ the base effect is returned
+		// verbatim, so nothing here runs (mirrors the SPA `sentryEnabled` gate).
+		const baseFetch = AppLive.pipe(HttpRouter.toHttpEffect);
+		const fetch = Option.match(dsn, {
+			onNone: () => baseFetch,
+			onSome: (value) =>
+				Effect.map(baseFetch, (httpEffect) =>
+					Effect.gen(function* () {
+						const request = yield* Cloudflare.Request;
+						const context = yield* Cloudflare.WorkerExecutionContext;
+						// Capture the request-scoped services (HttpServerRequest, Scope, the
+						// route markers) so the inner run inside `wrapRequestHandler`'s Promise
+						// thunk keeps them — a bare `Effect.runPromise` would start on the empty
+						// default context and lose them.
+						const requestContext = yield* Effect.context<Effect.Services<typeof httpEffect>>();
+						// alchemy types `makeRequestEffect` as `=> any` and pins its handler to the
+						// `HttpEffect<Req>` alias, narrower than `toHttpEffect`'s inferred result;
+						// assert its real contract so its OWN `HttpServerResponse`→web conversion
+						// (with the SSE scope transfer) is reused typed rather than re-forked.
+						const toWebResponse = Cloudflare.makeRequestEffect as (
+							webRequest: globalThis.Request,
+							handler: typeof httpEffect,
+						) => Effect.Effect<Response, never, Effect.Services<typeof httpEffect>>;
+						const webResponse = yield* Effect.promise(() =>
+							wrapRequestHandler(
+								{options: workerOptions(value), request, context, captureErrors: true},
+								() =>
+									Effect.runPromise(
+										toWebResponse(request, httpEffect).pipe(Effect.provide(requestContext)),
+									),
+							),
+						);
+						return HttpServerResponse.fromWeb(webResponse);
+					}),
+				),
+		});
+		return {fetch};
 	}).pipe(
 		// One combined provide (chaining multiple `Effect.provide` can break layer
 		// lifecycle). `LiveDOLive` registers the unified DO and resolves the
