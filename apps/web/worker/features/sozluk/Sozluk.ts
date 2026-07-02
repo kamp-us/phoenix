@@ -1126,7 +1126,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				authorId: definition.authorId,
 				authorName: definition.authorName,
 				createdAt: definition.createdAt ?? now,
-				updatedAt: voteResult.changed ? now : (definition.updatedAt ?? now),
+				// A vote is not a content edit, so report the definition's genuine
+				// `updatedAt` — never the vote instant, which would trip the
+				// "düzenlendi" badge on the live-push (#1634).
+				updatedAt: definition.updatedAt ?? definition.createdAt ?? now,
 				myVote: voteResult.myVote,
 				changed: voteResult.changed,
 			} satisfies VoteDefinitionResult;

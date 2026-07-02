@@ -135,18 +135,6 @@
 	outline-offset: 2px;
 }
 
-.kp-topbar__profile-link {
-	font: var(--t-body-sm);
-	font-weight: 500;
-	color: var(--accent);
-	text-decoration: none;
-	padding: 2px 6px;
-	border-radius: var(--r-sm);
-}
-.kp-topbar__profile-link:hover {
-	background: var(--accent-soft);
-}
-
 /* The ambient self-karma chip (#1208) — keep it centered in the topbar row. */
 .kp-topbar__karma {
 	align-self: center;

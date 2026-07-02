@@ -18,6 +18,7 @@ import {useSession} from "../auth/client";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
+import {Skeleton} from "../components/ui/atoms";
 import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {Screen} from "../fate/Screen";
@@ -75,6 +76,41 @@ const SOZLUK_OVERRIDES: WireMessageOverrides = {
 	BODY_TOO_LONG: `tanım en fazla ${BODY_MAX} karakter olabilir`,
 };
 
+/**
+ * Layout-preserving Suspense fallback for the term page: a header block (crumbs +
+ * title + meta) over a few definition-shaped rows, so the page doesn't jump when the
+ * real term resolves into the same {@link SozlukTermHeader} + {@link DefinitionCard}
+ * shape. The precedent is `LandingColsSkeleton` — a placeholder mirroring the real
+ * content, built from the shared {@link Skeleton} atom.
+ */
+function SozlukTermSkeleton() {
+	return (
+		<div role="status" aria-busy="true" aria-label="yükleniyor…" data-testid="sozluk-term-loading">
+			<header className="kp-sozluk-term__head">
+				<Skeleton width={140} height={12} className="kp-sozluk-term__skeleton-crumbs" />
+				<Skeleton width={220} height={20} className="kp-sozluk-term__skeleton-title" />
+				<div className="kp-sozluk-term__meta">
+					<Skeleton width={56} height={12} />
+					<Skeleton width={44} height={12} />
+					<Skeleton width={92} height={12} />
+				</div>
+			</header>
+			{[0, 1, 2].map((row) => (
+				<div key={row} className="kp-sozluk-definition" aria-hidden="true">
+					<div className="kp-sozluk-definition__vote">
+						<Skeleton width={26} height={26} />
+					</div>
+					<div className="kp-sozluk-term__skeleton-lines">
+						<Skeleton width="100%" height={12} />
+						<Skeleton width="92%" height={12} />
+						<Skeleton width="70%" height={12} />
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
 export function SozlukTermPage() {
 	const {slug} = useParams<{slug: string}>();
 	const safeSlug = slug ?? "";
@@ -93,7 +129,7 @@ export function SozlukTermPage() {
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<Screen
-					fallback={<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>}
+					fallback={<SozlukTermSkeleton />}
 					error={({code}) => (
 						<p style={{font: "var(--t-body)", color: "var(--danger)"}}>
 							terim yüklenemedi: {code.toLowerCase()}

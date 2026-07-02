@@ -109,12 +109,11 @@ export const targetTable: {readonly [K in TargetKind]: TargetTableDescriptor} = 
 				),
 		clearVotes: (db, targetId) =>
 			db.delete(schema.definitionVote).where(eq(schema.definitionVote.definitionId, targetId)),
-		scoreCache: (db, targetId, now) =>
+		scoreCache: (db, targetId) =>
 			db
 				.update(schema.definitionRecord)
 				.set({
 					score: sql`(SELECT COUNT(*) FROM ${schema.definitionVote} WHERE ${schema.definitionVote.definitionId} = ${targetId})`,
-					updatedAt: now,
 				})
 				.where(eq(schema.definitionRecord.id, targetId)),
 	},
@@ -149,7 +148,8 @@ export const targetTable: {readonly [K in TargetKind]: TargetTableDescriptor} = 
 				.set({
 					score: sql`(SELECT COUNT(*) FROM ${schema.postVote} WHERE ${schema.postVote.postId} = ${targetId})`,
 					hotScore: sql`CAST((SELECT COUNT(*) FROM ${schema.postVote} WHERE ${schema.postVote.postId} = ${targetId}) * ${multiplier} AS INTEGER)`,
-					updatedAt: now,
+					// A vote refreshes activity-ordering (`lastActivityAt`) but is NOT a
+					// content edit, so it must not touch `updatedAt` (the badge; #1634).
 					lastActivityAt: now,
 				})
 				.where(eq(schema.postRecord.id, targetId));
@@ -181,12 +181,11 @@ export const targetTable: {readonly [K in TargetKind]: TargetTableDescriptor} = 
 				),
 		clearVotes: (db, targetId) =>
 			db.delete(schema.commentVote).where(eq(schema.commentVote.commentId, targetId)),
-		scoreCache: (db, targetId, now) =>
+		scoreCache: (db, targetId) =>
 			db
 				.update(schema.commentRecord)
 				.set({
 					score: sql`(SELECT COUNT(*) FROM ${schema.commentVote} WHERE ${schema.commentVote.commentId} = ${targetId})`,
-					updatedAt: now,
 				})
 				.where(eq(schema.commentRecord.id, targetId)),
 	},
