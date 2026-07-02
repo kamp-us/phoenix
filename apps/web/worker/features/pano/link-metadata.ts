@@ -24,6 +24,16 @@ export const MAX_METADATA_BYTES = 512 * 1024;
 /** How long the server-side fetch may run before it's aborted (a graceful no-op). */
 export const FETCH_TIMEOUT_MS = 5_000;
 
+/**
+ * Max 3xx redirects the server-side fetch follows before giving up. The route
+ * follows redirects MANUALLY and re-screens every hop's `Location` through
+ * {@link isSafeFetchUrl}, so a public URL that 302s to `169.254.169.254` (or any
+ * private/loopback/link-local/metadata target) is refused — the SSRF-via-redirect
+ * vector a blind `redirect: "follow"` would chase. A chain longer than this cap
+ * is also refused (a graceful no-op).
+ */
+export const MAX_REDIRECT_HOPS = 5;
+
 /** Longest title/description the route returns — prefill stays editable and bounded. */
 export const MAX_FIELD_LEN = 300;
 

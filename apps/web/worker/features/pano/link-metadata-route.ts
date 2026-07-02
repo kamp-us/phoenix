@@ -2,8 +2,9 @@
  * `GET /api/pano/link-metadata?url=…` (#1642) — the pano submit form's
  * title/description prefill seam. The browser can't fetch cross-origin HTML,
  * so the worker does it: given an SSRF-safe `http(s)` URL it fetches the page
- * (timeout- and size-bounded), parses its metadata, and returns
- * {@link LinkMetadata} as JSON. See `.patterns/alchemy-http-router.md`.
+ * (timeout- and size-bounded, following redirects manually so every hop is
+ * re-screened for SSRF), parses its metadata, and returns {@link LinkMetadata}
+ * as JSON. See `.patterns/alchemy-http-router.md`.
  *
  * Every failure mode is a graceful no-op, never a 5xx: an unsafe/rejected URL,
  * a fetch error, a timeout, an over-cap body, a non-2xx upstream, or a page
@@ -19,6 +20,7 @@ import {
 	FETCH_TIMEOUT_MS,
 	isSafeFetchUrl,
 	MAX_METADATA_BYTES,
+	MAX_REDIRECT_HOPS,
 	parseLinkMetadata,
 } from "./link-metadata.ts";
 import type {LinkMetadata} from "./link-metadata-contract.ts";
@@ -50,18 +52,52 @@ async function readCapped(res: Response): Promise<string> {
 	return text;
 }
 
+/**
+ * Fetch `start` following up to {@link MAX_REDIRECT_HOPS} 3xx redirects
+ * MANUALLY (`redirect: "manual"`), re-screening every hop's `Location` through
+ * {@link isSafeFetchUrl} BEFORE following it. `redirect: "follow"` would chase a
+ * `302 Location: http://169.254.169.254/…` blindly, defeating the initial-URL
+ * guard — so each hop is resolved against the current URL and re-validated, and
+ * a hop that fails the guard (or a chain past the cap) returns `null` (refused).
+ * The single `signal` spans the whole chain, so the route's 5s timeout bounds
+ * every hop. `fetchImpl` is injectable so the loop is unit-testable offline.
+ */
+async function fetchFollowingSafeRedirects(
+	start: URL,
+	signal: AbortSignal,
+	fetchImpl: typeof fetch = fetch,
+): Promise<Response | null> {
+	let current = start;
+	for (let redirects = 0; ; redirects++) {
+		const res = await fetchImpl(current.toString(), {
+			method: "GET",
+			redirect: "manual",
+			signal,
+			headers: {accept: "text/html,application/xhtml+xml"},
+		});
+		if (res.status < 300 || res.status >= 400) return res;
+		if (redirects >= MAX_REDIRECT_HOPS) return null;
+		const location = res.headers.get("location");
+		if (location === null || location === "") return null;
+		let next: URL;
+		try {
+			next = new URL(location, current);
+		} catch {
+			return null;
+		}
+		const safe = isSafeFetchUrl(next.toString());
+		if (safe === null) return null;
+		current = safe;
+	}
+}
+
 /** Fetch + parse a safe URL's metadata. Any failure collapses to `{}` (no throw). */
 async function fetchMetadata(url: URL): Promise<LinkMetadata> {
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 	try {
-		const res = await fetch(url.toString(), {
-			method: "GET",
-			redirect: "follow",
-			signal: controller.signal,
-			headers: {accept: "text/html,application/xhtml+xml"},
-		});
-		if (!res.ok) return EMPTY;
+		const res = await fetchFollowingSafeRedirects(url, controller.signal);
+		if (res === null || !res.ok) return EMPTY;
 		const contentType = res.headers.get("content-type") ?? "";
 		if (contentType !== "" && !/html|xml/i.test(contentType)) return EMPTY;
 		const html = await readCapped(res);
@@ -72,6 +108,8 @@ async function fetchMetadata(url: URL): Promise<LinkMetadata> {
 		clearTimeout(timer);
 	}
 }
+
+export {fetchFollowingSafeRedirects};
 
 export const handleLinkMetadata = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
