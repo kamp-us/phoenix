@@ -32,6 +32,21 @@
 	flex-wrap: wrap;
 }
 
+/* Loading skeleton — layout-preserving Suspense fallback. Spacing mirrors the real
+   head (title/crumbs margins) so the page doesn't jump when the term resolves. */
+.kp-sozluk-term__skeleton-crumbs {
+	margin-bottom: 4px;
+}
+.kp-sozluk-term__skeleton-title {
+	display: block;
+	margin-bottom: 4px;
+}
+.kp-sozluk-term__skeleton-lines {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
 /* Definition card */
 .kp-sozluk-definition {
 	display: grid;
