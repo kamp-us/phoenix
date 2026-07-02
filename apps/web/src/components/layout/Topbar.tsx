@@ -118,15 +118,6 @@ export function Topbar({
 			{typeof karma === "number" ? (
 				<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />
 			) : null}
-			{user?.username ? (
-				<Link
-					className="kp-topbar__profile-link"
-					to={`/u/${user.username}`}
-					data-testid="topbar-profile-link"
-				>
-					@{user.username}
-				</Link>
-			) : null}
 			{user ? (
 				<Menu.Root>
 					<Menu.Trigger className="kp-topbar__user">
@@ -134,7 +125,10 @@ export function Topbar({
 						<span>{user.name}</span>
 					</Menu.Trigger>
 					<Menu.Popup align="end">
-						<Menu.Item onClick={() => navigate(user.username ? `/u/${user.username}` : "/profile")}>
+						<Menu.Item
+							data-testid="topbar-profile-link"
+							onClick={() => navigate(user.username ? `/u/${user.username}` : "/profile")}
+						>
 							Profil
 						</Menu.Item>
 						<Menu.Item onClick={() => navigate("/profile")}>Ayarlar</Menu.Item>
