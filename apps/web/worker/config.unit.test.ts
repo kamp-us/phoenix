@@ -13,19 +13,31 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
-import {AppConfig, betterAuthSecret, ENV_BINDINGS, envBindings, environment} from "./config.ts";
+import {
+	AppConfig,
+	betterAuthSecret,
+	ENV_BINDINGS,
+	envBindings,
+	environment,
+	sentryDsn,
+} from "./config.ts";
 
 const withEnv = (env: Record<string, string>) =>
 	Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(env));
 
 describe("ENV_BINDINGS — the single binding-name source", () => {
-	it("pins the worker's two binding names", () => {
+	it("pins the worker's binding names", () => {
 		assert.strictEqual(ENV_BINDINGS.environment, "ENVIRONMENT");
 		assert.strictEqual(ENV_BINDINGS.betterAuthSecret, "BETTER_AUTH_SECRET");
+		assert.strictEqual(ENV_BINDINGS.sentryDsn, "SENTRY_DSN");
 	});
 
-	it("envBindings binds under exactly the declared names (no key drift)", () => {
+	it("envBindings binds only the always-on names (SENTRY_DSN is bound conditionally, not here)", () => {
+		// `sentryDsn` is in ENV_BINDINGS (single-sourced name) but deliberately NOT in
+		// `envBindings`: it's added to the env block conditionally at deploy (index.ts)
+		// only when a DSN is provisioned, so an unset DSN produces no binding (ADR 0118).
 		assert.deepStrictEqual(
 			Object.keys(envBindings).sort(),
 			[ENV_BINDINGS.environment, ENV_BINDINGS.betterAuthSecret].sort(),
@@ -53,6 +65,20 @@ describe("the Config constants read under the single-sourced binding name", () =
 				const value = yield* betterAuthSecret;
 				assert.strictEqual(Redacted.value(value), "s3cr3t");
 			}).pipe(withEnv({[ENV_BINDINGS.betterAuthSecret]: "s3cr3t"})),
+	);
+
+	it.effect("`sentryDsn` resolves Some off the bound name", () =>
+		Effect.gen(function* () {
+			const dsn = yield* sentryDsn;
+			assert.strictEqual(Option.getOrNull(dsn), "https://k@o0.ingest.de.sentry.io/1");
+		}).pipe(withEnv({[ENV_BINDINGS.sentryDsn]: "https://k@o0.ingest.de.sentry.io/1"})),
+	);
+
+	it.effect("`sentryDsn` resolves None when the binding is absent (the inert path)", () =>
+		Effect.gen(function* () {
+			const dsn = yield* sentryDsn;
+			assert.strictEqual(Option.isNone(dsn), true);
+		}).pipe(withEnv({})),
 	);
 
 	it.effect("`AppConfig` resolves `environment` off the bound name", () =>

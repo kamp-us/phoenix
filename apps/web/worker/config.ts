@@ -27,6 +27,7 @@ import {DEFAULT_ENVIRONMENT, ENVIRONMENTS, type Environment} from "./environment
 export const ENV_BINDINGS = {
 	environment: "ENVIRONMENT",
 	betterAuthSecret: "BETTER_AUTH_SECRET",
+	sentryDsn: "SENTRY_DSN",
 } as const;
 
 /**
@@ -62,6 +63,20 @@ export type {Environment};
  * silently signing cookies with a blank key.
  */
 export const betterAuthSecret = Config.redacted(ENV_BINDINGS.betterAuthSecret);
+
+/**
+ * The Sentry DSN (ADR 0118), read as an OPTION so the worker Sentry path is inert
+ * when unset — `Config.option` yields `None` and the request seam returns the base
+ * fetch untouched (unlike `betterAuthSecret`, which is required and `orDie`s).
+ *
+ * NOT in `envBindings` below: the binding is added conditionally at deploy
+ * (`index.ts` env block) only when a DSN is provisioned, so an unset DSN produces
+ * NO binding at all — reading via `Config.option` then resolves `None`. Bound
+ * `secret_text` (a redacted value) when present; read here as a plain string
+ * because workerd exposes the binding as a string on `env` and the DSN is handed
+ * verbatim to `@sentry/cloudflare`.
+ */
+export const sentryDsn = Config.string(ENV_BINDINGS.sentryDsn).pipe(Config.option);
 
 /**
  * The Config-backed worker env bindings, keyed by their binding NAME (the computed keys
