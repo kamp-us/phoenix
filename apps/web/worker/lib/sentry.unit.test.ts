@@ -6,8 +6,10 @@
  * `src/lib/sentry.unit.test.ts`. Also pins the DSN gate and the PII scrub.
  */
 import type {ErrorEvent} from "@sentry/cloudflare";
+import * as Cause from "effect/Cause";
 import {describe, expect, it} from "vitest";
 import {scrubPii, sentryEnabled, workerOptions} from "./sentry.ts";
+import {shouldCaptureCause} from "./sentry-capture.ts";
 
 describe("sentryEnabled — the inert gate", () => {
 	it("is false for absent/empty/whitespace DSN", () => {
@@ -39,5 +41,31 @@ describe("decided defaults (ADR 0118)", () => {
 		expect(scrubbed.user).toEqual({});
 		expect(scrubbed.request?.cookies).toBeUndefined();
 		expect(scrubbed.request?.headers).toBeUndefined();
+	});
+});
+
+describe("shouldCaptureCause — the defects + 5xx policy (ADR 0118)", () => {
+	it("captures an unhandled defect (the must-have)", () => {
+		expect(shouldCaptureCause(Cause.die(new Error("boom")))).toBe(true);
+	});
+
+	it("captures a typed failure (a 5xx crash at this seam)", () => {
+		expect(shouldCaptureCause(Cause.fail("db down"))).toBe(true);
+	});
+
+	it("captures a cause mixing an interrupt with a real failure", () => {
+		expect(
+			shouldCaptureCause(
+				Cause.fromReasons([...Cause.fail("x").reasons, ...Cause.interrupt().reasons]),
+			),
+		).toBe(true);
+	});
+
+	it("skips a pure client abort (interrupt-only → 499, e.g. SSE disconnect)", () => {
+		expect(shouldCaptureCause(Cause.interrupt())).toBe(false);
+	});
+
+	it("skips an empty cause", () => {
+		expect(shouldCaptureCause(Cause.empty)).toBe(false);
 	});
 });

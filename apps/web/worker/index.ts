@@ -37,6 +37,7 @@ import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
 import {makeAppLive} from "./http/app.ts";
 import {workerFirstGlobs} from "./http/worker-routes.ts";
 import {workerOptions} from "./lib/sentry.ts";
+import {captureUnhandled} from "./lib/sentry-capture.ts";
 import {SentryEffectLive} from "./lib/sentry-effect.ts";
 
 /**
@@ -303,9 +304,11 @@ export default Phoenix.make(
 		// verbatim, so nothing here runs (mirrors the SPA `sentryEnabled` gate).
 		//
 		// `SentryEffectLive` (the Sentry Tracer/Logger, ADR 0029/0118) is merged into the
-		// router layer here so typed failures + `Cause` defects are captured; it's baked
-		// into the built `httpEffect`, so it survives the re-run inside `wrapRequestHandler`.
-		// Merged unconditionally — inert without a bound client (`sentry-effect.ts`).
+		// router layer here for tracing spans + `Effect.log*` breadcrumbs; it's baked into
+		// the built `httpEffect`, so it survives the re-run inside `wrapRequestHandler`.
+		// Merged unconditionally — inert without a bound client (`sentry-effect.ts`). It
+		// does NOT create issues from unhandled failures (it never calls `captureException`);
+		// that is `captureUnhandled`'s job at the seam below (`sentry-capture.ts`).
 		const baseFetch = AppLive.pipe(Layer.provide(SentryEffectLive), HttpRouter.toHttpEffect);
 		const fetch = Option.match(dsn, {
 			onNone: () => baseFetch,
@@ -327,12 +330,21 @@ export default Phoenix.make(
 							webRequest: globalThis.Request,
 							handler: typeof httpEffect,
 						) => Effect.Effect<Response, never, Effect.Services<typeof httpEffect>>;
+						// `captureUnhandled` catches the router handler's `Cause` and turns a
+						// 5xx-class failure/defect into a Sentry issue (ADR 0118, #1502) — the
+						// swallow inside alchemy's `Http.safeHttpEffect` is why `captureErrors`
+						// alone never fires. It runs inside this `runPromise` (thus inside
+						// `wrapRequestHandler`'s client scope), captures + flushes inline, and
+						// returns the response as a success value. `captureErrors: true` stays a
+						// backstop for anything that still rejects the thunk. Full rationale + the
+						// flush-on-die finding live in `sentry-capture.ts`.
+						const captured = captureUnhandled(httpEffect);
 						const webResponse = yield* Effect.promise(() =>
 							wrapRequestHandler(
 								{options: workerOptions(value), request, context, captureErrors: true},
 								() =>
 									Effect.runPromise(
-										toWebResponse(request, httpEffect).pipe(Effect.provide(requestContext)),
+										toWebResponse(request, captured).pipe(Effect.provide(requestContext)),
 									),
 							),
 						);
