@@ -46,6 +46,7 @@ import {
 	funnelReadoutFlag,
 	optimisticEditsFlag,
 	panoDraftSaveFlag,
+	panoOptimisticPostDeleteFlag,
 	panoOptimisticSubmitFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
@@ -80,6 +81,9 @@ export default Alchemy.Stack(
 		// epic #1637) — post/comment/definition edits pass an optimistic payload only
 		// behind this key until a human release.
 		yield* optimisticEditsFlag(flagship.appId);
+		// The optimistic post.delete dark-ship flag, default-off (#1677, epic #1637) —
+		// gates the instant-feed-removal delete flow until a human release.
+		yield* panoOptimisticPostDeleteFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

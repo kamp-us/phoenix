@@ -21,6 +21,15 @@ export const PANO_DRAFT_SAVE = "pano-draft-save";
 export const PANO_OPTIMISTIC_SUBMIT = "pano-optimistic-submit";
 
 /**
+ * Optimistic `post.delete` (instant feed removal on confirm) dark-ship flag (#1677,
+ * epic #1637). Gates the optimistic post-delete flow — evict-and-navigate at once,
+ * roll back on rejection — so it reaches production dark; with it off, `post.delete`
+ * keeps today's wait-for-round-trip behavior. Its own key (not the epic's shared
+ * seam): each Class-B optimistic slice has an independent lifecycle.
+ */
+export const PANO_OPTIMISTIC_POST_DELETE = "pano-optimistic-post-delete";
+
+/**
  * Earned-authorship loop (çaylak→yazar) dark-ship flag (#1204, epic #1202). The
  * single seam every authorship-loop surface gates behind: cross-cutting
  * (`phoenix`) because the loop touches sözlük/pano/pasaport, default-off so the
