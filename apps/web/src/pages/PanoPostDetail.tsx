@@ -29,7 +29,7 @@ import type {ReportOutcome} from "../components/ui/ReportButton";
 import {bodyEditOptimistic, postEditOptimistic} from "../fate/optimisticEdit";
 import {Screen} from "../fate/Screen";
 import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
-import {useReadbackRefetch} from "../fate/useReadbackRefetch";
+import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
 import {PANO_OPTIMISTIC_POST_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../flags/keys";
@@ -506,12 +506,8 @@ function Comments(props: CommentsProps) {
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 	const activeCommentId = useCommentAnchor();
 
-	// Deterministic read-back: if the server's `appendNode` push for the author's own
-	// new comment is lost (publish-vs-register race, #714), refetch this page's request
-	// `network-only` so the comment lands without a manual refresh.
-	const confirmComment = useReadbackRefetch({
-		presentIds: items.map(({node}) => String(node.id)),
-		refetch: () =>
+	const refetchPost = React.useCallback(
+		() =>
 			fate.request(
 				{
 					post: {
@@ -521,6 +517,15 @@ function Comments(props: CommentsProps) {
 				},
 				{mode: "network-only"},
 			),
+		[fate, props.idOrSlug],
+	);
+
+	// Deterministic read-back: if the server's `appendNode` push for the author's own
+	// new comment is lost (publish-vs-register race, #714), refetch this page's request
+	// `network-only` so the comment lands without a manual refresh.
+	const confirmComment = useReadbackRefetch({
+		presentIds: items.map(({node}) => String(node.id)),
+		refetch: refetchPost,
 	});
 
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
@@ -542,22 +547,36 @@ function Comments(props: CommentsProps) {
 	// not-yet-fulfilled node is skipped this frame; membership and node data arrive
 	// together in practice. Re-derives only on `items` change: `parentId` is
 	// immutable and a soft-delete reloads the page.
-	const {roots, childrenByParent, bodyById, refById, visibleCount} = React.useMemo(() => {
-		const nodes: Array<CommentNode<ViewRef<"Comment">>> = [];
-		for (const {node} of items) {
-			const snapshot = fate.readView(CommentTreeNodeView, node);
-			if (snapshot.status !== "fulfilled") continue;
-			const data = snapshot.value.data as CommentNodeData;
-			nodes.push({
-				id: String(data.id),
-				parentId: data.parentId != null ? String(data.parentId) : null,
-				deletedAt: toIsoOrNull(data.deletedAt),
-				body: data.body,
-				ref: node,
-			});
-		}
-		return buildCommentTree(nodes);
-	}, [items, fate]);
+	const {roots, childrenByParent, bodyById, refById, visibleCount, visibleIds} =
+		React.useMemo(() => {
+			const nodes: Array<CommentNode<ViewRef<"Comment">>> = [];
+			for (const {node} of items) {
+				const snapshot = fate.readView(CommentTreeNodeView, node);
+				if (snapshot.status !== "fulfilled") continue;
+				const data = snapshot.value.data as CommentNodeData;
+				nodes.push({
+					id: String(data.id),
+					parentId: data.parentId != null ? String(data.parentId) : null,
+					deletedAt: toIsoOrNull(data.deletedAt),
+					body: data.body,
+					ref: node,
+				});
+			}
+			// Non-tombstoned ids, for the delete-side read-back: a hard delete drops the
+			// id from membership, a soft delete tombstones it (deletedAt) — either way
+			// the id leaves this set when the delete reconciled.
+			const visibleIds = nodes.filter((n) => n.deletedAt == null).map((n) => n.id);
+			return {...buildCommentTree(nodes), visibleIds};
+		}, [items, fate]);
+
+	// Delete-side read-back (#1687): if the `deleteEdge` (or soft-delete tombstone)
+	// push for the author's own delete is lost server-side, the thread keeps rendering
+	// the deleted comment — refetch `network-only` so it reconciles away, mirroring
+	// the add-side self-heal above.
+	const confirmCommentGone = useConfirmGone({
+		presentIds: visibleIds,
+		refetch: refetchPost,
+	});
 
 	const childrenForId = React.useCallback(
 		(id: string): ReadonlyArray<{id: string; ref: ViewRef<"Comment">}> =>
@@ -567,14 +586,18 @@ function Comments(props: CommentsProps) {
 
 	async function onDeleteConfirm() {
 		if (!confirmDeleteId) return;
+		const deletedId = confirmDeleteId;
 		// `comment.delete` returns the re-resolved parent `Post` (leaf-hard-delete
 		// vs parent-soft-delete-tombstone is the server's call), so we can't use
 		// `delete: true`. The resolver drives the row live: hard delete → `deleteEdge`
 		// (row drops), soft delete → `live.update` with the `[silindi]` tombstone.
 		await runDelete(
-			() => fate.mutations.comment.delete({input: {id: confirmDeleteId}}),
+			() => fate.mutations.comment.delete({input: {id: deletedId}}),
 			"yorum silinemedi",
-			() => setConfirmDeleteId(null),
+			() => {
+				setConfirmDeleteId(null);
+				confirmCommentGone(deletedId);
+			},
 		);
 	}
 

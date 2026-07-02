@@ -23,7 +23,7 @@ import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
-import {useReadbackRefetch} from "../fate/useReadbackRefetch";
+import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {LoadMoreButton} from "../fate/wire";
 import type {WireMessageOverrides} from "../fate/wireMessages";
 import {authRedirectPath} from "../lib/returnTo";
@@ -244,16 +244,29 @@ function DefinitionsList(props: DefinitionsListProps) {
 	const term = useView(TermView, props.term);
 	const [items, loadNext] = useLiveListView(DefinitionConnectionView, term.definitions);
 
+	const refetchTerm = React.useCallback(
+		() =>
+			fate.request(
+				{term: {view: TermView, args: {slug: props.slug, definitions: {first: PAGE_SIZE}}}},
+				{mode: "network-only"},
+			),
+		[fate, props.slug],
+	);
+
 	// Deterministic read-back: if the server's `appendNode` push for the author's own
 	// new definition is lost (publish-vs-register race, #714), refetch this page's
 	// request `network-only` so the definition lands without a manual refresh.
 	const confirmDefinition = useReadbackRefetch({
 		presentIds: items.map(({node}) => String(node.id)),
-		refetch: () =>
-			fate.request(
-				{term: {view: TermView, args: {slug: props.slug, definitions: {first: PAGE_SIZE}}}},
-				{mode: "network-only"},
-			),
+		refetch: refetchTerm,
+	});
+
+	// Delete-side read-back (#1687): if the `deleteEdge` push for the author's own
+	// delete is lost server-side, the row lingers — refetch `network-only` so it
+	// reconciles away, mirroring the add-side self-heal above.
+	const confirmDefinitionGone = useConfirmGone({
+		presentIds: items.map(({node}) => String(node.id)),
+		refetch: refetchTerm,
 	});
 
 	// Fresh-slug arrival: this list mounted because a `definition.add` just created the
@@ -275,6 +288,7 @@ function DefinitionsList(props: DefinitionsListProps) {
 					rank={i + 1}
 					top={i === 0}
 					slug={props.slug}
+					onDeleted={confirmDefinitionGone}
 				/>
 			))}
 			{loadNext ? (
