@@ -29,6 +29,7 @@ export const WIRE_MESSAGES: Record<FateWireCode, string> = {
 	VOUCH_LIMIT_REACHED: "kefil olma sınırına ulaştın",
 	DEFINITION_NOT_FOUND: "tanım bulunamadı",
 	POST_NOT_FOUND: "başlık bulunamadı",
+	POST_DELETE_FAILED: "gönderi silinemedi, lütfen tekrar dene",
 	COMMENT_NOT_FOUND: "yorum bulunamadı",
 	VALIDATION_ERROR: "girdiğin bilgiler geçersiz",
 	BODY_REQUIRED: "içerik boş olamaz",

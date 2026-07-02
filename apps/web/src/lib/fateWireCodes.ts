@@ -30,6 +30,10 @@ export const FATE_WIRE_CODES = [
 	"VOUCH_LIMIT_REACHED",
 	"DEFINITION_NOT_FOUND",
 	"POST_NOT_FOUND",
+	// A pano post's removal WRITE failed at the D1 layer (`pano/PostDeleteFailed`,
+	// #1639) — the declared, user-readable failure `post.delete` raises instead of
+	// letting a squashed removal-commit defect escape as `INTERNAL_SERVER_ERROR`.
+	"POST_DELETE_FAILED",
 	"COMMENT_NOT_FOUND",
 	// Schema rejection of an operation's input/args (`InputValidationError`,
 	// the code fate's own schema validation also emits). Pre-handler, so any
