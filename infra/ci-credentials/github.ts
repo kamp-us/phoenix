@@ -93,7 +93,7 @@ export default Alchemy.Stack(
 		// adopts/refreshes them on every deploy; without these the state-store
 		// bootstrap fails with Cloudflare error 10000 even though the token
 		// authenticates for D1/Workers).
-		const apiToken = yield* Cloudflare.AccountApiToken("phoenix-ci-token", {
+		const apiToken = yield* Cloudflare.ApiToken.AccountApiToken("phoenix-ci-token", {
 			name: "phoenix-ci",
 			accountId,
 			policies: [

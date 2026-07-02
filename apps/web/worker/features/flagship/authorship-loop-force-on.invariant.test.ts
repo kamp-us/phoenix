@@ -23,7 +23,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
-import type {FlagshipEvaluationContext} from "alchemy/Cloudflare";
+import type {Flagship as CfFlagship} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
 import {parseDeployEnvironment, UnknownEnvironmentError} from "../../environment.ts";
@@ -79,7 +79,7 @@ const evalAuthorshipLoop: Flagship["Service"]["getBooleanValue"] = (
 	defaultValue,
 	context,
 ) => {
-	const ctx = (context ?? {}) as FlagshipEvaluationContext;
+	const ctx = (context ?? {}) as CfFlagship.EvaluationContext;
 	for (const rule of [...AUTHORSHIP_LOOP_RULES].sort((a, b) => a.priority - b.priority)) {
 		const matched = rule.conditions.every((condition) => {
 			if (!("attribute" in condition)) return false;

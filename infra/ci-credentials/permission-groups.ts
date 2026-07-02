@@ -22,15 +22,15 @@
  * `github.ts`, not the Cloudflare permission set this module governs.
  */
 
-import type {PermissionGroupName} from "alchemy/Cloudflare";
+import type {ApiToken} from "alchemy/Cloudflare";
 
 /** A CI-token permission group paired with the declared stack resource it's granted for. */
 export interface BackedPermissionGroup {
 	/**
 	 * The Cloudflare permission-group name passed to `AccountApiToken`. Typed against
-	 * alchemy's static catalog (`PermissionGroupName`), so a typo is a compile error.
+	 * alchemy's static catalog (`ApiToken.PermissionGroupName`), so a typo is a compile error.
 	 */
-	readonly group: PermissionGroupName;
+	readonly group: ApiToken.PermissionGroupName;
 	/** The declared `apps/web/alchemy.run.ts` resource this grant exists to deploy — never blank. */
 	readonly backedBy: string;
 }
@@ -65,7 +65,7 @@ export const CI_TOKEN_PERMISSION_GROUPS: readonly BackedPermissionGroup[] = [
 /** The literal permission-group names — what `AccountApiToken`'s `permissionGroups` expects. */
 export const permissionGroupNames = (
 	groups: readonly BackedPermissionGroup[] = CI_TOKEN_PERMISSION_GROUPS,
-): PermissionGroupName[] => groups.map((g) => g.group);
+): ApiToken.PermissionGroupName[] => groups.map((g) => g.group);
 
 /**
  * The granted groups with no backing resource (a blank `backedBy`) — an ahead-of-resource

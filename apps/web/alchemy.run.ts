@@ -33,6 +33,7 @@
  * `AlchemyContext.dev` / `ALCHEMY_PHASE`, which are not yet in scope here.
  */
 import * as Alchemy from "alchemy";
+import {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import {PhoenixDb} from "./worker/db/resources.ts";
@@ -96,5 +97,17 @@ export default Alchemy.Stack(
 			databaseId: db.databaseId,
 			accountId: db.accountId,
 		};
-	}).pipe(Effect.provide(PhoenixLive)),
+	}).pipe(
+		Effect.provide(PhoenixLive),
+		// `PhoenixLive` leaks a `RuntimeContext` requirement into this stack program:
+		// beta.59 colors DO storage/RPC and the `send_email` binding's `.send` with
+		// `RuntimeContext` (ADR 0124), and alchemy's `.make<Req>` type does not subtract
+		// the ambient `RuntimeContext` it provides at the worker execution scope. This is
+		// the same phantom-Req gap ADR 0124 discharges for the DO seam; `RuntimeContext`
+		// is really supplied by alchemy at deploy/runtime, so `RuntimeContext.phantom`
+		// (`Layer.empty`) erases the false requirement here without shadowing that real
+		// provision. `Providers` then clears via the stack's `providers` config. Deploy
+		// proof rides #1615.
+		Effect.provide(RuntimeContext.phantom),
+	),
 );

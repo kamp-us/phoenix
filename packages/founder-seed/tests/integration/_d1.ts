@@ -52,7 +52,7 @@ const phoenixD1Stack = (stage: string) =>
 		`founder-seed-it-${stage}`,
 		{providers: Cloudflare.providers(), state: Cloudflare.state()},
 		Effect.gen(function* () {
-			const db = yield* Cloudflare.D1Database("phoenix_db", {
+			const db = yield* Cloudflare.D1.Database("phoenix_db", {
 				migrationsDir: MIGRATIONS_DIR,
 				migrationsTable: "drizzle_migrations",
 			});

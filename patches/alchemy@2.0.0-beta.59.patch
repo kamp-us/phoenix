@@ -1,8 +1,8 @@
 diff --git a/lib/Cloudflare/Flagship/Flag.js b/lib/Cloudflare/Flagship/Flag.js
-index faa4cb457395672cec6249733ab26abe8f0347a4..7ad6b29bb9383db1680eaceff00f4f55ca0705d0 100644
+index 7de47700579646b223752697256ea351f4532a69..b5eee14cc9948af0ae34480301cdb3a0b3f1c402 100644
 --- a/lib/Cloudflare/Flagship/Flag.js
 +++ b/lib/Cloudflare/Flagship/Flag.js
-@@ -167,35 +167,39 @@ export const FlagshipFlagProvider = () => Provider.succeed(FlagshipFlag, {
+@@ -169,35 +169,39 @@ export const FlagProvider = () => Provider.succeed(Flag, {
                  return toAttributes(created, accountId, appId);
              }
          }
@@ -62,16 +62,3 @@ index faa4cb457395672cec6249733ab26abe8f0347a4..7ad6b29bb9383db1680eaceff00f4f55
      }),
      delete: Effect.fn(function* ({ output }) {
          yield* flagship
-diff --git a/lib/Cloudflare/Workers/DurableObjectNamespace.d.ts b/lib/Cloudflare/Workers/DurableObjectNamespace.d.ts
-index 49dae40f64388d102199797458151f5c1f5c79aa..43cdc888695b449a51c146606e74636f69b96e37 100644
---- a/lib/Cloudflare/Workers/DurableObjectNamespace.d.ts
-+++ b/lib/Cloudflare/Workers/DurableObjectNamespace.d.ts
-@@ -53,7 +53,7 @@ export interface DurableObjectShape {
-     webSocketMessage?: (socket: DurableWebSocket, message: string | ArrayBuffer) => Effect.Effect<void>;
-     webSocketClose?: (socket: DurableWebSocket, code: number, reason: string, wasClean: boolean) => Effect.Effect<void>;
- }
--export type DurableObjectServices = DurableObjectNamespace | DurableObjectState | WorkerServices | WorkerEnvironment | PlatformServices;
-+export type DurableObjectServices = DurableObjectNamespace | DurableObjectState | WorkerServices | WorkerEnvironment | PlatformServices | DurableObjectNamespaceScope;
- export interface DurableObjectNamespaceProps {
-     /**
-      * Name of the exported `DurableObject` class.

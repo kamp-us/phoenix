@@ -23,7 +23,7 @@ import {AUDIT_ENVIRONMENT} from "../../environment.ts";
  * no dashboard step. The worker `bind()`s it in init (see `Flagship.ts`) to
  * resolve a typed Effect-native `FlagshipClient`.
  */
-export const Flagship = Cloudflare.FlagshipApp("phoenix_flags", {});
+export const Flagship = Cloudflare.Flagship.App("phoenix_flags", {});
 
 /**
  * The IaC-declared demo flag for targeting + percentage rollout (epic #488,
@@ -45,7 +45,7 @@ export const DEMO_TARGETING_FLAG_KEY = "phoenix-flags-targeting-demo";
 export const DEMO_TARGETING_INTERNAL_ROLE = "internal";
 
 export const demoTargetingFlag = (appId: Input<string>) =>
-	Cloudflare.FlagshipFlag("phoenix_flags_targeting_demo", {
+	Cloudflare.Flagship.Flag("phoenix_flags_targeting_demo", {
 		appId,
 		key: DEMO_TARGETING_FLAG_KEY,
 		description:
@@ -105,7 +105,7 @@ export const PANO_DRAFT_SAVE_FLAG = {
  * (see `demoTargetingFlag` for why it's a factory, not a module constant).
  */
 export const panoDraftSaveFlag = (appId: Input<string>) =>
-	Cloudflare.FlagshipFlag("pano_draft_save", {appId, ...PANO_DRAFT_SAVE_FLAG});
+	Cloudflare.Flagship.Flag("pano_draft_save", {appId, ...PANO_DRAFT_SAVE_FLAG});
 
 /**
  * The earned-authorship loop (çaylak→yazar) dark-ship flag config (#1204, epic
@@ -162,7 +162,7 @@ export const AUTHORSHIP_LOOP_FLAG = {
  * the `equals` operator literal against the operator union (per
  * `.patterns/feature-flags-targeting.md`'s sanctioned taxonomy).
  */
-export const AUTHORSHIP_LOOP_RULES: Cloudflare.FlagshipFlagRule[] = [
+export const AUTHORSHIP_LOOP_RULES: Cloudflare.Flagship.FlagRule[] = [
 	{
 		priority: 1,
 		conditions: [{attribute: "environment", operator: "equals", value: AUDIT_ENVIRONMENT}],
@@ -176,7 +176,7 @@ export const AUTHORSHIP_LOOP_RULES: Cloudflare.FlagshipFlagRule[] = [
  * it's a factory, not a module constant).
  */
 export const authorshipLoopFlag = (appId: Input<string>) =>
-	Cloudflare.FlagshipFlag("phoenix_authorship_loop", {
+	Cloudflare.Flagship.Flag("phoenix_authorship_loop", {
 		appId,
 		...AUTHORSHIP_LOOP_FLAG,
 		rules: AUTHORSHIP_LOOP_RULES,
@@ -213,4 +213,4 @@ export const FUNNEL_READOUT_FLAG = {
  * (see `demoTargetingFlag` for why it's a factory, not a module constant).
  */
 export const funnelReadoutFlag = (appId: Input<string>) =>
-	Cloudflare.FlagshipFlag("phoenix_funnel_readout", {appId, ...FUNNEL_READOUT_FLAG});
+	Cloudflare.Flagship.Flag("phoenix_funnel_readout", {appId, ...FUNNEL_READOUT_FLAG});

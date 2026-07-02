@@ -24,7 +24,7 @@
  * `.patterns/effect-context-service.md` §"Wrapping a non-Effect client").
  */
 import {RuntimeContext} from "alchemy";
-import {SendEmail, type SendEmailBinding} from "alchemy/Cloudflare";
+import {Email} from "alchemy/Cloudflare";
 import {Context, Effect, Layer} from "effect";
 import {environment} from "../../config.ts";
 import {type Environment, isProduction} from "../../environment.ts";
@@ -73,7 +73,7 @@ export const EmailSenderLog: Layer.Layer<EmailSender> = Layer.succeed(EmailSende
  * `destinationAddress`/`allowedDestinationAddresses` → send to any verified
  * recipient — every signed-up user's address).
  */
-export const EmailSenderBinding = SendEmail("EmailSender", {
+export const EmailSenderBinding = Email.SendEmail("EmailSender", {
 	allowedSenderAddresses: [EMAIL_FROM],
 });
 
@@ -92,7 +92,8 @@ export const EmailSenderBinding = SendEmail("EmailSender", {
 export const EmailSenderCloudflareLive = Layer.effect(
 	EmailSender,
 	Effect.gen(function* () {
-		const email = yield* SendEmail.bind(EmailSenderBinding);
+		const descriptor = yield* EmailSenderBinding;
+		const email = yield* Email.Send(descriptor);
 		const runtimeContext = yield* RuntimeContext;
 		return EmailSender.of({
 			send: (message) =>
@@ -120,14 +121,14 @@ export const EmailSenderCloudflareLive = Layer.effect(
  */
 export const emailSenderLayerFor = (
 	env: Environment,
-): Layer.Layer<EmailSender, never, RuntimeContext | SendEmailBinding> =>
+): Layer.Layer<EmailSender, never, RuntimeContext | Email.Send> =>
 	isProduction(env) ? EmailSenderCloudflareLive : EmailSenderLog;
 
 /**
  * The resolved-from-Config layer used at the worker entry. Reads `ENVIRONMENT`
  * (fail-closed default `production`, ADR 0088) and defers to `emailSenderLayerFor`.
  */
-export const EmailSenderLive: Layer.Layer<EmailSender, never, RuntimeContext | SendEmailBinding> =
+export const EmailSenderLive: Layer.Layer<EmailSender, never, RuntimeContext | Email.Send> =
 	Layer.unwrap(
 		Effect.gen(function* () {
 			// `orDie`: a value outside the three literals is a malformed env, unrecoverable

@@ -3,8 +3,8 @@
  * Effect-native `FlagshipClient` for the Cloudflare Flagship binding (epic #488).
  *
  * Mirrors `db/Database.ts`: the binding is resolved once per isolate via
- * `Cloudflare.FlagshipApp.bind(Flagship)` (the init-phase alias, like
- * `Cloudflare.D1Connection.bind(PhoenixDb)`) and wrapped behind a Tag so the
+ * `Cloudflare.Flagship.ReadFlags(Flagship)` (the init-phase alias, like
+ * `Cloudflare.D1.QueryDatabase(PhoenixDb)`) and wrapped behind a Tag so the
  * runtime never re-binds per request. This child wires the binding only; the flag
  * Effect service that consumes the client lands in #508.
  */
@@ -12,7 +12,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import {Context, Effect, Layer} from "effect";
 import {Flagship as FlagshipApp} from "./resources.ts";
 
-export class Flagship extends Context.Service<Flagship, Cloudflare.FlagshipClient>()(
+export class Flagship extends Context.Service<Flagship, Cloudflare.Flagship.ReadFlagsClient>()(
 	"@kampus/Flagship",
 ) {}
 
@@ -24,6 +24,6 @@ export class Flagship extends Context.Service<Flagship, Cloudflare.FlagshipClien
 export const FlagshipLive = Layer.effect(
 	Flagship,
 	Effect.gen(function* () {
-		return yield* Cloudflare.FlagshipApp.bind(FlagshipApp);
+		return yield* Cloudflare.Flagship.ReadFlags(FlagshipApp);
 	}),
 );

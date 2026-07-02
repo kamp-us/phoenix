@@ -58,8 +58,11 @@ export class Phoenix extends Cloudflare.Worker<
 	// The hosted live-fan-out DO, declared as the worker's `Deps` (ADR 0028) so it
 	// can `yield*` the Tag in init and provide `.make()` below.
 	LiveDO
->()(
-	"phoenix",
+>()("phoenix") {}
+
+// Props moved from the Worker constructor to `.make(props, impl)` in alchemy
+// beta.59 (the tag carries name + RPC shape; props live on `.make`).
+const phoenixProps =
 	// Props are an Effect so `domain` can derive from the deploy's `Stage` (issue
 	// #594). `Stage` is a deploy-only PlatformService — alchemy provides it solely in
 	// the stack context (`Stack.make`), NEVER in workerd. But `Phoenix.make()` (the
@@ -134,10 +137,10 @@ export class Phoenix extends Cloudflare.Worker<
 		const stage = yield* Stage;
 		const domain = customHostname(stage, process.env.ENVIRONMENT ?? "");
 		return domain === undefined ? props : {...props, domain};
-	}),
-) {}
+	});
 
 export default Phoenix.make(
+	phoenixProps,
 	Effect.gen(function* () {
 		// ── INIT PHASE (deploy time + once per isolate) ──
 		// Bind the resources: at deploy each call records binding metadata for the
@@ -163,7 +166,7 @@ export default Phoenix.make(
 		const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)(betterAuth);
 
 		// Resolve the Effect-native `FlagshipClient` ONCE in init (epic #488) via the
-		// `Flagship` seam (`Cloudflare.FlagshipApp.bind(...)`, provided below) and wrap
+		// `Flagship` seam (`Cloudflare.Flagship.ReadFlags(...)`, provided below) and wrap
 		// it dependency-free for the routes — same shape as `Database` above.
 		const flagshipClient = yield* Flagship;
 		const flagshipLayer = Layer.succeed(Flagship)(flagshipClient);
@@ -217,7 +220,9 @@ export default Phoenix.make(
 				LiveTopics.of({
 					publish: (topicKey, message, limits) =>
 						Effect.asVoid(
-							topicOf(live, topicKey).publish({topicKey, frame: deliverFrameOf(message), limits}),
+							topicOf(live, topicKey)
+								.publish({topicKey, frame: deliverFrameOf(message), limits})
+								.pipe(Effect.provideService(RuntimeContext, runtimeContext)),
 						),
 				}),
 			),
@@ -231,11 +236,18 @@ export default Phoenix.make(
 					open: (connectionId, request) =>
 						withColdStartRetryFetch("open", connectionOf(live, connectionId).fetch(request)),
 					subscribe: (connectionId, input) =>
-						withColdStartRetry("subscribe", connectionOf(live, connectionId).subscribe(input)),
+						withColdStartRetry(
+							"subscribe",
+							connectionOf(live, connectionId)
+								.subscribe(input)
+								.pipe(Effect.provideService(RuntimeContext, runtimeContext)),
+						),
 					unsubscribe: (connectionId, subId) =>
 						withColdStartRetry(
 							"unsubscribe",
-							connectionOf(live, connectionId).unsubscribe({subId}),
+							connectionOf(live, connectionId)
+								.unsubscribe({subId})
+								.pipe(Effect.provideService(RuntimeContext, runtimeContext)),
 						),
 				}),
 			),
@@ -278,22 +290,14 @@ export default Phoenix.make(
 				// the binding.
 				BetterAuthLive.pipe(
 					Layer.provideMerge(DatabaseLive),
-					Layer.provide(
-						EmailSenderLive.pipe(
-							Layer.provide(Cloudflare.SendEmailBindingLive),
-							Layer.provide(Cloudflare.SendEmailBindingPolicyLive),
-						),
-					),
+					Layer.provide(EmailSenderLive.pipe(Layer.provide(Cloudflare.Email.SendBinding))),
 				),
 				// The `Flagship` seam (`bind()`-in-init) resolves through alchemy's
 				// Flagship binding graph: `FlagshipBindingLive` turns the app resource
 				// into the `FlagshipClient`, `FlagshipBindingPolicyLive` registers the
 				// policy it needs (epic #488). `WorkerEnvironment` is ambient.
-				FlagshipLive.pipe(
-					Layer.provide(Cloudflare.FlagshipBindingLive),
-					Layer.provide(Cloudflare.FlagshipBindingPolicyLive),
-				),
-			).pipe(Layer.provideMerge(Cloudflare.D1ConnectionLive)),
+				FlagshipLive.pipe(Layer.provide(Cloudflare.Flagship.ReadFlagsBinding)),
+			).pipe(Layer.provideMerge(Cloudflare.D1.QueryDatabaseBinding)),
 		),
 	),
 );

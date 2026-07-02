@@ -10,10 +10,12 @@
  * {@link resolveRole} reads `state.id.name` to pick the role at request time;
  * instances are addressed ONLY via {@link connectionOf}/{@link topicOf}.
  *
- * Cross-role calls go through the DO's OWN namespace, resolved once in init and
- * held in the closure. Same class referencing its own namespace = no sibling
- * cycle, so every RPC method's `R` is `never` and the Layer requires only
- * `Worker`.
+ * Cross-role calls go through the DO's OWN namespace, resolved once in the outer
+ * (per-instance) init and held in the closure. Same class referencing its own
+ * namespace = no sibling cycle, so the Layer requires only `Worker` (ADR 0124 —
+ * the beta.59 self-namespace resolution). The RPC methods' `R` is `RuntimeContext`
+ * (beta.59 colored DO storage + cross-role stubs), discharged at the worker call
+ * seam and, in unit tests, via `RuntimeContext.phantom`.
  *
  * Storage is `state.storage`'s flat KV API (no SQLite), void-faithful. The
  * void-faithful stale model rides two counters: per-connection `generation`
@@ -21,6 +23,7 @@
  * `revision`. The reap alarm deletes ALL a connection's rows on the FIRST
  * failed probe — no consecutive-miss counter.
  */
+import type {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -98,14 +101,14 @@ export interface LiveRpcSurface {
 		readonly ownerId: string | undefined;
 		readonly limits: LiveLimits;
 		readonly lastEventId?: string;
-	}) => Effect.Effect<{readonly ok: boolean}, never, never>;
+	}) => Effect.Effect<{readonly ok: boolean}, never, RuntimeContext>;
 	readonly unsubscribe: (input: {
 		readonly subId: string;
-	}) => Effect.Effect<{readonly ok: true}, never, never>;
-	readonly deliver: (input: DeliverInput) => Effect.Effect<DeliverResult, never, never>;
+	}) => Effect.Effect<{readonly ok: true}, never, RuntimeContext>;
+	readonly deliver: (input: DeliverInput) => Effect.Effect<DeliverResult, never, RuntimeContext>;
 	readonly check: (input: {
 		readonly subscriptions: ReadonlyArray<SubscriberRow>;
-	}) => Effect.Effect<{readonly stale: ReadonlyArray<number>}, never, never>;
+	}) => Effect.Effect<{readonly stale: ReadonlyArray<number>}, never, RuntimeContext>;
 	readonly register: (input: {
 		readonly row: SubscriberRow;
 		readonly limits: LiveLimits;
@@ -117,18 +120,18 @@ export interface LiveRpcSurface {
 		// time-grace bound alone.
 		readonly epochStartedAt?: number;
 		readonly lastEventId?: string;
-	}) => Effect.Effect<{readonly ok: boolean}, never, never>;
+	}) => Effect.Effect<{readonly ok: boolean}, never, RuntimeContext>;
 	readonly unregister: (input: {
 		readonly row: SubscriberRow;
-	}) => Effect.Effect<{readonly ok: true}, never, never>;
+	}) => Effect.Effect<{readonly ok: true}, never, RuntimeContext>;
 	readonly publish: (input: {
 		readonly topicKey: string;
 		readonly frame: DeliverFrame;
 		readonly limits: LiveLimits;
-	}) => Effect.Effect<{readonly delivered: number}, never, never>;
+	}) => Effect.Effect<{readonly delivered: number}, never, RuntimeContext>;
 }
 
-export class LiveDO extends Cloudflare.DurableObjectNamespace<LiveDO, LiveRpcSurface>()("LiveDO") {}
+export class LiveDO extends Cloudflare.DurableObject<LiveDO, LiveRpcSurface>()("LiveDO") {}
 
 type LiveNamespace = Effect.Success<typeof LiveDO>;
 
@@ -781,21 +784,33 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 
 /**
  * The `LiveDO` implementation Layer (ADR 0028). The DO's OWN namespace is
- * resolved once in init from `Cloudflare.DurableObjectNamespaceScope` (the local,
- * scriptName-less self-binding `.make()` provides) and captured for cross-role
- * addressing — void's `this.env[binding]` pattern. Because it's the local binding
- * (not a cross-script `.from(scriptName)`) it works under `alchemy dev`, requires
- * only `Worker`, and every RPC method's `R` is `never`.
+ * resolved once in the outer (per-instance) init for cross-role addressing —
+ * void's `this.env[binding]` pattern — via `Cloudflare.DurableObject`, the
+ * beta.59 self-namespace yield (ADR 0124, superseding ADR 0037's removed
+ * `DurableObjectNamespaceScope`). The requirement is discharged at the yield
+ * site (see below), so the Layer stays `Layer<LiveDO, never, Worker>`; the RPC
+ * methods themselves are `RuntimeContext`-colored (beta.59) and discharged at
+ * the worker call seam / in tests via `RuntimeContext.phantom`.
  */
 export const LiveDOLive = LiveDO.make(
 	Effect.gen(function* () {
-		// Resolve the DO's OWN namespace once (shared init), for cross-role
-		// addressing. NOT `LiveDO.from("phoenix")`: any `.from(...)` declares a
-		// CROSS-SCRIPT binding, which under `alchemy dev` routes through the
-		// dev-registry proxy and dies with `Worker "phoenix" not found`. The scope is
-		// typed generically (`DurableObjectNamespace<unknown>`), so we widen it once
-		// to this DO's `LiveRpcSurface` — a pure type widening, the only `as` here.
-		const live = (yield* Cloudflare.DurableObjectNamespaceScope) as LiveNamespace;
+		// Resolve the DO's OWN namespace once (outer, per-instance init — runs on the
+		// platform when the DO boots, NOT at stack build), for cross-role addressing.
+		// Must be the OUTER init, not a handler: `.make` provides `DurableObjectScope`
+		// to the constructor (alchemy DurableObject.js:640), and the bridge runs the
+		// constructor per-instance but does NOT thread the scope into the inner
+		// handlers, so a handler-level yield would die at runtime. NOT
+		// `LiveDO.from(Self)`: it needs the host `Worker`, reintroducing the worker↔DO
+		// cycle this scope avoids. The cast discharges the phantom `Req`: `.make<Req>`
+		// leaves the self-scope in `Req` (it's not a `DurableObjectServices` member)
+		// even though it's provided at runtime, so we narrow the whole Effect to
+		// `Effect<LiveNamespace>` (success widened to this DO's namespace, `R` narrowed
+		// to `never`), grounded in that runtime provision (ADR 0124). `DurableObjectClass`
+		// and `Effect` don't structurally overlap, so a lone `as` won't convert — the
+		// double cast is the only spelling, and it's laundering a KNOWN-provided service,
+		// not an unverified value.
+		// biome-ignore lint/plugin: discharges the self-scope `Req` that `.make` provides at runtime (alchemy DurableObject.js:640) but leaves in the type — the beta.59 typing gap ADR 0124 records; no value is fabricated, the runtime yield is unchanged.
+		const live = yield* Cloudflare.DurableObject as unknown as Effect.Effect<LiveNamespace>;
 		// The shared-init gen RETURNS the per-instance Effect (run once per instance
 		// wake). `return yield*` would run per-instance setup during shared init.
 		// @effect-diagnostics-next-line effect/returnEffectInGen:off

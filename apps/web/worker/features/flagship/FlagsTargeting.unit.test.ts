@@ -17,7 +17,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
-import {FlagshipError} from "alchemy/Cloudflare";
+import {Flagship as CfFlagship} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
 import {Flags, FlagsLive} from "./Flags.ts";
 import {encodeRoles, FlagsContext, toEvaluationContext} from "./FlagsContext.ts";
@@ -188,7 +188,9 @@ describe("Flags — safe default with targeting context (#511)", () => {
 		}).pipe(
 			Effect.provide(
 				flagsOver(() =>
-					Effect.fail(new FlagshipError({message: "binding unavailable", cause: undefined})),
+					Effect.fail(
+						new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}),
+					),
 				),
 			),
 		),
