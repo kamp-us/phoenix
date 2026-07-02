@@ -12,6 +12,7 @@ import {useSession} from "../auth/client";
 import {Subnav} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
+import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import {PANO_FILTERS, PANO_SORT_PARAM, panoFilterIdFromParam, SAVED_LINK} from "../lib/panoNav";
@@ -41,8 +42,8 @@ export function PanoFeed({host}: {host?: string}) {
 	return (
 		<Screen
 			fallback={
-				<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta="yükleniyor…">
-					{null}
+				<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta="">
+					<PanoFeedSkeleton />
 				</FeedChrome>
 			}
 			error={({code}) => (
