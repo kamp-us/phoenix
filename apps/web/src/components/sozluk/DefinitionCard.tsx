@@ -58,6 +58,11 @@ export interface DefinitionCardProps {
 	top: boolean;
 	/** Term slug — passed to the auth redirect so a signed-out vote returns here. */
 	slug: string;
+	/**
+	 * Hands the deleted definition's id to the list's delete-side read-back, so a
+	 * lost `deleteEdge` push self-heals via a network-only refetch (#1687).
+	 */
+	onDeleted?: (definitionId: string) => void;
 }
 
 export function DefinitionCard(props: DefinitionCardProps) {
@@ -159,7 +164,10 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		await runDelete(
 			() => fate.mutations.definition.delete({input: {id: definition.id}}),
 			"tanım silinemedi",
-			() => setConfirmDelete(false),
+			() => {
+				setConfirmDelete(false);
+				props.onDeleted?.(String(definition.id));
+			},
 		);
 	}
 
