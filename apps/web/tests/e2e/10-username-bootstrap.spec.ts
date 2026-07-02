@@ -29,7 +29,7 @@ test.describe("Username bootstrap", () => {
 		await expect(input).toHaveValue(sanitized);
 	});
 
-	test("submitting the bootstrap form sets username + topbar shows @username link", async ({
+	test("submitting the bootstrap form sets username + profile reachable via user menu", async ({
 		page,
 	}) => {
 		const localPart = `bs${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -40,17 +40,13 @@ test.describe("Username bootstrap", () => {
 		await input.fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
 
-		// Bootstrap form gone; topbar shows @username link.
+		// Bootstrap form gone; the handle is now reachable via the topbar user menu's
+		// "Profil" item (#1632 dropped the redundant standalone @username link).
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
 			timeout: 10_000,
 		});
-		const profileLink = page.locator('[data-testid="topbar-profile-link"]');
-		await expect(profileLink).toBeVisible({timeout: 5_000});
-		await expect(profileLink).toContainText(`@${handle}`);
-		await expect(profileLink).toHaveAttribute("href", `/u/${handle}`);
-
-		// Click it: should route to /u/<handle> without errors.
-		await profileLink.click();
+		await page.locator(".kp-topbar__user").first().click();
+		await page.getByTestId("topbar-profile-link").click();
 		await expect(page).toHaveURL(`/u/${handle}`, {timeout: 5_000});
 	});
 
