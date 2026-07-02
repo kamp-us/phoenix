@@ -1,0 +1,41 @@
+diff --git a/lib/index.mjs b/lib/index.mjs
+index 1320772aa6950d3e71b044e71ea6b1fd77d6f322..8de6f37df93f922f3c4ab37ec0110dbb26a6de34 100644
+--- a/lib/index.mjs
++++ b/lib/index.mjs
+@@ -46,6 +46,7 @@ function useView(view, ref) {
+ 	const snapshotRef = useRef(null);
+ 	const mergedSnapshotRef = useRef(null);
+ 	const pendingRef = useRef(null);
++	const pendingViewRef = useRef(null);
+ 	const readViewSnapshot = useCallback((viewRef, coverage = [], cacheKey) => {
+ 		const snapshot = client.readView(view, viewRef);
+ 		const mergeCoverage = (value) => ({
+@@ -53,6 +54,7 @@ function useView(view, ref) {
+ 			coverage: coverage.length ? [...coverage, ...value.coverage] : value.coverage
+ 		});
+ 		if (isFulfilledThenable(snapshot)) {
++			pendingViewRef.current = null;
+ 			if (coverage.length) {
+ 				const cached = mergedSnapshotRef.current;
+ 				const resolvedKey = `${viewRef.__typename}:${String(viewRef.id)}`;
+@@ -77,11 +79,19 @@ function useView(view, ref) {
+ 		}
+ 		mergedSnapshotRef.current = null;
+ 		snapshotRef.current = null;
+-		return Promise.resolve(snapshot).then((value) => {
++		if (pendingViewRef.current?.viewRef === viewRef && pendingViewRef.current.source === snapshot && pendingViewRef.current.cacheKey === cacheKey) return pendingViewRef.current.thenable;
++		const thenable = Promise.resolve(snapshot).then((value) => {
+ 			const resolved = mergeCoverage(value);
+ 			snapshotRef.current = resolved;
+ 			return resolved;
+ 		});
++		pendingViewRef.current = {
++			cacheKey,
++			source: snapshot,
++			thenable,
++			viewRef
++		};
++		return thenable;
+ 	}, [client, view]);
+ 	const getSnapshot = useCallback(() => {
+ 		if (ref === null) {
