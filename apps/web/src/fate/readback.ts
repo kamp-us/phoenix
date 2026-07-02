@@ -23,7 +23,10 @@
 
 /** A pending read-back: the node we're waiting on plus the probe budget left. */
 export interface ReadbackState {
-	/** The created node's id the mutator expects to see in its own connection. */
+	/**
+	 * The node id the mutator is watching for: expected to *appear* after a create
+	 * ({@link decideReadback}), expected to *leave* after a delete ({@link decideConfirmGone}).
+	 */
 	readonly expectedId: string;
 	/** Probes left before we stop waiting (each probe is one grace tick). */
 	readonly probesRemaining: number;
@@ -48,6 +51,27 @@ export function decideReadback(
 	state: ReadbackState,
 ): ReadbackDecision {
 	if (presentIds.has(state.expectedId)) return {action: "settled"};
+	if (state.probesRemaining <= 0) return {action: "refetch"};
+	return {
+		action: "wait",
+		next: {expectedId: state.expectedId, probesRemaining: state.probesRemaining - 1},
+	};
+}
+
+/**
+ * The delete-direction twin of {@link decideReadback}: after the mutator's own
+ * delete succeeds, the expected id should *leave* `presentIds` (a hard delete's
+ * `deleteEdge` drops the row; a soft delete's tombstone removes it from the
+ * *visible* set the caller passes). Settles the instant the id is gone, waits
+ * while probes remain, and refetches deterministically when the id is still
+ * present after the budget — healing every server-side delete-loss mode at once
+ * (#1687, the collection-delete analog of the scalar self-heal #731).
+ */
+export function decideConfirmGone(
+	presentIds: ReadonlySet<string>,
+	state: ReadbackState,
+): ReadbackDecision {
+	if (!presentIds.has(state.expectedId)) return {action: "settled"};
 	if (state.probesRemaining <= 0) return {action: "refetch"};
 	return {
 		action: "wait",
