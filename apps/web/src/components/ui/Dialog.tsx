@@ -1,5 +1,5 @@
 import {Dialog as BaseDialog} from "@base-ui/react/dialog";
-import type * as React from "react";
+import * as React from "react";
 import {bem} from "../../lib/bem";
 import "./Dialog.css";
 
@@ -65,6 +65,10 @@ export function Head({
 }
 
 export function Body({children}: {children: React.ReactNode}) {
+	// Render nothing when there's no real content: a padded body with the foot's
+	// border-top would otherwise draw a hollow banded strip (e.g. a confirm dialog
+	// whose body only renders on error). toArray drops null/false/undefined children.
+	if (React.Children.toArray(children).length === 0) return null;
 	return <div className={styles.body}>{children}</div>;
 }
 
