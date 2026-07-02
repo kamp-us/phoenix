@@ -155,6 +155,12 @@ jobs:
       # The SPA is a plain Vite build; the worker uploads `dist/client` via its
       # `assets` prop. `alchemy deploy` does not drive Vite for phoenix's shape.
       - name: Build SPA (${{ matrix.app }})
+        env:
+          # Bake the Sentry DSN into the bundle at build time (ADR 0118 — a public
+          # client-side value, so a repo variable, not a secret). Production stages
+          # only: an empty DSN leaves the SPA wiring inert (sentry.ts `sentryEnabled`
+          # gate), so per-PR previews neither init Sentry nor burn the free-tier quota.
+          VITE_SENTRY_DSN: ${{ env.ENVIRONMENT == 'production' && vars.VITE_SENTRY_DSN || '' }}
         run: pnpm --filter ${{ matrix.pnpm-name }} build
 
       # `exec alchemy` forwards `--stage`/`--yes` to the alchemy CLI. A bare
