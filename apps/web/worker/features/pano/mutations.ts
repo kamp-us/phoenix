@@ -25,6 +25,7 @@ import {
 	CommentNotFound,
 	CommentValidationErrors,
 	DraftsDisabled,
+	PostDeleteFailed,
 	PostNotFound,
 	PostValidationErrors,
 	UnauthorizedCommentMutation,
@@ -357,13 +358,23 @@ export const mutations = {
 		{
 			input: PostIdInput,
 			type: PostView,
-			error: Schema.Union([Unauthorized, UnauthorizedPostMutation]),
+			error: Schema.Union([Unauthorized, UnauthorizedPostMutation, PostDeleteFailed]),
 		},
 		Effect.fn("post.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
-			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
+			// The removal commit runs over `DrizzleAccessOrDie` — a D1-layer write failure
+			// dies as a defect, which would escape this union as a raw `INTERNAL_SERVER_ERROR`
+			// (#1639). Catch that defect into the declared, user-readable `PostDeleteFailed`;
+			// the typed `UnauthorizedPostMutation` (a failure, not a defect) passes through.
+			const r = yield* pano
+				.deletePost({postId: input.id, actorId: user.id})
+				.pipe(
+					Effect.catchDefect(
+						() => new PostDeleteFailed({message: "Gönderi silinemedi. Lütfen tekrar deneyin."}),
+					),
+				);
 			yield* live.post.delete(r.postId);
 			yield* live.post.feed.deleteEdge(r.postId);
 			// Bare id-only eviction ref: the post is hidden, so there's no row to run
