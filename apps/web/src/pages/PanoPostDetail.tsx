@@ -32,11 +32,13 @@ import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
 import {useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
-import {PHOENIX_OPTIMISTIC_EDITS} from "../flags/keys";
+import {PANO_OPTIMISTIC_POST_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {NotFoundPage} from "./NotFoundPage";
+import {decideOptimisticDelete} from "./optimisticPostDelete";
 import "./PanoPostDetail.css";
 
 const COMMENT_BODY_MAX = 5_000;
@@ -144,6 +146,19 @@ const COMMENT_OVERRIDES: WireMessageOverrides = {
 
 const currentLocationPath = () => `${window.location.pathname}${window.location.search}`;
 
+/**
+ * Router-state key the optimistic delete uses to carry a rejection's inline error
+ * back to the detail page it navigated away from (see `onDeleteConfirm`).
+ */
+const DELETE_ERROR_STATE_KEY = "postDeleteError";
+
+/** Reads a carried delete-error message off opaque router state, or `null`. */
+function readDeleteError(state: unknown): string | null {
+	if (state == null || typeof state !== "object") return null;
+	const value = (state as Record<string, unknown>)[DELETE_ERROR_STATE_KEY];
+	return typeof value === "string" ? value : null;
+}
+
 /** Client-side comment-body validation. Messages come from the shared registry. */
 const validateCommentBody = (trimmed: string, body: string): string | null => {
 	if (trimmed.length === 0) return messageForCode("BODY_REQUIRED", COMMENT_OVERRIDES);
@@ -205,10 +220,12 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
+	const location = useLocation();
 	const report = useReportHandler();
 	// Dark-ship gate (#1675): with the flag off the edit passes no optimistic
 	// payload and waits for the round-trip, exactly as before.
 	const {value: optimisticEdits} = useFlag(PHOENIX_OPTIMISTIC_EDITS, false);
+	const {value: optimisticDelete} = useFlag(PANO_OPTIMISTIC_POST_DELETE, false);
 
 	const [editing, setEditing] = React.useState(false);
 	const [editTitle, setEditTitle] = React.useState("");
@@ -224,9 +241,22 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	} = useDraftSubmit({overrides: POST_OVERRIDES, redirectPath: postRedirectPath});
 	const {
 		error: deleteError,
+		setError: setDeleteError,
 		inFlight: deleteInFlight,
 		run: runDelete,
 	} = useDraftSubmit({overrides: POST_OVERRIDES, redirectPath: postRedirectPath});
+
+	// Optimistic delete navigates to /pano at once, so a rejection's inline error
+	// can't stay on the unmounted dialog — the rollback returns here carrying the
+	// message in router state (see `onDeleteConfirm`). Rehydrate it: reopen the
+	// dialog with the error, then clear the state so a refresh/back can't re-trigger.
+	React.useEffect(() => {
+		const carried = readDeleteError(location.state);
+		if (carried == null) return;
+		setDeleteError(carried);
+		setConfirmDelete(true);
+		navigate(location.pathname, {replace: true, state: null});
+	}, [location.state, location.pathname, navigate, setDeleteError]);
 
 	const isAuthor = !!session.data?.user && session.data.user.id === data.authorId;
 
@@ -259,16 +289,46 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	}
 
 	async function onDeleteConfirm() {
-		// `delete: true` evicts the post by id across all connections (incl. the
-		// feed root list) — declarative, no imperative updater.
-		await runDelete(
-			() => fate.mutations.post.delete({input: {id: data.id}, delete: true}),
-			"başlık silinemedi",
-			() => {
-				setConfirmDelete(false);
-				navigate("/pano");
-			},
-		);
+		// `delete: true` evicts the post by id across all connections (incl. the feed
+		// root list) — declarative, no imperative updater. fate applies the eviction
+		// SYNCHRONOUSLY, before the round-trip, and rolls it back before a boundary
+		// throw (see `.patterns/fate-mutations-client.md`).
+		if (!optimisticDelete) {
+			await runDelete(
+				() => fate.mutations.post.delete({input: {id: data.id}, delete: true}),
+				"başlık silinemedi",
+				() => {
+					setConfirmDelete(false);
+					navigate("/pano");
+				},
+			);
+			return;
+		}
+		// Optimistic: the sync eviction already dropped the row, so navigate to /pano
+		// at once — the removal is perceived instantly and the server `feed.deleteEdge`
+		// frame reconciles it away for good (no reappear). Reconcile the outcome in the
+		// background; on rejection fate has restored the post, so return to it with the
+		// existing inline error.
+		setConfirmDelete(false);
+		const promise = fate.mutations.post.delete({input: {id: data.id}, delete: true});
+		const path = postRedirectPath();
+		navigate("/pano");
+		let failureCode: FateWireCode | null = null;
+		try {
+			const {error} = await promise;
+			if (error) failureCode = codeOf(error);
+		} catch (caught) {
+			failureCode = codeOf(caught);
+		}
+		const outcome = decideOptimisticDelete(failureCode);
+		if (outcome.kind === "deleted") return;
+		if (outcome.kind === "auth-redirect") {
+			navigate(authRedirectPath(path));
+			return;
+		}
+		navigate(path, {
+			state: {[DELETE_ERROR_STATE_KEY]: messageForCode(outcome.code, POST_OVERRIDES)},
+		});
 	}
 
 	return (

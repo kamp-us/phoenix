@@ -82,6 +82,24 @@ There is no hand-written updater enumerating connection keys. For connections th
 >
 > Entity-field mutations (vote, edit) are unaffected: they write back through the result `view` and re-render in place. Votes are fully optimistic; the in-place edits become optimistic behind the `phoenix-optimistic-edits` flag — see [Optimistic in-place edits](#optimistic-edits).
 
+### Optimistic root-list delete + navigate-away (`post.delete`) {#optimistic-root-list-delete}
+
+`delete: true` is **already optimistic**: fate evicts the entity and every edge referencing it **synchronously, before the round-trip**, captures a snapshot, and **restores it before a boundary throw** ([`@nkzw/fate` `wrapMutation`](https://github.com/usirin/fate)). So for a root-list member (pano's feed post) the eviction shows the instant the mutation is *called* — no `optimistic` payload needed, unlike an insert.
+
+The catch is a delete whose call site **navigates away on success** (pano `post.delete` → `/pano`). Don't `await` the round-trip before navigating — that reintroduces the wait the sync eviction removed. Instead fire the mutation, navigate **at once** (the feed already shows the row gone), and reconcile the promise in the background. A rejection has already rolled the eviction back (the post reappears), so route the **existing inline error** back to the page you left via router state rather than a toast:
+
+```tsx
+const promise = fate.mutations.post.delete({input: {id}, delete: true}); // sync eviction
+navigate("/pano");                                                        // perceived-instant
+const {error} = await promise.catch((caught) => ({error: caught}));
+if (error) {
+  // fate restored the post — return to it with the inline error (UNAUTHORIZED → auth)
+  navigate(postPath, {state: {postDeleteError: messageForCode(codeOf(error), overrides)}});
+}
+```
+
+The server publishes `live.post.feed.deleteEdge(id)` after the commit; that frame reconciles the already-optimistically-evicted edge idempotently — the row **never reappears** and the optimistic and SSE-reconciled states never diverge. Gate this behind a default-off flag (`pano-optimistic-post-delete`, #1677) so it dark-ships. The terminal-outcome decision is a pure core (`src/pages/optimisticPostDelete.ts`, the `savedReconcile` idiom), unit-tested hook-free.
+
 ## Errors {#errors}
 
 A failure is a `FateRequestError` with a `code` (a `FateWireCode` — `UNAUTHORIZED`, `VALIDATION_ERROR`, and the domain codes from `src/lib/fateWireCodes.ts`) and `message`. fate routes it by HTTP status:
