@@ -4,8 +4,12 @@ import "./Subnav.css";
 
 export type SubnavFilter = {id: string; label: React.ReactNode};
 
-/** A route-navigating item that sits beside the sort toggles (e.g. kaydedilenler). */
-export type SubnavLink = {to: string; label: React.ReactNode};
+/**
+ * A route-navigating item that sits beside the sort toggles (e.g. kaydedilenler).
+ * `end` scopes the NavLink active-match to an exact path, so a link to `/pano` isn't
+ * marked active on the nested `/pano/kaydedilenler` route (the default prefix match).
+ */
+export type SubnavLink = {to: string; label: React.ReactNode; end?: boolean};
 
 export function Subnav({
 	title,
@@ -43,7 +47,7 @@ export function Subnav({
 					))}
 					{/* NavLink sets aria-current="page" on the active route by default */}
 					{links?.map((l) => (
-						<NavLink key={l.to} to={l.to} className="kp-subnav__filter">
+						<NavLink key={l.to} to={l.to} end={l.end} className="kp-subnav__filter">
 							{l.label}
 						</NavLink>
 					))}
