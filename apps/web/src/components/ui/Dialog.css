@@ -77,9 +77,15 @@
 	background: var(--surface-raised);
 	color: var(--text-primary);
 }
+/* Softened focus ring for the close ×: the shared --focus-ring (a bold 2px accent
+   outline offset off the corner) read as an accidental orange highlight on a
+   destructive dialog. A thin inset ring on the hover surface keeps keyboard focus
+   legible without pulling the eye off the actual choice (vazgeç / sil). */
 .kp-dialog__close:focus-visible {
-	outline: var(--focus-ring);
-	outline-offset: 1px;
+	outline: none;
+	background: var(--surface-raised);
+	box-shadow: inset 0 0 0 1px var(--accent-9);
+	color: var(--text-primary);
 }
 
 @keyframes kp-dialog-fade {
