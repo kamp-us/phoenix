@@ -37,6 +37,7 @@ import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
 import {makeAppLive} from "./http/app.ts";
 import {workerFirstGlobs} from "./http/worker-routes.ts";
 import {workerOptions} from "./lib/sentry.ts";
+import {SentryEffectLive} from "./lib/sentry-effect.ts";
 
 /**
  * Lift a publish-side `PublishMessage` to the `DeliverFrame` `LiveDO.publish`
@@ -300,7 +301,12 @@ export default Phoenix.make(
 		// wrapped handler returns a web `Response`; `HttpServerResponse.fromWeb` hands it
 		// back for alchemy's outer conversion. No DSN ⇒ the base effect is returned
 		// verbatim, so nothing here runs (mirrors the SPA `sentryEnabled` gate).
-		const baseFetch = AppLive.pipe(HttpRouter.toHttpEffect);
+		//
+		// `SentryEffectLive` (the Sentry Tracer/Logger, ADR 0029/0118) is merged into the
+		// router layer here so typed failures + `Cause` defects are captured; it's baked
+		// into the built `httpEffect`, so it survives the re-run inside `wrapRequestHandler`.
+		// Merged unconditionally — inert without a bound client (`sentry-effect.ts`).
+		const baseFetch = AppLive.pipe(Layer.provide(SentryEffectLive), HttpRouter.toHttpEffect);
 		const fetch = Option.match(dsn, {
 			onNone: () => baseFetch,
 			onSome: (value) =>
