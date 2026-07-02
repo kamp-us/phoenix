@@ -13,6 +13,7 @@ import {PANO_DRAFT_SAVE} from "../flags/keys";
 import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
+import {prefillIfEmpty, useLinkMetadata} from "../lib/useLinkMetadata";
 import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
@@ -87,12 +88,21 @@ export function PanoSubmitPage() {
 	const [draftSaved, setDraftSaved] = React.useState(false);
 
 	const fate = useFateClient();
+	const {fetchMetadata} = useLinkMetadata();
 	const {
 		error,
 		setError,
 		inFlight: isInFlight,
 		run,
 	} = useDraftSubmit({overrides: PANO_SUBMIT_OVERRIDES, redirectPath: () => "/pano/yeni"});
+
+	// Prefill the (still-empty) title/context from the pasted link's metadata on
+	// URL blur — the shared policy in `prefillIfEmpty` never clobbers user input.
+	async function prefillFromUrl() {
+		const meta = await fetchMetadata(url);
+		prefillIfEmpty(title, meta.title, setTitle);
+		prefillIfEmpty(body, meta.description, setBody);
+	}
 	const urlRef = React.useRef<HTMLInputElement>(null);
 	const titleRef = React.useRef<HTMLInputElement>(null);
 	// CTA focus target: the URL field leads in link mode, the title field otherwise.
@@ -268,6 +278,7 @@ export function PanoSubmitPage() {
 										placeholder="https://overreacted.io/..."
 										value={url}
 										onChange={(e) => setUrl(e.currentTarget.value)}
+										onBlur={prefillFromUrl}
 									/>
 								</div>
 								{showPreview ? (
