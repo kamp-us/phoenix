@@ -36,3 +36,13 @@ export const PHOENIX_AUTHORSHIP_LOOP = "phoenix-authorship-loop";
  * funnel is a separate mod-only destination with its own lifecycle.
  */
 export const PHOENIX_FUNNEL_READOUT = "phoenix-funnel-readout";
+
+/**
+ * Optimistic in-place content-edit dark-ship flag (#1675, epic #1637). Gates the
+ * three Class-A content edits (`post.edit`, `comment.edit`, `definition.edit`)
+ * that render the edited body/title instantly by passing an `optimistic` payload
+ * (the seam votes already use); default-off so the edits reach production dark
+ * (waiting for the round-trip, exactly as today) until a human flips it at release
+ * (ADR 0083). The add/delete slices of the epic ship behind their own gates.
+ */
+export const PHOENIX_OPTIMISTIC_EDITS = "phoenix-optimistic-edits";

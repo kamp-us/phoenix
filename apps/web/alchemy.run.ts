@@ -44,6 +44,7 @@ import {
 	demoTargetingFlag,
 	Flagship,
 	funnelReadoutFlag,
+	optimisticEditsFlag,
 	panoDraftSaveFlag,
 	panoOptimisticSubmitFlag,
 } from "./worker/features/flagship/resources.ts";
@@ -75,6 +76,10 @@ export default Alchemy.Stack(
 		// The conversion-funnel readout dark-ship flag, default-off (#1589) — the
 		// founder/mod tier-count surface gates behind this key until a human release.
 		yield* funnelReadoutFlag(flagship.appId);
+		// The optimistic in-place content-edit dark-ship flag, default-off (#1675,
+		// epic #1637) — post/comment/definition edits pass an optimistic payload only
+		// behind this key until a human release.
+		yield* optimisticEditsFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
