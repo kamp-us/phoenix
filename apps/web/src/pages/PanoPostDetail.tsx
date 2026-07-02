@@ -22,6 +22,7 @@ import {
 	PanoPostHeaderView,
 	PanoPostHeaderVote,
 } from "../components/pano/PanoPostHeader";
+import {PanoPostSkeleton} from "../components/pano/PanoSkeleton";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import type {ReportOutcome} from "../components/ui/ReportButton";
@@ -165,7 +166,7 @@ export function PanoPostDetail() {
 					← akışa dön
 				</Link>
 				<Screen
-					fallback={<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>}
+					fallback={<PanoPostSkeleton />}
 					error={({code}) => (
 						<p style={{font: "var(--t-body)", color: "var(--danger)"}}>
 							başlık yüklenemedi: {code.toLowerCase()}
