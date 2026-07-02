@@ -788,7 +788,16 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		);
 		yield* Removal.removeEntity(removalSeq, {kind: "post", id: input.postId}, removed, now);
 
-		yield* persistPanoStats(now);
+		// The removal is committed (source of truth). `persistPanoStats` is a recomputable
+		// cache refresh (ADR 0011/0117) running AFTER the commit — it runs over
+		// `DrizzleAccessOrDie`, so a D1 hiccup dies, and that must NOT flip an already-
+		// committed delete into a raw 500 (the partial-commit-then-500, #1639). Swallow +
+		// log like the fire-and-forget live-publish (ADR 0039); totals recompute next write.
+		yield* persistPanoStats(now).pipe(
+			Effect.catchCause((cause) =>
+				Effect.logWarning("pano-stats refresh after post delete failed", cause),
+			),
+		);
 
 		return {postId: input.postId, deleted: true} satisfies DeletePostResult;
 	});
