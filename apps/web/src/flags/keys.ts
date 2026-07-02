@@ -12,6 +12,15 @@
 export const PANO_DRAFT_SAVE = "pano-draft-save";
 
 /**
+ * Optimistic `post.submit` (feed root-list insert) containment flag (#1676, epic
+ * #1637). Default-off: with it off, submit is a plain round-trip; flipping it on
+ * enables the optimistic front-of-feed insert that reconciles to the server row.
+ * Its own key (not the authorship-loop seam) — an independent per-mutation
+ * dark-ship for the Class B root-list optimistic slice.
+ */
+export const PANO_OPTIMISTIC_SUBMIT = "pano-optimistic-submit";
+
+/**
  * Earned-authorship loop (çaylak→yazar) dark-ship flag (#1204, epic #1202). The
  * single seam every authorship-loop surface gates behind: cross-cutting
  * (`phoenix`) because the loop touches sözlük/pano/pasaport, default-off so the
