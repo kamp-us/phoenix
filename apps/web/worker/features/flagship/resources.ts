@@ -15,6 +15,7 @@ import {
 	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_FUNNEL_READOUT,
+	PHOENIX_OPTIMISTIC_EDITS,
 } from "../../../src/flags/keys.ts";
 import {AUDIT_ENVIRONMENT} from "../../environment.ts";
 
@@ -74,7 +75,13 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 		],
 	});
 
-export {PANO_DRAFT_SAVE, PANO_OPTIMISTIC_SUBMIT, PHOENIX_AUTHORSHIP_LOOP, PHOENIX_FUNNEL_READOUT};
+export {
+	PANO_DRAFT_SAVE,
+	PANO_OPTIMISTIC_SUBMIT,
+	PHOENIX_AUTHORSHIP_LOOP,
+	PHOENIX_FUNNEL_READOUT,
+	PHOENIX_OPTIMISTIC_EDITS,
+};
 
 /**
  * The optimistic `post.submit` (feed root-list insert) containment flag config
@@ -246,3 +253,36 @@ export const FUNNEL_READOUT_FLAG = {
  */
 export const funnelReadoutFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_funnel_readout", {appId, ...FUNNEL_READOUT_FLAG});
+
+/**
+ * The optimistic in-place content-edit dark-ship flag config (#1675, epic #1637).
+ * The three Class-A content edits (`post.edit`/`comment.edit`/`definition.edit`)
+ * pass an `optimistic` payload only behind this key. Default-OFF so the edits
+ * reach production dark — with it off they wait for the round-trip exactly as
+ * today; flipping it on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           pano/sozluk (the content-mutation call sites)
+ *   - originating:     #1675 (epic: uniform optimistic content mutations, #1637)
+ *   - removal trigger: once optimistic edits graduate to on at 100% and stable for
+ *                      one release, retire the flag and inline the optimistic path.
+ */
+export const OPTIMISTIC_EDITS_FLAG = {
+	key: PHOENIX_OPTIMISTIC_EDITS,
+	description:
+		"optimistic in-place content edits (post/comment/definition) dark-ship (#1675, epic #1637). owner: pano/sozluk. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const optimisticEditsFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_optimistic_edits", {appId, ...OPTIMISTIC_EDITS_FLAG});

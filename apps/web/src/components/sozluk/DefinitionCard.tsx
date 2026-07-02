@@ -7,9 +7,12 @@ import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
 import type {Definition, ReportReceipt} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
+import {bodyEditOptimistic} from "../../fate/optimisticEdit";
 import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
+import {PHOENIX_OPTIMISTIC_EDITS} from "../../flags/keys";
+import {useFlag} from "../../flags/useFlag";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
@@ -65,6 +68,9 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
+	// Dark-ship gate (#1675): with the flag off the edit passes no optimistic
+	// payload and waits for the round-trip, exactly as before.
+	const {value: optimisticEdits} = useFlag(PHOENIX_OPTIMISTIC_EDITS, false);
 
 	const [editing, setEditing] = React.useState(false);
 	const [editBody, setEditBody] = React.useState(definition.body);
@@ -128,10 +134,12 @@ export function DefinitionCard(props: DefinitionCardProps) {
 			setEditError(messageForCode("BODY_TOO_LONG", DEFINITION_OVERRIDES));
 			return;
 		}
+		const optimistic = bodyEditOptimistic(optimisticEdits, editBody);
 		await runEdit(
 			() =>
 				fate.mutations.definition.edit({
 					input: {id: definition.id, body: editBody},
+					...(optimistic ? {optimistic} : {}),
 					view: DefinitionView,
 				}),
 			"tanım güncellenemedi",

@@ -40,6 +40,23 @@ fate.mutations.post.vote({
 
 For inserts that create an entity, give the optimistic record a temporary id (`optimistic:${Date.now()}`); fate reconciles it to the server id when the real result arrives. Concurrent optimistic edits to the same entity are masked so a slow server read can't clobber a still-pending field.
 
+### Optimistic in-place edits {#optimistic-edits}
+
+An **in-place field edit** (`post.edit`, `comment.edit`, `definition.edit`) is the simplest optimistic case: it's an entity-field write-back that already re-renders in place through its result `view`, so making it optimistic is *only* passing the edited fields (plus a fresh `updatedAt`) as the `optimistic` partial. No temp id, no membership change — the edited entity keeps its id, so the optimistic write and the server `live.update({changed:["body"|"title,body"]})` frame touch the **same fields on the same entity** and can't diverge. fate rolls the partial back and restores the prior text on a rejected edit (the boundary-class throw, [Errors](#errors)), so the existing inline error shows with no phantom-saved state.
+
+The load-bearing pieces are hook-free and unit-testable, mirroring `voteOptimistic`: [`src/fate/optimisticEdit.ts`](../apps/web/src/fate/optimisticEdit.ts) builds the partial (`postEditOptimistic` / `bodyEditOptimistic`) and returns `undefined` when the gate is off, so the call site spreads it away under `exactOptionalPropertyTypes`:
+
+```tsx
+const optimistic = bodyEditOptimistic(optimisticEdits, body); // undefined when the flag is off
+await fate.mutations.definition.edit({
+  input: {id, body},
+  ...(optimistic ? {optimistic} : {}),   // {body, updatedAt: <now>} when on
+  view: DefinitionView,
+});
+```
+
+The fresh `updatedAt` drives the "düzenlendi" indicator (`EditedIndicator`) instantly, consistently with the reconciled frame. Shipped dark behind the `phoenix-optimistic-edits` flag (default-off, ADR 0083; #1675, epic #1637) — off, the edit passes no `optimistic` and waits for the round-trip exactly as before.
+
 ## Connection membership — declarative, not imperative
 
 A new or deleted entity joins or leaves lists declaratively:
@@ -63,7 +80,7 @@ There is no hand-written updater enumerating connection keys. For connections th
 > - **add** to a nested connection: the new node is normalized into the cache, but joins the list only via a live `appendNode` or a re-read. sözlük's `definition.add` publishes no append, so its composer **reloads after a successful add**.
 > - **delete** of a node in a nested connection: `delete: true` is **wrong-entity** for sözlük's `definition.delete`, a `Term`-returning mutation (it re-resolves the parent for fresh counts), so `delete:true` would `deleteRecord("Term", definitionId)`. The card calls delete **without** `delete:true`; the server publishes `deleteEdge("Definition", id)` on `Term.definitions`.
 >
-> Entity-field mutations (vote, edit) are unaffected: they write back through the result `view` and re-render in place, fully optimistic.
+> Entity-field mutations (vote, edit) are unaffected: they write back through the result `view` and re-render in place. Votes are fully optimistic; the in-place edits become optimistic behind the `phoenix-optimistic-edits` flag — see [Optimistic in-place edits](#optimistic-edits).
 
 ## Errors {#errors}
 
