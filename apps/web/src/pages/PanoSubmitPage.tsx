@@ -9,11 +9,13 @@ import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import type {WireMessageOverrides} from "../fate/wireMessages";
 import {FlagGate} from "../flags/FlagGate";
-import {PANO_DRAFT_SAVE} from "../flags/keys";
+import {PANO_DRAFT_SAVE, PANO_OPTIMISTIC_SUBMIT} from "../flags/keys";
+import {useFlag} from "../flags/useFlag";
 import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
 import {prefillIfEmpty, useLinkMetadata} from "../lib/useLinkMetadata";
+import {postSubmitMembership} from "./panoSubmitArgs";
 import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
@@ -88,6 +90,9 @@ export function PanoSubmitPage() {
 	const [draftSaved, setDraftSaved] = React.useState(false);
 
 	const fate = useFateClient();
+	// Default-off containment flag (#1676, epic #1637): off ⇒ plain round-trip;
+	// on ⇒ optimistic front-of-feed insert that reconciles to the server row.
+	const {value: optimisticSubmit} = useFlag(PANO_OPTIMISTIC_SUBMIT, false);
 	const {fetchMetadata} = useLinkMetadata();
 	const {
 		error,
@@ -170,12 +175,15 @@ export function PanoSubmitPage() {
 		const trimmedUrl = url.trim();
 		const user = session.data.user;
 		const now = new Date();
+		const linkUrl = mode === "link" && trimmedUrl ? trimmedUrl : null;
 		await run(
 			() =>
-				// `insert: "before"` declaratively prepends the new post into the
-				// registered no-filter feed root list — NO imperative connection-key
-				// updater. The optimistic temp record (temp id fate reconciles to the
-				// server id) makes the prepend show during the in-flight window.
+				// The pano feed is a registered no-filter root list, so under the
+				// containment flag `insert: "before"` declaratively prepends the new
+				// post with a temp-id optimistic node fate reconciles to the server id
+				// (the same row `live.post.feed.appendNode` carries — reconcile dedups by
+				// id, so no double-row for the mutator's own client). Flag off ⇒ plain
+				// round-trip. See `.patterns/fate-mutations-client.md`.
 				fate.mutations.post.submit({
 					input: {
 						title: trimmedTitle,
@@ -184,26 +192,15 @@ export function PanoSubmitPage() {
 						...(body.trim() ? {body} : {}),
 					},
 					view: PanoPostCardView,
-					insert: "before",
-					optimistic: {
-						id: `optimistic:${Date.now()}`,
-						slug: null,
+					...postSubmitMembership(optimisticSubmit, {
 						title: trimmedTitle,
-						url: mode === "link" && trimmedUrl ? trimmedUrl : null,
-						host: mode === "link" && trimmedUrl ? hostOf(trimmedUrl) : null,
+						url: linkUrl,
+						host: linkUrl ? hostOf(linkUrl) : null,
+						tags: Array.from(selectedTags),
 						author: user.name ?? user.email,
 						authorId: user.id,
-						// Submitting a post is NOT a self-upvote: the server inserts it at
-						// score 0 with no viewer vote (Pano.submitPost). The optimistic record
-						// must mirror that, else its score:1/myVote:true reconciles onto the
-						// server-id'd Post and bleeds a phantom self-upvote into the
-						// freshly-navigated detail page (#707).
-						score: 0,
-						myVote: null,
-						commentCount: 0,
-						createdAt: now,
-						tags: Array.from(selectedTags).map((kind) => ({kind, label: kind})),
-					},
+						now,
+					}),
 				}),
 			"gönderi paylaşılamadı",
 			(result) => {

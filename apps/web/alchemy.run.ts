@@ -45,6 +45,7 @@ import {
 	Flagship,
 	funnelReadoutFlag,
 	panoDraftSaveFlag,
+	panoOptimisticSubmitFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
@@ -65,6 +66,9 @@ export default Alchemy.Stack(
 		yield* demoTargetingFlag(flagship.appId);
 		// The pano taslak (draft-save) dark-ship flag, default-off (#746).
 		yield* panoDraftSaveFlag(flagship.appId);
+		// The optimistic post.submit (feed root-list insert) containment flag,
+		// default-off (#1676, epic #1637).
+		yield* panoOptimisticSubmitFlag(flagship.appId);
 		// The earned-authorship loop (çaylak→yazar) dark-ship flag, default-off
 		// (#1204, epic #1202) — the single seam the authorship-loop epic gates behind.
 		yield* authorshipLoopFlag(flagship.appId);
