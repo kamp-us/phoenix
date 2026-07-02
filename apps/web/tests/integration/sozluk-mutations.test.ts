@@ -214,6 +214,22 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		if (!added.ok) return;
 		const id = (added.data as DefNode).id;
 
+		// `created_at`/`updated_at` store at SECOND granularity (`integer(mode:"timestamp")`,
+		// epoch seconds). If create + vote + edit all land in one wall-clock second, the edit's
+		// `now` truncates to the SAME second as creation, so "the edit bumped updatedAt" sees no
+		// change — a wall-clock-straddle flake in THIS test, not a product bug (production's
+		// `editedAfter` uses a 60s grace, so second granularity is fine live). Make it
+		// deterministic the same way the `recent`-keyset vertical constructs a timestamp it can't
+		// race for: bypass the server write clock with a setup-only controlled D1 write
+		// (`execD1`, the `setLastActivityAt` idiom, #643) to plant a known-OLD baseline, so the
+		// edit's real `now` is unconditionally a LATER second regardless of execution speed.
+		const BASELINE_EPOCH_S = 1_600_000_000; // 2020-09-13T12:26:40Z — a fixed whole second
+		const backdated = await h.execD1(
+			"UPDATE definition_record SET created_at = ?, updated_at = ? WHERE id = ?",
+			[BASELINE_EPOCH_S, BASELINE_EPOCH_S, id],
+		);
+		expect(backdated).toBe(1);
+
 		// Re-read updatedAt straight from D1 (a fresh `term` resolve), not off a
 		// mutation return — the AC verifies the persisted row, not just the UI.
 		const readUpdatedAt = async (): Promise<unknown> => {
@@ -231,6 +247,8 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		};
 
 		const beforeVote = await readUpdatedAt();
+		// The planted baseline really landed (a whole second in the past).
+		expect(beforeVote).toBe(new Date(BASELINE_EPOCH_S * 1000).toISOString());
 
 		const voted = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id}, select: ["score", "updatedAt"]},
@@ -239,18 +257,26 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
 		expect((voted.data as {score: number}).score).toBe(1);
-		// Persisted updatedAt is unchanged by the vote (DB round-trip), and the
-		// resolver/live-push return reports that same genuine value, not the vote instant.
+		// Persisted updatedAt is unchanged by the vote (DB round-trip) — byte-identical to the
+		// baseline — and the resolver/live-push return reports that same genuine value, not the
+		// vote instant.
 		expect(await readUpdatedAt()).toEqual(beforeVote);
 		expect((voted.data as {updatedAt: unknown}).updatedAt).toEqual(beforeVote);
 
-		// A genuine content edit still bumps updatedAt — edit detection is not disabled.
+		// A genuine content edit still bumps updatedAt — edit detection is not disabled. Because
+		// the baseline is a constructed PAST second, the edit's real `now` is deterministically a
+		// later second, so this holds no matter how fast create+vote+edit ran (no second-straddle).
 		const edited = await h.fate(
 			{kind: "mutation", name: "definition.edit", input: {id, body: "edited body"}, select: ["id"]},
 			{cookie: author.cookie},
 		);
 		expect(edited.ok).toBe(true);
-		expect(await readUpdatedAt()).not.toEqual(beforeVote);
+		const afterEdit = await readUpdatedAt();
+		expect(afterEdit).not.toEqual(beforeVote);
+		// Not merely different — strictly forward: an edit advances updatedAt past the baseline.
+		expect(new Date(afterEdit as string).getTime()).toBeGreaterThan(
+			new Date(beforeVote as string).getTime(),
+		);
 	});
 
 	it("two consecutive votes from the same user are idempotent (score stays at 1)", async () => {
