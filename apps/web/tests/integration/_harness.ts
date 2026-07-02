@@ -156,9 +156,25 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 // (`{ok:false,error:{code}}`), never this HTML — so it is bounded-retryable where a
 // genuine 404 is not. The `_integration.ts` health probe only warms one route at one
 // PoP; this is the general backstop for the first request on every path.
-const isCloudflarePlaceholder404 = (status: number, body: string): boolean =>
+export const isCloudflarePlaceholder404 = (status: number, body: string): boolean =>
 	status === 404 &&
 	(body.includes("There is nothing here yet") || body.startsWith("<!DOCTYPE html>"));
+
+// A CF edge-placeholder-404 (edge route not yet propagated) `req` gives up on after its own
+// short bounded loop, thrown as a DISTINCT TYPE rather than a string-matched message. The
+// readiness poll (`pollUntilReady`) rides ONLY this out on its generous budget — every OTHER
+// throw (an abort/timeout, a connection error, a real failure) still surfaces at once. Keeping
+// it a type (not a message match) is what scopes the widened budget precisely to the
+// edge-not-propagated transient, so a real failure can never be swallowed into the 60s wait.
+export class CloudflarePlaceholder404Error extends Error {
+	constructor(path: string) {
+		super(`cloudflare placeholder 404 at ${path} (edge not propagated)`);
+		this.name = "CloudflarePlaceholder404Error";
+	}
+}
+
+export const isCloudflarePlaceholder404Error = (e: unknown): e is CloudflarePlaceholder404Error =>
+	e instanceof CloudflarePlaceholder404Error;
 
 // A per-request timeout fires an `AbortSignal.timeout` → the fetch rejects with a
 // `TimeoutError`/`AbortError`. We treat that as "the request STALLED" (distinct
@@ -197,6 +213,52 @@ const sseReady = (res: Response): boolean =>
 // NOT ready; anything else IS — a genuine subscribe 200, OR a real error the test must
 // still see (only the cold-start 503 is retried, never a real failure masked).
 const liveControlReady = (res: Response): boolean => res.status !== 503;
+
+// Shared bounded readiness poll for the two cold-DO-tolerant `/fate/live` paths (the SSE open +
+// the control POST): re-send the request until `ready(res)` holds or the (#1074) deadline lapses,
+// releasing each not-ready response's body first so a held SSE stream can't pin the fetch
+// connection across the poll (harmless on the control POST's already-buffered body).
+//
+// It rides out BOTH cold-edge not-ready shapes on the SAME generous budget: a not-ready RESPONSE
+// (the 503 cold-start envelope / any non-200 that fails `ready`) AND a THROWN
+// `CloudflarePlaceholder404Error` (the edge route not yet propagated — #1689). The placeholder-404
+// tolerance is SCOPED, not blanket: ONLY that typed error is caught-and-retried; every OTHER throw
+// (an abort/timeout, a connection error, a genuine failure) escapes immediately, unretried — so the
+// widened budget can never swallow a real failure into a 60s wait. On a RESPONSE exhausting the
+// deadline it returns the last response, so the caller's own `expect(status).toBe(200)` still
+// reports the truth (it never classifies a status as terminal and stops early — the #1060
+// regression); on the deadline lapsing while STILL on the placeholder-404 it re-throws that typed
+// error so the edge-not-propagated diagnostic surfaces rather than a synthetic status.
+//
+// Deadline/poll are parameters (defaulting to the module bounds) purely so the unit test can drive
+// the readiness logic on a tiny budget instead of the real 60s.
+export const pollUntilReady = async (
+	send: () => Promise<Response>,
+	ready: (res: Response) => boolean,
+	{
+		deadlineMs = SSE_READY_DEADLINE_MS,
+		pollMs = SSE_READY_POLL_MS,
+	}: {deadlineMs?: number; pollMs?: number} = {},
+): Promise<Response> => {
+	const deadline = Date.now() + deadlineMs;
+	// Map ONLY the typed placeholder-404 throw to a retryable value; any other throw propagates.
+	const step = async (): Promise<Response | CloudflarePlaceholder404Error> => {
+		try {
+			return await send();
+		} catch (e) {
+			if (isCloudflarePlaceholder404Error(e)) return e;
+			throw e;
+		}
+	};
+	let last = await step();
+	while ((last instanceof CloudflarePlaceholder404Error || !ready(last)) && Date.now() < deadline) {
+		if (!(last instanceof CloudflarePlaceholder404Error)) await last.body?.cancel().catch(() => {});
+		await sleep(pollMs);
+		last = await step();
+	}
+	if (last instanceof CloudflarePlaceholder404Error) throw last;
+	return last;
+};
 
 // Unique per-process stamp for seeded author/voter emails. Each file owns its own
 // isolated stage + D1, but a `NO_DESTROY` re-run reuses the same stage's D1, so a
@@ -329,7 +391,9 @@ export function harness(
 				if (res.status === 404) {
 					const peek = await res.clone().text();
 					if (isCloudflarePlaceholder404(res.status, peek)) {
-						lastErr = new Error(`cloudflare placeholder 404 at ${path} (edge not propagated)`);
+						// Typed (not string-matched) so `pollUntilReady` can ride ONLY this out on
+						// its 60s budget while a real failure still surfaces at once (#1689).
+						lastErr = new CloudflarePlaceholder404Error(path);
 						await sleep(250);
 						continue;
 					}
@@ -668,34 +732,15 @@ export function harness(
 
 	const d1Target: Harness["d1Target"] = async () => getD1Target();
 
-	// Shared bounded readiness poll for the two cold-DO-tolerant `/fate/live` paths: re-send
-	// the request until `ready(res)` holds or the (same #1074) deadline lapses, releasing each
-	// not-ready response's body first so a held SSE stream can't pin the fetch connection across
-	// the poll (harmless on the control POST's already-buffered body). On exhaustion it returns
-	// the last response, so the caller's own `expect(status).toBe(200)` still reports the truth —
-	// it NEVER classifies a status as terminal and stops early (the #1060 early-stop regression).
-	const pollUntilReady = async (
-		send: () => Promise<Response>,
-		ready: (res: Response) => boolean,
-	): Promise<Response> => {
-		const deadline = Date.now() + SSE_READY_DEADLINE_MS;
-		let last = await send();
-		while (!ready(last) && Date.now() < deadline) {
-			await last.body?.cancel().catch(() => {});
-			await sleep(SSE_READY_POLL_MS);
-			last = await send();
-		}
-		return last;
-	};
-
 	// A dedicated-stage `/fate/live` open can draw a cold edge well past the `req` loop's
-	// ~5s placeholder-404 window: the route is brand-new AND the LiveDO is cold, so the
-	// first open can surface either the Cloudflare placeholder-404 (edge route not yet
-	// propagated, which `req` already retries but only briefly) OR the worker's 503
-	// `LIVE_UNAVAILABLE` cold-start envelope (`fate-live/cold-start-retry.ts`) before it
-	// serves the held SSE stream. Both are "not ready yet, retry", NOT a real failure — so
-	// this rides BOTH out on the generous bounded `pollUntilReady` and only returns once the
-	// edge serves the worker's real SSE response (200 + `text/event-stream`).
+	// ~5s placeholder-404 window: the route is brand-new AND the LiveDO is cold, so the first
+	// open can surface either the Cloudflare placeholder-404 (edge route not yet propagated —
+	// `req` retries it briefly then THROWS a `CloudflarePlaceholder404Error`) OR the worker's
+	// 503 `LIVE_UNAVAILABLE` cold-start envelope (`fate-live/cold-start-retry.ts`, a not-ready
+	// RESPONSE) before it serves the held SSE stream. Both are "not ready yet, retry", NOT a
+	// real failure — so `pollUntilReady` rides BOTH out on the SAME generous budget (the thrown
+	// placeholder-404 no longer escapes at ~5s, #1689) and only returns once the edge serves the
+	// worker's real SSE response (200 + `text/event-stream`).
 	const openSse: Harness["openSse"] = (connectionId, cookie) => {
 		const path = `/fate/live?connectionId=${encodeURIComponent(connectionId)}`;
 		const init: RequestInit = {headers: {accept: "text/event-stream", cookie}};
