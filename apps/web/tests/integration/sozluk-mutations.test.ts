@@ -199,6 +199,60 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		expect((retracted.data as DefNode).myVote).toBe(false);
 	});
 
+	it("a vote leaves updatedAt untouched, but a genuine edit bumps it (#1634)", async () => {
+		const slug = `${NS}-vote-updatedat`;
+		const added = await h.fate(
+			{
+				kind: "mutation",
+				name: "definition.add",
+				input: {termSlug: slug, body: "unedited body"},
+				select: ["id"],
+			},
+			{cookie: author.cookie},
+		);
+		expect(added.ok).toBe(true);
+		if (!added.ok) return;
+		const id = (added.data as DefNode).id;
+
+		// Re-read updatedAt straight from D1 (a fresh `term` resolve), not off a
+		// mutation return — the AC verifies the persisted row, not just the UI.
+		const readUpdatedAt = async (): Promise<unknown> => {
+			const term = await h.fate({
+				kind: "query",
+				name: "term",
+				args: {slug, definitions: {first: 10}},
+				select: ["definitions.id", "definitions.updatedAt"],
+			});
+			expect(term.ok).toBe(true);
+			if (!term.ok) return undefined;
+			const conn = (term.data as {definitions: Connection<{id: string; updatedAt: unknown}>})
+				.definitions;
+			return conn.items.find((e) => e.node.id === id)?.node.updatedAt;
+		};
+
+		const beforeVote = await readUpdatedAt();
+
+		const voted = await h.fate(
+			{kind: "mutation", name: "definition.vote", input: {id}, select: ["score", "updatedAt"]},
+			{cookie: author.cookie},
+		);
+		expect(voted.ok).toBe(true);
+		if (!voted.ok) return;
+		expect((voted.data as {score: number}).score).toBe(1);
+		// Persisted updatedAt is unchanged by the vote (DB round-trip), and the
+		// resolver/live-push return reports that same genuine value, not the vote instant.
+		expect(await readUpdatedAt()).toEqual(beforeVote);
+		expect((voted.data as {updatedAt: unknown}).updatedAt).toEqual(beforeVote);
+
+		// A genuine content edit still bumps updatedAt — edit detection is not disabled.
+		const edited = await h.fate(
+			{kind: "mutation", name: "definition.edit", input: {id, body: "edited body"}, select: ["id"]},
+			{cookie: author.cookie},
+		);
+		expect(edited.ok).toBe(true);
+		expect(await readUpdatedAt()).not.toEqual(beforeVote);
+	});
+
 	it("two consecutive votes from the same user are idempotent (score stays at 1)", async () => {
 		const slug = `${NS}-vote-idem`;
 		const added = await h.fate(
