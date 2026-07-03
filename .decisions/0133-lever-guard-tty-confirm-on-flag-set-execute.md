@@ -1,12 +1,14 @@
 ---
 id: 0133
 title: Lever-guard — TTY + interactive confirm hard-refuse on `cf-utils flag set --execute`
-status: accepted
+status: superseded by [0134](0134-clis-agent-invokable-human-only-at-invocation-layer.md)
 date: 2026-07-02
 tags: [cf-utils, release, authz, security]
 ---
 
 # 0133 — Lever-guard: TTY + interactive confirm hard-refuse on `cf-utils flag set --execute`
+
+Superseded by [0134](0134-clis-agent-invokable-human-only-at-invocation-layer.md) — the TTY hard-refuse broke `/release` and blocked legitimate delegation; human-only moves to the invocation layer + audit trail.
 
 ## Context
 
