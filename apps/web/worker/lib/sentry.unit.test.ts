@@ -42,6 +42,26 @@ describe("decided defaults (ADR 0118)", () => {
 		expect(scrubbed.request?.cookies).toBeUndefined();
 		expect(scrubbed.request?.headers).toBeUndefined();
 	});
+
+	it("scrubPii strips URL query strings + query_string and breadcrumb URLs", () => {
+		const event = {
+			type: undefined,
+			request: {
+				url: "https://kamp.us/reset?token=secret&email=a@b.co",
+				query_string: "token=secret",
+			},
+			breadcrumbs: [
+				{data: {url: "https://kamp.us/api/x?sid=abc"}},
+				{data: {from: "/a?q=1", to: "/b?q=2"}},
+			],
+		} as ErrorEvent;
+		const scrubbed = scrubPii(event);
+		expect(scrubbed.request?.url).toBe("https://kamp.us/reset");
+		expect(scrubbed.request?.query_string).toBeUndefined();
+		expect(scrubbed.breadcrumbs?.[0]?.data?.url).toBe("https://kamp.us/api/x");
+		expect(scrubbed.breadcrumbs?.[1]?.data?.from).toBe("/a");
+		expect(scrubbed.breadcrumbs?.[1]?.data?.to).toBe("/b");
+	});
 });
 
 describe("shouldCaptureCause — the defects + 5xx policy (ADR 0118)", () => {

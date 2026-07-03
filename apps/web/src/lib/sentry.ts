@@ -23,17 +23,49 @@ export function sentryEnabled(dsn: string | undefined): dsn is string {
 }
 
 /**
+ * Strip the query string + fragment from a URL, keeping origin + path. Query
+ * strings are a PII vector (`?email=…`, reset tokens); a plain string cut avoids
+ * the `URL` constructor (which throws on relative URLs) and never throws.
+ */
+function stripUrlQuery(url: string): string {
+	const q = url.indexOf("?");
+	const h = url.indexOf("#");
+	return url.slice(0, Math.min(q === -1 ? url.length : q, h === -1 ? url.length : h));
+}
+
+/** Drop query strings from URL-bearing breadcrumb data (navigation + http crumbs). */
+function scrubBreadcrumbUrls(breadcrumbs: Sentry.ErrorEvent["breadcrumbs"]): void {
+	if (!breadcrumbs) return;
+	for (const crumb of breadcrumbs) {
+		const data = crumb.data;
+		if (!data) continue;
+		for (const key of ["url", "to", "from"] as const) {
+			const value = data[key];
+			if (typeof value === "string") data[key] = stripUrlQuery(value);
+		}
+	}
+}
+
+/**
  * Drop user-identifying PII before any event leaves the browser (ADR 0118 decided
- * default; adjustable). Strips the `user` block and the request cookies/headers that
- * carry session identifiers.
+ * default; adjustable). Strips the `user` block, the request cookies/headers +
+ * `query_string`, and the query string off the request URL and any URL-bearing
+ * breadcrumb — the incidental PII vectors that survive `sendDefaultPii: false`.
  */
 export function scrubPii(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
 	if (event.user) {
 		event.user = {};
 	}
 	if (event.request) {
-		event.request = {...event.request, cookies: undefined, headers: undefined};
+		event.request = {
+			...event.request,
+			cookies: undefined,
+			headers: undefined,
+			query_string: undefined,
+			...(typeof event.request.url === "string" ? {url: stripUrlQuery(event.request.url)} : {}),
+		};
 	}
+	scrubBreadcrumbUrls(event.breadcrumbs);
 	return event;
 }
 
