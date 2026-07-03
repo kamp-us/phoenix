@@ -10,9 +10,11 @@
 // was clean (a plain rerun then went green). See ADR 0085 for the lane layout.
 //
 // This is a BOUNDED readiness probe, NOT a retry of the test assertions: it
-// polls the preview until it is provably warm — `/` actually renders the
-// mounted topbar (client-side React, so a real browser, not a raw fetch) AND
-// the better-auth router answers a side-effect-free GET non-404 — then returns.
+// polls the preview until it is provably warm — every first-touched SPA route
+// actually renders the mounted topbar (client-side React, so a real browser, not
+// a raw fetch) AND the better-auth router answers non-404 on both the read
+// (`get-session` GET) and the write (`sign-up/email` POST) paths the setup
+// races — then returns. Both auth probes are side-effect-free.
 // If the preview never warms within the hard cap it THROWS, which fails the
 // whole run: a genuinely-broken preview still reds the gate within a sane
 // timeout, so this masks no real regression (it never blanket-retries a real
@@ -32,6 +34,23 @@ const {chromium, request} = require("@playwright/test");
 // router isn't warm yet; any other status ⇒ the route is mounted and serving.
 const AUTH_READY_PATH = "/api/auth/get-session";
 
+// The EXACT write-path the `setup` project's `auth-setup` POSTs to. A warm GET
+// on `get-session` proved insufficient: a cold isolate answered the read route
+// non-404 while this POST route still fell through to the SPA asset (HTML `404`),
+// so the setup 404'd on the very first sign-up (both attempt + retry) even after
+// the probe returned "warm" (#716 e2e run 28634179735). Probing the identical
+// method+path is the only check that proves what the setup actually races.
+// Side-effect-free: an empty body fails better-auth validation (non-404, no user
+// created); a `404` HTML fallback still means the write route isn't mounted yet.
+const AUTH_WRITE_PROBE_PATH = "/api/auth/sign-up/email";
+
+// The SPA routes the first-touched smoke specs (00-smoke) navigate + assert
+// `.kp-topbar` on. Warming only `/` left `/pano/yeni` (a nested route) cold on
+// the isolate the parallel worker hit, so its topbar never mounted and the
+// smoke spec false-redded. Warm every first-touched route, matching this probe's
+// documented intent, not just the root.
+const WARM_ROUTES = ["/", "/pano", "/pano/yeni", "/sozluk", "/auth"];
+
 const READY_BUDGET_MS = 90_000; // hard cap: a persistent failure reds the gate within this
 const ATTEMPT_TIMEOUT_MS = 10_000; // per-attempt page-load / topbar-visible budget
 const POLL_INTERVAL_MS = 3_000;
@@ -48,21 +67,35 @@ module.exports = async function waitForPreviewReady() {
 		const page = await browser.newPage({baseURL});
 		while (Date.now() < deadline) {
 			try {
-				// 1) SPA shell warm — `/` renders the mounted topbar. The topbar is
-				//    client-side React, so a raw fetch of the static shell can't see it;
-				//    this needs a real browser render.
-				await page.goto("/", {waitUntil: "domcontentloaded", timeout: ATTEMPT_TIMEOUT_MS});
-				await page.locator(".kp-topbar").waitFor({state: "visible", timeout: ATTEMPT_TIMEOUT_MS});
+				// 1) SPA shell warm — every first-touched route renders the mounted
+				//    topbar. The topbar is client-side React, so a raw fetch of the
+				//    static shell can't see it; this needs a real browser render. Warm
+				//    each route (not just `/`): a cold nested route (`/pano/yeni`) never
+				//    mounted its topbar and false-redded the smoke spec.
+				for (const route of WARM_ROUTES) {
+					await page.goto(route, {waitUntil: "domcontentloaded", timeout: ATTEMPT_TIMEOUT_MS});
+					await page.locator(".kp-topbar").waitFor({state: "visible", timeout: ATTEMPT_TIMEOUT_MS});
+				}
 
-				// 2) Auth router warm — the cold-start signature was `sign-up/email`
-				//    → 404; a non-404 here proves the `/api/auth/*` route is mounted.
-				const res = await api.get(AUTH_READY_PATH);
-				if (res.status() === 404) {
+				// 2) Auth read route warm — a non-404 proves `/api/auth/*` is mounted.
+				const readRes = await api.get(AUTH_READY_PATH);
+				if (readRes.status() === 404) {
 					throw new Error(`${AUTH_READY_PATH} → 404 (auth router not warm yet)`);
 				}
 
+				// 3) Auth WRITE route warm — POST the exact `sign-up/email` path+method
+				//    the setup races. A read being warm does not imply this write route
+				//    is mounted (the #716 cold-start signature); a `404` HTML fallback
+				//    here means it isn't yet. Empty body ⇒ validation error (non-404, no
+				//    user created), so this stays side-effect-free.
+				const writeRes = await api.post(AUTH_WRITE_PROBE_PATH, {data: {}});
+				if (writeRes.status() === 404) {
+					throw new Error(`${AUTH_WRITE_PROBE_PATH} POST → 404 (auth write route not warm yet)`);
+				}
+
 				console.log(
-					`[preview-ready] preview warm at ${baseURL} (topbar rendered, auth router non-404)`,
+					`[preview-ready] preview warm at ${baseURL} ` +
+						`(${WARM_ROUTES.length} routes rendered, auth read+write routes non-404)`,
 				);
 				return;
 			} catch (err) {
