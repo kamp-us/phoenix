@@ -17,14 +17,15 @@
  * Credentials resolve keychain-first (`auth login`, #1730/#1761), falling back to
  * $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID — the env-var path CI keeps using.
  *
- * `flag set` is the human release act (ADR 0083, "agents deploy, humans release"), operating
- * the ACTUAL release lever — the no-match percentage split, never `defaultVariation` (#1726):
- * `--percent N` serves `on` to N% (remainder falls to the safe default), `on` ≡ `--percent
- * 100` (the canonical split form), and `off` is a true kill switch — it clears the split AND
- * sets the default off, so a split-released flag actually stops serving. It DRY-RUNS by
- * default — reads current state, prints the `current → target` diff, and writes NOTHING; the
- * mutation happens only under `--execute` (mirroring orphan-sweep). The write must never be
- * invoked by the pipeline autonomously.
+ * `flag set` operates the ACTUAL release lever — the no-match percentage split, never
+ * `defaultVariation` (#1726): `--percent N` serves `on` to N% (remainder falls to the safe
+ * default), `on` ≡ `--percent 100` (the canonical split form), and `off` is a true kill switch —
+ * it clears the split AND sets the default off, so a split-released flag actually stops serving.
+ * It DRY-RUNS by default — reads current state, prints the `current → target` diff, and writes
+ * NOTHING; the mutation happens only under `--execute` (mirroring orphan-sweep). The lever is
+ * agent-invokable (ADR 0134, supersedes 0133): the humans-release boundary (ADR 0083) lives at
+ * the `/release` skill + the audit trail, not as a structural TTY refuse here — a non-TTY caller
+ * proceeds (logged), a TTY human is prompted to confirm.
  *
  * The thin shell delegates to the pure core (`flag.ts`) via the injectable clients
  * (`flagship.ts`); an unreachable/unauthorized CF surfaces a typed error (rendered by
@@ -160,20 +161,21 @@ const resolveTarget = (
 	return Effect.fail(new FlagSetTargetInvalid({reason: "no target given"}));
 };
 
-// The ADR 0133 lever guard — the thin IO shell around the pure `decideLeverGuard` core: it
-// observes the two structural inputs (is stdin an interactive TTY, and the raw confirm line) and
-// hard-refuses the live flip unless BOTH hold. It runs ONLY on the `--execute` write branch; the
-// dry-run path never reaches it. The human `/release` path satisfies it by construction — a human
-// runs the lever in a terminal (stdin IS a TTY) and answers the `flip <flag> live? [y/N]` prompt,
-// so there is deliberately NO bypass. `Prompt.text` is reached only after the TTY check passes, so
-// it never faces a non-TTY stdin; an EOF/quit at the prompt collapses to no answer ⇒ refuse (the
-// fail-safe direction). See ADR 0133 (this guard) and ADR 0083 (agents deploy, humans release).
+// The lever's interactive confirm — the thin IO shell around the pure `decideLeverGuard` core. The
+// lever is agent-invokable (ADR 0134, supersedes 0133): humans-release is enforced at the /release
+// skill + the audit trail, NOT by a structural TTY refuse here. So a non-TTY caller (agent/CI)
+// PROCEEDS, logging the flip for the audit record; a TTY caller (a human at a terminal) is prompted
+// `flip <flag> live? [y/N]` as ergonomics and may decline. It runs ONLY on the `--execute` write
+// branch; the dry-run path never reaches it. See ADR 0134 (this behavior) and ADR 0083 (the
+// humans-release boundary, now enforced at the invocation layer).
 const guardLiveFlip = (
 	flagKey: string,
 ): Effect.Effect<void, LeverGuardRefused, Prompt.Environment> =>
 	Effect.gen(function* () {
 		const isTTY = process.stdin.isTTY === true;
 		if (!isTTY) {
+			// Agent / CI: proceed without a prompt, logging the flip for the audit record (ADR 0134).
+			yield* Console.log("  live flip executed (non-interactive)");
 			return yield* refuse(decideLeverGuard({isTTY: false, confirmResponse: undefined}));
 		}
 		const response = yield* Prompt.text({message: `flip ${flagKey} live? [y/N]`}).pipe(
@@ -222,9 +224,9 @@ const set = Command.make(
 			return;
 		}
 
-		// ADR 0133 lever guard: the live flip is a human release act — refuse unless stdin is an
-		// interactive TTY AND an interactive confirm passes. Runs ONLY here, on the changed
-		// `--execute` write branch (dry-run and no-op returned above are untouched).
+		// Lever confirm (ADR 0134): agent-invokable — a non-TTY caller proceeds (logged for audit);
+		// a TTY human is prompted to confirm. Runs ONLY here, on the changed `--execute` write branch
+		// (dry-run and no-op returned above are untouched).
 		yield* guardLiveFlip(key);
 
 		const write = yield* FlagshipWrite;

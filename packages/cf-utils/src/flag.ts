@@ -207,15 +207,12 @@ export class FlagSetTargetInvalid extends Data.TaggedError("FlagSetTargetInvalid
 }
 
 /**
- * The lever guard's refusal — `flag set --execute` (the live-flip write branch ONLY) refused
- * because the humans-release boundary was not satisfied structurally at the lever (ADR 0133,
- * pushing ADR 0083's "agents deploy, humans release" boundary down from the skill to the tool).
- * The `--execute` write is a single-purpose human-release lever with zero legitimate agent
- * callers, so refusing the TTY-less / unconfirmed path costs the legitimate path nothing: a
- * human runs `/release` in a terminal (stdin IS a TTY) and answers the confirm, satisfying the
- * guard by construction — there is deliberately no override flag (a string an agent could pass).
- * The message names the boundary and the recoverable fix, mirroring `ship-it`'s §CP self-merge
- * refusal (ADR 0053) — the same refuse-shape this guard is modeled on.
+ * The interactive confirm's refusal — `flag set --execute` (the live-flip write branch ONLY)
+ * declined because a human running the lever in a terminal did not affirm the `[y/N]` prompt.
+ * Under ADR 0134 (supersedes 0133) the lever is agent-invokable: a non-TTY caller is NOT refused
+ * (it proceeds, logged for the audit record), so this error surfaces ONLY on the TTY ergonomics
+ * path — a human at a terminal who answered `n`/empty/EOF. The message names the recoverable fix
+ * (re-run and answer the prompt affirmatively).
  */
 export class LeverGuardRefused extends Data.TaggedError("LeverGuardRefused")<{
 	readonly reason: string;
@@ -223,46 +220,43 @@ export class LeverGuardRefused extends Data.TaggedError("LeverGuardRefused")<{
 	override get message(): string {
 		return (
 			`flag set --execute refused: ${this.reason}. ` +
-			"Flipping a flag live is a human release act — agents deploy, humans release (ADR 0083/0133). " +
-			"Run it yourself in an interactive terminal and confirm the prompt; there is no override flag by design."
+			"Re-run it in your terminal and answer the [y/N] confirm with y/yes to proceed."
 		);
 	}
 }
 
 /**
- * The lever guard's decision for the live-flip `--execute` branch. `Allow` ⇒ the human-release
- * boundary is satisfied (an interactive TTY AND an affirmative confirm) and the write proceeds;
- * `Refuse` ⇒ it is not, carrying the `reason` the `LeverGuardRefused` error renders.
+ * The lever confirm's decision for the live-flip `--execute` branch. `Allow` ⇒ the write proceeds
+ * (a non-TTY agent/CI caller, or a TTY human who affirmed the prompt — ADR 0134); `Refuse` ⇒ a
+ * human at a terminal declined the confirm, carrying the `reason` the `LeverGuardRefused` renders.
  */
 export type LeverGuardDecision =
 	| {readonly _tag: "Allow"}
 	| {readonly _tag: "Refuse"; readonly reason: string};
 
 /**
- * PURE core of the ADR 0133 lever guard — decide whether `flag set --execute` may flip a flag
- * live, given only the two structural inputs the thin IO shell observes: whether stdin is an
+ * PURE core of the lever's interactive confirm — decide whether `flag set --execute` may flip a
+ * flag live, given the two structural inputs the thin IO shell observes: whether stdin is an
  * interactive TTY, and the raw confirm line the operator typed (`undefined` for EOF / no input).
  *
- * Both conditions must hold to `Allow`, and the guard fails toward `Refuse` on any ambiguity —
- * the fail-safe direction ADR 0133 mandates (refusing a TTY-less human is recoverable; letting an
- * agent flip a flag live is not):
+ * Per ADR 0134 (supersedes 0133) the lever is **agent-invokable** — the humans-release boundary
+ * (ADR 0083) lives at the `/release` skill + the audit trail, NOT as a structural TTY refuse at
+ * the tool. So the confirm is now purely human ergonomics when a terminal is present:
  *
- *  - **No TTY ⇒ Refuse** first, before the confirm is even considered — a TTY-less caller is the
- *    exact shape of an autonomous agent or a CI runner. This is the structural refuse: the absence
- *    of a terminal is the signal, no credential/identity check.
+ *  - **No TTY ⇒ Allow** — an agent / CI runner proceeds without a prompt (the IO shell logs the
+ *    non-interactive flip for the audit record). This is the 0134 reversal of 0133's non-TTY
+ *    hard-refuse.
  *  - **TTY + confirm ⇒ Allow only on an affirmative** — `y`/`yes` (case-insensitive, whitespace
- *    trimmed). Empty input, EOF (`undefined`), `n`, and anything else ⇒ Refuse. The default is
- *    deny: the human must type a deliberate keystroke.
+ *    trimmed) — the deliberate "are you sure" before a live prod flip for a human at the terminal.
+ *    Empty input, EOF (`undefined`), `n`, and anything else ⇒ Refuse. The default is deny: the
+ *    human must type a deliberate keystroke.
  */
 export const decideLeverGuard = (input: {
 	readonly isTTY: boolean;
 	readonly confirmResponse: string | undefined;
 }): LeverGuardDecision => {
 	if (!input.isTTY) {
-		return {
-			_tag: "Refuse",
-			reason: "stdin is not an interactive TTY (this is the shape of an agent or CI runner)",
-		};
+		return {_tag: "Allow"};
 	}
 	const answer = (input.confirmResponse ?? "").trim().toLowerCase();
 	if (answer === "y" || answer === "yes") {
