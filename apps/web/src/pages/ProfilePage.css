@@ -24,8 +24,8 @@
 	width: 56px;
 	height: 56px;
 	border-radius: var(--r-sm);
-	background: var(--accent-soft);
-	color: var(--accent);
+	background: var(--surface);
+	color: var(--accent-11);
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -172,8 +172,8 @@
 	cursor: pointer;
 }
 .kp-profile__theme-toggle button[aria-pressed="true"] {
-	background: var(--accent-soft);
-	color: var(--accent);
+	background: var(--surface);
+	color: var(--accent-11);
 	font-weight: 600;
 }
 
@@ -193,8 +193,8 @@
 	cursor: pointer;
 }
 .kp-profile__danger button:hover {
-	background: var(--accent-soft);
-	color: var(--accent);
+	background: var(--surface);
+	color: var(--accent-11);
 }
 .kp-profile__danger button.danger {
 	background: var(--accent);

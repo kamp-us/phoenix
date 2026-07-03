@@ -21,8 +21,8 @@
 	color: var(--border-strong);
 }
 .kp-pano-crumb .host {
-	background: var(--accent-soft);
-	color: var(--accent);
+	background: var(--surface);
+	color: var(--accent-11);
 	padding: 1px 6px;
 	border-radius: var(--r-sm);
 	font-weight: 600;

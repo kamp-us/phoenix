@@ -102,8 +102,8 @@
 	min-width: 100px;
 }
 .kp-landing__browse a:hover {
-	background: var(--accent-soft);
-	color: var(--accent);
+	background: var(--surface);
+	color: var(--accent-11);
 	text-decoration: none;
 }
 .kp-landing__browse a .label {
