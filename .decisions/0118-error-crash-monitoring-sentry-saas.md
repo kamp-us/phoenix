@@ -124,3 +124,29 @@ done here.
   adopting a second, non-Sentry-protocol tracker for the same job (which would forfeit the reversible-DSN
   property); and treating CF-native observability as a substitute for the browser-tier capture this ADR
   establishes.
+
+## Amendment (2026-07-02, [#1502](https://github.com/kamp-us/phoenix/issues/1502)) — data region is US, not the EU default
+
+The decision above named **EU** as the data region, explicitly as a default "adjustable at implementation
+time." At implementation it was set to **US**. Recording the realized choice here (not a new ADR) because
+this is that flagged knob being turned, not a new decision.
+
+**Why US.** The data region is an **org-wide** Sentry setting, not per-project — every project under an org
+inherits its region. The only existing org, `kampus-av`, is US-region. Honoring the EU default would mean
+standing up and operating a **second, EU-region org** for a single project — disproportionate to the benefit
+for a low-volume error tracker.
+
+**Risk accepted + mitigation.** Error events are stored in the US, so user data could leave the EU. This is
+bounded by the **`beforeSend` PII scrub** (the ADR's other decided default), applied on **both** tiers
+(`apps/web/src/lib/sentry.ts` and `apps/web/worker/lib/sentry.ts`): the `user` block and request
+cookies/headers are stripped **before** any event leaves the client/worker. So what lands in the US is
+**scrubbed** error data — a low-regret trade for a free-tier tracker.
+
+**Escape hatch intact.** The reversible-DSN property is unaffected: if data residency ever becomes a hard
+requirement, the move is a **DSN swap** to an EU-region Sentry org or a self-hosted EU GlitchTip — no
+re-instrumentation. The choice stays as adjustable as the ADR said it was.
+
+**Where realized.** Project `kampus-av/phoenix`; the public DSN is the `VITE_SENTRY_DSN` repo variable, wired
+into the prod build (SPA) and prod deploy (worker `SENTRY_DSN` binding) production-only in
+`.github/workflows/deploy.yml` ([#1656](https://github.com/kamp-us/phoenix/pull/1656)); worker capture is
+deploy-verified in [#1671](https://github.com/kamp-us/phoenix/pull/1671).
