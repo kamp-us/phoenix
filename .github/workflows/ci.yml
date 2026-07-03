@@ -646,6 +646,15 @@ jobs:
         env:
           E2E_BASE_URL: ${{ steps.preview.outputs.url }}
           PLAYWRIGHT_HTML_OPEN: never
+          # Privileged D1 REST access for the e2e promote helper (ADR 0137):
+          # `promoteToYazar` runs an authenticated D1 `UPDATE user SET tier='yazar'`
+          # against the preview stage's D1, mirroring the integration harness. The
+          # account + token come from the same secrets the integration job uses; the
+          # preview D1 uuid is the `<!-- d1:<uuid> -->` token deploy.yml surfaced,
+          # already resolved above for the seed step (`steps.preview.outputs.db`).
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          E2E_D1_DATABASE_ID: ${{ steps.preview.outputs.db }}
 
       # Upload the report whenever the run completed (pass or fail), so a red run's
       # traces survive for triage; `!cancelled()` keeps it from skipping on failure,
