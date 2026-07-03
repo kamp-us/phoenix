@@ -85,8 +85,12 @@ On a **PR**, `.github/workflows/decisions-index.yml` runs `decisions-index valid
 ## Rules
 
 - One decision per file. If the user is describing a sprawling design, that belongs in the vault, not here.
+- **Linking to another ADR — resolve its filename by stable number from disk, never guess the slug from the target's title.** A target ADR's slug is **not derivable from its title** (0048 is `ship-it-merge-actor`, not `single-merge-authority`; 0053 is `control-plane-boundary`, not `control-plane-human-merge`; 0075 is `issueless-doc-pr-merge-seam`, not `conversation-authored-adr-exception`). The stable number `NNNN` is the only reliable key, so **read the real filename off disk** and use it verbatim — never re-apply the Step-2 title→slug heuristic to a *different* ADR you're linking. This is the recurring `review-doc` "links resolve" FAIL (#1777); `doc-links.yml` is the CI backstop, this is the authoring-time fix. Resolve every `[NNNN](NNNN-slug.md)` link's slug this way:
+  ```bash
+  ls .decisions/NNNN-*.md   # → .decisions/NNNN-real-slug.md — use exactly this filename in the link
+  ```
 - `status`: `accepted | proposed | superseded | deprecated` (or a richer linked phrase like `superseded by [NNNN](NNNN-slug.md)`). Default `accepted` unless the user says otherwise. Whatever you put in `status:` is what the on-demand `compact` map shows.
-- Superseding an older ADR: in the new file write `Supersedes [NNNN](NNNN-slug.md).` in `## Context`, and edit the old file's front-matter `status: superseded by [NNNN](NNNN-slug.md)` plus a body line `Superseded by [NNNN](NNNN-slug.md).` The on-demand `compact` map reflects both from frontmatter — there is no index to touch.
+- Superseding an older ADR: in the new file write `Supersedes [NNNN](NNNN-slug.md).` in `## Context`, and edit the old file's front-matter `status: superseded by [NNNN](NNNN-slug.md)` plus a body line `Superseded by [NNNN](NNNN-slug.md).` The on-demand `compact` map reflects both from frontmatter — there is no index to touch. Resolve every `NNNN-slug.md` here off disk (`ls .decisions/NNNN-*.md`) per the cross-link rule above — the guessed slug is exactly where these supersede links go dead.
 - Date is today (`date` command if unsure).
 - Never edit an accepted ADR's decision text after the fact — supersede instead.
 - **Always resolve the vocabulary-impact outcome** (Step 5 / [§Vocabulary impact](#vocabulary-impact--catch-a-coined-or-redefined-term-at-its-source)): every ADR ends with *either* a term surfaced to `.glossary/TERMS.md` *or* an explicit recorded "no vocabulary impact." Never leave it unstated — the explicit "none" is a real outcome, not a skip.
