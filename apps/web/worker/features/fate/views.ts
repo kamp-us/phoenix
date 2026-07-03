@@ -46,10 +46,16 @@ export {
 	promotionReceiptDataView,
 	userDataView,
 } from "../pasaport/views.ts";
-export type {OpenReport, ReportReceipt, ResolveReceipt} from "../report/views.ts";
+export type {
+	OpenReport,
+	ReportReceipt,
+	ResolvedReport,
+	ResolveReceipt,
+} from "../report/views.ts";
 export {
 	openReportDataView,
 	reportReceiptDataView,
+	resolvedReportDataView,
 	resolveReceiptDataView,
 } from "../report/views.ts";
 export type {Definition, Term} from "../sozluk/views.ts";

@@ -57,6 +57,29 @@ export interface OpenReportGroup {
 }
 
 /**
+ * One row of the shared decision feed (#1704, the two-person team-ledger): a
+ * resolved/dismissed target grouped by `(targetKind, targetId)`, carrying the audit
+ * triad `content_report` stamps on a terminal transition — the decision
+ * (`removed`/`dismissed`), the **resolver** (which moderator), and when. Because
+ * `resolveTarget` stamps every open row on a target with one uniform triad (and
+ * `reopenForTarget` clears it), a target's terminal rows share a single decision, so
+ * the group carries one resolver/resolution/resolvedAt. `resolvedAt` is the group's
+ * most-recent terminal stamp — the decision feed's newest-first order.
+ */
+export interface ResolvedReportGroup {
+	targetKind: TargetKind;
+	targetId: string;
+	/** The decision the resolver made — `removed` (content soft-deleted) | `dismissed`. */
+	resolution: Resolution.Resolution;
+	/** The moderator who decided — first-class in the two-person ledger, never a footnote. */
+	resolverId: string;
+	/** When the decision landed (most-recent terminal stamp; newest-first feed order). */
+	resolvedAt: Date;
+	/** How many reports the decision collapsed on this target. */
+	reportCount: number;
+}
+
+/**
  * The audit a terminal transition records (ADR 0098 §4). All three fields are
  * written together — there is no partial resolution.
  */
@@ -104,6 +127,16 @@ export class Report extends Context.Service<
 		 * capability (`requireModeration`, ADR 0107 §4).
 		 */
 		readonly listOpen: (opts?: {limit?: number}) => Effect.Effect<ReadonlyArray<OpenReportGroup>>;
+
+		/**
+		 * The shared decision feed (#1704): recently resolved/dismissed targets grouped
+		 * by target, newest-decision-first, each carrying the audit triad (decision,
+		 * resolver, resolved-at). Bounded single-page like {@link listOpen} (no cursor).
+		 * Private moderation state — the resolver gates it behind `Moderate`.
+		 */
+		readonly listResolved: (opts?: {
+			limit?: number;
+		}) => Effect.Effect<ReadonlyArray<ResolvedReportGroup>>;
 
 		/**
 		 * Terminal transition (ADR 0098 §3/§4): collapse EVERY open report on
@@ -278,6 +311,41 @@ export const ReportLive = Layer.effect(Report)(
 						// returns that raw value, so reconstruct the Date from seconds.
 						firstReportedAt: new Date(Number(r.firstReportedAt) * 1000),
 					}) satisfies OpenReportGroup,
+			);
+		});
+
+		const listResolved = Effect.fn("Report.listResolved")(function* (opts?: {limit?: number}) {
+			const limit = Math.max(1, Math.min(opts?.limit ?? 50, 200));
+			const rows = yield* run((db) =>
+				db
+					.select({
+						targetKind: schema.contentReport.targetKind,
+						targetId: schema.contentReport.targetId,
+						reportCount: sql<number>`COUNT(*)`,
+						resolvedAt: sql<number>`MAX(${schema.contentReport.resolvedAt})`,
+						// A target's terminal rows share one uniform triad (resolveTarget stamps
+						// them together), so MIN over the group returns that single value.
+						resolverId: sql<string>`MIN(${schema.contentReport.resolverId})`,
+						resolution: sql<Resolution.Resolution>`MIN(${schema.contentReport.resolution})`,
+					})
+					.from(schema.contentReport)
+					.where(inArray(schema.contentReport.status, ["resolved", "dismissed"]))
+					.groupBy(schema.contentReport.targetKind, schema.contentReport.targetId)
+					.orderBy(sql`MAX(${schema.contentReport.resolvedAt}) DESC`)
+					.limit(limit),
+			);
+			return rows.map(
+				(r) =>
+					({
+						targetKind: r.targetKind as TargetKind,
+						targetId: r.targetId,
+						resolution: r.resolution as Resolution.Resolution,
+						resolverId: r.resolverId,
+						// D1 stores `resolved_at` as integer seconds (timestamp mode); MAX
+						// returns that raw value, so reconstruct the Date from seconds.
+						resolvedAt: new Date(Number(r.resolvedAt) * 1000),
+						reportCount: Number(r.reportCount),
+					}) satisfies ResolvedReportGroup,
 			);
 		});
 
@@ -536,6 +604,7 @@ export const ReportLive = Layer.effect(Report)(
 		return {
 			readByReporter,
 			listOpen,
+			listResolved,
 			resolveTarget,
 			reopenForTarget,
 			reopenForWave,

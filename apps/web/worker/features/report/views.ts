@@ -149,3 +149,58 @@ export class ResolveReceiptView extends FateDataView<ResolveReceiptViewRow>()("R
 export const resolveReceiptDataView = ResolveReceiptView.view;
 
 export type ResolveReceipt = WorkerEntity<typeof ResolveReceiptView>;
+
+/**
+ * `ResolvedReport` — one entry of the shared decision feed (#1704, the two-person
+ * team-ledger): a recently resolved/dismissed target with the audit triad the schema
+ * stamps — the `resolution` (removed/dismissed), the **resolver** (which moderator,
+ * first-class), and `resolvedAt`. Private moderation state, so the `report.listResolved`
+ * root list is `Moderate`-gated (invisible denial, no live view, no cursor), like
+ * `report.listOpen`. `id` is `<targetKind>:<targetId>`.
+ *
+ * The `target*` fields carry the decided target's in-situ context, enriched inside the
+ * same gated read (never a new public read): a content excerpt/title, the author handle,
+ * and the routing ref (post/comment → `/pano/<ref>`, definition → `/sozluk/<ref>`). All
+ * three are nullable — a target whose content can't be resolved (removed/sandboxed)
+ * renders the row without context rather than dropping it. `resolverHandle` is likewise
+ * nullable (an unresolved resolver identity falls back to the raw id client-side).
+ */
+export type ResolvedReportViewRow = ViewRow<{
+	id: string;
+	targetKind: TargetKind;
+	targetId: string;
+	/** The decision: `removed` (content soft-deleted) | `dismissed` (report unfounded). */
+	resolution: Resolution;
+	/** The moderator's account id who decided. */
+	resolverId: string;
+	/** The resolver's display handle (`null` when the identity couldn't be resolved). */
+	resolverHandle: string | null;
+	/** When the decision landed (ISO-8601). */
+	resolvedAt: string;
+	/** How many reports the decision collapsed on this target. */
+	reportCount: number;
+	/** A content excerpt or title identifying the decided target (`null` when unresolved). */
+	targetExcerpt: string | null;
+	/** The decided target's author handle (`null` when unresolved). */
+	targetAuthor: string | null;
+	/** The in-situ routing reference: post id (post & comment→parent post) or term slug (definition). */
+	targetRef: string | null;
+}>;
+
+export class ResolvedReportView extends FateDataView<ResolvedReportViewRow>()("ResolvedReport")({
+	id: true,
+	targetKind: true,
+	targetId: true,
+	resolution: true,
+	resolverId: true,
+	resolverHandle: true,
+	resolvedAt: true,
+	reportCount: true,
+	targetExcerpt: true,
+	targetAuthor: true,
+	targetRef: true,
+} satisfies {[K in keyof ResolvedReportViewRow]: true}) {}
+
+export const resolvedReportDataView = ResolvedReportView.view;
+
+export type ResolvedReport = WorkerEntity<typeof ResolvedReportView>;

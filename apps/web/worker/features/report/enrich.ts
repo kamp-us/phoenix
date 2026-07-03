@@ -8,10 +8,10 @@
  * a T1 unit (`*.unit.test.ts` precedent).
  */
 import type {TargetKind} from "../../db/target-kind.ts";
-import type {OpenReportGroup} from "./Report.ts";
+import type {OpenReportGroup, ResolvedReportGroup} from "./Report.ts";
 import {type RowReputation, rowReputationOf} from "./reputation.ts";
-import {toOpenReport} from "./shapers.ts";
-import type {OpenReport} from "./views.ts";
+import {toOpenReport, toResolvedReport} from "./shapers.ts";
+import type {OpenReport, ResolvedReport} from "./views.ts";
 
 /**
  * The reported target's in-situ context: a content excerpt/title, the author handle,
@@ -70,3 +70,26 @@ export const enrichOpenReports = (
 			reputations.get(key) ?? rowReputationOf(g, undefined, undefined),
 		);
 	});
+
+/**
+ * The decision-feed enrichment merge (#1704) — fold each resolved-report group with its
+ * decided target's context (`<kind>:<id>`-keyed) AND its resolver's display handle
+ * (keyed by `resolverId`), producing the `ResolvedReport` rows `report.listResolved`
+ * returns. A group with no matching context — a removed/hidden target — keeps null
+ * context fields rather than being dropped (the feed never loses a decision to a missing
+ * excerpt); an unresolved resolver handle folds to null (the client falls back to the
+ * raw id). Pure so the fold is a T1 unit; the batched content/identity reads live in the
+ * gated resolver.
+ */
+export const enrichResolvedReports = (
+	groups: ReadonlyArray<ResolvedReportGroup>,
+	contexts: ReadonlyMap<string, ReportTargetContext>,
+	resolverHandles: ReadonlyMap<string, string | null>,
+): ResolvedReport[] =>
+	groups.map((g) =>
+		toResolvedReport(
+			g,
+			contexts.get(contextKeyOf(g.targetKind, g.targetId)),
+			resolverHandles.get(g.resolverId) ?? null,
+		),
+	);

@@ -16,20 +16,32 @@ import {Fate} from "@kampus/fate-effect";
 import type {ConnectionResult} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import type {TargetKind} from "../../db/target-kind.ts";
 import {Denied} from "../kunye/errors.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {Moderate, requireModeration} from "../kunye/moderate.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {Pano} from "../pano/Pano.ts";
+import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
-import {contextKeyOf, enrichOpenReports, type ReportTargetContext, toExcerpt} from "./enrich.ts";
-import type {OpenReportGroup} from "./Report.ts";
+import {
+	contextKeyOf,
+	enrichOpenReports,
+	enrichResolvedReports,
+	type ReportTargetContext,
+	toExcerpt,
+} from "./enrich.ts";
+import type {OpenReportGroup, ResolvedReportGroup} from "./Report.ts";
 import {Report} from "./Report.ts";
 import {type RowReputation, reputationKeyOf, rowReputationOf} from "./reputation.ts";
-import type {OpenReport} from "./views.ts";
-import {OpenReportView} from "./views.ts";
+import type {OpenReport, ResolvedReport} from "./views.ts";
+import {OpenReportView, ResolvedReportView} from "./views.ts";
 
 const ListOpenArgs = Schema.Struct({
+	first: Schema.optional(Schema.Number),
+});
+
+const ListResolvedArgs = Schema.Struct({
 	first: Schema.optional(Schema.Number),
 });
 
@@ -42,6 +54,17 @@ export const lists = {
 		},
 		Effect.fn("report.listOpen")(function* ({args}) {
 			return yield* requireModeration(listOpenGated(args));
+		}),
+	),
+
+	"report.listResolved": Fate.list(
+		{
+			args: ListResolvedArgs,
+			type: ResolvedReportView,
+			error: Schema.Union([Denied]),
+		},
+		Effect.fn("report.listResolved")(function* ({args}) {
+			return yield* requireModeration(listResolvedGated(args));
 		}),
 	),
 };
@@ -65,12 +88,54 @@ const listOpenGated = Effect.fn("report.listOpenGated")(function* (args: typeof 
 	} satisfies ConnectionResult<OpenReport>;
 });
 
+// The decision-feed read (#1704) — `Moderate`-gated like the open queue. `yield* Moderate`
+// requires the proof; the read is a private surface unreachable without a discharged
+// grant. Each decided target is enriched with the SAME target-context dispatch the open
+// queue uses, plus the resolver's display handle joined from pasaport — so the resolver
+// is first-class, not a bare id.
+const listResolvedGated = Effect.fn("report.listResolvedGated")(function* (
+	args: typeof ListResolvedArgs.Type,
+) {
+	yield* Moderate;
+	const report = yield* Report;
+	const groups = yield* report.listResolved(
+		args.first !== undefined ? {limit: args.first} : undefined,
+	);
+	const contexts = yield* resolveTargetContexts(groups);
+	const resolverHandles = yield* resolveResolverHandles(groups);
+	return {
+		items: enrichResolvedReports(groups, contexts, resolverHandles).map((node) => ({
+			cursor: node.id,
+			node,
+		})),
+		pagination: {hasNext: false, hasPrevious: false},
+	} satisfies ConnectionResult<ResolvedReport>;
+});
+
+// Join each decision's resolver id to its display handle in ONE batched identity read
+// (pasaport), keyed by resolver id. An unresolved id simply has no entry — the merge
+// then renders that row with a null handle (the client falls back to the raw id).
+const resolveResolverHandles = Effect.fn("report.resolveResolverHandles")(function* (
+	groups: ReadonlyArray<ResolvedReportGroup>,
+) {
+	const handles = new Map<string, string | null>();
+	const resolverIds = [...new Set(groups.map((g) => g.resolverId))];
+	if (resolverIds.length === 0) return handles;
+	const pasaport = yield* Pasaport;
+	const identities = yield* pasaport.getProfileIdentitiesByIds(resolverIds);
+	for (const row of identities) {
+		handles.set(row.userId, row.displayName ?? row.username ?? null);
+	}
+	return handles;
+});
+
 // Resolve each group's reported-target context by dispatching a batched read to the
 // content service that owns the kind, keyed by `<kind>:<id>`. A target the batched
 // read doesn't return (missing / sandbox-hidden) simply has no entry — the merge
-// then renders that row with null context (never dropped).
+// then renders that row with null context (never dropped). Kind/id-structural so both
+// the open queue and the decision feed (#1704) share one dispatch.
 const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function* (
-	groups: ReadonlyArray<OpenReportGroup>,
+	groups: ReadonlyArray<{targetKind: TargetKind; targetId: string}>,
 ) {
 	const idsByKind = {
 		post: [] as string[],
