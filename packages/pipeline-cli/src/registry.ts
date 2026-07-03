@@ -20,6 +20,7 @@ import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
 import {docLinksCommand} from "./tools/doc-links/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
 import {ghPhoenixCommand} from "./tools/gh-phoenix/command.ts";
+import {glossaryDriftCommand} from "./tools/glossary-drift/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {pointerGuardCommand} from "./tools/pointer-guard/command.ts";
 import {readGuardCommand} from "./tools/read-guard/command.ts";
@@ -88,4 +89,5 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	tokenSpendCommand,
 	trivialDiffCommand,
 	shipDigestCommand,
+	glossaryDriftCommand,
 ];

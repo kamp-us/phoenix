@@ -145,6 +145,36 @@ git diff origin/main... | node packages/pipeline-cli/src/bin.ts trivial-diff cla
 node packages/pipeline-cli/src/bin.ts trivial-diff classify --diff-file d.patch --max-lines 20
 ```
 
+### `glossary-drift` — out-of-band glossary-drift backstop (ADR 0128 prong (b), #1748)
+
+Diffs recent merges to `main` against [`.glossary/TERMS.md`](../../.glossary/TERMS.md) and
+surfaces concept-level vocabulary drift the fail-closed `review-code` Step 3c gate
+structurally cannot see — a term coined in a regular code PR that never routes through
+`/adr` or `plan-epic`
+([ADR 0128](../../.decisions/0128-glossary-concept-trigger-off-the-gate.md), the grounded
+miss [#1726](https://github.com/kamp-us/phoenix/issues/1726): the release-lever
+redefinition "split serving" / "kill switch" landed in a plain `feat(cf-utils)` PR with
+zero glossary pressure). The gate reads structural path signals; this reads the *words* an
+author used to name what they shipped.
+
+The heuristic (pure core, `drift.ts`): pull quoted phrases and the 2–3-word windows of each
+merge **subject** (bodies are prose — only their quoted phrases count), drop filler-bounded
+and nested windows, and keep only phrases NOT already covered by a declared TERMS.md term
+(substring-tolerant). It is **recall-biased on purpose** — a false positive costs a triage
+glance, not a merge round-trip, so a coinage is never silently missed.
+
+**Off the per-PR blocking path by construction:** the tool exits `0` whether or not drift is
+found — a hit is a **filed `status:needs-triage` issue** (`--file-issue`, the `report` skill's
+intake path), never a non-zero gate exit — so it can never block a merge. It runs on a weekly
+schedule (`.github/workflows/glossary-drift.yml`), accepting the merge-cadence lag ADR 0128
+prices in for staying off the fail-closed gate.
+
+```bash
+node packages/pipeline-cli/src/bin.ts glossary-drift sweep                # print candidates, exit 0
+node packages/pipeline-cli/src/bin.ts glossary-drift sweep --window 50    # widen the merge window
+node packages/pipeline-cli/src/bin.ts glossary-drift sweep --file-issue   # on drift, file a status:needs-triage issue
+```
+
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
 pnpm --filter @kampus/pipeline-cli test
