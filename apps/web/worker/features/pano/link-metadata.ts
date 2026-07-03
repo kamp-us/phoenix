@@ -98,12 +98,15 @@ function isBlockedIPv6(host: string): boolean {
 }
 
 /**
- * Parse `raw` and return the {@link URL} only if it is safe to fetch
- * server-side; otherwise `null`. Fail-closed: an unparseable URL, a
- * non-`http(s)` scheme, or a private/loopback/link-local/CGNAT/metadata IP
- * literal or local-only hostname all return `null`.
+ * Parse `raw` and return the {@link URL} only if it parses AND carries an
+ * `http:`/`https:` scheme; otherwise `null`. This is the **protocol allowlist**
+ * alone — no host screen — so a `javascript:`/`data:`/`file:` URL (or an
+ * unparseable one) is rejected while a public-host `http(s)` URL passes. It is
+ * the shared source of the http(s) rule reused by {@link isSafeFetchUrl} (which
+ * layers the SSRF host screen on top) and by pano's submit-URL persistence gate,
+ * which needs the protocol allowlist without the fetch-time host block.
  */
-export function isSafeFetchUrl(raw: string): URL | null {
+export function isHttpUrl(raw: string): URL | null {
 	let url: URL;
 	try {
 		url = new URL(raw);
@@ -111,6 +114,18 @@ export function isSafeFetchUrl(raw: string): URL | null {
 		return null;
 	}
 	if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+	return url;
+}
+
+/**
+ * Parse `raw` and return the {@link URL} only if it is safe to fetch
+ * server-side; otherwise `null`. Fail-closed: an unparseable URL, a
+ * non-`http(s)` scheme, or a private/loopback/link-local/CGNAT/metadata IP
+ * literal or local-only hostname all return `null`.
+ */
+export function isSafeFetchUrl(raw: string): URL | null {
+	const url = isHttpUrl(raw);
+	if (!url) return null;
 
 	const host = url.hostname.toLowerCase();
 	if (host === "" || host === "localhost") return null;

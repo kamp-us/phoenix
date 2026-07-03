@@ -51,6 +51,7 @@ import {
 	UrlInvalid,
 } from "./errors.ts";
 import {excerpt} from "./excerpt.ts";
+import {isHttpUrl} from "./link-metadata.ts";
 import {postVisibleTo, postVisibleWhere} from "./PostVisibility.ts";
 import type {PersistPanoStats} from "./pano-stats.ts";
 import {
@@ -257,17 +258,24 @@ const validateDraftTitle = Effect.fn("Pano.validateDraftTitle")(function* (raw: 
 
 /**
  * Parse an optional submit/draft URL to its normalized form + host. An empty or
- * absent URL yields `{host: null, urlNormalized: null}`; a malformed one fails
- * `UrlInvalid`. Shared by `submitPost` and `saveDraft`.
+ * absent URL yields `{host: null, urlNormalized: null}`; a malformed URL OR one
+ * whose scheme isn't `http(s)` fails `UrlInvalid`. Shared by `submitPost` and
+ * `saveDraft`.
+ *
+ * The `http(s)`-only allowlist (via {@link isHttpUrl}) is defense-in-depth at the
+ * PERSISTENCE layer: it keeps a `javascript:`/`data:`/`file:` URL from ever
+ * reaching `post_record.url`, closing a stored-invariant gap so no consumer —
+ * present or future, React or not — can ever read a non-http(s) href back out
+ * (#1890). The bare-`new URL()` guard here previously admitted them.
  */
 const parseSubmitUrl = Effect.fn("Pano.parseSubmitUrl")(function* (url: string | null | undefined) {
 	if (url == null || url.length === 0) {
 		return {host: null, urlNormalized: null} as const;
 	}
-	const parsed = yield* Effect.try({
-		try: () => new URL(url),
-		catch: () => new UrlInvalid({message: "URL geçersiz"}),
-	});
+	const parsed = isHttpUrl(url);
+	if (!parsed) {
+		return yield* new UrlInvalid({message: "URL geçersiz"});
+	}
 	return {host: parsed.host, urlNormalized: parsed.toString()} as const;
 });
 
