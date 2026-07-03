@@ -10,7 +10,7 @@ import type {Profile} from "../../worker/features/fate/views";
 import {useMe} from "../auth/useMe";
 import {shouldShowCaylakStatus} from "../components/profile/CaylakStatusBlock";
 import {ContributionRow, ContributionView} from "../components/profile/ContributionRow";
-import {PromotionActions} from "../components/profile/PromotionActions";
+import {PromotionActions, shouldShowPromotionActions} from "../components/profile/PromotionActions";
 import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/UserProfileHeader";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
@@ -84,6 +84,10 @@ function UserProfileContent({username}: {username: string}) {
 
 function ProfilePromotion({profile}: {profile: ViewRef<"Profile">}) {
 	const {userId} = useView(UserProfileHeaderView, profile);
+	const {me} = useMe();
+	// Mirror the divan's promote gate: mod-only + never own-profile (#1841). Absent
+	// me (loading / signed-out) reads as non-moderator ⇒ hidden.
+	if (!shouldShowPromotionActions(me?.isModerator ?? false, me?.id === userId)) return null;
 	return <PromotionActions userId={userId} />;
 }
 
