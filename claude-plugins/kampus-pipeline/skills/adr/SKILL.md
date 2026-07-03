@@ -35,7 +35,19 @@ Capture one decision per file in `.decisions/`. There is no committed index (ADR
    fi
    ```
    The published CLI operates on the local `.decisions/` filesystem (no GitHub target), so there is no `$REPO`/`$CLAUDE_PIPELINE_REPO` resolution here — it is purely the in-repo-vs-published invocation swap.
-5. Tell the user the path. Do not summarize the body — they just stated it.
+5. **Record the ADR's vocabulary impact (required — a named term or an explicit "none").** An ADR is a primary *coining site*: it is where a concept most often enters the repo vocabulary — a new term, or a redefinition of an existing one (ADR 0126's "ambient discovery" was coined here and drifted silently). So before you tell the user the path, run the point-of-coining glossary catch defined in [§Vocabulary impact](#vocabulary-impact--catch-a-coined-or-redefined-term-at-its-source). This is a **coining-time authoring hook, not the `review-code` gate** — it lives in this skill (prong (c) of ADR [0128](https://github.com/kamp-us/phoenix/blob/main/.decisions/0128-glossary-concept-trigger-off-the-gate.md), Fixes #1737); it never touches `review-code`'s fail-closed Step 3c. **You must land on one of two explicit outcomes — a named term routed to the glossary, or a recorded "no vocabulary impact"; silently skipping it is not an option.**
+6. Tell the user the path. Do not summarize the body — they just stated it.
+
+## Vocabulary impact — catch a coined or redefined term at its source
+
+The glossary ([`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md)) is the repo-owned domain vocabulary every contributor and CI-spawned agent shares. Its `review-code` freshness gate (Step 3c) only sees **structural** surfaces — a new feature folder / package / export — so a **concept-level** term coined or redefined *within existing surfaces* (a renamed model, a redefined lever, an ADR-coined phrase) sails past it. An ADR is exactly where those terms are named, so catch them **here, at coinage**, where you already hold the concept — not in a later archaeology pass (ADR [0128](https://github.com/kamp-us/phoenix/blob/main/.decisions/0128-glossary-concept-trigger-off-the-gate.md) prong (c); the grounded miss is ADR 0126's "ambient discovery").
+
+This is a **required, not-silently-skippable** authoring step. When you write the ADR, ask: *does this decision coin a new term, or redefine an existing one?* You must record **exactly one** of two outcomes — you cannot leave it blank:
+
+- **Term(s) coined/redefined → feed the glossary.** Name each term (and, for a redefinition, what changed). Then route it to `.glossary/TERMS.md`: if the term's canonical definition is short and unambiguous, add/update its row directly in the same ADR PR; if it needs the fuller treatment (a "not …" disambiguation, cross-links), **invoke `/glossary`** (`claude-plugins/kampus-pipeline/skills/glossary/SKILL.md`) or file a `report` so the glossary skill picks it up. Either way the term is surfaced, never left implicit in the ADR prose.
+- **No vocabulary impact → record it explicitly.** If the ADR coins/redefines nothing (it re-decides mechanics, sequencing, or policy over already-named concepts), state that plainly — e.g. tell the user "no vocabulary impact" as part of Step 6's report. The explicit "none" is the recorded outcome; it is what distinguishes *"considered and there is none"* from *"forgot to check."*
+
+This hook is **off the fail-closed gate by construction**: it is authoring-time judgment in this skill, it blocks no PR, and it does not (and must not) alter `review-code`'s Step 3c. It is the routed-term half of ADR 0128; the un-routed code-PR class is the sibling drift-sweep backstop, not this skill's job.
 
 ## File template
 
@@ -77,4 +89,5 @@ On a **PR**, `.github/workflows/decisions-index.yml` runs `decisions-index valid
 - Superseding an older ADR: in the new file write `Supersedes [NNNN](NNNN-slug.md).` in `## Context`, and edit the old file's front-matter `status: superseded by [NNNN](NNNN-slug.md)` plus a body line `Superseded by [NNNN](NNNN-slug.md).` The ambient map reflects both from frontmatter — there is no index to touch.
 - Date is today (`date` command if unsure).
 - Never edit an accepted ADR's decision text after the fact — supersede instead.
+- **Always resolve the vocabulary-impact outcome** (Step 5 / [§Vocabulary impact](#vocabulary-impact--catch-a-coined-or-redefined-term-at-its-source)): every ADR ends with *either* a term surfaced to `.glossary/TERMS.md` *or* an explicit recorded "no vocabulary impact." Never leave it unstated — the explicit "none" is a real outcome, not a skip.
 - Your PR adds only the ADR file (plus the superseded file's status edit); there is no committed index. Optional local preview of the ambient map (nothing to stage): `node packages/pipeline-cli/src/bin.ts decisions-index compact` when the consolidated bin is on disk, else `pnpm dlx @kampus/pipeline-cli@0.1.0 decisions-index compact`.
