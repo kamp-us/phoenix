@@ -46,6 +46,7 @@ import {
 	Flagship,
 	funnelReadoutFlag,
 	optimisticDefinitionAddFlag,
+	optimisticDefinitionDeleteFlag,
 	optimisticEditsFlag,
 	panoDraftSaveFlag,
 	panoOptimisticCommentAddFlag,
@@ -100,6 +101,10 @@ export default Alchemy.Stack(
 		// The bildirim (notification system) dark-ship flag, default-off (#1694, epic
 		// #1666) — the single seam the whole notification surface gates behind.
 		yield* bildirimFlag(flagship.appId);
+		// The optimistic definition.delete dark-ship flag, default-off (#1681, epic
+		// #1637) — gates the nested-connection edge-drop (ADR 0125 D1) until a human
+		// release.
+		yield* optimisticDefinitionDeleteFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

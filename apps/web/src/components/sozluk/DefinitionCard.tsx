@@ -3,7 +3,7 @@
 // taxonomy, so mutations throw and we catch per-call-site. See
 // `.patterns/fate-mutations-client.md`.
 import * as React from "react";
-import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
+import {toEntityId, useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
 import type {Definition, ReportReceipt} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
@@ -11,11 +11,12 @@ import {bodyEditOptimistic} from "../../fate/optimisticEdit";
 import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
-import {PHOENIX_OPTIMISTIC_EDITS} from "../../flags/keys";
+import {PHOENIX_OPTIMISTIC_DEFINITION_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
+import {dropOptimisticDefinitionEdge} from "../../pages/definitionDeleteOptimistic";
 import {useVoteToggle} from "../pano/useVoteToggle";
 import {Button} from "../ui/Button";
 import {useVoteFlash} from "../useVoteFlash";
@@ -76,6 +77,9 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	// Dark-ship gate (#1675): with the flag off the edit passes no optimistic
 	// payload and waits for the round-trip, exactly as before.
 	const {value: optimisticEdits} = useFlag(PHOENIX_OPTIMISTIC_EDITS, false);
+	// Dark-ship gate (#1681, ADR 0125 D1): off ⇒ the card drops only when the live
+	// `deleteEdge` push / read-back lands, exactly as today.
+	const {value: optimisticDelete} = useFlag(PHOENIX_OPTIMISTIC_DEFINITION_DELETE, false);
 
 	const [editing, setEditing] = React.useState(false);
 	const [editBody, setEditBody] = React.useState(definition.body);
@@ -162,7 +166,28 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		// list's `useLiveListView` consumes — the card drops out in place (this
 		// client's own view included), no reload.
 		await runDelete(
-			() => fate.mutations.definition.delete({input: {id: definition.id}}),
+			() => {
+				const promise = fate.mutations.definition.delete({input: {id: definition.id}});
+				if (optimisticDelete) {
+					// Optimistic edge-drop (ADR 0125 D1): remove the edge from the nested list
+					// state now so the card disappears instantly. The definition id is already
+					// canonical, so the server `deleteEdge` frame removes an id already gone —
+					// a no-op by canonical id, no reappear. Roll the drop back on any failure
+					// (fate has no record write to restore for this Term-returning mutation).
+					const rollback = dropOptimisticDefinitionEdge(
+						fate.store,
+						toEntityId("Term", props.slug),
+						toEntityId("Definition", definition.id),
+					);
+					promise.then(
+						(res) => {
+							if (res.error) rollback();
+						},
+						() => rollback(),
+					);
+				}
+				return promise;
+			},
 			"tanım silinemedi",
 			() => {
 				setConfirmDelete(false);
