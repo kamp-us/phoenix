@@ -44,10 +44,16 @@ export const toOpenReport = (
 	targetExcerpt: context?.excerpt ?? null,
 	targetAuthor: context?.author ?? null,
 	targetRef: context?.ref ?? null,
+	authorId: reputation.authorId,
 	distinctReporters: reputation.distinctReporters,
 	authorTier: reputation.authorTier,
 	authorKarma: reputation.authorKarma,
 	authorPriorRemovals: reputation.authorPriorRemovals,
+	authorDefinitionCount: reputation.authorDefinitionCount,
+	authorPostCount: reputation.authorPostCount,
+	authorCommentCount: reputation.authorCommentCount,
+	authorKefil: reputation.authorKefil,
+	authorReportedTargets: reputation.authorReportedTargets,
 });
 
 export const toResolveReceipt = (r: {

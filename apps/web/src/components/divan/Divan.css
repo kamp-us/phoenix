@@ -492,3 +492,91 @@
 	color: var(--text-secondary);
 	text-transform: lowercase;
 }
+
+/* The actor-drawer stage (#1852): the single-item card with the künye drawer docked
+   beside it on desktop. Below the docked breakpoint the drawer stacks under the card. */
+.kp-triage__stage {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+@media (min-width: 900px) {
+	.kp-triage__stage[data-drawer="true"] {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+		align-items: start;
+	}
+}
+
+.kp-actor {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+	padding: var(--s-4);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface-raised);
+}
+
+.kp-actor__identity {
+	font: var(--t-h3);
+	color: var(--text-primary);
+	text-transform: lowercase;
+}
+
+.kp-actor__tells {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	margin: 0;
+}
+
+.kp-actor__tell {
+	display: flex;
+	justify-content: space-between;
+	gap: var(--s-2);
+	font: var(--t-meta);
+}
+
+.kp-actor__tell-key {
+	color: var(--text-muted);
+	text-transform: lowercase;
+}
+
+.kp-actor__tell-val {
+	margin: 0;
+	color: var(--text-secondary);
+	text-align: right;
+	text-transform: lowercase;
+}
+
+.kp-actor__guard {
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--text-muted);
+	text-transform: lowercase;
+}
+
+.kp-actor__hops {
+	display: flex;
+	gap: var(--s-2);
+}
+
+.kp-actor__hop {
+	flex: 1;
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: transparent;
+	color: var(--text-secondary);
+	font: var(--t-meta);
+	text-transform: lowercase;
+	cursor: pointer;
+}
+
+.kp-actor__hop[aria-current="true"] {
+	color: var(--accent-fg);
+	border-color: var(--accent);
+	background: var(--accent-faint);
+}

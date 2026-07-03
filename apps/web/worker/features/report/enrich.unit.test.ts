@@ -110,16 +110,30 @@ describe("enrichOpenReports — fold groups with their resolved target context",
 		const reputations = new Map<string, RowReputation>([
 			[
 				"post:p-1",
-				{authorTier: "çaylak", authorKarma: 2, authorPriorRemovals: 3, distinctReporters: 7},
+				{
+					authorId: "u-kaan",
+					authorTier: "çaylak",
+					authorKarma: 2,
+					authorPriorRemovals: 3,
+					distinctReporters: 7,
+					authorDefinitionCount: 5,
+					authorPostCount: 2,
+					authorCommentCount: 8,
+					authorKefil: true,
+					authorReportedTargets: 4,
+				},
 			],
 		]);
 
 		const [row] = enrichOpenReports(groups, contexts, reputations);
 
+		assert.strictEqual(row?.authorId, "u-kaan");
 		assert.strictEqual(row?.authorTier, "çaylak");
 		assert.strictEqual(row?.authorKarma, 2);
 		assert.strictEqual(row?.authorPriorRemovals, 3);
 		assert.strictEqual(row?.distinctReporters, 7, "the explicit diversity count wins");
+		assert.strictEqual(row?.authorKefil, true);
+		assert.strictEqual(row?.authorReportedTargets, 4);
 	});
 
 	it("preserves group order and carries the report fields through the shaper", () => {

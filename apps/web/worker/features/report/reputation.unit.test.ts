@@ -36,23 +36,42 @@ describe("reputationKeyOf — the <kind>:<id> merge key", () => {
 	});
 });
 
-describe("rowReputationOf — fold author standing + reporter diversity onto the row", () => {
-	it("lands a resolved author's tier, karma, and prior-removals", () => {
-		const rep: AuthorReputation = {tier: "çaylak", karma: 3, priorRemovals: 2};
+const reputation = (over: Partial<AuthorReputation> = {}): AuthorReputation => ({
+	authorId: "u-1",
+	tier: "çaylak",
+	karma: 3,
+	priorRemovals: 2,
+	definitionCount: 4,
+	postCount: 1,
+	commentCount: 7,
+	kefil: false,
+	reportedTargets: 3,
+	...over,
+});
+
+describe("rowReputationOf — fold author standing + actor cluster + reporter diversity", () => {
+	it("lands a resolved author's full actor cluster (#1852)", () => {
+		const rep = reputation({karma: 3, priorRemovals: 2, kefil: true, reportedTargets: 4});
 		const div: ReporterDiversity = {reportCount: 9, distinctReporters: 7};
 
 		const row = rowReputationOf(group("post", "p-1", {reportCount: 9}), rep, div);
 
 		assert.deepStrictEqual(row, {
+			authorId: "u-1",
 			authorTier: "çaylak",
 			authorKarma: 3,
 			authorPriorRemovals: 2,
 			distinctReporters: 7,
+			authorDefinitionCount: 4,
+			authorPostCount: 1,
+			authorCommentCount: 7,
+			authorKefil: true,
+			authorReportedTargets: 4,
 		});
 	});
 
 	it("carries a clean author (zero prior removals) faithfully — 0 is not absent", () => {
-		const rep: AuthorReputation = {tier: "yazar", karma: 240, priorRemovals: 0};
+		const rep = reputation({tier: "yazar", karma: 240, priorRemovals: 0});
 		const row = rowReputationOf(group("definition", "d-1"), rep, {
 			reportCount: 1,
 			distinctReporters: 1,
@@ -63,16 +82,36 @@ describe("rowReputationOf — fold author standing + reporter diversity onto the
 		assert.strictEqual(row.authorKarma, 240);
 	});
 
+	it("carries a zero-production / zero-reported actor faithfully — 0 is not absent (#1852)", () => {
+		const rep = reputation({definitionCount: 0, postCount: 0, commentCount: 0, reportedTargets: 0});
+		const row = rowReputationOf(group("post", "p-9"), rep, undefined);
+
+		assert.strictEqual(row.authorDefinitionCount, 0);
+		assert.strictEqual(row.authorPostCount, 0);
+		assert.strictEqual(row.authorCommentCount, 0);
+		assert.strictEqual(
+			row.authorReportedTargets,
+			0,
+			"no other reported targets renders 0, never null",
+		);
+	});
+
 	it("leaves the WHOLE author cluster null when the author is unresolved", () => {
 		const row = rowReputationOf(group("comment", "c-3", {reportCount: 4}), undefined, undefined);
 
+		assert.strictEqual(row.authorId, null);
 		assert.strictEqual(row.authorTier, null);
 		assert.strictEqual(row.authorKarma, null);
 		assert.strictEqual(row.authorPriorRemovals, null);
+		assert.strictEqual(row.authorDefinitionCount, null);
+		assert.strictEqual(row.authorPostCount, null);
+		assert.strictEqual(row.authorCommentCount, null);
+		assert.strictEqual(row.authorKefil, null);
+		assert.strictEqual(row.authorReportedTargets, null);
 	});
 
 	it("falls back distinctReporters to the group's reportCount when diversity is unresolved", () => {
-		const rep: AuthorReputation = {tier: "çaylak", karma: 0, priorRemovals: 1};
+		const rep = reputation({karma: 0, priorRemovals: 1});
 		const row = rowReputationOf(group("post", "p-2", {reportCount: 5}), rep, undefined);
 
 		assert.strictEqual(

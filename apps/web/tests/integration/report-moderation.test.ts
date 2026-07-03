@@ -70,7 +70,23 @@ const listOpen = (cookie?: string) =>
 			kind: "list",
 			name: "report.listOpen",
 			args: {},
-			select: ["id", "targetKind", "targetId", "reportCount"],
+			select: [
+				"id",
+				"targetKind",
+				"targetId",
+				"reportCount",
+				// The #1852 actor-drawer join, read INSIDE the same gated list (never a
+				// second data path): the actor's standing, footprint, and the "bu aktör" count.
+				"authorId",
+				"authorTier",
+				"authorKarma",
+				"authorDefinitionCount",
+				"authorPostCount",
+				"authorCommentCount",
+				"authorKefil",
+				"authorReportedTargets",
+				"distinctReporters",
+			],
 		},
 		cookie ? {cookie} : undefined,
 	);
@@ -139,6 +155,36 @@ describe("report.resolve — act-on-target via substrate + repeat-offender + reo
 			.items;
 		const row = rows.find((e) => e.node.targetId === postId);
 		expect(row?.node.reportCount).toBe(2);
+	});
+
+	it("the actor-drawer join lands the target author's künye INSIDE the gated read (#1852)", async () => {
+		const list = await listOpen(moderator.cookie);
+		expect(list.ok).toBe(true);
+		if (!list.ok) return;
+		type ActorNode = {
+			targetId: string;
+			authorId: string | null;
+			authorTier: string | null;
+			authorPostCount: number | null;
+			authorKefil: boolean | null;
+			authorReportedTargets: number | null;
+			distinctReporters: number;
+		};
+		const rows = (list.data as {items: Array<{node: ActorNode}>}).items;
+		const node = rows.find((e) => e.node.targetId === postId)?.node;
+		expect(node).toBeDefined();
+		if (!node) return;
+		// The join resolved the target's author off the same content read.
+		expect(node.authorId).toBe(author.userId);
+		expect(node.authorTier).not.toBeNull();
+		// The seeded post is one live gönderi by this author — its production footprint.
+		expect(node.authorPostCount).toBeGreaterThanOrEqual(1);
+		// kefil durumu resolves to a concrete boolean (unvouched author ⇒ false).
+		expect(node.authorKefil).toBe(false);
+		// "bu aktör": the author has ≥1 open-reported target (this post), and the
+		// pile-on's distinct-reporter count is the two reporters above.
+		expect(node.authorReportedTargets).toBeGreaterThanOrEqual(1);
+		expect(node.distinctReporters).toBe(2);
 	});
 
 	it("resolve(removed) hides the target, collapses BOTH reports, and stamps the audit", async () => {
