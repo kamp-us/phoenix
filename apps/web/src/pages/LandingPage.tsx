@@ -77,16 +77,28 @@ export function LandingPage() {
 						reklam, takipçi sayısı, sansasyon yok — sadece okumaya değer şeyler ve onları yazan
 						birkaç yüz kişi.
 					</p>
+					<p className="kp-landing__rite">
+						<strong>kapı açık:</strong> hesap açmak herkese serbest.{" "}
+						<strong>söz hakkı kazanılır:</strong> ilk yazdıkların çaylak olarak divanda incelenir;
+						katkı verdikçe bir yazar sana kefil olur, yazar olursun — o zaman yazdıkların doğrudan
+						yayına girer.
+					</p>
 				</div>
 				<div className="kp-landing__cta">
-					<Link to="/pano">
-						<span className="label">pano →</span>
-						<span className="sub">başlıklar · tartışmalar</span>
+					<Link className="kp-landing__join" to="/auth" data-testid="landing-join-cta">
+						<span className="label">hesap aç →</span>
+						<span className="sub">kapı açık · söz hakkı kazanılır</span>
 					</Link>
-					<Link to="/sozluk">
-						<span className="label">sözlük →</span>
-						<span className="sub">terimler · tanımlar</span>
-					</Link>
+					<div className="kp-landing__browse">
+						<Link to="/pano">
+							<span className="label">pano →</span>
+							<span className="sub">başlıklar · tartışmalar</span>
+						</Link>
+						<Link to="/sozluk">
+							<span className="label">sözlük →</span>
+							<span className="sub">terimler · tanımlar</span>
+						</Link>
+					</div>
 				</div>
 			</div>
 

@@ -41,6 +41,13 @@
 	text-align: center;
 }
 
+.kp-auth__rite {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin: -6px 0 var(--s-2);
+	text-align: center;
+}
+
 .kp-auth__form {
 	display: grid;
 	gap: var(--s-3);

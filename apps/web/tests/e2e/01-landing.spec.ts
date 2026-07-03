@@ -5,25 +5,36 @@ test.describe("LandingPage", () => {
 		await page.goto("/");
 	});
 
-	test("hero brand, tagline, manifesto, two CTA cards", async ({page}) => {
+	test("hero brand, tagline, manifesto, rite, join CTA + browse cards", async ({page}) => {
 		await expect(page.locator(".kp-landing__brand")).toContainText("kamp");
 		// dot accent inside the brand
 		await expect(page.locator(".kp-landing__brand .dot")).toBeVisible();
 		await expect(page.locator(".kp-landing__tagline")).toBeVisible();
 		await expect(page.locator(".kp-landing__manifesto")).toBeVisible();
+		await expect(page.locator(".kp-landing__rite")).toBeVisible();
 
-		const ctas = page.locator(".kp-landing__cta a");
-		await expect(ctas).toHaveCount(2);
-		await expect(ctas.nth(0)).toHaveAttribute("href", "/pano");
-		await expect(ctas.nth(1)).toHaveAttribute("href", "/sozluk");
+		// join is the figure: the dominant CTA points at /auth
+		const join = page.getByTestId("landing-join-cta");
+		await expect(join).toBeVisible();
+		await expect(join).toHaveAttribute("href", "/auth");
+
+		// browsing is the ground: the two demoted browse cards
+		const browse = page.locator(".kp-landing__browse a");
+		await expect(browse).toHaveCount(2);
+		await expect(browse.nth(0)).toHaveAttribute("href", "/pano");
+		await expect(browse.nth(1)).toHaveAttribute("href", "/sozluk");
 	});
 
 	test("CTA cards navigate", async ({page}) => {
-		await page.locator(".kp-landing__cta a", {hasText: "pano"}).click();
+		await page.getByTestId("landing-join-cta").click();
+		await expect(page).toHaveURL("/auth");
+
+		await page.goto("/");
+		await page.locator(".kp-landing__browse a", {hasText: "pano"}).click();
 		await expect(page).toHaveURL("/pano");
 
 		await page.goto("/");
-		await page.locator(".kp-landing__cta a", {hasText: "sözlük"}).click();
+		await page.locator(".kp-landing__browse a", {hasText: "sözlük"}).click();
 		await expect(page).toHaveURL("/sozluk");
 	});
 

@@ -107,8 +107,15 @@ export function AuthPage() {
 				</div>
 				<h2 className="kp-auth__title">{isSignIn ? "giriş yap" : "kayıt ol"}</h2>
 				<p className="kp-auth__sub">
-					{isSignIn ? "kaldığın yerden devam et." : "birkaç yüz kişiden biri ol."}
+					{isSignIn ? "kaldığın yerden devam et." : "kapı açık, söz hakkı kazanılır."}
 				</p>
+				{!isSignIn ? (
+					<p className="kp-auth__rite">
+						hesap açmak herkese serbest. ilk yazdıkların çaylak olarak divanda incelenir; katkı
+						verdikçe bir yazarın kefilliğiyle yazar olursun — o zaman yazdıkların doğrudan yayına
+						girer.
+					</p>
+				) : null}
 				<form className="kp-auth__form" onSubmit={onSubmit}>
 					{!isSignIn ? (
 						<div className="kp-auth__field">

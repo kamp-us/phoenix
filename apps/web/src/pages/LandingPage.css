@@ -46,12 +46,50 @@
 	font-weight: 500;
 }
 
+.kp-landing__rite {
+	font: var(--t-body);
+	color: var(--text-muted);
+	max-width: 56ch;
+	margin: var(--s-3) 0 0;
+}
+.kp-landing__rite strong {
+	color: var(--text-secondary);
+	font-weight: 500;
+}
+
+/* Join is the figure (accent block), browsing the ground (muted pair below). */
 .kp-landing__cta {
+	display: grid;
+	gap: var(--s-2);
+	min-width: 220px;
+}
+.kp-landing__join {
+	background: var(--accent);
+	color: var(--accent-fg);
+	padding: var(--s-3) var(--s-4);
+	border-radius: var(--r-sm);
+	text-decoration: none;
+	display: grid;
+	gap: 4px;
+}
+.kp-landing__join:hover {
+	filter: brightness(1.06);
+	color: var(--accent-fg);
+	text-decoration: none;
+}
+.kp-landing__join .label {
+	font: 600 15px / 1.2 var(--font-body);
+}
+.kp-landing__join .sub {
+	font: 400 11px / 1.2 var(--font-body);
+	opacity: 0.85;
+}
+.kp-landing__browse {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
 	gap: var(--s-2);
 }
-.kp-landing__cta a {
+.kp-landing__browse a {
 	border: none;
 	background: var(--surface-raised);
 	padding: var(--s-3) var(--s-4);
@@ -63,21 +101,21 @@
 	gap: 4px;
 	min-width: 100px;
 }
-.kp-landing__cta a:hover {
+.kp-landing__browse a:hover {
 	background: var(--accent-soft);
 	color: var(--accent);
 	text-decoration: none;
 }
-.kp-landing__cta a .label {
+.kp-landing__browse a .label {
 	font-weight: 600;
 	font-size: 14px;
 }
-.kp-landing__cta a .sub {
+.kp-landing__browse a .sub {
 	font-size: 11px;
 	color: var(--text-muted);
 	font-weight: 400;
 }
-.kp-landing__cta a:hover .sub {
+.kp-landing__browse a:hover .sub {
 	color: var(--text-secondary);
 }
 
