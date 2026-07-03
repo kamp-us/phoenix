@@ -23,7 +23,8 @@
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"test:e2e:install": "playwright install chromium",
-		"fate:generate": "fate generate"
+		"fate:generate": "fate generate",
+		"bundle:assert": "node scripts/bundle-assert/main.ts"
 	},
 	"dependencies": {
 		"@alchemy.run/better-auth": "catalog:",

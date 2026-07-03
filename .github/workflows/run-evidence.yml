@@ -62,6 +62,29 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Headless worker-bundle node-core assertion (ADR 0118, #1502 AC2, #1836): build the
+      # apps/web worker with the SAME bundler the deploy uses (rolldown + the cloudflare
+      # plugin, resolved through alchemy) and assert the emitted bundle reaches no forbidden
+      # Node-only module (child_process/inspector/winston/pino/@sentry/node-core). Runs on the
+      # runner — no `alchemy deploy`, no live CF account. Capture the exit but DON'T fail here:
+      # the pass/fail folds into the run-evidence manifest below (so review-code cites it
+      # SHA-bound), and the final step reds the job. Always leaves bundle/bundle-checks.json.
+      - name: Assert worker bundle excludes node-core
+        run: |
+          set -uo pipefail
+          BUNDLE="$GITHUB_WORKSPACE/bundle"
+          mkdir -p "$BUNDLE"
+          set +e
+          ( cd apps/web && node scripts/bundle-assert/main.ts --output "$BUNDLE/bundle-checks.json" )
+          BUNDLE_ASSERT_EXIT=$?
+          set -e
+          echo "BUNDLE_ASSERT_EXIT=$BUNDLE_ASSERT_EXIT" >> "$GITHUB_ENV"
+          # A hard error (exit 2 — could not bundle/scan) writes no check; synthesize a fail
+          # so the manifest still records it for review-code rather than dropping the evidence.
+          if [ ! -f "$BUNDLE/bundle-checks.json" ]; then
+            printf '[{"name":"bundle-node-core-free","status":"fail","exitCode":%s}]\n' "$BUNDLE_ASSERT_EXIT" > "$BUNDLE/bundle-checks.json"
+          fi
+
       # crabbox is pre-1.0 (v0.x) — pin a specific release; expect surface churn.
       # Linux runner ⇒ the linux_amd64 build. Verify the checksum so a tampered or
       # truncated download fails loud rather than producing a bogus bundle.
@@ -178,9 +201,13 @@ jobs:
           mkdir -p "$BUNDLE"
           JUNIT_ARG=()
           if [ -n "${JUNIT:-}" ]; then JUNIT_ARG=(--junit "$JUNIT"); fi
+          # Fold the #1836 bundle assertion's pass/fail into checks[] as bundle-node-core-free.
+          EXTRA_ARG=()
+          if [ -f "$BUNDLE/bundle-checks.json" ]; then EXTRA_ARG=(--extra-checks "$BUNDLE/bundle-checks.json"); fi
           node packages/pipeline-cli/src/bin.ts crabbox-manifest \
             --run-summary "$RUN_SUMMARY" \
             "${JUNIT_ARG[@]}" \
+            "${EXTRA_ARG[@]}" \
             --commit "$HEAD_SHA" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --environment ci \
@@ -208,3 +235,16 @@ jobs:
           path: bundle/
           if-no-files-found: error
           retention-days: 30
+
+      # Red the job when the worker bundle reached a forbidden Node-only module. Runs after
+      # the manifest is assembled + published (`if: always()`), so the failing
+      # bundle-node-core-free check reaches review-code as SHA-bound evidence even on a fail
+      # (ADR 0118, #1502 AC2, #1836).
+      - name: Fail if the worker bundle reached node-core
+        if: always()
+        run: |
+          if [ "${BUNDLE_ASSERT_EXIT:-1}" != "0" ]; then
+            echo "::error::worker bundle node-core assertion failed (exit ${BUNDLE_ASSERT_EXIT:-unset}) — see the 'Assert worker bundle excludes node-core' step and bundle-node-core-free in the run-evidence manifest" >&2
+            exit 1
+          fi
+          echo "worker bundle node-core assertion passed"

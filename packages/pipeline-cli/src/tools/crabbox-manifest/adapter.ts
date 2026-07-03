@@ -24,6 +24,13 @@ export interface AdapterInput {
 	readonly timestamp: string;
 	readonly runUrl?: string;
 	readonly environment?: string;
+	/**
+	 * Checks produced OUTSIDE crabbox that fold into the same `checks[]` — e.g. the
+	 * headless worker-bundle node-core assertion (#1836), which runs on the runner,
+	 * not in the crabbox container. Appended after the crabbox-derived checks, so a
+	 * review-code gate cites them as SHA-bound evidence alongside the test checks.
+	 */
+	readonly extraChecks?: ReadonlyArray<Check>;
 }
 
 const checkName = (cmd: CrabboxCommand, index: number): string =>
@@ -71,7 +78,7 @@ export const buildManifest = (input: AdapterInput): Manifest => ({
 		timestamp: input.timestamp,
 		...(input.environment !== undefined ? {environment: input.environment} : {}),
 	},
-	checks: deriveChecks(input.summary),
+	checks: [...deriveChecks(input.summary), ...(input.extraChecks ?? [])],
 	tests: input.tests,
 	logs: {ref: input.logsRef},
 	lease: deriveLease(input.summary),
