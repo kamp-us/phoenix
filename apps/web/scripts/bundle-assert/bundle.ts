@@ -102,13 +102,19 @@ export const bundleWorkerGraph = async (webRoot: string): Promise<BundleGraph> =
 		checks: {unresolvedImport: false, ineffectiveDynamicImport: false},
 	});
 	// `generate` (in-memory) not `write` — we only need the graph, no artifact on disk.
-	const {output} = await bundle.generate({
-		format: "esm",
-		minify: true,
-		keepNames: true,
-		sourcemap: "hidden",
-	});
-	await bundle.close();
+	// close() in finally so a generate() throw still tears the build down (a leaked
+	// rolldown build hangs CI instead of failing cleanly).
+	let output;
+	try {
+		({output} = await bundle.generate({
+			format: "esm",
+			minify: true,
+			keepNames: true,
+			sourcemap: "hidden",
+		}));
+	} finally {
+		await bundle.close();
+	}
 
 	const moduleIds = new Set<string>();
 	const externalImports = new Set<string>();
