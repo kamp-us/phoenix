@@ -1,0 +1,295 @@
+/**
+ * Reaction unit coverage — the decisions that are wrong-or-right with no
+ * database (ADR 0082). The `Drizzle` seam is substituted directly (the
+ * `Vote.unit.test.ts` idiom): a `run`/`batch` that THROWS proves a short-circuit
+ * never touched the DB, a stubbed `run` feeds the decision its inputs, and a
+ * recording `batch` captures the produced statement array so the write SHAPE is
+ * asserted without an engine. Reaction's real-D1 fidelity — composite-PK upsert
+ * (the emoji changes in place, still one row), retract removes the row,
+ * soft-delete not-found — lives on real D1 in `tests/integration/`.
+ *
+ * The load-bearing divergence from Vote is proven structurally here: the
+ * `ReactionLive` layer is built with NO `KarmaBump` and NO `VoterStanding`
+ * dependency — the react tests below drive `react` to completion against a layer
+ * that provides only `Drizzle`, so a çaylak (any user) reacting reaches the write
+ * with no tier gate and no karma statement. Reactions are ungated and karma-free.
+ */
+import {assert, describe, it} from "@effect/vitest";
+import {Effect, Layer} from "effect";
+import * as Schema from "effect/Schema";
+import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
+import {REACTION_EMOJI, ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
+import {TARGET_KINDS} from "../../db/target-kind.ts";
+import {Reaction, ReactionLive} from "./Reaction.ts";
+
+// A `Drizzle` whose every call throws — any path that actually reaches the DB
+// seam fails the test. A guard that short-circuits before reading runs to
+// completion against it, the "no read" proof.
+const throwingAccess: DrizzleAccess = {
+	run: () => Effect.die(new Error("Reaction read the DB on a path that must short-circuit")),
+	batch: () => Effect.die(new Error("Reaction wrote a batch on a path that must short-circuit")),
+};
+
+// A `Drizzle` whose `run` replays a queued sequence of results and whose `batch`
+// throws — drives `react`'s pre-batch decision (assertTargetLive + probe) while
+// proving the idempotent no-op never reaches `batch`.
+function scriptedAccess(results: ReadonlyArray<unknown>): DrizzleAccess {
+	const state = {i: 0};
+	return {
+		run: <A>(fn: (db: DrizzleDb) => Promise<A>) => {
+			void fn;
+			return Effect.succeed(results[state.i++] as A);
+		},
+		batch: () => Effect.die(new Error("idempotent no-op react must not reach the batch")),
+	};
+}
+
+// A recording write-path seam: `run` replays the pre-batch reads (assertTargetLive
+// meta, probe) and `batch` records the produced statement array against a chainable
+// db proxy, so a state-changing react is asserted (it reaches the write, its batch
+// carries exactly one statement) without a real engine.
+function recordingAccess(reads: ReadonlyArray<unknown>): {
+	access: DrizzleAccess;
+	batches: ReadonlyArray<unknown>[];
+} {
+	const state = {i: 0};
+	const batches: ReadonlyArray<unknown>[] = [];
+	const chainable: Record<string, (...a: unknown[]) => unknown> = {};
+	const dbProxy: unknown = new Proxy(chainable, {get: () => () => dbProxy});
+	const access: DrizzleAccess = {
+		run: <A>(fn: (db: DrizzleDb) => Promise<A>) => {
+			void fn;
+			return Effect.succeed(reads[state.i++] as A);
+		},
+		batch: <T extends Readonly<[unknown, ...unknown[]]>>(fn: (db: never) => T) => {
+			batches.push(fn(dbProxy as never) as ReadonlyArray<unknown>);
+			return Effect.succeed([] as never);
+		},
+	};
+	return {access, batches};
+}
+
+// The Reaction layer under test — NOTE it provides ONLY `Drizzle`. There is no
+// KarmaBump and no VoterStanding to provide, because Reaction declares neither
+// (the ungated, karma-free divergence from Vote). That this layer type-checks and
+// builds with Drizzle alone IS the "no tier gate, no karma" proof at the seam.
+const reactionLayer = (access: DrizzleAccess) =>
+	ReactionLive.pipe(Layer.provide(Layer.succeed(Drizzle, access)));
+
+// A live target meta the descriptor's loadMeta returns (author/createdAt/sandboxed
+// are Vote's fields; Reaction reads none of them — it only needs existence).
+const liveMeta = {authorId: "author-1", createdAtMs: 0, sandboxed: false};
+// A sandboxed target — Reaction reacts to it like any other live row (ungated).
+const sandboxedMeta = {authorId: "caylak-1", createdAtMs: 0, sandboxed: true};
+
+describe("Reaction.react — target liveness (mocked Drizzle seam)", () => {
+	it.effect("a missing/removed target raises ReactionTargetNotFound before any write", () =>
+		Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			// assertTargetLive's loadMeta resolves to `undefined` → not-found, no batch.
+			const exit = yield* Effect.exit(
+				reaction.react({userId: "u1", targetKind: "definition", targetId: "ghost", emoji: "👍"}),
+			);
+			assert.isTrue(exit._tag === "Failure", "react against a missing target fails");
+			assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /ReactionTargetNotFound/);
+		}).pipe(Effect.provide(reactionLayer(scriptedAccess([undefined])))),
+	);
+});
+
+describe("Reaction.react — react / change / no-op / retract (mocked Drizzle seam)", () => {
+	it.effect(
+		"a first react on a fresh target writes one upsert statement — ungated, no karma",
+		() => {
+			// reads: assertTargetLive → live meta; probe → no existing reaction (null).
+			// Any user reaches the write: the layer has NO tier gate, and the single-statement
+			// batch has NO karma statement (there is no KarmaBump to produce one).
+			const {access, batches} = recordingAccess([liveMeta, null]);
+			return Effect.gen(function* () {
+				const reaction = yield* Reaction;
+				const result = yield* reaction.react({
+					userId: "caylak-newcomer",
+					targetKind: "definition",
+					targetId: "def-1",
+					emoji: "❤️",
+				});
+				assert.isTrue(result.changed, "a fresh react is a real state change");
+				assert.strictEqual(result.myReaction, "❤️");
+				assert.strictEqual(batches.length, 1, "react is one atomic batch (ADR 0014)");
+				assert.strictEqual(
+					batches[0]?.length,
+					1,
+					"exactly one statement (the user_reaction upsert) — no score/karma statement",
+				);
+			}).pipe(Effect.provide(reactionLayer(access)));
+		},
+	);
+
+	it.effect("changing an existing reaction replaces the emoji (still one upsert, one row)", () => {
+		// probe → the user already holds 👍; the new emoji ❤️ differs, so it is a real
+		// change writing the upsert (onConflictDoUpdate overwrites in place — cardinality one).
+		const {access, batches} = recordingAccess([liveMeta, "👍"]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const result = yield* reaction.react({
+				userId: "u1",
+				targetKind: "post",
+				targetId: "post-1",
+				emoji: "❤️",
+			});
+			assert.isTrue(result.changed, "a different emoji is a real change");
+			assert.strictEqual(result.myReaction, "❤️", "the new emoji replaces the prior one");
+			assert.strictEqual(batches[0]?.length, 1, "the change is one upsert statement");
+		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+
+	it.effect("re-reacting the SAME emoji is an idempotent no-op — no batch", () => {
+		// probe → the user already holds 👍 and reacts 👍 again: state matches intent,
+		// so no write. The throwing `batch` in scriptedAccess proves the no-op path.
+		const access = scriptedAccess([liveMeta, "👍"]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const result = yield* reaction.react({
+				userId: "u1",
+				targetKind: "comment",
+				targetId: "c-1",
+				emoji: "👍",
+			});
+			assert.isFalse(result.changed, "same emoji is a no-op");
+			assert.strictEqual(result.myReaction, "👍", "returns the unchanged reaction");
+		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+
+	it.effect("retract (emoji: null) on an existing reaction removes the row — one delete", () => {
+		// probe → the user holds 😂; retract intent (null) differs, so it is a real change
+		// writing the single delete statement.
+		const {access, batches} = recordingAccess([liveMeta, "😂"]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const result = yield* reaction.react({
+				userId: "u1",
+				targetKind: "definition",
+				targetId: "def-1",
+				emoji: null,
+			});
+			assert.isTrue(result.changed, "retract of an existing reaction is a real change");
+			assert.strictEqual(result.myReaction, null, "no reaction after retract");
+			assert.strictEqual(batches[0]?.length, 1, "retract is one delete statement");
+		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+
+	it.effect("retract when NONE held is an idempotent no-op — no batch", () => {
+		// probe → no existing reaction (null); retract intent (null) matches, so no write.
+		const access = scriptedAccess([liveMeta, null]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const result = yield* reaction.react({
+				userId: "u1",
+				targetKind: "post",
+				targetId: "post-1",
+				emoji: null,
+			});
+			assert.isFalse(result.changed, "retract of nothing is a no-op");
+			assert.strictEqual(result.myReaction, null);
+		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+
+	it.effect("a sandboxed target is reactable — reactions are ungated (no sandbox gate)", () => {
+		// The descriptor returns a still-sandboxed meta; Vote would REJECT it, but Reaction
+		// reads no sandbox flag and reaches the write. This is the deliberate divergence.
+		const {access, batches} = recordingAccess([sandboxedMeta, null]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const result = yield* reaction.react({
+				userId: "caylak-newcomer",
+				targetKind: "definition",
+				targetId: "def-sandboxed",
+				emoji: "🔥",
+			});
+			assert.isTrue(result.changed, "the reaction on a sandboxed target still writes");
+			assert.strictEqual(batches[0]?.length, 1);
+		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+});
+
+describe("Reaction.readMine — presence read (mocked Drizzle seam)", () => {
+	it.effect("empty ids → empty Map without touching the DB", () =>
+		Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const mine = yield* reaction.readMine("u1", "definition", []);
+			assert.strictEqual(mine.size, 0);
+		}).pipe(Effect.provide(reactionLayer(throwingAccess))),
+	);
+
+	it.effect("null viewer → empty Map without touching the DB", () =>
+		Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const mine = yield* reaction.readMine(null, "definition", ["def-1"]);
+			assert.strictEqual(mine.size, 0);
+		}).pipe(Effect.provide(reactionLayer(throwingAccess))),
+	);
+
+	it.effect("returns each target's current emoji keyed by target id", () => {
+		// `run` replays the selected rows; readMine folds them into a Map<targetId, emoji>.
+		const rows = [
+			{targetId: "def-1", emoji: "👍"},
+			{targetId: "def-2", emoji: "❤️"},
+		];
+		const access = scriptedAccess([rows]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const mine = yield* reaction.readMine("u1", "definition", ["def-1", "def-2", "def-3"]);
+			assert.strictEqual(mine.size, 2, "only targets with a reaction are present");
+			assert.strictEqual(mine.get("def-1"), "👍");
+			assert.strictEqual(mine.get("def-2"), "❤️");
+			assert.isUndefined(mine.get("def-3"), "a target with no reaction is absent");
+		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+});
+
+describe("Reaction.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle seam)", () => {
+	// A recording batch seam whose db proxy makes every chained call return a marker,
+	// so we can count the produced statements without a real engine.
+	function recordingBatchAccess(): {access: DrizzleAccess; batches: ReadonlyArray<unknown>[]} {
+		const batches: ReadonlyArray<unknown>[] = [];
+		const chainable: Record<string, (...a: unknown[]) => unknown> = {};
+		const dbProxy: unknown = new Proxy(chainable, {get: () => () => dbProxy});
+		const access: DrizzleAccess = {
+			run: () => Effect.die(new Error("clearTarget must not call run")),
+			batch: <T extends Readonly<[unknown, ...unknown[]]>>(fn: (db: never) => T) => {
+				batches.push(fn(dbProxy as never) as ReadonlyArray<unknown>);
+				return Effect.succeed([] as never);
+			},
+		};
+		return {access, batches};
+	}
+
+	for (const kind of TARGET_KINDS) {
+		it.effect(`${kind}: one batch of exactly one statement (the user_reaction wipe)`, () => {
+			const {access, batches} = recordingBatchAccess();
+			return Effect.gen(function* () {
+				const reaction = yield* Reaction;
+				yield* reaction.clearTarget(kind, "target-1");
+				assert.strictEqual(batches.length, 1, "clearTarget is one atomic batch");
+				assert.strictEqual(
+					batches[0]?.length,
+					1,
+					"user_reaction wipe only — no score/karma statement",
+				);
+			}).pipe(Effect.provide(reactionLayer(access)));
+		});
+	}
+});
+
+describe("ReactionEmojiSchema — non-palette rejection (the wire decode boundary)", () => {
+	it("every palette member decodes to itself", () => {
+		for (const emoji of REACTION_EMOJI) {
+			const decoded = Schema.decodeUnknownSync(ReactionEmojiSchema)(emoji);
+			assert.strictEqual(decoded, emoji);
+		}
+	});
+
+	it("a non-palette emoji fails to decode — an arbitrary emoji is unrepresentable", () => {
+		assert.throws(() => Schema.decodeUnknownSync(ReactionEmojiSchema)("🍕"));
+		assert.throws(() => Schema.decodeUnknownSync(ReactionEmojiSchema)("not-an-emoji"));
+	});
+});
