@@ -32,6 +32,17 @@ export const PANO_OPTIMISTIC_SUBMIT = "pano-optimistic-submit";
 export const PANO_OPTIMISTIC_COMMENT_ADD = "pano-optimistic-comment-add";
 
 /**
+ * Optimistic `comment.delete` (instant leaf-drop / `[silindi]` tombstone) containment
+ * flag (#1680, epic #1637). Default-off: with it off, a deleted comment leaves/tombstones
+ * the thread only when the server `deleteEdge` / `live.update` frame (or the delete-side
+ * read-back) lands, exactly as today; flipping it on applies the reply-aware optimistic
+ * write per ADR 0125 (D1 — leaf edge-drop vs conservative `[silindi]` tombstone decided
+ * from the loaded tree, reconciled by canonical id). Its OWN key (not the epic's shared
+ * seam): each optimistic slice has an independent dark-ship lifecycle.
+ */
+export const PANO_OPTIMISTIC_COMMENT_DELETE = "pano-optimistic-comment-delete";
+
+/**
  * Optimistic `post.delete` (instant feed removal on confirm) dark-ship flag (#1677,
  * epic #1637). Gates the optimistic post-delete flow — evict-and-navigate at once,
  * roll back on rejection — so it reaches production dark; with it off, `post.delete`
