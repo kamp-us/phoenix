@@ -8,9 +8,12 @@
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {LandingStats, Post, Term} from "../../worker/features/fate/views";
+import {useSession} from "../auth/client";
+import {useMe} from "../auth/useMe";
 import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
 import {formatAgoTR} from "../lib/datetime";
+import {landingCtaPhase, showJoinCta} from "./landingGating";
 import "./LandingPage.css";
 
 const LANDING_LIST_SIZE = 5;
@@ -61,6 +64,16 @@ function formatStat(n: number): string {
 }
 
 export function LandingPage() {
+	// Auth-gate the join CTA + rite framing on the SAME signal the topbar reads —
+	// `useMe` over `useSession` (#1784) — so the landing and the topbar can never
+	// disagree about auth state. The three-valued phase suppresses the CTA while
+	// auth is still resolving so it never flashes in/out (#448); the pure decision
+	// lives in `landingGating` (DOM-free, unit-tested).
+	const session = useSession();
+	const {status} = useMe();
+	const phase = landingCtaPhase(session.isPending, status);
+	const joinVisible = showJoinCta(phase);
+
 	return (
 		<div className="kp-landing">
 			<div className="kp-landing__hero">
@@ -77,18 +90,22 @@ export function LandingPage() {
 						reklam, takipçi sayısı, sansasyon yok — sadece okumaya değer şeyler ve onları yazan
 						birkaç yüz kişi.
 					</p>
-					<p className="kp-landing__rite">
-						<strong>kapı açık:</strong> hesap açmak herkese serbest.{" "}
-						<strong>söz hakkı kazanılır:</strong> ilk yazdıkların çaylak olarak divanda incelenir;
-						katkı verdikçe bir yazar sana kefil olur, yazar olursun — o zaman yazdıkların doğrudan
-						yayına girer.
-					</p>
+					{joinVisible ? (
+						<p className="kp-landing__rite">
+							<strong>kapı açık:</strong> hesap açmak herkese serbest.{" "}
+							<strong>söz hakkı kazanılır:</strong> ilk yazdıkların çaylak olarak divanda incelenir;
+							katkı verdikçe bir yazar sana kefil olur, yazar olursun — o zaman yazdıkların doğrudan
+							yayına girer.
+						</p>
+					) : null}
 				</div>
 				<div className="kp-landing__cta">
-					<Link className="kp-landing__join" to="/auth" data-testid="landing-join-cta">
-						<span className="label">hesap aç →</span>
-						<span className="sub">kapı açık · söz hakkı kazanılır</span>
-					</Link>
+					{joinVisible ? (
+						<Link className="kp-landing__join" to="/auth" data-testid="landing-join-cta">
+							<span className="label">hesap aç →</span>
+							<span className="sub">kapı açık · söz hakkı kazanılır</span>
+						</Link>
+					) : null}
 					<div className="kp-landing__browse">
 						<Link to="/pano">
 							<span className="label">pano →</span>
