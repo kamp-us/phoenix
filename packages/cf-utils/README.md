@@ -25,7 +25,16 @@ stays at its create-time safe value forever — it is the no-split fallback, not
 `flag set` is **dry-run by default**: it reads the current state, prints the `current →
 target` diff, and writes **nothing** — the mutation happens only under an explicit
 `--execute` (mirroring `orphan-sweep`), so an accidental prod release is unrepresentable.
-The write is never invoked by the pipeline autonomously.
+
+The `--execute` live-flip branch is **lever-guarded** (ADR 0133): it hard-refuses to flip a
+flag live unless **both** stdin is an interactive TTY **and** an interactive `flip <flag> live?
+[y/N]` confirm is affirmed (`y`/`yes`). This enforces "agents deploy, humans release" (ADR 0083)
+**structurally at the tool**, not just at the `/release` skill — a TTY-less caller (an autonomous
+agent or a CI runner) is refused, and there is deliberately **no override flag** (a string an
+agent could pass). The guard fails toward refusal: refusing a TTY-less human is recoverable
+(re-run in a terminal), while letting an agent flip live is not. The human `/release` path
+satisfies the guard by construction — a human runs the lever in a terminal and confirms. Only the
+`--execute` write branch is guarded; dry-run and no-op paths are unaffected.
 
 It is a **standalone ops tool**, not a worker route — the flag IaC itself (create/delete)
 stays in `apps/web/worker/features/flagship/resources.ts`; `cf-utils` only reads and

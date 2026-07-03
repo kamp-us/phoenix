@@ -8,6 +8,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {
 	computeEffectiveServing,
 	computeServingPlan,
+	decideLeverGuard,
 	decodeEnv,
 	decodeFlagState,
 	distinctKeys,
@@ -17,6 +18,7 @@ import {
 	FlagSetTargetInvalid,
 	findAppForEnv,
 	findNoMatchSplit,
+	LeverGuardRefused,
 	planNextState,
 	type RawFlag,
 	renderEffectiveServing,
@@ -372,6 +374,59 @@ describe("FlagSetTargetInvalid — the flag set usage error", () => {
 		const err = new FlagSetTargetInvalid({reason: "no target given"});
 		assert.match(err.message, /no target given/);
 		assert.match(err.message, /--percent N/);
+	});
+});
+
+describe("decideLeverGuard — the ADR 0133 lever guard pure core", () => {
+	it("REFUSES a TTY-less caller (agent/CI shape) before the confirm is even considered", () => {
+		const decision = decideLeverGuard({isTTY: false, confirmResponse: "y"});
+		assert.strictEqual(decision._tag, "Refuse");
+		if (decision._tag === "Refuse") {
+			assert.match(decision.reason, /TTY/);
+		}
+	});
+
+	it("REFUSES with no TTY even when the confirm is affirmative — the TTY check dominates", () => {
+		assert.strictEqual(decideLeverGuard({isTTY: false, confirmResponse: "yes"})._tag, "Refuse");
+	});
+
+	it("ALLOWS on a TTY with an affirmative y", () => {
+		assert.strictEqual(decideLeverGuard({isTTY: true, confirmResponse: "y"})._tag, "Allow");
+	});
+
+	it("ALLOWS on a TTY with an affirmative yes (case/whitespace insensitive)", () => {
+		assert.strictEqual(decideLeverGuard({isTTY: true, confirmResponse: "  YES "})._tag, "Allow");
+		assert.strictEqual(decideLeverGuard({isTTY: true, confirmResponse: "Y"})._tag, "Allow");
+	});
+
+	it("REFUSES on a TTY with an explicit n", () => {
+		assert.strictEqual(decideLeverGuard({isTTY: true, confirmResponse: "n"})._tag, "Refuse");
+	});
+
+	it("REFUSES on a TTY with empty input (the [y/N] default is deny)", () => {
+		assert.strictEqual(decideLeverGuard({isTTY: true, confirmResponse: ""})._tag, "Refuse");
+	});
+
+	it("REFUSES on a TTY with EOF / no response (undefined) — the fail-safe direction", () => {
+		const decision = decideLeverGuard({isTTY: true, confirmResponse: undefined});
+		assert.strictEqual(decision._tag, "Refuse");
+		if (decision._tag === "Refuse") {
+			assert.match(decision.reason, /affirm/);
+		}
+	});
+
+	it("REFUSES on a TTY with any non-affirmative token (not a substring match on 'yes')", () => {
+		assert.strictEqual(decideLeverGuard({isTTY: true, confirmResponse: "yolo"})._tag, "Refuse");
+		assert.strictEqual(decideLeverGuard({isTTY: true, confirmResponse: "y please"})._tag, "Refuse");
+	});
+});
+
+describe("LeverGuardRefused — the lever guard refusal message", () => {
+	it("names the reason and points at the humans-release boundary + the recoverable fix", () => {
+		const err = new LeverGuardRefused({reason: "stdin is not an interactive TTY"});
+		assert.match(err.message, /stdin is not an interactive TTY/);
+		assert.match(err.message, /humans release/);
+		assert.match(err.message, /interactive terminal/);
 	});
 });
 
