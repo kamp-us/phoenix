@@ -133,7 +133,7 @@ export function SozlukAlphabet({
 	emptyLetters?: string[];
 }) {
 	return (
-		<nav className="kp-sozluk-alphabet" aria-label="Harf">
+		<nav className="kp-sozluk-alphabet" aria-label="harf">
 			{ALPHABET.map((l) => {
 				const isEmpty = emptyLetters.includes(l);
 				const isActive = value === l;

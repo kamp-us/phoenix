@@ -15,7 +15,7 @@ export function Trigger({
 	return (
 		<BaseCollapsible.Trigger
 			className={`${styles.trigger} ${className}`.trim()}
-			aria-label={open ? "Daralt" : "Genişlet"}
+			aria-label={open ? "daralt" : "genişlet"}
 			{...rest}
 		>
 			{open ? "–" : "+"}

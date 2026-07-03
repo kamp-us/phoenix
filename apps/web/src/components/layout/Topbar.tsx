@@ -115,7 +115,7 @@ export function Topbar({
 					<circle cx="11" cy="11" r="7" />
 					<path d="m20 20-3.5-3.5" />
 				</svg>
-				<input ref={searchInputRef} name="q" placeholder="ara…" aria-label="Ara" />
+				<input ref={searchInputRef} name="q" placeholder="ara…" aria-label="ara" />
 				<kbd>⌘K</kbd>
 			</form>
 			{onToggleTheme ? (
@@ -148,16 +148,16 @@ export function Topbar({
 							data-testid="topbar-profile-link"
 							onClick={() => navigate(user.username ? `/u/${user.username}` : "/profile")}
 						>
-							Profil
+							profil
 						</Menu.Item>
 						{bildirim ? (
 							<Menu.Item data-testid="topbar-bildirim-link" onClick={() => navigate(bildirim.to)}>
-								Bildirimler
+								bildirimler
 							</Menu.Item>
 						) : null}
-						<Menu.Item onClick={() => navigate("/profile")}>Ayarlar</Menu.Item>
+						<Menu.Item onClick={() => navigate("/profile")}>ayarlar</Menu.Item>
 						<Menu.Separator />
-						<Menu.Item onClick={onLogout}>Çıkış</Menu.Item>
+						<Menu.Item onClick={onLogout}>çıkış</Menu.Item>
 					</Menu.Popup>
 				</Menu.Root>
 			) : null}

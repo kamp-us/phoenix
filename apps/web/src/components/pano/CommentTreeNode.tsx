@@ -121,7 +121,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						type="button"
 						className={`kp-comment__upvote ${voted ? "kp-comment__upvote--active" : ""}`}
 						aria-pressed={voted}
-						aria-label="Yukarı oy"
+						aria-label="yukarı oy"
 						onClick={onUpvote}
 						data-testid={`comment-vote-${localId}`}
 					>
@@ -139,7 +139,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 					type="button"
 					className="kp-comment__collapser"
 					onClick={() => setOpen(!open)}
-					aria-label={open ? "Daralt" : "Genişlet"}
+					aria-label={open ? "daralt" : "genişlet"}
 				>
 					[ {open ? "—" : "+"} ]
 				</button>
@@ -180,7 +180,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 								<Menu.Root>
 									<Menu.Trigger
 										className="kp-comment__menu-trigger"
-										aria-label="Daha fazla"
+										aria-label="daha fazla"
 										data-testid={`pano-comment-menu-${localId}`}
 									>
 										⋯

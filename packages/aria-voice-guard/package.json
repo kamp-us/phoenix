@@ -1,0 +1,30 @@
+{
+	"name": "@kampus/aria-voice-guard",
+	"version": "0.0.0",
+	"private": true,
+	"description": "aria-voice-guard — a pure, Turkish-locale-correct core + thin Effect CLI that flags a Title-Case aria-label or persistent menu-item string in apps/web/src, guarding the lowercase anti-hype Turkish voice against re-drift at the a11y / menu seam (issue #1670); the CI step runs `node src/bin.ts scan <files>`",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"scan": "node src/bin.ts scan"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

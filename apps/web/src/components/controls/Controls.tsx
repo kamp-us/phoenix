@@ -54,7 +54,7 @@ export function ThemePicker({
 				variant="swatch"
 				value={[value]}
 				onValueChange={(v) => v[0] && onChange(v[0] as ColorTheme)}
-				aria-label="Renk teması"
+				aria-label="renk teması"
 			>
 				{(Object.keys(THEME_SWATCHES) as ColorTheme[]).map((t) => (
 					<ToggleGroup.Item key={t} value={t} aria-label={t} swatchColor={THEME_SWATCHES[t]} />
@@ -72,7 +72,7 @@ export function DensityToggle({value, onChange}: {value: Density; onChange: (v: 
 				variant="segmented"
 				value={[value]}
 				onValueChange={(v) => v[0] && onChange(v[0] as Density)}
-				aria-label="Yoğunluk"
+				aria-label="yoğunluk"
 			>
 				{(Object.keys(DENSITY_LABELS) as Density[]).map((d) => (
 					<ToggleGroup.Item key={d} value={d}>
@@ -92,7 +92,7 @@ export function ModeToggle({value, onChange}: {value: Mode; onChange: (v: Mode) 
 				variant="segmented"
 				value={[value]}
 				onValueChange={(v) => v[0] && onChange(v[0] as Mode)}
-				aria-label="Renk modu"
+				aria-label="renk modu"
 			>
 				{(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
 					<ToggleGroup.Item key={m} value={m}>

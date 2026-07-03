@@ -227,7 +227,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					type="button"
 					className="kp-sozluk-definition__vote-btn"
 					aria-pressed={voted}
-					aria-label={voted ? "Oyunu geri al" : "Yukarı oy"}
+					aria-label={voted ? "oyunu geri al" : "yukarı oy"}
 					data-testid={`definition-vote-${definition.id}`}
 					onClick={onVoteClick}
 				>

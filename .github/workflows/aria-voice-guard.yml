@@ -1,0 +1,51 @@
+name: aria-voice-guard
+
+# The authoritative a11y-voice gate (issue #1670). CI is the only surface that sees
+# every PR's diff regardless of how it was authored, so it — not a write-time hook —
+# is the unbypassable gate for the "no Title-Case aria-label / menu-item string"
+# rule that keeps the lowercase anti-hype Turkish voice from re-drifting at the a11y
+# seam. It runs @kampus/aria-voice-guard's `scan` bin; the Turkish-locale-correct
+# matcher lives once in the package (findDrift), never re-grepped here.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  scan:
+    name: scan changed apps/web/src for Title-Case a11y/menu drift
+    runs-on: ubuntu-latest
+    steps:
+      # Full history so the base...head diff resolves; the default shallow checkout
+      # has no merge-base for the comparison below.
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # base...head = the .tsx files this PR adds/changes under apps/web/src vs the
+      # merge-base (--diff-filter=ACMR drops deletions/renames-source). Scoping to the
+      # SPA source is what makes this a targeted a11y-voice gate. A diff that touches
+      # no such file is a clean pass — we skip the invocation rather than call `scan`
+      # with zero args.
+      - name: Scan PR diff for Title-Case aria-labels / menu items
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          mapfile -t changed < <(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD" -- 'apps/web/src/**/*.tsx')
+          if [ "${#changed[@]}" -eq 0 ]; then
+            echo "No changed apps/web/src/**/*.tsx files — nothing to scan."
+            exit 0
+          fi
+          printf 'Scanning %d changed file(s):\n' "${#changed[@]}"
+          printf '  %s\n' "${changed[@]}"
+          node packages/aria-voice-guard/src/bin.ts scan "${changed[@]}"

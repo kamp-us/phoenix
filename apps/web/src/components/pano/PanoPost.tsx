@@ -24,7 +24,7 @@ export function VoteControl({
 				type="button"
 				className="kp-pano-post__vote-btn"
 				aria-pressed={pressed}
-				aria-label="Yukarı oy"
+				aria-label="yukarı oy"
 				data-testid={testIdSuffix ? `post-vote-${testIdSuffix}` : undefined}
 				onClick={() => onToggle?.()}
 			>

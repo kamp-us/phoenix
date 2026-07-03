@@ -56,7 +56,7 @@ export function Head({
 				) : null}
 			</div>
 			{showClose ? (
-				<BaseDialog.Close className={styles.close} aria-label="Kapat">
+				<BaseDialog.Close className={styles.close} aria-label="kapat">
 					×
 				</BaseDialog.Close>
 			) : null}

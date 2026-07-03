@@ -58,7 +58,7 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
 	return (
 		<ToastContext.Provider value={value}>
 			{children}
-			<section className="kp-toast-region" aria-label="Bildirimler">
+			<section className="kp-toast-region" aria-label="bildirimler">
 				{toasts.map((t) => (
 					<div
 						key={t.id}
@@ -70,7 +70,7 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
 						<button
 							type="button"
 							className="kp-toast__close"
-							aria-label="Kapat"
+							aria-label="kapat"
 							onClick={() => dismiss(t.id)}
 							data-testid={t.testId ? `toast-close-${t.testId}` : undefined}
 						>

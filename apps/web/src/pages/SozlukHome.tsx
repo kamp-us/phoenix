@@ -123,7 +123,7 @@ function SozlukHomeChrome({letter, query, setQuery, status, errorMessage, childr
 						value={query}
 						onChange={(e) => setQuery(e.currentTarget.value)}
 						placeholder="terim ara: race condition, idempotent…"
-						aria-label="Terim ara"
+						aria-label="terim ara"
 					/>
 				</form>
 			</header>
