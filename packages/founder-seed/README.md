@@ -21,8 +21,15 @@ write token. There is no in-product way to write a relation tuple or set a tier;
 package is that path for founders.
 
 The cohort is **data, not logic**: `src/cohort.ts` exports `FOUNDER_COHORT`, an editable
-list of founder `user.id`s the seed reads. The ~20 names are added there without touching
-the seed core; an **empty** roster makes the seed a clean no-op.
+list of founder `user.id`s the seed reads. The roster changes there without touching the
+seed core; an **empty** roster makes the seed a clean no-op.
+
+The committed roster is **deliberately empty, and that is the permanent, correct state**
+(opsec): real better-auth account ids are personal identifiers that don't belong in an
+open-source repo, so they are never committed. The seed HAS run — the operator fills the
+real cohort locally at run time (an out-of-band, uncommitted edit) and runs the CLI
+against the bound D1; the grant lives in the seeded D1 rows, not in a committed roster.
+Read the empty array as by-design, not as an un-run bootstrap.
 
 The `object` key is `@kampus/authz`'s canonical `key(platform)` (`"platform:platform"`)
 — the SAME encoding the worker's `RelationStoreLive` reads with, so a seeded founder
@@ -76,9 +83,11 @@ node packages/founder-seed/src/bin.ts list --database-id <stage-d1-uuid>
 - `$CLOUDFLARE_API_TOKEN` — the minted token (carries `D1 Write`); read by
   `CredentialsFromEnv`.
 
-The cohort is named in `src/cohort.ts` (`FOUNDER_COHORT`) — each founder's `user.id`
-for an already-registered account. The seed promotes those accounts; it does not create
-users, so the founders must exist before it runs.
+The cohort lives in `src/cohort.ts` (`FOUNDER_COHORT`) — each founder's `user.id`
+for an already-registered account. Because the committed roster is deliberately empty
+(opsec, above), the operator fills the real ids locally before running and leaves that
+edit uncommitted. The seed promotes those accounts; it does not create users, so the
+founders must exist before it runs.
 
 Transport is the Cloudflare D1 REST query API via alchemy's already-installed
 `@distilled.cloud/cloudflare` (`@kampus/d1-rest`) — the same primitive alchemy
