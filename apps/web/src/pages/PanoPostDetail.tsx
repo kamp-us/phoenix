@@ -15,6 +15,7 @@ import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view}
 import {Link, useLocation, useNavigate, useParams} from "react-router";
 import type {Post, ReportReceipt} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
+import {useMe} from "../auth/useMe";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
 import {buildCommentTree, type CommentNode} from "../components/pano/commentTree";
 import {
@@ -32,12 +33,22 @@ import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
-import {PANO_OPTIMISTIC_POST_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../flags/keys";
+import {
+	PANO_OPTIMISTIC_COMMENT_ADD,
+	PANO_OPTIMISTIC_POST_DELETE,
+	PHOENIX_OPTIMISTIC_EDITS,
+} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {NotFoundPage} from "./NotFoundPage";
+import {
+	beginOptimisticCommentAppend,
+	commentAddOptimistic,
+	connectionListKey,
+	tempCommentEntityId,
+} from "./optimisticCommentAdd";
 import {decideOptimisticDelete} from "./optimisticPostDelete";
 import "./PanoPostDetail.css";
 
@@ -522,11 +533,30 @@ function Comments(props: CommentsProps) {
 
 	// Deterministic read-back: if the server's `appendNode` push for the author's own
 	// new comment is lost (publish-vs-register race, #714), refetch this page's request
-	// `network-only` so the comment lands without a manual refresh.
+	// `network-only` so the comment lands without a manual refresh. Under the optimistic
+	// flag (ADR 0125) this narrows to the append-loss healer — the optimistic node makes
+	// the comment appear at once, the read-back only heals a lost server append.
 	const confirmComment = useReadbackRefetch({
 		presentIds: items.map(({node}) => String(node.id)),
 		refetch: refetchPost,
 	});
+
+	// Dark-ship gate (#1678, epic #1637): off ⇒ the composer waits for the server
+	// append / read-back exactly as before; on ⇒ it writes an optimistic temp node
+	// into the nested `Post.comments` connection that reconciles to the server id
+	// (A1, ADR 0125). `me` supplies the author handle for the temp node; the
+	// read-back/live frame corrects a stale handle within the sub-second window.
+	const {value: optimisticAdd} = useFlag(PANO_OPTIMISTIC_COMMENT_ADD, false);
+	const {me} = useMe();
+	const optimisticContext = React.useMemo<CommentComposerOptimistic>(
+		() => ({
+			enabled: optimisticAdd,
+			author: me?.username ?? me?.name ?? "",
+			authorId: props.currentUserId ?? "",
+			connection: post.comments,
+		}),
+		[optimisticAdd, me?.username, me?.name, props.currentUserId, post.comments],
+	);
 
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
 	const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
@@ -612,6 +642,7 @@ function Comments(props: CommentsProps) {
 						onPosted={() => setReplyTo(null)}
 						onCancel={() => setReplyTo(null)}
 						onConfirm={confirmComment}
+						optimistic={optimisticContext}
 						autoFocus
 					/>
 				) : undefined,
@@ -626,7 +657,16 @@ function Comments(props: CommentsProps) {
 					/>
 				) : undefined,
 		}),
-		[replyTo, editingCommentId, props.postId, props.signedIn, bodyById, refById, confirmComment],
+		[
+			replyTo,
+			editingCommentId,
+			props.postId,
+			props.signedIn,
+			bodyById,
+			refById,
+			confirmComment,
+			optimisticContext,
+		],
 	);
 
 	return (
@@ -637,6 +677,7 @@ function Comments(props: CommentsProps) {
 				signedIn={props.signedIn}
 				onPosted={() => undefined}
 				onConfirm={confirmComment}
+				optimistic={optimisticContext}
 			/>
 			<h2 className="kp-pano-postpage__thread-heading">{visibleCount} yorum</h2>
 			<div className="kp-pano-thread">
@@ -705,9 +746,25 @@ function Comments(props: CommentsProps) {
 }
 
 /**
- * Top-level + nested comment composer — fate. Submits `comment.add`; the server's
- * `appendNode` live event merges the new comment into the thread in place (the
- * author's own view included), since nested-connection membership is server-driven.
+ * The optimistic-add context the {@link Comments} parent threads down: the
+ * dark-ship flag state (#1678), the author handle/id the temp node carries, and
+ * the nested `Post.comments` connection ref the temp edge is inserted into.
+ */
+interface CommentComposerOptimistic {
+	readonly enabled: boolean;
+	readonly author: string;
+	readonly authorId: string;
+	/** The `post.comments` connection ref — its `ConnectionTag` metadata keys the nested list. */
+	readonly connection: unknown;
+}
+
+/**
+ * Top-level + nested comment composer — fate. Submits `comment.add`; membership is
+ * server-driven (the `appendNode` live frame merges the new comment into the
+ * thread). Behind the `pano-optimistic-comment-add` flag it *also* writes an
+ * optimistic temp node into the nested `Post.comments` connection so the comment
+ * shows instantly, reconciled to the server id by canonical-id dedup (A1, ADR
+ * 0125); a rejected add rolls the temp node back before the inline error.
  */
 function CommentComposer({
 	postId,
@@ -716,6 +773,7 @@ function CommentComposer({
 	onPosted,
 	onCancel,
 	onConfirm,
+	optimistic,
 	autoFocus,
 }: {
 	postId: string;
@@ -725,6 +783,8 @@ function CommentComposer({
 	onCancel?: () => void;
 	/** Hands the created comment's id to the deterministic read-back (see {@link useReadbackRefetch}). */
 	onConfirm?: (commentId: string) => void;
+	/** Optimistic-add context; when its `enabled` is false the composer is a plain round-trip. */
+	optimistic?: CommentComposerOptimistic;
 	autoFocus?: boolean;
 }) {
 	const fate = useFateClient();
@@ -741,12 +801,40 @@ function CommentComposer({
 		validate: validateCommentBody,
 		redirectPath: currentLocationPath,
 		run: async (value) => {
-			const {result, error: callError} = await fate.mutations.comment.add({
-				input: {postId, body: value, ...(parentId ? {parentId} : {})},
-				view: CommentTreeNodeView,
+			// Flag on ⇒ build the optimistic temp node and insert it into the nested
+			// connection before the round-trip; flag off ⇒ `optimisticNode` is undefined
+			// and the call is the plain round-trip (identical to pre-flag behavior).
+			const optimisticNode = commentAddOptimistic(optimistic?.enabled ?? false, {
+				parentId,
+				body: value,
+				author: optimistic?.author ?? "",
+				authorId: optimistic?.authorId ?? "",
 			});
-			createdId.current = result?.id != null ? String(result.id) : null;
-			return {error: callError};
+			let rollback = () => {};
+			if (optimisticNode) {
+				rollback = beginOptimisticCommentAppend(
+					fate.store,
+					connectionListKey(optimistic?.connection),
+					tempCommentEntityId(optimisticNode),
+				);
+			}
+			try {
+				const {result, error: callError} = await fate.mutations.comment.add({
+					input: {postId, body: value, ...(parentId ? {parentId} : {})},
+					...(optimisticNode ? {optimistic: optimisticNode, insert: "none" as const} : {}),
+					view: CommentTreeNodeView,
+				});
+				createdId.current = result?.id != null ? String(result.id) : null;
+				// callSite (4xx) reject → fate cleared the temp entity; roll back the nested
+				// membership too (fate only rolls back root-list inserts). Success ⇒ fate's
+				// `resolveOptimisticEntity` already rewrote temp→server here, so DON'T undo it.
+				if (callError) rollback();
+				return {error: callError};
+			} catch (thrown) {
+				// boundary (401/403/5xx) throw → same rollback path before the throw propagates.
+				rollback();
+				throw thrown;
+			}
 		},
 		overrides: COMMENT_OVERRIDES,
 		failureFallback: "yorum eklenemedi",

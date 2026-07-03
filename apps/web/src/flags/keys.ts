@@ -30,6 +30,16 @@ export const PANO_OPTIMISTIC_SUBMIT = "pano-optimistic-submit";
 export const PANO_OPTIMISTIC_POST_DELETE = "pano-optimistic-post-delete";
 
 /**
+ * Optimistic `comment.add` (nested `Post.comments` insert) containment flag
+ * (#1678, epic #1637). Default-off: with it off, a new comment/reply lands only
+ * via the server `appendNode` / read-back (a plain round-trip, exactly as today);
+ * flipping it on enables the A1 optimistic temp-node append into the nested
+ * connection that reconciles to the server id (ADR 0125). Its own key (not the
+ * epic's shared seam) — each nested-add slice has an independent lifecycle.
+ */
+export const PANO_OPTIMISTIC_COMMENT_ADD = "pano-optimistic-comment-add";
+
+/**
  * Earned-authorship loop (çaylak→yazar) dark-ship flag (#1204, epic #1202). The
  * single seam every authorship-loop surface gates behind: cross-cutting
  * (`phoenix`) because the loop touches sözlük/pano/pasaport, default-off so the
