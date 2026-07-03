@@ -26,13 +26,21 @@ import {PanoPostSkeleton} from "../components/pano/PanoSkeleton";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import type {ReportOutcome} from "../components/ui/ReportButton";
+import {
+	beginOptimisticCommentMembership,
+	optimisticCommentRecord,
+} from "../fate/optimisticCommentAdd";
 import {bodyEditOptimistic, postEditOptimistic} from "../fate/optimisticEdit";
 import {Screen} from "../fate/Screen";
 import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
-import {PANO_OPTIMISTIC_POST_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../flags/keys";
+import {
+	PANO_OPTIMISTIC_COMMENT_ADD,
+	PANO_OPTIMISTIC_POST_DELETE,
+	PHOENIX_OPTIMISTIC_EDITS,
+} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
@@ -435,6 +443,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 				postPath={`/pano/${data.slug ?? data.id}`}
 				signedIn={!!session.data?.user}
 				currentUserId={session.data?.user?.id ?? null}
+				currentUserName={session.data?.user?.name ?? session.data?.user?.email ?? null}
 			/>
 		</>
 	);
@@ -449,6 +458,8 @@ interface CommentsProps {
 	postPath: string;
 	signedIn: boolean;
 	currentUserId: string | null;
+	/** Author display name (`user.name ?? user.email`) for the optimistic comment node; null when signed out. */
+	currentUserName: string | null;
 }
 
 /**
@@ -505,6 +516,9 @@ function Comments(props: CommentsProps) {
 	const report = useReportHandler();
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 	const activeCommentId = useCommentAnchor();
+	// Optimistic comment-add dark-ship gate (#1678, ADR 0125 A1): off ⇒ no temp node,
+	// the thread waits for the live `appendNode` / read-back exactly as today.
+	const {value: optimisticAdd} = useFlag(PANO_OPTIMISTIC_COMMENT_ADD, false);
 
 	const refetchPost = React.useCallback(
 		() =>
@@ -601,6 +615,22 @@ function Comments(props: CommentsProps) {
 		);
 	}
 
+	// The optimistic-add bundle both composers share (top-level + every reply insert
+	// into the SAME nested `Post.comments` connection). Null unless the flag is on AND
+	// the author identity is known — the temp node mirrors the author, so a missing
+	// name/id degrades cleanly to the non-optimistic round-trip.
+	const optimisticComment = React.useMemo(
+		() =>
+			optimisticAdd && props.currentUserId != null && props.currentUserName != null
+				? {
+						connection: post.comments,
+						author: props.currentUserName,
+						authorId: props.currentUserId,
+					}
+				: null,
+		[optimisticAdd, post.comments, props.currentUserId, props.currentUserName],
+	);
+
 	const composerFor = React.useCallback(
 		(id: string) => ({
 			replyComposer:
@@ -612,6 +642,7 @@ function Comments(props: CommentsProps) {
 						onPosted={() => setReplyTo(null)}
 						onCancel={() => setReplyTo(null)}
 						onConfirm={confirmComment}
+						optimistic={optimisticComment}
 						autoFocus
 					/>
 				) : undefined,
@@ -626,7 +657,16 @@ function Comments(props: CommentsProps) {
 					/>
 				) : undefined,
 		}),
-		[replyTo, editingCommentId, props.postId, props.signedIn, bodyById, refById, confirmComment],
+		[
+			replyTo,
+			editingCommentId,
+			props.postId,
+			props.signedIn,
+			bodyById,
+			refById,
+			confirmComment,
+			optimisticComment,
+		],
 	);
 
 	return (
@@ -637,6 +677,7 @@ function Comments(props: CommentsProps) {
 				signedIn={props.signedIn}
 				onPosted={() => undefined}
 				onConfirm={confirmComment}
+				optimistic={optimisticComment}
 			/>
 			<h2 className="kp-pano-postpage__thread-heading">{visibleCount} yorum</h2>
 			<div className="kp-pano-thread">
@@ -708,6 +749,12 @@ function Comments(props: CommentsProps) {
  * Top-level + nested comment composer — fate. Submits `comment.add`; the server's
  * `appendNode` live event merges the new comment into the thread in place (the
  * author's own view included), since nested-connection membership is server-driven.
+ *
+ * When `optimistic` is set (the `pano-optimistic-comment-add` flag on, ADR 0125 A1),
+ * the temp node also appears in the thread *before* the round-trip: fate's
+ * `optimistic` payload writes + reconciles the temp entity, and
+ * {@link beginOptimisticCommentMembership} appends the temp id into the nested
+ * `Post.comments` connection and rolls it back on reject.
  */
 function CommentComposer({
 	postId,
@@ -716,6 +763,7 @@ function CommentComposer({
 	onPosted,
 	onCancel,
 	onConfirm,
+	optimistic,
 	autoFocus,
 }: {
 	postId: string;
@@ -725,6 +773,12 @@ function CommentComposer({
 	onCancel?: () => void;
 	/** Hands the created comment's id to the deterministic read-back (see {@link useReadbackRefetch}). */
 	onConfirm?: (commentId: string) => void;
+	/** Optimistic-add bundle (flag on + known author); null ⇒ non-optimistic round-trip. */
+	optimistic?: {
+		connection: unknown;
+		author: string;
+		authorId: string;
+	} | null;
 	autoFocus?: boolean;
 }) {
 	const fate = useFateClient();
@@ -741,12 +795,40 @@ function CommentComposer({
 		validate: validateCommentBody,
 		redirectPath: currentLocationPath,
 		run: async (value) => {
-			const {result, error: callError} = await fate.mutations.comment.add({
+			const optimisticRecord = optimistic
+				? optimisticCommentRecord({
+						postId,
+						parentId,
+						body: value,
+						author: optimistic.author,
+						authorId: optimistic.authorId,
+						now: new Date(),
+					})
+				: undefined;
+			// Fire the mutation first: fate writes the temp record synchronously (before
+			// the first await), so the nested-list append below points at a live record.
+			const promise = fate.mutations.comment.add({
 				input: {postId, body: value, ...(parentId ? {parentId} : {})},
 				view: CommentTreeNodeView,
+				...(optimisticRecord ? {optimistic: optimisticRecord} : {}),
 			});
-			createdId.current = result?.id != null ? String(result.id) : null;
-			return {error: callError};
+			const rollback =
+				optimistic && optimisticRecord
+					? beginOptimisticCommentMembership(fate.store, optimistic.connection, optimisticRecord.id)
+					: undefined;
+			try {
+				const {result, error: callError} = await promise;
+				createdId.current = result?.id != null ? String(result.id) : null;
+				// callSite reject: fate rolled the temp record back but not this nested
+				// membership — undo it so no phantom row is left (rollback AC).
+				if (callError) rollback?.();
+				return {error: callError};
+			} catch (caught) {
+				// boundary throw: same — roll the membership back, then let useDraftSubmit
+				// classify the throw (UNAUTHORIZED redirect / inline error).
+				rollback?.();
+				throw caught;
+			}
 		},
 		overrides: COMMENT_OVERRIDES,
 		failureFallback: "yorum eklenemedi",
