@@ -19,24 +19,27 @@ describe("EntityLifecycle — type transitions", () => {
 		assert.isFalse(L.isRemoved(live));
 	});
 
-	it("remove() builds Removed with the full audit triad", () => {
+	it("remove() builds Removed with the full audit triad (live content ⇒ sandboxedAt null)", () => {
 		const removed = L.remove({
 			removedAt: fixedNow,
 			removedBy: "user-1",
 			reason: new L.AuthorDeletion(),
+			sandboxedAt: null,
 		});
 		assert.strictEqual(removed._tag, "Removed");
 		assert.isTrue(L.isRemoved(removed));
 		assert.strictEqual(removed.removedBy, "user-1");
 		assert.strictEqual(removed.removedAt, fixedNow);
 		assert.strictEqual(removed.reason._tag, "AuthorDeletion");
+		assert.strictEqual(removed.sandboxedAt, null);
 	});
 
-	it("restore : Removed → Live, and is only defined on Removed", () => {
+	it("restore : Removed → Live for content that was live before removal", () => {
 		const removed = L.remove({
 			removedAt: fixedNow,
 			removedBy: "user-1",
 			reason: new L.Moderated({reportId: "rep-9"}),
+			sandboxedAt: null,
 		});
 		const live = L.restore(removed);
 		assert.strictEqual(live._tag, "Live");
@@ -48,11 +51,43 @@ describe("EntityLifecycle — type transitions", () => {
 		L.restore(L.Live());
 	});
 
+	// The çaylak sandbox-escape fix (#1811): a restore is sandbox-faithful — content
+	// that was sandboxed before removal returns to Sandboxed, NOT Live, so a
+	// delete→restore round-trip can never self-escape a çaylak's content to the
+	// always-Live broadcast without a mod's promotion.
+	it("restore : Removed → Sandboxed for content sandboxed before removal (#1811)", () => {
+		const removed = L.remove({
+			removedAt: fixedNow,
+			removedBy: "user-1",
+			reason: new L.AuthorDeletion(),
+			sandboxedAt: fixedNow,
+		});
+		const back = L.restore(removed);
+		assert.strictEqual(back._tag, "Sandboxed");
+		assert.isTrue(L.isSandboxed(back));
+		assert.isFalse(L.isLive(back));
+		if (L.isSandboxed(back)) assert.strictEqual(back.sandboxedAt, fixedNow);
+	});
+
+	it("sandboxedAtOf preserves the marker of the pre-removal lifecycle (#1811)", () => {
+		assert.strictEqual(L.sandboxedAtOf(L.Live()), null);
+		assert.strictEqual(L.sandboxedAtOf(L.sandbox({sandboxedAt: fixedNow})), fixedNow);
+		const removed = L.remove({
+			removedAt: fixedNow,
+			removedBy: "u",
+			reason: new L.AuthorDeletion(),
+			sandboxedAt: fixedNow,
+		});
+		assert.strictEqual(L.sandboxedAtOf(removed), fixedNow);
+	});
+
 	it("Removed is uninhabitable without its audit triad (compile-time)", () => {
-		// @ts-expect-error — missing `removedBy` + `reason`.
+		// @ts-expect-error — missing `removedBy` + `reason` + `sandboxedAt`.
 		L.remove({removedAt: fixedNow});
-		// @ts-expect-error — missing `reason`.
+		// @ts-expect-error — missing `reason` + `sandboxedAt`.
 		L.remove({removedAt: fixedNow, removedBy: "user-1"});
+		// @ts-expect-error — missing `sandboxedAt`.
+		L.remove({removedAt: fixedNow, removedBy: "user-1", reason: new L.AuthorDeletion()});
 		assert.ok(true);
 	});
 });
@@ -88,6 +123,7 @@ describe("EntityLifecycle — column projection round-trip", () => {
 			removedAt: fixedNow,
 			removedBy: "user-1",
 			reason: new L.Anonymized(),
+			sandboxedAt: null,
 		});
 		const cols = L.toColumns(removed);
 		assert.strictEqual(cols.removedBy, "user-1");
@@ -98,11 +134,12 @@ describe("EntityLifecycle — column projection round-trip", () => {
 		if (L.isRemoved(back)) assert.strictEqual(back.reason._tag, "Anonymized");
 	});
 
-	it("toColumns(restore(removed)) clears the whole triad + sandbox (Live persistence)", () => {
+	it("toColumns(restore(removed)) clears the whole triad + sandbox for live-before-removal", () => {
 		const removed = L.remove({
 			removedAt: fixedNow,
 			removedBy: "user-1",
 			reason: new L.AuthorDeletion(),
+			sandboxedAt: null,
 		});
 		const cols = L.toColumns(L.restore(removed));
 		assert.deepStrictEqual(cols, {
@@ -111,6 +148,35 @@ describe("EntityLifecycle — column projection round-trip", () => {
 			removedReason: null,
 			sandboxedAt: null,
 		});
+	});
+
+	// #1811: a sandboxed-then-removed row PRESERVES its `sandboxedAt` through the
+	// Removed columns (so restore can round-trip it), and restore persists it back as
+	// a Sandboxed row — never a Live row with the marker cleared.
+	it("toColumns(remove(...)) preserves the pre-removal sandboxedAt column (#1811)", () => {
+		const removed = L.remove({
+			removedAt: fixedNow,
+			removedBy: "user-1",
+			reason: new L.AuthorDeletion(),
+			sandboxedAt: fixedNow,
+		});
+		const cols = L.toColumns(removed);
+		assert.strictEqual(cols.removedAt, fixedNow);
+		assert.strictEqual(cols.sandboxedAt, fixedNow);
+		// A removed-AND-sandboxed row still PROJECTS to Removed (removal precedence)…
+		const back = L.fromColumns(cols);
+		assert.isTrue(L.isRemoved(back));
+		// …but carries the marker, so restore recovers the sandbox rather than Live.
+		if (L.isRemoved(back)) {
+			assert.strictEqual(back.sandboxedAt, fixedNow);
+			const restoredCols = L.toColumns(L.restore(back));
+			assert.deepStrictEqual(restoredCols, {
+				removedAt: null,
+				removedBy: null,
+				removedReason: null,
+				sandboxedAt: fixedNow,
+			});
+		}
 	});
 
 	it("a corrupt half-removal (removedAt set, audit missing) is rejected loudly", () => {
@@ -141,14 +207,18 @@ describe("EntityLifecycle — sandbox (#1205)", () => {
 		if (L.isSandboxed(lifecycle)) assert.strictEqual(lifecycle.sandboxedAt, fixedNow);
 	});
 
-	it("removal takes precedence over sandbox in the projection (no contradiction)", () => {
+	it("removal takes precedence over sandbox in the projection, carrying the marker (#1811)", () => {
 		const lifecycle = L.fromColumns({
 			removedAt: fixedNow,
 			removedBy: "user-1",
 			removedReason: '{"_tag":"AuthorDeletion"}',
 			sandboxedAt: fixedNow,
 		});
+		// A removed-AND-sandboxed row reads as Removed (the removal is the live fact)…
 		assert.isTrue(L.isRemoved(lifecycle));
+		// …but the pre-removal sandbox marker is carried, not dropped — so restore
+		// round-trips it back to the sandbox (the çaylak-escape fix).
+		if (L.isRemoved(lifecycle)) assert.strictEqual(lifecycle.sandboxedAt, fixedNow);
 	});
 
 	it("toColumns(sandbox(...)) writes only sandboxedAt; never sandboxed-AND-removed", () => {

@@ -62,7 +62,12 @@ export const encodeReason = Schema.encodeSync(ReasonFromJson);
  * - `Sandboxed` — çaylak content held in the mod-only sandbox (#1205): visible to
  *   its author + moderators only, until promotion (#1206) transitions it to `Live`.
  * - `Removed` — soft-deleted, carrying the full audit triad; there is no `Removed`
- *   without `removedAt` + `removedBy` + `reason`.
+ *   without `removedAt` + `removedBy` + `reason`. It also carries the pre-removal
+ *   `sandboxedAt` (null if the content was `Live` when removed) so a remove→restore
+ *   round-trip is *faithful*: restoring sandboxed content returns it to `Sandboxed`,
+ *   not `Live` — the çaylak sandbox-escape fix (#1811). A `Removed`-with-`sandboxedAt`
+ *   is still `Removed` (the removal is the live fact); the marker is carried, not
+ *   projected, so promotion to `Live` stays the mod-only path (#1206).
  */
 export type EntityLifecycle = Data.TaggedEnum<{
 	// biome-ignore lint/complexity/noBannedTypes: Data.taggedEnum needs the literal `{}` for a payload-less member; `Record<string, never>` makes `Live()` demand an arg.
@@ -74,6 +79,7 @@ export type EntityLifecycle = Data.TaggedEnum<{
 		readonly removedAt: Date;
 		readonly removedBy: string;
 		readonly reason: RemovalReason;
+		readonly sandboxedAt: Date | null;
 	};
 }>;
 
@@ -105,11 +111,14 @@ export type RemovalColumns = LifecycleColumns;
 /**
  * Reconstitute the lifecycle union from a row's raw columns — the single
  * projection seam ADR 0096 §2 mandates (services call this, never branch on the
- * columns). Removal takes precedence over sandbox (a removed row reads `Removed`
- * regardless of `sandboxedAt`; `toColumns` never persists both, so the precedence
- * is only a defensive belt). A row with `removedAt` set but a missing
- * `removedBy`/`removedReason` is a corrupt half-removal the domain can't
- * represent; we surface it loudly rather than projecting a fabricated audit.
+ * columns). Removal takes precedence over sandbox: a removed row reads `Removed`
+ * *and carries its `sandboxedAt`* (the pre-removal sandbox marker, #1811) so
+ * {@link restore} can round-trip it faithfully — a removed-AND-sandboxed row is a
+ * çaylak's deleted sandboxed content, still `Removed` (the removal is the live
+ * fact), with the sandbox marker preserved for restore, not projected. A row with
+ * `removedAt` set but a missing `removedBy`/`removedReason` is a corrupt
+ * half-removal the domain can't represent; we surface it loudly rather than
+ * projecting a fabricated audit.
  */
 export const fromColumns = (cols: LifecycleColumns): EntityLifecycle => {
 	if (cols.removedAt !== null) {
@@ -122,6 +131,7 @@ export const fromColumns = (cols: LifecycleColumns): EntityLifecycle => {
 			removedAt: cols.removedAt,
 			removedBy: cols.removedBy,
 			reason: decodeReason(cols.removedReason),
+			sandboxedAt: cols.sandboxedAt,
 		});
 	}
 	if (cols.sandboxedAt !== null) return Sandboxed({sandboxedAt: cols.sandboxedAt});
@@ -129,12 +139,16 @@ export const fromColumns = (cols: LifecycleColumns): EntityLifecycle => {
 };
 
 /**
- * The inverse: the column values a lifecycle persists to. Each member writes a
- * shape with **at most one** of `removedAt`/`sandboxedAt` non-null — so the
- * persisted form can never hold the sandboxed-AND-removed contradiction the union
- * already forbids in memory. `Live` clears everything (what {@link restore} /
- * {@link promote} write); `Sandboxed` stamps only `sandboxedAt`; `Removed` stamps
- * only the triad.
+ * The inverse: the column values a lifecycle persists to. `Live` clears
+ * everything (what {@link promote} writes, and what {@link restore} writes for
+ * content that was live before removal); `Sandboxed` stamps only `sandboxedAt`
+ * (what {@link restore} writes for content that was sandboxed before removal);
+ * `Removed` stamps the triad **plus** the preserved pre-removal `sandboxedAt`
+ * (null if it was live) so the marker survives the round-trip (#1811). The
+ * `removed`-AND-`sandboxed` column pair is not a contradiction — it is a removed
+ * row remembering it was sandboxed; the removal-precedence in {@link fromColumns}
+ * still projects it to `Removed`, and only a mod's promotion clears the marker to
+ * reach `Live`.
  */
 export const toColumns = (lifecycle: EntityLifecycle): LifecycleColumns =>
 	$match(lifecycle, {
@@ -145,31 +159,57 @@ export const toColumns = (lifecycle: EntityLifecycle): LifecycleColumns =>
 			removedReason: null,
 			sandboxedAt,
 		}),
-		Removed: ({removedAt, removedBy, reason}) => ({
+		Removed: ({removedAt, removedBy, reason, sandboxedAt}) => ({
 			removedAt,
 			removedBy,
 			removedReason: encodeReason(reason),
-			sandboxedAt: null,
+			sandboxedAt,
 		}),
 	});
 
 /**
- * Construct the removed state from its audit triad — the one constructor a
- * delete path uses, so it cannot forget an audit field.
+ * Construct the removed state from its audit triad plus the pre-removal
+ * `sandboxedAt` — the one constructor a delete path uses, so it cannot forget an
+ * audit field. `sandboxedAt` is the marker the row carried *before* the delete
+ * (null if it was `Live`); carrying it through `Removed` is what lets
+ * {@link restore} round-trip sandboxed çaylak content back to `Sandboxed` instead
+ * of leaking it to `Live` (#1811). A delete path derives it from the row's current
+ * lifecycle — `isSandboxed(current) ? current.sandboxedAt : null` — via
+ * {@link sandboxedAtOf}.
  */
 export const remove = (input: {
 	readonly removedAt: Date;
 	readonly removedBy: string;
 	readonly reason: RemovalReason;
+	readonly sandboxedAt: Date | null;
 }): Removed => Removed(input);
 
 /**
- * `restore : Removed → Live`. Defined **only** on `Removed` — restoring a `Live`
- * entity is not expressible because the parameter type excludes it. The removed
- * audit is intentionally dropped: restore brings the content back live; the votes
- * `Vote.clearTarget` wiped are not resurrected (ADR 0096 §4).
+ * The `sandboxedAt` a {@link remove} should preserve for `current`'s pre-removal
+ * lifecycle: the marker if it was `Sandboxed`, else `null`. The one seam a delete
+ * path reads so it can't hand-derive the marker wrong (#1811). A `Removed` input
+ * (already deleted) keeps its carried marker — idempotent under a re-delete guard.
  */
-export const restore = (_removed: Removed): EntityLifecycle => Live();
+export const sandboxedAtOf = (current: EntityLifecycle): Date | null =>
+	$match(current, {
+		Live: () => null,
+		Sandboxed: ({sandboxedAt}) => sandboxedAt,
+		Removed: ({sandboxedAt}) => sandboxedAt,
+	});
+
+/**
+ * `restore : Removed → Sandboxed | Live`. Defined **only** on `Removed` —
+ * restoring a `Live`/`Sandboxed` entity is not expressible because the parameter
+ * type excludes it. Restore is **sandbox-faithful** (#1811): content that was
+ * `Sandboxed` before removal returns to `Sandboxed` (its `sandboxedAt` preserved
+ * through the `Removed` state), and only content that was `Live` returns to `Live`.
+ * This closes the çaylak self-escape — a delete→restore round-trip can never clear
+ * a sandbox marker, so no self-service path reaches `Live`/the always-Live
+ * broadcast without a mod's `promote`. The removed audit is intentionally dropped;
+ * votes `Vote.clearTarget` wiped are not resurrected (ADR 0096 §4).
+ */
+export const restore = (removed: Removed): EntityLifecycle =>
+	removed.sandboxedAt !== null ? Sandboxed({sandboxedAt: removed.sandboxedAt}) : Live();
 
 /**
  * Construct the sandboxed state — the one constructor a çaylak create path uses to

@@ -174,6 +174,19 @@ export interface DeletePostResult {
 	deleted: boolean;
 }
 
+/**
+ * A restore's result: whether it acted, and — for the live-broadcast decision — the
+ * `sandboxedAt` the content landed back at (#1811). `null` ⇒ restored to `Live`
+ * (broadcast via `alwaysLive`); non-null ⇒ restored to the çaylak sandbox, so the
+ * mutation must suppress the live echo through `decidePublish`, matching the
+ * create-time #1205 gate. Never broadcast a sandboxed restore to a public topic.
+ */
+export interface RestorePostResult {
+	postId: string;
+	deleted: boolean;
+	sandboxedAt: Date | null;
+}
+
 /** Returns the normalized body (`null` for empty), or fails `PostBodyTooLong`. */
 const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
 	if (rawBody.length > POST_BODY_MAX) {
@@ -774,7 +787,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				message: `not authorized to mutate post ${input.postId}`,
 			});
 		}
-		if (Removal.isRemoved(Removal.fromColumns(meta))) {
+		const current = Removal.fromColumns(meta);
+		if (Removal.isRemoved(current)) {
 			return {postId: input.postId, deleted: false} satisfies DeletePostResult;
 		}
 
@@ -784,6 +798,10 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				removedAt: now,
 				removedBy: input.actorId,
 				reason: input.reason ?? new Removal.AuthorDeletion(),
+				// Preserve the pre-delete sandbox marker through the removal so a
+				// restore round-trips it faithfully (#1811) — a çaylak's sandboxed post
+				// stays sandboxed across delete→restore, never self-escaping to Live.
+				sandboxedAt: Removal.sandboxedAtOf(current),
 			}),
 		);
 		yield* Removal.removeEntity(removalSeq, {kind: "post", id: input.postId}, removed, now);
@@ -805,7 +823,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	const restorePost = Effect.fn("Pano.restorePost")(function* (input: DeletePostInput) {
 		const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 		if (!meta) {
-			return {postId: input.postId, deleted: false} satisfies DeletePostResult;
+			return {postId: input.postId, deleted: false, sandboxedAt: null} satisfies RestorePostResult;
 		}
 		if (meta.authorId !== input.actorId) {
 			return yield* new UnauthorizedPostMutation({
@@ -815,11 +833,15 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		}
 		const lifecycle = Removal.fromColumns(meta);
 		if (!Removal.isRemoved(lifecycle)) {
-			return {postId: input.postId, deleted: false} satisfies DeletePostResult;
+			return {postId: input.postId, deleted: false, sandboxedAt: null} satisfies RestorePostResult;
 		}
 
 		const now = new Date();
-		const live = Removal.toColumns(Removal.restore(lifecycle));
+		// Sandbox-faithful restore (#1811): `restore` returns `Sandboxed` iff the row
+		// was sandboxed before deletion. The persisted columns carry the marker, and
+		// the returned `sandboxedAt` drives the mutation's broadcast decision.
+		const restored = Removal.restore(lifecycle);
+		const live = Removal.toColumns(restored);
 		yield* Removal.restoreEntity(
 			removalSeq,
 			{kind: "post", id: input.postId, title: meta.title},
@@ -829,7 +851,11 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 
 		yield* persistPanoStats(now);
 
-		return {postId: input.postId, deleted: true} satisfies DeletePostResult;
+		return {
+			postId: input.postId,
+			deleted: true,
+			sandboxedAt: live.sandboxedAt,
+		} satisfies RestorePostResult;
 	});
 
 	const moderateRemovePost = Effect.fn("Pano.moderateRemovePost")(function* (input: {
@@ -838,7 +864,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		reportId: string;
 	}) {
 		const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
-		if (!meta || Removal.isRemoved(Removal.fromColumns(meta))) {
+		if (!meta) return {removed: false};
+		const current = Removal.fromColumns(meta);
+		if (Removal.isRemoved(current)) {
 			return {removed: false};
 		}
 
@@ -848,6 +876,10 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				removedAt: now,
 				removedBy: input.resolverId,
 				reason: new Removal.Moderated({reportId: input.reportId}),
+				// Preserve the pre-removal sandbox marker so a mod-restore round-trips to
+				// the pre-removal state, not Live (#1811). Promotion to Live is the mod
+				// `promote` path (#1206), never a restore side effect.
+				sandboxedAt: Removal.sandboxedAtOf(current),
 			}),
 		);
 		yield* Removal.removeEntity(removalSeq, {kind: "post", id: input.postId}, removed, now);

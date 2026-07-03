@@ -19,7 +19,7 @@ import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
-import {alwaysLive, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {
 	CommentNotFound,
@@ -394,14 +394,16 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
-			yield* pano.restorePost({postId: input.id, actorId: user.id});
+			const restored = yield* pano.restorePost({postId: input.id, actorId: user.id});
 			const page = yield* pano.getPost(input.id);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
-			// Restore re-enters already-public content (`Removed → Live`, ADR 0096 §4):
-			// Live by construction, no sandbox state to discharge → `alwaysLive` (#1280).
-			yield* live.post.feed.appendNode(post.id, {node: post}, alwaysLive);
+			// Sandbox-faithful restore (#1811): a çaylak's sandboxed post round-trips
+			// back to Sandboxed, so route the broadcast through the #1205/#1280 gate
+			// (decidePublish) instead of the always-Live hatch — a sandboxed restore is
+			// suppressed from the public feed; a Live restore broadcasts as before.
+			yield* live.post.feed.appendNode(post.id, {node: post}, decidePublish(restored.sandboxedAt));
 			return post;
 		}),
 	),
@@ -542,14 +544,18 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
 			const postId = yield* pano.lookupCommentPostId(input.id);
-			yield* pano.restoreComment({commentId: input.id, actorId: user.id});
+			const restored = yield* pano.restoreComment({commentId: input.id, actorId: user.id});
 			if (!postId) return null;
 			const [comment] = yield* pano.getCommentsByIds([input.id], {viewerId: user.id});
 			if (comment) {
 				const node = toComment(comment);
-				// Restore re-enters already-public content (`Removed → Live`, ADR 0096 §4):
-				// Live by construction, no sandbox state to discharge → `alwaysLive` (#1280).
-				yield* live.comment.thread(postId).appendNode(node.id, {node}, alwaysLive);
+				// Sandbox-faithful restore (#1811): a çaylak's sandboxed comment round-trips
+				// back to Sandboxed, so route the thread broadcast through the #1205/#1280
+				// gate — a sandboxed restore is suppressed from the viewer-blind thread
+				// topic; a Live restore broadcasts as before.
+				yield* live.comment
+					.thread(postId)
+					.appendNode(node.id, {node}, decidePublish(restored.sandboxedAt ?? null));
 			}
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;

@@ -67,6 +67,7 @@ import {
 	POST_BODY_MAX,
 	POST_TITLE_MAX,
 	type PostTagInput,
+	type RestorePostResult,
 	type SaveDraftInput,
 	type SaveDraftResult,
 	type SubmitPostInput,
@@ -105,6 +106,7 @@ export type {
 	PostSummaryRow,
 	PostTagInput,
 	PostTagRow,
+	RestorePostResult,
 	SaveDraftInput,
 	SaveDraftResult,
 	SubmitPostInput,
@@ -193,10 +195,14 @@ export class Pano extends Context.Service<
 			input: DeletePostInput,
 		) => Effect.Effect<DeletePostResult, UnauthorizedPostMutation>;
 
-		/** Un-remove a `Removed` post (ADR 0096 §4); re-enters search, votes stay wiped. */
+		/**
+		 * Un-remove a `Removed` post (ADR 0096 §4); re-enters search, votes stay wiped.
+		 * Sandbox-faithful (#1811): the result's `sandboxedAt` is non-null iff the post
+		 * returned to the çaylak sandbox, so the mutation can suppress the live echo.
+		 */
 		readonly restorePost: (
 			input: DeletePostInput,
-		) => Effect.Effect<DeletePostResult, UnauthorizedPostMutation>;
+		) => Effect.Effect<RestorePostResult, UnauthorizedPostMutation>;
 
 		/**
 		 * Moderator soft-delete (ADR 0098 §6) — the same 0096 substrate write as

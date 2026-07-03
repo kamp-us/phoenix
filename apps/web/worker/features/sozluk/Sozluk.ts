@@ -233,6 +233,13 @@ export interface DeleteDefinitionResult {
 	definitionId: string;
 	/** `true` if the row was soft-deleted; `false` on idempotent no-op. */
 	deleted: boolean;
+	/**
+	 * On a restore, the `sandboxedAt` the definition landed back at (#1811): `null` ⇒
+	 * restored to `Live` (broadcast `alwaysLive`); non-null ⇒ restored to the çaylak
+	 * sandbox, so the mutation suppresses the live echo via `decidePublish`. Absent on
+	 * a delete result.
+	 */
+	sandboxedAt?: Date | null;
 }
 
 export class Sozluk extends Context.Service<
@@ -944,7 +951,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					message: `not authorized to mutate definition ${input.definitionId}`,
 				});
 			}
-			if (Removal.isRemoved(Removal.fromColumns(definition))) {
+			const current = Removal.fromColumns(definition);
+			if (Removal.isRemoved(current)) {
 				return {
 					definitionId: input.definitionId,
 					deleted: false,
@@ -957,6 +965,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					removedAt: now,
 					removedBy: input.actorId,
 					reason: input.reason ?? new Removal.AuthorDeletion(),
+					// Preserve the pre-delete sandbox marker so a çaylak's sandboxed
+					// definition round-trips back to Sandboxed on restore, never
+					// self-escaping to Live (#1811).
+					sandboxedAt: Removal.sandboxedAtOf(current),
 				}),
 			);
 			yield* Removal.removeEntity(
@@ -999,8 +1011,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			}
 
 			const now = new Date();
-			// `Removal.restore : Removed → Live` clears the triad; votes wiped on
-			// removal are NOT resurrected (ADR 0096 §4), so the score cache stays 0.
+			// Sandbox-faithful restore (#1811): `restore` returns `Sandboxed` iff the row
+			// was sandboxed before deletion; the marker rides the persisted columns. Votes
+			// wiped on removal are NOT resurrected (ADR 0096 §4), so the score cache stays 0.
 			const live = Removal.toColumns(Removal.restore(lifecycle));
 			yield* Removal.restoreEntity(
 				removalSeq,
@@ -1012,7 +1025,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
 			yield* recomputeSozlukStats(now);
 
-			return {definitionId: input.definitionId, deleted: true} satisfies DeleteDefinitionResult;
+			return {
+				definitionId: input.definitionId,
+				deleted: true,
+				sandboxedAt: live.sandboxedAt,
+			} satisfies DeleteDefinitionResult;
 		});
 
 		const moderateRemoveDefinition = Effect.fn("Sozluk.moderateRemoveDefinition")(
@@ -1020,7 +1037,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				const definition = yield* run((db) =>
 					db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 				);
-				if (!definition || Removal.isRemoved(Removal.fromColumns(definition))) {
+				if (!definition) return {removed: false};
+				const current = Removal.fromColumns(definition);
+				if (Removal.isRemoved(current)) {
 					return {removed: false};
 				}
 
@@ -1030,6 +1049,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						removedAt: now,
 						removedBy: input.resolverId,
 						reason: new Removal.Moderated({reportId: input.reportId}),
+						// Preserve the pre-removal sandbox marker so a mod-restore round-trips
+						// to the pre-removal state, not Live (#1811); promotion is mod-only.
+						sandboxedAt: Removal.sandboxedAtOf(current),
 					}),
 				);
 				yield* Removal.removeEntity(
