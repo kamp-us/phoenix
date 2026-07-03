@@ -25,6 +25,7 @@ import {
 } from "../lifecycle/SandboxVisibility.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
+import type {VoterNotEligible} from "../vote/errors.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
 import {Vote} from "../vote/Vote.ts";
 import {
@@ -356,9 +357,11 @@ export class Sozluk extends Context.Service<
 			definitionId: string;
 		}) => Effect.Effect<{restored: boolean}>;
 
+		// `VoterNotEligible` (#1810): a çaylak newcomer's cast is rejected by the "earn to
+		// vote" gate in `Vote.castImpl` — cast path only. Retraction never raises it.
 		readonly voteDefinition: (
 			input: VoteDefinitionInput,
-		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
+		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound | VoterNotEligible>;
 
 		readonly retractDefinitionVote: (
 			input: VoteDefinitionInput,
@@ -1166,7 +1169,12 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const retractDefinitionVote = Effect.fn("Sozluk.retractDefinitionVote")(function* (
 			input: VoteDefinitionInput,
 		) {
-			return yield* applyVote(input, false);
+			// The tier gate fires on the cast direction only (`value: true`), so a retraction
+			// never raises `VoterNotEligible` — die if it somehow does, keeping this method's
+			// channel to `DefinitionNotFound`.
+			return yield* applyVote(input, false).pipe(
+				Effect.catchTag("vote/VoterNotEligible", (e) => Effect.die(e)),
+			);
 		});
 
 		return {

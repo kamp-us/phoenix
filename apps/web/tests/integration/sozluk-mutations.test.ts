@@ -67,6 +67,9 @@ const DEF_SELECT = ["id", "body", "score", "author", "authorId", "myVote"];
 beforeAll(async () => {
 	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
 	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", "davetsiz");
+	// `author` casts real definition votes below. Since #1810's "earn to vote" gate a fresh
+	// çaylak is rejected at cast, so promote it to yazar. `intruder` never votes.
+	await h.promoteToYazar(author.userId);
 });
 
 describe("sozluk mutations — definition.add", () => {

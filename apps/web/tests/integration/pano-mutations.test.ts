@@ -100,6 +100,11 @@ async function seedPost(input: {
 beforeAll(async () => {
 	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", `${NS}-yazar`);
 	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", `${NS}-davetsiz`);
+	// `author` casts votes below (post.vote / comment.vote). A fresh account is a çaylak
+	// and, since #1810's "earn to vote" gate, is rejected at cast — so promote it to yazar
+	// (matching its `-yazar` name). `intruder` never votes (unauthorized-mutation cases),
+	// so it stays a çaylak.
+	await h.promoteToYazar(author.userId);
 });
 
 describe("pano mutations — post.submit", () => {

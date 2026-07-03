@@ -25,6 +25,7 @@ import {POST_TAG_KINDS, type PostTagKind, tagLabel} from "../../../src/lib/panoT
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
+import type {VoterNotEligible} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
 import type {CommentConnectionPage, CommentRow} from "./comment-fields.ts";
@@ -219,7 +220,12 @@ export class Pano extends Context.Service<
 		/** Moderator restore (ADR 0098 §3) — reopens the report at the resolve layer. */
 		readonly moderateRestorePost: (input: {postId: string}) => Effect.Effect<{restored: boolean}>;
 
-		readonly voteOnPost: (input: VoteOnPostInput) => Effect.Effect<VoteOnPostResult, PostNotFound>;
+		// `VoterNotEligible` (#1810): a çaylak newcomer's cast is rejected — the "earn to vote"
+		// gate lives in `Vote.castImpl`, so it surfaces on the cast path only. Retraction never
+		// raises it (a newcomer holds no vote to retract), so `retractPostVote` keeps its channel.
+		readonly voteOnPost: (
+			input: VoteOnPostInput,
+		) => Effect.Effect<VoteOnPostResult, PostNotFound | VoterNotEligible>;
 
 		readonly retractPostVote: (
 			input: VoteOnPostInput,
@@ -257,9 +263,10 @@ export class Pano extends Context.Service<
 			commentId: string;
 		}) => Effect.Effect<{restored: boolean}>;
 
+		// `VoterNotEligible` (#1810) — see `voteOnPost`. Cast path only; retraction is exempt.
 		readonly voteOnComment: (
 			input: VoteOnCommentInput,
-		) => Effect.Effect<VoteOnCommentResult, CommentNotFound>;
+		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | VoterNotEligible>;
 
 		readonly retractCommentVote: (
 			input: VoteOnCommentInput,

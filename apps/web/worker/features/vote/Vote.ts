@@ -22,7 +22,7 @@ import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.
 import * as schema from "../../db/drizzle/schema.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {type TargetRecordMeta, targetTable} from "../../db/target-table.ts";
-import {VoteTargetNotFound, VoteTargetSandboxed} from "./errors.ts";
+import {VoterNotEligible, VoteTargetNotFound, VoteTargetSandboxed} from "./errors.ts";
 
 // Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
 // that prefer importing it from `./Vote`.
@@ -76,19 +76,46 @@ export class KarmaBump extends Context.Service<KarmaBump, KarmaBumpService>()(
 	"@kampus/vote/KarmaBump",
 ) {}
 
+/**
+ * The voter-eligibility capability as Vote consumes it: given the voter's account id,
+ * is that account **above the çaylak newcomer floor** (a promoted/trusted account)?
+ * Voting on live content is an earned privilege ("earn to vote", #1810) — a still-newcomer
+ * çaylak (or a `visitor`) must be rejected at the single `Vote.castImpl` choke point before
+ * any score/karma write.
+ *
+ * Owned by Vote for the SAME dependency-inversion reason as {@link KarmaBump}: Vote is a
+ * shared low-level service that must not import a feature directory, so it declares the
+ * boolean predicate it needs and the real tier comparison — the `authorshipLadder`
+ * (`visitor < çaylak < yazar`, ADR 0107 §4) read against `Kunye.tierOf` — arrives at layer
+ * composition (`fate/layers.ts`). Keeping the tier *vocabulary* at that seam (not in Vote)
+ * is what lets the ladder move — a new intermediate rank, or a karma-floor variant — without
+ * touching Vote's internals; this contract is the renegotiation point.
+ */
+export interface VoterStandingService {
+	readonly isAboveNewcomer: (voterId: string) => Effect.Effect<boolean>;
+}
+
+/** The contract Vote OWNS for the voter-tier gate of a cast (dependency inversion). */
+export class VoterStanding extends Context.Service<VoterStanding, VoterStandingService>()(
+	"@kampus/vote/VoterStanding",
+) {}
+
 export class Vote extends Context.Service<
 	Vote,
 	{
 		/**
-		 * Score + credit karma for a vote on a **live** target. Rejects a still-sandboxed
-		 * target with {@link VoteTargetSandboxed}: sandboxed çaylak content is votable ONLY
-		 * through {@link castOnSandboxed}, past the divan gate (#1288). This is the surface the
-		 * inline sözlük/pano vote paths delegate to, so an inline voter can never score
-		 * sandboxed content.
+		 * Score + credit karma for a vote on a **live** target. Two eligibility gates guard the
+		 * write: the *target*-liveness gate rejects a still-sandboxed target with
+		 * {@link VoteTargetSandboxed} (sandboxed çaylak content is votable ONLY through
+		 * {@link castOnSandboxed}, past the divan gate, #1288); the *voter*-tier gate rejects a
+		 * newcomer (çaylak/visitor) voter with {@link VoterNotEligible} — voting on live content
+		 * is earned above the çaylak floor ("earn to vote", #1810). This is the surface the inline
+		 * sözlük/pano vote paths delegate to, so an inline voter can neither score sandboxed
+		 * content nor cast before they are promoted.
 		 */
 		readonly cast: (
 			input: VoteInput,
-		) => Effect.Effect<VoteResult, VoteTargetNotFound | VoteTargetSandboxed>;
+		) => Effect.Effect<VoteResult, VoteTargetNotFound | VoteTargetSandboxed | VoterNotEligible>;
 		/**
 		 * The divan-authorized cast (#1288): identical to {@link cast} but ACCEPTS a sandboxed
 		 * target. The only caller is the `features/divan` vote mutation, which reaches this
@@ -130,6 +157,7 @@ export const VoteLive = Layer.effect(Vote)(
 		// signatures carry domain errors only and `R` stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const karmaBump = yield* KarmaBump;
+		const voterStanding = yield* VoterStanding;
 
 		// Per-target metadata lookup. If the row is missing or removed we
 		// surface `VoteTargetNotFound` rather than letting the batch fail with
@@ -180,15 +208,41 @@ export const VoteLive = Layer.effect(Vote)(
 			return new Set(rows.map((r) => r.targetId));
 		});
 
-		// Shared cast body. `allowSandboxed` is the ONE eligibility difference between the
-		// public `cast` (false → reject sandboxed) and `castOnSandboxed` (true → accept) — an
-		// internal flag, never exposed: the public surface is two named methods so a caller
-		// can't pass the wrong regime, and the real authorization for the sandboxed path is
-		// the divan gate at the resolver (#1288), not this boolean.
+		// Shared cast body carrying the TWO internal eligibility regimes, never exposed — the
+		// public surface is two named methods so a caller can't pass the wrong regime:
+		//   • `allowSandboxed`   — the *target*-liveness regime: `cast` (false → reject sandboxed)
+		//     vs `castOnSandboxed` (true → accept), the divan-authorized path (#1288).
+		//   • `requireVoterTier` — the *voter*-tier regime ("earn to vote", #1810): `cast` (true →
+		//     a newcomer voter is rejected) vs `castOnSandboxed` (false → exempt: the divan gate
+		//     at the resolver already admits only yazar/mod, so re-gating tier here would be
+		//     redundant and would wrongly deny a divan-authorized mod).
+		// The real authorization for the sandboxed path is the divan gate at the resolver, not
+		// these booleans.
 		const castImpl = Effect.fn("Vote.castImpl")(function* (
 			input: VoteInput,
 			allowSandboxed: boolean,
+			requireVoterTier: boolean,
 		) {
+			// Voter-tier gate — the SINGLE choke point for all three inline cast paths (pano
+			// post/comment + sözlük definition all reach here via `cast`). Runs before any read
+			// of the target so a newcomer's cast is refused loudly (a typed `VoterNotEligible`,
+			// wire `FORBIDDEN`), never a silent no-op. "Above the çaylak floor" is resolved by
+			// the `VoterStanding` seam (discharged by Kunye at `fate/layers.ts`), keeping the
+			// tier vocabulary out of Vote. Gated on `input.value` (the CAST direction only): a
+			// retraction removes influence, never adds it, and a newcomer never cleared the gate
+			// to hold a vote worth retracting — so retraction stays open (and the retract
+			// mutations' error unions need no `VoterNotEligible` arm).
+			if (requireVoterTier && input.value) {
+				const eligible = yield* voterStanding.isAboveNewcomer(input.userId);
+				if (!eligible) {
+					return yield* new VoterNotEligible({
+						voterId: input.userId,
+						need: "yazar",
+						message: `voter ${input.userId} is below the vote-eligibility floor (must be promoted above çaylak)`,
+					});
+				}
+			}
+
 			const meta = yield* loadMeta(input.targetKind, input.targetId);
 
 			if (meta.sandboxed && !allowSandboxed) {
@@ -237,11 +291,13 @@ export const VoteLive = Layer.effect(Vote)(
 
 		return {
 			readMine,
-			cast: (input: VoteInput) => castImpl(input, false),
+			// `cast`: reject a sandboxed target AND require the voter be above the çaylak floor.
+			cast: (input: VoteInput) => castImpl(input, false, true),
 			castOnSandboxed: (input: VoteInput) =>
-				// `castImpl` with the sandbox gate open never surfaces VoteTargetSandboxed, so the
-				// divan path's error channel is VoteTargetNotFound only (matches the interface).
-				castImpl(input, true) as Effect.Effect<VoteResult, VoteTargetNotFound>,
+				// `castImpl` with the sandbox gate open (and the voter-tier gate OFF — the divan
+				// resolver already admits only yazar/mod) never surfaces VoteTargetSandboxed or
+				// VoterNotEligible, so the divan path's error channel is VoteTargetNotFound only.
+				castImpl(input, true, false) as Effect.Effect<VoteResult, VoteTargetNotFound>,
 			clearTarget: Effect.fn("Vote.clearTarget")(function* (kind: TargetKind, targetId: string) {
 				yield* batch((db) => buildClearTargetStatements(db, kind, targetId));
 			}),

@@ -6,6 +6,7 @@
  * `Effect.catchTag` (→ `DefinitionNotFound` / `PostNotFound` / `CommentNotFound`),
  * so fate handlers only ever emit the feature-level not-found errors.
  */
+import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 import {TargetKindSchema} from "../../db/target-kind.ts";
 
@@ -34,4 +35,27 @@ export class VoteTargetSandboxed extends Schema.TaggedErrorClass<VoteTargetSandb
 		targetId: Schema.String,
 		message: Schema.String,
 	},
+) {}
+
+/**
+ * The **voter** is not yet eligible to cast — their account tier is at or below the
+ * çaylak newcomer floor, and voting on live content is an earned privilege ("earn to
+ * vote", the #1810 containment). Unlike {@link VoteTargetSandboxed} (a *target*-liveness
+ * gate that reads as not-found), this is a *voter*-tier rejection and DOES reach the wire
+ * as a visible `FORBIDDEN` — the same "the ladder is a visible progression" idiom as
+ * `kunye/RequiresLevel`, so a çaylak sees a clear "vote once promoted" denial rather than a
+ * silent no-op or a mislabelled not-found. Carries the `need`ed tier so the surface can name
+ * the bar. The gate is the SINGLE choke point in `Vote.castImpl` (the `requireVoterTier`
+ * regime), covering all three inline cast paths — pano post/comment + sözlük definition —
+ * and is NOT applied on the divan-authorized `castOnSandboxed` path (a yazar/mod is already
+ * above the floor and the divan gate is the authorization there, #1288).
+ */
+export class VoterNotEligible extends Schema.TaggedErrorClass<VoterNotEligible>()(
+	"vote/VoterNotEligible",
+	{
+		voterId: Schema.String,
+		need: Schema.String,
+		message: Schema.String,
+	},
+	{[FateWireCode]: "FORBIDDEN"},
 ) {}

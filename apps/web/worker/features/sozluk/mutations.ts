@@ -15,6 +15,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {VoterNotEligible} from "../vote/errors.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -103,7 +104,9 @@ export const mutations = {
 		{
 			input: DefinitionIdInput,
 			type: DefinitionView,
-			error: Schema.Union([Unauthorized, DefinitionNotFound]),
+			// `VoterNotEligible` (wire `FORBIDDEN`) — the "earn to vote" gate (#1810): a çaylak
+			// newcomer is rejected at cast. Retraction is exempt (nothing cast to retract).
+			error: Schema.Union([Unauthorized, DefinitionNotFound, VoterNotEligible]),
 		},
 		Effect.fn("definition.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;

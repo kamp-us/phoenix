@@ -133,6 +133,16 @@ export interface Harness {
 	 */
 	execD1(sql: string, params?: unknown[]): Promise<number>;
 	/**
+	 * Promote an account to `yazar` by flipping its `user.tier` column directly over the
+	 * same setup-only D1 REST seam as `execD1` — the test-harness analogue of the server's
+	 * `Pasaport.promoteToYazar` (there is no public promotion mutation to drive black-box).
+	 * Needed since #1810's "earn to vote" gate: a freshly signed-up account is a `çaylak`
+	 * (the column default) and is REJECTED at cast, so any test that must land a real vote
+	 * (seeding a score, asserting the vote round-trip) promotes its voter first. Setup-only,
+	 * never an assertion.
+	 */
+	promoteToYazar(userId: string): Promise<void>;
+	/**
 	 * This stage's real D1 REST coordinates — `{accountId, databaseId}` — for a
 	 * setup tool that must drive D1 over the same Cloudflare REST seam off the
 	 * worker binding (the fts-backfill CLI's `makeD1RestFromEnv`, #645). Read straight
@@ -495,10 +505,18 @@ export function harness(
 
 	// Grow-only pool of voter cookies, sized on demand. Each voter is a distinct
 	// session, so `voterPool[0..n)` are n distinct up-votes for a single target.
+	// Each is PROMOTED to yazar right after signup: a fresh account is a çaylak and,
+	// since #1810's "earn to vote" gate, would be rejected at cast — a seed voter exists
+	// solely to realize a score, so it must be above the newcomer floor.
 	const voterPool: string[] = [];
 	const voters = async (n: number): Promise<string[]> => {
 		while (voterPool.length < n) {
-			const {cookie} = await signUp(`${nextSeedId()}@vote.local`, "voterpass-voterpass", "voter");
+			const {cookie, userId} = await signUp(
+				`${nextSeedId()}@vote.local`,
+				"voterpass-voterpass",
+				"voter",
+			);
+			await promoteToYazar(userId);
 			voterPool.push(cookie);
 		}
 		return voterPool.slice(0, n);
@@ -672,6 +690,13 @@ export function harness(
 
 	const execD1: Harness["execD1"] = (sql, params = []) => runD1Query(sql, params);
 
+	const promoteToYazar: Harness["promoteToYazar"] = async (userId) => {
+		const changes = await runD1Query(`UPDATE "user" SET tier = 'yazar' WHERE id = ?`, [userId]);
+		if (changes !== 1) {
+			throw new Error(`promoteToYazar(${userId}): expected 1 row updated, got ${changes}`);
+		}
+	};
+
 	const d1Target: Harness["d1Target"] = async () => getD1Target();
 
 	// A dedicated-stage `/fate/live` open can draw a cold edge well past the `req` loop's
@@ -710,6 +735,7 @@ export function harness(
 		touchTerm,
 		setLastActivityAt,
 		execD1,
+		promoteToYazar,
 		d1Target,
 		openSse,
 		liveControl,
