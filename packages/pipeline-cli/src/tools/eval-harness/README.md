@@ -30,7 +30,7 @@ slice ([#1848](https://github.com/kamp-us/phoenix/issues/1848)) shipped the corp
 ## The graded oracle ([#1849](https://github.com/kamp-us/phoenix/issues/1849))
 
 `gradeEntry(entry, artifact): Grade` (`oracle.ts`) is the per-corpus-entry quality grade. ADR
-[0112](../../../../.decisions/0112-token-measurement-no-quality-compromise-methodology.md) §3
+[0112](../../../../../.decisions/0112-token-measurement-no-quality-compromise-methodology.md) §3
 defines a per-stage output-quality oracle — a reproducible pass/fail that an optimized stage
 reproduced the **same decision artifact** as the baseline — as a *binary* over one frozen input.
 This generalizes it to grade **each** corpus entry, so the report slice can compute a pass-*rate*
