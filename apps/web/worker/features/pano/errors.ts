@@ -149,3 +149,15 @@ export class DraftsDisabled extends Schema.TaggedErrorClass<DraftsDisabled>()(
 	{message: Schema.String},
 	{[FateWireCode]: "DRAFTS_DISABLED"},
 ) {}
+
+/**
+ * Reactions (emoji tepki) are reachable only when the `phoenix-reactions` flag is
+ * on. The server-side gate raises this when a react mutation runs with the flag
+ * off, so the dark path is unreachable even if a client bypasses the (not-yet-
+ * shipped) UI. See issue #1863, epic #1840 (dark-ship per ADR 0083).
+ */
+export class ReactionsDisabled extends Schema.TaggedErrorClass<ReactionsDisabled>()(
+	"pano/ReactionsDisabled",
+	{message: Schema.String},
+	{[FateWireCode]: "REACTIONS_DISABLED"},
+) {}

@@ -24,6 +24,7 @@ import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
+import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
@@ -33,6 +34,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import type {ReactionTargetNotFound} from "../reaction/errors.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
 import {syncPostSearch} from "../search/fts-sync.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
@@ -53,6 +55,7 @@ import {postVisibleTo, postVisibleWhere} from "./PostVisibility.ts";
 import type {PersistPanoStats} from "./pano-stats.ts";
 import {
 	type PostConnectionPage,
+	type PostSummaryRow,
 	type PostTagRow,
 	parseTags,
 	toPostPage,
@@ -138,6 +141,29 @@ export interface VoteOnPostResult {
 	tags: PostTagRow[];
 	createdAt: Date;
 	myVote: boolean;
+	changed: boolean;
+}
+
+export interface ReactToPostInput {
+	postId: string;
+	userId: string;
+	/**
+	 * The reaction intent: a curated-palette member sets/changes the user's single
+	 * reaction; `null` retracts it (toggle off). Already decoded against
+	 * `ReactionEmojiSchema` at the wire boundary, so the service never sees a
+	 * non-palette string.
+	 */
+	emoji: ReactionEmoji | null;
+}
+
+/**
+ * `reactToPost` re-resolves the affected post like a read (the `post.save` idiom),
+ * so the returned entity carries the freshly-stamped `reactions` aggregate the
+ * mutation echoes back. `changed` is the service's idempotency signal (a re-react
+ * of the same emoji, or a retract-when-none, is `false`).
+ */
+export interface ReactToPostResult {
+	post: PostSummaryRow;
 	changed: boolean;
 }
 
@@ -977,6 +1003,47 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		return yield* applyPostVote(input, true);
 	});
 
+	// Reaction delegation — the karma-free, ungated twin of `voteOnPost` (#1863).
+	// Delegates the write to `Reaction.react` (kind `post`), translates the internal
+	// `ReactionTargetNotFound` into the wire-facing `PostNotFound` (the vote path's
+	// `translateVoteMiss` analogue), then RE-RESOLVES the post via the same batched
+	// `getPostsByIds` read as `post.save` so the returned entity carries the fresh
+	// `reactions` aggregate + `myReaction`. Unlike `voteOnPost` there is NO tier arm
+	// (`VoterNotEligible`) and NO karma path: a çaylak may react, and nothing writes
+	// karma — the settled ungated/social-only model (epic #1840, ADR-referenced).
+	const reactToPost = Effect.fn("Pano.reactToPost")(function* (input: ReactToPostInput) {
+		const result = yield* reactionSvc
+			.react({
+				userId: input.userId,
+				targetKind: "post",
+				targetId: input.postId,
+				emoji: input.emoji,
+			})
+			.pipe(
+				Effect.catchTag(
+					"reaction/ReactionTargetNotFound",
+					(_: ReactionTargetNotFound) =>
+						new PostNotFound({
+							postId: input.postId,
+							message: `post ${input.postId} not found`,
+						}),
+				),
+			);
+
+		// Re-resolve like a read so the echoed entity carries the freshly-stamped
+		// `reactions` aggregate (counts + the viewer's own `myReaction`). The react
+		// write already asserted the target is live, so a missing row here is a raced
+		// removal — surface it as `PostNotFound`, same as `post.save`.
+		const [row] = yield* getPostsByIds([input.postId], {viewerId: input.userId});
+		if (!row) {
+			return yield* new PostNotFound({
+				postId: input.postId,
+				message: `post ${input.postId} not found`,
+			});
+		}
+		return {post: row, changed: result.changed} satisfies ReactToPostResult;
+	});
+
 	const retractPostVote = Effect.fn("Pano.retractPostVote")(function* (input: VoteOnPostInput) {
 		// The shared body's channel carries `VoterNotEligible` because `Vote.cast`'s type
 		// does — but the tier gate fires on the CAST direction only (`value: true`), so a
@@ -1003,5 +1070,6 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		moderateRestorePost,
 		voteOnPost,
 		retractPostVote,
+		reactToPost,
 	};
 };

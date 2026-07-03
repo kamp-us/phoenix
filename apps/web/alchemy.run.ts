@@ -54,6 +54,7 @@ import {
 	panoOptimisticCommentDeleteFlag,
 	panoOptimisticPostDeleteFlag,
 	panoOptimisticSubmitFlag,
+	reactionsFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
@@ -109,6 +110,9 @@ export default Alchemy.Stack(
 		// The moderation-queue raporlar surface dark-ship flag, default-off (#1701) —
 		// the moderator-only queue view inside /divan gates behind this key.
 		yield* modQueueFlag(flagship.appId);
+		// The reactions (emoji tepki) dark-ship flag, default-off (#1863, epic #1840) —
+		// the single seam the whole reaction feature gates behind until a human release.
+		yield* reactionsFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

@@ -123,3 +123,15 @@ export const PHOENIX_OPTIMISTIC_DEFINITION_ADD = "phoenix-optimistic-definition-
  * sibling `comment.delete` slice is separate).
  */
 export const PHOENIX_OPTIMISTIC_DEFINITION_DELETE = "phoenix-optimistic-definition-delete";
+
+/**
+ * Reactions (emoji tepki) dark-ship flag (#1863, epic #1840). The SINGLE seam the
+ * whole reaction feature gates behind — the react/change/retract mutations and the
+ * `reactions` view field on every surface (pano post/comment, sözlük definition)
+ * reuse this one key rather than minting a per-surface flag, so one human flip
+ * releases the whole ungated social-signal affordance. Default-off so the feature
+ * reaches production dark until a human flips it at release (ADR 0083). Its OWN
+ * cross-cutting (`phoenix`) key — the template spans both products, mirroring the
+ * `phoenix-authorship-loop` / `phoenix-bildirim` shared-seam precedent.
+ */
+export const PHOENIX_REACTIONS = "phoenix-reactions";
