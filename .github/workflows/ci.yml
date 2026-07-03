@@ -85,12 +85,22 @@ jobs:
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
             (github.event_name == 'push' ||
              contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))) }}
+      # e2e is DELIBERATELY the ONE gating job NOT ORed-in on `merge_group` — it is
+      # the opposite stance of check/integration/packages/workflows above (which DO
+      # OR in `merge_group` to run the full gate on the batch, because they need no
+      # deploy). e2e alone awaits a live preview URL + D1 id from deploy.yml, and
+      # deploy.yml has NO `merge_group` trigger (only `push: [main]` + `pull_request`),
+      # so a batch can't produce a preview — e2e would await one forever, time out,
+      # and red `ci-required`, ejecting the whole batch (ADR 0132; run 28645439324).
+      # e2e already gated every PR in the `pull_request` context (where deploy.yml
+      # runs), so leaving `e2e_required == false` on `merge_group` skips it on the
+      # batch (→ green legit-skip in ci-required) without losing PR-time coverage.
+      # The pull_request-context requiredness below is unchanged.
       e2e_required: >-
-        ${{ github.event_name == 'merge_group' ||
-            (steps.filter.outputs.e2e == 'true' &&
+        ${{ steps.filter.outputs.e2e == 'true' &&
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
             github.event_name == 'pull_request' &&
-            contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) }}
+            contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) }}
       # `packages-tests` runs the workspace `packages/**` vitest suites (#760). Its
       # single-sourced required-ness is JUST the `packages` path filter — the suites
       # are creds-free node-pool unit runs (no fork/author guard, unlike
