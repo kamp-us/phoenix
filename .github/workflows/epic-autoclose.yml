@@ -82,6 +82,9 @@ jobs:
           #    sub_issues_summary undercounts under mixed open/closed children). Refuse to
           #    act on an empty child set — an epic with no linked children must never be
           #    auto-closed on a spurious trigger (fail-closed, ADR 0092).
+          #    LIMITATION: this closes NATIVE-sub-issue epics only (plan-epic-born, linked via
+          #    POST /issues/<epic>/sub_issues). A hand-split / body-linked epic has an empty
+          #    native child set → this guard leaves it open → it needs a manual hand-close.
           CHILDREN=$(gh api --paginate "repos/$REPO/issues/$EPIC/sub_issues?per_page=100")
           TOTAL=$(jq -s 'add // [] | length' <<<"$CHILDREN")
           if [ "$TOTAL" -eq 0 ]; then
