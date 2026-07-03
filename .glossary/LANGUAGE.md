@@ -283,7 +283,7 @@ The Turkish product/brand nouns this repo uses:
 
 ## See also
 
-- [`.decisions/`](../.decisions/index.md) — the *why* and the history behind every term
+- [`.decisions/`](../.decisions/) — the *why* and the history behind every term
   here (an ADR is the source for each phoenix structural term).
 - [`.patterns/`](../.patterns/index.md) — how the current code is shaped (the loader
   contract, the test seams, the DO wiring).
