@@ -10,7 +10,7 @@ This file **churns** — it lags shipped surfaces over time as features land and
 names move. It is maintained incrementally (not hand-frozen); when the code and
 this file disagree, the code is authoritative and this file is the doc to fix.
 
-The *why* and binding decisions live in [`.decisions/`](../.decisions/index.md);
+The *why* and binding decisions live in [`.decisions/`](../.decisions/);
 how the current code is shaped lives in [`.patterns/`](../.patterns/index.md).
 This file names the *what*.
 

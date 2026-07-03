@@ -413,14 +413,13 @@ Run each, scoped to the files the PR touches:
      (the why belongs in `.decisions/`).
    - **Prose** (README and friends) states current-state-for-builders, not retired
      context (CLAUDE.md "Doc surfaces").
-2. **Index row.** For an **ADR**, do **not** require an `.decisions/index.md` row in the
-   PR — that index is generated output regenerated and committed **on merge to main**, not
-   per-PR (ADR [0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md) / issue #1492),
-   so an ADR PR is purely additive and a **missing or stale index row is expected, not a
-   FAIL**. Verify instead that the ADR file's **frontmatter `status`** is correct (it is the
-   source the on-merge generator renders into the row); an `index.md` row committed in an ADR
-   PR is a non-blocking smell to flag (it reintroduces the conflict surface #1492 removed),
-   not a FAIL. A new **pattern** still has a hand-maintained row in
+2. **Index row.** For an **ADR**, there is **no** committed `.decisions/index.md` (ADR
+   [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md)) —
+   discovery is ambient, derived from frontmatter, so an ADR PR is purely additive and a
+   missing index is correct, never a FAIL. Verify instead that the ADR file's **frontmatter
+   `status`** is correct (it is the source the ambient `id · title · status` map renders); an
+   `.decisions/index.md` file **committed** in an ADR PR is a FAIL — it reintroduces the
+   deleted committed index. A new **pattern** still has a hand-maintained row in
    [`.patterns/index.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/index.md)
    (that index is not generated) — verify the row is in the diff or already present and
    consistent, not merely assumed.

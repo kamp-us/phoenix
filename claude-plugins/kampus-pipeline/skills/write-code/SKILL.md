@@ -1734,9 +1734,10 @@ not a PR.
 A decision issue asks for a settled, recorded technical choice — not code. Resolve it,
 then **record it via the in-repo `/adr` skill** (at `../adr/SKILL.md` —
 read it): it writes one decision per file into `.decisions/NNNN-slug.md` (Context /
-Decision / Consequences), appends a row to `.decisions/index.md`, and follows the
-supersede rules for any ADR it replaces. The ADR file + index row land on a branch and
-go in via a PR the same as code (so `review-code` can still gate it).
+Decision / Consequences) and follows the supersede rules for any ADR it replaces. There is
+no committed index (ADR 0126) — the ADR PR is purely additive: it lands the new file (plus
+the superseded file's status edit) on a branch and goes in via a PR the same as code (so
+`review-code` can still gate it).
 
 Then close the loop on the issue:
 

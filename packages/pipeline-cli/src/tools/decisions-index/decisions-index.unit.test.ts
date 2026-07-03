@@ -1,6 +1,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
 	type AdrFile,
+	buildCompact,
 	buildIndex,
 	DuplicateIdError,
 	FrontmatterError,
@@ -10,6 +11,7 @@ import {
 	numberFromFile,
 	parseAdrFile,
 	parseFrontmatter,
+	renderCompact,
 	renderIndex,
 	sortEntries,
 } from "./decisions-index.ts";
@@ -180,6 +182,45 @@ describe("renderIndex — canonical markdown", () => {
 			parseAdrFile(adr("0003", "T", "superseded by [0009](0009-x.md)", "2026-05-16")),
 		]);
 		assert.include(md, "| superseded by [0009](0009-x.md) |");
+	});
+});
+
+describe("renderCompact — the ambient map (ADR 0126)", () => {
+	it("emits one line per ADR (id · title · status), sorted ascending by id", () => {
+		const entries = [
+			adr("0002", "Second", "proposed", "2026-05-10", "second"),
+			adr("0001", "First", "accepted", "2026-05-09", "first"),
+		].map(parseAdrFile);
+		assert.strictEqual(renderCompact(entries), "0001 · First · accepted\n0002 · Second · proposed");
+	});
+
+	it("renders inline-markdown status verbatim (linked supersede)", () => {
+		const line = renderCompact([
+			parseAdrFile(adr("0003", "T", "superseded by [0009](0009-x.md)", "2026-05-16")),
+		]);
+		assert.strictEqual(line, "0003 · T · superseded by [0009](0009-x.md)");
+	});
+
+	it("has no committed-file dependency — derives purely from entries", () => {
+		assert.strictEqual(renderCompact([]), "");
+	});
+});
+
+describe("buildCompact — end-to-end from raw files", () => {
+	it("parses and folds the same duplicate-id guard as buildIndex", () => {
+		const files: ReadonlyArray<AdrFile> = [
+			{file: "0064-a.md", text: adr("0064", "a", "accepted", "d").text},
+			{file: "0064-b.md", text: adr("0064", "b", "accepted", "d").text},
+		];
+		assert.throws(() => buildCompact(files), DuplicateIdError);
+	});
+
+	it("emits the compact map from raw ADR files", () => {
+		const map = buildCompact([
+			adr("0001", "First", "accepted", "2026-05-09", "first"),
+			adr("0002", "Second", "accepted", "2026-05-10", "second"),
+		]);
+		assert.strictEqual(map, "0001 · First · accepted\n0002 · Second · accepted");
 	});
 });
 

@@ -118,20 +118,19 @@ view`, fail-closed (#408). This closed the last `10/11 → 11/11` gap — the fo
 [#362](https://github.com/kamp-us/phoenix/issues/362) that ADR 0062 §3 deferred — and was
 proven end-to-end against a real foreign repo (#368).
 
-The **`adr`** skill is portable on the same shape. Its index-regeneration step (which
-rewrites `.decisions/index.md` from each ADR's front-matter, ADR
-[0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md))
-runs the **`pipeline-cli decisions-index generate`** subcommand (ADR
-[0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md),
-which supersedes the per-package `pnpm dlx` fallback of ADR
-[0076](https://github.com/kamp-us/phoenix/blob/main/.decisions/0076-decisions-index-npm-publish-automated-release.md)):
-the SessionStart-installed `@kampus/pipeline-cli` is invoked the same way in phoenix and a
-foreign install. This closed the
-[#423](https://github.com/kamp-us/phoenix/issues/423) caveat (the regen previously shelled
-out to a workspace-only `pnpm --filter`, which silently no-ops outside phoenix). The CLI
-operates on the local `.decisions/` tree, so it needs no repo resolution. Validated
-end-to-end in a real non-phoenix repo (#432): `generate` regenerated a correct index and
-`check` gated a stale one — no `--filter` no-op, no `ERR_MODULE_NOT_FOUND`.
+The **`adr`** skill is portable on the same shape. There is no committed
+`.decisions/index.md` (ADR
+[0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md),
+supersedes 0066's storage half): discovery is ambient — the **`pipeline-cli decisions-index
+compact`** subcommand (ADR
+[0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md))
+emits the one-line-per-ADR map (`id · title · status`) from frontmatter to stdout, injected
+by a SessionStart hook (#1728), with `ls .decisions/` + frontmatter as the fallback. The
+SessionStart-installed `@kampus/pipeline-cli` is invoked the same way in phoenix and a
+foreign install; the CLI operates on the local `.decisions/` tree, so it needs no repo
+resolution. On a PR, `decisions-index validate` remains the number-lock backstop (duplicate
+/ mismatched `id` — #1471). The ADR PR is purely additive — it adds only the new file (plus
+the superseded file's status edit), never a regenerated index.
 
 ### Validating portability in a foreign repo
 
