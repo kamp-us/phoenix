@@ -25,6 +25,7 @@ import {DivanRoster} from "../components/divan/DivanRoster";
 import {shouldRenderDivanPage} from "../components/divan/divanGating";
 import {Raporlar} from "../components/divan/Raporlar";
 import {shouldShowRaporlar} from "../components/divan/raporlarGating";
+import {TriageLoop} from "../components/divan/TriageLoop";
 import {Screen} from "../fate/Screen";
 import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_MOD_QUEUE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
@@ -62,6 +63,10 @@ function DivanWorkspace() {
 	const raporlarVisible = shouldShowRaporlar(modQueueOn, me?.isModerator ?? false);
 	const [section, setSection] = useState<"caylaklar" | "raporlar">("caylaklar");
 	const showRaporlarPane = raporlarVisible && section === "raporlar";
+	// The triage loop is the product; the grid is its Esc fallback (#1703, ADR 0138).
+	// Entering the raporlar section always starts in the loop; Esc's outermost rung
+	// de-escalates to the grid without leaving the section.
+	const [raporlarMode, setRaporlarMode] = useState<"loop" | "grid">("loop");
 
 	return (
 		<div className="kp-divan" data-testid="divan-page">
@@ -89,7 +94,10 @@ function DivanWorkspace() {
 							type="button"
 							className="kp-divan__nav-tab"
 							aria-current={section === "raporlar" ? "true" : undefined}
-							onClick={() => setSection("raporlar")}
+							onClick={() => {
+								setSection("raporlar");
+								setRaporlarMode("loop");
+							}}
 							data-testid="divan-nav-raporlar"
 						>
 							raporlar
@@ -103,7 +111,11 @@ function DivanWorkspace() {
 							fallback={<p className="kp-divan__loading">yükleniyor…</p>}
 							error={({code}) => <AccessError code={code} />}
 						>
-							<Raporlar />
+							{raporlarMode === "loop" ? (
+								<TriageLoop onExit={() => setRaporlarMode("grid")} />
+							) : (
+								<Raporlar />
+							)}
 						</Screen>
 					</section>
 				) : (

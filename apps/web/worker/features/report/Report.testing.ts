@@ -1,5 +1,5 @@
 /**
- * `makeReportStub` — the shared `Report` test double. Defaults every one of the 7
+ * `makeReportStub` — the shared `Report` test double. Defaults every one of the
  * `Report` methods to fail-on-contact (`Effect.die`) and takes a partial override
  * of the method(s) under test, returning the `Layer.succeed(Report, …)` layer. One
  * place the interface shape lives — adding a method to `Report` is a single edit
@@ -29,6 +29,8 @@ const failOnContact: ReportShape = {
 	reopenForTarget: die("reopenForTarget"),
 	lookupReportTarget: die("lookupReportTarget"),
 	firstOpenReportId: die("firstOpenReportId"),
+	countRemovalsByAuthors: die("countRemovalsByAuthors"),
+	reporterDiversity: die("reporterDiversity"),
 };
 
 export const makeReportStub = (overrides: Partial<ReportShape> = {}): Layer.Layer<Report> =>

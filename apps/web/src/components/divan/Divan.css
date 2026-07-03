@@ -336,3 +336,159 @@
 	font: var(--t-body-sm);
 	color: var(--text-secondary);
 }
+
+/* the triage loop (#1703, ADR 0138) — the single-item keyboard hero. One target
+   central at a time; state carried by text + shape (the HUD position, the reputation
+   copy, the confirm sheet), never color alone. Desktop-first. */
+.kp-triage {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.kp-triage__hud {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: var(--s-2);
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.kp-triage__keys {
+	text-transform: lowercase;
+}
+
+.kp-triage__card {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+	padding: var(--s-4);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface-raised);
+}
+
+.kp-triage__card-head {
+	display: flex;
+	align-items: baseline;
+	gap: var(--s-2);
+	flex-wrap: wrap;
+}
+
+.kp-triage__kind {
+	font: var(--t-meta);
+	font-weight: 600;
+	color: var(--text-secondary);
+	text-transform: lowercase;
+}
+
+.kp-triage__diversity {
+	font: var(--t-meta);
+	padding: 1px 6px;
+	border-radius: var(--r-pill);
+	border: 1px solid var(--border);
+	color: var(--text-muted);
+}
+
+.kp-triage__age {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.kp-triage__excerpt-wrap {
+	font: var(--t-h3);
+	color: var(--text-primary);
+}
+
+.kp-triage__excerpt {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.kp-triage__excerpt[data-revealed="false"] {
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.kp-triage__excerpt-link {
+	color: var(--text-primary);
+	text-decoration: underline;
+	overflow-wrap: anywhere;
+}
+
+.kp-triage__card-foot {
+	display: flex;
+	align-items: baseline;
+	gap: var(--s-2);
+	flex-wrap: wrap;
+	font: var(--t-body-sm);
+}
+
+.kp-triage__author {
+	font-weight: 600;
+	color: var(--text-secondary);
+}
+
+.kp-triage__reputation {
+	color: var(--text-muted);
+}
+
+.kp-triage__reason {
+	color: var(--text-secondary);
+}
+
+.kp-triage__error {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--danger);
+}
+
+.kp-triage__confirm {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	padding: var(--s-3);
+	border: 1px solid var(--danger);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+}
+
+.kp-triage__confirm-line {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+}
+
+.kp-triage__confirm-actions {
+	display: flex;
+	gap: var(--s-2);
+}
+
+.kp-triage__confirm-yes,
+.kp-triage__confirm-no {
+	font: var(--t-meta);
+	padding: 2px 10px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface-raised);
+	color: var(--text-primary);
+	cursor: pointer;
+}
+
+.kp-triage__confirm-yes {
+	border-color: var(--danger);
+	color: var(--danger);
+}
+
+.kp-triage__drained {
+	padding: var(--s-4);
+	text-align: center;
+}
+
+.kp-triage__drained-line {
+	margin: 0;
+	font: var(--t-h3);
+	color: var(--text-secondary);
+	text-transform: lowercase;
+}

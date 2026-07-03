@@ -10,6 +10,11 @@
 import {assert, describe, it} from "@effect/vitest";
 import {contextKeyOf, enrichOpenReports, type ReportTargetContext, toExcerpt} from "./enrich.ts";
 import type {OpenReportGroup} from "./Report.ts";
+import type {RowReputation} from "./reputation.ts";
+
+// The reputation cluster is folded by a sibling merge (`reputation.unit.test.ts`); here
+// the enrich merge only routes it by key, so an empty map exercises the fallback path.
+const noReputations = new Map<string, RowReputation>();
 
 const group = (
 	targetKind: OpenReportGroup["targetKind"],
@@ -50,11 +55,14 @@ describe("enrichOpenReports — fold groups with their resolved target context",
 	it("lands each context on the matching group's target* fields", () => {
 		const groups = [group("post", "p-1"), group("definition", "d-2")];
 		const contexts = new Map<string, ReportTargetContext>([
-			["post:p-1", {excerpt: "gönderi başlığı", author: "elif", ref: "p-1"}],
-			["definition:d-2", {excerpt: "tanım gövdesi", author: "deniz", ref: "istanbul"}],
+			["post:p-1", {excerpt: "gönderi başlığı", author: "elif", ref: "p-1", authorId: "u-elif"}],
+			[
+				"definition:d-2",
+				{excerpt: "tanım gövdesi", author: "deniz", ref: "istanbul", authorId: "u-deniz"},
+			],
 		]);
 
-		const rows = enrichOpenReports(groups, contexts);
+		const rows = enrichOpenReports(groups, contexts, noReputations);
 
 		assert.deepStrictEqual(
 			rows.map((r) => ({
@@ -77,7 +85,7 @@ describe("enrichOpenReports — fold groups with their resolved target context",
 
 	it("keeps a group with no resolved context (null target*), never dropping the row", () => {
 		const groups = [group("comment", "c-3", {reportCount: 4})];
-		const rows = enrichOpenReports(groups, new Map());
+		const rows = enrichOpenReports(groups, new Map(), noReputations);
 
 		assert.strictEqual(rows.length, 1, "the row survives a missing context");
 		const [row] = rows;
@@ -86,6 +94,32 @@ describe("enrichOpenReports — fold groups with their resolved target context",
 		assert.strictEqual(row?.targetExcerpt, null);
 		assert.strictEqual(row?.targetAuthor, null);
 		assert.strictEqual(row?.targetRef, null);
+		assert.strictEqual(row?.authorTier, null, "no reputation ⇒ null author cluster");
+		assert.strictEqual(
+			row?.distinctReporters,
+			4,
+			"distinctReporters falls back to the report count",
+		);
+	});
+
+	it("folds a reputation cluster onto the matching row by key", () => {
+		const groups = [group("post", "p-1", {reportCount: 9})];
+		const contexts = new Map<string, ReportTargetContext>([
+			["post:p-1", {excerpt: "başlık", author: "kaan", ref: "p-1", authorId: "u-kaan"}],
+		]);
+		const reputations = new Map<string, RowReputation>([
+			[
+				"post:p-1",
+				{authorTier: "çaylak", authorKarma: 2, authorPriorRemovals: 3, distinctReporters: 7},
+			],
+		]);
+
+		const [row] = enrichOpenReports(groups, contexts, reputations);
+
+		assert.strictEqual(row?.authorTier, "çaylak");
+		assert.strictEqual(row?.authorKarma, 2);
+		assert.strictEqual(row?.authorPriorRemovals, 3);
+		assert.strictEqual(row?.distinctReporters, 7, "the explicit diversity count wins");
 	});
 
 	it("preserves group order and carries the report fields through the shaper", () => {
@@ -94,10 +128,10 @@ describe("enrichOpenReports — fold groups with their resolved target context",
 			group("comment", "c-2"),
 		];
 		const contexts = new Map<string, ReportTargetContext>([
-			["comment:c-2", {excerpt: "yorum", author: "ada", ref: "p-parent"}],
+			["comment:c-2", {excerpt: "yorum", author: "ada", ref: "p-parent", authorId: "u-ada"}],
 		]);
 
-		const rows = enrichOpenReports(groups, contexts);
+		const rows = enrichOpenReports(groups, contexts, noReputations);
 
 		assert.deepStrictEqual(
 			rows.map((r) => r.id),

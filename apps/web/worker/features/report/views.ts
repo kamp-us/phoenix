@@ -45,6 +45,14 @@ export type ReportReceipt = WorkerEntity<typeof ReportReceiptView>;
  * `/sozluk/<ref>`). All three are nullable — a target whose context can't be resolved
  * (e.g. a sandboxed row hidden from the batched content read) renders the row without
  * context rather than blocking the queue.
+ *
+ * The `author*` reputation cluster + `distinctReporters` (#1703, ADR 0138) carry the
+ * reported target author's standing (tier / karma / prior moderator-removals) and the
+ * pile-on's reporter-diversity signal, joined from künye INSIDE this same gated read.
+ * The author cluster is null together for an unresolvable author (never a partial
+ * reputation); `distinctReporters` mirrors `reportCount` today (the composite report
+ * PK collapses them for content targets) but is threaded as the seam #1852's actor
+ * drawer and #1855's remove-the-wave dock into.
  */
 export type OpenReportViewRow = ViewRow<{
 	id: string;
@@ -59,6 +67,14 @@ export type OpenReportViewRow = ViewRow<{
 	targetAuthor: string | null;
 	/** The in-situ routing reference: post id (post & comment→parent post) or term slug (definition). */
 	targetRef: string | null;
+	/** Distinct reporters filing open reports on this target (reporter-diversity numerator). */
+	distinctReporters: number;
+	/** The reported target author's authorship tier (`null` when the author is unresolved). */
+	authorTier: string | null;
+	/** The author's earned karma (`null` when unresolved). */
+	authorKarma: number | null;
+	/** How many of the author's targets a moderator previously removed (`null` when unresolved). */
+	authorPriorRemovals: number | null;
 }>;
 
 export class OpenReportView extends FateDataView<OpenReportViewRow>()("OpenReport")({
@@ -71,6 +87,10 @@ export class OpenReportView extends FateDataView<OpenReportViewRow>()("OpenRepor
 	targetExcerpt: true,
 	targetAuthor: true,
 	targetRef: true,
+	distinctReporters: true,
+	authorTier: true,
+	authorKarma: true,
+	authorPriorRemovals: true,
 } satisfies {[K in keyof OpenReportViewRow]: true}) {}
 
 export const openReportDataView = OpenReportView.view;
