@@ -78,6 +78,16 @@ export const PHOENIX_BILDIRIM = "phoenix-bildirim";
 export const PHOENIX_FUNNEL_READOUT = "phoenix-funnel-readout";
 
 /**
+ * Moderation-queue surface dark-ship flag (#1701). The moderator-only raporlar
+ * view inside `/divan` (the `report.listOpen` queue) gates behind this key;
+ * default-off so the surface reaches production dark until a human flips it at
+ * release (ADR 0083). Its OWN key, not the `phoenix-authorship-loop` seam — the
+ * moderation queue is a separate mod-only surface with its own lifecycle
+ * (the `PHOENIX_FUNNEL_READOUT` precedent).
+ */
+export const PHOENIX_MOD_QUEUE = "phoenix-mod-queue";
+
+/**
  * Optimistic in-place content-edit dark-ship flag (#1675, epic #1637). Gates the
  * three Class-A content edits (`post.edit`, `comment.edit`, `definition.edit`)
  * that render the edited body/title instantly by passing an `optimistic` payload
