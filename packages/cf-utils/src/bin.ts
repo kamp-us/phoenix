@@ -43,6 +43,7 @@ import {
 	decideLeverGuard,
 	decodeEnv,
 	distinctKeys,
+	ENV_HELP,
 	FlagEnvNotFound,
 	FlagKeyNotFound,
 	FlagSetTargetInvalid,
@@ -78,7 +79,7 @@ const getKeyArg = Argument.string("key").pipe(
 );
 const getEnvFlag = Flag.string("env").pipe(
 	Flag.optional,
-	Flag.withDescription("the env to read the flag in (e.g. prod); omit for every env"),
+	Flag.withDescription(`${ENV_HELP}; omit to read across every env`),
 );
 
 const get = Command.make(
@@ -128,9 +129,7 @@ const percentFlag = Flag.integer("percent").pipe(
 	Flag.optional,
 	Flag.withDescription("the share (0–100) serving on via the no-match split; remainder serves off"),
 );
-const envFlag = Flag.string("env").pipe(
-	Flag.withDescription("the env to release the flag in (e.g. prod)"),
-);
+const envFlag = Flag.string("env").pipe(Flag.withDescription(ENV_HELP));
 const executeFlag = Flag.boolean("execute").pipe(
 	Flag.withDescription(
 		"actually apply the release/kill (default: dry-run — print the diff, write nothing)",

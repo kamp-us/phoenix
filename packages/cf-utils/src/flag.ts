@@ -162,6 +162,18 @@ export const decodeFlagState = (env: string, flag: RawFlag): FlagState => ({
 });
 
 /**
+ * The `--env` option help text — single-sourced so `get` and `set` describe the env the same
+ * way, and so it can't drift from the guard. The valid env set is NOT a closed static enum: an
+ * env is a deploy stage decoded from a live Flagship app's physical name (`decodeEnv`), so it's
+ * runtime-open — `prod` is the one stable env, previews are `pr-<n>`, integration `it-…`, plus
+ * named-dev stages. The authoritative live set is what `flag list` enumerates (the same
+ * `decodeEnv`-over-listed-apps source `FlagEnvNotFound` reports), so the help names the stable
+ * env and points there rather than hardcoding a divergent list that would rot.
+ */
+export const ENV_HELP =
+	"the deploy stage to target, e.g. prod (previews are pr-<n>); run `flag list` to see the valid envs";
+
+/**
  * No Flagship app serves the requested env — the typed, legible not-found `flag set` fails
  * with BEFORE any read/write, so an unknown `--env` never reaches the mutation. Carries the
  * envs that DO resolve, so the message points the operator at a valid one.
@@ -172,7 +184,7 @@ export class FlagEnvNotFound extends Data.TaggedError("FlagEnvNotFound")<{
 }> {
 	override get message(): string {
 		const known = this.knownEnvs.length > 0 ? this.knownEnvs.join(", ") : "(none)";
-		return `no Flagship app for env "${this.env}" — known envs: ${known}`;
+		return `no Flagship app for env "${this.env}" — known envs: ${known} (run \`flag list\` to see them)`;
 	}
 }
 
