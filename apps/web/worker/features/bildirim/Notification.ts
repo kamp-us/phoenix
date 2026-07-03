@@ -111,7 +111,7 @@ export class Notification extends Context.Service<
 		readonly unreadCount: (recipientId: string) => Effect.Effect<number>;
 
 		/**
-		 * Mark one notification read. `marked: false` on a foreign, unknown, or
+		 * Mark one notification read. `marked: 0` on a foreign, unknown, or
 		 * already-read id — an idempotent no-op, never an existence oracle.
 		 */
 		readonly markRead: (
