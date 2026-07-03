@@ -535,7 +535,12 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 
 		const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 		if (post) {
-			const newCommentCount = Math.max(0, post.commentCount - 1);
+			// A sandboxed çaylak comment (#1205) was never counted into the PUBLIC
+			// `comment_count` on create, so its delete must not decrement it — mirror
+			// `addComment`'s `sandboxedAt`-gated increment (#1831). The pre-delete marker
+			// is `sandboxedAtOf(current)`, in hand from the row already loaded above.
+			const decrement = Removal.sandboxedAtOf(current) != null ? 0 : 1;
+			const newCommentCount = Math.max(0, post.commentCount - decrement);
 			const hotScore = computeHotScore(
 				post.score,
 				(post.createdAt ?? now).getTime(),
