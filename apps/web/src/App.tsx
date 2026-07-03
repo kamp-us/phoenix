@@ -29,6 +29,7 @@ import {SavedPostsPage} from "./pages/SavedPostsPage";
 import {SearchPage} from "./pages/SearchPage";
 import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
+import {useUsernameResolutionPending} from "./pages/signupUsernameGate";
 import {UsernameBootstrap} from "./pages/UsernameBootstrap";
 import {UserProfilePage} from "./pages/UserProfilePage";
 import {useProfileStats} from "./pages/useProfileStats";
@@ -55,17 +56,24 @@ function Layout() {
 	// today: disabled ⇒ the read never touches the wire and reports 0.
 	const {value: bildirimOn} = useFlag(PHOENIX_BILDIRIM, false);
 	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data);
+	// #1888: hold the off-/auth redirect while a chosen-username signup is still
+	// resolving. `signUp.email` establishes the session before the separate
+	// `setUsername` lands; without this hold the redirect unmounts AuthPage and
+	// buries a setUsername failure, silently dropping the chosen handle into the
+	// email-prefill bootstrap.
+	const usernamePending = useUsernameResolutionPending();
 
 	useEffect(() => {
 		if (!session.data) return;
 		if (location.pathname !== "/auth") return;
+		if (usernamePending) return;
 		// AuthPage sets `?returnTo=<path>` when redirected from a signed-out
 		// write affordance (T17). Honor it (sanitized to same-origin) so the
 		// user lands back on the page that triggered the auth flow.
 		const params = new URLSearchParams(location.search);
 		const target = safeReturnTo(params.get("returnTo"));
 		navigate(target, {replace: true});
-	}, [session.data, location.pathname, location.search, navigate]);
+	}, [session.data, location.pathname, location.search, navigate, usernamePending]);
 
 	async function onSignOut() {
 		await authClient.signOut();

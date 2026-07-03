@@ -5,6 +5,9 @@
  * Client-side pre-flight runs the single-source rule (`checkUsername`,
  * `worker/features/pasaport/username-rule.ts`) that `assertUsername` enforces
  * server-side; the prefill is derived from the email local-part (`+tag` stripped).
+ * Because a handle is permanent, the *unedited* email-derived prefill can't commit
+ * on a reflexive "devam et": it needs a deliberate confirm step (#1888 AC4). Any
+ * edit moves off the prefill and commits normally.
  *
  * Error routing: phoenix codes classify as boundary, so the mutation **throws**
  * for some failures and returns `{error}` for others — we handle BOTH, keying the
@@ -39,9 +42,22 @@ export function UsernameBootstrap({
 	onComplete: () => Promise<void> | void;
 }) {
 	const fate = useFateClient();
-	const [value, setValue] = useState(() => deriveUsernameFromEmail(email));
+	// The email-derived prefill, captured once. A submit whose value still equals
+	// this untouched prefill is an *email-derived* handle — permanent once set, so
+	// it must not commit on a reflexive "devam et" (#1888 AC4); it needs a
+	// deliberate confirm step. Any edit moves the value away from this and commits
+	// normally.
+	const prefill = deriveUsernameFromEmail(email);
+	const [value, setValue] = useState(() => prefill);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
+	// Set once the user has explicitly confirmed committing the unedited email
+	// prefill. Reset the moment they edit the field back away from a confirm.
+	const [confirmed, setConfirmed] = useState(false);
+
+	const normalized = value.trim().toLowerCase();
+	const isUneditedEmailPrefill = normalized === prefill.trim().toLowerCase();
+	const needsConfirm = isUneditedEmailPrefill && !confirmed;
 
 	async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
 		e.preventDefault();
@@ -50,11 +66,18 @@ export function UsernameBootstrap({
 			setError(local);
 			return;
 		}
+		// #1888 AC4: never commit the unedited email-derived prefill without a
+		// deliberate confirm — a permanent handle must be a choice, not a default.
+		if (needsConfirm) {
+			setConfirmed(true);
+			setError(null);
+			return;
+		}
 		setError(null);
 		setPending(true);
 		try {
 			const {error: callError} = await fate.mutations.user.setUsername({
-				input: {value: value.trim().toLowerCase()},
+				input: {value: normalized},
 				view: SetUsernameView,
 			});
 			if (callError) {
@@ -89,13 +112,21 @@ export function UsernameBootstrap({
 							minLength={3}
 							maxLength={30}
 							value={value}
-							onChange={(e) => setValue(e.currentTarget.value)}
+							onChange={(e) => {
+								setValue(e.currentTarget.value);
+								setConfirmed(false);
+							}}
 							placeholder="elif-kaya"
 						/>
 					</div>
+					{needsConfirm ? (
+						<p className="kp-auth__hint">
+							bu e-postandan türetilmiş ad. sonradan değişmez — onaylamadan önce istersen değiştir.
+						</p>
+					) : null}
 					{error ? <p className="kp-auth__error">{error}</p> : null}
 					<button type="submit" className="kp-auth__submit" disabled={pending}>
-						{pending ? "ayarlanıyor…" : "devam et"}
+						{pending ? "ayarlanıyor…" : needsConfirm ? "bu adı onayla" : "devam et"}
 					</button>
 				</form>
 			</div>

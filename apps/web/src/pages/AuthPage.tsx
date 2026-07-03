@@ -3,6 +3,7 @@ import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
 import {authClient} from "../auth/client";
 import {codeOf} from "../fate/wire";
+import {beginUsernameResolution, endUsernameResolution} from "./signupUsernameGate";
 import {localRuleMessage, messageForCode} from "./usernameMessages";
 import "./AuthPage.css";
 
@@ -25,8 +26,58 @@ export function AuthPage() {
 	const [mode, setMode] = useState<Mode>("sign-in");
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
+	// #1888: the chosen handle whose post-signup `setUsername` failed. Non-null ⇒
+	// the account exists but the handle didn't land — render the blocking retry
+	// surface and keep the redirect gate latched until it resolves or is abandoned.
+	const [stuckUsername, setStuckUsername] = useState<string | null>(null);
 	const isSignIn = mode === "sign-in";
 	const fate = useFateClient();
+
+	// Route the chosen handle through the `setUsername` mutation (`username` is
+	// better-auth `input: false`, so it can't ride `signUp.email`). Returns the
+	// inline error message on failure, or `null` once the handle lands. Handles
+	// BOTH fate shapes: a returned `{error}` and a thrown boundary error.
+	async function setUsernameOrFail(handle: string): Promise<string | null> {
+		try {
+			const {error: callError} = await fate.mutations.user.setUsername({
+				input: {value: handle},
+				view: SetUsernameView,
+			});
+			if (callError) return messageForCode(codeOf(callError));
+			return null;
+		} catch (caught) {
+			return messageForCode(codeOf(caught as SetUsernameError));
+		}
+	}
+
+	async function retryStuckUsername() {
+		if (stuckUsername == null) return;
+		setError(null);
+		setPending(true);
+		try {
+			const message = await setUsernameOrFail(stuckUsername);
+			if (message) {
+				setError(message);
+				return;
+			}
+			// Landed — clear the stuck state and release the gate so the Layout
+			// redirect carries the user into the app with the chosen handle set.
+			setStuckUsername(null);
+			endUsernameResolution();
+		} finally {
+			setPending(false);
+		}
+	}
+
+	// The deliberate escape hatch: give up on the chosen handle and fall through to
+	// the null-username bootstrap. Releasing the gate lets the redirect proceed;
+	// the account still has no handle, so `UsernameBootstrap` mounts — but only
+	// after an explicit choice, never as a silent default.
+	function abandonStuckUsername() {
+		setStuckUsername(null);
+		setError(null);
+		endUsernameResolution();
+	}
 
 	async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
 		e.preventDefault();
@@ -50,7 +101,10 @@ export function AuthPage() {
 		// Username is optional at signup; when present it must pass the same rule the
 		// server enforces (`assertUsername`). Pre-flight here so a bad handle never
 		// creates the account, then surfaces as a confusing post-signup failure.
-		const username = String(data.get("username") ?? "").trim();
+		// Normalize identically to the bootstrap fallback so the two never diverge.
+		const username = String(data.get("username") ?? "")
+			.trim()
+			.toLowerCase();
 		if (username) {
 			const ruleError = localRuleMessage(username);
 			if (ruleError) {
@@ -77,26 +131,66 @@ export function AuthPage() {
 			// established). A blank field leaves `username === null` so the layout's
 			// bootstrap gate fires as the fallback (AC3).
 			if (username) {
-				try {
-					const {error: callError} = await fate.mutations.user.setUsername({
-						input: {value: username},
-						view: SetUsernameView,
-					});
-					if (callError) {
-						setError(messageForCode(codeOf(callError)));
-						return;
-					}
-				} catch (caught) {
-					setError(messageForCode(codeOf(caught as SetUsernameError)));
+				// Latch the redirect gate BEFORE the async setUsername: `signUp.email`
+				// already established the session, so the Layout redirect would fire the
+				// instant this handler yields. Holding it keeps AuthPage mounted so a
+				// failure is visible + retryable here — never buried under the redirect,
+				// which is the #1888 silent-drop.
+				beginUsernameResolution();
+				const message = await setUsernameOrFail(username);
+				if (message) {
+					// The handle didn't land. Do NOT release the gate: park in the retry
+					// surface so the chosen handle is never silently dropped into the
+					// email-prefill bootstrap.
+					setStuckUsername(username);
+					setError(message);
 					return;
 				}
+				// Landed — release the gate so the Layout redirect proceeds.
+				endUsernameResolution();
 			}
 			// Redirect is intentionally not handled here: the Layout's effect
 			// watches `session.data` and navigates off /auth to `?returnTo=…`
-			// (or `/`) once the session lands.
+			// (or `/`) once the session lands (and the gate is clear).
 		} finally {
 			setPending(false);
 		}
+	}
+
+	// #1888: the account exists but the chosen handle failed to set. Block on a
+	// visible, retryable surface — never fall through to the redirect + email
+	// prefill, which is how the chosen handle got silently dropped before.
+	if (stuckUsername != null) {
+		return (
+			<div className="kp-auth">
+				<div className="kp-auth__card">
+					<div className="kp-auth__brand">
+						kamp<span className="dot">.</span>us
+					</div>
+					<h2 className="kp-auth__title">kullanıcı adı ayarlanamadı</h2>
+					<p className="kp-auth__sub">
+						hesabın açıldı, ama seçtiğin <strong>{stuckUsername}</strong> adı ayarlanamadı.
+						kullanıcı adı sonradan değişmez, o yüzden devam etmeden önce tekrar dene.
+					</p>
+					{error ? <p className="kp-auth__error">{error}</p> : null}
+					<div className="kp-auth__form">
+						<button
+							type="button"
+							className="kp-auth__submit"
+							disabled={pending}
+							onClick={retryStuckUsername}
+						>
+							{pending ? "ayarlanıyor…" : "tekrar dene"}
+						</button>
+					</div>
+					<div className="kp-auth__alt">
+						<button type="button" onClick={abandonStuckUsername} disabled={pending}>
+							bu adı bırak, sonra seçerim
+						</button>
+					</div>
+				</div>
+			</div>
+		);
 	}
 
 	return (
