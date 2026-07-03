@@ -896,9 +896,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		postId: string;
 	}) {
 		const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
-		if (!meta) return {restored: false};
+		if (!meta) return {restored: false, sandboxedAt: null};
 		const lifecycle = Removal.fromColumns(meta);
-		if (!Removal.isRemoved(lifecycle)) return {restored: false};
+		if (!Removal.isRemoved(lifecycle)) return {restored: false, sandboxedAt: null};
 
 		const now = new Date();
 		const live = Removal.toColumns(Removal.restore(lifecycle));
@@ -910,7 +910,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		);
 		yield* persistPanoStats(now);
 
-		return {restored: true};
+		// The round-tripped sandbox marker (#1811): a çaylak's post restores to Sandboxed,
+		// so report's live re-append gates the public-feed broadcast on it.
+		return {restored: true, sandboxedAt: live.sandboxedAt};
 	});
 
 	/**
