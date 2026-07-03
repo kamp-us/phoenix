@@ -1,0 +1,85 @@
+name: glossary-drift
+
+# The out-of-band backstop of ADR 0128 prong (b) (issue #1748): a periodic sweep that
+# diffs recent merges to `main` against `.glossary/TERMS.md` and files the concept-level
+# vocabulary drift it finds as a `status:needs-triage` issue.
+#
+# This catches the class the fail-closed `review-code` Step 3c gate structurally cannot
+# see — a term coined in a regular code PR that never routes through `/adr` or `plan-epic`
+# (the grounded miss #1726: the release-lever redefinition landed in a plain code PR with
+# zero glossary pressure). The gate reads structural path signals only; this reads the
+# words an author used to name what they shipped.
+#
+# It is OFF the per-PR blocking path BY CONSTRUCTION (ADR 0128 rejects extending the gate,
+# option (a)): the tool exits 0 whether or not drift is found — a hit is a FILED ISSUE,
+# never a non-zero gate exit — so it can never block a merge. The lag between a term
+# shipping and the next sweep filing it is the deliberate ADR-0128 price of staying off
+# the fail-closed gate.
+#
+# The safety + heuristic live in the CLI's pure core
+# (packages/pipeline-cli/src/tools/glossary-drift/drift.ts): recall-biased candidate
+# extraction (a false positive costs a triage glance, not a merge round-trip) and a
+# substring-tolerant known-term suppression against TERMS.md.
+on:
+  schedule:
+    # Weekly, Monday 04:23 UTC — off-hours and off the top of the hour (the GitHub
+    # scheduler congests on-the-hour crons). Weekly, not daily: ADR 0128 accepts
+    # merge-cadence lag by design, and a weekly window keeps the filed-issue rate low
+    # enough that each hit gets a real triage glance rather than becoming noise.
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      file_issue:
+        description: "File a status:needs-triage issue on detected drift (true) or print-only (false)"
+        type: boolean
+        default: false
+      window:
+        description: "How many recent first-parent merges to sweep"
+        type: string
+        default: "25"
+
+concurrency:
+  # Never let two sweeps race — a duplicate filed issue is pure triage noise.
+  group: glossary-drift
+  cancel-in-progress: false
+
+permissions:
+  contents: read # checkout + git log the merge window
+  issues: write # file the drift issue via gh
+
+jobs:
+  sweep:
+    name: sweep recent merges for glossary drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          # The sweep reads the merge history, so it needs more than the default
+          # shallow single-commit checkout. 200 comfortably covers any --window.
+          fetch-depth: 200
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # A scheduled run always --file-issues: the whole point is to surface drift
+      # autonomously. A manual workflow_dispatch defaults to print-only so a human can
+      # eyeball the candidates first, opting into filing via the `file_issue` input.
+      - name: Sweep recent merges vs .glossary/TERMS.md
+        env:
+          # The tool files the drift issue via `gh`; GH_TOKEN is what gh authenticates with.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          WINDOW="${{ github.event.inputs.window || '25' }}"
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.file_issue }}" = "true" ]; then
+            echo "Sweeping with --file-issue (filing status:needs-triage on drift)."
+            node packages/pipeline-cli/src/bin.ts glossary-drift sweep --window "$WINDOW" --file-issue
+          else
+            echo "Sweeping in print-only mode (no issue filed)."
+            node packages/pipeline-cli/src/bin.ts glossary-drift sweep --window "$WINDOW"
+          fi
