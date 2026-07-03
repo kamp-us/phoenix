@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
 
 /**
  * Sözlük voteDefinition end-to-end.
@@ -68,22 +69,22 @@ test.describe("Sözlük voteDefinition", () => {
 		const voteBtn = page.locator('[data-testid^="definition-vote-"]').first();
 		const score = page.locator('[data-testid^="definition-score-"]').first();
 		await expect(voteBtn).toBeVisible({timeout: 5_000});
-		await expect(score).toHaveText("0", {timeout: 5_000});
+		await expectScoreConsistent(page, score, "0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 
 		// Cast vote — optimistic flip lands first.
 		await voteBtn.click();
-		await expect(score).toHaveText("1", {timeout: 5_000});
+		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true", {timeout: 5_000});
 
 		// Retract vote.
 		await voteBtn.click();
-		await expect(score).toHaveText("0", {timeout: 5_000});
+		await expectScoreConsistent(page, score, "0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 
 		// Re-vote.
 		await voteBtn.click();
-		await expect(score).toHaveText("1", {timeout: 5_000});
+		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true");
 	});
 });

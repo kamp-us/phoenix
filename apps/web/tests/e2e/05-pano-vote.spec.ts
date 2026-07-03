@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {completeBootstrap, signUp} from "./_helpers/auth";
+import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
 
 /**
  * Pano post-vote toggle. PostVoteWidget tracks a local optimistic delta on
@@ -48,10 +49,10 @@ test("upvote increments and toggles back (signed in)", async ({page}) => {
 
 	const upvote = targetPost.locator(".kp-pano-post__vote-btn");
 	await upvote.click();
-	await expect(voteCount).toHaveText(String(start + 1), {timeout: 5_000});
+	await expectScoreConsistent(page, voteCount, String(start + 1));
 	await expect(upvote).toHaveAttribute("aria-pressed", "true");
 
 	await upvote.click();
-	await expect(voteCount).toHaveText(String(start), {timeout: 5_000});
+	await expectScoreConsistent(page, voteCount, String(start));
 	await expect(upvote).toHaveAttribute("aria-pressed", "false");
 });
