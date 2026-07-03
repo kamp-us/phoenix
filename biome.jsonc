@@ -12,8 +12,12 @@
 			// can't parse as a standard module; you can't format/lint what won't
 			// parse, so exclude them (same precedent as `!biome-plugins`).
 			"!**/.claude/workflows",
-			// The GritQL plugin source: biome's `.grit` formatter drops the
-			// `language js;` terminator, which silently breaks the plugin.
+			// The GritQL plugin source: a `.grit` file is not a standard
+			// biome-formattable surface, so keep it out of the formatter.
+			// (An earlier note blamed a dropped `language js;` terminator —
+			// disproven by #1775: the `Compile Error` came from a stale GLOBAL
+			// biome that predates the GritQL node bindings the pinned 2.4.15
+			// added; run via pnpm to pin 2.4.15.)
 			"!biome-plugins",
 			// Vendored, version-pinned third-party builds (e.g. the rite-audit
 			// accessibility dimension's `axe.min.js`, MPL-2.0) are not ours to
