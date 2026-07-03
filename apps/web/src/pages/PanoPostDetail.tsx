@@ -30,6 +30,7 @@ import {
 	beginOptimisticCommentMembership,
 	optimisticCommentRecord,
 } from "../fate/optimisticCommentAdd";
+import {beginOptimisticCommentDelete, decideCommentDelete} from "../fate/optimisticCommentDelete";
 import {bodyEditOptimistic, postEditOptimistic} from "../fate/optimisticEdit";
 import {Screen} from "../fate/Screen";
 import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
@@ -38,6 +39,7 @@ import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
 import {
 	PANO_OPTIMISTIC_COMMENT_ADD,
+	PANO_OPTIMISTIC_COMMENT_DELETE,
 	PANO_OPTIMISTIC_POST_DELETE,
 	PHOENIX_OPTIMISTIC_EDITS,
 } from "../flags/keys";
@@ -519,6 +521,9 @@ function Comments(props: CommentsProps) {
 	// Optimistic comment-add dark-ship gate (#1678, ADR 0125 A1): off ⇒ no temp node,
 	// the thread waits for the live `appendNode` / read-back exactly as today.
 	const {value: optimisticAdd} = useFlag(PANO_OPTIMISTIC_COMMENT_ADD, false);
+	// Optimistic comment-delete dark-ship gate (#1680, ADR 0125 D1): off ⇒ no optimistic
+	// write, the thread waits for the server `deleteEdge` / `live.update` / read-back.
+	const {value: optimisticDelete} = useFlag(PANO_OPTIMISTIC_COMMENT_DELETE, false);
 
 	const refetchPost = React.useCallback(
 		() =>
@@ -561,7 +566,7 @@ function Comments(props: CommentsProps) {
 	// not-yet-fulfilled node is skipped this frame; membership and node data arrive
 	// together in practice. Re-derives only on `items` change: `parentId` is
 	// immutable and a soft-delete reloads the page.
-	const {roots, childrenByParent, bodyById, refById, visibleCount, visibleIds} =
+	const {roots, childrenByParent, bodyById, refById, visibleCount, visibleIds, repliedToIds} =
 		React.useMemo(() => {
 			const nodes: Array<CommentNode<ViewRef<"Comment">>> = [];
 			for (const {node} of items) {
@@ -580,7 +585,13 @@ function Comments(props: CommentsProps) {
 			// id from membership, a soft delete tombstones it (deletedAt) — either way
 			// the id leaves this set when the delete reconciled.
 			const visibleIds = nodes.filter((n) => n.deletedAt == null).map((n) => n.id);
-			return {...buildCommentTree(nodes), visibleIds};
+			// Every id that some LOADED node names as its parent — the optimistic-delete
+			// branch (ADR 0125 D1) reads this to decide edge-drop (leaf) vs tombstone.
+			// Includes deleted parents so the reply-aware branch mirrors the server's.
+			const repliedToIds = new Set(
+				nodes.map((n) => n.parentId).filter((id): id is string => id != null),
+			);
+			return {...buildCommentTree(nodes), visibleIds, repliedToIds};
 		}, [items, fate]);
 
 	// Delete-side read-back (#1687): if the `deleteEdge` (or soft-delete tombstone)
@@ -606,7 +617,32 @@ function Comments(props: CommentsProps) {
 		// `delete: true`. The resolver drives the row live: hard delete → `deleteEdge`
 		// (row drops), soft delete → `live.update` with the `[silindi]` tombstone.
 		await runDelete(
-			() => fate.mutations.comment.delete({input: {id: deletedId}}),
+			() => {
+				const promise = fate.mutations.comment.delete({input: {id: deletedId}});
+				if (!optimisticDelete) return promise;
+				// Optimistic (ADR 0125 D1): mirror the server branch from the loaded tree —
+				// a client-certain leaf drops its edge, a reply parent OR an incompletely-
+				// loaded thread (uncertain) tombstones. `loadNext == null` ⇒ the whole
+				// thread is loaded, so an empty reply set is a true leaf. Roll the write
+				// back on any failure — the server frame reconciles it away otherwise.
+				const strategy = decideCommentDelete({
+					hasLoadedReply: repliedToIds.has(deletedId),
+					threadComplete: loadNext == null,
+				});
+				const rollback = beginOptimisticCommentDelete(fate.store, {
+					strategy,
+					commentId: deletedId,
+					postId: props.postId,
+					now: new Date(),
+				});
+				promise.then(
+					(res) => {
+						if (res.error) rollback();
+					},
+					() => rollback(),
+				);
+				return promise;
+			},
 			"yorum silinemedi",
 			() => {
 				setConfirmDeleteId(null);
