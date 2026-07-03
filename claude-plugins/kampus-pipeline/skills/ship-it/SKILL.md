@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green plus the SHA-bound run-evidence bundle, then enqueue for a squash merge with `gh pr merge --auto` (no method flag — the queue owns the SQUASH method) — the merge queue owns the final, async merge, so success is "enqueued + green" (QUEUED → auto-merges on green) and the linked issue auto-closes async when the merge lands (ADR 0132). When the ship was a dark feature ship it surfaces a release queue for the humans (deploy is the agent's boundary, release is human; ADR 0083). It REFUSES to self-merge control-plane PRs (.claude/.github + the gate-critical skills), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
+description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green plus the SHA-bound run-evidence bundle, then enqueue for a squash merge with `gh pr merge --auto` (no method flag — the queue owns the SQUASH method) — the merge queue owns the final, async merge, so success is "enqueued + green" (QUEUED → auto-merges on green) and the linked issue auto-closes async when the merge lands (ADR 0132). When the ship was a dark feature ship it surfaces a release queue for the humans (deploy is the agent's boundary, release is human; ADR 0083). For a control-plane PR (.claude/.github + the gate-critical skills) it is APPROVAL-AWARE (ADR 0135, amending 0053) — it enqueues the §CP PR only once a @kamp-us/control-plane team member has APPROVED it at the current head (all machine gates still green), else STOPS at "awaiting control-plane approval" — human judgment via the approval, pipeline mechanics via the enqueue. Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
 ---
 
 # ship-it
@@ -26,13 +26,18 @@ A PR is in one of two classes by the files it touches (ADR
 [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md), which supersedes
 [0049](https://github.com/kamp-us/phoenix/blob/main/.decisions/0049-pipeline-ships-code-not-itself.md)):
 
-- **BLOCKING — never auto-merged.** Any PR touching `.claude/**`, `.github/**`, or one of the
-  **gate-critical skills** is the agent control plane: agent instructions/tools/hooks
-  (`.claude`), CI enforcement (`.github`), and the verification/merge machinery + marker
-  contract (the gate-critical skills). A bad merge here is a serious security concern —
-  self-modification of the guardrails, or CI/secret exfiltration. A human merges these by
-  hand; the pipeline NEVER self-merges them. If the diff touches even one such file, you
-  **refuse** (see Step 0).
+- **CONTROL PLANE — enqueue only on a control-plane-team approval.** Any PR touching `.claude/**`,
+  `.github/**`, or one of the **gate-critical skills** is the agent control plane: agent
+  instructions/tools/hooks (`.claude`), CI enforcement (`.github`), and the verification/merge
+  machinery + marker contract (the gate-critical skills). A bad merge here is a serious security
+  concern — self-modification of the guardrails, or CI/secret exfiltration. Under ADR
+  [0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)
+  (amending 0053's merge model) the pipeline **never self-merges a §CP PR on its own machine
+  gates alone** — but it **does enqueue** one once a `@kamp-us/control-plane` **team member has
+  APPROVED it at the current head**. Human judgment enters via the approval; the pipeline owns the
+  mechanics. If the diff touches even one such file, you check for a current-head team approval
+  (see Step 0): **present** → enqueue like any PR; **absent** → STOP at `awaiting control-plane
+  approval`, never enqueue.
 
   The **gate-critical skills** are `claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`,
   `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`, `claude-plugins/kampus-pipeline/skills/review-plan/**`, and
@@ -47,8 +52,9 @@ A PR is in one of two classes by the files it touches (ADR
   makes exactly this subset blocking. This is a merge-authority concern only and is
   **independent of routing**: every gate-critical skill is still verified — now by
   `review-skill` (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md),
-  superseding 0063's `review-code` routing) — and the human reads that verdict, then merges by
-  hand. **Every OTHER `claude-plugins/kampus-pipeline/skills/**`** (triage, plan-epic, write-code, heal-ci, report, …) stays
+  superseding 0063's `review-code` routing) — and a `@kamp-us/control-plane` team member reads that
+  verdict, then **approves** the PR, after which `ship-it` enqueues it (ADR 0135; the approval is
+  the human-judgment gate, the enqueue is the pipeline's). **Every OTHER `claude-plugins/kampus-pipeline/skills/**`** (triage, plan-epic, write-code, heal-ci, report, …) stays
   **non-blocking** — `review-skill`-routed and auto-merged on a PASS, because those skills
   neither merge nor verify, so a bad edit still has to clear the gate that does. ADR 0065's
   blocking rule is **unchanged** by 0073: `review-skill` is the *verdict* gate; merge-authority
@@ -235,16 +241,64 @@ echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary)/' | grep -E
 **Routing:**
 
 - If **any** file is control plane (the §CP set — `.claude/**`, `.github/**`, or a
-  gate-critical skill) → **REFUSE.** Report `blocking — manual merge` and stop. A human merges
-  the control plane by hand (ADR 0053; gate-critical skills added by ADR 0065, with
-  `review-skill/**` added by ADR 0073); the pipeline never self-merges its own guardrails.
-  This holds even if the rest of the diff is clean code/docs/skills — a mixed PR that touches
-  the control plane is still a manual merge, and should be split so the non-blocking half can
-  flow. This refusal short-circuits **before** the namespace check below, so it never conflicts
-  with the fact that a gate-critical `claude-plugins/kampus-pipeline/skills/**` PR is still `review-skill`-routed (ADR 0073):
-  the routing decides *which gate's verdict the human reads*, this refusal decides *who merges*.
-  A `claude-plugins/kampus-pipeline/skills/**` PR that touches **no** gate-critical skill is **not** blocking — it flows
-  through `review-skill` and auto-merges on a PASS.
+  gate-critical skill) → the PR is **§CP: APPROVAL-GATED** (not a blanket refuse — ADR
+  [0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md),
+  amending 0053's merge model). Check for a **current-head `@kamp-us/control-plane` team approval**
+  (the [§CP approval gate](#step-0-cp-approval-gate) below):
+  - **present** → the human-judgment gate is satisfied; **carry on** into Step 2's normal machine
+    gates (matching-gate SHA-bound PASS, CI green, run-evidence). Once those pass, ENQUEUE exactly
+    like a non-§CP PR (`gh pr merge --auto`, no method flag — the queue owns the SQUASH method;
+    QUEUED → auto-merges on green; §CP PRs now
+    enter the ADR 0132 queue too). §CP carries **one extra** gate — the team approval — layered on
+    the same machine gates every PR clears.
+  - **absent** (or only a stale-head approval) → **STOP.** Report `awaiting control-plane approval`
+    and stop; do **not** enqueue. A `@kamp-us/control-plane` member must APPROVE the PR at its
+    current head. This **replaces** the old blanket refuse.
+
+  This holds even if the rest of the diff is clean code/docs/skills — a mixed PR that touches the
+  control plane needs the team approval for the whole PR, and should be split so the non-§CP half
+  can flow without it. The §CP gate short-circuits **before** the namespace check below, so it never
+  conflicts with the fact that a gate-critical `claude-plugins/kampus-pipeline/skills/**` PR is still
+  `review-skill`-routed (ADR 0073): the routing decides *which gate's verdict the human reads*, the
+  §CP approval gate decides *whether the enqueue is unblocked*. A `claude-plugins/kampus-pipeline/skills/**`
+  PR that touches **no** gate-critical skill is **not** §CP — it flows through `review-skill` and
+  auto-merges on a PASS with no team approval.
+
+  <a id="step-0-cp-approval-gate"></a>
+  **The §CP approval gate — a current-head team approval, resolved over `gh api` REST.** An approval
+  counts only when it is (a) authored by a `@kamp-us/control-plane` team member and (b) **bound to
+  the PR's current head** — the review's `commit_id` (the commit the review was submitted against,
+  per the [GitHub REST reviews resource](https://docs.github.com/rest/pulls/reviews)) equals the PR
+  head SHA. A stale approval on a superseded head **does not count** — this mirrors ADR
+  [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)'s
+  SHA-staleness rule for machine verdicts (and the `dismiss_stale_reviews_on_push` the Phase-3
+  ruleset sets, which dismisses an approval on any post-approval push). Resolve it via REST, never
+  GraphQL:
+
+  ```bash
+  ORG="${REPO%%/*}"                                            # owner half of owner/repo
+  HEAD="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"    # the SHA the approval must bind to
+  # latest review per author, keep APPROVED ones whose commit_id == the current head (SHA-bound)
+  CURRENT_APPROVERS="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" \
+    --jq "group_by(.user.login) | map(max_by(.submitted_at))
+          | map(select(.state == \"APPROVED\" and .commit_id == \"$HEAD\") | .user.login) | .[]")"
+  # is any current-head approver a @kamp-us/control-plane MEMBER? membership via REST (active state)
+  CP_OK=""
+  while IFS= read -r u; do
+    [ -z "$u" ] && continue
+    st="$(gh api "orgs/$ORG/teams/control-plane/memberships/$u" --jq '.state' 2>/dev/null)"
+    [ "$st" = "active" ] && { CP_OK=1; break; }
+  done <<<"$CURRENT_APPROVERS"
+  [ -n "$CP_OK" ] && echo "§CP approval: current-head team approval present → carry on to machine gates" \
+                  || echo "§CP approval: absent → STOP (awaiting control-plane approval)"
+  ```
+
+  This is **only** the §CP unblock — it does not weaken any other guard. The SHA-bound gate verdict
+  (Step 2/2b), CI-green (Step 3), the run-evidence bundle (Step 3.5), and single-merge-authority
+  (ADR 0048) all still apply to a §CP PR exactly as to a non-§CP one; the team approval is an
+  **additional** requirement, never a substitute. Note a team member cannot approve their **own**
+  §CP PR (GitHub blocks self-approval) — a §CP change needs the OTHER team member (the deliberate
+  two-person control, ADR 0135).
 - Otherwise, note which **artifact classes are present** (skills, code, docs, or a mix). Step 2
   requires the matching gate's latest verdict = PASS for **each class present**: skills →
   `review-skill` PASS; code → `review-code` PASS; docs → `review-doc` PASS; a mixed PR needs a
@@ -305,7 +359,7 @@ it lives outside the code roots, `claude-plugins/kampus-pipeline/skills/**`, and
 `review-doc` verifies. This keeps the docs class and the doc gate consistent: a present docs class
 implies a `review-doc` PASS is *obtainable*, never a phantom requirement. The control-plane check
 remains the only **exact** probe and is unchanged; this carve-out narrows **only** the docs class,
-weakening no other guard — control-plane refusal, SHA-binding, and the green-CI requirement all
+weakening no other guard — the §CP approval gate, SHA-binding, and the green-CI requirement all
 still hold, and a `packages/**`-internal `.md` simply rides the `review-code` PASS its tree already
 needs.
 
@@ -377,7 +431,7 @@ Step 0 already computed (do **not** re-derive them; ADR
   `Fixes #N` to close. Skip the auto-close expectation, leave `ISSUE` unset, and **proceed to
   the gate check** — the docs-only PR ships on its `review-doc: PASS` alone (Step 2). Emit
   **no** `no linked issue` refusal; it is not an anomaly. This relaxes **only** the missing-link
-  guard: Step 0's control-plane refusal and Step 2's required current-head `review-doc: PASS`
+  guard: Step 0's §CP approval gate and Step 2's required current-head `review-doc: PASS`
   are untouched — a docs-only PR still needs its gate verdict.
 
 ---
@@ -507,8 +561,10 @@ Now resolve **per namespace**, latest-wins by timestamp:
   PASS; `review-skill: FAIL … changes-requested` is FAIL. (review-skill is comment-only too,
   ADR 0058 — same single-record-type resolution as review-doc.) An **advisory** line
   (`review-skill: advisory — blocking-set PR …`) carries no `@ <sha>` and is **not** a PASS:
-  the PR that earns it is in the §CP set, which Step 0 already refused — so it never reaches a
-  merge decision here.
+  the PR that earns it is in the §CP set, whose enqueue Step 0 gates on a current-head
+  `@kamp-us/control-plane` team approval (ADR 0135), not on a `review-skill` PASS — the advisory
+  verdict is the human-read signal informing that approval, so it never enters the machine-PASS
+  namespace here.
 
 ### Step 2b — SHA-staleness refusal (ADR 0058)
 
@@ -1100,7 +1156,8 @@ When `ISSUE` is unset (the docs-only no-link path, Step 1 / ADR
 line renders `issue: n/a (docs-only, no linked issue)` instead of `issue #<ISSUE>`, and
 `release:` renders `n/a (not a dark ship)` (no linked issue ⇒ nothing to queue).
 
-If you refused to enqueue, the reason line is the whole point: `blocking — manual merge`,
+If you refused to enqueue, the reason line is the whole point: `awaiting control-plane approval`
+(a §CP PR with no current-head `@kamp-us/control-plane` approval — Step 0, ADR 0135),
 `unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `unverified (no
 review-skill PASS)`, `unverified (verdict
 not bound to current head)` (a SHA-less or stale-head verdict — Step 2b, ADR 0058), `latest
