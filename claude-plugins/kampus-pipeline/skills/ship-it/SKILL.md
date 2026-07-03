@@ -984,20 +984,31 @@ close the issue; let the `Fixes` seam do it when the merge lands. On the docs-on
 
 ## Step 5 — Confirm enqueued + green, then surface the release queue on a dark merge
 
-The final merge is **async** (queue-owned), so the terminal state to verify is **enqueued
-with auto-merge armed**, not `merged=true` in this run. Confirm the PR is queued/auto-merge-
-enabled rather than waiting on the merge to land:
+The final merge is **async** (queue-owned), so the terminal state to verify is **QUEUED**,
+not `merged=true` in this run. Under the merge queue a *successful* enqueue leaves `auto_merge`
+**`null`** — the queue, not an auto-merge request, owns the async merge — so the success signal
+is the **`already queued to merge`** message the enqueue prints and/or the PR's `QUEUED` state
+(the `added_to_merge_queue` timeline event / merge-queue-entry). See ADR 0132 addendum §3.
 
 ```bash
-# auto-merge armed (pre-queue) or the PR sitting in the merge queue (post-queue) both read
-# here — a non-null auto_merge (or an `enqueued` mergeStateStatus) is the enqueued success signal.
+# The QUEUED signal is the success condition. `already queued to merge` from Step 4's --auto
+# and/or an `enqueued`/QUEUED mergeStateStatus confirm it — NOT a non-null auto_merge, which
+# under the queue stays null on a clean enqueue (ADR 0132 §3).
 gh api repos/$REPO/pulls/$PR --jq '{merged, auto_merge, mergeable_state}'
+gh pr view $PR --json mergeStateStatus,mergeQueueEntry --jq '{mergeStateStatus, mergeQueueEntry}'
 ```
 
-A successful `--auto` leaves `auto_merge` non-null (armed) — that is the **enqueued + green**
-success condition. `merged` may still be `false` at this instant; that is expected, not a
-failure — the queue completes the squash merge when its batch goes green. Do **not** re-drive
-the PR or close the issue by hand off a not-yet-merged state.
+A clean `--auto` under the queue leaves `auto_merge` **`null`** and reports `already queued to
+merge`; that `null` is the **expected** post-enqueue shape, **not** a failure — do not read it
+as one. `merged` may still be `false` at this instant; that is expected too — the queue completes
+the squash merge when its batch goes green. Do **not** re-drive the PR or close the issue by hand
+off a not-yet-merged state, and do **not** re-arm auto-merge because the field reads `null`.
+
+**Do not use `null` `auto_merge` as a jam discriminator** (ADR 0132 addendum §1): a `null`
+`auto_merge` on a clean enqueue is indistinguishable *at that field alone* from the
+`allow_auto_merge=false` repo-wide jam. The reliable jam signal is Step 4's failure **string**
+`Auto merge is not allowed for this repository (enablePullRequestAutoMerge)`, not a `null` field
+read as failure — so a genuine jam surfaces as an enqueue error, never as a "stuck at `null`" here.
 
 Because the merge and its `Fixes #<ISSUE>` auto-close are async, **ship-it no longer asserts
 `state: closed` in the same run** — the issue closes when the queue lands the merge. When
