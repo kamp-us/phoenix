@@ -355,41 +355,44 @@ if (verdict.verdict !== "PASS") {
 // 4. Ship — the shipper runs its own Step 0 control-plane classify and REFUSES
 // control-plane PRs (returning a blocked / reviewed-ready outcome). We do NOT
 // re-encode the §CP regex here; a refusal IS the stop-at-reviewed-ready outcome.
+// Success is ENQUEUED + green, not merged-now: the merge queue owns the final async
+// merge and the async `Fixes #N` issue-close (ADR 0132), so this stage returns
+// `enqueued` (QUEUED -> auto-merges on green), never an in-run merge/close assertion.
 phase("Ship");
 log(`Shipping PR #${pr} (the shipper refuses control-plane PRs on its own)`);
 const shipped = await agent(
 	`Ship PR #${pr}. You are the shipper — run your Step 0 control-plane classify first. If PR #${pr} is ` +
-		`control-plane (\`.claude/**\`, \`.github/**\`, or a gate-critical skill), REFUSE to merge and leave it ` +
+		`control-plane (\`.claude/**\`, \`.github/**\`, or a gate-critical skill), REFUSE to enqueue and leave it ` +
 		`reviewed-ready for a human hand-merge. Otherwise assert the matching gate PASS, confirm CI is green, ` +
-		`squash-merge, and confirm the linked issue auto-closed. ` +
-		`Return { merged: true|false, sha: "<merge commit sha if merged>", reviewedReady: true|false, reason: "<refusal reason if not merged>" }.`,
+		`enqueue for a squash-merge with \`gh pr merge --squash --auto\`, and confirm it is enqueued + green. ` +
+		`The merge queue owns the final, async merge (ADR 0132): success is "enqueued + green" (QUEUED -> ` +
+		`auto-merges on green), NOT "merged now" — the linked issue auto-closes async when the queue lands the merge. ` +
+		`Return { enqueued: true|false, reviewedReady: true|false, reason: "<refusal reason if not enqueued>" }.`,
 	{
 		agentType: "shipper",
 		isolation: "worktree",
 		schema: {
 			type: "object",
 			properties: {
-				merged: { type: "boolean" },
-				sha: { type: "string" },
+				enqueued: { type: "boolean" },
 				reviewedReady: { type: "boolean" },
 				reason: { type: "string" },
 			},
-			required: ["merged"],
+			required: ["enqueued"],
 			additionalProperties: false,
 		},
 	},
 );
 log(
-	shipped.merged
-		? `PR #${pr} merged${shipped.sha ? ` @ ${shipped.sha}` : ""}`
-		: `PR #${pr} not merged (reviewedReady=${shipped.reviewedReady ?? false}): ${shipped.reason ?? "see shipper output"}`,
+	shipped.enqueued
+		? `PR #${pr} QUEUED -> auto-merges on green`
+		: `PR #${pr} not enqueued (reviewedReady=${shipped.reviewedReady ?? false}): ${shipped.reason ?? "see shipper output"}`,
 );
 
 return {
-	merged: !!shipped.merged,
+	enqueued: !!shipped.enqueued,
 	pr,
 	rounds: round,
-	sha: shipped.sha,
 	reviewedReady: shipped.reviewedReady,
 	reason: shipped.reason,
 };
