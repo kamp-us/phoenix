@@ -3,12 +3,11 @@
  * pure options — no init, no client, no network. "Inert when no DSN" is enforced at
  * the request seam (`index.ts`) via the `sentryEnabled` gate this pins; the module
  * itself never touches `@sentry/cloudflare` at runtime. Mirrors the SPA's
- * `src/lib/sentry.unit.test.ts`. Also pins the DSN gate and the PII scrub.
+ * `src/lib/sentry.unit.test.ts`. Also pins the DSN gate and the native-`dataCollection` shape.
  */
-import type {ErrorEvent} from "@sentry/cloudflare";
 import * as Cause from "effect/Cause";
 import {describe, expect, it} from "vitest";
-import {scrubUrls, sentryEnabled, workerOptions} from "./sentry.ts";
+import {sentryEnabled, workerOptions} from "./sentry.ts";
 import {shouldCaptureCause} from "./sentry-capture.ts";
 
 describe("sentryEnabled — the inert gate", () => {
@@ -24,10 +23,11 @@ describe("sentryEnabled — the inert gate", () => {
 });
 
 describe("decided defaults (ADR 0118)", () => {
-	it("workerOptions suppresses cookies/headers/user/query PII via native dataCollection", () => {
+	it("workerOptions is pure native dataCollection with no beforeSend", () => {
 		const opts = workerOptions("https://abc@o0.ingest.de.sentry.io/1");
 		expect(opts.dsn).toBe("https://abc@o0.ingest.de.sentry.io/1");
-		// dataCollection is the source of truth; the deprecated `sendDefaultPii` is gone.
+		// dataCollection is the whole story; the deprecated `sendDefaultPii` is gone,
+		// and no hand-rolled `beforeSend` scrub remains (server-side scrubbing is the backstop).
 		expect(opts.sendDefaultPii).toBeUndefined();
 		expect(opts.dataCollection).toEqual({
 			userInfo: false,
@@ -35,23 +35,7 @@ describe("decided defaults (ADR 0118)", () => {
 			httpHeaders: {request: false, response: false},
 			queryParams: false,
 		});
-		expect(typeof opts.beforeSend).toBe("function");
-	});
-
-	it("scrubUrls strips query strings off the always-sent URL and breadcrumb URLs", () => {
-		const event = {
-			type: undefined,
-			request: {url: "https://kamp.us/reset?token=secret&email=a@b.co"},
-			breadcrumbs: [
-				{data: {url: "https://kamp.us/api/x?sid=abc"}},
-				{data: {from: "/a?q=1", to: "/b?q=2"}},
-			],
-		} as ErrorEvent;
-		const scrubbed = scrubUrls(event);
-		expect(scrubbed.request?.url).toBe("https://kamp.us/reset");
-		expect(scrubbed.breadcrumbs?.[0]?.data?.url).toBe("https://kamp.us/api/x");
-		expect(scrubbed.breadcrumbs?.[1]?.data?.from).toBe("/a");
-		expect(scrubbed.breadcrumbs?.[1]?.data?.to).toBe("/b");
+		expect(opts.beforeSend).toBeUndefined();
 	});
 });
 

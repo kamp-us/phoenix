@@ -23,45 +23,12 @@ export function sentryEnabled(dsn: string | undefined): dsn is string {
 }
 
 /**
- * Strip the query string + fragment from a URL, keeping origin + path. Query
- * strings are a PII vector (`?email=…`, reset tokens); a plain string cut avoids
- * the `URL` constructor (which throws on relative URLs) and never throws.
- */
-function stripUrlQuery(url: string): string {
-	const q = url.indexOf("?");
-	const h = url.indexOf("#");
-	return url.slice(0, Math.min(q === -1 ? url.length : q, h === -1 ? url.length : h));
-}
-
-/**
- * Strip query strings off the full request URL and any URL-bearing breadcrumb
- * (navigation + http crumbs). This is the one PII vector `dataCollection` can't
- * reach: the SDK gates cookies/headers/user/`query_string` via `dataCollection`
- * (see `browserOptions`), but the full request URL is ALWAYS sent regardless
- * (`@sentry/core` requestdata: `url: true`, "No dataCollection equivalent"), so
- * the query string on it must be cut here. See ADR 0118.
- */
-export function scrubUrls(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
-	if (event.request && typeof event.request.url === "string") {
-		event.request = {...event.request, url: stripUrlQuery(event.request.url)};
-	}
-	for (const crumb of event.breadcrumbs ?? []) {
-		const data = crumb.data;
-		if (!data) continue;
-		for (const key of ["url", "to", "from"] as const) {
-			const value = data[key];
-			if (typeof value === "string") data[key] = stripUrlQuery(value);
-		}
-	}
-	return event;
-}
-
-/**
- * The decided client options (ADR 0118). `dataCollection` (SDK ≥10.57) is the
- * native, granular successor to `sendDefaultPii` (deprecated in 10.54, removed in
- * v11); it suppresses the cookies/headers/user/`query_string` PII we hand-scrubbed
- * before. Only the always-sent request URL escapes it, so `beforeSend` narrows to
- * `scrubUrls`.
+ * The decided client options (ADR 0118): pure native `dataCollection` (SDK ≥10.57,
+ * the granular successor to the removed `sendDefaultPii`), no `beforeSend`. It
+ * suppresses the cookies/headers/user/`query_string` PII. Query strings carry no
+ * GDPR-PII in this app (only short-lived auth/OAuth tokens, caught by Sentry's
+ * server-side default data-scrubbing by field name), so no client-side URL scrub is
+ * needed — server-side Advanced Data Scrubbing is the backstop.
  */
 export function browserOptions(dsn: string): Sentry.BrowserOptions {
 	return {
@@ -72,7 +39,6 @@ export function browserOptions(dsn: string): Sentry.BrowserOptions {
 			httpHeaders: {request: false, response: false},
 			queryParams: false,
 		},
-		beforeSend: (event) => scrubUrls(event),
 	};
 }
 

@@ -2,15 +2,14 @@
  * Pins ADR 0118's load-bearing invariant: the SPA Sentry wiring ships INERT. With no
  * `VITE_SENTRY_DSN` (the default in this test env), `initSentry`/`captureBoundaryError`
  * never touch `@sentry/react` and never throw — the integration activates only once the
- * maintainer provisions a DSN. Also pins the DSN gate and the PII scrub.
+ * maintainer provisions a DSN. Also pins the DSN gate and the native-`dataCollection` shape.
  */
-import type {ErrorEvent} from "@sentry/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 
 const {init, captureException} = vi.hoisted(() => ({init: vi.fn(), captureException: vi.fn()}));
 vi.mock("@sentry/react", () => ({init, captureException}));
 
-import {browserOptions, captureBoundaryError, initSentry, scrubUrls, sentryEnabled} from "./sentry";
+import {browserOptions, captureBoundaryError, initSentry, sentryEnabled} from "./sentry";
 
 afterEach(() => {
 	vi.clearAllMocks();
@@ -42,10 +41,11 @@ describe("inert without a DSN (the whole point of ADR 0118's parked-provisioning
 });
 
 describe("decided defaults (ADR 0118)", () => {
-	it("browserOptions suppresses cookies/headers/user/query PII via native dataCollection", () => {
+	it("browserOptions is pure native dataCollection with no beforeSend", () => {
 		const opts = browserOptions("https://abc@o0.ingest.de.sentry.io/1");
 		expect(opts.dsn).toBe("https://abc@o0.ingest.de.sentry.io/1");
-		// dataCollection is the source of truth; the deprecated `sendDefaultPii` is gone.
+		// dataCollection is the whole story; the deprecated `sendDefaultPii` is gone,
+		// and no hand-rolled `beforeSend` scrub remains (server-side scrubbing is the backstop).
 		expect(opts.sendDefaultPii).toBeUndefined();
 		expect(opts.dataCollection).toEqual({
 			userInfo: false,
@@ -53,22 +53,6 @@ describe("decided defaults (ADR 0118)", () => {
 			httpHeaders: {request: false, response: false},
 			queryParams: false,
 		});
-		expect(typeof opts.beforeSend).toBe("function");
-	});
-
-	it("scrubUrls strips query strings off the always-sent URL and breadcrumb URLs", () => {
-		const event: ErrorEvent = {
-			type: undefined,
-			request: {url: "https://kamp.us/reset?token=secret&email=a@b.co"},
-			breadcrumbs: [
-				{data: {url: "https://kamp.us/api/x?sid=abc"}},
-				{data: {from: "/a?q=1", to: "/b?q=2"}},
-			],
-		};
-		const scrubbed = scrubUrls(event);
-		expect(scrubbed.request?.url).toBe("https://kamp.us/reset");
-		expect(scrubbed.breadcrumbs?.[0]?.data?.url).toBe("https://kamp.us/api/x");
-		expect(scrubbed.breadcrumbs?.[1]?.data?.from).toBe("/a");
-		expect(scrubbed.breadcrumbs?.[1]?.data?.to).toBe("/b");
+		expect(opts.beforeSend).toBeUndefined();
 	});
 });
