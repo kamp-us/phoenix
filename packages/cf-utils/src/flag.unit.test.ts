@@ -377,17 +377,15 @@ describe("FlagSetTargetInvalid — the flag set usage error", () => {
 	});
 });
 
-describe("decideLeverGuard — the ADR 0133 lever guard pure core", () => {
-	it("REFUSES a TTY-less caller (agent/CI shape) before the confirm is even considered", () => {
-		const decision = decideLeverGuard({isTTY: false, confirmResponse: "y"});
-		assert.strictEqual(decision._tag, "Refuse");
-		if (decision._tag === "Refuse") {
-			assert.match(decision.reason, /TTY/);
-		}
+describe("decideLeverGuard — the ADR 0134 agent-invokable lever confirm", () => {
+	it("ALLOWS a TTY-less caller (agent/CI shape) — the lever is agent-invokable (ADR 0134)", () => {
+		assert.strictEqual(decideLeverGuard({isTTY: false, confirmResponse: "y"})._tag, "Allow");
 	});
 
-	it("REFUSES with no TTY even when the confirm is affirmative — the TTY check dominates", () => {
-		assert.strictEqual(decideLeverGuard({isTTY: false, confirmResponse: "yes"})._tag, "Refuse");
+	it("ALLOWS with no TTY regardless of the confirm line — the confirm is TTY-only ergonomics", () => {
+		assert.strictEqual(decideLeverGuard({isTTY: false, confirmResponse: "yes"})._tag, "Allow");
+		assert.strictEqual(decideLeverGuard({isTTY: false, confirmResponse: "n"})._tag, "Allow");
+		assert.strictEqual(decideLeverGuard({isTTY: false, confirmResponse: undefined})._tag, "Allow");
 	});
 
 	it("ALLOWS on a TTY with an affirmative y", () => {
@@ -421,12 +419,13 @@ describe("decideLeverGuard — the ADR 0133 lever guard pure core", () => {
 	});
 });
 
-describe("LeverGuardRefused — the lever guard refusal message", () => {
-	it("names the reason and points at the humans-release boundary + the recoverable fix", () => {
-		const err = new LeverGuardRefused({reason: "stdin is not an interactive TTY"});
-		assert.match(err.message, /stdin is not an interactive TTY/);
-		assert.match(err.message, /humans release/);
-		assert.match(err.message, /interactive terminal/);
+describe("LeverGuardRefused — the interactive-confirm refusal message", () => {
+	it("names the reason and points at the recoverable fix (re-run + affirm the confirm)", () => {
+		const err = new LeverGuardRefused({
+			reason: "the interactive confirmation was not affirmed (expected y/yes)",
+		});
+		assert.match(err.message, /the interactive confirmation was not affirmed/);
+		assert.match(err.message, /y\/yes/);
 	});
 });
 
