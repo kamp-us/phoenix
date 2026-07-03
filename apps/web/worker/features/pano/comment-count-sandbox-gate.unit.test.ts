@@ -20,6 +20,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
+import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
 import type {Vote} from "../vote/Vote.ts";
 import {type CommentOperationsDeps, makeCommentOperations} from "./comment-operations.ts";
@@ -193,5 +194,129 @@ describe("commentCount is sandbox-symmetric across create/delete (#1831)", () =>
 			});
 			assert.strictEqual(captured.postCommentCount, 6, "a live comment bumps +1");
 		}),
+	);
+});
+
+// A removed row as it sits after a mod-remove: the ADR 0096 triad stamped, plus the
+// preserved pre-removal `sandboxedAt` marker (null if it was live). `Removal.fromColumns`
+// projects this to `Removed`, and `Removal.restore` round-trips the marker back.
+const removedRow = (sandboxedAt: Date | null): CommentRow =>
+	commentRow({
+		removedAt: NOW,
+		removedBy: "u-mod",
+		removedReason: Lifecycle.encodeReason(new Lifecycle.Moderated({reportId: "rep_1"})),
+		sandboxedAt,
+	});
+
+// The MODERATOR remove/restore pair is sandbox-gated on the same arithmetic as the author
+// paths (#1835): a mod path that touches a SANDBOXED comment — a public count that never
+// counted it — must not drift the public `comment_count`. The pair is internally symmetric
+// (`-1`/`+1`), so the drift only appears against a sandboxed comment or across a now-gated
+// author path (mod-remove sandboxed `-0` then author-restore `+0`).
+describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair (#1835)", () => {
+	it.effect("mod-removing a SANDBOXED comment leaves the public count unchanged (-0, not -1)", () =>
+		Effect.gen(function* () {
+			const {db, captured} = fakeDb({comment: commentRow({sandboxedAt: NOW}), startCount: 5});
+			const ops = makeCommentOperations(deps(runOverDb(db)));
+			const result = yield* ops.moderateRemoveComment({
+				commentId: "comm_1",
+				resolverId: "u-mod",
+				reportId: "rep_1",
+			});
+			assert.isTrue(result.removed, "the mod-remove still soft-removes the comment");
+			assert.strictEqual(
+				captured.postCommentCount,
+				5,
+				"a sandboxed comment was never counted at create, so a mod-remove must not decrement",
+			);
+		}),
+	);
+
+	it.effect("mod-removing a NON-sandboxed comment decrements the public count by one (-1)", () =>
+		Effect.gen(function* () {
+			const {db, captured} = fakeDb({comment: commentRow({sandboxedAt: null}), startCount: 5});
+			const ops = makeCommentOperations(deps(runOverDb(db)));
+			const result = yield* ops.moderateRemoveComment({
+				commentId: "comm_1",
+				resolverId: "u-mod",
+				reportId: "rep_1",
+			});
+			assert.isTrue(result.removed, "the mod-remove soft-removes the comment");
+			assert.strictEqual(captured.postCommentCount, 4, "a live comment's mod-remove decrements -1");
+		}),
+	);
+
+	it.effect("mod-restoring a SANDBOXED comment does not bump the public count (+0, not +1)", () =>
+		Effect.gen(function* () {
+			const {db, captured} = fakeDb({comment: removedRow(NOW), startCount: 5});
+			const ops = makeCommentOperations(deps(runOverDb(db)));
+			const result = yield* ops.moderateRestoreComment({commentId: "comm_1"});
+			assert.isTrue(result.restored, "the mod-restore un-removes the comment");
+			assert.strictEqual(
+				captured.postCommentCount,
+				5,
+				"a comment restored to Sandboxed is not in the public thread, so it must not bump +1",
+			);
+		}),
+	);
+
+	it.effect("mod-restoring a NON-sandboxed comment bumps the public count by one (+1)", () =>
+		Effect.gen(function* () {
+			const {db, captured} = fakeDb({comment: removedRow(null), startCount: 5});
+			const ops = makeCommentOperations(deps(runOverDb(db)));
+			const result = yield* ops.moderateRestoreComment({commentId: "comm_1"});
+			assert.isTrue(result.restored, "the mod-restore un-removes the comment");
+			assert.strictEqual(captured.postCommentCount, 6, "a comment restored to Live bumps +1");
+		}),
+	);
+
+	it.effect("a sandboxed mod-remove → mod-restore round-trip nets zero (never drifts)", () =>
+		Effect.gen(function* () {
+			// mod-remove of the sandboxed live comment: -0
+			const remove = fakeDb({comment: commentRow({sandboxedAt: NOW}), startCount: 5});
+			const opsRemove = makeCommentOperations(deps(runOverDb(remove.db)));
+			yield* opsRemove.moderateRemoveComment({
+				commentId: "comm_1",
+				resolverId: "u-mod",
+				reportId: "rep_1",
+			});
+			assert.strictEqual(remove.captured.postCommentCount, 5, "mod-remove of sandboxed is -0");
+
+			// mod-restore of the now removed-AND-sandboxed row: +0 — the public count is back where it started
+			const restore = fakeDb({comment: removedRow(NOW), startCount: 5});
+			const opsRestore = makeCommentOperations(deps(runOverDb(restore.db)));
+			yield* opsRestore.moderateRestoreComment({commentId: "comm_1"});
+			assert.strictEqual(
+				restore.captured.postCommentCount,
+				5,
+				"mod-restore of sandboxed is +0 — the round-trip never drifts the public count",
+			);
+		}),
+	);
+
+	it.effect(
+		"cross-path: mod-remove SANDBOXED (-0) then author restoreComment (+0) never drifts",
+		() =>
+			Effect.gen(function* () {
+				// mod-remove of a sandboxed comment: -0 (the ungated bug would have made this -1)
+				const remove = fakeDb({comment: commentRow({sandboxedAt: NOW}), startCount: 5});
+				const opsRemove = makeCommentOperations(deps(runOverDb(remove.db)));
+				yield* opsRemove.moderateRemoveComment({
+					commentId: "comm_1",
+					resolverId: "u-mod",
+					reportId: "rep_1",
+				});
+				assert.strictEqual(remove.captured.postCommentCount, 5, "mod-remove of sandboxed is -0");
+
+				// author restoreComment of the removed-AND-sandboxed row: +0 (author-gated, #1811)
+				const restore = fakeDb({comment: removedRow(NOW), startCount: 5});
+				const opsRestore = makeCommentOperations(deps(runOverDb(restore.db)));
+				yield* opsRestore.restoreComment({commentId: "comm_1", actorId: "u-author"});
+				assert.strictEqual(
+					restore.captured.postCommentCount,
+					5,
+					"author-restore of sandboxed is +0 — the cross-path nets zero, no net -1 drift",
+				);
+			}),
 	);
 });

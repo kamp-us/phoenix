@@ -672,11 +672,16 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 
 		const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 		if (post) {
+			// A sandboxed çaylak comment (#1205) was never counted into the PUBLIC
+			// `comment_count`, so a mod-remove must not decrement it — mirror the
+			// author `deleteComment` gate (#1831). The pre-removal marker is
+			// `sandboxedAtOf(current)`, already in hand above.
+			const decrement = Removal.sandboxedAtOf(current) != null ? 0 : 1;
 			yield* run((db) =>
 				db
 					.update(schema.postRecord)
 					.set({
-						commentCount: Math.max(0, post.commentCount - 1),
+						commentCount: Math.max(0, post.commentCount - decrement),
 						updatedAt: now,
 						lastActivityAt: now,
 					})
@@ -704,10 +709,18 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 
 		const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 		if (post) {
+			// A sandboxed restore is not in the public thread, so it must not bump the
+			// public `comment_count` — mirror the author `restoreComment` gate (#1811).
+			// `live` carries the round-tripped `sandboxedAt`.
+			const increment = live.sandboxedAt != null ? 0 : 1;
 			yield* run((db) =>
 				db
 					.update(schema.postRecord)
-					.set({commentCount: post.commentCount + 1, updatedAt: now, lastActivityAt: now})
+					.set({
+						commentCount: post.commentCount + increment,
+						updatedAt: now,
+						lastActivityAt: now,
+					})
 					.where(eq(schema.postRecord.id, row.postId)),
 			);
 		}
