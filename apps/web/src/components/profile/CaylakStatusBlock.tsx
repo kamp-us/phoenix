@@ -185,7 +185,7 @@ export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
 			)}
 			<dl className="kp-caylak-status__facts">
 				<div className="kp-caylak-status__fact">
-					<dt className="kp-caylak-status__term">destek</dt>
+					<dt className="kp-caylak-status__term">kefil</dt>
 					<dd className="kp-caylak-status__value" data-testid="caylak-status-vouch">
 						{vouchExistsLabel(standing.vouchExists)}
 					</dd>
