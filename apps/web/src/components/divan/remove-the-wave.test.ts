@@ -70,7 +70,10 @@ describe("buildWaveManifest — the same-author grouping (Shift-X grabs the auth
 
 describe("initialWaveSelection — safe-by-default (auto-deselect zero-report targets)", () => {
 	it("pre-selects every reported target", () => {
-		const targets = [target({targetId: "a", reportCount: 3}), target({targetId: "b", reportCount: 1})];
+		const targets = [
+			target({targetId: "a", reportCount: 3}),
+			target({targetId: "b", reportCount: 1}),
+		];
 		expect(initialWaveSelection(targets)).toEqual(["post:a", "post:b"]);
 	});
 
@@ -86,7 +89,10 @@ describe("initialWaveSelection — safe-by-default (auto-deselect zero-report ta
 
 describe("selectAllWave / toggleWaveRow — T selects all, Space toggles a row", () => {
 	it("T selects every target including the zero-report ones (explicit override)", () => {
-		const targets = [target({targetId: "a", reportCount: 3}), target({targetId: "b", reportCount: 0})];
+		const targets = [
+			target({targetId: "a", reportCount: 3}),
+			target({targetId: "b", reportCount: 0}),
+		];
 		expect(selectAllWave(targets)).toEqual(["post:a", "post:b"]);
 	});
 
@@ -129,8 +135,13 @@ describe("blastRadiusLabel — the plain-Turkish magnitude confirm (not a noise 
 	});
 
 	it("restates the real magnitude off the current selection (a toggle changes it)", () => {
-		const targets = [target({targetId: "a", reportCount: 4}), target({targetId: "b", reportCount: 5})];
-		expect(blastRadiusLabel(targets, ["post:a"])).toBe("1 hedef · 4 raporu kapatır · geri alınabilir");
+		const targets = [
+			target({targetId: "a", reportCount: 4}),
+			target({targetId: "b", reportCount: 5}),
+		];
+		expect(blastRadiusLabel(targets, ["post:a"])).toBe(
+			"1 hedef · 4 raporu kapatır · geri alınabilir",
+		);
 	});
 });
 
@@ -155,8 +166,12 @@ describe("waveKeyToAction — Shift-X grab, T/Space select, ⌥R/⌥Y batch", ()
 	});
 
 	it("matches ⌥R / ⌥Y on the physical code (macOS Option remaps the glyph)", () => {
-		expect(waveKeyToAction(ev({key: "®", code: "KeyR", altKey: true}))).toEqual({kind: "batchRemove"});
-		expect(waveKeyToAction(ev({key: "´", code: "KeyY", altKey: true}))).toEqual({kind: "batchDismiss"});
+		expect(waveKeyToAction(ev({key: "®", code: "KeyR", altKey: true}))).toEqual({
+			kind: "batchRemove",
+		});
+		expect(waveKeyToAction(ev({key: "´", code: "KeyY", altKey: true}))).toEqual({
+			kind: "batchDismiss",
+		});
 	});
 
 	it("ignores an unbound key and an unrelated Option combo", () => {

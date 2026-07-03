@@ -13,11 +13,12 @@
  * the per-target ledger event #1704 groups into the restore-as-a-unit is out of scope
  * here (this slice stays out of #1704's listResolved read + decision feed).
  */
+import type {TargetKind} from "../../../worker/db/target-kind";
 import type {Verdict} from "./triage-loop";
 
 /** One reported target in the wave manifest — the actor's open-reported content. */
 export interface WaveTarget {
-	readonly targetKind: string;
+	readonly targetKind: TargetKind;
 	readonly targetId: string;
 	/** A resolved title/excerpt identifying the target (the client resolves the copy). */
 	readonly title: string;
@@ -32,7 +33,7 @@ export interface WaveRow extends WaveTarget {
 }
 
 /** The stable per-target key (`<kind>:<id>`) — the same identity `report.resolve` acts on. */
-export function waveTargetKey(t: {targetKind: string; targetId: string}): string {
+export function waveTargetKey(t: {targetKind: TargetKind; targetId: string}): string {
 	return `${t.targetKind}:${t.targetId}`;
 }
 
@@ -48,7 +49,12 @@ export function buildWaveManifest(
 	if (authorId === null) return [];
 	return rows
 		.filter((r) => r.authorId === authorId)
-		.map(({targetKind, targetId, title, reportCount}) => ({targetKind, targetId, title, reportCount}));
+		.map(({targetKind, targetId, title, reportCount}) => ({
+			targetKind,
+			targetId,
+			title,
+			reportCount,
+		}));
 }
 
 /**
@@ -67,10 +73,7 @@ export function selectAllWave(targets: ReadonlyArray<WaveTarget>): ReadonlyArray
 }
 
 /** Toggle one row's membership (`Space`) — add when absent, remove when present. */
-export function toggleWaveRow(
-	selected: ReadonlyArray<string>,
-	key: string,
-): ReadonlyArray<string> {
+export function toggleWaveRow(selected: ReadonlyArray<string>, key: string): ReadonlyArray<string> {
 	return selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key];
 }
 

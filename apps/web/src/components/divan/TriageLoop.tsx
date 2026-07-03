@@ -20,7 +20,26 @@ import type {OpenReport, ResolveReceipt} from "../../../worker/features/report/v
 import {ActorDrawer} from "./ActorDrawer";
 import {type Chamber, drawerDefaultOpen, drawerKeyToAction, hopTarget} from "./actor-drawer";
 import {itemKindLabel, parseBacklogItemId} from "./divanGating";
-import {reasonLabel, reportAgeLabel, targetHref} from "./raporlarGating";
+import {reasonLabel, reportAgeLabel, targetExcerptLabel, targetHref} from "./raporlarGating";
+import {
+	blastRadiusLabel,
+	buildWaveManifest,
+	canApplyWave,
+	initialWaveSelection,
+	isWaveSelected,
+	selectAllWave,
+	selectedWaveTargets,
+	summarizeWaveBatch,
+	toggleWaveRow,
+	type WaveOutcome,
+	type WaveRow,
+	type WaveTarget,
+	waveConfirmKey,
+	waveFailureLabel,
+	waveKeyToAction,
+	waveManifestLabel,
+	waveTargetKey,
+} from "./remove-the-wave";
 import {
 	authorReputationLabel,
 	drainedLabel,
@@ -116,6 +135,15 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	// the focused target's identity, not its rendered fields.
 	const focusedTarget = focused ? parseBacklogItemId(String(focused.node.id)) : null;
 
+	// The focused row's actor id — the join key `Shift-X` grabs a wave for (#1855). The
+	// null-tolerant `useView` subscribes to the focused ref only (the manifest's other
+	// rows load lazily behind the flag, inside `WaveManifest` when it opens).
+	const focusedData = useView(OpenReportLoopView, focused?.node ?? null);
+	// remove-the-wave (#1855): `Shift-X` opens the same-author batch manifest over the
+	// SAME queue read; the manifest owns the keyboard while open (the loop's own handler
+	// yields to it). Dark behind `phoenix-mod-queue` with the rest of `/divan`.
+	const [waveOpen, setWaveOpen] = useState(false);
+
 	const resolve = useCallback(
 		async (target: {targetKind: OpenReport["targetKind"]; targetId: string}, verdict: Verdict) => {
 			setBusy(true);
@@ -172,12 +200,53 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 		}
 	}, [fate, lastVerdict]);
 
+	// One target's batch resolve (#1855): the SAME single-target `report.resolve` the
+	// loop uses, fanned over the wave selection. Returns whether it landed so the batch
+	// can partition resolved from failed (no silent partial drop).
+	const resolveTarget = useCallback(
+		async (target: WaveTarget, verdict: Verdict): Promise<boolean> => {
+			try {
+				const {error: callError} = await fate.mutations.report.resolve({
+					input: {targetKind: target.targetKind, targetId: target.targetId, action: verdict},
+					view: ResolveReceiptView,
+				});
+				return !callError;
+			} catch {
+				return false;
+			}
+		},
+		[fate],
+	);
+
+	// A batch collapsed these keys off the queue — mirror the single-verdict bookkeeping
+	// (drop them from the live queue, count each decision) without a re-fetch.
+	const onWaveResolved = useCallback((keys: ReadonlyArray<string>) => {
+		if (keys.length === 0) return;
+		setResolvedIds((prev) => [...prev, ...keys]);
+		setDecisionsToday((n) => n + keys.length);
+		setLastVerdict(null);
+	}, []);
+
 	// The one keyboard listener the whole loop is driven by. The pure `keyToAction`
 	// maps the raw key; the switch runs the effect. `Tab`/`Escape` are prevented from
 	// their default so the loop owns them while it's the active surface.
 	useEffect(() => {
 		function onKey(e: KeyboardEvent) {
 			if (busy) return;
+			// While the wave manifest is open it owns the keyboard entirely (#1855) — its
+			// own listener handles select/toggle/batch/close, so the loop stands down.
+			if (waveOpen) return;
+
+			// `Shift-X` grabs the focused target's author into the wave manifest (#1855) —
+			// only when the actor resolves (an anonymized row has no author to group).
+			if (pending === null) {
+				const wave = waveKeyToAction({key: e.key, code: e.code, altKey: e.altKey});
+				if (wave?.kind === "grab") {
+					e.preventDefault();
+					if (focusedData?.authorId != null) setWaveOpen(true);
+					return;
+				}
+			}
 
 			// The actor-drawer bindings (#1852) take precedence over the loop's own, but
 			// only outside a confirm sheet (a sheet narrows to its own keys). `A` toggles
@@ -255,7 +324,18 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 		}
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [busy, pending, focusedTarget, live.length, revealed, resolve, undo, onExit]);
+	}, [
+		busy,
+		pending,
+		focusedTarget,
+		live.length,
+		revealed,
+		resolve,
+		undo,
+		onExit,
+		waveOpen,
+		focusedData?.authorId,
+	]);
 
 	if (live.length === 0) {
 		return (
@@ -272,7 +352,7 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 					{Math.min(index, live.length - 1) + 1} / {live.length}
 				</span>
 				<span className="kp-triage__keys">
-					j/k gez · Y yoksay · R kaldır · U geri al · O göster · A künye · V/M oda
+					j/k gez · Y yoksay · R kaldır · U geri al · O göster · A künye · V/M oda · X dalga
 				</span>
 			</div>
 
@@ -325,8 +405,251 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 					</div>
 				</div>
 			)}
+
+			{waveOpen && focused && (
+				<WaveManifest
+					rows={live}
+					authorId={focusedData?.authorId ?? null}
+					resolveTarget={resolveTarget}
+					onResolved={onWaveResolved}
+					onClose={() => setWaveOpen(false)}
+				/>
+			)}
 		</div>
 	);
+}
+
+// The remove-the-wave manifest (#1855, ADR 0138): the focused actor's open-reported
+// targets, grabbed off the SAME queue read (a MODE, never a re-fetch). It owns the
+// keyboard while open — `T` tümü, `Space` seç, `⌥R` kaldır (blast-radius confirm), `⌥Y`
+// yoksay, `j/k` gez, `Esc` çık — and fans the existing single-target `report.resolve`
+// over the selection, partitioning resolved from failed so a partial failure stays
+// actionable. Each queue row lazily resolves its actor/report projection via a
+// `WaveProbe`; the pure grouping/selection/blast-radius decisions live in
+// `remove-the-wave.ts` (unit-tested).
+function WaveManifest({
+	rows,
+	authorId,
+	resolveTarget,
+	onResolved,
+	onClose,
+}: {
+	readonly rows: ReadonlyArray<{readonly node: ViewRef<"OpenReport">}>;
+	readonly authorId: string | null;
+	readonly resolveTarget: (target: WaveTarget, verdict: Verdict) => Promise<boolean>;
+	readonly onResolved: (keys: ReadonlyArray<string>) => void;
+	readonly onClose: () => void;
+}) {
+	const [rowsByKey, setRowsByKey] = useState<Record<string, WaveRow>>({});
+	const onProbe = useCallback((row: WaveRow) => {
+		const key = waveTargetKey(row);
+		setRowsByKey((prev) => {
+			const cur = prev[key];
+			if (
+				cur !== undefined &&
+				cur.authorId === row.authorId &&
+				cur.reportCount === row.reportCount &&
+				cur.title === row.title
+			) {
+				return prev;
+			}
+			return {...prev, [key]: row};
+		});
+	}, []);
+
+	const manifest = buildWaveManifest(Object.values(rowsByKey), authorId);
+
+	// Selection stays "auto" (the safe-by-default auto-deselect over whatever has probed)
+	// until the mod first touches it, then it's their explicit set. This tracks
+	// incremental probe arrival correctly: a late-loading row is auto-included until a
+	// `T`/`Space` freezes the selection to the moderator's choice.
+	const [explicit, setExplicit] = useState<ReadonlyArray<string> | null>(null);
+	const selected = explicit ?? initialWaveSelection(manifest);
+
+	const [index, setIndex] = useState(0);
+	const [pending, setPending] = useState<Verdict | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const apply = useCallback(
+		async (verdict: Verdict) => {
+			const targets = selectedWaveTargets(manifest, selected);
+			if (targets.length === 0) return;
+			setBusy(true);
+			setError(null);
+			const outcomes: WaveOutcome[] = [];
+			for (const t of targets) {
+				const ok = await resolveTarget(t, verdict);
+				outcomes.push({key: waveTargetKey(t), ok});
+			}
+			const {resolved, failed} = summarizeWaveBatch(outcomes);
+			onResolved(resolved);
+			setPending(null);
+			setBusy(false);
+			const failLabel = waveFailureLabel(failed.length);
+			if (failLabel !== null) {
+				// No silent partial drop: keep the failed targets selected + in the manifest
+				// so they stay actionable, and name how many didn't resolve.
+				setError(failLabel);
+				setExplicit(failed);
+			} else {
+				onClose();
+			}
+		},
+		[manifest, selected, resolveTarget, onResolved, onClose],
+	);
+
+	useEffect(() => {
+		function onKey(e: KeyboardEvent) {
+			if (busy) return;
+			if (pending !== null) {
+				const confirm = waveConfirmKey(e.key);
+				if (confirm === "apply") {
+					e.preventDefault();
+					void apply("remove");
+				} else if (confirm === "cancel") {
+					e.preventDefault();
+					setPending(null);
+				}
+				return;
+			}
+			const wave = waveKeyToAction({key: e.key, code: e.code, altKey: e.altKey});
+			if (wave !== null) {
+				e.preventDefault();
+				switch (wave.kind) {
+					case "selectAll":
+						setExplicit(selectAllWave(manifest));
+						break;
+					case "toggleRow": {
+						const row = manifest[index];
+						if (row) setExplicit(toggleWaveRow(selected, waveTargetKey(row)));
+						break;
+					}
+					case "batchDismiss":
+						if (canApplyWave(selected)) void apply("dismiss");
+						break;
+					case "batchRemove":
+						// Asymmetric weight (like the single verdict): remove opens the
+						// blast-radius confirm, dismiss commits directly.
+						if (canApplyWave(selected)) setPending("remove");
+						break;
+					case "grab":
+						break;
+				}
+				return;
+			}
+			const nav = keyToAction(e.key);
+			if (nav?.kind === "next") {
+				e.preventDefault();
+				setIndex((i) => moveFocus(i, 1, manifest.length));
+			} else if (nav?.kind === "prev") {
+				e.preventDefault();
+				setIndex((i) => moveFocus(i, -1, manifest.length));
+			} else if (nav?.kind === "escape") {
+				e.preventDefault();
+				onClose();
+			}
+		}
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [busy, pending, manifest, index, selected, apply, onClose]);
+
+	return (
+		<div className="kp-wave" role="dialog" aria-label="dalgayı kaldır" data-testid="wave-manifest">
+			<header className="kp-wave__head">
+				<span className="kp-wave__title" data-testid="wave-title">
+					{waveManifestLabel(manifest.length)}
+				</span>
+				<span className="kp-wave__keys" aria-hidden="true">
+					T tümü · Space seç · ⌥R kaldır · ⌥Y yoksay · Esc çık
+				</span>
+			</header>
+
+			<ul className="kp-wave__list">
+				{manifest.map((t, i) => {
+					const key = waveTargetKey(t);
+					const on = isWaveSelected(selected, key);
+					return (
+						<li
+							key={key}
+							className="kp-wave__row"
+							data-focused={i === Math.min(index, Math.max(0, manifest.length - 1))}
+							data-selected={on}
+							data-testid={`wave-row-${key}`}
+						>
+							<span className="kp-wave__check" aria-hidden="true">
+								{on ? "◉" : "○"}
+							</span>
+							<span className="kp-wave__kind">{itemKindLabel(t.targetKind)}</span>
+							<span className="kp-wave__row-title">{t.title}</span>
+							<span className="kp-wave__count">{t.reportCount} rapor</span>
+						</li>
+					);
+				})}
+			</ul>
+
+			{error && (
+				<p className="kp-wave__error" role="alert" data-testid="wave-error">
+					{error}
+				</p>
+			)}
+
+			{pending === "remove" && (
+				<div className="kp-wave__confirm" role="alertdialog" data-testid="wave-confirm">
+					<p className="kp-wave__confirm-line" data-testid="wave-confirm-line">
+						{blastRadiusLabel(manifest, selected)}
+					</p>
+					<div className="kp-wave__confirm-actions">
+						<button
+							type="button"
+							className="kp-wave__confirm-yes"
+							disabled={busy}
+							onClick={() => void apply("remove")}
+							data-testid="wave-confirm-yes"
+						>
+							kaldır (Enter)
+						</button>
+						<button
+							type="button"
+							className="kp-wave__confirm-no"
+							disabled={busy}
+							onClick={() => setPending(null)}
+							data-testid="wave-confirm-no"
+						>
+							vazgeç (Esc)
+						</button>
+					</div>
+				</div>
+			)}
+
+			{rows.map(({node}) => (
+				<WaveProbe key={String(node.id)} node={node} onData={onProbe} />
+			))}
+		</div>
+	);
+}
+
+// A hidden data-loader: resolves one queue row's actor/report projection off the shared
+// gated read and lifts it to the manifest, so the parent can group by author + sum the
+// blast radius without the loop pre-resolving every row.
+function WaveProbe({
+	node,
+	onData,
+}: {
+	readonly node: ViewRef<"OpenReport">;
+	readonly onData: (row: WaveRow) => void;
+}) {
+	const data = useView(OpenReportLoopView, node);
+	useEffect(() => {
+		onData({
+			targetKind: data.targetKind,
+			targetId: data.targetId,
+			title: targetExcerptLabel(data.targetExcerpt),
+			reportCount: data.reportCount,
+			authorId: data.authorId,
+		});
+	}, [data.targetKind, data.targetId, data.targetExcerpt, data.reportCount, data.authorId, onData]);
+	return null;
 }
 
 // Resolve the focused node's full `OpenReport` view (the same read the card renders off)
