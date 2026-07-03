@@ -139,3 +139,15 @@
 .kp-topbar__karma {
 	align-self: center;
 }
+
+/* The quiet unread bildirim chip on the user-menu trigger (#1694) — count is
+   text in a subtle outline, never color-only state. */
+.kp-topbar__bildirim-badge {
+	font: var(--t-meta);
+	color: var(--text-primary);
+	border: 1px solid var(--border-subtle);
+	border-radius: 999px;
+	padding: 0 var(--s-1);
+	min-width: 1.25em;
+	text-align: center;
+}

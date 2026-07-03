@@ -41,6 +41,7 @@ import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
 import {
 	authorshipLoopFlag,
+	bildirimFlag,
 	demoTargetingFlag,
 	Flagship,
 	funnelReadoutFlag,
@@ -96,6 +97,9 @@ export default Alchemy.Stack(
 		// The optimistic definition.add dark-ship flag, default-off (#1679, epic #1637)
 		// — gates the nested-connection client-append (ADR 0125) until a human release.
 		yield* optimisticDefinitionAddFlag(flagship.appId);
+		// The bildirim (notification system) dark-ship flag, default-off (#1694, epic
+		// #1666) — the single seam the whole notification surface gates behind.
+		yield* bildirimFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

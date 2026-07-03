@@ -2,6 +2,7 @@ import {useEffect} from "react";
 import {Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {useMe} from "./auth/useMe";
+import {useBildirimUnread} from "./components/bildirim/useBildirimUnread";
 import {shouldShowDivanEntry} from "./components/divan/divanGating";
 import {useDivanAccess} from "./components/divan/useDivanAccess";
 import {AppShell, Main} from "./components/layout/AppShell";
@@ -9,12 +10,13 @@ import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
-import {PHOENIX_AUTHORSHIP_LOOP} from "./flags/keys";
+import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {safeReturnTo} from "./lib/returnTo";
 import {searchTarget} from "./lib/searchTarget";
 import {ThemeProvider, useTheme} from "./lib/theme";
 import {AuthPage} from "./pages/AuthPage";
+import {BildirimlerPage} from "./pages/BildirimlerPage";
 import {DivanPage} from "./pages/DivanPage";
 import {FunnelPage} from "./pages/FunnelPage";
 import {LandingPage} from "./pages/LandingPage";
@@ -48,6 +50,11 @@ function Layout() {
 	// entry is server-authoritative — invisible to çaylak/visitor, absent when off.
 	const divanAccess = useDivanAccess();
 	const showDivan = shouldShowDivanEntry(authorshipLoop, divanAccess);
+	// The bildirim entry + unread chip (#1694), dark behind the `phoenix-bildirim`
+	// flag. Gating the fetch on flag+session keeps the flag-off path exactly as
+	// today: disabled ⇒ the read never touches the wire and reports 0.
+	const {value: bildirimOn} = useFlag(PHOENIX_BILDIRIM, false);
+	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data);
 
 	useEffect(() => {
 		if (!session.data) return;
@@ -97,6 +104,9 @@ function Layout() {
 						divanTo={showDivan ? "/divan" : undefined}
 						{...userProps}
 						karma={selfKarma}
+						{...(bildirimOn && isSignedIn
+							? {bildirim: {to: "/bildirimler", unread: bildirimUnread}}
+							: {})}
 						onSearchSubmit={(query) => {
 							const target = searchTarget(query);
 							if (target) navigate(target);
@@ -159,6 +169,9 @@ export function App() {
 					{/* The founder/mod conversion readout (#1589) — the page self-gates on
 					    the funnel-readout flag (off ⇒ 404), so the route is dark by default. */}
 					<Route path="/funnel" element={<FunnelPage />} />
+					{/* The notification center (#1694) — the page self-gates on the
+					    phoenix-bildirim flag (off ⇒ 404), so the route is dark by default. */}
+					<Route path="/bildirimler" element={<BildirimlerPage />} />
 					<Route path="/profile" element={<ProfilePage />} />
 					<Route path="/u/:username" element={<UserProfilePage />} />
 					<Route path="*" element={<NotFoundPage />} />

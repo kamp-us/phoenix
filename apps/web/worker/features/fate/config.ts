@@ -27,6 +27,7 @@
  * See `.patterns/fate-connections.md`, `.patterns/fate-effect-sources.md`.
  */
 import {FateServer} from "@kampus/fate-effect";
+import {fateModule as bildirimModule} from "../bildirim/fate-module.ts";
 import {fateModule as divanModule} from "../divan/fate-module.ts";
 import {liveBusConfig} from "../fate-live/event-bus.ts";
 import {fateModule as funnelModule} from "../funnel/fate-module.ts";
@@ -50,6 +51,7 @@ export const modules = [
 	reportModule,
 	divanModule,
 	funnelModule,
+	bildirimModule,
 ];
 
 export const fateConfig = FateServer.config({

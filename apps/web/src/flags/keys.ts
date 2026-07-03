@@ -60,6 +60,15 @@ export const PANO_OPTIMISTIC_POST_DELETE = "pano-optimistic-post-delete";
 export const PHOENIX_AUTHORSHIP_LOOP = "phoenix-authorship-loop";
 
 /**
+ * Bildirim (notification system) dark-ship flag (#1694, epic #1666). The SINGLE
+ * seam the whole notification surface gates behind — the spine's unread badge +
+ * `/bildirimler` center page and every sibling emitter's surface reuse this one
+ * key rather than minting per-child flags. Default-off so the system ships dark
+ * until a human flips it at release (ADR 0083).
+ */
+export const PHOENIX_BILDIRIM = "phoenix-bildirim";
+
+/**
  * Conversion-funnel readout dark-ship flag (#1589). The founder/mod aggregate
  * tier-count surface (`/funnel` + the `funnel.summary` read) gates behind this key;
  * default-off so the readout reaches production dark until a human flips it at
