@@ -25,6 +25,7 @@ import {POST_TAG_KINDS, type PostTagKind, tagLabel} from "../../../src/lib/panoT
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
+import {Reaction} from "../reaction/Reaction.ts";
 import type {VoterNotEligible} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
@@ -282,6 +283,7 @@ export const PanoLive = Layer.effect(Pano)(
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 		const bookmarkSvc = yield* Bookmark;
+		const reactionSvc = yield* Reaction;
 
 		// The removal-sequence owner (#1129): the vote-wipe→stamp→FTS ordering is the
 		// module's to enforce, not this service's to hand-wire.
@@ -297,10 +299,17 @@ export const PanoLive = Layer.effect(Pano)(
 			batch,
 			voteSvc,
 			bookmarkSvc,
+			reactionSvc,
 			removalSeq,
 			persistPanoStats,
 		});
-		const commentOps = makeCommentOperations({run, voteSvc, removalSeq, persistPanoStats});
+		const commentOps = makeCommentOperations({
+			run,
+			voteSvc,
+			reactionSvc,
+			removalSeq,
+			persistPanoStats,
+		});
 
 		return {...postOps, ...commentOps};
 	}),

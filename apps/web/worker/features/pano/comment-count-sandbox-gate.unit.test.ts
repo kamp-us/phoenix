@@ -22,6 +22,7 @@ import {Effect} from "effect";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
+import type {Reaction} from "../reaction/Reaction.ts";
 import type {Vote} from "../vote/Vote.ts";
 import {type CommentOperationsDeps, makeCommentOperations} from "./comment-operations.ts";
 
@@ -105,6 +106,7 @@ const inertRemovalSeq: Removal.RemovalSequence = {
 const deps = (run: DrizzleAccessOrDie["run"]): CommentOperationsDeps => ({
 	run,
 	voteSvc: {} as typeof Vote.Service,
+	reactionSvc: {} as typeof Reaction.Service,
 	removalSeq: inertRemovalSeq,
 	persistPanoStats: () => Effect.void,
 });

@@ -33,6 +33,7 @@ import {BookmarkLive} from "../pano/Bookmark.ts";
 import {PanoLive} from "../pano/Pano.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
 import {makePasaportLive} from "../pasaport/Pasaport.ts";
+import {ReactionLive} from "../reaction/Reaction.ts";
 import {ReportLive} from "../report/Report.ts";
 import {SearchLive} from "../search/Search.ts";
 import {SozlukLive} from "../sozluk/Sozluk.ts";
@@ -165,6 +166,12 @@ export const makeFateLayer = Layer.mergeAll(
 			Layer.mergeAll(SozlukLive, PanoLive).pipe(
 				Layer.provideMerge(VoteLive),
 				Layer.provideMerge(BookmarkLive),
+				// Both `SozlukLive` and `PanoLive` stamp the reaction aggregate on their
+				// definition/post/comment reads (`Reaction.readAggregate`, #1862), so
+				// `ReactionLive` joins the same group via `provideMerge` — discharging that
+				// requirement while keeping `Reaction` in `WorkerFateServices` for the
+				// wiring children (#1863/#1864/#1865) that resolve it directly.
+				Layer.provideMerge(ReactionLive),
 				Layer.provide(KarmaBumpFromPasaport),
 				// Vote's voter-tier gate ("earn to vote", #1810), discharged by Künye — same
 				// internal-seam idiom as `KarmaBumpFromPasaport` (`Layer.provide`, not a routed

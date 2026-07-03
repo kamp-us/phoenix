@@ -16,6 +16,7 @@
  * `.patterns/fate-effect-operations.md`.
  */
 
+import {EMPTY_REACTION_AGGREGATE, type ReactionAggregate} from "../reaction/Reaction.ts";
 import type {CommentFields} from "./comment-fields.ts";
 import type {PostPage} from "./Pano.ts";
 import type {PostFields} from "./post-fields.ts";
@@ -40,17 +41,20 @@ export const toPost = (r: PostFields): Post => ({
 	myVote: r.myVote ?? null,
 	isSaved: r.isSaved ?? null,
 	isDraft: r.isDraft ?? null,
+	reactions: r.reactions ?? EMPTY_REACTION_AGGREGATE,
 	tags: [...r.tags],
 });
 
 // The single `PostPage` → `Post` mapping shared by the read resolver
 // (`queries.post`) and the delete-refresh (`comment.delete`) so they can't drift.
-// `myVote`/`isSaved` are stamped separately (the page row carries neither viewer
-// scalar) so the caller threads each in.
+// `myVote`/`isSaved`/`reactions` are stamped separately (the page row carries no
+// viewer scalar nor the aggregate) so the caller threads each in; `reactions`
+// defaults to the empty aggregate for callers that don't hydrate it.
 export const toPostFromPage = (
 	page: PostPage,
 	myVote: boolean | null,
 	isSaved: boolean | null = null,
+	reactions: ReactionAggregate = EMPTY_REACTION_AGGREGATE,
 ): Post =>
 	toPost({
 		id: page.id,
@@ -67,6 +71,7 @@ export const toPostFromPage = (
 		updatedAt: page.updatedAt,
 		myVote,
 		isSaved,
+		reactions,
 		tags: page.tags,
 	});
 
@@ -82,4 +87,5 @@ export const toComment = (r: CommentFields): Comment => ({
 	updatedAt: r.updatedAt ?? r.createdAt,
 	deletedAt: r.deletedAt ?? null,
 	myVote: r.myVote ?? null,
+	reactions: r.reactions ?? EMPTY_REACTION_AGGREGATE,
 });

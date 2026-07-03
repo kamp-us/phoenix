@@ -14,6 +14,7 @@ import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
@@ -23,6 +24,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import {Reaction} from "../reaction/Reaction.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoterNotEligible} from "../vote/errors.ts";
@@ -377,6 +379,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		// stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
+		const reactionSvc = yield* Reaction;
 
 		// The removal-sequence owner (#1129): the vote-wipe→stamp ordering is the
 		// module's to enforce, not this service's to hand-wire.
@@ -632,7 +635,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			);
 
 			const page = forwardPage(fetched, first, (r: DefinitionRow) => r.id, toDefinitionRow);
-			const rows = yield* stampViewerScalars(page.rows, viewerId, [definitionVoteScalar]);
+			const scalared = yield* stampViewerScalars(page.rows, viewerId, [definitionVoteScalar]);
+			const rows = yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
 
 			return {...page, rows, totalCount} satisfies DefinitionConnectionPage;
 		});
@@ -662,9 +666,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						),
 					),
 			);
-			return yield* stampViewerScalars(fetched.map(toDefinitionRow), viewerId, [
+			const scalared = yield* stampViewerScalars(fetched.map(toDefinitionRow), viewerId, [
 				definitionVoteScalar,
 			]);
+			return yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
 		});
 
 		const listSandboxedDefinitions = Effect.fn("Sozluk.listSandboxedDefinitions")(function* (

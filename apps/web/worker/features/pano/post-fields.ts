@@ -17,6 +17,7 @@
 
 import {tagLabel} from "../../../src/lib/panoTags.ts";
 import type * as schema from "../../db/drizzle/schema.ts";
+import type {ReactionAggregate} from "../reaction/Reaction.ts";
 
 type PostRecord = typeof schema.postRecord.$inferSelect;
 
@@ -85,6 +86,13 @@ export interface PostSummaryRow extends Omit<IntrinsicRow, "updatedAt" | "isDraf
 	myVote?: boolean | null;
 	/** Viewer's bookmark presence; `undefined` (unset) for reads that don't request it. */
 	isSaved?: boolean | null;
+	/**
+	 * The reaction aggregate (per-emoji counts + the viewer's own reaction), stamped
+	 * by `stampReactionAggregate` after the batched `user_reaction` read (#1862) —
+	 * `undefined` for reads that don't request it; the shaper fills the empty
+	 * aggregate so the wire field is always present.
+	 */
+	reactions?: ReactionAggregate;
 }
 
 export interface PostConnectionPage {
@@ -116,6 +124,7 @@ export type PostFields = Omit<IntrinsicRow, "updatedAt" | "isDraft" | "tags"> & 
 	isDraft?: boolean | null;
 	myVote?: boolean | null;
 	isSaved?: boolean | null;
+	reactions?: ReactionAggregate;
 	tags: ReadonlyArray<PostTagRow>;
 };
 
@@ -145,6 +154,7 @@ export const postViewFields = {
 	myVote: true,
 	isSaved: true,
 	isDraft: true,
+	reactions: true,
 } as const satisfies Record<keyof Omit<PostSummaryRow, "tags">, true>;
 
 const fieldKeys = Object.keys(intrinsicFields) as Array<keyof typeof intrinsicFields>;

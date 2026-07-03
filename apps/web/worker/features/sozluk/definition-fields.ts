@@ -17,6 +17,7 @@
  * split that keeps the N+1-avoidance contract structural.
  */
 import type * as schema from "../../db/drizzle/schema.ts";
+import type {ReactionAggregate} from "../reaction/Reaction.ts";
 
 type DefinitionRecord = typeof schema.definitionRecord.$inferSelect;
 
@@ -45,6 +46,12 @@ type IntrinsicRow = {[K in keyof typeof intrinsicFields]: ReturnType<(typeof int
  */
 export interface DefinitionRow extends IntrinsicRow {
 	myVote?: boolean | null;
+	/**
+	 * The reaction aggregate (per-emoji counts + the viewer's own reaction), stamped
+	 * by `stampReactionAggregate` after the batched `user_reaction` read (#1862) —
+	 * `undefined` when not requested; the shaper fills the empty aggregate.
+	 */
+	reactions?: ReactionAggregate;
 }
 
 export interface TermPage {
@@ -82,6 +89,7 @@ export const definitionViewFields = {
 	createdAt: true,
 	updatedAt: true,
 	myVote: true,
+	reactions: true,
 } as const satisfies Record<keyof DefinitionRow, true>;
 
 /**

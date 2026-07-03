@@ -24,6 +24,7 @@ import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
+import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
@@ -32,6 +33,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import type {Reaction} from "../reaction/Reaction.ts";
 import {syncPostSearch} from "../search/fts-sync.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
 import type {Vote} from "../vote/Vote.ts";
@@ -301,12 +303,13 @@ export interface PostOperationsDeps {
 	readonly batch: DrizzleAccessOrDie["batch"];
 	readonly voteSvc: typeof Vote.Service;
 	readonly bookmarkSvc: typeof Bookmark.Service;
+	readonly reactionSvc: typeof Reaction.Service;
 	readonly removalSeq: Removal.RemovalSequence;
 	readonly persistPanoStats: PersistPanoStats;
 }
 
 export const makePostOperations = (deps: PostOperationsDeps) => {
-	const {run, batch, voteSvc, bookmarkSvc, removalSeq, persistPanoStats} = deps;
+	const {run, batch, voteSvc, bookmarkSvc, reactionSvc, removalSeq, persistPanoStats} = deps;
 
 	// The viewer scalars for `Post` (#1126): `myVote` (batched `user_vote`) +
 	// `isSaved` (batched `post_bookmark`). Every read finalizes through
@@ -504,7 +507,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		// the viewer doesn't own never reaches this batch — so a surviving `isDraft` row
 		// is the author's own: read-your-writes, now verified rather than assumed.
 		const intrinsic = fetched.map(toPostSummaryRow);
-		return yield* stampViewerScalars(intrinsic, viewerId, postViewerScalars);
+		const scalared = yield* stampViewerScalars(intrinsic, viewerId, postViewerScalars);
+		return yield* stampReactionAggregate(reactionSvc, "post", scalared, viewerId);
 	});
 
 	// The moderator sandbox-queue / promotion-backlog read model (#1205, the #1206

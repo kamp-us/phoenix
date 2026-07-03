@@ -20,6 +20,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
+import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Sozluk, SozlukLive} from "./Sozluk.ts";
 
@@ -80,7 +81,11 @@ const VoteStub = Layer.succeed(Vote, {
 } as unknown as typeof Vote.Service);
 
 const sozlukLayer = (access: DrizzleAccess) =>
-	SozlukLive.pipe(Layer.provide(VoteStub), Layer.provide(Layer.succeed(Drizzle, access)));
+	SozlukLive.pipe(
+		Layer.provide(VoteStub),
+		Layer.provide(ReactionStub),
+		Layer.provide(Layer.succeed(Drizzle, access)),
+	);
 
 const fetchQuery = (queries: {sql: string; params: unknown[]}[]) => queries.at(-1)!;
 

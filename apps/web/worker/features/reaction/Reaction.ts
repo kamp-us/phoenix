@@ -30,11 +30,11 @@
  * `user_reaction` cross-product table itself is Reaction-owned (the `user_vote`
  * twin Vote owns), so its reads/writes address `schema.userReaction` directly.
  */
-import {and, eq, inArray} from "drizzle-orm";
+import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import {REACTION_EMOJI, type ReactionEmoji} from "../../db/reaction-emoji.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {targetTable} from "../../db/target-table.ts";
 import {ReactionTargetNotFound} from "./errors.ts";
@@ -66,6 +66,34 @@ export interface ReactResult {
 	changed: boolean;
 }
 
+/** One palette member's tally on a target — the non-zero cell of the reaction bar. */
+export interface ReactionCount {
+	emoji: ReactionEmoji;
+	count: number;
+}
+
+/**
+ * A target's reaction aggregate — the read half the fate views expose (the
+ * `score`/`isSaved` twin, #1862). `counts` are the per-emoji `COUNT(*)` tallies
+ * ORDERED by the curated `REACTION_EMOJI` palette (so every reader — human or
+ * agent — sees the bar in one canonical order), and only palette members with a
+ * non-zero tally appear (a target with no reactions has an empty `counts`).
+ * `myReaction` is the viewer's own current emoji (the `readMine` value), or
+ * `null` when the viewer is anonymous or has not reacted — the reaction twin of
+ * `myVote`.
+ */
+export interface ReactionAggregate {
+	counts: ReadonlyArray<ReactionCount>;
+	myReaction: ReactionEmoji | null;
+}
+
+/** The empty aggregate — no reactions, no viewer reaction. The neutral fill for a target absent from a batch read. */
+export const EMPTY_REACTION_AGGREGATE: ReactionAggregate = {counts: [], myReaction: null};
+
+// Palette member → its position, so a batched aggregate row set can be sorted
+// into the one canonical `REACTION_EMOJI` order regardless of GROUP BY row order.
+const PALETTE_ORDER = new Map<string, number>(REACTION_EMOJI.map((emoji, i) => [emoji, i]));
+
 export class Reaction extends Context.Service<
 	Reaction,
 	{
@@ -91,6 +119,22 @@ export class Reaction extends Context.Service<
 			kind: TargetKind,
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Map<string, ReactionEmoji>>;
+		/**
+		 * Batched aggregate read: for a page of `targetIds` of one `kind`, each
+		 * target's per-emoji `COUNT(*)` tallies (ordered by `REACTION_EMOJI`) plus the
+		 * viewer's own current reaction — returned as a `Map<targetId,
+		 * ReactionAggregate>` so a whole page hydrates in ONE `GROUP BY` read + one
+		 * `readMine`, never an N+1. This is the fate-view read half (#1862): the
+		 * `score`/`isSaved` twin, exposed on the `post`/`comment`/`definition` views.
+		 * A target with no reactions is ABSENT from the map (the caller fills the empty
+		 * aggregate). Missing/empty `targetIds` short-circuits to an empty Map with no
+		 * read.
+		 */
+		readonly readAggregate: (
+			viewerId: string | null | undefined,
+			kind: TargetKind,
+			targetIds: ReadonlyArray<string>,
+		) => Effect.Effect<Map<string, ReactionAggregate>>;
 		/**
 		 * The single reaction-cleanup home for the removal substrate (ADR 0096 §3,
 		 * the `Vote.clearTarget` twin): wipe the `user_reaction` rows for one target
@@ -162,8 +206,61 @@ export const ReactionLive = Layer.effect(Reaction)(
 			return new Map(rows.map((r) => [r.targetId, r.emoji]));
 		});
 
+		const readAggregate = Effect.fn("Reaction.readAggregate")(function* (
+			viewerId: string | null | undefined,
+			kind: TargetKind,
+			targetIds: ReadonlyArray<string>,
+		) {
+			const out = new Map<string, ReactionAggregate>();
+			if (targetIds.length === 0) return out;
+
+			// One GROUP BY over the whole page — per (target, emoji) COUNT(*), served
+			// by the `user_reaction_target` index (schema.ts). Anonymous viewer's own
+			// reaction is `null` (readMine short-circuits with no read).
+			const [rows, mine] = yield* Effect.all([
+				run((db) =>
+					db
+						.select({
+							targetId: schema.userReaction.targetId,
+							emoji: schema.userReaction.emoji,
+							count: sql<number>`count(*)`,
+						})
+						.from(schema.userReaction)
+						.where(
+							and(
+								eq(schema.userReaction.targetKind, kind),
+								inArray(schema.userReaction.targetId, [...targetIds]),
+							),
+						)
+						.groupBy(schema.userReaction.targetId, schema.userReaction.emoji),
+				),
+				readMine(viewerId, kind, targetIds),
+			]);
+
+			// Fold the flat (target, emoji, count) rows into per-target count arrays.
+			const byTarget = new Map<string, ReactionCount[]>();
+			for (const row of rows) {
+				const list = byTarget.get(row.targetId) ?? [];
+				list.push({emoji: row.emoji, count: row.count});
+				byTarget.set(row.targetId, list);
+			}
+
+			// A target appears in the result iff it has reactions OR the viewer reacted
+			// on it — the union of the count keys and the viewer's own reactions, each
+			// stamped with the viewer's emoji and the palette-ordered counts.
+			const targets = new Set<string>([...byTarget.keys(), ...mine.keys()]);
+			for (const targetId of targets) {
+				const counts = (byTarget.get(targetId) ?? []).sort(
+					(a, b) => (PALETTE_ORDER.get(a.emoji) ?? 0) - (PALETTE_ORDER.get(b.emoji) ?? 0),
+				);
+				out.set(targetId, {counts, myReaction: mine.get(targetId) ?? null});
+			}
+			return out;
+		});
+
 		return {
 			readMine,
+			readAggregate,
 			react: Effect.fn("Reaction.react")(function* (input: ReactInput) {
 				yield* assertTargetLive(input.targetKind, input.targetId);
 

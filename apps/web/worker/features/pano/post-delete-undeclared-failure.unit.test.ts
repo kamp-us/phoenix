@@ -27,6 +27,7 @@ import {Cause, type Context, Effect, Exit, Layer} from "effect";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
+import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {mutations} from "./mutations.ts";
@@ -149,6 +150,7 @@ const panoServiceLayer = (access: DrizzleAccess) =>
 		Layer.provide(Layer.succeed(Drizzle, access)),
 		Layer.provide(voteStub),
 		Layer.provide(inertBookmark),
+		Layer.provide(ReactionStub),
 	);
 
 describe("post.delete — (b) a post-commit cache refresh cannot fail a committed removal", () => {

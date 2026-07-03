@@ -42,7 +42,12 @@ export const queries = {
 			// `user_vote` / `post_bookmark` read — no per-row resolver.
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId, sandboxViewer});
 
-			const base = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
+			const base = toPostFromPage(
+				page,
+				stamped?.myVote ?? null,
+				stamped?.isSaved ?? null,
+				stamped?.reactions,
+			);
 
 			// The native path doesn't auto-invoke a nested relation's `connection`
 			// executor for a hand-built source, so deliver `comments` inline; the
