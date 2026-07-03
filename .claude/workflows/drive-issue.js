@@ -31,14 +31,16 @@ if (!Number.isInteger(issue) || issue <= 0) {
 
 // Trivial-diff tier (ADR 0120 §2-§4). The right-sized fan-out routes a trivially-classified
 // PR to the lighter `review-trivial` gate instead of the full `review-code`/`review-doc`/
-// `review-skill` fan-out. It is wired here but stays OFF BY DEFAULT: adoption is gated behind
-// child #1560's two-axis measurement (a measured token win AND held gate-accuracy, a quality
-// regression vetoing the lever — ADR 0112). Off ⇒ every PR takes the full fan-out exactly as
-// before, a pure no-op. #1560 flips it for measurement via `KAMPUS_TRIVIAL_TIER=on` or
-// `args.trivialTier=true`; this child claims NO token win — it only makes the branch measurable.
+// `review-skill` fan-out. ADOPTED default-ON per the #1562 measurement (both ADR 0112 axes
+// cleared on a measured basis: −22%/−32% token-per-review vs the full gate — a conservative
+// floor — AND the quality veto held, `review-trivial` catching a seeded off-by-one at
+// `review-code` parity). Escape hatch: `KAMPUS_TRIVIAL_TIER=off` (or `args.trivialTier=false`)
+// forces every PR back onto the full fan-out. This flip changes ONLY the tier's enable default;
+// the fail-closed routing below is untouched — a classifier error or `non-trivial` verdict still
+// falls to the full path, so a misclassification can still only over-pay, never under-gate.
 const TRIVIAL_TIER_ENABLED =
-	(typeof process !== "undefined" && !!process.env && process.env.KAMPUS_TRIVIAL_TIER === "on") ||
-	!!(args && typeof args === "object" && args.trivialTier === true);
+	!(typeof process !== "undefined" && !!process.env && process.env.KAMPUS_TRIVIAL_TIER === "off") &&
+	!(args && typeof args === "object" && args.trivialTier === false);
 
 // Default-deny tier routing (ADR 0120 §3). The LIGHTER path is selected ONLY on the full
 // positive conjunction — the tier is enabled AND the classifier ran OK AND its verdict is
