@@ -98,3 +98,18 @@ export const PHOENIX_OPTIMISTIC_EDITS = "phoenix-optimistic-edits";
  * slice has an independent lifecycle (the sibling `comment.add` slice is separate).
  */
 export const PHOENIX_OPTIMISTIC_DEFINITION_ADD = "phoenix-optimistic-definition-add";
+
+/**
+ * Optimistic `definition.delete` (instant term-page drop) dark-ship flag (#1681,
+ * epic #1637). Gates the D1 edge-drop from the *nested* `Term.definitions`
+ * connection (ADR 0125): with it off, a deleted definition leaves the term page
+ * only when the live `deleteEdge` push (or the delete-side read-back) lands, exactly
+ * as today; flipping it on removes the edge from the nested list state the instant
+ * deletion is confirmed, reconciled against the server `deleteEdge` by canonical id
+ * (no reappear) and restored on rejection. `definition.delete` has no reply tree, so
+ * D1 collapses to a plain edge-drop — no tombstone branch. Default-off so it reaches
+ * production dark until a human flips it at release (ADR 0083). Its OWN key, not the
+ * epic's shared seam — each optimistic slice has an independent lifecycle (the
+ * sibling `comment.delete` slice is separate).
+ */
+export const PHOENIX_OPTIMISTIC_DEFINITION_DELETE = "phoenix-optimistic-definition-delete";
