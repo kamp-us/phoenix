@@ -175,6 +175,32 @@ node packages/pipeline-cli/src/bin.ts glossary-drift sweep --window 50    # wide
 node packages/pipeline-cli/src/bin.ts glossary-drift sweep --file-issue   # on drift, file a status:needs-triage issue
 ```
 
+### `resume-policy` — capped TRANSIENT-only auto-resume for crashed workflows (ADR 0130, #1759)
+
+The pure decision behind the ADR-0130 main-loop auto-resume discipline: given a crashed
+dynamic Workflow's `status: failed` signal + the per-run resume ledger, decide `resume`
+vs `surface`. It **composes** the [`failure-classifier`](src/tools/failure-classifier/)
+(#1758): auto-resume **iff** the crash classifies TRANSIENT **and** this run is under the
+K=2 cap; a LOGIC crash (including every default-deny) surfaces immediately with zero
+resume attempts, and a run already resumed twice surfaces (`cap-reached`) — a persistent
+"transient" is a masked LOGIC error, so the cap bounds token burn even under an optimistic
+misclassification (the load-bearing safety property).
+
+The cap is counted **per `resumeFromRunId`**: a fresh run starts a fresh K budget, so K
+counts resumes of the *same* run, not a global tally. The `resume` action carries the
+`{scriptPath, resumeFromRunId}` the driving session re-invokes with (completed `agent()`
+stages replay from the journal cache). See the discipline this mechanism runs under:
+[.patterns/workflow-driving-auto-resume.md](../../.patterns/workflow-driving-auto-resume.md)
+and [ADR 0130](../../.decisions/0130-auto-resume-main-loop-discipline.md).
+
+```bash
+node packages/pipeline-cli/src/bin.ts resume-policy decide \
+  --reason "null subagent result" --run-id run_abc \
+  --script-path .claude/workflows/drive-issue.js --prior-resumes 0   # → resume
+echo '{"reason":"TypeError: …","resumeFromRunId":"run_x","priorResumes":0}' \
+  | node packages/pipeline-cli/src/bin.ts resume-policy decide         # → surface (logic)
+```
+
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
 pnpm --filter @kampus/pipeline-cli test
