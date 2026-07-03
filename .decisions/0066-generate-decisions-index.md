@@ -1,12 +1,14 @@
 ---
 id: 0066
 title: "Generate `.decisions/index.md` from the ADR files instead of hand-appending rows — concurrent doc PRs collide on the tail of `index.md` (4× hand-resolved in one session: #334/#337/#372/#377+#380) and `ship-it` has no rebase; a generator + CI `--check` (fails on stale index or duplicate ADR `id`) removes the shared textual anchor entirely, also closing the sibling ADR-number-collision (0059/#325, 0064/#370). `merge=union` via `.gitattributes` REJECTED — GitHub's server-side merge button ignores user `.gitattributes` ([community #9288](https://github.com/orgs/community/discussions/9288)), so it never fixes the `ship-it` path; ship-it auto-rebase rejected as merge-actor complexity. Implementation tracked as a follow-up"
-status: accepted
+status: superseded by [0126](0126-ambient-adr-discovery.md)
 date: 2026-06-15
 tags: [pipeline, docs, ship-it, decisions, autonomy]
 ---
 
 # 0066 — Generate `.decisions/index.md` from the ADR files instead of hand-appending rows
+
+Superseded by [0126](0126-ambient-adr-discovery.md) — the index is no longer committed at all; discovery is ambient via frontmatter + the SessionStart map.
 
 ## Context
 
