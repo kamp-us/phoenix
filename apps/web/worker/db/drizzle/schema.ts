@@ -10,6 +10,7 @@ import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-
 import {NOTIFICATION_TARGET_KINDS} from "../../features/bildirim/target.ts";
 import {STORED_TIERS} from "../../features/kunye/standing.ts";
 import {REPORT_STATUSES, RESOLUTIONS} from "../../features/report/resolution.ts";
+import {REACTION_EMOJI} from "../reaction-emoji.ts";
 import {TARGET_KINDS} from "../target-kind.ts";
 
 // The shared read-model tables (`term_record` / `definition_record` /
@@ -251,6 +252,40 @@ export const userVote = sqliteTable(
 		primaryKey({columns: [t.userId, t.targetKind, t.targetId]}),
 		// Reverse lookup; also hydrates myVote in batch from a list of target ids.
 		index("user_vote_target").on(t.targetKind, t.targetId),
+	],
+);
+
+/**
+ * Per-(user, target) reaction presence row — the third instance of the
+ * polymorphic per-user-presence pattern (after `user_vote` / `post_bookmark`),
+ * modeled on the karma-free / ungated `post_bookmark` shape, polymorphic over
+ * the same three targets Vote spans (`definition` | `post` | `comment`, the
+ * shared `TARGET_KINDS` taxonomy). Social-only and UNGATED: a logged-in çaylak
+ * may react — no karma column, no tier gate (the deliberate divergence from
+ * Vote). Unlike bookmark (pure presence), a reaction carries a value: the
+ * chosen `emoji`, constrained to the curated `REACTION_EMOJI` palette.
+ *
+ * The composite PK `(user_id, target_kind, target_id)` is the cardinality-one
+ * constraint — at most one reaction per user per item, so changing a reaction
+ * is an upsert on the `emoji` column (`onConflictDoUpdate`), mirroring the
+ * `user_vote` cross-product PK shape. Aggregation is a `COUNT(*)` GROUP BY emoji
+ * read (the display child owns the read path) — no per-(target, emoji) count
+ * cache row is added here; the count is computed on read, so there is no cache
+ * to keep coherent on every react.
+ */
+export const userReaction = sqliteTable(
+	"user_reaction",
+	{
+		userId: text("user_id").notNull(),
+		targetKind: text("target_kind", {enum: [...TARGET_KINDS]}).notNull(),
+		targetId: text("target_id").notNull(),
+		emoji: text("emoji", {enum: [...REACTION_EMOJI]}).notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.userId, t.targetKind, t.targetId]}),
+		// Reverse lookup; hydrates the per-target aggregate (COUNT GROUP BY emoji).
+		index("user_reaction_target").on(t.targetKind, t.targetId),
 	],
 );
 
