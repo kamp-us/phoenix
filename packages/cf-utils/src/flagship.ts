@@ -21,7 +21,14 @@ import type {Credentials} from "@distilled.cloud/cloudflare/Credentials";
 import * as flagship from "@distilled.cloud/cloudflare/flagship";
 import {Config, Context, Effect, Layer, Stream} from "effect";
 import type {HttpClient} from "effect/unstable/http/HttpClient";
-import {decodeEnv, decodeFlagState, type FlagState, type RawFlag} from "./flag.ts";
+import {
+	decodeEnv,
+	decodeFlagState,
+	type FlagState,
+	planNextState,
+	type RawFlag,
+	type ServeTarget,
+} from "./flag.ts";
 
 export {FlagshipAppNotFound, FlagshipFlagNotFound} from "@distilled.cloud/cloudflare/flagship";
 
@@ -47,11 +54,20 @@ const toRawFlag = (flag: {
 	readonly enabled: boolean;
 	readonly defaultVariation: string;
 	readonly variations: Record<string, unknown>;
+	readonly rules: ReadonlyArray<{
+		readonly conditions: ReadonlyArray<unknown>;
+		readonly priority: number;
+		readonly serveVariation: string;
+		readonly rollout?: {readonly percentage: number; readonly attribute?: string | null} | null;
+	}>;
 }): RawFlag => ({
 	key: flag.key,
 	enabled: flag.enabled,
 	defaultVariation: flag.defaultVariation,
 	variations: flag.variations,
+	// `rules` carries the no-match split — the actual release lever (#1726). Conditions stay
+	// opaque; the pure core only tests their presence and round-trips them verbatim.
+	rules: flag.rules,
 });
 
 /**
@@ -87,20 +103,22 @@ export type FlagshipWriteError =
 	| Config.ConfigError;
 
 /**
- * `FlagshipWrite` — the injectable flip seam. `setFlagDefault` is the ONE mutation `cf-utils`
+ * `FlagshipWrite` — the injectable release seam. `setServing` is the ONE mutation `cf-utils`
  * performs: it reads the flag's current full envelope (so an unknown key fails
- * `FlagshipFlagNotFound` BEFORE any write), then re-writes it with only `defaultVariation`
- * moved to the target `{off,on}` variation — `enabled`, `rules`, and `variations` pass
- * through unchanged (targeting-rule edits are out of scope, #1609). No new transport: it
- * rides the same ambient `Credentials | HttpClient` as `FlagshipReadLive`.
+ * `FlagshipFlagNotFound` BEFORE any write), computes the next serving state with the pure
+ * core (`planNextState` — the no-match split is the release lever, #1726), and re-writes the
+ * envelope. `Percent` moves only the split rule (`defaultVariation` keeps its create-time
+ * safe value); `Kill` clears the split AND sets `defaultVariation` off — the true kill
+ * switch. `enabled`, `variations`, and targeting rules pass through unchanged (#1609). No
+ * new transport: it rides the same ambient `Credentials | HttpClient` as `FlagshipReadLive`.
  */
 export class FlagshipWrite extends Context.Service<
 	FlagshipWrite,
 	{
-		readonly setFlagDefault: (input: {
+		readonly setServing: (input: {
 			readonly appId: string;
 			readonly flagKey: string;
-			readonly targetVariation: string;
+			readonly target: ServeTarget;
 		}) => Effect.Effect<RawFlag, FlagshipWriteError>;
 	}
 >()("@kampus/cf-utils/FlagshipWrite") {}
@@ -113,39 +131,39 @@ export const FlagshipWriteLive: Layer.Layer<FlagshipWrite, never, Credentials | 
 				effect: Effect.Effect<A, E, Credentials | HttpClient>,
 			): Effect.Effect<A, E> => Effect.provide(effect, context);
 
-			const setFlagDefault = (input: {
+			const setServing = (input: {
 				readonly appId: string;
 				readonly flagKey: string;
-				readonly targetVariation: string;
+				readonly target: ServeTarget;
 			}) =>
 				withCtx(
 					Effect.gen(function* () {
 						const acct = yield* accountId;
 						// Read-before-write: fail not-found on an unknown key BEFORE mutating, and carry the
-						// current envelope forward so only defaultVariation moves.
+						// current envelope forward so only the serving state (split rule / kill) moves.
 						const current = yield* flagship.getAppFlag({
 							appId: input.appId,
 							flagKey: input.flagKey,
 							accountId: acct,
 						});
+						const next = planNextState(toRawFlag(current), input.target);
 						const updated = yield* flagship.updateAppFlag({
 							appId: input.appId,
 							flagKey: input.flagKey,
 							accountId: acct,
 							key: current.key,
 							enabled: current.enabled,
-							defaultVariation: input.targetVariation,
+							defaultVariation: next.defaultVariation,
 							variations: current.variations,
-							// Rules pass through opaquely — this slice flips only the served value; the Get and
-							// Update rule shapes differ only in a nullable `rollout.attribute`, structurally
-							// identical for a verbatim round-trip.
-							rules: current.rules as flagship.UpdateAppFlagRequest["rules"],
+							// Rule conditions round-trip verbatim (#1609); the Get and Update rule shapes differ
+							// only in a nullable `rollout.attribute`, structurally identical for the cast.
+							rules: next.rules as flagship.UpdateAppFlagRequest["rules"],
 						});
 						return toRawFlag(updated);
 					}),
 				);
 
-			return {setFlagDefault};
+			return {setServing};
 		}),
 	);
 

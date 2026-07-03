@@ -1,20 +1,28 @@
 /**
- * Pure-core unit tests: the env↔app decode and the flag-state decode, plus the table
- * renderer. No IO, no CF — every case is a deterministic transform.
+ * Pure-core unit tests: the env↔app decode, the effective-serving computation (the #1726
+ * release-lever model: rules → no-match split → default), the serving-plan write model
+ * (`--percent` / kill semantics), and the renderers. No IO, no CF — every case is a
+ * deterministic transform.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
-	computeFlipPlan,
+	computeEffectiveServing,
+	computeServingPlan,
 	decodeEnv,
 	decodeFlagState,
 	distinctKeys,
 	FlagEnvNotFound,
 	FlagKeyNotFound,
+	type FlagRule,
+	FlagSetTargetInvalid,
 	findAppForEnv,
+	findNoMatchSplit,
+	planNextState,
 	type RawFlag,
+	renderEffectiveServing,
 	renderFlagDetail,
 	renderFlagTable,
-	renderFlipPlan,
+	renderServingPlan,
 	selectStatesForKey,
 } from "./flag.ts";
 
@@ -39,82 +47,298 @@ describe("decodeEnv — Flagship app physical name → env", () => {
 const flag = (over: Partial<RawFlag> = {}): RawFlag => ({
 	key: "new-nav",
 	enabled: true,
-	defaultVariation: "on",
+	defaultVariation: "off",
 	variations: {on: true, off: false},
+	rules: [],
 	...over,
 });
 
-describe("decodeFlagState — resolve a flag's default value in an env", () => {
-	it("resolves the defaultVariation to its value", () => {
-		const state = decodeFlagState("prod", flag());
-		assert.deepStrictEqual(state, {
-			key: "new-nav",
-			env: "prod",
-			enabled: true,
-			defaultVariation: "on",
-			defaultValue: true,
+const splitRule = (percentage: number, over: Partial<FlagRule> = {}): FlagRule => ({
+	conditions: [],
+	priority: 1,
+	serveVariation: "on",
+	rollout: {percentage},
+	...over,
+});
+
+const targetingRule = (priority = 0): FlagRule => ({
+	conditions: [{attribute: "email", operator: "equals", value: "founder@kamp.us"}],
+	priority,
+	serveVariation: "on",
+});
+
+describe("computeEffectiveServing — rules → no-match split → default (#1726)", () => {
+	it("a split-released flag serves on@100% even though defaultVariation is off", () => {
+		const serving = computeEffectiveServing(flag({rules: [splitRule(100)]}));
+		assert.deepStrictEqual(serving, {
+			_tag: "Split",
+			variation: "on",
+			percentage: 100,
+			otherRules: 0,
 		});
 	});
 
-	it("still resolves the default value for a DISABLED flag (it bypasses rules, serves defaultVariation)", () => {
-		const state = decodeFlagState("pr-7", flag({enabled: false, defaultVariation: "off"}));
-		assert.strictEqual(state.enabled, false);
-		assert.strictEqual(state.defaultValue, false);
+	it("a partial split reads as ramping at its percentage", () => {
+		const serving = computeEffectiveServing(flag({rules: [splitRule(50)]}));
+		assert.deepStrictEqual(serving, {
+			_tag: "Split",
+			variation: "on",
+			percentage: 50,
+			otherRules: 0,
+		});
 	});
 
-	it("resolves a string-typed variation value", () => {
-		const state = decodeFlagState(
-			"prod",
-			flag({defaultVariation: "green", variations: {green: "#0f0"}}),
+	it("no split ⇒ the default serves", () => {
+		const serving = computeEffectiveServing(flag());
+		assert.deepStrictEqual(serving, {_tag: "Default", variation: "off", otherRules: 0});
+	});
+
+	it("a disabled flag serves its default even with a split rule present (SDK: disabled bypasses all rules)", () => {
+		const serving = computeEffectiveServing(flag({enabled: false, rules: [splitRule(100)]}));
+		assert.deepStrictEqual(serving, {_tag: "Default", variation: "off", otherRules: 1});
+	});
+
+	it("targeting rules are counted alongside the split", () => {
+		const serving = computeEffectiveServing(flag({rules: [targetingRule(0), splitRule(100)]}));
+		assert.deepStrictEqual(serving, {
+			_tag: "Split",
+			variation: "on",
+			percentage: 100,
+			otherRules: 1,
+		});
+	});
+
+	it("the earliest-priority split wins when several conditions-empty rollout rules exist", () => {
+		const serving = computeEffectiveServing(
+			flag({rules: [splitRule(25, {priority: 5}), splitRule(75, {priority: 2})]}),
 		);
-		assert.strictEqual(state.defaultValue, "#0f0");
+		assert.strictEqual(serving._tag, "Split");
+		if (serving._tag !== "Split") return;
+		assert.strictEqual(serving.percentage, 75);
+	});
+});
+
+describe("renderEffectiveServing", () => {
+	it("renders a full split as on@100% (split)", () => {
+		assert.strictEqual(
+			renderEffectiveServing(computeEffectiveServing(flag({rules: [splitRule(100)]}))),
+			"on@100% (split)",
+		);
 	});
 
-	it("yields undefined when the named variation is absent (a malformed flag)", () => {
+	it("renders a partial split as on@N% (ramping)", () => {
+		assert.strictEqual(
+			renderEffectiveServing(computeEffectiveServing(flag({rules: [splitRule(50)]}))),
+			"on@50% (ramping)",
+		);
+	});
+
+	it("renders no split as <default> (default)", () => {
+		assert.strictEqual(renderEffectiveServing(computeEffectiveServing(flag())), "off (default)");
+	});
+
+	it("notes targeting rules with a +N suffix", () => {
+		assert.strictEqual(
+			renderEffectiveServing(
+				computeEffectiveServing(flag({rules: [targetingRule(0), splitRule(100)]})),
+			),
+			"on@100% (split) +1 targeting rules",
+		);
+	});
+});
+
+describe("findNoMatchSplit", () => {
+	it("ignores targeting rules and conditions-empty rules with no rollout", () => {
+		const noRollout: FlagRule = {conditions: [], priority: 0, serveVariation: "on"};
+		assert.isUndefined(findNoMatchSplit([targetingRule(0), noRollout]));
+	});
+});
+
+describe("planNextState — the serving write model", () => {
+	it("Percent mints a no-match split after existing rules; defaultVariation stays the safe value", () => {
+		const next = planNextState(flag({rules: [targetingRule(3)]}), {
+			_tag: "Percent",
+			percentage: 100,
+		});
+		assert.strictEqual(next.defaultVariation, "off");
+		assert.strictEqual(next.rules.length, 2);
+		assert.deepStrictEqual(next.rules[1], {
+			conditions: [],
+			priority: 4,
+			serveVariation: "on",
+			rollout: {percentage: 100},
+		});
+	});
+
+	it("Percent replaces an existing split in place, preserving its priority and rollout attribute", () => {
+		const existing = splitRule(100, {
+			priority: 7,
+			rollout: {percentage: 100, attribute: "targetingKey"},
+		});
+		const next = planNextState(flag({rules: [existing]}), {_tag: "Percent", percentage: 25});
+		assert.strictEqual(next.rules.length, 1);
+		assert.deepStrictEqual(next.rules[0], {
+			conditions: [],
+			priority: 7,
+			serveVariation: "on",
+			rollout: {percentage: 25, attribute: "targetingKey"},
+		});
+	});
+
+	it("Kill clears the split AND sets defaultVariation off; targeting rules pass through", () => {
+		const next = planNextState(
+			flag({defaultVariation: "on", rules: [targetingRule(0), splitRule(100)]}),
+			{_tag: "Kill"},
+		);
+		assert.strictEqual(next.defaultVariation, "off");
+		assert.deepStrictEqual(next.rules, [targetingRule(0)]);
+	});
+});
+
+describe("computeServingPlan — changed semantics off the RAW flag", () => {
+	it("releasing an unreleased flag is a change", () => {
+		const plan = computeServingPlan({
+			key: "new-nav",
+			env: "prod",
+			flag: flag(),
+			target: {_tag: "Percent", percentage: 100},
+		});
+		assert.isTrue(plan.changed);
+	});
+
+	it("a flag already split at the target percentage is a confirmed no-op", () => {
+		const plan = computeServingPlan({
+			key: "new-nav",
+			env: "prod",
+			flag: flag({rules: [splitRule(100)]}),
+			target: {_tag: "Percent", percentage: 100},
+		});
+		assert.isFalse(plan.changed);
+	});
+
+	it("re-ramping an existing split to a different percentage is a change", () => {
+		const plan = computeServingPlan({
+			key: "new-nav",
+			env: "prod",
+			flag: flag({rules: [splitRule(100)]}),
+			target: {_tag: "Percent", percentage: 50},
+		});
+		assert.isTrue(plan.changed);
+	});
+
+	it("Kill on a split-released flag is a change — the true kill switch (#1726)", () => {
+		const plan = computeServingPlan({
+			key: "new-nav",
+			env: "prod",
+			flag: flag({rules: [splitRule(100)]}),
+			target: {_tag: "Kill"},
+		});
+		assert.isTrue(plan.changed);
+	});
+
+	it("Kill is a change while defaultVariation is not off, even with no split", () => {
+		const plan = computeServingPlan({
+			key: "new-nav",
+			env: "prod",
+			flag: flag({defaultVariation: "on"}),
+			target: {_tag: "Kill"},
+		});
+		assert.isTrue(plan.changed);
+	});
+
+	it("Kill on an already-dead flag (no split, default off) is a confirmed no-op", () => {
+		const plan = computeServingPlan({
+			key: "new-nav",
+			env: "prod",
+			flag: flag(),
+			target: {_tag: "Kill"},
+		});
+		assert.isFalse(plan.changed);
+	});
+
+	it("Kill sees a split lurking on a DISABLED flag as a change (changed is raw, not effective)", () => {
+		const plan = computeServingPlan({
+			key: "new-nav",
+			env: "prod",
+			flag: flag({enabled: false, rules: [splitRule(100)]}),
+			target: {_tag: "Kill"},
+		});
+		assert.isTrue(plan.changed);
+	});
+});
+
+describe("renderServingPlan", () => {
+	it("renders a release as a current → target diff", () => {
+		const line = renderServingPlan(
+			computeServingPlan({
+				key: "funnel-readout",
+				env: "prod",
+				flag: flag(),
+				target: {_tag: "Percent", percentage: 100},
+			}),
+		);
+		assert.match(line, /funnel-readout @ prod: off \(default\) → on@100% \(split\)/);
+	});
+
+	it("renders a ramp target as on@N% (ramping)", () => {
+		const line = renderServingPlan(
+			computeServingPlan({
+				key: "funnel-readout",
+				env: "prod",
+				flag: flag(),
+				target: {_tag: "Percent", percentage: 50},
+			}),
+		);
+		assert.match(line, /→ on@50% \(ramping\)/);
+	});
+
+	it("renders a kill on a split-released flag as split → kill", () => {
+		const line = renderServingPlan(
+			computeServingPlan({
+				key: "funnel-readout",
+				env: "prod",
+				flag: flag({rules: [splitRule(100)]}),
+				target: {_tag: "Kill"},
+			}),
+		);
+		assert.match(line, /on@100% \(split\) → off \(kill: split cleared, default off\)/);
+	});
+
+	it("renders a no-op plan as 'already … (no change)'", () => {
+		const line = renderServingPlan(
+			computeServingPlan({
+				key: "beta",
+				env: "prod",
+				flag: flag({rules: [splitRule(100)]}),
+				target: {_tag: "Percent", percentage: 100},
+			}),
+		);
+		assert.match(line, /already on@100% \(split\) \(no change\)/);
+	});
+});
+
+describe("decodeFlagState — resolve a flag's serving state in an env", () => {
+	it("resolves the defaultVariation baseline and the effective serving", () => {
+		const state = decodeFlagState("prod", flag({rules: [splitRule(100)]}));
+		assert.strictEqual(state.key, "new-nav");
+		assert.strictEqual(state.env, "prod");
+		assert.strictEqual(state.enabled, true);
+		assert.strictEqual(state.defaultVariation, "off");
+		assert.strictEqual(state.defaultValue, false);
+		assert.deepStrictEqual(state.serving, {
+			_tag: "Split",
+			variation: "on",
+			percentage: 100,
+			otherRules: 0,
+		});
+	});
+
+	it("yields undefined default value when the named variation is absent (a malformed flag)", () => {
 		const state = decodeFlagState(
 			"prod",
 			flag({defaultVariation: "ghost", variations: {on: true}}),
 		);
 		assert.strictEqual(state.defaultValue, undefined);
-	});
-});
-
-describe("computeFlipPlan — current → target flip (pure)", () => {
-	it("marks a real flip as changed", () => {
-		const plan = computeFlipPlan({
-			key: "authorship-loop",
-			env: "prod",
-			currentVariation: "off",
-			target: "on",
-		});
-		assert.deepStrictEqual(plan, {
-			key: "authorship-loop",
-			env: "prod",
-			currentVariation: "off",
-			targetVariation: "on",
-			changed: true,
-		});
-	});
-
-	it("marks a no-op flip (already at target) as unchanged — the confirmed --execute no-op", () => {
-		const plan = computeFlipPlan({key: "beta", env: "prod", currentVariation: "on", target: "on"});
-		assert.strictEqual(plan.changed, false);
-	});
-});
-
-describe("renderFlipPlan", () => {
-	it("renders a real flip as a current → target diff", () => {
-		const line = renderFlipPlan(
-			computeFlipPlan({key: "authorship-loop", env: "prod", currentVariation: "off", target: "on"}),
-		);
-		assert.match(line, /authorship-loop @ prod: off → on/);
-	});
-
-	it("renders a no-op flip as 'already <target> (no change)'", () => {
-		const line = renderFlipPlan(
-			computeFlipPlan({key: "beta", env: "prod", currentVariation: "on", target: "on"}),
-		);
-		assert.match(line, /already on \(no change\)/);
 	});
 });
 
@@ -143,11 +367,19 @@ describe("FlagEnvNotFound — the typed, legible not-found", () => {
 	});
 });
 
+describe("FlagSetTargetInvalid — the flag set usage error", () => {
+	it("names the reason and the valid forms", () => {
+		const err = new FlagSetTargetInvalid({reason: "no target given"});
+		assert.match(err.message, /no target given/);
+		assert.match(err.message, /--percent N/);
+	});
+});
+
 describe("selectStatesForKey — the per-key slice of flag list", () => {
 	const rows = [
 		decodeFlagState("prod", flag({key: "new-nav"})),
 		decodeFlagState("pr-9", flag({key: "new-nav"})),
-		decodeFlagState("prod", flag({key: "beta-banner", enabled: false, defaultVariation: "off"})),
+		decodeFlagState("prod", flag({key: "beta-banner", enabled: false})),
 	];
 
 	it("keeps only the rows for the named key, across every env", () => {
@@ -190,40 +422,32 @@ describe("FlagKeyNotFound — the typed, legible env-less not-found", () => {
 });
 
 describe("renderFlagDetail — the single-flag --env view", () => {
-	it("shows key, env, enabled, served default value, and every variation", () => {
+	it("shows effective serving for a split-released flag (on, not the lying default)", () => {
 		const detail = renderFlagDetail(
 			"prod",
-			flag({
-				key: "authorship-loop",
-				enabled: true,
-				defaultVariation: "off",
-				variations: {off: false, on: true},
-			}),
+			flag({key: "authorship-loop", rules: [splitRule(100)]}),
 		);
 		assert.match(detail, /flag:\s+authorship-loop/);
 		assert.match(detail, /env:\s+prod/);
 		assert.match(detail, /enabled:\s+on/);
-		// the served value is the variation's resolved value, not just its name
-		assert.match(detail, /serves:\s+off = false/);
+		assert.match(detail, /serves:\s+on@100% \(split\)/);
+		assert.match(detail, /default:\s+off = false/);
 		assert.match(detail, /off = false/);
 		assert.match(detail, /on = true/);
 	});
 
-	it("renders enabled:off for a disabled flag (its default value still resolves)", () => {
-		const detail = renderFlagDetail(
-			"pr-7",
-			flag({enabled: false, defaultVariation: "off", variations: {off: false, on: true}}),
-		);
+	it("shows the default as serving for an unreleased flag", () => {
+		const detail = renderFlagDetail("pr-7", flag({enabled: false}));
 		assert.match(detail, /enabled:\s+off/);
-		assert.match(detail, /serves:\s+off = false/);
+		assert.match(detail, /serves:\s+off \(default\)/);
 	});
 
-	it("shows (none) for the served value when the variation is absent (a malformed flag)", () => {
+	it("shows (none) for the default value when the variation is absent (a malformed flag)", () => {
 		const detail = renderFlagDetail(
 			"prod",
 			flag({defaultVariation: "ghost", variations: {on: true}}),
 		);
-		assert.match(detail, /serves:\s+ghost = \(none\)/);
+		assert.match(detail, /default:\s+ghost = \(none\)/);
 	});
 });
 
@@ -232,15 +456,15 @@ describe("renderFlagTable", () => {
 		assert.strictEqual(renderFlagTable([]), "no flags found");
 	});
 
-	it("renders a legible header + one row per flag×env, sorted by key then env", () => {
+	it("renders effective serving per row — a split-released flag reads as on, sorted by key then env", () => {
 		const table = renderFlagTable([
-			decodeFlagState("prod", flag({key: "beta", enabled: false, defaultVariation: "off"})),
+			decodeFlagState("prod", flag({key: "beta", rules: [splitRule(100)]})),
 			decodeFlagState("pr-1", flag({key: "alpha"})),
 		]);
 		const lines = table.split("\n");
-		assert.match(lines[0] ?? "", /FLAG\s+ENV\s+ENABLED\s+DEFAULT/);
+		assert.match(lines[0] ?? "", /FLAG\s+ENV\s+ENABLED\s+SERVES/);
 		// alpha sorts before beta
-		assert.match(lines[1] ?? "", /^alpha\s+pr-1\s+on\s+true/);
-		assert.match(lines[2] ?? "", /^beta\s+prod\s+off\s+false/);
+		assert.match(lines[1] ?? "", /^alpha\s+pr-1\s+on\s+off \(default\)/);
+		assert.match(lines[2] ?? "", /^beta\s+prod\s+on\s+on@100% \(split\)/);
 	});
 });
