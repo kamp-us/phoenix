@@ -3,9 +3,10 @@
  * one row per open-reported target group off the gated `report.listOpen` read
  * (`Moderate`-gated server-side; a non-moderator's read denies the invisible
  * `UNAUTHORIZED`, caught by the page's `<Screen>`). Each row shows the target
- * kind, the report count (the pile-on signal), the reason when present, and the
- * first-reported age. Out of scope: target content preview, resolve/dismiss,
- * history (sibling slices).
+ * kind, the report count (the pile-on signal), the reason when present, the
+ * first-reported age, and the reported target's in-situ context (#1702): its
+ * excerpt/title + author, linked to the target on its own surface. Out of scope:
+ * resolve/dismiss, history (sibling slices).
  *
  * a11y (the divan baseline): a real `<ul>` list, counts and ages as text (never
  * color), lowercase Turkish copy.
@@ -13,7 +14,13 @@
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport} from "../../../worker/features/fate/views";
 import {itemKindLabel} from "./divanGating";
-import {reasonLabel, reportAgeLabel} from "./raporlarGating";
+import {
+	reasonLabel,
+	reportAgeLabel,
+	targetAuthorLabel,
+	targetExcerptLabel,
+	targetHref,
+} from "./raporlarGating";
 
 const QUEUE_PAGE_SIZE = 50;
 
@@ -24,6 +31,9 @@ const OpenReportRowView = view<OpenReport>()({
 	reportCount: true,
 	reason: true,
 	firstReportedAt: true,
+	targetExcerpt: true,
+	targetAuthor: true,
+	targetRef: true,
 });
 
 const OpenReportConnectionView = {items: {node: OpenReportRowView}} as const;
@@ -54,6 +64,9 @@ export function Raporlar() {
 function ReportRow({node}: {readonly node: ViewRef<"OpenReport">}) {
 	const data = useView(OpenReportRowView, node);
 	const age = reportAgeLabel(data.firstReportedAt, Date.now());
+	const href = targetHref(data.targetKind, data.targetRef);
+	const excerpt = targetExcerptLabel(data.targetExcerpt);
+	const author = targetAuthorLabel(data.targetAuthor);
 
 	return (
 		<li
@@ -65,6 +78,16 @@ function ReportRow({node}: {readonly node: ViewRef<"OpenReport">}) {
 				<span className="kp-divan__badge">{data.reportCount} rapor</span>
 				{age !== null && <span className="kp-divan__rapor-age">{age}</span>}
 			</span>
+			<p className="kp-divan__rapor-target">
+				{href !== null ? (
+					<a className="kp-divan__rapor-link" href={href}>
+						{excerpt}
+					</a>
+				) : (
+					<span className="kp-divan__rapor-excerpt">{excerpt}</span>
+				)}
+				{author !== null && <span className="kp-divan__rapor-author">{author}</span>}
+			</p>
 			<p className="kp-divan__rapor-reason">{reasonLabel(data.reason)}</p>
 		</li>
 	);

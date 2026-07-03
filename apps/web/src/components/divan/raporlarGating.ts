@@ -10,6 +10,7 @@
  * `Moderate`-gated server-side, so a forced read by a non-moderator denies the
  * invisible `UNAUTHORIZED` (rendered as the divan's "yetkin yok" state).
  */
+import type {TargetKind} from "../../../worker/db/target-kind";
 
 /**
  * Show the raporlar entry iff the mod-queue flag is on AND the viewer carries the
@@ -45,4 +46,38 @@ export function reportAgeLabel(firstReportedAt: string, nowMs: number): string |
 export function reasonLabel(reason: string | null): string {
 	const trimmed = reason?.trim();
 	return trimmed ? trimmed : "gerekçe yok";
+}
+
+/**
+ * The in-situ link for a reported target (#1702): a post/comment opens its pano post
+ * detail (`/pano/<ref>` — the comment's `ref` is its parent post id), a definition
+ * opens its sözlük term page (`/sozluk/<ref>`). `null` when the server couldn't
+ * resolve the routing ref, so the row renders context without a broken link.
+ */
+export function targetHref(kind: TargetKind, ref: string | null): string | null {
+	const trimmed = ref?.trim();
+	if (!trimmed) return null;
+	switch (kind) {
+		case "post":
+		case "comment":
+			return `/pano/${trimmed}`;
+		case "definition":
+			return `/sozluk/${trimmed}`;
+	}
+}
+
+/**
+ * The queue row's target-excerpt copy: the server-resolved excerpt/title when
+ * present, else the lowercase-Turkish "içerik yüklenemedi" (a target whose content
+ * couldn't be read — sandboxed/gone), never an empty cell.
+ */
+export function targetExcerptLabel(excerpt: string | null): string {
+	const trimmed = excerpt?.trim();
+	return trimmed ? trimmed : "içerik yüklenemedi";
+}
+
+/** The author byline copy: `@handle` when resolved, else "yazar bilinmiyor". */
+export function targetAuthorLabel(author: string | null): string | null {
+	const trimmed = author?.trim();
+	return trimmed ? `@${trimmed}` : null;
 }

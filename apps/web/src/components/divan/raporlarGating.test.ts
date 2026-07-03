@@ -6,7 +6,14 @@
  * `isModerator` signal, never `tier`.
  */
 import {describe, expect, it} from "vitest";
-import {reasonLabel, reportAgeLabel, shouldShowRaporlar} from "./raporlarGating";
+import {
+	reasonLabel,
+	reportAgeLabel,
+	shouldShowRaporlar,
+	targetAuthorLabel,
+	targetExcerptLabel,
+	targetHref,
+} from "./raporlarGating";
 
 describe("shouldShowRaporlar — the moderator-only, flag-gated entry", () => {
 	it("shows the entry when the flag is on AND the viewer is a moderator", () => {
@@ -62,5 +69,46 @@ describe("reasonLabel — the reason cell", () => {
 	it("falls back to 'gerekçe yok' for null and blank reasons", () => {
 		expect(reasonLabel(null)).toBe("gerekçe yok");
 		expect(reasonLabel("   ")).toBe("gerekçe yok");
+	});
+});
+
+describe("targetHref — the in-situ link per target kind (#1702)", () => {
+	it("links a post to its pano detail page", () => {
+		expect(targetHref("post", "p-1")).toBe("/pano/p-1");
+	});
+
+	it("links a comment to its PARENT post detail (ref is the parent post id)", () => {
+		expect(targetHref("comment", "parent-post-9")).toBe("/pano/parent-post-9");
+	});
+
+	it("links a definition to its sözlük term page (ref is the term slug)", () => {
+		expect(targetHref("definition", "istanbul")).toBe("/sozluk/istanbul");
+	});
+
+	it("returns null for a null or blank ref (no broken link when the ref is unresolved)", () => {
+		expect(targetHref("post", null)).toBeNull();
+		expect(targetHref("definition", "  ")).toBeNull();
+	});
+});
+
+describe("targetExcerptLabel — the excerpt/title cell", () => {
+	it("passes a present excerpt through", () => {
+		expect(targetExcerptLabel("başlık")).toBe("başlık");
+	});
+
+	it("falls back to 'içerik yüklenemedi' for null and blank excerpts", () => {
+		expect(targetExcerptLabel(null)).toBe("içerik yüklenemedi");
+		expect(targetExcerptLabel("   ")).toBe("içerik yüklenemedi");
+	});
+});
+
+describe("targetAuthorLabel — the author byline", () => {
+	it("prefixes a present author with @", () => {
+		expect(targetAuthorLabel("elif")).toBe("@elif");
+	});
+
+	it("returns null for null and blank authors (no byline beats an empty @)", () => {
+		expect(targetAuthorLabel(null)).toBeNull();
+		expect(targetAuthorLabel("  ")).toBeNull();
 	});
 });
