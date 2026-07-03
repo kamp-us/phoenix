@@ -104,4 +104,20 @@ describe("buildManifest (crabbox → ADR 0054 §2 manifest)", () => {
 		const b = build(passingRunSummary(), passingJUnit);
 		assert.deepStrictEqual(a, b);
 	});
+
+	it("appends extraChecks after the crabbox-derived checks (#1836 bundle assertion)", () => {
+		const m = buildManifest({
+			summary: passingRunSummary(),
+			tests: parseJUnit(passingJUnit),
+			commit: COMMIT,
+			logsRef: "crabbox:stdout",
+			timestamp: "2026-06-14T10:03:21.000Z",
+			extraChecks: [{name: "bundle-node-core-free", status: "pass", exitCode: 0}],
+		});
+		assert.deepStrictEqual(
+			m.checks.map((c) => c.name),
+			["typecheck", "lint", "test", "bundle-node-core-free"],
+		);
+		assert.strictEqual(m.checks.at(-1)?.status, "pass");
+	});
 });

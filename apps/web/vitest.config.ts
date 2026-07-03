@@ -143,6 +143,9 @@ export default defineConfig({
 						"worker/**/*.test.ts",
 						"src/**/*.test.ts",
 						"tests/integration/**/*.unit.test.ts",
+						// Pure-core tests of the headless build tooling (the node-core
+						// bundle assertion, #1836) — no deployed worker, runs offline here.
+						"scripts/**/*.unit.test.ts",
 					],
 					exclude: ["node_modules/**", "dist/**"],
 					sequence: {groupOrder: 1},

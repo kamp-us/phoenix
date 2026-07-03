@@ -8,7 +8,10 @@
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
 		"noEmit": true,
+		// The headless build tooling (scripts/bundle-assert, #1836) is loaded directly by
+		// Node's ESM loader, which requires explicit `.ts` import specifiers.
+		"allowImportingTsExtensions": true,
 		"types": ["node"]
 	},
-	"include": ["vite.config.ts"]
+	"include": ["vite.config.ts", "scripts"]
 }

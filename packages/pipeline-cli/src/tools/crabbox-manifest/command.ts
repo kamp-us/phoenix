@@ -19,12 +19,31 @@
  * `runMain` wiring is dropped — the shared `pipeline-cli` bin owns the run boundary.
  */
 import {readFileSync, writeFileSync} from "node:fs";
-import {Console, Effect} from "effect";
+import {Console, Effect, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {buildManifest} from "./adapter.ts";
 import {Git, GitLive} from "./commit.ts";
 import {CrabboxParseError, parseJUnit, parseRunSummaryJson} from "./crabbox.ts";
-import {manifestToJson} from "./Manifest.ts";
+import {Check, manifestToJson} from "./Manifest.ts";
+
+/** A file of externally-produced checks: a single `Check` object OR an array of them. */
+const ExtraChecksFile = Schema.Union([Check, Schema.Array(Check)]);
+const decodeExtraChecks = Schema.decodeUnknownSync(ExtraChecksFile);
+
+/**
+ * Parse an `--extra-checks` file into a `Check[]`. Tolerant of object-or-array;
+ * a malformed shape fails the process non-zero (same contract as a bad run-summary)
+ * so the manifest never carries a half-formed check.
+ */
+const parseExtraChecks = (text: string): Effect.Effect<ReadonlyArray<Check>, CrabboxParseError> =>
+	Effect.try({
+		try: () => {
+			const decoded = decodeExtraChecks(JSON.parse(text));
+			return Array.isArray(decoded) ? decoded : [decoded];
+		},
+		catch: (cause) =>
+			new CrabboxParseError({message: `malformed --extra-checks: ${String(cause)}`}),
+	});
 
 /** Read a file as UTF-8, lowering an IO fault into the adapter's typed parse error. */
 const readText = (path: string): Effect.Effect<string, CrabboxParseError> =>
@@ -63,6 +82,12 @@ const outputFlag = Flag.string("output").pipe(
 	Flag.optional,
 	Flag.withDescription("Write the manifest here instead of stdout"),
 );
+const extraChecksFlag = Flag.string("extra-checks").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"Path to a JSON Check (or Check[]) produced outside crabbox, folded into checks[] (e.g. the #1836 bundle assertion)",
+	),
+);
 
 export const crabboxManifestCommand = Command.make(
 	"crabbox-manifest",
@@ -74,6 +99,7 @@ export const crabboxManifestCommand = Command.make(
 		runUrl: runUrlFlag,
 		environment: environmentFlag,
 		output: outputFlag,
+		extraChecks: extraChecksFlag,
 	},
 	(args) =>
 		Effect.gen(function* () {
@@ -82,6 +108,11 @@ export const crabboxManifestCommand = Command.make(
 
 			const junitXml = args.junit._tag === "Some" ? yield* readText(args.junit.value) : null;
 			const tests = parseJUnit(junitXml);
+
+			const extraChecks =
+				args.extraChecks._tag === "Some"
+					? yield* Effect.flatMap(readText(args.extraChecks.value), parseExtraChecks)
+					: [];
 
 			const provided =
 				args.commit._tag === "Some" && args.commit.value.trim().length > 0
@@ -95,6 +126,7 @@ export const crabboxManifestCommand = Command.make(
 				commit,
 				logsRef: args.logs,
 				timestamp: summary.finishedAt ?? new Date().toISOString(),
+				extraChecks,
 				...(args.runUrl._tag === "Some" ? {runUrl: args.runUrl.value} : {}),
 				...(args.environment._tag === "Some" ? {environment: args.environment.value} : {}),
 			});
