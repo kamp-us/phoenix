@@ -12,7 +12,9 @@ import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied} from "../kunye/errors.ts";
 
-const bildirimOn = Effect.gen(function* () {
+/** The raw flag read — the emitter siblings gate their WRITES on this (a silent
+ * skip, never the resolver gate's `Denied`). Safe default `false`. */
+export const bildirimOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(PHOENIX_BILDIRIM, false).pipe(provideRequestFlags);
 });

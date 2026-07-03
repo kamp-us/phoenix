@@ -25,6 +25,8 @@ import {
 import {CurrentUser} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Exit, Layer} from "effect";
+import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
+import type {NotificationAggregateInput} from "../bildirim/Notification.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
@@ -117,6 +119,22 @@ const voteStubOf = (casts: VoteInput[], authorId = "u-author"): Layer.Layer<Vote
 		clearTarget: () => Effect.die(new Error("unused")),
 	});
 
+// A `Notification` whose `recordAggregate` RECORDS each emit (every other method fails on
+// contact), so "a landed divan vote notifies the item's author, aggregated" is observable (#1695).
+const notificationRecording = (): {
+	layer: ReturnType<typeof makeNotificationStub>;
+	emits: NotificationAggregateInput[];
+} => {
+	const emits: NotificationAggregateInput[] = [];
+	const layer = makeNotificationStub({
+		recordAggregate: (input) => {
+			emits.push(input);
+			return Effect.succeed({aggregated: false});
+		},
+	});
+	return {layer, emits};
+};
+
 // A Vote that DIES if any cast is attempted — proves a denied path never reaches the write.
 const voteFailOnContact: Layer.Layer<Vote> = Layer.succeed(Vote, {
 	cast: () => Effect.die(new Error("no cast on a denied path")),
@@ -169,6 +187,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					relationStoreOf([]),
 					kunyeOf({"u-yazar": "yazar"}),
 					agentAuthorityStub,
+					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
 					requestContext(human("u-yazar"), true),
 				),
 			),
@@ -192,6 +211,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					relationStoreOf(["u-mod"]),
 					kunyeOf({"u-mod": "çaylak"}),
 					agentAuthorityStub,
+					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
 					requestContext(human("u-mod"), true),
 				),
 			),
@@ -217,6 +237,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 						relationStoreOf([]),
 						kunyeOf({"u-yazar": "yazar"}, {"u-author": 15}), // at VOUCH_PROMOTION_KARMA_BAR
 						agentAuthorityStub,
+						makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
 						requestContext(human("u-yazar"), true),
 					),
 				),
@@ -240,6 +261,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					relationStoreOf([]),
 					kunyeOf({"u-yazar": "yazar"}, {"u-author": 99}),
 					agentAuthorityStub,
+					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
 					requestContext(human("u-yazar"), true),
 				),
 			),
@@ -260,6 +282,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					relationStoreOf([]),
 					kunyeOf({"u-caylak": "çaylak"}),
 					agentAuthorityStub,
+					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
 					requestContext(human("u-caylak"), true),
 				),
 			),
@@ -280,6 +303,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					relationStoreOf([]),
 					kunyeOf({}),
 					agentAuthorityStub,
+					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
 					requestContext(unauthenticated, true),
 				),
 			),
@@ -304,9 +328,77 @@ describe("divan.vote — gated sandboxed vote", () => {
 					}),
 					kunyeOf({"u-yazar": "yazar"}),
 					agentAuthorityStub,
+					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
 					requestContext(human("u-yazar"), false),
 				),
 			),
 		),
 	);
+});
+
+// Rite feedback (#1695): a landed divan vote notifies the item's author through the
+// bildirim spine — aggregated per item, self-suppressed, and NEVER able to fail the
+// committed cast. The retraction/self arms use the recording stub and assert ZERO
+// emits (the swallow would hide a die, so absence must be observed, not implied).
+describe("divan.vote — rite-feedback bildirim (#1695)", () => {
+	const landedVoteLayers = (
+		notification: ReturnType<typeof makeNotificationStub>,
+		casts: VoteInput[],
+		authorId: string,
+	) =>
+		Layer.mergeAll(
+			voteStubOf(casts, authorId),
+			vouchActiveFor([]),
+			makePasaportStub(),
+			relationStoreOf([]),
+			kunyeOf({"u-yazar": "yazar"}),
+			agentAuthorityStub,
+			notification,
+			requestContext(human("u-yazar"), true),
+		);
+
+	it.effect("a landed upvote emits ONE aggregate notification for the author", () => {
+		const casts: VoteInput[] = [];
+		const {layer, emits} = notificationRecording();
+		return Effect.gen(function* () {
+			yield* castVote("definition:def-1", true);
+			assert.deepStrictEqual(emits, [
+				{
+					recipientId: "u-author",
+					kind: "divan-vote",
+					targetKind: "definition",
+					targetId: "def-1",
+					actorId: null,
+				},
+			]);
+		}).pipe(Effect.provide(landedVoteLayers(layer, casts, "u-author")));
+	});
+
+	it.effect("a retraction (value: false) emits nothing", () => {
+		const casts: VoteInput[] = [];
+		const {layer, emits} = notificationRecording();
+		return Effect.gen(function* () {
+			yield* castVote("definition:def-1", false);
+			assert.deepStrictEqual(emits, []);
+		}).pipe(Effect.provide(landedVoteLayers(layer, casts, "u-author")));
+	});
+
+	it.effect("voting your own item emits nothing (self-suppression)", () => {
+		const casts: VoteInput[] = [];
+		const {layer, emits} = notificationRecording();
+		return Effect.gen(function* () {
+			// the cast credits the VOTER as author → no self-notification
+			yield* castVote("definition:def-1", true);
+			assert.deepStrictEqual(emits, []);
+		}).pipe(Effect.provide(landedVoteLayers(layer, casts, "u-yazar")));
+	});
+
+	it.effect("a DYING notification write cannot fail the committed vote (the seam AC)", () => {
+		const casts: VoteInput[] = [];
+		return Effect.gen(function* () {
+			// fail-on-contact Notification: recordAggregate DIES; the receipt still lands.
+			const receipt = yield* castVote("definition:def-1", true);
+			assert.strictEqual((receipt as {myVote: boolean}).myVote, true);
+		}).pipe(Effect.provide(landedVoteLayers(makeNotificationStub(), casts, "u-author")));
+	});
 });

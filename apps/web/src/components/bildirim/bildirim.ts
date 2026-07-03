@@ -52,6 +52,24 @@ export function rowUnread(
 	return readAt == null && !markedThisSession && !allMarkedThisSession;
 }
 
+// Kind → Turkish row copy (#1695): kinds stay English wire identifiers, the
+// rendered line is product voice. `count` is the aggregate slot ("N oy").
+const KIND_COPY: Record<string, (count: number) => string> = {
+	"divan-vote": (count) =>
+		count > 1 ? `divandaki içeriğin ${count} oy aldı` : "divandaki içeriğin oy aldı",
+	kefil: () => "bir yazar sana kefil oldu",
+};
+
+/**
+ * The row's Turkish copy per kind. An unknown kind (a future emitter's, read by
+ * an older client) degrades to the raw kind + `×N` — never a crash or a blank row.
+ */
+export function bildirimCopy(kind: string, count: number): string {
+	const copy = KIND_COPY[kind];
+	if (copy) return copy(count);
+	return count > 1 ? `${kind} ×${count}` : kind;
+}
+
 const TARGET_LINK_LABELS: Record<string, string> = {
 	post: "gönderiye git",
 	comment: "yoruma git",

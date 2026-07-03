@@ -16,6 +16,7 @@ const die =
 
 const failOnContact: NotificationShape = {
 	record: die("record"),
+	recordAggregate: die("recordAggregate"),
 	listForRecipient: die("listForRecipient"),
 	unreadCount: die("unreadCount"),
 	markRead: die("markRead"),

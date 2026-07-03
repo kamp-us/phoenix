@@ -12,7 +12,7 @@ import {useFateClient, useListView, useRequest, useView, type ViewRef, view} fro
 import {Link} from "react-router";
 import type {Notification, NotificationMarkReceipt} from "../../../worker/features/fate/views";
 import {LoadMoreButton} from "../../fate/wire";
-import {bildirimTarget, rowUnread, targetLinkLabel} from "./bildirim";
+import {bildirimCopy, bildirimTarget, rowUnread, targetLinkLabel} from "./bildirim";
 
 const PAGE_SIZE = 20;
 
@@ -142,10 +142,7 @@ function BildirimRow({
 		>
 			{/* Decorative — the unread state is announced by the row's "okundu" button. */}
 			{unread ? <span className="kp-bildirim__dot" aria-hidden="true" /> : null}
-			<span className="kp-bildirim__kind">
-				{data.kind}
-				{data.count > 1 ? ` ×${data.count}` : ""}
-			</span>
+			<span className="kp-bildirim__kind">{bildirimCopy(data.kind, data.count)}</span>
 			<time className="kp-bildirim__meta" dateTime={data.createdAt}>
 				{new Date(data.createdAt).toLocaleDateString("tr-TR")}
 			</time>
