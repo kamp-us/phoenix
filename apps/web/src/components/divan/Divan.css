@@ -55,6 +55,67 @@
 	color: var(--danger);
 }
 
+/* section nav (çaylaklar / raporlar, #1701) -------------------------------- */
+
+.kp-divan__nav {
+	display: inline-flex;
+	gap: var(--s-2);
+	margin-bottom: var(--s-4);
+}
+
+.kp-divan__nav-tab {
+	font: var(--t-body-sm);
+	padding: var(--s-1) var(--s-3);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text-secondary);
+	cursor: pointer;
+}
+
+.kp-divan__nav-tab:hover {
+	background: var(--surface-raised);
+}
+
+.kp-divan__nav-tab[aria-current="true"] {
+	border-color: var(--accent);
+	background: var(--accent-faint);
+	color: var(--text-primary);
+}
+
+/* raporlar (moderation queue, #1701) --------------------------------------- */
+
+.kp-divan__raporlar {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-divan__rapor-row {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+}
+
+.kp-divan__rapor-age {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.kp-divan__rapor-reason {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+	overflow-wrap: anywhere;
+}
+
 /* roster ------------------------------------------------------------------ */
 
 .kp-divan__roster {

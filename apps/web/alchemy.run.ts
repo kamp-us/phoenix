@@ -45,6 +45,7 @@ import {
 	demoTargetingFlag,
 	Flagship,
 	funnelReadoutFlag,
+	modQueueFlag,
 	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
 	optimisticEditsFlag,
@@ -105,6 +106,9 @@ export default Alchemy.Stack(
 		// #1637) — gates the nested-connection edge-drop (ADR 0125 D1) until a human
 		// release.
 		yield* optimisticDefinitionDeleteFlag(flagship.appId);
+		// The moderation-queue raporlar surface dark-ship flag, default-off (#1701) —
+		// the moderator-only queue view inside /divan gates behind this key.
+		yield* modQueueFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
