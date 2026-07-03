@@ -6,25 +6,24 @@
  *   node src/bin.ts version       # the Phase-1 tracer tool
  *   node src/bin.ts <tool> …      # dispatch to a registered tool (Phase-2 children)
  *
- * The router is `Command.withSubcommands(registeredTools)`: the root command
- * carries no behavior of its own, it only dispatches `pipeline-cli <tool> …` to
- * the tool whose `name` matches the first token. A Phase-2 child folds its tool
- * in by appending a `Command` to `registeredTools` in `registry.ts` — this bin
- * and the pure `router.ts` core never change.
- *
- * Wired per effect-smol's CLI guidance (mirrors `@kampus/decisions-index` /
- * `@kampus/epic-ledger`): `effect/unstable/cli` for the typed subcommands, the
- * Node platform over `NodeServices.layer`, run via `NodeRuntime.runMain`.
+ * The router itself lives in `run.ts` (`Command.withSubcommands(registeredTools)`);
+ * this file is a thin bootstrap that loads it via a **dynamic** `import()` so an
+ * unlinked `catalog:` dep — the in-repo-first path hit before `pnpm install` has
+ * settled on a fresh/partial checkout — surfaces as an actionable remediation
+ * instead of a raw `ERR_MODULE_NOT_FOUND` from deep in the static tool graph
+ * (#1798). A static `import "./run.ts"` would link that graph before any code
+ * here runs, so the throw could not be caught; the dynamic import is what makes
+ * the module-not-found catchable. On the normal (installed) path this is a plain
+ * pass-through — `run.ts` wires and runs the CLI exactly as before.
  */
-import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Effect} from "effect";
-import {Command} from "effect/unstable/cli";
-import {registeredTools} from "./registry.ts";
-import {VERSION} from "./version.ts";
+import {isUnlinkedDependencyError, remediationMessage} from "./module-load-guard.ts";
 
-const cli = Command.make("pipeline-cli").pipe(
-	Command.withSubcommands(registeredTools),
-	Command.withDescription("The pipeline tooling router — `pipeline-cli <tool> …` (epic #994)"),
-);
-
-cli.pipe(Command.run({version: VERSION}), Effect.provide(NodeServices.layer), NodeRuntime.runMain);
+try {
+	await import("./run.ts");
+} catch (err) {
+	if (isUnlinkedDependencyError(err)) {
+		console.error(remediationMessage(err));
+		process.exit(1);
+	}
+	throw err;
+}
