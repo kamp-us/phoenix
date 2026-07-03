@@ -51,25 +51,69 @@ the app serving an env, `computeEffectiveServing` resolves what an env actually 
 fails the typed, legible `FlagEnvNotFound` before any read or write.
 
 Credentials resolve **keychain-first with an env-var fallback** (#1730), never from
-source: `cf-utils auth login` stores the API token + account id once in the macOS Keychain
-(via the `security` CLI — no plaintext dotfile), and `CredentialsKeychainFirst` +
-`AccountIdKeychainConfig` (`src/credentials.ts`) resolve them on every later invocation,
-falling back to `$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID` when the keychain has
-nothing — so CI (which sets the env vars, and generally has no macOS Keychain) works
-unchanged; a keychain miss is the normal CI path, not an error. `auth login` **validates
-before persisting** with an authenticated `listApps` read against exactly the pasted
-credentials, `auth status` reports what resolves from where (and whether it
-authenticates), `auth logout` deletes the stored items. An unreachable/unauthorized CF
-surfaces a typed error, not a stack trace.
+source. There are **two ways to acquire** the keychain credential and one env-var path:
+
+- **Browser OAuth** (`auth login --oauth`, #1761) — the `wrangler login` model:
+  Authorization-Code + PKCE, a local loopback callback, CSRF `state`, PKCE challenge. You
+  authorize in the browser, so **no API-token secret ever crosses the terminal** — the path
+  that is safe to run on a stream (a pasted token would leak on a Twitch VOD). It stores an
+  **expiring access token + a refresh token**; `CredentialsKeychainFirst` resolves it via the
+  SDK's `fromOAuth` provider and **refreshes on expiry**, persisting the renewed set back to
+  the keychain.
+- **Token paste** (`auth login`, the default, #1730) — prompts for a Cloudflare API token +
+  account id, **validates before persisting** with an authenticated `listApps` read against
+  exactly the pasted credentials, and stores the long-lived token. This is the
+  **full-coverage** path (see the OAuth scope caveat below) and is **not** deprecated.
+- **Env vars** (`$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID`) — the CI/headless path,
+  used on a keychain miss. Byte-for-byte unchanged.
+
+Resolution precedence is OAuth (keychain) → pasted token (keychain) → env. A keychain miss is
+the normal CI path, not an error. `auth status` reports what resolves from where — `oauth |
+keychain | env | missing` — and whether it authenticates; `auth logout` deletes every stored
+item (token-paste and OAuth). An unreachable/unauthorized CF surfaces a typed error, not a
+stack trace.
+
+### One-time founder setup — register the public PKCE OAuth client
+
+The OAuth flow needs a **public (PKCE, no client secret) OAuth client** registered once in the
+Cloudflare dashboard — a **human setup task**, not something the tooling performs:
+
+1. Cloudflare dashboard → **Manage account → OAuth clients → Create**.
+2. Choose a **public / PKCE client** (no client secret — a CLI cannot hold one).
+3. Set the redirect/callback URI to **`http://localhost:9976/auth/callback`** (the loopback the
+   local callback server listens on — `OAUTH_REDIRECT_URI` in `src/oauth.ts`).
+4. Grant it a scope covering **Flagship read + write** (plus `account:read` / `user:read` for
+   account enumeration, and `offline_access` for the refresh token).
+5. The resulting **public client id** is wired as `OAUTH_CLIENT_ID` in `src/oauth.ts`; if the
+   founder registers under a different client id, update that constant.
+
+> **OAuth scope caveat (pending confirmation).** OAuth scope names map 1:1 to Cloudflare
+> API-token permission names. As of writing, **no `flagship:*` (feature-flag) scope is
+> documented** in Cloudflare's published OAuth-scope catalog (verified against the
+> wrangler/alchemy scope list). The scopes this flow requests are therefore a **single,
+> documented config constant** — `FLAGSHIP_OAUTH_SCOPES` in `src/oauth.ts` — currently
+> `flagship:read` / `flagship:write` (best-guess names following CF's `<resource>:<verb>`
+> convention). **The founder must confirm the real Flagship scope id via the dashboard's
+> `GET /oauth/scopes`.** If Cloudflare does not expose a Flagship OAuth scope, OAuth is a
+> **partial / scope-down** path (it covers what it can) and **token-paste remains the
+> full-coverage path** — which is exactly why token-paste stays a first-class login mode, not a
+> deprecated one. Correcting the scope is a **one-line edit** to `FLAGSHIP_OAUTH_SCOPES`, no
+> refactor.
 
 ## Usage
 
 ```bash
-# Once, on a human machine — prompts for the token + account id, validates, stores in
-# the macOS Keychain; every later invocation resolves credentials automatically:
+# Once, on a human machine — stores credentials in the macOS Keychain; every later
+# invocation resolves them automatically.
+
+# Browser OAuth (no secret in the terminal — safe on a stream; needs the one-time client above):
+node src/bin.ts auth login --oauth
+
+# Or token paste (prompts for the token + account id, validates, stores — full-coverage path):
 node src/bin.ts auth login
-node src/bin.ts auth status    # where credentials resolve from + a validating read
-node src/bin.ts auth logout    # remove them from the keychain
+
+node src/bin.ts auth status    # where credentials resolve from (oauth|keychain|env|missing) + a validating read
+node src/bin.ts auth logout    # remove them (token-paste and OAuth) from the keychain
 
 # Or the env-var path (CI, or any non-macOS host):
 export CLOUDFLARE_API_TOKEN=<a CF token with Flagship read scope>

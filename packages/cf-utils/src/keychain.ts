@@ -16,6 +16,12 @@ export const KEYCHAIN_SERVICE = "kampus-cf-utils";
 /** The generic-password `-a` accounts: one per stored credential. */
 export const API_TOKEN_ACCOUNT = "cloudflare-api-token";
 export const ACCOUNT_ID_ACCOUNT = "cloudflare-account-id";
+// The OAuth token set (#1761): the browser flow persists an EXPIRING access token + a refresh
+// token + the absolute expiry (epoch-ms), so `credentials.ts` can resolve OAuth-first and
+// refresh on expiry. Distinct accounts from the long-lived token-paste `API_TOKEN_ACCOUNT`.
+export const OAUTH_ACCESS_TOKEN_ACCOUNT = "cloudflare-oauth-access-token";
+export const OAUTH_REFRESH_TOKEN_ACCOUNT = "cloudflare-oauth-refresh-token";
+export const OAUTH_EXPIRES_AT_ACCOUNT = "cloudflare-oauth-expires-at";
 
 /** A `security` write exited non-zero (or could not spawn). Secrets never appear in `args`. */
 export class KeychainCommandError extends Schema.TaggedErrorClass<KeychainCommandError>()(
@@ -57,19 +63,21 @@ const runSecurity = Effect.fn("Keychain.runSecurity")(
 		),
 );
 
+/** The `Keychain` service method surface — the value a `yield* Keychain` produces. */
+export interface KeychainService {
+	readonly get: (account: string) => Effect.Effect<string | undefined>;
+	readonly set: (account: string, secret: string) => Effect.Effect<void, KeychainCommandError>;
+	readonly remove: (account: string) => Effect.Effect<boolean, KeychainCommandError>;
+}
+
 /**
  * `Keychain` — the injectable credential-store seam. `get` never fails (miss ⇒
  * `undefined`); `set` upserts (`add-generic-password -U`); `remove` reports whether an
  * item was actually deleted. Built by `KeychainLive`; unit tests substitute a fake layer.
  */
-export class Keychain extends Context.Service<
-	Keychain,
-	{
-		readonly get: (account: string) => Effect.Effect<string | undefined>;
-		readonly set: (account: string, secret: string) => Effect.Effect<void, KeychainCommandError>;
-		readonly remove: (account: string) => Effect.Effect<boolean, KeychainCommandError>;
-	}
->()("@kampus/cf-utils/Keychain") {}
+export class Keychain extends Context.Service<Keychain, KeychainService>()(
+	"@kampus/cf-utils/Keychain",
+) {}
 
 export const KeychainLive: Layer.Layer<Keychain, never, ChildProcessSpawner.ChildProcessSpawner> =
 	Layer.effect(Keychain)(
