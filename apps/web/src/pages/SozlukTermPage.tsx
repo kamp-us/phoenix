@@ -11,7 +11,15 @@
  * lost (#730/#714, epic #713).
  */
 import * as React from "react";
-import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
+import {
+	toEntityId,
+	useFateClient,
+	useLiveListView,
+	useRequest,
+	useView,
+	type ViewRef,
+	view,
+} from "react-fate";
 import {useNavigate, useParams} from "react-router";
 import type {Term} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
@@ -26,9 +34,12 @@ import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {LoadMoreButton} from "../fate/wire";
 import type {WireMessageOverrides} from "../fate/wireMessages";
+import {PHOENIX_OPTIMISTIC_DEFINITION_ADD} from "../flags/keys";
+import {useFlag} from "../flags/useFlag";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
+import {appendOptimisticDefinitionEdge, buildOptimisticDefinition} from "./definitionAddOptimistic";
 import {NotFoundPage} from "./NotFoundPage";
 import "./SozlukTermPage.css";
 
@@ -304,13 +315,18 @@ function DefinitionsList(props: DefinitionsListProps) {
 /**
  * Definition composer wired to `fate.mutations.definition.add`. Membership in the
  * *nested* `Term.definitions` connection is server-driven (fate's declarative
- * `insert` only targets registered root lists), so there is no optimistic
- * temp-node — it would double with the live append. `onTermCreated` is passed
- * only on the fresh-slug branch, where there's no list yet to append to; it force-
- * refetches `term(slug)` then carries the new definition's id across the remount so
- * the list branch arms its read-back on it. On the list branch `onConfirm` hands the
- * new id to the same deterministic read-back so a lost live `appendNode` self-heals
- * (see {@link useReadbackRefetch}).
+ * `insert` only targets registered root lists), so an optimistic node is injected
+ * by a phoenix client helper rather than `insert` — behind the default-off
+ * `phoenix-optimistic-definition-add` flag (ADR 0125, #1679): on, the new definition
+ * shows instantly, temp-node reconciled to the server id (dedup by canonical id vs
+ * the live append); off, it appears only when the live `appendNode` / read-back
+ * lands, exactly as before. `onTermCreated` is passed only on the fresh-slug branch,
+ * where there's no list yet to append to (so the optimistic append is skipped
+ * there); it force-refetches `term(slug)` then carries the new definition's id across
+ * the remount so the list branch arms its read-back on it. On the list branch
+ * `onConfirm` hands the new id to the same deterministic read-back — narrowed to the
+ * append-loss healer when optimistic is on (the node is already present) — so a lost
+ * live `appendNode` self-heals (see {@link useReadbackRefetch}).
  */
 function Composer({
 	slug,
@@ -324,6 +340,9 @@ function Composer({
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
+	// Dark-ship gate (#1679, ADR 0125): off ⇒ no optimistic node, wait for the
+	// append/read-back exactly as today.
+	const {value: optimisticAdd} = useFlag(PHOENIX_OPTIMISTIC_DEFINITION_ADD, false);
 	const [body, setBody] = React.useState("");
 	const {
 		error,
@@ -359,12 +378,43 @@ function Composer({
 			return;
 		}
 		if (disabled) return;
+		const user = session.data.user;
+		// Optimistic nested-append (ADR 0125) only on the existing-term branch: the
+		// fresh-slug branch (onTermCreated) has no loaded definitions list to append
+		// to and drives its own force-refetch + remount, left untouched.
+		const optimistic = buildOptimisticDefinition(optimisticAdd && !onTermCreated, {
+			body,
+			author: user.name ?? user.email,
+			authorId: user.id,
+		});
 		await run(
-			() =>
-				fate.mutations.definition.add({
+			() => {
+				const promise = fate.mutations.definition.add({
 					input: {termSlug: slug, termTitle: slug.replace(/-/g, " "), body},
 					view: DefinitionView,
-				}),
+					...(optimistic ? {optimistic, insert: "none" as const} : {}),
+				});
+				if (optimistic) {
+					// fate wrote the temp record synchronously inside `.add`; append its
+					// edge into the nested list now so it renders instantly. The HTTP
+					// result triggers fate's resolveOptimisticEntity (temp→server id),
+					// which dedups against the live appendNode by canonical id. Roll the
+					// edge back on any failure — fate restores its own record write, but
+					// not this nested-list insert.
+					const rollback = appendOptimisticDefinitionEdge(
+						fate.store,
+						toEntityId("Term", slug),
+						toEntityId("Definition", optimistic.id),
+					);
+					promise.then(
+						(res) => {
+							if (res.error) rollback();
+						},
+						() => rollback(),
+					);
+				}
+				return promise;
+			},
 			"tanım eklenemedi",
 			async (result) => {
 				setBody("");

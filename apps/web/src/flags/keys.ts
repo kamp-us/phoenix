@@ -66,3 +66,15 @@ export const PHOENIX_FUNNEL_READOUT = "phoenix-funnel-readout";
  * (ADR 0083). The add/delete slices of the epic ship behind their own gates.
  */
 export const PHOENIX_OPTIMISTIC_EDITS = "phoenix-optimistic-edits";
+
+/**
+ * Optimistic `definition.add` (instant term-page insert) dark-ship flag (#1679,
+ * epic #1637). Gates the A1 client-append into the *nested* `Term.definitions`
+ * connection (ADR 0125): with it off, a new definition appears only when the live
+ * `appendNode` push (or the read-back refetch) lands, exactly as today; flipping it
+ * on injects the optimistic temp-node that fate reconciles to the server id.
+ * Default-off so it reaches production dark until a human flips it at release (ADR
+ * 0083). Its OWN key, not the epic's shared seam — each nested-mutation optimistic
+ * slice has an independent lifecycle (the sibling `comment.add` slice is separate).
+ */
+export const PHOENIX_OPTIMISTIC_DEFINITION_ADD = "phoenix-optimistic-definition-add";

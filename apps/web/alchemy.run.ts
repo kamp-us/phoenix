@@ -44,6 +44,7 @@ import {
 	demoTargetingFlag,
 	Flagship,
 	funnelReadoutFlag,
+	optimisticDefinitionAddFlag,
 	optimisticEditsFlag,
 	panoDraftSaveFlag,
 	panoOptimisticCommentAddFlag,
@@ -88,6 +89,9 @@ export default Alchemy.Stack(
 		// The optimistic comment.add dark-ship flag, default-off (#1678, epic #1637) —
 		// gates the instant nested-thread insert (ADR 0125 A1) until a human release.
 		yield* panoOptimisticCommentAddFlag(flagship.appId);
+		// The optimistic definition.add dark-ship flag, default-off (#1679, epic #1637)
+		// — gates the nested-connection client-append (ADR 0125) until a human release.
+		yield* optimisticDefinitionAddFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
