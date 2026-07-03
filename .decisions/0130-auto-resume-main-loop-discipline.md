@@ -10,7 +10,7 @@ tags: [pipeline, workflow, reliability]
 
 ## Context
 
-This is a conversation-authored decision made by the founder — the ADR [0075](0075-conversation-authored-adr-exception.md) exception — resolving triaged decision issue [#1757](https://github.com/kamp-us/phoenix/issues/1757).
+This is a conversation-authored decision made by the founder — the ADR [0075](0075-issueless-doc-pr-merge-seam.md) exception — resolving triaged decision issue [#1757](https://github.com/kamp-us/phoenix/issues/1757).
 
 Overnight hand-driven backlog draining via dynamic Workflows requires manual resumes when a run crashes — one night alone needed roughly three (a null-verdict crash, a stringified-args crash, and a whole-process death on a model switch). Epic [#1751](https://github.com/kamp-us/phoenix/issues/1751) asks for capped, failure-classified auto-resume at the **orchestrator layer** — the backstop *above* the executor and the only handler for whole-process death.
 
