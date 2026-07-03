@@ -73,6 +73,18 @@ export interface AddCommentResult {
 	score: number;
 	commentCount: number;
 	createdAt: Date;
+	/**
+	 * The post author — the recipient of a "someone replied to your post" moment
+	 * (#1697). Carried on the result so the resolver can emit the conversation
+	 * notification without re-reading the post.
+	 */
+	postAuthorId: string;
+	/**
+	 * The parent-comment author for a threaded reply, or `null` for a top-level
+	 * comment — the recipient of a "someone replied to your comment" moment
+	 * (#1697), resolved off the parent row already loaded for the existence check.
+	 */
+	parentAuthorId: string | null;
 }
 
 export interface VoteOnCommentInput {
@@ -340,6 +352,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		}
 
 		const parentId = input.parentId ?? null;
+		let parentAuthorId: string | null = null;
 		if (parentId !== null) {
 			const parent = yield* run((db) =>
 				db.query.commentRecord.findFirst({
@@ -351,6 +364,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 					message: "yanıtlanan yorum bulunamadı",
 				});
 			}
+			parentAuthorId = parent.authorId;
 		}
 
 		const now = new Date();
@@ -404,6 +418,8 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			score: 0,
 			commentCount: newCommentCount,
 			createdAt: now,
+			postAuthorId: post.authorId,
+			parentAuthorId,
 		} satisfies AddCommentResult;
 	});
 
