@@ -5,8 +5,13 @@
  * wiring in `useGlobalLivePin` / `FateProvider` is exercised separately once the SPA
  * has a component-test seam (#1419) — this tier covers the falsifiable logic.
  */
-import {describe, expect, it} from "vitest";
-import {isTransientLiveError, LIVE_RETRY_MAX_ATTEMPTS, nextLiveRetryDelayMs} from "./liveRetry.ts";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
+import {
+	createLiveRetryController,
+	isTransientLiveError,
+	LIVE_RETRY_MAX_ATTEMPTS,
+	nextLiveRetryDelayMs,
+} from "./liveRetry.ts";
 
 describe("isTransientLiveError", () => {
 	it("treats a 503 (the server's graceful cold-start envelope) as transient", () => {
@@ -58,5 +63,100 @@ describe("nextLiveRetryDelayMs", () => {
 
 	it("exposes a bounded retry budget", () => {
 		expect(LIVE_RETRY_MAX_ATTEMPTS).toBeGreaterThan(0);
+	});
+});
+
+describe("createLiveRetryController", () => {
+	// Fake timers model the back-off elapsing without wall-clock waits; the controller
+	// uses the global `setTimeout`/`clearTimeout` these replace.
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => vi.useRealTimers());
+
+	it("coalesces a burst of errors from one failed connect into ONE scheduled retry", () => {
+		const controller = createLiveRetryController();
+		const fire = vi.fn();
+
+		// One cold connect fans its error out to 3 mounted subscriptions → 3 schedule()
+		// calls. Only the first arms a timer; the rest are absorbed.
+		controller.schedule(fire);
+		controller.schedule(fire);
+		controller.schedule(fire);
+
+		expect(vi.getTimerCount()).toBe(1);
+	});
+
+	it("uses the exact scheduled back-off delay for a connect (attempt 0 = 250ms)", () => {
+		const controller = createLiveRetryController();
+		const fire = vi.fn();
+
+		controller.schedule(fire);
+		vi.advanceTimersByTime(nextLiveRetryDelayMs(0) - 1);
+		expect(fire).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1);
+		expect(fire).toHaveBeenCalledTimes(1);
+	});
+
+	it("charges the budget per connect, not per error — N views do not drain it faster", () => {
+		const controller = createLiveRetryController();
+		const fire = vi.fn();
+
+		// Each round = one failed cold connect that reports an error to 3 subscriptions,
+		// then the back-off elapses and the reconnect fires. The budget must last exactly
+		// LIVE_RETRY_MAX_ATTEMPTS rounds regardless of the 3× error fan-out.
+		for (let round = 0; round < LIVE_RETRY_MAX_ATTEMPTS; round++) {
+			controller.schedule(fire);
+			controller.schedule(fire);
+			controller.schedule(fire);
+			expect(vi.getTimerCount()).toBe(1);
+			vi.advanceTimersByTime(nextLiveRetryDelayMs(round));
+		}
+
+		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS);
+
+		// Budget spent: a further failed connect schedules nothing.
+		controller.schedule(fire);
+		expect(vi.getTimerCount()).toBe(0);
+		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS);
+	});
+
+	it("reset() restores the full budget and drops any pending retry (new identity)", () => {
+		const controller = createLiveRetryController();
+		const fire = vi.fn();
+
+		for (let round = 0; round < LIVE_RETRY_MAX_ATTEMPTS; round++) {
+			controller.schedule(fire);
+			vi.advanceTimersByTime(nextLiveRetryDelayMs(round));
+		}
+		controller.schedule(fire); // budget spent → no-op
+		expect(vi.getTimerCount()).toBe(0);
+
+		controller.reset();
+		controller.schedule(fire);
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(nextLiveRetryDelayMs(0)); // back-off restarts from attempt 0
+		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS + 1);
+	});
+
+	it("reset() cancels a pending retry so it never fires onto a re-keyed client", () => {
+		const controller = createLiveRetryController();
+		const fire = vi.fn();
+
+		controller.schedule(fire);
+		expect(vi.getTimerCount()).toBe(1);
+		controller.reset();
+		expect(vi.getTimerCount()).toBe(0);
+		vi.advanceTimersByTime(10_000);
+		expect(fire).not.toHaveBeenCalled();
+	});
+
+	it("cancel() drops a pending retry without firing it (unmount)", () => {
+		const controller = createLiveRetryController();
+		const fire = vi.fn();
+
+		controller.schedule(fire);
+		controller.cancel();
+		expect(vi.getTimerCount()).toBe(0);
+		vi.advanceTimersByTime(10_000);
+		expect(fire).not.toHaveBeenCalled();
 	});
 });

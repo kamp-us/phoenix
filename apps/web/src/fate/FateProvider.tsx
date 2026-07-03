@@ -10,7 +10,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {FateClient} from "react-fate";
 import {useSession} from "../auth/client";
 import {createClient} from "./client";
-import {LIVE_RETRY_MAX_ATTEMPTS, nextLiveRetryDelayMs} from "./liveRetry";
+import {createLiveRetryController, type LiveRetryController} from "./liveRetry";
 import {useGlobalLivePin} from "./useGlobalLivePin";
 
 // Holds the app-lifetime live pin (#711) from inside the FateClient context,
@@ -26,30 +26,23 @@ export function FateProvider({children}: {children: React.ReactNode}) {
 
 	// ADR 0095 client half: on a cold-start LIVE_UNAVAILABLE/503 the pin re-attempts
 	// the connect on a bounded exponential back-off. `retryTick` re-runs the pin's
-	// subscribe effect; the budget + timer live here, the owner of both the client
-	// (which reports the transient signal) and the pin (which retries).
+	// subscribe effect; the budget + coalescing live in the controller (which counts
+	// connect attempts, not the per-subscription error fan-out one cold connect
+	// produces — see `createLiveRetryController`, #1738).
 	const [retryTick, setRetryTick] = useState(0);
-	const attemptRef = useRef(0);
-	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const controllerRef = useRef<LiveRetryController | null>(null);
+	if (controllerRef.current == null) controllerRef.current = createLiveRetryController();
 
 	const scheduleRetry = useCallback(() => {
-		const attempt = attemptRef.current;
-		if (attempt >= LIVE_RETRY_MAX_ATTEMPTS) return;
-		attemptRef.current = attempt + 1;
-		if (timerRef.current != null) clearTimeout(timerRef.current);
-		timerRef.current = setTimeout(
-			() => setRetryTick((tick) => tick + 1),
-			nextLiveRetryDelayMs(attempt),
-		);
+		controllerRef.current?.schedule(() => setRetryTick((tick) => tick + 1));
 	}, []);
 
-	// A new session identity gets a fresh retry budget; cancel any pending timer on
+	// A new session identity gets a fresh retry budget; cancel any pending retry on
 	// re-key/unmount so a back-off never fires onto a torn-down client.
 	useEffect(() => {
-		attemptRef.current = 0;
-		return () => {
-			if (timerRef.current != null) clearTimeout(timerRef.current);
-		};
+		const controller = controllerRef.current;
+		controller?.reset();
+		return () => controller?.cancel();
 	}, [userId]);
 
 	// Live SSE only opens for an authenticated client — `/fate/live` 401s for an
