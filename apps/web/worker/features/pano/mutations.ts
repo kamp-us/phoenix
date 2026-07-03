@@ -15,6 +15,7 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {notifyCommentReply} from "../bildirim/conversation-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
@@ -433,6 +434,16 @@ export const mutations = {
 			yield* live.comment
 				.thread(input.postId)
 				.appendNode(comment.id, {node: comment}, decidePublish(sandboxedAt));
+			// Conversation-moment notification (#1697): notify the post author (and,
+			// for a reply, the parent-comment author) — deduped, self-suppressed,
+			// flag-gated and swallowed inside the emitter, so it can never fail this
+			// committed comment.
+			yield* notifyCommentReply({
+				commentId: r.commentId,
+				postAuthorId: r.postAuthorId,
+				parentAuthorId: r.parentAuthorId,
+				actorId: user.id,
+			});
 			return comment;
 		}),
 	),
