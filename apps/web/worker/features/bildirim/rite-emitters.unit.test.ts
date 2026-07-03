@@ -19,6 +19,8 @@ import {
 	KEFIL_KIND,
 	notifyDivanVote,
 	notifyKefil,
+	notifyPromotion,
+	PROMOTION_KIND,
 	riteRecipient,
 } from "./rite-emitters.ts";
 
@@ -166,6 +168,51 @@ describe("notifyKefil — the vouch-received emit", () => {
 	it.effect("a DYING notification write is swallowed — the vouch caller still succeeds", () =>
 		Effect.gen(function* () {
 			const exit = yield* notifyKefil({candidateId: "u-caylak", voucherId: "u-yazar"}).pipe(
+				Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(true))),
+				Effect.exit,
+			);
+			assert.strictEqual(exit._tag, "Success");
+		}),
+	);
+});
+
+describe("notifyPromotion — the çaylak→yazar ceremony emit", () => {
+	it.effect("records one promotion notification for the promoted member (no actor identity)", () =>
+		Effect.gen(function* () {
+			const calls: NotificationRecordInput[] = [];
+			yield* notifyPromotion({userId: "u-promoted"}).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						makeNotificationStub({
+							record: (input) => {
+								calls.push(input);
+								return Effect.succeed({id: "n1"});
+							},
+						}),
+						requestContext(true),
+					),
+				),
+			);
+			assert.strictEqual(calls.length, 1);
+			assert.deepStrictEqual(calls[0], {
+				recipientId: "u-promoted",
+				kind: PROMOTION_KIND,
+				targetKind: "user",
+				targetId: "u-promoted",
+				actorId: null,
+			});
+		}),
+	);
+
+	it.effect("with the bildirim flag OFF the write never happens (dark by default)", () =>
+		notifyPromotion({userId: "u-promoted"}).pipe(
+			Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(false))),
+		),
+	);
+
+	it.effect("a DYING notification write is swallowed — the promotion caller still succeeds", () =>
+		Effect.gen(function* () {
+			const exit = yield* notifyPromotion({userId: "u-promoted"}).pipe(
 				Effect.provide(Layer.mergeAll(makeNotificationStub(), requestContext(true))),
 				Effect.exit,
 			);

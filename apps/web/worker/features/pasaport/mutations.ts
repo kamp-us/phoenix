@@ -10,7 +10,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
-import {notifyKefil} from "../bildirim/rite-emitters.ts";
+import {notifyKefil, notifyPromotion} from "../bildirim/rite-emitters.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
@@ -197,6 +197,10 @@ const promoteGated = Effect.fn("user.promoteGated")(function* (input: typeof Pro
 	yield* Moderate;
 	const pasaport = yield* Pasaport;
 	const {promoted} = yield* pasaport.promoteToYazar({userId: input.userId});
+	// Promotion ceremony (#1696): the mod-direct half of the two promotion sites —
+	// notify the promoted member, keyed on `promoted` so a no-op (already-yazar) call
+	// notifies nothing. Swallowed inside the emitter, so it can never fail the flip.
+	if (promoted) yield* notifyPromotion({userId: input.userId});
 	return toPromotionReceipt({userId: input.userId, promoted, vouchRecorded: false});
 });
 

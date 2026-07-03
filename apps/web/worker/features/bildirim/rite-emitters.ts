@@ -1,5 +1,5 @@
 /**
- * Rite-feedback emitters (#1695, epic #1666) — the two silent rite moments made
+ * Rite-feedback emitters (#1695/#1696, epic #1666) — the silent rite moments made
  * audible through the spine's {@link Notification} write surface:
  *
  *  - **divan vote** — a divan vote on a çaylak's sandboxed item notifies the
@@ -9,6 +9,11 @@
  *  - **kefil** — a recorded vouch notifies the vouched çaylak (one row per
  *    distinct vouch act; an idempotent re-vouch is the caller's `alreadyVouched`
  *    and never reaches here).
+ *  - **terfi (promotion)** — the çaylak→yazar tier flip notifies the promoted
+ *    member: the single most ceremonial moment in the rite (#1696). Keyed by the
+ *    caller on `promoteToYazar`'s `promoted: true`, so a no-op re-promotion
+ *    notifies nothing — idempotent by construction. Fired from BOTH promotion
+ *    sites (mod-direct and the tandem sweep), the two `promoteToYazar` call sites.
  *
  * Both emitters ride AFTER the committed mutation and can never fail it: the
  * whole effect — flag read included — is swallowed-with-log (`catchCause`, the
@@ -25,6 +30,7 @@ import {Notification} from "./Notification.ts";
 
 export const DIVAN_VOTE_KIND = "divan-vote";
 export const KEFIL_KIND = "kefil";
+export const PROMOTION_KIND = "terfi";
 
 /** Self-suppression, pure: the recipient, or `null` when they ARE the actor. */
 export const riteRecipient = (recipientId: string, actorId: string): string | null =>
@@ -70,3 +76,23 @@ export const notifyKefil = (input: {candidateId: string; voucherId: string}) =>
 			actorId: input.voucherId,
 		});
 	}).pipe(swallow(KEFIL_KIND));
+
+/**
+ * Notify the freshly-promoted member that they crossed çaylak → yazar. No
+ * self-suppression question: promotion is a standing the member EARNED, not an
+ * act another user did TO them — the recipient IS the subject, `actorId` is null
+ * (a ceremonial system event, not a per-actor drip). The target is the member's
+ * own account, so the row links to the profile where the new yazar tier shows.
+ */
+export const notifyPromotion = (input: {userId: string}) =>
+	Effect.gen(function* () {
+		if (!(yield* bildirimOn)) return;
+		const bildirim = yield* Notification;
+		yield* bildirim.record({
+			recipientId: input.userId,
+			kind: PROMOTION_KIND,
+			targetKind: "user",
+			targetId: input.userId,
+			actorId: null,
+		});
+	}).pipe(swallow(PROMOTION_KIND));

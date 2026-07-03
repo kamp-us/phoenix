@@ -13,11 +13,50 @@
  * (e.g. the no-vouch case never reads karma).
  */
 import {assert, describe, it} from "@effect/vitest";
+import {CurrentUser} from "@kampus/fate-effect";
+import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
+import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
+import type {NotificationRecordInput} from "../bildirim/Notification.ts";
+import {PROMOTION_KIND} from "../bildirim/rite-emitters.ts";
+import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
 import {makePasaportStub} from "./Pasaport.testing.ts";
 import {resolveTandem} from "./tandem.ts";
+
+// resolveTandem emits the promotion-ceremony bildirimi on a landed flip (#1696), so
+// it now needs the bildirim seam (Notification + Flags + CurrentUser + RuntimeContext)
+// in R. The default `bildirimContext` provides a flag-ON, fail-on-contact Notification
+// (the emit is swallowed at the seam, so a DYING write can't fail these promotion cases)
+// — a case that ASSERTS on the emit passes its own recording Notification stub instead.
+const runtimeContextStub: BaseRuntimeContext = {
+	Type: "tandem-test",
+	id: "tandem-test",
+	env: {},
+	get: () => Effect.succeed(undefined),
+	set: (id) => Effect.succeed(id),
+};
+
+const flagsStub = (on: boolean): Layer.Layer<Flags> =>
+	Layer.succeed(
+		Flags,
+		// biome-ignore lint/plugin: a Flags test double — only getBoolean is exercised here.
+		{
+			getBoolean: () => Effect.succeed(on),
+			getString: () => Effect.die(new Error("unused")),
+			getNumber: () => Effect.die(new Error("unused")),
+			getObject: () => Effect.die(new Error("unused")),
+		} as unknown as typeof Flags.Service,
+	);
+
+const bildirimContext = (notification = makeNotificationStub(), on = true) =>
+	Layer.mergeAll(
+		notification,
+		flagsStub(on),
+		Layer.succeed(CurrentUser, {user: undefined}),
+		Layer.succeed(RuntimeContext, runtimeContextStub),
+	);
 
 // A `Kunye` whose `karmaOf` answers `karma`; `tierOf`/`rootOf` are unreached on the
 // resolver path (it reads karma only), so they fail-on-contact.
@@ -48,6 +87,7 @@ describe("resolveTandem — order-independent promotion", () => {
 					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(true)}),
 					kunyeKarma(20), // ≥ VOUCH_PROMOTION_KARMA_BAR (15)
 					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: true})}),
+					bildirimContext(),
 				),
 			),
 		),
@@ -64,6 +104,7 @@ describe("resolveTandem — order-independent promotion", () => {
 					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(true)}),
 					kunyeKarma(5), // below the bar
 					makePasaportStub(),
+					bildirimContext(),
 				),
 			),
 		),
@@ -82,6 +123,7 @@ describe("resolveTandem — order-independent promotion", () => {
 					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(false)}),
 					kunyeUnreached,
 					makePasaportStub(),
+					bildirimContext(),
 				),
 			),
 		),
@@ -100,8 +142,67 @@ describe("resolveTandem — order-independent promotion", () => {
 					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(true)}),
 					kunyeKarma(50),
 					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: false})}),
+					bildirimContext(),
 				),
 			),
 		),
 	);
+});
+
+// Promotion ceremony (#1696): a landed tandem flip emits ONE `terfi` bildirimi to the
+// promoted çaylak (recipient = the çaylak's own account, no actor identity); an
+// idempotent no-op flip (already-yazar) emits nothing — the emit is keyed on `promoted`.
+describe("resolveTandem — promotion ceremony bildirimi (#1696)", () => {
+	const promotionRecording = () => {
+		const emits: NotificationRecordInput[] = [];
+		const layer = makeNotificationStub({
+			record: (input) => {
+				emits.push(input);
+				return Effect.succeed({id: "n-terfi"});
+			},
+		});
+		return {layer, emits};
+	};
+
+	it.effect("a landed flip emits one terfi notification for the promoted çaylak", () => {
+		const {layer, emits} = promotionRecording();
+		return Effect.gen(function* () {
+			yield* resolveTandem("u-caylak");
+			assert.deepStrictEqual(emits, [
+				{
+					recipientId: "u-caylak",
+					kind: PROMOTION_KIND,
+					targetKind: "user",
+					targetId: "u-caylak",
+					actorId: null,
+				},
+			]);
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(true)}),
+					kunyeKarma(20),
+					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: true})}),
+					bildirimContext(layer),
+				),
+			),
+		);
+	});
+
+	it.effect("an already-yazar no-op flip emits nothing", () => {
+		const {layer, emits} = promotionRecording();
+		return Effect.gen(function* () {
+			yield* resolveTandem("u-already-yazar");
+			assert.deepStrictEqual(emits, []);
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(true)}),
+					kunyeKarma(50),
+					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: false})}),
+					bildirimContext(layer),
+				),
+			),
+		);
+	});
 });

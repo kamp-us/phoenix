@@ -21,6 +21,7 @@
  * unconditional, like the service reads it composes.
  */
 import {Effect} from "effect";
+import {notifyPromotion} from "../bildirim/rite-emitters.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {VOUCH_PROMOTION_KARMA_BAR} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
@@ -41,5 +42,11 @@ export const resolveTandem = Effect.fn("pasaport.resolveTandem")(function* (cand
 	if (karma < VOUCH_PROMOTION_KARMA_BAR) return {promoted: false};
 
 	const pasaport = yield* Pasaport;
-	return yield* pasaport.promoteToYazar({userId: candidateId});
+	const {promoted} = yield* pasaport.promoteToYazar({userId: candidateId});
+	// Promotion ceremony (#1696): the tandem-sweep half of the two promotion sites —
+	// notify the freshly-promoted çaylak, keyed on `promoted` so an already-yazar
+	// re-fire (the idempotent no-op above) notifies nothing. Swallowed inside the
+	// emitter, so a bildirim hiccup can never fail this committed tier flip.
+	if (promoted) yield* notifyPromotion({userId: candidateId});
+	return {promoted};
 });

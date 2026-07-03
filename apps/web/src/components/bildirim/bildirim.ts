@@ -52,12 +52,15 @@ export function rowUnread(
 	return readAt == null && !markedThisSession && !allMarkedThisSession;
 }
 
-// Kind → Turkish row copy (#1695): kinds stay English wire identifiers, the
-// rendered line is product voice. `count` is the aggregate slot ("N oy").
+// Kind → Turkish row copy (#1695/#1696): kinds stay wire identifiers, the
+// rendered line is product voice. `count` is the aggregate slot ("N oy"). The
+// `terfi` line carries the ceremony — the çaylak→yazar promotion is the single
+// most ceremonial moment in the rite, so it reads as a moment, not a log line.
 const KIND_COPY: Record<string, (count: number) => string> = {
 	"divan-vote": (count) =>
 		count > 1 ? `divandaki içeriğin ${count} oy aldı` : "divandaki içeriğin oy aldı",
 	kefil: () => "bir yazar sana kefil oldu",
+	terfi: () => "tebrikler, artık bir yazarsın!",
 };
 
 /**

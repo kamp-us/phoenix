@@ -84,6 +84,10 @@ describe("bildirimCopy — Turkish product voice per kind (#1695)", () => {
 		expect(bildirimCopy("kefil", 1)).toBe("bir yazar sana kefil oldu");
 	});
 
+	it("terfi carries the ceremony — the çaylak→yazar promotion is a moment (#1696)", () => {
+		expect(bildirimCopy("terfi", 1)).toBe("tebrikler, artık bir yazarsın!");
+	});
+
 	it("an unknown kind degrades to the raw kind + xN — never a blank row", () => {
 		expect(bildirimCopy("future-kind", 1)).toBe("future-kind");
 		expect(bildirimCopy("future-kind", 2)).toBe("future-kind ×2");
