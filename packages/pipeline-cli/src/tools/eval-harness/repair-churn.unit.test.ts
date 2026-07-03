@@ -36,6 +36,24 @@ describe("repairChurnCost — geometric expected-extra-cycles model", () => {
 		assert.strictEqual(cost.churnTokens, Number.POSITIVE_INFINITY);
 	});
 
+	it("the (passRate=0, tokensPerRepairCycle=0) double boundary is never-adopt, not a hidden NaN", () => {
+		// Infinity * 0 = NaN would slip past the `netSaving < 0` never-adopt check (`NaN < 0` is false).
+		const cost = value(
+			repairChurnCost({passRate: 0, tokensPerRun: 10_000, tokensPerRepairCycle: 0}),
+		);
+		assert.isFalse(Number.isNaN(cost.churnTokens));
+		assert.strictEqual(cost.churnTokens, Number.POSITIVE_INFINITY);
+		assert.strictEqual(cost.amortizedTokensPerRun, Number.POSITIVE_INFINITY);
+		const pricing = value(
+			priceModelSwap({
+				baselineTokensPerRun: 12_000,
+				candidate: {passRate: 0, tokensPerRun: 10_000, tokensPerRepairCycle: 0},
+			}),
+		);
+		assert.isFalse(Number.isNaN(pricing.netSaving));
+		assert.isBelow(pricing.netSaving, 0); // -Infinity < 0 — reads as never-adopt
+	});
+
 	it("a p=0.5 model forces exactly one expected extra cycle", () => {
 		const cost = value(
 			repairChurnCost({passRate: 0.5, tokensPerRun: 5_000, tokensPerRepairCycle: 10_000}),

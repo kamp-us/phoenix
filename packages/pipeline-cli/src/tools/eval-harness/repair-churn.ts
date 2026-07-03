@@ -74,7 +74,12 @@ export interface RepairChurnCost {
 /** The pure geometric pricing over the already-validated domain type. */
 const compute = (input: RepairChurnInput): RepairChurnCost => {
 	const expectedExtraCycles = (1 - input.passRate) / input.passRate;
-	const churnTokens = expectedExtraCycles * input.tokensPerRepairCycle;
+	// A never-passing model (passRate=0 → infinite expected cycles) is never-adopt regardless of
+	// the per-repair token figure — so churn is +Infinity, NOT `Infinity * 0 = NaN` (which would
+	// slip past the `netSaving < 0` never-adopt check, since `NaN < 0` is false).
+	const churnTokens = Number.isFinite(expectedExtraCycles)
+		? expectedExtraCycles * input.tokensPerRepairCycle
+		: Number.POSITIVE_INFINITY;
 	return {
 		passRate: input.passRate,
 		expectedExtraCycles,
