@@ -11,7 +11,7 @@
  * re-report by the same user a no-op success (the `user_vote` precedent). No
  * live view publishes off a write — a report is private moderation state.
  */
-import {and, eq, inArray, sql} from "drizzle-orm";
+import {and, eq, inArray, isNotNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -136,6 +136,28 @@ export class Report extends Context.Service<
 			targetKind: TargetKind,
 			targetId: string,
 		) => Effect.Effect<string | null>;
+
+		/**
+		 * The moderation-queue reputation join (#1703, ADR 0138): for each author id,
+		 * how many of their content targets a moderator has previously removed
+		 * (`removed_by IS NOT NULL` across the post/comment/definition record tables).
+		 * One batched read over the page's authors, keyed by author id — the
+		 * repeat-offender signal the triage row surfaces. Absent authors carry 0.
+		 */
+		readonly countRemovalsByAuthors: (
+			authorIds: ReadonlyArray<string>,
+		) => Effect.Effect<ReadonlyMap<string, number>>;
+
+		/**
+		 * The pile-on's reporter-diversity numerator (#1703): per target, the total open
+		 * reports and the DISTINCT reporters behind them, keyed by `<kind>:<id>`. The
+		 * composite report PK collapses them for content targets today (one reporter,
+		 * one target), so the counts equal — the shape is threaded now for #1855's
+		 * remove-the-wave, which distinguishes a real wave from a grudge-reporter.
+		 */
+		readonly reporterDiversity: (
+			targets: ReadonlyArray<{targetKind: TargetKind; targetId: string}>,
+		) => Effect.Effect<ReadonlyMap<string, {reportCount: number; distinctReporters: number}>>;
 	}
 >()("@kampus/report/Report") {}
 
@@ -299,6 +321,65 @@ export const ReportLive = Layer.effect(Report)(
 			return row?.id ?? null;
 		});
 
+		// Per-author moderator-removal count across the three content record tables
+		// (`removed_by IS NOT NULL`). One grouped read per kind over the page's authors,
+		// summed into a single author→count map. Empty input short-circuits with no read.
+		const countRemovalsByAuthors = Effect.fn("Report.countRemovalsByAuthors")(function* (
+			authorIds: ReadonlyArray<string>,
+		) {
+			const counts = new Map<string, number>();
+			if (authorIds.length === 0) return counts;
+			const ids = [...authorIds];
+			const tables = [schema.postRecord, schema.commentRecord, schema.definitionRecord] as const;
+			for (const table of tables) {
+				const rows = yield* run((db) =>
+					db
+						.select({authorId: table.authorId, n: sql<number>`COUNT(*)`})
+						.from(table)
+						.where(and(inArray(table.authorId, ids), isNotNull(table.removedBy)))
+						.groupBy(table.authorId),
+				);
+				for (const r of rows) counts.set(r.authorId, (counts.get(r.authorId) ?? 0) + Number(r.n));
+			}
+			return counts;
+		});
+
+		// Per-target open-report total + distinct-reporter count, keyed `<kind>:<id>`.
+		// The composite report PK makes `COUNT(*)` and `COUNT(DISTINCT reporter_id)`
+		// equal for content targets, but both are read so the shape is honest for the
+		// #1855 wave slice. One grouped read over the page's targets.
+		const reporterDiversity = Effect.fn("Report.reporterDiversity")(function* (
+			targets: ReadonlyArray<{targetKind: TargetKind; targetId: string}>,
+		) {
+			const diversity = new Map<string, {reportCount: number; distinctReporters: number}>();
+			if (targets.length === 0) return diversity;
+			const targetIds = [...new Set(targets.map((t) => t.targetId))];
+			const rows = yield* run((db) =>
+				db
+					.select({
+						targetKind: schema.contentReport.targetKind,
+						targetId: schema.contentReport.targetId,
+						reportCount: sql<number>`COUNT(*)`,
+						distinctReporters: sql<number>`COUNT(DISTINCT ${schema.contentReport.reporterId})`,
+					})
+					.from(schema.contentReport)
+					.where(
+						and(
+							eq(schema.contentReport.status, "open"),
+							inArray(schema.contentReport.targetId, targetIds),
+						),
+					)
+					.groupBy(schema.contentReport.targetKind, schema.contentReport.targetId),
+			);
+			for (const r of rows) {
+				diversity.set(`${r.targetKind}:${r.targetId}`, {
+					reportCount: Number(r.reportCount),
+					distinctReporters: Number(r.distinctReporters),
+				});
+			}
+			return diversity;
+		});
+
 		return {
 			readByReporter,
 			listOpen,
@@ -306,6 +387,8 @@ export const ReportLive = Layer.effect(Report)(
 			reopenForTarget,
 			lookupReportTarget,
 			firstOpenReportId,
+			countRemovalsByAuthors,
+			reporterDiversity,
 			submit: Effect.fn("Report.submit")(function* (input: ReportInput) {
 				yield* assertTargetLive(input.targetKind, input.targetId);
 

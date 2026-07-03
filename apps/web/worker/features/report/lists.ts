@@ -17,12 +17,14 @@ import type {ConnectionResult} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {Denied} from "../kunye/errors.ts";
+import {Kunye} from "../kunye/Kunye.ts";
 import {Moderate, requireModeration} from "../kunye/moderate.ts";
 import {Pano} from "../pano/Pano.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
 import {contextKeyOf, enrichOpenReports, type ReportTargetContext, toExcerpt} from "./enrich.ts";
 import type {OpenReportGroup} from "./Report.ts";
 import {Report} from "./Report.ts";
+import {type RowReputation, reputationKeyOf, rowReputationOf} from "./reputation.ts";
 import type {OpenReport} from "./views.ts";
 import {OpenReportView} from "./views.ts";
 
@@ -52,8 +54,12 @@ const listOpenGated = Effect.fn("report.listOpenGated")(function* (args: typeof 
 	const report = yield* Report;
 	const groups = yield* report.listOpen(args.first !== undefined ? {limit: args.first} : undefined);
 	const contexts = yield* resolveTargetContexts(groups);
+	const reputations = yield* resolveRowReputations(groups, contexts);
 	return {
-		items: enrichOpenReports(groups, contexts).map((node) => ({cursor: node.id, node})),
+		items: enrichOpenReports(groups, contexts, reputations).map((node) => ({
+			cursor: node.id,
+			node,
+		})),
 		pagination: {hasNext: false, hasPrevious: false},
 	} satisfies ConnectionResult<OpenReport>;
 });
@@ -80,7 +86,12 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 		const rows = yield* pano.getPostsByIds(idsByKind.post);
 		for (const r of rows) {
 			// A post links to its own detail page (`/pano/<id>`); its title is the excerpt.
-			contexts.set(contextKeyOf("post", r.id), {excerpt: r.title, author: r.author, ref: r.id});
+			contexts.set(contextKeyOf("post", r.id), {
+				excerpt: r.title,
+				author: r.author,
+				ref: r.id,
+				authorId: r.authorId,
+			});
 		}
 	}
 
@@ -94,6 +105,7 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 				excerpt: toExcerpt(r.body),
 				author: r.author,
 				ref: postId,
+				authorId: r.authorId,
 			});
 		}
 	}
@@ -108,9 +120,55 @@ const resolveTargetContexts = Effect.fn("report.resolveTargetContexts")(function
 				excerpt: toExcerpt(r.body),
 				author: r.author,
 				ref: slug,
+				authorId: r.authorId,
 			});
 		}
 	}
 
 	return contexts;
+});
+
+// Join each group's reputation cluster (#1703, ADR 0138) INSIDE the gated read: the
+// reported target author's künye standing (tier + karma) and how many of that author's
+// targets a moderator has previously removed, plus the pile-on's distinct-reporter
+// count. Author standing is keyed by the `authorId` the context resolution captured;
+// a group whose author is unresolved (no context) folds to a null author cluster.
+// Distinct-reporter counts come from one batched read over the whole page.
+const resolveRowReputations = Effect.fn("report.resolveRowReputations")(function* (
+	groups: ReadonlyArray<OpenReportGroup>,
+	contexts: ReadonlyMap<string, ReportTargetContext>,
+) {
+	const kunye = yield* Kunye;
+	const report = yield* Report;
+
+	const authorIds = [
+		...new Set(
+			groups
+				.map((g) => contexts.get(contextKeyOf(g.targetKind, g.targetId))?.authorId)
+				.filter((id): id is string => id !== undefined),
+		),
+	];
+
+	// One batched removals-count read for the whole page (author → prior-removal count),
+	// and the distinct-reporter counts per target — both bounded by the page size.
+	const priorRemovals = yield* report.countRemovalsByAuthors(authorIds);
+	const diversity = yield* report.reporterDiversity(
+		groups.map((g) => ({targetKind: g.targetKind, targetId: g.targetId})),
+	);
+
+	const reputations = new Map<string, RowReputation>();
+	for (const g of groups) {
+		const key = reputationKeyOf(g.targetKind, g.targetId);
+		const authorId = contexts.get(contextKeyOf(g.targetKind, g.targetId))?.authorId;
+		const reputation =
+			authorId === undefined
+				? undefined
+				: {
+						tier: yield* kunye.tierOf(authorId),
+						karma: yield* kunye.karmaOf(authorId),
+						priorRemovals: priorRemovals.get(authorId) ?? 0,
+					};
+		reputations.set(key, rowReputationOf(g, reputation, diversity.get(key)));
+	}
+	return reputations;
 });

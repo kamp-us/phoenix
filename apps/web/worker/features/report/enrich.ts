@@ -9,6 +9,7 @@
  */
 import type {TargetKind} from "../../db/target-kind.ts";
 import type {OpenReportGroup} from "./Report.ts";
+import {type RowReputation, rowReputationOf} from "./reputation.ts";
 import {toOpenReport} from "./shapers.ts";
 import type {OpenReport} from "./views.ts";
 
@@ -23,6 +24,13 @@ export interface ReportTargetContext {
 	author: string;
 	/** post id (post, comment→parent post) or term slug (definition). */
 	ref: string;
+	/**
+	 * The target author's account id — the join key for the #1703 reputation cluster
+	 * (künye tier/karma + prior-removals). Carried off the same batched content read
+	 * that resolves the excerpt/author, so the row's author standing joins from this id
+	 * without a second target lookup.
+	 */
+	authorId: string;
 }
 
 /** The `<kind>:<id>` key an `OpenReport`/context map is keyed by (matches the view `id`). */
@@ -41,14 +49,24 @@ export const toExcerpt = (text: string, max = 140): string => {
 };
 
 /**
- * Fold each report group with its resolved target context (keyed by
- * `<kind>:<id>`), producing the enriched `OpenReport` rows the resolver returns.
- * A group with no matching context — an unresolved/hidden target — keeps null
- * context fields rather than being dropped, so the queue never loses a row to a
- * missing excerpt.
+ * Fold each report group with its resolved target context AND its reputation cluster
+ * (both keyed by `<kind>:<id>`), producing the enriched `OpenReport` rows the resolver
+ * returns. A group with no matching context — an unresolved/hidden target — keeps null
+ * context fields rather than being dropped, so the queue never loses a row to a missing
+ * excerpt; the reputation cluster's author fields are likewise null when the author is
+ * unresolved (`rowReputationOf`), while `distinctReporters` always resolves (it falls
+ * back to the group's report count).
  */
 export const enrichOpenReports = (
 	groups: ReadonlyArray<OpenReportGroup>,
 	contexts: ReadonlyMap<string, ReportTargetContext>,
+	reputations: ReadonlyMap<string, RowReputation>,
 ): OpenReport[] =>
-	groups.map((g) => toOpenReport(g, contexts.get(contextKeyOf(g.targetKind, g.targetId))));
+	groups.map((g) => {
+		const key = contextKeyOf(g.targetKind, g.targetId);
+		return toOpenReport(
+			g,
+			contexts.get(key),
+			reputations.get(key) ?? rowReputationOf(g, undefined, undefined),
+		);
+	});
