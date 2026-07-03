@@ -110,8 +110,8 @@
 	cursor: pointer;
 }
 .kp-topbar__btn:hover {
-	background: var(--accent-soft);
-	color: var(--accent);
+	background: var(--surface);
+	color: var(--accent-11);
 }
 
 .kp-topbar__user {
