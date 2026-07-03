@@ -113,10 +113,14 @@ export function connectionKey(connection: unknown): string {
 
 /**
  * Insert `tempId` into the nested comment connection and return a rollback that
- * restores the prior list state. fate's auto `resolveOptimisticEntity` rewrites
- * `tempId` to the server id on success (no manual reconcile here); the returned
- * rollback runs only on reject (callSite `{error}` OR a boundary throw), since fate
- * rolls back the record but not this manually-added nested membership.
+ * restores the prior list state. `tempId` MUST be the `toEntityId("Comment", …)`-
+ * qualified entity id (`Comment:optimistic:<ts>`), never the bare record id — runtime
+ * `Post.comments.list.ids` are qualified, so both reconcile paths key off the
+ * qualified id (#1714; `.patterns/fate-mutations-client.md`). fate's auto
+ * `resolveOptimisticEntity` rewrites `tempId` to the server id on success (no manual
+ * reconcile here); the returned rollback runs only on reject (callSite `{error}` OR a
+ * boundary throw), since fate rolls back the record but not this manually-added
+ * nested membership.
  */
 export function beginOptimisticCommentMembership(
 	store: CommentListStore,

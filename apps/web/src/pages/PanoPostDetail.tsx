@@ -9,7 +9,7 @@
  * fate's `delete: true` can't be used and the resolver drives the thread live.
  * Error routing is the call-site catch — see `.patterns/fate-mutations-client.md`.
  */
-import type {ViewData, ViewEntity, ViewSelection} from "@nkzw/fate";
+import {toEntityId, type ViewData, type ViewEntity, type ViewSelection} from "@nkzw/fate";
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useLocation, useNavigate, useParams} from "react-router";
@@ -850,7 +850,18 @@ function CommentComposer({
 			});
 			const rollback =
 				optimistic && optimisticRecord
-					? beginOptimisticCommentMembership(fate.store, optimistic.connection, optimisticRecord.id)
+					? // Qualify the temp id: runtime `Post.comments.list.ids` are `toEntityId`-
+						// qualified (`Comment:<id>`) — fate stores every list id via `toEntityId`
+						// (writeEntity/insertConnectionEdge), and both reconcile paths key off the
+						// qualified id (`resolveOptimisticEntity` rewrites the qualified `previousId`;
+						// the SSE `appendNode` dedups by `toEntityId(nodeType, id)`). A BARE
+						// `optimistic:<ts>` would neither rewrite nor dedup, leaving a duplicated /
+						// non-reconciling temp node (#1714). Matches #1679 definition.add + #1680 delete.
+						beginOptimisticCommentMembership(
+							fate.store,
+							optimistic.connection,
+							toEntityId("Comment", optimisticRecord.id),
+						)
 					: undefined;
 			try {
 				const {result, error: callError} = await promise;
