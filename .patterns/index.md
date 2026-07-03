@@ -56,6 +56,16 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 | [fate-mutations-client.md](./fate-mutations-client.md) | `fate.mutations`/`actions`, optimistic updates, `insert`/`delete` membership, error routing | Writing data from the UI |
 | [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, server `live.*` publishing, the SSE wire, the unified `LiveDO` Durable Object | Making a view live (spans client + server) |
 
+## Index — UI / components layer
+
+The frontend's component layer (above the fate client data layer). phoenix's UI primitives are
+[Base UI](https://base-ui.com) (`@base-ui/react`), unstyled + accessible-by-default; the wrappers
+live in `apps/web/src/components/ui/`.
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [base-ui-accessibility.md](./base-ui-accessibility.md) | What Base UI wires automatically (roles, disclosure/popup ARIA, focus, and the accessible **name** from content — `Dialog.Title`→`aria-labelledby`, `Menu.Item` name from text, `Collapsible` relationship-only); the one gap (icon-only content has no name); the decision (no `aria-label` on a text-bearing control) + the four legitimate hand-authored-label cases (icon-only / unlabelled form / landmark disambiguation / status region); prefer `aria-labelledby`→a heading | Adding or labelling an interactive control (button, menu, dialog, icon-only action), or reaching for an `aria-label` |
+
 ## Index — alchemy infra layer
 
 The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-effect](https://github.com/usirin/alchemy-effect) — one Effect program for infra + runtime, in place of `wrangler.jsonc`, a Hono entry, manual binding access, and hand-written DO classes. Read [alchemy-overview.md](./alchemy-overview.md) first; it maps how this layer sits under the unchanged `effect-*`/`fate-*` layers. phoenix and alchemy are both on effect v4.
