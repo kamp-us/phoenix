@@ -3,12 +3,14 @@
  *
  * The skill grep-lint for issue #743 (the pure `lintCorpus` core), moved into the
  * pipeline-cli registry (epic #994, Phase 2 / #1002). Lints the handed skill-corpus
- * files for GraphQL-path `gh` invocations (Projects-classic-only on the kamp-us org),
- * emits the scanned scope, and FAILS CLOSED on zero scope per ADR 0092:
+ * files for GraphQL-path `gh` invocations (Projects-classic-only on the kamp-us org)
+ * AND for invalid YAML frontmatter (#1766 — the durable gate for the unquoted-scalar
+ * colon-space defect), emits both checks' scanned scope, and FAILS CLOSED on zero
+ * scope per ADR 0092:
  *
- *   exit 0 — clean (no GraphQL-path gh calls in scope)
- *   exit 2 — one or more findings
- *   exit 3 — zero scope (ADR 0092: zero scope is a FAIL, never a silent PASS)
+ *   exit 0 — clean (no GraphQL-path gh calls, all frontmatter parses as strict YAML)
+ *   exit 2 — one or more findings (a gh-call finding OR an invalid-frontmatter finding)
+ *   exit 3 — zero scope in EITHER check (ADR 0092: zero scope is a FAIL, never a silent PASS)
  *
  * The `lint-skills` surface + its exit-code/stdout contract is preserved byte-for-byte
  * from the former package's `bin.ts`. The exit-3/exit-2 mapping, formerly done at the
@@ -46,7 +48,9 @@ const readFileOrSkip = (file: string): string | null => {
 
 const fileArg = Argument.string("file").pipe(
 	Argument.atLeast(1),
-	Argument.withDescription("one or more skill-corpus file paths to lint for GraphQL-path gh calls"),
+	Argument.withDescription(
+		"one or more skill-corpus file paths to lint for GraphQL-path gh calls and invalid YAML frontmatter",
+	),
 );
 
 /** The lint verdict: zero scope → ZeroScope, findings → FindingsFound, else clean (the print). */
@@ -60,20 +64,33 @@ const judge = (result: LintResult): Effect.Effect<void, ZeroScope | FindingsFoun
 			return yield* Effect.fail(new ZeroScope());
 		}
 
-		if (result.findings.length === 0) {
+		const total = result.findings.length + result.frontmatterFindings.length;
+		if (total === 0) {
 			yield* Console.log(
-				"gh-phoenix lint-skills: clean — no GraphQL-path gh calls in the scanned skill corpus.",
+				"gh-phoenix lint-skills: clean — no GraphQL-path gh calls and all frontmatter parses as strict YAML.",
 			);
 			return;
 		}
 
-		yield* Console.error(
-			`gh-phoenix lint-skills: FAIL — ${result.findings.length} GraphQL-path gh call(s) in the skill corpus (REST-only on this org, #743):`,
-		);
-		for (const f of result.findings) {
-			yield* Console.error(`  ${f.file}:${f.line}: ${f.matched} — ${f.reason}`);
+		if (result.findings.length > 0) {
+			yield* Console.error(
+				`gh-phoenix lint-skills: FAIL — ${result.findings.length} GraphQL-path gh call(s) in the skill corpus (REST-only on this org, #743):`,
+			);
+			for (const f of result.findings) {
+				yield* Console.error(`  ${f.file}:${f.line}: ${f.matched} — ${f.reason}`);
+			}
 		}
-		return yield* Effect.fail(new FindingsFound({count: result.findings.length}));
+
+		if (result.frontmatterFindings.length > 0) {
+			yield* Console.error(
+				`gh-phoenix lint-skills: FAIL — ${result.frontmatterFindings.length} file(s) with invalid YAML frontmatter (a mid-sentence colon-space in an unquoted scalar reparses as a mapping; quote the value or use a block scalar — #1766):`,
+			);
+			for (const f of result.frontmatterFindings) {
+				yield* Console.error(`  ${f.file}: ${f.reason}`);
+			}
+		}
+
+		return yield* Effect.fail(new FindingsFound({count: total}));
 	});
 
 // The gate-fail signal → exit-code mapping, formerly done at the bin's run boundary via
@@ -94,12 +111,17 @@ const lintSkills = Command.make(
 
 		const result = lintCorpus(scanInput);
 
-		// ADR 0092: emit what was scanned (scope is observable), THEN judge.
+		// ADR 0092: emit what each check scanned (scope is observable), THEN judge.
 		yield* Console.log(
-			`gh-phoenix lint-skills: scanned ${result.scanned.length} file(s)` +
+			`gh-phoenix lint-skills: gh-call scan scanned ${result.scanned.length} file(s)` +
 				(result.scanned.length > 0 ? `:` : ` (zero scope)`),
 		);
 		for (const f of result.scanned) yield* Console.log(`  scanned: ${f}`);
+		yield* Console.log(
+			`gh-phoenix lint-skills: frontmatter check scanned ${result.frontmatterScanned.length} file(s)` +
+				(result.frontmatterScanned.length > 0 ? `:` : ` (zero scope)`),
+		);
+		for (const f of result.frontmatterScanned) yield* Console.log(`  frontmatter-scanned: ${f}`);
 
 		yield* judge(result).pipe(
 			Effect.catchTag("ZeroScope", onZeroScope),
@@ -108,7 +130,7 @@ const lintSkills = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Lint the skill corpus for GraphQL-path gh invocations (fails closed on zero scope)",
+		"Lint the skill corpus for GraphQL-path gh invocations and invalid YAML frontmatter (fails closed on zero scope)",
 	),
 );
 
