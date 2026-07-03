@@ -251,7 +251,7 @@ export const mutations = {
 		{
 			input: PostIdInput,
 			type: PostView,
-			// `VoterNotEligible` (wire `FORBIDDEN`) — the "earn to vote" gate: a çaylak newcomer
+			// `VoterNotEligible` (wire `VOTE_REQUIRES_YAZAR`) — the "earn to vote" gate: a çaylak newcomer
 			// is rejected at cast, never a silent no-op (#1810). `retractVote` needs no such gate:
 			// a newcomer never cleared the cast, so there is nothing to retract.
 			error: Schema.Union([Unauthorized, PostNotFound, VoterNotEligible]),
@@ -457,7 +457,7 @@ export const mutations = {
 		{
 			input: CommentIdInput,
 			type: CommentView,
-			// `VoterNotEligible` (wire `FORBIDDEN`) — the "earn to vote" gate (#1810), same as
+			// `VoterNotEligible` (wire `VOTE_REQUIRES_YAZAR`) — the "earn to vote" gate (#1810), same as
 			// `post.vote`. Retraction is exempt for the same reason.
 			error: Schema.Union([Unauthorized, CommentNotFound, VoterNotEligible]),
 		},

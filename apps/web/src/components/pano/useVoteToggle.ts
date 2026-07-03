@@ -8,8 +8,10 @@
  *  - the signed-out gate (a click with no session redirects to auth, never fires
  *    the mutation);
  *  - the `UNAUTHORIZED` → auth-redirect classification on the dispatch error
- *    channel (the mutations have no inline error slot, so every other code stays
- *    silent — see `.patterns/fate-mutations-client.md`);
+ *    channel, and the `VOTE_REQUIRES_YAZAR` → toast classification for the
+ *    earn-to-vote denial (#1879 — a çaylak's gated vote is no longer a silent
+ *    dead-end); the mutations have no inline error slot, so every OTHER code stays
+ *    silent — see `.patterns/fate-mutations-client.md`;
  *  - for votes, the optimistic `score`/`myVote` delta with the `Math.max(0, …)`
  *    floor (a retract never renders a negative score).
  *
@@ -19,7 +21,9 @@
 import {useCallback} from "react";
 import {useNavigate} from "react-router";
 import {useSession} from "../../auth/client";
+import {useToast} from "../../components/ui/Toast";
 import {codeOf} from "../../fate/wire";
+import {WIRE_MESSAGES} from "../../fate/wireMessages";
 import {authRedirectPath} from "../../lib/returnTo";
 import {type ToggleAction, useToggleAction} from "./useToggleAction";
 
@@ -44,9 +48,10 @@ export interface GatedToggleArgs {
 	/** The path a signed-out (or `UNAUTHORIZED`) interaction returns to after auth. */
 	readonly returnTo: () => string;
 	/**
-	 * Fire the underlying fate mutation; may throw — `UNAUTHORIZED` is caught here.
-	 * The resolved value (the mutation's `{error, result}`) is ignored: these
-	 * sites have no inline error slot and lean on the boundary-class throw.
+	 * Fire the underlying fate mutation; may throw — `UNAUTHORIZED` redirects and
+	 * `VOTE_REQUIRES_YAZAR` toasts (both caught here). The resolved value (the
+	 * mutation's `{error, result}`) is ignored: these sites have no inline error
+	 * slot and lean on the boundary-class throw.
 	 */
 	readonly dispatch: (action: ToggleAction) => Promise<unknown>;
 }
@@ -62,6 +67,20 @@ export function isAuthRedirectError(error: unknown): boolean {
 }
 
 /**
+ * The Turkish toast copy for a dispatch error that carries a *legible* gate the
+ * user should be told about, or `null` for one that stays silent. Today the only
+ * such gate is the earn-to-vote denial: a çaylak casting a vote is rejected with
+ * `VOTE_REQUIRES_YAZAR`, and the ladder copy "yazar olunca oy verebilirsin" makes
+ * the progression visible instead of a silent no-op (#1879). `UNAUTHORIZED` is
+ * NOT surfaced here — it redirects (see {@link isAuthRedirectError}); every other
+ * code stays silent (these sites have no inline error slot). Pure and exported so
+ * the classification is unit-testable apart from the hook.
+ */
+export function voteGateMessage(error: unknown): string | null {
+	return codeOf(error) === "VOTE_REQUIRES_YAZAR" ? WIRE_MESSAGES.VOTE_REQUIRES_YAZAR : null;
+}
+
+/**
  * The serialize-and-supersede toggle (via {@link useToggleAction}) wrapped with
  * the signed-out gate and the `UNAUTHORIZED`→auth-redirect classification. The
  * returned `onToggle` is the click handler: it redirects a signed-out click and
@@ -70,6 +89,7 @@ export function isAuthRedirectError(error: unknown): boolean {
 export function useGatedToggle(args: GatedToggleArgs): () => void {
 	const session = useSession();
 	const redirectToAuth = useRedirectToAuth(args.returnTo);
+	const {show} = useToast();
 
 	const drive = useToggleAction(() => ({
 		on: args.on,
@@ -77,7 +97,17 @@ export function useGatedToggle(args: GatedToggleArgs): () => void {
 			try {
 				await args.dispatch(action);
 			} catch (error) {
-				if (isAuthRedirectError(error)) redirectToAuth();
+				if (isAuthRedirectError(error)) {
+					redirectToAuth();
+					return;
+				}
+				// A legible gate (today: the earn-to-vote `VOTE_REQUIRES_YAZAR` denial) is
+				// surfaced as a toast instead of a silent no-op — the server deliberately made
+				// this denial wire-visible and the client used to throw it away (#1879). Same id
+				// per gate so N failed taps replace rather than stack. Every other code stays
+				// silent (these sites have no inline error slot).
+				const message = voteGateMessage(error);
+				if (message) show({id: "vote-gate", message, testId: "vote-gate"});
 			}
 		},
 	}));

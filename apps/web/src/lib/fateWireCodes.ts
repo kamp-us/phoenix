@@ -24,6 +24,11 @@ export const FATE_WIRE_CODES = [
 	// (#1206): a non-yazar vouch attempt. Distinct from `UNAUTHORIZED` (the invisible
 	// ReBAC/moderation denial) — FORBIDDEN is the visible-progression public ladder.
 	"FORBIDDEN",
+	// The earn-to-vote denial — a çaylak (below the yazar floor) cast a vote on live
+	// content (`vote/VoterNotEligible`, ADR 0096 / #1810/#1828). Distinct from the
+	// overloaded `FORBIDDEN` (künye vouch denials) so the vote gate gets its own ladder
+	// copy without mislabelling other forbiddens (#1879): "yazar olunca oy verebilirsin".
+	"VOTE_REQUIRES_YAZAR",
 	// The concurrent-vouch cap (D5) is reached — a yazar already holds the maximum
 	// active vouches (`kunye/VouchLimitReached`, #1289). Past the `FORBIDDEN` yazar
 	// floor: the actor IS a yazar, the act is just rationed.

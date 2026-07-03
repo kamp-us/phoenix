@@ -67,6 +67,7 @@ import {
 	DefinitionNotFound,
 	UnauthorizedDefinitionMutation,
 } from "../sozluk/errors.ts";
+import {VoterNotEligible} from "../vote/errors.ts";
 import {fateConfig} from "./config.ts";
 
 /**
@@ -116,6 +117,11 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	// künye concurrent-vouch cap (D5, #1289) — reachable via `user.vouch` past the floor.
 	// Has an extra required field (`cap`), so pinned here but NOT in ROUND_TRIP_CLASSES.
 	[VouchLimitReached, "VOUCH_LIMIT_REACHED"],
+	// vote earn-to-vote denial — reachable from fateConfig via the inline cast paths
+	// (pano post/comment + sözlük definition), #1810/#1828/#1879. Its own distinct code
+	// (not the overloaded FORBIDDEN). Has extra required fields (`voterId`, `need`), so it
+	// is pinned here but NOT in ROUND_TRIP_CLASSES.
+	[VoterNotEligible, "VOTE_REQUIRES_YAZAR"],
 ]);
 
 const ORACLE_ENTRIES = [...EXPECTED_CODE.entries()] as ReadonlyArray<[unknown, string]>;

@@ -26,6 +26,7 @@ import {FATE_WIRE_CODES, type FateWireCode} from "../lib/fateWireCodes";
 export const WIRE_MESSAGES: Record<FateWireCode, string> = {
 	UNAUTHORIZED: "bu işlem için giriş yapmalısın",
 	FORBIDDEN: "bunu yapma yetkin yok",
+	VOTE_REQUIRES_YAZAR: "yazar olunca oy verebilirsin",
 	VOUCH_LIMIT_REACHED: "kefil olma sınırına ulaştın",
 	DEFINITION_NOT_FOUND: "tanım bulunamadı",
 	POST_NOT_FOUND: "başlık bulunamadı",
