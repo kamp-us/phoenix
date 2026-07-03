@@ -5,7 +5,7 @@ description: Record an architecture decision in `.decisions/`. Trigger when the 
 
 # adr
 
-Capture one decision per file in `.decisions/`. There is no committed index (ADR [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md)) — discovery is ambient (a `SessionStart` hook injects the compact `id · title · status` map, with `ls .decisions/` + frontmatter as the fallback). An ADR PR is **purely additive**: it adds one `.decisions/NNNN-slug.md` file (plus the superseded file's status edit when superseding), and never touches or regenerates an index.
+Capture one decision per file in `.decisions/`. There is no committed index (ADR [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md)) and **no `SessionStart` ADR-map hook** (ADR [0129](https://github.com/kamp-us/phoenix/blob/main/.decisions/0129-adr-discovery-is-the-claude-md-contract.md), dropping 0126's hook as needless indirection) — discovery is the CLAUDE.md contract alone, the same in every context: `ls .decisions/` + each file's frontmatter (`id`/`title`/`status`), with `pipeline-cli decisions-index compact` rendering the full `id · title · status` map **on demand** (never auto-injected). An ADR PR is **purely additive**: it adds one `.decisions/NNNN-slug.md` file (plus the superseded file's status edit when superseding), and never touches or regenerates an index.
 
 ## Steps
 
@@ -60,11 +60,11 @@ tags: [<area>, <area>]
 <What this makes easier / harder. What's now banned. Any migration cost.>
 ```
 
-## Ambient discovery — no committed index
+## Discovery — the CLAUDE.md contract, no committed index
 
-There is no committed `.decisions/index.md` (ADR [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md), supersedes 0066's storage half). Discovery is **ambient**: a `SessionStart` hook injects a compact map — one line per ADR (`id · title · status`) — emitted by `pipeline-cli decisions-index compact`, derived straight from each file's frontmatter and ordered ascending by `id`. In contexts without the hook (e.g. a subagent), the fallback is `ls .decisions/` (the `NNNN-slug` filenames are the map) plus each file's frontmatter. Nothing is generated, committed, or regenerated — so nothing can drift, and an ADR PR is purely additive.
+There is no committed `.decisions/index.md` (ADR [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md), supersedes 0066's storage half) and **no `SessionStart` ADR-map hook** (ADR [0129](https://github.com/kamp-us/phoenix/blob/main/.decisions/0129-adr-discovery-is-the-claude-md-contract.md), which drops 0126's §Decision 3 hook as needless indirection). Discovery is the CLAUDE.md contract alone, uniform across every context (session, subagent, CI): `ls .decisions/` (the `NNNN-slug` filenames are the map) plus each file's frontmatter (`id`/`title`/`status`) for the row. For the full one-line-per-ADR `id · title · status` map **on demand**, run `pipeline-cli decisions-index compact` (derived straight from frontmatter, ordered ascending by `id`) — never auto-injected. Nothing is generated, committed, or regenerated — so nothing can drift, and an ADR PR is purely additive.
 
-The map's `title`/`status` fields are the file's frontmatter values **verbatim** — so a linked supersede status (`superseded by [0009](0009-slug.md)`) is written in the file's `status:` field and the map carries it through. Keep `title` to one dense line; the injected map costs a token per ADR every session.
+The map's `title`/`status` fields are the file's frontmatter values **verbatim** — so a linked supersede status (`superseded by [0009](0009-slug.md)`) is written in the file's `status:` field and the rendered map carries it through. Keep `title` to one dense line.
 
 ### ADR number lock
 

@@ -121,14 +121,17 @@ proven end-to-end against a real foreign repo (#368).
 The **`adr`** skill is portable on the same shape. There is no committed
 `.decisions/index.md` (ADR
 [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md),
-supersedes 0066's storage half): discovery is ambient — the **`pipeline-cli decisions-index
-compact`** subcommand (ADR
+supersedes 0066's storage half) and **no `SessionStart` ADR-map hook** (ADR
+[0129](https://github.com/kamp-us/phoenix/blob/main/.decisions/0129-adr-discovery-is-the-claude-md-contract.md),
+which drops 0126's map-injection hook as needless indirection): discovery is the CLAUDE.md
+contract alone — `ls .decisions/` + each file's frontmatter — with the **`pipeline-cli
+decisions-index compact`** subcommand (ADR
 [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md))
-emits the one-line-per-ADR map (`id · title · status`) from frontmatter to stdout, injected
-by a SessionStart hook (#1728), with `ls .decisions/` + frontmatter as the fallback. The
-SessionStart-installed `@kampus/pipeline-cli` is invoked the same way in phoenix and a
-foreign install; the CLI operates on the local `.decisions/` tree, so it needs no repo
-resolution. On a PR, `decisions-index validate` remains the number-lock backstop (duplicate
+emitting the one-line-per-ADR map (`id · title · status`) from frontmatter to stdout **on
+demand** (never auto-injected). The `@kampus/pipeline-cli` (SessionStart-installed by the
+deps-install hook, a different hook entirely — [`.patterns/plugin-sessionstart-install.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/plugin-sessionstart-install.md))
+is invoked the same way in phoenix and a foreign install; the CLI operates on the local
+`.decisions/` tree, so it needs no repo resolution. On a PR, `decisions-index validate` remains the number-lock backstop (duplicate
 / mismatched `id` — #1471). The ADR PR is purely additive — it adds only the new file (plus
 the superseded file's status edit), never a regenerated index.
 
