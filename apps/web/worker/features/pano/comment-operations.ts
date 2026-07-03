@@ -18,6 +18,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
@@ -26,6 +27,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import type {Reaction} from "../reaction/Reaction.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
 import type {Vote} from "../vote/Vote.ts";
 import {type CommentConnectionPage, type CommentRow, toCommentRow} from "./comment-fields.ts";
@@ -165,12 +167,13 @@ const validateCommentBody = Effect.fn("Pano.validateCommentBody")(function* (
 export interface CommentOperationsDeps {
 	readonly run: DrizzleAccessOrDie["run"];
 	readonly voteSvc: typeof Vote.Service;
+	readonly reactionSvc: typeof Reaction.Service;
 	readonly removalSeq: Removal.RemovalSequence;
 	readonly persistPanoStats: PersistPanoStats;
 }
 
 export const makeCommentOperations = (deps: CommentOperationsDeps) => {
-	const {run, voteSvc, removalSeq, persistPanoStats} = deps;
+	const {run, voteSvc, reactionSvc, removalSeq, persistPanoStats} = deps;
 
 	// `Comment`'s one viewer scalar: `myVote` from the batched `user_vote` presence
 	// read (#1126). Every comment read finalizes through `stampViewerScalars` with
@@ -275,7 +278,8 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		);
 
 		const page = forwardPage(fetched, first, (r: CommentRow) => r.id, rowToCommentRow);
-		const rows = yield* stampViewerScalars(page.rows, viewerId, [commentVoteScalar]);
+		const scalared = yield* stampViewerScalars(page.rows, viewerId, [commentVoteScalar]);
+		const rows = yield* stampReactionAggregate(reactionSvc, "comment", scalared, viewerId);
 
 		return {...page, rows, totalCount} satisfies CommentConnectionPage;
 	});
@@ -303,7 +307,10 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 					),
 				),
 		);
-		return yield* stampViewerScalars(fetched.map(rowToCommentRow), viewerId, [commentVoteScalar]);
+		const scalared = yield* stampViewerScalars(fetched.map(rowToCommentRow), viewerId, [
+			commentVoteScalar,
+		]);
+		return yield* stampReactionAggregate(reactionSvc, "comment", scalared, viewerId);
 	});
 
 	// The moderator sandbox-queue / promotion-backlog read model (#1205, the #1206

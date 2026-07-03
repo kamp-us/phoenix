@@ -14,6 +14,7 @@
  * onto the same row shape at the call site.
  */
 
+import {EMPTY_REACTION_AGGREGATE} from "../reaction/Reaction.ts";
 import type {DefinitionRow} from "./definition-fields.ts";
 import type {TermPage} from "./Sozluk.ts";
 import type {TermSummaryRow} from "./term-fields.ts";
@@ -76,4 +77,5 @@ export const toDefinition = (r: DefinitionRow): Definition => ({
 	createdAt: r.createdAt,
 	updatedAt: r.updatedAt,
 	myVote: r.myVote ?? null,
+	reactions: r.reactions ?? EMPTY_REACTION_AGGREGATE,
 });

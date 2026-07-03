@@ -18,6 +18,7 @@
  * batched `user_vote` read (#1159, `viewer-scalars.ts`).
  */
 import type * as schema from "../../db/drizzle/schema.ts";
+import type {ReactionAggregate} from "../reaction/Reaction.ts";
 
 type CommentRecord = typeof schema.commentRecord.$inferSelect;
 
@@ -49,6 +50,12 @@ type IntrinsicRow = {[K in keyof typeof intrinsicFields]: ReturnType<(typeof int
  */
 export interface CommentRow extends IntrinsicRow {
 	myVote?: boolean | null;
+	/**
+	 * The reaction aggregate (per-emoji counts + the viewer's own reaction), stamped
+	 * by `stampReactionAggregate` after the batched `user_reaction` read (#1862) —
+	 * `undefined` when not requested; the shaper fills the empty aggregate.
+	 */
+	reactions?: ReactionAggregate;
 }
 
 /**
@@ -64,6 +71,7 @@ export type CommentFields = Omit<IntrinsicRow, "updatedAt" | "deletedAt"> & {
 	updatedAt?: Date | null;
 	deletedAt?: Date | null;
 	myVote?: boolean | null;
+	reactions?: ReactionAggregate;
 };
 
 export interface CommentConnectionPage {
@@ -92,6 +100,7 @@ export const commentViewFields = {
 	updatedAt: true,
 	deletedAt: true,
 	myVote: true,
+	reactions: true,
 } as const satisfies Record<keyof CommentRow, true>;
 
 /**

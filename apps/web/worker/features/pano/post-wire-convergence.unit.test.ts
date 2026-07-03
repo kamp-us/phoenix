@@ -16,6 +16,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import type * as schema from "../../db/drizzle/schema.ts";
+import {EMPTY_REACTION_AGGREGATE} from "../reaction/Reaction.ts";
 import {type PostKeysetRow, toPostSummaryKeysetRow, toPostSummaryRow} from "./post-fields.ts";
 import {toPost} from "./shapers.ts";
 
@@ -79,6 +80,7 @@ const KEYSET_WIRE_FIELDS = [
 	"createdAt",
 	"myVote",
 	"isSaved",
+	"reactions",
 	"tags",
 ] as const;
 
@@ -140,6 +142,7 @@ describe("Pano Post wire shaper — by-id and keyset summaries converge (#1161, 
 			"isDraft",
 			"isSaved",
 			"myVote",
+			"reactions",
 			"score",
 			"slug",
 			"tags",
@@ -152,5 +155,7 @@ describe("Pano Post wire shaper — by-id and keyset summaries converge (#1161, 
 		assert.strictEqual(wire.myVote, null);
 		assert.strictEqual(wire.isSaved, null);
 		assert.strictEqual(wire.isDraft, null);
+		// No reactions requested on a bare summary read → the empty aggregate.
+		assert.deepStrictEqual(wire.reactions, EMPTY_REACTION_AGGREGATE);
 	});
 });

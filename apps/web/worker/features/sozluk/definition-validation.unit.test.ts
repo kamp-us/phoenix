@@ -21,6 +21,7 @@ import {it} from "@effect/vitest";
 import {Cause, type Context, Effect, Exit, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
+import {Reaction} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
 import {DEFINITION_BODY_MAX, Sozluk, SozlukLive} from "./Sozluk.ts";
 
@@ -38,10 +39,12 @@ const throwingAccess: DrizzleAccess = {
 // vote/aggregate paths), so a never-cast inert instance satisfies the layer's
 // dependency type without a real implementation.
 const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
+const inertReaction = Layer.succeed(Reaction, {} as Context.Service.Shape<typeof Reaction>);
 
 const sozlukLayer = SozlukLive.pipe(
 	Layer.provide(Layer.succeed(Drizzle, throwingAccess)),
 	Layer.provide(inertVote),
+	Layer.provide(inertReaction),
 );
 
 const expectTag = (exit: Exit.Exit<unknown, unknown>, tag: string) => {

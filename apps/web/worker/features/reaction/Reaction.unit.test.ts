@@ -246,6 +246,106 @@ describe("Reaction.readMine — presence read (mocked Drizzle seam)", () => {
 	});
 });
 
+describe("Reaction.readAggregate — per-emoji counts + viewer's own (mocked Drizzle seam)", () => {
+	it.effect("empty ids → empty Map without touching the DB", () =>
+		Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const agg = yield* reaction.readAggregate("u1", "post", []);
+			assert.strictEqual(agg.size, 0);
+		}).pipe(Effect.provide(reactionLayer(throwingAccess))),
+	);
+
+	it.effect(
+		"no reactions on the page → every target absent (empty aggregate for the caller)",
+		() => {
+			// `run` replays: GROUP BY rows (none), then readMine rows (none) for the
+			// signed-in viewer. A target with no reactions and no viewer reaction is
+			// ABSENT from the map — the caller fills the empty aggregate.
+			const access = scriptedAccess([[], []]);
+			return Effect.gen(function* () {
+				const reaction = yield* Reaction;
+				const agg = yield* reaction.readAggregate("u1", "post", ["p1", "p2"]);
+				assert.strictEqual(agg.size, 0, "no target appears when the page has no reactions");
+			}).pipe(Effect.provide(reactionLayer(access)));
+		},
+	);
+
+	it.effect("a single-emoji target → one count, the viewer's own surfaced", () => {
+		const groupBy = [{targetId: "p1", emoji: "👍", count: 3}];
+		const mine = [{targetId: "p1", emoji: "👍"}];
+		const access = scriptedAccess([groupBy, mine]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const agg = yield* reaction.readAggregate("u1", "post", ["p1"]);
+			const p1 = agg.get("p1");
+			assert.deepStrictEqual(p1?.counts, [{emoji: "👍", count: 3}]);
+			assert.strictEqual(p1?.myReaction, "👍", "the viewer's own reaction is surfaced");
+		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+
+	it.effect("a multi-emoji target → counts ORDERED by the REACTION_EMOJI palette", () => {
+		// The GROUP BY rows arrive in a NON-palette order; the aggregate must re-order
+		// them to the curated `REACTION_EMOJI` sequence (👍 ❤️ 😂 🤔 😢 🔥). The
+		// anonymous viewer's readMine short-circuits with NO read, so only the GROUP BY
+		// run is scripted here.
+		const groupBy = [
+			{targetId: "p1", emoji: "🔥", count: 1},
+			{targetId: "p1", emoji: "👍", count: 5},
+			{targetId: "p1", emoji: "😂", count: 2},
+		];
+		const access = scriptedAccess([groupBy]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const agg = yield* reaction.readAggregate(null, "post", ["p1"]);
+			const p1 = agg.get("p1");
+			assert.deepStrictEqual(
+				p1?.counts.map((c) => c.emoji),
+				["👍", "😂", "🔥"],
+				"counts are ordered by REACTION_EMOJI, not GROUP BY row order",
+			);
+			assert.deepStrictEqual(p1?.counts, [
+				{emoji: "👍", count: 5},
+				{emoji: "😂", count: 2},
+				{emoji: "🔥", count: 1},
+			]);
+			assert.strictEqual(p1?.myReaction, null, "anonymous viewer has no own reaction");
+		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+
+	it.effect("counts and viewer's-own fold independently across a batch of targets", () => {
+		const groupBy = [
+			{targetId: "p1", emoji: "👍", count: 2},
+			{targetId: "p1", emoji: "❤️", count: 1},
+			{targetId: "p2", emoji: "🔥", count: 4},
+		];
+		// The viewer reacted on p2 (not p1) and on p3 (which has no other reactions).
+		const mine = [
+			{targetId: "p2", emoji: "🔥"},
+			{targetId: "p3", emoji: "😢"},
+		];
+		const access = scriptedAccess([groupBy, mine]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const agg = yield* reaction.readAggregate("u1", "post", ["p1", "p2", "p3"]);
+
+			assert.deepStrictEqual(agg.get("p1"), {
+				counts: [
+					{emoji: "👍", count: 2},
+					{emoji: "❤️", count: 1},
+				],
+				myReaction: null,
+			});
+			assert.deepStrictEqual(agg.get("p2"), {
+				counts: [{emoji: "🔥", count: 4}],
+				myReaction: "🔥",
+			});
+			// p3 has the viewer's reaction but no aggregated counts — it still appears,
+			// with an empty `counts` and the viewer's emoji.
+			assert.deepStrictEqual(agg.get("p3"), {counts: [], myReaction: "😢"});
+		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+});
+
 describe("Reaction.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle seam)", () => {
 	// A recording batch seam whose db proxy makes every chained call return a marker,
 	// so we can count the produced statements without a real engine.

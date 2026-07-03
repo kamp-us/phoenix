@@ -27,6 +27,7 @@ import {it} from "@effect/vitest";
 import {Cause, type Context, Effect, Exit, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
+import {Reaction} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {COMMENT_BODY_MAX, Pano, PanoLive, POST_BODY_MAX, POST_TITLE_MAX} from "./Pano.ts";
@@ -64,12 +65,14 @@ const editPostReadThenDieAccess = (postRow: unknown): DrizzleAccess => {
 // layer's dependency types without a real implementation.
 const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
 const inertBookmark = Layer.succeed(Bookmark, {} as Context.Service.Shape<typeof Bookmark>);
+const inertReaction = Layer.succeed(Reaction, {} as Context.Service.Shape<typeof Reaction>);
 
 const panoLayer = (access: DrizzleAccess) =>
 	PanoLive.pipe(
 		Layer.provide(Layer.succeed(Drizzle, access)),
 		Layer.provide(inertVote),
 		Layer.provide(inertBookmark),
+		Layer.provide(inertReaction),
 	);
 
 const expectTag = (exit: Exit.Exit<unknown, unknown>, tag: string) => {

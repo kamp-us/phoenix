@@ -17,6 +17,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {createDrizzle, Drizzle, makeDrizzleAccess} from "../../db/Drizzle.ts";
+import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Sozluk, SozlukLive} from "./Sozluk.ts";
 
@@ -73,7 +74,11 @@ const recordRecomputeCounts = Effect.gen(function* () {
 		});
 	}).pipe(
 		Effect.provide(
-			SozlukLive.pipe(Layer.provide(VoteStub), Layer.provide(Layer.succeed(Drizzle, access))),
+			SozlukLive.pipe(
+				Layer.provide(VoteStub),
+				Layer.provide(ReactionStub),
+				Layer.provide(Layer.succeed(Drizzle, access)),
+			),
 		),
 	);
 	return recorded.map((q) => q.sql.toLowerCase());

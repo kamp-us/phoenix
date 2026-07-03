@@ -10,6 +10,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import type * as schema from "../../db/drizzle/schema.ts";
+import {EMPTY_REACTION_AGGREGATE} from "../reaction/Reaction.ts";
 import {toDefinitionRow} from "./definition-fields.ts";
 import {toDefinition} from "./shapers.ts";
 
@@ -46,6 +47,7 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 			createdAt: new Date(1000),
 			updatedAt: new Date(2000),
 			myVote: null,
+			reactions: EMPTY_REACTION_AGGREGATE,
 		});
 	});
 
@@ -60,12 +62,15 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 			"createdAt",
 			"id",
 			"myVote",
+			"reactions",
 			"score",
 			"updatedAt",
 		]);
 		assert.strictEqual(wire.__typename, "Definition");
 		// No viewer scalar stamped on a bare row read → defaulted to `null`.
 		assert.strictEqual(wire.myVote, null);
+		// No reactions stamped on a bare row read → the empty aggregate.
+		assert.deepStrictEqual(wire.reactions, EMPTY_REACTION_AGGREGATE);
 	});
 
 	it("the `myVote` viewer scalar passes through the shaper when stamped on the row", () => {
