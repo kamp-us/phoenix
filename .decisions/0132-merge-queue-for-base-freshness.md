@@ -51,7 +51,16 @@ on:
   merge_group:
 ```
 
-The gating workflows on `main` are `ci.yml` (the `ci-required` roll-up and every job it depends on — a batch-ref run computes `ci-required` over the batched changes) and `run-evidence.yml` (the SHA-bound run-evidence bundle the gates in `ship-it`/`review-code` assert). Non-gating PR-metadata workflows (doc-links, decisions-index, leak-guard, pointer-guard, readme-guard, codeowners-cp, workflow-contract, glossary-drift) do **not** get the trigger: a check that does not gate merge has no reason to run on the batch, and adding it would only slow the queue. The `merge_group` ref (`gh-readonly-queue/<base>/…`) is a real branch push, so a workflow that keys on the PR head SHA (run-evidence stamps `github.event.pull_request.head.sha`) uses `github.sha` on the `merge_group` event — which on the batch ref *is* the batched commit, the exact ref that merges.
+The **gating** workflows are exactly those producing a **branch-protection-required** status check. The "main protection" ruleset requires three contexts (`gh api repos/kamp-us/phoenix/rulesets/17377992`): `ci-required`, `validate skill frontmatter`, and `scan changed files for leaks`. They come from **two** workflows, both of which gain the `merge_group:` trigger:
+
+- `ci.yml` — produces **both** `ci-required` (the roll-up over every job it depends on; a batch-ref run computes it over the batched changes) **and** `validate skill frontmatter` (the `skills` job).
+- `leak-guard.yml` — produces `scan changed files for leaks`. Its `scan` job resolves the base from `github.base_ref` on `pull_request` and from `github.event.merge_group.base_sha` on the batch ref, so its `base...HEAD` diff is correct on both events.
+
+`run-evidence.yml` also gains the trigger: it is not itself a branch-protection-required *context*, but it produces the SHA-bound run-evidence bundle the gates in `ship-it`/`review-code` assert against the batch head, so it must run on the batch ref for those gates to resolve.
+
+Non-gating PR-metadata workflows (doc-links, decisions-index, pointer-guard, readme-guard, codeowners-cp, workflow-contract, glossary-drift) do **not** get the trigger: a check that does not gate merge has no reason to run on the batch, and adding it would only slow the queue.
+
+The `merge_group` ref (`gh-readonly-queue/<base>/…`) is a real branch push. A workflow that keys on the PR head SHA (run-evidence stamps `github.event.pull_request.head.sha` on `pull_request`) binds to `github.event.merge_group.head_sha` on the `merge_group` event — the batch head, the exact commit that merges — rather than `github.event.pull_request.head.sha` (empty on the batch ref). `run-evidence.yml` threads exactly this `${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}` into `HEAD_SHA`, the `--commit` stamp, and the fail-closed drift assert.
 
 ### Transition safety — this PR is safe under the CURRENT direct-merge path
 
@@ -68,4 +77,5 @@ So `--auto` is the **universal-safe** change: the pipeline edits in this ADR (sh
 - ADR [0048](0048-ship-it-merge-actor.md) — ship-it is the single merge authority (preserved).
 - ADR [0053](0053-control-plane-boundary.md) — the §CP control-plane boundary (preserved; §CP PRs still refuse to self-merge).
 - ADR [0054](0054-run-evidence-bundle.md) / [0056](0056-bundle-storage-transport.md) — the run-evidence bundle gate (preserved; its producer gains `merge_group:`).
+- Issue [#312](https://github.com/kamp-us/phoenix/issues/312) — the leak gate (`scan changed files for leaks`), a branch-protection-required check whose producer (`leak-guard.yml`) gains `merge_group:`.
 - GitHub docs — [Managing a merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue) and [Automatically merging a pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/automatically-merging-a-pull-request).
