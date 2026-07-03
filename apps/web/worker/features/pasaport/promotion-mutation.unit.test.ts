@@ -439,3 +439,64 @@ describe("user.vouch — kefil bildirimi (#1695)", () => {
 		}).pipe(Effect.provide(vouchLayers(makeNotificationStub(), "recorded"))),
 	);
 });
+
+// Promotion ceremony (#1696): the mod-direct promotion path — a landed tier flip
+// notifies the promoted member (kind `terfi`, target = their own account, no actor
+// identity), keyed on the flip's `promoted: true` so a no-op notifies nothing, and
+// never able to fail the committed promotion.
+describe("user.promote — terfi bildirimi (#1696)", () => {
+	const promotionRecording = () => {
+		const emits: NotificationRecordInput[] = [];
+		const layer = makeNotificationStub({
+			record: (input) => {
+				emits.push(input);
+				return Effect.succeed({id: "n-terfi"});
+			},
+		});
+		return {layer, emits};
+	};
+
+	const promoteLayers = (
+		notification: ReturnType<typeof makeNotificationStub>,
+		promoted: boolean,
+	) =>
+		Layer.mergeAll(
+			makePasaportStub({promoteToYazar: () => Effect.succeed({promoted})}),
+			relationStoreOf(["u-mod"]),
+			agentAuthorityStub,
+			notification,
+			requestContext(human("u-mod"), true),
+		);
+
+	it.effect("a landed mod promotion emits ONE terfi notification for the promoted member", () => {
+		const {layer, emits} = promotionRecording();
+		return Effect.gen(function* () {
+			yield* promote("u-target");
+			assert.deepStrictEqual(emits, [
+				{
+					recipientId: "u-target",
+					kind: "terfi",
+					targetKind: "user",
+					targetId: "u-target",
+					actorId: null,
+				},
+			]);
+		}).pipe(Effect.provide(promoteLayers(layer, true)));
+	});
+
+	it.effect("a no-op promotion (already-yazar) emits nothing", () => {
+		const {layer, emits} = promotionRecording();
+		return Effect.gen(function* () {
+			yield* promote("u-target");
+			assert.deepStrictEqual(emits, []);
+		}).pipe(Effect.provide(promoteLayers(layer, false)));
+	});
+
+	it.effect("a DYING notification write cannot fail the committed promotion (the seam AC)", () =>
+		Effect.gen(function* () {
+			// fail-on-contact Notification: `record` DIES; the promotion receipt still lands.
+			const receipt = yield* promote("u-target");
+			assert.strictEqual((receipt as {promoted: boolean}).promoted, true);
+		}).pipe(Effect.provide(promoteLayers(makeNotificationStub(), true))),
+	);
+});
