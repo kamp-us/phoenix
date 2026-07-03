@@ -17,6 +17,7 @@ import {
 	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_FUNNEL_READOUT,
+	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_EDITS,
 } from "../../../src/flags/keys.ts";
 import {AUDIT_ENVIRONMENT} from "../../environment.ts";
@@ -84,6 +85,7 @@ export {
 	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_FUNNEL_READOUT,
+	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_EDITS,
 };
 
@@ -361,4 +363,41 @@ export const panoOptimisticCommentAddFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("pano_optimistic_comment_add", {
 		appId,
 		...PANO_OPTIMISTIC_COMMENT_ADD_FLAG,
+	});
+
+/**
+ * The optimistic `definition.add` (instant term-page insert) dark-ship flag config
+ * (#1679, epic #1637). The A1 client-append into the nested `Term.definitions`
+ * connection (ADR 0125) runs only behind this key. Default-OFF so it reaches
+ * production dark — with it off a new definition appears only when the live
+ * `appendNode` push / read-back lands, exactly as today; flipping it on is the human
+ * release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           sozluk (the term-page definition composer)
+ *   - originating:     #1679 (epic: optimistic content mutations, #1637)
+ *   - removal trigger: once optimistic definition-add graduates to on at 100% and
+ *                      stable for one release, retire the flag and inline the path.
+ */
+export const OPTIMISTIC_DEFINITION_ADD_FLAG = {
+	key: PHOENIX_OPTIMISTIC_DEFINITION_ADD,
+	description:
+		"optimistic definition.add nested-connection insert dark-ship (#1679, epic #1637). owner: sozluk. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const optimisticDefinitionAddFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_optimistic_definition_add", {
+		appId,
+		...OPTIMISTIC_DEFINITION_ADD_FLAG,
 	});
