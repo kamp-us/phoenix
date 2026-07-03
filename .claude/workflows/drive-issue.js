@@ -54,6 +54,12 @@ function selectReviewTier(trivialTierEnabled, classifierOk, verdict) {
 	return trivialTierEnabled && classifierOk && verdict === "trivial" ? "lighter" : "full";
 }
 
+// Disambiguating first line (#1768): `meta` is a pure literal (Workflow contract), so its
+// static top-row label can't carry the target number — concurrent drive-issue rows would be
+// indistinguishable. Emit the already-parsed `issue` as the workflow's VERY FIRST log line so
+// the progress tree of each concurrent run is disambiguated by issue number from the top.
+log(`drive-issue #${issue}`);
+
 // 1. Classify — a lightweight READ of the already-triaged `type:` label to route.
 // Deliberately NOT the triager agent: triager is needs-triage INTAKE and would
 // mutate; the executor only reads the label to route it (epic -> planner).
