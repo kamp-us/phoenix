@@ -55,8 +55,29 @@ jobs:
     # repo (not a fork). This replaces the old `author_association` gate, whose
     # webhook-payload value lagged org-membership visibility and skipped the
     # deploy on maintainer same-repo PRs (issue #293).
+    #
+    # Dependabot guard (issue #1901): a `dependabot[bot]`-authored PR is a
+    # SAME-REPO PR (its `dependabot/*` branch lives in this repo, not a fork), so
+    # it passes the fork gate above — yet GitHub runs Dependabot-triggered
+    # workflows against a SEPARATE `dependabot` secrets store, so the four CI
+    # secrets (CLOUDFLARE_*/ALCHEMY_PASSWORD/BETTER_AUTH_SECRET) resolve EMPTY on
+    # its runs and `alchemy deploy` dies with AuthError. See GitHub's docs,
+    # "Automating Dependabot with GitHub Actions" → "Accessing secrets": a
+    # Dependabot-triggered `pull_request` run cannot read regular Actions secrets;
+    # they must be set as `dependabot`-scoped secrets to be visible. Populating
+    # that separate store would hand the deploy creds to auto-opened dep-bump runs
+    # (a wider blast radius wanting its own decision), so instead SKIP the deploy
+    # for Dependabot. `github.actor` is `dependabot[bot]` on those runs (verified
+    # on run 28685219958). This is additive — the fork gate is preserved, and the
+    # skip is scoped to `dependabot[bot]`, so it opens no path for a fork/untrusted
+    # PR to skip the deploy. A skipped matrix job reports neutral (not red) to the
+    # merge queue's ALLGREEN policy (ruleset 17377992), so the Dependabot PR greens
+    # and can merge instead of wedging on a deploy that structurally can't
+    # authenticate; the `push`-to-`main` (prod) path is `github.actor`-independent
+    # and unchanged.
     if: >-
       github.event.action != 'closed' &&
+      github.actor != 'dependabot[bot]' &&
       (github.event_name == 'push' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     needs: app-roster
@@ -352,8 +373,14 @@ jobs:
     # Same fork gate as `deploy` — a fork PR never deployed a stage, so there's
     # nothing to tear down, and we don't run secret-bearing `destroy` for it
     # either. Same-repo (non-fork) closed PRs proceed (issue #293).
+    #
+    # Same Dependabot guard as `deploy` (issue #1901): a Dependabot PR's deploy is
+    # skipped (empty `dependabot`-scoped secrets → no stage was ever created), so
+    # there is nothing to destroy AND the secret-less `destroy` would AuthError
+    # too. Skip cleanup for `dependabot[bot]` to mirror the deploy skip.
     if: >-
       github.event_name == 'pull_request' && github.event.action == 'closed' &&
+      github.actor != 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     needs: app-roster
     runs-on: ubuntu-latest
