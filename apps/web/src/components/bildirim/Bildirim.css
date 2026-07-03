@@ -1,0 +1,90 @@
+/* bildirim center + topbar badge (#1694). Role tokens only; unread state is
+   carried by a dot + weight, never color alone. No custom animation. */
+
+.kp-bildirim {
+	display: flex;
+	justify-content: center;
+	padding: var(--s-4) var(--s-3);
+}
+
+.kp-bildirim__inner {
+	width: 100%;
+	max-width: 720px;
+}
+
+.kp-bildirim__masthead {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--s-2);
+	margin-bottom: var(--s-4);
+}
+
+.kp-bildirim__title {
+	margin: 0;
+	font: var(--t-h1);
+	color: var(--text-primary);
+}
+
+.kp-bildirim__loading,
+.kp-bildirim__error,
+.kp-bildirim__empty {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-bildirim__list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.kp-bildirim__row {
+	display: flex;
+	align-items: baseline;
+	gap: var(--s-2);
+	padding: var(--s-2) 0;
+	border-bottom: 1px solid var(--border-subtle);
+}
+
+.kp-bildirim__dot {
+	flex: none;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--text-primary);
+	align-self: center;
+}
+
+.kp-bildirim__kind {
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+}
+
+.kp-bildirim__row[data-unread] .kp-bildirim__kind {
+	font-weight: 600;
+}
+
+.kp-bildirim__meta {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.kp-bildirim__spacer {
+	flex: 1;
+}
+
+.kp-bildirim__tombstone {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.kp-bildirim__more {
+	margin-top: var(--s-3);
+	display: flex;
+	justify-content: center;
+}

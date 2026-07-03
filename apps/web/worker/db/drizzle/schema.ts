@@ -7,6 +7,7 @@
  */
 import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
+import {NOTIFICATION_TARGET_KINDS} from "../../features/bildirim/target.ts";
 import {STORED_TIERS} from "../../features/kunye/standing.ts";
 import {REPORT_STATUSES, RESOLUTIONS} from "../../features/report/resolution.ts";
 import {TARGET_KINDS} from "../target-kind.ts";
@@ -368,6 +369,43 @@ export const authorshipVouch = sqliteTable(
 	(t) => [
 		primaryKey({columns: [t.voucherId, t.candidateId]}),
 		index("authorship_vouch_candidate").on(t.candidateId),
+	],
+);
+
+/**
+ * Per-recipient notification row (#1694, epic #1666) — the bildirim spine's one
+ * table. `kind` is a plain text discriminant deliberately WITHOUT a D1 enum: the
+ * spine mints no notifications; each sibling emitter (#1695–#1699) introduces its
+ * own kinds without a migration. `target_kind`/`target_id` reference the notified
+ * entity polymorphically (the `content_report` idiom, widened by `user` — see
+ * `features/bildirim/target.ts`); the target may be removed later, so the read
+ * path resolves liveness at list time (tombstone), never an FK.
+ *
+ * Read state is the nullable `read_at` stamp — "read but we don't know when" is
+ * unrepresentable. `count` is the aggregate slot ("3 yeni oy", #1698): the spine
+ * writes 1, an aggregating emitter bumps it + `updated_at` in place. `actor_id`
+ * is kept verbatim with NO FK (the `authorship_vouch` choice) so an account
+ * deletion never cascade-erases a recipient's history.
+ */
+export const notification = sqliteTable(
+	"notification",
+	{
+		id: text("id").primaryKey(),
+		recipientId: text("recipient_id").notNull(),
+		kind: text("kind").notNull(),
+		targetKind: text("target_kind", {enum: [...NOTIFICATION_TARGET_KINDS]}).notNull(),
+		targetId: text("target_id").notNull(),
+		actorId: text("actor_id"),
+		count: integer("count").notNull().default(1),
+		readAt: timestamp("read_at"),
+		createdAt: timestamp("created_at").notNull(),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [
+		// WHERE recipient_id = ? AND read_at IS NULL (the unread-count badge).
+		index("notification_recipient_read").on(t.recipientId, t.readAt),
+		// WHERE recipient_id = ? ORDER BY created_at DESC (the center's keyset list).
+		index("notification_recipient_created").on(t.recipientId, sql`${t.createdAt} DESC`),
 	],
 );
 

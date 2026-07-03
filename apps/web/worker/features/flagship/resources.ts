@@ -17,6 +17,7 @@ import {
 	PANO_OPTIMISTIC_POST_DELETE,
 	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_AUTHORSHIP_LOOP,
+	PHOENIX_BILDIRIM,
 	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_EDITS,
@@ -86,6 +87,7 @@ export {
 	PANO_OPTIMISTIC_POST_DELETE,
 	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_AUTHORSHIP_LOOP,
+	PHOENIX_BILDIRIM,
 	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_EDITS,
@@ -403,6 +405,41 @@ export const panoOptimisticCommentDeleteFlag = (appId: Input<string>) =>
 		appId,
 		...PANO_OPTIMISTIC_COMMENT_DELETE_FLAG,
 	});
+
+/**
+ * The bildirim (notification system) dark-ship flag config (#1694, epic #1666).
+ * The SINGLE seam the whole notification surface gates behind: the spine's badge +
+ * center page and each sibling emitter's surface (#1695–#1700) reuse this one key
+ * rather than minting per-child flags. Default-OFF so the system reaches production
+ * dark — with it off, nothing user-visible changes (the resolvers deny invisibly,
+ * the badge and `/bildirimler` route are absent); flipping it on is the human
+ * release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           bildirim (the notification system, epic #1666)
+ *   - originating:     #1694 (the bildirim spine)
+ *   - removal trigger: once the notification system is on at 100% and stable for
+ *                      one release, retire the flag and inline the surface.
+ */
+export const BILDIRIM_FLAG = {
+	key: PHOENIX_BILDIRIM,
+	description:
+		"bildirim (notification system) dark-ship (#1694, epic #1666). owner: bildirim. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const bildirimFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_bildirim", {appId, ...BILDIRIM_FLAG});
 
 /**
  * The optimistic `definition.add` (instant term-page insert) dark-ship flag config

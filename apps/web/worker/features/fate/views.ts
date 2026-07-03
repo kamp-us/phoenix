@@ -10,6 +10,16 @@
 import {modules} from "./config.ts";
 import {mergeFateRoots} from "./module.ts";
 
+export type {
+	Notification,
+	NotificationMarkReceipt,
+	NotificationUnread,
+} from "../bildirim/views.ts";
+export {
+	notificationDataView,
+	notificationMarkReceiptDataView,
+	notificationUnreadDataView,
+} from "../bildirim/views.ts";
 export type {DivanBacklogItem, DivanCaylak, DivanVoteReceipt} from "../divan/views.ts";
 export {
 	divanBacklogItemDataView,

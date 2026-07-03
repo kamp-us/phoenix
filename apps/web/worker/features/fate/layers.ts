@@ -19,6 +19,7 @@ import {Effect, Layer} from "effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import type {Database} from "../../db/Database.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
+import {NotificationLive} from "../bildirim/Notification.ts";
 import {DivanLive} from "../divan/Divan.ts";
 import {FlagsLive} from "../flagship/Flags.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
@@ -156,6 +157,9 @@ export const makeFateLayer = Layer.mergeAll(
 	// over the `user` table, depending only on `Drizzle` (discharged below), so it
 	// merges flat like `Stats`/`Search`/`Report`.
 	FunnelLive,
+	// The bildirim spine's notification store + recipient-scoped read model (#1694,
+	// epic #1666), depending only on `Drizzle` (discharged below) — merges flat.
+	NotificationLive,
 	// The authz ports the moderation gate (`report.resolve`/`restore`/`listOpen`)
 	// discharges `Moderate.over(platform)` against: `RelationStoreLive` reads the
 	// `moderates` tuple off the same `Drizzle` seam (discharged below), and
