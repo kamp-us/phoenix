@@ -13,7 +13,11 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
+import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
+import {Flags} from "../flagship/Flags.ts";
+import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {VoterNotEligible} from "../vote/errors.ts";
 import {
@@ -41,6 +45,15 @@ const EditDefinitionInput = Schema.Struct({
 
 const DefinitionIdInput = Schema.Struct({
 	id: Schema.String,
+});
+
+// The reaction intent decodes against the curated `REACTION_EMOJI` palette at the
+// wire boundary: a palette member sets/changes the reactor's single reaction, `null`
+// retracts it, and a NON-palette string fails to decode — so an arbitrary emoji is
+// structurally unrepresentable, never reaching the service (#1865 AC#1).
+const ReactDefinitionInput = Schema.Struct({
+	id: Schema.String,
+	emoji: Schema.NullOr(ReactionEmojiSchema),
 });
 
 // Service results name the id `definitionId` / author `authorName`; the
@@ -136,6 +149,49 @@ export const mutations = {
 			const definition = shapeDefinition(result);
 			yield* live.definition.update(definition.id, {changed: ["score"], data: definition});
 			return definition;
+		}),
+	),
+	// Set / change / retract the viewer's single reaction on a definition (epic #1840,
+	// #1865) — the cross-product twin of `definition.vote`, delegating to the ungated,
+	// karma-free `Reaction` engine via `Sozluk.reactToDefinition`. `CurrentUser.required`
+	// is the ONLY gate (a signed-out reactor is `Unauthorized`, same as vote's signed-out
+	// gate) — deliberately NO voter-tier gate and NO karma write, so a çaylak may react
+	// (#1861). Ships dark behind the default-off `phoenix-reactions` flag.
+	"definition.react": Fate.mutation(
+		{
+			input: ReactDefinitionInput,
+			type: DefinitionView,
+			error: Schema.Union([Unauthorized, DefinitionNotFound]),
+		},
+		Effect.fn("definition.react")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const sozluk = yield* Sozluk;
+			// Dark-ship gate (ADR 0083): default-off `phoenix-reactions`. Off ⇒ inert — the
+			// react never lands (the write is the new path, unreachable until release);
+			// re-resolve the definition unchanged so the caller's cache stays consistent,
+			// the divan.vote dark-ship inert-receipt shape. On a Flagship outage the safe
+			// read default (`false`) keeps the path dark.
+			const flags = yield* Flags;
+			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
+			if (!on) {
+				const [current] = yield* sozluk.getDefinitionsByIds([input.id], {viewerId: user.id});
+				if (!current) {
+					return yield* new DefinitionNotFound({
+						definitionId: input.id,
+						message: `definition ${input.id} not found`,
+					});
+				}
+				return toDefinition(current);
+			}
+			// Live fan-out is out of scope here (#1868): the mutation return re-resolves the
+			// fresh aggregate for the reactor; broadcasting reaction-count deltas to other
+			// open subscribers is the fate-live child's slice.
+			const row = yield* sozluk.reactToDefinition({
+				definitionId: input.id,
+				reactorId: user.id,
+				emoji: input.emoji,
+			});
+			return toDefinition(row);
 		}),
 	),
 	"definition.edit": Fate.mutation(
