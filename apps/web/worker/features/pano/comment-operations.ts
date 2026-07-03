@@ -18,6 +18,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
@@ -27,6 +28,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import type {ReactionTargetNotFound} from "../reaction/errors.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
 import type {Vote} from "../vote/Vote.ts";
@@ -104,6 +106,29 @@ export interface VoteOnCommentResult {
 	score: number;
 	createdAt: Date;
 	myVote: boolean;
+	changed: boolean;
+}
+
+export interface ReactToCommentInput {
+	commentId: string;
+	userId: string;
+	/**
+	 * The reaction intent: a curated-palette member sets/changes the user's single
+	 * reaction; `null` retracts it (toggle off). Already decoded against
+	 * `ReactionEmojiSchema` at the wire boundary, so the service never sees a
+	 * non-palette string.
+	 */
+	emoji: ReactionEmoji | null;
+}
+
+/**
+ * `reactToComment` re-resolves the affected comment like a read (the `getCommentsByIds`
+ * idiom), so the returned row carries the freshly-stamped `reactions` aggregate the
+ * mutation echoes back. `changed` is the service's idempotency signal (a re-react of
+ * the same emoji, or a retract-when-none, is `false`).
+ */
+export interface ReactToCommentResult {
+	comment: CommentRow;
 	changed: boolean;
 }
 
@@ -804,6 +829,47 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		);
 	});
 
+	// Reaction delegation — the karma-free, ungated twin of `voteOnComment` (#1864),
+	// the direct mirror of `reactToPost`. Delegates the write to `Reaction.react`
+	// (kind `comment`), translates the internal `ReactionTargetNotFound` into the
+	// wire-facing `CommentNotFound`, then RE-RESOLVES the comment via the same batched
+	// `getCommentsByIds` read the comment views use so the returned row carries the
+	// fresh `reactions` aggregate + `myReaction`. Unlike `voteOnComment` there is NO
+	// tier arm (`VoterNotEligible`) and NO karma path: a çaylak may react, and nothing
+	// writes karma — the settled ungated/social-only model (epic #1840).
+	const reactToComment = Effect.fn("Pano.reactToComment")(function* (input: ReactToCommentInput) {
+		const result = yield* reactionSvc
+			.react({
+				userId: input.userId,
+				targetKind: "comment",
+				targetId: input.commentId,
+				emoji: input.emoji,
+			})
+			.pipe(
+				Effect.catchTag(
+					"reaction/ReactionTargetNotFound",
+					(_: ReactionTargetNotFound) =>
+						new CommentNotFound({
+							commentId: input.commentId,
+							message: `comment ${input.commentId} not found`,
+						}),
+				),
+			);
+
+		// Re-resolve like a read so the echoed row carries the freshly-stamped
+		// `reactions` aggregate (counts + the viewer's own `myReaction`). The react
+		// write already asserted the target is live, so a missing row here is a raced
+		// removal — surface it as `CommentNotFound`, same as the post path.
+		const [row] = yield* getCommentsByIds([input.commentId], {viewerId: input.userId});
+		if (!row) {
+			return yield* new CommentNotFound({
+				commentId: input.commentId,
+				message: `comment ${input.commentId} not found`,
+			});
+		}
+		return {comment: row, changed: result.changed} satisfies ReactToCommentResult;
+	});
+
 	return {
 		listCommentsKeyset,
 		getCommentsByIds,
@@ -817,5 +883,6 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		moderateRestoreComment,
 		voteOnComment,
 		retractCommentVote,
+		reactToComment,
 	};
 };

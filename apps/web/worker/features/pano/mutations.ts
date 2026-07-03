@@ -99,6 +99,15 @@ const CommentIdInput = Schema.Struct({
 	id: Schema.String,
 });
 
+// `emoji` decodes against the curated `REACTION_EMOJI` palette (or `null` to
+// retract): a non-palette string FAILS to decode here, at the wire boundary, so a
+// bad emoji never reaches `Reaction.react` — the rejection is structural, not a
+// service error (the settled curated-fixed-palette model, #1859/#1864).
+const ReactToCommentInput = Schema.Struct({
+	id: Schema.String,
+	emoji: Schema.NullOr(ReactionEmojiSchema),
+});
+
 const EditCommentInput = Schema.Struct({
 	id: Schema.String,
 	body: Schema.String,
@@ -530,6 +539,50 @@ export const mutations = {
 			const comment = shapeComment(r);
 			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
 			return comment;
+		}),
+	),
+	// `comment.react` — set / change / retract the viewer's single reaction on a
+	// comment (epic #1840, #1864), the direct twin of `post.react` and the karma-free,
+	// ungated mirror of `comment.vote`. `CurrentUser.required` is the ONLY gate (a
+	// signed-out reactor is `Unauthorized`) — deliberately NO `VoterNotEligible` tier
+	// arm and NO karma path: any signed-in user, including a çaylak, may react. The
+	// emoji decodes against the curated `REACTION_EMOJI` palette at the wire boundary
+	// (`ReactToCommentInput`) — an off-palette emoji fails to decode and never reaches
+	// the service. The re-resolved comment carries the fresh `reactions` aggregate.
+	// Live fan-out is out of scope (#1868, #1864); the mutation return re-resolves the
+	// reactor's own receipt.
+	"comment.react": Fate.mutation(
+		{
+			input: ReactToCommentInput,
+			type: CommentView,
+			error: Schema.Union([Unauthorized, CommentNotFound]),
+		},
+		Effect.fn("comment.react")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const pano = yield* Pano;
+			// Dark-ship gate (ADR 0083): default-off `phoenix-reactions`. Off ⇒ inert — the
+			// react never lands (the write is the new path, unreachable until release);
+			// re-resolve the comment unchanged so the caller's cache stays consistent (the
+			// `definition.react` dark-ship inert-receipt shape). On a Flagship outage the
+			// safe read default (`false`) keeps the path dark.
+			const flags = yield* Flags;
+			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
+			if (!on) {
+				const [current] = yield* pano.getCommentsByIds([input.id], {viewerId: user.id});
+				if (!current) {
+					return yield* new CommentNotFound({
+						commentId: input.id,
+						message: `comment ${input.id} not found`,
+					});
+				}
+				return toComment(current);
+			}
+			const r = yield* pano.reactToComment({
+				commentId: input.id,
+				userId: user.id,
+				emoji: input.emoji,
+			});
+			return toComment(r.comment);
 		}),
 	),
 	"comment.edit": Fate.mutation(
