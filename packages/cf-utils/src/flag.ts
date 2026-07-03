@@ -206,6 +206,71 @@ export class FlagSetTargetInvalid extends Data.TaggedError("FlagSetTargetInvalid
 	}
 }
 
+/**
+ * The lever guard's refusal — `flag set --execute` (the live-flip write branch ONLY) refused
+ * because the humans-release boundary was not satisfied structurally at the lever (ADR 0133,
+ * pushing ADR 0083's "agents deploy, humans release" boundary down from the skill to the tool).
+ * The `--execute` write is a single-purpose human-release lever with zero legitimate agent
+ * callers, so refusing the TTY-less / unconfirmed path costs the legitimate path nothing: a
+ * human runs `/release` in a terminal (stdin IS a TTY) and answers the confirm, satisfying the
+ * guard by construction — there is deliberately no override flag (a string an agent could pass).
+ * The message names the boundary and the recoverable fix, mirroring `ship-it`'s §CP self-merge
+ * refusal (ADR 0053) — the same refuse-shape this guard is modeled on.
+ */
+export class LeverGuardRefused extends Data.TaggedError("LeverGuardRefused")<{
+	readonly reason: string;
+}> {
+	override get message(): string {
+		return (
+			`flag set --execute refused: ${this.reason}. ` +
+			"Flipping a flag live is a human release act — agents deploy, humans release (ADR 0083/0133). " +
+			"Run it yourself in an interactive terminal and confirm the prompt; there is no override flag by design."
+		);
+	}
+}
+
+/**
+ * The lever guard's decision for the live-flip `--execute` branch. `Allow` ⇒ the human-release
+ * boundary is satisfied (an interactive TTY AND an affirmative confirm) and the write proceeds;
+ * `Refuse` ⇒ it is not, carrying the `reason` the `LeverGuardRefused` error renders.
+ */
+export type LeverGuardDecision =
+	| {readonly _tag: "Allow"}
+	| {readonly _tag: "Refuse"; readonly reason: string};
+
+/**
+ * PURE core of the ADR 0133 lever guard — decide whether `flag set --execute` may flip a flag
+ * live, given only the two structural inputs the thin IO shell observes: whether stdin is an
+ * interactive TTY, and the raw confirm line the operator typed (`undefined` for EOF / no input).
+ *
+ * Both conditions must hold to `Allow`, and the guard fails toward `Refuse` on any ambiguity —
+ * the fail-safe direction ADR 0133 mandates (refusing a TTY-less human is recoverable; letting an
+ * agent flip a flag live is not):
+ *
+ *  - **No TTY ⇒ Refuse** first, before the confirm is even considered — a TTY-less caller is the
+ *    exact shape of an autonomous agent or a CI runner. This is the structural refuse: the absence
+ *    of a terminal is the signal, no credential/identity check.
+ *  - **TTY + confirm ⇒ Allow only on an affirmative** — `y`/`yes` (case-insensitive, whitespace
+ *    trimmed). Empty input, EOF (`undefined`), `n`, and anything else ⇒ Refuse. The default is
+ *    deny: the human must type a deliberate keystroke.
+ */
+export const decideLeverGuard = (input: {
+	readonly isTTY: boolean;
+	readonly confirmResponse: string | undefined;
+}): LeverGuardDecision => {
+	if (!input.isTTY) {
+		return {
+			_tag: "Refuse",
+			reason: "stdin is not an interactive TTY (this is the shape of an agent or CI runner)",
+		};
+	}
+	const answer = (input.confirmResponse ?? "").trim().toLowerCase();
+	if (answer === "y" || answer === "yes") {
+		return {_tag: "Allow"};
+	}
+	return {_tag: "Refuse", reason: "the interactive confirmation was not affirmed (expected y/yes)"};
+};
+
 /** The per-key slice of the `flag list` rows — a flag's state in every env it's defined in. */
 export const selectStatesForKey = (
 	rows: ReadonlyArray<FlagState>,

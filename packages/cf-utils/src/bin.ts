@@ -32,19 +32,21 @@
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Layer} from "effect";
-import {Argument, Command, Flag} from "effect/unstable/cli";
+import {Argument, Command, Flag, Prompt} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {auth} from "./auth.ts";
 import {AccountIdKeychainConfig, CredentialsKeychainFirst} from "./credentials.ts";
 import {
 	computeEffectiveServing,
 	computeServingPlan,
+	decideLeverGuard,
 	decodeEnv,
 	distinctKeys,
 	FlagEnvNotFound,
 	FlagKeyNotFound,
 	FlagSetTargetInvalid,
 	findAppForEnv,
+	LeverGuardRefused,
 	renderEffectiveServing,
 	renderFlagDetail,
 	renderFlagTable,
@@ -158,6 +160,36 @@ const resolveTarget = (
 	return Effect.fail(new FlagSetTargetInvalid({reason: "no target given"}));
 };
 
+// The ADR 0133 lever guard — the thin IO shell around the pure `decideLeverGuard` core: it
+// observes the two structural inputs (is stdin an interactive TTY, and the raw confirm line) and
+// hard-refuses the live flip unless BOTH hold. It runs ONLY on the `--execute` write branch; the
+// dry-run path never reaches it. The human `/release` path satisfies it by construction — a human
+// runs the lever in a terminal (stdin IS a TTY) and answers the `flip <flag> live? [y/N]` prompt,
+// so there is deliberately NO bypass. `Prompt.text` is reached only after the TTY check passes, so
+// it never faces a non-TTY stdin; an EOF/quit at the prompt collapses to no answer ⇒ refuse (the
+// fail-safe direction). See ADR 0133 (this guard) and ADR 0083 (agents deploy, humans release).
+const guardLiveFlip = (
+	flagKey: string,
+): Effect.Effect<void, LeverGuardRefused, Prompt.Environment> =>
+	Effect.gen(function* () {
+		const isTTY = process.stdin.isTTY === true;
+		if (!isTTY) {
+			return yield* refuse(decideLeverGuard({isTTY: false, confirmResponse: undefined}));
+		}
+		const response = yield* Prompt.text({message: `flip ${flagKey} live? [y/N]`}).pipe(
+			// EOF / Ctrl-D / Ctrl-C at the prompt yields no affirmative answer — collapse to refuse.
+			Effect.catchCause(() => Effect.succeed(undefined)),
+		);
+		return yield* refuse(decideLeverGuard({isTTY: true, confirmResponse: response}));
+	});
+
+const refuse = (
+	decision: ReturnType<typeof decideLeverGuard>,
+): Effect.Effect<void, LeverGuardRefused> =>
+	decision._tag === "Allow"
+		? Effect.void
+		: Effect.fail(new LeverGuardRefused({reason: decision.reason}));
+
 const set = Command.make(
 	"set",
 	{key: keyArg, state: stateArg, percent: percentFlag, env: envFlag, execute: executeFlag},
@@ -189,6 +221,11 @@ const set = Command.make(
 			yield* Console.log("  (already at target — nothing to write)");
 			return;
 		}
+
+		// ADR 0133 lever guard: the live flip is a human release act — refuse unless stdin is an
+		// interactive TTY AND an interactive confirm passes. Runs ONLY here, on the changed
+		// `--execute` write branch (dry-run and no-op returned above are untouched).
+		yield* guardLiveFlip(key);
 
 		const write = yield* FlagshipWrite;
 		const updated = yield* write.setServing({appId: app.id, flagKey: key, target});
