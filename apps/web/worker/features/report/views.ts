@@ -53,6 +53,14 @@ export type ReportReceipt = WorkerEntity<typeof ReportReceiptView>;
  * reputation); `distinctReporters` mirrors `reportCount` today (the composite report
  * PK collapses them for content targets) but is threaded as the seam #1852's actor
  * drawer and #1855's remove-the-wave dock into.
+ *
+ * The `authorId`, `authorProduction*` counts, `authorKefil`, and `authorReportedTargets`
+ * (#1852, ADR 0138) complete the actor-drawer's join: the actor's account id (the
+ * cross-mode hop key), their live content footprint (tanım / gönderi / yorum), their
+ * kefil (vouch) status, and the "bu aktör" count of how many of their targets are
+ * open-reported — all joined INSIDE this same gated read (a MODE over
+ * `report.listOpen`, never a second data path). They are null together with the author
+ * cluster when the author is unresolved.
  */
 export type OpenReportViewRow = ViewRow<{
 	id: string;
@@ -67,6 +75,8 @@ export type OpenReportViewRow = ViewRow<{
 	targetAuthor: string | null;
 	/** The in-situ routing reference: post id (post & comment→parent post) or term slug (definition). */
 	targetRef: string | null;
+	/** The reported target author's account id — the actor-drawer's cross-mode hop key (`null` when unresolved). */
+	authorId: string | null;
 	/** Distinct reporters filing open reports on this target (reporter-diversity numerator). */
 	distinctReporters: number;
 	/** The reported target author's authorship tier (`null` when the author is unresolved). */
@@ -75,6 +85,16 @@ export type OpenReportViewRow = ViewRow<{
 	authorKarma: number | null;
 	/** How many of the author's targets a moderator previously removed (`null` when unresolved). */
 	authorPriorRemovals: number | null;
+	/** The author's live tanım (definition) production count (`null` when unresolved). */
+	authorDefinitionCount: number | null;
+	/** The author's live gönderi (post) production count (`null` when unresolved). */
+	authorPostCount: number | null;
+	/** The author's live yorum (comment) production count (`null` when unresolved). */
+	authorCommentCount: number | null;
+	/** The author's kefil (active-vouch) status — `true` when someone actively vouches them (`null` when unresolved). */
+	authorKefil: boolean | null;
+	/** How many DISTINCT targets of this author are open-reported (the "bu aktör" count; `null` when unresolved). */
+	authorReportedTargets: number | null;
 }>;
 
 export class OpenReportView extends FateDataView<OpenReportViewRow>()("OpenReport")({
@@ -87,10 +107,16 @@ export class OpenReportView extends FateDataView<OpenReportViewRow>()("OpenRepor
 	targetExcerpt: true,
 	targetAuthor: true,
 	targetRef: true,
+	authorId: true,
 	distinctReporters: true,
 	authorTier: true,
 	authorKarma: true,
 	authorPriorRemovals: true,
+	authorDefinitionCount: true,
+	authorPostCount: true,
+	authorCommentCount: true,
+	authorKefil: true,
+	authorReportedTargets: true,
 } satisfies {[K in keyof OpenReportViewRow]: true}) {}
 
 export const openReportDataView = OpenReportView.view;

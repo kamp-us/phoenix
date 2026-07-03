@@ -21,10 +21,20 @@ import type {OpenReportGroup} from "./Report.ts";
  * fallback rather than a fabricated tier.
  */
 export interface AuthorReputation {
+	/** The author's account id — the actor-drawer's cross-mode hop key (#1852). */
+	authorId: string;
 	tier: Tier;
 	karma: number;
 	/** How many of this author's targets a moderator has previously removed (0 = clean). */
 	priorRemovals: number;
+	/** The author's live content footprint (#1852): tanım / gönderi / yorum counts. */
+	definitionCount: number;
+	postCount: number;
+	commentCount: number;
+	/** Whether someone actively vouches (kefil) this author (#1852). */
+	kefil: boolean;
+	/** How many DISTINCT targets of this author are open-reported (the "bu aktör" count, #1852). */
+	reportedTargets: number;
 }
 
 /**
@@ -45,10 +55,16 @@ export interface ReporterDiversity {
  * so the row never claims a partial (tier-without-karma) reputation.
  */
 export interface RowReputation {
+	authorId: string | null;
 	authorTier: Tier | null;
 	authorKarma: number | null;
 	authorPriorRemovals: number | null;
 	distinctReporters: number;
+	authorDefinitionCount: number | null;
+	authorPostCount: number | null;
+	authorCommentCount: number | null;
+	authorKefil: boolean | null;
+	authorReportedTargets: number | null;
 }
 
 /** The `<kind>:<id>` key an author-reputation map is keyed by (mirrors the view `id`). */
@@ -67,8 +83,14 @@ export const rowReputationOf = (
 	reputation: AuthorReputation | undefined,
 	diversity: ReporterDiversity | undefined,
 ): RowReputation => ({
+	authorId: reputation?.authorId ?? null,
 	authorTier: reputation?.tier ?? null,
 	authorKarma: reputation?.karma ?? null,
 	authorPriorRemovals: reputation?.priorRemovals ?? null,
 	distinctReporters: diversity?.distinctReporters ?? group.reportCount,
+	authorDefinitionCount: reputation?.definitionCount ?? null,
+	authorPostCount: reputation?.postCount ?? null,
+	authorCommentCount: reputation?.commentCount ?? null,
+	authorKefil: reputation?.kefil ?? null,
+	authorReportedTargets: reputation?.reportedTargets ?? null,
 });

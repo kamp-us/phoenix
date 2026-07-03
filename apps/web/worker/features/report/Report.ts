@@ -11,7 +11,7 @@
  * re-report by the same user a no-op success (the `user_vote` precedent). No
  * live view publishes off a write — a report is private moderation state.
  */
-import {and, eq, inArray, isNotNull, sql} from "drizzle-orm";
+import {and, eq, inArray, isNotNull, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -158,8 +158,37 @@ export class Report extends Context.Service<
 		readonly reporterDiversity: (
 			targets: ReadonlyArray<{targetKind: TargetKind; targetId: string}>,
 		) => Effect.Effect<ReadonlyMap<string, {reportCount: number; distinctReporters: number}>>;
+
+		/**
+		 * The actor-drawer's üretim counts (#1852, ADR 0138): per author, how many
+		 * definition / post / comment records they authored (`removed_at IS NULL` — live
+		 * production only). One grouped read per kind over the page's authors, keyed by
+		 * author id; absent authors carry a zeroed triple. The künye-join actor-drawer
+		 * renders these as the actor's content footprint alongside their standing.
+		 */
+		readonly productionCountsByAuthors: (
+			authorIds: ReadonlyArray<string>,
+		) => Effect.Effect<ReadonlyMap<string, ProductionCounts>>;
+
+		/**
+		 * The actor-drawer's "bu aktör" tell (#1852, ADR 0138): per author, how many
+		 * DISTINCT of their targets carry an open report — the count behind "this actor
+		 * has N reported targets", the entry point #1855's remove-the-wave grows from.
+		 * Joined via the author id the content read captured; one grouped read per kind
+		 * over the page's authors. Absent authors carry 0.
+		 */
+		readonly countOpenReportedTargetsByAuthors: (
+			authorIds: ReadonlyArray<string>,
+		) => Effect.Effect<ReadonlyMap<string, number>>;
 	}
 >()("@kampus/report/Report") {}
+
+/** The actor's live content footprint (#1852) — per-kind production counts. */
+export interface ProductionCounts {
+	definitionCount: number;
+	postCount: number;
+	commentCount: number;
+}
 
 export const ReportLive = Layer.effect(Report)(
 	Effect.gen(function* () {
@@ -380,6 +409,80 @@ export const ReportLive = Layer.effect(Report)(
 			return diversity;
 		});
 
+		// Per-author live production counts across the three record tables
+		// (`removed_at IS NULL`). One grouped read per kind; each table maps to its
+		// `ProductionCounts` field. Empty input short-circuits with no read.
+		const productionCountsByAuthors = Effect.fn("Report.productionCountsByAuthors")(function* (
+			authorIds: ReadonlyArray<string>,
+		) {
+			const counts = new Map<string, ProductionCounts>();
+			if (authorIds.length === 0) return counts;
+			const ids = [...authorIds];
+			const kinds = [
+				[schema.definitionRecord, "definitionCount"],
+				[schema.postRecord, "postCount"],
+				[schema.commentRecord, "commentCount"],
+			] as const;
+			for (const [table, field] of kinds) {
+				const rows = yield* run((db) =>
+					db
+						.select({authorId: table.authorId, n: sql<number>`COUNT(*)`})
+						.from(table)
+						.where(and(inArray(table.authorId, ids), isNull(table.removedAt)))
+						.groupBy(table.authorId),
+				);
+				for (const r of rows) {
+					const cur = counts.get(r.authorId) ?? {
+						definitionCount: 0,
+						postCount: 0,
+						commentCount: 0,
+					};
+					counts.set(r.authorId, {...cur, [field]: Number(r.n)});
+				}
+			}
+			return counts;
+		});
+
+		// The "bu aktör" count (#1852): per author, how many DISTINCT of their targets
+		// carry an open report. Joins `content_report` (open) to each record table by
+		// target id per kind, groups by author. One read per kind over the page's
+		// authors; a target's kind decides which record table carries its author.
+		const countOpenReportedTargetsByAuthors = Effect.fn("Report.countOpenReportedTargetsByAuthors")(
+			function* (authorIds: ReadonlyArray<string>) {
+				const counts = new Map<string, number>();
+				if (authorIds.length === 0) return counts;
+				const ids = [...authorIds];
+				const kinds = [
+					["definition", schema.definitionRecord],
+					["post", schema.postRecord],
+					["comment", schema.commentRecord],
+				] as const;
+				for (const [kind, table] of kinds) {
+					const rows = yield* run((db) =>
+						db
+							.select({
+								authorId: table.authorId,
+								n: sql<number>`COUNT(DISTINCT ${schema.contentReport.targetId})`,
+							})
+							.from(schema.contentReport)
+							.innerJoin(table, eq(schema.contentReport.targetId, table.id))
+							.where(
+								and(
+									eq(schema.contentReport.status, "open"),
+									eq(schema.contentReport.targetKind, kind),
+									inArray(table.authorId, ids),
+								),
+							)
+							.groupBy(table.authorId),
+					);
+					for (const r of rows) {
+						counts.set(r.authorId, (counts.get(r.authorId) ?? 0) + Number(r.n));
+					}
+				}
+				return counts;
+			},
+		);
+
 		return {
 			readByReporter,
 			listOpen,
@@ -389,6 +492,8 @@ export const ReportLive = Layer.effect(Report)(
 			firstOpenReportId,
 			countRemovalsByAuthors,
 			reporterDiversity,
+			productionCountsByAuthors,
+			countOpenReportedTargetsByAuthors,
 			submit: Effect.fn("Report.submit")(function* (input: ReportInput) {
 				yield* assertTargetLive(input.targetKind, input.targetId);
 

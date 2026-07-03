@@ -31,6 +31,8 @@ const failOnContact: ReportShape = {
 	firstOpenReportId: die("firstOpenReportId"),
 	countRemovalsByAuthors: die("countRemovalsByAuthors"),
 	reporterDiversity: die("reporterDiversity"),
+	productionCountsByAuthors: die("productionCountsByAuthors"),
+	countOpenReportedTargetsByAuthors: die("countOpenReportedTargetsByAuthors"),
 };
 
 export const makeReportStub = (overrides: Partial<ReportShape> = {}): Layer.Layer<Report> =>

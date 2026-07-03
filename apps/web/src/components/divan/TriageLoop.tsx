@@ -14,9 +14,11 @@
  * decisions live DOM-free in `triageLoop.ts` (unit-tested); this component is the thin
  * React shell over them.
  */
-import {useCallback, useEffect, useRef, useState} from "react";
+import {useCallback, useEffect, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport, ResolveReceipt} from "../../../worker/features/report/views";
+import {ActorDrawer} from "./ActorDrawer";
+import {type Chamber, drawerDefaultOpen, drawerKeyToAction, hopTarget} from "./actor-drawer";
 import {itemKindLabel, parseBacklogItemId} from "./divanGating";
 import {reasonLabel, reportAgeLabel, targetHref} from "./raporlarGating";
 import {
@@ -45,10 +47,16 @@ const OpenReportLoopView = view<OpenReport>()({
 	targetExcerpt: true,
 	targetAuthor: true,
 	targetRef: true,
+	authorId: true,
 	distinctReporters: true,
 	authorTier: true,
 	authorKarma: true,
 	authorPriorRemovals: true,
+	authorDefinitionCount: true,
+	authorPostCount: true,
+	authorCommentCount: true,
+	authorKefil: true,
+	authorReportedTargets: true,
 });
 
 const OpenReportConnectionView = {items: {node: OpenReportLoopView}} as const;
@@ -86,6 +94,16 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	const [error, setError] = useState<string | null>(null);
 	const [decisionsToday, setDecisionsToday] = useState(0);
 	const [lastVerdict, setLastVerdict] = useState<LastVerdict | null>(null);
+
+	// The actor-drawer (#1852, ADR 0138): the focused item's actor, docked open by
+	// default on desktop (founder call). `chamber` is which mode it was entered from —
+	// `raporlar` here, `kefil` after a `V` hop; the hop only re-lenses the SAME actor,
+	// it never re-fetches. Desktop is a coarse pointer + wide viewport (no docked panel
+	// on a phone-sized surface).
+	const isDesktop =
+		typeof window !== "undefined" && window.matchMedia?.("(min-width: 900px)").matches === true;
+	const [drawerOpen, setDrawerOpen] = useState(() => drawerDefaultOpen(isDesktop));
+	const [chamber, setChamber] = useState<Chamber>("raporlar");
 
 	// The resolved-target ids the loop has already acted on this session — used to
 	// present the post-collapse queue without a re-fetch (a MODE over the same read).
@@ -160,6 +178,28 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	useEffect(() => {
 		function onKey(e: KeyboardEvent) {
 			if (busy) return;
+
+			// The actor-drawer bindings (#1852) take precedence over the loop's own, but
+			// only outside a confirm sheet (a sheet narrows to its own keys). `A` toggles
+			// the drawer; `V`/`M` hop between the kefil and moderation chambers on the SAME
+			// actor — a re-lens, not a re-fetch.
+			if (pending === null) {
+				const drawer = drawerKeyToAction(e.key);
+				if (drawer !== null) {
+					e.preventDefault();
+					if (drawer.kind === "toggleDrawer") {
+						setDrawerOpen((open) => !open);
+					} else {
+						const target = hopTarget(drawer);
+						if (target !== null) {
+							setChamber(target);
+							setDrawerOpen(true);
+						}
+					}
+					return;
+				}
+			}
+
 			const action = keyToAction(e.key);
 			if (action === null) return;
 
@@ -232,11 +272,27 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 					{Math.min(index, live.length - 1) + 1} / {live.length}
 				</span>
 				<span className="kp-triage__keys">
-					j/k gez · Y yoksay · R kaldır · U geri al · O göster
+					j/k gez · Y yoksay · R kaldır · U geri al · O göster · A künye · V/M oda
 				</span>
 			</div>
 
-			{focused && <TriageCard node={focused.node} revealed={revealed} />}
+			<div className="kp-triage__stage" data-drawer={drawerOpen}>
+				{focused && <TriageCard node={focused.node} revealed={revealed} />}
+				{focused && drawerOpen && (
+					<TriageActorDrawer
+						node={focused.node}
+						chamber={chamber}
+						onHopKefil={() => {
+							setChamber("kefil");
+							setDrawerOpen(true);
+						}}
+						onHopModeration={() => {
+							setChamber("raporlar");
+							setDrawerOpen(true);
+						}}
+					/>
+				)}
+			</div>
 
 			{error && (
 				<p className="kp-triage__error" role="alert" data-testid="triage-error">
@@ -270,6 +326,30 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 				</div>
 			)}
 		</div>
+	);
+}
+
+// Resolve the focused node's full `OpenReport` view (the same read the card renders off)
+// and hand its actor projection to the drawer — a MODE over the gated row, no re-fetch.
+function TriageActorDrawer({
+	node,
+	chamber,
+	onHopKefil,
+	onHopModeration,
+}: {
+	readonly node: ViewRef<"OpenReport">;
+	readonly chamber: Chamber;
+	readonly onHopKefil: () => void;
+	readonly onHopModeration: () => void;
+}) {
+	const data = useView(OpenReportLoopView, node);
+	return (
+		<ActorDrawer
+			data={data}
+			chamber={chamber}
+			onHopKefil={onHopKefil}
+			onHopModeration={onHopModeration}
+		/>
 	);
 }
 
