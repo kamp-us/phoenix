@@ -364,6 +364,15 @@ if (verdict.verdict !== "PASS") {
 // ENQUEUED + green, not merged-now: the merge queue owns the final async merge and the
 // async `Fixes #N` issue-close (ADR 0132), so this stage returns `enqueued` (QUEUED ->
 // auto-merges on green), never an in-run merge/close assertion.
+//
+// QUEUED is NOT terminal: the queue can EJECT an enqueued PR (textual batch conflict or a
+// combined-batch CI failure) without merging it, leaving it silently stalled (still open,
+// no longer queued, not merged) — indistinguishable from a slow-but-pending PR (#1823). So
+// the shipper runs ship-it's bounded post-enqueue RECONCILE (Step 5.5) and reports a
+// `mergeOutcome` of "landed" | "queued" | "ejected". An `ejected` outcome is NOT shipped:
+// this stage surfaces it and routes the PR back to the repair/re-queue lane rather than
+// reporting success. The reconcile is BOUNDED (a batch window, then report), staying inside
+// ADR 0132's async model — it does not block synchronously to the final merge.
 phase("Ship");
 log(`Shipping PR #${pr} (the shipper enqueues a §CP PR only on a control-plane-team approval)`);
 const shipped = await agent(
@@ -377,8 +386,13 @@ const shipped = await agent(
 		`PASS, confirm CI is green, enqueue for a squash-merge with \`gh pr merge --auto\` (no method flag — the queue owns the SQUASH method), and confirm it ` +
 		`is enqueued + green. The merge queue owns the final, async merge (ADR 0132): success is "enqueued + green" ` +
 		`(QUEUED -> auto-merges on green), NOT "merged now" — the linked issue auto-closes async when the queue lands ` +
-		`the merge. Return { enqueued: true|false, awaitingControlPlaneApproval: true|false, reviewedReady: ` +
-		`true|false, reason: "<stop/refusal reason if not enqueued>" }.`,
+		`the merge. After a successful enqueue, run your bounded post-enqueue RECONCILE (Step 5.5): poll the PR's ` +
+			`merged/state/mergeStateStatus within a batch window and classify the terminal outcome as "landed" (queue ` +
+			`merged it), "queued" (still in the queue at the window's end — a well-formed pending), or "ejected" (still ` +
+			`open, no longer queued, not merged — the queue dropped it on a textual or combined-batch conflict). On ` +
+			`"ejected", surface it (comment on the PR) and do NOT report shipped — it routes back to repair/re-queue. ` +
+			`Return { enqueued: true|false, mergeOutcome: "landed"|"queued"|"ejected"|"n/a", awaitingControlPlaneApproval: ` +
+			`true|false, reviewedReady: true|false, reason: "<stop/refusal/ejection reason if not shipped>" }.`,
 	{
 		agentType: "shipper",
 		isolation: "worktree",
@@ -386,6 +400,7 @@ const shipped = await agent(
 			type: "object",
 			properties: {
 				enqueued: { type: "boolean" },
+				mergeOutcome: { type: "string", enum: ["landed", "queued", "ejected", "n/a"] },
 				awaitingControlPlaneApproval: { type: "boolean" },
 				reviewedReady: { type: "boolean" },
 				reason: { type: "string" },
@@ -395,16 +410,24 @@ const shipped = await agent(
 		},
 	},
 );
+// An ejection is NOT a ship: the queue dropped an enqueued PR without merging it (#1823).
+const ejected = shipped.mergeOutcome === "ejected";
 log(
-	shipped.enqueued
-		? `PR #${pr} QUEUED -> auto-merges on green`
-		: shipped.awaitingControlPlaneApproval
-			? `PR #${pr} awaiting control-plane approval (§CP) — a @kamp-us/control-plane member must approve at the current head; re-run the shipper after approval`
-			: `PR #${pr} not enqueued (reviewedReady=${shipped.reviewedReady ?? false}): ${shipped.reason ?? "see shipper output"}`,
+	ejected
+		? `PR #${pr} EJECTED from the merge queue (not merged) — routing back to repair/re-queue: ${shipped.reason ?? "textual or combined-batch conflict"}`
+		: shipped.enqueued
+			? `PR #${pr} QUEUED -> auto-merges on green${shipped.mergeOutcome === "landed" ? " (reconciled: landed)" : shipped.mergeOutcome === "queued" ? " (reconciled: still queued)" : ""}`
+			: shipped.awaitingControlPlaneApproval
+				? `PR #${pr} awaiting control-plane approval (§CP) — a @kamp-us/control-plane member must approve at the current head; re-run the shipper after approval`
+				: `PR #${pr} not enqueued (reviewedReady=${shipped.reviewedReady ?? false}): ${shipped.reason ?? "see shipper output"}`,
 );
 
 return {
-	enqueued: !!shipped.enqueued,
+	// An ejected PR was enqueued but the queue dropped it — it did NOT ship, so it must not
+	// present as an enqueued success to the fleet; report enqueued=false and carry the outcome.
+	enqueued: !!shipped.enqueued && !ejected,
+	mergeOutcome: shipped.mergeOutcome ?? "n/a",
+	ejected,
 	awaitingControlPlaneApproval: !!shipped.awaitingControlPlaneApproval,
 	pr,
 	rounds: round,

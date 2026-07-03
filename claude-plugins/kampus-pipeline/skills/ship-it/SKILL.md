@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green plus the SHA-bound run-evidence bundle, then enqueue for a squash merge with `gh pr merge --auto` (no method flag — the queue owns the SQUASH method) — the merge queue owns the final, async merge, so success is "enqueued + green" (QUEUED → auto-merges on green) and the linked issue auto-closes async when the merge lands (ADR 0132). When the ship was a dark feature ship it surfaces a release queue for the humans (deploy is the agent's boundary, release is human; ADR 0083). For a control-plane PR (.claude/.github + the gate-critical skills) it is APPROVAL-AWARE (ADR 0135, amending 0053) — it enqueues the §CP PR only once a @kamp-us/control-plane team member has APPROVED it at the current head (all machine gates still green), else STOPS at "awaiting control-plane approval" — human judgment via the approval, pipeline mechanics via the enqueue. Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
+description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green plus the SHA-bound run-evidence bundle, then enqueue for a squash merge with `gh pr merge --auto` (no method flag — the queue owns the SQUASH method) — the merge queue owns the final, async merge, so success is "enqueued + green" (QUEUED → auto-merges on green) and the linked issue auto-closes async when the merge lands (ADR 0132) — then a bounded post-enqueue reconcile watches a batch window to catch a merge-queue ejection (a dropped PR — still open, no longer queued, not merged), routing an ejected PR back to repair/re-queue instead of reporting a silent false success. When the ship was a dark feature ship it surfaces a release queue for the humans (deploy is the agent's boundary, release is human; ADR 0083). For a control-plane PR (.claude/.github + the gate-critical skills) it is APPROVAL-AWARE (ADR 0135, amending 0053) — it enqueues the §CP PR only once a @kamp-us/control-plane team member has APPROVED it at the current head (all machine gates still green), else STOPS at "awaiting control-plane approval" — human judgment via the approval, pipeline mechanics via the enqueue. Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
 ---
 
 # ship-it
@@ -1011,6 +1011,83 @@ Step 1 pinned `PART_OF` (an explicit `Part of #N` partial split) — `issue: #<P
 open (intentional partial split, not auto-closed)`, confirming the partial-split issue stays
 open for the sibling lane.
 
+### Step 5.5 — Bounded post-enqueue reconcile: detect an ejection (QUEUED is not terminal success)
+
+`QUEUED` is the enqueue **success** signal (Step 4), but it is **not** the terminal one. GitHub's
+merge queue can **eject** an enqueued PR without merging it — the batch combining this PR with the
+PRs ahead of it in the `gh-readonly-queue/<base>/…` ref hits a **textual conflict**, or the
+combined batch **fails CI** (a logical/semantic conflict the queue bisects and removes the culprit
+from) — and on ejection the PR is **silently dropped from the queue**: still open, no longer queued,
+the async merge never happens, `Fixes #N` never fires, the issue stays open (GitHub docs,
+[Managing a merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)).
+Under concurrent fleet merges — the exact regime the queue exists for (ADR 0132) — ejection is the
+**expected** failure mode, not an edge case. Stopping at `QUEUED` therefore reports a **false
+success**: to the pipeline an ejected PR is indistinguishable from a slow-but-still-pending one.
+Close that hole with a **bounded post-enqueue reconcile** — it stays compatible with ADR 0132's
+async model (the actor does **not** block synchronously on the final merge), it just watches a
+**bounded batch window** to classify the terminal state before it reports.
+
+Read the two ground-truth signals per poll — `state`/`mergedAt` (did it land?) and
+`mergeStateStatus` (is it still in the queue?) — and classify into exactly three outcomes:
+
+```bash
+# Bounded reconcile: poll merged/queued state within a batch window, then classify.
+# BOUNDED, not synchronous-to-merge (ADR 0132): a fixed budget of polls, then STOP and report —
+# a PR still QUEUED at the budget's end is a well-formed pending, not a failure.
+RECONCILE_TRIES=${SHIP_RECONCILE_TRIES:-10}   # ~10 polls
+RECONCILE_SLEEP=${SHIP_RECONCILE_SLEEP:-30}   # ~30s apart ⇒ ~5 min batch window
+MERGE_OUTCOME=pending
+for i in $(seq 1 "$RECONCILE_TRIES"); do
+  # mergeStateStatus is the queue-membership discriminator: QUEUED ⇒ still in the queue.
+  # (gh pr view --json is the sanctioned PR-state read ship-it Step 2 already uses — NOT a
+  #  gh api GraphQL issue/PR intake query, which the org's Projects-classic integration breaks.)
+  read -r MERGED STATE MSS < <(gh pr view "$PR" --repo "$REPO" \
+    --json merged,state,mergeStateStatus \
+    --jq '"\(.merged) \(.state) \(.mergeStateStatus)"')
+  if [ "$MERGED" = "true" ] || [ "$STATE" = "MERGED" ]; then MERGE_OUTCOME=merged; break; fi
+  if [ "$MSS" = "QUEUED" ]; then MERGE_OUTCOME=queued; sleep "$RECONCILE_SLEEP"; continue; fi
+  # OPEN + not merged + not QUEUED ⇒ the queue dropped it: an EJECTION.
+  if [ "$STATE" = "OPEN" ]; then MERGE_OUTCOME=ejected; break; fi
+  sleep "$RECONCILE_SLEEP"
+done
+```
+
+Then act on `MERGE_OUTCOME`, and only here — **never at Step 4's enqueue** — decide the run's
+merge disposition:
+
+- **`merged`** — the queue landed the batch. Terminal success; the `Fixes #N` close has fired (or
+  is firing) async. Report `merged: yes (queue landed the batch)`.
+- **`queued`** — still in the queue at the window's end. This is a **well-formed pending**, not a
+  failure (ADR 0132: the actor does not block to the final merge). Report `enqueued: yes (QUEUED →
+  auto-merges on green)` exactly as before — the reconcile simply confirmed it was **still queued**,
+  never ejected, within the window.
+- **`ejected`** — the queue **dropped** the PR (still open, no longer queued, not merged). This is
+  the silent stall this step exists to catch. Do **not** report shipped. **Route it back to
+  repair/re-queue** and **surface the ejection**: leave a legible comment on the PR naming the
+  ejection and the likely cause (textual batch conflict vs combined-batch CI failure), so the
+  fleet/`drive-issue` shipper stage re-drives it (a fresh review at head → re-enqueue) instead of
+  treating `QUEUED` as done:
+
+  ```bash
+  if [ "$MERGE_OUTCOME" = ejected ]; then
+    gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: merge-queue **ejection** detected — PR #$PR was enqueued but the queue dropped it without merging (still open, no longer queued, not merged). Likely a textual conflict on the batch ref or a combined-batch CI failure (ADR 0132; GitHub \"Managing a merge queue\"). Routing back to repair/re-queue — this is NOT a shipped state." >/dev/null
+  fi
+  ```
+
+  ship-it does **not** itself re-enqueue an ejected PR in the same run (a bare re-enqueue would
+  loop on the same unmerged batch conflict); the ejection is surfaced and handed to the repair /
+  re-queue lane (the `drive-issue.js` shipper stage consumes `ejected` and re-drives), the same
+  fail → fix → re-request boundary write-code owns. The **success/watch distinction is now
+  observable** — `QUEUED` never masks a stall, because the reconcile separated `merged` from
+  `queued` from `ejected`.
+
+This reconcile **weakens no existing gate**: Step 0's §CP refusal, Step 2/2b's current-head PASS,
+Step 3's green CI, Step 3.5's run-evidence bundle, and the single-merge-authority contract (ADRs
+0048/0053/0132) all still gate the enqueue exactly as before — this only **adds** a bounded
+post-enqueue observation that classifies the terminal state. It stays inside ADR 0132's async
+model: it is a **bounded reconcile** (a fixed poll budget, then report), not a return to
+synchronous block-to-merge.
+
 ### Step 5b — Surface the release queue (a dark merge is deployed, not released)
 
 The enqueue above commits the merge — the agent's deployment boundary (ADR
@@ -1121,9 +1198,11 @@ resolve the latest verdict per required gate namespace, refuse any verdict not b
 PR's current head (Step 2b, ADR 0058), and enqueue only if every required one is a current-head
 PASS (Step 2, guard 1), confirm the gating checks are green (Step 3), assert the SHA-bound run-evidence bundle
 exists / is schema-readable / is commit-bound / is all-`pass` (Step 3.5, guard 2), enqueue for
-squash-merge with `--auto` (Step 4), confirm enqueued + green and surface the release queue on a
-dark merge (Step 5/5b). The queue owns the final merge — success is **enqueued + green**, and
-the issue-close is async (ADR 0132).
+squash-merge with `--auto` (Step 4), confirm enqueued + green (Step 5), **bounded-reconcile the
+enqueue to catch a queue ejection** before reporting shipped (Step 5.5), and surface the release
+queue on a dark merge (Step 5b). The queue owns the final merge — success is **enqueued + green,
+reconciled to landed-or-still-queued** (never a silent ejection), and the issue-close is async
+(ADR 0132).
 
 Report back a tight terminal ledger — nothing else, because the merge itself is the
 durable record:
@@ -1133,15 +1212,19 @@ PR #<PR> — issue #<ISSUE>
 branch: <head ref>
 PR url: <html_url>
 enqueued: yes (QUEUED → auto-merges on green) | no (<reason if no>)
+merge: landed (queue merged the batch) | still queued (pending, reconciled) | EJECTED (routed to repair/re-queue)
 issue: closes async on queue merge | n/a (docs-only) | #<PART_OF> left open (partial split)
 release: queued (awaiting human flip) | n/a (not a dark ship)
 ```
 
-The `enqueued:` line is the success condition: `yes (QUEUED → auto-merges on green)` once
-`--auto` armed the merge (Step 4) — the queue owns the final, async merge, so the issue-close
-also lands async (ADR 0132), reported as `issue: closes async on queue merge`. There is no
-in-run `merged: yes` / `issue closed: yes` assertion any more — asserting an immediate merge
-would false-fail every enqueued PR.
+The `enqueued:` line is the enqueue success condition: `yes (QUEUED → auto-merges on green)` once
+`--auto` armed the merge (Step 4). The `merge:` line is the **reconciled terminal outcome** (Step
+5.5) — the queue owns the final, async merge, so the issue-close also lands async (ADR 0132),
+reported as `issue: closes async on queue merge`. There is no in-run `merged: yes` / `issue closed:
+yes` **assertion** any more — asserting an immediate merge would false-fail every enqueued PR — but
+the bounded reconcile **does** distinguish `landed` from `still queued` from `EJECTED`, so `QUEUED`
+never masks a silent stall. An `EJECTED` outcome is **not** a shipped state: it routes back to
+repair/re-queue (Step 5.5), never reported as success.
 
 The `release:` line is the deployment/release boundary made visible (ADR 0083): `queued
 (awaiting human flip)` when Step 5b's ground-truth signal fired (the PR introduced a default-off
