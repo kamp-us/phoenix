@@ -104,7 +104,7 @@ export const bundleWorkerGraph = async (webRoot: string): Promise<BundleGraph> =
 	// `generate` (in-memory) not `write` — we only need the graph, no artifact on disk.
 	// close() in finally so a generate() throw still tears the build down (a leaked
 	// rolldown build hangs CI instead of failing cleanly).
-	let output;
+	let output: ReadonlyArray<RolldownChunk>;
 	try {
 		({output} = await bundle.generate({
 			format: "esm",
