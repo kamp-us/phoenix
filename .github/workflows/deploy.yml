@@ -155,6 +155,12 @@ jobs:
       # The SPA is a plain Vite build; the worker uploads `dist/client` via its
       # `assets` prop. `alchemy deploy` does not drive Vite for phoenix's shape.
       - name: Build SPA (${{ matrix.app }})
+        env:
+          # Bake the Sentry DSN into the bundle at build time (ADR 0118 — a public
+          # client-side value, so a repo variable, not a secret). Production stages
+          # only: an empty DSN leaves the SPA wiring inert (sentry.ts `sentryEnabled`
+          # gate), so per-PR previews neither init Sentry nor burn the free-tier quota.
+          VITE_SENTRY_DSN: ${{ env.ENVIRONMENT == 'production' && vars.VITE_SENTRY_DSN || '' }}
         run: pnpm --filter ${{ matrix.pnpm-name }} build
 
       # `exec alchemy` forwards `--stage`/`--yes` to the alchemy CLI. A bare
@@ -188,6 +194,11 @@ jobs:
           # binding the worker reads at runtime; the value must be present at deploy
           # time. A future auth-less app sets `needs-auth: false` and never reads it.
           BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}
+          # Sentry DSN for the WORKER tier (ADR 0118, #1502). index.ts adds the
+          # `SENTRY_DSN` secret_text binding only when this is present at deploy; absent
+          # ⇒ no binding ⇒ the worker Sentry path stays inert. Same public DSN as the SPA
+          # (the `VITE_SENTRY_DSN` repo variable), production stages only.
+          SENTRY_DSN: ${{ env.ENVIRONMENT == 'production' && vars.VITE_SENTRY_DSN || '' }}
 
       # Make "prod serves" — not "apply exited 0" — the prod deploy's success signal
       # (issue #1436). `alchemy deploy` exiting 0 proves only that the apply reconciled;
