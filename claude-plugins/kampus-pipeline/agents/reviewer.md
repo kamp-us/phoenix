@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Use this agent when the pipeline needs a PR (or a planned epic) verified against its linked issue's acceptance criteria before it advances — it is the single routing review gate, wrapping the four review skills. Typical triggers include "review this PR", "verify PR #N", "gate PR #N before merge", and "review the plan for epic #N". Spawn it (with isolation:worktree) as the verification stage of the issue pipeline; it routes by artifact class — code → review-code, docs → review-doc, skills/agents → review-skill, an epic plan → review-plan — and lands a SHA-bound verdict on the PR. It never edits a file, never merges, and never reviews its own work. See "When to invoke" in the agent body for worked scenarios.
-model: inherit
+model: opus
 color: purple
 tools: ["Read", "Grep", "Glob", "Bash"]
 ---

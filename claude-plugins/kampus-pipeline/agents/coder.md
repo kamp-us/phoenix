@@ -1,7 +1,7 @@
 ---
 name: coder
 description: Use this agent when the pipeline needs the next triaged issue turned into a PR, or a FAIL'd PR repaired — it wraps the write-code skill end to end. Typical triggers include "work the next issue", "implement issue #N", "pick up an issue", and "repair PR #N" / "fix the FAIL on PR #N". Spawn it (with isolation:worktree) as the execution stage of the issue pipeline; do NOT use it to review, merge, or close a human-filed issue. See "When to invoke" in the agent body for worked scenarios.
-model: inherit
+model: opus
 color: green
 tools: ["Read", "Edit", "Write", "Bash", "Grep", "Glob"]
 ---

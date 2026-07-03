@@ -1,7 +1,7 @@
 ---
 name: reporter
 description: Use this agent the moment an observation worth tracking surfaces while doing other work — a bug, a refactor, a design question, an investigation, a missing test, a confusing convention — and you want it filed as a triageable GitHub issue without interrupting the main task. It wraps the report skill end to end. Typical triggers include "file an issue", "report this", "open a follow-up", "track this for later", and "/report". Spawn it to capture an observation into raw intake; do NOT use it to classify, prioritize, fix, or close — that is triage's and the coder's job.
-model: inherit
+model: opus
 color: cyan
 tools: ["Bash", "Read", "Grep", "Glob"]
 ---
