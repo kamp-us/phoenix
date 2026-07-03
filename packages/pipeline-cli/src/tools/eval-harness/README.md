@@ -124,7 +124,65 @@ offline sum (`input + cache_creation + cache_read + output`) over a stage's
 the churn function is agnostic to which figure the caller sources, but the default grounding
 is the four-component `billed` sum.)
 
+## The committed corpus
+
+The frozen ground truth lives beside this module as one manifest per stage under
+[`corpus/`](./corpus) (issue [#1854](https://github.com/kamp-us/phoenix/issues/1854)):
+
+- [`corpus/triage.json`](./corpus/triage.json) — triage classifications
+- [`corpus/write-code.json`](./corpus/write-code.json) — write-code outcomes
+- [`corpus/review-code.json`](./corpus/review-code.json) — review-code verdicts
+
+Each file is a `CorpusManifest` whose non-target stage arrays are empty, so it decodes
+clean on its own and validates through `pipeline-cli eval-harness check`. Every entry is
+covered by `corpus.data.unit.test.ts`, which decodes each committed file through
+`decodeManifest` and asserts `Ok` — so a malformed corpus cannot land. A replay grades a
+recorded run against these files with **no live network dependency**: the ground truth is
+committed, and the `inputRef` pins a recorded state, not the live issue/PR.
+
+Every entry is pinned by a reproducible identifier and carries the **recorded baseline
+decision artifact** for that input — including the FAIL/red-CI edge cases (e.g.
+[#1294](https://github.com/kamp-us/phoenix/pull/1294) genuinely failed CI + earned
+`review-code: FAIL`). The label is what the baseline actually produced, so a model-swap
+replay is graded against ground truth; a FAIL exemplar is as load-bearing as a PASS one —
+it exercises the FAIL grading and the repair-churn cost the epic prices.
+
+## Corpus-curation policy (ADR 0112 §1)
+
+The corpus is governed by the **representative-task-set discipline** of ADR
+[0112 §1](../../../../../.decisions/0112-token-measurement-no-quality-compromise-methodology.md)
+(frozen inputs, apples-to-apples). Three rules:
+
+- **Selection — representative, stable, reproducible-from-id.** An entry is a real
+  pipeline input chosen to be small and stable, pinned by its issue/PR **identifier** (never
+  "a recent issue"). Each stage seeds the ADR 0112 §1 recorded input (triage
+  [#1227](https://github.com/kamp-us/phoenix/issues/1227), write-code
+  [#1223](https://github.com/kamp-us/phoenix/issues/1223) →
+  [#1224](https://github.com/kamp-us/phoenix/pull/1224), review-code
+  [#1199](https://github.com/kamp-us/phoenix/pull/1199)) and adds entries spanning the
+  happy path plus at least one edge/error class per stage — so a pass-rate is meaningful,
+  not n=1.
+- **Grounding — the label is the recorded baseline, not a guess.** Each `label` is the
+  decision artifact the baseline actually produced for that pinned input, verified against
+  the repo/GitHub (the triage labels the issue carries, the `Fixes #N` + CI state + the
+  `review-code` verdict a PR earned). A review-code `FAIL` label is anchored to the `FAIL`
+  marker that persists immutably in the PR's comment history, so it stays reproducible from
+  the id even after the PR moves on.
+- **Growth — append, never mutate a pinned entry's recorded expectation.** The corpus grows
+  by **adding** entries. A recorded expectation is frozen: when a pinned input later mutates
+  (e.g. an issue is re-triaged), the comparison pins to the recorded state, not the live one
+  — mutating a pinned label in place would break apples-to-apples across cost efforts. Only
+  a genuine correction of a mis-recorded label edits an entry, and that is a re-grounding
+  against the source, not a re-scoping.
+
+**On the triage edge class.** triage's non-happy outcome (`status: needs-info`) has no
+stably pinnable exemplar: a `needs-info` issue is relabeled once its info arrives, so it
+does not reproduce from its id the way a persisted `review-code: FAIL` marker does. The
+triage corpus therefore covers the edge by spanning the classification space (a routine
+`p2` `decision`, an urgent `p0` `bug`, a `p1` `chore`) rather than pinning an unstable
+`needs-info`.
+
 ## Out of scope (later children)
 
-Populating real corpus entries, running any stage (collecting the transcripts), and
-presenting the metric are separate slices under epic #1842 — not this core.
+Running any stage (collecting the transcripts), grading an entry, and computing any metric
+(pass-rate, repair-churn cost) are separate slices under epic #1842 — not these cores.
