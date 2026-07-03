@@ -10,8 +10,10 @@
  *   node src/bin.ts flag set <key> --percent 50 --env <env>  dry-run a partial ramp
  *   node src/bin.ts flag set <key> off --env <env>         dry-run the kill switch
  *   node src/bin.ts flag set <key> … --env <env> --execute   apply it
- *   $CLOUDFLARE_API_TOKEN   the minted CF token (read by CredentialsFromEnv)
- *   $CLOUDFLARE_ACCOUNT_ID  the account to operate on
+ *   node src/bin.ts auth login|status|logout                persist credentials once (keychain)
+ *
+ * Credentials resolve keychain-first (`auth login`, #1730), falling back to
+ * $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID — the env-var path CI keeps using.
  *
  * `flag set` is the human release act (ADR 0083, "agents deploy, humans release"), operating
  * the ACTUAL release lever — the no-match percentage split, never `defaultVariation` (#1726):
@@ -26,11 +28,12 @@
  * (`flagship.ts`); an unreachable/unauthorized CF surfaces a typed error (rendered by
  * `NodeRuntime.runMain`), never a raw stack trace.
  */
-import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Layer} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import {auth} from "./auth.ts";
+import {AccountIdKeychainConfig, CredentialsKeychainFirst} from "./credentials.ts";
 import {
 	computeEffectiveServing,
 	computeServingPlan,
@@ -48,6 +51,7 @@ import {
 	selectStatesForKey,
 } from "./flag.ts";
 import {FlagshipRead, FlagshipReadLive, FlagshipWrite, FlagshipWriteLive} from "./flagship.ts";
+import {KeychainLive} from "./keychain.ts";
 
 const list = Command.make(
 	"list",
@@ -204,15 +208,20 @@ const flag = Command.make("flag").pipe(
 );
 
 const cli = Command.make("cf-utils").pipe(
-	Command.withSubcommands([flag]),
+	Command.withSubcommands([flag, auth]),
 	Command.withDescription("Human-operated Cloudflare Flagship read/flip CLI"),
 );
 
-// The read + write clients run over the env-credentialed REST transport (the d1-rest
-// convention); `provideMerge(NodeServices.layer)` keeps the Node services the CLI runtime
-// needs (argv, stdout).
+// Credentials resolve keychain-first with the env-var fallback (#1730): the same ambient
+// `Credentials` seam as before, plus the account-id ConfigProvider so the per-call
+// `Config.string("CLOUDFLARE_ACCOUNT_ID")` reads in flagship.ts resolve the keychain too.
+// `provideMerge` keeps Keychain + HttpClient visible to the `auth` handlers, and
+// NodeServices supplies the spawner/terminal the keychain + prompts run on.
+const CredentialLayer = Layer.mergeAll(CredentialsKeychainFirst, AccountIdKeychainConfig).pipe(
+	Layer.provideMerge(KeychainLive),
+);
 const AppLayer = Layer.mergeAll(FlagshipReadLive, FlagshipWriteLive).pipe(
-	Layer.provide(Layer.merge(CredentialsFromEnv, FetchHttpClient.layer)),
+	Layer.provideMerge(Layer.merge(CredentialLayer, FetchHttpClient.layer)),
 	Layer.provideMerge(NodeServices.layer),
 );
 

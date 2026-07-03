@@ -50,13 +50,28 @@ the app serving an env, `computeEffectiveServing` resolves what an env actually 
 `computeServingPlan`/`renderServingPlan` produce the `current → target` diff. An unknown env
 fails the typed, legible `FlagEnvNotFound` before any read or write.
 
-Credentials are read from the environment at runtime, never from source:
-`$CLOUDFLARE_API_TOKEN` (via `CredentialsFromEnv`) + `$CLOUDFLARE_ACCOUNT_ID`. An
-unreachable/unauthorized CF surfaces a typed error, not a stack trace.
+Credentials resolve **keychain-first with an env-var fallback** (#1730), never from
+source: `cf-utils auth login` stores the API token + account id once in the macOS Keychain
+(via the `security` CLI — no plaintext dotfile), and `CredentialsKeychainFirst` +
+`AccountIdKeychainConfig` (`src/credentials.ts`) resolve them on every later invocation,
+falling back to `$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID` when the keychain has
+nothing — so CI (which sets the env vars, and generally has no macOS Keychain) works
+unchanged; a keychain miss is the normal CI path, not an error. `auth login` **validates
+before persisting** with an authenticated `listApps` read against exactly the pasted
+credentials, `auth status` reports what resolves from where (and whether it
+authenticates), `auth logout` deletes the stored items. An unreachable/unauthorized CF
+surfaces a typed error, not a stack trace.
 
 ## Usage
 
 ```bash
+# Once, on a human machine — prompts for the token + account id, validates, stores in
+# the macOS Keychain; every later invocation resolves credentials automatically:
+node src/bin.ts auth login
+node src/bin.ts auth status    # where credentials resolve from + a validating read
+node src/bin.ts auth logout    # remove them from the keychain
+
+# Or the env-var path (CI, or any non-macOS host):
 export CLOUDFLARE_API_TOKEN=<a CF token with Flagship read scope>
 export CLOUDFLARE_ACCOUNT_ID=<the account to enumerate>
 
