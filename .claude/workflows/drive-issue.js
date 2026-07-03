@@ -364,7 +364,7 @@ const shipped = await agent(
 	`Ship PR #${pr}. You are the shipper — run your Step 0 control-plane classify first. If PR #${pr} is ` +
 		`control-plane (\`.claude/**\`, \`.github/**\`, or a gate-critical skill), REFUSE to enqueue and leave it ` +
 		`reviewed-ready for a human hand-merge. Otherwise assert the matching gate PASS, confirm CI is green, ` +
-		`enqueue for a squash-merge with \`gh pr merge --squash --auto\`, and confirm it is enqueued + green. ` +
+		`enqueue for a squash-merge with \`gh pr merge --auto\` (no method flag — the queue owns the SQUASH method), and confirm it is enqueued + green. ` +
 		`The merge queue owns the final, async merge (ADR 0132): success is "enqueued + green" (QUEUED -> ` +
 		`auto-merges on green), NOT "merged now" — the linked issue auto-closes async when the queue lands the merge. ` +
 		`Return { enqueued: true|false, reviewedReady: true|false, reason: "<refusal reason if not enqueued>" }.`,
