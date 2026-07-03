@@ -81,7 +81,7 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 
 ## Decisions
 
-The ADRs live in [`.decisions/`](./.decisions/) — one `NNNN-slug.md` per decision, the *why* in each file's body. There is no committed index (ADR [0126](./.decisions/0126-ambient-adr-discovery.md)); discovery is **ambient** — a `SessionStart` hook injects a compact map (one line per ADR: `id · title · status`) into context, emitted by `pipeline-cli decisions-index compact`. When that map isn't in context (e.g. a subagent without session context), the fallback is `ls .decisions/` — the `NNNN-slug` filenames are the map — plus each file's frontmatter (`id`/`title`/`status`) for the row. Open the file when you need the why. Record new decisions with `/adr`.
+The ADRs live in [`.decisions/`](./.decisions/) — one `NNNN-slug.md` per decision, the *why* in each file's body. There is no committed index (ADR [0126](./.decisions/0126-ambient-adr-discovery.md)) and **no `SessionStart` ADR-map hook** (ADR [0129](./.decisions/0129-adr-discovery-is-the-claude-md-contract.md), dropping 0126's hook as needless indirection): discovery is *this* contract, the same in every context (session, subagent, CI). Discover ADRs by `ls .decisions/` — the `NNNN-slug` filenames are the map — plus each file's frontmatter (`id`/`title`/`status`) for the row; for the full one-line-per-ADR `id · title · status` map **on demand**, run `pipeline-cli decisions-index compact` (never auto-injected). Open the file when you need the why. Record new decisions with `/adr`.
 
 ## Vocabulary
 
