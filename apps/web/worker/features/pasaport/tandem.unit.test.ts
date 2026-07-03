@@ -23,7 +23,20 @@ import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
 import {makePasaportStub} from "./Pasaport.testing.ts";
+import {livePromoteContext} from "./promote-live.testing.ts";
 import {resolveTandem} from "./tandem.ts";
+
+// A landed flip (`promoted: true`) re-resolves the promoted `User` (#1886), so its
+// stub must answer `getUsersByIds` (the record the flip promoted, now `yazar`) —
+// the publish's inline data. `promoted: false` cases never reach it (unchanged).
+const promotedYazar = (id: string) =>
+	makePasaportStub({
+		promoteToYazar: () => Effect.succeed({promoted: true}),
+		getUsersByIds: () =>
+			Effect.succeed([
+				{id, email: `${id}@kamp.us`, name: id, image: null, username: id, tier: "yazar" as const},
+			]),
+	});
 
 // resolveTandem emits the promotion-ceremony bildirimi on a landed flip (#1696), so
 // it now needs the bildirim seam (Notification + Flags + CurrentUser + RuntimeContext)
@@ -86,8 +99,9 @@ describe("resolveTandem — order-independent promotion", () => {
 				Layer.mergeAll(
 					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(true)}),
 					kunyeKarma(20), // ≥ VOUCH_PROMOTION_KARMA_BAR (15)
-					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: true})}),
+					promotedYazar("u-caylak"),
 					bildirimContext(),
+					livePromoteContext,
 				),
 			),
 		),
@@ -105,6 +119,7 @@ describe("resolveTandem — order-independent promotion", () => {
 					kunyeKarma(5), // below the bar
 					makePasaportStub(),
 					bildirimContext(),
+					livePromoteContext,
 				),
 			),
 		),
@@ -124,6 +139,7 @@ describe("resolveTandem — order-independent promotion", () => {
 					kunyeUnreached,
 					makePasaportStub(),
 					bildirimContext(),
+					livePromoteContext,
 				),
 			),
 		),
@@ -143,6 +159,7 @@ describe("resolveTandem — order-independent promotion", () => {
 					kunyeKarma(50),
 					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: false})}),
 					bildirimContext(),
+					livePromoteContext,
 				),
 			),
 		),
@@ -182,8 +199,9 @@ describe("resolveTandem — promotion ceremony bildirimi (#1696)", () => {
 				Layer.mergeAll(
 					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(true)}),
 					kunyeKarma(20),
-					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: true})}),
+					promotedYazar("u-caylak"),
 					bildirimContext(layer),
+					livePromoteContext,
 				),
 			),
 		);
@@ -201,6 +219,7 @@ describe("resolveTandem — promotion ceremony bildirimi (#1696)", () => {
 					kunyeKarma(50),
 					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: false})}),
 					bildirimContext(layer),
+					livePromoteContext,
 				),
 			),
 		);

@@ -33,6 +33,18 @@ import type {Tier} from "../kunye/standing.ts";
 import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
 import {mutations} from "./mutations.ts";
 import {makePasaportStub} from "./Pasaport.testing.ts";
+import {noopLive, relationStoreNoModerators} from "./promote-live.testing.ts";
+
+// A landed flip re-resolves the promoted `User` for the #1886 live-publish, so a
+// `promoted: true` stub answers `getUsersByIds` (the record it promoted, now
+// `yazar`); these cases already provide their own `RelationStore`, so only the
+// no-op `LivePublisher` (`noopLive`) is added to their layer set.
+const promotedUsersByIds = (id: string) => ({
+	getUsersByIds: () =>
+		Effect.succeed([
+			{id, email: `${id}@kamp.us`, name: id, image: null, username: id, tier: "yazar" as const},
+		]),
+});
 
 const runtimeContextStub: BaseRuntimeContext = {
 	Type: "promotion-test",
@@ -78,8 +90,12 @@ const kunyeOf = (
 		rootOf: (id: string) => Effect.succeed(id),
 	});
 
+// Both promotion mutations now reach the #1886 live-publish through their shared
+// promote path, so `LivePublisher` is a static requirement of EVERY case (even a
+// denial that never runs the flip). `noopLive` satisfies it universally here; the
+// vouch/withdraw cases (no `RelationStore` of their own) add `relationStoreNone`.
 const requestContext = (actor: Actor, on: boolean) =>
-	Layer.mergeAll(flagsStub(on)).pipe(
+	Layer.mergeAll(flagsStub(on), noopLive).pipe(
 		Layer.provideMerge(Layer.succeed(CurrentUser, {user: undefined})),
 		Layer.provideMerge(Layer.succeed(CurrentActor, {actor})),
 		Layer.provideMerge(Layer.succeed(RuntimeContext, runtimeContextStub)),
@@ -117,11 +133,15 @@ describe("user.promote — direct moderator promotion", () => {
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: true})}),
+					makePasaportStub({
+						promoteToYazar: () => Effect.succeed({promoted: true}),
+						...promotedUsersByIds("u-target"),
+					}),
 					relationStoreOf(["u-mod"]),
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-mod"), true),
+					noopLive,
 				),
 			),
 		),
@@ -183,7 +203,11 @@ describe("user.vouch — author-vouch tandem", () => {
 			}).pipe(
 				Effect.provide(
 					Layer.mergeAll(
-						makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: true})}),
+						relationStoreNoModerators,
+						makePasaportStub({
+							promoteToYazar: () => Effect.succeed({promoted: true}),
+							...promotedUsersByIds("u-caylak"),
+						}),
 						makeVouchLedgerStub({
 							castVouch: () => Effect.succeed({outcome: "recorded" as const}),
 							hasActiveFor: () => Effect.succeed(true),
@@ -192,6 +216,7 @@ describe("user.vouch — author-vouch tandem", () => {
 						agentAuthorityStub,
 						makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 						requestContext(human("u-yazar"), true),
+						noopLive,
 					),
 				),
 			),
@@ -206,6 +231,7 @@ describe("user.vouch — author-vouch tandem", () => {
 			// Pasaport fail-on-contact: a reached promote below the bar would die.
 			Effect.provide(
 				Layer.mergeAll(
+					relationStoreNoModerators,
 					makePasaportStub(),
 					makeVouchLedgerStub({
 						castVouch: () => Effect.succeed({outcome: "recorded" as const}),
@@ -233,6 +259,7 @@ describe("user.vouch — author-vouch tandem", () => {
 			// hasActiveFor + Pasaport fail-on-contact: a denied vouch never reaches the tandem.
 			Effect.provide(
 				Layer.mergeAll(
+					relationStoreNoModerators,
 					makePasaportStub(),
 					makeVouchLedgerStub({
 						castVouch: () => Effect.succeed({outcome: "capReached" as const}),
@@ -257,6 +284,7 @@ describe("user.vouch — author-vouch tandem", () => {
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
+					relationStoreNoModerators,
 					makePasaportStub(),
 					makeVouchLedgerStub({
 						castVouch: () => Effect.succeed({outcome: "alreadyVouched" as const}),
@@ -281,6 +309,7 @@ describe("user.vouch — author-vouch tandem", () => {
 			}).pipe(
 				Effect.provide(
 					Layer.mergeAll(
+						relationStoreNoModerators,
 						makePasaportStub(),
 						makeVouchLedgerStub(),
 						kunyeOf({"u-caylak-actor": "çaylak"}, {}),
@@ -300,6 +329,7 @@ describe("user.vouch — author-vouch tandem", () => {
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
+					relationStoreNoModerators,
 					makePasaportStub(),
 					makeVouchLedgerStub(),
 					kunyeOf({}, {}),
@@ -324,6 +354,7 @@ describe("user.withdrawVouch — releasing the slot", () => {
 			// Pasaport fail-on-contact: withdraw must never touch the promotion path.
 			Effect.provide(
 				Layer.mergeAll(
+					relationStoreNoModerators,
 					makePasaportStub(),
 					makeVouchLedgerStub({withdraw: () => Effect.succeed({withdrawn: true})}),
 					kunyeOf(yazarVoucher.tier, {}),
@@ -343,6 +374,7 @@ describe("user.withdrawVouch — releasing the slot", () => {
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
+					relationStoreNoModerators,
 					makePasaportStub(),
 					makeVouchLedgerStub(),
 					kunyeOf({"u-caylak-actor": "çaylak"}, {}),
@@ -362,6 +394,7 @@ describe("user.withdrawVouch — releasing the slot", () => {
 			// Both seams fail-on-contact: neither the ledger nor the standing read is reached.
 			Effect.provide(
 				Layer.mergeAll(
+					relationStoreNoModerators,
 					makePasaportStub(),
 					makeVouchLedgerStub(),
 					kunyeOf({}, {}),
@@ -396,6 +429,7 @@ describe("user.vouch — kefil bildirimi (#1695)", () => {
 		outcome: "recorded" | "alreadyVouched",
 	) =>
 		Layer.mergeAll(
+			relationStoreNoModerators,
 			makePasaportStub(),
 			makeVouchLedgerStub({
 				castVouch: () => Effect.succeed({outcome}),
@@ -461,11 +495,15 @@ describe("user.promote — terfi bildirimi (#1696)", () => {
 		promoted: boolean,
 	) =>
 		Layer.mergeAll(
-			makePasaportStub({promoteToYazar: () => Effect.succeed({promoted})}),
+			makePasaportStub({
+				promoteToYazar: () => Effect.succeed({promoted}),
+				...promotedUsersByIds("u-target"),
+			}),
 			relationStoreOf(["u-mod"]),
 			agentAuthorityStub,
 			notification,
 			requestContext(human("u-mod"), true),
+			noopLive,
 		);
 
 	it.effect("a landed mod promotion emits ONE terfi notification for the promoted member", () => {
