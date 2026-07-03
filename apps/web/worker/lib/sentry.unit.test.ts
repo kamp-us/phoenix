@@ -8,7 +8,7 @@
 import type {ErrorEvent} from "@sentry/cloudflare";
 import * as Cause from "effect/Cause";
 import {describe, expect, it} from "vitest";
-import {scrubPii, sentryEnabled, workerOptions} from "./sentry.ts";
+import {scrubUrls, sentryEnabled, workerOptions} from "./sentry.ts";
 import {shouldCaptureCause} from "./sentry-capture.ts";
 
 describe("sentryEnabled — the inert gate", () => {
@@ -24,40 +24,31 @@ describe("sentryEnabled — the inert gate", () => {
 });
 
 describe("decided defaults (ADR 0118)", () => {
-	it("workerOptions disables default PII and wires the scrub", () => {
+	it("workerOptions suppresses cookies/headers/user/query PII via native dataCollection", () => {
 		const opts = workerOptions("https://abc@o0.ingest.de.sentry.io/1");
 		expect(opts.dsn).toBe("https://abc@o0.ingest.de.sentry.io/1");
-		expect(opts.sendDefaultPii).toBe(false);
+		// dataCollection is the source of truth; the deprecated `sendDefaultPii` is gone.
+		expect(opts.sendDefaultPii).toBeUndefined();
+		expect(opts.dataCollection).toEqual({
+			userInfo: false,
+			cookies: false,
+			httpHeaders: {request: false, response: false},
+			queryParams: false,
+		});
 		expect(typeof opts.beforeSend).toBe("function");
 	});
 
-	it("scrubPii strips the user block and request cookies/headers", () => {
+	it("scrubUrls strips query strings off the always-sent URL and breadcrumb URLs", () => {
 		const event = {
 			type: undefined,
-			user: {id: "u1", email: "a@b.co"},
-			request: {url: "/x", cookies: {sid: "secret"}, headers: {authorization: "Bearer t"}},
-		} as ErrorEvent;
-		const scrubbed = scrubPii(event);
-		expect(scrubbed.user).toEqual({});
-		expect(scrubbed.request?.cookies).toBeUndefined();
-		expect(scrubbed.request?.headers).toBeUndefined();
-	});
-
-	it("scrubPii strips URL query strings + query_string and breadcrumb URLs", () => {
-		const event = {
-			type: undefined,
-			request: {
-				url: "https://kamp.us/reset?token=secret&email=a@b.co",
-				query_string: "token=secret",
-			},
+			request: {url: "https://kamp.us/reset?token=secret&email=a@b.co"},
 			breadcrumbs: [
 				{data: {url: "https://kamp.us/api/x?sid=abc"}},
 				{data: {from: "/a?q=1", to: "/b?q=2"}},
 			],
 		} as ErrorEvent;
-		const scrubbed = scrubPii(event);
+		const scrubbed = scrubUrls(event);
 		expect(scrubbed.request?.url).toBe("https://kamp.us/reset");
-		expect(scrubbed.request?.query_string).toBeUndefined();
 		expect(scrubbed.breadcrumbs?.[0]?.data?.url).toBe("https://kamp.us/api/x");
 		expect(scrubbed.breadcrumbs?.[1]?.data?.from).toBe("/a");
 		expect(scrubbed.breadcrumbs?.[1]?.data?.to).toBe("/b");

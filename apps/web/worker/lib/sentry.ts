@@ -32,10 +32,19 @@ function stripUrlQuery(url: string): string {
 	return url.slice(0, Math.min(q === -1 ? url.length : q, h === -1 ? url.length : h));
 }
 
-/** Drop query strings from URL-bearing breadcrumb data (navigation + http crumbs). */
-function scrubBreadcrumbUrls(breadcrumbs: ErrorEvent["breadcrumbs"]): void {
-	if (!breadcrumbs) return;
-	for (const crumb of breadcrumbs) {
+/**
+ * Strip query strings off the full request URL and any URL-bearing breadcrumb
+ * (navigation + http crumbs). This is the one PII vector `dataCollection` can't
+ * reach: the SDK gates cookies/headers/user/`query_string` via `dataCollection`
+ * (see `workerOptions`), but the full request URL is ALWAYS sent regardless
+ * (`@sentry/core` requestdata: `url: true`, "No dataCollection equivalent"), so
+ * the query string on it must be cut here. Same scrub as the SPA copy. See ADR 0118.
+ */
+export function scrubUrls(event: ErrorEvent): ErrorEvent {
+	if (event.request && typeof event.request.url === "string") {
+		event.request = {...event.request, url: stripUrlQuery(event.request.url)};
+	}
+	for (const crumb of event.breadcrumbs ?? []) {
 		const data = crumb.data;
 		if (!data) continue;
 		for (const key of ["url", "to", "from"] as const) {
@@ -43,35 +52,25 @@ function scrubBreadcrumbUrls(breadcrumbs: ErrorEvent["breadcrumbs"]): void {
 			if (typeof value === "string") data[key] = stripUrlQuery(value);
 		}
 	}
-}
-
-/**
- * Drop user-identifying PII before any event leaves the worker (ADR 0118 decided
- * default; adjustable). Strips the `user` block, the request cookies/headers +
- * `query_string`, and the query string off the request URL and any URL-bearing
- * breadcrumb — the incidental PII vectors that survive `sendDefaultPii: false`.
- * Same scrub as the SPA copy.
- */
-export function scrubPii(event: ErrorEvent): ErrorEvent {
-	if (event.user) {
-		event.user = {};
-	}
-	if (event.request) {
-		// Omit rather than set `undefined`: under `exactOptionalPropertyTypes` these
-		// fields are `Record<...>`, not `... | undefined`, so dropping the keys is the
-		// only way to strip them.
-		const {cookies: _cookies, headers: _headers, query_string: _query, ...rest} = event.request;
-		event.request = typeof rest.url === "string" ? {...rest, url: stripUrlQuery(rest.url)} : rest;
-	}
-	scrubBreadcrumbUrls(event.breadcrumbs);
 	return event;
 }
 
-/** The decided client options (ADR 0118): PII off, scrubbed `beforeSend`. */
+/**
+ * The decided client options (ADR 0118). `dataCollection` (SDK ≥10.57) is the
+ * native, granular successor to `sendDefaultPii` (deprecated in 10.54, removed in
+ * v11); it suppresses the cookies/headers/user/`query_string` PII we hand-scrubbed
+ * before. Only the always-sent request URL escapes it, so `beforeSend` narrows to
+ * `scrubUrls`.
+ */
 export function workerOptions(dsn: string): CloudflareOptions {
 	return {
 		dsn,
-		sendDefaultPii: false,
-		beforeSend: (event) => scrubPii(event),
+		dataCollection: {
+			userInfo: false,
+			cookies: false,
+			httpHeaders: {request: false, response: false},
+			queryParams: false,
+		},
+		beforeSend: (event) => scrubUrls(event),
 	};
 }
