@@ -6,16 +6,21 @@
  *   node src/bin.ts flag list                              enumerate every flag × env
  *   node src/bin.ts flag get <key> --env <env>             read one flag's state in an env
  *   node src/bin.ts flag get <key>                         read that flag across every env
- *   node src/bin.ts flag set <key> on|off --env <env>      dry-run the served-value flip
- *   node src/bin.ts flag set <key> on|off --env <env> --execute   apply it
+ *   node src/bin.ts flag set <key> on --env <env>          dry-run a full release (≡ --percent 100)
+ *   node src/bin.ts flag set <key> --percent 50 --env <env>  dry-run a partial ramp
+ *   node src/bin.ts flag set <key> off --env <env>         dry-run the kill switch
+ *   node src/bin.ts flag set <key> … --env <env> --execute   apply it
  *   $CLOUDFLARE_API_TOKEN   the minted CF token (read by CredentialsFromEnv)
  *   $CLOUDFLARE_ACCOUNT_ID  the account to operate on
  *
- * `flag set` is the human release act (ADR 0083, "agents deploy, humans release"): it flips a
- * flag's served/default value from the terminal instead of the dashboard, scriptably and with
- * a trail. It DRY-RUNS by default — reads current state, prints the `current → target` diff,
- * and writes NOTHING; the mutation happens only under `--execute` (mirroring orphan-sweep). The
- * write must never be invoked by the pipeline autonomously.
+ * `flag set` is the human release act (ADR 0083, "agents deploy, humans release"), operating
+ * the ACTUAL release lever — the no-match percentage split, never `defaultVariation` (#1726):
+ * `--percent N` serves `on` to N% (remainder falls to the safe default), `on` ≡ `--percent
+ * 100` (the canonical split form), and `off` is a true kill switch — it clears the split AND
+ * sets the default off, so a split-released flag actually stops serving. It DRY-RUNS by
+ * default — reads current state, prints the `current → target` diff, and writes NOTHING; the
+ * mutation happens only under `--execute` (mirroring orphan-sweep). The write must never be
+ * invoked by the pipeline autonomously.
  *
  * The thin shell delegates to the pure core (`flag.ts`) via the injectable clients
  * (`flagship.ts`); an unreachable/unauthorized CF surfaces a typed error (rendered by
@@ -27,16 +32,19 @@ import {Console, Effect, Layer} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {
-	computeFlipPlan,
+	computeEffectiveServing,
+	computeServingPlan,
 	decodeEnv,
 	distinctKeys,
 	FlagEnvNotFound,
 	FlagKeyNotFound,
-	type FlagTarget,
+	FlagSetTargetInvalid,
 	findAppForEnv,
+	renderEffectiveServing,
 	renderFlagDetail,
 	renderFlagTable,
-	renderFlipPlan,
+	renderServingPlan,
+	type ServeTarget,
 	selectStatesForKey,
 } from "./flag.ts";
 import {FlagshipRead, FlagshipReadLive, FlagshipWrite, FlagshipWriteLive} from "./flagship.ts";
@@ -54,7 +62,7 @@ const list = Command.make(
 );
 
 const keyArg = Argument.string("key").pipe(
-	Argument.withDescription("the flag key to flip (e.g. authorship-loop)"),
+	Argument.withDescription("the flag key to release/kill (e.g. authorship-loop)"),
 );
 const getKeyArg = Argument.string("key").pipe(
 	Argument.withDescription("the flag key to read (e.g. authorship-loop)"),
@@ -102,22 +110,53 @@ const get = Command.make(
 	),
 );
 const stateArg = Argument.choice("state", ["on", "off"] as const).pipe(
-	Argument.withDescription("the served/default value to set — on or off"),
+	Argument.optional,
+	Argument.withDescription(
+		"the release target — on (≡ --percent 100) or off (kill: clear the split, default off)",
+	),
+);
+const percentFlag = Flag.integer("percent").pipe(
+	Flag.optional,
+	Flag.withDescription("the share (0–100) serving on via the no-match split; remainder serves off"),
 );
 const envFlag = Flag.string("env").pipe(
-	Flag.withDescription("the env to flip the flag in (e.g. prod)"),
+	Flag.withDescription("the env to release the flag in (e.g. prod)"),
 );
 const executeFlag = Flag.boolean("execute").pipe(
 	Flag.withDescription(
-		"actually apply the flip (default: dry-run — print the diff, write nothing)",
+		"actually apply the release/kill (default: dry-run — print the diff, write nothing)",
 	),
 );
 
+// Exactly one of `on|off` / `--percent N` names the target; both or neither is a usage error.
+const resolveTarget = (
+	state: {readonly _tag: "Some"; readonly value: "on" | "off"} | {readonly _tag: "None"},
+	percent: {readonly _tag: "Some"; readonly value: number} | {readonly _tag: "None"},
+): Effect.Effect<ServeTarget, FlagSetTargetInvalid> => {
+	if (state._tag === "Some" && percent._tag === "Some") {
+		return Effect.fail(new FlagSetTargetInvalid({reason: 'both "on|off" and --percent given'}));
+	}
+	if (percent._tag === "Some") {
+		if (percent.value < 0 || percent.value > 100) {
+			return Effect.fail(
+				new FlagSetTargetInvalid({reason: `--percent ${percent.value} is outside 0–100`}),
+			);
+		}
+		return Effect.succeed({_tag: "Percent", percentage: percent.value});
+	}
+	if (state._tag === "Some") {
+		return Effect.succeed(
+			state.value === "on" ? {_tag: "Percent", percentage: 100} : {_tag: "Kill"},
+		);
+	}
+	return Effect.fail(new FlagSetTargetInvalid({reason: "no target given"}));
+};
+
 const set = Command.make(
 	"set",
-	{key: keyArg, state: stateArg, env: envFlag, execute: executeFlag},
-	Effect.fn(function* ({key, state, env, execute}) {
-		const target = state as FlagTarget;
+	{key: keyArg, state: stateArg, percent: percentFlag, env: envFlag, execute: executeFlag},
+	Effect.fn(function* ({key, state, percent, env, execute}) {
+		const target = yield* resolveTarget(state, percent);
 		const read = yield* FlagshipRead;
 
 		// Resolve the app for the env FIRST — an unknown env fails not-found before any read/write.
@@ -130,11 +169,11 @@ const set = Command.make(
 			return yield* new FlagEnvNotFound({env, knownEnvs});
 		}
 
-		// Read the current served variation (an unknown key fails FlagshipFlagNotFound here, still
-		// before any write), then compute + render the pure flip plan.
+		// Read the current envelope (an unknown key fails FlagshipFlagNotFound here, still before
+		// any write), then compute + render the pure serving plan.
 		const current = yield* read.getAppFlag(app.id, key);
-		const plan = computeFlipPlan({key, env, currentVariation: current.defaultVariation, target});
-		yield* Console.log(renderFlipPlan(plan));
+		const plan = computeServingPlan({key, env, flag: current, target});
+		yield* Console.log(renderServingPlan(plan));
 
 		if (!execute) {
 			yield* Console.log("  (dry-run — pass --execute to apply; the flag is unchanged)");
@@ -146,16 +185,16 @@ const set = Command.make(
 		}
 
 		const write = yield* FlagshipWrite;
-		const updated = yield* write.setFlagDefault({
-			appId: app.id,
-			flagKey: key,
-			targetVariation: target,
-		});
-		yield* Console.log(`  applied — ${key} @ ${env} now serves "${updated.defaultVariation}"`);
+		const updated = yield* write.setServing({appId: app.id, flagKey: key, target});
+		yield* Console.log(
+			`  applied — ${key} @ ${env} now serves ${renderEffectiveServing(
+				computeEffectiveServing(updated),
+			)}`,
+		);
 	}),
 ).pipe(
 	Command.withDescription(
-		"Flip a flag's served/default value in an env (dry-run by default; --execute to apply)",
+		"Release a flag via the no-match split (on ≡ --percent 100; off kills; dry-run by default, --execute to apply)",
 	),
 );
 

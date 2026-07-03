@@ -140,8 +140,11 @@ read via `cf-utils` — **not** from repo-declared flag defaults and **not** fro
 `status:awaiting-release` label, because only the authoritative read reflects the human's
 out-of-band release flip (ADR 0083), which leaves no in-repo trace.
 
-Read the live flag × env matrix once via `cf-utils flag list` (its `FlagshipRead` client reads the
-served/default value per env; credentials come from the ambient environment, never source):
+Read the live flag × env matrix once via `cf-utils flag list` (its `FlagshipRead` client reads each
+flag's **effective serving** per env — rules → no-match split → default, the `SERVES` column;
+credentials come from the ambient environment, never source). Real releases are performed as a
+**no-match percentage split**, never a `defaultVariation` flip (#1726), so only the effective
+serving is truthful — a split-released flag's `defaultVariation` stays `off` forever:
 
 ```bash
 # authoritative Flagship state — every flag × env with its enabled/default value (ADR 0081/0123).
@@ -157,10 +160,13 @@ Assign each merged entry a **`releaseState`** — one of `live` / `awaiting-rele
 `unknown` (`RELEASE_STATE_ORDER`), by this rule:
 
 - **Flag-gated feature** (the merged work rides a Flagship flag — the authorship-loop /v1-membrane
-  class, #1202): look up that flag's authoritative value for the prod env in the `flag list` output.
-  - **on / served** → `live`.
-  - **off (default-off, not yet flipped)** → `dark` (merged behind a default-off flag; live only
-    once a human flips it — ADR 0083).
+  class, #1202): look up that flag's **effective serving** (`SERVES`) for the prod env in the
+  `flag list` output.
+  - **`on@100% (split)` or `on (default)`** → `live` (a split-released flag is live even though its
+    `defaultVariation` is off — never read the default as the release state, #1726).
+  - **`on@N% (ramping)`, 0 < N < 100** → `live` (partially released — note the ramp share).
+  - **`off (default)` (no split serving, not yet released)** → `dark` (merged behind a default-off
+    flag; live only once a human releases it — ADR 0083).
   - queued for release but the flip is imminent / staged → `awaiting-release` (use when the
     release-handoff signal says so and the flag is not yet on).
 - **Non-flag-gated work** (internal / refactor / infra / docs — the ADR-0083 exemptions, no flag to

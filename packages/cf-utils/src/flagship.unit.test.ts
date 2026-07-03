@@ -27,13 +27,23 @@ const flag = (
 	enabled: boolean,
 	defaultVariation: string,
 	variations: Record<string, unknown>,
+	rules: ReadonlyArray<unknown> = [],
 ) => ({
 	key,
 	enabled,
 	default_variation: defaultVariation,
 	variations,
-	rules: [],
+	rules,
 });
+
+// The no-match split in its WIRE form (snake_case, per the SDK's encodeKeys): a
+// conditions-empty rule carrying a rollout — the actual release lever (#1726).
+const wireSplit = {
+	conditions: [],
+	priority: 1,
+	serve_variation: "on",
+	rollout: {percentage: 100, attribute: "targetingKey"},
+};
 
 const appsBody = {
 	result: [
@@ -46,7 +56,7 @@ const appsBody = {
 const flagsByAppId: Record<string, unknown> = {
 	"app-prod": {
 		result: [
-			flag("new-nav", true, "on", {on: true, off: false}),
+			flag("new-nav", true, "off", {on: true, off: false}, [wireSplit]),
 			flag("beta-banner", false, "off", {on: true, off: false}),
 		],
 		result_info: {cursors: {after: null}},
@@ -115,20 +125,24 @@ describe("FlagshipRead.listFlagStates — decode flags × env over a stubbed tra
 			key: string;
 			env: string;
 			enabled: boolean;
+			defaultVariation: string;
 			defaultValue: unknown;
+			serving: {_tag: string; variation: string; percentage?: number};
 		}>;
 
 		// The foreign app (`some-other-account-app`) decodes to no env → skipped; only the two
 		// phoenix apps contribute rows (2 flags in prod + 1 in pr-9).
 		assert.strictEqual(rows.length, 3);
 
+		// A split-released flag (defaultVariation off, no-match split on@100%) reads as EFFECTIVELY
+		// on — the #1726 fix: the split rides the wire `rules[]` and survives the decode.
 		const prodNewNav = rows.find((r) => r.key === "new-nav" && r.env === "prod");
-		assert.deepStrictEqual(prodNewNav, {
-			key: "new-nav",
-			env: "prod",
-			enabled: true,
-			defaultVariation: "on",
-			defaultValue: true,
+		assert.strictEqual(prodNewNav?.defaultVariation, "off");
+		assert.deepStrictEqual(prodNewNav?.serving, {
+			_tag: "Split",
+			variation: "on",
+			percentage: 100,
+			otherRules: 0,
 		} as unknown);
 
 		const prodBeta = rows.find((r) => r.key === "beta-banner");
@@ -136,6 +150,7 @@ describe("FlagshipRead.listFlagStates — decode flags × env over a stubbed tra
 		// A disabled flag still decodes its default value (it bypasses rules, serves defaultVariation).
 		assert.strictEqual(prodBeta?.enabled, false);
 		assert.strictEqual(prodBeta?.defaultValue, false);
+		assert.strictEqual(prodBeta?.serving._tag, "Default");
 
 		const pr9NewNav = rows.find((r) => r.env === "pr-9");
 		assert.strictEqual(pr9NewNav?.key, "new-nav");
@@ -225,11 +240,14 @@ describe("FlagshipRead.getAppFlag — single-flag resolution over a stubbed tran
 	});
 });
 
-// The flip seam over a STUBBED transport — no real CF write in the unit tier (the #1609
-// acceptance). The stub replays a GET of the current flag, then captures the PUT body so the
-// test proves the write moves ONLY `default_variation` and passes `enabled`/`variations`/
-// `rules` through verbatim.
-const currentFlag = flag("authorship-loop", true, "off", {off: false, on: true});
+// The release seam over a STUBBED transport — no real CF write in the unit tier. The stub
+// replays a GET of the current flag, then captures the PUT body so the tests prove the write
+// moves ONLY the serving state (the no-match split / the kill) and passes `enabled`/
+// `variations`/targeting rules through verbatim (#1609 scope, #1726 lever).
+let currentWireFlag: Record<string, unknown> = flag("authorship-loop", true, "off", {
+	off: false,
+	on: true,
+});
 
 let capturedPut: {readonly method: string; readonly body: Record<string, unknown>} | undefined;
 
@@ -238,7 +256,7 @@ const writeStub: Layer.Layer<HttpClient.HttpClient> = Layer.succeed(HttpClient.H
 		const isFlag = /\/flagship\/apps\/[^/]+\/flags\/authorship-loop$/.test(url.pathname);
 		let payload: unknown = {success: false, errors: [{code: 7003, message: "unrouted path"}]};
 		if (isFlag && request.method === "GET") {
-			payload = {result: currentFlag, success: true, errors: []};
+			payload = {result: currentWireFlag, success: true, errors: []};
 		} else if (isFlag && request.method === "PUT") {
 			const body =
 				request.body._tag === "Uint8Array"
@@ -246,7 +264,7 @@ const writeStub: Layer.Layer<HttpClient.HttpClient> = Layer.succeed(HttpClient.H
 					: {};
 			capturedPut = {method: request.method, body};
 			payload = {
-				result: {...currentFlag, default_variation: body.default_variation},
+				result: {...currentWireFlag, default_variation: body.default_variation, rules: body.rules},
 				success: true,
 				errors: [],
 			};
@@ -267,14 +285,18 @@ const writeDeps = FlagshipWriteLive.pipe(
 	Layer.provide(Layer.merge(fromApiToken({apiToken: "unit-test-token"}), writeStub)),
 );
 
-const runSetFlagDefault = (targetVariation: string): Promise<Exit.Exit<unknown, unknown>> => {
+const runSetServing = (
+	current: Record<string, unknown>,
+	target: {_tag: "Percent"; percentage: number} | {_tag: "Kill"},
+): Promise<Exit.Exit<unknown, unknown>> => {
 	const saved = process.env[ACCOUNT_KEY];
 	process.env[ACCOUNT_KEY] = "acct-test";
+	currentWireFlag = current;
 	capturedPut = undefined;
 	return Effect.runPromiseExit(
 		FlagshipWrite.pipe(
 			Effect.flatMap((client) =>
-				client.setFlagDefault({appId: "app-prod", flagKey: "authorship-loop", targetVariation}),
+				client.setServing({appId: "app-prod", flagKey: "authorship-loop", target}),
 			),
 			Effect.provide(writeDeps),
 		),
@@ -284,22 +306,51 @@ const runSetFlagDefault = (targetVariation: string): Promise<Exit.Exit<unknown, 
 	});
 };
 
-describe("FlagshipWrite.setFlagDefault — flip the served value over a stubbed transport", () => {
-	it("reads then PUTs, moving ONLY default_variation and passing enabled/variations/rules through", async () => {
-		const exit = await runSetFlagDefault("on");
+describe("FlagshipWrite.setServing — release/kill over a stubbed transport", () => {
+	it("Percent PUTs a no-match split; default_variation keeps the create-time safe value", async () => {
+		const exit = await runSetServing(flag("authorship-loop", true, "off", {off: false, on: true}), {
+			_tag: "Percent",
+			percentage: 100,
+		});
 		assert.strictEqual(exit._tag, "Success");
 		if (exit._tag !== "Success") return;
 
-		// The write happened via PUT, carrying the new served value.
 		assert.strictEqual(capturedPut?.method, "PUT");
-		assert.strictEqual(capturedPut?.body.default_variation, "on");
-		// Everything else round-trips verbatim — no targeting-rule / enable edits (#1609 scope).
+		// The lever is the split, NOT defaultVariation (#1726): default stays off.
+		assert.strictEqual(capturedPut?.body.default_variation, "off");
+		assert.deepStrictEqual(capturedPut?.body.rules, [
+			{conditions: [], priority: 1, serve_variation: "on", rollout: {percentage: 100}},
+		]);
+		// Everything else round-trips verbatim.
 		assert.strictEqual(capturedPut?.body.enabled, true);
 		assert.deepStrictEqual(capturedPut?.body.variations, {off: false, on: true});
-		assert.deepStrictEqual(capturedPut?.body.rules, []);
 
-		// The returned flag reflects the confirmed new served value.
-		const updated = exit.value as {defaultVariation: string};
-		assert.strictEqual(updated.defaultVariation, "on");
+		// The returned flag decodes to the confirmed effective serving.
+		const updated = exit.value as {defaultVariation: string; rules: ReadonlyArray<unknown>};
+		assert.strictEqual(updated.defaultVariation, "off");
+		assert.strictEqual(updated.rules.length, 1);
+	});
+
+	it("Kill clears the split AND sets default_variation off — verified against a split-released flag", async () => {
+		const targetingWire = {
+			conditions: [{attribute: "email", operator: "equals", value: "founder@kamp.us"}],
+			priority: 0,
+			serve_variation: "on",
+		};
+		const exit = await runSetServing(
+			flag("authorship-loop", true, "on", {off: false, on: true}, [targetingWire, wireSplit]),
+			{_tag: "Kill"},
+		);
+		assert.strictEqual(exit._tag, "Success");
+		if (exit._tag !== "Success") return;
+
+		assert.strictEqual(capturedPut?.method, "PUT");
+		// The true kill switch: split gone AND default off — a split-released flag stops serving.
+		assert.strictEqual(capturedPut?.body.default_variation, "off");
+		const rules = capturedPut?.body.rules as ReadonlyArray<Record<string, unknown>>;
+		assert.strictEqual(rules.length, 1);
+		// The targeting rule passes through verbatim (#1609 scope) — only the split is cleared.
+		assert.deepStrictEqual(rules[0]?.conditions, targetingWire.conditions);
+		assert.strictEqual(rules[0]?.serve_variation, "on");
 	});
 });
