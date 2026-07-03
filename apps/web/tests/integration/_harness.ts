@@ -497,6 +497,23 @@ export function harness(
 	// Extract the session (`name=value` cookie + user id) from a better-auth
 	// sign-up OR sign-in response — the two share a response shape, so both the
 	// fresh-user and existing-user paths converge here.
+	// A better-auth POST that additionally rides out a cold per-PR-preview edge's
+	// placeholder-404 (the route not yet propagated) on the #1689 readiness budget —
+	// the auth-signup analogue of what `openSse`/`liveControl` do for `/fate/live`
+	// (#1717, the sibling gap #1689's warmup didn't cover). `req` already converts that
+	// edge transient into a THROWN typed `CloudflarePlaceholder404Error` (never a real
+	// worker response) after its own short loop, and `postIdempotent` re-raises it (it
+	// isn't an abort). So any Response that exits `postIdempotent` is a real worker answer
+	// and is READY (`ready: () => true`) — only the thrown placeholder-404 is retried under
+	// the deadline. A genuine 4xx (the 422 USER_ALREADY_EXISTS the caller handles, any
+	// validation error) is a real response, so it returns AT ONCE and is never swallowed
+	// into the readiness budget — the exact #1689 invariant, held for the auth path.
+	const postAuthReady = (path: string, body: unknown, cookie?: string): Promise<Response> =>
+		pollUntilReady(
+			() => postIdempotent(path, body, cookie),
+			() => true,
+		);
+
 	const sessionFrom = async (
 		res: Response,
 		ctx: string,
@@ -515,7 +532,7 @@ export function harness(
 	};
 
 	const signUp: Harness["signUp"] = async (email, password, name) => {
-		const res = await postIdempotent("/api/auth/sign-up/email", {email, password, name});
+		const res = await postAuthReady("/api/auth/sign-up/email", {email, password, name});
 		if (res.ok) return sessionFrom(res, "sign-up");
 		// Idempotent against the real remote D1 this file's stage deploys: a
 		// `NO_DESTROY` re-run reuses the same D1, so a seed user left by a prior run
@@ -523,7 +540,7 @@ export function harness(
 		// fixture is a no-op, not a hard fail.
 		const body = await res.text();
 		if (res.status === 422 && body.includes("USER_ALREADY_EXISTS")) {
-			const signIn = await postIdempotent("/api/auth/sign-in/email", {email, password});
+			const signIn = await postAuthReady("/api/auth/sign-in/email", {email, password});
 			if (!signIn.ok) {
 				throw new Error(
 					`sign-in (existing seed user) failed: ${signIn.status} ${await signIn.text()}`,
