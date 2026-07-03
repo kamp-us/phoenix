@@ -23,26 +23,22 @@ export function sentryEnabled(dsn: string | undefined): dsn is string {
 }
 
 /**
- * Drop user-identifying PII before any event leaves the browser (ADR 0118 decided
- * default; adjustable). Strips the `user` block and the request cookies/headers that
- * carry session identifiers.
+ * The decided client options (ADR 0118): pure native `dataCollection` (SDK ≥10.57,
+ * the granular successor to the removed `sendDefaultPii`), no `beforeSend`. It
+ * suppresses the cookies/headers/user/`query_string` PII. Query strings carry no
+ * GDPR-PII in this app (only short-lived auth/OAuth tokens, caught by Sentry's
+ * server-side default data-scrubbing by field name), so no client-side URL scrub is
+ * needed — server-side Advanced Data Scrubbing is the backstop.
  */
-export function scrubPii(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
-	if (event.user) {
-		event.user = {};
-	}
-	if (event.request) {
-		event.request = {...event.request, cookies: undefined, headers: undefined};
-	}
-	return event;
-}
-
-/** The decided client options (ADR 0118): PII off, scrubbed `beforeSend`. */
 export function browserOptions(dsn: string): Sentry.BrowserOptions {
 	return {
 		dsn,
-		sendDefaultPii: false,
-		beforeSend: (event) => scrubPii(event),
+		dataCollection: {
+			userInfo: false,
+			cookies: false,
+			httpHeaders: {request: false, response: false},
+			queryParams: false,
+		},
 	};
 }
 

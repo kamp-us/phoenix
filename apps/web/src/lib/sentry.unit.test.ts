@@ -4,9 +4,8 @@
  * never throw — the integration activates only once the maintainer provisions a DSN. The
  * inert block stubs the DSN empty and imports `./sentry` fresh so the invariant is proven
  * deterministically, independent of a developer's local `apps/web/.env` (#1661). Also pins
- * the DSN gate and the PII scrub.
+ * the DSN gate and the native-`dataCollection` shape.
  */
-import type {ErrorEvent} from "@sentry/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 
 const {init, captureException} = vi.hoisted(() => ({init: vi.fn(), captureException: vi.fn()}));
@@ -14,7 +13,7 @@ vi.mock("@sentry/react", () => ({init, captureException}));
 
 // The inert block imports `initSentry`/`captureBoundaryError` dynamically (after stubbing the
 // DSN), so only the DSN-independent helpers are imported statically here.
-import {browserOptions, scrubPii, sentryEnabled} from "./sentry";
+import {browserOptions, sentryEnabled} from "./sentry";
 
 afterEach(() => {
 	vi.clearAllMocks();
@@ -62,22 +61,18 @@ describe("inert without a DSN (the whole point of ADR 0118's parked-provisioning
 });
 
 describe("decided defaults (ADR 0118)", () => {
-	it("browserOptions disables default PII and wires the scrub", () => {
+	it("browserOptions is pure native dataCollection with no beforeSend", () => {
 		const opts = browserOptions("https://abc@o0.ingest.de.sentry.io/1");
 		expect(opts.dsn).toBe("https://abc@o0.ingest.de.sentry.io/1");
-		expect(opts.sendDefaultPii).toBe(false);
-		expect(typeof opts.beforeSend).toBe("function");
-	});
-
-	it("scrubPii strips the user block and request cookies/headers", () => {
-		const event: ErrorEvent = {
-			type: undefined,
-			user: {id: "u1", email: "a@b.co"},
-			request: {url: "/x", cookies: {sid: "secret"}, headers: {authorization: "Bearer t"}},
-		};
-		const scrubbed = scrubPii(event);
-		expect(scrubbed.user).toEqual({});
-		expect(scrubbed.request?.cookies).toBeUndefined();
-		expect(scrubbed.request?.headers).toBeUndefined();
+		// dataCollection is the whole story; the deprecated `sendDefaultPii` is gone,
+		// and no hand-rolled `beforeSend` scrub remains (server-side scrubbing is the backstop).
+		expect(opts.sendDefaultPii).toBeUndefined();
+		expect(opts.dataCollection).toEqual({
+			userInfo: false,
+			cookies: false,
+			httpHeaders: {request: false, response: false},
+			queryParams: false,
+		});
+		expect(opts.beforeSend).toBeUndefined();
 	});
 });
