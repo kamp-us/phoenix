@@ -57,19 +57,59 @@ source: `cf-utils auth login` stores the API token + account id once in the macO
 falling back to `$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID` when the keychain has
 nothing — so CI (which sets the env vars, and generally has no macOS Keychain) works
 unchanged; a keychain miss is the normal CI path, not an error. `auth login` **validates
-before persisting** with an authenticated `listApps` read against exactly the pasted
-credentials, `auth status` reports what resolves from where (and whether it
-authenticates), `auth logout` deletes the stored items. An unreachable/unauthorized CF
-surfaces a typed error, not a stack trace.
+before persisting** with an authenticated `listApps` read against exactly the just-acquired
+credentials, `auth status` reports what resolves from where — including **how** a keychain
+token was acquired (browser OAuth vs pasted) — and whether it authenticates; `auth logout`
+deletes every stored item. An unreachable/unauthorized CF surfaces a typed error, not a
+stack trace.
+
+`auth login` acquires credentials **two ways** (#1761), both persisting through the same
+keychain seam:
+
+- **Browser OAuth — `auth login --oauth`** (the `wrangler login` model): Authorization-Code
+  + PKCE against Cloudflare's self-managed public OAuth clients (GA 2026-06-03). It runs a
+  local loopback callback server, opens the browser to authorize, and exchanges the code for
+  a short-lived **access token + refresh token** — so **no secret ever crosses the terminal**
+  (the reason it exists: the token-paste flow leaks the API token on a stream/VOD). The
+  resolver (`src/credentials.ts`) refreshes the access token on expiry using the stored
+  refresh token, rewriting the rotated tokens back to the keychain. `src/oauth.ts` owns the
+  flow; its pure core (PKCE challenge, authorize-URL build, callback validation, token-form +
+  response decode) is unit-tested off-network.
+- **Token paste — `auth login`** (the default, #1730): prompts for a Cloudflare API token +
+  account id and stores them. The CI/headless `$CLOUDFLARE_API_TOKEN` /
+  `$CLOUDFLARE_ACCOUNT_ID` env-var path is unaffected by either login mode.
+
+### One-time founder setup — register the public PKCE OAuth client
+
+Browser OAuth needs a **public OAuth client registered once** in the Cloudflare dashboard
+(Manage account → OAuth clients) — a human setup task, done once, not something the tool
+performs:
+
+1. Create a **public client (no client secret)** — PKCE-only, as befits a CLI that can't
+   hold a secret.
+2. Set its **redirect URI** to `http://localhost:8976/oauth/callback` (the loopback
+   `cf-utils` listens on — `OAUTH_REDIRECT_URI` in `src/oauth.ts`).
+3. Grant it the **Flagship read/write scope** — the same permission the token-paste path
+   uses today (Cloudflare's self-managed OAuth scope names mirror the API-token permission
+   names). The scopes `cf-utils` requests live in one place, `OAUTH_SCOPES` in
+   `src/oauth.ts` (`feature_flags:read`, `feature_flags:write`, `offline_access`); align them
+   with what the client grants.
+4. Expose the resulting **public client id** to the CLI as `$CF_UTILS_OAUTH_CLIENT_ID` (it
+   is a public identifier, not a secret).
 
 ## Usage
 
 ```bash
-# Once, on a human machine — prompts for the token + account id, validates, stores in
-# the macOS Keychain; every later invocation resolves credentials automatically:
+# Once, on a human machine — authorize in the browser (no secret typed into the terminal),
+# validates, stores the access + refresh token in the macOS Keychain (refreshed on expiry):
+export CF_UTILS_OAUTH_CLIENT_ID=<the registered public PKCE client id>   # see founder setup above
+node src/bin.ts auth login --oauth
+
+# Or paste an API token instead — prompts for the token + account id, validates, stores it:
 node src/bin.ts auth login
-node src/bin.ts auth status    # where credentials resolve from + a validating read
-node src/bin.ts auth logout    # remove them from the keychain
+
+node src/bin.ts auth status    # where credentials resolve from (+ how acquired) + a validating read
+node src/bin.ts auth logout    # remove every stored item from the keychain
 
 # Or the env-var path (CI, or any non-macOS host):
 export CLOUDFLARE_API_TOKEN=<a CF token with Flagship read scope>
