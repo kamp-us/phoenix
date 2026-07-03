@@ -14,7 +14,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
-import {alwaysLive, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -202,7 +202,10 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
 			const live = sozlukLive(yield* WorkerLivePublisher);
-			yield* sozluk.restoreDefinition({definitionId: input.id, actorId: user.id});
+			const restoreResult = yield* sozluk.restoreDefinition({
+				definitionId: input.id,
+				actorId: user.id,
+			});
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
 			if (!slug) return null;
 			const page = yield* sozluk.getTerm(slug);
@@ -221,9 +224,13 @@ export const mutations = {
 					updatedAt: restored.updatedAt,
 					myVote: restored.myVote ?? null,
 				});
-				// Restore re-enters already-public content (`Removed → Live`, ADR 0096 §4):
-				// Live by construction, no sandbox state to discharge → `alwaysLive` (#1280).
-				yield* live.definition.term(slug).appendNode(restored.id, {node}, alwaysLive);
+				// Sandbox-faithful restore (#1811): a çaylak's sandboxed definition
+				// round-trips back to Sandboxed, so route the broadcast through the
+				// #1205/#1280 gate — a sandboxed restore is suppressed from the
+				// viewer-blind term topic; a Live restore broadcasts as before.
+				yield* live.definition
+					.term(slug)
+					.appendNode(restored.id, {node}, decidePublish(restoreResult.sandboxedAt ?? null));
 			}
 			return toTermFromPage(page);
 		}),
