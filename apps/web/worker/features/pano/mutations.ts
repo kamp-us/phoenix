@@ -15,6 +15,8 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
+import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
 import {notifyCommentReply} from "../bildirim/conversation-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -30,6 +32,7 @@ import {
 	PostDeleteFailed,
 	PostNotFound,
 	PostValidationErrors,
+	ReactionsDisabled,
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
 } from "./errors.ts";
@@ -69,6 +72,15 @@ const DiscardDraftInput = Schema.Struct({});
 
 const PostIdInput = Schema.Struct({
 	id: Schema.String,
+});
+
+// `emoji` decodes against the curated `REACTION_EMOJI` palette (or `null` to
+// retract): a non-palette string FAILS to decode here, at the wire boundary, so a
+// bad emoji never reaches `Reaction.react` — the rejection is structural, not a
+// service error (the settled curated-fixed-palette model, #1859/#1863).
+const ReactToPostInput = Schema.Struct({
+	id: Schema.String,
+	emoji: Schema.NullOr(ReactionEmojiSchema),
 });
 
 const EditPostInput = Schema.Struct({
@@ -279,6 +291,39 @@ export const mutations = {
 			const r = yield* pano.retractPostVote({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
 			yield* live.post.update(post.id, {changed: ["score"], data: post});
+			return post;
+		}),
+	),
+	// `post.react` — the karma-free, ungated reaction twin of `post.vote` (#1863,
+	// epic #1840). It delegates to `Reaction.react` (kind `post`), decoding the
+	// emoji against the curated `REACTION_EMOJI` palette at the wire boundary
+	// (`ReactToPostInput`) — a non-palette emoji fails to decode and never reaches
+	// the service. A palette emoji sets/changes the viewer's single reaction; a
+	// `null` emoji retracts it (the cardinality-one change/retract contract). Unlike
+	// `post.vote` there is deliberately NO `VoterNotEligible` tier arm and NO karma
+	// path: any signed-in user — including a çaylak — may react. Ships DARK behind
+	// the default-off `phoenix-reactions` flag: with it off every react fails
+	// `ReactionsDisabled`, so the path is unreachable even if a client bypasses the
+	// (not-yet-shipped) UI. The re-resolved post carries the fresh `reactions`
+	// aggregate; `live.update` flips every open card's reaction bar.
+	"post.react": Fate.mutation(
+		{
+			input: ReactToPostInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, ReactionsDisabled, PostNotFound]),
+		},
+		Effect.fn("post.react")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const flags = yield* Flags;
+			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
+			if (!on) {
+				return yield* new ReactionsDisabled({message: "tepki özelliği şu an kapalı"});
+			}
+			const pano = yield* Pano;
+			const live = panoLive(yield* WorkerLivePublisher);
+			const r = yield* pano.reactToPost({postId: input.id, userId: user.id, emoji: input.emoji});
+			const post = toPost(r.post);
+			yield* live.post.update(post.id, {changed: ["reactions"], data: post});
 			return post;
 		}),
 	),

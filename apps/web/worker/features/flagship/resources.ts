@@ -23,6 +23,7 @@ import {
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
 	PHOENIX_OPTIMISTIC_EDITS,
+	PHOENIX_REACTIONS,
 } from "../../../src/flags/keys.ts";
 import {AUDIT_ENVIRONMENT} from "../../environment.ts";
 
@@ -551,3 +552,38 @@ export const optimisticDefinitionDeleteFlag = (appId: Input<string>) =>
 		appId,
 		...OPTIMISTIC_DEFINITION_DELETE_FLAG,
 	});
+
+/**
+ * The reactions (emoji tepki) dark-ship flag config (#1863, epic #1840). The
+ * SINGLE seam the whole reaction feature gates behind — the react/change/retract
+ * mutations plus the `reactions` view field on pano post/comment + sözlük
+ * definition reuse this one cross-cutting key rather than minting a per-surface
+ * flag. Default-OFF so the ungated social-signal affordance reaches production dark
+ * (the product behaves exactly as today, no reaction surface); flipping it on is
+ * the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           reaction (the karma-free, ungated social-signal engine)
+ *   - originating:     #1863 (epic: emoji reactions, #1840)
+ *   - removal trigger: once reactions graduate to on at 100% and stable for one
+ *                      release, retire the flag and inline the now-permanent path.
+ */
+export const REACTIONS_FLAG = {
+	key: PHOENIX_REACTIONS,
+	description:
+		"emoji reactions (tepki) dark-ship (#1863, epic #1840). owner: reaction. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const reactionsFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_reactions", {appId, ...REACTIONS_FLAG});

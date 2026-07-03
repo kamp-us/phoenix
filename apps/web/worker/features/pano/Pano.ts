@@ -69,6 +69,8 @@ import {
 	POST_BODY_MAX,
 	POST_TITLE_MAX,
 	type PostTagInput,
+	type ReactToPostInput,
+	type ReactToPostResult,
 	type RestorePostResult,
 	type SaveDraftInput,
 	type SaveDraftResult,
@@ -108,6 +110,8 @@ export type {
 	PostSummaryRow,
 	PostTagInput,
 	PostTagRow,
+	ReactToPostInput,
+	ReactToPostResult,
 	RestorePostResult,
 	SaveDraftInput,
 	SaveDraftResult,
@@ -231,6 +235,17 @@ export class Pano extends Context.Service<
 		readonly retractPostVote: (
 			input: VoteOnPostInput,
 		) => Effect.Effect<VoteOnPostResult, PostNotFound>;
+
+		/**
+		 * React to a post — the karma-free, ungated twin of `voteOnPost` (#1863).
+		 * Delegates to `Reaction.react` (kind `post`): a palette `emoji` sets/changes
+		 * the viewer's single reaction, `null` retracts it. Re-resolves the post so the
+		 * result carries the fresh `reactions` aggregate. NO tier gate (a çaylak may
+		 * react) and NO karma write — the only failure is a missing/removed target.
+		 */
+		readonly reactToPost: (
+			input: ReactToPostInput,
+		) => Effect.Effect<ReactToPostResult, PostNotFound>;
 
 		readonly addComment: (
 			input: AddCommentInput,

@@ -41,6 +41,7 @@ export const WIRE_MESSAGES: Record<FateWireCode, string> = {
 	TAGS_REQUIRED: "en az bir etiket seç",
 	TAG_INVALID: "geçersiz etiket",
 	DRAFTS_DISABLED: "taslaklar şu an devre dışı",
+	REACTIONS_DISABLED: "tepkiler şu an devre dışı",
 	PARENT_NOT_FOUND: "yanıtlanan içerik bulunamadı",
 	INVALID_FORMAT: "geçersiz biçim",
 	TOO_SHORT: "çok kısa",
