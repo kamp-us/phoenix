@@ -30,13 +30,12 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import type {CompiledStack} from "alchemy/Stack";
 import * as Test from "alchemy/Test/Vitest";
 import * as Cause from "effect/Cause";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
-import * as HttpClient from "effect/unstable/http/HttpClient";
 import {inject} from "vitest";
 import Stack from "../../alchemy.run.ts";
 import {isTransientDeployError} from "./_deploy-transient.ts";
+import {awaitEdgeReady, edgeFetch} from "./_edge-ready.ts";
 import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
 import {type Harness, harness} from "./_harness.ts";
 import {slugify, stageName} from "./_stage-name.ts";
@@ -48,28 +47,41 @@ import {slugify, stageName} from "./_stage-name.ts";
 // `_global-setup.ts`; this file's per-file path (`integrationStack`) consumes the same
 // helpers below. The harness client itself (`sharedStack`) is exported at the end.
 
-// Tagged so the retry sentinel stays out of the untagged-error failure channel
-// (effect `globalErrorInEffectFailure`): the fresh route 404s until it propagates.
-class WorkerNotReady extends Data.TaggedError("WorkerNotReady")<{readonly status: number}> {}
+// All three deploy-time warm probes below ride the ONE shared readiness primitive
+// (`awaitEdgeReady`, ADR 0127): `edgeFetch` converts a cold edge-placeholder-404 into the typed
+// throw the primitive rides out, and each probe supplies a `ready` predicate that stops the poll
+// on its own "warmed" signal while a real terminal answer surfaces at once. The per-probe tagged
+// retry sentinels (`WorkerNotReady`/`LiveDONotReady`/`FateReadNotReady`) + their bespoke
+// `Schedule.spaced` loops are retired into that primitive — this is the #1689/#1717 point-fixes
+// generalized (see ADR 0127).
 
-// Retry sentinel for the DO-backed `/fate/live` warmup below. The `/api/health` probe
-// proves the WORKER route propagated, but never touches the `LiveDO` — so a cold
-// LiveDO still surfaces the bounded cold-start envelope (`fate-live/cold-start-retry.ts`)
-// as a 503 `LIVE_UNAVAILABLE` on the first connect/subscribe; and the DO-backed route can
-// still serve a Cloudflare edge-placeholder 404 (HTML) until it propagates, even after
-// `/api/health` is green (#1058). Carries the `contentType` so `isLiveWarmupNotReady` can
-// tell that placeholder apart from a legitimate worker JSON 404/auth response. Tagged
-// distinctly from `WorkerNotReady` so the two readiness gates retry on their own signals.
-class LiveDONotReady extends Data.TaggedError("LiveDONotReady")<{
-	readonly status: number;
-	readonly contentType: string;
-}> {}
+// `/api/health` is READY only on a 200 whose JSON body is `{status:"ok"}` — so its predicate is
+// async (it inspects a clone's body). A non-200, or a 200 with a non-JSON CF error page / a
+// non-"ok" body, is not ready → retry.
+const healthReady = async (res: Response): Promise<boolean> => {
+	if (res.status !== 200) return false;
+	try {
+		const body = (await res.clone().json()) as {status?: unknown} | null;
+		return body?.status === "ok";
+	} catch {
+		return false;
+	}
+};
 
-// Retry sentinel for the `POST /fate` warmup below. `/api/health` warms only the worker
-// route and `warmLiveDO` only the `/fate/live` DO path — neither exercises `POST /fate`
-// or the D1 read replica it reads through. Tagged distinctly so the fate-read gate
-// retries on its own signal.
-class FateReadNotReady extends Data.TaggedError("FateReadNotReady")<{readonly status: number}> {}
+// The `/fate/live` warm is READY on a 200 (the DO warmed) OR a terminal worker JSON 4xx (a real
+// 404/auth answer — `!isLiveWarmupNotReady`), which stops the poll so a genuine failure doesn't
+// burn the budget. Every other outcome (503 cold-start, a placeholder that slipped through as a
+// response, any not-yet-serving status) is not ready → retry.
+const liveWarmReady = (res: Response): boolean =>
+	res.status === 200 || !isLiveWarmupNotReady(res.status, res.headers.get("content-type") ?? "");
+
+// `POST /fate` (the read path + D1 read replica) is READY only on a 200; a cold PoP / cold replica
+// surfaces a non-200 that hasn't ripened → retry.
+const fateReadReady = (res: Response): boolean => res.status === 200;
+
+// The deploy-probe poll cadence — the ~2s spacing the retired `Schedule.spaced("2 seconds")` used,
+// over `awaitEdgeReady`'s default 60s budget.
+const WARM_POLL_MS = 2_000;
 
 /**
  * Self-supply the two env values the integration deploy needs when a clean runner has no
@@ -201,46 +213,21 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 			.map((part) => part.split(";")[0]!.trim())
 			.filter((kv) => kv.includes("="))
 			.join("; ");
-		return cookie;
-	}).pipe(
-		Effect.flatMap((cookie) =>
-			Effect.tryPromise(() =>
-				fetch(`${url}/fate/live?connectionId=live-warmup-${LOCAL_TOKEN}`, {
+		// Ride the cold `/fate/live` open out on the shared readiness budget: the thrown
+		// placeholder-404 (edge not propagated) AND the 503 cold-start envelope retry until the DO
+		// serves the held SSE 200 (or a terminal worker JSON 4xx stops the poll). Release the
+		// settled response's body — a warmed 200 is a held SSE stream that would otherwise pin the
+		// fetch connection (the warm consumes nothing; it only front-loads the cold cost).
+		const res = await awaitEdgeReady(
+			() =>
+				edgeFetch(`${url}/fate/live?connectionId=live-warmup-${LOCAL_TOKEN}`, {
 					headers: {accept: "text/event-stream", cookie},
 				}),
-			).pipe(
-				// Always release the response body (the held SSE stream on a 200, the error
-				// envelope body on a 503) before deciding — a leaked stream keeps the fetch
-				// connection open across the retry loop.
-				Effect.tap((res) =>
-					Effect.promise(() => res.body?.cancel().catch(() => {}) ?? Promise.resolve()),
-				),
-				Effect.flatMap((res) =>
-					// 200 means it warmed. Any non-200 carries its `content-type` so the retry's
-					// `while` can tell a "not ready yet" signal (cold-start 503, CF edge-placeholder
-					// HTML 404) from a terminal worker JSON 4xx (`isLiveWarmupNotReady`).
-					res.status === 200
-						? Effect.void
-						: Effect.fail(
-								new LiveDONotReady({
-									status: res.status,
-									contentType: res.headers.get("content-type") ?? "",
-								}),
-							),
-				),
-				Effect.retry({
-					// Keep retrying every not-ready signal AND any transport-level fetch failure (an
-					// edge reset while the route propagates), but stop on a terminal worker JSON 4xx
-					// so a real 404/auth response doesn't burn the whole bound (#1058).
-					while: (cause) =>
-						cause instanceof LiveDONotReady
-							? isLiveWarmupNotReady(cause.status, cause.contentType)
-							: true,
-					schedule: Schedule.spaced("2 seconds"),
-					times: 30,
-				}),
-			),
-		),
+			liveWarmReady,
+			{pollMs: WARM_POLL_MS},
+		);
+		await res.body?.cancel().catch(() => {});
+	}).pipe(
 		// Warmup is a readiness OPTIMIZATION, not an assertion: if it can't establish a
 		// cookie or never warms within the bound, the suite still runs (the worker seam's
 		// own retry is the real fix; this just front-loads the cold cost). Swallow so a
@@ -268,22 +255,23 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
  * envelope (`{version, operations}`) mirrors the harness `fateBatch`.
  */
 export const warmFateRead = (url: string): Effect.Effect<void, never, never> =>
-	Effect.tryPromise(() =>
-		fetch(`${url}/fate`, {
-			method: "POST",
-			headers: {"content-type": "application/json", origin: "http://localhost:3000"},
-			body: JSON.stringify({
-				version: 1,
-				operations: [{id: "1", kind: "query", name: "health", select: ["status"]}],
-			}),
-		}),
-	).pipe(
-		// A 200 means the route + D1 read served; a cold PoP placeholder-404 / edge reset
-		// surfaces as a non-200 → retry. The body is small JSON, so nothing to release.
-		Effect.flatMap((res) =>
-			res.status === 200 ? Effect.void : Effect.fail(new FateReadNotReady({status: res.status})),
-		),
-		Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
+	Effect.tryPromise(async () => {
+		// A 200 means the route + D1 read served; a cold PoP placeholder-404 (the thrown edge
+		// transient) / a non-200 that hasn't ripened rides the shared readiness budget → retry.
+		await awaitEdgeReady(
+			() =>
+				edgeFetch(`${url}/fate`, {
+					method: "POST",
+					headers: {"content-type": "application/json", origin: "http://localhost:3000"},
+					body: JSON.stringify({
+						version: 1,
+						operations: [{id: "1", kind: "query", name: "health", select: ["status"]}],
+					}),
+				}),
+			fateReadReady,
+			{pollMs: WARM_POLL_MS},
+		);
+	}).pipe(
 		// Warmup is a readiness OPTIMIZATION, not an assertion (mirrors `warmLiveDO`): the
 		// asserting tests remain the gate, so a warm that never settles must NOT red a green
 		// stage. Swallow the cause and log it non-fatally.
@@ -310,41 +298,27 @@ export const deployTransientRetry = Effect.retry({
 
 /**
  * Probe a freshly-deployed worker's `/api/health` until it serves `{status:"ok"}` — a fresh
- * workers.dev route 404s for a few seconds while it propagates, so retry every non-ready
- * outcome (`WorkerNotReady` AND any request-transport `HttpClientError`, e.g. an edge reset)
- * on a bounded `spaced` schedule. A worker that never serves healthy JSON within the bound
- * (30 × 2s) dies with a clear message rather than hanging. ONE copy for both deploy paths
- * (the per-file `integrationStack` and the shared-stage `_global-setup.ts`).
+ * workers.dev route 404s (the CF edge placeholder) for a few seconds while it propagates, so it
+ * rides the shared readiness budget (`awaitEdgeReady` + `edgeFetch`, ADR 0127): the thrown
+ * placeholder-404 AND any non-ready response retry until healthy. A worker that never serves
+ * healthy JSON within the bound (30 × 2s) DIES with a clear message rather than hanging —
+ * `Effect.promise` turns the thrown exhaustion error into a defect, the same hard failure the
+ * retired `Effect.die` produced. ONE copy for both deploy paths (the per-file `integrationStack`
+ * and the shared-stage `_global-setup.ts`).
  */
-export const awaitWorkerReady = (url: string): Effect.Effect<void, never, HttpClient.HttpClient> =>
-	Effect.gen(function* () {
-		const client = yield* HttpClient.HttpClient;
-		yield* client.get(`${url}/api/health`).pipe(
-			Effect.flatMap((res) =>
-				res.status === 200
-					? res.json.pipe(
-							Effect.flatMap((body) =>
-								(body as {status?: unknown} | null)?.status === "ok"
-									? Effect.void
-									: Effect.fail(new WorkerNotReady({status: res.status})),
-							),
-							// A CF HTML error page (or any non-JSON body) fails `res.json`
-							// decode — treat as not-ready, retryable, never a hard error.
-							Effect.catchTag("HttpClientError", () =>
-								Effect.fail(new WorkerNotReady({status: res.status})),
-							),
-						)
-					: Effect.fail(new WorkerNotReady({status: res.status})),
-			),
-			Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
-			Effect.catch((cause) =>
-				Effect.die(
-					new Error(
-						`worker never served a healthy /api/health within the readiness window for ${url}: ${String(cause)}`,
-					),
-				),
-			),
-		);
+export const awaitWorkerReady = (url: string): Effect.Effect<void, never, never> =>
+	Effect.promise(async () => {
+		const res = await awaitEdgeReady(() => edgeFetch(`${url}/api/health`), healthReady, {
+			pollMs: WARM_POLL_MS,
+		});
+		// `awaitEdgeReady` returns the last response even when it never went ready (the #1060
+		// no-early-stop guarantee), so a worker that never served healthy JSON must be turned into
+		// a hard, clear failure here — the throw becomes an `Effect.promise` defect (die).
+		if (!(await healthReady(res))) {
+			throw new Error(
+				`worker never served a healthy /api/health within the readiness window for ${url}: last status ${res.status}`,
+			);
+		}
 	});
 
 /**
