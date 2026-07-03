@@ -2,7 +2,10 @@
  * Sözlük home page — fate. Two term connections (recent + popular) resolve in one
  * batched `useRequest({recentTerms, popularTerms})`; each maps to a fixed-sort
  * `list` root over the `terms` keyset (see `worker/features/sozluk/lists.ts`).
- * Letter + search filtering is client-side over the already-loaded first page.
+ * The masthead box is a go-to-or-create affordance (`/sozluk/:slug`), NOT search —
+ * kept lexically + visually distinct from the topbar's federated `ara` (#1669). Its
+ * as-you-type letter/query filtering is client-side over the already-loaded first page,
+ * so the filtered-to-zero copy names that scope ("ilk sayfada"), never the whole corpus.
  */
 import * as React from "react";
 import {useListView, useRequest, useView, type ViewRef} from "react-fate";
@@ -12,6 +15,7 @@ import {TermRow, TermRowView} from "../components/sozluk/TermRow";
 import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
 import {slugifyTerm} from "../lib/slugifyTerm";
+import {sozlukPageEmptyLabel} from "../lib/sozlukPageEmptyLabel";
 import "./SozlukHome.css";
 
 /** A connection "view" is a plain `{items: {node: View}}` selection, not a `view<T>()`. */
@@ -89,10 +93,12 @@ function SozlukHomeChrome({letter, query, setQuery, status, errorMessage, childr
 	const navigate = useNavigate();
 	const totalsLine = status === "ok" ? "" : status === "loading" ? "yükleniyor…" : "yüklenemedi";
 
-	// Submitting the search routes to the existing fresh-slug composer branch at
-	// `/sozluk/:slug` — no new creation backend (issue #97). Signed-in users land
-	// on `NewTermComposer`; signed-out users get that page's unchanged 404/sign-in.
-	function onSearchSubmit(e: React.SyntheticEvent) {
+	// Go-to-or-create, NOT search (#1669). Deliberately distinct from the topbar's
+	// federated `ara` (icon+"ara" = ranked `/search?q=` site-wide): on Enter this routes
+	// the typed term to the fresh-slug composer branch at `/sozluk/:slug` — no new creation
+	// backend (issue #97). Signed-in users land on `NewTermComposer`; signed-out users get
+	// that page's unchanged 404/sign-in.
+	function onGoToOrCreate(e: React.SyntheticEvent) {
 		e.preventDefault();
 		const slug = slugifyTerm(query);
 		if (slug) navigate(`/sozluk/${slug}`);
@@ -106,7 +112,10 @@ function SozlukHomeChrome({letter, query, setQuery, status, errorMessage, childr
 						sözlük {totalsLine ? <small>{totalsLine}</small> : null}
 					</h1>
 				</div>
-				<form className="kp-sozluk-home__searchbar" onSubmit={onSearchSubmit}>
+				<form
+					className="kp-sozluk-home__searchbar kp-sozluk-home__gotocreate"
+					onSubmit={onGoToOrCreate}
+				>
 					<svg
 						width="11"
 						height="11"
@@ -116,14 +125,13 @@ function SozlukHomeChrome({letter, query, setQuery, status, errorMessage, childr
 						strokeWidth="2.4"
 						aria-hidden="true"
 					>
-						<circle cx="11" cy="11" r="7" />
-						<path d="m20 20-3.5-3.5" />
+						<path d="M12 5v14M5 12h14" />
 					</svg>
 					<input
 						value={query}
 						onChange={(e) => setQuery(e.currentTarget.value)}
-						placeholder="terim ara: race condition, idempotent…"
-						aria-label="Terim ara"
+						placeholder="terime git ya da oluştur: race condition, idempotent…"
+						aria-label="Terime git ya da oluştur"
 					/>
 				</form>
 			</header>
@@ -196,19 +204,12 @@ function RecentColumn({connection, letter, query}: ColumnProps) {
 					showCreateCta ? (
 						<CreateTermCta query={query} />
 					) : (
-						<ColumnEmptyState>{filterEmptyLabel(letter, query)}</ColumnEmptyState>
+						<ColumnEmptyState>{sozlukPageEmptyLabel(letter, query)}</ColumnEmptyState>
 					)
 				) : null}
 			</div>
 		</section>
 	);
-}
-
-/** "X harfinde terim yok" / "aramada terim yok" — the legible filtered-to-zero copy. */
-function filterEmptyLabel(letter: string | undefined, query: string) {
-	if (query.trim().length > 0) return `"${query.trim()}" aramasında terim yok.`;
-	if (letter) return `"${letter}" harfinde terim yok.`;
-	return "terim yok.";
 }
 
 function ColumnEmptyState({children}: {children: React.ReactNode}) {
@@ -289,7 +290,7 @@ function PopularColumn({connection, letter, query}: ColumnProps) {
 			{state === "empty" ? (
 				<ColumnEmptyState>henüz terim yok.</ColumnEmptyState>
 			) : state === "no-match" ? (
-				<ColumnEmptyState>{filterEmptyLabel(letter, query)}</ColumnEmptyState>
+				<ColumnEmptyState>{sozlukPageEmptyLabel(letter, query)}</ColumnEmptyState>
 			) : null}
 		</section>
 	);
