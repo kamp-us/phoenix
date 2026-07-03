@@ -2,10 +2,13 @@
 //
 // Dispatches the durable role agents by `agentType` and uses each stage's
 // structured-JSON return as the sole control signal. It only ROUTES already-triaged
-// work — it never re-triages, never edits, never merges. Control-plane PRs halt at
-// reviewed-ready because the shipper itself refuses them (we do not re-encode that
-// rule here). Saved workflows are not plugin-distributable, so this lives repo-local
-// in `.claude/workflows/`, not in the kampus-pipeline plugin.
+// work — it never re-triages, never edits, never merges. A control-plane PR is
+// APPROVAL-GATED (ADR 0135, amending 0053): the shipper enqueues it once a
+// @kamp-us/control-plane team member has approved it at the current head, else halts at
+// `awaiting control-plane approval` (a human approves out-of-band, then a shipper re-run
+// enqueues). We do not re-encode the §CP rule or the approval check here — the shipper
+// owns both. Saved workflows are not plugin-distributable, so this lives repo-local in
+// `.claude/workflows/`, not in the kampus-pipeline plugin.
 //
 // Pre-spawn claim (ADR 0115 §3, orchestrated path): the Implement branch acquires the
 // agent-distinguishable claim BEFORE the coder dispatch and spawns the coder only on a
@@ -17,7 +20,7 @@
 export const meta = {
 	name: "drive-issue",
 	description:
-		"Drive one triaged issue through the kampus pipeline: epics route planner -> reviewer(review-plan); everything else atomically claims the issue pre-spawn (ADR 0115) and only on a win runs coder -> reviewer -> repair(freeze-after-2) -> shipper, stopping at reviewed-ready when the shipper refuses a control-plane PR; a lost claim skips before any work starts.",
+		"Drive one triaged issue through the kampus pipeline: epics route planner -> reviewer(review-plan); everything else atomically claims the issue pre-spawn (ADR 0115) and only on a win runs coder -> reviewer -> repair(freeze-after-2) -> shipper. A control-plane PR is approval-gated (ADR 0135): the shipper enqueues it once a @kamp-us/control-plane team member approves at the current head, else halts at `awaiting control-plane approval`; a lost claim skips before any work starts.",
 	phases: ["Classify", "Plan", "Implement", "Review", "Repair", "Ship"],
 };
 
@@ -31,14 +34,16 @@ if (!Number.isInteger(issue) || issue <= 0) {
 
 // Trivial-diff tier (ADR 0120 §2-§4). The right-sized fan-out routes a trivially-classified
 // PR to the lighter `review-trivial` gate instead of the full `review-code`/`review-doc`/
-// `review-skill` fan-out. It is wired here but stays OFF BY DEFAULT: adoption is gated behind
-// child #1560's two-axis measurement (a measured token win AND held gate-accuracy, a quality
-// regression vetoing the lever — ADR 0112). Off ⇒ every PR takes the full fan-out exactly as
-// before, a pure no-op. #1560 flips it for measurement via `KAMPUS_TRIVIAL_TIER=on` or
-// `args.trivialTier=true`; this child claims NO token win — it only makes the branch measurable.
+// `review-skill` fan-out. ADOPTED default-ON per the #1562 measurement (both ADR 0112 axes
+// cleared on a measured basis: −22%/−32% token-per-review vs the full gate — a conservative
+// floor — AND the quality veto held, `review-trivial` catching a seeded off-by-one at
+// `review-code` parity). Escape hatch: `KAMPUS_TRIVIAL_TIER=off` (or `args.trivialTier=false`)
+// forces every PR back onto the full fan-out. This flip changes ONLY the tier's enable default;
+// the fail-closed routing below is untouched — a classifier error or `non-trivial` verdict still
+// falls to the full path, so a misclassification can still only over-pay, never under-gate.
 const TRIVIAL_TIER_ENABLED =
-	(typeof process !== "undefined" && !!process.env && process.env.KAMPUS_TRIVIAL_TIER === "on") ||
-	!!(args && typeof args === "object" && args.trivialTier === true);
+	!(typeof process !== "undefined" && !!process.env && process.env.KAMPUS_TRIVIAL_TIER === "off") &&
+	!(args && typeof args === "object" && args.trivialTier === false);
 
 // Default-deny tier routing (ADR 0120 §3). The LIGHTER path is selected ONLY on the full
 // positive conjunction — the tier is enabled AND the classifier ran OK AND its verdict is
@@ -51,6 +56,12 @@ const TRIVIAL_TIER_ENABLED =
 function selectReviewTier(trivialTierEnabled, classifierOk, verdict) {
 	return trivialTierEnabled && classifierOk && verdict === "trivial" ? "lighter" : "full";
 }
+
+// Disambiguating first line (#1768): `meta` is a pure literal (Workflow contract), so its
+// static top-row label can't carry the target number — concurrent drive-issue rows would be
+// indistinguishable. Emit the already-parsed `issue` as the workflow's VERY FIRST log line so
+// the progress tree of each concurrent run is disambiguated by issue number from the top.
+log(`drive-issue #${issue}`);
 
 // 1. Classify — a lightweight READ of the already-triaged `type:` label to route.
 // Deliberately NOT the triager agent: triager is needs-triage INTAKE and would
@@ -344,44 +355,59 @@ if (verdict.verdict !== "PASS") {
 	return { frozen: true, pr, rounds: round, reason: "freeze-after-2" };
 }
 
-// 4. Ship — the shipper runs its own Step 0 control-plane classify and REFUSES
-// control-plane PRs (returning a blocked / reviewed-ready outcome). We do NOT
-// re-encode the §CP regex here; a refusal IS the stop-at-reviewed-ready outcome.
+// 4. Ship — the shipper runs its own Step 0 §CP classify. Under ADR 0135 (amending
+// 0053) a §CP PR is APPROVAL-GATED, not blanket-refused: the shipper ENQUEUES it once a
+// @kamp-us/control-plane team member has APPROVED it at the current head, else STOPS at
+// `awaiting control-plane approval`. We do NOT re-encode the §CP regex or the approval
+// check here — the shipper owns both; an `awaiting control-plane approval` stop IS the
+// halt outcome (a human approves out-of-band, then a shipper re-run enqueues). Success is
+// ENQUEUED + green, not merged-now: the merge queue owns the final async merge and the
+// async `Fixes #N` issue-close (ADR 0132), so this stage returns `enqueued` (QUEUED ->
+// auto-merges on green), never an in-run merge/close assertion.
 phase("Ship");
-log(`Shipping PR #${pr} (the shipper refuses control-plane PRs on its own)`);
+log(`Shipping PR #${pr} (the shipper enqueues a §CP PR only on a control-plane-team approval)`);
 const shipped = await agent(
-	`Ship PR #${pr}. You are the shipper — run your Step 0 control-plane classify first. If PR #${pr} is ` +
-		`control-plane (\`.claude/**\`, \`.github/**\`, or a gate-critical skill), REFUSE to merge and leave it ` +
-		`reviewed-ready for a human hand-merge. Otherwise assert the matching gate PASS, confirm CI is green, ` +
-		`squash-merge, and confirm the linked issue auto-closed. ` +
-		`Return { merged: true|false, sha: "<merge commit sha if merged>", reviewedReady: true|false, reason: "<refusal reason if not merged>" }.`,
+	`Ship PR #${pr}. You are the shipper — run your Step 0 §CP classify first. If PR #${pr} is ` +
+		`control-plane (\`.claude/**\`, \`.github/**\`, or a gate-critical skill), it is APPROVAL-GATED (ADR 0135, ` +
+		`amending 0053): check for an APPROVED review from a \`@kamp-us/control-plane\` team member bound to the ` +
+		`CURRENT head. If that approval is PRESENT and all machine gates are green, enqueue like any PR. If it is ` +
+		`ABSENT (or only a stale-head approval), do NOT enqueue — STOP and return { enqueued: false, ` +
+		`awaitingControlPlaneApproval: true, reviewedReady: true, reason: "awaiting control-plane approval" } ` +
+		`(a human approves out-of-band, then a shipper re-run enqueues). For a non-§CP PR, assert the matching gate ` +
+		`PASS, confirm CI is green, enqueue for a squash-merge with \`gh pr merge --auto\` (no method flag — the queue owns the SQUASH method), and confirm it ` +
+		`is enqueued + green. The merge queue owns the final, async merge (ADR 0132): success is "enqueued + green" ` +
+		`(QUEUED -> auto-merges on green), NOT "merged now" — the linked issue auto-closes async when the queue lands ` +
+		`the merge. Return { enqueued: true|false, awaitingControlPlaneApproval: true|false, reviewedReady: ` +
+		`true|false, reason: "<stop/refusal reason if not enqueued>" }.`,
 	{
 		agentType: "shipper",
 		isolation: "worktree",
 		schema: {
 			type: "object",
 			properties: {
-				merged: { type: "boolean" },
-				sha: { type: "string" },
+				enqueued: { type: "boolean" },
+				awaitingControlPlaneApproval: { type: "boolean" },
 				reviewedReady: { type: "boolean" },
 				reason: { type: "string" },
 			},
-			required: ["merged"],
+			required: ["enqueued"],
 			additionalProperties: false,
 		},
 	},
 );
 log(
-	shipped.merged
-		? `PR #${pr} merged${shipped.sha ? ` @ ${shipped.sha}` : ""}`
-		: `PR #${pr} not merged (reviewedReady=${shipped.reviewedReady ?? false}): ${shipped.reason ?? "see shipper output"}`,
+	shipped.enqueued
+		? `PR #${pr} QUEUED -> auto-merges on green`
+		: shipped.awaitingControlPlaneApproval
+			? `PR #${pr} awaiting control-plane approval (§CP) — a @kamp-us/control-plane member must approve at the current head; re-run the shipper after approval`
+			: `PR #${pr} not enqueued (reviewedReady=${shipped.reviewedReady ?? false}): ${shipped.reason ?? "see shipper output"}`,
 );
 
 return {
-	merged: !!shipped.merged,
+	enqueued: !!shipped.enqueued,
+	awaitingControlPlaneApproval: !!shipped.awaitingControlPlaneApproval,
 	pr,
 	rounds: round,
-	sha: shipped.sha,
 	reviewedReady: shipped.reviewedReady,
 	reason: shipped.reason,
 };

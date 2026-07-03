@@ -55,7 +55,7 @@ A header earns its place when it states **what the module is + the one non-obvio
 - **Never touch code.** Comments only. The diff must be comments-and-whitespace.
 - **Never delete `TODO` / `FIXME` / `HACK` markers.** If one is stale or actionable, file it with `/report` and remove it; otherwise leave it.
 - **Never strip license headers, shebang lines, or tool pragmas** (`@ts-expect-error`, `biome-ignore`, `eslint-disable`, `@vitest-environment`).
-- **Never invent an ADR number.** Read `.decisions/index.md` for the next monotonic number (the `/adr` skill does this).
+- **Never invent an ADR number.** Derive the next monotonic number from the `.decisions/NNNN-*.md` filenames (`ls .decisions/`); there is no committed index (ADR 0126). The `/adr` skill does this.
 
 ## Running it at scale
 

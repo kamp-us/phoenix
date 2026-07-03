@@ -110,8 +110,8 @@
 	cursor: pointer;
 }
 .kp-topbar__btn:hover {
-	background: var(--accent-soft);
-	color: var(--accent);
+	background: var(--surface);
+	color: var(--accent-11);
 }
 
 .kp-topbar__user {
@@ -135,19 +135,19 @@
 	outline-offset: 2px;
 }
 
-.kp-topbar__profile-link {
-	font: var(--t-body-sm);
-	font-weight: 500;
-	color: var(--accent);
-	text-decoration: none;
-	padding: 2px 6px;
-	border-radius: var(--r-sm);
-}
-.kp-topbar__profile-link:hover {
-	background: var(--accent-soft);
-}
-
 /* The ambient self-karma chip (#1208) — keep it centered in the topbar row. */
 .kp-topbar__karma {
 	align-self: center;
+}
+
+/* The quiet unread bildirim chip on the user-menu trigger (#1694) — count is
+   text in a subtle outline, never color-only state. */
+.kp-topbar__bildirim-badge {
+	font: var(--t-meta);
+	color: var(--text-primary);
+	border: 1px solid var(--border-subtle);
+	border-radius: 999px;
+	padding: 0 var(--s-1);
+	min-width: 1.25em;
+	text-align: center;
 }

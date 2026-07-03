@@ -8,6 +8,7 @@
  */
 
 import type {TargetKind} from "../../db/target-kind.ts";
+import type {ReportTargetContext} from "./enrich.ts";
 import type {OpenReportGroup, ReportResult} from "./Report.ts";
 import type {Resolution} from "./resolution.ts";
 import type {OpenReport, ReportReceipt, ResolveReceipt} from "./views.ts";
@@ -21,7 +22,10 @@ export const toReportReceipt = (r: ReportResult): ReportReceipt => ({
 	created: r.created,
 });
 
-export const toOpenReport = (g: OpenReportGroup): OpenReport => ({
+// `context` is the reported target's in-situ enrichment (#1702), resolved in the
+// `Moderate`-gated `report.listOpen` path; absent (`undefined`) for a target whose
+// content couldn't be read, in which case the `target*` fields are null.
+export const toOpenReport = (g: OpenReportGroup, context?: ReportTargetContext): OpenReport => ({
 	__typename: "OpenReport",
 	id: `${g.targetKind}:${g.targetId}`,
 	targetKind: g.targetKind,
@@ -29,6 +33,9 @@ export const toOpenReport = (g: OpenReportGroup): OpenReport => ({
 	reportCount: g.reportCount,
 	reason: g.reason,
 	firstReportedAt: g.firstReportedAt.toISOString(),
+	targetExcerpt: context?.excerpt ?? null,
+	targetAuthor: context?.author ?? null,
+	targetRef: context?.ref ?? null,
 });
 
 export const toResolveReceipt = (r: {

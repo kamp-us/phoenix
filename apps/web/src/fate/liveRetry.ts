@@ -42,3 +42,74 @@ export function nextLiveRetryDelayMs(attempt: number): number {
 	const exp = LIVE_RETRY_BASE_MS * 2 ** Math.max(0, attempt);
 	return Math.min(exp, LIVE_RETRY_CAP_MS);
 }
+
+/** Injectable timer seam so the budget/coalescing invariant is testable off real time. */
+export interface RetryTimers {
+	readonly setTimeout: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+	readonly clearTimeout: (handle: ReturnType<typeof setTimeout>) => void;
+}
+
+export interface LiveRetryController {
+	/**
+	 * Ask for a bounded back-off reconnect. Coalesces a BURST of transient errors
+	 * from one failed connect into a single scheduled retry, and runs `fireRetry`
+	 * (the reconnect trigger) once the back-off elapses. A call while a retry is
+	 * already pending, or once the budget is spent, is a no-op.
+	 */
+	readonly schedule: (fireRetry: () => void) => void;
+	/** Cancel a pending retry without firing it (unmount). */
+	readonly cancel: () => void;
+	/** Restore the full budget and drop any pending retry (new session identity). */
+	readonly reset: () => void;
+}
+
+/**
+ * The bounded cold-start reconnect budget (ADR 0095), extracted from `FateProvider`
+ * so its coalescing invariant is unit-testable off the React tree.
+ *
+ * The invariant: the budget counts CONNECT attempts, not error fan-out. One failed
+ * (cold) live connect fans its error out to EVERY mounted live subscription — fate's
+ * native client loops all `liveSubscriptions` on a connection error, so the client's
+ * `onLiveError` fires once PER subscription, not once per connect. Charging the budget
+ * per error drains the N-attempt budget ~N× faster on a page with N live views,
+ * exhausting it before the DO warms — the #1738 post-reconnect defect, where a
+ * post-detail page (pin + header + comments live views) burned the 5-attempt budget in
+ * ~2 cold connects and never re-established the stream, so a vote published after the
+ * reload never reached the reconnected client. Coalescing the burst behind a single
+ * `pending` timer makes each cold connect cost exactly one attempt, so the five
+ * back-offs span five real reconnects (~7.75s) — long enough to outlast a cold DO.
+ */
+export function createLiveRetryController(
+	timers: RetryTimers = {setTimeout, clearTimeout},
+): LiveRetryController {
+	let attempt = 0;
+	let pending: ReturnType<typeof setTimeout> | null = null;
+
+	const drop = () => {
+		if (pending != null) {
+			timers.clearTimeout(pending);
+			pending = null;
+		}
+	};
+
+	return {
+		schedule: (fireRetry) => {
+			// A retry is already scheduled for this failed connect → coalesce the error
+			// burst; the fan-out of one connect failure must cost only one attempt.
+			if (pending != null) return;
+			if (attempt >= LIVE_RETRY_MAX_ATTEMPTS) return;
+			const delay = nextLiveRetryDelayMs(attempt);
+			attempt += 1;
+			pending = timers.setTimeout(() => {
+				// Clear BEFORE firing so the next failed connect's burst can schedule again.
+				pending = null;
+				fireRetry();
+			}, delay);
+		},
+		cancel: drop,
+		reset: () => {
+			attempt = 0;
+			drop();
+		},
+	};
+}

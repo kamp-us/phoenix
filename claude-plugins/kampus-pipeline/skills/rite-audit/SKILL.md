@@ -1,6 +1,7 @@
 ---
 name: rite-audit
-description: Drive the Playwright MCP against a flag-on audit stage to walk the v1 earned-authorship rite (çaylak→yazar) as an agentic explorer and emit raw pass/fail findings per dimension. Trigger on "run the rite audit", "audit the authorship rite", "rite-audit", "walk the çaylak→yazar rite", "/rite-audit". This is the audit harness's explorer: it consumes the ephemeral stage lifecycle (@kampus/audit-stage, #1512) — its base URL + minted test-mod — provisioned by epic #1510, runs each registered dimension over that one stage, and produces the raw findings the verdict report (#1516) structures and archives. It never deploys, seeds, or destroys the stage (that is @kampus/audit-stage), and never runs against production.
+description: >-
+  Drive the Playwright MCP against a flag-on audit stage to walk the v1 earned-authorship rite (çaylak→yazar) as an agentic explorer and emit raw pass/fail findings per dimension. Trigger on "run the rite audit", "audit the authorship rite", "rite-audit", "walk the çaylak→yazar rite", "/rite-audit". This is the audit harness's explorer: it consumes the ephemeral stage lifecycle (@kampus/audit-stage, #1512) — its base URL + minted test-mod — provisioned by epic #1510, runs each registered dimension over that one stage, and produces the raw findings the verdict report (#1516) structures and archives. It never deploys, seeds, or destroys the stage (that is @kampus/audit-stage), and never runs against production.
 ---
 
 # rite-audit

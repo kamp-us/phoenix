@@ -1,6 +1,7 @@
 ---
 name: heal-ci
-description: Classify a red CI run on the configured target repo into flake-vs-defect and route it — the failure triage the self-heal loop needs. Given a failed run id or a PR, fetch the failed logs, match against a small fixed signature taxonomy, and emit ONE routed action: rerun a known transient exactly once, or file a defect via report. Trigger on "heal CI for #N", "why did the run fail", "classify this failure", "/heal-ci", or from `ship-it` when checks come back red.
+description: >-
+  Classify a red CI run on the configured target repo into flake-vs-defect and route it — the failure triage the self-heal loop needs. Given a failed run id or a PR, fetch the failed logs, match against a small fixed signature taxonomy, and emit ONE routed action: rerun a known transient exactly once, or file a defect via report. Trigger on "heal CI for #N", "why did the run fail", "classify this failure", "/heal-ci", or from `ship-it` when checks come back red.
 ---
 
 # heal-ci

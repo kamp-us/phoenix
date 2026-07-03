@@ -3,6 +3,7 @@ import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {Field, FieldError, Form, Hint, Input, Label, Textarea} from "../components/ui/Form";
 import {Tabs} from "../components/ui/Tabs";
+import {prefillIfEmpty, useLinkMetadata} from "../lib/useLinkMetadata";
 
 export function PanoCreateDialog({
 	open,
@@ -14,6 +15,24 @@ export function PanoCreateDialog({
 	onSubmit?: (data: {mode: "link" | "text"; title: string; url?: string; text?: string}) => void;
 }) {
 	const [mode, setMode] = React.useState<"link" | "text">("link");
+	const {fetchMetadata} = useLinkMetadata();
+
+	// On URL blur, prefill the (still-empty) sibling title from the link's
+	// metadata. Uncontrolled form: reach the title input by name off the shared
+	// <form>, and let `prefillIfEmpty` enforce the never-clobber rule — the same
+	// shared policy `PanoSubmitPage` uses.
+	async function prefillFromUrl(e: React.FocusEvent<HTMLInputElement>) {
+		const form = e.currentTarget.form;
+		const url = e.currentTarget.value;
+		if (!form) return;
+		const meta = await fetchMetadata(url);
+		const titleInput = form.elements.namedItem("title");
+		if (titleInput instanceof HTMLInputElement) {
+			prefillIfEmpty(titleInput.value, meta.title, (v) => {
+				titleInput.value = v;
+			});
+		}
+	}
 
 	return (
 		<Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -49,7 +68,7 @@ export function PanoCreateDialog({
 								</Field>
 								<Field name="url">
 									<Label>URL</Label>
-									<Input name="url" type="url" required />
+									<Input name="url" type="url" required onBlur={prefillFromUrl} />
 									<FieldError>URL düzgün değil</FieldError>
 								</Field>
 								<Dialog.Foot>

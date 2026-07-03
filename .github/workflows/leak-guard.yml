@@ -7,6 +7,11 @@ name: leak-guard
 # mode; the deny-list lives once in the tool (findLeaks), never re-grepped here.
 on:
   pull_request:
+  # `scan changed files for leaks` is a branch-protection-REQUIRED status check, so the
+  # merge queue awaits it on the batched `merge_group` ref before it can merge; without
+  # this trigger that required check never runs on the batch and every queued merge hangs
+  # (ADR 0132).
+  merge_group:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,15 +37,29 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # base...head = files this PR adds/changes vs the merge-base with the target
+      # base...head = files this change adds/changes vs the merge-base with the target
       # branch (--diff-filter=ACMR drops deletions/renames-source). The scanner
       # self-scopes to doc surfaces, so we hand it every changed file; a diff with
       # no changed files (or none surviving the filter) is a clean pass — we skip
       # the invocation entirely rather than call `scan` with zero args.
+      #
+      # On `pull_request` the base is `github.base_ref` (the target branch). On the
+      # merge queue's batched `merge_group` ref `base_ref` is empty, so we diff against
+      # the batch's `merge_group.base_sha` — the base commit the queue built the batch on
+      # (ADR 0132) — which yields exactly the files the batch adds vs main.
       - name: Scan PR diff for leaks
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          mapfile -t changed < <(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD")
+          if [ -n "$BASE_REF" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            base="origin/$BASE_REF"
+          else
+            git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            base="$MERGE_GROUP_BASE_SHA"
+          fi
+          mapfile -t changed < <(git diff --name-only --diff-filter=ACMR "$base...HEAD")
           if [ "${#changed[@]}" -eq 0 ]; then
             echo "No changed files — nothing to scan."
             exit 0

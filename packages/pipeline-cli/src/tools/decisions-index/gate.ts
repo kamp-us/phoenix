@@ -16,7 +16,7 @@
 import {readdirSync, readFileSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
 import {Console, Data, Effect} from "effect";
-import {type AdrFile, buildIndex, DuplicateIdError} from "./decisions-index.ts";
+import {type AdrFile, buildCompact, buildIndex, DuplicateIdError} from "./decisions-index.ts";
 
 const INDEX_FILE = "index.md";
 const ADR_FILE = /^\d+[A-Za-z]*-.+\.md$/;
@@ -41,15 +41,24 @@ export const readAdrFiles = (dir: string): Effect.Effect<ReadonlyArray<AdrFile>,
 		catch: (cause) => new IoError({path: dir, cause}),
 	});
 
-/** Build the index, folding a duplicate id into a CheckFailed gate failure. */
-export const build = (files: ReadonlyArray<AdrFile>): Effect.Effect<string, CheckFailed> =>
+/** Fold a builder's throw (a duplicate id or a malformed file) into a CheckFailed. */
+const toGateFail = (build: () => string): Effect.Effect<string, CheckFailed> =>
 	Effect.try({
-		try: () => buildIndex(files),
+		try: build,
 		catch: (cause) =>
 			cause instanceof DuplicateIdError
 				? new CheckFailed({reason: cause.message})
 				: new CheckFailed({reason: String((cause as Error)?.message ?? cause)}),
 	});
+
+/** Build the index, folding a duplicate id into a CheckFailed gate failure. */
+export const build = (files: ReadonlyArray<AdrFile>): Effect.Effect<string, CheckFailed> =>
+	toGateFail(() => buildIndex(files));
+
+/** Build the compact ambient map (ADR 0126), same duplicate-id fold as `build`. */
+export const buildCompactMap = (
+	files: ReadonlyArray<AdrFile>,
+): Effect.Effect<string, CheckFailed> => toGateFail(() => buildCompact(files));
 
 /**
  * The PR-time gate after the index stopped being committed per-PR (ADR 0066, issue
@@ -77,6 +86,18 @@ export const generateIndex = (dir: string): Effect.Effect<void, IoError | CheckF
 			catch: (cause) => new IoError({path: target, cause}),
 		});
 		yield* Console.log(`decisions-index: wrote ${target}`);
+	});
+
+/**
+ * Emit the compact ambient ADR map to stdout — one line per ADR (`id · title ·
+ * status`), the map the SessionStart hook injects (ADR 0126 / #1728). Pure read: it
+ * derives from the ADR frontmatter with no committed-file dependency, so it never
+ * drifts and needs no regenerate step. `Console.log` writes the map to stdout.
+ */
+export const compactIndex = (dir: string): Effect.Effect<void, IoError | CheckFailed> =>
+	Effect.gen(function* () {
+		const map = yield* readAdrFiles(dir).pipe(Effect.flatMap(buildCompactMap));
+		yield* Console.log(map);
 	});
 
 /**

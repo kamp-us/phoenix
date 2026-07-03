@@ -16,7 +16,7 @@
 		"lint:worktree": "CHANGED=$({ git diff --name-only --diff-filter=ACMR origin/main; git ls-files --others --exclude-standard; } | grep -Ev '^node_modules/' | grep -E '\\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc|css|graphql)$' | sort -u || true); if [ -n \"$CHANGED\" ]; then biome check --files-ignore-unknown=true $CHANGED; else echo 'lint:worktree: no biome-handled changed files vs origin/main (clean skip)'; fi",
 		"format": "biome check --write .",
 		"prepare": "if [ \"$(git rev-parse --git-dir 2>/dev/null)\" = \"$(git rev-parse --git-common-dir 2>/dev/null)\" ]; then lefthook install || true; else echo 'prepare: linked worktree — skipping lefthook install (git hooks are primary-checkout-managed)'; fi",
-		"postinstall": "effect-tsgo patch"
+		"postinstall": "node scripts/patch-effect-tsgo.mjs"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",

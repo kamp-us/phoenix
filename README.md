@@ -77,6 +77,8 @@ apps/web/
 | `pnpm lint` | `biome check .`. |
 | `pnpm format` | `biome check --write .`. |
 
+Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — which pins the workspace binary (2.4.15). A bare `biome …` can resolve a stale **global** install (e.g. a homebrew 2.1.1) that doesn't recognize the GritQL node bindings our `biome-plugins/*.grit` rules use, so it prints spurious `Compile Error` lines while loading them. That noise is cosmetic (the run still exits `0`, unaffected via pnpm and in CI) and safe to ignore — but go through pnpm and it won't appear.
+
 ## Conventions
 
 - **Effect is the backend control flow.** Services are `Context.Service` classes; methods are `Effect.fn("Service.method")` for free spans; errors are `Data.TaggedError`. Input validation lives in service methods, not the route layer (ADR [0013](./.decisions/0013-validation-in-service-methods.md)).
@@ -121,7 +123,7 @@ Two more skills serve the docs rather than the chain: [`adr`](./.claude/skills/a
 
 ## Where to read deeper
 
-Two doc surfaces carry the rest: **[.decisions/](./.decisions/index.md)** holds the ADRs — the *why* behind each choice and the history of how it got here; **[.patterns/](./.patterns/index.md)** describes *how* the current code is shaped. Read a pattern when you're about to write that kind of code; read an ADR when you want to revisit a decision. New decisions go through `/adr`. When a doc and `apps/web/worker/` disagree, the source wins — fix the doc.
+Two doc surfaces carry the rest: **[.decisions/](./.decisions/)** holds the ADRs — the *why* behind each choice and the history of how it got here; **[.patterns/](./.patterns/index.md)** describes *how* the current code is shaped. Read a pattern when you're about to write that kind of code; read an ADR when you want to revisit a decision. New decisions go through `/adr`. When a doc and `apps/web/worker/` disagree, the source wins — fix the doc.
 
 **New here? Read in this order:**
 

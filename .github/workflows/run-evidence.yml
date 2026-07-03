@@ -7,10 +7,11 @@
 # `head_sha`, and download the `run-evidence` artifact.
 #
 # Load-bearing invariant (ADR 0054 §1 / 0056 fetch contract): the manifest's `commit`
-# MUST equal the PR HEAD sha. On `pull_request`, `github.sha` is the synthetic merge
-# commit, NOT the head — so the adapter is stamped with `github.event.pull_request.head.sha`
-# explicitly. Getting this wrong silently unbinds the evidence from the commit the gate
-# keys on.
+# MUST equal the head SHA the gate keys on. On `pull_request`, `github.sha` is the
+# synthetic merge commit, NOT the head — so the adapter is stamped with the head via the
+# job-level HEAD_SHA (`pull_request.head.sha`, or `merge_group.head_sha` on the merge
+# queue's batch ref — ADR 0132). Getting this wrong silently unbinds the evidence from the
+# commit the gate keys on.
 #
 # crabbox output contract (verified locally against v0.31.0, spike #235): `crabbox run
 # --timing-json` prints its machine-readable run-summary JSON as the LAST line of its
@@ -23,6 +24,11 @@ name: run-evidence
 
 on:
   pull_request:
+  # The merge queue awaits the run-evidence gate on the batched `merge_group` ref
+  # before it can merge; without this trigger the bundle never runs on the batch and
+  # every queued merge hangs (ADR 0132). On `merge_group` the head is the batch head
+  # (`merge_group.head_sha`), the exact commit that merges — resolved into HEAD_SHA below.
+  merge_group:
 
 # One producer run per head ref; cancel superseded pushes so the latest head SHA wins.
 concurrency:
@@ -35,12 +41,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # HEAD_SHA is the commit the bundle binds to — the PR head on `pull_request`, the
+    # batch head on `merge_group` (`pull_request.head.sha` is empty on merge_group). Both
+    # are the exact ref that merges, the binding key the gate consumers assert (ADR 0132).
+    env:
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
     steps:
-      # Check out the PR HEAD (not the merge ref) so the in-repo `git rev-parse HEAD`
+      # Check out the head (not the merge ref) so the in-repo `git rev-parse HEAD`
       # and the explicit head-sha stamp agree, and crabbox syncs the head tree.
       - uses: actions/checkout@v4.2.2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ env.HEAD_SHA }}
 
       - uses: pnpm/action-setup@v4.1.0
 
@@ -151,10 +162,11 @@ jobs:
             if [ -n "$JUNIT" ]; then echo "JUNIT=$JUNIT" >> "$GITHUB_ENV"; fi
           fi
 
-      # Map the crabbox run → ADR 0054 §2 manifest. `--commit` is the PR HEAD sha
-      # (not github.sha, the merge ref) — the binding key #246/#247 assert against.
-      # The adapter exits non-zero on malformed input / unresolvable commit, so any
-      # failure here fails the step red. `--junit` is conditional: omitted ⇒ zeroed tests.
+      # Map the crabbox run → ADR 0054 §2 manifest. `--commit` is HEAD_SHA (the PR head,
+      # or the batch head on merge_group — not github.sha, the merge ref) — the binding
+      # key #246/#247 assert against. The adapter exits non-zero on malformed input /
+      # unresolvable commit, so any failure here fails the step red. `--junit` is
+      # conditional: omitted ⇒ zeroed tests.
       - name: Assemble run-evidence manifest
         run: |
           set -euo pipefail
@@ -169,14 +181,14 @@ jobs:
           node packages/pipeline-cli/src/bin.ts crabbox-manifest \
             --run-summary "$RUN_SUMMARY" \
             "${JUNIT_ARG[@]}" \
-            --commit "${{ github.event.pull_request.head.sha }}" \
+            --commit "$HEAD_SHA" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --environment ci \
             --output "$BUNDLE/manifest.json"
-          # Assert the stamped commit is the PR head sha — fail closed on drift.
+          # Assert the stamped commit is the head sha — fail closed on drift.
           STAMPED=$(node -e "process.stdout.write(require(process.argv[1]).commit)" "$BUNDLE/manifest.json")
-          if [ "$STAMPED" != "${{ github.event.pull_request.head.sha }}" ]; then
-            echo "::error::manifest.commit ($STAMPED) != PR head sha (${{ github.event.pull_request.head.sha }})" >&2
+          if [ "$STAMPED" != "$HEAD_SHA" ]; then
+            echo "::error::manifest.commit ($STAMPED) != head sha ($HEAD_SHA)" >&2
             exit 1
           fi
 

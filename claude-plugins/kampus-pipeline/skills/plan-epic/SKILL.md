@@ -89,6 +89,17 @@ names (the one-concept-named-four-ways drift the audit found, #851):
 (architecture vocabulary). Point at the glossary, never copy a definition into this skill —
 the register is the single source. (ADR 0099.)
 
+## Vocabulary impact — surface the domain nouns an epic plan introduces
+
+Reading the glossary (above) keeps you *reusing* existing names; this is its complement — **surfacing the new ones you introduce.** An epic plan is a primary *coining site*: its user stories and `### What to build` specs name the domain nouns a whole fleet of `write-code` agents will then build against, and those names propagate before anyone routes them past a gate. The `review-code` glossary-freshness gate (Step 3c) only catches **structural** surfaces (a new feature folder / package / export); a **concept-level** noun coined in a plan — a new model, a redefined lever, a feature's Turkish brand name — sails past it. So catch it **at coinage, here**, where you already hold the concept (ADR [0128](https://github.com/kamp-us/phoenix/blob/main/.decisions/0128-glossary-concept-trigger-off-the-gate.md) prong (c), Fixes #1737; the parallel is the `/adr` skill's vocabulary-impact section — the two coining skills catch the routed-term class at its source).
+
+This is a **required, not-silently-skippable** part of the plan. As you write Step 2, ask: *does this plan introduce domain nouns not already in `.glossary/TERMS.md`, or redefine an existing one?* You must land on **exactly one** of two explicit outcomes and record it in the plan's `### Vocabulary impact` subsection (Step 2) — you cannot leave it blank:
+
+- **Noun(s) introduced/redefined → feed the glossary.** Name each new domain noun the plan coins (a feature's brand name, a new entity/model, a redefined term), and route it to `.glossary/TERMS.md`: add/update its row when the canonical definition is short and clear, or **invoke `/glossary`** (`claude-plugins/kampus-pipeline/skills/glossary/SKILL.md`) / file a `report` for the fuller treatment. Surfacing it in the plan is what makes the child `write-code` agents inherit the canonical name instead of re-coining a synonym (the one-concept-named-four-ways drift, #851).
+- **No vocabulary impact → record it explicitly.** If the plan introduces no new domain noun (it sequences and splits work over already-named concepts), state `### Vocabulary impact` → "none" plainly. The explicit "none" is the recorded outcome — it separates *"checked, there is none"* from *"forgot to check."*
+
+This hook is **off the fail-closed gate by construction**: it is authoring-time judgment in this skill, it blocks no PR and no child, and it does not (and must not) alter `review-code`'s Step 3c. It is the routed-term half of ADR 0128 (alongside `/adr`); the un-routed code-PR class is the sibling drift-sweep backstop, not this skill's job.
+
 ## Acquire the epic-lock before you mutate — release it on every exit
 
 `plan-epic` and `review-plan` both mutate one epic's children (you supersede/unlink/close on
@@ -295,6 +306,7 @@ Below the untouched brief, write the plan a `write-code` fleet needs, as a
 ### Approach
 ### Testing strategy
 ### Task-split rationale
+### Vocabulary impact
 ```
 
 (The `## Dependencies` topology is a separate top-level section you pin in Step 5 — not part
@@ -339,6 +351,13 @@ of this plan block.) What each section holds:
   The split is tracer-bullet vertical (Step 3) and falls on natural seams; the rationale is
   what makes the `## Dependencies` topology legible, and it names which stories each slice
   carries.
+- **Vocabulary impact** — the required point-of-coining glossary catch (see [§Vocabulary
+  impact](#vocabulary-impact--surface-the-domain-nouns-an-epic-plan-introduces)). Record
+  **exactly one** explicit outcome: either the new domain noun(s) this plan coins, each
+  surfaced to `.glossary/TERMS.md` (added directly, or routed via `/glossary` / a `report`),
+  **or** a plainly-stated "none" when the plan introduces no new term. This section is never
+  left blank — the explicit "none" is a recorded outcome, not a skip — and it is a
+  coining-time authoring hook only, off the fail-closed `review-code` gate (ADR 0128 prong (c)).
 
 Keep it grounded. No invented requirements, no aspirational scope the brief didn't ask for.
 The plan serves the children; if a paragraph doesn't change how a child gets built or what it

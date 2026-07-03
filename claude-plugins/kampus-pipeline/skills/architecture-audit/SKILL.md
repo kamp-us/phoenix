@@ -91,10 +91,13 @@ This skill **carries its own method docs**, which is method, not vocabulary:
 
 Before walking code, read `.glossary/LANGUAGE.md` and `.glossary/TERMS.md` (above). Then skim
 the decisions that should not be re-litigated, so the audit doesn't propose something already
-decided against — the `.decisions/` index and any ADR touching the scope you're auditing:
+decided against — scan the ADRs and read any touching the scope you're auditing. There is no
+committed index (ADR 0126); the `NNNN-slug` filenames are the map, and each file's frontmatter
+carries `id`/`title`/`status`:
 
 ```bash
-cat .decisions/index.md
+ls .decisions/                                      # the map — one NNNN-slug.md per ADR
+node packages/pipeline-cli/src/bin.ts decisions-index compact   # or: the compact id · title · status map
 ```
 
 Treat a recorded decision as decided ground: don't surface a finding that contradicts a

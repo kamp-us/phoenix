@@ -12,15 +12,21 @@ export function Popup({
 	children,
 	side = "bottom",
 	align = "start",
+	positionMethod = "fixed",
 	...rest
 }: {
 	children: React.ReactNode;
 	side?: "top" | "right" | "bottom" | "left";
 	align?: "start" | "center" | "end";
+	positionMethod?: "absolute" | "fixed";
 }) {
 	return (
 		<BaseMenu.Portal>
-			<BaseMenu.Positioner side={side} align={align} sideOffset={4}>
+			{/* positionMethod="fixed" resolves the anchor against the trigger's live
+			    viewport rect instead of Base UI's default `absolute` strategy, whose
+			    offset-parent/scroll conversion detaches the popup from a trigger inside
+			    a `position: sticky` ancestor (the topbar/subnav nav stack) — #1640. */}
+			<BaseMenu.Positioner side={side} align={align} sideOffset={4} positionMethod={positionMethod}>
 				<BaseMenu.Popup className={styles.popup} {...rest}>
 					{children}
 				</BaseMenu.Popup>

@@ -1,5 +1,6 @@
 import {type BrowserContext, expect, type Page, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {promoteToYazar} from "./_helpers/promote";
 
 declare global {
 	interface Window {
@@ -28,15 +29,22 @@ declare global {
  * appears, it arrived live.
  */
 
-/** Sign up + clear the username bootstrap gate on an arbitrary page/context. */
-async function signUpAndBootstrap(page: Page): Promise<void> {
+/**
+ * Sign up + clear the username bootstrap gate on an arbitrary page/context.
+ * Returns the sign-up `email` — the stable handle a spec needs to promote the
+ * user's authorship tier over D1 (`promoteToYazar`), since the UI sign-up flow
+ * doesn't surface the assigned user id.
+ */
+async function signUpAndBootstrap(page: Page): Promise<{email: string}> {
 	const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-	await signUp(page, {email: `live${suffix}@kamp.us`});
+	const email = `live${suffix}@kamp.us`;
+	await signUp(page, {email});
 	await page.locator("input#bootstrap-username").fill(`lv-${suffix}`);
 	await page.getByRole("button", {name: /devam et/i}).click();
 	await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
 		timeout: 10_000,
 	});
+	return {email};
 }
 
 /** Submit a fresh post as the signed-in user; returns its `/pano/<id>` path. */
@@ -66,8 +74,11 @@ test.describe("Pano live (two clients)", () => {
 		const pageB = await ctxB.newPage();
 
 		try {
-			await signUpAndBootstrap(pageA);
+			const {email: emailA} = await signUpAndBootstrap(pageA);
 			await signUpAndBootstrap(pageB);
+			// A casts a post-vote below; the anti-manipulation vote-gate (#1828/#1810)
+			// rejects a fresh çaylak's vote, so promote A to yazar first (ADR 0137).
+			await promoteToYazar(emailA);
 
 			// Client A creates the post all live action targets.
 			const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -122,8 +133,11 @@ test.describe("Pano live (two clients)", () => {
 		const pageB = await ctxB.newPage();
 
 		try {
-			await signUpAndBootstrap(pageA);
+			const {email: emailA} = await signUpAndBootstrap(pageA);
 			await signUpAndBootstrap(pageB);
+			// A casts post-votes below; the anti-manipulation vote-gate (#1828/#1810)
+			// rejects a fresh çaylak's vote, so promote A to yazar first (ADR 0137).
+			await promoteToYazar(emailA);
 
 			const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 			const title = `reconnect target ${stamp}`;

@@ -335,9 +335,23 @@ git update-ref -d "$PR_REF"          # drop the throwaway ref when done
 ```
 
 If a check genuinely needs a materialized tree (rare for a doc PR), add a **throwaway
-worktree** from `$PR_REF` (`git worktree add "$(mktemp -d)/review-doc-head-$PR" "$PR_REF"`,
-torn down with `git worktree prune` after) — never `git checkout` / `gh pr checkout` in the
-checkout you were launched in.
+worktree** from `$PR_REF` and **persist its run-unique path to a per-run `mktemp` handle**
+so a later step recovers the exact own tree rather than re-deriving it from the shared,
+PR-namespaced `review-doc-head-$PR` leaf (which would match a sibling reviewer's
+`review-doc-head-<otherPR>` under a parallel fan-out and pin the wrong head — the #1807
+collision; mirror the `VERDICT_FILE` (#1465) / report `BODY_FILE` `mktemp` discipline):
+
+```bash
+REVIEW_WT="$(mktemp -d)/review-doc-head-$PR"
+WT_FILE="$(mktemp /tmp/review-doc-wt.XXXXXX)"          # run-unique handle, never a fixed/PR-only path
+{ echo "REVIEW_WT='$REVIEW_WT'"; echo "PR_REF='$PR_REF'"; } > "$WT_FILE"
+git worktree add "$REVIEW_WT" "$PR_REF"
+# … later steps: `. "$WT_FILE"` re-sources $REVIEW_WT/$PR_REF after a between-call reset,
+# never re-deriving from the shared leaf name.
+rm -rf "$REVIEW_WT" && git worktree prune   # tear it down after
+```
+
+Never `git checkout` / `gh pr checkout` in the checkout you were launched in.
 
 ### Fetch the base fresh before any "is-it-shipped on main" check
 
@@ -413,14 +427,13 @@ Run each, scoped to the files the PR touches:
      (the why belongs in `.decisions/`).
    - **Prose** (README and friends) states current-state-for-builders, not retired
      context (CLAUDE.md "Doc surfaces").
-2. **Index row.** For an **ADR**, do **not** require an `.decisions/index.md` row in the
-   PR — that index is generated output regenerated and committed **on merge to main**, not
-   per-PR (ADR [0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md) / issue #1492),
-   so an ADR PR is purely additive and a **missing or stale index row is expected, not a
-   FAIL**. Verify instead that the ADR file's **frontmatter `status`** is correct (it is the
-   source the on-merge generator renders into the row); an `index.md` row committed in an ADR
-   PR is a non-blocking smell to flag (it reintroduces the conflict surface #1492 removed),
-   not a FAIL. A new **pattern** still has a hand-maintained row in
+2. **Index row.** For an **ADR**, there is **no** committed `.decisions/index.md` (ADR
+   [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md)) —
+   discovery is ambient, derived from frontmatter, so an ADR PR is purely additive and a
+   missing index is correct, never a FAIL. Verify instead that the ADR file's **frontmatter
+   `status`** is correct (it is the source the ambient `id · title · status` map renders); an
+   `.decisions/index.md` file **committed** in an ADR PR is a FAIL — it reintroduces the
+   deleted committed index. A new **pattern** still has a hand-maintained row in
    [`.patterns/index.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/index.md)
    (that index is not generated) — verify the row is in the diff or already present and
    consistent, not merely assumed.

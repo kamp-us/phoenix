@@ -18,14 +18,25 @@
  */
 import {type ReactNode, useCallback, useEffect, useState} from "react";
 import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
-import {Navigate} from "react-router";
+import {Link, Navigate} from "react-router";
 import {useSession} from "../auth/client";
-import {Subnav} from "../components/layout/Subnav";
+import {Subnav, type SubnavLink} from "../components/layout/Subnav";
+import "../components/ui/Button.css";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
+import {PANO_FILTERS, panoSortHref, SAVED_LINK} from "../lib/panoNav";
 import {authRedirectPath} from "../lib/returnTo";
 import {countSavedRows, isRowSaved} from "./savedReconcile";
+
+// The saved page has no feed to re-sort in place, so the sort chips are route links
+// back to `/pano?sort=…` (each `end` so a `/pano` link isn't marked active on this
+// nested route), with kaydedilenler the active NavLink — the shared feed nav, so the
+// viewer is never stranded without an in-subnav route back to a sort (#1641).
+const SAVED_SUBNAV_LINKS: SubnavLink[] = [
+	...PANO_FILTERS.map((f) => ({to: panoSortHref(f.sort), label: f.label, end: true})),
+	SAVED_LINK,
+];
 
 const PAGE_SIZE = 20;
 
@@ -109,9 +120,7 @@ function SavedRows({connection}: {connection: SavedConnection}) {
 				))}
 			</div>
 			{count === 0 ? (
-				<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>
-					henüz kaydedilen yok — bir başlığı <strong>kaydet</strong> ile saklayabilirsin.
-				</p>
+				<SavedEmptyState />
 			) : loadNext ? (
 				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>
 					<LoadMoreButton loadNext={loadNext} />
@@ -143,10 +152,50 @@ function SavedRow({
 	return <PanoPostCard post={post} />;
 }
 
+function SavedEmptyState() {
+	return (
+		<div
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				alignItems: "center",
+				textAlign: "center",
+				gap: "var(--s-3)",
+				padding: "var(--s-8) var(--s-3)",
+			}}
+		>
+			<svg
+				width="28"
+				height="28"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="var(--text-faint)"
+				strokeWidth="1.5"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" />
+			</svg>
+			<div style={{display: "flex", flexDirection: "column", gap: "var(--s-1)"}}>
+				<p style={{font: "var(--t-body)", color: "var(--text-primary)", margin: 0}}>
+					henüz kaydedilen yok
+				</p>
+				<p style={{font: "var(--t-meta)", color: "var(--text-muted)", margin: 0}}>
+					bir başlığı <strong>kaydet</strong> ile saklayabilirsin.
+				</p>
+			</div>
+			<Link to="/pano" className="kp-btn kp-btn--primary kp-btn--sm">
+				pano'yu keşfet
+			</Link>
+		</div>
+	);
+}
+
 function SavedChrome({meta, children}: {meta: ReactNode; children: ReactNode}) {
 	return (
 		<>
-			<Subnav title="kaydedilenler" meta={meta} />
+			<Subnav links={SAVED_SUBNAV_LINKS} meta={meta} />
 			<div className="kp-page">
 				<div className="kp-page__inner">{children}</div>
 			</div>

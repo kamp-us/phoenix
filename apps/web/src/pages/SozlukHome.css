@@ -53,6 +53,12 @@
 	color: var(--text-faint);
 }
 
+/* The masthead box is go-to-or-create, not search (#1669): the accent-tinted `+` glyph
+   sets it apart from the topbar's muted magnifier so its create-on-Enter reads as create. */
+.kp-sozluk-home__gotocreate svg {
+	color: var(--accent);
+}
+
 .kp-sozluk-home__create-cta {
 	display: flex;
 	flex-direction: column;

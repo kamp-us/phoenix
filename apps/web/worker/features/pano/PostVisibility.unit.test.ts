@@ -19,7 +19,12 @@ const OTHER = "someone-else";
 
 const live = L.Live();
 const sandboxed = L.sandbox({sandboxedAt: at});
-const removed = L.remove({removedAt: at, removedBy: "mod-1", reason: new L.AuthorDeletion()});
+const removed = L.remove({
+	removedAt: at,
+	removedBy: "mod-1",
+	reason: new L.AuthorDeletion(),
+	sandboxedAt: null,
+});
 
 const viewers = {
 	anonymous: L.anonymousViewer,

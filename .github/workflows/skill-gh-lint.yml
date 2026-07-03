@@ -1,14 +1,18 @@
 name: skill-gh-lint
 
-# The mechanical enforcement of the REST-only-on-this-org convention (#743): grep
-# the whole skill corpus for GraphQL-path `gh` invocations (`gh project`, GraphQL
-# `gh pr/issue edit`, `gh api graphql`) and FAIL on any match. It reuses
-# pipeline-cli's `gh-phoenix lint-skills` mode; the match patterns + self-exempts
-# live once in the tool (lint.ts), never re-grepped here.
+# Two mechanical gates over the skill+agent corpus, both in pipeline-cli's
+# `gh-phoenix lint-skills` mode (match logic lives once in lint.ts, never re-grepped here):
+#   1. REST-only-on-this-org (#743): FAIL on any GraphQL-path `gh` invocation
+#      (`gh project`, GraphQL `gh pr/issue edit`, `gh api graphql`).
+#   2. Frontmatter YAML validity (#1766): FAIL on any SKILL.md / agents/*.md whose
+#      `---`-fenced frontmatter does not parse as strict YAML (the recurring
+#      unquoted-`description:`-with-a-colon-space defect that breaks GitHub's renderer).
 #
-# Scans the FULL corpus (not just changed files) so a GraphQL-path call anywhere in
-# the skills is caught regardless of which PR introduced it, and FAILS CLOSED on
-# zero scope per ADR 0092: a lint that scanned nothing is a broken lint, exit 3.
+# Scans the FULL corpus (not just changed files) so a bad call/frontmatter anywhere
+# is caught regardless of which PR introduced it, and FAILS CLOSED on zero scope per
+# ADR 0092: a lint that scanned nothing is a broken lint, exit 3. The walk roots at
+# the plugin dir so both skills/** and agents/** are covered — a new skill OR agent
+# file is gated automatically.
 on:
   pull_request:
   push:
@@ -20,7 +24,7 @@ concurrency:
 
 jobs:
   lint:
-    name: lint skill corpus for GraphQL-path gh calls
+    name: lint skill corpus for GraphQL-path gh calls + invalid YAML frontmatter
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -34,13 +38,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The skill corpus lives at claude-plugins/kampus-pipeline/skills/** (the
-      # .claude/skills and root skills/ symlinks point into it). Hand the CLI every
-      # .md/.sh file; it self-scopes (self-exempt files are dropped from scope) and
-      # fails closed (exit 3) if scope is empty (ADR 0092).
-      - name: Lint skill corpus
+      # The corpus lives under claude-plugins/kampus-pipeline/** — skills/** (the
+      # .claude/skills and root skills/ symlinks point into it) AND agents/** (the
+      # subagent definitions, also frontmatter-bearing #1766). Root the walk at the
+      # plugin dir so both are covered; hand the CLI every .md/.sh file. The tool
+      # self-scopes (gh-grep drops self-exempt files; the frontmatter check scopes to
+      # SKILL.md / agents/*.md) and fails closed (exit 3) if either scope is empty
+      # (ADR 0092).
+      - name: Lint skill + agent corpus
         run: |
           set -euo pipefail
-          find claude-plugins/kampus-pipeline/skills -type f \( -name '*.md' -o -name '*.sh' \) -print0 \
+          find claude-plugins/kampus-pipeline -type f \( -name '*.md' -o -name '*.sh' \) -print0 \
             | sort -z \
             | xargs -0 node packages/pipeline-cli/src/bin.ts gh-phoenix lint-skills

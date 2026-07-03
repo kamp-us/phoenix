@@ -22,11 +22,11 @@
 	width: 64px;
 	height: 64px;
 	border-radius: 50%;
-	background: var(--accent-soft);
+	background: var(--surface);
 	display: grid;
 	place-items: center;
 	font: 600 22px var(--font-body);
-	color: var(--accent);
+	color: var(--accent-11);
 	overflow: hidden;
 }
 

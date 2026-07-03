@@ -20,7 +20,12 @@ const OTHER = "someone-else";
 
 const live = L.Live();
 const sandboxed = L.sandbox({sandboxedAt: at});
-const removed = L.remove({removedAt: at, removedBy: "mod-1", reason: new L.AuthorDeletion()});
+const removed = L.remove({
+	removedAt: at,
+	removedBy: "mod-1",
+	reason: new L.AuthorDeletion(),
+	sandboxedAt: null,
+});
 
 // The five viewer kinds. çaylak-author and yazar are both non-moderator members;
 // the matrix proves visibility turns on moderator-authority + authorship, not rank.

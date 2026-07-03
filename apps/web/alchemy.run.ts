@@ -41,10 +41,19 @@ import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
 import {
 	authorshipLoopFlag,
+	bildirimFlag,
 	demoTargetingFlag,
 	Flagship,
 	funnelReadoutFlag,
+	modQueueFlag,
+	optimisticDefinitionAddFlag,
+	optimisticDefinitionDeleteFlag,
+	optimisticEditsFlag,
 	panoDraftSaveFlag,
+	panoOptimisticCommentAddFlag,
+	panoOptimisticCommentDeleteFlag,
+	panoOptimisticPostDeleteFlag,
+	panoOptimisticSubmitFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
@@ -65,12 +74,41 @@ export default Alchemy.Stack(
 		yield* demoTargetingFlag(flagship.appId);
 		// The pano taslak (draft-save) dark-ship flag, default-off (#746).
 		yield* panoDraftSaveFlag(flagship.appId);
+		// The optimistic post.submit (feed root-list insert) containment flag,
+		// default-off (#1676, epic #1637).
+		yield* panoOptimisticSubmitFlag(flagship.appId);
 		// The earned-authorship loop (çaylak→yazar) dark-ship flag, default-off
 		// (#1204, epic #1202) — the single seam the authorship-loop epic gates behind.
 		yield* authorshipLoopFlag(flagship.appId);
 		// The conversion-funnel readout dark-ship flag, default-off (#1589) — the
 		// founder/mod tier-count surface gates behind this key until a human release.
 		yield* funnelReadoutFlag(flagship.appId);
+		// The optimistic in-place content-edit dark-ship flag, default-off (#1675,
+		// epic #1637) — post/comment/definition edits pass an optimistic payload only
+		// behind this key until a human release.
+		yield* optimisticEditsFlag(flagship.appId);
+		// The optimistic post.delete dark-ship flag, default-off (#1677, epic #1637) —
+		// gates the instant-feed-removal delete flow until a human release.
+		yield* panoOptimisticPostDeleteFlag(flagship.appId);
+		// The optimistic comment.add dark-ship flag, default-off (#1678, epic #1637) —
+		// gates the instant nested-thread insert (ADR 0125 A1) until a human release.
+		yield* panoOptimisticCommentAddFlag(flagship.appId);
+		// The optimistic comment.delete dark-ship flag, default-off (#1680, epic #1637)
+		// — gates the reply-aware leaf-drop / tombstone delete (ADR 0125 D1) until release.
+		yield* panoOptimisticCommentDeleteFlag(flagship.appId);
+		// The optimistic definition.add dark-ship flag, default-off (#1679, epic #1637)
+		// — gates the nested-connection client-append (ADR 0125) until a human release.
+		yield* optimisticDefinitionAddFlag(flagship.appId);
+		// The bildirim (notification system) dark-ship flag, default-off (#1694, epic
+		// #1666) — the single seam the whole notification surface gates behind.
+		yield* bildirimFlag(flagship.appId);
+		// The optimistic definition.delete dark-ship flag, default-off (#1681, epic
+		// #1637) — gates the nested-connection edge-drop (ADR 0125 D1) until a human
+		// release.
+		yield* optimisticDefinitionDeleteFlag(flagship.appId);
+		// The moderation-queue raporlar surface dark-ship flag, default-off (#1701) —
+		// the moderator-only queue view inside /divan gates behind this key.
+		yield* modQueueFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

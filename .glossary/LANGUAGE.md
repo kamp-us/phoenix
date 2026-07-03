@@ -238,6 +238,30 @@ product and brand names and all user-facing copy stay Turkish; everything techni
 English — URL routes/paths, code identifiers, D1 table/column names, file names. The
 canonical example is that the route is `/search?q=`, not `/ara`.
 
+**Two axes hide inside this one rule — keep them separate.** *Canonical glossary-term
+language* (the name a concept carries in [`TERMS.md`](./TERMS.md)) and *UI copy language*
+(the strings rendered on a user's/mod's screen) are decided **independently**:
+
+- A **technical / analytics / infra concept keeps an English canonical term**, even when
+  the concept appears on a Turkish-speaking user's or mod's screen. A *conversion funnel*
+  is recorded as `funnel / conversion funnel`, never force-translated into a manufactured
+  "dönüşüm hunisi" (an ugly, needless translation of a technical concept). This holds
+  when the [ADR 0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)
+  glossary-freshness gate demands a term for a new internal/analytics surface: **coin the
+  English term, don't translate it** — the concept stays English regardless of what
+  language its page renders in.
+- **User-facing UI copy stays Turkish** — the existing rule, unchanged. The mod-facing
+  funnel page renders Turkish copy while the concept underneath keeps its English
+  canonical name.
+
+The `bildir` row below already models this split: the brand lexeme surfaces in the
+user-facing copy (`bildir` / `bildirildi`) while its technical surface (`features/report`,
+the `Report` service, `content_report`) stays English. The funnel is the mirror case —
+a technical concept whose *canonical term* is English (`funnel / conversion funnel`) even
+though the surface it powers renders Turkish UI copy. Collapsing the two axes ("the
+concept shows on a Turkish screen, so its glossary term must be Turkish") is the mistake
+this note exists to stop.
+
 The Turkish product/brand nouns this repo uses:
 
 | Noun | What it names |
@@ -259,7 +283,7 @@ The Turkish product/brand nouns this repo uses:
 
 ## See also
 
-- [`.decisions/`](../.decisions/index.md) — the *why* and the history behind every term
+- [`.decisions/`](../.decisions/) — the *why* and the history behind every term
   here (an ADR is the source for each phoenix structural term).
 - [`.patterns/`](../.patterns/index.md) — how the current code is shaped (the loader
   contract, the test seams, the DO wiring).

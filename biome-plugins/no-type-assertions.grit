@@ -32,7 +32,10 @@
 // Registered via biome.jsonc `"plugins"`. Test/spec/support files that bridge
 // Node/test types to runtime DO/D1/browser surfaces carry justified
 // `biome-ignore lint/plugin` suppressions (this file is excluded from biome's
-// own formatter in biome.jsonc — its formatter drops `language js;`'s `;`).
+// own formatter in biome.jsonc — a `.grit` file is not a standard
+// biome-formattable surface; the `language js;` below is intact and valid at
+// the pinned 2.4.15, and the earlier "dropped terminator" note is disproven —
+// #1775 traced the `Compile Error` to a stale GLOBAL biome, not the source).
 language js;
 
 or {

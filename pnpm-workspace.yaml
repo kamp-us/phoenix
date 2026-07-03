@@ -46,6 +46,7 @@ catalog:
   typescript: ^6.0.3
   vite: ^8.0.11
   vitest: ^4.1.5
+  yaml: 2.9.0
   zod: 4.4.3
 
 cleanupUnusedCatalogs: true
@@ -57,9 +58,10 @@ onlyBuiltDependencies:
   - lefthook
   - workerd
 
-# Local patch (policy: patch deps locally, don't depend on an upstream/fork
-# release — ADR 0038). ONE hunk on beta.59; re-key on the next alchemy bump.
+# Local patches (policy: patch deps locally, don't depend on an upstream/fork
+# release — ADR 0038). Re-key each on that dep's next version bump.
 #
+# alchemy — ONE hunk on beta.59:
 # 1. Cloudflare/Flagship/Flag.js — `FlagshipFlag.reconcile` UPDATE path reconciles
 #    only the schema/metadata IaC owns ({variations, description}) and preserves the
 #    live serving the dashboard owns ({defaultVariation, rules, enabled}); the no-op
@@ -71,5 +73,16 @@ onlyBuiltDependencies:
 # beta.59 rewrote the DO authoring model (flat → namespaced), removing the
 # `DurableObjectNamespaceScope` type the hunk targeted entirely — the hunk is moot,
 # not upstreamed. Re-keyed beta.56 → beta.59.
+#
+# react-fate — ONE hunk on 1.3.1:
+# 1. lib/index.mjs — `useView`'s `readViewSnapshot` caches the derived thenable for a
+#    NON-fulfilled snapshot (keyed on viewRef + source snapshot + cacheKey, mirroring
+#    the deferred branch's `pendingRef` cache). Unpatched it built a fresh
+#    `Promise.resolve(snapshot).then(…)` per `getSnapshot` call, so
+#    `useSyncExternalStore` looped into React #185 whenever a mounted `useLiveView`'s
+#    record was deleted by an entity live frame (#1686 — the term-page crash on
+#    definition.delete). Regression test:
+#    apps/web/src/fate/useViewPendingSnapshot.test.tsx. Not upstreamed in 1.3.1.
 patchedDependencies:
   alchemy@2.0.0-beta.59: patches/alchemy@2.0.0-beta.59.patch
+  react-fate@1.3.1: patches/react-fate@1.3.1.patch

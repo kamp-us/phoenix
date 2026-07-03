@@ -9,7 +9,7 @@
  * fate's `delete: true` can't be used and the resolver drives the thread live.
  * Error routing is the call-site catch — see `.patterns/fate-mutations-client.md`.
  */
-import type {ViewData, ViewEntity, ViewSelection} from "@nkzw/fate";
+import {toEntityId, type ViewData, type ViewEntity, type ViewSelection} from "@nkzw/fate";
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useLocation, useNavigate, useParams} from "react-router";
@@ -22,17 +22,33 @@ import {
 	PanoPostHeaderView,
 	PanoPostHeaderVote,
 } from "../components/pano/PanoPostHeader";
+import {PanoPostSkeleton} from "../components/pano/PanoSkeleton";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import type {ReportOutcome} from "../components/ui/ReportButton";
+import {
+	beginOptimisticCommentMembership,
+	optimisticCommentRecord,
+} from "../fate/optimisticCommentAdd";
+import {beginOptimisticCommentDelete, decideCommentDelete} from "../fate/optimisticCommentDelete";
+import {bodyEditOptimistic, postEditOptimistic} from "../fate/optimisticEdit";
 import {Screen} from "../fate/Screen";
 import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
-import {useReadbackRefetch} from "../fate/useReadbackRefetch";
+import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
+import {
+	PANO_OPTIMISTIC_COMMENT_ADD,
+	PANO_OPTIMISTIC_COMMENT_DELETE,
+	PANO_OPTIMISTIC_POST_DELETE,
+	PHOENIX_OPTIMISTIC_EDITS,
+} from "../flags/keys";
+import {useFlag} from "../flags/useFlag";
+import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {NotFoundPage} from "./NotFoundPage";
+import {decideOptimisticDelete} from "./optimisticPostDelete";
 import "./PanoPostDetail.css";
 
 const COMMENT_BODY_MAX = 5_000;
@@ -140,6 +156,19 @@ const COMMENT_OVERRIDES: WireMessageOverrides = {
 
 const currentLocationPath = () => `${window.location.pathname}${window.location.search}`;
 
+/**
+ * Router-state key the optimistic delete uses to carry a rejection's inline error
+ * back to the detail page it navigated away from (see `onDeleteConfirm`).
+ */
+const DELETE_ERROR_STATE_KEY = "postDeleteError";
+
+/** Reads a carried delete-error message off opaque router state, or `null`. */
+function readDeleteError(state: unknown): string | null {
+	if (state == null || typeof state !== "object") return null;
+	const value = (state as Record<string, unknown>)[DELETE_ERROR_STATE_KEY];
+	return typeof value === "string" ? value : null;
+}
+
 /** Client-side comment-body validation. Messages come from the shared registry. */
 const validateCommentBody = (trimmed: string, body: string): string | null => {
 	if (trimmed.length === 0) return messageForCode("BODY_REQUIRED", COMMENT_OVERRIDES);
@@ -165,7 +194,7 @@ export function PanoPostDetail() {
 					← akışa dön
 				</Link>
 				<Screen
-					fallback={<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>}
+					fallback={<PanoPostSkeleton />}
 					error={({code}) => (
 						<p style={{font: "var(--t-body)", color: "var(--danger)"}}>
 							başlık yüklenemedi: {code.toLowerCase()}
@@ -201,7 +230,12 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
+	const location = useLocation();
 	const report = useReportHandler();
+	// Dark-ship gate (#1675): with the flag off the edit passes no optimistic
+	// payload and waits for the round-trip, exactly as before.
+	const {value: optimisticEdits} = useFlag(PHOENIX_OPTIMISTIC_EDITS, false);
+	const {value: optimisticDelete} = useFlag(PANO_OPTIMISTIC_POST_DELETE, false);
 
 	const [editing, setEditing] = React.useState(false);
 	const [editTitle, setEditTitle] = React.useState("");
@@ -217,9 +251,22 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	} = useDraftSubmit({overrides: POST_OVERRIDES, redirectPath: postRedirectPath});
 	const {
 		error: deleteError,
+		setError: setDeleteError,
 		inFlight: deleteInFlight,
 		run: runDelete,
 	} = useDraftSubmit({overrides: POST_OVERRIDES, redirectPath: postRedirectPath});
+
+	// Optimistic delete navigates to /pano at once, so a rejection's inline error
+	// can't stay on the unmounted dialog — the rollback returns here carrying the
+	// message in router state (see `onDeleteConfirm`). Rehydrate it: reopen the
+	// dialog with the error, then clear the state so a refresh/back can't re-trigger.
+	React.useEffect(() => {
+		const carried = readDeleteError(location.state);
+		if (carried == null) return;
+		setDeleteError(carried);
+		setConfirmDelete(true);
+		navigate(location.pathname, {replace: true, state: null});
+	}, [location.state, location.pathname, navigate, setDeleteError]);
 
 	const isAuthor = !!session.data?.user && session.data.user.id === data.authorId;
 
@@ -238,10 +285,12 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 			setEditError(validationError);
 			return;
 		}
+		const optimistic = postEditOptimistic(optimisticEdits, {title: trimmedTitle, body: editBody});
 		await runEdit(
 			() =>
 				fate.mutations.post.edit({
 					input: {id: data.id, title: trimmedTitle, body: editBody},
+					...(optimistic ? {optimistic} : {}),
 					view: PanoPostHeaderView,
 				}),
 			"başlık güncellenemedi",
@@ -250,16 +299,46 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	}
 
 	async function onDeleteConfirm() {
-		// `delete: true` evicts the post by id across all connections (incl. the
-		// feed root list) — declarative, no imperative updater.
-		await runDelete(
-			() => fate.mutations.post.delete({input: {id: data.id}, delete: true}),
-			"başlık silinemedi",
-			() => {
-				setConfirmDelete(false);
-				navigate("/pano");
-			},
-		);
+		// `delete: true` evicts the post by id across all connections (incl. the feed
+		// root list) — declarative, no imperative updater. fate applies the eviction
+		// SYNCHRONOUSLY, before the round-trip, and rolls it back before a boundary
+		// throw (see `.patterns/fate-mutations-client.md`).
+		if (!optimisticDelete) {
+			await runDelete(
+				() => fate.mutations.post.delete({input: {id: data.id}, delete: true}),
+				"başlık silinemedi",
+				() => {
+					setConfirmDelete(false);
+					navigate("/pano");
+				},
+			);
+			return;
+		}
+		// Optimistic: the sync eviction already dropped the row, so navigate to /pano
+		// at once — the removal is perceived instantly and the server `feed.deleteEdge`
+		// frame reconciles it away for good (no reappear). Reconcile the outcome in the
+		// background; on rejection fate has restored the post, so return to it with the
+		// existing inline error.
+		setConfirmDelete(false);
+		const promise = fate.mutations.post.delete({input: {id: data.id}, delete: true});
+		const path = postRedirectPath();
+		navigate("/pano");
+		let failureCode: FateWireCode | null = null;
+		try {
+			const {error} = await promise;
+			if (error) failureCode = codeOf(error);
+		} catch (caught) {
+			failureCode = codeOf(caught);
+		}
+		const outcome = decideOptimisticDelete(failureCode);
+		if (outcome.kind === "deleted") return;
+		if (outcome.kind === "auth-redirect") {
+			navigate(authRedirectPath(path));
+			return;
+		}
+		navigate(path, {
+			state: {[DELETE_ERROR_STATE_KEY]: messageForCode(outcome.code, POST_OVERRIDES)},
+		});
 	}
 
 	return (
@@ -366,6 +445,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 				postPath={`/pano/${data.slug ?? data.id}`}
 				signedIn={!!session.data?.user}
 				currentUserId={session.data?.user?.id ?? null}
+				currentUserName={session.data?.user?.name ?? session.data?.user?.email ?? null}
 			/>
 		</>
 	);
@@ -380,6 +460,8 @@ interface CommentsProps {
 	postPath: string;
 	signedIn: boolean;
 	currentUserId: string | null;
+	/** Author display name (`user.name ?? user.email`) for the optimistic comment node; null when signed out. */
+	currentUserName: string | null;
 }
 
 /**
@@ -436,13 +518,15 @@ function Comments(props: CommentsProps) {
 	const report = useReportHandler();
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 	const activeCommentId = useCommentAnchor();
+	// Optimistic comment-add dark-ship gate (#1678, ADR 0125 A1): off ⇒ no temp node,
+	// the thread waits for the live `appendNode` / read-back exactly as today.
+	const {value: optimisticAdd} = useFlag(PANO_OPTIMISTIC_COMMENT_ADD, false);
+	// Optimistic comment-delete dark-ship gate (#1680, ADR 0125 D1): off ⇒ no optimistic
+	// write, the thread waits for the server `deleteEdge` / `live.update` / read-back.
+	const {value: optimisticDelete} = useFlag(PANO_OPTIMISTIC_COMMENT_DELETE, false);
 
-	// Deterministic read-back: if the server's `appendNode` push for the author's own
-	// new comment is lost (publish-vs-register race, #714), refetch this page's request
-	// `network-only` so the comment lands without a manual refresh.
-	const confirmComment = useReadbackRefetch({
-		presentIds: items.map(({node}) => String(node.id)),
-		refetch: () =>
+	const refetchPost = React.useCallback(
+		() =>
 			fate.request(
 				{
 					post: {
@@ -452,6 +536,15 @@ function Comments(props: CommentsProps) {
 				},
 				{mode: "network-only"},
 			),
+		[fate, props.idOrSlug],
+	);
+
+	// Deterministic read-back: if the server's `appendNode` push for the author's own
+	// new comment is lost (publish-vs-register race, #714), refetch this page's request
+	// `network-only` so the comment lands without a manual refresh.
+	const confirmComment = useReadbackRefetch({
+		presentIds: items.map(({node}) => String(node.id)),
+		refetch: refetchPost,
 	});
 
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
@@ -473,22 +566,42 @@ function Comments(props: CommentsProps) {
 	// not-yet-fulfilled node is skipped this frame; membership and node data arrive
 	// together in practice. Re-derives only on `items` change: `parentId` is
 	// immutable and a soft-delete reloads the page.
-	const {roots, childrenByParent, bodyById, refById, visibleCount} = React.useMemo(() => {
-		const nodes: Array<CommentNode<ViewRef<"Comment">>> = [];
-		for (const {node} of items) {
-			const snapshot = fate.readView(CommentTreeNodeView, node);
-			if (snapshot.status !== "fulfilled") continue;
-			const data = snapshot.value.data as CommentNodeData;
-			nodes.push({
-				id: String(data.id),
-				parentId: data.parentId != null ? String(data.parentId) : null,
-				deletedAt: toIsoOrNull(data.deletedAt),
-				body: data.body,
-				ref: node,
-			});
-		}
-		return buildCommentTree(nodes);
-	}, [items, fate]);
+	const {roots, childrenByParent, bodyById, refById, visibleCount, visibleIds, repliedToIds} =
+		React.useMemo(() => {
+			const nodes: Array<CommentNode<ViewRef<"Comment">>> = [];
+			for (const {node} of items) {
+				const snapshot = fate.readView(CommentTreeNodeView, node);
+				if (snapshot.status !== "fulfilled") continue;
+				const data = snapshot.value.data as CommentNodeData;
+				nodes.push({
+					id: String(data.id),
+					parentId: data.parentId != null ? String(data.parentId) : null,
+					deletedAt: toIsoOrNull(data.deletedAt),
+					body: data.body,
+					ref: node,
+				});
+			}
+			// Non-tombstoned ids, for the delete-side read-back: a hard delete drops the
+			// id from membership, a soft delete tombstones it (deletedAt) — either way
+			// the id leaves this set when the delete reconciled.
+			const visibleIds = nodes.filter((n) => n.deletedAt == null).map((n) => n.id);
+			// Every id that some LOADED node names as its parent — the optimistic-delete
+			// branch (ADR 0125 D1) reads this to decide edge-drop (leaf) vs tombstone.
+			// Includes deleted parents so the reply-aware branch mirrors the server's.
+			const repliedToIds = new Set(
+				nodes.map((n) => n.parentId).filter((id): id is string => id != null),
+			);
+			return {...buildCommentTree(nodes), visibleIds, repliedToIds};
+		}, [items, fate]);
+
+	// Delete-side read-back (#1687): if the `deleteEdge` (or soft-delete tombstone)
+	// push for the author's own delete is lost server-side, the thread keeps rendering
+	// the deleted comment — refetch `network-only` so it reconciles away, mirroring
+	// the add-side self-heal above.
+	const confirmCommentGone = useConfirmGone({
+		presentIds: visibleIds,
+		refetch: refetchPost,
+	});
 
 	const childrenForId = React.useCallback(
 		(id: string): ReadonlyArray<{id: string; ref: ViewRef<"Comment">}> =>
@@ -498,16 +611,61 @@ function Comments(props: CommentsProps) {
 
 	async function onDeleteConfirm() {
 		if (!confirmDeleteId) return;
+		const deletedId = confirmDeleteId;
 		// `comment.delete` returns the re-resolved parent `Post` (leaf-hard-delete
 		// vs parent-soft-delete-tombstone is the server's call), so we can't use
 		// `delete: true`. The resolver drives the row live: hard delete → `deleteEdge`
 		// (row drops), soft delete → `live.update` with the `[silindi]` tombstone.
 		await runDelete(
-			() => fate.mutations.comment.delete({input: {id: confirmDeleteId}}),
+			() => {
+				const promise = fate.mutations.comment.delete({input: {id: deletedId}});
+				if (!optimisticDelete) return promise;
+				// Optimistic (ADR 0125 D1): mirror the server branch from the loaded tree —
+				// a client-certain leaf drops its edge, a reply parent OR an incompletely-
+				// loaded thread (uncertain) tombstones. `loadNext == null` ⇒ the whole
+				// thread is loaded, so an empty reply set is a true leaf. Roll the write
+				// back on any failure — the server frame reconciles it away otherwise.
+				const strategy = decideCommentDelete({
+					hasLoadedReply: repliedToIds.has(deletedId),
+					threadComplete: loadNext == null,
+				});
+				const rollback = beginOptimisticCommentDelete(fate.store, {
+					strategy,
+					commentId: deletedId,
+					postId: props.postId,
+					now: new Date(),
+				});
+				promise.then(
+					(res) => {
+						if (res.error) rollback();
+					},
+					() => rollback(),
+				);
+				return promise;
+			},
 			"yorum silinemedi",
-			() => setConfirmDeleteId(null),
+			() => {
+				setConfirmDeleteId(null);
+				confirmCommentGone(deletedId);
+			},
 		);
 	}
+
+	// The optimistic-add bundle both composers share (top-level + every reply insert
+	// into the SAME nested `Post.comments` connection). Null unless the flag is on AND
+	// the author identity is known — the temp node mirrors the author, so a missing
+	// name/id degrades cleanly to the non-optimistic round-trip.
+	const optimisticComment = React.useMemo(
+		() =>
+			optimisticAdd && props.currentUserId != null && props.currentUserName != null
+				? {
+						connection: post.comments,
+						author: props.currentUserName,
+						authorId: props.currentUserId,
+					}
+				: null,
+		[optimisticAdd, post.comments, props.currentUserId, props.currentUserName],
+	);
 
 	const composerFor = React.useCallback(
 		(id: string) => ({
@@ -520,6 +678,7 @@ function Comments(props: CommentsProps) {
 						onPosted={() => setReplyTo(null)}
 						onCancel={() => setReplyTo(null)}
 						onConfirm={confirmComment}
+						optimistic={optimisticComment}
 						autoFocus
 					/>
 				) : undefined,
@@ -534,7 +693,16 @@ function Comments(props: CommentsProps) {
 					/>
 				) : undefined,
 		}),
-		[replyTo, editingCommentId, props.postId, props.signedIn, bodyById, refById, confirmComment],
+		[
+			replyTo,
+			editingCommentId,
+			props.postId,
+			props.signedIn,
+			bodyById,
+			refById,
+			confirmComment,
+			optimisticComment,
+		],
 	);
 
 	return (
@@ -545,6 +713,7 @@ function Comments(props: CommentsProps) {
 				signedIn={props.signedIn}
 				onPosted={() => undefined}
 				onConfirm={confirmComment}
+				optimistic={optimisticComment}
 			/>
 			<h2 className="kp-pano-postpage__thread-heading">{visibleCount} yorum</h2>
 			<div className="kp-pano-thread">
@@ -616,6 +785,12 @@ function Comments(props: CommentsProps) {
  * Top-level + nested comment composer — fate. Submits `comment.add`; the server's
  * `appendNode` live event merges the new comment into the thread in place (the
  * author's own view included), since nested-connection membership is server-driven.
+ *
+ * When `optimistic` is set (the `pano-optimistic-comment-add` flag on, ADR 0125 A1),
+ * the temp node also appears in the thread *before* the round-trip: fate's
+ * `optimistic` payload writes + reconciles the temp entity, and
+ * {@link beginOptimisticCommentMembership} appends the temp id into the nested
+ * `Post.comments` connection and rolls it back on reject.
  */
 function CommentComposer({
 	postId,
@@ -624,6 +799,7 @@ function CommentComposer({
 	onPosted,
 	onCancel,
 	onConfirm,
+	optimistic,
 	autoFocus,
 }: {
 	postId: string;
@@ -633,6 +809,12 @@ function CommentComposer({
 	onCancel?: () => void;
 	/** Hands the created comment's id to the deterministic read-back (see {@link useReadbackRefetch}). */
 	onConfirm?: (commentId: string) => void;
+	/** Optimistic-add bundle (flag on + known author); null ⇒ non-optimistic round-trip. */
+	optimistic?: {
+		connection: unknown;
+		author: string;
+		authorId: string;
+	} | null;
 	autoFocus?: boolean;
 }) {
 	const fate = useFateClient();
@@ -649,12 +831,51 @@ function CommentComposer({
 		validate: validateCommentBody,
 		redirectPath: currentLocationPath,
 		run: async (value) => {
-			const {result, error: callError} = await fate.mutations.comment.add({
+			const optimisticRecord = optimistic
+				? optimisticCommentRecord({
+						postId,
+						parentId,
+						body: value,
+						author: optimistic.author,
+						authorId: optimistic.authorId,
+						now: new Date(),
+					})
+				: undefined;
+			// Fire the mutation first: fate writes the temp record synchronously (before
+			// the first await), so the nested-list append below points at a live record.
+			const promise = fate.mutations.comment.add({
 				input: {postId, body: value, ...(parentId ? {parentId} : {})},
 				view: CommentTreeNodeView,
+				...(optimisticRecord ? {optimistic: optimisticRecord} : {}),
 			});
-			createdId.current = result?.id != null ? String(result.id) : null;
-			return {error: callError};
+			const rollback =
+				optimistic && optimisticRecord
+					? // Qualify the temp id: runtime `Post.comments.list.ids` are `toEntityId`-
+						// qualified (`Comment:<id>`) — fate stores every list id via `toEntityId`
+						// (writeEntity/insertConnectionEdge), and both reconcile paths key off the
+						// qualified id (`resolveOptimisticEntity` rewrites the qualified `previousId`;
+						// the SSE `appendNode` dedups by `toEntityId(nodeType, id)`). A BARE
+						// `optimistic:<ts>` would neither rewrite nor dedup, leaving a duplicated /
+						// non-reconciling temp node (#1714). Matches #1679 definition.add + #1680 delete.
+						beginOptimisticCommentMembership(
+							fate.store,
+							optimistic.connection,
+							toEntityId("Comment", optimisticRecord.id),
+						)
+					: undefined;
+			try {
+				const {result, error: callError} = await promise;
+				createdId.current = result?.id != null ? String(result.id) : null;
+				// callSite reject: fate rolled the temp record back but not this nested
+				// membership — undo it so no phantom row is left (rollback AC).
+				if (callError) rollback?.();
+				return {error: callError};
+			} catch (caught) {
+				// boundary throw: same — roll the membership back, then let useDraftSubmit
+				// classify the throw (UNAUTHORIZED redirect / inline error).
+				rollback?.();
+				throw caught;
+			}
 		},
 		overrides: COMMENT_OVERRIDES,
 		failureFallback: "yorum eklenemedi",
@@ -736,7 +957,9 @@ function CommentComposer({
 
 /**
  * Inline comment edit composer — fate. `comment.edit` writes the new body back
- * through `CommentTreeNodeView` (the view the node reads), so it re-renders in place.
+ * through `CommentTreeNodeView` (the view the node reads), so it re-renders in
+ * place; behind the `phoenix-optimistic-edits` flag it also passes an optimistic
+ * `{body, updatedAt}` so the edit renders before the round-trip (#1675).
  */
 function CommentEditComposer({
 	commentId,
@@ -745,7 +968,7 @@ function CommentEditComposer({
 	onCancel,
 }: {
 	commentId: string;
-	/** Carried for symmetry / future optimistic edit; the write-back is keyed by id. */
+	/** Carried for symmetry; the write-back + optimistic update are keyed by id. */
 	commentRef: ViewRef<"Comment"> | null;
 	initialBody: string;
 	onEdited: () => void;
@@ -753,13 +976,21 @@ function CommentEditComposer({
 }) {
 	const fate = useFateClient();
 	const localId = commentId;
+	// Dark-ship gate (#1675): flag off ⇒ no optimistic payload (round-trip wait).
+	const {value: optimisticEdits} = useFlag(PHOENIX_OPTIMISTIC_EDITS, false);
 
 	const {body, setBody, error, inFlight, submit} = useDraft({
 		initialBody,
 		validate: validateCommentBody,
 		redirectPath: currentLocationPath,
-		run: (value) =>
-			fate.mutations.comment.edit({input: {id: commentId, body: value}, view: CommentTreeNodeView}),
+		run: (value) => {
+			const optimistic = bodyEditOptimistic(optimisticEdits, value);
+			return fate.mutations.comment.edit({
+				input: {id: commentId, body: value},
+				...(optimistic ? {optimistic} : {}),
+				view: CommentTreeNodeView,
+			});
+		},
 		overrides: COMMENT_OVERRIDES,
 		failureFallback: "yorum güncellenemedi",
 		onSuccess: onEdited,

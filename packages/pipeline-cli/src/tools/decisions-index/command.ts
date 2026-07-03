@@ -1,18 +1,21 @@
 /**
- * The `decisions-index` tool — `pipeline-cli decisions-index <generate|validate|check>`.
+ * The `decisions-index` tool — `pipeline-cli decisions-index <compact|validate|generate|check>`.
  *
- * The author + CI surface for ADR 0066, moved into the pipeline-cli registry
- * (epic #994, Phase 2 / #997):
- *   pipeline-cli decisions-index generate          # rewrite .decisions/index.md (on-merge job + local)
- *   pipeline-cli decisions-index validate          # PR gate: exit non-zero on a duplicate / mismatched id (no freshness check — #1492)
- *   pipeline-cli decisions-index check             # local: exit non-zero on a stale committed index or dup id
+ * The author + CI surface, moved into the pipeline-cli registry (epic #994, Phase 2
+ * / #997):
+ *   pipeline-cli decisions-index compact           # emit the compact ambient ADR map to stdout (ADR 0126 / #1728)
+ *   pipeline-cli decisions-index validate          # PR gate: exit non-zero on a duplicate / mismatched id
+ *   pipeline-cli decisions-index generate           # (legacy) rewrite a .decisions/index.md file locally
+ *   pipeline-cli decisions-index check             # (legacy) exit non-zero on a stale committed index
  *   pipeline-cli decisions-index <mode> --dir <d>  # point at a specific .decisions dir
  *
- * `validate` vs `check` (issue #1492): the index stopped being committed per-PR, so
- * the PR gate is `validate` (ADR-file validity only — keeps the #1471 dup-id guard
- * without requiring a regenerated index in the PR). `generate` runs on merge to main
- * to keep the committed index fresh; `check` (the old freshness gate) survives as a
- * local "did I regenerate?" helper but is no longer wired into the PR build.
+ * `compact` is the ambient-discovery surface (ADR 0126): there is no committed
+ * `.decisions/index.md` anymore — discovery goes ambient via a SessionStart hook
+ * (#1728) that injects this one-line-per-ADR map, with `ls .decisions/` + frontmatter
+ * as the fallback. It derives purely from ADR frontmatter, so it never drifts.
+ * `validate` is the PR-side number-lock backstop (duplicate / mismatched id — #1471).
+ * `generate`/`check` are legacy committed-index surfaces retained for local use only;
+ * they are no longer wired into any workflow (the index is not committed — ADR 0126).
  *
  * Exit-code contract (preserved from the package's former `bin.ts`): 0 = clean,
  * any non-zero = failure. `CheckFailed` is the expected gate-fail — its reason
@@ -28,7 +31,7 @@ import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "./decisions-index.ts";
 import type {CheckFailed} from "./gate.ts";
-import {checkIndex, generateIndex, validateAdrs} from "./gate.ts";
+import {checkIndex, compactIndex, generateIndex, validateAdrs} from "./gate.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;
 const DECISIONS_DIR = ".decisions";
@@ -79,6 +82,18 @@ const onCheckFailed = (e: CheckFailed) =>
 		process.exit(GATE_FAIL_EXIT_CODE);
 	});
 
+const compact = Command.make(
+	"compact",
+	{dir: dirFlag},
+	Effect.fn(function* ({dir: dirOpt}) {
+		yield* compactIndex(resolveDir(dirOpt)).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+	}),
+).pipe(
+	Command.withDescription(
+		"Emit the compact ambient ADR map (one line per ADR: id · title · status) to stdout (ADR 0126)",
+	),
+);
+
 const generate = Command.make(
 	"generate",
 	{dir: dirFlag},
@@ -110,6 +125,8 @@ const check = Command.make(
 );
 
 export const decisionsIndexCommand = Command.make("decisions-index").pipe(
-	Command.withSubcommands([generate, validate, check]),
-	Command.withDescription("Generate .decisions/index.md from the ADR files (ADR 0066)"),
+	Command.withSubcommands([compact, validate, generate, check]),
+	Command.withDescription(
+		"Ambient ADR discovery: emit the compact map + validate ADR files (ADR 0126)",
+	),
 );

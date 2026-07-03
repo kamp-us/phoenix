@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue awaits `ci-required` on the batched `merge_group` ref before it can
+  # merge; without this trigger that required check never runs on the batch and every
+  # queued merge hangs (ADR 0132).
+  merge_group:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -55,7 +59,12 @@ jobs:
       # predicate, so both read `check_required`. The integration/e2e author+event
       # guards are reproduced EXACTLY so a fork/non-author PR's legitimate
       # secret-less skip stays legitimate (required=false ⇒ skip is a PASS).
-      check_required: ${{ steps.filter.outputs.code == 'true' }}
+      # On the merge queue's batched `merge_group` ref there is no PR base for
+      # `paths-filter` to diff, so every `*_required` output ORs in `merge_group` to run
+      # the FULL gate on the batch (fail-safe to running — the same stance the
+      # worker-relevance classifier takes). The batch ref is the prospective merge of all
+      # queued PRs, so cost-optimization path-filtering doesn't apply there (ADR 0132).
+      check_required: ${{ github.event_name == 'merge_group' || steps.filter.outputs.code == 'true' }}
       # `worker_relevant != 'false'` (issue #1014) is ANDed in LAST so it can only
       # REMOVE an integration run, never add one: a PR whose diff is provably confined
       # to worker-irrelevant packages skips the tier even though the lockfile delta
@@ -65,12 +74,28 @@ jobs:
       # The `feature-complete` forcing function still wins (it ORs with `backend`), and
       # since a feature-complete PR is by definition worker-affecting the worker-
       # relevance AND never strips a flagged full sweep in practice.
+      # `merge_group` ORed in FIRST: the batch runs in the trusted base's context (only
+      # already-mergeable PRs enter the queue) with repo secrets, so the fork/author
+      # guard — a PR-only fork-secret safety — is not applicable and the full backstop
+      # runs on the batch (ADR 0132).
       integration_required: >-
-        ${{ (steps.filter.outputs.backend == 'true' ||
+        ${{ github.event_name == 'merge_group' ||
+            ((steps.filter.outputs.backend == 'true' ||
              contains(github.event.pull_request.labels.*.name, 'feature-complete')) &&
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
             (github.event_name == 'push' ||
-             contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) }}
+             contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))) }}
+      # e2e is DELIBERATELY the ONE gating job NOT ORed-in on `merge_group` — it is
+      # the opposite stance of check/integration/packages/workflows above (which DO
+      # OR in `merge_group` to run the full gate on the batch, because they need no
+      # deploy). e2e alone awaits a live preview URL + D1 id from deploy.yml, and
+      # deploy.yml has NO `merge_group` trigger (only `push: [main]` + `pull_request`),
+      # so a batch can't produce a preview — e2e would await one forever, time out,
+      # and red `ci-required`, ejecting the whole batch (ADR 0132; run 28645439324).
+      # e2e already gated every PR in the `pull_request` context (where deploy.yml
+      # runs), so leaving `e2e_required == false` on `merge_group` skips it on the
+      # batch (→ green legit-skip in ci-required) without losing PR-time coverage.
+      # The pull_request-context requiredness below is unchanged.
       e2e_required: >-
         ${{ steps.filter.outputs.e2e == 'true' &&
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
@@ -82,13 +107,13 @@ jobs:
       # integration/e2e), so a fork PR that touches `packages/**` MUST still run +
       # pass them. A non-packages PR has `packages_required == false`, so the job's
       # skip is a legitimate not-applicable PASS.
-      packages_required: ${{ steps.filter.outputs.packages == 'true' }}
+      packages_required: ${{ github.event_name == 'merge_group' || steps.filter.outputs.packages == 'true' }}
       # `actionlint` lints `.github/workflows/**` (issue #568). Its single-sourced
       # required-ness is JUST the `workflows` path filter — actionlint is creds-free
       # and fast (no author/fork guard), so any PR (incl. a fork) that touches a
       # workflow MUST run + pass it. A non-workflow PR has `workflows_required ==
       # false`, so the job's skip is a legitimate not-applicable PASS.
-      workflows_required: ${{ steps.filter.outputs.workflows == 'true' }}
+      workflows_required: ${{ github.event_name == 'merge_group' || steps.filter.outputs.workflows == 'true' }}
     steps:
       # Full history so the worker-relevance step's base...head diff resolves; the
       # default shallow checkout has no merge-base for the comparison (issue #1014).
@@ -367,16 +392,6 @@ jobs:
       # Same script runs locally: `bash .claude/skills/validate-gate-path-drift.sh`.
       - run: bash .claude/skills/validate-gate-path-drift.sh
 
-      # Flows-gate precondition guard (issue #751, epic #738): the authed write-flow
-      # `flows` e2e lane stays NON-BLOCKING until #713 (write-flow state-isolation)
-      # lands — flipping it blocking sooner trades a silent-no-op for a flaky block.
-      # This asserts `flows non-blocking ⟺ FLOWS_GATE_PRECONDITION: pending` in
-      # ci.yml, so a premature flip fails the build instead of shipping a flaky gate;
-      # the #713 dependency is a fired gate, not a TODO comment. Deterministic/static
-      # (no Playwright, no network) so it can't itself flake. Runs locally too:
-      # `bash .claude/skills/validate-flows-gate-precondition.sh`.
-      - run: bash .claude/skills/validate-flows-gate-precondition.sh
-
   # Reproducible workflow-YAML lint (issue #568). `.github/workflows/**` is the most
   # control-plane-sensitive, human-merged file class (ADR 0053), yet was validated
   # only by whoever happened to have actionlint installed locally — an ad-hoc,
@@ -506,20 +521,23 @@ jobs:
 
   # The blocking e2e gate (epic #462): run Playwright against the per-PR preview
   # deploy so "CI green" means the frontend renders + the gated flows work
-  # end-to-end, not just that unit/integration pass. Two tiers (Playwright projects
-  # in playwright.config.cjs):
-  #   BLOCKING (gates `ci-required`): `unauth` (public read specs) + `setup`+`authed`
-  #     (one real Better Auth sign-up captured into a storageState file the
-  #     shared-session specs reuse, ADR 0085, #524). These are reliably green.
-  #   NON-BLOCKING signal (`continue-on-error`): `flows` — the authed WRITE flows
-  #     (each drives its own sign-up). They catch behavioral races like the form-wipe
-  #     bug (#77/#438), but fail late under serial load on the shared preview (#713) —
-  #     so they RUN for signal but don't wedge merge until #713's state-isolation
-  #     lands and flips them blocking. The race fixes #707/#708 came out of this lane.
-  #     The flip is GATED on #713 by a machine-checked precondition marker on the flows
-  #     step (FLOWS_GATE_PRECONDITION) enforced by the `skills` job's
-  #     validate-flows-gate-precondition.sh guard, so it can't be flipped to a flaky
-  #     block early and can't silently stall after #713 closes (issue #751, epic #738).
+  # end-to-end, not just that unit/integration pass. All three Playwright projects
+  # (in playwright.config.cjs) now gate `ci-required` in one blocking step:
+  #   `unauth` (public read specs) + `setup`+`authed` (one real Better Auth sign-up
+  #   captured into a storageState file the shared-session specs reuse, ADR 0085,
+  #   #524) + `flows` (the authed WRITE flows — each drives its own sign-up; they
+  #   catch behavioral races like the form-wipe bug #77/#438).
+  #
+  # The `flows` lane was formerly NON-BLOCKING (`continue-on-error`) while it failed
+  # deterministically late under serial load. That was NOT a load wall: the real
+  # causes were two user-visible data-path bugs — Family A (fresh-slug definition
+  # card never persisting, fixed in #817/PR #821) and Family B (pano vote-count
+  # scalar never reconciling, fixed in #818/PR #824). With both merged the lane is
+  # green-stable (all 7 originally-failing specs pass), so #716 folds `flows` into
+  # this blocking step — a `flows` failure now reddens `ci-required` and wedges
+  # merge. This completes #525's full-suite-blocking ambition (epic #713 / #462).
+  # The former FLOWS_GATE_PRECONDITION marker + its `skills`-job guard are retired
+  # along with the flip.
   #
   # Target is the DEPLOYED preview, never a CI-booted workerd (the deploy already
   # runs in deploy.yml; #452's `spawn EBADF` is agent-sandbox-only, not Actions).
@@ -533,7 +551,7 @@ jobs:
   # on `e2e` so a docs/skills-only PR skips → green (the `ci-required` aggregator
   # treats a skip as a pass).
   e2e:
-    name: e2e (reads + authed blocking; flows non-blocking)
+    name: e2e (reads + authed + flows, blocking)
     needs: changes
     # Run-ness AND required-ness single-sourced (#786): `changes.e2e_required` mirrors
     # the EXACT inputs this `if:` inlined — `e2e-path && pull_request && author-allowed`
@@ -613,59 +631,34 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # BLOCKING tier — the reliably-green lanes that gate `ci-required`. `authed`
-      # pulls in its `setup` dependency automatically. A failure here fails the job
-      # → reddens `ci-required` → blocks merge. E2E_BASE_URL points the run at the
-      # preview (#520); `--reporter=html,list` leaves a browsable report for the
-      # artifact below (traces from the config's `trace: on-first-retry` + CI retry).
-      - name: Run e2e specs (blocking — unauth + authed)
+      # The full blocking gate: all three projects in one run. `authed` pulls in its
+      # `setup` dependency automatically; `flows` (the authed write-flow lane) is now
+      # folded in here (#716) — it went green-stable once Family A (#817) + Family B
+      # (#818) landed. A failure in ANY project fails the job → reddens `ci-required`
+      # → blocks merge. E2E_BASE_URL points the run at the preview (#520);
+      # `--reporter=html,list` leaves a browsable report for the artifact below
+      # (traces from the config's `trace: on-first-retry` + CI retry).
+      - name: Run e2e specs (blocking — unauth + authed + flows)
         run: >-
           pnpm --filter './apps/**' exec playwright test
           --reporter=html,list
-          --project unauth --project authed
+          --project unauth --project authed --project flows
         env:
           E2E_BASE_URL: ${{ steps.preview.outputs.url }}
           PLAYWRIGHT_HTML_OPEN: never
+          # Privileged D1 REST access for the e2e promote helper (ADR 0137):
+          # `promoteToYazar` runs an authenticated D1 `UPDATE user SET tier='yazar'`
+          # against the preview stage's D1, mirroring the integration harness. The
+          # account + token come from the same secrets the integration job uses; the
+          # preview D1 uuid is the `<!-- d1:<uuid> -->` token deploy.yml surfaced,
+          # already resolved above for the seed step (`steps.preview.outputs.db`).
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          E2E_D1_DATABASE_ID: ${{ steps.preview.outputs.db }}
 
-      # NON-BLOCKING tier — the `flows` write-flow lane runs for signal but
-      # `continue-on-error` keeps its (currently load-flaky, #713) result from failing
-      # the job, so it never wedges merge. Separate `--output` dir so its artifacts
-      # don't clobber the blocking tier's; `list` reporter surfaces pass/fail in the
-      # job log.
-      #
-      # FLIP-TO-BLOCKING is gated on #713 (write-flow state-isolation): until that
-      # preview load wall is fixed the lane fails late under serial load, so flipping
-      # it blocking now would trade a silent-no-op for a FLAKY hard-block. The flip is
-      # therefore encoded as a machine-checked precondition rather than a TODO comment:
-      # the marker below is the single source the `validate-flows-gate-precondition.sh`
-      # CI guard reads to enforce `flows non-blocking ⟺ #713 open`. To flip blocking
-      # (only once #713 has closed): set FLOWS_GATE_PRECONDITION to `met`, fold the
-      # `--project flows` run into the BLOCKING step above (drop this step's
-      # `continue-on-error`), and the guard re-checks the new invariant. Do NOT flip
-      # while the marker reads `pending` — the guard will fail the build (issue #751).
-      #
-      # #771 seam (symmetric to `integration`): `flows` already runs for SIGNAL on
-      # every e2e-path push (non-blocking here), the e2e analog of integration's
-      # flag-forced full sweep. The promotion to BLOCKING is the FUTURE co-action
-      # owned with #751 (flip on path/flag, not every-push — §6 #3 of the #771
-      # co-design). The marker line below is #751's flip seam — do NOT edit it here.
-      #
-      # FLOWS_GATE_PRECONDITION: pending  (requires: #713 — write-flow state-isolation)
-      - name: Run e2e specs (non-blocking — flows, #713)
-        continue-on-error: true
-        run: >-
-          pnpm --filter './apps/**' exec playwright test
-          --reporter=list
-          --project flows
-          --output test-results-flows
-        env:
-          E2E_BASE_URL: ${{ steps.preview.outputs.url }}
-          PLAYWRIGHT_HTML_OPEN: never
-
-      # `!cancelled()` (not `failure()`): the job is GREEN when only the non-blocking
-      # `flows` tier fails, so `failure()` would drop the flows report — the one we
-      # most want for #713 triage. Upload whenever the run completed; `if-no-files-found`
-      # ignores the all-clean case.
+      # Upload the report whenever the run completed (pass or fail), so a red run's
+      # traces survive for triage; `!cancelled()` keeps it from skipping on failure,
+      # and `if-no-files-found` ignores the all-clean case.
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4.4.3
@@ -674,7 +667,6 @@ jobs:
           path: |
             apps/**/playwright-report/
             apps/**/test-results/
-            apps/**/test-results-flows/
           retention-days: 7
           if-no-files-found: ignore
 

@@ -15,16 +15,18 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {notifyCommentReply} from "../bildirim/conversation-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
-import {alwaysLive, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {
 	CommentNotFound,
 	CommentValidationErrors,
 	DraftsDisabled,
+	PostDeleteFailed,
 	PostNotFound,
 	PostValidationErrors,
 	UnauthorizedCommentMutation,
@@ -357,13 +359,23 @@ export const mutations = {
 		{
 			input: PostIdInput,
 			type: PostView,
-			error: Schema.Union([Unauthorized, UnauthorizedPostMutation]),
+			error: Schema.Union([Unauthorized, UnauthorizedPostMutation, PostDeleteFailed]),
 		},
 		Effect.fn("post.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
-			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
+			// The removal commit runs over `DrizzleAccessOrDie` — a D1-layer write failure
+			// dies as a defect, which would escape this union as a raw `INTERNAL_SERVER_ERROR`
+			// (#1639). Catch that defect into the declared, user-readable `PostDeleteFailed`;
+			// the typed `UnauthorizedPostMutation` (a failure, not a defect) passes through.
+			const r = yield* pano
+				.deletePost({postId: input.id, actorId: user.id})
+				.pipe(
+					Effect.catchDefect(
+						() => new PostDeleteFailed({message: "Gönderi silinemedi. Lütfen tekrar deneyin."}),
+					),
+				);
 			yield* live.post.delete(r.postId);
 			yield* live.post.feed.deleteEdge(r.postId);
 			// Bare id-only eviction ref: the post is hidden, so there's no row to run
@@ -383,14 +395,16 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
-			yield* pano.restorePost({postId: input.id, actorId: user.id});
+			const restored = yield* pano.restorePost({postId: input.id, actorId: user.id});
 			const page = yield* pano.getPost(input.id);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
-			// Restore re-enters already-public content (`Removed → Live`, ADR 0096 §4):
-			// Live by construction, no sandbox state to discharge → `alwaysLive` (#1280).
-			yield* live.post.feed.appendNode(post.id, {node: post}, alwaysLive);
+			// Sandbox-faithful restore (#1811): a çaylak's sandboxed post round-trips
+			// back to Sandboxed, so route the broadcast through the #1205/#1280 gate
+			// (decidePublish) instead of the always-Live hatch — a sandboxed restore is
+			// suppressed from the public feed; a Live restore broadcasts as before.
+			yield* live.post.feed.appendNode(post.id, {node: post}, decidePublish(restored.sandboxedAt));
 			return post;
 		}),
 	),
@@ -422,6 +436,16 @@ export const mutations = {
 			yield* live.comment
 				.thread(input.postId)
 				.appendNode(comment.id, {node: comment}, decidePublish(sandboxedAt));
+			// Conversation-moment notification (#1697): notify the post author (and,
+			// for a reply, the parent-comment author) — deduped, self-suppressed,
+			// flag-gated and swallowed inside the emitter, so it can never fail this
+			// committed comment.
+			yield* notifyCommentReply({
+				commentId: r.commentId,
+				postAuthorId: r.postAuthorId,
+				parentAuthorId: r.parentAuthorId,
+				actorId: user.id,
+			});
 			return comment;
 		}),
 	),
@@ -531,14 +555,18 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
 			const postId = yield* pano.lookupCommentPostId(input.id);
-			yield* pano.restoreComment({commentId: input.id, actorId: user.id});
+			const restored = yield* pano.restoreComment({commentId: input.id, actorId: user.id});
 			if (!postId) return null;
 			const [comment] = yield* pano.getCommentsByIds([input.id], {viewerId: user.id});
 			if (comment) {
 				const node = toComment(comment);
-				// Restore re-enters already-public content (`Removed → Live`, ADR 0096 §4):
-				// Live by construction, no sandbox state to discharge → `alwaysLive` (#1280).
-				yield* live.comment.thread(postId).appendNode(node.id, {node}, alwaysLive);
+				// Sandbox-faithful restore (#1811): a çaylak's sandboxed comment round-trips
+				// back to Sandboxed, so route the thread broadcast through the #1205/#1280
+				// gate — a sandboxed restore is suppressed from the viewer-blind thread
+				// topic; a Live restore broadcasts as before.
+				yield* live.comment
+					.thread(postId)
+					.appendNode(node.id, {node}, decidePublish(restored.sandboxedAt ?? null));
 			}
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;

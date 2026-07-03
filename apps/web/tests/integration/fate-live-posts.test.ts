@@ -98,7 +98,7 @@ describe("live views — /fate/live (global topic:posts)", () => {
 		expect(payload?.event.edge.node.title).toBe("live post");
 
 		await reader.cancel();
-	}, 30_000);
+	});
 
 	it("reconnect on the same connectionId bumps epoch — frames go to the reconnected stream", async () => {
 		const connectionId = `live-regen-${Date.now()}`;
@@ -157,5 +157,5 @@ describe("live views — /fate/live (global topic:posts)", () => {
 
 		await firstReader.cancel();
 		await secondReader.cancel();
-	}, 30_000);
+	});
 });

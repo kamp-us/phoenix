@@ -288,6 +288,22 @@ describe("pano posts — delete idempotency", () => {
 		// Still gone after the second delete.
 		expect(await readPost(id)).toBeNull();
 	});
+
+	// #1639: post.delete must never surface a raw internal_server_error — a
+	// never-existed id short-circuits to the graceful {__typename,id} eviction ref,
+	// not an undeclared 500 (the service returns `deleted:false` for a missing row).
+	it("deleting a never-existed post is a graceful no-op, not internal_server_error", async () => {
+		const res = await h.fate(
+			{kind: "mutation", name: "post.delete", input: {id: `${NS}-never-existed`}, select: ["id"]},
+			{cookie: author.cookie},
+		);
+		expect(res.ok).toBe(true);
+		if (!res.ok) {
+			expect(res.error.code).not.toBe("INTERNAL_SERVER_ERROR");
+			return;
+		}
+		expect((res.data as PostNode).__typename).toBe("Post");
+	});
 });
 
 describe("pano posts — connection edges", () => {

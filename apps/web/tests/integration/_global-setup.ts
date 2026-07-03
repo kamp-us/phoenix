@@ -64,8 +64,9 @@ export default async function setup(project: TestProject): Promise<() => Promise
 
 	// Deploy ONCE through `Core.run` — the alchemy test runtime (`toEffect`) that
 	// `Test/Vitest.ts` wraps `deploy` with, which provides the full layer stack the per-file
-	// `beforeAll(deploy(...))` runs under (AlchemyContext, state, AND the `HttpClient`
-	// `awaitWorkerReady` needs). Same hardening the per-file path applies:
+	// `beforeAll(deploy(...))` runs under (AlchemyContext, state). The readiness probes now ride
+	// the shared `awaitEdgeReady` over a bare `fetch` (ADR 0127), so they need no `HttpClient`
+	// from the runtime. Same hardening the per-file path applies:
 	// `deployTransientRetry`, then `awaitWorkerReady` + `warmLiveDO`. No scope: CI is non-dev,
 	// so there is no workerd sidecar to keep alive (the scope in `Test/Vitest.ts` exists only
 	// for `alchemy dev`).

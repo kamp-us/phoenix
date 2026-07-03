@@ -25,8 +25,11 @@
 // a reason, so the next un-blessed re-introduction reds CI.
 //
 // Registered via biome.jsonc `"plugins"`, run by the existing `check` CI job.
-// Excluded from biome's own formatter in biome.jsonc — its formatter drops
-// `language js;`'s terminating `;`.
+// Excluded from biome's own formatter in biome.jsonc — a `.grit` file is not a
+// standard biome-formattable surface; the `language js;` below is intact and
+// valid at the pinned 2.4.15, and the earlier "dropped terminator" note is
+// disproven — #1775 traced the `Compile Error` to a stale GLOBAL biome that
+// predates the GritQL node bindings 2.4.15 added, not the source.
 language js;
 
 or {

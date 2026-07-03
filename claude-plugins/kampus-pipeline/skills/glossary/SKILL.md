@@ -69,7 +69,7 @@ Two rules govern every edit:
 - **The code is authoritative.** When the code and TERMS.md disagree, the code wins and TERMS.md
   is the doc to fix. You read the code to derive the term, never the reverse.
 - **Repo-relative cross-references only.** A term's note may link into `.decisions/` or
-  `.patterns/` with a **repo-relative markdown link** (`[...](../.decisions/index.md)`); it must
+  `.patterns/` with a **repo-relative markdown link** (`[...](../.decisions/NNNN-slug.md)` or `[...](../.decisions/)`); it must
   never carry a machine-absolute path, a home-directory path, a personal-vault path, or an Obsidian
   wikilink. Cite an ADR/issue by number, link by repo-relative path.
 

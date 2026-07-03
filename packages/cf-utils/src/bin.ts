@@ -6,40 +6,58 @@
  *   node src/bin.ts flag list                              enumerate every flag × env
  *   node src/bin.ts flag get <key> --env <env>             read one flag's state in an env
  *   node src/bin.ts flag get <key>                         read that flag across every env
- *   node src/bin.ts flag set <key> on|off --env <env>      dry-run the served-value flip
- *   node src/bin.ts flag set <key> on|off --env <env> --execute   apply it
- *   $CLOUDFLARE_API_TOKEN   the minted CF token (read by CredentialsFromEnv)
- *   $CLOUDFLARE_ACCOUNT_ID  the account to operate on
+ *   node src/bin.ts flag set <key> on --env <env>          dry-run a full release (≡ --percent 100)
+ *   node src/bin.ts flag set <key> --percent 50 --env <env>  dry-run a partial ramp
+ *   node src/bin.ts flag set <key> off --env <env>         dry-run the kill switch
+ *   node src/bin.ts flag set <key> … --env <env> --execute   apply it
+ *   node src/bin.ts auth login                              paste an API token → keychain (#1730)
+ *   node src/bin.ts auth login --oauth                      authorize in the browser → keychain (#1761)
+ *   node src/bin.ts auth status|logout                      inspect / clear stored credentials
  *
- * `flag set` is the human release act (ADR 0083, "agents deploy, humans release"): it flips a
- * flag's served/default value from the terminal instead of the dashboard, scriptably and with
- * a trail. It DRY-RUNS by default — reads current state, prints the `current → target` diff,
- * and writes NOTHING; the mutation happens only under `--execute` (mirroring orphan-sweep). The
- * write must never be invoked by the pipeline autonomously.
+ * Credentials resolve keychain-first (`auth login`, #1730/#1761), falling back to
+ * $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID — the env-var path CI keeps using.
+ *
+ * `flag set` operates the ACTUAL release lever — the no-match percentage split, never
+ * `defaultVariation` (#1726): `--percent N` serves `on` to N% (remainder falls to the safe
+ * default), `on` ≡ `--percent 100` (the canonical split form), and `off` is a true kill switch —
+ * it clears the split AND sets the default off, so a split-released flag actually stops serving.
+ * It DRY-RUNS by default — reads current state, prints the `current → target` diff, and writes
+ * NOTHING; the mutation happens only under `--execute` (mirroring orphan-sweep). The lever is
+ * agent-invokable (ADR 0134, supersedes 0133): the humans-release boundary (ADR 0083) lives at
+ * the `/release` skill + the audit trail, not as a structural TTY refuse here — a non-TTY caller
+ * proceeds (logged), a TTY human is prompted to confirm.
  *
  * The thin shell delegates to the pure core (`flag.ts`) via the injectable clients
  * (`flagship.ts`); an unreachable/unauthorized CF surfaces a typed error (rendered by
  * `NodeRuntime.runMain`), never a raw stack trace.
  */
-import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Layer} from "effect";
-import {Argument, Command, Flag} from "effect/unstable/cli";
+import {Argument, Command, Flag, Prompt} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import {auth} from "./auth.ts";
+import {AccountIdKeychainConfig, CredentialsKeychainFirst} from "./credentials.ts";
 import {
-	computeFlipPlan,
+	computeEffectiveServing,
+	computeServingPlan,
+	decideLeverGuard,
 	decodeEnv,
 	distinctKeys,
+	ENV_HELP,
 	FlagEnvNotFound,
 	FlagKeyNotFound,
-	type FlagTarget,
+	FlagSetTargetInvalid,
 	findAppForEnv,
+	LeverGuardRefused,
+	renderEffectiveServing,
 	renderFlagDetail,
 	renderFlagTable,
-	renderFlipPlan,
+	renderServingPlan,
+	type ServeTarget,
 	selectStatesForKey,
 } from "./flag.ts";
 import {FlagshipRead, FlagshipReadLive, FlagshipWrite, FlagshipWriteLive} from "./flagship.ts";
+import {KeychainLive} from "./keychain.ts";
 
 const list = Command.make(
 	"list",
@@ -54,14 +72,14 @@ const list = Command.make(
 );
 
 const keyArg = Argument.string("key").pipe(
-	Argument.withDescription("the flag key to flip (e.g. authorship-loop)"),
+	Argument.withDescription("the flag key to release/kill (e.g. authorship-loop)"),
 );
 const getKeyArg = Argument.string("key").pipe(
 	Argument.withDescription("the flag key to read (e.g. authorship-loop)"),
 );
 const getEnvFlag = Flag.string("env").pipe(
 	Flag.optional,
-	Flag.withDescription("the env to read the flag in (e.g. prod); omit for every env"),
+	Flag.withDescription(`${ENV_HELP}; omit to read across every env`),
 );
 
 const get = Command.make(
@@ -102,22 +120,82 @@ const get = Command.make(
 	),
 );
 const stateArg = Argument.choice("state", ["on", "off"] as const).pipe(
-	Argument.withDescription("the served/default value to set — on or off"),
+	Argument.optional,
+	Argument.withDescription(
+		"the release target — on (≡ --percent 100) or off (kill: clear the split, default off)",
+	),
 );
-const envFlag = Flag.string("env").pipe(
-	Flag.withDescription("the env to flip the flag in (e.g. prod)"),
+const percentFlag = Flag.integer("percent").pipe(
+	Flag.optional,
+	Flag.withDescription("the share (0–100) serving on via the no-match split; remainder serves off"),
 );
+const envFlag = Flag.string("env").pipe(Flag.withDescription(ENV_HELP));
 const executeFlag = Flag.boolean("execute").pipe(
 	Flag.withDescription(
-		"actually apply the flip (default: dry-run — print the diff, write nothing)",
+		"actually apply the release/kill (default: dry-run — print the diff, write nothing)",
 	),
 );
 
+// Exactly one of `on|off` / `--percent N` names the target; both or neither is a usage error.
+const resolveTarget = (
+	state: {readonly _tag: "Some"; readonly value: "on" | "off"} | {readonly _tag: "None"},
+	percent: {readonly _tag: "Some"; readonly value: number} | {readonly _tag: "None"},
+): Effect.Effect<ServeTarget, FlagSetTargetInvalid> => {
+	if (state._tag === "Some" && percent._tag === "Some") {
+		return Effect.fail(new FlagSetTargetInvalid({reason: 'both "on|off" and --percent given'}));
+	}
+	if (percent._tag === "Some") {
+		if (percent.value < 0 || percent.value > 100) {
+			return Effect.fail(
+				new FlagSetTargetInvalid({reason: `--percent ${percent.value} is outside 0–100`}),
+			);
+		}
+		return Effect.succeed({_tag: "Percent", percentage: percent.value});
+	}
+	if (state._tag === "Some") {
+		return Effect.succeed(
+			state.value === "on" ? {_tag: "Percent", percentage: 100} : {_tag: "Kill"},
+		);
+	}
+	return Effect.fail(new FlagSetTargetInvalid({reason: "no target given"}));
+};
+
+// The lever's interactive confirm — the thin IO shell around the pure `decideLeverGuard` core. The
+// lever is agent-invokable (ADR 0134, supersedes 0133): humans-release is enforced at the /release
+// skill + the audit trail, NOT by a structural TTY refuse here. So a non-TTY caller (agent/CI)
+// PROCEEDS, logging the flip for the audit record; a TTY caller (a human at a terminal) is prompted
+// `flip <flag> live? [y/N]` as ergonomics and may decline. It runs ONLY on the `--execute` write
+// branch; the dry-run path never reaches it. See ADR 0134 (this behavior) and ADR 0083 (the
+// humans-release boundary, now enforced at the invocation layer).
+const guardLiveFlip = (
+	flagKey: string,
+): Effect.Effect<void, LeverGuardRefused, Prompt.Environment> =>
+	Effect.gen(function* () {
+		const isTTY = process.stdin.isTTY === true;
+		if (!isTTY) {
+			// Agent / CI: proceed without a prompt, logging the flip for the audit record (ADR 0134).
+			yield* Console.log("  live flip executed (non-interactive)");
+			return yield* refuse(decideLeverGuard({isTTY: false, confirmResponse: undefined}));
+		}
+		const response = yield* Prompt.text({message: `flip ${flagKey} live? [y/N]`}).pipe(
+			// EOF / Ctrl-D / Ctrl-C at the prompt yields no affirmative answer — collapse to refuse.
+			Effect.catchCause(() => Effect.succeed(undefined)),
+		);
+		return yield* refuse(decideLeverGuard({isTTY: true, confirmResponse: response}));
+	});
+
+const refuse = (
+	decision: ReturnType<typeof decideLeverGuard>,
+): Effect.Effect<void, LeverGuardRefused> =>
+	decision._tag === "Allow"
+		? Effect.void
+		: Effect.fail(new LeverGuardRefused({reason: decision.reason}));
+
 const set = Command.make(
 	"set",
-	{key: keyArg, state: stateArg, env: envFlag, execute: executeFlag},
-	Effect.fn(function* ({key, state, env, execute}) {
-		const target = state as FlagTarget;
+	{key: keyArg, state: stateArg, percent: percentFlag, env: envFlag, execute: executeFlag},
+	Effect.fn(function* ({key, state, percent, env, execute}) {
+		const target = yield* resolveTarget(state, percent);
 		const read = yield* FlagshipRead;
 
 		// Resolve the app for the env FIRST — an unknown env fails not-found before any read/write.
@@ -130,11 +208,11 @@ const set = Command.make(
 			return yield* new FlagEnvNotFound({env, knownEnvs});
 		}
 
-		// Read the current served variation (an unknown key fails FlagshipFlagNotFound here, still
-		// before any write), then compute + render the pure flip plan.
+		// Read the current envelope (an unknown key fails FlagshipFlagNotFound here, still before
+		// any write), then compute + render the pure serving plan.
 		const current = yield* read.getAppFlag(app.id, key);
-		const plan = computeFlipPlan({key, env, currentVariation: current.defaultVariation, target});
-		yield* Console.log(renderFlipPlan(plan));
+		const plan = computeServingPlan({key, env, flag: current, target});
+		yield* Console.log(renderServingPlan(plan));
 
 		if (!execute) {
 			yield* Console.log("  (dry-run — pass --execute to apply; the flag is unchanged)");
@@ -145,17 +223,22 @@ const set = Command.make(
 			return;
 		}
 
+		// Lever confirm (ADR 0134): agent-invokable — a non-TTY caller proceeds (logged for audit);
+		// a TTY human is prompted to confirm. Runs ONLY here, on the changed `--execute` write branch
+		// (dry-run and no-op returned above are untouched).
+		yield* guardLiveFlip(key);
+
 		const write = yield* FlagshipWrite;
-		const updated = yield* write.setFlagDefault({
-			appId: app.id,
-			flagKey: key,
-			targetVariation: target,
-		});
-		yield* Console.log(`  applied — ${key} @ ${env} now serves "${updated.defaultVariation}"`);
+		const updated = yield* write.setServing({appId: app.id, flagKey: key, target});
+		yield* Console.log(
+			`  applied — ${key} @ ${env} now serves ${renderEffectiveServing(
+				computeEffectiveServing(updated),
+			)}`,
+		);
 	}),
 ).pipe(
 	Command.withDescription(
-		"Flip a flag's served/default value in an env (dry-run by default; --execute to apply)",
+		"Release a flag via the no-match split (on ≡ --percent 100; off kills; dry-run by default, --execute to apply)",
 	),
 );
 
@@ -165,15 +248,22 @@ const flag = Command.make("flag").pipe(
 );
 
 const cli = Command.make("cf-utils").pipe(
-	Command.withSubcommands([flag]),
+	Command.withSubcommands([flag, auth]),
 	Command.withDescription("Human-operated Cloudflare Flagship read/flip CLI"),
 );
 
-// The read + write clients run over the env-credentialed REST transport (the d1-rest
-// convention); `provideMerge(NodeServices.layer)` keeps the Node services the CLI runtime
-// needs (argv, stdout).
+// Credentials resolve keychain-first with the env-var fallback (#1730/#1761): the same ambient
+// `Credentials` seam as before, plus the account-id ConfigProvider so the per-call
+// `Config.string("CLOUDFLARE_ACCOUNT_ID")` reads in flagship.ts resolve the keychain too.
+// `CredentialsKeychainFirst` now also needs HttpClient (to refresh an expired OAuth token on
+// resolve), so the transport is provided into the credential layer here as well as at AppLayer.
+// `provideMerge` keeps Keychain + HttpClient visible to the `auth` handlers, and NodeServices
+// supplies the spawner/terminal the keychain + prompts run on.
+const CredentialLayer = Layer.mergeAll(CredentialsKeychainFirst, AccountIdKeychainConfig).pipe(
+	Layer.provideMerge(Layer.merge(KeychainLive, FetchHttpClient.layer)),
+);
 const AppLayer = Layer.mergeAll(FlagshipReadLive, FlagshipWriteLive).pipe(
-	Layer.provide(Layer.merge(CredentialsFromEnv, FetchHttpClient.layer)),
+	Layer.provideMerge(Layer.merge(CredentialLayer, FetchHttpClient.layer)),
 	Layer.provideMerge(NodeServices.layer),
 );
 

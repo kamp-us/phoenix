@@ -40,6 +40,23 @@ fate.mutations.post.vote({
 
 For inserts that create an entity, give the optimistic record a temporary id (`optimistic:${Date.now()}`); fate reconciles it to the server id when the real result arrives. Concurrent optimistic edits to the same entity are masked so a slow server read can't clobber a still-pending field.
 
+### Optimistic in-place edits {#optimistic-edits}
+
+An **in-place field edit** (`post.edit`, `comment.edit`, `definition.edit`) is the simplest optimistic case: it's an entity-field write-back that already re-renders in place through its result `view`, so making it optimistic is *only* passing the edited fields (plus a fresh `updatedAt`) as the `optimistic` partial. No temp id, no membership change — the edited entity keeps its id, so the optimistic write and the server `live.update({changed:["body"|"title,body"]})` frame touch the **same fields on the same entity** and can't diverge. fate rolls the partial back and restores the prior text on a rejected edit (the boundary-class throw, [Errors](#errors)), so the existing inline error shows with no phantom-saved state.
+
+The load-bearing pieces are hook-free and unit-testable, mirroring `voteOptimistic`: [`src/fate/optimisticEdit.ts`](../apps/web/src/fate/optimisticEdit.ts) builds the partial (`postEditOptimistic` / `bodyEditOptimistic`) and returns `undefined` when the gate is off, so the call site spreads it away under `exactOptionalPropertyTypes`:
+
+```tsx
+const optimistic = bodyEditOptimistic(optimisticEdits, body); // undefined when the flag is off
+await fate.mutations.definition.edit({
+  input: {id, body},
+  ...(optimistic ? {optimistic} : {}),   // {body, updatedAt: <now>} when on
+  view: DefinitionView,
+});
+```
+
+The fresh `updatedAt` drives the "düzenlendi" indicator (`EditedIndicator`) instantly, consistently with the reconciled frame. Shipped dark behind the `phoenix-optimistic-edits` flag (default-off, ADR 0083; #1675, epic #1637) — off, the edit passes no `optimistic` and waits for the round-trip exactly as before.
+
 ## Connection membership — declarative, not imperative
 
 A new or deleted entity joins or leaves lists declaratively:
@@ -55,13 +72,41 @@ fate.mutations.comment.delete({input: {id}, delete: true});
 - `insert: "before" | "after" | "none"` (default `"after"`) inserts the entity into the **registered root lists** for its type (e.g. the post feed).
 - `delete: true` prunes the entity and every reference to it across all connections.
 
+**Optimistic root-list insert (the pano feed happy path).** The pano feed is a registered root list (no filter args), so a submit can prepend optimistically: pass `insert: "before"` **plus** an `optimistic` temp-id node (`optimistic:${Date.now()}`). fate writes the temp node to the front immediately, reconciles it to the server id when the result arrives, and — because the server also publishes a `live.post.feed.appendNode` frame — **dedups by server id**, so the mutator's own client sees no double-row (the reconciled temp node and the live append are the same id). A rejected submit rolls the temp node back before the throw. `PanoSubmitPage` does this behind a default-off containment flag (#1676): flag off ⇒ plain round-trip (`insert: "none"`, no optimistic node); flag on ⇒ the optimistic prepend. The optimistic record must mirror the server's initial state (`score: 0`, `myVote: null`) or it bleeds a phantom self-upvote onto the reconciled row (#707). The membership branch is the pure `postSubmitMembership` core (`apps/web/src/pages/panoSubmitArgs.ts`).
+
 There is no hand-written updater enumerating connection keys. For connections that aren't root lists (a post's comments, a filtered feed variant), **membership is driven by server-emitted live events** — the mutation publishes `live.topic(...).appendNode/deleteEdge(...)` and every subscribed client updates. See [fate-live-views.md](./fate-live-views.md). This replaces per-call imperative cache surgery with one server-side source of truth.
 
-> **`insert`/`delete` only reach *root* lists; nested-connection membership is driven by server live events.** A root list is registered only when its connection has **no filter args** (`registerRootList` is gated on `!filterConnectionArgs(argsPayload)`). A *nested* connection (`Term.definitions` carried on the `term` query) is never a registered root list, so client-side `insert`/`delete` can't touch it — its membership comes from the mutation publishing `live.topic(...).appendNode/deleteEdge(...)` (pano's `comment.add`/`comment.delete` do this). Where a mutation doesn't publish an append, the screen reloads after success:
+> **`insert`/`delete` only reach *root* lists; nested-connection membership is driven by server live events.** A root list is registered only when its connection has **no filter args** (`registerRootList` is gated on `!filterConnectionArgs(argsPayload)`). A *nested* connection (`Term.definitions` carried on the `term` query) is never a registered root list, so client-side `insert`/`delete` can't touch it — its membership comes from the mutation publishing `live.topic(...).appendNode/deleteEdge(...)` (pano's `comment.add`/`comment.delete` do this). A nested add/delete **can still be optimistic** — but through a phoenix client helper, not `insert`/`delete`; see [Optimistic nested-connection membership](#optimistic-nested-membership) below. Baseline (flag-off) behavior:
 > - **add** to a nested connection: the new node is normalized into the cache, but joins the list only via a live `appendNode` or a re-read. sözlük's `definition.add` publishes no append, so its composer **reloads after a successful add**.
 > - **delete** of a node in a nested connection: `delete: true` is **wrong-entity** for sözlük's `definition.delete`, a `Term`-returning mutation (it re-resolves the parent for fresh counts), so `delete:true` would `deleteRecord("Term", definitionId)`. The card calls delete **without** `delete:true`; the server publishes `deleteEdge("Definition", id)` on `Term.definitions`.
 >
-> Entity-field mutations (vote, edit) are unaffected: they write back through the result `view` and re-render in place, fully optimistic.
+> Entity-field mutations (vote, edit) are unaffected: they write back through the result `view` and re-render in place. Votes are fully optimistic; the in-place edits become optimistic behind the `phoenix-optimistic-edits` flag — see [Optimistic in-place edits](#optimistic-edits).
+
+### Optimistic nested-connection membership (add-dedup + reply-aware delete) {#optimistic-nested-membership}
+
+A nested-connection add/delete **can** be optimistic — the earlier "no optimistic temp-node — it would double with the live append" ban is retired by ADR [0125](../.decisions/0125-optimistic-reconciliation-live-driven-nested-connections.md). Because `insert`/`delete` don't reach a nested list, the optimistic write goes through a **phoenix client helper** (not an upstream fate affordance) that drives the same `insertConnectionEdge` path the SSE handler uses.
+
+- **Add (`comment.add` / `definition.add`) — A1: client-originated append, canonical-id dedup.** Write the optimistic node with a temp **record** id (`optimistic:${Date.now()}`) + synthetic cursor, and append the temp **entity** id — the `toEntityId(Type, tempRecordId)`-**qualified** form (`Comment:optimistic:<ts>`), *not* the bare record id — into the nested connection's `list.ids`. The qualification is load-bearing: fate stores every `list.ids` entry qualified (`writeEntity`/`insertConnectionEdge` → `toEntityId`), and both reconcile paths key off the qualified id — `resolveOptimisticEntity(tempId, serverId)` rewrites the id only when `list.ids.includes(toEntityId(entity, tempRecordId))`, and the server `appendNode` dedups by `toEntityId(nodeType, id)`. Append a **bare** id and neither path matches ⇒ a non-reconciling / duplicated temp node (#1714; the `definition.add` #1679 and `comment.delete` #1680 slices already qualify — follow them). On the mutation HTTP result, `resolveOptimisticEntity(tempId, serverId)` rewrites the id; any server `appendNode` — before or after — then dedups by **canonical entity id** (`removeEntityFromListState` / visible-dedup), so temp-node and server-append collapse to one edge. Only a **sub-second transient double** is possible (a server append landing before the HTTP result resolves temp→server); it collapses on resolution, zero persistent divergence. `useReadbackRefetch` is **kept but narrowed** to the append-loss healer (#714's lost append), not the primary "make my row appear" path.
+- **Delete (`comment.delete` / `definition.delete`) — D1: reply-aware, decided from the loaded tree.** Mirror the server's branch (ADR [0096](../.decisions/0096-uniform-soft-delete-substrate.md)): a **client-certain leaf** (subtree loaded, no children) → optimistic edge-drop; **has replies OR uncertain** (unloaded subtree) → optimistic `[silindi]` tombstone (keep the row). `definition.delete` (no reply tree) → always an edge-drop. The conservative-tombstone-on-uncertainty rule makes stale-tree divergence unrepresentable (a `live.update` can't re-add a removed edge, so never edge-drop unless certain). Rollback rides fate's existing rollback-before-throw (snapshot the nested list/row, restore on reject).
+- **No-divergence invariant:** every membership change is keyed by canonical entity id, and the optimistic write is either collapsible into the authoritative frame by that id (add) or a conservative superset of it (delete). See ADR 0125 for the full derivation and the two escalation seams (A2 correlation-id echo; a delete-side read-back) left out of v1.
+
+### Optimistic root-list delete + navigate-away (`post.delete`) {#optimistic-root-list-delete}
+
+`delete: true` is **already optimistic**: fate evicts the entity and every edge referencing it **synchronously, before the round-trip**, captures a snapshot, and **restores it before a boundary throw** ([`@nkzw/fate` `wrapMutation`](https://github.com/usirin/fate)). So for a root-list member (pano's feed post) the eviction shows the instant the mutation is *called* — no `optimistic` payload needed, unlike an insert.
+
+The catch is a delete whose call site **navigates away on success** (pano `post.delete` → `/pano`). Don't `await` the round-trip before navigating — that reintroduces the wait the sync eviction removed. Instead fire the mutation, navigate **at once** (the feed already shows the row gone), and reconcile the promise in the background. A rejection has already rolled the eviction back (the post reappears), so route the **existing inline error** back to the page you left via router state rather than a toast:
+
+```tsx
+const promise = fate.mutations.post.delete({input: {id}, delete: true}); // sync eviction
+navigate("/pano");                                                        // perceived-instant
+const {error} = await promise.catch((caught) => ({error: caught}));
+if (error) {
+  // fate restored the post — return to it with the inline error (UNAUTHORIZED → auth)
+  navigate(postPath, {state: {postDeleteError: messageForCode(codeOf(error), overrides)}});
+}
+```
+
+The server publishes `live.post.feed.deleteEdge(id)` after the commit; that frame reconciles the already-optimistically-evicted edge idempotently — the row **never reappears** and the optimistic and SSE-reconciled states never diverge. Gate this behind a default-off flag (`pano-optimistic-post-delete`, #1677) so it dark-ships. The terminal-outcome decision is a pure core (`src/pages/optimisticPostDelete.ts`, the `savedReconcile` idiom), unit-tested hook-free.
 
 ## Errors {#errors}
 

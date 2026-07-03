@@ -12,8 +12,17 @@ import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {
 	PANO_DRAFT_SAVE,
+	PANO_OPTIMISTIC_COMMENT_ADD,
+	PANO_OPTIMISTIC_COMMENT_DELETE,
+	PANO_OPTIMISTIC_POST_DELETE,
+	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_AUTHORSHIP_LOOP,
+	PHOENIX_BILDIRIM,
 	PHOENIX_FUNNEL_READOUT,
+	PHOENIX_MOD_QUEUE,
+	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
+	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
+	PHOENIX_OPTIMISTIC_EDITS,
 } from "../../../src/flags/keys.ts";
 import {AUDIT_ENVIRONMENT} from "../../environment.ts";
 
@@ -73,7 +82,50 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 		],
 	});
 
-export {PANO_DRAFT_SAVE, PHOENIX_AUTHORSHIP_LOOP, PHOENIX_FUNNEL_READOUT};
+export {
+	PANO_DRAFT_SAVE,
+	PANO_OPTIMISTIC_COMMENT_ADD,
+	PANO_OPTIMISTIC_COMMENT_DELETE,
+	PANO_OPTIMISTIC_POST_DELETE,
+	PANO_OPTIMISTIC_SUBMIT,
+	PHOENIX_AUTHORSHIP_LOOP,
+	PHOENIX_BILDIRIM,
+	PHOENIX_FUNNEL_READOUT,
+	PHOENIX_MOD_QUEUE,
+	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
+	PHOENIX_OPTIMISTIC_EDITS,
+};
+
+/**
+ * The optimistic `post.submit` (feed root-list insert) containment flag config
+ * (#1676, epic #1637). Default-OFF so it reaches production dark — with it off,
+ * submit is a plain round-trip and the product behaves as today; flipping it on
+ * is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG` / `FUNNEL_READOUT_FLAG`).
+ *
+ * Per-flag metadata:
+ *   - owner:           pano
+ *   - originating:     #1676 (epic: optimistic content mutations, #1637)
+ *   - removal trigger: once optimistic submit graduates to on at 100% and stable,
+ *                      retire the flag and inline the optimistic path.
+ */
+export const PANO_OPTIMISTIC_SUBMIT_FLAG = {
+	key: PANO_OPTIMISTIC_SUBMIT,
+	description:
+		"optimistic post.submit feed insert dark-ship (#1676). owner: pano. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const panoOptimisticSubmitFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("pano_optimistic_submit", {appId, ...PANO_OPTIMISTIC_SUBMIT_FLAG});
 
 /**
  * The pano `taslak` (draft-save) dark-ship flag config (#746) — the feature-flag
@@ -214,3 +266,288 @@ export const FUNNEL_READOUT_FLAG = {
  */
 export const funnelReadoutFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_funnel_readout", {appId, ...FUNNEL_READOUT_FLAG});
+
+/**
+ * The moderation-queue surface dark-ship flag config (#1701) — the moderator-only
+ * raporlar view inside `/divan` gates behind this key. Default-OFF so the surface
+ * reaches production dark; flipping it on is the human release act (ADR 0083).
+ * Its own key (not `phoenix-authorship-loop`) so the moderation queue has an
+ * independent lifecycle, mirroring `FUNNEL_READOUT_FLAG`.
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           report (the moderation queue, ADR 0098)
+ *   - originating:     #1701 (the divan raporlar surface)
+ *   - removal trigger: once the moderation queue graduates to on at 100% and
+ *                      stable for one release, retire the flag and inline the surface.
+ */
+export const MOD_QUEUE_FLAG = {
+	key: PHOENIX_MOD_QUEUE,
+	description:
+		"moderation-queue raporlar surface dark-ship (#1701). owner: report. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const modQueueFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_mod_queue", {appId, ...MOD_QUEUE_FLAG});
+
+/**
+ * The optimistic in-place content-edit dark-ship flag config (#1675, epic #1637).
+ * The three Class-A content edits (`post.edit`/`comment.edit`/`definition.edit`)
+ * pass an `optimistic` payload only behind this key. Default-OFF so the edits
+ * reach production dark — with it off they wait for the round-trip exactly as
+ * today; flipping it on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           pano/sozluk (the content-mutation call sites)
+ *   - originating:     #1675 (epic: uniform optimistic content mutations, #1637)
+ *   - removal trigger: once optimistic edits graduate to on at 100% and stable for
+ *                      one release, retire the flag and inline the optimistic path.
+ */
+export const OPTIMISTIC_EDITS_FLAG = {
+	key: PHOENIX_OPTIMISTIC_EDITS,
+	description:
+		"optimistic in-place content edits (post/comment/definition) dark-ship (#1675, epic #1637). owner: pano/sozluk. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const optimisticEditsFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_optimistic_edits", {appId, ...OPTIMISTIC_EDITS_FLAG});
+
+/**
+ * The optimistic `post.delete` (instant feed removal on confirm) dark-ship flag
+ * config (#1677, epic #1637 Class B). Default-OFF so it reaches production dark;
+ * with it off, `post.delete` keeps today's wait-for-round-trip behavior. Flipping it
+ * on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           pano
+ *   - originating:     #1677 (epic: optimistic content mutations, #1637)
+ *   - removal trigger: once optimistic post-delete graduates to on at 100% and
+ *                      stable for one release, retire the flag and inline the path.
+ */
+export const PANO_OPTIMISTIC_POST_DELETE_FLAG = {
+	key: PANO_OPTIMISTIC_POST_DELETE,
+	description:
+		"optimistic post.delete (instant feed removal) dark-ship (#1677, epic #1637). owner: pano. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const panoOptimisticPostDeleteFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("pano_optimistic_post_delete", {
+		appId,
+		...PANO_OPTIMISTIC_POST_DELETE_FLAG,
+	});
+
+/**
+ * The optimistic `comment.add` (instant nested-thread insert) containment flag
+ * config (#1678, epic #1637). Default-OFF so it reaches production dark — with it
+ * off, a new comment/reply joins the thread only via the server `appendNode` frame
+ * (or the read-back self-heal), exactly as today; flipping it on writes the
+ * optimistic temp-node into the nested `Post.comments` connection that reconciles to
+ * the server id per ADR 0125 (A1). Flipping it on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_OPTIMISTIC_POST_DELETE_FLAG`).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           pano
+ *   - originating:     #1678 (epic: optimistic content mutations, #1637)
+ *   - removal trigger: once optimistic comment-add graduates to on at 100% and
+ *                      stable for one release, retire the flag and inline the path.
+ */
+export const PANO_OPTIMISTIC_COMMENT_ADD_FLAG = {
+	key: PANO_OPTIMISTIC_COMMENT_ADD,
+	description:
+		"optimistic comment.add (instant nested-thread insert) dark-ship (#1678, epic #1637). owner: pano. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const panoOptimisticCommentAddFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("pano_optimistic_comment_add", {
+		appId,
+		...PANO_OPTIMISTIC_COMMENT_ADD_FLAG,
+	});
+
+/**
+ * The optimistic `comment.delete` (instant leaf-drop / `[silindi]` tombstone)
+ * containment flag config (#1680, epic #1637). Default-OFF so it reaches production
+ * dark — with it off, a deleted comment leaves/tombstones the thread only when the
+ * server `deleteEdge` / `live.update` frame (or the delete-side read-back) lands,
+ * exactly as today; flipping it on applies the reply-aware optimistic write per ADR
+ * 0125 (D1). Flipping it on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_OPTIMISTIC_COMMENT_ADD_FLAG`).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           pano
+ *   - originating:     #1680 (epic: optimistic content mutations, #1637)
+ *   - removal trigger: once optimistic comment-delete graduates to on at 100% and
+ *                      stable for one release, retire the flag and inline the path.
+ */
+export const PANO_OPTIMISTIC_COMMENT_DELETE_FLAG = {
+	key: PANO_OPTIMISTIC_COMMENT_DELETE,
+	description:
+		"optimistic comment.delete (instant leaf-drop / [silindi] tombstone) dark-ship (#1680, epic #1637). owner: pano. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const panoOptimisticCommentDeleteFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("pano_optimistic_comment_delete", {
+		appId,
+		...PANO_OPTIMISTIC_COMMENT_DELETE_FLAG,
+	});
+
+/**
+ * The bildirim (notification system) dark-ship flag config (#1694, epic #1666).
+ * The SINGLE seam the whole notification surface gates behind: the spine's badge +
+ * center page and each sibling emitter's surface (#1695–#1700) reuse this one key
+ * rather than minting per-child flags. Default-OFF so the system reaches production
+ * dark — with it off, nothing user-visible changes (the resolvers deny invisibly,
+ * the badge and `/bildirimler` route are absent); flipping it on is the human
+ * release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           bildirim (the notification system, epic #1666)
+ *   - originating:     #1694 (the bildirim spine)
+ *   - removal trigger: once the notification system is on at 100% and stable for
+ *                      one release, retire the flag and inline the surface.
+ */
+export const BILDIRIM_FLAG = {
+	key: PHOENIX_BILDIRIM,
+	description:
+		"bildirim (notification system) dark-ship (#1694, epic #1666). owner: bildirim. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const bildirimFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_bildirim", {appId, ...BILDIRIM_FLAG});
+
+/**
+ * The optimistic `definition.add` (instant term-page insert) dark-ship flag config
+ * (#1679, epic #1637). The A1 client-append into the nested `Term.definitions`
+ * connection (ADR 0125) runs only behind this key. Default-OFF so it reaches
+ * production dark — with it off a new definition appears only when the live
+ * `appendNode` push / read-back lands, exactly as today; flipping it on is the human
+ * release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `PANO_DRAFT_SAVE_FLAG`, #746).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           sozluk (the term-page definition composer)
+ *   - originating:     #1679 (epic: optimistic content mutations, #1637)
+ *   - removal trigger: once optimistic definition-add graduates to on at 100% and
+ *                      stable for one release, retire the flag and inline the path.
+ */
+export const OPTIMISTIC_DEFINITION_ADD_FLAG = {
+	key: PHOENIX_OPTIMISTIC_DEFINITION_ADD,
+	description:
+		"optimistic definition.add nested-connection insert dark-ship (#1679, epic #1637). owner: sozluk. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const optimisticDefinitionAddFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_optimistic_definition_add", {
+		appId,
+		...OPTIMISTIC_DEFINITION_ADD_FLAG,
+	});
+
+/**
+ * The optimistic `definition.delete` (instant term-page drop) dark-ship flag config
+ * (#1681, epic #1637). The D1 edge-drop from the nested `Term.definitions`
+ * connection (ADR 0125 — `definition.delete` has no reply tree, so D1 collapses to a
+ * plain edge-drop) runs only behind this key. Default-OFF so it reaches production
+ * dark — with it off a deleted definition leaves the page only when the live
+ * `deleteEdge` push / read-back lands, exactly as today; flipping it on is the human
+ * release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `OPTIMISTIC_DEFINITION_ADD_FLAG`, #1679).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
+ * asks for):
+ *   - owner:           sozluk (the term-page definition card)
+ *   - originating:     #1681 (epic: optimistic content mutations, #1637)
+ *   - removal trigger: once optimistic definition-delete graduates to on at 100% and
+ *                      stable for one release, retire the flag and inline the path.
+ */
+export const OPTIMISTIC_DEFINITION_DELETE_FLAG = {
+	key: PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
+	description:
+		"optimistic definition.delete nested-connection edge-drop dark-ship (#1681, epic #1637). owner: sozluk. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const optimisticDefinitionDeleteFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_optimistic_definition_delete", {
+		appId,
+		...OPTIMISTIC_DEFINITION_DELETE_FLAG,
+	});

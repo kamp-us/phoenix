@@ -1,12 +1,14 @@
 /**
- * `@kampus/decisions-index` core — the pure, IO-free derivation of
- * `.decisions/index.md` from the ADR files (ADR 0066).
+ * `@kampus/decisions-index` core — the pure, IO-free derivation of the ADR map(s)
+ * from the ADR files.
  *
  * The single source of truth is each `.decisions/NNNN-*.md` file's YAML
- * front-matter (`id`, `title`, `status`, `date`); the index table is *derived*
- * output, deterministically ordered by `id` ascending. Two doc PRs that add two
- * different ADR files no longer share a textual anchor (the tail of the table),
- * so they cannot collide on `index.md` — the friction ADR 0066 removes.
+ * front-matter (`id`, `title`, `status`, `date`); both the compact ambient map
+ * (`renderCompact` — one line per ADR, the ADR 0126 surface) and the legacy markdown
+ * table (`renderIndex`) are *derived* output, deterministically ordered by `id`
+ * ascending. There is no committed `index.md` anymore (ADR 0126, supersedes 0066's
+ * storage half); discovery is ambient. `renderIndex`/`buildIndex` are retained only
+ * for the legacy `generate`/`check` CLI surfaces.
  *
  * `buildIndex` folds the sibling problem in: a **duplicate `id`** across files is
  * a `DuplicateIdError`, so the same gate that catches a stale index catches two
@@ -263,13 +265,37 @@ export const renderIndex = (entries: ReadonlyArray<AdrEntry>): string => {
 };
 
 /**
+ * Render the ambient compact ADR map: one line per ADR, `id · title · status`,
+ * sorted ascending by id (ADR 0126). This is the map the SessionStart hook injects
+ * (#1728) — no table, no links, no committed file; a dense line per ADR the loader
+ * surfaces into context the way the skills catalog does. `title`/`status` render
+ * verbatim from front-matter, the same source-of-truth as the table rows.
+ */
+export const renderCompact = (entries: ReadonlyArray<AdrEntry>): string =>
+	sortEntries(entries)
+		.map((e) => `${e.id} · ${e.title} · ${e.status}`)
+		.join("\n");
+
+/** Parse every file and reject a duplicate id — the shared prefix of both builders. */
+const buildEntries = (files: ReadonlyArray<AdrFile>): ReadonlyArray<AdrEntry> => {
+	const entries = files.map(parseAdrFile);
+	const dup = findDuplicateId(entries);
+	if (dup) throw dup;
+	return entries;
+};
+
+/**
  * Build the index markdown from the raw `.decisions/` files. Parses every file,
  * fails on a duplicate id (`DuplicateIdError`) or a malformed file
  * (`FrontmatterError`), and otherwise returns the deterministically-ordered table.
  */
-export const buildIndex = (files: ReadonlyArray<AdrFile>): string => {
-	const entries = files.map(parseAdrFile);
-	const dup = findDuplicateId(entries);
-	if (dup) throw dup;
-	return renderIndex(entries);
-};
+export const buildIndex = (files: ReadonlyArray<AdrFile>): string =>
+	renderIndex(buildEntries(files));
+
+/**
+ * Build the compact ambient map from the raw `.decisions/` files (ADR 0126). Same
+ * parse + duplicate-id guard as `buildIndex`, rendered as the one-line-per-ADR map
+ * instead of the markdown table.
+ */
+export const buildCompact = (files: ReadonlyArray<AdrFile>): string =>
+	renderCompact(buildEntries(files));

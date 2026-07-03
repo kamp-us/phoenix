@@ -1,0 +1,228 @@
+/**
+ * The keychain-first credentials resolver (#1730): `CredentialsKeychainFirst` satisfies the
+ * SAME ambient `Credentials` requirement `CredentialsFromEnv` does (the seam
+ * `FlagshipReadLive`/`FlagshipWriteLive` depend on), but resolves the API token from the
+ * macOS Keychain first, falling back to `resolveFromEnv` (`$CLOUDFLARE_API_TOKEN`) when the
+ * keychain has nothing — so `cf-utils auth login` works once for a human while CI's
+ * env-var path is byte-for-byte unchanged. `AccountIdKeychainConfig` is the account-id
+ * half: a `ConfigProvider` answering only `CLOUDFLARE_ACCOUNT_ID` keychain-first, so the
+ * per-call `Config.string("CLOUDFLARE_ACCOUNT_ID")` reads inside `flagship.ts` pick it up
+ * with zero handler changes.
+ */
+import {
+	apiTokenCredentials,
+	Credentials,
+	type CredentialsError,
+	type OAuthConfig,
+	OAuthRefreshError,
+	oauthCredentials,
+	type ResolvedCredentials,
+	resolveFromEnv,
+} from "@distilled.cloud/cloudflare/Credentials";
+import {ConfigError} from "@distilled.cloud/cloudflare/Errors";
+import * as flagship from "@distilled.cloud/cloudflare/flagship";
+import {ConfigProvider, Data, Effect, Layer, Stream} from "effect";
+import type {HttpClient} from "effect/unstable/http/HttpClient";
+import {
+	ACCOUNT_ID_ACCOUNT,
+	API_TOKEN_ACCOUNT,
+	Keychain,
+	type KeychainCommandError,
+	OAUTH_ACCESS_TOKEN_ACCOUNT,
+	OAUTH_EXPIRES_AT_ACCOUNT,
+	OAUTH_REFRESH_TOKEN_ACCOUNT,
+} from "./keychain.ts";
+import {needsRefresh, oauthClientId, refreshOAuthTokens} from "./oauth.ts";
+
+const LOGIN_HINT =
+	"run `cf-utils auth login` to store credentials in the keychain, or export $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID";
+
+/** Write the OAuth token triple back to the keychain (after a login or a refresh). */
+export const persistOAuthTokens = (
+	tokens: OAuthConfig,
+): Effect.Effect<void, KeychainCommandError, Keychain> =>
+	Effect.gen(function* () {
+		const keychain = yield* Keychain;
+		yield* keychain.set(OAUTH_ACCESS_TOKEN_ACCOUNT, tokens.accessToken);
+		if (tokens.refreshToken !== undefined) {
+			yield* keychain.set(OAUTH_REFRESH_TOKEN_ACCOUNT, tokens.refreshToken);
+		}
+		if (tokens.expiresAt !== undefined) {
+			yield* keychain.set(OAUTH_EXPIRES_AT_ACCOUNT, String(tokens.expiresAt));
+		}
+	});
+
+// The stored OAuth access token, refreshed via the refresh token when it is at/inside the
+// refresh window (the rotated tokens are persisted back so the next invocation starts fresh).
+const resolveOAuth = (
+	access: string,
+): Effect.Effect<ResolvedCredentials, CredentialsError, Keychain | HttpClient> =>
+	Effect.gen(function* () {
+		const keychain = yield* Keychain;
+		const refresh = yield* keychain.get(OAUTH_REFRESH_TOKEN_ACCOUNT);
+		const rawExpires = yield* keychain.get(OAUTH_EXPIRES_AT_ACCOUNT);
+		const expiresAt = rawExpires === undefined ? undefined : Number(rawExpires);
+		const stored: OAuthConfig = {
+			accessToken: access,
+			...(refresh !== undefined ? {refreshToken: refresh} : {}),
+			...(expiresAt !== undefined ? {expiresAt} : {}),
+		};
+
+		if (!needsRefresh(expiresAt, Date.now()) || refresh === undefined) {
+			return oauthCredentials(stored);
+		}
+		const clientId = yield* oauthClientId.pipe(
+			Effect.mapError(
+				(error) =>
+					new ConfigError({
+						message: `${error.message ?? String(error)} — set $CF_UTILS_OAUTH_CLIENT_ID to refresh the OAuth session, or re-run \`cf-utils auth login --oauth\``,
+					}),
+			),
+		);
+		const refreshed = yield* refreshOAuthTokens({clientId, refreshToken: refresh}).pipe(
+			Effect.mapError((error) => new OAuthRefreshError({message: error.message, cause: error})),
+		);
+		// A persist failure must not fail the resolve — the refreshed token still authenticates
+		// this run; only the next run's head start is lost.
+		yield* persistOAuthTokens(refreshed).pipe(Effect.ignore);
+		return oauthCredentials(refreshed);
+	});
+
+const resolveKeychainFirst: Effect.Effect<
+	ResolvedCredentials,
+	CredentialsError,
+	Keychain | HttpClient
+> = Effect.gen(function* () {
+	const keychain = yield* Keychain;
+	// OAuth (browser-login, #1761) wins over the pasted token when present: it is the newer,
+	// preferred acquisition path and carries the refresh seam.
+	const oauthAccess = yield* keychain.get(OAUTH_ACCESS_TOKEN_ACCOUNT);
+	if (oauthAccess !== undefined) {
+		return yield* resolveOAuth(oauthAccess);
+	}
+	const stored = yield* keychain.get(API_TOKEN_ACCOUNT);
+	if (stored !== undefined) {
+		return apiTokenCredentials({apiToken: stored});
+	}
+	return yield* resolveFromEnv.pipe(
+		Effect.mapError((error) => new ConfigError({message: `${error.message} — ${LOGIN_HINT}`})),
+	);
+});
+
+export const CredentialsKeychainFirst: Layer.Layer<Credentials, never, Keychain | HttpClient> =
+	Layer.effect(Credentials)(
+		Effect.gen(function* () {
+			const context = yield* Effect.context<Keychain | HttpClient>();
+			// Cached: the token can't expire mid-run, and caching keeps repeated ops (e.g. the
+			// per-app reads inside `listFlagStates`) from re-spawning `security` / re-refreshing per call.
+			return yield* Effect.cached(Effect.provide(resolveKeychainFirst, context));
+		}),
+	);
+
+/**
+ * Installs a `ConfigProvider` that resolves `CLOUDFLARE_ACCOUNT_ID` from the keychain
+ * first and delegates every other path (and a keychain miss) to the ambient provider
+ * (default: the env) — the account-id twin of `CredentialsKeychainFirst`.
+ */
+export const AccountIdKeychainConfig: Layer.Layer<never, never, Keychain> = ConfigProvider.layer(
+	Effect.gen(function* () {
+		const keychain = yield* Keychain;
+		const ambient = yield* ConfigProvider.ConfigProvider;
+		const cached = yield* Effect.cached(keychain.get(ACCOUNT_ID_ACCOUNT));
+		const fromKeychain = ConfigProvider.make((path) =>
+			path.length === 1 && path[0] === "CLOUDFLARE_ACCOUNT_ID"
+				? Effect.map(cached, (value) =>
+						value === undefined ? undefined : ConfigProvider.makeValue(value),
+					)
+				: Effect.succeed(undefined),
+		);
+		return ConfigProvider.orElse(fromKeychain, ambient);
+	}),
+);
+
+/** Where a credential resolved from — the fact `auth status` reports per credential. */
+export type CredentialSource = "keychain" | "env" | "missing";
+
+/** How a keychain-resolved token was acquired: browser OAuth (#1761) vs pasted token (#1730). */
+export type CredentialKind = "oauth" | "token";
+
+export interface CredentialSources {
+	readonly apiToken: CredentialSource;
+	// Only meaningful when `apiToken === "keychain"`: whether it's an OAuth or a pasted token.
+	readonly apiTokenKind: CredentialKind | undefined;
+	readonly accountId: {readonly source: CredentialSource; readonly value: string | undefined};
+}
+
+/** Resolve, without failing, where the token and account id would come from right now. */
+export const credentialSources: Effect.Effect<CredentialSources, never, Keychain> = Effect.gen(
+	function* () {
+		const keychain = yield* Keychain;
+		const [storedOAuth, storedToken, storedAccount] = yield* Effect.all([
+			keychain.get(OAUTH_ACCESS_TOKEN_ACCOUNT),
+			keychain.get(API_TOKEN_ACCOUNT),
+			keychain.get(ACCOUNT_ID_ACCOUNT),
+		]);
+		const envToken = process.env.CLOUDFLARE_API_TOKEN;
+		const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
+		// OAuth (browser login) resolves ahead of a pasted keychain token, matching resolveKeychainFirst.
+		const apiToken: CredentialSource =
+			storedOAuth !== undefined || storedToken !== undefined
+				? "keychain"
+				: envToken !== undefined
+					? "env"
+					: "missing";
+		const apiTokenKind: CredentialKind | undefined =
+			apiToken !== "keychain" ? undefined : storedOAuth !== undefined ? "oauth" : "token";
+		const accountId =
+			storedAccount !== undefined
+				? {source: "keychain" as const, value: storedAccount}
+				: envAccount !== undefined
+					? {source: "env" as const, value: envAccount}
+					: {source: "missing" as const, value: undefined};
+		return {apiToken, apiTokenKind, accountId};
+	},
+);
+
+/** The pasted credentials failed the pre-persist validating read. Nothing was stored. */
+export class CredentialValidationFailed extends Data.TaggedError("CredentialValidationFailed")<{
+	readonly reason: string;
+}> {
+	override get message(): string {
+		return `credential validation failed — nothing was stored: ${this.reason}`;
+	}
+}
+
+/**
+ * The cheap authenticated read `auth login` runs BEFORE persisting: `listApps` under a
+ * `Credentials` service built from exactly the just-acquired credentials + account id (never
+ * the ambient resolution, which would mask a bad credential with a working env var). Succeeds
+ * with the number of visible Flagship apps.
+ */
+const validateResolved = (
+	credentials: ResolvedCredentials,
+	accountId: string,
+): Effect.Effect<number, CredentialValidationFailed, HttpClient> =>
+	Stream.runCollect(flagship.listApps.items({accountId})).pipe(
+		Effect.map((apps) => apps.length),
+		Effect.provideService(Credentials, Effect.succeed(credentials)),
+		Effect.mapError(
+			(cause) =>
+				new CredentialValidationFailed({
+					reason: cause instanceof Error ? cause.message : String(cause),
+				}),
+		),
+	);
+
+/** Validate the pasted API token (#1730 token-paste path) before persisting it. */
+export const validateCredentials = (
+	apiToken: string,
+	accountId: string,
+): Effect.Effect<number, CredentialValidationFailed, HttpClient> =>
+	validateResolved(apiTokenCredentials({apiToken}), accountId);
+
+/** Validate the browser-acquired OAuth tokens (#1761 OAuth path) before persisting them. */
+export const validateOAuthCredentials = (
+	tokens: OAuthConfig,
+	accountId: string,
+): Effect.Effect<number, CredentialValidationFailed, HttpClient> =>
+	validateResolved(oauthCredentials(tokens), accountId);

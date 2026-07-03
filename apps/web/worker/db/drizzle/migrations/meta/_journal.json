@@ -120,6 +120,13 @@
       "when": 1790000000000,
       "tag": "0016_yazar_promoted_at",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1790500000000,
+      "tag": "0017_notification",
+      "breakpoints": true
     }
   ]
 }

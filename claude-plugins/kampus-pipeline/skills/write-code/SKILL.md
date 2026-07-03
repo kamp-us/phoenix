@@ -1485,12 +1485,35 @@ git fetch origin
 # In orchestrated repair the original claim token is threaded as MY_CLAIM (ADR 0115 §3 delegated own).
 claim_is_mine "$N" || { echo "refusing to repair PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
 wt_preflight && git switch <the PR's head branch>   # gate the branch switch ([per-mutation preflight]); gh api .../pulls/$PR --jq '.head.ref'
+wt_preflight && git rebase origin/main   # freshen the dispatch-time base FIRST — surface a textual conflict now, in-context (see below)
 # apply the fixes addressing exactly the enumerated findings
 ```
 
 Repair mode runs in a worktree too, so re-run the Step-4 opening preflight (and capture `WT`)
 before this switch, then gate every later `git commit`/`git push` on `wt_preflight` exactly
 as the initial build does.
+
+**Freshen the base onto latest `origin/main` before you fix — surface a textual conflict at
+code-time, not merge-time.** The repair branch still carries its **dispatch-time base**; if
+`main` moved while the PR sat in the gate (other PRs merged) and touched the same lines, the
+**textual merge conflict** doesn't surface until *merge* — when you (the coder) are long gone
+and can't resolve it in-context. The `git fetch origin` above already updated `origin/main`, so
+**`git rebase origin/main`** replays the branch onto the latest base **before** you apply the
+fixes. Two outcomes:
+
+- **Clean rebase** — the base was stale but non-conflicting; the branch is now current and you
+  proceed to fix exactly as before. (ADR 0132's merge queue would catch a *behind-main* base at
+  ship, but it does **not** auto-resolve a textual conflict — so freshening here is a genuine
+  earlier catch, not a queue duplicate.)
+- **Rebase hits a conflict** — a `main`-side change overlaps your branch's lines. This is the
+  whole point: **resolve it now, in-context.** Reconcile each conflicted hunk (keeping both the
+  incoming `main` change and your branch's intent), `git add` the resolved files, `git rebase
+  --continue`, and only then apply the review findings on top. Do **not** `git rebase --abort`
+  and push the stale base — that just re-buries the conflict until merge. Because a rebase moves
+  the head, the eventual R3 push is a force-push (`git push --force-with-lease origin HEAD`), and
+  the fresh re-review re-binds the verdict to the new head (the [rebase → re-review → ship is
+  atomic](#a-rebase-invalidates-the-pass--rebase--re-review--ship-is-atomic) rule already covers
+  this — the R3 push *is* that head-move, and the independent gate re-reviews it).
 
 Ground the fixes the same way the initial build does — ADRs in `.decisions/` for the *why*,
 patterns in `.patterns/` for *how the code is shaped* — and run the **pre-push typecheck**
@@ -1517,7 +1540,7 @@ makes the **stateless** gate re-run — you do **not** re-trigger or self-approv
 # reset can't move the claim, but the guard is MANDATED before every number-targeting mutation,
 # exactly as wt_preflight is before every git op; gate both the push and the progress comment.
 claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue #$N not my claim (Step 3.5)"; exit 1; }
-wt_preflight && git push origin HEAD   # gate the push ([per-mutation preflight])
+wt_preflight && git push --force-with-lease origin HEAD   # gate the push ([per-mutation preflight]); --force-with-lease because the R2 rebase onto origin/main moved the head
 gh api repos/$REPO/issues/$N/comments -f body="$(cat /tmp/write-code-repair-progress.md)"
 ```
 
@@ -1734,9 +1757,10 @@ not a PR.
 A decision issue asks for a settled, recorded technical choice — not code. Resolve it,
 then **record it via the in-repo `/adr` skill** (at `../adr/SKILL.md` —
 read it): it writes one decision per file into `.decisions/NNNN-slug.md` (Context /
-Decision / Consequences), appends a row to `.decisions/index.md`, and follows the
-supersede rules for any ADR it replaces. The ADR file + index row land on a branch and
-go in via a PR the same as code (so `review-code` can still gate it).
+Decision / Consequences) and follows the supersede rules for any ADR it replaces. There is
+no committed index (ADR 0126) — the ADR PR is purely additive: it lands the new file (plus
+the superseded file's status edit) on a branch and goes in via a PR the same as code (so
+`review-code` can still gate it).
 
 Then close the loop on the issue:
 

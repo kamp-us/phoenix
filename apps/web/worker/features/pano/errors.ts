@@ -125,6 +125,21 @@ export class UnauthorizedCommentMutation extends Schema.TaggedErrorClass<Unautho
 ) {}
 
 /**
+ * A post's removal WRITE failed at the D1 layer — the vote-clear / triad-stamp / FTS
+ * commit (`Removal.removeEntity`, over `DrizzleAccessOrDie`) threw. Declared so a
+ * genuine removal-commit failure surfaces as a typed, user-readable error the SPA can
+ * show, instead of escaping `post.delete`'s union as a squashed defect (a raw
+ * `INTERNAL_SERVER_ERROR`, #1639). The post-commit stats refresh is a recomputable
+ * cache (ADR 0011/0117) swallowed at its call site — it cannot fail an already-
+ * committed removal — so this error means the removal itself did not commit.
+ */
+export class PostDeleteFailed extends Schema.TaggedErrorClass<PostDeleteFailed>()(
+	"pano/PostDeleteFailed",
+	{message: Schema.String},
+	{[FateWireCode]: "POST_DELETE_FAILED"},
+) {}
+
+/**
  * Drafts (taslak) are reachable only when the `pano-draft-save` flag is on. The
  * server-side gate raises this when a draft mutation runs with the flag off, so the
  * dark path is unreachable even if a client bypasses the UI. See issue #746.

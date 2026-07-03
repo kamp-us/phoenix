@@ -7,13 +7,15 @@
  */
 import * as React from "react";
 import {useLiveListView, useRequest} from "react-fate";
+import {useSearchParams} from "react-router";
 import {useSession} from "../auth/client";
-import {Subnav, type SubnavLink} from "../components/layout/Subnav";
+import {Subnav} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
+import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
-import type {PostSort} from "../lib/panoFeedSort";
+import {PANO_FILTERS, PANO_SORT_PARAM, panoFilterIdFromParam, SAVED_LINK} from "../lib/panoNav";
 
 const PAGE_SIZE = 20;
 
@@ -27,27 +29,21 @@ const PostConnectionView = {
 	live: {prepend: "visible"},
 } as const;
 
-/** UI sort labels (Turkish) → server `sort` string (the shared `PostSort` vocabulary). */
-const FILTERS: {id: string; label: string; sort: PostSort}[] = [
-	{id: "sicak", label: "sıcak", sort: "hot"},
-	{id: "yeni", label: "yeni", sort: "new"},
-	{id: "en-iyi", label: "en iyi", sort: "top"},
-	{id: "tartisma", label: "tartışma", sort: "discuss"},
-];
-
-/** Saved-posts (`/pano/kaydedilenler`) is per-viewer, so it's shown signed-in only. */
-const SAVED_LINK: SubnavLink = {to: "/pano/kaydedilenler", label: "kaydedilenler"};
-
 export function PanoFeed({host}: {host?: string}) {
-	const [filterId, setFilterId] = React.useState("sicak");
-	const filter = FILTERS.find((f) => f.id === filterId) ?? FILTERS[0];
+	// Seed the chip from `?sort=` so a deep link (e.g. the saved page's sort links)
+	// opens the right feed; in-feed switching stays local chip state, unchanged.
+	const [searchParams] = useSearchParams();
+	const [filterId, setFilterId] = React.useState(() =>
+		panoFilterIdFromParam(searchParams.get(PANO_SORT_PARAM)),
+	);
+	const filter = PANO_FILTERS.find((f) => f.id === filterId) ?? PANO_FILTERS[0];
 	if (!filter) return null;
 
 	return (
 		<Screen
 			fallback={
-				<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta="yükleniyor…">
-					{null}
+				<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta="">
+					<PanoFeedSkeleton />
 				</FeedChrome>
 			}
 			error={({code}) => (
@@ -134,7 +130,7 @@ function FeedChrome({host, filterId, setFilterId, meta, children}: ChromeProps) 
 	return (
 		<>
 			<Subnav
-				filters={FILTERS}
+				filters={PANO_FILTERS}
 				activeFilter={filterId}
 				onFilterChange={setFilterId}
 				links={links}

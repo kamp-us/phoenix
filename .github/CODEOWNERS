@@ -1,24 +1,28 @@
-# Control-plane: human-only approval required (ADR 0053, 0065, 0071).
-# Owner MUST be a human individual or a humans-only team — never an agent/bot,
-# else an ADR-0055 agent approval would defeat the human-merge property.
+# Control-plane: control-plane-team approval required (ADR 0053, 0065, 0071, 0135).
+# Owner is the @kamp-us/control-plane team (usirin + cansirin) — a two-human team so
+# `require_code_owner_review` is SATISFIABLE (a single operator cannot self-approve;
+# GitHub blocks self-approval, so a §CP PR needs the OTHER team member — a deliberate
+# two-person control). The team is humans-only: never an agent/bot, else an ADR-0055
+# agent approval would defeat the human-judgment property (ADR 0135, amending 0071).
 #
 # This file is INERT until the `main` ruleset enables `require_code_owner_review`
-# (a human governance action — see ADR 0071 §3 and the PR that adds this file).
-/.claude/                       @usirin
-/.github/                       @usirin
-/claude-plugins/kampus-pipeline/skills/ship-it/                    @usirin
-/claude-plugins/kampus-pipeline/skills/review-code/                @usirin
-/claude-plugins/kampus-pipeline/skills/review-doc/                 @usirin
-/claude-plugins/kampus-pipeline/skills/review-skill/               @usirin
-/claude-plugins/kampus-pipeline/skills/review-plan/                @usirin
-/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md  @usirin
+# (a human governance action — the Phase-3 ruleset flip after this PR merges; see
+# ADR 0135 and ADR 0071 §3).
+/.claude/                       @kamp-us/control-plane
+/.github/                       @kamp-us/control-plane
+/claude-plugins/kampus-pipeline/skills/ship-it/                    @kamp-us/control-plane
+/claude-plugins/kampus-pipeline/skills/review-code/                @kamp-us/control-plane
+/claude-plugins/kampus-pipeline/skills/review-doc/                 @kamp-us/control-plane
+/claude-plugins/kampus-pipeline/skills/review-skill/               @kamp-us/control-plane
+/claude-plugins/kampus-pipeline/skills/review-plan/                @kamp-us/control-plane
+/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md  @kamp-us/control-plane
 # Control-plane: the plugin hook surface — the install.sh + guard.sh dispatch wrapper (the dir)
 # and the foreign-repo hook manifest (hooks.json). The §CP `hooks(/|\.json$)` branch covers both,
 # so each gets its own literal row (ADR 0103, #1003).
-/claude-plugins/kampus-pipeline/hooks/                            @usirin
-/claude-plugins/kampus-pipeline/hooks.json                        @usirin
+/claude-plugins/kampus-pipeline/hooks/                            @kamp-us/control-plane
+/claude-plugins/kampus-pipeline/hooks.json                        @kamp-us/control-plane
 # Control-plane: enforcement guard packages — the platform half of the §CP regex (ADR 0100).
 # The standalone *-guard packages were folded into pipeline-cli and deleted (#1003); ci-required
 # stays standalone (ADR 0092) and keeps its own owner line.
-/packages/ci-required/          @usirin
-/packages/pipeline-cli/         @usirin
+/packages/ci-required/          @kamp-us/control-plane
+/packages/pipeline-cli/         @kamp-us/control-plane

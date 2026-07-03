@@ -2,6 +2,7 @@ import type * as React from "react";
 import {useEffect, useRef} from "react";
 import {Link, NavLink, useNavigate} from "react-router";
 import {isSearchShortcut} from "../../lib/searchShortcut";
+import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
 import {Karma} from "../karma/Karma";
 import {Avatar} from "../ui/Avatar";
 import {Menu} from "../ui/Menu";
@@ -16,6 +17,7 @@ export function Topbar({
 	divanTo,
 	user,
 	karma,
+	bildirim,
 	actions,
 	onSearchSubmit,
 	onToggleTheme,
@@ -40,6 +42,13 @@ export function Topbar({
 	 * is off it is `undefined` and the topbar is exactly as before.
 	 */
 	karma?: number;
+	/**
+	 * The bildirim entry (#1694). Rendered only when set — the Layout passes it
+	 * solely when the `phoenix-bildirim` flag is on AND the viewer is signed in,
+	 * so with the flag off (the dark default) the topbar is exactly as before.
+	 * The unread chip on the trigger renders only when `unread > 0` (the AC).
+	 */
+	bildirim?: {to: string; unread: number};
 	actions?: React.ReactNode;
 	onSearchSubmit?: (query: string) => void;
 	onToggleTheme?: () => void;
@@ -118,25 +127,34 @@ export function Topbar({
 			{typeof karma === "number" ? (
 				<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />
 			) : null}
-			{user?.username ? (
-				<Link
-					className="kp-topbar__profile-link"
-					to={`/u/${user.username}`}
-					data-testid="topbar-profile-link"
-				>
-					@{user.username}
-				</Link>
-			) : null}
 			{user ? (
 				<Menu.Root>
 					<Menu.Trigger className="kp-topbar__user">
 						<Avatar name={user.name} src={user.src} />
 						<span>{user.name}</span>
+						{bildirim && showUnreadBadge(bildirim.unread) ? (
+							<span
+								className="kp-topbar__bildirim-badge"
+								data-testid="topbar-bildirim-badge"
+								role="status"
+								aria-label={`${bildirim.unread} okunmamış bildirim`}
+							>
+								{formatUnreadBadge(bildirim.unread)}
+							</span>
+						) : null}
 					</Menu.Trigger>
 					<Menu.Popup align="end">
-						<Menu.Item onClick={() => navigate(user.username ? `/u/${user.username}` : "/profile")}>
+						<Menu.Item
+							data-testid="topbar-profile-link"
+							onClick={() => navigate(user.username ? `/u/${user.username}` : "/profile")}
+						>
 							Profil
 						</Menu.Item>
+						{bildirim ? (
+							<Menu.Item data-testid="topbar-bildirim-link" onClick={() => navigate(bildirim.to)}>
+								Bildirimler
+							</Menu.Item>
+						) : null}
 						<Menu.Item onClick={() => navigate("/profile")}>Ayarlar</Menu.Item>
 						<Menu.Separator />
 						<Menu.Item onClick={onLogout}>Çıkış</Menu.Item>

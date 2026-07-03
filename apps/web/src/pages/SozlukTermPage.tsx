@@ -11,23 +11,35 @@
  * lost (#730/#714, epic #713).
  */
 import * as React from "react";
-import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
+import {
+	toEntityId,
+	useFateClient,
+	useLiveListView,
+	useRequest,
+	useView,
+	type ViewRef,
+	view,
+} from "react-fate";
 import {useNavigate, useParams} from "react-router";
 import type {Term} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
+import {Skeleton} from "../components/ui/atoms";
 import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
-import {useReadbackRefetch} from "../fate/useReadbackRefetch";
+import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {LoadMoreButton} from "../fate/wire";
 import type {WireMessageOverrides} from "../fate/wireMessages";
+import {PHOENIX_OPTIMISTIC_DEFINITION_ADD} from "../flags/keys";
+import {useFlag} from "../flags/useFlag";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
+import {appendOptimisticDefinitionEdge, buildOptimisticDefinition} from "./definitionAddOptimistic";
 import {NotFoundPage} from "./NotFoundPage";
 import "./SozlukTermPage.css";
 
@@ -75,6 +87,41 @@ const SOZLUK_OVERRIDES: WireMessageOverrides = {
 	BODY_TOO_LONG: `tanım en fazla ${BODY_MAX} karakter olabilir`,
 };
 
+/**
+ * Layout-preserving Suspense fallback for the term page: a header block (crumbs +
+ * title + meta) over a few definition-shaped rows, so the page doesn't jump when the
+ * real term resolves into the same {@link SozlukTermHeader} + {@link DefinitionCard}
+ * shape. The precedent is `LandingColsSkeleton` — a placeholder mirroring the real
+ * content, built from the shared {@link Skeleton} atom.
+ */
+function SozlukTermSkeleton() {
+	return (
+		<div role="status" aria-busy="true" aria-label="yükleniyor…" data-testid="sozluk-term-loading">
+			<header className="kp-sozluk-term__head">
+				<Skeleton width={140} height={12} className="kp-sozluk-term__skeleton-crumbs" />
+				<Skeleton width={220} height={20} className="kp-sozluk-term__skeleton-title" />
+				<div className="kp-sozluk-term__meta">
+					<Skeleton width={56} height={12} />
+					<Skeleton width={44} height={12} />
+					<Skeleton width={92} height={12} />
+				</div>
+			</header>
+			{[0, 1, 2].map((row) => (
+				<div key={row} className="kp-sozluk-definition" aria-hidden="true">
+					<div className="kp-sozluk-definition__vote">
+						<Skeleton width={26} height={26} />
+					</div>
+					<div className="kp-sozluk-term__skeleton-lines">
+						<Skeleton width="100%" height={12} />
+						<Skeleton width="92%" height={12} />
+						<Skeleton width="70%" height={12} />
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
 export function SozlukTermPage() {
 	const {slug} = useParams<{slug: string}>();
 	const safeSlug = slug ?? "";
@@ -93,7 +140,7 @@ export function SozlukTermPage() {
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<Screen
-					fallback={<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>}
+					fallback={<SozlukTermSkeleton />}
 					error={({code}) => (
 						<p style={{font: "var(--t-body)", color: "var(--danger)"}}>
 							terim yüklenemedi: {code.toLowerCase()}
@@ -208,16 +255,29 @@ function DefinitionsList(props: DefinitionsListProps) {
 	const term = useView(TermView, props.term);
 	const [items, loadNext] = useLiveListView(DefinitionConnectionView, term.definitions);
 
+	const refetchTerm = React.useCallback(
+		() =>
+			fate.request(
+				{term: {view: TermView, args: {slug: props.slug, definitions: {first: PAGE_SIZE}}}},
+				{mode: "network-only"},
+			),
+		[fate, props.slug],
+	);
+
 	// Deterministic read-back: if the server's `appendNode` push for the author's own
 	// new definition is lost (publish-vs-register race, #714), refetch this page's
 	// request `network-only` so the definition lands without a manual refresh.
 	const confirmDefinition = useReadbackRefetch({
 		presentIds: items.map(({node}) => String(node.id)),
-		refetch: () =>
-			fate.request(
-				{term: {view: TermView, args: {slug: props.slug, definitions: {first: PAGE_SIZE}}}},
-				{mode: "network-only"},
-			),
+		refetch: refetchTerm,
+	});
+
+	// Delete-side read-back (#1687): if the `deleteEdge` push for the author's own
+	// delete is lost server-side, the row lingers — refetch `network-only` so it
+	// reconciles away, mirroring the add-side self-heal above.
+	const confirmDefinitionGone = useConfirmGone({
+		presentIds: items.map(({node}) => String(node.id)),
+		refetch: refetchTerm,
 	});
 
 	// Fresh-slug arrival: this list mounted because a `definition.add` just created the
@@ -239,6 +299,7 @@ function DefinitionsList(props: DefinitionsListProps) {
 					rank={i + 1}
 					top={i === 0}
 					slug={props.slug}
+					onDeleted={confirmDefinitionGone}
 				/>
 			))}
 			{loadNext ? (
@@ -254,13 +315,18 @@ function DefinitionsList(props: DefinitionsListProps) {
 /**
  * Definition composer wired to `fate.mutations.definition.add`. Membership in the
  * *nested* `Term.definitions` connection is server-driven (fate's declarative
- * `insert` only targets registered root lists), so there is no optimistic
- * temp-node — it would double with the live append. `onTermCreated` is passed
- * only on the fresh-slug branch, where there's no list yet to append to; it force-
- * refetches `term(slug)` then carries the new definition's id across the remount so
- * the list branch arms its read-back on it. On the list branch `onConfirm` hands the
- * new id to the same deterministic read-back so a lost live `appendNode` self-heals
- * (see {@link useReadbackRefetch}).
+ * `insert` only targets registered root lists), so an optimistic node is injected
+ * by a phoenix client helper rather than `insert` — behind the default-off
+ * `phoenix-optimistic-definition-add` flag (ADR 0125, #1679): on, the new definition
+ * shows instantly, temp-node reconciled to the server id (dedup by canonical id vs
+ * the live append); off, it appears only when the live `appendNode` / read-back
+ * lands, exactly as before. `onTermCreated` is passed only on the fresh-slug branch,
+ * where there's no list yet to append to (so the optimistic append is skipped
+ * there); it force-refetches `term(slug)` then carries the new definition's id across
+ * the remount so the list branch arms its read-back on it. On the list branch
+ * `onConfirm` hands the new id to the same deterministic read-back — narrowed to the
+ * append-loss healer when optimistic is on (the node is already present) — so a lost
+ * live `appendNode` self-heals (see {@link useReadbackRefetch}).
  */
 function Composer({
 	slug,
@@ -274,6 +340,9 @@ function Composer({
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
+	// Dark-ship gate (#1679, ADR 0125): off ⇒ no optimistic node, wait for the
+	// append/read-back exactly as today.
+	const {value: optimisticAdd} = useFlag(PHOENIX_OPTIMISTIC_DEFINITION_ADD, false);
 	const [body, setBody] = React.useState("");
 	const {
 		error,
@@ -309,12 +378,43 @@ function Composer({
 			return;
 		}
 		if (disabled) return;
+		const user = session.data.user;
+		// Optimistic nested-append (ADR 0125) only on the existing-term branch: the
+		// fresh-slug branch (onTermCreated) has no loaded definitions list to append
+		// to and drives its own force-refetch + remount, left untouched.
+		const optimistic = buildOptimisticDefinition(optimisticAdd && !onTermCreated, {
+			body,
+			author: user.name ?? user.email,
+			authorId: user.id,
+		});
 		await run(
-			() =>
-				fate.mutations.definition.add({
+			() => {
+				const promise = fate.mutations.definition.add({
 					input: {termSlug: slug, termTitle: slug.replace(/-/g, " "), body},
 					view: DefinitionView,
-				}),
+					...(optimistic ? {optimistic, insert: "none" as const} : {}),
+				});
+				if (optimistic) {
+					// fate wrote the temp record synchronously inside `.add`; append its
+					// edge into the nested list now so it renders instantly. The HTTP
+					// result triggers fate's resolveOptimisticEntity (temp→server id),
+					// which dedups against the live appendNode by canonical id. Roll the
+					// edge back on any failure — fate restores its own record write, but
+					// not this nested-list insert.
+					const rollback = appendOptimisticDefinitionEdge(
+						fate.store,
+						toEntityId("Term", slug),
+						toEntityId("Definition", optimistic.id),
+					);
+					promise.then(
+						(res) => {
+							if (res.error) rollback();
+						},
+						() => rollback(),
+					);
+				}
+				return promise;
+			},
 			"tanım eklenemedi",
 			async (result) => {
 				setBody("");

@@ -36,7 +36,8 @@
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
-		"effect": "catalog:"
+		"effect": "catalog:",
+		"yaml": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
