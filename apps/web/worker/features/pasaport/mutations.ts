@@ -10,6 +10,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
+import {notifyKefil} from "../bildirim/rite-emitters.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
@@ -229,6 +230,12 @@ const vouchGated = Effect.fn("user.vouchGated")(function* (input: typeof VouchIn
 	}
 
 	const {promoted} = yield* resolveTandem(input.candidateId);
+	// Rite feedback (#1695): a RECORDED vouch (never the idempotent `alreadyVouched`
+	// re-vouch) notifies the vouched çaylak — self-suppressed, flag-gated and
+	// swallowed inside the emitter, so it can never fail this committed vouch.
+	if (outcome === "recorded") {
+		yield* notifyKefil({candidateId: input.candidateId, voucherId});
+	}
 	return toPromotionReceipt({
 		userId: input.candidateId,
 		promoted,

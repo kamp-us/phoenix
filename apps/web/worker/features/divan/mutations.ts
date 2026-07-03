@@ -28,6 +28,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
 import {TARGET_KINDS, type TargetKind} from "../../db/target-kind.ts";
+import {notifyDivanVote} from "../bildirim/rite-emitters.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied} from "../kunye/errors.ts";
@@ -113,6 +114,19 @@ const voteGated = Effect.fn("divan.voteGated")(function* (
 	// invariant), so it stays inside this divan-gated path with no new authority surface. Keyed on
 	// the SERVER-derived `result.authorId`, never a client-supplied id. Only on a real karma move.
 	if (result.changed) yield* resolveTandem(result.authorId);
+	// Rite feedback (#1695): a LANDED upvote (not a retraction, not an idempotent
+	// no-op) notifies the item's author — aggregated per item, self-suppressed,
+	// flag-gated and swallowed inside the emitter, so it can never fail this
+	// committed cast. A retraction stays silent (no decrement: the aggregate is
+	// "attention received", not a live score).
+	if (value && result.changed) {
+		yield* notifyDivanVote({
+			authorId: result.authorId,
+			actorId: user.id,
+			targetKind: result.targetKind,
+			targetId: result.targetId,
+		});
+	}
 	return {
 		__typename: "DivanVoteReceipt" as const,
 		id: `${result.targetKind}:${result.targetId}`,

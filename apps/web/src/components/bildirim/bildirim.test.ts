@@ -6,6 +6,7 @@
  */
 import {describe, expect, it} from "vitest";
 import {
+	bildirimCopy,
 	bildirimTarget,
 	formatUnreadBadge,
 	rowUnread,
@@ -70,5 +71,21 @@ describe("targetLinkLabel — per-kind Turkish labels, generic fallback", () => 
 		expect(targetLinkLabel("definition")).toBe("tanıma git");
 		expect(targetLinkLabel("user")).toBe("profile git");
 		expect(targetLinkLabel("mystery")).toBe("içeriğe git");
+	});
+});
+
+describe("bildirimCopy — Turkish product voice per kind (#1695)", () => {
+	it("divan-vote reads as received attention, aggregate count inline", () => {
+		expect(bildirimCopy("divan-vote", 1)).toBe("divandaki içeriğin oy aldı");
+		expect(bildirimCopy("divan-vote", 3)).toBe("divandaki içeriğin 3 oy aldı");
+	});
+
+	it("kefil reads as the vouch moment (no voucher identity drip)", () => {
+		expect(bildirimCopy("kefil", 1)).toBe("bir yazar sana kefil oldu");
+	});
+
+	it("an unknown kind degrades to the raw kind + xN — never a blank row", () => {
+		expect(bildirimCopy("future-kind", 1)).toBe("future-kind");
+		expect(bildirimCopy("future-kind", 2)).toBe("future-kind ×2");
 	});
 });

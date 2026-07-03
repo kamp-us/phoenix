@@ -11,7 +11,7 @@
  * no engine (ADR 0082 T1/T2). Reads reach D1 only through the `Drizzle` seam and
  * die on infra errors (`orDieAccess`), so public signatures carry no error.
  */
-import {and, count, desc, eq, inArray, isNull} from "drizzle-orm";
+import {and, count, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -41,6 +41,9 @@ export interface NotificationRecordInput {
 	/** Aggregate slot (#1698); defaults to 1. */
 	count?: number;
 }
+
+/** The aggregate-upsert input (#1695): one UNREAD row per `(recipient, kind, target)`. */
+export type NotificationAggregateInput = Omit<NotificationRecordInput, "count">;
 
 export interface NotificationRow {
 	id: string;
@@ -83,6 +86,52 @@ export const markReadStatement = (
 			),
 		);
 
+/** The aggregate key's WHERE — recipient-scoped AND unread-only, so a read row is
+ * history (never mutated) and a foreign recipient matches zero rows. */
+const unreadAggregateWhere = (input: NotificationAggregateInput) =>
+	and(
+		eq(schema.notification.recipientId, input.recipientId),
+		eq(schema.notification.kind, input.kind),
+		eq(schema.notification.targetKind, input.targetKind),
+		eq(schema.notification.targetId, input.targetId),
+		isNull(schema.notification.readAt),
+	);
+
+/** Bump the existing UNREAD aggregate row (`count + 1`, `updated_at` refreshed). */
+export const bumpUnreadAggregateStatement = (
+	db: DrizzleDb,
+	input: NotificationAggregateInput,
+	now: Date,
+) =>
+	db
+		.update(schema.notification)
+		.set({count: sql`${schema.notification.count} + 1`, updatedAt: now})
+		.where(unreadAggregateWhere(input));
+
+/**
+ * Insert a fresh unread row for the aggregate key ONLY if no unread row exists —
+ * the `VouchLedger.castVouch` guarded-insert idiom, so bump + insert run in one
+ * D1 batch (transaction) and two concurrent emits can't mint two unread rows.
+ * Raw-select values bypass the drizzle `{mode: "timestamp"}` codec, so the
+ * timestamps are encoded as the epoch SECONDS the column stores.
+ */
+export const insertUnlessUnreadStatement = (
+	db: DrizzleDb,
+	input: NotificationAggregateInput & {id: string},
+	now: Date,
+) => {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const unreadExists = db
+		.select({one: sql`1`})
+		.from(schema.notification)
+		.where(unreadAggregateWhere(input));
+	return db
+		.insert(schema.notification)
+		.select(
+			sql`select ${input.id}, ${input.recipientId}, ${input.kind}, ${input.targetKind}, ${input.targetId}, ${input.actorId ?? null}, 1, NULL, ${nowSeconds}, ${nowSeconds} where not exists (${unreadExists})`,
+		);
+};
+
 /** Flip EVERY unread notification of the recipient read. */
 export const markAllReadStatement = (db: DrizzleDb, recipientId: string, now: Date) =>
 	db
@@ -97,6 +146,18 @@ export class Notification extends Context.Service<
 	{
 		/** Record one notification (the emitter siblings' single write surface). */
 		readonly record: (input: NotificationRecordInput) => Effect.Effect<{id: string}>;
+
+		/**
+		 * Aggregate-upsert (#1695, the anti-hype voice): bump the recipient's
+		 * existing UNREAD row for `(kind, target)` — `count + 1`, `updated_at`
+		 * refreshed — or insert a fresh unread row when none exists (so activity
+		 * after a mark-read surfaces as NEW unread, never a rewrite of read
+		 * history). N repeat events on one target therefore never mint N rows.
+		 * `aggregated: true` ⇔ an existing row was bumped.
+		 */
+		readonly recordAggregate: (
+			input: NotificationAggregateInput,
+		) => Effect.Effect<{aggregated: boolean}>;
 
 		/**
 		 * The recipient's notifications, newest-first, forward keyset pagination
@@ -134,7 +195,7 @@ export class Notification extends Context.Service<
 
 export const NotificationLive = Layer.effect(Notification)(
 	Effect.gen(function* () {
-		const {run} = orDieAccess(yield* Drizzle);
+		const {run, batch} = orDieAccess(yield* Drizzle);
 
 		const listForRecipient = Effect.fn("Notification.listForRecipient")(function* (
 			recipientId: string,
@@ -294,6 +355,23 @@ export const NotificationLive = Layer.effect(Notification)(
 						.run(),
 				);
 				return {id};
+			}),
+			// Bump-then-guarded-insert in ONE batch (one D1 transaction): if the bump
+			// matched an unread row the insert's NOT EXISTS is false; if none existed
+			// the insert fires — atomic, so concurrent emits can't mint two unread rows.
+			recordAggregate: Effect.fn("Notification.recordAggregate")(function* (
+				input: NotificationAggregateInput,
+			) {
+				const id = crypto.randomUUID();
+				const now = new Date();
+				const [bumped] = yield* batch(
+					(db) =>
+						[
+							bumpUnreadAggregateStatement(db, input, now),
+							insertUnlessUnreadStatement(db, {...input, id}, now),
+						] as const,
+				);
+				return {aggregated: bumped.meta.changes > 0};
 			}),
 			unreadCount: Effect.fn("Notification.unreadCount")(function* (recipientId: string) {
 				const rows = yield* run((db) => unreadCountQuery(db, recipientId));

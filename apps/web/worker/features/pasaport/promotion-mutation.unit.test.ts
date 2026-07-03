@@ -24,6 +24,8 @@ import {
 import {CurrentUser} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Exit, Layer} from "effect";
+import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
+import type {NotificationRecordInput} from "../bildirim/Notification.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
@@ -118,6 +120,7 @@ describe("user.promote — direct moderator promotion", () => {
 					makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: true})}),
 					relationStoreOf(["u-mod"]),
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-mod"), true),
 				),
 			),
@@ -136,6 +139,7 @@ describe("user.promote — direct moderator promotion", () => {
 					makePasaportStub(),
 					relationStoreOf(["someone-else"]),
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-rando"), true),
 				),
 			),
@@ -156,6 +160,7 @@ describe("user.promote — direct moderator promotion", () => {
 						hasSubjects: () => Effect.die(new Error("flag OFF must not check authority")),
 					}),
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-rando"), false),
 				),
 			),
@@ -185,6 +190,7 @@ describe("user.vouch — author-vouch tandem", () => {
 						}),
 						kunyeOf(yazarVoucher.tier, {"u-caylak": 25}), // above VOUCH_PROMOTION_KARMA_BAR
 						agentAuthorityStub,
+						makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 						requestContext(human("u-yazar"), true),
 					),
 				),
@@ -207,6 +213,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					}),
 					kunyeOf(yazarVoucher.tier, {"u-caylak": 1}), // below the bar
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-yazar"), true),
 				),
 			),
@@ -232,6 +239,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					}),
 					kunyeOf(yazarVoucher.tier, {}),
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-yazar"), true),
 				),
 			),
@@ -256,6 +264,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					}),
 					kunyeOf(yazarVoucher.tier, {"u-existing": 1}), // below the bar ⇒ no promote
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-yazar"), true),
 				),
 			),
@@ -276,6 +285,7 @@ describe("user.vouch — author-vouch tandem", () => {
 						makeVouchLedgerStub(),
 						kunyeOf({"u-caylak-actor": "çaylak"}, {}),
 						agentAuthorityStub,
+						makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 						requestContext(human("u-caylak-actor"), true),
 					),
 				),
@@ -294,6 +304,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					makeVouchLedgerStub(),
 					kunyeOf({}, {}),
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(unauthenticated, true),
 				),
 			),
@@ -317,6 +328,7 @@ describe("user.withdrawVouch — releasing the slot", () => {
 					makeVouchLedgerStub({withdraw: () => Effect.succeed({withdrawn: true})}),
 					kunyeOf(yazarVoucher.tier, {}),
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-yazar"), true),
 				),
 			),
@@ -335,6 +347,7 @@ describe("user.withdrawVouch — releasing the slot", () => {
 					makeVouchLedgerStub(),
 					kunyeOf({"u-caylak-actor": "çaylak"}, {}),
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-caylak-actor"), true),
 				),
 			),
@@ -353,9 +366,76 @@ describe("user.withdrawVouch — releasing the slot", () => {
 					makeVouchLedgerStub(),
 					kunyeOf({}, {}),
 					agentAuthorityStub,
+					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
 					requestContext(human("u-rando"), false),
 				),
 			),
 		),
+	);
+});
+
+// Rite feedback (#1695): a RECORDED vouch notifies the vouched çaylak through the
+// bildirim spine (kind `kefil`, target = the çaylak's own account) — never on the
+// idempotent `alreadyVouched`, and never able to fail the committed vouch.
+describe("user.vouch — kefil bildirimi (#1695)", () => {
+	const yazarVoucher = {tier: {"u-yazar": "yazar"} as Record<string, Tier>};
+
+	const kefilRecording = () => {
+		const emits: NotificationRecordInput[] = [];
+		const layer = makeNotificationStub({
+			record: (input) => {
+				emits.push(input);
+				return Effect.succeed({id: "n-kefil"});
+			},
+		});
+		return {layer, emits};
+	};
+
+	const vouchLayers = (
+		notification: ReturnType<typeof makeNotificationStub>,
+		outcome: "recorded" | "alreadyVouched",
+	) =>
+		Layer.mergeAll(
+			makePasaportStub(),
+			makeVouchLedgerStub({
+				castVouch: () => Effect.succeed({outcome}),
+				hasActiveFor: () => Effect.succeed(true),
+			}),
+			kunyeOf(yazarVoucher.tier, {"u-caylak": 1}), // below the bar ⇒ no promote arm
+			agentAuthorityStub,
+			notification,
+			requestContext(human("u-yazar"), true),
+		);
+
+	it.effect("a recorded vouch emits ONE kefil notification for the vouched çaylak", () => {
+		const {layer, emits} = kefilRecording();
+		return Effect.gen(function* () {
+			yield* vouch("u-caylak");
+			assert.deepStrictEqual(emits, [
+				{
+					recipientId: "u-caylak",
+					kind: "kefil",
+					targetKind: "user",
+					targetId: "u-caylak",
+					actorId: "u-yazar",
+				},
+			]);
+		}).pipe(Effect.provide(vouchLayers(layer, "recorded")));
+	});
+
+	it.effect("an idempotent re-vouch (alreadyVouched) emits nothing", () => {
+		const {layer, emits} = kefilRecording();
+		return Effect.gen(function* () {
+			yield* vouch("u-caylak");
+			assert.deepStrictEqual(emits, []);
+		}).pipe(Effect.provide(vouchLayers(layer, "alreadyVouched")));
+	});
+
+	it.effect("a DYING notification write cannot fail the committed vouch (the seam AC)", () =>
+		Effect.gen(function* () {
+			// fail-on-contact Notification: `record` DIES; the vouch receipt still lands.
+			const receipt = yield* vouch("u-caylak");
+			assert.strictEqual((receipt as {vouchRecorded: boolean}).vouchRecorded, true);
+		}).pipe(Effect.provide(vouchLayers(makeNotificationStub(), "recorded"))),
 	);
 });

@@ -20,6 +20,8 @@ import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, relations} from "../../db/Drizzle.ts";
 import {
+	bumpUnreadAggregateStatement,
+	insertUnlessUnreadStatement,
 	markAllReadStatement,
 	markReadStatement,
 	Notification,
@@ -176,6 +178,76 @@ describe("Notification.listForRecipient — newest-first keyset paging", () => {
 		}).pipe(
 			Effect.provide(
 				notificationLayer(scriptedSequence([[row("n1", new Date(1000), new Date(500))]])),
+			),
+		),
+	);
+});
+
+const aggregateInput = {
+	recipientId: "me",
+	kind: "divan-vote",
+	targetKind: "post" as const,
+	targetId: "p1",
+	actorId: null,
+};
+
+describe("recordAggregate builders — recipient-scoped, unread-only (the anti-hype upsert)", () => {
+	it("the bump scopes to (recipient_id, kind, target_kind, target_id, read_at IS NULL) and adds 1", () => {
+		const {sql, params} = bumpUnreadAggregateStatement(
+			renderDb,
+			aggregateInput,
+			new Date(0),
+		).toSQL();
+		assert.include(sql, '"recipient_id" = ?');
+		assert.include(sql, '"kind" = ?');
+		assert.include(sql, '"target_kind" = ?');
+		assert.include(sql, '"target_id" = ?');
+		assert.include(sql, '"read_at" is null');
+		assert.include(sql, '"count" + 1');
+		assert.include(params, "me");
+		assert.include(params, "p1");
+	});
+
+	it("the insert fires only when NO unread row exists for the same recipient-scoped key", () => {
+		const {sql, params} = insertUnlessUnreadStatement(
+			renderDb,
+			{...aggregateInput, id: "n-new"},
+			new Date(0),
+		).toSQL();
+		assert.include(sql.toLowerCase(), "not exists");
+		assert.include(sql, '"recipient_id" = ?');
+		assert.include(sql, '"read_at" is null');
+		assert.include(params, "n-new");
+		assert.include(params, "me");
+	});
+});
+
+describe("Notification.recordAggregate — bump-or-insert in one batch", () => {
+	const batchScripted = (results: ReadonlyArray<unknown>): DrizzleAccess => ({
+		run: () => Effect.die(new Error("recordAggregate issues only a batch")),
+		batch: () => Effect.succeed(results as never),
+	});
+
+	it.effect("an existing unread row is bumped — aggregated, never a second row", () =>
+		Effect.gen(function* () {
+			const svc = yield* Notification;
+			const {aggregated} = yield* svc.recordAggregate(aggregateInput);
+			assert.isTrue(aggregated);
+		}).pipe(
+			Effect.provide(
+				notificationLayer(batchScripted([{meta: {changes: 1}}, {meta: {changes: 0}}])),
+			),
+		),
+	);
+
+	it.effect("no unread row (first event, or post-mark-read) inserts a FRESH unread row", () =>
+		Effect.gen(function* () {
+			const svc = yield* Notification;
+			const {aggregated} = yield* svc.recordAggregate(aggregateInput);
+			assert.isFalse(aggregated);
+		}).pipe(
+			Effect.provide(
+				notificationLayer(batchScripted([{meta: {changes: 0}}, {meta: {changes: 1}}])),
 			),
 		),
 	);
