@@ -127,6 +127,13 @@
       "when": 1790500000000,
       "tag": "0017_notification",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1791000000000,
+      "tag": "0018_reaction",
+      "breakpoints": true
     }
   ]
 }
