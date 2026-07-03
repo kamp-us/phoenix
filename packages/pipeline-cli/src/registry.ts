@@ -19,6 +19,7 @@ import {crabboxManifestCommand} from "./tools/crabbox-manifest/command.ts";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
 import {docLinksCommand} from "./tools/doc-links/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
+import {evalHarnessCommand} from "./tools/eval-harness/command.ts";
 import {failureClassifierCommand} from "./tools/failure-classifier/command.ts";
 import {ghPhoenixCommand} from "./tools/gh-phoenix/command.ts";
 import {glossaryDriftCommand} from "./tools/glossary-drift/command.ts";
@@ -94,4 +95,5 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	glossaryDriftCommand,
 	failureClassifierCommand,
 	resumePolicyCommand,
+	evalHarnessCommand,
 ];
