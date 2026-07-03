@@ -12,6 +12,7 @@ import {
 	decodeEnv,
 	decodeFlagState,
 	distinctKeys,
+	ENV_HELP,
 	FlagEnvNotFound,
 	FlagKeyNotFound,
 	type FlagRule,
@@ -366,6 +367,18 @@ describe("FlagEnvNotFound — the typed, legible not-found", () => {
 		const err = new FlagEnvNotFound({env: "staging", knownEnvs: ["prod", "pr-9"]});
 		assert.match(err.message, /staging/);
 		assert.match(err.message, /prod, pr-9/);
+	});
+
+	it("points at `flag list` so the failure path guides the operator, not just the up-front help", () => {
+		const err = new FlagEnvNotFound({env: "production", knownEnvs: ["prod"]});
+		assert.match(err.message, /flag list/);
+	});
+});
+
+describe("ENV_HELP — the shared --env option help text (#1796)", () => {
+	it("names the stable prod env and points at `flag list` for the runtime-open valid set", () => {
+		assert.match(ENV_HELP, /prod/);
+		assert.match(ENV_HELP, /flag list/);
 	});
 });
 
