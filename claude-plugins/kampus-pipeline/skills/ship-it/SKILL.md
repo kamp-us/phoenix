@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green, squash-merge, confirm the linked issue auto-closed, and — when the merge was a dark feature ship — surface a release queue for the humans (deploy is the agent's boundary, release is human; ADR 0083). It REFUSES to self-merge control-plane PRs (.claude/.github + the gate-critical skills), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
+description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green plus the SHA-bound run-evidence bundle, then enqueue for a squash merge with `gh pr merge --squash --auto` — the merge queue owns the final, async merge, so success is "enqueued + green" (QUEUED → auto-merges on green) and the linked issue auto-closes async when the merge lands (ADR 0132). When the ship was a dark feature ship it surfaces a release queue for the humans (deploy is the agent's boundary, release is human; ADR 0083). It REFUSES to self-merge control-plane PRs (.claude/.github + the gate-critical skills), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
 ---
 
 # ship-it
@@ -329,8 +329,8 @@ ISSUE=<N>
 ```
 
 If there **is** a linked issue (a closing keyword + `#N`), honor it as today regardless of
-class — resolve it; Step 4's squash-merge auto-closes it via `Fixes #<ISSUE>`, with Step 5's
-explicit-close fallback.
+class — resolve it; the queue's async squash-merge (Step 4's `--auto` enqueue) auto-closes it
+via `Fixes #<ISSUE>` when the merge lands (ADR 0132).
 
 **Intentional partial-split — an explicit non-closing `Part of #N`.** A closing keyword is not
 the only legitimate way a code/skills PR references its issue. When the body carries **no**
@@ -890,51 +890,70 @@ node ../../bin.ts crabbox-manifest --run-summary <(node -e 'console.log(JSON.str
 
 ---
 
-## Step 4 — Squash-merge
+## Step 4 — Enqueue for squash-merge (auto-merge / merge queue)
 
 Every guard cleared: not a control-plane PR (Step 0), the required gates' latest verdicts
 are a current-head PASS (Step 2/2b), checks are green (Step 3), and the run-evidence bundle
-is present, commit-bound, and all-`pass` (Step 3.5). Ship it with a squash merge so the issue's
-whole branch collapses to one commit on `main`:
+is present, commit-bound, and all-`pass` (Step 3.5). **Enqueue** it for a squash merge — the
+merge queue owns the final merge, testing the prospective batched merge result against a fresh
+base before it lands (ADR
+[0132](https://github.com/kamp-us/phoenix/blob/main/.decisions/0132-merge-queue-for-base-freshness.md)):
 
 ```bash
-gh pr merge $PR --squash
+gh pr merge $PR --squash --auto
 ```
 
-When there **is** a linked issue, the merge auto-closes it via its `Fixes #<ISSUE>` — that
-is the loop closing. Do not separately close the issue; let the `Fixes` seam do it. On the
-docs-only no-link path (`ISSUE` unset, ADR
+`--auto` is the **universal-safe** mechanism across both regimes (ADR 0132's transition
+safety): pre-queue it enables auto-merge (the PR merges when required checks pass); once
+"require merge queue" is on, the same command **adds the PR to the queue** and the queue
+performs the batched merge. Your success condition is therefore **enqueued + green**, not
+"merged now": every guard above (Step 0's §CP refusal, Step 2/2b's current-head PASS, Step
+3's green CI, Step 3.5's run-evidence bundle) still gates the enqueue exactly as before — the
+**only** change is that the terminal merge is async (queue-owned) instead of immediate. Do
+not treat a not-yet-merged state after a successful `--auto` as a failure: the merge lands
+when the queue's batch goes green.
+
+When there **is** a linked issue, the merge (whenever the queue completes it) auto-closes it
+via its `Fixes #<ISSUE>` — that is the loop closing, now **asynchronously**. Do not separately
+close the issue; let the `Fixes` seam do it when the merge lands. On the docs-only no-link path
+(`ISSUE` unset, ADR
 [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) there is no
-`Fixes #N` and nothing to auto-close — the PR simply merges.
+`Fixes #N` and nothing to auto-close — the PR simply enqueues and merges.
 
 ---
 
-## Step 5 — Confirm the loop closed, then surface the release queue on a dark merge
+## Step 5 — Confirm enqueued + green, then surface the release queue on a dark merge
 
-Verify the terminal state rather than assuming the merge took. Always confirm the PR
-`merged` state; the issue-close confirmation is **conditional on a linked issue** (ADR
-[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)):
+The final merge is **async** (queue-owned), so the terminal state to verify is **enqueued
+with auto-merge armed**, not `merged=true` in this run. Confirm the PR is queued/auto-merge-
+enabled rather than waiting on the merge to land:
 
 ```bash
-gh api repos/$REPO/pulls/$PR --jq '{merged, merged_at}'
-if [ -n "$ISSUE" ]; then
-  gh api repos/$REPO/issues/$ISSUE --jq '{state, state_reason}'
-fi
+# auto-merge armed (pre-queue) or the PR sitting in the merge queue (post-queue) both read
+# here — a non-null auto_merge (or an `enqueued` mergeStateStatus) is the enqueued success signal.
+gh api repos/$REPO/pulls/$PR --jq '{merged, auto_merge, mergeable_state}'
 ```
 
-When `ISSUE` is set, it should now read `state: closed`, `state_reason: completed`. If it
-didn't auto-close (a missing/garbled `Fixes #N`), close it explicitly with a one-line note
-pointing at the merged PR — but record that the seam was broken so it can be fixed upstream.
+A successful `--auto` leaves `auto_merge` non-null (armed) — that is the **enqueued + green**
+success condition. `merged` may still be `false` at this instant; that is expected, not a
+failure — the queue completes the squash merge when its batch goes green. Do **not** re-drive
+the PR or close the issue by hand off a not-yet-merged state.
 
-When `ISSUE` is **unset** there is no issue to auto-close — skip the close-confirmation query
-and report by whichever Step 1 path left it unset: `issue: n/a (docs-only, no linked issue)`
-for the ADR-0075 docs path, or — when Step 1 pinned `PART_OF` (an explicit `Part of #N`
-partial split) — `issue: #<PART_OF> left open (intentional partial split, not auto-closed)`,
-confirming the partial-split issue stays open for the sibling lane.
+Because the merge and its `Fixes #<ISSUE>` auto-close are async, **ship-it no longer asserts
+`state: closed` in the same run** — the issue closes when the queue lands the merge. When
+`ISSUE` is set, report it as `issue #<ISSUE> — closes async on queue merge`; if a later check
+shows the queue merged but the issue didn't auto-close (a missing/garbled `Fixes #N`), that
+broken seam is fixed upstream, not by a hand-close inside this run.
+
+When `ISSUE` is **unset** there is no issue to auto-close — report by whichever Step 1 path
+left it unset: `issue: n/a (docs-only, no linked issue)` for the ADR-0075 docs path, or — when
+Step 1 pinned `PART_OF` (an explicit `Part of #N` partial split) — `issue: #<PART_OF> left
+open (intentional partial split, not auto-closed)`, confirming the partial-split issue stays
+open for the sibling lane.
 
 ### Step 5b — Surface the release queue (a dark merge is deployed, not released)
 
-The merge above is **deployment complete** — the agent's boundary (ADR
+The enqueue above commits the merge — the agent's deployment boundary (ADR
 [0083](https://github.com/kamp-us/phoenix/blob/main/.decisions/0083-agents-deploy-humans-release.md)
 §1: *agents own deployment, humans own release*). When the merged change was a **user-facing
 feature shipped dark** behind a default-off flag, deployment is **not** release: the feature is
@@ -942,7 +961,7 @@ on `main`, contained, invisible to users until a human flips the flag. ship-it's
 **surface that change to the humans** by adding it to the release queue — the
 `status:awaiting-release` label on the linked issue (the queue mechanism defined in
 [#602](https://github.com/kamp-us/phoenix/issues/602)). The **issue** is the durable carrier:
-the PR is closed by the merge above, but the linked issue survives (it auto-closed, but the
+the linked issue survives the async queue merge (it auto-closes when the merge lands, but the
 label persists on it and is queryable by infra-admins), so the release queue rides the existing
 label spine and adds no new artifact.
 
@@ -1030,7 +1049,7 @@ already-closed issue is fine: an infra-admin lists the queue with a one-line fil
 (`gh api "repos/$REPO/issues?state=all&labels=status:awaiting-release"`), flips the flag in the
 dashboard, then clears the label as the release completes (#602's consume flow). This step is
 **idempotent** — re-running ship-it on an already-merged dark PR re-adds a label the issue
-already carries, a GitHub no-op.
+already carries (or a still-open-but-enqueued issue), a GitHub no-op.
 
 ---
 
@@ -1039,10 +1058,12 @@ already carries, a GitHub no-op.
 A single invocation ships one PR end to end: classify the diff against the control-plane
 boundary and refuse if it touches one (Step 0, guard 0), resolve the PR ↔ issue (Step 1),
 resolve the latest verdict per required gate namespace, refuse any verdict not bound to the
-PR's current head (Step 2b, ADR 0058), and merge only if every required one is a current-head
+PR's current head (Step 2b, ADR 0058), and enqueue only if every required one is a current-head
 PASS (Step 2, guard 1), confirm the gating checks are green (Step 3), assert the SHA-bound run-evidence bundle
-exists / is schema-readable / is commit-bound / is all-`pass` (Step 3.5, guard 2), squash-merge
-(Step 4), confirm the issue closed and surface the release queue on a dark merge (Step 5/5b).
+exists / is schema-readable / is commit-bound / is all-`pass` (Step 3.5, guard 2), enqueue for
+squash-merge with `--auto` (Step 4), confirm enqueued + green and surface the release queue on a
+dark merge (Step 5/5b). The queue owns the final merge — success is **enqueued + green**, and
+the issue-close is async (ADR 0132).
 
 Report back a tight terminal ledger — nothing else, because the merge itself is the
 durable record:
@@ -1051,25 +1072,31 @@ durable record:
 PR #<PR> — issue #<ISSUE>
 branch: <head ref>
 PR url: <html_url>
-merged: yes | no (<reason if no>)
-issue closed: yes | no
+enqueued: yes (QUEUED → auto-merges on green) | no (<reason if no>)
+issue: closes async on queue merge | n/a (docs-only) | #<PART_OF> left open (partial split)
 release: queued (awaiting human flip) | n/a (not a dark ship)
 ```
+
+The `enqueued:` line is the success condition: `yes (QUEUED → auto-merges on green)` once
+`--auto` armed the merge (Step 4) — the queue owns the final, async merge, so the issue-close
+also lands async (ADR 0132), reported as `issue: closes async on queue merge`. There is no
+in-run `merged: yes` / `issue closed: yes` assertion any more — asserting an immediate merge
+would false-fail every enqueued PR.
 
 The `release:` line is the deployment/release boundary made visible (ADR 0083): `queued
 (awaiting human flip)` when Step 5b's ground-truth signal fired (the PR introduced a default-off
 `FlagshipFlag` in the diff, or its body declared the dark-ship flag key) and it applied
-`status:awaiting-release`; `n/a (not a dark ship)` when the merged PR shipped **ungated** (no flag
+`status:awaiting-release`; `n/a (not a dark ship)` when the PR shipped **ungated** (no flag
 in the diff, no flag key declared — regardless of any inherited issue Containment stamp), on an
 absent cycle doc, or on a docs-only / unlinked PR. ship-it never flips the flag — the queued line
 hands the release to a human, it does not perform it.
 
 When `ISSUE` is unset (the docs-only no-link path, Step 1 / ADR
-[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) the two issue
-lines render `issue: n/a (docs-only, no linked issue)` instead of `issue #<ISSUE>` and
-`issue closed:`, and `release:` renders `n/a (not a dark ship)` (no linked issue ⇒ nothing to queue).
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) the issue
+line renders `issue: n/a (docs-only, no linked issue)` instead of `issue #<ISSUE>`, and
+`release:` renders `n/a (not a dark ship)` (no linked issue ⇒ nothing to queue).
 
-If you refused to merge, the reason line is the whole point: `blocking — manual merge`,
+If you refused to enqueue, the reason line is the whole point: `blocking — manual merge`,
 `unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `unverified (no
 review-skill PASS)`, `unverified (verdict
 not bound to current head)` (a SHA-less or stale-head verdict — Step 2b, ADR 0058), `latest

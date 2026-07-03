@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue awaits `ci-required` on the batched `merge_group` ref before it can
+  # merge; without this trigger that required check never runs on the batch and every
+  # queued merge hangs (ADR 0132).
+  merge_group:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -55,7 +59,12 @@ jobs:
       # predicate, so both read `check_required`. The integration/e2e author+event
       # guards are reproduced EXACTLY so a fork/non-author PR's legitimate
       # secret-less skip stays legitimate (required=false ⇒ skip is a PASS).
-      check_required: ${{ steps.filter.outputs.code == 'true' }}
+      # On the merge queue's batched `merge_group` ref there is no PR base for
+      # `paths-filter` to diff, so every `*_required` output ORs in `merge_group` to run
+      # the FULL gate on the batch (fail-safe to running — the same stance the
+      # worker-relevance classifier takes). The batch ref is the prospective merge of all
+      # queued PRs, so cost-optimization path-filtering doesn't apply there (ADR 0132).
+      check_required: ${{ github.event_name == 'merge_group' || steps.filter.outputs.code == 'true' }}
       # `worker_relevant != 'false'` (issue #1014) is ANDed in LAST so it can only
       # REMOVE an integration run, never add one: a PR whose diff is provably confined
       # to worker-irrelevant packages skips the tier even though the lockfile delta
@@ -65,30 +74,36 @@ jobs:
       # The `feature-complete` forcing function still wins (it ORs with `backend`), and
       # since a feature-complete PR is by definition worker-affecting the worker-
       # relevance AND never strips a flagged full sweep in practice.
+      # `merge_group` ORed in FIRST: the batch runs in the trusted base's context (only
+      # already-mergeable PRs enter the queue) with repo secrets, so the fork/author
+      # guard — a PR-only fork-secret safety — is not applicable and the full backstop
+      # runs on the batch (ADR 0132).
       integration_required: >-
-        ${{ (steps.filter.outputs.backend == 'true' ||
+        ${{ github.event_name == 'merge_group' ||
+            ((steps.filter.outputs.backend == 'true' ||
              contains(github.event.pull_request.labels.*.name, 'feature-complete')) &&
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
             (github.event_name == 'push' ||
-             contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) }}
+             contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))) }}
       e2e_required: >-
-        ${{ steps.filter.outputs.e2e == 'true' &&
+        ${{ github.event_name == 'merge_group' ||
+            (steps.filter.outputs.e2e == 'true' &&
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
             github.event_name == 'pull_request' &&
-            contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) }}
+            contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) }}
       # `packages-tests` runs the workspace `packages/**` vitest suites (#760). Its
       # single-sourced required-ness is JUST the `packages` path filter — the suites
       # are creds-free node-pool unit runs (no fork/author guard, unlike
       # integration/e2e), so a fork PR that touches `packages/**` MUST still run +
       # pass them. A non-packages PR has `packages_required == false`, so the job's
       # skip is a legitimate not-applicable PASS.
-      packages_required: ${{ steps.filter.outputs.packages == 'true' }}
+      packages_required: ${{ github.event_name == 'merge_group' || steps.filter.outputs.packages == 'true' }}
       # `actionlint` lints `.github/workflows/**` (issue #568). Its single-sourced
       # required-ness is JUST the `workflows` path filter — actionlint is creds-free
       # and fast (no author/fork guard), so any PR (incl. a fork) that touches a
       # workflow MUST run + pass it. A non-workflow PR has `workflows_required ==
       # false`, so the job's skip is a legitimate not-applicable PASS.
-      workflows_required: ${{ steps.filter.outputs.workflows == 'true' }}
+      workflows_required: ${{ github.event_name == 'merge_group' || steps.filter.outputs.workflows == 'true' }}
     steps:
       # Full history so the worker-relevance step's base...head diff resolves; the
       # default shallow checkout has no merge-base for the comparison (issue #1014).
