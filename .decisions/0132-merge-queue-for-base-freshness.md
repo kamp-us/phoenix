@@ -79,3 +79,39 @@ So `--auto` is the **universal-safe** change: the pipeline edits in this ADR (sh
 - ADR [0054](0054-run-evidence-bundle.md) / [0056](0056-bundle-storage-transport.md) — the run-evidence bundle gate (preserved; its producer gains `merge_group:`).
 - Issue [#312](https://github.com/kamp-us/phoenix/issues/312) — the leak gate (`scan changed files for leaks`), a branch-protection-required check whose producer (`leak-guard.yml`) gains `merge_group:`.
 - GitHub docs — [Managing a merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue) and [Automatically merging a pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/automatically-merging-a-pull-request).
+
+## Addendum — merge-queue operational corrections (2026-07-03, [#1824](https://github.com/kamp-us/phoenix/issues/1824))
+
+The decision above stands, but rolling it out to a live merge queue surfaced two operational facts the original text got wrong or omitted. This addendum records them; it does **not** revise the accepted decision (the merge queue remains the chosen mechanism). Both are stated repo-agnostically so a foreign install adopting this ADR via the plugin path (ADR [0062](0062-repo-as-config-plugin.md)) inherits the corrections, and both name the literal failure strings so a future operator can grep the exact symptom back to this addendum.
+
+### 1. `allow_auto_merge=true` is a HARD PREREQUISITE of the merge-queue regime
+
+The repo setting **"Allow auto-merge" (`allow_auto_merge`)** — Settings → General → Pull Requests → *Allow auto-merge* — **must be enabled** for the enqueue path in "The async-merge shift" (§Consequences) to work **at all**. It is the sibling admin prerequisite to the "require merge queue" ruleset toggle the decision already documents, and the original text omitted it: the string `allow_auto_merge` did not appear in this ADR before this addendum. Enabling the `merge_queue` ruleset **without** also enabling `allow_auto_merge` reproduces a repo-wide silent jam — this was the [#1817](https://github.com/kamp-us/phoenix/issues/1817) outage (2026-07-03), where ~8 reviewed-ready PRs jammed at the ship-it enqueue step.
+
+The failure is deceptively silent, not a loud error:
+
+- `gh pr merge --auto` fails with the literal string **`Auto merge is not allowed for this repository (enablePullRequestAutoMerge)`**.
+- The PR's `autoMergeRequest` / `auto_merge` field reads **`null`**, and the PR looks **QUEUED-but-not-progressing** — a no-op that presents as "stuck in the queue," not as an obvious rejection. The queue simply never receives the PR.
+
+So a merge-queue adopter must treat `allow_auto_merge=true` as a precondition of enabling the queue, verified before the ruleset toggle flips — not discovered by trial via `gh api` after the jam.
+
+### 2. The "`--squash --auto` works in both regimes" claim is FALSIFIED — use plain `--auto`
+
+The transition-safety section above asserts (in *§Transition safety*, the line "`gh pr merge --squash --auto` works in **both** regimes"):
+
+> `gh pr merge --squash --auto` works in **both** regimes
+
+Under the merge queue this is **false**. The **queue owns the merge strategy** (it applies the squash on the batched ref), so passing an explicit method flag *conflicts* with the queue rather than cooperating with it:
+
+- `gh pr merge --squash --auto` under the queue is rejected with **`The merge strategy for main is set by the merge queue`**.
+- A REST `PUT .../merges`-style direct merge is rejected with **`405 — Changes must be made through the merge queue`**.
+
+The **correct** enqueue invocation is plain **`gh pr merge --auto`** — **no** method flag; the queue applies the squash itself. This is why the ship-it skill was corrected from `--squash --auto` to plain `--auto`: the same command must enqueue cleanly under the queue and still act as ordinary auto-merge before the "require merge queue" toggle flips, and only the method-less form does both.
+
+### 3. A successful enqueue leaves `auto_merge` `null` — `QUEUED` is the success signal
+
+Reinforcing §"The async-merge shift": after a *successful* enqueue under the merge queue, the PR's `auto_merge` / `autoMergeRequest` field stays **`null`** (the queue, not an auto-merge request, owns the async merge), and **`already queued to merge`** / a **`QUEUED`** state is the success signal. Future ship-it debugging must **not** read a `null` `auto_merge` as a failure — under the queue that is the expected post-enqueue shape, indistinguishable at the `auto_merge` field alone from the correction-1 jam, which is why correction 1's failure string (not the `null` field) is the reliable jam discriminator.
+
+### On which checks can gate the queue (deploy-dependent e2e)
+
+One consequence for §"CI-under-batch": a **deploy-dependent** check cannot gate the queue, because a `merge_group` batch ref gets **no deploy**, so a deploy-gated e2e check has nothing to run against on the `merge_group` event (surfaced by [#1826](https://github.com/kamp-us/phoenix/issues/1826)). Only checks that run without a per-ref deploy may be added to the branch-protection-required set that gates the queue.
