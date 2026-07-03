@@ -42,9 +42,12 @@ export class VoteTargetSandboxed extends Schema.TaggedErrorClass<VoteTargetSandb
  * çaylak newcomer floor, and voting on live content is an earned privilege ("earn to
  * vote", the #1810 containment). Unlike {@link VoteTargetSandboxed} (a *target*-liveness
  * gate that reads as not-found), this is a *voter*-tier rejection and DOES reach the wire
- * as a visible `FORBIDDEN` — the same "the ladder is a visible progression" idiom as
- * `kunye/RequiresLevel`, so a çaylak sees a clear "vote once promoted" denial rather than a
- * silent no-op or a mislabelled not-found. Carries the `need`ed tier so the surface can name
+ * as a visible `VOTE_REQUIRES_YAZAR` — the same "the ladder is a visible progression" idiom
+ * as `kunye/RequiresLevel`, so a çaylak sees a clear "vote once promoted" denial rather than
+ * a silent no-op or a mislabelled not-found. The code is DISTINCT from the overloaded
+ * `FORBIDDEN` (künye vouch denials) so the vote gate carries its own ladder copy ("yazar
+ * olunca oy verebilirsin") without recopying `FORBIDDEN` and mislabelling those (#1879).
+ * Carries the `need`ed tier so the surface can name
  * the bar. The gate is the SINGLE choke point in `Vote.castImpl` (the `requireVoterTier`
  * regime), covering all three inline cast paths — pano post/comment + sözlük definition —
  * and is NOT applied on the divan-authorized `castOnSandboxed` path (a yazar/mod is already
@@ -57,5 +60,5 @@ export class VoterNotEligible extends Schema.TaggedErrorClass<VoterNotEligible>(
 		need: Schema.String,
 		message: Schema.String,
 	},
-	{[FateWireCode]: "FORBIDDEN"},
+	{[FateWireCode]: "VOTE_REQUIRES_YAZAR"},
 ) {}

@@ -104,7 +104,7 @@ export const mutations = {
 		{
 			input: DefinitionIdInput,
 			type: DefinitionView,
-			// `VoterNotEligible` (wire `FORBIDDEN`) — the "earn to vote" gate (#1810): a çaylak
+			// `VoterNotEligible` (wire `VOTE_REQUIRES_YAZAR`) — the "earn to vote" gate (#1810): a çaylak
 			// newcomer is rejected at cast. Retraction is exempt (nothing cast to retract).
 			error: Schema.Union([Unauthorized, DefinitionNotFound, VoterNotEligible]),
 		},
