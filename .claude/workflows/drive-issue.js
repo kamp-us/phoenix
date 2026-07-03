@@ -239,7 +239,9 @@ async function drive() {
 			`ADR 0115 §3 — your delegated claim token is "${claim.token}". The claim comment whose session id equals this token ` +
 			`is YOURS; recognize it as your delegated claim and do NOT re-race or post a second claim (ADR 0115 §3 "Delegated ownership") ` +
 			`— proceed straight to implementing. ` +
-			`Return { pr: <PR number>, headSha: "<head commit sha of the PR>" }.`,
+			`If a precondition fails and you SANCTIONED-back-off (file a blocker, release the claim, open NO PR), ` +
+			`return { pr: 0, headSha: "none — no PR opened: <why>", blocker: <the blocker issue number you filed> }. ` +
+			`Otherwise return { pr: <PR number>, headSha: "<head commit sha of the PR>" }.`,
 		{
 			agentType: "coder",
 			isolation: "worktree",
@@ -248,12 +250,38 @@ async function drive() {
 				properties: {
 					pr: { type: "number" },
 					headSha: { type: "string" },
+					blocker: { type: "number" },
 				},
 				required: ["pr", "headSha"],
 				additionalProperties: false,
 			},
 		},
 	));
+	// Sanctioned coder back-off short-circuit (#1682). The coder returns `pr === 0` when a
+	// precondition failed — it filed a blocker and released its claim WITHOUT opening a PR. That
+	// `0` is not a real PR number: entering the review/repair loop against it reviews/repairs a
+	// nonexistent `pulls/0` (FAIL on sha 0000…, repair 404s, churn to freeze-after-2 — ~5 wasted
+	// dispatches misreported as a frozen lane). So detect the back-off HERE, before any reviewer
+	// dispatch, and return a DISTINCT `{ backedOff, blocker? }` terminal result — unambiguously
+	// separable from `{ frozen: true, reason: "freeze-after-2" }`. The `built.pr <= 0` predicate is
+	// the inline mirror of the unit-tested `isCoderBackOff` in
+	// packages/pipeline-cli/src/tools/drive-issue-flow/post-build.ts (not importable from a workflow
+	// script — top-level return + injected globals; the trivial-diff/route.ts sibling shape).
+	if (!Number.isInteger(built.pr) || built.pr <= 0) {
+		const blocker = Number.isInteger(built.blocker) && built.blocker > 0 ? built.blocker : undefined;
+		log(
+			`Coder backed off on issue #${issue} (no PR opened${blocker ? `; filed blocker #${blocker}` : ""}) — ` +
+				`short-circuiting the review/repair loop (no reviewer, no repair, no pulls/0 fetch) with a distinct backedOff result (#1682)`,
+		);
+		return {
+			backedOff: true,
+			pr: 0,
+			issue,
+			...(blocker ? { blocker } : {}),
+			reason: "coder backed off — precondition failed, blocker filed, claim released (no PR opened)",
+		};
+	}
+
 	const pr = built.pr;
 	let headSha = built.headSha;
 	log(`Coder opened PR #${pr} @ ${headSha}`);
