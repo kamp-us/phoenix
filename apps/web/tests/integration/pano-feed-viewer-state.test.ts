@@ -86,6 +86,9 @@ async function feed(cookie?: string): Promise<Map<string, PostNode>> {
 beforeAll(async () => {
 	viewer = await h.signUp(`${NS}-viewer@test.local`, "hunter2hunter2", "izleyen");
 	other = await h.signUp(`${NS}-other@test.local`, "hunter2hunter2", "öteki");
+	// `viewer` casts real post votes below (voted/voted-saved fixtures). Since #1810's
+	// "earn to vote" gate a fresh çaylak is rejected at cast, so promote it to yazar.
+	await h.promoteToYazar(viewer.userId);
 
 	votedSaved = await seedPost(`${NS}-voted-saved`);
 	votedOnly = await seedPost(`${NS}-voted-only`);

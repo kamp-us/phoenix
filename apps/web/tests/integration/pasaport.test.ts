@@ -359,7 +359,10 @@ describe("pasaport — profile reads", () => {
 		// Baseline: a freshly-seeded author has zero karma.
 		expect(await karmaOf()).toBe(0);
 
+		// Promoted to yazar so it clears the #1810 "earn to vote" gate (a fresh çaylak is
+		// rejected at cast) and its up-vote lands to credit the author's karma.
 		const voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "Voter");
+		await h.promoteToYazar(voter.userId);
 		const vote = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
 			{cookie: voter.cookie},

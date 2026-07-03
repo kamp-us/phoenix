@@ -80,8 +80,10 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 			return (res.data as ProfileNode).totalKarma;
 		};
 
-		// A distinct voter up-votes the definition → author karma 1.
+		// A distinct voter up-votes the definition → author karma 1. Promoted to yazar
+		// so it clears the #1810 "earn to vote" gate (a fresh çaylak is rejected at cast).
 		const voter = await h.signUp(`${NS}-def-v@test.local`, "hunter2hunter2", "Voter");
+		await h.promoteToYazar(voter.userId);
 		const vote = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
 			{cookie: voter.cookie},
@@ -179,7 +181,9 @@ describe("removal substrate — post remove → restore, karma kept", () => {
 			return (res.data as ProfileNode).totalKarma;
 		};
 
+		// Promoted to yazar so it clears the #1810 "earn to vote" gate.
 		const voter = await h.signUp(`${NS}-post-v@test.local`, "hunter2hunter2", "Voter");
+		await h.promoteToYazar(voter.userId);
 		const vote = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id: postId}, select: ["score"]},
 			{cookie: voter.cookie},
@@ -277,7 +281,9 @@ describe("removal substrate — comment remove → restore, karma kept", () => {
 			return (res.data as ProfileNode).totalKarma;
 		};
 
+		// Promoted to yazar so it clears the #1810 "earn to vote" gate.
 		const voter = await h.signUp(`${NS}-cmt-v@test.local`, "hunter2hunter2", "Voter");
+		await h.promoteToYazar(voter.userId);
 		const vote = await h.fate(
 			{kind: "mutation", name: "comment.vote", input: {id: commentId}, select: ["score"]},
 			{cookie: voter.cookie},

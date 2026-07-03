@@ -974,7 +974,14 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	});
 
 	const retractPostVote = Effect.fn("Pano.retractPostVote")(function* (input: VoteOnPostInput) {
-		return yield* applyPostVote(input, false);
+		// The shared body's channel carries `VoterNotEligible` because `Vote.cast`'s type
+		// does — but the tier gate fires on the CAST direction only (`value: true`), so a
+		// retraction (`value: false`) can never raise it. Die if it somehow does (a broken
+		// invariant, not a user-facing case), keeping this method's error channel to
+		// `PostNotFound`.
+		return yield* applyPostVote(input, false).pipe(
+			Effect.catchTag("vote/VoterNotEligible", (e) => Effect.die(e)),
+		);
 	});
 
 	return {

@@ -789,7 +789,12 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 	const retractCommentVote = Effect.fn("Pano.retractCommentVote")(function* (
 		input: VoteOnCommentInput,
 	) {
-		return yield* applyCommentVote(input, false);
+		// See `retractPostVote`: the tier gate fires on the cast direction only, so a
+		// retraction never raises `VoterNotEligible` — die if it somehow does, keeping this
+		// method's channel to `CommentNotFound`.
+		return yield* applyCommentVote(input, false).pipe(
+			Effect.catchTag("vote/VoterNotEligible", (e) => Effect.die(e)),
+		);
 	});
 
 	return {

@@ -78,6 +78,7 @@ describe("account.delete — anonymize-to-@[silinen]", () => {
 		const definitionId = (added.data as {id: string}).id;
 
 		const voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "Voter");
+		await h.promoteToYazar(voter.userId);
 		const vote = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
 			{cookie: voter.cookie},

@@ -15,7 +15,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import {TARGET_KINDS} from "../../db/target-kind.ts";
-import {KarmaBump, Vote, VoteLive} from "./Vote.ts";
+import {KarmaBump, Vote, VoteLive, VoterStanding} from "./Vote.ts";
 
 // A `Drizzle` whose every call throws — provided so that any path which actually
 // reaches the DB seam fails the test. A guard that short-circuits before reading
@@ -52,8 +52,18 @@ const KarmaBumpStub = Layer.succeed(KarmaBump, {
 	},
 });
 
-const voteLayer = (access: DrizzleAccess) =>
-	VoteLive.pipe(Layer.provide(KarmaBumpStub), Layer.provide(Layer.succeed(Drizzle, access)));
+// A `VoterStanding` stub with a fixed eligibility verdict. `eligible` (the default) is
+// the "voter is above the çaylak floor" case, so tests NOT exercising the tier gate see
+// their prior behaviour; `caylak` (below the floor) drives the #1810 gate rejection.
+const VoterStandingStub = (aboveNewcomer: boolean) =>
+	Layer.succeed(VoterStanding, {isAboveNewcomer: () => Effect.succeed(aboveNewcomer)});
+
+const voteLayer = (access: DrizzleAccess, aboveNewcomer = true) =>
+	VoteLive.pipe(
+		Layer.provide(KarmaBumpStub),
+		Layer.provide(VoterStandingStub(aboveNewcomer)),
+		Layer.provide(Layer.succeed(Drizzle, access)),
+	);
 
 describe("Vote.readMine — no-read short-circuit (mocked Drizzle seam)", () => {
 	it.effect("empty ids → empty Set without touching the DB", () =>
@@ -239,7 +249,13 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 			);
 		}).pipe(
 			Effect.provide(
-				VoteLive.pipe(Layer.provide(karma), Layer.provide(Layer.succeed(Drizzle, access))),
+				VoteLive.pipe(
+					Layer.provide(karma),
+					// Voter above the çaylak floor — the #1810 tier gate is not what these two
+					// tests exercise (divan path has it OFF; the live path is a promoted voter).
+					Layer.provide(VoterStandingStub(true)),
+					Layer.provide(Layer.succeed(Drizzle, access)),
+				),
 			),
 		);
 	});
@@ -260,10 +276,109 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 			assert.deepStrictEqual(calls, [{userId: "author-1", delta: 1}]);
 		}).pipe(
 			Effect.provide(
-				VoteLive.pipe(Layer.provide(karma), Layer.provide(Layer.succeed(Drizzle, access))),
+				VoteLive.pipe(
+					Layer.provide(karma),
+					// Voter above the çaylak floor — the #1810 tier gate is not what these two
+					// tests exercise (divan path has it OFF; the live path is a promoted voter).
+					Layer.provide(VoterStandingStub(true)),
+					Layer.provide(Layer.succeed(Drizzle, access)),
+				),
 			),
 		);
 	});
+});
+
+describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle seam)", () => {
+	// The three inline cast paths (pano post/comment + sözlük definition) all reach the
+	// single `Vote.castImpl` choke point via `cast`. A çaylak (below-floor) voter is
+	// rejected on EACH before any DB read — the throwing `Drizzle` proves the short-circuit
+	// runs ahead of `loadMeta`, so the gate never even looks at the target.
+	for (const kind of TARGET_KINDS) {
+		it.effect(
+			`${kind}: a çaylak (below-floor) voter is REJECTED with VoterNotEligible — no DB read`,
+			() =>
+				Effect.gen(function* () {
+					const vote = yield* Vote;
+					const exit = yield* Effect.exit(
+						vote.cast({
+							userId: "caylak-voter",
+							targetKind: kind,
+							targetId: `${kind}-1`,
+							value: true,
+						}),
+					);
+					assert.isTrue(exit._tag === "Failure", "a çaylak cast fails");
+					assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /VoterNotEligible/);
+				}).pipe(Effect.provide(voteLayer(throwingAccess, false))),
+		);
+	}
+
+	it.effect("a promoted (above-floor) voter still casts normally on a live target", () => {
+		// reads: loadMeta (live) → probe (not yet cast) → post-batch score. The eligible voter
+		// clears the gate and the cast reaches the atomic batch (+1 to the author).
+		const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
+		const {layer: karma, calls} = recordingKarma();
+		return Effect.gen(function* () {
+			const vote = yield* Vote;
+			const result = yield* vote.cast({
+				userId: "yazar-voter",
+				targetKind: "definition",
+				targetId: "def-live",
+				value: true,
+			});
+			assert.isTrue(result.changed, "a promoted voter's cast is a real state change");
+			assert.strictEqual(batches[0]?.length, 4, "the full vote batch still writes");
+			assert.deepStrictEqual(calls, [{userId: "author-1", delta: 1}], "author credited +1");
+		}).pipe(
+			Effect.provide(
+				VoteLive.pipe(
+					Layer.provide(karma),
+					Layer.provide(VoterStandingStub(true)),
+					Layer.provide(Layer.succeed(Drizzle, access)),
+				),
+			),
+		);
+	});
+
+	it.effect(
+		"a çaylak RETRACTING is not tier-gated — a retraction removes influence, never adds",
+		() => {
+			// A çaylak has no cast to retract in practice, but the gate is CAST-direction-only:
+			// `value: false` skips it. Here the retraction is an idempotent no-op (never-cast),
+			// so it returns cleanly with `changed: false` rather than raising VoterNotEligible.
+			const {access} = scriptedAccess([liveMeta, false, 0]);
+			return Effect.gen(function* () {
+				const vote = yield* Vote;
+				const result = yield* vote.cast({
+					userId: "caylak-voter",
+					targetKind: "post",
+					targetId: "post-1",
+					value: false,
+				});
+				assert.isFalse(result.changed, "retraction of a never-cast vote is a clean no-op");
+			}).pipe(Effect.provide(voteLayer(access, false)));
+		},
+	);
+
+	it.effect(
+		"the target-liveness gate still holds — an eligible voter is rejected on a sandboxed target",
+		() =>
+			// An above-floor voter clears the tier gate but the target is sandboxed, so the
+			// EXISTING VoteTargetSandboxed gate (#1288) still fires: both gates compose.
+			Effect.gen(function* () {
+				const vote = yield* Vote;
+				const exit = yield* Effect.exit(
+					vote.cast({
+						userId: "yazar-voter",
+						targetKind: "definition",
+						targetId: "def-sb",
+						value: true,
+					}),
+				);
+				assert.isTrue(exit._tag === "Failure", "cast on a sandboxed target still fails");
+				assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /VoteTargetSandboxed/);
+			}).pipe(Effect.provide(voteLayer(scriptedAccess([sandboxedMeta]).access, true))),
+	);
 });
 
 describe("Vote.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle seam)", () => {

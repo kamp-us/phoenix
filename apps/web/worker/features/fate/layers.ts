@@ -25,8 +25,9 @@ import {FlagsLive} from "../flagship/Flags.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
 import {FunnelLive} from "../funnel/Funnel.ts";
 import {AgentAuthorityV1} from "../kunye/AgentAuthorityV1.ts";
-import {KunyeLive} from "../kunye/Kunye.ts";
+import {Kunye, KunyeLive} from "../kunye/Kunye.ts";
 import {RelationStoreLive} from "../kunye/RelationStore.ts";
+import {authorshipLadder} from "../kunye/standing.ts";
 import {VouchLedgerLive} from "../kunye/VouchLedger.ts";
 import {BookmarkLive} from "../pano/Bookmark.ts";
 import {PanoLive} from "../pano/Pano.ts";
@@ -36,7 +37,7 @@ import {ReportLive} from "../report/Report.ts";
 import {SearchLive} from "../search/Search.ts";
 import {SozlukLive} from "../sozluk/Sozluk.ts";
 import {StatsLive} from "../stats/Stats.ts";
-import {KarmaBump, VoteLive} from "../vote/Vote.ts";
+import {KarmaBump, VoteLive, VoterStanding} from "../vote/Vote.ts";
 import {fateConfig} from "./config.ts";
 
 /**
@@ -120,14 +121,35 @@ const PasaportFromTag = Layer.unwrap(
 const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statement: karmaBumpStatement});
 
 /**
+ * Künye's implementation of the `VoterStanding` contract Vote owns (dependency
+ * inversion — the `vote/ → kunye/` arrow lives ONLY at this seam, #1810). The
+ * predicate is the "earn to vote" floor: the voter must be **above the çaylak
+ * newcomer tier** on the `authorshipLadder` (`visitor < çaylak < yazar`, ADR 0107
+ * §4). `authorshipLadder.gte(tier, "yazar")` is `true` only for a promoted `yazar`
+ * (or any future higher rank), so a fresh `çaylak` — every open-registration signup —
+ * and a `visitor` are both refused. Keeping the tier comparison here (not in Vote)
+ * is what lets the ladder move without touching Vote.
+ */
+const VoterStandingFromKunye = Layer.effect(VoterStanding)(
+	Effect.gen(function* () {
+		const kunye = yield* Kunye;
+		return {
+			isAboveNewcomer: (voterId: string) =>
+				Effect.map(kunye.tierOf(voterId), (tier) => authorshipLadder.gte(tier, "yazar")),
+		};
+	}),
+).pipe(Layer.provide(KunyeLive));
+
+/**
  * The worker-level data-plane layer (ADR 0029, ADR 0040). Derives everything from
  * the two seams in its `R` channel — `Database` (behind `DrizzleLive`) and
  * `BetterAuth` — so features and auth provably share one handle.
  *
  * `SozlukLive` and `PanoLive` both depend on `Vote`, so they merge first and
- * `provideMerge(VoteLive)` once — with Vote's `KarmaBump` discharged by
- * {@link KarmaBumpFromPasaport} via `Layer.provide` (not `provideMerge`: the
- * contract is Vote's internal seam, not a worker service the routes see).
+ * `provideMerge(VoteLive)` once — with Vote's two internal seams, `KarmaBump` and
+ * `VoterStanding`, discharged by {@link KarmaBumpFromPasaport} and
+ * {@link VoterStandingFromKunye} via `Layer.provide` (not `provideMerge`: these are
+ * Vote's internal contracts, not worker services the routes see).
  *
  * `PanoLive` also depends on `Bookmark` (it stamps the `isSaved` viewer scalar
  * from `Bookmark.readMine` alongside `myVote`), so `BookmarkLive` joins the same
@@ -144,6 +166,10 @@ export const makeFateLayer = Layer.mergeAll(
 				Layer.provideMerge(VoteLive),
 				Layer.provideMerge(BookmarkLive),
 				Layer.provide(KarmaBumpFromPasaport),
+				// Vote's voter-tier gate ("earn to vote", #1810), discharged by Künye — same
+				// internal-seam idiom as `KarmaBumpFromPasaport` (`Layer.provide`, not a routed
+				// service). Its `Pasaport` requirement bubbles to the root `PasaportFromTag`.
+				Layer.provide(VoterStandingFromKunye),
 			),
 		),
 	),
