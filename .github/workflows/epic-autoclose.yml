@@ -1,0 +1,105 @@
+name: epic-autoclose
+
+# Auto-close an epic when all its children close (ADR 0131, #1767).
+#
+# Fires on `issues.closed`. When the just-closed issue is a child of a `type:epic`
+# parent and EVERY child of that epic is now closed, this closes the epic with an
+# explanatory comment. It runs on ANY child close regardless of who closed it —
+# critically including §CP children a human hand-merged, which `ship-it` refuses and
+# therefore never sees (e.g. #1746's children #1747/#1748 were both §CP human merges).
+# That is why this is a close-triggered Action and not a `ship-it` step.
+#
+# It deliberately auto-closes epics REGARDLESS OF FILER — founder-filed umbrellas
+# included — carving `type:epic` out of the "human-filed issues are never auto-closed"
+# convention (that convention still holds for every non-epic human-filed issue).
+#
+# Linkage source (authoritative): GitHub NATIVE sub-issues. `plan-epic` Step 4 links
+# each child to its epic via `POST /issues/<epic>/sub_issues` — the real parent/child
+# edge, not the `## Dependencies` body topology (which orders children among
+# themselves, it is not the parent edge). We resolve the closed issue's parent with
+# `GET /issues/<child>/parent` (the child's own `.parent` field in the plain issue
+# payload is unreliably null; the dedicated sub-endpoint is the source of truth) and
+# enumerate the epic's children with `GET /issues/<epic>/sub_issues` (the list, never
+# `sub_issues_summary`, which is documented to undercount under mixed open/closed
+# children).
+on:
+  issues:
+    types: [closed]
+
+concurrency:
+  # Serialize per closed-issue so a rapid close/reopen can't double-run for one number.
+  group: epic-autoclose-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  issues: write # read the parent/children, comment on and close the epic
+
+jobs:
+  autoclose:
+    name: close the epic when its last child closes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close parent epic if all children are closed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CHILD: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+
+          # 1. Resolve the closed issue's parent via the native sub-issue edge. A 404
+          #    ("No parent issue found") means the closed issue is not a sub-issue —
+          #    a standalone issue or a top-level epic — so there is nothing to cascade.
+          #    This 404 no-op is ALSO the loop guard: when this Action closes an epic,
+          #    that close re-fires `issues.closed` for the epic; a top-level epic has no
+          #    parent → 404 → clean stop. A nested epic (an epic that is itself a child)
+          #    still terminates: its grand-parent only closes once ALL its children —
+          #    this epic included — are closed, and the already-closed guard below makes
+          #    a re-close a no-op, so the cascade converges upward and halts.
+          if ! PARENT_JSON=$(gh api "repos/$REPO/issues/$CHILD/parent" 2>/dev/null); then
+            echo "issue #$CHILD has no parent (not a sub-issue) — nothing to cascade. No-op."
+            exit 0
+          fi
+          EPIC=$(jq -r '.number' <<<"$PARENT_JSON")
+          EPIC_STATE=$(jq -r '.state' <<<"$PARENT_JSON")
+          IS_EPIC=$(jq -r '[.labels[].name] | any(. == "type:epic")' <<<"$PARENT_JSON")
+
+          # 2. Guard: only cascade into a `type:epic` parent. A non-epic parent is out of
+          #    scope for this Action.
+          if [ "$IS_EPIC" != "true" ]; then
+            echo "parent #$EPIC of #$CHILD is not type:epic — out of scope. No-op."
+            exit 0
+          fi
+
+          # 3. Guard: if the epic is already closed, do nothing. Idempotent, and the
+          #    second half of the loop guard (a re-fired close never re-closes).
+          if [ "$EPIC_STATE" != "open" ]; then
+            echo "epic #$EPIC is already $EPIC_STATE — nothing to do. No-op."
+            exit 0
+          fi
+
+          # 4. Enumerate the epic's children from the sub_issues LIST (source of truth;
+          #    sub_issues_summary undercounts under mixed open/closed children). Refuse to
+          #    act on an empty child set — an epic with no linked children must never be
+          #    auto-closed on a spurious trigger (fail-closed, ADR 0092).
+          CHILDREN=$(gh api --paginate "repos/$REPO/issues/$EPIC/sub_issues?per_page=100")
+          TOTAL=$(jq -s 'add // [] | length' <<<"$CHILDREN")
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "epic #$EPIC has no linked sub-issues — refusing to auto-close (fail-closed). No-op."
+            exit 0
+          fi
+          OPEN=$(jq -s 'add // [] | map(select(.state == "open")) | length' <<<"$CHILDREN")
+          echo "epic #$EPIC has $TOTAL children, $OPEN still open."
+
+          # 5. The decision: close the epic IFF every child is closed.
+          if [ "$OPEN" -ne 0 ]; then
+            echo "epic #$EPIC still has $OPEN open child(ren) — leaving it open. No-op."
+            exit 0
+          fi
+
+          echo "all $TOTAL children of epic #$EPIC are closed — closing the epic."
+          gh api -X POST "repos/$REPO/issues/$EPIC/comments" \
+            -f "body=Auto-closing this epic: its last open child (#$CHILD) closed and all $TOTAL of its children are now closed. Closed by the \`epic-autoclose\` Action ([ADR 0131](.decisions/0131-epic-autoclose-on-all-children-closed.md), #1767) — this fires on **any** child close, including §CP children a human hand-merged, and applies to **all** epics regardless of filer. If this is premature, reopen a child and reopen the epic." \
+            >/dev/null
+          gh api -X PATCH "repos/$REPO/issues/$EPIC" -f state=closed -f state_reason=completed >/dev/null
+          echo "epic #$EPIC closed."
