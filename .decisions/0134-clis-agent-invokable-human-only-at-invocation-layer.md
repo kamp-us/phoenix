@@ -1,6 +1,6 @@
 ---
 id: 0134
-title: "CLIs are agent-invokable by default; human-only is an invocation-layer policy, not a lever TTY-refuse (supersedes [0133](0133-lever-guard-tty-interactive-confirm.md))"
+title: "CLIs are agent-invokable by default; human-only is an invocation-layer policy, not a lever TTY-refuse (supersedes [0133](0133-lever-guard-tty-confirm-on-flag-set-execute.md))"
 status: accepted
 date: 2026-07-03
 tags: [cf-utils, release, authz, cli, security]
@@ -10,7 +10,7 @@ tags: [cf-utils, release, authz, cli, security]
 
 ## Context
 
-Supersedes [0133](0133-lever-guard-tty-interactive-confirm.md).
+Supersedes [0133](0133-lever-guard-tty-confirm-on-flag-set-execute.md).
 
 ADR 0133 enforced the humans-release boundary (ADR [0083](0083-agents-deploy-humans-release.md))
 at the **lever** — `cf-utils flag set --execute` hard-refuses any non-TTY caller, on the reasoning
