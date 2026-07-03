@@ -82,6 +82,16 @@ git fetch origin "pull/$PR/head:$PR_REF"
 [ "$(git rev-parse "$PR_REF")" = "$HEAD_SHA" ] || { echo "FATAL: fetched head != resolved $HEAD_SHA — aborting" >&2; exit 1; }
 
 REVIEW_WT="$(mktemp -d)/review-skill-head-${PR}"
+# Persist the run-unique worktree path to a per-run mktemp handle so it survives the harness
+# cwd/shell reset between Bash calls — $REVIEW_WT is a shell var lost across calls, and the leaf
+# `review-skill-head-${PR}` is PR-namespaced, so a later step re-deriving it from `git worktree
+# list` would match a SIBLING reviewer's `review-skill-head-<otherPR>` and read the wrong head's
+# skill text (the #1807 collision: a reviewer re-read a shared pointer and found it flipped to a
+# sibling's worktree). Mirror the VERDICT_FILE (#1465) / report BODY_FILE mktemp discipline:
+# `. "$WT_FILE"` at the start of each later step re-sources these from the run-unique handle,
+# NEVER from the shared leaf name. WT_FILE itself is `$(mktemp)` — never a fixed/PR-only path.
+WT_FILE="$(mktemp /tmp/review-skill-wt.XXXXXX)"
+{ echo "REVIEW_WT='$REVIEW_WT'"; echo "PR_REF='$PR_REF'"; echo "HEAD_SHA='$HEAD_SHA'"; } > "$WT_FILE"
 git worktree add "$REVIEW_WT" "$PR_REF"
 
 # Enforce the instruction denylist EXPLICITLY (a full checkout lands the head's root CLAUDE.md
@@ -301,7 +311,10 @@ gh pr diff $PR \
 For checks that need the file in context (a trigger phrase, a cross-skill reference, the full
 shape of a step you're judging), read the changed skill at the PR head **from the isolated
 review worktree** (`$REVIEW_WT/skills/...`) the config-pin step set up — never by checking the
-head out into your session tree.
+head out into your session tree. Because the harness resets the shell between Bash calls,
+re-source the run-unique handle at the start of any later step that references `$REVIEW_WT`
+(`. "$WT_FILE"`), never re-deriving it from the shared `review-skill-head-${PR}` leaf — under a
+parallel fan-out that leaf name also matches a sibling's worktree (#1807).
 
 ### Fetch the base fresh before any "is-it-shipped on main" check
 

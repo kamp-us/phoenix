@@ -335,9 +335,23 @@ git update-ref -d "$PR_REF"          # drop the throwaway ref when done
 ```
 
 If a check genuinely needs a materialized tree (rare for a doc PR), add a **throwaway
-worktree** from `$PR_REF` (`git worktree add "$(mktemp -d)/review-doc-head-$PR" "$PR_REF"`,
-torn down with `git worktree prune` after) — never `git checkout` / `gh pr checkout` in the
-checkout you were launched in.
+worktree** from `$PR_REF` and **persist its run-unique path to a per-run `mktemp` handle**
+so a later step recovers the exact own tree rather than re-deriving it from the shared,
+PR-namespaced `review-doc-head-$PR` leaf (which would match a sibling reviewer's
+`review-doc-head-<otherPR>` under a parallel fan-out and pin the wrong head — the #1807
+collision; mirror the `VERDICT_FILE` (#1465) / report `BODY_FILE` `mktemp` discipline):
+
+```bash
+REVIEW_WT="$(mktemp -d)/review-doc-head-$PR"
+WT_FILE="$(mktemp /tmp/review-doc-wt.XXXXXX)"          # run-unique handle, never a fixed/PR-only path
+{ echo "REVIEW_WT='$REVIEW_WT'"; echo "PR_REF='$PR_REF'"; } > "$WT_FILE"
+git worktree add "$REVIEW_WT" "$PR_REF"
+# … later steps: `. "$WT_FILE"` re-sources $REVIEW_WT/$PR_REF after a between-call reset,
+# never re-deriving from the shared leaf name.
+rm -rf "$REVIEW_WT" && git worktree prune   # tear it down after
+```
+
+Never `git checkout` / `gh pr checkout` in the checkout you were launched in.
 
 ### Fetch the base fresh before any "is-it-shipped on main" check
 

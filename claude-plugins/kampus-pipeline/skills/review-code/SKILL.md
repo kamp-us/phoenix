@@ -271,6 +271,18 @@ PR_REF="refs/pr/$PR-$(uuidgen)"
 git fetch origin "pull/$PR/head:$PR_REF"
 
 REVIEW_WT="$(mktemp -d)/review-head-${PR}"
+# Persist the run-unique worktree path to a per-run mktemp handle so it survives the harness
+# cwd/shell reset between Bash calls — $REVIEW_WT is a shell var lost across calls, and the leaf
+# `review-head-${PR}` is PR-namespaced, so a later step re-deriving it from `git worktree list`
+# would match a SIBLING reviewer's `review-head-<otherPR>` and pin the wrong head (the collision
+# #1807: a reviewer re-read a shared pointer and found it flipped to a sibling's worktree). Mirror
+# the VERDICT_FILE (#1465) / report BODY_FILE mktemp discipline: `. "$WT_FILE"` at the start of
+# each later step re-sources $REVIEW_WT/$PR_REF from the run-unique handle, NEVER from
+# the shared leaf name. WT_FILE itself is `$(mktemp)` — never a fixed/PR-only path. HEAD_SHA is
+# NOT persisted here: it is re-resolved fresh against the live head at each later step (§HEAD),
+# so only the run-unique tree/ref handles need to survive.
+WT_FILE="$(mktemp /tmp/review-code-wt.XXXXXX)"
+{ echo "REVIEW_WT='$REVIEW_WT'"; echo "PR_REF='$PR_REF'"; } > "$WT_FILE"
 # Cone-mode-minus-denylist (ADR 0067): a FULL checkout materializes the head's whole tree, so
 # biome.jsonc + biome-plugins/, patches/, the catalog/lockfile, and everything `fate generate`
 # needs are present — the typecheck bootstrap is whole. A full checkout (like cone mode) also
@@ -306,6 +318,7 @@ an output), run the repo's commands **inside the review worktree** — behavior 
 running beats behavior inferred from a diff:
 
 ```bash
+. "$WT_FILE"                   # re-source the run-unique $REVIEW_WT/$PR_REF after a between-call reset (#1807) — never re-derive from the shared `review-head-${PR}` leaf
 pnpm -C "$REVIEW_WT" install   # the catalog/lockfile + patches/ are present, so this succeeds
 # Lint via `pnpm lint:worktree`, never `pnpm lint` / `biome check .`: bare `.` resolves to the
 # review worktree's CWD (sits under .claude/worktrees → matches `!**/.claude/worktrees`) and exits
