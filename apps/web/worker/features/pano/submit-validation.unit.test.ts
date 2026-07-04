@@ -89,6 +89,21 @@ const expectTag = (exit: Exit.Exit<unknown, unknown>, tag: string) => {
 	}
 };
 
+// The inverse of `expectTag`: a URL that PASSES the protocol allowlist runs on
+// past the gate into the throwing `Drizzle`, so the mutation `die`s (a defect,
+// not a typed failure). Reaching the DB is the "URL accepted" proof — the
+// http(s) case must land here, never at a `UrlInvalid`.
+const expectReachedDb = (exit: Exit.Exit<unknown, unknown>) => {
+	assert.isTrue(Exit.isFailure(exit), "expected the mutation to reach the throwing DB");
+	if (Exit.isFailure(exit)) {
+		assert.strictEqual(
+			Cause.findErrorOption(exit.cause)._tag,
+			"None",
+			"expected a die (the DB was reached past the gate), not a typed UrlInvalid",
+		);
+	}
+};
+
 const ownerId = "u1";
 
 const baseSubmit = {
@@ -127,6 +142,35 @@ it.effect("submitPost: an over-long body rejects with PostBodyTooLong before any
 it.effect("submitPost: a malformed URL rejects with UrlInvalid before any DB call", () =>
 	Effect.gen(function* () {
 		expectTag(yield* runSubmit({url: "not a url"}), "pano/UrlInvalid");
+	}),
+);
+
+it.effect("submitPost: a javascript: URL rejects with UrlInvalid before any DB call (#1890)", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runSubmit({url: "javascript:alert(1)"}), "pano/UrlInvalid");
+	}),
+);
+
+it.effect("submitPost: a data: URL rejects with UrlInvalid before any DB call (#1890)", () =>
+	Effect.gen(function* () {
+		expectTag(
+			yield* runSubmit({url: "data:text/html,<script>alert(1)</script>"}),
+			"pano/UrlInvalid",
+		);
+	}),
+);
+
+it.effect(
+	"submitPost: a non-http(s) scheme (file:) rejects with UrlInvalid before any DB call (#1890)",
+	() =>
+		Effect.gen(function* () {
+			expectTag(yield* runSubmit({url: "file:///etc/passwd"}), "pano/UrlInvalid");
+		}),
+);
+
+it.effect("submitPost: an http(s) URL passes the allowlist and reaches the DB (#1890)", () =>
+	Effect.gen(function* () {
+		expectReachedDb(yield* runSubmit({url: "https://kamp.us/x"}));
 	}),
 );
 
@@ -172,6 +216,27 @@ it.effect("saveDraft: an over-long body rejects with PostBodyTooLong before any 
 it.effect("saveDraft: a malformed URL rejects with UrlInvalid before any DB call", () =>
 	Effect.gen(function* () {
 		expectTag(yield* runDraft({url: "not a url"}), "pano/UrlInvalid");
+	}),
+);
+
+it.effect("saveDraft: a javascript: URL rejects with UrlInvalid before any DB call (#1890)", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runDraft({url: "javascript:alert(1)"}), "pano/UrlInvalid");
+	}),
+);
+
+it.effect("saveDraft: a data: URL rejects with UrlInvalid before any DB call (#1890)", () =>
+	Effect.gen(function* () {
+		expectTag(
+			yield* runDraft({url: "data:text/html,<script>alert(1)</script>"}),
+			"pano/UrlInvalid",
+		);
+	}),
+);
+
+it.effect("saveDraft: an http(s) URL passes the allowlist and reaches the DB (#1890)", () =>
+	Effect.gen(function* () {
+		expectReachedDb(yield* runDraft({url: "https://kamp.us/x"}));
 	}),
 );
 
