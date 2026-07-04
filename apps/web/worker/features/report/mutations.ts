@@ -25,13 +25,17 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {TargetKindSchema} from "../../db/target-kind.ts";
+import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Denied} from "../kunye/errors.ts";
 import {Moderate, moderatorOf, requireModeration} from "../kunye/moderate.ts";
 import {CommentNotFound, PostNotFound} from "../pano/errors.ts";
 import {Pano} from "../pano/Pano.ts";
+import {toComment, toPost} from "../pano/shapers.ts";
 import {DefinitionNotFound} from "../sozluk/errors.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
+import {toDefinition} from "../sozluk/shapers.ts";
 import type {ReportTargetNotFound} from "./errors.ts";
+import {reportLive} from "./live.ts";
 import {Report} from "./Report.ts";
 import {outcomeOf} from "./resolution.ts";
 import {toReportReceipt, toResolveReceipt} from "./shapers.ts";
@@ -131,6 +135,7 @@ const resolveGated = Effect.fn("report.resolveGated")(function* (
 	const grant = yield* Moderate;
 	const moderatorId = yield* moderatorOf(grant);
 	const report = yield* Report;
+	const live = reportLive(yield* WorkerLivePublisher);
 
 	// Resolve the target: a `reportId` resolves to its `(targetKind, targetId)`;
 	// otherwise `targetKind` + `targetId` are taken directly.
@@ -162,6 +167,14 @@ const resolveGated = Effect.fn("report.resolveGated")(function* (
 		const firstId = yield* report.firstOpenReportId(target.targetKind, target.targetId);
 		const reportId = firstId ?? input.reportId ?? `${target.targetKind}:${target.targetId}`;
 		targetRemoved = yield* moderateRemove(target, moderatorId, reportId);
+		// The moderator-remove hides content that lives in the subscribed
+		// `posts` / `Post.comments` / `Term.definitions` connections; publish the
+		// same invalidation the user-delete paths do so every other client's open
+		// view reconciles live (#1895, audit #1892). Only fan out on an actual
+		// removal — a no-op (already-removed / missing) changed no subscribed state.
+		if (targetRemoved) {
+			yield* publishRemoved(live, target);
+		}
 	}
 
 	const {collapsed} = yield* report.resolveTarget({
@@ -189,6 +202,7 @@ const restoreGated = Effect.fn("report.restoreGated")(function* (
 ) {
 	yield* Moderate;
 	const report = yield* Report;
+	const live = reportLive(yield* WorkerLivePublisher);
 
 	let target: {targetKind: TargetKind; targetId: string} | null = null;
 	if (input.reportId !== undefined) {
@@ -207,13 +221,19 @@ const restoreGated = Effect.fn("report.restoreGated")(function* (
 	}
 
 	const restored = yield* moderateRestore(target);
+	// Mirror the remove fan-out: re-enter the target into the subscribed connection so
+	// every other client's open view re-populates live (#1895). Only on an actual
+	// restore — a no-op restored nothing.
+	if (restored.restored) {
+		yield* publishRestored(live, target, restored.sandboxedAt);
+	}
 	const {reopened} = yield* report.reopenForTarget(target);
 
 	return toResolveReceipt({
 		targetKind: target.targetKind,
 		targetId: target.targetId,
 		resolution: "dismissed",
-		targetRemoved: !restored,
+		targetRemoved: !restored.restored,
 		collapsed: reopened,
 	});
 });
@@ -255,7 +275,12 @@ const moderateRemove = Effect.fn("report.moderateRemove")(function* (
 	}
 });
 
-/** Dispatch the moderator restore to the content service that owns the target kind. */
+/**
+ * Dispatch the moderator restore to the content service that owns the target kind.
+ * `sandboxedAt` is the round-tripped sandbox marker (#1811) the caller feeds to the
+ * live re-append's `decidePublish` gate — a sandboxed restore stays out of the public
+ * connection.
+ */
 const moderateRestore = Effect.fn("report.moderateRestore")(function* (target: {
 	targetKind: TargetKind;
 	targetId: string;
@@ -263,18 +288,86 @@ const moderateRestore = Effect.fn("report.moderateRestore")(function* (target: {
 	switch (target.targetKind) {
 		case "definition": {
 			const sozluk = yield* Sozluk;
-			const {restored} = yield* sozluk.moderateRestoreDefinition({definitionId: target.targetId});
-			return restored;
+			return yield* sozluk.moderateRestoreDefinition({definitionId: target.targetId});
 		}
 		case "post": {
 			const pano = yield* Pano;
-			const {restored} = yield* pano.moderateRestorePost({postId: target.targetId});
-			return restored;
+			return yield* pano.moderateRestorePost({postId: target.targetId});
 		}
 		case "comment": {
 			const pano = yield* Pano;
-			const {restored} = yield* pano.moderateRestoreComment({commentId: target.targetId});
-			return restored;
+			return yield* pano.moderateRestoreComment({commentId: target.targetId});
+		}
+	}
+});
+
+/**
+ * Publish the remove-side invalidation for a moderator-removed target: evict the entity
+ * + drop its edge from the connection it lives in (`posts` / `Post.comments` /
+ * `Term.definitions`), resolving the parent ref (post id for a comment, term slug for a
+ * definition) the same way the content features' delete paths do. A ref the lookup can't
+ * resolve (already gone) simply skips its connection edge — the entity eviction still
+ * fires. Publisher errors are `never`, so this can never fail the moderation action.
+ */
+const publishRemoved = Effect.fn("report.publishRemoved")(function* (
+	live: ReturnType<typeof reportLive>,
+	target: {targetKind: TargetKind; targetId: string},
+) {
+	switch (target.targetKind) {
+		case "post": {
+			yield* live.postRemoved(target.targetId);
+			return;
+		}
+		case "comment": {
+			const pano = yield* Pano;
+			const postId = yield* pano.lookupCommentPostId(target.targetId);
+			if (postId !== null) yield* live.commentRemoved(target.targetId, postId);
+			return;
+		}
+		case "definition": {
+			const sozluk = yield* Sozluk;
+			const slug = yield* sozluk.lookupDefinitionTermSlug(target.targetId);
+			if (slug !== null) yield* live.definitionRemoved(target.targetId, slug);
+			return;
+		}
+	}
+});
+
+/**
+ * Publish the restore-side invalidation for a moderator-restored target: re-resolve the
+ * full node (via the content service's batched by-id read) and re-append it to the
+ * connection, gated on the round-tripped `sandboxedAt` so a still-sandboxed restore
+ * stays suppressed from the viewer-blind public topic (#1205/#1280 leak surface),
+ * mirroring the user restore paths. A node that no longer resolves is skipped. Publisher
+ * errors are `never`.
+ */
+const publishRestored = Effect.fn("report.publishRestored")(function* (
+	live: ReturnType<typeof reportLive>,
+	target: {targetKind: TargetKind; targetId: string},
+	sandboxedAt: Date | null,
+) {
+	switch (target.targetKind) {
+		case "post": {
+			const pano = yield* Pano;
+			const [row] = yield* pano.getPostsByIds([target.targetId]);
+			if (row) yield* live.postRestored(toPost(row), sandboxedAt);
+			return;
+		}
+		case "comment": {
+			const pano = yield* Pano;
+			const postId = yield* pano.lookupCommentPostId(target.targetId);
+			if (postId === null) return;
+			const [row] = yield* pano.getCommentsByIds([target.targetId]);
+			if (row) yield* live.commentRestored(toComment(row), postId, sandboxedAt);
+			return;
+		}
+		case "definition": {
+			const sozluk = yield* Sozluk;
+			const slug = yield* sozluk.lookupDefinitionTermSlug(target.targetId);
+			if (slug === null) return;
+			const [row] = yield* sozluk.getDefinitionsByIds([target.targetId]);
+			if (row) yield* live.definitionRestored(toDefinition(row), slug, sandboxedAt);
+			return;
 		}
 	}
 });

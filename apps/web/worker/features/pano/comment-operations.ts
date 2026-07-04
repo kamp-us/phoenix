@@ -706,9 +706,9 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		const row = yield* run((db) =>
 			db.query.commentRecord.findFirst({where: {id: input.commentId}}),
 		);
-		if (!row) return {restored: false};
+		if (!row) return {restored: false, sandboxedAt: null};
 		const lifecycle = Removal.fromColumns(row);
-		if (!Removal.isRemoved(lifecycle)) return {restored: false};
+		if (!Removal.isRemoved(lifecycle)) return {restored: false, sandboxedAt: null};
 
 		const now = new Date();
 		const live = Removal.toColumns(Removal.restore(lifecycle));
@@ -733,7 +733,9 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		}
 		yield* persistPanoStats(now);
 
-		return {restored: true};
+		// `live.sandboxedAt` is the round-tripped marker (#1811) — report's live re-append
+		// gates the thread broadcast on it (a sandboxed restore stays suppressed).
+		return {restored: true, sandboxedAt: live.sandboxedAt};
 	});
 
 	/**

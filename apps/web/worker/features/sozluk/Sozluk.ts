@@ -354,10 +354,15 @@ export class Sozluk extends Context.Service<
 			reportId: string;
 		}) => Effect.Effect<{removed: boolean}>;
 
-		/** Moderator restore (ADR 0098 §3) — reopens the report at the resolve layer. */
+		/**
+		 * Moderator restore (ADR 0098 §3) — reopens the report at the resolve layer.
+		 * `sandboxedAt` is the round-tripped sandbox marker (#1811) so report's live
+		 * re-append gates the term-connection broadcast (a sandboxed restore stays
+		 * suppressed, #1205/#1280).
+		 */
 		readonly moderateRestoreDefinition: (input: {
 			definitionId: string;
-		}) => Effect.Effect<{restored: boolean}>;
+		}) => Effect.Effect<{restored: boolean; sandboxedAt: Date | null}>;
 
 		// `VoterNotEligible` (#1810): a çaylak newcomer's cast is rejected by the "earn to
 		// vote" gate in `Vote.castImpl` — cast path only. Retraction never raises it.
@@ -1081,9 +1086,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				const definition = yield* run((db) =>
 					db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 				);
-				if (!definition) return {restored: false};
+				if (!definition) return {restored: false, sandboxedAt: null};
 				const lifecycle = Removal.fromColumns(definition);
-				if (!Removal.isRemoved(lifecycle)) return {restored: false};
+				if (!Removal.isRemoved(lifecycle)) return {restored: false, sandboxedAt: null};
 
 				const now = new Date();
 				const live = Removal.toColumns(Removal.restore(lifecycle));
@@ -1097,7 +1102,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
 				yield* recomputeSozlukStats(now);
 
-				return {restored: true};
+				// `live.sandboxedAt` is the round-tripped marker (#1811) — report's live
+				// re-append gates the term-connection broadcast (a sandboxed restore stays
+				// suppressed).
+				return {restored: true, sandboxedAt: live.sandboxedAt};
 			},
 		);
 

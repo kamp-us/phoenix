@@ -222,8 +222,15 @@ export class Pano extends Context.Service<
 			reportId: string;
 		}) => Effect.Effect<{removed: boolean}>;
 
-		/** Moderator restore (ADR 0098 §3) — reopens the report at the resolve layer. */
-		readonly moderateRestorePost: (input: {postId: string}) => Effect.Effect<{restored: boolean}>;
+		/**
+		 * Moderator restore (ADR 0098 §3) — reopens the report at the resolve layer.
+		 * `sandboxedAt` is the target's round-tripped sandbox marker (#1811): non-null
+		 * iff the restored post is still sandboxed, so report's live re-append gates the
+		 * public-feed broadcast (a sandboxed restore stays suppressed, #1205/#1280).
+		 */
+		readonly moderateRestorePost: (input: {
+			postId: string;
+		}) => Effect.Effect<{restored: boolean; sandboxedAt: Date | null}>;
 
 		// `VoterNotEligible` (#1810): a çaylak newcomer's cast is rejected — the "earn to vote"
 		// gate lives in `Vote.castImpl`, so it surfaces on the cast path only. Retraction never
@@ -274,10 +281,14 @@ export class Pano extends Context.Service<
 			reportId: string;
 		}) => Effect.Effect<{removed: boolean}>;
 
-		/** Moderator restore of a comment (ADR 0098 §3) — reopens the report at the resolve layer. */
+		/**
+		 * Moderator restore of a comment (ADR 0098 §3) — reopens the report at the resolve
+		 * layer. `sandboxedAt` is the round-tripped sandbox marker (#1811) so report's live
+		 * re-append gates the thread broadcast (a sandboxed restore stays suppressed).
+		 */
 		readonly moderateRestoreComment: (input: {
 			commentId: string;
-		}) => Effect.Effect<{restored: boolean}>;
+		}) => Effect.Effect<{restored: boolean; sandboxedAt: Date | null}>;
 
 		// `VoterNotEligible` (#1810) — see `voteOnPost`. Cast path only; retraction is exempt.
 		readonly voteOnComment: (
