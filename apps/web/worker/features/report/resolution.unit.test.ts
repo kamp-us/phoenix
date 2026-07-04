@@ -6,7 +6,14 @@
  * `open` rejects reopen.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {IllegalTransition, isTerminal, outcomeOf, reopen, resolve} from "./resolution.ts";
+import {
+	IllegalTransition,
+	isTerminal,
+	outcomeOf,
+	reopen,
+	resolve,
+	TERMINAL_STATUSES,
+} from "./resolution.ts";
 
 describe("resolve — legal only from open", () => {
 	it("open + remove → resolved/removed", () => {
@@ -48,6 +55,19 @@ describe("isTerminal", () => {
 		assert.isFalse(isTerminal("open"));
 		assert.isTrue(isTerminal("resolved"));
 		assert.isTrue(isTerminal("dismissed"));
+	});
+});
+
+describe("TERMINAL_STATUSES — the reopen-source set, derived from the machine", () => {
+	it("is exactly the terminal statuses (the SQL reopen guard's source of truth)", () => {
+		assert.deepStrictEqual([...TERMINAL_STATUSES], ["resolved", "dismissed"]);
+	});
+
+	it("every member is reopenable and terminal", () => {
+		for (const status of TERMINAL_STATUSES) {
+			assert.isTrue(isTerminal(status));
+			assert.strictEqual(reopen(status), "open");
+		}
 	});
 });
 
