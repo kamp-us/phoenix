@@ -37,7 +37,8 @@ spec for this split, and it **supersedes** ADR
     and prose `*.md` *outside* `.claude/`, `.github/`, and `.glossary/`. For a doc PR in this
     set, your PASS marker is a **real `ship-it` go-ahead** — `ship-it` merges on it exactly as it
     merges on `review-code`'s.
-  - **Product code (incl. `.glossary/**`)** — `apps/web/**`, `packages/**`, and `.glossary/**`.
+  - **Product code (incl. `.glossary/**`)** — `apps/web/**`, `packages/**`, `infra/**` (standalone
+    stacks, ADR 0057), and `.glossary/**`.
     Non-blocking too, but that's `review-code`'s class, **not yours**: a `review-doc` PASS never
     verifies product code, and `.glossary/**` is owned by `review-code` Step 3c (#912/#919). A PR
     that touches both needs *both* gates (see the mixed code+doc routing in Step 0).
@@ -188,7 +189,7 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   yours — is the **canonical §DOC definition** in
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md): cite it, don't re-derive
   it (the same single-sourcing move §CP makes for the blocking set; the #375 drift class).
-  §DOC owns the code-root carve-out — a `*.md` under the code roots `apps/**`/`packages/**`
+  §DOC owns the code-root carve-out — a `*.md` under the code roots `apps/**`/`packages/**`/`infra/**`
   (a README, CHANGELOG) and a `.glossary/**` touch are **code**, not docs, so they ride a
   `review-code` PASS, not your marker (see the per-class notes below). For the doc class §DOC
   defines, your PASS marker binds `ship-it`.
@@ -209,10 +210,10 @@ don't re-derive it. The has-code/docs-exclusion probes both name `.glossary/**` 
 If the diff is **pure product code** with no doc/knowledge file at all, this is the wrong
 gate — that's `review-code`'s PR. Report `not a doc PR — route to review-code` (a plain note,
 **not** a `review-doc:` marker — there's no doc to verdict) and stop.
-If the diff is **mixed code + doc** (both a `*.md` knowledge file and `apps/**`/`packages/**`
+If the diff is **mixed code + doc** (both a `*.md` knowledge file and `apps/**`/`packages/**`/`infra/**`
 code or a `.glossary/**` touch, none of it blocking), it needs *both* gates: you verify the doc
 class here and emit the `review-doc` marker; `review-code` verifies the code class — `apps/**`,
-`packages/**`, **and `.glossary/**`** — and emits its own. `ship-it`
+`packages/**`, `infra/**`, **and `.glossary/**`** — and emits its own. `ship-it`
 requires the latest PASS in **each** namespace present before it merges, so don't try to
 cover the code half — verify the docs, emit `review-doc`. (A `.glossary/TERMS.md` touch riding a
 code PR is **not** a doc class for you — it is part of the code class `review-code` owns; don't
