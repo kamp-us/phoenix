@@ -30,7 +30,38 @@ The worker's grounded in-repo import closure is exactly `{db-schema, fate-effect
 `moderator-grant` which own their **own** real-D1 integration tiers (ADR
 [0082](../../.decisions/0082-two-test-tiers-unit-integration.md), #672/#930). A
 change to any of those four is integration-relevant; everything else under
-`packages/**` is dev-tooling the worker never imports.
+`packages/**` is dev-tooling the worker never imports — **unless an integration/e2e
+test imports it** (see below).
+
+## Two closures — worker-import ∪ test-import (ADR 0114)
+
+The relevance verdict is the **union of two closures**, not one:
+
+1. **The worker-import closure** — the fixed four packages above
+   (`INTEGRATION_RELEVANT_PACKAGES`) the worker imports (or that own their own
+   real-D1 tier).
+2. **The test-import closure** — the `packages/**` members imported under
+   `apps/web/tests/integration/**` and `apps/web/tests/e2e/**`, **computed from the
+   real imports** in those trees on every run (not a maintained list).
+
+A `packages/<name>` change is integration-relevant iff `<name>` is in **either**
+closure. This closes the hole ADR
+[0114](../../.decisions/0114-test-import-closure-gates-test-consumed-packages.md)
+records: a package the **worker** never imports but an integration test **does**
+(e.g. `founder-seed`, imported by `apps/web/tests/integration/kunye-moderate-seam.test.ts`)
+used to classify `irrelevant` and skip the integration tier on the very PR that broke
+it — the #1352 → #1378/#1380 → #1383 incident chain. Because the test-import closure
+is computed from the actual `import`/`require` graph, a newly test-imported package
+joins the relevant set the instant a test imports it, with **no list to maintain and
+no silent-drift window** — the drift that was the root cause of #1352 is structurally
+removed.
+
+The scan is the **bin's** job (it walks the two test trees, extracts `@kampus/*`
+specifiers, and resolves each to a real `packages/**` workspace member); the pure
+core takes the computed closure as `ClassifyInput.testImportedPackages` and unions it
+into both the changed-path check and the lockfile importer-block attribution. Per the
+fail-safe-to-running invariant, a **scan failure** resolves to `relevant` (RUN) — an
+unprovable test-import closure never yields a silent skip.
 
 ## How it's used
 
@@ -41,9 +72,11 @@ unified diff into the bin's env, then runs the classifier with no install:
 node packages/worker-relevance/src/bin.ts
 ```
 
-The bin prints the verdict + the triggering path (ADR 0092 §1 "emit what you
-scanned") and emits the `relevant` / `irrelevant` decision the `changes` job reads
-to gate the worker `integration` / `e2e` tiers.
+The bin computes the test-import closure off the checked-out test trees, prints the
+verdict + the triggering path (ADR 0092 §1 "emit what you scanned"), and emits the
+`relevant` / `irrelevant` decision the `changes` job reads to gate the worker
+`integration` / `e2e` tiers. No `ci.yml` change is needed — the bin reads the trees
+directly, so the closure stays in lockstep with the real imports.
 
 ## Architecture
 
@@ -51,10 +84,13 @@ A pure, unit-tested core + a thin Node bin (the repo tooling idiom), **zero
 runtime dependencies** so the `changes` step runs it without `pnpm install`:
 
 - `src/worker-relevance.ts` — the pure, IO-free core: `classify` over a
-  `ClassifyInput` (changed files + lockfile diff), `parseChangedFiles`, the
-  `INTEGRATION_RELEVANT_PACKAGES` set, and `inputFromEnv`. Same inputs ⇒ same
-  verdict, no IO.
-- `src/bin.ts` — the thin Node shell: read env, classify, print, emit the verdict.
+  `ClassifyInput` (changed files + lockfile diff + the test-import closure),
+  `parseChangedFiles`, the `INTEGRATION_RELEVANT_PACKAGES` set, the pure import
+  extractor `extractKampusPackages`, and `inputFromEnv`. Same inputs ⇒ same verdict,
+  no IO.
+- `src/bin.ts` — the thin Node shell: walk the test trees to compute the test-import
+  closure, read env, classify, print, emit the verdict (fail-safe to running on a
+  scan error).
 - `src/index.ts` — the package's public exports.
 
 ```bash
