@@ -421,23 +421,41 @@ If there is **no** linked issue, the rule is **class-aware** — reuse the artif
 Step 0 already computed (do **not** re-derive them; ADR
 [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)):
 
-- **A code or skills class is present** (anything other than docs-only) **with no issue
-  reference at all** — neither a closing keyword **nor** the explicit `Part of #N` partial-split
-  marker above → stop and report `no linked issue`. In this pipeline `write-code` always writes
-  `Fixes #N` (or, for a deliberate partial split, `Part of #N`), so a code PR that names **no**
-  issue at all is a broken seam, not a normal state — it has nothing to auto-close on merge and
-  would leave dangling work. (Distinct from the *linked-but-didn't-auto-close* case Step 5
-  handles: there the seam fired but GitHub didn't, which is recoverable; here no issue is named
-  on a code PR, an anomaly worth stopping on. Also distinct from the partial-split above, where
-  `Part of #N` names the issue **on purpose** to keep it open — that merges, this refuses.)
-- **Docs-only** (Step 0 classed `docs` with **no** code and **no** skills class present) → a
-  missing `Fixes #N` is a **legitimate state, not a broken seam**. A conversation-authored
-  ADR/doc records a settled choice that was never tracked work, so there is nothing for a
-  `Fixes #N` to close. Skip the auto-close expectation, leave `ISSUE` unset, and **proceed to
-  the gate check** — the docs-only PR ships on its `review-doc: PASS` alone (Step 2). Emit
-  **no** `no linked issue` refusal; it is not an anomaly. This relaxes **only** the missing-link
-  guard: Step 0's §CP approval gate and Step 2's required current-head `review-doc: PASS`
-  are untouched — a docs-only PR still needs its gate verdict.
+The carve-out turns on **doc/vocab-surface-only**, a wider set than Step 0's `docs` class.
+The **doc/vocab surfaces** are `.decisions/**`, `.patterns/**`, `.glossary/**`, and prose
+`*.md` — all of which legitimately have **no** tracked issue. `.glossary/**` is a doc/vocab
+surface here even though Step 0 classes it **has-code** (the #919 reclassification: the glossary
+is owned by `review-code` Step 3c, not `review-doc`). That has-code label is about *which gate
+verifies the glossary*, not about whether a glossary touch needs a `Fixes #N` — so the issueless
+allowance keys on the **surface**, not the gate class. A PR is **doc/vocab-surface-only** when
+**every** changed path is one of those four surfaces (no `apps/**`/`packages/**`/`infra/**` code,
+no `claude-plugins/**` skills source).
+
+- **A real code or skills class is present** — a changed path under `apps/**`, `packages/**`,
+  `infra/**`, or `claude-plugins/**` (skills source), i.e. the PR is **not**
+  doc/vocab-surface-only — **with no issue reference at all** — neither a closing keyword **nor**
+  the explicit `Part of #N` partial-split marker above → stop and report `no linked issue`. In
+  this pipeline `write-code` always writes `Fixes #N` (or, for a deliberate partial split,
+  `Part of #N`), so a code PR that names **no** issue at all is a broken seam, not a normal
+  state — it has nothing to auto-close on merge and would leave dangling work. (Distinct from the
+  *linked-but-didn't-auto-close* case Step 5 handles: there the seam fired but GitHub didn't,
+  which is recoverable; here no issue is named on a code PR, an anomaly worth stopping on. Also
+  distinct from the partial-split above, where `Part of #N` names the issue **on purpose** to
+  keep it open — that merges, this refuses.)
+- **Doc/vocab-surface-only** (every changed path is `.decisions/**`, `.patterns/**`,
+  `.glossary/**`, or prose `*.md` — **no** `apps/**`/`packages/**`/`infra/**` code and **no**
+  `claude-plugins/**` skills source) → a missing `Fixes #N` is a **legitimate state, not a broken
+  seam**. A conversation-authored ADR/doc records a settled choice that was never tracked work, so
+  there is nothing for a `Fixes #N` to close (ADR 0075). The canonical shape is a
+  conversation-authored ADR that co-locates its own `.glossary/**` term rename in the same PR
+  (the `adr` skill's vocabulary-impact step directs this) — a PR touching `.decisions/**` **and**
+  `.glossary/**` is doc/vocab-surface-only and ships issueless, even though `.glossary/**` makes
+  it has-code per Step 0/#919. Skip the auto-close expectation, leave `ISSUE` unset, and
+  **proceed to the gate check** — the PR ships on its gate PASS(es) alone (Step 2). Emit **no**
+  `no linked issue` refusal; it is not an anomaly. This relaxes **only** the missing-link guard:
+  Step 0's §CP approval gate and Step 2's required **current-head PASS in each class present**
+  are untouched — the glossary-riding class still requires its `review-code: PASS` and
+  `.decisions/**`/`.patterns/**`/prose its `review-doc: PASS`.
 
 ---
 
@@ -993,14 +1011,22 @@ The final merge is **async** (queue-owned), so the terminal state to verify is *
 not `merged=true` in this run. Under the merge queue a *successful* enqueue leaves `auto_merge`
 **`null`** — the queue, not an auto-merge request, owns the async merge — so the success signal
 is the **`already queued to merge`** message the enqueue prints and/or the PR's `QUEUED` state
-(the `added_to_merge_queue` timeline event / merge-queue-entry). See ADR 0132 addendum §3.
+(read from `mergeStateStatus` + the `added_to_merge_queue` REST timeline event — **not** the
+`mergeQueueEntry` `--json` field, which gh 2.62.0 rejects, #1930). See ADR 0132 addendum §3.
 
 ```bash
 # The QUEUED signal is the success condition. `already queued to merge` from Step 4's --auto
 # and/or an `enqueued`/QUEUED mergeStateStatus confirm it — NOT a non-null auto_merge, which
 # under the queue stays null on a clean enqueue (ADR 0132 §3).
 gh api repos/$REPO/pulls/$PR --jq '{merged, auto_merge, mergeable_state}'
-gh pr view $PR --json mergeStateStatus,mergeQueueEntry --jq '{mergeStateStatus, mergeQueueEntry}'
+# Derive QUEUED from `mergeStateStatus` PLUS the authoritative REST issue-timeline event
+# (`added_to_merge_queue`) — NOT the `mergeQueueEntry` --json field, which the pinned gh
+# 2.62.0 rejects, forcing an every-ship gh-api fallback (#1930). The last merge-queue timeline
+# event is the same gh-2.62.0-safe source Step 5.5's reconcile already reads; both steps use one
+# REST-timeline path for the QUEUED confirmation.
+gh pr view $PR --json mergeStateStatus --jq '{mergeStateStatus}'
+gh api "repos/$REPO/issues/$PR/timeline" \
+  --jq 'map(select(.event=="added_to_merge_queue" or .event=="removed_from_merge_queue")) | last | .event // "no-merge-queue-event"'
 ```
 
 A clean `--auto` under the queue leaves `auto_merge` **`null`** and reports `already queued to
@@ -1022,7 +1048,7 @@ shows the queue merged but the issue didn't auto-close (a missing/garbled `Fixes
 broken seam is fixed upstream, not by a hand-close inside this run.
 
 When `ISSUE` is **unset** there is no issue to auto-close — report by whichever Step 1 path
-left it unset: `issue: n/a (docs-only, no linked issue)` for the ADR-0075 docs path, or — when
+left it unset: `issue: n/a (doc/vocab-surface-only, no linked issue)` for the ADR-0075 path, or — when
 Step 1 pinned `PART_OF` (an explicit `Part of #N` partial split) — `issue: #<PART_OF> left
 open (intentional partial split, not auto-closed)`, confirming the partial-split issue stays
 open for the sibling lane.
@@ -1266,9 +1292,9 @@ in the diff, no flag key declared — regardless of any inherited issue Containm
 absent cycle doc, or on a docs-only / unlinked PR. ship-it never flips the flag — the queued line
 hands the release to a human, it does not perform it.
 
-When `ISSUE` is unset (the docs-only no-link path, Step 1 / ADR
+When `ISSUE` is unset (the doc/vocab-surface-only no-link path, Step 1 / ADR
 [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) the issue
-line renders `issue: n/a (docs-only, no linked issue)` instead of `issue #<ISSUE>`, and
+line renders `issue: n/a (doc/vocab-surface-only, no linked issue)` instead of `issue #<ISSUE>`, and
 `release:` renders `n/a (not a dark ship)` (no linked issue ⇒ nothing to queue).
 
 If you refused to enqueue, the reason line is the whole point: `awaiting control-plane approval`
