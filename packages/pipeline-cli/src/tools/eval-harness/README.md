@@ -27,6 +27,34 @@ slice ([#1848](https://github.com/kamp-us/phoenix/issues/1848)) shipped the corp
 - `decodeManifest(text)` — total: returns a typed `Result` failure (`malformed-json` or
   `schema-mismatch`) on bad input, never throws. `encodeManifest(manifest)` round-trips it.
 
+## The graded oracle ([#1849](https://github.com/kamp-us/phoenix/issues/1849))
+
+`gradeEntry(entry, artifact): Grade` (`oracle.ts`) is the per-corpus-entry quality grade. ADR
+[0112](../../../../../.decisions/0112-token-measurement-no-quality-compromise-methodology.md) §3
+defines a per-stage output-quality oracle — a reproducible pass/fail that an optimized stage
+reproduced the **same decision artifact** as the baseline — as a *binary* over one frozen input.
+This generalizes it to grade **each** corpus entry, so the report slice can compute a pass-*rate*
+over the whole set. It is pure and consumes an already-collected artifact — it does **not** spawn
+a stage or call `gh` (that is the runner slice, #1851).
+
+An entry passes iff the observed `artifact` reproduces its known-good `label`, per stage (ADR 0112 §3):
+
+- `triage` — actual `{type, priority, status}` equals the label.
+- `write-code` — the PR carries the labeled `Fixes #N` + CI green + an independent `review-code: PASS`
+  (actual `{fixesRef, ciGreen, reviewVerdict}` equals the label).
+- `review-code` — actual verdict + AC-finding **set** match the label (findings compared order- and
+  duplicate-insensitively).
+- `review-doc` — actual verdict + doc-finding set match the label.
+- `ship-it` — actual `{merged, mergeSha}` equals the label.
+
+The grade is a typed value, never a throw:
+
+- `{ status: "pass" }`, or
+- `{ status: "fail", mismatch }` where `mismatch` is either a `LabelMismatch` carrying the
+  per-field observed-vs-expected diffs (so the report can attribute *why* a (stage × model) missed —
+  a fail is never a bare boolean), or a `MalformedArtifact` with a stated reason. The grader is
+  **total**: a malformed or absent artifact grades `fail` with a reason rather than throwing.
+
 ## Why it exists
 
 ADR 0112's apparatus grades **one** frozen input per stage with a **binary** oracle —
