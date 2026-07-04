@@ -83,7 +83,7 @@ export const sentryDsn = Config.string(ENV_BINDINGS.sentryDsn).pipe(Config.optio
  * resolve from `ENV_BINDINGS`, so the key the worker binds under and the name the `Config`
  * reads under are the SAME literal). The `env:` block in `index.ts` spreads this in, so the
  * binding names are never restated there — a key↔name mismatch is impossible by
- * construction (#1432). `index.ts` adds the non-Config `FLAGS` resource binding alongside.
+ * construction (#1432). `index.ts` adds the non-Config `Flagship` resource binding alongside.
  */
 export const envBindings = {
 	[ENV_BINDINGS.environment]: environment,

@@ -105,8 +105,11 @@ const phoenixProps =
 			env: {
 				...envBindings,
 				// The Flagship app resource maps to the native `Flagship` runtime binding
-				// via `InferEnv` (epic #488); the worker `bind()`s it in init below.
-				FLAGS: FlagshipResource,
+				// via `InferEnv` (epic #488); the worker `bind()`s it in init below. The
+				// env key matches the `Flagship` Tag/consumer so the name is one across
+				// declare → bind → consume (#1439); runtime resolution is by the app's
+				// `LogicalId` (`phoenix_flags`), not this key, so the rename is behavior-neutral.
+				Flagship: FlagshipResource,
 				// Optional Sentry DSN (ADR 0118, #1502): bound `secret_text` (a redacted
 				// value) ONLY when a DSN is present in the deploy env, so an unset DSN adds
 				// no binding at all. Single-sourced name via `ENV_BINDINGS.sentryDsn` (#1432).
