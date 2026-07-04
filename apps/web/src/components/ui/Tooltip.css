@@ -1,5 +1,13 @@
 /* Tooltip — Base UI primitive wrapper. Used on post titles + abbreviations. */
 
+/* The Positioner carries the stacking rank — it is the positioned (`position: absolute`)
+   portal-root element, so z-index here builds a stacking context that outranks the sticky
+   Subnav. The inner `.kp-tooltip__popup` is `position: static`, where z-index is inert
+   (#2046, mirror of the Menu fix in #2041/#2044). */
+.kp-tooltip__positioner {
+	z-index: 80;
+}
+
 .kp-tooltip__popup {
 	background: var(--surface-raised);
 	color: var(--text-primary);
@@ -9,7 +17,6 @@
 	font: var(--t-micro);
 	box-shadow: var(--shadow-md);
 	max-width: 280px;
-	z-index: 80;
 	animation: kp-tooltip-pop var(--motion-fast) var(--ease-standard);
 }
 
