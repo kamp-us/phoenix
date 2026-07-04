@@ -23,8 +23,7 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import type {TargetKind} from "../../db/target-kind.ts";
-import {TargetKindSchema} from "../../db/target-kind.ts";
+import {type TargetKind, TargetKindSchema, targetKey} from "../../db/target-kind.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Denied} from "../kunye/errors.ts";
 import {Moderate, moderatorOf, requireModeration} from "../kunye/moderate.ts";
@@ -190,7 +189,7 @@ const resolveGated = Effect.fn("report.resolveGated")(function* (
 		// reportId carried into the removal is the FIRST open report id on the
 		// target, so a later restore can reopen the group.
 		const firstId = yield* report.firstOpenReportId(target.targetKind, target.targetId);
-		const reportId = firstId ?? input.reportId ?? `${target.targetKind}:${target.targetId}`;
+		const reportId = firstId ?? input.reportId ?? targetKey(target.targetKind, target.targetId);
 		targetRemoved = yield* moderateRemove(target, moderatorId, reportId);
 		// The moderator-remove hides content that lives in the subscribed
 		// `posts` / `Post.comments` / `Term.definitions` connections; publish the

@@ -7,7 +7,7 @@
  * `__typename` (`.patterns/fate-effect-operations.md`).
  */
 
-import type {TargetKind} from "../../db/target-kind.ts";
+import {type TargetKind, targetKey} from "../../db/target-kind.ts";
 import type {ReportTargetContext} from "./enrich.ts";
 import type {OpenReportGroup, ReportResult, ResolvedReportGroup} from "./Report.ts";
 import type {RowReputation} from "./reputation.ts";
@@ -17,7 +17,7 @@ import type {OpenReport, ReportReceipt, ResolvedReport, ResolveReceipt} from "./
 // `id` is the `<targetKind>:<targetId>` normalization key (see `views.ts`).
 export const toReportReceipt = (r: ReportResult): ReportReceipt => ({
 	__typename: "ReportReceipt",
-	id: `${r.targetKind}:${r.targetId}`,
+	id: targetKey(r.targetKind, r.targetId),
 	targetKind: r.targetKind,
 	targetId: r.targetId,
 	created: r.created,
@@ -35,7 +35,7 @@ export const toOpenReport = (
 	reputation: RowReputation,
 ): OpenReport => ({
 	__typename: "OpenReport",
-	id: `${g.targetKind}:${g.targetId}`,
+	id: targetKey(g.targetKind, g.targetId),
 	targetKind: g.targetKind,
 	targetId: g.targetId,
 	reportCount: g.reportCount,
@@ -67,7 +67,7 @@ export const toResolvedReport = (
 	resolverHandle: string | null,
 ): ResolvedReport => ({
 	__typename: "ResolvedReport",
-	id: `${g.targetKind}:${g.targetId}`,
+	id: targetKey(g.targetKind, g.targetId),
 	targetKind: g.targetKind,
 	targetId: g.targetId,
 	resolution: g.resolution,
@@ -89,7 +89,7 @@ export const toResolveReceipt = (r: {
 	collapsed: number;
 }): ResolveReceipt => ({
 	__typename: "ResolveReceipt",
-	id: `${r.targetKind}:${r.targetId}`,
+	id: targetKey(r.targetKind, r.targetId),
 	targetKind: r.targetKind,
 	targetId: r.targetId,
 	resolution: r.resolution,

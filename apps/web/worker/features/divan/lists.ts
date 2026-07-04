@@ -20,6 +20,7 @@ import type {ConnectionResult} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
+import {targetKey} from "../../db/target-kind.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied} from "../kunye/errors.ts";
@@ -70,7 +71,7 @@ const toCaylak = (e: DivanRosterRow): DivanCaylak => ({
 
 const toItem = (i: DivanItem): DivanBacklogItem => ({
 	__typename: "DivanBacklogItem",
-	id: `${i.kind}:${i.id}`,
+	id: targetKey(i.kind, i.id),
 	kind: i.kind,
 	authorId: i.authorId,
 	createdAt: i.createdAt.toISOString(),

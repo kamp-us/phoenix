@@ -11,6 +11,7 @@
  * which group, the missing-standing fallback, and the diversity ratio — is a T1
  * unit (`*.unit.test.ts` precedent), the same split `enrich.ts` follows.
  */
+import {type TargetKind, targetKey} from "../../db/target-kind.ts";
 import type {Tier} from "../kunye/standing.ts";
 import type {OpenReportGroup} from "./Report.ts";
 
@@ -68,8 +69,8 @@ export interface RowReputation {
 }
 
 /** The `<kind>:<id>` key an author-reputation map is keyed by (mirrors the view `id`). */
-export const reputationKeyOf = (targetKind: string, targetId: string): string =>
-	`${targetKind}:${targetId}`;
+export const reputationKeyOf = (targetKind: TargetKind, targetId: string): string =>
+	targetKey(targetKind, targetId);
 
 /**
  * Fold a group with its resolved author reputation + distinct-reporter count into the
