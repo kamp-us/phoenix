@@ -829,12 +829,14 @@ Commit per repo conventions, gating each `git commit` on `wt_preflight` (the
 [per-mutation preflight](#per-mutation-preflight) above) so a between-calls cwd reset can't
 land the commit on the primary tree. Don't push to or PR from `main`.
 
-**Add a `Co-authored-by:` trailer for the driving human on every commit (See ADR 0140 §1).**
-Since the PR is opened under the `phoenix[bot]` installation token (Step 5's `gh pr create`),
-the bot is the PR *author* and the human who drove the run is preserved as a `Co-authored-by:`
-**commit trailer** — attribution lives on the commit, not the PR body. Use the same no-PII
-`noreply@` form the repo already carries on its `Co-Authored-By: Claude …` trailers — **never**
-a personal email (the repo's no-PII rule). Append it as a trailer in the commit message, e.g.:
+**Add a `Co-authored-by:` trailer for the driving human when the BOT authored the PR (See ADR 0140 §1).**
+The trailer attributes the driving human specifically because the bot is the PR *author* — so it
+belongs on the **bot-authored path** (Step 5's rc=0 `GH_TOKEN="$TOK" gh pr create`). In the
+operator-fallback path (rc=3, no bot configured) the operator IS the author, so a human
+co-author trailer is redundant and can be omitted. Attribution lives on the commit, not the PR
+body. Use the same no-PII `noreply@` form the repo already carries on its `Co-Authored-By: Claude …`
+trailers — **never** a personal email (the repo's no-PII rule). Append it as a trailer in the
+commit message, e.g.:
 
 ```
 <type>(<scope>): <subject>
@@ -1082,36 +1084,57 @@ claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my cla
 # The body carries `Fixes #N` always; ADD the `Flag: <FLAG_KEY>` line BELOW it ONLY when Step 4b
 # fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it entirely for an ungated PR.
 #
-# Open the PR under the phoenix[bot] installation token, NOT the operator PAT (See ADR 0140 §1):
-# the bot is the distinct PR author, so any @kamp-us/control-plane member can approve a bot-authored
-# §CP PR. `bot-token mint` prints ONLY the ghs_ token to stdout and derives the org from the repo
-# owner (write-code runs in the target repo's cwd), so it selects the right App with no --repo. It
-# fails closed (non-zero, generic stderr) on missing creds / a mint HTTP failure.
+# Open the PR under the phoenix[bot] installation token WHEN a bot is configured; otherwise fall
+# back to the operator's own token (See ADR 0140 §1; #1958). The bot is OPT-IN, presence-based —
+# `kampus-pipeline` is a shared plugin, and a personal-project / self-hosted user with no bot App
+# configured must still open PRs (under their own token). `bot-token mint` signals which case
+# holds via a 3-way EXIT CODE (#1959, ADR 0142): 0 = configured + minted (ghs_ token on stdout) /
+# 3 = NOT-CONFIGURED (no org bot creds) / 1 = MINT-FAILED (creds present but broken). Branch on it:
+#   rc=0 → open the PR under the bot token (`GH_TOKEN="$TOK"`) — the distinct bot author lets any
+#          @kamp-us/control-plane member approve a bot-authored §CP PR.
+#   rc=3 → OPERATOR FALLBACK: open under the operator's own token (plain `gh pr create`). This is
+#          the sanctioned opt-out, not a silent degrade — the user never set up a bot. It's SAFE for
+#          phoenix because §CP is enforced by the branch RULESET, not by this path: a usirin-authored
+#          §CP PR can't self-approve (`require_code_owner_review` leaves it blocked), so the fallback
+#          cannot smuggle a §CP change past review.
+#   else (rc=1 / any other) → HARD-FAIL. A CONFIGURED-but-broken bot must NEVER silently author as
+#          the operator — that reintroduces the invisible #1875 author-bottleneck (%19's #1940 catch).
+#          Stop, surface the blocker (see the pipeline-cli bot-token README); do NOT open the PR.
 #
-# CAPTURE-then-ASSERT-then-USE — never the inline-prefix form. The obvious
-# `GH_TOKEN=$(mint) gh pr create …` prefix form is UNSAFE and must NOT be used: an assignment
-# prefix's command substitution does NOT propagate its non-zero exit to the command — even under
-# `set -e` the mint's failure is discarded and `gh pr create` RUNS with an EMPTY GH_TOKEN, which
-# `gh` treats as unset and FALLS BACK to the stored operator credential — the exact silent
-# operator-authored PR (author-bottleneck + wrong identity, #1875) ADR 0140 §1 kills, and because
-# gh exits 0 the agent misreads it as success. So mint into its OWN statement (`TOK="$(…)"`), where
-# the `||` DOES catch the non-zero exit, then assert non-empty (catches an empty-but-exit-0 edge),
-# and ONLY then pass `GH_TOKEN="$TOK"` inline on `gh pr create`. There is NO fallback to the
-# operator PAT: on a mint failure, stop and surface the blocker (creds not provisioned — see the
-# pipeline-cli bot-token README); never open the PR under the operator token.
+# CAPTURE-then-BRANCH — never the inline-prefix form. The obvious `GH_TOKEN=$(mint) gh pr create …`
+# prefix form is UNSAFE and must NOT be used: an assignment prefix's command substitution does NOT
+# propagate the non-zero exit to the command, so the rc=3 / rc=1 distinction is LOST and `gh` runs
+# with an EMPTY GH_TOKEN — falling back to the operator even on a broken configured bot (%19's #1940
+# catch, live). Mint into its OWN statement and read `$?` explicitly, THEN branch on the code.
 # Never echo the token (stdout-only contract).
-TOK="$(node packages/pipeline-cli/src/bin.ts bot-token mint)" || { echo "bot-token mint failed — refusing to open a PR under the operator identity (ADR 0140 §1)" >&2; exit 1; }
-[ -n "$TOK" ] || { echo "empty bot token — aborting (ADR 0140 §1)" >&2; exit 1; }
-GH_TOKEN="$TOK" gh pr create \
-  --base main \
-  --title "<concise PR title>" \
-  --body "$(cat <<'EOF'
+TOK="$(node packages/pipeline-cli/src/bin.ts bot-token mint)"; rc=$?
+# The bot-authored path (rc=0) opens under the bot; the operator-fallback path (rc=3) omits the
+# GH_TOKEN prefix and opens under the operator token. Keep the create call single-sourced via a
+# helper so the base/title/body/Fixes/Flag arguments aren't duplicated (and can't drift):
+open_pr() {   # $1: optional bot token; empty ⇒ operator token (gh's stored credential)
+  local tok="$1"
+  GH_TOKEN="$tok" gh pr create \
+    --base main \
+    --title "<concise PR title>" \
+    --body "$(cat <<'EOF'
 <short summary of what changed and why>
 
 Fixes #<N>
 Flag: <FLAG_KEY>
 EOF
 )"
+}
+case "$rc" in
+  0)
+    [ -n "$TOK" ] || { echo "bot-token mint exited 0 but returned an empty token — aborting (ADR 0140 §1)" >&2; exit 1; }
+    open_pr "$TOK" ;;                # configured + minted → author as the bot
+  3)
+    echo "no bot configured for this org — opening the PR under the operator token (opt-out fallback; ADR 0140 §1 / #1958)" >&2
+    open_pr "" ;;                    # NOT configured → operator fallback (plain gh pr create)
+  *)
+    echo "bot-token mint FAILED (rc=$rc) — a CONFIGURED bot is broken; refusing to fall back to the operator identity (ADR 0140 §1 / %19's #1940 catch). Surface the blocker (see the pipeline-cli bot-token README); do NOT open the PR." >&2
+    exit 1 ;;                        # configured-but-broken → HARD-FAIL, never a silent operator PR
+esac
 ```
 
 > `gh pr edit` is unreliable in this org (Projects-classic). If you must edit a PR
