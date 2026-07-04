@@ -201,6 +201,100 @@ echo '{"reason":"TypeError: …","resumeFromRunId":"run_x","priorResumes":0}' \
   | node packages/pipeline-cli/src/bin.ts resume-policy decide         # → surface (logic)
 ```
 
+### `bot-token` — mint a per-org bot installation access token (ADR 0140, #1938)
+
+Mints the **target org's** bot GitHub App **installation** access token (JWT RS256 → installation
+access token) for the pipeline's bot-authored PR-open + merge-queue enqueue. Per
+[ADR 0140](../../.decisions/0140-phoenix-bot-authors-pipeline-prs-team-cp.md) the bot is the
+distinct PR author, so any control-plane member may approve a bot-authored §CP PR; short-lived
+installation tokens replace any long-lived PAT (retires #382).
+
+**Plugin-level, org-derived.** This ships in the repo-agnostic `kampus-pipeline` plugin, which serves
+**N GitHub owners**, so the org is **derived from the target repo's owner** — never hardcoded. The repo
+is resolved by the **same idiom the skills use** (`--repo` flag > env `CLAUDE_PIPELINE_REPO` >
+`gh repo view --json nameWithOwner`), and the org is that repo's **owner segment**. A run against a
+`kamp-us/*` repo derives org `kamp-us`; a run against a `binclusive/*` repo derives `binclusive`. Each
+org has its **own** bot App and its **own** key material, keyed on disk by the derived org.
+
+The `mint` core is pure + injectable (`buildAppJwt` signs the App JWT given an injected clock;
+`mintInstallationToken` POSTs `/app/installations/<id>/access_tokens` given an injected `fetch`;
+`resolveOrg` derives the org from `owner/name`), so the signing + org derivation + request shape are
+unit-tested without a live App.
+
+**Output contract (security-critical):** `bot-token mint` prints **only** the `ghs_` token to
+stdout — the PEM is never printed, the token is never logged to stderr, and errors are generic
+(HTTP status + the GitHub API `.message`, never credential material). So a caller does:
+
+```bash
+GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint) gh pr create …
+```
+
+#### Provisioning convention — org-keyed, local-path per machine (rung 1)
+
+Creds live **out of every repo**, keyed by the **derived org**, under a single root:
+
+```
+~/.config/kampus-pipeline/<org>/
+  ├── private-key.pem     # the org's bot App private key (chmod 600)
+  └── config.json         # {"appId": "…", "installationId": "…"} for THAT org
+```
+
+Each pipeline operator provisions their **own** machine — provisioning one machine is independent and
+does not block anyone else's runs. Per operator, per org:
+
+1. **Mint your own private key.** The org's bot GitHub App supports **multiple private keys**, so each
+   operator generates their **own** key in the App settings and downloads the PEM. **No PEM is ever
+   transferred between operators** — a leaked or departed key is revoked in isolation without rotating
+   anyone else's. Place it, out of every repo, `chmod 600`:
+
+   ```bash
+   mkdir -p ~/.config/kampus-pipeline/<org>
+   # download YOUR own key from the org's bot App settings, save it here, then lock it down:
+   chmod 600 ~/.config/kampus-pipeline/<org>/private-key.pem
+   ```
+
+2. **Place the ids** in `~/.config/kampus-pipeline/<org>/config.json` as
+   `{"appId": "…", "installationId": "…"}` (or set env `KAMPUS_PIPELINE_APP_ID` /
+   `KAMPUS_PIPELINE_INSTALLATION_ID`). These are the org's bot-App ids — non-secret, but **not**
+   committed to any repo.
+
+After steps 1–2 the default invocation just works — the org is derived from where you run it:
+
+```bash
+# inside the target repo (org derived via gh repo view):
+GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint) gh pr create …
+# or force the org from anywhere:
+GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint --repo <org>/<repo>) gh pr create …
+```
+
+#### Upgrade path — a Cloudflare token-broker (rung 2), zero rework
+
+Rung-1 local-path-per-machine is the **current** convention; the documented **upgrade** is a
+**Cloudflare token-broker** that hands out the key content on demand (no per-machine PEM on disk).
+Because the helper already takes the PEM as **content** via `--private-key` (env
+`KAMPUS_PIPELINE_PRIVATE_KEY`) — co-equal with the path input — the broker rides that input with
+**zero code change**: the caller resolves the key from the broker and pipes it in.
+
+```bash
+# RUNG 2 (upgrade path, not a current dependency): the broker supplies the key content.
+GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint \
+  --private-key "$(<broker-fetch-for-org>)") gh pr create …
+```
+
+**Inputs** (precedence explicit flag > env > org-keyed config file):
+
+| input | flag | env | default |
+| --- | --- | --- | --- |
+| target repo (→ org) | `--repo` | `CLAUDE_PIPELINE_REPO` | `gh repo view` (owner = org) |
+| app id | `--app-id` | `KAMPUS_PIPELINE_APP_ID` | org `config.json` `appId` |
+| installation id | `--installation-id` | `KAMPUS_PIPELINE_INSTALLATION_ID` | org `config.json` `installationId` |
+| PEM file path | `--private-key-path` | `KAMPUS_PIPELINE_PRIVATE_KEY_PATH` | `~/.config/kampus-pipeline/<org>/private-key.pem` |
+| PEM content | `--private-key` | `KAMPUS_PIPELINE_PRIVATE_KEY` | — (broker / secret-injection) |
+
+Giving **both** `--private-key` and `--private-key-path` is an error; giving neither uses the org-derived
+default path. Fails closed (non-zero, generic stderr) on an underivable org, missing ids, an unreadable
+PEM, or a mint HTTP failure.
+
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
 pnpm --filter @kampus/pipeline-cli test
