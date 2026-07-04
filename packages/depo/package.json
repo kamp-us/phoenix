@@ -1,0 +1,52 @@
+{
+	"name": "@kampus/depo",
+	"version": "0.1.0",
+	"description": "depo — the standalone client for kampus's internal asset store/CDN (ADR 0144): a thin `put(file)` lib + a `depo` bin over it. NOT a pipeline-cli subcommand.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/depo"
+	},
+	"type": "module",
+	"bin": {
+		"depo": "./dist/bin.js"
+	},
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"prepublishOnly": "tsc -p tsconfig.build.json",
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"cli": "node src/bin.ts"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
