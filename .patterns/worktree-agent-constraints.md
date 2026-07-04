@@ -75,13 +75,16 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
 - **A bare `git checkout`/`switch` can detach the *shared primary* HEAD — never run
   one; address git at your worktree explicitly.** This is the cwd-reset bullet's most
   damaging instance. A worktree agent *armed* by `@kampus/worktree-guard` has its
-  non-HEAD-moving bare commands prepended with `cd "$WORKTREE_ROOT" && …`; a bare
-  **HEAD-moving** op (`checkout`/`switch`/`reset`/`rebase`) that is not scoped to the
-  worktree is now **refused outright** by the `pre-bash` guard (the enforced guard route
-  below), because cd-pinning it would only relocate the HEAD move into the worktree rather
-  than surface the mistake. The class this closes: a bare `git checkout <pr-head-sha>`, run
-  after a between-calls cwd reset, executes in the **primary** tree and detaches the shared
-  `main`. That silently breaks a sibling puller's `git merge --ff-only origin/main` (it
+  non-mutating bare commands prepended with `cd "$WORKTREE_ROOT" && …`; a bare
+  **working-state-mutating** op (`checkout`/`switch`/`reset`/`rebase`/`stash`/`merge`) that
+  is not scoped to the worktree is now **refused outright** by the `pre-bash` guard (the
+  enforced guard route below), because cd-pinning it would only relocate the mutation into
+  the worktree rather than surface the mistake. The class this closes: a bare
+  `git checkout <pr-head-sha>`, run after a between-calls cwd reset, executes in the
+  **primary** tree and detaches the shared `main`; and (added #2030) a bare
+  `git stash pop` / `git merge` that corrupts the shared primary's **working tree** — the
+  review-doc agent that ran `git stash pop` + `reset --hard` on the owner's checkout,
+  silently discarding its uncommitted state. That silently breaks a sibling puller's `git merge --ff-only origin/main` (it
   stalls on a detached HEAD / non-ff), with the symptom (puller stuck, merged work not
   propagating) far from the cause. It recurred on every review/ship agent that checked out a
   PR head from a shared checkout (#1103, then #1494). The rule, mandatory for **every**
@@ -89,8 +92,8 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   - **Capture `WT="$(git rev-parse --show-toplevel)"` once at spawn** (right after the
     opening worktree preflight passes) and run **ALL** git ops as `git -C "$WT" …`, so a
     cwd reset can never silently relocate the command into the primary tree.
-  - **Never run a bare `git checkout` / `git switch`** (nor `rebase` / `reset` / `stash`)
-    against a shared checkout. To bring a **PR head** in for review, fetch and check out
+  - **Never run a bare `git checkout` / `git switch`** (nor `rebase` / `reset` / `stash` /
+    `merge`) against a shared checkout. To bring a **PR head** in for review, fetch and check out
     *inside the worktree* by ref, not by a bare SHA:
     ```bash
     git -C "$WT" fetch origin pull/<N>/head && git -C "$WT" checkout FETCH_HEAD

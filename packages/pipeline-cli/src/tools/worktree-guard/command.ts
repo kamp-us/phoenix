@@ -135,7 +135,7 @@ const preBash = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"PreToolUse Bash: cd-pin to $WORKTREE_ROOT; refuse a bare HEAD-moving git op (#1571)",
+		"PreToolUse Bash: cd-pin to $WORKTREE_ROOT; refuse a bare working-state-mutating git op — checkout/switch/reset/rebase/stash/merge (#1571, #2030)",
 	),
 );
 
