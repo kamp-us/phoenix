@@ -96,6 +96,7 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 | Doc | Topic | Read when |
 |---|---|---|
 | [biome-custom-gritql-rules.md](./biome-custom-gritql-rules.md) | Authoring a project-specific lint rule as a biome GritQL plugin (`.grit` in `biome-plugins/`, registered in `biome.jsonc` `"plugins"`); the shipped `no-type-assertions` rule banning `as unknown as`/`as any`; per-line `// biome-ignore lint/plugin:` suppression | Adding/editing a custom biome lint rule, or suppressing one |
+| [erasable-typescript-syntax.md](./erasable-typescript-syntax.md) | Why worker/stack code must use only **erasable** TS syntax (no parameter-properties / `enum` / runtime `namespace`): `alchemy deploy` loads the stack through Node's strip-only loader (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`), a deploy-only break that passed typecheck+lint+integration deploy; the root `erasableSyntaxOnly: true` guard that fails it fast, and the erasable rewrites | Writing worker/`alchemy.run.ts` code, or hitting the strip-only deploy error ([#916](https://github.com/kamp-us/phoenix/issues/916)) |
 
 ## CI / pipeline
 

@@ -47,7 +47,10 @@ const rpcCallError = (cause: unknown, method = "open") => ({
 /** A non-transport app error — a declared `E` that must NOT be retried/converted. */
 class AppError {
 	readonly _tag = "AppError";
-	constructor(readonly detail: string) {}
+	readonly detail: string;
+	constructor(detail: string) {
+		this.detail = detail;
+	}
 }
 
 /** Run `effect` to its `Exit`, advancing past the whole bounded backoff window. */

@@ -14,6 +14,12 @@
 		"skipLibCheck": true,
 		"resolveJsonModule": true,
 		"verbatimModuleSyntax": true,
+		// `alchemy deploy` loads the worker stack through Node's strip-only TS loader, which
+		// rejects non-erasable syntax (parameter-properties / `enum` / `namespace`) at load time
+		// with ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX — a deploy-only break that passed typecheck, lint,
+		// and the transpiling integration deploy (#916). This flag rejects that class at
+		// `pnpm typecheck` (the fast gate) instead. See .patterns/erasable-typescript-syntax.md (#916).
+		"erasableSyntaxOnly": true,
 		// `includeSuggestionsInTsc: false` keeps `tsgo`/`pnpm typecheck` output free of
 		// suggestion-severity Effect hints (they never affected the exit code anyway).
 		// The hints still surface in the editor LSP, where the per-line
