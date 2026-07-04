@@ -209,8 +209,7 @@ const lockfileTriggersWorker = (diff: string, relevant: ReadonlySet<string>): st
 			if (header !== null && header[1] !== undefined) {
 				const importerPath = header[1];
 				const pkg = /^packages\/([^/]+)$/.exec(importerPath);
-				currentImporterIrrelevant =
-					pkg !== null && pkg[1] !== undefined && !relevant.has(pkg[1]);
+				currentImporterIrrelevant = pkg !== null && pkg[1] !== undefined && !relevant.has(pkg[1]);
 				currentSectionLabel = `importers › ${importerPath}`;
 			}
 		}
