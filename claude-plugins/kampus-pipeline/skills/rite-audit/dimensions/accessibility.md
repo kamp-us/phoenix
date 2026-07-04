@@ -14,25 +14,30 @@ Playwright-MCP driver) are defined there and consumed here, not re-derived.
 
 - **`id`** — `accessibility` (this file's basename == id == the *Active dimensions* row key).
 - **`surfaces`** — uses the [`SKILL.md`](../SKILL.md) route-map keys. Two tiers:
-  - **Full rubric** (all four checks) on the **core 6 loop surfaces**: `/` (landing), `/auth`,
+  - **Full rubric** (all five checks) on the **core 6 loop surfaces**: `/` (landing), `/auth`,
     `/sozluk` + `/sozluk/:slug`, `/pano` + `/pano/yeni`, `/profile` (as the self-registered
     çaylak), `/divan` (as the `testMod`).
   - **axe-scan-only** (A1 + A5, the two static-scan checks) on `/u/:username` and `/search` —
     cross-user read surfaces worth a contrast/violation sweep but outside the keyboard-walk budget.
 - **`probe`** — for each surface, in the appropriate identity context: navigate, settle, inject +
-  run axe (A1, A5), then on the full-rubric surfaces Tab-walk every interactive element (A2) and
-  read the focus ring at each stop + on each route/modal transition (A3). See **The probe** below.
-- **`rubric`** — the named checks **A1, A2, A3, A5** below. A4 (reduced-motion) is **descoped to
-  #1537** — see [Descoped: A4 reduced-motion](#descoped-a4--reduced-motion-deferred-to-1537).
+  run axe (A1, A5), then on the full-rubric surfaces Tab-walk every interactive element (A2), read
+  the focus ring at each stop + on each route/modal transition (A3), and force
+  `prefers-reduced-motion: reduce` via the `emulateMedia` seam and assert motion is suppressed
+  (A4). See **The probe** below.
+- **`rubric`** — the named checks **A1, A2, A3, A4, A5** below. A4 (reduced-motion) drives the
+  `emulateMedia` seam ([`SKILL.md`](../SKILL.md) *Playwright MCP wiring*) to force
+  `prefers-reduced-motion: reduce` on the core-6 full-rubric surfaces — a real drive-test now that
+  #1537 landed the media-emulation seam.
 
 ### Finding granularity — one Finding per (check, surface)
 
 The `Finding` key is `dimension` + `check` + `surface` (DIMENSIONS.md), so this dimension emits
 **one `Finding` per (check, surface) pair** — a failure names the exact surface it was found on
 (`surface: /pano/yeni`), never a single dimension-wide verdict that hides *where* the rite is
-inaccessible. With four checks over the core 6 surfaces plus the two axe-scan-only surfaces
-(A1 + A5 each), that is `4×6 + 2×2 = 28` findings on a full run. The `check` names (`axe-scan`,
-`keyboard-nav`, `focus-visible`, `color-contrast`) are stable across runs so #1516 diffs cleanly.
+inaccessible. With five checks over the core 6 surfaces plus the two axe-scan-only surfaces
+(A1 + A5 each), that is `5×6 + 2×2 = 34` findings on a full run. The `check` names (`axe-scan`,
+`keyboard-nav`, `focus-visible`, `reduced-motion`, `color-contrast`) are stable across runs so
+#1516 diffs cleanly.
 
 ## Identity contexts (consumed from the route map / SKILL.md identity model)
 
@@ -66,8 +71,9 @@ the **axe load + run** snippet below, immediately before the `axe.run(...)` call
 
 Drive only the **real** Playwright-MCP tools: `browser_navigate`, `browser_wait_for`,
 `browser_evaluate`, `browser_snapshot`, `browser_press_key`, `browser_take_screenshot`,
-`browser_resize`. Do not invent a tool. Every check is `drive → observe → assert → record` and
-emits exactly one `Finding` per surface in the shape DIMENSIONS.md defines.
+`browser_resize`, `browser_emulate_media` (the media-emulation seam — SKILL.md *Playwright MCP
+wiring*). Do not invent a tool. Every check is `drive → observe → assert → record` and emits
+exactly one `Finding` per surface in the shape DIMENSIONS.md defines.
 
 For **each surface** in this dimension's `surfaces`:
 
@@ -78,6 +84,9 @@ For **each surface** in this dimension's `surfaces`:
 3. On the **full-rubric** surfaces only: **A2** Tab-walk with `browser_press_key('Tab')` +
    the *focus probe* snippet; **A3** read the focus ring at each stop and across each
    route/modal transition, `browser_take_screenshot` as evidence.
+4. On the **full-rubric** surfaces only: **A4** — force `prefers-reduced-motion: reduce` via
+   `browser_emulate_media`, then run the *reduced-motion probe* snippet to observe the app
+   suppressed motion; restore the default (`{ reducedMotion: 'no-preference' }`) after.
 
 ### Snippet — axe load + run (paste into `browser_evaluate`; backs A1 + A5)
 
@@ -143,7 +152,45 @@ the scan **could not run** → record **BLOCKED** for that (check, surface), nev
 4. **Keyboard-trap probe:** if Tab stops advancing — `document.activeElement` is unchanged across
    consecutive Tabs and never escapes a region (e.g. an open modal/sheet) — that is a trap.
 
-## The rubric — A1, A2, A3, A5 (each emits one `Finding` per surface)
+### Snippet — reduced-motion probe (paste into `browser_evaluate`; backs A4)
+
+Run **after** forcing `prefers-reduced-motion: reduce` via `browser_emulate_media`. It confirms
+the media feature is actually forced (`matchMedia` reports `reduce`), then sweeps every rendered
+element for a non-trivial CSS `animation`/`transition` that the app failed to suppress under
+`reduce` — an app that respects the preference collapses these to `none`/`0s` (a
+`@media (prefers-reduced-motion: reduce)` rule, or a motion-off token). A non-empty
+`unsuppressed` array is the FAIL evidence: the element + the animation/transition still running.
+
+```js
+() => {
+  const forced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const running = (s) => {
+    const anim = s.animationName !== "none" &&
+      parseFloat(s.animationDuration) > 0;
+    const trans = parseFloat(s.transitionDuration) > 0;
+    return anim || trans;
+  };
+  const unsuppressed = [...document.querySelectorAll("*")]
+    .filter((el) => running(getComputedStyle(el)))
+    .slice(0, 20)
+    .map((el) => {
+      const s = getComputedStyle(el);
+      return {
+        tag: el.tagName,
+        testid: el.getAttribute("data-testid"),
+        animationName: s.animationName,
+        animationDuration: s.animationDuration,
+        transitionDuration: s.transitionDuration,
+      };
+    });
+  return JSON.stringify({ forced, unsuppressedCount: unsuppressed.length, unsuppressed });
+}
+```
+
+If `forced` is `false` the seam did not take effect (or is unavailable) → the check **could not
+run** → record **BLOCKED** for that (check, surface), never PASS.
+
+## The rubric — A1, A2, A3, A4, A5 (each emits one `Finding` per surface)
 
 ### A1 — axe-scan
 
@@ -184,6 +231,23 @@ the scan **could not run** → record **BLOCKED** for that (check, surface), nev
   the screenshot ref + the focus-probe `boxShadow`/`outline` readout). **BLOCKED** if the surface
   would not load. `surface:` the route walked.
 
+### A4 — reduced-motion
+
+- **check name** — `reduced-motion`. **Runs on** the core 6 full-rubric surfaces only.
+- **drive** — Force `prefers-reduced-motion: reduce` via `browser_emulate_media` (the
+  `emulateMedia` seam, SKILL.md *Playwright MCP wiring*), then run the *reduced-motion probe*
+  snippet on the settled surface. Restore `{ reducedMotion: 'no-preference' }` after so the forced
+  state never leaks into the next surface's checks.
+- **observe** — `forced` (did the seam take effect — `matchMedia('(prefers-reduced-motion:
+  reduce)')` reports `reduce`) and the `unsuppressed` array (elements still running a non-trivial
+  CSS `animation`/`transition` under `reduce`).
+- **assert / record** — **PASS** iff the feature forced ON (`forced === true`) **and** the app
+  suppressed motion (`unsuppressed` is empty — every animation/transition collapsed to `none`/`0s`
+  under `reduce`). **FAIL** if any element keeps animating under `reduce` (evidence = the
+  `unsuppressed` entries: element testid + the animation/transition still running). **BLOCKED** if
+  the seam did not take effect (`forced === false` — media emulation unavailable) or the surface
+  would not load. `surface:` the route walked.
+
 ### A5 — color-contrast
 
 - **check name** — `color-contrast`. **Runs on** all surfaces (core 6 + the two axe-scan-only).
@@ -194,14 +258,6 @@ the scan **could not run** → record **BLOCKED** for that (check, surface), nev
 - **assert / record** — **PASS** iff axe reports **no** `color-contrast` violation. **FAIL** on any
   (evidence = the offending nodes + the measured ratio from `failureSummary`). **BLOCKED** if axe
   could not run or the surface would not load. `surface:` the route walked.
-
-### Descoped: A4 — reduced-motion (deferred to #1537)
-
-reduced-motion (the planned A4) is **deferred to #1537**: the Playwright-MCP driver lacks
-media-emulation (no `emulateMedia` / CDP seam), so it can't **force** `prefers-reduced-motion`. A
-`matchMedia` heuristic isn't a real drive-test, and a permanently-BLOCKED check would red the
-dimension by the story-11 roll-up. It returns as a real check once #1537 lands the media-emulation
-seam. Until then this dimension emits **no** A4 `Finding` (an absent check is not a BLOCKED one).
 
 ## Roll-up
 
