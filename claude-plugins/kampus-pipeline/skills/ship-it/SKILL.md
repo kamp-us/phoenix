@@ -579,16 +579,25 @@ Now resolve **per namespace**, latest-wins by timestamp:
   `created_at`; its bound SHA is the marker's `@ <sha>`. `review-doc: PASS … merge-ready` is
   PASS; `review-doc: FAIL … changes-requested` is FAIL. (review-doc lands no native review —
   it is comment-only, ADR 0058 — so there is no review path to fold in, and no review-vs-comment
-  comparison to make.)
+  comparison to make.) A §CP doc PR's verdict is likewise the SHA-less-first-line advisory
+  (`review-doc: advisory — blocking-set PR …`), resolved for a §CP PR from the body's
+  `Reviewed-head` line via the same
+  **[§CP advisory resolution](#step-2cp--cp-advisory-namespace-resolution-adr-01350151)** below
+  (ADR 0111/0151) — never from a bindable first-line marker.
 - **review-skill namespace** — the verdict is the **latest `review-skill` marker comment** by
   `created_at`; its bound SHA is the marker's `@ <sha>`. `review-skill: PASS … merge-ready` is
   PASS; `review-skill: FAIL … changes-requested` is FAIL. (review-skill is comment-only too,
-  ADR 0058 — same single-record-type resolution as review-doc.) An **advisory** line
-  (`review-skill: advisory — blocking-set PR …`) carries no `@ <sha>` and is **not** a PASS:
-  the PR that earns it is in the §CP set, whose enqueue Step 0 gates on a current-head
-  `@kamp-us/control-plane` team approval (ADR 0135), not on a `review-skill` PASS — the advisory
-  verdict is the human-read signal informing that approval, so it never enters the machine-PASS
-  namespace here.
+  ADR 0058 — same single-record-type resolution as review-doc.) For a **non-§CP** skill PR an
+  **advisory** line (`review-skill: advisory — blocking-set PR …`) carries no first-line `@ <sha>`
+  and is **not** a PASS — it never enters the machine-PASS namespace here. But a §CP skill PR's
+  *only* verdict IS that advisory — ADR 0111 makes it SHA-less **in the first line by design**, and
+  binds the reviewed head **in the body** — so for a §CP PR ship-it resolves the advisory namespace
+  from the body's canonical `Reviewed-head` line via the
+  **[§CP advisory resolution](#step-2cp--cp-advisory-namespace-resolution-adr-01350151)** below,
+  gated on Step 0's control-plane approval (ADR 0135/0151). That §CP path is the **only** way a §CP
+  advisory resolves — a §CP PR is **never** required to (nor satisfied by) a bindable first-line
+  `review-skill: PASS @ <sha>` marker (that would drop it into the auto-merge namespace — the ADR 0111
+  hazard #2022's forge-workaround must not take).
 
 ### Step 2b — SHA-staleness refusal (ADR 0058)
 
@@ -622,15 +631,70 @@ is_current "$vsha" || echo "unverified (verdict not bound to current head) → r
 # as an empty string (or be short-circuited to refuse before the call) — never as the literal "null".
 ```
 
+<a id="step-2cp--cp-advisory-namespace-resolution-adr-01350151"></a>
+### Step 2.§CP — resolve a §CP advisory namespace from the body's `Reviewed-head` line (ADR 0135/0151)
+
+**This step runs only for a PR Step 0 classified §CP whose approval gate passed** (a current-head
+`@kamp-us/control-plane` team approval is present — else Step 0 already STOPPED at `awaiting
+control-plane approval`, and you never reach here). A §CP `review-skill` / `review-doc` PR's *only*
+verdict is the **SHA-less-first-line advisory** (ADR 0111): its first line carries no `@ <sha>`, so
+the Step-2 first-line matcher above resolves that namespace's `sha` to `null` and Step 2b would
+refuse it as a legacy SHA-less marker. That refusal is **correct for a non-§CP PR** but is the
+#1932/#2022 collision for a §CP one — the advisory is the *intended* §CP verdict, and its reviewed
+head is bound **in the body**, not the first line. So for the §CP advisory namespaces, resolve the
+reviewed head from the body's **canonical `Reviewed-head: @ <sha>` line** (mandated in
+`gh-issue-intake-formats.md` §6.6 and emitted by the review-skill/review-doc advisory templates,
+ADR 0151) instead of the first-line `@ <sha>`.
+
+This is **deterministic** — the outcome is a pure function of the PR's state (body `Reviewed-head`
+SHA + per-check PASS + approval@head + CI), never of which shipper instance reads it — which is the
+whole point (#2022): identical §CP PRs must enqueue-or-refuse identically. It is **§CP-only** and
+does **not** widen the reviewer marker contract: the reviewer still emits the SHA-less advisory
+(ADR 0111 intact); ship-it reads the SHA from the body, exactly as ADR 0111's delegated
+control-plane merge actor does. **Never** treat a §CP advisory as satisfied via a bindable
+first-line `review-skill: PASS @ <sha>` marker (that drops it into the auto-merge namespace — the
+ADR 0053/0065/0111 hazard; the hand-posted-marker forge on #2005 is the workaround this replaces and
+forbids).
+
+For each §CP namespace whose latest verdict is a **current-head advisory** (first line matches
+`^\s*\**\s*review-(skill|doc):\s*advisory\b`), resolve it as an **enqueue-eligible current-head
+PASS-equivalent** iff **all three** hold, else **refuse deterministically with the named reason**:
+
+```bash
+# $ADV_BODY = the latest §CP advisory comment body for this namespace (review-skill or review-doc),
+# author-gated (write+, ADR 0055) and latest-wins exactly like the markers above.
+# (a) body's canonical Reviewed-head SHA (ADR 0151 §6.6) must prefix-match the PR's current head.
+#     Anchored to the `Reviewed-head:` line — a DISTINCT token from the first-line advisory marker,
+#     so this never mistakes a first-line marker for the body binding, and the advisory stays out of
+#     the PASS namespace. Optional `@`, 7–40 hex, ADR 0058 prefix-match either side.
+BODY_SHA="$(printf '%s' "$ADV_BODY" | grep -ioE '^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*[0-9a-f]{7,40}' \
+              | grep -ioE '[0-9a-f]{7,40}' | head -n1)"
+is_current "$BODY_SHA" || { echo "unverified (§CP advisory reviewed-head stale — body @ ${BODY_SHA:-none} ≠ current head) → refuse"; }
+# (b) every checkbox in the body is PASS — a clean recorded verdict, no [FAIL] anywhere.
+if printf '%s' "$ADV_BODY" | grep -qiE '^\s*[-*]?\s*\[[[:space:]]*FAIL[[:space:]]*\]'; then
+  echo "unverified (§CP advisory not all-PASS — a body checkbox is [FAIL]) → refuse"
+fi
+# (c) Step 0's current-head @kamp-us/control-plane approval — already asserted before reaching here.
+#     All three ⇒ this §CP namespace is a current-head PASS-equivalent for the class-gate below.
+```
+
+A §CP namespace with **no** advisory comment at all (nor any PASS/FAIL marker) is still
+`unverified (no review-<skill|doc> PASS)` — the resolution needs a current-head advisory to read.
+A §CP namespace whose latest verdict is a `review-<skill|doc>: FAIL` marker is a **FAIL** (the
+reviewer found a miss), refused exactly as a non-§CP FAIL — the §CP advisory path is entered only
+when the latest verdict is an *advisory*, never to mask a FAIL.
+
 Then gate the merge on the classes present (Step 0):
 
 1. For **each class present**, its namespace must have a latest verdict, it must be **bound to
-   the current head** (Step 2b), and it must be PASS.
+   the current head** (Step 2b, or Step 2.§CP for a §CP advisory namespace), and it must be PASS
+   (or, for a §CP advisory namespace, the Step 2.§CP PASS-equivalent).
    - code present but the review-code namespace is empty → `unverified (no review-code PASS)`.
    - docs present but the review-doc namespace is empty → `unverified (no review-doc PASS)`.
    - skills present but the review-skill namespace is empty → `unverified (no review-skill PASS)`.
    - a verdict present but not bound to the current head → `unverified (verdict not bound to
-     current head)` → refuse.
+     current head)` → refuse. (For a §CP advisory namespace, "bound to current head" is the body's
+     `Reviewed-head` SHA per Step 2.§CP, not the absent first-line `@ <sha>`.)
    - a mixed PR needs **each** present namespace resolved to a current-head PASS (e.g. a
      skill+code PR needs both `review-skill` and `review-code`).
 2. If **any** required namespace's current-head verdict is **FAIL** → **do not merge.** The PR
