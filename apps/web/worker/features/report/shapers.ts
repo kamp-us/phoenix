@@ -9,10 +9,10 @@
 
 import type {TargetKind} from "../../db/target-kind.ts";
 import type {ReportTargetContext} from "./enrich.ts";
-import type {OpenReportGroup, ReportResult} from "./Report.ts";
+import type {OpenReportGroup, ReportResult, ResolvedReportGroup} from "./Report.ts";
 import type {RowReputation} from "./reputation.ts";
 import type {Resolution} from "./resolution.ts";
-import type {OpenReport, ReportReceipt, ResolveReceipt} from "./views.ts";
+import type {OpenReport, ReportReceipt, ResolvedReport, ResolveReceipt} from "./views.ts";
 
 // `id` is the `<targetKind>:<targetId>` normalization key (see `views.ts`).
 export const toReportReceipt = (r: ReportResult): ReportReceipt => ({
@@ -54,6 +54,31 @@ export const toOpenReport = (
 	authorCommentCount: reputation.authorCommentCount,
 	authorKefil: reputation.authorKefil,
 	authorReportedTargets: reputation.authorReportedTargets,
+});
+
+// `context` is the decided target's in-situ enrichment, resolved in the
+// `Moderate`-gated `report.listResolved` path; absent (`undefined`) for a target whose
+// content couldn't be read (removed/sandboxed), in which case the `target*` fields are
+// null. `resolverHandle` is the resolver's display handle joined from the same gated
+// read; null when the identity couldn't be resolved.
+export const toResolvedReport = (
+	g: ResolvedReportGroup,
+	context: ReportTargetContext | undefined,
+	resolverHandle: string | null,
+): ResolvedReport => ({
+	__typename: "ResolvedReport",
+	id: `${g.targetKind}:${g.targetId}`,
+	targetKind: g.targetKind,
+	targetId: g.targetId,
+	resolution: g.resolution,
+	resolverId: g.resolverId,
+	resolverHandle,
+	resolvedAt: g.resolvedAt.toISOString(),
+	reportCount: g.reportCount,
+	waveId: g.waveId,
+	targetExcerpt: context?.excerpt ?? null,
+	targetAuthor: context?.author ?? null,
+	targetRef: context?.ref ?? null,
 });
 
 export const toResolveReceipt = (r: {

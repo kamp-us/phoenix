@@ -8,11 +8,18 @@
  * `.patterns/fate-effect-sources.md`.
  */
 import {Fate} from "@kampus/fate-effect";
-import {OpenReportView, ReportReceiptView, ResolveReceiptView} from "./views.ts";
+import {
+	OpenReportView,
+	ReportReceiptView,
+	ResolvedReportView,
+	ResolveReceiptView,
+} from "./views.ts";
 
 export const reportReceiptSource = Fate.syntheticSource(ReportReceiptView);
-// `OpenReport` is delivered inline by the `report.listOpen` list resolver and
-// `ResolveReceipt` by the `report.resolve` mutation — neither is read by id, so
-// both are capability-less synthetic sources (view-reachable, no fetch path).
+// `OpenReport` is delivered inline by the `report.listOpen` list resolver, `ResolvedReport`
+// inline by the `report.listResolved` list resolver (#1704), and `ResolveReceipt` by the
+// `report.resolve`/`report.restore` mutations — none is read by id, so all are
+// capability-less synthetic sources (view-reachable, no fetch path).
 export const openReportSource = Fate.syntheticSource(OpenReportView);
+export const resolvedReportSource = Fate.syntheticSource(ResolvedReportView);
 export const resolveReceiptSource = Fate.syntheticSource(ResolveReceiptView);

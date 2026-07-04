@@ -129,6 +129,74 @@ describe("Report.submit — target-liveness decision (mocked Drizzle seam)", () 
 	);
 });
 
+describe("Report.listResolved — row→group mapping decision (mocked Drizzle seam)", () => {
+	it.effect(
+		"maps each aggregate row to a ResolvedReportGroup (seconds→Date, Number coercions)",
+		() =>
+			// The engine's GROUP BY / ORDER BY is integration-tier; the DECISION here is the
+			// pure row→group shape: `resolved_at` seconds reconstruct a Date, COUNT coerces to
+			// number, and the resolution/resolver pass through verbatim.
+			Effect.gen(function* () {
+				const report = yield* Report;
+				const groups = yield* report.listResolved({limit: 10});
+				assert.strictEqual(groups.length, 2);
+				assert.deepStrictEqual(
+					{
+						targetKind: groups[0]?.targetKind,
+						targetId: groups[0]?.targetId,
+						resolution: groups[0]?.resolution,
+						resolverId: groups[0]?.resolverId,
+						reportCount: groups[0]?.reportCount,
+						resolvedAtMs: groups[0]?.resolvedAt.getTime(),
+					},
+					{
+						targetKind: "post",
+						targetId: "p-1",
+						resolution: "removed",
+						resolverId: "mod-a",
+						reportCount: 3,
+						// 1_767_000_000 seconds → ms
+						resolvedAtMs: 1_767_000_000_000,
+					},
+				);
+				assert.strictEqual(groups[1]?.resolution, "dismissed");
+			}).pipe(
+				Effect.provide(
+					reportLayer(
+						scriptedAccess([
+							[
+								{
+									targetKind: "post",
+									targetId: "p-1",
+									reportCount: 3,
+									resolvedAt: 1_767_000_000,
+									resolverId: "mod-a",
+									resolution: "removed",
+								},
+								{
+									targetKind: "definition",
+									targetId: "d-2",
+									reportCount: 1,
+									resolvedAt: 1_766_000_000,
+									resolverId: "mod-b",
+									resolution: "dismissed",
+								},
+							],
+						]),
+					),
+				),
+			),
+	);
+
+	it.effect("empty result → empty array", () =>
+		Effect.gen(function* () {
+			const report = yield* Report;
+			const groups = yield* report.listResolved();
+			assert.strictEqual(groups.length, 0);
+		}).pipe(Effect.provide(reportLayer(scriptedAccess([[]])))),
+	);
+});
+
 describe("Report.submit — created/no-op decision maps meta.changes (mocked Drizzle seam)", () => {
 	it.effect("changes > 0 → created", () =>
 		// run #1 assertTargetLive → a live row; run #2 the insert → its meta envelope.
@@ -233,6 +301,88 @@ describe("Report.reopenForWave — restore the batch as a unit (#1855, captured 
 			assert.include(upd!.params, "open", "status is set to open");
 			assert.include(upd!.params, "resolved", "it targets resolved rows");
 			assert.include(upd!.params, "dismissed", "and dismissed rows");
+		}),
+	);
+});
+
+describe("Report.listResolved — wave grouping id maps onto the group (#1855, mocked seam)", () => {
+	it.effect("MIN(wave_id) passes through: a wave row carries its id, a lone row null", () =>
+		Effect.gen(function* () {
+			const report = yield* Report;
+			const groups = yield* report.listResolved();
+			assert.strictEqual(groups[0]?.waveId, "wave-1", "a wave-removal group carries its shared id");
+			assert.strictEqual(groups[1]?.waveId, null, "a lone removal group has no wave grouping");
+		}).pipe(
+			Effect.provide(
+				reportLayer(
+					scriptedAccess([
+						[
+							{
+								targetKind: "post",
+								targetId: "p-1",
+								reportCount: 1,
+								resolvedAt: 1_767_000_000,
+								resolverId: "mod-a",
+								resolution: "removed",
+								waveId: "wave-1",
+							},
+							{
+								targetKind: "comment",
+								targetId: "c-2",
+								reportCount: 1,
+								resolvedAt: 1_766_000_000,
+								resolverId: "mod-a",
+								resolution: "removed",
+								waveId: null,
+							},
+						],
+					]),
+				),
+			),
+		),
+	);
+});
+
+describe("Report.waveTargets — the batch's distinct targets (#1855)", () => {
+	it.effect("maps each distinct row to a {targetKind, targetId}", () =>
+		Effect.gen(function* () {
+			const report = yield* Report;
+			const targets = yield* report.waveTargets("wave-1");
+			assert.deepStrictEqual(targets, [
+				{targetKind: "post", targetId: "p-1"},
+				{targetKind: "definition", targetId: "d-2"},
+			]);
+		}).pipe(
+			Effect.provide(
+				reportLayer(
+					scriptedAccess([
+						[
+							{targetKind: "post", targetId: "p-1"},
+							{targetKind: "definition", targetId: "d-2"},
+						],
+					]),
+				),
+			),
+		),
+	);
+
+	it.effect("filters by the waveId and the terminal statuses (captured WHERE)", () =>
+		Effect.gen(function* () {
+			const {access, captured} = capturingDrizzle();
+			yield* Effect.provide(
+				Effect.gen(function* () {
+					const report = yield* Report;
+					return yield* report.waveTargets("wave-1");
+				}),
+				reportLayer(access),
+			);
+			const sel = captured.find((c) => /select/i.test(c.sql) && /content_report/i.test(c.sql));
+			assert.isDefined(sel, "waveTargets issued a SELECT on content_report");
+			assert.match(sel!.sql, /distinct/i, "it reads DISTINCT targets");
+			assert.match(sel!.sql, /"wave_id"\s*=\s*\?/i, "scoped to the wave grouping");
+			assert.include(sel!.params, "wave-1", "the WHERE binds the batch's wave id");
+			assert.include(sel!.params, "resolved", "it reads resolved rows");
+			assert.include(sel!.params, "dismissed", "and dismissed rows");
 		}),
 	);
 });

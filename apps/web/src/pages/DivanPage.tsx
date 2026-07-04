@@ -21,6 +21,7 @@
 import {useState} from "react";
 import {useMe} from "../auth/useMe";
 import {CaylakDetail} from "../components/divan/CaylakDetail";
+import {DecisionFeed} from "../components/divan/DecisionFeed";
 import {DivanRoster} from "../components/divan/DivanRoster";
 import {shouldRenderDivanPage} from "../components/divan/divanGating";
 import {Raporlar} from "../components/divan/Raporlar";
@@ -106,18 +107,32 @@ function DivanWorkspace() {
 				)}
 
 				{showRaporlarPane ? (
-					<section className="kp-divan__raporlar-pane" aria-label="açık raporlar">
-						<Screen
-							fallback={<p className="kp-divan__loading">yükleniyor…</p>}
-							error={({code}) => <AccessError code={code} />}
-						>
-							{raporlarMode === "loop" ? (
-								<TriageLoop onExit={() => setRaporlarMode("grid")} />
-							) : (
-								<Raporlar />
-							)}
-						</Screen>
-					</section>
+					<>
+						<section className="kp-divan__raporlar-pane" aria-label="açık raporlar">
+							<Screen
+								fallback={<p className="kp-divan__loading">yükleniyor…</p>}
+								error={({code}) => <AccessError code={code} />}
+							>
+								{raporlarMode === "loop" ? (
+									<TriageLoop onExit={() => setRaporlarMode("grid")} />
+								) : (
+									<Raporlar />
+								)}
+							</Screen>
+						</section>
+
+						{/* The shared decision feed (#1704) — a DISTINCT section, its own gated
+						    read, so who-decided-what stays legible below the live queue. */}
+						<section className="kp-divan__decisions-pane" aria-label="son kararlar">
+							<h2 className="kp-divan__decisions-title">son kararlar</h2>
+							<Screen
+								fallback={<p className="kp-divan__loading">yükleniyor…</p>}
+								error={({code}) => <AccessError code={code} />}
+							>
+								<DecisionFeed />
+							</Screen>
+						</section>
+					</>
 				) : (
 					<div className="kp-divan__layout">
 						<section className="kp-divan__roster-pane" aria-label="çaylak listesi">
