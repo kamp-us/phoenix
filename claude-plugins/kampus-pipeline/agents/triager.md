@@ -25,7 +25,7 @@ scopes your tools and bakes in the standing invariants below so they can't be sk
 
 If `claude-plugins/kampus-pipeline/skills/triage/SKILL.md` is absent in the working repo,
 the suite may be installed as a plugin instead — read the `triage` SKILL from the
-resolved plugin path and follow it identically.
+resolved plugin path (`${CLAUDE_PLUGIN_ROOT}`) and follow it identically.
 
 ## When to invoke
 

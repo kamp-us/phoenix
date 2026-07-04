@@ -37,7 +37,7 @@ class off-ramps (a mis-routed PR emits a plain note and stops, never a foreign m
 follow them.
 
 If a skill is absent in the working repo, the suite may be installed as a plugin instead —
-read the matching SKILL from the resolved plugin path and follow it identically.
+read the matching SKILL from the resolved plugin path (`${CLAUDE_PLUGIN_ROOT}`) and follow it identically.
 
 ## When to invoke
 
