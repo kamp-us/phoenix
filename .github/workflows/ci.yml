@@ -473,6 +473,22 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Persist turbo's local cache dir (`.turbo/cache`, gitignored) across runs so the
+      # `Build SPA` step below is a cache HIT on an unchanged build instead of a cold
+      # rebuild (#681). Turbo already content-hashes each task's inputs to decide reuse;
+      # this cache only makes those prior outputs *reachable* on a fresh runner. Key on
+      # the lockfile + all build source so an unchanged tree restores an exact-match
+      # cache; `restore-keys` falls back to the newest prior cache on a partial change,
+      # letting turbo reuse the unchanged tasks and rebuild only what moved. Caching
+      # only — a cold-cache run produces byte-identical output.
+      - name: Cache turbo build cache
+        uses: actions/cache@v4.2.3
+        with:
+          path: .turbo/cache
+          key: turbo-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'apps/**/src/**', 'apps/**/worker/**', 'packages/**/src/**', 'turbo.json') }}
+          restore-keys: |
+            turbo-build-${{ runner.os }}-
+
       # The worker binds `assets: ./dist/client`; the integration deploy needs the
       # SPA shell to exist even though the suite only asserts over the API/fate
       # HTTP surface.
