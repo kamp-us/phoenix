@@ -731,6 +731,37 @@ isolated worktree `main` is checked out elsewhere, so branching directly off the
 freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back to a
 `main` checkout.
 
+<a id="branch-name-is-re-derived-live"></a>
+> **The branch name is created once here, then RE-DERIVED LIVE from the worktree at every
+> later git op — NEVER carried across Bash calls in a shared file.** `$BRANCH` is a shell
+> variable, and shell state does **not** survive between an agent's separate Bash
+> invocations (env vars are gone by the next call, the same way the cwd is reset back to the
+> primary tree — which the per-mutation preflight corrects). So by push time (Step 5)
+> `$BRANCH` is **empty**, and an agent that "carries" it by writing the name to a scratchpad
+> file improvises a **cross-lane hazard**: a plain `/tmp` (or shared-scratchpad) path like
+> `branch.txt` is **unkeyed**, so a concurrent lane clobbers it mid-run and the reader
+> pushes to the **sibling lane's ref** (#2038 — the #2018 lane pushed toward the #2021
+> lane's branch). The `uuidgen` nonce makes each lane's *value* unique, but a shared
+> *filename* is what collides.
+>
+> **The rule (mandatory, at every git op after this create): re-derive the branch live from
+> your own worktree — never read it from a file.** Right after `wt_preflight` re-`cd`s you to
+> `$WT`, the checked-out branch **is** your work branch, so read it straight from the
+> worktree HEAD:
+>
+> ```bash
+> BRANCH="$(git -C "$WT" branch --show-current)"   # live from the worktree — the source of truth, re-read at each git op
+> : "${BRANCH:?could not re-derive branch from worktree $WT — refusing to push to a guessed/cached ref}"
+> ```
+>
+> This is exactly the recovery the reported incident used to self-heal, promoted to the
+> standing rule. **Do NOT** persist the branch name to a scratchpad/`/tmp` file to carry it
+> across calls. If — and only if — a per-run cache is genuinely unavoidable, its filename
+> **MUST** be namespaced by the per-agent token (`$CLAUDE_CODE_SESSION_ID`) so two lanes
+> cannot collide (`branch-$CLAUDE_CODE_SESSION_ID.txt`, never a bare `branch.txt`) — but the
+> live `git -C "$WT" branch --show-current` re-derivation above is the preferred, simpler
+> fix and needs no file at all.
+
 The prefix is **derived** from this checkout's `git config user.name`, not a copied literal —
 so the branch lands under *your* handle (`<your-handle>/…`), whoever runs the skill, instead
 of inheriting someone else's namespace. Append a short kebab-case slug naming the work and the
@@ -740,14 +771,18 @@ pass; `no` means config/docs/scaffolding where test-first doesn't apply.
 
 <a id="non-isolated-fallback"></a>
 > **Non-isolated fallback.** For the rare invocation that isn't already in a worktree,
-> spin one up rather than checking out `main`. Carry the same per-run `$BRANCH` (nonce and
-> all) and a per-run worktree path so two concurrent fallback runs collide on neither the
-> branch nor the dir: `WT="../wt-issue-<N>-$(uuidgen | head -c 8)"; git worktree add -b
-> "$BRANCH" "$WT" origin/main`, then `cd "$WT"`. When you're done, remove it with
+> spin one up rather than checking out `main`. Create the worktree on the per-run `$BRANCH`
+> (nonce and all) at a per-run worktree path so two concurrent fallback runs collide on
+> neither the branch nor the dir: `WT="../wt-issue-<N>-$(uuidgen | head -c 8)"; git worktree
+> add -b "$BRANCH" "$WT" origin/main`, then `cd "$WT"`. When you're done, remove it with
 > `git worktree remove "$WT"`. After the `cd "$WT"`, **re-run the Step 4 preflight** — the
 > fresh worktree's git-dir now differs from the common dir, so the check passes and you may
 > mutate. This is the *only* sanctioned route from a primary-checkout start; the preflight
-> stays fail-closed until a real worktree exists.
+> stays fail-closed until a real worktree exists. Here too the branch name is **created once**
+> and thereafter **re-derived live** from the worktree (`git -C "$WT" branch
+> --show-current`) at each later git op — never carried across Bash calls in a shared file
+> (see [the live-derivation rule](#branch-name-is-re-derived-live) above; the same
+> cross-lane clobber applies to a fallback run).
 
 Ground the implementation in the codebase the way the repo expects: the ADRs in
 `.decisions/` are the *why* and the binding decisions, the patterns in `.patterns/`
@@ -1060,7 +1095,12 @@ substrate, ADR 0062) Step 4b never fires, so there is no `FLAG_KEY` and no `Flag
 ships normally.
 
 ```bash
-wt_preflight && git push -u origin "$BRANCH"   # gate the push ([per-mutation preflight]); same per-run branch from Step 4
+# RE-DERIVE the branch LIVE from the worktree — never a cached/shared-file value (see the
+# live-derivation rule in Step 4). $BRANCH from Step 4 is GONE across Bash calls; wt_preflight
+# just re-cd'd to $WT, so the checked-out branch IS the work branch. Read it, never guess it.
+wt_preflight && BRANCH="$(git -C "$WT" branch --show-current)"
+: "${BRANCH:?could not re-derive branch from worktree $WT — refusing to push to a guessed/cached ref}"
+git -C "$WT" push -u origin "$BRANCH"   # gate the push ([per-mutation preflight]); branch re-derived live, never cross-lane-cached
 # The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
 # PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
 claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my claim (Step 3.5)"; exit 1; }
