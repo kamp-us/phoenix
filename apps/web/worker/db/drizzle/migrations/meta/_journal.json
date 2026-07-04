@@ -141,6 +141,13 @@
       "when": 1791500000000,
       "tag": "0019_remove_the_wave",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792000000000,
+      "tag": "0020_drop_imge_object",
+      "breakpoints": true
     }
   ]
 }
