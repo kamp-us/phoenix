@@ -35,6 +35,7 @@ import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
 import type {VouchLedger} from "../kunye/VouchLedger.ts";
 import {makePasaportStub} from "../pasaport/Pasaport.testing.ts";
 import type {Pasaport} from "../pasaport/Pasaport.ts";
+import {noopLive} from "../pasaport/promote-live.testing.ts";
 import type {VoteInput, VoteResult} from "../vote/Vote.ts";
 import {Vote} from "../vote/Vote.ts";
 import {mutations} from "./mutations.ts";
@@ -94,6 +95,17 @@ const pasaportRecording = (): {layer: Layer.Layer<Pasaport>; promoted: string[]}
 			promoted.push(userId);
 			return Effect.succeed({promoted: true});
 		},
+		getUsersByIds: () =>
+			Effect.succeed([
+				{
+					id: "u-author",
+					email: "u-author@kamp.us",
+					name: "u-author",
+					image: null,
+					username: "u-author",
+					tier: "yazar" as const,
+				},
+			]),
 	});
 	return {layer, promoted};
 };
@@ -143,8 +155,12 @@ const voteFailOnContact: Layer.Layer<Vote> = Layer.succeed(Vote, {
 	clearTarget: () => Effect.die(new Error("unused")),
 });
 
+// `divan.vote` fires `resolveTandem`, which reaches the #1886 live-publish on a
+// landed flip — so `LivePublisher` is a static requirement of every case (even a
+// denial). `noopLive` satisfies it universally; the case that actually promotes
+// asserts on nothing published, and the tandem-promote case builds its own record.
 const requestContext = (actor: Actor, on: boolean) =>
-	Layer.mergeAll(flagsStub(on)).pipe(
+	Layer.mergeAll(flagsStub(on), noopLive).pipe(
 		Layer.provideMerge(Layer.succeed(CurrentUser, {user: {id: actorId(actor)} as never})),
 		Layer.provideMerge(Layer.succeed(CurrentActor, {actor})),
 		Layer.provideMerge(Layer.succeed(RuntimeContext, runtimeContextStub)),

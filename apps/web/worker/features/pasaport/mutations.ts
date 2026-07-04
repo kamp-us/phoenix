@@ -20,6 +20,7 @@ import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {requireVouch, Vouch, voucherOf} from "../kunye/vouch.ts";
 import {UserNotFound, UsernameAlreadySet, UsernameInvalidErrors, UsernameTaken} from "./errors.ts";
 import {Pasaport} from "./Pasaport.ts";
+import {publishPromotion} from "./promote-live.ts";
 import {toAccountDeletionReceipt, toPromotionReceipt} from "./shapers.ts";
 import {resolveTandem} from "./tandem.ts";
 import {toTrustedUser} from "./trusted-user.ts";
@@ -200,7 +201,13 @@ const promoteGated = Effect.fn("user.promoteGated")(function* (input: typeof Pro
 	// Promotion ceremony (#1696): the mod-direct half of the two promotion sites —
 	// notify the promoted member, keyed on `promoted` so a no-op (already-yazar) call
 	// notifies nothing. Swallowed inside the emitter, so it can never fail the flip.
-	if (promoted) yield* notifyPromotion({userId: input.userId});
+	// Live propagation (#1886): publish the new `User` tier so an open profile view
+	// reconciles over `/fate/live` without a reload — keyed on `promoted` (a no-op
+	// publishes nothing) and infallible (publisher's error channel is `never`).
+	if (promoted) {
+		yield* notifyPromotion({userId: input.userId});
+		yield* publishPromotion(input.userId);
+	}
 	return toPromotionReceipt({userId: input.userId, promoted, vouchRecorded: false});
 });
 
