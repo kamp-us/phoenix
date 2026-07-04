@@ -3,7 +3,14 @@ import type * as React from "react";
 import {bem} from "../../lib/bem";
 import "./Menu.css";
 
-const styles = bem("kp-menu", ["popup", "item", "itemDanger", "separator", "shortcut"]);
+const styles = bem("kp-menu", [
+	"positioner",
+	"popup",
+	"item",
+	"itemDanger",
+	"separator",
+	"shortcut",
+]);
 
 export const Root = BaseMenu.Root;
 export const Trigger = BaseMenu.Trigger;
@@ -26,7 +33,19 @@ export function Popup({
 			    viewport rect instead of Base UI's default `absolute` strategy, whose
 			    offset-parent/scroll conversion detaches the popup from a trigger inside
 			    a `position: sticky` ancestor (the topbar/subnav nav stack) — #1640. */}
-			<BaseMenu.Positioner side={side} align={align} sideOffset={4} positionMethod={positionMethod}>
+			{/* The z-index lives on the Positioner, not the Popup: the Positioner is the
+			    `position: fixed` portal-root element, so an explicit z-index there both
+			    establishes a stacking context and ranks it above the sticky Subnav
+			    (`.kp-subnav`, z-index:49). The inner Popup is `position: static`, where a
+			    z-index is inert — so styling z-index on it never escaped the Subnav's
+			    layer (#2041). */}
+			<BaseMenu.Positioner
+				className={styles.positioner}
+				side={side}
+				align={align}
+				sideOffset={4}
+				positionMethod={positionMethod}
+			>
 				<BaseMenu.Popup className={styles.popup} {...rest}>
 					{children}
 				</BaseMenu.Popup>

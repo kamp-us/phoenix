@@ -1,6 +1,12 @@
 /* Menu — Base UI primitive wrapper.
    Used by: comment owner ⋯, topbar user dropdown. */
 
+/* The Positioner carries the stacking rank — it is the `position: fixed` element,
+   so z-index here builds a stacking context that outranks the sticky Subnav (#2041). */
+.kp-menu__positioner {
+	z-index: 70;
+}
+
 .kp-menu__popup {
 	min-width: 160px;
 	background: var(--surface-raised);
@@ -8,7 +14,6 @@
 	border-radius: var(--r-md);
 	box-shadow: var(--shadow-md);
 	padding: var(--s-1) 0;
-	z-index: 70;
 	animation: kp-menu-pop var(--motion-fast) var(--ease-standard);
 }
 
