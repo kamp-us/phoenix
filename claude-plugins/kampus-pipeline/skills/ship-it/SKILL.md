@@ -409,10 +409,11 @@ PART_OF=<N>   # the partial-split issue this PR advances but deliberately does N
 Do **not** refuse this as `no linked issue`: every actual merge-safety guard is unaffected
 (Step 0's control-plane class, Step 2/2b's current-head PASS, Step 3's green CI, Step 3.5's
 run-evidence all still hold) — only the missing-closing-keyword check is relaxed, and **only**
-for this one explicit marker. This is a **parallel** allowance to the docs-only carve-out below
+for this one explicit marker. This is a **parallel** allowance to the doc/vocab-surface-only
+carve-out below
 (ADR [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)),
-not the same one: docs-only is *issueless* (nothing to close); a partial split *names an issue
-it intentionally keeps open*. The `Part of #N` marker is a non-closing mention by construction —
+not the same one: the doc/vocab-surface-only path is *issueless* (nothing to close); a partial
+split *names an issue it intentionally keeps open*. The `Part of #N` marker is a non-closing mention by construction —
 GitHub never populates `closingIssuesReferences` from it (only a closing keyword does;
 [gh-issue-intake-formats.md §9](../gh-issue-intake-formats.md)) — which is exactly why the merge
 leaves `#N` open.
@@ -998,8 +999,8 @@ when the queue's batch goes green.
 
 When there **is** a linked issue, the merge (whenever the queue completes it) auto-closes it
 via its `Fixes #<ISSUE>` — that is the loop closing, now **asynchronously**. Do not separately
-close the issue; let the `Fixes` seam do it when the merge lands. On the docs-only no-link path
-(`ISSUE` unset, ADR
+close the issue; let the `Fixes` seam do it when the merge lands. On the doc/vocab-surface-only
+no-link path (`ISSUE` unset, ADR
 [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) there is no
 `Fixes #N` and nothing to auto-close — the PR simply enqueues and merges.
 
@@ -1201,7 +1202,7 @@ contract, ADR 0062 — an absent cycle doc means no flag substrate, hence nothin
 those preconditions met, the merge queues `status:awaiting-release` **iff** signal (a) or (b)
 fires. When **neither** fires the PR shipped **ungated** → this step **no-ops** regardless of the
 issue's inherited stamp (exactly the #1211/#1212/#1213 foundation shape, addressing #1202). On
-**no linked issue** (the docs-only path) or an **absent cycle doc** it also no-ops — so the merge
+**no linked issue** (the doc/vocab-surface-only path) or an **absent cycle doc** it also no-ops — so the merge
 behavior is exactly as it was before this dimension existed:
 
 ```bash
@@ -1271,7 +1272,7 @@ branch: <head ref>
 PR url: <html_url>
 enqueued: yes (QUEUED → auto-merges on green) | no (<reason if no>)
 merge: landed (queue merged the batch) | still queued (pending, reconciled) | EJECTED (routed to repair/re-queue)
-issue: closes async on queue merge | n/a (docs-only) | #<PART_OF> left open (partial split)
+issue: closes async on queue merge | n/a (doc/vocab-surface-only, no linked issue) | #<PART_OF> left open (partial split)
 release: queued (awaiting human flip) | n/a (not a dark ship)
 ```
 
@@ -1289,7 +1290,7 @@ The `release:` line is the deployment/release boundary made visible (ADR 0083): 
 `FlagshipFlag` in the diff, or its body declared the dark-ship flag key) and it applied
 `status:awaiting-release`; `n/a (not a dark ship)` when the PR shipped **ungated** (no flag
 in the diff, no flag key declared — regardless of any inherited issue Containment stamp), on an
-absent cycle doc, or on a docs-only / unlinked PR. ship-it never flips the flag — the queued line
+absent cycle doc, or on a doc/vocab-surface-only / unlinked PR. ship-it never flips the flag — the queued line
 hands the release to a human, it does not perform it.
 
 When `ISSUE` is unset (the doc/vocab-surface-only no-link path, Step 1 / ADR
