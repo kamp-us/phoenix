@@ -27,6 +27,7 @@
  */
 import {TARGET_KINDS, type TargetKind} from "../../../worker/db/target-kind";
 import type {Tier} from "../../../worker/features/kunye/standing";
+import {actorLabel} from "../moderation/actor-identity";
 
 /**
  * Show the `/divan` page content iff the authorship-loop flag is on. Off (and
@@ -80,11 +81,11 @@ export function promoteVisible(isModerator: boolean): boolean {
  * The display handle for a çaylak in the divan: their display name, else their
  * `@username`, else the lowercase-Turkish "çaylak" fallback (an anonymized /
  * not-yet-named row). Never the raw user id — the divan reads a person, not an id.
+ * The çaylak-specific fallback over the shared actor-row rule (ADR 0147): one tested
+ * handle resolver across every mod/admin surface, divan supplying its own noun.
  */
 export function caylakLabel(displayName: string | null, username: string | null): string {
-	if (displayName?.trim()) return displayName.trim();
-	if (username?.trim()) return `@${username.trim()}`;
-	return "çaylak";
+	return actorLabel(displayName, username, "çaylak");
 }
 
 /**
