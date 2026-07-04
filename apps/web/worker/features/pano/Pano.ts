@@ -314,6 +314,18 @@ export class Pano extends Context.Service<
 		readonly reactToComment: (
 			input: ReactToCommentInput,
 		) => Effect.Effect<ReactToCommentResult, CommentNotFound>;
+
+		/**
+		 * Periodic sıcak/hot decay-refresh (#2027): recompute the stored `hot_score`
+		 * for live, non-draft posts in the recency window at `now` and write back the
+		 * changed rows, so an inactive post's ranking decays with age without an
+		 * activity write. Driven by the cron trigger (`index.ts`); the stored-column +
+		 * keyset-cursor design is preserved (no read-time recompute). Returns the pass's
+		 * scanned/updated counts for observability.
+		 */
+		readonly refreshHotScores: (
+			now: Date,
+		) => Effect.Effect<{readonly scanned: number; readonly updated: number}>;
 	}
 >()("@kampus/pano/Pano") {}
 
