@@ -49,15 +49,6 @@ const PRUNE_ALARM_DELAY_MS = 60_000;
  */
 const REAP_PROBE_TIMEOUT_KEY = "topic:reap:probe-timeout-ms";
 
-/**
- * Defensive margin on the cross-DO replay bound: `subscribedAt` is the connection
- * DO's clock, `buffered.at` the topic DO's. CF colocated-DO `Date.now()` skew is
- * sub-second while the register race is 0.2–2.5s, so the bound is robust; this
- * grace just keeps a frame published a hair before the subscribe (within skew)
- * from being wrongly excluded. See {@link replayBuffer}.
- */
-const REPLAY_CLOCK_GRACE_MS = 1_000;
-
 type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
 
 /**
@@ -114,10 +105,9 @@ export interface LiveRpcSurface {
 		readonly limits: LiveLimits;
 		readonly subscribedAt: number;
 		// Connection-DO internal state (NOT a persisted row/frame field): the instant
-		// the subscribing connection's current epoch began. When present it raises the
-		// replay floor to the epoch start, fencing pre-epoch frames (#1072). Optional so
-		// a direct `register` (tests) that doesn't model an epoch falls back to the
-		// time-grace bound alone.
+		// the subscribing connection's current epoch began. It is the authoritative replay
+		// floor, fencing pre-epoch frames (#1072/#1903). Optional so a direct `register`
+		// (tests) that doesn't model an epoch falls back to the `subscribedAt` bound.
 		readonly epochStartedAt?: number;
 		readonly lastEventId?: string;
 	}) => Effect.Effect<{readonly ok: boolean}, never, RuntimeContext>;
@@ -223,9 +213,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	let ownerId: string | undefined;
 	let generation: number | undefined;
 	// Wall-clock instant this connection's CURRENT epoch began (set when `openStream`
-	// bumps `generation`). Replay floors at this so a frame published before the epoch
-	// — already in a cursorless reconnect's query result — can't leak onto the new
-	// stream past the backward time-grace. See {@link replayBuffer} (#1072).
+	// bumps `generation`). The authoritative replay floor: a frame published before the
+	// epoch — already in a cursorless reconnect's query result — can't leak onto the new
+	// stream and clobber it. See {@link replayBuffer} (#1072/#1903).
 	let epochStartedAt: number | undefined;
 	const subscriptions = new Map<
 		string,
@@ -518,21 +508,17 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	 * Replay the catch-up window to a connection whose `register` lost the race with
 	 * a just-fired publish (#714).
 	 *
-	 * Bounded to the register-race window, NOT the whole TTL buffer: replay delivers
-	 * only frames published at/after `subscribedAt` (the subscriber's intent instant).
-	 * A frame published before this subscription existed was already in the client's
-	 * initial query result — replaying it would duplicate a "live" edge. `lastEventId`
-	 * tightens further on a cursored resubscribe (skip frames at/under the id already
-	 * seen), but `subscribedAt` is the primary bound and applies even when no cursor.
-	 *
-	 * `epochStartedAt` is a SECOND lower floor (#1072): a cursorless resubscribe under a
-	 * reused `connectionId` reads `subscribedAt` fresh, so the backward time-grace alone
-	 * admits any frame published within `REPLAY_CLOCK_GRACE_MS` before the resubscribe —
-	 * INCLUDING a frame published before this connection's current epoch began (the epoch
-	 * bumps on each (re)connect, but that pre-epoch frame carries the CURRENT generation
-	 * once replayed, so `isStale` doesn't exclude it). Flooring at the epoch start fences
-	 * it: a #714 register-race frame is published after `openStream` (`at >= epochStartedAt`)
-	 * so it still replays, while a pre-epoch frame (`at < epochStartedAt`) is excluded.
+	 * Bounded to the register-race window, NOT the whole TTL buffer, by the CAUSAL epoch
+	 * floor `epochStartedAt` (the instant `openStream` began this connection's current epoch,
+	 * #1072/#1903): replay delivers only frames published at/after the epoch. A #714
+	 * register-race frame fires after `openStream` (`at >= epochStartedAt`) so it still
+	 * replays; a stale pre-vote frame from before the subscribe intent is pre-epoch
+	 * (`at < epochStartedAt`) and is dropped, so it can't clobber the correct post-reload
+	 * value on a cursorless fresh-subscribe (that pre-epoch frame carries the CURRENT
+	 * generation once replayed, so `isStale` alone doesn't catch it — the floor must). The
+	 * `subscribedAt` fallback covers only the epoch-absent direct-`register` (test) path.
+	 * `lastEventId` tightens further on a cursored resubscribe (skip frames at/under the id
+	 * already seen); the epoch floor applies even with no cursor.
 	 *
 	 * Dedup guarantee — at-most-once, exclusive-by-construction: fan-out (`publish`)
 	 * delivers ONLY to connections already in the registry; replay delivers ONLY to
@@ -555,15 +541,16 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			const now = Date.now();
 			const entries = yield* loadBuffer(row.topicKey);
 			const window = yield* pruneBuffer(entries, limits, now);
-			// `subscribedAt` is the connection-DO clock, `buffered.at` the topic-DO's;
-			// the grace absorbs sub-second cross-DO skew (see REPLAY_CLOCK_GRACE_MS).
-			// `epochStartedAt` raises the floor to this connection's current epoch start so
-			// a pre-epoch frame inside the grace window can't leak (#1072); absent ⇒ the
-			// epoch term drops out and the grace bound stands alone.
-			const floor = Math.max(
-				subscribedAt - REPLAY_CLOCK_GRACE_MS,
-				epochStartedAt ?? Number.NEGATIVE_INFINITY,
-			);
+			// The replay floor is the CAUSAL epoch boundary, not a wall-clock guess: a #714
+			// register-race frame is published after `openStream` (`at >= epochStartedAt`, KEEP);
+			// a stale pre-vote frame published before the subscribe intent is pre-epoch
+			// (`at < epochStartedAt`, DROP). Production always sets `epochStartedAt` (openStream);
+			// the `subscribedAt` fallback is only the epoch-absent direct-`register` (test) path.
+			// No wall-clock grace: it once absorbed cross-DO skew, but `epochStartedAt` and
+			// `subscribedAt` are the SAME connection-DO clock, so there is no skew to absorb — and
+			// that grace was itself the #1903 leak (it admitted the pre-vote frame the epoch fence
+			// now drops). See #1903.
+			const floor = epochStartedAt ?? subscribedAt;
 			// The cursor is the last per-topic `seq` the subscriber saw (every delivered frame
 			// now carries `eventId === String(seq)`, primary fan-out and replay alike). Compare
 			// numerically against `buffered.seq` and replay only STRICTLY-newer frames — robust

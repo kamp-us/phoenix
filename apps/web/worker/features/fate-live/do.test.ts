@@ -762,9 +762,10 @@ describe("LiveDO live fan-out (KV model)", () => {
 
 		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
 
-		// Publish to the REAL topic, then register with `subscribedAt` set WELL AFTER
-		// the frame's publish time (past the clock grace) — the frame predates the
-		// subscriber's intent, the regression's stale-history case. It must NOT replay.
+		// Publish to the REAL topic, then register (epoch-absent, `subscribedAt`-fallback
+		// path) with `subscribedAt` set WELL AFTER the frame's publish time — the frame
+		// predates the subscriber's intent, the regression's stale-history case. It must NOT
+		// replay.
 		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 		const row: SubscriberRow = {
 			topicKey,
@@ -831,16 +832,15 @@ describe("LiveDO live fan-out (KV model)", () => {
 	});
 });
 
-// The epoch fence (#1072): the `subscribedAt - REPLAY_CLOCK_GRACE_MS` time-grace alone
-// admits ANY frame published within 1s before a (re)subscribe — including a frame published
-// BEFORE this connection's current epoch began. On a cursorless reconnect under a reused
-// connectionId the epoch bumps, but the replayed pre-epoch frame carries the CURRENT
-// generation, so `isStale` doesn't catch it → it leaks onto the new stream ahead of the live
-// frame. `replayBuffer` now ALSO floors at `epochStartedAt`, which a pre-epoch frame can never
+// The epoch fence (#1072/#1903): a frame published BEFORE this connection's current epoch is
+// already in a cursorless reconnect's initial query result, so replaying it would clobber the
+// correct value. On a cursorless reconnect under a reused connectionId the epoch bumps, but the
+// replayed pre-epoch frame carries the CURRENT generation, so `isStale` doesn't catch it → it
+// would leak onto the new stream ahead of the live frame. `replayBuffer` floors at
+// `epochStartedAt` (the authoritative causal floor, #1903), which a pre-epoch frame can never
 // beat — while a #714 register-race frame (published after `openStream`) still clears it. The
-// existing `subscribedAt + 60_000` test only covers the coarse past-grace case; these cover the
-// grace-window edge that leaked.
-describe("LiveDO replay epoch fence (#1072)", () => {
+// wall-clock grace that once sat below this floor was itself the #1903 leak and is gone.
+describe("LiveDO replay epoch fence (#1072/#1903)", () => {
 	// Driven via direct `register` with explicit `subscribedAt` + `epochStartedAt` so the
 	// window edges are deterministic (no wall-clock race), mirroring the `subscribedAt`-floor
 	// tests: subscribe to a DECOY topic to activate the subId on the connection, publish to a
@@ -998,13 +998,12 @@ describe("LiveDO replay epoch fence (#1072)", () => {
 		await stream.cancel();
 	});
 
-	// #1903 discriminating proof (Phase-1 gate): can the `epochStartedAt`/`openStream`
-	// CAUSAL boundary ALONE separate the two frames the 1s wall-clock grace cannot tell
-	// apart — the #714 register-race KEEP frame vs the stale pre-vote #1903 DROP frame —
-	// when BOTH sit inside the same 1s grace window? The whole question: does the epoch
-	// fence cleanly fence one KEEP and one DROP with the time-grace neutralized (both
-	// frames well inside `subscribedAt - REPLAY_CLOCK_GRACE_MS`, so the grace floor admits
-	// BOTH and only the causal `epochStartedAt` floor discriminates).
+	// #1903 regression guard: the `epochStartedAt`/`openStream` CAUSAL boundary ALONE
+	// separates the two frames the (now-removed) 1s wall-clock grace could not tell apart —
+	// the #714 register-race KEEP frame vs the stale pre-vote #1903 DROP frame. Both sit
+	// where the OLD grace floor (`subscribedAt - 1000`) would have admitted BOTH; this proves
+	// the causal `epochStartedAt` floor is the sole discriminator, so dropping the grace does
+	// not regress #714 and does close the #1903 clobber.
 	//
 	// Timeline modeled (the real #1903 page-reload flake): a stale pre-vote frame is
 	// buffered (score:0), THEN the client reloads → `openStream` bumps the epoch
@@ -1012,9 +1011,8 @@ describe("LiveDO replay epoch fence (#1072)", () => {
 	// fires after the reconnected stream is open but before `register` commits (score:1),
 	// THEN the cursorless (`lastEventId: undefined`) `register` lands. The pre-vote frame is
 	// pre-epoch (`at < epochStartedAt`) ⇒ DROP; the race frame is post-epoch
-	// (`at >= epochStartedAt`) ⇒ KEEP. Both are inside the grace, so this isolates the
-	// causal fence as the sole discriminator.
-	it("epoch fence alone separates a #714 race-KEEP from a #1903 pre-vote-DROP inside the same grace window", async () => {
+	// (`at >= epochStartedAt`) ⇒ KEEP.
+	it("epoch fence alone separates a #714 race-KEEP from a #1903 pre-vote-DROP the old grace could not", async () => {
 		const cell = makeLiveCell();
 		const topicKey = "Post:post-1903-discriminate";
 		const decoyKey = "Post:decoy-1903-discriminate";
@@ -1058,11 +1056,12 @@ describe("LiveDO replay epoch fence (#1072)", () => {
 		await run(topic.publish({topicKey, frame: raceFrame, limits: LIMITS}));
 		const afterRace = Date.now();
 
-		// The cursorless (`lastEventId: undefined`) register lands. `subscribedAt` sits so that
-		// BOTH frames are inside the 1s wall-clock grace (`subscribedAt - 1000 < staleAt`) —
-		// the grace floor admits BOTH, so ONLY the `epochStartedAt` causal floor discriminates.
+		// The cursorless (`lastEventId: undefined`) register lands. `subscribedAt` sits so BOTH
+		// frames would have been inside the OLD 1s wall-clock grace (`subscribedAt - 1000 <
+		// staleAt`) — proving the removed grace admitted the stale frame, so ONLY the
+		// `epochStartedAt` causal floor discriminates now.
 		const subscribedAt = afterRace;
-		expect(subscribedAt - 1000).toBeLessThan(staleAt); // grace alone would KEEP the stale frame
+		expect(subscribedAt - 1000).toBeLessThan(staleAt); // the removed grace would KEEP the stale frame
 		expect(staleAt).toBeLessThan(epochStartedAt); // pre-vote frame is pre-epoch ⇒ DROP
 		expect(raceAt).toBeGreaterThanOrEqual(epochStartedAt); // race frame is post-epoch ⇒ KEEP
 
@@ -1085,7 +1084,7 @@ describe("LiveDO replay epoch fence (#1072)", () => {
 
 		// No second frame: the stale pre-vote (score:0) was fenced by the epoch floor, so it
 		// never reaches the reconnected stream to clobber the correct value. The fence cleanly
-		// separated KEEP (post-epoch) from DROP (pre-epoch) with the grace neutralized.
+		// separated KEEP (post-epoch) from DROP (pre-epoch) with no wall-clock grace beneath it.
 		const echo = await Promise.race([
 			stream.next(),
 			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
