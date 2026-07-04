@@ -669,10 +669,12 @@ until it lands, the graded rows are produced by the `runner.ts` cores and the co
 by `eval-harness check`. See the tool [README](../packages/pipeline-cli/src/tools/eval-harness/README.md)
 for the full data model and the corpus-curation policy.
 
-**This apparatus feeds the tiering decision — it does not make it.** Whether any stage runs on a
-cheaper model is [#1576](https://github.com/kamp-us/phoenix/issues/1576)'s call, made *on* this
-harness's graded output (pass-rate + net-token verdict). It is **not** resolved here or by the
-harness; this section records the measurement method #1576 will cite.
+**This apparatus feeds a tiering decision — it does not make it.** Whether any stage runs on a
+cheaper model is a tiering call made *on* this harness's graded output (pass-rate + net-token
+verdict). The specific call [#1576](https://github.com/kamp-us/phoenix/issues/1576) named was
+closed `not_planned` (opus-only spawn is fine; nobody is blocked), so this section records the
+measurement method any future tiering call would cite — it is **not** a live pending dependency,
+and the tiering policy is **not** resolved here or by the harness.
 
 ## Tooling gap (follow-up)
 

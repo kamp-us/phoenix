@@ -36,9 +36,10 @@ that statistical evidence: the [`eval-harness`](../packages/pipeline-cli/src/too
 tool. This ADR records the durable *why* — what graded-over-corpus measurement is and why a
 stochastic model swap requires it — extending 0112's method to the stochastic case. It records
 **no** per-swap numbers (those live on the lever/decision children, per 0112's division of
-surfaces) and it does **not** decide the tiering policy — that is
-[#1576](https://github.com/kamp-us/phoenix/issues/1576), the downstream decision this
-apparatus feeds.
+surfaces) and it does **not** decide the tiering policy — the tiering call that
+[#1576](https://github.com/kamp-us/phoenix/issues/1576) named was **closed `not_planned`**
+(opus-only spawn is fine; nobody is blocked), so this apparatus stands as the evidence any
+future per-stage tiering call would feed on, not a live pending dependency.
 
 ## Decision
 
@@ -81,15 +82,17 @@ stochastic swap the two axes are the **net** token axis (amortized over repair c
 **graded** quality axis (pass-rate no-regression over the corpus) — the same "same-or-better
 output, fewer tokens" bar, made checkable against a distribution instead of a fixed artifact.
 As under 0112, this ADR carries **no** measured numbers; a swap's pass-rate and net-token
-verdict live on the decision that cites them (#1576).
+verdict live on whatever decision cites them — the tiering call #1576 named was closed
+`not_planned`, so this stands ready for any future tiering call rather than a pending one.
 
 ## Consequences
 
 - **A stochastic model swap now has a sufficient oracle.** The binary n=1 oracle of 0112 §3
   cannot adjudicate a model whose output is a distribution; the graded corpus + pass-rate +
-  repair-churn cost is the evidence #1576 (and any future per-stage tiering call) must cite,
-  the same way a deterministic lever cites the 0112 apparatus. No model swap is adopted on an
-  n=1 PASS or a per-run token saving alone.
+  repair-churn cost is the evidence any future per-stage tiering call must cite (the specific
+  call #1576 named was closed `not_planned` — opus-only is fine — but the apparatus outlives
+  it), the same way a deterministic lever cites the 0112 apparatus. No model swap is adopted on
+  an n=1 PASS or a per-run token saving alone.
 - **This extends 0112, it does not supersede it.** The binary n=1 oracle remains the right
   tool for a **deterministic** stage change (tighter prompt, thin-core skill, read-economics);
   the graded corpus is the tool for a **stochastic** change (model swap). Both hold 0112 §4's
@@ -101,7 +104,8 @@ verdict live on the decision that cites them (#1576).
   [`.patterns/token-economics-measurement.md`](../.patterns/token-economics-measurement.md) §8,
   cross-linked from this ADR — the same division of surfaces 0112 established (this ADR owns
   the *why*, the pattern owns the *how* + the numbers).
-- **This ADR decides nothing about tiering.** Whether any stage runs on a cheaper model is
-  [#1576](https://github.com/kamp-us/phoenix/issues/1576)'s call, made **on** this apparatus's
-  output — explicitly not resolved here. This record supplies the measurement method the
-  decision will cite, nothing more.
+- **This ADR decides nothing about tiering.** Whether any stage runs on a cheaper model is a
+  tiering call made **on** this apparatus's output — explicitly not resolved here. The specific
+  call [#1576](https://github.com/kamp-us/phoenix/issues/1576) named was closed `not_planned`
+  (opus-only spawn is fine; nobody is blocked), so this record supplies the measurement method
+  any future tiering call would cite, nothing more.
