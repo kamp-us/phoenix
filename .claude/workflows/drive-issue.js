@@ -142,6 +142,7 @@ async function drive() {
 				`Return { planned: true|false, headOrIssue: "<the epic issue number or the plan head ref>" }.`,
 			{
 				agentType: "planner",
+				isolation: "worktree",
 				schema: {
 					type: "object",
 					properties: {
