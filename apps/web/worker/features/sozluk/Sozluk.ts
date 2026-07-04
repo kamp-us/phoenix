@@ -17,6 +17,7 @@ import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
+import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
 import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
@@ -553,6 +554,16 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			);
 		});
 
+		// The recomputable-cache refresh (ADR 0011) every definition remove/restore runs
+		// after the substrate write — the term summary + sözlük stats, the `refresh` the
+		// shared transition swallows uniformly (#2012). Sequenced summary-then-stats, as
+		// each arm did inline before the factoring.
+		const refreshSozlukCaches = (slug: string, title: string, now: Date) =>
+			Effect.gen(function* () {
+				yield* persistTermSummary(slug, title, now);
+				yield* recomputeSozlukStats(now);
+			});
+
 		const getTerm = Effect.fn("Sozluk.getTerm")(function* (
 			slug: string,
 			opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
@@ -994,39 +1005,23 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					message: `not authorized to mutate definition ${input.definitionId}`,
 				});
 			}
-			const current = Removal.fromColumns(definition);
-			if (Removal.isRemoved(current)) {
-				return {
-					definitionId: input.definitionId,
-					deleted: false,
-				} satisfies DeleteDefinitionResult;
-			}
 
 			const now = new Date();
-			const removed = Removal.toColumns(
-				Removal.remove({
-					removedAt: now,
-					removedBy: input.actorId,
-					reason: input.reason ?? new Removal.AuthorDeletion(),
-					// Preserve the pre-delete sandbox marker so a çaylak's sandboxed
-					// definition round-trips back to Sandboxed on restore, never
-					// self-escaping to Live (#1811).
-					sandboxedAt: Removal.sandboxedAtOf(current),
-				}),
-			);
-			yield* Removal.removeEntity(
-				removalSeq,
-				{kind: "definition", id: input.definitionId},
-				removed,
+			const outcome = yield* applyRemovalTransition({
+				label: "Sozluk.deleteDefinition",
+				transition: "remove",
+				seq: removalSeq,
+				subject: definition,
+				target: {kind: "definition", id: input.definitionId},
+				removedBy: input.actorId,
+				reason: input.reason ?? new Removal.AuthorDeletion(),
 				now,
-			);
-
-			yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
-			yield* recomputeSozlukStats(now);
+				refresh: refreshSozlukCaches(definition.termSlug, definition.termTitle, now),
+			});
 
 			return {
 				definitionId: input.definitionId,
-				deleted: true,
+				deleted: outcome.committed,
 			} satisfies DeleteDefinitionResult;
 		});
 
@@ -1048,30 +1043,25 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					message: `not authorized to mutate definition ${input.definitionId}`,
 				});
 			}
-			const lifecycle = Removal.fromColumns(definition);
-			if (!Removal.isRemoved(lifecycle)) {
-				return {definitionId: input.definitionId, deleted: false} satisfies DeleteDefinitionResult;
-			}
 
 			const now = new Date();
-			// Sandbox-faithful restore (#1811): `restore` returns `Sandboxed` iff the row
-			// was sandboxed before deletion; the marker rides the persisted columns. Votes
-			// wiped on removal are NOT resurrected (ADR 0096 §4), so the score cache stays 0.
-			const live = Removal.toColumns(Removal.restore(lifecycle));
-			yield* Removal.restoreEntity(
-				removalSeq,
-				{kind: "definition", id: input.definitionId},
-				live,
+			const outcome = yield* applyRemovalTransition({
+				label: "Sozluk.restoreDefinition",
+				transition: "restore",
+				seq: removalSeq,
+				subject: definition,
+				target: {kind: "definition", id: input.definitionId},
 				now,
-			);
-
-			yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
-			yield* recomputeSozlukStats(now);
+				refresh: refreshSozlukCaches(definition.termSlug, definition.termTitle, now),
+			});
+			if (!outcome.committed) {
+				return {definitionId: input.definitionId, deleted: false} satisfies DeleteDefinitionResult;
+			}
 
 			return {
 				definitionId: input.definitionId,
 				deleted: true,
-				sandboxedAt: live.sandboxedAt,
+				sandboxedAt: outcome.sandboxedAt,
 			} satisfies DeleteDefinitionResult;
 		});
 
@@ -1081,33 +1071,21 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 				);
 				if (!definition) return {removed: false};
-				const current = Removal.fromColumns(definition);
-				if (Removal.isRemoved(current)) {
-					return {removed: false};
-				}
 
 				const now = new Date();
-				const removed = Removal.toColumns(
-					Removal.remove({
-						removedAt: now,
-						removedBy: input.resolverId,
-						reason: new Removal.Moderated({reportId: input.reportId}),
-						// Preserve the pre-removal sandbox marker so a mod-restore round-trips
-						// to the pre-removal state, not Live (#1811); promotion is mod-only.
-						sandboxedAt: Removal.sandboxedAtOf(current),
-					}),
-				);
-				yield* Removal.removeEntity(
-					removalSeq,
-					{kind: "definition", id: input.definitionId},
-					removed,
+				const outcome = yield* applyRemovalTransition({
+					label: "Sozluk.moderateRemoveDefinition",
+					transition: "remove",
+					seq: removalSeq,
+					subject: definition,
+					target: {kind: "definition", id: input.definitionId},
+					removedBy: input.resolverId,
+					reason: new Removal.Moderated({reportId: input.reportId}),
 					now,
-				);
+					refresh: refreshSozlukCaches(definition.termSlug, definition.termTitle, now),
+				});
 
-				yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
-				yield* recomputeSozlukStats(now);
-
-				return {removed: true};
+				return {removed: outcome.committed};
 			},
 		);
 
@@ -1117,25 +1095,23 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 				);
 				if (!definition) return {restored: false, sandboxedAt: null};
-				const lifecycle = Removal.fromColumns(definition);
-				if (!Removal.isRemoved(lifecycle)) return {restored: false, sandboxedAt: null};
 
 				const now = new Date();
-				const live = Removal.toColumns(Removal.restore(lifecycle));
-				yield* Removal.restoreEntity(
-					removalSeq,
-					{kind: "definition", id: input.definitionId},
-					live,
+				const outcome = yield* applyRemovalTransition({
+					label: "Sozluk.moderateRestoreDefinition",
+					transition: "restore",
+					seq: removalSeq,
+					subject: definition,
+					target: {kind: "definition", id: input.definitionId},
 					now,
-				);
+					refresh: refreshSozlukCaches(definition.termSlug, definition.termTitle, now),
+				});
+				if (!outcome.committed) return {restored: false, sandboxedAt: null};
 
-				yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
-				yield* recomputeSozlukStats(now);
-
-				// `live.sandboxedAt` is the round-tripped marker (#1811) — report's live
+				// `outcome.sandboxedAt` is the round-tripped marker (#1811) — report's live
 				// re-append gates the term-connection broadcast (a sandboxed restore stays
 				// suppressed).
-				return {restored: true, sandboxedAt: live.sandboxedAt};
+				return {restored: true, sandboxedAt: outcome.sandboxedAt};
 			},
 		);
 
