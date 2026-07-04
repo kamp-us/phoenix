@@ -27,6 +27,7 @@ import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
+import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
@@ -825,37 +826,21 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				message: `not authorized to mutate post ${input.postId}`,
 			});
 		}
-		const current = Removal.fromColumns(meta);
-		if (Removal.isRemoved(current)) {
-			return {postId: input.postId, deleted: false} satisfies DeletePostResult;
-		}
 
 		const now = new Date();
-		const removed = Removal.toColumns(
-			Removal.remove({
-				removedAt: now,
-				removedBy: input.actorId,
-				reason: input.reason ?? new Removal.AuthorDeletion(),
-				// Preserve the pre-delete sandbox marker through the removal so a
-				// restore round-trips it faithfully (#1811) — a çaylak's sandboxed post
-				// stays sandboxed across delete→restore, never self-escaping to Live.
-				sandboxedAt: Removal.sandboxedAtOf(current),
-			}),
-		);
-		yield* Removal.removeEntity(removalSeq, {kind: "post", id: input.postId}, removed, now);
+		const outcome = yield* applyRemovalTransition({
+			label: "Pano.deletePost",
+			transition: "remove",
+			seq: removalSeq,
+			subject: meta,
+			target: {kind: "post", id: input.postId},
+			removedBy: input.actorId,
+			reason: input.reason ?? new Removal.AuthorDeletion(),
+			now,
+			refresh: persistPanoStats(now),
+		});
 
-		// The removal is committed (source of truth). `persistPanoStats` is a recomputable
-		// cache refresh (ADR 0011/0117) running AFTER the commit — it runs over
-		// `DrizzleAccessOrDie`, so a D1 hiccup dies, and that must NOT flip an already-
-		// committed delete into a raw 500 (the partial-commit-then-500, #1639). Swallow +
-		// log like the fire-and-forget live-publish (ADR 0039); totals recompute next write.
-		yield* persistPanoStats(now).pipe(
-			Effect.catchCause((cause) =>
-				Effect.logWarning("pano-stats refresh after post delete failed", cause),
-			),
-		);
-
-		return {postId: input.postId, deleted: true} satisfies DeletePostResult;
+		return {postId: input.postId, deleted: outcome.committed} satisfies DeletePostResult;
 	});
 
 	const restorePost = Effect.fn("Pano.restorePost")(function* (input: DeletePostInput) {
@@ -869,30 +854,25 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				message: `not authorized to mutate post ${input.postId}`,
 			});
 		}
-		const lifecycle = Removal.fromColumns(meta);
-		if (!Removal.isRemoved(lifecycle)) {
-			return {postId: input.postId, deleted: false, sandboxedAt: null} satisfies RestorePostResult;
-		}
 
 		const now = new Date();
-		// Sandbox-faithful restore (#1811): `restore` returns `Sandboxed` iff the row
-		// was sandboxed before deletion. The persisted columns carry the marker, and
-		// the returned `sandboxedAt` drives the mutation's broadcast decision.
-		const restored = Removal.restore(lifecycle);
-		const live = Removal.toColumns(restored);
-		yield* Removal.restoreEntity(
-			removalSeq,
-			{kind: "post", id: input.postId, title: meta.title},
-			live,
+		const outcome = yield* applyRemovalTransition({
+			label: "Pano.restorePost",
+			transition: "restore",
+			seq: removalSeq,
+			subject: meta,
+			target: {kind: "post", id: input.postId, title: meta.title},
 			now,
-		);
-
-		yield* persistPanoStats(now);
+			refresh: persistPanoStats(now),
+		});
+		if (!outcome.committed) {
+			return {postId: input.postId, deleted: false, sandboxedAt: null} satisfies RestorePostResult;
+		}
 
 		return {
 			postId: input.postId,
 			deleted: true,
-			sandboxedAt: live.sandboxedAt,
+			sandboxedAt: outcome.sandboxedAt,
 		} satisfies RestorePostResult;
 	});
 
@@ -903,27 +883,21 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	}) {
 		const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 		if (!meta) return {removed: false};
-		const current = Removal.fromColumns(meta);
-		if (Removal.isRemoved(current)) {
-			return {removed: false};
-		}
 
 		const now = new Date();
-		const removed = Removal.toColumns(
-			Removal.remove({
-				removedAt: now,
-				removedBy: input.resolverId,
-				reason: new Removal.Moderated({reportId: input.reportId}),
-				// Preserve the pre-removal sandbox marker so a mod-restore round-trips to
-				// the pre-removal state, not Live (#1811). Promotion to Live is the mod
-				// `promote` path (#1206), never a restore side effect.
-				sandboxedAt: Removal.sandboxedAtOf(current),
-			}),
-		);
-		yield* Removal.removeEntity(removalSeq, {kind: "post", id: input.postId}, removed, now);
-		yield* persistPanoStats(now);
+		const outcome = yield* applyRemovalTransition({
+			label: "Pano.moderateRemovePost",
+			transition: "remove",
+			seq: removalSeq,
+			subject: meta,
+			target: {kind: "post", id: input.postId},
+			removedBy: input.resolverId,
+			reason: new Removal.Moderated({reportId: input.reportId}),
+			now,
+			refresh: persistPanoStats(now),
+		});
 
-		return {removed: true};
+		return {removed: outcome.committed};
 	});
 
 	const moderateRestorePost = Effect.fn("Pano.moderateRestorePost")(function* (input: {
@@ -931,22 +905,22 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	}) {
 		const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 		if (!meta) return {restored: false, sandboxedAt: null};
-		const lifecycle = Removal.fromColumns(meta);
-		if (!Removal.isRemoved(lifecycle)) return {restored: false, sandboxedAt: null};
 
 		const now = new Date();
-		const live = Removal.toColumns(Removal.restore(lifecycle));
-		yield* Removal.restoreEntity(
-			removalSeq,
-			{kind: "post", id: input.postId, title: meta.title},
-			live,
+		const outcome = yield* applyRemovalTransition({
+			label: "Pano.moderateRestorePost",
+			transition: "restore",
+			seq: removalSeq,
+			subject: meta,
+			target: {kind: "post", id: input.postId, title: meta.title},
 			now,
-		);
-		yield* persistPanoStats(now);
+			refresh: persistPanoStats(now),
+		});
+		if (!outcome.committed) return {restored: false, sandboxedAt: null};
 
 		// The round-tripped sandbox marker (#1811): a çaylak's post restores to Sandboxed,
 		// so report's live re-append gates the public-feed broadcast on it.
-		return {restored: true, sandboxedAt: live.sandboxedAt};
+		return {restored: true, sandboxedAt: outcome.sandboxedAt};
 	});
 
 	/**

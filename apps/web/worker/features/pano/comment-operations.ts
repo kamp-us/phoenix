@@ -21,6 +21,7 @@ import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
+import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
@@ -199,6 +200,41 @@ export interface CommentOperationsDeps {
 
 export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 	const {run, voteSvc, reactionSvc, removalSeq, persistPanoStats} = deps;
+
+	// The parent post's PUBLIC `comment_count` bookkeeping every comment remove/restore
+	// shares — the plane-specific `afterCommit` the four transition methods run after the
+	// substrate write. A sandboxed çaylak comment (#1205) was never counted into the public
+	// count on create, so a sandboxed transition adjusts by 0 — the create-gate mirror
+	// (#1831/#1811). `sandboxedAt` is the round-tripped marker the transition stamped. Only
+	// the author `deleteComment` also refreshes `hotScore` (the activity bump), so it opts in
+	// via `recomputeHot`; the mod + restore arms leave `hotScore` untouched, as before.
+	const adjustPostCommentCount = (
+		postId: string,
+		sandboxedAt: Date | null,
+		now: Date,
+		direction: "remove" | "restore",
+		opts: {recomputeHot?: boolean} = {},
+	) =>
+		Effect.gen(function* () {
+			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: postId}}));
+			if (!post) return;
+			const step = sandboxedAt != null ? 0 : direction === "remove" ? -1 : 1;
+			const commentCount = Math.max(0, post.commentCount + step);
+			const hotScore = opts.recomputeHot
+				? computeHotScore(post.score, (post.createdAt ?? now).getTime(), now.getTime())
+				: undefined;
+			yield* run((db) =>
+				db
+					.update(schema.postRecord)
+					.set({
+						commentCount,
+						...(hotScore !== undefined ? {hotScore} : {}),
+						updatedAt: now,
+						lastActivityAt: now,
+					})
+					.where(eq(schema.postRecord.id, postId)),
+			);
+		});
 
 	// `Comment`'s one viewer scalar: `myVote` from the batched `user_vote` presence
 	// read (#1126). Every comment read finalizes through `stampViewerScalars` with
@@ -522,8 +558,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				message: `not authorized to mutate comment ${input.commentId}`,
 			});
 		}
-		const current = Removal.fromColumns(row);
-		if (Removal.isRemoved(current)) {
+		if (Removal.isRemoved(Removal.fromColumns(row))) {
 			return {
 				commentId: input.commentId,
 				deleted: false,
@@ -547,51 +582,23 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		const hasReplies = (childCountRow?.n ?? 0) > 0;
 
 		const now = new Date();
-		// SOFT remove for every comment now (ADR 0096 §1 — no hard delete): wipe
-		// votes via `Vote.clearTarget` (karma KEPT), then stamp the `Removed`
-		// triad. The canonical body is KEPT (the `[silindi]` tombstone is rendered
-		// by `rowToCommentRow`, not written here), so restore + moderator review
-		// have the real text. `hasReplies` now only shapes the result placeholder,
-		// not the strategy. `commentCount` + stats refresh outside (caches).
-		const removed = Removal.toColumns(
-			Removal.remove({
-				removedAt: now,
-				removedBy: input.actorId,
-				reason: input.reason ?? new Removal.AuthorDeletion(),
-				// Preserve the pre-delete sandbox marker so a çaylak's sandboxed comment
-				// round-trips back to Sandboxed on restore, never self-escaping to Live (#1811).
-				sandboxedAt: Removal.sandboxedAtOf(current),
-			}),
-		);
-		yield* Removal.removeEntity(removalSeq, {kind: "comment", id: input.commentId}, removed, now);
-
-		const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
-		if (post) {
-			// A sandboxed çaylak comment (#1205) was never counted into the PUBLIC
-			// `comment_count` on create, so its delete must not decrement it — mirror
-			// `addComment`'s `sandboxedAt`-gated increment (#1831). The pre-delete marker
-			// is `sandboxedAtOf(current)`, in hand from the row already loaded above.
-			const decrement = Removal.sandboxedAtOf(current) != null ? 0 : 1;
-			const newCommentCount = Math.max(0, post.commentCount - decrement);
-			const hotScore = computeHotScore(
-				post.score,
-				(post.createdAt ?? now).getTime(),
-				now.getTime(),
-			);
-			yield* run((db) =>
-				db
-					.update(schema.postRecord)
-					.set({
-						commentCount: newCommentCount,
-						hotScore,
-						updatedAt: now,
-						lastActivityAt: now,
-					})
-					.where(eq(schema.postRecord.id, row.postId)),
-			);
-		}
-
-		yield* persistPanoStats(now);
+		// SOFT remove for every comment now (ADR 0096 §1 — no hard delete). The canonical
+		// body is KEPT (the `[silindi]` tombstone is rendered by `rowToCommentRow`, not
+		// written here), so restore + moderator review have the real text. `hasReplies`
+		// only shapes the result placeholder, not the strategy.
+		yield* applyRemovalTransition({
+			label: "Pano.deleteComment",
+			transition: "remove",
+			seq: removalSeq,
+			subject: row,
+			target: {kind: "comment", id: input.commentId},
+			removedBy: input.actorId,
+			reason: input.reason ?? new Removal.AuthorDeletion(),
+			now,
+			afterCommit: (sandboxedAt) =>
+				adjustPostCommentCount(row.postId, sandboxedAt, now, "remove", {recomputeHot: true}),
+			refresh: persistPanoStats(now),
+		});
 
 		const placeholder: CommentRow | null = hasReplies
 			? {
@@ -631,8 +638,18 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				message: `not authorized to mutate comment ${input.commentId}`,
 			});
 		}
-		const lifecycle = Removal.fromColumns(row);
-		if (!Removal.isRemoved(lifecycle)) {
+		const now = new Date();
+		const outcome = yield* applyRemovalTransition({
+			label: "Pano.restoreComment",
+			transition: "restore",
+			seq: removalSeq,
+			subject: row,
+			target: {kind: "comment", id: input.commentId},
+			now,
+			afterCommit: (sandboxedAt) => adjustPostCommentCount(row.postId, sandboxedAt, now, "restore"),
+			refresh: persistPanoStats(now),
+		});
+		if (!outcome.committed) {
 			return {
 				commentId: input.commentId,
 				deleted: false,
@@ -641,37 +658,12 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			} satisfies DeleteCommentResult;
 		}
 
-		const now = new Date();
-		// Sandbox-faithful restore (#1811): `restore` returns `Sandboxed` iff the row
-		// was sandboxed before deletion; the persisted columns carry the marker.
-		const live = Removal.toColumns(Removal.restore(lifecycle));
-		yield* Removal.restoreEntity(removalSeq, {kind: "comment", id: input.commentId}, live, now);
-
-		const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
-		if (post) {
-			// A sandboxed restore is not in the public thread, so it must not bump the
-			// public `commentCount` — mirror `addComment`'s sandbox-aware count (#1205).
-			const newCommentCount = post.commentCount + (live.sandboxedAt != null ? 0 : 1);
-			yield* run((db) =>
-				db
-					.update(schema.postRecord)
-					.set({
-						commentCount: newCommentCount,
-						updatedAt: now,
-						lastActivityAt: now,
-					})
-					.where(eq(schema.postRecord.id, row.postId)),
-			);
-		}
-
-		yield* persistPanoStats(now);
-
 		return {
 			commentId: input.commentId,
 			deleted: true,
 			hasReplies: false,
 			placeholder: null,
-			sandboxedAt: live.sandboxedAt,
+			sandboxedAt: outcome.sandboxedAt,
 		} satisfies DeleteCommentResult;
 	});
 
@@ -684,45 +676,22 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			db.query.commentRecord.findFirst({where: {id: input.commentId}}),
 		);
 		if (!row) return {removed: false};
-		const current = Removal.fromColumns(row);
-		if (Removal.isRemoved(current)) {
-			return {removed: false};
-		}
 
 		const now = new Date();
-		const removed = Removal.toColumns(
-			Removal.remove({
-				removedAt: now,
-				removedBy: input.resolverId,
-				reason: new Removal.Moderated({reportId: input.reportId}),
-				// Preserve the pre-removal sandbox marker so a mod-restore round-trips to
-				// the pre-removal state, not Live (#1811); promotion is the mod-only path.
-				sandboxedAt: Removal.sandboxedAtOf(current),
-			}),
-		);
-		yield* Removal.removeEntity(removalSeq, {kind: "comment", id: input.commentId}, removed, now);
+		const outcome = yield* applyRemovalTransition({
+			label: "Pano.moderateRemoveComment",
+			transition: "remove",
+			seq: removalSeq,
+			subject: row,
+			target: {kind: "comment", id: input.commentId},
+			removedBy: input.resolverId,
+			reason: new Removal.Moderated({reportId: input.reportId}),
+			now,
+			afterCommit: (sandboxedAt) => adjustPostCommentCount(row.postId, sandboxedAt, now, "remove"),
+			refresh: persistPanoStats(now),
+		});
 
-		const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
-		if (post) {
-			// A sandboxed çaylak comment (#1205) was never counted into the PUBLIC
-			// `comment_count`, so a mod-remove must not decrement it — mirror the
-			// author `deleteComment` gate (#1831). The pre-removal marker is
-			// `sandboxedAtOf(current)`, already in hand above.
-			const decrement = Removal.sandboxedAtOf(current) != null ? 0 : 1;
-			yield* run((db) =>
-				db
-					.update(schema.postRecord)
-					.set({
-						commentCount: Math.max(0, post.commentCount - decrement),
-						updatedAt: now,
-						lastActivityAt: now,
-					})
-					.where(eq(schema.postRecord.id, row.postId)),
-			);
-		}
-		yield* persistPanoStats(now);
-
-		return {removed: true};
+		return {removed: outcome.committed};
 	});
 
 	const moderateRestoreComment = Effect.fn("Pano.moderateRestoreComment")(function* (input: {
@@ -732,35 +701,23 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			db.query.commentRecord.findFirst({where: {id: input.commentId}}),
 		);
 		if (!row) return {restored: false, sandboxedAt: null};
-		const lifecycle = Removal.fromColumns(row);
-		if (!Removal.isRemoved(lifecycle)) return {restored: false, sandboxedAt: null};
 
 		const now = new Date();
-		const live = Removal.toColumns(Removal.restore(lifecycle));
-		yield* Removal.restoreEntity(removalSeq, {kind: "comment", id: input.commentId}, live, now);
+		const outcome = yield* applyRemovalTransition({
+			label: "Pano.moderateRestoreComment",
+			transition: "restore",
+			seq: removalSeq,
+			subject: row,
+			target: {kind: "comment", id: input.commentId},
+			now,
+			afterCommit: (sandboxedAt) => adjustPostCommentCount(row.postId, sandboxedAt, now, "restore"),
+			refresh: persistPanoStats(now),
+		});
+		if (!outcome.committed) return {restored: false, sandboxedAt: null};
 
-		const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
-		if (post) {
-			// A sandboxed restore is not in the public thread, so it must not bump the
-			// public `comment_count` — mirror the author `restoreComment` gate (#1811).
-			// `live` carries the round-tripped `sandboxedAt`.
-			const increment = live.sandboxedAt != null ? 0 : 1;
-			yield* run((db) =>
-				db
-					.update(schema.postRecord)
-					.set({
-						commentCount: post.commentCount + increment,
-						updatedAt: now,
-						lastActivityAt: now,
-					})
-					.where(eq(schema.postRecord.id, row.postId)),
-			);
-		}
-		yield* persistPanoStats(now);
-
-		// `live.sandboxedAt` is the round-tripped marker (#1811) — report's live re-append
+		// `outcome.sandboxedAt` is the round-tripped marker (#1811) — report's live re-append
 		// gates the thread broadcast on it (a sandboxed restore stays suppressed).
-		return {restored: true, sandboxedAt: live.sandboxedAt};
+		return {restored: true, sandboxedAt: outcome.sandboxedAt};
 	});
 
 	/**
