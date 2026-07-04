@@ -32,6 +32,7 @@ import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.t
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {Flagship, FlagshipLive} from "./features/flagship/Flagship.ts";
 import {Flagship as FlagshipResource} from "./features/flagship/resources.ts";
+import {subscribeHotScoreDecay} from "./features/pano/hot-score-decay-cron.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
 import {makeAppLive} from "./http/app.ts";
@@ -230,6 +231,15 @@ export default Phoenix.make(
 		// time inside `FateExecutor.toCodegenServer` (`schema.ts`), so `vite build`
 		// fails on duplicate wire names / missing sources before the worker exists.
 
+		// The sıcak/hot decay-refresh Cron Trigger (#2027): register the `scheduled`
+		// listener (runtime) + attach the cron expression to the worker (deploy). The
+		// handler re-decays `post_record.hot_score` over the recency window so the hot
+		// feed keeps decaying with age without an activity write, preserving the
+		// stored-column + keyset-cursor design (no read-time recompute). Provided the
+		// built `fateLayer` so it resolves `Pano` at dispatch. `subscribe` only
+		// registers a listener (no async/timer work), so it is init-safe.
+		yield* subscribeHotScoreDecay(fateLayer);
+
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace resolved
 		// once above, wrapped as worker-level services. One namespace plays both
 		// roles, keyed by instance name. Addressing + name grammar live at the
@@ -384,6 +394,12 @@ export default Phoenix.make(
 				// into the `FlagshipClient`, `FlagshipBindingPolicyLive` registers the
 				// policy it needs (epic #488). `WorkerEnvironment` is ambient.
 				FlagshipLive.pipe(Layer.provide(Cloudflare.Flagship.ReadFlagsBinding)),
+				// The Cron Trigger runtime seam the sıcak/hot decay-refresh subscribes to
+				// (#2027): `subscribeHotScoreDecay` above `yield*`s `Cloudflare.cron(...).subscribe`,
+				// which resolves this `CronEventSource`. Its deploy-time policy
+				// (`CronEventSourcePolicy`) rides `Cloudflare.providers()`; `RuntimeContext` is
+				// ambient at the worker scope.
+				Cloudflare.CronEventSourceLive,
 			).pipe(Layer.provideMerge(Cloudflare.D1.QueryDatabaseBinding)),
 		),
 	),
