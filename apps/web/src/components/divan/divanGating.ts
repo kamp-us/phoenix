@@ -81,7 +81,7 @@ export function promoteVisible(isModerator: boolean): boolean {
  * The display handle for a çaylak in the divan: their display name, else their
  * `@username`, else the lowercase-Turkish "çaylak" fallback (an anonymized /
  * not-yet-named row). Never the raw user id — the divan reads a person, not an id.
- * The çaylak-specific fallback over the shared actor-row rule (ADR 0145): one tested
+ * The çaylak-specific fallback over the shared actor-row rule (ADR 0147): one tested
  * handle resolver across every mod/admin surface, divan supplying its own noun.
  */
 export function caylakLabel(displayName: string | null, username: string | null): string {

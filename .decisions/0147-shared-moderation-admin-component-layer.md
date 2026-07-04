@@ -1,12 +1,12 @@
 ---
-id: 0145
+id: 0147
 title: Moderation/admin surfaces share ONE React component layer — no forked parallel trees
 status: accepted
 date: 2026-07-04
 tags: [moderation, admin, divan, components, frontend, product, actor, issue-1993]
 ---
 
-# 0145 — Moderation/admin surfaces share one React component layer
+# 0147 — Moderation/admin surfaces share one React component layer
 
 ## Context
 

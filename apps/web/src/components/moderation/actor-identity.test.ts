@@ -1,5 +1,5 @@
 /**
- * The shared moderation actor-row handle rule (ADR 0145), asserted DOM-free — one
+ * The shared moderation actor-row handle rule (ADR 0147), asserted DOM-free — one
  * tested handle resolver every mod/admin surface reuses (divan's `caylakLabel`, the
  * admin user-list #968) instead of each forking its own. Mirrors the divan
  * `caylakLabel` contract, generalized over the fallback noun.

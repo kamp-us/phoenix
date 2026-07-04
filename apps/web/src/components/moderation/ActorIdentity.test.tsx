@@ -1,5 +1,5 @@
 /**
- * `ActorIdentity` — the shared moderation actor-row (ADR 0145). Renders an actor's
+ * `ActorIdentity` — the shared moderation actor-row (ADR 0147). Renders an actor's
  * handle + karma-on-others through the same reusable `<Karma>` atom (#1208), with the
  * consuming surface's own CSS namespace + test-id prefix supplied as props. These
  * asserts pin the render contract every mod/admin surface reuses (divan's roster and

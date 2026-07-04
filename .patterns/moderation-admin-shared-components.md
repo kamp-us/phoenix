@@ -4,10 +4,10 @@ How every **moderation/admin surface** — the divan, the admin surface
 ([#873](https://github.com/kamp-us/phoenix/issues/873)), any future mod tooling — renders its
 cross-surface primitives (the **actor/user row**, **action affordances**, **audit context**) from
 **one shared component layer** rather than reimplementing them per surface. This is the
-[ADR 0145](../.decisions/0145-shared-moderation-admin-component-layer.md) rule made concrete: the
+[ADR 0147](../.decisions/0147-shared-moderation-admin-component-layer.md) rule made concrete: the
 map to consult when building or extending any mod/admin UI.
 
-The *why* (the founder directive, the drift it prevents) is in ADR 0145; the actor-centric spine
+The *why* (the founder directive, the drift it prevents) is in ADR 0147; the actor-centric spine
 these surfaces share is [ADR 0138](../.decisions/0138-divan-actor-centric-spine.md). This doc is
 the *where + how*.
 

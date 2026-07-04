@@ -5,7 +5,7 @@
  *
  * Home of the cross-surface actor-identity rule: every moderation/admin surface that
  * shows *who* an actor is (divan roster/detail today, the admin user-list #968 next)
- * renders the SAME handle + karma primitive rather than forking its own — ADR 0145,
+ * renders the SAME handle + karma primitive rather than forking its own — ADR 0147,
  * grounded in ADR 0138's actor-centric spine.
  */
 

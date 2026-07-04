@@ -1,7 +1,7 @@
 /**
  * `CaylakIdentity` — a çaylak's handle + their **karma-on-others** in the divan
  * (#1290 AC). It is the divan-flavoured consumer of the shared moderation actor row
- * {@link ActorIdentity} (ADR 0145): the shared primitive owns the handle + `<Karma>`
+ * {@link ActorIdentity} (ADR 0147): the shared primitive owns the handle + `<Karma>`
  * render (the same reusable atom, #1208), and this wrapper supplies divan's own CSS
  * namespace (`kp-divan__*`), test-id prefix, and the "çaylak" fallback. The admin
  * user-list (#968) consumes the same {@link ActorIdentity} rather than forking a

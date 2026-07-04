@@ -1,7 +1,7 @@
 /**
  * `ActorIdentity` — the shared moderation/admin **actor row**: an actor's handle plus
  * their karma-on-others, the one primitive every mod surface renders to answer "who is
- * this actor?" (ADR 0145, grounded in the actor-centric spine of ADR 0138).
+ * this actor?" (ADR 0147, grounded in the actor-centric spine of ADR 0138).
  *
  * It is the canonical home for the actor/user row across surfaces: divan's roster and
  * çaylak-detail consume it today (via the thin divan-flavoured `CaylakIdentity`
