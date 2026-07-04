@@ -25,7 +25,7 @@ can't be skipped.
 
 If `claude-plugins/kampus-pipeline/skills/write-code/SKILL.md` is absent in the working
 repo, the suite may be installed as a plugin instead — read the `write-code` SKILL from
-the resolved plugin path and follow it identically.
+the resolved plugin path (`${CLAUDE_PLUGIN_ROOT}`) and follow it identically.
 
 ## When to invoke
 

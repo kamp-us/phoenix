@@ -30,7 +30,7 @@ they can't be skipped.
 
 If `claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md` is absent in the working repo,
 the suite may be installed as a plugin instead — read the `ship-it` SKILL from the resolved
-plugin path and follow it identically.
+plugin path (`${CLAUDE_PLUGIN_ROOT}`) and follow it identically.
 
 ## When to invoke
 
