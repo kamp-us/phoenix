@@ -12,7 +12,6 @@
  */
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
-import {botTokenCommand} from "./tools/bot-token/command.ts";
 import {changelogDeriveCommand} from "./tools/changelog-derive/command.ts";
 import {ciRequiredCommand} from "./tools/ci-required/command.ts";
 import {codeownersCpCommand} from "./tools/codeowners-cp/command.ts";
@@ -99,5 +98,4 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	failureClassifierCommand,
 	resumePolicyCommand,
 	evalHarnessCommand,
-	botTokenCommand,
 ];
