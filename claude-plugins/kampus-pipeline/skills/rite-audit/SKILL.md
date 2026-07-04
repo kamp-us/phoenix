@@ -81,6 +81,18 @@ snapshot/screenshot). The contract for the explorer:
   action, read the resulting DOM/text/screenshot, compare against the rubric's expectation,
   then emit exactly one `Finding`. Capture a screenshot as evidence at each asserted transition
   (the verdict report attaches them).
+- **Force a browser media state via the `emulateMedia` seam.** When a check must *force* a media
+  feature rather than read the stage default, drive the `browser_emulate_media`-style MCP tool
+  over Playwright's page-level `page.emulateMedia({ reducedMotion, colorScheme, forcedColors })`
+  (a CDP `Emulation.setEmulatedMedia` bridge). This single seam covers all three feature axes, so
+  a dimension can force `prefers-reduced-motion: reduce`, `prefers-color-scheme: dark`, or
+  `forced-colors: active` before it observes — it is general, not reduced-motion only.
+  `browser_evaluate` can only *read* the current media state
+  (`matchMedia('(prefers-reduced-motion: reduce)').matches`); reading the default is not a
+  drive-test — force the feature ON through this seam first, then observe the app's response and
+  restore the default (`{ reducedMotion: 'no-preference' }`) after. If the seam is absent from the
+  exposed tool surface, that is a **BLOCKED** precondition for any check that depends on it (story
+  11), never a silent pass.
 
 ## The route map — the rite surfaces
 
