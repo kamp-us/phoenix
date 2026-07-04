@@ -808,6 +808,15 @@ closing the #375 drift class).
   - `claude-plugins/kampus-pipeline/skills/review-skill/**`
   - `claude-plugins/kampus-pipeline/skills/review-plan/**`
   - `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` (this file)
+- the **pipeline agent definitions** — `claude-plugins/kampus-pipeline/agents/**`: the behavior
+  instructions for the very agents that run the pipeline, including `shipper.md` (the merge
+  authority) and `reviewer.md` (the verdict gate). An agents-only PR matched **no** §CP clause
+  and **no** routing probe, so `ship-it` would have enqueued it with no human merge and no gate —
+  a gate/merge agent auto-shipping a weakening of its own instructions, the exact
+  self-modification-of-guardrails risk §CP exists to prevent (ADR
+  [0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
+  #2003; same ADR 0065 rationale that makes the gate-critical skills blocking). Agent defs are
+  behavioral artifacts like skills → **`review-skill`-routed for the verdict**, **blocking for merge**.
 - the **plugin hook surface** — `claude-plugins/kampus-pipeline/hooks/**` (the `install.sh`
   that drops the installed `pipeline-cli` and the `guard.sh` fail-open dispatch wrapper) plus
   `claude-plugins/kampus-pipeline/hooks.json` (the foreign-repo hook manifest). These are
@@ -843,7 +852,10 @@ that reviews the gates is itself a gate; the enforcement-guard packages added by
 [0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md),
 since a guard is a self-weakening surface wherever it lives; that coverage now also flows
 through the consolidated `^packages/pipeline-cli/` package per ADR
-[0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)). Everything else — `apps/**`,
+[0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md);
+the **pipeline agent definitions** (`claude-plugins/kampus-pipeline/agents/**`) added by ADR
+[0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
+since a gate/merge agent's own instructions are a self-weakening surface). Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**`, `.patterns/**`, every prose doc `*.md` (the
 §DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
 auto-merges through its matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
@@ -861,13 +873,13 @@ Every consumer matches the set with this **one** anchored regex (POSIX ERE; the 
 form below). Cite this regex; do **not** re-hard-code the path list:
 
 ```
-^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/
+^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/
 ```
 
 ```bash
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — one definition, no fourth copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'
 # --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
 # concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
 # API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a
@@ -920,8 +932,9 @@ that is:**
 **and is NOT** under any of the carved-out roots, in this precedence order:
 
 - **control plane** (`.claude/**`, `.github/**`, a gate-critical skill — the §CP set);
-- **`skills/**`** — a behavioral artifact, `review-skill`'s class, carved out *before* the
-  `.md` test (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md));
+- **`skills/**` and `agents/**`** — behavioral artifacts, `review-skill`'s class, carved out
+  *before* the `.md` test (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md);
+  agents added by ADR [0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md));
 - the **code roots `apps/**`, `packages/**`, and `infra/**`** — a code/app-internal `*.md` (a
   package or app README, CHANGELOG, …) rides the `review-code` PASS its tree already needs, and is
   **never** the doc class. `infra/**` is a real standalone-stack code root (ADR

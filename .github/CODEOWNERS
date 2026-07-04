@@ -16,6 +16,10 @@
 /claude-plugins/kampus-pipeline/skills/review-skill/               @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/review-plan/                @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md  @kamp-us/control-plane
+# Control-plane: the pipeline agent definitions — the behavior of the very agents that run the
+# pipeline, including shipper.md (merge authority) and reviewer.md (verdict gate). §CP-blocking
+# for merge, review-skill-routed for the verdict (ADR 0150, #2003).
+/claude-plugins/kampus-pipeline/agents/                           @kamp-us/control-plane
 # Control-plane: the plugin hook surface — the install.sh + guard.sh dispatch wrapper (the dir)
 # and the foreign-repo hook manifest (hooks.json). The §CP `hooks(/|\.json$)` branch covers both,
 # so each gets its own literal row (ADR 0103, #1003).

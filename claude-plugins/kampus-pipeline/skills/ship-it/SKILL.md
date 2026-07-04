@@ -221,7 +221,7 @@ FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].f
 # is current — a pre-amendment snapshot once auto-merged a now-control-plane PR (#981). So the
 # literal below is the fail-closed reference + the validate-gate-path-drift lockstep target, NOT the
 # live decision source: the regex actually classified is re-resolved from origin/main right after it.
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set — one definition (ADR 0073 §6; hooks added by 0103/#1003; the standalone -guard clause retired with those packages by #1003)
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set — one definition (ADR 0073 §6; hooks added by 0103/#1003; the standalone -guard clause retired with those packages by #1003; agents/ added by 0150/#2003)
 # Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-classify a now-control-plane
 # PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
 # freshly via REST raw (never GraphQL, top-of-skill rule). origin/main's line wins over the snapshot.
@@ -232,7 +232,7 @@ else
   CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ treat EVERY path as control-plane (refuse), never trust the possibly-stale snapshot
 fi
 echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065) + the enforcement-guard packages (ADR 0100/0103); other skills/** auto-merge on a review-skill PASS (ADR 0073)
-echo "$FILES" | grep -Eq '^claude-plugins/kampus-pipeline/skills/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063)
+echo "$FILES" | grep -Eq '^claude-plugins/kampus-pipeline/(skills|agents)/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063); agents/** are behavioral artifacts, skill-class for the verdict gate (ADR 0150/#2003) — §CP-blocking for merge via CONTROL_PLANE_RE above
 echo "$FILES" | grep -Eq '^(apps|packages|\.glossary|infra)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages + infra/** standalone stacks (ADR 0057) + .glossary/** — agrees with the docs-probe exclusion below (#663/#919/#1987); review-code owns the glossary (Step 3c); skills/** is its OWN class (ADR 0073)
 # docs probe EXCLUDES the code roots, skills/**, AND .glossary/** first, so a code/app-internal README
 # (apps/**, packages/**, infra/**), a skills-only .md, or a .glossary/** touch is NOT classed docs — only a prose
