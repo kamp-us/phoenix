@@ -66,6 +66,7 @@ live in `apps/web/src/components/ui/`.
 | Doc | Topic | Read when |
 |---|---|---|
 | [base-ui-accessibility.md](./base-ui-accessibility.md) | What Base UI wires automatically (roles, disclosure/popup ARIA, focus, and the accessible **name** from content — `Dialog.Title`→`aria-labelledby`, `Menu.Item` name from text, `Collapsible` relationship-only); the one gap (icon-only content has no name); the decision (no `aria-label` on a text-bearing control) + the four legitimate hand-authored-label cases (icon-only / unlabelled form / landmark disambiguation / status region); prefer `aria-labelledby`→a heading | Adding or labelling an interactive control (button, menu, dialog, icon-only action), or reaching for an `aria-label` |
+| [moderation-admin-shared-components.md](./moderation-admin-shared-components.md) | The **one shared component layer** every moderation/admin surface consumes (`apps/web/src/components/moderation/`): the cross-surface primitives (actor/user row, action affordances, audit context), the shared-primitive + thin-per-surface-wrapper shape (divan's `CaylakIdentity` over `ActorIdentity`), how a new mod surface (the admin user-list #968) consumes it, the reuse-don't-fork rule, and the extract-on-the-second-consumer discipline | Building or extending any moderation/admin UI (divan, admin #873 children, future mod tooling) — before forking a user-list / action-row ([ADR 0145](../.decisions/0145-shared-moderation-admin-component-layer.md) / [0138](../.decisions/0138-divan-actor-centric-spine.md)) |
 
 ## Index — alchemy infra layer
 
