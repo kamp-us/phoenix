@@ -107,7 +107,7 @@ export const ensureIntegrationEnv = (): void => {
 
 ensureIntegrationEnv();
 
-// The Stack's compiled output type (`{url, databaseId, accountId}` as `Output<…>`) —
+// The Stack's compiled output type (`{url, domains, databaseId, accountId}` as `Output<…>`) —
 // what `deploy` resolves. Pinning `A` explicitly keeps the link to the Stack's declared
 // output: if the stack stops returning these fields, `deploy` no longer accepts the
 // Stack and this stops compiling rather than breaking at runtime on `out.databaseId`.
