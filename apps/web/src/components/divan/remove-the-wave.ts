@@ -90,6 +90,27 @@ export function selectedWaveTargets(
 	return targets.filter((t) => selected.includes(waveTargetKey(t)));
 }
 
+/** One target's `report.resolve` input in a wave gesture — carries the shared `waveId`. */
+export interface WaveResolveInput {
+	readonly targetKind: TargetKind;
+	readonly targetId: string;
+	readonly waveId: string;
+}
+
+/**
+ * The per-target `report.resolve` inputs for ONE wave gesture (#1855, ADR 0138): every
+ * selected target carries the SAME `waveId`, so the server stamps one shared grouping
+ * across the batch and #1704's restore reopens it as a unit. The id is generated once per
+ * gesture (a wave IS one grouping) and threaded here; a single-target loop resolve passes
+ * no waveId, so its row's grouping stays null.
+ */
+export function waveResolveInputs(
+	targets: ReadonlyArray<WaveTarget>,
+	waveId: string,
+): ReadonlyArray<WaveResolveInput> {
+	return targets.map((t) => ({targetKind: t.targetKind, targetId: t.targetId, waveId}));
+}
+
 /** A non-empty selection is required before a batch verdict can apply. */
 export function canApplyWave(selected: ReadonlyArray<string>): boolean {
 	return selected.length > 0;

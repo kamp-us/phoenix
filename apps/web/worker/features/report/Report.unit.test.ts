@@ -16,7 +16,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
-import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
+import {createDrizzle, Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import {Report, ReportLive} from "./Report.ts";
 
 const throwingAccess: DrizzleAccess = {
@@ -39,6 +39,41 @@ function scriptedAccess(results: ReadonlyArray<unknown>): DrizzleAccess {
 
 const reportLayer = (access: DrizzleAccess) =>
 	ReportLive.pipe(Layer.provide(Layer.succeed(Drizzle, access)));
+
+// A capturing `Drizzle` seam over a fake D1 that records every `prepare(sql).bind(...)`:
+// the REAL `ReportLive` write path (drizzle's update builder) renders against it, so the
+// captured `{sql, params}` is the actual statement the service issues — the wave-grouping
+// column landing (#1855) proven without an engine, the `pano-stats` capturing idiom (ADR
+// 0082) generalized to `.update().set().where().run()` (executeMethod "run" ⇒
+// `stmt.bind(...params).run()`, drizzle-orm/d1 session).
+function capturingDrizzle(): {
+	access: DrizzleAccess;
+	captured: Array<{sql: string; params: unknown[]}>;
+} {
+	const captured: Array<{sql: string; params: unknown[]}> = [];
+	// biome-ignore lint/plugin: a capturing D1 stub — only prepare/bind/run are exercised to record the rendered statement; nothing executes against a binding.
+	const fakeD1 = {
+		prepare(sql: string) {
+			const stmt = {
+				bind(...params: unknown[]) {
+					captured.push({sql, params});
+					return stmt;
+				},
+				run: async () => ({success: true, meta: {changes: 1}, results: []}),
+				all: async () => ({success: true, meta: {changes: 0}, results: []}),
+				first: async () => null,
+				raw: async () => [],
+			};
+			return stmt;
+		},
+	} as unknown as D1Database;
+	const db = createDrizzle(fakeD1);
+	const access: DrizzleAccess = {
+		run: <A>(fn: (db: DrizzleDb) => Promise<A>) => Effect.promise(() => fn(db)),
+		batch: () => Effect.die(new Error("wave writes issue no batch")),
+	};
+	return {access, captured};
+}
 
 describe("Report.readByReporter — no-read short-circuit (mocked Drizzle seam)", () => {
 	it.effect("empty ids → empty Set without touching the DB", () =>
@@ -120,5 +155,84 @@ describe("Report.submit — created/no-op decision maps meta.changes (mocked Dri
 			});
 			assert.isFalse(result.created, "a swallowed PK conflict is a no-op success");
 		}).pipe(Effect.provide(reportLayer(scriptedAccess([{id: "def-1"}, {meta: {changes: 0}}])))),
+	);
+});
+
+// AC4 (#1855): a wave-remove resolves every selected target AND writes ONE grouping
+// identity that restores as a unit. The write-side stamping + the reopen-as-a-unit
+// primitive, proven over the real render (capturing D1).
+describe("Report.resolveTarget — wave grouping stamp (#1855, captured render)", () => {
+	it.effect("a resolve carrying a waveId stamps wave_id with that shared id (batch)", () =>
+		Effect.gen(function* () {
+			const {access, captured} = capturingDrizzle();
+			yield* Effect.provide(
+				Effect.gen(function* () {
+					const report = yield* Report;
+					yield* report.resolveTarget({
+						targetKind: "post",
+						targetId: "p1",
+						resolverId: "mod",
+						action: "dismiss",
+						resolvedAt: new Date("2026-01-01T00:00:00Z"),
+						waveId: "wave-1",
+					});
+				}),
+				reportLayer(access),
+			);
+			const upd = captured.find((c) => /update\b/i.test(c.sql) && /content_report/i.test(c.sql));
+			assert.isDefined(upd, "the resolve issued an UPDATE on content_report");
+			assert.match(upd!.sql, /"wave_id"\s*=\s*\?/i, "the UPDATE sets wave_id");
+			assert.include(upd!.params, "wave-1", "wave_id is bound to the shared wave id");
+		}),
+	);
+
+	it.effect("a single-target resolve (no waveId) leaves wave_id null", () =>
+		Effect.gen(function* () {
+			const {access, captured} = capturingDrizzle();
+			yield* Effect.provide(
+				Effect.gen(function* () {
+					const report = yield* Report;
+					yield* report.resolveTarget({
+						targetKind: "post",
+						targetId: "p1",
+						resolverId: "mod",
+						action: "dismiss",
+						resolvedAt: new Date("2026-01-01T00:00:00Z"),
+					});
+				}),
+				reportLayer(access),
+			);
+			const upd = captured.find((c) => /update\b/i.test(c.sql) && /content_report/i.test(c.sql));
+			assert.isDefined(upd, "the resolve issued an UPDATE on content_report");
+			assert.match(upd!.sql, /"wave_id"\s*=\s*\?/i, "the UPDATE still sets wave_id (explicitly)");
+			assert.include(upd!.params, null, "wave_id is bound null on a lone resolve");
+			assert.notInclude(upd!.params, "wave-1", "no wave grouping leaks onto a single resolve");
+		}),
+	);
+});
+
+describe("Report.reopenForWave — restore the batch as a unit (#1855, captured render)", () => {
+	it.effect("reopens exactly the rows sharing the waveId, and nothing else", () =>
+		Effect.gen(function* () {
+			const {access, captured} = capturingDrizzle();
+			const {reopened} = yield* Effect.provide(
+				Effect.gen(function* () {
+					const report = yield* Report;
+					return yield* report.reopenForWave("wave-1");
+				}),
+				reportLayer(access),
+			);
+			assert.strictEqual(reopened, 1, "the fake render reports the rows the WHERE matched");
+			const upd = captured.find((c) => /update\b/i.test(c.sql) && /content_report/i.test(c.sql));
+			assert.isDefined(upd, "reopenForWave issued an UPDATE on content_report");
+			// Scoped by the wave grouping — the batch, nothing outside it.
+			assert.match(upd!.sql, /where[\s\S]*"wave_id"\s*=\s*\?/i, "the WHERE filters by wave_id");
+			assert.include(upd!.params, "wave-1", "the WHERE binds the batch's wave id");
+			// Reopened back to a pristine open row — status flipped, grouping cleared.
+			assert.match(upd!.sql, /set[\s\S]*"status"\s*=\s*\?/i, "it flips status back to open");
+			assert.include(upd!.params, "open", "status is set to open");
+			assert.include(upd!.params, "resolved", "it targets resolved rows");
+			assert.include(upd!.params, "dismissed", "and dismissed rows");
+		}),
 	);
 });

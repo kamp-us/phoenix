@@ -67,6 +67,13 @@ export interface ResolveTargetInput {
 	/** The moderator's chosen action; the state machine derives the persisted outcome. */
 	action: Resolution.ResolveAction;
 	resolvedAt: Date;
+	/**
+	 * The wave-remove grouping identity (#1855, ADR 0138): the shared id stamped on
+	 * this resolve when it is one target of a wave gesture, so the batch reopens as a
+	 * unit (`reopenForWave`). Omitted/`null` on a single-target resolve — a wave
+	 * groups a batch, a lone resolve has none.
+	 */
+	waveId?: string | null;
 }
 
 export interface ResolveTargetResult {
@@ -117,6 +124,15 @@ export class Report extends Context.Service<
 			targetKind: TargetKind;
 			targetId: string;
 		}) => Effect.Effect<{reopened: number}>;
+
+		/**
+		 * Reopen a whole wave as a unit (#1855, ADR 0138): flip every resolved/dismissed
+		 * report sharing `waveId` back to `open`, clearing its audit triad + the wave
+		 * grouping — the restore-as-a-unit primitive #1704's restore mutation calls. One
+		 * shared id, so the batch reopens together and nothing outside it is touched.
+		 * Returns how many reports were reopened.
+		 */
+		readonly reopenForWave: (waveId: string) => Effect.Effect<{reopened: number}>;
 
 		/**
 		 * Resolve a single report id to its `(targetKind, targetId)` — so the resolve
@@ -279,6 +295,10 @@ export const ReportLive = Layer.effect(Report)(
 						resolverId: input.resolverId,
 						resolvedAt: input.resolvedAt,
 						resolution,
+						// A wave gesture stamps ONE shared id across its targets (#1855); a
+						// single-target resolve leaves it null. Always set explicitly so a
+						// re-resolve never inherits a stale wave grouping.
+						waveId: input.waveId ?? null,
 					})
 					.where(
 						and(
@@ -299,11 +319,41 @@ export const ReportLive = Layer.effect(Report)(
 			const result = yield* run((db) =>
 				db
 					.update(schema.contentReport)
-					.set({status: "open", resolverId: null, resolvedAt: null, resolution: null})
+					// Clearing `waveId` too keeps the invariant: an OPEN report never carries
+					// a stale wave grouping (#1855).
+					.set({
+						status: "open",
+						resolverId: null,
+						resolvedAt: null,
+						resolution: null,
+						waveId: null,
+					})
 					.where(
 						and(
 							eq(schema.contentReport.targetKind, input.targetKind),
 							eq(schema.contentReport.targetId, input.targetId),
+							inArray(schema.contentReport.status, ["resolved", "dismissed"]),
+						),
+					)
+					.run(),
+			);
+			return {reopened: result.meta.changes};
+		});
+
+		const reopenForWave = Effect.fn("Report.reopenForWave")(function* (waveId: string) {
+			const result = yield* run((db) =>
+				db
+					.update(schema.contentReport)
+					.set({
+						status: "open",
+						resolverId: null,
+						resolvedAt: null,
+						resolution: null,
+						waveId: null,
+					})
+					.where(
+						and(
+							eq(schema.contentReport.waveId, waveId),
 							inArray(schema.contentReport.status, ["resolved", "dismissed"]),
 						),
 					)
@@ -488,6 +538,7 @@ export const ReportLive = Layer.effect(Report)(
 			listOpen,
 			resolveTarget,
 			reopenForTarget,
+			reopenForWave,
 			lookupReportTarget,
 			firstOpenReportId,
 			countRemovalsByAuthors,

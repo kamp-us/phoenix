@@ -134,6 +134,13 @@
       "when": 1791000000000,
       "tag": "0018_reaction",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791500000000,
+      "tag": "0019_remove_the_wave",
+      "breakpoints": true
     }
   ]
 }

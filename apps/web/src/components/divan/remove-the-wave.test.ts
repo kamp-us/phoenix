@@ -25,6 +25,7 @@ import {
 	waveFailureLabel,
 	waveKeyToAction,
 	waveManifestLabel,
+	waveResolveInputs,
 	waveTargetKey,
 } from "./remove-the-wave";
 
@@ -224,5 +225,31 @@ describe("summarizeWaveBatch / waveFailureLabel — no silent partial drop", () 
 describe("waveTargetKey — the <kind>:<id> identity report.resolve acts on", () => {
 	it("joins kind and id", () => {
 		expect(waveTargetKey({targetKind: "definition", targetId: "x"})).toBe("definition:x");
+	});
+});
+
+describe("waveResolveInputs — ONE shared waveId across the batch (#1855, AC4)", () => {
+	it("stamps the SAME generated waveId on every selected target's resolve input", () => {
+		const targets = [
+			target({targetKind: "post", targetId: "a"}),
+			target({targetKind: "comment", targetId: "b"}),
+			target({targetKind: "definition", targetId: "c"}),
+		];
+		const inputs = waveResolveInputs(targets, "wave-42");
+		expect(inputs.map((i) => i.waveId)).toEqual(["wave-42", "wave-42", "wave-42"]);
+		expect(new Set(inputs.map((i) => i.waveId)).size).toBe(1);
+		expect(inputs.map((i) => waveTargetKey(i))).toEqual(["post:a", "comment:b", "definition:c"]);
+	});
+
+	it("preserves the partial-failure surfacing — the wave groups only the successes (AC5)", () => {
+		// The fan-out threads one waveId; each call's outcome partitions independently, so a
+		// failed target stays actionable (its write never landed ⇒ it carries no grouping).
+		const targets = [target({targetId: "a"}), target({targetId: "b"}), target({targetId: "c"})];
+		const inputs = waveResolveInputs(targets, "wave-9");
+		const outcomes = inputs.map((i, idx) => ({key: waveTargetKey(i), ok: idx !== 1}));
+		const {resolved, failed} = summarizeWaveBatch(outcomes);
+		expect(resolved).toEqual(["post:a", "post:c"]);
+		expect(failed).toEqual(["post:b"]);
+		expect(waveFailureLabel(failed.length)).toBe("1 hedef çözülemedi, tekrar dene");
 	});
 });

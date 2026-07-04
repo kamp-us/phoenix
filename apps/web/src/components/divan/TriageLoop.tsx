@@ -32,12 +32,13 @@ import {
 	summarizeWaveBatch,
 	toggleWaveRow,
 	type WaveOutcome,
+	type WaveResolveInput,
 	type WaveRow,
-	type WaveTarget,
 	waveConfirmKey,
 	waveFailureLabel,
 	waveKeyToAction,
 	waveManifestLabel,
+	waveResolveInputs,
 	waveTargetKey,
 } from "./remove-the-wave";
 import {
@@ -201,13 +202,19 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	}, [fate, lastVerdict]);
 
 	// One target's batch resolve (#1855): the SAME single-target `report.resolve` the
-	// loop uses, fanned over the wave selection. Returns whether it landed so the batch
-	// can partition resolved from failed (no silent partial drop).
+	// loop uses, fanned over the wave selection with the gesture's shared `waveId` so the
+	// batch reopens as a unit. Returns whether it landed so the batch can partition
+	// resolved from failed (no silent partial drop).
 	const resolveTarget = useCallback(
-		async (target: WaveTarget, verdict: Verdict): Promise<boolean> => {
+		async (input: WaveResolveInput, verdict: Verdict): Promise<boolean> => {
 			try {
 				const {error: callError} = await fate.mutations.report.resolve({
-					input: {targetKind: target.targetKind, targetId: target.targetId, action: verdict},
+					input: {
+						targetKind: input.targetKind,
+						targetId: input.targetId,
+						action: verdict,
+						waveId: input.waveId,
+					},
 					view: ResolveReceiptView,
 				});
 				return !callError;
@@ -436,7 +443,7 @@ function WaveManifest({
 }: {
 	readonly rows: ReadonlyArray<{readonly node: ViewRef<"OpenReport">}>;
 	readonly authorId: string | null;
-	readonly resolveTarget: (target: WaveTarget, verdict: Verdict) => Promise<boolean>;
+	readonly resolveTarget: (input: WaveResolveInput, verdict: Verdict) => Promise<boolean>;
 	readonly onResolved: (keys: ReadonlyArray<string>) => void;
 	readonly onClose: () => void;
 }) {
@@ -477,10 +484,14 @@ function WaveManifest({
 			if (targets.length === 0) return;
 			setBusy(true);
 			setError(null);
+			// ONE grouping id per gesture, threaded through every fanned-out resolve so the
+			// batch reopens as a unit (#1855). A target that fails to resolve simply never
+			// gets the stamp (its write didn't land), so the wave groups only the successes.
+			const waveId = crypto.randomUUID();
 			const outcomes: WaveOutcome[] = [];
-			for (const t of targets) {
-				const ok = await resolveTarget(t, verdict);
-				outcomes.push({key: waveTargetKey(t), ok});
+			for (const input of waveResolveInputs(targets, waveId)) {
+				const ok = await resolveTarget(input, verdict);
+				outcomes.push({key: waveTargetKey(input), ok});
 			}
 			const {resolved, failed} = summarizeWaveBatch(outcomes);
 			onResolved(resolved);

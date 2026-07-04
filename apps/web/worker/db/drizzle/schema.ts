@@ -346,12 +346,20 @@ export const contentReport = sqliteTable(
 		// The decision the resolver made: 'removed' (target soft-deleted via the
 		// substrate) | 'dismissed' (report unfounded, no action).
 		resolution: text("resolution", {enum: [...RESOLUTIONS]}),
+		// The wave-remove grouping identity (#1855, ADR 0138): ONE shared id stamped
+		// across every target resolved in a single wave gesture, so the batch reopens
+		// as a unit (#1704's restore primitive). NULL on a single-target resolve — a
+		// wave groups a batch, a lone resolve has none.
+		waveId: text("wave_id"),
 	},
 	(t) => [
 		primaryKey({columns: [t.reporterId, t.targetKind, t.targetId]}),
 		// Reverse lookup: reports against a given target (moderation read path +
 		// free repeat-offender count, ADR 0098 §5).
 		index("content_report_target").on(t.targetKind, t.targetId),
+		// Reopen-by-wave lookup: the rows sharing a `wave_id` the restore reopens as a
+		// unit (#1855).
+		index("content_report_wave").on(t.waveId),
 	],
 );
 
