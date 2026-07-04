@@ -14,6 +14,7 @@ import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
@@ -205,6 +206,18 @@ export interface VoteDefinitionResult {
 	changed: boolean;
 }
 
+export interface ReactDefinitionInput {
+	definitionId: string;
+	reactorId: string;
+	/**
+	 * The reaction intent, a curated-`REACTION_EMOJI` member or a retract. A palette
+	 * emoji sets/changes the reactor's single reaction; `null` retracts it. The type
+	 * only admits a palette member, so a non-palette string is already rejected by
+	 * `ReactionEmojiSchema` at the wire boundary — this method never sees one.
+	 */
+	emoji: ReactionEmoji | null;
+}
+
 export interface EditDefinitionInput {
 	definitionId: string;
 	actorId: string;
@@ -373,6 +386,23 @@ export class Sozluk extends Context.Service<
 		readonly retractDefinitionVote: (
 			input: VoteDefinitionInput,
 		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
+
+		/**
+		 * Set / change / retract the reactor's single reaction on a definition (epic
+		 * #1840, #1865) — the cross-product twin of `voteDefinition`, delegating to the
+		 * shared {@link Reaction} engine instead of {@link Vote}. UNGATED and karma-free
+		 * by construction: it takes no voter tier, writes no karma, and dispatches
+		 * through `Reaction.react` (the settled divergence from vote — a çaylak may
+		 * react, #1861). A palette `emoji` sets or replaces the reaction; `null`
+		 * retracts it; cardinality-one (one reaction per (reactor, definition)) is the
+		 * `user_reaction` PK, enforced in the engine. Returns the re-resolved
+		 * `DefinitionRow` carrying the FRESH reaction aggregate + the reactor's own
+		 * reaction (the `myVote`/`reactions` stamps every definition read shares).
+		 * Translates the engine's target-miss into this surface's `DefinitionNotFound`.
+		 */
+		readonly reactToDefinition: (
+			input: ReactDefinitionInput,
+		) => Effect.Effect<DefinitionRow, DefinitionNotFound>;
 	}
 >()("@kampus/sozluk/Sozluk") {}
 
@@ -1190,6 +1220,61 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			);
 		});
 
+		const reactToDefinition = Effect.fn("Sozluk.reactToDefinition")(function* (
+			input: ReactDefinitionInput,
+		) {
+			// Load the target up-front so a missing/removed definition is this surface's
+			// DefinitionNotFound. No sandbox filter — reactions are ungated, so a live
+			// target is reactable regardless of the reactor's tier.
+			const definition = yield* run((db) =>
+				db.query.definitionRecord.findFirst({
+					where: {id: input.definitionId, removedAt: {isNull: true}},
+				}),
+			);
+			if (!definition) {
+				return yield* new DefinitionNotFound({
+					definitionId: input.definitionId,
+					message: `definition ${input.definitionId} not found`,
+				});
+			}
+
+			// Delegate to the ungated, karma-free Reaction engine — no tier gate, no karma
+			// write on this path (the settled #1861 divergence from Vote). A raced
+			// target-miss collapses to this surface's DefinitionNotFound.
+			yield* reactionSvc
+				.react({
+					userId: input.reactorId,
+					targetKind: "definition",
+					targetId: input.definitionId,
+					emoji: input.emoji,
+				})
+				.pipe(
+					Effect.catchTag("reaction/ReactionTargetNotFound", () =>
+						Effect.fail(
+							new DefinitionNotFound({
+								definitionId: input.definitionId,
+								message: `definition ${input.definitionId} not found`,
+							}),
+						),
+					),
+				);
+
+			// Re-resolve with the FRESH reaction aggregate + the reactor's own reaction,
+			// through the same batched stamps every definition read shares (`myVote` via
+			// stampViewerScalars, `reactions` via stampReactionAggregate) — so the wire row
+			// is shape-identical to a plain read.
+			const scalared = yield* stampViewerScalars([toDefinitionRow(definition)], input.reactorId, [
+				definitionVoteScalar,
+			]);
+			const [row] = yield* stampReactionAggregate(
+				reactionSvc,
+				"definition",
+				scalared,
+				input.reactorId,
+			);
+			return row as DefinitionRow;
+		});
+
 		return {
 			getTerm,
 			listDefinitionsKeyset,
@@ -1208,6 +1293,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			moderateRestoreDefinition,
 			voteDefinition,
 			retractDefinitionVote,
+			reactToDefinition,
 		};
 	}),
 );
