@@ -99,4 +99,4 @@ The moment you spot work you won't do right now — a bug, a refactor you're not
 
 ## Sözlük seed
 
-There is no seeding mechanism in the worker. The `ENVIRONMENT`-gated `/api/admin/*` seeder routes + the `import-sozluk`/`import-pano` scripts were deleted (a fail-open security hole; throwaway data-population). sözlük/pano persist via Drizzle+D1, so any future re-seed is a direct-D1 script against the bound database, not a runtime route on the public worker.
+There is no seeding mechanism in the worker, and cold-start content seeding is a founder-declared v1 non-goal: the first cohort is the two founders writing as users, and new yazars arrive by vouch (kefil) + moderation — no imported/seeded corpus is planned. **Security guard (load-bearing):** no runtime seeder route may be rebuilt on the public worker — the deleted `ENVIRONMENT`-gated `/api/admin/*` seeder routes + the `import-sozluk`/`import-pano` scripts were a fail-open security hole.
