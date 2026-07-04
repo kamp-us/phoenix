@@ -2,9 +2,11 @@ import {assert, describe, it} from "@effect/vitest";
 import {
 	type ClassifyInput,
 	classify,
+	extractKampusPackages,
 	INTEGRATION_RELEVANT_PACKAGES,
 	inputFromEnv,
 	parseChangedFiles,
+	parseTestImportedPackages,
 } from "./worker-relevance.ts";
 
 /** A classify input with no lockfile change unless explicitly supplied. */
@@ -299,5 +301,125 @@ describe("parseChangedFiles + inputFromEnv", () => {
 			}),
 		);
 		assert.strictEqual(r.verdict, "irrelevant");
+	});
+});
+
+describe("test-import closure (ADR 0114) — the #1352 hole closes", () => {
+	// The real #1352 shape: a package the WORKER never imports but an integration test
+	// DOES (founder-seed via kunye-moderate-seam.test.ts). With the test-import closure
+	// naming it, its change must now force `relevant` (the integration tier RUNS on the
+	// introducing PR), where before the worker-only closure classified it irrelevant.
+	const testClosure = new Set(["founder-seed", "authz", "d1-rest", "admin-grant"]);
+
+	it("a founder-seed-only change is relevant when founder-seed is in the test-import closure", () => {
+		const r = classify(
+			input({
+				changedFiles: ["packages/founder-seed/src/seed.ts"],
+				testImportedPackages: testClosure,
+			}),
+		);
+		assert.strictEqual(r.verdict, "relevant");
+		assert.strictEqual(r.trigger, "packages/founder-seed/src/seed.ts");
+	});
+
+	it("the SAME founder-seed change is irrelevant with an EMPTY test-import closure (proves the closure is what flips it)", () => {
+		const r = classify(
+			input({
+				changedFiles: ["packages/founder-seed/src/seed.ts"],
+				testImportedPackages: new Set(),
+			}),
+		);
+		assert.strictEqual(r.verdict, "irrelevant");
+	});
+
+	it("an omitted testImportedPackages keeps the pre-0114 worker-only behavior (founder-seed irrelevant)", () => {
+		const r = classify(input({changedFiles: ["packages/founder-seed/src/seed.ts"]}));
+		assert.strictEqual(r.verdict, "irrelevant");
+	});
+
+	it("a genuinely-isolated package (in NEITHER closure) stays irrelevant — the skip optimization is preserved", () => {
+		const r = classify(
+			input({
+				changedFiles: ["packages/pipeline-cli/src/router.ts"],
+				testImportedPackages: testClosure,
+			}),
+		);
+		assert.strictEqual(r.verdict, "irrelevant");
+	});
+
+	it("a lockfile delta confined to a test-imported package's importer block is relevant (the union feeds lockfile attribution too)", () => {
+		const r = classify(
+			input({
+				changedFiles: ["pnpm-lock.yaml"],
+				lockfileChanged: true,
+				lockfileDiff: importerAddDiff("packages/founder-seed"),
+				testImportedPackages: testClosure,
+			}),
+		);
+		assert.strictEqual(r.verdict, "relevant");
+	});
+
+	it("the union does not narrow the worker closure — a db-schema change stays relevant regardless of the test closure", () => {
+		const r = classify(
+			input({
+				changedFiles: ["packages/db-schema/src/schema.ts"],
+				testImportedPackages: new Set(),
+			}),
+		);
+		assert.strictEqual(r.verdict, "relevant");
+	});
+});
+
+describe("extractKampusPackages — the pure import extractor (ADR 0114)", () => {
+	it('captures the <name> of a static `from "@kampus/x"` import', () => {
+		const src = `import {seedFounders} from "@kampus/founder-seed";\nimport {key} from "@kampus/authz";`;
+		assert.deepStrictEqual([...extractKampusPackages(src)].sort(), ["authz", "founder-seed"]);
+	});
+
+	it("captures single- and double-quoted specifiers and a re-export", () => {
+		const src = `import {a} from '@kampus/d1-rest';\nexport {b} from "@kampus/admin-grant";`;
+		assert.deepStrictEqual([...extractKampusPackages(src)].sort(), ["admin-grant", "d1-rest"]);
+	});
+
+	it("captures dynamic import() and require() specifiers", () => {
+		const src = `const m = await import("@kampus/founder-seed");\nconst n = require('@kampus/authz');`;
+		assert.deepStrictEqual([...extractKampusPackages(src)].sort(), ["authz", "founder-seed"]);
+	});
+
+	it("resolves a subpath specifier to its package <name>", () => {
+		assert.deepStrictEqual(
+			[...extractKampusPackages(`import x from "@kampus/db-schema/schema";`)],
+			["db-schema"],
+		);
+	});
+
+	it("dedupes repeated imports of the same package", () => {
+		const src = `import {a} from "@kampus/authz";\nimport {b} from "@kampus/authz";`;
+		assert.deepStrictEqual([...extractKampusPackages(src)], ["authz"]);
+	});
+
+	it("ignores a non-@kampus import", () => {
+		assert.strictEqual(extractKampusPackages(`import {Effect} from "effect";`).size, 0);
+	});
+});
+
+describe("parseTestImportedPackages — the bin→core env handoff (ADR 0114)", () => {
+	it("splits a comma/newline/NUL list and trims blanks", () => {
+		assert.deepStrictEqual(
+			[...parseTestImportedPackages("founder-seed,authz\nd1-rest\0admin-grant,, ")].sort(),
+			["admin-grant", "authz", "d1-rest", "founder-seed"],
+		);
+	});
+
+	it("an empty string yields an empty set", () => {
+		assert.strictEqual(parseTestImportedPackages("").size, 0);
+	});
+
+	it("inputFromEnv threads TEST_IMPORTED_PACKAGES into the classify input", () => {
+		const i = inputFromEnv({
+			CHANGED_FILES: "packages/founder-seed/src/seed.ts",
+			TEST_IMPORTED_PACKAGES: "founder-seed,authz",
+		});
+		assert.strictEqual(classify(i).verdict, "relevant");
 	});
 });

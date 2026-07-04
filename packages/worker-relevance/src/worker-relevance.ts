@@ -33,11 +33,15 @@
  */
 
 /**
- * Packages whose change MUST run the worker `integration`/`e2e` tiers. The worker's
- * grounded import closure ∪ the packages that own their own real-D1 integration
- * tiers in the `integration` job. A `packages/<name>/**` change is integration-
- * relevant iff `name` is in this set. Everything else under `packages/**` is
- * dev-tooling the worker never imports → not integration-relevant on its own.
+ * The WORKER-import closure: packages whose change MUST run the worker
+ * `integration`/`e2e` tiers because the worker imports them (or they own their own
+ * real-D1 integration tier in the `integration` job). This is one of two closures
+ * the relevance verdict unions (ADR 0114) — the other, the TEST-import closure, is
+ * computed at run time from the real imports under the integration/e2e test trees
+ * and passed in via `ClassifyInput.testImportedPackages`. A `packages/<name>/**`
+ * change is integration-relevant iff `name` is in EITHER closure; everything else
+ * under `packages/**` is dev-tooling neither the worker nor a test imports → not
+ * integration-relevant on its own.
  */
 export const INTEGRATION_RELEVANT_PACKAGES: ReadonlySet<string> = new Set([
 	// worker's grounded @kampus/* import closure (apps/web/package.json; both leaves)
@@ -76,22 +80,46 @@ export interface ClassifyInput {
 	readonly lockfileChanged: boolean;
 	/** Unified diff of `pnpm-lock.yaml` (`git diff base...head -- pnpm-lock.yaml`). */
 	readonly lockfileDiff: string;
+	/**
+	 * The TEST-import closure (ADR 0114): `packages/**` dir-names imported under
+	 * `apps/web/tests/integration/**` and `apps/web/tests/e2e/**`, computed from the
+	 * REAL imports in those trees (not a maintained list) and unioned with the
+	 * worker-import closure for the relevance check. A change to any member forces
+	 * `relevant`, so the integration tier runs on the PR that introduces a
+	 * test-consumed break rather than the next innocent one. Optional so existing
+	 * callers/tests that only exercise the worker closure keep working; when absent it
+	 * defaults to empty (no test-import members), leaving the pre-0114 behavior intact.
+	 * Per the fail-safe-to-running invariant, the bin resolves an empty/failed scan to
+	 * a superset relevant verdict via `changedFiles`, never a silent narrowing here.
+	 */
+	readonly testImportedPackages?: ReadonlySet<string>;
 }
 
 const PACKAGE_PATH = /^packages\/([^/]+)\//;
 
 /**
- * Is a single non-lockfile changed path worker-irrelevant? True ONLY for a file
- * under a `packages/<name>/` dir whose `<name>` is NOT in the integration-relevant
- * set. Every other path — `apps/**`, `infra/**`, root configs, workflows, a
- * `packages/<relevant>/**` file, or a bare `packages/foo` with no trailing slash —
- * is worker-relevant (fail safe to running).
+ * The integration-relevance set for a run: the worker-import closure unioned with
+ * this run's computed test-import closure (ADR 0114). A `packages/<name>` change is
+ * integration-relevant iff `name` is in this union.
  */
-const isIrrelevantPath = (path: string): boolean => {
+const relevantPackages = (input: ClassifyInput): ReadonlySet<string> => {
+	const test = input.testImportedPackages;
+	if (test === undefined || test.size === 0) return INTEGRATION_RELEVANT_PACKAGES;
+	return new Set([...INTEGRATION_RELEVANT_PACKAGES, ...test]);
+};
+
+/**
+ * Is a single non-lockfile changed path worker-irrelevant? True ONLY for a file
+ * under a `packages/<name>/` dir whose `<name>` is NOT in the union of the worker-
+ * import and test-import closures (`relevant`). Every other path — `apps/**`,
+ * `infra/**`, root configs, workflows, a relevant-package file, or a bare
+ * `packages/foo` with no trailing slash — is worker-relevant (fail safe to running).
+ */
+const isIrrelevantPath = (path: string, relevant: ReadonlySet<string>): boolean => {
 	const m = PACKAGE_PATH.exec(path);
 	if (m === null) return false;
 	const pkg = m[1];
-	return pkg !== undefined && !INTEGRATION_RELEVANT_PACKAGES.has(pkg);
+	return pkg !== undefined && !relevant.has(pkg);
 };
 
 /**
@@ -112,7 +140,7 @@ const isIrrelevantPath = (path: string): boolean => {
  *
  * Returns the offending header/section string when relevant, else null (irrelevant).
  */
-const lockfileTriggersWorker = (diff: string): string | null => {
+const lockfileTriggersWorker = (diff: string, relevant: ReadonlySet<string>): string | null => {
 	if (diff.trim() === "") {
 		// lockfileChanged=true but we couldn't read the diff — cannot prove confinement.
 		return "pnpm-lock.yaml (changed but diff unavailable — fail safe to running)";
@@ -182,7 +210,7 @@ const lockfileTriggersWorker = (diff: string): string | null => {
 				const importerPath = header[1];
 				const pkg = /^packages\/([^/]+)$/.exec(importerPath);
 				currentImporterIrrelevant =
-					pkg !== null && pkg[1] !== undefined && !INTEGRATION_RELEVANT_PACKAGES.has(pkg[1]);
+					pkg !== null && pkg[1] !== undefined && !relevant.has(pkg[1]);
 				currentSectionLabel = `importers › ${importerPath}`;
 			}
 		}
@@ -202,15 +230,18 @@ const lockfileTriggersWorker = (diff: string): string | null => {
 /**
  * The whole-diff verdict. `irrelevant` (safe to skip integration/e2e) ONLY when
  * EVERY changed non-lockfile path is worker-irrelevant AND the lockfile delta (if
- * any) is confined to worker-irrelevant importer blocks. Fail-safe: the first
- * worker-relevant signal returns `relevant`. An empty diff is `irrelevant` — but
- * ci.yml only consults this when the path filter already saw a lockfile/package
- * change, so this is the confined-skip path, never a blanket skip.
+ * any) is confined to worker-irrelevant importer blocks — where "irrelevant" is
+ * measured against the union of the worker-import and test-import closures (ADR
+ * 0114). Fail-safe: the first worker-relevant signal returns `relevant`. An empty
+ * diff is `irrelevant` — but ci.yml only consults this when the path filter already
+ * saw a lockfile/package change, so this is the confined-skip path, never a blanket
+ * skip.
  */
 export const classify = (input: ClassifyInput): ClassifyResult => {
+	const relevant = relevantPackages(input);
 	for (const path of input.changedFiles) {
 		if (path === LOCKFILE) continue; // handled below via the diff
-		if (!isIrrelevantPath(path)) {
+		if (!isIrrelevantPath(path, relevant)) {
 			return {
 				verdict: "relevant",
 				trigger: path,
@@ -220,7 +251,7 @@ export const classify = (input: ClassifyInput): ClassifyResult => {
 	}
 
 	if (input.lockfileChanged) {
-		const trigger = lockfileTriggersWorker(input.lockfileDiff);
+		const trigger = lockfileTriggersWorker(input.lockfileDiff, relevant);
 		if (trigger !== null) {
 			return {
 				verdict: "relevant",
@@ -246,10 +277,51 @@ export const parseChangedFiles = (raw: string): ReadonlyArray<string> =>
 		.filter((s) => s.length > 0);
 
 /**
+ * Match every `@kampus/<name>` module specifier in TypeScript/JS source text — the
+ * `from "@kampus/x"` of a static `import`/`export`, and the `"@kampus/x"` of a
+ * dynamic `import(...)`/`require(...)`. The capture is the bare `<name>` segment
+ * after the `@kampus/` scope (up to the next `/` or the closing quote), which under
+ * the repo's identity name→dir convention is the `packages/<name>` dir-name.
+ *
+ * Grammar-lite on purpose: a regex over the whole file text, IO-free and pure, so it
+ * needs no TS parser (keeping the zero-runtime-dependency shape). It is deliberately
+ * OVER-inclusive — it also matches a specifier inside a comment or string literal —
+ * which is the fail-safe direction (ADR 0114): a spurious match only ever WIDENS the
+ * test-import closure (running the tier for a package a test doesn't truly import),
+ * never narrows it, so it can never cause a missed run. A subpath import
+ * (`@kampus/x/sub`) resolves to the same `<name>` = the package dir.
+ */
+const KAMPUS_SPECIFIER = /['"]@kampus\/([a-z0-9][a-z0-9._-]*)(?:\/[^'"]*)?['"]/g;
+
+/**
+ * Extract the set of `@kampus/<name>` package dir-names referenced by a single
+ * source file's text. Pure over the text — the IO (reading the test-tree files) is
+ * the bin's job; this is the unit-tested extraction the bin feeds each file into.
+ */
+export const extractKampusPackages = (source: string): ReadonlySet<string> => {
+	const names = new Set<string>();
+	for (const m of source.matchAll(KAMPUS_SPECIFIER)) {
+		if (m[1] !== undefined) names.add(m[1]);
+	}
+	return names;
+};
+
+/** Parse a NUL-/newline-/comma-separated dir-name list into a set (the bin's env handoff). */
+export const parseTestImportedPackages = (raw: string): ReadonlySet<string> =>
+	new Set(
+		raw
+			.split(/\0|\n|,/)
+			.map((s) => s.trim())
+			.filter((s) => s.length > 0),
+	);
+
+/**
  * Map the classify step's `env:` to a `ClassifyInput`. `CHANGED_FILES` is the
  * newline/NUL-joined `git diff --name-only` list; `LOCKFILE_DIFF` is the lockfile's
- * unified diff (empty when the lockfile didn't change). The lockfile-changed flag is
- * derived from the file list so there's one source of truth.
+ * unified diff (empty when the lockfile didn't change); `TEST_IMPORTED_PACKAGES` is
+ * the bin-computed test-import closure (the `packages/**` dir-names imported under
+ * the integration/e2e test trees, ADR 0114). The lockfile-changed flag is derived
+ * from the file list so there's one source of truth.
  */
 export const inputFromEnv = (e: Record<string, string | undefined>): ClassifyInput => {
 	const changedFiles = parseChangedFiles(e.CHANGED_FILES ?? "");
@@ -257,5 +329,6 @@ export const inputFromEnv = (e: Record<string, string | undefined>): ClassifyInp
 		changedFiles,
 		lockfileChanged: changedFiles.includes(LOCKFILE),
 		lockfileDiff: e.LOCKFILE_DIFF ?? "",
+		testImportedPackages: parseTestImportedPackages(e.TEST_IMPORTED_PACKAGES ?? ""),
 	};
 };

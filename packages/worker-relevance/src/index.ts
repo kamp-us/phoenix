@@ -10,9 +10,11 @@ export {
 	type ClassifyInput,
 	type ClassifyResult,
 	classify,
+	extractKampusPackages,
 	INTEGRATION_RELEVANT_PACKAGES,
 	inputFromEnv,
 	LOCKFILE,
 	parseChangedFiles,
+	parseTestImportedPackages,
 	type Verdict,
 } from "./worker-relevance.ts";
