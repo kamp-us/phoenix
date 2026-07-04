@@ -598,9 +598,19 @@ bind), keeping your verdict out of `ship-it`'s PASS namespace.
 > merge-ready` namespace — that omission is what makes `ship-it` refuse the §CP merge (ADR 0053).
 > It is *not* a dropped binding: you still record the reviewed head `@ <sha>` + the per-AC PASS in
 > the verdict **body** below. A delegated control-plane merge actor must **not** try to bind your
-> first-line marker (it would read as `unverified`); it confirms by reading the body's `@ <sha>`
-> against the PR's current head + the per-AC PASS, then applies `ship-it`'s just-in-time guards and
-> merges by hand.
+> first-line marker (it would read as `unverified`); it confirms by reading the body's canonical
+> `Reviewed-head: @ <sha>` line against the PR's current head + the per-AC PASS, then applies
+> `ship-it`'s just-in-time guards and merges by hand.
+
+> **The body's `Reviewed-head:` line is canonical and load-bearing — emit it verbatim (ADR 0151).**
+> `ship-it`'s ADR-0135 approval-aware enqueue reads the reviewed head from **exactly** the
+> `Reviewed-head: @ <HEAD_SHA>` line below (the anchored matcher in
+> [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §6.6), gated on the control-plane
+> approval — that is what makes a §CP skill PR's enqueue **deterministic** (#1932/#2022; free-prose
+> "reviewed head" phrasings resolved nondeterministically and are retired). Write it as its own line
+> with the exact `Reviewed-head:` prefix and the head SHA you reviewed — do **not** paraphrase it,
+> and do **not** promote it to a first-line `PASS @ <sha>` marker (that would drop the §CP verdict
+> into `ship-it`'s auto-merge namespace, the ADR 0111 hazard).
 
 ```markdown
 review-skill: advisory — blocking-set PR (manual merge)
@@ -608,6 +618,8 @@ review-skill: advisory — blocking-set PR (manual merge)
 PR #<PR> touches the control plane (a gate-critical skill or a `.claude`/`.github` path — §CP) —
 the agent control plane / pipeline gates (ADR 0053/0065/0073). My verdict is **advisory only**:
 it does **not** authorize a merge. A maintainer merges this by hand.
+
+Reviewed-head: @ <HEAD_SHA>
 
 Verified against #<ISSUE>'s acceptance criteria + the skill-rigor checklist — all checks pass:
 
@@ -627,7 +639,9 @@ isn't unique; a fixed `/tmp/...-${PR}.md` collides under concurrent reviews), th
 own prior `review-skill:` marker if one exists, else `POST`. The namespace-anchored find filter
 matches a prior PASS/FAIL too, so a re-review that flips a PR to blocking overwrites the old
 binding verdict with this advisory line — exactly one `review-skill` verdict per PR (ADR 0058
-rule 2). There is **no `HEAD_SHA`** here: the advisory line carries no `@ <sha>` by design.
+rule 2). The advisory **first line** carries no `@ <sha>` by design (SHA-less, so it never enters
+`ship-it`'s auto-merge namespace — ADR 0111); the reviewed head IS recorded, once, in the body's
+canonical `Reviewed-head: @ <HEAD_SHA>` line (ADR 0151), which `ship-it`'s §CP enqueue reads.
 
 ```bash
 VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"

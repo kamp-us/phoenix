@@ -656,11 +656,21 @@ merges it.
 > [0111](https://github.com/kamp-us/phoenix/blob/main/.decisions/0111-blocking-set-verdicts-sha-less-by-design.md)).**
 > The advisory line omits the first-line `@ <sha>` so it never enters `ship-it`'s `PASS @ <sha> —
 > merge-ready` namespace — that omission is what makes `ship-it` refuse the §CP merge (ADR 0053).
-> It is *not* a dropped binding: you still record the reviewed head `@ <sha>` + the per-AC PASS in
-> the verdict **body** below. A delegated control-plane merge actor must **not** try to bind your
-> first-line marker (it would read as `unverified`); it confirms by reading the body's `@ <sha>`
-> against the PR's current head + the per-AC PASS, then applies `ship-it`'s just-in-time guards and
-> merges by hand.
+> It is *not* a dropped binding: you still record the reviewed head in the body's canonical
+> `Reviewed-head: @ <sha>` line + the per-AC PASS below. A delegated control-plane merge actor must
+> **not** try to bind your first-line marker (it would read as `unverified`); it confirms by reading
+> the body's `Reviewed-head: @ <sha>` line against the PR's current head + the per-AC PASS, then
+> applies `ship-it`'s just-in-time guards and merges by hand.
+
+> **The body's `Reviewed-head:` line is canonical and load-bearing — emit it verbatim (ADR 0151).**
+> `ship-it`'s ADR-0135 approval-aware enqueue reads the reviewed head from **exactly** the
+> `Reviewed-head: @ <HEAD_SHA>` line below (the anchored matcher in
+> [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §6.6), gated on the control-plane
+> approval — that is what makes a §CP doc PR's enqueue **deterministic** (#1932/#2022; free-prose
+> "reviewed head" phrasings resolved nondeterministically and are retired). Write it as its own line
+> with the exact `Reviewed-head:` prefix and the head SHA you reviewed — do **not** paraphrase it,
+> and do **not** promote it to a first-line `PASS @ <sha>` marker (that would drop the §CP verdict
+> into `ship-it`'s auto-merge namespace, the ADR 0111 hazard).
 
 ```markdown
 review-doc: advisory — blocking-set PR (manual merge)
@@ -668,6 +678,8 @@ review-doc: advisory — blocking-set PR (manual merge)
 PR #<PR> touches the control plane (`.claude/`/`.github/` or a gate-critical skill) — the agent
 control plane / pipeline gates (ADR 0053/0065). My verdict is **advisory only**: it does **not**
 authorize a merge. A maintainer merges this by hand.
+
+Reviewed-head: @ <HEAD_SHA>
 
 Verified against #<ISSUE>'s acceptance criteria + doc hygiene — all checks pass:
 

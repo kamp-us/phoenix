@@ -1420,10 +1420,39 @@ review-skill: advisory — blocking-set PR (manual merge)
 ```
 
 The rest of the body carries the same per-check evidence table the PASS/FAIL paths carry —
-the verdict is *recorded* (for the human merger to read), it just **authorizes nothing**.
-The advisory line **carries no `@ <sha>`** on purpose: it does not enter any `ship-it` PASS
-namespace, so there is nothing to bind, and `ship-it` refuses the blocking-set PR regardless
-(§CP). A human merges it (ADR 0053/0065).
+the verdict is *recorded* (for the human or delegated merge actor to read), it just **authorizes
+nothing on its first line**. The advisory **first line** **carries no `@ <sha>`** on purpose: it
+does not enter any `ship-it` `PASS @ <sha> — merge-ready` namespace, so a §CP PR is never
+auto-mergeable off it (ADR 0053). A human merges it, **or** — under ADR 0135's approve-then-enqueue —
+`ship-it` enqueues it once a `@kamp-us/control-plane` approval is present at head (ADR 0053/0065/0135).
+
+**The advisory body MUST carry the canonical `Reviewed-head` line (ADR 0151).** Immediately after
+the advisory's first-line marker + framing prose, the body carries **exactly one** line recording
+the reviewed head SHA in a fixed, machine-parseable form:
+
+```markdown
+Reviewed-head: @ <HEAD_SHA>
+```
+
+This is the single canonical binding for a §CP advisory — it replaces the free-prose "reviewed head"
+phrasings (which spelled the SHA half a dozen incompatible ways and made the §CP enqueue
+nondeterministic; #1932/#2022). It is a **body** line with a **distinct `Reviewed-head:` token**, so
+it is never matched by the first-line `review-(code|doc|skill): PASS @ <sha>` PASS-namespace matcher —
+the advisory stays out of `ship-it`'s auto-merge namespace exactly as ADR 0111 requires. Both a human
+delegated merge actor and `ship-it`'s ADR-0135 approval-aware §CP enqueue read the reviewed head from
+**this** line, via the anchored matcher (case-insensitive, optional `@`, 7–40 hex, ADR 0058
+prefix-match either side):
+
+```
+^\s*Reviewed-head:\s*@?\s*([0-9a-f]{7,40})\b
+```
+
+`ship-it` treats the §CP advisory namespace as an enqueue-eligible current-head PASS-equivalent iff
+(a) this `Reviewed-head` SHA prefix-matches the PR's current head, (b) every body checkbox is
+`[PASS]`, and (c) Step 0's control-plane approval is present at head — else it refuses
+deterministically (ship-it Step 2.§CP, ADR 0151). The reviewer is **never** asked to emit a bindable
+first-line PASS on a §CP PR to unblock enqueue (ADR 0111's advisory-is-SHA-less-in-first-line
+invariant is preserved; the reviewer marker contract is not widened).
 
 This is why the advisory form is namespace-uniform but binding-free: it keeps each gate's
 verdict **out** of `ship-it`'s merge path for the control plane while still leaving a
@@ -1431,19 +1460,24 @@ visible, evidence-bearing verdict on the PR. (`review-code`'s historical binding
 caveat shape is the one being retired in favor of this; the reconciliation is part of #424's
 build.)
 
-**The first-line `@ <sha>` is omitted by design — the SHA is bound in the body, and a
-delegated merge actor confirms from the body, not the first-line marker (ADR 0111).** The
-advisory line deliberately withholds the first-line `@ <sha>` so it never enters `ship-it`'s
-`PASS @ <sha> — merge-ready` namespace — that withholding is exactly what makes `ship-it` refuse
-the §CP merge (ADR 0053). It is **not** a missing binding: the head SHA the reviewer inspected is
-still recorded in the verdict **body** (the re-review `@ <sha>` line + the per-AC PASS table), per
-ADR 0058. So a **delegated** control-plane merge actor — an operator hand-merging a banked §CP PR
-on the maintainer's authority — must **not** try to bind the first-line marker (it will read as
-`unverified`, the SHA-less-by-design form #977 hit). It confirms the verdict by **reading the body**:
-the `@ <sha>` against the PR's current head + every AC marked PASS, then applies `ship-it`'s
-just-in-time guards (head freshness, mergeable, no failing required check) and merges by hand. A
-namespace-isolated bindable first-line SHA was rejected (it would invite automated §CP merging and
-erode ADR 0053) — see [ADR 0111](https://github.com/kamp-us/phoenix/blob/main/.decisions/0111-blocking-set-verdicts-sha-less-by-design.md).
+**The first-line `@ <sha>` is omitted by design — the SHA is bound in the body's canonical
+`Reviewed-head` line, and both a delegated merge actor AND `ship-it`'s §CP enqueue confirm from
+that body line, not the first-line marker (ADR 0111/0151).** The advisory line deliberately
+withholds the first-line `@ <sha>` so it never enters `ship-it`'s `PASS @ <sha> — merge-ready`
+namespace — that withholding is exactly what makes `ship-it` refuse to *auto-merge* the §CP PR off a
+first-line PASS (ADR 0053). It is **not** a missing binding: the head SHA the reviewer inspected is
+recorded in the verdict **body** on the canonical `Reviewed-head: @ <sha>` line + the per-AC PASS
+table, per ADR 0058. So a **delegated** control-plane merge actor — an operator hand-merging a banked
+§CP PR, or `ship-it`'s ADR-0135 approval-aware enqueue acting on the maintainer's current-head
+APPROVE — must **not** try to bind the first-line marker (it will read as `unverified`, the
+SHA-less-by-design form #977 hit). It confirms the verdict by **reading the body**: the
+`Reviewed-head` `@ <sha>` against the PR's current head + every AC marked PASS, then applies
+`ship-it`'s just-in-time guards (head freshness, mergeable, no failing required check) and
+merges/enqueues. A namespace-isolated bindable *first-line* SHA was rejected (it would invite
+automated §CP auto-merge and erode ADR 0053) — ADR 0151 instead makes the *body*'s binding canonical
+and machine-read, keeping ADR 0111 intact. See
+[ADR 0111](https://github.com/kamp-us/phoenix/blob/main/.decisions/0111-blocking-set-verdicts-sha-less-by-design.md)
+and [ADR 0151](https://github.com/kamp-us/phoenix/blob/main/.decisions/0151-cp-advisory-body-sha-resolves-approval-aware-enqueue.md).
 
 ---
 
