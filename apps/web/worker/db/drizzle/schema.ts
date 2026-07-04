@@ -451,36 +451,3 @@ export const notification = sqliteTable(
 		index("notification_recipient_created").on(t.recipientId, sql`${t.createdAt} DESC`),
 	],
 );
-
-/**
- * Per-object metadata backing imge (ADR 0044 Decision 1) — bytes live in R2, this
- * row holds everything else: owner, content type, byte size, optional pixel
- * dimensions, the R2 storage key, created-at.
- *
- * `id` is the opaque, non-enumerable object key (content-hash or random id, never
- * sequential — Decision 5b) that appears in the public delivery URL; as the PK an
- * enumerable autoincrement is unrepresentable.
- *
- * `owner_id` is the uploader's pasaport user id, kept verbatim with NO FK — the same
- * choice as `authorship_vouch` — so deleting the uploader (or their `apiKey`) never
- * cascade-deletes the object. "URLs never break" is a v1 contract (Decision 5): an
- * embedded image survives its uploader's deletion.
- *
- * `width`/`height` are nullable (an object either has known pixel dimensions or
- * none). The `(owner_id, created_at)` index serves the per-user count/sum-per-window
- * quota query (#110, Decision 6).
- */
-export const imgeObject = sqliteTable(
-	"imge_object",
-	{
-		id: text("id").primaryKey(),
-		ownerId: text("owner_id").notNull(),
-		contentType: text("content_type").notNull(),
-		byteSize: integer("byte_size").notNull(),
-		width: integer("width"),
-		height: integer("height"),
-		r2Key: text("r2_key").notNull(),
-		createdAt: timestamp("created_at").notNull(),
-	},
-	(t) => [index("imge_object_owner_created").on(t.ownerId, t.createdAt)],
-);
