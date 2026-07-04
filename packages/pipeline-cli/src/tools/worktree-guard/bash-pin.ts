@@ -14,11 +14,15 @@
  * leading `cd` is the one signal we trust, mirroring the worktree convention's own
  * `cd <worktree-root> && …` idiom.
  *
- * On top of the cd-pin, a **HEAD-moving git op** (`checkout`/`switch`/`reset`/
- * `rebase`) that is NOT already scoped to a worktree is **refused**, not pinned:
- * cd-pinning it would only relocate the HEAD move into the worktree, but the
- * #1103/#1494 detach class is a bare HEAD move escaping to the shared *primary*
- * `.git` (the orchestrator's ff-pull then stalls on a detached HEAD). The owner's
+ * On top of the cd-pin, a **working-state-mutating git op**
+ * (`checkout`/`switch`/`reset`/`rebase`/`stash`/`merge`) that is NOT already scoped
+ * to a worktree is **refused**, not pinned: cd-pinning it would only relocate the
+ * mutation into the worktree, but the #1103/#1494 detach class is a bare op escaping
+ * to the shared *primary* `.git` — `checkout`/`switch`/`reset`/`rebase` move the
+ * primary HEAD (the orchestrator's ff-pull then stalls on a detached HEAD), and
+ * `stash`/`merge` mutate the primary working tree (#2030: a review-doc agent ran
+ * `git stash pop` + `reset --hard` on the owner's checkout, silently discarding its
+ * uncommitted state — same shared-checkout hazard, same fail-closed refusal). The owner's
  * ruling on the arm-vs-refuse posture (issue #1571) is REFUSE, scoped to guarded
  * agents: the refusal fires only when `$WORKTREE_ROOT` names a managed worktree —
  * i.e. this hook is active for an `isolation:worktree` subagent. The orchestrator's
@@ -43,20 +47,25 @@ const isManagedWorktree = (worktreeRoot: string): boolean =>
 /** True when the command's FIRST effective token is `cd` (it sets its own cwd). */
 export const hasLeadingCd = (command: string): boolean => /^\s*cd(\s|$)/.test(command);
 
-/** The git subcommands that move HEAD — a bare one against the shared primary is the #1103 detach. */
-const HEAD_MOVING = new Set(["checkout", "switch", "reset", "rebase"]);
+/**
+ * The git subcommands that mutate the shared primary's git working state — a bare one against the
+ * shared primary is the #1103 detach (`checkout`/`switch`/`reset`/`rebase` move HEAD) or the #2030
+ * working-tree corruption (`stash`/`merge` mutate the tree, e.g. the review-doc `git stash pop`).
+ */
+const HEAD_MOVING = new Set(["checkout", "switch", "reset", "rebase", "stash", "merge"]);
 
 const dequote = (s: string): string => s.replace(/^["']/, "").replace(/["']$/, "");
 
 /**
- * Inspect a command for a git invocation whose subcommand moves HEAD, and whether that
- * invocation is already **scoped to a worktree** — either via a `-C <path>` / `--git-dir`
- * / `--work-tree` global option pointing at `$WT`/`$WORKTREE_ROOT` (or a path under the
- * worktree root), which is the sanctioned safe form the refusal points agents to.
+ * Inspect a command for a git invocation whose subcommand mutates the primary's working state
+ * (moves HEAD, or mutates the working tree via `stash`/`merge`), and whether that invocation is
+ * already **scoped to a worktree** — either via a `-C <path>` / `--git-dir` / `--work-tree` global
+ * option pointing at `$WT`/`$WORKTREE_ROOT` (or a path under the worktree root), which is the
+ * sanctioned safe form the refusal points agents to.
  *
  * The parse is intentionally shallow (whitespace tokens, first `git` token): guard commands
- * are simple invocations, and a shallow parse that errs toward *seeing* a HEAD-move is the
- * fail-closed direction (ambiguity → refuse, never silently allow a primary-HEAD mutation).
+ * are simple invocations, and a shallow parse that errs toward *seeing* a mutating op is the
+ * fail-closed direction (ambiguity → refuse, never silently allow a primary-tree mutation).
  */
 export const inspectGitHeadMove = (
 	command: string,
@@ -113,9 +122,10 @@ export const inspectGitHeadMove = (
 };
 
 const REFUSE_REASON =
-	"refused a bare HEAD-moving git op (checkout/switch/reset/rebase) in a guarded worktree — " +
-	"unscoped, it would execute against the shared PRIMARY .git after the cwd reset and detach the " +
-	"primary HEAD (the #1103/#1494 stall). Scope it to your worktree: " +
+	"refused a bare working-state-mutating git op (checkout/switch/reset/rebase/stash/merge) in a " +
+	"guarded worktree — unscoped, it would execute against the shared PRIMARY .git after the cwd " +
+	"reset and detach the primary HEAD (the #1103/#1494 stall) or corrupt its working tree (#2030). " +
+	"Scope it to your worktree: " +
 	'`git -C "$WT" <op> …`, or bring a PR head in by ref — ' +
 	'`git -C "$WT" fetch origin pull/<N>/head && git -C "$WT" checkout FETCH_HEAD`.';
 
@@ -126,8 +136,9 @@ const REFUSE_REASON =
  *   also the orchestrator's own shell — its `git checkout main` is never reached here).
  * - An empty/whitespace-only command → **allow** (nothing to pin).
  * - A command with a leading `cd ` → **allow** (it sets its own cwd; don't fight it).
- * - A HEAD-moving git op NOT scoped to the worktree → **refuse** (issue #1571).
- * - A HEAD-moving git op already scoped to the worktree (`git -C "$WT" …`) → **allow**
+ * - A working-state-mutating git op (`checkout`/`switch`/`reset`/`rebase`/`stash`/`merge`) NOT
+ *   scoped to the worktree → **refuse** (issue #1571; `stash`/`merge` added #2030).
+ * - Such an op already scoped to the worktree (`git -C "$WT" …`) → **allow**
  *   (the safe form; `-C` overrides cwd, so no cd-pin is needed).
  * - Otherwise → **rewrite** to `cd "<root>" && <command>` (the cwd-reset cd-pin).
  */

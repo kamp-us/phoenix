@@ -63,6 +63,22 @@ describe("pinBash — refuse a bare HEAD-moving git op in a guarded worktree (#1
 			"refuse",
 		);
 	});
+	// #2030: `stash`/`merge` corrupt the shared primary's WORKING TREE (the review-doc
+	// `git stash pop` + `reset --hard` incident) — same shared-checkout hazard, same refusal.
+	it("refuses bare `git stash` / `git stash pop` and `git merge` (would corrupt the primary tree)", () => {
+		assert.strictEqual(pinBash({worktreeRoot: WT, command: "git stash"}).kind, "refuse");
+		assert.strictEqual(pinBash({worktreeRoot: WT, command: "git stash pop"}).kind, "refuse");
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: "git merge origin/main"}).kind,
+			"refuse",
+		);
+	});
+	it('allows the safe `git -C "$WT" stash pop` scoped form', () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: 'git -C "$WT" stash pop'}).kind,
+			"allow",
+		);
+	});
 
 	// (b) the safe `git -C "$WT" …` form → ALLOW (scoped; `-C` overrides cwd, no pin needed)
 	it('allows the safe `git -C "$WT" checkout FETCH_HEAD` form', () => {
