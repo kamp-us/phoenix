@@ -20,7 +20,8 @@ import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
  * so the historical `page.reload()` Suspense workaround is gone.
  */
 test.describe("Pano voteOnPost", () => {
-	// QUARANTINED (temporary) — vote score-propagation flake, see #1903; re-enable when #1903 lands. Tracking: #1885/#1903.
+	// QUARANTINED — un-quarantine blocked on #1838 (e2e can't establish yazar tier); see #1903.
+	// Vote score-propagation flake tracked at #1903. Tracking: #1885/#1903.
 	// The whole test is the post-vote score round-trip (expectScoreConsistent
 	// "0"/"1" + the coupled aria-pressed toggle, which only settles once the score
 	// propagates), so the flaky read-back is inseparable from it — fixme'ing the
