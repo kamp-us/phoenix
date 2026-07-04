@@ -217,8 +217,21 @@ export const FlagshipReadLive: Layer.Layer<FlagshipRead, never, Credentials | Ht
 							if (env === undefined) {
 								continue; // a foreign account app — not one of ours, no env to decode
 							}
+							// An owned-but-inaccessible app (orphaned / mid-deletion per-PR-preview app —
+							// a steady-state condition, #813/#690/#1509) fails this fetch with
+							// `FlagshipAppNotFound` (the SDK's tag for the 404 "App not found or access
+							// denied" ownership error). Skip it with a warning so the enumeration degrades
+							// to "every accessible app" instead of aborting the whole listing (#1645). The
+							// catch is scoped to that ONE tag: a transport/auth `Unauthorized` or any other
+							// `DefaultErrors`/`ConfigError` still fails loud, never swallowed as a skip.
 							const flags = yield* Stream.runCollect(
 								flagship.listAppFlags.items({appId: app.id, accountId: acct}),
+							).pipe(
+								Effect.catchTag("FlagshipAppNotFound", (error) =>
+									Effect.logWarning(
+										`skipping inaccessible Flagship app "${app.name}" (${app.id}) in env "${env}": ${error.message}`,
+									).pipe(Effect.as([] as ReadonlyArray<never>)),
+								),
 							);
 							for (const flag of flags) {
 								rows.push(decodeFlagState(env, toRawFlag(flag)));
