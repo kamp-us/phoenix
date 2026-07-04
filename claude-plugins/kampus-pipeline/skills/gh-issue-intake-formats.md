@@ -922,9 +922,12 @@ that is:**
 - **control plane** (`.claude/**`, `.github/**`, a gate-critical skill — the §CP set);
 - **`skills/**`** — a behavioral artifact, `review-skill`'s class, carved out *before* the
   `.md` test (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md));
-- the **code roots `apps/**` and `packages/**`** — a code/app-internal `*.md` (a package or
-  app README, CHANGELOG, …) rides the `review-code` PASS its tree already needs, and is
-  **never** the doc class.
+- the **code roots `apps/**`, `packages/**`, and `infra/**`** — a code/app-internal `*.md` (a
+  package or app README, CHANGELOG, …) rides the `review-code` PASS its tree already needs, and is
+  **never** the doc class. `infra/**` is a real standalone-stack code root (ADR
+  [0057](https://github.com/kamp-us/phoenix/blob/main/.decisions/0057-one-worker-per-app.md)), so a
+  package README under an `infra/**` stack rides its code artifact exactly as an `apps`/`packages`
+  README does.
 - **`.glossary/**`** — the repo-owned domain vocabulary (`.glossary/TERMS.md`, `LANGUAGE.md`;
   a 4th committed doc surface, ADR [0099](https://github.com/kamp-us/phoenix/blob/main/.decisions/0099-glossary-surface-audit-skill-emits-issues.md)).
   `review-code` Step 3c **reads + enforces** this contract (a new-surface code PR must touch
@@ -936,20 +939,21 @@ that is:**
 
 This is **exactly `review-doc`'s verification surface**: a present doc class therefore
 always has a *reachable* gate. The code-class carve-out names the roots **`apps`,
-`packages`**, plus **`.glossary`** — and `ship-it` Step 0's has-code probe
-(`^(apps|packages|\.glossary)/`) names the **same** roots as the docs-exclusion
-(`grep -Ev '^(claude-plugins|apps|packages|\.glossary)/'`), so a `.glossary/**` path classes
-**has-code** (riding the `review-code` PASS) and is dropped from docs **in lockstep** — prose and
-both probes name one boundary and can't drift (the #663 has-code/docs-exclusion agreement invariant,
-extended to `.glossary/**` by #919).
+`packages`**, plus **`.glossary`** and **`infra`** — and `ship-it` Step 0's has-code probe
+(`^(apps|packages|\.glossary|infra)/`) names the **same** roots as the docs-exclusion
+(`grep -Ev '^(claude-plugins|apps|packages|\.glossary|infra)/'`), so a `.glossary/**` or
+`infra/**` path classes **has-code** (riding the `review-code` PASS) and is dropped from docs **in
+lockstep** — prose and both probes name one boundary and can't drift (the #663
+has-code/docs-exclusion agreement invariant, extended to `.glossary/**` by #919 and to `infra/**`
+standalone stacks (ADR 0057) by #1987).
 
 The canonical probe both `ship-it` Step 0 and `review-doc` Step 0 run — carve out
-control-plane, then `skills/**`, then the code roots + `.glossary/**`, *then* test for a doc path:
+control-plane, then `skills/**`, then the code roots + `.glossary/**` + `infra/**`, *then* test for a doc path:
 
 ```bash
 # docs class = review-doc's surface: a .md/knowledge file outside control-plane, skills/**,
-# the code roots apps/**/packages/**, AND .glossary/** (#542/#650/#663/#919). Cite this; don't re-derive it loosely.
-echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+# the code roots apps/**/packages/**/infra/**, AND .glossary/** (#542/#650/#663/#919/#1987). Cite this; don't re-derive it loosely.
+echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary|infra)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 ```
 
 A code-root `*.md` is **not** weakened by this carve-out — it is gated harder, by
