@@ -1,12 +1,14 @@
 ---
 id: 0142
 title: "kampus-pipeline bot-credential resolution: org-derived config paths, per-operator App keys, and the three-rung upgrade ladder (local path → secret-manager content → CF token-broker)"
-status: accepted
+status: superseded by [0143](0143-reject-phoenix-bot-authorship.md)
 date: 2026-07-03
 tags: [pipeline, pipeline-cli, github-app, credentials, security, control-plane, multi-org, epic-1934]
 ---
 
 # 0142 — kampus-pipeline bot-credential resolution: org-derived paths, per-operator keys, upgrade ladder
+
+> **Superseded by [0143](0143-reject-phoenix-bot-authorship.md).** This bot-credential convention served the phoenix[bot] authorship direction, which is rejected as a zero-human §CP self-merge hole.
 
 ## Context
 

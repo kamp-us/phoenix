@@ -1,12 +1,14 @@
 ---
 id: 0140
 title: "phoenix[bot] GitHub App authors pipeline PRs → team-based §CP: a bot-authored PR is approvable by ANY @kamp-us/control-plane member (usirin + cansirin today, extensible as the team grows), because the bot's distinct authorship makes every human team member a valid non-author approver — no ruleset change"
-status: accepted
+status: superseded by [0143](0143-reject-phoenix-bot-authorship.md)
 date: 2026-07-03
 tags: [pipeline, control-plane, governance, github, github-app, security, ship-it, epic]
 ---
 
 # 0140 — phoenix[bot] authors pipeline PRs: team-based §CP (any control-plane member approves)
+
+> **Superseded by [0143](0143-reject-phoenix-bot-authorship.md).** The phoenix[bot] pipeline-authorship direction is rejected: because agents run `gh` as `usirin`, a bot-authored §CP PR can be approved by the same automation (as `usirin`), collapsing the two-human gate to a **zero-human self-merge**. #1875 (author≠approver) is a security invariant, not a bottleneck.
 
 ## Context
 
