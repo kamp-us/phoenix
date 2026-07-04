@@ -26,9 +26,10 @@
  */
 import {Effect} from "effect";
 import {bildirimOn} from "./gate.ts";
+import type {NotificationKind} from "./kind.ts";
 import {Notification} from "./Notification.ts";
 
-export const REPLY_KIND = "reply";
+export const REPLY_KIND: NotificationKind = "reply";
 
 /**
  * The deduped, self-suppressed recipient set for one comment event (pure).
