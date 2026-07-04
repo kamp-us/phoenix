@@ -26,7 +26,7 @@ phoenix/
 │       ├── src/             # React frontend
 │       └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)
 ├── packages/                # shared internal packages
-├── infra/                   # standalone stacks (e.g. ci-credentials — the one-shot CI-token provisioner)
+├── infra/                   # standalone stacks: ci-credentials (one-shot CI-token provisioner), depo (internal asset store/CDN — designed, ADR 0144)
 └── pnpm-workspace.yaml
 ```
 
