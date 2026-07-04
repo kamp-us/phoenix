@@ -8,12 +8,13 @@
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
 		"noEmit": true,
-		// The stack (`depo.ts`) is loaded directly by Node's ESM loader, which
-		// requires explicit `.ts` import specifiers; allow them here.
+		// The stacks (`depo.ts`, `doorman.ts`) are loaded directly by Node's ESM
+		// loader, which requires explicit `.ts` import specifiers; allow them here.
 		"allowImportingTsExtensions": true,
-		// The stack provisions Cloudflare-scoped resources via `alchemy/Cloudflare`,
-		// whose resource types reference the workers runtime types.
+		// Both stacks provision Cloudflare-scoped resources via `alchemy/Cloudflare`,
+		// and the doorman worker uses the workers runtime globals (`crypto.subtle`,
+		// `Headers`, `Response`, `TextEncoder`) — all from `@cloudflare/workers-types`.
 		"types": ["@cloudflare/workers-types", "node"]
 	},
-	"include": ["depo.ts"]
+	"include": ["depo.ts", "doorman.ts", "worker", "vitest.config.ts"]
 }

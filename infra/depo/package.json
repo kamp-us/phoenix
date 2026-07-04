@@ -6,18 +6,26 @@
 	"scripts": {
 		"deploy:depo": "alchemy deploy depo.ts",
 		"destroy:depo": "alchemy destroy depo.ts",
-		"typecheck": "tsgo -p tsconfig.json"
+		"deploy:doorman": "alchemy deploy doorman.ts",
+		"destroy:doorman": "alchemy destroy doorman.ts",
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run"
 	},
 	"dependencies": {
+		"@better-auth/api-key": "catalog:",
 		"alchemy": "catalog:",
+		"better-auth": "catalog:",
+		"drizzle-orm": "catalog:",
 		"effect": "catalog:"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:",
 		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
 		"@typescript/native-preview": "catalog:",
-		"typescript": "catalog:"
+		"typescript": "catalog:",
+		"vitest": "catalog:"
 	},
 	"volta": {
 		"node": "26.2.0"
