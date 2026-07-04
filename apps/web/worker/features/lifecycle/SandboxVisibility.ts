@@ -11,7 +11,12 @@
  * orthogonal), `and()`-ing this predicate beside it.
  */
 import {and, eq, isNotNull, isNull, or, type SQL, type SQLWrapper} from "drizzle-orm";
-import {anonymousViewer, type SandboxViewer} from "./EntityLifecycle.ts";
+import {
+	anonymousViewer,
+	type LifecycleTag,
+	lifecycleVisibilityRule,
+	type SandboxViewer,
+} from "./EntityLifecycle.ts";
 
 /**
  * Resolve the {@link SandboxViewer} a domain read applies from its options. A read
@@ -34,9 +39,48 @@ export interface SandboxColumns {
 }
 
 /**
+ * The sandbox-dimension read arm each lifecycle state contributes for a **non-moderator**
+ * viewer — the SQL half of that state's {@link lifecycleVisibilityRule}, keyed by the
+ * closed {@link LifecycleTag} discriminant so the SQL encoding is tied to the SAME
+ * exhaustive tag set the TS `isVisibleTo` uses (#2013). An exhaustive `switch`: a new
+ * lifecycle tag has no case, so this **fails to compile** until its sandbox arm is
+ * stated — closing the latent gap where a 4th state would branch on booleans and
+ * silently mis-filter at the DB. Returns the predicate admitting the rows of that state
+ * this viewer may see, or `undefined` when the state adds no arm (`Removed` is filtered
+ * by the caller's orthogonal `isNull(removedAt)` guard, so it is not selected here):
+ *
+ * - `Live` (`Everyone`) — `sandboxed_at IS NULL`: the public base, visible to all.
+ * - `Sandboxed` (`AuthorOrModerator`) — a signed-in viewer additionally sees their own
+ *   sandboxed rows (`author_id = :viewerId`); a moderator is handled by the
+ *   `canSeeSandboxed` short-circuit in {@link sandboxVisibleWhere} (no restriction).
+ * - `Removed` (`NoOne`) — `undefined`: not selected in the sandbox dimension.
+ */
+const sandboxArm = (
+	tag: LifecycleTag,
+	cols: SandboxColumns,
+	viewer: SandboxViewer,
+): SQL | undefined => {
+	switch (tag) {
+		case "Live":
+			return isNull(cols.sandboxedAt);
+		case "Sandboxed":
+			// Only the AuthorOrModerator rule's author branch survives here for a
+			// non-moderator (the moderator branch is the caller's `canSeeSandboxed`
+			// short-circuit): a signed-in viewer sees their OWN sandboxed rows.
+			return viewer.viewerId !== null ? eq(cols.authorId, viewer.viewerId) : undefined;
+		case "Removed":
+			return undefined;
+	}
+};
+
+/**
  * The per-viewer sandbox read filter, the SQL mirror of `isVisibleTo` for the
  * `Live`/`Sandboxed` split (the `Removed` arm is the caller's own
- * `isNull(removedAt)` guard, kept beside this):
+ * `isNull(removedAt)` guard, kept beside this). Derived from the same exhaustive
+ * lifecycle discriminant `isVisibleTo` uses (#2013): a moderator sees everything, else
+ * the row is visible iff any lifecycle state's {@link sandboxArm} admits it — so a new
+ * lifecycle tag forces a `sandboxArm` case (and a `lifecycleVisibilityRule` entry)
+ * rather than compiling clean and mis-filtering. Emits the same SQL as before:
  *
  * - moderator (`canSeeSandboxed`) — `undefined`: no sandbox restriction, the full
  *   set is visible (drizzle `and()` drops an `undefined` term).
@@ -49,10 +93,11 @@ export const sandboxVisibleWhere = (
 	viewer: SandboxViewer,
 ): SQL | undefined => {
 	if (viewer.canSeeSandboxed) return undefined;
-	if (viewer.viewerId !== null) {
-		return or(isNull(cols.sandboxedAt), eq(cols.authorId, viewer.viewerId));
-	}
-	return isNull(cols.sandboxedAt);
+	const tags = Object.keys(lifecycleVisibilityRule) as LifecycleTag[];
+	const arms = tags
+		.map((tag) => sandboxArm(tag, cols, viewer))
+		.filter((a): a is SQL => a !== undefined);
+	return arms.length === 1 ? arms[0] : or(...arms);
 };
 
 /**

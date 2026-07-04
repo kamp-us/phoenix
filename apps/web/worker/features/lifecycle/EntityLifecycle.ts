@@ -244,26 +244,89 @@ export interface SandboxViewer {
 export const anonymousViewer: SandboxViewer = {viewerId: null, canSeeSandboxed: false};
 
 /**
+ * The tag of an {@link EntityLifecycle} state — the closed discriminant both the
+ * in-memory decision ({@link isVisibleTo}) and the SQL mirror
+ * (`SandboxVisibility.sandboxVisibleWhere`) key their visibility rule on. Exported so
+ * the SQL side can iterate the SAME tag set exhaustively (a new tag then has no SQL
+ * arm and fails to compile), instead of re-deriving the rule from booleans (#2013).
+ */
+export type LifecycleTag = EntityLifecycle["_tag"];
+
+/**
+ * The per-state visibility rule as a closed union of exactly three arms — the
+ * single-sourced shape both encodings interpret (#2013). A lifecycle state permits a
+ * viewer by one of:
+ *
+ * - `Everyone` — the state is public (`Live`).
+ * - `NoOne` — the state is hidden from content reads (`Removed`; moderators review it
+ *   through a separate queue, not these reads).
+ * - `AuthorOrModerator` — visible only to a moderator (`canSeeSandboxed`) or the
+ *   authoring account (`Sandboxed`, the #1205 çaylak rule).
+ *
+ * Making the rule a value — not inline logic duplicated per encoding — is what lets
+ * `isVisibleTo` (runtime) and `sandboxVisibleWhere` (SQL) both read it, so they cannot
+ * silently diverge for a state.
+ */
+export type LifecycleVisibilityRule = "Everyone" | "NoOne" | "AuthorOrModerator";
+
+/**
+ * The single source of the çaylak-sandbox visibility boundary (#1205, #2013): each
+ * lifecycle tag → its {@link LifecycleVisibilityRule}, keyed by the closed
+ * {@link LifecycleTag} discriminant. This `Record` over the tag union is exhaustive by
+ * its type — a new lifecycle tag with no entry is a **compile error here**, forcing
+ * both encodings (which derive from this map) to gain the state rather than one
+ * silently mis-filtering. This replaces the old two-place encoding where the SQL
+ * builder branched on booleans and a 4th tag would have compiled clean at the DB.
+ */
+export const lifecycleVisibilityRule: Record<LifecycleTag, LifecycleVisibilityRule> = {
+	Live: "Everyone",
+	Removed: "NoOne",
+	Sandboxed: "AuthorOrModerator",
+};
+
+/**
+ * Interpret a {@link LifecycleVisibilityRule} against a viewer + the content's author
+ * — the one place a rule becomes a boolean, shared by {@link isVisibleTo} and (via the
+ * SQL arm builder) the read-query predicate. `AuthorOrModerator` is visible to a
+ * moderator (`canSeeSandboxed`) or the author (`viewerId === authorId`).
+ */
+export const ruleVisibleTo = (
+	rule: LifecycleVisibilityRule,
+	authorId: string,
+	viewer: SandboxViewer,
+): boolean => {
+	switch (rule) {
+		case "Everyone":
+			return true;
+		case "NoOne":
+			return false;
+		case "AuthorOrModerator":
+			return viewer.canSeeSandboxed || viewer.viewerId === authorId;
+	}
+};
+
+/**
  * The pure visibility decision (#1205) — the rule the read queries' SQL predicate
  * mirrors and the visibility-matrix test targets directly. A piece of content with
- * `lifecycle`/`authorId` is visible to `viewer` iff:
+ * `lifecycle`/`authorId` is visible to `viewer` iff its state's
+ * {@link lifecycleVisibilityRule} permits them:
  *
- * - `Live` — visible to everyone.
- * - `Removed` — hidden from the content reads (the existing `removed_at IS NULL`
- *   guard, unchanged — moderators review removed content through a different queue).
- * - `Sandboxed` — visible only to a moderator (`canSeeSandboxed`) or the author
- *   (`viewerId === authorId`); hidden from anonymous + every other member.
+ * - `Live` (`Everyone`) — visible to everyone.
+ * - `Removed` (`NoOne`) — hidden from the content reads (the existing
+ *   `removed_at IS NULL` guard, unchanged — moderators review removed content through a
+ *   different queue).
+ * - `Sandboxed` (`AuthorOrModerator`) — visible only to a moderator
+ *   (`canSeeSandboxed`) or the author (`viewerId === authorId`); hidden from anonymous
+ *   + every other member.
+ *
+ * Reads the rule off {@link lifecycleVisibilityRule} keyed by the lifecycle tag, so
+ * this and the SQL encoding share ONE source of the rule.
  */
 export const isVisibleTo = (
 	lifecycle: EntityLifecycle,
 	authorId: string,
 	viewer: SandboxViewer,
-): boolean =>
-	$match(lifecycle, {
-		Live: () => true,
-		Removed: () => false,
-		Sandboxed: () => viewer.canSeeSandboxed || viewer.viewerId === authorId,
-	});
+): boolean => ruleVisibleTo(lifecycleVisibilityRule[lifecycle._tag], authorId, viewer);
 
 /**
  * Exhaustive reason handling via `Match.tagsExhaustive` — the call site that adds
