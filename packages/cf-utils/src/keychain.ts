@@ -16,12 +16,6 @@ export const KEYCHAIN_SERVICE = "kampus-cf-utils";
 /** The generic-password `-a` accounts: one per stored credential. */
 export const API_TOKEN_ACCOUNT = "cloudflare-api-token";
 export const ACCOUNT_ID_ACCOUNT = "cloudflare-account-id";
-// The browser-OAuth credential (#1761) persists through the same seam as the pasted token:
-// a short-lived access token, its refresh token, and the epoch-ms expiry that drives
-// refresh-on-resolve in `credentials.ts`.
-export const OAUTH_ACCESS_TOKEN_ACCOUNT = "cloudflare-oauth-access-token";
-export const OAUTH_REFRESH_TOKEN_ACCOUNT = "cloudflare-oauth-refresh-token";
-export const OAUTH_EXPIRES_AT_ACCOUNT = "cloudflare-oauth-expires-at";
 
 /** A `security` write exited non-zero (or could not spawn). Secrets never appear in `args`. */
 export class KeychainCommandError extends Schema.TaggedErrorClass<KeychainCommandError>()(

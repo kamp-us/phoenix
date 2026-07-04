@@ -11,10 +11,9 @@
  *   node src/bin.ts flag set <key> off --env <env>         dry-run the kill switch
  *   node src/bin.ts flag set <key> … --env <env> --execute   apply it
  *   node src/bin.ts auth login                              paste an API token → keychain (#1730)
- *   node src/bin.ts auth login --oauth                      authorize in the browser → keychain (#1761)
  *   node src/bin.ts auth status|logout                      inspect / clear stored credentials
  *
- * Credentials resolve keychain-first (`auth login`, #1730/#1761), falling back to
+ * Credentials resolve keychain-first (`auth login`, #1730), falling back to
  * $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID — the env-var path CI keeps using.
  *
  * `flag set` operates the ACTUAL release lever — the no-match percentage split, never
@@ -252,15 +251,13 @@ const cli = Command.make("cf-utils").pipe(
 	Command.withDescription("Human-operated Cloudflare Flagship read/flip CLI"),
 );
 
-// Credentials resolve keychain-first with the env-var fallback (#1730/#1761): the same ambient
+// Credentials resolve keychain-first with the env-var fallback (#1730): the same ambient
 // `Credentials` seam as before, plus the account-id ConfigProvider so the per-call
 // `Config.string("CLOUDFLARE_ACCOUNT_ID")` reads in flagship.ts resolve the keychain too.
-// `CredentialsKeychainFirst` now also needs HttpClient (to refresh an expired OAuth token on
-// resolve), so the transport is provided into the credential layer here as well as at AppLayer.
-// `provideMerge` keeps Keychain + HttpClient visible to the `auth` handlers, and NodeServices
-// supplies the spawner/terminal the keychain + prompts run on.
+// `provideMerge` keeps Keychain visible to the `auth` handlers, and NodeServices supplies the
+// spawner/terminal the keychain + prompts run on.
 const CredentialLayer = Layer.mergeAll(CredentialsKeychainFirst, AccountIdKeychainConfig).pipe(
-	Layer.provideMerge(Layer.merge(KeychainLive, FetchHttpClient.layer)),
+	Layer.provideMerge(KeychainLive),
 );
 const AppLayer = Layer.mergeAll(FlagshipReadLive, FlagshipWriteLive).pipe(
 	Layer.provideMerge(Layer.merge(CredentialLayer, FetchHttpClient.layer)),

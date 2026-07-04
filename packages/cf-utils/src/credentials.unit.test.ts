@@ -8,8 +8,6 @@
 import {Credentials} from "@distilled.cloud/cloudflare/Credentials";
 import {assert, describe, it} from "@effect/vitest";
 import {Config, ConfigProvider, Effect, Layer, Redacted} from "effect";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import {
 	AccountIdKeychainConfig,
 	CredentialsKeychainFirst,
@@ -24,24 +22,12 @@ const fakeKeychain = (store: Record<string, string>): Layer.Layer<Keychain> =>
 		remove: () => Effect.succeed(false) as Effect.Effect<boolean, KeychainCommandError>,
 	});
 
-// A transport that is never exercised by these resolution-order tests (no OAuth refresh fires
-// because the stored token is far from expiry); it satisfies the layer's HttpClient requirement.
-const unusedTransport: Layer.Layer<HttpClient.HttpClient> = Layer.succeed(HttpClient.HttpClient)(
-	HttpClient.make((request) =>
-		Effect.succeed(HttpClientResponse.fromWeb(request, new Response("{}", {status: 200}))),
-	),
-);
-
 const resolveWith = (store: Record<string, string>, env: Record<string, string>) =>
 	Effect.gen(function* () {
 		const resolve = yield* Credentials;
 		return yield* resolve;
 	}).pipe(
-		Effect.provide(
-			CredentialsKeychainFirst.pipe(
-				Layer.provide(Layer.merge(fakeKeychain(store), unusedTransport)),
-			),
-		),
+		Effect.provide(CredentialsKeychainFirst.pipe(Layer.provide(fakeKeychain(store)))),
 		Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({env})),
 	);
 
@@ -77,26 +63,6 @@ describe("CredentialsKeychainFirst", () => {
 			assert.isTrue(exit._tag === "Failure");
 			const message = exit._tag === "Failure" ? String(exit.cause) : "";
 			assert.include(message, "cf-utils auth login");
-		}),
-	);
-
-	it.effect("a stored OAuth access token resolves as oauth credentials, over a pasted token", () =>
-		Effect.gen(function* () {
-			const creds = yield* resolveWith(
-				{
-					"cloudflare-oauth-access-token": "oauth-access",
-					"cloudflare-oauth-refresh-token": "oauth-refresh",
-					// far in the future → no refresh, so the transport is never called
-					"cloudflare-oauth-expires-at": String(Date.now() + 60 * 60 * 1000),
-					"cloudflare-api-token": "paste-token",
-				},
-				{},
-			);
-			assert.strictEqual(creds.type, "oauth");
-			assert.strictEqual(
-				creds.type === "oauth" ? Redacted.value(creds.accessToken) : undefined,
-				"oauth-access",
-			);
 		}),
 	);
 });
@@ -154,17 +120,6 @@ describe("credentialSources", () => {
 				Effect.provide(fakeKeychain({"cloudflare-api-token": "t"})),
 			);
 			assert.strictEqual(sources.apiToken, "keychain");
-			assert.strictEqual(sources.apiTokenKind, "token");
-		}),
-	);
-
-	it.effect("reports the OAuth acquisition kind when the token came from browser login", () =>
-		Effect.gen(function* () {
-			const sources = yield* credentialSources.pipe(
-				Effect.provide(fakeKeychain({"cloudflare-oauth-access-token": "a"})),
-			);
-			assert.strictEqual(sources.apiToken, "keychain");
-			assert.strictEqual(sources.apiTokenKind, "oauth");
 		}),
 	);
 });
