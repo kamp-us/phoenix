@@ -22,7 +22,12 @@ import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.
 import * as schema from "../../db/drizzle/schema.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {type TargetRecordMeta, targetTable} from "../../db/target-table.ts";
-import {VoterNotEligible, VoteTargetNotFound, VoteTargetSandboxed} from "./errors.ts";
+import {
+	VOTE_REQUIRED_TIER,
+	VoterNotEligible,
+	VoteTargetNotFound,
+	VoteTargetSandboxed,
+} from "./errors.ts";
 
 // Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
 // that prefer importing it from `./Vote`.
@@ -226,8 +231,9 @@ export const VoteLive = Layer.effect(Vote)(
 			// Voter-tier gate — the SINGLE choke point for all three inline cast paths (pano
 			// post/comment + sözlük definition all reach here via `cast`). Runs before any read
 			// of the target so a newcomer's cast is refused loudly (a typed `VoterNotEligible`,
-			// wire `FORBIDDEN`), never a silent no-op. "Above the çaylak floor" is resolved by
-			// the `VoterStanding` seam (discharged by Kunye at `fate/layers.ts`), keeping the
+			// wire `VOTE_REQUIRES_YAZAR` — its wire code + `need` tier are single-sourced from
+			// `VOTE_REQUIRED_TIER` in `errors.ts`), never a silent no-op. "Above the çaylak floor"
+			// is resolved by the `VoterStanding` seam (discharged by Kunye at `fate/layers.ts`), keeping the
 			// tier vocabulary out of Vote. Gated on `input.value` (the CAST direction only): a
 			// retraction removes influence, never adds it, and a newcomer never cleared the gate
 			// to hold a vote worth retracting — so retraction stays open (and the retract
@@ -237,7 +243,7 @@ export const VoteLive = Layer.effect(Vote)(
 				if (!eligible) {
 					return yield* new VoterNotEligible({
 						voterId: input.userId,
-						need: "yazar",
+						need: VOTE_REQUIRED_TIER,
 						message: `voter ${input.userId} is below the vote-eligibility floor (must be promoted above çaylak)`,
 					});
 				}
