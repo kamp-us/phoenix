@@ -55,6 +55,48 @@ The grade is a typed value, never a throw:
   a fail is never a bare boolean), or a `MalformedArtifact` with a stated reason. The grader is
   **total**: a malformed or absent artifact grades `fail` with a reason rather than throwing.
 
+## The corpus runner ([#1851](https://github.com/kamp-us/phoenix/issues/1851))
+
+`runner.ts` is the **collection layer** between the corpus format and the report slice: it turns
+a corpus manifest into **graded runs** for a chosen (stage × model). For each corpus entry it
+grades the entry's actual run `artifact` (via `oracle.ts` `gradeEntry`) and reconstructs the
+run's token spend from its sub-agent transcript (via the [`token-spend`](../token-spend/token-spend.ts)
+core, ADR 0112 §2), producing a `{entry, grade, spend}` **row**. A per-(stage × model) collection
+of those rows is the raw material the report slice ([#1853](https://github.com/kamp-us/phoenix/issues/1853))
+aggregates into pass-rate + churn cost.
+
+The runner is a deterministic, side-effect-light **collector over runs that already happened** — it
+does **not** spawn stage agents. Spawning is the operator's act, and the fleet's model is pinned by
+`spawn-guard`; keeping the runner spawn-free is what makes the harness reproducible.
+
+`RunRow` is `{entry, grade, spend}` where `spend` is a `RunSpend` union — either
+`{_tag: "Reconstructed", spend}` (the `token-spend` `StageSpend`) or `{_tag: "TranscriptMissing"}`.
+The missing case is a distinct, counted outcome rather than a fabricated zero the report could
+mistake for a genuinely free run — a **missing transcript is graded and counted, never a crash**.
+
+Two modes, story-split:
+
+- **Offline / replay (story 6)** — `collectRuns(inputs)` over already-loaded transcripts + recorded
+  artifacts, where each `RunInput` is `{entry, transcript, artifact}` (a `null` transcript folds in as
+  `TranscriptMissing`). This is the reproducible, no-spawn path a CI or a re-analysis uses. Grading is
+  total (a malformed artifact grades `fail` via the oracle) and spend reconstruction is fail-open (a
+  malformed transcript undercounts, never throws) — so a whole corpus resolves without a crash.
+- **Capture-manifest (story 7)** — `CaptureManifest` is the documented shape naming, per run, the
+  transcript path (`<parent-session-id>/subagents/agent-<id>.jsonl`, ADR 0112 §2) + the recorded
+  artifact, keyed by `(stage, inputRef)` so a fresh live run (spawned by the **operator**, not this
+  tool) folds into the corpus deterministically. `decodeCaptureManifest(text)` is total (typed
+  `Result` failure on malformed JSON or a schema mismatch). `collectFromCapture({stage, corpus,
+  capture, loadTranscript})` joins each capture run to its corpus entry (for the ground-truth label),
+  loads transcripts through the caller-supplied `TranscriptLoader` (keeping the core pure — the
+  command shell supplies an fs-backed loader), and collects the graded rows.
+
+```ts
+import {collectRuns, collectFromCapture, decodeCaptureManifest} from "./runner.ts";
+```
+
+The runner is a pure library; presenting the collected rows (the two-axis scorecard) is the report
+slice ([#1853](https://github.com/kamp-us/phoenix/issues/1853)), not this core.
+
 ## Why it exists
 
 ADR 0112's apparatus grades **one** frozen input per stage with a **binary** oracle —
