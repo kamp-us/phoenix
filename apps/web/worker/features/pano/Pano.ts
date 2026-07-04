@@ -39,6 +39,8 @@ import {
 	type EditCommentInput,
 	type EditCommentResult,
 	makeCommentOperations,
+	type ReactToCommentInput,
+	type ReactToCommentResult,
 	SILINDI_PLACEHOLDER,
 	type VoteOnCommentInput,
 	type VoteOnCommentResult,
@@ -110,6 +112,8 @@ export type {
 	PostSummaryRow,
 	PostTagInput,
 	PostTagRow,
+	ReactToCommentInput,
+	ReactToCommentResult,
 	ReactToPostInput,
 	ReactToPostResult,
 	RestorePostResult,
@@ -298,6 +302,18 @@ export class Pano extends Context.Service<
 		readonly retractCommentVote: (
 			input: VoteOnCommentInput,
 		) => Effect.Effect<VoteOnCommentResult, CommentNotFound>;
+
+		/**
+		 * React to a comment — the karma-free, ungated twin of `voteOnComment` (#1864),
+		 * the direct mirror of `reactToPost`. Delegates to `Reaction.react` (kind
+		 * `comment`): a palette `emoji` sets/changes the viewer's single reaction,
+		 * `null` retracts it. Re-resolves the comment so the result carries the fresh
+		 * `reactions` aggregate. NO tier gate (a çaylak may react) and NO karma write —
+		 * the only failure is a missing/removed target.
+		 */
+		readonly reactToComment: (
+			input: ReactToCommentInput,
+		) => Effect.Effect<ReactToCommentResult, CommentNotFound>;
 	}
 >()("@kampus/pano/Pano") {}
 
