@@ -44,6 +44,10 @@ const DOC_SELF_EXEMPT = [
 	"/skills/review-doc/SKILL.md",
 	"/skills/triage/SKILL.md",
 	"/skills/report/SKILL.md",
+	// The triager agent's ## Output privacy rule names ~/code/... / /Users/... as the
+	// machine-local shapes it forbids in the return summary (#1956) — illustrative rule
+	// text, not real paths, so routine edits must not trip the guard.
+	"/agents/triager.md",
 	"/skills/report/footer.sh",
 	// Its Lineage section deliberately names ~/code/... sibling-repo clones (the
 	// rebuild provenance), so routine edits to it must not trip the guard.

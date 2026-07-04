@@ -459,7 +459,7 @@ unmilestoned and move on.
   [0072](https://github.com/kamp-us/phoenix/blob/main/.decisions/0072-milestones-encode-strategic-sequencing.md)
   §3). Do **not** `POST` a new milestone, ever.
 - **Preserve freeze-by-absence.** A deliberately-unmilestoned surface — a frozen new-product
-  cluster (e.g. imge / kampus-CLI / künye) — stays unmilestoned. A missing milestone there is
+  cluster (e.g. kampus-CLI / künye) — stays unmilestoned. A missing milestone there is
   a *signal* that the work is parked, never data to backfill; do not auto-fill it to make the
   issue "complete" (contract §Milestone, ADR 0072 §4).
 
@@ -543,7 +543,12 @@ sweeping:
 5. Report a short ledger back: per issue, the outcome (type+priority+triaged, plus the
    milestone if one was a clear match / needs-info / closed) in one line each. Don't
    narrate every REST call — the labels, milestone, and comments on the issues are the
-   durable record.
+   durable record. **The ledger you hand back is a shared artifact — hold it to the same
+   privacy rule as issue bodies and comments** (the "Repo-relative paths only — never
+   machine-local paths" rule in Step 4): cite **repo-relative paths only** and no PII —
+   never a machine-local path (an absolute `/Users/…`, a home-dir clone `~/code/…`, or a
+   sibling-repo tree). The guarantee is a property of the agent, not of who dispatches it;
+   a caller must never have to re-scrub the summary before relaying it.
 
 ## Conventions
 

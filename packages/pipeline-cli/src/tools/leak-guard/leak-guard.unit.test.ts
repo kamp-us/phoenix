@@ -89,6 +89,10 @@ describe("surface predicates", () => {
 		// the `.claude/skills` symlink path resolves too — its suffix still ends with
 		// the canonical `/skills/<name>/...`, so editing through either path is exempt.
 		assert.isTrue(isSelfExempt(".claude/skills/triage/SKILL.md"));
+		// the triager agent's ## Output privacy rule names the forbidden machine-local
+		// shapes as illustrative text (#1956), so it is self-exempt like the skills.
+		assert.isTrue(isSelfExempt("agents/triager.md"));
+		assert.isTrue(isSelfExempt(".claude/agents/triager.md"));
 		assert.isFalse(isSelfExempt("README.md"));
 	});
 });
