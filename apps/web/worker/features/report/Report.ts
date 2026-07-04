@@ -77,6 +77,14 @@ export interface ResolvedReportGroup {
 	resolvedAt: Date;
 	/** How many reports the decision collapsed on this target. */
 	reportCount: number;
+	/**
+	 * The wave grouping id (#1855, ADR 0138) shared across a batch's targets, or `null`
+	 * on a lone removal. A target's terminal rows share one `waveId` (`resolveTarget`
+	 * stamps them together), so the group carries the single value — the decision feed's
+	 * restore-as-a-unit key (rows sharing a `waveId` render as one entry whose restore
+	 * calls `reopenForWave`).
+	 */
+	waveId: string | null;
 }
 
 /**
@@ -166,6 +174,17 @@ export class Report extends Context.Service<
 		 * Returns how many reports were reopened.
 		 */
 		readonly reopenForWave: (waveId: string) => Effect.Effect<{reopened: number}>;
+
+		/**
+		 * The distinct terminal targets sharing `waveId` (#1855, ADR 0138): every
+		 * `(targetKind, targetId)` a wave gesture removed, still resolved/dismissed. The
+		 * restore-as-a-unit mutation reads this to bring each target's content back live
+		 * before `reopenForWave` flips the reports — one shared id, so the batch is exactly
+		 * the wave and nothing outside it. Empty when the wave has already been reopened.
+		 */
+		readonly waveTargets: (
+			waveId: string,
+		) => Effect.Effect<ReadonlyArray<{targetKind: TargetKind; targetId: string}>>;
 
 		/**
 		 * Resolve a single report id to its `(targetKind, targetId)` — so the resolve
@@ -327,6 +346,10 @@ export const ReportLive = Layer.effect(Report)(
 						// them together), so MIN over the group returns that single value.
 						resolverId: sql<string>`MIN(${schema.contentReport.resolverId})`,
 						resolution: sql<Resolution.Resolution>`MIN(${schema.contentReport.resolution})`,
+						// A target's terminal rows share one waveId (resolveTarget stamps them
+						// together), so MIN over the group returns that single value (null on a
+						// lone removal).
+						waveId: sql<string | null>`MIN(${schema.contentReport.waveId})`,
 					})
 					.from(schema.contentReport)
 					.where(inArray(schema.contentReport.status, ["resolved", "dismissed"]))
@@ -345,6 +368,7 @@ export const ReportLive = Layer.effect(Report)(
 						// returns that raw value, so reconstruct the Date from seconds.
 						resolvedAt: new Date(Number(r.resolvedAt) * 1000),
 						reportCount: Number(r.reportCount),
+						waveId: r.waveId ?? null,
 					}) satisfies ResolvedReportGroup,
 			);
 		});
@@ -428,6 +452,24 @@ export const ReportLive = Layer.effect(Report)(
 					.run(),
 			);
 			return {reopened: result.meta.changes};
+		});
+
+		const waveTargets = Effect.fn("Report.waveTargets")(function* (waveId: string) {
+			const rows = yield* run((db) =>
+				db
+					.selectDistinct({
+						targetKind: schema.contentReport.targetKind,
+						targetId: schema.contentReport.targetId,
+					})
+					.from(schema.contentReport)
+					.where(
+						and(
+							eq(schema.contentReport.waveId, waveId),
+							inArray(schema.contentReport.status, ["resolved", "dismissed"]),
+						),
+					),
+			);
+			return rows.map((r) => ({targetKind: r.targetKind as TargetKind, targetId: r.targetId}));
 		});
 
 		const lookupReportTarget = Effect.fn("Report.lookupReportTarget")(function* (reportId: string) {
@@ -608,6 +650,7 @@ export const ReportLive = Layer.effect(Report)(
 			resolveTarget,
 			reopenForTarget,
 			reopenForWave,
+			waveTargets,
 			lookupReportTarget,
 			firstOpenReportId,
 			countRemovalsByAuthors,

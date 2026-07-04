@@ -66,6 +66,13 @@ const RestoreReportInput = Schema.Struct({
 	targetId: Schema.optional(Schema.String),
 });
 
+// Restore a whole wave-removal (#1855) as a unit: the `waveId` names the one grouping id
+// the wave gesture stamped across its targets, so restore brings EVERY target in the batch
+// back live and reopens every report sharing the id together.
+const RestoreWaveReportInput = Schema.Struct({
+	waveId: Schema.String,
+});
+
 // Translate the service's kind-blind not-found into the feature-level error its
 // `targetKind` names — the wire-facing not-found the client already knows.
 const toFeatureNotFound = (e: ReportTargetNotFound) => {
@@ -125,6 +132,20 @@ export const mutations = {
 		},
 		Effect.fn("report.restore")(function* ({input}) {
 			return yield* requireModeration(restoreGated(input));
+		}),
+	),
+
+	// Restore a wave-removal as a unit (#1855, ADR 0138): reopen every report sharing the
+	// `waveId` AND bring each of the batch's targets back live — the restore-as-a-unit
+	// counterpart to a wave `report.resolve`. `Moderate`-gated, like restore.
+	"report.restoreWave": Fate.mutation(
+		{
+			input: RestoreWaveReportInput,
+			type: ResolveReceiptView,
+			error: Schema.Union([Denied]),
+		},
+		Effect.fn("report.restoreWave")(function* ({input}) {
+			return yield* requireModeration(restoreWaveGated(input));
 		}),
 	),
 };
@@ -241,6 +262,43 @@ const restoreGated = Effect.fn("report.restoreGated")(function* (
 		targetId: target.targetId,
 		resolution: "dismissed",
 		targetRemoved: !restored.restored,
+		collapsed: reopened,
+	});
+});
+
+// The post-gate wave-restore body — `Moderate`-gated in R like {@link restoreGated}. It
+// generalizes the single-target restore across the batch: bring EVERY target sharing the
+// waveId back live (the same per-target `moderateRestore` + live re-append the lone restore
+// runs), then reopen the whole batch as a unit (`reopenForWave`). The batch is exactly the
+// wave — one shared id — so nothing outside it is touched. `yield* Moderate` IS the gate.
+const restoreWaveGated = Effect.fn("report.restoreWaveGated")(function* (
+	input: typeof RestoreWaveReportInput.Type,
+) {
+	yield* Moderate;
+	const report = yield* Report;
+	const live = reportLive(yield* WorkerLivePublisher);
+
+	// The batch's still-terminal targets — each gets its content brought back live, exactly
+	// as the single restore does, before the reports flip open.
+	const targets = yield* report.waveTargets(input.waveId);
+	for (const target of targets) {
+		const restored = yield* moderateRestore(target);
+		if (restored.restored) {
+			yield* publishRestored(live, target, restored.sandboxedAt);
+		}
+	}
+
+	// Reopen every report sharing the waveId together — the restore-as-a-unit primitive.
+	const {reopened} = yield* report.reopenForWave(input.waveId);
+
+	// A result-only ack (like the single restore): the wave carries no single target, so the
+	// receipt names the wave (`waveId` as the id) and reports how many reports reopened.
+	const first = targets[0];
+	return toResolveReceipt({
+		targetKind: first?.targetKind ?? "post",
+		targetId: input.waveId,
+		resolution: "dismissed",
+		targetRemoved: false,
 		collapsed: reopened,
 	});
 });

@@ -22,6 +22,7 @@ const group = (
 	resolverId: "mod-1",
 	resolvedAt: new Date("2026-07-03T10:00:00Z"),
 	reportCount: 2,
+	waveId: null,
 	...over,
 });
 
@@ -81,6 +82,16 @@ describe("enrichResolvedReports — fold decisions with target context + resolve
 		assert.strictEqual(rows[0]?.targetRef, null);
 		// The decision itself still resolves — the resolver stays first-class.
 		assert.strictEqual(rows[0]?.resolverHandle, "founder");
+	});
+
+	it("carries the wave grouping id onto the row (null on a lone removal, #1855)", () => {
+		const rows = enrichResolvedReports(
+			[group("post", "p-1", {waveId: "wave-9"}), group("comment", "c-2", {waveId: null})],
+			new Map(),
+			new Map(),
+		);
+		assert.strictEqual(rows[0]?.waveId, "wave-9");
+		assert.strictEqual(rows[1]?.waveId, null);
 	});
 
 	it("folds an unresolved resolver handle to null (client falls back to the raw id)", () => {

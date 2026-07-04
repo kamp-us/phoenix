@@ -75,6 +75,7 @@ export const toResolvedReport = (
 	resolverHandle,
 	resolvedAt: g.resolvedAt.toISOString(),
 	reportCount: g.reportCount,
+	waveId: g.waveId,
 	targetExcerpt: context?.excerpt ?? null,
 	targetAuthor: context?.author ?? null,
 	targetRef: context?.ref ?? null,

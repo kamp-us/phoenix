@@ -29,6 +29,7 @@ const failOnContact: ReportShape = {
 	resolveTarget: die("resolveTarget"),
 	reopenForTarget: die("reopenForTarget"),
 	reopenForWave: die("reopenForWave"),
+	waveTargets: die("waveTargets"),
 	lookupReportTarget: die("lookupReportTarget"),
 	firstOpenReportId: die("firstOpenReportId"),
 	countRemovalsByAuthors: die("countRemovalsByAuthors"),

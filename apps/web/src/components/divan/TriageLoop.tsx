@@ -93,12 +93,19 @@ const ResolveReceiptView = view<ResolveReceipt>()({
 	collapsed: true,
 });
 
-/** A resolved target the loop can undo — the last verdict and which target it hit. */
-interface LastVerdict {
-	readonly targetKind: OpenReport["targetKind"];
-	readonly targetId: string;
-	readonly verdict: Verdict;
-}
+/**
+ * The last decision the loop can undo (`U`): a single-target verdict, or a wave-removal
+ * batch (#1855). `U` restores the batch as a unit (`report.restoreWave`) when the last
+ * decision was a wave, mirroring the decision feed's wave-restore.
+ */
+type LastVerdict =
+	| {
+			readonly kind: "single";
+			readonly targetKind: OpenReport["targetKind"];
+			readonly targetId: string;
+			readonly verdict: Verdict;
+	  }
+	| {readonly kind: "wave"; readonly waveId: string; readonly keys: ReadonlyArray<string>};
 
 export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	const result = useRequest({
@@ -159,7 +166,12 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 					return;
 				}
 				setResolvedIds((prev) => [...prev, `${target.targetKind}:${target.targetId}`]);
-				setLastVerdict({targetKind: target.targetKind, targetId: target.targetId, verdict});
+				setLastVerdict({
+					kind: "single",
+					targetKind: target.targetKind,
+					targetId: target.targetId,
+					verdict,
+				});
 				setDecisionsToday((n) => n + 1);
 				setRevealed(false);
 				setPending(null);
@@ -179,20 +191,35 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 		setBusy(true);
 		setError(null);
 		try {
-			// Undo is the existing restore/reopen edge (ADR 0098 §3): a removed target
-			// comes back live and its reports reopen; a dismissed group reopens the same
-			// way. Either path rehydrates the row into the live queue.
-			const {error: callError} = await fate.mutations.report.restore({
-				input: {targetKind: last.targetKind, targetId: last.targetId},
-				view: ResolveReceiptView,
-			});
-			if (callError) {
-				setError("geri alınamadı, tekrar dene.");
-				return;
+			// Undo is the existing restore/reopen edge (ADR 0098 §3): a removed target comes
+			// back live and its reports reopen; a dismissed group reopens the same way. A
+			// wave-removal (#1855) undoes as a UNIT — `report.restoreWave` reopens the whole
+			// batch — so `U` mirrors the decision feed's wave-restore; a lone verdict is the
+			// single-target restore. Either path rehydrates the affected rows into the queue.
+			if (last.kind === "wave") {
+				const {error: callError} = await fate.mutations.report.restoreWave({
+					input: {waveId: last.waveId},
+					view: ResolveReceiptView,
+				});
+				if (callError) {
+					setError("geri alınamadı, tekrar dene.");
+					return;
+				}
+				setResolvedIds((prev) => prev.filter((x) => !last.keys.includes(x)));
+				setDecisionsToday((n) => Math.max(0, n - last.keys.length));
+			} else {
+				const {error: callError} = await fate.mutations.report.restore({
+					input: {targetKind: last.targetKind, targetId: last.targetId},
+					view: ResolveReceiptView,
+				});
+				if (callError) {
+					setError("geri alınamadı, tekrar dene.");
+					return;
+				}
+				const id = `${last.targetKind}:${last.targetId}`;
+				setResolvedIds((prev) => prev.filter((x) => x !== id));
+				setDecisionsToday((n) => Math.max(0, n - 1));
 			}
-			const id = `${last.targetKind}:${last.targetId}`;
-			setResolvedIds((prev) => prev.filter((x) => x !== id));
-			setDecisionsToday((n) => Math.max(0, n - 1));
 			setLastVerdict(null);
 		} catch {
 			setError("geri alınamadı, tekrar dene.");
@@ -226,12 +253,13 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	);
 
 	// A batch collapsed these keys off the queue — mirror the single-verdict bookkeeping
-	// (drop them from the live queue, count each decision) without a re-fetch.
-	const onWaveResolved = useCallback((keys: ReadonlyArray<string>) => {
+	// (drop them from the live queue, count each decision) without a re-fetch, and record the
+	// wave as the last verdict so `U` undoes the whole batch as a unit (#1855).
+	const onWaveResolved = useCallback((keys: ReadonlyArray<string>, waveId: string) => {
 		if (keys.length === 0) return;
 		setResolvedIds((prev) => [...prev, ...keys]);
 		setDecisionsToday((n) => n + keys.length);
-		setLastVerdict(null);
+		setLastVerdict({kind: "wave", waveId, keys});
 	}, []);
 
 	// The one keyboard listener the whole loop is driven by. The pure `keyToAction`
@@ -444,7 +472,7 @@ function WaveManifest({
 	readonly rows: ReadonlyArray<{readonly node: ViewRef<"OpenReport">}>;
 	readonly authorId: string | null;
 	readonly resolveTarget: (input: WaveResolveInput, verdict: Verdict) => Promise<boolean>;
-	readonly onResolved: (keys: ReadonlyArray<string>) => void;
+	readonly onResolved: (keys: ReadonlyArray<string>, waveId: string) => void;
 	readonly onClose: () => void;
 }) {
 	const [rowsByKey, setRowsByKey] = useState<Record<string, WaveRow>>({});
@@ -494,7 +522,7 @@ function WaveManifest({
 				outcomes.push({key: waveTargetKey(input), ok});
 			}
 			const {resolved, failed} = summarizeWaveBatch(outcomes);
-			onResolved(resolved);
+			onResolved(resolved, waveId);
 			setPending(null);
 			setBusy(false);
 			const failLabel = waveFailureLabel(failed.length);

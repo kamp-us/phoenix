@@ -179,6 +179,12 @@ export type ResolvedReportViewRow = ViewRow<{
 	resolvedAt: string;
 	/** How many reports the decision collapsed on this target. */
 	reportCount: number;
+	/**
+	 * The wave grouping id (#1855) shared across a batch's targets, or `null` on a lone
+	 * removal — the decision feed's restore-as-a-unit key. Rows sharing a `waveId` render
+	 * as one entry whose restore reopens the whole batch (`report.restoreWave`).
+	 */
+	waveId: string | null;
 	/** A content excerpt or title identifying the decided target (`null` when unresolved). */
 	targetExcerpt: string | null;
 	/** The decided target's author handle (`null` when unresolved). */
@@ -196,6 +202,7 @@ export class ResolvedReportView extends FateDataView<ResolvedReportViewRow>()("R
 	resolverHandle: true,
 	resolvedAt: true,
 	reportCount: true,
+	waveId: true,
 	targetExcerpt: true,
 	targetAuthor: true,
 	targetRef: true,

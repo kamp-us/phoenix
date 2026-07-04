@@ -304,3 +304,85 @@ describe("Report.reopenForWave — restore the batch as a unit (#1855, captured 
 		}),
 	);
 });
+
+describe("Report.listResolved — wave grouping id maps onto the group (#1855, mocked seam)", () => {
+	it.effect("MIN(wave_id) passes through: a wave row carries its id, a lone row null", () =>
+		Effect.gen(function* () {
+			const report = yield* Report;
+			const groups = yield* report.listResolved();
+			assert.strictEqual(groups[0]?.waveId, "wave-1", "a wave-removal group carries its shared id");
+			assert.strictEqual(groups[1]?.waveId, null, "a lone removal group has no wave grouping");
+		}).pipe(
+			Effect.provide(
+				reportLayer(
+					scriptedAccess([
+						[
+							{
+								targetKind: "post",
+								targetId: "p-1",
+								reportCount: 1,
+								resolvedAt: 1_767_000_000,
+								resolverId: "mod-a",
+								resolution: "removed",
+								waveId: "wave-1",
+							},
+							{
+								targetKind: "comment",
+								targetId: "c-2",
+								reportCount: 1,
+								resolvedAt: 1_766_000_000,
+								resolverId: "mod-a",
+								resolution: "removed",
+								waveId: null,
+							},
+						],
+					]),
+				),
+			),
+		),
+	);
+});
+
+describe("Report.waveTargets — the batch's distinct targets (#1855)", () => {
+	it.effect("maps each distinct row to a {targetKind, targetId}", () =>
+		Effect.gen(function* () {
+			const report = yield* Report;
+			const targets = yield* report.waveTargets("wave-1");
+			assert.deepStrictEqual(targets, [
+				{targetKind: "post", targetId: "p-1"},
+				{targetKind: "definition", targetId: "d-2"},
+			]);
+		}).pipe(
+			Effect.provide(
+				reportLayer(
+					scriptedAccess([
+						[
+							{targetKind: "post", targetId: "p-1"},
+							{targetKind: "definition", targetId: "d-2"},
+						],
+					]),
+				),
+			),
+		),
+	);
+
+	it.effect("filters by the waveId and the terminal statuses (captured WHERE)", () =>
+		Effect.gen(function* () {
+			const {access, captured} = capturingDrizzle();
+			yield* Effect.provide(
+				Effect.gen(function* () {
+					const report = yield* Report;
+					return yield* report.waveTargets("wave-1");
+				}),
+				reportLayer(access),
+			);
+			const sel = captured.find((c) => /select/i.test(c.sql) && /content_report/i.test(c.sql));
+			assert.isDefined(sel, "waveTargets issued a SELECT on content_report");
+			assert.match(sel!.sql, /distinct/i, "it reads DISTINCT targets");
+			assert.match(sel!.sql, /"wave_id"\s*=\s*\?/i, "scoped to the wave grouping");
+			assert.include(sel!.params, "wave-1", "the WHERE binds the batch's wave id");
+			assert.include(sel!.params, "resolved", "it reads resolved rows");
+			assert.include(sel!.params, "dismissed", "and dismissed rows");
+		}),
+	);
+});

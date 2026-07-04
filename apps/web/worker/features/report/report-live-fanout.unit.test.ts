@@ -21,7 +21,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {type Actor, AgentAuthority, CurrentActor, human, RelationStore} from "@kampus/authz";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
-import {Effect, Layer} from "effect";
+import {Cause, Effect, Layer} from "effect";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Pano} from "../pano/Pano.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
@@ -470,6 +470,123 @@ describe("report.resolve — threads the wave grouping id to resolveTarget (#185
 			});
 			assert.strictEqual(sink.waveId, null, "a lone resolve carries no wave grouping");
 		}).pipe(Effect.provide(gate(Layer.mergeAll(capturingReport(sink), layer))));
+	});
+});
+
+// #1704 AC3: restoring a wave-removal (one ledger event, #1855) restores EVERY target in
+// the batch as a unit. The handler reads the wave's targets, brings each back live (the same
+// per-target restore + live re-append the lone restore runs), then reopens the whole batch.
+describe("report.restoreWave — restores the batch as a unit (#1704 AC3)", () => {
+	// A `Report` scripted for a two-target wave: `waveTargets` names the batch, `reopenForWave`
+	// reopens it. Every other method fail-on-contact — the path touches only these.
+	const waveReportStub = (
+		targets: ReadonlyArray<{targetKind: "post" | "comment" | "definition"; targetId: string}>,
+	) =>
+		makeReportStub({
+			waveTargets: () => Effect.succeed(targets),
+			reopenForWave: () => Effect.succeed({reopened: targets.length}),
+		});
+
+	it.effect("brings every target back live AND reopens the batch (post + definition)", () => {
+		const {recorded, scheduled, layer} = recordingPublisher();
+		return Effect.gen(function* () {
+			const receipt = yield* mutations["report.restoreWave"].handler({
+				input: {waveId: "wave-1"},
+				select: ["id", "collapsed"],
+			});
+			yield* flush(scheduled);
+			// Each target re-enters its subscribed connection — the batch restored as a unit.
+			assert.deepStrictEqual(recorded, [
+				liveGlobalConnectionTopic("posts"),
+				liveConnectionTopic("Term.definitions", {id: "effect"}),
+			]);
+			// The ack reports how many reports reopened across the wave.
+			assert.strictEqual((receipt as {collapsed: number}).collapsed, 2);
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					waveReportStub([
+						{targetKind: "post", targetId: "p1"},
+						{targetKind: "definition", targetId: "d1"},
+					]),
+					Layer.succeed(
+						Pano,
+						panoStub({
+							moderateRestorePost: () => Effect.succeed({restored: true, sandboxedAt: null}),
+							getPostsByIds: () => Effect.succeed([postRow("p1")]),
+						}),
+					),
+					Layer.succeed(
+						Sozluk,
+						sozlukStub({
+							moderateRestoreDefinition: () => Effect.succeed({restored: true, sandboxedAt: null}),
+							lookupDefinitionTermSlug: () => Effect.succeed("effect"),
+							getDefinitionsByIds: () => Effect.succeed([definitionRow("d1")]),
+						}),
+					),
+					layer,
+					relationStoreOf([MOD]),
+					agentAuthorityStub,
+					actorContext(human(MOD)),
+				),
+			),
+		);
+	});
+
+	it.effect("an empty wave (already reopened) fans out nothing and reopens zero", () => {
+		const {recorded, scheduled, layer} = recordingPublisher();
+		return Effect.gen(function* () {
+			const receipt = yield* mutations["report.restoreWave"].handler({
+				input: {waveId: "wave-gone"},
+				select: ["id", "collapsed"],
+			});
+			yield* flush(scheduled);
+			assert.deepStrictEqual(recorded, []);
+			assert.strictEqual((receipt as {collapsed: number}).collapsed, 0);
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					makeReportStub({
+						waveTargets: () => Effect.succeed([]),
+						reopenForWave: () => Effect.succeed({reopened: 0}),
+					}),
+					Layer.succeed(Pano, panoStub({})),
+					Layer.succeed(Sozluk, sozlukStub({})),
+					layer,
+					relationStoreOf([MOD]),
+					agentAuthorityStub,
+					actorContext(human(MOD)),
+				),
+			),
+		);
+	});
+
+	it.effect("a NON-moderator is denied — the wave body never runs (invisible denial)", () => {
+		const {layer} = recordingPublisher();
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				mutations["report.restoreWave"].handler({input: {waveId: "wave-1"}, select: ["id"]}),
+			);
+			assert.isTrue(exit._tag === "Failure", "a non-moderator restoreWave is denied");
+			if (exit._tag === "Failure") {
+				// The künye invisible denial — never leaks the wave exists.
+				assert.match(String(Cause.pretty(exit.cause)), /Denied|UNAUTHORIZED/);
+			}
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					// fail-on-contact Report/Pano/Sozluk: the gate denies BEFORE the body, so a
+					// reached `waveTargets`/restore would die and fail the test.
+					makeReportStub({}),
+					Layer.succeed(Pano, panoStub({})),
+					Layer.succeed(Sozluk, sozlukStub({})),
+					layer,
+					relationStoreOf([]),
+					agentAuthorityStub,
+					actorContext(human("u-not-mod")),
+				),
+			),
+		);
 	});
 });
 
