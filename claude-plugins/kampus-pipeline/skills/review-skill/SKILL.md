@@ -205,7 +205,7 @@ PR=<pr number>
 # once mis-flagged a now-control-plane PR as auto-mergeable (#981). So the literal below is the
 # fail-closed reference + the validate-gate-path-drift lockstep target, NOT the live decision source:
 # the regex actually classified is re-resolved from origin/main right after it.
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'
 # Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-flag a now-control-plane
 # PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
 # freshly via REST raw (never GraphQL). origin/main's line wins over the snapshot; fail closed on read failure.
@@ -235,10 +235,15 @@ CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page
   `heal-ci`, `report`, … — possibly alongside other non-blocking paths) → **non-blocking**.
   Your PASS marker binds `ship-it`.
 
-If the diff has **no `skills/**` file at all**, this is the wrong gate — that PR belongs to
-`review-code` (code) or `review-doc` (docs). Report `not a skill PR — route to review-code /
-review-doc` (a plain note, **not** a `review-skill:` marker — there's no skill to verdict) and
-stop. If the diff is **mixed skill + code/docs** (a `skills/**` change *and* `apps/web`/
+Your class is `claude-plugins/kampus-pipeline/skills/**` **and** the pipeline agent
+definitions `claude-plugins/kampus-pipeline/agents/**` — agent defs are behavioral artifacts
+like skills, so they route here for the verdict (ADR
+[0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
+#2003; an agents-only PR is §CP-blocking for merge via `CONTROL_PLANE_RE`, advisory-verdict
+here). If the diff has **no `skills/**` or `agents/**` file at all**, this is the wrong gate —
+that PR belongs to `review-code` (code) or `review-doc` (docs). Report `not a skill PR — route to
+review-code / review-doc` (a plain note, **not** a `review-skill:` marker — there's no skill to
+verdict) and stop. If the diff is **mixed skill + code/docs** (a `skills/**` or `agents/**` change *and* `apps/web`/
 `packages` code or a `.decisions`/`.patterns` doc, none of it gate-critical), it needs the
 matching gate per class: you verify the skill class here and emit the `review-skill` marker;
 `review-code`/`review-doc` verify their classes and emit theirs. `ship-it` requires the latest

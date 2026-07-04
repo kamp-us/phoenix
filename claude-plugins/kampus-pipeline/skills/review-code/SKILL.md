@@ -173,8 +173,9 @@ each gate hands a mis-classed PR to the gate that owns its class:
 ```bash
 # the file set drives the class decision (same list pulled above)
 FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
-# skills-only ⇒ every changed path is under skills/ — review-skill's class, not yours
-if [ -n "$FILES" ] && ! grep -qvE '^claude-plugins/kampus-pipeline/skills/' <<<"$FILES"; then
+# skills-only ⇒ every changed path is under skills/ or agents/ — review-skill's class, not yours
+# (agents/** are behavioral artifacts, review-skill-routed for the verdict — ADR 0150/#2003)
+if [ -n "$FILES" ] && ! grep -qvE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES"; then
   echo "not a code PR — route to review-skill"   # plain note, no review-code: marker; stop
   exit 0
 fi
@@ -455,7 +456,7 @@ snapshot once mis-classified a now-control-plane PR (#981); reading §CP freshly
 # is current — a pre-amendment snapshot once mis-classified a now-control-plane PR (#981). So the
 # literal below is the fail-closed reference + the validate-gate-path-drift lockstep target, NOT the
 # live decision source: the regex actually classified is re-resolved from origin/main right after it.
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set (ADR 0073 §6; hooks added by 0103/#1003; the standalone -guard clause retired with those packages by #1003)
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set (ADR 0073 §6; hooks added by 0103/#1003; the standalone -guard clause retired with those packages by #1003; agents/ added by 0150/#2003)
 # Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-flag a now-control-plane
 # PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
 # freshly via REST raw (never GraphQL). origin/main's line wins over the snapshot; fail closed on read failure.
