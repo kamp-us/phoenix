@@ -17,8 +17,15 @@
  *     the per-kind counts. {@link buildRoster} derives these by grouping items.
  */
 
-/** The content kind a sandboxed backlog item came from. */
-export type DivanItemKind = "definition" | "post" | "comment";
+import type {TargetKind} from "../../db/target-kind.ts";
+
+/**
+ * The content kind a sandboxed backlog item came from. Aliased to the shared
+ * {@link TargetKind} taxonomy so the votable-kind set is declared once — a divan
+ * kind outside `TARGET_KINDS` can no longer be introduced here without failing to
+ * compile against the vote/report engines the divan casts into.
+ */
+export type DivanItemKind = TargetKind;
 
 /**
  * One normalized sandboxed backlog item — the per-domain rows

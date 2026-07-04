@@ -7,7 +7,7 @@
  * merge — which context lands on which group, and the missing-context fallback — is
  * a T1 unit (`*.unit.test.ts` precedent).
  */
-import type {TargetKind} from "../../db/target-kind.ts";
+import {type TargetKind, targetKey} from "../../db/target-kind.ts";
 import type {OpenReportGroup, ResolvedReportGroup} from "./Report.ts";
 import {type RowReputation, rowReputationOf} from "./reputation.ts";
 import {toOpenReport, toResolvedReport} from "./shapers.ts";
@@ -35,7 +35,7 @@ export interface ReportTargetContext {
 
 /** The `<kind>:<id>` key an `OpenReport`/context map is keyed by (matches the view `id`). */
 export const contextKeyOf = (targetKind: TargetKind, targetId: string): string =>
-	`${targetKind}:${targetId}`;
+	targetKey(targetKind, targetId);
 
 /**
  * Clamp a body to a single-line queue excerpt: collapse whitespace and cut to

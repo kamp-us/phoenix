@@ -27,7 +27,7 @@ import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
-import {TARGET_KINDS, type TargetKind} from "../../db/target-kind.ts";
+import {parseTargetKey, type TargetKind, targetKey} from "../../db/target-kind.ts";
 import {notifyDivanVote} from "../bildirim/rite-emitters.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
@@ -52,16 +52,14 @@ const DivanVoteInput = Schema.Struct({
 
 /**
  * Split a `<kind>:<itemId>` divan item id back into its target, or `null` if malformed /
- * unknown-kind. The backlog read only ever emits well-formed ids, so a `null` here is a
- * hand-crafted request past the gate — the caller collapses it to the invisible `Denied`,
- * keeping the private surface opaque.
+ * unknown-kind — the shared {@link parseTargetKey} codec, remapped to the vote engine's
+ * `{targetKind, targetId}` field names. The backlog read only ever emits well-formed ids,
+ * so a `null` here is a hand-crafted request past the gate — the caller collapses it to the
+ * invisible `Denied`, keeping the private surface opaque.
  */
 const parseItemId = (id: string): {targetKind: TargetKind; targetId: string} | null => {
-	const sep = id.indexOf(":");
-	if (sep <= 0 || sep === id.length - 1) return null;
-	const kind = id.slice(0, sep);
-	if (!(TARGET_KINDS as ReadonlyArray<string>).includes(kind)) return null;
-	return {targetKind: kind as TargetKind, targetId: id.slice(sep + 1)};
+	const parsed = parseTargetKey(id);
+	return parsed && {targetKind: parsed.kind, targetId: parsed.id};
 };
 
 export const mutations = {
@@ -129,7 +127,7 @@ const voteGated = Effect.fn("divan.voteGated")(function* (
 	}
 	return {
 		__typename: "DivanVoteReceipt" as const,
-		id: `${result.targetKind}:${result.targetId}`,
+		id: targetKey(result.targetKind, result.targetId),
 		score: result.score,
 		myVote: result.myVote,
 	};

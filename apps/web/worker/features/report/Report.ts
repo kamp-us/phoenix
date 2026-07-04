@@ -15,7 +15,7 @@ import {and, eq, inArray, isNotNull, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import type {TargetKind} from "../../db/target-kind.ts";
+import {type TargetKind, targetKey} from "../../db/target-kind.ts";
 import {targetTable} from "../../db/target-table.ts";
 import {ReportTargetNotFound} from "./errors.ts";
 import * as Resolution from "./resolution.ts";
@@ -561,7 +561,7 @@ export const ReportLive = Layer.effect(Report)(
 					.groupBy(schema.contentReport.targetKind, schema.contentReport.targetId),
 			);
 			for (const r of rows) {
-				diversity.set(`${r.targetKind}:${r.targetId}`, {
+				diversity.set(targetKey(r.targetKind, r.targetId), {
 					reportCount: Number(r.reportCount),
 					distinctReporters: Number(r.distinctReporters),
 				});
