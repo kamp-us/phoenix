@@ -1,0 +1,47 @@
+/* ReactionBar — the curated-palette emoji tepki bar (#1867), reused across pano
+   post/comment + sözlük definition cards. A horizontal row of palette buttons;
+   the viewer's current reaction is highlighted via [aria-pressed="true"]. */
+
+.kp-reaction-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	align-items: center;
+}
+
+.kp-reaction-bar__btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 1px 6px;
+	border: 1px solid var(--border-faint);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--text);
+	font: var(--t-meta);
+	line-height: 1.6;
+	cursor: pointer;
+}
+
+.kp-reaction-bar__btn:hover {
+	background: var(--surface-sunken);
+}
+
+.kp-reaction-bar__btn:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 1px;
+}
+
+.kp-reaction-bar__btn[aria-pressed="true"] {
+	border-color: var(--accent);
+	background: var(--accent-soft, var(--surface-sunken));
+}
+
+.kp-reaction-bar__emoji {
+	font-size: 1em;
+}
+
+.kp-reaction-bar__count {
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+}

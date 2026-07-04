@@ -11,13 +11,19 @@ import {bodyEditOptimistic} from "../../fate/optimisticEdit";
 import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
-import {PHOENIX_OPTIMISTIC_DEFINITION_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../../flags/keys";
+import {FlagGate} from "../../flags/FlagGate";
+import {
+	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
+	PHOENIX_OPTIMISTIC_EDITS,
+	PHOENIX_REACTIONS,
+} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
 import {dropOptimisticDefinitionEdge} from "../../pages/definitionDeleteOptimistic";
 import {useVoteToggle} from "../pano/useVoteToggle";
+import {DefinitionReactionBar} from "../reaction/DefinitionReactionBar";
 import {Button} from "../ui/Button";
 import {useVoteFlash} from "../useVoteFlash";
 import "../vote-cue.css";
@@ -35,6 +41,7 @@ export const DefinitionView = view<Definition>()({
 	updatedAt: true,
 	author: true,
 	authorId: true,
+	reactions: {counts: true, myReaction: true},
 });
 
 const BODY_MAX = 10_000;
@@ -330,6 +337,15 @@ export function DefinitionCard(props: DefinitionCardProps) {
 						) : null}
 					</span>
 				</footer>
+				{!editing ? (
+					<FlagGate flag={PHOENIX_REACTIONS}>
+						<DefinitionReactionBar
+							definitionId={definition.id}
+							slug={props.slug}
+							reactions={definition.reactions}
+						/>
+					</FlagGate>
+				) : null}
 				{isAuthor ? (
 					<Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>
 						<Dialog.Popup>
