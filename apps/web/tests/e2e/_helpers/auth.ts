@@ -73,7 +73,8 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
 }
 
 /**
- * Complete the username bootstrap gate if it's up.
+ * Complete the username bootstrap gate if it's up, committing the unedited
+ * email-derived prefill.
  *
  * A fresh Pasaport user has `username = NULL`, so the Layout's `needsBootstrap`
  * gate replaces the page content with <UsernameBootstrap> until a username is
@@ -82,8 +83,20 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
  * instead of the content. Submits the pre-filled value (the email local-part,
  * unique per `signUp`). No-op if the gate isn't present (already bootstrapped).
  *
+ * #1888 AC4 makes the *unedited* prefill a deliberate two-step confirm: because
+ * a handle is permanent, submitting the untouched email-derived value doesn't
+ * commit on the first click — it only arms confirm (the submit button reads
+ * "bu adı onayla" on mount, not "devam et"), and a *second* submit commits. An
+ * *edited* value still commits on the first click. So this helper: (1) selects
+ * the submit button by its stable class, not the varying label; (2) clicks it,
+ * and if the gate heading is still up after that, clicks once more (the confirm
+ * path). That is robust for both paths — an edited handle commits on click one
+ * and the second click is skipped; the unedited prefill arms on click one and
+ * commits on click two.
+ *
  * Specs that need a *specific* handle (e.g. to navigate to `/u/<handle>`) drive
- * the gate themselves with their chosen value instead of calling this.
+ * the gate themselves with their chosen value instead of calling this — an
+ * edited value commits in one click, so they are unaffected by the confirm step.
  */
 export async function completeBootstrap(page: Page): Promise<void> {
 	const input = page.locator("input#bootstrap-username");
@@ -101,10 +114,20 @@ export async function completeBootstrap(page: Page): Promise<void> {
 			? prefilled
 			: `e2e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 	await input.fill(handle);
-	await page.getByRole("button", {name: /devam et/i}).click();
-	await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
-		timeout: 10_000,
-	});
+
+	// Select by the stable submit class, NOT the label: the label now varies
+	// ("bu adı onayla" while confirm is armed vs "devam et" otherwise, #1888 AC4).
+	const submit = page.locator("button[type='submit'].kp-auth__submit");
+	const heading = page.getByRole("heading", {name: /kullanıcı adını seç/i});
+
+	await submit.click();
+	// The unedited prefill only ARMED confirm on click one, so the gate is still
+	// up — a second click commits. An edited value already committed on click one,
+	// so the gate is gone and this branch is skipped.
+	if (await heading.isVisible().catch(() => false)) {
+		await submit.click();
+	}
+	await expect(heading).toHaveCount(0, {timeout: 10_000});
 }
 
 /**
