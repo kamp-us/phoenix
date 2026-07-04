@@ -352,7 +352,7 @@ export const ReportLive = Layer.effect(Report)(
 						waveId: sql<string | null>`MIN(${schema.contentReport.waveId})`,
 					})
 					.from(schema.contentReport)
-					.where(inArray(schema.contentReport.status, ["resolved", "dismissed"]))
+					.where(inArray(schema.contentReport.status, Resolution.TERMINAL_STATUSES))
 					.groupBy(schema.contentReport.targetKind, schema.contentReport.targetId)
 					.orderBy(sql`MAX(${schema.contentReport.resolvedAt}) DESC`)
 					.limit(limit),
@@ -414,7 +414,10 @@ export const ReportLive = Layer.effect(Report)(
 					// Clearing `waveId` too keeps the invariant: an OPEN report never carries
 					// a stale wave grouping (#1855).
 					.set({
-						status: "open",
+						// The target status AND the terminal-source guard are decided by the
+						// state machine (terminal → open); the SQL guard below is the
+						// counterpart that applies the reopen only to terminal rows.
+						status: Resolution.reopen("resolved"),
 						resolverId: null,
 						resolvedAt: null,
 						resolution: null,
@@ -424,7 +427,7 @@ export const ReportLive = Layer.effect(Report)(
 						and(
 							eq(schema.contentReport.targetKind, input.targetKind),
 							eq(schema.contentReport.targetId, input.targetId),
-							inArray(schema.contentReport.status, ["resolved", "dismissed"]),
+							inArray(schema.contentReport.status, Resolution.TERMINAL_STATUSES),
 						),
 					)
 					.run(),
@@ -437,7 +440,7 @@ export const ReportLive = Layer.effect(Report)(
 				db
 					.update(schema.contentReport)
 					.set({
-						status: "open",
+						status: Resolution.reopen("resolved"),
 						resolverId: null,
 						resolvedAt: null,
 						resolution: null,
@@ -446,7 +449,7 @@ export const ReportLive = Layer.effect(Report)(
 					.where(
 						and(
 							eq(schema.contentReport.waveId, waveId),
-							inArray(schema.contentReport.status, ["resolved", "dismissed"]),
+							inArray(schema.contentReport.status, Resolution.TERMINAL_STATUSES),
 						),
 					)
 					.run(),
@@ -465,7 +468,7 @@ export const ReportLive = Layer.effect(Report)(
 					.where(
 						and(
 							eq(schema.contentReport.waveId, waveId),
-							inArray(schema.contentReport.status, ["resolved", "dismissed"]),
+							inArray(schema.contentReport.status, Resolution.TERMINAL_STATUSES),
 						),
 					),
 			);

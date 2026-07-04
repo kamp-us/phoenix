@@ -103,6 +103,16 @@ export const reopen = (from: ReportStatus): ReportStatus =>
 
 export const isTerminal = (status: ReportStatus): boolean => status !== "open";
 
+/**
+ * The terminal statuses a report can be reopened from, derived from the machine
+ * ({@link isTerminal}) rather than hand-typed — so the SQL `reopen` guard sources
+ * its "reopen only from a terminal state" set from the one machine, not a literal
+ * that could drift from it (ADR 0098 §3). Narrowed to the terminal subtype.
+ */
+export const TERMINAL_STATUSES = REPORT_STATUSES.filter(isTerminal) as ReadonlyArray<
+	Exclude<ReportStatus, "open">
+>;
+
 /** The outcome an action records, independent of any transition — the action→outcome map. */
 export const outcomeOf = (action: ResolveAction): Resolution =>
 	action === "remove" ? "removed" : "dismissed";
