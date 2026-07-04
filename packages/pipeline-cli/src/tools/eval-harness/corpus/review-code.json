@@ -1,0 +1,47 @@
+{
+	"version": 1,
+	"stages": {
+		"triage": [],
+		"write-code": [],
+		"review-code": [
+			{
+				"stage": "review-code",
+				"inputRef": 1199,
+				"label": {
+					"verdict": "PASS",
+					"acFindings": [
+						"Only claude-plugins/kampus-pipeline/agents/shipper.md added, matching the coder.md agent template",
+						"Read-only tool scope (no Edit/Write) — a working-tree mutation is structurally unrepresentable",
+						"Refuses control-plane merges, as the shipper epic intends"
+					]
+				}
+			},
+			{
+				"stage": "review-code",
+				"inputRef": 1294,
+				"label": {
+					"verdict": "FAIL",
+					"acFindings": [
+						"AC1 R2 bucket declared beside PhoenixDb but NOT provisioned — alchemy deploy fails Unauthorized in CI",
+						"deploy and integration-tests jobs are red — the central deliverable fails in CI",
+						"Conjunctive verdict: a red central deliverable forces FAIL despite passing typecheck/build/lint/unit"
+					]
+				}
+			},
+			{
+				"stage": "review-code",
+				"inputRef": 1115,
+				"label": {
+					"verdict": "PASS",
+					"acFindings": [
+						"Repair delta since the FAILed 31fc8da is a single one-line re-export reorder, no export added or removed",
+						"Lint now clean and typecheck 14/14 — the prior import-order defect is gone",
+						"Load-bearing wire-code invariant survived: the wireCodes.unit.test guard passes in CI"
+					]
+				}
+			}
+		],
+		"review-doc": [],
+		"ship-it": []
+	}
+}

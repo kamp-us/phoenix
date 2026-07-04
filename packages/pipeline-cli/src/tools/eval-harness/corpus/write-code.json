@@ -1,0 +1,26 @@
+{
+	"version": 1,
+	"stages": {
+		"triage": [],
+		"write-code": [
+			{
+				"stage": "write-code",
+				"inputRef": 1223,
+				"label": { "fixesRef": 1223, "ciGreen": true, "reviewVerdict": "PASS" }
+			},
+			{
+				"stage": "write-code",
+				"inputRef": 106,
+				"label": { "fixesRef": 106, "ciGreen": false, "reviewVerdict": "FAIL" }
+			},
+			{
+				"stage": "write-code",
+				"inputRef": 1032,
+				"label": { "fixesRef": 1032, "ciGreen": true, "reviewVerdict": "PASS" }
+			}
+		],
+		"review-code": [],
+		"review-doc": [],
+		"ship-it": []
+	}
+}

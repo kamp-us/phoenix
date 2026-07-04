@@ -1,0 +1,26 @@
+{
+	"version": 1,
+	"stages": {
+		"triage": [
+			{
+				"stage": "triage",
+				"inputRef": 1227,
+				"label": { "type": "decision", "priority": "p2", "status": "triaged" }
+			},
+			{
+				"stage": "triage",
+				"inputRef": 1223,
+				"label": { "type": "bug", "priority": "p0", "status": "triaged" }
+			},
+			{
+				"stage": "triage",
+				"inputRef": 1848,
+				"label": { "type": "chore", "priority": "p1", "status": "triaged" }
+			}
+		],
+		"write-code": [],
+		"review-code": [],
+		"review-doc": [],
+		"ship-it": []
+	}
+}
