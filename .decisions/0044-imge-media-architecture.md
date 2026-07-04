@@ -1,12 +1,14 @@
 ---
 id: 0044
 title: imge Media Architecture — R2 Store, Pasaport-Auth Uploads, One Surface
-status: accepted
+status: superseded by [0144](0144-depo-internal-asset-cdn.md)
 date: 2026-06-13
 tags: [imge, storage, auth, infra]
 ---
 
 # 0044 — imge Media Architecture — R2 Store, Pasaport-Auth Uploads, One Surface
+
+Superseded by [0144](0144-depo-internal-asset-cdn.md) — the imgur-style scope was brutally narrowed to **depo**, a decoupled internal asset CDN (own `infra/` stack, `depo.kamp.us` public-read, doorman upload worker, standalone CLI). The R2-store + pasaport-`apiKey`-auth spine below survives; the public-product scope (frontend, gallery, user uploads, video, full safety envelope) is rejected.
 
 ## Context
 
