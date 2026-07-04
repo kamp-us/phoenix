@@ -18,7 +18,7 @@ primitives. Each file is presentational + pure-testable:
 
 | Primitive | File | What it is | Consumers |
 |---|---|---|---|
-| **actor/user row** | `ActorIdentity.tsx` + `actorIdentity.ts` (`actorLabel`) | An actor's handle + karma-on-others, rendered through the reusable `<Karma>` atom (#1208); the label resolved DOM-free by `actorLabel` (display name → `@username` → surface fallback noun) | divan roster + çaylak-detail (via `CaylakIdentity`); the admin user-list (#968) next |
+| **actor/user row** | `ActorIdentity.tsx` + `actor-identity.ts` (`actorLabel`) | An actor's handle + karma-on-others, rendered through the reusable `<Karma>` atom (#1208); the label resolved DOM-free by `actorLabel` (display name → `@username` → surface fallback noun) | divan roster + çaylak-detail (via `CaylakIdentity`); the admin user-list (#968) next |
 
 The table grows as each real second consumer lands (see "Extract on the second consumer" below):
 the **action affordances** (a confirm-before-act row like divan's `VouchSheet`/remove verdict) and
