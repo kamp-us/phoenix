@@ -38,7 +38,7 @@
  * env or the out-of-repo org-keyed config; the tool source carries none.
  */
 import {execFile} from "node:child_process";
-import {readFileSync} from "node:fs";
+import {existsSync, readFileSync} from "node:fs";
 import {homedir} from "node:os";
 import {promisify} from "node:util";
 import {Config, Console, Effect} from "effect";
@@ -46,6 +46,8 @@ import {Command, Flag} from "effect/unstable/cli";
 import {
 	defaultConfigPath,
 	defaultKeyPath,
+	EXIT_MINT_FAILED,
+	EXIT_NOT_CONFIGURED,
 	expandHome,
 	MintError,
 	mintInstallationToken,
@@ -90,10 +92,21 @@ const privateKeyFlag = Flag.string("private-key").pipe(
 	),
 );
 
-// A generic, credential-free failure that carries only a message to stderr + exit 1.
+// A generic, credential-free failure that carries only a message to stderr + exit 1 (mint-failed).
 // MintError already scrubs to status + API message; input/read faults surface here.
 class BotTokenFailure {
 	readonly _tag = "BotTokenFailure";
+	readonly message: string;
+	constructor(message: string) {
+		this.message = message;
+	}
+}
+
+// The org has NO bot creds at all — not an error, an opt-out signal. Exits 3 (distinct from the
+// mint-failed 1) so a caller can fall back to the operator token. See the exit-code contract in
+// bot-token.ts. Kept a SEPARATE tag from BotTokenFailure so the two exit codes can't be conflated.
+class BotTokenNotConfigured {
+	readonly _tag = "BotTokenNotConfigured";
 	readonly message: string;
 	constructor(message: string) {
 		this.message = message;
@@ -128,18 +141,35 @@ const readPemFileOrFail = (path: string): Effect.Effect<string, BotTokenFailure>
 		catch: () => new BotTokenFailure(`cannot read private-key file: ${path}`),
 	});
 
-/** Read + parse the optional org-keyed `{appId, installationId}` config JSON; a missing/unreadable/malformed file is a soft null (ids may still come from env/flags). */
+/**
+ * Read + parse the optional org-keyed `{appId, installationId}` config JSON. Reports both the
+ * parsed value (a soft `undefined` on missing/unreadable/malformed — ids may still come from
+ * env/flags) AND `present`: whether the file EXISTS on disk. Presence is what separates
+ * not-configured (no file) from configured-but-broken (file present but unparseable/empty) —
+ * the latter must hard-fail (exit 1), never degrade to exit 3.
+ */
 const readConfigFile = (
 	path: string,
-): Effect.Effect<{appId?: unknown; installationId?: unknown} | undefined> =>
+): Effect.Effect<{
+	present: boolean;
+	value: {appId?: unknown; installationId?: unknown} | undefined;
+}> =>
 	Effect.sync(() => {
+		const resolved = expandHome(path, homedir());
+		const present = existsSync(resolved);
+		if (!present) return {present: false, value: undefined};
 		try {
-			const parsed = JSON.parse(readFileSync(expandHome(path, homedir()), "utf8"));
-			return parsed && typeof parsed === "object"
-				? (parsed as {appId?: unknown; installationId?: unknown})
-				: undefined;
+			const parsed = JSON.parse(readFileSync(resolved, "utf8"));
+			return {
+				present: true,
+				value:
+					parsed && typeof parsed === "object"
+						? (parsed as {appId?: unknown; installationId?: unknown})
+						: undefined,
+			};
 		} catch {
-			return undefined;
+			// Present but unparseable — configured-but-broken. `present:true` forces the hard-fail path.
+			return {present: true, value: undefined};
 		}
 	});
 
@@ -165,7 +195,30 @@ const mint = Command.make(
 			}
 			const org = orgRes.org;
 
-			// 2. PEM source: explicit override, else the org-derived default path.
+			// 2. Ids: flag > env > the org-keyed config file. Resolved BEFORE any file read so a
+			//    genuinely not-configured org exits 3 without a spurious PEM-read failure. A supplied
+			//    key override (--private-key[-path] / env) is configuration intent — it flips a missing
+			//    id from not-configured to configured-but-broken (hard-fail), never a silent exit-3.
+			const keyOverrideSupplied =
+				args.privateKey._tag === "Some" || args.privateKeyPath._tag === "Some";
+			const configPath = defaultConfigPath(org);
+			const config = yield* readConfigFile(configPath);
+			const ids = resolveIds({
+				configPathForError: configPath,
+				configPresent: config.present || keyOverrideSupplied,
+				...(args.appId._tag === "Some" ? {appId: args.appId.value} : {}),
+				...(args.installationId._tag === "Some" ? {installationId: args.installationId.value} : {}),
+				...(config.value ? {configFile: config.value} : {}),
+			});
+			if (ids._tag === "NotConfigured") {
+				return yield* Effect.fail(new BotTokenNotConfigured(ids.message));
+			}
+			if (ids._tag === "Error") {
+				return yield* Effect.fail(new BotTokenFailure(ids.message));
+			}
+
+			// 3. PEM source: explicit override, else the org-derived default path. A read failure
+			//    here is configured-but-broken (we HAD the ids) → mint-failed (exit 1), never exit 3.
 			const source = resolveKeySource({
 				defaultPath: defaultKeyPath(org),
 				...(args.privateKey._tag === "Some" ? {privateKey: args.privateKey.value} : {}),
@@ -176,19 +229,6 @@ const mint = Command.make(
 			}
 			const privateKeyPem =
 				source._tag === "File" ? yield* readPemFileOrFail(source.path) : source.pem;
-
-			// 3. Ids: flag > env > the org-keyed config file.
-			const configPath = defaultConfigPath(org);
-			const configFile = yield* readConfigFile(configPath);
-			const ids = resolveIds({
-				configPathForError: configPath,
-				...(args.appId._tag === "Some" ? {appId: args.appId.value} : {}),
-				...(args.installationId._tag === "Some" ? {installationId: args.installationId.value} : {}),
-				...(configFile ? {configFile} : {}),
-			});
-			if (ids._tag === "Error") {
-				return yield* Effect.fail(new BotTokenFailure(ids.message));
-			}
 
 			const token = yield* Effect.tryPromise({
 				try: () =>
@@ -212,10 +252,20 @@ const mint = Command.make(
 		});
 
 		return run.pipe(
+			// not-configured (exit 3) — an opt-out signal, distinct from mint-failed. Caller may
+			// fall back to the operator token. Prefixed so the stderr line is unmistakable.
+			Effect.catchTag("BotTokenNotConfigured", (e) =>
+				Effect.sync(() => {
+					process.stderr.write(`bot-token: ${e.message}\n`);
+					process.exit(EXIT_NOT_CONFIGURED);
+				}),
+			),
+			// every other failure (bad key, mint HTTP error, malformed/present config, GitHub reject)
+			// stays mint-failed (exit 1) — a configured-but-broken bot must hard-fail, never degrade.
 			Effect.catchTag("BotTokenFailure", (e) =>
 				Effect.sync(() => {
 					process.stderr.write(`${e.message}\n`);
-					process.exit(1);
+					process.exit(EXIT_MINT_FAILED);
 				}),
 			),
 		);
