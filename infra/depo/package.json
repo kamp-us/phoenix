@@ -1,0 +1,25 @@
+{
+	"name": "@kampus/depo-infra",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"deploy:depo": "alchemy deploy depo.ts",
+		"destroy:depo": "alchemy destroy depo.ts",
+		"typecheck": "tsgo -p tsconfig.json"
+	},
+	"dependencies": {
+		"alchemy": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
