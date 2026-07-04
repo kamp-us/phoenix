@@ -1,9 +1,13 @@
 /**
- * The `bot-token` core — mint a phoenix[bot] GitHub App INSTALLATION access token.
+ * The `bot-token` core — mint a per-org bot GitHub App INSTALLATION access token.
  *
- * Operationalizes ADR 0140: the pipeline authenticates as the `phoenix[bot]` GitHub
- * App via a short-lived installation access token (not a long-lived PAT) to author
- * PR-open + merge-queue enqueue under the bot identity. See ADR 0140 for the why.
+ * Operationalizes ADR 0140: the pipeline authenticates as its org's bot GitHub App via a
+ * short-lived installation access token (not a long-lived PAT) to author PR-open +
+ * merge-queue enqueue under the bot identity. See ADR 0140 for the why.
+ *
+ * Plugin-level, org-derived: the plugin serves N GitHub owners, so the org is DERIVED from
+ * the target repo's owner (`resolveOrg`), and creds are keyed by that org under
+ * `~/.config/kampus-pipeline/<org>/`. Nothing here is hardcoded to one org.
  *
  * Two pure, injectable pieces so the whole flow is unit-testable without a live App:
  *   - `buildAppJwt` — a signed RS256 JWT (the App-auth credential), given the App id,
@@ -130,10 +134,6 @@ export const mintInstallationToken = async ({
 	return parsed.token;
 };
 
-/** Default OUT-OF-REPO cred locations — the local-path provisioning shape (ADR 0140). */
-export const DEFAULT_KEY_PATH = "~/.config/phoenix-bot/private-key.pem";
-export const DEFAULT_CONFIG_PATH = "~/.config/phoenix-bot/config.json";
-
 /**
  * Expand a leading `~` / `$HOME` to the home dir (`home` injected so it's pure). Only a
  * leading `~/` or `~` is expanded — a `~` mid-path is left untouched. An absolute or
@@ -146,11 +146,54 @@ export const expandHome = (path: string, home: string): string => {
 	return path;
 };
 
+// ── Org derivation ──────────────────────────────────────────────────────────
+// The plugin serves N orgs (any GitHub owner), so the org is DERIVED from the target
+// repo's owner — never a hardcoded constant. The repo itself is resolved by the skills'
+// shared idiom `${CLAUDE_PIPELINE_REPO:-$(gh repo view … nameWithOwner)}`; this module
+// takes that `owner/name` string and extracts the owner.
+
+const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+
+export type OrgResolution =
+	| {readonly _tag: "Ok"; readonly org: string}
+	| {readonly _tag: "Error"; readonly message: string};
+
+/**
+ * Derive the org from a `owner/name` slug — the owner segment. This is the pure half of
+ * the skills' `$REPO` resolution (`CLAUDE_PIPELINE_REPO` else `gh repo view … nameWithOwner`,
+ * matched in the command layer): given that `owner/name`, the org is the owner. So an
+ * `acme-co/widget` run derives `acme-co`; a `binclusive/foo` run derives `binclusive`. A slug
+ * without exactly one `/`-delimited owner segment is an error — the plugin must never guess an org.
+ */
+export const resolveOrg = (repoSlug: string): OrgResolution => {
+	const owner = repoSlug.split("/")[0]?.trim();
+	if (!nonEmpty(owner) || owner === repoSlug.trim() || repoSlug.split("/").length < 2) {
+		return {
+			_tag: "Error",
+			message: `cannot derive org from repo "${repoSlug}" — expected owner/name (set --repo or CLAUDE_PIPELINE_REPO)`,
+		};
+	}
+	return {_tag: "Ok", org: owner};
+};
+
+/** The out-of-repo cred root, shared across every org the plugin serves (each org its own subdir). */
+export const CRED_ROOT = "~/.config/kampus-pipeline";
+
+/** The org-derived default PEM path: `~/.config/kampus-pipeline/<org>/private-key.pem`. */
+export const defaultKeyPath = (org: string): string => `${CRED_ROOT}/${org}/private-key.pem`;
+
+/** The org-derived default config path: `~/.config/kampus-pipeline/<org>/config.json`. */
+export const defaultConfigPath = (org: string): string => `${CRED_ROOT}/${org}/config.json`;
+
+// ── PEM source resolution ───────────────────────────────────────────────────
+
 export interface KeySourceInput {
-	/** `--private-key` / env `PHOENIX_BOT_PRIVATE_KEY` — PEM CONTENT (secret-injection case). */
+	/** `--private-key` / env `KAMPUS_PIPELINE_PRIVATE_KEY` — PEM CONTENT (broker / secret-injection). */
 	readonly privateKey?: string | undefined;
-	/** `--private-key-path` / env `PHOENIX_BOT_PRIVATE_KEY_PATH` — a PEM file path. */
+	/** `--private-key-path` / env `KAMPUS_PIPELINE_PRIVATE_KEY_PATH` — a PEM file path override. */
 	readonly privateKeyPath?: string | undefined;
+	/** The org-derived default PEM path, used when neither override is given. */
+	readonly defaultPath: string;
 }
 
 export type KeyResolution =
@@ -159,16 +202,20 @@ export type KeyResolution =
 	| {readonly _tag: "Error"; readonly message: string};
 
 /**
- * Resolve the PEM source. `--private-key` (inline content, e.g. a secret-manager value)
- * and `--private-key-path` (a file path) are the two sources; giving BOTH is an error. If
- * NEITHER is set, fall back to the well-known local path `DEFAULT_KEY_PATH` — the local-path
- * provisioning shape (ADR 0140): creds live OUT of the repo under `~/.config/phoenix-bot/`,
- * so a path source always exists by default. The caller reads the file for the `File` case
- * (kept out of this pure resolver so precedence is testable without touching the filesystem).
+ * Resolve the PEM source. `--private-key` (inline content — the token-broker / secret-manager
+ * path) and `--private-key-path` (a file path) are the two overrides; giving BOTH is an error.
+ * If NEITHER is set, fall back to the org-derived `defaultPath` (rung-1 local-path model, ADR
+ * 0140): creds live OUT of every repo under `~/.config/kampus-pipeline/<org>/`, so a path source
+ * always exists by default. The caller reads the file for the `File` case (kept out of this pure
+ * resolver so precedence is testable without touching the filesystem).
  */
-export const resolveKeySource = ({privateKey, privateKeyPath}: KeySourceInput): KeyResolution => {
-	const hasInline = typeof privateKey === "string" && privateKey.length > 0;
-	const hasPath = typeof privateKeyPath === "string" && privateKeyPath.length > 0;
+export const resolveKeySource = ({
+	privateKey,
+	privateKeyPath,
+	defaultPath,
+}: KeySourceInput): KeyResolution => {
+	const hasInline = nonEmpty(privateKey);
+	const hasPath = nonEmpty(privateKeyPath);
 	if (hasInline && hasPath) {
 		return {
 			_tag: "Error",
@@ -178,30 +225,36 @@ export const resolveKeySource = ({privateKey, privateKeyPath}: KeySourceInput): 
 	if (hasInline) {
 		return {_tag: "Inline", pem: privateKey as string};
 	}
-	// path given, or neither → the well-known local default (local-path shape).
-	return {_tag: "File", path: hasPath ? (privateKeyPath as string) : DEFAULT_KEY_PATH};
+	return {_tag: "File", path: hasPath ? (privateKeyPath as string) : defaultPath};
 };
+
+// ── App/installation id resolution ──────────────────────────────────────────
 
 export interface BotConfigInput {
 	/** Flag or env value — highest precedence. */
 	readonly appId?: string | undefined;
 	readonly installationId?: string | undefined;
-	/** Parsed `~/.config/phoenix-bot/config.json` contents (optional fallback). */
+	/** Parsed org-keyed `config.json` contents (optional fallback — the primary source). */
 	readonly configFile?: {readonly appId?: unknown; readonly installationId?: unknown} | undefined;
+	/** The config path named in the error message, so a failure points at the real file. */
+	readonly configPathForError: string;
 }
 
 export type IdResolution =
 	| {readonly _tag: "Ok"; readonly appId: string; readonly installationId: string}
 	| {readonly _tag: "Error"; readonly message: string};
 
-const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.length > 0;
-
 /**
- * Resolve `appId` + `installationId` with precedence flag/env > config-file. Both are
- * non-secret but kept OUT of committed source — sourced from env or the gitignored
- * out-of-repo `~/.config/phoenix-bot/config.json` (ADR 0140). A missing id is a clear error.
+ * Resolve `appId` + `installationId` with precedence flag > env > org-keyed config-file. Both
+ * are non-secret but kept OUT of committed source — sourced from env or the out-of-repo
+ * org-keyed `config.json` (ADR 0140). A missing id is a clear error naming the real config path.
  */
-export const resolveIds = ({appId, installationId, configFile}: BotConfigInput): IdResolution => {
+export const resolveIds = ({
+	appId,
+	installationId,
+	configFile,
+	configPathForError,
+}: BotConfigInput): IdResolution => {
 	const resolvedAppId = nonEmpty(appId)
 		? appId
 		: nonEmpty(configFile?.appId)
@@ -215,15 +268,13 @@ export const resolveIds = ({appId, installationId, configFile}: BotConfigInput):
 	if (!nonEmpty(resolvedAppId)) {
 		return {
 			_tag: "Error",
-			message:
-				"no app id — set --app-id, env PHOENIX_BOT_APP_ID, or appId in ~/.config/phoenix-bot/config.json",
+			message: `no app id — set --app-id, env KAMPUS_PIPELINE_APP_ID, or appId in ${configPathForError}`,
 		};
 	}
 	if (!nonEmpty(resolvedInstallationId)) {
 		return {
 			_tag: "Error",
-			message:
-				"no installation id — set --installation-id, env PHOENIX_BOT_INSTALLATION_ID, or installationId in ~/.config/phoenix-bot/config.json",
+			message: `no installation id — set --installation-id, env KAMPUS_PIPELINE_INSTALLATION_ID, or installationId in ${configPathForError}`,
 		};
 	}
 	return {_tag: "Ok", appId: resolvedAppId, installationId: resolvedInstallationId};

@@ -2,14 +2,21 @@ import {generateKeyPairSync, verify} from "node:crypto";
 import {assert, describe, it} from "@effect/vitest";
 import {
 	buildAppJwt,
-	DEFAULT_KEY_PATH,
+	CRED_ROOT,
+	defaultConfigPath,
+	defaultKeyPath,
 	expandHome,
 	type FetchLike,
 	MintError,
 	mintInstallationToken,
 	resolveIds,
 	resolveKeySource,
+	resolveOrg,
 } from "./bot-token.ts";
+
+// A fixture org — deliberately NOT any real org. Proves the resolver is owner-derived, not hardcoded.
+const FIXTURE_ORG = "acme-co";
+const FIXTURE_REPO = `${FIXTURE_ORG}/widget`;
 
 // A throwaway RSA keypair generated in-test — proves the signing is correct without a
 // live GitHub App. `sign(pem, "base64url")` needs a PKCS#8/PKCS#1 PEM; `pkcs8` is fine.
@@ -77,38 +84,78 @@ describe("buildAppJwt — RS256 App JWT construction", () => {
 	});
 });
 
-describe("resolveKeySource — inline/path resolution + default-path fallback", () => {
+describe("resolveOrg — derive the org from the repo owner (never hardcoded)", () => {
+	it("derives the owner segment from owner/name", () => {
+		const r = resolveOrg(FIXTURE_REPO);
+		assert.deepStrictEqual(r, {_tag: "Ok", org: FIXTURE_ORG});
+	});
+
+	it("derives a DIFFERENT org from a different owner (owner-derived, not a constant)", () => {
+		assert.deepStrictEqual(resolveOrg("binclusive/foo"), {_tag: "Ok", org: "binclusive"});
+		assert.deepStrictEqual(resolveOrg("other-owner/bar"), {_tag: "Ok", org: "other-owner"});
+	});
+
+	it("tolerates a deeper path (owner is still the first segment)", () => {
+		assert.deepStrictEqual(resolveOrg("owner/name/extra"), {_tag: "Ok", org: "owner"});
+	});
+
+	it("a bare name with no owner segment → Error (never guess an org)", () => {
+		assert.strictEqual(resolveOrg("justaname")._tag, "Error");
+	});
+
+	it("an empty slug → Error", () => {
+		assert.strictEqual(resolveOrg("")._tag, "Error");
+	});
+});
+
+describe("defaultKeyPath / defaultConfigPath — org-derived cred locations", () => {
+	it("keys the PEM path under ~/.config/kampus-pipeline/<org>/", () => {
+		assert.strictEqual(defaultKeyPath(FIXTURE_ORG), `${CRED_ROOT}/${FIXTURE_ORG}/private-key.pem`);
+	});
+
+	it("keys the config path under ~/.config/kampus-pipeline/<org>/", () => {
+		assert.strictEqual(defaultConfigPath(FIXTURE_ORG), `${CRED_ROOT}/${FIXTURE_ORG}/config.json`);
+	});
+
+	it("a different org yields a different path (org is load-bearing in the path)", () => {
+		assert.notStrictEqual(defaultKeyPath("org-a"), defaultKeyPath("org-b"));
+	});
+});
+
+describe("resolveKeySource — inline/path override + org-derived default", () => {
+	const defaultPath = defaultKeyPath(FIXTURE_ORG);
+
 	it("inline only → Inline with the PEM content", () => {
-		const r = resolveKeySource({privateKey: "PEM-CONTENT"});
+		const r = resolveKeySource({privateKey: "PEM-CONTENT", defaultPath});
 		assert.deepStrictEqual(r, {_tag: "Inline", pem: "PEM-CONTENT"});
 	});
 
-	it("path only → File with the path", () => {
-		const r = resolveKeySource({privateKeyPath: "/path/to/key.pem"});
+	it("path override → File with that path", () => {
+		const r = resolveKeySource({privateKeyPath: "/path/to/key.pem", defaultPath});
 		assert.deepStrictEqual(r, {_tag: "File", path: "/path/to/key.pem"});
 	});
 
-	it("neither → File at the well-known default local path (local-path shape)", () => {
-		const r = resolveKeySource({});
-		assert.deepStrictEqual(r, {_tag: "File", path: DEFAULT_KEY_PATH});
+	it("neither override → File at the org-derived default path", () => {
+		const r = resolveKeySource({defaultPath});
+		assert.deepStrictEqual(r, {_tag: "File", path: defaultPath});
 	});
 
 	it("both inline AND path → Error", () => {
-		const r = resolveKeySource({privateKey: "PEM", privateKeyPath: "/x.pem"});
+		const r = resolveKeySource({privateKey: "PEM", privateKeyPath: "/x.pem", defaultPath});
 		assert.strictEqual(r._tag, "Error");
 	});
 
-	it("empty strings count as absent → default path", () => {
-		const r = resolveKeySource({privateKey: "", privateKeyPath: ""});
-		assert.deepStrictEqual(r, {_tag: "File", path: DEFAULT_KEY_PATH});
+	it("empty strings count as absent → org-derived default path", () => {
+		const r = resolveKeySource({privateKey: "", privateKeyPath: "", defaultPath});
+		assert.deepStrictEqual(r, {_tag: "File", path: defaultPath});
 	});
 });
 
 describe("expandHome — leading ~ / $HOME expansion", () => {
 	it("expands a leading ~/", () => {
 		assert.strictEqual(
-			expandHome("~/.config/phoenix-bot/x", "/home/u"),
-			"/home/u/.config/phoenix-bot/x",
+			expandHome("~/.config/kampus-pipeline/x", "/home/u"),
+			"/home/u/.config/kampus-pipeline/x",
 		);
 	});
 	it("expands a bare ~", () => {
@@ -125,38 +172,49 @@ describe("expandHome — leading ~ / $HOME expansion", () => {
 	});
 });
 
-describe("resolveIds — flag/env > config-file precedence", () => {
+describe("resolveIds — flag/env > org-keyed config-file precedence", () => {
+	const configPathForError = defaultConfigPath(FIXTURE_ORG);
+
 	it("flag/env wins over config file", () => {
 		const r = resolveIds({
 			appId: "AAA",
 			installationId: "III",
 			configFile: {appId: "cfg-app", installationId: "cfg-inst"},
+			configPathForError,
 		});
 		assert.deepStrictEqual(r, {_tag: "Ok", appId: "AAA", installationId: "III"});
 	});
 
 	it("falls back to config file when flag/env absent", () => {
-		const r = resolveIds({configFile: {appId: "cfg-app", installationId: "cfg-inst"}});
+		const r = resolveIds({
+			configFile: {appId: "cfg-app", installationId: "cfg-inst"},
+			configPathForError,
+		});
 		assert.deepStrictEqual(r, {_tag: "Ok", appId: "cfg-app", installationId: "cfg-inst"});
 	});
 
 	it("mixes: appId from flag, installationId from config", () => {
-		const r = resolveIds({appId: "AAA", configFile: {installationId: "cfg-inst"}});
+		const r = resolveIds({
+			appId: "AAA",
+			configFile: {installationId: "cfg-inst"},
+			configPathForError,
+		});
 		assert.deepStrictEqual(r, {_tag: "Ok", appId: "AAA", installationId: "cfg-inst"});
 	});
 
-	it("missing appId → Error", () => {
-		const r = resolveIds({installationId: "III"});
+	it("missing appId → Error naming the org config path", () => {
+		const r = resolveIds({installationId: "III", configPathForError});
 		assert.strictEqual(r._tag, "Error");
+		if (r._tag === "Error") assert.include(r.message, configPathForError);
 	});
 
 	it("missing installationId → Error", () => {
-		const r = resolveIds({appId: "AAA"});
+		const r = resolveIds({appId: "AAA", configPathForError});
 		assert.strictEqual(r._tag, "Error");
 	});
 
 	it("empty config + no flags → Error", () => {
-		const r = resolveIds({configFile: {}});
+		const r = resolveIds({configFile: {}, configPathForError});
 		assert.strictEqual(r._tag, "Error");
 	});
 });

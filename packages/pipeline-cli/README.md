@@ -201,17 +201,25 @@ echo '{"reason":"TypeError: …","resumeFromRunId":"run_x","priorResumes":0}' \
   | node packages/pipeline-cli/src/bin.ts resume-policy decide         # → surface (logic)
 ```
 
-### `bot-token` — mint a phoenix[bot] installation access token (ADR 0140, #1938)
+### `bot-token` — mint a per-org bot installation access token (ADR 0140, #1938)
 
-Mints a `phoenix[bot]` GitHub App **installation** access token (JWT RS256 → installation
+Mints the **target org's** bot GitHub App **installation** access token (JWT RS256 → installation
 access token) for the pipeline's bot-authored PR-open + merge-queue enqueue. Per
 [ADR 0140](../../.decisions/0140-phoenix-bot-authors-pipeline-prs-team-cp.md) the bot is the
-distinct PR author, so any `@kamp-us/control-plane` member may approve a bot-authored §CP PR;
-short-lived installation tokens replace any long-lived PAT (retires #382).
+distinct PR author, so any control-plane member may approve a bot-authored §CP PR; short-lived
+installation tokens replace any long-lived PAT (retires #382).
+
+**Plugin-level, org-derived.** This ships in the repo-agnostic `kampus-pipeline` plugin, which serves
+**N GitHub owners**, so the org is **derived from the target repo's owner** — never hardcoded. The repo
+is resolved by the **same idiom the skills use** (`--repo` flag > env `CLAUDE_PIPELINE_REPO` >
+`gh repo view --json nameWithOwner`), and the org is that repo's **owner segment**. A run against a
+`kamp-us/*` repo derives org `kamp-us`; a run against a `binclusive/*` repo derives `binclusive`. Each
+org has its **own** bot App and its **own** key material, keyed on disk by the derived org.
 
 The `mint` core is pure + injectable (`buildAppJwt` signs the App JWT given an injected clock;
-`mintInstallationToken` POSTs `/app/installations/<id>/access_tokens` given an injected `fetch`),
-so the signing + request shape are unit-tested without a live App.
+`mintInstallationToken` POSTs `/app/installations/<id>/access_tokens` given an injected `fetch`;
+`resolveOrg` derives the org from `owner/name`), so the signing + org derivation + request shape are
+unit-tested without a live App.
 
 **Output contract (security-critical):** `bot-token mint` prints **only** the `ghs_` token to
 stdout — the PEM is never printed, the token is never logged to stderr, and errors are generic
@@ -221,71 +229,71 @@ stdout — the PEM is never printed, the token is never logged to stderr, and er
 GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint) gh pr create …
 ```
 
-**Execution model — multi-machine, local-path per machine.** phoenix's pipeline runs on
-**≥2 machines**: each operator (umut, cansirin, …) runs their own pipeline instance on their own
-machine, so the PEM must be present on **each** machine that runs the pipeline. `isolation:"worktree"`
-(see `.claude/workflows/drive-issue.js`) means the agents within one instance run in **local
-worktrees** — a within-instance property, not a claim of one global machine. There is **no shared
-secret manager**; the settled model is **local-path per machine** (the runbook below).
+#### Provisioning convention — org-keyed, local-path per machine (rung 1)
 
-#### Provisioning a new operator's machine (runbook)
+Creds live **out of every repo**, keyed by the **derived org**, under a single root:
 
-Only a machine that actually runs the pipeline needs the PEM. Provisioning one operator's machine
-is independent — it does **not** block anyone else's runs.
+```
+~/.config/kampus-pipeline/<org>/
+  ├── private-key.pem     # the org's bot App private key (chmod 600)
+  └── config.json         # {"appId": "…", "installationId": "…"} for THAT org
+```
 
-1. **Place the PEM** at `~/.config/phoenix-bot/private-key.pem` (override via env
-   `PHOENIX_BOT_PRIVATE_KEY_PATH`), out of the repo, `chmod 600`:
+Each pipeline operator provisions their **own** machine — provisioning one machine is independent and
+does not block anyone else's runs. Per operator, per org:
+
+1. **Mint your own private key.** The org's bot GitHub App supports **multiple private keys**, so each
+   operator generates their **own** key in the App settings and downloads the PEM. **No PEM is ever
+   transferred between operators** — a leaked or departed key is revoked in isolation without rotating
+   anyone else's. Place it, out of every repo, `chmod 600`:
 
    ```bash
-   mkdir -p ~/.config/phoenix-bot
-   # write the PEM here (see step 3 for how it is delivered), then lock it down:
-   chmod 600 ~/.config/phoenix-bot/private-key.pem
+   mkdir -p ~/.config/kampus-pipeline/<org>
+   # download YOUR own key from the org's bot App settings, save it here, then lock it down:
+   chmod 600 ~/.config/kampus-pipeline/<org>/private-key.pem
    ```
 
-2. **Place the ids** in `~/.config/phoenix-bot/config.json` as `{"appId": "…", "installationId": "…"}`
-   (or set env `PHOENIX_BOT_APP_ID` / `PHOENIX_BOT_INSTALLATION_ID`). The App id + installation id are
-   the phoenix[bot] App's — get them from the App settings / an existing operator; they are **not**
-   committed to the repo.
+2. **Place the ids** in `~/.config/kampus-pipeline/<org>/config.json` as
+   `{"appId": "…", "installationId": "…"}` (or set env `KAMPUS_PIPELINE_APP_ID` /
+   `KAMPUS_PIPELINE_INSTALLATION_ID`). These are the org's bot-App ids — non-secret, but **not**
+   committed to any repo.
 
-3. **Deliver the PEM securely, once.** The private key is the **bot's master key** — hand it to each
-   operator **once over a secure channel** (a 1Password one-time-share link, or an encrypted message).
-   **Never** send it in plaintext, **never** commit it, **never** paste it into a shared log.
-
-After steps 1–2 the default invocation just works — no flags:
+After steps 1–2 the default invocation just works — the org is derived from where you run it:
 
 ```bash
+# inside the target repo (org derived via gh repo view):
 GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint) gh pr create …
+# or force the org from anywhere:
+GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint --repo <org>/<repo>) gh pr create …
 ```
 
-**The helper stays storage/manager-agnostic — the forward path is free.** It takes the PEM as either
-a **path** or **content** (`--private-key` / env `PHOENIX_BOT_PRIVATE_KEY`) and never shells out to
-`op` / any specific manager — that coupling would live in the caller, not the tool. The `--private-key`
-**content** input is co-equal with the path input, so if operators ever adopt a **shared secret
-manager**, it drops in with **zero code change** — resolve the PEM value in the caller and pipe it in:
+#### Upgrade path — a Cloudflare token-broker (rung 2), zero rework
+
+Rung-1 local-path-per-machine is the **current** convention; the documented **upgrade** is a
+**Cloudflare token-broker** that hands out the key content on demand (no per-machine PEM on disk).
+Because the helper already takes the PEM as **content** via `--private-key` (env
+`KAMPUS_PIPELINE_PRIVATE_KEY`) — co-equal with the path input — the broker rides that input with
+**zero code change**: the caller resolves the key from the broker and pipes it in.
 
 ```bash
-# FORWARD PATH (not a current dependency) — if a shared manager is ever adopted:
+# RUNG 2 (upgrade path, not a current dependency): the broker supplies the key content.
 GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint \
-  --private-key "$(op read op://vault/phoenix-bot/private-key)") gh pr create …
+  --private-key "$(<broker-fetch-for-org>)") gh pr create …
 ```
 
-**Inputs** (flag → env fallback; ids also fall back to the config file; precedence flag/env > config-file):
+**Inputs** (precedence explicit flag > env > org-keyed config file):
 
 | input | flag | env | default |
 | --- | --- | --- | --- |
-| app id | `--app-id` | `PHOENIX_BOT_APP_ID` | `config.json` `appId` |
-| installation id | `--installation-id` | `PHOENIX_BOT_INSTALLATION_ID` | `config.json` `installationId` |
-| PEM file path | `--private-key-path` | `PHOENIX_BOT_PRIVATE_KEY_PATH` | `~/.config/phoenix-bot/private-key.pem` |
-| PEM content | `--private-key` | `PHOENIX_BOT_PRIVATE_KEY` | — (secret-injection case) |
-| config path | `--config-path` | `PHOENIX_BOT_CONFIG_PATH` | `~/.config/phoenix-bot/config.json` |
+| target repo (→ org) | `--repo` | `CLAUDE_PIPELINE_REPO` | `gh repo view` (owner = org) |
+| app id | `--app-id` | `KAMPUS_PIPELINE_APP_ID` | org `config.json` `appId` |
+| installation id | `--installation-id` | `KAMPUS_PIPELINE_INSTALLATION_ID` | org `config.json` `installationId` |
+| PEM file path | `--private-key-path` | `KAMPUS_PIPELINE_PRIVATE_KEY_PATH` | `~/.config/kampus-pipeline/<org>/private-key.pem` |
+| PEM content | `--private-key` | `KAMPUS_PIPELINE_PRIVATE_KEY` | — (broker / secret-injection) |
 
-Giving **both** `--private-key` and `--private-key-path` is an error; giving neither uses the default
-local path. Fails closed (non-zero, generic stderr) on missing ids, an unreadable PEM, or a mint HTTP
-failure.
-
-```bash
-node packages/pipeline-cli/src/bin.ts bot-token mint   # uses ~/.config/phoenix-bot/ by default
-```
+Giving **both** `--private-key` and `--private-key-path` is an error; giving neither uses the org-derived
+default path. Fails closed (non-zero, generic stderr) on an underivable org, missing ids, an unreadable
+PEM, or a mint HTTP failure.
 
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
