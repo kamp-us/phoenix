@@ -615,6 +615,65 @@ confirm verdict-parity (every FAIL the full gate would raise, the lighter gate a
 miss → veto and keep it off. This mirrors §5/§6's *ship only what wins; under-claiming beats a
 regression* discipline: no flip on an unmeasured axis.
 
+## 8. The graded generalization — a labeled corpus + pass-rate + repair-churn cost (`eval-harness`)
+
+§1's frozen input, §3's binary oracle, and §4's two-axis gate are exactly right for a
+**deterministic** lever: one input, one pass/fail, adopt-if-both-axes-hold. They are **not
+sufficient for a stochastic model swap** (Opus → Sonnet on a stage), where the same input can
+pass on one run and fail on the next — an n=1 oracle cannot separate *"good enough"* from *"got
+lucky"*, and a per-run token saving hides the extra write-code→review→repair cycles a
+fail-prone model forces. The **graded** apparatus generalizes §1/§3/§4 from *binary-per-run* to
+*graded-over-corpus*, and it is built and committed as the
+[`eval-harness`](../packages/pipeline-cli/src/tools/eval-harness) tool (epic
+[#1842](https://github.com/kamp-us/phoenix/issues/1842)), extending ADR
+[0146](../.decisions/0146-graded-corpus-oracle-for-stochastic-model-swap.md) /
+[0112](../.decisions/0112-token-measurement-no-quality-compromise-methodology.md). The three
+generalizations, one per §1/§3/§4 part:
+
+- **§1 frozen input → a labeled *corpus* per stage.** Instead of one pinned input per stage, a
+  *set* of pinned inputs (happy path + at least one edge/error class — a real `review-code:
+  FAIL`, a red-CI write-code), each carrying the **recorded baseline decision artifact** as its
+  ground-truth `label`. Same representative-task-set discipline as §1 (reproducible-from-id,
+  pinned to the recorded state, append-only) — scaled from n=1 to a set big enough that a rate
+  is meaningful.
+- **§3 binary oracle → a graded oracle (a pass-*rate*).** §3's per-stage oracle (did the stage
+  reproduce the same decision artifact) is applied **per corpus entry**, yielding a per-(stage
+  × model) **pass-rate** — the statistic n=1 cannot supply.
+- **§4 two-axis gate → the same gate over the corpus, plus a *repair-churn cost*.** §2's meter
+  prices one run; a stochastic swap needs the **net** token cost — a cheaper model that fails
+  more often forces extra repair cycles (`expectedExtraCycles = (1 − passRate) / passRate`,
+  `churnTokens = expectedExtraCycles × tokensPerRepairCycle`, so a swap is judged on
+  `amortizedTokensPerRun = tokensPerRun + churnTokens`). The churn core reuses §2's
+  four-`usage`-component `token-spend` reconstruction read-only — **no second meter**. §4's veto
+  is unchanged; its two axes for a swap become the **net** token axis and the **graded** (pass-rate
+  no-regression) quality axis.
+
+**Runnable entry point + corpus location** (the role §2's `jq` one-liner plays for token-spend).
+The committed ground truth is one manifest per stage under
+[`eval-harness/corpus/`](../packages/pipeline-cli/src/tools/eval-harness/corpus)
+(`triage.json`, `write-code.json`, `review-code.json`). Validate a manifest against the schema
+with the one live subcommand today:
+
+```bash
+# validate the committed corpus (decode each manifest through the schema; exit non-zero on a bad one)
+node packages/pipeline-cli/src/bin.ts eval-harness check packages/pipeline-cli/src/tools/eval-harness/corpus/triage.json
+```
+
+The pure library cores are `corpus.ts` (the `CorpusManifest` format + `decodeManifest`),
+`oracle.ts` (`gradeEntry` — the graded per-entry oracle), `runner.ts` (collect graded
+`{entry, grade, spend}` rows over already-happened runs, offline/replay + capture-manifest), and
+`repair-churn.ts` (`repairChurnCost` / `priceModelSwap`). The two-axis **scorecard** command
+(`eval-harness report` — pass-rate + token spend + churn cost per stage × model) is the pending
+aggregation slice ([#1853](https://github.com/kamp-us/phoenix/issues/1853)), not yet on `main`;
+until it lands, the graded rows are produced by the `runner.ts` cores and the corpus is exercised
+by `eval-harness check`. See the tool [README](../packages/pipeline-cli/src/tools/eval-harness/README.md)
+for the full data model and the corpus-curation policy.
+
+**This apparatus feeds the tiering decision — it does not make it.** Whether any stage runs on a
+cheaper model is [#1576](https://github.com/kamp-us/phoenix/issues/1576)'s call, made *on* this
+harness's graded output (pass-rate + net-token verdict). It is **not** resolved here or by the
+harness; this section records the measurement method #1576 will cite.
+
 ## Tooling gap (follow-up)
 
 Per-stage token spend **is** individually attributable offline — each stage sub-agent has its own
