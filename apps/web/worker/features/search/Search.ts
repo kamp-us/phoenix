@@ -24,6 +24,7 @@ import {forwardPage, resolveCursor} from "../../db/keyset.ts";
 import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import type {PostSummaryRow} from "../pano/Pano.ts";
 import {postVisibleWhere} from "../pano/PostVisibility.ts";
+import {toPostSummaryKeysetRow} from "../pano/post-fields.ts";
 import {type TermSummaryRow, termSummaryColumns, toTermSummaryRow} from "../sozluk/term-fields.ts";
 import {toMatchExpression} from "./normalize.ts";
 
@@ -252,7 +253,14 @@ export const SearchLive = Layer.effect(Search)(
 				return {rows: [], hasNextPage, endCursor, totalCount} satisfies PostSearchPage;
 			}
 
-			// Hydrate only live (non-deleted) posts, then re-order to FTS rank.
+			// Hydrate only live (non-deleted) posts through the SHARED pano mapper
+			// (`toPostSummaryKeysetRow`) so post_record→PostSummaryRow — including the
+			// `tags` CSV parse via `tagLabel` — is the single mapping the feed and
+			// keyset already cross (#2015). The local shaping drifted: it rendered the
+			// raw tag value (`show`) where the shared mapper resolves the legacy alias
+			// to the canonical Turkish label (`göster`). The select is the exact
+			// `PostKeysetRow` column subset the mapper reads. `removed_at` is the WHERE
+			// guard only (ADR 0096), spelled against the table — not a hydrated field.
 			const summaries = yield* run((db) =>
 				db
 					.select({
@@ -268,7 +276,6 @@ export const SearchLive = Layer.effect(Search)(
 						commentCount: schema.postRecord.commentCount,
 						createdAt: schema.postRecord.createdAt,
 						tags: schema.postRecord.tags,
-						removedAt: schema.postRecord.removedAt,
 					})
 					.from(schema.postRecord)
 					.where(
@@ -276,23 +283,7 @@ export const SearchLive = Layer.effect(Search)(
 					),
 			);
 			const byId = new Map(
-				summaries.map((r): [string, PostSummaryRow] => [
-					r.id,
-					{
-						id: r.id,
-						slug: r.slug,
-						title: r.title,
-						url: r.url,
-						host: r.host,
-						body: r.bodyExcerpt && r.bodyExcerpt.length > 0 ? r.bodyExcerpt : null,
-						author: r.authorName,
-						authorId: r.authorId,
-						score: r.score,
-						commentCount: r.commentCount,
-						createdAt: r.createdAt ?? new Date(0),
-						tags: parsePostTags(r.tags),
-					},
-				]),
+				summaries.map((r): [string, PostSummaryRow] => [r.id, toPostSummaryKeysetRow(r)]),
 			);
 			const rows = keys.flatMap((id) => {
 				const row = byId.get(id);
@@ -305,18 +296,3 @@ export const SearchLive = Layer.effect(Search)(
 		return {searchTerms, searchPosts};
 	}),
 );
-
-/**
- * Local copy of Pano's CSV tag parse — the shaper needs `{kind, label}` rows and
- * importing `Pano`'s private `parseTags` would couple the services. The tag enum
- * is fixed and the kind doubles as the label fallback (ADR 0080 reuses the
- * existing post-card components, which only read `kind`/`label`).
- */
-const parsePostTags = (csv: string): Array<{kind: string; label: string}> => {
-	if (!csv) return [];
-	return csv
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean)
-		.map((kind) => ({kind, label: kind}));
-};
