@@ -343,6 +343,69 @@ export interface PostOperationsDeps {
 	readonly persistPanoStats: PersistPanoStats;
 }
 
+/**
+ * The periodic sıcak/hot decay-refresh (#2027), factored to the ONE dep it reads
+ * (`run`) so it builds standalone. `hot_score` is a stored, keyset-read column written
+ * only at activity sites, so an inactive post's age term freezes and it squats the hot
+ * feed. This re-decays the stored column on a schedule (the cron trigger in `index.ts`)
+ * so ranking keeps decaying with age WITHOUT a read-time recompute — the keyset-cursor
+ * contract and the no-`POW` constraint both need `hot_score` to stay a stored, indexed,
+ * monotonic-per-snapshot column. Scoped to the recency window (`decayWindowMs`) where
+ * decay actually reorders the feed, and to live, non-draft posts (a removed post's
+ * `hot_score` is already zeroed by the removal batch); the pure decision (formula reuse
+ * + changed-only filter) lives in `db/hotScoreDecay.ts`.
+ *
+ * Exported (not inlined in `makePostOperations`) so the AC4 integration test can drive
+ * the SHIPPED method against real remote D1 built from just a `run` — no full
+ * `PostOperationsDeps` graph, no re-implementation of the window query.
+ */
+export const makeRefreshHotScores = (run: DrizzleAccessOrDie["run"]) =>
+	Effect.fn("Pano.refreshHotScores")(function* (now: Date) {
+		const nowMs = now.getTime();
+		const cutoff = new Date(nowMs - decayWindowMs);
+		const rows = yield* run((db) =>
+			db
+				.select({
+					id: schema.postRecord.id,
+					score: schema.postRecord.score,
+					hotScore: schema.postRecord.hotScore,
+					createdAt: schema.postRecord.createdAt,
+				})
+				.from(schema.postRecord)
+				.where(
+					and(
+						isNull(schema.postRecord.removedAt),
+						sql`${schema.postRecord.isDraft} is not 1`,
+						gte(schema.postRecord.createdAt, cutoff),
+					),
+				),
+		);
+		const updates = decayHotScores(
+			rows.map((r) => ({
+				id: r.id,
+				score: r.score,
+				hotScore: r.hotScore,
+				createdAtMs: (r.createdAt ?? now).getTime(),
+			})),
+			nowMs,
+		);
+		// One UPDATE per changed row, all in the fetched-clock reading. Nothing changed ⇒ no
+		// write (the common steady state). `Effect.forEach` sequences them; the volume is
+		// bounded by the recency window, so a per-row update stays cheap.
+		yield* Effect.forEach(
+			updates,
+			(u) =>
+				run((db) =>
+					db
+						.update(schema.postRecord)
+						.set({hotScore: u.hotScore})
+						.where(eq(schema.postRecord.id, u.id)),
+				),
+			{discard: true},
+		);
+		return {scanned: rows.length, updated: updates.length};
+	});
+
 export const makePostOperations = (deps: PostOperationsDeps) => {
 	const {run, batch, voteSvc, bookmarkSvc, reactionSvc, removalSeq, persistPanoStats} = deps;
 
@@ -1066,60 +1129,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		);
 	});
 
-	// The periodic sıcak/hot decay-refresh (#2027). `hot_score` is a stored, keyset-read
-	// column written only at activity sites, so an inactive post's age term freezes and it
-	// squats the hot feed. This re-decays the stored column on a schedule (the cron trigger
-	// in `index.ts`) so ranking keeps decaying with age WITHOUT a read-time recompute — the
-	// keyset-cursor contract and the no-`POW` constraint both need `hot_score` to stay a
-	// stored, indexed, monotonic-per-snapshot column. Scoped to the recency window
-	// (`decayWindowMs`) where decay actually reorders the feed, and to live, non-draft posts
-	// (a removed post's `hot_score` is already zeroed by the removal batch); the pure decision
-	// (formula reuse + changed-only filter) lives in `db/hotScoreDecay.ts`.
-	const refreshHotScores = Effect.fn("Pano.refreshHotScores")(function* (now: Date) {
-		const nowMs = now.getTime();
-		const cutoff = new Date(nowMs - decayWindowMs);
-		const rows = yield* run((db) =>
-			db
-				.select({
-					id: schema.postRecord.id,
-					score: schema.postRecord.score,
-					hotScore: schema.postRecord.hotScore,
-					createdAt: schema.postRecord.createdAt,
-				})
-				.from(schema.postRecord)
-				.where(
-					and(
-						isNull(schema.postRecord.removedAt),
-						sql`${schema.postRecord.isDraft} is not 1`,
-						gte(schema.postRecord.createdAt, cutoff),
-					),
-				),
-		);
-		const updates = decayHotScores(
-			rows.map((r) => ({
-				id: r.id,
-				score: r.score,
-				hotScore: r.hotScore,
-				createdAtMs: (r.createdAt ?? now).getTime(),
-			})),
-			nowMs,
-		);
-		// One UPDATE per changed row, all in the fetched-clock reading. Nothing changed ⇒ no
-		// write (the common steady state). `Effect.forEach` sequences them; the volume is
-		// bounded by the recency window, so a per-row update stays cheap.
-		yield* Effect.forEach(
-			updates,
-			(u) =>
-				run((db) =>
-					db
-						.update(schema.postRecord)
-						.set({hotScore: u.hotScore})
-						.where(eq(schema.postRecord.id, u.id)),
-				),
-			{discard: true},
-		);
-		return {scanned: rows.length, updated: updates.length};
-	});
+	const refreshHotScores = makeRefreshHotScores(run);
 
 	return {
 		getPost,
