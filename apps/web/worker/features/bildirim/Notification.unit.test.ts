@@ -185,7 +185,7 @@ describe("Notification.listForRecipient — newest-first keyset paging", () => {
 
 const aggregateInput = {
 	recipientId: "me",
-	kind: "divan-vote",
+	kind: "divan-vote" as const,
 	targetKind: "post" as const,
 	targetId: "p1",
 	actorId: null,
@@ -259,7 +259,7 @@ describe("Notification.record — the emitter write surface", () => {
 			const svc = yield* Notification;
 			const {id} = yield* svc.record({
 				recipientId: "me",
-				kind: "test",
+				kind: "reply",
 				targetKind: "post",
 				targetId: "p1",
 			});

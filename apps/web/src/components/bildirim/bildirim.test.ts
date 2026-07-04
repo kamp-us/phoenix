@@ -88,6 +88,11 @@ describe("bildirimCopy — Turkish product voice per kind (#1695)", () => {
 		expect(bildirimCopy("terfi", 1)).toBe("tebrikler, artık bir yazarsın!");
 	});
 
+	it("reply renders Turkish copy — the raw `reply` identifier no longer surfaces (#2016)", () => {
+		expect(bildirimCopy("reply", 1)).toBe("gönderine yanıt geldi");
+		expect(bildirimCopy("reply", 3)).toBe("gönderine 3 yanıt geldi");
+	});
+
 	it("an unknown kind degrades to the raw kind + xN — never a blank row", () => {
 		expect(bildirimCopy("future-kind", 1)).toBe("future-kind");
 		expect(bildirimCopy("future-kind", 2)).toBe("future-kind ×2");

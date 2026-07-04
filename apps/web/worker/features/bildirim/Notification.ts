@@ -22,6 +22,7 @@ import {
 	keysetAfter,
 	resolveCursor,
 } from "../../db/keyset.ts";
+import type {NotificationKind} from "./kind.ts";
 import {
 	emptyResolvedTargetRows,
 	foldTargetHrefs,
@@ -32,8 +33,8 @@ import {
 
 export interface NotificationRecordInput {
 	recipientId: string;
-	/** Plain-text discriminant; each emitter sibling owns its kind names. */
-	kind: string;
+	/** The closed notification-kind discriminant (single-sourced from `NOTIFICATION_KINDS`). */
+	kind: NotificationKind;
 	targetKind: NotificationTargetKind;
 	targetId: string;
 	/** Who triggered it, or null for system events. */
@@ -48,6 +49,9 @@ export type NotificationAggregateInput = Omit<NotificationRecordInput, "count">;
 export interface NotificationRow {
 	id: string;
 	recipientId: string;
+	/** Wire-tolerant on READ: the D1 column carries no enum (schema note — emitters
+	 * add kinds with no migration), so a row's kind stays `string` at the read
+	 * boundary; the closed `NotificationKind` union types the WRITE/emit side. */
 	kind: string;
 	targetKind: NotificationTargetKind;
 	targetId: string;

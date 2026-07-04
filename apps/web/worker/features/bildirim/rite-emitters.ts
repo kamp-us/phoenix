@@ -26,11 +26,12 @@
 import {Effect} from "effect";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {bildirimOn} from "./gate.ts";
+import type {NotificationKind} from "./kind.ts";
 import {Notification} from "./Notification.ts";
 
-export const DIVAN_VOTE_KIND = "divan-vote";
-export const KEFIL_KIND = "kefil";
-export const PROMOTION_KIND = "terfi";
+export const DIVAN_VOTE_KIND: NotificationKind = "divan-vote";
+export const KEFIL_KIND: NotificationKind = "kefil";
+export const PROMOTION_KIND: NotificationKind = "terfi";
 
 /** Self-suppression, pure: the recipient, or `null` when they ARE the actor. */
 export const riteRecipient = (recipientId: string, actorId: string): string | null =>

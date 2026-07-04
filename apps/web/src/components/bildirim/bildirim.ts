@@ -6,6 +6,7 @@
  * dead target renders a tombstone (never a broken link), and a marked-read row
  * stops counting as unread without a reload.
  */
+import type {NotificationKind} from "../../../worker/features/bildirim/kind";
 
 /**
  * Show the `/bildirimler` page content iff the bildirim flag is on. Off (and
@@ -56,19 +57,24 @@ export function rowUnread(
 // rendered line is product voice. `count` is the aggregate slot ("N oy"). The
 // `terfi` line carries the ceremony — the çaylak→yazar promotion is the single
 // most ceremonial moment in the rite, so it reads as a moment, not a log line.
-const KIND_COPY: Record<string, (count: number) => string> = {
+//
+// `satisfies Record<NotificationKind, …>` makes the map EXHAUSTIVE over the shared
+// kind union (#2016): a new emitter kind cannot ship without its copy — a missing
+// entry is a compile error, not a raw wire identifier rendered to a reader.
+const KIND_COPY = {
 	"divan-vote": (count) =>
 		count > 1 ? `divandaki içeriğin ${count} oy aldı` : "divandaki içeriğin oy aldı",
 	kefil: () => "bir yazar sana kefil oldu",
 	terfi: () => "tebrikler, artık bir yazarsın!",
-};
+	reply: (count) => (count > 1 ? `gönderine ${count} yanıt geldi` : "gönderine yanıt geldi"),
+} satisfies Record<NotificationKind, (count: number) => string>;
 
 /**
  * The row's Turkish copy per kind. An unknown kind (a future emitter's, read by
  * an older client) degrades to the raw kind + `×N` — never a crash or a blank row.
  */
 export function bildirimCopy(kind: string, count: number): string {
-	const copy = KIND_COPY[kind];
+	const copy = (KIND_COPY as Record<string, (count: number) => string>)[kind];
 	if (copy) return copy(count);
 	return count > 1 ? `${kind} ×${count}` : kind;
 }
