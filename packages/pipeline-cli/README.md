@@ -201,6 +201,92 @@ echo '{"reason":"TypeError: …","resumeFromRunId":"run_x","priorResumes":0}' \
   | node packages/pipeline-cli/src/bin.ts resume-policy decide         # → surface (logic)
 ```
 
+### `bot-token` — mint a phoenix[bot] installation access token (ADR 0140, #1938)
+
+Mints a `phoenix[bot]` GitHub App **installation** access token (JWT RS256 → installation
+access token) for the pipeline's bot-authored PR-open + merge-queue enqueue. Per
+[ADR 0140](../../.decisions/0140-phoenix-bot-authors-pipeline-prs-team-cp.md) the bot is the
+distinct PR author, so any `@kamp-us/control-plane` member may approve a bot-authored §CP PR;
+short-lived installation tokens replace any long-lived PAT (retires #382).
+
+The `mint` core is pure + injectable (`buildAppJwt` signs the App JWT given an injected clock;
+`mintInstallationToken` POSTs `/app/installations/<id>/access_tokens` given an injected `fetch`),
+so the signing + request shape are unit-tested without a live App.
+
+**Output contract (security-critical):** `bot-token mint` prints **only** the `ghs_` token to
+stdout — the PEM is never printed, the token is never logged to stderr, and errors are generic
+(HTTP status + the GitHub API `.message`, never credential material). So a caller does:
+
+```bash
+GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint) gh pr create …
+```
+
+**Execution model — multi-machine, local-path per machine.** phoenix's pipeline runs on
+**≥2 machines**: each operator (umut, cansirin, …) runs their own pipeline instance on their own
+machine, so the PEM must be present on **each** machine that runs the pipeline. `isolation:"worktree"`
+(see `.claude/workflows/drive-issue.js`) means the agents within one instance run in **local
+worktrees** — a within-instance property, not a claim of one global machine. There is **no shared
+secret manager**; the settled model is **local-path per machine** (the runbook below).
+
+#### Provisioning a new operator's machine (runbook)
+
+Only a machine that actually runs the pipeline needs the PEM. Provisioning one operator's machine
+is independent — it does **not** block anyone else's runs.
+
+1. **Place the PEM** at `~/.config/phoenix-bot/private-key.pem` (override via env
+   `PHOENIX_BOT_PRIVATE_KEY_PATH`), out of the repo, `chmod 600`:
+
+   ```bash
+   mkdir -p ~/.config/phoenix-bot
+   # write the PEM here (see step 3 for how it is delivered), then lock it down:
+   chmod 600 ~/.config/phoenix-bot/private-key.pem
+   ```
+
+2. **Place the ids** in `~/.config/phoenix-bot/config.json` as `{"appId": "…", "installationId": "…"}`
+   (or set env `PHOENIX_BOT_APP_ID` / `PHOENIX_BOT_INSTALLATION_ID`). The App id + installation id are
+   the phoenix[bot] App's — get them from the App settings / an existing operator; they are **not**
+   committed to the repo.
+
+3. **Deliver the PEM securely, once.** The private key is the **bot's master key** — hand it to each
+   operator **once over a secure channel** (a 1Password one-time-share link, or an encrypted message).
+   **Never** send it in plaintext, **never** commit it, **never** paste it into a shared log.
+
+After steps 1–2 the default invocation just works — no flags:
+
+```bash
+GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint) gh pr create …
+```
+
+**The helper stays storage/manager-agnostic — the forward path is free.** It takes the PEM as either
+a **path** or **content** (`--private-key` / env `PHOENIX_BOT_PRIVATE_KEY`) and never shells out to
+`op` / any specific manager — that coupling would live in the caller, not the tool. The `--private-key`
+**content** input is co-equal with the path input, so if operators ever adopt a **shared secret
+manager**, it drops in with **zero code change** — resolve the PEM value in the caller and pipe it in:
+
+```bash
+# FORWARD PATH (not a current dependency) — if a shared manager is ever adopted:
+GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint \
+  --private-key "$(op read op://vault/phoenix-bot/private-key)") gh pr create …
+```
+
+**Inputs** (flag → env fallback; ids also fall back to the config file; precedence flag/env > config-file):
+
+| input | flag | env | default |
+| --- | --- | --- | --- |
+| app id | `--app-id` | `PHOENIX_BOT_APP_ID` | `config.json` `appId` |
+| installation id | `--installation-id` | `PHOENIX_BOT_INSTALLATION_ID` | `config.json` `installationId` |
+| PEM file path | `--private-key-path` | `PHOENIX_BOT_PRIVATE_KEY_PATH` | `~/.config/phoenix-bot/private-key.pem` |
+| PEM content | `--private-key` | `PHOENIX_BOT_PRIVATE_KEY` | — (secret-injection case) |
+| config path | `--config-path` | `PHOENIX_BOT_CONFIG_PATH` | `~/.config/phoenix-bot/config.json` |
+
+Giving **both** `--private-key` and `--private-key-path` is an error; giving neither uses the default
+local path. Fails closed (non-zero, generic stderr) on missing ids, an unreadable PEM, or a mint HTTP
+failure.
+
+```bash
+node packages/pipeline-cli/src/bin.ts bot-token mint   # uses ~/.config/phoenix-bot/ by default
+```
+
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
 pnpm --filter @kampus/pipeline-cli test
