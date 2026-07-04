@@ -251,7 +251,7 @@ autonomous "create-milestones" skill (ADR 0072 §3). A skill that finds no clear
 existing open milestone leaves the issue **unmilestoned**; it does not invent a home.
 
 **Freeze-by-absence — deliberate absence is a signal, never missing data.** A deliberately
-**unmilestoned** cluster (e.g. a frozen new-product surface — imge / kampus-CLI / künye) is itself
+**unmilestoned** cluster (e.g. a frozen new-product surface — kampus-CLI / künye) is itself
 the signal that the work is **parked / deferred** (ADR 0072 §4). So a missing milestone is
 **never** "data to be backfilled": a skill must not auto-fill an empty milestone to make an issue
 "complete." Absence carries information — treat it as a value, not a gap. This is the inverse of
