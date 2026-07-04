@@ -160,6 +160,99 @@ describe("FlagshipRead.listFlagStates — decode flags × env over a stubbed tra
 	});
 });
 
+// An account that carries an owned-but-inaccessible app (orphaned / mid-deletion per-PR-preview
+// app — a steady-state condition, #813/#690/#1509): its flags fetch returns the CF 404 "App not
+// found or access denied" envelope the SDK decodes to FlagshipAppNotFound. The enumeration must
+// degrade to "every accessible app" and skip the inaccessible one, not abort the whole listing
+// (#1645). Both `flag list` and the bare `flag get <key>` share this listFlagStates site, so
+// covering it here covers both entrypoints.
+const mixedAppsBody = {
+	result: [
+		app("app-prod", "phoenix-phoenix-flags-prod-abc123"),
+		app("app-pr-orphan", "phoenix-phoenix-flags-pr-7-orphan"),
+		app("app-foreign", "some-other-account-app"),
+	],
+};
+
+const partialStubTransport: Layer.Layer<HttpClient.HttpClient> = Layer.succeed(
+	HttpClient.HttpClient,
+)(
+	HttpClient.make((request, url) => {
+		const flags = /\/flagship\/apps\/([^/]+)\/flags$/.exec(url.pathname);
+		if (url.pathname.endsWith("/flagship/apps")) {
+			return Effect.succeed(
+				HttpClientResponse.fromWeb(
+					request,
+					new Response(JSON.stringify(mixedAppsBody), {
+						status: 200,
+						headers: {"content-type": "application/json"},
+					}),
+				),
+			);
+		}
+		if (flags && flags[1] === "app-prod") {
+			return Effect.succeed(
+				HttpClientResponse.fromWeb(
+					request,
+					new Response(JSON.stringify(flagsByAppId["app-prod"]), {
+						status: 200,
+						headers: {"content-type": "application/json"},
+					}),
+				),
+			);
+		}
+		// The orphaned owned app: CF 404 "App not found or access denied" → FlagshipAppNotFound.
+		return Effect.succeed(
+			HttpClientResponse.fromWeb(
+				request,
+				new Response(
+					JSON.stringify({
+						success: false,
+						errors: [{code: 1003, message: "App not found or access denied"}],
+					}),
+					{status: 404, headers: {"content-type": "application/json"}},
+				),
+			),
+		);
+	}),
+);
+
+const partialDeps = FlagshipReadLive.pipe(
+	Layer.provide(Layer.merge(fromApiToken({apiToken: "unit-test-token"}), partialStubTransport)),
+);
+
+const runFlagStatesWith = (
+	deps_: Layer.Layer<FlagshipRead>,
+): Promise<Exit.Exit<unknown, unknown>> => {
+	const saved = process.env[ACCOUNT_KEY];
+	process.env[ACCOUNT_KEY] = "acct-test";
+	return Effect.runPromiseExit(
+		FlagshipRead.pipe(
+			Effect.flatMap((client) => client.listFlagStates()),
+			Effect.provide(deps_),
+		),
+	).finally(() => {
+		if (saved === undefined) delete process.env[ACCOUNT_KEY];
+		else process.env[ACCOUNT_KEY] = saved;
+	});
+};
+
+describe("FlagshipRead.listFlagStates — an inaccessible owned app is skipped, not fatal", () => {
+	it("returns the accessible app's rows and skips the FlagshipAppNotFound app without aborting (#1645)", async () => {
+		const exit = await runFlagStatesWith(partialDeps);
+		// The single inaccessible owned app must NOT fail the whole enumeration.
+		assert.strictEqual(exit._tag, "Success");
+		if (exit._tag !== "Success") return;
+		const rows = exit.value as ReadonlyArray<{key: string; env: string}>;
+
+		// Only the accessible prod app contributes its 2 flags; the orphaned pr-7 app is skipped,
+		// and the foreign app is skipped by decodeEnv as before (no regression).
+		assert.strictEqual(rows.length, 2);
+		assert.isTrue(rows.every((r) => r.env === "prod"));
+		assert.isUndefined(rows.find((r) => r.env === "pr-7"));
+	});
+});
+
 // The single-flag read seam over a STUBBED transport — no real CF in the unit tier. The stub
 // routes the get path to the flag envelope for a known key, and a 404 "Flag not found" CF
 // error envelope for any other key, so the REAL SDK error-matcher path decodes
