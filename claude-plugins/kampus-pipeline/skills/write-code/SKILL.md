@@ -1086,14 +1086,23 @@ claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my cla
 # the bot is the distinct PR author, so any @kamp-us/control-plane member can approve a bot-authored
 # §CP PR. `bot-token mint` prints ONLY the ghs_ token to stdout and derives the org from the repo
 # owner (write-code runs in the target repo's cwd), so it selects the right App with no --repo. It
-# fails closed (non-zero, generic stderr) on missing creds / a mint HTTP failure — and because
-# GH_TOKEN=$(…) inherits that failure, `gh pr create` then HARD-FAILS. That is the sanctioned
-# behavior: there is NO silent fallback to the operator PAT — a PAT-authored PR would re-introduce
-# the author-bottleneck (a usirin-authored §CP PR usirin can't clear, #1875) that 0140 exists to
-# retire. On a mint failure, stop and surface the blocker (creds not provisioned — see the
+# fails closed (non-zero, generic stderr) on missing creds / a mint HTTP failure.
+#
+# CAPTURE-then-ASSERT-then-USE — never the inline-prefix form. The obvious
+# `GH_TOKEN=$(mint) gh pr create …` prefix form is UNSAFE and must NOT be used: an assignment
+# prefix's command substitution does NOT propagate its non-zero exit to the command — even under
+# `set -e` the mint's failure is discarded and `gh pr create` RUNS with an EMPTY GH_TOKEN, which
+# `gh` treats as unset and FALLS BACK to the stored operator credential — the exact silent
+# operator-authored PR (author-bottleneck + wrong identity, #1875) ADR 0140 §1 kills, and because
+# gh exits 0 the agent misreads it as success. So mint into its OWN statement (`TOK="$(…)"`), where
+# the `||` DOES catch the non-zero exit, then assert non-empty (catches an empty-but-exit-0 edge),
+# and ONLY then pass `GH_TOKEN="$TOK"` inline on `gh pr create`. There is NO fallback to the
+# operator PAT: on a mint failure, stop and surface the blocker (creds not provisioned — see the
 # pipeline-cli bot-token README); never open the PR under the operator token.
 # Never echo the token (stdout-only contract).
-GH_TOKEN=$(node packages/pipeline-cli/src/bin.ts bot-token mint) gh pr create \
+TOK="$(node packages/pipeline-cli/src/bin.ts bot-token mint)" || { echo "bot-token mint failed — refusing to open a PR under the operator identity (ADR 0140 §1)" >&2; exit 1; }
+[ -n "$TOK" ] || { echo "empty bot token — aborting (ADR 0140 §1)" >&2; exit 1; }
+GH_TOKEN="$TOK" gh pr create \
   --base main \
   --title "<concise PR title>" \
   --body "$(cat <<'EOF'
