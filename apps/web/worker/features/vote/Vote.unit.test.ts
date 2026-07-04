@@ -12,9 +12,11 @@
  * `db/Drizzle.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
+import {wireCodeOfClass} from "@kampus/fate-effect";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import {TARGET_KINDS} from "../../db/target-kind.ts";
+import {VOTE_ELIGIBILITY_WIRE_CODE, VOTE_REQUIRED_TIER, VoterNotEligible} from "./errors.ts";
 import {KarmaBump, Vote, VoteLive, VoterStanding} from "./Vote.ts";
 
 // A `Drizzle` whose every call throws — provided so that any path which actually
@@ -299,7 +301,7 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 			() =>
 				Effect.gen(function* () {
 					const vote = yield* Vote;
-					const exit = yield* Effect.exit(
+					const err = yield* Effect.flip(
 						vote.cast({
 							userId: "caylak-voter",
 							targetKind: kind,
@@ -307,11 +309,34 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 							value: true,
 						}),
 					);
-					assert.isTrue(exit._tag === "Failure", "a çaylak cast fails");
-					assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /VoterNotEligible/);
+					// `flip` surfaces the typed error as the success channel so we assert on the
+					// `VoterNotEligible` instance itself — its `need` bar comes from the single
+					// source (Vote no longer re-bakes a raw tier string, the #2021 contract).
+					assert.isTrue(
+						err instanceof VoterNotEligible,
+						"a çaylak cast fails with VoterNotEligible",
+					);
+					if (err instanceof VoterNotEligible) {
+						assert.strictEqual(err.need, VOTE_REQUIRED_TIER);
+					}
 				}).pipe(Effect.provide(voteLayer(throwingAccess, false))),
 		);
 	}
+
+	it("VoterNotEligible.need + its wire code are single-sourced from VOTE_REQUIRED_TIER (#2021)", () => {
+		// The tier name and the wire code are ONE fact: the error's `need` is `VOTE_REQUIRED_TIER`
+		// and its `FateWireCode` is derived from it, so a ladder move can't drift them apart.
+		const err = new VoterNotEligible({voterId: "u1", need: VOTE_REQUIRED_TIER, message: "x"});
+		assert.strictEqual(err.need, VOTE_REQUIRED_TIER);
+		assert.strictEqual(
+			VOTE_ELIGIBILITY_WIRE_CODE,
+			`VOTE_REQUIRES_${VOTE_REQUIRED_TIER.toUpperCase()}`,
+		);
+		// The annotation on the error class reads back the derived code, not a hand-typed literal.
+		assert.strictEqual(wireCodeOfClass(VoterNotEligible), VOTE_ELIGIBILITY_WIRE_CODE);
+		// With the current ladder rank the derived code is the literal the SPA copy decodes.
+		assert.strictEqual(VOTE_ELIGIBILITY_WIRE_CODE, "VOTE_REQUIRES_YAZAR");
+	});
 
 	it.effect("a promoted (above-floor) voter still casts normally on a live target", () => {
 		// reads: loadMeta (live) → probe (not yet cast) → post-batch score. The eligible voter

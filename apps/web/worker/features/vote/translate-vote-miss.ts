@@ -14,9 +14,11 @@
  *
  * The third — `VoterNotEligible` (#1810's "earn to vote" gate) — is NOT a miss: a
  * çaylak voter is genuinely REJECTED, so it passes through UNTRANSLATED and reaches
- * the wire as `FORBIDDEN`. It stays in the combinator's output channel (`E |
- * VoterNotEligible`) deliberately — collapsing it to not-found would mislabel a
- * "vote once promoted" denial as "this doesn't exist".
+ * the wire as its own code (`VoterNotEligible`'s definition in `errors.ts` owns that
+ * `FateWireCode`, single-sourced from `VOTE_REQUIRED_TIER` — this combinator never
+ * re-states it). It stays in the combinator's output channel (`E | VoterNotEligible`)
+ * deliberately — collapsing it to not-found would mislabel a "vote once promoted"
+ * denial as "this doesn't exist".
  *
  * The divan path (`features/divan`) is deliberately NOT a caller: it uses the
  * one-arm `castOnSandboxed → Denied` translation (different method, single tag,
@@ -40,8 +42,9 @@ export const translateVoteMiss =
 		self.pipe(
 			// Only the two "not there" arms collapse to the caller's not-found. `VoterNotEligible`
 			// (#1810's "earn to vote" gate) is a genuine REJECTION, not a miss — it passes through
-			// UNTRANSLATED so the resolver surfaces its wire `FORBIDDEN`, never a mislabelled
-			// not-found (a çaylak must see "vote once promoted", not "this doesn't exist").
+			// UNTRANSLATED so the resolver surfaces the wire code `VoterNotEligible` owns (see its
+			// definition in `errors.ts`), never a mislabelled not-found (a çaylak must see "vote
+			// once promoted", not "this doesn't exist").
 			Effect.catchTags({
 				"vote/VoteTargetNotFound": () => Effect.fail(makeNotFound()),
 				"vote/VoteTargetSandboxed": () => Effect.fail(makeNotFound()),

@@ -38,20 +38,40 @@ export class VoteTargetSandboxed extends Schema.TaggedErrorClass<VoteTargetSandb
 ) {}
 
 /**
+ * The tier a voter must reach to cast on live content ("earn to vote", #1810) — the SINGLE
+ * source both the {@link VoterNotEligible} wire code and its `need` field derive from, so the
+ * tier name and the wire code can't drift apart across sites. The rejection's rank name lives
+ * ONCE here: `Vote.castImpl` reads it for `VoterNotEligible.need` (it no longer re-bakes a raw
+ * `"yazar"` string), and {@link VOTE_ELIGIBILITY_WIRE_CODE} is derived from it — a ladder move
+ * (a new required rank) is a one-token edit here that moves the `need` field and the wire code
+ * together, never an edit that touches Vote's internals.
+ */
+export const VOTE_REQUIRED_TIER = "yazar" as const;
+
+/**
+ * The `FateWireCode` for {@link VoterNotEligible}, DERIVED from {@link VOTE_REQUIRED_TIER} so
+ * the required-tier name and the wire code are one fact, not two that can drift. Distinct from
+ * the overloaded `FORBIDDEN` (künye vouch denials) so the vote gate carries its own ladder copy
+ * ("yazar olunca oy verebilirsin") without recopying `FORBIDDEN` and mislabelling those (#1879).
+ * With `VOTE_REQUIRED_TIER = "yazar"` this is the literal `"VOTE_REQUIRES_YAZAR"` the SPA copy
+ * (`src/fate/wireMessages.ts`) and the fate wire-code allowlist already decode.
+ */
+export const VOTE_ELIGIBILITY_WIRE_CODE =
+	`VOTE_REQUIRES_${VOTE_REQUIRED_TIER.toUpperCase()}` as const;
+
+/**
  * The **voter** is not yet eligible to cast — their account tier is at or below the
  * çaylak newcomer floor, and voting on live content is an earned privilege ("earn to
  * vote", the #1810 containment). Unlike {@link VoteTargetSandboxed} (a *target*-liveness
  * gate that reads as not-found), this is a *voter*-tier rejection and DOES reach the wire
- * as a visible `VOTE_REQUIRES_YAZAR` — the same "the ladder is a visible progression" idiom
- * as `kunye/RequiresLevel`, so a çaylak sees a clear "vote once promoted" denial rather than
- * a silent no-op or a mislabelled not-found. The code is DISTINCT from the overloaded
- * `FORBIDDEN` (künye vouch denials) so the vote gate carries its own ladder copy ("yazar
- * olunca oy verebilirsin") without recopying `FORBIDDEN` and mislabelling those (#1879).
- * Carries the `need`ed tier so the surface can name
- * the bar. The gate is the SINGLE choke point in `Vote.castImpl` (the `requireVoterTier`
- * regime), covering all three inline cast paths — pano post/comment + sözlük definition —
- * and is NOT applied on the divan-authorized `castOnSandboxed` path (a yazar/mod is already
- * above the floor and the divan gate is the authorization there, #1288).
+ * as a visible {@link VOTE_ELIGIBILITY_WIRE_CODE} — the same "the ladder is a visible
+ * progression" idiom as `kunye/RequiresLevel`, so a çaylak sees a clear "vote once promoted"
+ * denial rather than a silent no-op or a mislabelled not-found. Carries the `need`ed tier
+ * ({@link VOTE_REQUIRED_TIER}) so the surface can name the bar. The gate is the SINGLE choke
+ * point in `Vote.castImpl` (the `requireVoterTier` regime), covering all three inline cast
+ * paths — pano post/comment + sözlük definition — and is NOT applied on the divan-authorized
+ * `castOnSandboxed` path (a yazar/mod is already above the floor and the divan gate is the
+ * authorization there, #1288).
  */
 export class VoterNotEligible extends Schema.TaggedErrorClass<VoterNotEligible>()(
 	"vote/VoterNotEligible",
@@ -60,5 +80,5 @@ export class VoterNotEligible extends Schema.TaggedErrorClass<VoterNotEligible>(
 		need: Schema.String,
 		message: Schema.String,
 	},
-	{[FateWireCode]: "VOTE_REQUIRES_YAZAR"},
+	{[FateWireCode]: VOTE_ELIGIBILITY_WIRE_CODE},
 ) {}
