@@ -813,7 +813,9 @@ export const LiveDOLive = LiveDO.make(
 					// a safe default if the param is missing/unparseable.
 					const capParam = Number(url.searchParams.get("maxQueuedEventsPerConnection"));
 					const maxQueuedEventsPerConnection =
-						Number.isInteger(capParam) && capParam > 0 ? capParam : 100;
+						Number.isInteger(capParam) && capParam > 0
+							? capParam
+							: defaultLiveLimits.maxQueuedEventsPerConnection;
 					return yield* instance.openStream({
 						ownerId: url.searchParams.get("ownerId") ?? undefined,
 						maxQueuedEventsPerConnection,
