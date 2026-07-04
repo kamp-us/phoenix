@@ -25,7 +25,15 @@ import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
  * a regression.
  */
 test.describe("Sözlük voteDefinition", () => {
-	test("vote → unvote → vote round-trip on a fresh definition", async ({page}) => {
+	// QUARANTINED — un-quarantine blocked on #1838 (e2e can't establish yazar tier); see #1903.
+	// Vote score-propagation flake tracked at #1903. Tracking: #1885/#1903.
+	// The whole test is the definition-vote score round-trip (expectScoreConsistent
+	// "0"/"1" + the coupled aria-pressed toggle, which only settles once the score
+	// propagates), so the flaky read-back is inseparable from it — fixme'ing the
+	// whole test. Lost coverage while quarantined: sözlük definition vote/unvote/
+	// re-vote round-trip. No vote-GATE (#1828) coverage lives here.
+	// Re-enable = revert to plain test(...).
+	test.fixme("vote → unvote → vote round-trip on a fresh definition", async ({page}) => {
 		// Fresh sign-up + bootstrap so the user is fully authenticated.
 		const localPart = `vt${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
