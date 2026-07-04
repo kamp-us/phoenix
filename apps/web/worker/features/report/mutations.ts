@@ -49,11 +49,15 @@ const SubmitReportInput = Schema.Struct({
 
 // Either name the target directly (the moderation queue surfaces `targetKind` +
 // `targetId`), or pass a `reportId` and the resolve acts on its whole target group.
+// `waveId` is the remove-the-wave grouping id (#1855): the client generates ONE per
+// wave gesture and threads the SAME id through every fanned-out resolve, so the batch
+// reopens as a unit. Absent on a single-target resolve.
 const ResolveReportInput = Schema.Struct({
 	reportId: Schema.optional(Schema.String),
 	targetKind: Schema.optional(TargetKindSchema),
 	targetId: Schema.optional(Schema.String),
 	action: Schema.Literals(["remove", "dismiss"]),
+	waveId: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 const RestoreReportInput = Schema.Struct({
@@ -183,6 +187,9 @@ const resolveGated = Effect.fn("report.resolveGated")(function* (
 		resolverId: moderatorId,
 		action: input.action,
 		resolvedAt: now,
+		// Stamp the wave grouping when this resolve is one target of a wave gesture
+		// (#1855); null on a single-target resolve.
+		waveId: input.waveId ?? null,
 	});
 
 	return toResolveReceipt({

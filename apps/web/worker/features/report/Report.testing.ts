@@ -27,6 +27,7 @@ const failOnContact: ReportShape = {
 	listOpen: die("listOpen"),
 	resolveTarget: die("resolveTarget"),
 	reopenForTarget: die("reopenForTarget"),
+	reopenForWave: die("reopenForWave"),
 	lookupReportTarget: die("lookupReportTarget"),
 	firstOpenReportId: die("firstOpenReportId"),
 	countRemovalsByAuthors: die("countRemovalsByAuthors"),

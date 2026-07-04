@@ -580,3 +580,129 @@
 	border-color: var(--accent);
 	background: var(--accent-faint);
 }
+
+/* remove-the-wave (#1855): the same-author batch manifest, docked over the loop when
+   the mod grabs a flood with Shift-X. */
+.kp-wave {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+	padding: var(--s-4);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface-raised);
+}
+
+.kp-wave__head {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-wave__title {
+	font: var(--t-h3);
+	color: var(--text-primary);
+	text-transform: lowercase;
+}
+
+.kp-wave__keys {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	text-transform: lowercase;
+}
+
+.kp-wave__list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.kp-wave__row {
+	display: grid;
+	grid-template-columns: auto auto minmax(0, 1fr) auto;
+	align-items: baseline;
+	gap: var(--s-2);
+	padding: var(--s-2);
+	border: 1px solid transparent;
+	border-radius: var(--r-sm);
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+.kp-wave__row[data-focused="true"] {
+	border-color: var(--border);
+	background: var(--surface);
+}
+
+.kp-wave__row[data-selected="true"] .kp-wave__check {
+	color: var(--danger);
+}
+
+.kp-wave__check {
+	color: var(--text-muted);
+}
+
+.kp-wave__kind {
+	color: var(--text-muted);
+	text-transform: lowercase;
+}
+
+.kp-wave__row-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-primary);
+}
+
+.kp-wave__count {
+	color: var(--text-muted);
+	text-align: right;
+	text-transform: lowercase;
+}
+
+.kp-wave__error {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--danger);
+}
+
+.kp-wave__confirm {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	padding: var(--s-3);
+	border: 1px solid var(--danger);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+}
+
+.kp-wave__confirm-line {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+	text-transform: lowercase;
+}
+
+.kp-wave__confirm-actions {
+	display: flex;
+	gap: var(--s-2);
+}
+
+.kp-wave__confirm-yes,
+.kp-wave__confirm-no {
+	font: var(--t-meta);
+	padding: 2px 10px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface-raised);
+	color: var(--text-primary);
+	cursor: pointer;
+}
+
+.kp-wave__confirm-yes {
+	border-color: var(--danger);
+	color: var(--danger);
+}

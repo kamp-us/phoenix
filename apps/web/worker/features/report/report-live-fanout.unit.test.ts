@@ -423,6 +423,56 @@ describe("fail-safe — a failed publish does not fail the moderation action", (
 	});
 });
 
+// #1855: the wave grouping the client generates rides the SAME `report.resolve` input,
+// threaded to `resolveTarget` so the batch's rows carry one shared id. A capturing stub
+// records what the handler passed down (a dismiss avoids the remove/publish detour).
+describe("report.resolve — threads the wave grouping id to resolveTarget (#1855)", () => {
+	const capturingReport = (sink: {waveId?: string | null}) =>
+		makeReportStub({
+			resolveTarget: (input) =>
+				Effect.sync(() => {
+					sink.waveId = input.waveId ?? null;
+					return {collapsed: 1};
+				}),
+		});
+
+	// Pano/Sozluk are in the handler's static R (the remove branch), never reached on a
+	// dismiss — empty stubs die on contact, proving the dismiss path never touches them.
+	const gate = <ROut>(extra: Layer.Layer<ROut, never, never>) =>
+		Layer.mergeAll(
+			extra,
+			Layer.succeed(Pano, panoStub({})),
+			Layer.succeed(Sozluk, sozlukStub({})),
+			relationStoreOf([MOD]),
+			agentAuthorityStub,
+			actorContext(human(MOD)),
+		);
+
+	it.effect("a wave-fanned resolve carrying a waveId passes it through", () => {
+		const sink: {waveId?: string | null} = {};
+		const {layer} = recordingPublisher();
+		return Effect.gen(function* () {
+			yield* mutations["report.resolve"].handler({
+				input: {targetKind: "post", targetId: "p1", action: "dismiss", waveId: "wave-1"},
+				select: ["id"],
+			});
+			assert.strictEqual(sink.waveId, "wave-1", "the shared wave id reaches resolveTarget");
+		}).pipe(Effect.provide(gate(Layer.mergeAll(capturingReport(sink), layer))));
+	});
+
+	it.effect("a single-target resolve (no waveId) passes null — no grouping", () => {
+		const sink: {waveId?: string | null} = {};
+		const {layer} = recordingPublisher();
+		return Effect.gen(function* () {
+			yield* mutations["report.resolve"].handler({
+				input: {targetKind: "post", targetId: "p1", action: "dismiss"},
+				select: ["id"],
+			});
+			assert.strictEqual(sink.waveId, null, "a lone resolve carries no wave grouping");
+		}).pipe(Effect.provide(gate(Layer.mergeAll(capturingReport(sink), layer))));
+	});
+});
+
 describe("report.submit — the audit refuted submit; it fans out nothing", () => {
 	it.effect(
 		"submit acquires NO publisher (a private report row changes no subscribed content)",
