@@ -22,6 +22,19 @@
  */
 import {createSign} from "node:crypto";
 
+// ── Exit-code contract (epic #1934; amends #1938) ────────────────────────────
+// The command distinguishes THREE outcomes so callers (write-code, ship-it) can tell an
+// org that never set the bot up apart from a configured-but-broken bot:
+//   0  ok             — a `ghs_` token on stdout.
+//   3  not-configured — the org has NO bot creds at all (no config.json AND no id/key env/flags).
+//                       The bot is OPT-IN: a caller may fall back to the operator's own token.
+//   1  mint-failed    — creds WERE resolvable but minting/key-load/GitHub failed, OR the config
+//                       is present-but-broken. A configured-but-broken bot must HARD-FAIL, never
+//                       silently degrade to the operator (the #1875 invisible-fallback class).
+export const EXIT_OK = 0;
+export const EXIT_MINT_FAILED = 1;
+export const EXIT_NOT_CONFIGURED = 3;
+
 /** GitHub's installation access-token endpoint response — only `.token` is load-bearing. */
 interface AccessTokenResponse {
 	readonly token: string;
@@ -236,23 +249,43 @@ export interface BotConfigInput {
 	readonly installationId?: string | undefined;
 	/** Parsed org-keyed `config.json` contents (optional fallback — the primary source). */
 	readonly configFile?: {readonly appId?: unknown; readonly installationId?: unknown} | undefined;
+	/**
+	 * Whether an org-keyed `config.json` EXISTS on disk (readable), independent of whether it
+	 * parsed or carried ids. This is what separates not-configured from configured-but-broken:
+	 * an absent file with no env/flags is genuinely not-configured (exit 3); a present file
+	 * that failed to parse or lacks ids is configured-but-broken and must hard-fail (exit 1).
+	 * Defaults to `false` — a caller that can't tell must treat the org as not-configured only
+	 * when nothing else is supplied either.
+	 */
+	readonly configPresent?: boolean | undefined;
 	/** The config path named in the error message, so a failure points at the real file. */
 	readonly configPathForError: string;
 }
 
 export type IdResolution =
 	| {readonly _tag: "Ok"; readonly appId: string; readonly installationId: string}
+	| {readonly _tag: "NotConfigured"; readonly message: string}
 	| {readonly _tag: "Error"; readonly message: string};
 
 /**
  * Resolve `appId` + `installationId` with precedence flag > env > org-keyed config-file. Both
  * are non-secret but kept OUT of committed source — sourced from env or the out-of-repo
- * org-keyed `config.json` (ADR 0140). A missing id is a clear error naming the real config path.
+ * org-keyed `config.json` (ADR 0140).
+ *
+ * Three-way outcome (epic #1934, amending #1938):
+ *   - `Ok`             — both ids resolved.
+ *   - `NotConfigured`  — the org has NO bot creds AT ALL: no config file present (`configPresent`
+ *     is false), no ids from env/flags, and no ids in any passed config. The bot is opt-in, so a
+ *     caller may fall back to the operator token. → exit 3.
+ *   - `Error`          — SOME input was supplied but ids are still missing: a config file was
+ *     present (even if empty/unparsed) OR an env/flag id was given but its partner is absent.
+ *     Configured-but-broken → hard-fail. → exit 1.
  */
 export const resolveIds = ({
 	appId,
 	installationId,
 	configFile,
+	configPresent,
 	configPathForError,
 }: BotConfigInput): IdResolution => {
 	const resolvedAppId = nonEmpty(appId)
@@ -265,17 +298,33 @@ export const resolveIds = ({
 		: nonEmpty(configFile?.installationId)
 			? configFile.installationId
 			: undefined;
+	if (nonEmpty(resolvedAppId) && nonEmpty(resolvedInstallationId)) {
+		return {_tag: "Ok", appId: resolvedAppId, installationId: resolvedInstallationId};
+	}
+	// Nothing at all points at this org's bot — no config file on disk, no env/flag id, no id in
+	// any config passed. That is genuinely not-configured: the org never set the bot up.
+	const nothingSupplied =
+		configPresent !== true &&
+		!nonEmpty(resolvedAppId) &&
+		!nonEmpty(resolvedInstallationId) &&
+		!nonEmpty(configFile?.appId) &&
+		!nonEmpty(configFile?.installationId);
+	if (nothingSupplied) {
+		return {
+			_tag: "NotConfigured",
+			message: `no bot configured for this org — no ${configPathForError} and no --app-id/--installation-id (env KAMPUS_PIPELINE_APP_ID/…); caller may fall back to the operator token`,
+		};
+	}
+	// Something was supplied (a present config file, or a partial env/flag pair) but an id is still
+	// missing — configured-but-broken. Hard-fail; never silently degrade to the operator.
 	if (!nonEmpty(resolvedAppId)) {
 		return {
 			_tag: "Error",
 			message: `no app id — set --app-id, env KAMPUS_PIPELINE_APP_ID, or appId in ${configPathForError}`,
 		};
 	}
-	if (!nonEmpty(resolvedInstallationId)) {
-		return {
-			_tag: "Error",
-			message: `no installation id — set --installation-id, env KAMPUS_PIPELINE_INSTALLATION_ID, or installationId in ${configPathForError}`,
-		};
-	}
-	return {_tag: "Ok", appId: resolvedAppId, installationId: resolvedInstallationId};
+	return {
+		_tag: "Error",
+		message: `no installation id — set --installation-id, env KAMPUS_PIPELINE_INSTALLATION_ID, or installationId in ${configPathForError}`,
+	};
 };

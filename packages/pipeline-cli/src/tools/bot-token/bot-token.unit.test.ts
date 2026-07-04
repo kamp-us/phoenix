@@ -202,20 +202,62 @@ describe("resolveIds — flag/env > org-keyed config-file precedence", () => {
 		assert.deepStrictEqual(r, {_tag: "Ok", appId: "AAA", installationId: "cfg-inst"});
 	});
 
-	it("missing appId → Error naming the org config path", () => {
+	it("missing appId (installationId supplied) → Error (partial input, not not-configured)", () => {
 		const r = resolveIds({installationId: "III", configPathForError});
 		assert.strictEqual(r._tag, "Error");
 		if (r._tag === "Error") assert.include(r.message, configPathForError);
 	});
 
-	it("missing installationId → Error", () => {
+	it("missing installationId (appId supplied) → Error (partial input, not not-configured)", () => {
 		const r = resolveIds({appId: "AAA", configPathForError});
 		assert.strictEqual(r._tag, "Error");
 	});
 
-	it("empty config + no flags → Error", () => {
-		const r = resolveIds({configFile: {}, configPathForError});
+	it("present-but-empty config (configPresent) + no flags → Error (configured-but-broken)", () => {
+		const r = resolveIds({configFile: {}, configPresent: true, configPathForError});
 		assert.strictEqual(r._tag, "Error");
+	});
+});
+
+describe("resolveIds — not-configured vs configured-but-broken discrimination (epic #1934)", () => {
+	const configPathForError = defaultConfigPath(FIXTURE_ORG);
+
+	it("no config present + no env/flags at all → NotConfigured (exit-3 signal, opt-out)", () => {
+		const r = resolveIds({configPresent: false, configPathForError});
+		assert.strictEqual(r._tag, "NotConfigured");
+		if (r._tag === "NotConfigured") assert.include(r.message, configPathForError);
+	});
+
+	it("configPresent omitted + nothing supplied → NotConfigured (defaults to absent)", () => {
+		const r = resolveIds({configPathForError});
+		assert.strictEqual(r._tag, "NotConfigured");
+	});
+
+	it("present-but-empty config → Error, NOT NotConfigured (a present file is configured)", () => {
+		const notConfigured = resolveIds({configPresent: false, configPathForError});
+		const brokenPresent = resolveIds({configFile: {}, configPresent: true, configPathForError});
+		assert.strictEqual(notConfigured._tag, "NotConfigured");
+		assert.strictEqual(brokenPresent._tag, "Error");
+	});
+
+	it("a partial env/flag (one id, no config) → Error, NOT NotConfigured (some intent supplied)", () => {
+		assert.strictEqual(
+			resolveIds({appId: "AAA", configPresent: false, configPathForError})._tag,
+			"Error",
+		);
+		assert.strictEqual(
+			resolveIds({installationId: "III", configPresent: false, configPathForError})._tag,
+			"Error",
+		);
+	});
+
+	it("both ids from config (present) → Ok, never the not-configured/broken paths", () => {
+		const r = resolveIds({
+			configFile: {appId: "cfg-app", installationId: "cfg-inst"},
+			configPresent: true,
+			configPathForError,
+		});
+		assert.deepStrictEqual(r, {_tag: "Ok", appId: "cfg-app", installationId: "cfg-inst"});
 	});
 });
 
