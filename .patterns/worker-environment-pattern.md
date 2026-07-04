@@ -53,7 +53,7 @@ SAME `ENV_BINDINGS` literal, making a key↔name mismatch a structural impossibi
 not a runtime hazard (#1432):
 
 ```ts
-env: {...envBindings, FLAGS: FlagshipResource},
+env: {...envBindings, Flagship: FlagshipResource},
 ```
 
 Per-key (a spread of name-keyed entries) — not `env: AppConfig` — because alchemy's
