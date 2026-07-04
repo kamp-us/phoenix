@@ -23,6 +23,7 @@ import {NotificationLive} from "../bildirim/Notification.ts";
 import {DivanLive} from "../divan/Divan.ts";
 import {FlagsLive} from "../flagship/Flags.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
+import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import {FunnelLive} from "../funnel/Funnel.ts";
 import {AgentAuthorityV1} from "../kunye/AgentAuthorityV1.ts";
 import {Kunye, KunyeLive} from "../kunye/Kunye.ts";
@@ -223,12 +224,16 @@ export const makeFateLayer = Layer.mergeAll(
  * `FateServer.layer`'s own R is discharged by the same domain layers, a record
  * needing a forgotten service is a compile error HERE, the composition site.
  *
- * `[CurrentActor]` registers the per-request authz actor (ADR 0107 §7): it is
- * excluded from build-time R and fulfilled per request from the session in
- * `route.ts` (`requestServices`), never provided by a worker-level layer.
+ * `[CurrentActor, RequestFlagOverrides]` registers the two per-request services
+ * (ADR 0107 §7): the authz actor and the raw `Cookie` header the dev-override
+ * flag path reads (#622). Both are excluded from build-time R and fulfilled per
+ * request from the session/request in `route.ts` (`requestServices`), never
+ * provided by a worker-level layer.
  */
 export const PhoenixFateLive: Layer.Layer<
 	WorkerFateServices | FateServer,
 	never,
 	Database | BetterAuth.BetterAuth | Flagship | RuntimeContext
-> = FateServer.layer(fateConfig, [CurrentActor]).pipe(Layer.provideMerge(makeFateLayer));
+> = FateServer.layer(fateConfig, [CurrentActor, RequestFlagOverrides]).pipe(
+	Layer.provideMerge(makeFateLayer),
+);

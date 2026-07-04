@@ -55,6 +55,25 @@ export class FlagsContext extends Context.Service<FlagsContext, FlagsContextValu
 	"@kampus/FlagsContext",
 ) {}
 
+/**
+ * The request's raw `Cookie` header, carried as a per-request service so a
+ * flag-gated fate resolver's `provideRequestFlags` can source the dev-override
+ * cookie (#622) the SAME way the flagship route does — the fate `/fate` route edge
+ * has the raw request, a resolver deep in the tree does not. Fulfilled per request
+ * from the session-bearing request in `fate/route.ts` (`requestServices`) and
+ * declared to `FateServer.layer` (`layers.ts`), so — like `CurrentActor` — it is
+ * excluded from build-time `R` and never provided by a worker-level layer.
+ *
+ * `header` is `null` when the request carries no `Cookie` header. The dev-only
+ * gate stays in {@link makeRequestFlagsContext} (environment === "development"), so
+ * this service is inert in every deployed stage: it merely transports the header,
+ * it grants no capability of its own.
+ */
+export class RequestFlagOverrides extends Context.Service<
+	RequestFlagOverrides,
+	{readonly cookieHeader: string | null}
+>()("@kampus/RequestFlagOverrides") {}
+
 /** The anonymous request context — no identity to bucket on. */
 export const anonymousFlagsContext: FlagsContextValue = {};
 
@@ -112,11 +131,18 @@ export const makeRequestFlagsContext = (
  */
 export const provideRequestFlags = <A, E, R>(
 	effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, Exclude<R, FlagsContext> | CurrentUser> =>
+): Effect.Effect<A, E, Exclude<R, FlagsContext> | CurrentUser | RequestFlagOverrides> =>
 	Effect.gen(function* () {
 		const {user} = yield* CurrentUser;
+		// The dev-override cookie (#622) rides the per-request `RequestFlagOverrides`
+		// service, fulfilled at the `/fate` route edge — so a flag-gated resolver's
+		// override is honored on the mutation path, not only on the flagship route.
+		// The environment gate stays in `makeRequestFlagsContext`, so this is inert in
+		// every deployed stage.
+		const {cookieHeader} = yield* RequestFlagOverrides;
 		const context = yield* makeRequestFlagsContext(
 			user ? {userId: user.id} : anonymousFlagsContext,
+			cookieHeader,
 		);
 		return yield* effect.pipe(Effect.provideService(FlagsContext, context));
 	});
