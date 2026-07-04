@@ -997,6 +997,103 @@ describe("LiveDO replay epoch fence (#1072)", () => {
 
 		await stream.cancel();
 	});
+
+	// #1903 discriminating proof (Phase-1 gate): can the `epochStartedAt`/`openStream`
+	// CAUSAL boundary ALONE separate the two frames the 1s wall-clock grace cannot tell
+	// apart — the #714 register-race KEEP frame vs the stale pre-vote #1903 DROP frame —
+	// when BOTH sit inside the same 1s grace window? The whole question: does the epoch
+	// fence cleanly fence one KEEP and one DROP with the time-grace neutralized (both
+	// frames well inside `subscribedAt - REPLAY_CLOCK_GRACE_MS`, so the grace floor admits
+	// BOTH and only the causal `epochStartedAt` floor discriminates).
+	//
+	// Timeline modeled (the real #1903 page-reload flake): a stale pre-vote frame is
+	// buffered (score:0), THEN the client reloads → `openStream` bumps the epoch
+	// (`epochStartedAt = reload instant`, live-do.ts:264), THEN a #714 register-race frame
+	// fires after the reconnected stream is open but before `register` commits (score:1),
+	// THEN the cursorless (`lastEventId: undefined`) `register` lands. The pre-vote frame is
+	// pre-epoch (`at < epochStartedAt`) ⇒ DROP; the race frame is post-epoch
+	// (`at >= epochStartedAt`) ⇒ KEEP. Both are inside the grace, so this isolates the
+	// causal fence as the sole discriminator.
+	it("epoch fence alone separates a #714 race-KEEP from a #1903 pre-vote-DROP inside the same grace window", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-1903-discriminate";
+		const decoyKey = "Post:decoy-1903-discriminate";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-1903-discriminate");
+		const ownerId = "owner-1903";
+		const subId = "sub-1903";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// Activate `subId` on the connection via the decoy so a replayed deliver to the
+		// real topic is non-stale (generation 1 / revision 1).
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// (b) STALE PRE-VOTE frame (score:0): buffered BEFORE the reload's epoch begins.
+		// `buffered.at` is stamped `Date.now()` inside `publish` (live-do.ts:713); a real gap
+		// on either side of the epoch makes the two frames' `at` fall on opposite sides of
+		// `epochStartedAt` deterministically (no same-millisecond ambiguity).
+		const preVoteFrame: DeliverFrame = {kind: "next", id: "", event: {data: {score: 0}}};
+		const staleAt = Date.now();
+		await run(topic.publish({topicKey, frame: preVoteFrame, limits: LIMITS}));
+
+		// The reload's epoch begins strictly AFTER the stale frame was buffered — this is the
+		// causal boundary `openStream` (live-do.ts:264) stamps on the page-reload reconnect.
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		const epochStartedAt = Date.now();
+		await new Promise((resolve) => setTimeout(resolve, 5));
+
+		// (a) #714 REGISTER-RACE frame (score:1): fires AFTER the epoch (stream already open)
+		// but BEFORE `register` commits. Post-epoch ⇒ must be KEPT for #714.
+		const raceFrame: DeliverFrame = {kind: "next", id: "", event: {data: {score: 1}}};
+		const raceAt = Date.now();
+		await run(topic.publish({topicKey, frame: raceFrame, limits: LIMITS}));
+		const afterRace = Date.now();
+
+		// The cursorless (`lastEventId: undefined`) register lands. `subscribedAt` sits so that
+		// BOTH frames are inside the 1s wall-clock grace (`subscribedAt - 1000 < staleAt`) —
+		// the grace floor admits BOTH, so ONLY the `epochStartedAt` causal floor discriminates.
+		const subscribedAt = afterRace;
+		expect(subscribedAt - 1000).toBeLessThan(staleAt); // grace alone would KEEP the stale frame
+		expect(staleAt).toBeLessThan(epochStartedAt); // pre-vote frame is pre-epoch ⇒ DROP
+		expect(raceAt).toBeGreaterThanOrEqual(epochStartedAt); // race frame is post-epoch ⇒ KEEP
+
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-1903-discriminate",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt, epochStartedAt}));
+		expect(reg.ok).toBe(true);
+
+		// The KEEP frame (#714 race, score:1) replays — and it is the ONLY frame that arrives.
+		const kept = await stream.next();
+		expect(kept).toContain("event: next");
+		expect(payloadOf(kept).id).toBe(subId);
+		expect((payloadOf(kept).event.data as {score: number}).score).toBe(1);
+
+		// No second frame: the stale pre-vote (score:0) was fenced by the epoch floor, so it
+		// never reaches the reconnected stream to clobber the correct value. The fence cleanly
+		// separated KEEP (post-epoch) from DROP (pre-epoch) with the grace neutralized.
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
+	});
 });
 
 // The OTHER buffer bound is the count cap (`maxBufferedFramesPerTopic`): the ring
