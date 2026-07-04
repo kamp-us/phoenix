@@ -1038,29 +1038,39 @@ Close that hole with a **bounded post-enqueue reconcile** — it stays compatibl
 async model (the actor does **not** block synchronously on the final merge), it just watches a
 **bounded batch window** to classify the terminal state before it reports.
 
-Read the two ground-truth signals per poll — `state`/`mergedAt` (did it land?) and
-`mergeStateStatus` (is it still in the queue?) — and classify into exactly three outcomes:
+Classify each poll off the **authoritative** merge-queue signal — GitHub's REST issue-timeline
+events (`added_to_merge_queue` on enqueue, `removed_from_merge_queue` on a genuine ejection;
+GitHub "Managing a merge queue") — **not** a momentary `mergeStateStatus`. The old discriminator
+inferred `ejected` from `OPEN + mergeStateStatus != QUEUED`, but a freshly-enqueued PR reads
+`mergeStateStatus = CLEAN` for a few seconds *before* GitHub flips it CLEAN → QUEUED, so a
+genuinely-queued PR false-classified as `ejected` on the first poll (the #1906 live instance: an
+ejection comment posted on a healthy queued PR, then retracted by hand — #1921). The fix adds a
+fourth outcome, `pending` (the enqueue-settle window: OPEN, not merged, **no** merge-queue event
+yet), which is **never** an ejection. The classification is a **pure, unit-tested** predicate in
+`pipeline-cli merge-queue-classify` (`packages/pipeline-cli/src/tools/merge-queue-classify/`) — the
+reconcile shells out to it per poll and branches on the printed outcome word:
 
 ```bash
-# Bounded reconcile: poll merged/queued state within a batch window, then classify.
+# Bounded reconcile: poll the authoritative merge-queue state within a batch window, then classify.
 # BOUNDED, not synchronous-to-merge (ADR 0132): a fixed budget of polls, then STOP and report —
 # a PR still QUEUED at the budget's end is a well-formed pending, not a failure.
+# The classifier reads PR state (gh pr view — the sanctioned PR-state read ship-it Step 2 uses,
+# NOT a GraphQL intake query the org's Projects-classic integration breaks) + the last merge-queue
+# timeline event (gh api …/timeline, REST) and prints merged/ejected/queued/pending. It is
+# fail-closed away from a false ship: any unreadable signal ⇒ pending (keep polling), never a
+# false merged/ejected.
 RECONCILE_TRIES=${SHIP_RECONCILE_TRIES:-10}   # ~10 polls
 RECONCILE_SLEEP=${SHIP_RECONCILE_SLEEP:-30}   # ~30s apart ⇒ ~5 min batch window
 MERGE_OUTCOME=pending
 for i in $(seq 1 "$RECONCILE_TRIES"); do
-  # mergeStateStatus is the queue-membership discriminator: QUEUED ⇒ still in the queue.
-  # (gh pr view --json is the sanctioned PR-state read ship-it Step 2 already uses — NOT a
-  #  gh api GraphQL issue/PR intake query, which the org's Projects-classic integration breaks.)
-  read -r MERGED STATE MSS < <(gh pr view "$PR" --repo "$REPO" \
-    --json merged,state,mergeStateStatus \
-    --jq '"\(.merged) \(.state) \(.mergeStateStatus)"')
-  if [ "$MERGED" = "true" ] || [ "$STATE" = "MERGED" ]; then MERGE_OUTCOME=merged; break; fi
-  if [ "$MSS" = "QUEUED" ]; then MERGE_OUTCOME=queued; sleep "$RECONCILE_SLEEP"; continue; fi
-  # OPEN + not merged + not QUEUED ⇒ the queue dropped it: an EJECTION.
-  if [ "$STATE" = "OPEN" ]; then MERGE_OUTCOME=ejected; break; fi
+  MERGE_OUTCOME=$(pipeline-cli merge-queue-classify classify --pr "$PR" --repo "$REPO")
+  [ "$MERGE_OUTCOME" = merged ] && break   # terminal success
+  [ "$MERGE_OUTCOME" = ejected ] && break  # a genuine dequeue (removed_from_merge_queue) — act below
+  # queued (still in the queue) or pending (enqueue-settle window) ⇒ keep polling within the budget
   sleep "$RECONCILE_SLEEP"
 done
+# At the budget's end a still-`pending` PR (never a merge-queue event) is reported as a well-formed
+# pending, NOT ejected — the settle window is not an ejection (#1921).
 ```
 
 Then act on `MERGE_OUTCOME`, and only here — **never at Step 4's enqueue** — decide the run's
@@ -1068,11 +1078,16 @@ merge disposition:
 
 - **`merged`** — the queue landed the batch. Terminal success; the `Fixes #N` close has fired (or
   is firing) async. Report `merged: yes (queue landed the batch)`.
-- **`queued`** — still in the queue at the window's end. This is a **well-formed pending**, not a
-  failure (ADR 0132: the actor does not block to the final merge). Report `enqueued: yes (QUEUED →
-  auto-merges on green)` exactly as before — the reconcile simply confirmed it was **still queued**,
-  never ejected, within the window.
-- **`ejected`** — the queue **dropped** the PR (still open, no longer queued, not merged). This is
+- **`queued`** / **`pending`** — the PR is still healthily in-flight at the window's end: `queued`
+  is confirmed in the queue (last event `added_to_merge_queue`, or `mergeStateStatus == QUEUED`);
+  `pending` is the **enqueue-settle window** (OPEN, not merged, no merge-queue event yet — incl.
+  OPEN + CLEAN before the CLEAN → QUEUED flip). **Both are a well-formed pending, not a failure**
+  (ADR 0132: the actor does not block to the final merge). Report `enqueued: yes (→ auto-merges on
+  green)` exactly as before — the reconcile confirmed it was **still in-flight, never ejected**,
+  within the window. A `pending` PR at the budget's end is reported this way too — the settle window
+  is **never** an ejection (#1921).
+- **`ejected`** — the queue **dropped** the PR (still open, no longer queued, not merged) — keyed on
+  the authoritative `removed_from_merge_queue` timeline event, not on a momentary state. This is
   the silent stall this step exists to catch. Do **not** report shipped. **Route it back to
   repair/re-queue** and **surface the ejection**: leave a legible comment on the PR naming the
   ejection and the likely cause (textual batch conflict vs combined-batch CI failure), so the
@@ -1090,7 +1105,8 @@ merge disposition:
   re-queue lane (the `drive-issue.js` shipper stage consumes `ejected` and re-drives), the same
   fail → fix → re-request boundary write-code owns. The **success/watch distinction is now
   observable** — `QUEUED` never masks a stall, because the reconcile separated `merged` from
-  `queued` from `ejected`.
+  `queued`/`pending` from `ejected` off the authoritative merge-queue timeline event, so an
+  enqueue-settle window no longer masquerades as an ejection (#1921).
 
 This reconcile **weakens no existing gate**: Step 0's §CP refusal, Step 2/2b's current-head PASS,
 Step 3's green CI, Step 3.5's run-evidence bundle, and the single-merge-authority contract (ADRs
