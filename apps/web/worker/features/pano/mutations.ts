@@ -15,7 +15,7 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {PHOENIX_KARMA_GATES, PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
+import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
 import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
 import {notifyCommentReply} from "../bildirim/conversation-emitters.ts";
 import {notifyCaylakEntersDivan} from "../bildirim/mod-emitters.ts";
