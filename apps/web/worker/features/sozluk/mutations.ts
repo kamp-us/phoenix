@@ -15,6 +15,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
 import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
+import {notifyContentVote} from "../bildirim/vote-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
@@ -129,6 +130,17 @@ export const mutations = {
 			const definition = shapeDefinition(result);
 			// `myVote` is viewer-specific, so it's omitted from `changed`.
 			yield* live.definition.update(definition.id, {changed: ["score"], data: definition});
+			// Aggregated vote notification (#1698): see pano's `post.vote` — a landed
+			// upvote notifies the definition author, rolled up per item, on a real
+			// state change only. `result.authorId` is server-derived.
+			if (result.changed) {
+				yield* notifyContentVote({
+					authorId: result.authorId,
+					voterId: user.id,
+					targetKind: "definition",
+					targetId: result.definitionId,
+				});
+			}
 			return definition;
 		}),
 	),
