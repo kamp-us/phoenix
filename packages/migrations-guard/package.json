@@ -1,0 +1,31 @@
+{
+	"name": "@kampus/migrations-guard",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Fail-closed CI gate over the hand-authored flat D1 migrations tree (ADR 0108): consistency (.sql ↔ journal ↔ snapshots), ordering (contiguous-unique idx/tag/number), and immutability (a journaled migration's SQL never changes vs a committed baseline) — issue #1435",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"check": "node src/bin.ts check",
+		"baseline": "node src/bin.ts baseline"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
