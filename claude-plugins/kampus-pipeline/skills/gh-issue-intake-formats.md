@@ -755,6 +755,38 @@ immutable; re-read it each round.
 
 ---
 
+## Posting a comment body — read it into `$BODY`, never `gh api -f body=@file` (the local-path leak)
+
+Formats 3 and 4 (and every claim/handoff comment below) are posted with `gh api … -f body=…`.
+There is **one** correct way to pass a body, and one form that is **forbidden** because it
+silently leaks a local path into a **public** comment:
+
+- **Required form — assemble the body into a shell var, then pass it by value.** Build the text
+  (a heredoc, or a scratchpad file you `cat`), read it into `$BODY`, and pass `-f body="$BODY"`:
+
+  ```bash
+  BODY="$(cat "$BODY_FILE")"                       # or: BODY=$(cat <<'EOF' … EOF)
+  gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
+  ```
+
+- **Forbidden form — NEVER `gh api -f body=@<path>` (equivalently `--raw-field body=@<file>`).**
+  `gh api`'s `-f`/`--raw-field` adds a **static string** parameter: it takes the value *verbatim*
+  and, unlike `curl`, does **not** expand a leading `@` into the file's contents. So
+  `-f body=@/some/path` posts the raw text `@/some/path` as the comment body — two harms in one:
+  (1) the intended body never renders, and (2) the literal value is typically a machine-local
+  absolute path (a `mktemp`/scratchpad file), so a **local filesystem path leaks into a public
+  GitHub comment**, violating the no-local-paths-in-shared-artifacts invariant (`CLAUDE.md`). The
+  `leak-guard` CI gate scans **committed files**, not comment bodies posted at runtime, so nothing
+  catches this after the fact — the leak lives in the public comment until a human spots it (the
+  manually-patched comment on PR #1567). If you find yourself reaching for the curl-style `@file`
+  idiom, stop and use the `BODY="$(cat …)"` → `-f body="$BODY"` form above.
+
+  (Only `-F`/`--field` — the *typed* flag — reads a file via `@`, per `gh api --help`. Do not
+  route around this with `-F body=@file`: the `$BODY`-by-value form is the single idiom every
+  skill here uses — reach for it, not a second mechanism.)
+
+---
+
 ## 3. Progress-comment format
 
 While working an issue, an agent logs progress as **comments on that issue**.
@@ -786,6 +818,9 @@ otherwise have to reverse-engineer>
   buried in a diff is a decision the next agent will re-litigate.
 - This is the per-issue ledger. Cross-task context that the *epic* needs goes in
   a handoff note (format 4), not here.
+- Post the body the required way — read it into `$BODY` and pass `-f body="$BODY"`;
+  **never `gh api -f body=@file`**, which posts the literal path and leaks it publicly
+  (see [Posting a comment body](#posting-a-comment-body--read-it-into-body-never-gh-api--f-bodyfile-the-local-path-leak)).
 
 ---
 
@@ -823,6 +858,9 @@ assumption invalidated, a partial state left behind>
 - If a child completed in pure isolation with zero sibling impact, a one-line
   "Done" handoff is honest and complete. Don't manufacture cross-task context
   that isn't there.
+- Post the note the required way — read it into `$BODY` and pass `-f body="$BODY"`;
+  **never `gh api -f body=@file`**, which posts the literal path and leaks it publicly
+  (see [Posting a comment body](#posting-a-comment-body--read-it-into-body-never-gh-api--f-bodyfile-the-local-path-leak)).
 
 ---
 
