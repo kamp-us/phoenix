@@ -54,6 +54,38 @@ node packages/pipeline-cli/src/bin.ts version
 node packages/pipeline-cli/src/bin.ts <tool> …
 ```
 
+### `main-sync` — codified orchestrator main-sync with detached-HEAD auto-reattach (#1573)
+
+The single runnable surface for the orchestrator's **main-sync** — bringing the shared
+primary checkout up to `origin/main` before/after an unattended drain. It replaces the
+hand-run `git fetch origin main && git merge --ff-only origin/main` that lived only in
+operator memory (#1494 diagnosis, Unit C), and — the new capability — **auto-reattaches a
+detached primary HEAD to `main` first**, so a stray detach during a heavy parallel drain
+can't wedge the sync with a silent *"Not possible to fast-forward"* until a human notices.
+
+Safe by construction (the pure core `main-sync.ts` decides, `command.ts` runs it):
+
+- A reattach `git checkout main` is authorized **only when the working tree is clean**. A
+  dirty off-`main` HEAD is **detect-and-surface** (`blocked-dirty`): the tool refuses to
+  `checkout` and reports the dirt for a human, never blindly discarding uncommitted work —
+  consistent with the #1494 incidents, which were always clean.
+- The sync merge is `git merge --ff-only origin/main` — fast-forward only, so it never
+  creates a merge commit and fails loudly rather than diverging the primary.
+- **Dry-run by default:** with no flag it probes HEAD, prints the plan it *would* run, and
+  exits 0 without touching anything (not even a fetch). `--execute` runs the plan.
+
+```bash
+# before/after a drain: print what main-sync would do (dry-run, nothing touched)
+node packages/pipeline-cli/src/bin.ts main-sync
+
+# actually reattach (if detached+clean) then fetch + merge --ff-only origin/main
+node packages/pipeline-cli/src/bin.ts main-sync --execute
+```
+
+This is a **control-plane** surface (it drives the shared primary checkout); see
+[`.patterns/worktree-agent-constraints.md`](../../.patterns/worktree-agent-constraints.md)
+for the surrounding worktree/primary-checkout discipline it defends.
+
 ### `ship-digest` — the merged-since founder projection (#1595)
 
 Renders a **founder-facing** ship digest for a `--since` window from a pre-gathered
