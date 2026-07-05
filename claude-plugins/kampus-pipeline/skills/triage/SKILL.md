@@ -338,6 +338,18 @@ you don't parse a flag.
 agents running under their own account. So never treat "who filed it" as settling
 the question; read the body.
 
+**The filing-provenance signal is the report footer, not authorship (ADR 0159).** The
+reliable input is defined once in
+[`gh-issue-intake-formats.md` §4.5](../gh-issue-intake-formats.md) — cite it, don't
+re-derive it. In short: authorship is unusable (every report-filed issue shows
+`author: usirin` via the shared token), so the signal is the `Filed by an agent` footer.
+**Footer ABSENT ⇒ hand-typed in the GitHub UI ⇒ human-owned ⇒ PROTECTED (never
+auto-close); footer PRESENT ⇒ filed via the report skill (including a human-invoked
+`/report`) ⇒ raw INTAKE ⇒ auto-close-ELIGIBLE after confirmation — the confirmation step
+IS the guard.** So an autonomous close/kill-sweep keys eligibility on footer presence: a
+footer-absent issue is structurally excluded from auto-close, and a footer-present issue
+is only closed once its confirmation step passes — never on footer presence alone.
+
 Tells that an issue is **agent-filed** (the only kind you may close):
 
 - **It carries the agent-report fingerprint.** The `report` skill files a
