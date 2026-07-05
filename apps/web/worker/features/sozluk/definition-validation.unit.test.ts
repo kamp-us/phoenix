@@ -21,6 +21,7 @@ import {it} from "@effect/vitest";
 import {Cause, type Context, Effect, Exit, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
+import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
 import {DEFINITION_BODY_MAX, Sozluk, SozlukLive} from "./Sozluk.ts";
@@ -40,11 +41,13 @@ const throwingAccess: DrizzleAccess = {
 // dependency type without a real implementation.
 const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
 const inertReaction = Layer.succeed(Reaction, {} as Context.Service.Shape<typeof Reaction>);
+const inertPasaport = Layer.succeed(Pasaport, {} as Context.Service.Shape<typeof Pasaport>);
 
 const sozlukLayer = SozlukLive.pipe(
 	Layer.provide(Layer.succeed(Drizzle, throwingAccess)),
 	Layer.provide(inertVote),
 	Layer.provide(inertReaction),
+	Layer.provide(inertPasaport),
 );
 
 const expectTag = (exit: Exit.Exit<unknown, unknown>, tag: string) => {

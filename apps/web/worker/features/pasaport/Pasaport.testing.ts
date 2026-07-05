@@ -37,3 +37,18 @@ const failOnContact: PasaportShape = {
 
 export const makePasaportStub = (overrides: Partial<PasaportShape> = {}): Layer.Layer<Pasaport> =>
 	Layer.succeed(Pasaport, {...failOnContact, ...overrides});
+
+/**
+ * `PasaportIdentityStub` — the `Pasaport` double for unit tests that build
+ * `PanoLive` / `SozlukLive` over a substituted `Drizzle` seam. Those services now
+ * stamp the live author identity on their reads (`getProfileIdentitiesByIds`, #2139,
+ * mirroring the `ReactionStub` shape for `Reaction.readAggregate`, #1862), so a test
+ * that provides only `Vote`/`Bookmark`/`Reaction`/`Drizzle` leaves `Pasaport`
+ * unsatisfied in `R`. This stub discharges it: `getProfileIdentitiesByIds` returns
+ * `[]`, so the stamp leaves `authorUsername`/`authorDisplayName` null and the client
+ * `actorLabel` degrades. Every other method dies if reached — the resolve/identity
+ * write paths are the pasaport domain tests' concern, not these connection tests.
+ */
+export const PasaportIdentityStub: Layer.Layer<Pasaport> = makePasaportStub({
+	getProfileIdentitiesByIds: () => Effect.succeed([]),
+});

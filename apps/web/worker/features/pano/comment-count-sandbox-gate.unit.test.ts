@@ -109,6 +109,10 @@ const deps = (run: DrizzleAccessOrDie["run"]): CommentOperationsDeps => ({
 	reactionSvc: {} as typeof Reaction.Service,
 	removalSeq: inertRemovalSeq,
 	persistPanoStats: () => Effect.void,
+	// The delete path never re-resolves live author identity (it stamps a count, not a
+	// read row), so a fail-on-contact reader proves that: reaching it fails the test.
+	readProfileIdentities: () =>
+		Effect.die(new Error("comment delete-count path must not read author identity")),
 });
 
 const runOverDb = (db: unknown): DrizzleAccessOrDie["run"] =>

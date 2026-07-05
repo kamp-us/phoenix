@@ -34,6 +34,8 @@ export const toPost = (r: PostFields): Post => ({
 	body: r.body,
 	author: r.author,
 	authorId: r.authorId,
+	authorUsername: r.authorUsername ?? null,
+	authorDisplayName: r.authorDisplayName ?? null,
 	score: r.score,
 	commentCount: r.commentCount,
 	createdAt: r.createdAt,
@@ -47,14 +49,17 @@ export const toPost = (r: PostFields): Post => ({
 
 // The single `PostPage` → `Post` mapping shared by the read resolver
 // (`queries.post`) and the delete-refresh (`comment.delete`) so they can't drift.
-// `myVote`/`isSaved`/`reactions` are stamped separately (the page row carries no
-// viewer scalar nor the aggregate) so the caller threads each in; `reactions`
-// defaults to the empty aggregate for callers that don't hydrate it.
+// `myVote`/`isSaved`/`reactions` and the live `authorUsername`/`authorDisplayName`
+// identity (#2139) are stamped separately (the page row carries no viewer scalar,
+// aggregate, nor resolved identity), so the caller threads each in — `reactions`
+// defaults to the empty aggregate and `identity` to nulls for callers that don't
+// hydrate them (`actorLabel` then degrades on the client).
 export const toPostFromPage = (
 	page: PostPage,
 	myVote: boolean | null,
 	isSaved: boolean | null = null,
 	reactions: ReactionAggregate = EMPTY_REACTION_AGGREGATE,
+	identity: {authorUsername?: string | null; authorDisplayName?: string | null} = {},
 ): Post =>
 	toPost({
 		id: page.id,
@@ -65,6 +70,8 @@ export const toPostFromPage = (
 		body: page.body,
 		author: page.author,
 		authorId: page.authorId,
+		authorUsername: identity.authorUsername ?? null,
+		authorDisplayName: identity.authorDisplayName ?? null,
 		score: page.score,
 		commentCount: page.commentCount,
 		createdAt: page.createdAt,
@@ -81,6 +88,8 @@ export const toComment = (r: CommentFields): Comment => ({
 	parentId: r.parentId,
 	author: r.author,
 	authorId: r.authorId,
+	authorUsername: r.authorUsername ?? null,
+	authorDisplayName: r.authorDisplayName ?? null,
 	body: r.body,
 	score: r.score,
 	createdAt: r.createdAt,

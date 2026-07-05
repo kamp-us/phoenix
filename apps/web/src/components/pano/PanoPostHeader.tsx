@@ -9,6 +9,7 @@ import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {tagClass} from "../../lib/panoTags";
+import {actorLabel} from "../moderation/actor-identity";
 import {Tag, type TagKind} from "../ui/atoms";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
@@ -40,6 +41,8 @@ export const PanoPostHeaderView = view<Post>()({
 	body: true,
 	author: true,
 	authorId: true,
+	authorUsername: true,
+	authorDisplayName: true,
 	score: true,
 	myVote: true,
 	isSaved: true,
@@ -80,7 +83,11 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 						{t.label}
 					</Tag>
 				))}
-				<span className="author">@{post.author}</span>
+				{/* Live author identity via `actorLabel` (#2139): current displayName → @username,
+				    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
+				<span className="author">
+					{actorLabel(post.authorDisplayName ?? null, post.authorUsername ?? null, post.author)}
+				</span>
 				<span>·</span>
 				<span>{formatAgoTR(toIso(post.createdAt))}</span>
 				<EditedIndicator createdAt={toIso(post.createdAt)} updatedAt={toIso(post.updatedAt)} />

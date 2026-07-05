@@ -87,6 +87,15 @@ export interface PostSummaryRow extends Omit<IntrinsicRow, "updatedAt" | "isDraf
 	/** Viewer's bookmark presence; `undefined` (unset) for reads that don't request it. */
 	isSaved?: boolean | null;
 	/**
+	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
+	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
+	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
+	 * `authorName` snapshot (#2126's AC). `undefined` when not requested; `null` when the
+	 * author has no profile/handle — `actorLabel` then degrades to `@username` → fallback.
+	 */
+	authorUsername?: string | null;
+	authorDisplayName?: string | null;
+	/**
 	 * The reaction aggregate (per-emoji counts + the viewer's own reaction), stamped
 	 * by `stampReactionAggregate` after the batched `user_reaction` read (#1862) —
 	 * `undefined` for reads that don't request it; the shaper fills the empty
@@ -124,6 +133,8 @@ export type PostFields = Omit<IntrinsicRow, "updatedAt" | "isDraft" | "tags"> & 
 	isDraft?: boolean | null;
 	myVote?: boolean | null;
 	isSaved?: boolean | null;
+	authorUsername?: string | null;
+	authorDisplayName?: string | null;
 	reactions?: ReactionAggregate;
 	tags: ReadonlyArray<PostTagRow>;
 };
@@ -154,6 +165,8 @@ export const postViewFields = {
 	myVote: true,
 	isSaved: true,
 	isDraft: true,
+	authorUsername: true,
+	authorDisplayName: true,
 	reactions: true,
 } as const satisfies Record<keyof Omit<PostSummaryRow, "tags">, true>;
 

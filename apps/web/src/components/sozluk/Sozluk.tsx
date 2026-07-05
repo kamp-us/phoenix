@@ -1,6 +1,7 @@
 import type * as React from "react";
 import {Link} from "react-router";
 import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
+import {actorLabel} from "../moderation/actor-identity";
 import "./Sozluk.css";
 
 export type TermRow = {
@@ -58,16 +59,24 @@ export type DefinitionData = {
 	id: string;
 	body: React.ReactNode;
 	author: string;
+	// Live identity (#2139): the current `{username, displayName}` so the label resolves
+	// via `actorLabel` and the profile link targets the handle; both optional so an
+	// unstamped caller falls back to the `author` snapshot.
+	authorUsername?: string | null;
+	authorDisplayName?: string | null;
 	agoLabel: string;
 	score: number;
 };
 
 export function SozlukDefinition({d}: {d: DefinitionData}) {
+	const handle = d.authorUsername ?? d.author;
 	return (
 		<article className="kp-definition" id={d.id}>
 			<div className="kp-definition__body kp-prose">{d.body}</div>
 			<div className="kp-definition__meta">
-				<Link to={`/u/${d.author}`}>@{d.author}</Link>
+				<Link to={`/u/${handle}`}>
+					{actorLabel(d.authorDisplayName ?? null, d.authorUsername ?? null, d.author)}
+				</Link>
 				<span>·</span>
 				<span>{d.agoLabel}</span>
 				<span>·</span>

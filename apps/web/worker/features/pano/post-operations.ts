@@ -26,6 +26,7 @@ import {computeHotScore} from "../../db/hotScore.ts";
 import {decayHotScores, decayWindowMs} from "../../db/hotScoreDecay.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import {type ReadProfileIdentities, stampAuthorIdentity} from "../fate/author-identity.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
@@ -342,6 +343,8 @@ export interface PostOperationsDeps {
 	readonly reactionSvc: typeof Reaction.Service;
 	readonly removalSeq: Removal.RemovalSequence;
 	readonly persistPanoStats: PersistPanoStats;
+	/** Batched live author-identity reader (`Pasaport.getProfileIdentitiesByIds`, #2139). */
+	readonly readProfileIdentities: ReadProfileIdentities;
 }
 
 /**
@@ -480,7 +483,16 @@ export const makeBackfillHotScores = (run: DrizzleAccessOrDie["run"]) =>
 	});
 
 export const makePostOperations = (deps: PostOperationsDeps) => {
-	const {run, batch, voteSvc, bookmarkSvc, reactionSvc, removalSeq, persistPanoStats} = deps;
+	const {
+		run,
+		batch,
+		voteSvc,
+		bookmarkSvc,
+		reactionSvc,
+		removalSeq,
+		persistPanoStats,
+		readProfileIdentities,
+	} = deps;
 
 	// The viewer scalars for `Post` (#1126): `myVote` (batched `user_vote`) +
 	// `isSaved` (batched `post_bookmark`). Every read finalizes through
@@ -679,7 +691,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		// is the author's own: read-your-writes, now verified rather than assumed.
 		const intrinsic = fetched.map(toPostSummaryRow);
 		const scalared = yield* stampViewerScalars(intrinsic, viewerId, postViewerScalars);
-		return yield* stampReactionAggregate(reactionSvc, "post", scalared, viewerId);
+		const reacted = yield* stampReactionAggregate(reactionSvc, "post", scalared, viewerId);
+		return yield* stampAuthorIdentity(readProfileIdentities, reacted);
 	});
 
 	// The moderator sandbox-queue / promotion-backlog read model (#1205, the #1206

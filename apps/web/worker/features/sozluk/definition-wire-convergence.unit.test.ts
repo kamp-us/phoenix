@@ -44,6 +44,10 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 			score: 5,
 			author: "umut",
 			authorId: "user-1",
+			// No live identity stamped on a bare row read (`stampAuthorIdentity` runs on the
+			// service read path, #2139) → both default to null; the client `actorLabel` degrades.
+			authorUsername: null,
+			authorDisplayName: null,
 			createdAt: new Date(1000),
 			updatedAt: new Date(2000),
 			myVote: null,
@@ -57,7 +61,9 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 		assert.deepStrictEqual(Object.keys(wire).sort(), [
 			"__typename",
 			"author",
+			"authorDisplayName",
 			"authorId",
+			"authorUsername",
 			"body",
 			"createdAt",
 			"id",

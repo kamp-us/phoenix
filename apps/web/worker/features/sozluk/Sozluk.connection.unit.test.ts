@@ -20,6 +20,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
+import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Sozluk, SozlukLive} from "./Sozluk.ts";
@@ -84,6 +85,7 @@ const sozlukLayer = (access: DrizzleAccess) =>
 	SozlukLive.pipe(
 		Layer.provide(VoteStub),
 		Layer.provide(ReactionStub),
+		Layer.provide(PasaportIdentityStub),
 		Layer.provide(Layer.succeed(Drizzle, access)),
 	);
 

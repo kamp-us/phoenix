@@ -9,6 +9,7 @@ import type {Comment} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
+import {actorLabel} from "../moderation/actor-identity";
 import {CommentReactionBar} from "../reaction/CommentReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
@@ -31,6 +32,8 @@ export const CommentTreeNodeView = view<Comment>()({
 	deletedAt: true,
 	author: true,
 	authorId: true,
+	authorUsername: true,
+	authorDisplayName: true,
 	reactions: {counts: true, myReaction: true},
 });
 
@@ -113,8 +116,11 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 				{isDeleted ? (
 					<span className="kp-comment__author kp-comment__author--deleted">[silindi]</span>
 				) : (
-					<a className="kp-comment__author" href={`/u/${data.author}`}>
-						@{data.author}
+					// Live author identity via `actorLabel` (#2139): current displayName → @username,
+					// falling back to the write-time `author` snapshot for an unstamped/legacy row.
+					// The profile link targets the live username when present, else the snapshot.
+					<a className="kp-comment__author" href={`/u/${data.authorUsername ?? data.author}`}>
+						{actorLabel(data.authorDisplayName ?? null, data.authorUsername ?? null, data.author)}
 					</a>
 				)}
 				<span>{formatAgoTR(toIso(data.createdAt))}</span>

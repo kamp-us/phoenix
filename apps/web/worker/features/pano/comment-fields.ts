@@ -51,6 +51,16 @@ type IntrinsicRow = {[K in keyof typeof intrinsicFields]: ReturnType<(typeof int
 export interface CommentRow extends IntrinsicRow {
 	myVote?: boolean | null;
 	/**
+	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
+	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
+	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
+	 * `authorName` snapshot (#2126's AC). `undefined` when not requested; `null` when the
+	 * author has no profile/handle (or the `Removed` tombstone blanked `authorId`) —
+	 * `actorLabel` then degrades to `@username` → fallback.
+	 */
+	authorUsername?: string | null;
+	authorDisplayName?: string | null;
+	/**
 	 * The reaction aggregate (per-emoji counts + the viewer's own reaction), stamped
 	 * by `stampReactionAggregate` after the batched `user_reaction` read (#1862) —
 	 * `undefined` when not requested; the shaper fills the empty aggregate.
@@ -71,6 +81,8 @@ export type CommentFields = Omit<IntrinsicRow, "updatedAt" | "deletedAt"> & {
 	updatedAt?: Date | null;
 	deletedAt?: Date | null;
 	myVote?: boolean | null;
+	authorUsername?: string | null;
+	authorDisplayName?: string | null;
 	reactions?: ReactionAggregate;
 };
 
@@ -100,6 +112,8 @@ export const commentViewFields = {
 	updatedAt: true,
 	deletedAt: true,
 	myVote: true,
+	authorUsername: true,
+	authorDisplayName: true,
 	reactions: true,
 } as const satisfies Record<keyof CommentRow, true>;
 

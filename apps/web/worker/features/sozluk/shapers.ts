@@ -74,6 +74,8 @@ export const toDefinition = (r: DefinitionRow): Definition => ({
 	score: r.score,
 	author: r.author,
 	authorId: r.authorId,
+	authorUsername: r.authorUsername ?? null,
+	authorDisplayName: r.authorDisplayName ?? null,
 	createdAt: r.createdAt,
 	updatedAt: r.updatedAt,
 	myVote: r.myVote ?? null,
