@@ -36,6 +36,7 @@ import {subscribeHotScoreDecay} from "./features/pano/hot-score-decay-cron.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
 import {Events as TelemetryEvents} from "./features/telemetry/resources.ts";
+import {TelemetryClient} from "./features/telemetry/Telemetry.ts";
 import {makeAppLive} from "./http/app.ts";
 import {workerFirstGlobs} from "./http/worker-routes.ts";
 import {workerOptions} from "./lib/sentry.ts";
@@ -200,6 +201,15 @@ export default Phoenix.make(
 		const flagshipClient = yield* Flagship;
 		const flagshipLayer = Layer.succeed(Flagship)(flagshipClient);
 
+		// Resolve the Analytics Engine write client ONCE in init (ADR 0153, #2067) —
+		// where the `WriteDataset` binding graph is ambient (provided below) — and
+		// wrap it dependency-free on the `TelemetryClient` seam for the fate runtime,
+		// same shape as `Flagship`/`Database` above. Keeping the binding resolution
+		// here (not in `TelemetryLive`) keeps the fate runtime's R free of
+		// `WorkerEnvironment`/`Worker`.
+		const telemetryClient = yield* Cloudflare.AnalyticsEngine.WriteDataset(TelemetryEvents);
+		const telemetryLayer = Layer.succeed(TelemetryClient)(telemetryClient);
+
 		// The worker's ambient `RuntimeContext`, resolved once. The fate runtime needs
 		// it because the pano draft-save gate (#746) reads `Flags` (a `RuntimeContext`
 		// per-call requirement); `makeAppLive` reuses it for the `/api/auth/*` route.
@@ -224,6 +234,10 @@ export default Phoenix.make(
 						databaseLayer,
 						betterAuthLayer,
 						flagshipLayer,
+						// The init-resolved AE write client (ADR 0153, #2067) the `Telemetry`
+						// seam emits through; `RuntimeContext` (below) discharges the ambient
+						// requirement `writeDataPoint` needs, captured once in `TelemetryLive`.
+						telemetryLayer,
 						Layer.succeed(RuntimeContext)(runtimeContext),
 					),
 				),
@@ -401,6 +415,11 @@ export default Phoenix.make(
 				// into the `FlagshipClient`, `FlagshipBindingPolicyLive` registers the
 				// policy it needs (epic #488). `WorkerEnvironment` is ambient.
 				FlagshipLive.pipe(Layer.provide(Cloudflare.Flagship.ReadFlagsBinding)),
+				// The AE `WriteDataset` binding graph (ADR 0153, #2067): resolves the
+				// `WriteDataset` tag `yield* Cloudflare.AnalyticsEngine.WriteDataset(Events)`
+				// reads in init to get the write client. `WorkerEnvironment` is ambient at
+				// the worker scope, the same binding-graph shape as Flagship's `ReadFlagsBinding`.
+				Cloudflare.AnalyticsEngine.WriteDatasetBinding,
 				// The Cron Trigger runtime seam the sıcak/hot decay-refresh subscribes to
 				// (#2027): `subscribeHotScoreDecay` above `yield*`s `Cloudflare.cron(...).subscribe`,
 				// which resolves this `CronEventSource`. Its deploy-time policy

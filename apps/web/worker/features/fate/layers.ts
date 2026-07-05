@@ -40,6 +40,7 @@ import {ReportLive} from "../report/Report.ts";
 import {SearchLive} from "../search/Search.ts";
 import {SozlukLive} from "../sozluk/Sozluk.ts";
 import {StatsLive} from "../stats/Stats.ts";
+import {type TelemetryClient, TelemetryLive} from "../telemetry/Telemetry.ts";
 import {KarmaBump, VoteLive, VoterStanding} from "../vote/Vote.ts";
 import {fateConfig} from "./config.ts";
 
@@ -206,6 +207,13 @@ export const makeFateLayer = Layer.mergeAll(
 		),
 	),
 	StatsLive,
+	// The product-usage telemetry seam (ADR 0153, epic #2065) — the isolate-level
+	// `Telemetry` service every instrument (#2068/#2069) emits through. Merges flat
+	// like `Stats`: it resolves the init-provided `TelemetryClient` (the AE write
+	// client, resolved once where the binding graph is ambient — like `Database`'s
+	// D1 handle) and captures `RuntimeContext` at build (already an R seam here);
+	// `emit` itself carries no R (both channels discharged in `TelemetryLive`).
+	TelemetryLive,
 	// SearchLive and ReportLive depend only on Drizzle (the FTS read / the report
 	// write), so they merge flat alongside the other domain layers and are
 	// discharged by `provideMerge(DrizzleLive)`.
@@ -260,7 +268,7 @@ export const makeFateLayer = Layer.mergeAll(
 export const PhoenixFateLive: Layer.Layer<
 	WorkerFateServices | FateServer,
 	never,
-	Database | BetterAuth.BetterAuth | Flagship | RuntimeContext
+	Database | BetterAuth.BetterAuth | Flagship | TelemetryClient | RuntimeContext
 > = FateServer.layer(fateConfig, [CurrentActor, RequestFlagOverrides]).pipe(
 	Layer.provideMerge(makeFateLayer),
 );
