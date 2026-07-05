@@ -62,6 +62,17 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   is covered by ≥ 1 child, and every child carries a `**Stories:**` line tracing to ≥ 1 story
   (or the explicit pure-infra marker) plus ≥ 1 acceptance criterion. An untraceable child is
   scope creep; an uncovered story is an unfinished plan.
+- **Story grammar is the floor's contract — ordered list, bare-numeric child refs (don't drift).**
+  Emit the `### User stories` spine as an **ordered (`1.`) list** — the story's number is its id —
+  **never** unordered or letter-labeled bullets (`- **S1 — …`); and write each child's
+  `**Stories:**` line as **bare numbers** (`**Stories:** 1` / `**Stories:** 1, 3`), **no `S`
+  prefix and no parenthetical prose containing digits**. This is not a style nicety: the
+  `review-plan` epic-ledger floor (`parseEpicStories`/`parseChildStories` in
+  `packages/pipeline-cli/src/tools/epic-ledger/markdown.ts`) parses stories positionally from
+  ordered items and extracts child refs via `matchAll(/\d+/g)`, so an unordered/`S<n>` spine
+  parses as **zero stories** (`MISSING_STORIES_SECTION` FAIL) and a `**Stories:** S3 (prose)`
+  ref bleeds stray digits — a first-review FAIL on pure grammar. Follow the SKILL's worked
+  story-spine example verbatim; do not improvise an `S<n>` grammar.
 - **Pin a `## Dependencies` topology.** Close the plan by pinning the phase/parallel-group
   topology that says what gates what — `### Phase N` as the sequential spine, the list within
   a phase as a parallel group, `requires: #N` as a cross-boundary edge. Topology only: no

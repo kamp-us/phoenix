@@ -321,14 +321,35 @@ of this plan block.) What each section holds:
 - **What changes** — the solution from the user's perspective: what is different once this
   ships, stated as the experience, not the implementation.
 - **User stories** — the spine of the plan, written under the stable `### User stories`
-  heading so every child's `**Stories:**` line can reference them by number. A numbered list,
-  each: *As a `<actor>`, I want `<capability>`, so that `<benefit>`.* Be **extensive** — cover
-  the happy path, edge cases, error states, and admin/moderation flows; thin generic stories
-  produce thin tasks. Each story should be specific enough to demo. Actors include agents
-  where the surface is agent-facing. **These stories are what you slice the children from in
-  Step 3, and every child traces back to one** — so write them first and write them well.
+  heading so every child's `**Stories:**` line can reference them by number. Be **extensive** —
+  cover the happy path, edge cases, error states, and admin/moderation flows; thin generic
+  stories produce thin tasks. Each story should be specific enough to demo. Actors include
+  agents where the surface is agent-facing. **These stories are what you slice the children from
+  in Step 3, and every child traces back to one** — so write them first and write them well.
   A story that depends on an unresolved product decision becomes a `type:decision` child (Step
   1); don't bury the fork inside a vague story.
+
+  **The story spine MUST be an ordered (`1.`) list — the story's number *is* its id, and the
+  `review-plan` epic-ledger floor parses it positionally.** Emit each story as a numbered
+  ordered-list item (`1.`, `2.`, `3.`, …), each *As a `<actor>`, I want `<capability>`, so that
+  `<benefit>`.* — **never** an unordered bullet (`- …` / `* …`) and **never** a letter-labeled
+  bullet (`- **S1 — …`). The floor's `parseEpicStories` collects story ids **only** from
+  ordered-list items (`ORDERED_ITEM = /^\s*(\d+)[.)]\s+\S/` in
+  `packages/pipeline-cli/src/tools/epic-ledger/markdown.ts`); an unordered or `S<n>`-labeled
+  bullet matches **zero**, so the whole epic parses as **zero stories** → a `MISSING_STORIES_SECTION`
+  floor FAIL. Worked spine:
+
+  ```markdown
+  ### User stories
+
+  1. As a yazar, I want to draft a başlık, so that I can publish it when it's ready.
+  2. As a moderator, I want reported entries in a review queue, so that I can act on them.
+  3. As an agent, I want a stable fate view for the queue, so that I can drive it headless.
+  ```
+
+  The child `**Stories:**` line then references these by their **bare number** — `1`, `2`, `3` —
+  never `S1`/`S2` and never wrapped in parenthetical prose that carries digits (see the child
+  template in Step 3).
 
 **Engineering layer — then this.**
 
@@ -396,7 +417,7 @@ the split isn't done.
 Each child's body follows the **sub-issue body format** (format 2) exactly:
 
 ```markdown
-**Stories:** <REQUIRED — story numbers this child implements or unblocks; or `none (pure infra — see What to build)`>
+**Stories:** <REQUIRED — BARE story numbers this child implements or unblocks (`1` or `1, 3` — comma/space-separated, no `S` prefix, no parenthetical prose); or `none (pure infra — see What to build)`>
 **TDD:** yes | no
 **Containment:** flag (default-off) | exempt (<reason>) | none (no cycle doc)   ← stamped per the cycle-doc hook below; omit (or `none`) when there's no cycle doc
 
@@ -415,9 +436,16 @@ the live code anyway.)
 
 The invariants you must hold:
 
-- **≥ 1 user story per child.** The `**Stories:**` line is required and never blank — it names
-  the stories the child implements or unblocks (or, for the rare pure-infra child, the explicit
-  `none (pure infra — see What to build)` marker). See the coverage invariant above.
+- **≥ 1 user story per child, as BARE numbers.** The `**Stories:**` line is required and never
+  blank — it names the stories the child implements or unblocks (or, for the rare pure-infra
+  child, the explicit `none (pure infra — see What to build)` marker). See the coverage
+  invariant above. **The refs are bare numeric ids** matching the epic's ordered story list —
+  `**Stories:** 1` or `**Stories:** 1, 3`, comma/space-separated, **no `S` prefix**
+  (`**Stories:** S3` is wrong) and **no parenthetical prose containing digits** (`**Stories:** 3
+  (the queue view)` is wrong — the floor's `parseChildStories` extracts *every* digit run after
+  `**Stories:**` via `matchAll(/\d+/g)`, so `queue view` prose bleeds stray ids and the "queue"
+  in `3 (the queue…)` can't rescue a wrong number). Write the number and nothing digit-bearing
+  after it.
 - **≥ 1 acceptance criterion per child.** Non-negotiable — `write-code` can't know
   when to stop and `review-code` can't verify without it. If you can't write one,
   the child isn't specified yet.
@@ -448,7 +476,7 @@ non-blocking advisor (#754, same `/tmp` collision class as `report`'s per-run `m
 # write this child's body into a per-run temp file, never a shared fixed path (#754)
 CHILD_BODY_FILE="$(mktemp /tmp/plan-epic-<EPIC>-child.XXXXXX)"
 cat > "$CHILD_BODY_FILE" <<'EOF'
-**Stories:** <…>
+**Stories:** <bare numbers, e.g. `1` or `1, 3` — no `S` prefix, no parenthetical digits>
 **TDD:** yes | no
 
 ### What to build
