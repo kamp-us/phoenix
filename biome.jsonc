@@ -56,6 +56,10 @@
 		"enabled": true,
 		"rules": {
 			"recommended": true,
+			"correctness": {
+				"noUnusedImports": "error",
+				"noUnusedVariables": "error"
+			},
 			"suspicious": {
 				"noExplicitAny": "off"
 			}
