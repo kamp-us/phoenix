@@ -864,6 +864,53 @@ assumption invalidated, a partial state left behind>
 
 ---
 
+## 4.5. The filing-provenance signal — the report footer, not GitHub authorship (ADR 0159)
+
+This is the **single source** of the human-vs-agent-filed signal that triage's
+never-auto-close protection consumes (`triage/SKILL.md` Step 5). The protection exists so
+an autonomous agent — an audit or kill-sweep — never silently closes an issue a human
+owns; that judgment needs a reliable filing-provenance signal, and this section defines it
+(ADR [0159](https://github.com/kamp-us/phoenix/blob/main/.decisions/0159-never-auto-close-signal-is-the-report-footer.md)).
+
+**GitHub issue authorship is NOT the signal.** Every issue filed through the `report` →
+`triage` skills goes through the shared `usirin` gh token, so **an agent-filed issue and a
+hand-typed one both show `author: usirin`** — the same shared-login degeneracy §7 / ADR
+0115 removes for the claim marker. Keying off authorship over-protects the whole board
+(everything reads as `usirin`) or silently bypasses the protection; it is unusable either
+way. **Never consult authorship for this judgment.**
+
+**The signal is the report footer.** The `report` skill emits a
+`<sub>Filed by an agent · …</sub>` footer (`report/footer.sh`). The literal
+**`Filed by an agent`** marker is the invariant tell — the footer's session/model/branch
+fields are best-effort and often absent, so a **sparse footer is still a present footer**
+(do not read a missing session/branch as "no footer").
+
+**The canonical semantic:**
+
+- **Footer ABSENT** — the issue was **hand-typed in the GitHub UI** ⇒ **human-owned ⇒
+  PROTECTED**: never auto-close.
+- **Footer PRESENT** — filed via the report skill, **including a human-invoked `/report`**
+  ⇒ **raw INTAKE ⇒ auto-close-ELIGIBLE after confirmation.**
+- **The confirmation step IS the guard** on the footer-present path — "eligible" is not
+  "closed."
+
+The footer means "**filed via the report skill**," **not** "agent intent": a
+human-invoked `/report` also emits it. ADR 0159 settles the resulting fork by **taking
+the confirmation step as the guard** and **rejecting a distinct human-invoked marker** — a
+`/report` issue is intake by nature (meant to be triaged and closed), so human- and
+agent-invoked `/report` are treated identically, and a human tracking their own thing
+types it directly in the UI (no footer ⇒ protected). There is **no** separate
+human-invoked footer token or env flag, and `footer.sh` is unchanged.
+
+> **Provenance beyond the footer (unchanged).** A pipeline-made issue can carry the five
+> report sections but **no** footer — e.g. a triage split child (look for `split from #N`).
+> Such an issue is agent-made by provenance, not by footer; triage judges those by
+> provenance the same as before (`triage/SKILL.md` Step 5). This section governs the
+> footer signal itself; it does not narrow the "when in doubt, treat it as human" default
+> the never-auto-close protection keeps.
+
+---
+
 ## CP. The control-plane / blocking set — one canonical definition
 
 Three gates and the merge actor all need to answer the *same* question — **does this PR
