@@ -1248,7 +1248,7 @@ gating) — are **unchanged**; ship-it was never one of them, so dropping the re
 *consistent* with that contract while making the release-queue decision **structural, requiring no
 per-shipper judgment**.
 
-The trigger is **two ground-truth signals of the PR**, either of which proves the merge shipped a
+The trigger is **three ground-truth signals of the PR**, any of which proves the merge shipped a
 real dark feature:
 
 - **(a) the diff introduces a flag.** The PR **adds** a default-off flag declaration in the
@@ -1260,11 +1260,24 @@ real dark feature:
 - **(b) the PR body declares the flag key.** An explicit `Flag: <key>` / `Flag key: <key>` line
   naming the kebab-case flag this PR dark-ships — the fallback for a feature that gates behind a
   flag a **prior** PR already declared, so the flag resource isn't in *this* diff.
+- **(c) the PR body names an already-declared flag key in prose.** The body mentions a kebab-case
+  token that is a **real, currently-declared flag key** in the flag-IaC surface on `main` — the
+  reused-flag dark-ship case where `write-code` phrased the flag in prose ("ships dark behind
+  `phoenix-bildirim`") instead of emitting the canonical `Flag:` line, so signals (a) and (b) both
+  miss (#2086). This closes that latent blind spot **without** re-opening the #1257 phantom-release
+  class: the match is **grounded against the actual registry of declared default-off flags** — the
+  `key:` string literals in `resources.ts` (sourced from `apps/web/src/flags/keys.ts`) — so it
+  fires only when the body references a genuine, pre-declared flag, never on arbitrary prose, an
+  undeclared/misspelled key, or a non-flag kebab token. Signal (c) can therefore only *add*
+  coverage for reused-flag dark ships; a truly ungated PR names no declared flag key and still
+  no-ops. **(c) is additive: it never displaces (a) or (b), and never fires without a real
+  declared-flag reference to ground it — so it can only widen detection, never let a real dark ship
+  slip.**
 
 It runs **only** when there is a linked issue *and* the cycle doc is present (the graceful absence
 contract, ADR 0062 — an absent cycle doc means no flag substrate, hence nothing to release). With
-those preconditions met, the merge queues `status:awaiting-release` **iff** signal (a) or (b)
-fires. When **neither** fires the PR shipped **ungated** → this step **no-ops** regardless of the
+those preconditions met, the merge queues `status:awaiting-release` **iff** signal (a), (b), or (c)
+fires. When **none** fires the PR shipped **ungated** → this step **no-ops** regardless of the
 issue's inherited stamp (exactly the #1211/#1212/#1213 foundation shape, addressing #1202). On
 **no linked issue** (the doc/vocab-surface-only path) or an **absent cycle doc** it also no-ops — so the merge
 behavior is exactly as it was before this dimension existed:
@@ -1294,12 +1307,45 @@ if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md"
   FLAG_IN_BODY=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""' \
     | grep -Eiq '^[[:space:]]*(#{1,6}[[:space:]]*)?\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' && echo yes || echo no)
 
-  if [ "$FLAG_IN_DIFF" = yes ] || [ "$FLAG_IN_BODY" = yes ]; then
+  # (c) the PR BODY names an ALREADY-DECLARED flag key in prose (the reused-flag dark ship, #2086):
+  #     the flag pre-dates this diff (so (a) misses) and write-code phrased it in prose — "ships dark
+  #     behind `phoenix-bildirim`" — rather than the canonical `Flag:` line (so (b) misses). Ground the
+  #     match against the REAL registry of declared default-off flags so it is false-positive-safe: read
+  #     the `key: <CONST>` list from the flag-IaC surface (resources.ts) on `main` and resolve each const
+  #     to its literal via apps/web/src/flags/keys.ts, then fire ONLY if the body mentions one of those
+  #     declared keys as a whole kebab token. An undeclared/misspelled key, arbitrary prose, or a non-flag
+  #     kebab token all miss — so (c) only ADDS coverage for a genuine reused-flag dark ship and can never
+  #     queue an ungated ship (no #1257 phantom-release regression).
+  DECLARED_KEYS=$(
+    gh api "repos/$REPO/contents/apps/web/worker/features/flagship/resources.ts?ref=main" \
+        --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
+      | grep -oE 'key:[[:space:]]*[A-Z0-9_]+' | grep -oE '[A-Z0-9_]+$' | sort -u > /tmp/shipit-flag-consts.$$ || true
+    gh api "repos/$REPO/contents/apps/web/src/flags/keys.ts?ref=main" \
+        --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
+      | grep -oE '^export const [A-Z0-9_]+[[:space:]]*=[[:space:]]*"[a-z0-9]+(-[a-z0-9]+)+"' \
+      | sed -E 's/^export const ([A-Z0-9_]+)[[:space:]]*=[[:space:]]*"([a-z0-9-]+)"/\1 \2/' \
+      | while read -r CONST LIT; do grep -qx "$CONST" /tmp/shipit-flag-consts.$$ 2>/dev/null && echo "$LIT"; done
+    rm -f /tmp/shipit-flag-consts.$$
+  )
+  FLAG_IN_PROSE=no
+  if [ -n "$DECLARED_KEYS" ]; then
+    BODY_PROSE=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""')
+    while IFS= read -r K; do
+      [ -z "$K" ] && continue
+      # whole-token match: the declared key bounded by non-[a-z0-9-] on each side, so a longer key
+      # containing this one as a substring (e.g. phoenix-bildirim-x) is NOT matched by phoenix-bildirim
+      printf '%s' "$BODY_PROSE" | grep -Eq "(^|[^a-z0-9-])$K([^a-z0-9-]|\$)" && { FLAG_IN_PROSE=yes; break; }
+    done <<EOF
+$DECLARED_KEYS
+EOF
+  fi
+
+  if [ "$FLAG_IN_DIFF" = yes ] || [ "$FLAG_IN_BODY" = yes ] || [ "$FLAG_IN_PROSE" = yes ]; then
     # deployed-dark (a real flag shipped) → add the linked issue to the release queue for a human flip (#602)
     gh api -X POST "repos/$REPO/issues/$ISSUE/labels" -f "labels[]=status:awaiting-release"
     RELEASE_QUEUE="queued (awaiting human flip)"
   fi
-  # neither signal ⇒ the PR shipped ungated (the inherited-stamp false positive #1257 closes) ⇒ no-op, no label
+  # no signal ⇒ the PR shipped ungated (the inherited-stamp false positive #1257 closes) ⇒ no-op, no label
 fi
 ```
 
