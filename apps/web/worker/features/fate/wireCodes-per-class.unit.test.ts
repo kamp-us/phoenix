@@ -35,7 +35,7 @@ import {
 	wireCodeOfClass,
 } from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
-import {Denied, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
+import {Denied, InsufficientKarma, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
 import {
 	CommentBodyRequired,
 	CommentBodyTooLong,
@@ -124,6 +124,11 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	// (not the overloaded FORBIDDEN). Has extra required fields (`voterId`, `need`), so it
 	// is pinned here but NOT in ROUND_TRIP_CLASSES.
 	[VoterNotEligible, "VOTE_REQUIRES_YAZAR"],
+	// künye karma-VALUE privilege floor (#150) — reachable from fateConfig via the
+	// content-creation mutations (`post.submit` / `comment.add` / `definition.add`) and
+	// `report.submit`. Its OWN code (not the tier-ladder FORBIDDEN). Has extra required
+	// fields (`need`, `have`), so pinned here but NOT in ROUND_TRIP_CLASSES.
+	[InsufficientKarma, "INSUFFICIENT_KARMA"],
 ]);
 
 const ORACLE_ENTRIES = [...EXPECTED_CODE.entries()] as ReadonlyArray<[unknown, string]>;

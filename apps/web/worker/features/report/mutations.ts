@@ -26,8 +26,9 @@ import * as Schema from "effect/Schema";
 import {type TargetKind, TargetKindSchema, targetKey} from "../../db/target-kind.ts";
 import {notifyReportFiled} from "../bildirim/mod-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
-import {Denied} from "../kunye/errors.ts";
+import {Denied, InsufficientKarma} from "../kunye/errors.ts";
 import {Moderate, moderatorOf, requireModeration} from "../kunye/moderate.ts";
+import {gateFlagOnKarma} from "../kunye/privilege.ts";
 import {CommentNotFound, PostNotFound} from "../pano/errors.ts";
 import {Pano} from "../pano/Pano.ts";
 import {toComment, toPost} from "../pano/shapers.ts";
@@ -90,34 +91,51 @@ export const mutations = {
 	"report.submit": Fate.mutation(
 		{
 			input: SubmitReportInput,
+			error: Schema.Union([
+				Unauthorized,
+				InsufficientKarma,
+				PostNotFound,
+				CommentNotFound,
+				DefinitionNotFound,
+			]),
 			type: ReportReceiptView,
-			error: Schema.Union([Unauthorized, PostNotFound, CommentNotFound, DefinitionNotFound]),
 		},
 		Effect.fn("report.submit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
-			const report = yield* Report;
-			const result = yield* report
-				.submit({
-					reporterId: user.id,
-					targetKind: input.targetKind,
-					targetId: input.targetId,
-					reason: input.reason ?? null,
-				})
-				.pipe(
-					Effect.catchTag("report/ReportTargetNotFound", (e) => Effect.fail(toFeatureNotFound(e))),
-				);
-			// Mod-queue heartbeat (#1699): page every moderator that a report was filed —
-			// but only on a GENUINELY new report (`created`), never an idempotent re-report.
-			// Flag-gated, moderator-resolved and swallowed inside the emitter, so it can
-			// never fail this committed report.
-			if (result.created) {
-				yield* notifyReportFiled({
-					reporterId: user.id,
-					targetKind: input.targetKind,
-					targetId: input.targetId,
-				});
-			}
-			return toReportReceipt(result);
+			const submit = Effect.fn("report.submitBody")(function* () {
+				const report = yield* Report;
+				const result = yield* report
+					.submit({
+						reporterId: user.id,
+						targetKind: input.targetKind,
+						targetId: input.targetId,
+						reason: input.reason ?? null,
+					})
+					.pipe(
+						Effect.catchTag("report/ReportTargetNotFound", (e) =>
+							Effect.fail(toFeatureNotFound(e)),
+						),
+					);
+				// Mod-queue heartbeat (#1699): page every moderator that a report was filed —
+				// but only on a GENUINELY new report (`created`), never an idempotent re-report.
+				// Flag-gated, moderator-resolved and swallowed inside the emitter, so it can
+				// never fail this committed report.
+				if (result.created) {
+					yield* notifyReportFiled({
+						reporterId: user.id,
+						targetKind: input.targetKind,
+						targetId: input.targetId,
+					});
+				}
+				return toReportReceipt(result);
+			});
+			// Flag-value karma gate (#150), dark behind the default-off
+			// `phoenix-karma-gates` flag: ON ⇒ `CanFlag` floors the reporter's karma at
+			// ≥ 50 before the submit runs (a below-floor flagger is denied
+			// `INSUFFICIENT_KARMA`); OFF ⇒ inert, every report behaves as today. A
+			// SEPARATE axis from the ADR 0098 moderation surface (which gates report
+			// *resolution*), not a re-gate of the same fact (#150 rescope).
+			return yield* gateFlagOnKarma(submit());
 		}),
 	),
 

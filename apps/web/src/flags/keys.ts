@@ -135,3 +135,19 @@ export const PHOENIX_OPTIMISTIC_DEFINITION_DELETE = "phoenix-optimistic-definiti
  * `phoenix-authorship-loop` / `phoenix-bildirim` shared-seam precedent.
  */
 export const PHOENIX_REACTIONS = "phoenix-reactions";
+
+/**
+ * Karma-gated privileges dark-ship flag (#150, künye epic #41). The SINGLE seam
+ * the karma-value privilege gates ride behind — the post-floor (`karma ≥ −4`, on
+ * content creation) and the flag-floor (`karma ≥ 50`, on `report.submit`). With
+ * it OFF the gates are inert: no karma read runs and every write behaves exactly
+ * as today, so the gates reach production dark until a human flips the flag at
+ * release (ADR 0083). Default-off, its own cross-cutting (`phoenix`) key — the
+ * gates span both products (pano/sözlük creation) and the moderation surface, the
+ * `phoenix-authorship-loop` / `phoenix-reactions` shared-seam precedent.
+ *
+ * Deliberately distinct from the çaylak→yazar *tier* gates (authorship level) and
+ * the ADR 0098 moderation surface: these are karma-VALUE floors (anti-abuse), not
+ * a second tier ladder — no double-gating (#150 rescope, 2026-07-02).
+ */
+export const PHOENIX_KARMA_GATES = "phoenix-karma-gates";

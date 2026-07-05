@@ -19,7 +19,7 @@
  */
 
 import {assert, it} from "@effect/vitest";
-import {RelationStore} from "@kampus/authz";
+import {CurrentActor, human, RelationStore} from "@kampus/authz";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
@@ -139,6 +139,7 @@ it.effect(
 						),
 					),
 					Effect.provideService(CurrentUser, {user: AUTHOR}),
+					Effect.provideService(CurrentActor, {actor: human(AUTHOR.id)}),
 					Effect.provideService(RuntimeContext, runtimeContextStub),
 				);
 			yield* Effect.promise(() => Promise.allSettled(scheduled));

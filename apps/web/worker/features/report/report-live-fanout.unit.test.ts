@@ -27,6 +27,7 @@ import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
+import {Kunye} from "../kunye/Kunye.ts";
 import {Pano} from "../pano/Pano.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
 import {mutations} from "./mutations.ts";
@@ -67,6 +68,14 @@ const bildirimOffStub = Layer.mergeAll(
 	noRequestFlagOverrides,
 	makeNotificationStub(),
 	relationStoreOf([]),
+	// The karma flag-gate deps `report.submit` gained (#150): `Flags` OFF ⇒ the
+	// `CanFlag` gate auto-passes without a karma read, so `Kunye.karmaOf` dies on
+	// contact (unexercised); the proof still stamps off the per-test `CurrentActor`.
+	Layer.succeed(Kunye, {
+		karmaOf: () => Effect.die("Kunye.karmaOf not exercised in report-live-fanout (flag off)"),
+		tierOf: () => Effect.die("Kunye.tierOf not exercised in report-live-fanout"),
+		rootOf: (id: string) => Effect.succeed(id),
+	} as typeof Kunye.Service),
 );
 
 const actorContext = (actor: Actor) => Layer.succeed(CurrentActor, {actor});
@@ -640,6 +649,7 @@ describe("report.submit — the audit refuted submit; the CONTENT path fans out 
 									submit: () => Effect.succeed({targetKind: "post", targetId: "p1", created: true}),
 								}),
 								layer,
+								actorContext(human("u-reporter")),
 								bildirimOffStub,
 							),
 						),

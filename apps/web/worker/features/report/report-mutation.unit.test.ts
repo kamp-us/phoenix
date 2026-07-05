@@ -13,7 +13,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {RelationStore} from "@kampus/authz";
+import {CurrentActor, human, RelationStore, unauthenticated} from "@kampus/authz";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Layer} from "effect";
@@ -21,6 +21,7 @@ import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import {noRequestFlagOverrides, resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
+import {Kunye} from "../kunye/Kunye.ts";
 import {ReportTargetNotFound} from "./errors.ts";
 import {mutations} from "./mutations.ts";
 import {makeReportStub} from "./Report.testing.ts";
@@ -59,6 +60,15 @@ const bildirimOffStub = Layer.mergeAll(
 		hasSubjects: () => Effect.die("RelationStore.hasSubjects not exercised in report-mutation"),
 		subjectsOf: () => Effect.die("RelationStore.subjectsOf not exercised in report-mutation"),
 	}),
+	// The karma flag-gate deps `report.submit` gained (#150): `Flags` OFF ⇒ the
+	// `CanFlag` gate auto-passes without a karma read, so `Kunye.karmaOf` is never
+	// exercised (it dies on contact); `CanFlag.authorize` still stamps its proof off
+	// `CurrentActor`, provided per-call in `submit`.
+	Layer.succeed(Kunye, {
+		karmaOf: () => Effect.die("Kunye.karmaOf not exercised in report-mutation (flag off)"),
+		tierOf: () => Effect.die("Kunye.tierOf not exercised in report-mutation"),
+		rootOf: (id: string) => Effect.succeed(id),
+	} as typeof Kunye.Service),
 );
 
 // Drive the op through its real external interface (`resolveWire`: `resolve`
@@ -73,7 +83,11 @@ const submit = (
 	resolveWire(mutations["report.submit"], {
 		input,
 		select: ["id", "targetKind", "targetId", "created"],
-	}).pipe(Effect.provideService(CurrentUser, {user}), Effect.provide(bildirimOffStub));
+	}).pipe(
+		Effect.provideService(CurrentUser, {user}),
+		Effect.provideService(CurrentActor, {actor: user ? human(user.id) : unauthenticated}),
+		Effect.provide(bildirimOffStub),
+	);
 
 // The wire `code` carried by a `resolveWire` failure `Cause` (the `FateRequestError`
 // `encodeWireError` produced), or `undefined` if the cause holds no error / on success.
