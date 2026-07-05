@@ -62,8 +62,8 @@ beforeAll(async () => {
 		slug: SLUG,
 		title: "Fate Read",
 		definitions: [
-			{authorName: "umut", body: "alpha definition", score: 2},
-			{authorName: "elif", body: "beta definition", score: 1},
+			{authorName: "anka", body: "alpha definition", score: 2},
+			{authorName: "zumrud", body: "beta definition", score: 1},
 		],
 	});
 	seeded = result.definitions;
@@ -136,16 +136,17 @@ describe("sozluk reads — deployed worker /fate (system smoke)", () => {
 		expect(conn.items.length).toBe(2);
 		// Scope the scalar-surface assertion to the EXACT row this file seeded, found by
 		// the real id the worker assigned (captured from the seed) — never the positional
-		// `items[0]` + a hardcoded handle. The connection is `termSlug`-scoped so only
-		// this NS term's rows appear, but pinning by seeded id keeps the assertion
-		// deterministic on the run-scoped SHARED stage (ADR 0104): it verifies the
-		// session-derived surface of the definition we know we authored, whatever the
-		// stage's actor population — instead of `expected 'yazar' to be 'umut'`, the
-		// fixture-pinned read of another shared-stage file's author (#2116).
+		// `items[0]`. Determinism on the run-scoped SHARED stage (ADR 0104) rests on TWO
+		// facts: the connection is `termSlug`-scoped so only this NS term's rows appear, AND
+		// the seed's author identity is uniquified per run at the harness source, so the
+		// stored `author_name` can't collide with a pre-existing stage actor. Asserting
+		// against the seed's RETURNED `authorName` (never a base/handle literal) is what
+		// closes the fixed-identity-on-a-shared-stage flake (#2116: `expected 'yazar' to
+		// be 'umut'` — a fixed handle read back as another actor's).
 		const alpha = conn.items.find((e) => e.node.id === seeded[0]!.id)?.node;
 		expect(alpha).toBeDefined();
-		// `author` round-trips the seed's own username (`author_name`, snapshotted from
-		// `user.name` at add-time) — a straight scalar passthrough (`definition-fields.ts`:
+		// `author` round-trips the seed's own (uniquified) username (`author_name`, snapshotted
+		// from `user.name` at add-time) — a straight scalar passthrough (`definition-fields.ts`:
 		// `author: d => d.authorName`), NOT the `yazar` authorship-tier noun (ADR 0107).
 		expect(alpha!.author).toBe(seeded[0]!.authorName);
 		expect(alpha!.authorId).toBe(seeded[0]!.authorId);

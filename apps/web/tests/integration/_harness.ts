@@ -81,6 +81,11 @@ export interface Harness {
 	 * the REAL `id`/`authorId` the worker assigned — assert against those, not a
 	 * caller-chosen id.
 	 *
+	 * The input `authorName` is a BASE — the stored `author_name` is uniquified per
+	 * run (`<base>-<run-stamp>`) so a fixed handle can't collide with a pre-existing
+	 * actor on the shared stage (#2116). The returned rows carry that REAL stored
+	 * `authorName`; assert `author` against `definitions[i].authorName`, never the base.
+	 *
 	 * Re-seeding the same `(slug, body)` is idempotent: the body is skipped (not
 	 * re-added), mirroring the old admin upsert's dedup. `created` is true only the
 	 * first time a slug is seeded in this process.
@@ -494,13 +499,22 @@ export function harness(
 	let seedCounter = 0;
 	const nextSeedId = () => `seed-${STAMP_SEED}-${seedCounter++}`;
 
+	// The seeded author identity is uniquified PER RUN at this source: the stored `author_name`
+	// (`user.name ?? user.email`) is the requested base + the per-process `STAMP_SEED`, so no two
+	// runs — and no actor already present on the run-scoped SHARED stage (ADR 0104) — can collide
+	// on it. Fixed identity + a shared mutable stage was the nondeterministic-read root cause
+	// (#2116: `expected 'yazar' to be 'umut'` — a fixed `umut` handle colliding with a pre-existing
+	// stage actor). Callers assert against the RETURNED `authorName` (threaded through `seedTerm`),
+	// never the requested base literal, since the two now differ.
+	const runAuthorName = (base: string): string => `${base}-${STAMP_SEED}`;
 	const authorCookies = new Map<string, string>();
-	const authorCookie = async (authorName: string): Promise<string> => {
+	const authorCookie = async (base: string): Promise<{cookie: string; authorName: string}> => {
+		const authorName = runAuthorName(base);
 		const existing = authorCookies.get(authorName);
-		if (existing) return existing;
+		if (existing) return {cookie: existing, authorName};
 		const {cookie} = await signUp(`${nextSeedId()}@seed.local`, "seedpass-seedpass", authorName);
 		authorCookies.set(authorName, cookie);
-		return cookie;
+		return {cookie, authorName};
 	};
 
 	// Grow-only pool of voter cookies, sized on demand. Each voter is a distinct
@@ -607,7 +621,7 @@ export function harness(
 			}
 			seededBodies.add(key);
 
-			const cookie = await authorCookie(def.authorName);
+			const {cookie, authorName} = await authorCookie(def.authorName);
 			const node = await addDefinition(cookie, input.slug, input.title, def.body);
 			insertedDefinitions++;
 
@@ -631,7 +645,10 @@ export function harness(
 			definitions.push({
 				id: node.id,
 				authorId: node.authorId,
-				authorName: def.authorName,
+				// The REAL stored `author_name` (uniquified per run), not the requested base —
+				// the deployed row carries this, so an id-pinned read asserting `author` must
+				// compare against it, never the base literal (#2116).
+				authorName,
 				score,
 			});
 		}
