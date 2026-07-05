@@ -25,7 +25,31 @@
  */
 import {encodeWireError, failureOf} from "@kampus/fate-effect";
 import type {FateRequestError} from "@nkzw/fate/server";
-import {Effect, Exit} from "effect";
+import {Effect, Exit, Layer} from "effect";
+import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
+
+/**
+ * The no-cookie {@link RequestFlagOverrides} default a flag-gated unit test
+ * discharges. A flag-gated resolver's `provideRequestFlags` requires this
+ * per-request transport service (#622); the `/fate` route fulfills it live from
+ * the raw `Cookie` header (`fate/route.ts`), but a unit test drives one op with NO
+ * real request, so it carries no override cookie. `null` is simply "no local
+ * override" — the environment gate stays in `makeRequestFlagsContext`, so this is
+ * never a capability, and it mirrors how `CurrentUser`/`CurrentActor` are stubbed
+ * per request (ADR 0107 §7).
+ *
+ * {@link resolveWire} discharges it automatically (the driver seam), so a
+ * `resolveWire`-based test needs nothing. A test that drives a flag-gated domain
+ * effect DIRECTLY (not through `resolveWire`) merges {@link noRequestFlagOverrides}
+ * into its context layer instead.
+ */
+const NO_COOKIE_OVERRIDES = RequestFlagOverrides.of({cookieHeader: null});
+
+/** The shared no-cookie {@link RequestFlagOverrides} stub layer — see {@link NO_COOKIE_OVERRIDES}. */
+export const noRequestFlagOverrides: Layer.Layer<RequestFlagOverrides> = Layer.succeed(
+	RequestFlagOverrides,
+	NO_COOKIE_OVERRIDES,
+);
 
 /**
  * The external interface of any fate op (query/list/mutation): its `resolve`
@@ -49,7 +73,7 @@ interface ResolvableOp<In, A, E, R> {
 export const resolveWire = <In, A, E, R>(
 	op: ResolvableOp<In, A, E, R>,
 	raw: In,
-): Effect.Effect<A, FateRequestError, R> =>
+): Effect.Effect<A, FateRequestError, Exclude<R, RequestFlagOverrides>> =>
 	op.resolve(raw).pipe(
 		Effect.exit,
 		Effect.flatMap((exit) =>
@@ -57,4 +81,8 @@ export const resolveWire = <In, A, E, R>(
 				? Effect.succeed(exit.value)
 				: Effect.fail(encodeWireError(failureOf(exit.cause))),
 		),
+		// Discharge the per-request `RequestFlagOverrides` a flag-gated resolver's
+		// `provideRequestFlags` requires (#622) with the no-cookie default — the driver
+		// seam, so no gated unit test has to stub it (see `NO_COOKIE_OVERRIDES`).
+		Effect.provideService(RequestFlagOverrides, NO_COOKIE_OVERRIDES),
 	);
