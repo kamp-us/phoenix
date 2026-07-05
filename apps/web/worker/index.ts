@@ -35,6 +35,7 @@ import {Flagship as FlagshipResource} from "./features/flagship/resources.ts";
 import {subscribeHotScoreDecay} from "./features/pano/hot-score-decay-cron.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
+import {Events as TelemetryEvents} from "./features/telemetry/resources.ts";
 import {makeAppLive} from "./http/app.ts";
 import {workerFirstGlobs} from "./http/worker-routes.ts";
 import {workerOptions} from "./lib/sentry.ts";
@@ -111,6 +112,12 @@ const phoenixProps =
 				// declare → bind → consume (#1439); runtime resolution is by the app's
 				// `LogicalId` (`phoenix_flags`), not this key, so the rename is behavior-neutral.
 				Flagship: FlagshipResource,
+				// The Analytics Engine `app_events` dataset (ADR 0153, epic #2065): bound as
+				// the `Events` runtime binding so worker init can resolve the write client via
+				// `Cloudflare.AnalyticsEngine.WriteDataset(Events)`. No provisioning — an AE
+				// dataset is created on first `writeDataPoint`. The `Telemetry` service that
+				// consumes the client lands in #2067; this child wires the binding only.
+				Events: TelemetryEvents,
 				// Optional Sentry DSN (ADR 0118, #1502): bound `secret_text` (a redacted
 				// value) ONLY when a DSN is present in the deploy env, so an unset DSN adds
 				// no binding at all. Single-sourced name via `ENV_BINDINGS.sentryDsn` (#1432).
