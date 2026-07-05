@@ -326,6 +326,20 @@ export class Pano extends Context.Service<
 		readonly refreshHotScores: (
 			now: Date,
 		) => Effect.Effect<{readonly scanned: number; readonly updated: number}>;
+
+		/**
+		 * One-time FULL `hot_score` backfill (#2131): a single windowless recompute over
+		 * ALL live, non-draft posts, reusing the same pure decay core as
+		 * `refreshHotScores` but MINUS the 72h window clause — so it re-decays the pre-fix
+		 * frozen rows outside the window that the cron can never reach. Run-once +
+		 * idempotent via the `hot_score_backfill` marker row: `ran: false` once it has
+		 * completed. Driven by a guarded run-once cron subscriber (`index.ts`).
+		 */
+		readonly backfillHotScores: (now: Date) => Effect.Effect<{
+			readonly ran: boolean;
+			readonly scanned: number;
+			readonly updated: number;
+		}>;
 	}
 >()("@kampus/pano/Pano") {}
 

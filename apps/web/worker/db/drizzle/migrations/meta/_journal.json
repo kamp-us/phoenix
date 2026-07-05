@@ -148,6 +148,13 @@
       "when": 1792000000000,
       "tag": "0020_drop_imge_object",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792500000000,
+      "tag": "0021_hot_score_backfill",
+      "breakpoints": true
     }
   ]
 }
