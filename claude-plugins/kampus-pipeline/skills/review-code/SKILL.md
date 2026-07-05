@@ -1029,6 +1029,62 @@ This row is governed by the conjunctive rule (Step 3): a `[FAIL]` comment-discip
 PR until the diff is deslopped. The author is the *fixer*; you are the *judge* — the split-role
 firewall holds, and the author bias #1394 named is gone by construction.
 
+### Step 3e — Unresolved inline review threads: surface them in the verdict (ADR 0158)
+
+An inline review thread — human **or** bot — left **unresolved** on this PR is a real objection
+that the acceptance-criteria checklist above does not see (a human's inline "fix this", the
+code-quality bot's inline finding). Historically these were silently discarded before merge
+(#2123, the broadened root-cause parent of #2121: the bot's unused-import thread shipped past this
+gate on PR #2113). Read them here so the objection **surfaces at the gate**, visible in this
+verdict, rather than at a silent merge.
+
+Thread **resolution** state (`isResolved`) is a **GraphQL** field
+(`repository.pullRequest.reviewThreads[].isResolved`); the REST inline-comments endpoint exposes
+the comments but has **no** `isResolved` field, so it cannot tell resolved from unresolved. Reading
+review-thread resolution is therefore the **single, narrow, documented exception** to this skill's
+REST-only rule — verified working on this org (the Projects-classic breakage is scoped to Projects
+fields, not `reviewThreads`; ADR
+[0158](https://github.com/kamp-us/phoenix/blob/main/.decisions/0158-unresolved-review-thread-is-a-merge-gate.md)).
+Every other read/write in this skill stays REST.
+
+```bash
+ORG="${REPO%%/*}"; NAME="${REPO#*/}"
+# The ONE GraphQL read in review-code (ADR 0158): REST exposes no isResolved.
+gh api graphql -f query='
+  query($o:String!,$n:String!,$pr:Int!) {
+    repository(owner:$o, name:$n) {
+      pullRequest(number:$pr) {
+        reviewThreads(first:100) {
+          nodes { isResolved path line comments(first:1){ nodes { author { login } body } } }
+        }
+      }
+    }
+  }' -F o="$ORG" -F n="$NAME" -F pr="$PR" \
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)
+        | {path, line, author: .comments.nodes[0].author.login, body: (.comments.nodes[0].body[0:200])}'
+echo "unresolved-threads: scanned the PR's review threads (§ZS: this read ran)"
+```
+
+Fold the result into the conjunctive table exactly like Step 3b/3c/3d:
+
+- **A substantive unresolved thread ⇒ `[FAIL]` row.** A real objection (a requested change, a bot
+  finding naming a real defect) that is still unresolved is an unmet criterion — name the site and
+  the thread so `write-code`'s repair round addresses it. **When in doubt, treat it as substantive**
+  (a false FAIL costs a cycle; a false PASS discards a real objection — ADR 0158's crux).
+- **Only genuine nits unresolved, or none ⇒ not a FAIL for this facet.** Cite that the unresolved
+  threads (if any) are trivial/obsolete nits, or that there are no unresolved threads.
+- **No review threads at all ⇒ explicit not-applicable skip** — emit
+  `unresolved-threads: not applicable — no review threads on this PR` and omit the row.
+
+```
+- [FAIL] unresolved-threads — apps/web/worker/features/pano/mutations.ts:18 @github-code-quality: "Unused import PHOENIX_KARMA_GATES" is unresolved and substantive → address on the branch (ADR 0158)
+```
+
+Surfacing the thread here does **not** resolve it or merge past it — the split-role firewall holds
+(you judge, `write-code` fixes, `ship-it` merges). `ship-it`'s Step 3.6 is the terminal enforcement
+that refuses to enqueue on a substantive unresolved thread; this step makes the same objection
+**visible at review time**, so it never reaches merge unread.
+
 ---
 
 ## Step 4a — Pass path: signal merge-ready (do NOT merge)

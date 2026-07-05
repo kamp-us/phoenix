@@ -112,6 +112,14 @@ pointless.
    entirely over `gh api` / `gh pr merge` (the merge happens **server-side**), so you have **no
    reason to touch the local working tree at all** — read PR state read-only over `gh api`; you
    never need a checkout to ship.
+5. **An unresolved inline review thread (human or bot) blocks the merge — and the default is
+   route-back, never auto-dismiss.** Before you enqueue, read the PR's unresolved inline threads
+   (Step 3.6): a **substantive** one refuses the ship like a FAIL (routed back to `write-code`); a
+   **genuine nit** may be resolved **only with an explicit written rationale**; **in doubt, treat
+   it as substantive and route back** (ADR
+   [0158](https://github.com/kamp-us/phoenix/blob/main/.decisions/0158-unresolved-review-thread-is-a-merge-gate.md)).
+   A shipper that "resolves" a real objection just re-creates the throw-away one layer down —
+   never blanket-resolve threads to clear the gate.
 
 ## The merge-ready signals
 
@@ -1034,11 +1042,99 @@ node ../../bin.ts crabbox-manifest --run-summary <(node -e 'console.log(JSON.str
 
 ---
 
+## Step 3.6 — Unresolved inline review threads gate: read them, route back by default (ADR 0158, guard 3)
+
+An inline review thread — human **or** bot — whose resolution state is **unresolved** is a
+merge-blocking signal, on the same footing as a `review-*: FAIL` verdict. Before you enqueue,
+read the PR's unresolved threads and act on them. The `review-*: PASS` verdicts (Step 2), the
+green CI (Step 3), and the run-evidence bundle (Step 3.5) attest the diff against the issue's
+acceptance criteria — they do **not** see an inline "fix this" a human (or the code-quality bot)
+left on a line. That objection was silently discarded before merge (#2123, the broadened
+root-cause parent of #2121: the bot's unused-import thread shipped past every gate on PR #2113).
+This step closes that hole in the pipeline-native path, independent of whether the ruleset's
+`required_review_thread_resolution` flag is enabled (that server-side lever is founder-gated and
+NOT flipped by this skill — ADR 0158 Consequences).
+
+**The load-bearing crux (ADR 0158 §Decision 3): the default errs toward routing-back, NEVER
+auto-dismiss.** A shipper that "resolves" a human's real objection just re-creates the throw-away
+one layer down. So a **substantive** unresolved thread refuses the ship exactly like a FAIL; a
+**genuine nit** may be resolved **only with an explicit written rationale**; and **when in doubt,
+treat the thread as substantive and route back**. Never blanket-resolve threads to clear the gate.
+
+### Reading thread resolution — the one sanctioned GraphQL read (ADR 0158 §Decision 2)
+
+Thread **resolution** state (`isResolved`) is a **GraphQL** field
+(`repository.pullRequest.reviewThreads[].isResolved`); the REST inline-comments endpoint
+(`GET /repos/{o}/{r}/pulls/{n}/comments`) exposes the comments but has **no** `isResolved` field
+and no thread grouping, so it cannot tell resolved from unresolved. Reading review-thread
+resolution is therefore the **single, narrow, documented exception** to this skill's REST-only
+rule — verified working on this org (the Projects-classic breakage is scoped to Projects fields,
+not `reviewThreads`; grounded live on PRs #2113/#2122/#2107, ADR 0158). Every other read/write in
+this skill stays REST.
+
+```bash
+ORG="${REPO%%/*}"; NAME="${REPO#*/}"
+# The ONE GraphQL read in ship-it (ADR 0158): REST exposes no isResolved. Read every review thread's
+# resolution state + its first author, so a substantive-vs-nit judgment has the thread text.
+gh api graphql -f query='
+  query($o:String!,$n:String!,$pr:Int!) {
+    repository(owner:$o, name:$n) {
+      pullRequest(number:$pr) {
+        reviewThreads(first:100) {
+          nodes {
+            isResolved
+            isOutdated
+            path
+            line
+            comments(first:1) { nodes { author { login } body } }
+          }
+        }
+      }
+    }
+  }' -F o="$ORG" -F n="$NAME" -F pr="$PR" \
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)
+        | {path, line, author: .comments.nodes[0].author.login, body: (.comments.nodes[0].body[0:200])}'
+```
+
+### Disposition — classify each unresolved thread, then branch
+
+For **each** unresolved thread the query returns:
+
+- **Substantive** — a real objection: a requested change ("fix this", "handle this case", "this
+  is wrong", "don't do X"), a bot finding that names a real defect (an unused import, a missing
+  guard), or anything you cannot confidently call trivial. → **REFUSE to enqueue.** Report
+  `unresolved substantive review thread (<path>:<line>, @<author>)` and stop — this is a FAIL-class
+  refusal, routed back to `write-code` to address the thread on the branch. Do **not** resolve it.
+- **Genuine nit** — a trivial, already-satisfied, or obsolete note (a style preference already
+  followed, a question already answered in the diff, a finding a later commit made moot). → you
+  **may** resolve it, but **only with an explicit written rationale**: reply on the thread stating
+  *why* it is a nit, then resolve it. Never a silent or blanket resolve.
+
+If **any** unresolved thread is substantive (or in-doubt), you refuse — the whole PR does not
+enqueue. Only when **every** unresolved thread has been either addressed on the branch (so it no
+longer shows unresolved) or resolved-with-rationale as a nit do you proceed to Step 4.
+
+```bash
+# Resolve a NIT thread — ONLY after posting the rationale reply. Requires the thread's node id
+# (from the same GraphQL read, add `id` to the reviewThreads.nodes selection). REST cannot resolve
+# a thread, so the resolve mutation is part of the same sanctioned GraphQL exception (ADR 0158).
+# gh api graphql -f query='mutation($t:ID!){ resolveReviewThread(input:{threadId:$t}){ thread { isResolved } } }' -F t="$THREAD_ID"
+```
+
+**Refuse in doubt.** A false route-back costs one cycle; a false auto-resolve silently discards a
+real objection — the exact failure ADR 0158 closes. The conservative bias is the point, not a
+rough edge. This guard is **additive**: it layers a new pre-enqueue refusal on the existing
+sequence (Step 0 §CP approval, Step 2/2b current-head PASS, Step 3 green CI, Step 3.5
+run-evidence) and weakens none of them.
+
+---
+
 ## Step 4 — Enqueue for squash-merge (auto-merge / merge queue)
 
-Every guard cleared: not a control-plane PR (Step 0), the required gates' latest verdicts
-are a current-head PASS (Step 2/2b), checks are green (Step 3), and the run-evidence bundle
-is present, commit-bound, and all-`pass` (Step 3.5). **Enqueue** it for a squash merge — the
+Every guard cleared: not a control-plane PR without a current-head team approval (Step 0), the
+required gates' latest verdicts are a current-head PASS (Step 2/2b), checks are green (Step 3),
+the run-evidence bundle is present, commit-bound, and all-`pass` (Step 3.5), and **no unresolved
+inline review thread is substantive** (Step 3.6, ADR 0158). **Enqueue** it for a squash merge — the
 merge queue owns the final merge, testing the prospective batched merge result against a fresh
 base before it lands (ADR
 [0132](https://github.com/kamp-us/phoenix/blob/main/.decisions/0132-merge-queue-for-base-freshness.md)):
