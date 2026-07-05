@@ -21,6 +21,11 @@ two costs that collided on #2049 (the reaction live-count reconcile bug):
   On #2049 that became a ~50-minute blind loop — a silent 120s test timeout, no
   signal, three cycles burned guessing.
 
+The same real-CF-harness limit recurs on a different test tier — the e2e capability
+gap (#1838) — so this is a shared constraint, not a one-off. Resolving #2061 also
+unblocks #2031 AC3 (the deferred D1 cross-encoding proof, which was blocked on
+exactly this harness gap).
+
 Two escape doors were raised to close that gap. This ADR shuts both.
 
 ## Decision
@@ -55,6 +60,11 @@ blind timeout. Concretely (proven on #2049):
 #2049 is the reference instance: a former 50-minute blind loop became a ~2-second
 named cause. That discipline is canonized separately in `.patterns/` so every future
 integration test is legible by default.
+
+Enforcing this decision through a CI/workflow (`.github/**`) change is control-plane
+(§CP) → human-merge (approve-then-enqueue, ADR 0135); a change confined to the test
+tier (`apps/web/tests/**`) is non-§CP and ships through the normal pipeline. This ADR
+*file* itself is a `.decisions/` doc — non-§CP.
 
 Reference this decision by **slug** in code comments
 (`// See ADR: integration-tier-is-ci-only`) so the ADR-numbering migration (#2058)
