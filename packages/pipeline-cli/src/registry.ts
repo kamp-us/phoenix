@@ -21,9 +21,11 @@ import {docLinksCommand} from "./tools/doc-links/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
 import {evalHarnessCommand} from "./tools/eval-harness/command.ts";
 import {failureClassifierCommand} from "./tools/failure-classifier/command.ts";
+import {fanoutGuardCommand} from "./tools/fanout-guard/command.ts";
 import {ghPhoenixCommand} from "./tools/gh-phoenix/command.ts";
 import {glossaryDriftCommand} from "./tools/glossary-drift/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
+import {mainSyncCommand} from "./tools/main-sync/command.ts";
 import {mergeQueueClassifyCommand} from "./tools/merge-queue-classify/command.ts";
 import {pointerGuardCommand} from "./tools/pointer-guard/command.ts";
 import {readGuardCommand} from "./tools/read-guard/command.ts";
@@ -96,6 +98,8 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	shipDigestCommand,
 	glossaryDriftCommand,
 	failureClassifierCommand,
+	fanoutGuardCommand,
 	resumePolicyCommand,
 	evalHarnessCommand,
+	mainSyncCommand,
 ];

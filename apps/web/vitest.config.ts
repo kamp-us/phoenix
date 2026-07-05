@@ -103,6 +103,20 @@ export default defineConfig({
 					testTimeout: 120_000,
 					hookTimeout: 180_000,
 					pool: "forks",
+					// `isolate: false` shares one parsed JS module graph across the files
+					// that run in the same fork, so the phoenix worker barrel chain
+					// (`_integration.ts` → `alchemy.run.ts` → `worker/index.ts`, ~132 TS
+					// files, ~62% alchemy/CF SDK eval) is imported+transformed ONCE per fork
+					// instead of re-imported from scratch per file (#958, diagnosed in #682).
+					// This is Vitest's JS-module-registry isolation — DISTINCT from the
+					// per-file isolated D1 *stage* (ADR 0082/0104): it does NOT merge the
+					// real-D1 worker deploys, only the in-fork module cache. Safe here because
+					// the harness holds no cross-file module-level mutable singleton (the
+					// shared stage handle arrives via `provide`, not a module global); a
+					// fully-green integration tier is the contamination proof.
+					// CI A/B (recorded on PR #958): integration-job wall-clock 251s median
+					// (isolate:true baseline, n=5 main runs) → 203s (isolate:false), ≈19% faster.
+					isolate: false,
 					// Per-file isolated stages (ADR 0082): each file deploys its own
 					// worker + D1, so files run in parallel — the inverse of the retired
 					// single-fork model. `disableConsoleIntercept` keeps the alchemy
