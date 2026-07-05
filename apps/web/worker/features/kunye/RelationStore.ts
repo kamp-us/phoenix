@@ -57,6 +57,22 @@ export const RelationStoreLive = Layer.effect(RelationStore)(
 				);
 				return new Set(rows.map((row) => row.subject));
 			}),
+
+			subjectsOf: Effect.fn("RelationStore.subjectsOf")(function* ({relation, object}) {
+				const rows = yield* run((db) =>
+					db
+						.select({subject: schema.relationTuple.subject})
+						.from(schema.relationTuple)
+						.where(
+							and(
+								eq(schema.relationTuple.relation, relation),
+								eq(schema.relationTuple.object, objectKey(object)),
+							),
+						)
+						.all(),
+				);
+				return new Set(rows.map((row) => row.subject));
+			}),
 		};
 	}),
 );

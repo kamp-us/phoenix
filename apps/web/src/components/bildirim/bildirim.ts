@@ -70,6 +70,10 @@ const KIND_COPY = {
 	// The aggregated live-content vote voice (#1698): the anti-hype "N yeni oy",
 	// one rolled-up line per item — never one-per-vote, never a per-voter identity drip.
 	vote: (count) => (count > 1 ? `içeriğin ${count} yeni oy aldı` : "içeriğin 1 yeni oy aldı"),
+	// The mod-queue heartbeat (#1699): mod-facing lines, not member-facing.
+	"report-filed": (count) =>
+		count > 1 ? `${count} yeni içerik bildirildi` : "yeni bir içerik bildirildi",
+	"caylak-pending": () => "yeni bir çaylak divanda incelenmeyi bekliyor",
 } satisfies Record<NotificationKind, (count: number) => string>;
 
 /**

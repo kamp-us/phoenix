@@ -46,6 +46,12 @@ const access = (
 								: [],
 						),
 					),
+				subjectsOf: ({relation, object}) =>
+					Effect.succeed(
+						new Set(
+							relation === "moderates" && object.type === "platform" ? (opts.mods ?? []) : [],
+						),
+					),
 			}),
 		),
 	);
@@ -84,6 +90,7 @@ describe("funnel gate — platform-moderation only", () => {
 				Effect.provideService(RelationStore, {
 					has: () => Effect.succeed(true),
 					hasSubjects: ({subjects}) => Effect.succeed(new Set(subjects)),
+					subjectsOf: () => Effect.succeed(new Set<string>()),
 				}),
 			),
 		);

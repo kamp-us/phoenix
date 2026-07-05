@@ -50,6 +50,7 @@ const relationStoreOf = (mods: ReadonlyArray<string>): Layer.Layer<RelationStore
 			Effect.succeed(
 				new Set(relation === "moderates" ? subjects.filter((s) => mods.includes(s)) : []),
 			),
+		subjectsOf: ({relation}) => Effect.succeed(new Set(relation === "moderates" ? mods : [])),
 	});
 
 describe("toTrustedUser — the SELF trusted User shape", () => {

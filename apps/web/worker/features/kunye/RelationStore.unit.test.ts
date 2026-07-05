@@ -134,6 +134,49 @@ describe("RelationStore.hasSubjects — batched membership over a subject set (#
 	});
 });
 
+describe("RelationStore.subjectsOf — the open-set enumeration for one (relation, object) (#1699)", () => {
+	it.effect("returns every subject the read rows carry", () =>
+		Effect.gen(function* () {
+			const store = yield* RelationStore;
+			const mods = yield* store.subjectsOf({relation: "moderates", object: platform});
+			assert.deepStrictEqual([...mods].sort(), ["u-mod-a", "u-mod-b"]);
+		}).pipe(
+			Effect.provide(
+				storeLayer(countingAccess([{subject: "u-mod-a"}, {subject: "u-mod-b"}]).access),
+			),
+		),
+	);
+
+	it.effect("is empty when no tuple matches (no moderators)", () =>
+		Effect.gen(function* () {
+			const store = yield* RelationStore;
+			const mods = yield* store.subjectsOf({relation: "moderates", object: platform});
+			assert.strictEqual(mods.size, 0);
+		}).pipe(Effect.provide(storeLayer(countingAccess([]).access))),
+	);
+
+	it("compiles to a relation/object-filtered read over relation_tuple (statement pin, no engine)", () => {
+		const db: DrizzleDb = createDrizzle({} as D1Database);
+		const {sql, params} = db
+			.select({subject: schema.relationTuple.subject})
+			.from(schema.relationTuple)
+			.where(
+				and(
+					eq(schema.relationTuple.relation, "moderates"),
+					eq(schema.relationTuple.object, objectKey(platform)),
+				),
+			)
+			.toSQL();
+		assert.match(sql, /from "relation_tuple"/i);
+		assert.match(sql, /"relation" = \?/i);
+		assert.match(sql, /"object" = \?/i);
+		// No subject predicate — the enumeration is the whole set for this (relation, object).
+		assert.notMatch(sql, /"subject" (=|in)/i);
+		assert.include(params as unknown[], "moderates");
+		assert.include(params as unknown[], "platform:kampus");
+	});
+});
+
 describe("RelationStore.has — query shape (statement pin, no engine)", () => {
 	// The production lookup compiles to an existence read over `relation_tuple`,
 	// filtered by the three tuple columns with the `objectKey` serialization. The real

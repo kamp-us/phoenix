@@ -57,6 +57,21 @@ export const moderatorsAmong = (
 	});
 
 /**
+ * EVERY platform moderator's account id — the mod-fan-out recipient set (#1699):
+ * every subject holding `(subject, "moderates", platform)`, read off the same
+ * direct tuple {@link isModerator} / {@link moderatorsAmong} key. Where those two
+ * ANSWER membership for a known candidate, this ENUMERATES the open set a `notify
+ * every moderator` emit needs — a recipient set with no candidate ids up front, so
+ * neither `has` nor `hasSubjects` can produce it. The tuple key lives here next to
+ * {@link Moderate} so the enumeration key can't drift from the discharge key.
+ */
+export const allModerators = (): Effect.Effect<ReadonlySet<string>, never, RelationStore> =>
+	Effect.gen(function* () {
+		const store = yield* RelationStore;
+		return yield* store.subjectsOf({relation: "moderates", object: platform});
+	});
+
+/**
  * Gate `body` behind platform-moderation authority: discharge
  * `Moderate.over(platform)` (the invisible {@link Denied} on failure) and thread
  * the resulting `Grant` into `body`'s R-channel via `Grant.provide`. So `body`

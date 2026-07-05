@@ -77,6 +77,7 @@ const relationStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationSt
 			Effect.succeed(
 				new Set(relation === "moderates" ? subjects.filter((s) => holders.includes(s)) : []),
 			),
+		subjectsOf: ({relation}) => Effect.succeed(new Set(relation === "moderates" ? holders : [])),
 	});
 
 // A `Kunye` whose standing/karma answer by id.
@@ -178,6 +179,7 @@ describe("user.promote — direct moderator promotion", () => {
 					Layer.succeed(RelationStore, {
 						has: () => Effect.die(new Error("flag OFF must not check authority")),
 						hasSubjects: () => Effect.die(new Error("flag OFF must not check authority")),
+						subjectsOf: () => Effect.die(new Error("flag OFF must not check authority")),
 					}),
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),

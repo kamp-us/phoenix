@@ -23,7 +23,7 @@ import {
 } from "@kampus/authz";
 import {Effect, Exit} from "effect";
 import {Denied} from "./errors.ts";
-import {Moderate, moderatorOf, moderatorsAmong} from "./moderate.ts";
+import {allModerators, Moderate, moderatorOf, moderatorsAmong} from "./moderate.ts";
 
 // Provide the three ports off a fixture (the holder set the `moderates` tuple
 // proves membership against) and run `Moderate.over(platform)` to an Exit.
@@ -49,6 +49,10 @@ const discharge = (
 								? subjects.filter((subject) => holders.includes(subject))
 								: [],
 						),
+					),
+				subjectsOf: ({relation, object}) =>
+					Effect.succeed(
+						new Set(relation === "moderates" && object.type === "platform" ? holders : []),
 					),
 			}),
 		),
@@ -115,6 +119,10 @@ describe("moderatorsAmong", () => {
 							: [],
 					),
 				),
+			subjectsOf: ({relation, object}) =>
+				Effect.succeed(
+					new Set(relation === "moderates" && object.type === "platform" ? holders : []),
+				),
 		});
 
 	it("returns exactly the subjects that hold the moderates tuple", () => {
@@ -129,6 +137,33 @@ describe("moderatorsAmong", () => {
 
 	it("is empty for an empty subject set", () => {
 		const mods = Effect.runSync(moderatorsAmong([]).pipe(storeOf(["u1"])));
+		assert.strictEqual(mods.size, 0);
+	});
+});
+
+// `allModerators` is the OPEN-set enumeration (#1699) the membership pair can't
+// answer: the whole `(moderates, platform)` subject set with no candidates up front —
+// the mod fan-out recipient set. The fixture returns exactly the holders for the
+// moderates/platform tuple, so the enumeration reads off the same key `has` proves.
+describe("allModerators", () => {
+	const storeOf = (holders: ReadonlyArray<string>) =>
+		Effect.provideService(RelationStore, {
+			has: () => Effect.die(new Error("allModerators enumerates via subjectsOf, not has")),
+			hasSubjects: () =>
+				Effect.die(new Error("allModerators enumerates via subjectsOf, not hasSubjects")),
+			subjectsOf: ({relation, object}) =>
+				Effect.succeed(
+					new Set(relation === "moderates" && object.type === "platform" ? holders : []),
+				),
+		});
+
+	it("enumerates every subject holding the moderates tuple", () => {
+		const mods = Effect.runSync(allModerators().pipe(storeOf(["u-mod1", "u-mod2"])));
+		assert.deepStrictEqual([...mods].sort(), ["u-mod1", "u-mod2"]);
+	});
+
+	it("is empty when no one moderates", () => {
+		const mods = Effect.runSync(allModerators().pipe(storeOf([])));
 		assert.strictEqual(mods.size, 0);
 	});
 });

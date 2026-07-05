@@ -13,15 +13,53 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {CurrentUser} from "@kampus/fate-effect";
-import {Cause, Effect, type Layer} from "effect";
-import {resolveWire} from "../fate/resolve-wire.testing.ts";
+import {RelationStore} from "@kampus/authz";
+import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
+import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
+import {Cause, Effect, Layer} from "effect";
+import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
+import {noRequestFlagOverrides, resolveWire} from "../fate/resolve-wire.testing.ts";
+import {livePublisherFor} from "../fate-live/live-publisher.ts";
+import {Flags} from "../flagship/Flags.ts";
 import {ReportTargetNotFound} from "./errors.ts";
 import {mutations} from "./mutations.ts";
 import {makeReportStub} from "./Report.testing.ts";
 import type {Report, ReportInput, ReportResult} from "./Report.ts";
 
 const REPORTER = {id: "u-reporter", email: "elif@example.com", name: "elif"};
+
+const runtimeContextStub: BaseRuntimeContext = {
+	Type: "report-mutation-test",
+	id: "report-mutation-test",
+	env: {},
+	get: () => Effect.succeed(undefined),
+	set: (id) => Effect.succeed(id),
+};
+
+// The mod-emitter deps `report.submit` gained (#1699): the report-filed page rides
+// AFTER the committed submit. `Flags` OFF ⇒ `bildirimOn` is false ⇒ the emit no-ops
+// before the moderator read or any notification write, so the Notification /
+// RelationStore stubs exist only to satisfy the type and die if ever reached.
+const bildirimOffStub = Layer.mergeAll(
+	Layer.succeed(Flags, {
+		getBoolean: () => Effect.succeed(false),
+		getString: () => Effect.die("getString not exercised"),
+		getNumber: () => Effect.die("getNumber not exercised"),
+		getObject: () => Effect.die("getObject not exercised"),
+	} as typeof Flags.Service),
+	Layer.succeed(RuntimeContext, runtimeContextStub),
+	noRequestFlagOverrides,
+	makeNotificationStub(),
+	// `Notification.record` rides `LivePublisher` (the per-recipient live delivery seam,
+	// #2076) — a static requirement of the mod emit even though the flag-off path never
+	// records. A no-op publisher satisfies it; it is never reached.
+	Layer.succeed(LivePublisher)(livePublisherFor({publish: () => Effect.void, waitUntil: () => {}})),
+	Layer.succeed(RelationStore, {
+		has: () => Effect.die("RelationStore.has not exercised in report-mutation"),
+		hasSubjects: () => Effect.die("RelationStore.hasSubjects not exercised in report-mutation"),
+		subjectsOf: () => Effect.die("RelationStore.subjectsOf not exercised in report-mutation"),
+	}),
+);
 
 // Drive the op through its real external interface (`resolveWire`: `resolve`
 // decode + the `encodeWireError` class→wire-code seam), not `.handler` — so the
@@ -35,7 +73,7 @@ const submit = (
 	resolveWire(mutations["report.submit"], {
 		input,
 		select: ["id", "targetKind", "targetId", "created"],
-	}).pipe(Effect.provideService(CurrentUser, {user}));
+	}).pipe(Effect.provideService(CurrentUser, {user}), Effect.provide(bildirimOffStub));
 
 // The wire `code` carried by a `resolveWire` failure `Cause` (the `FateRequestError`
 // `encodeWireError` produced), or `undefined` if the cause holds no error / on success.
