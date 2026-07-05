@@ -20,6 +20,9 @@ import * as Schema from "effect/Schema";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import {REACTION_EMOJI, ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
 import {TARGET_KINDS} from "../../db/target-kind.ts";
+import type {TelemetryEvent} from "../telemetry/schema.ts";
+import {dyingTelemetry, recordingTelemetry} from "../telemetry/Telemetry.testing.ts";
+import type {Telemetry} from "../telemetry/Telemetry.ts";
 import {Reaction, ReactionLive} from "./Reaction.ts";
 
 // A `Drizzle` whose every call throws — any path that actually reaches the DB
@@ -69,12 +72,17 @@ function recordingAccess(reads: ReadonlyArray<unknown>): {
 	return {access, batches};
 }
 
-// The Reaction layer under test — NOTE it provides ONLY `Drizzle`. There is no
-// KarmaBump and no VoterStanding to provide, because Reaction declares neither
-// (the ungated, karma-free divergence from Vote). That this layer type-checks and
-// builds with Drizzle alone IS the "no tier gate, no karma" proof at the seam.
-const reactionLayer = (access: DrizzleAccess) =>
-	ReactionLive.pipe(Layer.provide(Layer.succeed(Drizzle, access)));
+// The Reaction layer under test. It provides `Drizzle` and `Telemetry` (the
+// product-usage seam `Reaction.react` emits through, #2069). There is still NO
+// KarmaBump and NO VoterStanding to provide, because Reaction declares neither
+// (the ungated, karma-free divergence from Vote) — that the layer builds without
+// them IS the "no tier gate, no karma" proof at the seam. `telemetry` defaults to
+// a discarding recording sink so the react/change/no-op/retract write tests need
+// no telemetry setup; the emit tests pass a recording sink or the dying double.
+const reactionLayer = (
+	access: DrizzleAccess,
+	telemetry: Layer.Layer<Telemetry> = recordingTelemetry([]),
+) => ReactionLive.pipe(Layer.provide(Layer.mergeAll(Layer.succeed(Drizzle, access), telemetry)));
 
 // A live target meta the descriptor's loadMeta returns (author/createdAt/sandboxed
 // are Vote's fields; Reaction reads none of them — it only needs existence).
@@ -208,6 +216,127 @@ describe("Reaction.react — react / change / no-op / retract (mocked Drizzle se
 			assert.isTrue(result.changed, "the reaction on a sandboxed target still writes");
 			assert.strictEqual(batches[0]?.length, 1);
 		}).pipe(Effect.provide(reactionLayer(access)));
+	});
+});
+
+describe("Reaction.react — product-usage telemetry (ADR 0153, #2069)", () => {
+	it.effect(
+		"a committed react emits one {feature, action: react, surface, emoji, userId} event",
+		() => {
+			// probe → no existing reaction; a fresh react commits, then emits. `surface` is
+			// the target kind (`post`), `emoji` rides the trailing blob slot, `userId` is
+			// the reacting user (approximate blob).
+			const {access} = recordingAccess([liveMeta, null]);
+			const events: TelemetryEvent[] = [];
+			return Effect.gen(function* () {
+				const reaction = yield* Reaction;
+				yield* reaction.react({userId: "u1", targetKind: "post", targetId: "post-1", emoji: "❤️"});
+				assert.strictEqual(events.length, 1, "exactly one event on a committed react");
+				assert.deepStrictEqual(events[0], {
+					feature: "reaction",
+					action: "react",
+					surface: "post",
+					userId: "u1",
+					emoji: "❤️",
+				});
+			}).pipe(Effect.provide(reactionLayer(access, recordingTelemetry(events))));
+		},
+	);
+
+	it.effect("a change (different emoji) emits action: react with the NEW emoji", () => {
+		// probe → the user holds 👍; ❤️ differs → a real change. Set/change both map to
+		// `action: react` (only the null-emoji toggle-off is `retract`).
+		const {access} = recordingAccess([liveMeta, "👍"]);
+		const events: TelemetryEvent[] = [];
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			yield* reaction.react({userId: "u1", targetKind: "definition", targetId: "d-1", emoji: "❤️"});
+			assert.deepStrictEqual(events, [
+				{feature: "reaction", action: "react", surface: "definition", userId: "u1", emoji: "❤️"},
+			]);
+		}).pipe(Effect.provide(reactionLayer(access, recordingTelemetry(events))));
+	});
+
+	it.effect("a retract (emoji: null) emits action: retract with NO emoji", () => {
+		// probe → the user holds 😂; retract (null) differs → a real change removing the row.
+		// `action` is `retract` and the event carries no `emoji` (there is no emoji to record).
+		const {access} = recordingAccess([liveMeta, "😂"]);
+		const events: TelemetryEvent[] = [];
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			yield* reaction.react({userId: "u1", targetKind: "comment", targetId: "c-1", emoji: null});
+			assert.deepStrictEqual(events, [
+				{feature: "reaction", action: "retract", surface: "comment", userId: "u1"},
+			]);
+		}).pipe(Effect.provide(reactionLayer(access, recordingTelemetry(events))));
+	});
+
+	it.effect("a no-op re-react (changed: false) emits NOTHING", () => {
+		// probe → the user already holds 👍 and reacts 👍 again: the state matches intent,
+		// so `react` returns early with `changed: false` BEFORE the emit — no event.
+		const events: TelemetryEvent[] = [];
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const result = yield* reaction.react({
+				userId: "u1",
+				targetKind: "post",
+				targetId: "post-1",
+				emoji: "👍",
+			});
+			assert.isFalse(result.changed, "same-emoji re-react is a no-op");
+			assert.strictEqual(events.length, 0, "a no-op re-react emits nothing (ADR 0153 default)");
+		}).pipe(
+			Effect.provide(reactionLayer(scriptedAccess([liveMeta, "👍"]), recordingTelemetry(events))),
+		);
+	});
+
+	it.effect("a no-op retract-when-none-held emits NOTHING", () => {
+		// probe → no existing reaction; retract (null) matches → early `changed: false`, no emit.
+		const events: TelemetryEvent[] = [];
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const result = yield* reaction.react({
+				userId: "u1",
+				targetKind: "definition",
+				targetId: "d-1",
+				emoji: null,
+			});
+			assert.isFalse(result.changed, "retract of nothing is a no-op");
+			assert.strictEqual(events.length, 0, "a no-op retract emits nothing");
+		}).pipe(
+			Effect.provide(reactionLayer(scriptedAccess([liveMeta, null]), recordingTelemetry(events))),
+		);
+	});
+
+	it.effect("a failed target-liveness check emits nothing (no react, no event)", () => {
+		// loadMeta → undefined → ReactionTargetNotFound before probe/write, so the emit
+		// (which sits after the committed write) is never reached.
+		const events: TelemetryEvent[] = [];
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			const exit = yield* Effect.exit(
+				reaction.react({userId: "u1", targetKind: "post", targetId: "ghost", emoji: "👍"}),
+			);
+			assert.isTrue(exit._tag === "Failure", "a missing target fails the react");
+			assert.strictEqual(events.length, 0, "a failed reaction emits nothing");
+		}).pipe(Effect.provide(reactionLayer(scriptedAccess([undefined]), recordingTelemetry(events))));
+	});
+
+	it.effect("the emit is off the commit path — the write commits before the emit runs", () => {
+		// The `Telemetry` double's `emit` DIES. The write is sequenced BEFORE the emit, so
+		// its statement is already recorded in `batches` (the reaction committed) even as the
+		// emit blows up — proving the emit is downstream of the commit, never a gate on it.
+		// (The production fail-safe that also swallows the failure lives in `TelemetryLive`
+		// and is pinned in `Telemetry.unit.test.ts`; here the double lets us see the ordering.)
+		const {access, batches} = recordingAccess([liveMeta, null]);
+		return Effect.gen(function* () {
+			const reaction = yield* Reaction;
+			yield* Effect.exit(
+				reaction.react({userId: "u1", targetKind: "post", targetId: "post-1", emoji: "🔥"}),
+			);
+			assert.strictEqual(batches.length, 1, "the reaction write committed before the emit");
+			assert.strictEqual(batches[0]?.length, 1, "exactly the one upsert statement");
+		}).pipe(Effect.provide(reactionLayer(access, dyingTelemetry)));
 	});
 });
 

@@ -198,6 +198,15 @@ export const makeFateLayer = Layer.mergeAll(
 				// requirement while keeping `Reaction` in `WorkerFateServices` for the
 				// wiring children (#1863/#1864/#1865) that resolve it directly.
 				Layer.provideMerge(ReactionLive),
+				// `Reaction.react` emits a product-usage event on a committed reaction
+				// (the reference instrument #2, ADR 0153 / #2069), so `ReactionLive` now
+				// requires `Telemetry`. Discharge it here with `Layer.provide` (like
+				// Vote's internal seams — Telemetry is a dependency of the nested reaction
+				// layer, not a routed service the content group re-exports; the top-level
+				// `TelemetryLive` below keeps `Telemetry` in `WorkerFateServices`). Its
+				// `TelemetryClient`/`RuntimeContext` requirements bubble to the root, where
+				// they are init-provided on `PhoenixFateLive`.
+				Layer.provide(TelemetryLive),
 				Layer.provide(KarmaBumpFromPasaport),
 				// Vote's voter-tier gate ("earn to vote", #1810), discharged by Künye — same
 				// internal-seam idiom as `KarmaBumpFromPasaport` (`Layer.provide`, not a routed
