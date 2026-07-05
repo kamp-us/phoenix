@@ -18,6 +18,7 @@ import * as Schema from "effect/Schema";
 import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
 import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
 import {notifyCommentReply} from "../bildirim/conversation-emitters.ts";
+import {notifyContentVote} from "../bildirim/vote-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
@@ -284,6 +285,18 @@ export const mutations = {
 			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
 			yield* live.post.update(post.id, {changed: ["score"], data: post});
+			// Aggregated vote notification (#1698): a LANDED upvote (not an idempotent
+			// no-op) notifies the post author — rolled up per item, self-suppressed,
+			// flag-gated and swallowed inside the emitter, so it can never fail this
+			// committed cast. `r.authorId` is server-derived, never client-supplied.
+			if (r.changed) {
+				yield* notifyContentVote({
+					authorId: r.authorId,
+					voterId: user.id,
+					targetKind: "post",
+					targetId: r.postId,
+				});
+			}
 			return post;
 		}),
 	),
@@ -522,6 +535,16 @@ export const mutations = {
 			const r = yield* pano.voteOnComment({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
 			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
+			// Aggregated vote notification (#1698): see `post.vote` — a landed upvote
+			// notifies the comment author, rolled up per item, on a real state change only.
+			if (r.changed) {
+				yield* notifyContentVote({
+					authorId: r.authorId,
+					voterId: user.id,
+					targetKind: "comment",
+					targetId: r.commentId,
+				});
+			}
 			return comment;
 		}),
 	),

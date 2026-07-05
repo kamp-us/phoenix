@@ -67,6 +67,9 @@ const KIND_COPY = {
 	kefil: () => "bir yazar sana kefil oldu",
 	terfi: () => "tebrikler, artık bir yazarsın!",
 	reply: (count) => (count > 1 ? `gönderine ${count} yanıt geldi` : "gönderine yanıt geldi"),
+	// The aggregated live-content vote voice (#1698): the anti-hype "N yeni oy",
+	// one rolled-up line per item — never one-per-vote, never a per-voter identity drip.
+	vote: (count) => (count > 1 ? `içeriğin ${count} yeni oy aldı` : "içeriğin 1 yeni oy aldı"),
 } satisfies Record<NotificationKind, (count: number) => string>;
 
 /**
