@@ -55,7 +55,7 @@ function Layout() {
 	// flag. Gating the fetch on flag+session keeps the flag-off path exactly as
 	// today: disabled ⇒ the read never touches the wire and reports 0.
 	const {value: bildirimOn} = useFlag(PHOENIX_BILDIRIM, false);
-	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data);
+	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data, me?.id ?? null);
 	// #1888: hold the off-/auth redirect while a chosen-username signup is still
 	// resolving. `signUp.email` establishes the session before the separate
 	// `setUsername` lands; without this hold the redirect unmounts AuthPage and

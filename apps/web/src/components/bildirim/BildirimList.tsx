@@ -7,10 +7,23 @@
  * reload. A dead target (`targetUrl: null`) renders the tombstone row
  * (`bildirimTarget`), never a broken link.
  */
-import {useState} from "react";
-import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
+import {useEffect, useRef, useState} from "react";
+import {
+	useFateClient,
+	useListView,
+	useLiveView,
+	useRequest,
+	useView,
+	type ViewRef,
+	view,
+} from "react-fate";
 import {Link} from "react-router";
-import type {Notification, NotificationMarkReceipt} from "../../../worker/features/fate/views";
+import type {
+	Notification,
+	NotificationChannel,
+	NotificationMarkReceipt,
+} from "../../../worker/features/fate/views";
+import {useSession} from "../../auth/client";
 import {LoadMoreButton} from "../../fate/wire";
 import {bildirimCopy, bildirimTarget, rowUnread, targetLinkLabel} from "./bildirim";
 
@@ -33,6 +46,11 @@ const MarkReceiptView = view<NotificationMarkReceipt>()({
 	unreadCount: true,
 });
 
+const ChannelView = view<NotificationChannel>()({
+	id: true,
+	unreadCount: true,
+});
+
 const BildirimConnectionView = {
 	items: {node: BildirimRowView},
 } as const;
@@ -45,6 +63,25 @@ export function BildirimList() {
 	const result = useRequest(bildirimRequest);
 	const [items, loadNext] = useListView(BildirimConnectionView, result["bildirim.list"]);
 	const fate = useFateClient();
+	const userId = useSession().data?.user?.id ?? null;
+
+	// Live-reconcile the center over `/fate/live` (#1700): subscribe the viewer's
+	// own `NotificationChannel` entity (recipient-scoped by construction — the id is
+	// the session user's), and when a recorded notification bumps its live unread
+	// count, refetch the list once (network-only) so the new row surfaces without a
+	// nav or refresh. `bildirim.list` has no per-node live topic; watching the
+	// per-recipient count is the coarse signal that a page re-read is due.
+	const channelRef = userId ? fate.ref("NotificationChannel", userId, ChannelView) : null;
+	const channel = useLiveView(ChannelView, channelRef);
+	const lastUnread = useRef<number | null>(null);
+	useEffect(() => {
+		const next = channel?.unreadCount ?? null;
+		if (next == null) return;
+		if (lastUnread.current != null && next > lastUnread.current) {
+			void fate.request(bildirimRequest, {mode: "network-only"}).catch(() => {});
+		}
+		lastUnread.current = next;
+	}, [channel?.unreadCount, fate]);
 
 	// This session's mark state — the receipt confirms the write but doesn't
 	// rewrite the listed rows, so rows fold these into their unread reading.

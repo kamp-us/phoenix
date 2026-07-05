@@ -9,7 +9,7 @@
  * surface (e.g. the vote path's `recordAggregate`) is a test failure.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {CurrentUser} from "@kampus/fate-effect";
+import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
@@ -38,12 +38,25 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		} as unknown as typeof Flags.Service,
 	);
 
+// A no-op `LivePublisher`: the emitter calls `Notification.record`, which yields the
+// per-request publisher for the fire-and-forget live fan-out (#1700). The stub `record`
+// never touches it, so a do-nothing publisher satisfies the requirement (the live
+// publish is covered in `Notification.unit.test.ts` / the integration tier).
+const noopLivePublisher = Layer.succeed(LivePublisher)({
+	update: () => Effect.void,
+	delete: () => Effect.void,
+	topic: () => {
+		throw new Error("noopLivePublisher.topic unused");
+	},
+} as typeof LivePublisher.Service);
+
 const requestContext = (on: boolean) =>
 	Layer.mergeAll(
 		flagsStub(on),
 		Layer.succeed(CurrentUser, {user: undefined}),
 		Layer.succeed(RuntimeContext, runtimeContextStub),
 		noRequestFlagOverrides,
+		noopLivePublisher,
 	);
 
 const recordingStub = (calls: NotificationRecordInput[]) =>

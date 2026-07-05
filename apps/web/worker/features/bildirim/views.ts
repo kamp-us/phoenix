@@ -57,6 +57,34 @@ export const notificationUnreadDataView = NotificationUnreadView.view;
 
 export type NotificationUnread = WorkerEntity<typeof NotificationUnreadView>;
 
+export type NotificationChannelViewRow = ViewRow<{
+	/** The recipient's user id — the per-recipient live topic key (#1700). */
+	id: string;
+	/** The recipient's live unread count, republished on every recorded notification. */
+	unreadCount: number;
+}>;
+
+/**
+ * `NotificationChannel` — the per-recipient live entity (#1700, epic #1666). Keyed
+ * by the recipient's user id, it carries the live unread count the topbar badge +
+ * center reconcile to over `/fate/live`: `Notification.record`/`recordAggregate`
+ * republishes `live.update("NotificationChannel", recipientId, …)` after the write,
+ * so a subscribed client's badge moves without a refresh. The entity topic is
+ * recipient-scoped by construction — the id IS the recipient — and the subscribe
+ * route rejects an entity subscription whose id is not the session user's own
+ * (route.ts), so a user cannot watch another user's channel.
+ */
+export class NotificationChannelView extends FateDataView<NotificationChannelViewRow>()(
+	"NotificationChannel",
+)({
+	id: true,
+	unreadCount: true,
+} satisfies {[K in keyof NotificationChannelViewRow]: true}) {}
+
+export const notificationChannelDataView = NotificationChannelView.view;
+
+export type NotificationChannel = WorkerEntity<typeof NotificationChannelView>;
+
 export type NotificationMarkReceiptViewRow = ViewRow<{
 	/** The marked notification's id, or `"all"` for `bildirim.markAllRead`. */
 	id: string;

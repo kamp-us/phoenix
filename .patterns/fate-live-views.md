@@ -70,6 +70,18 @@ This is why connection membership is server-driven ([fate-mutations-client.md](.
 
 **Testing a publishing mutation end-to-end:** one `integration` case in `tests/integration/fate-live.test.ts` subscribes to a topic the mutation publishes to and asserts the frame arrives — the sozluk `definition.add` → args-scoped `Term.definitions` `appendNode` case is the reference.
 
+### Publishing from a domain-service seam — one publish, every caller live {#service-seam-publish}
+
+The publish need not live in the mutation handler. When *many* write paths must all produce the same live signal, publish from the **domain service** they all call, once — every caller inherits liveness with zero per-caller publish code. The bildirim spine is the reference (#1700): `Notification.record`/`recordAggregate` publish the recipient's fresh unread count from *inside* the service, so every emitter (rite, reply, vote, mod) is live without touching the publish. The service method takes `LivePublisher` in its `R` channel (`Effect<A, never, LivePublisher>`); its callers are fate handlers, which already carry the per-request publisher, so the requirement discharges at the call site with no new wiring. The publish stays fire-and-forget after the committed write — `LivePublisher`'s methods are `Effect<void>` (swallow-with-log, [ADR 0039](../.decisions/0039-livebus-context-service.md)) — so it can never fail the write.
+
+### Recipient-scoped live channels — the topic authorization gate {#recipient-scoped-channels}
+
+A per-recipient live signal (a user's own notification unread count, an inbox badge) uses an **entity topic keyed by the recipient's user id** — `live.update("NotificationChannel", recipientId, {data})` fans out on `NotificationChannel:<recipientId>`. The subscriber watches its own channel: `useLiveView(ChannelView, client.ref("NotificationChannel", userId, ChannelView))`.
+
+The security seam is **not** the DO's owner check. The connection DO rejects a subscription that names a *different connection's* owner, but an **entity** subscription's `entityId` is client-supplied — nothing in the DO stops a user from subscribing to `type: "NotificationChannel", entityId: <someone-else's-id>`. So a recipient-scoped entity type MUST be authorized at the `/fate/live` route (`features/fate-live/route.ts`): reject an entity `subscribe` op whose `type` is the recipient-scoped channel and whose `entityId !== session.user.id`, returning `{ok: false}` before the topic registers. Single-source the channel type string in a leaf module both the publish seam and the route import (bildirim's `channel.ts`), so publish and gate can't name different types. The gate is proven at the integration tier: a cross-user subscribe returns `results: [{ok: false}]` (`tests/integration/fate-live-bildirim.test.ts`).
+
+Above-Suspense readers (a topbar badge in the app shell, not inside a `<Screen>`) can't call the suspending `useLiveView`; they drive the live read themselves — seed the ref with one imperative `client.request`, hold `client.subscribeLiveView` open, and read reactively via `useSyncExternalStore` over `client.store.subscribe` (the `useBildirimUnread` shape, mirroring `useView`'s coverage-driven store subscription).
+
 ## Transport — SSE
 
 The built-in `createLiveEventBus()` is an in-memory `EventEmitter`: a `live.update` in the isolate handling the mutation reaches only subscribers in **that** isolate. On Workers every request may land in a different isolate, so it cannot fan out. phoenix keeps fate's SSE wire protocol but moves the connection-owning and fan-out into a Durable Object — the same topology void uses.

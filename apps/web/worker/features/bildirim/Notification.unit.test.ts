@@ -15,7 +15,9 @@
  *     or dead id) is the shared cursor-miss empty page, never a probe.
  *   - **unreadCount / record** — the fold and the insert's field mapping.
  */
+
 import {assert, describe, it} from "@effect/vitest";
+import {LivePublisher} from "@kampus/fate-effect";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, relations} from "../../db/Drizzle.ts";
@@ -28,6 +30,27 @@ import {
 	NotificationLive,
 	unreadCountQuery,
 } from "./Notification.ts";
+
+/**
+ * A recording `LivePublisher` (#1700): captures every `update(type, id, opts)` so a
+ * test can assert the publish seam fired on the recipient's `NotificationChannel`
+ * topic. `record`/`recordAggregate` yield `LivePublisher` for the fire-and-forget
+ * live fan-out, so the seam is provided here for those cases.
+ */
+const recordingPublisher = () => {
+	const updates: Array<{type: string; id: string | number; data: unknown}> = [];
+	const layer = Layer.succeed(LivePublisher)({
+		update: (type, id, opts) =>
+			Effect.sync(() => {
+				updates.push({type, id, data: opts?.data});
+			}),
+		delete: () => Effect.void,
+		topic: () => {
+			throw new Error("recordingPublisher.topic unused");
+		},
+	} as typeof LivePublisher.Service);
+	return {updates, layer};
+};
 
 // A real drizzle client over a no-op D1 — used ONLY to render `.toSQL()`; it
 // never executes.
@@ -223,9 +246,14 @@ describe("recordAggregate builders — recipient-scoped, unread-only (the anti-h
 });
 
 describe("Notification.recordAggregate — bump-or-insert in one batch", () => {
-	const batchScripted = (results: ReadonlyArray<unknown>): DrizzleAccess => ({
-		run: () => Effect.die(new Error("recordAggregate issues only a batch")),
-		batch: () => Effect.succeed(results as never),
+	// recordAggregate does one batch (bump+insert) then reads the fresh unread count
+	// for the live publish (#1700) — so the seam is a batch AND a run.
+	const aggregateAccess = (
+		batchResults: ReadonlyArray<unknown>,
+		unreadRows: ReadonlyArray<unknown>,
+	): DrizzleAccess => ({
+		run: <A>(_fn: (db: never) => Promise<A>) => Effect.succeed(unreadRows as A),
+		batch: () => Effect.succeed(batchResults as never),
 	});
 
 	it.effect("an existing unread row is bumped — aggregated, never a second row", () =>
@@ -235,7 +263,9 @@ describe("Notification.recordAggregate — bump-or-insert in one batch", () => {
 			assert.isTrue(aggregated);
 		}).pipe(
 			Effect.provide(
-				notificationLayer(batchScripted([{meta: {changes: 1}}, {meta: {changes: 0}}])),
+				notificationLayer(aggregateAccess([{meta: {changes: 1}}, {meta: {changes: 0}}], [])).pipe(
+					Layer.merge(recordingPublisher().layer),
+				),
 			),
 		),
 	);
@@ -247,15 +277,20 @@ describe("Notification.recordAggregate — bump-or-insert in one batch", () => {
 			assert.isFalse(aggregated);
 		}).pipe(
 			Effect.provide(
-				notificationLayer(batchScripted([{meta: {changes: 0}}, {meta: {changes: 1}}])),
+				notificationLayer(aggregateAccess([{meta: {changes: 0}}, {meta: {changes: 1}}], [])).pipe(
+					Layer.merge(recordingPublisher().layer),
+				),
 			),
 		),
 	);
 });
 
-describe("Notification.record — the emitter write surface", () => {
-	it.effect("inserts and returns a fresh id", () =>
-		Effect.gen(function* () {
+describe("Notification.record — the emitter write surface + the live publish (#1700)", () => {
+	// record does the insert (1 run) then reads the fresh unread count for the live
+	// publish (2nd run): the recipient-scoped `NotificationChannel` fan-out.
+	it.effect("inserts, returns a fresh id, and publishes the recipient's fresh unread count", () => {
+		const {updates, layer} = recordingPublisher();
+		return Effect.gen(function* () {
 			const svc = yield* Notification;
 			const {id} = yield* svc.record({
 				recipientId: "me",
@@ -265,6 +300,22 @@ describe("Notification.record — the emitter write surface", () => {
 			});
 			assert.isString(id);
 			assert.isAbove(id.length, 0);
-		}).pipe(Effect.provide(notificationLayer(scriptedSequence([{meta: {changes: 1}}])))),
-	);
+			// The live publish fired on the recipient's own channel entity, carrying the
+			// re-read unread count — the recipient-scoped seam every emitter inherits.
+			assert.lengthOf(updates, 1);
+			assert.strictEqual(updates[0]?.type, "NotificationChannel");
+			assert.strictEqual(updates[0]?.id, "me");
+			assert.deepStrictEqual(updates[0]?.data, {
+				__typename: "NotificationChannel",
+				id: "me",
+				unreadCount: 4,
+			});
+		}).pipe(
+			Effect.provide(
+				notificationLayer(scriptedSequence([{meta: {changes: 1}}, [{count: 4}]])).pipe(
+					Layer.merge(layer),
+				),
+			),
+		);
+	});
 });

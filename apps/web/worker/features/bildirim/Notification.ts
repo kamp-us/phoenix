@@ -11,6 +11,7 @@
  * no engine (ADR 0082 T1/T2). Reads reach D1 only through the `Drizzle` seam and
  * die on infra errors (`orDieAccess`), so public signatures carry no error.
  */
+import {LivePublisher} from "@kampus/fate-effect";
 import {and, count, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
@@ -22,6 +23,7 @@ import {
 	keysetAfter,
 	resolveCursor,
 } from "../../db/keyset.ts";
+import {NOTIFICATION_CHANNEL_TYPE} from "./channel.ts";
 import type {NotificationKind} from "./kind.ts";
 import {
 	emptyResolvedTargetRows,
@@ -148,8 +150,17 @@ export const markAllReadStatement = (db: DrizzleDb, recipientId: string, now: Da
 export class Notification extends Context.Service<
 	Notification,
 	{
-		/** Record one notification (the emitter siblings' single write surface). */
-		readonly record: (input: NotificationRecordInput) => Effect.Effect<{id: string}>;
+		/**
+		 * Record one notification (the emitter siblings' single write surface).
+		 * After the committed insert it republishes the recipient's live unread
+		 * count on the `NotificationChannel` entity topic (#1700) — the ONE publish
+		 * seam every emitter inherits with zero per-emitter code. The publish rides
+		 * the per-request `LivePublisher`, whose methods are `Effect<void>`
+		 * (swallow-with-log, ADR 0039), so it can never fail the recording write.
+		 */
+		readonly record: (
+			input: NotificationRecordInput,
+		) => Effect.Effect<{id: string}, never, LivePublisher>;
 
 		/**
 		 * Aggregate-upsert (#1695, the anti-hype voice): bump the recipient's
@@ -157,11 +168,13 @@ export class Notification extends Context.Service<
 		 * refreshed — or insert a fresh unread row when none exists (so activity
 		 * after a mark-read surfaces as NEW unread, never a rewrite of read
 		 * history). N repeat events on one target therefore never mint N rows.
-		 * `aggregated: true` ⇔ an existing row was bumped.
+		 * `aggregated: true` ⇔ an existing row was bumped. Republishes the
+		 * recipient's live unread count after the write (#1700), same seam as
+		 * {@link record}.
 		 */
 		readonly recordAggregate: (
 			input: NotificationAggregateInput,
-		) => Effect.Effect<{aggregated: boolean}>;
+		) => Effect.Effect<{aggregated: boolean}, never, LivePublisher>;
 
 		/**
 		 * The recipient's notifications, newest-first, forward keyset pagination
@@ -200,6 +213,23 @@ export class Notification extends Context.Service<
 export const NotificationLive = Layer.effect(Notification)(
 	Effect.gen(function* () {
 		const {run, batch} = orDieAccess(yield* Drizzle);
+
+		// Republish the recipient's fresh unread count on their entity topic after a
+		// recorded notification — the ONE live seam every emitter inherits (#1700).
+		// Re-reads the count and fans it out inline as the `NotificationChannel`
+		// entity data (the reactions `live.definition.update` idiom). The publish
+		// rides `LivePublisher` (swallow-with-log, ADR 0039), so it can never fail
+		// the recording write — a fan-out failure is logged, not raised.
+		const publishChannel = Effect.fn("Notification.publishChannel")(function* (
+			recipientId: string,
+		) {
+			const live = yield* LivePublisher;
+			const rows = yield* run((db) => unreadCountQuery(db, recipientId));
+			const unread = Number(rows[0]?.count ?? 0);
+			yield* live.update(NOTIFICATION_CHANNEL_TYPE, recipientId, {
+				data: {__typename: NOTIFICATION_CHANNEL_TYPE, id: recipientId, unreadCount: unread},
+			});
+		});
 
 		const listForRecipient = Effect.fn("Notification.listForRecipient")(function* (
 			recipientId: string,
@@ -358,6 +388,7 @@ export const NotificationLive = Layer.effect(Notification)(
 						})
 						.run(),
 				);
+				yield* publishChannel(input.recipientId);
 				return {id};
 			}),
 			// Bump-then-guarded-insert in ONE batch (one D1 transaction): if the bump
@@ -375,6 +406,7 @@ export const NotificationLive = Layer.effect(Notification)(
 							insertUnlessUnreadStatement(db, {...input, id}, now),
 						] as const,
 				);
+				yield* publishChannel(input.recipientId);
 				return {aggregated: bumped.meta.changes > 0};
 			}),
 			unreadCount: Effect.fn("Notification.unreadCount")(function* (recipientId: string) {
