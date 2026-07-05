@@ -208,6 +208,20 @@ const liveControlReady = (res: Response): boolean => res.status !== 503;
 // prior run left behind.
 const STAMP_SEED = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+// The seed-id counter MUST live at module scope, the SAME scope as STAMP_SEED — NOT inside
+// `harness()`. Every test file builds its own `harness()` (each `const h = sharedStack()`), so a
+// per-instance counter resets to 0 in every file and each file's first seed user requests the
+// IDENTICAL email `seed-<STAMP>-0@seed.local`. On that collision `signUp`'s 422 fallback signs in
+// as whichever file created the user first — adopting a FOREIGN author (e.g. `yazar-<stamp>`) while
+// the caller records its own base — the cross-file identity bleed behind #2116 (`expected
+// 'yazar-<stamp>' to be 'anka-<stamp>'`, identical stamps). A process-global counter makes
+// `seed-<STAMP>-<n>` unique across ALL harness instances, so `signUp` always creates a fresh user
+// and stored authorName == recorded authorName. The NO_DESTROY re-run path stays correct: STAMP_SEED
+// is stable across a re-run, so the email sequence is stable within a run and the sign-in fallback
+// still adopts the same prior-run users.
+let seedCounter = 0;
+const nextSeedId = () => `seed-${STAMP_SEED}-${seedCounter++}`;
+
 const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
 
 // The CF REST bearer token — the SAME one the integration deploy uses
@@ -495,9 +509,9 @@ export function harness(
 	// (author = session user) and scores are vote-derived, so seeding drives the
 	// same public surface the app does: one cached session per distinct
 	// `authorName`, and a shared, lazily-grown pool of throwaway voters that each
-	// cast a single up-vote to realize a definition's `score`.
-	let seedCounter = 0;
-	const nextSeedId = () => `seed-${STAMP_SEED}-${seedCounter++}`;
+	// cast a single up-vote to realize a definition's `score`. The seed-id counter
+	// (`nextSeedId`) is process-global (module scope, above) — never re-declared here,
+	// so emails stay unique across every file's harness instance (#2116).
 
 	// The seeded author identity is uniquified PER RUN at this source: the stored `author_name`
 	// (`user.name ?? user.email`) is the requested base + the per-process `STAMP_SEED`, so no two
