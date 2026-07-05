@@ -12,6 +12,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
+import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {notifyCommentReply, REPLY_KIND, replyRecipients} from "./conversation-emitters.ts";
 import {makeNotificationStub} from "./Notification.testing.ts";
@@ -42,6 +43,7 @@ const requestContext = (on: boolean) =>
 		flagsStub(on),
 		Layer.succeed(CurrentUser, {user: undefined}),
 		Layer.succeed(RuntimeContext, runtimeContextStub),
+		noRequestFlagOverrides,
 	);
 
 const recordingStub = (calls: NotificationRecordInput[]) =>

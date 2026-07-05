@@ -548,9 +548,11 @@ export const mutations = {
 	// arm and NO karma path: any signed-in user, including a çaylak, may react. The
 	// emoji decodes against the curated `REACTION_EMOJI` palette at the wire boundary
 	// (`ReactToCommentInput`) — an off-palette emoji fails to decode and never reaches
-	// the service. The re-resolved comment carries the fresh `reactions` aggregate.
-	// Live fan-out is out of scope (#1868, #1864); the mutation return re-resolves the
-	// reactor's own receipt.
+	// the service. The re-resolved comment carries the fresh `reactions` aggregate, and
+	// `live.comment.update({changed: ["reactions"]})` fans that aggregate out to every
+	// open subscriber so a reader watching the thread sees the count move (#1868) — the
+	// reaction twin of `comment.vote`'s score publish, through the same never-failing
+	// `WorkerLivePublisher`.
 	"comment.react": Fate.mutation(
 		{
 			input: ReactToCommentInput,
@@ -577,12 +579,15 @@ export const mutations = {
 				}
 				return toComment(current);
 			}
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.reactToComment({
 				commentId: input.id,
 				userId: user.id,
 				emoji: input.emoji,
 			});
-			return toComment(r.comment);
+			const comment = toComment(r.comment);
+			yield* live.comment.update(comment.id, {changed: ["reactions"], data: comment});
+			return comment;
 		}),
 	),
 	"comment.edit": Fate.mutation(

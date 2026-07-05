@@ -19,6 +19,7 @@ import {Effect, Layer} from "effect";
 import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import type {NotificationRecordInput} from "../bildirim/Notification.ts";
 import {PROMOTION_KIND} from "../bildirim/rite-emitters.ts";
+import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
@@ -69,6 +70,7 @@ const bildirimContext = (notification = makeNotificationStub(), on = true) =>
 		flagsStub(on),
 		Layer.succeed(CurrentUser, {user: undefined}),
 		Layer.succeed(RuntimeContext, runtimeContextStub),
+		noRequestFlagOverrides,
 	);
 
 // A `Kunye` whose `karmaOf` answers `karma`; `tierOf`/`rootOf` are unreached on the

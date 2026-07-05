@@ -12,6 +12,7 @@
  */
 import {FateInterpreter, type FateRequestContext} from "@kampus/fate-effect";
 import * as Cloudflare from "alchemy/Cloudflare";
+import {Context} from "effect";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -19,6 +20,7 @@ import {interruptOnAbort} from "../../http/interrupt-on-abort.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {defaultLiveLimits, type PublishMessage} from "../fate-live/protocol.ts";
 import {LiveTopics} from "../fate-live/topics.ts";
+import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import {currentActorContext} from "../kunye/CurrentActorLive.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 
@@ -40,12 +42,20 @@ export const handleFate = Effect.gen(function* () {
 
 	// ONE context object for the whole request — never copy or rebuild it per
 	// resolver. No `signal` field: interruption is wired at this edge (below).
-	// `requestServices` fulfills the `[CurrentActor]` registered in `layers.ts`,
-	// derived from the same validated session (ADR 0107 §7).
+	// `requestServices` fulfills the `[CurrentActor, RequestFlagOverrides]`
+	// registered in `layers.ts`: `CurrentActor` derived from the validated session
+	// (ADR 0107 §7), `RequestFlagOverrides` carrying the raw `Cookie` header so a
+	// flag-gated resolver's `provideRequestFlags` can source the dev-override cookie
+	// (#622) — the environment gate stays in `makeRequestFlagsContext`, so it is
+	// inert in every deployed stage.
+	const requestServices = Context.merge(
+		currentActorContext(session?.user),
+		Context.make(RequestFlagOverrides, {cookieHeader: raw.headers.get("cookie")}),
+	);
 	const ctx: FateRequestContext = {
 		currentUser: {user: session?.user},
 		livePublisher: livePublisherFor({publish: publishToTopic, waitUntil}),
-		requestServices: currentActorContext(session?.user),
+		requestServices,
 	};
 
 	const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort(raw.signal));

@@ -23,6 +23,7 @@ import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
+import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
@@ -107,7 +108,15 @@ it.effect(
 			yield* mutations["definition.add"]
 				.handler({input: {termSlug: slug, body: ADD_RESULT.body}, select: ["id"]})
 				.pipe(
-					Effect.provide(Layer.mergeAll(sozlukStub(ADD_RESULT), liveStub, flagsOffStub, kunyeStub)),
+					Effect.provide(
+						Layer.mergeAll(
+							sozlukStub(ADD_RESULT),
+							liveStub,
+							flagsOffStub,
+							kunyeStub,
+							noRequestFlagOverrides,
+						),
+					),
 					Effect.provideService(CurrentUser, {user: AUTHOR}),
 					Effect.provideService(RuntimeContext, runtimeContextStub),
 				);

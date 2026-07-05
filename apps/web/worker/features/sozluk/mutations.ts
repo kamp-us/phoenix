@@ -183,15 +183,20 @@ export const mutations = {
 				}
 				return toDefinition(current);
 			}
-			// Live fan-out is out of scope here (#1868): the mutation return re-resolves the
-			// fresh aggregate for the reactor; broadcasting reaction-count deltas to other
-			// open subscribers is the fate-live child's slice.
+			// The mutation return re-resolves the fresh aggregate for the reactor, and
+			// `live.definition.update({changed: ["reactions"]})` fans that aggregate out to
+			// every open subscriber so a reader watching the term sees the count move (#1868)
+			// — the reaction twin of `definition.vote`'s score publish, through the same
+			// never-failing `WorkerLivePublisher`.
+			const live = sozlukLive(yield* WorkerLivePublisher);
 			const row = yield* sozluk.reactToDefinition({
 				definitionId: input.id,
 				reactorId: user.id,
 				emoji: input.emoji,
 			});
-			return toDefinition(row);
+			const definition = toDefinition(row);
+			yield* live.definition.update(definition.id, {changed: ["reactions"], data: definition});
+			return definition;
 		}),
 	),
 	"definition.edit": Fate.mutation(

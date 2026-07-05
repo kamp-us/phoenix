@@ -23,10 +23,11 @@
  * `../reaction/Reaction.unit.test.ts` (#1861); here we prove the MUTATION wiring.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {CurrentUser} from "@kampus/fate-effect";
+import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Exit, Layer} from "effect";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
+import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {EMPTY_REACTION_AGGREGATE, type ReactionAggregate} from "../reaction/Reaction.ts";
 import type {CommentRow} from "./comment-fields.ts";
@@ -54,6 +55,13 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		getNumber: () => Effect.die("getNumber not exercised"),
 		getObject: () => Effect.die("getObject not exercised"),
 	} as typeof Flags.Service);
+
+// A `LivePublisher` that records nothing — the flag-ON path's reaction-count publish
+// (#1868) is fire-and-forget with an error channel of `never`, so it can never fail the
+// mutation; the stub just satisfies the requirement.
+const liveStub = Layer.succeed(LivePublisher)(
+	livePublisherFor({publish: () => Effect.void, waitUntil: () => {}}),
+);
 
 // A `Pano` whose named methods are scripted; every OTHER method dies on contact, so
 // a passing test proves the resolver reached only the method its path routes to.
@@ -96,7 +104,7 @@ const react = (
 		input,
 		select: ["id", "reactions"],
 	}).pipe(
-		Effect.provide(Layer.mergeAll(pano, flagsStub(on))),
+		Effect.provide(Layer.mergeAll(pano, flagsStub(on), liveStub)),
 		Effect.provideService(CurrentUser, {user}),
 		Effect.provideService(RuntimeContext, runtimeContextStub),
 	);
@@ -226,7 +234,7 @@ describe("comment.react — (4) reactions are ungated (a çaylak reacts, no tier
 				input: {id: "comment_1", emoji: "👍"},
 				select: ["id"],
 			}).pipe(
-				Effect.provide(Layer.mergeAll(panoProxy({}), flagsStub(true))),
+				Effect.provide(Layer.mergeAll(panoProxy({}), flagsStub(true), liveStub)),
 				Effect.provideService(CurrentUser, {user: undefined}),
 				Effect.provideService(RuntimeContext, runtimeContextStub),
 				Effect.exit,

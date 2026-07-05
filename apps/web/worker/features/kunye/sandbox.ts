@@ -25,7 +25,7 @@ import type {RuntimeContext} from "alchemy";
 import {Effect} from "effect";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
-import {provideRequestFlags} from "../flagship/FlagsContext.ts";
+import {provideRequestFlags, type RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Kunye} from "./Kunye.ts";
 import {requireModeration} from "./moderate.ts";
@@ -40,7 +40,11 @@ import {requireModeration} from "./moderate.ts";
 export const sandboxedAtForAuthor = (
 	authorId: string,
 	now: Date,
-): Effect.Effect<Date | null, never, Kunye | Flags | RuntimeContext | CurrentUser> =>
+): Effect.Effect<
+	Date | null,
+	never,
+	Kunye | Flags | RuntimeContext | CurrentUser | RequestFlagOverrides
+> =>
 	Effect.gen(function* () {
 		const flags = yield* Flags;
 		const loopOn = yield* flags

@@ -15,10 +15,11 @@
  *     boundary, so an arbitrary emoji is structurally unrepresentable (#1865 AC#1).
  */
 import {assert, describe, it} from "@effect/vitest";
-import {CurrentUser} from "@kampus/fate-effect";
+import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Exit, Layer} from "effect";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
+import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {EMPTY_REACTION_AGGREGATE} from "../reaction/Reaction.ts";
 import {mutations} from "./mutations.ts";
@@ -79,6 +80,13 @@ const REACTED_ROW: DefinitionRow = {
 // The CURRENT (unreacted) row the inert flag-off path re-resolves: empty aggregate.
 const CURRENT_ROW: DefinitionRow = {...REACTED_ROW, reactions: EMPTY_REACTION_AGGREGATE};
 
+// A `LivePublisher` that records nothing — the flag-ON path's reaction-count publish
+// (#1868) is fire-and-forget with an error channel of `never`, so it can never fail the
+// mutation; the stub just satisfies the requirement.
+const liveStub = Layer.succeed(LivePublisher)(
+	livePublisherFor({publish: () => Effect.void, waitUntil: () => {}}),
+);
+
 const requestCtx = (
 	user: {id: string; email: string; name: string} | undefined,
 	on: boolean,
@@ -87,6 +95,7 @@ const requestCtx = (
 	Layer.mergeAll(
 		sozluk,
 		flagsStub(on),
+		liveStub,
 		Layer.succeed(CurrentUser, {user}),
 		Layer.succeed(RuntimeContext, runtimeContextStub),
 	);

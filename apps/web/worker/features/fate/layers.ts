@@ -17,11 +17,13 @@ import {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import {AppConfig} from "../../config.ts";
 import type {Database} from "../../db/Database.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
 import {NotificationLive} from "../bildirim/Notification.ts";
 import {DivanLive} from "../divan/Divan.ts";
-import {FlagsLive} from "../flagship/Flags.ts";
+import {FlagsDevOverrideLive, FlagsLive} from "../flagship/Flags.ts";
+import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
 import {FunnelLive} from "../funnel/Funnel.ts";
 import {AgentAuthorityV1} from "../kunye/AgentAuthorityV1.ts";
@@ -142,6 +144,29 @@ const VoterStandingFromKunye = Layer.effect(VoterStanding)(
 ).pipe(Layer.provide(KunyeLive));
 
 /**
+ * The `Flags` layer for the fate data plane, environment-selected at layer build —
+ * the fate-runtime twin of the raw-route selection in `http/app.ts` (the #622 gate).
+ * Under `development` it installs the dev-override wrapper (`FlagsDevOverrideLive`) so
+ * a flag-gated fate resolver/mutation honors the `phoenix_flag_overrides` cookie that
+ * `provideRequestFlags` threads off `RequestFlagOverrides`; every other stage
+ * (including the `production` fail-closed default of `AppConfig.environment`,
+ * `config.ts`) builds the plain `FlagsLive`, so the override branch is structurally
+ * absent from every deployed stage's fate flag path — the same fail-closed gate as
+ * the raw routes, applied at the one place the fate runtime resolves `Flags` (#1868:
+ * without this, `makeFateLayer` baked `FlagsLive` unconditionally, so the dev-override
+ * decorator was never on the fate mutation path and the integration flag-flip cookie
+ * had no effect). `AppConfig` reads off the ConfigProvider alchemy auto-wires at
+ * worker scope — the same read `makeRequestFlagsContext` uses; both selector arms need
+ * only `Flagship`, discharged at the composition root like `FlagsLive` was.
+ */
+export const FateFlagsLive = Layer.unwrap(
+	Effect.gen(function* () {
+		const {environment} = yield* AppConfig.pipe(Effect.orDie);
+		return environment === "development" ? FlagsDevOverrideLive : FlagsLive;
+	}),
+);
+
+/**
  * The worker-level data-plane layer (ADR 0029, ADR 0040). Derives everything from
  * the two seams in its `R` channel — `Database` (behind `DrizzleLive`) and
  * `BetterAuth` — so features and auth provably share one handle.
@@ -206,11 +231,14 @@ export const makeFateLayer = Layer.mergeAll(
 	// The authorship-vouch ledger (#1206) — the `user.vouch` recorded-act store.
 	// Reads/writes the `authorship_vouch` table off the same `Drizzle` seam below.
 	VouchLedgerLive,
-	// `Flags` is the dark-ship read surface the pano draft-save gate consumes (#746).
-	// `FlagsLive` needs only `Flagship` (a new R seam, discharged at the composition
-	// root like `Database`); `getBoolean`'s `RuntimeContext`/`FlagsContext` are per-call,
-	// supplied by the resolver, not at layer build.
-	FlagsLive,
+	// `Flags` is the dark-ship read surface fate resolvers/mutations gate on (#746,
+	// #1868). Environment-selected by {@link FateFlagsLive}: the dev-override wrapper
+	// under `development` (so the #622 override cookie is honored on the fate mutation
+	// path), the plain `FlagsLive` on every deployed stage. Needs only `Flagship` (a new
+	// R seam, discharged at the composition root like `Database`); `getBoolean`'s
+	// `RuntimeContext`/`FlagsContext` are per-call, supplied by the resolver, not at
+	// layer build.
+	FateFlagsLive,
 ).pipe(Layer.provideMerge(PasaportFromTag), Layer.provideMerge(DrizzleLive));
 
 /**
@@ -223,12 +251,16 @@ export const makeFateLayer = Layer.mergeAll(
  * `FateServer.layer`'s own R is discharged by the same domain layers, a record
  * needing a forgotten service is a compile error HERE, the composition site.
  *
- * `[CurrentActor]` registers the per-request authz actor (ADR 0107 §7): it is
- * excluded from build-time R and fulfilled per request from the session in
- * `route.ts` (`requestServices`), never provided by a worker-level layer.
+ * `[CurrentActor, RequestFlagOverrides]` registers the two per-request services
+ * (ADR 0107 §7): the authz actor and the raw `Cookie` header the dev-override
+ * flag path reads (#622). Both are excluded from build-time R and fulfilled per
+ * request from the session/request in `route.ts` (`requestServices`), never
+ * provided by a worker-level layer.
  */
 export const PhoenixFateLive: Layer.Layer<
 	WorkerFateServices | FateServer,
 	never,
 	Database | BetterAuth.BetterAuth | Flagship | RuntimeContext
-> = FateServer.layer(fateConfig, [CurrentActor]).pipe(Layer.provideMerge(makeFateLayer));
+> = FateServer.layer(fateConfig, [CurrentActor, RequestFlagOverrides]).pipe(
+	Layer.provideMerge(makeFateLayer),
+);
