@@ -1,0 +1,39 @@
+name: migrations-guard
+
+# Fail-closed CI gate over the hand-authored flat D1 migrations tree (issue #1435).
+# ADR 0108 sanctions hand-authored flat migrations and disabled the only tool that
+# validated the tree (drizzle-kit's assertV3OutFolder); nothing replaced it. This job
+# asserts three properties over apps/web/…/migrations: consistency (.sql ↔ journal ↔
+# snapshots agree), ordering (contiguous-unique idx/tag/number), and immutability (a
+# journaled migration's SQL never changes vs the committed baseline in
+# packages/migrations-guard/migration-hashes.json). It reuses the guard package's own
+# `check` command — the scan lives once in the tool. The guard package is control-plane
+# (ADR 0100). An edited historical migration is green in integration but stale on prod;
+# this gate is what makes that drift visible.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check the D1 migrations tree is consistent, ordered, and immutable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when the migrations tree drifts (inconsistent/mis-ordered set, or an edited
+      # historical migration vs the committed baseline); the report is on stdout. See #1435.
+      - name: Check the flat D1 migrations tree
+        run: node packages/migrations-guard/src/bin.ts check
