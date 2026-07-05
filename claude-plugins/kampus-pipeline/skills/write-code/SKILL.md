@@ -1214,6 +1214,15 @@ Assemble the comment from a temp file so multi-line markdown and backticks survi
 shell. Keep it scannable — bullets over paragraphs, omit a heading with nothing under
 it. Record decisions at the point you make them, not retroactively.
 
+> **Read the body into `$BODY` — NEVER `gh api -f body=@file`.** This applies to *every*
+> comment this skill posts — the progress comment here, the Step 7 handoff, and the repair
+> progress comment (Step R3). Unlike `curl`, `gh api -f`/`--raw-field` does **not** expand a
+> leading `@`: `-f body=@/some/path` posts the literal string `@/some/path` — the intended body
+> never renders *and* the local scratchpad path leaks into a public comment, which `leak-guard`
+> (committed-files only) does not catch (PR #1567). Always assemble the text into `$BODY` first
+> (`BODY="$(cat "$BODY_FILE")"`) and pass `-f body="$BODY"`, exactly as the snippets above do.
+> See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) → **Posting a comment body**.
+
 ---
 
 ## Step 7 — Hand off to the parent epic (sub-issues only)

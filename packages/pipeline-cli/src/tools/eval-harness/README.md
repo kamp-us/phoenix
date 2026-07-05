@@ -94,8 +94,86 @@ Two modes, story-split:
 import {collectRuns, collectFromCapture, decodeCaptureManifest} from "./runner.ts";
 ```
 
-The runner is a pure library; presenting the collected rows (the two-axis scorecard) is the report
-slice ([#1853](https://github.com/kamp-us/phoenix/issues/1853)), not this core.
+Presenting the collected rows (the two-axis scorecard) is the report slice
+([#1853](https://github.com/kamp-us/phoenix/issues/1853)), documented next.
+
+## The report — graded two-axis scorecard ([#1853](https://github.com/kamp-us/phoenix/issues/1853))
+
+`report.ts` is the **top of the vertical slice** and the evidence artifact the model-tiering
+decision ([#1576](https://github.com/kamp-us/phoenix/issues/1576)) consumes. It aggregates the
+runner's graded `{entry, grade, spend}` rows into a per-(stage × model) **scorecard** on the ADR
+0112 §4 two-axis gate, now graded:
+
+- **Quality axis** — a **pass-rate** per (stage × model) over the corpus (`passedRuns / gradedRuns`),
+  the graded generalization of ADR 0112 §3's binary-per-run oracle.
+- **Token axis** — the mean **billed** + **ex-cache-read** spend per run (ADR 0112 §2), plus the
+  priced **repair-churn cost** (`repair-churn.ts`): the amortized true cost of one *accepted* run
+  once the extra cycles a lower pass-rate forces are amortized in.
+- **Net saving vs a baseline** — when a `baseline` (stage × model) is named, each other cell's
+  `netSaving = baseline.billedPerRun − candidate.amortizedBilledPerRun`. A **negative** net saving is
+  the epic's headline risk — a per-run token saving *eaten* by repair churn — rendered as
+  `NET-NEGATIVE` in the table and `netNegative: true` in the JSON, so the crossover the
+  binary-per-run gate cannot see is impossible to miss.
+
+The report is **measurement, not a recommendation**: it states pass-rate + net-token cost per cell
+and never selects or recommends a model — that call is #1576, a separate `type:decision`. Both
+rendered surfaces carry a framing line pointing at #1576, and the JSON has no
+`recommendation`/`selectedModel`/`winner` key by construction.
+
+Pure + total: a `TranscriptMissing` run still counts toward the pass-rate but is absent from the
+spend mean, and a cell with **no** reconstructed spend reports a `null` token axis rather than a
+fabricated zero. `buildScorecard`, `renderTable`, `toJson`, and `decodeReportInput` are the exports.
+
+### The CLI surface
+
+```bash
+# human table (default) — the founder reads this to decide #1576
+pipeline-cli eval-harness report <rows.json>
+
+# stable machine-readable JSON — a future gate / CI consumes this
+pipeline-cli eval-harness report <rows.json> --json
+
+# price net saving against a baseline (stage × model)
+pipeline-cli eval-harness report <rows.json> --baseline-stage write-code --baseline-model opus-4.8
+```
+
+`<rows.json>` is a serialized `RunRow[]` — the array `collectRuns` emits. `decodeReportInput` is
+total: a malformed body or a shape mismatch exits non-zero with a typed reason, never a throw.
+
+### The stable JSON shape (the contract a consumer decodes)
+
+```jsonc
+{
+  "decisionRef": 1576,                       // the decision this evidence feeds — never made here
+  "framing": "This scorecard is measurement feeding the model-tiering decision (#1576); …",
+  "baseline": { "stage": "write-code", "model": "opus-4.8" } | null,
+  "cells": [
+    {
+      "stage": "write-code",
+      "model": "opus-4.8" | null,            // reconstructed from the transcript; null when unattributable
+      "gradedRuns": 3,                        // pass-rate denominator (includes transcript-missing runs)
+      "passedRuns": 2,
+      "passRate": 0.6667,                     // the graded quality axis
+      "spend": {                              // the token axis — null when no run reconstructed
+        "billedPerRun": 200,
+        "exCacheReadPerRun": 180,
+        "reconstructedRuns": 3,
+        "transcriptMissingRuns": 0
+      } | null,
+      "churn": {                              // priced repair churn — null when no reconstructed spend
+        "expectedExtraCycles": 0.5,
+        "churnTokens": 100,                   // +Infinity when passRate === 0 (never adopt)
+        "amortizedBilledPerRun": 300
+      } | null,
+      "netSaving": -400 | null,               // vs baseline; null on the baseline cell / no spend
+      "netNegative": true                     // true iff netSaving is a finite number < 0
+    }
+  ]
+}
+```
+
+The shape is stable: field names + nesting are the contract, and `toJson` is a thin projection of
+the in-memory `Scorecard` so the JSON and the type never drift.
 
 ## Why it exists
 
@@ -108,11 +186,12 @@ This module is the shared format that graded slice is built on.
 ## How to use
 
 The core is a pure library — import `CorpusEntry`, `CorpusManifest`, `decodeManifest`,
-`encodeManifest`, and `STAGES` from `corpus.ts`. The one CLI surface validates a manifest
-file against the schema:
+`encodeManifest`, and `STAGES` from `corpus.ts`. The CLI has two surfaces — validate a manifest
+against the schema, and render the graded scorecard over runner rows:
 
 ```bash
-pipeline-cli eval-harness check <manifest>   # exit 0 if valid; non-zero on a bad manifest
+pipeline-cli eval-harness check <manifest>    # exit 0 if valid; non-zero on a bad manifest
+pipeline-cli eval-harness report <rows.json>  # the graded two-axis scorecard (see below)
 ```
 
 ## Repair-churn cost — net-token pricing of a model swap
@@ -224,7 +303,8 @@ triage corpus therefore covers the edge by spanning the classification space (a 
 `p2` `decision`, an urgent `p0` `bug`, a `p1` `chore`) rather than pinning an unstable
 `needs-info`.
 
-## Out of scope (later children)
+## Out of scope
 
-Running any stage (collecting the transcripts), grading an entry, and computing any metric
-(pass-rate, repair-churn cost) are separate slices under epic #1842 — not these cores.
+Running any stage (collecting the transcripts) is the operator's act, not this tool.
+**Making the tiering call** is [#1576](https://github.com/kamp-us/phoenix/issues/1576), a
+separate `type:decision` — the harness supplies the graded evidence, the human decides.

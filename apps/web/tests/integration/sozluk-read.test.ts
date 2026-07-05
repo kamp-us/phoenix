@@ -134,14 +134,23 @@ describe("sozluk reads — deployed worker /fate (system smoke)", () => {
 		if (!result.ok) return;
 		const conn = (result.data as {definitions: Connection<DefNode>}).definitions;
 		expect(conn.items.length).toBe(2);
-		// Highest-scoring definition is alpha (umut, score 2), the first seeded row.
-		// Identity is session-derived → assert the author name + the real id the
-		// worker assigned (captured from the seed), not a caller-chosen id.
-		const top = conn.items[0]!.node;
-		expect(top.author).toBe("umut");
-		expect(top.authorId).toBe(seeded[0]!.authorId);
-		expect(top.score).toBe(2);
+		// Scope the scalar-surface assertion to the EXACT row this file seeded, found by
+		// the real id the worker assigned (captured from the seed) — never the positional
+		// `items[0]` + a hardcoded handle. The connection is `termSlug`-scoped so only
+		// this NS term's rows appear, but pinning by seeded id keeps the assertion
+		// deterministic on the run-scoped SHARED stage (ADR 0104): it verifies the
+		// session-derived surface of the definition we know we authored, whatever the
+		// stage's actor population — instead of `expected 'yazar' to be 'umut'`, the
+		// fixture-pinned read of another shared-stage file's author (#2116).
+		const alpha = conn.items.find((e) => e.node.id === seeded[0]!.id)?.node;
+		expect(alpha).toBeDefined();
+		// `author` round-trips the seed's own username (`author_name`, snapshotted from
+		// `user.name` at add-time) — a straight scalar passthrough (`definition-fields.ts`:
+		// `author: d => d.authorName`), NOT the `yazar` authorship-tier noun (ADR 0107).
+		expect(alpha!.author).toBe(seeded[0]!.authorName);
+		expect(alpha!.authorId).toBe(seeded[0]!.authorId);
+		expect(alpha!.score).toBe(2);
 		// Anonymous viewer → myVote null.
-		expect(top.myVote).toBeNull();
+		expect(alpha!.myVote).toBeNull();
 	});
 });

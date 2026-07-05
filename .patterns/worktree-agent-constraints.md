@@ -121,6 +121,19 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   rule above is now the **belt** to the guard's **braces**: the guard mechanically blocks the
   bare op, the prose tells you the shape to write instead.
 
+  **Defense-in-depth behind the guard (Unit C, #1573):** even with the guard preventing new
+  detaches, the orchestrator's main-sync is codified as a single runnable surface —
+  `pipeline-cli main-sync` (`packages/pipeline-cli/src/tools/main-sync/`) — that the driving
+  session runs **before/after a drain** instead of the hand-run
+  `git fetch origin main && git merge --ff-only origin/main`. If it finds the primary HEAD
+  already detached (a stray detach the guard didn't catch), it **auto-reattaches to `main`**
+  (`git checkout main`) before the merge, so a single stray detach can't wedge an unattended
+  overnight drain with a silent *"Not possible to fast-forward"*. The reattach is authorized
+  **only on a clean tree** — a dirty off-`main` HEAD is detect-and-surface (refuse, report the
+  dirt), never a blind `checkout` that discards work. Dry-run by default; `--execute` runs the
+  plan. See [`packages/pipeline-cli/README.md`](../packages/pipeline-cli/README.md) (the
+  `main-sync` section) for the full contract.
+
 - **Run root `pnpm` scripts as `pnpm -w <script>` (or from the worktree root),
   never from a subdir.** A root-level script (`pnpm lint`, `pnpm typecheck`, …) run
   from a *subdirectory* (e.g. `apps/web/`) trips pnpm's refusal: it resolves the
