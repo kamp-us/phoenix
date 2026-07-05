@@ -11,12 +11,7 @@ import {bodyEditOptimistic} from "../../fate/optimisticEdit";
 import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
-import {FlagGate} from "../../flags/FlagGate";
-import {
-	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
-	PHOENIX_OPTIMISTIC_EDITS,
-	PHOENIX_REACTIONS,
-} from "../../flags/keys";
+import {PHOENIX_OPTIMISTIC_DEFINITION_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
@@ -24,6 +19,7 @@ import {authRedirectPath} from "../../lib/returnTo";
 import {dropOptimisticDefinitionEdge} from "../../pages/definitionDeleteOptimistic";
 import {useVoteToggle} from "../pano/useVoteToggle";
 import {DefinitionReactionBar} from "../reaction/DefinitionReactionBar";
+import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {Button} from "../ui/Button";
 import {useVoteFlash} from "../useVoteFlash";
 import "../vote-cue.css";
@@ -338,13 +334,13 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					</span>
 				</footer>
 				{!editing ? (
-					<FlagGate flag={PHOENIX_REACTIONS}>
+					<ReactionBarSlot>
 						<DefinitionReactionBar
 							definitionId={definition.id}
 							slug={props.slug}
 							reactions={definition.reactions}
 						/>
-					</FlagGate>
+					</ReactionBarSlot>
 				) : null}
 				{isAuthor ? (
 					<Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>

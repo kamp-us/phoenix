@@ -8,11 +8,10 @@ import {useLiveView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
-import {FlagGate} from "../../flags/FlagGate";
-import {PHOENIX_REACTIONS} from "../../flags/keys";
 import {formatAgoTR} from "../../lib/datetime";
 import {tagClass} from "../../lib/panoTags";
 import {PostReactionBar} from "../reaction/PostReactionBar";
+import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
@@ -94,9 +93,9 @@ export function PanoPostCard({
 						</>
 					) : null}
 				</div>
-				<FlagGate flag={PHOENIX_REACTIONS}>
+				<ReactionBarSlot>
 					<PostReactionBar postId={data.id} reactions={data.reactions} />
-				</FlagGate>
+				</ReactionBarSlot>
 			</div>
 		</article>
 	);
