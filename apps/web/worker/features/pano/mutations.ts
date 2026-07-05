@@ -488,7 +488,16 @@ export const mutations = {
 			const page = yield* pano.getPost(input.id);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
-			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
+			const post = toPostFromPage(
+				page,
+				stamped?.myVote ?? null,
+				stamped?.isSaved ?? null,
+				stamped?.reactions,
+				{
+					authorUsername: stamped?.authorUsername ?? null,
+					authorDisplayName: stamped?.authorDisplayName ?? null,
+				},
+			);
 			// Sandbox-faithful restore (#1811): a çaylak's sandboxed post round-trips
 			// back to Sandboxed, so route the broadcast through the #1205/#1280 gate
 			// (decidePublish) instead of the always-Live hatch — a sandboxed restore is
@@ -683,7 +692,16 @@ export const mutations = {
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
-			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
+			const post = toPostFromPage(
+				page,
+				stamped?.myVote ?? null,
+				stamped?.isSaved ?? null,
+				stamped?.reactions,
+				{
+					authorUsername: stamped?.authorUsername ?? null,
+					authorDisplayName: stamped?.authorDisplayName ?? null,
+				},
+			);
 			// Removal is always soft now (ADR 0096); the reply-aware decision only
 			// shapes the live signal:
 			//  - leaf (no replies): the service returns no placeholder, so `deleteEdge`
@@ -734,7 +752,16 @@ export const mutations = {
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
-			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
+			const post = toPostFromPage(
+				page,
+				stamped?.myVote ?? null,
+				stamped?.isSaved ?? null,
+				stamped?.reactions,
+				{
+					authorUsername: stamped?.authorUsername ?? null,
+					authorDisplayName: stamped?.authorDisplayName ?? null,
+				},
+			);
 			yield* live.post.update(post.id, {changed: ["commentCount"], data: post});
 			return post;
 		}),

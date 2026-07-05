@@ -19,6 +19,7 @@ import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import {type ReadProfileIdentities, stampAuthorIdentity} from "../fate/author-identity.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
@@ -196,10 +197,12 @@ export interface CommentOperationsDeps {
 	readonly reactionSvc: typeof Reaction.Service;
 	readonly removalSeq: Removal.RemovalSequence;
 	readonly persistPanoStats: PersistPanoStats;
+	/** Batched live author-identity reader (`Pasaport.getProfileIdentitiesByIds`, #2139). */
+	readonly readProfileIdentities: ReadProfileIdentities;
 }
 
 export const makeCommentOperations = (deps: CommentOperationsDeps) => {
-	const {run, voteSvc, reactionSvc, removalSeq, persistPanoStats} = deps;
+	const {run, voteSvc, reactionSvc, removalSeq, persistPanoStats, readProfileIdentities} = deps;
 
 	// The parent post's PUBLIC `comment_count` bookkeeping every comment remove/restore
 	// shares — the plane-specific `afterCommit` the four transition methods run after the
@@ -340,7 +343,8 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 
 		const page = forwardPage(fetched, first, (r: CommentRow) => r.id, rowToCommentRow);
 		const scalared = yield* stampViewerScalars(page.rows, viewerId, [commentVoteScalar]);
-		const rows = yield* stampReactionAggregate(reactionSvc, "comment", scalared, viewerId);
+		const reacted = yield* stampReactionAggregate(reactionSvc, "comment", scalared, viewerId);
+		const rows = yield* stampAuthorIdentity(readProfileIdentities, reacted);
 
 		return {...page, rows, totalCount} satisfies CommentConnectionPage;
 	});
@@ -371,7 +375,8 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		const scalared = yield* stampViewerScalars(fetched.map(rowToCommentRow), viewerId, [
 			commentVoteScalar,
 		]);
-		return yield* stampReactionAggregate(reactionSvc, "comment", scalared, viewerId);
+		const reacted = yield* stampReactionAggregate(reactionSvc, "comment", scalared, viewerId);
+		return yield* stampAuthorIdentity(readProfileIdentities, reacted);
 	});
 
 	// The moderator sandbox-queue / promotion-backlog read model (#1205, the #1206

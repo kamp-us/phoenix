@@ -15,6 +15,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import {stampAuthorIdentity} from "../fate/author-identity.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
@@ -26,6 +27,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -416,6 +418,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 		const reactionSvc = yield* Reaction;
+		// Live author-identity resolver (#2139): one batched `user_profile` read per page
+		// (`getProfileIdentitiesByIds`) stamps the CURRENT `{username, displayName}` so the
+		// read surfaces render via `actorLabel`, not the write-time `authorName` snapshot.
+		const pasaport = yield* Pasaport;
 
 		// The removal-sequence owner (#1129): the vote-wipe→stamp ordering is the
 		// module's to enforce, not this service's to hand-wire.
@@ -682,7 +688,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const page = forwardPage(fetched, first, (r: DefinitionRow) => r.id, toDefinitionRow);
 			const scalared = yield* stampViewerScalars(page.rows, viewerId, [definitionVoteScalar]);
-			const rows = yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
+			const reacted = yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
+			const rows = yield* stampAuthorIdentity(pasaport.getProfileIdentitiesByIds, reacted);
 
 			return {...page, rows, totalCount} satisfies DefinitionConnectionPage;
 		});
@@ -715,7 +722,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const scalared = yield* stampViewerScalars(fetched.map(toDefinitionRow), viewerId, [
 				definitionVoteScalar,
 			]);
-			return yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
+			const reacted = yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
+			return yield* stampAuthorIdentity(pasaport.getProfileIdentitiesByIds, reacted);
 		});
 
 		const listSandboxedDefinitions = Effect.fn("Sozluk.listSandboxedDefinitions")(function* (
@@ -1237,17 +1245,18 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			// Re-resolve with the FRESH reaction aggregate + the reactor's own reaction,
 			// through the same batched stamps every definition read shares (`myVote` via
-			// stampViewerScalars, `reactions` via stampReactionAggregate) — so the wire row
-			// is shape-identical to a plain read.
+			// stampViewerScalars, `reactions` via stampReactionAggregate, live identity via
+			// stampAuthorIdentity) — so the wire row is shape-identical to a plain read.
 			const scalared = yield* stampViewerScalars([toDefinitionRow(definition)], input.reactorId, [
 				definitionVoteScalar,
 			]);
-			const [row] = yield* stampReactionAggregate(
+			const reacted = yield* stampReactionAggregate(
 				reactionSvc,
 				"definition",
 				scalared,
 				input.reactorId,
 			);
+			const [row] = yield* stampAuthorIdentity(pasaport.getProfileIdentitiesByIds, reacted);
 			return row as DefinitionRow;
 		});
 

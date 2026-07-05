@@ -18,6 +18,7 @@ import {drizzle} from "drizzle-orm/d1";
 import {type Context, Effect, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
+import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Sozluk, SozlukLive, type TermSummaryDefRow} from "./Sozluk.ts";
@@ -81,6 +82,7 @@ const sozlukOver = (access: DrizzleAccess) =>
 		Layer.provide(Layer.succeed(Drizzle, access)),
 		Layer.provide(inertVote),
 		Layer.provide(ReactionStub),
+		Layer.provide(PasaportIdentityStub),
 	);
 
 const SLUG = "kelime";

@@ -19,6 +19,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer} from "effect";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {
 	EMPTY_REACTION_AGGREGATE,
 	type ReactInput,
@@ -101,6 +102,7 @@ const sozlukLayer = (
 	SozlukLive.pipe(
 		Layer.provide(VoteStub),
 		Layer.provide(recordingReaction(reactCalls, aggregateById)),
+		Layer.provide(PasaportIdentityStub),
 		Layer.provide(Layer.succeed(Drizzle, definitionAccess(row))),
 	);
 

@@ -17,6 +17,7 @@ import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
 import {dropOptimisticDefinitionEdge} from "../../pages/definitionDeleteOptimistic";
+import {actorLabel} from "../moderation/actor-identity";
 import {useVoteToggle} from "../pano/useVoteToggle";
 import {DefinitionReactionBar} from "../reaction/DefinitionReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
@@ -37,6 +38,8 @@ export const DefinitionView = view<Definition>()({
 	updatedAt: true,
 	author: true,
 	authorId: true,
+	authorUsername: true,
+	authorDisplayName: true,
 	reactions: {counts: true, myReaction: true},
 });
 
@@ -296,7 +299,15 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					<DefinitionBody text={definition.body} />
 				)}
 				<footer className="kp-sozluk-definition__foot">
-					<span className="author">@{definition.author}</span>
+					{/* Live author identity via `actorLabel` (#2139): CURRENT displayName → @username,
+					    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
+					<span className="author">
+						{actorLabel(
+							definition.authorDisplayName ?? null,
+							definition.authorUsername ?? null,
+							definition.author,
+						)}
+					</span>
 					<span className="dot">·</span>
 					<span>{formatAgoTR(toIso(definition.createdAt))}</span>
 					<EditedIndicator

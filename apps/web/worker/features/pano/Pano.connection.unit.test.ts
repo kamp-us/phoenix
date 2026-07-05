@@ -22,6 +22,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
+import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
@@ -102,6 +103,7 @@ const panoLayer = (access: DrizzleAccess) =>
 		Layer.provide(VoteStub),
 		Layer.provide(BookmarkStub),
 		Layer.provide(ReactionStub),
+		Layer.provide(PasaportIdentityStub),
 		Layer.provide(Layer.succeed(Drizzle, access)),
 	);
 

@@ -27,6 +27,7 @@ import {it} from "@effect/vitest";
 import {Cause, type Context, Effect, Exit, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
+import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
@@ -66,6 +67,7 @@ const editPostReadThenDieAccess = (postRow: unknown): DrizzleAccess => {
 const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
 const inertBookmark = Layer.succeed(Bookmark, {} as Context.Service.Shape<typeof Bookmark>);
 const inertReaction = Layer.succeed(Reaction, {} as Context.Service.Shape<typeof Reaction>);
+const inertPasaport = Layer.succeed(Pasaport, {} as Context.Service.Shape<typeof Pasaport>);
 
 const panoLayer = (access: DrizzleAccess) =>
 	PanoLive.pipe(
@@ -73,6 +75,7 @@ const panoLayer = (access: DrizzleAccess) =>
 		Layer.provide(inertVote),
 		Layer.provide(inertBookmark),
 		Layer.provide(inertReaction),
+		Layer.provide(inertPasaport),
 	);
 
 const expectTag = (exit: Exit.Exit<unknown, unknown>, tag: string) => {

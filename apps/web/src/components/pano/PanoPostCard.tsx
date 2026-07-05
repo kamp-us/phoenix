@@ -10,6 +10,7 @@ import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {tagClass} from "../../lib/panoTags";
+import {actorLabel} from "../moderation/actor-identity";
 import {PostReactionBar} from "../reaction/PostReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {Tag, type TagKind} from "../ui/atoms";
@@ -28,6 +29,8 @@ export const PanoPostCardView = view<Post>()({
 	createdAt: true,
 	author: true,
 	authorId: true,
+	authorUsername: true,
+	authorDisplayName: true,
 	slug: true,
 	tags: true,
 	reactions: {counts: true, myReaction: true},
@@ -77,7 +80,11 @@ export function PanoPostCard({
 					) : null}
 				</div>
 				<div className="kp-pano-post__meta">
-					<span className="author">@{data.author}</span>
+					{/* Live author identity via `actorLabel` (#2139): current displayName → @username,
+					    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
+					<span className="author">
+						{actorLabel(data.authorDisplayName ?? null, data.authorUsername ?? null, data.author)}
+					</span>
 					<span className="dot">·</span>
 					<span>{agoLabel}</span>
 					<span className="dot">·</span>

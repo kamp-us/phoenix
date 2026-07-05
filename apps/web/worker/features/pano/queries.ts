@@ -47,6 +47,10 @@ export const queries = {
 				stamped?.myVote ?? null,
 				stamped?.isSaved ?? null,
 				stamped?.reactions,
+				{
+					authorUsername: stamped?.authorUsername ?? null,
+					authorDisplayName: stamped?.authorDisplayName ?? null,
+				},
 			);
 
 			// The native path doesn't auto-invoke a nested relation's `connection`
