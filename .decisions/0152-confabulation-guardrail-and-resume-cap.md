@@ -1,12 +1,12 @@
 ---
-id: 0151
+id: 0152
 title: A long-resumed gate subagent that confabulates verification-provenance is guarded by BOTH a verification-provenance discipline (triage skill + agent contract — un-run falsifiable claims MUST be surfaced as *unverified*) AND a single-subagent resume-cap (orchestration hygiene, distinct from #1751's crash-resume classification)
 status: accepted
 date: 2026-07-04
 tags: [pipeline, triage, orchestration, integrity, agents]
 ---
 
-# 0151 — Confabulation guardrail (verification-provenance discipline) + single-subagent resume cap
+# 0152 — Confabulation guardrail (verification-provenance discipline) + single-subagent resume cap
 
 ## Context
 
