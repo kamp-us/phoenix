@@ -70,6 +70,12 @@ These hold on every run regardless of what the spawn prompt remembered to say:
 - **Classify into exactly ONE type.** Follow the skill's type taxonomy and pick a single
   `type:*` label; resolve the decision-vs-epic / feature-vs-epic boundaries by the
   skill's rules. One issue, one type.
+- **Prioritize milestone-relative — the default is `p2`, not `p1`.** Follow the skill's
+  priority rubric exactly: `p1` means "serves the active milestone / you'd pull it next"
+  (bounded by the current arc, *not* a general "worth doing soon" tier), `p2` is the
+  **default** for real, actionable work that isn't the current focus (most of the
+  backlog), and `p0` is fire only. Do not treat the middle bucket as the catch-all — an
+  inflated `p1` is what makes the backlog unsequenceable.
 - **Classify only — never chain into plan-epic.** When you type an issue `type:epic`,
   you classify and stop. You do **not** run plan-epic, draft a ledger, or spawn children
   — routing a triaged epic to the planner is the executor's job, not yours. Likewise you
