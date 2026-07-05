@@ -238,12 +238,30 @@ jobs:
       # job (no false-green) — an unreachable prod, a non-200, or a body whose `status`
       # is not "ok" (the health handler returns `{status:"ok",…}`, see
       # apps/web/worker/http/health.ts) all red the deploy run.
+      #
+      # The URL-presence check lives INSIDE the step body, NOT in the `if:` guard (issue
+      # #1617). The guard is `github.event_name == 'push'` ALONE: an empty `outputs.url`
+      # after a "successful" deploy — an alchemy log-scrape miss or a genuinely URL-less
+      # deploy — must RED the job, not skip it green. A `&& steps.deploy.outputs.url != ''`
+      # clause in the `if:` would make an empty URL SKIP the step, which GitHub records as
+      # a passed job: a fail-OPEN corner in the very gate meant to be fail-closed against a
+      # broken prod (ADR 0092, gates fail closed on zero scope). So on a prod push the step
+      # always runs, and an empty URL exits non-zero with `::error::` — "no URL to check"
+      # is itself a deploy failure worth surfacing.
       - name: Verify prod serves — GET /api/health (${{ matrix.app }})
-        if: github.event_name == 'push' && steps.deploy.outputs.url != ''
+        if: github.event_name == 'push'
         env:
           PROD_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -uo pipefail
+          # Fail closed on an empty URL (issue #1617): `alchemy deploy` exited 0 but the
+          # scrape yielded no worker URL, so there is nothing to probe — red the deploy
+          # rather than pass silently, same fail-closed posture as the retry exhaustion below.
+          if [ -z "$PROD_URL" ]; then
+            echo "::error::prod health gate FAILED (issue #1617) — alchemy deploy exited 0 but emitted no scrapeable worker URL."
+            echo "An empty URL after a successful deploy is itself a deploy failure. Failing so it surfaces instead of skipping green (ADR 0092)."
+            exit 1
+          fi
           healthy=""
           last=""
           # Retry across CF's propagation window (same shape as the teardown-verify loop):
