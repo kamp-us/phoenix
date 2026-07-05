@@ -84,6 +84,13 @@ describe("live views — /fate/live (reaction-count reconcile)", () => {
 			user.cookie,
 		);
 		expect(sub.status).toBe(200);
+		// Assert the DO ACCEPTED the entity subscription — a 200 envelope can still
+		// carry `results: [{ok: false}]` when the connection DO rejects the register
+		// (e.g. its held-stream queue isn't bound yet), which would silently drop the
+		// publish and time out the read below. Registering the row is the precondition
+		// for delivery, so gate on it, mirroring `fate-live-scoped`'s proven flow.
+		const subResult = (await sub.json()) as {results: Array<{id: string; ok: boolean}>};
+		expect(subResult.results[0]?.ok).toBe(true);
 
 		// React on the definition — the flag-override cookie unlocks the dark-shipped
 		// write + live-publish path; the mutation publishes an entity `update` frame
@@ -102,9 +109,14 @@ describe("live views — /fate/live (reaction-count reconcile)", () => {
 		// The subscribed stream delivers the reaction-count delta as an entity `next`
 		// frame whose `event.data` is the re-resolved definition with its updated
 		// aggregate (the `myReaction` + per-emoji `counts` the reaction bar reconciles to).
-		const frame = await readEvent(reader, decoder, buffer);
-		expect(frame).toContain("event: next");
-		const payload = frameData<{
+		//
+		// Drain until THIS reaction's own frame arrives, mirroring the proven
+		// `fate-live-posts` drain-until-own-frame flow: on a `NO_DESTROY` re-run the
+		// entity topic's replay buffer can hold a prior run's `next` frame for the same
+		// seeded id, which would be the next frame ahead of ours. Match on our own
+		// `myReaction === "👍"` rather than asserting the very next frame. Bounded: a
+		// stream that never delivers our frame still fails (readEvent's own timeout).
+		type ReactionNext = {
 			kind: string;
 			event: {
 				data: {
@@ -112,11 +124,17 @@ describe("live views — /fate/live (reaction-count reconcile)", () => {
 					reactions: {counts: Array<{emoji: string; count: number}>; myReaction: string | null};
 				};
 			};
-		}>(frame);
-		expect(payload.kind).toBe("next");
-		expect(payload.event.data.id).toBe(definitionId);
-		expect(payload.event.data.reactions.myReaction).toBe("👍");
-		expect(payload.event.data.reactions.counts).toContainEqual({emoji: "👍", count: 1});
+		};
+		let payload: ReactionNext | undefined;
+		for (let i = 0; i < 10 && payload?.event.data.reactions.myReaction !== "👍"; i++) {
+			const frame = await readEvent(reader, decoder, buffer);
+			expect(frame).toContain("event: next");
+			payload = frameData<ReactionNext>(frame);
+		}
+		expect(payload?.kind).toBe("next");
+		expect(payload?.event.data.id).toBe(definitionId);
+		expect(payload?.event.data.reactions.myReaction).toBe("👍");
+		expect(payload?.event.data.reactions.counts).toContainEqual({emoji: "👍", count: 1});
 
 		await reader.cancel();
 	});
