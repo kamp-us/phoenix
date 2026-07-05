@@ -13,7 +13,7 @@ snapshots) and, in doing so, **disabled the only tool that validated the tree**:
 It is a `packages/` Effect CLI per the repo's Node-over-Python convention (the
 `leak-guard` / `readme-guard` / `flake-rate` idiom) — a pure, unit-tested core plus a
 thin `effect/unstable/cli` bin — wired as a fail-closed CI job. Per ADR
-[0100](../../.decisions/0100-guard-packages-are-control-plane.md) the guard package is
+[0100](../../.decisions/0100-control-plane-covers-enforcement-guard-packages.md) the guard package is
 **control-plane** (human-merged).
 
 ## Why it exists — the drift it catches
