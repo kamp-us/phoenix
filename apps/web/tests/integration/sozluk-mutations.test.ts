@@ -622,7 +622,7 @@ describe("sozluk mutations — seed idempotency / emptying a term", () => {
 	it("seedTerm is idempotent: re-seeding the same definition skips it", async () => {
 		const slug = `${NS}-outbox`;
 		const def = {
-			authorName: "umut",
+			authorName: "anka",
 			body: "Atomic durability primitive in the producer-consumer outbox pattern.",
 		};
 

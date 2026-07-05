@@ -82,7 +82,7 @@ let postId = "";
 const commentIds: string[] = [];
 
 beforeAll(async () => {
-	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "umut");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "anka");
 	for (let i = 0; i < 5; i++) {
 		commenters.push(await h.signUp(`${NS}-c${i}@test.local`, "hunter2hunter2", `commenter ${i}`));
 	}
@@ -139,7 +139,7 @@ describe("pano reads — /fate", () => {
 		expect(seeded!.cursor).toBe(postId); // cursor is the post id keyset
 		expect(seeded!.node.title).toBe("Fate Pano Read");
 		expect(seeded!.node.commentCount).toBe(5);
-		expect(seeded!.node.author).toBe("umut");
+		expect(seeded!.node.author).toBe("anka");
 		expect(data.pagination.hasPrevious).toBe(false);
 	});
 
@@ -300,7 +300,7 @@ describe("pano reads — /fate", () => {
 		expect(post.title).toContain("phoenix");
 		expect(post.url).toBe(`https://${host}/phoenix`);
 		expect(post.host).toBe(host);
-		expect(post.author).toBe("umut");
+		expect(post.author).toBe("anka");
 		expect(post.score).toBe(0);
 		expect(post.commentCount).toBe(0);
 		expect(post.tags).toHaveLength(1);

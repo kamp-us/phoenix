@@ -117,15 +117,15 @@ beforeAll(async () => {
 		await h.seedTerm({
 			slug,
 			title: slug.toUpperCase(),
-			definitions: [{authorName: "umut", body: `body ${slug}`, score}],
+			definitions: [{authorName: "anka", body: `body ${slug}`, score}],
 		});
 	}
 	await h.seedTerm({
 		slug: DEFS_SLUG,
 		title: "Keyset Defs",
 		definitions: [
-			{authorName: "umut", body: "high", score: 5},
-			{authorName: "elif", body: "mid", score: 3},
+			{authorName: "anka", body: "high", score: 5},
+			{authorName: "zumrud", body: "mid", score: 3},
 			{authorName: "ada", body: "low", score: 1},
 		],
 	});
@@ -137,7 +137,7 @@ beforeAll(async () => {
 		await h.seedTerm({
 			slug,
 			title: slug.toUpperCase(),
-			definitions: [{authorName: "umut", body: `body ${slug}`}],
+			definitions: [{authorName: "anka", body: `body ${slug}`}],
 		});
 	}
 	for (const slug of REC_SLUGS) {
