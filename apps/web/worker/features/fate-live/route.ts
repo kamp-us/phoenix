@@ -23,6 +23,7 @@ import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import {NOTIFICATION_CHANNEL_TYPE} from "../bildirim/channel.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import type {LiveTransportError} from "./cold-start-retry.ts";
 import {
@@ -92,6 +93,20 @@ export const handleLive = Effect.gen(function* () {
 			if (operation.kind === "unsubscribe") {
 				yield* connections.unsubscribe(connectionId, operation.id);
 				results.push({id: operation.id, ok: true, data: null});
+				continue;
+			}
+			// Recipient-scoped topic gate (#1700): the `NotificationChannel` entity topic
+			// is keyed by a recipient's user id, so a subscription whose entity id is not
+			// the session user's own would watch ANOTHER user's notification stream. The
+			// entity id is client-supplied, and the DO's owner check only guards the
+			// CONNECTION owner (not the entity id), so this is the authorization seam —
+			// reject the cross-user subscribe here rather than register a foreign topic.
+			if (
+				operation.kind === "subscribe" &&
+				operation.type === NOTIFICATION_CHANNEL_TYPE &&
+				String(operation.entityId) !== ownerId
+			) {
+				results.push({id: operation.id, ok: false, data: null});
 				continue;
 			}
 			const control: SubscribeControl =

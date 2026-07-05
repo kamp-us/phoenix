@@ -7,8 +7,14 @@
  * `.patterns/fate-effect-sources.md`).
  */
 import {Fate} from "@kampus/fate-effect";
-import {NotificationMarkReceiptView, NotificationUnreadView, NotificationView} from "./views.ts";
+import {
+	NotificationChannelView,
+	NotificationMarkReceiptView,
+	NotificationUnreadView,
+	NotificationView,
+} from "./views.ts";
 
 export const notificationSource = Fate.syntheticSource(NotificationView);
 export const notificationUnreadSource = Fate.syntheticSource(NotificationUnreadView);
 export const notificationMarkReceiptSource = Fate.syntheticSource(NotificationMarkReceiptView);
+export const notificationChannelSource = Fate.syntheticSource(NotificationChannelView);

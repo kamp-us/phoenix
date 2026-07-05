@@ -12,10 +12,12 @@ import {mergeFateRoots} from "./module.ts";
 
 export type {
 	Notification,
+	NotificationChannel,
 	NotificationMarkReceipt,
 	NotificationUnread,
 } from "../bildirim/views.ts";
 export {
+	notificationChannelDataView,
 	notificationDataView,
 	notificationMarkReceiptDataView,
 	notificationUnreadDataView,

@@ -5,7 +5,12 @@
  * these do. See `.patterns/fate-effect-operations.md`.
  */
 import type {NotificationRow} from "./Notification.ts";
-import type {Notification, NotificationMarkReceipt, NotificationUnread} from "./views.ts";
+import type {
+	Notification,
+	NotificationChannel,
+	NotificationMarkReceipt,
+	NotificationUnread,
+} from "./views.ts";
 
 export const toNotification = (row: NotificationRow, targetUrl: string | null): Notification => ({
 	__typename: "Notification",
@@ -29,6 +34,15 @@ export const toNotificationUnread = (count: number): NotificationUnread => ({
 	__typename: "NotificationUnread",
 	id: UNREAD_SINGLETON_ID,
 	count,
+});
+
+export const toNotificationChannel = (
+	recipientId: string,
+	unreadCount: number,
+): NotificationChannel => ({
+	__typename: "NotificationChannel",
+	id: recipientId,
+	unreadCount,
 });
 
 export const toMarkReceipt = (

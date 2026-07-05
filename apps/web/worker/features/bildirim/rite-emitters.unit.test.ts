@@ -8,7 +8,7 @@
  * method overridden, so "touched the wrong write surface" is a test failure.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {CurrentUser} from "@kampus/fate-effect";
+import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
@@ -45,12 +45,26 @@ const flagsStub = (on: boolean): Layer.Layer<Flags> =>
 		} as unknown as typeof Flags.Service,
 	);
 
+// A no-op `LivePublisher`: the emitters call `Notification.record`, which yields the
+// per-request publisher for the fire-and-forget live fan-out (#1700). The emit path is
+// swallowed and the stub `record` never touches it, so a do-nothing publisher satisfies
+// the requirement without asserting anything on it (the live publish itself is covered
+// in `Notification.unit.test.ts` / the integration tier).
+const noopLivePublisher = Layer.succeed(LivePublisher)({
+	update: () => Effect.void,
+	delete: () => Effect.void,
+	topic: () => {
+		throw new Error("noopLivePublisher.topic unused");
+	},
+} as typeof LivePublisher.Service);
+
 const requestContext = (on: boolean) =>
 	Layer.mergeAll(
 		flagsStub(on),
 		Layer.succeed(CurrentUser, {user: undefined}),
 		Layer.succeed(RuntimeContext, runtimeContextStub),
 		noRequestFlagOverrides,
+		noopLivePublisher,
 	);
 
 describe("riteRecipient — self-suppression, pure", () => {
