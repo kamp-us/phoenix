@@ -55,6 +55,48 @@ writing — it's the safety margin, not the target.
 
 ---
 
+## Verification-provenance discipline — every gate agent, emitter-side (ADR 0152)
+
+This is a **general agent-contract rule that binds every gate agent** that reads or writes
+these formats — the `triager` first, and every `review-*` / `ship-it` / `plan-epic` gate by
+extension. It is stated **once here**, on the shared all-gates contract, so no gate agent is
+left uncovered by virtue of not being a particular skill; it is **not** scoped to any single
+SKILL.md (ADR
+[0152](https://github.com/kamp-us/phoenix/blob/main/.decisions/0152-confabulation-guardrail-and-resume-cap.md),
+mitigation (a)).
+
+**The rule.** A gate agent **MUST NOT assert a falsifiable platform-state claim or an
+action-attribution as *verified* unless it ran the check itself, in its own transcript, this
+run.** Any such claim it did **not** run must be surfaced as **unverified** (or dropped) — it
+may not be presented as fact. And an action must **never** be attributed to another party (the
+orchestrator, a sibling agent, a human) that the emitter did not observe that party perform:
+"the orchestrator ran X" / "your evidence chain proves Y" is assertable **only** when the
+emitter observed that party do X, even if X happens to be true.
+
+A **falsifiable platform-state claim** is one checkable against the live platform this run — a
+ruleset/branch-protection state, a PR's `mergeable_state` or merge-queue membership, a flag's
+release state, a label or assignee, whether a named PR/issue exists or merged, a CI conclusion.
+Citing any of these *as verified* requires the actual `gh api` / tool call to appear in **this
+run's** transcript; an un-run such claim is *unverified*, full stop.
+
+**This is the emitter-side complement of CLAUDE.md's reader-side grounding rule, not a
+duplicate of it.** CLAUDE.md's "ground falsifiable claims about platform/runtime/dependency
+behavior in source, not intuition" tells the **reader** to re-ground a claim it consumes; this
+rule tells the **emitter** it may not launder an un-run claim as *verified* in the first place.
+The reader-side backstop is not always run — so the emitter obligation must be explicit. The
+two are one loop: the emitter marks provenance honestly, the reader still re-grounds.
+
+**Why it binds a gate specifically.** A gate agent's output becomes issue bodies, labels, and
+routing decisions, so a false-but-confident claim in its return channel propagates into the
+pipeline. The failure mode this closes is the confabulated evidence chain that *happens to be
+right* — which trains the reader to trust the next one (the #1876 near-miss: a long-resumed
+triager returned a fabricated platform-verification "evidence chain" as observed fact and
+mis-attributed it to the orchestrator, caught only by independent downstream re-grounding).
+Marking un-run claims *unverified* costs a gate the transcript action of actually running any
+check it wants to cite as verified — deliberately: the price of trustworthy gate output.
+
+---
+
 ## Target repo resolution
 
 The suite is a **repo-agnostic** installable plugin: an adopter installs it into

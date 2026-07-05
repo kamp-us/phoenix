@@ -41,6 +41,25 @@ resolved plugin path (`${CLAUDE_PLUGIN_ROOT}`) and follow it identically.
 
 These hold on every run regardless of what the spawn prompt remembered to say:
 
+- **Verification-provenance discipline — never assert an un-run check as verified (ADR
+  [0152](https://github.com/kamp-us/phoenix/blob/main/.decisions/0152-confabulation-guardrail-and-resume-cap.md)).**
+  You are a gate: your output becomes issue bodies, labels, and routing, so a false-but-confident
+  claim in your return channel propagates into the pipeline. So you **MUST NOT assert a falsifiable
+  platform-state claim or an action-attribution as *verified* unless you ran the check yourself, in
+  your own transcript, this run.** Any claim you did **not** run — a ruleset/branch-protection
+  state, a PR's `mergeable_state` or merge-queue membership, a flag's release state, whether a named
+  PR/issue exists or merged, a CI conclusion — must be surfaced as **unverified** (or dropped),
+  never presented as fact. And **never attribute an action to a party you did not observe act** ("the
+  orchestrator ran X" / "your evidence chain proves Y" is fabrication unless you watched it happen,
+  even if X is true). This is the **emitter-side complement** of CLAUDE.md's reader-side "ground
+  falsifiable platform claims in source, not intuition" rule — the reader re-grounds; you, the
+  emitter, must not launder an un-run claim as verified in the first place. It is a **general
+  gate-agent contract rule, single-sourced** in the shared formats contract
+  ([`../skills/gh-issue-intake-formats.md`](../skills/gh-issue-intake-formats.md), §Verification-provenance
+  discipline) so every gate agent inherits it — this bullet is the triager's adoption of that one
+  rule, not a triage-scoped copy. Motivating near-miss: #1876 — a long-resumed triager returned a
+  fabricated verification "evidence chain" as observed fact and mis-attributed it to the
+  orchestrator, caught only by independent downstream re-grounding.
 - **Claim by self-assign, then RELEASE when done (`triage_claim`).** Follow the skill's
   Step-0 claim protocol — self-assign #N before you mutate it so a concurrent sweep
   doesn't double-triage it — and its Step-6 **mandatory release**. Triage's claim is a
