@@ -15,7 +15,13 @@ import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
-import {PANO_FILTERS, PANO_SORT_PARAM, panoFilterIdFromParam, SAVED_LINK} from "../lib/panoNav";
+import {
+	PANO_FILTERS,
+	PANO_SORT_PARAM,
+	panoFilterIdFromParam,
+	panoSortFromFilterId,
+	SAVED_LINK,
+} from "../lib/panoNav";
 
 const PAGE_SIZE = 20;
 
@@ -30,11 +36,23 @@ const PostConnectionView = {
 } as const;
 
 export function PanoFeed({host}: {host?: string}) {
-	// Seed the chip from `?sort=` so a deep link (e.g. the saved page's sort links)
-	// opens the right feed; in-feed switching stays local chip state, unchanged.
-	const [searchParams] = useSearchParams();
-	const [filterId, setFilterId] = React.useState(() =>
-		panoFilterIdFromParam(searchParams.get(PANO_SORT_PARAM)),
+	// The `?sort=` param is the source of truth for the active subfeed: the chip is
+	// derived from it every render (not just seeded once), and switching a chip writes
+	// the sort back to the URL — so reload, back/forward, and share-current-URL all
+	// preserve the active subfeed instead of resetting to the default (#2072).
+	const [searchParams, setSearchParams] = useSearchParams();
+	const filterId = panoFilterIdFromParam(searchParams.get(PANO_SORT_PARAM));
+	// Push (not replace) a history entry so browser back/forward step across the
+	// visited subfeeds, per the acceptance criteria.
+	const setFilterId = React.useCallback(
+		(id: string) => {
+			setSearchParams((prev) => {
+				const next = new URLSearchParams(prev);
+				next.set(PANO_SORT_PARAM, panoSortFromFilterId(id));
+				return next;
+			});
+		},
+		[setSearchParams],
 	);
 	const filter = PANO_FILTERS.find((f) => f.id === filterId) ?? PANO_FILTERS[0];
 	if (!filter) return null;

@@ -11,7 +11,7 @@
  * feed seeds its initial chip from the param.
  */
 import type {SubnavLink} from "../components/layout/Subnav";
-import type {PostSort} from "./panoFeedSort";
+import {DEFAULT_POST_SORT, type PostSort} from "./panoFeedSort";
 
 /** The query param that carries the active feed sort (deep-linkable). */
 export const PANO_SORT_PARAM = "sort";
@@ -39,6 +39,15 @@ export const SAVED_LINK: SubnavLink = {to: "/pano/kaydedilenler", label: "kayded
 /** The filter id for a raw `?sort=` value, defaulting when absent/unrecognized. */
 export function panoFilterIdFromParam(param: string | null): string {
 	return PANO_FILTERS.find((f) => f.sort === param)?.id ?? DEFAULT_PANO_FILTER_ID;
+}
+
+/**
+ * The server `sort` a filter id selects — the inverse of `panoFilterIdFromParam`,
+ * so an in-feed chip switch can write its sort back to the `?sort=` param and keep
+ * the URL the source of truth. Defaults when the id is unrecognized.
+ */
+export function panoSortFromFilterId(id: string): PostSort {
+	return PANO_FILTERS.find((f) => f.id === id)?.sort ?? DEFAULT_POST_SORT;
 }
 
 /** The feed URL for a given sort — the route a saved-page sort chip navigates back to. */
