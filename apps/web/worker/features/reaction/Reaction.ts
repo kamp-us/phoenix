@@ -37,6 +37,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {REACTION_EMOJI, type ReactionEmoji} from "../../db/reaction-emoji.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {targetTable} from "../../db/target-table.ts";
+import {Telemetry} from "../telemetry/Telemetry.ts";
 import {ReactionTargetNotFound} from "./errors.ts";
 
 // Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
@@ -150,6 +151,13 @@ export const ReactionLive = Layer.effect(Reaction)(
 		// `orDieAccess`: DB failures are defects (domain-boundary rule), so the
 		// public signature carries `ReactionTargetNotFound` only and `R` stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
+
+		// The product-usage telemetry seam (ADR 0153, epic #2065). Resolved once at
+		// layer build (isolate-level, discharged at the `makeFateLayer` merge) so
+		// `react` gains no per-request wiring. `emit` is fire-and-forget best-effort:
+		// its error + requirement channels are discharged inside `TelemetryLive`, so a
+		// telemetry failure can never fail the reaction it observes (ADR 0153 fail-safe).
+		const telemetry = yield* Telemetry;
 
 		// Target-liveness lookup through the shared descriptor seam — the same
 		// `definition | post | comment` fan-out Vote/Report dispatch through, so
@@ -315,6 +323,22 @@ export const ReactionLive = Layer.effect(Reaction)(
 									}),
 							] as const),
 				);
+
+				// Fire-and-forget product-usage emit, AFTER the write commits and only
+				// on a real state change — the early `changed: false` return above means
+				// a no-op re-react/retract emits nothing (ADR 0153, #2069). `action`
+				// distinguishes a set/change (`react`) from the null-emoji toggle-off
+				// (`retract`); `surface` is the target kind; `emoji` rides the trailing
+				// blob slot (retract carries none). `emit` is `Effect<void>` with its
+				// failure swallowed in `TelemetryLive`, so this can never fail or delay
+				// the reaction (ADR 0153 fail-safe, S4).
+				yield* telemetry.emit({
+					feature: "reaction",
+					action: input.emoji === null ? "retract" : "react",
+					surface: input.targetKind,
+					userId: input.userId,
+					...(input.emoji === null ? {} : {emoji: input.emoji}),
+				});
 
 				return {
 					targetKind: input.targetKind,

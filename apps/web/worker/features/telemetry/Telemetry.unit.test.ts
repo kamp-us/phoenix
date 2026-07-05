@@ -76,6 +76,40 @@ describe("toDataPoint — fixed positional AE schema (ADR 0153)", () => {
 			doubles: [1],
 		});
 	});
+
+	it("maps a reaction's emoji to the trailing blob slot after userId (#2069)", () => {
+		assert.deepStrictEqual(
+			toDataPoint({
+				feature: "reaction",
+				action: "react",
+				surface: "post",
+				userId: "u1",
+				emoji: "❤️",
+			}),
+			{indexes: ["reaction"], blobs: ["reaction", "react", "post", "u1", "❤️"], doubles: [1]},
+		);
+	});
+
+	it("a retract carries no emoji — the trailing slot is dropped, userId stays at blob4", () => {
+		assert.deepStrictEqual(
+			toDataPoint({feature: "reaction", action: "retract", surface: "comment", userId: "u1"}),
+			{indexes: ["reaction"], blobs: ["reaction", "retract", "comment", "u1"], doubles: [1]},
+		);
+	});
+
+	it("keeps emoji at blob5 even with an absent userId — an empty placeholder holds blob4", () => {
+		// The positional-stability guard: a present emoji with no userId must NOT slide
+		// into blob4, or the column silently misaligns. userId is filled with "" so emoji
+		// stays at its fixed slot.
+		assert.deepStrictEqual(
+			toDataPoint({feature: "reaction", action: "react", surface: "post", emoji: "🔥"}),
+			{
+				indexes: ["reaction"],
+				blobs: ["reaction", "react", "post", "", "🔥"],
+				doubles: [1],
+			},
+		);
+	});
 });
 
 describe("Telemetry.emit", () => {
