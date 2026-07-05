@@ -189,27 +189,12 @@ export const mutations = {
 			// — the reaction twin of `definition.vote`'s score publish, through the same
 			// never-failing `WorkerLivePublisher`.
 			const live = sozlukLive(yield* WorkerLivePublisher);
-			// [DIAG2049] stage RE-RESOLVE (prime suspect) — entering the definition read/
-			// stamp path for the reactor. `reactToDefinition` returns the row the
-			// `Reaction.readAggregate` merge stamps the fresh per-emoji aggregate onto
-			// (the SAME layer post uses); if this never logs its exit, the re-resolve hung.
-			console.log(
-				`[DIAG2049][RE-RESOLVE-ENTER] definitionId=${input.id} reactorId=${user.id} emoji=${input.emoji}`,
-			);
 			const row = yield* sozluk.reactToDefinition({
 				definitionId: input.id,
 				reactorId: user.id,
 				emoji: input.emoji,
 			});
 			const definition = toDefinition(row);
-			console.log(
-				`[DIAG2049][RE-RESOLVE-EXIT] definitionId=${definition.id} reactionsPresent=${definition.reactions !== undefined} myReaction=${(definition as {reactions?: {myReaction?: unknown}}).reactions?.myReaction}`,
-			);
-			// [DIAG2049] stage PUBLISH-FIRES — the `live.definition.update` publish for
-			// `definition.react` (byte-identical to `definition.vote`'s score publish). If
-			// this logs but no [FRAME-ROUTE]/[DRAIN] follows, the frame died in the publisher
-			// waitUntil/topic seam, not here.
-			console.log(`[DIAG2049][PUBLISH-FIRES] definitionId=${definition.id} changed=reactions`);
 			yield* live.definition.update(definition.id, {changed: ["reactions"], data: definition});
 			return definition;
 		}),

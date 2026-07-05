@@ -106,6 +106,26 @@ describe("live views — /fate/live (reaction-count reconcile)", () => {
 		);
 		expect(reacted.ok).toBe(true);
 
+		// CAUSE-1 DISCRIMINATOR (fail fast, before the SSE read). The DIRECT mutation
+		// return — not a streamed frame — carries the fresh aggregate ONLY on the flag-ON
+		// path: flag-ON returns `toDefinition(reactToDefinition(...))` with the reactor's
+		// own emoji stamped (`myReaction === "👍"`), while the dark-ship OFF branch returns
+		// the inert pre-reaction re-resolve (`toDefinition(current)`) whose `myReaction` is
+		// `null` — yet BOTH return `ok: true`, so the `ok` check above cannot tell them
+		// apart. Asserting the reactor's emoji on the direct response makes a silently
+		// ineffective flag override fail HERE in milliseconds instead of hanging the SSE
+		// read for the full test budget. `reacted.data` is the mutation's returned
+		// DefinitionView (`select: ["id", "reactions"]`).
+		const directReaction = (reacted.ok ? reacted.data : undefined) as
+			| {reactions?: {myReaction: string | null}}
+			| undefined;
+		expect(
+			directReaction?.reactions?.myReaction,
+			`expected direct react response myReaction=👍 (flag ON), got ${JSON.stringify(
+				directReaction?.reactions?.myReaction ?? null,
+			)} — phoenix-reactions flag did not take effect on the deployed stage`,
+		).toBe("👍");
+
 		// The subscribed stream delivers the reaction-count delta as an entity `next`
 		// frame whose `event.data` is the re-resolved definition with its updated
 		// aggregate (the `myReaction` + per-emoji `counts` the reaction bar reconciles to).
@@ -115,7 +135,7 @@ describe("live views — /fate/live (reaction-count reconcile)", () => {
 		// entity topic's replay buffer can hold a prior run's `next` frame for the same
 		// seeded id, which would be the next frame ahead of ours. Match on our own
 		// `myReaction === "👍"` rather than asserting the very next frame. Bounded: a
-		// stream that never delivers our frame still fails (readEvent's own timeout).
+		// stream that never delivers our frame still fails (the 10s deadline below).
 		type ReactionNext = {
 			kind: string;
 			event: {
@@ -125,11 +145,36 @@ describe("live views — /fate/live (reaction-count reconcile)", () => {
 				};
 			};
 		};
+		//
+		// CAUSE-2 DISCRIMINATOR (fail at ~10s, not the 120s test budget). The direct
+		// response above proved the flag is ON and the mutation published, so a missing
+		// frame now means the publish was LOST in delivery, not that the flag is off. The
+		// held stream never closes, so `readEvent` would otherwise block on `reader.read()`
+		// until the whole test times out with no signal — race every read against a shared
+		// 10s deadline (a working delivery lands the frame in well under that). The read
+		// stays non-vacuous: it still requires OUR own `myReaction === "👍"` frame to pass.
+		const READ_DEADLINE_MS = 10_000;
+		let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+		const deadline = new Promise<never>((_, reject) => {
+			deadlineTimer = setTimeout(
+				() =>
+					reject(
+						new Error(
+							"no reaction update frame received within 10s (flag ON, publish fired) — frame lost in delivery",
+						),
+					),
+				READ_DEADLINE_MS,
+			);
+		});
 		let payload: ReactionNext | undefined;
-		for (let i = 0; i < 10 && payload?.event.data.reactions.myReaction !== "👍"; i++) {
-			const frame = await readEvent(reader, decoder, buffer);
-			expect(frame).toContain("event: next");
-			payload = frameData<ReactionNext>(frame);
+		try {
+			for (let i = 0; i < 10 && payload?.event.data.reactions.myReaction !== "👍"; i++) {
+				const frame = await Promise.race([readEvent(reader, decoder, buffer), deadline]);
+				expect(frame).toContain("event: next");
+				payload = frameData<ReactionNext>(frame);
+			}
+		} finally {
+			clearTimeout(deadlineTimer);
 		}
 		expect(payload?.kind).toBe("next");
 		expect(payload?.event.data.id).toBe(definitionId);
