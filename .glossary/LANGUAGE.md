@@ -257,6 +257,16 @@ independently; the product simply comes home to **kamp.us**. Rebirth named in En
 English-for-technical rule (§3). `anka` is a **framework name**, not user-facing product
 copy, so it lives here in sense (3) rather than as a §3 Turkish-surface brand-noun row.
 
+### Milestone
+
+**A milestone is an *initiative*. An initiative has a Definition of Done.** A catch-all with
+no DoD is a **label, not a milestone**. A fixes-bucket like "Sözlük/Pano fixes" is an
+*oxymoron* to this definition — it has no DoD, so it can't be an initiative, so it isn't a
+milestone; its disposition is to **retire** (convert to a plain label if the grouping is
+still wanted), not "close as done." (ADR
+[0072](../.decisions/0072-milestones-encode-strategic-sequencing.md) — *milestones encode
+strategic sequencing*.)
+
 ---
 
 ## 3. Product / brand nouns (Turkish surface)

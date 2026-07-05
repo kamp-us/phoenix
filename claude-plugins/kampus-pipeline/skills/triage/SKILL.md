@@ -555,6 +555,40 @@ sweeping:
    sibling-repo tree). The guarantee is a property of the agent, not of who dispatches it;
    a caller must never have to re-scrub the summary before relaying it.
 
+### Cadence hygiene sweep — flag 100%-open milestones (flag-only, NEVER auto-close)
+
+Once per sweep, run a **milestone-hygiene pass**: surface every open milestone that has hit
+**100% (`open_issues == 0`, `closed_issues > 0`)** to the EA for a close / keep / retire
+call. An open milestone is meant to signal *active work*; one sitting at 100% signals
+nothing, so the board's focus signal rots. This sweep is the natural home for that hygiene
+check — it costs one REST read and keeps the milestone list readable.
+
+**Flag-only — this sweep NEVER modifies or closes a milestone.** It is the exact mirror of
+the human-filed-never-auto-closed rule (Step 5): the *disposition* of a completed milestone
+is founder judgment, not a mechanical act. A 100%-open milestone may legitimately stay open
+(more issues genuinely planned), may be **done → close**, or may be a **bucket masquerading
+as a milestone → retire** (convert to a plain label). Per the glossary's **Milestone** term
+([`../../../.glossary/LANGUAGE.md`](../../../.glossary/LANGUAGE.md)) — *a milestone is an
+initiative; an initiative has a Definition of Done; a catch-all with no DoD is a label, not
+a milestone* — a fixes-bucket at 100% is retired, not closed-as-done. Deciding which of the
+three applies is out of triage's scope (ADR
+[0072](https://github.com/kamp-us/phoenix/blob/main/.decisions/0072-milestones-encode-strategic-sequencing.md)
+§3 — curating the milestone set is a roadmap, human act). Triage **flags**; the EA decides.
+
+```bash
+# open milestones at 100% — 0 open issues, at least one closed (an empty milestone is not "done")
+gh api "repos/$REPO/milestones?state=open&per_page=100" \
+  --jq '.[] | select(.open_issues == 0 and .closed_issues > 0)
+        | "#\(.number)\t\(.title)\t(\(.closed_issues) closed, 0 open)"'
+```
+
+Surface the matches in the sweep ledger (Step 5's report-back) as a **flag to the EA** — one
+line per 100%-open milestone with its number, title, and closed count, tagged for a
+close/keep/retire call. Do **not** `PATCH`/close a milestone, and do **not** file a follow-up
+issue per milestone — the flag in the ledger is the surfacing; the routed board-hygiene action
+is the EA's, downstream of this sweep. If the sweep finds no 100%-open milestone, note "none"
+and move on — the check is idempotent and read-only.
+
 ## Conventions
 
 This skill is one of a suite (`report` → **`triage`** → `plan-epic` → `review-plan` →
