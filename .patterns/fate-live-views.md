@@ -49,6 +49,96 @@ The same holds for the mutator's own **delete** (#1687, the collection-delete an
 
 The fresh-slug sözlük branch (no list yet) was **not** in fact deterministic on its own: `definition.add` auto-creates the term, then `SozlukTermPage` remounts the content (a `reloadKey` bump) to flip from the empty-term branch to the list branch via a fresh `network-only term(slug)` re-read. That re-read **must be issued imperatively before the remount** — a bare `key` bump reuses the first mount's fulfilled `data:null` handle without refetching ([fate-views-and-requests.md](./fate-views-and-requests.md#remount-no-refetch), #817) — but even with the imperative re-read it is a *second* request that can race the write, and on the fresh-slug path nothing armed the read-back, so a raced re-read silently dropped the just-created definition (#730, the dominant flows-lane Family-B cause in epic #713). The fix carries the mutation's **own returned id** across the remount (`SozlukTermPage`'s `createdDefinitionId`) and arms the same `useReadbackRefetch` on it once the list branch mounts. The remount re-read is now just a fast-path that usually already carries the node (the read-back settles instantly); when it raced, the read-back deterministically refetches the node in. The mutation result is the source of truth for the just-created entity — the blind-re-read-only path is gone.
 
+## The invalidation invariant — a mutation over a live view MUST publish {#invalidation-invariant}
+
+**A state-mutation that writes an entity or list backing a `/fate/live` view MUST publish
+its invalidation on the same request.** The client stays current only because the mutation
+tells the live bus what changed; a mutation that writes the row and returns a receipt but
+publishes nothing leaves every *other* open subscriber — and, absent the read-back
+self-heal above, the mutator's own view — stale until a manual reload. The publish is the
+authoring-side half of "live": the view opts a ref into the stream, the mutation feeds it.
+
+State this as an invariant because the failure is silent: the write succeeds, the mutation
+returns, tests over the return value pass, and the staleness only shows on a *second* open
+client that never sees the change. That is exactly [#1886](https://github.com/kamp-us/phoenix/issues/1886)
+(the anti-pattern below) — a promote-to-yazar write that returned success but published
+nothing, so the divan UI required a manual refresh.
+
+The invariant is **fail-safe on the publish, not on the omission**: `WorkerLivePublisher`'s
+publish methods carry `E = never` (see [fate-effect-server.md](./fate-effect-server.md)), so
+a publish that *is* wired can never fail the mutation — but a publish that is *never wired*
+is undetectable at the type level today. That gap is what the enforcement seam
+([#1898](https://github.com/kamp-us/phoenix/issues/1898)) closes; until it lands, this
+convention is the human-readable rule an author holds themselves to.
+
+### The reference pattern — how pano + sözlük publish {#reference-pattern}
+
+The landed features (`features/pano/mutations.ts`, `features/sozluk/mutations.ts`) all
+follow one shape. Copy it:
+
+1. **Acquire the publisher and bind the feature's `live.ts` targets.** Each feature owns a
+   single `live.ts` — the ONE place that answers "what does mutating this entity publish
+   to?" It binds the entity's wire `__typename` **off the view's `typeName`**, never an
+   inline `"Post"`/`"Definition"` literal ([#1127](https://github.com/kamp-us/phoenix/issues/1127)):
+
+   ```ts
+   // features/sozluk/live.ts — const DEFINITION = DefinitionView.typeName;
+   const live = sozlukLive(yield* WorkerLivePublisher);
+   ```
+
+   The view is the source of the typename, so a resolver names the fan-out target instead
+   of restating the magic-string seam — and the published frame is byte-identical to the
+   inline wiring it replaced.
+
+2. **Publish after the write.** Pick the shape by what changed:
+   - **Scalar field reconcile** — `live.<entity>.update(id, {changed, data})`. Pass the
+     re-resolved entity inline as `data` (the mutation already re-resolved it for its own
+     response); each client masks it to its own selection. `changed` is a per-mutation hint
+     (which fields the write touched) and does not reach the wire.
+
+     ```ts
+     yield* live.definition.update(definition.id, {changed: ["score"], data: definition});
+     ```
+   - **Connection membership** — a topic `appendNode` / `prependNode` / `deleteEdge` on the
+     args-scoped connection the view subscribes to (`Term.definitions` keyed by term slug,
+     `Post.comments` keyed by post id, the global `posts` feed):
+
+     ```ts
+     yield* live.definition
+       .term(input.termSlug)
+       .appendNode(definition.id, {node: definition}, decidePublish(sandboxedAt));
+     ```
+
+3. **`broadcastIf`-gate any node broadcast to a viewer-blind topic.** `appendNode` /
+   `prependNode` push a node onto a public topic that has no per-subscriber view of the
+   viewer, so a resolver cannot broadcast without discharging the sandbox `PublishDecision`
+   ([#1280](https://github.com/kamp-us/phoenix/issues/1280); the `broadcastIf` gate in each
+   feature's `live.ts`). `deleteEdge` / `update` carry no broadcast node, so they stay
+   ungated.
+
+The delete direction is symmetric: publish `live.<entity>.delete(id)` for the entity plus a
+topic `deleteEdge(id)` on the connection it leaves, and its inverse (`restore`) re-publishes
+the `appendNode` through the same sandbox gate — see `definition.delete` / `definition.restore`
+in `features/sozluk/mutations.ts`.
+
+### The anti-pattern — write, return a receipt, publish nothing {#anti-pattern}
+
+```ts
+// ANTI-PATTERN — the write lands, the mutation returns, NOTHING is published.
+Effect.fn("promote")(function* ({input}) {
+  const user = yield* CurrentUser.required;
+  yield* service.promote(input.id);
+  return {ok: true};   // ← stale-til-reload: every OTHER open subscriber never sees it
+});
+```
+
+A mutation that fans out an entity/list change but returns only a receipt (or returns the
+re-resolved entity but never publishes) is **stale-til-reload** — the exemplar is
+[#1886](https://github.com/kamp-us/phoenix/issues/1886): the promote-to-yazar write
+succeeded but the divan UI required a manual refresh because no `live.*` invalidation
+followed the write. The fix is always the reference pattern above: after the write, publish
+the reconcile through the feature's `live.ts`.
+
 ## Server — publishing from mutations
 
 A mutation handler publishes events after the write, through the per-request `LivePublisher` service ([fate-effect-operations.md](./fate-effect-operations.md) "Write conventions"):

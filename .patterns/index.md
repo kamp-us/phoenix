@@ -56,7 +56,7 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 | [fate-client-setup.md](./fate-client-setup.md) | `createFateClient`, `<FateClient>` provider, auth, generated client, Suspense/error rails | Wiring the client / app shell |
 | [fate-views-and-requests.md](./fate-views-and-requests.md) | `view`/`useView`/`ViewRef`, masking, one batched `useRequest` per screen, `useListView` pagination | Reading data in a component |
 | [fate-mutations-client.md](./fate-mutations-client.md) | `fate.mutations`/`actions`, optimistic updates, `insert`/`delete` membership, error routing | Writing data from the UI |
-| [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, server `live.*` publishing, the SSE wire, the unified `LiveDO` Durable Object | Making a view live (spans client + server) |
+| [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, the [invalidation invariant](./fate-live-views.md#invalidation-invariant) (a mutation over a live view MUST publish), server `live.*` publishing, the SSE wire, the unified `LiveDO` Durable Object | Making a view live (spans client + server); writing a mutation that must invalidate a live view |
 
 ## Index — UI / components layer
 
