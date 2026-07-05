@@ -3,6 +3,7 @@ import {Navigate} from "react-router";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
 import {Karma} from "../components/karma/Karma";
+import {actorLabel} from "../components/moderation/actor-identity";
 import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
 import {profileStandingLabel} from "../components/profile/profileStanding";
@@ -40,8 +41,17 @@ export function ProfilePage() {
 	const [deleteOpen, setDeleteOpen] = useState(false);
 
 	const u = session.data?.user;
-	const name = u?.name ?? u?.email.split("@")[0] ?? "user";
-	const handle = u?.email.split("@")[0] ?? "user";
+	// Route the identity mirror through the shared actor-label rule (#2126): the
+	// display name, falling back to the chosen @username, never the email-derived
+	// local-part the old code leaked. `me` (the canonical row) is the source for the
+	// username — the session user's `username` doesn't round-trip cleanly right after
+	// a setUsername write (see useMe); `me.name` is the display name.
+	const username = me?.username ?? null;
+	const name = actorLabel(me?.name ?? u?.name ?? null, username, "kullanıcı");
+	// The handle line is the chosen username; on the settings page the account is
+	// always booted, so `username` is set — the `kullanıcı` fallback is only the
+	// defensive not-yet-booted degenerate, never the email local-part.
+	const handle = username ?? "kullanıcı";
 	// The handle-line standing label, derived from the trusted tier (#1302) instead
 	// of the old hard-coded `· yeni üye` lie. `null` (flag off, or no honest tier) →
 	// handle-only, never a placeholder. Dark behind the same authorship-loop flag as

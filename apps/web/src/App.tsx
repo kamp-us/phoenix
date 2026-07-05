@@ -8,6 +8,7 @@ import {useDivanAccess} from "./components/divan/useDivanAccess";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
+import {actorLabel} from "./components/moderation/actor-identity";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
@@ -81,14 +82,15 @@ function Layout() {
 	}
 
 	const sessionUser = session.data?.user;
-	const fallbackName = sessionUser
-		? (sessionUser.name ?? sessionUser.email.split("@")[0] ?? "user")
-		: "";
+	// The topbar identity, routed through the shared actor-label rule (#2126):
+	// display name, falling back to the @username, never the email local-part the
+	// old `email.split("@")[0]` leaked into the visible name.
+	const username = me?.username ?? null;
 	const userProps = sessionUser
 		? {
 				user: {
-					name: me?.name ?? fallbackName,
-					username: me?.username ?? null,
+					name: actorLabel(me?.name ?? sessionUser.name, username, "kullanıcı"),
+					username,
 				},
 			}
 		: {};

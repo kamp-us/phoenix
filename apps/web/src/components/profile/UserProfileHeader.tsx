@@ -1,5 +1,6 @@
 import {useView, type ViewRef, view} from "react-fate";
 import type {Profile} from "../../../worker/features/fate/views";
+import {actorLabel} from "../moderation/actor-identity";
 import {CaylakStatusBlock} from "./CaylakStatusBlock";
 
 export const UserProfileHeaderView = view<Profile>()({
@@ -29,7 +30,7 @@ export interface UserProfileHeaderProps {
 
 export function UserProfileHeader(props: UserProfileHeaderProps) {
 	const profile = useView(UserProfileHeaderView, props.profile);
-	const displayName = profile.displayName ?? profile.username ?? "kullanıcı";
+	const displayName = actorLabel(profile.displayName, profile.username, "kullanıcı");
 	const handle = profile.username ?? props.fallbackHandle;
 
 	return (

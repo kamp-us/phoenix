@@ -3,6 +3,7 @@ import {useFateClient} from "react-fate";
 import {Link, useNavigate} from "react-router";
 import {useSession} from "../auth/client";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
+import {actorLabel} from "../components/moderation/actor-identity";
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
@@ -197,7 +198,11 @@ export function PanoSubmitPage() {
 						url: linkUrl,
 						host: linkUrl ? hostOf(linkUrl) : null,
 						tags: Array.from(selectedTags),
-						author: user.name ?? user.email,
+						// Shared actor-label rule (#2126): display name → fixed noun, never the
+						// email the old `?? user.email` could leak into the optimistic author.
+						// The session user has no typed `username`; the server round-trip
+						// replaces this optimistic author with the stored value.
+						author: actorLabel(user.name, null, "kullanıcı"),
 						authorId: user.id,
 						now,
 					}),
