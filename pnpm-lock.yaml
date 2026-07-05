@@ -567,10 +567,22 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.10.1)
+      '@kampus/d1-rest':
+        specifier: workspace:*
+        version: link:../d1-rest
+      '@kampus/db-schema':
+        specifier: workspace:*
+        version: link:../db-schema
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 'catalog:'
+        version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
