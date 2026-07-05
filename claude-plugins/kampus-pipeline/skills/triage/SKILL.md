@@ -387,18 +387,23 @@ comment there rather than file anew.
 ### Assign a priority
 
 Every triaged issue gets exactly one of `p0` / `p1` / `p2`. Priority is *your*
-judgment of urgency-and-impact, deliberately coarse — it sets write-code's pick order
-(highest bucket first, oldest first within a bucket), so it only has to be
-*directionally* right, not a precise ranking.
+judgment, deliberately coarse — it sets write-code's pick order (highest bucket first,
+oldest first within a bucket), so it only has to be *directionally* right, not a precise
+ranking. Priority is **milestone-relative**, not an absolute urgency score: `p1` means
+"serves the active milestone / you'd pull it next," so it stays naturally bounded by the
+current arc instead of becoming the catch-all. The **default is `p2`** — most real work
+isn't the current focus.
 
 | Priority | Use when… |
 |---|---|
-| **`p0`** | **Highest.** Drop-everything: actively breaking something people rely on, blocking other work, a data-loss or security risk, or a release gate. If it's not really urgent, it's not p0 — reserve it so the bucket stays meaningful. |
-| **`p1`** | **Medium.** Real and worth doing soon, but nothing is on fire. The default for solid, actionable work that isn't an emergency. |
-| **`p2`** | **Lowest.** Nice-to-have, cleanup, "don't forget to reconsider" trackers, low-impact refactors, deferred investigations. Real work, no time pressure. |
+| **`p0`** | **Fire only.** Drop-everything: actively breaking something people rely on, blocking other work, a data-loss or security risk, or a release gate. If it's not a genuine emergency, it's not p0 — reserve it so the bucket stays meaningful. |
+| **`p1`** | **Serves the active milestone.** Real, actionable work that belongs to the current arc — you'd pull it next. Milestone-bounded on purpose: p1 is *not* a general "worth doing soon" tier, so a solid issue that isn't part of the current focus is **not** p1. If there's no active milestone, keep p1 for the small set of things you'd genuinely pick up next; everything else is p2. |
+| **`p2`** | **The default.** Real, actionable work that isn't the current focus — most of the backlog. Also nice-to-have, cleanup, "don't forget to reconsider" trackers, low-impact refactors, deferred investigations. Real work, no time pressure to pull it ahead of the active arc. |
 
-Most of a healthy backlog is `p1`/`p2`. When unsure between two buckets, pick the
-lower one — over-escalation erodes the signal faster than under-escalation.
+Most of a healthy backlog is `p2`, with a bounded `p1` set tracking the active
+milestone. When unsure between two buckets, pick the lower one — over-escalation erodes
+the signal faster than under-escalation, and an inflated `p1` is exactly what makes the
+backlog unsequenceable.
 
 ### Apply the labels (triaged path)
 
