@@ -265,6 +265,13 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			framesQueue = queue;
 			yield* Queue.offer(queue, CONNECTED_FRAME);
 
+			// [DIAG2049] stage READ-LOOP-ENTRY — the connection role bound its held-stream
+			// queue and is about to build the merged SSE read stream. Proves the subscriber
+			// connection entered the read loop (vs erroring before it).
+			console.log(
+				`[DIAG2049][READ-LOOP-ENTRY] connectionId=${role.connectionId} generation=${generation} epochStartedAt=${epochStartedAt}`,
+			);
+
 			// `drop(1)` skips `Stream.tick`'s immediate tick so the first keep-alive
 			// lands at +15s, not 0.
 			const keepAlive = Stream.tick("15 seconds").pipe(
@@ -612,6 +619,12 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			yield* state.storage.put(subscriberKey(row), row);
 			yield* ensureAlarm(input.limits);
+			// [DIAG2049] stage REGISTER — the topic role accepted+persisted this subscriber
+			// row. Log the topic key it registered under (should be `Definition:<id>` for
+			// the reaction subscribe) so REGISTER, PUBLISH, and DRAIN can be keyed together.
+			console.log(
+				`[DIAG2049][REGISTER] topicKey=${role.topicKey} connectionId=${row.connectionId} subId=${row.subId} generation=${row.generation} revision=${row.revision} epochStartedAt=${input.epochStartedAt} subscribedAt=${input.subscribedAt}`,
+			);
 			// Catch up the just-registered connection on frames a publish that beat this
 			// register would have missed it on (#714). Replay reaches ONLY this
 			// connection, which fan-out could not have — see {@link replayBuffer}.
@@ -648,6 +661,13 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			const seq = yield* nextSeq;
 			const frame: DeliverFrame = {...input.frame, eventId: String(seq)};
 			const entries = yield* loadRows(input.topicKey);
+			// [DIAG2049] stage FRAME-ROUTE — the published frame reached the topic role and
+			// its subscriber registry was listed. `subscriberCount` is how many rows this
+			// topic will fan the frame out to; 0 = published-into-the-void (no subscriber on
+			// the exact key the publish routed to — the register/publish key MUST match).
+			console.log(
+				`[DIAG2049][FRAME-ROUTE] topicKey=${input.topicKey} seq=${seq} eventId=${frame.eventId} frameKind=${frame.kind} subscriberCount=${entries.length}`,
+			);
 			// Fan out per-connection deliver passes concurrently (connections are
 			// independent). The inner per-row loop stays sequential because it
 			// short-circuits on the first unreachable item.
@@ -675,6 +695,13 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 									// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
 									Effect.catchCause(() => Effect.succeed<DeliverResult | undefined>(undefined)),
 								);
+							// [DIAG2049] stage DRAIN — the outcome of enqueueing this frame onto the held
+							// connection's SSE queue. delivered=true ⇒ frame reached the subscriber's
+							// stream; undefined ⇒ deliver unreachable/timed-out (connection reaped);
+							// stale=true ⇒ row stale (generation/revision mismatch), frame dropped.
+							console.log(
+								`[DIAG2049][DRAIN] topicKey=${input.topicKey} connectionId=${connectionId} subId=${item.row.subId} rowGeneration=${item.row.generation} delivered=${result?.delivered} stale=${result?.stale} unreachable=${result === undefined}`,
+							);
 							if (result === undefined) {
 								reachable = false;
 								break;
