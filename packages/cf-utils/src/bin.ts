@@ -12,6 +12,8 @@
  *   node src/bin.ts flag set <key> … --env <env> --execute   apply it
  *   node src/bin.ts auth login                              paste an API token → keychain (#1730)
  *   node src/bin.ts auth status|logout                      inspect / clear stored credentials
+ *   node src/bin.ts scrub-author-email --database-id <uuid>            dry-run the email-at-rest scan (#2137)
+ *   node src/bin.ts scrub-author-email --database-id <uuid> --execute --confirm scrub-author-email   apply it
  *
  * Credentials resolve keychain-first (`auth login`, #1730), falling back to
  * $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID — the env-var path CI keeps using.
@@ -57,6 +59,7 @@ import {
 } from "./flag.ts";
 import {FlagshipRead, FlagshipReadLive, FlagshipWrite, FlagshipWriteLive} from "./flagship.ts";
 import {KeychainLive} from "./keychain.ts";
+import {makeScrubCommand} from "./scrub-command.ts";
 
 const list = Command.make(
 	"list",
@@ -246,9 +249,18 @@ const flag = Command.make("flag").pipe(
 	Command.withDescription("Read and flip Flagship flags across every env"),
 );
 
+// The D1 REST transport layer the scrub verb runs `makeD1Rest` on: the SAME keychain-first
+// `Credentials` seam (#1730) the flag surfaces use, plus a Fetch HTTP client — so a founder's
+// `auth login` credentials satisfy the D1 REST query API with zero extra wiring, and the
+// env-var fallback ($CLOUDFLARE_API_TOKEN) still works for a token-only run.
+const ScrubRestLayer = Layer.merge(
+	CredentialsKeychainFirst.pipe(Layer.provideMerge(KeychainLive)),
+	FetchHttpClient.layer,
+).pipe(Layer.provide(NodeServices.layer));
+
 const cli = Command.make("cf-utils").pipe(
-	Command.withSubcommands([flag, auth]),
-	Command.withDescription("Human-operated Cloudflare Flagship read/flip CLI"),
+	Command.withSubcommands([flag, auth, makeScrubCommand(ScrubRestLayer)]),
+	Command.withDescription("Human-operated Cloudflare Flagship read/flip + data-scrub CLI"),
 );
 
 // Credentials resolve keychain-first with the env-var fallback (#1730): the same ambient
