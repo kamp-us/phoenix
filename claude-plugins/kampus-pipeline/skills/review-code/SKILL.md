@@ -429,15 +429,17 @@ has repo-wide contract blast radius against `apps/web/worker/features/fate/wireC
 feature-scoped green while that contract test is red is the #1657-class false-green a trust
 gate exists to prevent. On the degrade path therefore:
 
-- **Run the full unit project, not a feature-scoped subset.** Use `pnpm -C "$REVIEW_WT" test:unit`
-  (repo script = `vitest run --config vitest.config.ts --project unit`, the whole unit
-  surface), never `--project unit <feature-path>`. This is the fail-closed fix: it verifies
-  the change's real blast radius, so a cross-cutting contract test cannot slip past a
-  degraded verification.
+- **Run the full unit project, not a feature-scoped subset.** Use `pnpm -C "$REVIEW_WT/apps/web" test:unit`
+  (the `apps/web` package script = `vitest run --config vitest.config.ts --project unit`, the
+  whole unit surface — `test:unit` lives in `apps/web/package.json`, NOT the repo root, since
+  `$REVIEW_WT` is the repo root a bare `pnpm -C "$REVIEW_WT" test:unit` hits
+  `ERR_PNPM_NO_SCRIPT`), never `--project unit <feature-path>`. This is the fail-closed fix:
+  it verifies the change's real blast radius, so a cross-cutting contract test cannot slip
+  past a degraded verification.
 
   ```bash
-  . "$WT_FILE"                        # re-source $REVIEW_WT/$PR_REF after a between-call reset (#1807)
-  pnpm -C "$REVIEW_WT" test:unit      # FULL unit project — never path-narrowed on the degrade path
+  . "$WT_FILE"                              # re-source $REVIEW_WT/$PR_REF after a between-call reset (#1807)
+  pnpm -C "$REVIEW_WT/apps/web" test:unit   # FULL unit project (the apps/web script) — never path-narrowed on the degrade path
   ```
 
 - **If — and only if — the full unit project genuinely cannot run** (an environment fault
