@@ -77,16 +77,29 @@ const relationStoreStub = Layer.succeed(RelationStore, {
 
 // A `Sozluk` stub whose `addDefinition` is scripted; every other method dies on
 // contact, so a passing test proves `definition.add` reached only the write it
-// routes around. Mirrors `draft-save.invariant.test.ts`'s `panoStub`.
-const sozlukStub = (result: AddDefinitionResult): Layer.Layer<Sozluk> =>
+// routes around. Mirrors `draft-save.invariant.test.ts`'s `panoStub`. `capture`
+// (when passed) records the write input so a test can assert the persisted
+// `authorName` the resolver chose (#2130 — never the user's email).
+const sozlukStub = (
+	result: AddDefinitionResult,
+	capture?: (input: {authorName: string}) => void,
+): Layer.Layer<Sozluk> =>
 	Layer.succeed(
 		Sozluk,
-		new Proxy({addDefinition: () => Effect.succeed(result)} as Partial<typeof Sozluk.Service>, {
-			get(target, prop) {
-				if (prop in target) return (target as Record<string, unknown>)[prop as string];
-				return () => Effect.die(`Sozluk.${String(prop)} not exercised in definition-mutation`);
+		new Proxy(
+			{
+				addDefinition: (input: {authorName: string}) => {
+					capture?.(input);
+					return Effect.succeed(result);
+				},
+			} as Partial<typeof Sozluk.Service>,
+			{
+				get(target, prop) {
+					if (prop in target) return (target as Record<string, unknown>)[prop as string];
+					return () => Effect.die(`Sozluk.${String(prop)} not exercised in definition-mutation`);
+				},
 			},
-		}) as typeof Sozluk.Service,
+		) as typeof Sozluk.Service,
 	);
 
 const ADD_RESULT: AddDefinitionResult = {
@@ -154,4 +167,50 @@ it.effect(
 			// `Term.definitions` subscriber across all slugs). That topic must be absent.
 			assert.isFalse(recorded.includes(liveGlobalConnectionTopic("Term.definitions")));
 		}),
+);
+
+// #2130 (PII-at-rest): a null-name account must NEVER have its EMAIL persisted as the
+// denormalized `authorName` — the old `user.name ?? user.email` fallback did exactly
+// that, and the flattened string renders publicly on the author surfaces. The resolver
+// now flattens identity through `authorDisplayLabel` (name → @username → fallback), so a
+// null-name / no-username actor persists the fixed fallback noun, never the email.
+it.effect("definition.add never persists a null-name author's email as authorName", () =>
+	Effect.gen(function* () {
+		const nullNameUser = {id: "u-nameless", email: "leak@example.com", name: null, username: null};
+		let captured: {authorName: string} | undefined;
+
+		const liveStub = Layer.succeed(LivePublisher)(
+			livePublisherFor({
+				publish: () => Effect.void,
+				waitUntil: () => {},
+			}),
+		);
+
+		yield* mutations["definition.add"]
+			.handler({input: {termSlug: "gizli", body: ADD_RESULT.body}, select: ["id"]})
+			.pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						sozlukStub(ADD_RESULT, (input) => {
+							captured = input;
+						}),
+						liveStub,
+						flagsOffStub,
+						kunyeStub,
+						notificationStub,
+						divanStub,
+						relationStoreStub,
+						noRequestFlagOverrides,
+					),
+				),
+				Effect.provideService(CurrentUser, {user: nullNameUser}),
+				Effect.provideService(CurrentActor, {actor: human(nullNameUser.id)}),
+				Effect.provideService(RuntimeContext, runtimeContextStub),
+			);
+
+		assert.isDefined(captured);
+		assert.strictEqual(captured?.authorName, "kullanıcı");
+		assert.notStrictEqual(captured?.authorName, nullNameUser.email);
+		assert.notInclude(captured?.authorName ?? "", "@");
+	}),
 );

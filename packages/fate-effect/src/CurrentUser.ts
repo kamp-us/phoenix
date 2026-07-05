@@ -15,10 +15,12 @@
  * The shape is deliberately minimal: `user` is `undefined` for anonymous
  * traffic (mirroring the worker's `Auth`), and {@link CurrentUserInfo} carries
  * exactly the identity fields phoenix resolvers consume (`id`/`email`/`name`/
- * `image`) — a structural subset of the better-auth session user, so the
- * worker provides it from the session value directly. Anything richer
- * (username, karma) is a database read behind a domain service, not session
- * state.
+ * `image`/`username`) — a structural subset of the better-auth session user, so
+ * the worker provides it from the session value directly. `username` is the
+ * public handle (a better-auth `additionalFields.username`, nullable until an
+ * account bootstraps it) — it rides on the session so a write path can persist a
+ * non-PII display label without a second DB read. Anything richer (karma) is a
+ * database read behind a domain service, not session state.
  */
 import {Context, Effect} from "effect";
 import * as Schema from "effect/Schema";
@@ -31,8 +33,22 @@ import {FateWireCode} from "./WireError.ts";
 export interface CurrentUserInfo {
 	readonly id: string;
 	readonly email: string;
-	readonly name: string;
+	/**
+	 * Display name — NULLABLE: the `user.name` column is nullable and the magic-link
+	 * signup mints nameless accounts (only email/password signup supplies a name). The
+	 * type must reflect that (the old non-null `string` lie is what made the
+	 * `name ?? email` PII fallback look safe, #2130); a null-name write flattens through
+	 * `authorDisplayLabel`, never email.
+	 */
+	readonly name: string | null;
 	readonly image?: string | null | undefined;
+	/**
+	 * Public handle (better-auth `additionalFields.username`), `null` until the
+	 * account bootstraps one. Carried on the session so a write path can resolve a
+	 * non-PII author label (name → `@username` → fallback) without a DB read — the
+	 * `email` field is NEVER a display fallback (a null name must not leak email).
+	 */
+	readonly username?: string | null | undefined;
 }
 
 /**

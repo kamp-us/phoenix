@@ -27,6 +27,7 @@ import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
 import {InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {authorDisplayLabel} from "../pasaport/author-label.ts";
 import {VoterNotEligible} from "../vote/errors.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {
@@ -201,7 +202,7 @@ export const mutations = {
 					...(input.body ? {body: input.body} : {}),
 					tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})})),
 					authorId: user.id,
-					authorName: user.name ?? user.email,
+					authorName: authorDisplayLabel(user),
 					sandboxedAt,
 				});
 				const post = shapePost({...r, myVote: null});
@@ -248,7 +249,7 @@ export const mutations = {
 			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.saveDraft({
 				authorId: user.id,
-				authorName: user.name ?? user.email,
+				authorName: authorDisplayLabel(user),
 				...(input.title != null ? {title: input.title} : {}),
 				...(input.url != null ? {url: input.url} : {}),
 				...(input.body != null ? {body: input.body} : {}),
@@ -518,7 +519,7 @@ export const mutations = {
 				const r = yield* pano.addComment({
 					postId: input.postId,
 					authorId: user.id,
-					authorName: user.name ?? user.email,
+					authorName: authorDisplayLabel(user),
 					body: input.body,
 					sandboxedAt,
 					...(input.parentId ? {parentId: input.parentId} : {}),

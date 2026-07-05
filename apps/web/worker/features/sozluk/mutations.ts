@@ -23,6 +23,7 @@ import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {authorDisplayLabel} from "../pasaport/author-label.ts";
 import {VoterNotEligible} from "../vote/errors.ts";
 import {
 	BodyRequired,
@@ -101,7 +102,7 @@ export const mutations = {
 				const result = yield* sozluk.addDefinition({
 					termSlug: input.termSlug,
 					authorId: user.id,
-					authorName: user.name ?? user.email,
+					authorName: authorDisplayLabel(user),
 					body: input.body,
 					sandboxedAt,
 					...(input.termTitle ? {termTitle: input.termTitle} : {}),
