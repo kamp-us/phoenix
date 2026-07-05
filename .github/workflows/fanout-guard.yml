@@ -1,0 +1,38 @@
+name: fanout-guard
+
+# CI gate for #1898 (ADR 0155): a mutation over a fate-live fanned entity (Post /
+# Comment / Definition, in the posts / Post.comments / Term.definitions topics) must
+# publish the /fate/live invalidation after its write — else every other client's live
+# view goes stale. That omission is invisible at the mutation site (the publisher's
+# error channel is `never`), which is why four features shipped it silently (#1893–#1896).
+# This job runs `pipeline-cli fanout-guard check`: every Fate.mutation must be classified
+# fanned/not in apps/web/worker/features/fate-live/fanned-mutations.ts (drift check), and
+# every fanned mutation's feature must reference a WorkerLivePublisher publish. It fails
+# closed on zero discovered mutations (ADR 0092). The scan lives once in the tool.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check every fanned mutation publishes its /fate/live invalidation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when a mutation is unclassified (drift), a fanned mutation's feature omits
+      # the publish, or zero mutations are in scope (fail-closed). Report on stderr. See #1898.
+      - name: Check every fanned mutation publishes
+        run: node packages/pipeline-cli/src/bin.ts fanout-guard check
