@@ -407,6 +407,78 @@ export const makeRefreshHotScores = (run: DrizzleAccessOrDie["run"]) =>
 		return {scanned: rows.length, updated: updates.length};
 	});
 
+/**
+ * The one-time FULL `hot_score` backfill (#2131). {@link makeRefreshHotScores} decays
+ * only the 72h recency window (`decayWindowMs`), so a post that froze high BEFORE the
+ * #2033 cron shipped and now sits OUTSIDE that window is never re-selected and stays
+ * pinned to the sıcak feed. This drops the window clause and recomputes EVERY live,
+ * non-draft row once, reusing the SAME pure core (`decayHotScores`) and the same
+ * changed-only write-back — the go-forward cron is left untouched.
+ *
+ * Run-once + idempotent by construction: the `hot_score_backfill` singleton row is the
+ * persisted marker. If it already exists the pass no-ops (`ran: false`); otherwise it
+ * recomputes, then inserts the marker so it never runs again. A recompute is naturally
+ * idempotent anyway (same rows + same clock ⇒ same result), so the marker only avoids a
+ * redundant table-wide scan on later invocations — a re-run before the marker lands is
+ * harmless. Factored to the one dep it reads (`run`) so it builds standalone, exactly
+ * like {@link makeRefreshHotScores}, and can be driven by an integration test.
+ */
+export const makeBackfillHotScores = (run: DrizzleAccessOrDie["run"]) =>
+	Effect.fn("Pano.backfillHotScores")(function* (now: Date) {
+		const alreadyRan = yield* run((db) =>
+			db.query.hotScoreBackfill.findFirst({columns: {id: true}}),
+		);
+		if (alreadyRan) {
+			return {ran: false as const, scanned: 0, updated: 0};
+		}
+
+		const nowMs = now.getTime();
+		// The windowless twin of refreshHotScores' query: SAME live/non-draft predicate,
+		// MINUS the `gte(createdAt, cutoff)` recency clause — so it reaches the pre-fix
+		// frozen rows outside the 72h window that the cron can never select.
+		const rows = yield* run((db) =>
+			db
+				.select({
+					id: schema.postRecord.id,
+					score: schema.postRecord.score,
+					hotScore: schema.postRecord.hotScore,
+					createdAt: schema.postRecord.createdAt,
+				})
+				.from(schema.postRecord)
+				.where(
+					and(isNull(schema.postRecord.removedAt), sql`${schema.postRecord.isDraft} is not 1`),
+				),
+		);
+		const updates = decayHotScores(
+			rows.map((r) => ({
+				id: r.id,
+				score: r.score,
+				hotScore: r.hotScore,
+				createdAtMs: (r.createdAt ?? now).getTime(),
+			})),
+			nowMs,
+		);
+		yield* Effect.forEach(
+			updates,
+			(u) =>
+				run((db) =>
+					db
+						.update(schema.postRecord)
+						.set({hotScore: u.hotScore})
+						.where(eq(schema.postRecord.id, u.id)),
+				),
+			{discard: true},
+		);
+		// Stamp the run-once marker LAST so a mid-pass failure leaves it unset and a later
+		// invocation retries the (idempotent) recompute rather than skipping a partial run.
+		yield* run((db) =>
+			db
+				.insert(schema.hotScoreBackfill)
+				.values({id: 1, completedAt: now, scanned: rows.length, updated: updates.length}),
+		);
+		return {ran: true as const, scanned: rows.length, updated: updates.length};
+	});
+
 export const makePostOperations = (deps: PostOperationsDeps) => {
 	const {run, batch, voteSvc, bookmarkSvc, reactionSvc, removalSeq, persistPanoStats} = deps;
 
@@ -1104,6 +1176,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	});
 
 	const refreshHotScores = makeRefreshHotScores(run);
+	const backfillHotScores = makeBackfillHotScores(run);
 
 	return {
 		getPost,
@@ -1122,5 +1195,6 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		retractPostVote,
 		reactToPost,
 		refreshHotScores,
+		backfillHotScores,
 	};
 };
