@@ -229,6 +229,34 @@ calls *unrepresentable*; 0037 reunified them into a single class (the split's tw
 motivations — a mutual-DO Layer cycle and a SQLite registry — both went away), where a
 misroute now no-ops at runtime (role-guarded) rather than failing to compile.
 
+### The three senses of "phoenix"
+
+"phoenix" carries **three distinct meanings**, each with a graduation name —
+disambiguate which one a doc means, because they're about to fork harder (`phoenix-ops`
+leans on sense 3, product milestones lean on sense 2):
+
+1. **phoenix, the monorepo** — this repository: the multi-app, multi-worker Cloudflare
+   workspace (`apps/*`, `packages/*`, `infra/*`). Product/company side — the ground the
+   other two stand on.
+2. **phoenix, the product codename** — kamp.us vNext, the reborn community, under its
+   build-time codename. Product/company side. When it ships it simply becomes **kamp.us**
+   — the codename is retired, not renamed; the product comes home to its own name.
+3. **phoenix, the framework** — the batteries-included application framework the other two
+   are quarried from: alchemy + Effect + fate, battle-tested in production, general-purpose,
+   future-facing. Not a kamp.us artifact — a standalone one forged here, built for keeps. It
+   graduates to **anka** — the Turkish phoenix (*Anka kuşu / Zümrüdüanka*) — as its permanent
+   name.
+
+Monorepo + product-codename are **product/company** side; the framework is the **durable,
+reusable** side.
+
+The through-line worth preserving: **the framework is the true phoenix** — the part built to
+outlive its origin — so it earns the Turkish phoenix name **anka** and rises to live
+independently; the product simply comes home to **kamp.us**. Rebirth named in English
+(*phoenix*), completed in Turkish (*anka*), landing on the repo's Turkish-for-brand /
+English-for-technical rule (§3). `anka` is a **framework name**, not user-facing product
+copy, so it lives here in sense (3) rather than as a §3 Turkish-surface brand-noun row.
+
 ---
 
 ## 3. Product / brand nouns (Turkish surface)
