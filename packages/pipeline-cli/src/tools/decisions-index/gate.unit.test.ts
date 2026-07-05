@@ -15,7 +15,7 @@ import {join} from "node:path";
 import {afterEach, assert, beforeEach, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit} from "effect";
 import {buildIndex} from "./decisions-index.ts";
-import {CheckFailed, checkIndex, generateIndex, validateAdrs} from "./gate.ts";
+import {CheckFailed, checkIndex, generateIndex, nextIndex, validateAdrs} from "./gate.ts";
 
 let dir: string;
 beforeEach(() => {
@@ -113,6 +113,28 @@ describe("validateAdrs — the PR gate after the index stopped being committed p
 		writeAdr({name: "0007-mismatch.md", text: adr("0009", "Mismatch").text});
 
 		const exit = await run(validateAdrs(dir));
+		assert.isTrue(Exit.isFailure(exit));
+		if (Exit.isFailure(exit)) {
+			const error = Cause.squash(exit.cause);
+			assert.isTrue(error instanceof CheckFailed);
+		}
+	});
+});
+
+describe("nextIndex — the deterministic ADR-number allocator over a fake .decisions dir (#2064)", () => {
+	it("SUCCEEDS (exit 0), reading the number purely from the ADR files", async () => {
+		writeAdr(adr("0001", "First"));
+		writeAdr(adr("0151", "Latest"));
+
+		const exit = await run(nextIndex(dir));
+		assert.isTrue(Exit.isSuccess(exit));
+	});
+
+	it("FAILS (CheckFailed) rather than allocate over a duplicate-id tree", async () => {
+		writeAdr(adr("0001", "First", "a"));
+		writeAdr(adr("0001", "Dup", "b"));
+
+		const exit = await run(nextIndex(dir));
 		assert.isTrue(Exit.isFailure(exit));
 		if (Exit.isFailure(exit)) {
 			const error = Cause.squash(exit.cause);

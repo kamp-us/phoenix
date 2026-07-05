@@ -190,6 +190,39 @@ const idSortKey = (id: string): [number, string] => {
 	return [Number.parseInt(m[1], 10), m[2] ?? ""];
 };
 
+/**
+ * How many digits `next` zero-pads to — the width every existing ADR filename/`id`
+ * already carries (`0151`, not `151`). One named constant so the allocator and any
+ * future consumer agree on the padding.
+ */
+export const ADR_ID_WIDTH = 4;
+
+/**
+ * The next free ADR number as a zero-padded string — `max(numeric id) + 1`, padded
+ * to {@link ADR_ID_WIDTH} (`[…, 0151] → "0152"`, empty set → `0001`). The
+ * deterministic allocator that replaces eyeballing `.decisions/` — which goes stale
+ * between a local checkout and origin/main, or races two simultaneous authors onto
+ * the same guess (#2064). A pure derivation over the parsed entries, reading the same
+ * `id` axis the index/validate surfaces read, so the number it hands out is exactly
+ * the one `validate` guards.
+ *
+ * A **lettered** id (`0034a`, a supersede-in-place variant) shares its base numeric
+ * with `0034`, so it never advances the allocation past `0035` — the letter suffix is
+ * deliberately ignored, only the numeric axis allocates. This is an allocator, **not**
+ * a collision guard: the rare two-authors-at-once collision is still caught fail-closed
+ * by `validate` (`findDuplicateId`) on merge. `next` kills the stale-guess case,
+ * `validate` backs the simultaneous case — the two together are collision-proof without
+ * a date-slug rename (#2064, supersedes #2058).
+ */
+export const nextAdrNumber = (entries: ReadonlyArray<AdrEntry>): string => {
+	let max = 0;
+	for (const e of entries) {
+		const [n] = idSortKey(e.id);
+		if (Number.isFinite(n) && n > max) max = n;
+	}
+	return String(max + 1).padStart(ADR_ID_WIDTH, "0");
+};
+
 /** Entries sorted ascending by id (numeric part, then letter suffix). */
 export const sortEntries = (entries: ReadonlyArray<AdrEntry>): ReadonlyArray<AdrEntry> =>
 	[...entries].sort((a, b) => {
@@ -299,3 +332,12 @@ export const buildIndex = (files: ReadonlyArray<AdrFile>): string =>
  */
 export const buildCompact = (files: ReadonlyArray<AdrFile>): string =>
 	renderCompact(buildEntries(files));
+
+/**
+ * The next free ADR number from the raw `.decisions/` files (#2064). Parses every
+ * file through the same `buildEntries` prefix as `buildIndex`/`buildCompact` — so it
+ * inherits the duplicate-id / number-mismatch guard, refusing to allocate over an
+ * already-broken tree — then hands the derived number to `nextAdrNumber`.
+ */
+export const buildNext = (files: ReadonlyArray<AdrFile>): string =>
+	nextAdrNumber(buildEntries(files));

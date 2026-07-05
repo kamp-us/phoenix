@@ -4,6 +4,7 @@
  * The author + CI surface, moved into the pipeline-cli registry (epic #994, Phase 2
  * / #997):
  *   pipeline-cli decisions-index compact           # emit the compact ambient ADR map to stdout (ADR 0126 / #1728)
+ *   pipeline-cli decisions-index next              # emit the next free ADR number (deterministic allocator — #2064)
  *   pipeline-cli decisions-index validate          # PR gate: exit non-zero on a duplicate / mismatched id
  *   pipeline-cli decisions-index generate           # (legacy) rewrite a .decisions/index.md file locally
  *   pipeline-cli decisions-index check             # (legacy) exit non-zero on a stale committed index
@@ -13,6 +14,12 @@
  * `.decisions/index.md` anymore — discovery goes ambient via a SessionStart hook
  * (#1728) that injects this one-line-per-ADR map, with `ls .decisions/` + frontmatter
  * as the fallback. It derives purely from ADR frontmatter, so it never drifts.
+ * `next` is the deterministic ADR-number allocator (#2064): it prints `max(id) + 1`
+ * zero-padded, so an author runs `pipeline-cli decisions next` instead of eyeballing
+ * `.decisions/` (which goes stale between a local checkout and origin/main, or races
+ * two simultaneous authors onto the same guess). Paired with `validate` — the allocator
+ * kills the stale-guess case, `validate` backs the rare simultaneous case — the two are
+ * collision-proof without a date-slug rename (supersedes #2058).
  * `validate` is the PR-side number-lock backstop (duplicate / mismatched id — #1471).
  * `generate`/`check` are legacy committed-index surfaces retained for local use only;
  * they are no longer wired into any workflow (the index is not committed — ADR 0126).
@@ -31,7 +38,7 @@ import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "./decisions-index.ts";
 import type {CheckFailed} from "./gate.ts";
-import {checkIndex, compactIndex, generateIndex, validateAdrs} from "./gate.ts";
+import {checkIndex, compactIndex, generateIndex, nextIndex, validateAdrs} from "./gate.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;
 const DECISIONS_DIR = ".decisions";
@@ -94,6 +101,18 @@ const compact = Command.make(
 	),
 );
 
+const next = Command.make(
+	"next",
+	{dir: dirFlag},
+	Effect.fn(function* ({dir: dirOpt}) {
+		yield* nextIndex(resolveDir(dirOpt)).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+	}),
+).pipe(
+	Command.withDescription(
+		"Emit the next free ADR number (max id + 1, zero-padded) — the deterministic allocator authors run before /adr (#2064)",
+	),
+);
+
 const generate = Command.make(
 	"generate",
 	{dir: dirFlag},
@@ -125,8 +144,8 @@ const check = Command.make(
 );
 
 export const decisionsIndexCommand = Command.make("decisions-index").pipe(
-	Command.withSubcommands([compact, validate, generate, check]),
+	Command.withSubcommands([compact, next, validate, generate, check]),
 	Command.withDescription(
-		"Ambient ADR discovery: emit the compact map + validate ADR files (ADR 0126)",
+		"Ambient ADR discovery: emit the compact map, allocate the next ADR number, + validate ADR files (ADR 0126 / #2064)",
 	),
 );

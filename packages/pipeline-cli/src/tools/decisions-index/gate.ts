@@ -16,7 +16,13 @@
 import {readdirSync, readFileSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
 import {Console, Data, Effect} from "effect";
-import {type AdrFile, buildCompact, buildIndex, DuplicateIdError} from "./decisions-index.ts";
+import {
+	type AdrFile,
+	buildCompact,
+	buildIndex,
+	buildNext,
+	DuplicateIdError,
+} from "./decisions-index.ts";
 
 const INDEX_FILE = "index.md";
 const ADR_FILE = /^\d+[A-Za-z]*-.+\.md$/;
@@ -60,6 +66,11 @@ export const buildCompactMap = (
 	files: ReadonlyArray<AdrFile>,
 ): Effect.Effect<string, CheckFailed> => toGateFail(() => buildCompact(files));
 
+/** Derive the next free ADR number (#2064), same duplicate-id fold as `build`. */
+export const buildNextNumber = (
+	files: ReadonlyArray<AdrFile>,
+): Effect.Effect<string, CheckFailed> => toGateFail(() => buildNext(files));
+
 /**
  * The PR-time gate after the index stopped being committed per-PR (ADR 0066, issue
  * #1492). It parses every ADR file via `build` — so a duplicate id, a
@@ -98,6 +109,19 @@ export const compactIndex = (dir: string): Effect.Effect<void, IoError | CheckFa
 	Effect.gen(function* () {
 		const map = yield* readAdrFiles(dir).pipe(Effect.flatMap(buildCompactMap));
 		yield* Console.log(map);
+	});
+
+/**
+ * Emit the next free ADR number to stdout — the deterministic allocator an author
+ * runs instead of eyeballing `.decisions/` before `/adr` (#2064). Pure read over the
+ * ADR frontmatter: `max(id) + 1`, zero-padded (e.g. `0152`). It fails `CheckFailed`
+ * on an already-broken tree (duplicate / mismatched id) rather than allocate over it —
+ * the same fold `validate` uses, so `next` and `validate` never disagree.
+ */
+export const nextIndex = (dir: string): Effect.Effect<void, IoError | CheckFailed> =>
+	Effect.gen(function* () {
+		const next = yield* readAdrFiles(dir).pipe(Effect.flatMap(buildNextNumber));
+		yield* Console.log(next);
 	});
 
 /**
