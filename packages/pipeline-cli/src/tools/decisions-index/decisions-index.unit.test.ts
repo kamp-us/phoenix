@@ -1,13 +1,16 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	type AdrEntry,
 	type AdrFile,
 	buildCompact,
 	buildIndex,
+	buildNext,
 	DuplicateIdError,
 	FrontmatterError,
 	findDuplicateId,
 	findRootDir,
 	NumberMismatchError,
+	nextAdrNumber,
 	numberFromFile,
 	parseAdrFile,
 	parseFrontmatter,
@@ -19,6 +22,14 @@ import {
 const adr = (id: string, title: string, status: string, date: string, slug = "x"): AdrFile => ({
 	file: `${id}-${slug}.md`,
 	text: `---\nid: ${id}\ntitle: ${title}\nstatus: ${status}\ndate: ${date}\ntags: [a, b]\n---\n\n# ${id} — ${title}\n\nbody\n`,
+});
+
+const entry = (id: string): AdrEntry => ({
+	id,
+	title: "T",
+	status: "accepted",
+	date: "2026-07-05",
+	file: `${id}-x.md`,
 });
 
 describe("parseFrontmatter", () => {
@@ -304,5 +315,56 @@ describe("buildIndex — end-to-end (the stale-detection seam)", () => {
 			{file: "0115-b.md", text: adr("0114", "b", "accepted", "d").text},
 		];
 		assert.throws(() => buildIndex(files), NumberMismatchError);
+	});
+});
+
+describe("nextAdrNumber — the deterministic ADR-number allocator (#2064)", () => {
+	it("returns max + 1, zero-padded to four digits", () => {
+		assert.strictEqual(nextAdrNumber([entry("0001"), entry("0002"), entry("0003")]), "0004");
+	});
+
+	it("allocates 0001 for an empty decisions set", () => {
+		assert.strictEqual(nextAdrNumber([]), "0001");
+	});
+
+	it("keys off the numeric max regardless of entry order (unsorted input)", () => {
+		assert.strictEqual(nextAdrNumber([entry("0009"), entry("0002"), entry("0151")]), "0152");
+	});
+
+	it("ignores a lettered suffix — a supersede-in-place variant shares its base number", () => {
+		// 0034a shares base 34 with 0034, so it never advances past 0035.
+		assert.strictEqual(nextAdrNumber([entry("0034"), entry("0034a")]), "0035");
+		assert.strictEqual(nextAdrNumber([entry("0034a")]), "0035");
+	});
+
+	it("widens past four digits once the numeric part overflows the pad width", () => {
+		// padStart never truncates: a five-digit number renders in full.
+		assert.strictEqual(nextAdrNumber([entry("9999")]), "10000");
+	});
+});
+
+describe("buildNext — end-to-end from raw files", () => {
+	it("derives the next number from raw ADR files", () => {
+		const files = [
+			adr("0001", "First", "accepted", "2026-05-09", "first"),
+			adr("0151", "Latest", "accepted", "2026-07-04", "latest"),
+		];
+		assert.strictEqual(buildNext(files), "0152");
+	});
+
+	it("folds the same duplicate-id guard as buildIndex — refuses to allocate over a broken tree", () => {
+		const files: ReadonlyArray<AdrFile> = [
+			{file: "0064-a.md", text: adr("0064", "a", "accepted", "d").text},
+			{file: "0064-b.md", text: adr("0064", "b", "accepted", "d").text},
+		];
+		assert.throws(() => buildNext(files), DuplicateIdError);
+	});
+
+	it("folds the number-mismatch guard — a filename/id drift refuses to allocate", () => {
+		const files: ReadonlyArray<AdrFile> = [
+			{file: "0114-a.md", text: adr("0114", "a", "accepted", "d").text},
+			{file: "0115-b.md", text: adr("0114", "b", "accepted", "d").text},
+		];
+		assert.throws(() => buildNext(files), NumberMismatchError);
 	});
 });
