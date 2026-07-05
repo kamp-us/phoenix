@@ -328,6 +328,10 @@ pnpm -C "$REVIEW_WT" install   # the catalog/lockfile + patches/ are present, so
 # so it catches root + `.claude/**` violations a bare `biome check apps packages` would miss and
 # reliably predicts the CI lint job (#553/#559):
 pnpm -C "$REVIEW_WT" lint:worktree   # and/or the specific test the criterion names
+# Scoping a test to the criterion is fine when the SHA-bound run-evidence bundle (Step 2)
+# corroborates the full surface. But when the bundle is DEGRADED (absent/expired/stale-for-SHA),
+# a feature-scoped run under-verifies the change's blast radius — see the "fail closed on the
+# test surface" rule in the degrade block below: run the FULL unit project, never a subset.
 rm -rf "$REVIEW_WT" && git worktree prune && git update-ref -d "$PR_REF"   # tear the throwaway tree + ref down
 ```
 
@@ -414,6 +418,37 @@ bundle's absence in the verdict and fall back to the current behavior** — veri
 from the diff, the tests you run in the review worktree above, and the PR's checks the
 ordinary way. Do **not** fail the gate, refuse to review, or block on the bundle: it
 *strengthens* evidence when present; its absence costs only reproducibility, not the review.
+
+**But fail closed on the test surface (ADR [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)) — a `PASS` must never be reachable on a strictly-narrower
+test surface than the change's blast radius.** When the bundle degrades and you fall back to
+running tests in the review worktree, the SHA-bound proof of *what CI ran* is gone, so a
+feature-scoped run (`--project unit <feature-path>`) can miss a **cross-cutting contract
+test** that lives outside the changed feature's cone — e.g. a new server-emittable wire code
+has repo-wide contract blast radius against `apps/web/worker/features/fate/wireCodes.unit.test.ts`
+(asserts every server code is in the SPA decode list), not feature-local blast radius. A
+feature-scoped green while that contract test is red is the #1657-class false-green a trust
+gate exists to prevent. On the degrade path therefore:
+
+- **Run the full unit project, not a feature-scoped subset.** Use `pnpm -C "$REVIEW_WT/apps/web" test:unit`
+  (the `apps/web` package script = `vitest run --config vitest.config.ts --project unit`, the
+  whole unit surface — `test:unit` lives in `apps/web/package.json`, NOT the repo root, since
+  `$REVIEW_WT` is the repo root a bare `pnpm -C "$REVIEW_WT" test:unit` hits
+  `ERR_PNPM_NO_SCRIPT`), never `--project unit <feature-path>`. This is the fail-closed fix:
+  it verifies the change's real blast radius, so a cross-cutting contract test cannot slip
+  past a degraded verification.
+
+  ```bash
+  . "$WT_FILE"                              # re-source $REVIEW_WT/$PR_REF after a between-call reset (#1807)
+  pnpm -C "$REVIEW_WT/apps/web" test:unit   # FULL unit project (the apps/web script) — never path-narrowed on the degrade path
+  ```
+
+- **If — and only if — the full unit project genuinely cannot run** (an environment fault
+  unrelated to the PR, not a slow/large suite), fence the verdict as partial rather than
+  emitting a full-trust `PASS`: `review-code: PASS (partial local verification — CI-authoritative) @ <sha>`,
+  and name in the body what was and was not run. A downstream human hand-merging a §CP PR
+  (ADRs [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)/[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md)) must not over-trust a narrow-surface PASS; the fence tells them (and
+  `ship-it`) that CI is the authority for the surface you could not cover. Fencing is the
+  fallback, not the default — prefer running the full unit project.
 
 ### Flag a control-plane PR (complementary signal, not the isolation)
 
