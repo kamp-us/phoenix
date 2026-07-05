@@ -267,6 +267,21 @@ still wanted), not "close as done." (ADR
 [0072](../.decisions/0072-milestones-encode-strategic-sequencing.md) — *milestones encode
 strategic sequencing*.)
 
+A **standing cross-cutting axis** — a perpetual concern with no terminal DoD (token
+efficiency, test/CI health, pipeline hardening) — is likewise **a label, not a milestone**,
+by the same DoD test. Its label is `axis:*`, distinct from `area:*`: **`area:*` = product
+area, `axis:*` = cross-cutting concern** (e.g. `axis:token-efficiency`, `axis:test-ci-health`,
+`axis:pipeline-hardening` vs `area:sozluk-pano-ui`). Tag **go-forward only** — open issues get
+the axis label; closed issues are not retro-tagged (the `area:sozluk-pano-ui` precedent).
+
+An `axis:*` label **does not anchor p1** — only a **live fire** or an **active bounded
+milestone** does. A standing axis is **p2-by-default**; an individual item rises to p1 only
+when it is a genuine fire (a broken gate, a false-verdict trust bug). This keeps a lane's
+sustained importance out of the priority spine, so it can't rebuild the p1-inflation backdoor
+the milestone-relative p1 rule closed (#1936 / #2078). *Founder-override-open* — the founder
+may later designate an `axis:*` (e.g. `axis:pipeline-hardening`) a p1-anchor; until relayed,
+this rule stands. (Extends the #2093 → #2095 milestone-governance convention.)
+
 ---
 
 ## 3. Product / brand nouns (Turkish surface)
