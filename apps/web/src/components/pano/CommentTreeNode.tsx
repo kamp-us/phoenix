@@ -7,11 +7,10 @@ import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import type {Comment} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
-import {FlagGate} from "../../flags/FlagGate";
-import {PHOENIX_REACTIONS} from "../../flags/keys";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {CommentReactionBar} from "../reaction/CommentReactionBar";
+import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
@@ -210,9 +209,9 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						</footer>
 					) : null}
 					{!isDeleted && !editing ? (
-						<FlagGate flag={PHOENIX_REACTIONS}>
+						<ReactionBarSlot>
 							<CommentReactionBar commentId={data.id} reactions={data.reactions} />
-						</FlagGate>
+						</ReactionBarSlot>
 					) : null}
 					{replyComposer ? (
 						<div className="kp-comment__reply" data-testid={`pano-comment-reply-${localId}`}>

@@ -2,11 +2,28 @@
    post/comment + sözlük definition cards. A horizontal row of palette buttons;
    the viewer's current reaction is highlighted via [aria-pressed="true"]. */
 
+:root {
+	/* One row of --t-meta buttons: line-height 1.6×11px + 2×1px padding + 2×1px
+	   border ≈ 21.6px. The phoenix-reactions gate resolves async, so the slot
+	   must reserve this height BEFORE the bar mounts or the whole feed reflows
+	   down when it appears (#2054). The reserved slot (.kp-reaction-slot) and the
+	   mounted bar share this one source of truth so the reservation is exact. */
+	--reaction-bar-height: 22px;
+}
+
+/* Reserved height for the reaction slot, held while the phoenix-reactions gate
+   resolves (or when it's off) so the late-mounting bar swaps into an
+   already-sized slot instead of growing the card (#2054). */
+.kp-reaction-slot {
+	min-height: var(--reaction-bar-height);
+}
+
 .kp-reaction-bar {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 4px;
 	align-items: center;
+	min-height: var(--reaction-bar-height);
 }
 
 .kp-reaction-bar__btn {
