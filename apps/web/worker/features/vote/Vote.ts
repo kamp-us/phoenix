@@ -289,19 +289,16 @@ export const VoteLive = Layer.effect(Vote)(
 			// commits, so a rolled-back cast — and every idempotent no-op above, which
 			// returns before reaching here — emits nothing. `surface` is the vote's
 			// `targetKind` (definition|post|comment), `userId` the caster (a
-			// deliberately-approximate blob, ADR 0153). `Telemetry.emit` already discharges
-			// its error channel inside `TelemetryLive` (`Effect<void>`, ADR 0153 fail-safe);
-			// `Effect.ignoreCause` is the belt-and-suspenders that keeps even a *defect* off
-			// the vote path (the `live-publisher`/`email-sender` best-effort idiom) — telemetry
-			// is best-effort and can NEVER fail or slow the cast it observes.
-			yield* telemetry
-				.emit({
-					feature: "vote",
-					action: isCast ? "cast" : "retract",
-					surface: input.targetKind,
-					userId: input.userId,
-				})
-				.pipe(Effect.ignoreCause({log: "Warn"}));
+			// deliberately-approximate blob, ADR 0153). Emitted BARE: `TelemetryLive`
+			// contains the whole failure Cause — a `DatasetError` OR a defect — inside the
+			// seam (`Effect.ignoreCause`, ADR 0153 S4 / #2085), so `emit: Effect<void>`
+			// cannot fail or die and a call-site wrap would be redundant.
+			yield* telemetry.emit({
+				feature: "vote",
+				action: isCast ? "cast" : "retract",
+				surface: input.targetKind,
+				userId: input.userId,
+			});
 
 			const newScore = yield* readCachedScore(input.targetKind, input.targetId);
 
