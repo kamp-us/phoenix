@@ -55,17 +55,36 @@ beforeAll(async () => {
 describe("live views — /fate/live (bildirim delivery)", () => {
 	it("subscribe(channel) → a reply to my post → the unread count arrives live", async () => {
 		// The author submits a post; a reply to it records a notification for the author.
+		// `post.submit`'s wire input requires a non-empty `tags` array (`SubmitPostInput`,
+		// `pano/mutations.ts`) and the service rejects an empty tag list with `TagsRequired`
+		// before any DB call (`normalizeSubmitTags`, `pano/post-operations.ts`) — so a
+		// tagless submit returns `ok:false` and never creates the post to reply to. Supply a
+		// real tag kind (`soru`, from the fixed `POST_TAG_KINDS` enum).
 		const posted = await h.fate(
 			{
 				kind: "mutation",
 				name: "post.submit",
-				input: {title: `${NS} canlı bildirim`, url: "https://example.com/1700"},
+				input: {
+					title: `${NS} canlı bildirim`,
+					url: "https://example.com/1700",
+					tags: [{kind: "soru"}],
+				},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
 		);
-		expect(posted.ok).toBe(true);
+		// SETUP DISCRIMINATOR (fail fast, before the SSE read). The post is the precondition
+		// for the reply that records the notification; assert its id on the DIRECT response so
+		// a rejected submit (missing/invalid tags, unauth) fails HERE with a named cause in
+		// milliseconds instead of masquerading as a lost-frame delivery timeout downstream.
+		// See ADR: integration-tier-is-ci-only.
 		const postId = (posted.ok ? (posted.data as {id: string}).id : "") as string;
+		expect(
+			postId,
+			`post.submit setup failed (ok=${posted.ok}${
+				posted.ok ? "" : ` code=${posted.error.code}`
+			}) — no post created to reply to; the live-delivery path never runs`,
+		).toBeTruthy();
 
 		const connectionId = `${NS}-bildirim-${Date.now()}`;
 		const connect = await h.openSse(connectionId, author.cookie);
