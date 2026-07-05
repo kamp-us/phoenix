@@ -84,6 +84,14 @@ const run = <A, E>(
 							),
 						),
 					),
+				subjectsOf: ({object}) =>
+					Effect.succeed(
+						new Set(
+							(env.tuples ?? [])
+								.filter((t) => t.type === object.type && t.id === object.id)
+								.map((t) => t.subject),
+						),
+					),
 			}),
 		),
 	);

@@ -15,6 +15,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
 import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
+import {notifyCaylakEntersDivan} from "../bildirim/mod-emitters.ts";
 import {notifyContentVote} from "../bildirim/vote-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -111,6 +112,9 @@ export const mutations = {
 			yield* live.definition
 				.term(input.termSlug)
 				.appendNode(definition.id, {node: definition}, decidePublish(sandboxedAt));
+			// Mod-queue heartbeat (#1699): a sandboxed definition that is the çaylak's
+			// FIRST pending item pages the moderators — same transition gate as pano.
+			yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
 			return definition;
 		}),
 	),

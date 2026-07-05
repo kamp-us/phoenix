@@ -37,5 +37,15 @@ export class RelationStore extends Context.Service<
 			readonly relation: string;
 			readonly object: Resource;
 		}) => Effect.Effect<ReadonlySet<string>>;
+
+		// Enumerate EVERY subject holding `(relation, object)` — the open-set read the
+		// membership pair (`has`/`hasSubjects`) can't answer, because both need the
+		// candidate ids up front. A mod fan-out (`notify every moderator`, #1699) has no
+		// candidate set: the recipient set IS "who holds `(moderates, platform)`". Same
+		// direct-tuple semantics as `has` (no ancestry walk); one read returns the whole set.
+		readonly subjectsOf: (query: {
+			readonly relation: string;
+			readonly object: Resource;
+		}) => Effect.Effect<ReadonlySet<string>>;
 	}
 >()("authz/RelationStore") {}

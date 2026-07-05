@@ -46,6 +46,10 @@ const discharge = (actor: Actor, holders: ReadonlyArray<string>): Exit.Exit<Gran
 								: [],
 						),
 					),
+				subjectsOf: ({relation, object}) =>
+					Effect.succeed(
+						new Set(relation === "admin" && object.type === "platform" ? holders : []),
+					),
 			}),
 		),
 	);

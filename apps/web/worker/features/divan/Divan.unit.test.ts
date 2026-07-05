@@ -283,3 +283,14 @@ describe("Divan.backlogOf — one çaylak's sandboxed backlog, newest first", ()
 		);
 	});
 });
+
+describe("Divan.pendingCountOf — the mod-notification 0→1 transition gate (#1699)", () => {
+	it("counts a çaylak's still-pending items across all kinds (removed & live excluded)", () => {
+		// cyl-a: d1 (sandboxed) + p1 (sandboxed) = 2; d2 (removed) and the yazar's live d4 excluded.
+		assert.strictEqual(run(Effect.flatMap(Divan, (d) => d.pendingCountOf("cyl-a"))), 2);
+	});
+
+	it("is 0 for an author with no pending items", () => {
+		assert.strictEqual(run(Effect.flatMap(Divan, (d) => d.pendingCountOf("yzr"))), 0);
+	});
+});

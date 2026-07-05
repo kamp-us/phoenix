@@ -19,10 +19,13 @@
  */
 
 import {assert, it} from "@effect/vitest";
+import {RelationStore} from "@kampus/authz";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
+import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
+import {Divan} from "../divan/Divan.ts";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -56,6 +59,21 @@ const kunyeStub = Layer.succeed(Kunye, {
 	karmaOf: () => Effect.succeed(0),
 	rootOf: (id: string) => Effect.succeed(id),
 } as typeof Kunye.Service);
+
+// The mod-emitter deps the resolver gained (#1699). `Flags` OFF ⇒ `sandboxedAtForAuthor`
+// returns null ⇒ `notifyCaylakEntersDivan` short-circuits before touching any of these,
+// so they exist only to satisfy the type and die on contact if ever reached.
+const notificationStub = makeNotificationStub();
+const divanStub = Layer.succeed(Divan, {
+	roster: () => Effect.die("Divan.roster not exercised in definition-mutation"),
+	backlogOf: () => Effect.die("Divan.backlogOf not exercised in definition-mutation"),
+	pendingCountOf: () => Effect.die("Divan.pendingCountOf not exercised in definition-mutation"),
+});
+const relationStoreStub = Layer.succeed(RelationStore, {
+	has: () => Effect.die("RelationStore.has not exercised in definition-mutation"),
+	hasSubjects: () => Effect.die("RelationStore.hasSubjects not exercised in definition-mutation"),
+	subjectsOf: () => Effect.die("RelationStore.subjectsOf not exercised in definition-mutation"),
+});
 
 // A `Sozluk` stub whose `addDefinition` is scripted; every other method dies on
 // contact, so a passing test proves `definition.add` reached only the write it
@@ -114,6 +132,9 @@ it.effect(
 							liveStub,
 							flagsOffStub,
 							kunyeStub,
+							notificationStub,
+							divanStub,
+							relationStoreStub,
 							noRequestFlagOverrides,
 						),
 					),

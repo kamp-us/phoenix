@@ -32,6 +32,7 @@ import {publishPromotion} from "./promote-live.ts";
 const relationStoreEmpty: Layer.Layer<RelationStore> = Layer.succeed(RelationStore, {
 	has: () => Effect.succeed(false),
 	hasSubjects: () => Effect.succeed(new Set<string>()),
+	subjectsOf: () => Effect.succeed(new Set<string>()),
 });
 
 // One `user` record the re-resolve reads back — the promoted member, now `yazar`.

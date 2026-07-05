@@ -24,6 +24,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {type TargetKind, TargetKindSchema, targetKey} from "../../db/target-kind.ts";
+import {notifyReportFiled} from "../bildirim/mod-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Denied} from "../kunye/errors.ts";
 import {Moderate, moderatorOf, requireModeration} from "../kunye/moderate.ts";
@@ -105,6 +106,17 @@ export const mutations = {
 				.pipe(
 					Effect.catchTag("report/ReportTargetNotFound", (e) => Effect.fail(toFeatureNotFound(e))),
 				);
+			// Mod-queue heartbeat (#1699): page every moderator that a report was filed —
+			// but only on a GENUINELY new report (`created`), never an idempotent re-report.
+			// Flag-gated, moderator-resolved and swallowed inside the emitter, so it can
+			// never fail this committed report.
+			if (result.created) {
+				yield* notifyReportFiled({
+					reporterId: user.id,
+					targetKind: input.targetKind,
+					targetId: input.targetId,
+				});
+			}
 			return toReportReceipt(result);
 		}),
 	),

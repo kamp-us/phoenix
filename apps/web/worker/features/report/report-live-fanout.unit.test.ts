@@ -21,8 +21,12 @@ import {assert, describe, it} from "@effect/vitest";
 import {type Actor, AgentAuthority, CurrentActor, human, RelationStore} from "@kampus/authz";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
+import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Layer} from "effect";
+import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
+import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
+import {Flags} from "../flagship/Flags.ts";
 import {Pano} from "../pano/Pano.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
 import {mutations} from "./mutations.ts";
@@ -38,9 +42,32 @@ const relationStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationSt
 			Effect.succeed(
 				new Set(relation === "moderates" ? subjects.filter((s) => holders.includes(s)) : []),
 			),
+		subjectsOf: ({relation}) => Effect.succeed(new Set(relation === "moderates" ? holders : [])),
 	});
 
 const agentAuthorityStub = Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(false)});
+
+// The mod-emitter deps `report.submit` gained (#1699): `Flags` OFF ⇒ `bildirimOn` is
+// false ⇒ the report-filed page no-ops before the moderator read / notification write.
+const runtimeContextStub: BaseRuntimeContext = {
+	Type: "report-live-fanout-test",
+	id: "report-live-fanout-test",
+	env: {},
+	get: () => Effect.succeed(undefined),
+	set: (id) => Effect.succeed(id),
+};
+const bildirimOffStub = Layer.mergeAll(
+	Layer.succeed(Flags, {
+		getBoolean: () => Effect.succeed(false),
+		getString: () => Effect.die("getString not exercised"),
+		getNumber: () => Effect.die("getNumber not exercised"),
+		getObject: () => Effect.die("getObject not exercised"),
+	} as typeof Flags.Service),
+	Layer.succeed(RuntimeContext, runtimeContextStub),
+	noRequestFlagOverrides,
+	makeNotificationStub(),
+	relationStoreOf([]),
+);
 
 const actorContext = (actor: Actor) => Layer.succeed(CurrentActor, {actor});
 
@@ -590,27 +617,36 @@ describe("report.restoreWave — restores the batch as a unit (#1704 AC3)", () =
 	});
 });
 
-describe("report.submit — the audit refuted submit; it fans out nothing", () => {
+describe("report.submit — the audit refuted submit; the CONTENT path fans out nothing", () => {
 	it.effect(
-		"submit acquires NO publisher (a private report row changes no subscribed content)",
+		"submit never publishes to a CONTENT topic (a private report row changes no subscribed content)",
 		() =>
-			// The submit handler never reaches `WorkerLivePublisher` — a fail-on-contact
-			// publisher would DIE if it did. That it lands with no `LivePublisher` provided
-			// at all is the strongest proof: submit's R-channel carries no live dependency.
+			// The submit handler never touches `WorkerLivePublisher` on the content path — a
+			// report is private moderation state. Its ONLY live dependency is the bildirim
+			// spine's per-recipient `Notification.record` delivery (#2076/#1699), gated OFF
+			// here (`bildirimOffStub`), so the recording publisher captures NOTHING.
 			Effect.gen(function* () {
+				const {recorded, scheduled, layer} = recordingPublisher();
 				const receipt = yield* mutations["report.submit"]
 					.handler({
 						input: {targetKind: "post", targetId: "p1"},
 						select: ["id", "created"],
 					})
-					.pipe(Effect.provideService(CurrentUser, {user: {id: "u-reporter"} as never}));
+					.pipe(
+						Effect.provideService(CurrentUser, {user: {id: "u-reporter"} as never}),
+						Effect.provide(
+							Layer.mergeAll(
+								makeReportStub({
+									submit: () => Effect.succeed({targetKind: "post", targetId: "p1", created: true}),
+								}),
+								layer,
+								bildirimOffStub,
+							),
+						),
+					);
+				yield* flush(scheduled);
 				assert.strictEqual((receipt as {created: boolean}).created, true);
-			}).pipe(
-				Effect.provide(
-					makeReportStub({
-						submit: () => Effect.succeed({targetKind: "post", targetId: "p1", created: true}),
-					}),
-				),
-			),
+				assert.deepStrictEqual(recorded, [], "submit published to no topic (content or bildirim)");
+			}),
 	);
 });

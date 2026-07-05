@@ -70,6 +70,7 @@ const relationStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationSt
 			Effect.succeed(
 				new Set(relation === "moderates" ? subjects.filter((s) => holders.includes(s)) : []),
 			),
+		subjectsOf: ({relation}) => Effect.succeed(new Set(relation === "moderates" ? holders : [])),
 	});
 
 const kunyeOf = (
@@ -341,6 +342,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					Layer.succeed(RelationStore, {
 						has: () => Effect.die(new Error("flag OFF must not check authority")),
 						hasSubjects: () => Effect.die(new Error("flag OFF must not check authority")),
+						subjectsOf: () => Effect.die(new Error("flag OFF must not check authority")),
 					}),
 					kunyeOf({"u-yazar": "yazar"}),
 					agentAuthorityStub,

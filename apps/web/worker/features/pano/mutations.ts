@@ -18,6 +18,7 @@ import * as Schema from "effect/Schema";
 import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
 import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
 import {notifyCommentReply} from "../bildirim/conversation-emitters.ts";
+import {notifyCaylakEntersDivan} from "../bildirim/mod-emitters.ts";
 import {notifyContentVote} from "../bildirim/vote-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -206,6 +207,10 @@ export const mutations = {
 			// but only when the post is live: the feed topic is viewer-blind, so a
 			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
 			yield* live.post.feed.prependNode(post.id, {node: post}, decidePublish(sandboxedAt));
+			// Mod-queue heartbeat (#1699): if this sandboxed post is the çaylak's FIRST
+			// pending item, page the moderators that a new çaylak awaits review. Gated,
+			// transition-guarded and swallowed inside the emitter — never fails the post.
+			yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
 			return post;
 		}),
 	),
@@ -517,6 +522,9 @@ export const mutations = {
 				parentAuthorId: r.parentAuthorId,
 				actorId: user.id,
 			});
+			// Mod-queue heartbeat (#1699): a sandboxed comment that is the çaylak's FIRST
+			// pending item pages the moderators — same transition gate as post.submit.
+			yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
 			return comment;
 		}),
 	),

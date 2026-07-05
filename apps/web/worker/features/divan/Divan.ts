@@ -35,6 +35,14 @@ export class Divan extends Context.Service<
 		readonly roster: () => Effect.Effect<ReadonlyArray<DivanRosterRow>>;
 		/** One çaylak's sandboxed backlog (newest first) — the detail-view items. */
 		readonly backlogOf: (authorId: string) => Effect.Effect<ReadonlyArray<DivanItem>>;
+		/**
+		 * How many still-pending (sandboxed, not-removed) items one author has across
+		 * all three kinds — the mod-notification transition gate (#1699): a create path
+		 * fires the "new çaylak awaiting review" page only when this count is exactly 1
+		 * right after a çaylak's item committed (their 0→1 entry onto the roster), so a
+		 * çaylak's second and later items don't re-page the team.
+		 */
+		readonly pendingCountOf: (authorId: string) => Effect.Effect<number>;
 	}
 >()("divan/Divan") {}
 
@@ -115,6 +123,7 @@ export const DivanLive = Layer.effect(Divan)(
 				Effect.map(collect({authorId}), (items) =>
 					[...items].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
 				),
+			pendingCountOf: (authorId) => Effect.map(collect({authorId}), (items) => items.length),
 		};
 	}),
 );

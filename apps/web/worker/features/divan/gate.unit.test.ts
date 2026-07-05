@@ -55,6 +55,12 @@ const access = (
 								: [],
 						),
 					),
+				subjectsOf: ({relation, object}) =>
+					Effect.succeed(
+						new Set(
+							relation === "moderates" && object.type === "platform" ? (opts.mods ?? []) : [],
+						),
+					),
 			}),
 		),
 	);
@@ -114,6 +120,7 @@ describe("divan gate — yazar OR mod, collapse-to-allow", () => {
 				Effect.provideService(RelationStore, {
 					has: () => Effect.succeed(false),
 					hasSubjects: () => Effect.succeed(new Set<string>()),
+					subjectsOf: () => Effect.succeed(new Set<string>()),
 				}),
 			),
 		);

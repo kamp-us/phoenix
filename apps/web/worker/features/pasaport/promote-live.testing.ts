@@ -35,6 +35,7 @@ export const noopLive: Layer.Layer<LivePublisher> = Layer.succeed(LivePublisher)
 export const relationStoreNoModerators: Layer.Layer<RelationStore> = Layer.succeed(RelationStore, {
 	has: () => Effect.die(new Error("moderatorsAmong reads hasSubjects, not has")),
 	hasSubjects: () => Effect.succeed(new Set<string>()),
+	subjectsOf: () => Effect.succeed(new Set<string>()),
 });
 
 /**
