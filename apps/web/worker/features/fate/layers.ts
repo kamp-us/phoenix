@@ -203,6 +203,14 @@ export const makeFateLayer = Layer.mergeAll(
 				// internal-seam idiom as `KarmaBumpFromPasaport` (`Layer.provide`, not a routed
 				// service). Its `Pasaport` requirement bubbles to the root `PasaportFromTag`.
 				Layer.provide(VoterStandingFromKunye),
+				// Vote's telemetry instrument (ADR 0153, epic #2065, #2068): `Vote.cast` emits a
+				// `vote` event after a committed cast, so `VoteLive` gains a build-time `Telemetry`
+				// requirement. Discharged HERE with the SAME `TelemetryLive` merged flat below — the
+				// shared layer value memoizes to one isolate instance via `makeFateRuntime`'s memoMap,
+				// so `Telemetry` stays a worker output for future instruments (#2069) while Vote's
+				// requirement is satisfied in-group; `TelemetryClient`/`RuntimeContext` bubble to the
+				// same root that discharges the flat `TelemetryLive`.
+				Layer.provide(TelemetryLive),
 			),
 		),
 	),

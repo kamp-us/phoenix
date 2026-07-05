@@ -22,6 +22,7 @@ import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.
 import * as schema from "../../db/drizzle/schema.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {type TargetRecordMeta, targetTable} from "../../db/target-table.ts";
+import {Telemetry} from "../telemetry/Telemetry.ts";
 import {
 	VOTE_REQUIRED_TIER,
 	VoterNotEligible,
@@ -163,6 +164,7 @@ export const VoteLive = Layer.effect(Vote)(
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const karmaBump = yield* KarmaBump;
 		const voterStanding = yield* VoterStanding;
+		const telemetry = yield* Telemetry;
 
 		// Per-target metadata lookup. If the row is missing or removed we
 		// surface `VoteTargetNotFound` rather than letting the batch fail with
@@ -282,6 +284,24 @@ export const VoteLive = Layer.effect(Vote)(
 			yield* batch((db) =>
 				buildBatchStatements(db, input, meta, isCast, karmaDelta, now, karmaBump),
 			);
+
+			// Reference instrument #1 (ADR 0153, epic #2065). Emit AFTER the atomic batch
+			// commits, so a rolled-back cast — and every idempotent no-op above, which
+			// returns before reaching here — emits nothing. `surface` is the vote's
+			// `targetKind` (definition|post|comment), `userId` the caster (a
+			// deliberately-approximate blob, ADR 0153). `Telemetry.emit` already discharges
+			// its error channel inside `TelemetryLive` (`Effect<void>`, ADR 0153 fail-safe);
+			// `Effect.ignoreCause` is the belt-and-suspenders that keeps even a *defect* off
+			// the vote path (the `live-publisher`/`email-sender` best-effort idiom) — telemetry
+			// is best-effort and can NEVER fail or slow the cast it observes.
+			yield* telemetry
+				.emit({
+					feature: "vote",
+					action: isCast ? "cast" : "retract",
+					surface: input.targetKind,
+					userId: input.userId,
+				})
+				.pipe(Effect.ignoreCause({log: "Warn"}));
 
 			const newScore = yield* readCachedScore(input.targetKind, input.targetId);
 

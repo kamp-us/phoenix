@@ -13,11 +13,33 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {wireCodeOfClass} from "@kampus/fate-effect";
-import {Effect, Layer} from "effect";
+import {Effect, Exit, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import {TARGET_KINDS} from "../../db/target-kind.ts";
+import type {TelemetryEvent} from "../telemetry/schema.ts";
+import {Telemetry} from "../telemetry/Telemetry.ts";
 import {VOTE_ELIGIBILITY_WIRE_CODE, VOTE_REQUIRED_TIER, VoterNotEligible} from "./errors.ts";
 import {KarmaBump, Vote, VoteLive, VoterStanding} from "./Vote.ts";
+
+// A recording `Telemetry` seam: `emit` pushes each event into `sink` and succeeds,
+// so a test can assert the exact `{feature, action, surface, userId}` a cast emitted
+// — and that a rejected/no-op cast emits nothing (empty sink). Substitutes the
+// `Telemetry` tag directly (`.patterns/effect-testing.md`), no real Analytics Engine.
+const recordingTelemetry = (sink: TelemetryEvent[]) =>
+	Layer.succeed(Telemetry, {
+		emit: (event) =>
+			Effect.sync(() => {
+				sink.push(event);
+			}),
+	});
+
+// A `Telemetry` whose `emit` returns a FAILING effect — the S4 fail-safe double. The
+// real `TelemetryLive` discharges its error channel internally so `emit` is `Effect<void>`,
+// but this double proves the invariant from Vote's side: even if `emit` itself failed, the
+// vote's success/failure contract is unchanged (a telemetry hiccup can never fail the cast).
+const failingTelemetry = Layer.succeed(Telemetry, {
+	emit: () => Effect.die(new Error("telemetry emit blew up — must NOT surface to the vote")),
+});
 
 // A `Drizzle` whose every call throws — provided so that any path which actually
 // reaches the DB seam fails the test. A guard that short-circuits before reading
@@ -60,10 +82,15 @@ const KarmaBumpStub = Layer.succeed(KarmaBump, {
 const VoterStandingStub = (aboveNewcomer: boolean) =>
 	Layer.succeed(VoterStanding, {isAboveNewcomer: () => Effect.succeed(aboveNewcomer)});
 
-const voteLayer = (access: DrizzleAccess, aboveNewcomer = true) =>
+const voteLayer = (
+	access: DrizzleAccess,
+	aboveNewcomer = true,
+	telemetry: Layer.Layer<Telemetry> = recordingTelemetry([]),
+) =>
 	VoteLive.pipe(
 		Layer.provide(KarmaBumpStub),
 		Layer.provide(VoterStandingStub(aboveNewcomer)),
+		Layer.provide(telemetry),
 		Layer.provide(Layer.succeed(Drizzle, access)),
 	);
 
@@ -256,6 +283,7 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 					// Voter above the çaylak floor — the #1810 tier gate is not what these two
 					// tests exercise (divan path has it OFF; the live path is a promoted voter).
 					Layer.provide(VoterStandingStub(true)),
+					Layer.provide(recordingTelemetry([])),
 					Layer.provide(Layer.succeed(Drizzle, access)),
 				),
 			),
@@ -283,6 +311,7 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 					// Voter above the çaylak floor — the #1810 tier gate is not what these two
 					// tests exercise (divan path has it OFF; the live path is a promoted voter).
 					Layer.provide(VoterStandingStub(true)),
+					Layer.provide(recordingTelemetry([])),
 					Layer.provide(Layer.succeed(Drizzle, access)),
 				),
 			),
@@ -359,6 +388,7 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 				VoteLive.pipe(
 					Layer.provide(karma),
 					Layer.provide(VoterStandingStub(true)),
+					Layer.provide(recordingTelemetry([])),
 					Layer.provide(Layer.succeed(Drizzle, access)),
 				),
 			),
@@ -424,4 +454,146 @@ describe("Vote.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle
 			}).pipe(Effect.provide(voteLayer(access)));
 		});
 	}
+});
+
+// Reference instrument #1 (ADR 0153, epic #2065, #2068): `Vote.cast` emits a `vote`
+// telemetry event after a committed cast. Recording/failing `Telemetry` doubles at the
+// tag prove: the emit carries the right positional fields, fires ONLY on a committed
+// state change (never on a no-op or a rejected cast), distinguishes cast vs retract, and
+// — S4 fail-safe — can never fail the vote even when the seam itself blows up.
+describe("Vote.cast — telemetry instrument (ADR 0153, #2068, mocked Drizzle + Telemetry seams)", () => {
+	// Build a VoteLive whose Telemetry is the given double and whose write-path Drizzle is a
+	// recording cast access, so a state-changing cast reaches the emit.
+	const instrumentLayer = (access: DrizzleAccess, telemetry: Layer.Layer<Telemetry>) => {
+		const {layer: karma} = recordingKarma();
+		return VoteLive.pipe(
+			Layer.provide(karma),
+			Layer.provide(VoterStandingStub(true)),
+			Layer.provide(telemetry),
+			Layer.provide(Layer.succeed(Drizzle, access)),
+		);
+	};
+
+	it.effect(
+		"a committed live cast emits exactly one {vote, cast, <targetKind>, userId} event",
+		() => {
+			const {access} = recordingCastAccess([liveMeta, false, 1]);
+			const sink: TelemetryEvent[] = [];
+			return Effect.gen(function* () {
+				const vote = yield* Vote;
+				yield* vote.cast({userId: "voter-1", targetKind: "post", targetId: "post-1", value: true});
+				assert.strictEqual(sink.length, 1, "exactly one event per committed cast");
+				assert.deepStrictEqual(sink[0], {
+					feature: "vote",
+					action: "cast",
+					surface: "post",
+					userId: "voter-1",
+				});
+			}).pipe(Effect.provide(instrumentLayer(access, recordingTelemetry(sink))));
+		},
+	);
+
+	it.effect("a committed retract emits action:'retract' (cast vs retract distinguished)", () => {
+		// probe → already cast (true), so `value:false` is a real state change (retraction).
+		const {access} = recordingCastAccess([liveMeta, true, 0]);
+		const sink: TelemetryEvent[] = [];
+		return Effect.gen(function* () {
+			const vote = yield* Vote;
+			const result = yield* vote.cast({
+				userId: "voter-1",
+				targetKind: "definition",
+				targetId: "def-1",
+				value: false,
+			});
+			assert.isTrue(result.changed, "an existing vote is really retracted");
+			assert.strictEqual(sink.length, 1);
+			assert.deepStrictEqual(sink[0], {
+				feature: "vote",
+				action: "retract",
+				surface: "definition",
+				userId: "voter-1",
+			});
+		}).pipe(Effect.provide(instrumentLayer(access, recordingTelemetry(sink))));
+	});
+
+	it.effect("an idempotent no-op cast emits NOTHING (emit is off the no-write path)", () => {
+		// probe → already cast, and `value:true` matches → no batch, no emit.
+		const {access} = scriptedAccess([liveMeta, true, 5]);
+		const sink: TelemetryEvent[] = [];
+		return Effect.gen(function* () {
+			const vote = yield* Vote;
+			const result = yield* vote.cast({
+				userId: "voter-1",
+				targetKind: "definition",
+				targetId: "def-1",
+				value: true,
+			});
+			assert.isFalse(result.changed, "matching state is a no-op");
+			assert.strictEqual(sink.length, 0, "a no-op cast records no telemetry");
+		}).pipe(Effect.provide(instrumentLayer(access, recordingTelemetry(sink))));
+	});
+
+	it.effect("a rejected cast (target-not-found) emits NOTHING", () => {
+		// loadMeta → undefined → VoteTargetNotFound before any write, so no emit.
+		const {access} = scriptedAccess([undefined]);
+		const sink: TelemetryEvent[] = [];
+		return Effect.gen(function* () {
+			const vote = yield* Vote;
+			const exit = yield* Effect.exit(
+				vote.cast({userId: "voter-1", targetKind: "definition", targetId: "ghost", value: true}),
+			);
+			assert.isTrue(exit._tag === "Failure", "the cast is rejected");
+			assert.strictEqual(sink.length, 0, "a rejected cast records no telemetry");
+		}).pipe(Effect.provide(instrumentLayer(access, recordingTelemetry(sink))));
+	});
+
+	it.effect("a rejected cast (voter-not-eligible) emits NOTHING", () => {
+		// Below-floor voter → VoterNotEligible before any DB read, so no emit. The throwing
+		// Drizzle proves the short-circuit; the recording Telemetry proves the reject path
+		// never reaches the emit.
+		const sink: TelemetryEvent[] = [];
+		return Effect.gen(function* () {
+			const vote = yield* Vote;
+			const err = yield* Effect.flip(
+				vote.cast({userId: "caylak-voter", targetKind: "post", targetId: "post-1", value: true}),
+			);
+			assert.isTrue(err instanceof VoterNotEligible);
+			assert.strictEqual(sink.length, 0, "a below-floor rejected cast records no telemetry");
+		}).pipe(
+			Effect.provide(
+				VoteLive.pipe(
+					Layer.provide(KarmaBumpStub),
+					Layer.provide(VoterStandingStub(false)),
+					Layer.provide(recordingTelemetry(sink)),
+					Layer.provide(Layer.succeed(Drizzle, throwingAccess)),
+				),
+			),
+		);
+	});
+
+	it.effect(
+		"a Telemetry failure NEVER fails the vote — the cast still commits (S4 fail-safe)",
+		() => {
+			// The failing double's `emit` DIES; `Vote.cast`'s `Effect.ignoreCause` contains it, so
+			// the vote's success contract is unchanged — `changed:true` with the committed score.
+			const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
+			return Effect.gen(function* () {
+				const vote = yield* Vote;
+				const exit = yield* Effect.exit(
+					vote.cast({
+						userId: "voter-1",
+						targetKind: "definition",
+						targetId: "def-live",
+						value: true,
+					}),
+				);
+				assert.isTrue(Exit.isSuccess(exit), "a telemetry blow-up leaves the vote succeeding");
+				if (Exit.isSuccess(exit)) {
+					assert.isTrue(exit.value.changed, "the cast is committed");
+					assert.strictEqual(exit.value.score, 1);
+				}
+				assert.strictEqual(batches.length, 1, "the vote batch committed before the failing emit");
+			}).pipe(Effect.provide(instrumentLayer(access, failingTelemetry)));
+		},
+	);
 });

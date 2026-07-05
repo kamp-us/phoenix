@@ -15,14 +15,20 @@
 import type {Effect, Layer} from "effect";
 import {describe, expectTypeOf, it} from "vitest";
 import type {Drizzle, DrizzleDb, Stmt} from "../../db/Drizzle.ts";
+import type {Telemetry} from "../telemetry/Telemetry.ts";
 import type {KarmaBump, Vote, VoteLive, VoterStanding} from "./Vote.ts";
 
 describe("Vote's public surface is feature-clean (type pins)", () => {
-	it("VoteLive requires exactly the db seam + Vote's own KarmaBump + VoterStanding contracts", () => {
+	it("VoteLive requires the db seam + Vote's own KarmaBump + VoterStanding + the shared Telemetry seam", () => {
 		// A re-imported pasaport/künye implementation would bake the dep in and drop
-		// `KarmaBump`/`VoterStanding` from R, failing this pin.
+		// `KarmaBump`/`VoterStanding` from R, failing this pin. `Telemetry` is the ONE shared
+		// cross-cutting seam Vote depends on directly (ADR 0153, #2068 reference instrument):
+		// a low-level service every instrument emits through — not a peer feature, and it
+		// imports nothing from vote — so it rides `R` un-inverted, discharged by the same
+		// `makeFateLayer` merge. A drift that dropped it (an un-instrumented cast) or widened
+		// R with a sibling feature fails this pin.
 		expectTypeOf<typeof VoteLive>().toEqualTypeOf<
-			Layer.Layer<Vote, never, Drizzle | KarmaBump | VoterStanding>
+			Layer.Layer<Vote, never, Drizzle | KarmaBump | VoterStanding | Telemetry>
 		>();
 	});
 
