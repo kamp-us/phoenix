@@ -1,6 +1,6 @@
 ---
 id: 0152
-title: A long-resumed gate subagent that confabulates verification-provenance is guarded by BOTH a verification-provenance discipline (triage skill + agent contract — un-run falsifiable claims MUST be surfaced as *unverified*) AND a single-subagent resume-cap (orchestration hygiene, distinct from #1751's crash-resume classification)
+title: A long-resumed gate subagent that confabulates verification-provenance is guarded by BOTH a verification-provenance discipline (general agent contract — un-run falsifiable claims MUST be surfaced as *unverified*) AND a single-subagent resume-cap (orchestration hygiene, distinct from #1751's crash-resume classification)
 status: accepted
 date: 2026-07-04
 tags: [pipeline, triage, orchestration, integrity, agents]
@@ -41,11 +41,12 @@ subagents degrade toward confabulation**, correlated with very long resume chain
 
 Two properties of the current pipeline let this through:
 
-- **The `triage` skill has no bounded verification-of-platform-state step.** There is no rule
-  that a falsifiable platform-state claim (or an action-attribution) must be *run-in-transcript
-  before it may be asserted as verified* — so there was nothing for the triager to violate. The
-  CLAUDE.md grounding discipline is worded as *the reader's* re-grounding duty, not as *the
-  emitter's* provenance obligation; the emitter's side was implicit.
+- **No pipeline-agent contract carries a bounded verification-of-platform-state rule.** There
+  is no rule that a falsifiable platform-state claim (or an action-attribution) must be
+  *run-in-transcript before it may be asserted as verified* — so there was nothing for the
+  triager to violate. The CLAUDE.md grounding discipline is worded as *the reader's*
+  re-grounding duty, not as *the emitter's* provenance obligation; the emitter's side was
+  implicit.
 - **Nothing caps single-subagent resume cycles.** A triager can be resumed indefinitely, and
   confabulation appears correlated with very long resume chains.
 
@@ -61,41 +62,54 @@ confabulation-integrity of trusted gate output — is covered by neither. It is 
 
 ## Decision
 
-Adopt **both** mitigations; each has a distinct home.
+Adopt **both** mitigations; each has a distinct home. **The founder ruling fixes those homes
+here — they are not re-litigated per follow-up.**
 
-**Mitigation (a) — verification-provenance discipline (skill + agent contract).** An agent
-that runs a pipeline gate — the `triager` first, and the general pipeline-agent contract by
-extension — **MUST NOT assert a falsifiable platform-state claim or an action-attribution as
-*verified* unless it ran the check itself, in its own transcript, this run.** Any un-run such
-claim must be surfaced as **unverified** (or dropped), and an action must never be attributed
-to another party (the orchestrator, a sibling agent) that the emitter did not observe that
-party perform. This is the **emitter-side complement** of CLAUDE.md's existing reader-side
-"ground falsifiable platform claims in source, not intuition" rule: the reader re-grounds; the
-emitter must not launder an un-run claim as verified in the first place. It lives as **prose in
-the `triage` skill** (a verification-discipline instruction, the least-privileged surface that
-correctly fixes it — the skill is where the triager's contract is written), and is stated once
-as a general pipeline-agent-contract expectation so the other gate agents inherit it.
+**Mitigation (a) — verification-provenance discipline (general agent contract).** An agent
+that runs a pipeline gate — the `triager` first, and every gate agent by extension — **MUST
+NOT assert a falsifiable platform-state claim or an action-attribution as *verified* unless it
+ran the check itself, in its own transcript, this run.** Any un-run such claim must be
+surfaced as **unverified** (or dropped), and an action must never be attributed to another
+party (the orchestrator, a sibling agent) that the emitter did not observe that party perform.
+This is the **emitter-side complement** of CLAUDE.md's existing reader-side "ground falsifiable
+platform claims in source, not intuition" rule: the reader re-grounds; the emitter must not
+launder an un-run claim as verified in the first place.
+
+Its home is the **general agent contract**, not a single skill's SKILL.md: it lands as a rule
+in the pipeline **agent contract** — `claude-plugins/kampus-pipeline/agents/triager.md` — and
+in the shared, all-gates **formats contract**
+`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`, so every gate agent
+inherits it. **It is deliberately NOT scoped to the `triage` SKILL.md**: the confabulation
+risk is a property of any long-resumed gate agent, not of the triage skill specifically, so
+scoping the rule to one skill's prose would under-fix the demonstrated hole. The general rule
+is the point. Because this rule lands on the pipeline agent contract + the shared gate-critical
+formats contract (both control-plane surfaces), **mitigation (a)'s implementation is §CP** —
+control-plane → human-merge, cansirin @head per ADR
+[0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md). It is **not**
+auto-shipped.
 
 **Mitigation (b) — single-subagent resume cap (orchestration hygiene).** A single subagent is
 **not resumed indefinitely**: past a bounded number of resume cycles the orchestrator
 **spawns a fresh instance** rather than resuming the degraded one, because confabulation
-correlates with very long resume chains. This is an **orchestration/harness-hygiene** rule,
-**distinct from #1751's crash-resume classification** — #1751 decides *whether* to resume a
-**crashed** run (TRANSIENT vs LOGIC, K=2); this cap bounds *how many times* a **healthy,
-non-crashing** subagent may be resumed before it is replaced. The two compose without overlap:
-#1751 governs the crash axis, this governs the degradation-over-lifetime axis. The exact cap
-value and its enforcement home (main-loop discipline in the workflow-driving skill vs. the
-orchestrator vs. a memory rule) are an implementation choice for the follow-up, not fixed here.
+correlates with very long resume chains. Its home is the **orchestrator** —
+`.claude/workflows/drive-issue.js` — where the spawn/resume decision is made. This is an
+**orchestration/harness-hygiene** rule, **distinct from #1751's crash-resume classification** —
+#1751 decides *whether* to resume a **crashed** run (TRANSIENT vs LOGIC, K=2); this cap bounds
+*how many times* a **healthy, non-crashing** subagent may be resumed before it is replaced. The
+two compose without overlap: #1751 governs the crash axis (TRANSIENT/LOGIC, K=2), this governs
+the **lifetime-degradation axis**. Because it lands in the orchestrator under `.claude/**`,
+**mitigation (b)'s implementation is §CP** — control-plane → human-merge (cansirin @head per
+ADR 0135), not auto-shipped. The exact cap value is an implementation detail for the follow-up;
+the enforcement home (the orchestrator) is fixed here.
 
-**This ADR records the decision; it does not itself implement.** The buildable changes —
-(a) the `triage`-skill / agent-contract prose edit, and (b) the resume-cap mechanism — are
-filed as **follow-up issues via report→triage** so each re-enters the pipeline at intake and is
-triaged, typed, and prioritized on its own merits (and so the §CP classification of the
-triage-skill edit is decided by triage, not pre-committed here). The §CP note: the `triage`
-skill is **not** a gate-critical skill (it is not in the ship-it/review-\* / gh-issue-intake
-set), so mitigation (a)'s prose edit is expected non-§CP and review-skill-gated; a resume-cap
-landing in `.claude/**` or the orchestrator would be §CP and human-merged — but that call is
-triage's, made per follow-up.
+**This ADR records the decision; it does not itself implement.** The buildable changes are
+filed as follow-up issues so each re-enters the pipeline and is built on its own merits:
+**#2052** lands mitigation (a) (the agent-contract + formats-contract prose), and **#2053**
+lands mitigation (b) (the resume-cap in the orchestrator). **Both #2052 and #2053 are §CP and
+human-merged** — they touch the pipeline agent contract, the shared gate-critical formats
+contract, and the orchestrator, so neither auto-ships; each is code-owner-approved and merged
+by a human (cansirin @head per ADR 0135). **Both are freeze-exempt hardening of a demonstrated
+hole** (the #1876 near-miss), not new feature scope, so they proceed through a delivery freeze.
 
 ## Consequences
 
@@ -104,19 +118,27 @@ triage's, made per follow-up.
   present its conclusion as verified — it labels it *unverified* or omits it. This closes the
   "confabulated chain that happens to be right" trap at the source, not only at the
   re-grounding reader.
+- **The fix is a general agent-contract rule, not a per-skill patch.** Because mitigation (a)
+  lives on the general agent contract (`agents/triager.md` + `gh-issue-intake-formats.md`), the
+  discipline binds every gate agent, present and future — no gate agent is left un-covered by
+  virtue of not being the triage skill.
 - **Action-attribution to an un-observed party is banned.** "Your evidence chain" / "the
   orchestrator ran X" is only assertable when the emitter observed that party do X; otherwise
   it is a fabrication even if X is true.
 - **A degraded long-lived subagent is replaced, not trusted further.** Bounding resume cycles
-  removes the correlated confabulation risk without touching #1751's crash-resume policy —
-  the two axes (crash-recovery, lifetime-degradation) are handled independently and are
-  explicitly cross-referenced so they don't silently overlap.
+  in the orchestrator removes the correlated confabulation risk without touching #1751's
+  crash-resume policy — the two axes (crash-recovery, lifetime-degradation) are handled
+  independently and are explicitly cross-referenced so they don't silently overlap.
+- **Both implementations are §CP and human-merged.** Mitigation (a) (#2052, agent contract +
+  formats contract) and mitigation (b) (#2053, orchestrator) each land on control-plane
+  surfaces, so both are code-owner-approved and human-merged (cansirin @head per ADR 0135),
+  never auto-shipped — and both are freeze-exempt hardening of the #1876 hole.
 - **Cost:** a triager must now spend a transcript action to *actually run* any platform check
   it wants to cite as verified (or explicitly mark it unverified), and the orchestrator eats a
   fresh-spawn cold-start instead of a cheap resume once the cap is hit. Both are deliberate:
   the price of trustworthy gate output.
 - **This ADR is a policy/routing decision over already-named concepts; it does not itself
-  land the guardrails** — the two follow-up issues do, through report→triage.
+  land the guardrails** — #2052 and #2053 do.
 
 ### Vocabulary impact
 
@@ -125,5 +147,5 @@ that a falsifiable platform-state claim or action-attribution may be asserted as
 only if the emitter ran the check in its own transcript this run; otherwise it is surfaced as
 *unverified*. It is the emitter-side complement of CLAUDE.md's reader-side grounding rule. This
 is a lightweight coinage recorded here; if it earns a fuller `.glossary/TERMS.md` treatment
-(disambiguation, cross-links) that is routed via the follow-up that lands mitigation (a)'s
-prose, not this additive ADR PR.
+(disambiguation, cross-links) that is routed via #2052 (which lands mitigation (a)'s prose),
+not this additive ADR PR.
