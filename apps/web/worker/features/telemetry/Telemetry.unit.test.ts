@@ -61,6 +61,17 @@ const failingClient = Layer.succeed(TelemetryClient)(
 	}),
 );
 
+// A `TelemetryClient` whose `writeDataPoint` DIES (a defect, not a typed error) —
+// drives the seam-contains-a-defect proof (#2085): `emit` must still succeed even
+// though a defect slipped into the emit path, because the seam swallows the whole
+// Cause (`Effect.ignoreCause`), not just the typed `E` (`Effect.ignore`).
+const dyingClient = Layer.succeed(TelemetryClient)(
+	TelemetryClient.of({
+		raw: Effect.die(new Error("raw unused")),
+		writeDataPoint: () => Effect.die(new Error("writeDataPoint blew up")),
+	}),
+);
+
 describe("toDataPoint — fixed positional AE schema (ADR 0153)", () => {
 	it("maps a vote event to the fixed slot order (index=feature, blobs, doubles=[1])", () => {
 		assert.deepStrictEqual(
@@ -143,6 +154,22 @@ describe("Telemetry.emit", () => {
 		}).pipe(
 			Effect.provide(
 				TelemetryLive.pipe(Layer.provide(Layer.mergeAll(failingClient, inertRuntimeContext))),
+			),
+		));
+
+	it("contains a DEFECT in the write path — emit still succeeds (seam-level S4, #2085)", () =>
+		// The whole point of moving containment into the seam: a defect (a die, a sync
+		// throw) inside emit must NOT propagate to the caller. `Effect.ignore` would let
+		// this exit die; `Effect.ignoreCause` swallows the whole Cause, so emit succeeds.
+		Effect.gen(function* () {
+			const telemetry = yield* Telemetry;
+			const exit = yield* Effect.exit(
+				telemetry.emit({feature: "reaction", action: "react", surface: "sozluk"}),
+			);
+			assert.strictEqual(Exit.isSuccess(exit), true);
+		}).pipe(
+			Effect.provide(
+				TelemetryLive.pipe(Layer.provide(Layer.mergeAll(dyingClient, inertRuntimeContext))),
 			),
 		));
 });

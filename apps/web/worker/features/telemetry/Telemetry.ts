@@ -13,9 +13,13 @@
  * discharged inside the layer so call-sites get a clean `Effect<void>`:
  *   - `writeDataPoint`'s ambient `RuntimeContext` requirement — captured once and
  *     `provideService`'d, the same pattern `LiveTopics.publish` uses (`index.ts`).
- *   - the `DatasetError` error channel — swallowed with a log (fire-and-forget
- *     best-effort). A telemetry failure can NEVER fail the mutation it observes
- *     (ADR 0153 fail-safe invariant).
+ *   - the WHOLE failure `Cause` — swallowed with a log (fire-and-forget
+ *     best-effort). A telemetry failure — a typed `DatasetError` OR a *defect* —
+ *     can NEVER fail the mutation it observes (ADR 0153 fail-safe invariant, S4).
+ *     `Effect.ignoreCause` (not `Effect.ignore`) is what makes this a SEAM property:
+ *     it discards defects and interruptions too, so `emit: Effect<void>` genuinely
+ *     cannot fail OR die and every caller gets S4 by construction — no per-call-site
+ *     `ignoreCause` an instrument must remember.
  *
  * The `Context.Service` + `Layer.effect` idiom is grounded in effect-smol
  * `LLMS.md` §"Writing Effect services" → "Context.Service" and
@@ -68,12 +72,14 @@ export const TelemetryLive = Layer.effect(
 			emit: (event) =>
 				client.writeDataPoint(toDataPoint(event)).pipe(
 					Effect.provideService(RuntimeContext, runtimeContext),
-					// Swallow-with-log: telemetry is best-effort, never a source of truth,
-					// and must not fail the mutation it observes (ADR 0153 fail-safe). The
-					// same `Effect.ignore({log})` boundary `LivePublisher` uses
-					// (`fate-live/live-publisher.ts`) — the failure is logged, `emit` is
-					// `Effect<void>`, and the caller never sees the `DatasetError`.
-					Effect.ignore({log: "Warn"}),
+					// Swallow-with-log the WHOLE Cause: telemetry is best-effort, never a
+					// source of truth, and must not fail the mutation it observes (ADR 0153
+					// S4). `ignoreCause` (not `ignore`) discards defects/interruptions too,
+					// so a DEFECT thrown inside emit — a sync throw in `writeDataPoint`, an
+					// `orDie`, a `toDataPoint` bug — is contained AT THE SEAM. That makes S4
+					// a property of the seam for every instrument, so callers emit BARE and
+					// never repeat a call-site `ignoreCause` (ADR 0153, #2085).
+					Effect.ignoreCause({log: "Warn"}),
 				),
 		});
 	}),

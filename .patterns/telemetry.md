@@ -36,19 +36,27 @@ binding is resolved **once per isolate in worker init** and carried on a depende
 Emitting is **fire-and-forget best-effort, never a source of truth** (ADR 0153). Internalize
 this before anything else: a telemetry failure — an AE write error *or* a defect — must never
 fail, unwind, or slow the mutation it observes. `emit`'s type is `Effect<void>` precisely
-because both channels are discharged inside `TelemetryLive`, so a call-site can't accidentally
-route a telemetry error into its own error union.
+because **both a typed failure and a defect are contained inside `TelemetryLive`**, so a
+call-site can neither route a telemetry error into its own error union nor be unwound by a
+telemetry defect. **S4 is a property of the seam, not of each call-site** — instruments emit
+BARE and inherit containment by construction (#2085).
 
 Two discharges live in the layer (`Telemetry.ts`), so the call-site gets a clean `Effect<void>`:
 
 - **The `RuntimeContext` requirement** `writeDataPoint` needs is captured once in the layer
   closure and `provideService`'d — the same pattern `LiveTopics.publish` uses in the worker.
-- **The `DatasetError` error channel** is swallowed with a log (`Effect.ignore({log: "Warn"})`)
-  — the same best-effort boundary `LivePublisher` uses. The failure is logged; `emit` still
-  succeeds.
+- **The whole failure `Cause`** is swallowed with a log (`Effect.ignoreCause({log: "Warn"})`).
+  This is the load-bearing choice: `Effect.ignoreCause` discards the **whole Cause — a typed
+  `DatasetError` AND a defect (a `die`, a sync throw in `writeDataPoint`, a `toDataPoint` bug)
+  and interruptions** — whereas `Effect.ignore` would discard only the typed `E` channel and let
+  a defect propagate out. Containing the whole Cause **at the seam** is what makes `emit` a
+  genuine `Effect<void>` that cannot fail OR die for every caller, so no instrument has to
+  remember a call-site wrap. Grounded in effect-smol `Effect.ts` (`ignoreCause`: "Ignores the
+  effect's failure cause, including defects and interruptions"; `ignore`: discards only the
+  failure value).
 
 ```ts
-// features/telemetry/Telemetry.ts — the layer discharges both channels
+// features/telemetry/Telemetry.ts — the seam contains the WHOLE Cause (defects included)
 export const TelemetryLive = Layer.effect(
 	Telemetry,
 	Effect.gen(function* () {
@@ -58,16 +66,20 @@ export const TelemetryLive = Layer.effect(
 			emit: (event) =>
 				client.writeDataPoint(toDataPoint(event)).pipe(
 					Effect.provideService(RuntimeContext, runtimeContext),
-					// best-effort: log the DatasetError, return void — never fail the caller (ADR 0153)
-					Effect.ignore({log: "Warn"}),
+					// best-effort: log the whole Cause (error OR defect), return void — never fail
+					// or die out of the caller (ADR 0153 S4). ignoreCause, not ignore: a defect must
+					// be contained at the seam so every instrument gets S4 by construction (#2085).
+					Effect.ignoreCause({log: "Warn"}),
 				),
 		});
 	}),
 );
 ```
 
-The invariant is pinned by a test: `Telemetry.unit.test.ts` substitutes a `failingClient` whose
-`writeDataPoint` always fails with a `DatasetError`, and asserts `emit` still exits **success**.
+The invariant is pinned by two tests in `Telemetry.unit.test.ts`: a `failingClient` whose
+`writeDataPoint` fails with a `DatasetError` (the typed-failure case) **and** a `dyingClient`
+whose `writeDataPoint` **dies** (the defect case) — both assert `emit` still exits **success**,
+proving the seam contains error *and* defect.
 
 ## The fixed positional event-schema (one owner, `schema.ts`)
 
@@ -155,23 +167,29 @@ yield* telemetry.emit({
 });
 ```
 
-**4. Wrap the emit for defect-containment where the instrument is on a hot mutation path.**
-`Vote.cast` wraps its emit in `Effect.ignoreCause` — and this is the load-bearing distinction:
+**4. Emit BARE — no call-site containment wrap.** Both reference instruments (`Vote.cast`,
+`Reaction.react`) emit bare; the seam already contains the whole failure `Cause` (error **and**
+defect), so a call-site `Effect.ignoreCause` would be pure redundancy:
 
 ```ts
-// features/vote/Vote.ts — emit after the atomic batch commits, defect-contained
-yield* telemetry
-	.emit({feature: "vote", action: isCast ? "cast" : "retract", surface: input.targetKind, userId: input.userId})
-	.pipe(Effect.ignoreCause({log: "Warn"}));
+// features/vote/Vote.ts — emit after the atomic batch commits; bare, seam-contained
+yield* telemetry.emit({
+	feature: "vote",
+	action: isCast ? "cast" : "retract",
+	surface: input.targetKind,
+	userId: input.userId,
+});
 ```
 
-> **Why `Effect.ignoreCause`, not `Effect.ignore`.** `Effect.ignore` discards only the **error
-> (`E`) channel** — a *defect* (a `die`, a thrown bug in the emit path) still propagates and
-> would unwind the mutation. `Effect.ignoreCause` discards the **whole `Cause`** — error **and**
-> defect — so even a broken emit can never fail or slow the cast it observes. `TelemetryLive`
-> already swallows the `DatasetError` (the `E` channel), so this is belt-and-suspenders: it
-> contains a *defect* that slipped past the layer, keeping telemetry fully off the mutation's
-> critical path. Use it on any instrument where a telemetry defect must not touch the mutation.
+> **The seam uses `ignoreCause` so callers don't have to.** The `ignore` vs `ignoreCause`
+> distinction still matters — it's just resolved **once, at the seam**, not at every call-site.
+> `Effect.ignore` discards only the **error (`E`) channel**, so a *defect* (a `die`, a thrown
+> bug in the emit path) would propagate and unwind the mutation; `Effect.ignoreCause` discards
+> the **whole `Cause`** — error **and** defect — so even a broken emit can never fail or slow the
+> mutation. `TelemetryLive` uses `Effect.ignoreCause` internally (see [The one invariant](#the-one-invariant-telemetry-can-never-fail-the-mutation-it-observes-s4)),
+> which makes `emit: Effect<void>` genuinely unfailable-and-undyable for **every** instrument by
+> construction — so a per-call-site wrap is redundant and instruments emit bare (#2085). Don't
+> re-add a call-site `ignoreCause`: it duplicates a guarantee the seam already gives.
 
 **5. Discharge the `Telemetry` layer requirement at `makeFateLayer`.** Emitting gives the
 feature's `*Live` a build-time `Telemetry` requirement. Discharge it with `Layer.provide` at the
@@ -206,13 +224,18 @@ Substitute the `Telemetry` tag directly (the unit-tier seam substitution,
 - **`recordingTelemetry(sink)`** — records every emitted event so a test asserts the exact
   `{feature, action, surface, emoji?}` shape it emitted, or that it emitted **nothing** on a
   no-op (an empty `sink`).
-- **`dyingTelemetry`** — makes `emit` **die**, so a test proves the instrument's write already
-  committed **before** the (best-effort) emit — i.e. the emit is off the commit path and a
-  blown-up emit can't unwind the mutation.
+- **`dyingTelemetry`** — makes `emit` **die**, so an instrument test proves the write already
+  committed **before** the (best-effort) emit — the emit is off the commit path. Note this double
+  substitutes the `Telemetry` *tag*, so it **bypasses the real seam** and its assertion is
+  commit-ordering only (the write is in `batches` even as the emit blows up); it does **not** run
+  the defect through the real containment. The seam-level defect containment itself is pinned in
+  `Telemetry.unit.test.ts`, below.
 
-The production fail-safe (the `DatasetError` swallow inside `TelemetryLive`) is pinned separately
-by the `failingClient` case in `Telemetry.unit.test.ts` — that substitutes the AE client at the
-`TelemetryClient` tag and asserts `emit` still succeeds.
+The production fail-safe is pinned by **two** cases in `Telemetry.unit.test.ts`, both substituting
+the AE client at the `TelemetryClient` tag and running through the real `TelemetryLive`: a
+`failingClient` whose `writeDataPoint` fails with a `DatasetError` (typed-failure containment) and
+a `dyingClient` whose `writeDataPoint` **dies** (defect containment) — both assert `emit` still
+succeeds, proving `Effect.ignoreCause` at the seam swallows error *and* defect (#2085).
 
 ## The read contract — reads are sampling-correct, and never from the Worker
 
@@ -249,8 +272,12 @@ GROUP BY day ORDER BY day
   one silently misaligns columns.
 - **Emitting before the commit, or on a no-op.** Emit after the mutation commits, on the
   state-change tail only, so a rolled-back or idempotent-no-op mutation emits nothing.
-- **`Effect.ignore` where a defect must not touch the mutation.** Use `Effect.ignoreCause` on hot
-  instrument paths — `ignore` leaves defects on the critical path.
+- **`Effect.ignore` at the seam.** The seam (`TelemetryLive`) must use `Effect.ignoreCause`, not
+  `Effect.ignore` — `ignore` leaves defects on the mutation's critical path; only `ignoreCause`
+  contains the whole Cause so S4 holds by construction for every caller (#2085).
+- **A call-site containment wrap on `emit`.** Instruments emit **bare** — the seam already
+  contains error *and* defect, so a call-site `Effect.ignoreCause`/`Effect.ignore` is redundant
+  and drifts the pattern; don't re-add one.
 - **Routing telemetry into a call-site's error union.** `emit` is `Effect<void>`; never widen it.
 - **`count()` in a read query, or reading from the Worker.** Weight by `SUM(_sample_interval)`
   and read only through the external SQL API.

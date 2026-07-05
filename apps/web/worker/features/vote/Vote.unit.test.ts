@@ -13,7 +13,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {wireCodeOfClass} from "@kampus/fate-effect";
-import {Effect, Exit, Layer} from "effect";
+import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import {TARGET_KINDS} from "../../db/target-kind.ts";
 import type {TelemetryEvent} from "../telemetry/schema.ts";
@@ -33,12 +33,13 @@ const recordingTelemetry = (sink: TelemetryEvent[]) =>
 			}),
 	});
 
-// A `Telemetry` whose `emit` returns a FAILING effect — the S4 fail-safe double. The
-// real `TelemetryLive` discharges its error channel internally so `emit` is `Effect<void>`,
-// but this double proves the invariant from Vote's side: even if `emit` itself failed, the
-// vote's success/failure contract is unchanged (a telemetry hiccup can never fail the cast).
+// A `Telemetry` whose `emit` DIES — the commit-ordering double. The real `TelemetryLive`
+// discharges the WHOLE Cause internally (`Effect.ignoreCause`, #2085) so `emit` is `Effect<void>`
+// and a defect can never surface; substituting the tag with this dying double bypasses that
+// seam, so it can only prove the cast is committed BEFORE the emit runs (the seam-level S4 proof
+// itself lives in `Telemetry.unit.test.ts`), never fed through the real containment.
 const failingTelemetry = Layer.succeed(Telemetry, {
-	emit: () => Effect.die(new Error("telemetry emit blew up — must NOT surface to the vote")),
+	emit: () => Effect.die(new Error("telemetry emit blew up — off the commit path")),
 });
 
 // A `Drizzle` whose every call throws — provided so that any path which actually
@@ -571,29 +572,26 @@ describe("Vote.cast — telemetry instrument (ADR 0153, #2068, mocked Drizzle + 
 		);
 	});
 
-	it.effect(
-		"a Telemetry failure NEVER fails the vote — the cast still commits (S4 fail-safe)",
-		() => {
-			// The failing double's `emit` DIES; `Vote.cast`'s `Effect.ignoreCause` contains it, so
-			// the vote's success contract is unchanged — `changed:true` with the committed score.
-			const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
-			return Effect.gen(function* () {
-				const vote = yield* Vote;
-				const exit = yield* Effect.exit(
-					vote.cast({
-						userId: "voter-1",
-						targetKind: "definition",
-						targetId: "def-live",
-						value: true,
-					}),
-				);
-				assert.isTrue(Exit.isSuccess(exit), "a telemetry blow-up leaves the vote succeeding");
-				if (Exit.isSuccess(exit)) {
-					assert.isTrue(exit.value.changed, "the cast is committed");
-					assert.strictEqual(exit.value.score, 1);
-				}
-				assert.strictEqual(batches.length, 1, "the vote batch committed before the failing emit");
-			}).pipe(Effect.provide(instrumentLayer(access, failingTelemetry)));
-		},
-	);
+	it.effect("the emit is off the commit path — the cast commits before the emit runs", () => {
+		// The `Telemetry` double's `emit` DIES. The vote batch is sequenced BEFORE the emit,
+		// so its statement is already in `batches` (the cast committed) even as the emit blows
+		// up — proving the emit is downstream of the commit, never a gate on it. Since #2085
+		// the vote emits BARE (no call-site wrap): the production fail-safe that turns a defect
+		// into a swallowed no-op lives in `TelemetryLive` (`Effect.ignoreCause`) and is pinned
+		// seam-side in `Telemetry.unit.test.ts`; this double substitutes the `Telemetry` tag so
+		// it never reaches that seam, and here we only assert the commit-before-emit ordering.
+		const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
+		return Effect.gen(function* () {
+			const vote = yield* Vote;
+			yield* Effect.exit(
+				vote.cast({
+					userId: "voter-1",
+					targetKind: "definition",
+					targetId: "def-live",
+					value: true,
+				}),
+			);
+			assert.strictEqual(batches.length, 1, "the vote batch committed before the emit");
+		}).pipe(Effect.provide(instrumentLayer(access, failingTelemetry)));
+	});
 });
