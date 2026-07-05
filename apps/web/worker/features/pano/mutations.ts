@@ -15,7 +15,7 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
+import {PHOENIX_KARMA_GATES, PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
 import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
 import {notifyCommentReply} from "../bildirim/conversation-emitters.ts";
 import {notifyCaylakEntersDivan} from "../bildirim/mod-emitters.ts";
@@ -24,6 +24,8 @@ import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
+import {InsufficientKarma} from "../kunye/errors.ts";
+import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {VoterNotEligible} from "../vote/errors.ts";
 import {Bookmark} from "./Bookmark.ts";
@@ -183,35 +185,45 @@ export const mutations = {
 		{
 			input: SubmitPostInput,
 			type: PostView,
-			error: Schema.Union([Unauthorized, ...PostValidationErrors]),
+			error: Schema.Union([Unauthorized, InsufficientKarma, ...PostValidationErrors]),
 		},
 		Effect.fn("post.submit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
-			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
-			// A çaylak's new post lands sandboxed when the authorship-loop flag is on;
-			// flag-off / yazar ⇒ live, exactly as today (#1205).
-			const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
-			const r = yield* pano.submitPost({
-				title: input.title,
-				...(input.url ? {url: input.url} : {}),
-				...(input.body ? {body: input.body} : {}),
-				tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})})),
-				authorId: user.id,
-				authorName: user.name ?? user.email,
-				sandboxedAt,
+			const submit = Effect.fn("post.submitBody")(function* () {
+				const pano = yield* Pano;
+				const live = panoLive(yield* WorkerLivePublisher);
+				// A çaylak's new post lands sandboxed when the authorship-loop flag is on;
+				// flag-off / yazar ⇒ live, exactly as today (#1205).
+				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
+				const r = yield* pano.submitPost({
+					title: input.title,
+					...(input.url ? {url: input.url} : {}),
+					...(input.body ? {body: input.body} : {}),
+					tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})})),
+					authorId: user.id,
+					authorName: user.name ?? user.email,
+					sandboxedAt,
+				});
+				const post = shapePost({...r, myVote: null});
+				// New post leads the feed: prepend to the `posts` topic (every
+				// feed-sort variant, via the global topic). Inline node, no DB work —
+				// but only when the post is live: the feed topic is viewer-blind, so a
+				// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
+				yield* live.post.feed.prependNode(post.id, {node: post}, decidePublish(sandboxedAt));
+				// Mod-queue heartbeat (#1699): if this sandboxed post is the çaylak's FIRST
+				// pending item, page the moderators that a new çaylak awaits review. Gated,
+				// transition-guarded and swallowed inside the emitter — never fails the post.
+				yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
+				return post;
 			});
-			const post = shapePost({...r, myVote: null});
-			// New post leads the feed: prepend to the `posts` topic (every
-			// feed-sort variant, via the global topic). Inline node, no DB work —
-			// but only when the post is live: the feed topic is viewer-blind, so a
-			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
-			yield* live.post.feed.prependNode(post.id, {node: post}, decidePublish(sandboxedAt));
-			// Mod-queue heartbeat (#1699): if this sandboxed post is the çaylak's FIRST
-			// pending item, page the moderators that a new çaylak awaits review. Gated,
-			// transition-guarded and swallowed inside the emitter — never fails the post.
-			yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
-			return post;
+			// Post-value karma gate (#150), dark behind the default-off
+			// `phoenix-karma-gates` flag: ON ⇒ `CanPost` floors the author's karma at
+			// ≥ −4 before the post lands (a downvoted-into-the-ground author is muted
+			// with `INSUFFICIENT_KARMA`); OFF ⇒ inert, the post behaves as today. A
+			// SEPARATE axis from the çaylak→yazar sandbox tier above — the sandbox
+			// contains a new author's REACH, this floors an abused author's karma
+			// (no double-gating, #150 rescope).
+			return yield* gateContentOnKarma(submit());
 		}),
 	),
 	// `post.saveDraft` / `post.discardDraft` are the dark-shipped taslak path (#746),
@@ -488,44 +500,54 @@ export const mutations = {
 		{
 			input: AddCommentInput,
 			type: CommentView,
-			error: Schema.Union([Unauthorized, ...CommentValidationErrors, PostNotFound]),
+			error: Schema.Union([
+				Unauthorized,
+				InsufficientKarma,
+				...CommentValidationErrors,
+				PostNotFound,
+			]),
 		},
 		Effect.fn("comment.add")(function* ({input}) {
 			const user = yield* CurrentUser.required;
-			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
-			// A çaylak's new comment lands sandboxed when the authorship-loop flag is
-			// on; flag-off / yazar ⇒ live, exactly as today (#1205).
-			const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
-			const r = yield* pano.addComment({
-				postId: input.postId,
-				authorId: user.id,
-				authorName: user.name ?? user.email,
-				body: input.body,
-				sandboxedAt,
-				...(input.parentId ? {parentId: input.parentId} : {}),
+			const add = Effect.fn("comment.addBody")(function* () {
+				const pano = yield* Pano;
+				const live = panoLive(yield* WorkerLivePublisher);
+				// A çaylak's new comment lands sandboxed when the authorship-loop flag is
+				// on; flag-off / yazar ⇒ live, exactly as today (#1205).
+				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
+				const r = yield* pano.addComment({
+					postId: input.postId,
+					authorId: user.id,
+					authorName: user.name ?? user.email,
+					body: input.body,
+					sandboxedAt,
+					...(input.parentId ? {parentId: input.parentId} : {}),
+				});
+				const comment = shapeComment({...r, myVote: null});
+				// Append to the `Post.comments` topic keyed by the parent post id — but
+				// only when the comment is live: the thread topic is viewer-blind, so a
+				// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
+				yield* live.comment
+					.thread(input.postId)
+					.appendNode(comment.id, {node: comment}, decidePublish(sandboxedAt));
+				// Conversation-moment notification (#1697): notify the post author (and,
+				// for a reply, the parent-comment author) — deduped, self-suppressed,
+				// flag-gated and swallowed inside the emitter, so it can never fail this
+				// committed comment.
+				yield* notifyCommentReply({
+					commentId: r.commentId,
+					postAuthorId: r.postAuthorId,
+					parentAuthorId: r.parentAuthorId,
+					actorId: user.id,
+				});
+				// Mod-queue heartbeat (#1699): a sandboxed comment that is the çaylak's FIRST
+				// pending item pages the moderators — same transition gate as post.submit.
+				yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
+				return comment;
 			});
-			const comment = shapeComment({...r, myVote: null});
-			// Append to the `Post.comments` topic keyed by the parent post id — but
-			// only when the comment is live: the thread topic is viewer-blind, so a
-			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
-			yield* live.comment
-				.thread(input.postId)
-				.appendNode(comment.id, {node: comment}, decidePublish(sandboxedAt));
-			// Conversation-moment notification (#1697): notify the post author (and,
-			// for a reply, the parent-comment author) — deduped, self-suppressed,
-			// flag-gated and swallowed inside the emitter, so it can never fail this
-			// committed comment.
-			yield* notifyCommentReply({
-				commentId: r.commentId,
-				postAuthorId: r.postAuthorId,
-				parentAuthorId: r.parentAuthorId,
-				actorId: user.id,
-			});
-			// Mod-queue heartbeat (#1699): a sandboxed comment that is the çaylak's FIRST
-			// pending item pages the moderators — same transition gate as post.submit.
-			yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
-			return comment;
+			// Post-value karma gate (#150), dark behind `phoenix-karma-gates` — the same
+			// ≥ −4 floor as `post.submit`, applied to the comment write path.
+			return yield* gateContentOnKarma(add());
 		}),
 	),
 	"comment.vote": Fate.mutation(

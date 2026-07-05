@@ -20,6 +20,8 @@ import {notifyContentVote} from "../bildirim/vote-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
+import {InsufficientKarma} from "../kunye/errors.ts";
+import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {VoterNotEligible} from "../vote/errors.ts";
 import {
@@ -86,36 +88,42 @@ export const mutations = {
 		{
 			input: AddDefinitionInput,
 			type: DefinitionView,
-			error: Schema.Union([Unauthorized, BodyRequired, BodyTooLong]),
+			error: Schema.Union([Unauthorized, InsufficientKarma, BodyRequired, BodyTooLong]),
 		},
 		Effect.fn("definition.add")(function* ({input}) {
 			const user = yield* CurrentUser.required;
-			const sozluk = yield* Sozluk;
-			const live = sozlukLive(yield* WorkerLivePublisher);
-			// A çaylak's new definition lands sandboxed when the authorship-loop flag
-			// is on; flag-off / yazar ⇒ live, exactly as today (#1205).
-			const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
-			const result = yield* sozluk.addDefinition({
-				termSlug: input.termSlug,
-				authorId: user.id,
-				authorName: user.name ?? user.email,
-				body: input.body,
-				sandboxedAt,
-				...(input.termTitle ? {termTitle: input.termTitle} : {}),
+			const add = Effect.fn("definition.addBody")(function* () {
+				const sozluk = yield* Sozluk;
+				const live = sozlukLive(yield* WorkerLivePublisher);
+				// A çaylak's new definition lands sandboxed when the authorship-loop flag
+				// is on; flag-off / yazar ⇒ live, exactly as today (#1205).
+				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
+				const result = yield* sozluk.addDefinition({
+					termSlug: input.termSlug,
+					authorId: user.id,
+					authorName: user.name ?? user.email,
+					body: input.body,
+					sandboxedAt,
+					...(input.termTitle ? {termTitle: input.termTitle} : {}),
+				});
+				// Fresh write: not yet voted by anyone.
+				const definition = shapeDefinition({...result, myVote: null});
+				// Append the node to the term's `Term.definitions` topic (same key
+				// `definition.delete` removes from) so every open term page updates live —
+				// but only when the definition is live: the topic is viewer-blind, so a
+				// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
+				yield* live.definition
+					.term(input.termSlug)
+					.appendNode(definition.id, {node: definition}, decidePublish(sandboxedAt));
+				// Mod-queue heartbeat (#1699): a sandboxed definition that is the çaylak's
+				// FIRST pending item pages the moderators — same transition gate as pano.
+				yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
+				return definition;
 			});
-			// Fresh write: not yet voted by anyone.
-			const definition = shapeDefinition({...result, myVote: null});
-			// Append the node to the term's `Term.definitions` topic (same key
-			// `definition.delete` removes from) so every open term page updates live —
-			// but only when the definition is live: the topic is viewer-blind, so a
-			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
-			yield* live.definition
-				.term(input.termSlug)
-				.appendNode(definition.id, {node: definition}, decidePublish(sandboxedAt));
-			// Mod-queue heartbeat (#1699): a sandboxed definition that is the çaylak's
-			// FIRST pending item pages the moderators — same transition gate as pano.
-			yield* notifyCaylakEntersDivan({authorId: user.id, sandboxedAt});
-			return definition;
+			// Post-value karma gate (#150), dark behind `phoenix-karma-gates` — the same
+			// ≥ −4 floor as pano's `post.submit` / `comment.add`, applied to the sözlük
+			// definition write path.
+			return yield* gateContentOnKarma(add());
 		}),
 	),
 	"definition.vote": Fate.mutation(

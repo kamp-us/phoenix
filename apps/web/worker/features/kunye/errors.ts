@@ -43,3 +43,22 @@ export class VouchLimitReached extends Schema.TaggedErrorClass<VouchLimitReached
 	{message: Schema.String, cap: Schema.Number},
 	{[FateWireCode]: "VOUCH_LIMIT_REACHED"},
 ) {}
+
+/**
+ * A karma-VALUE privilege floor (#150) failed — the actor's earned `total_karma`
+ * is below a right's minimum. Distinct from {@link RequiresLevel}, which floors
+ * the çaylak→yazar authorship *tier*: this floors a raw karma count (post ≥ −4,
+ * flag ≥ 50), an anti-abuse gate orthogonal to the tier ladder — so it carries
+ * its OWN `INSUFFICIENT_KARMA` code (not the overloaded `FORBIDDEN`) and the
+ * `need`ed floor + the actor's current `have`, so the surface can name the bar
+ * ("−4 karmanın altındasın") without mislabelling a tier denial. Visible (a
+ * FORBIDDEN-family public-progression denial), never the invisible {@link Denied}
+ * — a downvoted-into-the-ground poster deserves a clear reason, not a silent
+ * no-op. Reconciled with the tier model + ADR 0098 (no double-gating): the karma
+ * floors are a separate axis from authorship-tier and from moderation authority.
+ */
+export class InsufficientKarma extends Schema.TaggedErrorClass<InsufficientKarma>()(
+	"kunye/InsufficientKarma",
+	{message: Schema.String, need: Schema.Number, have: Schema.Number},
+	{[FateWireCode]: "INSUFFICIENT_KARMA"},
+) {}

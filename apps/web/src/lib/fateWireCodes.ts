@@ -33,6 +33,11 @@ export const FATE_WIRE_CODES = [
 	// active vouches (`kunye/VouchLimitReached`, #1289). Past the `FORBIDDEN` yazar
 	// floor: the actor IS a yazar, the act is just rationed.
 	"VOUCH_LIMIT_REACHED",
+	// A karma-VALUE privilege floor failed — the actor's earned `total_karma` is
+	// below a right's minimum (`kunye/InsufficientKarma`, #150): posting (≥ −4) or
+	// flagging (≥ 50). Distinct from the tier-ladder `FORBIDDEN` — this is a raw
+	// karma-count anti-abuse floor, a separate axis (no double-gating, #150 rescope).
+	"INSUFFICIENT_KARMA",
 	"DEFINITION_NOT_FOUND",
 	"POST_NOT_FOUND",
 	// A pano post's removal WRITE failed at the D1 layer (`pano/PostDeleteFailed`,

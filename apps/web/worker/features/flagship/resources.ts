@@ -19,6 +19,7 @@ import {
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
 	PHOENIX_FUNNEL_READOUT,
+	PHOENIX_KARMA_GATES,
 	PHOENIX_MOD_QUEUE,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
@@ -92,6 +93,7 @@ export {
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
 	PHOENIX_FUNNEL_READOUT,
+	PHOENIX_KARMA_GATES,
 	PHOENIX_MOD_QUEUE,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_EDITS,
@@ -587,3 +589,40 @@ export const REACTIONS_FLAG = {
  */
 export const reactionsFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_reactions", {appId, ...REACTIONS_FLAG});
+
+/**
+ * The karma-gated privileges dark-ship flag config (#150, künye epic #41). The
+ * SINGLE seam the karma-VALUE privilege gates ride behind — the post-floor
+ * (`karma ≥ −4`, on pano post/comment + sözlük definition creation) and the
+ * flag-floor (`karma ≥ 50`, on `report.submit`). Default-OFF so the gates reach
+ * production dark: with it off the karma read never runs and every write behaves
+ * exactly as today; flipping it on is the human release act (ADR 0083).
+ *
+ * A separate axis from the çaylak→yazar authorship-loop flag (tier gating) and the
+ * mod-queue flag (ADR 0098 moderation) — these are anti-abuse karma-value floors,
+ * not a second tier ladder (no double-gating, #150 rescope 2026-07-02).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
+ * `REACTIONS_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           künye (the earned-standing / privilege surface)
+ *   - originating:     #150 (epic: künye reputation, #41)
+ *   - removal trigger: once the karma gates graduate to on at 100% and stable for
+ *                      one release, retire the flag and inline the now-permanent gate.
+ */
+export const KARMA_GATES_FLAG = {
+	key: PHOENIX_KARMA_GATES,
+	description:
+		"karma-gated privileges dark-ship (#150, epic #41). owner: künye. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const karmaGatesFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_karma_gates", {appId, ...KARMA_GATES_FLAG});

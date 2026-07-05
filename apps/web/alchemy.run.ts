@@ -45,6 +45,7 @@ import {
 	demoTargetingFlag,
 	Flagship,
 	funnelReadoutFlag,
+	karmaGatesFlag,
 	modQueueFlag,
 	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
@@ -113,6 +114,10 @@ export default Alchemy.Stack(
 		// The reactions (emoji tepki) dark-ship flag, default-off (#1863, epic #1840) —
 		// the single seam the whole reaction feature gates behind until a human release.
 		yield* reactionsFlag(flagship.appId);
+		// The karma-gated privileges dark-ship flag, default-off (#150, epic #41) — the
+		// single seam the post-floor (≥ −4) + flag-floor (≥ 50) karma gates ride behind
+		// until a human release.
+		yield* karmaGatesFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
