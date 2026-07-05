@@ -96,6 +96,35 @@ function selectReviewTier(trivialTierEnabled, classifierOk, verdict) {
 	return trivialTierEnabled && classifierOk && verdict === "trivial" ? "lighter" : "full";
 }
 
+// Single-subagent resume cap (ADR 0152 mitigation (b), issue #2053) — the LIFETIME-DEGRADATION
+// axis. A HEALTHY, non-crashing subagent is NOT resumed indefinitely: past HEALTHY_RESUME_CAP
+// resume cycles the driving session spawns a FRESH instance instead of resuming the degraded one,
+// because confabulation correlates with very long resume chains (the #1876 near-miss). The count
+// is per-subagent-instance (its spawn/resumeFromRunId), so a fresh spawn zeroes the budget.
+//
+// This is DISTINCT from #1751 / ADR 0130 (`resume-policy.ts`, `RESUME_CAP = 2`), which governs
+// the CRASH axis — a run that crashed (`status: failed`), classified TRANSIENT/LOGIC, capped per
+// `resumeFromRunId`. The two axes compose WITHOUT overlap and never double-count: a CRASH resume
+// is accounted against the crash budget (K=2); a HEALTHY resume against this lifetime cap. A
+// single resume is one axis or the other, never both — neither budget weakens the other.
+//
+// Enforcement seam: the healthy resume of a whole run is driven by the driving session's
+// auto-resume layer (`.patterns/workflow-driving-auto-resume.md`, ADR 0130), which owns the
+// per-run ledger. That layer consults THIS decision on a HEALTHY resume request (no crash signal)
+// before re-invoking: `respawn` ⇒ start a fresh run/instance rather than replay the degraded one.
+// The predicate below is the inline mirror of the unit-tested pure core `resumeCapDecision` in
+// packages/pipeline-cli/src/tools/drive-issue-flow/resume-cap.ts; it is inlined (not imported)
+// because a workflow script — top-level return + injected globals — is not importable as a module
+// (the `selectReviewTier` / `isCoderBackOff` sibling shape). K's rationale is recorded there.
+const HEALTHY_RESUME_CAP = 5;
+function resumeCapDecision(cycles, cap = HEALTHY_RESUME_CAP) {
+	// Corrupt (non-integer / non-positive) prior count ⇒ treat as a fresh instance (0 so far).
+	const c = Number.isInteger(cycles) && cycles > 0 ? cycles : 0;
+	return c >= cap
+		? {action: "respawn", reason: "cap-reached"}
+		: {action: "resume", cycle: c + 1};
+}
+
 // Disambiguating first line (#1768): `meta` is a pure literal (Workflow contract), so its
 // static top-row label can't carry the target number — concurrent drive-issue rows would be
 // indistinguishable. Emit the already-parsed `issue` as the workflow's VERY FIRST log line so

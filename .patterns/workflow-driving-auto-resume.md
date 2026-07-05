@@ -90,6 +90,33 @@ A run `run_flaky` crashes TRANSIENT three times in a row:
 have surfaced immediately with **zero** resumes. A *different* run's crash carries its own
 zeroed budget, so it gets its own full two resumes independent of `run_flaky`.
 
+## A second, orthogonal cap: the healthy-resume lifetime cap (ADR 0152 (b))
+
+Everything above is the **crash axis** — it fires on a `status: failed` event and caps resumes
+of a *crashed* run at K=2. There is a **second, independent** cap on a different failure mode:
+a **healthy, non-crashing** subagent that is resumed across a very long chain and degrades
+toward confident-but-confabulated output (the #1876 near-miss — a triager resumed ~5000s across
+many cycles). Confabulation correlates with long resume chains, not crashes, so the crash
+machinery does not cover it (ADR
+[0152](../.decisions/0152-confabulation-guardrail-and-resume-cap.md) mitigation (b),
+[#2053](https://github.com/kamp-us/phoenix/issues/2053)).
+
+The rule: on a **healthy** resume request (no crash signal), the driving session consults the
+lifetime cap before re-invoking. A single healthy subagent is resumed at most
+`HEALTHY_RESUME_CAP` (K=5) times; past the cap the session **spawns a fresh instance** instead
+of resuming the degraded one. The count is per subagent instance (its
+spawn/`resumeFromRunId`), so a fresh spawn zeroes the budget and the successor gets a full K
+again. The decision is the pure, unit-tested
+[`resumeCapDecision`](../packages/pipeline-cli/src/tools/drive-issue-flow/resume-cap.ts)
+(mirrored inline in `.claude/workflows/drive-issue.js` as `HEALTHY_RESUME_CAP` +
+`resumeCapDecision`, the enforcement home per ADR 0152).
+
+**The two axes are distinct and never double-count.** The crash cap (K=2, `resume-policy.ts`)
+is consulted on a **crash**; the lifetime cap (K=5, `resume-cap.ts`) on a **healthy** resume.
+A single resume is one axis or the other, never both — neither budget weakens the other, and a
+resume is never counted against both. A run that has crash-resumed under K=2 may still
+healthy-resume up to K=5, and vice versa; they are separate ledgers over separate failure modes.
+
 ## What this discipline does NOT cover
 
 **Whole-process death** ([#1760](https://github.com/kamp-us/phoenix/issues/1760), deferred):
