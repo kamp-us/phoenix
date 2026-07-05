@@ -24,6 +24,7 @@ import {useNavigate, useParams} from "react-router";
 import type {Term} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
+import {actorLabel} from "../components/moderation/actor-identity";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
 import {Skeleton} from "../components/ui/atoms";
@@ -384,7 +385,12 @@ function Composer({
 		// to and drives its own force-refetch + remount, left untouched.
 		const optimistic = buildOptimisticDefinition(optimisticAdd && !onTermCreated, {
 			body,
-			author: user.name ?? user.email,
+			// Route through the shared actor-label rule (#2126): display name, falling
+			// back to a fixed noun, NEVER the email — the old `?? user.email` could
+			// surface a user's email in the optimistic author line (a PII leak). The
+			// session user carries no typed `username`, so the middle @username tier is
+			// unreachable here; the server round-trip replaces this optimistic value.
+			author: actorLabel(user.name, null, "kullanıcı"),
 			authorId: user.id,
 		});
 		await run(

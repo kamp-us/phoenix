@@ -15,6 +15,7 @@ import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view}
 import {Link, useLocation, useNavigate, useParams} from "react-router";
 import type {Post, ReportReceipt} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
+import {actorLabel} from "../components/moderation/actor-identity";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
 import {buildCommentTree, type CommentNode} from "../components/pano/commentTree";
 import {
@@ -445,7 +446,9 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 				postPath={`/pano/${data.slug ?? data.id}`}
 				signedIn={!!session.data?.user}
 				currentUserId={session.data?.user?.id ?? null}
-				currentUserName={session.data?.user?.name ?? session.data?.user?.email ?? null}
+				currentUserName={
+					session.data?.user ? actorLabel(session.data.user.name, null, "kullanıcı") : null
+				}
 			/>
 		</>
 	);
@@ -460,7 +463,7 @@ interface CommentsProps {
 	postPath: string;
 	signedIn: boolean;
 	currentUserId: string | null;
-	/** Author display name (`user.name ?? user.email`) for the optimistic comment node; null when signed out. */
+	/** Author label (`actorLabel`: display name → @username, never email) for the optimistic comment node; null when signed out. */
 	currentUserName: string | null;
 }
 
