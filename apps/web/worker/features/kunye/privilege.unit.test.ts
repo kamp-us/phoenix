@@ -67,19 +67,25 @@ const run = (
 ): Exit.Exit<"ok", InsufficientKarma> =>
 	Effect.runSyncExit(
 		(gate(Effect.succeed("ok" as const)) as Effect.Effect<"ok", InsufficientKarma, unknown>).pipe(
-			Effect.provideService(CurrentActor, {actor: opts.actor}),
-			Effect.provideService(AgentAuthority, {admits: () => Effect.succeed(true)}),
-			Effect.provide(kunyeWithKarma(opts.karma)),
-			Effect.provide(flagsStub(opts.flagOn)),
-			Effect.provideService(CurrentUser, {user: opts.user}),
-			// `provideRequestFlags` (the flag-aware wrappers) reads the per-request
-			// override seam + `AppConfig` for the stage; a non-development stage reads no
-			// cookie, so a null-cookie override + a bare config provider is all the flag
-			// path needs to resolve under `runSyncExit`.
-			Effect.provideService(RequestFlagOverrides, {cookieHeader: null}),
-			Effect.provideService(
-				ConfigProvider.ConfigProvider,
-				ConfigProvider.fromUnknown({ENVIRONMENT: "production"}),
+			// One combined provide (a single merged layer), never a chain of provides —
+			// `@effect/language-service` flags chained provides (`multipleEffectProvide`).
+			// `provideRequestFlags` (the flag-aware wrappers) reads the per-request override
+			// seam + `AppConfig` for the stage; a non-development stage reads no cookie, so a
+			// null-cookie override + a bare config provider is all the flag path needs under
+			// `runSyncExit`.
+			Effect.provide(
+				Layer.mergeAll(
+					Layer.succeed(CurrentActor, {actor: opts.actor}),
+					Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(true)}),
+					kunyeWithKarma(opts.karma),
+					flagsStub(opts.flagOn),
+					Layer.succeed(CurrentUser, {user: opts.user}),
+					Layer.succeed(RequestFlagOverrides, {cookieHeader: null}),
+					Layer.succeed(
+						ConfigProvider.ConfigProvider,
+						ConfigProvider.fromUnknown({ENVIRONMENT: "production"}),
+					),
+				),
 			),
 		) as Effect.Effect<"ok", InsufficientKarma, never>,
 	);
