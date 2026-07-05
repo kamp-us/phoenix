@@ -568,7 +568,7 @@ the human-filed-never-auto-closed rule (Step 5): the *disposition* of a complete
 is founder judgment, not a mechanical act. A 100%-open milestone may legitimately stay open
 (more issues genuinely planned), may be **done → close**, or may be a **bucket masquerading
 as a milestone → retire** (convert to a plain label). Per the glossary's **Milestone** term
-([`../../../.glossary/LANGUAGE.md`](../../../.glossary/LANGUAGE.md)) — *a milestone is an
+([`../../../../.glossary/LANGUAGE.md`](../../../../.glossary/LANGUAGE.md)) — *a milestone is an
 initiative; an initiative has a Definition of Done; a catch-all with no DoD is a label, not
 a milestone* — a fixes-bucket at 100% is retired, not closed-as-done. Deciding which of the
 three applies is out of triage's scope (ADR
