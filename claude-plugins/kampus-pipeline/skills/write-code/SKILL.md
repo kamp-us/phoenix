@@ -714,7 +714,13 @@ isolated worktree (`fatal: 'main' is already checked out at <primary>`). Branch 
 latest origin `main` **without checking it out**:
 
 ```bash
-git fetch origin main
+# Fetch the base fresh, and FAIL-LOUD if it doesn't run: FETCH_HEAD is what the branch below is
+# cut from, so a silently-failed fetch (network blip, a harness worktree whose exec env stripped
+# PATH) leaves FETCH_HEAD at a STALE prior tip, and the branch misses a base file merged just
+# before branch-cut → the SHA-bound run-evidence check false-fails on a file the head never
+# carried (#1920; the same stale-base class #1837 fixed at the repair step). Never proceed on an
+# unverified fetch — assert it succeeded before branching off FETCH_HEAD.
+git fetch origin main || { echo "write-code: 'git fetch origin main' failed — refusing to branch off a stale FETCH_HEAD (would cut a head missing a just-merged base file; #1920)." >&2; exit 1; }
 # Derive the prefix from THIS checkout's git identity — never a hardcoded literal. A copied
 # literal namespaces every agent's branch under one person's handle regardless of who runs.
 PREFIX="$(git config user.name | tr '[:upper:] ' '[:lower:]-')"   # e.g. "Umut Sirin" → "umut-sirin"
@@ -771,11 +777,16 @@ pass; `no` means config/docs/scaffolding where test-first doesn't apply.
 
 <a id="non-isolated-fallback"></a>
 > **Non-isolated fallback.** For the rare invocation that isn't already in a worktree,
-> spin one up rather than checking out `main`. Create the worktree on the per-run `$BRANCH`
-> (nonce and all) at a per-run worktree path so two concurrent fallback runs collide on
-> neither the branch nor the dir: `WT="../wt-issue-<N>-$(uuidgen | head -c 8)"; git worktree
-> add -b "$BRANCH" "$WT" origin/main`, then `cd "$WT"`. When you're done, remove it with
-> `git worktree remove "$WT"`. After the `cd "$WT"`, **re-run the Step 4 preflight** — the
+> spin one up rather than checking out `main`. **Fetch first** — the local `origin/main`
+> remote-tracking ref can predate a just-merged base commit (e.g. a run-evidence-referenced
+> tooling file added seconds before branch-cut), so `git worktree add … origin/main` off a
+> stale ref cuts a head that misses that file and false-fails the SHA-bound CI (#1920; the same
+> stale-base class #1837 fixed at the repair step). Create the worktree on the per-run
+> `$BRANCH` (nonce and all) at a per-run worktree path off the **freshly-fetched** tip, so two
+> concurrent fallback runs collide on neither the branch nor the dir: `git fetch origin main;
+> WT="../wt-issue-<N>-$(uuidgen | head -c 8)"; git worktree add -b "$BRANCH" "$WT" FETCH_HEAD`,
+> then `cd "$WT"`. Branch off `FETCH_HEAD` (the just-fetched origin tip), **never** the possibly-stale
+> `origin/main` ref. When you're done, remove it with `git worktree remove "$WT"`. After the `cd "$WT"`, **re-run the Step 4 preflight** — the
 > fresh worktree's git-dir now differs from the common dir, so the check passes and you may
 > mutate. This is the *only* sanctioned route from a primary-checkout start; the preflight
 > stays fail-closed until a real worktree exists. Here too the branch name is **created once**
