@@ -114,6 +114,8 @@ export default defineConfig({
 					// the harness holds no cross-file module-level mutable singleton (the
 					// shared stage handle arrives via `provide`, not a module global); a
 					// fully-green integration tier is the contamination proof.
+					// CI A/B (recorded on PR #958): integration-job wall-clock 251s median
+					// (isolate:true baseline, n=5 main runs) → 203s (isolate:false), ≈19% faster.
 					isolate: false,
 					// Per-file isolated stages (ADR 0082): each file deploys its own
 					// worker + D1, so files run in parallel — the inverse of the retired
