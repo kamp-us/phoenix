@@ -61,12 +61,18 @@ A PR is in one of two classes by the files it touches (ADR
   (blocking) is the *separate* axis 0065 owns, and 0065 stands verbatim until a later decision
   retires it against `review-skill`'s evidence (ADR 0073 §4).
 - **NON-BLOCKING — autonomous.** Everything else — `apps/**` (every app worker), `packages/**`,
-  `.decisions/**`, `.patterns/**`, and other prose docs. These are product or knowledge
+  `.decisions/**` (**except a guard-touching ADR** — see next paragraph), `.patterns/**`, and
+  other prose docs. These are product or knowledge
   artifacts; they are gated for quality, but a human at the merge adds no security value, so
   you ship them once the matching gate PASSes.
 
 Note `.decisions/**` and `.patterns/**` are **non-blocking** under 0053 — they auto-merge
-through `review-doc` (the boundary moved off "harness vs not" to "control plane vs not").
+through `review-doc` (the boundary moved off "harness vs not" to "control plane vs not"). **The
+one exception (ADR [0164](https://github.com/kamp-us/phoenix/blob/main/.decisions/0164-guard-relaxing-adr-cp-gate.md),
+#2191): a guard-touching `.decisions/**` ADR is §CP.** An ADR that relaxes/amends a documented
+guard is control-plane by nature, so Step 0 classifies a `.decisions/**` file §CP by its
+**content** (a conservative, fail-closed guard-vocabulary probe — not an author-declared tag) and
+holds it for a founder/control-plane approval rather than auto-shipping it on a `review-doc` PASS.
 
 ## All GitHub ops via `gh api` REST — never GraphQL
 
@@ -240,6 +246,24 @@ else
   CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ treat EVERY path as control-plane (refuse), never trust the possibly-stale snapshot
 fi
 echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065) + the enforcement-guard packages (ADR 0100/0103); other skills/** auto-merge on a review-skill PASS (ADR 0073)
+# §CP CONTENT clause (ADR 0164/#2191): a .decisions/** ADR is §CP by PATH only if it also matches
+# CONTROL_PLANE_RE (it doesn't) — but a guard-RELAXING ADR is control-plane by NATURE and path can't
+# tell it from an ordinary one. So classify a touched .decisions/** ADR §CP when its CONTENT cites or
+# amends a documented guard. GUARD_ADR_RE is single-sourced in gh-issue-intake-formats.md §CP — the
+# literal below is the fail-closed reference + validate-gate-path-drift lockstep target, NOT the live
+# decision source: re-resolve it from origin/main (like CONTROL_PLANE_RE, #981), and read each ADR's
+# body at the PR head. FAIL CLOSED throughout: unreadable boundary ⇒ match-everything; unreadable ADR
+# (delete/404) ⇒ §CP — never auto-ship an ADR that couldn't be read and proven guard-free.
+GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'   # §CP canonical (ADR 0164) — drift-locked to gh-issue-intake-formats.md
+GA_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^GUARD_ADR_RE=' | head -n1 || true)"
+if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched .decisions/** file is §CP
+HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+  [ -z "$adr" ] && continue
+  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
+  if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
+  elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
+done
 echo "$FILES" | grep -Eq '^claude-plugins/kampus-pipeline/(skills|agents)/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063); agents/** are behavioral artifacts, skill-class for the verdict gate (ADR 0150/#2003) — §CP-blocking for merge via CONTROL_PLANE_RE above
 echo "$FILES" | grep -Eq '^(apps|packages|\.glossary|infra)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages + infra/** standalone stacks (ADR 0057) + .glossary/** — agrees with the docs-probe exclusion below (#663/#919/#1987); review-code owns the glossary (Step 3c); skills/** is its OWN class (ADR 0073)
 # docs probe EXCLUDES the code roots, skills/**, AND .glossary/** first, so a code/app-internal README
@@ -251,7 +275,11 @@ echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary|infra)/' | g
 **Routing:**
 
 - If **any** file is control plane (the §CP set — `.claude/**`, `.github/**`, or a
-  gate-critical skill) → the PR is **§CP: APPROVAL-GATED** (not a blanket refuse — ADR
+  gate-critical skill) **OR any touched `.decisions/**` ADR matched the guard-touching content
+  probe above** (a guard-relaxing/amending ADR is control-plane by nature — ADR
+  [0164](https://github.com/kamp-us/phoenix/blob/main/.decisions/0164-guard-relaxing-adr-cp-gate.md),
+  #2191; its `review-doc` verdict routing is unchanged, only merge-authority moves) → the PR is
+  **§CP: APPROVAL-GATED** (not a blanket refuse — ADR
   [0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md),
   amending 0053's merge model). Check for a **current-head `@kamp-us/control-plane` team approval**
   (the [§CP approval gate](#step-0-cp-approval-gate) below):
