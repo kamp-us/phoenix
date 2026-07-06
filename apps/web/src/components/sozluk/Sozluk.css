@@ -58,7 +58,9 @@
 }
 .kp-sozluk-popular__rank {
 	font: var(--t-meta);
-	color: var(--text-faint);
+	/* Rank number carries meaning → --text-muted (AA-safe ≥4.5:1); --text-faint is
+	   decorative-only and bottoms out at ~3:1 (#2166, tokens.css role layer). */
+	color: var(--text-muted);
 	text-align: right;
 }
 .kp-sozluk-popular__title {
