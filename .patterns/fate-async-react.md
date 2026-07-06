@@ -4,9 +4,10 @@ How phoenix makes navigation and in-screen data swaps **feel instant** with Reac
 concurrent primitives on top of fate's Suspense-based data model. The short answer: reads
 suspend, so a screen never hand-rolls a loading flag — instead it (1) sits under a **stable**
 `<Suspense>` boundary, (2) marks any state change that re-suspends as a **transition** so the
-current UI stays interactive instead of hard-swapping to a fallback, (3) `defer`s below-the-fold
-sections so above-the-fold content isn't gated on the slowest loader, and (4) sizes every
-Suspense fallback (skeleton) to its real payload so arrival swaps in with no layout jump.
+current UI stays interactive instead of hard-swapping to a fallback, and (3) sizes every
+Suspense fallback (skeleton) to its real payload so arrival swaps in with no layout jump. A
+fourth fate lever — `defer` — is **not usable against phoenix's data seam today** and the
+"why" is load-bearing enough to document; see [Why `defer` doesn't apply here](#why-defer-doesnt-apply-to-phoenixs-nested-connections-today).
 
 This is the client-side companion to [fate-client-setup.md](./fate-client-setup.md) (the
 `<Screen>` rails) and [fate-views-and-requests.md](./fate-views-and-requests.md) (the read model).
@@ -21,10 +22,12 @@ boundary, paired in [`src/fate/Screen.tsx`](../apps/web/src/fate/Screen.tsx). Th
 imperative loading state to coordinate; React's concurrent renderer decides *when* to show the
 fallback. Our job is to shape the tree so it shows the fallback **only** on a genuine cold load —
 never on a navigation or a filter swap where a previous screen was already on-screen and could
-stay interactive. That shaping is the three levers below (transitions, defer, height-matched
-skeletons), grounded in fate's own async model (its README: *"React Suspense manages loading
-states… This eliminates the need for imperative loading logic"*, and the `defer` / Deferred Views
-section).
+stay interactive. That shaping is the two levers below (transitions, height-matched skeletons),
+grounded in fate's own async model (its README: *"React Suspense manages loading states… This
+eliminates the need for imperative loading logic"*). **fate's single batched request per screen
+already removes waterfalls** — every screen's whole composed view resolves in one round-trip, so
+above-the-fold content is never gated on a *separate* slow request; the only wait is the one cold
+load, which the height-matched skeleton covers.
 
 ## Lever 1 — `startTransition` keeps the current screen interactive across a re-suspend
 
@@ -87,59 +90,47 @@ reads as "loading the next view," not a frozen screen. Use motion tokens for the
 > README notes the manual `useTransition` fallback for non-Action call sites; our mutation hooks
 > (`useDraftSubmit`) already sit on Actions.
 
-## Lever 2 — `defer` so above-the-fold content isn't gated on the slowest loader
+<a id="why-defer-doesnt-apply-to-phoenixs-nested-connections-today"></a>
+## Why `defer` doesn't apply to phoenix's nested connections today
 
-By default a screen's one `useRequest` resolves the **whole** composed view before anything
-paints — the header waits on the heaviest nested list. `defer(selection)` marks a field so the
-parent view resolves as soon as the **eager** fields are ready, handing back a `Deferred<T>`
-handle for the deferred field. The component that reads that handle (with `useView` /
-`useListView` / `useLiveListView`) decides which `<Suspense>` boundary owns *its* loading state —
-so the fast, above-the-fold content paints immediately while the slow section loads under its own
-skeleton (fate README, *Deferred Views*: *"the parent view receives a deferred handle immediately
-after the eager fields are available, and the component that reads that handle … decides which
-Suspense boundary handles the loading state"*).
+fate ships a `defer(selection)` primitive — the parent view resolves on its eager fields and hands
+back a `Deferred<T>` handle, and the component reading that handle owns a *separate* `<Suspense>`
+boundary (fate README, *Deferred Views*). It is the natural tool for "header first, slow section
+under its own boundary." **It does not work against phoenix's data seam, and shipping it stalls
+the deferred section forever — do not reach for it on a nested connection.** This is grounded in
+fate's client source, not intuition (the regression was caught by the deployed e2e, invisible to
+jsdom unit tests — #2161, PR #2181):
 
-```tsx
-// apps/web/src/pages/UserProfilePage.tsx — the header (name/tier/karma, from eager
-// aggregate counts) paints at once; the below-the-fold contributions connection loads
-// under its OWN <Suspense> boundary instead of gating the whole profile.
-import {defer, useListView, view} from "react-fate";
+- **How fate resolves a deferred handle.** `FateClient.readDeferred` (in `@nkzw/fate`'s
+  `lib/index.mjs`) resolves a `Deferred` by calling `fetchByIdAndNormalize(ownerType, [ownerId],
+  deferredPaths)`, which issues **`transport.fetchById(type, ids, select)`** — a **byId (`node`)
+  fetch of the owner entity** requesting the deferred field. So `defer(Profile.contributions)`
+  resolves by fetching `Profile` **by id** selecting `contributions`.
+- **Why phoenix can't satisfy that fetch.** In phoenix every nested connection
+  (`Profile.contributions`, `Post.comments`, `Term.definitions`) is **delivered inline by a custom
+  root query resolver**, gated on `hasNestedSelection(select, "<field>")`
+  (`worker/features/*/queries.ts`). The entity's **byId source** (`Fate.source(…, {byId})`)
+  deliberately returns only the base entity — the sources even comment that the connection is
+  *"delivered inline by `queries.profile`"* and *"custom executor for a hand-built source, so
+  deliver `comments` inline."* So the byId fetch `readDeferred` issues returns the `Profile`
+  **without** `contributions`; `missingForSelection` stays > 0; the handle never fulfils; the
+  `<Suspense>` boundary hangs on its skeleton. The header (eager, byId-deliverable) paints; the
+  deferred section is **lost, not deferred**.
 
-const UserProfileView = view<Profile>()({
-	...UserProfileHeaderView,                       // eager — above the fold
-	contributions: defer(ContributionsConnectionView), // deferred — below the fold
-});
+The rule: **`defer` is only usable where the deferred field is deliverable by the owner's byId
+source.** phoenix's nested connections are root-resolver-only, so `defer` is off the table for
+them until (and unless) the byId sources are taught to deliver the connection — a fate/worker-seam
+change, not an `apps/web` one.
 
-function UserProfileContent(/* … */) {
-	const {profile} = useRequest({profile: {view: UserProfileView, args: {/* … */}}});
-	return (
-		<>
-			<UserProfileHeader profile={profile} />           {/* paints on eager resolve */}
-			<Suspense fallback={<ContributionsSkeleton />}>   {/* the deferred field's own boundary */}
-				<ContributionsList profile={profile} />
-			</Suspense>
-		</>
-	);
-}
-```
+**What satisfies AC2's intent instead — and why it's already met.** The goal is "above-the-fold
+content isn't gated on the slowest loader." phoenix meets it structurally: **one batched request
+per screen resolves the whole composed view server-side in a single round-trip** (header counts +
+the contribution feed are built in the *same* `queries.profile` resolver pass), so there is **no
+separate slow loader** for the header to wait on — the header and the list arrive together, and
+the single cold-load wait is covered by the height-matched skeleton (lever below). Keep nested
+connections **eager** on the screen's `useRequest`; do not wrap them in `defer`.
 
-Deferred fields are **explicit handles, not optional data**: if the deferred selection is missing
-from the normalized cache, fate fetches *only* that selection and suspends *only* the component
-that read it. Reach for `defer` when a screen has a clear above/below-the-fold split where the
-below-the-fold section is genuinely secondary (a profile's contribution feed, a post's comment
-thread). Don't defer the primary content a user came to see.
-
-> **Nullable relations + `defer` — narrow the handle at the read site.** A server view field
-> typed optional (`{contributions?: Contribution[]}`) makes `defer` brand the handle with a
-> `| undefined` payload (`Deferred<ConnectionValue | undefined>`), which `useListView`'s deferred
-> arm — wanting `Deferred<ConnectionValue>` — rejects. The handle is never actually `undefined`
-> at read time (fate fetches the selection before the reader resolves), so narrow the branded
-> payload at the single read boundary with a documented type helper
-> (`type NonNullableDeferred<D> = D extends Deferred<infer V> ? Deferred<NonNullable<V>> : D`),
-> not a server-view change. `useListView` still yields `[]` for a genuinely empty connection, so
-> the empty-state branch is untouched. Live example: `ContributionsList` in `UserProfilePage.tsx`.
-
-## Lever 3 — height-matched skeletons so arrival swaps in without a jump
+## Lever 2 — height-matched skeletons so arrival swaps in without a jump
 
 A Suspense fallback must reserve the **same height** its real payload will occupy, or the page
 reflows when content lands — the footer jumps, layout thrashes (CLS). A skeleton that renders a
@@ -152,8 +143,9 @@ handful of rows under a page that resolves to twenty jumps ~941px on arrival (#2
 - **Single-source the row count from the page size.** The feed skeleton's row count is
   `PANO_FEED_PAGE_SIZE` — the *same* constant the feed request's `first:` reads
   (`apps/web/src/lib/panoNav.ts`) — so the skeleton reserves exactly one row per arriving post and
-  the two can never drift back apart (make-invalid-states-unrepresentable). A deferred section's
-  skeleton reserves a representative page (`ContributionsSkeleton`).
+  the two can never drift back apart (make-invalid-states-unrepresentable). A detail screen's
+  skeleton (`SozlukTermSkeleton`, `PanoPostSkeleton`) mirrors its header + a representative page of
+  rows the same way.
 
 Skeletons use **real tokens** — spacing (`--s-*`), motion, sizing — never raw px/hex, and every
 fallback is a labeled status region (`role="status"` + `aria-busy="true"` + a Turkish
@@ -165,13 +157,14 @@ fallback is a labeled status region (`role="status"` + `aria-busy="true"` + a Tu
 |---|---|---|
 | Stable Suspense + error rails | `<Screen>` (Suspense + boundary) | every screen; [`src/fate/Screen.tsx`](../apps/web/src/fate/Screen.tsx) |
 | Keep current UI across a re-suspend | `useTransition` + `isPending` dim | `PanoFeed` sort-chip swap |
-| Above-the-fold ungating | `defer` + a nested `<Suspense>` | `UserProfilePage` contributions |
-| No-jump arrival | height-matched `Skeleton` fallbacks | `PanoFeedSkeleton`, `SozlukTermSkeleton`, `PanoPostSkeleton`, `ContributionsSkeleton` |
+| Above-the-fold ungating | one batched request (no waterfall) — **not** `defer` on nested connections ([why](#why-defer-doesnt-apply-to-phoenixs-nested-connections-today)) | every screen resolves its composed view in one round-trip |
+| No-jump arrival | height-matched `Skeleton` fallbacks | `PanoFeedSkeleton`, `SozlukTermSkeleton`, `PanoPostSkeleton` |
 
 ## See also
 
 - [fate-client-setup.md](./fate-client-setup.md) — `<Screen>` (Suspense + error boundary), the provider
 - [fate-views-and-requests.md](./fate-views-and-requests.md) — `view`/`useView`/`useListView`, one request per screen
+- [fate-connections.md](./fate-connections.md) — how the server resolves nested connections inline (the reason `defer` can't reach them by id)
 - [fate-mutations-client.md](./fate-mutations-client.md) — writes ride React Actions (no manual transition needed)
 - [base-ui-accessibility.md](./base-ui-accessibility.md) — the accessible-name rules a status region follows
-- fate reference (in the [fate](https://github.com/usirin/fate) repo README): *Data Fetching* (Suspense), *Deferred Views* (`defer`)
+- fate reference (in the [fate](https://github.com/usirin/fate) repo README): *Data Fetching* (Suspense); *Deferred Views* (`defer` — see the phoenix-seam caveat above)
