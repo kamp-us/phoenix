@@ -35,6 +35,17 @@ export const LiveTopic = {
 	postComments: "Post.comments",
 	/** sözlük term → definitions (args: `{id: termSlug}`). */
 	termDefinitions: "Term.definitions",
+	/**
+	 * pano viewer's saved posts (per-viewer). Registered so the saved view's
+	 * connection-level subscribe DECODES instead of 400ing (`SavedConnectionView`
+	 * carries no `live:` config, so it wants no connection prepends — only a valid
+	 * subscribe). Deliberately has NO cross-client publish target: the saved list is
+	 * viewer-private, so a publish onto this login-blind shared topic would leak one
+	 * viewer's saved membership (and per-viewer `isSaved`) to every other subscriber.
+	 * Live save-state is carried per-row by the entity `Post` subscribe (`isSaved`)
+	 * + the client's local `savedReconcile`, not a connection fan-out.
+	 */
+	savedPosts: "savedPosts",
 } as const;
 
 /**
