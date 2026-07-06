@@ -160,9 +160,47 @@ until they land, the rule still governs (do not seed a fresh hand-built instance
 | A button (incl. `pressed` / `icon` / `loading`) | The widened `Button` primitive | Hand-roll a button wrapper around the primitive. |
 | Empty / short / sparse state | The reusable empty-state primitive ([#2162](https://github.com/kamp-us/phoenix/issues/2162)) | Ship a bare `0 yorum`-style label as the whole treatment. |
 | A reaction affordance | The on-brand controlled reaction asset ([#2165](https://github.com/kamp-us/phoenix/issues/2165)) | Ship a raw system-emoji glyph (OS-drift). |
+| A functional icon (vote / nav / toolbar / inline) | A drawn **Lucide** icon at the ruled size + role token (the [icon idiom](#the-canonical-icon-idiom) below) | Ship a Unicode functional glyph (`△` `↑` `→` `⌘` `↵`) or a hand-inlined SVG as an icon. |
 
 **One system throughout:** one type ramp, one four-level elevation system, one icon idiom — never
-a second type/elevation system or a fourth icon idiom.
+a second type/elevation system or a fourth icon idiom. The icon idiom's **positive** definition —
+the set, stroke, sizes, color, vote glyph, and function/affect/key-legend partition — is
+[encoded below](#the-canonical-icon-idiom) (ADR [0166](https://github.com/kamp-us/phoenix/blob/main/.decisions/0166-canonical-icon-idiom.md)).
+
+---
+
+## The canonical icon idiom
+
+Per Pillar 2 (cohesiveness) and ADR
+[0166](https://github.com/kamp-us/phoenix/blob/main/.decisions/0166-canonical-icon-idiom.md). This
+leg is **encoded** (it was previously deferred — the manifest and 0162 stated only the "one icon
+idiom / never a fourth" prohibition; 0166 records the positive ruling transcribed here). The
+migration of the live glyph surfaces to this idiom is a **separate downstream chore** under epic
+[#2168](https://github.com/kamp-us/phoenix/issues/2168), not yet performed.
+
+- **Set — Lucide.** The canonical set is **[Lucide](https://lucide.dev)**: 24×24 grid, a single 2px
+  stroke, round caps/joins, `fill: none`. MIT, tree-shakeable, added via `catalog:`. Icons are drawn
+  Lucide glyphs — **never** a hand-inlined SVG, and **never** a Unicode functional glyph
+  (`△` `↑` `→` `⌘` `↵`) as an icon (those drift per-OS font fallback, the same reason raw emoji are
+  outlawed as reaction affordances).
+- **Stroke — native optical per-size.** Icons use Lucide's **native per-size** stroke scaling — the
+  stroke thickens/thins with the glyph at each size. **Never** pin a constant `absoluteStrokeWidth`
+  across sizes.
+- **Sizes — 16 / 20 / 24 on the 4px grid** (floor 16; below 16 muddies on dark). **16 (sm)** = dense
+  rows · inline · vote; **20 (md)** = standalone · nav · toolbar; **24 (lg)** = emphasis ·
+  empty-state (sparing). The **tap target is decoupled**: the glyph is centered in a **≥36px hit
+  area** (padding fills), honoring the 36px minimum **without inflating the glyph**.
+- **Color — monochrome, `stroke: currentColor`, role tokens only.** Default `--text-secondary`,
+  hover `--text-primary`, active/on `--accent`, disabled `--text-muted`. The **one filled
+  exception** is the active vote glyph (`--accent` fill). **No icon hardcodes a color.**
+- **Vote glyph — a drawn triangle** (not a chevron — the HN / lobste.rs vote lineage): filled-accent
+  (`--accent`) when active, outline-secondary (`--text-secondary`) when inactive, up/down symmetry,
+  36px hit area. This is the one affordance that needs real design; the rest is substitution.
+- **The three-way partition (the boundary rule).** **Function** → a drawn Lucide icon (anywhere).
+  **Affect** → the curated six-emoji reaction set (monochrome-controlled per ADR
+  [0139](https://github.com/kamp-us/phoenix/blob/main/.decisions/0139-reaction-curated-palette.md)),
+  **only** in the reaction bar. **Key-legends** → `⌘` `⌥` `⇧` `↵` `⎋` are keycap typography, legal
+  **only** inside a `<kbd>` chip — never free-floating, never an icon.
 
 ---
 
@@ -191,6 +229,12 @@ card / meta-row / count-pill by hand.
 - **Never** hand-roll a button wrapper around the primitive.
 - **Never** ship raw system-emoji glyphs as reaction affordances.
 - **Never** introduce a fourth icon idiom or a second type/elevation system.
+- **Never** ship a Unicode functional glyph (`△` `↑` `→` `⌘` `↵`) or a hand-inlined SVG as an
+  icon — functional icons are drawn Lucide (the [icon idiom](#the-canonical-icon-idiom)).
+- **Never** hardcode an icon's color — icons are `stroke: currentColor` driven by role tokens
+  only (the active vote glyph's `--accent` fill is the one exception).
+- **Never** place a keycap glyph (`⌘` `⌥` `⇧` `↵` `⎋`) free-floating as an icon — it is legal only
+  inside a `<kbd>` chip.
 - **Never** reference a raw scale (`--mauve-*`) or semantic scale (`--gray-N` / `--accent-N`)
   token from a component — role tokens only.
 
