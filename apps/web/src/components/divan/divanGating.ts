@@ -49,6 +49,44 @@ export function shouldShowDivanEntry(flagOn: boolean, accessGranted: boolean): b
 }
 
 /**
+ * Can the CLIENT prove — from its trusted signals alone — that `divan.roster`
+ * would deny this viewer, so the guaranteed-`UNAUTHORIZED` probe need never be
+ * fired (#2209)? The server grant is the disjunction yazar OR moderator
+ * (`requireDivanAccess`, divan/gate.ts), so denial is provable iff BOTH arms are
+ * KNOWN-false: the tier is loaded and below yazar (`visitor`/`çaylak`) AND the
+ * `isModerator` signal is loaded and false. An `undefined` tier (`me` not yet
+ * read) is the AMBIGUOUS case — the client cannot prove anything, so this returns
+ * `false` and the server probe still runs, keeping the server the sole authority
+ * for the yazar/mod case. The short-circuit is layered ON the server gate, never a
+ * replacement: a viewer this returns `false` for is still probed.
+ */
+export function divanAccessDefinitelyDenied(
+	tier: Tier | undefined,
+	isModerator: boolean | undefined,
+): boolean {
+	return tier !== undefined && tier !== "yazar" && isModerator === false;
+}
+
+/**
+ * Should `useDivanAccess` fire the server-side `divan.roster` wire probe (#2209)?
+ * TRUE only when the flag is on, the viewer is signed in, and access is NOT
+ * client-provably denied. A provably-denied çaylak/non-mod ({@link
+ * divanAccessDefinitelyDenied}) returns `false` — the guaranteed-`UNAUTHORIZED`
+ * request is never issued — while the AMBIGUOUS case (a not-yet-loaded `me`, a
+ * yazar, or a moderator) returns `true`, so the server stays the sole authority for
+ * the yazar/mod grant. Factored DOM-free so "the probe fires iff …" is asserted
+ * without a React runtime (`apps/web/src` has no jsdom).
+ */
+export function shouldProbeDivanRoster(
+	flagOn: boolean,
+	signedIn: boolean,
+	tier: Tier | undefined,
+	isModerator: boolean | undefined,
+): boolean {
+	return flagOn && signedIn && !divanAccessDefinitelyDenied(tier, isModerator);
+}
+
+/**
  * Show the yazar **"kefil ol"** (vouch) affordance iff the viewer is a yazar — the
  * trusted account tier (`requireVouch` is the yazar floor server-side). A mod who
  * is not a yazar cannot vouch, so the affordance is yazar-tier only.

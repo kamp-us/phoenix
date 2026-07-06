@@ -164,7 +164,9 @@ function LayoutContent() {
 	// The yazar/mod-only divan entry (#1290), dark behind the same authorship-loop
 	// flag. `useDivanAccess` probes the server's gated read (yazar OR mod), so the
 	// entry is server-authoritative — invisible to çaylak/visitor, absent when off.
-	const divanAccess = useDivanAccess();
+	// `me` feeds the #2209 client short-circuit: a provably-denied çaylak/non-mod
+	// skips the guaranteed-`UNAUTHORIZED` probe; the ambiguous case still probes.
+	const divanAccess = useDivanAccess(me);
 	const showDivan = shouldShowDivanEntry(authorshipLoop, divanAccess);
 	// The bildirim entry + unread chip (#1694), dark behind the `phoenix-bildirim`
 	// flag. Gating the fetch on flag+session keeps the flag-off path exactly as

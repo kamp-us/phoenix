@@ -32,8 +32,18 @@ const SIGNAL_SIZE = 5;
 
 const ContributionsConnectionView = {items: {node: ContributionView}} as const;
 
+// Selects the count scalars alongside `contributions` so this read is a SUPERSET
+// of `useProfileStats`'s counts-only `profile` read (#2209): the two share a
+// `profile` root queryKey (root-path args `{username}`), so once this superset
+// populates the record, the sibling counts-only read on `/profile` resolves those
+// scalars from the normalized store instead of a second wire round-trip — the
+// counts read deduped onto this fuller one. The scalars aren't rendered here.
 const SignalView = view<Profile>()({
 	userId: true,
+	postCount: true,
+	commentCount: true,
+	definitionCount: true,
+	totalKarma: true,
 	contributions: ContributionsConnectionView,
 });
 
