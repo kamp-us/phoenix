@@ -12,8 +12,6 @@ import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {tagClass} from "../../lib/panoTags";
 import {actorLabel} from "../moderation/actor-identity";
-import {PostReactionBar} from "../reaction/PostReactionBar";
-import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
@@ -34,7 +32,6 @@ export const PanoPostCardView = view<Post>()({
 	authorDisplayName: true,
 	slug: true,
 	tags: true,
-	reactions: {counts: true, myReaction: true},
 });
 
 export function PanoPostCard({
@@ -108,9 +105,6 @@ export function PanoPostCard({
 						</>
 					) : null}
 				</div>
-				<ReactionBarSlot>
-					<PostReactionBar postId={data.id} reactions={data.reactions} />
-				</ReactionBarSlot>
 			</div>
 		</article>
 	);

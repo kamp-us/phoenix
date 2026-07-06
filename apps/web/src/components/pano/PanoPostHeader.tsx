@@ -10,6 +10,8 @@ import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {tagClass} from "../../lib/panoTags";
 import {actorLabel} from "../moderation/actor-identity";
+import {PostReactionBar} from "../reaction/PostReactionBar";
+import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {Tag, type TagKind} from "../ui/atoms";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
@@ -52,6 +54,7 @@ export const PanoPostHeaderView = view<Post>()({
 	updatedAt: true,
 	sandboxed: true,
 	tags: true,
+	reactions: {counts: true, myReaction: true},
 });
 
 export interface PanoPostHeaderProps {
@@ -122,6 +125,11 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 					))}
 				</div>
 			) : null}
+			{/* Reactions are scoped to the post detail, not the feed row (#2212) — mirroring
+			    how sözlük scopes them to the definition detail, not the term list. */}
+			<ReactionBarSlot>
+				<PostReactionBar postId={post.id} reactions={post.reactions} />
+			</ReactionBarSlot>
 		</div>
 	);
 }
