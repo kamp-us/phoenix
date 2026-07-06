@@ -785,6 +785,71 @@ silently leaks a local path into a **public** comment:
   route around this with `-F body=@file`: the `$BODY`-by-value form is the single idiom every
   skill here uses — reach for it, not a second mechanism.)
 
+### The verdict read-back guard — after posting a gate marker, re-read it and FAIL LOUD (`verdict_readback_guard`)
+
+The by-value form above (`-f body="$BODY"`) is the *source* idiom; it prevents a `body=@<path>`
+leak **at the call site**. But a source idiom cannot catch a **runtime deviation** — an agent that
+hand-assembles the wrong `$BODY` (the literal temp path as the marker body, a body missing its
+`Reviewed-head:` anchor, or a silently no-opped post) still lands a broken marker the by-value form
+happily transmits. That is the #2148 class: the posted verdict comment's entire body was a local
+temp path (`@/var/folders/…`), so no SHA-bound verdict existed for `ship-it` / the §CP merger to
+bind to (a **missing** gate verdict), **and** it leaked a machine-local path into a public comment.
+The source idiom alone can't see it; only a **post-write read-back** can.
+
+So every gate that posts a verdict marker — `review-code`, `review-doc`, `review-skill` — closes the
+loop with **one** canonical read-back guard: after the post/upsert lands, **re-read the comment you
+just wrote** and assert three invariants, failing **loud** (fail-closed, ADR
+[0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md) §ZS)
+on any miss — never a silent pass. This is the single source; each review skill **references it**
+(it does not re-derive its own copy — the three-copy drift is exactly what this contract exists to
+prevent):
+
+```bash
+# verdict_readback_guard <comment-id> <gate> <head-sha>: re-read the just-posted verdict comment
+# and PROVE it is a well-formed, leak-free, current-head-bound marker. FAIL LOUD (non-zero) on any
+# miss — a broken marker reads to consumers as "no verdict", or worse a human skims it as posted.
+# <gate> is one of: review-code | review-doc | review-skill.
+verdict_readback_guard() {
+  local cid="$1" gate="$2" sha="$3"
+  local got; got="$(gh api "repos/$REPO/issues/comments/$cid" --jq .body)" || {
+    echo "verdict_readback_guard FAILED: cannot re-read comment $cid — treat the verdict as UNLANDED." >&2; return 1; }
+
+  # (1) the canonical gate marker token is present: either the bindable first-line
+  #     `<gate>: PASS|FAIL @ <sha>` (SHA prefix-matched, ADR 0058), OR the SHA-less `<gate>: advisory`
+  #     first line (blocking-set path — authorizes nothing but IS a posted verdict).
+  printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${sha:0:7}" \
+    || printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*advisory" \
+    || { echo "verdict_readback_guard FAILED: no canonical '${gate}:' marker (PASS/FAIL @ ${sha:0:7} or advisory) in comment $cid — the body is malformed; the PR is UNGATED." >&2; return 1; }
+
+  # (2) the anchored `Reviewed-head: @ <sha>` binding line is present (§6.6 / ADR 0151), SHA
+  #     prefix-matched to the head reviewed — the body line every §CP consumer resolves the head from.
+  printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*${sha:0:7}" \
+    || { echo "verdict_readback_guard FAILED: no anchored 'Reviewed-head: @ ${sha:0:7}' line in comment $cid — the §CP head binding is missing." >&2; return 1; }
+
+  # (3) NO local filesystem path leaked into the public body (the #2148 leak). Reject a machine-local
+  #     scratch/home path or a leading `@<path>` marker-as-path. Patterns are placeholders, not real
+  #     paths — this doc stays leak-clean.
+  if printf '%s' "$got" | grep -Eq '(/var/folders/|/Users/|/tmp[/.]|/private/tmp/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
+    echo "verdict_readback_guard FAILED: comment $cid leaks a local filesystem path in its body — a #2148 marker-as-path leak; refuse and re-post the real verdict." >&2; return 1
+  fi
+
+  echo "verdict_readback_guard OK: ${gate} verdict @ ${sha:0:7} landed on comment $cid — marker + Reviewed-head present, no local-path leak."
+}
+```
+
+Gate it exactly like the by-value post it follows: right after the `PATCH`/`POST` upsert returns the
+comment id, call `verdict_readback_guard "$CID" <gate> "$HEAD_SHA"` and, on non-zero, **re-post the
+real verdict and re-assert** — if it still cannot land clean, surface it as a **posting failure** in
+the run ledger (the PR is genuinely ungated; a consumer must not read it as verified), never swallow
+it as a silent success. A moved `HEAD_SHA` between the post and the read-back means the head advanced
+*during* the review — re-resolve the head, re-verify against it (the gate is stateless), and re-post;
+never loosen the match to paper over a moved head.
+
+Two of the three assertions bind to a **head SHA** ((1) and (2)); the advisory blocking-set path
+carries no first-line `@ <sha>` by design (ADR 0111), which is why (1) accepts the `<gate>: advisory`
+first line as a posted verdict — but even the advisory MUST carry the body's `Reviewed-head: @ <sha>`
+line, so (2) and (3) still bind it. The bindable PASS/FAIL first line satisfies (1) via its `@ <sha>`.
+
 ---
 
 ## 3. Progress-comment format
