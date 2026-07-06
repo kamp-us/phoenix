@@ -20,7 +20,7 @@ import {
 	type ViewRef,
 	view,
 } from "react-fate";
-import {useNavigate, useParams} from "react-router";
+import {Link, useNavigate, useParams} from "react-router";
 import type {Term} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
@@ -251,8 +251,10 @@ interface DefinitionsListProps {
 	seedDefinitionId: string | null;
 }
 
-function DefinitionsList(props: DefinitionsListProps) {
+export function DefinitionsList(props: DefinitionsListProps) {
 	const fate = useFateClient();
+	const session = useSession();
+	const signedIn = !!session.data?.user;
 	const term = useView(TermView, props.term);
 	const [items, loadNext] = useLiveListView(DefinitionConnectionView, term.definitions);
 
@@ -308,8 +310,31 @@ function DefinitionsList(props: DefinitionsListProps) {
 					<LoadMoreButton loadNext={loadNext} />
 				</div>
 			) : null}
-			<Composer slug={props.slug} onConfirm={confirmDefinition} />
+			{signedIn ? (
+				<Composer slug={props.slug} onConfirm={confirmDefinition} />
+			) : (
+				<DefinitionSignInPrompt slug={props.slug} />
+			)}
 		</>
+	);
+}
+
+/**
+ * Anon affordance for an existing term: a logged-out visitor can't add a definition,
+ * so the live composer is replaced by a sign-in prompt — mirroring the new-term
+ * branch ({@link SozlukTermContent}) and pano, instead of inviting an action anon
+ * can't complete (#2211).
+ */
+function DefinitionSignInPrompt({slug}: {slug: string}) {
+	return (
+		<div className="kp-sozluk-composer" data-testid="sozluk-composer-signin">
+			<header className="kp-sozluk-composer__head">
+				<span className="kp-sozluk-composer__title">sen nasıl tanımlardın?</span>
+			</header>
+			<p style={{font: "var(--t-body)", color: "var(--text-muted)"}}>
+				tanım eklemek için <Link to={authRedirectPath(`/sozluk/${slug}`)}>giriş yap</Link>.
+			</p>
+		</div>
 	);
 }
 
