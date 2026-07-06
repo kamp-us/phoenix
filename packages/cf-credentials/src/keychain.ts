@@ -19,7 +19,7 @@ export const ACCOUNT_ID_ACCOUNT = "cloudflare-account-id";
 
 /** A `security` write exited non-zero (or could not spawn). Secrets never appear in `args`. */
 export class KeychainCommandError extends Schema.TaggedErrorClass<KeychainCommandError>()(
-	"@kampus/cf-utils/KeychainCommandError",
+	"@kampus/cf-credentials/KeychainCommandError",
 	{
 		args: Schema.Array(Schema.String),
 		exitCode: Schema.Number,
@@ -69,7 +69,7 @@ export class Keychain extends Context.Service<
 		readonly set: (account: string, secret: string) => Effect.Effect<void, KeychainCommandError>;
 		readonly remove: (account: string) => Effect.Effect<boolean, KeychainCommandError>;
 	}
->()("@kampus/cf-utils/Keychain") {}
+>()("@kampus/cf-credentials/Keychain") {}
 
 export const KeychainLive: Layer.Layer<Keychain, never, ChildProcessSpawner.ChildProcessSpawner> =
 	Layer.effect(Keychain)(

@@ -33,11 +33,15 @@
  * `NodeRuntime.runMain`), never a raw stack trace.
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {
+	AccountIdKeychainConfig,
+	auth,
+	CredentialsKeychainFirst,
+	KeychainLive,
+} from "@kampus/cf-credentials";
 import {Console, Effect, Layer} from "effect";
 import {Argument, Command, Flag, Prompt} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import {auth} from "./auth.ts";
-import {AccountIdKeychainConfig, CredentialsKeychainFirst} from "./credentials.ts";
 import {
 	computeEffectiveServing,
 	computeServingPlan,
@@ -58,7 +62,6 @@ import {
 	selectStatesForKey,
 } from "./flag.ts";
 import {FlagshipRead, FlagshipReadLive, FlagshipWrite, FlagshipWriteLive} from "./flagship.ts";
-import {KeychainLive} from "./keychain.ts";
 import {makeScrubCommand} from "./scrub-command.ts";
 
 const list = Command.make(

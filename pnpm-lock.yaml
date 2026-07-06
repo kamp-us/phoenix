@@ -559,6 +559,37 @@ importers:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
+  packages/cf-credentials:
+    dependencies:
+      '@distilled.cloud/cloudflare':
+        specifier: 'catalog:'
+        version: 0.27.0(effect@4.0.0-beta.92)
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.92
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 'catalog:'
+        version: 4.20260629.1
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.5.2
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.2
+      '@typescript/native-preview':
+        specifier: 'catalog:'
+        version: 7.0.0-dev.20260509.2
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+
   packages/cf-utils:
     dependencies:
       '@distilled.cloud/cloudflare':
@@ -567,6 +598,9 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.10.1)
+      '@kampus/cf-credentials':
+        specifier: workspace:*
+        version: link:../cf-credentials
       '@kampus/d1-rest':
         specifier: workspace:*
         version: link:../d1-rest
@@ -953,6 +987,9 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.10.1)
+      '@kampus/cf-credentials':
+        specifier: workspace:*
+        version: link:../cf-credentials
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92
