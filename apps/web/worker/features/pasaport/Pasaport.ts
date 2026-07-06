@@ -23,6 +23,7 @@ import {
 } from "../lifecycle/SandboxVisibility.ts";
 import {postVisibleWhere} from "../pano/PostVisibility.ts";
 import {
+	DisplayNameEmpty,
 	UserNotFound,
 	UsernameAlreadySet,
 	type UsernameInvalid,
@@ -66,6 +67,13 @@ export interface SetUsernameResult {
 	userId: string;
 	username: string;
 	displayName: string | null;
+	image: string | null;
+}
+
+export interface SetDisplayNameResult {
+	userId: string;
+	username: string | null;
+	displayName: string;
 	image: string | null;
 }
 
@@ -190,6 +198,19 @@ export class Pasaport extends Context.Service<
 			SetUsernameResult,
 			UsernameInvalid | UsernameTaken | UsernameAlreadySet | UserNotFound
 		>;
+
+		// Change the görünen ad (display name). Writes `user.name` AND
+		// `user_profile.display_name` in ONE atomic D1 batch so the two can never
+		// diverge (#2154): the better-auth field the settings surface reads and the
+		// stamped column every author byline reads are updated in lockstep. The
+		// `user_profile` upsert inserts a fresh row (`username` null) for a user who
+		// never set a username, so a byline resolves the live display name even
+		// pre-bootstrap. Unlike `setUsername`, this is re-runnable — a display name
+		// is mutable.
+		readonly setDisplayName: (input: {
+			userId: string;
+			value: string;
+		}) => Effect.Effect<SetDisplayNameResult, DisplayNameEmpty | UserNotFound>;
 
 		// `viewer` threads the request viewer so the profile's HEADLINE counts
 		// (`definitionCount`/`postCount`/`commentCount`) apply the #1205 sandbox filter
@@ -572,6 +593,38 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					} satisfies SetUsernameResult;
 				}),
 
+				setDisplayName: Effect.fn("Pasaport.setDisplayName")(function* (input: {
+					userId: string;
+					value: string;
+				}) {
+					const {userId} = input;
+					const trimmed = input.value.trim();
+					if (trimmed.length === 0) {
+						return yield* new DisplayNameEmpty({message: "görünen ad boş olamaz"});
+					}
+
+					const existingUser = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
+					if (!existingUser) {
+						return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
+					}
+
+					const now = new Date();
+					// One atomic batch (the `buildPromotionStatements` precedent): `user.name`
+					// and `user_profile.display_name` move all-or-none, so the better-auth
+					// field the settings surface reads and the stamped column every byline
+					// reads can never diverge (#2154). The profile upsert inserts a fresh row
+					// for a user who never set a username (preserving a null `username`), so a
+					// byline resolves the live display name even pre-bootstrap.
+					yield* batch((db) => buildSetDisplayNameStatements(db, userId, trimmed, now));
+
+					return {
+						userId,
+						username: existingUser.username ?? null,
+						displayName: trimmed,
+						image: existingUser.image ?? null,
+					} satisfies SetDisplayNameResult;
+				}),
+
 				lookupProfile: Effect.fn("Pasaport.lookupProfile")(function* (
 					username: string,
 					viewer?: {
@@ -935,4 +988,40 @@ function buildPromotionStatements(db: DrizzleDb, userId: string, now: Date) {
 		sweep(schema.postRecord),
 		sweep(schema.commentRecord),
 	] as const;
+}
+
+/**
+ * The atomic görünen-ad (display-name) write-through (#2154). Two statements:
+ *  1. `user.name := <trimmed>` — the better-auth field the settings surface reads.
+ *  2. `user_profile.display_name := <trimmed>` — the stamped column every author
+ *     byline reads, via an upsert that INSERTS a fresh row (null `username`) for a
+ *     user who never bootstrapped a username, and on conflict overwrites ONLY
+ *     `display_name` + `updated_at`, preserving `username`/`image`.
+ *
+ * Both move in one D1 batch so `user.name` and `user_profile.display_name` are
+ * lockstep — a byline can never render a stale name the settings surface has
+ * already changed (the one-shot-sync defect this closes). Both are query-builder
+ * statements (never a raw `db.run(sql)`, which 500s a real-D1 batch — #863) so the
+ * batch executor accepts the array (the `buildPromotionStatements` rule).
+ */
+function buildSetDisplayNameStatements(
+	db: DrizzleDb,
+	userId: string,
+	displayName: string,
+	now: Date,
+) {
+	const setUserName = db
+		.update(schema.user)
+		.set({name: displayName, updatedAt: now})
+		.where(eq(schema.user.id, userId));
+
+	const upsertProfileName = db
+		.insert(schema.userProfile)
+		.values({userId, username: null, displayName, image: null, updatedAt: now})
+		.onConflictDoUpdate({
+			target: schema.userProfile.userId,
+			set: {displayName, updatedAt: now},
+		});
+
+	return [setUserName, upsertProfileName] as const;
 }
