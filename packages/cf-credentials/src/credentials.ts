@@ -135,3 +135,24 @@ export const validateCredentials = (
 	accountId: string,
 ): Effect.Effect<number, CredentialValidationFailed, HttpClient> =>
 	validateResolved(apiTokenCredentials({apiToken}), accountId);
+
+/**
+ * Validate the AMBIENT (keychain-first, env-fallback) resolution `auth status` reports on:
+ * resolve the credentials the same way every flag command will, then run the `listApps` read
+ * against `accountId`. A green result proves the effective credentials authenticate — the
+ * check `auth status` prints as `validation: ok`. Failure surfaces `CredentialValidationFailed`
+ * (rendered `validation: FAILED`). Requires the same ambient `Keychain | HttpClient` the rest
+ * of the seam does, so `auth status` needs no cf-utils flag-domain service.
+ */
+export const validateAmbient = (
+	accountId: string,
+): Effect.Effect<number, CredentialValidationFailed, Keychain | HttpClient> =>
+	resolveKeychainFirst.pipe(
+		Effect.mapError(
+			(cause) =>
+				new CredentialValidationFailed({
+					reason: cause instanceof Error ? cause.message : String(cause),
+				}),
+		),
+		Effect.flatMap((credentials) => validateResolved(credentials, accountId)),
+	);

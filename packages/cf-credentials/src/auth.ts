@@ -8,8 +8,7 @@
  */
 import {Console, Effect, Redacted} from "effect";
 import {Command, Prompt} from "effect/unstable/cli";
-import {credentialSources, validateCredentials} from "./credentials.ts";
-import {FlagshipRead} from "./flagship.ts";
+import {credentialSources, validateAmbient, validateCredentials} from "./credentials.ts";
 import {ACCOUNT_ID_ACCOUNT, API_TOKEN_ACCOUNT, KEYCHAIN_SERVICE, Keychain} from "./keychain.ts";
 
 const ACCOUNT_ID_RE = /^[0-9a-f]{32}$/;
@@ -68,19 +67,18 @@ const status = Command.make(
 		yield* Console.log(`api token:  ${sources.apiToken}`);
 		yield* Console.log(`account id: ${describeAccount}`);
 
-		if (sources.apiToken === "missing" || sources.accountId.source === "missing") {
+		if (sources.apiToken === "missing" || sources.accountId.value === undefined) {
 			yield* Console.log(
 				"validation: skipped — run `cf-utils auth login` (or export $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID)",
 			);
 			return;
 		}
 
-		// Validate through the SAME ambient resolution every other command uses, so a green
-		// status proves `flag list` et al. will authenticate too.
-		const read = yield* FlagshipRead;
-		yield* read.listApps().pipe(
+		// Validate through the SAME ambient (keychain-first, env-fallback) resolution every flag
+		// command uses, so a green status proves `flag list` et al. will authenticate too.
+		yield* validateAmbient(sources.accountId.value).pipe(
 			Effect.matchEffect({
-				onSuccess: (apps) => Console.log(`validation: ok — ${apps.length} Flagship app(s) visible`),
+				onSuccess: (apps) => Console.log(`validation: ok — ${apps} Flagship app(s) visible`),
 				onFailure: (error) =>
 					Console.log(
 						`validation: FAILED — ${error instanceof Error ? error.message : String(error)}`,

@@ -14,6 +14,7 @@
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
+		"@kampus/cf-credentials": "workspace:*",
 		"effect": "catalog:"
 	},
 	"devDependencies": {
