@@ -1,5 +1,8 @@
+import type {Density} from "../../lib/density";
 import {ToggleGroup} from "../ui/ToggleGroup";
 import "./Controls.css";
+
+export type {Density};
 
 export type ColorTheme =
 	| "ember"
@@ -14,7 +17,6 @@ export type ColorTheme =
 	| "mauve";
 
 export type Mode = "dark" | "light";
-export type Density = "compact" | "normal" | "spacious";
 
 const THEME_SWATCHES: Record<ColorTheme, string> = {
 	ember: "#e54d2e",
