@@ -859,10 +859,21 @@ verdict_readback_guard() {
     || printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*advisory" \
     || { echo "verdict_readback_guard FAILED: no canonical '${gate}:' marker (PASS/FAIL @ ${sha:0:7} or advisory) in comment $cid — the body is malformed; the PR is UNGATED." >&2; return 1; }
 
-  # (2) the anchored `Reviewed-head: @ <sha>` binding line is present (§6.6 / ADR 0151), SHA
-  #     prefix-matched to the head reviewed — the body line every §CP consumer resolves the head from.
-  printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*${sha:0:7}" \
-    || { echo "verdict_readback_guard FAILED: no anchored 'Reviewed-head: @ ${sha:0:7}' line in comment $cid — the §CP head binding is missing." >&2; return 1; }
+  # (2) Head binding — SHA-SOURCE-AWARE (#2272): do NOT require a `Reviewed-head:` line
+  #     unconditionally. A bindable first line (`<gate>: PASS|FAIL @ <sha>`) already carries the head
+  #     binding — (1) validated it against ${sha:0:7} — so a non-blocking binding PASS/FAIL (whose
+  #     template carries the SHA only on the first line, no separate line) needs NO `Reviewed-head:`.
+  #     A SHA-less advisory binds the head via `Reviewed-head: @ <sha>`: review-doc/review-skill carry
+  #     it (verified against head WHEN PRESENT); review-code's §CP advisory carries NONE by design
+  #     (ADR 0111 — SHA-less first line, no body binding) → accept its absence, never un-gate it. A
+  #     `Reviewed-head:` line present but bound to the WRONG sha is ALWAYS fatal (a stale/mis-bound
+  #     head must never read as verified).
+  if printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${sha:0:7}"; then
+    : # bindable first line: its `@ <sha>` IS the head binding (validated by (1)) — no line required
+  elif printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
+    printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*${sha:0:7}" \
+      || { echo "verdict_readback_guard FAILED: 'Reviewed-head:' line in comment $cid is bound to the wrong head (not @ ${sha:0:7}) — a stale/mis-bound §CP head binding." >&2; return 1; }
+  fi
 
   # (3) NO local filesystem path leaked into the public body (the #2148 leak). Reject a machine-local
   #     scratch/home path or a leading `@<path>` marker-as-path. Patterns are placeholders, not real
@@ -871,7 +882,7 @@ verdict_readback_guard() {
     echo "verdict_readback_guard FAILED: comment $cid leaks a local filesystem path in its body — a #2148 marker-as-path leak; refuse and re-post the real verdict." >&2; return 1
   fi
 
-  echo "verdict_readback_guard OK: ${gate} verdict @ ${sha:0:7} landed on comment $cid — marker + Reviewed-head present, no local-path leak."
+  echo "verdict_readback_guard OK: ${gate} verdict @ ${sha:0:7} landed on comment $cid — marker + head binding valid, no local-path leak."
 }
 ```
 
@@ -883,10 +894,16 @@ it as a silent success. A moved `HEAD_SHA` between the post and the read-back me
 *during* the review — re-resolve the head, re-verify against it (the gate is stateless), and re-post;
 never loosen the match to paper over a moved head.
 
-Two of the three assertions bind to a **head SHA** ((1) and (2)); the advisory blocking-set path
-carries no first-line `@ <sha>` by design (ADR 0111), which is why (1) accepts the `<gate>: advisory`
-first line as a posted verdict — but even the advisory MUST carry the body's `Reviewed-head: @ <sha>`
-line, so (2) and (3) still bind it. The bindable PASS/FAIL first line satisfies (1) via its `@ <sha>`.
+Check (2) is **SHA-source-aware** (#2272), which is why the read-back is unconditional without
+false-failing a legitimate non-blocking PASS or the review-code §CP advisory. The bindable PASS/FAIL
+first line satisfies (1) via its `@ <sha>` — that SHA **is** the head binding, so (2) requires no
+separate `Reviewed-head:` line (the non-blocking binding templates carry the SHA only on the first
+line). The advisory blocking-set path carries no first-line `@ <sha>` by design (ADR 0111), which is
+why (1) accepts the `<gate>: advisory` first line; it binds the head via a body `Reviewed-head: @ <sha>`
+line — review-doc/review-skill carry it and (2) verifies it against head when present, while
+review-code's §CP advisory carries none by design (ADR 0111) and (2) accepts its absence. A
+`Reviewed-head:` line present but bound to the wrong sha is always fatal. The leak check (3) is
+**unconditional** on every verdict type — the #2148/#2264 path-leak protection is never relaxed.
 
 ### Make the read-back UNCONDITIONAL — resolve the landed verdict from PR state, never a carried id (`verdict_post_verify`)
 
