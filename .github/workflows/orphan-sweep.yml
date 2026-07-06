@@ -8,8 +8,10 @@ name: orphan-sweep
 #
 # Safety is the CLI's pure core (packages/orphan-sweep/src/orphan-sweep.ts):
 # allow-by-pattern + deny-by-protection. prod, named-dev (--protect), and OPEN-PR
-# pr-<n> previews are NEVER swept — only it-* orphans are. Closed-PR pr-<n> previews
-# are left to #813's lane (this job does NOT pass --sweep-closed-previews).
+# pr-<n> previews are NEVER swept. This job also passes --sweep-closed-previews, so it
+# is the backstop that reaps a MERGED/CLOSED PR's pr-<n> preview (open-PR previews stay
+# protected by construction — the core keeps any pr-<n> whose PR is in the open-PR list,
+# regardless of the flag); it-* orphans are swept as before (#2145).
 on:
   schedule:
     # Daily at 03:17 UTC — off-hours and off the top of the hour (the GitHub scheduler
@@ -60,9 +62,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.execute }}" = "true" ]; then
-            echo "Running sweep with --execute (deleting orphan it-* resources)."
-            node packages/orphan-sweep/src/bin.ts sweep --execute
+            echo "Running sweep with --execute (deleting orphan it-* and closed-PR pr-<n> resources)."
+            node packages/orphan-sweep/src/bin.ts sweep --execute --sweep-closed-previews
           else
             echo "Running sweep in dry-run mode (printing the plan only; no deletions)."
-            node packages/orphan-sweep/src/bin.ts sweep
+            node packages/orphan-sweep/src/bin.ts sweep --sweep-closed-previews
           fi
