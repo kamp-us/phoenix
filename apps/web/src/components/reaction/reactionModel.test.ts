@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {REACTION_EMOJI} from "../../../worker/db/reaction-emoji";
 import type {ReactionAggregate} from "../../../worker/features/reaction/Reaction";
-import {nextReaction, reactionOptimistic, reactionSlots} from "./reactionModel";
+import {nextReaction, REACTION_GLOSS, reactionOptimistic, reactionSlots} from "./reactionModel";
 
 /**
  * The load-bearing reaction-bar core the three surfaces ship through
@@ -46,6 +46,15 @@ describe("reactionSlots — the full curated palette, in order", () => {
 		const active = reactionSlots(agg).filter((s) => s.active);
 		expect(active).toHaveLength(1);
 		expect(active[0]?.emoji).toBe("❤️");
+	});
+
+	it("carries each member's ADR-0139 Turkish gloss (the accessible name seed)", () => {
+		const byEmoji = new Map(reactionSlots(null).map((s) => [s.emoji, s.gloss]));
+		expect(byEmoji.get("👍")).toBe("beğendim");
+		expect(byEmoji.get("🤔")).toBe("düşündürdü");
+		expect(byEmoji.get("🔥")).toBe("efsane");
+		// The gloss map covers every palette member exactly (no drift from the palette).
+		expect(Object.keys(REACTION_GLOSS).sort()).toEqual([...REACTION_EMOJI].sort());
 	});
 });
 
