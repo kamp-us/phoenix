@@ -17,6 +17,7 @@ import {ciRequiredCommand} from "./tools/ci-required/command.ts";
 import {codeownersCpCommand} from "./tools/codeowners-cp/command.ts";
 import {crabboxManifestCommand} from "./tools/crabbox-manifest/command.ts";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
+import {designTokenGuardCommand} from "./tools/design-token-guard/command.ts";
 import {docLinksCommand} from "./tools/doc-links/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
 import {evalHarnessCommand} from "./tools/eval-harness/command.ts";
@@ -100,6 +101,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	glossaryDriftCommand,
 	failureClassifierCommand,
 	fanoutGuardCommand,
+	designTokenGuardCommand,
 	resumePolicyCommand,
 	evalHarnessCommand,
 	mainSyncCommand,

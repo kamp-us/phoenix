@@ -30,6 +30,6 @@
 }
 
 .kp-not-found__links a {
-	color: var(--accent, #60a5fa);
+	color: var(--accent);
 	text-decoration: underline;
 }
