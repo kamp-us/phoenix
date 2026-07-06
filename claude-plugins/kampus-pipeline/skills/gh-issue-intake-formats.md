@@ -434,7 +434,7 @@ values**:
 | Value | Meaning |
 |---|---|
 | `flag (default-off)` | A **user-facing** change → it must **ship dark** behind a default-off flag (the agent-workflow pattern, `.patterns/feature-flags-agent-workflow.md`). |
-| `exempt (<reason>)` | An **internal / refactor / infra / docs** change with no user-facing surface to contain — the `<reason>` names which (e.g. `exempt (internal refactor)`, `exempt (docs)`). |
+| `exempt (<reason>)` | A change with **no behavior to hold dark** — an **internal / refactor / infra / docs** change with no user-facing surface, **or** a **client-only presentational** change whose entire user-facing effect is *which pixels render* (ADR [0161](https://github.com/kamp-us/phoenix/blob/main/.decisions/0161-containment-exempts-client-only-presentational-change.md)). The `<reason>` names which (e.g. `exempt (internal refactor)`, `exempt (docs)`, `exempt (client-only presentational)`). See the [exempt-vs-not-exempt boundary](#the-exempt-boundary-behavior--access--state-delta-adr-0161) below. |
 | `none (no cycle doc)` | The **graceful-absence** value: the repo has no `product-development-cycle.md`, so no containment is required. This is what a foreign install's children carry. |
 
 **The tolerant-read rule:** a **missing `**Containment:**` line reads as `none`** — treated as
@@ -443,6 +443,42 @@ tolerant-reading stance applied to this field: a child filed before the dimensio
 cycle doc, is well-formed and unblocked, not malformed. (Contrast `**Stories:**`, which is
 required — `**Containment:**` is optional, and its absence is a valid value, not a defect.)
 
+<a id="the-exempt-boundary-behavior--access--state-delta-adr-0161"></a>
+### The exempt boundary — a **behavior / access / state delta** (ADR 0161)
+
+`flag (default-off)` holds an **autonomously-merged behavior change** dark until a human validates
+it. A change with **no behavior to validate dark** has nothing for the flag to protect, so it is
+**`exempt`** — the flag would be a no-op guard adding ceremony and a manual flip while reducing zero
+risk. The boundary is a **user-visible behavior / access / state delta**, *not* "does the code branch
+on data" — draw it exactly per ADR
+[0161](https://github.com/kamp-us/phoenix/blob/main/.decisions/0161-containment-exempts-client-only-presentational-change.md)
+(which refines the ADR-0083 containment scope):
+
+- **EXEMPT — stamp `exempt (<reason>)`, ships live:** a change whose entire user-facing effect is
+  **presentational** — *which pixels render*: CSS-only / styling / layout / spacing / density / motion,
+  and **pure client perceived-perf** with no data / logic / security surface. **A presentational
+  conditional is still exempt** — rendering different pixels off already-loaded data (an **empty
+  state**, a **loading skeleton**, a **responsive / density layout**) changes only *what is painted*.
+  A **branch on data alone is not a behavior change**; it adds/removes no control, gates no feature,
+  mutates no data, persists no observable state.
+
+- **NOT EXEMPT — stamp `flag (default-off)`, ships dark:** any **behavior / access / state delta** —
+  a **data** change, **logic** (a new decision that changes what the app *does*), a **behavior flag**,
+  **auth** (an access / permission decision), or a **persisted / observable state change**. **The
+  access edge:** **CSS that HIDES or DISABLES a functional control is an access change, not
+  presentation** — a `display:none` / `visibility:hidden` / `pointer-events:none` that removes users'
+  access to a working control changes *what the user can do*. **The line is access, not the CSS
+  property** — a style that only changes a still-usable control's *appearance* stays exempt; one that
+  revokes access to it does not.
+
+- **When genuinely ambiguous, contain — fail closed.** If you cannot tell whether a change is
+  presentational-only or carries an access / behavior / state delta, stamp `flag (default-off)`, **not**
+  `exempt` — never exempt on a guess. The exemption removes ceremony only from the class that
+  *provably* has nothing to protect; a too-wide exemption re-admits the behavior changes ADR-0083
+  contains. Claiming the exemption means **saying so** (a deliberate `exempt (<reason>)`, recorded, not
+  a bare/omitted line that reads as `none`), so the classification is legible and the reviewer catches
+  a mis-stamp per-PR.
+
 ### Who writes it, who reads it
 
 Mirroring the §1 / §2 / §Milestone "who writes, who reads" convention, the marker has one
@@ -450,8 +486,10 @@ writer and two readers:
 
 - **`plan-epic` writes it.** When it mints a child, plan-epic runs the consult-hook probe; if
   the cycle doc is **present**, it consults the cycle's policy and stamps the child's
-  `**Containment:**` accordingly (`flag (default-off)` for a user-facing child, `exempt
-  (<reason>)` otherwise). If the doc is **absent**, the step no-ops and the child carries
+  `**Containment:**` accordingly (`flag (default-off)` for a user-facing **behavior** child, `exempt
+  (<reason>)` for an internal/refactor/docs child **or** a client-only presentational one — per the
+  [exempt boundary](#the-exempt-boundary-behavior--access--state-delta-adr-0161), containing on
+  genuine ambiguity). If the doc is **absent**, the step no-ops and the child carries
   `none (no cycle doc)` (or, equivalently, no line at all). plan-epic is the **only** writer.
 - **`write-code` reads it.** When it picks a child marked `flag (default-off)`, write-code
   ships the change **dark** behind a default-off flag per the agent-workflow pattern; an
