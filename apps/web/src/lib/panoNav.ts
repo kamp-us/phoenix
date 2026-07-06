@@ -16,6 +16,16 @@ import {DEFAULT_POST_SORT, type PostSort} from "./panoFeedSort";
 /** The query param that carries the active feed sort (deep-linkable). */
 export const PANO_SORT_PARAM = "sort";
 
+/**
+ * The feed's first-page size — the single source both the feed request
+ * (`PanoFeed`'s `first: PANO_FEED_PAGE_SIZE`) and the loading skeleton
+ * (`PanoFeedSkeleton`'s row count) read, so the skeleton reserves the SAME height
+ * the arriving page occupies. A skeleton row count that under-counts the payload is
+ * the height-mismatch that jumps the footer ~941px on arrival (#2161); sourcing both
+ * from here makes that drift unrepresentable.
+ */
+export const PANO_FEED_PAGE_SIZE = 20;
+
 export interface PanoFilter {
 	id: string;
 	label: string;

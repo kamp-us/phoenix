@@ -4,11 +4,16 @@
  * Each mirrors the real DOM shape (feed row grid / post-detail header) so content
  * arrival swaps in without a layout jump.
  */
+import {PANO_FEED_PAGE_SIZE} from "../../lib/panoNav";
 import {Skeleton} from "../ui/atoms";
 import "./PanoPost.css";
 import "../../pages/PanoPostDetail.css";
 
-const FEED_ROWS = 6;
+// Match the skeleton row count to the feed's first-page size so it reserves the
+// SAME height the arriving page occupies — a 6-row skeleton under a 20-post page
+// jumped the footer ~941px on arrival (#2161). Single-sourced from `panoNav` so the
+// two can't drift.
+const FEED_ROWS = PANO_FEED_PAGE_SIZE;
 
 /** Feed-row skeleton — mirrors `PanoPostCard`'s [rank | vote | body] grid. */
 export function PanoFeedSkeleton() {
