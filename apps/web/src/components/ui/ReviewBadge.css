@@ -1,0 +1,12 @@
+/* "incelemede" in-review badge (#2200) — matches the profile katkıların badge
+   (ContributionRow.css). State is carried by the word, not color alone; the role
+   tokens are AA-contrast. */
+.kp-review-badge {
+	font: var(--t-meta);
+	font-weight: 600;
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: var(--warning-soft, var(--accent-soft));
+	color: var(--warning, var(--accent));
+	text-transform: lowercase;
+}

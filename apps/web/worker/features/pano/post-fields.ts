@@ -87,6 +87,13 @@ export interface PostSummaryRow extends Omit<IntrinsicRow, "updatedAt" | "isDraf
 	/** Viewer's bookmark presence; `undefined` (unset) for reads that don't request it. */
 	isSaved?: boolean | null;
 	/**
+	 * The owner-scoped in-review flag (#2200): `true` iff this post is still sandboxed
+	 * (#1205) AND the viewer is its author, stamped by the read paths via `ownSandboxed`.
+	 * Owner-only by construction, so it never leaks review state to another viewer; a
+	 * read that doesn't stamp it leaves it `undefined` → the shaper defaults `false`.
+	 */
+	sandboxed?: boolean;
+	/**
 	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
 	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
 	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
@@ -133,6 +140,7 @@ export type PostFields = Omit<IntrinsicRow, "updatedAt" | "isDraft" | "tags"> & 
 	isDraft?: boolean | null;
 	myVote?: boolean | null;
 	isSaved?: boolean | null;
+	sandboxed?: boolean;
 	authorUsername?: string | null;
 	authorDisplayName?: string | null;
 	reactions?: ReactionAggregate;
@@ -165,6 +173,7 @@ export const postViewFields = {
 	myVote: true,
 	isSaved: true,
 	isDraft: true,
+	sandboxed: true,
 	authorUsername: true,
 	authorDisplayName: true,
 	reactions: true,

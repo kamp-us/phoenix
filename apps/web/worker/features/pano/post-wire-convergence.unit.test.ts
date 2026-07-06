@@ -82,6 +82,7 @@ const KEYSET_WIRE_FIELDS = [
 	"createdAt",
 	"myVote",
 	"isSaved",
+	"sandboxed",
 	"reactions",
 	"tags",
 ] as const;
@@ -147,6 +148,7 @@ describe("Pano Post wire shaper — by-id and keyset summaries converge (#1161, 
 			"isSaved",
 			"myVote",
 			"reactions",
+			"sandboxed",
 			"score",
 			"slug",
 			"tags",
@@ -159,6 +161,9 @@ describe("Pano Post wire shaper — by-id and keyset summaries converge (#1161, 
 		assert.strictEqual(wire.myVote, null);
 		assert.strictEqual(wire.isSaved, null);
 		assert.strictEqual(wire.isDraft, null);
+		// The owner-scoped in-review flag is stamped only by the read path (#2200); a
+		// bare summary shape defaults it `false`, never leaking review state.
+		assert.strictEqual(wire.sandboxed, false);
 		// No reactions requested on a bare summary read → the empty aggregate.
 		assert.deepStrictEqual(wire.reactions, EMPTY_REACTION_AGGREGATE);
 	});

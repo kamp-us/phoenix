@@ -14,6 +14,7 @@ import {Tag, type TagKind} from "../ui/atoms";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
+import {ReviewBadge} from "../ui/ReviewBadge";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 
 /**
@@ -49,6 +50,7 @@ export const PanoPostHeaderView = view<Post>()({
 	commentCount: true,
 	createdAt: true,
 	updatedAt: true,
+	sandboxed: true,
 	tags: true,
 });
 
@@ -66,7 +68,12 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 	const tags = post.tags ?? [];
 	return (
 		<div>
-			<h1 className="kp-pano-postpage__title kp-prose">{post.title}</h1>
+			<h1 className="kp-pano-postpage__title kp-prose">
+				{post.title}
+				{/* Owner-only in-review signal (#2200): `sandboxed` is owner-scoped server-side,
+				    re-gated on `isAuthor` so only the author sees their own pending post's state. */}
+				{props.isAuthor && post.sandboxed ? <ReviewBadge /> : null}
+			</h1>
 			{post.url ? (
 				<a
 					className="kp-pano-postpage__url"

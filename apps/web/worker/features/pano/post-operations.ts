@@ -33,6 +33,7 @@ import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
+	ownSandboxed,
 	resolveSandboxViewer,
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
@@ -698,7 +699,13 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		// draft/ownership gate is enforced in SQL by `postVisibleWhere` above — a draft
 		// the viewer doesn't own never reaches this batch — so a surviving `isDraft` row
 		// is the author's own: read-your-writes, now verified rather than assumed.
-		const intrinsic = fetched.map(toPostSummaryRow);
+		// `sandboxed` is the owner-scoped in-review flag (#2200): computed off the fetched
+		// record (`sandboxed_at` + `author_id`) against the viewer, so it lands `true` only
+		// for the author's own still-in-review post and never leaks to another viewer.
+		const intrinsic = fetched.map((p) => ({
+			...toPostSummaryRow(p),
+			sandboxed: ownSandboxed(p, viewerId),
+		}));
 		const scalared = yield* stampViewerScalars(intrinsic, viewerId, postViewerScalars);
 		const reacted = yield* stampReactionAggregate(reactionSvc, "post", scalared, viewerId);
 		return yield* stampAuthorIdentity(readProfileIdentities, reacted);

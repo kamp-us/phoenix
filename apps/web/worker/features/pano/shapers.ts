@@ -43,6 +43,7 @@ export const toPost = (r: PostFields): Post => ({
 	myVote: r.myVote ?? null,
 	isSaved: r.isSaved ?? null,
 	isDraft: r.isDraft ?? null,
+	sandboxed: r.sandboxed ?? false,
 	reactions: r.reactions ?? EMPTY_REACTION_AGGREGATE,
 	tags: [...r.tags],
 });
@@ -60,6 +61,7 @@ export const toPostFromPage = (
 	isSaved: boolean | null = null,
 	reactions: ReactionAggregate = EMPTY_REACTION_AGGREGATE,
 	identity: {authorUsername?: string | null; authorDisplayName?: string | null} = {},
+	sandboxed = false,
 ): Post =>
 	toPost({
 		id: page.id,
@@ -78,6 +80,7 @@ export const toPostFromPage = (
 		updatedAt: page.updatedAt,
 		myVote,
 		isSaved,
+		sandboxed,
 		reactions,
 		tags: page.tags,
 	});
