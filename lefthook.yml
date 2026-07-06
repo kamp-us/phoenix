@@ -31,6 +31,87 @@ pre-commit:
         fi
         exit 0
 
+    # The #2144-killer local fast-fail: run biome (lint + format) on the staged
+    # biome-handled files so a lint/format nit blocks the COMMIT locally instead of
+    # burning a full CI round-trip (#2147; PR #2144 failed `pnpm lint` twice before a
+    # clean 3rd push). biome is a single native binary (no `node_modules` runtime), so
+    # this leg CAN fail-closed even in a lean agent worktree — unlike a deps-dependent
+    # check, which is why lint/format lives here on pre-commit and vitest/typecheck on
+    # pre-push. Bypassable with `git commit --no-verify` (humans only); CI stays the
+    # unbypassable authority (ADR 0068).
+    #
+    # Fail-CLOSED on a REAL finding, fail-OPEN on an ABSENT toolchain — the load-bearing
+    # distinction (#2147): a lint/format error MUST block the commit (biome's non-zero
+    # exit → we exit 1), but a stripped-PATH / no-toolchain worktree where biome can't be
+    # resolved MUST NOT abort (skip → exit 0), so it never bricks a lean worktree the way a
+    # blanket fail-closed would. This is the INVERSE of the leak-guard "any non-zero →
+    # allow" fail-open: here a resolved biome that FINDS an error blocks; only an
+    # UNRESOLVABLE biome skips. The staged list is pre-filtered to biome-handled
+    # extensions (the `lint:worktree` idiom) and early-outs when NONE match, so an
+    # all-non-biome commit (e.g. a lefthook.yml-only change) is a clean pass, not a
+    # spurious "No files were processed" non-zero — biome exits non-zero when its whole
+    # input is unknown, which is NOT a finding and must not block.
+    biome:
+      run: |
+        # Keep only the staged paths biome actually checks (same extension set the root
+        # `lint:worktree` script uses); if none remain, there is nothing to lint — pass.
+        FILES=$(printf '%s\n' {staged_files} | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc|css|graphql)$' || true)
+        [ -z "$FILES" ] && exit 0
+        # Resolve a biome runner without assuming PATH: the workspace-root bin (present
+        # once deps are installed, incl. the post-checkout bootstrap) first, then `pnpm
+        # exec`. If NEITHER resolves, the toolchain is absent — SKIP (fail-open on infra),
+        # do not abort the commit. A resolved biome that reports a finding fails CLOSED.
+        if [ -x node_modules/.bin/biome ]; then
+          RUN="node_modules/.bin/biome"
+        elif command -v pnpm >/dev/null 2>&1; then
+          RUN="pnpm exec biome"
+        else
+          echo "biome: no biome binary on PATH (stripped-PATH/lean worktree, e.g. a harness spawn); skipping local pre-commit lint/format — CI is the authority" >&2
+          exit 0
+        fi
+        if ! echo "$FILES" | xargs $RUN check --files-ignore-unknown=true; then
+          echo "blocked by biome (lint/format, #2147); fix with \`pnpm format\` or \`git commit --no-verify\` to bypass" >&2
+          exit 1
+        fi
+
+# The deps-dependent fast-fail tier (#2147): typecheck + changed-scoped unit tests fire
+# at PUSH time, not commit time, because they need `node_modules` (unlike biome). Scoped so
+# each push stays cheap — vitest `--changed origin/main` runs only the suites related to
+# what this branch changed. Blocks the PUSH on a REAL failure so it never reaches CI; CI
+# stays the unbypassable authority (ADR 0068). Bypassable with `git push --no-verify`
+# (humans only; agents must not).
+#
+# Fail-CLOSED on a real error, fail-OPEN on an absent toolchain (the #2147 precondition,
+# NOT the leak-guard "any non-zero → allow" fail-open): a type error or a failing unit test
+# MUST block the push (the tool's non-zero → the command exits non-zero → lefthook blocks);
+# but a stripped-PATH / no-toolchain worktree that cannot resolve pnpm MUST NOT abort (skip
+# → exit 0), so a lean worktree is never bricked. The distinction is toolchain-absence
+# (skip) vs toolchain-present-and-found-an-error (block) — the deps-tier does NOT silently
+# exit 0 on a real finding the way the leak-guard fail-open does.
+pre-push:
+  parallel: false
+  commands:
+    typecheck:
+      # tsgo across the workspace (the same `pnpm typecheck` CI runs) — fast enough to run
+      # whole-repo per push; a type error fails closed and blocks the push.
+      run: |
+        command -v pnpm >/dev/null 2>&1 || {
+          echo "typecheck: no pnpm on PATH (stripped-PATH/lean worktree); skipping local pre-push typecheck — CI is the authority" >&2
+          exit 0
+        }
+        pnpm typecheck
+    unit-changed:
+      # `vitest run --changed origin/main` (unit project) — only the suites related to files
+      # this branch changed vs origin/main, so a push stays cheap. Exits 0 cleanly when no
+      # changed test is related (a docs-only push isn't spuriously blocked); a real failing
+      # unit test fails closed and blocks the push.
+      run: |
+        command -v pnpm >/dev/null 2>&1 || {
+          echo "unit-changed: no pnpm on PATH (stripped-PATH/lean worktree); skipping local pre-push unit tests — CI is the authority" >&2
+          exit 0
+        }
+        pnpm --filter './apps/**' exec vitest run --config vitest.config.ts --project unit --changed origin/main
+
 # `git worktree add` fires post-checkout, so this provisions a fresh worktree's deps —
 # node_modules is gitignored and per-checkout, so a worktree is otherwise dead-on-arrival
 # for typechecks (#504). Only a real `pnpm install` is CORRECT here: a filesystem-only
