@@ -1,4 +1,4 @@
-import {useEffect} from "react";
+import {createContext, useContext, useEffect, useMemo, useState} from "react";
 import {Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {useMe} from "./auth/useMe";
@@ -11,6 +11,7 @@ import {Topbar} from "./components/layout/Topbar";
 import {actorLabel} from "./components/moderation/actor-identity";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
+import {FateProvider} from "./fate/FateProvider";
 import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {safeReturnTo} from "./lib/returnTo";
@@ -35,12 +36,117 @@ import {UsernameBootstrap} from "./pages/UsernameBootstrap";
 import {UserProfilePage} from "./pages/UserProfilePage";
 import {useProfileStats} from "./pages/useProfileStats";
 
+/**
+ * The fate-dependent topbar chips, computed below the session gate and read by the
+ * always-painting shell frame above it. `null` is the pre-settle default — the frame
+ * paints its static structure immediately with these absent, and they fill in once
+ * `FateProvider` commits and `LayoutContent` publishes them. See #2160.
+ */
+type TopbarChips = {
+	userProps: {user?: {name: string; username: string | null}};
+	karma: number | undefined;
+	divanTo: string | undefined;
+	bildirim: {to: string; unread: number} | undefined;
+};
+
+/**
+ * The bridge that carries the fate-dependent chips UP from `LayoutContent` (below the
+ * session gate, where fate lives) to the always-painting shell frame (above it). The
+ * frame owns the chip state and passes the setter down through this context; the
+ * gated content sets it once fate settles. This lets the frame render once — no
+ * remount of the shell on settle, only the chips fill in (#2160).
+ */
+const SetTopbarChipsContext = createContext<((chips: TopbarChips | null) => void) | null>(null);
+
+/**
+ * The always-painting shell frame. It reads only `useSession`/`useTheme`/routing —
+ * NO fate client — so it renders on the first frame, before `/api/auth/get-session`
+ * resolves, killing the blank first-paint flash (#2160). The fate-dependent chips
+ * arrive later via the chip-state bridge, set by `LayoutContent` from below the
+ * session gate; until then the topbar shows its signed-out/anonymous affordances.
+ * The signed-in/out `actions` split rides `useSession` alone, so it is correct
+ * immediately without waiting on fate.
+ */
 function Layout() {
+	const session = useSession();
+	const navigate = useNavigate();
+	const {toggle: toggleTheme} = useTheme();
+	const [chips, setChips] = useState<TopbarChips | null>(null);
+
+	async function onSignOut() {
+		await authClient.signOut();
+		clearBearerToken();
+	}
+
+	const isSignedIn = !!session.data;
+
+	return (
+		<TooltipProvider>
+			<ToastProvider>
+				<AppShell>
+					<Topbar
+						brandName="kamp.us"
+						nav={[
+							{to: "/sozluk", label: "sözlük"},
+							{to: "/pano", label: "pano"},
+						]}
+						divanTo={chips?.divanTo}
+						{...(chips?.userProps ?? {})}
+						karma={chips?.karma}
+						{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
+						onSearchSubmit={(query) => {
+							const target = searchTarget(query);
+							if (target) navigate(target);
+						}}
+						onToggleTheme={toggleTheme}
+						onLogout={onSignOut}
+						actions={
+							isSignedIn ? (
+								<button
+									type="button"
+									className="kp-topbar__btn"
+									onClick={() => navigate("/pano/yeni")}
+								>
+									+ gönderi
+								</button>
+							) : (
+								<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
+									giriş yap
+								</button>
+							)
+						}
+					/>
+					<Main>
+						{/* The routed content + fate-dependent chips live below the session
+						    gate — FateProvider keeps its #438 remount guard (first & only key
+						    is the resolved identity), while the shell frame above already
+						    painted. */}
+						<FateProvider>
+							<SetTopbarChipsContext.Provider value={setChips}>
+								<LayoutContent />
+							</SetTopbarChipsContext.Provider>
+						</FateProvider>
+					</Main>
+					<Footer />
+				</AppShell>
+			</ToastProvider>
+		</TooltipProvider>
+	);
+}
+
+/**
+ * Runs below `FateProvider` (so `useMe`/`useProfileStats`/`useDivanAccess`/
+ * `useBildirimUnread` have a fate client): computes the auth-dependent topbar chips,
+ * publishes them up to the shell frame via the chip-state bridge, and renders the
+ * routed `Outlet`. Because `FateProvider` only commits once the session is settled,
+ * this never mounts under an "anon" key (#438 preserved).
+ */
+function LayoutContent() {
 	const session = useSession();
 	const {me, refetch} = useMe();
 	const navigate = useNavigate();
 	const location = useLocation();
-	const {toggle: toggleTheme} = useTheme();
+	const setChips = useContext(SetTopbarChipsContext);
 	// Ambient self-karma in the topbar, dark behind the authorship-loop flag (#1208).
 	// Gating the fetch on the flag keeps the flag-off path exactly as today: no flag →
 	// null username → the read short-circuits off the wire (useProfileStats).
@@ -76,80 +182,42 @@ function Layout() {
 		navigate(target, {replace: true});
 	}, [session.data, location.pathname, location.search, navigate, usernamePending]);
 
-	async function onSignOut() {
-		await authClient.signOut();
-		clearBearerToken();
-	}
-
 	const sessionUser = session.data?.user;
 	// The topbar identity, routed through the shared actor-label rule (#2126):
 	// display name, falling back to the @username, never the email local-part the
 	// old `email.split("@")[0]` leaked into the visible name.
 	const username = me?.username ?? null;
-	const userProps = sessionUser
-		? {
-				user: {
-					name: actorLabel(me?.name ?? sessionUser.name, username, "kullanıcı"),
-					username,
-				},
-			}
-		: {};
 	const isSignedIn = !!session.data;
-	// Bootstrap is required when the session is established but the canonical
-	// user row in Pasaport has no username yet. Block the page content until
-	// the form is submitted — set-once write so this only happens on first
-	// sign-in.
 	const needsBootstrap = isSignedIn && me !== null && !me.username && location.pathname !== "/auth";
 
-	return (
-		<TooltipProvider>
-			<ToastProvider>
-				<AppShell>
-					<Topbar
-						brandName="kamp.us"
-						nav={[
-							{to: "/sozluk", label: "sözlük"},
-							{to: "/pano", label: "pano"},
-						]}
-						divanTo={showDivan ? "/divan" : undefined}
-						{...userProps}
-						karma={selfKarma}
-						{...(bildirimOn && isSignedIn
-							? {bildirim: {to: "/bildirimler", unread: bildirimUnread}}
-							: {})}
-						onSearchSubmit={(query) => {
-							const target = searchTarget(query);
-							if (target) navigate(target);
-						}}
-						onToggleTheme={toggleTheme}
-						onLogout={onSignOut}
-						actions={
-							isSignedIn ? (
-								<button
-									type="button"
-									className="kp-topbar__btn"
-									onClick={() => navigate("/pano/yeni")}
-								>
-									+ gönderi
-								</button>
-							) : (
-								<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
-									giriş yap
-								</button>
-							)
-						}
-					/>
-					<Main>
-						{needsBootstrap && sessionUser ? (
-							<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
-						) : (
-							<Outlet />
-						)}
-					</Main>
-					<Footer />
-				</AppShell>
-			</ToastProvider>
-		</TooltipProvider>
+	const chips = useMemo<TopbarChips>(
+		() => ({
+			userProps: sessionUser
+				? {
+						user: {
+							name: actorLabel(me?.name ?? sessionUser.name, username, "kullanıcı"),
+							username,
+						},
+					}
+				: {},
+			karma: selfKarma,
+			divanTo: showDivan ? "/divan" : undefined,
+			bildirim: bildirimOn && isSignedIn ? {to: "/bildirimler", unread: bildirimUnread} : undefined,
+		}),
+		[sessionUser, me?.name, username, selfKarma, showDivan, bildirimOn, isSignedIn, bildirimUnread],
+	);
+
+	// Publish the computed chips up to the shell frame; clear them on unmount (the
+	// signed-out/re-key transition) so the frame falls back to anonymous affordances.
+	useEffect(() => {
+		setChips?.(chips);
+		return () => setChips?.(null);
+	}, [chips, setChips]);
+
+	return needsBootstrap && sessionUser ? (
+		<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
+	) : (
+		<Outlet />
 	);
 }
 
