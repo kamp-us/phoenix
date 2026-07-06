@@ -1401,6 +1401,18 @@ consumer apply one SHA contract. This makes verdict-posting an **enforced** gate
 the gate does not consider itself done until its own verdict is provably on the current head — closing
 the case where the posting step silently no-ops and a PR reads as ungated (#749 part b).
 
+**Then run the shared verdict read-back guard on the comment you just wrote (the #2148 leak class).**
+The presence check above proves *some* current-head `review-code:` verdict landed; it does not prove
+the comment **body** is well-formed and **leak-free** — the #2148 failure was a marker comment whose
+entire body was a local temp path (`@/var/folders/…`), a broken-marker + local-path-leak that a
+presence scan doesn't catch. When you posted via the **comment** upsert path (not the native APPROVE),
+re-read *that* comment and run the single canonical guard defined in the shared contract —
+[`gh-issue-intake-formats.md` §The verdict read-back guard](../gh-issue-intake-formats.md#the-verdict-read-back-guard--after-posting-a-gate-marker-re-read-it-and-fail-loud-verdict_readback_guard).
+Do **not** re-derive a local copy — call the shared `verdict_readback_guard "$MINE" review-code "$HEAD_SHA"`
+(it asserts the canonical marker token, the anchored `Reviewed-head: @ <sha>` line, and **no local
+filesystem path**, failing loud on any miss). On non-zero, re-post the real verdict and re-assert;
+never swallow it as a silent success.
+
 > A `HEAD_SHA` moved between the 4a/4b post and this read-back means the PR head advanced *during*
 > the review — the verdict you posted is already stale against the new head. Re-resolve
 > `HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"`, **re-verify against the new head**

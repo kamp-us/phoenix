@@ -783,6 +783,27 @@ comment.
 
 ---
 
+## Step 5b — Confirm the verdict landed clean (the shared read-back guard, #2148)
+
+After **any** of the three Step-5 upserts (PASS non-blocking, advisory, or FAIL) returns its
+comment id, close the loop: **re-read the comment you just wrote and prove its body is a
+well-formed, leak-free, current-head-bound marker.** The by-value `-f body="$BODY"` post prevents
+the `body=@<path>` leak at the call site, but a source idiom cannot catch a **runtime deviation** —
+the #2148 failure was a marker comment whose entire body was a local temp path (`@/var/folders/…`):
+a broken marker (no SHA-bound verdict for consumers) **and** a public local-path leak. Only a
+post-write read-back sees it.
+
+Run the **single canonical guard** defined in the shared contract —
+[`gh-issue-intake-formats.md` §The verdict read-back guard](../gh-issue-intake-formats.md#the-verdict-read-back-guard--after-posting-a-gate-marker-re-read-it-and-fail-loud-verdict_readback_guard).
+Do **not** re-derive a local copy — capture the upsert's comment id and call
+`verdict_readback_guard "$MINE" review-doc "$HEAD_SHA"` (it asserts the canonical `review-doc:`
+marker token, the anchored `Reviewed-head: @ <sha>` line, and **no local filesystem path**, failing
+loud on any miss). On non-zero, re-post the real verdict and re-assert; if it still cannot land
+clean, surface it as a posting failure in the run ledger — the PR is genuinely ungated and a
+consumer must not read it as verified — never swallow it as a silent success (fail-closed, ADR 0092 §ZS).
+
+---
+
 ## Running it
 
 A single invocation gates one doc PR end to end: classify blocking vs non-blocking
