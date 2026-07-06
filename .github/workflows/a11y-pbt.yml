@@ -1,0 +1,44 @@
+name: a11y-pbt
+
+# CI gate for #2175 (ADR 0162 pillar 4): the property-based a11y promotion loop
+# over the apps/web ui/ primitives. `fast-check` generates randomized valid prop
+# combinations for each primitive and asserts the pillar-4 invariants — accessible
+# name, valid ARIA, keyboard-focusability — in jsdom via axe. Each invariant carries
+# a warning-to-enforced posture (apps/web/src/components/ui/a11y/posture.ts): the
+# jsdom-decidable rules are enforced (a violation fails this job); contrast and
+# tap-target start as warnings (jsdom has no layout/CSS) and graduate by a one-line
+# posture edit. The suite fails closed on an unclassified new primitive. This is the
+# third enforcement rung, above the deterministic CSS lint (design-token-guard.yml).
+on:
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs
+# the suite, which fails via the vitest exit code — it posts no check-run/status/PR
+# comment — so contents:read is all it needs; default-deny every other scope.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  a11y:
+    name: property-based a11y over the ui/ primitives (warning-to-enforced)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit non-zero on an enforced pillar-4 invariant violation or an unclassified
+      # ui/ primitive (fail-closed). Warning-posture invariants report, never fail.
+      - name: Run the property-based a11y suite
+        run: pnpm --filter @kampus/web test:a11y
