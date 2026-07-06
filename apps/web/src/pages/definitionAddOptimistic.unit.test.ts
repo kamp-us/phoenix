@@ -7,11 +7,11 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import type {List} from "@nkzw/fate";
+import type {EntityId, List, Snapshot} from "@nkzw/fate";
 import {
 	appendOptimisticDefinitionEdge,
 	buildOptimisticDefinition,
-	type DefinitionListStore,
+	type DefinitionAddStore,
 } from "./definitionAddOptimistic";
 
 const NOW = new Date("2026-07-02T00:00:00.000Z");
@@ -54,22 +54,34 @@ describe("buildOptimisticDefinition — flag-gated optimistic nested node", () =
 	});
 });
 
-/** A fake store recording setList/restoreList, seeded with per-key list snapshots. */
-function fakeStore(lists: ReadonlyArray<readonly [string, List]>): DefinitionListStore & {
+/** A fake store recording setList/restoreList + the term record, seeded per key/id. */
+function fakeStore(
+	lists: ReadonlyArray<readonly [string, List]>,
+	records?: Record<string, Record<string, unknown>>,
+): DefinitionAddStore & {
 	readonly current: Map<string, List | undefined>;
+	readonly record: (id: EntityId) => Record<string, unknown> | undefined;
 } {
 	const current = new Map<string, List | undefined>(lists.map(([k, l]) => [k, l]));
+	const recs = new Map<string, Record<string, unknown>>(
+		Object.entries(records ?? {}).map(([k, v]) => [k, {...v}]),
+	);
 	return {
 		current,
 		getListsForField: () => lists,
 		setList: (key, state) => current.set(key, state),
 		restoreList: (key, state) => current.set(key, state),
+		read: (id) => recs.get(id),
+		merge: (id, partial) => void recs.set(id, {...(recs.get(id) ?? {}), ...partial}),
+		snapshot: (id): Snapshot => ({record: {...recs.get(id)}}),
+		restore: (id, snap) => void recs.set(id, {...(snap.record ?? {})}),
+		record: (id) => recs.get(id),
 	};
 }
 
 describe("appendOptimisticDefinitionEdge — nested-list injection + rollback", () => {
-	const TERM = "Term:react";
-	const TEMP = "Definition:optimistic:123";
+	const TERM = "Term:react" as EntityId;
+	const TEMP = "Definition:optimistic:123" as EntityId;
 
 	it("appends the temp entity id to the tail of each backing list", () => {
 		const store = fakeStore([["list-1", {ids: ["Definition:a", "Definition:b"]}]]);
@@ -117,5 +129,38 @@ describe("appendOptimisticDefinitionEdge — nested-list injection + rollback", 
 		assert.strictEqual(typeof rollback, "function");
 		rollback(); // must not throw
 		assert.strictEqual(store.current.size, 0);
+	});
+
+	it("bumps BOTH count (header) and definitionCount (index) aggregates by one (#2198)", () => {
+		const store = fakeStore([["list-1", {ids: ["Definition:a"]}]], {
+			[TERM]: {count: 2, definitionCount: 2},
+		});
+		appendOptimisticDefinitionEdge(store, TERM, TEMP);
+		assert.strictEqual(store.record(TERM)?.count, 3);
+		assert.strictEqual(store.record(TERM)?.definitionCount, 3);
+	});
+
+	it("bumps only the loaded scalar — term page carries `count`, not `definitionCount`", () => {
+		const store = fakeStore([["list-1", {ids: []}]], {[TERM]: {count: 2}});
+		appendOptimisticDefinitionEdge(store, TERM, TEMP);
+		assert.strictEqual(store.record(TERM)?.count, 3);
+		assert.strictEqual(store.record(TERM)?.definitionCount, undefined);
+	});
+
+	it("rollback restores the bumped aggregates on a rejected add (no phantom count)", () => {
+		const store = fakeStore([["list-1", {ids: ["Definition:a"]}]], {
+			[TERM]: {count: 2, definitionCount: 2},
+		});
+		const rollback = appendOptimisticDefinitionEdge(store, TERM, TEMP);
+		assert.strictEqual(store.record(TERM)?.count, 3);
+		rollback();
+		assert.strictEqual(store.record(TERM)?.count, 2);
+		assert.strictEqual(store.record(TERM)?.definitionCount, 2);
+	});
+
+	it("leaves the aggregate untouched when the term record is not loaded", () => {
+		const store = fakeStore([["list-1", {ids: []}]]);
+		appendOptimisticDefinitionEdge(store, TERM, TEMP);
+		assert.strictEqual(store.record(TERM), undefined);
 	});
 });
