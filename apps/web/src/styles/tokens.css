@@ -120,11 +120,22 @@
 	--plum-contrast: #fff;
 	--mauve-contrast: #fff;
 
-	/* misc raw */
+	/* misc raw — black/white alpha stops feeding the elevation ramp (§ ELEVATION).
+	   White stops are the dark-mode surface-tint highlights: a cast shadow reads
+	   poorly on a dark ground, so each dark level lifts the surface with a top-edge
+	   inset highlight instead of leaning on shadow alone (ADR 0162, Elevation). */
+	--black-a60: rgba(0, 0, 0, 0.6);
+	--black-a50: rgba(0, 0, 0, 0.5);
 	--black-a40: rgba(0, 0, 0, 0.4);
 	--black-a35: rgba(0, 0, 0, 0.35);
+	--black-a20: rgba(0, 0, 0, 0.2);
+	--black-a15: rgba(0, 0, 0, 0.15);
 	--black-a10: rgba(0, 0, 0, 0.1);
+	--black-a08: rgba(0, 0, 0, 0.08);
 	--black-a04: rgba(0, 0, 0, 0.04);
+	--white-a08: rgba(255, 255, 255, 0.08);
+	--white-a06: rgba(255, 255, 255, 0.06);
+	--white-a04: rgba(255, 255, 255, 0.04);
 }
 
 /* ──────────── 1. RAW SCALES (light) ──────────── */
@@ -451,8 +462,14 @@
 	--tag-news-bg: oklch(0.3 0.06 320);
 	--tag-news-fg: oklch(0.85 0.1 320);
 
-	--shadow-sm: 0 1px 0 0 var(--black-a40);
-	--shadow-md: 0 2px 4px 0 var(--black-a35);
+	/* Elevation — four levels (flat · raised · dropdown · overlay), ADR 0162.
+	   Dark: the cast shadow is near-invisible on the dark ground, so each level
+	   also lifts the surface with a top-edge inset highlight (the surface-tint
+	   bump) — the elevation reads even where the shadow does not. */
+	--shadow-flat: none;
+	--shadow-raised: inset 0 1px 0 0 var(--white-a04), 0 1px 3px 0 var(--black-a40);
+	--shadow-dropdown: inset 0 1px 0 0 var(--white-a06), 0 6px 16px -4px var(--black-a50);
+	--shadow-overlay: inset 0 1px 0 0 var(--white-a08), 0 16px 40px -8px var(--black-a60);
 }
 [data-theme="light"] {
 	--tag-discuss-bg: oklch(0.95 0.04 260);
@@ -468,8 +485,12 @@
 	--tag-news-bg: oklch(0.95 0.05 320);
 	--tag-news-fg: oklch(0.38 0.1 320);
 
-	--shadow-sm: 0 1px 0 0 var(--black-a04);
-	--shadow-md: 0 1px 3px 0 var(--black-a10);
+	/* Elevation — four levels (flat · raised · dropdown · overlay), ADR 0162.
+	   Light: real cast shadows carry the lift; no surface-tint bump needed. */
+	--shadow-flat: none;
+	--shadow-raised: 0 1px 2px 0 var(--black-a08), 0 1px 3px 0 var(--black-a04);
+	--shadow-dropdown: 0 4px 12px -2px var(--black-a15), 0 2px 6px -2px var(--black-a10);
+	--shadow-overlay: 0 12px 32px -8px var(--black-a20), 0 4px 12px -4px var(--black-a15);
 }
 
 /* ──────────── TYPE / SPACE / RADIUS / DENSITY ──────────── */
@@ -478,13 +499,16 @@
 		"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 	--font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-	--t-body: 13px / 1.45 var(--font-body);
-	--t-body-sm: 12px / 1.45 var(--font-body);
-	--t-meta: 11px / 1.4 var(--font-body);
-	--t-micro: 10.5px / 1.4 var(--font-body);
-	--t-h-feed: 14px / 1.35 var(--font-body);
-	--t-h-page: 18px / 1.3 var(--font-body);
-	--t-mono: 12px / 1.45 var(--font-mono);
+	/* Type ramp — 14px body base (ADR 0162), a hand-tuned perceptual ladder that
+	   opens the body→heading range so headings read as hierarchy, not bold body.
+	   Sizes are a ladder (odd steps allowed), not rigid 4px multiples. */
+	--t-body: 14px / 1.5 var(--font-body);
+	--t-body-sm: 13px / 1.45 var(--font-body);
+	--t-meta: 12px / 1.4 var(--font-body);
+	--t-micro: 11px / 1.4 var(--font-body);
+	--t-h-feed: 16px / 1.35 var(--font-body);
+	--t-h-page: 22px / 1.25 var(--font-body);
+	--t-mono: 13px / 1.5 var(--font-mono);
 
 	--r-sm: 2px;
 	--r-md: 4px;
