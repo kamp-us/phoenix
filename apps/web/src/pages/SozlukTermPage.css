@@ -55,8 +55,13 @@
 	padding: var(--s-3) 0;
 	border-bottom: 1px solid var(--border-faint);
 }
+/* Top definition — a highlighted, not an errored, card. A full --accent-faint
+   (maroon) fill read as destructive/error UI; the highlight is carried by a
+   neutral raised surface + an accent left-border marker instead (ADR 0162
+   cohesiveness; #2166). */
 .kp-sozluk-definition--top {
-	background: var(--accent-faint);
+	background: var(--surface-raised);
+	border-left: 2px solid var(--accent);
 	padding: var(--s-3);
 	margin: 0 -8px;
 	border-radius: var(--r-sm);

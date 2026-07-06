@@ -54,7 +54,7 @@
 .kp-pano-submit__toggle button[aria-pressed="true"] {
 	background: var(--surface-raised);
 	color: var(--text-primary);
-	box-shadow: var(--shadow-sm);
+	box-shadow: var(--shadow-raised);
 }
 
 .kp-pano-submit__form {
