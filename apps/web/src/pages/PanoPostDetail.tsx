@@ -26,6 +26,7 @@ import {
 import {PanoPostSkeleton} from "../components/pano/PanoSkeleton";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
+import {EmptyState} from "../components/ui/EmptyState";
 import type {ReportOutcome} from "../components/ui/ReportButton";
 import {
 	beginOptimisticCommentMembership,
@@ -719,6 +720,12 @@ function Comments(props: CommentsProps) {
 				optimistic={optimisticComment}
 			/>
 			<h2 className="kp-pano-postpage__thread-heading">{visibleCount} yorum</h2>
+			{visibleCount === 0 ? (
+				<EmptyState
+					title="henüz yorum yok."
+					description="ilk yorumu sen yaz — tartışmayı başlat."
+				/>
+			) : null}
 			<div className="kp-pano-thread">
 				{roots.map((r) => (
 					<CommentTreeNode

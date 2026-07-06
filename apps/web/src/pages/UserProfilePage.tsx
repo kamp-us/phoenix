@@ -12,6 +12,7 @@ import {shouldShowCaylakStatus} from "../components/profile/CaylakStatusBlock";
 import {ContributionRow, ContributionView} from "../components/profile/ContributionRow";
 import {PromotionActions, shouldShowPromotionActions} from "../components/profile/PromotionActions";
 import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/UserProfileHeader";
+import {EmptyState} from "../components/ui/EmptyState";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import {FlagGate} from "../flags/FlagGate";
@@ -106,7 +107,10 @@ function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 		<section className="kp-user-profile__feed" data-testid="user-profile-feed">
 			<h3>katkılar</h3>
 			{items.length === 0 ? (
-				<p className="kp-user-profile__empty">henüz katkı yok.</p>
+				<EmptyState
+					title="henüz katkı yok."
+					description="ilk tanımını ya da başlığını ekleyince burada görünür."
+				/>
 			) : (
 				<ul className="kp-user-profile__list">
 					{items.map(({cursor, node}) => (

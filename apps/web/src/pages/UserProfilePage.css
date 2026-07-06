@@ -71,11 +71,6 @@
 	margin: 0 0 var(--s-2);
 }
 
-.kp-user-profile__empty {
-	color: var(--text-muted);
-	font: var(--t-meta);
-}
-
 .kp-user-profile__list {
 	list-style: none;
 	padding: 0;
