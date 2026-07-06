@@ -14,6 +14,7 @@ import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider} from "./fate/FateProvider";
 import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
+import {DensityProvider} from "./lib/density";
 import {safeReturnTo} from "./lib/returnTo";
 import {searchTarget} from "./lib/searchTarget";
 import {ThemeProvider, useTheme} from "./lib/theme";
@@ -229,32 +230,34 @@ function PanoSiteFeedRoute() {
 export function App() {
 	return (
 		<ThemeProvider>
-			<Routes>
-				<Route element={<Layout />}>
-					<Route path="/" element={<LandingPage />} />
-					<Route path="/pano" element={<PanoFeed />} />
-					<Route path="/pano/yeni" element={<PanoSubmitPage />} />
-					<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
-					<Route path="/pano/kaydedilenler" element={<SavedPostsPage />} />
-					<Route path="/pano/:id" element={<PanoPostDetail />} />
-					<Route path="/sozluk" element={<SozlukHome />} />
-					<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
-					<Route path="/search" element={<SearchPage />} />
-					<Route path="/auth" element={<AuthPage />} />
-					{/* The divan reviewer workspace (#1290) — the page self-gates on the
+			<DensityProvider>
+				<Routes>
+					<Route element={<Layout />}>
+						<Route path="/" element={<LandingPage />} />
+						<Route path="/pano" element={<PanoFeed />} />
+						<Route path="/pano/yeni" element={<PanoSubmitPage />} />
+						<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
+						<Route path="/pano/kaydedilenler" element={<SavedPostsPage />} />
+						<Route path="/pano/:id" element={<PanoPostDetail />} />
+						<Route path="/sozluk" element={<SozlukHome />} />
+						<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
+						<Route path="/search" element={<SearchPage />} />
+						<Route path="/auth" element={<AuthPage />} />
+						{/* The divan reviewer workspace (#1290) — the page self-gates on the
 					    authorship-loop flag (off ⇒ 404), so the route is dark by default. */}
-					<Route path="/divan" element={<DivanPage />} />
-					{/* The founder/mod conversion readout (#1589) — the page self-gates on
+						<Route path="/divan" element={<DivanPage />} />
+						{/* The founder/mod conversion readout (#1589) — the page self-gates on
 					    the funnel-readout flag (off ⇒ 404), so the route is dark by default. */}
-					<Route path="/funnel" element={<FunnelPage />} />
-					{/* The notification center (#1694) — the page self-gates on the
+						<Route path="/funnel" element={<FunnelPage />} />
+						{/* The notification center (#1694) — the page self-gates on the
 					    phoenix-bildirim flag (off ⇒ 404), so the route is dark by default. */}
-					<Route path="/bildirimler" element={<BildirimlerPage />} />
-					<Route path="/profile" element={<ProfilePage />} />
-					<Route path="/u/:username" element={<UserProfilePage />} />
-					<Route path="*" element={<NotFoundPage />} />
-				</Route>
-			</Routes>
+						<Route path="/bildirimler" element={<BildirimlerPage />} />
+						<Route path="/profile" element={<ProfilePage />} />
+						<Route path="/u/:username" element={<UserProfilePage />} />
+						<Route path="*" element={<NotFoundPage />} />
+					</Route>
+				</Routes>
+			</DensityProvider>
 		</ThemeProvider>
 	);
 }

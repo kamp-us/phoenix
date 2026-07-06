@@ -11,6 +11,7 @@ import {ProfileContributionSignal} from "../components/profile/ProfileContributi
 import {profileStandingLabel} from "../components/profile/profileStanding";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {type Density, useDensity} from "../lib/density";
 import {type ThemeChoice, useTheme} from "../lib/theme";
 import {useProfileStats} from "./useProfileStats";
 import "./ProfilePage.css";
@@ -35,6 +36,13 @@ function initialsOf(name: string) {
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
+// Mirrors the DENSITY_LABELS Turkish copy in components/controls/Controls.tsx.
+const DENSITY_LABELS: Record<Density, string> = {
+	compact: "sıkı",
+	normal: "normal",
+	spacious: "ferah",
+};
+
 export function ProfilePage() {
 	const session = useSession();
 	const {me, status: meStatus, refetch: refetchMe} = useMe();
@@ -48,6 +56,7 @@ export function ProfilePage() {
 	const statsFailed = statsState.status === "error" || meStatus === "error";
 	const stats = statsState.status === "ok" ? statsState.stats : null;
 	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
+	const {choice: densityChoice, setChoice: setDensityChoice} = useDensity();
 	const [revokingAll, setRevokingAll] = useState(false);
 	const [revokeAllError, setRevokeAllError] = useState<string | null>(null);
 	const [deleteOpen, setDeleteOpen] = useState(false);
@@ -270,6 +279,24 @@ export function ProfilePage() {
 										onClick={() => setThemeChoice(t)}
 									>
 										{t === "light" ? "açık" : t === "dark" ? "koyu" : "otomatik"}
+									</button>
+								))}
+							</span>
+						</span>
+						<span />
+					</div>
+					<div className="kp-profile__row">
+						<span className="label">yoğunluk</span>
+						<span className="value">
+							<span className="kp-profile__theme-toggle">
+								{(["compact", "normal", "spacious"] as Density[]).map((d) => (
+									<button
+										key={d}
+										type="button"
+										aria-pressed={densityChoice === d}
+										onClick={() => setDensityChoice(d)}
+									>
+										{DENSITY_LABELS[d]}
 									</button>
 								))}
 							</span>
