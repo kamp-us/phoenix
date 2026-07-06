@@ -63,11 +63,40 @@ select {
 	word-break: break-word;
 }
 
-/* Focus ring shared by all interactive elements.
-   Components opt in via :focus-visible { outline: var(--focus-ring); }   */
+/* One shared focus layer for every interactive control (#2169, the
+   discord/focus-rings idiom): the keyboard focus ring is defined ONCE here and
+   applied to all natively-interactive elements, so no component hand-rolls its
+   own `outline: … var(--focus-ring)` rule. The token pair below is the single
+   source; this `:where()` selector paints it.
+
+   `:where()` gives the rule ZERO specificity on purpose: a component that needs a
+   deliberate variant (a tighter offset for a dense control, the Dialog close's
+   softened inset ring) overrides it with a plain normal-specificity
+   `:focus-visible` rule — no `!important`, no specificity fight. `:focus-visible`
+   (not `:focus`) means the ring shows for keyboard/AT focus but not on a mouse
+   click, matching the platform default. */
 :root {
 	--focus-ring: 2px solid var(--accent-9);
 	--focus-ring-offset: 2px;
+}
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: var(--focus-ring-offset);
+}
+
+/* Visually-hidden but AT-readable text (#2169). Standard clip-rect: stays in the
+   accessibility tree + reading order while taking no visual space, for a text
+   suffix that names state a sighted user reads from color/position alone. */
+.kp-visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	border: 0;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
 }
 
 /* Reduced motion — global, unconditional a11y baseline (WCAG 2.3.3).

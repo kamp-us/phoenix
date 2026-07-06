@@ -62,8 +62,9 @@
 .kp-comment__upvote--active {
 	color: var(--accent);
 }
+/* Ring from the shared focus layer (global.css, #2169); tighter offset + rounded
+   corner hug this compact vote control. */
 .kp-comment__upvote:focus-visible {
-	outline: var(--focus-ring);
 	outline-offset: 1px;
 	border-radius: var(--r-sm);
 }

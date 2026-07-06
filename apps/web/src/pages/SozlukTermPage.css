@@ -95,8 +95,9 @@
 	background: var(--accent);
 	border-color: var(--accent);
 }
+/* Ring from the shared focus layer (global.css, #2169); tighter offset hugs the
+   compact vote control. */
 .kp-sozluk-definition__vote-btn:focus-visible {
-	outline: var(--focus-ring);
 	outline-offset: 1px;
 }
 .kp-sozluk-definition__vote-count {

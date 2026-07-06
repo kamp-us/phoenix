@@ -16,10 +16,7 @@
 	background: var(--accent-9);
 	border-color: var(--accent-9);
 }
-.kp-switch:focus-visible {
-	outline: var(--focus-ring);
-	outline-offset: 2px;
-}
+/* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
 
 .kp-switch__thumb {
 	position: absolute;

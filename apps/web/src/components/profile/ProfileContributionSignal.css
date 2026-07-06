@@ -29,8 +29,9 @@
 	text-decoration: underline;
 }
 
+/* Ring + offset from the shared focus layer (global.css, #2169) — was a bespoke
+   `2px solid var(--accent)` that bypassed the --focus-ring token; only the rounded
+   corner is signal-specific now. */
 .kp-signal__more:focus-visible {
-	outline: 2px solid var(--accent);
-	outline-offset: 2px;
 	border-radius: var(--r-sm);
 }

@@ -26,7 +26,8 @@
 	background: var(--surface-raised);
 	color: var(--text-primary);
 }
+/* Ring from the shared focus layer (global.css, #2169); a tighter offset hugs
+   this full-width trigger's edge. */
 .kp-collapsible__trigger:focus-visible {
-	outline: var(--focus-ring);
 	outline-offset: 1px;
 }

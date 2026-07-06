@@ -130,10 +130,7 @@
 .kp-topbar__user:hover {
 	background: var(--surface-raised);
 }
-.kp-topbar__user:focus-visible {
-	outline: var(--focus-ring);
-	outline-offset: 2px;
-}
+/* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
 
 /* The ambient self-karma chip (#1208) — keep it centered in the topbar row. */
 .kp-topbar__karma {
