@@ -870,6 +870,7 @@ function CommentComposer({
 						beginOptimisticCommentMembership(
 							fate.store,
 							optimistic.connection,
+							postId,
 							toEntityId("Comment", optimisticRecord.id),
 						)
 					: undefined;

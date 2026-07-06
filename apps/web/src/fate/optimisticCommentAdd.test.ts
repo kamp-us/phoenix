@@ -1,4 +1,4 @@
-import {ConnectionTag, type List} from "@nkzw/fate";
+import {ConnectionTag, type EntityId, type List, type Snapshot} from "@nkzw/fate";
 import {describe, expect, it} from "vitest";
 import {
 	appendOptimisticEdge,
@@ -101,40 +101,76 @@ describe("connectionKey — resolves the fate metadata key", () => {
 	});
 });
 
-/** A minimal in-memory `CommentListStore` for the membership helper. */
-function fakeStore(initial?: List): CommentListStore & {readonly current: () => List | undefined} {
+/** A minimal in-memory `CommentListStore` over lists + records for the membership helper. */
+function fakeStore(
+	initial?: List,
+	records?: Record<string, Record<string, unknown>>,
+): CommentListStore & {
+	readonly current: () => List | undefined;
+	readonly record: (id: EntityId) => Record<string, unknown> | undefined;
+} {
 	const lists = new Map<string, List>();
 	if (initial) lists.set(KEY, initial);
+	const recs = new Map<string, Record<string, unknown>>(
+		Object.entries(records ?? {}).map(([k, v]) => [k, {...v}]),
+	);
 	return {
 		getListState: (key) => lists.get(key),
 		setList: (key, state) => void lists.set(key, state),
 		// mirror fate: restore(undefined) deletes the list (no prior state)
 		restoreList: (key, list) => void (list ? lists.set(key, list) : lists.delete(key)),
+		read: (id) => recs.get(id),
+		merge: (id, partial) => void recs.set(id, {...(recs.get(id) ?? {}), ...partial}),
+		snapshot: (id): Snapshot => ({record: {...recs.get(id)}}),
+		restore: (id, snap) => void recs.set(id, {...(snap.record ?? {})}),
 		current: () => lists.get(KEY),
+		record: (id) => recs.get(id),
 	};
 }
 const KEY = "Post:post_1.comments";
+const POST_ID = "post_1";
+const POST_ENTITY = "Post:post_1" as EntityId;
 const connection = {[ConnectionTag]: {key: KEY}};
 
 describe("beginOptimisticCommentMembership — append + rollback", () => {
 	it("appends the temp id into the nested connection immediately", () => {
 		const store = fakeStore({ids: ["a", "b"]});
-		beginOptimisticCommentMembership(store, connection, "temp");
+		beginOptimisticCommentMembership(store, connection, POST_ID, "temp");
 		expect(store.current()?.ids).toEqual(["a", "b", "temp"]);
 	});
 
 	it("rollback restores the prior list on reject (no phantom row)", () => {
 		const store = fakeStore({ids: ["a", "b"]});
-		const rollback = beginOptimisticCommentMembership(store, connection, "temp");
+		const rollback = beginOptimisticCommentMembership(store, connection, POST_ID, "temp");
 		rollback();
 		expect(store.current()?.ids).toEqual(["a", "b"]);
 	});
 
 	it("rollback deletes the list when there was no prior state (first comment)", () => {
 		const store = fakeStore();
-		const rollback = beginOptimisticCommentMembership(store, connection, "temp");
+		const rollback = beginOptimisticCommentMembership(store, connection, POST_ID, "temp");
 		expect(store.current()?.ids).toEqual(["temp"]);
 		rollback();
 		expect(store.current()).toBeUndefined();
+	});
+
+	it("bumps the parent post's commentCount aggregate (header + feed card agree, #2198)", () => {
+		const store = fakeStore({ids: ["a"]}, {[POST_ENTITY]: {commentCount: 2}});
+		beginOptimisticCommentMembership(store, connection, POST_ID, "temp");
+		expect(store.record(POST_ENTITY)?.commentCount).toBe(3);
+	});
+
+	it("rollback restores commentCount on reject (no phantom bump)", () => {
+		const store = fakeStore({ids: ["a"]}, {[POST_ENTITY]: {commentCount: 2}});
+		const rollback = beginOptimisticCommentMembership(store, connection, POST_ID, "temp");
+		expect(store.record(POST_ENTITY)?.commentCount).toBe(3);
+		rollback();
+		expect(store.record(POST_ENTITY)?.commentCount).toBe(2);
+	});
+
+	it("leaves commentCount untouched when the post record is not loaded", () => {
+		const store = fakeStore({ids: ["a"]});
+		beginOptimisticCommentMembership(store, connection, POST_ID, "temp");
+		expect(store.record(POST_ENTITY)).toBeUndefined();
 	});
 });

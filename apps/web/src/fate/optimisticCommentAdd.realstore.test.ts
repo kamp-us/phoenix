@@ -73,6 +73,12 @@ function membershipStore(client: ReturnType<typeof realClient>) {
 		getListState: (key: string) => store.getListState(key),
 		setList: (key: string, state: List) => store.setList(key, state),
 		restoreList: (key: string, list?: List) => store.restoreList(key, list),
+		read: (id: EntityId) => store.read(id),
+		merge: (id: EntityId, partial: Record<string, unknown>, paths: Iterable<string>) =>
+			store.merge(id, partial, paths),
+		snapshot: (id: EntityId) => store.snapshot(id),
+		restore: (id: EntityId, snapshot: ReturnType<typeof store.snapshot>) =>
+			store.restore(id, snapshot),
 	};
 }
 
@@ -104,6 +110,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 		beginOptimisticCommentMembership(
 			membershipStore(client),
 			connectionFor(CONNECTION_KEY),
+			POST_ID,
 			tempId,
 		);
 
@@ -127,6 +134,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 		beginOptimisticCommentMembership(
 			membershipStore(client),
 			connectionFor(CONNECTION_KEY),
+			POST_ID,
 			tempId,
 		);
 
@@ -154,6 +162,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 		beginOptimisticCommentMembership(
 			membershipStore(client),
 			connectionFor(CONNECTION_KEY),
+			POST_ID,
 			tempId,
 		);
 		client.resolveOptimisticEntity(tempId, serverId);
@@ -190,6 +199,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 		beginOptimisticCommentMembership(
 			membershipStore(client),
 			connectionFor(CONNECTION_KEY),
+			POST_ID,
 			bareTempId,
 		);
 

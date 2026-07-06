@@ -29,7 +29,7 @@
  * #1637; ADR 0083) at the call site: off ⇒ no optimistic node, the thread waits for
  * the live append / read-back exactly as today.
  */
-import {ConnectionTag, type EntityId, type List} from "@nkzw/fate";
+import {ConnectionTag, type EntityId, type List, type Snapshot, toEntityId} from "@nkzw/fate";
 
 /** The source values the optimistic temp Comment node mirrors from the compose form + author. */
 export interface OptimisticCommentInput {
@@ -87,11 +87,19 @@ export function appendOptimisticEdge(list: List | undefined, entityId: EntityId)
 	};
 }
 
-/** The slice of the fate client `store` the membership append + rollback drive. */
+/**
+ * The slice of the fate client `store` the membership append + rollback drive — the
+ * nested-list methods plus the record `read`/`merge`/`snapshot`/`restore` the
+ * `Post.commentCount` aggregate bump uses. `fate.store` satisfies it structurally.
+ */
 export interface CommentListStore {
 	getListState(key: string): List | undefined;
 	setList(key: string, state: List): void;
 	restoreList(key: string, list?: List): void;
+	read(id: EntityId): Record<string, unknown> | undefined;
+	merge(id: EntityId, partial: Record<string, unknown>, paths: Iterable<string>): void;
+	snapshot(id: EntityId): Snapshot;
+	restore(id: EntityId, snapshot: Snapshot): void;
 }
 
 /**
@@ -121,14 +129,35 @@ export function connectionKey(connection: unknown): string {
  * reconcile here); the returned rollback runs only on reject (callSite `{error}` OR a
  * boundary throw), since fate rolls back the record but not this manually-added
  * nested membership.
+ *
+ * Also bumps the parent post's `commentCount` aggregate by one so the post header
+ * (`PanoPostHeader`) and feed card (`PanoPostCard`) agree with the rendered thread
+ * during the optimistic window — `comment.add` returns a `Comment`, not the parent
+ * `Post`, so nothing else reconciles the aggregate until a refetch (#2198); the
+ * mirror of `comment.delete`'s decrement (`optimisticCommentDelete`). The bump rolls
+ * back with the list edge.
  */
 export function beginOptimisticCommentMembership(
 	store: CommentListStore,
 	connection: unknown,
+	postId: string,
 	tempId: EntityId,
 ): () => void {
+	const rollbacks: Array<() => void> = [];
 	const key = connectionKey(connection);
 	const previous = store.getListState(key);
 	store.setList(key, appendOptimisticEdge(previous, tempId));
-	return () => store.restoreList(key, previous);
+	rollbacks.push(() => store.restoreList(key, previous));
+
+	const postEntity = toEntityId("Post", postId);
+	const current = store.read(postEntity)?.commentCount;
+	if (typeof current === "number") {
+		const before = store.snapshot(postEntity);
+		store.merge(postEntity, {commentCount: current + 1}, ["commentCount"]);
+		rollbacks.push(() => store.restore(postEntity, before));
+	}
+
+	return () => {
+		for (const rollback of rollbacks.reverse()) rollback();
+	};
 }

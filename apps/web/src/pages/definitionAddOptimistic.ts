@@ -26,7 +26,7 @@
  *
  * See `.patterns/fate-mutations-client.md` (§Optimistic nested-connection membership).
  */
-import type {List} from "@nkzw/fate";
+import type {EntityId, List, Snapshot} from "@nkzw/fate";
 
 /** Injectable now-clock so the optimistic `createdAt`/temp id are deterministic in tests. */
 export type Now = () => Date;
@@ -102,6 +102,19 @@ export interface DefinitionListStore {
 }
 
 /**
+ * The add path additionally bumps the term's aggregate count scalars, so it needs
+ * the record `read`/`merge`/`snapshot`/`restore` methods on top of the list slice.
+ * Kept separate from {@link DefinitionListStore} so the delete path (edge-drop only)
+ * stays on the narrower interface. `fate.store` satisfies it structurally.
+ */
+export interface DefinitionAddStore extends DefinitionListStore {
+	read(id: EntityId): Record<string, unknown> | undefined;
+	merge(id: EntityId, partial: Record<string, unknown>, paths: Iterable<string>): void;
+	snapshot(id: EntityId): Snapshot;
+	restore(id: EntityId, snapshot: Snapshot): void;
+}
+
+/**
  * Append `optimisticEntityId` (a `Definition` **entity id**, e.g.
  * `Definition:optimistic:<ts>`) to every list state backing the term's nested
  * `definitions` connection, and return a rollback that restores each list to its
@@ -114,23 +127,53 @@ export interface DefinitionListStore {
  * result, after which a server `appendNode(serverId)` dedups by canonical id
  * (`removeEntityFromListState` / visible short-circuit) — one edge, no double.
  *
+ * Also bumps the term's aggregate definition-count scalars by one so the header
+ * (`Term.count`, `SozlukTermHeader`) and the index row (`Term.definitionCount`,
+ * `TermRow`/`SozlukHome`) agree with the rendered list during the optimistic window —
+ * `definition.add` returns a `Definition`, not the parent `Term`, so nothing else
+ * reconciles the aggregate until a refetch (#2198). Both scalars mirror the same
+ * server `definitionCount` column (`term-fields.ts`), so each present one is bumped to
+ * keep the two surfaces consistent (AC3). The bump rolls back with the list edge.
+ *
  * A no-op (empty rollback) when the term has no loaded `definitions` list yet (the
  * fresh-slug branch, where there's nothing to append to) — that flow is driven by
  * the composer's force-refetch + remount, untouched here.
  */
 export function appendOptimisticDefinitionEdge(
-	store: DefinitionListStore,
-	termEntityId: string,
-	optimisticEntityId: string,
+	store: DefinitionAddStore,
+	termEntityId: EntityId,
+	optimisticEntityId: EntityId,
 ): () => void {
+	const rollbacks: Array<() => void> = [];
 	const snapshots = store.getListsForField(termEntityId, "definitions");
 	for (const [key, list] of snapshots) {
 		const next: List = list.cursors
 			? {...list, ids: [...list.ids, optimisticEntityId], cursors: [...list.cursors, undefined]}
 			: {...list, ids: [...list.ids, optimisticEntityId]};
 		store.setList(key, next);
+		rollbacks.push(() => store.restoreList(key, list));
 	}
+
+	const term = store.read(termEntityId);
+	if (term) {
+		const partial: Record<string, unknown> = {};
+		const paths: string[] = [];
+		if (typeof term.count === "number") {
+			partial.count = term.count + 1;
+			paths.push("count");
+		}
+		if (typeof term.definitionCount === "number") {
+			partial.definitionCount = term.definitionCount + 1;
+			paths.push("definitionCount");
+		}
+		if (paths.length > 0) {
+			const before = store.snapshot(termEntityId);
+			store.merge(termEntityId, partial, paths);
+			rollbacks.push(() => store.restore(termEntityId, before));
+		}
+	}
+
 	return () => {
-		for (const [key, list] of snapshots) store.restoreList(key, list);
+		for (const rollback of rollbacks.reverse()) rollback();
 	};
 }
