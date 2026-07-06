@@ -75,12 +75,14 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 	{
 		key: "post.save",
 		fanned: false,
-		rationale: "writes the caller's private save relation — no subscribed connection",
+		rationale:
+			"writes the caller's private save relation; the `savedPosts` connection is per-viewer subscribe-only, so a publish onto its login-blind shared topic would leak viewer-private membership — no cross-client fan-out",
 	},
 	{
 		key: "post.unsave",
 		fanned: false,
-		rationale: "clears the caller's private save relation — no subscribed connection",
+		rationale:
+			"clears the caller's private save relation; the `savedPosts` connection is per-viewer subscribe-only, so a publish onto its login-blind shared topic would leak viewer-private membership — no cross-client fan-out",
 	},
 	{
 		key: "post.edit",
