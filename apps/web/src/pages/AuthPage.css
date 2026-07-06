@@ -95,7 +95,10 @@
 	border: none;
 	border-radius: var(--r-sm);
 	padding: 10px 12px;
-	font: 600 14px var(--font-body);
+	/* White --accent-fg on the accent solid is Radix's accentContrast (3:1 UI/large-text
+	   pairing, not 4.5:1 small-text); the label qualifies as WCAG large text so the
+	   sanctioned pairing is AA-valid (#2166). */
+	font: 700 19px / 1.2 var(--font-body);
 	cursor: pointer;
 	margin-top: var(--s-2);
 }

@@ -6,12 +6,12 @@
    via [aria-pressed="true"] (accent color + border). */
 
 :root {
-	/* One row of --t-meta buttons: line-height 1.6×11px + 2×1px padding + 2×1px
-	   border ≈ 21.6px. The phoenix-reactions gate resolves async, so the slot
-	   must reserve this height BEFORE the bar mounts or the whole feed reflows
-	   down when it appears (#2054). The reserved slot (.kp-reaction-slot) and the
-	   mounted bar share this one source of truth so the reservation is exact. */
-	--reaction-bar-height: 22px;
+	/* Each palette button is floored at the WCAG 2.5.8 24px minimum target size
+	   (#2166); the reserved slot must match that floor so the bar swaps into an
+	   already-sized slot instead of reflowing the feed when it mounts (#2054). The
+	   reserved slot (.kp-reaction-slot) and the mounted button share this one
+	   source of truth so the reservation is exact. */
+	--reaction-bar-height: 24px;
 	/* The on-brand line-icon glyph box (#2165) — sized to sit on the --t-meta
 	   text baseline, one source of truth for every palette member. */
 	--reaction-glyph-size: 14px;
@@ -35,7 +35,9 @@
 .kp-reaction-bar__btn {
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	gap: 4px;
+	min-height: var(--reaction-bar-height); /* WCAG 2.5.8 24px min target (#2166) */
 	padding: 1px 6px;
 	border: 1px solid var(--border-faint);
 	border-radius: 999px;
@@ -51,8 +53,8 @@
 }
 
 .kp-reaction-bar__btn:focus-visible {
-	outline: 2px solid var(--focus-ring);
-	outline-offset: 1px;
+	outline: var(--focus-ring);
+	outline-offset: var(--focus-ring-offset);
 }
 
 .kp-reaction-bar__btn[aria-pressed="true"] {
@@ -74,5 +76,7 @@
 
 .kp-reaction-bar__count {
 	font-variant-numeric: tabular-nums;
-	color: var(--text-faint);
+	/* Meaning-carrying metadata → --text-muted (AA-safe ≥4.5:1); --text-faint is
+	   decorative-only and bottoms out at ~3:1 (#2166, tokens.css role layer). */
+	color: var(--text-muted);
 }

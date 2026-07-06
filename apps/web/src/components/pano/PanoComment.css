@@ -44,6 +44,7 @@
 	display: inline-flex;
 	align-items: center;
 	gap: 3px;
+	min-height: 24px; /* WCAG 2.5.8 24px min target (#2166) */
 	color: var(--text-muted);
 	background: none;
 	border: 0;
