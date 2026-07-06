@@ -1086,7 +1086,8 @@ through the consolidated `^packages/pipeline-cli/` package per ADR
 the **pipeline agent definitions** (`claude-plugins/kampus-pipeline/agents/**`) added by ADR
 [0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
 since a gate/merge agent's own instructions are a self-weakening surface). Everything else — `apps/**`,
-**non**-guard `packages/**`, `.decisions/**`, `.patterns/**`, every prose doc `*.md` (the
+**non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
+clause below), `.patterns/**`, every prose doc `*.md` (the
 §DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
 auto-merges through its matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
 code-root `*.md` is non-blocking here yet rides `review-code`, not `review-doc`, per §DOC.)
@@ -1136,6 +1137,59 @@ The **0052 instruction-trust set** (root `CLAUDE.md`, `.claude/**`, `.decisions/
 `.patterns/**`) is a *different* set — what a reviewer must never *load*, an isolation
 concern, not a merge-blocking one. Keep them apart (review-code Step 2 spells out the
 distinction). This section governs **only** the merge-blocking / control-plane set above.
+
+### The guard-touching ADR predicate — a §CP membership test by CONTENT (ADR 0164)
+
+The path matcher above is **necessary but not sufficient**: a `.decisions/**` ADR that
+**relaxes, amends, or widens an exemption on a documented guard** is control-plane by *nature*
+(it weakens the pipeline's own guardrails — the exact class §CP exists to hold for human
+ratification), yet its **path** is indistinguishable from an ordinary ADR's. `.decisions/**` is
+otherwise non-blocking (it auto-merges on a `review-doc` PASS), so a guard-relaxing ADR would
+auto-ship past founder ratification with no mechanical hold — a control-plane fail-open (ADR
+[0164](https://github.com/kamp-us/phoenix/blob/main/.decisions/0164-guard-relaxing-adr-cp-gate.md),
+#2191).
+
+So §CP membership has a **second, content-inferred clause** for `.decisions/**` files, alongside
+the path `CONTROL_PLANE_RE`: a touched `.decisions/**` ADR whose **content cites or amends a
+documented guard** is §CP. The signal is **inferred from the ADR prose, never an author-declared
+tag** — an author-declared marker (`relaxes:` / `guard-change`) is self-defeating (the agent that
+lacks the discipline to hold the ADR also won't add the tag; ADR 0164 MECHANISM). The predicate is
+**deliberately conservative / fail-closed**: it over-matches on any guard-vocabulary mention
+(routing a merely-guard-*citing* ADR to a cheap human approval) rather than risk missing a
+guard-*relaxer* (which would auto-ship a weakened gate) — "you cannot relax a guard without naming
+it," so a content probe over guard vocabulary catches the class an author tag would let slip. This
+is the same fail-closed stance as §ZS / ADR 0092.
+
+The predicate is **single-sourced here** as one canonical regex — the same discipline that keeps
+`CONTROL_PLANE_RE` from drifting (ADR 0073 §6). Cite this line; do **not** re-hard-code the
+vocabulary. `validate-gate-path-drift.sh` locks `ship-it`'s copy byte-identical to this canonical.
+
+```
+GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'
+```
+
+```bash
+# §CP content clause (ADR 0164): a touched .decisions/** ADR whose CONTENT matches GUARD_ADR_RE is
+# §CP. Resolve GUARD_ADR_RE from origin/main at run time (like CONTROL_PLANE_RE, #981); read each
+# ADR's body at the PR head. FAIL CLOSED: an unreadable boundary ⇒ match-everything; an unreadable
+# ADR (delete/404) ⇒ §CP — never auto-ship an ADR that could not be read and proven guard-free.
+GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'
+GA_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^GUARD_ADR_RE=' | head -n1 || true)"
+if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched ADR is §CP
+HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+  [ -z "$adr" ] && continue
+  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
+  if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
+  elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
+done
+```
+
+A guard-touching ADR classifies **§CP for merge-authority** exactly like a path-§CP file:
+`ship-it` STOPS at `awaiting control-plane approval` until a current-head `@kamp-us/control-plane`
+approval is present (per POLICY, the founder's; ADR 0135). Its **verdict routing is unchanged** —
+it is still doc-class, `review-doc`-verified (this set governs *who merges*, not *which gate
+verifies*); the content clause adds only the merge-authority hold.
 
 ---
 

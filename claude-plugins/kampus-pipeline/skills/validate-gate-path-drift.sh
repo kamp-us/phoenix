@@ -100,6 +100,39 @@ for rel in $CONSUMERS; do
 	fi
 done
 
+# ── Invariant 1b: GUARD_ADR_RE copy matches §CP (ADR 0164) ──────────────────
+#
+# The guard-touching-ADR content predicate (ADR 0164, #2191) is single-sourced in §CP the
+# same way CONTROL_PLANE_RE is: one canonical GUARD_ADR_RE= line in gh-issue-intake-formats.md,
+# with ONE consumer copy in ship-it (its fail-closed reference literal). Lock the copy
+# byte-identical to §CP so the vocabulary can't drift between the source and ship-it.
+GA_CANONICAL=$(grep "^GUARD_ADR_RE=" "$FORMATS_MD" | head -n1 | sed 's/^GUARD_ADR_RE=//' || true)
+if [ -z "$GA_CANONICAL" ]; then
+	fail "§CP canonical GUARD_ADR_RE= not found in $FORMATS_MD — line must start with GUARD_ADR_RE= (ADR 0164)"
+else
+	ok "§CP canonical GUARD_ADR_RE extracted from gh-issue-intake-formats.md"
+	GA_MD="$skills_dir/ship-it/SKILL.md"
+	if [ ! -f "$GA_MD" ]; then
+		fail "ship-it/SKILL.md not found — cannot verify GUARD_ADR_RE copy"
+	else
+		GA_LINE=$(grep "GUARD_ADR_RE=" "$GA_MD" | head -n1 || true)
+		if [ -z "$GA_LINE" ]; then
+			fail "ship-it/SKILL.md: no GUARD_ADR_RE= line found — consumer must carry a copy matching §CP (ADR 0164)"
+		else
+			GA_STRIPPED="${GA_LINE#"${GA_LINE%%[![:space:]]*}"}"
+			GA_VAL="${GA_STRIPPED#GUARD_ADR_RE=}"
+			GA_VAL_CLEAN=$(printf '%s\n' "$GA_VAL" | sed "s/'[[:space:]]*#.*$/'/")
+			if [ "$GA_VAL_CLEAN" = "$GA_CANONICAL" ]; then
+				ok "ship-it/SKILL.md GUARD_ADR_RE matches §CP canonical"
+			else
+				fail "ship-it/SKILL.md GUARD_ADR_RE has drifted from §CP canonical
+  §CP:  $GA_CANONICAL
+  copy: $GA_VAL_CLEAN"
+			fi
+		fi
+	fi
+fi
+
 # ── Invariant 2: .claude/skills symlink agrees with marketplace source ───────
 #
 # .claude/skills -> ../claude-plugins/kampus-pipeline/skills
