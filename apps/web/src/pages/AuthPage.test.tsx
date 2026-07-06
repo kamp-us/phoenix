@@ -130,6 +130,37 @@ describe("AuthPage — signup→setUsername (#1888)", () => {
 		await waitFor(() => expect(screen.getByTestId("gate").textContent).toBe("clear"));
 	});
 
+	it("an empty signup submit shows Turkish validation and never reaches signUp (no browser-locale bubble)", async () => {
+		const setUsername = vi.fn(async () => ({error: null}));
+		renderAuth(setUsername);
+		switchToSignUp();
+		// noValidate → the browser suppresses its English constraint bubble, so an empty
+		// submit reaches onSubmit and the Turkish field message surfaces instead.
+		fireEvent.submit(screen.getByRole("button", {name: "hesap aç"}).closest("form")!);
+		await waitFor(() => screen.getByText("görünen ad gerekli"));
+		expect(signUpEmail).not.toHaveBeenCalled();
+	});
+
+	it("a malformed signup e-posta shows the Turkish format message, not an English bubble", async () => {
+		const setUsername = vi.fn(async () => ({error: null}));
+		renderAuth(setUsername);
+		switchToSignUp();
+		fireEvent.change(screen.getByLabelText("görünen ad"), {target: {value: "Elif Kaya"}});
+		fireEvent.change(screen.getByLabelText("e-posta"), {target: {value: "elif"}});
+		fireEvent.change(screen.getByLabelText("parola"), {target: {value: "hunter2hunter2"}});
+		fireEvent.submit(screen.getByRole("button", {name: "hesap aç"}).closest("form")!);
+		await waitFor(() => screen.getByText("geçerli bir e-posta gir"));
+		expect(signUpEmail).not.toHaveBeenCalled();
+	});
+
+	it("an empty sign-in submit shows Turkish validation and never reaches signIn", async () => {
+		const setUsername = vi.fn(async () => ({error: null}));
+		renderAuth(setUsername);
+		fireEvent.submit(screen.getByRole("button", {name: "devam et"}).closest("form")!);
+		await waitFor(() => screen.getByText("e-posta gerekli"));
+		expect(signInEmail).not.toHaveBeenCalled();
+	});
+
 	it("a blank username field never touches setUsername and never holds the gate", async () => {
 		const setUsername = vi.fn(async () => ({error: null}));
 		renderAuth(setUsername);
