@@ -25,10 +25,13 @@ test.describe("ProfilePage (/profile)", () => {
 		const creds = await signUp(page);
 		await bootstrapUsername(page);
 		await page.goto("/profile");
-		await expect(page.locator(".kp-profile__avatar")).toBeVisible();
-		await expect(page.locator(".kp-profile__name")).toContainText(creds.name);
-		await expect(page.locator(".kp-profile__handle")).toBeVisible();
-		await expect(page.locator(".kp-profile__stat")).toHaveCount(3);
+		// #2203: the header is now the shared `ProfileHeader` primitive
+		// (`kp-profile-header__*`), consumed by both /profile and /u/. Assert its
+		// stable testids / structure rather than the retired hand-derived classes.
+		await expect(page.locator(".kp-profile-header__avatar")).toBeVisible();
+		await expect(page.getByTestId("user-profile-display-name")).toContainText(creds.name);
+		await expect(page.getByTestId("user-profile-handle")).toBeVisible();
+		await expect(page.locator(".kp-profile-header__stat")).toHaveCount(3);
 		// email row should show the credential email
 		await expect(page.locator(".kp-profile__row.readonly .value")).toContainText(creds.email);
 
