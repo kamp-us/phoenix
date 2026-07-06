@@ -19,6 +19,7 @@ export function Topbar({
 	karma,
 	bildirim,
 	actions,
+	searchQuery = "",
 	onSearchSubmit,
 	onToggleTheme,
 	onLogout,
@@ -50,6 +51,13 @@ export function Topbar({
 	 */
 	bildirim?: {to: string; unread: number};
 	actions?: React.ReactNode;
+	/**
+	 * The active search query to echo in the header input on the results page
+	 * (#2199) — seeded from the URL `q` by the Layout only on `/search`, empty
+	 * elsewhere. It keys an uncontrolled `defaultValue` (below), so the field
+	 * stays freely editable and a query→query navigation re-seeds it.
+	 */
+	searchQuery?: string;
 	onSearchSubmit?: (query: string) => void;
 	onToggleTheme?: () => void;
 	onLogout?: () => void;
@@ -115,7 +123,16 @@ export function Topbar({
 					<circle cx="11" cy="11" r="7" />
 					<path d="m20 20-3.5-3.5" />
 				</svg>
-				<input ref={searchInputRef} name="q" placeholder="ara…" aria-label="Ara" />
+				{/* key + defaultValue: uncontrolled so it stays editable, yet a query→query
+				    navigation re-seeds the echoed value by remounting with the new default. */}
+				<input
+					key={searchQuery}
+					ref={searchInputRef}
+					name="q"
+					defaultValue={searchQuery}
+					placeholder="ara…"
+					aria-label="Ara"
+				/>
 				<kbd>⌘K</kbd>
 			</form>
 			{onToggleTheme ? (

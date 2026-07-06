@@ -207,3 +207,30 @@ describe("App first-paint invariants (#2177 — pins #2160 flash + #438 remount)
 		expect(fateMounts[0]?.key).toBe("anon");
 	});
 });
+
+// The header search box echoes the active query on the results page (#2199). The
+// box lives in the fate-free shell, so these render without settling the session.
+describe("Topbar search echo (#2199)", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+	});
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("echoes the URL q in the header search input on /search", () => {
+		renderApp("/search?q=elma");
+		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("elma");
+	});
+
+	it("reads q live — a different query renders a different echoed value (no stale/double source)", () => {
+		renderApp("/search?q=armut");
+		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("armut");
+	});
+
+	it("leaves the header input empty off the results page (unchanged behavior)", () => {
+		renderApp("/pano");
+		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("");
+	});
+});
