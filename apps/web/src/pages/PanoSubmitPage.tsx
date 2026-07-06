@@ -249,9 +249,9 @@ export function PanoSubmitPage() {
 					<Link to="/pano" className="kp-pano-submit__back">
 						← akışa dön
 					</Link>
-					<h1 className="kp-pano-submit__title">Bir şey paylaş</h1>
+					<h1 className="kp-pano-submit__title">bir şey paylaş</h1>
 					<p className="kp-pano-submit__lede">
-						Bağlantı, yazı, soru. Self-promo da olur — bir kere açıkla niye paylaşıyorsun.
+						bağlantı, yazı, soru. self-promo da olur — bir kere açıkla niye paylaşıyorsun.
 					</p>
 
 					<div className="kp-pano-submit__toggle">
