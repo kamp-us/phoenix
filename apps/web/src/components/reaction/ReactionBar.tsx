@@ -7,9 +7,16 @@
  * `aria-pressed`) when it is the viewer's current reaction. The parent owns the
  * mutation + auth gate ({@link useReactionBar}); this only renders the slots and
  * routes a tap to `onReact`.
+ *
+ * Each member renders as an on-brand monochrome line-icon ({@link ReactionGlyph}),
+ * not its raw OS emoji glyph (#2165): the icon paints in `currentColor` so it
+ * inherits the button's token (text, or accent when active) and renders identically
+ * across OSes — the palette SET is ADR 0139's, unchanged; only the rendering is
+ * controlled. The accessible name is ADR 0139's Turkish gloss (`slot.gloss`).
  */
 import type {ReactionEmoji} from "../../../worker/db/reaction-emoji";
 import type {ReactionAggregate} from "../../../worker/features/reaction/Reaction";
+import {ReactionGlyph} from "./ReactionGlyph";
 import {reactionSlots} from "./reactionModel";
 import "./ReactionBar.css";
 
@@ -32,11 +39,11 @@ export function ReactionBar({aggregate, onReact, testIdSuffix}: ReactionBarProps
 					type="button"
 					className="kp-reaction-bar__btn"
 					aria-pressed={slot.active}
-					aria-label={`${slot.emoji} tepki${slot.count ? ` (${slot.count})` : ""}`}
+					aria-label={`${slot.gloss}${slot.count ? ` (${slot.count})` : ""}`}
 					data-testid={`reaction-${slot.emoji}-${testIdSuffix}`}
 					onClick={() => onReact(slot.emoji)}
 				>
-					<span className="kp-reaction-bar__emoji">{slot.emoji}</span>
+					<ReactionGlyph emoji={slot.emoji} />
 					{slot.count > 0 ? (
 						<span
 							className="kp-reaction-bar__count"

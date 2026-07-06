@@ -28,9 +28,26 @@ export interface OptimisticReactionAggregate {
 	myReaction: ReactionEmoji | null;
 }
 
-/** One palette slot as the bar renders it: the emoji, its aggregate count, and whether it is the viewer's current reaction. */
+/**
+ * The Turkish reaction glosses fixed by ADR 0139 — one per palette member, in the
+ * same affective order. This is the single in-code seed of the ADR's gloss table;
+ * the bar uses it as each reaction's accessible name (ARIA label) so a screen
+ * reader announces "beğendim" / "sevdim" / … rather than the raw glyph. Keyed by
+ * the canonical `REACTION_EMOJI` member so it can never drift from the palette.
+ */
+export const REACTION_GLOSS: Record<ReactionEmoji, string> = {
+	"👍": "beğendim",
+	"❤️": "sevdim",
+	"😂": "güldüm",
+	"🤔": "düşündürdü",
+	"😢": "üzüldüm",
+	"🔥": "efsane",
+};
+
+/** One palette slot as the bar renders it: the emoji, its Turkish gloss, its aggregate count, and whether it is the viewer's current reaction. */
 export interface ReactionSlot {
 	readonly emoji: ReactionEmoji;
+	readonly gloss: string;
 	readonly count: number;
 	readonly active: boolean;
 }
@@ -51,6 +68,7 @@ export function reactionSlots(aggregate: ReactionAggregate | undefined | null): 
 	const countOf = new Map<string, number>(agg.counts.map((c) => [c.emoji, c.count]));
 	return REACTION_EMOJI.map((emoji) => ({
 		emoji,
+		gloss: REACTION_GLOSS[emoji],
 		count: countOf.get(emoji) ?? 0,
 		active: agg.myReaction === emoji,
 	}));

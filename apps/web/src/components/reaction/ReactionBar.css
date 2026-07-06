@@ -1,6 +1,9 @@
-/* ReactionBar — the curated-palette emoji tepki bar (#1867), reused across pano
+/* ReactionBar — the curated-palette tepki bar (#1867), reused across pano
    post/comment + sözlük definition cards. A horizontal row of palette buttons;
-   the viewer's current reaction is highlighted via [aria-pressed="true"]. */
+   each member renders as an on-brand monochrome line-icon (#2165), not a raw OS
+   emoji glyph, so the affordance renders identically across OSes and coheres with
+   the monochrome-plus-accent palette. The viewer's current reaction is highlighted
+   via [aria-pressed="true"] (accent color + border). */
 
 :root {
 	/* One row of --t-meta buttons: line-height 1.6×11px + 2×1px padding + 2×1px
@@ -9,6 +12,9 @@
 	   down when it appears (#2054). The reserved slot (.kp-reaction-slot) and the
 	   mounted bar share this one source of truth so the reservation is exact. */
 	--reaction-bar-height: 22px;
+	/* The on-brand line-icon glyph box (#2165) — sized to sit on the --t-meta
+	   text baseline, one source of truth for every palette member. */
+	--reaction-glyph-size: 14px;
 }
 
 /* Reserved height for the reaction slot, held while the phoenix-reactions gate
@@ -52,10 +58,18 @@
 .kp-reaction-bar__btn[aria-pressed="true"] {
 	border-color: var(--accent);
 	background: var(--accent-soft, var(--surface-sunken));
+	/* The glyph paints in currentColor, so tinting the active button accent tints
+	   the icon too — the viewer's own reaction reads as the accent, on-brand. */
+	color: var(--accent);
 }
 
-.kp-reaction-bar__emoji {
-	font-size: 1em;
+/* The on-brand line-icon: paints in currentColor (inherits the button's token —
+   text by default, accent when active) and sizes off the glyph token, so no color
+   or size literal lives on the glyph (#2165). */
+.kp-reaction-bar__glyph {
+	width: var(--reaction-glyph-size);
+	height: var(--reaction-glyph-size);
+	flex: none;
 }
 
 .kp-reaction-bar__count {
