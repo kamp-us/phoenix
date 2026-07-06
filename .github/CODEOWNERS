@@ -14,6 +14,7 @@
 /claude-plugins/kampus-pipeline/skills/review-code/                @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/review-doc/                 @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/review-skill/               @kamp-us/control-plane
+/claude-plugins/kampus-pipeline/skills/review-design/              @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/review-plan/                @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md  @kamp-us/control-plane
 # Control-plane: the pipeline agent definitions — the behavior of the very agents that run the
