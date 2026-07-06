@@ -130,7 +130,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						type="button"
 						className={`kp-comment__upvote ${voted ? "kp-comment__upvote--active" : ""}`}
 						aria-pressed={voted}
-						aria-label="Yukarı oy"
+						aria-label={voted ? "Oyunu geri al" : "Yukarı oy"}
 						onClick={onUpvote}
 						data-testid={`comment-vote-${localId}`}
 					>

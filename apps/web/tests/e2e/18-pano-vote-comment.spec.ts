@@ -88,20 +88,25 @@ test.describe("Pano voteOnComment", () => {
 		await expect(voteBtn).toBeVisible({timeout: 5_000});
 		await expectScoreConsistent(page, score, "0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
+		// a11y: the accessible name toggles with vote state (#2215).
+		await expect(voteBtn).toHaveAttribute("aria-label", "Yukarı oy");
 
 		// Cast vote — optimistic flip lands first.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true", {timeout: 5_000});
+		await expect(voteBtn).toHaveAttribute("aria-label", "Oyunu geri al");
 
 		// Retract.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
+		await expect(voteBtn).toHaveAttribute("aria-label", "Yukarı oy");
 
 		// Re-vote.
 		await voteBtn.click();
 		await expectScoreConsistent(page, score, "1");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true");
+		await expect(voteBtn).toHaveAttribute("aria-label", "Oyunu geri al");
 	});
 });
