@@ -227,6 +227,12 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		rationale: "mutates the caller's identity row — no fanned content entity",
 	},
 	{
+		key: "user.setDisplayName",
+		fanned: false,
+		rationale:
+			"write-through of the display name to the caller's `user`/`user_profile` identity rows (#2154) — not a Post/Comment/Definition write; bylines re-resolve live identity on the next read via `stampAuthorIdentity`, and the caller's own `User` view reconciles over the global User pin, so no content connection is fanned",
+	},
+	{
 		key: "account.delete",
 		fanned: false,
 		rationale: "deletes the caller's account — identity, not a fanned content entity",

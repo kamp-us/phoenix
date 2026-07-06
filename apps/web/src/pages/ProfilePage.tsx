@@ -1,5 +1,7 @@
 import {useEffect, useRef, useState} from "react";
+import {useFateClient, view} from "react-fate";
 import {Navigate} from "react-router";
+import type {User} from "../../worker/features/fate/views";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
 import {Karma} from "../components/karma/Karma";
@@ -12,6 +14,15 @@ import {useFlag} from "../flags/useFlag";
 import {type ThemeChoice, useTheme} from "../lib/theme";
 import {useProfileStats} from "./useProfileStats";
 import "./ProfilePage.css";
+
+/** The `User` write-back selection for the `setDisplayName` result. */
+const SetDisplayNameView = view<User>()({
+	id: true,
+	email: true,
+	name: true,
+	image: true,
+	username: true,
+});
 
 function initialsOf(name: string) {
 	return name
@@ -26,7 +37,8 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function ProfilePage() {
 	const session = useSession();
-	const {me, status: meStatus} = useMe();
+	const {me, status: meStatus, refetch: refetchMe} = useMe();
+	const fate = useFateClient();
 	const statsState = useProfileStats(me?.username);
 	// Reinforce the owner's own karma on their identity mirror, dark behind the
 	// authorship-loop flag (#1208). Flag off → no karma stat, profile as today.
@@ -82,16 +94,31 @@ export function ProfilePage() {
 	const trimmed = draftName.trim();
 	const canSave = saveState !== "saving" && trimmed.length > 0 && trimmed !== name;
 
+	// Save the görünen ad through the WORKER mutation, not `authClient.updateUser`
+	// (#2154): `user.setDisplayName` writes `user.name` AND the stamped
+	// `user_profile.display_name` in lockstep, so a rename reaches every author
+	// byline. `authClient.updateUser` only touched better-auth `user.name`, which
+	// never propagated to the stamped column — the one-shot-sync bug. Refetch `me`
+	// (the canonical header row) and the session (better-auth's cached `user.name`)
+	// so both surfaces show the saved name.
 	async function onSaveName() {
 		const next = draftName.trim();
 		if (!next || next === name) return;
 		setSaveState("saving");
-		const {error} = await authClient.updateUser({name: next});
-		if (error) {
+		try {
+			const {error} = await fate.mutations.user.setDisplayName({
+				input: {value: next},
+				view: SetDisplayNameView,
+			});
+			if (error) {
+				setSaveState("error");
+				return;
+			}
+		} catch {
 			setSaveState("error");
 			return;
 		}
-		await session.refetch();
+		await Promise.all([refetchMe(), session.refetch()]);
 		setSaveState("saved");
 	}
 

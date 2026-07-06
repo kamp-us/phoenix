@@ -55,6 +55,7 @@ import {
 	UrlInvalid,
 } from "../pano/errors.ts";
 import {
+	DisplayNameEmpty,
 	UserNotFound,
 	UsernameAlreadySet,
 	UsernameInvalidFormat,
@@ -110,6 +111,7 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	[UsernameTaken, "TAKEN"],
 	[UsernameAlreadySet, "ALREADY_SET"],
 	[UserNotFound, "USER_NOT_FOUND"],
+	[DisplayNameEmpty, "DISPLAY_NAME_EMPTY"],
 	// künye moderation gate + the package-side gate the SPA already decodes for writes
 	[Denied, "UNAUTHORIZED"],
 	[Unauthorized, "UNAUTHORIZED"],
@@ -160,6 +162,7 @@ const ROUND_TRIP_CLASSES = [
 	UsernameInvalidFormat,
 	UsernameTooShort,
 	UsernameTooLong,
+	DisplayNameEmpty,
 	Denied,
 	Unauthorized,
 ] as const satisfies ReadonlyArray<new (props: {message: string}) => unknown>;

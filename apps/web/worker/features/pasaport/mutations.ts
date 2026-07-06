@@ -11,6 +11,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
 import {notifyKefil, notifyPromotion} from "../bildirim/rite-emitters.ts";
+import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
@@ -18,7 +19,14 @@ import {Moderate, requireModeration} from "../kunye/moderate.ts";
 import {VOUCH_CONCURRENT_CAP} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {requireVouch, Vouch, voucherOf} from "../kunye/vouch.ts";
-import {UserNotFound, UsernameAlreadySet, UsernameInvalidErrors, UsernameTaken} from "./errors.ts";
+import {
+	DisplayNameEmpty,
+	UserNotFound,
+	UsernameAlreadySet,
+	UsernameInvalidErrors,
+	UsernameTaken,
+} from "./errors.ts";
+import {pasaportLive} from "./live.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {publishPromotion} from "./promote-live.ts";
 import {toAccountDeletionReceipt, toPromotionReceipt} from "./shapers.ts";
@@ -38,6 +46,10 @@ const authorshipLoopOn = Effect.gen(function* () {
 });
 
 const SetUsernameInput = Schema.Struct({
+	value: Schema.String,
+});
+
+const SetDisplayNameInput = Schema.Struct({
 	value: Schema.String,
 });
 
@@ -98,6 +110,49 @@ export const mutations = {
 				image: result.image,
 				username: result.username,
 			});
+		}),
+	),
+
+	// Change the görünen ad (display name). The write-through half of #2154:
+	// `Pasaport.setDisplayName` updates `user.name` AND `user_profile.display_name`
+	// in lockstep, so a display-name edit reaches the stamped column every author
+	// byline reads (the one-shot-sync defect: display_name was only ever written at
+	// setUsername-time). `CurrentUser.required` gates it (anonymous → `UNAUTHORIZED`);
+	// the target is ALWAYS the caller (`user.id`), never an arg, so renaming someone
+	// else is unrepresentable. Domain validation (empty-name floor) lives in the
+	// service (ADR 0013).
+	//
+	// Publishes a `User` entity reconcile so the owner's OWN open profile/`User` view
+	// (the app-lifetime global live pin, ADR 0094 — `User.id === CurrentUser.id`)
+	// reflects the new name over `/fate/live` without a reload — the same channel
+	// `publishPromotion` uses for a tier flip. This is NOT a fanned-content publish:
+	// the write touches the identity row, not a Post/Comment/Definition, so it is
+	// classified `fanned: false` in the manifest. Denormalized bylines re-resolve
+	// their live identity on the next read (`stampAuthorIdentity`), never over a
+	// per-content live frame. Infallible (publisher error channel is `never`).
+	"user.setDisplayName": Fate.mutation(
+		{
+			input: SetDisplayNameInput,
+			type: UserView,
+			error: Schema.Union([Unauthorized, DisplayNameEmpty, UserNotFound]),
+		},
+		Effect.fn("user.setDisplayName")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const pasaport = yield* Pasaport;
+			const result = yield* pasaport.setDisplayName({userId: user.id, value: input.value});
+			const trusted = yield* toTrustedUser({
+				id: result.userId,
+				email: user.email,
+				name: result.displayName,
+				image: result.image,
+				username: result.username,
+			});
+			// `trusted` is already the wire `User` (`toTrustedUser` → `toUser`), so publish
+			// it inline as the reconcile data — the same byte-identical shape a fresh fetch
+			// yields, masked per-client (the inline-data contract).
+			const live = pasaportLive(yield* WorkerLivePublisher);
+			yield* live.user.update(result.userId, {changed: ["name"], data: trusted});
+			return trusted;
 		}),
 	),
 

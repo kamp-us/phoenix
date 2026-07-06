@@ -67,3 +67,14 @@ export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
 	},
 	{[FateWireCode]: "USER_NOT_FOUND"},
 ) {}
+
+// A display-name change with an empty (or whitespace-only) value. The görünen-ad
+// save is the sole caller; the SPA input is `required` + trimmed, so this is the
+// server-authoritative floor against a blank submit — never a byline-blanking write.
+export class DisplayNameEmpty extends Schema.TaggedErrorClass<DisplayNameEmpty>()(
+	"pasaport/DisplayNameEmpty",
+	{
+		message: Schema.String,
+	},
+	{[FateWireCode]: "DISPLAY_NAME_EMPTY"},
+) {}

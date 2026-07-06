@@ -50,6 +50,7 @@ export const WIRE_MESSAGES: Record<FateWireCode, string> = {
 	ALREADY_SET: "zaten ayarlanmış",
 	TAKEN: "bu değer alınmış",
 	USER_NOT_FOUND: "kullanıcı bulunamadı",
+	DISPLAY_NAME_EMPTY: "görünen ad boş olamaz",
 	BAD_REQUEST: "geçersiz istek",
 	INTERNAL_SERVER_ERROR: "bir şeyler ters gitti, lütfen tekrar dene",
 };

@@ -70,6 +70,10 @@ export const FATE_WIRE_CODES = [
 	"ALREADY_SET",
 	"TAKEN",
 	"USER_NOT_FOUND",
+	// A görünen-ad (display-name) save submitted an empty/whitespace-only value
+	// (`pasaport/DisplayNameEmpty`, #2154) — the server-authoritative floor the
+	// worker `user.setDisplayName` write-through raises against a blank byline.
+	"DISPLAY_NAME_EMPTY",
 	"BAD_REQUEST",
 	"INTERNAL_SERVER_ERROR",
 ] as const;
