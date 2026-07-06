@@ -13,6 +13,7 @@ import {Subnav} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
+import {EmptyState} from "../components/ui/EmptyState";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import {
@@ -149,19 +150,26 @@ function FeedRows({
 			    go inert (`aria-busy`), so the swap reads as "loading the next sort" rather
 			    than a frozen screen — the `startTransition` in the parent keeps them here
 			    instead of unmounting to the skeleton (#2161). */}
-			<div
-				className="kp-pano-list"
-				aria-busy={pending}
-				style={
-					pending
-						? {opacity: 0.6, transition: "opacity var(--motion-base) var(--ease-standard)"}
-						: undefined
-				}
-			>
-				{items.map(({node}, i) => (
-					<PanoPostCard key={node.id} post={node} rank={i + 1} />
-				))}
-			</div>
+			{items.length === 0 && !pending ? (
+				<EmptyState
+					title={host ? `${host} için henüz başlık yok.` : "henüz başlık yok."}
+					description="ilk başlığı sen aç — pano seni bekliyor."
+				/>
+			) : (
+				<div
+					className="kp-pano-list"
+					aria-busy={pending}
+					style={
+						pending
+							? {opacity: 0.6, transition: "opacity var(--motion-base) var(--ease-standard)"}
+							: undefined
+					}
+				>
+					{items.map(({node}, i) => (
+						<PanoPostCard key={node.id} post={node} rank={i + 1} />
+					))}
+				</div>
+			)}
 			{loadNext ? (
 				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>
 					<LoadMoreButton loadNext={loadNext} />
