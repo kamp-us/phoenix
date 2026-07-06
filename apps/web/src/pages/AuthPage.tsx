@@ -3,6 +3,7 @@ import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
 import {authClient} from "../auth/client";
 import {codeOf} from "../fate/wire";
+import {validateEmail, validateName, validatePassword, validateSignIn} from "./authValidation";
 import {beginUsernameResolution, endUsernameResolution} from "./signupUsernameGate";
 import {localRuleMessage, messageForCode} from "./usernameMessages";
 import "./AuthPage.css";
@@ -85,12 +86,18 @@ export function AuthPage() {
 		setError(null);
 
 		if (isSignIn) {
+			const email = String(data.get("email") ?? "");
+			const password = String(data.get("password") ?? "");
+			// Form is `noValidate` — drive the required/format checks in Turkish through
+			// the `kp-auth__error` surface instead of the browser's locale-default bubble.
+			const fieldError = validateSignIn(email, password);
+			if (fieldError) {
+				setError(fieldError);
+				return;
+			}
 			setPending(true);
 			try {
-				const result = await authClient.signIn.email({
-					email: String(data.get("email") ?? ""),
-					password: String(data.get("password") ?? ""),
-				});
+				const result = await authClient.signIn.email({email, password});
 				if (result.error) setError(result.error.message ?? "giriş başarısız");
 			} finally {
 				setPending(false);
@@ -98,6 +105,9 @@ export function AuthPage() {
 			return;
 		}
 
+		const name = String(data.get("name") ?? "");
+		const email = String(data.get("email") ?? "");
+		const password = String(data.get("password") ?? "");
 		// Username is optional at signup; when present it must pass the same rule the
 		// server enforces (`assertUsername`). Pre-flight here so a bad handle never
 		// creates the account, then surfaces as a confusing post-signup failure.
@@ -105,21 +115,23 @@ export function AuthPage() {
 		const username = String(data.get("username") ?? "")
 			.trim()
 			.toLowerCase();
-		if (username) {
-			const ruleError = localRuleMessage(username);
-			if (ruleError) {
-				setError(ruleError);
-				return;
-			}
+
+		// Form is `noValidate` — validate the required/format constraints in Turkish
+		// through the `kp-auth__error` surface (no browser-locale bubble), in visual
+		// field order: görünen ad → e-posta → kullanıcı adı → parola.
+		const fieldError =
+			validateName(name) ??
+			validateEmail(email) ??
+			(username ? localRuleMessage(username) : null) ??
+			validatePassword(password, "sign-up");
+		if (fieldError) {
+			setError(fieldError);
+			return;
 		}
 
 		setPending(true);
 		try {
-			const result = await authClient.signUp.email({
-				name: String(data.get("name") ?? ""),
-				email: String(data.get("email") ?? ""),
-				password: String(data.get("password") ?? ""),
-			});
+			const result = await authClient.signUp.email({name, email, password});
 			if (result.error) {
 				setError(result.error.message ?? "kayıt başarısız");
 				return;
@@ -210,7 +222,7 @@ export function AuthPage() {
 						girer.
 					</p>
 				) : null}
-				<form className="kp-auth__form" onSubmit={onSubmit}>
+				<form className="kp-auth__form" onSubmit={onSubmit} noValidate>
 					{!isSignIn ? (
 						<div className="kp-auth__field">
 							<label htmlFor="auth-name">görünen ad</label>
