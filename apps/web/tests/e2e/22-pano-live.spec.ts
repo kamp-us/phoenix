@@ -75,23 +75,29 @@ test.describe("Pano live (two clients)", () => {
 
 		try {
 			const {email: emailA} = await signUpAndBootstrap(pageA);
-			await signUpAndBootstrap(pageB);
-			// A casts a post-vote below; the anti-manipulation vote-gate (#1828/#1810)
-			// rejects a fresh çaylak's vote, so promote A to yazar first (ADR 0137).
+			const {email: emailB} = await signUpAndBootstrap(pageB);
+			// A casts a post-vote on B's post below. Self-voting is blocked (#2216), so the
+			// voter can't author the target: B creates the post, A votes it. Promote A past the
+			// anti-manipulation vote-gate (#1828/#1810, ADR 0137) and B so its post is live
+			// (not sandboxed) and thus votable.
 			await promoteToYazar(emailA);
+			await promoteToYazar(emailB);
 
-			// Client A creates the post all live action targets.
+			// Client B creates the post all live action targets and stays on its detail view —
+			// its live SSE connection + comments/header subscriptions are the observer.
 			const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 			const title = `live target ${stamp}`;
-			const postPath = await submitPost(pageA, title);
-
-			// Client B opens the same post and waits for its detail view to settle
-			// (opens the live SSE connection + subscribes the comments list + header).
-			await pageB.goto(postPath);
-			await expect(pageB.getByRole("heading", {level: 1})).toContainText(title, {
+			const postPath = await submitPost(pageB, title);
+			await expect(pageB.locator(".kp-pano-postpage__thread-heading")).toHaveText("0 yorum", {
 				timeout: 10_000,
 			});
-			await expect(pageB.locator(".kp-pano-postpage__thread-heading")).toHaveText("0 yorum", {
+
+			// Client A opens the same post to act on it (comment + vote).
+			await pageA.goto(postPath);
+			await expect(pageA.getByRole("heading", {level: 1})).toContainText(title, {
+				timeout: 10_000,
+			});
+			await expect(pageA.locator('[data-testid="pano-comment-input"]')).toBeVisible({
 				timeout: 10_000,
 			});
 
@@ -134,17 +140,20 @@ test.describe("Pano live (two clients)", () => {
 
 		try {
 			const {email: emailA} = await signUpAndBootstrap(pageA);
-			await signUpAndBootstrap(pageB);
-			// A casts post-votes below; the anti-manipulation vote-gate (#1828/#1810)
-			// rejects a fresh çaylak's vote, so promote A to yazar first (ADR 0137).
+			const {email: emailB} = await signUpAndBootstrap(pageB);
+			// A casts post-votes on B's post below. Self-voting is blocked (#2216), so the
+			// voter can't author the target: B creates the post, A votes it. Promote A past the
+			// anti-manipulation vote-gate (#1828/#1810, ADR 0137) and B so its post is live/votable.
 			await promoteToYazar(emailA);
+			await promoteToYazar(emailB);
 
 			const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 			const title = `reconnect target ${stamp}`;
-			const postPath = await submitPost(pageA, title);
+			const postPath = await submitPost(pageB, title);
 
-			await pageB.goto(postPath);
-			await expect(pageB.getByRole("heading", {level: 1})).toContainText(title, {timeout: 10_000});
+			// A opens B's post to cast the votes; B stays on its own detail view as the observer.
+			await pageA.goto(postPath);
+			await expect(pageA.getByRole("heading", {level: 1})).toContainText(title, {timeout: 10_000});
 
 			// A votes WHILE B is "away" (the reload below tears down B's SSE stream
 			// and rebuilds it). v1 resumes live-only — the event A sends during the

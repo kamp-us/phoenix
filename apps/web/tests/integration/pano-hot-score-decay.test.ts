@@ -67,6 +67,7 @@ const HOST = `hot-decay-${Date.now().toString(36)}.example.com`;
 const HOUR_MS = 3_600_000;
 
 let author: {userId: string; cookie: string};
+let voter: {userId: string; cookie: string};
 
 /** Submit a real post under `HOST` over `/fate`; return its id. */
 async function seedPost(title: string): Promise<string> {
@@ -131,9 +132,12 @@ async function realRefreshHotScores() {
 
 beforeAll(async () => {
 	author = await h.signUp("hot-decay-author@test.local", "hunter2hunter2", "hot-decay-yazar");
-	// A fresh account is a çaylak and is rejected at cast (#1810's "earn to vote" gate);
-	// the stale post is voted below to earn its young-high frozen score, so promote first.
+	// The fresher post is voted below by a non-author (`voter`) — self-voting is blocked
+	// (#2216) — to earn its young-high frozen score. A fresh account is a çaylak rejected at
+	// cast (#1810's "earn to vote" gate), so promote both.
+	voter = await h.signUp("hot-decay-voter@test.local", "hunter2hunter2", "hot-decay-oycu");
 	await h.promoteToYazar(author.userId);
+	await h.promoteToYazar(voter.userId);
 });
 
 describe("pano sıcak/hot decay-refresh (#2027 AC4) — the stored-column read → window → write-back", () => {
@@ -143,9 +147,10 @@ describe("pano sıcak/hot decay-refresh (#2027 AC4) — the stored-column read �
 
 		// The fresher post earns a young-high stored score by voting it while age≈0 — the
 		// live activity path, score 1 → `hot_score = computeHotScore(1, now, now)` = 287.
+		// Cast by a non-author (self-voting is blocked, #2216).
 		const voted = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id: fresherId}, select: ["id", "score"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;

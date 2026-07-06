@@ -61,15 +61,19 @@ type Connection<N> = {
 
 let author: {userId: string; cookie: string};
 let intruder: {userId: string; cookie: string};
+let voter: {userId: string; cookie: string};
 
 const DEF_SELECT = ["id", "body", "score", "author", "authorId", "myVote"];
 
 beforeAll(async () => {
 	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
 	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", "davetsiz");
-	// `author` casts real definition votes below. Since #1810's "earn to vote" gate a fresh
-	// çaylak is rejected at cast, so promote it to yazar. `intruder` never votes.
+	voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "oycu");
+	// `voter` casts every real definition vote below — self-voting is blocked since #2216, so
+	// the caster is never the definition's author. Since #1810's "earn to vote" gate a fresh
+	// çaylak is rejected at cast, so promote both. `intruder` never votes.
 	await h.promoteToYazar(author.userId);
+	await h.promoteToYazar(voter.userId);
 });
 
 describe("sozluk mutations — definition.add", () => {
@@ -180,7 +184,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 
 		const voted = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id}, select: ["score", "myVote"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
@@ -194,7 +198,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 				input: {id},
 				select: ["score", "myVote"],
 			},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(retracted.ok).toBe(true);
 		if (!retracted.ok) return;
@@ -255,7 +259,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 
 		const voted = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id}, select: ["score", "updatedAt"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
@@ -298,7 +302,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 
 		const first = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id}, select: ["score", "myVote"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(first.ok).toBe(true);
 		if (!first.ok) return;
@@ -306,7 +310,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 
 		const second = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id}, select: ["score", "myVote"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(second.ok).toBe(true);
 		if (!second.ok) return;
@@ -335,7 +339,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 				input: {id},
 				select: ["score", "myVote"],
 			},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
@@ -359,15 +363,15 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 
 		await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id}, select: ["score"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		await h.fate(
 			{kind: "mutation", name: "definition.retractVote", input: {id}, select: ["score"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		const final = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id}, select: ["score", "myVote"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(final.ok).toBe(true);
 		if (!final.ok) return;
@@ -494,10 +498,11 @@ describe("sozluk mutations — definition.delete", () => {
 		if (!b.ok) return;
 		const survivorId = (b.data as DefNode).id;
 
-		// Vote the doomed definition so totalScore is observably 1 before delete.
+		// Vote the doomed definition (as a non-author — self-vote is blocked, #2216) so
+		// totalScore is observably 1 before delete.
 		await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id: aId}, select: ["score"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 
 		const before = await h.fate({

@@ -51,7 +51,9 @@ let savedOnly = "";
 /** A post the viewer neither votes nor saves. */
 let neutral = "";
 
-/** Submit a post under the viewer cookie on the shared feed host; return its id. */
+// Posts are authored by `other`, not the `viewer`: since #2216 blocks self-voting, the
+// viewer's fixture votes below have to land on content it did not write.
+/** Submit a post under the author (`other`) cookie on the shared feed host; return its id. */
 async function seedPost(title: string): Promise<string> {
 	const r = await h.fate(
 		{
@@ -60,7 +62,7 @@ async function seedPost(title: string): Promise<string> {
 			input: {title, url: `https://${FEED_HOST}/${title}`, tags: [{kind: "tartışma"}]},
 			select: ["id"],
 		},
-		{cookie: viewer.cookie},
+		{cookie: other.cookie},
 	);
 	expect(r.ok).toBe(true);
 	if (!r.ok) throw new Error("seedPost failed");
@@ -86,9 +88,12 @@ async function feed(cookie?: string): Promise<Map<string, PostNode>> {
 beforeAll(async () => {
 	viewer = await h.signUp(`${NS}-viewer@test.local`, "hunter2hunter2", "izleyen");
 	other = await h.signUp(`${NS}-other@test.local`, "hunter2hunter2", "öteki");
-	// `viewer` casts real post votes below (voted/voted-saved fixtures). Since #1810's
-	// "earn to vote" gate a fresh çaylak is rejected at cast, so promote it to yazar.
+	// `viewer` casts real post votes below (voted/voted-saved fixtures) on posts `other`
+	// authored — self-voting is blocked (#2216), so the caster is never the author. Since
+	// #1810's "earn to vote" gate a fresh çaylak is rejected at cast, promote the voter; and
+	// promote `other` so its authored posts are live (not sandboxed) and thus votable/feed-visible.
 	await h.promoteToYazar(viewer.userId);
+	await h.promoteToYazar(other.userId);
 
 	votedSaved = await seedPost(`${NS}-voted-saved`);
 	votedOnly = await seedPost(`${NS}-voted-only`);

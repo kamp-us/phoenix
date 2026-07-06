@@ -64,6 +64,7 @@ const HOST = `hot-backfill-${Date.now().toString(36)}.example.com`;
 const HOUR_MS = 3_600_000;
 
 let author: {userId: string; cookie: string};
+let voter: {userId: string; cookie: string};
 
 async function seedPost(title: string): Promise<string> {
 	const r = await h.fate(
@@ -127,7 +128,11 @@ async function realOps() {
 
 beforeAll(async () => {
 	author = await h.signUp("hot-backfill-author@test.local", "hunter2hunter2", "hot-backfill-yazar");
+	// `voter` casts the fresher post's live vote below — self-voting is blocked (#2216), so the
+	// caster is never the author; both need yazar to clear the #1810 "earn to vote" gate.
+	voter = await h.signUp("hot-backfill-voter@test.local", "hunter2hunter2", "hot-backfill-oycu");
 	await h.promoteToYazar(author.userId);
+	await h.promoteToYazar(voter.userId);
 });
 
 describe("pano sıcak/hot one-time backfill (#2131) — the windowless recompute reaches rows OUTSIDE 72h", () => {
@@ -135,10 +140,11 @@ describe("pano sıcak/hot one-time backfill (#2131) — the windowless recompute
 		const staleId = await seedPost("stale-outside-window");
 		const fresherId = await seedPost("fresher-inside-window");
 
-		// The fresher post earns a young-high stored score via the live vote path.
+		// The fresher post earns a young-high stored score via the live vote path (cast by a
+		// non-author — self-voting is blocked, #2216).
 		const voted = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id: fresherId}, select: ["id", "score"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
