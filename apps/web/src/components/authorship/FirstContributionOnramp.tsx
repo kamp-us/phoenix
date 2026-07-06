@@ -13,23 +13,22 @@
  * view, never the untrusted better-auth session field.
  *
  * It does NOT touch the surface's draft autosave (#1214) — the on-ramp only
- * nudges + focuses the composer, so in-progress writing survives the auth
- * round-trip exactly as before.
+ * frames the composer sitting right below it, so in-progress writing survives the
+ * auth round-trip exactly as before. It carries no CTA: the composer it would
+ * "lead" to is already rendered and interactive, so a button that merely focused
+ * it was a doubled affordance (#2208) — the honest-framing header is the whole job.
  *
- * a11y: a labelled `<section>` region (`aria-labelledby` → its own heading), a
- * real `<h2>` (not div-soup), an optional native `<Button>` (full keyboard path +
- * visible focus + AA contrast from the shared button styles); meaning is carried
- * by text, never color alone; copy is lowercase Turkish (çaylak/yazar/karma are
- * brand nouns); no animation — reduced-motion-safe by default, and the global
- * `prefers-reduced-motion` reset (styles/global.css) neutralizes any inherited
- * transition.
+ * a11y: a labelled `<section>` region (`aria-labelledby` → its own heading) and a
+ * real `<h2>` (not div-soup); meaning is carried by text, never color alone; copy
+ * is lowercase Turkish (çaylak/yazar/karma are brand nouns); no animation —
+ * reduced-motion-safe by default, and the global `prefers-reduced-motion` reset
+ * (styles/global.css) neutralizes any inherited transition.
  */
 import {useId} from "react";
 import type {Tier} from "../../../worker/features/kunye/standing";
 import {useMe} from "../../auth/useMe";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
-import {Button} from "../ui/Button";
 import "./FirstContributionOnramp.css";
 
 /** The write surface the on-ramp sits on — selects the per-surface copy noun. */
@@ -46,25 +45,19 @@ export function shouldShowOnramp(flagOn: boolean, tier: Tier | undefined): boole
 	return flagOn && tier === "çaylak";
 }
 
-/** Per-surface lowercase-Turkish heading + CTA label. The body copy is shared. */
-export function onrampCopy(surface: OnrampSurface): {heading: string; cta: string} {
+/** Per-surface lowercase-Turkish heading. The body copy is shared. */
+export function onrampCopy(surface: OnrampSurface): {heading: string} {
 	return surface === "sozluk"
-		? {heading: "ilk tanımını yazmaya hazırsın", cta: "ilk tanımını yaz"}
-		: {heading: "ilk gönderini paylaşmaya hazırsın", cta: "ilk gönderini yaz"};
+		? {heading: "ilk tanımını yazmaya hazırsın"}
+		: {heading: "ilk gönderini paylaşmaya hazırsın"};
 }
 
 export interface FirstContributionOnrampProps {
 	/** The write surface — picks the copy noun. */
 	readonly surface: OnrampSurface;
-	/**
-	 * Optional "start writing" handler — the page wires it to focus its composer
-	 * field, so the CTA actually guides to the first contribution. Omitted ⇒ no
-	 * CTA button (the honest framing still renders).
-	 */
-	readonly onStart?: () => void;
 }
 
-export function FirstContributionOnramp({surface, onStart}: FirstContributionOnrampProps) {
+export function FirstContributionOnramp({surface}: FirstContributionOnrampProps) {
 	// Fail-closed default `false`: every flag failure mode (loading/error/undeclared)
 	// degrades to today's behavior.
 	const {value: flagOn} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
@@ -88,19 +81,6 @@ export function FirstContributionOnramp({surface, onStart}: FirstContributionOnr
 				incelenir — hemen herkese görünmez. yazıp katkı verdikçe karma toplar, bir yazarın
 				desteğiyle yazar olursun; o zaman yazdıkların doğrudan yayına girer.
 			</p>
-			{onStart ? (
-				<div className="kp-onramp__actions">
-					<Button
-						type="button"
-						variant="secondary"
-						size="sm"
-						onClick={onStart}
-						data-testid="first-contribution-onramp-start"
-					>
-						{copy.cta}
-					</Button>
-				</div>
-			) : null}
 		</section>
 	);
 }

@@ -112,8 +112,6 @@ export function PanoSubmitPage() {
 	}
 	const urlRef = React.useRef<HTMLInputElement>(null);
 	const titleRef = React.useRef<HTMLInputElement>(null);
-	// CTA focus target: the URL field leads in link mode, the title field otherwise.
-	const focusFirstField = () => (mode === "link" ? urlRef : titleRef).current?.focus();
 
 	const draftValue = React.useMemo<PanoDraft>(
 		() => ({mode, url, title, body, tags: Array.from(selectedTags)}),
@@ -267,7 +265,7 @@ export function PanoSubmitPage() {
 						<DraftRestoreBanner onRestore={restoreDraft} onDismiss={draft.dismiss} />
 					) : null}
 
-					<FirstContributionOnramp surface="pano" onStart={focusFirstField} />
+					<FirstContributionOnramp surface="pano" />
 
 					<form className="kp-pano-submit__form" onSubmit={onSubmit}>
 						{mode === "link" ? (
