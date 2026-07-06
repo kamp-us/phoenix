@@ -738,6 +738,37 @@ importers:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
+  packages/design-capture:
+    dependencies:
+      '@effect/platform-node':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.10.1)
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.59.1
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.92
+    devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.5.2
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.2
+      '@typescript/native-preview':
+        specifier: 'catalog:'
+        version: 7.0.0-dev.20260509.2
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+
   packages/fate-effect:
     dependencies:
       '@nkzw/fate':
@@ -1086,37 +1117,6 @@ importers:
       alchemy:
         specifier: 'catalog:'
         version: 2.0.0-beta.59(patch_hash=f9499e78145761f9d80842c97ef78d04f0d52c7dbdf682b255dd9e809004c46d)(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(effect@4.0.0-beta.92)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260617.1)(ws@8.21.0)
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-      vitest:
-        specifier: 'catalog:'
-        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
-
-  packages/review-capture:
-    dependencies:
-      '@effect/platform-node':
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.10.1)
-      '@playwright/test':
-        specifier: 'catalog:'
-        version: 1.59.1
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92
-    devDependencies:
-      '@effect/tsgo':
-        specifier: 'catalog:'
-        version: 0.5.2
-      '@effect/vitest':
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@types/node':
-        specifier: 'catalog:'
-        version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

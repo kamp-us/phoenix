@@ -1,5 +1,5 @@
 {
-	"name": "@kampus/review-capture",
+	"name": "@kampus/design-capture",
 	"version": "0.0.0",
 	"private": true,
 	"description": "Playwright-capture + GitHub user-attachments upload helper for the review-design gate (ADR 0165, epic #1966) — shoots a UI PR's changed surfaces over its per-PR preview deploy and hosts the PNGs as GitHub attachments for the SHA-bound verdict",
@@ -11,7 +11,7 @@
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run --project unit",
 		"test:unit": "vitest run --project unit",
-		"capture": "node src/bin.ts run"
+		"capture": "node src/bin.ts capture"
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
