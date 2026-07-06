@@ -1,29 +1,38 @@
 /**
- * Pano feed page — fate. One batched `useRequest({posts: {list, args}})` resolves
- * the feed; `useLiveListView` paginates. Connection identity keeps the filter
- * args (`sort`/`host`) but strips pagination, so each filter combo is a distinct
- * connection that paginates independently. Every chip maps to a server `sort`,
- * so the feed pages and counts the result set the server returns directly.
+ * Pano feed page — fate. One `PanoFeed` serves every subfeed, selected by the
+ * deep-linkable `?sort=` param: the sort subfeeds (sıcak / yeni / en iyi /
+ * tartışma) and the per-viewer kaydedilenler collection (`?sort=saved`), one feed
+ * shape + one routing model (#2196).
+ *
+ * The sort subfeeds share `useRequest({posts, args:{sort}})` + `useLiveListView`;
+ * connection identity keeps the filter args (`sort`/`host`) but strips pagination,
+ * so each combo paginates independently. The saved variant is the same feed shape
+ * over a DIFFERENT data source (`savedPosts`) with its own preserved behavior:
+ * signed-in-only (auth redirect w/ `returnTo`), live-`isSaved` row-drop via
+ * `savedReconcile`, and no ranks (a personal collection has no ordinal meaning).
  */
 import * as React from "react";
-import {useLiveListView, useRequest} from "react-fate";
-import {useSearchParams} from "react-router";
+import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
+import {Link, Navigate, useSearchParams} from "react-router";
 import {useSession} from "../auth/client";
-import {Subnav} from "../components/layout/Subnav";
+import {Subnav, type SubnavFilter} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
-import {EmptyState} from "../components/ui/EmptyState";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import {
 	PANO_FEED_PAGE_SIZE,
 	PANO_FILTERS,
 	PANO_SORT_PARAM,
-	panoFilterIdFromParam,
-	panoSortFromFilterId,
-	SAVED_LINK,
+	panoActiveFilterId,
+	panoSortParamFromFilterId,
+	panoVariantFromParam,
+	SAVED_HREF,
+	SAVED_PANO_FILTER_ID,
 } from "../lib/panoNav";
+import {authRedirectPath} from "../lib/returnTo";
+import {countSavedRows, isRowSaved} from "./savedReconcile";
 
 /**
  * `live: {prepend: "visible"}` makes a server-pushed `prependNode` (a new post
@@ -35,19 +44,26 @@ const PostConnectionView = {
 	live: {prepend: "visible"},
 } as const;
 
+const SavedConnectionView = {
+	items: {node: PanoPostCardView},
+} as const;
+
+type Chrome = (children: React.ReactNode, meta: React.ReactNode) => React.ReactNode;
+
 export function PanoFeed({host}: {host?: string}) {
-	// The `?sort=` param is the source of truth for the active subfeed: the chip is
-	// derived from it every render (not just seeded once), and switching a chip writes
-	// the sort back to the URL — so reload, back/forward, and share-current-URL all
-	// preserve the active subfeed instead of resetting to the default (#2072).
+	// The `?sort=` param is the source of truth for the active variant: derived every
+	// render (not seeded once), and switching a chip writes it back to the URL — so
+	// reload, back/forward, and share-current-URL all preserve the active subfeed
+	// instead of resetting to the default (#2072). The saved variant is `?sort=saved`.
 	const [searchParams, setSearchParams] = useSearchParams();
-	const filterId = panoFilterIdFromParam(searchParams.get(PANO_SORT_PARAM));
-	// Switching a chip swaps to a different `sort` connection, so `FeedContent`
-	// re-suspends. Writing the `?sort=` param inside `startTransition` marks that
-	// re-fetch as non-urgent: React keeps the CURRENT feed committed + interactive
-	// under the stable `<Screen>` boundary instead of hard-swapping to the skeleton,
-	// and surfaces the in-flight swap as `isPending` (#2161). The initial cold load
-	// still shows the skeleton — there's no prior content to preserve there.
+	const session = useSession();
+	const variant = panoVariantFromParam(searchParams.get(PANO_SORT_PARAM));
+	const filterId = panoActiveFilterId(variant);
+	// Switching a chip swaps to a different connection, so the content re-suspends.
+	// Writing the `?sort=` param inside `startTransition` marks that re-fetch as
+	// non-urgent: React keeps the CURRENT feed committed + interactive under the stable
+	// `<Screen>` boundary instead of hard-swapping to the skeleton, and surfaces the
+	// in-flight swap as `isPending` (#2161). The cold load still shows the skeleton.
 	const [isPending, startTransition] = React.useTransition();
 	// Push (not replace) a history entry so browser back/forward step across the
 	// visited subfeeds, per the acceptance criteria.
@@ -56,54 +72,66 @@ export function PanoFeed({host}: {host?: string}) {
 			startTransition(() => {
 				setSearchParams((prev) => {
 					const next = new URLSearchParams(prev);
-					next.set(PANO_SORT_PARAM, panoSortFromFilterId(id));
+					next.set(PANO_SORT_PARAM, panoSortParamFromFilterId(id));
 					return next;
 				});
 			});
 		},
 		[setSearchParams],
 	);
-	const filter = PANO_FILTERS.find((f) => f.id === filterId) ?? PANO_FILTERS[0];
-	if (!filter) return null;
+
+	const signedIn = !!session.data?.user;
+	const chrome: Chrome = (children, meta) => (
+		<FeedChrome
+			host={host}
+			filterId={filterId}
+			setFilterId={setFilterId}
+			signedIn={signedIn}
+			meta={meta}
+		>
+			{children}
+		</FeedChrome>
+	);
+
+	// Saved is signed-in only: a signed-out load redirects to auth with a `returnTo`
+	// back to kaydedilenler.
+	if (variant.kind === "saved") {
+		if (session.isPending) return null;
+		if (!signedIn) return <Navigate to={authRedirectPath(SAVED_HREF)} replace />;
+	}
 
 	return (
 		<Screen
-			fallback={
-				<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta="">
-					<PanoFeedSkeleton />
-				</FeedChrome>
-			}
-			error={({code}) => (
-				<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta="">
+			fallback={chrome(<PanoFeedSkeleton />, "")}
+			error={({code}) =>
+				chrome(
 					<p style={{font: "var(--t-meta)", color: "var(--danger)"}}>
-						başlıklar yüklenemedi: {code.toLowerCase()}
-					</p>
-				</FeedChrome>
-			)}
+						{variant.kind === "saved" ? "kaydedilenler" : "başlıklar"} yüklenemedi:{" "}
+						{code.toLowerCase()}
+					</p>,
+					"",
+				)
+			}
 		>
-			<FeedContent
-				host={host}
-				filterId={filterId}
-				setFilterId={setFilterId}
-				sort={filter.sort}
-				pending={isPending}
-			/>
+			{variant.kind === "saved" ? (
+				<SavedContent chrome={chrome} />
+			) : (
+				<FeedContent host={host} sort={variant.sort} pending={isPending} chrome={chrome} />
+			)}
 		</Screen>
 	);
 }
 
 function FeedContent({
 	host,
-	filterId,
-	setFilterId,
 	sort,
 	pending,
+	chrome,
 }: {
 	host?: string;
-	filterId: string;
-	setFilterId: (id: string) => void;
 	sort: string;
 	pending: boolean;
+	chrome: Chrome;
 }) {
 	const {posts} = useRequest({
 		posts: {
@@ -112,15 +140,7 @@ function FeedContent({
 		},
 	});
 
-	return (
-		<FeedRows
-			connection={posts}
-			host={host}
-			filterId={filterId}
-			setFilterId={setFilterId}
-			pending={pending}
-		/>
-	);
+	return <FeedRows connection={posts} host={host} pending={pending} chrome={chrome} />;
 }
 
 type PostConnection = ReturnType<
@@ -130,52 +150,170 @@ type PostConnection = ReturnType<
 function FeedRows({
 	connection,
 	host,
-	filterId,
-	setFilterId,
 	pending,
+	chrome,
 }: {
 	connection: PostConnection;
 	host?: string;
-	filterId: string;
-	setFilterId: (id: string) => void;
 	pending: boolean;
+	chrome: Chrome;
 }) {
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
 	const meta = host ? `${items.length} başlık · ${host}` : `${items.length} başlık`;
 
-	return (
-		<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta={meta}>
+	return chrome(
+		<>
 			{/* During a chip-driven sort swap the current rows stay committed but dim +
 			    go inert (`aria-busy`), so the swap reads as "loading the next sort" rather
 			    than a frozen screen — the `startTransition` in the parent keeps them here
 			    instead of unmounting to the skeleton (#2161). */}
-			{items.length === 0 && !pending ? (
-				<EmptyState
-					title={host ? `${host} için henüz başlık yok.` : "henüz başlık yok."}
-					description="ilk başlığı sen aç — pano seni bekliyor."
-				/>
-			) : (
-				<div
-					className="kp-pano-list"
-					aria-busy={pending}
-					style={
-						pending
-							? {opacity: 0.6, transition: "opacity var(--motion-base) var(--ease-standard)"}
-							: undefined
-					}
-				>
-					{items.map(({node}, i) => (
-						<PanoPostCard key={node.id} post={node} rank={i + 1} />
-					))}
-				</div>
-			)}
+			<div
+				className="kp-pano-list"
+				aria-busy={pending}
+				style={
+					pending
+						? {opacity: 0.6, transition: "opacity var(--motion-base) var(--ease-standard)"}
+						: undefined
+				}
+			>
+				{items.map(({node}, i) => (
+					<PanoPostCard key={node.id} post={node} rank={i + 1} />
+				))}
+			</div>
 			{loadNext ? (
 				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>
 					<LoadMoreButton loadNext={loadNext} />
 				</div>
 			) : null}
-		</FeedChrome>
+		</>,
+		meta,
+	);
+}
+
+function SavedContent({chrome}: {chrome: Chrome}) {
+	const {savedPosts} = useRequest({
+		savedPosts: {
+			list: SavedConnectionView,
+			args: {first: PANO_FEED_PAGE_SIZE},
+		},
+	});
+
+	return <SavedRows connection={savedPosts} chrome={chrome} />;
+}
+
+type SavedConnection = ReturnType<
+	typeof useRequest<{savedPosts: {list: typeof SavedConnectionView}}>
+>["savedPosts"];
+
+function SavedRows({connection, chrome}: {connection: SavedConnection; chrome: Chrome}) {
+	const [items, loadNext] = useLiveListView(SavedConnectionView, connection);
+
+	// Each row reads its `isSaved` via its own `useLiveView` hook, and lifting that read
+	// into a parent loop would vary the hook count as pagination grows `items` — illegal.
+	// So rows report their live `isSaved` up here; the count + empty-state then use the
+	// SAME rule the row drops on (`savedReconcile`), never edge-`node` truthiness (#1417).
+	const [savedById, setSavedById] = React.useState<ReadonlyMap<string | number, boolean>>(
+		() => new Map(),
+	);
+	const reportSaved = React.useCallback((id: string | number, saved: boolean) => {
+		setSavedById((prev) => {
+			if (prev.get(id) === saved) return prev;
+			const next = new Map(prev);
+			next.set(id, saved);
+			return next;
+		});
+	}, []);
+
+	// A genuinely deleted entity has no node — that's edge presence (a row can't render),
+	// NOT saved-ness, which is the live `isSaved` below.
+	const nodes = items.flatMap(({node}) => (node ? [node] : []));
+	const count = countSavedRows(
+		nodes.map((node) => node.id),
+		savedById,
+	);
+
+	return chrome(
+		<>
+			{/* Rows stay mounted even at count 0 so each keeps reporting its live `isSaved`;
+			    an unsaved row renders null, so the empty-state message is the only visible
+			    content when the still-saved count reaches 0. */}
+			<div className="kp-pano-list">
+				{nodes.map((node) => (
+					<SavedRow key={node.id} post={node} onReconcile={reportSaved} />
+				))}
+			</div>
+			{count === 0 ? (
+				<SavedEmptyState />
+			) : loadNext ? (
+				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>
+					<LoadMoreButton loadNext={loadNext} />
+				</div>
+			) : null}
+		</>,
+		count === 0 ? "0 kayıt" : `${count} kayıt`,
+	);
+}
+
+/**
+ * One saved row. Reads the post's live `isSaved` so an un-save (from this card's own
+ * `PostSaveButton`, or another client/tab) drops the row immediately, and reports that
+ * same saved-ness up so the list count + empty-state track it. Ranks are omitted — a
+ * saved list has no ordinal meaning.
+ */
+function SavedRow({
+	post,
+	onReconcile,
+}: {
+	post: ViewRef<"Post">;
+	onReconcile: (id: string | number, saved: boolean) => void;
+}) {
+	const data = useLiveView(PanoPostCardView, post);
+	const saved = isRowSaved(data.isSaved);
+	React.useEffect(() => {
+		onReconcile(data.id, saved);
+	}, [data.id, saved, onReconcile]);
+	if (!saved) return null;
+	return <PanoPostCard post={post} />;
+}
+
+function SavedEmptyState() {
+	return (
+		<div
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				alignItems: "center",
+				textAlign: "center",
+				gap: "var(--s-3)",
+				padding: "var(--s-8) var(--s-3)",
+			}}
+		>
+			<svg
+				width="28"
+				height="28"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="var(--text-faint)"
+				strokeWidth="1.5"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" />
+			</svg>
+			<div style={{display: "flex", flexDirection: "column", gap: "var(--s-1)"}}>
+				<p style={{font: "var(--t-body)", color: "var(--text-primary)", margin: 0}}>
+					henüz kaydedilen yok
+				</p>
+				<p style={{font: "var(--t-meta)", color: "var(--text-muted)", margin: 0}}>
+					bir başlığı <strong>kaydet</strong> ile saklayabilirsin.
+				</p>
+			</div>
+			<Link to="/pano" className="kp-btn kp-btn--primary kp-btn--sm">
+				pano'yu keşfet
+			</Link>
+		</div>
 	);
 }
 
@@ -183,23 +321,21 @@ interface ChromeProps {
 	host?: string;
 	filterId: string;
 	setFilterId: (id: string) => void;
+	signedIn: boolean;
 	meta: React.ReactNode;
 	children: React.ReactNode;
 }
 
-function FeedChrome({host, filterId, setFilterId, meta, children}: ChromeProps) {
-	const session = useSession();
-	const links = session.data?.user ? [SAVED_LINK] : undefined;
+function FeedChrome({host, filterId, setFilterId, signedIn, meta, children}: ChromeProps) {
+	// kaydedilenler is a per-viewer chip, so it joins the sort chips only signed-in —
+	// same subnav row, driven by the same `onFilterChange` → `?sort=` mechanism (#1641).
+	const filters: SubnavFilter[] = signedIn
+		? [...PANO_FILTERS, {id: SAVED_PANO_FILTER_ID, label: "kaydedilenler"}]
+		: PANO_FILTERS;
 
 	return (
 		<>
-			<Subnav
-				filters={PANO_FILTERS}
-				activeFilter={filterId}
-				onFilterChange={setFilterId}
-				links={links}
-				meta={meta}
-			/>
+			<Subnav filters={filters} activeFilter={filterId} onFilterChange={setFilterId} meta={meta} />
 			{host ? <PanoCrumb host={host} /> : null}
 			<div className="kp-page">
 				<div className="kp-page__inner">{children}</div>

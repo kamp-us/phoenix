@@ -5,9 +5,9 @@ import "./Subnav.css";
 export type SubnavFilter = {id: string; label: React.ReactNode};
 
 /**
- * A route-navigating item that sits beside the sort toggles (e.g. kaydedilenler).
- * `end` scopes the NavLink active-match to an exact path, so a link to `/pano` isn't
- * marked active on the nested `/pano/kaydedilenler` route (the default prefix match).
+ * A route-navigating item that sits beside the sort toggles. `end` scopes the
+ * NavLink active-match to an exact path so a broader link (e.g. `/pano`) isn't
+ * marked active on a nested/decorated route (the default is prefix match).
  */
 export type SubnavLink = {to: string; label: React.ReactNode; end?: boolean};
 
