@@ -325,6 +325,17 @@ but leave the body's original brief intact at the top. Do not bury it in a
 `<details>`. (If an epic was filed truly threadbare, prefer `status:needs-info` over
 mangling it.)
 
+**Re-typing an issue? Reconcile the BODY, not just a comment.** When you change an
+already-typed issue's type (a `decision` re-scoped to `feature`, a `bug` recut as a
+`chore`), the body's `## Acceptance criteria` are still written for the *old* type — and
+the body, not a comment, is the source of truth a `review-*` gate and a `write-code` agent
+read. A re-type that lands the new scope in a **comment** while leaving the stale
+criteria in the body ships a misleading spec: the coder builds against decision-era ACs
+("record an ADR", "file follow-ups") that no longer describe the work (#2165 →
+#2180). So on any re-type, **rewrite the body's acceptance criteria to the new type**
+(reusing Step 4's temp-file `PATCH` flow), then record the re-scope rationale in a
+comment — the comment explains *why*, the body carries *what to build*.
+
 ---
 
 ## Step 5 — The human-vs-agent judgment (who never gets auto-closed)
