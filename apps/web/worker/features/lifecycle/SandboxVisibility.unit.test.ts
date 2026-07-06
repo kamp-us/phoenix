@@ -12,7 +12,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as L from "./EntityLifecycle.ts";
-import {publicLiveWhere, sandboxVisibleWhere} from "./SandboxVisibility.ts";
+import {ownSandboxed, publicLiveWhere, sandboxVisibleWhere} from "./SandboxVisibility.ts";
 
 const at = new Date("2026-06-25T00:00:00.000Z");
 const AUTHOR = "caylak-author";
@@ -97,6 +97,31 @@ describe("sandboxVisibleWhere — the SQL predicate mirrors the decision shape",
 
 	it("an anonymous viewer gets a restricting predicate (public only)", () => {
 		assert.isDefined(sandboxVisibleWhere(cols, viewers.anonymous));
+	});
+});
+
+describe("ownSandboxed — the owner-scoped in-review flag (never leaks review state)", () => {
+	const ownSandboxedRecord = {sandboxedAt: at, authorId: AUTHOR};
+	const ownLiveRecord = {sandboxedAt: null, authorId: AUTHOR};
+
+	it("the author of a still-sandboxed row reads true (their own in-review signal)", () => {
+		assert.isTrue(ownSandboxed(ownSandboxedRecord, AUTHOR));
+	});
+
+	it("the author of a live (not-sandboxed) row reads false — no signal on public content", () => {
+		assert.isFalse(ownSandboxed(ownLiveRecord, AUTHOR));
+	});
+
+	it("another member never reads the flag on someone's sandboxed row", () => {
+		assert.isFalse(ownSandboxed(ownSandboxedRecord, OTHER));
+	});
+
+	it("a moderator (non-author) never reads the flag — owner-only, not moderator-scoped", () => {
+		assert.isFalse(ownSandboxed(ownSandboxedRecord, viewers.moderator.viewerId));
+	});
+
+	it("an anonymous viewer (null id) never reads the flag", () => {
+		assert.isFalse(ownSandboxed(ownSandboxedRecord, null));
 	});
 });
 
