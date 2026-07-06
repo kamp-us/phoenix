@@ -38,9 +38,23 @@ const DEPLOY_TRANSIENT_TAGS = new Set([
 // This precise substring is the version-propagation race alone.
 const NO_VERSIONS_MESSAGE = "no versions";
 
+// The preview-deploy secret probe's eventually-consistent signature: the `AuthError` _tag with a
+// "Edge-preview secret read failed: Secret probe returned <code>" message (a non-2xx probe result,
+// e.g. `400: <!DOCTYPE html>` or a 5xx). ADR 0061 already documents this verbatim string as a
+// Cloudflare preview-deploy infra flake unrelated to a PR that adds no worker/deploy code; it fired
+// in merge-group CI and ejected an approved PR from the queue (#2156, #2148). Matched on the MESSAGE
+// substring, NOT the bare `AuthError` _tag: a blanket AuthError retry would mask a genuine auth
+// failure (bad/expired token, wrong account), which must still fail fast — only the secret-probe
+// propagation race rides the bounded backoff.
+const SECRET_PROBE_MESSAGE = "Secret probe returned";
+
 export const isTransientDeployError = (error: unknown): boolean => {
 	if (typeof error !== "object" || error === null || !("_tag" in error)) return false;
 	const {_tag: tag, message} = error as {_tag: unknown; message?: unknown};
 	if (typeof tag === "string" && DEPLOY_TRANSIENT_TAGS.has(tag)) return true;
-	return tag === "NotFound" && typeof message === "string" && message.includes(NO_VERSIONS_MESSAGE);
+	if (tag === "NotFound" && typeof message === "string" && message.includes(NO_VERSIONS_MESSAGE))
+		return true;
+	return (
+		tag === "AuthError" && typeof message === "string" && message.includes(SECRET_PROBE_MESSAGE)
+	);
 };
