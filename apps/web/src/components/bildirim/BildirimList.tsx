@@ -55,8 +55,15 @@ const BildirimConnectionView = {
 	items: {node: BildirimRowView},
 } as const;
 
+// `bildirim.channel` rides the same request so `useLiveView(channelRef)` below reads a
+// HYDRATED cache instead of fetching a `byId` — `NotificationChannel` is a loader-less
+// `Fate.syntheticSource`, and a `byId` against it 500s through fate's capability-less arm
+// (#2206). `useRequest` suspends the component until this resolves, so the entity is in the
+// cache before `useLiveView`'s `readView` runs (a pure cache hit, no `byId`); the query
+// then reconciles live over `/fate/live` (seed-then-subscribe).
 const bildirimRequest = {
 	"bildirim.list": {list: BildirimConnectionView, args: {first: PAGE_SIZE}},
+	"bildirim.channel": {view: ChannelView},
 } as const;
 
 export function BildirimList() {

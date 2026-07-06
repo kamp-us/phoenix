@@ -28,11 +28,24 @@ type ChannelSnapshot = {
 	data: {unreadCount?: number} | null;
 };
 
-/** Read the channel's merged snapshot from the cache, or `null` if not yet loaded. */
+/**
+ * Read the channel's merged snapshot from the cache, or `null` if not yet loaded.
+ *
+ * Reads ONLY once `seeded` — i.e. after the `bildirim.channel` query has hydrated the
+ * channel into the cache. `NotificationChannel` is a loader-less `Fate.syntheticSource`
+ * (no `byId`/`byIds`), and `client.readView` fetches a `byId` on a cache miss — which
+ * takes fate's capability-less error arm and 500s. This badge mounts on every
+ * authenticated page, so an ungated read is 500-spam on 100% of authed pageviews (#2206).
+ * Gating the read behind the seed keeps `readView` a pure cache hit (`missing.size === 0`),
+ * so the `byId` is never issued; the entity is delivered inline by the query and
+ * reconciled live over `/fate/live`.
+ */
 function readChannel(
 	client: ReturnType<typeof useFateClient>,
 	userId: string,
+	seeded: boolean,
 ): ChannelSnapshot | null {
+	if (!seeded) return null;
 	const ref = client.ref("NotificationChannel", userId, ChannelView);
 	const thenable = client.readView(ChannelView, ref);
 	return "status" in thenable && (thenable as {status?: unknown}).status === "fulfilled"
@@ -81,17 +94,16 @@ export function useBildirimUnread(enabled: boolean, userId: string | null): numb
 	// coverage-driven subscription, hoisted above Suspense (synchronous read; a
 	// not-yet-loaded ref reads 0).
 	const getSnapshot = useCallback(
-		() => (canRead && userId != null ? readChannel(client, userId) : null),
-		[client, canRead, userId],
+		() => (canRead && userId != null ? readChannel(client, userId, seeded > 0) : null),
+		[client, canRead, userId, seeded],
 	);
 
 	const subscribe = useCallback(
 		(onStoreChange: () => void) => {
-			void seeded; // re-establish the subscription once the seed populates coverage
 			if (!canRead || userId == null) return () => {};
 			const subscriptions = new Map<string, () => void>();
 			const sync = () => {
-				const snapshot = readChannel(client, userId);
+				const snapshot = readChannel(client, userId, seeded > 0);
 				const nextIds = new Set<string>();
 				for (const [entityId, paths] of snapshot?.coverage ?? []) {
 					nextIds.add(entityId);
