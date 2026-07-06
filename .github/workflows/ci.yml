@@ -277,7 +277,7 @@ jobs:
       - run: pnpm typecheck
 
   unit:
-    name: unit tests
+    name: unit + client tests
     needs: changes
     # Same gate as `check`: skip (→ green, non-blocking) on a docs/skills-only PR.
     #
@@ -319,6 +319,17 @@ jobs:
       # 0057): runs each app's `test:unit`, so a second app is gated with no edit here.
       # Recursive `run` skips an app without the script — same posture as packages-tests.
       - run: pnpm --filter './apps/**' test:unit
+
+      # The `client` vitest project (#1419, ADR 0082): the SPA component/DOM tier —
+      # jsdom, renders the real React shells and queries the DOM for the `src/**/*.test.tsx`
+      # suites (ui primitives, ReactionBar, PanoPost, Screen, the pages latches). It's a
+      # sibling of `unit` (never `.tsx`), authored but ungated until now — CI ran only
+      # `--project unit`, so a client-tier regression reached main on a green CI (#2266).
+      # Folded into this same `code`-gated job: no worker deploy, no creds, and its fork
+      # heap is already CI-capped (`--max-old-space-size=512`, vitest.config.ts). A
+      # failing `.test.tsx` fails this job → UNIT_RESULT ≠ success → `ci-required` fails
+      # closed, exactly as a `test:unit` failure does.
+      - run: pnpm --filter './apps/**' test:client
 
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
   # ships a `test` script (pipeline-cli — now the single home for the consolidated
