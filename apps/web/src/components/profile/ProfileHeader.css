@@ -1,0 +1,77 @@
+/* ProfileHeader (#2203) — the one header shared by /profile and /u/:username.
+   Avatar + id + right-aligned activity tiles; wraps below 640px (the shared
+   narrow-viewport breakpoint for this cluster). */
+
+.kp-profile-header {
+	display: flex;
+	align-items: center;
+	gap: var(--s-4);
+	padding-bottom: var(--s-4);
+	border-bottom: 1px solid var(--border);
+}
+
+.kp-profile-header__avatar {
+	width: 56px;
+	height: 56px;
+	flex-shrink: 0;
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--accent-11);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font: 600 22px var(--font-body);
+	overflow: hidden;
+}
+.kp-profile-header__avatar img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.kp-profile-header__id {
+	display: grid;
+	gap: 4px;
+	min-width: 0;
+}
+.kp-profile-header__name {
+	font: 600 18px / 1.1 var(--font-body);
+	color: var(--text-primary);
+	letter-spacing: -0.01em;
+}
+.kp-profile-header__handle {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+
+.kp-profile-header__stats {
+	display: flex;
+	gap: var(--s-5);
+	margin-left: auto;
+	align-items: flex-end;
+}
+.kp-profile-header__stat {
+	text-align: right;
+}
+.kp-profile-header__stat .n {
+	font: 600 15px var(--font-body);
+	color: var(--text-primary);
+}
+.kp-profile-header__stat .l {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+.kp-profile-header__stats--error {
+	align-items: center;
+	font: var(--t-meta);
+	color: var(--danger);
+}
+
+@media (max-width: 640px) {
+	.kp-profile-header {
+		flex-wrap: wrap;
+	}
+	.kp-profile-header__stats {
+		margin-left: 0;
+	}
+}

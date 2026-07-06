@@ -22,7 +22,9 @@ import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Profile} from "../../../worker/features/fate/views";
 import {Screen} from "../../fate/Screen";
+import {EmptyState} from "../ui/EmptyState";
 import {ContributionRow, ContributionView} from "./ContributionRow";
+import {CONTRIBUTIONS_EMPTY, CONTRIBUTIONS_HEADING} from "./profileContributions";
 import "./ProfileContributionSignal.css";
 
 // Thin by design: just enough recent items to read as a track record, never a feed.
@@ -42,7 +44,7 @@ function SignalShell({children}: {children: ReactNode}) {
 			aria-labelledby="kp-signal-heading"
 			data-testid="contribution-signal"
 		>
-			<h3 id="kp-signal-heading">katkıların</h3>
+			<h3 id="kp-signal-heading">{CONTRIBUTIONS_HEADING.self}</h3>
 			{children}
 		</section>
 	);
@@ -96,9 +98,7 @@ function SignalContent({username}: {username: string}) {
 
 function EmptySignal() {
 	return (
-		<p className="kp-signal__status" data-testid="signal-empty">
-			henüz katkın yok — ilk tanımını ya da başlığını ekleyince burada görünür.
-		</p>
+		<EmptyState title={CONTRIBUTIONS_EMPTY.title} description={CONTRIBUTIONS_EMPTY.description} />
 	);
 }
 
