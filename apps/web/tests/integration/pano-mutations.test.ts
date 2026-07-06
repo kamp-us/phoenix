@@ -210,7 +210,11 @@ describe("pano mutations — post.vote / retractVote", () => {
 		if (result.ok) return;
 		expect(result.error.code).toBe("SELF_VOTE_NOT_ALLOWED");
 
-		// The rejected cast wrote nothing: the post is still at score 0 with no vote stamped.
+		// The rejected cast wrote nothing: the post is still at score 0, and the author's
+		// re-resolve stamps `myVote: false` — the authenticated-but-unvoted default. In
+		// stampViewerScalars the scalar is `viewerId ? set.has(id) : null`; the author IS the
+		// viewer here (non-null viewerId), so an unvoted post is `false`, not the anonymous-only
+		// `null`. Matches the retractVote sibling below and the sözlük counterpart.
 		const detail = await h.fate(
 			{kind: "query", name: "post", args: {idOrSlug: id}, select: ["id", "score", "myVote"]},
 			{cookie: author.cookie},
@@ -218,7 +222,7 @@ describe("pano mutations — post.vote / retractVote", () => {
 		expect(detail.ok).toBe(true);
 		if (!detail.ok) return;
 		expect((detail.data as PostNode).score).toBe(0);
-		expect((detail.data as PostNode).myVote).toBeNull();
+		expect((detail.data as PostNode).myVote).toBe(false);
 	});
 
 	// The guard is cast-only (#2216): the author retracting a vote on its own post is exempt —
