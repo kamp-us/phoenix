@@ -32,7 +32,7 @@
 
 .kp-funnel__panel {
 	border: 1px solid var(--border-subtle);
-	border-radius: var(--radius-md);
+	border-radius: var(--r-md);
 	padding: var(--s-4);
 }
 
