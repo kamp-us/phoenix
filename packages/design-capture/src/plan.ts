@@ -86,13 +86,29 @@ export const joinPreviewUrl = (previewUrl: string, route: string): string => {
 	return new URL(path, base).toString();
 };
 
-/** A filesystem-safe PNG file name derived from a surface's route + state. */
+/**
+ * A filesystem-safe PNG file name derived from a surface's route + state.
+ *
+ * The surface route is caller-supplied (uncontrolled), so the sanitization must
+ * run in linear time on any input: an unbounded run of non-alnum characters
+ * would let an anchored trailing-dash trim (`/^-+|-+$/g`) backtrack
+ * polynomially — the ReDoS CodeQL flagged (alert #24). So the route is clamped
+ * to a bounded length before sanitizing (a filename never needs to be longer),
+ * and the leading/trailing-dash trim is a single-pass index walk, not a
+ * backtracking regex.
+ */
+const MAX_FILENAME_STEM = 128;
 export const surfaceFileName = (surface: Surface, viewport: Viewport): string => {
 	const base = surface.state === null ? surface.route : `${surface.route}-${surface.state}`;
-	const safe = base
-		.replace(/^\//, "")
-		.replace(/[^a-zA-Z0-9._-]+/g, "-")
-		.replace(/^-+|-+$/g, "");
+	const clamped = base.length > MAX_FILENAME_STEM ? base.slice(0, MAX_FILENAME_STEM) : base;
+	// `[^…]+` over a negated class is a single greedy quantifier — linear, no
+	// backtracking. The dash-trim that WAS polynomial is now the index walk below.
+	const collapsed = clamped.replace(/^\//, "").replace(/[^a-zA-Z0-9._-]+/g, "-");
+	let start = 0;
+	let end = collapsed.length;
+	while (start < end && collapsed[start] === "-") start++;
+	while (end > start && collapsed[end - 1] === "-") end--;
+	const safe = collapsed.slice(start, end);
 	return `${safe.length === 0 ? "root" : safe}@${viewport.label}.png`;
 };
 

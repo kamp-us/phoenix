@@ -92,6 +92,27 @@ describe("surfaceFileName", () => {
 			"root@desktop.png",
 		);
 	});
+
+	it("collapses non-alnum runs and trims leading/trailing dashes", () => {
+		assert.strictEqual(
+			surfaceFileName({surface: "s", route: "/a//b??c", state: null}, DESKTOP_VIEWPORT),
+			"a-b-c@desktop.png",
+		);
+	});
+
+	it("sanitizes a pathological uncontrolled route in linear time (no ReDoS)", () => {
+		// A long run of non-alnum chars is exactly what made the old `/^-+|-+$/g`
+		// trailing-trim backtrack polynomially (CodeQL alert #24). Bounded + linear
+		// now: it returns promptly and still yields a dash-trimmed, alnum-only stem.
+		const evil = `/${"!".repeat(200_000)}x${"!".repeat(200_000)}`;
+		const started = Date.now();
+		const name = surfaceFileName({surface: evil, route: evil, state: null}, DESKTOP_VIEWPORT);
+		assert.ok(Date.now() - started < 1000, "sanitization must be linear, not polynomial");
+		// Clamped to the bounded stem, collapsed to a single dash, dashes trimmed:
+		// the pathological prefix is all `!` → one `-` → trimmed to "" → "root".
+		assert.strictEqual(name, "root@desktop.png");
+		assert.ok(!name.startsWith("-") && !name.includes("-@"), "no leading/trailing dashes survive");
+	});
 });
 
 describe("buildCapturePlan", () => {
