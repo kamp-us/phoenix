@@ -30,6 +30,7 @@ import {mergeQueueClassifyCommand} from "./tools/merge-queue-classify/command.ts
 import {pointerGuardCommand} from "./tools/pointer-guard/command.ts";
 import {readGuardCommand} from "./tools/read-guard/command.ts";
 import {readmeGuardCommand} from "./tools/readme-guard/command.ts";
+import {refGuardCommand} from "./tools/ref-guard/command.ts";
 import {resumePolicyCommand} from "./tools/resume-policy/command.ts";
 import {shipDigestCommand} from "./tools/ship-digest/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
@@ -102,4 +103,5 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	resumePolicyCommand,
 	evalHarnessCommand,
 	mainSyncCommand,
+	refGuardCommand,
 ];

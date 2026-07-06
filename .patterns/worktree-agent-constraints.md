@@ -134,6 +134,23 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   plan. See [`packages/pipeline-cli/README.md`](../packages/pipeline-cli/README.md) (the
   `main-sync` section) for the full contract.
 
+  **The ref-force-move sibling (the caller-agnostic backstop, #2143 / [ADR 0160](../.decisions/0160-ref-transaction-guard-refuses-diverging-primary-main.md)):**
+  the two guards above catch *HEAD* moves by a *Bash-tool* caller — but the orchestrator/PULLER
+  role force-moved the primary's `main` **ref** (`branch -f main` / `checkout -B main` /
+  `update-ref refs/heads/main`) **outside the agent Bash path entirely**, diverging local `main`
+  from `origin/main` with a mass deletion staged (a "one `git push -f` clobbers `origin/main`"
+  loaded gun). Neither the bash-pin (disarmed with no `$WORKTREE_ROOT`; a ref-move is not in its
+  `HEAD_MOVING` set) nor a `PreToolUse` hook (never sees a non-Bash-tool caller) can reach that
+  class. The enforcement is `pipeline-cli ref-guard`
+  (`packages/pipeline-cli/src/tools/ref-guard/`), wired via `lefthook.yml` as git's own
+  **`reference-transaction`** hook — which fires for **every** ref update regardless of caller.
+  It **refuses any `refs/heads/main` update that would make local `main` a non-fast-forward of
+  `origin/main`**, so a diverging force-move aborts at the ref boundary; the legitimate
+  `merge --ff-only origin/main` (a fast-forward) and the reattach `checkout main` (no ref move on
+  `main`) both pass. **The PULLER/orchestrator ROE, enforced by this guard: drive sync ONLY
+  through the `main-sync` fetch-inspect-`ff-only` seam — never a bare `checkout -B main` /
+  `branch -f main` / `reset` / `update-ref refs/heads/main` on the primary checkout.**
+
 - **Run root `pnpm` scripts as `pnpm -w <script>` (or from the worktree root),
   never from a subdir.** A root-level script (`pnpm lint`, `pnpm typecheck`, …) run
   from a *subdirectory* (e.g. `apps/web/`) trips pnpm's refusal: it resolves the
