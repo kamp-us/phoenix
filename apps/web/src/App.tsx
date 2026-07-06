@@ -71,8 +71,14 @@ const SetTopbarChipsContext = createContext<((chips: TopbarChips | null) => void
 function Layout() {
 	const session = useSession();
 	const navigate = useNavigate();
+	const location = useLocation();
 	const {toggle: toggleTheme} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
+
+	// Echo the active query in the header input, but only on the results page — off
+	// `/search` the box keeps its empty `ara…` placeholder (#2199).
+	const searchQuery =
+		location.pathname === "/search" ? (new URLSearchParams(location.search).get("q") ?? "") : "";
 
 	async function onSignOut() {
 		await authClient.signOut();
@@ -95,6 +101,7 @@ function Layout() {
 						{...(chips?.userProps ?? {})}
 						karma={chips?.karma}
 						{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
+						searchQuery={searchQuery}
 						onSearchSubmit={(query) => {
 							const target = searchTarget(query);
 							if (target) navigate(target);
