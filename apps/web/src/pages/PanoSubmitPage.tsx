@@ -12,6 +12,7 @@ import type {WireMessageOverrides} from "../fate/wireMessages";
 import {FlagGate} from "../flags/FlagGate";
 import {PANO_DRAFT_SAVE, PANO_OPTIMISTIC_SUBMIT} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {panoSubmitGate} from "../lib/panoSubmitGate";
 import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
@@ -155,13 +156,14 @@ export function PanoSubmitPage() {
 	const noTags = selectedTags.size === 0;
 	const linkModeUrlEmpty = mode === "link" && url.trim().length === 0;
 
-	const submitDisabled =
-		isInFlight ||
-		trimmedTitle.length < TITLE_MIN ||
-		titleTooLong ||
-		bodyTooLong ||
-		noTags ||
-		linkModeUrlEmpty;
+	const {submitDisabled, tagsAreSoleBlocker} = panoSubmitGate({
+		inFlight: isInFlight,
+		titleInvalid: trimmedTitle.length < TITLE_MIN,
+		titleTooLong,
+		bodyTooLong,
+		noTags,
+		linkModeUrlEmpty,
+	});
 
 	async function onSubmit(e: React.SyntheticEvent) {
 		e.preventDefault();
@@ -347,7 +349,9 @@ export function PanoSubmitPage() {
 						)}
 
 						<fieldset className="kp-pano-submit__field kp-pano-submit__fieldset">
-							<legend className="kp-pano-submit__field-label">etiketler · en fazla 3</legend>
+							<legend className="kp-pano-submit__field-label">
+								etiketler · en az 1, en fazla 3
+							</legend>
 							<div className="kp-pano-submit__tagrow">
 								{TAGS.map((t) => {
 									const on = selectedTags.has(t.kind);
@@ -365,6 +369,15 @@ export function PanoSubmitPage() {
 									);
 								})}
 							</div>
+							{tagsAreSoleBlocker ? (
+								<span
+									className="kp-pano-submit__hint"
+									data-testid="pano-submit-tags-required"
+									style={{color: "var(--text-faint)"}}
+								>
+									{PANO_SUBMIT_OVERRIDES.TAGS_REQUIRED}
+								</span>
+							) : null}
 						</fieldset>
 
 						{error ? (
