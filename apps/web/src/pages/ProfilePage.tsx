@@ -4,10 +4,11 @@ import {Navigate} from "react-router";
 import type {User} from "../../worker/features/fate/views";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
-import {Karma} from "../components/karma/Karma";
 import {actorLabel} from "../components/moderation/actor-identity";
+import {CaylakStatusBlock} from "../components/profile/CaylakStatusBlock";
 import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
+import {ProfileHeader} from "../components/profile/ProfileHeader";
 import {profileStandingLabel} from "../components/profile/profileStanding";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
@@ -24,15 +25,6 @@ const SetDisplayNameView = view<User>()({
 	image: true,
 	username: true,
 });
-
-function initialsOf(name: string) {
-	return name
-		.split(/\s+|_|-/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((p) => p[0]?.toUpperCase() ?? "")
-		.join("");
-}
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -165,42 +157,21 @@ export function ProfilePage() {
 	return (
 		<div className="kp-profile">
 			<div className="kp-profile__inner">
-				<header className="kp-profile__head">
-					<div className="kp-profile__avatar">{initialsOf(name)}</div>
-					<div className="kp-profile__id">
-						<div className="kp-profile__name">{name}</div>
-						<div className="kp-profile__handle">
-							{standingLabel ? `@${handle} · ${standingLabel}` : `@${handle}`}
-						</div>
-					</div>
-					{statsFailed ? (
-						<div
-							className="kp-profile__stats-strip kp-profile__stats-strip--error"
-							data-testid="stats-error"
-							role="alert"
-						>
-							istatistikler yüklenemedi
-						</div>
-					) : (
-						<div className="kp-profile__stats-strip">
-							<div className="kp-profile__stat" data-testid="stat-posts">
-								<div className="n">{stats?.postCount ?? 0}</div>
-								<div className="l">başlık</div>
-							</div>
-							<div className="kp-profile__stat" data-testid="stat-comments">
-								<div className="n">{stats?.commentCount ?? 0}</div>
-								<div className="l">yorum</div>
-							</div>
-							<div className="kp-profile__stat" data-testid="stat-definitions">
-								<div className="n">{stats?.definitionCount ?? 0}</div>
-								<div className="l">tanım</div>
-							</div>
-							{authorshipLoop ? (
-								<Karma variant="stat" value={stats?.totalKarma ?? 0} testId="stat-karma" />
-							) : null}
-						</div>
-					)}
-				</header>
+				<ProfileHeader
+					displayName={name}
+					handle={handle}
+					standingLabel={standingLabel}
+					image={me?.image ?? null}
+					stats={stats}
+					statsError={statsFailed}
+					showKarma={authorshipLoop}
+				/>
+
+				{/* The çaylak's own "yazarlığa giden yol" tracker (#1291), surfaced on the
+				    self-service profile too (#2203) so promotion progress is reachable from
+				    settings, not only the public /u/ page. Reuses the existing block, which
+				    self-gates on the #1204 authorship-loop flag + own-profile + çaylak. */}
+				{me?.id ? <CaylakStatusBlock profileUserId={me.id} /> : null}
 
 				{/* Thin contribution signal (#1209) — the owner's own track record,
 				    dark behind the authorship-loop flag (#1204). Flag off → exactly

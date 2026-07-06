@@ -13,58 +13,8 @@
 	gap: var(--s-6);
 }
 
-.kp-profile__head {
-	display: flex;
-	align-items: center;
-	gap: var(--s-4);
-	padding-bottom: var(--s-4);
-	border-bottom: 1px solid var(--border);
-}
-.kp-profile__avatar {
-	width: 56px;
-	height: 56px;
-	border-radius: var(--r-sm);
-	background: var(--surface);
-	color: var(--accent-11);
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	font: 600 22px var(--font-body);
-}
-.kp-profile__id {
-	display: grid;
-	gap: 4px;
-}
-.kp-profile__name {
-	font: 600 18px / 1.1 var(--font-body);
-	color: var(--text-primary);
-	letter-spacing: -0.01em;
-}
-.kp-profile__handle {
-	font: var(--t-body-sm);
-	color: var(--text-muted);
-}
-.kp-profile__stats-strip {
-	display: flex;
-	gap: var(--s-5);
-	margin-left: auto;
-}
-.kp-profile__stat {
-	text-align: right;
-}
-.kp-profile__stat .n {
-	font: 600 15px var(--font-body);
-	color: var(--text-primary);
-}
-.kp-profile__stat .l {
-	font: var(--t-meta);
-	color: var(--text-muted);
-}
-.kp-profile__stats-strip--error {
-	align-items: center;
-	font: var(--t-meta);
-	color: var(--danger);
-}
+/* The profile header now lives in the shared ProfileHeader primitive
+   (components/profile/ProfileHeader.css, #2203). */
 
 .kp-profile__section {
 	display: grid;
@@ -225,18 +175,10 @@
 }
 
 /* Phone account surface (~375–414px, content ≈ 327px): the fixed 140px label track
-   crushes the value cell, and the margin-left:auto stats strip overflows a non-wrapping
-   flex head. Stack the label above the value (1fr value + auto edit-btn) and let the head
-   wrap so the stats strip drops below the avatar/name. 640px is the shared narrow-viewport
-   breakpoint for this cluster (LandingPage #1249, SozlukHome #1250). */
+   crushes the value cell. Stack the label above the value (1fr value + auto edit-btn).
+   640px is the shared narrow-viewport breakpoint for this cluster (LandingPage #1249,
+   SozlukHome #1250); the header's own wrap lives in ProfileHeader.css. */
 @media (max-width: 640px) {
-	.kp-profile__head {
-		flex-wrap: wrap;
-	}
-	.kp-profile__stats-strip {
-		margin-left: 0;
-	}
-
 	.kp-profile__row {
 		grid-template-columns: 1fr auto;
 	}

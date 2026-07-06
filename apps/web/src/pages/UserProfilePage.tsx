@@ -11,6 +11,10 @@ import {useMe} from "../auth/useMe";
 import {shouldShowCaylakStatus} from "../components/profile/CaylakStatusBlock";
 import {ContributionRow, ContributionView} from "../components/profile/ContributionRow";
 import {PromotionActions, shouldShowPromotionActions} from "../components/profile/PromotionActions";
+import {
+	CONTRIBUTIONS_EMPTY,
+	CONTRIBUTIONS_HEADING,
+} from "../components/profile/profileContributions";
 import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/UserProfileHeader";
 import {EmptyState} from "../components/ui/EmptyState";
 import {Screen} from "../fate/Screen";
@@ -105,11 +109,11 @@ function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 
 	return (
 		<section className="kp-user-profile__feed" data-testid="user-profile-feed">
-			<h3>katkılar</h3>
+			<h3>{CONTRIBUTIONS_HEADING.public}</h3>
 			{items.length === 0 ? (
 				<EmptyState
-					title="henüz katkı yok."
-					description="ilk tanımını ya da başlığını ekleyince burada görünür."
+					title={CONTRIBUTIONS_EMPTY.title}
+					description={CONTRIBUTIONS_EMPTY.description}
 				/>
 			) : (
 				<ul className="kp-user-profile__list">

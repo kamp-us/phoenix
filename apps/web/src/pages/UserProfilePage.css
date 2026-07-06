@@ -8,63 +8,8 @@
 	padding: 0 var(--s-3);
 }
 
-.kp-user-profile__head {
-	display: grid;
-	grid-template-columns: auto 1fr auto;
-	gap: var(--s-3);
-	align-items: center;
-	padding: var(--s-3) 0;
-	border-bottom: 1px solid var(--border-faint);
-	margin-bottom: var(--s-4);
-}
-
-.kp-user-profile__avatar {
-	width: 64px;
-	height: 64px;
-	border-radius: 50%;
-	background: var(--surface);
-	display: grid;
-	place-items: center;
-	font: 600 22px var(--font-body);
-	color: var(--accent-11);
-	overflow: hidden;
-}
-
-.kp-user-profile__avatar img {
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
-}
-
-.kp-user-profile__name {
-	font: var(--t-h-page);
-	color: var(--text-primary);
-}
-
-.kp-user-profile__handle {
-	font: var(--t-meta);
-	color: var(--text-muted);
-}
-
-.kp-user-profile__stats {
-	display: flex;
-	gap: var(--s-3);
-}
-
-.kp-user-profile__stat {
-	text-align: center;
-	min-width: 60px;
-}
-
-.kp-user-profile__stat .n {
-	font: var(--t-h-feed);
-	color: var(--text-primary);
-}
-
-.kp-user-profile__stat .l {
-	font: var(--t-meta);
-	color: var(--text-muted);
-}
+/* The profile header now lives in the shared ProfileHeader primitive
+   (components/profile/ProfileHeader.css, #2203). */
 
 .kp-user-profile__feed h3 {
 	font: var(--t-h-feed);
