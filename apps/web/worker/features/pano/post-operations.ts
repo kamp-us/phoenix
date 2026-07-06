@@ -572,7 +572,27 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		);
 		if (sandboxClause) baseConditions.push(sandboxClause);
 
-		const totalCount = yield* run((db) =>
+		type CursorRow = {
+			id: string;
+			score: number;
+			hotScore: number;
+			commentCount: number;
+			createdAt: Date | null;
+		};
+
+		// The total count and the keyset page are INDEPENDENT reads over the same
+		// base predicate — the page query never consumes the count — so they run
+		// concurrently instead of serially, collapsing two cross-region D1
+		// round-trips into one overlapped batch and cutting the feed's latency floor
+		// (#2275). The combinator is the repo's `Effect.all([...], {concurrency:
+		// "unbounded"})` parallel-reads idiom (Divan.collect). NOT folded into a
+		// single `count(*) OVER()` window: the keyset query's WHERE carries the
+		// cursor predicate (`id < cursor`), so a window count there would total only
+		// the post-cursor slice, not the whole feed — a different result the fold is
+		// forbidden to change. Per-viewer scalars (myVote/isSaved) + reaction
+		// aggregates are NOT read here; they come from the batched `getPostsByIds`
+		// re-hydrate in the resolver, left untouched.
+		const countEffect = run((db) =>
 			db
 				.select({n: sql<number>`count(*)`})
 				.from(schema.postRecord)
@@ -581,92 +601,102 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				.then((r) => r?.n ?? 0),
 		);
 
-		type CursorRow = {
-			id: string;
-			score: number;
-			hotScore: number;
-			commentCount: number;
-			createdAt: Date | null;
-		};
-		const resolvedRow = after
-			? ((yield* run((db) =>
-					db
-						.select({
-							id: schema.postRecord.id,
-							score: schema.postRecord.score,
-							hotScore: schema.postRecord.hotScore,
-							commentCount: schema.postRecord.commentCount,
-							createdAt: schema.postRecord.createdAt,
-						})
-						.from(schema.postRecord)
-						.where(eq(schema.postRecord.id, after))
-						.get(),
-				)) ?? null)
-			: null;
-		const cursor = resolveCursor<CursorRow>(after, resolvedRow);
-		if (cursor.kind === "miss") {
+		// The keyset page path: resolve the cursor (a DB read only when `after` is
+		// present), short-circuit to `null` on a cursor miss (the caller renders the
+		// empty page), else fetch the page and stamp the live author identity.
+		const pageEffect = Effect.gen(function* () {
+			const resolvedRow = after
+				? ((yield* run((db) =>
+						db
+							.select({
+								id: schema.postRecord.id,
+								score: schema.postRecord.score,
+								hotScore: schema.postRecord.hotScore,
+								commentCount: schema.postRecord.commentCount,
+								createdAt: schema.postRecord.createdAt,
+							})
+							.from(schema.postRecord)
+							.where(eq(schema.postRecord.id, after))
+							.get(),
+					)) ?? null)
+				: null;
+			const cursor = resolveCursor<CursorRow>(after, resolvedRow);
+			if (cursor.kind === "miss") return null;
+			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
+
+			// Both the keyset cursor predicate and `orderBy` derive from the one
+			// `POST_SORT_LEAD_COLUMN` map: an optional lead column (descending) +
+			// `id` desc tiebreaker; `new` (no lead column) orders by `id` alone.
+			const leadKey = POST_SORT_LEAD_COLUMN[sort];
+			const leadColumn = leadKey
+				? {column: schema.postRecord[leadKey], value: cursorRow?.[leadKey]}
+				: null;
+
+			const cursorPredicate = keysetAfter([
+				...(leadColumn
+					? [{column: leadColumn.column, dir: "desc" as const, value: leadColumn.value ?? null}]
+					: []),
+				{column: schema.postRecord.id, dir: "desc", value: cursorRow?.id ?? null},
+			]);
+
+			const whereExpr = cursorPredicate
+				? and(...baseConditions, cursorPredicate)
+				: and(...baseConditions);
+
+			const orderBy = [
+				...(leadColumn ? [desc(leadColumn.column)] : []),
+				desc(schema.postRecord.id),
+			];
+
+			const fetched = yield* run((db) =>
+				db
+					.select({
+						id: schema.postRecord.id,
+						slug: schema.postRecord.slug,
+						title: schema.postRecord.title,
+						url: schema.postRecord.url,
+						host: schema.postRecord.host,
+						bodyExcerpt: schema.postRecord.bodyExcerpt,
+						authorId: schema.postRecord.authorId,
+						authorName: schema.postRecord.authorName,
+						score: schema.postRecord.score,
+						commentCount: schema.postRecord.commentCount,
+						createdAt: schema.postRecord.createdAt,
+						tags: schema.postRecord.tags,
+					})
+					.from(schema.postRecord)
+					.where(whereExpr)
+					.orderBy(...orderBy)
+					.limit(first + 1),
+			);
+
+			// Route the keyset projection through the same `post-fields.ts` column→field
+			// map the by-id path uses, so `body` collapses to `null` for an empty excerpt
+			// (not `""`) — the divergence is unrepresentable, not hand-synced (#1170).
+			const page = forwardPage(fetched, first, (r) => r.id, toPostSummaryKeysetRow);
+
+			// Stamp the LIVE author identity onto the page — one batched
+			// `getProfileIdentitiesByIds` read for the whole page (never per-row), the same
+			// idiom `getPostsByIds` uses. This is the feed's convergence point: the resolver
+			// paths that serve this page WITHOUT re-hydrating through `getPostsByIds` —
+			// `landingPosts` (always anon) and the signed-OUT `posts` feed — would otherwise
+			// render the write-time `authorName` snapshot and degrade to `@username` (#2151,
+			// the last unstamped pano read path from #2139's `stampAuthorIdentity` rollout).
+			const stampedRows = yield* stampAuthorIdentity(readProfileIdentities, page.rows);
+			return {...page, rows: stampedRows};
+		});
+
+		// `countEffect` is element 0 so its read is issued first — the parallelized
+		// reads are order-independent for correctness (each is fully consumed), but
+		// keeping count first preserves the deterministic call order the scripted
+		// unit doubles replay against (count, [cursor], fetch).
+		const [totalCount, pageResult] = yield* Effect.all([countEffect, pageEffect], {
+			concurrency: "unbounded",
+		});
+		if (pageResult === null) {
 			return {...emptyKeysetPage, totalCount} satisfies PostConnectionPage;
 		}
-		const cursorRow = cursor.kind === "hit" ? cursor.row : null;
-
-		// Both the keyset cursor predicate and `orderBy` derive from the one
-		// `POST_SORT_LEAD_COLUMN` map: an optional lead column (descending) +
-		// `id` desc tiebreaker; `new` (no lead column) orders by `id` alone.
-		const leadKey = POST_SORT_LEAD_COLUMN[sort];
-		const leadColumn = leadKey
-			? {column: schema.postRecord[leadKey], value: cursorRow?.[leadKey]}
-			: null;
-
-		const cursorPredicate = keysetAfter([
-			...(leadColumn
-				? [{column: leadColumn.column, dir: "desc" as const, value: leadColumn.value ?? null}]
-				: []),
-			{column: schema.postRecord.id, dir: "desc", value: cursorRow?.id ?? null},
-		]);
-
-		const whereExpr = cursorPredicate
-			? and(...baseConditions, cursorPredicate)
-			: and(...baseConditions);
-
-		const orderBy = [...(leadColumn ? [desc(leadColumn.column)] : []), desc(schema.postRecord.id)];
-
-		const fetched = yield* run((db) =>
-			db
-				.select({
-					id: schema.postRecord.id,
-					slug: schema.postRecord.slug,
-					title: schema.postRecord.title,
-					url: schema.postRecord.url,
-					host: schema.postRecord.host,
-					bodyExcerpt: schema.postRecord.bodyExcerpt,
-					authorId: schema.postRecord.authorId,
-					authorName: schema.postRecord.authorName,
-					score: schema.postRecord.score,
-					commentCount: schema.postRecord.commentCount,
-					createdAt: schema.postRecord.createdAt,
-					tags: schema.postRecord.tags,
-				})
-				.from(schema.postRecord)
-				.where(whereExpr)
-				.orderBy(...orderBy)
-				.limit(first + 1),
-		);
-
-		// Route the keyset projection through the same `post-fields.ts` column→field
-		// map the by-id path uses, so `body` collapses to `null` for an empty excerpt
-		// (not `""`) — the divergence is unrepresentable, not hand-synced (#1170).
-		const page = forwardPage(fetched, first, (r) => r.id, toPostSummaryKeysetRow);
-
-		// Stamp the LIVE author identity onto the page — one batched
-		// `getProfileIdentitiesByIds` read for the whole page (never per-row), the same
-		// idiom `getPostsByIds` uses. This is the feed's convergence point: the resolver
-		// paths that serve this page WITHOUT re-hydrating through `getPostsByIds` —
-		// `landingPosts` (always anon) and the signed-OUT `posts` feed — would otherwise
-		// render the write-time `authorName` snapshot and degrade to `@username` (#2151,
-		// the last unstamped pano read path from #2139's `stampAuthorIdentity` rollout).
-		const stampedRows = yield* stampAuthorIdentity(readProfileIdentities, page.rows);
-
-		return {...page, rows: stampedRows, totalCount} satisfies PostConnectionPage;
+		return {...pageResult, totalCount} satisfies PostConnectionPage;
 	});
 
 	const getPostsByIds = Effect.fn("Pano.getPostsByIds")(function* (

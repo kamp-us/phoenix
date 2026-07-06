@@ -22,9 +22,11 @@ import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
+import type * as schema from "../../db/drizzle/schema.ts";
 import {makePasaportStub, PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import type {Pasaport, ProfileIdentityRow} from "../pasaport/Pasaport.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
+import {Reaction, type ReactionAggregate} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {Pano, PanoLive} from "./Pano.ts";
@@ -340,4 +342,127 @@ describe("Pano.listPostsConnection — stamps the LIVE author identity on the pa
 			);
 		}).pipe(Effect.provide(panoLayer(access, LiveIdentityStub)));
 	});
+});
+
+describe("Pano — authed feed: parallelized listPostsConnection composes with the getPostsByIds re-hydrate (#2275)", () => {
+	// #2275 parallelizes the total-count and keyset-page reads inside
+	// `listPostsConnection`; the per-viewer scalars (`myVote`/`isSaved`) and the
+	// reaction aggregate are deliberately NOT read there — they come from the
+	// batched `getPostsByIds` re-hydrate the `posts` resolver runs for a signed-in
+	// viewer (lists.ts). This drives that exact composition end to end over the
+	// substituted seams and proves a viewer with a vote + a save + a reaction still
+	// sees all three after the parallelization — i.e. the re-hydrate stamps survive.
+	const VIEWER = "user-viewer";
+
+	// The keyset-page projection `listPostsConnection` returns (post-fields subset).
+	const keysetRow = {
+		id: "post-1",
+		slug: "baslik",
+		title: "başlık",
+		url: "https://kamp.us",
+		host: "kamp.us",
+		bodyExcerpt: "özet",
+		authorId: "user-1",
+		authorName: "eski-ad",
+		score: 3,
+		commentCount: 2,
+		createdAt: new Date(1000),
+		tags: "show",
+	};
+
+	// The full `post_record` the re-hydrate re-reads by id (getPostsByIds does a
+	// `select()` of the whole row, then stamps the viewer scalars + reactions onto it).
+	// biome-ignore lint/plugin: a row fixture standing in for a full `post_record` select; getPostsByIds reads the lifecycle/draft columns + the `toPostSummaryRow` field set off it, enumerating every column adds nothing.
+	const fullRecord = {
+		id: "post-1",
+		slug: "baslik",
+		title: "başlık",
+		url: "https://kamp.us",
+		host: "kamp.us",
+		body: "gövde",
+		bodyExcerpt: "özet",
+		authorId: "user-1",
+		authorName: "eski-ad",
+		tags: "show",
+		score: 3,
+		commentCount: 2,
+		hotScore: 5,
+		createdAt: new Date(1000),
+		updatedAt: new Date(1000),
+		lastActivityAt: new Date(1000),
+		removedAt: null,
+		removedBy: null,
+		removedReason: null,
+		sandboxedAt: null,
+		isDraft: null,
+	} as unknown as typeof schema.postRecord.$inferSelect;
+
+	const reactionAggregate: ReactionAggregate = {
+		counts: [{emoji: "🔥", count: 4}],
+		myReaction: "🔥",
+	};
+
+	// The viewer's state: a vote (Vote.readMine → the id), a save (Bookmark.readMine
+	// → the id), and a reaction (Reaction.readAggregate → the non-empty aggregate).
+	// biome-ignore lint/plugin: a service double — only `readMine` is on the re-hydrate path.
+	const VotedStub = Layer.succeed(Vote, {
+		cast: () => Effect.die(new Error("feed re-hydrate must not cast a vote")),
+		readMine: () => Effect.succeed(new Set<string>(["post-1"])),
+		clearTarget: () => Effect.void,
+	} as unknown as typeof Vote.Service);
+
+	// biome-ignore lint/plugin: a service double — only `readMine` is on the re-hydrate path.
+	const SavedStub = Layer.succeed(Bookmark, {
+		toggle: () => Effect.die(new Error("feed re-hydrate must not toggle a bookmark")),
+		readMine: () => Effect.succeed(new Set<string>(["post-1"])),
+		listSavedConnection: () => Effect.die(new Error("not used")),
+	} as unknown as typeof Bookmark.Service);
+
+	const ReactedStub = Layer.succeed(Reaction, {
+		react: () => Effect.die(new Error("feed re-hydrate must not react")),
+		readMine: () => Effect.die(new Error("readMine not on this path")),
+		readAggregate: () => Effect.succeed(new Map([["post-1", reactionAggregate]])),
+		clearTarget: () => Effect.void,
+	} satisfies typeof Reaction.Service);
+
+	const authedPanoLayer = (access: DrizzleAccess) =>
+		PanoLive.pipe(
+			Layer.provide(VotedStub),
+			Layer.provide(SavedStub),
+			Layer.provide(ReactedStub),
+			Layer.provide(PasaportIdentityStub),
+			Layer.provide(Layer.succeed(Drizzle, access)),
+		);
+
+	it.effect(
+		"a signed-in viewer with a vote + a save + a reaction sees all three on the composed feed row",
+		() => {
+			// The composed authed-feed read order: count + keyset fetch (the two now
+			// parallelized in listPostsConnection), then the getPostsByIds re-hydrate
+			// fetch — the scripted double replays these in call order.
+			const {access} = scriptedAccess([
+				1 /* count */,
+				[keysetRow] /* keyset page fetch */,
+				[fullRecord] /* getPostsByIds re-hydrate fetch */,
+			]);
+			return Effect.gen(function* () {
+				const pano = yield* Pano;
+				const page = yield* pano.listPostsConnection({sort: "new", first: 10});
+				assert.strictEqual(page.totalCount, 1, "parallelized count still lands on the page");
+				const ids = page.rows.map((row) => row.id);
+				assert.deepStrictEqual(ids, ["post-1"], "the keyset page carries the id to re-hydrate");
+
+				const hydrated = yield* pano.getPostsByIds(ids, {viewerId: VIEWER});
+				const row = hydrated[0];
+				assert.isDefined(row, "the re-hydrate returns the viewer-scoped row");
+				assert.strictEqual(row.myVote, true, "the viewer's vote survives the re-hydrate stamp");
+				assert.strictEqual(row.isSaved, true, "the viewer's save survives the re-hydrate stamp");
+				assert.deepStrictEqual(
+					row.reactions,
+					reactionAggregate,
+					"the reaction aggregate survives the re-hydrate stamp",
+				);
+			}).pipe(Effect.provide(authedPanoLayer(access)));
+		},
+	);
 });
