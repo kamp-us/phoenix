@@ -783,8 +783,11 @@ changed no user-facing code (the unfiring-gate class — `gh-issue-intake-format
 [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).
 So, before the facet checks, **scan the diff for a user-facing surface, emit what you scanned, and
 FAIL CLOSED when it is empty.** The user-facing surface is the set of changed paths a user can
-reach — **`apps/web/src/**/*.tsx`** (UI), and **new fate resolvers / HTTP routes / mutations** under
-`apps/web/worker/**` (the data + API surface a flag would gate). This is deliberately the *reachable*
+reach — **`apps/web/src/**/*.{tsx,css}`** (UI markup + stylesheets), and **new fate resolvers / HTTP
+routes / mutations** under `apps/web/worker/**` (the data + API surface a flag would gate). `.css` is
+in-surface because an unconditional CSS-only PR (a contrast promotion, a tap-target floor, a
+focus-ring fix) changes rendered surface the same way a `.tsx` change does — omitting it zero-scoped a
+correct CSS-only PR into a false FAIL (#2185). This is deliberately the *reachable*
 surface, not "any file": a `flag`-marked PR whose entire diff is a refactor, a test, a doc, or a
 config change is one that shipped **no** user-facing path to contain, which on a `flag` marker is the
 FAIL — there is no dark feature here to gate (it is **not** a graceful skip; the skip is for
@@ -795,13 +798,13 @@ surface and the surface came back empty):
 # the PR's user-facing surface (reachable UI + new data/API entry points), off the changed file set.
 # Emit the count + matched paths (ADR 0092 §ZS #1 — a gate states its scope), then fail closed on zero.
 FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # the changed paths (same set Step 2 pulled; --paginate past file #100, #725)
-USERFACING=$(printf '%s\n' "$FILES" | grep -E '^apps/web/src/.*\.tsx$|^apps/web/worker/.*\.(ts|tsx)$' || true)
+USERFACING=$(printf '%s\n' "$FILES" | grep -E '^apps/web/src/.*\.(tsx|css)$|^apps/web/worker/.*\.(ts|tsx)$' || true)
 USERFACING_N=$(printf '%s\n' "$USERFACING" | grep -c . || true)
 echo "flag-gating user-facing scope: $USERFACING_N path(s) matched"; printf '%s\n' "$USERFACING"
 if [ "$USERFACING_N" -eq 0 ]; then
   # relevant input (flag marker present), zero matches ⇒ FAIL CLOSED, never a silent PASS (§ZS #2).
   # Emit ONE [FAIL] row into the conjunctive verdict; the PR is not merge-ready.
-  echo "- [FAIL] flag-gating (default-off) — \`**Containment:** flag\` marks a dark-shipped feature, but the diff touches NO user-facing surface (apps/web/src/**/*.tsx, new apps/web/worker/** resolver/route/mutation): empty scope on a flag-marked PR is a FAIL (ADR 0092 §ZS), not a pass — there is no user-facing path to gate."
+  echo "- [FAIL] flag-gating (default-off) — \`**Containment:** flag\` marks a dark-shipped feature, but the diff touches NO user-facing surface (apps/web/src/**/*.{tsx,css}, new apps/web/worker/** resolver/route/mutation): empty scope on a flag-marked PR is a FAIL (ADR 0092 §ZS), not a pass — there is no user-facing path to gate."
 fi
 ```
 
@@ -844,7 +847,7 @@ like any other criterion:
 ```
 - [PASS] flag-gating (default-off) — resources.ts:NN defaultVariation:"off"; reads pass old-path default (worker/...:NN, src/...:NN); new path gated behind FlagGate, no ungated entry
 - [FAIL] flag-gating (default-off) — <which facet failed: e.g. useFlag(key, true) defaults to the NEW path → ships live>
-- [FAIL] flag-gating (default-off) — flag-marked PR touches no user-facing surface (apps/web/src/**/*.tsx, new apps/web/worker/** resolver/route/mutation): empty scope = FAIL (ADR 0092 §ZS)
+- [FAIL] flag-gating (default-off) — flag-marked PR touches no user-facing surface (apps/web/src/**/*.{tsx,css}, new apps/web/worker/** resolver/route/mutation): empty scope = FAIL (ADR 0092 §ZS)
 ```
 
 When the marker is `exempt`/`none`/absent or no cycle doc exists, **omit this row entirely** — a
