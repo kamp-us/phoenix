@@ -1,9 +1,9 @@
 # Property-based a11y — the promotion loop over the `ui/` primitives
 
 The third enforcement rung of the ADR
-[0162](../../../../../.decisions/0162-four-pillars-design-law.md) four-pillars
+[0162](../../../../../../.decisions/0162-four-pillars-design-law.md) four-pillars
 design law (issue #2175), above the deterministic CSS lint
-([design-token-guard](../../../../../.github/workflows/design-token-guard.yml),
+([design-token-guard](../../../../../../.github/workflows/design-token-guard.yml),
 #2170) and complementary to the `review-design` judgment gate (#2174).
 
 It generates randomized **valid** prop combinations for each `ui/` primitive with
@@ -33,7 +33,7 @@ The coverage test in [`a11y-pbt.test.tsx`](./a11y-pbt.test.tsx) asserts the
 registry key set **equals** the barrel's runtime export set — so a newly added
 primitive that no one classified, or a stale entry for a removed one, **fails the
 gate** (fail-closed, ADR
-[0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). The
+[0092](../../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). The
 covered set can never silently go stale.
 
 `deferred` is a conscious, reasoned parking spot (a compound base-ui/portal
@@ -47,5 +47,5 @@ pnpm --filter @kampus/web test:a11y
 ```
 
 Wired as a standalone CI gate in
-[`.github/workflows/a11y-pbt.yml`](../../../../../.github/workflows/a11y-pbt.yml)
+[`.github/workflows/a11y-pbt.yml`](../../../../../../.github/workflows/a11y-pbt.yml)
 (least-privilege `contents: read`).
