@@ -22,7 +22,8 @@ import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
-import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
+import {makePasaportStub, PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
+import type {Pasaport, ProfileIdentityRow} from "../pasaport/Pasaport.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
@@ -98,12 +99,12 @@ const BookmarkStub = Layer.succeed(Bookmark, {
 	listSavedConnection: () => Effect.die(new Error("not used")),
 } as unknown as typeof Bookmark.Service);
 
-const panoLayer = (access: DrizzleAccess) =>
+const panoLayer = (access: DrizzleAccess, pasaport: Layer.Layer<Pasaport> = PasaportIdentityStub) =>
 	PanoLive.pipe(
 		Layer.provide(VoteStub),
 		Layer.provide(BookmarkStub),
 		Layer.provide(ReactionStub),
-		Layer.provide(PasaportIdentityStub),
+		Layer.provide(pasaport),
 		Layer.provide(Layer.succeed(Drizzle, access)),
 	);
 
@@ -244,5 +245,99 @@ describe("Pano.listPostsConnection — cursor-miss → empty page, NO second DB 
 			const page = yield* pano.listPostsConnection({first: 10});
 			assert.strictEqual(page.totalCount, 0);
 		}).pipe(Effect.provide(panoLayer(access)));
+	});
+});
+
+describe("Pano.listPostsConnection — stamps the LIVE author identity on the page (#2151)", () => {
+	// The keyset fetch projects exactly `PostKeysetRow` (post-fields.ts): the resolver
+	// reads only these columns, so a scripted fetch row must carry the same subset.
+	const fetchRow = {
+		id: "post-1",
+		slug: "baslik",
+		title: "başlık",
+		url: "https://kamp.us",
+		host: "kamp.us",
+		bodyExcerpt: "özet",
+		authorId: "user-1",
+		// The write-time snapshot — the STALE handle the pre-fix feed rendered.
+		authorName: "eski-ad",
+		score: 3,
+		commentCount: 2,
+		createdAt: new Date(1000),
+		tags: "show",
+	};
+
+	// The LIVE `user_profile` identity for `user-1` — deliberately DIVERGENT from the
+	// write-time `authorName` snapshot above, so a stamped row proves the feed read the
+	// current handle rather than echoing the snapshot.
+	const liveIdentity: ProfileIdentityRow = {
+		userId: "user-1",
+		username: "umut",
+		displayName: "Umut Şirin",
+		totalKarma: 42,
+	};
+
+	const readSpy: {ids: ReadonlyArray<string> | null} = {ids: null};
+	const LiveIdentityStub = makePasaportStub({
+		getProfileIdentitiesByIds: (ids: ReadonlyArray<string>) => {
+			readSpy.ids = ids;
+			return Effect.succeed([liveIdentity]);
+		},
+	});
+
+	it.effect(
+		"landingPosts / signed-out feed path: the page row carries the LIVE username + displayName, not the write-time snapshot",
+		() => {
+			readSpy.ids = null;
+			// count + fetch (head page, no cursor). The fetch returns the one live row.
+			const {access} = scriptedAccess([1 /* count */, [fetchRow] /* fetch */]);
+			return Effect.gen(function* () {
+				const pano = yield* Pano;
+				const page = yield* pano.listPostsConnection({sort: "new", first: 10});
+				assert.strictEqual(page.rows.length, 1, "head page returns the one row");
+				const row = page.rows[0];
+				assert.isDefined(row, "head page returns the one row");
+				// The stamp — the fix's whole point: the resolver paths that DON'T re-hydrate
+				// through `getPostsByIds` (landingPosts, signed-out posts) now get the live
+				// identity here, so `actorLabel` renders the current display name.
+				assert.strictEqual(
+					row.authorDisplayName,
+					"Umut Şirin",
+					"the live displayName is stamped onto the feed row",
+				);
+				assert.strictEqual(
+					row.authorUsername,
+					"umut",
+					"the live username is stamped onto the feed row",
+				);
+				// The write-time `authorName` snapshot still rides as `author` (the intrinsic
+				// field) — the stamp ADDS the live identity, it does not overwrite the snapshot.
+				assert.strictEqual(
+					row.author,
+					"eski-ad",
+					"the write-time snapshot is preserved as `author`",
+				);
+			}).pipe(Effect.provide(panoLayer(access, LiveIdentityStub)));
+		},
+	);
+
+	it.effect("the identity read is ONE batched query keyed by the page's authorIds — no N+1", () => {
+		readSpy.ids = null;
+		const rows = [
+			{...fetchRow, id: "post-1", authorId: "user-1"},
+			{...fetchRow, id: "post-2", authorId: "user-2"},
+			// Two posts by the same author collapse to one id in the batch.
+			{...fetchRow, id: "post-3", authorId: "user-1"},
+		];
+		const {access} = scriptedAccess([3 /* count */, rows /* fetch */]);
+		return Effect.gen(function* () {
+			const pano = yield* Pano;
+			yield* pano.listPostsConnection({sort: "new", first: 10});
+			assert.deepStrictEqual(
+				[...(readSpy.ids ?? [])].sort(),
+				["user-1", "user-2"],
+				"one identity read over the page's DISTINCT authorIds — never per-row",
+			);
+		}).pipe(Effect.provide(panoLayer(access, LiveIdentityStub)));
 	});
 });

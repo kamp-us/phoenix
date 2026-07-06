@@ -655,7 +655,16 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		// (not `""`) — the divergence is unrepresentable, not hand-synced (#1170).
 		const page = forwardPage(fetched, first, (r) => r.id, toPostSummaryKeysetRow);
 
-		return {...page, totalCount} satisfies PostConnectionPage;
+		// Stamp the LIVE author identity onto the page — one batched
+		// `getProfileIdentitiesByIds` read for the whole page (never per-row), the same
+		// idiom `getPostsByIds` uses. This is the feed's convergence point: the resolver
+		// paths that serve this page WITHOUT re-hydrating through `getPostsByIds` —
+		// `landingPosts` (always anon) and the signed-OUT `posts` feed — would otherwise
+		// render the write-time `authorName` snapshot and degrade to `@username` (#2151,
+		// the last unstamped pano read path from #2139's `stampAuthorIdentity` rollout).
+		const stampedRows = yield* stampAuthorIdentity(readProfileIdentities, page.rows);
+
+		return {...page, rows: stampedRows, totalCount} satisfies PostConnectionPage;
 	});
 
 	const getPostsByIds = Effect.fn("Pano.getPostsByIds")(function* (
