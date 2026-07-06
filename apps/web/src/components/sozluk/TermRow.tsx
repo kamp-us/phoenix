@@ -30,7 +30,7 @@ export function TermRow({term, variant = "recent", rank}: TermRowProps) {
 				<Link className="kp-sozluk-popular__title" to={`/sozluk/${data.slug}`}>
 					{data.title}
 				</Link>
-				<span className="kp-sozluk-popular__meta">{data.totalScore} ↑</span>
+				<span className="kp-sozluk-popular__meta">{data.totalScore} oy</span>
 			</li>
 		);
 	}

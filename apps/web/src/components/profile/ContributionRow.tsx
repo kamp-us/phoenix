@@ -5,6 +5,7 @@ import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Contribution} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
+import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import "./ContributionRow.css";
 
@@ -26,17 +27,6 @@ export const ContributionView = view<Contribution>()({
 	postId: true,
 	postTitle: true,
 });
-
-function formatDate(value: Date | string | null | undefined): string {
-	const iso = toIso(value);
-	if (!iso) return "";
-	try {
-		const d = new Date(iso);
-		return d.toLocaleDateString("tr-TR", {day: "2-digit", month: "short", year: "numeric"});
-	} catch {
-		return iso;
-	}
-}
 
 export interface ContributionRowProps {
 	node: ViewRef<"Contribution">;
@@ -66,8 +56,8 @@ export function ContributionRow({node, sandboxBadge = false}: ContributionRowPro
 					<Link to={`/sozluk/${c.termSlug}`} className="kp-user-profile__row-title">
 						{c.termTitle}
 					</Link>
-					<span className="kp-user-profile__row-score">{c.score} puan</span>
-					<span className="kp-user-profile__row-date">{formatDate(c.createdAt)}</span>
+					<span className="kp-user-profile__row-score">{c.score} oy</span>
+					<span className="kp-user-profile__row-date">{formatAgoTR(toIso(c.createdAt))}</span>
 				</div>
 				<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt ?? "")}</p>
 			</li>
@@ -83,8 +73,8 @@ export function ContributionRow({node, sandboxBadge = false}: ContributionRowPro
 					<Link to={`/pano/${c.id}`} className="kp-user-profile__row-title">
 						{c.title}
 					</Link>
-					<span className="kp-user-profile__row-score">{c.score} puan</span>
-					<span className="kp-user-profile__row-date">{formatDate(c.createdAt)}</span>
+					<span className="kp-user-profile__row-score">{c.score} oy</span>
+					<span className="kp-user-profile__row-date">{formatAgoTR(toIso(c.createdAt))}</span>
 				</div>
 				{c.bodyExcerpt ? (
 					<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt)}</p>
@@ -102,8 +92,8 @@ export function ContributionRow({node, sandboxBadge = false}: ContributionRowPro
 					<Link to={`/pano/${c.postId}`} className="kp-user-profile__row-title">
 						{c.postTitle}
 					</Link>
-					<span className="kp-user-profile__row-score">{c.score} puan</span>
-					<span className="kp-user-profile__row-date">{formatDate(c.createdAt)}</span>
+					<span className="kp-user-profile__row-score">{c.score} oy</span>
+					<span className="kp-user-profile__row-date">{formatAgoTR(toIso(c.createdAt))}</span>
 				</div>
 				<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt ?? "")}</p>
 			</li>
