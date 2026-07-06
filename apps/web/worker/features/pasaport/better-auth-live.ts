@@ -148,6 +148,22 @@ export const BetterAuthLive = Layer.effect(
 				database: drizzleAdapter(db, {provider: "sqlite", schema}),
 				secret: Redacted.value(secret),
 				...authUrlConfig,
+				// Take D1 off get-session's hot path (#2260). Authenticated
+				// `/api/auth/get-session` was 5–8s because it is the FIRST D1-touching
+				// request in a cold isolate and pays the cold first-D1-connection
+				// amplifier (the same session resolution runs in ~478ms on `/fate`
+				// once the isolate + D1 subrequest are warm — so it's cold-connection
+				// cost, not a slow query). `cookieCache` serves the session from a
+				// short-lived signed cookie (default `strategy: "compact"` =
+				// HMAC-SHA256), making get-session crypto-only with ZERO D1 on the hot
+				// path. Tradeoff: a revoked/logged-out session stays valid until the
+				// cookie expires, so `maxAge` is the session-revocation latency — kept
+				// SHORT at better-auth's own 5-minute default (300s) to bound it.
+				session: {cookieCache: {enabled: true, maxAge: 300}},
+				// Collapse the sequential session+user lookups into one relational
+				// query via the drizzle relations wired above (#2260). Complements
+				// cookieCache: cheap on the cache-miss / cold path that still hits D1.
+				experimental: {joins: true},
 				// Verify a new account's email via a delivered link (the `EmailSender`
 				// port; ADR 0101). Was unreachable before — no sender existed.
 				emailVerification: {
