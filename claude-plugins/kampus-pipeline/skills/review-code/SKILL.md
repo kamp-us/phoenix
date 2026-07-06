@@ -1371,50 +1371,32 @@ you reviewed (`$HEAD_SHA`), **or** the native approving review GitHub recorded a
 the **same SHA-binding contract** (§5 / ADR 0058) the consumers apply, so "landed" means landed *for
 this head*, not "some review-code comment exists":
 
+Do **not** re-implement this inline against a `$MINE` you captured on one 4a/4b branch — that carried
+id is exactly what the #2264 recurrence slipped through (`$MINE` is set only on the APPROVE-failed
+comment-upsert `else` fallback, so the native-APPROVE, first-`POST`, and hand-rolled paths reached the
+guard with an empty id and a broken/leaking marker sailed through). Instead call the **single
+unconditional wrapper** from the shared contract, which re-derives the landed verdict from live PR
+state (never a carried variable) and runs the read-back on whatever landed, on **every** post path —
+[`gh-issue-intake-formats.md` §Make the read-back UNCONDITIONAL (`verdict_post_verify`)](../gh-issue-intake-formats.md#make-the-read-back-unconditional--resolve-the-landed-verdict-from-pr-state-never-a-carried-id-verdict_post_verify):
+
 ```bash
-# verdict-posting self-assertion: prove a current-head review-code verdict actually landed (§ZS).
-ME="$(gh api user --jq .login)"
-# (1) a marker comment from me, first line review-code:, carrying THIS head's @ <sha> (or the
-#     advisory line, which is intentionally SHA-less — it authorizes nothing but IS a posted verdict):
-LANDED_COMMENT=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-  | jq -r --arg me "$ME" --arg sha "$HEAD_SHA" '
-      [ .[] | select(.user.login==$me)
-            | select((.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*" + ($sha[0:7]); "i"))
-                      or (.body | test("^\\s*\\**\\s*review-code:\\s*advisory"; "i"))) ]
-      | length')
-# (2) or a native approving review GitHub attributed to this exact head (commit_id == HEAD_SHA):
-LANDED_REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-  --jq "[.[] | select(.user.login==\"$ME\" and .commit_id==\"$HEAD_SHA\" and .state==\"APPROVED\")] | length")
-echo "verdict-posting self-check @ ${HEAD_SHA:0:7}: marker=$LANDED_COMMENT native-approve=$LANDED_REVIEW"
-if [ "$LANDED_COMMENT" -eq 0 ] && [ "$LANDED_REVIEW" -eq 0 ]; then
-  # the gate computed a verdict but NONE bound to the current head landed: the post silently no-opped.
-  # Fail LOUD — do NOT exit 0 as if gated. Re-post the verdict (re-run the 4a/4b upsert) and re-assert;
-  # if it still cannot land, surface it as a posting failure in the run ledger (the PR is genuinely
-  # ungated and a consumer must not read it as verified), never swallow it as a silent success.
-  echo "review-code verdict-posting FAILED (fail-loud): no review-code verdict bound to head ${HEAD_SHA:0:7} landed — the post no-opped. Re-posting; if it still fails, report posting failure (the PR is ungated)." >&2
-fi
+# UNCONDITIONAL post-verify: resolve the landed verdict from PR state (marker comment @ HEAD_SHA, the
+# advisory line, or the native APPROVE at commit_id==HEAD_SHA), then prove it present + well-formed +
+# leak-free. FATAL (non-zero) on absent / malformed / leaking — the #2264 whole-body-path leak, a
+# no-opped post, and a stale-head marker all fail here. Propagate the non-zero: never report the gate
+# done over an ungated PR. Runs no matter which 4a/4b branch posted — no $MINE, no skippable path.
+verdict_post_verify "$PR" review-code "$HEAD_SHA" || exit 1
 ```
 
-The `marker=N native-approve=M` line is the **load-bearing emit** (§ZS #1): the run output now states
-that the verdict reached the PR for this head, so a posting step that quietly stopped landing is
-visible immediately instead of reading green. A SHA-binding read is deliberate — a *stale* marker
-from an earlier head (a pre-rebase verdict, the head-moved-under-the-verdict race ADR 0058 closes)
-does **not** count as landed here, exactly as `ship-it` would refuse it; the self-check and the
-consumer apply one SHA contract. This makes verdict-posting an **enforced** gate, not a convention:
-the gate does not consider itself done until its own verdict is provably on the current head — closing
-the case where the posting step silently no-ops and a PR reads as ungated (#749 part b).
-
-**Then run the shared verdict read-back guard on the comment you just wrote (the #2148 leak class).**
-The presence check above proves *some* current-head `review-code:` verdict landed; it does not prove
-the comment **body** is well-formed and **leak-free** — the #2148 failure was a marker comment whose
-entire body was a local temp path (`@/var/folders/…`), a broken-marker + local-path-leak that a
-presence scan doesn't catch. When you posted via the **comment** upsert path (not the native APPROVE),
-re-read *that* comment and run the single canonical guard defined in the shared contract —
-[`gh-issue-intake-formats.md` §The verdict read-back guard](../gh-issue-intake-formats.md#the-verdict-read-back-guard--after-posting-a-gate-marker-re-read-it-and-fail-loud-verdict_readback_guard).
-Do **not** re-derive a local copy — call the shared `verdict_readback_guard "$MINE" review-code "$HEAD_SHA"`
-(it asserts the canonical marker token, the anchored `Reviewed-head: @ <sha>` line, and **no local
-filesystem path**, failing loud on any miss). On non-zero, re-post the real verdict and re-assert;
-never swallow it as a silent success.
+`verdict_post_verify` is the load-bearing change over the old inline check: the prior presence scan
+merely *echoed* a warning on a miss and re-posted **without a non-zero exit**, so a garbled/absent
+marker read as green (the #2264 slip). The wrapper's single **fatal** exit — on nothing-landed *and*
+on a malformed/leaking marker resolved from PR state — makes verdict-posting an **enforced** gate: the
+gate does not consider itself done until a clean, current-head `review-code:` verdict is provably on
+the PR. The SHA-binding is deliberate: a *stale* marker from an earlier head (a pre-rebase verdict,
+the head-moved-under-the-verdict race ADR 0058 closes) does **not** count as landed, exactly as
+`ship-it` would refuse it. See the shared contract for the full post-path enumeration proving no path
+skips the guard.
 
 > A `HEAD_SHA` moved between the 4a/4b post and this read-back means the PR head advanced *during*
 > the review — the verdict you posted is already stale against the new head. Re-resolve
