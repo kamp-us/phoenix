@@ -51,6 +51,9 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 			createdAt: new Date(1000),
 			updatedAt: new Date(2000),
 			myVote: null,
+			// Owner-scoped in-review flag (#2200): stamped only by the read path, so a bare
+			// row shape defaults it `false` and never leaks review state to another viewer.
+			sandboxed: false,
 			reactions: EMPTY_REACTION_AGGREGATE,
 		});
 	});
@@ -69,12 +72,15 @@ describe("Sözlük Definition wire shaper — derived from the one column→fiel
 			"id",
 			"myVote",
 			"reactions",
+			"sandboxed",
 			"score",
 			"updatedAt",
 		]);
 		assert.strictEqual(wire.__typename, "Definition");
 		// No viewer scalar stamped on a bare row read → defaulted to `null`.
 		assert.strictEqual(wire.myVote, null);
+		// Owner-scoped in-review flag defaults `false` on a bare row shape (#2200).
+		assert.strictEqual(wire.sandboxed, false);
 		// No reactions stamped on a bare row read → the empty aggregate.
 		assert.deepStrictEqual(wire.reactions, EMPTY_REACTION_AGGREGATE);
 	});

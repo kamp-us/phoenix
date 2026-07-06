@@ -28,6 +28,7 @@ import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {Dialog} from "../ui/Dialog";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
+import {ReviewBadge} from "../ui/ReviewBadge";
 
 export const DefinitionView = view<Definition>()({
 	id: true,
@@ -40,6 +41,7 @@ export const DefinitionView = view<Definition>()({
 	authorId: true,
 	authorUsername: true,
 	authorDisplayName: true,
+	sandboxed: true,
 	reactions: {counts: true, myReaction: true},
 });
 
@@ -299,6 +301,9 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					<DefinitionBody text={definition.body} />
 				)}
 				<footer className="kp-sozluk-definition__foot">
+					{/* Owner-only in-review signal (#2200): `sandboxed` is owner-scoped server-side,
+					    re-gated on `isAuthor` so only the author sees their own pending definition's state. */}
+					{isAuthor && definition.sandboxed ? <ReviewBadge /> : null}
 					{/* Live author identity via `actorLabel` (#2139): CURRENT displayName → @username,
 					    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
 					<span className="author">

@@ -22,6 +22,7 @@ import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
 import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
+	ownSandboxed,
 	publicLiveWhere,
 	resolveSandboxViewer,
 	sandboxBacklogWhere,
@@ -686,7 +687,18 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.limit(first + 1),
 			);
 
-			const page = forwardPage(fetched, first, (r: DefinitionRow) => r.id, toDefinitionRow);
+			// `sandboxed` is the owner-scoped in-review flag (#2200): computed off the fetched
+			// record against the viewer, so a çaylak sees the "incelemede" signal on their OWN
+			// still-in-review definition and no other viewer ever receives it.
+			const page = forwardPage(
+				fetched,
+				first,
+				(r: DefinitionRow) => r.id,
+				(d) => ({
+					...toDefinitionRow(d),
+					sandboxed: ownSandboxed(d, viewerId),
+				}),
+			);
 			const scalared = yield* stampViewerScalars(page.rows, viewerId, [definitionVoteScalar]);
 			const reacted = yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
 			const rows = yield* stampAuthorIdentity(pasaport.getProfileIdentitiesByIds, reacted);
@@ -719,9 +731,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						),
 					),
 			);
-			const scalared = yield* stampViewerScalars(fetched.map(toDefinitionRow), viewerId, [
-				definitionVoteScalar,
-			]);
+			const scalared = yield* stampViewerScalars(
+				fetched.map((d) => ({...toDefinitionRow(d), sandboxed: ownSandboxed(d, viewerId)})),
+				viewerId,
+				[definitionVoteScalar],
+			);
 			const reacted = yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
 			return yield* stampAuthorIdentity(pasaport.getProfileIdentitiesByIds, reacted);
 		});

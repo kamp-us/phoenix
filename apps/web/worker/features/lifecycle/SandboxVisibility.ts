@@ -124,6 +124,25 @@ export interface PublicLiveColumns extends SandboxColumns {
 export const publicLiveWhere = (cols: PublicLiveColumns, viewer: SandboxViewer): SQL | undefined =>
 	and(isNull(cols.removedAt), sandboxVisibleWhere(cols, viewer));
 
+/** The two record fields the owner-scoped in-review flag reads. */
+export interface OwnerSandboxRecord {
+	readonly sandboxedAt: Date | null;
+	readonly authorId: string;
+}
+
+/**
+ * The in-memory owner-scoped in-review flag (#2200): `true` iff the row is still
+ * sandboxed (#1205) AND the viewer is its author — the `sandboxed` wire signal a
+ * çaylak sees on their OWN in-review content. Owner-only by construction: any other
+ * viewer (anonymous, another member, a moderator) reads `false`, so the flag never
+ * leaks review state beyond the author. The in-memory dual of {@link sandboxArm}'s
+ * `Sandboxed` author branch, for the read paths that have already fetched the record.
+ */
+export const ownSandboxed = (
+	record: OwnerSandboxRecord,
+	viewerId: string | null | undefined,
+): boolean => record.sandboxedAt != null && viewerId != null && record.authorId === viewerId;
+
 /** The lifecycle columns the moderator sandbox queue reads. */
 export interface SandboxBacklogColumns {
 	readonly sandboxedAt: SQLWrapper;

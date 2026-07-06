@@ -47,6 +47,13 @@ type IntrinsicRow = {[K in keyof typeof intrinsicFields]: ReturnType<(typeof int
 export interface DefinitionRow extends IntrinsicRow {
 	myVote?: boolean | null;
 	/**
+	 * The owner-scoped in-review flag (#2200): `true` iff this definition is still
+	 * sandboxed (#1205) AND the viewer is its author, stamped by the read paths via
+	 * `ownSandboxed`. Owner-only by construction, so it never leaks review state to
+	 * another viewer; a read that doesn't stamp it leaves it `undefined` → default `false`.
+	 */
+	sandboxed?: boolean;
+	/**
 	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
 	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
 	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
@@ -98,6 +105,7 @@ export const definitionViewFields = {
 	createdAt: true,
 	updatedAt: true,
 	myVote: true,
+	sandboxed: true,
 	authorUsername: true,
 	authorDisplayName: true,
 	reactions: true,
