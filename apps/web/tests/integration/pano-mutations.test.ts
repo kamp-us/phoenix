@@ -195,6 +195,45 @@ describe("pano mutations — post.vote / retractVote", () => {
 		if (result.ok) return;
 		expect(result.error.code).toBe("POST_NOT_FOUND");
 	});
+
+	// The self-vote block (#2216) proven end-to-end through the real mutation, not just the
+	// domain unit (self-vote-guard.unit.test.ts): `author` is a promoted yazar, so it clears
+	// the earn-to-vote gate (#1810) and it is the self-vote guard specifically that rejects a
+	// cast on its own post with the `SELF_VOTE_NOT_ALLOWED` wire code the client receives.
+	it("post.vote by the post's own author is rejected with SELF_VOTE_NOT_ALLOWED", async () => {
+		const id = await seedPost({title: `${NS} self-vote target`, tags: [{kind: "soru"}]});
+		const result = await h.fate(
+			{kind: "mutation", name: "post.vote", input: {id}, select: ["id", "score", "myVote"]},
+			{cookie: author.cookie},
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.error.code).toBe("SELF_VOTE_NOT_ALLOWED");
+
+		// The rejected cast wrote nothing: the post is still at score 0 with no vote stamped.
+		const detail = await h.fate(
+			{kind: "query", name: "post", args: {idOrSlug: id}, select: ["id", "score", "myVote"]},
+			{cookie: author.cookie},
+		);
+		expect(detail.ok).toBe(true);
+		if (!detail.ok) return;
+		expect((detail.data as PostNode).score).toBe(0);
+		expect((detail.data as PostNode).myVote).toBeNull();
+	});
+
+	// The guard is cast-only (#2216): the author retracting a vote on its own post is exempt —
+	// a retract by the owner is not rejected (here a no-op, since no vote was cast).
+	it("post.retractVote by the post's own author is NOT rejected (cast-only guard)", async () => {
+		const id = await seedPost({title: `${NS} self-retract exempt`, tags: [{kind: "soru"}]});
+		const result = await h.fate(
+			{kind: "mutation", name: "post.retractVote", input: {id}, select: ["id", "score", "myVote"]},
+			{cookie: author.cookie},
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect((result.data as PostNode).score).toBe(0);
+		expect((result.data as PostNode).myVote).toBe(false);
+	});
 });
 
 describe("pano mutations — post.edit / post.delete", () => {

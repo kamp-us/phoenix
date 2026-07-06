@@ -393,6 +393,71 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		if (result.ok) return;
 		expect(result.error.code).toBe("DEFINITION_NOT_FOUND");
 	});
+
+	// The self-vote block (#2216) proven end-to-end through the real mutation, not just the
+	// domain unit (self-vote-guard.unit.test.ts): `author` is a promoted yazar, so it clears
+	// the earn-to-vote gate (#1810) and it is the self-vote guard specifically that rejects a
+	// cast on its own definition with the `SELF_VOTE_NOT_ALLOWED` wire code the client receives.
+	it("definition.vote by the definition's own author is rejected with SELF_VOTE_NOT_ALLOWED", async () => {
+		const slug = `${NS}-self-vote`;
+		const added = await h.fate(
+			{
+				kind: "mutation",
+				name: "definition.add",
+				input: {termSlug: slug, body: "a self-vote target"},
+				select: ["id"],
+			},
+			{cookie: author.cookie},
+		);
+		expect(added.ok).toBe(true);
+		if (!added.ok) return;
+		const id = (added.data as DefNode).id;
+
+		const result = await h.fate(
+			{kind: "mutation", name: "definition.vote", input: {id}, select: ["score", "myVote"]},
+			{cookie: author.cookie},
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.error.code).toBe("SELF_VOTE_NOT_ALLOWED");
+
+		// The rejected cast wrote nothing: the definition is still at score 0 with no vote stamped.
+		const detail = await h.fate(
+			{kind: "mutation", name: "definition.retractVote", input: {id}, select: ["score", "myVote"]},
+			{cookie: author.cookie},
+		);
+		expect(detail.ok).toBe(true);
+		if (!detail.ok) return;
+		expect((detail.data as DefNode).score).toBe(0);
+		expect((detail.data as DefNode).myVote).toBe(false);
+	});
+
+	// The guard is cast-only (#2216): the author retracting a vote on its own definition is
+	// exempt — a retract by the owner is not rejected (here a no-op, since no vote was cast).
+	it("definition.retractVote by the definition's own author is NOT rejected (cast-only guard)", async () => {
+		const slug = `${NS}-self-retract-exempt`;
+		const added = await h.fate(
+			{
+				kind: "mutation",
+				name: "definition.add",
+				input: {termSlug: slug, body: "a self-retract exempt target"},
+				select: ["id"],
+			},
+			{cookie: author.cookie},
+		);
+		expect(added.ok).toBe(true);
+		if (!added.ok) return;
+		const id = (added.data as DefNode).id;
+
+		const result = await h.fate(
+			{kind: "mutation", name: "definition.retractVote", input: {id}, select: ["score", "myVote"]},
+			{cookie: author.cookie},
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect((result.data as DefNode).score).toBe(0);
+		expect((result.data as DefNode).myVote).toBe(false);
+	});
 });
 
 describe("sozluk mutations — definition.edit", () => {
