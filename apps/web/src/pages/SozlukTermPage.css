@@ -55,8 +55,13 @@
 	padding: var(--s-3) 0;
 	border-bottom: 1px solid var(--border-faint);
 }
+/* Top definition — a highlighted, not an errored, card. A full --accent-faint
+   (maroon) fill read as destructive/error UI; the highlight is carried by a
+   neutral raised surface + an accent left-border marker instead (ADR 0162
+   cohesiveness; #2166). */
 .kp-sozluk-definition--top {
-	background: var(--accent-faint);
+	background: var(--surface-raised);
+	border-left: 2px solid var(--accent);
 	padding: var(--s-3);
 	margin: 0 -8px;
 	border-radius: var(--r-sm);
@@ -143,36 +148,22 @@
 	color: var(--text-primary);
 	font-weight: 600;
 }
-.kp-sozluk-definition__foot {
-	display: flex;
+/* Row shell + shared child treatment is the MetaRow primitive (ui/MetaRow.css,
+   #2163). Only this footer's own tuning stays here, at a specificity that outranks
+   the primitive's defaults so the fold is order-free: its t-meta font + 10px gap +
+   top-margin, its right-aligned actions cluster, and its text-primary button hover
+   (the primitive hovers to accent; this surface hovers to text-primary). */
+.kp-meta-row.kp-sozluk-definition__foot {
 	gap: 10px;
-	align-items: center;
 	margin-top: 6px;
 	font: var(--t-meta);
-	color: var(--text-muted);
-	flex-wrap: wrap;
-}
-.kp-sozluk-definition__foot .author {
-	color: var(--text-secondary);
-	font-weight: 600;
-}
-.kp-sozluk-definition__foot .dot {
-	color: var(--text-faint);
 }
 .kp-sozluk-definition__foot .actions {
 	margin-left: auto;
 	display: flex;
 	gap: 10px;
 }
-.kp-sozluk-definition__foot button {
-	background: none;
-	border: 0;
-	padding: 0;
-	font: inherit;
-	color: inherit;
-	cursor: pointer;
-}
-.kp-sozluk-definition__foot button:hover {
+.kp-meta-row.kp-sozluk-definition__foot button:hover {
 	color: var(--text-primary);
 }
 

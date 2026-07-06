@@ -27,10 +27,12 @@ pair is defined). Each value cites where it **actually lives** in source.
 > **Law vs live-value.** This manifest records the **law** — 0162's ratified target values —
 > which the token recalibration legs ([#2164](https://github.com/kamp-us/phoenix/issues/2164),
 > [#2163](https://github.com/kamp-us/phoenix/issues/2163)) then re-derive the live CSS to. Where
-> the live CSS currently differs from the law (body text is live `13px`, law is `14px`; the focus
-> ring is live a flush 2px ring, law adds the 2px gap; elevation is live two shadows, law is four
-> levels + dark-tint), the manifest states the **law** and annotates the **current → target
-> delta** so the recalibration leg knows its target and a reviewer knows what is not yet true.
+> the live CSS currently differs from the law (the focus ring is live a flush 2px ring, law adds
+> the 2px gap), the manifest states the **law** and annotates the **current → target delta** so
+> the recalibration leg knows its target and a reviewer knows what is not yet true; where a leg has
+> landed (body text is now `14px` and elevation is now the four named levels + dark-mode tint, both
+> per [#2164](https://github.com/kamp-us/phoenix/issues/2164)), the delta column records the
+> achieved state.
 > Encoding the law is not the same as the live CSS already satisfying it.
 
 ---
@@ -66,10 +68,10 @@ delta**.
 | # | Value | Law (0162) | Where it lives in source | Current → target delta |
 |---|---|---|---|---|
 | 1 | **Grid** | 4px base grid; sanctioned **1px & 2px** exceptions (hairline borders, optical nudges). Everything lands on the 4px lattice unless a sanctioned exception. | The 4px lattice is the discipline behind the spacing ramp (`--s-1..--s-8`) and radius scale (`--r-sm: 2px`, `--r-md: 4px`, `--r-lg: 6px`) in [`tokens.css`](apps/web/src/styles/tokens.css). | On-grid re-derivation of the ramps is [#2164](https://github.com/kamp-us/phoenix/issues/2164)/[#2163](https://github.com/kamp-us/phoenix/issues/2163)'s job (some live density steps are off-grid, e.g. `normal --s-1: 5px`). |
-| 2 | **Body text** | **14px** ratified body size. | `--t-body` in [`tokens.css`](apps/web/src/styles/tokens.css) (`:root` TYPE block). | **Live `--t-body` is `13px`** → the type recalibration [#2164](https://github.com/kamp-us/phoenix/issues/2164) moves it to 14px. |
+| 2 | **Body text** | **14px** ratified body size. | `--t-body` in [`tokens.css`](apps/web/src/styles/tokens.css) (`:root` TYPE block). | **Achieved** — `--t-body` is now `14px` and the full `--t-*` ramp opened to that base by [#2164](https://github.com/kamp-us/phoenix/issues/2164). |
 | 3 | **Spacing** | 4px-based ramp — hand-tuned but on-grid (Primer/Polaris perceptual ladder, not a rigid ×N multiplier); **all three density ramps re-derive to clean 4px multiples**. | `--s-1..--s-8` in [`tokens.css`](apps/web/src/styles/tokens.css), redefined per `[data-density="compact"\|normal\|spacious"]`. | Compact ramp is already 4px multiples (`4/8/12/16/20/24/32/40`); `normal`/`spacious` steps are re-derived to 4px multiples by [#2164](https://github.com/kamp-us/phoenix/issues/2164). |
 | 4 | **Tap target** | **36px minimum hit area** for every interactive control (the hit area, not necessarily the visible glyph). | Not a single token — enforced per interactive control (min-height / min-width or hit-area padding). | New floor; the concrete fixes land in [#2166](https://github.com/kamp-us/phoenix/issues/2166). |
-| 5 | **Elevation** | **Four levels — flat/resting · raised · dropdown · overlay** — plus a **dark-mode surface-tint bump** (each level lightens the surface, not shadow-only). | Today only `--shadow-sm` / `--shadow-md` exist in [`tokens.css`](apps/web/src/styles/tokens.css) (`[data-theme="dark"]` / `[data-theme="light"]` blocks). | **Live is two shadows** → the four-level ramp + dark-mode tint is built by [#2164](https://github.com/kamp-us/phoenix/issues/2164). |
+| 5 | **Elevation** | **Four levels — flat/resting · raised · dropdown · overlay** — plus a **dark-mode surface-tint bump** (each level lightens the surface, not shadow-only). | The four named levels `--shadow-flat` / `--shadow-raised` / `--shadow-dropdown` / `--shadow-overlay` in [`tokens.css`](apps/web/src/styles/tokens.css) (`[data-theme="dark"]` / `[data-theme="light"]` blocks). | **Achieved** — the four-level ramp + the dark-mode surface-tint bump are built by [#2164](https://github.com/kamp-us/phoenix/issues/2164); the old `--shadow-sm`/`--shadow-md` are retired and consumers rewired to the named levels. |
 | 6 | **Focus — the spacer ring** | **2px ring + 2px gap** (a ring separated from the control by a transparent spacer). The gap guarantees the ring clears **3:1 contrast even on same-family dark surfaces**. Extends the existing `--focus-ring` token — its *definition* gains the gap; the ~13 correct consumers keep consuming `--focus-ring` unchanged. | `--focus-ring: 2px solid var(--accent-9)` and `--focus-ring-offset: 2px`, defined in [`apps/web/src/styles/global.css`](apps/web/src/styles/global.css) (**NOT** `tokens.css`), painted by the single `:focus-visible` rule there. | **Live `--focus-ring` is a flush 2px ring** (`--focus-ring-offset: 2px` already exists as the outline offset) → 0162's spacer ring adds the **2px transparent gap** to the token's definition; [#2169](https://github.com/kamp-us/phoenix/issues/2169) builds the systematic focus layer, [#2166](https://github.com/kamp-us/phoenix/issues/2166) fixes the ReactionBar double-wrap misuse. |
 | 7 | **Contrast floors** | **AA 4.5:1** for body / any meaning-carrying text; **3:1** for large text and non-text UI (borders, icons, control affordances); **AAA where it comes for free** (`--text-primary` = `--gray-12` already clears AAA vs `--surface`). | The text-hierarchy ladder role tokens in [`tokens.css`](apps/web/src/styles/tokens.css) role block: `--text-primary` (`--gray-12`), `--text-secondary` (`mix(11,12)`), `--text-muted` (`--gray-11`, AA-safe floor for meaning), `--text-faint` (`--gray-10`, 3:1 only, decorative). | Law already holds for the ladder; the concrete WCAG-defect fixes (faint-for-meaning promotions, CTA-on-tomato) land in [#2166](https://github.com/kamp-us/phoenix/issues/2166). |
 | 8 | **Density** | Expose **all three ramps — compact · normal · spacious**. | The `[data-density="compact"\|normal\|spacious"]` ramp infra in [`tokens.css`](apps/web/src/styles/tokens.css). | Infra exists; the user-facing density control is wired by [#2183](https://github.com/kamp-us/phoenix/issues/2183). |
@@ -134,13 +136,13 @@ hand-roll a per-component `outline` — reach for `--focus-ring` (Pillar 4).
 
 | Role token | Value | Reach for it when |
 |---|---|---|
-| `--t-body` | `13px/1.45` (**law: 14px** — [#2164](https://github.com/kamp-us/phoenix/issues/2164)) | Default body copy. |
-| `--t-body-sm` | `12px/1.45` | Small body copy. |
-| `--t-meta` | `11px/1.4` | Meta rows (timestamps, counts, bylines). |
-| `--t-micro` | `10.5px/1.4` | The smallest micro-copy. |
-| `--t-h-feed` | `14px/1.35` | Feed-item headings. |
-| `--t-h-page` | `18px/1.3` | Page titles. |
-| `--t-mono` | `12px/1.45` (mono) | Code / monospace. |
+| `--t-body` | `14px/1.5` (law body base — [#2164](https://github.com/kamp-us/phoenix/issues/2164)) | Default body copy. |
+| `--t-body-sm` | `13px/1.45` | Small body copy. |
+| `--t-meta` | `12px/1.4` | Meta rows (timestamps, counts, bylines). |
+| `--t-micro` | `11px/1.4` | The smallest micro-copy. |
+| `--t-h-feed` | `16px/1.35` | Feed-item headings. |
+| `--t-h-page` | `22px/1.25` | Page titles. |
+| `--t-mono` | `13px/1.5` (mono) | Code / monospace. |
 
 ---
 
@@ -158,9 +160,47 @@ until they land, the rule still governs (do not seed a fresh hand-built instance
 | A button (incl. `pressed` / `icon` / `loading`) | The widened `Button` primitive | Hand-roll a button wrapper around the primitive. |
 | Empty / short / sparse state | The reusable empty-state primitive ([#2162](https://github.com/kamp-us/phoenix/issues/2162)) | Ship a bare `0 yorum`-style label as the whole treatment. |
 | A reaction affordance | The on-brand controlled reaction asset ([#2165](https://github.com/kamp-us/phoenix/issues/2165)) | Ship a raw system-emoji glyph (OS-drift). |
+| A functional icon (vote / nav / toolbar / inline) | A drawn **Lucide** icon at the ruled size + role token (the [icon idiom](#the-canonical-icon-idiom) below) | Ship a Unicode functional glyph (`△` `↑` `→` `⌘` `↵`) or a hand-inlined SVG as an icon. |
 
 **One system throughout:** one type ramp, one four-level elevation system, one icon idiom — never
-a second type/elevation system or a fourth icon idiom.
+a second type/elevation system or a fourth icon idiom. The icon idiom's **positive** definition —
+the set, stroke, sizes, color, vote glyph, and function/affect/key-legend partition — is
+[encoded below](#the-canonical-icon-idiom) (ADR [0166](https://github.com/kamp-us/phoenix/blob/main/.decisions/0166-canonical-icon-idiom.md)).
+
+---
+
+## The canonical icon idiom
+
+Per Pillar 2 (cohesiveness) and ADR
+[0166](https://github.com/kamp-us/phoenix/blob/main/.decisions/0166-canonical-icon-idiom.md). This
+leg is **encoded** (it was previously deferred — the manifest and 0162 stated only the "one icon
+idiom / never a fourth" prohibition; 0166 records the positive ruling transcribed here). The
+migration of the live glyph surfaces to this idiom is a **separate downstream chore** under epic
+[#2168](https://github.com/kamp-us/phoenix/issues/2168), not yet performed.
+
+- **Set — Lucide.** The canonical set is **[Lucide](https://lucide.dev)**: 24×24 grid, a single 2px
+  stroke, round caps/joins, `fill: none`. MIT, tree-shakeable, added via `catalog:`. Icons are drawn
+  Lucide glyphs — **never** a hand-inlined SVG, and **never** a Unicode functional glyph
+  (`△` `↑` `→` `⌘` `↵`) as an icon (those drift per-OS font fallback, the same reason raw emoji are
+  outlawed as reaction affordances).
+- **Stroke — native optical per-size.** Icons use Lucide's **native per-size** stroke scaling — the
+  stroke thickens/thins with the glyph at each size. **Never** pin a constant `absoluteStrokeWidth`
+  across sizes.
+- **Sizes — 16 / 20 / 24 on the 4px grid** (floor 16; below 16 muddies on dark). **16 (sm)** = dense
+  rows · inline · vote; **20 (md)** = standalone · nav · toolbar; **24 (lg)** = emphasis ·
+  empty-state (sparing). The **tap target is decoupled**: the glyph is centered in a **≥36px hit
+  area** (padding fills), honoring the 36px minimum **without inflating the glyph**.
+- **Color — monochrome, `stroke: currentColor`, role tokens only.** Default `--text-secondary`,
+  hover `--text-primary`, active/on `--accent`, disabled `--text-muted`. The **one filled
+  exception** is the active vote glyph (`--accent` fill). **No icon hardcodes a color.**
+- **Vote glyph — a drawn triangle** (not a chevron — the HN / lobste.rs vote lineage): filled-accent
+  (`--accent`) when active, outline-secondary (`--text-secondary`) when inactive, up/down symmetry,
+  36px hit area. This is the one affordance that needs real design; the rest is substitution.
+- **The three-way partition (the boundary rule).** **Function** → a drawn Lucide icon (anywhere).
+  **Affect** → the curated six-emoji reaction set (monochrome-controlled per ADR
+  [0139](https://github.com/kamp-us/phoenix/blob/main/.decisions/0139-reaction-curated-palette.md)),
+  **only** in the reaction bar. **Key-legends** → `⌘` `⌥` `⇧` `↵` `⎋` are keycap typography, legal
+  **only** inside a `<kbd>` chip — never free-floating, never an icon.
 
 ---
 
@@ -189,6 +229,12 @@ card / meta-row / count-pill by hand.
 - **Never** hand-roll a button wrapper around the primitive.
 - **Never** ship raw system-emoji glyphs as reaction affordances.
 - **Never** introduce a fourth icon idiom or a second type/elevation system.
+- **Never** ship a Unicode functional glyph (`△` `↑` `→` `⌘` `↵`) or a hand-inlined SVG as an
+  icon — functional icons are drawn Lucide (the [icon idiom](#the-canonical-icon-idiom)).
+- **Never** hardcode an icon's color — icons are `stroke: currentColor` driven by role tokens
+  only (the active vote glyph's `--accent` fill is the one exception).
+- **Never** place a keycap glyph (`⌘` `⌥` `⇧` `↵` `⎋`) free-floating as an icon — it is legal only
+  inside a `<kbd>` chip.
 - **Never** reference a raw scale (`--mauve-*`) or semantic scale (`--gray-N` / `--accent-N`)
   token from a component — role tokens only.
 

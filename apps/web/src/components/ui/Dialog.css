@@ -23,7 +23,7 @@
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-lg);
-	box-shadow: var(--shadow-md);
+	box-shadow: var(--shadow-overlay);
 	z-index: 61;
 	animation: kp-dialog-pop var(--motion-base) var(--ease-emphasized);
 }

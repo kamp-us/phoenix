@@ -17,6 +17,7 @@
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport, ResolveReceipt} from "../../../worker/features/report/views";
+import {Surface} from "../ui/Card";
 import {ActorDrawer} from "./ActorDrawer";
 import {type Chamber, drawerDefaultOpen, drawerKeyToAction, hopTarget} from "./actor-drawer";
 import {itemKindLabel, parseBacklogItemId} from "./divanGating";
@@ -594,7 +595,16 @@ function WaveManifest({
 	}, [busy, pending, manifest, index, selected, apply, onClose]);
 
 	return (
-		<div className="kp-wave" role="dialog" aria-label="dalgayı kaldır" data-testid="wave-manifest">
+		<Surface
+			tone="raised"
+			radius="sm"
+			padding="lg"
+			border
+			className="kp-wave"
+			role="dialog"
+			aria-label="dalgayı kaldır"
+			data-testid="wave-manifest"
+		>
 			<header className="kp-wave__head">
 				<span className="kp-wave__title" data-testid="wave-title">
 					{waveManifestLabel(manifest.length)}
@@ -664,7 +674,7 @@ function WaveManifest({
 			{rows.map(({node}) => (
 				<WaveProbe key={String(node.id)} node={node} onData={onProbe} />
 			))}
-		</div>
+		</Surface>
 	);
 }
 
@@ -734,7 +744,12 @@ function TriageCard({
 	);
 
 	return (
-		<article
+		<Surface
+			as="article"
+			tone="raised"
+			radius="sm"
+			padding="lg"
+			border
 			className="kp-triage__card"
 			data-testid={`triage-card-${data.targetKind}-${data.targetId}`}
 		>
@@ -769,6 +784,6 @@ function TriageCard({
 				)}
 				<span className="kp-triage__reason">{reasonLabel(data.reason)}</span>
 			</footer>
-		</article>
+		</Surface>
 	);
 }

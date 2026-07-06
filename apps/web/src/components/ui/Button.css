@@ -77,3 +77,43 @@
 .kp-btn--block {
 	width: 100%;
 }
+
+/* Pressed/toggle — the accent-tinted active state, carried on top of
+   [aria-pressed] so it is never color-alone (#2163). */
+.kp-btn--pressed {
+	border-color: var(--accent);
+	background: var(--accent-faint);
+	color: var(--accent);
+}
+
+/* Leading icon slot — sizes the glyph to the text box. */
+.kp-btn__icon {
+	display: inline-flex;
+	align-items: center;
+}
+.kp-btn__icon svg {
+	width: 1em;
+	height: 1em;
+}
+
+/* Loading — the in-flight spinner replaces the leading icon; the label stays,
+   the control disables. The disabled dim is overridden so a busy button reads
+   as active-but-waiting, not unavailable. */
+.kp-btn--loading:disabled {
+	opacity: 1;
+	cursor: progress;
+}
+.kp-btn__spinner {
+	width: 0.85em;
+	height: 0.85em;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	border-radius: var(--r-pill);
+	/* Neutralized by the global prefers-reduced-motion reset (global.css). */
+	animation: kp-btn-spin var(--motion-slow) linear infinite;
+}
+@keyframes kp-btn-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}

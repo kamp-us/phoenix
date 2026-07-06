@@ -12,7 +12,7 @@
 	background: var(--surface-raised);
 	border: 1px solid var(--border);
 	border-radius: var(--r-md);
-	box-shadow: var(--shadow-md);
+	box-shadow: var(--shadow-dropdown);
 	padding: var(--s-1) 0;
 	animation: kp-menu-pop var(--motion-fast) var(--ease-standard);
 }

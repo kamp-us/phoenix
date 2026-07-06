@@ -13,6 +13,7 @@ import {formatAgoTR} from "../../lib/datetime";
 import {tagClass} from "../../lib/panoTags";
 import {actorLabel} from "../moderation/actor-identity";
 import {Tag, type TagKind} from "../ui/atoms";
+import {MetaRow} from "../ui/MetaRow";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
 
@@ -84,27 +85,27 @@ export function PanoPostCard({
 						<span className="kp-pano-post__site">{siteLabel}</span>
 					) : null}
 				</div>
-				<div className="kp-pano-post__meta">
+				<MetaRow className="kp-pano-post__meta">
 					{/* Live author identity via `actorLabel` (#2139): current displayName → @username,
 					    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
 					<span className="author">
 						{actorLabel(data.authorDisplayName ?? null, data.authorUsername ?? null, data.author)}
 					</span>
-					<span className="dot">·</span>
+					<MetaRow.Dot />
 					<span>{agoLabel}</span>
-					<span className="dot">·</span>
+					<MetaRow.Dot />
 					<a href={`${href}#comments`}>{data.commentCount} yorum</a>
-					<span className="dot">·</span>
+					<MetaRow.Dot />
 					<PostSaveButton postId={data.id} isSaved={data.isSaved ?? null} />
 					{onHide ? (
 						<>
-							<span className="dot">·</span>
+							<MetaRow.Dot />
 							<button type="button" onClick={() => onHide(data.id)}>
 								gizle
 							</button>
 						</>
 					) : null}
-				</div>
+				</MetaRow>
 			</div>
 		</article>
 	);

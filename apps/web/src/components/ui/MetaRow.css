@@ -1,0 +1,43 @@
+/* MetaRow — the shared metadata-row primitive (#2163). Owns the inline row
+   layout and the shared child treatment; a migrating surface keeps only its own
+   diverging tuning (a bespoke gap, a top-margin) on a paired class that outranks
+   these defaults by specificity, so folding is order-independent. Role tokens
+   only — no color literal here. */
+
+.kp-meta-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--s-2);
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+
+.kp-meta-row .author {
+	color: var(--text-secondary);
+	font-weight: 600;
+}
+
+.kp-meta-row a {
+	color: var(--text-secondary);
+}
+.kp-meta-row a:hover {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.kp-meta-row button {
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+.kp-meta-row button:hover {
+	color: var(--accent);
+}
+
+.kp-meta-row__dot {
+	color: var(--text-faint);
+}

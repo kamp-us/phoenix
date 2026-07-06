@@ -1,0 +1,42 @@
+/* CountToggle — the count-pill toggle primitive (#2163). The reaction bar's
+   per-emoji pill, extracted so the shape is built once. Pressed state is carried
+   by the accent tint (border + soft fill + accent text — which the icon inherits
+   via currentColor), on top of [aria-pressed]. Role tokens only. */
+
+.kp-count-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--s-1);
+	/* WCAG 2.5.8 minimum target size (#2166) — a load-bearing a11y floor.
+	   --s-6 is 24px at the compact default and only grows with density. */
+	min-height: var(--s-6);
+	padding: 1px var(--s-2);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-pill);
+	background: var(--surface);
+	color: var(--text-primary);
+	font: var(--t-meta);
+	line-height: 1.6;
+	cursor: pointer;
+}
+
+.kp-count-toggle:hover {
+	background: var(--surface-sunken);
+}
+
+/* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
+
+.kp-count-toggle[aria-pressed="true"] {
+	border-color: var(--accent);
+	background: var(--accent-soft, var(--surface-sunken));
+	/* The icon paints in currentColor, so tinting the pressed pill accent tints
+	   the glyph too — the active state reads as the accent, on-brand. */
+	color: var(--accent);
+}
+
+.kp-count-toggle__count {
+	font-variant-numeric: tabular-nums;
+	/* Meaning-carrying metadata → --text-muted (AA-safe ≥4.5:1). */
+	color: var(--text-muted);
+}
