@@ -32,37 +32,9 @@
 	min-height: var(--reaction-bar-height);
 }
 
-.kp-reaction-bar__btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 4px;
-	min-height: var(--reaction-bar-height); /* WCAG 2.5.8 24px min target (#2166) */
-	padding: 1px 6px;
-	border: 1px solid var(--border-faint);
-	border-radius: 999px;
-	background: var(--surface);
-	color: var(--text-primary);
-	font: var(--t-meta);
-	line-height: 1.6;
-	cursor: pointer;
-}
-
-.kp-reaction-bar__btn:hover {
-	background: var(--surface-sunken);
-}
-
-/* Keyboard focus ring comes from the shared focus layer (global.css, #2169) —
-   the same --focus-ring / --focus-ring-offset #2166 converged this button onto,
-   now sourced from one place instead of re-declared here. */
-
-.kp-reaction-bar__btn[aria-pressed="true"] {
-	border-color: var(--accent);
-	background: var(--accent-soft, var(--surface-sunken));
-	/* The glyph paints in currentColor, so tinting the active button accent tints
-	   the icon too — the viewer's own reaction reads as the accent, on-brand. */
-	color: var(--accent);
-}
+/* Each palette button is the shared CountToggle count-pill (ui/CountToggle.css,
+   #2163) — the pill shell, hover, [aria-pressed] accent tint, and count styling
+   live there now, so the bar owns only its own layout + the on-brand glyph. */
 
 /* The on-brand line-icon: paints in currentColor (inherits the button's token —
    text by default, accent when active) and sizes off the glyph token, so no color
@@ -71,11 +43,4 @@
 	width: var(--reaction-glyph-size);
 	height: var(--reaction-glyph-size);
 	flex: none;
-}
-
-.kp-reaction-bar__count {
-	font-variant-numeric: tabular-nums;
-	/* Meaning-carrying metadata → --text-muted (AA-safe ≥4.5:1); --text-faint is
-	   decorative-only and bottoms out at ~3:1 (#2166, tokens.css role layer). */
-	color: var(--text-muted);
 }
