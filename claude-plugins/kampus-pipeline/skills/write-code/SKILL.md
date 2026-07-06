@@ -775,6 +775,11 @@ per-run nonce so two concurrent runs on the same issue never push the same `orig
 and honor the `**TDD:**` flag — `yes` means write the failing test first, then make it
 pass; `no` means config/docs/scaffolding where test-first doesn't apply.
 
+As you write, apply CLAUDE.md's "Comments earn their place or die" collapse convention to
+the code you generate: state a *why* once at its most load-bearing site and point elsewhere
+with `// See ADR NNNN` / `#NNNN` — never re-derive the same ADR rationale across multiple
+docblocks in a file (the `coder.md` standing invariant is the source; #2186).
+
 <a id="non-isolated-fallback"></a>
 > **Non-isolated fallback.** For the rare invocation that isn't already in a worktree,
 > spin one up rather than checking out `main`. **Fetch first** — the local `origin/main`

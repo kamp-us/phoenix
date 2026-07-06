@@ -56,6 +56,13 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   progress comments, commit messages, and committed files cite repo-relative paths only —
   never a `~/`, `/Users/…`, vault, or sibling-clone path.
 - **Work from the repo root**, not a nested app directory.
+- **State a *why* ONCE — collapse duplicated docblocks to a pointer.** In the code you
+  generate, apply CLAUDE.md's "Comments earn their place or die" convention: state a
+  rationale at its single most load-bearing site, and collapse any docblock that
+  re-derives an ADR's *why* to a `// See ADR NNNN` (or `#NNNN`) pointer. Do NOT re-narrate
+  the same *why* across multiple docblocks in a file — no near-identical per-item
+  docblocks (one per glyph/case/component). Duplicated *why* rots in N places and reads as
+  a boilerplate wall (the #2179 reaction-surface duplication).
 - **Claim the issue first (self-assign).** Follow the skill's claim protocol before
   implementing, so a parallel coder steps over your issue.
 - **Implement only — never review, merge, or close a human-filed issue.** You own
