@@ -27,6 +27,7 @@ import "../vote-cue.css";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {Dialog} from "../ui/Dialog";
 import {EditedIndicator} from "../ui/EditedIndicator";
+import {MetaRow} from "../ui/MetaRow";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import {ReviewBadge} from "../ui/ReviewBadge";
 
@@ -305,7 +306,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 				) : (
 					<DefinitionBody text={definition.body} />
 				)}
-				<footer className="kp-sozluk-definition__foot">
+				<MetaRow as="footer" className="kp-sozluk-definition__foot">
 					{/* Owner-only in-review signal (#2200): `sandboxed` is owner-scoped server-side,
 					    re-gated on `isAuthor` so only the author sees their own pending definition's state. */}
 					{isAuthor && definition.sandboxed ? <ReviewBadge /> : null}
@@ -318,7 +319,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 							definition.author,
 						)}
 					</span>
-					<span className="dot">·</span>
+					<MetaRow.Dot />
 					<span>{formatAgoTR(toIso(definition.createdAt))}</span>
 					<EditedIndicator
 						createdAt={toIso(definition.createdAt)}
@@ -353,7 +354,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 							</>
 						) : null}
 					</span>
-				</footer>
+				</MetaRow>
 				{!editing ? (
 					<ReactionBarSlot>
 						<DefinitionReactionBar

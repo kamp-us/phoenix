@@ -12,6 +12,7 @@
  * hop decisions live DOM-free in `actor-drawer.ts` (unit-tested); this is the thin shell.
  */
 import type {OpenReport} from "../../../worker/features/report/views";
+import {Surface} from "../ui/Card";
 import {
 	type ActorStanding,
 	actorIdentityLabel,
@@ -60,7 +61,16 @@ export function ActorDrawer({
 	const recordVerdicts = modRecordVerdicts(chamber);
 
 	return (
-		<aside className="kp-actor" aria-label="aktör künyesi" data-testid="actor-drawer">
+		<Surface
+			as="aside"
+			tone="raised"
+			radius="sm"
+			padding="lg"
+			border
+			className="kp-actor"
+			aria-label="aktör künyesi"
+			data-testid="actor-drawer"
+		>
 			<header className="kp-actor__head">
 				<span className="kp-actor__identity" data-testid="actor-identity">
 					{identity ?? "aktör bilinmiyor"}
@@ -139,6 +149,6 @@ export function ActorDrawer({
 					moderasyon (M)
 				</button>
 			</div>
-		</aside>
+		</Surface>
 	);
 }

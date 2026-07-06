@@ -15,6 +15,7 @@ import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {Tag, type TagKind} from "../ui/atoms";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
+import {MetaRow} from "../ui/MetaRow";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import {ReviewBadge} from "../ui/ReviewBadge";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
@@ -87,7 +88,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 					{post.host ?? post.url} ↗
 				</a>
 			) : null}
-			<div className="kp-pano-postpage__meta">
+			<MetaRow className="kp-pano-postpage__meta">
 				{tags.map((t, i) => (
 					<Tag key={i} kind={tagClass(t.kind) as TagKind}>
 						{t.label}
@@ -117,7 +118,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 						</button>
 					</>
 				) : null}
-			</div>
+			</MetaRow>
 			{post.body ? (
 				<div className="kp-pano-postpage__body kp-prose">
 					{post.body.split(/\n{2,}/).map((para, i) => (

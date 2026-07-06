@@ -1,0 +1,66 @@
+/* Surface / Card — the composite shell primitive (#2163). Role tokens only:
+   background from a tone, lift from the ADR 0162 elevation ramp, border/radius/
+   padding from the token scales. No color/spacing/shadow literal lives here. */
+
+.kp-surface {
+	box-sizing: border-box;
+}
+
+/* tone — background role */
+.kp-surface--tone-default {
+	background: var(--surface);
+}
+.kp-surface--tone-raised {
+	background: var(--surface-raised);
+}
+.kp-surface--tone-sunken {
+	background: var(--surface-sunken);
+}
+
+/* elevation — the four-level ramp (ADR 0162); flat carries no class */
+.kp-surface--elev-raised {
+	box-shadow: var(--shadow-raised);
+}
+.kp-surface--elev-dropdown {
+	box-shadow: var(--shadow-dropdown);
+}
+.kp-surface--elev-overlay {
+	box-shadow: var(--shadow-overlay);
+}
+
+/* radius */
+.kp-surface--radius-sm {
+	border-radius: var(--r-sm);
+}
+.kp-surface--radius-md {
+	border-radius: var(--r-md);
+}
+.kp-surface--radius-lg {
+	border-radius: var(--r-lg);
+}
+
+/* padding */
+.kp-surface--pad-sm {
+	padding: var(--s-2);
+}
+.kp-surface--pad-md {
+	padding: var(--s-3);
+}
+.kp-surface--pad-lg {
+	padding: var(--s-4);
+}
+
+.kp-surface--border {
+	border: 1px solid var(--border);
+}
+
+.kp-card--interactive {
+	cursor: pointer;
+	transition:
+		background var(--motion-fast) var(--ease-standard),
+		border-color var(--motion-fast) var(--ease-standard);
+}
+.kp-card--interactive:hover {
+	background: var(--surface-raised);
+	border-color: var(--border-strong);
+}

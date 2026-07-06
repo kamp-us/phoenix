@@ -16,6 +16,7 @@
  */
 import type {ReactionEmoji} from "../../../worker/db/reaction-emoji";
 import type {ReactionAggregate} from "../../../worker/features/reaction/Reaction";
+import {CountToggle} from "../ui/CountToggle";
 import {ReactionGlyph} from "./ReactionGlyph";
 import {reactionSlots} from "./reactionModel";
 import "./ReactionBar.css";
@@ -34,25 +35,16 @@ export function ReactionBar({aggregate, onReact, testIdSuffix}: ReactionBarProps
 	return (
 		<div className="kp-reaction-bar" data-testid={`reaction-bar-${testIdSuffix}`}>
 			{slots.map((slot) => (
-				<button
+				<CountToggle
 					key={slot.emoji}
-					type="button"
-					className="kp-reaction-bar__btn"
-					aria-pressed={slot.active}
+					pressed={slot.active}
+					count={slot.count}
+					countTestId={`reaction-count-${slot.emoji}-${testIdSuffix}`}
+					icon={<ReactionGlyph emoji={slot.emoji} />}
 					aria-label={`${slot.gloss}${slot.count ? ` (${slot.count})` : ""}`}
 					data-testid={`reaction-${slot.emoji}-${testIdSuffix}`}
 					onClick={() => onReact(slot.emoji)}
-				>
-					<ReactionGlyph emoji={slot.emoji} />
-					{slot.count > 0 ? (
-						<span
-							className="kp-reaction-bar__count"
-							data-testid={`reaction-count-${slot.emoji}-${testIdSuffix}`}
-						>
-							{slot.count}
-						</span>
-					) : null}
-				</button>
+				/>
 			))}
 		</div>
 	);
