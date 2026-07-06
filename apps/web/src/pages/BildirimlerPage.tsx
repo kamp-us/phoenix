@@ -3,8 +3,8 @@
  * Ships dark behind the `phoenix-bildirim` flag: with the flag off the route
  * renders the 404 (effectively absent); loading shows a neutral placeholder so
  * the 404 never flashes before the flag resolves (the `FunnelPage` shape).
- * Signed-out redirects to auth with a `returnTo` back here (the
- * `SavedPostsPage` shape) — a notification list is a signed-in surface.
+ * Signed-out redirects to auth with a `returnTo` back here (as `PanoFeed`'s
+ * kaydedilenler variant does) — a notification list is a signed-in surface.
  */
 import {Navigate} from "react-router";
 import {useSession} from "../auth/client";

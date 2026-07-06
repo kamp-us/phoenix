@@ -1,5 +1,5 @@
 import {createContext, useContext, useEffect, useMemo, useState} from "react";
-import {Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
+import {Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {useMe} from "./auth/useMe";
 import {useBildirimUnread} from "./components/bildirim/useBildirimUnread";
@@ -15,6 +15,7 @@ import {FateProvider} from "./fate/FateProvider";
 import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {DensityProvider} from "./lib/density";
+import {SAVED_HREF} from "./lib/panoNav";
 import {safeReturnTo} from "./lib/returnTo";
 import {searchTarget} from "./lib/searchTarget";
 import {ThemeProvider, useTheme} from "./lib/theme";
@@ -28,7 +29,6 @@ import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
 import {PanoSubmitPage} from "./pages/PanoSubmitPage";
 import {ProfilePage} from "./pages/ProfilePage";
-import {SavedPostsPage} from "./pages/SavedPostsPage";
 import {SearchPage} from "./pages/SearchPage";
 import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
@@ -237,7 +237,9 @@ export function App() {
 						<Route path="/pano" element={<PanoFeed />} />
 						<Route path="/pano/yeni" element={<PanoSubmitPage />} />
 						<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
-						<Route path="/pano/kaydedilenler" element={<SavedPostsPage />} />
+						{/* kaydedilenler folded into PanoFeed as the `?sort=saved` variant (#2196);
+						    the legacy bespoke route redirects so existing links don't break. */}
+						<Route path="/pano/kaydedilenler" element={<Navigate to={SAVED_HREF} replace />} />
 						<Route path="/pano/:id" element={<PanoPostDetail />} />
 						<Route path="/sozluk" element={<SozlukHome />} />
 						<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
