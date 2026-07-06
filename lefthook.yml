@@ -1,7 +1,17 @@
 # rc is sourced by every generated hook wrapper (under /bin/sh, absolute shebang)
 # BEFORE lefthook runs — it restores the system bin dirs on PATH so lefthook can
 # resolve sh even in the harness stripped-PATH worktree-spawn env (#787). See .lefthookrc.
-rc: .lefthookrc
+#
+# The path MUST be `./`-qualified. The generated wrapper sources it as `. <rc>`; under
+# dash (CI's /bin/sh) a NO-SLASH argument to `.` triggers a PATH search, and when CWD is
+# not on PATH the source fails `.: <rc>: not found` — and dash, being POSIX, treats a
+# `.`-builtin failure in a non-interactive shell as FATAL and exits the shell immediately.
+# For a non-aborting hook (pre-commit/post-checkout) that fatal exit was latent/harmless,
+# but a `reference-transaction` hook aborts the git transaction on any non-zero, so the
+# bare `. .lefthookrc` PATH-search miss bricked every ref update in CI (#2143 follow-up:
+# leak-guard's `git fetch --depth=1 origin main` aborted). `./.lefthookrc` resolves by
+# path (no PATH search) → sources cleanly, hardening ALL hooks against the same dash trap.
+rc: ./.lefthookrc
 
 # Git hooks, managed by lefthook (ADR 0068). The leak-guard pre-commit is the
 # local fast-fail leg of the no-local-paths defense-in-depth (#158/#173); CI
@@ -105,9 +115,12 @@ reference-transaction:
     ref-guard:
       use_stdin: true
       run: |
-        node packages/pipeline-cli/src/bin.ts ref-guard reference-transaction {0}
-        status=$?
+        # `|| status=$?` (not a bare call) so a non-zero node exit can NEVER trip an inherited
+        # `set -e` and abort the transaction as a side effect — the guard aborts ONLY on its own
+        # deliberate refuse code below, never on any infra failure (the #1050 fail-open invariant).
+        status=0
+        node packages/pipeline-cli/src/bin.ts ref-guard reference-transaction {0} || status=$?
         # exit 3 == the guard's deliberate refuse (abort the transaction); any other
-        # non-zero == the CLI couldn't run (fail-open, #1050) → allow. 0 == allow.
+        # non-zero == the CLI couldn't run (node/CLI/module absent, crash) → fail-OPEN, allow.
         [ "$status" -eq 3 ] && exit 1
         exit 0

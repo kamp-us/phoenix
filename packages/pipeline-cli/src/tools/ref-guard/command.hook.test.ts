@@ -156,21 +156,25 @@ describe("ref-guard reference-transaction — real git facts", () => {
 // incident's `branch: Reset to HEAD` was a checkout-B/reset on the checked-out branch, of
 // which update-ref is the minimal ref-transaction form.
 describe("ref-guard — installed reference-transaction hook fires on a BARE git ref-move (no pipeline command)", () => {
-	const hookBody = (bin: string): string =>
+	// Mirror the lefthook.yml wiring EXACTLY: `|| status=$?` (never a bare call, so an
+	// inherited `set -e` can't abort as a side effect) + abort ONLY on the dedicated refuse
+	// code 3; every other non-zero (CLI absent / crash) fail-opens. `cmd` is the guard
+	// invocation — parameterized so the CLI-unavailable test can point it at a missing bin.
+	const hookBody = (cmd: string): string =>
 		[
 			"#!/bin/sh",
-			`node "${bin}" ref-guard reference-transaction "$1"`,
-			"s=$?",
-			// mirror lefthook.yml: only the guard's dedicated refuse code (3) aborts; any other
-			// non-zero fail-opens (the CLI couldn't run) — never wedge every ref transaction.
-			'[ "$s" -eq 3 ] && exit 1',
+			"status=0",
+			`${cmd} || status=$?`,
+			'[ "$status" -eq 3 ] && exit 1',
 			"exit 0",
 			"",
 		].join("\n");
 
-	const installHook = (repoDir: string): void => {
+	const guardCmd = (bin: string): string => `node "${bin}" ref-guard reference-transaction "$1"`;
+
+	const installHook = (repoDir: string, cmd: string = guardCmd(BIN)): void => {
 		const hookPath = join(repoDir, ".git", "hooks", "reference-transaction");
-		writeFileSync(hookPath, hookBody(BIN), {mode: 0o755});
+		writeFileSync(hookPath, hookBody(cmd), {mode: 0o755});
 	};
 
 	it("aborts a bare `git update-ref refs/heads/main <divergent>` — main is held at its old tip", () => {
@@ -224,7 +228,75 @@ describe("ref-guard — installed reference-transaction hook fires on a BARE git
 			ok = false;
 		}
 		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
-		assert.isTrue(ok, "an off-main branch ref-move must not be blocked (no false-positive on coders)");
+		assert.isTrue(
+			ok,
+			"an off-main branch ref-move must not be blocked (no false-positive on coders)",
+		);
 		assert.strictEqual(git(fx.dir, "rev-parse", "refs/heads/umut/feature"), fx.divergent);
+	});
+
+	// Regression for Defect 2 (#2143 follow-up): a `git fetch` updates refs/remotes/origin/* +
+	// FETCH_HEAD, NOT refs/heads/main — the guard MUST allow it. The CI breaker was leak-guard's
+	// `git fetch --depth=1 origin main` aborting; this proves the fetch's ref-transaction passes.
+	it("ALLOWS a real `git fetch origin main` (updates refs/remotes/origin/main + FETCH_HEAD, not refs/heads/main)", () => {
+		// advance origin so the fetch actually transacts a remote-tracking update
+		const originClone = join(fx.dir, "..", "origin-advance");
+		execFileSync("git", ["clone", "-q", join(fx.dir, "..", "origin.git"), originClone]);
+		git(originClone, "config", "user.email", "t@t");
+		git(originClone, "config", "user.name", "t");
+		const advanced = commitEmpty(originClone, "origin-advance-2");
+		execFileSync("git", ["push", "-q", "origin", "main"], {cwd: originClone});
+
+		installHook(fx.dir);
+		let ok = true;
+		try {
+			execFileSync("git", ["fetch", "--no-tags", "origin", "main"], {cwd: fx.dir, stdio: "pipe"});
+		} catch {
+			ok = false;
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		rmSync(originClone, {recursive: true, force: true});
+		assert.isTrue(
+			ok,
+			"a `git fetch origin main` must not be aborted — it never touches refs/heads/main",
+		);
+		assert.strictEqual(
+			git(fx.dir, "rev-parse", "refs/remotes/origin/main"),
+			advanced,
+			"the remote-tracking ref must have advanced (the fetch's ref-transaction was allowed)",
+		);
+	});
+
+	// Regression for Defect 1 (#1050/#787 fail-open): when the CLI can't RUN (missing bin /
+	// node module), the hook must FAIL OPEN — allow the ref-move, never abort. Only a positive
+	// refuse (exit 3) aborts. We point the hook at a non-existent bin to simulate the
+	// not-yet-installed / stripped-PATH env, then attempt the very divergence that would abort
+	// if the guard were live — and assert it is ALLOWED (the guard couldn't run ⇒ fail-open).
+	it("FAILS OPEN (allows) when the CLI is unavailable — a missing bin never aborts a ref transaction", () => {
+		const missingBin = join(fx.dir, "does-not-exist", "bin.ts");
+		installHook(fx.dir, guardCmd(missingBin));
+		git(fx.dir, "update-ref", "refs/heads/main", fx.base); // ensure a known start
+		let ok = true;
+		try {
+			// This is a DIVERGENCE that a live guard would abort — but the CLI can't run, so fail-open.
+			execFileSync("git", ["update-ref", "refs/heads/main", fx.divergent], {
+				cwd: fx.dir,
+				stdio: "pipe",
+			});
+		} catch {
+			ok = false;
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		const landed = git(fx.dir, "rev-parse", "refs/heads/main");
+		git(fx.dir, "update-ref", "refs/heads/main", fx.base); // restore fixture
+		assert.isTrue(
+			ok,
+			"a missing-CLI hook must fail OPEN (allow), never abort the transaction (#1050/#787)",
+		);
+		assert.strictEqual(
+			landed,
+			fx.divergent,
+			"the move was allowed because the guard could not run",
+		);
 	});
 });

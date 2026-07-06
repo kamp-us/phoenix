@@ -78,6 +78,22 @@ would make local `main` a non-fast-forward of `origin/main`.**
   stripped-PATH CLI — or `bin.ts`'s unlinked-dependency remediation, which itself exits 1
   (#1798) — must never wedge every ref transaction repo-wide.
 
+- **The dash `rc`-source trap (found in first-CI, fixed at the root).** Because a
+  `reference-transaction` hook aborts on *any* non-zero — unlike `pre-commit`/`post-checkout`,
+  whose non-zero is harmless in the fetch path — it exposed a latent bug in the shared lefthook
+  wrapper: the wrapper sourced the rc as `. .lefthookrc` (no slash), and under **dash** (CI's
+  `/bin/sh`) a no-slash argument to the `.` builtin triggers a **PATH search**; when CWD is not
+  on PATH the source fails `.: .lefthookrc: not found`, and dash — per POSIX — treats a
+  special-builtin failure in a non-interactive shell as **fatal**, exiting the shell before the
+  guard body runs. So the wrapper returned non-zero and CI's `git fetch --depth=1 origin main`
+  (leak-guard) aborted on the very first run. The root-cause fix is to `./`-qualify the rc
+  reference (`rc: ./.lefthookrc`), so the generated `. ./.lefthookrc` resolves by path with no
+  PATH search — hardening **all** hooks against the same dash trap, not just this one. The
+  guard's own `run` body was additionally made `set -e`-proof (`… || status=$?`) so no future
+  inherited shell option can turn an infra failure into an abort. This is why the fail-open
+  invariant above is defended at *two* layers: the exit-code discipline in the body, and the
+  rc-source that must not fatally exit before the body even runs.
+
 - **ROE (AC #4).** The PULLER/orchestrator drives sync **only** through the
   fetch-inspect-`ff-only` seam (`pipeline-cli main-sync`, #1573) — never a bare
   `checkout -B main` / `branch -f main` / `reset` / `update-ref refs/heads/main` on the
