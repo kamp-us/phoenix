@@ -27,9 +27,3 @@
 	font: var(--t-body-sm);
 	color: var(--text-secondary);
 }
-
-.kp-onramp__actions {
-	display: flex;
-	gap: var(--s-2);
-	margin-top: var(--s-1);
-}

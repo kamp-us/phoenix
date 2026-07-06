@@ -450,7 +450,7 @@ function Composer({
 
 	return (
 		<form className="kp-sozluk-composer" onSubmit={onSubmit}>
-			<FirstContributionOnramp surface="sozluk" onStart={() => bodyRef.current?.focus()} />
+			<FirstContributionOnramp surface="sozluk" />
 			<header className="kp-sozluk-composer__head">
 				<span className="kp-sozluk-composer__title">sen nasıl tanımlardın?</span>
 			</header>

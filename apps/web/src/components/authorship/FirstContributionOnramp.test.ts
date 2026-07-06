@@ -39,20 +39,17 @@ describe("onrampCopy — per-surface lowercase-Turkish copy", () => {
 	it("uses the tanım noun on the sözlük surface", () => {
 		const copy = onrampCopy("sozluk");
 		expect(copy.heading).toBe("ilk tanımını yazmaya hazırsın");
-		expect(copy.cta).toBe("ilk tanımını yaz");
 	});
 
 	it("uses the gönderi noun on the pano surface", () => {
 		const copy = onrampCopy("pano");
 		expect(copy.heading).toBe("ilk gönderini paylaşmaya hazırsın");
-		expect(copy.cta).toBe("ilk gönderini yaz");
 	});
 
-	it("keeps all copy lowercase (Turkish user-facing convention)", () => {
+	it("keeps the heading lowercase (Turkish user-facing convention)", () => {
 		for (const surface of ["sozluk", "pano"] as const) {
-			const {heading, cta} = onrampCopy(surface);
+			const {heading} = onrampCopy(surface);
 			expect(heading).toBe(heading.toLocaleLowerCase("tr-TR"));
-			expect(cta).toBe(cta.toLocaleLowerCase("tr-TR"));
 		}
 	});
 });
