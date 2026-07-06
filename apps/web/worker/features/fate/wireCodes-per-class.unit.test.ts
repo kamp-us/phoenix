@@ -69,7 +69,7 @@ import {
 	DefinitionNotFound,
 	UnauthorizedDefinitionMutation,
 } from "../sozluk/errors.ts";
-import {VoterNotEligible} from "../vote/errors.ts";
+import {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
 import {fateConfig} from "./config.ts";
 
 /**
@@ -126,6 +126,10 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	// (not the overloaded FORBIDDEN). Has extra required fields (`voterId`, `need`), so it
 	// is pinned here but NOT in ROUND_TRIP_CLASSES.
 	[VoterNotEligible, "VOTE_REQUIRES_YAZAR"],
+	// vote self-vote denial — reachable from fateConfig via the inline cast paths (pano
+	// post + sözlük definition), #2216. Its own distinct code. Has an extra required field
+	// (`voterId`), so pinned here but NOT in ROUND_TRIP_CLASSES.
+	[SelfVoteNotAllowed, "SELF_VOTE_NOT_ALLOWED"],
 	// künye karma-VALUE privilege floor (#150) — reachable from fateConfig via the
 	// content-creation mutations (`post.submit` / `comment.add` / `definition.add`) and
 	// `report.submit`. Its OWN code (not the tier-ladder FORBIDDEN). Has extra required

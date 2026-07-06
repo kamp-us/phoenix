@@ -126,7 +126,21 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 	);
 }
 
-export function PanoPostHeaderVote({post}: {post: ViewRef<"Post">}) {
+export function PanoPostHeaderVote({
+	post,
+	isAuthor = false,
+}: {
+	post: ViewRef<"Post">;
+	/** The viewer authored this post — drop the vote button (self-vote is blocked, #2216). */
+	isAuthor?: boolean;
+}) {
 	const data = useLiveView(PanoPostHeaderView, post);
-	return <PostVoteWidget postId={data.id} score={data.score} myVote={data.myVote ?? null} />;
+	return (
+		<PostVoteWidget
+			postId={data.id}
+			score={data.score}
+			myVote={data.myVote ?? null}
+			own={isAuthor}
+		/>
+	);
 }

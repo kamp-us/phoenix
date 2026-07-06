@@ -24,7 +24,7 @@ import {InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {authorDisplayLabel} from "../pasaport/author-label.ts";
-import {VoterNotEligible} from "../vote/errors.ts";
+import {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -132,8 +132,9 @@ export const mutations = {
 			input: DefinitionIdInput,
 			type: DefinitionView,
 			// `VoterNotEligible` (wire `VOTE_REQUIRES_YAZAR`) — the "earn to vote" gate (#1810): a çaylak
-			// newcomer is rejected at cast. Retraction is exempt (nothing cast to retract).
-			error: Schema.Union([Unauthorized, DefinitionNotFound, VoterNotEligible]),
+			// newcomer is rejected at cast. `SelfVoteNotAllowed` (wire `SELF_VOTE_NOT_ALLOWED`) — the
+			// founder-ruled self-vote block (#2216). Both cast-only; retraction is exempt for each.
+			error: Schema.Union([Unauthorized, DefinitionNotFound, VoterNotEligible, SelfVoteNotAllowed]),
 		},
 		Effect.fn("definition.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;

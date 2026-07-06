@@ -41,6 +41,7 @@ import {
 import type {ReactionTargetNotFound} from "../reaction/errors.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
 import {syncPostSearch} from "../search/fts-sync.ts";
+import {SelfVoteNotAllowed} from "../vote/errors.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
 import type {Vote} from "../vote/Vote.ts";
 import type {Bookmark} from "./Bookmark.ts";
@@ -1108,6 +1109,17 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			});
 		}
 
+		// Self-vote guard (#2216, founder-ruled): a cast on one's OWN post is rejected
+		// at the domain, so an inflated self-score is unrepresentable rather than caught
+		// downstream. Cast-only (mirrors the `VoterNotEligible` tier gate) — a retraction
+		// is exempt because a blocked cast leaves nothing to retract.
+		if (isVote && meta.authorId === input.voterId) {
+			return yield* new SelfVoteNotAllowed({
+				voterId: input.voterId,
+				message: "kendi gönderine oy veremezsin",
+			});
+		}
+
 		const voteResult = yield* voteSvc
 			.cast({
 				userId: input.voterId,
@@ -1194,13 +1206,16 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	});
 
 	const retractPostVote = Effect.fn("Pano.retractPostVote")(function* (input: VoteOnPostInput) {
-		// The shared body's channel carries `VoterNotEligible` because `Vote.cast`'s type
-		// does — but the tier gate fires on the CAST direction only (`value: true`), so a
-		// retraction (`value: false`) can never raise it. Die if it somehow does (a broken
-		// invariant, not a user-facing case), keeping this method's error channel to
-		// `PostNotFound`.
+		// The shared body's channel carries `VoterNotEligible` + `SelfVoteNotAllowed` because
+		// `applyPostVote`'s type does — but both fire on the CAST direction only (`isVote`/
+		// `value: true`), so a retraction (`value: false`) can never raise them. Die if one
+		// somehow does (a broken invariant, not a user-facing case), keeping this method's
+		// error channel to `PostNotFound`.
 		return yield* applyPostVote(input, false).pipe(
-			Effect.catchTag("vote/VoterNotEligible", (e) => Effect.die(e)),
+			Effect.catchTags({
+				"vote/VoterNotEligible": (e) => Effect.die(e),
+				"vote/SelfVoteNotAllowed": (e) => Effect.die(e),
+			}),
 		);
 	});
 

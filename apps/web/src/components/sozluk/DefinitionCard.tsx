@@ -231,16 +231,21 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	return (
 		<article className={cls} data-testid={`definition-card-${definition.id}`}>
 			<div className="kp-sozluk-definition__vote">
-				<button
-					type="button"
-					className="kp-sozluk-definition__vote-btn"
-					aria-pressed={voted}
-					aria-label={voted ? "Oyunu geri al" : "Yukarı oy"}
-					data-testid={`definition-vote-${definition.id}`}
-					onClick={onVoteClick}
-				>
-					<span className="triangle" />
-				</button>
+				{/* Self-vote is blocked (#2216): drop the vote button on one's own definition
+				    while the score still renders. The server guard is the invariant, this is
+				    the matching affordance. */}
+				{isAuthor ? null : (
+					<button
+						type="button"
+						className="kp-sozluk-definition__vote-btn"
+						aria-pressed={voted}
+						aria-label={voted ? "Oyunu geri al" : "Yukarı oy"}
+						data-testid={`definition-vote-${definition.id}`}
+						onClick={onVoteClick}
+					>
+						<span className="triangle" />
+					</button>
+				)}
 				<span
 					className={`kp-sozluk-definition__vote-count${flashing ? " kp-vote-flash" : ""}`}
 					onAnimationEnd={endFlash}

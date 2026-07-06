@@ -63,6 +63,7 @@ interface CommentNode {
 
 let author: {userId: string; cookie: string};
 let intruder: {userId: string; cookie: string};
+let voter: {userId: string; cookie: string};
 
 const POST_SELECT = [
 	"id",
@@ -100,11 +101,14 @@ async function seedPost(input: {
 beforeAll(async () => {
 	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", `${NS}-yazar`);
 	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", `${NS}-davetsiz`);
-	// `author` casts votes below (post.vote / comment.vote). A fresh account is a çaylak
-	// and, since #1810's "earn to vote" gate, is rejected at cast — so promote it to yazar
-	// (matching its `-yazar` name). `intruder` never votes (unauthorized-mutation cases),
-	// so it stays a çaylak.
+	voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", `${NS}-oycu`);
+	// `author` casts comment votes below (comment self-vote is not blocked). Post votes,
+	// however, must come from a non-author since #2216 blocks self-voting on posts — `voter`
+	// casts those. A fresh account is a çaylak and, since #1810's "earn to vote" gate, is
+	// rejected at cast, so promote both casters to yazar. `intruder` never votes
+	// (unauthorized-mutation cases), so it stays a çaylak.
 	await h.promoteToYazar(author.userId);
+	await h.promoteToYazar(voter.userId);
 });
 
 describe("pano mutations — post.submit", () => {
@@ -160,7 +164,7 @@ describe("pano mutations — post.vote / retractVote", () => {
 
 		const voted = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id}, select: ["id", "score", "myVote"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
@@ -169,7 +173,7 @@ describe("pano mutations — post.vote / retractVote", () => {
 
 		const retracted = await h.fate(
 			{kind: "mutation", name: "post.retractVote", input: {id}, select: ["id", "score", "myVote"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(retracted.ok).toBe(true);
 		if (!retracted.ok) return;

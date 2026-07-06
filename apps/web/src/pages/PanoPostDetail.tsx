@@ -346,7 +346,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	return (
 		<>
 			<header className="kp-pano-postpage__head">
-				<PanoPostHeaderVote post={post} />
+				<PanoPostHeaderVote post={post} isAuthor={isAuthor} />
 				{editing ? (
 					<form className="kp-pano-edit-post" onSubmit={onEditSubmit}>
 						<input

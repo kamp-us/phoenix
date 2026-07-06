@@ -7,6 +7,7 @@
 import {useLiveView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Post} from "../../../worker/features/fate/views";
+import {useSession} from "../../auth/client";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {tagClass} from "../../lib/panoTags";
@@ -46,6 +47,8 @@ export function PanoPostCard({
 	onHide?: (id: string) => void;
 }) {
 	const data = useLiveView(PanoPostCardView, post);
+	const session = useSession();
+	const isOwn = !!session.data?.user && session.data.user.id === data.authorId;
 	const href = `/pano/${data.slug ?? data.id}`;
 	const siteLabel = data.host ?? (data.url ? null : "yazı");
 	const agoLabel = formatAgoTR(toIso(data.createdAt));
@@ -56,7 +59,12 @@ export function PanoPostCard({
 			<span className="kp-pano-post__rank">
 				{rank != null ? String(rank).padStart(2, "0") : ""}
 			</span>
-			<PostVoteWidget postId={data.id} score={data.score} myVote={data.myVote ?? null} />
+			<PostVoteWidget
+				postId={data.id}
+				score={data.score}
+				myVote={data.myVote ?? null}
+				own={isOwn}
+			/>
 			<div className="kp-pano-post__body">
 				<div className="kp-pano-post__title-row">
 					{tags.length ? (

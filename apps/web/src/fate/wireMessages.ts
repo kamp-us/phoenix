@@ -27,6 +27,7 @@ export const WIRE_MESSAGES: Record<FateWireCode, string> = {
 	UNAUTHORIZED: "bu işlem için giriş yapmalısın",
 	FORBIDDEN: "bunu yapma yetkin yok",
 	VOTE_REQUIRES_YAZAR: "yazar olunca oy verebilirsin",
+	SELF_VOTE_NOT_ALLOWED: "kendi içeriğine oy veremezsin",
 	VOUCH_LIMIT_REACHED: "kefil olma sınırına ulaştın",
 	INSUFFICIENT_KARMA: "bunu yapmak için karman yetersiz",
 	DEFINITION_NOT_FOUND: "tanım bulunamadı",

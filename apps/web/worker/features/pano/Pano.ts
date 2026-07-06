@@ -27,7 +27,7 @@ import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
-import type {VoterNotEligible} from "../vote/errors.ts";
+import type {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
 import type {CommentConnectionPage, CommentRow} from "./comment-fields.ts";
@@ -238,11 +238,12 @@ export class Pano extends Context.Service<
 		}) => Effect.Effect<{restored: boolean; sandboxedAt: Date | null}>;
 
 		// `VoterNotEligible` (#1810): a çaylak newcomer's cast is rejected — the "earn to vote"
-		// gate lives in `Vote.castImpl`, so it surfaces on the cast path only. Retraction never
-		// raises it (a newcomer holds no vote to retract), so `retractPostVote` keeps its channel.
+		// gate lives in `Vote.castImpl`. `SelfVoteNotAllowed` (#2216): a cast on one's own post
+		// is rejected at the cast site. Both surface on the cast path only — retraction raises
+		// neither (nothing to retract), so `retractPostVote` keeps its `PostNotFound` channel.
 		readonly voteOnPost: (
 			input: VoteOnPostInput,
-		) => Effect.Effect<VoteOnPostResult, PostNotFound | VoterNotEligible>;
+		) => Effect.Effect<VoteOnPostResult, PostNotFound | VoterNotEligible | SelfVoteNotAllowed>;
 
 		readonly retractPostVote: (
 			input: VoteOnPostInput,
