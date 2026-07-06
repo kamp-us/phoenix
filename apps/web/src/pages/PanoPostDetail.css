@@ -44,28 +44,12 @@
 	text-decoration: underline;
 }
 
-.kp-pano-postpage__meta {
+/* Row shell + shared child treatment is the MetaRow primitive (ui/MetaRow.css,
+   #2163); only this header's own tuning (t-meta font, 8px gap) stays here, at a
+   specificity that outranks the primitive's defaults so the fold is order-free. */
+.kp-meta-row.kp-pano-postpage__meta {
 	font: var(--t-meta);
-	color: var(--text-muted);
-	display: flex;
 	gap: 8px;
-	align-items: center;
-	flex-wrap: wrap;
-}
-.kp-pano-postpage__meta .author {
-	color: var(--text-secondary);
-	font-weight: 600;
-}
-.kp-pano-postpage__meta button {
-	background: none;
-	border: 0;
-	padding: 0;
-	font: inherit;
-	color: inherit;
-	cursor: pointer;
-}
-.kp-pano-postpage__meta button:hover {
-	color: var(--accent);
 }
 
 /* Composer above the thread */
