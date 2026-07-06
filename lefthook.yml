@@ -1,7 +1,17 @@
 # rc is sourced by every generated hook wrapper (under /bin/sh, absolute shebang)
 # BEFORE lefthook runs — it restores the system bin dirs on PATH so lefthook can
 # resolve sh even in the harness stripped-PATH worktree-spawn env (#787). See .lefthookrc.
-rc: .lefthookrc
+#
+# The path MUST be `./`-qualified. The generated wrapper sources it as `. <rc>`; under
+# dash (CI's /bin/sh) a NO-SLASH argument to `.` triggers a PATH search, and when CWD is
+# not on PATH the source fails `.: <rc>: not found` — and dash, being POSIX, treats a
+# `.`-builtin failure in a non-interactive shell as FATAL and exits the shell immediately.
+# For a non-aborting hook (pre-commit/post-checkout) that fatal exit was latent/harmless,
+# but a `reference-transaction` hook aborts the git transaction on any non-zero, so the
+# bare `. .lefthookrc` PATH-search miss bricked every ref update in CI (#2143 follow-up:
+# leak-guard's `git fetch --depth=1 origin main` aborted). `./.lefthookrc` resolves by
+# path (no PATH search) → sources cleanly, hardening ALL hooks against the same dash trap.
+rc: ./.lefthookrc
 
 # Git hooks, managed by lefthook (ADR 0068). The leak-guard pre-commit is the
 # local fast-fail leg of the no-local-paths defense-in-depth (#158/#173); CI
@@ -76,3 +86,41 @@ post-checkout:
         # --ignore-scripts: a worktree shares .git/hooks (the common dir), so firing `prepare`
         # (lefthook install) from here would rewrite the SHARED hooks — provision deps, not lifecycle.
         "$@" install --prefer-offline --ignore-scripts
+
+# The caller-agnostic ref-transaction guard (ADR 0160, #2143): refuse a DIVERGING
+# refs/heads/main ref-move on the shared primary checkout (a non-fast-forward of
+# origin/main). Unlike the #1571 worktree-guard PreToolUse Bash hook — which only arms
+# for a $WORKTREE_ROOT subagent and only matches its HEAD_MOVING set — git's own
+# reference-transaction boundary fires for EVERY ref update regardless of caller (agent
+# Bash, harness worktree machinery, a manually-run command, or another git hook), which
+# is exactly the class #2143's force-move (a bare branch -f/checkout -B/update-ref by the
+# PULLER role, outside the agent Bash tool-call path) slipped past.
+#
+# git's contract: this hook runs on prepared|committed|aborted and gets one line per
+# queued update (`<old> <new> <ref>`) on stdin (use_stdin: true); a non-zero exit is
+# honored ONLY in the 'prepared' state, aborting the whole transaction. `{0}` is the
+# state arg git passes. The pure decision core (ref-guard.ts) refuses only a diverging
+# refs/heads/main move (exit 1); the legitimate PULLER `merge --ff-only origin/main` is
+# a fast-forward and always passes (exit 0).
+#
+# Fail-CLOSED on the guard's own refusal but fail-OPEN when the CLI can't RUN — a
+# not-yet-installed / stripped-PATH env (#787), or bin.ts's unlinked-dep remediation on a
+# fresh/partial checkout (#1798, which itself exits 1), must NOT abort every ref
+# transaction repo-wide (the #1050 guard.sh fail-open invariant). The guard signals a
+# deliberate refuse with a DEDICATED code (REFUSE_EXIT_CODE = 3), distinct from both
+# success (0) and any infra failure (1 / 127) — so ONLY code 3 propagates as an abort;
+# every other non-zero swallows to a clean allow. `run` executes under sh.
+reference-transaction:
+  commands:
+    ref-guard:
+      use_stdin: true
+      run: |
+        # `|| status=$?` (not a bare call) so a non-zero node exit can NEVER trip an inherited
+        # `set -e` and abort the transaction as a side effect — the guard aborts ONLY on its own
+        # deliberate refuse code below, never on any infra failure (the #1050 fail-open invariant).
+        status=0
+        node packages/pipeline-cli/src/bin.ts ref-guard reference-transaction {0} || status=$?
+        # exit 3 == the guard's deliberate refuse (abort the transaction); any other
+        # non-zero == the CLI couldn't run (node/CLI/module absent, crash) → fail-OPEN, allow.
+        [ "$status" -eq 3 ] && exit 1
+        exit 0

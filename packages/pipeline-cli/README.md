@@ -86,6 +86,55 @@ This is a **control-plane** surface (it drives the shared primary checkout); see
 [`.patterns/worktree-agent-constraints.md`](../../.patterns/worktree-agent-constraints.md)
 for the surrounding worktree/primary-checkout discipline it defends.
 
+### `ref-guard` — caller-agnostic ref-transaction guard against a diverging `main` (#2143, ADR 0160)
+
+A fail-closed guardrail wired as git's own **`reference-transaction`** hook that **refuses
+a diverging `refs/heads/main` ref-move** on the shared primary checkout — any update that
+would make local `main` a **non-fast-forward** of `origin/main`. It closes the #2143
+loaded-gun class: the orchestrator/PULLER role force-moved primary `main` off the merge seam
+(a bare `branch -f main` / `checkout -B main` / `update-ref refs/heads/main`), diverging it
+from `origin/main` and staging a ~13.5k-line deletion — one `git push -f` from clobbering
+`origin/main`.
+
+**Why the ref boundary, not a Bash hook.** The #1571 `worktree-guard` bash-pin only arms for
+a `$WORKTREE_ROOT` subagent and only matches its `HEAD_MOVING` set — so it is disarmed for
+the orchestrator/PULLER (no `$WORKTREE_ROOT`), a ref force-move is not in its set, and the
+#2143 keystroke was outside the agent Bash tool-call path entirely. Git's
+`reference-transaction` boundary fires for **every** ref update regardless of caller (agent
+Bash, harness worktree machinery, a manually-run command, or another git hook), which is
+exactly the reach a `PreToolUse` Bash hook lacks.
+
+Safe by construction (the pure core `ref-guard.ts` decides, `command.ts` runs it):
+
+- The pure `decideRefUpdate` allows every non-`refs/heads/main` update untouched, and on
+  `refs/heads/main` allows **only a fast-forward** of `origin/main` (`origin/main` an
+  ancestor of the new tip, or the new tip == `origin/main`); a non-ff divergence — or a
+  delete — **refuses**. The legitimate PULLER `merge --ff-only origin/main` is a fast-forward,
+  so it always passes; the reattach `checkout main` moves no ref on `main` at all.
+- **Fail-open on infra absence, fail-closed on divergence.** An unresolvable `origin/main`
+  (a fresh clone before the first fetch) allows the update (nothing to diverge from); an
+  ancestry probe that *fails* is treated as non-ff and refuses on the guarded ref (cannot
+  prove a fast-forward ⇒ divergence). The `lefthook.yml` wrapper aborts the transaction only
+  on the guard's **dedicated refuse exit code (3)** and fail-opens on any other non-zero, so a
+  not-yet-installed / stripped-PATH CLI (#787) or `bin.ts`'s unlinked-dep remediation (which
+  exits 1) can never wedge every ref transaction repo-wide (the #1050 fail-open invariant).
+
+Installed via `lefthook.yml` (ADR 0068), so it lands in the shared `.git/hooks` and fires for
+the primary checkout and every worktree that shares that `.git`. Git honors the exit status
+only in the `prepared` state, so the guard evaluates + can refuse only there; `committed` /
+`aborted` drain stdin and no-op.
+
+```bash
+# git invokes this itself as the reference-transaction hook; the manual shape (for a test):
+printf '%s %s refs/heads/main\n' "$OLD" "$NEW" \
+  | node packages/pipeline-cli/src/bin.ts ref-guard reference-transaction prepared
+# exit 0 = allow · exit 3 = REFUSE (a diverging main move) · other non-zero = CLI couldn't run (fail-open)
+```
+
+This is a **control-plane** surface (it guards the shared primary checkout's `main`); see
+[`.patterns/worktree-agent-constraints.md`](../../.patterns/worktree-agent-constraints.md)
+for the surrounding primary-checkout discipline it completes.
+
 ### `ship-digest` — the merged-since founder projection (#1595)
 
 Renders a **founder-facing** ship digest for a `--since` window from a pre-gathered
