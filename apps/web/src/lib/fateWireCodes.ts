@@ -29,6 +29,10 @@ export const FATE_WIRE_CODES = [
 	// overloaded `FORBIDDEN` (künye vouch denials) so the vote gate gets its own ladder
 	// copy without mislabelling other forbiddens (#1879): "yazar olunca oy verebilirsin".
 	"VOTE_REQUIRES_YAZAR",
+	// The self-vote denial — a voter cast on their OWN content (`vote/SelfVoteNotAllowed`,
+	// #2216, founder-ruled). The client hides the vote control on one's own content, so this
+	// is defense-in-depth: it reaches the wire only if that affordance is bypassed.
+	"SELF_VOTE_NOT_ALLOWED",
 	// The concurrent-vouch cap (D5) is reached — a yazar already holds the maximum
 	// active vouches (`kunye/VouchLimitReached`, #1289). Past the `FORBIDDEN` yazar
 	// floor: the actor IS a yazar, the act is just rationed.

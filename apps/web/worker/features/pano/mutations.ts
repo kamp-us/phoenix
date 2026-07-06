@@ -28,7 +28,7 @@ import {InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {authorDisplayLabel} from "../pasaport/author-label.ts";
-import {VoterNotEligible} from "../vote/errors.ts";
+import {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {
 	CommentNotFound,
@@ -292,9 +292,11 @@ export const mutations = {
 			input: PostIdInput,
 			type: PostView,
 			// `VoterNotEligible` (wire `VOTE_REQUIRES_YAZAR`) — the "earn to vote" gate: a çaylak newcomer
-			// is rejected at cast, never a silent no-op (#1810). `retractVote` needs no such gate:
-			// a newcomer never cleared the cast, so there is nothing to retract.
-			error: Schema.Union([Unauthorized, PostNotFound, VoterNotEligible]),
+			// is rejected at cast, never a silent no-op (#1810). `SelfVoteNotAllowed` (wire
+			// `SELF_VOTE_NOT_ALLOWED`) — the founder-ruled self-vote block (#2216). Both are
+			// cast-only: `retractVote` needs neither (a newcomer never cleared the cast, and a
+			// blocked self-cast leaves nothing to retract).
+			error: Schema.Union([Unauthorized, PostNotFound, VoterNotEligible, SelfVoteNotAllowed]),
 		},
 		Effect.fn("post.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;

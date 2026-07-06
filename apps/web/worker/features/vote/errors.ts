@@ -82,3 +82,23 @@ export class VoterNotEligible extends Schema.TaggedErrorClass<VoterNotEligible>(
 	},
 	{[FateWireCode]: VOTE_ELIGIBILITY_WIRE_CODE},
 ) {}
+
+/**
+ * A voter tried to cast on their **own** content (`voterId === authorId`), which the
+ * founder has ruled disallowed — a self-vote inflates the author's own score/karma and
+ * corrupts every ranking that reads it (#2216). Like {@link VoterNotEligible} this is a
+ * genuine *voter* rejection that reaches the wire (its own `SELF_VOTE_NOT_ALLOWED`
+ * {@link FateWireCode}, so the SPA can name it), never a target miss. Raised at the cast
+ * site (`Pano.applyPostVote` / `Sozluk.applyVote`), which already holds the target's
+ * `authorId` — and only on the CAST direction (`isVote === true`): a retraction is exempt,
+ * since once the cast is blocked there is no self-vote to retract (the same cast-only shape
+ * as {@link VoterNotEligible}).
+ */
+export class SelfVoteNotAllowed extends Schema.TaggedErrorClass<SelfVoteNotAllowed>()(
+	"vote/SelfVoteNotAllowed",
+	{
+		voterId: Schema.String,
+		message: Schema.String,
+	},
+	{[FateWireCode]: "SELF_VOTE_NOT_ALLOWED"},
+) {}

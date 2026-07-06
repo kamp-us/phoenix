@@ -31,7 +31,7 @@ import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
-import type {VoterNotEligible} from "../vote/errors.ts";
+import {SelfVoteNotAllowed, type VoterNotEligible} from "../vote/errors.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
 import {Vote} from "../vote/Vote.ts";
 import {
@@ -381,10 +381,15 @@ export class Sozluk extends Context.Service<
 		}) => Effect.Effect<{restored: boolean; sandboxedAt: Date | null}>;
 
 		// `VoterNotEligible` (#1810): a çaylak newcomer's cast is rejected by the "earn to
-		// vote" gate in `Vote.castImpl` — cast path only. Retraction never raises it.
+		// vote" gate in `Vote.castImpl`. `SelfVoteNotAllowed` (#2216): a cast on one's own
+		// definition is rejected at the cast site. Both cast path only — retraction raises
+		// neither, so `retractDefinitionVote` keeps its `DefinitionNotFound` channel.
 		readonly voteDefinition: (
 			input: VoteDefinitionInput,
-		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound | VoterNotEligible>;
+		) => Effect.Effect<
+			VoteDefinitionResult,
+			DefinitionNotFound | VoterNotEligible | SelfVoteNotAllowed
+		>;
 
 		readonly retractDefinitionVote: (
 			input: VoteDefinitionInput,
@@ -1145,6 +1150,17 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				});
 			}
 
+			// Self-vote guard (#2216, founder-ruled): a cast on one's OWN definition is
+			// rejected at the domain, so an inflated self-score is unrepresentable rather
+			// than caught downstream. Cast-only (mirrors the `VoterNotEligible` tier gate) —
+			// a retraction is exempt because a blocked cast leaves nothing to retract.
+			if (isVote && definition.authorId === input.voterId) {
+				return yield* new SelfVoteNotAllowed({
+					voterId: input.voterId,
+					message: "kendi tanımına oy veremezsin",
+				});
+			}
+
 			// A Vote miss (raced soft-delete or sandboxed) collapses to this
 			// surface's DefinitionNotFound — see translateVoteMiss.
 			const voteResult = yield* voteSvc
@@ -1196,11 +1212,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const retractDefinitionVote = Effect.fn("Sozluk.retractDefinitionVote")(function* (
 			input: VoteDefinitionInput,
 		) {
-			// The tier gate fires on the cast direction only (`value: true`), so a retraction
-			// never raises `VoterNotEligible` — die if it somehow does, keeping this method's
-			// channel to `DefinitionNotFound`.
+			// `VoterNotEligible` + `SelfVoteNotAllowed` both fire on the cast direction only
+			// (`isVote`/`value: true`), so a retraction never raises either — die if one
+			// somehow does, keeping this method's channel to `DefinitionNotFound`.
 			return yield* applyVote(input, false).pipe(
-				Effect.catchTag("vote/VoterNotEligible", (e) => Effect.die(e)),
+				Effect.catchTags({
+					"vote/VoterNotEligible": (e) => Effect.die(e),
+					"vote/SelfVoteNotAllowed": (e) => Effect.die(e),
+				}),
 			);
 		});
 

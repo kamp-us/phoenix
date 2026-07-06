@@ -5,31 +5,40 @@ import {currentLocationReturnTo, useGatedToggle, useVoteToggle} from "./useVoteT
 import "../vote-cue.css";
 import "./PanoPost.css";
 
-/** Presentational vote control; the parent owns the mutation + auth gate. */
+/**
+ * Presentational vote control; the parent owns the mutation + auth gate. `own`
+ * marks the viewer's own content: the vote button is dropped (self-voting is
+ * blocked, #2216) while the score still renders, so the affordance matches the
+ * rule — the server guard is the invariant, this is the matching UX.
+ */
 export function VoteControl({
 	count,
 	pressed = false,
 	onToggle,
 	testIdSuffix,
+	own = false,
 }: {
 	count: number;
 	pressed?: boolean;
 	onToggle?: () => void;
 	testIdSuffix?: string;
+	own?: boolean;
 }) {
 	const {flashing, endFlash} = useVoteFlash(count);
 	return (
 		<div className="kp-pano-post__vote">
-			<button
-				type="button"
-				className="kp-pano-post__vote-btn"
-				aria-pressed={pressed}
-				aria-label="Yukarı oy"
-				data-testid={testIdSuffix ? `post-vote-${testIdSuffix}` : undefined}
-				onClick={() => onToggle?.()}
-			>
-				<span className="triangle" />
-			</button>
+			{own ? null : (
+				<button
+					type="button"
+					className="kp-pano-post__vote-btn"
+					aria-pressed={pressed}
+					aria-label="Yukarı oy"
+					data-testid={testIdSuffix ? `post-vote-${testIdSuffix}` : undefined}
+					onClick={() => onToggle?.()}
+				>
+					<span className="triangle" />
+				</button>
+			)}
 			<span
 				className={`kp-pano-post__vote-count${flashing ? " kp-vote-flash" : ""}`}
 				onAnimationEnd={endFlash}
@@ -53,10 +62,13 @@ export function PostVoteWidget({
 	postId,
 	score,
 	myVote,
+	own = false,
 }: {
 	postId: string;
 	score: number;
 	myVote: boolean | null;
+	/** The viewer authored this post — drop the vote button (self-vote is blocked, #2216). */
+	own?: boolean;
 }) {
 	const fate = useFateClient();
 
@@ -74,7 +86,15 @@ export function PostVoteWidget({
 		},
 	});
 
-	return <VoteControl count={score} pressed={voted} onToggle={onToggle} testIdSuffix={postId} />;
+	return (
+		<VoteControl
+			count={score}
+			pressed={voted}
+			onToggle={onToggle}
+			testIdSuffix={postId}
+			own={own}
+		/>
+	);
 }
 
 /**
