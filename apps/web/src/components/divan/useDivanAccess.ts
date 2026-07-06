@@ -1,10 +1,18 @@
 /**
  * `useDivanAccess` — the server-authoritative answer to "may THIS user see the
  * divan?" (#1290). The divan is reached by yazar OR mod (the disjunctive
- * `requireDivanAccess` gate, divan/gate.ts), and the frontend carries no mod
- * signal (`role` is not on the `User` view) — so rather than guess authority
- * client-side, this probes the gated `divan.roster` read and reports whether it
+ * `requireDivanAccess` gate, divan/gate.ts), so rather than guess authority for the
+ * ambiguous case, this probes the gated `divan.roster` read and reports whether it
  * resolved (granted) or denied (the invisible `UNAUTHORIZED`).
+ *
+ * Client short-circuit (#2209): the `me` row carries the trusted `tier` +
+ * `isModerator` signals, so for a viewer whose disjunction is PROVABLY false
+ * (`divanAccessDefinitelyDenied` — a loaded non-yazar tier AND a loaded
+ * `isModerator: false`, i.e. a çaylak/visitor non-mod) the probe is skipped: it
+ * would return `UNAUTHORIZED` on every authed load. The server probe still runs for
+ * the AMBIGUOUS case (`me` not yet loaded, a yazar, or a moderator) — the gate stays
+ * server-authoritative; the short-circuit only elides a request the client can PROVE
+ * is wasted.
  *
  * Imperative (`request` in an effect, not the suspending `useRequest`), for the
  * same reason as `useMe` / `useProfileStats`: it drives the topbar entry, which
@@ -24,21 +32,27 @@ import {useCallback, useEffect, useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {DivanCaylak} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
+import type {MeUser} from "../../auth/useMe";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
+import {shouldProbeDivanRoster} from "./divanGating";
 
 const DivanAccessProbeView = view<DivanCaylak>()({id: true});
 const DivanRosterProbeConnection = {items: {node: DivanAccessProbeView}} as const;
 
-export function useDivanAccess(): boolean {
+export function useDivanAccess(me: MeUser | null): boolean {
 	const {value: flagOn} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	const session = useSession();
 	const fate = useFateClient();
 	const [granted, setGranted] = useState(false);
 	const signedIn = !!session.data;
+	// Fire the wire probe only when the flag+session are on AND access isn't
+	// client-provably denied (#2209): a çaylak/non-mod short-circuits off the wire; a
+	// not-yet-loaded `me`, a yazar, or a moderator is ambiguous ⇒ still probed.
+	const probeWire = shouldProbeDivanRoster(flagOn, signedIn, me?.tier, me?.isModerator);
 
 	const probe = useCallback(async () => {
-		if (!flagOn || !signedIn) {
+		if (!probeWire) {
 			setGranted(false);
 			return;
 		}
@@ -52,7 +66,7 @@ export function useDivanAccess(): boolean {
 			// failure ⇒ no access. Fail-closed: the entry stays hidden.
 			setGranted(false);
 		}
-	}, [flagOn, signedIn, fate]);
+	}, [probeWire, fate]);
 
 	useEffect(() => {
 		void probe();

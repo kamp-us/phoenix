@@ -9,11 +9,13 @@ import {describe, expect, it} from "vitest";
 import {
 	canVouch,
 	caylakLabel,
+	divanAccessDefinitelyDenied,
 	itemKindLabel,
 	parseBacklogItemId,
 	promoteOutcome,
 	promoteOutcomeMessage,
 	promoteVisible,
+	shouldProbeDivanRoster,
 	shouldRenderDivanPage,
 	shouldShowDivanEntry,
 	vouchOutcome,
@@ -48,6 +50,54 @@ describe("shouldShowDivanEntry — the yazar/mod-only topbar entry", () => {
 
 	it("hides the entry when both are false", () => {
 		expect(shouldShowDivanEntry(false, false)).toBe(false);
+	});
+});
+
+describe("divanAccessDefinitelyDenied — the #2209 client short-circuit for the roster probe", () => {
+	it("is TRUE for a loaded çaylak non-moderator (the guaranteed-UNAUTHORIZED case → skip the probe)", () => {
+		expect(divanAccessDefinitelyDenied("çaylak", false)).toBe(true);
+	});
+
+	it("is TRUE for a loaded visitor non-moderator", () => {
+		expect(divanAccessDefinitelyDenied("visitor", false)).toBe(true);
+	});
+
+	it("is FALSE for a yazar — the server grants, so it must still probe (never short-circuit a grant)", () => {
+		expect(divanAccessDefinitelyDenied("yazar", false)).toBe(false);
+	});
+
+	it("is FALSE for a çaylak who IS a moderator — the mod arm grants, so it must still probe", () => {
+		expect(divanAccessDefinitelyDenied("çaylak", true)).toBe(false);
+	});
+
+	it("is FALSE for the AMBIGUOUS not-yet-loaded case (undefined tier and/or undefined isModerator) → still probe", () => {
+		expect(divanAccessDefinitelyDenied(undefined, undefined)).toBe(false);
+		expect(divanAccessDefinitelyDenied(undefined, false)).toBe(false);
+		expect(divanAccessDefinitelyDenied("çaylak", undefined)).toBe(false);
+	});
+});
+
+describe("shouldProbeDivanRoster — fire the wire probe iff not client-provably denied (#2209)", () => {
+	it("does NOT fire the roster probe for a signed-in çaylak non-moderator (guaranteed UNAUTHORIZED)", () => {
+		expect(shouldProbeDivanRoster(true, true, "çaylak", false)).toBe(false);
+	});
+
+	it("does NOT fire for a signed-in visitor non-moderator", () => {
+		expect(shouldProbeDivanRoster(true, true, "visitor", false)).toBe(false);
+	});
+
+	it("DOES fire for the ambiguous not-yet-loaded viewer (undefined signals)", () => {
+		expect(shouldProbeDivanRoster(true, true, undefined, undefined)).toBe(true);
+	});
+
+	it("DOES fire for a yazar and for a çaylak moderator — the server is the authority for the grant", () => {
+		expect(shouldProbeDivanRoster(true, true, "yazar", false)).toBe(true);
+		expect(shouldProbeDivanRoster(true, true, "çaylak", true)).toBe(true);
+	});
+
+	it("never fires with the flag off or while signed out, regardless of tier", () => {
+		expect(shouldProbeDivanRoster(false, true, "yazar", true)).toBe(false);
+		expect(shouldProbeDivanRoster(true, false, "yazar", true)).toBe(false);
 	});
 });
 
