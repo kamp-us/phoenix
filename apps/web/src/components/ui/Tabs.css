@@ -30,9 +30,9 @@
 	color: var(--text-primary);
 	border-bottom-color: var(--accent-9);
 }
+/* Ring from the shared focus layer (global.css, #2169); only the rounded outline
+   corner is tab-specific. */
 .kp-tabs__tab:focus-visible {
-	outline: var(--focus-ring);
-	outline-offset: 2px;
 	border-radius: var(--r-sm);
 }
 

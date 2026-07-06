@@ -19,10 +19,7 @@
 		color 80ms,
 		border-color 80ms;
 }
-.kp-btn:focus-visible {
-	outline: var(--focus-ring);
-	outline-offset: 2px;
-}
+/* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
 .kp-btn:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;

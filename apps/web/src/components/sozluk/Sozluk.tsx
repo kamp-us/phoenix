@@ -133,6 +133,14 @@ const ALPHABET = [
  * each letter is a shareable URL, back-button-correct and middle-clickable. The
  * active letter links back to bare `/sozluk` so it still toggles its filter off.
  * Empty letters stay inert `<span>`s — no destination to navigate to.
+ *
+ * ARIA (#2169): the `<nav aria-label="Harf">` names the index as a landmark. Each
+ * populated letter is a link whose accessible name spells out the letter ("A
+ * harfi") — a bare "a" reads ambiguously to a screen reader that spells single
+ * chars. Empty letters are inert spans (not announced as links) carrying a
+ * visually-hidden "(… harfi, terim yok)" suffix, so an AT user hears the
+ * populated/empty distinction the muted color conveys visually. The active letter
+ * keeps `aria-current="page"`.
  */
 export function SozlukAlphabet({
 	value,
@@ -153,10 +161,17 @@ export function SozlukAlphabet({
 				]
 					.filter(Boolean)
 					.join(" ");
+				const letterName = `${l.toLocaleUpperCase("tr")} harfi`;
 				if (isEmpty) {
+					// Inert letter — a plain span (no interactive role) so it isn't announced as
+					// a link. The visible glyph reads as the letter; a visually-hidden suffix
+					// spells the name + "(terim yok)" so an AT user hears the empty distinction the
+					// muted color conveys visually. (aria-label/aria-disabled aren't valid on a
+					// generic span; the hidden text carries the semantics instead.)
 					return (
 						<span key={l} className={cls}>
 							{l}
+							<span className="kp-visually-hidden">{`(${letterName}, terim yok)`}</span>
 						</span>
 					);
 				}
@@ -165,6 +180,7 @@ export function SozlukAlphabet({
 						key={l}
 						to={sozlukLetterHref(l, isActive)}
 						className={cls}
+						aria-label={letterName}
 						aria-current={isActive ? "page" : undefined}
 					>
 						{l}

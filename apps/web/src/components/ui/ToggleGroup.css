@@ -34,10 +34,7 @@
 	border-color: var(--accent-9);
 	font-weight: 600;
 }
-.kp-toggle:focus-visible {
-	outline: var(--focus-ring);
-	outline-offset: 2px;
-}
+/* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
 .kp-toggle:disabled,
 .kp-toggle[data-disabled] {
 	opacity: 0.4;

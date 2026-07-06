@@ -52,10 +52,9 @@
 	background: var(--surface-sunken);
 }
 
-.kp-reaction-bar__btn:focus-visible {
-	outline: var(--focus-ring);
-	outline-offset: var(--focus-ring-offset);
-}
+/* Keyboard focus ring comes from the shared focus layer (global.css, #2169) —
+   the same --focus-ring / --focus-ring-offset #2166 converged this button onto,
+   now sourced from one place instead of re-declared here. */
 
 .kp-reaction-bar__btn[aria-pressed="true"] {
 	border-color: var(--accent);

@@ -56,8 +56,9 @@
 .kp-pano-post__vote-btn[aria-pressed="true"] {
 	color: var(--accent);
 }
+/* Ring from the shared focus layer (global.css, #2169); tighter offset hugs the
+   compact vote control. */
 .kp-pano-post__vote-btn:focus-visible {
-	outline: var(--focus-ring);
 	outline-offset: 1px;
 }
 
@@ -154,8 +155,9 @@
 	color: var(--accent);
 	font-weight: 600;
 }
+/* Ring from the shared focus layer (global.css, #2169); tighter offset + rounded
+   corner hug the compact save control. */
 .kp-pano-post__save:focus-visible {
-	outline: var(--focus-ring);
 	outline-offset: 1px;
 	border-radius: var(--r-sm);
 }
