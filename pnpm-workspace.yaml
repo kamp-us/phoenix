@@ -86,6 +86,16 @@ onlyBuiltDependencies:
 #    record was deleted by an entity live frame (#1686 — the term-page crash on
 #    definition.delete). Regression test:
 #    apps/web/src/fate/useViewPendingSnapshot.test.tsx. Not upstreamed in 1.3.1.
+#
+# @nkzw/fate — ONE hunk on 1.3.1 (createHTTPTransport is defined here; react-fate only
+# re-exports it):
+# 1. lib/index.mjs — the native live client's `add` buffers same-tick subscribe ops and
+#    flushes them as ONE `/fate/live` control POST (mirroring the reconnect path's
+#    `control(resubscribe)`). Unpatched, each `add` fired its own `control([op])` after
+#    `open`, so a feed load with N `useLiveView` mounts issued N single-op POSTs, each
+#    re-validating the session (~22 on an authed /pano load — #2273). Regression test:
+#    apps/web/src/fate/liveSubscribeBatch.test.ts. Not upstreamed in 1.3.1.
 patchedDependencies:
+  '@nkzw/fate@1.3.1': patches/@nkzw__fate@1.3.1.patch
   alchemy@2.0.0-beta.59: patches/alchemy@2.0.0-beta.59.patch
   react-fate@1.3.1: patches/react-fate@1.3.1.patch
