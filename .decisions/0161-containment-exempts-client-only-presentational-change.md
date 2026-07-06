@@ -43,43 +43,59 @@ confirmed the behavior is what was intended. The thing being contained is a *beh
 mutation, a logic branch, an auth or access decision, a persisted or observable state change —
 something that, if wrong, does damage to users or data the moment it is live.
 
-**Why a client-only / unconditional presentational change has nothing for it to protect.** Such
-a change has **no data mutation, no logic branch, no behavior flag, no auth decision, no
-persisted or observable state change**. Its only output is a **visual / presentational result**
-— how something looks or how quickly it appears to render. That output is validated by
-**review-design plus the deployed e2e**, not by a dark flag: there is no behavior for a human to
-"validate dark," because the only thing to validate is the pixels, which the design review and
-the deployed end-to-end test already see. A dark flag on such a change adds **ceremony** (a flag
-to author, gate, and later retire) and a **manual human flip**, and it reduces **zero** risk —
-there is no live behavior the flip is protecting users from. The flag would be a no-op guard: it
-holds back nothing dangerous.
+**Why a client-only presentational change has nothing for it to protect.** Such a change
+introduces **no behavior / access / state delta** — no data mutation, no feature gated, no auth
+or access decision, no persisted or observable state change. Its entire user-facing effect is
+**presentational** — *which pixels render*. That output is validated by **review-design plus the
+deployed e2e**, not by a dark flag: there is no behavior for a human to "validate dark," because
+the only thing to validate is the pixels, which the design review and the deployed end-to-end
+test already see. A dark flag on such a change adds **ceremony** (a flag to author, gate, and
+later retire) and a **manual human flip**, and it reduces **zero** risk — there is no live
+behavior the flip is protecting users from. The flag would be a no-op guard: it holds back
+nothing dangerous.
 
-**Where the line is (this boundary is the whole ADR — it must be tight).**
+**Where the line is (this boundary is the whole ADR — it must be tight).** The test is a
+**user-visible behavior / access / state delta**, *not* "does the code branch on data." A
+presentational change may legitimately branch on already-loaded data and still be exempt,
+because branching to paint different pixels is not a behavior change — it changes only *what is
+painted*, never *what the app does* or *what the user can access*.
 
 - **EXEMPT — contains as `exempt`, no dark flag required:**
-  - **CSS-only / unconditional presentational changes** — a change whose entire user-facing
-    effect is visual (styling, layout, spacing, density, motion) and is applied unconditionally,
-    with no branch on data, user, or state.
+  - **CSS-only / presentational changes** — a change whose entire user-facing effect is visual
+    (styling, layout, spacing, density, motion): it **adds/removes no control, gates no feature,
+    mutates no data, and persists no observable state** — no behavior / access / state delta.
+  - **A presentational conditional is EXEMPT.** Rendering different pixels based on
+    already-loaded data — an **empty state** (`items.length === 0`), a **loading skeleton**, a
+    **responsive / density layout** — is exempt: it changes only what is *painted*, not what the
+    app *does* or what the user can *access*. "Branches on data/state" alone does **not** make a
+    change non-exempt; a *behavior/access/state delta* does.
   - **Pure client perceived-perf with no data / logic / security surface** — the #2181 class:
     once its `defer` leg was removed it was pure client render, changing *when/how fast* the UI
     appears, not *what* it computes, mutates, or authorizes.
 
 - **NOT EXEMPT — contains normally (`flag (default-off)`, ships dark):**
-  - Anything that touches **data** (a mutation, a read that changes what is persisted or served),
-    **logic** (a new branch/decision on behavior), a **behavior flag**, **auth** (an access or
-    permission decision), or a **persisted / observable state change**. Any one of these is a
-    behavior — exactly what ADR-0083 exists to hold dark — and it contains normally.
+  - Anything that introduces a **behavior / access / state delta**: a **data** change (a
+    mutation, or a read that changes what is persisted or served), **logic** (a new decision that
+    changes what the app *does*), a **behavior flag**, **auth** (an access or permission
+    decision), or a **persisted / observable state change**. Any one of these is a behavior —
+    exactly what ADR-0083 exists to hold dark — and it contains normally.
+  - **The access edge (red-team, #2194): CSS that HIDES or DISABLES a functional control is an
+    ACCESS change, not presentation.** A `display:none` / `visibility:hidden` /
+    `pointer-events:none` that **removes users' access to a working control** changes *what the
+    user can do*, not merely *what is painted* — it is an access delta and **contains normally**.
+    A style that changes only the *appearance* of a still-usable control stays presentational and
+    exempt; one that revokes access to it does not. The line is access, not the CSS property.
 
 **Residual risk of the exemption, and why it is acceptable.** The one risk is
-**mis-classification**: a change that *looks* client-only but smuggles in a data/logic/auth
-surface, stamped `exempt` and thus shipped live without a dark flag. That risk is bounded by two
-gates, not by trust:
+**mis-classification**: a change that *looks* client-only but carries a behavior/access/state
+delta (a smuggled data/logic/auth surface, or a control-hiding access change), stamped `exempt`
+and thus shipped live without a dark flag. That risk is bounded by two gates, not by trust:
 1. The **exemption is applied per-PR with an explicit client-only confirmation** (see Decision).
    The reviewer confirms the diff is presentational — a mis-stamp is caught at review, not
    silently accepted.
-2. A change that **does** carry a data/logic/auth/state surface **is not exempt by definition** —
+2. A change that **does** carry a behavior/access/state delta **is not exempt by definition** —
    it falls in the NOT-EXEMPT set and contains normally. The exemption is a *classification*, not
-   an override: it never lets a real behavior change ship without its dark flag. If a surface
+   an override: it never lets a real behavior change ship without its dark flag. If a delta
    sneaks in, the correct outcome is that the PR was mis-classified and should have contained —
    the exemption did not authorize the leak, it was misapplied, and the per-PR confirmation is the
    place that catch happens.
@@ -87,17 +103,19 @@ gates, not by trust:
 So the exemption removes ceremony from the class that had nothing to protect, without widening
 the class that does. A too-wide exemption (e.g. "any refactor," "anything that looks safe") would
 re-admit behavior changes past the guard — that is why the line is drawn at *presentational
-output only*, and why data/logic/auth/state is a hard boundary, not a soft heuristic.
+output only* (no behavior/access/state delta), and why a behavior/access/state delta is a hard
+boundary, not a soft heuristic.
 
 ## Decision
 
-**A client-only / unconditional presentational change is exempt from ADR-0083 dark-release
-containment.**
+**A client-only presentational change — one with no user-visible behavior / access / state delta
+— is exempt from ADR-0083 dark-release containment.**
 
-1. **The exempt class** is exactly the EXEMPT set above: CSS-only / unconditional presentational
-   changes, and pure client perceived-perf with no data / logic / security surface. Everything in
-   the NOT-EXEMPT set — data, logic, a behavior flag, auth, or a persisted/observable state change
-   — contains normally (`flag (default-off)`).
+1. **The exempt class** is exactly the EXEMPT set above: CSS-only / presentational changes
+   (including a presentational conditional that branches only to paint different pixels), and
+   pure client perceived-perf with no data / logic / security surface. Everything in the
+   NOT-EXEMPT set — a data, logic, behavior-flag, auth, access (including control-hiding), or
+   persisted/observable-state delta — contains normally (`flag (default-off)`).
 
 2. **Per-PR discipline, recorded not silent.** The exemption is applied **per-PR** with an
    **explicit client-only confirmation**. The `**Containment:**` marker is set to
@@ -140,4 +158,5 @@ containment.**
   (the fail-closed-on-zero-scope rule the §ZS `.css` fix keeps honest).
 - **Tracked work:** #2185 (§ZS `.css` coverage (b) + plan-epic exempt-class guidance (a)),
   #2181 (async perceived-perf), #2166 (CSS a11y), #2183 (density toggle) — the client-only PRs
-  that motivated the exemption.
+  that motivated the exemption; #2169 / #2194 — the reviews that had to reason past the pre-sharpen
+  wording, whose access-edge advisory this ADR now folds in.
