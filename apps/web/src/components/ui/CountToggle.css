@@ -7,10 +7,11 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 4px;
-	/* WCAG 2.5.8 minimum target size (#2166) — a load-bearing a11y floor. */
-	min-height: 24px;
-	padding: 1px 6px;
+	gap: var(--s-1);
+	/* WCAG 2.5.8 minimum target size (#2166) — a load-bearing a11y floor.
+	   --s-6 is 24px at the compact default and only grows with density. */
+	min-height: var(--s-6);
+	padding: 1px var(--s-2);
 	border: 1px solid var(--border-faint);
 	border-radius: var(--r-pill);
 	background: var(--surface);
