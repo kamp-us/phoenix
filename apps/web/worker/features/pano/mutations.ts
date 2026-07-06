@@ -301,7 +301,16 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
-			const post = shapePost(r);
+			// Re-resolve the affected post via the same batched read `post.save`/`post.unsave`
+			// use, so the returned AND published projection carries the real `isSaved` + live
+			// author identity. The write result (`VoteOnPostResult`) has neither, and its
+			// null-bearing shape clobbered the client cache — and the fanned live frame — of an
+			// already-saved post (#2213).
+			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+			if (!row) {
+				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
+			}
+			const post = toPost(row);
 			yield* live.post.update(post.id, {changed: ["score"], data: post});
 			// Aggregated vote notification (#1698): a LANDED upvote (not an idempotent
 			// no-op) notifies the post author — rolled up per item, self-suppressed,
@@ -328,8 +337,14 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
-			const r = yield* pano.retractPostVote({postId: input.id, voterId: user.id});
-			const post = shapePost(r);
+			yield* pano.retractPostVote({postId: input.id, voterId: user.id});
+			// Re-resolve like `post.vote` above so the returned/published projection keeps the
+			// real `isSaved` + author identity instead of the null-bearing write shape (#2213).
+			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+			if (!row) {
+				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
+			}
+			const post = toPost(row);
 			yield* live.post.update(post.id, {changed: ["score"], data: post});
 			return post;
 		}),
