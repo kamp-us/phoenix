@@ -57,6 +57,7 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 | [fate-views-and-requests.md](./fate-views-and-requests.md) | `view`/`useView`/`ViewRef`, masking, one batched `useRequest` per screen, `useListView` pagination | Reading data in a component |
 | [fate-mutations-client.md](./fate-mutations-client.md) | `fate.mutations`/`actions`, optimistic updates, `insert`/`delete` membership, error routing | Writing data from the UI |
 | [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, the [invalidation invariant](./fate-live-views.md#invalidation-invariant) (a mutation over a live view MUST publish), server `live.*` publishing, the SSE wire, the unified `LiveDO` Durable Object | Making a view live (spans client + server); writing a mutation that must invalidate a live view |
+| [fate-async-react.md](./fate-async-react.md) | The "feels instant" defaults on fate + React 19 concurrency: the stable `<Suspense>` boundary, `useTransition`/`isPending` to keep the current screen interactive across a re-suspend (react-router already transitions route swaps), `defer` + a nested boundary to ungate above-the-fold content, height-matched skeletons single-sourced from the page size (no CLS/footer jump), and the nullable-relation `defer` narrowing | Building a screen's loading/pending path — before adding a spinner or a hard-swapping fallback (#2161) |
 
 ## Index — UI / components layer
 

@@ -16,14 +16,13 @@ import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import {
+	PANO_FEED_PAGE_SIZE,
 	PANO_FILTERS,
 	PANO_SORT_PARAM,
 	panoFilterIdFromParam,
 	panoSortFromFilterId,
 	SAVED_LINK,
 } from "../lib/panoNav";
-
-const PAGE_SIZE = 20;
 
 /**
  * `live: {prepend: "visible"}` makes a server-pushed `prependNode` (a new post
@@ -42,14 +41,23 @@ export function PanoFeed({host}: {host?: string}) {
 	// preserve the active subfeed instead of resetting to the default (#2072).
 	const [searchParams, setSearchParams] = useSearchParams();
 	const filterId = panoFilterIdFromParam(searchParams.get(PANO_SORT_PARAM));
+	// Switching a chip swaps to a different `sort` connection, so `FeedContent`
+	// re-suspends. Writing the `?sort=` param inside `startTransition` marks that
+	// re-fetch as non-urgent: React keeps the CURRENT feed committed + interactive
+	// under the stable `<Screen>` boundary instead of hard-swapping to the skeleton,
+	// and surfaces the in-flight swap as `isPending` (#2161). The initial cold load
+	// still shows the skeleton — there's no prior content to preserve there.
+	const [isPending, startTransition] = React.useTransition();
 	// Push (not replace) a history entry so browser back/forward step across the
 	// visited subfeeds, per the acceptance criteria.
 	const setFilterId = React.useCallback(
 		(id: string) => {
-			setSearchParams((prev) => {
-				const next = new URLSearchParams(prev);
-				next.set(PANO_SORT_PARAM, panoSortFromFilterId(id));
-				return next;
+			startTransition(() => {
+				setSearchParams((prev) => {
+					const next = new URLSearchParams(prev);
+					next.set(PANO_SORT_PARAM, panoSortFromFilterId(id));
+					return next;
+				});
 			});
 		},
 		[setSearchParams],
@@ -72,7 +80,13 @@ export function PanoFeed({host}: {host?: string}) {
 				</FeedChrome>
 			)}
 		>
-			<FeedContent host={host} filterId={filterId} setFilterId={setFilterId} sort={filter.sort} />
+			<FeedContent
+				host={host}
+				filterId={filterId}
+				setFilterId={setFilterId}
+				sort={filter.sort}
+				pending={isPending}
+			/>
 		</Screen>
 	);
 }
@@ -82,20 +96,30 @@ function FeedContent({
 	filterId,
 	setFilterId,
 	sort,
+	pending,
 }: {
 	host?: string;
 	filterId: string;
 	setFilterId: (id: string) => void;
 	sort: string;
+	pending: boolean;
 }) {
 	const {posts} = useRequest({
 		posts: {
 			list: PostConnectionView,
-			args: {sort, first: PAGE_SIZE, ...(host ? {host} : {})},
+			args: {sort, first: PANO_FEED_PAGE_SIZE, ...(host ? {host} : {})},
 		},
 	});
 
-	return <FeedRows connection={posts} host={host} filterId={filterId} setFilterId={setFilterId} />;
+	return (
+		<FeedRows
+			connection={posts}
+			host={host}
+			filterId={filterId}
+			setFilterId={setFilterId}
+			pending={pending}
+		/>
+	);
 }
 
 type PostConnection = ReturnType<
@@ -107,11 +131,13 @@ function FeedRows({
 	host,
 	filterId,
 	setFilterId,
+	pending,
 }: {
 	connection: PostConnection;
 	host?: string;
 	filterId: string;
 	setFilterId: (id: string) => void;
+	pending: boolean;
 }) {
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
@@ -119,7 +145,19 @@ function FeedRows({
 
 	return (
 		<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta={meta}>
-			<div className="kp-pano-list">
+			{/* During a chip-driven sort swap the current rows stay committed but dim +
+			    go inert (`aria-busy`), so the swap reads as "loading the next sort" rather
+			    than a frozen screen — the `startTransition` in the parent keeps them here
+			    instead of unmounting to the skeleton (#2161). */}
+			<div
+				className="kp-pano-list"
+				aria-busy={pending}
+				style={
+					pending
+						? {opacity: 0.6, transition: "opacity var(--motion-base) var(--ease-standard)"}
+						: undefined
+				}
+			>
 				{items.map(({node}, i) => (
 					<PanoPostCard key={node.id} post={node} rank={i + 1} />
 				))}
