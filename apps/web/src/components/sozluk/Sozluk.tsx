@@ -48,7 +48,7 @@ export function SozlukPopular({terms}: {terms: PopularTerm[]}) {
 					<Link className="kp-sozluk-popular__title" to={`/sozluk/${t.slug}`}>
 						{t.title}
 					</Link>
-					<span className="kp-sozluk-popular__meta">{t.totalScore} ↑</span>
+					<span className="kp-sozluk-popular__meta">{t.totalScore} oy</span>
 				</li>
 			))}
 		</ol>
@@ -80,7 +80,7 @@ export function SozlukDefinition({d}: {d: DefinitionData}) {
 				<span>·</span>
 				<span>{d.agoLabel}</span>
 				<span>·</span>
-				<span>{d.score} puan</span>
+				<span>{d.score} oy</span>
 			</div>
 		</article>
 	);
