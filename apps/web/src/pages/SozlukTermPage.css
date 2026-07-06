@@ -108,7 +108,9 @@
 }
 .kp-sozluk-definition__rank {
 	font: var(--t-micro);
-	color: var(--text-faint);
+	/* Rank number carries meaning → --text-muted (AA-safe ≥4.5:1); --text-faint is
+	   decorative-only and bottoms out at ~3:1 (#2166, tokens.css role layer). */
+	color: var(--text-muted);
 	margin-top: 2px;
 }
 .kp-sozluk-definition__body {
