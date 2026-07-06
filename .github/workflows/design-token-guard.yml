@@ -1,0 +1,44 @@
+name: design-token-guard
+
+# CI gate for #2170 (ADR 0162 / design-system-manifest.md): the first deterministic
+# enforcement rung of the four-pillars design law. A component CSS file must consume the
+# design-token seam — every var(--…) resolves to a declared/injected/grandfathered
+# property (no dead ref, the Toast #2167 class), no raw hex outside the raw-scale layer
+# tokens.css, and no raw px > 2px beyond each file's grandfathered ceiling (the 4px grid
+# sanctions only 1px/2px). It runs `pipeline-cli design-token-guard check` and fails
+# closed on zero CSS files or a malformed allow-list config (ADR 0092). The bounded
+# allow-lists (apps/web/src/styles/design-token-lint.config.json) grandfather the
+# pre-existing debt so the gate is green on main. The scan lives once in the tool.
+on:
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs the
+# guard, which fails via exit code — it posts no check-run/status/PR comment — so
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check every component CSS file consumes the design-token seam
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 on a dead var(--…) ref, a raw hex outside tokens.css, a raw-px regression
+      # over a file's ceiling, or zero CSS files in scope (fail-closed). Report on stderr.
+      - name: Check the design-token seam holds
+        run: node packages/pipeline-cli/src/bin.ts design-token-guard check
