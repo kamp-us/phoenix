@@ -74,7 +74,7 @@ export function PanoPostCard({
 							))}
 						</span>
 					) : null}
-					<a className="kp-pano-post__title kp-prose" href={data.url ?? href}>
+					<a className="kp-pano-post__title kp-prose" href={data.url ?? href} title={data.title}>
 						{data.title}
 					</a>
 					{data.host ? (

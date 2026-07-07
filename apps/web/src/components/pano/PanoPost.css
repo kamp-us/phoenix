@@ -94,6 +94,15 @@
 	font-weight: 500;
 	color: var(--text-primary);
 	text-decoration: none;
+	/* Clamp a long feed title to one line so the row stays uniform and the feed
+	   scans (#2303); the full title lives on the detail-page h1 + this link's
+	   `title`. `min-width: 0` lets the anchor shrink below its content — without it
+	   the `flex-wrap` title-row grows it full-width instead of ellipsizing. */
+	min-width: 0;
+	display: -webkit-box;
+	-webkit-line-clamp: 1;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
 }
 .kp-pano-post__title:hover {
 	color: var(--accent);
