@@ -1800,21 +1800,23 @@ this one rule so they can't diverge (the same discipline §5 pins for code/doc).
 
 ---
 
-## 6.6. The canonical advisory line — one form for all three gates
+## 6.6. The canonical advisory line — one form for all four gates
 
-The three gates once expressed "advisory" two ways: `review-code` emitted a binding
+The gates once expressed "advisory" two ways: `review-code` emitted a binding
 `PASS @ <sha> — merge-ready` line *plus* a control-plane caveat, while `review-doc`
 suppressed the binding PASS and led with a **no-`@ <sha>`** advisory line. ADR
 [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §5 picks
-`review-doc`'s form as the **single canonical advisory shape** and converges all three on it.
+`review-doc`'s form as the **single canonical advisory shape** and converges all the gates on
+it; the later `review-design` gate (§6.7, ADR 0165) adopts the same form from birth.
 
 For a PR in the **control-plane / blocking set** (§CP), the gate emits a comment whose first
 line is the **no-`@ <sha>`** advisory marker in its own namespace:
 
 ```markdown
-review-code:  advisory — blocking-set PR (manual merge)
-review-doc:   advisory — blocking-set PR (manual merge)
-review-skill: advisory — blocking-set PR (manual merge)
+review-code:   advisory — blocking-set PR (manual merge)
+review-doc:    advisory — blocking-set PR (manual merge)
+review-skill:  advisory — blocking-set PR (manual merge)
+review-design: advisory — blocking-set PR (manual merge)
 ```
 
 The rest of the body carries the same per-check evidence table the PASS/FAIL paths carry —
@@ -1876,6 +1878,122 @@ automated §CP auto-merge and erode ADR 0053) — ADR 0151 instead makes the *bo
 and machine-read, keeping ADR 0111 intact. See
 [ADR 0111](https://github.com/kamp-us/phoenix/blob/main/.decisions/0111-blocking-set-verdicts-sha-less-by-design.md)
 and [ADR 0151](https://github.com/kamp-us/phoenix/blob/main/.decisions/0151-cp-advisory-body-sha-resolves-approval-aware-enqueue.md).
+
+---
+
+## 6.7. review-design verdict marker
+
+`review-design` is the **design-class gate** — the fourth reviewer skill alongside
+`review-code` (§5), `review-doc` (§6), and `review-skill` (§6.5). It gates a **UI-affecting
+PR** by driving Playwright over the PR's preview deploy, capturing the changed UI surfaces,
+and judging the rendered screenshots multimodally against the **four-pillars design law**
+(ADR [0162](https://github.com/kamp-us/phoenix/blob/main/.decisions/0162-four-pillars-design-law.md);
+the gate itself is ADR [0165](https://github.com/kamp-us/phoenix/blob/main/.decisions/0165-review-design-gate.md),
+skill landed via #2246). It hard-FAILs **only** on the six enumerable, objective ADR-0162
+prohibitions; all holistic/taste judgment rides as advisory (non-blocking) notes in the same
+verdict comment. It lands its verdict as a **comment whose first line is a recognizable,
+SHA-bound marker** — and **only** that comment, never a native review (like `review-doc` /
+`review-skill`, ADR 0058 rule 4). The marker lives in its **own namespace**, distinct from
+§5's `review-code`, §6's `review-doc`, and §6.5's `review-skill`.
+
+### Shape — SHA-bound (ADR 0058)
+
+The recognizable **first line** of the PR comment carries the head SHA the reviewer
+inspected (`@ <sha>`, from `gh api repos/$REPO/pulls/$PR --jq .head.sha`):
+
+```markdown
+review-design: PASS @ <sha> — merge-ready
+```
+
+```markdown
+review-design: FAIL @ <sha> — changes-requested
+```
+
+For a PR in the **control-plane / blocking set** (§CP), `review-design` is **advisory only**
+and instead leads with the **canonical advisory line** (§6.6):
+
+```markdown
+review-design: advisory — blocking-set PR (manual merge)
+```
+
+so its verdict stays *out* of `ship-it`'s PASS namespace — a human merges those (ADR 0053).
+The advisory line carries **no `@ <sha>`** by design: it authorizes nothing, so there is
+nothing to bind.
+
+The rest of the body carries the per-prohibition table (the six hard-FAIL checks, passing
+rows too), an **Advisory (non-blocking)** section, and an **Evidence** section embedding the
+GitHub-hosted screenshot URLs so a human can see what was judged. What's load-bearing for the
+scanner is the namespace, the polarity, **and the `@ <sha>`** — the same staleness contract as
+§5/§6/§6.5: `ship-it`/`write-code`-repair refuse a `review-design` verdict whose `@ <sha>` is
+not the PR's current head, and refuse a SHA-less one (ADR
+[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
+
+### Comment-only (ADR 0058)
+
+`review-design` emits its verdict **only** as the SHA-bound `review-design:` comment,
+**never** a native `APPROVE`/`REQUEST_CHANGES` review — for the same reason `review-doc` /
+`review-skill` are comment-only (§6/§6.5): a native review cannot carry the `@ <sha>` in the
+shape this contract controls, so one comparable record type per lane keeps the lane
+resolvable.
+
+### Upsert, not append (ADR 0058)
+
+`review-design` writes **exactly one** `review-design:` marker comment per PR: before posting
+it scans for **its own** prior `review-design:` marker and `PATCH`es it with the fresh verdict
++ fresh `@ <sha>` rather than appending (ADR 0058 rule 2; same mechanism as §5/§6/§6.5).
+
+### The matcher contract — anchored, never cross-matching (canonical shape)
+
+`review-design` adds a **fourth** namespace to the §5 matcher family, on the same
+emphasis-tolerant + SHA-capturing rule. The four matchers are mutually exclusive by
+construction — anchored at `^\s*` so a mid-body quote never matches, and each names its own
+token so a scan in one namespace can **never** cross-match another:
+
+- code:   `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- doc:    `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- skill:  `^\s*\**\s*review-skill:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- design: `^\s*\**\s*review-design:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+
+The tokens are distinct literals, and because each ends in a different word (`code:` /
+`doc:` / `skill:` / `design:`) no anchored literal prefix-matches another — the four are
+disjoint. `review-design` also inherits §5's **token-order** rule (`@ <sha>` immediately
+after the polarity, before the `— merge-ready` / `— changes-requested` tail) and its
+**forbidden emit forms** (no HTML-comment wrapper, no `sha:` delimiter, no heading-only
+verdict, marker on the literal first line). Every matcher site cites this one rule so they
+can't diverge.
+
+### The `Reviewed-head` body anchor (ADR 0151)
+
+Every `review-design` verdict body carries the canonical **`Reviewed-head: @ <sha>`** line
+(§6.6 / ADR 0151) — the read-back guard asserts it on every path, and a delegated §CP merge
+actor (and `ship-it`'s ADR-0135 approval-aware enqueue) resolves the reviewed head from
+**exactly that line** on an advisory §CP verdict, never from the first-line marker.
+
+### Field notes
+
+- **Separate namespace.** `ship-it` resolves each gate's verdict in its **own** namespace,
+  latest-verdict-wins by timestamp, then the SHA-staleness test (§5/§6/§6.5). `review-design`
+  never emits a `review-code` / `review-doc` / `review-skill` marker, and they never emit a
+  `review-design` one.
+- **First line, recognizable.** The marker leads the comment so a scan matches it without
+  parsing the whole body. Recognize it tolerantly by shape (`review-design: PASS @ <sha>` …
+  `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
+  dashes — but the `@ <sha>` is required.
+- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every applicable prohibition
+  passed or N/A, bound to that head) is the go-ahead signal `ship-it` acts on to merge a
+  **non-blocking** UI PR **iff `<sha>` is the current head** — once `review-design`'s
+  required-gate wiring lands as part of the ADR-0165 rollout (`ship-it` / `reviewer.md`
+  consumption). `FAIL @ <sha> — changes-requested` (≥1 objective prohibition violated) is read
+  by `write-code`'s fix round-trip as "my UI PR came back failed"; `ship-it` reads it as "do
+  not merge."
+- **Advisory for the blocking set.** A UI PR in the §CP set gets the **canonical advisory
+  line** (§6.6), not a PASS marker — its verdict does not authorize that merge; a human does
+  (ADR 0053/0065). Because a design verdict is calibrated to FAIL conservatively (a borderline
+  call is downgraded to advisory), an advisory here can also mean "no objective prohibition
+  hard-failed" — but on a §CP PR the first-line advisory is always the manual-merge shape.
+- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
+  `review-design` writing it does **not** merge (see review-design/SKILL.md §"Authority
+  limit").
 
 ---
 
