@@ -162,6 +162,13 @@
       "when": 1793000000000,
       "tag": "0022_display_name_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1793500000000,
+      "tag": "0023_drop_hot_score_backfill",
+      "breakpoints": true
     }
   ]
 }

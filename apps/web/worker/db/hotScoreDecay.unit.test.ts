@@ -7,7 +7,7 @@
  */
 import {describe, expect, it} from "vitest";
 import {computeHotScore} from "./hotScore.ts";
-import {decayHotScores, decayWindowMs, HOT_DECAY_WINDOW_HOURS} from "./hotScoreDecay.ts";
+import {decayHotScores} from "./hotScoreDecay.ts";
 
 const HOUR = 3_600_000;
 
@@ -76,10 +76,5 @@ describe("decayHotScores", () => {
 		expect(decayedStale).toBeDefined();
 		// After re-decay the stale post drops below the fresher post → ordering fixed.
 		expect(decayedStale ?? 0).toBeLessThan(freshScore);
-	});
-
-	it("the recency window is 72h", () => {
-		expect(HOT_DECAY_WINDOW_HOURS).toBe(72);
-		expect(decayWindowMs).toBe(72 * HOUR);
 	});
 });

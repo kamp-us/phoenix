@@ -6,22 +6,23 @@
  * formula freezes the instant a post stops getting activity — an inactive post keeps
  * a "young, high" score forever and squats the hot feed above genuinely fresher rows.
  * The fix is `Pano.refreshHotScores` (`post-operations.ts`), driven periodically by
- * the cron trigger (`hot-score-decay-cron.ts`): re-decay the stored column over the
- * recency window, WITHOUT a read-time recompute (the keyset-cursor contract + the
- * no-`POW` SQLite constraint both need `hot_score` to stay a stored, indexed column).
+ * the cron trigger (`hot-score-decay-cron.ts`): re-decay the stored column for every
+ * live non-draft post (WINDOWLESS since #2133), WITHOUT a read-time recompute (the
+ * keyset-cursor contract + the no-`POW` SQLite constraint both need `hot_score` to stay
+ * a stored, indexed column).
  *
  * The pure decay core (`decayHotScores`) is unit-tested off-DB (`hotScoreDecay.unit.test.ts`).
  * This is the integration tier AC4 names (ADR 0082 §irreducible-integration): the
- * stored-column read → window filter → changed-only write-back → keyset feed re-ordering
- * that `decayHotScores`'s unit test can't reach. It:
+ * stored-column read → changed-only write-back → keyset feed re-ordering that
+ * `decayHotScores`'s unit test can't reach. It:
  *   1. seeds two real posts over `/fate` under one per-file host (so the `posts(hot)`
  *      feed scopes to exactly this test's rows) — a `fresher` post voted young for a
  *      real young-high stored score, and a `stale` post;
  *   2. constructs the exact #2027 bug state on the stale post via a setup-only D1 write
  *      (`execD1`) — a higher score, a `hot_score` FROZEN at the young value, and a
- *      `created_at` aged 60h into the past (OLD, but still inside the 72h decay window
- *      the refresh scans): the "advance time" + frozen-score the public seam can't set,
- *      so the OLD post outranks the fresher one #1;
+ *      `created_at` aged 17 DAYS into the past (far OUTSIDE the old 72h window that used
+ *      to gate the refresh — this is the #2133 case): the "advance time" + frozen-score
+ *      the public seam can't set, so the OLD post outranks the fresher one #1;
  *   3. runs the REAL `Pano.refreshHotScores(now)` against this stage's REAL remote D1
  *      (the fts-backfill precedent, #645: the shipped code path over `@kampus/d1-rest`,
  *      NOT a `node:sqlite` oracle — banned by ADR 0082, and NOT a re-implementation of
@@ -156,15 +157,16 @@ describe("pano sıcak/hot decay-refresh (#2027 AC4) — the stored-column read �
 		if (!voted.ok) return;
 		expect((voted.data as PostNode).score).toBe(1);
 
-		// Construct the exact #2027 bug state on the stale post via the setup-only D1 REST seam
-		// (the write clock + frozen-score the public mutation seam can't set): a HIGHER score (5),
-		// a `hot_score` FROZEN at the young value it would have had at age≈0
-		// (`computeHotScore(5, t, t)` = 1436), and a `created_at` aged 60h into the past — OLD, but
-		// still INSIDE the 72h decay window (`decayWindowMs`) the refresh scans. `created_at` is
-		// `integer(mode:"timestamp")`, stored as whole epoch SECONDS. So pre-refresh the OLD post's
-		// frozen 1436 outranks the fresher post's 287 — the bug: a stale post squatting #1.
+		// Construct the exact #2027/#2133 bug state on the stale post via the setup-only D1 REST
+		// seam (the write clock + frozen-score the public mutation seam can't set): a HIGHER score
+		// (5), a `hot_score` FROZEN at the young value it would have had at age≈0
+		// (`computeHotScore(5, t, t)` = 1436), and a `created_at` aged 17 DAYS into the past — far
+		// OUTSIDE the OLD 72h window (`decayWindowMs`, dropped in #2133) that used to gate the
+		// refresh, so a windowed refresh would never have re-selected this row (the #2133 freeze).
+		// `created_at` is `integer(mode:"timestamp")`, stored as whole epoch SECONDS. So pre-refresh
+		// the OLD post's frozen 1436 outranks the fresher post's 287 — a stale post squatting #1.
 		const nowMs = Date.now();
-		const staleCreatedSec = Math.floor((nowMs - 60 * HOUR_MS) / 1000);
+		const staleCreatedSec = Math.floor((nowMs - 17 * 24 * HOUR_MS) / 1000);
 		const staleFrozenHot = computeHotScore(5, nowMs, nowMs); // young-high, frozen at age≈0
 		const changed = await h.execD1(
 			"UPDATE post_record SET score = ?, hot_score = ?, created_at = ? WHERE id = ?",
@@ -181,17 +183,19 @@ describe("pano sıcak/hot decay-refresh (#2027 AC4) — the stored-column read �
 		expect(fresherBefore).toBeGreaterThanOrEqual(0);
 		expect(staleBefore).toBeLessThan(fresherBefore); // stale ranks ABOVE fresher (the bug)
 
-		// Grounding (the same formula the refresh applies, not intuition): re-decayed at 60h the
+		// Grounding (the same formula the refresh applies, not intuition): re-decayed at 17 days the
 		// stale score collapses far below the fresher post's young score, so the refresh MUST flip
 		// the order.
 		const staleDecayed = computeHotScore(5, staleCreatedSec * 1000, nowMs);
 		const fresherYoung = computeHotScore(1, nowMs, nowMs);
 		expect(staleDecayed).toBeLessThan(fresherYoung);
 
-		// Run the REAL refresh against real remote D1 — the shipped window query + write-back.
+		// Run the REAL refresh against real remote D1 — the shipped windowless query + write-back.
+		// The #2133 guard: the 17-day stale post is FAR outside the old 72h window, so a windowed
+		// refresh would never have selected it; the windowless pass re-decays it here.
 		const refreshHotScores = await realRefreshHotScores();
 		const result = await Effect.runPromise(refreshHotScores(new Date(nowMs)));
-		expect(result.scanned).toBeGreaterThanOrEqual(2); // both posts are inside the 72h window
+		expect(result.scanned).toBeGreaterThanOrEqual(2); // every live non-draft post is scanned
 		expect(result.updated).toBeGreaterThanOrEqual(1); // the stale post's frozen score moved
 
 		// Post-refresh: the aged stale post's re-decayed stored score has collapsed, so the

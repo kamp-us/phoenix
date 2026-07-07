@@ -235,24 +235,6 @@ export const panoStats = sqliteTable("pano_stats", {
 });
 
 /**
- * Run-once completion marker for the one-time full `hot_score` backfill (#2131).
- * The go-forward decay cron (#2033) is window-scoped to 72h, so a post that froze high
- * BEFORE that fix and now sits outside the window never re-decays — a stale post stays
- * pinned to the sıcak feed. The fix is a single windowless recompute over ALL rows, and
- * the `hot_score` formula uses `POW` (`^1.8`, `db/hotScore.ts`) which SQLite lacks, so it
- * can't be a pure-SQL data migration — it must reuse the worker-side pure core. This
- * table IS the persisted "already ran" signal: presence of the `id = 1` row means the
- * backfill completed, so the guarded run-once path (`backfillHotScores`) no-ops
- * thereafter. Singleton row (`id` default 1), matching the `pano_stats` idiom.
- */
-export const hotScoreBackfill = sqliteTable("hot_score_backfill", {
-	id: integer("id").primaryKey().default(1),
-	completedAt: timestamp("completed_at").notNull(),
-	scanned: integer("scanned").notNull().default(0),
-	updated: integer("updated").notNull().default(0),
-});
-
-/**
  * Per-user-per-target vote presence table powering the `myVote` view field.
  * Up-only in the MVP — presence of a row means voted, absence means not; there
  * is no `value` column. Maintained inline by `Vote.cast`'s atomic batch (insert
