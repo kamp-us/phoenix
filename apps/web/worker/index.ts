@@ -140,6 +140,15 @@ const phoenixProps =
 				runWorkerFirst: [...workerFirstGlobs],
 			},
 			compatibility: {flags: ["nodejs_compat"]},
+			// Smart Placement (ADR 0168): run the worker near its heaviest upstream — the
+			// D1 primary in ENAM — so the authed `/fate` feed's ~11 sequential D1
+			// round-trips collapse from cross-region hops to in-region ones. Safe only
+			// because no worker code serves static assets via `env.ASSETS.fetch()` (the
+			// `assets` block above is edge-direct), so moving the worker toward ENAM does
+			// not pull asset serving off the edge. Read-replication (D1 Sessions API)
+			// stays deferred per ADR 0168; verify placement post-deploy via the
+			// `cf-placement` response header.
+			placement: {mode: "smart" as const},
 			// Workers Observability, declared explicitly rather than leaning on alchemy's
 			// default-on (Worker.ts `observability ?? {enabled, logs:{enabled,invocationLogs}}`)
 			// so the captured-exception behavior is legible in source. `headSamplingRate: 1`
