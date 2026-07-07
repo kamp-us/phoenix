@@ -129,8 +129,11 @@ pointless.
 
 ## The merge-ready signals
 
-The pipeline runs **three gates**, one per artifact class, each landing its verdict as a
-first-line marker comment:
+The pipeline runs **three artifact-class gates** (one per class), each landing its verdict as
+a first-line marker comment — **plus `review-design`, an additive UI-quality gate** that a
+UI-affecting PR requires *alongside* its class gate (a UI PR under `apps/web/src` is also code,
+so it needs **both** `review-code` and `review-design`; `review-design` never replaces a class
+gate, it layers on):
 
 Every verdict is **SHA-bound** — its first line carries the head it reviewed (`@ <sha>`), and
 you refuse any verdict not bound to the PR's *current* head (Step 2b, ADR
@@ -153,6 +156,16 @@ you refuse any verdict not bound to the PR's *current* head (Step 2b, ADR
   (canonical shape: §6.5). `review-skill` is **comment-only** like `review-doc` (ADR 0058). This
   **supersedes ADR 0063's** `claude-plugins/kampus-pipeline/skills/**` → `review-code` routing (ADR 0073 §4): a skill is a
   behavioral artifact, gated by the gate built for it.
+- **UI-affecting** (a changed path under `apps/web/src`, a `*.tsx` file, or a style surface —
+  the same UI-affecting-PR detection the reviewer agent uses to *dispatch* `review-design`;
+  see the [UI-affecting detection](#the-ui-affecting-detection-must-agree-with-the-reviewer) note
+  below) → `review-design`, whose marker is `review-design: PASS @ <sha> — merge-ready` or
+  `review-design: FAIL @ <sha> — changes-requested`. `review-design` is **comment-only** like
+  `review-doc`/`review-skill` (ADR 0058) — a single comparable record type, no native review.
+  Unlike the three class gates, `review-design` is **additive, not a class**: it is required
+  **alongside** the PR's artifact-class gate(s) whenever the diff is UI-affecting, never
+  instead of one (a UI PR under `apps/web/src` is has-code, so it needs `review-code`'s PASS
+  **and** `review-design`'s).
 
 The marker-comment path is the **default** to expect: the single operator on this repo
 (`usirin`) cannot post an approving review on their own PR under org branch rules, so on
@@ -161,8 +174,9 @@ were written for** — without you, they are inert verdicts nobody acts on. Reco
 tolerantly by shape (`review-code: PASS @ <sha>` … `merge-ready`, `review-code: FAIL @ <sha>`
 … `not merge-ready`, `review-doc: PASS @ <sha>` … `merge-ready`, `review-doc: FAIL @ <sha>` …
 `changes-requested`, `review-skill: PASS @ <sha>` … `merge-ready`, `review-skill: FAIL @ <sha>`
-… `changes-requested`), not by exact dashes — but the `@ <sha>` is required, and a SHA-less
-legacy marker resolves to `unverified`, not PASS.
+… `changes-requested`, `review-design: PASS @ <sha>` … `merge-ready`, `review-design: FAIL @
+<sha>` … `changes-requested`), not by exact dashes — but the `@ <sha>` is required, and a
+SHA-less legacy marker resolves to `unverified`, not PASS.
 
 Each gate is **stateless and re-runs**, so a PR can flip PASS → (new commits) → FAIL or
 FAIL → PASS, and (for code) the marker and the native-review forms interleave. So you never
@@ -270,6 +284,14 @@ echo "$FILES" | grep -Eq '^(apps|packages|\.glossary|infra)/' && echo "has-code"
 # (apps/**, packages/**, infra/**), a skills-only .md, or a .glossary/** touch is NOT classed docs — only a prose
 # .md on review-doc's own surface is (#542/#650/#919/#1987). The §DOC contract is the single source — cite, don't re-derive.
 echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary|infra)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+# UI probe → review-design (ADDITIVE, not a class): a changed path under apps/web/src, a *.tsx
+# file, or a style surface (*.css). This UI_RE MUST stay identical to the reviewer agent's
+# UI-affecting dispatch rule (reviewer.md, #2249: "apps/web/src, *.tsx, and style surfaces") —
+# required-gate == dispatched-gate, else a UI PR routes to review-design at review time but
+# ship-it doesn't require it (or vice versa). When a second app worker is added, generalize BOTH
+# this UI_RE and reviewer.md's rule to apps/**/src in lockstep. See the note after the routing.
+UI_RE='^apps/web/src/|\.tsx$|\.css$'
+echo "$FILES" | grep -Eq "$UI_RE" && echo "has-ui"   # UI-affecting → require review-design ALONGSIDE the class gate(s)
 ```
 
 **Routing:**
@@ -337,10 +359,27 @@ echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary|infra)/' | g
   **additional** requirement, never a substitute. Note a team member cannot approve their **own**
   §CP PR (GitHub blocks self-approval) — a §CP change needs the OTHER team member (the deliberate
   two-person control, ADR 0135).
-- Otherwise, note which **artifact classes are present** (skills, code, docs, or a mix). Step 2
-  requires the matching gate's latest verdict = PASS for **each class present**: skills →
-  `review-skill` PASS; code → `review-code` PASS; docs → `review-doc` PASS; a mixed PR needs a
-  current-head PASS in **each** namespace present. Carry the class set into Step 2.
+- Otherwise, note which **artifact classes are present** (skills, code, docs, or a mix) **and
+  whether the diff is UI-affecting** (`has-ui`). Step 2 requires the matching gate's latest
+  verdict = PASS for **each class present**: skills → `review-skill` PASS; code → `review-code`
+  PASS; docs → `review-doc` PASS; a mixed PR needs a current-head PASS in **each** namespace
+  present. **If the diff is UI-affecting (`has-ui`), a current-head `review-design` PASS is
+  required *in addition*** — additive, alongside the class gate(s), never instead of one. Carry
+  the class set **and the `has-ui` flag** into Step 2.
+
+<a id="the-ui-affecting-detection-must-agree-with-the-reviewer"></a>
+**The UI-affecting detection must AGREE with the reviewer, or the gate is unroutable.** ship-it
+requires a `review-design` PASS *because the reviewer dispatched `review-design` on the same
+diff* — so the `UI_RE` probe above (`^apps/web/src/|\.tsx$|\.css$` — a changed path under
+`apps/web/src`, a `*.tsx` file, or a `*.css` style surface) **must be the same rule** the
+reviewer agent uses to decide whether to run `review-design` (`reviewer.md`, #2249: "changed
+files under `apps/web/src`, `*.tsx`, and style surfaces"). This is the
+same **required-gate == dispatched-gate** invariant that binds the has-code probe to review-code's
+scope: if ship-it required `review-design` on a diff the reviewer never routed to `review-design`,
+that PR would demand a `review-design: PASS` **no gate ever produces** → every UI PR **deadlocks**
+(`unverified — no review-design PASS`). Keep the two definitions in **lockstep** — when the
+reviewer's UI-affecting rule changes (e.g. a new app worker, a new style surface), this `UI_RE`
+changes with it, never one without the other.
 
 **The docs class must equal `review-doc`'s verification scope, or the gate it demands is
 unreachable.** ship-it requires a class's gate PASS *because that gate runs on that class* —
@@ -512,9 +551,10 @@ can apply the staleness refusal; see the matcher contract in
 [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5/§6/§6.5 and ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)):
 
-- code:  `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- doc:   `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- skill: `^\s*\**\s*review-skill:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- code:   `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- doc:    `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- skill:  `^\s*\**\s*review-skill:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- design: `^\s*\**\s*review-design:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
 
 A marker matching the looser `…:\s*(PASS|FAIL)` prefix but **not** the `@ <sha>` tail is a
 pre-0058 legacy verdict → Step 2b resolves it to `unverified (verdict not bound to current
@@ -543,9 +583,9 @@ and `IN($authorized[])` below matches nothing — every namespace resolves to `n
 comments_file=$(mktemp)
 gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
 
-# distinct logins that posted any review-code/review-doc/review-skill marker
+# distinct logins that posted any review-code/review-doc/review-skill/review-design marker
 markerAuthors=$(jq -r '[.[]
-    | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
+    | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill|design):\\s*(PASS|FAIL)"; "i"))
     | .user.login] | unique | .[]' "$comments_file")
 
 # keep only those holding write+ on the repo (GitHub's ACL is the trust root, ADR 0055)
@@ -600,6 +640,14 @@ jq --argjson authorized "$authorized" \
     | sort_by(.created_at) | last
     | {body, at: .created_at,
        sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
+
+# latest review-design marker comment (design namespace) — author-gated, anchored, never matches review-code/review-doc/review-skill
+jq --argjson authorized "$authorized" \
+   '[.[] | select(.user.login | IN($authorized[]))
+         | select(.body | test("^\\s*\\**\\s*review-design:\\s*(PASS|FAIL)"; "i"))]
+    | sort_by(.created_at) | last
+    | {body, at: .created_at,
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-design:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
 ```
 
 Now resolve **per namespace**, latest-wins by timestamp:
@@ -634,6 +682,17 @@ Now resolve **per namespace**, latest-wins by timestamp:
   advisory resolves — a §CP PR is **never** required to (nor satisfied by) a bindable first-line
   `review-skill: PASS @ <sha>` marker (that would drop it into the auto-merge namespace — the ADR 0111
   hazard #2022's forge-workaround must not take).
+- **review-design namespace** — the verdict is the **latest `review-design` marker comment** by
+  `created_at`; its bound SHA is the marker's `@ <sha>`. `review-design: PASS … merge-ready` is
+  PASS; `review-design: FAIL … changes-requested` is FAIL. (review-design is comment-only, ADR
+  0058 — same single-record-type resolution as review-doc/review-skill; a newer FAIL in this
+  namespace vetoes an older PASS, latest-wins, exactly like the other gates.) This namespace is
+  resolved **and required only when the diff is UI-affecting** (Step 0's `has-ui`) — it is the
+  additive UI-quality gate, so a non-UI PR neither resolves nor needs it. On the rare §CP UI PR,
+  a `review-design` **advisory** resolves via the same
+  **[§CP advisory resolution](#step-2cp--cp-advisory-namespace-resolution-adr-01350151)** below
+  as review-skill/review-doc (comment-only, body-bound `Reviewed-head`), never a bindable
+  first-line PASS.
 
 ### Step 2b — SHA-staleness refusal (ADR 0058)
 
@@ -693,8 +752,9 @@ ADR 0053/0065/0111 hazard; the hand-posted-marker forge on #2005 is the workarou
 forbids).
 
 For each §CP namespace whose latest verdict is a **current-head advisory** (first line matches
-`^\s*\**\s*review-(skill|doc):\s*advisory\b`), resolve it as an **enqueue-eligible current-head
-PASS-equivalent** iff **all three** hold, else **refuse deterministically with the named reason**:
+`^\s*\**\s*review-(skill|doc|design):\s*advisory\b`), resolve it as an **enqueue-eligible
+current-head PASS-equivalent** iff **all three** hold, else **refuse deterministically with the
+named reason**:
 
 ```bash
 # $ADV_BODY = the latest §CP advisory comment body for this namespace (review-skill or review-doc),
@@ -728,11 +788,17 @@ Then gate the merge on the classes present (Step 0):
    - code present but the review-code namespace is empty → `unverified (no review-code PASS)`.
    - docs present but the review-doc namespace is empty → `unverified (no review-doc PASS)`.
    - skills present but the review-skill namespace is empty → `unverified (no review-skill PASS)`.
+   - **UI-affecting (`has-ui`) but the review-design namespace is empty → `awaiting review-design
+     (no review-design PASS)` → do not ship.** This is **additive**: it holds *on top of* the
+     PR's artifact-class gate(s), so a UI PR under `apps/web/src` (has-code) needs **both** a
+     current-head `review-code` PASS **and** a current-head `review-design` PASS.
    - a verdict present but not bound to the current head → `unverified (verdict not bound to
      current head)` → refuse. (For a §CP advisory namespace, "bound to current head" is the body's
      `Reviewed-head` SHA per Step 2.§CP, not the absent first-line `@ <sha>`.)
    - a mixed PR needs **each** present namespace resolved to a current-head PASS (e.g. a
-     skill+code PR needs both `review-skill` and `review-code`).
+     skill+code PR needs both `review-skill` and `review-code`); a UI-affecting PR additionally
+     needs a current-head `review-design` PASS alongside those (e.g. a UI code PR needs
+     `review-code` **and** `review-design`).
 2. If **any** required namespace's current-head verdict is **FAIL** → **do not merge.** The PR
    has unaddressed failures as its *current* state, even if an older PASS exists. Report
    `latest verdict is FAIL (<which gate>)` and stop; the fix round-trip is `write-code`'s
@@ -744,11 +810,15 @@ The polarity of the **newest current-head** event in each namespace is the only 
 decides — an old PASS behind a newer FAIL never ships, an old FAIL behind a newer PASS does not
 block, and a PASS bound to a *stale* head never ships at all.
 
-**This per-present-class requirement iterates over EVERY class Step 0 found — never just one.**
-The merge is gated on the **conjunction** across all present namespaces: a mixed code+docs PR
-clears guard 1 **only** when the review-code namespace AND the review-doc namespace each resolve
-to a current-head PASS; a single namespace's PASS while another present namespace is
-empty/stale/FAIL **refuses** (`unverified (no review-doc PASS)`, etc.). This is the **fail-closed
+**This per-present-class requirement iterates over EVERY class Step 0 found — never just one —
+and, when the diff is UI-affecting, folds in the additive `review-design` gate.** The merge is
+gated on the **conjunction** across all present namespaces plus `review-design` when `has-ui`: a
+mixed code+docs PR clears guard 1 **only** when the review-code namespace AND the review-doc
+namespace each resolve to a current-head PASS; a UI code PR clears it **only** when the
+review-code namespace AND the review-design namespace each do; a single namespace's PASS while
+another *required* namespace (including `review-design` on a UI PR) is empty/stale/FAIL
+**refuses** (`unverified (no review-doc PASS)`, `awaiting review-design (no review-design PASS)`,
+etc.). This is the **fail-closed
 late catch** — the safety net, deliberately preserved unchanged. It is **not** meant to be the
 *first* place a second required namespace is discovered: the routing review gate upstream now
 resolves **every** present namespace in one pass (the *routing-completeness rule* in
