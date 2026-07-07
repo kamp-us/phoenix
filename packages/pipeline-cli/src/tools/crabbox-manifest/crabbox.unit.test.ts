@@ -1,7 +1,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {CrabboxParseError, parseJUnit, parseRunSummaryJson} from "./crabbox.ts";
-import {passingJUnit, passingRunSummary} from "./fixtures.ts";
+import {failingJUnit, passingJUnit, passingRunSummary} from "./fixtures.ts";
 
 describe("parseRunSummaryJson (crabbox trust boundary)", () => {
 	it.effect("decodes a well-formed run-summary", () =>
@@ -66,6 +66,52 @@ describe("parseJUnit (tolerant)", () => {
 		const t = parseJUnit(xml);
 		assert.strictEqual(t.failed, 1);
 		assert.strictEqual(t.failures[0]?.message, "kaboom");
+	});
+
+	it("skips self-closing <testcase/> siblings and only counts a real failure", () => {
+		// The self-closing `<testcase name="ok"/>` sits directly before the failing case;
+		// the former regex needed a `(?<!\/)` lookbehind to stop the container form from
+		// swallowing it and mis-attributing `bad`'s failure to `ok`. The real parser
+		// distinguishes them structurally, so no workaround is needed.
+		const xml = `<testsuites name="vitest" tests="2" failures="1" errors="0" skipped="0">
+  <testsuite name="s" tests="2" failures="1" skipped="0">
+    <testcase classname="s" name="ok"/>
+    <testcase classname="s" name="bad"><failure message="boom"/></testcase>
+  </testsuite>
+</testsuites>`;
+		const t = parseJUnit(xml);
+		assert.strictEqual(t.total, 2);
+		assert.strictEqual(t.failed, 1);
+		assert.strictEqual(t.passed, 1);
+		assert.strictEqual(t.failures.length, 1);
+		assert.strictEqual(t.failures[0]?.name, "bad");
+		assert.strictEqual(t.failures[0]?.message, "boom");
+	});
+
+	it("unwraps a CDATA failure message (the regex left the <![CDATA[…]]> wrapper in)", () => {
+		// A CDATA body carries raw `<`/`&` the regex path could not decode: it captured the
+		// literal `<![CDATA[…]]>` markers into the message. The real parser strips them and
+		// yields the raw content — the correctness win that justifies the swap.
+		const xml = `<testsuites tests="1" failures="1" errors="0" skipped="0">
+  <testsuite name="s" tests="1" failures="1" skipped="0">
+    <testcase classname="s" name="cdata"><failure><![CDATA[expected a < b && c > d]]></failure></testcase>
+  </testsuite>
+</testsuites>`;
+		const t = parseJUnit(xml);
+		assert.strictEqual(t.failed, 1);
+		assert.strictEqual(t.failures[0]?.suite, "s");
+		assert.strictEqual(t.failures[0]?.name, "cdata");
+		assert.strictEqual(t.failures[0]?.message, "expected a < b && c > d");
+	});
+
+	it("folds the failingJUnit fixture: entity-decoded attribute message, rollup totals", () => {
+		const t = parseJUnit(failingJUnit);
+		assert.strictEqual(t.total, 3);
+		assert.strictEqual(t.failed, 1);
+		assert.strictEqual(t.passed, 2);
+		assert.strictEqual(t.failures[0]?.suite, "adapter.buildManifest");
+		assert.strictEqual(t.failures[0]?.name, "stamps commit");
+		assert.strictEqual(t.failures[0]?.message, "expected 'abc123' to equal 'def456'");
 	});
 
 	it("degrades to zero on null / empty / garbage", () => {

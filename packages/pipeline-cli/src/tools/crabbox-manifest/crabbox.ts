@@ -19,6 +19,7 @@
  */
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {XMLParser} from "fast-xml-parser";
 import type {TestFailure, TestSummary} from "./Manifest.ts";
 
 /** One crabbox command within a run: the command line + its own `exitCode`. */
@@ -83,71 +84,117 @@ export class CrabboxParseError extends Schema.TaggedErrorClass<CrabboxParseError
 
 const ZERO_TESTS: TestSummary = {total: 0, passed: 0, failed: 0, skipped: 0, failures: []};
 
-const unescapeXml = (value: string): string =>
-	value
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&quot;/g, '"')
-		.replace(/&apos;/g, "'")
-		.replace(/&amp;/g, "&");
+const ATTR_PREFIX = "@_";
+const TEXT_KEY = "#text";
 
-const attr = (tag: string, name: string): string | undefined => {
-	const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`));
-	return match?.[1];
+// A real XML parser replaces the former hand-rolled regex extraction: fast-xml-parser
+// decodes entities, unwraps CDATA, and handles self-closing/single-quoted/whitespace
+// variants natively — the classes the regex silently misparsed (a raw `<![CDATA[…]]>`
+// wrapper leaking into the failure message; the lookbehind workaround for self-closing
+// `<testcase/>`). Numbers stay strings (`parseTagValue`/`parseAttributeValue` off) so we
+// keep this module's own integer coercion; `isArray` forces the counted/case tags into
+// arrays for uniform folding regardless of single-vs-multiple cardinality.
+const JUNIT_TAGS = new Set(["testsuites", "testsuite", "testcase", "failure", "error"]);
+const xmlParser = new XMLParser({
+	ignoreAttributes: false,
+	attributeNamePrefix: ATTR_PREFIX,
+	parseTagValue: false,
+	parseAttributeValue: false,
+	isArray: (name) => JUNIT_TAGS.has(name),
+});
+
+type XmlNode = Record<string, unknown>;
+
+const isNode = (v: unknown): v is XmlNode =>
+	typeof v === "object" && v !== null && !Array.isArray(v);
+
+const asArray = <T>(v: T | T[] | undefined): T[] =>
+	v === undefined ? [] : Array.isArray(v) ? v : [v];
+
+/** Depth-first collect every node reachable under `tag`, in document order. */
+const collect = (node: unknown, tag: string, out: XmlNode[]): void => {
+	if (Array.isArray(node)) {
+		for (const item of node) collect(item, tag, out);
+		return;
+	}
+	if (!isNode(node)) return;
+	for (const [key, value] of Object.entries(node)) {
+		if (key === tag) for (const item of asArray(value)) if (isNode(item)) out.push(item);
+		collect(value, tag, out);
+	}
 };
 
-const intAttr = (tag: string, name: string): number => {
-	const raw = attr(tag, name);
-	if (raw === undefined) return 0;
-	const n = Number.parseInt(raw, 10);
+const intAttr = (node: XmlNode, name: string): number => {
+	const raw = node[`${ATTR_PREFIX}${name}`];
+	if (raw === undefined || raw === null) return 0;
+	const n = Number.parseInt(String(raw), 10);
 	return Number.isNaN(n) ? 0 : n;
 };
 
+const stringAttr = (node: XmlNode, name: string): string | undefined => {
+	const raw = node[`${ATTR_PREFIX}${name}`];
+	return raw === undefined ? undefined : String(raw);
+};
+
+/** The `<failure>`/`<error>` payload — an attributed node, or a bare text child. */
+const failureMessage = (payload: unknown): string => {
+	if (isNode(payload)) {
+		const attrMessage = stringAttr(payload, "message");
+		if (attrMessage !== undefined) return attrMessage;
+		return String(payload[TEXT_KEY] ?? "").trim();
+	}
+	return String(payload ?? "").trim();
+};
+
 /**
- * Tolerantly parse JUnit XML into a `TestSummary`. Prefers the `<testsuites>` /
- * `<testsuite>` rollup attributes (`tests`/`failures`/`errors`/`skipped`); the
- * `passed` total is the derived remainder. Each failing `<testcase>` contributes
- * a `{suite, name, message}` failure. A `null`/empty/garbage input yields the
- * zeroed summary — the degrade path that keeps a no-JUnit run from crashing.
+ * Tolerantly parse JUnit XML into a `TestSummary`. Prefers the `<testsuites>` rollup
+ * attributes (`tests`/`failures`/`errors`/`skipped`) over summing the individual
+ * `<testsuite>`s; `passed` is the derived remainder. Each failing `<testcase>` (one
+ * carrying a `<failure>` or `<error>`) contributes a `{suite, name, message}`. A
+ * `null`/empty/unparseable input yields the zeroed summary — the degrade path (never a
+ * throw) that keeps a no-JUnit run from crashing (ADR 0054 §2).
  */
 export const parseJUnit = (xml: string | null | undefined): TestSummary => {
 	if (xml === null || xml === undefined) return {...ZERO_TESTS};
 	const text = xml.trim();
 	if (text.length === 0) return {...ZERO_TESTS};
 
-	const suiteTags = [...text.matchAll(/<testsuites?\b[^>]*>/g)].map((m) => m[0]);
-	if (suiteTags.length === 0) return {...ZERO_TESTS};
+	let root: unknown;
+	try {
+		root = xmlParser.parse(text);
+	} catch {
+		return {...ZERO_TESTS};
+	}
+
+	const suitesRollups: XmlNode[] = [];
+	const suites: XmlNode[] = [];
+	collect(root, "testsuites", suitesRollups);
+	collect(root, "testsuite", suites);
+	if (suitesRollups.length === 0 && suites.length === 0) return {...ZERO_TESTS};
 
 	let total = 0;
 	let failed = 0;
 	let skipped = 0;
 	// A `<testsuites>` rollup already sums its child `<testsuite>`s; counting both
 	// would double the totals. Prefer the rollup when present, else sum the suites.
-	const rollup = suiteTags.find((t) => /^<testsuites\b/.test(t));
-	const counted = rollup ? [rollup] : suiteTags;
-	for (const tag of counted) {
-		total += intAttr(tag, "tests");
-		failed += intAttr(tag, "failures") + intAttr(tag, "errors");
-		skipped += intAttr(tag, "skipped");
+	const counted = suitesRollups.length > 0 ? [suitesRollups[0] as XmlNode] : suites;
+	for (const node of counted) {
+		total += intAttr(node, "tests");
+		failed += intAttr(node, "failures") + intAttr(node, "errors");
+		skipped += intAttr(node, "skipped");
 	}
 
 	const failures: TestFailure[] = [];
-	// `[^>]*?(?<!\/)` keeps the container form from swallowing a self-closing
-	// `<testcase .../>`: without the lookbehind the greedy `[^>]*` eats the `/`,
-	// matches the next `</testcase>`, and mis-attributes one case's failure to a
-	// sibling. A self-closing case carries no `<failure>`, so it's skipped anyway.
-	const caseRe = /<testcase\b([^>]*?(?<!\/))>([\s\S]*?)<\/testcase>|<testcase\b([^>]*)\/>/g;
-	for (const m of text.matchAll(caseRe)) {
-		const openAttrs = m[1] ?? m[3] ?? "";
-		const inner = m[2] ?? "";
-		const failTag = inner.match(/<(failure|error)\b([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/);
-		if (!failTag) continue;
-		const suite = attr(openAttrs, "classname") ?? attr(openAttrs, "class") ?? "";
-		const name = attr(openAttrs, "name") ?? "";
-		const attrMessage = attr(failTag[2] ?? "", "message");
-		const message =
-			attrMessage !== undefined ? unescapeXml(attrMessage) : unescapeXml((failTag[3] ?? "").trim());
-		failures.push({suite, name, message});
+	const cases: XmlNode[] = [];
+	collect(root, "testcase", cases);
+	for (const tc of cases) {
+		const payload = asArray(tc.failure)[0] ?? asArray(tc.error)[0];
+		if (payload === undefined) continue;
+		failures.push({
+			suite: stringAttr(tc, "classname") ?? stringAttr(tc, "class") ?? "",
+			name: stringAttr(tc, "name") ?? "",
+			message: failureMessage(payload),
+		});
 	}
 
 	const passed = Math.max(0, total - failed - skipped);
