@@ -2,11 +2,11 @@
 # Mechanical drift guard for the §CP canonical regex and the .claude/skills symlink
 # (issue #720). Two invariants, both runnable in CI/locally:
 #
-#   1. REGEX COPIES — the five CONTROL_PLANE_RE= copies in ship-it, review-code,
-#      review-doc, review-skill, and gh-issue-intake-formats (§CP, the source)
-#      must be byte-identical to the §CP canonical line. A rename of the plugin
-#      path string currently requires ~11 lockstep edits with no guard; this
-#      fails CI on any copy that drifts from §CP.
+#   1. REGEX COPIES — the CONTROL_PLANE_RE= copies in ship-it, review-code,
+#      review-doc, review-skill, review-design, and gh-issue-intake-formats
+#      (§CP, the source) must be byte-identical to the §CP canonical line. A
+#      rename of the plugin path string currently requires ~11 lockstep edits
+#      with no guard; this fails CI on any copy that drifts from §CP.
 #
 #   2. SYMLINK ↔ MARKETPLACE — .claude/skills must resolve to the same directory
 #      as marketplace.json's `source` field + /skills. Both express the same plugin
@@ -67,6 +67,7 @@ ship-it/SKILL.md
 review-code/SKILL.md
 review-doc/SKILL.md
 review-skill/SKILL.md
+review-design/SKILL.md
 "
 
 for rel in $CONSUMERS; do
