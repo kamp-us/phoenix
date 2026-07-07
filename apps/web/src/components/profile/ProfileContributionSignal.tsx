@@ -22,6 +22,8 @@ import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Profile} from "../../../worker/features/fate/views";
 import {Screen} from "../../fate/Screen";
+import {PHOENIX_AUTHORSHIP_LOOP} from "../../flags/keys";
+import {useFlag} from "../../flags/useFlag";
 import {EmptyState} from "../ui/EmptyState";
 import {ContributionRow, ContributionView} from "./ContributionRow";
 import {CONTRIBUTIONS_EMPTY, CONTRIBUTIONS_HEADING} from "./profileContributions";
@@ -60,16 +62,44 @@ function SignalShell({children}: {children: ReactNode}) {
 	);
 }
 
+/**
+ * The Katkıların loading skeleton — shared by the `<Screen>` fallback below and the
+ * eager pre-session paint above the gate (ADR 0167 / #2188), so the skeleton the
+ * always-anonymous first paint shows is byte-identical to the one the settled authed
+ * read shows: no visual jump as the eager tier hands off to the below-gate read.
+ */
+export function ProfileContributionSkeleton() {
+	return (
+		<SignalShell>
+			<p className="kp-signal__status" data-testid="signal-loading">
+				yükleniyor…
+			</p>
+		</SignalShell>
+	);
+}
+
+/**
+ * The eager Katkıların skeleton the `/profile` route paints ABOVE the session gate
+ * (mounted by `Layout` while `get-session` is still pending), the two-tier decoupling
+ * of ADR 0167 extended to `/profile` (#2188). Unlike `/pano`'s eager tier it carries
+ * NO fate client: the owner's own contributions are identity-scoped (the resolver
+ * shows the owner their still-sandboxed rows), so the real read must stay on the authed
+ * client below the gate — pre-session there is only a skeleton to paint, no anon data.
+ * Mounting no `FateClient` is also what makes it #438-safe by construction: with no
+ * client above the gate there is nothing to re-key anon→id.
+ *
+ * Gated on the authorship-loop flag so a flag-off (rollback) load never flashes a
+ * Katkıların section the settled page won't render.
+ */
+export function EagerProfileContributionSkeleton() {
+	const {value: authorshipLoop} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
+	return authorshipLoop ? <ProfileContributionSkeleton /> : null;
+}
+
 export function ProfileContributionSignal({username}: {username: string}) {
 	return (
 		<Screen
-			fallback={
-				<SignalShell>
-					<p className="kp-signal__status" data-testid="signal-loading">
-						yükleniyor…
-					</p>
-				</SignalShell>
-			}
+			fallback={<ProfileContributionSkeleton />}
 			error={({code}) => (
 				<SignalShell>
 					<p className="kp-signal__status kp-signal__status--error" role="alert">

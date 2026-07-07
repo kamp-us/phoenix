@@ -131,7 +131,20 @@ vi.mock("./auth/useMe", () => ({
 vi.mock("./pages/useProfileStats", () => ({useProfileStats: () => ({status: "idle"})}));
 vi.mock("./components/divan/useDivanAccess", () => ({useDivanAccess: () => false}));
 vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: () => 0}));
-vi.mock("./flags/useFlag", () => ({useFlag: () => ({value: false, status: "ok"})}));
+
+// Controllable flag mock. The eager `/profile` Katkıların skeleton (#2188) is gated on
+// the authorship-loop flag, so its tests flip `flags.authorshipLoop`; every other read
+// (and other flag key) stays off, matching the default the shell rendered under before.
+const flags = vi.hoisted(() => ({authorshipLoop: false}));
+vi.mock("./flags/useFlag", async () => {
+	const {PHOENIX_AUTHORSHIP_LOOP} = await import("./flags/keys");
+	return {
+		useFlag: (key: string) => ({
+			value: key === PHOENIX_AUTHORSHIP_LOOP ? flags.authorshipLoop : false,
+			loading: false,
+		}),
+	};
+});
 
 // Render the real App at a chosen route. Invariant 2's tests settle the session, which
 // commits FateProvider and mounts the routed page BELOW it — so they route to a
@@ -286,6 +299,55 @@ describe("Two-tier fate provider — /pano public first paint (#2285)", () => {
 		expect(authed).toHaveLength(1);
 		expect(authed[0]?.key).toBe("user-7");
 		expect(authed.map((m) => m.key)).not.toContain("anon");
+	});
+});
+
+// The two-tier decoupling extended to /profile (ADR 0167 / #2188): the identity-scoped
+// Katkıların read can't paint anon data pre-session, so /profile's eager tier paints a
+// SKELETON above the gate while `get-session` resolves, then the authed read below the
+// gate fills it in. Unlike /pano's tier it mounts NO FateClient — which is exactly what
+// keeps #438 preserved (no client above the gate ⇒ nothing to re-key anon→id).
+describe("Two-tier fate provider — /profile eager Katkıların skeleton (#2188)", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+		flags.authorshipLoop = true;
+	});
+	afterEach(() => {
+		flags.authorshipLoop = false;
+		vi.clearAllMocks();
+	});
+
+	it("paints the Katkıların skeleton on /profile while the session isPending — before the authed gate commits", () => {
+		renderApp("/profile");
+
+		expect(screen.getByTestId("signal-loading")).toBeTruthy();
+		// It painted ABOVE the gate with NO FateClient committed — the authed tier is
+		// still deferred (isPending → null), and the eager tier mounts no client at all.
+		expect(fateMounts).toHaveLength(0);
+	});
+
+	it("#438: the eager /profile skeleton mounts NO FateClient — nothing to re-key anon→id", () => {
+		renderApp("/profile");
+		// The proof the eager tier can't reintroduce the #438 remount: it commits zero
+		// fate clients above the gate, so there is no anon-keyed client to later re-key to
+		// the resolved id. The authed FateProvider below is untouched (its once-on-settle
+		// mount is pinned by the invariant-2 tests above).
+		expect(fateMounts).toHaveLength(0);
+		expect(screen.getByTestId("signal-loading")).toBeTruthy();
+	});
+
+	it("scoped: a non-profile route paints NO eager Katkıların skeleton", () => {
+		renderApp("/sozluk");
+		expect(screen.queryByTestId("signal-loading")).toBeNull();
+		expect(fateMounts).toHaveLength(0);
+	});
+
+	it("flag-off: /profile paints NO eager skeleton — no flash of a section the settled page won't render", () => {
+		flags.authorshipLoop = false;
+		renderApp("/profile");
+		expect(screen.queryByTestId("signal-loading")).toBeNull();
+		expect(fateMounts).toHaveLength(0);
 	});
 });
 
