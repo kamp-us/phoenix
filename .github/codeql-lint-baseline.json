@@ -1,0 +1,18 @@
+{
+	"_comment": "codeql-lint grandfather baseline (issue #2261). Pre-existing CodeQL debt that default-setup already carries as unrelated alerts, so `pipeline-cli codeql-lint check` is GREEN on main and fails only on NEW violations. Do NOT add a NEW workflow here to dodge the gate — add an explicit least-privilege `permissions:` block instead. This list only shrinks (as legacy workflows get pinned).",
+	"grandfatheredWorkflows": [
+		".github/workflows/ci.yml",
+		".github/workflows/codeowners-cp.yml",
+		".github/workflows/decisions-index.yml",
+		".github/workflows/deploy.yml",
+		".github/workflows/doc-links.yml",
+		".github/workflows/fanout-guard.yml",
+		".github/workflows/leak-guard.yml",
+		".github/workflows/migrations-guard.yml",
+		".github/workflows/pointer-guard.yml",
+		".github/workflows/readme-guard.yml",
+		".github/workflows/skill-gh-lint.yml",
+		".github/workflows/workflow-contract.yml"
+	],
+	"grandfatheredRegexes": []
+}

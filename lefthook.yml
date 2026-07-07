@@ -121,6 +121,35 @@ pre-push:
           exit 0
         }
         pnpm --filter './apps/**' exec vitest run --config vitest.config.ts --project unit --changed origin/main
+    codeql-lint:
+      # Shift-left the two COMMON CodeQL findings to author time (#2261): a net-new
+      # workflow missing a least-privilege `permissions:` block or a catastrophic-
+      # backtracking regex (ReDoS) fails the PUSH here, deterministically and locally
+      # (no network, NOT CodeQL) — instead of surfacing late as a CodeQL alert that
+      # refuses the PR at ship and costs a full repair → re-review → re-ship cycle. The
+      # grandfather baseline (`.github/codeql-lint-baseline.json`) keeps main green, so
+      # only NEW violations block. Runs via `node …/bin.ts` (not pnpm) like leak-guard —
+      # it needs only node + the installed effect deps.
+      #
+      # Fail-CLOSED on a real finding, fail-OPEN on an absent toolchain — the dedicated
+      # exit-code contract (bin.ts: 2 = finding → block; any OTHER non-zero = couldn't
+      # run, e.g. stripped-PATH worktree / unlinked deps #1798 → allow). CodeQL's own CI
+      # scan stays the unbypassable backstop; this is the local fast-fail.
+      run: |
+        command -v node >/dev/null 2>&1 || {
+          echo "codeql-lint: no node on PATH (stripped-PATH/lean worktree); skipping local pre-push check — CodeQL at CI is the backstop" >&2
+          exit 0
+        }
+        status=0
+        node packages/pipeline-cli/src/bin.ts codeql-lint check || status=$?
+        if [ "$status" -eq 2 ]; then
+          echo "blocked by codeql-lint (#2261); fix the finding above or \`git push --no-verify\` to bypass" >&2
+          exit 1
+        elif [ "$status" -ne 0 ]; then
+          echo "codeql-lint: check could not run (e.g. run 'pnpm install'); skipping local pre-push check — CodeQL at CI is the backstop" >&2
+          exit 0
+        fi
+        exit 0
 
 # `git worktree add` fires post-checkout, so this provisions a fresh worktree's deps —
 # node_modules is gitignored and per-checkout, so a worktree is otherwise dead-on-arrival

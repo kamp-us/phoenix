@@ -86,6 +86,28 @@ This is a **control-plane** surface (it drives the shared primary checkout); see
 [`.patterns/worktree-agent-constraints.md`](../../.patterns/worktree-agent-constraints.md)
 for the surrounding worktree/primary-checkout discipline it defends.
 
+### `codeql-lint` — author-time shift-left for the two common CodeQL findings (#2261)
+
+A deterministic, local (**no network, not CodeQL**) pre-push lint that catches the two
+COMMON CodeQL findings which keep blocking net-new-artifact PRs at ship — never at
+`review-code`, which does not run CodeQL: a workflow missing a least-privilege
+`permissions:` block (PR #2251) and a catastrophic-backtracking regex / ReDoS (PR #2258).
+It fails the **push** (deterministically, ~1s over the whole repo) instead of surfacing
+late as a CodeQL alert that refuses the PR at ship and costs a full repair → re-review →
+re-ship cycle.
+
+```bash
+# gate: exit 0 clean / 2 on a real finding / other non-zero = couldn't run
+node packages/pipeline-cli/src/bin.ts codeql-lint check
+node packages/pipeline-cli/src/bin.ts codeql-lint check --root <d>
+```
+
+A grandfather baseline (`.github/codeql-lint-baseline.json`) keeps `main` green so only
+NEW violations block; the `lefthook` pre-push leg keys off the dedicated exit code `2` to
+fail-closed on a finding but fail-open on an absent toolchain. Full detail — the two ReDoS
+shapes, the documented scan surface, the baseline model — in the
+[tool README](src/tools/codeql-lint/README.md).
+
 ### `ref-guard` — caller-agnostic ref-transaction guard against a diverging `main` (#2143, ADR 0160)
 
 A fail-closed guardrail wired as git's own **`reference-transaction`** hook that **refuses
