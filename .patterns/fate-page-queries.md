@@ -1,5 +1,7 @@
 # Page queries — one root query per page
 
+> Derived from `@nkzw/fate@1.3.1` — re-verify on pin bump.
+
 How a page or route composes its data into fate requests. The short answer, Relay-style: a
 page issues **one root query** — a single `useRequest` whose view tree names everything the
 screen needs, with nested connections composed **inline** into that root selection, not fetched

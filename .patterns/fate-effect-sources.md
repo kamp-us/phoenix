@@ -1,5 +1,7 @@
 # fate-effect sources — `Fate.source`, the per-entity loader
 
+> Derived from the in-repo source (`packages/fate-effect`, `apps/web`) + `@nkzw/fate@1.3.1` where the lib is implicated — re-verify on pin bump.
+
 How `@kampus/fate-effect` declares a source. The short answer: **`Fate.source(ViewClass, {id}, handlers)` builds the loader for one entity** — the kernel `SourceDefinition` plus Effect handlers, with the loader contract (at least one of `byId`/`byIds`, silent reads, `E = never`) enforced at the type level. This replaced the bridge's `fateSource` + hand-written `SourceDefinition` literals (deleted in the v1 cutover, ADR 0042). Handlers delegate to the domain services — fate never queries the database ([ADR 0016](../.decisions/0016-fate-pure-transport-effect-services-domain.md)).
 
 ## Declaring a source

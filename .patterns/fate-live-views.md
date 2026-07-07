@@ -1,5 +1,7 @@
 # Live views
 
+> Derived from `@nkzw/fate@1.3.1` — re-verify on pin bump.
+
 How views stay current without refetching. The short answer: a component swaps `useView` → `useLiveView` to subscribe a ref to server-pushed updates. Updates flow over one SSE connection per client, fan out across Worker isolates through a single Durable Object class — **`LiveDO`**, which plays both the per-client connection role and the per-topic registry role, keyed by instance name — and merge into the normalized cache so only the affected fields re-render. Mutations drive the updates by publishing `live.*` events.
 
 Live is the one place phoenix runs a Durable Object: cross-isolate fan-out has no in-memory shortcut on Workers, so the DO is load-bearing, not optional. The client transport is plain SSE — fate's native live client, no custom connector.
@@ -15,7 +17,7 @@ const [comments, loadNext] = useLiveListView(CommentConnectionView, post.comment
 
 - One **shared SSE connection** per client carries every subscription; the client ref-counts subscriptions so multiple components watching the same entity share one server-side subscription.
 - Updates merge into the cache and re-render only components reading a changed field — switching `useView` → `useLiveView` needs no other changes because both read the same store.
-- A connection view can opt into eager insertion: `live: {append: "visible"}` on the connection selection.
+- A connection view can opt into eager insertion: `live: {prepend: "visible"}` on the connection selection (the lib's `ConnectionLivePolicy` — `prepend?: 'edge' | 'visible'`, default `'edge'` buffers a pushed node until a page load; `PanoFeed`'s feed connection uses `"visible"`).
 - Live failures never throw into the tree; they go to `onLiveError` on the client ([fate-client-setup.md](./fate-client-setup.md)). On reconnect the client resubscribes every active operation with its `lastEventId`.
 
 ### One app-lifetime global live pin keeps the stream alive {#global-pin}
@@ -67,9 +69,13 @@ nothing, so the divan UI required a manual refresh.
 The invariant is **fail-safe on the publish, not on the omission**: `WorkerLivePublisher`'s
 publish methods carry `E = never` (see [fate-effect-server.md](./fate-effect-server.md)), so
 a publish that *is* wired can never fail the mutation — but a publish that is *never wired*
-is undetectable at the type level today. That gap is what the enforcement seam
-([#1898](https://github.com/kamp-us/phoenix/issues/1898)) closes; until it lands, this
-convention is the human-readable rule an author holds themselves to.
+is undetectable at the type level. That gap is closed by the **landed enforcement seam**
+(#1898 → ADR [0155](../.decisions/0155-fanned-mutation-publish-guard.md)): every `entity.verb`
+mutation is classified fanned/not in
+[`fanned-mutations.ts`](../apps/web/worker/features/fate-live/fanned-mutations.ts), and
+`pipeline-cli fanout-guard check` (the `fanout-guard.yml` CI job) fails closed on an
+unclassified mutation or a `fanned: true` mutation whose feature omits the publish. Authoring
+a new mutation forces the fanned/not decision; this section is the *why* behind the guard.
 
 ### The reference pattern — how pano + sözlük publish {#reference-pattern}
 

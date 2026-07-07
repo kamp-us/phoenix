@@ -1,5 +1,7 @@
 # fate-effect server — `FateServer` tag, `config`, `layer`, and the per-request pair
 
+> Derived from the in-repo source (`packages/fate-effect`, `apps/web`) + `@nkzw/fate@1.3.1` where the lib is implicated — re-verify on pin bump.
+
 How `@kampus/fate-effect` composes a fate server. The short answer: **fate has exactly one composite — the server — so it is the one Effect service.** `FateServer` is the package-owned tag (the `HttpRouter` idiom; no user-defined class), `FateServer.config(...)` captures the records, and `FateServer.layer(config)` is the only composition construct — domain requirements are discharged with ordinary `Layer.provide`. There is no menu, fragment, group, or per-feature tag. Entries are authored per [fate-effect-operations.md](./fate-effect-operations.md) and [fate-effect-sources.md](./fate-effect-sources.md).
 
 ## Declaring a server

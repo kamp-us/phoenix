@@ -1,5 +1,7 @@
 # fate-effect worker wiring — the server composition at the worker edge
 
+> Derived from the in-repo source (`packages/fate-effect`, `apps/web`) + `@nkzw/fate@1.3.1` where the lib is implicated — re-verify on pin bump.
+
 How `apps/web/worker` serves `@kampus/fate-effect`: the one config, the composed layer, the
 init-only runtime, and the per-request seam. Since the v2 cutover (ADR 0043) the `/fate` route
 serves the NATIVE interpreter ([fate-effect-interpreter.md](./fate-effect-interpreter.md)) on

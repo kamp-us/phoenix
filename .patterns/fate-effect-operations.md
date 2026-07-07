@@ -1,5 +1,7 @@
 # fate-effect operations — `Fate.query` / `Fate.list` / `Fate.mutation`
 
+> Derived from the in-repo source (`packages/fate-effect`, `apps/web`) + `@nkzw/fate@1.3.1` where the lib is implicated — re-verify on pin bump.
+
 How `@kampus/fate-effect` declares operations. The short answer: **each record entry pairs a pure-data definition with a user-authored `Effect.fn("<wire name>")` handler** — Effect Schema replaces zod at the boundary, the success view names the wire type, and the handler's error channel is checked against the declared error union at the constructor call. This replaced the bridge's `fateQuery`/`fateList`/`fateMutation` helpers (deleted in the v1 cutover, ADR 0042). Sources are the other half of the loader/resolver split ([fate-effect-sources.md](./fate-effect-sources.md)): sources LOAD, operations RESOLVE.
 
 ## Declaring operations
