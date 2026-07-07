@@ -145,6 +145,12 @@ export const BetterAuthLive = Layer.effect(
 			const db = drizzle(raw, {relations: defineRelations(schema)});
 			return makeBetterAuth({
 				emailAndPassword: {enabled: true},
+				// `experimental.joins` MUST stay off: the adapter emits an RQB-v1 raw-SQL `eq()`
+				// where-shape, but our drizzle-orm is RQB-v2 (`defineRelations`), which feeds
+				// `where` into `relationsFilterToSQL` with no SQL pass-through → any better-auth
+				// read on the joins path (not just sign-up) 500s. Re-enabling (to collapse the
+				// 2-query session read) needs the pre-scoped pnpm patch or an RQB-v2 adapter —
+				// tracked in #2291; blast-site context in #2286.
 				database: drizzleAdapter(db, {provider: "sqlite", schema}),
 				secret: Redacted.value(secret),
 				...authUrlConfig,
