@@ -1088,6 +1088,72 @@ Surfacing the thread here does **not** resolve it or merge past it — the split
 that refuses to enqueue on a substantive unresolved thread; this step makes the same objection
 **visible at review time**, so it never reaches merge unread.
 
+### Step 3f — Session-caching two-axis staleness gate (ADR 0169)
+
+Session freshness is **security-load-bearing** and a session-perf/caching review is a **two-axis
+check** — the lesson ADR
+[0169](https://github.com/kamp-us/phoenix/blob/main/.decisions/0169-no-session-caching-immediate-teardown-invariant.md)
+records. The first #2263 `cookieCache` review scoped only axis (1) (all capability reads fresh from
+Künye) and **missed** axis (2) (a deleted account still authenticated for ≤TTL); the
+`account-deletion.test` integration test caught the hole by luck, not by the review. This step folds
+that catch into the gate so the **next** session-caching proposal can't pass by checking only one
+axis. It fires **only** when this PR **introduces a new session-caching path** — otherwise it is an
+explicit not-applicable skip.
+
+**What counts as a new session-caching path (the fire condition).** Any diff that lets an
+authenticated request be served **without** a fresh source-of-truth (D1 / Künye) session
+revalidation for some window: adopting better-auth `session.cookieCache` (or any signed-cookie
+session short-circuit), a TTL/in-memory/KV/DO cache of the validated session or of a gated
+capability (role / karma / ban / kefil), or any `maxAge`/staleness window on the session read.
+Detect it off the diff Step 2 already loaded — emit the scanned scope (§ZS #1) so a future drift
+that silently stops matching is visible in the run output rather than reading green:
+
+```bash
+# does this PR touch a session/caching seam? A hit ARMS the two-axis check below; it never
+# alone FAILs — the reviewer judges whether a hit is a genuine new caching path (per the fire
+# condition above) or an unrelated auth edit. Fail-closed on the security-load-bearing surface:
+# when in doubt that a hit is a caching path, run the check, don't skip it.
+CACHE_HITS="$(gh pr diff $PR \
+  | grep -inE 'cookieCache|session\.?cache|cacheSession|maxAge|staleness|ttl|revalidat' || true)"
+echo "session-caching gate: scanned the diff for session-caching seams — $(printf '%s\n' "$CACHE_HITS" | grep -c . || echo 0) candidate line(s)"
+```
+
+**When it fires, both axes MUST be verified as REQUIRED test coverage — not prose, not one axis.**
+Confirm the PR adds (or already has, exercising the new path) a deterministic integration test for
+**each**:
+
+1. **Capability staleness** — a gated decision (role / karma / ban / kefil) reads the capability
+   FRESH per request, never from a cached session snapshot. The canonical exemplars:
+   `apps/web/tests/integration/session-freshness-invariants.test.ts` (axis 1, the çaylak→yazar tier
+   gate read fresh under the same cookie) and its `kunye-admin-seam` / `kunye-moderate-seam` siblings
+   (a revoked tuple denies the very next discharge).
+2. **Identity-continuity teardown** — delete / logout / revoke stops authenticating **immediately**,
+   never after a TTL. The canonical exemplars: `apps/web/tests/integration/account-deletion.test.ts`
+   (the delete path) and `session-freshness-invariants.test.ts` (the logout/revoke path) — the very
+   next request under the torn-down cookie is `UNAUTHORIZED`.
+
+A caching PR that covers only axis (1) — the exact #2263 gap — is **incomplete on its face**; require
+the axis-(2) teardown test before PASS. Fold the result into the per-criterion table exactly like
+Step 3b–3e:
+
+- **New session-caching path, both axes covered by deterministic tests ⇒ PASS** for this facet —
+  cite the two test files/cases that exercise the new path on each axis.
+- **New session-caching path, an axis uncovered ⇒ `[FAIL]` row.** Name which axis is missing and the
+  test that must exist (a teardown test for the new window on axis 2, a fresh-read test on axis 1),
+  so `write-code`'s repair round adds it. **When in doubt, treat the path as caching and require both
+  axes** — a false FAIL costs a cycle; a false PASS ships an identity-continuity hole (ADR 0169's crux).
+- **No new session-caching path ⇒ explicit not-applicable skip** — emit
+  `session-caching gate: not applicable — no new session-caching path in this PR` and **omit the row**
+  from the conjunctive table, exactly as Step 3b–3e omit theirs.
+
+```
+- [FAIL] session-caching two-axis gate — PR adopts session.cookieCache (worker/features/pasaport/...:NN) with only a capability-staleness test; NO identity-continuity teardown test proves delete/logout/revoke stops authenticating within the window (ADR 0169 axis 2, the #2263 gap) → add a teardown integration test like session-freshness-invariants.test.ts before PASS
+```
+
+This row is governed by the conjunctive rule (Step 3): a `[FAIL]` fails the PR until both axes carry
+required test coverage. The firewall holds — you judge, `write-code` fixes, an independent re-review
+re-gates.
+
 ---
 
 ## Step 4a — Pass path: signal merge-ready (do NOT merge)
