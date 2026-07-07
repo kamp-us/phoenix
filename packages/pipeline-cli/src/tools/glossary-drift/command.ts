@@ -29,7 +29,7 @@ import {existsSync, readFileSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
 import {Console, Data, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../doc-links/doc-links.ts";
+import {findRootDir} from "../../find-root-dir.ts";
 import {findDrift, parseKnownTerms, renderIssueBody, renderReport} from "./drift.ts";
 import {GIT_LOG_RECORD_SEP, parseGitLog} from "./gitlog.ts";
 

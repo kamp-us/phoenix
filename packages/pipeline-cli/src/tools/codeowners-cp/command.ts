@@ -11,7 +11,7 @@
  * and fails the build when any §CP path lacks a covering CODEOWNERS row. The scan/IO
  * lives in `gate.ts`; this file wires it to the CLI.
  *
- * Exit-code contract (mirrors doc-links): 0 = in sync, any non-zero = failure — both
+ * Exit-code contract (mirrors readme-guard): 0 = in sync, any non-zero = failure — both
  * a gate failure (an unowned §CP path / unparseable source / zero-scope; reason on
  * stderr) and a genuine IO crash exit non-zero, undistinguished. `CheckFailed` is
  * caught inside the handler (not at the bin's run boundary) so the contract survives

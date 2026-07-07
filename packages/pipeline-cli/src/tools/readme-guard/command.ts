@@ -14,7 +14,7 @@
  * for removal by #1351) are ignored, so the guard reds on a real README gap, not on
  * leftover litter. The scope is grounded in `pnpm-workspace.yaml`'s `packages/*`
  * glob. Fail-closed on zero members (ADR 0092). The scan/IO lives in `gate.ts`; this
- * file wires it to the CLI (mirrors `doc-links`).
+ * file wires it to the CLI (the thin-CLI-over-`gate.ts` idiom shared across the guards).
  *
  * With no --root the repo root is resolved by walking UP from cwd for a workspace
  * marker (so `pnpm --filter <pkg> …`, whose cwd is the package dir, scans the whole
@@ -30,7 +30,7 @@ import {existsSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../doc-links/doc-links.ts";
+import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, checkReadmes} from "./gate.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;

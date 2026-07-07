@@ -94,7 +94,7 @@ export const checkCodeownersCp = (root: string): Effect.Effect<void, IoError | C
 /**
  * Resolve the repo root by walking UP from `from` for a workspace marker, so
  * `pnpm --filter <pkg> …` (cwd = package dir) still finds the repo root. Mirrors
- * doc-links / decisions-index (#447).
+ * the shared `find-root-dir` / decisions-index walk (#447).
  */
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 export const defaultRoot = (from: string = process.cwd()): string => {

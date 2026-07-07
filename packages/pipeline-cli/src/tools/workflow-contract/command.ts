@@ -15,7 +15,7 @@
  * Fail-closed (ADR 0092): a present-but-unparseable or violating script reds; an
  * empty set (no `.claude/workflows/*.js`) passes clean. The contract + parse live in
  * `workflow-contract.ts`; the scan/IO in `gate.ts`; this file wires it to the CLI
- * (mirrors `doc-links` / `readme-guard`).
+ * (mirrors `readme-guard`).
  *
  * With no --root the repo root is resolved by walking UP from cwd for a workspace
  * marker (so `pnpm --filter <pkg> …`, whose cwd is the package dir, scans the whole
@@ -31,7 +31,7 @@ import {existsSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../doc-links/doc-links.ts";
+import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, checkWorkflows} from "./gate.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;
