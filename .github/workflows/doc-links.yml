@@ -41,20 +41,39 @@ jobs:
             exit 1
           fi
 
+      # lychee's release tarball nests the binary under the target-triple directory
+      # (`lychee-<arch>-unknown-linux-gnu/lychee`), NOT at the archive root. The
+      # `lycheeverse/lychee-action@v2.8.0` install step referenced the flat root path
+      # (`$RUNNER_TEMP/lychee-download/lychee`) and died with `install: cannot stat …:
+      # No such file or directory` on v0.24.2 (the action's own fix — glob-detecting the
+      # nested dir — is on its unreleased main, not in any tag; #2308). Install directly
+      # from the real nested subpath so the gate is under our control, not a broken tag.
+      - name: Install lychee (offline link checker)
+        env:
+          LYCHEE_VERSION: v0.24.2
+        run: |
+          set -euo pipefail
+          TARGET="lychee-$(uname -m)-unknown-linux-gnu"
+          TMP="$(mktemp -d)"
+          curl -sfL -o "$TMP/lychee.tar.gz" \
+            "https://github.com/lycheeverse/lychee/releases/download/lychee-${LYCHEE_VERSION}/${TARGET}.tar.gz"
+          tar -xzf "$TMP/lychee.tar.gz" -C "$TMP"
+          install -Dt "$HOME/.local/bin" "$TMP/${TARGET}/lychee"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          lychee --version
+
       # `--offline` blocks all network requests and skips external URLs (http(s)/
       # mailto/tel), so only on-disk targets are resolved. `--root-dir` resolves the
       # repo-absolute (`/foo`) link convention against the repo root (lychee errors
       # on a `/`-rooted link without it); a repo audit found no tracked doc uses the
       # convention today, so this is forward-preserving, not load-bearing. Fragment/
-      # anchor checking is left OFF (lychee's default), matching the former gate.
+      # anchor checking is left OFF (lychee's default), matching the former gate. A
+      # broken link makes lychee exit non-zero, which fails the job (fail-closed is
+      # also enforced upstream by the zero-scope guard above, ADR 0092).
       - name: Check docs for dead internal links (lychee, offline)
-        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
-        with:
-          lycheeVersion: v0.24.2
-          args: >-
-            --offline
-            --no-progress
-            --root-dir ${{ github.workspace }}
+        run: |
+          lychee \
+            --offline \
+            --no-progress \
+            --root-dir "${{ github.workspace }}" \
             --files-from lychee-files.txt
-          fail: true
-          failIfEmpty: true
