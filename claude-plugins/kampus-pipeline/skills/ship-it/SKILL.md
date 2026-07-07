@@ -984,10 +984,13 @@ RUN_ID=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
 # the run-evidence artifact id, then the manifest bytes
 ART_ID=$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
   --jq '.artifacts[] | select(.name=="run-evidence") | .id' 2>/dev/null)
-rm -rf /tmp/ship-it-bundle && mkdir -p /tmp/ship-it-bundle
-gh api "repos/$REPO/actions/artifacts/$ART_ID/zip" > /tmp/ship-it-bundle/run-evidence.zip 2>/dev/null \
-  && unzip -oq /tmp/ship-it-bundle/run-evidence.zip -d /tmp/ship-it-bundle
-MANIFEST=/tmp/ship-it-bundle/manifest.json
+# per-run bundle dir (mktemp -d), NOT a fixed /tmp/ship-it-bundle: concurrent §CP shippers
+# fan out, and a shared path lets two racing runs read each other's bundle — merge-safety must
+# not rest on Step 3.5's commit==head assertion catching the swap after the fact (#2281).
+BUNDLE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ship-it-bundle.XXXXXX")
+gh api "repos/$REPO/actions/artifacts/$ART_ID/zip" > "$BUNDLE_DIR/run-evidence.zip" 2>/dev/null \
+  && unzip -oq "$BUNDLE_DIR/run-evidence.zip" -d "$BUNDLE_DIR"
+MANIFEST="$BUNDLE_DIR/manifest.json"
 ```
 
 Now assert the four things, **failing closed** on each — a missing bundle, an unreadable
