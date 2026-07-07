@@ -17,6 +17,16 @@
  * agent's live PR branch) is never silently discarded. `git worktree remove` *without*
  * `--force` is the second enforcement line in `command.ts`; this core only chooses
  * WHETHER to attempt the remove, and never escalates to a forced one.
+ *
+ * Liveness guard (#2240 FAIL): clean-AND-merged is NOT sufficient to remove. On the
+ * SessionStart cadence, sibling agents run concurrently and a LIVE lane is routinely
+ * momentarily clean-and-on-main — right after it commits+pushes, or once its PR
+ * squash-merges to `origin/main` while it finishes a repair round. `git worktree remove`
+ * WITHOUT `--force` does NOT protect that case: it refuses only dirty/locked/current
+ * trees, not a clean tree a *sibling* process holds as its CWD (the no-`--force` line is
+ * a dirty-work guard, orthogonal to liveness). So a clean+merged tree is removed only
+ * when it is also provably NOT in use: unlocked AND idle past a threshold (mtime) AND
+ * with no open PR for its branch. Every liveness signal fails safe toward KEEP.
  */
 
 /** The segment that marks a harness-managed agent worktree: `<main>/.claude/worktrees/<id>`. */
@@ -46,6 +56,17 @@ export interface WorktreeRecord {
 	 * `reachableFromOriginMain` misses (ADR 0048, #1328).
 	 */
 	readonly squashMergedToOriginMain: boolean;
+	/**
+	 * The three liveness facts (#2240) — each fail-safe toward KEEP, gathered at the git
+	 * boundary. `locked`: `git worktree lock` was set (an operator/agent pinned it).
+	 * `recentlyActive`: the worktree was touched within the idle threshold (an unresolvable
+	 * mtime reads active). `hasOpenPr`: the branch has an open PR on the GitHub origin (a
+	 * failed/indeterminate query on a GitHub origin reads true). A clean+merged tree is
+	 * removed only when all three are false.
+	 */
+	readonly locked: boolean;
+	readonly recentlyActive: boolean;
+	readonly hasOpenPr: boolean;
 }
 
 /** Why a worktree is KEPT — the audit trail, so the plan is never an opaque list. */
@@ -54,6 +75,12 @@ export type KeepReason =
 	| "not-managed"
 	/** Uncommitted/untracked changes present — keep, never `--force` (unpushed work is sacred). */
 	| "dirty"
+	/** `git worktree lock` is set — an operator/agent pinned it as in-use (#2240). */
+	| "locked"
+	/** Touched within the idle threshold — presumed a live lane, never swept (#2240). */
+	| "recently-active"
+	/** The branch has an open PR — an in-flight lane, kept until it merges + goes idle (#2240). */
+	| "open-pr"
 	/** Branch not merged into `origin/main` (or detached HEAD not reachable) — live/unmerged work. */
 	| "unmerged";
 
@@ -92,14 +119,17 @@ export interface WorktreeSweepPlan {
  *      foreign tree are never candidates, regardless of their other facts.
  *   2. Dirty → KEEP (`dirty`). Wins over every merge signal: a worktree with
  *      working-tree changes is never removed, even when its branch has merged.
- *   3. Ancestor-reachable from `origin/main` → REMOVE. `merged-clean` on a branch,
+ *   3. Liveness gates (#2240) — locked / recently-active / open-PR → KEEP. A clean+merged
+ *      tree may still belong to a LIVE sibling lane (just committed+pushed, or PR just
+ *      squash-merged mid-repair). These gates run BEFORE the remove branches, so each is a
+ *      necessary condition on REMOVE: a tree is swept only when it clears all three.
+ *   4. Ancestor-reachable from `origin/main` → REMOVE. `merged-clean` on a branch,
  *      `detached-reachable` when detached at a merged commit. Ancestry wins over the
  *      squash signal (a non-squash merge is the simpler, stronger fact).
- *   4. Else squash-merged to `origin/main` → REMOVE (`squash-merged-clean`). The
+ *   5. Else squash-merged to `origin/main` → REMOVE (`squash-merged-clean`). The
  *      #1328 case: a squash merge (ADR 0048) leaves the tip un-ancestored but lands
  *      the branch's content, so the worktree is done.
- *   5. Otherwise → KEEP (`unmerged`). Protects a live agent's in-flight branch (an
- *      open PR's worktree, or one with no PR yet) from being swept.
+ *   6. Otherwise → KEEP (`unmerged`). Genuinely unmerged work.
  */
 export const classifyWorktree = (wt: WorktreeRecord): SweepDecision => {
 	if (!isManagedWorktree(wt.path)) {
@@ -107,6 +137,15 @@ export const classifyWorktree = (wt: WorktreeRecord): SweepDecision => {
 	}
 	if (wt.isDirty) {
 		return {kind: "keep", reason: "dirty"};
+	}
+	if (wt.locked) {
+		return {kind: "keep", reason: "locked"};
+	}
+	if (wt.recentlyActive) {
+		return {kind: "keep", reason: "recently-active"};
+	}
+	if (wt.hasOpenPr) {
+		return {kind: "keep", reason: "open-pr"};
 	}
 	if (wt.reachableFromOriginMain) {
 		return wt.branch === null

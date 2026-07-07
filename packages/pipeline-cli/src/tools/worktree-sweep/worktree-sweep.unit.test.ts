@@ -16,6 +16,9 @@ const record = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	isDirty: false,
 	reachableFromOriginMain: true,
 	squashMergedToOriginMain: false,
+	locked: false,
+	recentlyActive: false,
+	hasOpenPr: false,
 	...over,
 });
 
@@ -77,6 +80,39 @@ describe("classifyWorktree — KEEP branches (the safety cases)", () => {
 			record({branch: null, isDirty: false, reachableFromOriginMain: false}),
 		);
 		assert.deepStrictEqual(d, {kind: "keep", reason: "unmerged"});
+	});
+
+	// The #2240 liveness guard: clean+merged is NOT sufficient — a live sibling lane is
+	// routinely momentarily clean-and-on-main, so each liveness signal must veto the remove.
+	it("keeps a LOCKED clean+merged worktree (an operator/agent pinned it)", () => {
+		const d = classifyWorktree(record({locked: true, reachableFromOriginMain: true}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "locked"});
+	});
+
+	it("keeps a RECENTLY-ACTIVE clean+merged worktree (presumed a live lane)", () => {
+		const d = classifyWorktree(record({recentlyActive: true, reachableFromOriginMain: true}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "recently-active"});
+	});
+
+	it("keeps a clean+merged worktree WITH an OPEN PR (an in-flight lane)", () => {
+		const d = classifyWorktree(record({hasOpenPr: true, reachableFromOriginMain: true}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "open-pr"});
+	});
+
+	it("keeps a clean, squash-merged worktree that is still recently-active (live post-merge round)", () => {
+		const d = classifyWorktree(
+			record({
+				recentlyActive: true,
+				reachableFromOriginMain: false,
+				squashMergedToOriginMain: true,
+			}),
+		);
+		assert.deepStrictEqual(d, {kind: "keep", reason: "recently-active"});
+	});
+
+	it("dirty wins over a liveness signal (still kept, reported as dirty)", () => {
+		const d = classifyWorktree(record({isDirty: true, locked: true, hasOpenPr: true}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "dirty"});
 	});
 });
 

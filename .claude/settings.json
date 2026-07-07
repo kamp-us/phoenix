@@ -77,6 +77,10 @@
 					{
 						"type": "command",
 						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/guard.sh\" spawn-guard freshness"
+					},
+					{
+						"type": "command",
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/guard.sh\" worktree-sweep --execute"
 					}
 				]
 			}

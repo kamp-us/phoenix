@@ -1,5 +1,5 @@
 {
-	"description": "kampus-pipeline portable guard surface: SessionStart-installs @kampus/pipeline-cli into ${CLAUDE_PLUGIN_DATA} (version-aware, idempotent, network-resilient) and wires the read/worktree/spawn guards through a fail-open dispatch wrapper. Mirrors the matchers in phoenix's .claude/settings.json (ADR 0103, #1001). Inert until the plugin is enabled (#1003).",
+	"description": "kampus-pipeline portable guard surface: SessionStart-installs @kampus/pipeline-cli into ${CLAUDE_PLUGIN_DATA} (version-aware, idempotent, network-resilient), sweeps orphaned agent worktrees left by aborted/hard-stopped lanes via the safe `worktree-sweep --execute` classifier (#2238), and wires the read/worktree/spawn guards through a fail-open dispatch wrapper. Mirrors the matchers in phoenix's .claude/settings.json (ADR 0103, #1001). Inert until the plugin is enabled (#1003).",
 	"hooks": {
 		"SessionStart": [
 			{
@@ -13,6 +13,10 @@
 					{
 						"type": "command",
 						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard.sh spawn-guard freshness"
+					},
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard.sh worktree-sweep --execute"
 					}
 				]
 			}
