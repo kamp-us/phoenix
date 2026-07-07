@@ -148,21 +148,37 @@ export const BetterAuthLive = Layer.effect(
 				database: drizzleAdapter(db, {provider: "sqlite", schema}),
 				secret: Redacted.value(secret),
 				...authUrlConfig,
-				// Take D1 off get-session's hot path (#2260). Authenticated
-				// `/api/auth/get-session` was 5–8s because it is the FIRST D1-touching
-				// request in a cold isolate and pays the cold first-D1-connection
-				// amplifier (the same session resolution runs in ~478ms on `/fate`
-				// once the isolate + D1 subrequest are warm — so it's cold-connection
-				// cost, not a slow query). `cookieCache` serves the session from a
-				// short-lived signed cookie (default `strategy: "compact"` =
-				// HMAC-SHA256), making get-session crypto-only with ZERO D1 on the hot
-				// path. Tradeoff: a revoked/logged-out session stays valid until the
-				// cookie expires, so `maxAge` is the session-revocation latency — kept
-				// SHORT at better-auth's own 5-minute default (300s) to bound it.
-				session: {cookieCache: {enabled: true, maxAge: 300}},
-				// Collapse the sequential session+user lookups into one relational
-				// query via the drizzle relations wired above (#2260). Complements
-				// cookieCache: cheap on the cache-miss / cold path that still hits D1.
+				// Take D1 off the session-validation hot path on the DATA plane
+				// (#2274). Every authenticated `/fate` + `/fate/live` request validated
+				// the session with a fresh 2-query D1 lookup (session, then user).
+				// `cookieCache` serves the session from a short-lived signed cookie
+				// (default `strategy: "compact"` = HMAC-SHA256), so the hot path is
+				// crypto-only with ZERO D1. (Distinct from #2260, the control-plane
+				// `/api/auth/get-session` endpoint — different route, different fix.)
+				//
+				// `maxAge` is the SESSION-REVOCATION LATENCY BOUND: within the window,
+				// `getSession` trusts the signed cookie and re-checks only its embedded
+				// expiry — it does NOT re-query D1 for a server-side revocation (verified
+				// against better-auth@1.6.10 `api/routes/session.mjs`), so a
+				// logged-out / admin-revoked / banned session stays valid until the
+				// cookie expires. 60s (not better-auth's 300s default, `|| 300` in
+				// `context/create-context.mjs`) bounds that lag 5× tighter. 60s is safe
+				// because NO authz decision reads the cached session: moderation
+				// authority is read fresh per call from the relation-tuple store
+				// (`kunye/moderate.ts`), karma gates read fresh from Künye
+				// (`kunye/privilege.ts`, "never trust a stale session value"), tier
+				// gates read fresh via `kunye.tierOf` (`fate/layers.ts`), and
+				// `CurrentActor` derives only `user.id` (`kunye/CurrentActorLive.ts`).
+				// The stale-session blast radius is thus identity-continuity only
+				// (treated as still-signed-in-as-self for ≤60s), never a stale
+				// capability — see the PR's Staleness-safety section.
+				session: {cookieCache: {enabled: true, maxAge: 60}},
+				// On the cache-miss / cold path that still hits D1, pass the
+				// session+user lookup to the drizzle adapter as ONE relational join
+				// (via the relations wired above) instead of better-auth's two-query
+				// fallback (@better-auth/core `db/adapter/factory.ts` gates the join on
+				// this flag). Part of killing the 2-query D1 session-validation tax
+				// (#2274); complements cookieCache on the path the cache doesn't serve.
 				experimental: {joins: true},
 				// Verify a new account's email via a delivered link (the `EmailSender`
 				// port; ADR 0101). Was unreachable before — no sender existed.
