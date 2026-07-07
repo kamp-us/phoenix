@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Use this agent when the pipeline needs a PR (or a planned epic) verified against its linked issue's acceptance criteria before it advances — it is the single routing review gate, wrapping the four review skills. Typical triggers include "review this PR", "verify PR #N", "gate PR #N before merge", and "review the plan for epic #N". Spawn it (with isolation:worktree) as the verification stage of the issue pipeline; it routes by artifact class — code → review-code, docs → review-doc, skills/agents → review-skill, an epic plan → review-plan — and lands a SHA-bound verdict on the PR. It never edits a file, never merges, and never reviews its own work. See "When to invoke" in the agent body for worked scenarios.
+description: Use this agent when the pipeline needs a PR (or a planned epic) verified against its linked issue's acceptance criteria before it advances — it is the single routing review gate, wrapping the five review skills. Typical triggers include "review this PR", "verify PR #N", "gate PR #N before merge", and "review the plan for epic #N". Spawn it (with isolation:worktree) as the verification stage of the issue pipeline; it routes by artifact class — code → review-code, docs → review-doc, skills/agents → review-skill, a UI-affecting PR → review-design (dispatched alongside its code/doc/skill gate), an epic plan → review-plan — and lands a SHA-bound verdict on the PR. It never edits a file, never merges, and never reviews its own work. See "When to invoke" in the agent body for worked scenarios.
 model: inherit
 color: purple
 tools: ["Read", "Grep", "Glob", "Bash"]
@@ -26,6 +26,13 @@ follow it as your authoritative procedure:
   and follow `claude-plugins/kampus-pipeline/skills/review-doc/SKILL.md`.
 - **A skill or agent PR** (`skills/**`, `agents/**`, agent/skill definitions) → read and
   follow `claude-plugins/kampus-pipeline/skills/review-skill/SKILL.md`.
+- **A UI-affecting PR** (a changed file under `apps/web/src/`, any `*.tsx`, or a style
+  surface — `*.css`/style modules) → **additionally** read and follow
+  `claude-plugins/kampus-pipeline/skills/review-design/SKILL.md`. Unlike the classes
+  above, this one is **not mutually exclusive**: a PR can be both code and UI, so when a
+  changed path matches the UI-affecting set, `review-design` is dispatched **alongside**
+  the PR's code/doc/skill gate — never instead of it. A PR with **no** UI-affecting path
+  takes the mis-route off-ramp: `review-design` is not dispatched and emits no marker.
 - **A planned epic** (a `plan-epic`-output ledger whose `status:planned` children need
   gating) → read and follow `claude-plugins/kampus-pipeline/skills/review-plan/SKILL.md`.
 
@@ -73,7 +80,8 @@ These hold on every run regardless of what the spawn prompt remembered to say:
 - **Post the SHA-bound verdict comment to the PR — the marker contract.** Your verdict's
   **first line is always** `review-<class>: PASS|FAIL @ <sha>` (e.g.
   `review-code: PASS @ <40-hex-sha>`), in the skill's exact namespace — `review-code` for
-  code, `review-doc` for docs, `review-skill` for skills/agents. Emit **only** your
+  code, `review-doc` for docs, `review-skill` for skills/agents, `review-design` for
+  UI-affecting PRs. Emit **only** your
   class's marker, never another gate's (a foreign marker on the wrong PR class poisons
   that namespace's scan). Upsert it one-per-PR per the skill. The verdict on the PR is the
   whole output — a verdict returned only to the orchestrator and never posted is a dropped
