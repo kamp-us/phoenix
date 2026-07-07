@@ -32,10 +32,7 @@ import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.t
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {Flagship, FlagshipLive} from "./features/flagship/Flagship.ts";
 import {Flagship as FlagshipResource} from "./features/flagship/resources.ts";
-import {
-	subscribeHotScoreBackfill,
-	subscribeHotScoreDecay,
-} from "./features/pano/hot-score-decay-cron.ts";
+import {subscribeHotScoreDecay} from "./features/pano/hot-score-decay-cron.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
 import {Events as TelemetryEvents} from "./features/telemetry/resources.ts";
@@ -264,22 +261,14 @@ export default Phoenix.make(
 		// time inside `FateExecutor.toCodegenServer` (`schema.ts`), so `vite build`
 		// fails on duplicate wire names / missing sources before the worker exists.
 
-		// The sıcak/hot decay-refresh Cron Trigger (#2027): register the `scheduled`
-		// listener (runtime) + attach the cron expression to the worker (deploy). The
-		// handler re-decays `post_record.hot_score` over the recency window so the hot
-		// feed keeps decaying with age without an activity write, preserving the
-		// stored-column + keyset-cursor design (no read-time recompute). Provided the
-		// built `fateLayer` so it resolves `Pano` at dispatch. `subscribe` only
+		// The sıcak/hot decay-refresh Cron Trigger (#2027, windowless since #2133): register
+		// the `scheduled` listener (runtime) + attach the cron expression to the worker
+		// (deploy). The handler re-decays every live non-draft post's `post_record.hot_score`
+		// so the hot feed keeps decaying with age at any age without an activity write,
+		// preserving the stored-column + keyset-cursor design (no read-time recompute).
+		// Provided the built `fateLayer` so it resolves `Pano` at dispatch. `subscribe` only
 		// registers a listener (no async/timer work), so it is init-safe.
 		yield* subscribeHotScoreDecay(fateLayer);
-
-		// The one-time full `hot_score` backfill (#2131): a marker-guarded run-once
-		// windowless recompute that un-freezes pre-#2033 posts stranded outside the 72h
-		// decay window. Rides the same 15-min cron trigger; the first scheduled pass after
-		// deploy runs it and stamps the `hot_score_backfill` marker, later passes no-op.
-		// Route-free by design (NOT a public/ENVIRONMENT-gated seeder route — the deleted
-		// fail-open hole). `subscribe` only registers a listener, so it stays init-safe.
-		yield* subscribeHotScoreBackfill(fateLayer);
 
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace resolved
 		// once above, wrapped as worker-level services. One namespace plays both

@@ -318,9 +318,9 @@ export class Pano extends Context.Service<
 		) => Effect.Effect<ReactToCommentResult, CommentNotFound>;
 
 		/**
-		 * Periodic sıcak/hot decay-refresh (#2027): recompute the stored `hot_score`
-		 * for live, non-draft posts in the recency window at `now` and write back the
-		 * changed rows, so an inactive post's ranking decays with age without an
+		 * Periodic sıcak/hot decay-refresh (#2027, windowless since #2133): recompute the
+		 * stored `hot_score` for EVERY live, non-draft post at `now` and write back the
+		 * changed rows, so an inactive post's ranking decays with age at any age without an
 		 * activity write. Driven by the cron trigger (`index.ts`); the stored-column +
 		 * keyset-cursor design is preserved (no read-time recompute). Returns the pass's
 		 * scanned/updated counts for observability.
@@ -328,20 +328,6 @@ export class Pano extends Context.Service<
 		readonly refreshHotScores: (
 			now: Date,
 		) => Effect.Effect<{readonly scanned: number; readonly updated: number}>;
-
-		/**
-		 * One-time FULL `hot_score` backfill (#2131): a single windowless recompute over
-		 * ALL live, non-draft posts, reusing the same pure decay core as
-		 * `refreshHotScores` but MINUS the 72h window clause — so it re-decays the pre-fix
-		 * frozen rows outside the window that the cron can never reach. Run-once +
-		 * idempotent via the `hot_score_backfill` marker row: `ran: false` once it has
-		 * completed. Driven by a guarded run-once cron subscriber (`index.ts`).
-		 */
-		readonly backfillHotScores: (now: Date) => Effect.Effect<{
-			readonly ran: boolean;
-			readonly scanned: number;
-			readonly updated: number;
-		}>;
 	}
 >()("@kampus/pano/Pano") {}
 

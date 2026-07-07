@@ -16,14 +16,14 @@
  * Validation lives in the service methods, not resolvers (ADR 0013).
  */
 import {id} from "@usirin/forge";
-import {and, desc, eq, gte, inArray, isNull, sql} from "drizzle-orm";
+import {and, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Effect} from "effect";
 import {POST_SORT_LEAD_COLUMN, type PostSort} from "../../../src/lib/panoFeedSort.ts";
 import {isPostTagKind} from "../../../src/lib/panoTags.ts";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
-import {decayHotScores, decayWindowMs} from "../../db/hotScoreDecay.ts";
+import {decayHotScores} from "../../db/hotScoreDecay.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {type ReadProfileIdentities, stampAuthorIdentity} from "../fate/author-identity.ts";
@@ -350,97 +350,32 @@ export interface PostOperationsDeps {
 }
 
 /**
- * The periodic sıcak/hot decay-refresh (#2027), factored to the ONE dep it reads
- * (`run`) so it builds standalone. `hot_score` is a stored, keyset-read column written
- * only at activity sites, so an inactive post's age term freezes and it squats the hot
- * feed. This re-decays the stored column on a schedule (the cron trigger in `index.ts`)
- * so ranking keeps decaying with age WITHOUT a read-time recompute — the keyset-cursor
- * contract and the no-`POW` constraint both need `hot_score` to stay a stored, indexed,
- * monotonic-per-snapshot column. Scoped to the recency window (`decayWindowMs`) where
- * decay actually reorders the feed, and to live, non-draft posts (a removed post's
- * `hot_score` is already zeroed by the removal batch); the pure decision (formula reuse
- * + changed-only filter) lives in `db/hotScoreDecay.ts`.
+ * The periodic sıcak/hot decay-refresh (#2027, made WINDOWLESS in #2133), factored to
+ * the ONE dep it reads (`run`) so it builds standalone. `hot_score` is a stored,
+ * keyset-read column written only at activity sites, so an inactive post's age term
+ * freezes and it squats the hot feed. This re-decays the stored column on a schedule
+ * (the cron trigger in `index.ts`) so ranking keeps decaying with age WITHOUT a
+ * read-time recompute — the keyset-cursor contract and the no-`POW` constraint both need
+ * `hot_score` to stay a stored, indexed, monotonic-per-snapshot column. Scoped only to
+ * live, non-draft posts (a removed post's `hot_score` is already zeroed by the removal
+ * batch); the pure decision (formula reuse + changed-only filter) lives in
+ * `db/hotScoreDecay.ts`.
+ *
+ * WINDOWLESS by design (#2133): earlier this pass scanned only a 72h recency window, so a
+ * post that froze high and drifted past 72h was never re-selected and squatted the feed
+ * forever (the ~18-day, hot_score=285 post the founder observed). Every live non-draft
+ * post is now re-decayed each pass, so age keeps eroding rank at any age. The accepted
+ * tradeoff: a pass is O(all live non-draft posts) per 15-min tick, not O(recent) — fine
+ * at the v1 cohort's scale (tens of posts); revisit (batch/window the SCAN, not the
+ * decay) only if the table grows large.
  *
  * Exported (not inlined in `makePostOperations`) so the AC4 integration test can drive
  * the SHIPPED method against real remote D1 built from just a `run` — no full
- * `PostOperationsDeps` graph, no re-implementation of the window query.
+ * `PostOperationsDeps` graph, no re-implementation of the query.
  */
 export const makeRefreshHotScores = (run: DrizzleAccessOrDie["run"]) =>
 	Effect.fn("Pano.refreshHotScores")(function* (now: Date) {
 		const nowMs = now.getTime();
-		const cutoff = new Date(nowMs - decayWindowMs);
-		const rows = yield* run((db) =>
-			db
-				.select({
-					id: schema.postRecord.id,
-					score: schema.postRecord.score,
-					hotScore: schema.postRecord.hotScore,
-					createdAt: schema.postRecord.createdAt,
-				})
-				.from(schema.postRecord)
-				.where(
-					and(
-						isNull(schema.postRecord.removedAt),
-						sql`${schema.postRecord.isDraft} is not 1`,
-						gte(schema.postRecord.createdAt, cutoff),
-					),
-				),
-		);
-		const updates = decayHotScores(
-			rows.map((r) => ({
-				id: r.id,
-				score: r.score,
-				hotScore: r.hotScore,
-				createdAtMs: (r.createdAt ?? now).getTime(),
-			})),
-			nowMs,
-		);
-		// One UPDATE per changed row, all in the fetched-clock reading. Nothing changed ⇒ no
-		// write (the common steady state). `Effect.forEach` sequences them; the volume is
-		// bounded by the recency window, so a per-row update stays cheap.
-		yield* Effect.forEach(
-			updates,
-			(u) =>
-				run((db) =>
-					db
-						.update(schema.postRecord)
-						.set({hotScore: u.hotScore})
-						.where(eq(schema.postRecord.id, u.id)),
-				),
-			{discard: true},
-		);
-		return {scanned: rows.length, updated: updates.length};
-	});
-
-/**
- * The one-time FULL `hot_score` backfill (#2131). {@link makeRefreshHotScores} decays
- * only the 72h recency window (`decayWindowMs`), so a post that froze high BEFORE the
- * #2033 cron shipped and now sits OUTSIDE that window is never re-selected and stays
- * pinned to the sıcak feed. This drops the window clause and recomputes EVERY live,
- * non-draft row once, reusing the SAME pure core (`decayHotScores`) and the same
- * changed-only write-back — the go-forward cron is left untouched.
- *
- * Run-once + idempotent by construction: the `hot_score_backfill` singleton row is the
- * persisted marker. If it already exists the pass no-ops (`ran: false`); otherwise it
- * recomputes, then inserts the marker so it never runs again. A recompute is naturally
- * idempotent anyway (same rows + same clock ⇒ same result), so the marker only avoids a
- * redundant table-wide scan on later invocations — a re-run before the marker lands is
- * harmless. Factored to the one dep it reads (`run`) so it builds standalone, exactly
- * like {@link makeRefreshHotScores}, and can be driven by an integration test.
- */
-export const makeBackfillHotScores = (run: DrizzleAccessOrDie["run"]) =>
-	Effect.fn("Pano.backfillHotScores")(function* (now: Date) {
-		const alreadyRan = yield* run((db) =>
-			db.query.hotScoreBackfill.findFirst({columns: {id: true}}),
-		);
-		if (alreadyRan) {
-			return {ran: false as const, scanned: 0, updated: 0};
-		}
-
-		const nowMs = now.getTime();
-		// The windowless twin of refreshHotScores' query: SAME live/non-draft predicate,
-		// MINUS the `gte(createdAt, cutoff)` recency clause — so it reaches the pre-fix
-		// frozen rows outside the 72h window that the cron can never select.
 		const rows = yield* run((db) =>
 			db
 				.select({
@@ -463,6 +398,8 @@ export const makeBackfillHotScores = (run: DrizzleAccessOrDie["run"]) =>
 			})),
 			nowMs,
 		);
+		// One UPDATE per changed row, all in the fetched-clock reading. Nothing changed ⇒ no
+		// write (the common steady state). `Effect.forEach` sequences them.
 		yield* Effect.forEach(
 			updates,
 			(u) =>
@@ -474,14 +411,7 @@ export const makeBackfillHotScores = (run: DrizzleAccessOrDie["run"]) =>
 				),
 			{discard: true},
 		);
-		// Stamp the run-once marker LAST so a mid-pass failure leaves it unset and a later
-		// invocation retries the (idempotent) recompute rather than skipping a partial run.
-		yield* run((db) =>
-			db
-				.insert(schema.hotScoreBackfill)
-				.values({id: 1, completedAt: now, scanned: rows.length, updated: updates.length}),
-		);
-		return {ran: true as const, scanned: rows.length, updated: updates.length};
+		return {scanned: rows.length, updated: updates.length};
 	});
 
 export const makePostOperations = (deps: PostOperationsDeps) => {
@@ -1250,7 +1180,6 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	});
 
 	const refreshHotScores = makeRefreshHotScores(run);
-	const backfillHotScores = makeBackfillHotScores(run);
 
 	return {
 		getPost,
@@ -1269,6 +1198,5 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		retractPostVote,
 		reactToPost,
 		refreshHotScores,
-		backfillHotScores,
 	};
 };
