@@ -48,6 +48,22 @@ export const toPost = (r: PostFields): Post => ({
 	tags: [...r.tags],
 });
 
+/**
+ * The viewer-invariant BASE post (#2322, epic #2316 leg B): `toPost` minus the two
+ * viewer scalars (`myVote`/`isSaved`). The GET-able base feed serves this so its bytes
+ * are identical for anon and every signed-in viewer — the per-viewer scalars ride the
+ * separate authed `PostOverlay` read instead. `sandboxed` stays but is structurally
+ * `false` on the base path (the route reads the ANONYMOUS sandbox viewer, and any
+ * sandboxed post is filtered out of the feed before it reaches here), so it carries no
+ * viewer-derived value.
+ */
+export type BasePost = Omit<Post, "myVote" | "isSaved">;
+
+export const toBasePost = (r: PostFields): BasePost => {
+	const {myVote: _myVote, isSaved: _isSaved, ...base} = toPost(r);
+	return base;
+};
+
 // The single `PostPage` → `Post` mapping shared by the read resolver
 // (`queries.post`) and the delete-refresh (`comment.delete`) so they can't drift.
 // `myVote`/`isSaved`/`reactions` and the live `authorUsername`/`authorDisplayName`

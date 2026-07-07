@@ -672,6 +672,29 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		return yield* stampAuthorIdentity(readProfileIdentities, reacted);
 	});
 
+	// The viewer overlay (#2322, epic #2316 leg B): given the base feed's post ids,
+	// return ONLY the per-viewer scalars (`myVote`/`isSaved`) — the exact slice the
+	// GET-able base projection omits so it can be viewer-invariant + cacheable. Reuses
+	// the SAME `postViewerScalars` batch readers as `getPostsByIds` (one `user_vote` +
+	// one `post_bookmark` `IN (...)` read for the whole id batch, never per-row), so the
+	// split adds no N+1. It reads no `post_record` at all — presence is a property of
+	// the viewer's own vote/bookmark rows, so an id the viewer never touched degrades to
+	// `false` (or `null` for an anonymous viewer, the read-path convention). Nothing here
+	// is viewer-cross-visible: a reader only ever learns its OWN vote/save state.
+	const readViewerOverlay = Effect.fn("Pano.readViewerOverlay")(function* (
+		ids: ReadonlyArray<string>,
+		opts: {viewerId?: string | null | undefined} = {},
+	) {
+		if (ids.length === 0) return [];
+		const viewerId = opts.viewerId ?? null;
+		const stamped = yield* stampViewerScalars(
+			ids.map((id) => ({id})),
+			viewerId,
+			postViewerScalars,
+		);
+		return stamped.map((row) => ({id: row.id, myVote: row.myVote, isSaved: row.isSaved}));
+	});
+
 	// The moderator sandbox-queue / promotion-backlog read model (#1205, the #1206
 	// seam): a çaylak's still-sandboxed, not-removed posts — scoped to one author when
 	// promotion flips their backlog. Authority is gated at the resolver; the service
@@ -1185,6 +1208,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		getPost,
 		listPostsConnection,
 		getPostsByIds,
+		readViewerOverlay,
 		listSandboxedPosts,
 		submitPost,
 		saveDraft,
