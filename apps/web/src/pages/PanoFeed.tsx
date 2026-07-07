@@ -20,6 +20,7 @@ import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
 import {Screen} from "../fate/Screen";
+import {FEED_SNAPSHOT_ENABLED} from "../fate/snapshot";
 import {LoadMoreButton} from "../fate/wire";
 import {
 	PANO_FEED_PAGE_SIZE,
@@ -133,12 +134,19 @@ function FeedContent({
 	pending: boolean;
 	chrome: Chrome;
 }) {
-	const {posts} = useRequest({
-		posts: {
-			list: PostConnectionView,
-			args: {sort, first: PANO_FEED_PAGE_SIZE, ...(host ? {host} : {})},
+	// Feed snapshot (leg A, #2319): under the containment flag, run the feed read
+	// stale-while-revalidate so a snapshot hydrated into the public client paints
+	// synchronously and the network patch lands in the background. Flag off ⇒ an
+	// `undefined` options arg, behaviorally identical to today's cache-first default.
+	const {posts} = useRequest(
+		{
+			posts: {
+				list: PostConnectionView,
+				args: {sort, first: PANO_FEED_PAGE_SIZE, ...(host ? {host} : {})},
+			},
 		},
-	});
+		FEED_SNAPSHOT_ENABLED ? {mode: "stale-while-revalidate"} : undefined,
+	);
 
 	return <FeedRows connection={posts} host={host} pending={pending} chrome={chrome} />;
 }

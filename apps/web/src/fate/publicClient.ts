@@ -12,6 +12,7 @@
  * scalars stay on the authed client below the gate. See ADR 0167.
  */
 import {createClient, type FateClientInstance} from "./client";
+import {hydrateAnonPublicClient, installAnonSnapshotPersistence} from "./snapshot";
 
 let publicClient: FateClientInstance | null = null;
 
@@ -21,6 +22,17 @@ let publicClient: FateClientInstance | null = null;
 // authed feed takes over, but the instance — and its warm cache — persists for the app
 // lifetime).
 export function getPublicFateClient(): FateClientInstance {
-	if (publicClient == null) publicClient = createClient({authenticated: false});
+	if (publicClient == null) {
+		publicClient = createClient({authenticated: false});
+		// Feed snapshot (leg A, #2319): restore the persisted anon cache into this
+		// singleton at creation — BEFORE any `useRequest` renders under
+		// `PublicFateProvider`, fate's hydrate-before-render contract — then persist it
+		// on tab-hide for the app's lifetime (the singleton never tears down, so its
+		// uninstaller is intentionally discarded). Both no-op when the containment flag
+		// is off (flag-off ⇒ no storage reads/writes), so this is byte-identical to today
+		// until #2326 flips it. See `snapshot.ts`.
+		hydrateAnonPublicClient(publicClient);
+		installAnonSnapshotPersistence(publicClient);
+	}
 	return publicClient;
 }
