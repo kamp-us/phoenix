@@ -1,5 +1,14 @@
 import {createContext, useContext, useEffect, useMemo, useState} from "react";
-import {Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
+import {
+	Navigate,
+	Outlet,
+	Route,
+	Routes,
+	useLocation,
+	useMatch,
+	useNavigate,
+	useParams,
+} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {useMe} from "./auth/useMe";
 import {useBildirimUnread} from "./components/bildirim/useBildirimUnread";
@@ -11,7 +20,7 @@ import {Topbar} from "./components/layout/Topbar";
 import {actorLabel} from "./components/moderation/actor-identity";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
-import {FateProvider} from "./fate/FateProvider";
+import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {DensityProvider} from "./lib/density";
@@ -75,6 +84,21 @@ function Layout() {
 	const {toggle: toggleTheme} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
 
+	// The two-tier fate provider's public first paint (ADR 0167). While `get-session`
+	// is still in flight the authed `FateProvider` gate below returns null, so the
+	// routed `/pano` feed can't paint. So for the anon-capable pano feed routes ONLY,
+	// render an eager copy over the PUBLIC (always-anonymous) fate client above the gate
+	// — it paints in parallel with `get-session` instead of serialized behind it. The
+	// instant the session settles the gate commits, the authed feed (with live +
+	// mutations) takes over, and this eager tier unmounts. This preserves #438 verbatim:
+	// the router-bearing authed subtree still mounts only once, on the resolved identity
+	// — the public client is a distinct, never-re-keyed instance, so there is no
+	// anon→userId re-key remount of the authed tree.
+	const panoMatch = useMatch("/pano");
+	const panoSiteMatch = useMatch("/pano/site/:host");
+	const eagerPanoHost = panoSiteMatch?.params.host;
+	const showEagerPanoFeed = session.isPending && (panoMatch != null || panoSiteMatch != null);
+
 	// Echo the active query in the header input, but only on the results page — off
 	// `/search` the box keeps its empty `ara…` placeholder (#2199).
 	const searchQuery =
@@ -125,6 +149,14 @@ function Layout() {
 						}
 					/>
 					<Main>
+						{/* PUBLIC tier (ADR 0167): the anon-capable pano feed paints over the
+						    always-anonymous public client while `get-session` resolves, then
+						    hands off to the authed feed once the gate below commits. */}
+						{showEagerPanoFeed ? (
+							<PublicFateProvider>
+								<PanoFeed {...(eagerPanoHost ? {host: eagerPanoHost} : {})} />
+							</PublicFateProvider>
+						) : null}
 						{/* The routed content + fate-dependent chips live below the session
 						    gate — FateProvider keeps its #438 remount guard (first & only key
 						    is the resolved identity), while the shell frame above already
