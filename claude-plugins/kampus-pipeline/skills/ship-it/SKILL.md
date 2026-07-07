@@ -658,7 +658,14 @@ Now resolve **per namespace**, latest-wins by timestamp:
   `CHANGES_REQUESTED` review or a `review-code: FAIL` marker is FAIL. The verdict's bound SHA
   is the marker's `@ <sha>` (or, for a native review, its `commit_id`). (The native
   approving-review path stays; it interleaves only with the review-code markers, never with
-  review-doc.)
+  review-doc.) A **§CP** code PR's verdict is likewise the SHA-less-first-line advisory
+  (`review-code: advisory — blocking-set PR …`) — §6.6/ADR 0151 converges **all four** gates on
+  the one advisory form, so a §CP review-code advisory is resolved from the body's canonical
+  `Reviewed-head` line via the
+  **[§CP advisory resolution](#step-2cp--cp-advisory-namespace-resolution-adr-01350151)** below
+  (ADR 0111/0151), gated on Step 0's control-plane approval — **never** from a bindable first-line
+  marker (that would drop the §CP verdict into the auto-merge namespace, the ADR 0111 hazard). This
+  is the written resolution path a canonical review-code §CP advisory previously lacked (#2329).
 - **review-doc namespace** — the verdict is the **latest `review-doc` marker comment** by
   `created_at`; its bound SHA is the marker's `@ <sha>`. `review-doc: PASS … merge-ready` is
   PASS; `review-doc: FAIL … changes-requested` is FAIL. (review-doc lands no native review —
@@ -752,12 +759,16 @@ ADR 0053/0065/0111 hazard; the hand-posted-marker forge on #2005 is the workarou
 forbids).
 
 For each §CP namespace whose latest verdict is a **current-head advisory** (first line matches
-`^\s*\**\s*review-(skill|doc|design):\s*advisory\b`), resolve it as an **enqueue-eligible
+`^\s*\**\s*review-(code|skill|doc|design):\s*advisory\b`), resolve it as an **enqueue-eligible
 current-head PASS-equivalent** iff **all three** hold, else **refuse deterministically with the
-named reason**:
+named reason**. `review-code` is in this set: a §CP code PR's approved verdict is the same SHA-less
+advisory (§6.6/ADR 0151 converges **all four** gates on one advisory form), so its body
+`Reviewed-head` line resolves the enqueue exactly like the doc/skill/design namespaces — without it,
+a canonical review-code §CP advisory had no written resolution path and read as `sha: null` → refused
+on a legitimately-approved PR (#2329):
 
 ```bash
-# $ADV_BODY = the latest §CP advisory comment body for this namespace (review-skill or review-doc),
+# $ADV_BODY = the latest §CP advisory comment body for this namespace (review-code/skill/doc/design),
 # author-gated (write+, ADR 0055) and latest-wins exactly like the markers above.
 # (a) body's canonical Reviewed-head SHA (ADR 0151 §6.6) must prefix-match the PR's current head.
 #     Anchored to the `Reviewed-head:` line — a DISTINCT token from the first-line advisory marker,
@@ -775,8 +786,8 @@ fi
 ```
 
 A §CP namespace with **no** advisory comment at all (nor any PASS/FAIL marker) is still
-`unverified (no review-<skill|doc> PASS)` — the resolution needs a current-head advisory to read.
-A §CP namespace whose latest verdict is a `review-<skill|doc>: FAIL` marker is a **FAIL** (the
+`unverified (no review-<code|skill|doc> PASS)` — the resolution needs a current-head advisory to read.
+A §CP namespace whose latest verdict is a `review-<code|skill|doc>: FAIL` marker is a **FAIL** (the
 reviewer found a miss), refused exactly as a non-§CP FAIL — the §CP advisory path is entered only
 when the latest verdict is an *advisory*, never to mask a FAIL.
 

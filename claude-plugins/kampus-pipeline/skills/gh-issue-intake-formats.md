@@ -859,20 +859,30 @@ verdict_readback_guard() {
     || printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*advisory" \
     || { echo "verdict_readback_guard FAILED: no canonical '${gate}:' marker (PASS/FAIL @ ${sha:0:7} or advisory) in comment $cid — the body is malformed; the PR is UNGATED." >&2; return 1; }
 
-  # (2) Head binding — SHA-SOURCE-AWARE (#2272): do NOT require a `Reviewed-head:` line
-  #     unconditionally. A bindable first line (`<gate>: PASS|FAIL @ <sha>`) already carries the head
-  #     binding — (1) validated it against ${sha:0:7} — so a non-blocking binding PASS/FAIL (whose
-  #     template carries the SHA only on the first line, no separate line) needs NO `Reviewed-head:`.
-  #     A SHA-less advisory binds the head via `Reviewed-head: @ <sha>`: review-doc/review-skill carry
-  #     it (verified against head WHEN PRESENT); review-code's §CP advisory carries NONE by design
-  #     (ADR 0111 — SHA-less first line, no body binding) → accept its absence, never un-gate it. A
-  #     `Reviewed-head:` line present but bound to the WRONG sha is ALWAYS fatal (a stale/mis-bound
-  #     head must never read as verified).
+  # (2) Head binding — SHA-SOURCE-AWARE (#2272), and every verdict body binds the reviewed head:
+  #     - a bindable first line (`<gate>: PASS|FAIL @ <sha>`) carries the binding inline — (1) already
+  #       validated it against ${sha:0:7}, so a non-blocking binding PASS/FAIL needs no separate line
+  #       (this is the branch that keeps a legitimate non-blocking PASS from false-failing; #2272).
+  #     - a SHA-less advisory first line (`<gate>: advisory`, ALL FOUR gates INCL review-code) MUST
+  #       carry the canonical body `Reviewed-head: @ <sha>` line (§6.6 / ADR 0151) — absence is FATAL.
+  #       (#2329: the prior "review-code's §CP advisory carries NONE by design → accept its absence"
+  #       carve-out contradicted §6.6's own MUST and blinded the read-back to a drifted
+  #       `**Reviewed head:**` variant — bold, space-not-hyphen, backticked SHA — that does NOT match
+  #       `^Reviewed-head:` and that ship-it's §6.6 enqueue matcher then rejects, leaving a genuinely
+  #       -approved §CP PASS silently unshippable until a human hand-re-posts. Requiring the canonical
+  #       line on every advisory makes a drifted line read as absent → FATAL here → forces a canonical
+  #       re-post at EMISSION time, never a ship-it refusal on an approved PR.)
+  #     - ANY `Reviewed-head:` line present (advisory, or a belt-and-suspenders non-blocking PASS) must
+  #       bind ${sha:0:7} — a mis-bound/stale one is ALWAYS fatal (a wrong head must never read verified).
   if printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${sha:0:7}"; then
-    : # bindable first line: its `@ <sha>` IS the head binding (validated by (1)) — no line required
-  elif printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
+    : # bindable first line: its `@ <sha>` IS the head binding (validated by (1))
+  elif ! printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
+    echo "verdict_readback_guard FAILED: SHA-less advisory in comment $cid carries no canonical 'Reviewed-head: @ ${sha:0:7}' line — §6.6/ADR 0151 requires it on ALL four gates' advisories (incl review-code); a drifted '**Reviewed head:**' variant reads as absent. Re-post the canonical 'Reviewed-head: @ <sha>' line (hyphen, no bold, no backticks around the SHA)." >&2; return 1
+  fi
+  # a present `Reviewed-head:` line (advisory OR a non-blocking PASS that also carries it) must bind head:
+  if printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
     printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*${sha:0:7}" \
-      || { echo "verdict_readback_guard FAILED: 'Reviewed-head:' line in comment $cid is bound to the wrong head (not @ ${sha:0:7}) — a stale/mis-bound §CP head binding." >&2; return 1; }
+      || { echo "verdict_readback_guard FAILED: 'Reviewed-head:' line in comment $cid is bound to the wrong head (not @ ${sha:0:7}) — a stale/mis-bound head binding." >&2; return 1; }
   fi
 
   # (3) NO local filesystem path leaked into the public body (the #2148 leak). Reject a machine-local
@@ -894,16 +904,21 @@ it as a silent success. A moved `HEAD_SHA` between the post and the read-back me
 *during* the review — re-resolve the head, re-verify against it (the gate is stateless), and re-post;
 never loosen the match to paper over a moved head.
 
-Check (2) is **SHA-source-aware** (#2272), which is why the read-back is unconditional without
-false-failing a legitimate non-blocking PASS or the review-code §CP advisory. The bindable PASS/FAIL
-first line satisfies (1) via its `@ <sha>` — that SHA **is** the head binding, so (2) requires no
-separate `Reviewed-head:` line (the non-blocking binding templates carry the SHA only on the first
-line). The advisory blocking-set path carries no first-line `@ <sha>` by design (ADR 0111), which is
-why (1) accepts the `<gate>: advisory` first line; it binds the head via a body `Reviewed-head: @ <sha>`
-line — review-doc/review-skill carry it and (2) verifies it against head when present, while
-review-code's §CP advisory carries none by design (ADR 0111) and (2) accepts its absence. A
-`Reviewed-head:` line present but bound to the wrong sha is always fatal. The leak check (3) is
-**unconditional** on every verdict type — the #2148/#2264 path-leak protection is never relaxed.
+Check (2) is **SHA-source-aware** (#2272): the read-back fires on every verdict type without
+false-failing a legitimate non-blocking PASS. The bindable PASS/FAIL first line satisfies (1) via its
+`@ <sha>` — that SHA **is** the head binding, so (2) requires no separate `Reviewed-head:` line (the
+non-blocking binding templates carry the SHA only on the first line; this is the branch that keeps a
+clean non-blocking doc/skill PASS from false-failing under the unconditional `verdict_post_verify …
+|| exit 1`). The advisory blocking-set path carries no first-line `@ <sha>` by design (ADR 0111),
+which is why (1) accepts the `<gate>: advisory` first line; it binds the head **in the body** via the
+canonical `Reviewed-head: @ <sha>` line, which §6.6/ADR 0151 mandates on **all four gates'** advisories
+— **review-code included** (#2329: the earlier "review-code's §CP advisory carries NONE by design →
+accept its absence" carve-out contradicted §6.6's MUST and blinded (2) to a drifted `**Reviewed head:**`
+variant, which ship-it's §6.6 enqueue matcher then rejects; the carve-out is removed, so a missing or
+drifted advisory head-binding fails **loud at emission** rather than surfacing as a ship-it refusal on
+an approved PR). Any `Reviewed-head:` line present but bound to the wrong sha is always fatal. The
+canonical-marker check (1) and the leak check (3) are **unconditional** on every verdict type — the
+#2148/#2264 path-leak protection is never relaxed.
 
 ### Make the read-back UNCONDITIONAL — resolve the landed verdict from PR state, never a carried id (`verdict_post_verify`)
 

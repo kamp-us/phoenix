@@ -1165,9 +1165,11 @@ gets the **canonical advisory line** instead — `review-code: advisory — bloc
 merge)`, no `@ <sha>` — the one advisory shape all three gates converge on (ADR
 [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §5;
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §6.6). It carries the same
-per-criterion evidence table, but it authorizes nothing — it stays *out* of `ship-it`'s PASS
-namespace (there is nothing to bind, so no `@ <sha>`), `ship-it` refuses the blocking-set PR
-regardless (its Step 0), and a human merges it. Skip to **the blocking-set advisory path** below.
+per-criterion evidence table, but it authorizes nothing on its first line — it stays *out* of
+`ship-it`'s auto-merge PASS namespace (no first-line `@ <sha>`), and it binds the reviewed head in
+the body's canonical `Reviewed-head: @ <sha>` line instead (ADR 0151). Under ADR 0135's
+approve-then-enqueue, a human merges the §CP PR by hand, **or** `ship-it` enqueues it once a
+`@kamp-us/control-plane` approval is present at head. Skip to **the blocking-set advisory path** below.
 
 > **Why the advisory line, not "binding PASS + a caveat"?** The old shape — a real
 > `PASS @ <sha> — merge-ready` plus a control-plane warning — put a *binding* marker into
@@ -1314,19 +1316,36 @@ same forbidden forms — differing only in polarity (`FAIL @ <sha> — not merge
 
 Every criterion passed but `CONTROL_PLANE_TOUCHED` (Step 2) is non-empty — the PR touches the
 control plane (§CP). Post the **same evidence**, but the first line is the **canonical advisory
-line** (§6.6), **not** a binding merge-ready marker. It carries **no `@ <sha>`** by design (it
-authorizes nothing, so there is nothing to bind), keeping the verdict out of `ship-it`'s PASS
-namespace; `ship-it` refuses the PR regardless (Step 0) and a human merges it (ADR 0053/0065).
-Upsert it exactly as the PASS path (one `review-code:` marker per PR), and — like the PASS
+line** (§6.6), **not** a binding merge-ready marker. Its **first line** carries **no `@ <sha>`** by
+design (it authorizes nothing on its first line, so it never enters `ship-it`'s auto-merge PASS
+namespace — ADR 0111); under ADR 0135's approve-then-enqueue a human merges it by hand, **or**
+`ship-it` enqueues it once a `@kamp-us/control-plane` approval is present at head (ADR 0135, amending
+0053). Upsert it exactly as the PASS path (one `review-code:` marker per PR), and — like the PASS
 fallback — post it as a **comment**, not a native `APPROVE` (a native APPROVE would re-enter the
-code review namespace via its `commit_id`, defeating the advisory's purpose):
+code review namespace via its `commit_id`, defeating the advisory's purpose).
+
+> **The body's `Reviewed-head:` line is canonical and load-bearing — emit it verbatim (ADR 0151).**
+> The advisory's first line is SHA-less by design (ADR 0111), so the reviewed head is bound **in the
+> body**, on the canonical `Reviewed-head: @ <HEAD_SHA>` line below — the one form all four gates
+> converge on (§6.6). `ship-it`'s ADR-0135 approval-aware §CP enqueue reads the reviewed head from
+> **exactly** that line via the anchored matcher `^\s*Reviewed-head:\s*@?\s*([0-9a-f]{7,40})`, gated
+> on the control-plane approval — that is what makes a §CP code PR's enqueue **deterministic**
+> (#1932/#2022; free-prose "reviewed head" phrasings resolved nondeterministically and are retired).
+> Emit it as its own line with the **exact** `Reviewed-head:` prefix — **hyphen, not a space; no bold
+> `**`; no backticks around the SHA** (the drift on PR #2318 — `**Reviewed head:** \`<sha>\`` — did
+> not match the matcher and blocked a genuinely-approved §CP PASS until it was hand-re-posted; #2329).
+> Do **not** paraphrase it, and do **not** promote it to a first-line `PASS @ <sha>` marker (that
+> would drop the §CP verdict into `ship-it`'s auto-merge namespace, the ADR 0111 hazard).
 
 ```markdown
 review-code: advisory — blocking-set PR (manual merge)
 
 PR #<PR> touches the control plane (`.claude/**`, `.github/**`, or a gate-critical skill — §CP):
 the agent control plane / pipeline gates (ADR 0053/0065). My verdict is **advisory only**: it
-does **not** authorize a merge. A maintainer merges this by hand.
+does **not** authorize a merge. A maintainer merges this by hand, or `ship-it` enqueues it once a
+`@kamp-us/control-plane` approval is present at head (ADR 0135).
+
+Reviewed-head: @ <HEAD_SHA>
 
 Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time — all pass:
 
