@@ -163,11 +163,12 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   flag pins resolution to the workspace root regardless of CWD), which sidesteps both
   footguns at once.
 
-- **`read-guard` is NOT a blocker here** — it already fails OPEN for any target
-  under `.claude/worktrees/` (`packages/pipeline-cli/src/tools/read-guard/read-guard.ts`, #781), because a
-  worktree subagent's own `Read`s live in a separate transcript the hook can't see,
-  so it can't soundly attribute them. The remaining denial is purely the harness
-  self-mod classifier, which `read-guard` does not control.
+- **The blocker here is the harness self-mod classifier, not any pipeline hook** — a
+  worktree edit that gets denied is denied by the harness's own `.claude/`-substring
+  self-mod classifier, which no pipeline lever controls. The pipeline ships no
+  read-before-edit hook of its own; the harness's native read-before-edit check is the
+  only one in play (a former pipeline read-before-edit hook was a strict-subset
+  duplicate of it and was removed, #2307).
 
 ## Hook generation is PRIMARY-CHECKOUT-ONLY — a worktree consumes the hooks, never regenerates them
 
@@ -266,7 +267,6 @@ of `.claude/`, in lockstep with the `WORKTREE_SEGMENT` change scoped above; this
 a control-plane change tracked under #801, to be reviewed deliberately. Until either
 lands, the Bash-write workaround above is the move.
 
-This compounds with [#781](https://github.com/kamp-us/phoenix/issues/781): both the
-self-mod classifier and (before its fail-open fix) `read-guard` independently denied
-worktree-agent `Edit`/`Write`. `read-guard` now fails open; the self-mod classifier
-does not, so it is the one that still bites.
+This compounds with [#781](https://github.com/kamp-us/phoenix/issues/781): the harness
+self-mod classifier denies worktree-agent `Edit`/`Write` on `.claude/` targets and does
+not fail open, so it is the blocker that still bites.

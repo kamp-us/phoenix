@@ -60,7 +60,6 @@ The plugin's `hooks.json` (registered via plugin.json's `"hooks": "./hooks.json"
 | Event | Matcher | Dispatch |
 |---|---|---|
 | SessionStart | `startup\|resume` | `install.sh`, then `guard.sh spawn-guard freshness` |
-| PreToolUse | `Edit\|Write` | `guard.sh read-guard` |
 | PreToolUse | `Read\|Edit\|Write` | `guard.sh worktree-guard pre-file` |
 | PreToolUse | `Bash` | `guard.sh worktree-guard pre-bash` |
 | PreToolUse | `EnterWorktree` | `guard.sh worktree-guard pre-enter` |
