@@ -12,6 +12,11 @@ import {useSession} from "../auth/client";
 import {createClient} from "./client";
 import {createLiveRetryController, type LiveRetryController} from "./liveRetry";
 import {getPublicFateClient} from "./publicClient";
+import {
+	hydrateAuthedClient,
+	installAuthedSnapshotPersistence,
+	teardownAuthedSnapshot,
+} from "./snapshot";
 import {useGlobalLivePin} from "./useGlobalLivePin";
 
 /**
@@ -57,12 +62,42 @@ export function FateProvider({children}: {children: React.ReactNode}) {
 		return () => controller?.cancel();
 	}, [userId]);
 
+	// Identity-change teardown (#2321): when the resolved identity changes — a switch A→B
+	// or a sign-out/account-deletion A→anon (all reduce to the same transition) — drop the
+	// PREVIOUS identity's persisted snapshot, so its private myVote/isSaved overlay never
+	// survives the identity it belonged to. A content-cache eviction, not auth: the session
+	// cookie/validation is untouched.
+	const prevUserIdRef = useRef<string | null>(null);
+	useEffect(() => {
+		const prev = prevUserIdRef.current;
+		if (prev != null && prev !== userId) teardownAuthedSnapshot(prev);
+		prevUserIdRef.current = userId;
+	}, [userId]);
+
 	// Live SSE only opens for an authenticated client — `/fate/live` 401s for an
 	// anonymous viewer, so an anon client gets no-op live methods (no retry loop).
-	const client = useMemo(
-		() => createClient({authenticated: userId != null, onTransientLiveError: scheduleRetry}),
-		[userId, scheduleRetry],
-	);
+	const client = useMemo(() => {
+		const created = createClient({
+			authenticated: userId != null,
+			onTransientLiveError: scheduleRetry,
+		});
+		// Feed snapshot (leg A, #2321): restore this identity's persisted authed cache at
+		// client creation — BEFORE any `useRequest` renders under the FateClient below, fate's
+		// hydrate-before-render contract. The anon (userId null) client is the pending/signed-out
+		// tier and owns no authed snapshot, so it is skipped: the authed snapshot is strictly
+		// identity-scoped. No-op when the flag is off. See `snapshot.ts`.
+		if (userId != null) hydrateAuthedClient(created, userId);
+		return created;
+	}, [userId, scheduleRetry]);
+
+	// Persist this identity's authed cache on tab-hide for the committed client's lifetime
+	// (#2321). Tied to the client instance so a re-key uninstalls the old client's listeners
+	// before the next installs; anon owns no authed snapshot, so it is skipped. No-op when
+	// the flag is off.
+	useEffect(() => {
+		if (userId == null) return;
+		return installAuthedSnapshotPersistence(client, userId);
+	}, [client, userId]);
 
 	// `useSession` resolves async ({data:null, isPending:true} → user) with no
 	// synchronous hydration. Committing the keyed client before it settles mounts

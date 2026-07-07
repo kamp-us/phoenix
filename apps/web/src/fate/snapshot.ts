@@ -39,6 +39,15 @@ export const FEED_SNAPSHOT_SCHEMA = "v1";
  *  per user-id and tears the snapshot down on identity change / sign-out. */
 export const ANON_IDENTITY = "anon";
 
+/** Identity segment for an authed viewer, keyed per user id (#2321). The `user:` prefix
+ *  keeps every authed key disjoint from the anon segment (`anon`) and from every other
+ *  user, so a snapshot written under user A lives at a distinct key from user B's and
+ *  from anon's — the primary guard that A's private `myVote`/`isSaved` overlay can never
+ *  hydrate under another identity (a mismatched key simply finds no snapshot). */
+export function authedIdentity(userId: string): string {
+	return `user:${userId}`;
+}
+
 /** Cap a persisted snapshot's serialized length. An oversized payload is neither
  *  written nor read back (dropped to a clean boot), bounding both `localStorage`
  *  pressure and the synchronous boot-time parse cost. */
@@ -176,6 +185,21 @@ export function saveSnapshot(
 	return writeSnapshot(storage, snapshotKey(schema, identity), state, maxChars);
 }
 
+/** Remove a persisted snapshot, tolerating a throwing `removeItem` (Safari private mode)
+ *  to a clean no-op. The identity teardown primitive: the snapshot is a content cache,
+ *  never an auth artifact, so an identity's persisted feed overlay is dropped the moment
+ *  its session ends (#2321). */
+export function clearSnapshot(
+	storage: KeyValueStorage,
+	{schema = FEED_SNAPSHOT_SCHEMA, identity = ANON_IDENTITY}: SnapshotScope = {},
+): void {
+	try {
+		storage.removeItem(snapshotKey(schema, identity));
+	} catch {
+		// storage unreachable ⇒ nothing to clean up; teardown stays best-effort like every other path
+	}
+}
+
 /** A leading-edge throttle gate: returns `true` at most once per `throttleMs`. Time is
  *  injected so the throttle is deterministically testable. */
 export function createLeadingThrottle(
@@ -272,4 +296,42 @@ export function installAnonSnapshotPersistence(client: SnapshotClient): () => vo
 	return installSnapshotPersistence(client, storage, browserPersistenceBindings(), {
 		identity: ANON_IDENTITY,
 	});
+}
+
+/** Boot-time hydrate for the identity-keyed authed client (#2321) — the authed sibling of
+ *  `hydrateAnonPublicClient`. Runs at client creation in `FateProvider` AFTER the session
+ *  resolves, keyed on the resolved `userId`, so a signed-in reload paints the viewer's own
+ *  last-seen feed (base feed + private `myVote`/`isSaved`) synchronously before the first
+ *  `useRequest`. Keyed per user, so one identity's snapshot never hydrates under another.
+ *  No-op when the flag is off or `localStorage` is unavailable. */
+export function hydrateAuthedClient(client: SnapshotClient, userId: string): void {
+	if (!FEED_SNAPSHOT_ENABLED) return;
+	const storage = browserSnapshotStorage();
+	if (storage == null) return;
+	hydrateFromSnapshot(client, storage, {identity: authedIdentity(userId)});
+}
+
+/** Install authed persistence for the identity-keyed client's lifetime, keyed per user id
+ *  (#2321). Inert uninstaller when the flag is off or `localStorage` is unavailable. */
+export function installAuthedSnapshotPersistence(
+	client: SnapshotClient,
+	userId: string,
+): () => void {
+	if (!FEED_SNAPSHOT_ENABLED) return () => {};
+	const storage = browserSnapshotStorage();
+	if (storage == null) return () => {};
+	return installSnapshotPersistence(client, storage, browserPersistenceBindings(), {
+		identity: authedIdentity(userId),
+	});
+}
+
+/** Tear down one authed identity's persisted snapshot (#2321). Wired at the sign-out path,
+ *  the identity-change seam, and account deletion so a viewer's private feed overlay never
+ *  outlives its session — session validation is untouched, this only drops a content cache.
+ *  No-op when the flag is off or `localStorage` is unavailable. */
+export function teardownAuthedSnapshot(userId: string): void {
+	if (!FEED_SNAPSHOT_ENABLED) return;
+	const storage = browserSnapshotStorage();
+	if (storage == null) return;
+	clearSnapshot(storage, {identity: authedIdentity(userId)});
 }

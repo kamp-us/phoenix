@@ -19,6 +19,8 @@ import {createClient, type FateDehydratedState} from "@nkzw/fate";
 import {describe, expect, it, vi} from "vitest";
 import {
 	ANON_IDENTITY,
+	authedIdentity,
+	clearSnapshot,
 	createLeadingThrottle,
 	hydrateFromSnapshot,
 	installSnapshotPersistence,
@@ -336,5 +338,111 @@ describe("real fate client round-trip", () => {
 		const restored = realClient("scope-B"); // schema rotated
 		expect(() => hydrateFromSnapshot(restored, storage)).not.toThrow();
 		expect(hydrateFromSnapshot(restored, storage)).toBe(false);
+	});
+});
+
+/**
+ * The identity-keyed authed tier (#2321): the authed snapshot embeds the viewer's private
+ * `myVote`/`isSaved` overlay, so its storage key must be scoped per user id — a snapshot
+ * written under user A must NEVER hydrate under user B or under anon (both directions), and
+ * an identity's snapshot must be torn down when its session ends (sign-out / identity switch
+ * / account deletion). These pin the pure key-scoping + teardown contract the browser-bound
+ * `hydrateAuthedClient` / `installAuthedSnapshotPersistence` / `teardownAuthedSnapshot`
+ * wrappers (flag-gated, `window`-bound — untested here, as the anon siblings are) delegate to.
+ */
+describe("authedIdentity — per-user key scoping, disjoint from anon", () => {
+	it("namespaces the identity under `user:` so it cannot collide with anon or another id", () => {
+		expect(authedIdentity("42")).toBe("user:42");
+		expect(authedIdentity("42")).not.toBe(ANON_IDENTITY);
+		expect(authedIdentity("A")).not.toBe(authedIdentity("B"));
+		// Even a user whose id were literally "anon" keys to a distinct segment.
+		expect(authedIdentity(ANON_IDENTITY)).not.toBe(ANON_IDENTITY);
+	});
+});
+
+describe("authed snapshot — cross-identity hydration is rejected (both directions, #2321 AC2)", () => {
+	it("a snapshot written under user A does NOT hydrate under user B", () => {
+		const storage = memoryStorage();
+		// A's snapshot carries A's private overlay.
+		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
+
+		const asB = fakeClient(sampleState);
+		expect(hydrateFromSnapshot(asB, storage, {identity: authedIdentity("B")})).toBe(false);
+		expect(asB.hydrated).toEqual([]); // B's client never saw A's overlay
+	});
+
+	it("a snapshot written under user A does NOT hydrate under anon", () => {
+		const storage = memoryStorage();
+		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
+
+		const asAnon = fakeClient(sampleState);
+		expect(hydrateFromSnapshot(asAnon, storage, {identity: ANON_IDENTITY})).toBe(false);
+		expect(asAnon.hydrated).toEqual([]);
+	});
+
+	it("the inverse: an anon snapshot does NOT hydrate under an authed identity", () => {
+		const storage = memoryStorage();
+		saveSnapshot(fakeClient(sampleState), storage, {identity: ANON_IDENTITY});
+
+		const asA = fakeClient(sampleState);
+		expect(hydrateFromSnapshot(asA, storage, {identity: authedIdentity("A")})).toBe(false);
+		expect(asA.hydrated).toEqual([]);
+	});
+
+	it("the same identity DOES hydrate its own snapshot (positive control)", () => {
+		const storage = memoryStorage();
+		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
+
+		const asA = fakeClient(sampleState);
+		expect(hydrateFromSnapshot(asA, storage, {identity: authedIdentity("A")})).toBe(true);
+		expect(asA.hydrated).toEqual([sampleState]);
+	});
+
+	it("restores the deep-linked subfeed (?sort/host connection state) for the authed tier (AC5)", () => {
+		// `sampleState.data` carries the `posts(sort:hot,host:example.com)` list identity — the
+		// `?sort=…` / `/pano/site/:host` subfeed. Through the authed key it round-trips intact,
+		// so a deep-linked subfeed restores instantly for a signed-in viewer too.
+		const storage = memoryStorage();
+		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
+		const restored = readSnapshot(storage, snapshotKey("v1", authedIdentity("A")));
+		expect(restored?.data).toEqual(sampleState.data);
+	});
+});
+
+describe("authed snapshot teardown — the sign-out / identity-change / deletion seam (#2321 AC3)", () => {
+	it("clearSnapshot removes exactly the target identity's snapshot, leaving siblings intact", () => {
+		const storage = memoryStorage();
+		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
+		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("B")});
+		saveSnapshot(fakeClient(sampleState), storage, {identity: ANON_IDENTITY});
+
+		// Tear down A (sign-out / switch away from A / A's account deletion).
+		clearSnapshot(storage, {identity: authedIdentity("A")});
+
+		// A is gone; B and anon survive — teardown is strictly identity-scoped.
+		expect(readSnapshot(storage, snapshotKey("v1", authedIdentity("A")))).toBeNull();
+		expect(readSnapshot(storage, snapshotKey("v1", authedIdentity("B")))).not.toBeNull();
+		expect(readSnapshot(storage, snapshotKey("v1", ANON_IDENTITY))).not.toBeNull();
+	});
+
+	it("after teardown, A's own re-hydration finds nothing (the overlay does not survive its session)", () => {
+		const storage = memoryStorage();
+		saveSnapshot(fakeClient(sampleState), storage, {identity: authedIdentity("A")});
+		clearSnapshot(storage, {identity: authedIdentity("A")});
+
+		const asA = fakeClient(sampleState);
+		expect(hydrateFromSnapshot(asA, storage, {identity: authedIdentity("A")})).toBe(false);
+		expect(asA.hydrated).toEqual([]);
+	});
+
+	it("tolerates a throwing removeItem (Safari private mode) → clean no-op", () => {
+		const storage: KeyValueStorage = {
+			getItem: () => null,
+			setItem: () => undefined,
+			removeItem: () => {
+				throw new Error("access denied");
+			},
+		};
+		expect(() => clearSnapshot(storage, {identity: authedIdentity("A")})).not.toThrow();
 	});
 });
