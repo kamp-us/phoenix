@@ -18,6 +18,7 @@ import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {actorLabel} from "./components/moderation/actor-identity";
+import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
@@ -99,6 +100,13 @@ function Layout() {
 	const eagerPanoHost = panoSiteMatch?.params.host;
 	const showEagerPanoFeed = session.isPending && (panoMatch != null || panoSiteMatch != null);
 
+	// The same two-tier decoupling (ADR 0167) extended to `/profile` (#2188): paint the
+	// Katkıların skeleton above the gate while `get-session` resolves. Why it is a
+	// skeleton (not anon data) and how it stays #438-safe with no fate client lives on
+	// `EagerProfileContributionSkeleton`.
+	const profileMatch = useMatch("/profile");
+	const showEagerProfileSkeleton = session.isPending && profileMatch != null;
+
 	// Echo the active query in the header input, but only on the results page — off
 	// `/search` the box keeps its empty `ara…` placeholder (#2199).
 	const searchQuery =
@@ -157,6 +165,7 @@ function Layout() {
 								<PanoFeed {...(eagerPanoHost ? {host: eagerPanoHost} : {})} />
 							</PublicFateProvider>
 						) : null}
+						{showEagerProfileSkeleton ? <EagerProfileContributionSkeleton /> : null}
 						{/* The routed content + fate-dependent chips live below the session
 						    gate — FateProvider keeps its #438 remount guard (first & only key
 						    is the resolved identity), while the shell frame above already

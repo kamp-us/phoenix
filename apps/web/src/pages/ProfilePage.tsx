@@ -39,7 +39,16 @@ export function ProfilePage() {
 	const session = useSession();
 	const {me, status: meStatus, refetch: refetchMe} = useMe();
 	const fate = useFateClient();
-	const statsState = useProfileStats(me?.username);
+	const u = session.data?.user;
+	// The username the profile READS (counts + Katkıların contributions) key on. Prefer
+	// the settled session identity — available the instant `FateProvider` commits — so
+	// the read fires WITHOUT the extra canonical-`me` round-trip that used to gate it,
+	// the third serial hop that made Katkıların land ~1.8s late (#2188). `username` is
+	// server-managed + immutable once set (`better-auth-live.ts`), so the session value
+	// equals `me.username`; fall back to `me` only for the brief post-`setUsername`
+	// window where the session row still lags the just-written username (see `useMe`).
+	const readUsername = u?.username ?? me?.username ?? null;
+	const statsState = useProfileStats(readUsername);
 	// Reinforce the owner's own karma on their identity mirror, dark behind the
 	// authorship-loop flag (#1208). Flag off → no karma stat, profile as today.
 	const {value: authorshipLoop} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
@@ -53,12 +62,11 @@ export function ProfilePage() {
 	const [revokeAllError, setRevokeAllError] = useState<string | null>(null);
 	const [deleteOpen, setDeleteOpen] = useState(false);
 
-	const u = session.data?.user;
 	// Route the identity mirror through the shared actor-label rule (#2126): the
 	// display name, falling back to the chosen @username, never the email-derived
 	// local-part the old code leaked. `me` (the canonical row) is the source for the
-	// username — the session user's `username` doesn't round-trip cleanly right after
-	// a setUsername write (see useMe); `me.name` is the display name.
+	// display username — the session user's `username` can briefly lag right after a
+	// setUsername write (see useMe); `me.name` is the display name.
 	const username = me?.username ?? null;
 	const name = actorLabel(me?.name ?? u?.name ?? null, username, "kullanıcı");
 	// The handle line is the chosen username; on the settings page the account is
@@ -177,8 +185,8 @@ export function ProfilePage() {
 				    dark behind the authorship-loop flag (#1204). Flag off → exactly
 				    today's profile. The owner sees their OWN sandboxed content here
 				    (the feed keys on authorId with no sandbox filter). */}
-				{authorshipLoop && me?.username ? (
-					<ProfileContributionSignal username={me.username} />
+				{authorshipLoop && readUsername ? (
+					<ProfileContributionSignal username={readUsername} />
 				) : null}
 
 				<section className="kp-profile__section">
