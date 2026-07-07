@@ -852,6 +852,13 @@ verdict_readback_guard() {
   local got; got="$(gh api "repos/$REPO/issues/comments/$cid" --jq .body)" || {
     echo "verdict_readback_guard FAILED: cannot re-read comment $cid — treat the verdict as UNLANDED." >&2; return 1; }
 
+  # (0) the body is non-empty. An empty/whitespace-only body carries no marker at all — the degenerate
+  #     case of a garbled post (#2268); reject it up front so the failure names the real cause rather
+  #     than falling through to (1)'s "no marker".
+  if [ -z "$(printf '%s' "$got" | tr -d '[:space:]')" ]; then
+    echo "verdict_readback_guard FAILED: comment $cid is empty/whitespace — no verdict landed; the PR is UNGATED." >&2; return 1
+  fi
+
   # (1) the canonical gate marker token is present: either the bindable first-line
   #     `<gate>: PASS|FAIL @ <sha>` (SHA prefix-matched, ADR 0058), OR the SHA-less `<gate>: advisory`
   #     first line (blocking-set path — authorizes nothing but IS a posted verdict).
@@ -875,11 +882,13 @@ verdict_readback_guard() {
       || { echo "verdict_readback_guard FAILED: 'Reviewed-head:' line in comment $cid is bound to the wrong head (not @ ${sha:0:7}) — a stale/mis-bound §CP head binding." >&2; return 1; }
   fi
 
-  # (3) NO local filesystem path leaked into the public body (the #2148 leak). Reject a machine-local
-  #     scratch/home path or a leading `@<path>` marker-as-path. Patterns are placeholders, not real
-  #     paths — this doc stays leak-clean.
-  if printf '%s' "$got" | grep -Eq '(/var/folders/|/Users/|/tmp[/.]|/private/tmp/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
-    echo "verdict_readback_guard FAILED: comment $cid leaks a local filesystem path in its body — a #2148 marker-as-path leak; refuse and re-post the real verdict." >&2; return 1
+  # (3) NO local filesystem path leaked into the public body (the #2148/#2268 leak). Reject a
+  #     machine-local scratch/home path or a leading `@<path>` marker-as-path. Match by absolute ROOT
+  #     (`/Users`, `/var`, `/tmp`, `/private`) — the roots a `mktemp`/scratchpad path lands under —
+  #     not just `/var/folders/`, so a leaked path under any of them cannot read green (#2268). Patterns
+  #     are placeholders, not real paths — this doc stays leak-clean.
+  if printf '%s' "$got" | grep -Eq '(/var/|/Users/|/tmp[/.]|/private/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
+    echo "verdict_readback_guard FAILED: comment $cid leaks a local filesystem path in its body — a #2148/#2268 marker-as-path leak; refuse and re-post the real verdict." >&2; return 1
   fi
 
   echo "verdict_readback_guard OK: ${gate} verdict @ ${sha:0:7} landed on comment $cid — marker + head binding valid, no local-path leak."
@@ -892,7 +901,9 @@ real verdict and re-assert** — if it still cannot land clean, surface it as a 
 the run ledger (the PR is genuinely ungated; a consumer must not read it as verified), never swallow
 it as a silent success. A moved `HEAD_SHA` between the post and the read-back means the head advanced
 *during* the review — re-resolve the head, re-verify against it (the gate is stateless), and re-post;
-never loosen the match to paper over a moved head.
+never loosen the match to paper over a moved head. (In practice a gate never calls this primitive with
+a hand-carried id — it calls the unconditional `verdict_post_verify` wrapper below, which resolves the
+landed comment id by re-scanning PR state and passes it here.)
 
 Check (2) is **SHA-source-aware** (#2272), which is why the read-back is unconditional without
 false-failing a legitimate non-blocking PASS or the review-code §CP advisory. The bindable PASS/FAIL
@@ -970,7 +981,7 @@ verdict_post_verify() {
   #     (literal alternation + anchored `(^|[[:space:]])` — no nested quantifier, no ReDoS), the same
   #     pattern verdict_readback_guard uses; paths are placeholders, keeping this doc leak-clean.
   if [ "${approved:-0}" -gt 0 ] && [ -n "$rbody" ]; then
-    if printf '%s' "$rbody" | grep -Eq '(/var/folders/|/Users/|/tmp[/.]|/private/tmp/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
+    if printf '%s' "$rbody" | grep -Eq '(/var/|/Users/|/tmp[/.]|/private/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
       echo "verdict_post_verify FAILED (fatal): native APPROVE review body on PR #$PR leaks a local filesystem path — dismiss/re-post a clean by-value verdict." >&2
       return 1
     fi
