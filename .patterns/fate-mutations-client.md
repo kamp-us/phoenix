@@ -1,5 +1,7 @@
 # Mutations (client)
 
+> Derived from `@nkzw/fate@1.3.1` — re-verify on pin bump.
+
 How the SPA writes data. The short answer: call `fate.mutations.<entity.verb>({input, view, optimistic, insert})`. The response is written back into the normalized cache by its `view`, optimistic updates apply instantly and roll back on error, and connection membership is declarative (`insert`/`delete`) — there are no imperative cache updaters.
 
 ## Calling a mutation

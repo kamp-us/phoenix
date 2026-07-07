@@ -1,5 +1,7 @@
 # Connections & pagination
 
+> Derived from `@nkzw/fate@1.3.1` — re-verify on pin bump.
+
 How lists paginate. The short answer: a list is `list(view, {orderBy})` in the data view, and at runtime resolves to a `ConnectionResult<Node>` — `{items: [{cursor, node}], pagination: {hasNext, hasPrevious, nextCursor?, previousCursor?}}`. There are no `Connection`/`Edge`/`PageInfo` types. Keyset pagination lives in the services; this doc covers the two ways a service page reaches the client.
 
 ## Two delivery paths

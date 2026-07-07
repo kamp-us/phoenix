@@ -1,5 +1,7 @@
 # Async React with fate
 
+> Derived from `@nkzw/fate@1.3.1` — re-verify on pin bump.
+
 How phoenix makes navigation and in-screen data swaps **feel instant** with React 19's
 concurrent primitives on top of fate's Suspense-based data model. The short answer: reads
 suspend, so a screen never hand-rolls a loading flag — instead it (1) sits under a **stable**
@@ -102,10 +104,12 @@ fate's client source, not intuition (the regression was caught by the deployed e
 jsdom unit tests — #2161, PR #2181):
 
 - **How fate resolves a deferred handle.** `FateClient.readDeferred` (in `@nkzw/fate`'s
-  `lib/index.mjs`) resolves a `Deferred` by calling `fetchByIdAndNormalize(ownerType, [ownerId],
-  deferredPaths)`, which issues **`transport.fetchById(type, ids, select)`** — a **byId (`node`)
-  fetch of the owner entity** requesting the deferred field. So `defer(Profile.contributions)`
-  resolves by fetching `Profile` **by id** selecting `contributions`.
+  `lib/index.mjs`) resolves a `Deferred` by calling `fetchByIdAndNormalize(ownerType,
+  [rawOwnerId], fetchPaths, plan)`, which issues **`transport.fetchById(type, ids, select)`** —
+  a **byId (`node`) fetch of the owner entity** requesting the deferred field. So
+  `defer(Profile.contributions)` resolves by fetching `Profile` **by id** selecting
+  `contributions`. (Incident archaeology: #2188 — the deployed hang that surfaced these
+  semantics; caught by the blocking e2e, invisible to jsdom.)
 - **Why phoenix can't satisfy that fetch.** In phoenix every nested connection
   (`Profile.contributions`, `Post.comments`, `Term.definitions`) is **delivered inline by a custom
   root query resolver**, gated on `hasNestedSelection(select, "<field>")`

@@ -1,5 +1,7 @@
 # fate-effect compiler — `FateExecutor`: config → pure `createFateServer` (oracle baseline + codegen)
 
+> Derived from the in-repo source (`packages/fate-effect`, `apps/web`) + `@nkzw/fate@1.3.1` where the lib is implicated — re-verify on pin bump.
+
 How `@kampus/fate-effect` turns a composed `FateServer` into fate's own server value (the v1 backend). **Since the v2 cutover (ADR 0043) this path serves nothing**: the `/fate` route runs the native interpreter ([fate-effect-interpreter.md](./fate-effect-interpreter.md)). The compile step survives with exactly two roles:
 
 - **The differential oracle's baseline** — the oracle suites (`Interpreter*.test.ts`, harness + shared sozluk world in `Oracle.fixture.ts`) byte-compare the interpreter against fate's real `createFateServer` over these compiled executors (including the walk-baseline rigs over `compileFateSources`). The oracle is the regression net, so the v1 side stays exactly as it served.

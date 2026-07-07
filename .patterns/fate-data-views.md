@@ -1,5 +1,7 @@
 # Data views
 
+> Derived from the in-repo source (`packages/fate-effect`, `apps/web`) + `@nkzw/fate@1.3.1` where the lib is implicated — re-verify on pin bump.
+
 How entity types are modeled. The short answer: a **data view** per entity — in phoenix, a
 `FateDataView<Row>()("Name")({fields})` class whose static `view` IS the kernel `dataView()`
 value ([fate-effect-data-views.md](./fate-effect-data-views.md) owns the authoring mechanics

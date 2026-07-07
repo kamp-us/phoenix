@@ -1,5 +1,7 @@
 # fate-effect data views — the `FateDataView` class factory
 
+> Derived from the in-repo source (`packages/fate-effect`, `apps/web`) + `@nkzw/fate@1.3.1` where the lib is implicated — re-verify on pin bump.
+
 How `@kampus/fate-effect` (the workspace package at `packages/fate-effect`) declares fate data views. The short answer: **a view is an exported class whose static `view` IS the kernel `dataView()` output, unchanged** — the class exists to give the view a nameable exported type, which is what makes fate's own `Entity<>` derivation usable across module boundaries. This replaced the worker's `DataViewOf`/`EntityOf` helpers (deleted in the v1 cutover, ADR 0042); `ViewRow` survives in `worker/features/fate/view-types.ts` as the shared row restatement every view uses.
 
 ## Declaring a view
