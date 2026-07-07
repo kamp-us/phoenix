@@ -37,6 +37,7 @@
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
 		"effect": "catalog:",
+		"fast-xml-parser": "catalog:",
 		"yaml": "catalog:"
 	},
 	"devDependencies": {

@@ -46,6 +46,9 @@ catalog:
   drizzle-orm: 1.0.0-rc.4
   effect: 4.0.0-beta.92
   fast-check: ^3.23.2
+  # Pinned to the exact 5.8.0 an existing lockfile parent already links (@distilled.cloud/aws +
+  # alchemy) so no third version enters the tree — the PR #535 frozen-lockfile rule.
+  fast-xml-parser: 5.8.0
   jsdom: ^26.1.0
   lefthook: ^2.1.9
   react: 19.2.6
