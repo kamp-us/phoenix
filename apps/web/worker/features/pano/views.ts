@@ -17,6 +17,20 @@ export type TagViewRow = ViewRow<PostTagRow>;
 export type CommentViewRow = ViewRow<CommentRow>;
 export type PostViewRow = ViewRow<PostSummaryRow>;
 
+/**
+ * `PostOverlay` — the per-viewer scalar slice (#2322, epic #2316 leg B), keyed by the
+ * post id. The GET-able base feed (`PostView` served without the viewer stamp) is
+ * viewer-invariant; the client fetches this overlay by the base feed's ids and composes
+ * `myVote`/`isSaved` on top (#2323). A distinct entity — not a `PostView` field set —
+ * so the base projection and the per-viewer read are separately cacheable/session-gated.
+ */
+export interface PostOverlayRow {
+	id: string;
+	myVote: boolean | null;
+	isSaved: boolean | null;
+}
+export type PostOverlayViewRow = ViewRow<PostOverlayRow>;
+
 // `Tag` is an embedded scalar on the post row (parsed from `post_record.tags`
 // CSV), not a standalone table; `kind` is the natural key.
 export class TagView extends FateDataView<TagViewRow>()("Tag")({
@@ -49,13 +63,23 @@ export class PostView extends FateDataView<PostViewRow>()("Post")({
 	comments: FateDataView.list(CommentView, {orderBy: viewOrderBy(COMMENT_ORDERING)}),
 }) {}
 
+// The per-viewer overlay view (#2322): three scalars, no relation. `myVote`/`isSaved`
+// are stamped by `Pano.readViewerOverlay` off the batched presence readers.
+export class PostOverlayView extends FateDataView<PostOverlayViewRow>()("PostOverlay")({
+	id: true,
+	myVote: true,
+	isSaved: true,
+}) {}
+
 // Kernel views for cross-feature surfaces that want fate's plain `dataView()`
 // value (the `fate/views.ts` `Root` map + barrel re-exports).
 export const tagDataView = TagView.view;
 export const commentDataView = CommentView.view;
 export const postDataView = PostView.view;
+export const postOverlayDataView = PostOverlayView.view;
 
 export type Tag = WorkerEntity<typeof TagView>;
+export type PostOverlay = WorkerEntity<typeof PostOverlayView>;
 // `deletedAt` is `Date | null` (the source row types it `deletedAt?: Date | null`, but
 // the corrected worker type drops the unset `undefined`) — an `Override`, not a `DateKeys`
 // member, which would preserve the optional and widen to `Date | null | undefined`.

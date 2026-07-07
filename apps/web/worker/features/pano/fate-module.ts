@@ -4,7 +4,7 @@ import type {FateModule, FateRootsRecord} from "../fate/module.ts";
 import {lists} from "./lists.ts";
 import {mutations} from "./mutations.ts";
 import {queries} from "./queries.ts";
-import {commentSource, postSource, tagSource} from "./sources.ts";
+import {commentSource, postOverlaySource, postSource, tagSource} from "./sources.ts";
 import {postDataView} from "./views.ts";
 
 const roots: FateRootsRecord = {
@@ -27,6 +27,6 @@ export const fateModule = {
 	queries,
 	lists,
 	mutations,
-	sources: [postSource, commentSource, tagSource],
+	sources: [postSource, postOverlaySource, commentSource, tagSource],
 	roots,
 } satisfies FateModule;

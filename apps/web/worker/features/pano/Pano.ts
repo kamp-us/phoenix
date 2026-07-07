@@ -169,6 +169,19 @@ export class Pano extends Context.Service<
 			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
 		) => Effect.Effect<ReadonlyArray<PostSummaryRow>>;
 
+		/**
+		 * The viewer overlay (#2322, epic #2316 leg B): the per-viewer `myVote`/`isSaved`
+		 * slice the GET-able base feed omits, keyed by the base feed's post ids. Reuses
+		 * the same batched `user_vote` / `post_bookmark` presence readers `getPostsByIds`
+		 * uses (one `IN (...)` per scalar, never per-row), reading no `post_record`.
+		 */
+		readonly readViewerOverlay: (
+			ids: ReadonlyArray<string>,
+			opts?: {viewerId?: string | null | undefined},
+		) => Effect.Effect<
+			ReadonlyArray<{id: string; myVote: boolean | null; isSaved: boolean | null}>
+		>;
+
 		/** Comment source `byIds` — batched read avoiding the relation N+1. */
 		readonly getCommentsByIds: (
 			ids: ReadonlyArray<string>,

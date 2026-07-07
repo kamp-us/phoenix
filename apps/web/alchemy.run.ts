@@ -50,6 +50,7 @@ import {
 	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
 	optimisticEditsFlag,
+	panoBaseFeedFlag,
 	panoDraftSaveFlag,
 	panoOptimisticCommentAddFlag,
 	panoOptimisticCommentDeleteFlag,
@@ -76,6 +77,10 @@ export default Alchemy.Stack(
 		yield* demoTargetingFlag(flagship.appId);
 		// The pano taslak (draft-save) dark-ship flag, default-off (#746).
 		yield* panoDraftSaveFlag(flagship.appId);
+		// The base-feed / viewer-overlay split dark-ship flag, default-off (#2322,
+		// epic #2316 leg B) — the single seam the GET-able base feed + PostOverlay read
+		// gate behind until a human release.
+		yield* panoBaseFeedFlag(flagship.appId);
 		// The optimistic post.submit (feed root-list insert) containment flag,
 		// default-off (#1676, epic #1637).
 		yield* panoOptimisticSubmitFlag(flagship.appId);

@@ -52,6 +52,18 @@ export const PANO_OPTIMISTIC_COMMENT_DELETE = "pano-optimistic-comment-delete";
 export const PANO_OPTIMISTIC_POST_DELETE = "pano-optimistic-post-delete";
 
 /**
+ * Base-feed / viewer-overlay split dark-ship flag (#2322, epic #2316 leg B). The
+ * SINGLE seam every leg-B surface gates behind — the server split (the GET-able
+ * viewer-invariant base feed + the authed `PostOverlay` read), the client
+ * composition (#2323), and the edge cache (#2324) reuse this one key. Default-off
+ * so the whole base/overlay path ships dark until a human flips it at release (ADR
+ * 0083): with it off the `GET /fate/pano/feed` route 404s, the `PostOverlay` source
+ * resolves inert (null scalars), and the existing per-viewer `posts` feed is the
+ * unchanged source of truth. Its own `pano-` key (the surface is pano-only).
+ */
+export const PANO_BASE_FEED = "pano-base-feed";
+
+/**
  * Earned-authorship loop (çaylak→yazar) dark-ship flag (#1204, epic #1202). The
  * single seam every authorship-loop surface gates behind: cross-cutting
  * (`phoenix`) because the loop touches sözlük/pano/pasaport, default-off so the

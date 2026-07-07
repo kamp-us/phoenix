@@ -6,10 +6,13 @@
  * `E = never` — infra failures die inside the domain service (the boundary rule
  * in `.patterns/feature-services.md`). See `.patterns/fate-effect-sources.md`.
  */
-import {Fate} from "@kampus/fate-effect";
+import {CurrentUser, Fate} from "@kampus/fate-effect";
+import {PANO_BASE_FEED} from "../../../src/flags/keys.ts";
+import {Flags} from "../flagship/Flags.ts";
+import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Pano, tagLabel} from "./Pano.ts";
-import {CommentView, PostView, TagView} from "./views.ts";
+import {CommentView, PostOverlayView, PostView, TagView} from "./views.ts";
 
 export const postSource = Fate.source(
 	PostView,
@@ -19,6 +22,33 @@ export const postSource = Fate.source(
 			const pano = yield* Pano;
 			const sandboxViewer = yield* currentSandboxViewer;
 			return yield* pano.getPostsByIds(ids, {viewerId: sandboxViewer.viewerId, sandboxViewer});
+		},
+	},
+);
+
+/**
+ * The per-viewer overlay source (#2322, epic #2316 leg B): given the base feed's post
+ * ids, return each viewer's own `myVote`/`isSaved`. Session-gated by construction — it
+ * reads `CurrentUser` off the authed `POST /fate` edge (ADR 0169 untouched: nothing
+ * session-derived rides the cacheable base). Dark behind the leg-B flag: with it OFF
+ * (the default / a Flagship outage) it resolves INERT (`null` scalars for every id) so
+ * the new capability ships dark; flipping the flag on is the human release act (ADR
+ * 0083). An anonymous viewer likewise gets `null` scalars (the read-path convention).
+ */
+export const postOverlaySource = Fate.source(
+	PostOverlayView,
+	{id: "id"},
+	{
+		byIds: function* (ids) {
+			const {user} = yield* CurrentUser;
+			const viewerId = user?.id ?? null;
+			const flags = yield* Flags;
+			const on = yield* flags.getBoolean(PANO_BASE_FEED, false).pipe(provideRequestFlags);
+			if (!on || !viewerId) {
+				return ids.map((id) => ({id, myVote: null, isSaved: null}));
+			}
+			const pano = yield* Pano;
+			return yield* pano.readViewerOverlay(ids, {viewerId});
 		},
 	},
 );
