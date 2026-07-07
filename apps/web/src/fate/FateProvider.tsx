@@ -11,7 +11,19 @@ import {FateClient} from "react-fate";
 import {useSession} from "../auth/client";
 import {createClient} from "./client";
 import {createLiveRetryController, type LiveRetryController} from "./liveRetry";
+import {getPublicFateClient} from "./publicClient";
 import {useGlobalLivePin} from "./useGlobalLivePin";
+
+/**
+ * The PUBLIC tier of the two-tier fate provider (ADR 0167): mounts the eager,
+ * always-anonymous public client ABOVE the session gate. Its subtree reads public
+ * views (the /pano feed list) that need no settled session, so they paint in parallel
+ * with `get-session`. The client never re-keys (always anon), so this commit never
+ * triggers the #438 re-key remount the authed `FateProvider` below defers to avoid.
+ */
+export function PublicFateProvider({children}: {children: React.ReactNode}) {
+	return <FateClient client={getPublicFateClient()}>{children}</FateClient>;
+}
 
 // Holds the app-lifetime live pin (#711) from inside the FateClient context,
 // where `useFateClient` resolves. Renders nothing.

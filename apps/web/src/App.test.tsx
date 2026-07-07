@@ -20,6 +20,12 @@
  * through a mount-recording `FateClient` spy. A regression that reaches a fate/session
  * read back into the shell (invariant 1) or re-keys `FateClient` anon→id (invariant 2)
  * fails these — see the two `// REGRESSION:` notes on the assertions.
+ *
+ * The third block pins the two-tier fate provider (ADR 0167 / #2285): the /pano feed
+ * paints over the PUBLIC client above the gate while `get-session` is pending, then hands
+ * off to the authed tier once it commits — WITHOUT dragging the authed router subtree
+ * through the anon→id re-key remount invariant 2 forbids. The spy tags each mount
+ * public/authed so the two tiers are told apart.
  */
 import {act, render, screen} from "@testing-library/react";
 import type {ReactNode} from "react";
@@ -27,11 +33,16 @@ import {MemoryRouter} from "react-router";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {App} from "./App";
 
-// The mounts the FateProvider gate commits, in order. Each entry is one `FateClient`
-// mount, recording the `key` it committed under. Invariant 2 reads this back: one entry
-// keyed on the resolved identity is correct; a second entry (or a leading "anon" entry)
-// is the #438 anon→id remount.
-type FateMount = {key: string};
+// The two-tier public client (ADR 0167 / #2285): the eager public tier passes this
+// sentinel as its `FateClient` `client`, so the spy can tag a mount as `public` (the
+// always-anonymous tier above the gate) vs `authed` (the identity-keyed tier below it).
+const {PUBLIC_CLIENT} = vi.hoisted(() => ({PUBLIC_CLIENT: {__tier: "public"} as never}));
+
+// The mounts the two-tier fate provider commits, in order. Each entry is one `FateClient`
+// mount: its `key` (the identity it committed under) and its `tier` (public/authed).
+// Invariant 2 / #438 reads the AUTHED tier back: one entry keyed on the resolved identity
+// is correct; a second entry (or a leading "anon" entry) is the anon→id remount.
+type FateMount = {key: string; tier: "public" | "authed"};
 const fateMounts: FateMount[] = [];
 
 // Spy `FateClient` in place of react-fate's real one, driving the REAL `FateProvider`
@@ -41,23 +52,36 @@ const fateMounts: FateMount[] = [];
 // source the real FateProvider keys on — the mocked `useSession`. React remounts the spy
 // exactly when the committed `key` changes, so one recorded mount == one real key, and a
 // second recorded mount is exactly the anon→id remount invariant 2 forbids. Recording on
-// MOUNT (an empty-dep effect), not per render, is what makes a remount observable.
+// MOUNT (an empty-dep effect), not per render, is what makes a remount observable. The
+// `tier` is read off the `client` instance — the public tier passes `PUBLIC_CLIENT`.
 vi.mock("react-fate", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("react-fate")>();
 	const {useEffect} = await import("react");
 	const {useSession} = await import("./auth/client");
-	function FateClientSpy({children}: {children: ReactNode}) {
+	function FateClientSpy({children, client}: {children: ReactNode; client: unknown}) {
 		const session = useSession();
 		const key = session.data?.user.id ?? "anon";
+		const tier = client === PUBLIC_CLIENT ? "public" : "authed";
 		useEffect(() => {
 			// Empty deps: fires once per real mount. A re-key (anon→id) tears this instance
 			// down and mounts a fresh one, firing this again — the double-mount we're pinning.
-			fateMounts.push({key});
+			fateMounts.push({key, tier});
 		}, []);
 		return <>{children}</>;
 	}
 	return {...actual, FateClient: FateClientSpy};
 });
+
+// The eager public pano feed (ADR 0167) renders the REAL `PanoFeed` over the public
+// client; stub it inert here so the tree renders offline without a real fate context —
+// its PRESENCE above the gate (the `eager-pano-feed` marker) is what the two-tier tests
+// assert, not its internal fate reads.
+vi.mock("./pages/PanoFeed", () => ({
+	PanoFeed: ({host}: {host?: string}) => <div data-testid="eager-pano-feed">{host ?? "all"}</div>,
+}));
+
+// The public tier's client factory — return the sentinel the spy tags as `public`.
+vi.mock("./fate/publicClient", () => ({getPublicFateClient: () => PUBLIC_CLIENT}));
 
 // Controllable, REACTIVE session store. The whole first-paint story is "shell paints
 // while pending, FateProvider commits once settled", so the mock must actually trigger a
@@ -205,6 +229,63 @@ describe("App first-paint invariants (#2177 — pins #2160 flash + #438 remount)
 
 		expect(fateMounts).toHaveLength(1);
 		expect(fateMounts[0]?.key).toBe("anon");
+	});
+});
+
+// The two-tier fate provider's public first paint (ADR 0167 / #2285): the anon-capable
+// /pano feed paints over the PUBLIC (always-anonymous) client ABOVE the session gate,
+// in parallel with `get-session`, then hands off to the authed feed once the gate
+// commits — WITHOUT an anon→id re-key remount of the authed router subtree (#438).
+describe("Two-tier fate provider — /pano public first paint (#2285)", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+	});
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("AC2/AC5: the /pano feed paints over the public client while the session is isPending — before the authed gate commits", () => {
+		// First frame on /pano: session still resolving. The authed FateProvider gate is
+		// null, yet the public feed paints — proof the first paint does NOT wait on
+		// get-session.
+		renderApp("/pano");
+
+		expect(screen.getByTestId("eager-pano-feed")).toBeTruthy();
+		// It painted over the PUBLIC tier (above the gate)…
+		expect(fateMounts.some((m) => m.tier === "public")).toBe(true);
+		// …while the AUTHED tier has NOT committed (still isPending → null below).
+		expect(fateMounts.some((m) => m.tier === "authed")).toBe(false);
+	});
+
+	it("scoped: a non-pano route paints NO public feed (the eager tier is /pano-only)", () => {
+		renderApp("/sozluk");
+		expect(screen.queryByTestId("eager-pano-feed")).toBeNull();
+		// No public client mounts off the pano routes — the shell stays fate-free there.
+		expect(fateMounts).toHaveLength(0);
+	});
+
+	it("AC4 (#438): after the public first paint, the authed subtree mounts ONCE on the resolved id — no anon→id remount", () => {
+		renderApp("/pano");
+		// Pending: only the public tier has painted; the authed gate is still deferred.
+		expect(fateMounts.filter((m) => m.tier === "authed")).toHaveLength(0);
+
+		// The session settles authenticated → the authed FateProvider commits for the
+		// FIRST time now, under the resolved id — the eager public tier unmounts.
+		act(() => {
+			setSession({
+				data: {user: {id: "user-7", name: "Deniz", email: "deniz@kamp.us"}},
+				isPending: false,
+			});
+		});
+
+		const authed = fateMounts.filter((m) => m.tier === "authed");
+		// Exactly ONE authed mount, keyed on the resolved id — never "anon" first. Had the
+		// public first paint dragged the authed tree through an anon→id re-key, we'd see a
+		// leading {key:"anon"} authed mount (the #438 form-wiping remount).
+		expect(authed).toHaveLength(1);
+		expect(authed[0]?.key).toBe("user-7");
+		expect(authed.map((m) => m.key)).not.toContain("anon");
 	});
 });
 
