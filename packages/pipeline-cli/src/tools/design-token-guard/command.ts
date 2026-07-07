@@ -29,7 +29,7 @@ import {existsSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../doc-links/doc-links.ts";
+import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, checkDesignTokens, writeBaseline} from "./gate.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;

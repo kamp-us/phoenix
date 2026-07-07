@@ -4,7 +4,13 @@ name: doc-links
 # and structurally cannot catch a link orphaned in a doc *outside* the PR's diff
 # (a file rename/delete elsewhere). This job walks every git-tracked `.md` and
 # fails the PR when any relative/internal link target no longer resolves on disk.
-# It reuses pipeline-cli's `doc-links check` mode — the scan lives once in the tool.
+#
+# The scan is `lychee` (the maintained link checker) in `--offline` mode, replacing
+# the in-house regex extractor (#2308): markdown-native parsing gives code-span /
+# fenced-block masking and reference/HTML-link coverage for free — the fragile part
+# the in-house tool re-implemented. Scope stays git-tracked-only (the `git ls-files`
+# list fed via `--files-from`), and the gate is fail-closed on zero scope per ADR
+# 0092 (the explicit non-empty guard below — lychee itself exits 0 on an empty input).
 on:
   pull_request:
 
@@ -19,16 +25,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
-      - uses: pnpm/action-setup@v4.1.0
+      # Scope = git-tracked `*.md` only (matches the former tool's `git ls-files -z
+      # '*.md'` boundary): untracked scratch files and node_modules docs are out.
+      # NUL-delimited from git, converted to the newline list `--files-from` reads.
+      # ADR 0092 fail-closed: an empty scope is a misconfiguration, not a pass — fail
+      # here rather than let lychee exit 0 on zero inputs (its documented empty-input
+      # behavior). `failIfEmpty` on the action below is the defense-in-depth backstop.
+      - name: Enumerate git-tracked markdown files (fail closed on zero scope)
+        run: |
+          git ls-files -z '*.md' | tr '\0' '\n' > lychee-files.txt
+          count=$(grep -c . lychee-files.txt || true)
+          echo "doc-links: $count git-tracked .md files in scope"
+          if [ "$count" -eq 0 ]; then
+            echo "doc-links FAILED (fail-closed, ADR 0092): zero markdown files in scope — refusing to pass a no-op gate." >&2
+            exit 1
+          fi
 
-      - uses: actions/setup-node@v4.4.0
-        with:
-          node-version-file: package.json
-          cache: pnpm
+      # lychee's release tarball nests the binary under the target-triple directory
+      # (`lychee-<arch>-unknown-linux-gnu/lychee`), NOT at the archive root. The
+      # `lycheeverse/lychee-action@v2.8.0` install step referenced the flat root path
+      # (`$RUNNER_TEMP/lychee-download/lychee`) and died with `install: cannot stat …:
+      # No such file or directory` on v0.24.2 (the action's own fix — glob-detecting the
+      # nested dir — is on its unreleased main, not in any tag; #2308). Install directly
+      # from the real nested subpath so the gate is under our control, not a broken tag.
+      - name: Install lychee (offline link checker)
+        env:
+          LYCHEE_VERSION: v0.24.2
+        run: |
+          set -euo pipefail
+          TARGET="lychee-$(uname -m)-unknown-linux-gnu"
+          TMP="$(mktemp -d)"
+          curl -sfL -o "$TMP/lychee.tar.gz" \
+            "https://github.com/lycheeverse/lychee/releases/download/lychee-${LYCHEE_VERSION}/${TARGET}.tar.gz"
+          tar -xzf "$TMP/lychee.tar.gz" -C "$TMP"
+          install -Dt "$HOME/.local/bin" "$TMP/${TARGET}/lychee"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          lychee --version
 
-      - run: pnpm install --frozen-lockfile
-
-      # Exit 1 on a dead internal doc link (the file:line → target report is on
-      # stderr); any other non-zero means the run could not complete. See #638.
-      - name: Check docs for dead internal links
-        run: node packages/pipeline-cli/src/bin.ts doc-links check
+      # `--offline` blocks all network requests and skips external URLs (http(s)/
+      # mailto/tel), so only on-disk targets are resolved. `--root-dir` resolves the
+      # repo-absolute (`/foo`) link convention against the repo root (lychee errors
+      # on a `/`-rooted link without it); a repo audit found no tracked doc uses the
+      # convention today, so this is forward-preserving, not load-bearing. Fragment/
+      # anchor checking is left OFF (lychee's default), matching the former gate. A
+      # broken link makes lychee exit non-zero, which fails the job (fail-closed is
+      # also enforced upstream by the zero-scope guard above, ADR 0092).
+      - name: Check docs for dead internal links (lychee, offline)
+        run: |
+          lychee \
+            --offline \
+            --no-progress \
+            --root-dir "${{ github.workspace }}" \
+            --files-from lychee-files.txt
