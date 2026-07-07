@@ -149,6 +149,9 @@ catalogs:
       version: 4.4.3
 
 patchedDependencies:
+  '@nkzw/fate@1.3.1':
+    hash: e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c
+    path: patches/@nkzw__fate@1.3.1.patch
   alchemy@2.0.0-beta.59:
     hash: f9499e78145761f9d80842c97ef78d04f0d52c7dbdf682b255dd9e809004c46d
     path: patches/alchemy@2.0.0-beta.59.patch
@@ -216,7 +219,7 @@ importers:
         version: link:../../packages/fate-effect
       '@nkzw/fate':
         specifier: 'catalog:'
-        version: 1.3.1(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       '@sentry/cloudflare':
         specifier: 'catalog:'
         version: 10.62.0(@cloudflare/workers-types@4.20260629.1)
@@ -785,7 +788,7 @@ importers:
     dependencies:
       '@nkzw/fate':
         specifier: 'catalog:'
-        version: 1.3.1(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92
@@ -5094,7 +5097,7 @@ snapshots:
 
   '@neon-rs/load@0.0.4': {}
 
-  '@nkzw/fate@1.3.1(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
+  '@nkzw/fate@1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       '@trpc/client': 11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3)
       superjson: 2.2.6
@@ -6511,7 +6514,7 @@ snapshots:
 
   react-fate@1.3.1(patch_hash=6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)):
     dependencies:
-      '@nkzw/fate': 1.3.1(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      '@nkzw/fate': 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
     transitivePeerDependencies:

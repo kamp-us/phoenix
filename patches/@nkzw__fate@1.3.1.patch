@@ -1,0 +1,51 @@
+diff --git a/lib/index.mjs b/lib/index.mjs
+index c551f46050c0b41494a0360e7022a2e639bc5f10..bc41f30c59910cd9200b4c9c84db153a6bc4dacb 100644
+--- a/lib/index.mjs
++++ b/lib/index.mjs
+@@ -3731,14 +3731,41 @@ function createHTTPTransport({ eventSource, fetch: fetchImpl = defaultFetch, hea
+ 			source.addEventListener("message", handleLiveMessage);
+ 			source.addEventListener("next", handleLiveMessage);
+ 			source.addEventListener("connection", handleLiveMessage);
++			// phoenix #2273: coalesce same-tick subscribe ops into ONE /fate/live control
++			// POST. Upstream `add` fired its own `control([op])` after `open`, so a feed load
++			// with N useLiveView mounts issued N single-op POSTs, each re-validating the
++			// session. Buffer adds and flush once per tick across the `open` microtask
++			// boundary — the same batching the reconnect path already does via
++			// control(resubscribe) at the "open" listener above.
++			let pendingAdds = [];
++			let addScheduled = false;
++			const takePendingAdds = () => {
++				addScheduled = false;
++				const batch = pendingAdds;
++				pendingAdds = [];
++				return batch;
++			};
++			const discardAdds = (batch, error) => {
++				for (const operation of batch) {
++					operations.delete(operation.id);
++					liveSubscriptions.delete(operation.id);
++				}
++				reportError(error);
++			};
++			const flushAdds = () => {
++				const batch = takePendingAdds();
++				if (batch.length === 0) return;
++				control(batch.map(withLastEventId)).catch((error) => discardAdds(batch, error));
++			};
++			const failAdds = (error) => discardAdds(takePendingAdds(), error);
+ 			nativeLiveClient = {
+ 				add(operation) {
+ 					operations.set(operation.id, operation);
+-					open.then(() => control([withLastEventId(operation)])).catch((error) => {
+-						operations.delete(operation.id);
+-						liveSubscriptions.delete(operation.id);
+-						reportError(error);
+-					});
++					pendingAdds.push(operation);
++					if (!addScheduled) {
++						addScheduled = true;
++						open.then(flushAdds, failAdds);
++					}
+ 				},
+ 				remove(id) {
+ 					operations.delete(id);
