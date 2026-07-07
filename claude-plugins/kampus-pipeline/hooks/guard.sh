@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fail-open dispatch wrapper for the guard hooks.
 #
-# Usage: guard.sh <tool> [mode...]   e.g. guard.sh read-guard
+# Usage: guard.sh <tool> [mode...]   e.g. guard.sh worktree-guard pre-file
 #                                         guard.sh worktree-guard pre-bash
 #                                         guard.sh spawn-guard guard
 #                                         guard.sh spawn-guard freshness

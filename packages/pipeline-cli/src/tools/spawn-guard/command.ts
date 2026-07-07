@@ -162,7 +162,7 @@ const freshnessSignal = (dep: string = RUNTIME_DEP): string | null =>
 	depsInstalled(dep)
 		? null
 		: `Hook deps not installed — run \`pnpm install\`. The phoenix hook-pack's runtime ` +
-			`dep (\`${dep}\`) is unresolvable, so the read-guard / worktree-guard / spawn-guard ` +
+			`dep (\`${dep}\`) is unresolvable, so the worktree-guard / spawn-guard ` +
 			`hooks are DEGRADED (not enforcing) and the statusline is a placeholder, until deps ` +
 			`are installed (issue #835). Tell the user to run \`pnpm install\` from the repo root.`;
 

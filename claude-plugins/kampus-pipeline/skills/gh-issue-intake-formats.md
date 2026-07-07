@@ -1177,7 +1177,7 @@ closing the #375 drift class).
   - `packages/pipeline-cli/**` — the consolidated guard machinery (ADR
     [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)),
     now the single home for every guard the standalone `*-guard` packages used to carry
-    (`spawn-guard`, `read-guard`, `worktree-guard`, `structured-output-guard`, `leak-guard`),
+    (`spawn-guard`, `worktree-guard`, `structured-output-guard`, `leak-guard`),
     those packages deleted by Phase-4 (#1003). The whole package matches (`^packages/pipeline-cli/`),
     not a `src/guards/` sub-prefix: the shared guard-dispatch infra — `registry.ts` (the
     `registeredTools[]` array that wires every guard in), `router.ts`/`bin.ts` — lives at the
