@@ -730,14 +730,26 @@ the #2148 failure was a marker comment whose entire body was a local temp path (
 a broken marker (no SHA-bound verdict for consumers) **and** a public local-path leak. Only a
 post-write read-back sees it.
 
-Run the **single canonical guard** defined in the shared contract —
-[`gh-issue-intake-formats.md` §The verdict read-back guard](../gh-issue-intake-formats.md#the-verdict-read-back-guard--after-posting-a-gate-marker-re-read-it-and-fail-loud-verdict_readback_guard).
-Do **not** re-derive a local copy — capture the upsert's comment id and call
-`verdict_readback_guard "$MINE" review-skill "$HEAD_SHA"` (it asserts the canonical `review-skill:`
-marker token, the anchored `Reviewed-head: @ <sha>` line, and **no local filesystem path**, failing
-loud on any miss). On non-zero, re-post the real verdict and re-assert; if it still cannot land
-clean, surface it as a posting failure in the run ledger — the PR is genuinely ungated and a
-consumer must not read it as verified — never swallow it as a silent success (fail-closed, ADR 0092 §ZS).
+Do **not** re-implement this against a `$MINE` captured on one Step-5 branch — that carried id is what
+the #2264 recurrence slipped through (`$MINE` is set only on the comment-upsert branch, so a verdict
+landed by any other path reached the guard with an empty id and a broken/leaking marker sailed
+through). Call the **single unconditional wrapper** from the shared contract, which re-derives the
+landed verdict from live PR state (never a carried variable) and runs the read-back on whatever
+landed, on **every** post path —
+[`gh-issue-intake-formats.md` §Make the read-back UNCONDITIONAL (`verdict_post_verify`)](../gh-issue-intake-formats.md#make-the-read-back-unconditional--resolve-the-landed-verdict-from-pr-state-never-a-carried-id-verdict_post_verify):
+
+```bash
+# UNCONDITIONAL post-verify: resolve the landed verdict from PR state, prove it present + well-formed
+# + leak-free, FATAL (non-zero) on absent / malformed / leaking. Propagate the non-zero — never report
+# the gate done over an ungated PR. Runs no matter which Step-5 branch posted; no $MINE, no skippable path.
+verdict_post_verify "$PR" review-skill "$HEAD_SHA" || exit 1
+```
+
+The wrapper's single **fatal** exit — on nothing-landed *and* on a malformed/leaking marker resolved
+from PR state — makes verdict-posting an **enforced** gate (fail-closed, ADR 0092 §ZS): the gate is
+not done until a clean, current-head `review-skill:` verdict is provably on the PR. The prior
+`verdict_readback_guard "$MINE"` call could be reached with an empty id and silently no-op; this
+cannot. See the shared contract for the full post-path enumeration proving no path skips the guard.
 
 ---
 

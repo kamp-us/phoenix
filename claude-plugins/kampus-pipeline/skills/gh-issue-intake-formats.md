@@ -859,10 +859,21 @@ verdict_readback_guard() {
     || printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*advisory" \
     || { echo "verdict_readback_guard FAILED: no canonical '${gate}:' marker (PASS/FAIL @ ${sha:0:7} or advisory) in comment $cid — the body is malformed; the PR is UNGATED." >&2; return 1; }
 
-  # (2) the anchored `Reviewed-head: @ <sha>` binding line is present (§6.6 / ADR 0151), SHA
-  #     prefix-matched to the head reviewed — the body line every §CP consumer resolves the head from.
-  printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*${sha:0:7}" \
-    || { echo "verdict_readback_guard FAILED: no anchored 'Reviewed-head: @ ${sha:0:7}' line in comment $cid — the §CP head binding is missing." >&2; return 1; }
+  # (2) Head binding — SHA-SOURCE-AWARE (#2272): do NOT require a `Reviewed-head:` line
+  #     unconditionally. A bindable first line (`<gate>: PASS|FAIL @ <sha>`) already carries the head
+  #     binding — (1) validated it against ${sha:0:7} — so a non-blocking binding PASS/FAIL (whose
+  #     template carries the SHA only on the first line, no separate line) needs NO `Reviewed-head:`.
+  #     A SHA-less advisory binds the head via `Reviewed-head: @ <sha>`: review-doc/review-skill carry
+  #     it (verified against head WHEN PRESENT); review-code's §CP advisory carries NONE by design
+  #     (ADR 0111 — SHA-less first line, no body binding) → accept its absence, never un-gate it. A
+  #     `Reviewed-head:` line present but bound to the WRONG sha is ALWAYS fatal (a stale/mis-bound
+  #     head must never read as verified).
+  if printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${sha:0:7}"; then
+    : # bindable first line: its `@ <sha>` IS the head binding (validated by (1)) — no line required
+  elif printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
+    printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*${sha:0:7}" \
+      || { echo "verdict_readback_guard FAILED: 'Reviewed-head:' line in comment $cid is bound to the wrong head (not @ ${sha:0:7}) — a stale/mis-bound §CP head binding." >&2; return 1; }
+  fi
 
   # (3) NO local filesystem path leaked into the public body (the #2148 leak). Reject a machine-local
   #     scratch/home path or a leading `@<path>` marker-as-path. Patterns are placeholders, not real
@@ -871,7 +882,7 @@ verdict_readback_guard() {
     echo "verdict_readback_guard FAILED: comment $cid leaks a local filesystem path in its body — a #2148 marker-as-path leak; refuse and re-post the real verdict." >&2; return 1
   fi
 
-  echo "verdict_readback_guard OK: ${gate} verdict @ ${sha:0:7} landed on comment $cid — marker + Reviewed-head present, no local-path leak."
+  echo "verdict_readback_guard OK: ${gate} verdict @ ${sha:0:7} landed on comment $cid — marker + head binding valid, no local-path leak."
 }
 ```
 
@@ -883,10 +894,113 @@ it as a silent success. A moved `HEAD_SHA` between the post and the read-back me
 *during* the review — re-resolve the head, re-verify against it (the gate is stateless), and re-post;
 never loosen the match to paper over a moved head.
 
-Two of the three assertions bind to a **head SHA** ((1) and (2)); the advisory blocking-set path
-carries no first-line `@ <sha>` by design (ADR 0111), which is why (1) accepts the `<gate>: advisory`
-first line as a posted verdict — but even the advisory MUST carry the body's `Reviewed-head: @ <sha>`
-line, so (2) and (3) still bind it. The bindable PASS/FAIL first line satisfies (1) via its `@ <sha>`.
+Check (2) is **SHA-source-aware** (#2272), which is why the read-back is unconditional without
+false-failing a legitimate non-blocking PASS or the review-code §CP advisory. The bindable PASS/FAIL
+first line satisfies (1) via its `@ <sha>` — that SHA **is** the head binding, so (2) requires no
+separate `Reviewed-head:` line (the non-blocking binding templates carry the SHA only on the first
+line). The advisory blocking-set path carries no first-line `@ <sha>` by design (ADR 0111), which is
+why (1) accepts the `<gate>: advisory` first line; it binds the head via a body `Reviewed-head: @ <sha>`
+line — review-doc/review-skill carry it and (2) verifies it against head when present, while
+review-code's §CP advisory carries none by design (ADR 0111) and (2) accepts its absence. A
+`Reviewed-head:` line present but bound to the wrong sha is always fatal. The leak check (3) is
+**unconditional** on every verdict type — the #2148/#2264 path-leak protection is never relaxed.
+
+### Make the read-back UNCONDITIONAL — resolve the landed verdict from PR state, never a carried id (`verdict_post_verify`)
+
+`verdict_readback_guard` above is correct but only fires **if it is reached with the right comment
+id**. The #2264 recurrence (after #2148/#2153 already "fixed" the leak) proves that condition is the
+real gap: the guard was invoked as `verdict_readback_guard "$MINE" …`, and `$MINE` is populated on
+**one** posting branch only (the APPROVE-failed comment-upsert `else` fallback). A verdict that lands
+by any **other** path — the native `APPROVE`, a first-verdict `POST` on a branch that didn't set
+`$MINE`, or an agent hand-rolling `gh api -f body=@file` — reaches the guard with an **empty** id, so
+the guard reads nothing and the broken/leaking marker sails through. A guard you can skip by taking a
+different post branch is not a guard.
+
+The fix is to **stop trusting a carried variable and re-derive the landed verdict from live PR
+state**, then run the read-back **unconditionally** on whatever landed. This is the single wrapper
+every gate calls after posting — it resolves the marker comment id by re-scanning, proves *a* verdict
+actually landed for the head, and **hard-fails (non-zero)** on absent / broken / leaking so a garbled
+or path-leaking marker is a **fatal** error the gate cannot silently pass:
+
+```bash
+# verdict_post_verify <PR> <gate> <head-sha>: the UNCONDITIONAL post-verification, run after ANY
+# verdict post/upsert (native APPROVE, comment PATCH-upsert, comment POST, advisory). It does NOT
+# rely on a $MINE/$CID captured on one posting branch — it RE-SCANS the PR's live state to resolve
+# whatever landed, then proves it well-formed + leak-free. Returns 0 ONLY on a proven-clean landed
+# verdict; non-zero (FATAL) on absent / malformed / leaking. <gate> ∈ review-code|review-doc|review-skill.
+verdict_post_verify() {
+  local PR="$1" gate="$2" sha="$3" me cid approved rbody
+  me="$(gh api user --jq .login)"
+  # (A) resolve MY landed marker COMMENT id for this gate — the SHA-bound `<gate>: PASS|FAIL @ <sha>`
+  #     first line OR the SHA-less `<gate>: advisory` line — re-scanned from PR state, NOT a carried id.
+  #     A whole-body-path leak (#2264) has NO `<gate>:` first line, so it resolves empty here → caught in (C).
+  cid=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+    | jq -r --arg me "$me" --arg g "$gate" --arg sha "${sha:0:7}" '
+        [ .[] | select(.user.login==$me)
+              | select((.body | test("^\\s*\\**\\s*" + $g + ":\\s*(PASS|FAIL)\\s*@\\s*" + $sha; "i"))
+                        or (.body | test("^\\s*\\**\\s*" + $g + ":\\s*advisory"; "i"))) ]
+        | sort_by(.created_at) | last | .id // empty')
+  # (B) or a native approving REVIEW GitHub bound to this exact head (commit_id == head; its own SHA anchor):
+  approved=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
+    --jq "[.[] | select(.user.login==\"$me\" and .commit_id==\"$sha\" and .state==\"APPROVED\")] | length")
+  rbody=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
+    --jq "[.[] | select(.user.login==\"$me\" and .commit_id==\"$sha\" and .state==\"APPROVED\")] | last | .body // empty")
+  echo "verdict_post_verify: PR #$PR ${gate} @ ${sha:0:7} -> comment=${cid:-none} native-approve=${approved:-0}"
+
+  # (C) FATAL: nothing bound to this head landed — the post no-opped, OR the body carries no marker
+  #     line at all (the #2264 whole-body-path leak leaves no `<gate>:` first line). The PR is UNGATED.
+  if [ -z "$cid" ] && [ "${approved:-0}" -eq 0 ]; then
+    echo "verdict_post_verify FAILED (fatal): no ${gate} verdict bound to head ${sha:0:7} landed on PR #$PR — the post no-opped or the marker's first line is absent (a whole-body local-path leak leaves no marker). Re-post the real by-value verdict; if it still cannot land, report a POSTING FAILURE — the PR is ungated." >&2
+    return 1
+  fi
+
+  # (D) UNCONDITIONAL shape + leak read-back on the landed COMMENT — covers PATCH-upsert, POST, and
+  #     advisory (every comment post path). $cid came from a re-scan, so this runs no matter which
+  #     branch posted; the guard asserts marker shape + `Reviewed-head:` + NO local-path leak.
+  if [ -n "$cid" ]; then
+    verdict_readback_guard "$cid" "$gate" "$sha" || {
+      echo "verdict_post_verify FAILED (fatal): landed ${gate} comment $cid on PR #$PR is malformed or leaks a local filesystem path — delete/re-post the real by-value verdict and re-verify; never leave a broken/leaking marker." >&2
+      return 1
+    }
+  fi
+
+  # (E) UNCONDITIONAL leak check on the native-APPROVE body too. The APPROVE body is by-value, but a
+  #     hand-assembled body could still carry a local path; its SHA binding is the commit_id, so ONLY
+  #     the leak check applies (no `Reviewed-head:` line is required of a native approve). LINEAR regex
+  #     (literal alternation + anchored `(^|[[:space:]])` — no nested quantifier, no ReDoS), the same
+  #     pattern verdict_readback_guard uses; paths are placeholders, keeping this doc leak-clean.
+  if [ "${approved:-0}" -gt 0 ] && [ -n "$rbody" ]; then
+    if printf '%s' "$rbody" | grep -Eq '(/var/folders/|/Users/|/tmp[/.]|/private/tmp/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
+      echo "verdict_post_verify FAILED (fatal): native APPROVE review body on PR #$PR leaks a local filesystem path — dismiss/re-post a clean by-value verdict." >&2
+      return 1
+    fi
+  fi
+
+  echo "verdict_post_verify OK: ${gate} verdict @ ${sha:0:7} landed clean on PR #$PR (comment=${cid:-none} native-approve=${approved:-0}) — present, well-formed, leak-free."
+}
+```
+
+**Why this closes the #2264 recurrence — the post-path enumeration.** Every way a gate can land a
+verdict now routes through the same unconditional read-back, because `verdict_post_verify` resolves
+the landed surface from PR state instead of from a branch-local variable:
+
+- **native `APPROVE`** → resolved by (B); its body is leak-checked by (E); commit_id is its SHA anchor.
+- **comment `PATCH`-upsert** (the old `$MINE` branch) → resolved by (A); shape+leak by (D).
+- **comment `POST`** (first verdict, `$MINE` empty) → resolved by (A); shape+leak by (D). *This is the
+  branch the carried-`$MINE` call silently skipped.*
+- **advisory comment** (§CP blocking-set) → resolved by (A) via the `<gate>: advisory` arm; shape+leak by (D).
+- **hand-rolled `gh api -f body=@file`** (the literal path as the whole body) → has **no** `<gate>:`
+  first line, so (A) resolves empty and (B) is 0 ⇒ **(C) fatal** (`ungated`). A garbled marker is fatal.
+
+The single **fatal** exit on absent/broken/leaking is the load-bearing change: the prior Step-4c
+presence check merely *echoed* a warning and re-posted without a non-zero exit, so a garble read as
+green. Callers **must** propagate the non-zero — `verdict_post_verify … || exit 1` — so the gate
+cannot report itself done over an ungated PR.
+
+Gate it exactly like the by-value post it follows: right after the last of the Step-5/4a-4b upsert
+branches runs, call `verdict_post_verify "$PR" <gate> "$HEAD_SHA" || exit 1`. On a moved `HEAD_SHA`
+between post and verify the head advanced *during* review — re-resolve the head, re-verify against it
+(the gate is stateless), and re-post; never loosen the match to paper over a moved head.
 
 ---
 
