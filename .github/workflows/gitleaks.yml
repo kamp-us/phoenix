@@ -8,7 +8,7 @@ name: gitleaks
 # with a stripped PATH where a Go binary is unreliable (#2310), and CI is the only gate
 # that sees every PR's diff however it was authored.
 #
-# Scope is DIFF-scoped (the PR's own commits, base..HEAD), not full history: the repo's
+# Scope is DIFF-scoped (the PR's own commits, merge-base..HEAD), not full history: the repo's
 # git history already carries triaged findings (issue #2325 baseline), so a whole-history
 # scan would fail every run — the gate's job is to block a NET-NEW committed secret. A
 # real secret already in history is a separate rotation/remediation incident, never
@@ -36,8 +36,8 @@ jobs:
     name: scan PR commits for secrets
     runs-on: ubuntu-latest
     steps:
-      # Full history so base..HEAD resolves; the default shallow checkout has no
-      # merge-base for the diff-scoped log range below.
+      # Full history so the merge-base of base + HEAD resolves; the default shallow
+      # checkout has no merge-base for the diff-scoped log range below.
       - uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
@@ -76,16 +76,25 @@ jobs:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -uo pipefail
+          # Fetch the base WITH ancestry (no --depth=1): a shallow base has no history,
+          # so the merge-base below can't resolve and the range degenerates to a
+          # full-history walk that re-flags pre-existing triaged findings (issue #2325
+          # repair — the #2325 gate must scan ONLY this PR's net-new commits).
           if [ -n "$BASE_REF" ]; then
-            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            git fetch --no-tags origin "$BASE_REF"
             base="origin/$BASE_REF"
           else
-            git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            git fetch --no-tags origin "$MERGE_GROUP_BASE_SHA"
             base="$MERGE_GROUP_BASE_SHA"
           fi
-          echo "Scanning commits in range ${base}..HEAD"
+          # Scope to the PR's OWN commits via the merge-base — the git-log equivalent of
+          # leak-guard.yml's three-dot `git diff base...HEAD`. A two-dot `base..HEAD`
+          # against a moved base wrongly walks history; `merge-base..HEAD` never does.
+          mergebase="$(git merge-base "$base" HEAD)"
+          [ -n "$mergebase" ] || { echo "::error::could not resolve merge-base of ${base} and HEAD — refusing to scan a degenerate range (fail-closed)."; exit 1; }
+          echo "Scanning commits in range ${mergebase}..HEAD"
           ./gitleaks git . \
-            --log-opts="${base}..HEAD" \
+            --log-opts="${mergebase}..HEAD" \
             --config=.gitleaks.toml \
             --no-banner \
             --redact \
