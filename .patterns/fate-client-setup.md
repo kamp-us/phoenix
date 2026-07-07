@@ -1,5 +1,7 @@
 # Client setup
 
+> Derived from `@nkzw/fate@1.3.1` — re-verify on pin bump.
+
 How the SPA talks to the backend. The short answer: a generated `react-fate/client` module creates one `createFateClient` instance, a `<FateClient>` provider puts it in the tree, and every screen reads data through Suspense with an error boundary above it. The client imports the server's `Entity<>` types type-only, so the frontend and backend share one type contract with no schema artifact in between.
 
 ## The generated client
@@ -46,6 +48,15 @@ export const createClient = ({authenticated}: {authenticated: boolean}) => {
 ```
 
 Auth is the better-auth **session cookie**. `credentials: "include"` sends it on the data transport, and fate opens the live `EventSource` with `withCredentials`, so the same cookie authenticates the SSE stream — no token in the URL, no `Authorization` header. This works because the SPA and API are same-origin (one Worker). See [fate-live-views.md](./fate-live-views.md#auth).
+
+## `createHTTPTransport` — the standalone transport constructor
+
+`react-fate` also exports the transport constructor the generated client uses internally: `createHTTPTransport({url, liveUrl?, live?, liveRetryMs?, fetch?, headers?, eventSource?})`. Standalone, `live` **defaults to `true`** (it also accepts a custom `LiveConnector` function; only `live: false` disables the SSE surface) — the generated client is the thing that pins it `false` (below). phoenix uses the constructor directly in two load-bearing ways (`apps/web/src/fate/client.ts` and the live-transport tests):
+
+- **The live graft** (next callout): a second transport constructed with `live: true` supplies the `subscribeById`/`subscribeConnection` methods the generated `live: false` transport lacks — the flag is what makes the transport build its SSE subscription surface at all.
+- **Test seams**: the `eventSource` option injects an `EventSource` constructor, which is how `globalLivePin.test.ts` / `liveSubscribeBatch.test.ts` drive the live wire transport-level with a fake `EventSource` — no React, no network.
+
+Reach for it when a test (or a non-React context) needs a raw transport against `/fate`; app code otherwise never constructs one — the generated client owns transport creation.
 
 > **Enabling live — graft the live transport.** `useLiveView`/`useLiveListView` require the client's transport to expose `subscribeById`/`subscribeConnection`, which fate's native HTTP transport only builds when constructed with `live: true`. The Vite plugin emits `live: true` in the generated client only when `fateServer.manifest.live` is non-empty — and that manifest is populated by walking `roots`. phoenix keeps `roots: {}` (every read is a custom `queries`/`lists` resolver, which keeps the `fateServer` export type nameable — TS2883), so the generated transport is built with `live: false`. So phoenix enables live the way fate's own client template does: build a separate `live: true` HTTP transport and graft its `subscribeById`/`subscribeConnection` onto the client's transport. The native live client is lazy (the `EventSource` opens on the first subscription), so grafting costs nothing until a `useLiveView` mounts. An **anonymous** client (no session) gets **no-op** live methods instead — `/fate/live` requires the session cookie, so an anon `EventSource` would 401 and retry forever; the no-ops satisfy `assertLive*Support()` without ever opening a stream. The provider re-keys on user id, so signing in rebuilds the client with the real live transport.
 
@@ -108,6 +119,7 @@ The fate generated client (`clientRoot`/`createFateClient` returns) is **not com
 ## See also
 
 - [fate-views-and-requests.md](./fate-views-and-requests.md) — `view`/`useView`/`useRequest`, the read model
+- [fate-hydration.md](./fate-hydration.md) — snapshot/restore of the client's normalized cache
 - [fate-mutations-client.md](./fate-mutations-client.md) — writes, optimistic updates, error routing
 - [fate-live-views.md](./fate-live-views.md) — the SSE connection and its auth
 - [fate-data-views.md](./fate-data-views.md) — the server views whose `Entity<>` types the client imports

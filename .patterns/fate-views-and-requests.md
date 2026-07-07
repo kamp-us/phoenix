@@ -1,5 +1,7 @@
 # Views & requests
 
+> Derived from `@nkzw/fate@1.3.1` — re-verify on pin bump.
+
 How components declare and read data. The short answer: each component declares a **view** — the fields it needs — co-located with it. Views compose up the tree; a screen root resolves the whole composed tree in **one** `useRequest`. Child components read their slice with `useView`. fate fetches everything in a single request, so there are no waterfalls and no loading states to coordinate.
 
 This is the client mirror of the server's data views ([fate-data-views.md](./fate-data-views.md)) — same field-selection model, same masking.
@@ -107,6 +109,30 @@ Request item shapes:
 
 `useRequest` composes the whole tree into **one** batched operation set, suspends until it resolves, and populates the cache. The nested `useView`/`useListView` calls then read from cache and fire no further requests — **no waterfall**. Args ride on the item (or on the view object for connection page size).
 
+## Request modes & cache lifetime {#request-modes--cache-lifetime}
+
+`useRequest` (and the imperative `fate.request`) takes a `mode` option controlling cache-vs-network:
+
+| Mode | Behavior |
+|---|---|
+| `cache-first` (default) | returns cached data if available, else fetches |
+| `stale-while-revalidate` | returns cached data **and** simultaneously fetches fresh data |
+| `network-only` | always fetches, bypassing the cache — with the remount caveat [above](#remount-no-refetch) |
+
+```tsx
+const {posts} = useRequest({posts: {list: PostView}}, {mode: "stale-while-revalidate"});
+```
+
+`stale-while-revalidate` is the paint-now-patch-later mode: combined with a hydrated cache it renders synchronously and refreshes in the background ([fate-hydration.md](./fate-hydration.md#paint-from-snapshot--revalidate)).
+
+Cache-lifetime facts that shape phoenix reads:
+
+- The normalized cache is keyed `__typename:id`; lists and root queries point at those records. **Request args are part of the cache key** — two list requests differing in filter args keep separate list state, while cursor args merge into the same list (the connection-identity rule below). The selected view is part of the key too: `PostCardView` and `PostDetailView` share normalized records, but field coverage is tracked per request.
+- A mounted `useRequest` **retains** its request; unmount releases it and schedules GC. Released requests sit in a **release buffer** (default: the 10 most recently released) before their data is collectible — quick route round-trips reuse the cache instead of refetching. Tune with `createClient({gcReleaseBufferSize})`; set `0` in tests or memory-tight contexts to collect immediately.
+- `cache-first` handles are stable while cached; if GC later sweeps a fulfilled request's data, the next `cache-first` read refetches instead of returning stale references.
+- An out-of-React `fate.request(...)` whose result must survive manual `gc()` needs an explicit retain: `const retained = fate.retain(request); try { … } finally { retained.dispose(); }`.
+- GC **waits for active optimistic updates to settle** before sweeping, so optimistic records and their list positions stay stable while mutations are pending.
+
 ## Lists & pagination — `useListView`
 
 A `{list}` item resolves to a connection ref; a nested connection field (`term.definitions`) is read off the parent's `useView`. Either feeds `useListView`, which renders the page and loads more. The connection "view" is a plain `{items: {node: View}}` object (not a `view<T>()`):
@@ -146,6 +172,7 @@ Every read hits the cache the root request populated.
 ## See also
 
 - [fate-client-setup.md](./fate-client-setup.md) — the client + Suspense/error rails these reads depend on
+- [fate-hydration.md](./fate-hydration.md) — snapshotting/restoring the cache these reads hit
 - [fate-mutations-client.md](./fate-mutations-client.md) — writing data back
 - [fate-live-views.md](./fate-live-views.md) — `useLiveView`/`useLiveListView`
 - [fate-data-views.md](./fate-data-views.md) — the server views these mirror
