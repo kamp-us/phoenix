@@ -173,13 +173,19 @@ export const BetterAuthLive = Layer.effect(
 				// (treated as still-signed-in-as-self for ≤60s), never a stale
 				// capability — see the PR's Staleness-safety section.
 				session: {cookieCache: {enabled: true, maxAge: 60}},
-				// On the cache-miss / cold path that still hits D1, pass the
-				// session+user lookup to the drizzle adapter as ONE relational join
-				// (via the relations wired above) instead of better-auth's two-query
-				// fallback (@better-auth/core `db/adapter/factory.ts` gates the join on
-				// this flag). Part of killing the 2-query D1 session-validation tax
-				// (#2274); complements cookieCache on the path the cache doesn't serve.
-				experimental: {joins: true},
+				// NB: better-auth's `experimental.joins` (the cache-miss cold-path
+				// 2-query→1-join optimization) is NOT enabled — it's incompatible with
+				// this stack. Turning it on routes EVERY adapter read through drizzle's
+				// relational query builder (`db.query[model].findFirst`), and
+				// @better-auth/drizzle-adapter@1.6.10 passes a raw SQL `eq(...)`
+				// expression as the RQB `where` (RQB-v1 shape). drizzle-orm@1.0.0-rc.4
+				// is RQB-v2 (`defineRelations`), whose `where` must be a relational
+				// filter object — it iterates the SQL object's keys and rejects the
+				// internal `decoder` property (`Unknown relational filter field:
+				// "decoder"`), 500ing sign-up's create→read-back. cookieCache above
+				// already delivers #2274's primary win (zero D1 on the authenticated
+				// hot path via the signed cookie); joins was only the secondary
+				// cache-miss lever, so it's dropped rather than fought.
 				// Verify a new account's email via a delivered link (the `EmailSender`
 				// port; ADR 0101). Was unreachable before — no sender existed.
 				emailVerification: {
