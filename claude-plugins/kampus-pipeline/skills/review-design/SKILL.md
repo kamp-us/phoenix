@@ -105,8 +105,9 @@ stage exists to prevent — the same invariant the sibling gates hold.
 ## You emit a `review-design` marker, NEVER a `review-code`/`review-doc`/`review-skill` one
 
 `ship-it` matches the gate markers in **separate namespaces** (anchored, emphasis-tolerant,
-SHA-capturing regexes that never cross-match — the matcher contract in
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5 / §6.5), latest-verdict-wins per
+SHA-capturing regexes that never cross-match — your `review-design` namespace is registered in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §6.7, on the shared §5 matcher
+contract), latest-verdict-wins per
 namespace, then a SHA-staleness refusal (ADR 0058). Your verdict's first line is **always**
 `review-design: … @ <sha>` — never another gate's token. Emitting another gate's marker on a UI PR
 would let that namespace's scan match your verdict, collapsing the gates into one. Keep the namespace
@@ -142,10 +143,10 @@ Your inputs and output live in the shared contract — read it before you start:
 
 - **§CP** — the canonical control-plane / blocking-set definition (Step 0 classification). Cite it;
   don't re-hard-code the path list.
-- **§5 / §6.5** — the SHA-bound verdict-marker matcher contract. Your `review-design` marker lives in
-  its own namespace, distinct from `review-code` (§5), `review-doc` (§6), and `review-skill` (§6.5);
-  emit the same SHA-bound `PASS @ <sha> — merge-ready` / `FAIL @ <sha> — changes-requested` shape and
-  token order, under the `review-design:` token.
+- **§6.7** — your own registered marker namespace (on the shared §5 matcher contract). Your
+  `review-design` marker lives in its own namespace, distinct from `review-code` (§5), `review-doc`
+  (§6), and `review-skill` (§6.5); emit the same SHA-bound `PASS @ <sha> — merge-ready` /
+  `FAIL @ <sha> — changes-requested` shape and token order, under the `review-design:` token.
 - **The verdict read-back guard** (`verdict_readback_guard`) — the single canonical post-write
   read-back you call after your upsert (Step 5). It is **gate-parameterized** — call it with the
   `review-design` gate token; do not re-derive a local copy.
