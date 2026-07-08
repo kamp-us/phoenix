@@ -22,6 +22,8 @@ import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
 import {Screen} from "../fate/Screen";
 import {FEED_SNAPSHOT_ENABLED} from "../fate/snapshot";
 import {LoadMoreButton} from "../fate/wire";
+import {PANO_BASE_FEED} from "../flags/keys";
+import {useFlag} from "../flags/useFlag";
 import {
 	PANO_FEED_PAGE_SIZE,
 	PANO_FILTERS,
@@ -134,6 +136,13 @@ function FeedContent({
 	pending: boolean;
 	chrome: Chrome;
 }) {
+	// Base + overlay composition (#2323, leg B), dark behind `pano-base-feed`. On ⇒ the
+	// rows compose the viewer scalars through the identity guard (`PanoPostCard compose`):
+	// base content paints de-gated from the session, `myVote`/`isSaved` stay neutral until
+	// the overlay lands under the confirmed identity. Off (default) ⇒ scalars read straight
+	// off the post, byte-identical to today. Sort feed only — `?sort=saved` is inherently
+	// per-viewer and stays on the authed path (`SavedContent`), out of the base/overlay split.
+	const {value: composeOverlay} = useFlag(PANO_BASE_FEED, false);
 	// Feed snapshot (leg A, #2319): under the containment flag, run the feed read
 	// stale-while-revalidate so a snapshot hydrated into the public client paints
 	// synchronously and the network patch lands in the background. Flag off ⇒ an
@@ -148,7 +157,15 @@ function FeedContent({
 		FEED_SNAPSHOT_ENABLED ? {mode: "stale-while-revalidate"} : undefined,
 	);
 
-	return <FeedRows connection={posts} host={host} pending={pending} chrome={chrome} />;
+	return (
+		<FeedRows
+			connection={posts}
+			host={host}
+			pending={pending}
+			chrome={chrome}
+			compose={composeOverlay}
+		/>
+	);
 }
 
 type PostConnection = ReturnType<
@@ -160,11 +177,13 @@ function FeedRows({
 	host,
 	pending,
 	chrome,
+	compose,
 }: {
 	connection: PostConnection;
 	host?: string;
 	pending: boolean;
 	chrome: Chrome;
+	compose: boolean;
 }) {
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
@@ -186,7 +205,7 @@ function FeedRows({
 				}
 			>
 				{items.map(({node}, i) => (
-					<PanoPostCard key={node.id} post={node} rank={i + 1} />
+					<PanoPostCard key={node.id} post={node} rank={i + 1} compose={compose} />
 				))}
 			</div>
 			{loadNext ? (
