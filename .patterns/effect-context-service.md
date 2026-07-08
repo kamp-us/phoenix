@@ -1,5 +1,7 @@
 # Context.Service pattern
 
+> Derived from `alchemy@2.0.0-beta.59` — re-verify on pin bump.
+
 How to define and wire services in phoenix's worker.
 
 > [!IMPORTANT]
@@ -89,7 +91,7 @@ export const layer = Layer.effect(UserRepo)(
 );
 ```
 
-Use when the service needs other services from the context (here, `Database`). The resulting layer carries `R = Database` until that's provided. `worker/db/Drizzle.ts`'s `makeDrizzleLayer` is the canonical phoenix example — the worker init builds the drizzle builder once from the bound D1 (via `Cloudflare.D1Connection.bind(PhoenixDb).raw`) and hands it to `makeDrizzleLayer(db)`, which returns a `DrizzleAccess` record.
+Use when the service needs other services from the context (here, `Database`). The resulting layer carries `R = Database` until that's provided. `worker/db/Drizzle.ts`'s `makeDrizzleLayer` is the canonical phoenix example — the worker init builds the drizzle builder once from the bound D1 (via `Cloudflare.D1.QueryDatabase(PhoenixDb)`, whose `connection.raw` is the underlying `D1Database` — as `worker/db/Database.ts` resolves it) and hands it to `makeDrizzleLayer(db)`, which returns a `DrizzleAccess` record.
 
 ### `Layer.effectContext` — providing multiple tags from one construction
 
