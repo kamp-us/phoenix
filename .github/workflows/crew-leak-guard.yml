@@ -1,0 +1,37 @@
+name: crew-leak-guard
+
+# CI gate for #2357 (crew epic #2342 Phase 4): the pipeline-crew plugin ships ZERO
+# real operator data, so its whole tree is swept for every personal-data class the
+# sanitization contract bans (machine-local paths, emails, tmux pane ids, real
+# operator names, personal-memory refs). Unlike leak-guard's `scan` (which checks
+# only changed doc surfaces for the no-local-paths rule), this sweeps the entire
+# claude-plugins/pipeline-crew dir on every PR and fails closed on any hit OR a
+# zero-file scope (ADR 0092) — a re-personalized def can't silently re-drift back
+# in. The scan lives once in pipeline-cli's `leak-guard sweep`, never re-grepped here.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  sweep:
+    name: sweep pipeline-crew for personal-data leaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 on any personal-data hit under claude-plugins/pipeline-crew (report on
+      # stderr), or when zero files are in scope (fail-closed). See #2357.
+      - name: Sweep pipeline-crew for personal-data leaks
+        run: node packages/pipeline-cli/src/bin.ts leak-guard sweep

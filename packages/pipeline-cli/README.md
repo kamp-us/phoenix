@@ -54,6 +54,35 @@ node packages/pipeline-cli/src/bin.ts version
 node packages/pipeline-cli/src/bin.ts <tool> …
 ```
 
+### `leak-guard` — personal-data leak gate for shared artifacts (#173, #2357)
+
+Two modes, one deny-list-per-mode core:
+
+- **`leak-guard scan <file>…`** — the changed-file gate (#173): reports any user-local
+  filesystem path (`/Users/<name>`, `~/.claude`, `~/code/…`, `/vault/…`) leaking into a
+  shared **doc surface** (`.md`, `.decisions/`, `.patterns/`), exit 2 on a hit. CI hands it
+  every changed file; the core (`findLeaks`) self-scopes to doc surfaces.
+- **`leak-guard sweep [--dir <d>] [--root <r>]`** — the pipeline-crew sanitization sweep
+  (#2357, crew epic #2342 Phase 4). The crew plugin ships **zero real operator data**, so
+  its whole tree is swept for **every** personal-data class the contract bans — machine-local
+  paths, emails, tmux pane ids (`%N`), real operator names, and personal-memory references.
+  Fails closed (exit 1) on any hit **and** on a zero-file scope (ADR 0092), mirroring the
+  readme-guard/fanout-guard directory-check idiom. The pure match-class core
+  (`crew-leak.ts`, unit-tested class by class) grounds operator-name detection in a **named
+  deny-list of the real operators**, not a generic detector — so the README's deliberately
+  *fictional* seam examples (`@robin`, `Robin Operator`) pass while real data is caught.
+
+```bash
+# changed-file doc-surface scan (exit 2 on a leak)
+node packages/pipeline-cli/src/bin.ts leak-guard scan path/to/file.md
+
+# sweep the whole pipeline-crew tree (exit 1 on any hit or zero scope)
+node packages/pipeline-cli/src/bin.ts leak-guard sweep
+```
+
+Both modes are wired as CI gates (`leak-guard.yml` for `scan`, `crew-leak-guard.yml` for
+`sweep`) — the scan lives once in the tool, never re-grepped in the workflow.
+
 ### `main-sync` — codified orchestrator main-sync with detached-HEAD auto-reattach (#1573)
 
 The single runnable surface for the orchestrator's **main-sync** — bringing the shared

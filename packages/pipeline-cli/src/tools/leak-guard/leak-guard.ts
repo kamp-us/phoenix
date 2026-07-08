@@ -41,6 +41,10 @@ const DOC_SELF_EXEMPT = [
 	"/packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts",
 	"/packages/pipeline-cli/src/tools/leak-guard/leak-guard.unit.test.ts",
 	"/packages/pipeline-cli/src/tools/leak-guard/command.ts",
+	// Documents the leak-guard deny-list patterns (the ~/.claude / ~/code/ / /vault
+	// example shapes), so it must spell the forbidden tokens out — exempt like the
+	// old package's own README already is.
+	"/packages/pipeline-cli/README.md",
 	"/skills/review-doc/SKILL.md",
 	"/skills/triage/SKILL.md",
 	"/skills/report/SKILL.md",
