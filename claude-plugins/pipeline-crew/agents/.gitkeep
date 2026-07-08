@@ -2,7 +2,7 @@
 # (the documented Claude Code `agents/` layout, mirroring
 # `claude-plugins/kampus-pipeline/agents/`):
 #
-#   ea.md                  — EA / chief-of-staff        (issue #2360)
+#   exec-assistant.md      — EA / chief-of-staff        (issue #2360)
 #   engineering-manager.md — execution conductor         (issue #2354)
 #   triage.md              — intake + planning/canon seam (issue #2355)
 #
