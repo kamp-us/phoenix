@@ -563,6 +563,8 @@ order, so a trailing `@ <sha>` captures `sha=null` and refuses a correct PASS as
 ```markdown
 review-skill: PASS @ <HEAD_SHA> — merge-ready
 
+Reviewed-head: @ <HEAD_SHA>
+
 Verified PR #<PR> against the acceptance criteria of #<ISSUE> + the skill-rigor checklist:
 
 **Acceptance criteria**
@@ -581,6 +583,12 @@ Read the PR head (§HEAD): all skill text under review sourced from `<HEAD_SHA>`
 All checks pass. This PR is merge-ready. **review-skill does not merge** — `ship-it` is the
 authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
 ```
+
+The body carries the canonical `Reviewed-head: @ <HEAD_SHA>` line here too, so **every** verdict body
+this gate emits — non-blocking PASS, advisory, FAIL — binds the reviewed head in one uniform form
+(#2272). The non-blocking PASS is still bound primarily by its first-line `@ <sha>`; the body line is
+the same canonical token the read-back guard (§6.6) validates, so a clean non-blocking PASS never
+false-fails the unconditional `verdict_post_verify … || exit 1`.
 
 ### Pass path — blocking-set PR (advisory only, the canonical advisory form)
 
