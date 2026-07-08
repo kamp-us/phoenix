@@ -22,6 +22,7 @@ import {EagerProfileContributionSkeleton} from "./components/profile/ProfileCont
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
+import {teardownAuthedSnapshot} from "./fate/snapshot";
 import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {DensityProvider} from "./lib/density";
@@ -113,6 +114,13 @@ function Layout() {
 		location.pathname === "/search" ? (new URLSearchParams(location.search).get("q") ?? "") : "";
 
 	async function onSignOut() {
+		// Drop this identity's persisted feed snapshot at the sign-out seam BEFORE the
+		// session clears — its private myVote/isSaved overlay must not outlive the session
+		// (#2321). Capture the id first: signOut() nulls the session. The FateProvider
+		// identity-change seam also tears down on the resulting A→anon transition; this
+		// eager call makes the removal immediate on click rather than after the async settle.
+		const signedOutUserId = session.data?.user.id;
+		if (signedOutUserId) teardownAuthedSnapshot(signedOutUserId);
 		await authClient.signOut();
 		clearBearerToken();
 	}

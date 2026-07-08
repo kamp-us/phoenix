@@ -122,6 +122,18 @@ vi.mock("./auth/client", async () => {
 vi.mock("./fate/client", () => ({createClient: () => ({}) as never}));
 vi.mock("./fate/useGlobalLivePin", () => ({useGlobalLivePin: () => undefined}));
 
+// Spy the authed-tier feed-snapshot seam (#2321) so the wiring is observable independent of
+// the (default-off, `window`-bound) flag: FateProvider hydrates at client creation on the
+// resolved id + installs persistence, and tears down the previous identity's snapshot on an
+// identity change / sign-out; App's `onSignOut` tears down eagerly. The pure storage contract
+// is proven in `snapshot.test.ts`; here we assert only that the seam CALLS teardown/hydrate.
+const snapshotSpies = vi.hoisted(() => ({
+	hydrateAuthedClient: vi.fn(),
+	installAuthedSnapshotPersistence: vi.fn(() => () => {}),
+	teardownAuthedSnapshot: vi.fn(),
+}));
+vi.mock("./fate/snapshot", () => snapshotSpies);
+
 // The fate-consuming hooks that live BELOW the gate in `LayoutContent`. Stub them inert
 // so `LayoutContent` renders offline once the gate commits — their PRESENCE below the
 // gate is invariant 1's point; here they must simply not touch the wire.
@@ -375,5 +387,87 @@ describe("Topbar search echo (#2199)", () => {
 	it("leaves the header input empty off the results page (unchanged behavior)", () => {
 		renderApp("/pano");
 		expect((screen.getByLabelText("Ara") as HTMLInputElement).value).toBe("");
+	});
+});
+
+// The authed-tier feed snapshot wiring (#2321): FateProvider hydrates the identity-keyed
+// client at creation on the RESOLVED id (never anon), installs per-identity persistence, and
+// tears down the previous identity's snapshot on an identity change / sign-out — all through
+// the REAL FateProvider gate the invariant-2 tests pin (#438-safe). The snapshot module is
+// spied (snapshotSpies), so these assert the SEAM fires, not the storage effect.
+describe("Authed feed snapshot wiring (#2321)", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+		snapshotSpies.hydrateAuthedClient.mockClear();
+		snapshotSpies.installAuthedSnapshotPersistence.mockClear();
+		snapshotSpies.teardownAuthedSnapshot.mockClear();
+	});
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("AC1/AC4: hydrates the authed client ONCE on the resolved identity (never anon) + installs persistence", () => {
+		renderApp(FATE_FREE_ROUTE);
+		// Pending: the gate is deferred, so no authed client has been created/hydrated yet.
+		expect(snapshotSpies.hydrateAuthedClient).not.toHaveBeenCalled();
+
+		act(() => {
+			setSession({
+				data: {user: {id: "user-42", name: "Elif", email: "elif@kamp.us"}},
+				isPending: false,
+			});
+		});
+
+		// Hydrated exactly once, keyed on the resolved id — never a leading anon hydrate (the
+		// #438 re-key would have produced an anon-keyed pass first).
+		expect(snapshotSpies.hydrateAuthedClient).toHaveBeenCalledTimes(1);
+		expect(snapshotSpies.hydrateAuthedClient).toHaveBeenCalledWith(expect.anything(), "user-42");
+		expect(snapshotSpies.installAuthedSnapshotPersistence).toHaveBeenCalledWith(
+			expect.anything(),
+			"user-42",
+		);
+	});
+
+	it("AC3: an identity switch A→B tears down the PREVIOUS identity's snapshot", () => {
+		renderApp(FATE_FREE_ROUTE);
+		act(() => {
+			setSession({
+				data: {user: {id: "user-A", name: "Ada", email: "ada@kamp.us"}},
+				isPending: false,
+			});
+		});
+		expect(snapshotSpies.teardownAuthedSnapshot).not.toHaveBeenCalled(); // first identity, nothing prior
+
+		act(() => {
+			setSession({
+				data: {user: {id: "user-B", name: "Bora", email: "bora@kamp.us"}},
+				isPending: false,
+			});
+		});
+		expect(snapshotSpies.teardownAuthedSnapshot).toHaveBeenCalledWith("user-A");
+	});
+
+	it("AC3: sign-out / account deletion (A→signed-out) tears down A's snapshot", () => {
+		renderApp(FATE_FREE_ROUTE);
+		act(() => {
+			setSession({
+				data: {user: {id: "user-A", name: "Ada", email: "ada@kamp.us"}},
+				isPending: false,
+			});
+		});
+		act(() => {
+			setSession({data: null, isPending: false}); // session ends
+		});
+		expect(snapshotSpies.teardownAuthedSnapshot).toHaveBeenCalledWith("user-A");
+	});
+
+	it("identity-scoped: a signed-out settle hydrates NO authed snapshot (anon owns none)", () => {
+		renderApp(FATE_FREE_ROUTE);
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+		expect(snapshotSpies.hydrateAuthedClient).not.toHaveBeenCalled();
+		expect(snapshotSpies.installAuthedSnapshotPersistence).not.toHaveBeenCalled();
 	});
 });
