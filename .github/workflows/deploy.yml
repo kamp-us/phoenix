@@ -67,6 +67,9 @@ jobs:
             # Keep this list byte-for-byte in sync with the `e2e:` block in
             # .github/workflows/ci.yml — the queue-safe invariant above (deploy-run ⊇
             # e2e-run) requires equal path sets, so an edit to one MUST edit the other.
+            # ENFORCED MECHANICALLY (issue #2372) by `pipeline-cli path-filter-guard check`
+            # (the path-filter-guard.yml job): it fails the build if this `deploy:` set and
+            # ci.yml's `e2e:` set drift apart — this comment documents it, the guard defends it.
             deploy:
               - 'apps/**/src/**'
               - 'apps/**/index.html'

@@ -156,7 +156,10 @@ jobs:
             # this e2e RUN-set, or a PR that trips e2e but skips its deploy makes e2e's
             # 10-min preview-comment poll time out and wedge `ci-required`. An edit to
             # THIS list MUST be mirrored into deploy.yml's `deploy:` filter (and vice
-            # versa) — keep the two path sets identical.
+            # versa) — keep the two path sets identical. ENFORCED MECHANICALLY (issue
+            # #2372) by `pipeline-cli path-filter-guard check` (the path-filter-guard.yml
+            # job), which fails the build if this `e2e:` set and deploy.yml's `deploy:`
+            # set drift apart — this comment documents the invariant; the guard defends it.
             e2e:
               - 'apps/**/src/**'
               - 'apps/**/index.html'

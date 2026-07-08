@@ -1,0 +1,45 @@
+name: path-filter-guard
+
+# CI gate for #2372 (the sync invariant of #2366 / PR #2371): deploy.yml's
+# `changes.deploy` dorny/paths-filter list and ci.yml's `changes.e2e` dorny/paths-filter
+# list must be the SAME set of globs. That pins the load-bearing invariant deploy's
+# RUN-set ⊇ e2e's RUN-set (deploy skips only where e2e also skips). ci.yml's `e2e` job
+# polls deploy.yml's sticky `<!-- preview-deploy -->` comment on a 10-minute deadline, so
+# a PR that trips e2e but skips its deploy times the poll out and wedges `ci-required`.
+# The two lists were guarded ONLY by a reciprocal human comment; this runs
+# `pipeline-cli path-filter-guard check` so a drifting edit to either list cannot merge.
+# It fails closed on zero scope — a missing file/job/step/key or an empty list (ADR 0092).
+# The scan lives once in the tool.
+on:
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs the
+# guard, which fails via exit code — it posts no check-run/status/PR comment — so
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check ci.yml changes.e2e and deploy.yml changes.deploy stay in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when the two path-filter sets drift apart, or zero scope (a missing
+      # file/job/step/key or an empty list, fail-closed). Report on stderr. See #2372.
+      - name: Check the ci.yml/deploy.yml path-filter sync invariant
+        run: node packages/pipeline-cli/src/bin.ts path-filter-guard check
