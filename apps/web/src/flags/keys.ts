@@ -12,6 +12,16 @@
 export const PANO_DRAFT_SAVE = "pano-draft-save";
 
 /**
+ * Pano base-feed edge-cache containment flag (#2324, epic #2316 leg B, ADR 0170).
+ * Default-off. With it off, the base-feed GET emits no `Cache-Control` (nothing is
+ * edge-cached) and the fanned-mutation seam fires no purge — the feature ships dark.
+ * Flipping it on is the human release act (ADR 0083). Its OWN key, distinct from
+ * `pano-base-feed` (which gates the base-feed route's existence): the viewer-invariant
+ * base feed can serve without the edge cache, so caching has an independent lifecycle.
+ */
+export const PANO_FEED_EDGE_CACHE = "pano-feed-edge-cache";
+
+/**
  * Optimistic `post.submit` (feed root-list insert) containment flag (#1676, epic
  * #1637). Default-off: with it off, submit is a plain round-trip; flipping it on
  * enables the optimistic front-of-feed insert that reconciles to the server row.

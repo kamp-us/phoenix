@@ -32,6 +32,7 @@ import {RelationStoreLive} from "../kunye/RelationStore.ts";
 import {authorshipLadder} from "../kunye/standing.ts";
 import {VouchLedgerLive} from "../kunye/VouchLedger.ts";
 import {BookmarkLive} from "../pano/Bookmark.ts";
+import {PanoFeedCache} from "../pano/feed-cache.ts";
 import {PanoLive} from "../pano/Pano.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
 import {makePasaportLive} from "../pasaport/Pasaport.ts";
@@ -276,16 +277,17 @@ export const makeFateLayer = Layer.mergeAll(
  * `FateServer.layer`'s own R is discharged by the same domain layers, a record
  * needing a forgotten service is a compile error HERE, the composition site.
  *
- * `[CurrentActor, RequestFlagOverrides]` registers the two per-request services
- * (ADR 0107 §7): the authz actor and the raw `Cookie` header the dev-override
- * flag path reads (#622). Both are excluded from build-time R and fulfilled per
- * request from the session/request in `route.ts` (`requestServices`), never
- * provided by a worker-level layer.
+ * `[CurrentActor, RequestFlagOverrides, PanoFeedCache]` registers the per-request
+ * services (ADR 0107 §7): the authz actor, the raw `Cookie` header the dev-override
+ * flag path reads (#622), and the base-feed edge-cache purger a fanned pano mutation
+ * fires alongside its live publish (ADR 0170 / #2324). All are excluded from build-time
+ * R and fulfilled per request from the session/request/execution-context in `route.ts`
+ * (`requestServices`), never provided by a worker-level layer.
  */
 export const PhoenixFateLive: Layer.Layer<
 	WorkerFateServices | FateServer,
 	never,
 	Database | BetterAuth.BetterAuth | Flagship | TelemetryClient | RuntimeContext
-> = FateServer.layer(fateConfig, [CurrentActor, RequestFlagOverrides]).pipe(
+> = FateServer.layer(fateConfig, [CurrentActor, RequestFlagOverrides, PanoFeedCache]).pipe(
 	Layer.provideMerge(makeFateLayer),
 );

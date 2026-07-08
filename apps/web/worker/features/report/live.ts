@@ -30,6 +30,7 @@
 import {Effect} from "effect";
 import type {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {decidePublish} from "../kunye/sandbox.ts";
+import type {WorkerPanoFeedCache} from "../pano/feed-cache.ts";
 import {panoLive} from "../pano/live.ts";
 import type {Comment, Post} from "../pano/views.ts";
 import {sozlukLive} from "../sozluk/live.ts";
@@ -39,10 +40,13 @@ import type {Definition} from "../sozluk/views.ts";
  * Bind report's moderator-path publish targets to the per-request publisher. Each
  * helper dispatches to the content feature's own live binding by the reported target's
  * kind, so the fan-out lands on the same topic (and same view-sourced typename) the
- * user delete/restore paths publish to.
+ * user delete/restore paths publish to. A moderator remove/restore of a `Post`/`Comment`
+ * is a feed-visible write, so `feedCache` rides `panoLive` to purge the base feed
+ * exactly as the user paths do (ADR 0170 / #2324); sözlük targets never touch the pano
+ * feed, so `sozlukLive` takes no purger.
  */
-export const reportLive = (live: WorkerLivePublisher) => {
-	const pano = panoLive(live);
+export const reportLive = (live: WorkerLivePublisher, feedCache: WorkerPanoFeedCache) => {
+	const pano = panoLive(live, feedCache);
 	const sozluk = sozlukLive(live);
 	return {
 		/**

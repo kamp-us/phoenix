@@ -158,6 +158,13 @@ const phoenixProps =
 				headSamplingRate: 1,
 				logs: {enabled: true, invocationLogs: true},
 			},
+			// Workers Caching (per-Worker edge cache) enablement (ADR 0170, via the
+			// in-repo alchemy `pnpm patch`). Enabling the platform capability is inert on
+			// its own — Workers Caching caches a GET/HEAD response ONLY when the worker
+			// stamps `Cache-Control`, which the base-feed route does solely behind the
+			// default-off `pano-feed-edge-cache` flag (#2324). So the base feed is the one
+			// cached surface, and the leg-B flag — not this knob — is the release gate.
+			cache: {enabled: true},
 		};
 
 		// The custom domain is deploy-time-only AND production-only: skip it at runtime

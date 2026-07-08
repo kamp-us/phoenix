@@ -41,6 +41,7 @@ import {
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
 } from "./errors.ts";
+import {PanoFeedCache} from "./feed-cache.ts";
 import {panoLive} from "./live.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPost, toPostFromPage} from "./shapers.ts";
@@ -192,7 +193,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const submit = Effect.fn("post.submitBody")(function* () {
 				const pano = yield* Pano;
-				const live = panoLive(yield* WorkerLivePublisher);
+				const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 				// A çaylak's new post lands sandboxed when the authorship-loop flag is on;
 				// flag-off / yazar ⇒ live, exactly as today (#1205).
 				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
@@ -246,7 +247,7 @@ export const mutations = {
 				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
 			}
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.saveDraft({
 				authorId: user.id,
 				authorName: authorDisplayLabel(user),
@@ -279,7 +280,7 @@ export const mutations = {
 				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
 			}
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.discardDraft({authorId: user.id});
 			if (!r.postId) return null;
 			yield* live.post.delete(r.postId);
@@ -301,7 +302,7 @@ export const mutations = {
 		Effect.fn("post.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
 			// Re-resolve the affected post via the same batched read `post.save`/`post.unsave`
 			// use, so the returned AND published projection carries the real `isSaved` + live
@@ -338,7 +339,7 @@ export const mutations = {
 		Effect.fn("post.retractVote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			yield* pano.retractPostVote({postId: input.id, voterId: user.id});
 			// Re-resolve like `post.vote` above so the returned/published projection keeps the
 			// real `isSaved` + author identity instead of the null-bearing write shape (#2213).
@@ -377,7 +378,7 @@ export const mutations = {
 				return yield* new ReactionsDisabled({message: "tepki özelliği şu an kapalı"});
 			}
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.reactToPost({postId: input.id, userId: user.id, emoji: input.emoji});
 			const post = toPost(r.post);
 			yield* live.post.update(post.id, {changed: ["reactions"], data: post});
@@ -400,7 +401,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const bookmark = yield* Bookmark;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			yield* bookmark.toggle({userId: user.id, postId: input.id, value: true});
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
 			if (!row) {
@@ -421,7 +422,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const bookmark = yield* Bookmark;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			yield* bookmark.toggle({userId: user.id, postId: input.id, value: false});
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
 			if (!row) {
@@ -446,7 +447,7 @@ export const mutations = {
 		Effect.fn("post.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.editPost({
 				postId: input.id,
 				actorId: user.id,
@@ -470,7 +471,7 @@ export const mutations = {
 		Effect.fn("post.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			// The removal commit runs over `DrizzleAccessOrDie` — a D1-layer write failure
 			// dies as a defect, which would escape this union as a raw `INTERNAL_SERVER_ERROR`
 			// (#1639). Catch that defect into the declared, user-readable `PostDeleteFailed`;
@@ -500,7 +501,7 @@ export const mutations = {
 		Effect.fn("post.restore")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const restored = yield* pano.restorePost({postId: input.id, actorId: user.id});
 			const page = yield* pano.getPost(input.id);
 			if (!page) return null;
@@ -538,7 +539,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const add = Effect.fn("comment.addBody")(function* () {
 				const pano = yield* Pano;
-				const live = panoLive(yield* WorkerLivePublisher);
+				const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 				// A çaylak's new comment lands sandboxed when the authorship-loop flag is
 				// on; flag-off / yazar ⇒ live, exactly as today (#1205).
 				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
@@ -588,7 +589,7 @@ export const mutations = {
 		Effect.fn("comment.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.voteOnComment({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
 			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
@@ -614,7 +615,7 @@ export const mutations = {
 		Effect.fn("comment.retractVote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.retractCommentVote({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
 			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
@@ -659,7 +660,7 @@ export const mutations = {
 				}
 				return toComment(current);
 			}
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.reactToComment({
 				commentId: input.id,
 				userId: user.id,
@@ -684,7 +685,7 @@ export const mutations = {
 		Effect.fn("comment.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.editComment({commentId: input.id, actorId: user.id, body: input.body});
 			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
 			const comment = shapeComment({...r, myVote: fresh?.myVote ?? null});
@@ -701,7 +702,7 @@ export const mutations = {
 		Effect.fn("comment.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			// Resolve the parent post id before the delete, while the row exists.
 			const postId = yield* pano.lookupCommentPostId(input.id);
 			const result = yield* pano.deleteComment({commentId: input.id, actorId: user.id});
@@ -751,7 +752,7 @@ export const mutations = {
 		Effect.fn("comment.restore")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = panoLive(yield* WorkerLivePublisher);
+			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const postId = yield* pano.lookupCommentPostId(input.id);
 			const restored = yield* pano.restoreComment({commentId: input.id, actorId: user.id});
 			if (!postId) return null;
