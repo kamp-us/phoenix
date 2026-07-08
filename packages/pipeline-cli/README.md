@@ -64,13 +64,18 @@ Two modes, one deny-list-per-mode core:
   every changed file; the core (`findLeaks`) self-scopes to doc surfaces.
 - **`leak-guard sweep [--dir <d>] [--root <r>]`** — the pipeline-crew sanitization sweep
   (#2357, crew epic #2342 Phase 4). The crew plugin ships **zero real operator data**, so
-  its whole tree is swept for **every** personal-data class the contract bans — machine-local
-  paths, emails, tmux pane ids (`%N`), real operator names, and personal-memory references.
-  Fails closed (exit 1) on any hit **and** on a zero-file scope (ADR 0092), mirroring the
-  readme-guard/fanout-guard directory-check idiom. The pure match-class core
-  (`crew-leak.ts`, unit-tested class by class) grounds operator-name detection in a **named
-  deny-list of the real operators**, not a generic detector — so the README's deliberately
-  *fictional* seam examples (`@robin`, `Robin Operator`) pass while real data is caught.
+  its whole tree is swept by a **purely generic, pattern-based** personal-data detector —
+  it catches only **structural pattern classes**, never a hardcoded person identifier:
+  machine-local / home / absolute **paths** (`/Users/<name>`, `/home/<name>`, `~/.claude`,
+  `~/code/…`, `/vault/…`), any **email** (`local@domain.tld`), **tmux pane ids** (`%N`), and
+  **personal-memory references** (`MEMORY.md`, `/memory/`, `feedback_*`/`reference_*`/`project_*`
+  slug shapes). Fails closed (exit 1) on any hit **and** on a zero-file scope (ADR 0092),
+  mirroring the readme-guard/fanout-guard directory-check idiom. The pure match-class core
+  (`crew-leak.ts`, unit-tested class by class) carries **no named operator deny-list** — a
+  bare first name in prose is deliberately NOT caught (generic over named: the high-value
+  leaks are all pattern-detectable, whereas bare-name matching is low-value and
+  false-positive-prone), so the README's deliberately *fictional* seam examples (`@robin`,
+  `Robin Operator`) pass while real personal data is caught.
 
 ```bash
 # changed-file doc-surface scan (exit 2 on a leak)
