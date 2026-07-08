@@ -1,5 +1,7 @@
 # better-auth on Cloudflare D1 with plugins — the forked CloudflareD1 Layer
 
+> Derived from `alchemy@2.0.0-beta.59` — re-verify on pin bump.
+
 Phoenix runs better-auth on `@alchemy.run/better-auth`'s `BetterAuth`
 Context.Service tag, but provides its own Layer implementation rather than
 the upstream `CloudflareD1` reference Layer. The reasons are concrete: the
@@ -36,7 +38,7 @@ export const BetterAuthLive = Layer.effect(
   BetterAuth.BetterAuth,
   Effect.gen(function* () {
     // Reuse phoenix's existing D1 — no separate BetterAuth DB.
-    const connection = yield* Cloudflare.D1Connection.bind(PhoenixDb);
+    const connection = yield* Cloudflare.D1.QueryDatabase(PhoenixDb);
     const env = yield* Cloudflare.WorkerEnvironment;
 
     // Mint (or recover from state) the session-signing secret. `Random`
@@ -74,7 +76,7 @@ export const BetterAuthLive = Layer.effect(
       fetch: /* request handler that calls auth.handler(...) */,
     };
   }),
-).pipe(Layer.provide(Cloudflare.D1ConnectionLive));
+).pipe(Layer.provide(Cloudflare.D1.QueryDatabaseBinding));
 ```
 
 The Layer satisfies `BetterAuth.BetterAuth` (the Context tag from
@@ -92,8 +94,8 @@ Three load-bearing differences from the reference Layer:
   pre-constructed `Auth` instance, so the construction itself has to
   carry them.
 - **Database reuse.** The reference Layer declares its own
-  `Cloudflare.D1Database("BetterAuth")` — a second D1 alongside the
-  canonical `PhoenixDb` defined in `apps/web/work../db/resources.ts`.
+  `Cloudflare.D1.Database("BetterAuth")` — a second D1 alongside the
+  canonical `PhoenixDb` defined in `apps/web/worker/db/resources.ts`.
   The better-auth tables (user, session, account, verification) live on
   the same D1 as the rest of the product data (post, term,
   definition, user_profile) — schema is in
@@ -108,7 +110,7 @@ Three load-bearing differences from the reference Layer:
 
 The fork is ~40 lines and is the smallest delta that keeps the three
 above. Tracking upstream is straightforward — the structure (Random for
-secret, `D1Connection.bind`, `Effect.cached` for the
+secret, `D1.QueryDatabase`, `Effect.cached` for the
 `makeBetterAuth` call) mirrors the reference Layer; only the
 `makeBetterAuth` body diverges.
 
@@ -186,8 +188,8 @@ parameter is the seam.
 
 ## Reuse the existing phoenix D1
 
-`yield* Cloudflare.D1Connection.bind(PhoenixDb)` is how the Layer binds
-to the canonical D1 (declared in `apps/web/work../db/resources.ts`).
+`yield* Cloudflare.D1.QueryDatabase(PhoenixDb)` is how the Layer binds
+to the canonical D1 (declared in `apps/web/worker/db/resources.ts`).
 The drizzle adapter then takes `connection.raw` (the underlying
 `D1Database` handle) plus the shared schema:
 
@@ -231,13 +233,13 @@ unchanged.
   factory that takes the resolved instance.
 - `apps/web/worker/index.ts` — the worker init that yields `betterAuth.auth`
   once and threads `authInstance` into the fate Layer.
-- `apps/web/work../db/resources.ts` — `PhoenixDb` (the shared D1).
+- `apps/web/worker/db/resources.ts` — `PhoenixDb` (the shared D1).
 - `apps/web/worker/db/drizzle/schema.ts` — the shared schema (product
   tables + better-auth tables).
 
 ## See also
 
-- [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) — `D1Connection.bind`,
+- [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) — `D1.QueryDatabase`,
   drizzle wiring.
 - [effect-layer-composition.md](./effect-layer-composition.md) — the
   `RuntimeContext`-escape: why a service whose method yields
