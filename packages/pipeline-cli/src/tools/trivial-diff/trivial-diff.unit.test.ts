@@ -1,10 +1,15 @@
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import {extractControlPlaneRe} from "../codeowners-cp/codeowners-cp.ts";
 import {type ClassifyOptions, classify, parseUnifiedDiff} from "./trivial-diff.ts";
 
 // The live CONTROL_PLANE_RE (gh-issue-intake-formats.md §CP) — a fixture only. The bin
 // re-resolves this from origin/main at run time; the core takes it as a string input.
+// The lockstep test at the bottom of this file asserts this fixture still equals the
+// canonical §CP line on disk, so it can't silently drift again (#2343).
 const LIVE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
+	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
 
 const opts = (over: Partial<ClassifyOptions> = {}): ClassifyOptions => ({
 	controlPlaneRe: LIVE_RE,
@@ -118,6 +123,15 @@ describe("classify — §CP forces non-trivial (live boundary, checked first)", 
 		);
 	});
 
+	it("a pipeline agent-definition path (claude-plugins/…/agents/) → non-trivial (ADR 0150)", () => {
+		const c = classify(
+			fileDiff("claude-plugins/kampus-pipeline/agents/coder.md", ["a tweak"]),
+			opts(),
+		);
+		expect(c.verdict).toBe("non-trivial");
+		expect(c.reason).toMatch(/control-plane/);
+	});
+
 	it("the gate-critical formats doc → non-trivial (control-plane checked before doc bound)", () => {
 		const c = classify(
 			fileDiff("claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md", ["a tweak"]),
@@ -151,5 +165,23 @@ describe("classify — unreadable / unparseable boundary forces non-trivial (fai
 describe("classify — unparseable / empty diff forces non-trivial (fail-closed)", () => {
 	it("non-diff input → non-trivial", () => {
 		expect(classify("not a diff at all", opts()).verdict).toBe("non-trivial");
+	});
+});
+
+// Lockstep: extract the canonical §CP line from the real gh-issue-intake-formats.md on
+// disk (via the single-sourced extractControlPlaneRe) and assert LIVE_RE still equals it,
+// so this fixture can't silently drift from §CP again (#2343).
+describe("LIVE_RE fixture stays in lockstep with §CP on disk", () => {
+	const FORMATS_PATH = fileURLToPath(
+		new URL(
+			"../../../../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
+			import.meta.url,
+		),
+	);
+
+	it("equals the canonical CONTROL_PLANE_RE extracted from the formats doc", () => {
+		const canonical = extractControlPlaneRe(readFileSync(FORMATS_PATH, "utf8"));
+		expect(canonical).not.toBeNull();
+		expect(LIVE_RE).toBe(canonical);
 	});
 });
