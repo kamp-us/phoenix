@@ -15,6 +15,14 @@ interface ImportMetaEnv {
 	 * round-trip — see `src/fate/snapshot.ts`. #2326 flips it on measured evidence.
 	 */
 	readonly VITE_FEED_SNAPSHOT?: string;
+	/**
+	 * Reload→feed-paint instrumentation flag (epic #2316, verification #2326). `"on"`
+	 * emits the User Timing marks/measures in a measurement/stage build; the instrument
+	 * is also on automatically in dev. Absent/anything else keeps it off in a production
+	 * build (zero cost). A build-time flag, like `VITE_FEED_SNAPSHOT` — see
+	 * `src/lib/feedPerf.ts`.
+	 */
+	readonly VITE_FEED_PERF?: string;
 }
 
 interface ImportMeta {

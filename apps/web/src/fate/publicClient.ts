@@ -11,6 +11,7 @@
  * (an anon `/fate/live` `EventSource` 401-loops); live + mutations + viewer-scoped
  * scalars stay on the authed client below the gate. See ADR 0167.
  */
+import {noteSnapshotHydrated} from "../lib/feedPerf";
 import {createClient, type FateClientInstance} from "./client";
 import {hydrateAnonPublicClient, installAnonSnapshotPersistence} from "./snapshot";
 
@@ -31,7 +32,9 @@ export function getPublicFateClient(): FateClientInstance {
 		// uninstaller is intentionally discarded). Both no-op when the containment flag
 		// is off (flag-off ⇒ no storage reads/writes), so this is byte-identical to today
 		// until #2326 flips it. See `snapshot.ts`.
-		hydrateAnonPublicClient(publicClient);
+		// Note a hydrated snapshot so the reload→paint instrument classifies this paint as
+		// the snapshot path (#2326). No-op when the snapshot flag is off (returns false).
+		if (hydrateAnonPublicClient(publicClient)) noteSnapshotHydrated();
 		installAnonSnapshotPersistence(publicClient);
 	}
 	return publicClient;
