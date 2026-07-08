@@ -1,5 +1,7 @@
 # CI/CD — deploy from GitHub Actions
 
+> Derived from `alchemy@2.0.0-beta.59` — re-verify on pin bump.
+
 How phoenix ships from CI. Pushes to `main` deploy the `prod` stage; pull requests
 get an isolated `pr-<n>` preview with its own worker + D1 + DOs; closing a PR tears
 that stage down. Adapted from [alchemy tutorial Part 5](https://v2.alchemy.run/tutorial/part-5/)
@@ -83,8 +85,9 @@ orphaned token.
   `ALCHEMY_PASSWORD` secrets — do **not** set `ALCHEMY_PROFILE` in the workflow.
 - **The state store is versioned; re-bootstrap on alchemy bumps.** A `Cloudflare.state()`
   deploy fails with `Cloudflare State store not found … run 'alchemy … bootstrap'` when the
-  account's state-store worker is out of date (e.g. alchemy `beta.52` expects store **v7**,
-  `beta.45` used **v6**). Re-run the `alchemy cloudflare bootstrap --profile admin` step
+  account's state-store worker is out of date (an alchemy bump can move the expected store
+  version — e.g. the `beta.45` → `beta.52` bump moved it v6 → v7). Re-run the
+  `alchemy cloudflare bootstrap --profile admin` step
   above to upgrade it in place. The upgrade is **account-global and one-way**, so once you
   bump, branches still on the older alchemy can no longer deploy against that account.
 - **`exec alchemy`, not the package script.** `pnpm --filter @kampus/web deploy --stage X`
@@ -93,8 +96,10 @@ orphaned token.
   --stage "$STAGE" --yes` so the flags reach the alchemy CLI.
 - **`--yes` is required in CI.** Without it, alchemy prompts for plan approval on any
   change and the job hangs.
-- **`STAGE` regex.** Stage names must match `^[a-z0-9]([-_a-z0-9]*)$` — `pr-12` and
-  `prod` both pass.
+- **`STAGE` regex.** Stage names must match `[a-z0-9][-_a-z0-9]*` (the CLI's
+  `--stage` schema; `alchemy@2.0.0-beta.59 — src/Cli/commands/_shared.ts`) — `pr-12`
+  and `prod` both pass. The same file is why an *omitted* `--stage` is never neutral:
+  it defaults to `dev_${USER}`, a personal stage — CI always passes `--stage` explicitly.
 - **`BETTER_AUTH_SECRET` is per-app, at deploy AND destroy.** An app that binds it
   (`@kampus/web`, whose `config.ts` reads it `Effect.orDie`) needs it in env for both
   `deploy` and `destroy` (`destroy` loads `alchemy.run.ts` to build the worker layer),
@@ -105,6 +110,12 @@ orphaned token.
 - **Prod safety check.** The `cleanup` job refuses to `destroy` if `STAGE == prod`,
   even though it only ever runs on closed PRs. It runs per matrix leg, so each app's
   preview-stage teardown is independently guarded.
+- **Teardown works *because* the state is hosted.** `alchemy destroy` is state-driven
+  (deploy with desired state zeroed out); the `cleanup` job can destroy `pr-<n>` from a
+  fresh runner only because `Cloudflare.state()` durably remembers what that stage
+  deployed. A stage whose state lived in a discarded checkout's `.alchemy/` is
+  undestroyable — its real resources orphan (#2340). The full lifecycle contract is in
+  [alchemy-stack-deploy.md → Stage lifecycle & state discipline](./alchemy-stack-deploy.md#stage-lifecycle--state-discipline).
 - **One sticky comment, one line per app.** The PR preview comment is a single sticky
   comment keyed by `<!-- preview-deploy -->`, with a per-app sub-line keyed by
   `<!-- preview-deploy:<app> -->`. Parallel matrix legs each upsert only their own
