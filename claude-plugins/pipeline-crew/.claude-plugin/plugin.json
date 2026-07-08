@@ -1,0 +1,20 @@
+{
+	"$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+	"name": "pipeline-crew",
+	"description": "The kamp.us pipeline crew: three spawnable agent defs (EA / engineering-manager / triage-guy) that conduct the kampus-pipeline skills as a 3-session crew over the intake → execution → human seams. Consumes kampus-pipeline's shipped agents; every operator-specific detail is supplied per install through the personalization seam, so the plugin carries zero operator data.",
+	"author": {
+		"name": "kamp-us",
+		"url": "https://github.com/kamp-us"
+	},
+	"homepage": "https://github.com/kamp-us/phoenix",
+	"repository": "https://github.com/kamp-us/phoenix",
+	"license": "MIT",
+	"keywords": [
+		"agent-crew",
+		"pipeline-orchestration",
+		"tmux",
+		"agent-workflow",
+		"issue-pipeline",
+		"repo-agnostic"
+	]
+}

@@ -1,0 +1,46 @@
+{
+	// pipeline-crew personalization seam — the template.
+	//
+	// Copy this file to your operator-owned config and fill EVERY <placeholder>:
+	//   cp "${CLAUDE_PLUGIN_ROOT}/crew.config.template.jsonc" .claude/crew.config.jsonc
+	// (or keep it anywhere and point $CREW_CONFIG at it). Then git-ignore your copy.
+	//
+	// This template ships ZERO real operator data — placeholders only. See
+	// PERSONALIZATION.md for the mechanism, the dimension contract, and stand-up.
+
+	// The human the crew serves and addresses.
+	"operator": {
+		"name": "<operator-name>",
+		"handle": "<operator-handle>"
+	},
+
+	// Who reviews / approves / merges control-plane (§CP) PRs — the human the EA
+	// banks §CP work for and relays to (ADR 0135).
+	"controlPlaneApprover": {
+		"name": "<control-plane-approver-name>",
+		"login": "<control-plane-approver-login>"
+	},
+
+	// Where the single-owner human-notification protocol delivers pings.
+	"notification": {
+		"channel": "<notification-channel>",
+		"handle": "<notification-handle>"
+	},
+
+	// tmux session + the three per-role window/pane names the stand-up brings up.
+	"tmux": {
+		"session": "<tmux-session-name>",
+		"windows": {
+			"ea": "<ea-window-name>",
+			"engineeringManager": "<em-window-name>",
+			"triage": "<triage-window-name>"
+		}
+	},
+
+	// The model tier each role runs on (planning tier vs execution/build tier).
+	"modelTiers": {
+		"ea": "<ea-model-tier>",
+		"engineeringManager": "<em-model-tier>",
+		"triage": "<triage-model-tier>"
+	}
+}
