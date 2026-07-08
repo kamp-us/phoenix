@@ -6,7 +6,7 @@ date: 2026-07-07
 tags: [plugin-portability, packaging, distribution, pipeline]
 ---
 
-# 0167 — kampus-pipeline is audited spec-conformant against the official Claude Code plugin spec
+# 0171 — kampus-pipeline is audited spec-conformant against the official Claude Code plugin spec
 
 ## Context
 
