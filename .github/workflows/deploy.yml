@@ -21,6 +21,84 @@ env:
   STAGE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'prod' }}
 
 jobs:
+  # Job-level change-detection gating ONLY the `deploy` job (issue #2366): a
+  # docs/canon/pipeline-only PR (`.decisions/`, `.patterns/`, `.glossary/`, `*.md`,
+  # `.claude/`, `claude-plugins/`, `packages/pipeline-cli/`, …) mints no preview stack
+  # — no worker, no D1, no DOs, no Flagship app that nothing ever requests.
+  #
+  # Why JOB-level and not a workflow-level `paths:`/`paths-ignore:` filter: a
+  # workflow-level filter would ALSO gate the `closed`-event `cleanup` job, so a PR
+  # that deployed while it had code, then rewrote to docs-only, would skip teardown and
+  # LEAK its stack (the #813/#1505 false-green class). `cleanup` therefore stays
+  # unconditional on `closed` (below) and only `deploy` consumes this gate.
+  #
+  # THE QUEUE-SAFE INVARIANT (do not invert): the deploy job's RUN-set MUST be a
+  # SUPERSET of ci.yml's `e2e` RUN-set — deploy skips ONLY a PR where e2e also skips,
+  # never more. ci.yml's `e2e` job polls deploy.yml's sticky `<!-- preview-deploy -->`
+  # comment on a 10-minute deadline, so a PR that trips e2e but skips its deploy makes
+  # e2e poll out → red `ci-required` → wedged PR. So this `deploy` filter's path set is
+  # the EXACT path set of ci.yml's `changes.e2e` filter (kept identical, cross-referenced
+  # both ways — see the `e2e:` block in .github/workflows/ci.yml). Equal sets ⇒ deploy's
+  # path predicate never skips a PR where e2e's does ⇒ superset holds by construction.
+  # It also FAILS TOWARD DEPLOYING: `push` (prod) and any non-PR event always deploy,
+  # and any UI change (`apps/**/src/**`, review-design's input — ADR 0165) is in the set,
+  # so a skipped deploy is provably preview-irrelevant. Deploy's checks are NOT ruleset-
+  # required (ruleset 17377992 requires only leak-scan / skill-frontmatter / ci-required,
+  # and deploy.yml has no `merge_group` trigger), so the classic paths-filter/merge-queue
+  # wedge does not bite here; the e2e-poll coupling above is the real constraint.
+  changes:
+    name: detect deploy relevance
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read # dorny/paths-filter reads the PR's changed files via the API
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+    steps:
+      # dorny/paths-filter resolves the PR's changed files from the API (no checkout
+      # needed on a `pull_request` event). Run it only for a non-closed PR — `push`
+      # (prod) and `closed` (cleanup) never consult it; the `decide` step below forces
+      # `deploy=true` for every non-PR event so prod always deploys.
+      - uses: dorny/paths-filter@v3.0.2
+        id: filter
+        if: github.event_name == 'pull_request' && github.event.action != 'closed'
+        with:
+          filters: |
+            # Deploy-relevant paths = ci.yml's `changes.e2e` filter, EXACTLY (issue #2366).
+            # Keep this list byte-for-byte in sync with the `e2e:` block in
+            # .github/workflows/ci.yml — the queue-safe invariant above (deploy-run ⊇
+            # e2e-run) requires equal path sets, so an edit to one MUST edit the other.
+            deploy:
+              - 'apps/**/src/**'
+              - 'apps/**/index.html'
+              - 'apps/**/vite.config.ts'
+              - 'apps/**/worker/**'
+              - 'apps/**/alchemy.run.ts'
+              - 'apps/**/tests/e2e/**'
+              - 'apps/**/playwright.config.cjs'
+              - 'apps/**/package.json'
+              - 'packages/preview-seed/**'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/deploy.yml'
+      # Emit a VISIBLE, reported decision (issue #2366 AC): a skipped deploy must not be
+      # a silently-absent context — the e2e poll + humans see this job's verdict in the
+      # run log. `push`/non-PR events always deploy (fail toward deploying); on a PR the
+      # dorny filter decides. This job always completes success, so it never propagates a
+      # skip to `deploy`/`cleanup` (which would skip the prod deploy on `push`).
+      - id: decide
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::event '${{ github.event_name }}' is not a pull_request → DEPLOY (prod/backstop; fail toward deploying)"
+          elif [ "${{ steps.filter.outputs.deploy }}" = "true" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::deploy-relevant paths changed → DEPLOY preview stack (matches ci.yml e2e filter → e2e runs too)"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no deploy-relevant paths changed → SKIP preview deploy (docs/canon/pipeline-only PR). e2e also skips (identical filter); the closed-event cleanup still runs unconditionally."
+          fi
+
   # Single source of the per-app deploy roster (ADR 0057, #1434). The `app` /
   # `pnpm-name` / `needs-auth` set is declared ONCE here and consumed by BOTH `deploy`
   # and `cleanup` via `fromJSON(needs.app-roster.outputs.matrix)`, so an app added to
@@ -75,12 +153,19 @@ jobs:
     # and can merge instead of wedging on a deploy that structurally can't
     # authenticate; the `push`-to-`main` (prod) path is `github.actor`-independent
     # and unchanged.
+    #
+    # Deploy-relevance gate (issue #2366): only mint a preview stack when the diff
+    # touches a deploy-relevant path (== ci.yml's `e2e` filter — see the `changes` job
+    # above). `push` (prod) forces `changes.outputs.deploy == 'true'`, so this term never
+    # gates the prod deploy; a docs/canon/pipeline-only PR skips it. `changes` always
+    # completes success, so consuming its output here never skip-propagates onto prod.
     if: >-
       github.event.action != 'closed' &&
       github.actor != 'dependabot[bot]' &&
+      needs.changes.outputs.deploy == 'true' &&
       (github.event_name == 'push' ||
        github.event.pull_request.head.repo.full_name == github.repository)
-    needs: app-roster
+    needs: [app-roster, changes]
     runs-on: ubuntu-latest
     permissions:
       contents: read
