@@ -1,5 +1,7 @@
 # Layer composition and runtime wiring
 
+> Derived from `alchemy@2.0.0-beta.59` — re-verify on pin bump.
+
 How phoenix builds Effect runtimes from layers. Read [effect-context-service.md](./effect-context-service.md) first, then [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) for *where* these layers get provided (worker scope vs per request).
 
 ## The three layer constructors
@@ -77,7 +79,7 @@ The temptation is to define `class FateLayer extends Context.Service<FateLayer, 
 
 The factory shape is for **pure composition over already-resolved values**. A `Context.Service` Layer (with `Layer.effect(...)`) is the right call when the Layer is genuinely doing scoped work:
 
-- **Async or fallible construction** — building the service requires a `yield*` of an effect that can fail (e.g. `BetterAuthLive` resolving `Random` + `D1Connection`).
+- **Async or fallible construction** — building the service requires a `yield*` of an effect that can fail (e.g. `BetterAuthLive` resolving `Random` + `Cloudflare.D1.QueryDatabase`).
 - **Scoped resources** — a service that needs `Layer.scoped` for finalizers (connection pools, file handles).
 - **A real domain shape** — the service has methods (`Pasaport.validateSession`, `Drizzle.run`), not just a composed Layer.
 
@@ -142,7 +144,7 @@ const result = await Effect.runPromiseExit(
 // If SomeLayer fails to construct, the Exit is a failure with that layer's error.
 ```
 
-Phoenix's feature Layers don't fail at construction today — `DrizzleLive` just wraps a constructed builder, no validation. `BetterAuthLive` can fail at the `Random`/`D1Connection` resolve step; that surfaces as a Layer error at the worker's outer `Effect.provide`, before any handler runs.
+Phoenix's feature Layers don't fail at construction today — `DrizzleLive` just wraps a constructed builder, no validation. `BetterAuthLive` can fail at the `Random`/`Cloudflare.D1.QueryDatabase` resolve step; that surfaces as a Layer error at the worker's outer `Effect.provide`, before any handler runs.
 
 ## See also
 
