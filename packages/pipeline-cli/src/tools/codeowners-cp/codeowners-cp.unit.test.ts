@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {
 	type CpPath,
@@ -13,8 +15,10 @@ import {
 
 // The live CONTROL_PLANE_RE (gh-issue-intake-formats.md §CP) — kept here only as a
 // fixture for the parser; the gate reads it from disk, never from a hardcoded copy.
+// The lockstep test at the bottom of this file asserts this fixture still equals the
+// canonical §CP line on disk, so it can't silently drift again (#2343).
 const LIVE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
+	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
 
 describe("extractControlPlaneRe", () => {
 	it("pulls the regex from the canonical CONTROL_PLANE_RE='…' assignment line", () => {
@@ -33,7 +37,8 @@ describe("splitTopLevelBranches", () => {
 		const branches = splitTopLevelBranches(LIVE_RE);
 		expect(branches).toEqual([
 			"(\\.claude|\\.github)/",
-			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/",
+			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/",
+			"claude-plugins/kampus-pipeline/agents/",
 			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$",
 			"claude-plugins/kampus-pipeline/hooks(/|\\.json$)",
 			"packages/ci-required/",
@@ -50,18 +55,25 @@ describe("expandBranch", () => {
 		]);
 	});
 
-	it("expands the five skill dirs", () => {
+	it("expands the six skill dirs", () => {
 		const out = expandBranch(
-			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/",
+			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/",
 		);
 		expect(out.map((p) => p.path)).toEqual([
 			"claude-plugins/kampus-pipeline/skills/ship-it/",
 			"claude-plugins/kampus-pipeline/skills/review-code/",
 			"claude-plugins/kampus-pipeline/skills/review-doc/",
 			"claude-plugins/kampus-pipeline/skills/review-skill/",
+			"claude-plugins/kampus-pipeline/skills/review-design/",
 			"claude-plugins/kampus-pipeline/skills/review-plan/",
 		]);
 		expect(out.every((p) => p.kind === "dir")).toBe(true);
+	});
+
+	it("passes the group-free agents dir branch through as a single dir (ADR 0150)", () => {
+		expect(expandBranch("claude-plugins/kampus-pipeline/agents/")).toEqual([
+			{path: "claude-plugins/kampus-pipeline/agents/", kind: "dir"},
+		]);
 	});
 
 	it("strips the $ end-anchor and unescapes a single exact-file branch", () => {
@@ -87,7 +99,7 @@ describe("expandBranch", () => {
 });
 
 describe("cpPaths over the live regex", () => {
-	it("resolves the full §CP path set (8 paths: dirs + the two exact files)", () => {
+	it("resolves the full §CP path set (14 paths: dirs + the two exact files)", () => {
 		expect(cpPaths(LIVE_RE).map((p) => p.path)).toEqual([
 			".claude/",
 			".github/",
@@ -95,7 +107,9 @@ describe("cpPaths over the live regex", () => {
 			"claude-plugins/kampus-pipeline/skills/review-code/",
 			"claude-plugins/kampus-pipeline/skills/review-doc/",
 			"claude-plugins/kampus-pipeline/skills/review-skill/",
+			"claude-plugins/kampus-pipeline/skills/review-design/",
 			"claude-plugins/kampus-pipeline/skills/review-plan/",
+			"claude-plugins/kampus-pipeline/agents/",
 			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
 			"claude-plugins/kampus-pipeline/hooks/",
 			"claude-plugins/kampus-pipeline/hooks.json",
@@ -167,7 +181,9 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/skills/review-code/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-doc/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-skill/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/review-design/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-plan/ @usirin",
+			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/claude-plugins/kampus-pipeline/hooks/ @usirin",
 			"/claude-plugins/kampus-pipeline/hooks.json @usirin",
@@ -186,7 +202,9 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/skills/review-code/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-doc/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-skill/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/review-design/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-plan/ @usirin",
+			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/packages/ci-required/ @usirin",
 		].join("\n");
@@ -204,5 +222,25 @@ describe("renderReport", () => {
 		const out = renderReport([{path: "packages/pipeline-cli/", kind: "dir"} satisfies CpPath]);
 		expect(out).toContain("packages/pipeline-cli/  (dir)");
 		expect(out).toContain("1 §CP control-plane path");
+	});
+});
+
+// Lockstep: eat our own dogfood — extract the canonical §CP line from the real
+// gh-issue-intake-formats.md on disk and assert the LIVE_RE fixture still equals it.
+// Without this, the fixture drifts silently from §CP (the review-design/agents/ gap of
+// #2343), because validate-gate-path-drift.sh's consumer set never included these unit
+// fixtures. This assertion is the drift check the fixtures were missing.
+describe("LIVE_RE fixture stays in lockstep with §CP on disk", () => {
+	const FORMATS_PATH = fileURLToPath(
+		new URL(
+			"../../../../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
+			import.meta.url,
+		),
+	);
+
+	it("equals the canonical CONTROL_PLANE_RE extracted from the formats doc", () => {
+		const canonical = extractControlPlaneRe(readFileSync(FORMATS_PATH, "utf8"));
+		expect(canonical).not.toBeNull();
+		expect(LIVE_RE).toBe(canonical);
 	});
 });
