@@ -7,11 +7,19 @@ name: orphan-sweep
 # @kampus/orphan-sweep CLI (built in #1141/#1142) on a daily schedule to delete them.
 #
 # Safety is the CLI's pure core (packages/orphan-sweep/src/orphan-sweep.ts):
-# allow-by-pattern + deny-by-protection. prod, named-dev (--protect), and OPEN-PR
-# pr-<n> previews are NEVER swept. This job also passes --sweep-closed-previews, so it
-# is the backstop that reaps a MERGED/CLOSED PR's pr-<n> preview (open-PR previews stay
-# protected by construction — the core keeps any pr-<n> whose PR is in the open-PR list,
-# regardless of the flag); it-* orphans are swept as before (#2145).
+# allow-by-pattern + deny-by-protection. prod, named-dev (--protect AND the dev/dev-*
+# shape), and OPEN-PR pr-<n> previews are NEVER swept. This job also passes
+# --sweep-closed-previews, so it is the backstop that reaps a MERGED/CLOSED PR's pr-<n>
+# preview (open-PR previews stay protected by construction — the core keeps any pr-<n>
+# whose PR is in the open-PR list, regardless of the flag); it-* orphans are swept as
+# before (#2145).
+#
+# It also passes --sweep-dev-test-stages, which reaps stale test/test-* stages only — the
+# dev/dev-* named-dev family (dev-usirin-*, dev-cansirin) is a protected category the core
+# NEVER deletes, flag or no flag (#2340; armed here per #2358 leg 1). The workflow_dispatch
+# dry-run below is the human eyeball surface for this delete set: dispatch it (execute:
+# false) to read the exact test-* plan before this §CP change is merged, since the merge is
+# what arms the daily schedule to --execute it.
 on:
   schedule:
     # Daily at 03:17 UTC — off-hours and off the top of the hour (the GitHub scheduler
@@ -52,8 +60,12 @@ jobs:
 
       # A scheduled run always --executes: the whole point is to bound the leak
       # autonomously. A manual workflow_dispatch defaults to dry-run so a human can
-      # eyeball the plan first, opting into deletion via the `execute` input.
-      - name: Sweep orphan it-* integration stages
+      # eyeball the plan first — including the test-* delete set from --sweep-dev-test-stages,
+      # which the dry-run prints without touching the account — opting into deletion via the
+      # `execute` input. Both paths pass --sweep-dev-test-stages so the dry-run and the armed
+      # schedule report/act on the same plan; the core's named-dev protection keeps dev/dev-*
+      # out of it regardless (#2340/#2358).
+      - name: Sweep orphan it-* and stale test-* stages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -62,9 +74,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.execute }}" = "true" ]; then
-            echo "Running sweep with --execute (deleting orphan it-* and closed-PR pr-<n> resources)."
-            node packages/orphan-sweep/src/bin.ts sweep --execute --sweep-closed-previews
+            echo "Running sweep with --execute (deleting orphan it-*, closed-PR pr-<n>, and stale test-* resources)."
+            node packages/orphan-sweep/src/bin.ts sweep --execute --sweep-closed-previews --sweep-dev-test-stages
           else
             echo "Running sweep in dry-run mode (printing the plan only; no deletions)."
-            node packages/orphan-sweep/src/bin.ts sweep --sweep-closed-previews
+            node packages/orphan-sweep/src/bin.ts sweep --sweep-closed-previews --sweep-dev-test-stages
           fi
