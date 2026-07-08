@@ -1,11 +1,13 @@
 /**
  * `findCrewLeaks` — the pure match-class core for the pipeline-crew sanitization
- * sweep (#2357). Covers every personal-data class the crew contract bans (paths,
- * emails, tmux pane ids, real operator names, personal-memory refs) AND the
- * false-positive safety that makes the sweep pass on the shipped crew content: the
- * README's deliberately-fictional seam examples (`@robin`, `Robin Operator`,
- * `#crew-pings`, `${CLAUDE_PLUGIN_ROOT}`, relative `../../.decisions/...`) must NOT
- * be flagged, only real operator data is.
+ * sweep (#2357). Covers every GENERIC personal-data class the crew contract bans
+ * (paths, emails, tmux pane ids, personal-memory refs) AND the false-positive safety
+ * that makes the sweep pass on the shipped crew content: the README's deliberately
+ * fictional seam examples (`@robin`, `#crew-pings`, `${CLAUDE_PLUGIN_ROOT}`, relative
+ * `../../.decisions/...`) must NOT be flagged. Fixtures use FAKE data only
+ * (`alice@example.com`, `/Users/alice`) — no real identifier appears anywhere here.
+ * There is intentionally NO operator-name class: a bare first name in prose is not
+ * caught, by founder ruling (see crew-leak.ts docblock).
  */
 import {describe, expect, it} from "@effect/vitest";
 import {type CrewLeak, findCrewLeaks, type LeakClass} from "./crew-leak.ts";
@@ -47,11 +49,16 @@ describe("findCrewLeaks — match classes", () => {
 		});
 	});
 
-	describe("email class", () => {
-		it("flags a real email address", () => {
-			const leaks = findCrewLeaks("ping imperialwarrior@gmail.com on failure");
+	describe("email class (generic any-email regex)", () => {
+		it("flags any email address", () => {
+			const leaks = findCrewLeaks("ping alice@example.com on failure");
 			expect(classes(leaks)).toContain("email");
-			expect(matched(leaks)).toContain("imperialwarrior@gmail.com");
+			expect(matched(leaks)).toContain("alice@example.com");
+		});
+		it("flags a differently-shaped email (subdomain + plus tag)", () => {
+			expect(matched(findCrewLeaks("route to ops+ci@mail.example.co.uk"))).toContain(
+				"ops+ci@mail.example.co.uk",
+			);
 		});
 		it("does NOT flag an npm scope (@kampus) or a fictional handle (@robin)", () => {
 			expect(classes(findCrewLeaks("install pipeline-crew@kampus"))).not.toContain("email");
@@ -67,21 +74,6 @@ describe("findCrewLeaks — match classes", () => {
 		});
 		it("does NOT flag hex url-encoding (%2F) or a bare percent", () => {
 			expect(classes(findCrewLeaks("path%2Fsegment and 100% done"))).not.toContain("tmux-id");
-		});
-	});
-
-	describe("operator-name class (real-operator deny-list)", () => {
-		it("flags the real operator identifiers", () => {
-			for (const name of ["umut", "usirin", "cansirin", "imperialwarrior"]) {
-				expect(classes(findCrewLeaks(`assign it to ${name}`))).toContain("operator-name");
-			}
-		});
-		it("is case-insensitive", () => {
-			expect(classes(findCrewLeaks("Umut approves §CP"))).toContain("operator-name");
-		});
-		it("does NOT flag fictional README example names (Robin Operator / Sam Approver)", () => {
-			expect(classes(findCrewLeaks('"name": "Robin Operator"'))).not.toContain("operator-name");
-			expect(classes(findCrewLeaks('"name": "Sam Approver"'))).not.toContain("operator-name");
 		});
 	});
 
@@ -105,10 +97,14 @@ describe("findCrewLeaks — match classes", () => {
 		});
 	});
 
+	it("does NOT flag a bare first name in prose (no operator-name class, by ruling)", () => {
+		expect(findCrewLeaks("assign the review to Robin, then Sam approves")).toEqual([]);
+	});
+
 	it("dedupes repeated identical hits and returns [] on clean text", () => {
 		expect(findCrewLeaks("")).toEqual([]);
 		expect(findCrewLeaks("a perfectly clean sentence with <placeholders>")).toEqual([]);
-		const dup = findCrewLeaks("umut and umut again");
-		expect(dup.filter((l) => l.class === "operator-name")).toHaveLength(1);
+		const dup = findCrewLeaks("ping alice@example.com and alice@example.com again");
+		expect(dup.filter((l) => l.class === "email")).toHaveLength(1);
 	});
 });

@@ -1,30 +1,31 @@
 /**
- * `crew-leak` core — the pure, IO-free matcher for the pipeline-crew sanitization
- * contract (issue #2357, crew epic #2342 Phase 4). Where `findLeaks` (leak-guard.ts)
- * scopes to *doc surfaces* and only the no-local-paths rule, this scans EVERY file
- * shipped under `claude-plugins/pipeline-crew/` for every personal-data class the
- * crew's "zero real operator data" contract bans (PERSONALIZATION.md): machine-local
- * paths, emails, tmux pane ids, real operator names, and personal-memory references.
+ * `crew-leak` core — the pure, IO-free, GENERIC-PATTERN personal-data detector for the
+ * pipeline-crew sanitization contract (issue #2357, crew epic #2342 Phase 4). Where
+ * `findLeaks` (leak-guard.ts) scopes to *doc surfaces* and only the no-local-paths rule,
+ * this scans EVERY file shipped under `claude-plugins/pipeline-crew/` for the high-value
+ * personal-data classes the crew's "zero real operator data" contract bans, each detected
+ * by its STRUCTURAL shape — never by a hardcoded person identifier:
  *
- * Two design decisions carry the false-positive safety, both grounded in the shipped
- * crew content (README.md, PERSONALIZATION.md, crew.config.template.jsonc):
+ *  - machine-local / home / absolute paths (`/Users/<name>`, `/home/<name>`, `~/.claude`, …),
+ *  - email addresses (any `local@domain.tld` — a crew def should carry ZERO emails),
+ *  - tmux pane ids (`%N`),
+ *  - personal auto-memory references (`MEMORY.md`, `/memory/`, `feedback_*`/`reference_*` slugs).
  *
- *  - Real-operator data is a NAMED DENY-LIST, not a generic detector. The README
- *    documents the seam with *fictional* examples on purpose — `@robin`,
- *    `"Robin Operator"`, `"Sam Approver"`, `#crew-pings`. A generic name/@handle
- *    matcher would red-flag that legitimate documentation. So the "operator-name"
- *    class matches only the KNOWN real phoenix operators; fictional stand-in values
- *    pass, real ones don't — which is exactly what the contract bans.
- *  - The path class mirrors leak-guard's precise deny-list (the specific machine-local
- *    home dirs), not a bare-`~/` catch-all, extended with `/home/<name>`. The crew
- *    ships `${CLAUDE_PLUGIN_ROOT}` and relative `../../.decisions/...` paths, which
- *    are not machine-local and must pass.
+ * Deliberately scope-limited (founder ruling): the check carries NO named operator
+ * deny-list and NO personal identifiers (names or emails) — not in this module and not in
+ * its tests. A bare first name in prose is therefore NOT caught, and that is accepted: the
+ * high-value leaks (emails, local/home paths, creds) are all pattern-detectable, whereas
+ * bare-name matching is low-value and false-positive-prone (it would red-flag the README's
+ * fictional `Robin`/`Sam` seam examples), so it is intentionally dropped. Do not add
+ * name-literal matching back in any form.
  *
- * Every match class is unit-tested in `crew-leak.unit.test.ts`; the deny-list is the
- * load-bearing safety, so it lives in one place and is exercised class by class.
+ * The path class mirrors leak-guard's precise deny-list (the specific machine-local home
+ * dirs), not a bare-`~/` catch-all — the crew ships `${CLAUDE_PLUGIN_ROOT}` and relative
+ * `../../.decisions/...` paths, which are not machine-local and must pass. Every match
+ * class is unit-tested in `crew-leak.unit.test.ts`, class by class, on FICTIONAL fixtures.
  */
 
-export type LeakClass = "path" | "email" | "tmux-id" | "operator-name" | "memory-ref";
+export type LeakClass = "path" | "email" | "tmux-id" | "memory-ref";
 
 export interface CrewLeak {
 	/** Which sanitization-contract class this hit belongs to. */
@@ -40,24 +41,6 @@ interface ClassPattern {
 	readonly pattern: RegExp;
 	readonly reason: string;
 }
-
-/**
- * The real phoenix operators the crew must never hardcode — the deny-list the
- * "operator-name" class is grounded in. These are the actual people the original
- * author's install addressed; the shipped plugin parameterizes them behind the
- * `operator.*` / `controlPlaneApprover.*` seam keys, so any literal occurrence in
- * crew content is a sanitization miss. Fictional README examples (robin/sam) are
- * deliberately absent from this list, so they pass.
- */
-export const OPERATOR_NAMES: ReadonlyArray<string> = [
-	"umut",
-	"sirin",
-	"usirin",
-	"cansirin",
-	"imperialwarrior",
-];
-
-const operatorNamePattern = new RegExp(`\\b(?:${OPERATOR_NAMES.join("|")})\\b`, "gi");
 
 // Order = report order. Every pattern carries the global flag for the per-match scan.
 const CLASS_PATTERNS: ReadonlyArray<ClassPattern> = [
@@ -118,12 +101,6 @@ const CLASS_PATTERNS: ReadonlyArray<ClassPattern> = [
 		class: "memory-ref",
 		pattern: /\b(?:feedback|reference|project)_[a-z0-9]+(?:_[a-z0-9]+)+\b/g,
 		reason: "personal auto-memory slug (feedback_*/reference_*/project_*)",
-	},
-	{
-		class: "operator-name",
-		pattern: operatorNamePattern,
-		reason:
-			"real operator name — the crew parameterizes people behind the operator.* / controlPlaneApprover.* seam keys",
 	},
 ];
 

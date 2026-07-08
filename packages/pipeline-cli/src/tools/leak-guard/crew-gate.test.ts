@@ -1,9 +1,10 @@
 /**
  * `sweepCrew` over a fake crew dir — the filesystem-seam test for #2357. The pure
- * match classes are covered in `crew-leak.unit.test.ts`; this crosses the IO gate,
- * asserting the exit-code contract from observable outcomes (never by spawning the
- * bin): a clean tree succeeds, a seeded-leak fixture `CheckFailed`s, and a zero-file
- * scope `CheckFailed`s (fail-closed, ADR 0092).
+ * generic match classes are covered in `crew-leak.unit.test.ts`; this crosses the IO
+ * gate, asserting the exit-code contract from observable outcomes (never by spawning
+ * the bin): a clean tree succeeds, a seeded-leak fixture `CheckFailed`s, and a zero-file
+ * scope `CheckFailed`s (fail-closed, ADR 0092). Seeded fixtures use FAKE data only
+ * (`alice@example.com`, `/Users/someone`) — no real identifier appears here.
  */
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
@@ -55,17 +56,12 @@ describe("sweepCrew — the CI exit-code gate over a fake crew dir", () => {
 	});
 
 	it("FAILS (CheckFailed) on a seeded email leak", async () => {
-		writeCrewFile("README.md", "ping imperialwarrior@gmail.com\n");
+		writeCrewFile("README.md", "ping alice@example.com\n");
 		expect(isCheckFailed(await run(sweepCrew(root)))).toBe(true);
 	});
 
 	it("FAILS (CheckFailed) on a seeded tmux pane id", async () => {
 		writeCrewFile("README.md", "ping the triage pane %11\n");
-		expect(isCheckFailed(await run(sweepCrew(root)))).toBe(true);
-	});
-
-	it("FAILS (CheckFailed) on a seeded real operator name", async () => {
-		writeCrewFile("README.md", "assign the §CP merge to cansirin\n");
 		expect(isCheckFailed(await run(sweepCrew(root)))).toBe(true);
 	});
 
