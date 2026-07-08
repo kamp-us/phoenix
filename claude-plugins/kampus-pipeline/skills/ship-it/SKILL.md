@@ -285,12 +285,22 @@ echo "$FILES" | grep -Eq '^(apps|packages|\.glossary|infra)/' && echo "has-code"
 # .md on review-doc's own surface is (#542/#650/#919/#1987). The §DOC contract is the single source — cite, don't re-derive.
 echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary|infra)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 # UI probe → review-design (ADDITIVE, not a class): a changed path under apps/web/src, a *.tsx
-# file, or a style surface (*.css). This UI_RE MUST stay identical to the reviewer agent's
-# UI-affecting dispatch rule (reviewer.md, #2249: "apps/web/src, *.tsx, and style surfaces") —
-# required-gate == dispatched-gate, else a UI PR routes to review-design at review time but
-# ship-it doesn't require it (or vice versa). When a second app worker is added, generalize BOTH
-# this UI_RE and reviewer.md's rule to apps/**/src in lockstep. See the note after the routing.
+# file, or a style surface (*.css). Like CONTROL_PLANE_RE/GUARD_ADR_RE above, the literal below
+# is the fail-closed REFERENCE + the validate-gate-path-drift lockstep target, NOT the live
+# decision source: it is re-resolved from origin/main right after, so an injected skill snapshot
+# that predates the review-design gate can't silently DROP the UI probe and slip a UI PR past the
+# gate (#2341 — the #981 idiom, previously only on §CP/GUARD, now extended to UI_RE). ship-it/
+# SKILL.md@main's `UI_RE=` line is the ONE live source; reviewer.md re-resolves the SAME line from
+# the same ref (reviewer.md, #2249/#2341), so required-gate == dispatched-gate holds by
+# construction — both sides read live main, not two independently-aging snapshots. When a second
+# app worker is added, generalize this one live UI_RE to apps/**/src and both sides track it.
 UI_RE='^apps/web/src/|\.tsx$|\.css$'
+UI_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^UI_RE=' | head -n1 || true)"
+if [ -n "$UI_LIVE" ]; then
+  UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"   # UI-gating tracks origin/main, not the snapshot's age (#2341)
+else
+  UI_RE='.'   # FAIL CLOSED: can't read origin/main's UI_RE ⇒ treat EVERY path as UI-affecting ⇒ REQUIRE review-design, never silently skip the gate (the safe default is demand-the-gate)
+fi
 echo "$FILES" | grep -Eq "$UI_RE" && echo "has-ui"   # UI-affecting → require review-design ALONGSIDE the class gate(s)
 ```
 
@@ -377,9 +387,16 @@ files under `apps/web/src`, `*.tsx`, and style surfaces"). This is the
 same **required-gate == dispatched-gate** invariant that binds the has-code probe to review-code's
 scope: if ship-it required `review-design` on a diff the reviewer never routed to `review-design`,
 that PR would demand a `review-design: PASS` **no gate ever produces** → every UI PR **deadlocks**
-(`unverified — no review-design PASS`). Keep the two definitions in **lockstep** — when the
-reviewer's UI-affecting rule changes (e.g. a new app worker, a new style surface), this `UI_RE`
-changes with it, never one without the other.
+(`unverified — no review-design PASS`). Lockstep here is **not two hand-synced copies that drift as
+each side's checkout ages** — that staleness was the enforcement hole (#2341: a shipper/reviewer on
+a snapshot predating the review-design merge silently omitted the gate; PR #2333 merged
+un-design-reviewed). Both sides instead resolve `UI_RE` from **one live source — `UI_RE=` in
+`ship-it/SKILL.md` on `origin/main`**, read via `?ref=main` at run time (the `#981` idiom the §CP
+`CONTROL_PLANE_RE`/`GUARD_ADR_RE` already use): ship-it re-resolves it in the probe above, and
+`reviewer.md` re-resolves the **same line from the same ref** before deciding to dispatch
+`review-design`. Both fail closed to *require*/`dispatch` the gate if that line is unreadable —
+never to skip it. So the two agree by construction, not by manual sync: change the one live `UI_RE`
+(e.g. a new app worker → `apps/**/src`) and both sides track it on their next run.
 
 **The docs class must equal `review-doc`'s verification scope, or the gate it demands is
 unreachable.** ship-it requires a class's gate PASS *because that gate runs on that class* —

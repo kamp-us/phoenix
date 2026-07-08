@@ -33,6 +33,8 @@ follow it as your authoritative procedure:
   changed path matches the UI-affecting set, `review-design` is dispatched **alongside**
   the PR's code/doc/skill gate — never instead of it. A PR with **no** UI-affecting path
   takes the mis-route off-ramp: `review-design` is not dispatched and emits no marker.
+  **Resolve the UI-affecting set from live `main`, not this snapshot** — see the
+  [UI dispatch in lockstep with ship-it](#dispatch-review-design-in-lockstep-with-ship-its-live-ui_re) invariant below.
 - **A planned epic** (a `plan-epic`-output ledger whose `status:planned` children need
   gating) → read and follow `claude-plugins/kampus-pipeline/skills/review-plan/SKILL.md`.
 
@@ -86,6 +88,27 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   that namespace's scan). Upsert it one-per-PR per the skill. The verdict on the PR is the
   whole output — a verdict returned only to the orchestrator and never posted is a dropped
   gate.
+<a id="dispatch-review-design-in-lockstep-with-ship-its-live-ui_re"></a>
+- **Dispatch `review-design` in lockstep with ship-it's LIVE `UI_RE` — resolve the
+  UI-affecting set from `origin/main`, never this snapshot (`ui_reresolve`).** The prose set
+  above (`apps/web/src/`, `*.tsx`, style surfaces) is the fail-closed **reference**, not the
+  live decision source: a reviewer whose worktree/injected snapshot predates the review-design
+  merge would otherwise silently omit the dispatch on a UI PR, while ship-it — grounding against
+  live main — still *requires* the gate, so the PR deadlocks (`unverified — no review-design
+  PASS`). ship-it and this agent therefore read the **same one live source**: the `UI_RE=` line
+  in `ship-it/SKILL.md` on `origin/main`. Re-resolve it before deciding to dispatch, fail-closed
+  to **has-ui** (dispatch `review-design`) if that line is unreadable — never fail-open to skip
+  it (#2341, the #981 `?ref=main` idiom):
+  ```bash
+  UI_RE='^apps/web/src/|\.tsx$|\.css$'   # fail-closed reference; the live line below is authoritative
+  UI_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^UI_RE=' | head -n1 || true)"
+  if [ -n "$UI_LIVE" ]; then UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"; else UI_RE='.'; fi   # unreadable ⇒ '.' ⇒ every path is UI-affecting ⇒ dispatch review-design (never silently drop it)
+  CHANGED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
+  echo "$CHANGED" | grep -Eq "$UI_RE" && echo "UI-affecting → dispatch review-design alongside the class gate"
+  ```
+  Because both sides resolve the identical live `UI_RE`, `required-gate == dispatched-gate` holds
+  by construction, not by hand-syncing two aging copies — the exact staleness that let UI PRs slip
+  the gate non-deterministically (PR #2333 merged un-design-reviewed).
 - **All GitHub ops via `gh api` REST — never GraphQL.** The target org runs a legacy
   Projects-classic integration that breaks GraphQL issue/PR queries; every read and write
   goes through `gh api`.
