@@ -206,6 +206,28 @@ of scope. Fails closed on zero CLAUDE.md in scope (ADR 0092).
 node packages/pipeline-cli/src/bin.ts pointer-guard check
 ```
 
+### `path-filter-guard` — fail-closed ci.yml/deploy.yml path-filter sync gate (#2372)
+
+Mechanizes the ci.yml/deploy.yml path-filter **sync invariant** (issue
+[#2372](https://github.com/kamp-us/phoenix/issues/2372); the invariant landed in #2366 / PR
+#2371). `deploy.yml`'s `changes.deploy` dorny/paths-filter list and `ci.yml`'s `changes.e2e`
+dorny/paths-filter list must be the **same set** of globs — pinning **deploy's RUN-set ⊇
+e2e's RUN-set** (deploy skips a preview only where e2e also skips). `ci.yml`'s `e2e` job
+polls `deploy.yml`'s sticky `<!-- preview-deploy -->` comment on a 10-minute deadline, so a
+PR that trips e2e but skips its deploy times the poll out and wedges `ci-required`. The two
+lists were guarded ONLY by a reciprocal human comment; this makes the invariant mechanical.
+
+Set **equality** is the checkable form (equality ⇒ superset, and equality is what the
+comments pin). The pure core parses each workflow YAML, reads the `changes` job's
+`dorny/paths-filter` `with.filters` string (parsed as YAML — the inline `#` comments are
+inert), and diffs the `e2e:` / `deploy:` lists as sets. Fails closed on zero scope — a
+missing file/job/step/key or an empty list (ADR 0092). See the tool README:
+[`src/tools/path-filter-guard/README.md`](src/tools/path-filter-guard/README.md).
+
+```bash
+node packages/pipeline-cli/src/bin.ts path-filter-guard check
+```
+
 ### `trivial-diff` — deterministic fail-closed trivial-diff classifier (ADR 0120 §1, #1557)
 
 Classifies a unified diff as `trivial` / `non-trivial` for the right-sized fan-out
