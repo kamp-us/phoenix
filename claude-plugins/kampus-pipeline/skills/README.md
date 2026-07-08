@@ -15,6 +15,8 @@ body/comment/dependency formats every skill reads and writes).
 
 The plugin carries **no per-plugin `version`** (neither in the marketplace plugin entry nor in [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json)): Claude Code then content-addresses the install by git commit SHA, so every commit is a new "version" and skill additions/edits reach already-installed users on the normal update path — a fixed semver pin froze the cache and silently served stale content (#945). This omission is **deliberate, not a defect — do not add a `version`**; the decision record (why + history) is [ADR 0110](https://github.com/kamp-us/phoenix/blob/main/.decisions/0110-plugin-carries-no-version-continuous-ship.md).
 
+The whole plugin surface was audited against the official Claude Code plugin spec ([plugins reference](https://docs.claude.com/en/docs/claude-code/plugins-reference), [marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)); the conformance record — the corrected manifest `$schema` URL plus every deliberate deviation (no `version`, the root-level `hooks.json`, the absent `commands/`, the `.claude/skills` discovery symlink) and its forcing constraint — is [ADR 0171](https://github.com/kamp-us/phoenix/blob/main/.decisions/0171-kampus-pipeline-plugin-spec-conformance.md). A future audit that re-flags any of those reads the disposition there: documented-intentional, not an open defect.
+
 ## The pipeline
 
 The core flow runs left to right; each stage consumes the previous stage's output:
