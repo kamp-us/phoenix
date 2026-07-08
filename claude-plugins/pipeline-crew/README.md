@@ -30,9 +30,10 @@ standing roles that *drive* that conveyor, each owning one seam of it:
 
 - **triage-guy — the intake seam** ([`agents/triage-guy.md`](agents/triage-guy.md)). The
   standing intake session: it runs the report → triage loop over the target repo's
-  `status:needs-triage` queue and owns the **planning/canon seam** — driving `plan-epic` over
-  freshly-triaged epics and routing canon/ADR-shaped work to its skill. It hands
-  `status:triaged` issues forward to the execution seam.
+  `status:needs-triage` queue and owns the **planning/canon seam** — spawning the `planner`
+  agent over freshly-triaged epics and the `canon`/`adr` agents for canon/decision-shaped work
+  (mirroring how the execution seam spawns `coder`/`reviewer`/`shipper`), rather than running
+  those skills inline. It hands `status:triaged` issues forward to the execution seam.
 - **engineering-manager — the execution seam**
   ([`agents/engineering-manager.md`](agents/engineering-manager.md)). The execution conductor:
   it drives each triaged issue to a *landed* merge by spawning the ephemeral kampus-pipeline
@@ -54,8 +55,8 @@ agents that write, review, and merge; it never does their work by hand.
 pipeline-crew **consumes** [`kampus-pipeline`](../kampus-pipeline/) and never the reverse:
 
 - The crew defs conduct the pipeline's shipped **skills** and spawn its ephemeral **agents**
-  (`coder`, `reviewer`, `shipper`, `reporter`, `plan-epic`, `canon`, `adr`) **by their shipped
-  names** — they never re-implement, fork, or edit any file under
+  (`coder`, `reviewer`, `shipper`, `reporter`, `triager`, `planner`, `canon`, `adr`) **by their
+  shipped names** — they never re-implement, fork, or edit any file under
   [`../kampus-pipeline/`](../kampus-pipeline/).
 - **Nothing under `claude-plugins/kampus-pipeline/` references or depends on pipeline-crew.**
   The dependency direction is structural and one-way (epic #2342): the crew is an optional
@@ -177,8 +178,8 @@ matching spawn prompt. Which session runs what:
   planning tier). Spawn prompt:
 
   > *You are the pipeline-crew intake session. Follow the `triage-guy` agent def. Run the
-  > report → triage loop over the `status:needs-triage` queue and drive `plan-epic` over
-  > freshly-triaged epics. Resolve the personalization seam from `.claude/crew.config.jsonc`
+  > report → triage loop over the `status:needs-triage` queue and plan freshly-triaged epics
+  > (spawning the `planner`). Resolve the personalization seam from `.claude/crew.config.jsonc`
   > before acting; hand triaged issues to the `em` window.*
 
 - **`em` window — the execution seam.** Bring the session up on
