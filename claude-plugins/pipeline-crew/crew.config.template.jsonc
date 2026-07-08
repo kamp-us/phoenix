@@ -42,5 +42,12 @@
 		"ea": "<ea-model-tier>",
 		"engineeringManager": "<em-model-tier>",
 		"triage": "<triage-model-tier>"
+	},
+
+	// The engineering-manager's WIP caps — the bounded number of concurrent lanes
+	// it runs at once, partitioned by class (product vs platform/pipeline).
+	"wipCaps": {
+		"productLanes": "<wip-cap-product-lanes>",
+		"platformLanes": "<wip-cap-platform-lanes>"
 	}
 }

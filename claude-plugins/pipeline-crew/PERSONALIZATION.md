@@ -65,6 +65,7 @@ reference these keys, never a literal.
 | Notification channel/handle | `notification.channel`, `notification.handle` | Where the single-owner human-notification protocol delivers pings (the EA-owned channel + the addressee handle). | `<notification-channel>`, `<notification-handle>` |
 | tmux / session naming | `tmux.session`, `tmux.windows.ea`, `tmux.windows.engineeringManager`, `tmux.windows.triage` | The tmux session name and the three per-role window/pane names the stand-up brings up and the roles address each other by. | `<tmux-session-name>`, `<ea-window-name>`, `<em-window-name>`, `<triage-window-name>` |
 | Model-tier preferences | `modelTiers.ea`, `modelTiers.engineeringManager`, `modelTiers.triage` | The model tier each role runs on — the planning-tier intake session vs the execution/build-tier conductor (so a role never silently downgrades a spawned subagent). | `<ea-model-tier>`, `<em-model-tier>`, `<triage-model-tier>` |
+| WIP caps | `wipCaps.productLanes`, `wipCaps.platformLanes` | The engineering-manager's bounded concurrent-lane count per class — how many product vs platform/pipeline coders it drives at once before queueing the rest. | `<wip-cap-product-lanes>`, `<wip-cap-platform-lanes>` |
 
 Adding a new operator-specific dimension is **one row here + one key in the template + one
 reference in the def that needs it** — never a new literal buried in a def.
