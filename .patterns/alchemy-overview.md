@@ -1,5 +1,7 @@
 # alchemy-effect: the infra layer
 
+> Derived from `alchemy@2.0.0-beta.59` — re-verify on pin bump.
+
 How phoenix's Cloudflare infrastructure is declared and wired. The short answer: instead of `wrangler.jsonc` + a raw `export default {fetch}` worker + `env.PHOENIX_DB`-style binding access + hand-written Durable Object classes, the whole worker is **one Effect program** — [alchemy-effect](https://github.com/usirin/alchemy-effect) — where the same code that *declares* a binding at deploy time *is* the typed client at runtime.
 
 > **These `alchemy-*` docs describe the live `apps/web/worker/`.** The `effect-*` and `fate-*` docs describe the domain and protocol layers riding on top, unchanged by the infra; these describe the bottom layer — the worker, its bindings, the DOs, routing, and deploy. Where a doc and the source disagree, the source wins — fix the doc.
@@ -11,7 +13,7 @@ phoenix is on effect v4; so is alchemy-effect (`effect@4.0.0-*`). The domain lay
 | Concern | Old wrangler/Hono shape | On alchemy-effect (current) |
 |---|---|---|
 | Bindings, DOs, migrations, assets | declared in `wrangler.jsonc` | declared as resources in one Effect program (`alchemy.run.ts` + the worker) |
-| Reaching a binding | `env.PHOENIX_DB`, `env.CONNECTION_DO` | `yield* Cloudflare.D1Connection.bind(PhoenixDb)`, `yield* ConnectionDO` |
+| Reaching a binding | `env.PHOENIX_DB`, `env.LIVE_DO` | `yield* Database` (the seam resolving the bound `PhoenixDb`), `yield* LiveDO` |
 | Worker entry | `export default {fetch: app.fetch}` (Hono) | `export default class Phoenix extends Cloudflare.Worker<Phoenix>()(...)` |
 | HTTP routing | Hono `app.get/post` | `HttpRouter` + `HttpApiBuilder` (`@effect/platform`) |
 | Runtime | `ManagedRuntime.make(...)` built + disposed per request | ONE worker-level `ManagedRuntime`, built once per isolate and never disposed — init-only layer-build vehicle; requests are served on the request fiber (ADR 0041/0043) |
@@ -32,9 +34,8 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
     // ── INIT PHASE (deploy time + once per isolate) ──
     // Bind resources. At deploy time this records binding metadata for the
     // Cloudflare API; at runtime it resolves typed clients.
-    const db = yield* Cloudflare.D1Connection.bind(PhoenixDb);
-    const connections = yield* ConnectionDO;
-    const topics = yield* TopicDO;
+    const db = yield* Database;   // the seam resolving the bound PhoenixDb
+    const live = yield* LiveDO;   // the unified live DO (ADR 0037)
 
     return {
       // ── RUNTIME PHASE (per request) ──
@@ -60,9 +61,9 @@ phoenix has three layers (see [index.md](./index.md)). alchemy-effect sits *unde
 2. [alchemy-bindings.md](./alchemy-bindings.md) — `bind()`, the deploy-policy/runtime-service split, the Live-layer convention.
 3. [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — **the load-bearing doc.** Worker-level vs request-scoped layers, the one worker-level `ManagedRuntime`, the fate seam.
 4. [alchemy-http-router.md](./alchemy-http-router.md) — `HttpRouter` + `HttpApiBuilder`, mounting fate/auth/SSE.
-5. [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the Effect DO model; `ConnectionDO`/`TopicDO`.
+5. [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the Effect DO model; the unified `LiveDO` (ADR 0037).
 6. [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) — D1 + Drizzle + migrations.
-7. [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) — `alchemy.run.ts`, the `Stack`, dev/deploy.
+7. [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) — `alchemy.run.ts`, the `Stack`, dev/deploy, and the stage/state lifecycle (why losing local state orphans real cloud resources).
 
 ## See also
 
