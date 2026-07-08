@@ -1385,17 +1385,80 @@ has-code/docs-exclusion agreement invariant, extended to `.glossary/**` by #919 
 standalone stacks (ADR 0057) by #1987).
 
 The canonical probe both `ship-it` Step 0 and `review-doc` Step 0 run — carve out
-control-plane, then `skills/**`, then the code roots + `.glossary/**` + `infra/**`, *then* test for a doc path:
+control-plane, then `skills/**`, then the code roots + `.glossary/**` + `infra/**`, *then* test for a doc path.
+The two regexes it uses — the carve-out `HAS_DOCS_EXCLUDE_RE` and the doc-path `HAS_DOCS_RE` — are
+single-sourced as canonical named `_RE=` lines in [§CLASS](#class-the-artifact-class-probes--one-canonical-definition)
+below (alongside `HAS_CODE_RE`/`HAS_SKILLS_RE`), re-resolved from `origin/main`:
 
 ```bash
 # docs class = review-doc's surface: a .md/knowledge file outside control-plane, skills/**,
 # the code roots apps/**/packages/**/infra/**, AND .glossary/** (#542/#650/#663/#919/#1987). Cite this; don't re-derive it loosely.
-echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary|infra)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs"   # HAS_DOCS_* single-sourced in §CLASS
 ```
 
 A code-root `*.md` is **not** weakened by this carve-out — it is gated harder, by
 `review-code` over its whole tree, not skipped. Only the *class label* moves: from a
 phantom doc class with no reachable gate to the code class that already gates it.
+
+---
+
+## CLASS. The artifact-class probes — one canonical definition
+
+`ship-it` Step 0 (which gate(s) a PR needs before merge) and the `reviewer` agent (which
+gate(s) to dispatch in a review pass) both classify a PR's changed-file set into the
+**artifact classes** — **has-code / has-docs / has-skills**. Both must reach the *same*
+answer, or the review stage gates one class while `ship-it` demands another: the multi-class
+gap where a PR carrying one class's PASS reaches `ship-it` and fail-closes on an ungated
+sibling class, a late stall (#2383; PR #2378 touched docs+skills+code, reached `ship-it` with
+only `review-doc: PASS`).
+
+So these probes are **single-sourced here** as canonical named `_RE=` lines — the same
+discipline that single-sources `CONTROL_PLANE_RE`/`GUARD_ADR_RE` (§CP) and `UI_RE`
+(`ship-it/SKILL.md`). A third inline copy in `reviewer.md` is the exact drift `#375`/`#981`/`#2341`
+fought — the class probes were previously inline grep literals in `ship-it` Step 0 *only*, with
+no reusable line for the reviewer to consume:
+
+```bash
+HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'
+HAS_SKILLS_RE='^claude-plugins/kampus-pipeline/(skills|agents)/'
+HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'
+HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
+```
+
+The boundary each line draws is **not re-derived here** — it is §DOC's, above: `HAS_CODE_RE`
+names the code roots (`apps`/`packages`/`.glossary`/`infra`, the #663/#919/#1987 has-code set),
+`HAS_SKILLS_RE` the behavioral-artifact roots (`skills/**`/`agents/**`, ADR 0073/0150), and the
+two `HAS_DOCS_*` lines are the carve-then-test docs probe. `HAS_CODE_RE` and `HAS_DOCS_EXCLUDE_RE`
+name the **same** code roots (the has-code/docs-exclusion agreement invariant) and must move in
+lockstep — keep them adjacent so a root added to one is added to the other.
+
+**Both consumers re-resolve these lines from `origin/main` at run time** (REST raw, `?ref=main`
+— the #981 idiom, generalized from `CONTROL_PLANE_RE`/`UI_RE` to the class probes), never trusting
+the injected skill snapshot, which can lag `origin/main` even when the on-disk copy is current.
+The re-resolution is **fail-closed**: an unreadable source ⇒ **dispatch the gate** (never silently
+skip a class) — `HAS_CODE_RE`/`HAS_SKILLS_RE`/`HAS_DOCS_RE` default to `.` (every path matches),
+`HAS_DOCS_EXCLUDE_RE` defaults to a never-match sentinel (`$^`, so the carve-out excludes nothing
+and every path falls through to the doc test). This is the same stance as §CP's fail-closed
+`CONTROL_PLANE_RE='.'` and `UI_RE`'s fail-closed `has-ui`:
+
+```bash
+# Re-resolve a canonical _RE= line from gh-issue-intake-formats.md@main (#981 ?ref=main idiom).
+# Prints the live value, or the fail-closed default $2 when the line is unreadable.
+FORMATS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
+reresolve_re() {   # $1=var name, $2=fail-closed default
+  live="$(printf '%s\n' "$FORMATS_RAW" | grep "^$1=" | head -n1 || true)"
+  if [ -n "$live" ]; then printf '%s' "$live" | sed "s/^$1='//; s/'\$//"; else printf '%s' "$2"; fi
+}
+HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
+HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
+HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
+HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
+```
+
+`review-design`/`has-ui` is **additive** and stays single-sourced in `ship-it/SKILL.md`'s
+`UI_RE=` (dispatched alongside whatever class gate(s) fire, never as a class of its own — see the
+`ui_reresolve` invariant in `reviewer.md`); the `HAS_*` lines above cover the three mutually-inclusive
+verdict classes.
 
 ---
 

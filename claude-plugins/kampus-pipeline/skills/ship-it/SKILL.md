@@ -278,12 +278,25 @@ echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
   if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
   elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
 done
-echo "$FILES" | grep -Eq '^claude-plugins/kampus-pipeline/(skills|agents)/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063); agents/** are behavioral artifacts, skill-class for the verdict gate (ADR 0150/#2003) — §CP-blocking for merge via CONTROL_PLANE_RE above
-echo "$FILES" | grep -Eq '^(apps|packages|\.glossary|infra)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages + infra/** standalone stacks (ADR 0057) + .glossary/** — agrees with the docs-probe exclusion below (#663/#919/#1987); review-code owns the glossary (Step 3c); skills/** is its OWN class (ADR 0073)
-# docs probe EXCLUDES the code roots, skills/**, AND .glossary/** first, so a code/app-internal README
-# (apps/**, packages/**, infra/**), a skills-only .md, or a .glossary/** touch is NOT classed docs — only a prose
-# .md on review-doc's own surface is (#542/#650/#919/#1987). The §DOC contract is the single source — cite, don't re-derive.
-echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary|infra)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+# The has-code/has-docs/has-skills probes are single-sourced as canonical HAS_*_RE= lines in
+# gh-issue-intake-formats.md §CLASS and re-resolved from origin/main here (like CONTROL_PLANE_RE/
+# UI_RE, #981) so this snapshot can't mis-classify — and so the reviewer (which consumes the SAME
+# lines) fans across every present class in lockstep with what ship-it requires (#2383). FAIL CLOSED:
+# an unreadable source ⇒ dispatch/require the gate. The literals below are the fail-closed reference
+# + validate-gate-path-drift lockstep target, NOT the live decision source — §CLASS is the source.
+HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'
+HAS_SKILLS_RE='^claude-plugins/kampus-pipeline/(skills|agents)/'
+HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'
+HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
+CLASS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
+reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -n "$live" ]; then printf '%s' "$live" | sed "s/^$1='//; s/'\$//"; else printf '%s' "$2"; fi; }
+HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
+HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
+HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
+HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
+echo "$FILES" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills"   # → review-skill (ADR 0073/0150); §CP-blocking for merge via CONTROL_PLANE_RE above
+echo "$FILES" | grep -Eq "$HAS_CODE_RE" && echo "has-code"       # → review-code; the has-code roots agree with the docs-exclusion below in lockstep (§CLASS/§DOC, #663/#919/#1987)
+echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs"   # → review-doc; carve out code roots/skills/.glossary first, then test for a doc path (§DOC contract)
 # UI probe → review-design (ADDITIVE, not a class): a changed path under apps/web/src, a *.tsx
 # file, or a style surface (*.css). Like CONTROL_PLANE_RE/GUARD_ADR_RE above, the literal below
 # is the fail-closed REFERENCE + the validate-gate-path-drift lockstep target, NOT the live
