@@ -150,6 +150,13 @@ jobs:
             # touches none of these, so `e2e` stays false → the e2e job skips
             # (→ green, non-blocking). Includes both workflows so a CI/deploy edit
             # keeps the gate self-covering.
+            #
+            # SYNC INVARIANT (issue #2366): deploy.yml's `changes.deploy` filter is a
+            # byte-for-byte COPY of this list — deploy's RUN-set must be a superset of
+            # this e2e RUN-set, or a PR that trips e2e but skips its deploy makes e2e's
+            # 10-min preview-comment poll time out and wedge `ci-required`. An edit to
+            # THIS list MUST be mirrored into deploy.yml's `deploy:` filter (and vice
+            # versa) — keep the two path sets identical.
             e2e:
               - 'apps/**/src/**'
               - 'apps/**/index.html'
