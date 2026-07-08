@@ -23,9 +23,12 @@
  * is dropped: the `pipeline-cli` bin imports `@effect/platform-node` statically,
  * so by the time this command runs the runtime dep is always resolved.
  */
-import {readFileSync} from "node:fs";
-import {Console, Data, Effect} from "effect";
-import {Argument, Command} from "effect/unstable/cli";
+import {existsSync, readFileSync} from "node:fs";
+import {dirname, join, resolve} from "node:path";
+import {Console, Data, Effect, Option} from "effect";
+import {Argument, Command, Flag} from "effect/unstable/cli";
+import {findRootDir} from "../../find-root-dir.ts";
+import {type CheckFailed, CREW_DIR, sweepCrew} from "./crew-gate.ts";
 import {findLeaks, type Leak} from "./leak-guard.ts";
 
 // 2 = a confirmed leak; any OTHER non-zero from this process means the scan
@@ -98,7 +101,59 @@ const scan = Command.make(
 	}),
 ).pipe(Command.withDescription("Scan files for user-local paths leaking into shared doc surfaces"));
 
+// The repeatable pipeline-crew sanitization sweep (#2357). Where `scan` takes explicit
+// changed files and checks only the no-local-paths rule on doc surfaces, `sweep` walks
+// a whole directory and checks EVERY personal-data class the crew's "zero real operator
+// data" contract bans — fail-closed on any hit and on a zero-file scope (ADR 0092),
+// mirroring the readme-guard/fanout-guard directory-check idiom.
+const GATE_FAIL_EXIT_CODE = 1;
+const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
+
+const defaultRoot = (from: string = process.cwd()): string => {
+	const start = resolve(from);
+	const root = findRootDir(
+		start,
+		(dir) => ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
+		dirname,
+	);
+	return root ?? start;
+};
+
+const rootFlag = Flag.string("root").pipe(
+	Flag.optional,
+	Flag.withDescription("the repo root to resolve the crew dir under (default: walk up for one)"),
+);
+const dirFlag = Flag.string("dir").pipe(
+	Flag.optional,
+	Flag.withDescription(`the crew directory to sweep, root-relative (default: ${CREW_DIR})`),
+);
+
+// CheckFailed carries the expected gate-fail signal — its report is already built; print
+// it on stderr and exit non-zero without a stack trace. Caught inside the handler (not at
+// the bin's run boundary) so the contract survives the fold into the shared pipeline-cli bin.
+const onCheckFailed = (e: CheckFailed) =>
+	Effect.sync(() => {
+		process.stderr.write(`${e.reason}\n`);
+		process.exit(GATE_FAIL_EXIT_CODE);
+	});
+
+const sweep = Command.make(
+	"sweep",
+	{root: rootFlag, dir: dirFlag},
+	Effect.fn(function* ({root, dir}) {
+		const base = Option.getOrElse(root, () => defaultRoot());
+		yield* sweepCrew(
+			base,
+			Option.getOrElse(dir, () => CREW_DIR),
+		).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+	}),
+).pipe(
+	Command.withDescription(
+		"Sweep the pipeline-crew dir for personal-data leaks; fail-closed on any hit or zero scope",
+	),
+);
+
 export const leakGuardCommand = Command.make("leak-guard").pipe(
-	Command.withSubcommands([scan]),
+	Command.withSubcommands([scan, sweep]),
 	Command.withDescription("Block user-local paths from entering shared-artifact doc surfaces"),
 );
