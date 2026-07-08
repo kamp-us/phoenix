@@ -317,13 +317,34 @@ BODY="$(cat /tmp/triage-body-<N>.md)"
 gh api -X PATCH "repos/$REPO/issues/<N>" -f body="$BODY"
 ```
 
-**Epics are the exception — do not rewrite-on-top.** An epic's original content is
-the *brief*, not superseded noise; the `plan-epic` skill appends its plan *below* the
-untouched original (append-down, not rewrite-on-top — see the formats doc). For an
-epic, classify and prioritize it, optionally add a short triage note as a comment,
-but leave the body's original brief intact at the top. Do not bury it in a
-`<details>`. (If an epic was filed truly threadbare, prefer `status:needs-info` over
-mangling it.)
+**Epics are the exception — wrap-in-place, never rewrite-on-top.** An epic's original
+content is the *brief*, not superseded noise, and it is `plan-epic`'s input: the plan is
+appended *below* it (append-down, not rewrite-on-top — see the formats doc), and
+`plan-epic`'s surgical splice preserves it byte-for-byte. So for an epic you **do not**
+write an enriched, actionable version on top — that would fork the brief `plan-epic`
+reads. What you *may* do (and now should, so a post-triage epic body isn't the one type
+that leads with flat, un-collapsed intake prose) is **wrap the preserved original in a
+`<details>` in place** — byte-for-byte, with nothing enriched above it. Classify and
+prioritize, optionally add a short triage note as a comment, then shape the body as:
+
+```markdown
+**Epic — awaiting plan.** `plan-epic` appends `## Plan (plan-epic)` and `## Dependencies` below.
+
+<details>
+<summary>Original brief (verbatim)</summary>
+
+<the original body, byte-for-byte unchanged>
+
+</details>
+```
+
+This is a *collapse in place*, not the Step-4 rewrite-on-top: nothing sits above the
+`<details>` but the one-line typed header (so a pre-plan epic body leads with the epic,
+not a bare collapsed element), and the brief inside is verbatim — so the exact bytes
+`plan-epic` splices are unchanged. The `<summary>` is the epic variant of the other
+types' `Original report (verbatim)` — `Original brief` names an epic's original as its
+*brief* (Step 2's tell), the same verbatim-provenance guarantee. (If an epic was filed
+truly threadbare, prefer `status:needs-info` over mangling it.)
 
 **Re-typing an issue? Reconcile the BODY, not just a comment.** When you change an
 already-typed issue's type (a `decision` re-scoped to `feature`, a `bug` recut as a

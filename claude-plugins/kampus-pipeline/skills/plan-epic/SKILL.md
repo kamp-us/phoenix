@@ -25,10 +25,12 @@ product judgment; you do not ask the user questions (the human already approved 
 triage). When a user story hinges on a genuine product decision you can't ground from the
 codebase, carve it as a `type:decision` child — never handwave it. Plan, split, link, done.
 
-The epic body is **append-down**: the triaged original brief stays untouched at the top, and you
-write *below* it. You never rewrite-on-top an epic — its original content is the brief that
-grounds your plan, not noise to bury. (This is exactly the exception triage carves out for
-epics; the formats doc spells out why.)
+The epic body is **append-down**: the triaged original brief stays untouched at the top — triage
+may collapse it into a `<details>` wrap-in-place, but it is preserved byte-for-byte and is still
+your input — and you write *below* it. You never rewrite-on-top an epic: its original content is
+the brief that grounds your plan, and your surgical splice preserves it verbatim whether or not
+it's wrapped. (This is exactly the exception triage carves out for epics; the formats doc spells
+out why.)
 
 ## All GitHub ops via `gh api` REST — never GraphQL
 
