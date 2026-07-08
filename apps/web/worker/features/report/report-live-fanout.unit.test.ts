@@ -24,7 +24,7 @@ import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Layer} from "effect";
 import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
-import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
+import {noopPanoFeedCache, noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
@@ -66,6 +66,9 @@ const bildirimOffStub = Layer.mergeAll(
 	} as typeof Flags.Service),
 	Layer.succeed(RuntimeContext, runtimeContextStub),
 	noRequestFlagOverrides,
+	// The base-feed purger a fanned pano mutation fires alongside its publish (#2324):
+	// a no-op here, so the fanout assertions below are unchanged.
+	noopPanoFeedCache,
 	makeNotificationStub(),
 	relationStoreOf([]),
 	// The karma flag-gate deps `report.submit` gained (#150): `Flags` OFF ⇒ the
@@ -152,16 +155,21 @@ const commentRow = (id: string) => ({
 const recordingPublisher = () => {
 	const recorded: Array<string> = [];
 	const scheduled: Array<Promise<unknown>> = [];
-	const layer = Layer.succeed(LivePublisher)(
-		livePublisherFor({
-			publish: (topicKey) =>
-				Effect.sync(() => {
-					recorded.push(topicKey);
-				}),
-			waitUntil: (promise) => {
-				scheduled.push(promise);
-			},
-		}),
+	const layer = Layer.mergeAll(
+		Layer.succeed(LivePublisher)(
+			livePublisherFor({
+				publish: (topicKey) =>
+					Effect.sync(() => {
+						recorded.push(topicKey);
+					}),
+				waitUntil: (promise) => {
+					scheduled.push(promise);
+				},
+			}),
+		),
+		// The base-feed purger a fanned pano moderation path fires (#2324) — no-op here,
+		// so the recorded live topics below are the sole fan-out assertion.
+		noopPanoFeedCache,
 	);
 	return {recorded, scheduled, layer};
 };
@@ -450,6 +458,7 @@ describe("fail-safe — a failed publish does not fail the moderation action", (
 					),
 					Layer.succeed(Sozluk, sozlukStub({})),
 					failing,
+					noopPanoFeedCache,
 					relationStoreOf([MOD]),
 					agentAuthorityStub,
 					actorContext(human(MOD)),

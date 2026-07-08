@@ -30,6 +30,7 @@ import {Denied, InsufficientKarma} from "../kunye/errors.ts";
 import {Moderate, moderatorOf, requireModeration} from "../kunye/moderate.ts";
 import {gateFlagOnKarma} from "../kunye/privilege.ts";
 import {CommentNotFound, PostNotFound} from "../pano/errors.ts";
+import {PanoFeedCache} from "../pano/feed-cache.ts";
 import {Pano} from "../pano/Pano.ts";
 import {toComment, toPost} from "../pano/shapers.ts";
 import {DefinitionNotFound} from "../sozluk/errors.ts";
@@ -189,7 +190,7 @@ const resolveGated = Effect.fn("report.resolveGated")(function* (
 	const grant = yield* Moderate;
 	const moderatorId = yield* moderatorOf(grant);
 	const report = yield* Report;
-	const live = reportLive(yield* WorkerLivePublisher);
+	const live = reportLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 
 	// Resolve the target: a `reportId` resolves to its `(targetKind, targetId)`;
 	// otherwise `targetKind` + `targetId` are taken directly.
@@ -259,7 +260,7 @@ const restoreGated = Effect.fn("report.restoreGated")(function* (
 ) {
 	yield* Moderate;
 	const report = yield* Report;
-	const live = reportLive(yield* WorkerLivePublisher);
+	const live = reportLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 
 	let target: {targetKind: TargetKind; targetId: string} | null = null;
 	if (input.reportId !== undefined) {
@@ -305,7 +306,7 @@ const restoreWaveGated = Effect.fn("report.restoreWaveGated")(function* (
 ) {
 	yield* Moderate;
 	const report = yield* Report;
-	const live = reportLive(yield* WorkerLivePublisher);
+	const live = reportLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 
 	// The batch's still-terminal targets — each gets its content brought back live, exactly
 	// as the single restore does, before the reports flip open.

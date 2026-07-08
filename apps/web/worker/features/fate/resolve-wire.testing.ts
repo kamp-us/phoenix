@@ -27,6 +27,7 @@ import {encodeWireError, failureOf} from "@kampus/fate-effect";
 import type {FateRequestError} from "@nkzw/fate/server";
 import {Effect, Exit, Layer} from "effect";
 import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
+import {PanoFeedCache} from "../pano/feed-cache.ts";
 
 /**
  * The no-cookie {@link RequestFlagOverrides} default a flag-gated unit test
@@ -52,6 +53,18 @@ export const noRequestFlagOverrides: Layer.Layer<RequestFlagOverrides> = Layer.s
 );
 
 /**
+ * The no-op base-feed purger a fanned pano mutation resolves (#2324, ADR 0170) — the
+ * cache twin of {@link noRequestFlagOverrides}. `resolveWire` discharges it
+ * automatically; a test that drives a fanned pano mutation DIRECTLY (not through
+ * `resolveWire`) merges this layer into its context instead. A unit test drives one op
+ * with no real execution context, so the purge is a no-op (the real purger is built
+ * per request off `ctx.cache` in `fate/route.ts`).
+ */
+export const noopPanoFeedCache: Layer.Layer<PanoFeedCache> = Layer.succeed(PanoFeedCache, {
+	purge: () => Effect.void,
+});
+
+/**
  * The external interface of any fate op (query/list/mutation): its `resolve`
  * decode-then-run wrapper. Captured structurally over the op's `resolve` so a
  * caller passes the op record itself (`queries.me`, `mutations["x.y"]`) and the
@@ -73,7 +86,7 @@ interface ResolvableOp<In, A, E, R> {
 export const resolveWire = <In, A, E, R>(
 	op: ResolvableOp<In, A, E, R>,
 	raw: In,
-): Effect.Effect<A, FateRequestError, Exclude<R, RequestFlagOverrides>> =>
+): Effect.Effect<A, FateRequestError, Exclude<R, RequestFlagOverrides | PanoFeedCache>> =>
 	op.resolve(raw).pipe(
 		Effect.exit,
 		Effect.flatMap((exit) =>
@@ -81,8 +94,9 @@ export const resolveWire = <In, A, E, R>(
 				? Effect.succeed(exit.value)
 				: Effect.fail(encodeWireError(failureOf(exit.cause))),
 		),
-		// Discharge the per-request `RequestFlagOverrides` a flag-gated resolver's
-		// `provideRequestFlags` requires (#622) with the no-cookie default — the driver
-		// seam, so no gated unit test has to stub it (see `NO_COOKIE_OVERRIDES`).
-		Effect.provideService(RequestFlagOverrides, NO_COOKIE_OVERRIDES),
+		// Discharge the two per-request driver-seam services in one merged provide so the
+		// residual `R` is a single-union `Exclude`: `RequestFlagOverrides` (the #622
+		// no-cookie override a flag-gated resolver's `provideRequestFlags` requires) and
+		// the base-feed purger a fanned pano mutation fires (#2324) as a no-op.
+		Effect.provide(Layer.mergeAll(noRequestFlagOverrides, noopPanoFeedCache)),
 	);

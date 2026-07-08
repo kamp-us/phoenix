@@ -28,6 +28,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
+import {noopPanoFeedCache} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import type {CommentRow} from "../pano/comment-fields.ts";
 import {mutations as panoMutations} from "../pano/mutations.ts";
@@ -48,16 +49,20 @@ const AT = new Date("2026-07-03T00:00:00.000Z");
 const recordingLive = () => {
 	const recorded: Array<string> = [];
 	const scheduled: Array<Promise<unknown>> = [];
-	const layer = Layer.succeed(LivePublisher)(
-		livePublisherFor({
-			publish: (topicKey) =>
-				Effect.sync(() => {
-					recorded.push(topicKey);
-				}),
-			waitUntil: (promise) => {
-				scheduled.push(promise);
-			},
-		}),
+	const layer = Layer.mergeAll(
+		Layer.succeed(LivePublisher)(
+			livePublisherFor({
+				publish: (topicKey) =>
+					Effect.sync(() => {
+						recorded.push(topicKey);
+					}),
+				waitUntil: (promise) => {
+					scheduled.push(promise);
+				},
+			}),
+		),
+		// The base-feed purger a fanned pano mutation fires (#2324) — no-op here.
+		noopPanoFeedCache,
 	);
 	return {recorded, scheduled, layer};
 };

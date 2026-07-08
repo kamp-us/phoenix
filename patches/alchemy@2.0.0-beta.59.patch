@@ -62,3 +62,40 @@ index 7de47700579646b223752697256ea351f4532a69..b5eee14cc9948af0ae34480301cdb3a0
      }),
      delete: Effect.fn(function* ({ output }) {
          yield* flagship
+diff --git a/lib/Cloudflare/Workers/Worker.d.ts b/lib/Cloudflare/Workers/Worker.d.ts
+index 6ce6dc33b67e02df3a00695c874f49c9b1cfe69e..abf8ee334a68a910c1955c1f33b6408756e99631 100644
+--- a/lib/Cloudflare/Workers/Worker.d.ts
++++ b/lib/Cloudflare/Workers/Worker.d.ts
+@@ -137,6 +137,17 @@ export interface WorkerProps<Bindings extends WorkerBindingProps = any, Assets e
+     };
+     limits?: WorkerLimits;
+     placement?: WorkerPlacement;
++    /**
++     * Workers Caching (per-Worker edge cache) enablement. Maps to the script
++     * upload metadata's `cache_options.enabled`. Phoenix in-repo patch (ADR 0170,
++     * the ADR 0038 idiom): beta.59 predates the native knob, so this exposes the
++     * per-Worker cache-enable setting on the Worker resource, declared in
++     * `alchemy.run.ts` like `observability`/`placement`. Retire this hunk when a
++     * future alchemy release ships the field natively.
++     */
++    cache?: {
++        enabled?: boolean;
++    };
+     /**
+      * Tracks Durable Object and Workflow exports for Effect-native Workers only.
+      * Populated automatically from bindings; do not set manually.
+diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/WorkerProvider.js
+index 5a3a52dccf3fa3cc5e21ac2190027801fc646b53..d3d9c6762a8b4a04e8ed3bd1c0b0b882a2f58d98 100644
+--- a/lib/Cloudflare/Workers/WorkerProvider.js
++++ b/lib/Cloudflare/Workers/WorkerProvider.js
+@@ -691,6 +691,10 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
+                 },
+             },
+             placement: news.placement,
++            // Workers Caching enablement (phoenix in-repo patch, ADR 0170): thread
++            // the Worker resource's `cache` prop through as the API's `cache_options`
++            // field. Sent only when set, so an unpatched-shaped resource is untouched.
++            cache_options: news.cache,
+             tags: metadataTags,
+             tailConsumers: undefined,
+             usageModel: undefined,

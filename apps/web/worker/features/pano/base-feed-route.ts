@@ -19,13 +19,18 @@
  *     flips the flag at release (ADR 0083). The flag is read under the anonymous flags
  *     context (no identity), so the gate itself does no session work either.
  *
- * Cache headers / purge are the sibling cache child (#2324), NOT set here.
+ * Edge-cache headers (leg B, #2324, ADR 0170): when the `PANO_FEED_EDGE_CACHE` flag is
+ * on, the 200 carries `Cache-Control` (the TTL backstop) + `Cache-Tag: pano-feed`, so the
+ * per-Worker edge cache serves repeat anon GETs without re-running the D1 read; the
+ * fanned-mutation seam purges the tag on a feed-visible write. Flag off ⇒ no cache headers
+ * (the shipped-dark default). The purge lives at the mutation seam (`feed-cache.ts`), NOT
+ * here — this route only stamps the cache metadata.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {PANO_BASE_FEED} from "../../../src/flags/keys.ts";
+import {PANO_BASE_FEED, PANO_FEED_EDGE_CACHE} from "../../../src/flags/keys.ts";
 import {toPostSort} from "../../../src/lib/panoFeedSort.ts";
 import {toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -35,6 +40,7 @@ import {
 	makeRequestFlagsContext,
 } from "../flagship/FlagsContext.ts";
 import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
+import {baseFeedCacheControl, PANO_FEED_CACHE_TAG} from "./feed-cache.ts";
 import {Pano, type PostSummaryRow} from "./Pano.ts";
 import {type BasePost, toBasePost} from "./shapers.ts";
 
@@ -59,6 +65,12 @@ export const handleBaseFeed = Effect.gen(function* () {
 	if (!on) {
 		return HttpServerResponse.empty({status: 404});
 	}
+	// The leg-B edge-cache gate (#2324, ADR 0170), read under the same anon flags context:
+	// on ⇒ stamp the cache headers below so the per-Worker edge cache serves repeat GETs;
+	// off ⇒ no cache headers, the shipped-dark default (AC#5).
+	const cacheOn = yield* flags
+		.getBoolean(PANO_FEED_EDGE_CACHE, false)
+		.pipe(Effect.provideService(FlagsContext, flagsContext));
 
 	const params = new URL(raw.url).searchParams;
 	const host = params.get("host");
@@ -85,7 +97,12 @@ export const handleBaseFeed = Effect.gen(function* () {
 		(row) => row.id,
 		(row) => toBasePost(row),
 	);
-	return HttpServerResponse.jsonUnsafe(connection);
+	return HttpServerResponse.jsonUnsafe(
+		connection,
+		cacheOn
+			? {headers: {"cache-control": baseFeedCacheControl, "cache-tag": PANO_FEED_CACHE_TAG}}
+			: undefined,
+	);
 });
 
 export const baseFeedRoute = HttpRouter.add("GET", "/fate/pano/feed", handleBaseFeed);

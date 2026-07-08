@@ -52,6 +52,7 @@ import {
 	optimisticEditsFlag,
 	panoBaseFeedFlag,
 	panoDraftSaveFlag,
+	panoFeedEdgeCacheFlag,
 	panoOptimisticCommentAddFlag,
 	panoOptimisticCommentDeleteFlag,
 	panoOptimisticPostDeleteFlag,
@@ -81,6 +82,10 @@ export default Alchemy.Stack(
 		// epic #2316 leg B) — the single seam the GET-able base feed + PostOverlay read
 		// gate behind until a human release.
 		yield* panoBaseFeedFlag(flagship.appId);
+		// The base-feed edge-cache + fanned-seam purge dark-ship flag, default-off (#2324,
+		// epic #2316 leg B, ADR 0170) — gates the `Cache-Control`/`Cache-Tag` headers and
+		// the fanned-mutation purge until a human release.
+		yield* panoFeedEdgeCacheFlag(flagship.appId);
 		// The optimistic post.submit (feed root-list insert) containment flag,
 		// default-off (#1676, epic #1637).
 		yield* panoOptimisticSubmitFlag(flagship.appId);
