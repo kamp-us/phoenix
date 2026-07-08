@@ -13,6 +13,12 @@ name: gitleaks
 # scan would fail every run — the gate's job is to block a NET-NEW committed secret. A
 # real secret already in history is a separate rotation/remediation incident, never
 # suppressed here.
+# Least-privilege token: the job only checks out and scans the repo (SARIF is written to
+# the runner's disk, never uploaded to code-scanning, and nothing comments/checks the PR),
+# so read-only `contents` is all it needs — no default write scopes on a control-plane gate.
+permissions:
+  contents: read
+
 on:
   pull_request:
   # `scan PR commits for secrets` is intended as a branch-protection-REQUIRED status
