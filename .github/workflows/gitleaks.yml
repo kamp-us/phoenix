@@ -1,0 +1,118 @@
+name: gitleaks
+
+# CI credential scanner (issue #2325). gitleaks scans the PR's new commits for
+# committed secrets — API keys, tokens, private keys — its actual domain, additive to
+# and orthogonal from leak-guard (machine-local-path/PII in doc surfaces; the #2310
+# spike measured stock gitleaks at 0/6 on leak-guard's corpus). CI is the enforcement
+# surface, not a pre-commit hook: the lean lefthook fires in harness-created worktrees
+# with a stripped PATH where a Go binary is unreliable (#2310), and CI is the only gate
+# that sees every PR's diff however it was authored.
+#
+# Scope is DIFF-scoped (the PR's own commits, merge-base..HEAD), not full history: the repo's
+# git history already carries triaged findings (issue #2325 baseline), so a whole-history
+# scan would fail every run — the gate's job is to block a NET-NEW committed secret. A
+# real secret already in history is a separate rotation/remediation incident, never
+# suppressed here.
+# Least-privilege token: the job only checks out and scans the repo (SARIF is written to
+# the runner's disk, never uploaded to code-scanning, and nothing comments/checks the PR),
+# so read-only `contents` is all it needs — no default write scopes on a control-plane gate.
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  # `scan PR commits for secrets` is intended as a branch-protection-REQUIRED status
+  # check, so the merge queue awaits it on the batched `merge_group` ref before it can
+  # merge; without this trigger that required check never runs on the batch and every
+  # queued merge hangs (ADR 0132) — same wiring as leak-guard.yml.
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # Pinned gitleaks binary — a CI binary, NOT a pnpm catalog: dependency, so it is pinned
+  # here by version + checksum, never a floating `latest`. Bump both together on upgrade.
+  GITLEAKS_VERSION: "8.21.2"
+  GITLEAKS_SHA256: "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba" # gitleaks_8.21.2_linux_x64.tar.gz
+
+jobs:
+  scan:
+    name: scan PR commits for secrets
+    runs-on: ubuntu-latest
+    steps:
+      # Full history so the merge-base of base + HEAD resolves; the default shallow
+      # checkout has no merge-base for the diff-scoped log range below.
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      # Install the pinned gitleaks binary and verify its checksum. A version-only pin
+      # can still be swapped under the same tag; the checksum makes the binary itself
+      # immutable — refuse to run on a mismatch (fail-closed).
+      - name: Install pinned gitleaks
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          curl -sSLf -o "$tarball" "$url"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+          ./gitleaks version
+
+      # Diff-scoped scan of the PR's own commits. On `pull_request` the base is the
+      # target branch; on the merge queue's batched `merge_group` ref `base_ref` is
+      # empty, so we use `merge_group.base_sha` — the base commit the queue built the
+      # batch on (ADR 0132) — yielding exactly the commits the batch adds vs main.
+      #
+      # Exit-code contract (grounded in the #2310 spike against gitleaks source):
+      #   0   = clean               -> PASS (the ONLY passing outcome)
+      #   3   = findings            -> FAIL (a net-new committed secret) — `--exit-code 3`
+      #                               dodges gitleaks' reserved codes so a finding is
+      #                               DISTINGUISHABLE from a tool failure
+      #   1   = fatal/partial scan  -> FAIL
+      #   2   = panic (bad rule)    -> FAIL   (why 3, not 2, is the finding code)
+      #   126 = bad flag            -> FAIL
+      #   *   = anything else       -> FAIL
+      # Fail-closed: only exit 0 passes; a finding OR any error fails the job.
+      - name: Scan PR commits for secrets
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -uo pipefail
+          # Fetch the base WITH ancestry (no --depth=1): a shallow base has no history,
+          # so the merge-base below can't resolve and the range degenerates to a
+          # full-history walk that re-flags pre-existing triaged findings (issue #2325
+          # repair — the #2325 gate must scan ONLY this PR's net-new commits).
+          if [ -n "$BASE_REF" ]; then
+            git fetch --no-tags origin "$BASE_REF"
+            base="origin/$BASE_REF"
+          else
+            git fetch --no-tags origin "$MERGE_GROUP_BASE_SHA"
+            base="$MERGE_GROUP_BASE_SHA"
+          fi
+          # Scope to the PR's OWN commits via the merge-base — the git-log equivalent of
+          # leak-guard.yml's three-dot `git diff base...HEAD`. A two-dot `base..HEAD`
+          # against a moved base wrongly walks history; `merge-base..HEAD` never does.
+          mergebase="$(git merge-base "$base" HEAD)"
+          [ -n "$mergebase" ] || { echo "::error::could not resolve merge-base of ${base} and HEAD — refusing to scan a degenerate range (fail-closed)."; exit 1; }
+          echo "Scanning commits in range ${mergebase}..HEAD"
+          ./gitleaks git . \
+            --log-opts="${mergebase}..HEAD" \
+            --config=.gitleaks.toml \
+            --no-banner \
+            --redact \
+            --exit-code 3 \
+            --report-format sarif \
+            --report-path gitleaks.sarif
+          code=$?
+          case "$code" in
+            0)   echo "gitleaks: clean — no committed secrets in the PR's commits."; exit 0 ;;
+            3)   echo "::error::gitleaks found a committed secret in this PR. Remove it, rotate it, and (if a real credential) treat the leak as an incident — do NOT allowlist a real secret."; exit 1 ;;
+            1)   echo "::error::gitleaks fatal/partial scan error (exit 1) — treating as fail-closed."; exit 1 ;;
+            2)   echo "::error::gitleaks panic (exit 2, e.g. a malformed rule) — treating as fail-closed."; exit 1 ;;
+            126) echo "::error::gitleaks bad flag/invocation (exit 126) — treating as fail-closed."; exit 1 ;;
+            *)   echo "::error::gitleaks unexpected exit code ${code} — treating as fail-closed."; exit 1 ;;
+          esac

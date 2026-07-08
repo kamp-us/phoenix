@@ -1,0 +1,35 @@
+# gitleaks configuration — stock ruleset + a narrow allowlist of triaged false positives.
+#
+# This is the config for the CI credential scanner wired in
+# `.github/workflows/gitleaks.yml` (issue #2325). gitleaks is adopted for its actual
+# domain — committed credentials (API keys, tokens, private keys) — additive to and
+# orthogonal from leak-guard, which keeps owning machine-local-path/PII leakage in doc
+# surfaces (the #2310 spike ruling: stock gitleaks scored 0/6 on leak-guard's corpus).
+#
+# Stock rules only. gitleaks' RE2 engine forbids lookbehind and panics on such a rule
+# (#2310), so this repo authors NO custom rules — `useDefault` pulls the maintained
+# upstream ruleset and the config adds only allowlist entries for triaged false
+# positives, each with a one-line reason (issue #2325 acceptance criteria).
+
+title = "phoenix gitleaks config"
+
+[extend]
+# Inherit gitleaks' stock/default ruleset — the ~upstream-maintained credential rules.
+# No custom rules are added (RE2-lookbehind panic constraint, #2310).
+useDefault = true
+
+# --- Triaged false positives (issue #2325 baseline scan) ------------------------------
+# Each regex suppresses ONE specific dummy/test literal — a narrow value match, never a
+# whole-file or whole-rule mute, so a real secret accidentally added to the same test
+# file is still caught. `regexTarget = "match"` matches against the full matched span.
+[allowlist]
+regexTarget = "match"
+regexes = [
+	# SHA-256('abc') content hash used as a fake content-addressed asset key in depo
+	# tests (packages/depo/src/{client,domain}.unit.test.ts) — a public digest, not a credential.
+	'''ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad''',
+	# Deliberate dummy Cloudflare token in orphan-sweep tests
+	# (packages/orphan-sweep/src/cloudflare.unit.test.ts); the value self-documents as
+	# 'Must_Never_Leak' — a fixture, not a credential.
+	'''cf-secret-Th1s_Must_Never_Leak_0000''',
+]
