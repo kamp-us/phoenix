@@ -14,7 +14,7 @@ export const renderSummary = (plan: SweepPlan, execute: boolean): string => {
 /** The delete set, one `kind name (reason, stage)` per line — empty plan renders a clear note. */
 export const renderPlan = (plan: SweepPlan): string => {
 	if (plan.toDelete.length === 0) {
-		return "  (nothing to delete — no orphan it-* or closed-preview resources found)";
+		return "  (nothing to delete — no orphan it-*, closed-preview, or stale dev/test resources found)";
 	}
 	return plan.toDelete
 		.map((d) => `  - ${d.resource.kind} ${d.resource.name} (${d.reason}, stage ${d.stage})`)

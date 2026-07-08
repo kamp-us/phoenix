@@ -10,8 +10,10 @@
  * `afterAll(destroy(...))`. A partial `beforeAll` deploy can orphan its remote D1; the
  * #689 run-unique stage names mean a later run never overwrites it, so orphans
  * ACCUMULATE on the one shared account. This sweep is the bound: it deletes the
- * ephemeral integration (`it-*`) resources and the preview (`pr-<n>`) resources of
- * CLOSED PRs, and protects everything else.
+ * ephemeral integration (`it-*`) resources, the preview (`pr-<n>`) resources of
+ * CLOSED PRs, and — behind a separate opt-in — the stale `test`/`test-*` dev/test
+ * stage resources (#2340), and protects everything else. The `dev`/`dev-*` named-dev
+ * stages are deny-by-protection and never swept, flag or not.
  *
  * The safety property is the whole point. A sweep that deletes a prod, named-dev, or
  * open-PR resource is catastrophic and irreversible (ADR 0032: these are REAL remote
@@ -75,12 +77,34 @@ export interface Protection {
 	 * minimal.
 	 */
 	readonly sweepClosedPreviews: boolean;
+	/**
+	 * Sweep stale dev/test per-stage resources (#2340). The dev/test family splits into
+	 * a *sweepable* and a *protected* half, and this flag governs ONLY the sweepable half:
+	 *
+	 * - **Sweepable** — ephemeral `test`/`test-*` stages: machine-owned, run-unique per
+	 *   spin-up (like `it-*`, but outside #690's `it-*` mandate — hence a separate opt-in).
+	 * - **Protected (NEVER swept, flag or not)** — `dev`/`dev-*` named-dev stages
+	 *   (`dev-usirin` is exactly this shape). A dev stage belongs to a human, and the pure
+	 *   core carries no signal — no age, no live-worker match — to distinguish a dead
+	 *   named-dev stage from an active one, so the whole `dev-*` family stays
+	 *   deny-by-protection. This is the load-bearing carve-out the #2340 design tension names.
+	 *
+	 * Off by default, mirroring `sweepClosedPreviews`: it widens the delete set, so it is
+	 * opt-in and dry-run-safe.
+	 */
+	readonly sweepDevTestStages: boolean;
 }
 
 /** Why a resource is in the plan — the audit trail, so the plan is never an opaque list. */
-export type DeleteReason = "orphan-integration" | "closed-preview";
+export type DeleteReason = "orphan-integration" | "closed-preview" | "stale-dev-test";
 
-export type KeepReason = "protected-stage" | "open-pr" | "unrecognized" | "preview-sweep-disabled";
+export type KeepReason =
+	| "protected-stage"
+	| "open-pr"
+	| "unrecognized"
+	| "preview-sweep-disabled"
+	| "named-dev"
+	| "dev-test-sweep-disabled";
 
 export interface PlannedDelete {
 	readonly resource: CfResource;
@@ -161,16 +185,29 @@ const previewPrNumber = (stage: string): number | undefined => {
 };
 
 /**
+ * The two halves of the dev/test stage family (#2340), both anchored (a match on the
+ * exact stage or a `<fam>-` prefix, never a substring — `development`/`testing` match
+ * neither). See the `sweepDevTestStages` docblock for why the split is where it is.
+ */
+const isNamedDevStage = (stage: string): boolean => stage === "dev" || stage.startsWith("dev-");
+const isEphemeralTestStage = (stage: string): boolean =>
+	stage === "test" || stage.startsWith("test-");
+
+/**
  * Compute the deletion plan. The order of checks IS the safety policy:
  *
  *   1. Unrecognized (not one of our resources) → KEPT. Nothing foreign is ever swept.
- *   2. The decoded stage is in `protectedStages` (prod, named-dev) → KEPT. This wins
- *      even over an `it-`/`pr-` allow-match, so a stage someone deliberately protected
- *      can never be swept regardless of its name shape.
- *   3. `it-*` integration stage → DELETE (`orphan-integration`).
- *   4. `pr-<n>` preview: open PR → KEPT (`open-pr`). Closed PR → DELETE only if
+ *   2. The decoded stage is in `protectedStages` (prod, `--protect`-ed) → KEPT. This wins
+ *      even over an `it-`/`pr-`/`test-` allow-match, so a stage someone deliberately
+ *      protected can never be swept regardless of its name shape.
+ *   3. `dev`/`dev-*` named-dev stage → KEPT (`named-dev`). A protection that wins before
+ *      any sweep: `dev-usirin`-shaped stages are NEVER deleted, flag or not (#2340).
+ *   4. `it-*` integration stage → DELETE (`orphan-integration`).
+ *   5. `pr-<n>` preview: open PR → KEPT (`open-pr`). Closed PR → DELETE only if
  *      `sweepClosedPreviews`, else KEPT (`preview-sweep-disabled`).
- *   5. Anything else recognized but not matched → KEPT (`unrecognized`).
+ *   6. `test`/`test-*` ephemeral stage → DELETE (`stale-dev-test`) only if
+ *      `sweepDevTestStages`, else KEPT (`dev-test-sweep-disabled`) (#2340).
+ *   7. Anything else recognized but not matched → KEPT (`unrecognized`).
  */
 export const computeSweepPlan = (
 	resources: ReadonlyArray<CfResource>,
@@ -191,6 +228,12 @@ export const computeSweepPlan = (
 			kept.push({resource, reason: "protected-stage"});
 			continue;
 		}
+		// Named-dev (`dev-usirin`-shaped) is a protection: it must win before ANY sweep
+		// branch below, so a dev stage is never deleted regardless of the opt-in (#2340).
+		if (isNamedDevStage(stage)) {
+			kept.push({resource, reason: "named-dev"});
+			continue;
+		}
 		if (isIntegrationStage(stage)) {
 			toDelete.push({resource, reason: "orphan-integration", stage});
 			continue;
@@ -203,6 +246,14 @@ export const computeSweepPlan = (
 				toDelete.push({resource, reason: "closed-preview", stage});
 			} else {
 				kept.push({resource, reason: "preview-sweep-disabled"});
+			}
+			continue;
+		}
+		if (isEphemeralTestStage(stage)) {
+			if (protection.sweepDevTestStages) {
+				toDelete.push({resource, reason: "stale-dev-test", stage});
+			} else {
+				kept.push({resource, reason: "dev-test-sweep-disabled"});
 			}
 			continue;
 		}

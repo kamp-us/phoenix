@@ -20,18 +20,50 @@ and irreversible (ADR 0032: these are real remote D1s, never emulated). So the p
 1. An **unrecognized** resource (not `phoenix-phoenix-…`) is NEVER swept.
 2. A **protected** stage (`prod`, plus any `--protect` named-dev) is NEVER swept — this
    wins even over an `it-`/`pr-` allow-match.
-3. An **`it-*`** integration stage is deleted (`orphan-integration`).
-4. A **`pr-<n>`** preview is kept for an OPEN PR; a CLOSED PR's preview is deleted only
+3. A **`dev`/`dev-*`** named-dev stage (e.g. `dev-usirin`) is **NEVER** swept — a new
+   protected category (`named-dev`), deny-by-protection regardless of any opt-in ([#2340](https://github.com/kamp-us/phoenix/issues/2340)).
+4. An **`it-*`** integration stage is deleted (`orphan-integration`).
+5. A **`pr-<n>`** preview is kept for an OPEN PR; a CLOSED PR's preview is deleted only
    with `--sweep-closed-previews` (off by default — #690's mandate is the `it-*` leak).
+6. A **`test`/`test-*`** ephemeral dev/test stage is deleted (`stale-dev-test`) only with
+   `--sweep-dev-test-stages` (off by default; [#2340](https://github.com/kamp-us/phoenix/issues/2340)).
 
 This holds **identically across every resource kind** — Worker scripts, D1 databases, and
 **Flagship apps + flags** (#1505/#1506). A leaked preview Flagship app and its flags decode
 their stage the same way and flow through the same deny-by-default protection, so an OPEN
 PR's preview flags are **never** swept and a closed PR's are reclaimed only behind the gate.
 
-The match anchors are exact (`it-` start, not substring; `^pr-\d+$`), and the protection
-ordering is exhaustively unit-tested in `src/orphan-sweep.unit.test.ts` — the load-bearing
-test is that prod / named-dev / open-PR can never enter the delete set, in any kind.
+The match anchors are exact (`it-` start, not substring; `^pr-\d+$`; `dev`/`dev-` and
+`test`/`test-` starts, never a substring), and the protection ordering is exhaustively
+unit-tested in `src/orphan-sweep.unit.test.ts` — the load-bearing test is that prod /
+named-dev / open-PR can never enter the delete set, in any kind.
+
+## The dev/test staleness policy (`--sweep-dev-test-stages`, #2340)
+
+Per-stage `dev-*` and `test-*` D1s used to fall through the classifier to `unrecognized`
+and accumulate forever ([#2340](https://github.com/kamp-us/phoenix/issues/2340)). The
+dev/test stage family now classifies **explicitly**, split into a sweepable and a protected
+half — and the design tension the issue names (a `dev-usirin` stage is named-dev-shaped, so
+sweeping it relaxes the guard the core exists to enforce) is settled by making that split
+the policy, not by relaxing the guard:
+
+- **Sweepable** — `test` / `test-*` stages. These are **machine-owned, run-unique** (each
+  test spin-up gets a fresh physical suffix), exactly the `it-*` accumulation pattern but
+  outside #690's `it-*` mandate — so they reclaim behind their **own** opt-in flag,
+  `--sweep-dev-test-stages`, dry-run by default (mirroring `--sweep-closed-previews`). Their
+  delete reason is `stale-dev-test`.
+- **Protected (NEVER swept, flag or not)** — `dev` / `dev-*` stages (`dev-usirin` is exactly
+  this shape). A dev stage belongs to a **human**, and the pure core carries **no signal**
+  — no age, no live-worker match — that can safely distinguish a dead named-dev stage from
+  an active one. So the whole `dev-*` family is **deny-by-protection** (kept reason
+  `named-dev`), and no flag reaches it. A unit test pins that `dev-usirin` is kept even with
+  the sweep ON. Draining any genuinely-dead `dev-usirin` D1 is a founder-side judgement call
+  (they hold the credentials), not an automated sweep target.
+
+This is **code + tests + CLI flag only** — no scheduled-workflow change and no actual drain
+of the current stale cohort. Arming the daily `orphan-sweep.yml` with the new flag is a
+control-plane follow-up (it banks for a human merge), and the one-shot drain of the existing
+`test-*` cohort runs founder-side (agents hold no Cloudflare credentials).
 
 ## Physical name shape
 
@@ -95,6 +127,9 @@ node packages/orphan-sweep/src/bin.ts sweep --execute
 
 # Also reap closed PRs' pr-<n> previews.
 node packages/orphan-sweep/src/bin.ts sweep --execute --sweep-closed-previews
+
+# Also reap stale test/test-* stages (dev/dev-* named-dev stages are NEVER swept).
+node packages/orphan-sweep/src/bin.ts sweep --execute --sweep-dev-test-stages
 ```
 
 `sweep` resolves the target repo for the open-PR lookup per ADR

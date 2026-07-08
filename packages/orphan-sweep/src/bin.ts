@@ -9,9 +9,10 @@
  * delete and exits 0 without touching the account.
  *
  * The catastrophe guard lives in the pure core (`orphan-sweep.ts`): prod, named-dev
- * (`--protect`), and open-PR resources are NEVER in the plan, so `--execute` can only
- * ever delete an orphan `it-*` (and, with `--sweep-closed-previews`, a closed PR's
- * `pr-<n>`) — across all resource kinds, the Flagship apps/flags included. Credentials
+ * (`--protect` AND the `dev`/`dev-*` shape), and open-PR resources are NEVER in the plan,
+ * so `--execute` can only ever delete an orphan `it-*` (with `--sweep-closed-previews`, a
+ * closed PR's `pr-<n>`; with `--sweep-dev-test-stages`, a stale `test`/`test-*` stage —
+ * #2340) — across all resource kinds, the Flagship apps/flags included. Credentials
  * come from the environment at runtime (`$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID`),
  * never from source.
  *
@@ -43,14 +44,21 @@ const sweepClosedPreviewsFlag = Flag.boolean("sweep-closed-previews").pipe(
 	),
 );
 
+const sweepDevTestStagesFlag = Flag.boolean("sweep-dev-test-stages").pipe(
+	Flag.withDescription(
+		"also delete stale test/test-* stage resources (off by default; dev/dev-* named-dev stages are NEVER swept — #2340)",
+	),
+);
+
 const sweep = Command.make(
 	"sweep",
 	{
 		execute: executeFlag,
 		protect: protectFlag,
 		sweepClosedPreviews: sweepClosedPreviewsFlag,
+		sweepDevTestStages: sweepDevTestStagesFlag,
 	},
-	Effect.fn(function* ({execute, protect, sweepClosedPreviews}) {
+	Effect.fn(function* ({execute, protect, sweepClosedPreviews, sweepDevTestStages}) {
 		const cloudflare = yield* Cloudflare;
 		const github = yield* Github;
 
@@ -62,6 +70,7 @@ const sweep = Command.make(
 			protectedStages: ["prod", ...protect],
 			openPrNumbers,
 			sweepClosedPreviews,
+			sweepDevTestStages,
 		};
 		const plan = computeSweepPlan(resources, protection);
 

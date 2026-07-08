@@ -43,6 +43,7 @@ const protection = (over: Partial<Protection> = {}): Protection => ({
 	protectedStages: ["prod"],
 	openPrNumbers: [],
 	sweepClosedPreviews: false,
+	sweepDevTestStages: false,
 	...over,
 });
 
@@ -145,6 +146,99 @@ describe("computeSweepPlan — open PR previews are protected", () => {
 			protection({sweepClosedPreviews: true}),
 		);
 		assert.strictEqual(plan.toDelete.length, 0);
+	});
+});
+
+describe("computeSweepPlan — named-dev (dev-*) stages are a protected category (#2340)", () => {
+	// The load-bearing carve-out: dev-usirin-* is named-dev-shaped, so the dev/test opt-in
+	// must NEVER reach it. A dev stage belongs to a human; the pure core has no signal
+	// (no age, no live-worker match) to tell a dead named-dev stage from an active one, so
+	// the whole dev-* family is deny-by-protection.
+	it("keeps a dev-usirin stage as named-dev, even with the dev/test sweep ON", () => {
+		const w = worker("dev-usirin");
+		const db = d1("dev-usirin");
+		const plan = computeSweepPlan([w, db], protection({sweepDevTestStages: true}));
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, w.name), "named-dev");
+		assert.strictEqual(keptReasonFor(plan, db.name), "named-dev");
+	});
+
+	it("keeps any dev-* stage (dev-cansirin) as named-dev with the sweep ON", () => {
+		const db = d1("dev-cansirin");
+		const plan = computeSweepPlan([db], protection({sweepDevTestStages: true}));
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, db.name), "named-dev");
+	});
+
+	it("keeps a bare `dev` stage as named-dev (no name segment still means a dev stage)", () => {
+		const w = worker("dev");
+		const plan = computeSweepPlan([w], protection({sweepDevTestStages: true}));
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, w.name), "named-dev");
+	});
+
+	it("never matches `dev` via a substring — `development` is not a dev stage", () => {
+		// A stage merely CONTAINING dev is unrecognized, never named-dev, never swept.
+		const w = worker("development");
+		const plan = computeSweepPlan([w], protection({sweepDevTestStages: true}));
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, w.name), "unrecognized");
+	});
+});
+
+describe("computeSweepPlan — stale test-* stages sweep only under the opt-in (#2340)", () => {
+	// `phoenix-phoenix-db-test-<hash>` decodes to stage `test`; a namespaced test stage to
+	// `test-<slug>`. These are machine-owned, run-unique ephemeral stages — like it-* but
+	// outside #690's mandate — so they reclaim only behind the explicit opt-in flag.
+	it("deletes a bare `test` stage D1 (stale-dev-test) only when the flag is ON", () => {
+		const db = d1("test");
+		const on = computeSweepPlan([db], protection({sweepDevTestStages: true}));
+		assert.deepStrictEqual(deletedNames(on), [db.name]);
+		assert.strictEqual(on.toDelete[0]?.reason, "stale-dev-test");
+		assert.strictEqual(on.toDelete[0]?.stage, "test");
+
+		const off = computeSweepPlan([db], protection({sweepDevTestStages: false}));
+		assert.strictEqual(off.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(off, db.name), "dev-test-sweep-disabled");
+	});
+
+	it("deletes a namespaced test-<slug> stage when the flag is ON", () => {
+		const w = worker("test-report");
+		const on = computeSweepPlan([w], protection({sweepDevTestStages: true}));
+		assert.deepStrictEqual(deletedNames(on), [w.name]);
+		assert.strictEqual(on.toDelete[0]?.reason, "stale-dev-test");
+		assert.strictEqual(on.toDelete[0]?.stage, "test-report");
+	});
+
+	it("keeps a test stage that is ALSO explicitly --protect-ed (protection wins first)", () => {
+		const w = worker("test-keepme");
+		const plan = computeSweepPlan(
+			[w],
+			protection({protectedStages: ["prod", "test-keepme"], sweepDevTestStages: true}),
+		);
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, w.name), "protected-stage");
+	});
+
+	it("never matches `test` via a substring — `testing` is not a test stage", () => {
+		const w = worker("testing");
+		const plan = computeSweepPlan([w], protection({sweepDevTestStages: true}));
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, w.name), "unrecognized");
+	});
+
+	it("the dev/test opt-in NEVER reaches prod, it-*, or pr-<n> — those keep their own reasons", () => {
+		// The new flag widens coverage to test-* ONLY; it must not perturb the existing
+		// classifications. it-* still deletes (its own mandate), prod stays protected.
+		const resources = [worker("prod"), worker("it-report-aaaa"), worker("pr-5")];
+		const plan = computeSweepPlan(
+			[...resources],
+			protection({openPrNumbers: [5], sweepDevTestStages: true}),
+		);
+		assert.deepStrictEqual(deletedNames(plan), [worker("it-report-aaaa").name]);
+		assert.strictEqual(plan.toDelete[0]?.reason, "orphan-integration");
+		assert.strictEqual(keptReasonFor(plan, worker("prod").name), "protected-stage");
+		assert.strictEqual(keptReasonFor(plan, worker("pr-5").name), "open-pr");
 	});
 });
 
@@ -274,6 +368,20 @@ describe("computeSweepPlan — Flagship apps/flags flow through the SAME protect
 		assert.strictEqual(plan.toDelete.length, 0);
 		assert.strictEqual(keptReasonFor(plan, foreignApp.name), "unrecognized");
 		assert.strictEqual(keptReasonFor(plan, foreignFlag.name), "unrecognized");
+	});
+
+	it("dev/test classification flows through flagship kinds too (#2340)", () => {
+		// A leaked test-stage flagship app + flag sweep under the opt-in; a named-dev one never does.
+		const testApp = flagshipApp("test");
+		const testFlag = flagshipFlag("test");
+		const devApp = flagshipApp("dev-usirin");
+		const on = computeSweepPlan(
+			[testFlag, testApp, devApp],
+			protection({sweepDevTestStages: true}),
+		);
+		assert.deepStrictEqual(new Set(deletedNames(on)), new Set([testFlag.name, testApp.name]));
+		for (const d of on.toDelete) assert.strictEqual(d.reason, "stale-dev-test");
+		assert.strictEqual(keptReasonFor(on, devApp.name), "named-dev");
 	});
 
 	it("a flag named `prod-…` (open pr) is kept even though its KEY looks prod-ish", () => {
