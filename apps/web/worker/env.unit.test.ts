@@ -1,6 +1,12 @@
 /** Unit tests for `resolveStateMode` + `customHostname` — deploy-time helpers. */
 import {describe, expect, it} from "vitest";
-import {customHostname, PHOENIX_APEX_HOSTNAME, resolveStateMode} from "./env.ts";
+import {
+	customHostname,
+	devDatabaseName,
+	PHOENIX_APEX_HOSTNAME,
+	resolveDevStage,
+	resolveStateMode,
+} from "./env.ts";
 
 describe("resolveStateMode", () => {
 	it("a real deploy (no CI, no dev signal) uses the Cloudflare-hosted store", () => {
@@ -46,6 +52,61 @@ describe("resolveStateMode", () => {
 
 	it("falls through to the shared store on a malformed ALCHEMY_EXEC_OPTIONS blob", () => {
 		expect(resolveStateMode({ALCHEMY_EXEC_OPTIONS: "{not json"})).toBe("cloudflare");
+	});
+});
+
+describe("resolveDevStage (#2361 — stable dev D1 name, local path only)", () => {
+	it("reads the stage from the alchemy dev exec-options blob", () => {
+		expect(
+			resolveDevStage({ALCHEMY_EXEC_OPTIONS: JSON.stringify({dev: true, stage: "dev_usirin"})}),
+		).toBe("dev_usirin");
+	});
+
+	it("is undefined off the local dev path (a real deploy never pins a name)", () => {
+		// The load-bearing safety case: no dev signal ⇒ no stage ⇒ no explicit name ⇒
+		// production keeps its persisted auto-generated name (no diff→replace).
+		expect(resolveDevStage({})).toBeUndefined();
+		expect(resolveDevStage({CI: "true"})).toBeUndefined();
+		expect(
+			resolveDevStage({ALCHEMY_EXEC_OPTIONS: JSON.stringify({stage: "production"}), CI: "true"}),
+		).toBeUndefined();
+	});
+
+	it("is undefined on a local path with no decodable stage (never pin a stage-less name)", () => {
+		// A stage-less name would collide across personal stages (stage is the isolation
+		// unit, ADR 0057), so the coarse ALCHEMY_DEV-only harness path falls back to the
+		// auto-generated per-instance name rather than a shared name.
+		expect(resolveDevStage({ALCHEMY_DEV: "1"})).toBeUndefined();
+		expect(resolveDevStage({ALCHEMY_EXEC_OPTIONS: JSON.stringify({dev: true})})).toBeUndefined();
+		expect(resolveDevStage({ALCHEMY_EXEC_OPTIONS: "{not json"})).toBeUndefined();
+	});
+});
+
+describe("devDatabaseName (#2361 — the explicit dev D1 physical name)", () => {
+	it("mirrors alchemy's stack-id-stage prefix, DNS-sanitized, minus the random suffix", () => {
+		expect(
+			devDatabaseName({ALCHEMY_EXEC_OPTIONS: JSON.stringify({dev: true, stage: "dev_usirin"})}),
+		).toBe("phoenix-phoenix-db-dev-usirin");
+	});
+
+	it("is stable across state resets for the same stage (adoption re-links the same D1)", () => {
+		const env = {ALCHEMY_EXEC_OPTIONS: JSON.stringify({dev: true, stage: "dev_umut"})};
+		expect(devDatabaseName(env)).toBe(devDatabaseName(env));
+		expect(devDatabaseName(env)).toBe("phoenix-phoenix-db-dev-umut");
+	});
+
+	it("distinguishes stages so per-stage isolation holds (ADR 0057)", () => {
+		const a = devDatabaseName({ALCHEMY_EXEC_OPTIONS: JSON.stringify({dev: true, stage: "dev_a"})});
+		const b = devDatabaseName({ALCHEMY_EXEC_OPTIONS: JSON.stringify({dev: true, stage: "dev_b"})});
+		expect(a).not.toBe(b);
+	});
+
+	it("is undefined on every hosted-state path — production's name is untouched, no diff→replace", () => {
+		expect(devDatabaseName({})).toBeUndefined();
+		expect(devDatabaseName({CI: "true"})).toBeUndefined();
+		expect(
+			devDatabaseName({ALCHEMY_EXEC_OPTIONS: JSON.stringify({stage: "production"}), CI: "true"}),
+		).toBeUndefined();
 	});
 });
 
