@@ -9,6 +9,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {FateClient} from "react-fate";
 import {useSession} from "../auth/client";
+import {noteSnapshotHydrated} from "../lib/feedPerf";
 import {createClient} from "./client";
 import {createLiveRetryController, type LiveRetryController} from "./liveRetry";
 import {getPublicFateClient} from "./publicClient";
@@ -86,7 +87,9 @@ export function FateProvider({children}: {children: React.ReactNode}) {
 		// hydrate-before-render contract. The anon (userId null) client is the pending/signed-out
 		// tier and owns no authed snapshot, so it is skipped: the authed snapshot is strictly
 		// identity-scoped. No-op when the flag is off. See `snapshot.ts`.
-		if (userId != null) hydrateAuthedClient(created, userId);
+		// Note a hydrated snapshot so the reload→paint instrument classifies this paint as
+		// the snapshot path (#2326). No-op when the snapshot flag is off (returns false).
+		if (userId != null && hydrateAuthedClient(created, userId)) noteSnapshotHydrated();
 		return created;
 	}, [userId, scheduleRetry]);
 

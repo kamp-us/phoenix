@@ -278,12 +278,14 @@ export function browserPersistenceBindings(): PersistenceBindings {
 }
 
 /** Boot-time hydrate for the always-anonymous public client. No-op when the flag is off
- *  or `localStorage` is unavailable, so the flag-off path performs no storage reads. */
-export function hydrateAnonPublicClient(client: SnapshotClient): void {
-	if (!FEED_SNAPSHOT_ENABLED) return;
+ *  or `localStorage` is unavailable, so the flag-off path performs no storage reads.
+ *  Returns whether a snapshot was applied (the reload→paint instrument reads this to
+ *  classify the paint as the snapshot path, #2326). */
+export function hydrateAnonPublicClient(client: SnapshotClient): boolean {
+	if (!FEED_SNAPSHOT_ENABLED) return false;
 	const storage = browserSnapshotStorage();
-	if (storage == null) return;
-	hydrateFromSnapshot(client, storage, {identity: ANON_IDENTITY});
+	if (storage == null) return false;
+	return hydrateFromSnapshot(client, storage, {identity: ANON_IDENTITY});
 }
 
 /** Install anon persistence for the public client's lifetime. No-op (an inert
@@ -303,12 +305,13 @@ export function installAnonSnapshotPersistence(client: SnapshotClient): () => vo
  *  resolves, keyed on the resolved `userId`, so a signed-in reload paints the viewer's own
  *  last-seen feed (base feed + private `myVote`/`isSaved`) synchronously before the first
  *  `useRequest`. Keyed per user, so one identity's snapshot never hydrates under another.
- *  No-op when the flag is off or `localStorage` is unavailable. */
-export function hydrateAuthedClient(client: SnapshotClient, userId: string): void {
-	if (!FEED_SNAPSHOT_ENABLED) return;
+ *  No-op when the flag is off or `localStorage` is unavailable. Returns whether a snapshot
+ *  was applied (the reload→paint instrument reads this to classify the paint, #2326). */
+export function hydrateAuthedClient(client: SnapshotClient, userId: string): boolean {
+	if (!FEED_SNAPSHOT_ENABLED) return false;
 	const storage = browserSnapshotStorage();
-	if (storage == null) return;
-	hydrateFromSnapshot(client, storage, {identity: authedIdentity(userId)});
+	if (storage == null) return false;
+	return hydrateFromSnapshot(client, storage, {identity: authedIdentity(userId)});
 }
 
 /** Install authed persistence for the identity-keyed client's lifetime, keyed per user id

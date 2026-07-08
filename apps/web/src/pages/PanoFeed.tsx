@@ -24,6 +24,7 @@ import {FEED_SNAPSHOT_ENABLED} from "../fate/snapshot";
 import {LoadMoreButton} from "../fate/wire";
 import {PANO_BASE_FEED} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {markFeedPaintOnce} from "../lib/feedPerf";
 import {
 	PANO_FEED_PAGE_SIZE,
 	PANO_FILTERS,
@@ -186,6 +187,14 @@ function FeedRows({
 	compose: boolean;
 }) {
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
+
+	// Reload→first-feed-paint instrumentation (#2326, epic #2316): mark the first committed
+	// feed rows so the epic's founding floor is readable in a DevTools/Performance trace.
+	// Fires once per tab (the module latches) and classifies the path (snapshot/edge/cold)
+	// from the boot-time snapshot signal; no-op when the instrument is off. See `feedPerf.ts`.
+	React.useEffect(() => {
+		if (items.length > 0) markFeedPaintOnce();
+	}, [items.length]);
 
 	const meta = host ? `${items.length} başlık · ${host}` : `${items.length} başlık`;
 
