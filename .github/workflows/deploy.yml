@@ -267,6 +267,10 @@ jobs:
           # only: an empty DSN leaves the SPA wiring inert (sentry.ts `sentryEnabled`
           # gate), so per-PR previews neither init Sentry nor burn the free-tier quota.
           VITE_SENTRY_DSN: ${{ env.ENVIRONMENT == 'production' && vars.VITE_SENTRY_DSN || '' }}
+          # Snapshot-hydration containment flag (#2319/#2333) — same build-time repo-variable
+          # gate as the Sentry DSN above: prod reads the variable (its value IS the release
+          # state), previews build flag-dark (empty ≠ "on"). The variable's absence = flag off.
+          VITE_FEED_SNAPSHOT: ${{ env.ENVIRONMENT == 'production' && vars.VITE_FEED_SNAPSHOT || '' }}
         run: pnpm --filter ${{ matrix.pnpm-name }} build
 
       # `exec alchemy` forwards `--stage`/`--yes` to the alchemy CLI. A bare
