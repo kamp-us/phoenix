@@ -1,10 +1,12 @@
 # Durable Objects
 
+> Derived from `alchemy@2.0.0-beta.59` — re-verify on pin bump.
+
 How phoenix's live fan-out DO is written on alchemy. The short answer:
-`LiveDO` is a single `Cloudflare.DurableObjectNamespace<LiveDO, LiveRpcSurface>()("LiveDO")`
+`LiveDO` is a single `Cloudflare.DurableObject<LiveDO, LiveRpcSurface>()("LiveDO")`
 class (identity + RPC contract, no inline body) with a separate `LiveDOLive`
 implementation Layer produced by `LiveDO.make(body)`. `body` is a two-phase
-Effect — shared init, then a per-instance Effect that yields
+Effect — an outer constructor phase, then a per-instance Effect that yields
 `Cloudflare.DurableObjectState` and returns handlers. Methods you return become
 **typed RPC** the worker (and the DO itself) calls through a stub; `fetch`
 handles request-shaped interactions like the SSE upgrade. KV storage and alarms
@@ -19,14 +21,19 @@ supersedes [0025](../.decisions/0025-split-livedo-connection-topic.md)).
 > **One class, two roles — no sibling cycle.** A `LiveDO` instance is named
 > `connection:<id>` or `topic:<key>`; `resolveRole(state.id.name)` picks the role
 > at request time. Cross-role calls (connection→topic register, topic→connection
-> deliver) ride the DO's **OWN** namespace, resolved **once in shared init** via
-> `LiveDO.from("phoenix")` and held in the closure — not a sibling DO Tag, and
-> not a per-call resolution. Because the class references its own namespace by
-> host script name, there is no circular Layer dependency: `.from(scriptName)`
-> resolves to `Effect<…, never, Worker>`, so `LiveDOLive` is
-> `Layer<LiveDO, never, Worker>` and every RPC method's `R` is `never`. This is
-> what retired [ADR 0033](../.decisions/0033-mutual-do-layer-cycle-per-call-resolution.md)
-> (the mutual-DO problem) and deleted the sibling-resolution pattern.
+> deliver) ride the DO's **OWN** namespace, resolved **once in the outer init**
+> via the beta.59 self-scope — `yield* Cloudflare.DurableObject` — and held in
+> the closure; not a sibling DO Tag, not `LiveDO.from(Self)` (which needs the
+> host `Worker` import and would reintroduce the worker↔DO cycle), and not a
+> per-call resolution. The self-scope service is not a member of
+> `DurableObjectServices`, so `.make` leaves it in the Layer's `Req` even though
+> the bridge provides it at runtime — a phantom requirement discharged with one
+> localized double cast at the yield site. The whole story (what beta.59 removed,
+> why the alternatives fail, why the cast is sound) is
+> [ADR 0124](../.decisions/0124-livedo-self-addressing-beta59-runtime-scope.md),
+> amending 0037; the mutual-DO per-call rule of
+> [ADR 0033](../.decisions/0033-mutual-do-layer-cycle-per-call-resolution.md)
+> stays retired. The Layer is `Layer<LiveDO, never, Worker>`.
 
 ## The shape
 
@@ -35,42 +42,45 @@ and the implementation Layer.
 
 ```ts
 // worker/features/fate-live/live-do.ts
+import type {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
-// (1) RPC surface — both roles' methods. Every method's R is `never`: cross-role
-// calls ride the self-namespace captured in init, not a per-call Tag.
+// (1) RPC surface — both roles' methods. beta.59 colors DO storage and
+// cross-DO stubs with `RuntimeContext`, so every method's R is `RuntimeContext`
+// (ADR 0124) — discharged at the worker call seam and, in unit tests, via
+// `RuntimeContext.phantom`.
 export interface LiveRpcSurface {
-  readonly subscribe: (input: /* … */) => Effect.Effect<{ok: boolean}, never, never>;
-  readonly unsubscribe: (input: /* … */) => Effect.Effect<{ok: true}, never, never>;
-  readonly deliver: (input: /* … */) => Effect.Effect<DeliverResult, never, never>;
-  readonly check: (input: /* … */) => Effect.Effect<{stale: ReadonlyArray<number>}, never, never>;
-  readonly register: (input: /* … */) => Effect.Effect<{ok: boolean}, never, never>;
-  readonly unregister: (input: /* … */) => Effect.Effect<{ok: true}, never, never>;
-  readonly publish: (input: /* … */) => Effect.Effect<{delivered: number}, never, never>;
+  readonly subscribe: (input: /* … */) => Effect.Effect<{ok: boolean}, never, RuntimeContext>;
+  readonly unsubscribe: (input: /* … */) => Effect.Effect<{ok: true}, never, RuntimeContext>;
+  readonly deliver: (input: /* … */) => Effect.Effect<DeliverResult, never, RuntimeContext>;
+  readonly check: (input: /* … */) => Effect.Effect<{stale: ReadonlyArray<number>}, never, RuntimeContext>;
+  readonly register: (input: /* … */) => Effect.Effect<{ok: boolean}, never, RuntimeContext>;
+  readonly unregister: (input: /* … */) => Effect.Effect<{ok: true}, never, RuntimeContext>;
+  readonly publish: (input: /* … */) => Effect.Effect<{delivered: number}, never, RuntimeContext>;
 }
 
 // (2) Class Tag — identity + contract, no body. Importing this pulls in no DO
 // runtime (the bundler tree-shakes `.make()` out of consumers).
-export class LiveDO extends Cloudflare.DurableObjectNamespace<LiveDO, LiveRpcSurface>()("LiveDO") {}
+export class LiveDO extends Cloudflare.DurableObject<LiveDO, LiveRpcSurface>()("LiveDO") {}
 
 // (3) Implementation Layer.
 export const LiveDOLive = LiveDO.make(
   Effect.gen(function* () {
-    // ── SHARED INIT (once per namespace) ──
-    // Resolve the DO's OWN namespace here for cross-role addressing. Use the
-    // `.from(scriptName)` overload — NOT a bare `yield* LiveDO`. `.from("phoenix")`
-    // binds by host script name → `Effect<…, never, Worker>`, so the Layer stays
-    // `Layer<LiveDO, never, Worker>`. A bare `yield* LiveDO` would leak `LiveDO`
-    // as an unsatisfiable self-requirement (the very Tag this Layer outputs).
-    // The string must stay in sync with `Phoenix.make("phoenix", …)` in index.ts.
-    const live = yield* LiveDO.from("phoenix");
+    // ── OUTER INIT (the constructor phase) ──
+    // Resolve the DO's OWN namespace here for cross-role addressing — the
+    // beta.59 self-scope yield. It MUST be here, not in a handler: the bridge
+    // provides the self-scope to the constructor phase only, never to the inner
+    // handlers. The double cast discharges the phantom `Req` the `.make` typing
+    // leaves behind (ADR 0124) — no value is fabricated, the runtime yield is
+    // unchanged.
+    const live = yield* Cloudflare.DurableObject as unknown as Effect.Effect<LiveNamespace>;
 
-    // The shared-init gen RETURNS the per-instance Effect (run once per instance
-    // wake). `return yield*` would collapse the two phases — see below.
+    // The outer gen RETURNS the per-instance Effect. `return yield*` would
+    // collapse the two phases — see below.
     // @effect-diagnostics-next-line effect/returnEffectInGen:off
     return Effect.gen(function* () {
-      // ── PER-INSTANCE (once per instance wake) ──
+      // ── PER-INSTANCE ──
       const state = yield* Cloudflare.DurableObjectState;
       const instance = makeLiveInstance(state, live); // state + self-namespace
       return {
@@ -89,13 +99,19 @@ export const LiveDOLive = LiveDO.make(
 );
 ```
 
-The outer `Effect.gen` runs once per namespace (resolve the self-namespace,
-shared setup). The inner `Effect.gen` runs per instance wake and closes over
-per-instance state — this closure is alchemy's equivalent of instance fields and
-persists for the instance's lifetime. `return Effect.gen(...)` returns the inner
-Effect **unrun** so alchemy invokes it per instance; `return yield* Effect.gen(...)`
-would run per-instance setup during shared init (wrong lifecycle). The
-`effect/returnEffectInGen:off` suppression is correct here — annotate with **why**.
+Both phases run on each instance wake, sequentially, inside
+`state.blockConcurrencyWhile` (`alchemy@2.0.0-beta.59 —
+src/Cloudflare/Workers/DurableObjectBridge.ts`: the bridge constructor runs the
+outer Effect, then the inner Effect it returned) — the outer phase is *not*
+once-per-namespace. The distinction is what each phase can see: only the outer
+(constructor) phase gets the self-scope; the inner phase yields
+`Cloudflare.DurableObjectState` and closes over per-instance values — this
+closure is alchemy's equivalent of instance fields and persists for the
+instance's lifetime. `return Effect.gen(...)` returns the inner Effect **unrun**
+so the bridge invokes it in the right phase; `return yield* Effect.gen(...)`
+would run it during the constructor phase with the wrong services in scope. The
+`effect/returnEffectInGen:off` suppression is correct here — annotate with
+**why**.
 
 ## Role dispatch: `resolveRole(state.id.name)`
 
@@ -123,18 +139,18 @@ manual `url.pathname` routing, no request/response (de)serialization:
 
 ```ts
 // caller (worker, or the DO's own init closure for cross-role addressing)
-yield* live.getByName(`topic:${topicKey}`).publish({topicKey, frame, limits});
-yield* live.getByName(`connection:${id}`).deliver({frame, row, limits});
+yield* topicOf(live, topicKey).publish({topicKey, frame, limits});
+yield* connectionOf(live, connectionId).deliver({frame, row, limits});
 ```
 
 Reserve `fetch` for the genuinely request-shaped interaction — the SSE upgrade.
 Everything else (`subscribe`, `register`, `publish`, `check`, …) is a method.
 
-## The `never` error channel is a type lie — retry the cold-start transport seam
+## The typed error channel is a type lie — retry the cold-start transport seam
 
-Every `LiveRpcSurface` method above is typed `Effect<…, never, never>`, but that
+Every `LiveRpcSurface` method above has failure channel `never`, but that
 `never` is the **declared** shape, not the **runtime** one. The alchemy stub
-(`makeRpcStub`, `alchemy/Cloudflare/Workers/Rpc`) wraps each cross-DO call in
+(`makeRpcStub`, `src/Cloudflare/Workers/Rpc.ts`) wraps each cross-DO call in
 `Effect.tryPromise({catch: … RpcCallError})`, so a real transport failure —
 crucially, a **cold-start** failure when Cloudflare has evicted an idle DO and the
 first RPC races the warm-up — surfaces as an `RpcCallError` in the **failure
@@ -154,14 +170,20 @@ exhaustion surfaces a typed `LiveTransportError` the route renders as a graceful
 envelope. The retry keys on the `RpcCallError` `_tag` (the class is internal to
 alchemy, off the public export path — a structural tag check is the only seam) via
 `Retry.Options.while`, so a **genuine app error fails fast and passes through
-untouched** — never retried, never masked as a 503. Schedule shape grounds in
-effect-smol `LLMS.md` §"Working with Schedules" (`retryBackoffWithLimit` +
-`retryableOnly`). See [ADR 0095](../.decisions/0095-cold-start-retry-rpc-transport-seam.md).
+untouched** — never retried, never masked as a 503. The SSE-open path is the one
+exception: a cold-DO `stub.fetch` rejection arrives as a **defect**, not an
+`RpcCallError` failure, so the open call site uses the sibling
+`withColdStartRetryFetch`, which lifts the transport defect into the same retryable
+shape (#1048). Schedule shape grounds in effect-smol `LLMS.md` §"Working with
+Schedules" (`retryBackoffWithLimit` + `retryableOnly`). See
+[ADR 0095](../.decisions/0095-cold-start-retry-rpc-transport-seam.md).
 
 ```ts
 // index.ts liveLayer — wrap each stub call at the seam, never call it bare:
 subscribe: (id, input) =>
   withColdStartRetry("subscribe", connectionOf(live, id).subscribe(input)),
+open: (id, request) =>
+  withColdStartRetryFetch("open", connectionOf(live, id).fetch(request)),
 ```
 
 The service `Context.Service` signatures (`topics.ts`) then declare the truthful
@@ -169,26 +191,35 @@ The service `Context.Service` signatures (`topics.ts`) then declare the truthful
 to handle the 503 path — invalid state (a swallowed transport failure) made
 unrepresentable.
 
-## Addressing: `getByName` only
+## Addressing: `getByName` only, through the name-grammar helpers
 
-The alchemy DO stub exposes **only `getByName(name)` and `fetch(HttpServerRequest)`**.
-`idFromName`, `idFromString`, `get`, `newUniqueId`, and `jurisdiction` are
-unavailable on the alchemy stub. All addressing is name-based — and for `LiveDO`
-the name *is* the role + key:
+The alchemy DO namespace exposes **only `getByName(name)`** (plus the stub's
+typed methods and `fetch(HttpServerRequest)`). `idFromName`, `idFromString`,
+`get`, `newUniqueId`, and `jurisdiction` are unavailable — they exist commented
+out in the binding construction (`alchemy@2.0.0-beta.59 —
+src/Cloudflare/Workers/DurableObject.ts`, the runtime namespace object). All
+addressing is name-based — and for `LiveDO` the name *is* the role + key, so
+production code addresses instances only through the exported helpers that fuse
+the name grammar with `getByName`:
 
 ```ts
-const topic = live.getByName(`topic:${topicKey}`);
-const connection = live.getByName(`connection:${connectionId}`);
+const topic = topicOf(live, topicKey);              // getByName(`topic:${topicKey}`)
+const connection = connectionOf(live, connectionId); // getByName(`connection:${connectionId}`)
 ```
 
+A hand-rolled malformed name resolves to role `unknown` — a silently no-op RPC —
+so "always address via `connectionOf`/`topicOf`" is the greppable convention.
 The `generation` stale model holds under name addressing: the only handle is the
 human-readable `connection:${id}` key, so the topic registry stores and re-derives
-that key, and `generation`+`revision` carry the staleness no opaque id is needed.
+that key, and `generation`+`revision` carry the staleness — no opaque id is needed.
 
 ## KV storage (no SQLite)
 
 Storage is `state.storage`'s KV API, mirroring void's flat keys — there is no SQL
-table and no `@effect/sql-sqlite-do`:
+table and no `@effect/sql-sqlite-do`. The storage methods are
+`RuntimeContext`-colored (beta.59): resolve the `state` *reference* wherever, but
+call `storage.get`/`put`/`list`/`delete` only where `RuntimeContext` is in scope —
+the per-instance handlers.
 
 - **Subscriber rows** (topic role) — keyed
   `sub:${topicKey}:${connectionId}:${subId}:${generation}:${revision}` → the
@@ -238,9 +269,10 @@ queue + keep-alive shape in isolation.
 > **No WebSocket hibernation here.** `LiveDO` holds an HTTP SSE stream, not a
 > WebSocket, so the hibernation API doesn't apply. For DOs that *do* use
 > WebSockets, alchemy provides `Cloudflare.upgrade()`, `serializeAttachment` /
-> `deserializeAttachment`, `state.getWebSockets()`, and the `webSocketMessage` /
-> `webSocketClose` handler slots — see the alchemy `Room` example. phoenix
-> doesn't need them today.
+> `deserializeAttachment`, and the `webSocketMessage` / `webSocketClose` handler
+> slots (`src/Cloudflare/Workers/DurableObject.ts` §WebSocket Hibernation, and
+> the bridge's `webSocketMessage`/`webSocketClose` forwarding). phoenix doesn't
+> need them today.
 
 ## The reap alarm (topic role)
 
@@ -261,7 +293,7 @@ const alarm = () =>
   Effect.gen(function* () {
     const entries = yield* loadRows(role.topicKey);    // grouped by connectionId
     for (const [connectionId, items] of grouped) {
-      const result = yield* live.getByName(`connection:${connectionId}`)
+      const result = yield* connectionOf(live, connectionId)
         .check({subscriptions: items.map((i) => i.row)})
         .pipe(Effect.timeout(probeTimeout), Effect.catchCause(() => Effect.succeed(undefined)));
       if (result === undefined) {
@@ -287,16 +319,18 @@ from stalling the single-threaded DO.
 ## Where the body lives — unit-testable
 
 `makeLiveInstance(state, live)` holds the per-instance algorithm and takes the
-resolved `DurableObjectState` + the self-namespace as plain args, so a
-node-pool unit test drives it without workerd (inject a fake state + a fake
-namespace whose `getByName` returns stubs). See
+resolved state + the self-namespace as plain args — typed against `LiveDoState`,
+the `Pick<…, "id" | "storage">` slice of `DurableObjectState` it actually touches
+— so a node-pool unit test drives it without workerd (inject a fake state + a
+fake namespace whose `getByName` returns stubs; discharge the methods'
+`RuntimeContext` with `RuntimeContext.phantom`). See
 `features/fate-live/do.test.ts` for the unit driver and
 `tests/integration/fate-live.test.ts` for the black-box-over-HTTP version.
 
 ## See also
 
-- [alchemy-bindings.md](./alchemy-bindings.md) — `yield* SomeDO` and the
-  `.from(scriptName)` self/cross-script binding overload
+- [alchemy-bindings.md](./alchemy-bindings.md) — `yield* SomeDO` and the binding
+  model
 - [alchemy-http-router.md](./alchemy-http-router.md) — the `/fate/live` route
   that forwards to a `connection:` instance
 - [fate-live-views.md](./fate-live-views.md) — the live protocol and the DO in
@@ -305,3 +339,5 @@ namespace whose `getByName` returns stubs). See
   held-stream queue + keep-alive shape
 - [ADR 0037](../.decisions/0037-unified-void-aligned-live-do.md) — why one
   unified `LiveDO` (supersedes the 0025 split, retires the 0033 mutual-DO rule)
+- [ADR 0124](../.decisions/0124-livedo-self-addressing-beta59-runtime-scope.md) —
+  the beta.59 self-namespace resolution + phantom-`Req` discharge
