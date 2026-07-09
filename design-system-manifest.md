@@ -8,6 +8,12 @@ role token means and when to reach for it), the **component-selection rules** (r
 composite primitive, never hand-build), and the **prohibitions** (the machine-checkable "never"
 rules a reviewer and a linter can enforce).
 
+Its **sibling** for the marketing surface is [brand-imagery.md](./brand-imagery.md) — the same
+founder-authored / agent-transcribed shape for **brand imagery** (the "ASCII cutaway kampüs" visual
+grammar). This manifest governs the **UI**; that doc governs generated marketing / product art.
+Both map to the *same* [`apps/web/src/styles/tokens.css`](apps/web/src/styles/tokens.css) tokens —
+brand art and interface are one color system.
+
 The normative content is **founder-authored, not agent-invented**. It is the machine form of ADR
 [0162](https://github.com/kamp-us/phoenix/blob/main/.decisions/0162-four-pillars-design-law.md) —
 the ratify-root of the frontend audit wave (epic
