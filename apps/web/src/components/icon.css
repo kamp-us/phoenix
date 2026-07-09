@@ -1,0 +1,9 @@
+/* See ADR 0166 §5 — functional icons are monochrome, painted via stroke:currentColor
+   and driven by role tokens only (never a hardcoded color). The default role is
+   --text-secondary; a call-site raises it to --text-primary (hover), --accent
+   (active), or --text-muted (disabled) by setting `color` on the icon or its control. */
+.kp-icon {
+	flex: none;
+	vertical-align: middle;
+	color: var(--text-secondary);
+}

@@ -64,10 +64,6 @@
 	outline-offset: 1px;
 }
 
-.kp-pano-post__vote-btn .triangle {
-	font-size: 13px;
-}
-
 .kp-pano-post__vote-count {
 	font: var(--t-micro);
 	color: var(--text-muted);
