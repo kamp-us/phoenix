@@ -53,7 +53,7 @@ async function submitReport(
 
 beforeAll(async () => {
 	reporter = await h.signUp(`${NS}-reporter@test.local`, "hunter2hunter2", "muhbir");
-	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "anka");
 
 	const post = await h.fate(
 		{
@@ -84,7 +84,7 @@ beforeAll(async () => {
 	const seeded = await h.seedTerm({
 		slug: `${NS}-term`,
 		title: `${NS} term`,
-		definitions: [{authorName: "yazar", body: "report target definition body"}],
+		definitions: [{authorName: "anka", body: "report target definition body"}],
 	});
 	definitionId = seeded.definitions[0]!.id;
 });

@@ -66,7 +66,7 @@ let voter: {userId: string; cookie: string};
 const DEF_SELECT = ["id", "body", "score", "author", "authorId", "myVote"];
 
 beforeAll(async () => {
-	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "anka");
 	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", "davetsiz");
 	voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "oycu");
 	// `voter` casts every real definition vote below — self-voting is blocked since #2216, so
@@ -94,7 +94,7 @@ describe("sozluk mutations — definition.add", () => {
 		expect(def.__typename).toBe("Definition");
 		expect(def.id).toBeTruthy();
 		expect(def.body).toBe("an added definition");
-		expect(def.author).toBe("yazar");
+		expect(def.author).toBe("anka");
 		expect(def.authorId).toBe(author.userId);
 		expect(def.score).toBe(0);
 		expect(def.myVote).toBeNull();
