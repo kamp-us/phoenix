@@ -1,0 +1,3 @@
+{
+	"include": [{ "app": "web", "pnpm-name": "@kampus/web", "needs-auth": true }]
+}

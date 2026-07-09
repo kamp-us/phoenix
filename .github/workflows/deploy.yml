@@ -8,8 +8,12 @@ name: Deploy
 on:
   push:
     branches: [main]
+  # No `closed`: PR-close teardown moved to its own `pull_request_target` workflow
+  # (.github/workflows/pr-cleanup.yml, issue #2299) — a `pull_request` `closed` run is
+  # bound to the PR head ref, which `delete_branch_on_merge` deletes at merge, so GitHub
+  # cancelled the teardown before it ran. Deploy only needs open/reopen/synchronize.
   pull_request:
-    types: [opened, reopened, synchronize, closed]
+    types: [opened, reopened, synchronize]
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -27,10 +31,9 @@ jobs:
   # — no worker, no D1, no DOs, no Flagship app that nothing ever requests.
   #
   # Why JOB-level and not a workflow-level `paths:`/`paths-ignore:` filter: a
-  # workflow-level filter would ALSO gate the `closed`-event `cleanup` job, so a PR
-  # that deployed while it had code, then rewrote to docs-only, would skip teardown and
-  # LEAK its stack (the #813/#1505 false-green class). `cleanup` therefore stays
-  # unconditional on `closed` (below) and only `deploy` consumes this gate.
+  # workflow-level filter would also gate every other job in this workflow, whereas
+  # only `deploy` should consult it. (Teardown lives in its own workflow now —
+  # .github/workflows/pr-cleanup.yml, #2299 — so it is unaffected either way.)
   #
   # THE QUEUE-SAFE INVARIANT (do not invert): the deploy job's RUN-set MUST be a
   # SUPERSET of ci.yml's `e2e` RUN-set — deploy skips ONLY a PR where e2e also skips,
@@ -55,12 +58,12 @@ jobs:
       deploy: ${{ steps.decide.outputs.deploy }}
     steps:
       # dorny/paths-filter resolves the PR's changed files from the API (no checkout
-      # needed on a `pull_request` event). Run it only for a non-closed PR — `push`
-      # (prod) and `closed` (cleanup) never consult it; the `decide` step below forces
-      # `deploy=true` for every non-PR event so prod always deploys.
+      # needed on a `pull_request` event). Run it only for a PR — `push` (prod) never
+      # consults it; the `decide` step below forces `deploy=true` for every non-PR
+      # event so prod always deploys.
       - uses: dorny/paths-filter@v3.0.2
         id: filter
-        if: github.event_name == 'pull_request' && github.event.action != 'closed'
+        if: github.event_name == 'pull_request'
         with:
           filters: |
             # Deploy-relevant paths = ci.yml's `changes.e2e` filter, EXACTLY (issue #2366).
@@ -87,7 +90,7 @@ jobs:
       # a silently-absent context — the e2e poll + humans see this job's verdict in the
       # run log. `push`/non-PR events always deploy (fail toward deploying); on a PR the
       # dorny filter decides. This job always completes success, so it never propagates a
-      # skip to `deploy`/`cleanup` (which would skip the prod deploy on `push`).
+      # skip to `deploy` (which would skip the prod deploy on `push`).
       - id: decide
         run: |
           set -euo pipefail
@@ -99,31 +102,35 @@ jobs:
             echo "::notice::deploy-relevant paths changed → DEPLOY preview stack (matches ci.yml e2e filter → e2e runs too)"
           else
             echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::no deploy-relevant paths changed → SKIP preview deploy (docs/canon/pipeline-only PR). e2e also skips (identical filter); the closed-event cleanup still runs unconditionally."
+            echo "::notice::no deploy-relevant paths changed → SKIP preview deploy (docs/canon/pipeline-only PR). e2e also skips (identical filter); PR-close teardown is a separate workflow (pr-cleanup.yml) and is unaffected."
           fi
 
-  # Single source of the per-app deploy roster (ADR 0057, #1434). The `app` /
-  # `pnpm-name` / `needs-auth` set is declared ONCE here and consumed by BOTH `deploy`
-  # and `cleanup` via `fromJSON(needs.app-roster.outputs.matrix)`, so an app added to
-  # deploy can't be silently missed in cleanup — the deploy/cleanup-drift that leaks a
+  # Single source of the per-app roster (ADR 0057, #1434), declared ONCE in
+  # .github/app-roster.json and consumed via `fromJSON(needs.app-roster.outputs.matrix)`
+  # by BOTH this workflow's `deploy` AND pr-cleanup.yml's `cleanup`, so an app added to
+  # deploy can't be silently missed on teardown — the deploy/cleanup-drift that leaks a
   # worker + D1 + DOs on PR close, the exact class the teardown-verify step (#813)
-  # exists to catch. GitHub Actions has no YAML-anchor reuse across jobs, so a roster
-  # job emitting the matrix JSON is the single-source mechanism; adding an app is one
-  # declaration edit here, not a two-site shotgun.
+  # exists to catch. GitHub Actions has no YAML-anchor reuse across jobs/workflows, so a
+  # roster job emitting the matrix JSON from the shared file is the single-source
+  # mechanism; adding an app is one declaration edit in app-roster.json, not a shotgun.
   app-roster:
     name: resolve app roster
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.roster.outputs.matrix }}
     steps:
-      # `app` is the apps/ dir; `pnpm-name` its workspace package; `needs-auth` whether
-      # the app's worker binds BETTER_AUTH_SECRET (@kampus/web reads it `Effect.orDie`
-      # in config.ts, so its deploy/destroy passes the secret; a future auth-less app
-      # sets `needs-auth: false` so its deploy never requires it — ADR 0057).
+      # Single source of the app roster (.github/app-roster.json), shared with the
+      # pr-cleanup.yml `app-roster` job so deploy and teardown can never drift apart —
+      # the deploy/cleanup-drift stage leak #1434 killed. `app` is the apps/ dir;
+      # `pnpm-name` its workspace package; `needs-auth` whether the app's worker binds
+      # BETTER_AUTH_SECRET (@kampus/web reads it `Effect.orDie` in config.ts, so its
+      # deploy/destroy passes the secret; a future auth-less app sets `needs-auth:
+      # false` so its deploy never requires it — ADR 0057).
+      - uses: actions/checkout@v4.2.2
       - id: roster
         run: |
           set -euo pipefail
-          echo 'matrix={"include":[{"app":"web","pnpm-name":"@kampus/web","needs-auth":true}]}' >> "$GITHUB_OUTPUT"
+          echo "matrix=$(jq -c . .github/app-roster.json)" >> "$GITHUB_OUTPUT"
 
   deploy:
     # Defense-in-depth: never run a secret-bearing deploy for a fork PR. A
@@ -177,8 +184,8 @@ jobs:
       # Each app is an independent worker + stack (ADR 0057) — one app's deploy
       # failing must not cancel the other's. `fail-fast: false` keeps both running.
       fail-fast: false
-      # The roster is single-sourced in the `app-roster` job (#1434) and shared with
-      # `cleanup`, so deploy and teardown can never drift onto different app sets.
+      # The roster is single-sourced in .github/app-roster.json (#1434) and shared with
+      # pr-cleanup.yml, so deploy and teardown can never drift onto different app sets.
       matrix: ${{ fromJSON(needs.app-roster.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4.2.2
@@ -319,7 +326,7 @@ jobs:
       # migration side-effect, un-provisioned TLS — the #983 class) and go live green.
       # PR previews are already behaviorally verified (ci.yml e2e hits the preview URL),
       # so prod — the one environment users actually hit — had the weakest gate. This is
-      # the prod-side analogue of the cleanup job's teardown-verify (#813): a real
+      # the prod-side analogue of the cleanup teardown-verify (#813, now in pr-cleanup.yml): a real
       # post-action behavioral gate that fails loudly rather than pass silently.
       #
       # Prod-only by construction: gated on `github.event_name == 'push'` (the sole push
@@ -472,247 +479,6 @@ jobs:
                     ...context.repo, issue_number: context.issue.number, body: upsert(""),
                   });
                 }
-                return;
-              } catch (err) {
-                if (attempt === 4) throw err;
-                await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-              }
-            }
-
-  cleanup:
-    # Same fork gate as `deploy` — a fork PR never deployed a stage, so there's
-    # nothing to tear down, and we don't run secret-bearing `destroy` for it
-    # either. Same-repo (non-fork) closed PRs proceed (issue #293).
-    #
-    # Same Dependabot guard as `deploy` (issue #1901): a Dependabot PR's deploy is
-    # skipped (empty `dependabot`-scoped secrets → no stage was ever created), so
-    # there is nothing to destroy AND the secret-less `destroy` would AuthError
-    # too. Skip cleanup for `dependabot[bot]` to mirror the deploy skip.
-    if: >-
-      github.event_name == 'pull_request' && github.event.action == 'closed' &&
-      github.actor != 'dependabot[bot]' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    needs: app-roster
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write # update the preview comment to "torn down"
-    strategy:
-      # Tear down every app's preview stage; one destroy failing must not skip
-      # the other (a half-torn-down PR would leak a worker + D1 + DOs).
-      fail-fast: false
-      # Same single-sourced roster as `deploy` (#1434): cleanup reads the EXACT app
-      # set deploy used, so an app added to deploy is torn down automatically — no
-      # second matrix to keep in sync, killing the deploy/cleanup-drift stage leak.
-      matrix: ${{ fromJSON(needs.app-roster.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@v4.2.2
-
-      - uses: pnpm/action-setup@v4.1.0
-
-      - uses: actions/setup-node@v4.4.0
-        with:
-          node-version-file: package.json
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      # STAGE is only ever `pr-<n>` in this job (it runs on closed PRs), but fail
-      # loudly rather than ever let a destroy reach the prod stage.
-      - name: Safety check — never destroy prod
-        run: |
-          if [ "$STAGE" = "prod" ]; then
-            echo "ERROR: refusing to destroy the prod stage in cleanup"
-            exit 1
-          fi
-
-      # Tears down one app's isolated preview stack (worker + D1 + DOs). `destroy`
-      # loads `alchemy.run.ts`, which builds the worker layer → for apps with auth
-      # that needs BETTER_AUTH_SECRET (config.ts reads it `Effect.orDie`) just like
-      # the deploy; a future auth-less app never binds it (matrix.needs-auth).
-      - name: Destroy ${{ matrix.app }} preview stage ${{ env.STAGE }}
-        run: pnpm --filter ${{ matrix.pnpm-name }} exec alchemy destroy --stage "$STAGE" --yes
-        env:
-          CI: "true"
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
-          BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}
-
-      # Kill the false-green (issue #813). `alchemy destroy` deletes only what its STATE
-      # records for the stage: when no state is found for `pr-<n>` the plan is empty
-      # (`Plan: 0 to delete`) and the command STILL exits 0 (alchemy
-      # `Cli/commands/deploy.js` → `execStack({destroy:true})`: an empty `deletions` set
-      # makes `hasChanges` false, so it prints nothing and returns success). A green
-      # destroy step therefore does NOT prove the worker is gone — that gap is exactly how
-      # 33 `pr-<n>` workers leaked while every cleanup job reported `success`. Verify the
-      # teardown actually happened: list this stage's worker scripts by their alchemy
-      # physical-name prefix and FAIL the job if any survive, so a green cleanup reliably
-      # means torn down and any future state-loss regression surfaces loudly instead of
-      # accumulating an unnoticed leak. The prefix is the alchemy physical name
-      # `${stack}-${id}-${stage}-` = `phoenix-phoenix-${STAGE}-` (the scheme the "Resolve
-      # web preview D1 id" step in the deploy job documents; see apps/web/alchemy.run.ts).
-      # The trailing dash anchors the stage so `pr-12-` never matches `pr-120-…`. Runs only
-      # on a SUCCESSFUL destroy (default `if: success()`) — a destroy that already errored
-      # reds the job on its own; this step catches the SILENT exit-0 no-op. STAGE is always
-      # `pr-<n>` here (cleanup is closed-PR-only), so this never inspects prod.
-      - name: Verify teardown — no surviving preview worker (${{ matrix.app }})
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WORKER_NAME_PREFIX: phoenix-phoenix-${{ env.STAGE }}-
-        run: |
-          set -uo pipefail
-          listed=""
-          survivors=""
-          # Retry the list to absorb Cloudflare's eventual-consistency window after the
-          # delete (a just-deleted script can linger in the list API for a few seconds).
-          for attempt in 1 2 3 4 5; do
-            if resp="$(curl -sf \
-              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts" \
-              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"; then
-              listed=yes
-              survivors="$(echo "$resp" | jq -r --arg p "$WORKER_NAME_PREFIX" \
-                '[.result[]?.id // empty | select(startswith($p))] | .[]')"
-              [ -z "$survivors" ] && break
-            fi
-            sleep $((attempt * 3))
-          done
-          # A list that never succeeded must NOT pass silently (that would re-introduce a
-          # false-green) — fail so the verification gap is visible.
-          if [ -z "$listed" ]; then
-            echo "::error::could not list workers to verify teardown for stage ${STAGE}"
-            exit 1
-          fi
-          if [ -n "$survivors" ]; then
-            echo "::error::teardown FALSE-GREEN (issue #813) — worker(s) survived destroy for stage ${STAGE}:"
-            echo "$survivors"
-            echo "alchemy destroy reported success but left a live worker. Failing so the leak surfaces."
-            exit 1
-          fi
-          echo "teardown verified: no worker prefixed '${WORKER_NAME_PREFIX}' survives for stage ${STAGE}"
-
-      # Same false-green class as the worker check above (issue #813), extended to the
-      # Flagship resource class (issue #1505). Each preview deploy provisions a per-stage
-      # `phoenix_flags` FlagshipApp + its flags off `Cloudflare.FlagshipApp("phoenix_flags")`
-      # (apps/web/worker/features/flagship/resources.ts). `alchemy destroy` deletes the app
-      # via a REAL DELETE (`/accounts/{id}/flagship/apps/{appId}`) — the alchemy FlagshipApp
-      # resource `delete` calls Cloudflare's deleteApp, NOT a no-op — but ONLY over what the
-      # stage's state records, so the SAME lost-state exit-0 no-op that leaked workers leaks
-      # the app + its flags here too. The worker check above does not see Flagship apps, so a
-      # leaked preview app survives a green teardown unnoticed. Verify it the same way: list
-      # this account's Flagship apps and FAIL if any carries this stage's app-name prefix, then
-      # (mirroring the worker check) attempt to reclaim each survivor — delete its flags, then
-      # the app. The prefix is the alchemy physical name `${stack}-${id}-${stage}-` for the app
-      # whose logical id is `phoenix_flags`: createPhysicalName lowercases and DNS-sanitizes, so
-      # `_`→`-` makes the id `phoenix-flags`, giving `phoenix-phoenix-flags-${STAGE}-` (the same
-      # scheme the D1 prefix `phoenix-phoenix-db-${STAGE}-` at the deploy job uses). The trailing
-      # dash anchors the stage so `pr-12-` never matches `pr-120-…` (#1296). Default `if:
-      # success()` like the worker check — a destroy that already errored reds the job; this
-      # catches the SILENT exit-0 no-op. STAGE is always `pr-<n>` here (cleanup is closed-PR-only).
-      - name: Verify teardown — no surviving preview Flagship app/flags (${{ matrix.app }})
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          FLAGSHIP_APP_NAME_PREFIX: phoenix-phoenix-flags-${{ env.STAGE }}-
-        run: |
-          set -uo pipefail
-          # Belt-and-suspenders prod guard: the job-level "never destroy prod" check already
-          # aborts on STAGE=prod before destroy, but never enumerate+delete against a prod-shaped
-          # prefix even if this step is ever reached out of order.
-          if [ "$STAGE" = "prod" ]; then
-            echo "::error::refusing to run Flagship teardown verification against the prod stage"
-            exit 1
-          fi
-          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
-          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-          listed=""
-          survivor_ids=""
-          # Retry to absorb Cloudflare's eventual-consistency window after the delete, exactly
-          # like the worker check (a just-deleted app can linger in the list API for seconds).
-          for attempt in 1 2 3 4 5; do
-            if resp="$(curl -sf "${api}/flagship/apps" -H "$auth")"; then
-              listed=yes
-              survivor_ids="$(echo "$resp" | jq -r --arg p "$FLAGSHIP_APP_NAME_PREFIX" \
-                '[.result[]? | select((.name // "") | startswith($p)) | .id] | .[]')"
-              [ -z "$survivor_ids" ] && break
-            fi
-            sleep $((attempt * 3))
-          done
-          # A list that never succeeded must NOT pass silently (that would re-introduce a
-          # false-green) — fail so the verification gap is visible, like the worker check.
-          if [ -z "$listed" ]; then
-            echo "::error::could not list Flagship apps to verify teardown for stage ${STAGE}"
-            exit 1
-          fi
-          if [ -z "$survivor_ids" ]; then
-            echo "teardown verified: no Flagship app prefixed '${FLAGSHIP_APP_NAME_PREFIX}' survives for stage ${STAGE}"
-            exit 0
-          fi
-          # Survivors found: alchemy destroy reported success but left a leaked Flagship app
-          # (the #813/#1505 false-green). Reclaim each — delete its flags, then the app — and
-          # fail the job so the leak surfaces instead of accumulating.
-          echo "::error::teardown FALSE-GREEN (issue #1505) — Flagship app(s) survived destroy for stage ${STAGE}:"
-          echo "$survivor_ids"
-          while IFS= read -r appId; do
-            [ -z "$appId" ] && continue
-            echo "reclaiming leaked Flagship app ${appId}"
-            if flags="$(curl -sf "${api}/flagship/apps/${appId}/flags" -H "$auth")"; then
-              echo "$flags" | jq -r '.result[]?.key // empty' | while IFS= read -r flagKey; do
-                [ -z "$flagKey" ] && continue
-                echo "  deleting flag ${flagKey}"
-                curl -sf -X DELETE "${api}/flagship/apps/${appId}/flags/${flagKey}" -H "$auth" >/dev/null \
-                  || echo "  ::warning::failed to delete flag ${flagKey} on app ${appId}"
-              done
-            fi
-            curl -sf -X DELETE "${api}/flagship/apps/${appId}" -H "$auth" >/dev/null \
-              && echo "  deleted app ${appId}" \
-              || echo "  ::warning::failed to delete app ${appId}"
-          done <<< "$survivor_ids"
-          echo "alchemy destroy reported success but left a live Flagship app. Failing so the leak surfaces."
-          exit 1
-
-      # Flip the sticky preview comment to "torn down" so it never points at a
-      # destroyed stage. Each matrix job rewrites only its own app line; the last
-      # job to run leaves the comment reading "torn down" for both apps.
-      # `always()`: update it even if the destroy step errored.
-      - name: Update preview comment (torn down, ${{ matrix.app }})
-        if: always()
-        uses: actions/github-script@v7.0.1
-        env:
-          APP: ${{ matrix.app }}
-          STAGE_NAME: ${{ env.STAGE }}
-        with:
-          script: |
-            const marker = "<!-- preview-deploy -->";
-            const app = process.env.APP;
-            const appMark = `<!-- preview-deploy:${app} -->`;
-            const appLine = `${appMark}\n`
-              + `- **${app}** — Stage \`${process.env.STAGE_NAME}\` torn down.`;
-
-            const upsert = (body) => {
-              const header = `${marker}\n### 🧹 Preview torn down`;
-              let b = body && body.includes(marker) ? body : header;
-              const re = new RegExp(
-                `${appMark.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\n[^\\n]*`,
-              );
-              return re.test(b) ? b.replace(re, appLine) : `${b}\n${appLine}`;
-            };
-
-            // Re-list and re-resolve `existing` each attempt (same shape as the
-            // deploy step's fix, issue #273): a sibling matrix job may create the
-            // sticky comment between our reads, so re-resolving lets a leg that
-            // saw "no comment yet" pick it up on retry instead of giving up.
-            for (let attempt = 0; attempt < 5; attempt++) {
-              try {
-                const {data: comments} = await github.rest.issues.listComments({
-                  ...context.repo, issue_number: context.issue.number, per_page: 100,
-                });
-                const existing = comments.find((c) => c.body?.includes(marker));
-                if (!existing) return;
-                await github.rest.issues.updateComment({
-                  ...context.repo, comment_id: existing.id, body: upsert(existing.body),
-                });
                 return;
               } catch (err) {
                 if (attempt === 4) throw err;
