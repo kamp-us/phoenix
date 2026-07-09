@@ -30,6 +30,7 @@ import {Screen} from "../../fate/Screen";
 import {codeOf} from "../../fate/wire";
 import {Button} from "../ui/Button";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
+import {VoteTriangle} from "../VoteTriangle";
 import {CaylakIdentityById, IdentityFallback} from "./CaylakIdentity";
 import {
 	itemKindLabel,
@@ -262,7 +263,7 @@ function BacklogItemRow({node}: {readonly node: ViewRef<"DivanBacklogItem">}) {
 					aria-label={mine ? "oyu geri çek" : "oy ver"}
 					data-testid={`divan-upvote-${data.id}`}
 				>
-					<span aria-hidden="true">▲</span>
+					<VoteTriangle />
 				</button>
 				{score !== null ? (
 					<span className="kp-divan__score" data-testid={`divan-score-${data.id}`}>

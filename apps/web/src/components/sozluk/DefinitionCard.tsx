@@ -22,14 +22,14 @@ import {useVoteToggle} from "../pano/useVoteToggle";
 import {DefinitionReactionBar} from "../reaction/DefinitionReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {Button} from "../ui/Button";
-import {useVoteFlash} from "../useVoteFlash";
-import "../vote-cue.css";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {Dialog} from "../ui/Dialog";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {MetaRow} from "../ui/MetaRow";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import {ReviewBadge} from "../ui/ReviewBadge";
+import {useVoteFlash} from "../useVoteFlash";
+import {VoteTriangle} from "../VoteTriangle";
 
 export const DefinitionView = view<Definition>()({
 	id: true,
@@ -244,7 +244,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 						data-testid={`definition-vote-${definition.id}`}
 						onClick={onVoteClick}
 					>
-						<span className="triangle" />
+						<VoteTriangle />
 					</button>
 				)}
 				<span

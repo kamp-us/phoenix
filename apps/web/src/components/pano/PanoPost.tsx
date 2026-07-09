@@ -1,8 +1,8 @@
 import {useFateClient} from "react-fate";
 import {useVoteFlash} from "../useVoteFlash";
+import {VoteTriangle} from "../VoteTriangle";
 import {PostSaveView, PostVoteView} from "./PanoPostHeader";
 import {currentLocationReturnTo, useGatedToggle, useVoteToggle} from "./useVoteToggle";
-import "../vote-cue.css";
 import "./PanoPost.css";
 
 /**
@@ -36,7 +36,7 @@ export function VoteControl({
 					data-testid={testIdSuffix ? `post-vote-${testIdSuffix}` : undefined}
 					onClick={() => onToggle?.()}
 				>
-					<span className="triangle" />
+					<VoteTriangle />
 				</button>
 			)}
 			<span

@@ -68,9 +68,6 @@
 	outline-offset: 1px;
 	border-radius: var(--r-sm);
 }
-.kp-comment__upvote .triangle {
-	font-size: 10px;
-}
 
 .kp-comment__collapser {
 	margin-left: auto;

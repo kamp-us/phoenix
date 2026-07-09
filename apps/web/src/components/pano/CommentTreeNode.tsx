@@ -17,8 +17,8 @@ import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import {useVoteFlash} from "../useVoteFlash";
+import {VoteTriangle} from "../VoteTriangle";
 import {currentLocationReturnTo, useVoteToggle} from "./useVoteToggle";
-import "../vote-cue.css";
 import "./PanoComment.css";
 
 export const CommentTreeNodeView = view<Comment>()({
@@ -134,7 +134,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						onClick={onUpvote}
 						data-testid={`comment-vote-${localId}`}
 					>
-						<span className="triangle" />{" "}
+						<VoteTriangle />{" "}
 						<span
 							className={flashing ? "kp-vote-flash" : undefined}
 							onAnimationEnd={endFlash}

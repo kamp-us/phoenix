@@ -49,6 +49,7 @@
 		"better-call": "catalog:",
 		"drizzle-orm": "catalog:",
 		"effect": "catalog:",
+		"lucide-react": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:",
 		"react-fate": "catalog:",

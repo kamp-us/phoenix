@@ -152,6 +152,14 @@
 	color: var(--accent);
 }
 
+/* The inline directional arrow (ADR 0166 — the retired `→` glyph, now Lucide
+   ArrowRight) follows its link's own role-token color + hover instead of the icon
+   default, so it reads as part of the link rather than a detached secondary mark. */
+.kp-icon.kp-inline-arrow {
+	color: inherit;
+	margin-inline-start: 0.15em;
+}
+
 .kp-landing__col ul {
 	list-style: none;
 	padding: 0;

@@ -5,11 +5,13 @@
  * `Screen` (ADR 0021). Server types are the source of truth (ADR 0022) — the rows
  * read the `Post`/`Term` views directly, no hand-written shadow shapes.
  */
+import {ArrowRight} from "lucide-react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {LandingStats, Post, Term} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
+import {Icon} from "../components/Icon";
 import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
 import {formatAgoTR} from "../lib/datetime";
@@ -102,17 +104,23 @@ export function LandingPage() {
 				<div className="kp-landing__cta">
 					{joinVisible ? (
 						<Link className="kp-landing__join" to="/auth" data-testid="landing-join-cta">
-							<span className="label">hesap aç →</span>
+							<span className="label">
+								hesap aç <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+							</span>
 							<span className="sub">kapı açık · söz hakkı kazanılır</span>
 						</Link>
 					) : null}
 					<div className="kp-landing__browse">
 						<Link to="/pano">
-							<span className="label">pano →</span>
+							<span className="label">
+								pano <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+							</span>
 							<span className="sub">başlıklar · tartışmalar</span>
 						</Link>
 						<Link to="/sozluk">
-							<span className="label">sözlük →</span>
+							<span className="label">
+								sözlük <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+							</span>
 							<span className="sub">terimler · tanımlar</span>
 						</Link>
 					</div>
@@ -138,7 +146,9 @@ function LandingBody() {
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
 						<h3>panoda son 24 saat</h3>
-						<Link to="/pano">hepsini gör →</Link>
+						<Link to="/pano">
+							hepsini gör <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+						</Link>
 					</header>
 					<ul>
 						{postItems.length === 0 ? (
@@ -159,7 +169,9 @@ function LandingBody() {
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
 						<h3>sözlüğe son eklenenler</h3>
-						<Link to="/sozluk">hepsini gör →</Link>
+						<Link to="/sozluk">
+							hepsini gör <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+						</Link>
 					</header>
 					<ul>
 						{termItems.length === 0 ? (
@@ -248,7 +260,9 @@ function LandingColsSkeleton({status}: {status: "loading" | "error"}) {
 			<section className="kp-landing__col">
 				<header className="kp-landing__col-head">
 					<h3>panoda son 24 saat</h3>
-					<Link to="/pano">hepsini gör →</Link>
+					<Link to="/pano">
+						hepsini gör <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+					</Link>
 				</header>
 				<ul>
 					<li className="kp-landing-row">
@@ -262,7 +276,9 @@ function LandingColsSkeleton({status}: {status: "loading" | "error"}) {
 			<section className="kp-landing__col">
 				<header className="kp-landing__col-head">
 					<h3>sözlüğe son eklenenler</h3>
-					<Link to="/sozluk">hepsini gör →</Link>
+					<Link to="/sozluk">
+						hepsini gör <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+					</Link>
 				</header>
 				<ul>
 					<li className="kp-landing-row">
