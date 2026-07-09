@@ -175,6 +175,24 @@ the set, stroke, sizes, color, vote glyph, and function/affect/key-legend partit
 
 ---
 
+## Design-sync authority — the behavioral spine is code-authoritative
+
+A design round-trip (Claude Design / `/design-sync`) is **one-directional per layer**, never a
+whole-file overwrite: **tokens/style → the visual tool is source** (it owns the paint — role-token
+values, CSS declarations); **component logic + a11y → the repo primitive is source** (focus rings,
+aria roles/labels/state, keyboard order/operability, `prefers-reduced-motion` respect). A visual
+reskin consumes the behavioral spine **read-only**; it never re-authors it. This is the direct
+consequence of Pillar 4 (accessibility is a property of the shared primitives, not per-component
+paint) — a synced reskin that drops a control's focus ring, `aria-pressed`, keyboard order, or
+reduced-motion handling is a regression no matter how good the new look is.
+
+The full contract, the per-layer authority table, and its enforcement live in
+[`.patterns/design-sync-authority.md`](.patterns/design-sync-authority.md); it is locked by the
+property-based a11y loop (generic, every `ui/` primitive) and the entry-row spine tripwire
+([`apps/web/src/components/entry-row-spine.test.tsx`](apps/web/src/components/entry-row-spine.test.tsx)).
+
+---
+
 ## The canonical icon idiom
 
 Per Pillar 2 (cohesiveness) and ADR
