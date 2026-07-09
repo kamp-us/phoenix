@@ -50,13 +50,13 @@ const TITLE = "Şişli Büyük Buluşma";
 const FOLDED_QUERY = "sisli";
 
 beforeAll(async () => {
-	await h.signUp(`${SLUG}-author@test.local`, "hunter2hunter2", "yazar");
+	await h.signUp(`${SLUG}-author@test.local`, "hunter2hunter2", "anka");
 	// Seed through the public dual-write: a real term_record row + its term_search
 	// FTS row land together.
 	await h.seedTerm({
 		slug: SLUG,
 		title: TITLE,
-		definitions: [{authorName: "yazar", body: "Şişli gövde"}],
+		definitions: [{authorName: "anka", body: "Şişli gövde"}],
 	});
 	// Drop ONLY this term's FTS row, off the worker binding — reconstructing the
 	// pre-backfill state (#534): the summary row exists, the FTS index does not.

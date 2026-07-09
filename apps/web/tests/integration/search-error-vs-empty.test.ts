@@ -32,11 +32,11 @@ beforeAll(async () => {
 	// A real seeded term gives the control query a populated, well-formed index to read
 	// a legitimate zero-match against — so the empty-vs-error contrast below is genuine,
 	// not an artifact of an empty database.
-	await h.signUp(`search549-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
+	await h.signUp(`search549-${STAMP}-author@test.local`, "hunter2hunter2", "anka");
 	await h.seedTerm({
 		slug: `search549-${STAMP}-istanbul`,
 		title: "İstanbul",
-		definitions: [{authorName: "yazar", body: "İstanbul gövde"}],
+		definitions: [{authorName: "anka", body: "İstanbul gövde"}],
 	});
 });
 

@@ -90,7 +90,7 @@ async function searchPosts(
 let author: {userId: string; cookie: string};
 
 beforeAll(async () => {
-	author = await h.signUp(`${NS}-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
+	author = await h.signUp(`${NS}-${STAMP}-author@test.local`, "hunter2hunter2", "anka");
 });
 
 /** Submit a post under the author cookie; assert success; return its id. */
@@ -121,17 +121,17 @@ describe("searchTerms — real FTS5 over the deployed worker", () => {
 		await h.seedTerm({
 			slug: istanbulSlug,
 			title: `${NS} İstanbul`,
-			definitions: [{authorName: "yazar", body: "İstanbul gövde"}],
+			definitions: [{authorName: "anka", body: "İstanbul gövde"}],
 		});
 		await h.seedTerm({
 			slug: sisliSlug,
 			title: `${NS} Şişli`,
-			definitions: [{authorName: "yazar", body: "Şişli gövde"}],
+			definitions: [{authorName: "anka", body: "Şişli gövde"}],
 		});
 		await h.seedTerm({
 			slug: ankaraSlug,
 			title: `${NS} Ankara`,
-			definitions: [{authorName: "yazar", body: "Ankara gövde"}],
+			definitions: [{authorName: "anka", body: "Ankara gövde"}],
 		});
 	});
 
@@ -182,17 +182,17 @@ describe("searchTerms — bm25-ranked keyset pagination over real FTS5", () => {
 		await h.seedTerm({
 			slug: projectSlugs[0]!,
 			title: `${NS} ortak proje a`,
-			definitions: [{authorName: "yazar", body: "ortak proje a gövde"}],
+			definitions: [{authorName: "anka", body: "ortak proje a gövde"}],
 		});
 		await h.seedTerm({
 			slug: projectSlugs[1]!,
 			title: `${NS} ortak proje b`,
-			definitions: [{authorName: "yazar", body: "ortak proje b gövde"}],
+			definitions: [{authorName: "anka", body: "ortak proje b gövde"}],
 		});
 		await h.seedTerm({
 			slug: projectSlugs[2]!,
 			title: `${NS} ortak proje c`,
-			definitions: [{authorName: "yazar", body: "ortak proje c gövde"}],
+			definitions: [{authorName: "anka", body: "ortak proje c gövde"}],
 		});
 	});
 
@@ -265,7 +265,7 @@ describe("searchTerms — title-only scope (guards against scope creep)", () => 
 		await h.seedTerm({
 			slug: `${NS}-${STAMP}-kavram`,
 			title: `${NS} Kavram`,
-			definitions: [{authorName: "yazar", body: "Kavram gövde"}],
+			definitions: [{authorName: "anka", body: "Kavram gövde"}],
 		});
 		const c = await searchTerms({query: `${NS} govde`});
 		expect(c.items).toEqual([]);
