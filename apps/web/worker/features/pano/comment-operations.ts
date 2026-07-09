@@ -190,6 +190,26 @@ const validateCommentBody = Effect.fn("Pano.validateCommentBody")(function* (
 	return rawBody;
 });
 
+/**
+ * The single source of truth for a post's public `comment_count` after one
+ * comment lifecycle step — the delta rule every add / delete / restore /
+ * mod-remove / mod-restore path routes through, so the count is derived here
+ * once and never re-hand-written per method. A sandboxed çaylak comment (#1205)
+ * is never in the public count, so a sandboxed step moves it by 0 — the
+ * create-gate the delete path must mirror (#1831/#1811). The `Math.max(0, …)`
+ * floor keeps a raced double-remove from driving the public count negative
+ * (the #1831 class this rule makes unrepresentable). A create bumps the count
+ * the same +1 as a `restore`.
+ */
+export const nextCommentCount = (
+	current: number,
+	sandboxedAt: Date | null,
+	direction: "remove" | "restore",
+): number => {
+	const step = sandboxedAt != null ? 0 : direction === "remove" ? -1 : 1;
+	return Math.max(0, current + step);
+};
+
 /** The shared runtime deps `PanoLive` threads into the comments plane. */
 export interface CommentOperationsDeps {
 	readonly run: DrizzleAccessOrDie["run"];
@@ -206,11 +226,10 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 
 	// The parent post's PUBLIC `comment_count` bookkeeping every comment remove/restore
 	// shares — the plane-specific `afterCommit` the four transition methods run after the
-	// substrate write. A sandboxed çaylak comment (#1205) was never counted into the public
-	// count on create, so a sandboxed transition adjusts by 0 — the create-gate mirror
-	// (#1831/#1811). `sandboxedAt` is the round-tripped marker the transition stamped. Only
-	// the author `deleteComment` also refreshes `hotScore` (the activity bump), so it opts in
-	// via `recomputeHot`; the mod + restore arms leave `hotScore` untouched, as before.
+	// substrate write. The delta rule itself lives in `nextCommentCount`; this only loads
+	// the post, applies it, and persists. `hotScore` is an explicit opt-in: only the author
+	// `deleteComment` refreshes it (`recomputeHot`), so the mod + restore arms leave it
+	// untouched — a deliberate per-caller decision, not an incidental divergence.
 	const adjustPostCommentCount = (
 		postId: string,
 		sandboxedAt: Date | null,
@@ -221,8 +240,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		Effect.gen(function* () {
 			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: postId}}));
 			if (!post) return;
-			const step = sandboxedAt != null ? 0 : direction === "remove" ? -1 : 1;
-			const commentCount = Math.max(0, post.commentCount + step);
+			const commentCount = nextCommentCount(post.commentCount, sandboxedAt, direction);
 			const hotScore = opts.recomputeHot
 				? computeHotScore(post.score, (post.createdAt ?? now).getTime(), now.getTime())
 				: undefined;
@@ -469,9 +487,14 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			}),
 		);
 
-		// A sandboxed çaylak comment (#1205) is pending — it must not bump the
-		// post's PUBLIC `comment_count`. Promotion (#1206) recomputes it on flip.
-		const newCommentCount = post.commentCount + (input.sandboxedAt != null ? 0 : 1);
+		// A create bumps the public count the same +1 as a `restore`, gated on the
+		// sandbox by the shared delta rule (a sandboxed çaylak comment (#1205) stays
+		// pending and is recomputed into the count on promotion, #1206).
+		const newCommentCount = nextCommentCount(
+			post.commentCount,
+			input.sandboxedAt ?? null,
+			"restore",
+		);
 		const hotScore = computeHotScore(post.score, (post.createdAt ?? now).getTime(), now.getTime());
 
 		yield* run((db) =>

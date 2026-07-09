@@ -326,3 +326,23 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 			}),
 	);
 });
+
+// The author `restoreComment` +1 (live) branch — the last arithmetic branch not asserted
+// directly (its +0 sandboxed arm is covered by the cross-path test above, #1811). Pins the
+// non-sandboxed restore to +1 so the shared delta rule (`nextCommentCount`) stays honest on
+// the create-mirror arm for the author path too.
+describe("commentCount is sandbox-gated on the author restoreComment path (#1811)", () => {
+	it.effect("author-restoring a NON-sandboxed comment bumps the public count by one (+1)", () =>
+		Effect.gen(function* () {
+			const {db, captured} = fakeDb({comment: removedRow(null), startCount: 5});
+			const ops = makeCommentOperations(deps(runOverDb(db)));
+			const result = yield* ops.restoreComment({commentId: "comm_1", actorId: "u-author"});
+			assert.isTrue(result.deleted, "the author-restore un-removes the comment");
+			assert.strictEqual(
+				captured.postCommentCount,
+				6,
+				"a comment restored to Live was not counted while removed, so its restore bumps +1",
+			);
+		}),
+	);
+});
