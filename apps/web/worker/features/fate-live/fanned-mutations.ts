@@ -255,4 +255,15 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		fanned: false,
 		rationale: "withdraws a kefil vouch edge — no fanned content entity",
 	},
+	{
+		key: "user.banUser",
+		fanned: false,
+		rationale:
+			"appends an audited ban event on the identity surface (enforced at the session boundary) — no Post/Comment/Definition in a subscribed content connection",
+	},
+	{
+		key: "user.unbanUser",
+		fanned: false,
+		rationale: "appends an audited unban event on the identity surface — no fanned content entity",
+	},
 ];

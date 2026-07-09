@@ -58,6 +58,7 @@ import {
 	panoOptimisticPostDeleteFlag,
 	panoOptimisticSubmitFlag,
 	reactionsFlag,
+	userBanFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
@@ -128,6 +129,10 @@ export default Alchemy.Stack(
 		// single seam the post-floor (≥ −4) + flag-floor (≥ 50) karma gates ride behind
 		// until a human release.
 		yield* karmaGatesFlag(flagship.appId);
+		// The user ban/unban dark-ship flag, default-off (#970, epic #968) — the single
+		// seam the ban mutations + admin read + moderator-UI controls gate behind, so an
+		// unreleased ban can never refuse a real user's session until a human release.
+		yield* userBanFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

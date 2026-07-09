@@ -9,7 +9,7 @@
  * `Pasaport` no longer mounts the handler itself.
  */
 import type {Auth as BetterAuth} from "better-auth";
-import {and, eq, inArray, isNull, type SQL, sql} from "drizzle-orm";
+import {and, desc, eq, inArray, isNull, type SQL, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -22,6 +22,7 @@ import {
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
 import {postVisibleWhere} from "../pano/PostVisibility.ts";
+import {type BanEvent, type BanState, NOT_BANNED, resolveBanState} from "./ban.ts";
 import {
 	DisplayNameEmpty,
 	UserNotFound,
@@ -269,6 +270,33 @@ export class Pasaport extends Context.Service<
 		// here — `promoted: true` iff the tier flip actually fired (the account was a
 		// çaylak), `false` on an already-yazar / unknown account.
 		readonly promoteToYazar: (input: {userId: string}) => Effect.Effect<{promoted: boolean}>;
+
+		// The account's current ban-state, projected from the latest `user_ban_event`
+		// row (epic #968). A fresh read of the append-only log, so it reflects the
+		// authority-checked truth, never a cached session flag. Read at the session
+		// boundary (`validateSession`) and by the admin ban surface.
+		readonly getBanState: (userId: string) => Effect.Effect<BanState>;
+
+		// Ban an account: append a `ban` event (reason + optional expiry), stamped
+		// with the acting admin (`actorId`) and time — the audit record IS the write
+		// (ADR 0107, epic #968). Returns the resulting ban-state. `UserNotFound` on an
+		// unknown target. The AUTHORITY is discharged at the resolver (`requireAdmin`),
+		// never here — this method assumes an authorized caller.
+		readonly banUser: (input: {
+			userId: string;
+			actorId: string;
+			reason: string;
+			expiresAt?: Date | null;
+		}) => Effect.Effect<BanState, UserNotFound>;
+
+		// Unban an account: append an `unban` event stamped with the acting admin and
+		// time (the reversal is itself audited). Returns the resulting ban-state
+		// (not-banned). Idempotent — unbanning a not-banned account appends a benign
+		// `unban` and still reads not-banned. `UserNotFound` on an unknown target.
+		readonly unbanUser: (input: {
+			userId: string;
+			actorId: string;
+		}) => Effect.Effect<BanState, UserNotFound>;
 	}
 >()("@kampus/pasaport/Pasaport") {}
 
@@ -477,11 +505,41 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 				} satisfies ProfileRow;
 			});
 
+			// The account's current ban-state — a FRESH read of the latest `user_ban_event`
+			// row projected by `resolveBanState` (epic #968). The session boundary and the
+			// admin ban surface both route through this one seam, so "session refused" and
+			// "reported banned" can't disagree. `now` fresh per call so an expiry self-lifts.
+			const readBanState = (userId: string): Effect.Effect<BanState> =>
+				run((db) =>
+					db
+						.select({
+							action: schema.userBanEvent.action,
+							reason: schema.userBanEvent.reason,
+							expiresAt: schema.userBanEvent.expiresAt,
+							createdAt: schema.userBanEvent.createdAt,
+						})
+						.from(schema.userBanEvent)
+						.where(eq(schema.userBanEvent.userId, userId))
+						.orderBy(desc(schema.userBanEvent.createdAt), desc(schema.userBanEvent.id))
+						.limit(1)
+						.then((rows): BanState => {
+							const row = rows[0];
+							if (!row) return NOT_BANNED;
+							const latest: BanEvent = {
+								action: row.action,
+								reason: row.reason,
+								expiresAt: row.expiresAt,
+								createdAt: row.createdAt ?? new Date(0),
+							};
+							return resolveBanState(latest, new Date());
+						}),
+				);
+
 			return {
 				validateSession: Effect.fn("Pasaport.validateSession")(function* (headers: Headers) {
 					// better-auth's `getSession` can throw on a flaky JWT, missing
 					// cookie, etc. Treat any failure as "no session" (log + swallow).
-					return yield* Effect.tryPromise({
+					const session = yield* Effect.tryPromise({
 						try: async () => {
 							const session = await auth.api.getSession({headers});
 							if (!session?.user) return null;
@@ -499,6 +557,18 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 							}),
 						),
 					);
+					// Enforcement at the auth boundary (epic #968): a banned account's session
+					// is REFUSED here, not merely flagged — every session-derived consumer
+					// (fate/`CurrentUser`, `CurrentActor`, the `/api/auth` guard) reads this one
+					// gate, so a banned user with a still-valid cookie is treated as anonymous
+					// on EXISTING sessions, and an unban restores access on the next request. The
+					// ban-state is read FRESH from D1 (never trusted off the session token), the
+					// fail-closed fresh-read invariant ADR 0098 §2 carries forward.
+					if (session?.user) {
+						const banState = yield* readBanState(session.user.id);
+						if (banState.banned) return null;
+					}
+					return session;
 				}),
 
 				getUserById: Effect.fn("Pasaport.getUserById")(function* (userId: string) {
@@ -881,6 +951,56 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					// tier UPDATE; its `changes` count is `1` iff the account was a çaylak.
 					const result = yield* batch((db) => buildPromotionStatements(db, input.userId, now));
 					return {promoted: result[0].meta.changes > 0};
+				}),
+
+				getBanState: Effect.fn("Pasaport.getBanState")(function* (userId: string) {
+					return yield* readBanState(userId);
+				}),
+
+				banUser: Effect.fn("Pasaport.banUser")(function* (input: {
+					userId: string;
+					actorId: string;
+					reason: string;
+					expiresAt?: Date | null;
+				}) {
+					// Reject an unknown target up front so a ban can't be recorded against a
+					// non-existent id (the audit log stays meaningful).
+					const target = yield* run((db) => db.query.user.findFirst({where: {id: input.userId}}));
+					if (!target) return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
+
+					yield* run((db) =>
+						db.insert(schema.userBanEvent).values({
+							id: crypto.randomUUID(),
+							userId: input.userId,
+							action: "ban",
+							actorId: input.actorId,
+							reason: input.reason,
+							expiresAt: input.expiresAt ?? null,
+							createdAt: new Date(),
+						}),
+					);
+					return yield* readBanState(input.userId);
+				}),
+
+				unbanUser: Effect.fn("Pasaport.unbanUser")(function* (input: {
+					userId: string;
+					actorId: string;
+				}) {
+					const target = yield* run((db) => db.query.user.findFirst({where: {id: input.userId}}));
+					if (!target) return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
+
+					yield* run((db) =>
+						db.insert(schema.userBanEvent).values({
+							id: crypto.randomUUID(),
+							userId: input.userId,
+							action: "unban",
+							actorId: input.actorId,
+							reason: null,
+							expiresAt: null,
+							createdAt: new Date(),
+						}),
+					);
+					return yield* readBanState(input.userId);
 				}),
 			};
 		}),

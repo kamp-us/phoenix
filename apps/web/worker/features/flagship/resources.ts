@@ -27,6 +27,7 @@ import {
 	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
 	PHOENIX_OPTIMISTIC_EDITS,
 	PHOENIX_REACTIONS,
+	PHOENIX_USER_BAN,
 } from "../../../src/flags/keys.ts";
 import {AUDIT_ENVIRONMENT} from "../../environment.ts";
 
@@ -695,3 +696,36 @@ export const KARMA_GATES_FLAG = {
  */
 export const karmaGatesFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_karma_gates", {appId, ...KARMA_GATES_FLAG});
+
+/**
+ * The user ban/unban dark-ship flag config (#970, admin epic #968). The SINGLE seam
+ * the ban surface gates behind — the `user.banUser` / `user.unbanUser` admin
+ * mutations, the `user.banState` admin read, and the moderator-UI ban controls.
+ * Default-OFF so the whole ban path reaches production dark: with it off the
+ * mutations/read fail the invisible `Denied` and the client controls render nothing,
+ * so an unreleased feature can never refuse a real user's session. Flipping it on is
+ * the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors `MOD_QUEUE_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           pasaport (the identity + session-boundary surface)
+ *   - originating:     #970 (epic: admin dashboard, #968)
+ *   - removal trigger: once ban graduates to on at 100% and stable for one release,
+ *                      retire the flag and inline the now-permanent ban path.
+ */
+export const USER_BAN_FLAG = {
+	key: PHOENIX_USER_BAN,
+	description:
+		"user ban/unban dark-ship (#970, epic #968). owner: pasaport. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const userBanFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_user_ban", {appId, ...USER_BAN_FLAG});

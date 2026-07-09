@@ -12,6 +12,9 @@
  * hop decisions live DOM-free in `actor-drawer.ts` (unit-tested); this is the thin shell.
  */
 import type {OpenReport} from "../../../worker/features/report/views";
+import {FlagGate} from "../../flags/FlagGate";
+import {PHOENIX_USER_BAN} from "../../flags/keys";
+import {BanControls} from "../moderation/BanControls";
 import {Surface} from "../ui/Card";
 import {
 	type ActorStanding,
@@ -127,6 +130,14 @@ export function ActorDrawer({
 				>
 					mod sicili bilgilendirir, kefil kararını vermez.
 				</p>
+			)}
+
+			{/* Ban/unban (#970) — dark behind `phoenix-user-ban` (ADR 0083) and admin-gated
+			    server-side; only rendered for a resolvable actor id. */}
+			{data.authorId !== null && (
+				<FlagGate flag={PHOENIX_USER_BAN}>
+					<BanControls userId={data.authorId} />
+				</FlagGate>
 			)}
 
 			<div className="kp-actor__hops">

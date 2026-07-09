@@ -13,6 +13,7 @@ import {getUsersWithModerationByIds} from "./trusted-user.ts";
 import {
 	AccountDeletionReceiptView,
 	AuthorshipStandingView,
+	BanStateView,
 	ContributionView,
 	ProfileView,
 	PromotionReceiptView,
@@ -75,3 +76,11 @@ export const promotionReceiptSource = Fate.syntheticSource(PromotionReceiptView)
 // ZERO capabilities so source-completeness accepts the view-reachable result type;
 // mirrors `promotionReceiptSource`.
 export const authorshipStandingSource = Fate.syntheticSource(AuthorshipStandingView);
+
+// `BanState` has no by-id fetch path — it is produced ONLY past the `requireAdmin`
+// gate (epic #968), by the `user.banState` admin read and the `user.banUser` /
+// `user.unbanUser` mutation acks, never a public by-id load (a by-id source would be
+// an ungated leak of an account's ban-state). Registered with ZERO capabilities so
+// source-completeness accepts the view-reachable result type; mirrors
+// `promotionReceiptSource`.
+export const banStateSource = Fate.syntheticSource(BanStateView);

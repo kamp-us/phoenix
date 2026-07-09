@@ -78,3 +78,14 @@ export class DisplayNameEmpty extends Schema.TaggedErrorClass<DisplayNameEmpty>(
 	},
 	{[FateWireCode]: "DISPLAY_NAME_EMPTY"},
 ) {}
+
+// A ban with an empty (or whitespace-only) reason. A ban MUST carry a reason (epic
+// #968 — the audit record is meaningless without one), so the server rejects a blank
+// submit as the authoritative floor even though the admin UI marks the field required.
+export class BanReasonRequired extends Schema.TaggedErrorClass<BanReasonRequired>()(
+	"pasaport/BanReasonRequired",
+	{
+		message: Schema.String,
+	},
+	{[FateWireCode]: "BAN_REASON_REQUIRED"},
+) {}
