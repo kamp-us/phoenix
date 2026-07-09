@@ -4,6 +4,7 @@
  * (`.patterns/fate-effect-operations.md`).
  */
 
+import type {BanState} from "./ban.ts";
 import {
 	CONTRIBUTION_VARIANT_FIELD_NAMES,
 	type ContributionNode,
@@ -14,6 +15,7 @@ import type {UserFields} from "./user-fields.ts";
 import type {
 	AccountDeletionReceipt,
 	AuthorshipStanding,
+	BanStateEntity,
 	Profile,
 	PromotionReceipt,
 	User,
@@ -85,6 +87,19 @@ export const toAuthorshipStanding = (r: {
 	bar: r.bar,
 	vouchExists: r.vouchExists,
 	inReviewCount: r.inReviewCount,
+});
+
+// The single spelling of the ban-state entity (epic #968) — the admin read AND the
+// ban/unban ack resolve the SAME entity, keyed on the target user id, so a mutation
+// ack reconciles the surface's earlier read. `expiresAt` crosses the wire as
+// epoch-millis (or null = permanent / not-banned), so the domain `Date | null`
+// projects to a plain scalar here at the one seam.
+export const toBanState = (userId: string, state: BanState): BanStateEntity => ({
+	__typename: "BanState",
+	id: userId,
+	banned: state.banned,
+	reason: state.reason,
+	expiresAt: state.expiresAt === null ? null : state.expiresAt.getTime(),
 });
 
 // Flatten a discriminated `ContributionNode` onto the flat `ContributionRow`

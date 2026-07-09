@@ -111,6 +111,27 @@ export class PromotionReceiptView extends FateDataView<PromotionReceiptViewRow>(
 	vouchRecorded: true,
 } satisfies {[K in keyof PromotionReceiptViewRow]: true}) {}
 
+// The admin ban-state readout / ban-unban acknowledgement (epic #968) — the
+// projected current ban-state for one account. `id` === the target user id (the
+// client normalization key), so the admin ban surface reads and the ban/unban
+// mutation ack reconcile the SAME entity. `expiresAt` is epoch-millis (or null =
+// permanent / not-banned) to keep the wire scalar plain; `reason` is null when not
+// banned. It carries ONLY the ban-state — no session, no PII — and is only ever
+// produced past the `requireAdmin` gate + the dark-ship flag, so it never leaks.
+export type BanStateViewRow = ViewRow<{
+	id: string;
+	banned: boolean;
+	reason: string | null;
+	expiresAt: number | null;
+}>;
+
+export class BanStateView extends FateDataView<BanStateViewRow>()("BanState")({
+	id: true,
+	banned: true,
+	reason: true,
+	expiresAt: true,
+} satisfies {[K in keyof BanStateViewRow]: true}) {}
+
 // The çaylak-SELF authorship-standing aggregate (#1316, epic #1202) — the
 // "yazarlığa giden yol" read the #1291 status block consumes about ITSELF. The
 // subject is always the authenticated çaylak (the `myAuthorshipStanding` resolver
@@ -150,6 +171,7 @@ export const profileDataView = ProfileView.view;
 export const accountDeletionReceiptDataView = AccountDeletionReceiptView.view;
 export const promotionReceiptDataView = PromotionReceiptView.view;
 export const authorshipStandingDataView = AuthorshipStandingView.view;
+export const banStateDataView = BanStateView.view;
 
 export type User = WorkerEntity<typeof UserView>;
 export type Contribution = WorkerEntity<typeof ContributionView, "createdAt">;
@@ -157,3 +179,4 @@ export type Profile = WorkerEntity<typeof ProfileView, never, {contributions?: C
 export type AccountDeletionReceipt = WorkerEntity<typeof AccountDeletionReceiptView>;
 export type PromotionReceipt = WorkerEntity<typeof PromotionReceiptView>;
 export type AuthorshipStanding = WorkerEntity<typeof AuthorshipStandingView>;
+export type BanStateEntity = WorkerEntity<typeof BanStateView>;

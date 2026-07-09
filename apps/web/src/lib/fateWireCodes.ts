@@ -78,6 +78,10 @@ export const FATE_WIRE_CODES = [
 	// (`pasaport/DisplayNameEmpty`, #2154) — the server-authoritative floor the
 	// worker `user.setDisplayName` write-through raises against a blank byline.
 	"DISPLAY_NAME_EMPTY",
+	// A ban submitted without a reason (`pasaport/BanReasonRequired`, #970) — the
+	// server-authoritative floor the admin `user.banUser` mutation raises against a
+	// blank gerekçe, since a ban's audit record is meaningless without one.
+	"BAN_REASON_REQUIRED",
 	"BAD_REQUEST",
 	"INTERNAL_SERVER_ERROR",
 ] as const;

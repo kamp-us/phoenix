@@ -173,3 +173,16 @@ export const PHOENIX_REACTIONS = "phoenix-reactions";
  * a second tier ladder — no double-gating (#150 rescope, 2026-07-02).
  */
 export const PHOENIX_KARMA_GATES = "phoenix-karma-gates";
+
+/**
+ * User ban/unban dark-ship flag (#970, admin epic #968). The SINGLE seam the ban
+ * surface gates behind — the `user.banUser` / `user.unbanUser` admin mutations, the
+ * `user.banState` admin read, AND the moderator-UI ban controls all read this one
+ * key. Default-off so the whole ban path (server + client) reaches production dark
+ * until a human flips it at release (ADR 0083): with it off the mutations/read fail
+ * the invisible `Denied` (like a non-admin call) and the client controls render
+ * nothing, so no session is ever refused by an unreleased feature. Its OWN key, not
+ * a shared authz seam — ban is a distinct admin capability with its own lifecycle
+ * (the `phoenix-funnel-readout` / `phoenix-mod-queue` mod-surface precedent).
+ */
+export const PHOENIX_USER_BAN = "phoenix-user-ban";

@@ -34,6 +34,9 @@ const failOnContact: PasaportShape = {
 	listContributions: die("listContributions"),
 	anonymizeAccount: die("anonymizeAccount"),
 	promoteToYazar: die("promoteToYazar"),
+	getBanState: die("getBanState"),
+	banUser: die("banUser"),
+	unbanUser: die("unbanUser"),
 };
 
 export const makePasaportStub = (overrides: Partial<PasaportShape> = {}): Layer.Layer<Pasaport> =>

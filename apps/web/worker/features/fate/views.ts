@@ -40,6 +40,7 @@ export {
 export type {
 	AccountDeletionReceipt,
 	AuthorshipStanding,
+	BanStateEntity as BanState,
 	Contribution,
 	Profile,
 	PromotionReceipt,
@@ -48,6 +49,7 @@ export type {
 export {
 	accountDeletionReceiptDataView,
 	authorshipStandingDataView,
+	banStateDataView,
 	contributionDataView,
 	profileDataView,
 	promotionReceiptDataView,

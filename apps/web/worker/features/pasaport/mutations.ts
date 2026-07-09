@@ -9,17 +9,19 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
+import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_USER_BAN} from "../../../src/flags/keys.ts";
 import {notifyKefil, notifyPromotion} from "../bildirim/rite-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
+import {Admin, adminOf, requireAdmin} from "../kunye/admin.ts";
 import {Denied, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
 import {Moderate, requireModeration} from "../kunye/moderate.ts";
 import {VOUCH_CONCURRENT_CAP} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {requireVouch, Vouch, voucherOf} from "../kunye/vouch.ts";
 import {
+	BanReasonRequired,
 	DisplayNameEmpty,
 	UserNotFound,
 	UsernameAlreadySet,
@@ -29,10 +31,10 @@ import {
 import {pasaportLive} from "./live.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {publishPromotion} from "./promote-live.ts";
-import {toAccountDeletionReceipt, toPromotionReceipt} from "./shapers.ts";
+import {toAccountDeletionReceipt, toBanState, toPromotionReceipt} from "./shapers.ts";
 import {resolveTandem} from "./tandem.ts";
 import {toTrustedUser} from "./trusted-user.ts";
-import {AccountDeletionReceiptView, PromotionReceiptView, UserView} from "./views.ts";
+import {AccountDeletionReceiptView, BanStateView, PromotionReceiptView, UserView} from "./views.ts";
 
 /**
  * Is the #1204 authorship-loop dark-ship flag on for this request? The promotion
@@ -43,6 +45,17 @@ import {AccountDeletionReceiptView, PromotionReceiptView, UserView} from "./view
 const authorshipLoopOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(PHOENIX_AUTHORSHIP_LOOP, false).pipe(provideRequestFlags);
+});
+
+/**
+ * Is the #970 user-ban dark-ship flag on for this request? Safe-default `false`
+ * (dark), the `funnel.summary` idiom: with the flag off (default / Flagship outage)
+ * the ban path fails the invisible `Denied` exactly like a non-admin call, so an
+ * unreleased ban can never refuse a real user's session (ADR 0083).
+ */
+const userBanOn = Effect.gen(function* () {
+	const flags = yield* Flags;
+	return yield* flags.getBoolean(PHOENIX_USER_BAN, false).pipe(provideRequestFlags);
 });
 
 const SetUsernameInput = Schema.Struct({
@@ -81,6 +94,20 @@ const VouchInput = Schema.Struct({
 // actor, never an arg, so a yazar can only withdraw their OWN vouch for `candidateId`.
 const WithdrawVouchInput = Schema.Struct({
 	candidateId: Schema.String,
+});
+
+// Ban a target account by id: a `reason` (required — enforced non-empty in the gated
+// body, `BanReasonRequired`) and an OPTIONAL `expiresAt` epoch-millis (null/omitted =
+// permanent). No `actor` arg — the acting admin is the discharged `Admin` grant's id,
+// never client-supplied, so a ban is always audited against its real author.
+const BanUserInput = Schema.Struct({
+	userId: Schema.String,
+	reason: Schema.String,
+	expiresAt: Schema.optional(Schema.NullOr(Schema.Number)),
+});
+
+const UnbanUserInput = Schema.Struct({
+	userId: Schema.String,
 });
 
 export const mutations = {
@@ -242,7 +269,77 @@ export const mutations = {
 			return yield* requireVouch(withdrawGated(input));
 		}),
 	),
+
+	// Ban an account (#970, admin epic #968) — `requireAdmin`-gated, behind the
+	// `phoenix-user-ban` dark-ship flag. With the flag off the mutation fails the
+	// invisible `Denied` (like a non-admin call), so an unreleased ban never refuses a
+	// real session. The write is the AUDIT record (actor from the discharged grant,
+	// target, reason, time); enforcement — refusing the banned user's existing
+	// sessions — happens at `Pasaport.validateSession`, not here.
+	"user.banUser": Fate.mutation(
+		{
+			input: BanUserInput,
+			type: BanStateView,
+			error: Schema.Union([Denied, UserNotFound, BanReasonRequired]),
+		},
+		Effect.fn("user.banUser")(function* ({input}) {
+			if (!(yield* userBanOn)) {
+				return yield* Effect.fail(new Denied({message: "Bu işlem şu an kapalı."}));
+			}
+			return yield* requireAdmin(banGated(input));
+		}),
+	),
+
+	// Unban an account (#970) — the `requireAdmin`-gated, flag-gated reversal. Appends
+	// an audited `unban` event; the banned user's next request re-validates to a live
+	// session. Idempotent (unbanning a not-banned account still reads not-banned).
+	"user.unbanUser": Fate.mutation(
+		{
+			input: UnbanUserInput,
+			type: BanStateView,
+			error: Schema.Union([Denied, UserNotFound]),
+		},
+		Effect.fn("user.unbanUser")(function* ({input}) {
+			if (!(yield* userBanOn)) {
+				return yield* Effect.fail(new Denied({message: "Bu işlem şu an kapalı."}));
+			}
+			return yield* requireAdmin(unbanGated(input));
+		}),
+	),
 };
+
+// The post-gate ban body — runnable only with an `Admin` `Grant` in R
+// (`requireAdmin` provides it); `yield* adminOf(grant)` reads the authority-checked
+// actor id the audit row is stamped with, so a ban is never attributed to a
+// client-supplied identity. A blank reason fails `BanReasonRequired` (a ban must
+// carry a reason, epic #968); an unknown target fails `UserNotFound`.
+const banGated = Effect.fn("user.banGated")(function* (input: typeof BanUserInput.Type) {
+	const grant = yield* Admin;
+	const actorId = yield* adminOf(grant);
+	const reason = input.reason.trim();
+	if (reason.length === 0) {
+		return yield* new BanReasonRequired({message: "Yasaklama gerekçesi zorunludur."});
+	}
+	const pasaport = yield* Pasaport;
+	const state = yield* pasaport.banUser({
+		userId: input.userId,
+		actorId,
+		reason,
+		expiresAt: input.expiresAt == null ? null : new Date(input.expiresAt),
+	});
+	return toBanState(input.userId, state);
+});
+
+// The post-gate unban body — runnable only with an `Admin` `Grant` in R. Appends the
+// audited `unban` (stamped with the discharged admin's id); `UserNotFound` on an
+// unknown target.
+const unbanGated = Effect.fn("user.unbanGated")(function* (input: typeof UnbanUserInput.Type) {
+	const grant = yield* Admin;
+	const actorId = yield* adminOf(grant);
+	const pasaport = yield* Pasaport;
+	const state = yield* pasaport.unbanUser({userId: input.userId, actorId});
+	return toBanState(input.userId, state);
+});
 
 // The post-gate moderator-promote body — runnable only with a `Moderate` `Grant` in
 // R (`requireModeration` provides it); `yield* Moderate` IS the authority gate, so

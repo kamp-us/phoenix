@@ -52,6 +52,7 @@ export const WIRE_MESSAGES: Record<FateWireCode, string> = {
 	TAKEN: "bu değer alınmış",
 	USER_NOT_FOUND: "kullanıcı bulunamadı",
 	DISPLAY_NAME_EMPTY: "görünen ad boş olamaz",
+	BAN_REASON_REQUIRED: "yasaklama gerekçesi zorunludur",
 	BAD_REQUEST: "geçersiz istek",
 	INTERNAL_SERVER_ERROR: "bir şeyler ters gitti, lütfen tekrar dene",
 };

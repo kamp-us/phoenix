@@ -148,6 +148,44 @@ export const apikey = sqliteTable("apiKey", {
 });
 
 /**
+ * Append-only ban/unban event log — the SINGLE source of both the audit trail and
+ * the current ban-state (ADR 0107 admin-gated moderation, epic #968). Ban-state is
+ * NOT a mutable flag on `user` (the never-migrated better-auth `banned`/`banReason`/
+ * `banExpires` columns are deliberately not resurrected): it is a projection of the
+ * latest event for a user (see `features/pasaport/ban.ts` `resolveBanState`), so
+ * "current state diverged from history" is unrepresentable — every ban and every
+ * unban is one immutable row carrying its actor, reason, expiry, and time.
+ *
+ * Enforcement reads the latest row per request at the session boundary
+ * (`Pasaport.validateSession`), so a banned user's EXISTING session is refused, not
+ * just a flag toggled. The `(user_id, created_at DESC)` index is that hot read's
+ * key. `onDelete: cascade` ties the log to the account row (account-deletion is a
+ * kept tombstone, ADR 0097, so the row — and this history — survive a deletion).
+ */
+export const userBanEvent = sqliteTable(
+	"user_ban_event",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, {onDelete: "cascade"}),
+		// The event kind: a `ban` opens/refreshes a ban, an `unban` lifts it. The
+		// projection reads only the latest row, so an `unban` after a `ban` restores
+		// access without mutating or deleting the ban row — full reversibility.
+		action: text("action", {enum: ["ban", "unban"]}).notNull(),
+		// The admin who performed the action (a discharged `Admin` grant's account id).
+		actorId: text("actor_id").notNull(),
+		// Ban reason (required at the mutation boundary for a `ban`); null for an `unban`.
+		reason: text("reason"),
+		// Optional ban expiry; null = permanent (or an `unban`). A past `expiresAt`
+		// projects to not-banned (see `resolveBanState`), so an expired ban self-lifts.
+		expiresAt: timestamp("expires_at"),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [index("user_ban_event_user_created").on(t.userId, sql`${t.createdAt} DESC`)],
+);
+
+/**
  * Per-(definition, voter) up-vote presence row. `user_vote` and
  * `definition_record.score` (COUNT(*) under `WHERE definition_id = ?`) are both
  * denormalized off this, recomputed inline in the same D1 batch as the vote write.

@@ -5,12 +5,18 @@ import {queries} from "./queries.ts";
 import {
 	accountDeletionReceiptSource,
 	authorshipStandingSource,
+	banStateSource,
 	contributionSource,
 	profileSource,
 	promotionReceiptSource,
 	userSource,
 } from "./sources.ts";
-import {authorshipStandingDataView, profileDataView, userDataView} from "./views.ts";
+import {
+	authorshipStandingDataView,
+	banStateDataView,
+	profileDataView,
+	userDataView,
+} from "./views.ts";
 
 const roots: FateRootsRecord = {
 	me: userDataView,
@@ -19,6 +25,9 @@ const roots: FateRootsRecord = {
 	// root keyed on `CurrentUser` (self-only), aggregate-only (one-way-glass), behind
 	// `PHOENIX_AUTHORSHIP_LOOP`. Resolved inline by the `myAuthorshipStanding` resolver.
 	myAuthorshipStanding: authorshipStandingDataView,
+	// The admin ban-state read (#970, epic #968) — `requireAdmin`-gated + behind
+	// `phoenix-user-ban`; the `user.banState` resolver owns the gate.
+	"user.banState": banStateDataView,
 };
 
 export const fateModule = {
@@ -31,6 +40,7 @@ export const fateModule = {
 		accountDeletionReceiptSource,
 		promotionReceiptSource,
 		authorshipStandingSource,
+		banStateSource,
 	],
 	roots,
 } satisfies FateModule;

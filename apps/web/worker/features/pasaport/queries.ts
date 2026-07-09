@@ -10,19 +10,21 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {hasNestedSelection} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
+import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_USER_BAN} from "../../../src/flags/keys.ts";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
+import {Admin, requireAdmin} from "../kunye/admin.ts";
+import {Denied} from "../kunye/errors.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {promotionBarFor} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {Pasaport} from "./Pasaport.ts";
-import {toAuthorshipStanding, toContributionRow, toProfile} from "./shapers.ts";
+import {toAuthorshipStanding, toBanState, toContributionRow, toProfile} from "./shapers.ts";
 import {toTrustedUser} from "./trusted-user.ts";
 import type {Contribution} from "./views.ts";
-import {AuthorshipStandingView, ProfileView, UserView} from "./views.ts";
+import {AuthorshipStandingView, BanStateView, ProfileView, UserView} from "./views.ts";
 
 const CONTRIBUTIONS_PAGE_SIZE = 20;
 
@@ -30,6 +32,16 @@ const CONTRIBUTIONS_PAGE_SIZE = 20;
 const loopOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(PHOENIX_AUTHORSHIP_LOOP, false).pipe(provideRequestFlags);
+});
+
+/** Is the #970 user-ban dark-ship flag on for this request? Safe-default `false` (dark). */
+const userBanOn = Effect.gen(function* () {
+	const flags = yield* Flags;
+	return yield* flags.getBoolean(PHOENIX_USER_BAN, false).pipe(provideRequestFlags);
+});
+
+const BanStateArgs = Schema.Struct({
+	userId: Schema.String,
 });
 
 // Nested connection args are scoped under the field path
@@ -148,4 +160,27 @@ export const queries = {
 			});
 		}),
 	),
+
+	// The admin ban-state read (#970, epic #968) — `requireAdmin`-gated, behind the
+	// `phoenix-user-ban` dark-ship flag. The moderator UI reads it to show whether the
+	// focused actor is banned + the reason. With the flag off it fails the invisible
+	// `Denied` (like a non-admin call), so the read never leaks ban-state until release.
+	"user.banState": Fate.query(
+		{args: BanStateArgs, type: BanStateView, error: Schema.Union([Denied])},
+		Effect.fn("user.banState")(function* ({args}) {
+			if (!(yield* userBanOn)) {
+				return yield* Effect.fail(new Denied({message: "Bu işlem şu an kapalı."}));
+			}
+			return yield* requireAdmin(banStateGated(args.userId));
+		}),
+	),
 };
+
+// The post-gate ban-state read — runnable only with an `Admin` `Grant` in R
+// (`requireAdmin` provides it); `yield* Admin` requires the proof, so reading an
+// account's ban-state without a discharged grant is a compile error (ADR 0107).
+const banStateGated = Effect.fn("user.banStateGated")(function* (userId: string) {
+	yield* Admin;
+	const pasaport = yield* Pasaport;
+	return toBanState(userId, yield* pasaport.getBanState(userId));
+});
