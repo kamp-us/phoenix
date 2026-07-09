@@ -77,10 +77,9 @@ const acquire = Command.make(
 	Effect.fn(function* ({epic, session}) {
 		const sessionId = resolveSession(session);
 		if (sessionId === "") {
-			yield* backOff(
+			return yield* backOff(
 				"no CLAUDE_CODE_SESSION_ID (and no --session) — cannot post an agent-distinguishable planning claim. BACK OFF, do not mutate.",
 			);
-			return;
 		}
 		const result = yield* (yield* Github).acquire(epic, sessionId);
 		yield* reportAcquire(epic, result);
@@ -99,10 +98,9 @@ const release = Command.make(
 		if (sessionId === "") {
 			// Release with no session id can only retract by session — nothing to do, but the label
 			// may still be held. Surface it loudly and exit non-zero rather than silently no-op.
-			yield* backOff(
+			return yield* backOff(
 				"no CLAUDE_CODE_SESSION_ID (and no --session) — cannot identify our own claim to retract. Clear status:planning by hand if leaked.",
 			);
-			return;
 		}
 		const result = yield* (yield* Github).release(epic, sessionId);
 		yield* Console.log(
