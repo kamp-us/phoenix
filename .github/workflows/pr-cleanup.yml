@@ -43,6 +43,12 @@ jobs:
   app-roster:
     name: resolve app roster
     runs-on: ubuntu-latest
+    # Least-privilege on this elevated `pull_request_target` workflow: app-roster only
+    # checks out and reads .github/app-roster.json, so it needs nothing beyond
+    # `contents: read`. Without an explicit block it would inherit the default token's
+    # broad write scope. Mirrors the `cleanup` job's own least-privilege permissions.
+    permissions:
+      contents: read
     outputs:
       matrix: ${{ steps.roster.outputs.matrix }}
     steps:
