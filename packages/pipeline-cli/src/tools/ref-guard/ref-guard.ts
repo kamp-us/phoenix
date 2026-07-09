@@ -27,10 +27,22 @@
  * Fail-safe posture (fail-closed on the guarded ref, fail-open off it): every
  * indeterminate fact the git boundary can't resolve is passed as a discriminated flag
  * so the decision is explicit, never a silent allow of a `main` divergence.
+ *
+ * A second, orthogonal concern lives here too (#2270, the mechanical half): `decideHeadDetach`
+ * refuses a bare HEAD-detaching checkout on the shared PRIMARY checkout — a distinct hazard from
+ * the `refs/heads/main` force-move above, and one `decideRefUpdate` structurally cannot see (a
+ * detach moves `HEAD`, not `refs/heads/main`). See its docblock for the git-grounded signal.
  */
 
 /** The full ref name the guard protects. Other refs (feature branches, tags, `origin/*`) are out of scope. */
 export const GUARDED_REF = "refs/heads/main";
+
+/**
+ * Git's per-worktree symbolic `HEAD`, as it appears verbatim on the `reference-transaction`
+ * stdin (`<old> SP <new> SP HEAD`). A detaching checkout moves THIS ref to a concrete commit —
+ * the operation `decideHeadDetach` guards on the primary checkout.
+ */
+export const HEAD_REF = "HEAD";
 
 /** Git's all-zeroes object name — the sentinel for a ref being created anew (old) or deleted (new). */
 export const ZERO_OID = "0000000000000000000000000000000000000000";
@@ -137,6 +149,72 @@ export const decideRefUpdate = (update: RefUpdate, facts: OriginFacts): RefDecis
 			`(local main diverged from origin/main; one \`git push -f\` would clobber origin/main). Drive sync through ` +
 			`\`git merge --ff-only origin/main\`, never a bare \`branch -f main\` / \`checkout -B main\` / \`update-ref refs/heads/main\`.`,
 	};
+};
+
+/**
+ * The checkout a `reference-transaction` is firing against, reduced to the one fact the
+ * HEAD-detach decision needs: whether it is the shared PRIMARY checkout rather than a linked
+ * worktree. The git boundary resolves it by comparing the per-tree git-dir with the shared
+ * git-common-dir (equal ⇒ primary; differ ⇒ linked worktree — the same plumbing `write-code`'s
+ * worktree preflight uses). An indeterminate resolution passes `false` (fail-OPEN: a detach we
+ * can't prove is on the primary is allowed, so a worktree agent is never false-refused).
+ */
+export interface CheckoutContext {
+	readonly isPrimaryCheckout: boolean;
+}
+
+/**
+ * Refuse a bare HEAD-detaching checkout on the shared PRIMARY checkout — the #2270 hazard: a
+ * worktree-isolated agent whose cwd resets to the primary between Bash calls runs a bare
+ * `git checkout <sha>` / `checkout FETCH_HEAD` / `switch --detach`, detaching the human's shared
+ * `HEAD` off its branch and corrupting the checkout. `decideRefUpdate`'s `refs/heads/main` scope
+ * never sees this: a detach moves `HEAD`, not `refs/heads/main`, so it is a separate decision.
+ *
+ * The signal is grounded in git's real `reference-transaction` behavior (verified against git
+ * 2.40, not assumed — the AC's requirement): a detaching checkout queues an update whose ref-name
+ * is exactly `HEAD`, whose new value is a concrete commit, with NO sibling `refs/heads/*` update
+ * to that same commit in the transaction. An ATTACHED move — a commit/reset on the current branch,
+ * including the unborn-branch first commit — queues `HEAD` PAIRED with its `refs/heads/<branch>`
+ * update to the same new oid; an attached `switch <branch>` retargets the HEAD symref and queues
+ * no `HEAD` update at all. So "HEAD moved to a commit that no branch in this transaction is also
+ * moving to" isolates exactly a detach, and only a detach.
+ *
+ * Scoped to the PRIMARY checkout (`ctx.isPrimaryCheckout`). A worktree's own HEAD detach fires
+ * against its per-tree git-dir, so this allows it — worktree agents moving/detaching their OWN
+ * HEAD are untouched, as is the PULLER `checkout main` reattach (a symref retarget queues no HEAD
+ * ref update) and the human's normal attached work (paired HEAD+branch moves).
+ */
+export const decideHeadDetach = (
+	updates: ReadonlyArray<RefUpdate>,
+	ctx: CheckoutContext,
+): RefDecision => {
+	if (!ctx.isPrimaryCheckout) {
+		return {
+			kind: "allow",
+			reason:
+				"not the shared primary checkout (a linked worktree) — HEAD moves are the worktree's own",
+		};
+	}
+	const branchTargets = new Set(
+		updates
+			.filter((u) => u.refName.startsWith("refs/heads/") && u.newOid !== ZERO_OID)
+			.map((u) => u.newOid),
+	);
+	for (const u of updates) {
+		if (u.refName !== HEAD_REF) continue;
+		if (u.newOid === ZERO_OID) continue; // a HEAD delete / no concrete target is not a detach
+		if (branchTargets.has(u.newOid)) continue; // paired with a branch move ⇒ attached, allow
+		return {
+			kind: "refuse",
+			reason:
+				`refusing a HEAD-detaching checkout on the shared PRIMARY checkout: HEAD would move to ${u.newOid.slice(0, 12)} ` +
+				`with no branch tracking it (a detached HEAD). On the primary this strands the human's shared checkout off its ` +
+				`branch (#2270) — the exact corruption a worktree-isolated agent triggers when its cwd resets to the primary ` +
+				`between calls. Detach inside your OWN worktree, or reattach with \`git checkout <branch>\`, never a bare ` +
+				`\`git checkout <sha>\` / \`checkout FETCH_HEAD\` / \`switch --detach\` on the primary.`,
+		};
+	}
+	return {kind: "allow", reason: "no bare HEAD detach on the primary checkout"};
 };
 
 /**

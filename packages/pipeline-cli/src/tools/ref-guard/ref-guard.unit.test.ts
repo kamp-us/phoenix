@@ -1,8 +1,10 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	decideHeadDetach,
 	decideRefUpdate,
 	decideTransaction,
 	GUARDED_REF,
+	HEAD_REF,
 	type OriginFacts,
 	type RefUpdate,
 	ZERO_OID,
@@ -134,6 +136,94 @@ describe("decideRefUpdate — totality", () => {
 				}
 			}
 		}
+	});
+});
+
+// #2270 mechanical half: a bare HEAD-detaching checkout on the shared PRIMARY checkout is
+// refused. The signal (grounded in git's real reference-transaction behavior, see the
+// command.hook.test.ts end-to-end cases) is a HEAD update to a concrete commit with NO paired
+// refs/heads/* update to the same oid in the batch — an attached move pairs them, a detach does
+// not — and only on the primary (a linked worktree's own HEAD is its business).
+describe("decideHeadDetach — bare HEAD detach on the primary (the #2270 refuse)", () => {
+	const headUpdate = (over: Partial<RefUpdate> = {}): RefUpdate => ({
+		oldOid: ZERO_OID,
+		newOid: OID_B,
+		refName: HEAD_REF,
+		...over,
+	});
+
+	it("a bare HEAD detach on the primary (HEAD → concrete, no paired branch) → refuse", () => {
+		const d = decideHeadDetach([headUpdate()], {isPrimaryCheckout: true});
+		assert.strictEqual(d.kind, "refuse");
+		assert.include(d.reason, "PRIMARY");
+	});
+
+	it("the same detach in a linked worktree (not primary) → allow", () => {
+		const d = decideHeadDetach([headUpdate()], {isPrimaryCheckout: false});
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("an attached commit on the primary (HEAD paired with refs/heads/main to the same oid) → allow", () => {
+		const d = decideHeadDetach(
+			[
+				{oldOid: OID_A, newOid: OID_B, refName: HEAD_REF},
+				{oldOid: OID_A, newOid: OID_B, refName: GUARDED_REF},
+			],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("the unborn-branch first commit (HEAD + refs/heads/main, both zero-old, same new) → allow", () => {
+		const d = decideHeadDetach(
+			[
+				{oldOid: ZERO_OID, newOid: OID_B, refName: HEAD_REF},
+				{oldOid: ZERO_OID, newOid: OID_B, refName: "refs/heads/main"},
+			],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("a branch-only ref move on the primary (no HEAD update at all) → allow", () => {
+		const d = decideHeadDetach(
+			[{oldOid: ZERO_OID, newOid: OID_B, refName: "refs/heads/umut/feature"}],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("a HEAD delete (new all-zeroes) on the primary is not a detach → allow", () => {
+		const d = decideHeadDetach([headUpdate({oldOid: OID_A, newOid: ZERO_OID})], {
+			isPrimaryCheckout: true,
+		});
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("a FETCH_HEAD / ORIG_HEAD update (not exactly HEAD) is out of scope → allow", () => {
+		const d = decideHeadDetach(
+			[
+				{oldOid: ZERO_OID, newOid: OID_B, refName: "FETCH_HEAD"},
+				{oldOid: ZERO_OID, newOid: OID_A, refName: "ORIG_HEAD"},
+			],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("a detach paired with an UNRELATED branch move (different oid) still refuses", () => {
+		const d = decideHeadDetach(
+			[
+				{oldOid: ZERO_OID, newOid: OID_B, refName: HEAD_REF},
+				{oldOid: OID_A, newOid: OID_ORIGIN, refName: "refs/heads/other"},
+			],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "refuse");
+	});
+
+	it("an empty batch → allow", () => {
+		assert.strictEqual(decideHeadDetach([], {isPrimaryCheckout: true}).kind, "allow");
 	});
 });
 

@@ -299,4 +299,91 @@ describe("ref-guard — installed reference-transaction hook fires on a BARE git
 			"the move was allowed because the guard could not run",
 		);
 	});
+
+	// #2270 mechanical half (criteria 1/2/4): the SAME installed reference-transaction hook that
+	// catches a diverging refs/heads/main move must also refuse a bare HEAD-DETACHING checkout on
+	// the shared PRIMARY checkout — the operation that strands the human's shared HEAD off its
+	// branch when a worktree-isolated agent's cwd resets to the primary between Bash calls. These
+	// drive a REAL `git checkout` (not a synthetic update-ref) so the assertion is grounded in
+	// git's actual reference-transaction behavior for a detach: HEAD → a concrete commit, no
+	// paired refs/heads/* move.
+	const headRef = (repoDir: string): string =>
+		execFileSync("git", ["symbolic-ref", "-q", "HEAD"], {cwd: repoDir, encoding: "utf8"}).trim();
+
+	it("aborts a bare `git checkout <sha>` HEAD-detach on the PRIMARY — HEAD stays attached to its branch", () => {
+		git(fx.dir, "checkout", "-q", "main"); // known attached start
+		const before = headRef(fx.dir);
+		installHook(fx.dir);
+		let aborted = false;
+		try {
+			execFileSync("git", ["checkout", fx.divergent], {cwd: fx.dir, stdio: "pipe"});
+		} catch {
+			aborted = true; // git exits non-zero: "ref updates aborted by hook"
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		assert.isTrue(aborted, "the bare HEAD-detach on the primary should be aborted by the hook");
+		assert.strictEqual(
+			headRef(fx.dir),
+			before,
+			"HEAD must still be attached to its branch (the detach was refused)",
+		);
+	});
+
+	it("does NOT abort an attached commit on a feature branch on the PRIMARY (HEAD paired with its branch move)", () => {
+		// A feature branch, not main, so the pre-existing #2143 main-divergence guard is out of the
+		// picture — this isolates the HEAD-detach guard's pairing rule (HEAD moved WITH its branch).
+		git(fx.dir, "checkout", "-q", "-b", "attached-feature", fx.base);
+		installHook(fx.dir);
+		let ok = true;
+		try {
+			execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "attached"], {
+				cwd: fx.dir,
+				stdio: "pipe",
+			});
+		} catch {
+			ok = false;
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		const stayed = headRef(fx.dir);
+		git(fx.dir, "checkout", "-q", "main"); // restore fixture: reattach main, drop the feature branch
+		git(fx.dir, "branch", "-qD", "attached-feature");
+		assert.isTrue(ok, "an attached commit (paired HEAD+branch move) must not be aborted");
+		assert.strictEqual(
+			stayed,
+			"refs/heads/attached-feature",
+			"HEAD stays attached to the feature branch after the commit",
+		);
+	});
+
+	it("does NOT abort a `git checkout main` reattach on the PRIMARY (a symref retarget, no HEAD ref update)", () => {
+		git(fx.dir, "checkout", "-q", "--detach", fx.base); // detach BEFORE the hook is installed
+		installHook(fx.dir);
+		let ok = true;
+		try {
+			execFileSync("git", ["checkout", "main"], {cwd: fx.dir, stdio: "pipe"});
+		} catch {
+			ok = false;
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		assert.isTrue(ok, "the PULLER `checkout main` reattach must not be aborted");
+		assert.strictEqual(headRef(fx.dir), "refs/heads/main", "HEAD is reattached to main");
+	});
+
+	it("does NOT abort a bare HEAD-detach inside a LINKED worktree (only the shared primary is guarded)", () => {
+		const wt = join(fx.dir, "..", "wt-head-detach");
+		execFileSync("git", ["worktree", "add", "-q", "--detach", wt, fx.base], {cwd: fx.dir});
+		installHook(fx.dir); // shared hook (common .git) — but the worktree's HEAD is not the primary's
+		let ok = true;
+		try {
+			execFileSync("git", ["checkout", fx.divergent], {cwd: wt, stdio: "pipe"});
+		} catch {
+			ok = false;
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		execFileSync("git", ["worktree", "remove", "--force", wt], {cwd: fx.dir});
+		assert.isTrue(
+			ok,
+			"a worktree agent detaching its OWN HEAD must not be blocked (no false-positive on coders)",
+		);
+	});
 });
