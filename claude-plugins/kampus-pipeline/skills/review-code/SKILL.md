@@ -265,7 +265,9 @@ git fetch origin "$BASE_REF"
 # Fetch the PR head into a dedicated ref WITHOUT touching the session tree. pull/$PR/head
 # resolves for same-repo AND cross-fork PRs, so there is no separate cross-fork branch to
 # check out into your own tree (the trust inversion ADR 0052 closes — never run
-# `gh pr checkout`, which would materialize the head's config into the session checkout).
+# `gh pr checkout` / `git checkout` / `git switch`, which materialize the head into a working
+# tree: the harness resets this cwd to the shared PRIMARY between Bash calls, so a bare checkout
+# lands there and detaches the human's `main` (#2270/#1103 detach class) — §RO forbids it outright).
 # Per-run ref: the PR number alone is shared, so a second review of the same PR would
 # overwrite the ref mid-review and you'd verify the wrong SHA — uniquify it per invocation.
 PR_REF="refs/pr/$PR-$(uuidgen)"

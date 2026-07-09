@@ -146,6 +146,9 @@ HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
 PR_REF="refs/review-trivial/$PR"
 git fetch --no-tags origin "pull/$PR/head:$PR_REF" >/dev/null 2>&1 || git fetch origin "$HEAD_SHA" >/dev/null 2>&1
 # read a head file WITHOUT a checkout:  git show "$PR_REF:<path>"   (or "$HEAD_SHA:<path>")
+# NEVER `git checkout` / `git switch` to inspect the head — the harness resets this cwd to the
+# shared PRIMARY between Bash calls, so a checkout lands there and detaches the human's `main`
+# (#2270/#1103); §RO in gh-issue-intake-formats.md forbids switching any working tree outright.
 
 # the PR body carries Fixes #N; pin the linked issue and its acceptance criteria
 ISSUE=$(gh api repos/$REPO/pulls/$PR --jq '.body' | grep -ioE '(fix(es|ed)?|close[sd]?|resolve[sd]?)\s+#[0-9]+' | grep -oE '[0-9]+' | head -n1)

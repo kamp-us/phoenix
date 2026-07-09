@@ -324,7 +324,9 @@ the hunk alone — and read it **read-only**, without ever switching the checkou
 
 ```bash
 # Land the head in a per-run ref WITHOUT touching the working tree (resolves for same-repo
-# AND cross-fork PRs — never `gh pr checkout` / `git checkout`, which switch your tree):
+# AND cross-fork PRs — never `gh pr checkout` / `git checkout` / `git switch`: the harness
+# resets this cwd to the shared PRIMARY between Bash calls, so a checkout lands there and
+# detaches the human's `main` (#2270/#1103), and §RO forbids switching your tree outright):
 PR_REF="refs/pr/$PR-$(uuidgen)"
 git fetch origin "pull/$PR/head:$PR_REF"
 
@@ -352,7 +354,9 @@ git worktree add "$REVIEW_WT" "$PR_REF"
 rm -rf "$REVIEW_WT" && git worktree prune   # tear it down after
 ```
 
-Never `git checkout` / `gh pr checkout` in the checkout you were launched in.
+Never `git checkout` / `git switch` / `gh pr checkout` in the checkout you were launched in —
+not even `git -C`-scoped to your own worktree (the harness cwd-reset would still land a bare one
+on the shared primary and detach the human's `main`, #2270/#1103; §RO is the single source).
 
 ### Fetch the base fresh before any "is-it-shipped on main" check
 
