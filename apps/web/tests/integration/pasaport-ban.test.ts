@@ -44,6 +44,11 @@ let d1: D1Database;
 // in the future and never expire.
 const nowSec = () => Math.floor(Date.now() / 1000);
 
+// D1 REST params is a strict `string[]` that REJECTS a null element (packages/d1-rest
+// `assertRestParam`, #569): a SQL NULL must be rendered inline by OMITTING the nullable
+// column from the INSERT, never bound as a null param. `reason`/`expires_at` are the two
+// nullable columns (migration 0024) — include each only when its value is non-null so an
+// omitted column defaults to SQL NULL; the always-present columns bind unconditionally.
 const insertBanEvent = (row: {
 	userId: string;
 	action: "ban" | "unban";
@@ -51,21 +56,29 @@ const insertBanEvent = (row: {
 	reason: string | null;
 	expiresAtSec: number | null;
 	createdAtSec: number;
-}) =>
-	d1
-		.prepare(
-			"INSERT INTO user_ban_event (id, user_id, action, actor_id, reason, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		)
-		.bind(
-			crypto.randomUUID(),
-			row.userId,
-			row.action,
-			row.actorId,
-			row.reason,
-			row.expiresAtSec,
-			row.createdAtSec,
-		)
+}) => {
+	const cols = ["id", "user_id", "action", "actor_id", "created_at"];
+	const values: (string | number)[] = [
+		crypto.randomUUID(),
+		row.userId,
+		row.action,
+		row.actorId,
+		row.createdAtSec,
+	];
+	if (row.reason !== null) {
+		cols.push("reason");
+		values.push(row.reason);
+	}
+	if (row.expiresAtSec !== null) {
+		cols.push("expires_at");
+		values.push(row.expiresAtSec);
+	}
+	const placeholders = cols.map(() => "?").join(", ");
+	return d1
+		.prepare(`INSERT INTO user_ban_event (${cols.join(", ")}) VALUES (${placeholders})`)
+		.bind(...values)
 		.run();
+};
 
 // `me` under a cookie: is the session honored (resolves the User) or refused
 // (UNAUTHORIZED, i.e. treated as anonymous)? D1 read-replica lag means a just-landed
