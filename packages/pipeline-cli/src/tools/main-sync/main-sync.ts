@@ -20,6 +20,17 @@
  * incidents all had a CLEAN tree — so a reattach is authorized ONLY on a clean tree;
  * a dirty primary tree DETECTS-AND-SURFACES (refuse to reattach, report the dirt)
  * rather than blindly `checkout`-ing and discarding the operator's changes.
+ *
+ * A SECOND, gentler policy lives beside the drain-sync above: `decideMainRefresh`, the
+ * post-merge refresh (#2056). Under the merge queue (ADR 0132) a PR lands GitHub-side with
+ * no local `git merge` on the primary, so the owner's checkout silently drifts behind
+ * `origin/main` and any read of the local tree (next-free ADR number, "does X exist yet")
+ * is made against stale state. The refresh is invoked by a pipeline step that KNOWS a merge
+ * landed (ship-it / the orchestrator) and passively fast-forwards the primary — but, unlike
+ * the drain-sync, it NEVER moves HEAD: on a non-`main` branch or a dirty tree it LEAVES THE
+ * CHECKOUT ALONE and exits cleanly (a stale checkout is no worse than today; yanking the
+ * owner off their feature branch or touching their uncommitted work is). Failing-to-refresh
+ * is acceptable; failing-loudly or clobbering is not.
  */
 
 /**
@@ -104,4 +115,56 @@ export const decideMainSync = (head: HeadState): MainSyncPlan => {
 		return {action: "blocked-dirty", from: fromLabel(head.branch)};
 	}
 	return {action: "reattach", from: fromLabel(head.branch)};
+};
+
+/**
+ * What the post-merge refresh should do to bring the primary checkout up to
+ * `origin/main` — the gentle, HEAD-preserving counterpart to `MainSyncPlan`. It has
+ * exactly two outcomes because the refresh never moves HEAD (see the module docblock,
+ * #2056): either a fast-forward is safe, or the checkout is left exactly as it is.
+ */
+export type MainRefreshPlan =
+	/**
+	 * HEAD is on `main` AND the tree is clean — the only state in which a `git merge
+	 * --ff-only origin/main` is both possible and non-destructive. The refresh runs
+	 * `fetch` + `merge --ff-only`; ff-only never creates a merge commit and aborts on any
+	 * divergence, so the worst case is a no-op, never a clobber.
+	 */
+	| {readonly action: "fast-forward"; readonly branch: string}
+	/**
+	 * The refresh is a deliberate NO-OP — HEAD is not on `main`, or the tree is dirty. It
+	 * exits cleanly (never an error): a fast-forward of `main` can't advance a checked-out
+	 * feature branch, and a dirty tree could have its uncommitted work disturbed, so the
+	 * refresh leaves the checkout untouched. `reason` records which condition held for the
+	 * report; `branch` is the current branch (or `detached-HEAD`).
+	 */
+	| {
+			readonly action: "leave-alone";
+			readonly reason: "off-main" | "dirty";
+			readonly branch: string;
+	  };
+
+/**
+ * Decide the post-merge refresh plan from the primary checkout's HEAD state (#2056):
+ *
+ *   1. Not on `main` → `leave-alone` (reason `off-main`). The owner is on their own
+ *      feature branch (or detached); a fast-forward of `main` cannot advance it, and
+ *      yanking them onto `main` is exactly the disruption the refresh must avoid. No-op.
+ *   2. On `main` but dirty → `leave-alone` (reason `dirty`). A fast-forward could disturb
+ *      the owner's uncommitted work, and a stale-but-clean-of-clobber checkout is
+ *      acceptable — failing-to-refresh beats touching uncommitted work. No-op.
+ *   3. On `main` AND clean → `fast-forward`. The only state where the ff is safe: run it.
+ *
+ * The branch check precedes the dirty check on purpose — off-`main` is reported even when
+ * also dirty, because the branch is the binding reason the ff can't run (it can't advance
+ * a checked-out feature branch regardless of tree state). Total over every `HeadState`.
+ */
+export const decideMainRefresh = (head: HeadState): MainRefreshPlan => {
+	if (head.branch !== MAIN_BRANCH) {
+		return {action: "leave-alone", reason: "off-main", branch: fromLabel(head.branch)};
+	}
+	if (head.isDirty) {
+		return {action: "leave-alone", reason: "dirty", branch: MAIN_BRANCH};
+	}
+	return {action: "fast-forward", branch: MAIN_BRANCH};
 };

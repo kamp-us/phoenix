@@ -145,6 +145,38 @@ node packages/pipeline-cli/src/bin.ts main-sync
 node packages/pipeline-cli/src/bin.ts main-sync --execute
 ```
 
+#### `--post-merge` — the gentle post-merge refresh (#2056)
+
+Every pipeline agent works in an isolated `git worktree` (correctly — ADR 0109), so
+*nobody ever pulls the primary checkout*. Under the merge queue (ADR 0132) a PR lands
+GitHub-side with **no local `git merge` on the primary** to advance it, so the owner's
+checkout **silently drifts behind `origin/main`** — and any read of the local tree (the
+next-free ADR number, "does file X exist yet", "is this already on main") is then made
+against stale state. A local `post-merge` lefthook can't fix this (the triggering local
+merge never happens under the queue); the refresh must be driven by a pipeline step that
+*knows* a PR merged (`ship-it` / the orchestrator), which invokes:
+
+```bash
+# after a PR lands: fast-forward the primary IF it's on a clean 'main', else no-op (exit 0)
+node packages/pipeline-cli/src/bin.ts main-sync --post-merge --execute
+```
+
+`--post-merge` is the **HEAD-preserving** counterpart to the default drain-sync — it is
+gentle where the default is aggressive:
+
+- It **only** fast-forwards when the primary is already on a **clean `main`** — the one
+  state where `merge --ff-only` is both possible and non-destructive.
+- On a **non-`main` branch** (the owner is on their own feature branch, or detached) **or a
+  dirty tree**, it **leaves the checkout alone and exits 0** — it never reattaches, never
+  moves HEAD, never touches uncommitted work. Failing-to-refresh is acceptable (a stale
+  checkout is no worse than today); clobbering the owner or yanking them off their branch
+  is not.
+- It still `--ff-only`, so even on the fast-forward path it aborts on any divergence and
+  never force-updates.
+
+The refresh **wiring** into `ship-it`'s post-landed step is tracked separately (#2417); this
+tool ships the safe refresh *mechanism* those steps invoke.
+
 This is a **control-plane** surface (it drives the shared primary checkout); see
 [`.patterns/worktree-agent-constraints.md`](../../.patterns/worktree-agent-constraints.md)
 for the surrounding worktree/primary-checkout discipline it defends.

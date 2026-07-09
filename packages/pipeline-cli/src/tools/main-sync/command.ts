@@ -18,16 +18,27 @@
  *   2. The sync merge is `git merge --ff-only origin/main` — fast-forward only, so it
  *      never creates a merge commit and fails loudly rather than diverging the primary.
  *
+ * TWO policies, one runnable surface:
+ *   - default (drain-sync, #1494/#1573): AGGRESSIVE — reattaches a detached/off-`main`
+ *     HEAD to `main` (clean tree only) before the merge, for the orchestrator's
+ *     before/after-drain sync.
+ *   - `--post-merge` (refresh, #2056): GENTLE — invoked by a pipeline step that knows a
+ *     merge landed (ship-it / the orchestrator). It fast-forwards the primary ONLY when
+ *     it is already on a clean `main`; on a non-`main` branch or a dirty tree it LEAVES
+ *     THE CHECKOUT ALONE and exits 0 (never moves HEAD, never errors). This closes the
+ *     silent-drift hazard under the merge queue (ADR 0132), where a PR lands GitHub-side
+ *     with no local merge to advance the owner's checkout. See `decideMainRefresh`.
+ *
  * DRY-RUN by default: with no flag it probes HEAD, prints the plan it WOULD run, and
- * exits 0 without touching anything (not even a fetch). `--execute` runs the plan:
- * reattach if authorized, then `fetch` + `merge --ff-only`. The git IO uses
- * `execFileSync` directly (mirrors `worktree-sweep` / the `worktree-guard` reaper),
- * so the tool's requirement stays at the Node platform ceiling the registry provides.
+ * exits 0 without touching anything (not even a fetch). `--execute` runs the plan. The
+ * git IO uses `execFileSync` directly (mirrors `worktree-sweep` / the `worktree-guard`
+ * reaper), so the tool's requirement stays at the Node platform ceiling the registry
+ * provides.
  */
 import {execFileSync} from "node:child_process";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {decideMainSync, type HeadState, MAIN_BRANCH} from "./main-sync.ts";
+import {decideMainRefresh, decideMainSync, type HeadState, MAIN_BRANCH} from "./main-sync.ts";
 
 interface GitResult {
 	readonly ok: boolean;
@@ -65,17 +76,81 @@ const treeIsDirty = (): boolean => {
 	return r.stdout.trim() !== "";
 };
 
+/**
+ * The gentle post-merge refresh (#2056) — the HEAD-preserving counterpart to the drain-sync
+ * below. `decideMainRefresh` is the safety policy; this runs it. A `leave-alone` plan is a
+ * clean exit-0 no-op (the whole point: a stale checkout is acceptable, disturbing the owner
+ * is not), so it NEVER errors — only a genuine fetch/merge failure on the fast-forward path
+ * exits non-zero.
+ */
+const runPostMergeRefresh = Effect.fn(function* (head: HeadState, execute: boolean) {
+	const plan = decideMainRefresh(head);
+
+	// ADR 0092 "emit what you scanned": the HEAD state + plan are observable before any action.
+	yield* Console.log(
+		`main-sync --post-merge: HEAD ${head.branch ?? "(detached)"}, tree ${head.isDirty ? "DIRTY" : "clean"} — plan: ${plan.action}${execute ? " (EXECUTE)" : " (dry-run)"}`,
+	);
+
+	if (plan.action === "leave-alone") {
+		yield* Console.log(
+			`  leaving the primary checkout ALONE (${plan.reason === "off-main" ? `on '${plan.branch}', not '${MAIN_BRANCH}'` : "tree is dirty"}) — a fast-forward would ${plan.reason === "off-main" ? "not advance a checked-out feature branch" : "risk uncommitted work"}. No-op (stale is acceptable; clobbering is not).`,
+		);
+		return;
+	}
+
+	if (!execute) {
+		yield* Console.log(
+			`  would refresh: git fetch origin ${MAIN_BRANCH} && git merge --ff-only origin/${MAIN_BRANCH}`,
+		);
+		yield* Console.log("  (dry-run — pass --execute to run; nothing touched)");
+		return;
+	}
+
+	const fetched = runGit(["fetch", "origin", MAIN_BRANCH]);
+	if (!fetched.ok) {
+		yield* Console.error(
+			`main-sync --post-merge: \`git fetch origin ${MAIN_BRANCH}\` failed — ${fetched.stderr.trim() || "network?"}`,
+		);
+		return yield* Effect.sync(() => process.exit(1));
+	}
+
+	// --ff-only is the invariant that makes the refresh safe: it advances main to origin/main
+	// when it's a strict fast-forward and ABORTS on any divergence — never a merge commit,
+	// never a force. On a clean 'main' the worst case is a no-op, never a clobber (#2056).
+	const merged = runGit(["merge", "--ff-only", `origin/${MAIN_BRANCH}`]);
+	if (!merged.ok) {
+		yield* Console.error(
+			`main-sync --post-merge: \`git merge --ff-only origin/${MAIN_BRANCH}\` failed — ${merged.stderr.trim() || "not fast-forwardable"}. The primary has diverged; resolve by hand.`,
+		);
+		return yield* Effect.sync(() => process.exit(1));
+	}
+	yield* Console.log(
+		`main-sync --post-merge: primary checkout fast-forwarded to origin/${MAIN_BRANCH}.`,
+	);
+});
+
 const executeFlag = Flag.boolean("execute").pipe(
 	Flag.withDescription(
 		"actually reattach (if detached+clean) and run fetch + merge --ff-only (default: dry-run, print the plan only)",
 	),
 );
 
+const postMergeFlag = Flag.boolean("post-merge").pipe(
+	Flag.withDescription(
+		"gentle post-merge refresh (#2056): fast-forward ONLY on a clean 'main'; on any other branch or a dirty tree, leave the checkout alone and exit 0 (never reattach, never error)",
+	),
+);
+
 const mainSync = Command.make(
 	"main-sync",
-	{execute: executeFlag},
-	Effect.fn(function* ({execute}) {
+	{execute: executeFlag, postMerge: postMergeFlag},
+	Effect.fn(function* ({execute, postMerge}) {
 		const head: HeadState = {branch: headBranch(), isDirty: treeIsDirty()};
+
+		if (postMerge) {
+			return yield* runPostMergeRefresh(head, execute);
+		}
+
 		const plan = decideMainSync(head);
 
 		// ADR 0092 "emit what you scanned": the HEAD state + plan are observable before any action.
@@ -135,7 +210,7 @@ const mainSync = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Codified orchestrator main-sync — auto-reattach a detached primary HEAD to main, then fetch + merge --ff-only; refuses on a dirty tree (#1573 / #1494 Unit C)",
+		"Codified primary main-sync. Default (drain-sync): auto-reattach a detached primary HEAD to main, then fetch + merge --ff-only; refuses on a dirty tree (#1573 / #1494 Unit C). --post-merge (refresh): fast-forward ONLY on a clean main, else leave the checkout alone and exit 0 (#2056).",
 	),
 );
 

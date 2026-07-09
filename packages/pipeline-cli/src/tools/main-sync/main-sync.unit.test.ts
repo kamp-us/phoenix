@@ -1,9 +1,11 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
 	DETACHED_LABEL,
+	decideMainRefresh,
 	decideMainSync,
 	type HeadState,
 	MAIN_BRANCH,
+	type MainRefreshPlan,
 	type MainSyncPlan,
 } from "./main-sync.ts";
 
@@ -74,6 +76,56 @@ describe("decideMainSync — totality", () => {
 		const actions = new Set(["already-on-main", "reattach", "blocked-dirty"]);
 		for (const c of cases) {
 			assert.isTrue(actions.has(decideMainSync(c).action));
+		}
+	});
+});
+
+describe("decideMainRefresh — fast-forward (the only safe-to-advance state)", () => {
+	it("clean HEAD on main → fast-forward", () => {
+		const plan = decideMainRefresh(head({branch: "main", isDirty: false}));
+		assert.deepStrictEqual(plan, {action: "fast-forward", branch: MAIN_BRANCH});
+	});
+});
+
+describe("decideMainRefresh — leave-alone (never move HEAD, never error)", () => {
+	it("on main but dirty → leave-alone (reason dirty) — refuse to disturb uncommitted work", () => {
+		const plan = decideMainRefresh(head({branch: "main", isDirty: true}));
+		assert.deepStrictEqual(plan, {action: "leave-alone", reason: "dirty", branch: MAIN_BRANCH});
+	});
+
+	it("clean feature branch → leave-alone (reason off-main) — never yank the owner onto main", () => {
+		const plan = decideMainRefresh(head({branch: "umut/wip", isDirty: false}));
+		assert.deepStrictEqual(plan, {action: "leave-alone", reason: "off-main", branch: "umut/wip"});
+	});
+
+	it("detached HEAD → leave-alone (reason off-main) from detached-HEAD", () => {
+		const plan = decideMainRefresh(head({branch: null, isDirty: false}));
+		assert.deepStrictEqual(plan, {
+			action: "leave-alone",
+			reason: "off-main",
+			branch: DETACHED_LABEL,
+		});
+	});
+
+	it("off-main takes precedence over dirty — the branch is the binding reason the ff can't run", () => {
+		// A dirty feature branch is reported off-main, not dirty: an ff of main can't advance a
+		// checked-out feature branch regardless of tree state, so the branch is the real blocker.
+		const plan = decideMainRefresh(head({branch: "umut/wip", isDirty: true}));
+		assert.deepStrictEqual(plan, {action: "leave-alone", reason: "off-main", branch: "umut/wip"});
+	});
+
+	it("NEVER yields a HEAD-moving action — leave-alone or fast-forward only, no reattach/checkout", () => {
+		const cases: HeadState[] = [
+			{branch: "main", isDirty: false},
+			{branch: "main", isDirty: true},
+			{branch: null, isDirty: false},
+			{branch: null, isDirty: true},
+			{branch: "feature", isDirty: false},
+			{branch: "feature", isDirty: true},
+		];
+		const actions = new Set<MainRefreshPlan["action"]>(["fast-forward", "leave-alone"]);
+		for (const c of cases) {
+			assert.isTrue(actions.has(decideMainRefresh(c).action));
 		}
 	});
 });
