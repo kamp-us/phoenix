@@ -891,12 +891,19 @@ this atomic path; this refusal is its enforcement point, not a dead end (#310).
 
 ---
 
-## Step 3 — Confirm the *gating* checks are green (one read, no polling)
+## Step 3 — Confirm the *gating* checks are green (one read, then a bounded CI-settle poll)
 
-You confirm checks; you do **not** own a wait-loop. Read the current check state once. The
-human table and exit code can't cleanly separate red from pending, and neither tells a
-*gating* check from an *informational* one — so read the per-check **names and states** and
-classify by name, not by a bare bucket count:
+You confirm checks. Read the current check state **once** to classify it, then branch. If that
+first read is already decisive — every gating check green, or a gating check red, or a dropped
+trigger — the outcome is settled with no wait. If instead some gating check is still **pending**,
+you do **not** report-and-park hoping a caller re-invokes you: that delegation was the silent-death
+hole of [#1928](https://github.com/kamp-us/phoenix/issues/1928) (a shipper that parked on a poll
+and died left the PR green-but-not-enqueued with **no** FAIL and **no** outcome comment). You run a
+**bounded, in-process CI-settle poll** ([§The bounded CI-settle poll](#the-bounded-ci-settle-poll--never-a-silent-park-1928))
+that always terminates in one of two PR-visible outcomes — the enqueue, or an explicit refusal
+comment — never a silent park. The human table and exit code can't cleanly separate red from
+pending, and neither tells a *gating* check from an *informational* one — so read the per-check
+**names and states** and classify by name, not by a bare bucket count:
 
 ```bash
 gh pr checks $PR --json name,state,bucket --jq '.[] | "\(.bucket)\t\(.name)"'
@@ -948,9 +955,15 @@ in-flight wait):
    merge. Route it to the self-heal lane: invoke [`/heal-ci`](../heal-ci/SKILL.md) with this
    PR/run, then report the result (e.g. `routed to heal-ci`). `heal-ci` decides
    flake-vs-defect; you only refuse on a gating red and hand off — you still do not merge.
-2. **Else, any check pending** (no gating red, some unfinished) → report `checks pending —
-   not yet merge-ready` and stop. The caller re-invokes you after CI settles; blocking on a
-   multi-minute poll inside this atomic stage is out of scope.
+2. **Else, any check pending** (no gating red, some unfinished) → **enter the bounded CI-settle
+   poll** ([§below](#the-bounded-ci-settle-poll--never-a-silent-park-1928)). Do **not** report
+   `checks pending` and park: that stop-path delegated resumption to a caller that may never fire,
+   and because a decline is a *successful* outcome it left the PR green-but-unenqueued with **no**
+   FAIL and **no** outcome comment — the silent stall of #1928. The bounded poll re-reads the checks
+   on a fixed budget and **always** terminates in exactly one of two PR-visible outcomes: it reaches
+   the enqueue (fall through to Step 3.5 → Step 4) the moment the gating suite goes green, or — if
+   the budget is exhausted with a gating check still pending — it posts an explicit
+   `refused — CI still pending after <budget>` outcome comment on the PR and stops.
 3. **Else, the repo runs Actions (`NWF ≥ 1`) but the head SHA has zero workflow runs
    (`NRUNS == 0`)** → the **dropped-trigger state** (Step 3z). This is **not** green: an empty
    check set with *no runs behind it* is "CI never fired," not "CI ran and passed." Do **not**
@@ -966,6 +979,104 @@ The gating set is, by construction, the suite the run-evidence bundle attests SH
 Step 3.5 (lint / format / typecheck, unit tests, validate skill frontmatter, integration
 when it runs) — Step 3 is the cheap early read, Step 3.5 is the authority; if the two ever
 disagree, Step 3.5 wins.
+
+### The bounded CI-settle poll — never a silent park (#1928)
+
+Branch 2 (gating checks still pending) does **not** hand resumption to "the caller re-invokes you
+after CI settles." That delegation was a **liveness hole**: nothing guaranteed the re-invocation
+ever fired, and because a decline is a *successful* outcome (no FAIL, no error), a shipper that
+parked on a background poll and died left the PR **green-but-not-enqueued with zero signal** — no
+`added_to_merge_queue` event, no outcome comment, invisible until a human re-polled merge state
+([#1928](https://github.com/kamp-us/phoenix/issues/1928), observed on PR #1916). The remedy is a
+**bounded, in-process** poll the shipper runs to completion itself: it either reaches the enqueue
+or emits a durable, PR-visible refusal — **every** exit from the pending-wait is observable.
+
+**This deliberately amends Step 3's former "one read, no polling" invariant, narrowly.** The old
+invariant existed to stop the atomic stage from blocking on an *unbounded* synchronous wait; the
+replacement keeps that intent — the poll is **bounded** by a fixed budget, and each pass emits
+progress so a no-progress watchdog never fires — while closing the silent-death hole. It does
+**not** conflict with ADR [0132](https://github.com/kamp-us/phoenix/blob/main/.decisions/0132-merge-queue-for-base-freshness.md)'s
+async merge-queue model: 0132 makes the **final merge** async (the queue merges the batch
+server-side *after* the enqueue), which is untouched. This poll spans only the window *before* the
+enqueue — waiting for the PR's own gating checks to settle so the enqueue can happen at all; once
+enqueued, the merge remains the queue's async job.
+
+`ci_settle_wait` re-runs the same Step-3 classification on a loop until the budget runs out. The
+budget is a fixed, tunable ceiling (default ~10 min at a 30s cadence) — long enough to outlast a
+normal CI settle, bounded so a stuck check can never wait forever. It is entered **only from
+branch 2**, i.e. with the pending set already non-empty (so runs are known to have fired) — which
+is why a later-empty pending set inside the loop is a genuine green, not the dropped-trigger
+false-green Step 3z guards (that state is branch 3, never reached from here):
+
+```bash
+SETTLE_BUDGET_SECS="${SHIP_IT_SETTLE_BUDGET_SECS:-600}"    # total in-process wait ceiling — BOUNDED, never unbounded
+SETTLE_INTERVAL_SECS="${SHIP_IT_SETTLE_INTERVAL_SECS:-30}" # cadence; each pass emits progress so a no-progress watchdog never fires
+ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused (budget-exhausted OR head moved mid-settle; comment posted) · 2=gating red mid-wait→heal-ci
+  local waited=0 bucket name red pending headnow
+  while :; do
+    red=""; pending=""
+    while IFS=$'\t' read -r bucket name; do
+      case "$bucket" in
+        # same known-informational carve-out as Step 3: a red preview-deploy/teardown check never gates
+        fail)    case "$name" in "deploy (web)"|"cleanup (web,"*) ;; *) red="$red $name" ;; esac ;;
+        pending) pending="$pending $name" ;;
+      esac
+    done < <(gh pr checks "$PR" --json name,state,bucket --jq '.[] | "\(.bucket)\t\(.name)"')
+    if [ -n "$red" ]; then
+      echo "gating check went red during settle-wait ($red) — routing to heal-ci"; return 2
+    fi
+    if [ -z "$pending" ]; then
+      # TOCTOU guard (secondary #1928 note): the in-process poll widens the window between Step 2/2b's
+      # SHA-bound verdict check (bound to $CURRENT_HEAD) and the enqueue. Unlike the old park→fresh-reinvoke
+      # (which re-ran Step 2b on resume), this in-process resume enters at Step 3.5 and does NOT re-run
+      # Step 2b — so a head-move during the settle would enqueue a head whose verdict/run-evidence predate
+      # it. Re-confirm the head is still the verified one before returning green; if it moved, refuse (same
+      # durable-comment/stop disposition as budget-exhaustion) so a re-dispatch re-runs Step 2b on the moved head.
+      headnow="$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')"
+      if [ -n "$headnow" ] && [ "$headnow" != "$CURRENT_HEAD" ]; then
+        gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — head moved during CI-settle (verified ${CURRENT_HEAD}, now ${headnow}) — **not enqueued**. The SHA-bound verdict and run-evidence (Step 2/2b) predate this head; re-dispatch ship-it to re-verify the moved head — idempotent, a re-ship on a re-verified head enqueues cleanly (#1928)." >/dev/null
+        echo "refused — head moved during settle-wait (${CURRENT_HEAD} → ${headnow}); Step 2b must re-run — not enqueued"; return 1
+      fi
+      echo "gating checks settled green after ${waited}s — proceeding to Step 3.5 → enqueue"; return 0
+    fi
+    if [ "$waited" -ge "$SETTLE_BUDGET_SECS" ]; then
+      # Budget exhausted, still pending → the ONE required durable signal: an explicit PR-visible refusal.
+      # A plain outcome note, NOT a review-* verdict marker — so it never blocks a later idempotent re-ship.
+      gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — CI still pending after ${SETTLE_BUDGET_SECS}s (gating checks unfinished:${pending}) — **not enqueued**. This head is not yet merge-ready; re-dispatch ship-it once CI settles — idempotent, a re-ship on the now-green head enqueues cleanly (#1928)." >/dev/null
+      echo "refused — CI still pending after ${SETTLE_BUDGET_SECS}s (PR outcome comment posted) — not enqueued"; return 1
+    fi
+    echo "checks still pending after ${waited}s (${pending# }) — re-reading in ${SETTLE_INTERVAL_SECS}s (budget ${SETTLE_BUDGET_SECS}s)"
+    sleep "$SETTLE_INTERVAL_SECS"; waited=$((waited + SETTLE_INTERVAL_SECS))
+  done
+}
+
+ci_settle_wait; SETTLE_RC=$?
+case "$SETTLE_RC" in
+  0) : ;;         # settled green → fall through to Step 3.5 → Step 4 (enqueue)
+  2)              # gating red mid-wait → route to /heal-ci (Step 3 branch 1's disposition), then STOP — never enqueue.
+     # This arm MUST terminate the ship, exactly like `1)`: a check that goes red DURING the poll is a
+     # gating red, and Step 3 branch 1's disposition is "do NOT merge; invoke /heal-ci and report." Invoke
+     # /heal-ci for this PR (the same agent action Step 3 branch 1 takes), then exit — falling through here
+     # would enqueue a red PR, the exact merge-safety hole this arm exists to close (#1928).
+     echo "routed to heal-ci — gating check went red mid-settle for PR #$PR; not enqueued"; exit 0 ;;
+  1) exit 0 ;;    # refused (budget-exhausted, or head moved mid-settle) — durable outcome comment posted; a successful decline, no longer silent (#1928)
+esac
+```
+
+The three returns are the **whole guarantee**: `0` reaches the enqueue, `2` routes a mid-wait red
+to `heal-ci` (branch 1's disposition) **and stops the ship** — it never falls through to Step 3.5 →
+Step 4 — and `1` posts the durable refusal and stops. Both non-zero returns `exit` the shipper; only
+`0` proceeds to enqueue. There is **no fourth path** where the shipper leaves the pending-wait without
+either enqueuing or landing a PR-visible outcome — the silent park of #1928 is structurally
+unreachable, and a mid-wait gating-red can never slip through to the merge queue.
+
+**Idempotency is preserved.** The refusal comment is a plain outcome note, not a `review-*` verdict
+marker and not a merge blocker, so a later re-dispatch on the now-green head clears every guard and
+enqueues cleanly — no double-enqueue, no false "already shipped." Re-running `ci_settle_wait` on a
+green head returns `0` on its first read (zero waiting) and proceeds straight to the enqueue. As
+defense-in-depth, an orchestrator-side stall detector (out of this skill's scope) may still flag any
+`review-*`-PASS + CI-green + OPEN PR with no queue entry and no outcome comment as a stalled ship —
+but the in-skill bounded poll makes that a backstop, not the only signal.
 
 ---
 
@@ -994,10 +1105,11 @@ signal and could hang indefinitely on a never-run PR.)
 **The remedy is a bounded close→reopen nudge.** Closing then reopening the PR re-emits the
 `pull_request` trigger with the **head ref unchanged**, so the dropped workflows fire.
 **ship-it performs the nudge itself** — it is a discrete server-side PR action like the merge,
-not a wait-loop — then **stops**; the *re-read after CI settles is the caller re-invoking
-ship-it*, the same atomic contract as `checks pending` (Step 3 owns no poll). The nudge is
-**bounded to at most once per head SHA**, enforced statelessly against the PR's own
-reopened-event history so a genuinely-stuck producer can never loop:
+not a wait-loop — then **stops** and leaves a **durable, PR-visible outcome comment** so the park
+is observable, not silent (the same #1928 rule the branch-2 poll enforces): a re-dispatch after CI
+settles resumes the ship. The nudge is **bounded to at most once per head SHA**, enforced
+statelessly against the PR's own reopened-event history so a genuinely-stuck producer can never
+loop:
 
 ```bash
 # Have we ALREADY nudged this exact head? A nudge leaves a `reopened` event; count the ones
@@ -1009,6 +1121,9 @@ NUDGES=$(gh api "repos/$REPO/issues/$PR/events?per_page=100" \
   --jq "[.[] | select(.event==\"reopened\") | .created_at | select(. > \"$HEAD_PUSHED\")] | length")
 
 if [ "${NUDGES:-0}" -ge 1 ]; then
+  # Nudge exhausted → refuse and hand to a human, but leave a durable PR-visible signal (#1928):
+  # never a silent stop even on this dead-end path.
+  gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: unverified (no runs fired — nudge exhausted, producer may be stuck) — **not enqueued**. This head was already close→reopened once and CI still fired zero runs; handing to a human (#1928)." >/dev/null
   echo "unverified (no runs fired — nudge exhausted, producer may be stuck)"; exit 0   # refuse, hand to human
 fi
 
@@ -1017,7 +1132,9 @@ fi
 # untouched, so every SHA-bound review verdict (Step 2) survives the reopen.
 gh api -X PATCH "repos/$REPO/pulls/$PR" -f state=closed >/dev/null
 gh api -X PATCH "repos/$REPO/pulls/$PR" -f state=open   >/dev/null
-echo "nudged (close→reopen) — CI re-triggered, not yet merge-ready"; exit 0   # stop; caller re-invokes after CI settles
+# Durable, PR-visible outcome so the park is observable (#1928): a re-dispatch after CI settles resumes the ship.
+gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: nudged (close→reopen) — CI re-triggered, **not enqueued** yet. The head SHA had zero workflow runs (dropped trigger); ship-it close→reopened it once to re-emit the trigger. Re-dispatch ship-it once CI settles — idempotent (#1928)." >/dev/null
+echo "nudged (close→reopen) — CI re-triggered, not yet merge-ready"; exit 0   # stop; re-dispatch after CI settles resumes the ship
 ```
 
 The nudge **never bypasses verification** — it only restores the *missing runs*. A nudged PR
@@ -1652,11 +1769,14 @@ If you refused to enqueue, the reason line is the whole point: `awaiting control
 review-skill PASS)`, `unverified (verdict
 not bound to current head)` (a SHA-less or stale-head verdict — Step 2b, ADR 0058), `latest
 verdict is FAIL (<gate>)`, `routed to heal-ci` (a gating red check, handed to the self-heal lane),
-`checks pending`, the dropped-trigger outcomes (Step 3z): `nudged (close→reopen) — CI
-re-triggered, not yet merge-ready` (the head SHA had zero workflow runs; ship-it close→reopened
-it once to re-emit the trigger and stopped — re-invoke after CI settles) or `unverified (no runs
-fired — nudge exhausted, producer may be stuck)` (already nudged once and still zero runs →
-handed to a human), `no linked issue`, or a run-evidence refusal (Step 3.5):
+`refused — CI still pending after <budget>` (the bounded CI-settle poll ran to its budget with a
+gating check still unfinished — Step 3, #1928; a durable PR outcome comment is posted, and a
+re-dispatch on the now-green head enqueues cleanly), the dropped-trigger outcomes (Step 3z):
+`nudged (close→reopen) — CI re-triggered, not yet merge-ready` (the head SHA had zero workflow
+runs; ship-it close→reopened it once to re-emit the trigger, posted a durable PR outcome comment,
+and stopped — re-dispatch after CI settles) or `unverified (no runs fired — nudge exhausted,
+producer may be stuck)` (already nudged once and still zero runs → handed to a human, with a
+durable PR outcome comment), `no linked issue`, or a run-evidence refusal (Step 3.5):
 `unverified (no run-evidence bundle)`, `unverified (unsupported bundle schemaVersion: <v>)`,
 `unverified (stale run-evidence bundle: …)`, or `run-evidence checks failed (<names>)`. A
 refusal is a successful run — shipping the wrong PR is the only failure mode that matters.
