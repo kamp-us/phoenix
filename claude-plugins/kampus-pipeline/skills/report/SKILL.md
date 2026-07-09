@@ -104,12 +104,16 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
    you know that it lacks as a comment there, and return to your task.
 4. File it, applying only `status:needs-triage`.
 
-Write the body to a temp file first and read it into `$BODY` so multi-line markdown and backticks survive the shell intact, then make the `gh api` call. Allocate the temp file with `mktemp` and thread it through `$BODY_FILE` — concurrent report runs share `/tmp`, so a fixed path would let two runs interleave bodies and file each other's content:
+Stream the composed body **straight into the create call over stdin** — there is no named temp file to collide on and no shell variable to reuse stale, so two concurrent `report` runs cannot interleave bodies (the cross-filing hazard is structurally unrepresentable, not merely warned against — #2002). `-F body=@-` reads the `body` field verbatim from stdin, and the **quoted** heredoc (`<<'EOF'`) passes the markdown through untouched — so multi-line markdown, backticks, and nested fences survive intact, the "backticks survive the shell" guarantee with no round-trip through a variable:
 
 ```bash
-# 1. Write the five sections + footer into a per-run temp file.
-BODY_FILE="$(mktemp /tmp/report-body.XXXXXX)"
-cat > "$BODY_FILE" <<'EOF'
+# The five sections + a blank line + the footer.sh block, piped straight into the
+# REST create over stdin. No mktemp, no $BODY_FILE, no `$(cat …)` — nothing shared to
+# collide on. `-F body=@-` consumes the whole stream as the body field; `-f title`/
+# `-f labels[]` stay ordinary POST fields. The quoted `<<'EOF'` heredoc means the shell
+# never touches the markdown, so backticks and nested ``` fences file intact.
+{
+  cat <<'EOF'
 ## What I was doing
 …
 
@@ -124,20 +128,16 @@ cat > "$BODY_FILE" <<'EOF'
 
 ## Suggested next step (non-binding)
 …
-
----
-<sub>Filed by an agent · session `abc123…` · branch `<prefix>/some-branch` · 2026-06-12T08:14:01Z</sub>
 EOF
-
-# 2. Read it into $BODY so markdown/backticks survive the shell intact.
-BODY="$(cat "$BODY_FILE")"
-
-# 3. Create the issue with only the status:needs-triage label.
-gh api repos/$REPO/issues \
+  echo   # blank line before the footer block
+  claude-plugins/kampus-pipeline/skills/report/footer.sh   # emits its own `---` + <sub>… line
+} | gh api repos/$REPO/issues \
   -f title="<title>" \
-  -f body="$BODY" \
+  -F body=@- \
   -f "labels[]=status:needs-triage"
 ```
+
+The body never lands on disk under a shared name and never round-trips through a variable, so the two named failure paths this hardening closes — "simplify" to a fixed `/tmp/report-body.md`, or reuse one `$BODY_FILE` across two creates — have no surface to occur on: there is no file path to fix and no variable to reuse.
 
 5. Report back to the user in one line: the issue number and URL (`gh api` returns them as `.number` and `.html_url`). Then return to your original task — don't expand into triaging or fixing what you just filed.
 
