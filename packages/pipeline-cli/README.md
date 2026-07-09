@@ -54,6 +54,35 @@ node packages/pipeline-cli/src/bin.ts version
 node packages/pipeline-cli/src/bin.ts <tool> …
 ```
 
+### `epic-lock` — the ADR-0059 `status:planning` epic-lock (#2098)
+
+The two-layer epic-plan lock the `plan-epic` / `review-plan` skills use to serialize
+concurrent mutation of one epic's children, extracted from the ~50-line inline `jq` glue
+each skill hand-rolled. It runs the ADR-0115 agent-distinguishable-claim protocol over the
+ADR-0059 `status:planning` lock-label:
+
+- **`epic-lock acquire <epic>`** — coarse-label Rule-0 defer → POST the label (fail-closed on
+  a 422 missing label) → POST the `claim: <session-id> · <ts>` comment → checkpoint-GET →
+  resolve the **earliest authorized claim** (write+ collaborators only, ADR 0055). **Exits 0
+  only when the lock is ours;** every fail-closed back-off (held label, 422 missing label,
+  failed claim post, lost co-acquire, missing `CLAUDE_CODE_SESSION_ID`) prints a reason on
+  stderr and exits **non-zero**, so a caller branches on exit status.
+- **`epic-lock release <epic>`** — retract our own claim comment(s) (re-found by session id)
+  and DELETE the label (404-benign, **loud** on any other DELETE failure — a swallowed DELETE
+  leaks the lock and wedges the epic).
+
+The session id is `$CLAUDE_CODE_SESSION_ID`; `--session` overrides it (the orchestrated
+delegated-token path, and tests). The pure claim-resolution decision (`claim-resolution.ts`)
+is IO-free and unit-tested table-driven; `github.ts` is the REST-only `gh api` boundary — the
+**template `github.ts` service pattern** the epic #994 Phase-2 families copy.
+
+```bash
+# acquire (exit 0 = held by us; non-zero = backed off, do not mutate)
+node packages/pipeline-cli/src/bin.ts epic-lock acquire 1234 && echo "hold the lock"
+# release on every terminal path
+node packages/pipeline-cli/src/bin.ts epic-lock release 1234
+```
+
 ### `leak-guard` — personal-data leak gate for shared artifacts (#173, #2357)
 
 Two modes, one deny-list-per-mode core:

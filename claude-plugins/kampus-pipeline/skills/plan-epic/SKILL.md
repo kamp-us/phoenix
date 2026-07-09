@@ -132,65 +132,29 @@ means a caller keying on exit status alone cannot tell "planned" from "backed of
 the echo is the signal, so a wrapper must read it (or re-run) rather than treat `exit 0` as "the
 epic was planned".
 
+The whole protocol — the missing-session fail-closed, the coarse-label Rule-0 defer, the
+label `POST` (fail-closed on a 422 missing label), the claim-comment `POST`, the checkpoint-GET,
+and the earliest-authorized-claim resolution — lives in one deterministic, unit-tested tool,
+`pipeline-cli epic-lock` (ADR 0059/0115, #2098), so this skill **calls** it rather than
+re-implementing ~50 lines of `jq` inline. Resolve the tool in-repo first, published fallback
+(ADR 0064), then branch on its exit status:
+
 ```bash
-# 0. fail-closed on a missing session id: the claim is the ONLY agent-distinguishable signal under
-#    the shared `usirin` login — with no token a co-acquire is unresolvable, so we never mutate.
-if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
-  echo "no CLAUDE_CODE_SESSION_ID in env — cannot post an agent-distinguishable planning claim. BACK OFF, do not mutate."
-  exit 0
+# Resolve the epic-lock CLI once — in-repo first, published fallback (ADR 0064; epic #994).
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  LOCK="node packages/pipeline-cli/src/bin.ts epic-lock"   # phoenix-local: the in-repo consolidated bin
+else
+  LOCK="pnpm dlx @kampus/pipeline-cli@0.1.0 epic-lock"     # foreign install: the published CLI
 fi
 
-# 1. coarse gate: defer to a label already held (Rule 0 — never evict a holder that was there first).
-HELD=$(gh api repos/$REPO/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
-# gh --jq prints "" (not "null") for a jq null, so test non-empty: index() is a numeric position when held, empty when absent.
-if [ -n "$HELD" ]; then
-  echo "epic #<EPIC> is being planned by another run (status:planning held) — BACK OFF, do not mutate."
-  exit 0   # the held lock is the holder's, not ours — do NOT release it.
+# Acquire the two-layer lock. `epic-lock acquire` runs the WHOLE ADR-0115 protocol over $CLAUDE_CODE_SESSION_ID
+# and exits 0 ONLY when the lock is ours; every fail-closed back-off — a held label, a 422 missing label, a
+# failed claim post, a lost co-acquire, a missing session id — prints its reason on stderr and exits NON-ZERO.
+# Branch on exit status — never mutate on a non-zero.
+if ! $LOCK acquire <EPIC>; then
+  exit 0   # backed off (held lock / setup gap / lost race is not a plan-epic failure) — re-run later.
 fi
-
-# 2. POST the coarse label — proceed ONLY if it lands (fails closed on a 422 missing label / IO fault).
-if ! gh api repos/$REPO/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
-  echo "could not acquire status:planning on epic #<EPIC> (422 missing label? transient gh fault?) — BACK OFF, do not mutate."
-  exit 0   # FAILS CLOSED: the POST didn't land, so we DON'T hold the lock — never mutate unlocked.
-fi
-
-# 3. post OUR agent-distinguishable claim ON THE EPIC (the §7 claim-comment primitive, ADR 0115 §1).
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-MYCLAIM=$(gh api repos/$REPO/issues/<EPIC>/comments -f "body=claim: $CLAUDE_CODE_SESSION_ID · $NOW" --jq .id)
-if [ -z "$MYCLAIM" ]; then
-  # FAILS CLOSED: we can't prove ownership, so we must not mutate. Leave the shared label (a co-racer
-  # may legitimately win on it) — never DELETE it here; a leaked label is human-cleared, a double-plan is not.
-  echo "failed to post the planning claim on epic #<EPIC> — BACK OFF, do not mutate (the status:planning label may be leaked; a human clears it)."
-  exit 0
-fi
-
-# 4. checkpoint GET — resolve co-acquirers to ONE holder: EARLIEST AUTHORIZED claim wins (ADR 0115 §2).
-cf=$(mktemp); gh api "repos/$REPO/issues/<EPIC>/comments?per_page=100" --paginate > "$cf"
-# authors of any claim marker on the epic
-claimAuthors=$(jq -r '[.[] | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*[0-9a-f-]{36}\\b")) | .user.login] | unique | .[]' "$cf")
-# keep only write+ collaborators (the ADR 0055 trust root) — a forged claim from a non-collaborator is ignored.
-authorized='[]'
-while IFS= read -r a; do
-  [ -z "$a" ] && continue
-  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
-  case "$perm" in admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;; esac
-done <<<"$claimAuthors"
-# the EARLIEST authorized claim — min (created_at, comment id) — is the canonical winner; read its session.
-WINSID=$(jq -r --argjson authorized "$authorized" '
-  [.[] | select(.user.login | IN($authorized[]))
-       | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*[0-9a-f-]{36}\\b"))
-       | {sid: (.body | capture("(?i)^\\s*\\**\\s*claim:\\s*(?<s>[0-9a-f-]{36})").s), at: .created_at, id: .id}]
-  | sort_by([.at, .id]) | first | .sid // ""' "$cf")
-
-# 5. we win ONLY if the earliest authorized claim is ours. Else retract OUR claim and back off — NEVER the label.
-if [ "$WINSID" != "$CLAUDE_CODE_SESSION_ID" ]; then
-  echo "lost the status:planning co-acquire on epic #<EPIC> (earliest authorized claim is another run's) — BACK OFF, do not mutate."
-  gh api -X DELETE repos/$REPO/issues/comments/$MYCLAIM >/dev/null 2>&1 \
-    || echo "WARNING: failed to retract our planning claim $MYCLAIM on epic #<EPIC> — retract it by hand."
-  exit 0   # do NOT DELETE the shared status:planning label — the WINNER still holds it.
-fi
-# WON. WE hold the lock (label + earliest claim). WE must release BOTH our claim and the label
-# on EVERY terminal path (below).
+# WON. WE hold the lock (label + earliest claim). Release it on EVERY terminal path (below).
 ```
 
 **Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
@@ -203,25 +167,12 @@ the way out — run this exact `DELETE` once you reach **any** terminal state (P
 or a failure/abort mid-mutation):
 
 ```bash
-# release: run on EVERY exit path AFTER a WON acquire (done, park, or fault mid-mutation). Two parts.
-
-# (a) retract OUR own planning-claim comment(s). Re-find them by OUR session id — the acquire's
-#     $MYCLAIM was captured in a PRIOR bash process and is gone here (each call is its own shell).
-cf=$(mktemp); gh api "repos/$REPO/issues/<EPIC>/comments?per_page=100" --paginate > "$cf"
-for cid in $(jq -r --arg me "$CLAUDE_CODE_SESSION_ID" '.[] | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*" + $me + "\\b")) | .id' "$cf"); do
-  gh api -X DELETE repos/$REPO/issues/comments/$cid >/dev/null 2>&1 \
-    || echo "WARNING: failed to retract our planning claim $cid on epic #<EPIC> — clear it by hand."
-done
-
-# (b) release the coarse label. Do NOT fire-and-forget — a silently-failed DELETE LEAKS the lock and
-#     wedges the epic, the exact catastrophe this design prevents. A 404 is benign (label already gone —
-#     released, or never landed); ANY other failure means the lock may still be held, so surface it LOUDLY.
-if ! relerr=$(gh api -X DELETE repos/$REPO/issues/<EPIC>/labels/status:planning 2>&1); then
-  case "$relerr" in
-    *"HTTP 404"*|*"Label does not exist"*) : ;;  # already released / never acquired — nothing to free
-    *) echo "WARNING: failed to release status:planning on epic #<EPIC> — the epic-lock may be LEAKED (still held). Re-run this DELETE or clear the label by hand; until cleared, plan-epic/review-plan back off on this epic. ($relerr)" ;;
-  esac
-fi
+# release: run on EVERY exit path AFTER a WON acquire (done, park, or fault mid-mutation).
+# `epic-lock release` does BOTH parts: (a) retract OUR OWN claim comment(s) — re-found by session id,
+# since the acquire ran in a PRIOR process and its comment id is gone here; and (b) drop the coarse
+# label — a 404 is benign (already released), but ANY other DELETE failure is surfaced LOUDLY (a
+# silently-swallowed DELETE LEAKS the lock and wedges the epic, the exact ADR-0059 catastrophe).
+$LOCK release <EPIC>
 ```
 
 The release fires on **every** terminal path on purpose: you drive this as an LLM agent across

@@ -19,6 +19,7 @@ import {crabboxManifestCommand} from "./tools/crabbox-manifest/command.ts";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
 import {designTokenGuardCommand} from "./tools/design-token-guard/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
+import {epicLockCommand} from "./tools/epic-lock/command.ts";
 import {evalHarnessCommand} from "./tools/eval-harness/command.ts";
 import {failureClassifierCommand} from "./tools/failure-classifier/command.ts";
 import {fanoutGuardCommand} from "./tools/fanout-guard/command.ts";
@@ -77,6 +78,7 @@ export type RegisteredTool = Command.Command<any, any, object, unknown, Platform
 export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	versionCommand,
 	epicLedgerCommand,
+	epicLockCommand,
 	decisionsIndexCommand,
 	readmeGuardCommand,
 	worktreeGuardCommand,
