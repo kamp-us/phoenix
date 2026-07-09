@@ -46,7 +46,13 @@ Three skills run **standalone**, outside the linear flow:
 - **`adr`** records an architecture decision into `.decisions/`.
 - **`deslop-comments`** strips noise comments from the working tree.
 
-## The 13 skills
+One skill runs **upstream** of the linear flow, in the ideation layer:
+
+- **`wayfinder`** charts a fuzzy destination into a living `wayfinder:map` issue and works its
+  open frontier of investigation/decision tickets until a concrete plan is ready to hand to
+  `triage` / `plan-epic` — the pre-triage front door (epic #2421).
+
+## The 14 skills
 
 | Skill | One-line |
 |-------|----------|
@@ -63,6 +69,7 @@ Three skills run **standalone**, outside the linear flow:
 | `adr` | Record an architecture decision (Context / Decision / Consequences) into `.decisions/NNNN-slug.md` and the index, following supersede rules. |
 | `deslop-comments` | Ruthlessly cut comments that bury the code without earning their place — keeping load-bearing notes, collapsing duplicated "why" to ADR pointers. |
 | `doctor` | Preflight a repo against the pipeline prerequisites (gh auth + scope, the 15 required labels, repo resolution, a CI signal, npm deps) and print a tiered pass/fail checklist with the exact fix command for each gap. |
+| `wayfinder` | The ideation-layer front door, upstream of the pipeline: chart a fuzzy destination into a living `wayfinder:map` issue, then work its open frontier of investigation/decision tickets — recording answers, graduating cleared fog, surfacing founder-decision-forks — until a concrete plan is ready for `triage` / `plan-epic` (epic #2421). |
 
 ## Install
 
