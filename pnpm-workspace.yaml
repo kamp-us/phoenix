@@ -40,7 +40,7 @@ catalog:
   # read via `experimental.joins` 500s ("Unknown relational filter field"). These pins are coupled
   # by that incompatibility — don't assume a bump makes them join-compatible (no RQB-v2 adapter
   # release exists yet). See #2286 (guard) / #2291 (re-enable joins via pnpm patch).
-  better-auth: ^1.6.10
+  better-auth: ^1.6.13
   better-call: 1.3.5
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
