@@ -12,6 +12,13 @@ import {REFUSE_EXIT_CODE} from "./command.ts";
 // modeled stub (CLAUDE.md: ground platform-behavior claims in the real platform).
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
 
+// Every test here spawns `node bin.ts` through a REAL git ref-transaction, and git ≥ 2.45 (CI/prod
+// runs 2.55) fires the `reference-transaction` hook once per state (preparing/prepared/committed) AND
+// again for the AUTO_MERGE ref of a `checkout` — several node cold-starts per git op. On CI that blows
+// vitest's 5000ms default (the #2415 timeouts). A generous suite-level timeout keeps the real-git
+// tripwires green on the deployed git without weakening what they assert.
+const HOOK_TEST_TIMEOUT = 60_000;
+
 interface RunResult {
 	readonly code: number;
 	readonly stderr: string;
@@ -95,7 +102,7 @@ afterAll(() => {
 	if (root) rmSync(root, {recursive: true, force: true});
 });
 
-describe("ref-guard reference-transaction — real git facts", () => {
+describe("ref-guard reference-transaction — real git facts", {timeout: HOOK_TEST_TIMEOUT}, () => {
 	it("REFUSES a diverging refs/heads/main move (non-fast-forward of origin/main) in 'prepared'", async () => {
 		const stdin = `${fx.base} ${fx.divergent} refs/heads/main\n`;
 		const {code, stderr} = await runGuard("prepared", stdin, fx.dir);
@@ -155,7 +162,9 @@ describe("ref-guard reference-transaction — real git facts", () => {
 // because git refuses a `-f` on the CURRENTLY-checked-out branch before any hook runs — the
 // incident's `branch: Reset to HEAD` was a checkout-B/reset on the checked-out branch, of
 // which update-ref is the minimal ref-transaction form.
-describe("ref-guard — installed reference-transaction hook fires on a BARE git ref-move (no pipeline command)", () => {
+describe("ref-guard — installed reference-transaction hook fires on a BARE git ref-move (no pipeline command)", {
+	timeout: HOOK_TEST_TIMEOUT,
+}, () => {
 	// Mirror the lefthook.yml wiring EXACTLY: `|| status=$?` (never a bare call, so an
 	// inherited `set -e` can't abort as a side effect) + abort ONLY on the dedicated refuse
 	// code 3; every other non-zero (CLI absent / crash) fail-opens. `cmd` is the guard
@@ -355,7 +364,10 @@ describe("ref-guard — installed reference-transaction hook fires on a BARE git
 		);
 	});
 
-	it("does NOT abort a `git checkout main` reattach on the PRIMARY (a symref retarget, no HEAD ref update)", () => {
+	// The load-bearing PULLER flow (#2415): git ≥ 2.45 (CI/prod 2.55) queues this reattach as a HEAD
+	// update whose new value is the SYMREF `ref:refs/heads/main` (git 2.40 queues no HEAD line at all).
+	// Either way it is an ATTACH, never a detach — the guard must allow it on both versions.
+	it("does NOT abort a `git checkout main` reattach on the PRIMARY (HEAD → symref, git ≥ 2.45; no HEAD line, git 2.40)", () => {
 		git(fx.dir, "checkout", "-q", "--detach", fx.base); // detach BEFORE the hook is installed
 		installHook(fx.dir);
 		let ok = true;

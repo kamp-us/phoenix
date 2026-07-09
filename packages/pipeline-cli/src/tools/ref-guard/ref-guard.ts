@@ -44,6 +44,17 @@ export const GUARDED_REF = "refs/heads/main";
  */
 export const HEAD_REF = "HEAD";
 
+/**
+ * The prefix git ≥ 2.45 stamps on a SYMREF value in a `reference-transaction` line when the update
+ * retargets a symbolic ref rather than moving it to an object — e.g. reattaching HEAD queues
+ * `<old> SP ref:refs/heads/main SP HEAD`. Grounded by direct measurement on git 2.55 (below); it is
+ * the signal that a HEAD update is an ATTACH (reattach / branch switch), never a detach.
+ */
+export const SYMREF_VALUE_PREFIX = "ref:";
+
+/** A `reference-transaction` value naming a symbolic-ref target (`ref:refs/…`) rather than an object id. */
+const isSymrefValue = (value: string): boolean => value.startsWith(SYMREF_VALUE_PREFIX);
+
 /** Git's all-zeroes object name — the sentinel for a ref being created anew (old) or deleted (new). */
 export const ZERO_OID = "0000000000000000000000000000000000000000";
 
@@ -170,19 +181,27 @@ export interface CheckoutContext {
  * `HEAD` off its branch and corrupting the checkout. `decideRefUpdate`'s `refs/heads/main` scope
  * never sees this: a detach moves `HEAD`, not `refs/heads/main`, so it is a separate decision.
  *
- * The signal is grounded in git's real `reference-transaction` behavior (verified against git
- * 2.40, not assumed — the AC's requirement): a detaching checkout queues an update whose ref-name
- * is exactly `HEAD`, whose new value is a concrete commit, with NO sibling `refs/heads/*` update
- * to that same commit in the transaction. An ATTACHED move — a commit/reset on the current branch,
- * including the unborn-branch first commit — queues `HEAD` PAIRED with its `refs/heads/<branch>`
- * update to the same new oid; an attached `switch <branch>` retargets the HEAD symref and queues
- * no `HEAD` update at all. So "HEAD moved to a commit that no branch in this transaction is also
- * moving to" isolates exactly a detach, and only a detach.
+ * The signal is grounded in git's real `reference-transaction` behavior, measured directly on BOTH
+ * deployed git versions — local 2.40.1 AND CI/production 2.55.0 (git changed HEAD emission between
+ * them: the symref-in-transaction work of git 2.45; #2415/#2270 regrounding). A detaching checkout
+ * (`checkout <sha>` / `switch --detach`) queues, in the `prepared` state, an update whose ref-name
+ * is exactly `HEAD` and whose NEW VALUE is a CONCRETE object id — identical on 2.40 and 2.55. The
+ * two legitimate look-alikes differ by version, and BOTH must be allowed:
+ *   - a REATTACH / branch switch (`checkout main`, `switch <branch>`) queues, on git ≥ 2.45, a HEAD
+ *     update whose new value is the SYMREF `ref:refs/heads/<branch>` (not an object) — and on 2.40
+ *     queues no `HEAD` update at all. `isSymrefValue` catches the ≥2.45 form; the 2.40 form has no
+ *     line to catch. Either way: never a detach.
+ *   - an ATTACHED commit/reset on the current branch queues, on 2.40, `HEAD` PAIRED with its
+ *     `refs/heads/<branch>` update to the SAME new oid; on 2.55 the `prepared` batch carries only
+ *     the `refs/heads/<branch>` line (no HEAD). The `branchTargets` pairing catches the 2.40 form.
+ * So a detach is exactly: a HEAD update to a concrete oid that is NEITHER a symref value NOR paired
+ * with a same-oid branch move in the batch. This isolates a detach on both versions, and only a
+ * detach — never the reattach the shared-primary PULLER relies on.
  *
  * Scoped to the PRIMARY checkout (`ctx.isPrimaryCheckout`). A worktree's own HEAD detach fires
  * against its per-tree git-dir, so this allows it — worktree agents moving/detaching their OWN
- * HEAD are untouched, as is the PULLER `checkout main` reattach (a symref retarget queues no HEAD
- * ref update) and the human's normal attached work (paired HEAD+branch moves).
+ * HEAD are untouched, as are the PULLER `checkout main` reattach and the human's normal attached
+ * work.
  */
 export const decideHeadDetach = (
 	updates: ReadonlyArray<RefUpdate>,
@@ -203,7 +222,8 @@ export const decideHeadDetach = (
 	for (const u of updates) {
 		if (u.refName !== HEAD_REF) continue;
 		if (u.newOid === ZERO_OID) continue; // a HEAD delete / no concrete target is not a detach
-		if (branchTargets.has(u.newOid)) continue; // paired with a branch move ⇒ attached, allow
+		if (isSymrefValue(u.newOid)) continue; // HEAD retargeted to a branch (ref:refs/heads/*) ⇒ reattach/switch, allow (git ≥ 2.45)
+		if (branchTargets.has(u.newOid)) continue; // paired with a branch move ⇒ attached, allow (git 2.40)
 		return {
 			kind: "refuse",
 			reason:
