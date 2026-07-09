@@ -1011,8 +1011,8 @@ false-green Step 3z guards (that state is branch 3, never reached from here):
 ```bash
 SETTLE_BUDGET_SECS="${SHIP_IT_SETTLE_BUDGET_SECS:-600}"    # total in-process wait ceiling — BOUNDED, never unbounded
 SETTLE_INTERVAL_SECS="${SHIP_IT_SETTLE_INTERVAL_SECS:-30}" # cadence; each pass emits progress so a no-progress watchdog never fires
-ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused-after-budget (comment posted) · 2=gating red mid-wait→heal-ci
-  local waited=0 bucket name red pending
+ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused (budget-exhausted OR head moved mid-settle; comment posted) · 2=gating red mid-wait→heal-ci
+  local waited=0 bucket name red pending headnow
   while :; do
     red=""; pending=""
     while IFS=$'\t' read -r bucket name; do
@@ -1026,6 +1026,17 @@ ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused-after-budg
       echo "gating check went red during settle-wait ($red) — routing to heal-ci"; return 2
     fi
     if [ -z "$pending" ]; then
+      # TOCTOU guard (secondary #1928 note): the in-process poll widens the window between Step 2/2b's
+      # SHA-bound verdict check (bound to $CURRENT_HEAD) and the enqueue. Unlike the old park→fresh-reinvoke
+      # (which re-ran Step 2b on resume), this in-process resume enters at Step 3.5 and does NOT re-run
+      # Step 2b — so a head-move during the settle would enqueue a head whose verdict/run-evidence predate
+      # it. Re-confirm the head is still the verified one before returning green; if it moved, refuse (same
+      # durable-comment/stop disposition as budget-exhaustion) so a re-dispatch re-runs Step 2b on the moved head.
+      headnow="$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')"
+      if [ -n "$headnow" ] && [ "$headnow" != "$CURRENT_HEAD" ]; then
+        gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — head moved during CI-settle (verified ${CURRENT_HEAD}, now ${headnow}) — **not enqueued**. The SHA-bound verdict and run-evidence (Step 2/2b) predate this head; re-dispatch ship-it to re-verify the moved head — idempotent, a re-ship on a re-verified head enqueues cleanly (#1928)." >/dev/null
+        echo "refused — head moved during settle-wait (${CURRENT_HEAD} → ${headnow}); Step 2b must re-run — not enqueued"; return 1
+      fi
       echo "gating checks settled green after ${waited}s — proceeding to Step 3.5 → enqueue"; return 0
     fi
     if [ "$waited" -ge "$SETTLE_BUDGET_SECS" ]; then
@@ -1042,15 +1053,22 @@ ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused-after-budg
 ci_settle_wait; SETTLE_RC=$?
 case "$SETTLE_RC" in
   0) : ;;         # settled green → fall through to Step 3.5 → Step 4 (enqueue)
-  2) : ;;         # gating red mid-wait → route to /heal-ci (Step 3 branch 1's disposition), then report; do not merge
-  1) exit 0 ;;    # refused after budget — durable outcome comment posted; a successful decline, no longer silent (#1928)
+  2)              # gating red mid-wait → route to /heal-ci (Step 3 branch 1's disposition), then STOP — never enqueue.
+     # This arm MUST terminate the ship, exactly like `1)`: a check that goes red DURING the poll is a
+     # gating red, and Step 3 branch 1's disposition is "do NOT merge; invoke /heal-ci and report." Invoke
+     # /heal-ci for this PR (the same agent action Step 3 branch 1 takes), then exit — falling through here
+     # would enqueue a red PR, the exact merge-safety hole this arm exists to close (#1928).
+     echo "routed to heal-ci — gating check went red mid-settle for PR #$PR; not enqueued"; exit 0 ;;
+  1) exit 0 ;;    # refused (budget-exhausted, or head moved mid-settle) — durable outcome comment posted; a successful decline, no longer silent (#1928)
 esac
 ```
 
 The three returns are the **whole guarantee**: `0` reaches the enqueue, `2` routes a mid-wait red
-to `heal-ci` (branch 1's disposition), and `1` posts the durable refusal and stops. There is **no
-fourth path** where the shipper leaves the pending-wait without either enqueuing or landing a
-PR-visible outcome — the silent park of #1928 is structurally unreachable.
+to `heal-ci` (branch 1's disposition) **and stops the ship** — it never falls through to Step 3.5 →
+Step 4 — and `1` posts the durable refusal and stops. Both non-zero returns `exit` the shipper; only
+`0` proceeds to enqueue. There is **no fourth path** where the shipper leaves the pending-wait without
+either enqueuing or landing a PR-visible outcome — the silent park of #1928 is structurally
+unreachable, and a mid-wait gating-red can never slip through to the merge queue.
 
 **Idempotency is preserved.** The refusal comment is a plain outcome note, not a `review-*` verdict
 marker and not a merge blocker, so a later re-dispatch on the now-green head clears every guard and
