@@ -1420,17 +1420,31 @@ no reusable line for the reviewer to consume:
 
 ```bash
 HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'
-HAS_SKILLS_RE='^claude-plugins/kampus-pipeline/(skills|agents)/'
+HAS_SKILLS_RE='^claude-plugins/[^/]+/(skills|agents)/|^\.claude-plugin/'
 HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'
 HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
 ```
 
 The boundary each line draws is **not re-derived here** — it is §DOC's, above: `HAS_CODE_RE`
 names the code roots (`apps`/`packages`/`.glossary`/`infra`, the #663/#919/#1987 has-code set),
-`HAS_SKILLS_RE` the behavioral-artifact roots (`skills/**`/`agents/**`, ADR 0073/0150), and the
+`HAS_SKILLS_RE` the plugin behavioral-artifact surface — **any** plugin's `skills/**`/`agents/**`
+(the plugin-name is `[^/]+`, not the `kampus-pipeline` literal) **plus the `.claude-plugin/**`
+plugin/marketplace manifest** that declares that surface (ADR 0073/0150; #2387) — and the
 two `HAS_DOCS_*` lines are the carve-then-test docs probe. `HAS_CODE_RE` and `HAS_DOCS_EXCLUDE_RE`
 name the **same** code roots (the has-code/docs-exclusion agreement invariant) and must move in
 lockstep — keep them adjacent so a root added to one is added to the other.
+
+`HAS_SKILLS_RE`'s two additions close the **#663 neither-class gap** for the plugin surface (#2387):
+a PR touching only a **non-`kampus-pipeline`** plugin's `agents/**`/`skills/**` (e.g. the
+`pipeline-crew` crew defs) or only the `.claude-plugin/**` manifest (`plugin.json`,
+`marketplace.json`) previously matched **no** class — so `ship-it` Step 0 demanded no gate and it
+reached merge un-reviewed. Both now class **has-skills** and ride the `review-skill` gate: the
+manifest surface *declares* the plugin's skill/agent artifacts (and is the drift-check `source`
+`validate-gate-path-drift.sh` locks), so it belongs to the same behavioral-artifact class and gate
+as the artifacts it manifests — no new class or gate is invented. This is **only** the review-class
+axis: `CONTROL_PLANE_RE` (§CP, who-merges) is a **separate** regex and is **untouched**, so a crew
+plugin's `agents/**` gains a `review-skill` gate yet still **auto-ships** on PASS (the founder #2342
+ruling — extras don't block — is preserved; the class fix and the §CP ruling compose).
 
 **Both consumers re-resolve these lines from `origin/main` at run time** (REST raw, `?ref=main`
 — the #981 idiom, generalized from `CONTROL_PLANE_RE`/`UI_RE` to the class probes), never trusting
