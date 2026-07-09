@@ -1,8 +1,10 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	decideHeadDetach,
 	decideRefUpdate,
 	decideTransaction,
 	GUARDED_REF,
+	HEAD_REF,
 	type OriginFacts,
 	type RefUpdate,
 	ZERO_OID,
@@ -134,6 +136,124 @@ describe("decideRefUpdate — totality", () => {
 				}
 			}
 		}
+	});
+});
+
+// #2270 mechanical half: a bare HEAD-detaching checkout on the shared PRIMARY checkout is
+// refused. The signal (grounded in git's real reference-transaction behavior on BOTH 2.40 and
+// 2.55, see the command.hook.test.ts end-to-end cases) is a HEAD update to a CONCRETE oid that is
+// neither a symref value (`ref:refs/heads/*`, the git ≥ 2.45 reattach form) nor paired with a
+// same-oid refs/heads/* move in the batch (the git 2.40 attached-commit form) — and only on the
+// primary (a linked worktree's own HEAD is its business).
+describe("decideHeadDetach — bare HEAD detach on the primary (the #2270 refuse)", () => {
+	const headUpdate = (over: Partial<RefUpdate> = {}): RefUpdate => ({
+		oldOid: ZERO_OID,
+		newOid: OID_B,
+		refName: HEAD_REF,
+		...over,
+	});
+
+	it("a bare HEAD detach on the primary (HEAD → concrete, no paired branch) → refuse", () => {
+		const d = decideHeadDetach([headUpdate()], {isPrimaryCheckout: true});
+		assert.strictEqual(d.kind, "refuse");
+		assert.include(d.reason, "PRIMARY");
+	});
+
+	it("the same detach in a linked worktree (not primary) → allow", () => {
+		const d = decideHeadDetach([headUpdate()], {isPrimaryCheckout: false});
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("an attached commit on the primary (HEAD paired with refs/heads/main to the same oid) → allow", () => {
+		const d = decideHeadDetach(
+			[
+				{oldOid: OID_A, newOid: OID_B, refName: HEAD_REF},
+				{oldOid: OID_A, newOid: OID_B, refName: GUARDED_REF},
+			],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("the unborn-branch first commit (HEAD + refs/heads/main, both zero-old, same new) → allow", () => {
+		const d = decideHeadDetach(
+			[
+				{oldOid: ZERO_OID, newOid: OID_B, refName: HEAD_REF},
+				{oldOid: ZERO_OID, newOid: OID_B, refName: "refs/heads/main"},
+			],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("a branch-only ref move on the primary (no HEAD update at all) → allow", () => {
+		const d = decideHeadDetach(
+			[{oldOid: ZERO_OID, newOid: OID_B, refName: "refs/heads/umut/feature"}],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("a HEAD delete (new all-zeroes) on the primary is not a detach → allow", () => {
+		const d = decideHeadDetach([headUpdate({oldOid: OID_A, newOid: ZERO_OID})], {
+			isPrimaryCheckout: true,
+		});
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("a FETCH_HEAD / ORIG_HEAD update (not exactly HEAD) is out of scope → allow", () => {
+		const d = decideHeadDetach(
+			[
+				{oldOid: ZERO_OID, newOid: OID_B, refName: "FETCH_HEAD"},
+				{oldOid: ZERO_OID, newOid: OID_A, refName: "ORIG_HEAD"},
+			],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("a detach paired with an UNRELATED branch move (different oid) still refuses", () => {
+		const d = decideHeadDetach(
+			[
+				{oldOid: ZERO_OID, newOid: OID_B, refName: HEAD_REF},
+				{oldOid: OID_A, newOid: OID_ORIGIN, refName: "refs/heads/other"},
+			],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "refuse");
+	});
+
+	it("an empty batch → allow", () => {
+		assert.strictEqual(decideHeadDetach([], {isPrimaryCheckout: true}).kind, "allow");
+	});
+
+	// git ≥ 2.45 (CI/prod runs 2.55) routes symref updates through the transaction: a `checkout main`
+	// reattach on the PRIMARY queues `HEAD` whose NEW VALUE is the symref `ref:refs/heads/main`, NOT a
+	// concrete oid. Measured on git 2.55.0. The pre-fix heuristic (any non-zero HEAD newOid with no
+	// paired branch ⇒ detach) false-refused this legitimate PULLER reattach — the #2415 regression.
+	it("a `checkout main` reattach on the primary (HEAD → ref:refs/heads/main symref, git ≥ 2.45) → allow", () => {
+		const d = decideHeadDetach(
+			[{oldOid: ZERO_OID, newOid: "ref:refs/heads/main", refName: HEAD_REF}],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("a `switch <branch>` retarget on the primary (HEAD → ref:refs/heads/feature symref) → allow", () => {
+		const d = decideHeadDetach(
+			[{oldOid: ZERO_OID, newOid: "ref:refs/heads/feature", refName: HEAD_REF}],
+			{isPrimaryCheckout: true},
+		);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	// The refuse path stays exact across versions: a concrete-oid HEAD move with no symref value and no
+	// paired branch is a real detach on both 2.40 and 2.55 (identical signature) — still refused.
+	it("a bare detach (concrete-oid HEAD, no symref, no paired branch) still refuses on the primary", () => {
+		const d = decideHeadDetach([{oldOid: ZERO_OID, newOid: OID_B, refName: HEAD_REF}], {
+			isPrimaryCheckout: true,
+		});
+		assert.strictEqual(d.kind, "refuse");
 	});
 });
 

@@ -39,6 +39,8 @@ import {execFileSync} from "node:child_process";
 import {Console, Effect} from "effect";
 import {Argument, Command} from "effect/unstable/cli";
 import {
+	type CheckoutContext,
+	decideHeadDetach,
 	decideRefUpdate,
 	decideTransaction,
 	GUARDED_REF,
@@ -126,6 +128,25 @@ const originIsAncestorOf = (newOid: string): boolean => {
 	}
 };
 
+/**
+ * `true` iff this reference-transaction is firing against the shared PRIMARY checkout, resolved
+ * exactly as `write-code`'s worktree preflight does: the per-tree git-dir equals the shared
+ * git-common-dir on the primary, and differs in a linked worktree. Both are read with
+ * `--path-format=absolute` so the comparison is over identically-normalized absolute paths.
+ * An indeterminate resolution (either rev-parse fails/empty) returns `false` — fail-OPEN, so a
+ * HEAD detach we cannot prove is on the primary is allowed and a worktree agent is never
+ * false-refused (mirrors the guard's fail-open-on-infrastructure-absence posture).
+ */
+const resolvePrimaryCheckout = (): boolean => {
+	const gd = runGit(["rev-parse", "--path-format=absolute", "--git-dir"]);
+	const cd = runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+	if (!gd.ok || !cd.ok) return false;
+	const gitDir = gd.stdout.trim();
+	const commonDir = cd.stdout.trim();
+	if (gitDir === "" || commonDir === "") return false;
+	return gitDir === commonDir;
+};
+
 const stateArg = Argument.string("state").pipe(
 	Argument.withDescription(
 		"the reference-transaction state: prepared | committed | aborted (git passes this). Only 'prepared' can refuse.",
@@ -159,7 +180,15 @@ const referenceTransaction = Command.make(
 			};
 		};
 
-		const verdict = decideTransaction(updates.map((u) => decideRefUpdate(u, facts(u))));
+		// Two orthogonal concerns fold into one transaction verdict: the per-update
+		// refs/heads/main divergence guard (#2143), and the batch-level HEAD-detach guard on
+		// the primary checkout (#2270 — a detach moves HEAD, not refs/heads/main, so it is a
+		// separate decision over the whole batch). Any refuse aborts the transaction.
+		const checkout: CheckoutContext = {isPrimaryCheckout: resolvePrimaryCheckout()};
+		const verdict = decideTransaction([
+			decideHeadDetach(updates, checkout),
+			...updates.map((u) => decideRefUpdate(u, facts(u))),
+		]);
 
 		if (verdict.kind === "refuse") {
 			// ADR 0092 "emit what you scanned": name the guarded ref + why before aborting.

@@ -149,15 +149,28 @@ This is a **control-plane** surface (it drives the shared primary checkout); see
 [`.patterns/worktree-agent-constraints.md`](../../.patterns/worktree-agent-constraints.md)
 for the surrounding worktree/primary-checkout discipline it defends.
 
-### `ref-guard` — caller-agnostic ref-transaction guard against a diverging `main` (#2143, ADR 0160)
+### `ref-guard` — caller-agnostic ref-transaction guard for the shared primary (#2143 diverging `main`; #2270 HEAD detach)
 
-A fail-closed guardrail wired as git's own **`reference-transaction`** hook that **refuses
-a diverging `refs/heads/main` ref-move** on the shared primary checkout — any update that
-would make local `main` a **non-fast-forward** of `origin/main`. It closes the #2143
-loaded-gun class: the orchestrator/PULLER role force-moved primary `main` off the merge seam
-(a bare `branch -f main` / `checkout -B main` / `update-ref refs/heads/main`), diverging it
-from `origin/main` and staging a ~13.5k-line deletion — one `git push -f` from clobbering
-`origin/main`.
+A fail-closed guardrail wired as git's own **`reference-transaction`** hook that refuses two
+shared-primary hazards at git's own ref boundary:
+
+1. **A diverging `refs/heads/main` ref-move** (#2143, ADR 0160) — any update that would make
+   local `main` a **non-fast-forward** of `origin/main`. It closes the #2143 loaded-gun class:
+   the orchestrator/PULLER role force-moved primary `main` off the merge seam (a bare
+   `branch -f main` / `checkout -B main` / `update-ref refs/heads/main`), diverging it from
+   `origin/main` and staging a ~13.5k-line deletion — one `git push -f` from clobbering
+   `origin/main`.
+2. **A bare HEAD-detaching checkout on the shared primary** (#2270) — a `git checkout <sha>` /
+   `checkout FETCH_HEAD` / `switch --detach` that detaches the human's shared `HEAD` off its
+   branch. This is the exact corruption a worktree-isolated agent triggers when its cwd resets
+   to the primary between Bash calls. `decideHeadDetach` catches it via the same
+   `reference-transaction` boundary: a detach queues an update whose ref-name is exactly `HEAD`
+   to a concrete commit with **no paired `refs/heads/*` move to that same commit** (an attached
+   commit pairs them; an attached `switch <branch>` retargets the symref and queues no `HEAD`
+   update at all), and only on the **primary** checkout (git-dir == git-common-dir). A linked
+   worktree's own HEAD detach — and the PULLER `checkout main` reattach, which queues no `HEAD`
+   ref update — stay allowed. The signal is grounded in git's real `reference-transaction`
+   behavior (verified against git 2.40, not assumed).
 
 **Why the ref boundary, not a Bash hook.** The #1571 `worktree-guard` bash-pin only arms for
 a `$WORKTREE_ROOT` subagent and only matches its `HEAD_MOVING` set — so it is disarmed for
@@ -191,7 +204,7 @@ only in the `prepared` state, so the guard evaluates + can refuse only there; `c
 # git invokes this itself as the reference-transaction hook; the manual shape (for a test):
 printf '%s %s refs/heads/main\n' "$OLD" "$NEW" \
   | node packages/pipeline-cli/src/bin.ts ref-guard reference-transaction prepared
-# exit 0 = allow · exit 3 = REFUSE (a diverging main move) · other non-zero = CLI couldn't run (fail-open)
+# exit 0 = allow · exit 3 = REFUSE (a diverging main move OR a bare HEAD detach on the primary) · other non-zero = CLI couldn't run (fail-open)
 ```
 
 This is a **control-plane** surface (it guards the shared primary checkout's `main`); see

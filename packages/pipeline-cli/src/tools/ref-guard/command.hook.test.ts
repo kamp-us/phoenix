@@ -12,6 +12,13 @@ import {REFUSE_EXIT_CODE} from "./command.ts";
 // modeled stub (CLAUDE.md: ground platform-behavior claims in the real platform).
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
 
+// Every test here spawns `node bin.ts` through a REAL git ref-transaction, and git ≥ 2.45 (CI/prod
+// runs 2.55) fires the `reference-transaction` hook once per state (preparing/prepared/committed) AND
+// again for the AUTO_MERGE ref of a `checkout` — several node cold-starts per git op. On CI that blows
+// vitest's 5000ms default (the #2415 timeouts). A generous suite-level timeout keeps the real-git
+// tripwires green on the deployed git without weakening what they assert.
+const HOOK_TEST_TIMEOUT = 60_000;
+
 interface RunResult {
 	readonly code: number;
 	readonly stderr: string;
@@ -95,7 +102,7 @@ afterAll(() => {
 	if (root) rmSync(root, {recursive: true, force: true});
 });
 
-describe("ref-guard reference-transaction — real git facts", () => {
+describe("ref-guard reference-transaction — real git facts", {timeout: HOOK_TEST_TIMEOUT}, () => {
 	it("REFUSES a diverging refs/heads/main move (non-fast-forward of origin/main) in 'prepared'", async () => {
 		const stdin = `${fx.base} ${fx.divergent} refs/heads/main\n`;
 		const {code, stderr} = await runGuard("prepared", stdin, fx.dir);
@@ -155,7 +162,9 @@ describe("ref-guard reference-transaction — real git facts", () => {
 // because git refuses a `-f` on the CURRENTLY-checked-out branch before any hook runs — the
 // incident's `branch: Reset to HEAD` was a checkout-B/reset on the checked-out branch, of
 // which update-ref is the minimal ref-transaction form.
-describe("ref-guard — installed reference-transaction hook fires on a BARE git ref-move (no pipeline command)", () => {
+describe("ref-guard — installed reference-transaction hook fires on a BARE git ref-move (no pipeline command)", {
+	timeout: HOOK_TEST_TIMEOUT,
+}, () => {
 	// Mirror the lefthook.yml wiring EXACTLY: `|| status=$?` (never a bare call, so an
 	// inherited `set -e` can't abort as a side effect) + abort ONLY on the dedicated refuse
 	// code 3; every other non-zero (CLI absent / crash) fail-opens. `cmd` is the guard
@@ -297,6 +306,96 @@ describe("ref-guard — installed reference-transaction hook fires on a BARE git
 			landed,
 			fx.divergent,
 			"the move was allowed because the guard could not run",
+		);
+	});
+
+	// #2270 mechanical half (criteria 1/2/4): the SAME installed reference-transaction hook that
+	// catches a diverging refs/heads/main move must also refuse a bare HEAD-DETACHING checkout on
+	// the shared PRIMARY checkout — the operation that strands the human's shared HEAD off its
+	// branch when a worktree-isolated agent's cwd resets to the primary between Bash calls. These
+	// drive a REAL `git checkout` (not a synthetic update-ref) so the assertion is grounded in
+	// git's actual reference-transaction behavior for a detach: HEAD → a concrete commit, no
+	// paired refs/heads/* move.
+	const headRef = (repoDir: string): string =>
+		execFileSync("git", ["symbolic-ref", "-q", "HEAD"], {cwd: repoDir, encoding: "utf8"}).trim();
+
+	it("aborts a bare `git checkout <sha>` HEAD-detach on the PRIMARY — HEAD stays attached to its branch", () => {
+		git(fx.dir, "checkout", "-q", "main"); // known attached start
+		const before = headRef(fx.dir);
+		installHook(fx.dir);
+		let aborted = false;
+		try {
+			execFileSync("git", ["checkout", fx.divergent], {cwd: fx.dir, stdio: "pipe"});
+		} catch {
+			aborted = true; // git exits non-zero: "ref updates aborted by hook"
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		assert.isTrue(aborted, "the bare HEAD-detach on the primary should be aborted by the hook");
+		assert.strictEqual(
+			headRef(fx.dir),
+			before,
+			"HEAD must still be attached to its branch (the detach was refused)",
+		);
+	});
+
+	it("does NOT abort an attached commit on a feature branch on the PRIMARY (HEAD paired with its branch move)", () => {
+		// A feature branch, not main, so the pre-existing #2143 main-divergence guard is out of the
+		// picture — this isolates the HEAD-detach guard's pairing rule (HEAD moved WITH its branch).
+		git(fx.dir, "checkout", "-q", "-b", "attached-feature", fx.base);
+		installHook(fx.dir);
+		let ok = true;
+		try {
+			execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "attached"], {
+				cwd: fx.dir,
+				stdio: "pipe",
+			});
+		} catch {
+			ok = false;
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		const stayed = headRef(fx.dir);
+		git(fx.dir, "checkout", "-q", "main"); // restore fixture: reattach main, drop the feature branch
+		git(fx.dir, "branch", "-qD", "attached-feature");
+		assert.isTrue(ok, "an attached commit (paired HEAD+branch move) must not be aborted");
+		assert.strictEqual(
+			stayed,
+			"refs/heads/attached-feature",
+			"HEAD stays attached to the feature branch after the commit",
+		);
+	});
+
+	// The load-bearing PULLER flow (#2415): git ≥ 2.45 (CI/prod 2.55) queues this reattach as a HEAD
+	// update whose new value is the SYMREF `ref:refs/heads/main` (git 2.40 queues no HEAD line at all).
+	// Either way it is an ATTACH, never a detach — the guard must allow it on both versions.
+	it("does NOT abort a `git checkout main` reattach on the PRIMARY (HEAD → symref, git ≥ 2.45; no HEAD line, git 2.40)", () => {
+		git(fx.dir, "checkout", "-q", "--detach", fx.base); // detach BEFORE the hook is installed
+		installHook(fx.dir);
+		let ok = true;
+		try {
+			execFileSync("git", ["checkout", "main"], {cwd: fx.dir, stdio: "pipe"});
+		} catch {
+			ok = false;
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		assert.isTrue(ok, "the PULLER `checkout main` reattach must not be aborted");
+		assert.strictEqual(headRef(fx.dir), "refs/heads/main", "HEAD is reattached to main");
+	});
+
+	it("does NOT abort a bare HEAD-detach inside a LINKED worktree (only the shared primary is guarded)", () => {
+		const wt = join(fx.dir, "..", "wt-head-detach");
+		execFileSync("git", ["worktree", "add", "-q", "--detach", wt, fx.base], {cwd: fx.dir});
+		installHook(fx.dir); // shared hook (common .git) — but the worktree's HEAD is not the primary's
+		let ok = true;
+		try {
+			execFileSync("git", ["checkout", fx.divergent], {cwd: wt, stdio: "pipe"});
+		} catch {
+			ok = false;
+		}
+		rmSync(join(fx.dir, ".git", "hooks", "reference-transaction"), {force: true});
+		execFileSync("git", ["worktree", "remove", "--force", wt], {cwd: fx.dir});
+		assert.isTrue(
+			ok,
+			"a worktree agent detaching its OWN HEAD must not be blocked (no false-positive on coders)",
 		);
 	});
 });
