@@ -74,8 +74,10 @@ Competing mechanisms:
 
 ## Decision
 
-**ACCEPTED — awaiting founder ruling. This ADR records the choice and a recommendation; it does
-not enact it.**
+**ACCEPTED (record-and-defer).** The decision stands; this ADR records the accepted choice and its
+rationale. The code enactment — updating `CONTROL_PLANE_RE` so bare gate-critical `.sh` guards under
+`skills/` classify §CP — is tracked separately as
+[#2576](https://github.com/kamp-us/phoenix/issues/2576).
 
 **Recommended: option 1 — broaden `CONTROL_PLANE_RE`** with an alternative matching any bare
 `.sh` immediately under the pipeline `skills/` root:
@@ -112,15 +114,16 @@ in lockstep).
 
 ## Consequences
 
-- **Once ratified and implemented (recommended path):** a PR touching any bare gate `.sh` under
+- **Once enacted (recommended path, tracked in #2576):** a PR touching any bare gate `.sh` under
   `skills/` classifies §CP at `ship-it` Step 0 and requires a `@kamp-us/control-plane` approval
   before enqueue (ADR [0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)) —
   the self-approval-adjacent hole closes, and the guard surface becomes self-covering.
 - **Cost:** the `CONTROL_PLANE_RE` edit is itself a §CP change and lands through the human gate;
   all verbatim copies move together under `validate-gate-path-drift.sh`'s lockstep. Any future
   bare `.sh` added under `skills/` inherits §CP membership automatically — intended.
-- **Until ratified, the hole stands.** This ADR does not change classification; it records the
-  decision for founder ruling. Implementation is a separate follow-up PR (the code change is
-  small once the boundary is decided).
+- **Until enacted, the hole stands.** This ADR does not itself change classification; the decision
+  is accepted and its enactment is tracked in
+  [#2576](https://github.com/kamp-us/phoenix/issues/2576) (the code change is small now the
+  boundary is decided).
 - **Bounded blast radius vs #2488.** This settles the guard's *own classification* only; the
   guard's *scan-coverage* (#2488) remains a separate concern and is not addressed here.
