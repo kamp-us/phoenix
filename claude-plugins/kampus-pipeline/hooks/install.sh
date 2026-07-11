@@ -3,11 +3,10 @@
 # version-aware + idempotent + network-resilient. See ADR 0103 and
 # .patterns/plugin-sessionstart-install.md.
 #
-# Data dir (where the CLI is installed) is resolved from, in order:
-#   1. $KAMPUS_PIPELINE_DATA  — phoenix's .claude/settings.json self-wiring (#1003)
-#   2. $CLAUDE_PLUGIN_DATA    — the foreign-repo plugin surface (hooks.json)
-# guard.sh resolves the CLI from the SAME dir via the same precedence, so the two
-# stay in lockstep whether invoked by the plugin or by phoenix's settings.json.
+# Data dir (where the CLI is installed) is resolved by resolve-data-dir.sh, robust
+# to Claude Code's verbatim settings.json `env` semantics (see that file / #2495);
+# guard.sh sources the SAME resolver so the two stay in lockstep whether invoked by
+# the plugin or by phoenix's settings.json.
 #
 # Invariant: this MUST NOT hard-crash the session. Every failure path degrades
 # (logs to stderr, exit 0) so a SessionStart on an offline/npm-unreachable host
@@ -21,11 +20,11 @@ set -u
 PIN="0.1.0"
 PKG="@kampus/pipeline-cli"
 
-DATA="${KAMPUS_PIPELINE_DATA:-${CLAUDE_PLUGIN_DATA:-}}"
-if [ -z "$DATA" ]; then
-	echo "kampus-pipeline: no data dir (KAMPUS_PIPELINE_DATA / CLAUDE_PLUGIN_DATA unset); skipping install" >&2
+. "$(dirname "${BASH_SOURCE[0]}")/resolve-data-dir.sh"
+DATA="$(resolve_pipeline_data_dir)" || {
+	echo "kampus-pipeline: no resolvable data dir (env value unexpanded and CLAUDE_PROJECT_DIR unset); skipping install" >&2
 	exit 0
-fi
+}
 
 MARKER="$DATA/.pipeline-cli.version"
 BIN="$DATA/node_modules/.bin/pipeline-cli"

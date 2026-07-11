@@ -2,10 +2,6 @@
 	"enabledPlugins": {
 		"kampus-pipeline@kampus": false
 	},
-	"env": {
-		"KAMPUS_PIPELINE_DATA": "${CLAUDE_PROJECT_DIR}/.claude/.pipeline-cli-data",
-		"PATH": "${CLAUDE_PROJECT_DIR}/packages/gh-phoenix/shim:/opt/homebrew/bin:/usr/bin:/bin:${PATH}"
-	},
 	"hooks": {
 		"PreToolUse": [
 			{

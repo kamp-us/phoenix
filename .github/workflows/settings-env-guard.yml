@@ -1,0 +1,41 @@
+name: settings-env-guard
+
+# CI gate for #2495: no `.claude/settings.json` `env` value may carry an unexpanded
+# `${...}` token. Claude Code applies env values VERBATIM — it does NOT expand
+# ${VAR} in them (settings docs; verified on desktop + web) — so such a value never
+# resolves: it is consumed literally, creating a stray literal-token directory at the
+# repo root and clobbering PATH. This is the same silent-drift class the other
+# fail-closed guards cover. Reuses pipeline-cli's `settings-env-guard check` mode —
+# the scan lives once in the tool.
+on:
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: the only job checks out + runs a read-only node CLI
+# (pipeline-cli settings-env-guard check), no writes — so read on contents suffices.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: no ${...} in any .claude/settings.json env value
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when an env value carries an unexpanded ${...} (the report is on
+      # stderr), or when settings.json is missing/unparseable (fail-closed). See #2495.
+      - name: Check no env value carries an unexpanded ${...}
+        run: node packages/pipeline-cli/src/bin.ts settings-env-guard check
