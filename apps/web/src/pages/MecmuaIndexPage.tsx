@@ -13,13 +13,16 @@
 import {BookOpenText} from "lucide-react";
 import {useEffect, useState} from "react";
 import {Link} from "react-router";
+import {useSession} from "../auth/client";
+import {useMe} from "../auth/useMe";
 import {Icon} from "../components/Icon";
 import {Card} from "../components/ui/Card";
 import {EmptyState} from "../components/ui/EmptyState";
 import {MetaRow} from "../components/ui/MetaRow";
-import {MECMUA_PUBLIC_READ} from "../flags/keys";
+import {MECMUA_PUBLIC_READ, MECMUA_WRITE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {formatDateTR} from "../lib/datetime";
+import {shouldShowMecmuaWriteCta} from "./MecmuaEditorPage";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaIndexPage.css";
 
@@ -57,8 +60,23 @@ export function MecmuaIndexPage() {
 	return <MecmuaIndex />;
 }
 
+/** The "yeni yazı" entry-point link to the editor, styled as the primary CTA button. */
+function MecmuaWriteCta() {
+	return (
+		<Link to="/mecmua/yaz" className="kp-btn kp-btn--primary" data-testid="mecmua-write-cta">
+			yeni yazı
+		</Link>
+	);
+}
+
 function MecmuaIndex() {
 	const [state, setState] = useState<FetchState>({kind: "loading"});
+	const session = useSession();
+	const {me} = useMe();
+	// The write CTA shares the editor's own publish gate (yazar tier + MECMUA_WRITE live),
+	// so it never dead-ends a çaylak/visitor into a page they can't publish from (#2532).
+	const {value: writeFlagOn} = useFlag(MECMUA_WRITE, false);
+	const showWriteCta = shouldShowMecmuaWriteCta(writeFlagOn, !!session.data, me?.tier);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -82,16 +100,19 @@ function MecmuaIndex() {
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<header className="kp-mecmua-index__head">
-					<h1 className="kp-mecmua-index__title">mecmua</h1>
+					<div className="kp-mecmua-index__head-row">
+						<h1 className="kp-mecmua-index__title">mecmua</h1>
+						{showWriteCta ? <MecmuaWriteCta /> : null}
+					</div>
 					<p className="kp-mecmua-index__lede">topluluğun uzun yazıları</p>
 				</header>
-				<MecmuaIndexBody state={state} />
+				<MecmuaIndexBody state={state} showWriteCta={showWriteCta} />
 			</div>
 		</div>
 	);
 }
 
-function MecmuaIndexBody({state}: {state: FetchState}) {
+function MecmuaIndexBody({state, showWriteCta}: {state: FetchState; showWriteCta: boolean}) {
 	if (state.kind === "loading") {
 		return <p className="kp-mecmua-index__status">yükleniyor…</p>;
 	}
@@ -110,6 +131,7 @@ function MecmuaIndexBody({state}: {state: FetchState}) {
 				icon={<Icon icon={BookOpenText} size={24} />}
 				title="henüz yazı yok"
 				description="ilk mecmua yazısı yayımlandığında burada görünecek."
+				action={showWriteCta ? <MecmuaWriteCta /> : undefined}
 			/>
 		);
 	}

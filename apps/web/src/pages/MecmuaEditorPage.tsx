@@ -68,6 +68,21 @@ export function mecmuaPublishAffordance(
 	};
 }
 
+/**
+ * Should the "yeni yazı" entry-point CTA (nav + index) be shown to this viewer (#2532)?
+ * Gate parity with the editor is structural, not restated: the CTA appears exactly when
+ * the write flag is live AND {@link mecmuaPublishAffordance} would offer publish (yazar
+ * tier), so it never dead-ends a çaylak/visitor/signed-out reader into a page they'd be
+ * publish-gated on. `MECMUA_WRITE` off, or any non-yazar/undefined tier, resolves false.
+ */
+export function shouldShowMecmuaWriteCta(
+	flagOn: boolean,
+	isSignedIn: boolean,
+	tier: Tier | undefined,
+): boolean {
+	return flagOn && mecmuaPublishAffordance(isSignedIn, tier).kind === "publish";
+}
+
 export function MecmuaEditorPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_WRITE, false);
 
