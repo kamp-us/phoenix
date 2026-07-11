@@ -24,11 +24,13 @@
  * `git stash pop` + `reset --hard` on the owner's checkout, silently discarding its
  * uncommitted state — same shared-checkout hazard, same fail-closed refusal). The owner's
  * ruling on the arm-vs-refuse posture (issue #1571) is REFUSE, scoped to guarded
- * agents: the refusal fires only when `$WORKTREE_ROOT` names a managed worktree —
- * i.e. this hook is active for an `isolation:worktree` subagent. The orchestrator's
- * own shell runs no such hook and carries no `$WORKTREE_ROOT`, so its legitimate
- * `git checkout main` (the ff-pull/reattach flow) can never reach this refusal. See
- * `.patterns/worktree-agent-constraints.md` (the guard route, now enforced).
+ * agents: the refusal fires when `$WORKTREE_ROOT` names a managed worktree —
+ * i.e. this hook is active for an `isolation:worktree` subagent — OR, per ADR 0172, when
+ * isolation was EXPECTED (an isolation-asserting agent-type) yet `$WORKTREE_ROOT` is unset
+ * (the #2440 harness no-op that disarms the root-keyed branch and leaves this the sole layer).
+ * The orchestrator's own shell runs no such hook, carries no `$WORKTREE_ROOT`, and asserts no
+ * isolation, so its legitimate `git checkout main` (the ff-pull/reattach flow) can never reach
+ * either refusal. See `.patterns/worktree-agent-constraints.md` (the guard route, now enforced).
  */
 
 export type BashDecision =
@@ -129,11 +131,31 @@ const REFUSE_REASON =
 	'`git -C "$WT" <op> …`, or bring a PR head in by ref — ' +
 	'`git -C "$WT" fetch origin pull/<N>/head && git -C "$WT" checkout FETCH_HEAD`.';
 
+// The #2452/#2453 detach: an isolation-expecting agent (coder/reviewer/shipper) whose harness
+// no-op'd worktree provisioning (#2440) has NO worktree, so `$WORKTREE_ROOT` is unset — which ALSO
+// disarms the whole $WORKTREE_ROOT-keyed refusal below, allowing everything. With no worktree, even
+// the `-C "$WT"` "safe" form the REFUSE_REASON above points agents to resolves `$WT`
+// (`git rev-parse --show-toplevel`) to the shared PRIMARY checkout and detaches its HEAD. So when
+// isolation was expected but no managed worktree exists, a head-moving git op is REFUSED regardless
+// of `-C` scoping — this preflight is then the surviving layer (ADR 0172).
+const REFUSE_REASON_ISOLATION_NO_ROOT =
+	"refused a working-state-mutating git op (checkout/switch/reset/rebase/stash/merge) for an " +
+	"isolation-expecting agent (coder/reviewer/shipper) with NO provisioned worktree ($WORKTREE_ROOT " +
+	'unset/non-managed — the #2440 harness no-op). With no worktree the `-C "$WT"` form resolves to ' +
+	"the shared PRIMARY checkout and would detach its HEAD (#2452/#2453). This is a harness " +
+	"provisioning failure: STOP and surface it up (do NOT retry the spawn), and do NOT self-provision " +
+	"to route around it — that hides the failure and collapses the primary-corruption defense (ADR 0172, #2270).";
+
 /**
  * Decide whether to pin/refuse a Bash command for a guarded worktree agent.
  *
- * - No `$WORKTREE_ROOT`, or a non-managed root → **allow** (not a guarded agent; this is
- *   also the orchestrator's own shell — its `git checkout main` is never reached here).
+ * - No managed `$WORKTREE_ROOT` **and isolation NOT expected** → **allow** (the orchestrator's own
+ *   shell / a standalone run — its `git checkout main` is never reached here).
+ * - No managed `$WORKTREE_ROOT` **but isolation WAS expected** (`isolationExpected`, from an
+ *   isolation-asserting `$CLAUDE_CODE_AGENT`) → a head-moving git op is **refused** even in its
+ *   `-C "$WT"` form: with no worktree provisioned `$WT` can only be the shared PRIMARY checkout (the
+ *   #2440 no-op / #2452 detach), and the $WORKTREE_ROOT-keyed branch below is disarmed, so this is
+ *   the surviving refusal (ADR 0172). A non-head-move command still allows (no over-refusal).
  * - An empty/whitespace-only command → **allow** (nothing to pin).
  * - A command with a leading `cd ` → **allow** (it sets its own cwd; don't fight it).
  * - A working-state-mutating git op (`checkout`/`switch`/`reset`/`rebase`/`stash`/`merge`) NOT
@@ -145,9 +167,22 @@ const REFUSE_REASON =
 export const pinBash = (args: {
 	readonly worktreeRoot: string;
 	readonly command: string;
+	readonly isolationExpected?: boolean;
 }): BashDecision => {
-	const {worktreeRoot, command} = args;
-	if (!worktreeRoot || !isManagedWorktree(worktreeRoot)) return {kind: "allow"};
+	const {worktreeRoot, command, isolationExpected = false} = args;
+	if (!worktreeRoot || !isManagedWorktree(worktreeRoot)) {
+		// No managed worktree. Normally a clean allow — but if isolation was expected, the harness
+		// no-op'd provisioning (#2440) and a head-moving git op here hits the PRIMARY checkout (#2453).
+		if (
+			isolationExpected &&
+			command.trim() !== "" &&
+			!hasLeadingCd(command) &&
+			inspectGitHeadMove(command, worktreeRoot).isHeadMove
+		) {
+			return {kind: "refuse", reason: REFUSE_REASON_ISOLATION_NO_ROOT};
+		}
+		return {kind: "allow"};
+	}
 	if (command.trim() === "") return {kind: "allow"};
 	if (hasLeadingCd(command)) return {kind: "allow"};
 

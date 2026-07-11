@@ -7,7 +7,10 @@
  * and emitting the matching hook output. All read `$WORKTREE_ROOT` from the process
  * env (injected at spawn for an `isolation:worktree` subagent); an UNSET root makes
  * every subcommand a clean allow/skip no-op, so a non-worktree session is never
- * affected.
+ * affected — with ONE exception (ADR 0172): `pre-bash` still refuses a head-moving git
+ * op when isolation was EXPECTED (`$CLAUDE_CODE_AGENT` is coder/reviewer/shipper) yet the
+ * root is unset, because that unset root is itself the #2440 harness no-op that would
+ * otherwise let the #2452/#2453 primary-checkout detach through.
  *
  *   PreToolUse:
  *     pre-file  (matcher Read|Edit|Write) — rewrite/block a main-checkout path
@@ -31,6 +34,13 @@ import {mainCheckoutPrefix, resolvePath} from "./path-resolve.ts";
 import {decideReap} from "./reap.ts";
 
 const WORKTREE_ROOT = process.env.WORKTREE_ROOT ?? "";
+
+// Was worktree isolation EXPECTED for this run? The coder/reviewer/shipper agent-types all spawn
+// `isolation:worktree` (agents/{coder,reviewer,shipper}.md), read from the harness-set
+// $CLAUDE_CODE_AGENT. This lets pre-bash refuse a head-moving git op even when $WORKTREE_ROOT is
+// unset — the #2440 no-op that disarms every $WORKTREE_ROOT-keyed subcommand — instead of the old
+// silent allow that let the #2452/#2453 primary-checkout detach through (ADR 0172).
+const ISOLATION_EXPECTED = /coder|reviewer|shipper/.test(process.env.CLAUDE_CODE_AGENT ?? "");
 
 // A non-force `git worktree remove` that errors means git judged the tree unsafe to
 // remove — we KEEP it (never escalate to --force). Tagged so the error channel stays typed.
@@ -125,7 +135,11 @@ const preBash = Command.make(
 		const input = yield* readStdin();
 		const toolInput = (field(input, "tool_input") as Record<string, unknown>) ?? {};
 		const command = str(toolInput.command);
-		const decision = pinBash({worktreeRoot: WORKTREE_ROOT, command});
+		const decision = pinBash({
+			worktreeRoot: WORKTREE_ROOT,
+			command,
+			isolationExpected: ISOLATION_EXPECTED,
+		});
 		if (decision.kind === "allow") return yield* allow();
 		if (decision.kind === "refuse") return yield* deny(`worktree-guard: ${decision.reason}`);
 		return yield* allow(

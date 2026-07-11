@@ -142,6 +142,14 @@ split holds too (ADR 0052): the **head is the diff under test**, your **config/i
 come from the trusted base** — never load the head's `.claude/**` / `CLAUDE.md` / hooks.
 
 ```bash
+# Isolation preflight FIRST, before the head fetch below. If this review-trivial spawn expected
+# worktree isolation (reviewer agent-type) but the #2440 harness no-op dropped it onto the shared
+# PRIMARY checkout ($WORKTREE_ROOT unset), fetching the head here is the #2452/#2453
+# primary-checkout-detach surface — fail closed LOUD and route up. Single-sourced in
+# gh-issue-intake-formats.md §RO-iso (ADR 0172; the write-code wt_preflight sibling). A genuine
+# standalone run on the owner's checkout still proceeds (the head read is via `git show`, checkout-free).
+iso_preflight review-trivial || exit 1   # ../gh-issue-intake-formats.md §RO-iso — define it there, cite here
+
 HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
 PR_REF="refs/review-trivial/$PR"
 git fetch --no-tags origin "pull/$PR/head:$PR_REF" >/dev/null 2>&1 || git fetch origin "$HEAD_SHA" >/dev/null 2>&1
