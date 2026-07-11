@@ -1,0 +1,134 @@
+/* /lab/composer — throwaway tiptap spike (#2465). Role tokens only; deletable with the
+   route. */
+
+.kp-lab__inner {
+	max-width: 1000px;
+	margin: 0 auto;
+	padding: var(--s-4) var(--s-3) var(--s-8);
+}
+
+.kp-lab__masthead {
+	padding: var(--s-2) 0 var(--s-4);
+	border-bottom: 1px solid var(--border);
+}
+
+.kp-lab__title {
+	display: flex;
+	align-items: center;
+	gap: var(--s-2);
+	font-size: 16px;
+	font-weight: 700;
+	margin: 0;
+	color: var(--text-primary);
+}
+
+.kp-lab__badge {
+	font: var(--t-micro);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--accent-fg);
+	background: var(--accent-soft);
+	border-radius: 4px;
+	padding: 2px 6px;
+}
+
+.kp-lab__lead {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin: var(--s-2) 0 0;
+	max-width: 60ch;
+}
+
+.kp-lab__row {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	padding: var(--s-4) 0 var(--s-3);
+}
+
+.kp-lab__label {
+	font: var(--t-meta);
+	font-weight: 600;
+	color: var(--text-secondary);
+}
+
+.kp-lab__textarea {
+	font: var(--t-mono);
+	color: var(--text-primary);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: var(--s-2);
+	resize: vertical;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.kp-lab__btn {
+	align-self: flex-start;
+	font: var(--t-meta);
+	font-weight: 600;
+	color: var(--accent-contrast);
+	background: var(--accent);
+	border: none;
+	border-radius: 6px;
+	padding: var(--s-2) var(--s-3);
+	cursor: pointer;
+}
+
+.kp-lab__grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: var(--s-3);
+}
+
+.kp-lab__panel {
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--surface-raised);
+	padding: var(--s-3);
+	min-width: 0;
+}
+
+.kp-lab__panel--sketch {
+	grid-column: 1 / -1;
+}
+
+.kp-lab__panel-title {
+	font: var(--t-meta);
+	font-weight: 700;
+	color: var(--text-secondary);
+	margin: 0 0 var(--s-2);
+}
+
+/* The ProseMirror editable's own default outline is dropped; the shared focus layer
+   in global.css (#2169) is the single source of the `--focus-ring` on focus. */
+.kp-lab__editor .tiptap {
+	font: var(--t-body);
+	color: var(--text-primary);
+	min-height: 160px;
+	outline: none;
+}
+
+.kp-lab__out {
+	font: var(--t-mono);
+	color: var(--text-primary);
+	background: var(--surface-sunken);
+	border-radius: 6px;
+	padding: var(--s-2);
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow-x: auto;
+}
+
+.kp-lab__out--json {
+	color: var(--text-secondary);
+}
+
+@media (max-width: 720px) {
+	.kp-lab__grid {
+		grid-template-columns: 1fr;
+	}
+}
