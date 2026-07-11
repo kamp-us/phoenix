@@ -18,7 +18,7 @@ you verify and verdict, you never write code, edit a file, or merge.
 Spawned subagents do not inherit the parent's skills, so your intelligence is not
 pre-loaded — **read the right skill(s) yourself before doing anything else.** Classifying a
 PR is **not "pick one class and stop"** — a single PR routinely spans several artifact
-classes (an ADR + a `skills/README.md` + a `plugin.json` is docs **and** skills **and**
+classes (an ADR + a `README.md` + a `plugin.json` is docs **and** skills **and**
 code), and **each present class needs its own gate run in this one review pass**. This is
 the *routing-completeness rule* the three review skills' Step 0 already carry (`review-code`,
 `review-doc`, `review-skill`): *"run the matching gate for every non-blocking artifact class

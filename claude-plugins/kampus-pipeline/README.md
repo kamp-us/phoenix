@@ -8,16 +8,23 @@ each handoff a durable artifact (a label, a comment, a PR) the next stage reads 
 The suite is **repo-agnostic**: install it once and point it at whatever repo you're
 working in.
 
-This directory (`skills/`) is the **canonical home** for the suite and the plugin's
-documented entry point. It holds every `SKILL.md` plus the shared contract doc
-[`gh-issue-intake-formats.md`](gh-issue-intake-formats.md) (the label semantics and the
-body/comment/dependency formats every skill reads and writes).
+**This plugin is the entry point.** You are reading its root README — the front door.
+The skills themselves live one level down in [`skills/`](skills/) (every `SKILL.md` plus
+the shared contract doc [`gh-issue-intake-formats.md`](skills/gh-issue-intake-formats.md),
+which defines the label semantics and the body/comment/dependency formats every skill
+reads and writes). You don't invoke those files directly — you install the plugin and run
+the skills by name (`report`, `triage`, `write-code`, …). The [How the pipeline works](#how-the-pipeline-works)
+section below is the fastest way to understand the whole flow before you touch a skill.
 
-The plugin carries **no per-plugin `version`** (neither in the marketplace plugin entry nor in [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json)): Claude Code then content-addresses the install by git commit SHA, so every commit is a new "version" and skill additions/edits reach already-installed users on the normal update path — a fixed semver pin froze the cache and silently served stale content (#945). This omission is **deliberate, not a defect — do not add a `version`**; the decision record (why + history) is [ADR 0110](https://github.com/kamp-us/phoenix/blob/main/.decisions/0110-plugin-carries-no-version-continuous-ship.md).
+## How the pipeline works
 
-The whole plugin surface was audited against the official Claude Code plugin spec ([plugins reference](https://docs.claude.com/en/docs/claude-code/plugins-reference), [marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)); the conformance record — the corrected manifest `$schema` URL plus every deliberate deviation (no `version`, the root-level `hooks.json`, the absent `commands/`, the `.claude/skills` discovery symlink) and its forcing constraint — is [ADR 0171](https://github.com/kamp-us/phoenix/blob/main/.decisions/0171-kampus-pipeline-plugin-spec-conformance.md). A future audit that re-flags any of those reads the disposition there: documented-intentional, not an open defect.
+If you're new here, read this section first. The pipeline is a **conveyor belt for issues**:
+raw work enters at one end and a merged, closed PR comes out the other. Each stage is one
+skill. A stage never keeps state in its head — it writes its output as a GitHub artifact (a
+label, a comment, a PR) that the next stage picks up **cold**, so a fresh agent (or a
+different one) can always continue where the last left off.
 
-## The pipeline
+### The flow
 
 The core flow runs left to right; each stage consumes the previous stage's output:
 
@@ -25,32 +32,51 @@ The core flow runs left to right; each stage consumes the previous stage's outpu
 report → triage → plan-epic → review-plan → write-code → review-code / review-doc / review-skill → ship-it
 ```
 
-- **`report`** files raw intake (`status:needs-triage`).
-- **`triage`** classifies, prioritizes, and either splits an epic or marks an issue
-  `status:triaged` (pickable).
-- **`plan-epic`** turns a triaged epic into a child-issue ledger with a `## Dependencies`
-  topology; **`review-plan`** gates that ledger and flips its children to `status:triaged`.
-- **`write-code`** picks the next triaged issue, implements it on a branch, and opens a PR.
-- **`review-code`** (code PRs) / **`review-doc`** (doc PRs) / **`review-skill`** (skill PRs)
-  verify the PR against its issue's acceptance criteria — `review-doc` adds a doc-hygiene
-  checklist, `review-skill` adds a behavioral-rigor checklist — and emit a PASS/FAIL verdict;
-  `write-code` consumes a FAIL and re-submits; the loop is bounded. The three split on
-  artifact class (code / docs / skills — ADR 0073, superseding 0063's `skills/**` →
-  `review-code` routing).
-- **`ship-it`** is the only skill with merge authority: on a PASS verdict + green CI it
-  squash-merges, closing the linked issue.
+### What each stage consumes and emits
 
-Three skills run **standalone**, outside the linear flow:
+| Stage | Consumes | Emits |
+|-------|----------|-------|
+| **`report`** | A raw observation (a bug, a refactor, a missing test) | A type-blind issue labelled `status:needs-triage` |
+| **`triage`** | A `status:needs-triage` issue | Either a `status:triaged` issue (classified + prioritized, pickable) or an epic to be planned |
+| **`plan-epic`** | A triaged epic | A ledger of child issues with a pinned `## Dependencies` topology (`status:planned`) |
+| **`review-plan`** | A `status:planned` ledger | The same ledger gated against the structural floor; on a clean pass its children flip to `status:triaged` |
+| **`write-code`** | The next `status:triaged` issue | A branch + a PR that closes it (`Fixes #N`); on a gate FAIL, a fix pushed to the same branch |
+| **`review-code` / `review-doc` / `review-skill`** | An open PR + its issue's acceptance criteria | A SHA-bound `PASS`/`FAIL` verdict comment (the three split by artifact class: code / docs / skills) |
+| **`ship-it`** | A PASS verdict + green CI | A squash-merge that closes the linked issue — the only stage with merge authority |
+
+The split at the review step is by **artifact class**: `review-code` for code PRs,
+`review-doc` for docs (`.decisions`/`.patterns`/prose), `review-skill` for `skills/**` PRs
+(each adds a class-specific checklist). `write-code` consumes a FAIL and re-submits on the
+same branch; the fix loop is bounded, and an independent reviewer — never the author —
+re-gates each round (the split-role firewall: implementer ≠ reviewer).
+
+### Three standalone skills (outside the linear flow)
 
 - **`heal-ci`** triages a red CI run (flake vs. defect) and routes it.
 - **`adr`** records an architecture decision into `.decisions/`.
 - **`deslop-comments`** strips noise comments from the working tree.
+- **`doctor`** preflights a repo against the pipeline's prerequisites and prints a pass/fail
+  checklist with the exact fix command for each gap.
 
-One skill runs **upstream** of the linear flow, in the ideation layer:
+### One upstream skill (the ideation layer)
 
-- **`wayfinder`** charts a fuzzy destination into a living `wayfinder:map` issue and works its
-  open frontier of investigation/decision tickets until a concrete plan is ready to hand to
-  `triage` / `plan-epic` — the pre-triage front door (epic #2421).
+- **`wayfinder`** runs *before* triage: it charts a fuzzy destination into a living
+  `wayfinder:map` issue and works its frontier of investigation/decision tickets until a
+  concrete plan is ready to hand to `triage` / `plan-epic` — the pre-triage front door
+  (epic #2421).
+
+### How to kick it off
+
+1. **Install the plugin** (see [Install](#install) below) and make sure `gh` is logged in —
+   the only prerequisite.
+2. **Run `doctor` once** in the target repo to confirm the prerequisites (gh auth + scope,
+   the required labels, a CI signal). It turns "did I wire this up right?" into one command.
+3. **Enter work through `report`** (or `wayfinder` for something still fuzzy). From there the
+   pipeline pulls it forward: `triage` makes it pickable, `write-code` picks the next triaged
+   issue and opens a PR, a review skill gates it, and `ship-it` merges on green.
+
+You drive it stage by stage — each skill is a named action you invoke — and because every
+handoff is a durable GitHub artifact, you can stop after any stage and resume later.
 
 ## The 14 skills
 
@@ -82,7 +108,7 @@ Claude Code:
 ```
 
 `kamp-us/phoenix` is the marketplace repository; `kampus-pipeline@kampus` is the plugin
-`kampus-pipeline` from the `kampus` marketplace. After install, the 11 skills are
+`kampus-pipeline` from the `kampus` marketplace. After install, the 14 skills are
 available in the picker (e.g. `triage`, `write-code`, `ship-it`).
 
 ## Configuration — point the pipeline at your repo
@@ -107,9 +133,15 @@ the wrong repo — the default-to-current-repo path is the safe one; the overrid
 The skills use the [GitHub CLI (`gh`)](https://cli.github.com/) for all reads and writes,
 so a logged-in `gh` is the only prerequisite.
 
+## Design notes — versioning and spec conformance
+
+The plugin carries **no per-plugin `version`** (neither in the marketplace plugin entry nor in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)): Claude Code then content-addresses the install by git commit SHA, so every commit is a new "version" and skill additions/edits reach already-installed users on the normal update path — a fixed semver pin froze the cache and silently served stale content (#945). This omission is **deliberate, not a defect — do not add a `version`**; the decision record (why + history) is [ADR 0110](https://github.com/kamp-us/phoenix/blob/main/.decisions/0110-plugin-carries-no-version-continuous-ship.md).
+
+The whole plugin surface was audited against the official Claude Code plugin spec ([plugins reference](https://docs.claude.com/en/docs/claude-code/plugins-reference), [marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)); the conformance record — the corrected manifest `$schema` URL plus every deliberate deviation (no `version`, the root-level `hooks.json`, the absent `commands/`, the `.claude/skills` discovery symlink) and its forcing constraint — is [ADR 0171](https://github.com/kamp-us/phoenix/blob/main/.decisions/0171-kampus-pipeline-plugin-spec-conformance.md). A future audit that re-flags any of those reads the disposition there: documented-intentional, not an open defect.
+
 ## Portability boundary (ADR 0062)
 
-**All 11 skills are fully repo-agnostic** — they carry no repo literals beyond the
+**All 14 skills are fully repo-agnostic** — they carry no repo literals beyond the
 resolved `$REPO`, so they operate on your repo out of the box.
 
 This includes **`review-plan`**, which is now **portable** too. Its deterministic ledger
@@ -123,7 +155,7 @@ both phoenix and a foreign install invoke the **same** `pipeline-cli epic-ledger
 non-phoenix install **runs** the gate (validates the ledger, flips `status:planned →
 status:triaged` on a clean one, posts a per-defect FAIL on a dirty one) instead of degrading.
 The CLI resolves its target repo from `CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` → `gh repo
-view`, fail-closed (#408). This closed the last `10/11 → 11/11` gap — the follow-up epic
+view`, fail-closed (#408). This closed the last portability gap — the follow-up epic
 [#362](https://github.com/kamp-us/phoenix/issues/362) that ADR 0062 §3 deferred — and was
 proven end-to-end against a real foreign repo (#368).
 
@@ -224,6 +256,7 @@ phoenix/
 │   └── kampus-pipeline/                 # this plugin — source: "./claude-plugins/kampus-pipeline"
 │       ├── .claude-plugin/
 │       │   └── plugin.json
+│       ├── README.md                    # this file — the plugin's front-door entry point
 │       └── skills/                      # canonical — plugin source-root discovery
 │           ├── <name>/SKILL.md
 │           └── gh-issue-intake-formats.md
