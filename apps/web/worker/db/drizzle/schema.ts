@@ -489,3 +489,36 @@ export const notification = sqliteTable(
 		index("notification_recipient_created").on(t.recipientId, sql`${t.createdAt} DESC`),
 	],
 );
+
+/**
+ * One row per mecmua post — mecmua's OWN worker-private long-form authoring store
+ * (epic #2467, #2463), NOT a reuse of pano `post_record`. mecmua is markdown
+ * long-form authoring, so it carries none of pano's link-sharing columns
+ * (`url`/`host`/`score`/`hot_score`/`comment_count`/`tags`) and no çaylak sandbox
+ * marker.
+ *
+ * `published_at` IS the draft/publish lifecycle: null ⇒ an unpublished draft
+ * (masked from public reads by `features/mecmua/MecmuaPostVisibility`), non-null ⇒
+ * published at that instant. Multiple drafts per author are allowed — the
+ * deliberate divergence from pano's one-draft-per-author partial unique index, so
+ * there is none here. Worker-private, so it lives in this schema and not the shared
+ * `@kampus/db-schema` leaf.
+ */
+export const mecmuaPost = sqliteTable(
+	"mecmua_post",
+	{
+		id: text("id").primaryKey(),
+		title: text("title").notNull(),
+		// Canonical long-form markdown body under D1-direct (ADR 0009).
+		body: text("body").notNull().default(""),
+		slug: text("slug"),
+		authorId: text("author_id").notNull(),
+		publishedAt: timestamp("published_at"),
+		createdAt: timestamp("created_at").notNull(),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [
+		// WHERE author_id = ? ORDER BY created_at DESC (an author's own posts + drafts).
+		index("mecmua_post_author_created").on(t.authorId, sql`${t.createdAt} DESC`),
+	],
+);

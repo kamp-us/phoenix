@@ -176,6 +176,13 @@
       "when": 1794000000000,
       "tag": "0024_user_ban_event",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1794500000000,
+      "tag": "0025_mecmua_post",
+      "breakpoints": true
     }
   ]
 }
