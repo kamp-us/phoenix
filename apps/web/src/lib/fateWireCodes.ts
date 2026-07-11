@@ -79,6 +79,12 @@ export const FATE_WIRE_CODES = [
 	// server-authoritative floor the admin `user.banUser` mutation raises against a
 	// blank gerekçe, since a ban's audit record is meaningless without one.
 	"BAN_REASON_REQUIRED",
+	// mecmua write path is gated on the `mecmua-write` flag; the server raises this
+	// when `mecmua.publish` / `mecmua.saveDraft` run with the flag off (#2497).
+	"MECMUA_DISABLED",
+	// A `mecmua.publish` target draft doesn't exist or isn't the caller's own
+	// (`mecmua/MecmuaPostNotFound`, #2497) — the ownership-scoped miss.
+	"MECMUA_POST_NOT_FOUND",
 	"BAD_REQUEST",
 	"INTERNAL_SERVER_ERROR",
 ] as const;

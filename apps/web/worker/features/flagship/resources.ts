@@ -12,6 +12,7 @@ import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {
 	MECMUA_PUBLIC_READ,
+	MECMUA_WRITE,
 	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
 	PANO_FEED_EDGE_CACHE,
@@ -232,6 +233,38 @@ export const PANO_DRAFT_SAVE_FLAG = {
  */
 export const panoDraftSaveFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("pano_draft_save", {appId, ...PANO_DRAFT_SAVE_FLAG});
+
+/**
+ * The mecmua write-path dark-ship flag config (#2497, epic #2467). The SINGLE seam
+ * the mecmua write surface gates behind — `mecmua.publish` + `mecmua.saveDraft` fail
+ * `MECMUA_DISABLED` with it off, so the write path reaches production dark; flipping
+ * it on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`, #746): the
+ * factory spreads it into `FlagshipFlag`; the test asserts `defaultVariation`/
+ * `variations.off` on this same record.
+ *
+ * Per-flag metadata (`.patterns/feature-flags-schema-lifecycle.md`):
+ *   - owner:           mecmua
+ *   - originating:     #2497 (epic: mecmua v1 post feature, #2467)
+ *   - removal trigger: once the mecmua write path is on at 100% and stable for one
+ *                      release, retire the flag and delete its gate.
+ */
+export const MECMUA_WRITE_FLAG = {
+	key: MECMUA_WRITE,
+	description:
+		"mecmua write-path (publish + save-draft) dark-ship (#2497, epic #2467). owner: mecmua. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * No targeting rules — a plain boolean kill-switch (`panoDraftSaveFlag` shape). `appId`
+ * is resolved at deploy.
+ */
+export const mecmuaWriteFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("mecmua_write", {appId, ...MECMUA_WRITE_FLAG});
 
 /**
  * The earned-authorship loop (çaylak→yazar) dark-ship flag config (#1204, epic

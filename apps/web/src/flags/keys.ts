@@ -12,6 +12,14 @@
 export const PANO_DRAFT_SAVE = "pano-draft-save";
 
 /**
+ * mecmua write-path dark-ship flag (#2497, epic #2467). The single seam the mecmua
+ * write surface gates behind — the `mecmua.publish` + `mecmua.saveDraft` mutations
+ * fail `MECMUA_DISABLED` with it off, so the whole write path ships dark until a
+ * human flips it at release (ADR 0083). Its own `mecmua-` product key.
+ */
+export const MECMUA_WRITE = "mecmua-write";
+
+/**
  * Pano base-feed edge-cache containment flag (#2324, epic #2316 leg B, ADR 0170).
  * Default-off. With it off, the base-feed GET emits no `Cache-Control` (nothing is
  * edge-cached) and the fanned-mutation seam fires no purge — the feature ships dark.

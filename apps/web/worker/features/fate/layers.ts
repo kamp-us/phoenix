@@ -31,6 +31,7 @@ import {Kunye, KunyeLive} from "../kunye/Kunye.ts";
 import {RelationStoreLive} from "../kunye/RelationStore.ts";
 import {authorshipLadder} from "../kunye/standing.ts";
 import {VouchLedgerLive} from "../kunye/VouchLedger.ts";
+import {MecmuaLive} from "../mecmua/Mecmua.ts";
 import {BookmarkLive} from "../pano/Bookmark.ts";
 import {PanoFeedCache} from "../pano/feed-cache.ts";
 import {PanoLive} from "../pano/Pano.ts";
@@ -244,6 +245,11 @@ export const makeFateLayer = Layer.mergeAll(
 	// The bildirim spine's notification store + recipient-scoped read model (#1694,
 	// epic #1666), depending only on `Drizzle` (discharged below) — merges flat.
 	NotificationLive,
+	// The mecmua long-form write service (#2497, epic #2467) — the publish + save-draft
+	// acts, depending only on `Drizzle` (discharged below), so it merges flat like the
+	// other domain layers. The publish yazar-floor is discharged at the mutation via
+	// `PublishMecmua` (CurrentActor/AgentAuthority/Kunye already in this graph), not here.
+	MecmuaLive,
 	// The authz ports the moderation gate (`report.resolve`/`restore`/`listOpen`)
 	// discharges `Moderate.over(platform)` against: `RelationStoreLive` reads the
 	// `moderates` tuple off the same `Drizzle` seam (discharged below), and

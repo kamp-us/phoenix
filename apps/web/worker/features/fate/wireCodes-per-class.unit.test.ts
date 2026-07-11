@@ -36,6 +36,7 @@ import {
 } from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
 import {Denied, InsufficientKarma, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
+import {MecmuaDisabled, MecmuaPostNotFound, MecmuaTitleRequired} from "../mecmua/errors.ts";
 import {
 	CommentBodyRequired,
 	CommentBodyTooLong,
@@ -98,6 +99,12 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	[UnauthorizedPostMutation, "UNAUTHORIZED"],
 	[UnauthorizedCommentMutation, "UNAUTHORIZED"],
 	[DraftsDisabled, "DRAFTS_DISABLED"],
+	// mecmua write path (#2497) — reachable from fateConfig via `mecmua.publish` /
+	// `mecmua.saveDraft`. All message-only, so also round-trip representatives below;
+	// `MecmuaTitleRequired` shares the `TITLE_REQUIRED` code with pano's `TitleRequired`.
+	[MecmuaDisabled, "MECMUA_DISABLED"],
+	[MecmuaPostNotFound, "MECMUA_POST_NOT_FOUND"],
+	[MecmuaTitleRequired, "TITLE_REQUIRED"],
 	// sozluk
 	[BodyRequired, "BODY_REQUIRED"],
 	[BodyTooLong, "BODY_TOO_LONG"],
@@ -163,6 +170,8 @@ const ROUND_TRIP_CLASSES = [
 	ParentCommentNotFound,
 	PostDeleteFailed,
 	DraftsDisabled,
+	MecmuaDisabled,
+	MecmuaPostNotFound,
 	BodyRequired,
 	UsernameInvalidFormat,
 	UsernameTooShort,
