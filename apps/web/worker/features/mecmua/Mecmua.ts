@@ -94,6 +94,9 @@ export class Mecmua extends Context.Service<
 			subscriberId: string,
 		) => Effect.Effect<ReadonlyArray<string>>;
 
+		/** Whether `subscriberId` follows `authorId` — the subscribe-affordance state read (#2527). */
+		readonly isSubscribed: (subscriberId: string, authorId: string) => Effect.Effect<boolean>;
+
 		/**
 		 * The subscribed-author time feed (#2500): a forward keyset page of PUBLISHED
 		 * mecmua posts from the reader's subscribed authors, ordered `publishedAt desc, id
@@ -195,6 +198,25 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 			return rows.map((r) => r.authorId);
 		});
 
+		const isSubscribed = Effect.fn("Mecmua.isSubscribed")(function* (
+			subscriberId: string,
+			authorId: string,
+		) {
+			const rows = yield* run((db) =>
+				db
+					.select({authorId: schema.mecmuaSubscription.authorId})
+					.from(schema.mecmuaSubscription)
+					.where(
+						and(
+							eq(schema.mecmuaSubscription.subscriberId, subscriberId),
+							eq(schema.mecmuaSubscription.authorId, authorId),
+						),
+					)
+					.limit(1),
+			);
+			return rows.length > 0;
+		});
+
 		const listFeedConnection = Effect.fn("Mecmua.listFeedConnection")(function* (
 			input: MecmuaFeedInput,
 		) {
@@ -259,6 +281,7 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 			subscribe,
 			unsubscribe,
 			listSubscribedAuthorIds,
+			isSubscribed,
 			listFeedConnection,
 		};
 	}),

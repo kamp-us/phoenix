@@ -6,7 +6,13 @@ import type {FateModule, FateRootsRecord} from "../fate/module.ts";
 import {lists} from "./lists.ts";
 import {mutations} from "./mutations.ts";
 import {MECMUA_FEED_ORDERING} from "./ordering.ts";
-import {MecmuaPostView, MecmuaSubscriptionReceiptView, mecmuaPostDataView} from "./views.ts";
+import {queries} from "./queries.ts";
+import {
+	MecmuaPostView,
+	MecmuaSubscriptionReceiptView,
+	mecmuaPostDataView,
+	mecmuaSubscriptionReceiptDataView,
+} from "./views.ts";
 
 // The write path + feed both return `MecmuaPostView` inline, so the entity needs a
 // source to be view-reachable in codegen. A `syntheticSource` (no by-id fetch path) is
@@ -20,9 +26,13 @@ const roots: FateRootsRecord = {
 	// (`publishedAt desc, id desc`, single-sourced from `MECMUA_FEED_ORDERING`) + the
 	// published mask + the subscribed-author selection.
 	mecmuaFeed: list(mecmuaPostDataView, {orderBy: viewOrderBy(MECMUA_FEED_ORDERING)}),
+	// The subscribe-affordance state read (#2527) — whether the reader follows a given
+	// author. Resolved inline by the `mecmuaSubscription` query keyed on `CurrentUser`.
+	mecmuaSubscription: mecmuaSubscriptionReceiptDataView,
 };
 
 export const fateModule = {
+	queries,
 	lists,
 	mutations,
 	sources: [mecmuaPostSource, mecmuaSubscriptionReceiptSource],
