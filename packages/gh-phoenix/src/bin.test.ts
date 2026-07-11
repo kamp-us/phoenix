@@ -26,11 +26,6 @@ const run = (args: ReadonlyArray<string>, env?: NodeJS.ProcessEnv): Promise<RunR
 
 describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 	let dir: string;
-	const write = (name: string, content: string): string => {
-		const p = join(dir, name);
-		writeFileSync(p, content, "utf8");
-		return p;
-	};
 
 	beforeAll(() => {
 		dir = mkdtempSync(join(tmpdir(), "gh-phoenix-lint-"));
@@ -49,8 +44,19 @@ describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 		assert.include(stderr, "zero");
 	}, 30_000);
 
+	// Both the gh-call scan and the #1766 frontmatter check must have non-empty scope, so the
+	// corpus is a real (non-self-exempt) SKILL.md carrying valid frontmatter — a plain .md
+	// has empty frontmatter scope and would (correctly) fail closed with exit 3 (ADR 0092).
+	const VALID_FM = ["---", "name: foo", "description: a test skill", "---", ""].join("\n");
+	const writeSkill = (rel: string, body: string): string => {
+		const p = join(dir, rel);
+		mkdirSync(join(p, ".."), {recursive: true});
+		writeFileSync(p, VALID_FM + body, "utf8");
+		return p;
+	};
+
 	it("exits 2 and reports the finding on a GraphQL-path gh call", async () => {
-		const f = write("dirty.md", "step one\nrun gh project list\n");
+		const f = writeSkill("skills/foo/SKILL.md", "step one\nrun gh project list\n");
 		const {code, stderr, stdout} = await run(["lint-skills", f]);
 		assert.strictEqual(code, 2);
 		assert.include(stderr, "gh project");
@@ -58,7 +64,7 @@ describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 	}, 30_000);
 
 	it("exits 0 and emits scope on a clean skill file", async () => {
-		const f = write("clean.md", "use gh api repos/o/r/issues/1");
+		const f = writeSkill("skills/bar/SKILL.md", "use gh api repos/o/r/issues/1");
 		const {code, stdout} = await run(["lint-skills", f]);
 		assert.strictEqual(code, 0);
 		assert.include(stdout, "scanned 1 file");

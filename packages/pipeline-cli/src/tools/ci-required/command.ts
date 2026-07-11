@@ -12,13 +12,14 @@
  * exactly as the former `node packages/ci-required/src/bin.ts` (a bare bin) read
  * it. The print sequence and exit-code contract (0 = PASS / 1 = FAIL) are
  * preserved byte-for-byte; only the IO shell moves from a plain-Node bin to this
- * Effect `Command`. The pure core (`inputFromEnv` + `judge`) is unchanged and
- * stays zero-runtime-dependency plain-Node — `command.ts` is the IO shell: read
- * env, print, exit.
+ * Effect `Command`. The pure core (`inputFromEnv` + `judge`) is imported from the
+ * standalone `@kampus/ci-required` — the single source of truth the CI gate bin
+ * (`node packages/ci-required/src/bin.ts`) also runs, so this CLI and CI can never
+ * diverge (#2442). `command.ts` is the IO shell: read env, print, exit.
  */
+import {inputFromEnv, judge} from "@kampus/ci-required";
 import {Console, Effect} from "effect";
 import {Command} from "effect/unstable/cli";
-import {inputFromEnv, judge} from "./ci-required.ts";
 
 export const ciRequiredCommand = Command.make(
 	"ci-required",
