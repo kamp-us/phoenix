@@ -11,6 +11,7 @@
 import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {
+	MECMUA_PUBLIC_READ,
 	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
 	PANO_FEED_EDGE_CACHE,
@@ -729,3 +730,36 @@ export const USER_BAN_FLAG = {
  */
 export const userBanFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_user_ban", {appId, ...USER_BAN_FLAG});
+
+/**
+ * The mecmua public-read dark-ship flag config (#2498, epic #2467). The SINGLE seam
+ * the anonymous read surface gates behind — the `GET /fate/mecmua/post/:slug` route
+ * (404 until flipped) + the `/mecmua/:slug` reader page (self-404). Default-OFF so
+ * the whole public-read path reaches production dark: with it off the route 404s and
+ * the page renders the 404, so no unpublished-feature surface is reachable; flipping
+ * it on is the human release act (ADR 0083). Its own `mecmua-` key, scoped to reads —
+ * the authoring/publish path (#2497) ships behind its own seam.
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `PANO_BASE_FEED_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           mecmua (the long-form read surface)
+ *   - originating:     #2498 (epic: mecmua, #2467)
+ *   - removal trigger: once mecmua public read graduates to on at 100% and stable for
+ *                      one release, retire the flag and inline the route + page.
+ */
+export const MECMUA_PUBLIC_READ_FLAG = {
+	key: MECMUA_PUBLIC_READ,
+	description:
+		"mecmua public-read (anon GET route + reader page) dark-ship (#2498, epic #2467). owner: mecmua. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const mecmuaPublicReadFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("mecmua_public_read", {appId, ...MECMUA_PUBLIC_READ_FLAG});

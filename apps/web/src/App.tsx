@@ -36,6 +36,7 @@ import {DivanPage} from "./pages/DivanPage";
 import {FunnelPage} from "./pages/FunnelPage";
 import {LabComposerPage} from "./pages/LabComposerPage";
 import {LandingPage} from "./pages/LandingPage";
+import {MecmuaPostPage} from "./pages/MecmuaPostPage";
 import {NotFoundPage} from "./pages/NotFoundPage";
 import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
@@ -300,6 +301,9 @@ export function App() {
 						    the legacy bespoke route redirects so existing links don't break. */}
 						<Route path="/pano/kaydedilenler" element={<Navigate to={SAVED_HREF} replace />} />
 						<Route path="/pano/:id" element={<PanoPostDetail />} />
+						{/* The mecmua public reader (#2498) — the page self-gates on the
+						    mecmua-public-read flag (off ⇒ 404), so the route is dark by default. */}
+						<Route path="/mecmua/:slug" element={<MecmuaPostPage />} />
 						<Route path="/sozluk" element={<SozlukHome />} />
 						<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
 						<Route path="/search" element={<SearchPage />} />
