@@ -96,11 +96,12 @@ export function LabComposerPage() {
 			<div className="kp-lab__inner">
 				<header className="kp-lab__masthead">
 					<h1 className="kp-lab__title">
-						lab · composer <span className="kp-lab__badge">spike</span>
+						lab · composer <span className="kp-lab__badge">kalıcı</span>
 					</h1>
 					<p className="kp-lab__lead">
 						tiptap StarterKit + native v3 markdown. paste markdown, düzenle, ve JSON → markdown
-						gidiş-dönüşünü canlı gör. atılabilir bir deneme — kalıcı bir özellik değil.
+						gidiş-dönüşünü canlı gör. paylaşılan @kampus/composer tabanının ilk canlı yüzü — herkese
+						açık, kalıcı bir ürün parçası.
 					</p>
 				</header>
 
