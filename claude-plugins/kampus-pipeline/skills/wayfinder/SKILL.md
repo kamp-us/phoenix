@@ -41,8 +41,7 @@ way `write-code` splits on an issue vs. a PR number:
   answer** into `## Decisions-so-far`, **graduate** the answered ticket from `## Open frontier`
   into `## Graduated fog`, and **spawn any new frontier** its answer reveals (a resolved
   unknown routinely uncovers the next one — that fog-graduation is the map's forward motion).
-  *(The full WORK procedure is filled in by #S3 — this scaffold names the mode and its
-  contract; it does not yet implement the walk.)*
+  The full walk is [WORK mode](#work-mode--resolve-one-frontier-ticket-graduate-its-fog) below.
 
 **The one preserved human seam — the founder-decision-fork.** wayfinder clears *investigation*
 fog autonomously, but it **never auto-resolves a founder decision**. When a frontier ticket is
@@ -178,6 +177,90 @@ The map is now charted: a named destination, the givens logged, and a frontier o
 investigation/decision sub-issues WORK mode can resolve one at a time. CHART stops here — it does
 not resolve a ticket, and it never resolves a founder-decision-fork.
 
+## WORK mode — resolve one frontier ticket, graduate its fog
+
+WORK is invoked with **a map issue number** ("work the wayfinder map #N"). Where CHART lays the
+frontier down, WORK is the mode that *clears* it: it takes the map's `## Open frontier`, resolves
+**one** open ticket, records the answer, and graduates that ticket into the fog — the forward
+motion that walks a charted map toward "done enough" for the pipeline. WORK is a **consumer** of
+the four-section map-shape contract
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), §The `wayfinder:map` issue
+shape) — it never re-derives the section grammar, and it honors that contract's lockstep
+invariant: **a ticket leaves `## Open frontier` only by its answer landing in
+`## Decisions-so-far` and the ticket moving to `## Graduated fog`** — the three move together, so
+the map is never left with a resolved unknown that has no recorded answer.
+
+### The one-ticket-per-session law — resolve exactly one, then stop
+
+A WORK run resolves **exactly one** frontier ticket and stops — the same one-unit-per-run
+discipline `write-code` holds (one issue → one PR). This is not throttling for its own sake: each
+resolution is an atomic, auditable step that appends **one** `## Decisions-so-far` entry and
+graduates **one** ticket, so a later reader can trace *how the fog cleared* one move at a time,
+and the next run picks up cold from the map's durable state. A run that chained several
+resolutions would blur that history, compound un-reviewed answers, and race its own frontier
+spawns. So: pick one, resolve it, record and graduate it, then hand back — never loop to a second
+ticket in the same session.
+
+### Map state is read and written through the `wayfinder-map` CLI — never ad-hoc markdown parsing
+
+Every map-state read and mutation WORK performs — reading `## Open frontier` to pick the next
+ticket, appending a `## Decisions-so-far` entry, moving a ticket into `## Graduated fog` — goes
+through the `wayfinder-map` CLI (the pipeline-cli tool, #2426), **not** hand-rolled markdown
+slicing of the issue body. Prose-guessing section boundaries with `sed`/regex is exactly the
+brittle parsing the structured contract exists to remove: a stray heading, a reordered section, or
+an extra note under a section silently corrupts a hand-edit, whereas the CLI reads and rewrites the
+four sections against the single-source shape. The CLI is the same reader/writer CHART's output is
+shaped for and the durable seam between runs — WORK mutates the map only through it.
+
+### The walk
+
+1. **Resolve the map and read its frontier through the CLI.** Load map `#N`'s state via
+   `wayfinder-map` and take its `## Open frontier` list. Pick the **next resolvable** ticket
+   deterministically (oldest sub-issue first). A ticket already flagged **founder-decision-fork**
+   and awaiting the founder is **not resolvable by the agent** — skip it (see the seam below) and
+   take the next investigation ticket. If the only remaining frontier is forks awaiting the
+   founder, there is nothing for WORK to resolve: surface that the map is blocked on the human and
+   stop.
+
+2. **Classify the picked ticket — investigation (AFK) or founder-decision-fork.** An investigation
+   ticket (`type:investigation`, the AFK/Research + Prototype-spike rows of CHART's translation
+   table) is one the agent clears autonomously. A `type:decision` ticket flagged a
+   founder-decision-fork is **not** — it routes to the preserved human seam (below), never to a
+   subagent.
+
+3. **Resolve the one investigation ticket via a subagent.** Spawn an investigation / deep-research
+   subagent (or a spike/tracer coder for a Prototype ticket) to answer the open question, and
+   capture its finding. WORK does the legwork here autonomously — this is the fog wayfinder clears
+   on its own authority.
+
+4. **Record the answer into `## Decisions-so-far`.** Append **one** entry naming *what was
+   decided/found* and the ticket it came from (`— from #N`), via the CLI. This is append-only
+   history — never rewrite or delete an earlier entry; a later revision lands as a new superseding
+   line (§the map-shape contract).
+
+5. **Fog-graduation — graduate the resolved ticket and spawn any new frontier it reveals.** Close
+   the resolved sub-issue, and move it from `## Open frontier` into `## Graduated fog` via the CLI
+   (the lockstep counterpart to step 4). Then, **if the recorded answer uncovers further
+   unknowns**, file those as new frontier sub-issues under `## Open frontier` — reusing CHART's
+   filing mechanics (a real `type:investigation`/`type:decision` sub-issue linked to the map, held
+   to the same plan-don't-do law: each new ticket resolves a decision or an unknown, never a
+   deliverable) — and note them on the graduated line (`→ spawned #M`). A resolved unknown
+   routinely reveals the next one; that spawn is the map's forward motion, not a failure to finish.
+
+6. **Stop — exactly one ticket resolved.** One frontier ticket is now answered, recorded, and
+   graduated, with any newly-revealed fog laid down for a future run. Do **not** pick a second
+   ticket; the next WORK run resumes cold from the map's updated state.
+
+### The founder-decision-fork seam — surfaced, never resolved by WORK
+
+WORK clears investigation fog autonomously, but it **never auto-resolves a founder-decision-fork**
+— the one preserved human seam (see [Two modes, one preserved human seam](#two-modes-one-preserved-human-seam)
+for the *why*). When the ticket WORK would pick is a fork, it does **not** hand it to a subagent
+and does **not** pick an option: it leaves the fork on `## Open frontier`, surfaces that the map is
+awaiting a founder call, and stops. The mechanics of *routing* a fork to the founder — how the
+choice is presented and consumed — are the founder-decision-fork seam (#2424), out of scope here;
+WORK's obligation is only to **recognize the fork and refuse to resolve it**.
+
 ## Handoff — the map graduates into the pipeline
 
 A map is "done enough" when its open frontier holds no more answerable unknowns — every
@@ -188,8 +271,9 @@ is concrete enough to enter the execution pipeline: its accreted decisions becom
 front of that funnel, not a replacement for it.
 
 > **Build status.** The construct — the `wayfinder:map` label, the map-issue shape contract, and
-> the two-mode + one-seam description — and the **CHART mode** walk above are in place (#2421,
-> #2422). Still to land: the **WORK mode** walk (#2423), the **founder-decision-fork** routing
-> mechanics (#2424), the **emission** path into the pipeline (#2425), and the **CLI tool**
-> (#2426). Each fills in against the map-shape contract linked above; do not let a mode drift
-> from that single source.
+> the two-mode + one-seam description — and both mode walks, **CHART** and **WORK**, are in place
+> (#2421, #2422, #2423). Still to land: the **founder-decision-fork** routing mechanics (#2424,
+> which WORK surfaces-and-stops for but does not itself resolve), the **emission** path into the
+> pipeline (#2425), and the **CLI tool** (#2426, the `wayfinder-map` reader/writer WORK's map-state
+> ops go through). Each fills in against the map-shape contract linked above; do not let a mode
+> drift from that single source.
