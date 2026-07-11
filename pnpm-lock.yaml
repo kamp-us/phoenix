@@ -958,6 +958,9 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.0
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
@@ -1085,6 +1088,12 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.10.1)
+      '@kampus/ci-required':
+        specifier: workspace:*
+        version: link:../ci-required
+      '@kampus/gh-phoenix':
+        specifier: workspace:*
+        version: link:../gh-phoenix
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92
