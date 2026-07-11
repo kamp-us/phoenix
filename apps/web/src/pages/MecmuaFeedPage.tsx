@@ -120,9 +120,7 @@ function MecmuaFeedRow({node}: {node: ViewRef<"MecmuaPost">}) {
 				<h2 className="kp-mecmua-feed__row-title">{post.title}</h2>
 				{post.publishedAt ? (
 					<MetaRow as="div" className="kp-mecmua-feed__meta">
-						<time dateTime={toIso(post.publishedAt)}>
-							{formatAgoTR(toIso(post.publishedAt))}
-						</time>
+						<time dateTime={toIso(post.publishedAt)}>{formatAgoTR(toIso(post.publishedAt))}</time>
 					</MetaRow>
 				) : null}
 				<p className="kp-mecmua-feed__excerpt">{excerpt}</p>
