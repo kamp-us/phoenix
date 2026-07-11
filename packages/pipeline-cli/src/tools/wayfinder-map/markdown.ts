@@ -74,13 +74,33 @@ const sliceSection = (body: string, headingRe: RegExp): Section => {
 	return {present: true, lines: out};
 };
 
-/** The list-item bodies (text after the bullet) of a section, in document order. */
+/**
+ * The list-item bodies (text after the bullet) of a section, in document order.
+ * A wrapped item's continuation lines fold into its text: a non-blank line under
+ * a bullet that is not itself a bullet is glued onto the current item before ref
+ * extraction, and a blank line ends the item. Without this a `— from #N`
+ * attribution that wraps onto a continuation line (as in the §worked-example map)
+ * is dropped, spuriously yielding MALFORMED_DECISION_ENTRY (#2426).
+ */
 const listItems = (section: Section): ReadonlyArray<string> => {
 	const items: string[] = [];
+	let current: string[] | undefined;
+	const flush = () => {
+		if (current) items.push(current.join(" ").trim());
+		current = undefined;
+	};
 	for (const line of section.lines) {
 		const match = LIST_ITEM.exec(line);
-		if (match?.[1]) items.push(match[1].trim());
+		if (match?.[1]) {
+			flush();
+			current = [match[1].trim()];
+		} else if (line.trim().length === 0) {
+			flush();
+		} else if (current) {
+			current.push(line.trim());
+		}
 	}
+	flush();
 	return items;
 };
 
