@@ -289,11 +289,15 @@ done
 # The has-code/has-docs/has-skills probes are single-sourced as canonical HAS_*_RE= lines in
 # gh-issue-intake-formats.md §CLASS and re-resolved from origin/main here (like CONTROL_PLANE_RE/
 # UI_RE, #981) so this snapshot can't mis-classify — and so the reviewer (which consumes the SAME
-# lines) fans across every present class in lockstep with what ship-it requires (#2383). FAIL CLOSED:
-# an unreadable source ⇒ dispatch/require the gate. The literals below are the fail-closed reference
-# + validate-gate-path-drift lockstep target, NOT the live decision source — §CLASS is the source.
+# lines) fans across every present class in lockstep with what ship-it requires (#2383). The reviewer
+# and this step both run `pipeline-cli class-probe classify` (which parses these SAME §CLASS lines —
+# no third copy) as the deterministic class set, so `required == dispatched` can't diverge by an
+# eyeball miss the way `.glossary/**` did on PR #2430 (#2434). FAIL CLOSED: an unreadable source ⇒
+# dispatch/require the gate. The literals below are the fail-closed reference, NOT the live decision
+# source — §CLASS is the source:
+#   gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' | pipeline-cli class-probe classify
 HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'
-HAS_SKILLS_RE='^claude-plugins/kampus-pipeline/(skills|agents)/'
+HAS_SKILLS_RE='^claude-plugins/[^/]+/(skills|agents)/|^\.claude-plugin/'
 HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'
 HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
 CLASS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
