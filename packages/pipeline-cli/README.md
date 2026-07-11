@@ -412,6 +412,33 @@ echo '{"reason":"TypeError: …","resumeFromRunId":"run_x","priorResumes":0}' \
   | node packages/pipeline-cli/src/bin.ts resume-policy decide         # → surface (logic)
 ```
 
+### `wayfinder-map` — parse + validate a `wayfinder:map` issue's state (#2421, #2426)
+
+The machine-readable substrate the `wayfinder` skill's fog-graduation and emission modes
+read instead of prose-guessing a map's state. A `wayfinder:map` issue is the ideation-layer
+map that sits upstream of the execution pipeline; its body carries four canonical sections
+(`## Destination` / `## Decisions-so-far` / `## Open frontier` / `## Graduated fog`), defined
+once in the [formats contract](../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md).
+This tool parses that body into `{destination, decisionsSoFar, openFrontier, graduatedFog}`,
+validates it against a structural floor (the epic-ledger idiom: a closed defect enum, sorted
+deterministically), and exposes a **graduation-readiness** predicate — is the open frontier
+cleared of every *answerable* unknown (a well-formed, non-fork ticket), so the map is ready to
+emit.
+
+The tool is **read-only** — it parses and validates; the map's writes belong to the
+`wayfinder` skill's chart/work modes. The pure core (`markdown.ts` parse, `validate.ts` floor
++ `isGraduationReady`) is unit-tested directly; the GitHub boundary (`github.ts`) fetches the
+map body + its native sub-issues and resolves a frontier ref that names a non-sub-issue as
+`DANGLING_FRONTIER_REF`.
+
+```bash
+# human verdict: valid/malformed + the graduation-ready flag
+node packages/pipeline-cli/src/bin.ts wayfinder-map 2421
+
+# the full parsed state + defects as one JSON object (what the skill modes / a CI hook consume)
+node packages/pipeline-cli/src/bin.ts wayfinder-map 2421 --json
+```
+
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
 pnpm --filter @kampus/pipeline-cli test
