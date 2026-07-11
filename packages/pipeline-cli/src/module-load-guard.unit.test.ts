@@ -1,7 +1,9 @@
-import {describe, expect, it} from "vitest";
+import {describe, expect, it, vi} from "vitest";
 import {
 	isUnlinkedDependencyError,
+	loadWithSelfHeal,
 	remediationMessage,
+	shouldSelfHeal,
 	unlinkedPackageName,
 } from "./module-load-guard.ts";
 
@@ -75,5 +77,75 @@ describe("remediationMessage", () => {
 	it("degrades to a generic phrasing when the package name is unresolvable", () => {
 		const weird = Object.assign(new Error("Cannot find package"), {code: "ERR_MODULE_NOT_FOUND"});
 		expect(remediationMessage(weird)).toContain("a dependency");
+	});
+});
+
+describe("shouldSelfHeal", () => {
+	it("is on by default when the opt-out env var is unset", () => {
+		expect(shouldSelfHeal({})).toBe(true);
+	});
+
+	it("is off when the opt-out env var is set to a truthy value", () => {
+		expect(shouldSelfHeal({PIPELINE_CLI_NO_SELF_HEAL: "1"})).toBe(false);
+		expect(shouldSelfHeal({PIPELINE_CLI_NO_SELF_HEAL: "yes"})).toBe(false);
+	});
+
+	it("treats falsey values as unset so `VAR=0`/`VAR=` doesn't accidentally arm it", () => {
+		expect(shouldSelfHeal({PIPELINE_CLI_NO_SELF_HEAL: ""})).toBe(true);
+		expect(shouldSelfHeal({PIPELINE_CLI_NO_SELF_HEAL: "0"})).toBe(true);
+		expect(shouldSelfHeal({PIPELINE_CLI_NO_SELF_HEAL: "false"})).toBe(true);
+	});
+});
+
+describe("loadWithSelfHeal", () => {
+	it("passes through when the first load succeeds — no install", async () => {
+		const load = vi.fn().mockResolvedValue(undefined);
+		const install = vi.fn().mockResolvedValue(undefined);
+		await expect(loadWithSelfHeal({load, install})).resolves.toBeUndefined();
+		expect(load).toHaveBeenCalledTimes(1);
+		expect(install).not.toHaveBeenCalled();
+	});
+
+	it("self-heals the unlinked-dep case: one install, then the retry succeeds", async () => {
+		const load = vi
+			.fn()
+			.mockRejectedValueOnce(unlinkedPkgErr("@kampus/ci-required"))
+			.mockResolvedValueOnce(undefined);
+		const install = vi.fn().mockResolvedValue(undefined);
+		const onHealAttempt = vi.fn();
+		await expect(loadWithSelfHeal({load, install, onHealAttempt})).resolves.toBeUndefined();
+		// bounded: exactly one install, exactly one retry (two loads total) — never a loop
+		expect(install).toHaveBeenCalledTimes(1);
+		expect(load).toHaveBeenCalledTimes(2);
+		expect(onHealAttempt).toHaveBeenCalledWith("@kampus/ci-required");
+	});
+
+	it("falls back to the #1798 remediation when the retry still can't link the dep", async () => {
+		const stillUnlinked = unlinkedPkgErr("@kampus/ci-required");
+		const load = vi.fn().mockRejectedValue(stillUnlinked);
+		const install = vi.fn().mockResolvedValue(undefined);
+		// the second unlinked throw propagates so the bin prints remediation + exit(1)
+		await expect(loadWithSelfHeal({load, install})).rejects.toBe(stillUnlinked);
+		expect(install).toHaveBeenCalledTimes(1); // still bounded — one install, no loop
+		expect(load).toHaveBeenCalledTimes(2);
+		expect(isUnlinkedDependencyError(stillUnlinked)).toBe(true);
+	});
+
+	it("does NOT self-heal a genuine missing-source-file miss — rethrows the real bug untouched", async () => {
+		const realBug = missingRelativeFileErr();
+		const load = vi.fn().mockRejectedValue(realBug);
+		const install = vi.fn().mockResolvedValue(undefined);
+		await expect(loadWithSelfHeal({load, install})).rejects.toBe(realBug);
+		expect(install).not.toHaveBeenCalled();
+		expect(load).toHaveBeenCalledTimes(1);
+	});
+
+	it("skips the heal entirely when disabled — the unlinked error drops straight to the fallback", async () => {
+		const unlinked = unlinkedPkgErr("yaml");
+		const load = vi.fn().mockRejectedValue(unlinked);
+		const install = vi.fn().mockResolvedValue(undefined);
+		await expect(loadWithSelfHeal({load, install, selfHealEnabled: false})).rejects.toBe(unlinked);
+		expect(install).not.toHaveBeenCalled();
+		expect(load).toHaveBeenCalledTimes(1);
 	});
 });

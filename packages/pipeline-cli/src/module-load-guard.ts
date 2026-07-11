@@ -61,3 +61,61 @@ export const remediationMessage = (err: Error & {code: string}): string => {
 		`  ${FILTER_INSTALL}   # just this package`,
 	].join("\n");
 };
+
+/** Opt-out env var: set it to disable the self-heal and drop straight to the #1798 fallback. */
+export const NO_SELF_HEAL_ENV = "PIPELINE_CLI_NO_SELF_HEAL";
+
+/**
+ * True unless the caller opted out via `PIPELINE_CLI_NO_SELF_HEAL`. The auto-install is
+ * desirable on the primary checkout (where `main-sync` must be runnable with zero manual
+ * install), but an environment that installs deps itself and forbids an implicit one — a
+ * frozen-lockfile CI runner, say — sets the var to skip the heal and fail fast instead.
+ * A falsey value (`""`, `"0"`, `"false"`) reads as unset so `VAR=0` doesn't accidentally arm it.
+ */
+export const shouldSelfHeal = (env: {[NO_SELF_HEAL_ENV]?: string}): boolean => {
+	const v = env[NO_SELF_HEAL_ENV];
+	return v === undefined || v === "" || v === "0" || v === "false";
+};
+
+export interface SelfHealOptions {
+	/** Load the tool graph — the bin's dynamic `import("./run.ts")`. */
+	load: () => Promise<unknown>;
+	/** The one-shot workspace install run to link the missing dep. */
+	install: () => Promise<void>;
+	/** Off ⇒ skip the heal and rethrow the unlinked-dep error to the #1798 fallback. Default on. */
+	selfHealEnabled?: boolean;
+	/** Observability hook fired just before the single install attempt (the healed package name). */
+	onHealAttempt?: (pkg: string | null) => void;
+}
+
+/**
+ * Bounded, idempotent self-heal for the unlinked-workspace-dep condition (#2459).
+ *
+ * `main-sync` (and every pipeline-cli tool) runs from source as `node src/bin.ts …`, so a
+ * `pipeline-cli` workspace-dep-graph change (PR #2447 switched `@kampus/ci-required` to a
+ * `workspace:*` import) leaves the primary checkout's `node_modules` stale and the dynamic
+ * `import("./run.ts")` throws the unlinked-dep `ERR_MODULE_NOT_FOUND` `isUnlinkedDependencyError`
+ * classifies. Rather than dead-ending at the legible remediation, we first try to heal the exact
+ * condition: run one workspace install, then retry the load. The install runs **at most once** per
+ * process (bounded — never a retry loop) and **only** for the classifier-accepted unlinked-dep case,
+ * so a genuine missing-source-file miss (or any unrelated throw) propagates untouched and still fails
+ * as the real bug it is. If the single retry still can't link the dep, that throw propagates too and
+ * the caller falls back to the #1798 fail-fast remediation — the legible message is preserved as the
+ * last resort, not replaced.
+ */
+export const loadWithSelfHeal = async ({
+	load,
+	install,
+	selfHealEnabled = true,
+	onHealAttempt,
+}: SelfHealOptions): Promise<void> => {
+	try {
+		await load();
+		return;
+	} catch (err) {
+		if (!selfHealEnabled || !isUnlinkedDependencyError(err)) throw err;
+		onHealAttempt?.(unlinkedPackageName(err.message));
+		await install();
+		await load();
+	}
+};
