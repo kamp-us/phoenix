@@ -147,7 +147,12 @@ fi
 # toolchain-free `skills` CI job (no node/pnpm), where a class-probe call can't reach.
 HAS_NAMES="HAS_CODE_RE HAS_SKILLS_RE HAS_DOCS_EXCLUDE_RE HAS_DOCS_RE"
 # Surfaces carrying a copy of the §CP block, enumerated like Invariant 1's CONSUMERS.
-HAS_CONSUMERS="ship-it/SKILL.md"
+# ship-it's copies are one-per-line; reviewer.md's `class_reresolve` fail-closed reference
+# packs two per COMPOUND line (`HAS_A='x'; HAS_B='y'   # c`), which the per-assignment
+# extraction below handles. Both copy sites must track §CP or the class fan silently drifts
+# (issue #2488: reviewer.md's copy was unguarded — drifting it left this gate GREEN). Paths
+# are relative to skills_dir, so the sibling agents/ dir is reached with `../agents/…`.
+HAS_CONSUMERS="ship-it/SKILL.md ../agents/reviewer.md"
 
 for name in $HAS_NAMES; do
 	# Canonical: the single-quoted §CP assignment (NAME='…'). Anchor on the opening
@@ -172,9 +177,13 @@ for name in $HAS_NAMES; do
 			fail "$rel: no $name='…' line found — consumer must carry a copy matching §CP (issue #2488)"
 			continue
 		fi
-		STRIPPED="${LINE#"${LINE%%[![:space:]]*}"}"
-		VAL="${STRIPPED#"$name="}"
-		VAL_CLEAN=$(printf '%s\n' "$VAL" | sed "s/'[[:space:]]*#.*$/'/")
+		# Per-assignment extraction (compound-line-aware): pull ONLY this NAME's own
+		# single-quoted value, whether it sits alone (ship-it, one per line) or shares a
+		# compound line with a sibling assignment + trailing comment (reviewer.md,
+		# `HAS_A='x'; HAS_B='y'   # c`). A single-quoted bash string cannot contain a `'`,
+		# so `[^']*` up to the next quote is the exact value — the old whole-line strip
+		# swallowed the sibling assignment on a compound line and false-FAILed (issue #2488).
+		VAL_CLEAN=$(printf '%s\n' "$LINE" | sed "s/.*$name='\([^']*\)'.*/'\1'/")
 		if [ "$VAL_CLEAN" = "$HAS_CANONICAL" ]; then
 			ok "$rel $name matches §CP canonical"
 		else
