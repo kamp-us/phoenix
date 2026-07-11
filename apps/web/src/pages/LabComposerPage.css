@@ -111,6 +111,159 @@
 	outline: none;
 }
 
+/* Element-level prose rules for the rendered markdown (#2477). Without these every
+   block fell back to a bare browser default (the reported unstyled blockquote); each
+   supported element now gets a real treatment. Role tokens only (ADR 0162): sizes come
+   from the type ramp, spacing/radius/color from role tokens — no raw hex, no raw px. */
+.kp-lab__editor .tiptap > :first-child {
+	margin-top: 0;
+}
+
+.kp-lab__editor .tiptap > :last-child {
+	margin-bottom: 0;
+}
+
+.kp-lab__editor .tiptap p {
+	margin: var(--s-3) 0;
+}
+
+/* Six heading levels off a two-size type ramp: h1/h2 take the dedicated heading
+   sizes; h3–h6 lean on weight, caps, and color to stay distinct without a raw size. */
+.kp-lab__editor .tiptap :is(h1, h2, h3, h4, h5, h6) {
+	color: var(--text-primary);
+	font-weight: 700;
+	margin: var(--s-4) 0 var(--s-2);
+}
+
+.kp-lab__editor .tiptap h1 {
+	font: var(--t-h-page);
+	font-weight: 700;
+}
+
+.kp-lab__editor .tiptap h2 {
+	font: var(--t-h-feed);
+	font-weight: 700;
+}
+
+.kp-lab__editor .tiptap h3 {
+	font: var(--t-body);
+	font-weight: 700;
+}
+
+.kp-lab__editor .tiptap h4 {
+	font: var(--t-body);
+	font-weight: 600;
+	color: var(--text-secondary);
+}
+
+.kp-lab__editor .tiptap h5 {
+	font: var(--t-meta);
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-secondary);
+}
+
+.kp-lab__editor .tiptap h6 {
+	font: var(--t-micro);
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-muted);
+}
+
+.kp-lab__editor .tiptap strong {
+	font-weight: 700;
+	color: var(--text-primary);
+}
+
+.kp-lab__editor .tiptap em {
+	font-style: italic;
+}
+
+.kp-lab__editor .tiptap s,
+.kp-lab__editor .tiptap del {
+	text-decoration: line-through;
+	color: var(--text-muted);
+}
+
+.kp-lab__editor .tiptap a {
+	color: var(--link);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+/* Inline code gets a chip; a code block resets that chip back to a plain slab. */
+.kp-lab__editor .tiptap code {
+	font: var(--t-mono);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 0 var(--s-1);
+}
+
+.kp-lab__editor .tiptap pre {
+	font: var(--t-mono);
+	color: var(--text-primary);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-lg);
+	padding: var(--s-3);
+	margin: var(--s-3) 0;
+	overflow-x: auto;
+}
+
+.kp-lab__editor .tiptap pre code {
+	background: none;
+	border: none;
+	border-radius: 0;
+	padding: 0;
+	font: inherit;
+	color: inherit;
+}
+
+.kp-lab__editor .tiptap ul,
+.kp-lab__editor .tiptap ol {
+	margin: var(--s-3) 0;
+	padding-left: var(--s-5);
+}
+
+.kp-lab__editor .tiptap ul {
+	list-style: disc;
+}
+
+.kp-lab__editor .tiptap ol {
+	list-style: decimal;
+}
+
+.kp-lab__editor .tiptap li {
+	margin: var(--s-1) 0;
+}
+
+/* A nested list tightens and sheds the outer block's vertical margin. */
+.kp-lab__editor .tiptap li > ul,
+.kp-lab__editor .tiptap li > ol {
+	margin: var(--s-1) 0;
+}
+
+.kp-lab__editor .tiptap blockquote {
+	margin: var(--s-3) 0;
+	padding: var(--s-1) 0 var(--s-1) var(--s-3);
+	border-left: 2px solid var(--border-strong);
+	color: var(--text-secondary);
+}
+
+.kp-lab__editor .tiptap blockquote blockquote {
+	margin: var(--s-2) 0 0;
+	color: var(--text-muted);
+}
+
+.kp-lab__editor .tiptap hr {
+	border: none;
+	border-top: 1px solid var(--border);
+	margin: var(--s-4) 0;
+}
+
 .kp-lab__out {
 	font: var(--t-mono);
 	color: var(--text-primary);
