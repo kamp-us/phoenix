@@ -23,8 +23,9 @@
  *     HEAD to `main` (clean tree only) before the merge, for the orchestrator's
  *     before/after-drain sync.
  *   - `--post-merge` (refresh, #2056): GENTLE — invoked by a pipeline step that knows a
- *     merge landed (ship-it / the orchestrator). It fast-forwards the primary ONLY when
- *     it is already on a clean `main`; on a non-`main` branch or a dirty tree it LEAVES
+ *     merge landed (ship-it / the orchestrator). It fast-forwards the primary when it is
+ *     on `main` and free of tracked modifications (ff'ing through untracked-only dirt,
+ *     #2455); on a non-`main` branch or a tree with tracked modifications it LEAVES
  *     THE CHECKOUT ALONE and exits 0 (never moves HEAD, never errors). This closes the
  *     silent-drift hazard under the merge queue (ADR 0132), where a PR lands GitHub-side
  *     with no local merge to advance the owner's checkout. See `decideMainRefresh`.
@@ -77,6 +78,19 @@ const treeIsDirty = (): boolean => {
 };
 
 /**
+ * `git status --porcelain -uno` non-empty ⇒ TRACKED modifications (staged/unstaged) — `-uno`
+ * excludes untracked files. Indeterminate (command failed) ⇒ true (fail-safe: treat an
+ * unreadable tree as tracked-dirty so the refresh leaves it alone). See #2455: the post-merge
+ * refresh ff's through untracked-only dirt but must still refuse on tracked modifications a
+ * fast-forward could clobber, so `decideMainRefresh` consults THIS, not `isDirty`.
+ */
+const treeHasTrackedModifications = (): boolean => {
+	const r = runGit(["status", "--porcelain", "-uno"]);
+	if (!r.ok) return true;
+	return r.stdout.trim() !== "";
+};
+
+/**
  * The gentle post-merge refresh (#2056) — the HEAD-preserving counterpart to the drain-sync
  * below. `decideMainRefresh` is the safety policy; this runs it. A `leave-alone` plan is a
  * clean exit-0 no-op (the whole point: a stale checkout is acceptable, disturbing the owner
@@ -87,13 +101,19 @@ const runPostMergeRefresh = Effect.fn(function* (head: HeadState, execute: boole
 	const plan = decideMainRefresh(head);
 
 	// ADR 0092 "emit what you scanned": the HEAD state + plan are observable before any action.
+	// Report the tracked/untracked distinction the refresh actually gates on (#2455), not bare dirt.
+	const treeLabel = head.hasTrackedModifications
+		? "tracked-modified"
+		: head.isDirty
+			? "untracked-only (ff-safe)"
+			: "clean";
 	yield* Console.log(
-		`main-sync --post-merge: HEAD ${head.branch ?? "(detached)"}, tree ${head.isDirty ? "DIRTY" : "clean"} — plan: ${plan.action}${execute ? " (EXECUTE)" : " (dry-run)"}`,
+		`main-sync --post-merge: HEAD ${head.branch ?? "(detached)"}, tree ${treeLabel} — plan: ${plan.action}${execute ? " (EXECUTE)" : " (dry-run)"}`,
 	);
 
 	if (plan.action === "leave-alone") {
 		yield* Console.log(
-			`  leaving the primary checkout ALONE (${plan.reason === "off-main" ? `on '${plan.branch}', not '${MAIN_BRANCH}'` : "tree is dirty"}) — a fast-forward would ${plan.reason === "off-main" ? "not advance a checked-out feature branch" : "risk uncommitted work"}. No-op (stale is acceptable; clobbering is not).`,
+			`  leaving the primary checkout ALONE (${plan.reason === "off-main" ? `on '${plan.branch}', not '${MAIN_BRANCH}'` : "tree has tracked modifications"}) — a fast-forward would ${plan.reason === "off-main" ? "not advance a checked-out feature branch" : "risk clobbering tracked work"}. No-op (stale is acceptable; clobbering is not).`,
 		);
 		return;
 	}
@@ -137,7 +157,7 @@ const executeFlag = Flag.boolean("execute").pipe(
 
 const postMergeFlag = Flag.boolean("post-merge").pipe(
 	Flag.withDescription(
-		"gentle post-merge refresh (#2056): fast-forward ONLY on a clean 'main'; on any other branch or a dirty tree, leave the checkout alone and exit 0 (never reattach, never error)",
+		"gentle post-merge refresh (#2056): fast-forward on 'main' when free of tracked modifications (ff's through untracked-only dirt, #2455); on any other branch or a tree with tracked modifications, leave the checkout alone and exit 0 (never reattach, never error)",
 	),
 );
 
@@ -145,7 +165,11 @@ const mainSync = Command.make(
 	"main-sync",
 	{execute: executeFlag, postMerge: postMergeFlag},
 	Effect.fn(function* ({execute, postMerge}) {
-		const head: HeadState = {branch: headBranch(), isDirty: treeIsDirty()};
+		const head: HeadState = {
+			branch: headBranch(),
+			isDirty: treeIsDirty(),
+			hasTrackedModifications: treeHasTrackedModifications(),
+		};
 
 		if (postMerge) {
 			return yield* runPostMergeRefresh(head, execute);
@@ -210,7 +234,7 @@ const mainSync = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Codified primary main-sync. Default (drain-sync): auto-reattach a detached primary HEAD to main, then fetch + merge --ff-only; refuses on a dirty tree (#1573 / #1494 Unit C). --post-merge (refresh): fast-forward ONLY on a clean main, else leave the checkout alone and exit 0 (#2056).",
+		"Codified primary main-sync. Default (drain-sync): auto-reattach a detached primary HEAD to main, then fetch + merge --ff-only; refuses on a dirty tree (#1573 / #1494 Unit C). --post-merge (refresh): fast-forward on main when free of tracked modifications (ff's through untracked-only dirt, #2455), else leave the checkout alone and exit 0 (#2056).",
 	),
 );
 
