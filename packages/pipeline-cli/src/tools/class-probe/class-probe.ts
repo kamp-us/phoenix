@@ -12,7 +12,11 @@
  *
  * Single source: the four `HAS_*_RE` regexes are NOT re-declared here — they are parsed
  * from `gh-issue-intake-formats.md` §CLASS, the one definition ship-it Step 0 and the
- * reviewer fan both re-resolve. There is no third copy to drift out of lockstep.
+ * reviewer fan both re-resolve. There is no third copy to drift out of lockstep. The
+ * additive `UI_RE` (has-ui → the `review-design` gate) is parsed the same way but from its
+ * own single source, `ship-it/SKILL.md` (§CLASS keeps it there deliberately, never in
+ * §CLASS itself) — folding it in here is what makes review-design a deterministic probe
+ * output the reviewer fan dispatches rather than an eyeball it can skip (#2485/#2483).
  */
 
 /** The three artifact classes a PR diff can span — each maps to one `review-*` gate. */
@@ -121,3 +125,35 @@ export const classify = (
 export const requiredNamespaces = (
 	classes: ReadonlyArray<ArtifactClass>,
 ): ReadonlyArray<ReviewNamespace> => classes.map((c) => NAMESPACE_OF[c]);
+
+/**
+ * The additive UI gate — required *alongside* the class gate(s), never as a class of its
+ * own (§CLASS). A UI-affecting diff must reach ship-it with a `review-design` marker present.
+ */
+export const DESIGN_NAMESPACE = "review-design" as const;
+
+/**
+ * Fail-closed UI probe: `.` ⇒ every path is UI-affecting ⇒ has-ui, so an unreadable/incomplete
+ * `UI_RE` demands review-design rather than silently dropping the gate (mirrors ship-it Step 0 /
+ * the reviewer's `ui_reresolve` fail-closed `has-ui`).
+ */
+export const FAILCLOSED_UI_RE = ".";
+
+/**
+ * Parse the canonical `UI_RE='…'` line out of `ship-it/SKILL.md` — the single source for the
+ * additive has-ui/review-design gate (§CLASS keeps `UI_RE` in ship-it, not in §CLASS itself).
+ * A missing line falls back to the fail-closed default; the source is single, so this only
+ * bites on a truncated read.
+ */
+export const parseUiProbe = (shipItText: string): string =>
+	shipItText.match(/^UI_RE='([^']*)'/m)?.[1] ?? FAILCLOSED_UI_RE;
+
+/**
+ * Is the diff UI-affecting (has-ui)? A non-visual `apps/web/src/*.ts` still matches `UI_RE`'s
+ * `^apps/web/src/` branch — that is deliberate here, not a bug to eyeball away: ship-it requires
+ * review-design on exactly this predicate, so the fan must dispatch it on exactly this predicate
+ * or the PR deadlocks on a phantom-empty review-design namespace (#2485/#2483). Fail-closed: an
+ * uncompilable probe matches every path ⇒ has-ui.
+ */
+export const isUiAffecting = (files: ReadonlyArray<string>, uiRe: string): boolean =>
+	files.some(matcher(uiRe, () => true));

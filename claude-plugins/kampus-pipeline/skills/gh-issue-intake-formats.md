@@ -1578,7 +1578,10 @@ HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed:
 `review-design`/`has-ui` is **additive** and stays single-sourced in `ship-it/SKILL.md`'s
 `UI_RE=` (dispatched alongside whatever class gate(s) fire, never as a class of its own — see the
 `ui_reresolve` invariant in `reviewer.md`); the `HAS_*` lines above cover the three mutually-inclusive
-verdict classes.
+verdict classes. `pipeline-cli class-probe classify` folds the additive gate in — it parses `UI_RE`
+from that same single source and appends `has-ui` (`--namespaces`: `review-design`) — so the reviewer
+fan dispatches review-design off the same deterministic probe, never an eyeball that skips a non-visual
+`apps/web/src/*.ts` and deadlocks ship-it on a phantom-empty `review-design` namespace (#2485/#2483).
 
 ---
 
