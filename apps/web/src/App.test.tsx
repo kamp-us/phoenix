@@ -145,14 +145,21 @@ vi.mock("./components/divan/useDivanAccess", () => ({useDivanAccess: () => false
 vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: () => 0}));
 
 // Controllable flag mock. The eager `/profile` Katkıların skeleton (#2188) is gated on
-// the authorship-loop flag, so its tests flip `flags.authorshipLoop`; every other read
-// (and other flag key) stays off, matching the default the shell rendered under before.
-const flags = vi.hoisted(() => ({authorshipLoop: false}));
+// the authorship-loop flag, so its tests flip `flags.authorshipLoop`; the mecmua feed
+// (akış) nav entry (#2547) is gated on `mecmua-feed`, flipped via `flags.mecmuaFeed`.
+// Every other read (and other flag key) stays off, matching the default the shell
+// rendered under before.
+const flags = vi.hoisted(() => ({authorshipLoop: false, mecmuaFeed: false}));
 vi.mock("./flags/useFlag", async () => {
-	const {PHOENIX_AUTHORSHIP_LOOP} = await import("./flags/keys");
+	const {PHOENIX_AUTHORSHIP_LOOP, MECMUA_FEED} = await import("./flags/keys");
 	return {
 		useFlag: (key: string) => ({
-			value: key === PHOENIX_AUTHORSHIP_LOOP ? flags.authorshipLoop : false,
+			value:
+				key === PHOENIX_AUTHORSHIP_LOOP
+					? flags.authorshipLoop
+					: key === MECMUA_FEED
+						? flags.mecmuaFeed
+						: false,
 			loading: false,
 		}),
 	};
@@ -254,6 +261,33 @@ describe("App first-paint invariants (#2177 — pins #2160 flash + #438 remount)
 
 		expect(fateMounts).toHaveLength(1);
 		expect(fateMounts[0]?.key).toBe("anon");
+	});
+});
+
+// The mecmua feed (akış) nav entry (#2547) gates on the SAME `mecmua-feed` seam the
+// `/mecmua/akis` route self-gates on — so the link never points at a dark 404. These
+// pin that gating: absent when the flag is off, present (→ /mecmua/akis) when it flips.
+describe("mecmua feed nav entry (#2547) — gated on mecmua-feed, never a dead link", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+		flags.mecmuaFeed = false;
+	});
+	afterEach(() => {
+		flags.mecmuaFeed = false;
+		vi.clearAllMocks();
+	});
+
+	it("off: the flag dark ⇒ no akış nav link (subscribe's destination stays hidden with its route)", () => {
+		renderApp();
+		expect(screen.queryByRole("link", {name: "akış"})).toBeNull();
+	});
+
+	it("on: the flag flipped ⇒ the akış nav link paints and points at /mecmua/akis", () => {
+		flags.mecmuaFeed = true;
+		renderApp();
+		const link = screen.getByRole("link", {name: "akış"});
+		expect(link.getAttribute("href")).toBe("/mecmua/akis");
 	});
 });
 
