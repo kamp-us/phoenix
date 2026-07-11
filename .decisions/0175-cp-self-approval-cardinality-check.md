@@ -1,12 +1,12 @@
 ---
-id: 0173
+id: 0175
 title: "PROPOSED — §CP self-approval gate is non-deterministic; make it a hard `gh api` team-cardinality check (branch team size 0-1-N), with a single-owner degenerate-case discharge policy that ship-it evaluates from org/team shape, not agent judgment (extends 0135)"
 status: proposed
 date: 2026-07-11
 tags: [pipeline, ship-it, security, control-plane, governance, github]
 ---
 
-# 0173 — Make the §CP self-approval gate deterministic: a hard team-cardinality check with an explicit single-owner discharge policy
+# 0175 — Make the §CP self-approval gate deterministic: a hard team-cardinality check with an explicit single-owner discharge policy
 
 > **Status: PROPOSED — recommendation, not a ruling.** This ADR records a *recommended*
 > discharge policy for umut to rule on via normal ADR review; it is not enacted until accepted.
