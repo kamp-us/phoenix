@@ -77,24 +77,37 @@ read the matching SKILL from the resolved plugin path (`${CLAUDE_PLUGIN_ROOT}`) 
 
 These hold on every run regardless of what the spawn prompt remembered to say:
 
-- **Verify the PR HEAD, never the CWD (`review_head`).** You verdict the PR's actual
-  head commit, not whatever happens to be checked out. Resolve and pin the head SHA up
-  front, then bring that head into **your own worktree by ref** — never a bare
-  `git checkout <sha>`, which after a between-calls cwd reset lands in the shared primary
-  and detaches its `main` (#1103). Capture `WT="$(git rev-parse --show-toplevel)"` once and
-  fetch/check out the PR head explicitly against it:
+- **Verify the PR HEAD, never the CWD — via a per-run ref, never a checkout (`review_head`).**
+  You verdict the PR's actual head commit, not whatever happens to be checked out. Resolve and
+  pin the head SHA up front, then **materialize that head into a per-run ref and an isolated
+  throwaway worktree** — the §RO/§HEAD read-only mechanism the routed skill already runs — and
+  source every file under review from *there*:
   ```bash
-  git -C "$WT" fetch origin pull/<N>/head && git -C "$WT" checkout FETCH_HEAD
+  HEAD_SHA="$(gh pr view <N> --repo "$REPO" --json headRefOid -q .headRefOid)"
+  PR_REF="refs/pr/<N>-$(uuidgen)"
+  git fetch origin "pull/<N>/head:$PR_REF"                  # fetch into your OWN ref — moves no working-tree HEAD
+  [ "$(git rev-parse "$PR_REF")" = "$HEAD_SHA" ] || exit 1  # assert the fetched ref IS the pinned head
+  git worktree add "$(mktemp -d)/review-head-<N>" "$PR_REF" # an isolated throwaway tree the gate owns
+  git show "$PR_REF:<path>"                                 # or read from the throwaway worktree — NEVER a checkout
   ```
-  Confirm `git -C "$WT" rev-parse HEAD` equals the pinned SHA, then bind your verdict to it
-  — a verdict against the wrong tree is a false PASS/FAIL.
-- **Worktree preflight before any git checkout (`wt_preflight`).** You run in an isolated
-  worktree (`isolation:worktree`). The harness resets your shell cwd back to the shared
-  **primary** checkout between Bash calls — so **confirm pwd + branch before every git
-  read/checkout**, and address git at your worktree explicitly (`git -C "$WT" …`,
-  capturing `WT` once after the opening preflight) — **never a bare `git checkout` /
-  `switch` / `fetch` into the primary**, which detaches the shared primary HEAD (the
-  #1103 detach class). You hold no Edit/Write tool: the only thing that mutates is the
+  **Never `git checkout` / `git switch` a head into a working tree — not even a `git -C "$WT"`-scoped
+  one.** The harness resets your shell cwd back to the shared **primary** checkout between Bash calls,
+  so a bare checkout lands *there* and detaches the human's `main` (the #1103/#2270 detach class); and
+  even a checkout in your *own* launched worktree is forbidden by §RO (a gate never mutates working-tree
+  HEAD). `git fetch` into a per-run ref, `git show "$PR_REF:<path>"`, and `git worktree add` move no
+  working tree — they are the only sanctioned way to reach the head. Bind your verdict to `$HEAD_SHA` —
+  a verdict against the wrong tree is a false PASS/FAIL.
+- **Read-only on git working state — never a checkout to inspect a head (`wt_preflight`).** You run in
+  an isolated worktree (`isolation:worktree`), but the harness resets your shell cwd back to the shared
+  **primary** checkout between Bash calls — so a bare `git checkout` / `switch` / `reset` / `stash`
+  issued after a reset runs against the human's **primary** tree and detaches or mutates its `main`
+  (the #1103/#2270 detach class). The gate therefore **never** switches a working tree to inspect a
+  PR: it reaches the head **read-only** via a per-run ref (`git show "$PR_REF:<path>"`) or an isolated
+  throwaway worktree (`git worktree add … "$PR_REF"`), per `review_head` above. `git fetch` into your
+  own per-run ref and `git update-ref -d` are fine — they move no working tree; a `git checkout` /
+  `switch` is not, bare **or** `git -C`-scoped. The full single source is
+  [`../skills/gh-issue-intake-formats.md`](../skills/gh-issue-intake-formats.md) §RO/§HEAD; cite it,
+  don't re-derive the prohibition. You hold no Edit/Write tool: the only thing that mutates is the
   verdict comment, posted via `gh api`.
 - **Post the SHA-bound verdict comment to the PR — the marker contract.** Your verdict's
   **first line is always** `review-<class>: PASS|FAIL @ <sha>` (e.g.

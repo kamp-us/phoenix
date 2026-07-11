@@ -83,7 +83,7 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   You run in an isolated worktree (`isolation:worktree`). The harness resets your shell cwd back
   to the shared **primary** checkout between Bash calls — so a bare `git checkout` / `switch` /
   `rebase` / `reset` / `merge` / `stash` issued after a reset runs against the shared primary tree
-  and detaches or resets the owner's `main` (the #1103/#1494 detach class this exact ship side
+  and detaches or resets the owner's `main` (the #1103/#1494/#2270 detach class this exact ship side
   hit). But ship-it does its whole job **read-only over `gh api` and server-side** — verdict +
   checks reads via `gh api`, the enqueue via `gh pr merge <n> --auto` (no method flag — the queue
   owns the SQUASH method; no `--delete-branch` — the queue owns the final merge, ADR 0132) — so you

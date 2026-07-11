@@ -74,7 +74,9 @@ git fetch origin "$BASE_REF"
 HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
 
 # Fetch the PR head into a dedicated ref WITHOUT touching the session tree (same-repo AND
-# cross-fork; never `gh pr checkout`, which would materialize head config into the session).
+# cross-fork; never `gh pr checkout` / `git checkout` / `git switch`, which materialize the head
+# into a working tree — the harness resets this cwd to the shared PRIMARY between Bash calls, so a
+# bare checkout lands there and detaches the human's `main` (#2270/#1103), and §RO forbids it).
 PR_REF="refs/pr/$PR-$(uuidgen)"
 git fetch origin "pull/$PR/head:$PR_REF"
 # §HEAD #2: confirm the fetched ref IS the resolved head before reviewing — else you'd review a
