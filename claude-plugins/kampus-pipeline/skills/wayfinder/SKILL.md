@@ -225,8 +225,9 @@ shaped for and the durable seam between runs — WORK mutates the map only throu
    ticket. Otherwise pick the **next resolvable** ticket deterministically (oldest sub-issue
    first). A ticket already flagged **founder-decision-fork** and awaiting the founder is **not
    resolvable by the agent** — skip it (see the seam below) and take the next investigation ticket.
-   If the only remaining frontier is forks awaiting the founder, there is nothing for WORK to
-   resolve: surface that the map is blocked on the human and stop.
+   A fork-only map (no answerable ticket left) is already caught by the emission-readiness check
+   above, which routes it into emission's graceful-block-on-human handling — so it never reaches
+   this pick step.
 
 2. **Classify the picked ticket — investigation (AFK) or founder-decision-fork.** An investigation
    ticket (`type:investigation`, the AFK/Research + Prototype-spike rows of CHART's translation
