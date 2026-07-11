@@ -589,31 +589,32 @@ controls, so emitting one would leave `ship-it` comparing a review against a com
 doc lane — two incomparable records. The comment is the single carrier, resolving the
 APPROVE-vs-comment duality #258 flagged.
 
-The post is an **upsert**, not an append: scan the PR for *your own* prior `review-doc:`
-marker comment and `PATCH` it with the fresh verdict instead of `POST`-ing a new one, so
-there is exactly **one** `review-doc` verdict comment per PR (ADR 0058 rule 2). A re-review of
-a new head overwrites the same record with the new `@ <sha>`. The `… | last | .id` upsert
-PATCHes only your *newest* own marker, so on a PR migrated from the pre-0058 append era a few
-older SHA-less own markers may linger — the one-per-gate invariant is **forward-looking**, and
-those legacy duplicates are tolerated because `ship-it`'s consumer SHA-refuses any marker
-without an `@ <sha>` on the current head (Step 2b), so they can never authorize a merge.
+The post is an **upsert**, not an append: exactly **one** `review-doc` verdict comment per PR
+(ADR 0058 rule 2) — a re-review of a new head overwrites the same record with the new `@ <sha>`.
+The upsert (scan your own prior `review-doc:` marker → `PATCH` it, else `POST`) plus its
+namespace guard are the ADR-0058 glue **all four gates share**, so they live in one
+deterministic, unit-tested tool — `pipeline-cli verdict post` (#2102) — rather than re-hand-rolled
+`jq` here. `verdict post` PATCHes only your *newest* own marker, so on a PR migrated from the
+pre-0058 append era a few older SHA-less own markers may linger — the one-per-gate invariant is
+**forward-looking**, and those legacy duplicates are tolerated because `ship-it`'s consumer
+SHA-refuses any marker without an `@ <sha>` on the current head (Step 2b). It also refuses
+fail-closed if the body's first line is not a `review-doc:` marker — the cross-namespace
+emission guard (§the never-a-`review-code`-marker invariant) enforced by the tool, not by care.
+
+Resolve the tool once — in-repo first, published fallback (ADR 0062/0064; epic #994) — and pass
+your composed verdict body by file:
 
 ```bash
+# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
+else
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.1.0 verdict"     # foreign install: the published CLI
+fi
+
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
 # write your composed PASS verdict into "$VERDICT_FILE" (first line: review-doc: PASS @ <HEAD_SHA> — merge-ready)
-BODY="$(cat "$VERDICT_FILE")"
-ME="$(gh api user --jq .login)"
-# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
-# (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
-MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-        | jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-doc:"; "i"))))
-        | last | .id // empty')
-if [ -n "$MINE" ]; then
-  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"   # upsert
-else
-  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"   # first verdict
-fi
+$VERDICT post --pr "$PR" --gate doc --body-file "$VERDICT_FILE"   # upsert (PATCH own prior marker, else POST)
 ```
 
 Verdict body shape. The first line is the **canonical bare marker** — no leading `**`
@@ -714,21 +715,12 @@ rule 4). Upsert it the same way (`PATCH` your own prior `review-doc:` marker if 
 else `POST`):
 
 ```bash
+# $VERDICT resolved above (in-repo-first, published-fallback; ADR 0062/0064). The advisory line
+# opens with `review-doc:` too, so `verdict post`'s namespace guard accepts it and upserts it the
+# same way — one comment per gate, PATCH own prior marker else POST.
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
 # write your composed advisory verdict into "$VERDICT_FILE" (first line: review-doc: advisory — blocking-set PR (manual merge))
-BODY="$(cat "$VERDICT_FILE")"
-ME="$(gh api user --jq .login)"
-# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
-# (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
-MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-        | jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-doc:"; "i"))))
-        | last | .id // empty')
-if [ -n "$MINE" ]; then
-  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
-else
-  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"
-fi
+$VERDICT post --pr "$PR" --gate doc --body-file "$VERDICT_FILE"
 ```
 
 Do **not** emit the `review-doc: PASS @ <sha> — merge-ready` marker for a blocking PR — that marker is a
@@ -751,19 +743,8 @@ verdict comment per PR (ADR 0058 rule 2):
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
 # write your composed FAIL verdict into "$VERDICT_FILE" (first line: review-doc: FAIL @ <HEAD_SHA> — changes-requested)
-BODY="$(cat "$VERDICT_FILE")"
-ME="$(gh api user --jq .login)"
-# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
-# (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
-MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-        | jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-doc:"; "i"))))
-        | last | .id // empty')
-if [ -n "$MINE" ]; then
-  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
-else
-  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"
-fi
+# $VERDICT resolved above (ADR 0062/0064) — same one-per-gate upsert as the PASS path.
+$VERDICT post --pr "$PR" --gate doc --body-file "$VERDICT_FILE"
 ```
 
 Verdict body shape:
