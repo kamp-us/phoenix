@@ -8,9 +8,10 @@
  * env (injected at spawn for an `isolation:worktree` subagent); an UNSET root makes
  * every subcommand a clean allow/skip no-op, so a non-worktree session is never
  * affected — with ONE exception (ADR 0172): `pre-bash` still refuses a head-moving git
- * op when isolation was EXPECTED (`$CLAUDE_CODE_AGENT` is coder/reviewer/shipper) yet the
- * root is unset, because that unset root is itself the #2440 harness no-op that would
- * otherwise let the #2452/#2453 primary-checkout detach through.
+ * op when isolation was EXPECTED (a direct coder/reviewer/shipper agent-type, or a nested
+ * crew spawn detected via `git-dir == git-common-dir`; #2462) yet the root is unset, because
+ * that unset root is itself the #2440 harness no-op that would otherwise let the #2452/#2453
+ * primary-checkout detach through.
  *
  *   PreToolUse:
  *     pre-file  (matcher Read|Edit|Write) — rewrite/block a main-checkout path
@@ -26,21 +27,40 @@
  */
 import {execFileSync} from "node:child_process";
 import {existsSync, statSync} from "node:fs";
+import {resolve} from "node:path";
 import {Console, Data, Effect} from "effect";
 import {Command} from "effect/unstable/cli";
-import {pinBash} from "./bash-pin.ts";
+import {isIsolationExpected, pinBash} from "./bash-pin.ts";
 import {guardEnterWorktree} from "./enter-guard.ts";
 import {mainCheckoutPrefix, resolvePath} from "./path-resolve.ts";
 import {decideReap} from "./reap.ts";
 
 const WORKTREE_ROOT = process.env.WORKTREE_ROOT ?? "";
 
-// Was worktree isolation EXPECTED for this run? The coder/reviewer/shipper agent-types all spawn
-// `isolation:worktree` (agents/{coder,reviewer,shipper}.md), read from the harness-set
-// $CLAUDE_CODE_AGENT. This lets pre-bash refuse a head-moving git op even when $WORKTREE_ROOT is
-// unset — the #2440 no-op that disarms every $WORKTREE_ROOT-keyed subcommand — instead of the old
-// silent allow that let the #2452/#2453 primary-checkout detach through (ADR 0172).
-const ISOLATION_EXPECTED = /coder|reviewer|shipper/.test(process.env.CLAUDE_CODE_AGENT ?? "");
+// Is this run sitting on the PRIMARY checkout? Env-independent signal (see ADR 0172 amendment,
+// #2462): `git rev-parse --absolute-git-dir` equals the (cwd-resolved) `--git-common-dir` on the
+// primary checkout, but differs in a linked worktree (whose per-tree git dir is
+// `.git/worktrees/<id>`) — the same signal write-code Step-4 uses. This corroborates the isolation
+// gate for a NESTED crew spawn whose inherited $CLAUDE_CODE_AGENT (engineering-manager) masks the
+// direct agent-type regex. Resolved against the hook's reported cwd; unknowable ⇒ false (degrade to
+// today's allow, never a spurious refusal).
+const onPrimaryCheckout = (cwd: string): boolean => {
+	const base = cwd || process.cwd();
+	try {
+		const opts = {cwd: base, encoding: "utf8" as const};
+		const gitDir = resolve(
+			base,
+			execFileSync("git", ["rev-parse", "--absolute-git-dir"], opts).trim(),
+		);
+		const commonDir = resolve(
+			base,
+			execFileSync("git", ["rev-parse", "--git-common-dir"], opts).trim(),
+		);
+		return gitDir === commonDir;
+	} catch {
+		return false;
+	}
+};
 
 // A non-force `git worktree remove` that errors means git judged the tree unsafe to
 // remove — we KEEP it (never escalate to --force). Tagged so the error channel stays typed.
@@ -135,10 +155,14 @@ const preBash = Command.make(
 		const input = yield* readStdin();
 		const toolInput = (field(input, "tool_input") as Record<string, unknown>) ?? {};
 		const command = str(toolInput.command);
+		const cwd = str(field(input, "cwd"));
 		const decision = pinBash({
 			worktreeRoot: WORKTREE_ROOT,
 			command,
-			isolationExpected: ISOLATION_EXPECTED,
+			isolationExpected: isIsolationExpected({
+				agentType: process.env.CLAUDE_CODE_AGENT ?? "",
+				onPrimaryCheckout: onPrimaryCheckout(cwd),
+			}),
 		});
 		if (decision.kind === "allow") return yield* allow();
 		if (decision.kind === "refuse") return yield* deny(`worktree-guard: ${decision.reason}`);

@@ -78,3 +78,34 @@ assertion the signal rests on is governed; the signal consumes it, it does not r
 - **Scope note (§CP):** this decision changes `agents/coder.md` (control-plane owned) alongside the
   non-§CP `skills/write-code/SKILL.md`, so the PR is §CP and merges by a human control-plane owner.
   It does **not** touch `.claude/workflows/drive-issue.js`.
+
+## Amendment (2026-07-11, [#2462](https://github.com/kamp-us/phoenix/issues/2462)) — the isolation gate is re-keyed onto `git-dir == git-common-dir`; the `$CLAUDE_CODE_AGENT` signal is not reliable across a nested crew spawn
+
+The Decision above called `$CLAUDE_CODE_AGENT` "stable across an agent's separate Bash calls." That
+holds for a **direct** coder spawn but **not across a nested crew spawn**: a coder spawned under the
+crew Workflow inherits the *parent's* agent-type (`engineering-manager`), not `coder`. So the
+`/coder|reviewer|shipper/` match returned `isolation-expected=0` for exactly the #2440 spawn shape
+this ADR set out to fence — the loud-fail went **inert** for the nested coder, and the guard's
+`ISOLATION_EXPECTED` in `packages/pipeline-cli/src/tools/worktree-guard/command.ts` was disarmed the
+same way. The env signal is not the reliable machine-check the Decision assumed.
+
+**Correction.** The "isolation expected" detection is **re-keyed** off `$CLAUDE_CODE_AGENT` alone
+onto the **env-independent primary-checkout signal** `git-dir == git-common-dir` — the same signal
+`write-code` Step-4 already uses (`git rev-parse --absolute-git-dir` vs the cwd-resolved
+`--git-common-dir`; equal ⇒ primary checkout, differ ⇒ linked worktree). The gate now arms when the
+agent-type names itself directly **OR** when the run is in an agent context (`$CLAUDE_CODE_AGENT`
+set to any value) sitting on the primary checkout. A genuine standalone (`$CLAUDE_CODE_AGENT` unset —
+a human `/write-code`) matches neither clause, so the standalone path is unchanged and does not
+over-refuse. The repo-side gate lives in
+`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts` (`isIsolationExpected`), pinned by unit
+tests for the nested-coder shape; the identical fix in the `write-code` Step-4 preflight follows the
+same signal.
+
+**Coverage-limit note (carried from #2462, demonstrated by the #2459 near-miss).** The
+`worktree-guard` belt intercepts **git head-materialization only** — a head-moving git op that would
+land on the primary checkout. Raw `Edit`/`Write` file-writes into the primary checkout are **not**
+guarded by this belt (they are not git operations), so a cwd-reset bleed that writes absolute
+primary-checkout paths can still slip past it; the only durable cover for that vector is the harness
+actually provisioning the worktree (#2440's out-of-repo half). #2459 was a near-miss of exactly this
+Edit/Write vector — caught pre-commit by the coder's own vigilance, not by the belt. Do not
+over-trust the belt as covering both vectors.

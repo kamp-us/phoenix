@@ -26,8 +26,10 @@
  * ruling on the arm-vs-refuse posture (issue #1571) is REFUSE, scoped to guarded
  * agents: the refusal fires when `$WORKTREE_ROOT` names a managed worktree —
  * i.e. this hook is active for an `isolation:worktree` subagent — OR, per ADR 0172, when
- * isolation was EXPECTED (an isolation-asserting agent-type) yet `$WORKTREE_ROOT` is unset
- * (the #2440 harness no-op that disarms the root-keyed branch and leaves this the sole layer).
+ * isolation was EXPECTED (a direct isolation-asserting agent-type, OR a nested crew spawn whose
+ * inherited agent-type masks that — detected via `git-dir == git-common-dir`; #2462) yet
+ * `$WORKTREE_ROOT` is unset (the #2440 harness no-op that disarms the root-keyed branch and leaves
+ * this the sole layer).
  * The orchestrator's own shell runs no such hook, carries no `$WORKTREE_ROOT`, and asserts no
  * isolation, so its legitimate `git checkout main` (the ff-pull/reattach flow) can never reach
  * either refusal. See `.patterns/worktree-agent-constraints.md` (the guard route, now enforced).
@@ -145,6 +147,26 @@ const REFUSE_REASON_ISOLATION_NO_ROOT =
 	"the shared PRIMARY checkout and would detach its HEAD (#2452/#2453). This is a harness " +
 	"provisioning failure: STOP and surface it up (do NOT retry the spawn), and do NOT self-provision " +
 	"to route around it — that hides the failure and collapses the primary-corruption defense (ADR 0172, #2270).";
+
+/**
+ * Was worktree isolation EXPECTED for this run — the gate that arms the {@link pinBash}
+ * no-worktree refusal (ADR 0172)?
+ *
+ * A **direct** guarded spawn names itself: `$CLAUDE_CODE_AGENT` is coder/reviewer/shipper. But a
+ * **nested crew spawn** inherits the *parent's* agent-type (a coder spawned under the crew reads
+ * `engineering-manager`), so the agent-type regex alone goes inert for it and ADR 0172's loud-fail
+ * never arms (#2462). So we corroborate with an **env-independent** signal — `onPrimaryCheckout`
+ * (`git-dir == git-common-dir`, the same primary-checkout signal write-code Step-4 uses): an
+ * agent-context run (`$CLAUDE_CODE_AGENT` set) sitting on the primary checkout is a broken/absent
+ * worktree, whatever its inherited agent-type. A genuine standalone (`$CLAUDE_CODE_AGENT` unset — a
+ * human `/write-code`) matches neither clause, so it never over-refuses (ADR 0172's standalone path).
+ */
+export const isIsolationExpected = (args: {
+	readonly agentType: string;
+	readonly onPrimaryCheckout: boolean;
+}): boolean =>
+	/coder|reviewer|shipper/.test(args.agentType) ||
+	(args.agentType.trim() !== "" && args.onPrimaryCheckout);
 
 /**
  * Decide whether to pin/refuse a Bash command for a guarded worktree agent.
