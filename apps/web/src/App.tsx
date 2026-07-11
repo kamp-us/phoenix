@@ -23,7 +23,7 @@ import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
-import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
+import {MECMUA_PUBLIC_READ, PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
@@ -37,6 +37,7 @@ import {FunnelPage} from "./pages/FunnelPage";
 import {LabComposerPage} from "./pages/LabComposerPage";
 import {LandingPage} from "./pages/LandingPage";
 import {MecmuaEditorPage} from "./pages/MecmuaEditorPage";
+import {MecmuaIndexPage} from "./pages/MecmuaIndexPage";
 import {MecmuaPostPage} from "./pages/MecmuaPostPage";
 import {NotFoundPage} from "./pages/NotFoundPage";
 import {PanoFeed} from "./pages/PanoFeed";
@@ -88,6 +89,11 @@ function Layout() {
 	const location = useLocation();
 	const {toggle: toggleTheme} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
+	// The mecmua nav entry (#2512), dark behind `mecmua-public-read` — the same seam the
+	// reader/index gate on. `useFlag` reads over `fetch` (no fate client), so it is safe in
+	// this always-painting shell frame: the entry simply appears once the flag resolves on,
+	// never blocking first paint (Pillar 1). Off ⇒ the nav is exactly as before.
+	const {value: mecmuaOn} = useFlag(MECMUA_PUBLIC_READ, false);
 
 	// The two-tier fate provider's public first paint (ADR 0167). While `get-session`
 	// is still in flight the authed `FateProvider` gate below returns null, so the
@@ -139,6 +145,7 @@ function Layout() {
 						nav={[
 							{to: "/sozluk", label: "sözlük"},
 							{to: "/pano", label: "pano"},
+							...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
 						]}
 						divanTo={chips?.divanTo}
 						{...(chips?.userProps ?? {})}
@@ -302,12 +309,12 @@ export function App() {
 						    the legacy bespoke route redirects so existing links don't break. */}
 						<Route path="/pano/kaydedilenler" element={<Navigate to={SAVED_HREF} replace />} />
 						<Route path="/pano/:id" element={<PanoPostDetail />} />
-						{/* The mecmua authoring page (#2499) — the page self-gates on the
-						    mecmua-write flag (off ⇒ 404), so the route is dark by default. The
-						    static `/mecmua/yaz` out-ranks the `/mecmua/:slug` reader below it. */}
+						{/* mecmua — each page self-gates on its flag (off ⇒ 404), so these routes
+						    are dark by default: the index (#2512) + reader (#2498) on
+						    mecmua-public-read, the authoring page (#2499) on mecmua-write. The two
+						    static paths out-rank the `/mecmua/:slug` reader below them. */}
+						<Route path="/mecmua" element={<MecmuaIndexPage />} />
 						<Route path="/mecmua/yaz" element={<MecmuaEditorPage />} />
-						{/* The mecmua public reader (#2498) — the page self-gates on the
-						    mecmua-public-read flag (off ⇒ 404), so the route is dark by default. */}
 						<Route path="/mecmua/:slug" element={<MecmuaPostPage />} />
 						<Route path="/sozluk" element={<SozlukHome />} />
 						<Route path="/sozluk/:slug" element={<SozlukTermPage />} />

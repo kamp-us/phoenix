@@ -1,0 +1,55 @@
+/* The public mecmua index (#2512). Layout only — colors/elevation/borders come from
+   the Card primitive and role tokens; this file owns the list rhythm + heading spacing. */
+
+.kp-mecmua-index__head {
+	margin-bottom: var(--s-5);
+}
+
+.kp-mecmua-index__title {
+	font: var(--t-h-page);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-mecmua-index__lede {
+	font: var(--t-body);
+	color: var(--text-secondary);
+	margin: var(--s-1) 0 0;
+}
+
+.kp-mecmua-index__list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.kp-mecmua-index__item {
+	padding: 0;
+}
+
+.kp-mecmua-index__link {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	padding: var(--s-3) var(--s-4);
+	text-decoration: none;
+	color: inherit;
+}
+
+.kp-mecmua-index__item-title {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+}
+
+.kp-mecmua-index__meta {
+	color: var(--text-muted);
+	font: var(--t-meta);
+}
+
+.kp-mecmua-index__status {
+	font: var(--t-body);
+	color: var(--text-secondary);
+}
