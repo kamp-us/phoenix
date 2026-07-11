@@ -8,7 +8,7 @@
  * imports tiptap directly.
  */
 
-import {Composer, getJSON, getMarkdown, setMarkdown, useComposerEditor} from "@kampus/composer";
+import {Composer, useComposerEditor} from "@kampus/composer";
 import {useState} from "react";
 import "./LabComposerPage.css";
 
@@ -77,18 +77,18 @@ export function LabComposerPage() {
 	// re-derive `getMarkdown()`/`getJSON()` from the live editor state.
 	const [rev, setRev] = useState(0);
 
-	const editor = useComposerEditor({
+	const composer = useComposerEditor({
 		content: SEED_MARKDOWN,
 		onUpdate: () => setRev((n) => n + 1),
 	});
 
 	// `rev` is read to tie the derivation to the latest transaction (see the state above).
 	void rev;
-	const markdown = editor ? getMarkdown(editor) : "";
-	const json = editor ? JSON.stringify(getJSON(editor), null, 2) : "";
+	const markdown = composer ? composer.getMarkdown() : "";
+	const json = composer ? JSON.stringify(composer.toJSON(), null, 2) : "";
 
 	function loadPasted() {
-		if (editor) setMarkdown(editor, pasted);
+		if (composer) composer.setContent(pasted);
 	}
 
 	return (
@@ -125,7 +125,7 @@ export function LabComposerPage() {
 				<div className="kp-lab__grid">
 					<section className="kp-lab__panel" aria-label="editör">
 						<h2 className="kp-lab__panel-title">editör</h2>
-						<Composer editor={editor} className="kp-lab__editor" />
+						<Composer composer={composer} className="kp-lab__editor" />
 					</section>
 
 					<section className="kp-lab__panel" aria-label="getMarkdown çıktısı">
