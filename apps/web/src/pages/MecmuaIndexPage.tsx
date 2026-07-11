@@ -22,7 +22,9 @@ import {MetaRow} from "../components/ui/MetaRow";
 import {MECMUA_PUBLIC_READ, MECMUA_WRITE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {formatDateTR} from "../lib/datetime";
-import {shouldShowMecmuaWriteCta} from "./MecmuaEditorPage";
+// The gate helper lives composer-free (#2523) so this public index never pulls the tiptap
+// editor payload into the entry chunk just to decide whether to show the "yeni yazı" CTA.
+import {shouldShowMecmuaWriteCta} from "./mecmua-write-gate";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaIndexPage.css";
 
