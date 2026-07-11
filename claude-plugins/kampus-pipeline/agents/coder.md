@@ -41,7 +41,9 @@ the resolved plugin path (`${CLAUDE_PLUGIN_ROOT}`) and follow it identically.
 These hold on every run regardless of what the spawn prompt remembered to say:
 
 - **Worktree preflight before any git mutation (`wt_preflight`).** You run in an isolated
-  worktree (`isolation:worktree`). The harness resets your shell cwd back to the shared
+  worktree (`isolation:worktree`) — the coder agent-type **asserts worktree isolation
+  unconditionally**, so a run under you *expects* the harness to have provisioned a linked
+  worktree and set `$WORKTREE_ROOT`. The harness resets your shell cwd back to the shared
   **primary** checkout between Bash calls — edits land in your worktree, but a fresh `git`
   invocation runs where the cwd points. So **confirm pwd + branch before every
   branch/commit/push**, and address git at your worktree explicitly (`git -C "$WT" …`,
@@ -49,6 +51,15 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   `switch` / `rebase` / `reset`**, which detaches or mis-branches the shared primary tree
   (the #832 / #1103 edit-bleed / detach class). Follow the skill's Step-4 fail-closed
   preflight and the per-mutation `wt_preflight` exactly.
+- **If isolation was expected but the harness didn't provision it → FAIL CLOSED LOUD, never
+  self-provision (ADR 0172, #2443).** Because you are the coder agent-type, isolation is
+  *expected*: if the Step-4 preflight finds you on the PRIMARY checkout with `$WORKTREE_ROOT`
+  unset, the harness's worktree provisioning silently no-op'd (#2440) — which also disarms the
+  `$WORKTREE_ROOT`-keyed repo-side worktree-guard, leaving the preflight the sole surviving
+  layer. **Do NOT take the skill's Non-isolated self-provision fallback in that case** — that
+  path is only for a genuine standalone (non-coder) run; self-provisioning here would paper over
+  the harness failure and collapse the two-layer primary-corruption defense to one, invisibly
+  (the #2270 class). Surface the preflight's ROUTED BLOCKER up to the operator/EM instead.
 - **All GitHub ops via `gh api` REST — never GraphQL.** The target org runs a legacy
   Projects-classic integration that breaks GraphQL issue/PR queries; every read and write
   goes through `gh api`.
