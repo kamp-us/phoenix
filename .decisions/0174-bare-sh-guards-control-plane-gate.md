@@ -1,7 +1,7 @@
 ---
 id: 0174
-title: "PROPOSED — Gate-critical bare `.sh` guards under `skills/` are control-plane (broaden `CONTROL_PLANE_RE` to `skills/[^/]+\\.sh$`)"
-status: proposed
+title: "ACCEPTED — Gate-critical bare `.sh` guards under `skills/` are control-plane (broaden `CONTROL_PLANE_RE` to `skills/[^/]+\\.sh$`)"
+status: accepted
 date: 2026-07-11
 tags: [pipeline, control-plane, security]
 ---
@@ -74,7 +74,7 @@ Competing mechanisms:
 
 ## Decision
 
-**PROPOSED — awaiting founder ruling. This ADR records the choice and a recommendation; it does
+**ACCEPTED — awaiting founder ruling. This ADR records the choice and a recommendation; it does
 not enact it.**
 
 **Recommended: option 1 — broaden `CONTROL_PLANE_RE`** with an alternative matching any bare
