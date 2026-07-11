@@ -70,6 +70,7 @@ function MyComposer() {
 | `ComposerContentType` | `"markdown"` — the only content type v1 accepts (see below)          |
 | `ComposerJSON`        | the ProseMirror JSON doc type `toJSON()` returns                     |
 | `SetContentOptions`   | `setContent()`'s options (`{contentType?}`)                          |
+| `renderTestMarkdown`  | the canonical render-test fixture (see below)                        |
 
 `useComposerEditor` returns `null` until the editor mounts (SSR / first render) — guard
 it, as the example does.
@@ -125,6 +126,20 @@ consumer needs one (rule of three), it slots in as a **new named kit** alongside
 (e.g. a `mentionKit()` returning its own `Extensions`), composed by that consumer's own
 `useEditor` wiring — never by widening `baseKit()` itself. Until then, the surface stays
 emergent.
+
+## Render-test fixture — `renderTestMarkdown`
+
+`renderTestMarkdown` is a shared markdown document exercising every block + inline element
+`baseKit()` round-trips — headings h1–h6, bold/italic/strikethrough, inline + fenced code,
+ordered/unordered/nested lists, plain + nested blockquotes, horizontal rule, and links. It is
+the **single source** for that content: [`/lab/composer`](../../apps/web/src/pages/LabComposerPage.tsx)
+seeds its playground from it and the base's round-trip test drives it, so the public render
+checklist and the base fixture can never drift. A downstream consumer (mecmua / sözlük / pano)
+reuses it to prove the base round-trips before depending on it.
+
+Task-lists and tables are **not** in the fixture — the v1 set is StarterKit-only, which ships
+no such node, so they'd be dropped by the markdown parser rather than round-trip; they land here
+only when a kit that round-trips them does (the emergent discipline above).
 
 ## First consumer
 
