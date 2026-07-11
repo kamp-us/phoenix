@@ -348,7 +348,13 @@ export function PanoSubmitPage() {
 
 						<fieldset className="kp-pano-submit__field kp-pano-submit__fieldset">
 							<legend className="kp-pano-submit__field-label">
-								etiketler · en az 1, en fazla 3
+								<span>etiketler · en az 1, en fazla 3</span>
+								<span
+									className="kp-pano-submit__required"
+									data-testid="pano-submit-tags-legend-required"
+								>
+									gerekli
+								</span>
 							</legend>
 							<div className="kp-pano-submit__tagrow">
 								{TAGS.map((t) => {
@@ -367,13 +373,15 @@ export function PanoSubmitPage() {
 									);
 								})}
 							</div>
-							{tagsAreSoleBlocker ? (
-								<span
-									className="kp-pano-submit__hint"
-									data-testid="pano-submit-tags-required"
-									style={{color: "var(--text-faint)"}}
-								>
-									{PANO_SUBMIT_OVERRIDES.TAGS_REQUIRED}
+							{/* The required-tag cue is the load-bearing affordance (#2575): it renders
+							    whenever a tag is missing — NOT gated on tagsAreSoleBlocker — so a cold user
+							    sees it before the rest of the form is perfect. tagsAreSoleBlocker only
+							    upgrades the phrasing to "one step left" (#2201's sole-blocker signal). */}
+							{noTags ? (
+								<span className="kp-pano-submit__tag-cue" data-testid="pano-submit-tags-required">
+									{tagsAreSoleBlocker
+										? "son adım: en az bir etiket seç"
+										: PANO_SUBMIT_OVERRIDES.TAGS_REQUIRED}
 								</span>
 							) : null}
 						</fieldset>
@@ -400,6 +408,18 @@ export function PanoSubmitPage() {
 							</p>
 						) : null}
 
+						{submitDisabled && noTags ? (
+							<p
+								id="pano-submit-disabled-reason"
+								className="kp-pano-submit__disabled-reason"
+								data-testid="pano-submit-disabled-reason"
+							>
+								{tagsAreSoleBlocker
+									? "“paylaş” için son bir adım kaldı: yukarıdan en az bir etiket seç"
+									: "“paylaş” için en az bir etiket seçmelisin"}
+							</p>
+						) : null}
+
 						<div className="kp-pano-submit__form-actions">
 							<FlagGate flag={PANO_DRAFT_SAVE}>
 								<Button
@@ -417,6 +437,10 @@ export function PanoSubmitPage() {
 								variant="primary"
 								disabled={submitDisabled}
 								data-testid="pano-submit-submit"
+								title={submitDisabled && noTags ? "en az bir etiket seç" : undefined}
+								aria-describedby={
+									submitDisabled && noTags ? "pano-submit-disabled-reason" : undefined
+								}
 							>
 								{isInFlight ? "gönderiliyor…" : "paylaş"}
 							</Button>

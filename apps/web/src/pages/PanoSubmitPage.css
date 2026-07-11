@@ -109,6 +109,33 @@
 	color: var(--text-muted);
 }
 
+/* Required-tag affordance (#2575). The cues carry meaning in their copy first;
+   --warning is reinforcement, matching this form's error=--danger text idiom, and
+   is deliberately NOT --text-faint — a meaning-carrying hint must stay legible. */
+.kp-pano-submit__field-label {
+	display: inline-flex;
+	align-items: baseline;
+	gap: var(--s-1);
+}
+.kp-pano-submit__required {
+	font: var(--t-meta);
+	font-weight: 600;
+	color: var(--warning);
+	text-transform: lowercase;
+	letter-spacing: 0.02em;
+}
+.kp-pano-submit__tag-cue {
+	font: var(--t-meta);
+	font-weight: 500;
+	color: var(--warning);
+}
+.kp-pano-submit__disabled-reason {
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--warning);
+	text-align: right;
+}
+
 .kp-pano-submit__url-preview {
 	display: grid;
 	grid-template-columns: 32px 1fr;
