@@ -128,3 +128,19 @@ describe("Mecmua.listFeedConnection — the served feed path", () => {
 		}).pipe(Effect.provide(mecmuaLayer(scriptedAccess([[]])))),
 	);
 });
+
+describe("Mecmua.isSubscribed — the subscribe-affordance state read (#2527)", () => {
+	it.effect("returns true when a (subscriber, author) edge row exists", () =>
+		Effect.gen(function* () {
+			const mecmua = yield* Mecmua;
+			assert.isTrue(yield* mecmua.isSubscribed("reader", "A"));
+		}).pipe(Effect.provide(mecmuaLayer(scriptedAccess([[{authorId: "A"}]])))),
+	);
+
+	it.effect("returns false when no edge row matches", () =>
+		Effect.gen(function* () {
+			const mecmua = yield* Mecmua;
+			assert.isFalse(yield* mecmua.isSubscribed("reader", "A"));
+		}).pipe(Effect.provide(mecmuaLayer(scriptedAccess([[]])))),
+	);
+});

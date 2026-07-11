@@ -13,16 +13,21 @@
  */
 import {useEffect, useState} from "react";
 import {useParams} from "react-router";
+import {MecmuaSubscribeButton} from "../components/mecmua/MecmuaSubscribeButton";
 import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../lib/markdown";
 import {NotFoundPage} from "./NotFoundPage";
 
-/** The wire shape the anon read route returns — only başlık + body are rendered here. */
+/**
+ * The wire shape the anon read route returns. `authorId` is the subscribe target — the
+ * follow toggle (#2527) subscribes the reader to this post's author.
+ */
 interface MecmuaPostWire {
 	readonly id: string;
 	readonly title: string;
 	readonly body: string;
+	readonly authorId: string;
 }
 
 type FetchState =
@@ -111,6 +116,7 @@ function MecmuaPostReader({slug}: {slug: string}) {
 			<div className="kp-page__inner">
 				<article data-testid="mecmua-post">
 					<h1>{state.post.title}</h1>
+					<MecmuaSubscribeButton authorId={state.post.authorId} />
 					<div className="kp-prose">
 						{blocks.map((block, i) =>
 							block.kind === "code" ? (

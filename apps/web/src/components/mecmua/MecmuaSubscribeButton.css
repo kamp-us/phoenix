@@ -1,0 +1,16 @@
+/* The mecmua subscribe toggle (#2527). Layout only — the button surface/elevation come
+   from the Button primitive and role tokens; this file owns the wrapper rhythm and the
+   inline error copy. */
+
+.kp-mecmua-subscribe {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	margin: var(--s-4) 0;
+}
+
+.kp-mecmua-subscribe__error {
+	font: var(--t-body-sm);
+	color: var(--danger);
+	margin: 0;
+}
