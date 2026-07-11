@@ -1043,6 +1043,51 @@ Open the PR with **`Fixes #N` in the body** so merging auto-closes the issue (th
 the seam `review-code` relies on: pass → merge → `Fixes #N` closes it). Use the issue
 number you're implementing.
 
+**The AC-completeness gate — decide `Fixes #N` vs `Part of #N` from whether the diff satisfies
+EVERY acceptance criterion (run this BEFORE you write the keyword).** The closing keyword is a
+**scope claim**, not a formality: `Fixes #N` auto-closes the *whole* issue on merge, so it is
+correct **only** when this diff delivers **every** one of `#N`'s acceptance criteria. Before you
+write any keyword, **enumerate the linked issue's `### Acceptance criteria` and check them off
+one by one against what this diff actually delivers** — the same checklist `review-code` will
+grade against:
+
+```bash
+# enumerate #N's acceptance criteria — the checklist you must satisfy in FULL to emit a closing keyword
+gh api repos/$REPO/issues/<N> --jq '.body' \
+  | awk '/^###[[:space:]]*Acceptance criteria/{f=1;next} /^###/{f=0} f' \
+  | grep -E '^\s*- \[' || echo "(no checkbox ACs — read the ### Acceptance criteria prose)"
+```
+
+- **All ACs met by this diff → `Fixes #N`** (the default full close, below).
+- **Any AC unmet by this diff → `Part of #N`** (the §9 partial-split token, below) — you delivered
+  a subset and a sibling lane or a follow-up will finish the rest, so `#N` must stay **open** on
+  merge. Do **not** reach for `Refs #N` / `See #N` / a bare `#N` for the partial case: `Refs`
+  arms **no** seam at all and jams `ship-it` Step 1 (#647). The one sanctioned partial token is
+  `Part of #N`, which links the PR without closing.
+
+This is the decision the recurring **over-claim defect** exists to force — a `Fixes #N` on a
+partial delivery silently closes an issue with ACs undelivered, and the deferred half vanishes
+from the tracker (PR #2414 over-claimed `Fixes #2270` on the prose-only half; PR #2420 over-claimed
+`Fixes #2056` with the mechanism inert). The `Part of #N` *tool* already existed; this gate is the
+*trigger* that makes you reach for it instead of over-claiming.
+
+**When you defer ACs, capture the deferred half — it must not silently drop.** A `Part of #N`
+keeps `#N` open, but the unmet ACs still need a home a successor can pick up: **file a follow-up
+issue** for them (via the [`report`](../report/SKILL.md) skill) **or** point at
+an existing sibling/child that already owns them, and **name that issue** in the PR body and your
+Step-6 progress comment. This is how #2270 → #2415 and #2056 were reconciled *after* the fact —
+do it up front. (A purely **mechanical** guard — e.g. warning when a `Fixes`-armed PR's touched
+surface looks narrower than the issue's AC count — is **out of scope for this step**; noted as a
+possible follow-up, not built here. The gate here is the coder-side prose discipline.)
+
+This gate sits **upstream** of the `(b)` seam self-check below and is what makes it a *decision*:
+`(b)` only verifies the seam is **well-formed** (a closing keyword **or** `Part of #N` — either
+counts as "armed"), so on its own it waves a `Fixes #N` over-claim straight through. The
+AC-completeness gate is what **decides which** of the two is correct, *before* `(b)` ever runs — it
+does not replace `(b)`, it feeds it the right keyword. It leaves the `(c)` inverse guard untouched:
+`Part of` is not a closing keyword, so a `Part of #N`-only PR still has a closing-keyword set of
+exactly `{}`.
+
 **Always emit a real GitHub *closing keyword* — `Fixes #N` (or `Closes #N`/`Resolves #N`) —
 never `Refs #N`, `Re: #N`, `See #N`, or a bare `#N`.** This is a load-bearing invariant, not
 a phrasing preference: GitHub only auto-closes the linked issue when the body carries one of
