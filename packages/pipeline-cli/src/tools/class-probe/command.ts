@@ -11,9 +11,14 @@
  * they cannot disagree on a diff's required class coverage (#2434, the `.glossary/**→has-code`
  * miss on PR #2430). Reads the changed-file list from stdin (or `--files-from`), reads the
  * four canonical `HAS_*_RE` probes from the local `gh-issue-intake-formats.md` §CLASS (the
- * single source — never a third inline copy), and prints one present class per line to
- * **stdout** (`--namespaces` prints the `review-*` set instead). A human summary goes to
- * **stderr**; exit is always 0 — this classifies, it does not gate.
+ * single source — never a third inline copy) plus the additive `UI_RE` from the local
+ * `ship-it/SKILL.md` (its single source), and prints one present class per line to **stdout**
+ * — appending `has-ui` when the diff is UI-affecting (`--namespaces` prints the `review-*` set
+ * instead, appending `review-design`). Folding has-ui in here is the #2485/#2483 fix: the
+ * reviewer fan dispatches review-design deterministically off this output instead of eyeballing
+ * a non-visual `apps/web/src/*.ts` away and deadlocking ship-it on an empty review-design
+ * namespace. A human summary goes to **stderr**; exit is always 0 — this classifies, it does
+ * not gate.
  *
  * IO here (the thin bin), classification in `class-probe.ts` (the pure core). An
  * unreadable §CLASS falls back to the fail-closed probes (`FAILCLOSED_PROBES`), which
@@ -25,9 +30,19 @@ import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "../../find-root-dir.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
-import {classify, parseClassProbes, requiredNamespaces} from "./class-probe.ts";
+import {
+	classify,
+	DESIGN_NAMESPACE,
+	isUiAffecting,
+	parseClassProbes,
+	parseUiProbe,
+	requiredNamespaces,
+} from "./class-probe.ts";
 
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
+
+/** The single source for the additive `UI_RE` (has-ui → review-design), read locally like §CLASS. */
+const SHIP_IT_PATH = "claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md";
 
 const defaultRoot = (from: string = process.cwd()): string => {
 	const start = resolve(from);
@@ -81,6 +96,15 @@ const readFormats = (root: string): string | null => {
 	}
 };
 
+/** Read local ship-it/SKILL.md text; null (⇒ fail-closed `UI_RE`) if the file is unreadable. */
+const readShipIt = (root: string): string | null => {
+	try {
+		return readFileSync(join(root, SHIP_IT_PATH), "utf8");
+	} catch {
+		return null;
+	}
+};
+
 const classifyCmd = Command.make(
 	"classify",
 	{filesFrom: filesFromFlag, root: rootFlag, namespaces: namespacesFlag},
@@ -88,8 +112,11 @@ const classifyCmd = Command.make(
 		const rootDir = Option.getOrElse(root, () => defaultRoot());
 		const formats = readFormats(rootDir);
 		const probes = parseClassProbes(formats ?? "");
+		const shipIt = readShipIt(rootDir);
+		const uiRe = parseUiProbe(shipIt ?? "");
 		const files = readFiles(filesFrom);
 		const classes = classify(files, probes);
+		const uiAffecting = isUiAffecting(files, uiRe);
 
 		if (formats === null) {
 			yield* Effect.sync(() =>
@@ -98,13 +125,21 @@ const classifyCmd = Command.make(
 				),
 			);
 		}
+		if (shipIt === null) {
+			yield* Effect.sync(() =>
+				process.stderr.write(
+					`class-probe: could not read ${SHIP_IT_PATH} under ${rootDir} — using fail-closed UI_RE (require review-design).\n`,
+				),
+			);
+		}
 		yield* Effect.sync(() =>
 			process.stderr.write(
-				`class-probe: ${files.length} changed file(s) → ${classes.length > 0 ? classes.join(", ") : "no artifact class"}\n`,
+				`class-probe: ${files.length} changed file(s) → ${classes.length > 0 ? classes.join(", ") : "no artifact class"}${uiAffecting ? " + has-ui (review-design)" : ""}\n`,
 			),
 		);
 
-		const out = namespaces ? requiredNamespaces(classes) : classes;
+		const base = namespaces ? requiredNamespaces(classes) : classes;
+		const out = uiAffecting ? [...base, namespaces ? DESIGN_NAMESPACE : "has-ui"] : base;
 		for (const line of out) {
 			yield* Console.log(line);
 		}

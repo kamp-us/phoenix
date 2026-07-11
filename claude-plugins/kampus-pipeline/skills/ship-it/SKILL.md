@@ -310,15 +310,18 @@ echo "$FILES" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills"   # → review-sk
 echo "$FILES" | grep -Eq "$HAS_CODE_RE" && echo "has-code"       # → review-code; the has-code roots agree with the docs-exclusion below in lockstep (§CLASS/§DOC, #663/#919/#1987)
 echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs"   # → review-doc; carve out code roots/skills/.glossary first, then test for a doc path (§DOC contract)
 # UI probe → review-design (ADDITIVE, not a class): a changed path under apps/web/src, a *.tsx
-# file, or a style surface (*.css). Like CONTROL_PLANE_RE/GUARD_ADR_RE above, the literal below
-# is the fail-closed REFERENCE + the validate-gate-path-drift lockstep target, NOT the live
-# decision source: it is re-resolved from origin/main right after, so an injected skill snapshot
-# that predates the review-design gate can't silently DROP the UI probe and slip a UI PR past the
-# gate (#2341 — the #981 idiom, previously only on §CP/GUARD, now extended to UI_RE). ship-it/
-# SKILL.md@main's `UI_RE=` line is the ONE live source; reviewer.md re-resolves the SAME line from
-# the same ref (reviewer.md, #2249/#2341), so required-gate == dispatched-gate holds by
-# construction — both sides read live main, not two independently-aging snapshots. When a second
-# app worker is added, generalize this one live UI_RE to apps/**/src and both sides track it.
+# file, or a style surface (*.css). `pipeline-cli class-probe classify` above ALSO emits `has-ui`
+# (it parses this same UI_RE from its single source, ship-it/SKILL.md) — so the reviewer fan
+# dispatches review-design off the SAME deterministic probe it fans the class gates from, rather
+# than eyeballing the files and skipping it (the #2483 deadlock; #2485). Like CONTROL_PLANE_RE/
+# GUARD_ADR_RE above, the literal below is the fail-closed REFERENCE + the validate-gate-path-drift
+# lockstep target, NOT the live decision source: it is re-resolved from origin/main right after, so
+# an injected skill snapshot that predates the review-design gate can't silently DROP the UI probe
+# and slip a UI PR past the gate (#2341 — the #981 idiom, previously only on §CP/GUARD, now extended
+# to UI_RE). ship-it/SKILL.md@main's `UI_RE=` line is the ONE live source; reviewer.md re-resolves
+# the SAME line from the same ref (reviewer.md, #2249/#2341), so required-gate == dispatched-gate
+# holds by construction — both sides read live main, not two independently-aging snapshots. When a
+# second app worker is added, generalize this one live UI_RE to apps/**/src and both sides track it.
 UI_RE='^apps/web/src/|\.tsx$|\.css$'
 UI_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^UI_RE=' | head -n1 || true)"
 if [ -n "$UI_LIVE" ]; then

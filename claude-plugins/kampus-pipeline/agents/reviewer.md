@@ -147,8 +147,16 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   third copy) and dispatch a gate for **exactly** each namespace it prints:
   ```bash
   gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-    | pipeline-cli class-probe classify --namespaces   # → review-code / review-doc / review-skill, one per present class
+    | pipeline-cli class-probe classify --namespaces   # → review-code / review-doc / review-skill (+ review-design when has-ui), one per present gate
   ```
+  The probe **also folds in the additive `review-design`** (`ui_reresolve`, below): it reads the
+  live `UI_RE` from its single source (`ship-it/SKILL.md`) and appends `review-design` to
+  `--namespaces` when the diff is UI-affecting, so the one command names **every** gate ship-it
+  will require — class **and** design. **Dispatch exactly each namespace it prints**, review-design
+  included; do not re-decide has-ui by eye. This is the #2485/#2483 fix: a non-visual
+  `apps/web/src/*.ts` matches `UI_RE`'s `^apps/web/src/` branch, so the probe names `review-design`
+  and the fan dispatches it — where the old eyeball-the-files step skipped it and deadlocked ship-it
+  on a phantom-empty `review-design` namespace.
   The equivalent shell, kept as the **fail-closed reference** for what the tool computes (the tool
   is authoritative — its core mirrors these exact lines, `packages/pipeline-cli/src/tools/class-probe/`):
   ```bash
@@ -163,20 +171,23 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   echo "$CHANGED" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills → dispatch review-skill"
   echo "$CHANGED" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs → dispatch review-doc"
   ```
-  Dispatch each gate the probe names and post its SHA-bound marker in this same pass; `review-design`
-  rides additively on top per `ui_reresolve`. A single-class PR simply fires one probe — the fan
-  degenerates to today's behavior, never a regression.
+  Dispatch each gate the probe names — class gates **and** the additive `review-design` when it
+  appears — and post its SHA-bound marker in this same pass. A single-class PR simply fires one
+  probe — the fan degenerates to today's behavior, never a regression.
 <a id="dispatch-review-design-in-lockstep-with-ship-its-live-ui_re"></a>
-- **Dispatch `review-design` in lockstep with ship-it's LIVE `UI_RE` — resolve the
-  UI-affecting set from `origin/main`, never this snapshot (`ui_reresolve`).** The prose set
-  above (`apps/web/src/`, `*.tsx`, style surfaces) is the fail-closed **reference**, not the
-  live decision source: a reviewer whose worktree/injected snapshot predates the review-design
-  merge would otherwise silently omit the dispatch on a UI PR, while ship-it — grounding against
-  live main — still *requires* the gate, so the PR deadlocks (`unverified — no review-design
-  PASS`). ship-it and this agent therefore read the **same one live source**: the `UI_RE=` line
-  in `ship-it/SKILL.md` on `origin/main`. Re-resolve it before deciding to dispatch, fail-closed
-  to **has-ui** (dispatch `review-design`) if that line is unreadable — never fail-open to skip
-  it (#2341, the #981 `?ref=main` idiom):
+- **Dispatch `review-design` in lockstep with ship-it's LIVE `UI_RE` — the `class-probe` output
+  is the deterministic dispatch signal; the shell below is its fail-closed reference
+  (`ui_reresolve`).** `pipeline-cli class-probe classify --namespaces` (the fan invariant above)
+  reads this same `UI_RE` from its single source and prints `review-design` whenever the diff is
+  UI-affecting — so the **probe**, not an eyeball over the changed files, decides has-ui, and a
+  non-visual `apps/web/src/*.ts` no longer gets waved off (#2485/#2483). The prose set (`apps/web/src/`,
+  `*.tsx`, style surfaces) is the fail-closed **reference**, not the live decision source: a reviewer
+  whose worktree/injected snapshot predates the review-design merge would otherwise silently omit the
+  dispatch on a UI PR, while ship-it — grounding against live main — still *requires* the gate, so the
+  PR deadlocks (`unverified — no review-design PASS`). ship-it and this agent therefore read the **same
+  one live source**: the `UI_RE=` line in `ship-it/SKILL.md` on `origin/main`. Re-resolve it before
+  deciding to dispatch, fail-closed to **has-ui** (dispatch `review-design`) if that line is unreadable
+  — never fail-open to skip it (#2341, the #981 `?ref=main` idiom):
   ```bash
   UI_RE='^apps/web/src/|\.tsx$|\.css$'   # fail-closed reference; the live line below is authoritative
   UI_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^UI_RE=' | head -n1 || true)"
