@@ -309,20 +309,27 @@ HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed:
 echo "$FILES" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills"   # → review-skill (ADR 0073/0150); §CP-blocking for merge via CONTROL_PLANE_RE above
 echo "$FILES" | grep -Eq "$HAS_CODE_RE" && echo "has-code"       # → review-code; the has-code roots agree with the docs-exclusion below in lockstep (§CLASS/§DOC, #663/#919/#1987)
 echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs"   # → review-doc; carve out code roots/skills/.glossary first, then test for a doc path (§DOC contract)
-# UI probe → review-design (ADDITIVE, not a class): a changed path under apps/web/src, a *.tsx
-# file, or a style surface (*.css). `pipeline-cli class-probe classify` above ALSO emits `has-ui`
-# (it parses this same UI_RE from its single source, ship-it/SKILL.md) — so the reviewer fan
-# dispatches review-design off the SAME deterministic probe it fans the class gates from, rather
-# than eyeballing the files and skipping it (the #2483 deadlock; #2485). Like CONTROL_PLANE_RE/
-# GUARD_ADR_RE above, the literal below is the fail-closed REFERENCE + the validate-gate-path-drift
-# lockstep target, NOT the live decision source: it is re-resolved from origin/main right after, so
-# an injected skill snapshot that predates the review-design gate can't silently DROP the UI probe
-# and slip a UI PR past the gate (#2341 — the #981 idiom, previously only on §CP/GUARD, now extended
-# to UI_RE). ship-it/SKILL.md@main's `UI_RE=` line is the ONE live source; reviewer.md re-resolves
-# the SAME line from the same ref (reviewer.md, #2249/#2341), so required-gate == dispatched-gate
-# holds by construction — both sides read live main, not two independently-aging snapshots. When a
-# second app worker is added, generalize this one live UI_RE to apps/**/src and both sides track it.
-UI_RE='^apps/web/src/|\.tsx$|\.css$'
+# UI probe → review-design (ADDITIVE, not a class): a changed path under apps/web/src — the
+# rendered frontend surface (React components, styles, tokens, routes). `pipeline-cli class-probe
+# classify` above ALSO emits `has-ui` (it parses this same UI_RE from its single source,
+# ship-it/SKILL.md) — so the reviewer fan dispatches review-design off the SAME deterministic probe
+# it fans the class gates from, rather than eyeballing the files and skipping it (the #2483 deadlock;
+# #2485). Like CONTROL_PLANE_RE/GUARD_ADR_RE above, the literal below is the fail-closed REFERENCE +
+# the validate-gate-path-drift lockstep target, NOT the live decision source: it is re-resolved from
+# origin/main right after, so an injected skill snapshot that predates the review-design gate can't
+# silently DROP the UI probe and slip a UI PR past the gate (#2341 — the #981 idiom, previously only
+# on §CP/GUARD, now extended to UI_RE). ship-it/SKILL.md@main's `UI_RE=` line is the ONE live source;
+# reviewer.md, class-probe, AND review-design's Step 0 off-ramp all re-resolve the SAME line from the
+# same ref, so required-gate == dispatched-gate == satisfiable-gate holds by construction — all sides
+# read live main, not independently-aging snapshots. When a second app worker is added, generalize
+# this one live UI_RE to apps/**/src and every side tracks it.
+# SCOPE (#2470): UI_RE is `^apps/web/src/` ONLY — a `.tsx`/`.css` OUTSIDE apps/web/src (a Hono
+# server-JSX file, a `.tsx` test fixture, a non-web `.css`) has no rendered surface, so it is NOT
+# design-gate work and must NOT mint a required review-design. The earlier `|\.tsx$|\.css$` branches
+# made the *require* predicate a superset of review-design's own dispatch/off-ramp predicate
+# (`^apps/web/src/`): a non-web `.tsx` was required-but-unroutable — the dispatched review-design run
+# off-ramped with no marker and ship-it deadlocked on a review-design PASS no run could produce.
+UI_RE='^apps/web/src/'
 UI_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^UI_RE=' | head -n1 || true)"
 if [ -n "$UI_LIVE" ]; then
   UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"   # UI-gating tracks origin/main, not the snapshot's age (#2341)
@@ -408,23 +415,30 @@ echo "$FILES" | grep -Eq "$UI_RE" && echo "has-ui"   # UI-affecting → require 
 <a id="the-ui-affecting-detection-must-agree-with-the-reviewer"></a>
 **The UI-affecting detection must AGREE with the reviewer, or the gate is unroutable.** ship-it
 requires a `review-design` PASS *because the reviewer dispatched `review-design` on the same
-diff* — so the `UI_RE` probe above (`^apps/web/src/|\.tsx$|\.css$` — a changed path under
-`apps/web/src`, a `*.tsx` file, or a `*.css` style surface) **must be the same rule** the
-reviewer agent uses to decide whether to run `review-design` (`reviewer.md`, #2249: "changed
-files under `apps/web/src`, `*.tsx`, and style surfaces"). This is the
-same **required-gate == dispatched-gate** invariant that binds the has-code probe to review-code's
-scope: if ship-it required `review-design` on a diff the reviewer never routed to `review-design`,
-that PR would demand a `review-design: PASS` **no gate ever produces** → every UI PR **deadlocks**
-(`unverified — no review-design PASS`). Lockstep here is **not two hand-synced copies that drift as
+diff*, AND *because the dispatched `review-design` run can actually reach a rendered surface to
+verdict* — so the `UI_RE` probe above (`^apps/web/src/` — a changed path under the rendered
+frontend) **must be the same rule** the reviewer agent uses to decide whether to run
+`review-design` **and** the rule `review-design`'s own Step 0 off-ramp uses to decide it has a
+surface to gate. This is the same **required-gate == dispatched-gate == satisfiable-gate**
+invariant that binds the has-code probe to review-code's scope: if ship-it required `review-design`
+on a diff the reviewer never routed to it — or on one the dispatched `review-design` run then
+off-ramps as non-UI without emitting a marker — that PR would demand a `review-design: PASS` **no
+gate ever produces** → every such PR **deadlocks** (`unverified — no review-design PASS`). That
+second gap is exactly #2470: the earlier `UI_RE='^apps/web/src/|\.tsx$|\.css$'` was a **superset**
+of review-design's `^apps/web/src/` off-ramp, so a `.tsx`/`.css` outside `apps/web/src` was
+required-but-unroutable — now the one live `UI_RE` is `^apps/web/src/` and all three sides
+(require, dispatch, off-ramp) resolve it. Lockstep here is **not two hand-synced copies that drift as
 each side's checkout ages** — that staleness was the enforcement hole (#2341: a shipper/reviewer on
 a snapshot predating the review-design merge silently omitted the gate; PR #2333 merged
 un-design-reviewed). Both sides instead resolve `UI_RE` from **one live source — `UI_RE=` in
 `ship-it/SKILL.md` on `origin/main`**, read via `?ref=main` at run time (the `#981` idiom the §CP
-`CONTROL_PLANE_RE`/`GUARD_ADR_RE` already use): ship-it re-resolves it in the probe above, and
+`CONTROL_PLANE_RE`/`GUARD_ADR_RE` already use): ship-it re-resolves it in the probe above,
 `reviewer.md` re-resolves the **same line from the same ref** before deciding to dispatch
-`review-design`. Both fail closed to *require*/`dispatch` the gate if that line is unreadable —
-never to skip it. So the two agree by construction, not by manual sync: change the one live `UI_RE`
-(e.g. a new app worker → `apps/**/src`) and both sides track it on their next run.
+`review-design`, and `review-design`'s Step 0 off-ramp re-resolves the **same line** before
+deciding it has a rendered surface to gate (#2470). All three fail closed to
+*require*/`dispatch`/*proceed* on the gate if that line is unreadable — never to skip it. So they
+agree by construction, not by manual sync: change the one live `UI_RE` (e.g. a new app worker →
+`apps/**/src`) and every side tracks it on its next run.
 
 **The docs class must equal `review-doc`'s verification scope, or the gate it demands is
 unreachable.** ship-it requires a class's gate PASS *because that gate runs on that class* —

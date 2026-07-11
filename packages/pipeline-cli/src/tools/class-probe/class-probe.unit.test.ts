@@ -118,7 +118,10 @@ describe("classify — fail-closed on an unreadable source over-dispatches, neve
 
 describe("parseUiProbe — the additive UI_RE off its single source (ship-it/SKILL.md)", () => {
 	it("extracts the live single-quoted UI_RE line", () => {
-		expect(LIVE_UI_RE).toBe("^apps/web/src/|\\.tsx$|\\.css$");
+		// #2470: scope is `^apps/web/src/` ONLY. The old `|\.tsx$|\.css$` branches made the require
+		// predicate a superset of review-design's own dispatch/off-ramp (`^apps/web/src/`), so a
+		// non-web `.tsx`/`.css` was required-but-unroutable — a phantom review-design gate.
+		expect(LIVE_UI_RE).toBe("^apps/web/src/");
 	});
 
 	it("falls back to the fail-closed UI_RE for a missing/truncated source", () => {
@@ -148,7 +151,7 @@ describe("isUiAffecting — review-design reaches a marker, never a phantom-empt
 		expect(isUiAffecting(nonVisualSrcTs, LIVE_UI_RE)).toBe(true);
 	});
 
-	it("still fires on the visual surfaces (*.tsx, *.css) it already covered", () => {
+	it("fires on visual surfaces under apps/web/src (*.tsx, *.css) via the prefix", () => {
 		expect(isUiAffecting(["apps/web/src/App.tsx"], LIVE_UI_RE)).toBe(true);
 		expect(isUiAffecting(["apps/web/src/styles/theme.css"], LIVE_UI_RE)).toBe(true);
 	});
@@ -169,5 +172,33 @@ describe("isUiAffecting — review-design reaches a marker, never a phantom-empt
 		// Mirrors ship-it Step 0 / the reviewer's fail-closed `has-ui` — demand the gate, never
 		// silently drop it. Empty diff stays empty (nothing to gate).
 		expect(isUiAffecting(["packages/pipeline-cli/src/bin.ts"], FAILCLOSED_UI_RE)).toBe(true);
+	});
+});
+
+describe("isUiAffecting — a non-web .tsx/.css mints NO phantom review-design (#2470)", () => {
+	// The #2470 deadlock: ship-it's require predicate was `^apps/web/src/|\.tsx$|\.css$` — a
+	// SUPERSET of review-design's own dispatch/off-ramp predicate (`^apps/web/src/`). A `.tsx`/`.css`
+	// OUTSIDE apps/web/src (a Hono server-JSX file, a `.tsx` test fixture, a non-web `.css`) matched
+	// the require + dispatch but off-ramped at review-design Step 0 with no marker → ship-it blocked
+	// on a review-design PASS no run could produce. Now the one live UI_RE is `^apps/web/src/`, so a
+	// non-web .tsx/.css is neither required nor dispatched — no phantom gate.
+	const nonWebUi = [
+		"apps/web/worker/features/foo/index.tsx", // Hono server-JSX in the worker, no rendered surface
+		"packages/some-pkg/src/fixtures/sample.tsx", // a .tsx test fixture
+		"packages/some-pkg/src/styles.css", // a non-web .css
+	];
+
+	it("a non-apps/web/src .tsx/.css is NOT has-ui — no required/dispatched review-design", () => {
+		for (const f of nonWebUi) {
+			expect(isUiAffecting([f], LIVE_UI_RE)).toBe(false);
+		}
+		expect(isUiAffecting(nonWebUi, LIVE_UI_RE)).toBe(false);
+	});
+
+	it("a real apps/web/src UI file STILL is has-ui — the gate holds for rendered surfaces", () => {
+		expect(isUiAffecting(["apps/web/src/App.tsx"], LIVE_UI_RE)).toBe(true);
+		expect(isUiAffecting(["apps/web/src/styles/theme.css"], LIVE_UI_RE)).toBe(true);
+		// and the #2485 non-visual apps/web/src/*.ts stays has-ui via the same prefix branch
+		expect(isUiAffecting(["apps/web/src/fate/wireMessages.ts"], LIVE_UI_RE)).toBe(true);
 	});
 });
