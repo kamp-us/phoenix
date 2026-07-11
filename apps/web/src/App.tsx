@@ -34,6 +34,7 @@ import {AuthPage} from "./pages/AuthPage";
 import {BildirimlerPage} from "./pages/BildirimlerPage";
 import {DivanPage} from "./pages/DivanPage";
 import {FunnelPage} from "./pages/FunnelPage";
+import {LabComposerPage} from "./pages/LabComposerPage";
 import {LandingPage} from "./pages/LandingPage";
 import {NotFoundPage} from "./pages/NotFoundPage";
 import {PanoFeed} from "./pages/PanoFeed";
@@ -312,6 +313,9 @@ export function App() {
 						{/* The notification center (#1694) — the page self-gates on the
 					    phoenix-bildirim flag (off ⇒ 404), so the route is dark by default. */}
 						<Route path="/bildirimler" element={<BildirimlerPage />} />
+						{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,
+						    no nav entry; deletable when the rich-composer phase begins. */}
+						<Route path="/lab/composer" element={<LabComposerPage />} />
 						<Route path="/profile" element={<ProfilePage />} />
 						<Route path="/u/:username" element={<UserProfilePage />} />
 						<Route path="*" element={<NotFoundPage />} />
