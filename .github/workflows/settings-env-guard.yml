@@ -10,6 +10,11 @@ name: settings-env-guard
 on:
   pull_request:
 
+# Least-privilege GITHUB_TOKEN: the only job checks out + runs a read-only node CLI
+# (pipeline-cli settings-env-guard check), no writes — so read on contents suffices.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
