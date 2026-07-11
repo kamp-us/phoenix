@@ -24,6 +24,7 @@ import * as Effect from "effect/Effect";
 import type {TestProject} from "vitest/node";
 import Stack from "../../alchemy.run.ts";
 import {
+	awaitAuthRouteReady,
 	awaitWorkerReady,
 	deployTransientRetry,
 	ensureIntegrationEnv,
@@ -70,6 +71,14 @@ export default async function setup(project: TestProject): Promise<() => Promise
 	// `deployTransientRetry`, then `awaitWorkerReady` + `warmLiveDO`. No scope: CI is non-dev,
 	// so there is no workerd sidecar to keep alive (the scope in `Test/Vitest.ts` exists only
 	// for `alchemy dev`).
+	//
+	// The readiness gate proves BOTH the health route AND the auth-provisioning route are past the
+	// CF edge placeholder before `project.provide` releases the URL: edge propagation is per-route,
+	// so `/api/health` (`awaitWorkerReady`) can ripen while `/api/auth/sign-up/email`
+	// (`awaitAuthRouteReady`) — the route every forked suite hits to provision users — still 404s.
+	// Gating on health alone released the URL early and reds all 53 suites with
+	// `CloudflarePlaceholder404Error` on a slow auth propagation (#2416); the auth gate pays that
+	// wait once, here, so no per-suite `signUp` rides the budget.
 	const {url, accountId, databaseId} = await Core.run(
 		Core.deploy(MAKE_OPTIONS, Stack, {stage}).pipe(
 			deployTransientRetry,
@@ -81,6 +90,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
 					return Effect.die(new Error("shared deploy returned no D1 databaseId"));
 				}
 				return awaitWorkerReady(cleanUrl).pipe(
+					Effect.andThen(awaitAuthRouteReady(cleanUrl)),
 					Effect.andThen(warmLiveDO(cleanUrl)),
 					Effect.as({
 						url: cleanUrl,

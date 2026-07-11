@@ -322,6 +322,41 @@ export const awaitWorkerReady = (url: string): Effect.Effect<void, never, never>
 	});
 
 /**
+ * Probe a freshly-deployed worker's auth-provisioning route (`POST /api/auth/sign-up/email`, the
+ * route every suite hits at setup) until the CF edge stops serving the placeholder 404 for it.
+ *
+ * Edge propagation on Cloudflare is PER-ROUTE, not per-worker, so `/api/health` (`awaitWorkerReady`)
+ * can ripen while `/api/auth/*` still 404s at the edge for several more seconds (#2416). Without
+ * this gate the shared stage releases its URL on health alone; each forked suite's first `signUp`
+ * then rides its OWN `EDGE_READY_DEADLINE_MS` budget in-suite, and a slow auth propagation reds all
+ * of them with `CloudflarePlaceholder404Error`. Pay that wait ONCE here so the URL is released only
+ * after the auth route is serving.
+ *
+ * Reuses the shared `awaitEdgeReady`/`edgeFetch` primitive (ADR 0127) on its default
+ * `EDGE_READY_DEADLINE_MS` budget — at least as generous as the per-test one it front-loads. The
+ * probe body is deliberately empty: better-auth answers a structured 4xx (proof the route is
+ * serving) without provisioning a user, and the `() => true` predicate — the same shape the harness
+ * `postAuthReady` uses — rides ONLY the thrown placeholder-404 out; any real worker answer stops the
+ * poll AT ONCE, so a genuine auth 4xx/5xx is never swallowed into the budget (the `_edge-ready.ts`
+ * scoped-tolerance guarantee). If the route never propagates within the budget, `awaitEdgeReady`
+ * re-throws the typed placeholder-404 → an `Effect.promise` defect (die), failing the bootstrap
+ * loudly rather than releasing a URL whose auth route still 404s.
+ */
+export const awaitAuthRouteReady = (url: string): Effect.Effect<void, never, never> =>
+	Effect.promise(async () => {
+		await awaitEdgeReady(
+			() =>
+				edgeFetch(`${url}/api/auth/sign-up/email`, {
+					method: "POST",
+					headers: {"content-type": "application/json", origin: "http://localhost:3000"},
+					body: "{}",
+				}),
+			() => true,
+			{pollMs: WARM_POLL_MS},
+		);
+	});
+
+/**
  * Stand up this file's per-file `Test.make` lifecycle and return the black-box
  * `harness` bound to its deployed worker URL. Call once at module top level.
  *
