@@ -218,12 +218,15 @@ shaped for and the durable seam between runs — WORK mutates the map only throu
 ### The walk
 
 1. **Resolve the map and read its frontier through the CLI.** Load map `#N`'s state via
-   `wayfinder-map` and take its `## Open frontier` list. Pick the **next resolvable** ticket
-   deterministically (oldest sub-issue first). A ticket already flagged **founder-decision-fork**
-   and awaiting the founder is **not resolvable by the agent** — skip it (see the seam below) and
-   take the next investigation ticket. If the only remaining frontier is forks awaiting the
-   founder, there is nothing for WORK to resolve: surface that the map is blocked on the human and
-   stop.
+   `wayfinder-map` and take its `## Open frontier` list. First ask the CLI whether the map is
+   **emission-ready** — its `## Open frontier` cleared of answerable unknowns (the
+   graduation-readiness signal, see [Emission](#emission--the-cleared-map-emits-triaged-epics-into-the-pipeline));
+   if so, this map has nothing left to resolve and WORK hands off to emission rather than picking a
+   ticket. Otherwise pick the **next resolvable** ticket deterministically (oldest sub-issue
+   first). A ticket already flagged **founder-decision-fork** and awaiting the founder is **not
+   resolvable by the agent** — skip it (see the seam below) and take the next investigation ticket.
+   If the only remaining frontier is forks awaiting the founder, there is nothing for WORK to
+   resolve: surface that the map is blocked on the human and stop.
 
 2. **Classify the picked ticket — investigation (AFK) or founder-decision-fork.** An investigation
    ticket (`type:investigation`, the AFK/Research + Prototype-spike rows of CHART's translation
@@ -334,19 +337,135 @@ reveals. The **only** difference from an investigation is *whose answer it is*: 
 was the founder's, never the agent's. wayfinder did the framing legwork, the founder made the call,
 and the map records it and moves on.
 
-## Handoff — the map graduates into the pipeline
+## Emission — the cleared map emits triaged epics into the pipeline
 
-A map is "done enough" when its open frontier holds no more answerable unknowns — every
-investigation is graduated into the fog and every remaining item is either a settled
-decision-so-far or a surfaced founder-decision-fork awaiting the human. At that point the map
-is concrete enough to enter the execution pipeline: its accreted decisions become the spec a
-`report` → `triage` → `plan-epic` pass turns into a dependency-ordered ledger. wayfinder is the
-front of that funnel, not a replacement for it.
+This is the **handoff seam** where the ideation layer graduates into the execution pipeline: a
+map that has cleared enough fog emits one or more concrete epics/features into the **existing**
+`report` → `triage` → `plan-epic` → `write-code` funnel. Emission is **not a third mode with new
+machinery** — it is the terminal act of a map's life, reached from a WORK run whose
+graduation-readiness check finds the frontier cleared. Where CHART lays the frontier down and
+WORK clears it one ticket at a time, emission is what a map *becomes* once its frontier holds no
+more answerable unknowns: the accreted plan, filed as intake the settled pipeline already knows
+how to drain. Nothing downstream is rebuilt — emission only feeds the funnel from its front.
+
+### When emission fires — the graduation-readiness signal
+
+A map is **emission-ready** when its `## Open frontier` holds no more *answerable* unknowns: every
+investigation ticket has graduated into `## Graduated fog`, and no founder-decision-fork remains
+awaiting the founder that would gate the buildable plan. This readiness is the wayfinder CLI's
+**graduation-readiness signal** (#2426) — WORK **asks the CLI**, and never re-derives readiness by
+ad-hoc markdown parsing of the map body (the same single-source discipline every map-state op
+holds; see [Map state is read and written through the `wayfinder-map` CLI](#map-state-is-read-and-written-through-the-wayfinder-map-cli--never-ad-hoc-markdown-parsing)).
+
+- A WORK run that finds the frontier **still holds an answerable unknown** resolves that one ticket
+  (the [WORK walk](#the-walk-1)) and does **not** emit — emission is never chained onto a
+  resolution in the same run.
+- A run that finds the frontier **cleared** performs emission instead of resolving a ticket.
+  Emission is thus the natural terminus of the one-ticket-per-session walk, not a parallel machine.
+- **Graceful block on the human.** A map that still holds a founder-decision-fork *awaiting the
+  founder* is **not** emission-ready for the plan that fork gates — it is blocked on the human (the
+  [founder-decision-fork seam](#the-founder-decision-fork-seam--routing-the-fork-to-the-founder)),
+  and emission waits for the founder's answer to graduate the fork before that part of the plan
+  becomes buildable. Emission never routes around an open fork by guessing the decision.
+
+### Compose each brief from `## Destination` + `## Decisions-so-far`
+
+The emitted issue's brief is composed from the map's **accreted state**, read through the CLI:
+
+- The map's **`## Destination`** supplies the end-state the epic charts toward — *where we want to
+  be*, concretely enough to tell "arrived" from "not yet."
+- The map's **`## Decisions-so-far`** supplies the settled decisions and established facts that make
+  the path buildable — these become the brief's **givens**, each carried with its `— from #N`
+  provenance so a downstream reader can trace the decision back to the frontier ticket that settled
+  it.
+- `## Open frontier` and `## Graduated fog` do **not** go into a brief — the frontier is cleared,
+  and the fog is the map's working history of *how* it cleared, not part of the spec.
+
+One cleared map may emit **one or several** epics/features: decompose the cleared destination into
+the coherent buildable units its accreted decisions now support, and give each emitted issue the
+relevant slice of `## Decisions-so-far` as its givens plus a link back to the map for provenance.
+
+### File into the existing `report` → `triage` entry seam — reuse, don't rebuild
+
+Emit each epic/feature as a **`status:needs-triage`** issue — the **same intake entry the `report`
+skill uses** — carrying only that one label, no `type:*` and no priority. This is a deliberate
+reuse of the pipeline's front door, not new machinery:
+
+- **Emission does not classify, type, or prioritize** the emitted issue — that is `triage`'s job.
+  Applying a type or priority here would poison the triage queue exactly as a hand-typed label does
+  (§the report skill's "no type, no priority" rule).
+- **Emission does not plan an emitted epic into children** — that is `plan-epic`'s job once triage
+  has classified it as an epic.
+- Downstream `triage` → `plan-epic` → `write-code` is **reused verbatim, never re-invented.** The
+  seam adds *no* downstream state, label, or step; it only files intake the existing pipeline
+  already drains.
+
+The emitted issue is **agent-filed intake**, so carry the report skill's `Filed by an agent` footer
+([`../report/footer.sh`](../report/footer.sh)) — this marks the emitted epic as pipeline intake
+rather than a hand-typed, human-owned issue, so triage's auto-close-eligibility semantics apply
+correctly (§the report footer in the formats contract). Stream the composed brief straight into the
+create over stdin (no shared temp file to collide on, per the report skill's filing rule):
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+# One emitted epic per coherent buildable unit. The brief is composed from map #$MAP's
+# ## Destination + the relevant ## Decisions-so-far slice (read via the wayfinder CLI, never
+# ad-hoc markdown slicing). Files into the SAME status:needs-triage entry `report` uses.
+{
+  cat <<'EOF'
+## Destination
+<the epic's end-state, from the map's ## Destination>
+
+## Given (decided on the map)
+<the ## Decisions-so-far entries that make this epic buildable — each with its `— from #N` provenance>
+
+## Emitted from wayfinder map
+Charted and cleared on wayfinder:map #<MAP>. Downstream is the existing pipeline: triage → plan-epic → write-code.
+EOF
+  echo   # blank line before the footer block
+  claude-plugins/kampus-pipeline/skills/report/footer.sh   # emits its own `---` + <sub>… line
+} | gh api repos/$REPO/issues \
+  -f title="<the epic, as one concrete deliverable>" \
+  -F body=@- \
+  -f "labels[]=status:needs-triage"
+```
+
+### Mark the map emitted — the traceable ideation→execution handoff
+
+Once the epics are filed, **mark the map as emitted** so the ideation→execution loop is traceable
+from both ends:
+
+- Post a handoff comment on the map linking **every** emitted issue (`emitted #E1, #E2 → triage`),
+  so a reader of the map can follow it *forward* to the epics it became.
+- Each emitted issue already references the map (`Emitted from wayfinder:map #<MAP>` in its brief),
+  so a reader of any emitted epic can follow it *back* to the map that discovered it. The link is
+  **bidirectional** — that is what makes the ideation→execution handoff traceable.
+- **Close vs annotate.** A map whose buildable plan is **fully** emitted is **closed** — its
+  frontier is cleared and its purpose (charting the fog) is complete; it remains the durable record
+  of *how* the plan was discovered while the emitted issues carry it forward. A map that emits only
+  **part** of its plan (some destinations still fogged, or a fork still awaiting the founder) is
+  **annotated** with the emitted links but stays **open** for a future WORK run to clear the rest
+  and emit again.
+
+```bash
+# link the emitted epics on the map, then close it IFF the buildable plan is fully emitted
+BODY="Emitted into the pipeline: #$E1, #$E2 → triage → plan-epic → write-code. Frontier cleared."
+gh api repos/$REPO/issues/$MAP/comments -f body="$BODY"
+gh api -X PATCH repos/$REPO/issues/$MAP -f state=closed   # fully-emitted only; a partial emit stays open
+```
+
+### What emission is not
+
+- It **does not triage, type, or prioritize** the emitted issues — `triage` owns that.
+- It **does not plan an emitted epic into children** — `plan-epic` owns that.
+- It **does not write code, open a PR, or merge** — the execution pipeline owns that.
+- It **invents no new downstream machinery** — the `report` → `triage` → `plan-epic` funnel is
+  reused exactly; emission is only its front door for a cleared map.
 
 > **Build status.** The construct — the `wayfinder:map` label, the map-issue shape contract, and
-> the two-mode + one-seam description — both mode walks, **CHART** and **WORK**, and the
-> **founder-decision-fork** routing contract WORK surfaces-and-stops for are in place (#2421,
-> #2422, #2423, #2424). Still to land: the **emission** path into the pipeline (#2425) and the
-> **CLI tool** (#2426, the `wayfinder-map` reader/writer WORK's map-state ops go through). Each
-> fills in against the map-shape contract linked above; do not let a mode drift from that single
-> source.
+> the two-mode + one-seam description — both mode walks, **CHART** and **WORK**, the
+> **founder-decision-fork** routing contract WORK surfaces-and-stops for, and the **emission** seam
+> a cleared map hands off through are in place (#2421, #2422, #2423, #2424, #2425). Still to land:
+> the **CLI tool** (#2426, the `wayfinder-map` reader/writer WORK's map-state ops and the
+> graduation-readiness signal go through) and the dogfood bootstrap (#2427). Each fills in against
+> the map-shape contract linked above; do not let a mode drift from that single source.
