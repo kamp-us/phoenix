@@ -1,16 +1,15 @@
 ---
 id: 0175
-title: "PROPOSED — §CP self-approval gate is non-deterministic; make it a hard `gh api` team-cardinality check (branch team size 0-1-N), with a single-owner degenerate-case discharge policy that ship-it evaluates from org/team shape, not agent judgment (extends 0135)"
-status: proposed
+title: "§CP self-approval gate is non-deterministic; make it a hard `gh api` team-cardinality check (branch team size 0-1-N), with a single-owner degenerate-case discharge policy that ship-it evaluates from org/team shape, not agent judgment (extends 0135)"
+status: accepted
 date: 2026-07-11
 tags: [pipeline, ship-it, security, control-plane, governance, github]
 ---
 
 # 0175 — Make the §CP self-approval gate deterministic: a hard team-cardinality check with an explicit single-owner discharge policy
 
-> **Status: PROPOSED — recommendation, not a ruling.** This ADR records a *recommended*
-> discharge policy for umut to rule on via normal ADR review; it is not enacted until accepted.
-> Filed for [#2435](https://github.com/kamp-us/phoenix/issues/2435).
+> **Status: ACCEPTED** — ruled by umut on 2026-07-11 for [#2435](https://github.com/kamp-us/phoenix/issues/2435).
+> The implementing ship-it §CP gate edit is a separate, gate-critical (§CP) unit tracked as a follow-up.
 
 ## Context
 
@@ -52,7 +51,7 @@ gate to run the cardinality introspection — is a distinct, blocked-on-this-dec
 
 ## Decision
 
-**Recommended (PROPOSED).** Replace the agent judgment with a **hard, deterministic check keyed on
+Replace the agent judgment with a **hard, deterministic check keyed on
 control-plane-team shape**, evaluated at gate time from org/team introspection via `gh api` REST
 (never GraphQL — the org's Projects-classic integration breaks GraphQL, per 0135 lines 96-98). The
 gate branches on the **cardinality of present, active, human `@kamp-us/control-plane` members**
@@ -131,9 +130,9 @@ branch only decides *whether the §CP enqueue is unblocked*, never substitutes f
   rule are all preserved; this ADR only *specifies the cardinality branch 0135 left implicit* and
   makes the degenerate cases deterministic. 0135's body is not edited.
 - **Implementation is a separate, blocked-on-this unit.** Editing the ship-it §CP gate to run the
-  cardinality introspection is gate-critical (§CP) and lands via its own PR once this ADR is
+  cardinality introspection is gate-critical (§CP) and lands via its own PR now that this ADR is
   accepted (#2435 triage note); this ADR is scoped to the policy.
-- **Banned (if accepted):** resolving §CP discharge by agent judgment; a self-approval discharging
+- **Banned:** resolving §CP discharge by agent judgment; a self-approval discharging
   §CP when `N ≥ 2`; auto-enqueuing a §CP PR when `N == 0`; a stale-head self-approval marker
   discharging the single-owner case; resolving team membership over GraphQL.
 
