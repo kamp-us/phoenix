@@ -23,12 +23,7 @@ import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
-import {
-	MECMUA_PUBLIC_READ,
-	MECMUA_WRITE,
-	PHOENIX_AUTHORSHIP_LOOP,
-	PHOENIX_BILDIRIM,
-} from "./flags/keys";
+import {MECMUA_PUBLIC_READ, PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
@@ -41,7 +36,7 @@ import {DivanPage} from "./pages/DivanPage";
 import {FunnelPage} from "./pages/FunnelPage";
 import {LabComposerPage} from "./pages/LabComposerPage";
 import {LandingPage} from "./pages/LandingPage";
-import {MecmuaEditorPage, shouldShowMecmuaWriteCta} from "./pages/MecmuaEditorPage";
+import {MecmuaEditorPage} from "./pages/MecmuaEditorPage";
 import {MecmuaFeedPage} from "./pages/MecmuaFeedPage";
 import {MecmuaIndexPage} from "./pages/MecmuaIndexPage";
 import {MecmuaPostPage} from "./pages/MecmuaPostPage";
@@ -69,9 +64,6 @@ type TopbarChips = {
 	karma: number | undefined;
 	divanTo: string | undefined;
 	bildirim: {to: string; unread: number} | undefined;
-	// The mecmua "yaz" nav entry's visibility (#2532), computed below the fate gate where
-	// `me.tier` lives and published up to the always-painting nav frame via this bridge.
-	mecmuaWrite: boolean;
 };
 
 /**
@@ -155,9 +147,6 @@ function Layout() {
 							{to: "/sozluk", label: "sözlük"},
 							{to: "/pano", label: "pano"},
 							...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
-							// The yazar-gated "yaz" entry to the editor (#2532), shown once fate
-							// settles the write affordance — chip-published from below the gate.
-							...(chips?.mecmuaWrite ? [{to: "/mecmua/yaz", label: "yaz"}] : []),
 						]}
 						divanTo={chips?.divanTo}
 						{...(chips?.userProps ?? {})}
@@ -244,10 +233,6 @@ function LayoutContent() {
 	// today: disabled ⇒ the read never touches the wire and reports 0.
 	const {value: bildirimOn} = useFlag(PHOENIX_BILDIRIM, false);
 	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data, me?.id ?? null);
-	// The yazar-gated mecmua "yaz" nav entry (#2532), dark behind `mecmua-write`. The
-	// visibility shares the editor's own publish gate (shouldShowMecmuaWriteCta), so the
-	// nav entry never dead-ends a çaylak/visitor into a page they can't publish from.
-	const {value: mecmuaWriteOn} = useFlag(MECMUA_WRITE, false);
 	// #1888: hold the off-/auth redirect while a chosen-username signup is still
 	// resolving. `signUp.email` establishes the session before the separate
 	// `setUsername` lands; without this hold the redirect unmounts AuthPage and
@@ -288,20 +273,8 @@ function LayoutContent() {
 			karma: selfKarma,
 			divanTo: showDivan ? "/divan" : undefined,
 			bildirim: bildirimOn && isSignedIn ? {to: "/bildirimler", unread: bildirimUnread} : undefined,
-			mecmuaWrite: shouldShowMecmuaWriteCta(mecmuaWriteOn, isSignedIn, me?.tier),
 		}),
-		[
-			sessionUser,
-			me?.name,
-			me?.tier,
-			username,
-			selfKarma,
-			showDivan,
-			bildirimOn,
-			isSignedIn,
-			bildirimUnread,
-			mecmuaWriteOn,
-		],
+		[sessionUser, me?.name, username, selfKarma, showDivan, bildirimOn, isSignedIn, bildirimUnread],
 	);
 
 	// Publish the computed chips up to the shell frame; clear them on unmount (the
