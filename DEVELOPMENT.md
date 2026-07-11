@@ -89,6 +89,7 @@ Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — w
 - **Make invalid states unrepresentable.** Domain logic lives in domain objects.
 - **No `export default`** (ADR [0001](./.decisions/0001-no-export-default.md)) except where the framework demands it (`alchemy.run.ts`, the worker entry, Vite config).
 - **Feature flags ship dark, default-off.** Gate a new path behind a flag and read it with the safe value as default — the read never throws, so an outage degrades to the old path. Declaring, reading (server or React), and flipping a flag are all in [.patterns/feature-flags.md](./.patterns/feature-flags.md) (ADR [0081](./.decisions/0081-feature-flag-substrate-cloudflare-flagship.md)).
+- **`/lab/*` is the standing prototype space, and it is PUBLIC.** In-product experiments/prototypes mount under `/lab/<name>` as a durable, kept home (not per-spike throwaway), shipped **live to all users with no dev-gate and no dark flag** — the explicit inverse of the flag-gated feature routes. The route-tree shape, the visibility classes, and the `/lab/*` naming/lifecycle convention are in [.patterns/frontend-routing.md](./.patterns/frontend-routing.md).
 - **pnpm, not npm.** Biome formatting: tabs, 100 col, no bracket spacing.
 
 Data tasks (seeding, backfills) are one-off direct-D1 scripts against the bound database, not worker routes.
