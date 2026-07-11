@@ -85,14 +85,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 	const editing = editComposer != null;
 
 	const highlight = props.activeCommentId === data.id;
-	const cls = [
-		"kp-comment",
-		props.depth === 1 ? "kp-comment--depth-1" : "",
-		(props.depth ?? 0) >= 2 ? "kp-comment--depth-2" : "",
-		highlight ? "kp-comment--highlighted" : "",
-	]
-		.filter(Boolean)
-		.join(" ");
+	const cls = ["kp-comment", highlight ? "kp-comment--highlighted" : ""].filter(Boolean).join(" ");
 
 	const onUpvote = useVoteToggle({
 		voted,
@@ -225,7 +218,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						</div>
 					) : null}
 					{props.children.length ? (
-						<div>
+						<div className="kp-comment__children">
 							{props.children.map((child) => (
 								<CommentTreeNode
 									key={child.id}

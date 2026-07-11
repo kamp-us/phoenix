@@ -1,4 +1,6 @@
-/* PanoComment — threaded with depth-1/depth-2 left rails. Mirrors dense .pano-comment. */
+/* PanoComment — a threaded reply subtree carries its left rail on the children
+   WRAPPER (.kp-comment__children), not the reply article, and only a root comment
+   draws the thread divider. See ADR 0162 / #2510. Mirrors dense .pano-comment. */
 
 .kp-pano-thread {
 	display: flex;
@@ -7,6 +9,13 @@
 
 .kp-comment {
 	padding: var(--comment-y) 0;
+}
+
+/* One separator per thread: only a root comment (a direct child of the thread)
+   draws the full-width divider. A nested reply must not — its border-bottom
+   stacked, indented, under the parent's, and the gap between them read as a
+   doubled/misaligned rule (#2510). */
+.kp-pano-thread > .kp-comment {
 	border-bottom: 1px solid var(--border-faint);
 }
 
@@ -133,15 +142,18 @@
 	color: var(--accent);
 }
 
-.kp-comment--depth-1 {
+/* The rail belongs to the subtree, so it lives on the children wrapper — which
+   has no vertical padding, so it spans exactly the nested replies. Authored as a
+   border-left on the padded reply article, it ran through the article's top and
+   bottom padding and left an orphaned L-corner hanging into the parent (#2510).
+   Wrappers nest, so the indent compounds per level; deeper rails soften. */
+.kp-comment__children {
 	margin-left: 18px;
 	padding-left: 12px;
 	border-left: 2px solid var(--border);
 }
-.kp-comment--depth-2 {
-	margin-left: 36px;
-	padding-left: 12px;
-	border-left: 2px solid var(--border-faint);
+.kp-comment__children .kp-comment__children {
+	border-left-color: var(--border-faint);
 }
 
 .kp-comment--highlighted {
