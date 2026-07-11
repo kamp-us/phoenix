@@ -83,6 +83,40 @@ node packages/pipeline-cli/src/bin.ts epic-lock acquire 1234 && echo "hold the l
 node packages/pipeline-cli/src/bin.ts epic-lock release 1234
 ```
 
+### `verdict` — the ADR-0058 SHA-bound gate-verdict read/post glue (#2102)
+
+The SHA-bound verdict read/post glue the `review-*` / `ship-it` / `write-code`-repair skills
+each hand-rolled inline as `jq`, extracted into one deterministic, unit-tested tool. The
+**pure core** (`verdict-match.ts`) is the verdict-match decision: given a PR's comment bodies
++ the current HEAD sha + the write+ authorized-author set, is HEAD reviewed in this gate's
+namespace, and by which marker? — with the discriminator the inline reads got subtly wrong
+made explicit (a SHA-less advisory does **not** satisfy a SHA-bound check; a verdict bound to a
+stale head does **not** pass; newest-authorized-marker wins). It re-encodes the ADR-0058 match
+semantics; it does **not** change what any gate verifies.
+
+- **`verdict read --pr N --gate <code|doc|skill|design> [--expect PASS|FAIL] [--head <sha>]`** —
+  resolve the (PR, gate) verdict against the PR's current head (author-gated to write+
+  collaborators, ADR 0055). Prints the resolved outcome as JSON on stdout (`_tag` of
+  `current`/`stale`/`sha-less`/`none`, plus the bound sha + comment id); **exits 0 only when HEAD
+  is reviewed with the `--expect` polarity** (default `PASS`; `FAIL` is the `write-code`-repair
+  seam), non-zero with a named refusal reason on stderr otherwise — so a caller branches on exit
+  status.
+- **`verdict post --pr N --gate <g> [--body-file <f>]`** — the ADR-0058 rule-2 **upsert**: read
+  the composed verdict body (from `--body-file` or stdin), refuse fail-closed if its first line is
+  not *this* gate's marker (the cross-namespace emission bug), then PATCH our own prior marker in
+  the namespace if one exists, else POST — exactly one verdict comment per (PR, gate). Prints
+  `patched <id>` / `posted <id>`.
+
+The pure match core (`verdict-match.ts`) is IO-free and unit-tested table-driven; `github.ts` is
+the REST-only `gh api` boundary (the `epic-lock` `github.ts` service pattern).
+
+```bash
+# is PR 123's doc verdict a current-head PASS? (exit 0 = reviewed)
+node packages/pipeline-cli/src/bin.ts verdict read --pr 123 --gate doc && echo "merge-ready"
+# upsert a composed review-doc verdict (one comment per gate)
+node packages/pipeline-cli/src/bin.ts verdict post --pr 123 --gate doc --body-file "$VERDICT_FILE"
+```
+
 ### `leak-guard` — personal-data leak gate for shared artifacts (#173, #2357)
 
 Two modes, one deny-list-per-mode core:
