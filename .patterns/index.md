@@ -75,6 +75,14 @@ live in `apps/web/src/components/ui/`.
 | [design-sync-authority.md](./design-sync-authority.md) | The **one-directional per-layer sync authority** contract every `/design-sync` (Claude Design) round-trip runs against (#2406): tokens/style → the visual tool is source; component logic + a11y (focus rings, aria wiring, keyboard order, reduced-motion) → the repo primitive is source. The behavioral spine is code-authoritative — a visual reskin consumes it read-only, never re-authors it. Enforced by the property-based a11y loop (generic) + the entry-row spine lock (`apps/web/src/components/entry-row-spine.test.tsx`, the composite tripwire) | Before any design round-trip, or when changing an entry-row primitive's behavior vs its paint ([ADR 0162](../.decisions/0162-four-pillars-design-law.md)) |
 | [moderation-admin-shared-components.md](./moderation-admin-shared-components.md) | The **one shared component layer** every moderation/admin surface consumes (`apps/web/src/components/moderation/`): the cross-surface primitives (actor/user row, action affordances, audit context), the shared-primitive + thin-per-surface-wrapper shape (divan's `CaylakIdentity` over `ActorIdentity`), how a new mod surface (the admin user-list #968) consumes it, the reuse-don't-fork rule, and the extract-on-the-second-consumer discipline | Building or extending any moderation/admin UI (divan, admin #873 children, future mod tooling) — before forking a user-list / action-row ([ADR 0147](../.decisions/0147-shared-moderation-admin-component-layer.md) / [0138](../.decisions/0138-divan-actor-centric-spine.md)) |
 
+## Index — frontend routing
+
+The SPA's route tree (`apps/web/src/App.tsx`) and the visibility classes a route can take.
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [frontend-routing.md](./frontend-routing.md) | How the react-router `<Routes>`/`<Route>` tree is shaped (one shared `<Layout />` parent, pages in `apps/web/src/pages/`); the two visibility classes (public product routes vs dark flag-gated feature routes that 404 when off); and the standing **`/lab/*` convention** — a durable, kept home for in-product prototypes with the load-bearing **PUBLIC** visibility rule (no `ENVIRONMENT` dev-gate, no `phoenix-*` dark flag), plus its naming/nesting and graduate-or-cull lifecycle; first inhabitant `/lab/composer` (#2465) | Adding a route, mounting a prototype under `/lab/*`, or deciding a route's production visibility |
+
 ## Index — alchemy infra layer
 
 The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-effect](https://github.com/usirin/alchemy-effect) — one Effect program for infra + runtime, in place of `wrangler.jsonc`, a Hono entry, manual binding access, and hand-written DO classes. Read [alchemy-overview.md](./alchemy-overview.md) first; it maps how this layer sits under the unchanged `effect-*`/`fate-*` layers. phoenix and alchemy are both on effect v4.
