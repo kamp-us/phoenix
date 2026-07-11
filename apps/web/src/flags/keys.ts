@@ -74,6 +74,16 @@ export const PANO_OPTIMISTIC_POST_DELETE = "pano-optimistic-post-delete";
 export const PANO_BASE_FEED = "pano-base-feed";
 
 /**
+ * mecmua public-read dark-ship flag (#2498, epic #2467). The SINGLE seam the
+ * anonymous read surface gates behind — the `GET /fate/mecmua/post/:slug` route's
+ * existence (404 until flipped) AND the `/mecmua/:slug` reader page (self-404).
+ * Default-off so the whole public-read path ships dark until a human flips it at
+ * release (ADR 0083). Its own `mecmua-` key, scoped to the read surface — the
+ * authoring/publish path (#2497) ships behind its own seam.
+ */
+export const MECMUA_PUBLIC_READ = "mecmua-public-read";
+
+/**
  * Earned-authorship loop (çaylak→yazar) dark-ship flag (#1204, epic #1202). The
  * single seam every authorship-loop surface gates behind: cross-cutting
  * (`phoenix`) because the loop touches sözlük/pano/pasaport, default-off so the

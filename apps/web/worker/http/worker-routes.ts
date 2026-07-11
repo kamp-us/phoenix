@@ -22,6 +22,7 @@ import {fateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import {flagsEvaluateRoute, flagsProbeRoute} from "../features/flagship/route.ts";
 import {flagsDevApplyRoute, flagsDevPageRoute} from "../features/flagship/route-dev.ts";
+import {mecmuaPublicReadRoute} from "../features/mecmua/public-read-route.ts";
 import {baseFeedRoute} from "../features/pano/base-feed-route.ts";
 import {linkMetadataRoute} from "../features/pano/link-metadata-route.ts";
 import {authRoute} from "../features/pasaport/route.ts";
@@ -64,6 +65,10 @@ export const rawWorkerRoutes: readonly [WorkerRoute, ...WorkerRoute[]] = [
 	// The GET-able base feed (#2322, epic #2316 leg B); the `/fate/*` glob already
 	// shadows the SPA for it. Dark behind `PANO_BASE_FEED` (404 until flipped).
 	{path: "/fate/pano/feed", glob: "/fate/*", route: baseFeedRoute},
+	// The public read of a single published mecmua post (#2498, epic #2467); the
+	// `/fate/*` glob already shadows the SPA for it. Dark behind `MECMUA_PUBLIC_READ`
+	// (404 until flipped).
+	{path: "/fate/mecmua/post/:slug", glob: "/fate/*", route: mecmuaPublicReadRoute},
 	{path: "/api/auth/*", glob: "/api/*", route: authRoute},
 	{path: "/api/flags/probe", glob: "/api/*", route: flagsProbeRoute},
 	{path: "/api/flags/evaluate", glob: "/api/*", route: flagsEvaluateRoute},

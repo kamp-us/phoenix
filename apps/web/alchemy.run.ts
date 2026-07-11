@@ -46,6 +46,7 @@ import {
 	Flagship,
 	funnelReadoutFlag,
 	karmaGatesFlag,
+	mecmuaPublicReadFlag,
 	modQueueFlag,
 	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
@@ -133,6 +134,9 @@ export default Alchemy.Stack(
 		// seam the ban mutations + admin read + moderator-UI controls gate behind, so an
 		// unreleased ban can never refuse a real user's session until a human release.
 		yield* userBanFlag(flagship.appId);
+		// The mecmua public-read dark-ship flag, default-off (#2498, epic #2467) — the
+		// single seam the anon GET route + reader page gate behind until a human release.
+		yield* mecmuaPublicReadFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
