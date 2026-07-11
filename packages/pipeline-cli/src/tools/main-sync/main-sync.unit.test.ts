@@ -12,6 +12,7 @@ import {
 const head = (over: Partial<HeadState> = {}): HeadState => ({
 	branch: "main",
 	isDirty: false,
+	hasTrackedModifications: false,
 	...over,
 });
 
@@ -54,8 +55,8 @@ describe("decideMainSync — blocked-dirty (detect-and-surface, never discard)",
 
 	it("dirty NEVER yields a reattach on the off-main path (safety invariant)", () => {
 		const plans: MainSyncPlan[] = [
-			decideMainSync({branch: null, isDirty: true}),
-			decideMainSync({branch: "x", isDirty: true}),
+			decideMainSync({branch: null, isDirty: true, hasTrackedModifications: true}),
+			decideMainSync({branch: "x", isDirty: true, hasTrackedModifications: true}),
 		];
 		for (const plan of plans) {
 			assert.notStrictEqual(plan.action, "reattach");
@@ -66,12 +67,12 @@ describe("decideMainSync — blocked-dirty (detect-and-surface, never discard)",
 describe("decideMainSync — totality", () => {
 	it("every HeadState maps to exactly one of the three actions", () => {
 		const cases: HeadState[] = [
-			{branch: "main", isDirty: false},
-			{branch: "main", isDirty: true},
-			{branch: null, isDirty: false},
-			{branch: null, isDirty: true},
-			{branch: "feature", isDirty: false},
-			{branch: "feature", isDirty: true},
+			{branch: "main", isDirty: false, hasTrackedModifications: false},
+			{branch: "main", isDirty: true, hasTrackedModifications: true},
+			{branch: null, isDirty: false, hasTrackedModifications: false},
+			{branch: null, isDirty: true, hasTrackedModifications: true},
+			{branch: "feature", isDirty: false, hasTrackedModifications: false},
+			{branch: "feature", isDirty: true, hasTrackedModifications: true},
 		];
 		const actions = new Set(["already-on-main", "reattach", "blocked-dirty"]);
 		for (const c of cases) {
@@ -85,11 +86,22 @@ describe("decideMainRefresh — fast-forward (the only safe-to-advance state)", 
 		const plan = decideMainRefresh(head({branch: "main", isDirty: false}));
 		assert.deepStrictEqual(plan, {action: "fast-forward", branch: MAIN_BRANCH});
 	});
+
+	it("on main + untracked-only dirt → fast-forward (#2455: ff passes straight through untracked files)", () => {
+		// The #2455 fix: a tree dirty ONLY with untracked files still fast-forwards. `merge --ff-only`
+		// never touches untracked files, so blocking on them bought no safety and pinned primary stale.
+		const plan = decideMainRefresh(
+			head({branch: "main", isDirty: true, hasTrackedModifications: false}),
+		);
+		assert.deepStrictEqual(plan, {action: "fast-forward", branch: MAIN_BRANCH});
+	});
 });
 
 describe("decideMainRefresh — leave-alone (never move HEAD, never error)", () => {
-	it("on main but dirty → leave-alone (reason dirty) — refuse to disturb uncommitted work", () => {
-		const plan = decideMainRefresh(head({branch: "main", isDirty: true}));
+	it("on main + tracked modifications → leave-alone (reason dirty) — a ff could clobber tracked work", () => {
+		const plan = decideMainRefresh(
+			head({branch: "main", isDirty: true, hasTrackedModifications: true}),
+		);
 		assert.deepStrictEqual(plan, {action: "leave-alone", reason: "dirty", branch: MAIN_BRANCH});
 	});
 
@@ -107,21 +119,25 @@ describe("decideMainRefresh — leave-alone (never move HEAD, never error)", () 
 		});
 	});
 
-	it("off-main takes precedence over dirty — the branch is the binding reason the ff can't run", () => {
-		// A dirty feature branch is reported off-main, not dirty: an ff of main can't advance a
-		// checked-out feature branch regardless of tree state, so the branch is the real blocker.
-		const plan = decideMainRefresh(head({branch: "umut/wip", isDirty: true}));
+	it("off-main takes precedence over tracked dirt — the branch is the binding reason the ff can't run", () => {
+		// A feature branch with tracked modifications is reported off-main, not dirty: an ff of main
+		// can't advance a checked-out feature branch regardless of tree state, so the branch is the
+		// real blocker (checked ahead of the tracked-dirt guard).
+		const plan = decideMainRefresh(
+			head({branch: "umut/wip", isDirty: true, hasTrackedModifications: true}),
+		);
 		assert.deepStrictEqual(plan, {action: "leave-alone", reason: "off-main", branch: "umut/wip"});
 	});
 
 	it("NEVER yields a HEAD-moving action — leave-alone or fast-forward only, no reattach/checkout", () => {
 		const cases: HeadState[] = [
-			{branch: "main", isDirty: false},
-			{branch: "main", isDirty: true},
-			{branch: null, isDirty: false},
-			{branch: null, isDirty: true},
-			{branch: "feature", isDirty: false},
-			{branch: "feature", isDirty: true},
+			{branch: "main", isDirty: false, hasTrackedModifications: false},
+			{branch: "main", isDirty: true, hasTrackedModifications: true},
+			{branch: "main", isDirty: true, hasTrackedModifications: false},
+			{branch: null, isDirty: false, hasTrackedModifications: false},
+			{branch: null, isDirty: true, hasTrackedModifications: true},
+			{branch: "feature", isDirty: false, hasTrackedModifications: false},
+			{branch: "feature", isDirty: true, hasTrackedModifications: true},
 		];
 		const actions = new Set<MainRefreshPlan["action"]>(["fast-forward", "leave-alone"]);
 		for (const c of cases) {

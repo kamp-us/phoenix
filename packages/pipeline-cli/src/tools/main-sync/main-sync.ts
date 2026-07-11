@@ -27,10 +27,11 @@
  * `origin/main` and any read of the local tree (next-free ADR number, "does X exist yet")
  * is made against stale state. The refresh is invoked by a pipeline step that KNOWS a merge
  * landed (ship-it / the orchestrator) and passively fast-forwards the primary — but, unlike
- * the drain-sync, it NEVER moves HEAD: on a non-`main` branch or a dirty tree it LEAVES THE
- * CHECKOUT ALONE and exits cleanly (a stale checkout is no worse than today; yanking the
- * owner off their feature branch or touching their uncommitted work is). Failing-to-refresh
- * is acceptable; failing-loudly or clobbering is not.
+ * the drain-sync, it NEVER moves HEAD: on a non-`main` branch or a tree with tracked
+ * modifications it LEAVES THE CHECKOUT ALONE and exits cleanly (a stale checkout is no worse
+ * than today; yanking the owner off their feature branch or clobbering their tracked work is).
+ * It ff's through untracked-only dirt, which a fast-forward never touches (see
+ * `decideMainRefresh`, #2455). Failing-to-refresh is acceptable; failing-loudly or clobbering is not.
  */
 
 /**
@@ -51,8 +52,19 @@ export interface HeadState {
 	 * The working tree has uncommitted/untracked changes (`git status --porcelain`
 	 * non-empty, or the probe was indeterminate). A dirty tree blocks a reattach —
 	 * a `git checkout main` from a detached HEAD with local changes could lose them.
+	 * This is the coarse dirty signal the drain-sync reattach consults; the post-merge
+	 * refresh consults the finer `hasTrackedModifications` instead (see #2455).
 	 */
 	readonly isDirty: boolean;
+	/**
+	 * The tree has TRACKED modifications — staged or unstaged changes to tracked files
+	 * (`git status --porcelain -uno` non-empty, or the probe was indeterminate),
+	 * EXCLUDING untracked files. This is the only dirt a `merge --ff-only` could clobber;
+	 * git fast-forwards straight through untracked files without touching them. The
+	 * post-merge refresh gates on THIS, not `isDirty`, so an untracked-only tree ff's
+	 * through (see #2455). Implies `isDirty` (tracked dirt is a subset of all dirt).
+	 */
+	readonly hasTrackedModifications: boolean;
 }
 
 /** The name of the branch the primary checkout must be attached to for a clean main-sync. */
@@ -125,18 +137,20 @@ export const decideMainSync = (head: HeadState): MainSyncPlan => {
  */
 export type MainRefreshPlan =
 	/**
-	 * HEAD is on `main` AND the tree is clean — the only state in which a `git merge
-	 * --ff-only origin/main` is both possible and non-destructive. The refresh runs
+	 * HEAD is on `main` AND free of tracked modifications — the state in which a `git merge
+	 * --ff-only origin/main` is both possible and non-destructive (untracked-only dirt is
+	 * fine; a fast-forward passes straight through it, #2455). The refresh runs
 	 * `fetch` + `merge --ff-only`; ff-only never creates a merge commit and aborts on any
 	 * divergence, so the worst case is a no-op, never a clobber.
 	 */
 	| {readonly action: "fast-forward"; readonly branch: string}
 	/**
-	 * The refresh is a deliberate NO-OP — HEAD is not on `main`, or the tree is dirty. It
-	 * exits cleanly (never an error): a fast-forward of `main` can't advance a checked-out
-	 * feature branch, and a dirty tree could have its uncommitted work disturbed, so the
+	 * The refresh is a deliberate NO-OP — HEAD is not on `main`, or the tree has tracked
+	 * modifications. It exits cleanly (never an error): a fast-forward of `main` can't advance
+	 * a checked-out feature branch, and tracked modifications could be clobbered, so the
 	 * refresh leaves the checkout untouched. `reason` records which condition held for the
-	 * report; `branch` is the current branch (or `detached-HEAD`).
+	 * report (`dirty` means tracked-modified, #2455); `branch` is the current branch (or
+	 * `detached-HEAD`).
 	 */
 	| {
 			readonly action: "leave-alone";
@@ -150,20 +164,28 @@ export type MainRefreshPlan =
  *   1. Not on `main` → `leave-alone` (reason `off-main`). The owner is on their own
  *      feature branch (or detached); a fast-forward of `main` cannot advance it, and
  *      yanking them onto `main` is exactly the disruption the refresh must avoid. No-op.
- *   2. On `main` but dirty → `leave-alone` (reason `dirty`). A fast-forward could disturb
- *      the owner's uncommitted work, and a stale-but-clean-of-clobber checkout is
- *      acceptable — failing-to-refresh beats touching uncommitted work. No-op.
- *   3. On `main` AND clean → `fast-forward`. The only state where the ff is safe: run it.
+ *   2. On `main` with TRACKED modifications → `leave-alone` (reason `dirty`). A fast-forward
+ *      could clobber the owner's uncommitted tracked work, and a stale-but-clobber-free
+ *      checkout is acceptable — failing-to-refresh beats touching tracked work. No-op.
+ *   3. On `main` AND free of tracked modifications → `fast-forward`. Safe to advance —
+ *      including when the tree carries untracked-only dirt (see the untracked note below).
  *
- * The branch check precedes the dirty check on purpose — off-`main` is reported even when
- * also dirty, because the branch is the binding reason the ff can't run (it can't advance
- * a checked-out feature branch regardless of tree state). Total over every `HeadState`.
+ * The branch check precedes the tracked-dirt check on purpose — off-`main` is reported even
+ * when also dirty, because the branch is the binding reason the ff can't run (it can't
+ * advance a checked-out feature branch regardless of tree state). Total over every `HeadState`.
+ *
+ * The tracked-vs-untracked distinction (#2455): the ff-blocking guard consults
+ * `hasTrackedModifications`, NOT `isDirty`. `merge --ff-only` fast-forwards straight through
+ * untracked files without touching them, so untracked-only dirt buys no safety by blocking —
+ * gating on `isDirty` instead pinned the primary STALE session-long (the #2453 detached-HEAD
+ * corruption root cause: stale on-disk skills). This matches the drain-sync path, which never
+ * consults dirt once already on `main`.
  */
 export const decideMainRefresh = (head: HeadState): MainRefreshPlan => {
 	if (head.branch !== MAIN_BRANCH) {
 		return {action: "leave-alone", reason: "off-main", branch: fromLabel(head.branch)};
 	}
-	if (head.isDirty) {
+	if (head.hasTrackedModifications) {
 		return {action: "leave-alone", reason: "dirty", branch: MAIN_BRANCH};
 	}
 	return {action: "fast-forward", branch: MAIN_BRANCH};
