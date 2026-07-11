@@ -1,4 +1,4 @@
-export {type BaseKitOptions, baseKit} from "./baseKit.ts";
+export {type BaseKitOptions, baseKit, type ComposerContentType} from "./baseKit.ts";
 export {Composer, type ComposerProps} from "./Composer.tsx";
-export {getJSON, getMarkdown, setMarkdown} from "./markdown.ts";
+export type {ComposerHandle, ComposerJSON, SetContentOptions} from "./handle.ts";
 export {type UseComposerEditorOptions, useComposerEditor} from "./useComposerEditor.ts";
