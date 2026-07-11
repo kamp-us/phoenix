@@ -36,7 +36,7 @@ import {
 import {contributionOrdering} from "./ordering.ts";
 import type {ProfileRow} from "./profile-fields.ts";
 import {toUserRow, type UserRow} from "./user-fields.ts";
-import {checkUsername} from "./username-rule.ts";
+import {checkUsername, normalizeUsername} from "./username-rule.ts";
 
 // `UserRow`/`ProfileRow` are single-sourced in their field-map modules (#1545);
 // re-exported here so cross-feature callers keep their `./Pasaport.ts` import.
@@ -618,7 +618,7 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					value: string;
 				}) {
 					const {userId} = input;
-					const normalized = input.value.trim().toLowerCase();
+					const normalized = normalizeUsername(input.value);
 					yield* assertUsername(normalized);
 
 					const existingUser = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
@@ -702,6 +702,11 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						sandboxViewer?: SandboxViewer | undefined;
 					},
 				) {
+					// Usernames are stored lowercased at write time (`setUsername`), so the
+					// read must normalize identically or a mixed-case `/u/Rasit` misses the
+					// stored `rasit` row and 404s (#2445). `normalizeUsername` is the one
+					// source read and write share, keeping every entry point case-insensitive.
+					const normalized = normalizeUsername(username);
 					const rows = yield* run((db) =>
 						db
 							.select({
@@ -712,7 +717,7 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 								totalKarma: schema.userProfile.totalKarma,
 							})
 							.from(schema.userProfile)
-							.where(eq(schema.userProfile.username, username))
+							.where(eq(schema.userProfile.username, normalized))
 							.limit(1),
 					);
 					const row = rows[0];
