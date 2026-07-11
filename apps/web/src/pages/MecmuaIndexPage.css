@@ -5,6 +5,13 @@
 	margin-bottom: var(--s-5);
 }
 
+.kp-mecmua-index__head-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-3);
+}
+
 .kp-mecmua-index__title {
 	font: var(--t-h-page);
 	color: var(--text-primary);
