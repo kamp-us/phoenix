@@ -35,7 +35,7 @@ import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import {MecmuaPostNotFound, MecmuaTitleRequired} from "./errors.ts";
 import {selectMecmuaFeed} from "./feed-selection.ts";
 import {anonymousMecmuaViewer, mecmuaPostVisibleWhere} from "./MecmuaPostVisibility.ts";
-import {MECMUA_FEED_ORDERING} from "./ordering.ts";
+import {MECMUA_FEED_ORDERING, MECMUA_MINE_ORDERING} from "./ordering.ts";
 import {type MecmuaPostRow, toMecmuaPostRow} from "./post-fields.ts";
 
 export interface SaveMecmuaDraftInput {
@@ -64,6 +64,13 @@ export interface MecmuaSubscriptionInput {
 /** The subscribed-author feed page request — `subscriberId` + forward keyset window. */
 export interface MecmuaFeedInput {
 	subscriberId: string;
+	first?: number;
+	after?: string | null;
+}
+
+/** The author's own-posts page request (#2544) — `authorId` + forward keyset window. */
+export interface MecmuaOwnPostsInput {
+	authorId: string;
 	first?: number;
 	after?: string | null;
 }
@@ -104,6 +111,15 @@ export class Mecmua extends Context.Service<
 		 * mask); a reader with no subscriptions gets an empty page.
 		 */
 		readonly listFeedConnection: (input: MecmuaFeedInput) => Effect.Effect<MecmuaFeedPage>;
+
+		/**
+		 * The author's OWN posts (#2544): a forward keyset page of the caller's posts —
+		 * BOTH drafts (`publishedAt is null`) and published — ordered `createdAt desc, id
+		 * desc` (newest-started first). This is the PRIVATE complement of the draft-masked
+		 * public reads: it is scoped `where author_id = ?`, so only the caller's own rows
+		 * ever resolve and no other author's drafts are exposed.
+		 */
+		readonly listOwnPostsConnection: (input: MecmuaOwnPostsInput) => Effect.Effect<MecmuaFeedPage>;
 	}
 >()("mecmua/Mecmua") {}
 
@@ -275,6 +291,51 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 			return forwardPage(selected, first, (r) => r.id) satisfies MecmuaFeedPage;
 		});
 
+		const listOwnPostsConnection = Effect.fn("Mecmua.listOwnPostsConnection")(function* (
+			input: MecmuaOwnPostsInput,
+		) {
+			const first = Math.max(1, Math.min(input.first ?? FEED_DEFAULT_FIRST, FEED_MAX_FIRST));
+			const after = input.after ?? null;
+
+			// Own posts only — `author_id = ?` includes drafts (null `publishedAt`), so no
+			// visibility mask is applied: the author always sees their own rows, and the
+			// scoping guarantees another author's rows never resolve (rides the
+			// `mecmua_post_author_created` index).
+			const baseWhere = eq(schema.mecmuaPost.authorId, input.authorId);
+
+			// Resolve the `after` cursor to its `createdAt` anchor, gated by the SAME author
+			// scope so a cursor naming a foreign/absent row misses → empty page.
+			const resolvedRow = after
+				? ((yield* run((db) =>
+						db
+							.select({createdAt: schema.mecmuaPost.createdAt})
+							.from(schema.mecmuaPost)
+							.where(and(eq(schema.mecmuaPost.id, after), baseWhere))
+							.get(),
+					)) ?? null)
+				: null;
+			const cursor = resolveCursor(after, resolvedRow);
+			if (cursor.kind === "miss") return emptyKeysetPage satisfies MecmuaFeedPage;
+			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
+
+			const cursorPredicate = keysetAfter(
+				keysetKeys(MECMUA_MINE_ORDERING, (field) =>
+					field === "id" ? after : (cursorRow?.createdAt ?? null),
+				),
+			);
+
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.mecmuaPost)
+					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
+					.orderBy(...orderByColumns(MECMUA_MINE_ORDERING))
+					.limit(first + 1),
+			);
+
+			return forwardPage(fetched.map(toMecmuaPostRow), first, (r) => r.id) satisfies MecmuaFeedPage;
+		});
+
 		return {
 			saveDraft,
 			publish,
@@ -283,6 +344,7 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 			listSubscribedAuthorIds,
 			isSubscribed,
 			listFeedConnection,
+			listOwnPostsConnection,
 		};
 	}),
 );

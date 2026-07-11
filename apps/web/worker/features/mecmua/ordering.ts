@@ -17,3 +17,16 @@ export const MECMUA_FEED_ORDERING: Ordering = [
 	{field: "publishedAt", column: schema.mecmuaPost.publishedAt, dir: "desc"},
 	{field: "id", column: schema.mecmuaPost.id, dir: "desc"},
 ];
+
+/**
+ * The author's own-posts list (`mecmuaMyPosts`, #2544): `createdAt desc, id desc` —
+ * most-recently-started post/draft first, `id` breaking ties for a stable keyset
+ * cursor. Ordered on `createdAt` (not `publishedAt`) because the list includes
+ * drafts (null `publishedAt`), and it rides the `mecmua_post_author_created`
+ * index. Consumed by the `mecmuaMyPosts` root's view `orderBy` and
+ * `Mecmua.listOwnPostsConnection`'s keyset.
+ */
+export const MECMUA_MINE_ORDERING: Ordering = [
+	{field: "createdAt", column: schema.mecmuaPost.createdAt, dir: "desc"},
+	{field: "id", column: schema.mecmuaPost.id, dir: "desc"},
+];

@@ -15,6 +15,12 @@
  *     visitor sees the Turkish earned-gate message instead — publish is server-gated by
  *     `PublishMecmua` regardless, this is the honest UI mirror.
  *
+ * Two routes reach this page (#2544): `/mecmua/yaz` opens a blank editor; `/mecmua/yaz/:id`
+ * loads one of the author's OWN posts (via the `CurrentUser`-scoped `mecmuaMyPosts` read)
+ * into the editor so a saved draft is reopenable. Multi-draft is unchanged — a save still
+ * mints a fresh row (no edit-in-place), so `taslak kaydet` lands on the just-saved draft's
+ * id rather than a blank editor. `taslaklarım` (`/mecmua/yazilarim`) lists them.
+ *
  * The whole surface ships dark behind `MECMUA_WRITE` (default-off): the page
  * self-gates (off ⇒ 404), mirroring `MecmuaPostPage` / `DivanPage`, so the route is
  * absent until a human flips the flag at release (ADR 0083). Storage is the markdown
@@ -22,12 +28,14 @@
  */
 import {Composer, useComposerEditor} from "@kampus/composer";
 import {useState} from "react";
-import {useFateClient, view} from "react-fate";
+import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
+import {Link, useNavigate, useParams} from "react-router";
 import type {MecmuaPost} from "../../worker/features/fate/views";
 import type {Tier} from "../../worker/features/kunye/standing";
 import {useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
 import {Button} from "../components/ui/Button";
+import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {MECMUA_WRITE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
@@ -100,21 +108,95 @@ export function MecmuaEditorPage() {
 
 	if (!flagOn) return <NotFoundPage />;
 
-	return <MecmuaEditor />;
+	return <MecmuaEditorRoute />;
 }
 
-function MecmuaEditor() {
+/** The full-post read used to reopen an author's own draft — body included so the composer seeds. */
+const MecmuaOwnPostView = view<MecmuaPost>()({
+	id: true,
+	title: true,
+	body: true,
+	publishedAt: true,
+});
+const OwnPostsConnectionView = {items: {node: MecmuaOwnPostView}} as const;
+const ownPostsRequest = {
+	mecmuaMyPosts: {list: OwnPostsConnectionView, args: {first: 100}},
+} as const;
+
+/**
+ * Route the editor by the `:id` param (#2544): no id ⇒ a blank editor; an id ⇒ load
+ * that draft (scoped to the author's own posts) and seed the editor with it. The read
+ * runs BEFORE `MecmuaEditor` mounts so the composer's initial content is ready at hook
+ * time — the composer seeds content only at creation.
+ */
+function MecmuaEditorRoute() {
+	const {id} = useParams<{id: string}>();
+	if (!id) return <MecmuaEditor initialTitle="" initialBody="" />;
+	return (
+		<Screen
+			fallback={
+				<div className="kp-page">
+					<div className="kp-page__inner">
+						<p>yükleniyor…</p>
+					</div>
+				</div>
+			}
+			error={() => <MecmuaDraftNotFound />}
+		>
+			<MecmuaDraftLoader draftId={id} />
+		</Screen>
+	);
+}
+
+function MecmuaDraftLoader({draftId}: {draftId: string}) {
+	const {mecmuaMyPosts} = useRequest(ownPostsRequest);
+	const [items] = useListView(OwnPostsConnectionView, mecmuaMyPosts);
+	// `mecmuaMyPosts` returns ONLY the caller's own posts, so a foreign/absent id simply
+	// isn't in the list — it can't disclose another author's draft, it 404s to the author.
+	const match = items.find(({node}) => String(node.id) === draftId);
+	if (!match) return <MecmuaDraftNotFound />;
+	return <MecmuaDraftEditor node={match.node} />;
+}
+
+function MecmuaDraftEditor({node}: {node: ViewRef<"MecmuaPost">}) {
+	const post = useView(MecmuaOwnPostView, node);
+	return <MecmuaEditor initialTitle={post.title} initialBody={post.body} />;
+}
+
+function MecmuaDraftNotFound() {
+	return (
+		<div className="kp-page">
+			<div className="kp-page__inner">
+				<div className="kp-mecmua-editor">
+					<p className="kp-mecmua-editor__notice" role="status">
+						taslak bulunamadı.
+					</p>
+					<Link to="/mecmua/yazilarim" className="kp-mecmua-editor__yazilarim-link">
+						yazılarıma dön
+					</Link>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initialBody: string}) {
 	const session = useSession();
 	const {me} = useMe();
 	const fate = useFateClient();
+	const navigate = useNavigate();
+	const {id} = useParams<{id: string}>();
 
-	const [title, setTitle] = useState("");
+	const [title, setTitle] = useState(initialTitle);
 	const [notice, setNotice] = useState<string | null>(null);
 	// The composer holds the body; markdown is read on-demand at save/publish time
-	// (`getMarkdown()`), so no per-keystroke rerender is needed here.
-	const composer = useComposerEditor({content: ""});
+	// (`getMarkdown()`), so no per-keystroke rerender is needed here. Seeded with the
+	// loaded draft's markdown (empty for a fresh editor).
+	const composer = useComposerEditor({content: initialBody});
 
-	const {error, setError, inFlight, run} = useDraftSubmit({redirectPath: () => "/mecmua/yaz"});
+	const {error, setError, inFlight, run} = useDraftSubmit({
+		redirectPath: () => (id ? `/mecmua/yaz/${id}` : "/mecmua/yaz"),
+	});
 
 	// The trusted account tier off the fate `me` view (#1297) decides the publish
 	// affordance: a yazar is offered publish; a çaylak / visitor / signed-out reader
@@ -133,7 +215,13 @@ function MecmuaEditor() {
 					view: MecmuaEditorView,
 				}),
 			"taslak kaydedilemedi",
-			() => setNotice("taslak kaydedildi"),
+			(result) => {
+				setNotice("taslak kaydedildi");
+				// Land on the just-saved draft (id-addressable), not a blank `/mecmua/yaz`
+				// (#2544). Each save mints a fresh row, so the saved id is new — navigate to it.
+				const savedId = result?.id;
+				if (savedId && String(savedId) !== id) navigate(`/mecmua/yaz/${String(savedId)}`);
+			},
 		);
 	}
 
@@ -167,7 +255,12 @@ function MecmuaEditor() {
 			<div className="kp-page__inner">
 				<div className="kp-mecmua-editor">
 					<header className="kp-mecmua-editor__head">
-						<h1 className="kp-mecmua-editor__title">yeni yazı</h1>
+						<div className="kp-mecmua-editor__head-row">
+							<h1 className="kp-mecmua-editor__title">{id ? "yazıyı düzenle" : "yeni yazı"}</h1>
+							<Link to="/mecmua/yazilarim" className="kp-mecmua-editor__yazilarim-link">
+								yazılarım
+							</Link>
+						</div>
 						<p className="kp-mecmua-editor__lede">
 							uzun biçimli bir yazı yaz. istediğin an taslak olarak kaydet; hazır olunca yayımla.
 						</p>

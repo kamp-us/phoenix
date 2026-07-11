@@ -1,0 +1,80 @@
+/* /mecmua/yazilarim — the author's own posts list (#2544). Layout only — colors/
+   elevation/borders come from the Card primitive and role tokens; this file owns the
+   list rhythm, heading spacing, and the draft/published badge. */
+
+.kp-mecmua-drafts__head {
+	margin-bottom: var(--s-5);
+}
+
+.kp-mecmua-drafts__head-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-3);
+}
+
+.kp-mecmua-drafts__title {
+	font: var(--t-h-page);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-mecmua-drafts__lede {
+	font: var(--t-body);
+	color: var(--text-secondary);
+	margin: var(--s-1) 0 0;
+}
+
+.kp-mecmua-drafts__list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.kp-mecmua-drafts__item {
+	padding: 0;
+}
+
+.kp-mecmua-drafts__link {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	padding: var(--s-3) var(--s-4);
+	text-decoration: none;
+	color: inherit;
+}
+
+.kp-mecmua-drafts__item-title {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+}
+
+.kp-mecmua-drafts__meta {
+	color: var(--text-muted);
+	font: var(--t-meta);
+	display: flex;
+	align-items: center;
+	gap: var(--s-2);
+}
+
+.kp-mecmua-drafts__badge {
+	font: var(--t-meta);
+	color: var(--text-secondary);
+	background: var(--surface-sunken);
+	border-radius: var(--r-sm);
+	padding: 0 var(--s-2);
+}
+
+.kp-mecmua-drafts__badge--published {
+	color: var(--text-primary);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+}
+
+.kp-mecmua-drafts__status {
+	font: var(--t-body);
+	color: var(--text-secondary);
+}
