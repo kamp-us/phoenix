@@ -47,6 +47,7 @@ import {
 	funnelReadoutFlag,
 	karmaGatesFlag,
 	mecmuaPublicReadFlag,
+	mecmuaWriteFlag,
 	modQueueFlag,
 	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
@@ -80,6 +81,9 @@ export default Alchemy.Stack(
 		yield* demoTargetingFlag(flagship.appId);
 		// The pano taslak (draft-save) dark-ship flag, default-off (#746).
 		yield* panoDraftSaveFlag(flagship.appId);
+		// The mecmua write-path dark-ship flag, default-off (#2497, epic #2467) — the
+		// single seam mecmua.publish + mecmua.saveDraft gate behind until a human release.
+		yield* mecmuaWriteFlag(flagship.appId);
 		// The base-feed / viewer-overlay split dark-ship flag, default-off (#2322,
 		// epic #2316 leg B) — the single seam the GET-able base feed + PostOverlay read
 		// gate behind until a human release.

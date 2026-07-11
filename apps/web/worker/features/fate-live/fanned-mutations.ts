@@ -266,4 +266,19 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		fanned: false,
 		rationale: "appends an audited unban event on the identity surface — no fanned content entity",
 	},
+
+	// mecmua — long-form posts (#2497, epic #2467). mecmua Post does NOT yet live in a
+	// subscribed `/fate/live` connection (no mecmua root is wired), so neither write fans;
+	// if a mecmua mutation is later classified fanned it must publish via `WorkerLivePublisher`.
+	{
+		key: "mecmua.publish",
+		fanned: false,
+		rationale:
+			"stamps publishedAt on a mecmua post — mecmua Post is in no subscribed /fate/live connection yet (#2463)",
+	},
+	{
+		key: "mecmua.saveDraft",
+		fanned: false,
+		rationale: "writes the caller's private mecmua draft row — no subscribed connection",
+	},
 ];
