@@ -136,9 +136,23 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   in **every** present namespace — no late-stall bounce-back (#2383). **Fail-closed**: an
   unreadable source ⇒ dispatch the gate (`.` for the match probes, a never-match sentinel for the
   docs carve-out so every path reaches the doc test), consistent with `ui_reresolve` — never
-  fail-open to skip a class:
+  fail-open to skip a class.
+
+  **Compute the class set with `pipeline-cli class-probe`, not by eyeballing (#2434).** The
+  §CLASS regexes below already put `.glossary/**` in **has-code**, yet PR #2430 (a mixed
+  `.glossary/TERMS.md` + skill diff) still fanned only `review-skill` — the reviewer read the
+  glossary path as a doc surface and skipped `review-code`, so `ship-it` refused the bank on the
+  empty `review-code` namespace. The classification is not a taste call; run the deterministic,
+  unit-tested probe (it parses the **same** §CLASS `HAS_*_RE` lines `ship-it` Step 0 reads — no
+  third copy) and dispatch a gate for **exactly** each namespace it prints:
   ```bash
-  HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'; HAS_SKILLS_RE='^claude-plugins/kampus-pipeline/(skills|agents)/'   # fail-closed reference; the live lines below are authoritative
+  gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+    | pipeline-cli class-probe classify --namespaces   # → review-code / review-doc / review-skill, one per present class
+  ```
+  The equivalent shell, kept as the **fail-closed reference** for what the tool computes (the tool
+  is authoritative — its core mirrors these exact lines, `packages/pipeline-cli/src/tools/class-probe/`):
+  ```bash
+  HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'; HAS_SKILLS_RE='^claude-plugins/[^/]+/(skills|agents)/|^\.claude-plugin/'   # fail-closed reference; §CLASS is authoritative
   HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'; HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
   CLASS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
   reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -n "$live" ]; then printf '%s' "$live" | sed "s/^$1='//; s/'\$//"; else printf '%s' "$2"; fi; }
@@ -149,7 +163,7 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   echo "$CHANGED" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills → dispatch review-skill"
   echo "$CHANGED" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs → dispatch review-doc"
   ```
-  Dispatch each gate that fires and post its SHA-bound marker in this same pass; `review-design`
+  Dispatch each gate the probe names and post its SHA-bound marker in this same pass; `review-design`
   rides additively on top per `ui_reresolve`. A single-class PR simply fires one probe — the fan
   degenerates to today's behavior, never a regression.
 <a id="dispatch-review-design-in-lockstep-with-ship-its-live-ui_re"></a>
