@@ -1,4 +1,4 @@
-import {createContext, useContext, useEffect, useMemo, useState} from "react";
+import {createContext, lazy, Suspense, useContext, useEffect, useMemo, useState} from "react";
 import {
 	Navigate,
 	Outlet,
@@ -39,10 +39,8 @@ import {AuthPage} from "./pages/AuthPage";
 import {BildirimlerPage} from "./pages/BildirimlerPage";
 import {DivanPage} from "./pages/DivanPage";
 import {FunnelPage} from "./pages/FunnelPage";
-import {LabComposerPage} from "./pages/LabComposerPage";
 import {LandingPage} from "./pages/LandingPage";
 import {MecmuaDraftsPage} from "./pages/MecmuaDraftsPage";
-import {MecmuaEditorPage} from "./pages/MecmuaEditorPage";
 import {MecmuaFeedPage} from "./pages/MecmuaFeedPage";
 import {MecmuaIndexPage} from "./pages/MecmuaIndexPage";
 import {MecmuaPostPage} from "./pages/MecmuaPostPage";
@@ -308,6 +306,26 @@ function PanoSiteFeedRoute() {
 	return <PanoFeed {...(host ? {host} : {})} />;
 }
 
+// The composer routes are the SPA's only `@kampus/composer` (tiptap/ProseMirror) consumers,
+// so lazy-loading both keeps that heavy editor payload out of the entry chunk every public
+// route pays for — the performance-pillar fix of #2523. Named-export → default shim for React.lazy.
+const LabComposerPage = lazy(() =>
+	import("./pages/LabComposerPage").then((m) => ({default: m.LabComposerPage})),
+);
+const MecmuaEditorPage = lazy(() =>
+	import("./pages/MecmuaEditorPage").then((m) => ({default: m.MecmuaEditorPage})),
+);
+
+function ComposerRouteFallback() {
+	return (
+		<div className="kp-page">
+			<div className="kp-page__inner">
+				<p>yükleniyor…</p>
+			</div>
+		</div>
+	);
+}
+
 export function App() {
 	return (
 		<ThemeProvider>
@@ -331,8 +349,22 @@ export function App() {
 						<Route path="/mecmua" element={<MecmuaIndexPage />} />
 						<Route path="/mecmua/akis" element={<MecmuaFeedPage />} />
 						<Route path="/mecmua/yazilarim" element={<MecmuaDraftsPage />} />
-						<Route path="/mecmua/yaz" element={<MecmuaEditorPage />} />
-						<Route path="/mecmua/yaz/:id" element={<MecmuaEditorPage />} />
+						<Route
+							path="/mecmua/yaz"
+							element={
+								<Suspense fallback={<ComposerRouteFallback />}>
+									<MecmuaEditorPage />
+								</Suspense>
+							}
+						/>
+						<Route
+							path="/mecmua/yaz/:id"
+							element={
+								<Suspense fallback={<ComposerRouteFallback />}>
+									<MecmuaEditorPage />
+								</Suspense>
+							}
+						/>
 						<Route path="/mecmua/:slug" element={<MecmuaPostPage />} />
 						<Route path="/sozluk" element={<SozlukHome />} />
 						<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
@@ -349,7 +381,14 @@ export function App() {
 						<Route path="/bildirimler" element={<BildirimlerPage />} />
 						{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,
 						    no nav entry; deletable when the rich-composer phase begins. */}
-						<Route path="/lab/composer" element={<LabComposerPage />} />
+						<Route
+							path="/lab/composer"
+							element={
+								<Suspense fallback={<ComposerRouteFallback />}>
+									<LabComposerPage />
+								</Suspense>
+							}
+						/>
 						<Route path="/profile" element={<ProfilePage />} />
 						<Route path="/u/:username" element={<UserProfilePage />} />
 						<Route path="*" element={<NotFoundPage />} />

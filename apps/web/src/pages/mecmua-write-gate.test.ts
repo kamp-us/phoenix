@@ -2,10 +2,11 @@
  * The mecmua editor's earned-gate contract (#2499): publish is offered ONLY to a
  * yazar; a çaylak / visitor / signed-out reader sees the Turkish earned-gate copy.
  * Tests the pure `mecmuaPublishAffordance` core (DOM-free), the way `FlagGate`'s
- * `flagGateChild` and the on-ramp's `shouldShowOnramp` are tested.
+ * `flagGateChild` and the on-ramp's `shouldShowOnramp` are tested. The core lives in
+ * its own composer-free module (#2523) so the entry-point CTA can gate without tiptap.
  */
 import {describe, expect, it} from "vitest";
-import {mecmuaPublishAffordance, shouldShowMecmuaWriteCta} from "./MecmuaEditorPage";
+import {mecmuaPublishAffordance, shouldShowMecmuaWriteCta} from "./mecmua-write-gate";
 
 describe("mecmuaPublishAffordance — publish is a yazar-only affordance", () => {
 	it("offers publish to a yazar", () => {

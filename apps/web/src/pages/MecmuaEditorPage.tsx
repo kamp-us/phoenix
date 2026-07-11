@@ -31,7 +31,6 @@ import {useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useNavigate, useParams} from "react-router";
 import type {MecmuaPost} from "../../worker/features/fate/views";
-import type {Tier} from "../../worker/features/kunye/standing";
 import {useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
 import {Button} from "../components/ui/Button";
@@ -39,6 +38,9 @@ import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {MECMUA_WRITE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+// The publish/CTA gate lives in a composer-free module so its consumers (index, nav) don't
+// drag tiptap into the entry chunk — this page lazy-loads behind that split (#2523).
+import {mecmuaPublishAffordance} from "./mecmua-write-gate";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaEditorPage.css";
 
@@ -52,44 +54,6 @@ const MecmuaEditorView = view<MecmuaPost>()({
 	title: true,
 	publishedAt: true,
 });
-
-/**
- * The publish affordance decision, factored DOM-free so the earned-gate contract —
- * publish is offered ONLY to a yazar; everyone else sees the Turkish earned-gate
- * message — is unit-testable without a DOM (the pure-extraction idiom of
- * `shouldShowOnramp` / `flagGateChild`). The tier is the trusted account level read
- * off the fate `me` view; publish is server-gated by `PublishMecmua` regardless, so
- * this only governs what the UI offers.
- */
-export type MecmuaPublishAffordance = {kind: "publish"} | {kind: "gate"; message: string};
-
-export function mecmuaPublishAffordance(
-	isSignedIn: boolean,
-	tier: Tier | undefined,
-): MecmuaPublishAffordance {
-	if (tier === "yazar") return {kind: "publish"};
-	return {
-		kind: "gate",
-		message: isSignedIn
-			? "yayımlamak için yazar olman gerekiyor — çaylakların yazıları henüz yayımlanamaz."
-			: "yayımlamak için giriş yapıp yazar olman gerekiyor.",
-	};
-}
-
-/**
- * Should the "yeni yazı" entry-point CTA (nav + index) be shown to this viewer (#2532)?
- * Gate parity with the editor is structural, not restated: the CTA appears exactly when
- * the write flag is live AND {@link mecmuaPublishAffordance} would offer publish (yazar
- * tier), so it never dead-ends a çaylak/visitor/signed-out reader into a page they'd be
- * publish-gated on. `MECMUA_WRITE` off, or any non-yazar/undefined tier, resolves false.
- */
-export function shouldShowMecmuaWriteCta(
-	flagOn: boolean,
-	isSignedIn: boolean,
-	tier: Tier | undefined,
-): boolean {
-	return flagOn && mecmuaPublishAffordance(isSignedIn, tier).kind === "publish";
-}
 
 export function MecmuaEditorPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_WRITE, false);
