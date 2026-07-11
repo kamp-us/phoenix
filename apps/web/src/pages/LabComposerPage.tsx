@@ -1,20 +1,14 @@
 /**
- * `/lab/composer` — a THROWAWAY tiptap spike (#2465). A disposable playground to
- * *feel* tiptap + its native markdown round-trip before the real rich-composer phase;
- * not a shippable feature — no auth, no nav entry, reachable only by URL, deletable in
- * one PR when the rich phase begins. Composer is resolved to tiptap (the Lexical
- * bake-off is deferred to that phase, not reopened here).
- *
- * The one non-obvious thing: the editor-level `getMarkdown()` + `contentType: "markdown"`
- * parsing are NOT in `@tiptap/core`/`starter-kit` — they ship in `@tiptap/markdown` (it
- * bundles the `marked` tokenizer + the `Markdown` extension that augments the editor).
- * StarterKit alone leaves `# foo` as literal text; the `Markdown` extension is what makes
- * the round-trip real.
+ * `/lab/composer` — the live proof / first consumer of `@kampus/composer`, kept +
+ * canonical under the `/lab/*` public convention (#2469 / PR #2474). NOT throwaway:
+ * this route stays as the working demonstration of the shared headless composer base,
+ * exercising its full markdown round-trip end to end. The editor is wired entirely
+ * through `@kampus/composer` — the app supplies only chrome (masthead, panels, CSS);
+ * the base owns the tiptap wrapping (StarterKit + `@tiptap/markdown`), so nothing here
+ * imports tiptap directly.
  */
 
-import {Markdown} from "@tiptap/markdown";
-import {EditorContent, useEditor} from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import {Composer, getJSON, getMarkdown, setMarkdown, useComposerEditor} from "@kampus/composer";
 import {useState} from "react";
 import "./LabComposerPage.css";
 
@@ -83,20 +77,18 @@ export function LabComposerPage() {
 	// re-derive `getMarkdown()`/`getJSON()` from the live editor state.
 	const [rev, setRev] = useState(0);
 
-	const editor = useEditor({
-		extensions: [StarterKit, Markdown],
+	const editor = useComposerEditor({
 		content: SEED_MARKDOWN,
-		contentType: "markdown",
 		onUpdate: () => setRev((n) => n + 1),
 	});
 
 	// `rev` is read to tie the derivation to the latest transaction (see the state above).
 	void rev;
-	const markdown = editor ? editor.getMarkdown() : "";
-	const json = editor ? JSON.stringify(editor.getJSON(), null, 2) : "";
+	const markdown = editor ? getMarkdown(editor) : "";
+	const json = editor ? JSON.stringify(getJSON(editor), null, 2) : "";
 
 	function loadPasted() {
-		editor?.commands.setContent(pasted, {contentType: "markdown"});
+		if (editor) setMarkdown(editor, pasted);
 	}
 
 	return (
@@ -132,7 +124,7 @@ export function LabComposerPage() {
 				<div className="kp-lab__grid">
 					<section className="kp-lab__panel" aria-label="editör">
 						<h2 className="kp-lab__panel-title">editör</h2>
-						<EditorContent editor={editor} className="kp-lab__editor" />
+						<Composer editor={editor} className="kp-lab__editor" />
 					</section>
 
 					<section className="kp-lab__panel" aria-label="getMarkdown çıktısı">
@@ -158,7 +150,7 @@ export function LabComposerPage() {
  * persist through the fate mutation pattern in `apps/web/worker/features/*` and, being a
  * write over a fanned entity, MUST publish the live invalidation + be classified in
  * `apps/web/worker/features/fate-live/fanned-mutations.ts` (CLAUDE.md fanout rule). That
- * wiring is explicitly out of scope for this throwaway lab route.
+ * wiring is explicitly out of scope for this v1 lab route (baseKit-only, #2464).
  */
 type ComposerDraftRow = {
 	id: string;

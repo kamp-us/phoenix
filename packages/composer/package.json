@@ -1,0 +1,40 @@
+{
+	"name": "@kampus/composer",
+	"version": "0.0.0",
+	"private": true,
+	"description": "The shared headless composer base — one tiptap-wrapped editor (baseKit + useComposerEditor factory + markdown-string I/O + a headless <Composer>) every kamp.us product composes from; consumers never import tiptap directly (epic #2476, design #2464)",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@tiptap/core": "catalog:",
+		"@tiptap/markdown": "catalog:",
+		"@tiptap/pm": "catalog:",
+		"@tiptap/react": "catalog:",
+		"@tiptap/starter-kit": "catalog:"
+	},
+	"peerDependencies": {
+		"react": "catalog:",
+		"react-dom": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"jsdom": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
