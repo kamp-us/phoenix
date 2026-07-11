@@ -202,9 +202,13 @@ when you finish the code class on a mixed PR, **ensure the gate for every other 
 also run against this same head before the review is reported complete** — load and follow the
 sibling gate(s) (`review-doc` for the docs class, `review-skill` for the skills class) in this
 pass, or have the routing dispatch fan out to them, so each present namespace carries a
-current-head verdict. `ship-it`'s per-present-class requirement (its Step 2) is unchanged — it
-remains the **fail-closed late catch**, the safety net for a genuinely-missing namespace, not the
-*first* place the second namespace is discovered.
+current-head verdict. **Emit each namespace's verdict as its OWN separate PR comment — one
+comment per namespace, marker on that comment's literal first line — never two markers stacked
+in one comment** (the second would be un-anchored, resolve empty, and fail-close a
+substantively-PASS PR — the PR #2456 stall; the forbidden "stacked" emit form in
+`../gh-issue-intake-formats.md` §5). `ship-it`'s per-present-class requirement (its Step 2) is
+unchanged — it remains the **fail-closed late catch**, the safety net for a genuinely-missing
+namespace, not the *first* place the second namespace is discovered.
 
 ### The trust split: head = code under test, base = the reviewer's instructions (ADR 0052)
 

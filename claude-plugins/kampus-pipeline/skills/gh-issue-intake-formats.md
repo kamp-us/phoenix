@@ -1870,10 +1870,22 @@ and stalled every code-lane merge — #219), this contract pins **one** rule bot
   - **Marker not on the literal first line** — the `^` anchor pins the marker to the **start of
     the comment body**; a marker buried after a preamble paragraph never matches. It leads the
     body.
+  - **Two namespace markers stacked in one comment (the multi-namespace fan)** — on a
+    mixed-class diff the reviewer fans several verdict namespaces (e.g. `review-code` +
+    `review-skill` for a skill+code PR, `review-design` for a UI PR). Each namespace's `^`
+    anchor pins its marker to the first line of **its own comment**, so stacking a second
+    namespace's marker on line 2 of the first's comment leaves that second marker un-anchored:
+    it never matches, its namespace resolves **empty**, and `ship-it` fail-closes a
+    substantively-PASS PR (the live PR #2456 stall — both reviews PASSed, but the stacked
+    `review-skill` marker was unmatchable and recovery needed a manual re-emit). **Emit each
+    fanned namespace's verdict as its OWN separate PR comment, its `<namespace>: PASS|FAIL @
+    <sha>` marker on that comment's literal first line — one comment per namespace, never two
+    markers stacked.** The upsert is still one-comment-per-`(PR, namespace)`; the fan writes
+    N such comments (one each), not one comment carrying N markers.
   These are emitter bugs, not matcher gaps — the fix is always to **emit the canonical shape**,
   never to loosen the anchored matcher to chase a malformed marker (ADR 0058 forbids weakening
-  the SHA-binding). §6/§6.5 inherit this forbidden-forms list for `review-doc` / `review-skill`
-  via the same matcher contract.
+  the SHA-binding). §6/§6.5/§6.7 inherit this forbidden-forms list for `review-doc` /
+  `review-skill` / `review-design` via the same matcher contract.
 
 ### Field notes
 
