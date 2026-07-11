@@ -8,68 +8,14 @@
  * imports tiptap directly.
  */
 
-import {Composer, useComposerEditor} from "@kampus/composer";
+import {Composer, renderTestMarkdown, useComposerEditor} from "@kampus/composer";
 import {useState} from "react";
 import "./LabComposerPage.css";
 
-// Canonical render-test content (#2477): every block + inline element the
-// StarterKit + `@tiptap/markdown` set actually round-trips, so the panels below
-// double as a render checklist now and a reusable fixture for the shared
-// `@kampus/composer` base (#2476). Verified idempotent — `getMarkdown()` echoes
-// this verbatim. NOT included: tables and task-lists — this route is StarterKit-only,
-// which ships no table/taskList node, so both are dropped by the markdown parser
-// (tables vanish, `- [ ]` degrades to a plain bullet) rather than shipped broken.
-const SEED_MARKDOWN = `# Composer render testi
-
-Bu örnek, StarterKit + \`@tiptap/markdown\` setinin **round-trip** ile işlediği her blok ve satır-içi öğeyi gösterir — hem şimdi bir render kontrol listesi, hem #2476'daki paylaşılan \`@kampus/composer\` tabanına taşınacak kanonik test içeriği.
-
-## Satır içi biçimler
-
-Paragraf içinde **kalın**, *italik*, ~~üstü çizili~~ ve \`satır içi kod\` bir arada. Bir de [kamp.us bağlantısı](https://kamp.us) burada.
-
-### Üçüncü seviye başlık
-
-#### Dördüncü seviye başlık
-
-##### Beşinci seviye başlık
-
-###### Altıncı seviye başlık
-
-## Listeler
-
-- birinci madde
-- ikinci madde
-  - iç içe madde
-  - ikinci iç madde
-- üçüncü madde
-
-1. birinci adım
-2. ikinci adım
-  1. iç içe numaralı
-  2. ikinci iç numaralı
-3. üçüncü adım
-
-## Alıntılar
-
-> Bir alıntı bloğu — kenar çizgisi ve soluk renkle ayrışır.
->
-> > İç içe alıntı ayrı bir tonda görünür.
-
-## Kod bloğu
-
-\`\`\`ts
-export function selam(ad: string): string {
-	return "merhaba, " + ad;
-}
-\`\`\`
-
-## Yatay çizgi
-
-Aşağıda bir ayraç var:
-
----
-
-Ayracın altındaki paragraf.`;
+// The canonical render-test content is the shared `renderTestMarkdown` fixture the base
+// exports (#2482) — the single source, so this playground and `@kampus/composer`'s
+// round-trip test can never drift. The panels below double as its live render checklist.
+const SEED_MARKDOWN = renderTestMarkdown;
 
 export function LabComposerPage() {
 	const [pasted, setPasted] = useState(SEED_MARKDOWN);
