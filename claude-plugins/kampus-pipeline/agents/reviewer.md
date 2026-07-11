@@ -115,7 +115,13 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   code, `review-doc` for docs, `review-skill` for skills/agents, `review-design` for
   UI-affecting PRs. Emit **one marker per present class** (the fan above) and **only** for
   classes the diff actually spans — never a foreign marker for an absent class (a marker on the
-  wrong PR class poisons that namespace's scan). Upsert each one-per-PR per its skill. The
+  wrong PR class poisons that namespace's scan). **When the fan spans more than one class, emit
+  each namespace's marker as its OWN separate PR comment — one comment per namespace, marker on
+  that comment's literal first line, never two markers stacked in one comment.** Each namespace's
+  `^` anchor pins its marker to the first line of *its own* comment, so a second namespace stacked
+  on line 2 is un-anchored, resolves empty, and fail-closes a substantively-PASS PR (the PR #2456
+  stall; the forbidden "stacked" emit form in `gh-issue-intake-formats.md` §5 — cited, not
+  re-derived here). Upsert each one-per-PR per its skill. The
   verdicts on the PR are the whole output — a verdict returned only to the orchestrator and
   never posted is a dropped gate.
 <a id="fan-across-every-present-class-in-lockstep-with-ship-its-live-class-probes-class_reresolve"></a>

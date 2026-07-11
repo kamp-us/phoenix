@@ -262,6 +262,10 @@ stop." So after you verify the skills and emit `review-skill`, **ensure `review-
 `review-doc` (docs) are also run against this same head before the review is reported complete**
 — load and follow the sibling gate(s) in this pass, or have the routing dispatch fan out to them,
 so the PR reaches `ship-it` with a current-head PASS standing in each present namespace.
+**Emit each namespace's verdict as its OWN separate PR comment — one comment per namespace, marker
+on that comment's literal first line — never two markers stacked in one comment** (the second
+would be un-anchored, resolve empty, and fail-close a substantively-PASS PR — the PR #2456 stall;
+the forbidden "stacked" emit form in `../gh-issue-intake-formats.md` §5).
 `ship-it`'s per-present-class requirement (its Step 2) is unchanged — it remains the
 **fail-closed late catch** for a genuinely-missing namespace, not the *first* place the second
 namespace is discovered.
