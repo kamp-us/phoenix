@@ -250,6 +250,14 @@ make the isolation hold *by construction*, not by your remembering to behave:
 Your own session stays in *this* worktree (the trusted base config you were launched under).
 
 ```bash
+# Isolation preflight FIRST, before any head fetch / `git worktree add` below. If this
+# review-code spawn expected worktree isolation (reviewer agent-type) but the #2440 harness no-op
+# dropped it onto the shared PRIMARY checkout ($WORKTREE_ROOT unset), materializing the head here
+# is the #2452/#2453 primary-checkout-detach surface — fail closed LOUD and route up, never
+# materialize. Single-sourced in gh-issue-intake-formats.md §RO-iso (ADR 0172; the write-code
+# wt_preflight sibling). A genuine standalone run on the owner's checkout still proceeds.
+iso_preflight review-code || exit 1   # ../gh-issue-intake-formats.md §RO-iso — define it there, cite here
+
 # the trusted base — the PR's merge target at tip; your config already comes from here
 BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main
 

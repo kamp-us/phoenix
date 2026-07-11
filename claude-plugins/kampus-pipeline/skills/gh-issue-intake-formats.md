@@ -1654,6 +1654,73 @@ keeps the head's *instructions* out of a reviewer's path; this keeps *the gate's
 of the owner's working tree. A gate that needs a materialized head has the per-run-ref +
 throwaway-worktree mechanism above; it never reaches for the launched checkout.
 
+### RO-iso. `iso_preflight` — refuse head-materialization from the PRIMARY checkout when isolation was expected (ADR 0172)
+
+The §RO throwaway-worktree/per-run-ref materialization is safe **only** when the gate's git
+ops land somewhere other than the shared **primary** checkout's working state. The
+[#2452](https://github.com/kamp-us/phoenix/issues/2452)/[#2453](https://github.com/kamp-us/phoenix/issues/2453)
+detach proved the residual hole: a review/ship gate spawned `isolation:worktree` but dropped —
+by the [#2440](https://github.com/kamp-us/phoenix/issues/2440) harness no-op — into the primary
+checkout with `$WORKTREE_ROOT` unset ran its head-materialization there. That no-op *also*
+disarms the entire `$WORKTREE_ROOT`-keyed repo-side `worktree-guard`
+(`packages/pipeline-cli/src/tools/worktree-guard/`), so nothing loudly refused.
+
+`iso_preflight <surface>` is the **single-sourced** reviewer/shipper sibling of `write-code`'s
+Step-4 `wt_preflight` (ADR [0172](https://github.com/kamp-us/phoenix/blob/main/.decisions/0172-write-code-fails-loud-when-expected-worktree-isolation-is-absent.md),
+#2443/#2446): the **same** `git-dir == common-dir` primary-checkout detection and the **same**
+isolation-expected fork, defined **once here** so the three head-materializing gates
+(`review-code`, `review-trivial`, `ship-it`) share one contract rather than drifting three
+copies apart. Each gate runs it — `iso_preflight <surface> || exit 1` — **before** its first
+head fetch / `git worktree add`:
+
+```bash
+# iso_preflight <surface>: the shared primary-checkout fail-closed guard every head-materializing
+# gate runs BEFORE its first head fetch / `git worktree add` (§RO). Reviewer/shipper sibling of
+# write-code's Step-4 wt_preflight (ADR 0172) — the SAME git-dir==common-dir detection, the SAME
+# isolation-expected fork. Read-only (git rev-parse only); safe to re-run.
+iso_preflight() {
+  local surface="$1" gitdir common iso=0
+  gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
+    echo "$surface iso_preflight FAILED (fail-closed): not inside a git repository — refusing to materialize a PR head." >&2; return 1; }
+  common="$(git rev-parse --git-common-dir 2>/dev/null)"
+  case "$common" in /*) ;; *) common="$(pwd)/$common" ;; esac   # normalize a relative `.git` (older git)
+  common="$(cd "$common" && pwd)"
+  # Isolation was EXPECTED when the run is under an isolation-asserting pipeline agent-type —
+  # coder/reviewer/shipper all spawn isolation:worktree (agents/{coder,reviewer,shipper}.md) — read
+  # from the harness-set $CLAUDE_CODE_AGENT (stable across an agent's Bash calls, unlike a shell
+  # export), corroborated by a set $WORKTREE_ROOT. A genuine standalone run (a human /review-code,
+  # /ship-it) matches NEITHER. Critically the LOUD refusal fires on the AGENT-TYPE ALONE and does
+  # NOT key on $WORKTREE_ROOT being set — so the #2440 no-op (isolation requested, $WORKTREE_ROOT
+  # unset, which also disarms the $WORKTREE_ROOT-keyed worktree-guard) still trips this preflight;
+  # it is then the sole surviving layer, exactly as in write-code (ADR 0172).
+  case "$CLAUDE_CODE_AGENT" in coder|*coder*|reviewer|*reviewer*|shipper|*shipper*) iso=1 ;; esac
+  [ -n "$WORKTREE_ROOT" ] && iso=1
+  echo "$surface iso_preflight: git-dir=$gitdir common-dir=$common cwd=$(pwd) isolation-expected=$iso (agent=${CLAUDE_CODE_AGENT:-unset} worktree-root=${WORKTREE_ROOT:+set})"
+  if [ "$gitdir" = "$common" ]; then
+    if [ "$iso" = 1 ]; then
+      echo "$surface iso_preflight FAILED (fail-closed, LOUD): worktree isolation was EXPECTED (agent=${CLAUDE_CODE_AGENT:-?}, worktree-root=${WORKTREE_ROOT:+set}) but this run is on the PRIMARY checkout (git-dir == common-dir) and \$WORKTREE_ROOT is unset." >&2
+      echo "  Refusing to fetch / \`git worktree add\` the PR head here — the #2440 harness no-op left this $surface spawn in the shared primary checkout, and a head-materialization run there is the #2452/#2453 primary-checkout-detach surface. The \$WORKTREE_ROOT-keyed repo-side worktree-guard is disarmed by the same no-op, so THIS preflight is the only surviving layer." >&2
+      echo "  Do NOT self-provision a worktree to route around it — that hides the harness failure and leaves the primary-corruption defense collapsed to one, invisibly (#2270)." >&2
+      echo "  ROUTED BLOCKER — surface UP to the operator/EM: 'harness worktree provisioning no-op'd for a $surface spawn (isolation expected, \$WORKTREE_ROOT unset); the out-of-repo harness half (#2440) needs attention. Do NOT blindly retry the same spawn.'" >&2
+      return 1
+    fi
+    # isolation NOT expected ⇒ a genuine standalone run on the owner's primary checkout. This gate
+    # never mutates the launched tree (§RO): it materializes the head ONLY into a throwaway worktree
+    # / per-run ref, so operating from the primary checkout is safe here — proceed, no LOUD stop.
+    echo "$surface iso_preflight: standalone run on the primary checkout — proceeding read-only via the §RO throwaway-worktree / per-run-ref materialization (the launched tree is never mutated)." >&2
+  fi
+}
+```
+
+The fork is what keeps this **non-breaking for a legitimate standalone gate**: §RO explicitly
+runs a gate "in a checkout it does not own — often the owner's live checkout," and that
+standalone-on-primary mode stays allowed (the gate's materialization is throwaway-only). The
+LOUD stop fires **only** for an isolation-expected pipeline spawn that mis-landed on the primary
+checkout — the exact #2440/#2453 condition. `write-code`'s Step-4 `wt_preflight` is the stricter
+sibling (it *always* expects isolation and additionally must branch the session tree, so it also
+refuses the standalone-on-primary case via its Non-isolated fallback); it is a deliberate,
+documented specialization of this same contract, not a fourth drifting copy.
+
 ---
 
 ## HEAD. Review the PR head, never the launched checkout's working copy (#793)

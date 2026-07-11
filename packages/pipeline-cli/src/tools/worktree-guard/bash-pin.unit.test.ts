@@ -133,6 +133,78 @@ describe("pinBash — refuse a bare HEAD-moving git op in a guarded worktree (#1
 	});
 });
 
+// ADR 0172 / #2454: when isolation was EXPECTED (coder/reviewer/shipper) but the harness no-op'd
+// provisioning (#2440), $WORKTREE_ROOT is unset — which used to disarm the guard entirely and let
+// the #2452/#2453 `git -C "$WT" checkout` primary-checkout detach through. isolationExpected closes it.
+describe("pinBash — isolation expected but NO provisioned worktree (ADR 0172, #2453)", () => {
+	it('refuses `git -C "$WT" checkout FETCH_HEAD` (the #2453 form) when root unset + isolation expected', () => {
+		const d = pinBash({
+			worktreeRoot: "",
+			command: 'git -C "$WT" checkout FETCH_HEAD',
+			isolationExpected: true,
+		});
+		assert.strictEqual(d.kind, "refuse");
+		if (d.kind === "refuse") assert.match(d.reason, /NO provisioned worktree/);
+	});
+	it("refuses a bare `git checkout main` when root unset + isolation expected", () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: "", command: "git checkout main", isolationExpected: true}).kind,
+			"refuse",
+		);
+	});
+	it("refuses `git switch`/`reset`/`stash`/`merge` too (all HEAD-moving) when root unset + isolation expected", () => {
+		for (const cmd of [
+			"git switch main",
+			"git reset --hard FETCH_HEAD",
+			"git stash pop",
+			"git merge origin/main",
+			'git -C "$WORKTREE_ROOT" reset --hard FETCH_HEAD',
+		]) {
+			assert.strictEqual(
+				pinBash({worktreeRoot: "", command: cmd, isolationExpected: true}).kind,
+				"refuse",
+				`${cmd} should refuse`,
+			);
+		}
+	});
+	it("does NOT over-refuse a non-head-move (git status / fetch / worktree add) when root unset + isolation expected", () => {
+		// worktree add is the sanctioned self-provision op (not HEAD-moving) — never refuse it
+		for (const cmd of [
+			"git status",
+			"git fetch origin main",
+			"git worktree add -b br /tmp/wt FETCH_HEAD",
+			"ls -la",
+		]) {
+			assert.strictEqual(
+				pinBash({worktreeRoot: "", command: cmd, isolationExpected: true}).kind,
+				"allow",
+				`${cmd} should allow`,
+			);
+		}
+	});
+	it("still allows a bare HEAD-move when isolation was NOT expected (orchestrator/standalone — unchanged)", () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: "", command: 'git -C "$WT" checkout FETCH_HEAD'}).kind,
+			"allow",
+		);
+		assert.strictEqual(
+			pinBash({worktreeRoot: "", command: "git checkout main", isolationExpected: false}).kind,
+			"allow",
+		);
+	});
+	it('is unchanged for a genuinely provisioned (managed) worktree — `-C "$WT"` still allowed', () => {
+		// isolation expected AND a real managed root: the safe scoped form is genuinely safe
+		assert.strictEqual(
+			pinBash({
+				worktreeRoot: WT,
+				command: 'git -C "$WT" checkout FETCH_HEAD',
+				isolationExpected: true,
+			}).kind,
+			"allow",
+		);
+	});
+});
+
 describe("inspectGitHeadMove — the pure parse (branch-by-branch)", () => {
 	it("flags a bare head-move as head-move + unscoped", () => {
 		assert.deepStrictEqual(inspectGitHeadMove("git checkout 1a2b", WT), {

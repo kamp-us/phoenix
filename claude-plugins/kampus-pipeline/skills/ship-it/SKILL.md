@@ -193,6 +193,14 @@ Before anything else, read the PR's changed files and split them by class. This 
 
 ```bash
 PR=<pr number>
+# Isolation preflight FIRST. ship-it is §RO — it ships entirely over `gh api` / `gh pr merge`
+# (server-side) and materializes NO head via local git — so it should never touch the primary
+# checkout's git state. This is the defense-in-depth belt: if this ship-it spawn expected worktree
+# isolation (shipper agent-type) but the #2440 harness no-op dropped it onto the shared PRIMARY
+# checkout ($WORKTREE_ROOT unset — the #2452/#2453 condition), fail closed LOUD and route up rather
+# than run any git op there. Single-sourced in gh-issue-intake-formats.md §RO-iso (ADR 0172; the
+# write-code wt_preflight sibling). A genuine standalone `/ship-it` on the owner's checkout still proceeds.
+iso_preflight ship-it || exit 1   # ../gh-issue-intake-formats.md §RO-iso — define it there, cite here
 gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
 ```
 
