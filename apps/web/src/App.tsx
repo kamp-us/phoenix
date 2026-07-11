@@ -23,7 +23,12 @@ import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
-import {MECMUA_PUBLIC_READ, PHOENIX_AUTHORSHIP_LOOP, PHOENIX_BILDIRIM} from "./flags/keys";
+import {
+	MECMUA_FEED,
+	MECMUA_PUBLIC_READ,
+	PHOENIX_AUTHORSHIP_LOOP,
+	PHOENIX_BILDIRIM,
+} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
@@ -96,6 +101,11 @@ function Layout() {
 	// this always-painting shell frame: the entry simply appears once the flag resolves on,
 	// never blocking first paint (Pillar 1). Off ⇒ the nav is exactly as before.
 	const {value: mecmuaOn} = useFlag(MECMUA_PUBLIC_READ, false);
+	// The mecmua feed (akış) nav entry (#2547), dark behind its own `mecmua-feed` seam —
+	// the SAME flag the `/mecmua/akis` route self-gates on (self-404 when off). Gating the
+	// link on the route's own seam is what keeps it from ever pointing at a dark 404: off ⇒
+	// no entry, so subscribing (also `mecmua-feed`) and its feed destination appear together.
+	const {value: feedOn} = useFlag(MECMUA_FEED, false);
 
 	// The two-tier fate provider's public first paint (ADR 0167). While `get-session`
 	// is still in flight the authed `FateProvider` gate below returns null, so the
@@ -148,6 +158,7 @@ function Layout() {
 							{to: "/sozluk", label: "sözlük"},
 							{to: "/pano", label: "pano"},
 							...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
+							...(feedOn ? [{to: "/mecmua/akis", label: "akış"}] : []),
 						]}
 						divanTo={chips?.divanTo}
 						{...(chips?.userProps ?? {})}
