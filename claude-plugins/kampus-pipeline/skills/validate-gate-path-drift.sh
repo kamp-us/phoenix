@@ -134,6 +134,66 @@ else
 	fi
 fi
 
+# ── Invariant 1c: HAS_*_RE class-fan copies match §CP (issue #2488) ──────────
+#
+# The four class-classification probes — HAS_CODE_RE / HAS_SKILLS_RE /
+# HAS_DOCS_EXCLUDE_RE / HAS_DOCS_RE — are single-sourced as canonical HAS_*_RE='…'
+# lines in §CP exactly like CONTROL_PLANE_RE, then copied verbatim into ship-it Step
+# 0's class fan. A stale copy mis-classes a PR's changed-path fan (the #2434
+# `.glossary/**→has-code` miss that emptied a review namespace and stalled ship-it),
+# and that drift was caught only by hand during #2434/#2486 — the exact gap this
+# invariant closes. Same grep-extract-then-diff idiom as Invariant 1; kept pure bash
+# rather than routed through `pipeline-cli class-probe` because this guard runs in the
+# toolchain-free `skills` CI job (no node/pnpm), where a class-probe call can't reach.
+HAS_NAMES="HAS_CODE_RE HAS_SKILLS_RE HAS_DOCS_EXCLUDE_RE HAS_DOCS_RE"
+# Surfaces carrying a copy of the §CP block, enumerated like Invariant 1's CONSUMERS.
+# ship-it's copies are one-per-line; reviewer.md's `class_reresolve` fail-closed reference
+# packs two per COMPOUND line (`HAS_A='x'; HAS_B='y'   # c`), which the per-assignment
+# extraction below handles. Both copy sites must track §CP or the class fan silently drifts
+# (issue #2488: reviewer.md's copy was unguarded — drifting it left this gate GREEN). Paths
+# are relative to skills_dir, so the sibling agents/ dir is reached with `../agents/…`.
+HAS_CONSUMERS="ship-it/SKILL.md ../agents/reviewer.md"
+
+for name in $HAS_NAMES; do
+	# Canonical: the single-quoted §CP assignment (NAME='…'). Anchor on the opening
+	# quote so this never grabs the double-quoted `NAME="$(reresolve_re …)"` line below it.
+	HAS_CANONICAL=$(grep "^$name='" "$FORMATS_MD" | head -n1 | sed "s/^$name=//" || true)
+	if [ -z "$HAS_CANONICAL" ]; then
+		fail "§CP canonical $name= not found in $FORMATS_MD — line must start with $name='…' (issue #2488)"
+		continue
+	fi
+	ok "§CP canonical $name extracted from gh-issue-intake-formats.md"
+
+	for rel in $HAS_CONSUMERS; do
+		md="$skills_dir/$rel"
+		if [ ! -f "$md" ]; then
+			fail "$rel: file not found — cannot verify $name copy"
+			continue
+		fi
+		# The single-quoted copy (tolerant of leading whitespace); the `'` in the
+		# pattern excludes the `NAME="$(reresolve_re …)"` re-assignment line.
+		LINE=$(grep "$name='" "$md" | head -n1 || true)   # || true: no-match hits the fail below, not a set -e abort
+		if [ -z "$LINE" ]; then
+			fail "$rel: no $name='…' line found — consumer must carry a copy matching §CP (issue #2488)"
+			continue
+		fi
+		# Per-assignment extraction (compound-line-aware): pull ONLY this NAME's own
+		# single-quoted value, whether it sits alone (ship-it, one per line) or shares a
+		# compound line with a sibling assignment + trailing comment (reviewer.md,
+		# `HAS_A='x'; HAS_B='y'   # c`). A single-quoted bash string cannot contain a `'`,
+		# so `[^']*` up to the next quote is the exact value — the old whole-line strip
+		# swallowed the sibling assignment on a compound line and false-FAILed (issue #2488).
+		VAL_CLEAN=$(printf '%s\n' "$LINE" | sed "s/.*$name='\([^']*\)'.*/'\1'/")
+		if [ "$VAL_CLEAN" = "$HAS_CANONICAL" ]; then
+			ok "$rel $name matches §CP canonical"
+		else
+			fail "$rel $name has drifted from §CP canonical
+  §CP:  $HAS_CANONICAL
+  copy: $VAL_CLEAN"
+		fi
+	done
+done
+
 # ── Invariant 2: .claude/skills symlink agrees with marketplace source ───────
 #
 # .claude/skills -> ../claude-plugins/kampus-pipeline/skills
