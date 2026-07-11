@@ -37,7 +37,6 @@ import {
 	PostDeleteFailed,
 	PostNotFound,
 	PostValidationErrors,
-	ReactionsDisabled,
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
 } from "./errors.ts";
@@ -359,25 +358,32 @@ export const mutations = {
 	// the service. A palette emoji sets/changes the viewer's single reaction; a
 	// `null` emoji retracts it (the cardinality-one change/retract contract). Unlike
 	// `post.vote` there is deliberately NO `VoterNotEligible` tier arm and NO karma
-	// path: any signed-in user — including a çaylak — may react. Ships DARK behind
-	// the default-off `phoenix-reactions` flag: with it off every react fails
-	// `ReactionsDisabled`, so the path is unreachable even if a client bypasses the
-	// (not-yet-shipped) UI. The re-resolved post carries the fresh `reactions`
-	// aggregate; `live.update` flips every open card's reaction bar.
+	// path: any signed-in user — including a çaylak — may react. The re-resolved post
+	// carries the fresh `reactions` aggregate; `live.update` flips every open card's
+	// reaction bar.
 	"post.react": Fate.mutation(
 		{
 			input: ReactToPostInput,
 			type: PostView,
-			error: Schema.Union([Unauthorized, ReactionsDisabled, PostNotFound]),
+			error: Schema.Union([Unauthorized, PostNotFound]),
 		},
 		Effect.fn("post.react")(function* ({input}) {
 			const user = yield* CurrentUser.required;
+			const pano = yield* Pano;
+			// Dark-ship gate (ADR 0083): default-off `phoenix-reactions`. Off ⇒ inert — the
+			// react never lands (the write is the new path, unreachable until release);
+			// re-resolve the post unchanged so the caller's cache stays consistent (the
+			// `comment.react` / `definition.react` dark-ship inert-receipt shape). On a
+			// Flagship outage the safe read default (`false`) keeps the path dark.
 			const flags = yield* Flags;
 			const on = yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(provideRequestFlags);
 			if (!on) {
-				return yield* new ReactionsDisabled({message: "tepki özelliği şu an kapalı"});
+				const [current] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+				if (!current) {
+					return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
+				}
+				return toPost(current);
 			}
-			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.reactToPost({postId: input.id, userId: user.id, emoji: input.emoji});
 			const post = toPost(r.post);

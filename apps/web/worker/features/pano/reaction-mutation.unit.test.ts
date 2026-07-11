@@ -2,8 +2,8 @@
  * `post.react` wire-boundary unit coverage (#1863, epic #1840) — the pano-post
  * reaction mutation's four AC proofs, driven through its real external interface
  * (`resolveWire`: the `resolve` decode + the `encodeWireError` class→wire-code
- * seam), so a decode rejection surfaces as a WIRE `code` and a mis-annotated
- * `[FateWireCode]` on `ReactionsDisabled` is a unit failure. The `Pano` / `Flags` /
+ * seam), so a decode rejection surfaces as a WIRE `code` (an off-palette emoji →
+ * `VALIDATION_ERROR`). The `Pano` / `Flags` /
  * `LivePublisher` seams are substituted directly — no DB, no Flagship binding. The
  * react/change/retract write semantics themselves (probe-then-write, cardinality
  * one, NO karma, NO tier gate) are proven over the real service in
@@ -15,9 +15,11 @@
  *      emoji, a different palette emoji, `null`).
  *   2. non-palette rejection — an off-palette emoji FAILS to decode at the wire
  *      boundary (`ReactionEmojiSchema`), so the service is NEVER reached.
- *   3. flag gate — with `Flags` OFF the mutation fails the wire `REACTIONS_DISABLED`
- *      and never touches the service (dark-ship unreachable even past the UI); with
- *      it ON the delegation runs.
+ *   3. flag gate (dark ship, ADR 0083) — with `Flags` OFF the mutation is inert: no
+ *      react lands (`Pano.reactToPost` is never called), the post is re-resolved
+ *      unchanged via `getPostsByIds` and returned with no error — a merged-but-
+ *      unflipped feature is invisible, matching `comment.react` / `definition.react`;
+ *      with it ON the delegation runs.
  *   4. ungated — a çaylak/newcomer (any authenticated user) reacts with no tier
  *      gate: the mutation carries no `VOTE_REQUIRES_YAZAR` arm, so a plain user
  *      succeeds exactly like any other.
@@ -60,15 +62,16 @@ const liveStub = Layer.succeed(LivePublisher)(
 	livePublisherFor({publish: () => Effect.void, waitUntil: () => {}}),
 );
 
-// A `Pano` stub whose `reactToPost` is scripted; every other method dies. Cast to
-// the full service tag — the react path only ever reaches `reactToPost`.
-const panoStub = (reactToPost: (typeof Pano.Service)["reactToPost"]): Layer.Layer<Pano> =>
+// A `Pano` whose named methods are scripted; every OTHER method dies on contact, so
+// a passing test proves the resolver reached only the method its path routes to (the
+// flag-ON path routes to `reactToPost`, the inert flag-OFF path to `getPostsByIds`).
+const panoProxy = (methods: Partial<typeof Pano.Service>): Layer.Layer<Pano> =>
 	Layer.succeed(
 		Pano,
-		new Proxy({reactToPost} as Partial<typeof Pano.Service>, {
+		new Proxy(methods, {
 			get(target, prop) {
 				if (prop in target) return (target as Record<string, unknown>)[prop as string];
-				return () => Effect.die(`Pano.${String(prop)} not exercised in reaction-mutation`);
+				return () => Effect.die(`Pano.${String(prop)} not exercised in post.react`);
 			},
 		}) as typeof Pano.Service,
 	);
@@ -121,9 +124,11 @@ describe("post.react — (1) delegation threads the emoji and echoes the aggrega
 				changed: true,
 			};
 			const post = yield* react(
-				panoStub((i) => {
-					calls.push({postId: i.postId, userId: i.userId, emoji: i.emoji});
-					return Effect.succeed(result);
+				panoProxy({
+					reactToPost: (i) => {
+						calls.push({postId: i.postId, userId: i.userId, emoji: i.emoji});
+						return Effect.succeed(result);
+					},
 				}),
 				flagsStub(true),
 				{id: "post_1", emoji: "👍"},
@@ -140,12 +145,14 @@ describe("post.react — (1) delegation threads the emoji and echoes the aggrega
 		Effect.gen(function* () {
 			const calls: Array<string | null> = [];
 			const post = yield* react(
-				panoStub((i) => {
-					calls.push(i.emoji);
-					return Effect.succeed({
-						post: postRowWith({counts: [{emoji: "🔥", count: 1}], myReaction: "🔥"}),
-						changed: true,
-					});
+				panoProxy({
+					reactToPost: (i) => {
+						calls.push(i.emoji);
+						return Effect.succeed({
+							post: postRowWith({counts: [{emoji: "🔥", count: 1}], myReaction: "🔥"}),
+							changed: true,
+						});
+					},
 				}),
 				flagsStub(true),
 				{id: "post_1", emoji: "🔥"},
@@ -162,9 +169,11 @@ describe("post.react — (1) delegation threads the emoji and echoes the aggrega
 		Effect.gen(function* () {
 			const calls: Array<string | null> = [];
 			const post = yield* react(
-				panoStub((i) => {
-					calls.push(i.emoji);
-					return Effect.succeed({post: postRowWith(EMPTY_REACTION_AGGREGATE), changed: true});
+				panoProxy({
+					reactToPost: (i) => {
+						calls.push(i.emoji);
+						return Effect.succeed({post: postRowWith(EMPTY_REACTION_AGGREGATE), changed: true});
+					},
 				}),
 				flagsStub(true),
 				{id: "post_1", emoji: null},
@@ -180,7 +189,9 @@ describe("post.react — (2) a non-palette emoji is rejected at the wire boundar
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
 				react(
-					panoStub(() => Effect.die("Pano.reactToPost ran on a non-palette emoji")),
+					panoProxy({
+						reactToPost: () => Effect.die("Pano.reactToPost ran on a non-palette emoji"),
+					}),
 					flagsStub(true),
 					{id: "post_1", emoji: "🚀"},
 				),
@@ -197,24 +208,21 @@ describe("post.react — (2) a non-palette emoji is rejected at the wire boundar
 	);
 });
 
-describe("post.react — (3) the flag gate is the safe default", () => {
-	it.effect("flag OFF → the wire REACTIONS_DISABLED, and Pano.reactToPost is never called", () =>
+describe("post.react — (3) flag OFF is inert (dark ship)", () => {
+	it.effect("inert: no react lands, the unchanged post is re-resolved and returned", () =>
 		Effect.gen(function* () {
-			const exit = yield* Effect.exit(
-				react(
-					panoStub(() => Effect.die("Pano.reactToPost ran with the flag off")),
-					flagsStub(false),
-					{id: "post_1", emoji: "👍"},
-				),
+			const post = yield* react(
+				// reactToPost fail-on-contact: the write must never land when dark; the inert
+				// path re-resolves the current post via `getPostsByIds`.
+				panoProxy({
+					getPostsByIds: () => Effect.succeed([postRowWith(EMPTY_REACTION_AGGREGATE)]),
+				}),
+				flagsStub(false),
+				{id: "post_1", emoji: "👍"},
 			);
-			assert.isTrue(exit._tag === "Failure", "off-path fails");
-			if (exit._tag === "Failure") {
-				const error = Cause.findErrorOption(exit.cause);
-				assert.isTrue(error._tag === "Some");
-				if (error._tag === "Some") {
-					assert.strictEqual((error.value as {code?: unknown}).code, "REACTIONS_DISABLED");
-				}
-			}
+			assert.strictEqual((post as {id: string}).id, "post_1");
+			// The current, unreacted aggregate — the react write never happened while dark.
+			assert.deepStrictEqual((post as {reactions?: unknown}).reactions, EMPTY_REACTION_AGGREGATE);
 		}),
 	);
 });
@@ -225,14 +233,16 @@ describe("post.react — (4) reactions are ungated (a çaylak reacts, no tier ga
 		() =>
 			Effect.gen(function* () {
 				const post = yield* react(
-					panoStub((i) => {
-						// The mutation carries no tier gate: a plain user's react reaches the
-						// service exactly like any other — the ungated/social-only model.
-						assert.strictEqual(i.userId, CAYLAK.id);
-						return Effect.succeed({
-							post: postRowWith({counts: [{emoji: "❤️", count: 1}], myReaction: "❤️"}),
-							changed: true,
-						});
+					panoProxy({
+						reactToPost: (i) => {
+							// The mutation carries no tier gate: a plain user's react reaches the
+							// service exactly like any other — the ungated/social-only model.
+							assert.strictEqual(i.userId, CAYLAK.id);
+							return Effect.succeed({
+								post: postRowWith({counts: [{emoji: "❤️", count: 1}], myReaction: "❤️"}),
+								changed: true,
+							});
+						},
 					}),
 					flagsStub(true),
 					{id: "post_1", emoji: "❤️"},
