@@ -149,10 +149,12 @@ export const parseUiProbe = (shipItText: string): string =>
 	shipItText.match(/^UI_RE='([^']*)'/m)?.[1] ?? FAILCLOSED_UI_RE;
 
 /**
- * Is the diff UI-affecting (has-ui)? A non-visual `apps/web/src/*.ts` still matches `UI_RE`'s
- * `^apps/web/src/` branch — that is deliberate here, not a bug to eyeball away: ship-it requires
+ * Is the diff UI-affecting (has-ui)? A non-visual `apps/web/src/*.ts` still matches `UI_RE`
+ * (`^apps/web/src/`) — that is deliberate here, not a bug to eyeball away: ship-it requires
  * review-design on exactly this predicate, so the fan must dispatch it on exactly this predicate
- * or the PR deadlocks on a phantom-empty review-design namespace (#2485/#2483). Fail-closed: an
+ * or the PR deadlocks on a phantom-empty review-design namespace (#2485/#2483). Conversely a
+ * `.tsx`/`.css` OUTSIDE apps/web/src is NOT has-ui — the scope is `^apps/web/src/` only, so the
+ * require predicate never exceeds review-design's dispatch/off-ramp (#2470). Fail-closed: an
  * uncompilable probe matches every path ⇒ has-ui.
  */
 export const isUiAffecting = (files: ReadonlyArray<string>, uiRe: string): boolean =>

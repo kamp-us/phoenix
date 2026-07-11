@@ -164,10 +164,22 @@ Pull the file list first. This gate applies to a PR that **changes rendered UI**
 under `apps/web/src/**` (React components, styles, tokens, routes). If the diff touches **no**
 UI-affecting path at all, this is the wrong gate.
 
+This off-ramp predicate is the **SAME one live `UI_RE`** ship-it *requires* on and reviewer.md
+*dispatches* on — re-resolved from `ship-it/SKILL.md@main` via the `?ref=main` idiom, NOT a
+hardcoded third copy. Wiring it to the single source is the #2470 fix: a hardcoded off-ramp narrower
+than ship-it's require (`^apps/web/src/` vs the old `^apps/web/src/|\.tsx$|\.css$`) let a `.tsx`/`.css`
+outside `apps/web/src` be *required* yet off-ramped here with no marker → an unroutable phantom gate
+that deadlocked ship-it. Fail closed to **has-ui** (proceed and verdict) if the line is unreadable —
+never silently off-ramp, which is the failure that mints the phantom gate.
+
 ```bash
 PR=<pr number>
-# UI-affecting = the rendered frontend surface (components, styles, tokens, routes)
+# UI-affecting = the ONE live source (ship-it/SKILL.md@main's `UI_RE=` line) — the SAME predicate
+# ship-it requires on and reviewer.md dispatches on, so require == dispatch == off-ramp by
+# construction (#2470). The literal is the fail-closed REFERENCE, not the live decision source.
 UI_RE='^apps/web/src/'
+UI_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^UI_RE=' | head -n1 || true)"
+if [ -n "$UI_LIVE" ]; then UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"; else UI_RE='.'; fi   # unreadable ⇒ '.' ⇒ every path is UI-affecting ⇒ proceed & verdict (never silently off-ramp)
 UI_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   --jq '.[].filename' | grep -E "$UI_RE" || true)"
 ```
