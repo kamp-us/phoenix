@@ -1,0 +1,146 @@
+/* /mecmua/yaz — the mecmua authoring surface (#2499). App-side chrome for the shared
+   headless @kampus/composer base; role tokens only (design-system-manifest.md). The
+   editor's paint lives here — the base ships no styling. */
+
+.kp-mecmua-editor {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-5);
+	max-width: calc(var(--s-8) * 18);
+	margin: 0 auto;
+}
+
+.kp-mecmua-editor__head {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-mecmua-editor__title {
+	font: var(--t-h-page);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-mecmua-editor__lede {
+	font: var(--t-body);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-mecmua-editor__field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.kp-mecmua-editor__label {
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+/* Strip the fieldset's native chrome — it groups the composer for a11y only; the
+   spacing matches the other fields. `legend` sits inline as a plain label. */
+.kp-mecmua-editor__fieldset {
+	border: 0;
+	margin: 0;
+	padding: 0;
+	min-inline-size: 0;
+}
+
+.kp-mecmua-editor__fieldset > legend {
+	padding: 0;
+	margin-bottom: var(--s-2);
+}
+
+.kp-mecmua-editor__title-input {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	padding: var(--s-2) var(--s-3);
+}
+
+.kp-mecmua-editor__title-input::placeholder {
+	color: var(--text-faint);
+}
+
+/* The composer surface. The base renders tiptap's `.tiptap` contenteditable inside;
+   the ProseMirror default outline is dropped so the shared `:focus-visible` spacer
+   ring (global.css) is the sole focus treatment — never a hand-rolled outline. */
+.kp-mecmua-editor__body {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+}
+
+.kp-mecmua-editor__body .tiptap {
+	min-height: calc(var(--s-8) * 6);
+	padding: var(--s-3);
+	font: var(--t-body);
+	color: var(--text-primary);
+	outline: none;
+}
+
+.kp-mecmua-editor__body .tiptap > :first-child {
+	margin-top: 0;
+}
+
+.kp-mecmua-editor__body .tiptap > :last-child {
+	margin-bottom: 0;
+}
+
+.kp-mecmua-editor__body .tiptap :is(h1, h2, h3, h4, h5, h6) {
+	color: var(--text-primary);
+	line-height: 1.25;
+}
+
+.kp-mecmua-editor__body .tiptap p {
+	margin: var(--s-3) 0;
+}
+
+.kp-mecmua-editor__body .tiptap code {
+	font: var(--t-mono);
+	background: var(--surface-sunken);
+	border-radius: var(--r-sm);
+	padding: 0 var(--s-1);
+}
+
+.kp-mecmua-editor__body .tiptap pre {
+	background: var(--surface-sunken);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	padding: var(--s-3);
+	overflow-x: auto;
+}
+
+.kp-mecmua-editor__body .tiptap blockquote {
+	border-left: 2px solid var(--border-strong);
+	margin: var(--s-3) 0;
+	padding-left: var(--s-3);
+	color: var(--text-secondary);
+}
+
+.kp-mecmua-editor__notice {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-mecmua-editor__notice--error {
+	color: var(--danger);
+}
+
+.kp-mecmua-editor__actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--s-3);
+}
+
+.kp-mecmua-editor__gate {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
