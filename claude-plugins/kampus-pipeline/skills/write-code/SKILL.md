@@ -655,24 +655,77 @@ GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
 COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
 case "$COMMON" in /*) ;; *) COMMON="$(pwd)/$COMMON" ;; esac   # normalize relative `.git` (older git)
 COMMON="$(cd "$COMMON" && pwd)"
-echo "write-code preflight: git-dir=$GITDIR common-dir=$COMMON cwd=$(pwd)"   # emit scanned scope (ADR 0092 §1)
+
+# Was worktree isolation EXPECTED for this run? The coder agent-type (agents/coder.md) asserts
+# isolation UNCONDITIONALLY, so any run under it expects the harness to have provisioned a linked
+# worktree + set $WORKTREE_ROOT. The signal is machine-checkable and harness-set — the agent-type
+# env var $CLAUDE_CODE_AGENT (stable across an agent's Bash calls, unlike a shell `export`),
+# corroborated by a set $WORKTREE_ROOT — NOT a per-run guess. A genuine standalone human run (a
+# direct `/write-code`) matches NEITHER. This is what lets the fail-closed branch below distinguish
+# "isolation expected but the harness no-op'd provisioning" (#2440) from a legitimate standalone
+# run, so it fires LOUD in the first case without regressing the second. See ADR 0172.
+ISOLATION_EXPECTED=0
+case "$CLAUDE_CODE_AGENT" in coder|*coder*) ISOLATION_EXPECTED=1 ;; esac   # ran AS the coder agent-type
+[ -n "$WORKTREE_ROOT" ] && ISOLATION_EXPECTED=1                            # harness signalled a provisioned root
+echo "write-code preflight: git-dir=$GITDIR common-dir=$COMMON cwd=$(pwd) isolation-expected=$ISOLATION_EXPECTED (agent=${CLAUDE_CODE_AGENT:-unset} worktree-root=${WORKTREE_ROOT:+set})"   # emit scanned scope (ADR 0092 §1)
 if [ "$GITDIR" = "$COMMON" ]; then
+  if [ "$ISOLATION_EXPECTED" = 1 ]; then
+    # FAIL-CLOSED LOUD (the #2443 branch): isolation was EXPECTED but this run is on the PRIMARY
+    # checkout with no linked worktree — the harness's `git worktree add` + $WORKTREE_ROOT injection
+    # silently didn't run for this coder spawn (#2440's harness no-op). Because the whole repo-side
+    # worktree-guard keys on $WORKTREE_ROOT, that no-op ALSO disarmed it, leaving this preflight the
+    # sole surviving layer. Do NOT self-provision here: doing so papers over the harness failure and
+    # leaves the two-layer primary-corruption defense collapsed to one, invisibly (#2270 class).
+    echo "write-code preflight FAILED (fail-closed, LOUD): worktree isolation was EXPECTED (agent=${CLAUDE_CODE_AGENT:-?}, worktree-root=${WORKTREE_ROOT:+set}) but this run is on the PRIMARY checkout (git-dir == common-dir) and \$WORKTREE_ROOT is unset." >&2
+    echo "  ROOT CAUSE: the harness's worktree provisioning (git worktree add + \$WORKTREE_ROOT injection) did NOT run for this coder spawn — the #2440 harness no-op. The repo-side worktree-guard also keys on \$WORKTREE_ROOT, so it is disarmed too; only this preflight is left." >&2
+    echo "  REFUSING to self-provision — that would hide the harness failure and leave the two-layer defense collapsed to one, invisibly (the primary-checkout-corruption class, #2270)." >&2
+    echo "  ROUTED BLOCKER — surface UP to the operator/EM: 'harness worktree provisioning no-op'd for a coder spawn (isolation expected, \$WORKTREE_ROOT unset); the out-of-repo harness half (#2440) needs attention. Do NOT blindly retry the same spawn.'" >&2
+    exit 1
+  fi
+  # isolation was NOT expected ⇒ a genuine standalone run: fall through to the Non-isolated fallback,
+  # which self-provisions a worktree (this path is unchanged, and the loud branch above never fires for it).
   echo "write-code preflight FAILED (fail-closed): git-dir == common-dir ⇒ this is the PRIMARY checkout, not an isolated worktree." >&2
   echo "  Refusing to branch/commit here — a spawn without isolation:worktree (or a cwd reset to the primary tree) would mis-branch the owner's checkout." >&2
-  echo "  Fix: re-spawn write-code with isolation:worktree, or take the Non-isolated fallback below to create a worktree before mutating." >&2
+  echo "  This run did NOT expect isolation (standalone) — take the Non-isolated fallback below to create a worktree before mutating." >&2
   exit 1
 fi
 ```
 
 The preflight is **fail-closed by construction**: it refuses on the primary checkout, on a
 not-a-repo cwd, *and* on the ambiguous default — only positive evidence of a linked worktree
-(git-dir ≠ common-dir) lets it through. It is **observable** (it prints the two dirs + cwd it
-compared, so "what did the preflight look at" is answerable from the run log) and **idempotent**
-(read-only `git rev-parse`, safe to re-run). The **one** sanctioned way to satisfy it from a
-non-worktree start is the [Non-isolated fallback](#non-isolated-fallback) below — which creates
-a real linked worktree and `cd`s into it, after which this same check passes. **Never** route
-around the preflight by deleting it or relaxing the comparison; a green preflight is the
-precondition every mutation in Steps 4–7 relies on.
+(git-dir ≠ common-dir) lets it through. It is **observable** (it prints the two dirs + cwd +
+`isolation-expected` it compared, so "what did the preflight look at" is answerable from the run
+log) and **idempotent** (read-only `git rev-parse`, safe to re-run). **Never** route around the
+preflight by deleting it or relaxing the comparison; a green preflight is the precondition every
+mutation in Steps 4–7 relies on.
+
+**The primary-checkout refusal forks on whether isolation was *expected* (ADR 0172, #2443).** The
+`git-dir == common-dir` refusal is a hard stop in both directions, but *how* you're meant to
+recover differs, and conflating the two is what let a harness failure hide:
+
+- **Isolation was EXPECTED** (`isolation-expected=1` — the run is under the coder agent-type, or
+  `$WORKTREE_ROOT` was set) yet you're on the primary checkout ⇒ **fail closed LOUD and STOP.**
+  This is the [#2440](https://github.com/kamp-us/phoenix/issues/2440) harness no-op: the harness
+  was supposed to provision a linked worktree and inject `$WORKTREE_ROOT` but silently didn't, which
+  *also* disarms the whole `$WORKTREE_ROOT`-keyed repo-side worktree-guard — so this preflight is
+  the only surviving layer. **Do NOT self-provision to route around it.** Self-provisioning here
+  would paper over the harness failure and leave the two-layer primary-corruption defense collapsed
+  to one, *invisibly* (the [#2270](https://github.com/kamp-us/phoenix/issues/2270)
+  primary-checkout-corruption class). Instead surface the printed **ROUTED BLOCKER** up to the
+  operator/EM so the out-of-repo harness half gets fixed rather than silently absorbed.
+- **Isolation was NOT expected** (`isolation-expected=0` — a genuine standalone `write-code`, e.g.
+  a human running `/write-code` directly) ⇒ take the [Non-isolated fallback](#non-isolated-fallback)
+  below, which creates a real linked worktree and `cd`s into it, after which this same check passes.
+  This is the **only** path where self-provisioning is sanctioned; the loud branch above never fires
+  for it, so the standalone flow is unchanged.
+
+The `isolation-expected` signal is **machine-checkable and grounded in the coder agent-type's
+unconditional-isolation assertion** ([`../../agents/coder.md`](../../agents/coder.md)), read from the
+harness-set `$CLAUDE_CODE_AGENT` env (stable across an agent's separate Bash calls) plus a set
+`$WORKTREE_ROOT` — never a per-run guess. It **fails safe**: if the agent-type value ever differs from
+what's matched, the run degrades to `isolation-expected=0` (today's silent self-provision), never to a
+dangerous primary-checkout mutation — the loud branch only *adds* a stop, it never removes the
+existing refusal.
 
 <a id="per-mutation-preflight"></a>
 > **The preflight runs once at Step-4 start AND re-asserts before EVERY git-mutating op.**
@@ -793,8 +846,12 @@ docblocks in a file (the `coder.md` standing invariant is the source; #2186).
 > then `cd "$WT"`. Branch off `FETCH_HEAD` (the just-fetched origin tip), **never** the possibly-stale
 > `origin/main` ref. When you're done, remove it with `git worktree remove "$WT"`. After the `cd "$WT"`, **re-run the Step 4 preflight** — the
 > fresh worktree's git-dir now differs from the common dir, so the check passes and you may
-> mutate. This is the *only* sanctioned route from a primary-checkout start; the preflight
-> stays fail-closed until a real worktree exists. Here too the branch name is **created once**
+> mutate. This fallback is **only for the standalone (`isolation-expected=0`) path** — a run where
+> isolation was *expected* must NOT reach it: the preflight's loud branch (ADR 0172, #2443) hard-stops
+> that case *before* here, because self-provisioning would silently absorb a harness provisioning
+> failure (#2440) and collapse the two-layer defense to one. For a standalone run this is the only
+> sanctioned route from a primary-checkout start; the preflight stays fail-closed until a real
+> worktree exists. Here too the branch name is **created once**
 > and thereafter **re-derived live** from the worktree (`git -C "$WT" branch
 > --show-current`) at each later git op — never carried across Bash calls in a shared file
 > (see [the live-derivation rule](#branch-name-is-re-derived-live) above; the same
