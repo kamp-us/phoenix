@@ -473,6 +473,38 @@ node packages/pipeline-cli/src/bin.ts wayfinder-map 2421
 node packages/pipeline-cli/src/bin.ts wayfinder-map 2421 --json
 ```
 
+### `reachability-guard` — a flag can't graduate while its UI slice is unbuilt (ADR 0173, #2529)
+
+The single deterministic reachability contract both `plan-epic` (#2530) and `/release`
+(#2531) key off — the enforcement seam that makes an unreachable-feature graduation
+unrepresentable (ADR [0173](../../.decisions/0173-vertical-completeness-gate.md), epic
+[#1943](https://github.com/kamp-us/phoenix/issues/1943)). Given a Flagship flag key, it
+asserts the flag's vertical has a **user-facing slice** before the flag can reach 100%:
+
+- **Consuming UI** — the flag-key constant declared in `apps/web/src/flags/keys.ts` is
+  referenced by ≥1 `apps/web/src/**/*.tsx` component (the static scan the reactions reporter
+  ran by hand; ADR 0173 §1a/§2).
+- **Registered journey e2e** — a spec under `apps/web/tests/e2e/` carries an in-title
+  `@journey:<flag-key>` tag (ADR 0173 §2). The checker asserts *registration*; the e2e job
+  runs the spec.
+- **Exemption** — a legitimately UI-less infra/containment flag (e.g. `pano-feed-edge-cache`)
+  opts out with a `@reachability-exempt: <reason>` marker at its `keys.ts` definition (ADR
+  0173 §3), so the gate refuses unreachable *user-facing* flags without blocking infra flags.
+
+It **fails closed** (ADR 0092) and **names precisely** which assertion failed (missing UI
+consumer / missing journey e2e / unknown flag / zero scope), so `/release` can surface the
+gap to the human. The pure core (`reachability-guard.ts` — keys.ts parse, `@journey` tag
+parse, `judge`) is unit-tested directly; the filesystem boundary (`gate.ts` — walk `.tsx` +
+e2e specs) is crossed over a fake repo dir.
+
+```bash
+# exit 0 iff <flag-key> is reachable (consuming UI + registered journey) or @reachability-exempt
+node packages/pipeline-cli/src/bin.ts reachability-guard check phoenix-reactions
+
+# point at a specific repo root (default: walk up for a workspace marker)
+node packages/pipeline-cli/src/bin.ts reachability-guard check pano-feed-edge-cache --root /path/to/repo
+```
+
 ```bash
 pnpm --filter @kampus/pipeline-cli typecheck
 pnpm --filter @kampus/pipeline-cli test

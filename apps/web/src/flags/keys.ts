@@ -26,6 +26,8 @@ export const MECMUA_WRITE = "mecmua-write";
  * Flipping it on is the human release act (ADR 0083). Its OWN key, distinct from
  * `pano-base-feed` (which gates the base-feed route's existence): the viewer-invariant
  * base feed can serve without the edge cache, so caching has an independent lifecycle.
+ *
+ * @reachability-exempt: infra edge-cache flag — no user-facing surface by design (ADR 0170).
  */
 export const PANO_FEED_EDGE_CACHE = "pano-feed-edge-cache";
 

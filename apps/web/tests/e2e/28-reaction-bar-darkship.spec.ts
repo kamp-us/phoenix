@@ -18,7 +18,9 @@ import {expect, test} from "@playwright/test";
  * seeded reaction, landing at release), so this e2e stays on the off-path — the
  * same split as `26-pano-draft-save.spec.ts`.
  */
-test.describe("Reaction bar (dark-ship, phoenix-reactions default off)", () => {
+// @journey:phoenix-reactions — the registered reachability journey for the reactions
+// vertical (ADR 0173 §2). reachability-guard asserts this tag exists; the e2e job runs it.
+test.describe("Reaction bar (dark-ship, phoenix-reactions default off) @journey:phoenix-reactions", () => {
 	test("no reaction bar renders on pano post cards while the flag defaults off", async ({page}) => {
 		await page.goto("/pano");
 		// The feed rendered (a post card is present)…
