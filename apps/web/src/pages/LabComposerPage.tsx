@@ -18,16 +18,64 @@ import StarterKit from "@tiptap/starter-kit";
 import {useState} from "react";
 import "./LabComposerPage.css";
 
-const SEED_MARKDOWN = `# merhaba
+// Canonical render-test content (#2477): every block + inline element the
+// StarterKit + `@tiptap/markdown` set actually round-trips, so the panels below
+// double as a render checklist now and a reusable fixture for the shared
+// `@kampus/composer` base (#2476). Verified idempotent — `getMarkdown()` echoes
+// this verbatim. NOT included: tables and task-lists — this route is StarterKit-only,
+// which ships no table/taskList node, so both are dropped by the markdown parser
+// (tables vanish, `- [ ]` degrades to a plain bullet) rather than shipped broken.
+const SEED_MARKDOWN = `# Composer render testi
 
-tiptap **kalın**, *italik* ve \`satır içi kod\` destekliyor.
+Bu örnek, StarterKit + \`@tiptap/markdown\` setinin **round-trip** ile işlediği her blok ve satır-içi öğeyi gösterir — hem şimdi bir render kontrol listesi, hem #2476'daki paylaşılan \`@kampus/composer\` tabanına taşınacak kanonik test içeriği.
+
+## Satır içi biçimler
+
+Paragraf içinde **kalın**, *italik*, ~~üstü çizili~~ ve \`satır içi kod\` bir arada. Bir de [kamp.us bağlantısı](https://kamp.us) burada.
+
+### Üçüncü seviye başlık
+
+#### Dördüncü seviye başlık
+
+##### Beşinci seviye başlık
+
+###### Altıncı seviye başlık
+
+## Listeler
 
 - birinci madde
 - ikinci madde
+  - iç içe madde
+  - ikinci iç madde
+- üçüncü madde
 
-> bir alıntı
+1. birinci adım
+2. ikinci adım
+  1. iç içe numaralı
+  2. ikinci iç numaralı
+3. üçüncü adım
 
-[kamp.us](https://kamp.us)`;
+## Alıntılar
+
+> Bir alıntı bloğu — kenar çizgisi ve soluk renkle ayrışır.
+>
+> > İç içe alıntı ayrı bir tonda görünür.
+
+## Kod bloğu
+
+\`\`\`ts
+export function selam(ad: string): string {
+	return "merhaba, " + ad;
+}
+\`\`\`
+
+## Yatay çizgi
+
+Aşağıda bir ayraç var:
+
+---
+
+Ayracın altındaki paragraf.`;
 
 export function LabComposerPage() {
 	const [pasted, setPasted] = useState(SEED_MARKDOWN);
