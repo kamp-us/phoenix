@@ -2,7 +2,7 @@
    route. */
 
 .kp-lab__inner {
-	max-width: 1000px;
+	max-width: var(--content-w);
 	margin: 0 auto;
 	padding: var(--s-4) var(--s-3) var(--s-8);
 }
@@ -16,7 +16,7 @@
 	display: flex;
 	align-items: center;
 	gap: var(--s-2);
-	font-size: 16px;
+	font: var(--t-h-feed);
 	font-weight: 700;
 	margin: 0;
 	color: var(--text-primary);
@@ -29,8 +29,8 @@
 	letter-spacing: 0.04em;
 	color: var(--accent-fg);
 	background: var(--accent-soft);
-	border-radius: 4px;
-	padding: 2px 6px;
+	border-radius: var(--r-md);
+	padding: 2px var(--s-1);
 }
 
 .kp-lab__lead {
@@ -58,7 +58,7 @@
 	color: var(--text-primary);
 	background: var(--surface-sunken);
 	border: 1px solid var(--border);
-	border-radius: 6px;
+	border-radius: var(--r-lg);
 	padding: var(--s-2);
 	resize: vertical;
 	width: 100%;
@@ -72,7 +72,7 @@
 	color: var(--accent-contrast);
 	background: var(--accent);
 	border: none;
-	border-radius: 6px;
+	border-radius: var(--r-lg);
 	padding: var(--s-2) var(--s-3);
 	cursor: pointer;
 }
@@ -85,7 +85,7 @@
 
 .kp-lab__panel {
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: var(--r-lg);
 	background: var(--surface-raised);
 	padding: var(--s-3);
 	min-width: 0;
@@ -107,7 +107,7 @@
 .kp-lab__editor .tiptap {
 	font: var(--t-body);
 	color: var(--text-primary);
-	min-height: 160px;
+	min-height: calc(var(--s-8) * 4);
 	outline: none;
 }
 
@@ -115,7 +115,7 @@
 	font: var(--t-mono);
 	color: var(--text-primary);
 	background: var(--surface-sunken);
-	border-radius: 6px;
+	border-radius: var(--r-lg);
 	padding: var(--s-2);
 	margin: 0;
 	white-space: pre-wrap;
