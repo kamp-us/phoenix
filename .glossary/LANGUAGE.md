@@ -326,6 +326,7 @@ The Turkish product/brand nouns this repo uses:
 | **künye** | the per-user identity DO (karma, invite-only access, privileges) |
 | **depo** | the internal asset store/CDN (was imge) |
 | **divan** | the proving-ground reviewer surface — the gated `/divan` destination where yazar + moderatör review a çaylak's sandboxed work ("work goes before the divan") |
+| **mecmua** | the serious long-form blogging / publishing product (a third surface beside **sözlük** + **pano**, epic #2429) — a **yazar** authors and publishes a long-form post (başlık + markdown body) that anyone may read; a **çaylak** cannot publish (authorship is earned). v1 is a surface on the existing `apps/web` worker, not its own app. Turkish for "magazine / journal / anthology" |
 
 > This is the brand-noun seed. The full domain-noun glossary (the entities and their
 > precise definitions) lives in its own `.glossary/TERMS.md`; this table fixes only the
