@@ -124,4 +124,3 @@ in lockstep).
   small once the boundary is decided).
 - **Bounded blast radius vs #2488.** This settles the guard's *own classification* only; the
   guard's *scan-coverage* (#2488) remains a separate concern and is not addressed here.
-</content>
