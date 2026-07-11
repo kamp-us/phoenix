@@ -1,5 +1,5 @@
 import {assert, describe, it} from "@effect/vitest";
-import {hasLeadingCd, inspectGitHeadMove, pinBash} from "./bash-pin.ts";
+import {hasLeadingCd, inspectGitHeadMove, isIsolationExpected, pinBash} from "./bash-pin.ts";
 
 const WT = "/Users/dev/code/phoenix/.claude/worktrees/wf_abc123";
 
@@ -202,6 +202,39 @@ describe("pinBash — isolation expected but NO provisioned worktree (ADR 0172, 
 			}).kind,
 			"allow",
 		);
+	});
+});
+
+// ADR 0172 amendment / #2462: re-key the isolation gate off $CLAUDE_CODE_AGENT alone onto the
+// env-independent primary-checkout signal (git-dir == common-dir) so the loud-fail arms for a
+// NESTED crew-spawned coder, whose inherited $CLAUDE_CODE_AGENT (engineering-manager) masks the
+// direct agent-type regex and used to leave the guard inert.
+describe("isIsolationExpected — the ADR-0172 gate, re-keyed onto git-dir == common-dir (#2462)", () => {
+	it("arms for a DIRECT guarded agent-type (coder/reviewer/shipper), regardless of checkout", () => {
+		for (const agentType of ["coder", "reviewer", "shipper"]) {
+			assert.isTrue(isIsolationExpected({agentType, onPrimaryCheckout: true}), agentType);
+			assert.isTrue(isIsolationExpected({agentType, onPrimaryCheckout: false}), agentType);
+		}
+	});
+
+	// The load-bearing AC2 case: a nested coder inherits CLAUDE_CODE_AGENT=engineering-manager with
+	// $WORKTREE_ROOT unset; on the primary checkout the loud-fail must now arm (it did not before).
+	it("arms for a NESTED crew spawn (engineering-manager) sitting on the primary checkout", () => {
+		assert.isTrue(isIsolationExpected({agentType: "engineering-manager", onPrimaryCheckout: true}));
+	});
+
+	it("does NOT arm for a nested spawn that IS in a linked worktree (not on primary)", () => {
+		assert.isFalse(
+			isIsolationExpected({agentType: "engineering-manager", onPrimaryCheckout: false}),
+		);
+	});
+
+	// AC3: a genuine standalone (no CLAUDE_CODE_AGENT) never arms — no over-refusal regression, even
+	// though a human /write-code also sits on the primary checkout.
+	it("does NOT arm for a genuine standalone (empty agent-type) even on the primary checkout", () => {
+		assert.isFalse(isIsolationExpected({agentType: "", onPrimaryCheckout: true}));
+		assert.isFalse(isIsolationExpected({agentType: "   ", onPrimaryCheckout: true}));
+		assert.isFalse(isIsolationExpected({agentType: "", onPrimaryCheckout: false}));
 	});
 });
 
