@@ -36,6 +36,7 @@ import {DivanPage} from "./pages/DivanPage";
 import {FunnelPage} from "./pages/FunnelPage";
 import {LabComposerPage} from "./pages/LabComposerPage";
 import {LandingPage} from "./pages/LandingPage";
+import {MecmuaDraftsPage} from "./pages/MecmuaDraftsPage";
 import {MecmuaEditorPage} from "./pages/MecmuaEditorPage";
 import {MecmuaFeedPage} from "./pages/MecmuaFeedPage";
 import {MecmuaIndexPage} from "./pages/MecmuaIndexPage";
@@ -313,11 +314,14 @@ export function App() {
 						{/* mecmua — each page self-gates on its flag (off ⇒ 404), so these routes
 						    are dark by default: the public index (#2512) + reader (#2498) on
 						    mecmua-public-read, the subscribed-author feed (#2500) on mecmua-feed, the
-						    authoring page (#2499) on mecmua-write. The three static paths out-rank
-						    the `/mecmua/:slug` reader below them. */}
+						    authoring page (#2499), the id-addressable draft load + the drafts list
+						    (#2544) on mecmua-write. The static/`yaz`-prefixed paths out-rank the
+						    `/mecmua/:slug` reader below them. */}
 						<Route path="/mecmua" element={<MecmuaIndexPage />} />
 						<Route path="/mecmua/akis" element={<MecmuaFeedPage />} />
+						<Route path="/mecmua/yazilarim" element={<MecmuaDraftsPage />} />
 						<Route path="/mecmua/yaz" element={<MecmuaEditorPage />} />
+						<Route path="/mecmua/yaz/:id" element={<MecmuaEditorPage />} />
 						<Route path="/mecmua/:slug" element={<MecmuaPostPage />} />
 						<Route path="/sozluk" element={<SozlukHome />} />
 						<Route path="/sozluk/:slug" element={<SozlukTermPage />} />

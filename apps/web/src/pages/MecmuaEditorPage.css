@@ -16,6 +16,23 @@
 	gap: var(--s-1);
 }
 
+.kp-mecmua-editor__head-row {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--s-3);
+}
+
+.kp-mecmua-editor__yazilarim-link {
+	font: var(--t-meta);
+	color: var(--text-secondary);
+	text-decoration: none;
+}
+
+.kp-mecmua-editor__yazilarim-link:hover {
+	color: var(--text-primary);
+}
+
 .kp-mecmua-editor__title {
 	font: var(--t-h-page);
 	color: var(--text-primary);

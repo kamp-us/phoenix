@@ -13,7 +13,7 @@
 import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {MECMUA_FEED} from "../../../src/flags/keys.ts";
+import {MECMUA_FEED, MECMUA_WRITE} from "../../../src/flags/keys.ts";
 import {emptyKeysetPage} from "../../db/keyset.ts";
 import {toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -44,6 +44,12 @@ const feedOn = Effect.gen(function* () {
 	return yield* flags.getBoolean(MECMUA_FEED, false).pipe(provideRequestFlags);
 });
 
+/** Is the mecmua write path on for this request? Safe-default `false` (ships dark). */
+const writeOn = Effect.gen(function* () {
+	const flags = yield* Flags;
+	return yield* flags.getBoolean(MECMUA_WRITE, false).pipe(provideRequestFlags);
+});
+
 export const lists = {
 	mecmuaFeed: Fate.list(
 		{args: MecmuaFeedArgs, type: MecmuaPostView},
@@ -56,6 +62,26 @@ export const lists = {
 			const mecmua = yield* Mecmua;
 			const page = yield* mecmua.listFeedConnection({
 				subscriberId: user.id,
+				...(args.first !== undefined ? {first: args.first} : {}),
+				...(args.after !== undefined ? {after: args.after} : {}),
+			});
+			return feedConnection(page);
+		}),
+	),
+	// The author's OWN posts — drafts + published (#2544), the private retrieval surface
+	// for the write path. Scoped to `CurrentUser`, so it never exposes another author's
+	// drafts; gated behind the same `MECMUA_WRITE` seam as the editor, so it ships dark.
+	mecmuaMyPosts: Fate.list(
+		{args: MecmuaFeedArgs, type: MecmuaPostView},
+		Effect.fn("mecmuaMyPosts")(function* ({args}) {
+			// Flag off OR signed-out ⇒ empty: the write surface is dark until release, and an
+			// anonymous reader authored nothing, so there is nothing of theirs to serve.
+			const {user} = yield* CurrentUser;
+			if (!user || !(yield* writeOn)) return feedConnection(emptyKeysetPage);
+
+			const mecmua = yield* Mecmua;
+			const page = yield* mecmua.listOwnPostsConnection({
+				authorId: user.id,
 				...(args.first !== undefined ? {first: args.first} : {}),
 				...(args.after !== undefined ? {after: args.after} : {}),
 			});

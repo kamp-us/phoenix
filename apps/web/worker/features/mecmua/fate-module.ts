@@ -5,7 +5,7 @@ import {viewOrderBy} from "../../db/ordering.ts";
 import type {FateModule, FateRootsRecord} from "../fate/module.ts";
 import {lists} from "./lists.ts";
 import {mutations} from "./mutations.ts";
-import {MECMUA_FEED_ORDERING} from "./ordering.ts";
+import {MECMUA_FEED_ORDERING, MECMUA_MINE_ORDERING} from "./ordering.ts";
 import {queries} from "./queries.ts";
 import {
 	MecmuaPostView,
@@ -26,6 +26,10 @@ const roots: FateRootsRecord = {
 	// (`publishedAt desc, id desc`, single-sourced from `MECMUA_FEED_ORDERING`) + the
 	// published mask + the subscribed-author selection.
 	mecmuaFeed: list(mecmuaPostDataView, {orderBy: viewOrderBy(MECMUA_FEED_ORDERING)}),
+	// The author's own posts — drafts + published (#2544). `CurrentUser`-scoped, ordered
+	// `createdAt desc, id desc` (single-sourced from `MECMUA_MINE_ORDERING`), so the
+	// private drafts list has a stable retrieval surface.
+	mecmuaMyPosts: list(mecmuaPostDataView, {orderBy: viewOrderBy(MECMUA_MINE_ORDERING)}),
 	// The subscribe-affordance state read (#2527) — whether the reader follows a given
 	// author. Resolved inline by the `mecmuaSubscription` query keyed on `CurrentUser`.
 	mecmuaSubscription: mecmuaSubscriptionReceiptDataView,
