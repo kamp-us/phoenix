@@ -21,8 +21,31 @@ export class MecmuaPostView extends FateDataView<MecmuaPostViewRow>()("MecmuaPos
 ) {}
 
 // Kernel view value for the fate `Root` map + cross-feature surfaces (as pano's
-// `postDataView`); no mecmua root is wired yet (#2496 lands storage + read-model only).
+// `postDataView`). The `mecmuaFeed` root (#2500) is a `list(mecmuaPostDataView, …)`.
 export const mecmuaPostDataView = MecmuaPostView.view;
+
+/**
+ * The subscribe/unsubscribe write receipt (#2500) — the minimal shape the
+ * `mecmua.subscribe` / `mecmua.unsubscribe` mutations return (the `NotificationMarkReceipt`
+ * idiom): `id` is the target author, `subscribed` the edge state AFTER the write. A
+ * synthetic view (no fetch path) — the mutation delivers it inline, never re-fetched.
+ */
+export type MecmuaSubscriptionReceiptViewRow = ViewRow<{
+	/** The target author id — the receipt's identity. */
+	id: string;
+	/** The edge state after the write: true ⇒ subscribed, false ⇒ unsubscribed. */
+	subscribed: boolean;
+}>;
+
+export class MecmuaSubscriptionReceiptView extends FateDataView<MecmuaSubscriptionReceiptViewRow>()(
+	"MecmuaSubscriptionReceipt",
+)({
+	id: true,
+	subscribed: true,
+} satisfies {[K in keyof MecmuaSubscriptionReceiptViewRow]: true}) {}
+
+export const mecmuaSubscriptionReceiptDataView = MecmuaSubscriptionReceiptView.view;
+export type MecmuaSubscriptionReceipt = WorkerEntity<typeof MecmuaSubscriptionReceiptView>;
 
 // `createdAt`/`updatedAt`/`publishedAt` ride the standard timestamp correction (wire
 // `string` / `string | null` → `Date` / `Date | null`); `StringToDate` preserves the

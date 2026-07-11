@@ -11,6 +11,7 @@
 import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {
+	MECMUA_FEED,
 	MECMUA_PUBLIC_READ,
 	MECMUA_WRITE,
 	PANO_BASE_FEED,
@@ -265,6 +266,37 @@ export const MECMUA_WRITE_FLAG = {
  */
 export const mecmuaWriteFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("mecmua_write", {appId, ...MECMUA_WRITE_FLAG});
+
+/**
+ * The mecmua subscribed-author feed dark-ship flag config (#2500, epic #2467). The
+ * SINGLE seam the feed surface gates behind — the `mecmuaFeed` list root (empty when
+ * off), the `mecmua.subscribe` / `mecmua.unsubscribe` mutations, and the `/mecmua` feed
+ * page. Default-OFF so the whole feed path reaches production dark; flipping it on is the
+ * human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `MECMUA_WRITE_FLAG`).
+ *
+ * Per-flag metadata (`.patterns/feature-flags-schema-lifecycle.md`):
+ *   - owner:           mecmua (the long-form feed surface)
+ *   - originating:     #2500 (epic: mecmua v1 post feature, #2467)
+ *   - removal trigger: once the mecmua feed is on at 100% and stable for one release,
+ *                      retire the flag and inline the feed root + page.
+ */
+export const MECMUA_FEED_FLAG = {
+	key: MECMUA_FEED,
+	description:
+		"mecmua subscribed-author feed (mecmuaFeed root + subscribe/unsubscribe + feed page) dark-ship (#2500, epic #2467). owner: mecmua. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (mirrors `mecmuaWriteFlag`).
+ */
+export const mecmuaFeedFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("mecmua_feed", {appId, ...MECMUA_FEED_FLAG});
 
 /**
  * The earned-authorship loop (çaylak→yazar) dark-ship flag config (#1204, epic

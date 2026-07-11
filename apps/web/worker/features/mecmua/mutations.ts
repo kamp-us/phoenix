@@ -20,7 +20,7 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {MECMUA_WRITE} from "../../../src/flags/keys.ts";
+import {MECMUA_FEED, MECMUA_WRITE} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {RequiresLevel} from "../kunye/errors.ts";
@@ -28,8 +28,8 @@ import {MecmuaDisabled, MecmuaPostNotFound, MecmuaTitleRequired} from "./errors.
 import {Mecmua} from "./Mecmua.ts";
 import {PublishMecmua, requirePublishMecmua} from "./PublishMecmua.ts";
 import type {MecmuaPostRow} from "./post-fields.ts";
-import type {MecmuaPost} from "./views.ts";
-import {MecmuaPostView} from "./views.ts";
+import type {MecmuaPost, MecmuaSubscriptionReceipt} from "./views.ts";
+import {MecmuaPostView, MecmuaSubscriptionReceiptView} from "./views.ts";
 
 /** Is the mecmua write path on for this request? Safe-default `false` (ships dark). */
 const mecmuaOn = Effect.gen(function* () {
@@ -37,8 +37,28 @@ const mecmuaOn = Effect.gen(function* () {
 	return yield* flags.getBoolean(MECMUA_WRITE, false).pipe(provideRequestFlags);
 });
 
+/** Is the mecmua feed (subscribe/unsubscribe) on for this request? Safe-default `false`. */
+const feedOn = Effect.gen(function* () {
+	const flags = yield* Flags;
+	return yield* flags.getBoolean(MECMUA_FEED, false).pipe(provideRequestFlags);
+});
+
 /** Stamp the wire `__typename` onto a service row — the one mecmua write-path shaper. */
 const toMecmuaPost = (r: MecmuaPostRow): MecmuaPost => ({__typename: "MecmuaPost", ...r});
+
+/** The subscribe/unsubscribe receipt shaper — the target author + the post-write edge state. */
+const toSubscriptionReceipt = (
+	authorId: string,
+	subscribed: boolean,
+): MecmuaSubscriptionReceipt => ({
+	__typename: "MecmuaSubscriptionReceipt",
+	id: authorId,
+	subscribed,
+});
+
+const SubscriptionInput = Schema.Struct({
+	authorId: Schema.String,
+});
 
 const SaveDraftInput = Schema.Struct({
 	title: Schema.optional(Schema.NullOr(Schema.String)),
@@ -100,6 +120,34 @@ export const mutations = {
 				...(input.slug != null ? {slug: input.slug} : {}),
 			});
 			return toMecmuaPost(row);
+		}),
+	),
+	"mecmua.subscribe": Fate.mutation(
+		{
+			input: SubscriptionInput,
+			type: MecmuaSubscriptionReceiptView,
+			error: Schema.Union([Unauthorized, MecmuaDisabled]),
+		},
+		Effect.fn("mecmua.subscribe")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			if (!(yield* feedOn)) return yield* new MecmuaDisabled({message: "mecmua şu an kapalı"});
+			const mecmua = yield* Mecmua;
+			yield* mecmua.subscribe({subscriberId: user.id, authorId: input.authorId});
+			return toSubscriptionReceipt(input.authorId, true);
+		}),
+	),
+	"mecmua.unsubscribe": Fate.mutation(
+		{
+			input: SubscriptionInput,
+			type: MecmuaSubscriptionReceiptView,
+			error: Schema.Union([Unauthorized, MecmuaDisabled]),
+		},
+		Effect.fn("mecmua.unsubscribe")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			if (!(yield* feedOn)) return yield* new MecmuaDisabled({message: "mecmua şu an kapalı"});
+			const mecmua = yield* Mecmua;
+			yield* mecmua.unsubscribe({subscriberId: user.id, authorId: input.authorId});
+			return toSubscriptionReceipt(input.authorId, false);
 		}),
 	),
 };

@@ -37,6 +37,7 @@ import {FunnelPage} from "./pages/FunnelPage";
 import {LabComposerPage} from "./pages/LabComposerPage";
 import {LandingPage} from "./pages/LandingPage";
 import {MecmuaEditorPage} from "./pages/MecmuaEditorPage";
+import {MecmuaFeedPage} from "./pages/MecmuaFeedPage";
 import {MecmuaIndexPage} from "./pages/MecmuaIndexPage";
 import {MecmuaPostPage} from "./pages/MecmuaPostPage";
 import {NotFoundPage} from "./pages/NotFoundPage";
@@ -310,10 +311,12 @@ export function App() {
 						<Route path="/pano/kaydedilenler" element={<Navigate to={SAVED_HREF} replace />} />
 						<Route path="/pano/:id" element={<PanoPostDetail />} />
 						{/* mecmua — each page self-gates on its flag (off ⇒ 404), so these routes
-						    are dark by default: the index (#2512) + reader (#2498) on
-						    mecmua-public-read, the authoring page (#2499) on mecmua-write. The two
-						    static paths out-rank the `/mecmua/:slug` reader below them. */}
+						    are dark by default: the public index (#2512) + reader (#2498) on
+						    mecmua-public-read, the subscribed-author feed (#2500) on mecmua-feed, the
+						    authoring page (#2499) on mecmua-write. The three static paths out-rank
+						    the `/mecmua/:slug` reader below them. */}
 						<Route path="/mecmua" element={<MecmuaIndexPage />} />
+						<Route path="/mecmua/akis" element={<MecmuaFeedPage />} />
 						<Route path="/mecmua/yaz" element={<MecmuaEditorPage />} />
 						<Route path="/mecmua/:slug" element={<MecmuaPostPage />} />
 						<Route path="/sozluk" element={<SozlukHome />} />

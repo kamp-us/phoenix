@@ -46,6 +46,7 @@ import {
 	Flagship,
 	funnelReadoutFlag,
 	karmaGatesFlag,
+	mecmuaFeedFlag,
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
 	modQueueFlag,
@@ -141,6 +142,10 @@ export default Alchemy.Stack(
 		// The mecmua public-read dark-ship flag, default-off (#2498, epic #2467) — the
 		// single seam the anon GET route + reader page gate behind until a human release.
 		yield* mecmuaPublicReadFlag(flagship.appId);
+		// The mecmua subscribed-author feed dark-ship flag, default-off (#2500, epic #2467) —
+		// the single seam the mecmuaFeed root + subscribe/unsubscribe + feed page gate behind
+		// until a human release.
+		yield* mecmuaFeedFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
