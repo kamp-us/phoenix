@@ -45,7 +45,6 @@ import {
 	PostBodyTooLong,
 	PostDeleteFailed,
 	PostNotFound,
-	ReactionsDisabled,
 	TagInvalid,
 	TagsRequired,
 	TitleRequired,
@@ -99,7 +98,6 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	[UnauthorizedPostMutation, "UNAUTHORIZED"],
 	[UnauthorizedCommentMutation, "UNAUTHORIZED"],
 	[DraftsDisabled, "DRAFTS_DISABLED"],
-	[ReactionsDisabled, "REACTIONS_DISABLED"],
 	// sozluk
 	[BodyRequired, "BODY_REQUIRED"],
 	[BodyTooLong, "BODY_TOO_LONG"],
@@ -165,7 +163,6 @@ const ROUND_TRIP_CLASSES = [
 	ParentCommentNotFound,
 	PostDeleteFailed,
 	DraftsDisabled,
-	ReactionsDisabled,
 	BodyRequired,
 	UsernameInvalidFormat,
 	UsernameTooShort,

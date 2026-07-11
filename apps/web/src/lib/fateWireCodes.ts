@@ -64,9 +64,6 @@ export const FATE_WIRE_CODES = [
 	// Pano taslak (draft-save) is gated on the `pano-draft-save` flag; the server
 	// raises this when a draft mutation runs with the flag off (#746).
 	"DRAFTS_DISABLED",
-	// Reactions (emoji tepki) are gated on the `phoenix-reactions` flag; the server
-	// raises this when a react mutation runs with the flag off (#1863, epic #1840).
-	"REACTIONS_DISABLED",
 	"PARENT_NOT_FOUND",
 	"INVALID_FORMAT",
 	"TOO_SHORT",
