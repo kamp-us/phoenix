@@ -16,6 +16,7 @@
  * `_auth-signup-readiness.unit.test.ts` #1720) now that their logic is one primitive.
  */
 
+import * as Effect from "effect/Effect";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {
 	awaitEdgeReady,
@@ -26,6 +27,7 @@ import {
 } from "./_edge-ready.ts";
 import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
 import {harness} from "./_harness.ts";
+import {awaitAuthRouteReady} from "./_integration.ts";
 
 // A tiny budget so the tests drive the readiness logic in milliseconds, not the real 60s.
 const BUDGET = {deadlineMs: 120, pollMs: 5} as const;
@@ -140,6 +142,51 @@ describe("awaitEdgeReady — the shared cold-start readiness primitive (ADR 0127
 		expect(res.status).toBe(401);
 		// Fast-fail: the terminal worker JSON 4xx was ready on the FIRST attempt, never re-polled.
 		expect(send).toHaveBeenCalledTimes(1);
+	});
+});
+
+// The shared bootstrap gates the run-scoped stage on the AUTH-provisioning route being past the CF
+// edge placeholder before releasing the URL — edge propagation is per-route, so `/api/health` can
+// ripen while `/api/auth/sign-up/email` still 404s and reds all 53 forked suites (#2416). This pins
+// that gate probes the auth route (POST) and rides ONLY the placeholder-404, not a real answer.
+describe("awaitAuthRouteReady — the bootstrap auth-route propagation gate (#2416)", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("probes POST /api/auth/sign-up/email and resolves on the first real (non-placeholder) response", async () => {
+		// Typed impl params so `mock.calls` infers `[string, RequestInit?]` — assert the probed
+		// route + method off the recorded call without a type assertion.
+		const fetchMock = vi.fn(
+			async (_input: string, _init?: RequestInit) =>
+				new Response(JSON.stringify({code: "INVALID_EMAIL"}), {status: 400}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		await Effect.runPromise(awaitAuthRouteReady("https://stage.example.workers.dev"));
+
+		// One call: a real worker 400 (the empty-body probe answer) is READY at once under
+		// `() => true` — a genuine auth 4xx is never swallowed into the readiness budget (invariant 2).
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const [input, init] = fetchMock.mock.calls[0]!;
+		expect(input).toBe("https://stage.example.workers.dev/api/auth/sign-up/email");
+		expect(init?.method).toBe("POST");
+	});
+
+	it("rides out a cold-edge placeholder-404 on the auth route until it propagates, then resolves", async () => {
+		let call = 0;
+		const fetchMock = vi.fn(async () => {
+			call += 1;
+			// The auth route is not propagated on the first open (CF HTML placeholder 404 → edgeFetch
+			// throws the typed error the gate rides), then serves a structured 4xx (route propagated).
+			if (call === 1)
+				return new Response("<!DOCTYPE html>There is nothing here yet", {status: 404});
+			return new Response(JSON.stringify({code: "INVALID_EMAIL"}), {status: 400});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(
+			Effect.runPromise(awaitAuthRouteReady("https://stage.example.workers.dev")),
+		).resolves.toBeUndefined();
+		expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
 	});
 });
 
