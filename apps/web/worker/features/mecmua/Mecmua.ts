@@ -20,11 +20,22 @@
  */
 
 import {id} from "@usirin/forge";
-import {and, eq} from "drizzle-orm";
+import {and, eq, inArray} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import {
+	emptyKeysetPage,
+	forwardPage,
+	type KeysetPage,
+	keysetAfter,
+	resolveCursor,
+} from "../../db/keyset.ts";
+import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import {MecmuaPostNotFound, MecmuaTitleRequired} from "./errors.ts";
+import {selectMecmuaFeed} from "./feed-selection.ts";
+import {anonymousMecmuaViewer, mecmuaPostVisibleWhere} from "./MecmuaPostVisibility.ts";
+import {MECMUA_FEED_ORDERING} from "./ordering.ts";
 import {type MecmuaPostRow, toMecmuaPostRow} from "./post-fields.ts";
 
 export interface SaveMecmuaDraftInput {
@@ -42,6 +53,28 @@ export interface PublishMecmuaInput {
 	authorId: string;
 }
 
+/** One reader→author subscription edge (#2500). */
+export interface MecmuaSubscriptionInput {
+	/** The reader who follows. */
+	subscriberId: string;
+	/** The author followed. */
+	authorId: string;
+}
+
+/** The subscribed-author feed page request — `subscriberId` + forward keyset window. */
+export interface MecmuaFeedInput {
+	subscriberId: string;
+	first?: number;
+	after?: string | null;
+}
+
+/** A forward page of the subscribed-author feed — plain `MecmuaPostRow`s, keyset-ordered. */
+export type MecmuaFeedPage = KeysetPage<MecmuaPostRow>;
+
+/** The feed page size default + clamp bound (mirrors the pano feed clamp). */
+const FEED_DEFAULT_FIRST = 20;
+const FEED_MAX_FIRST = 100;
+
 export class Mecmua extends Context.Service<
 	Mecmua,
 	{
@@ -49,6 +82,25 @@ export class Mecmua extends Context.Service<
 		readonly publish: (
 			input: PublishMecmuaInput,
 		) => Effect.Effect<MecmuaPostRow, MecmuaPostNotFound | MecmuaTitleRequired>;
+
+		/** Follow an author (#2500). Idempotent — a re-subscribe is a no-op, never a dup row. */
+		readonly subscribe: (input: MecmuaSubscriptionInput) => Effect.Effect<void>;
+
+		/** Unfollow an author (#2500). A miss is a no-op. */
+		readonly unsubscribe: (input: MecmuaSubscriptionInput) => Effect.Effect<void>;
+
+		/** The author ids a reader is subscribed to — the feed's author-selection edge read. */
+		readonly listSubscribedAuthorIds: (
+			subscriberId: string,
+		) => Effect.Effect<ReadonlyArray<string>>;
+
+		/**
+		 * The subscribed-author time feed (#2500): a forward keyset page of PUBLISHED
+		 * mecmua posts from the reader's subscribed authors, ordered `publishedAt desc, id
+		 * desc` (newest-first). Drafts never appear (the `MecmuaPostVisibility` published
+		 * mask); a reader with no subscriptions gets an empty page.
+		 */
+		readonly listFeedConnection: (input: MecmuaFeedInput) => Effect.Effect<MecmuaFeedPage>;
 	}
 >()("mecmua/Mecmua") {}
 
@@ -103,6 +155,111 @@ export const MecmuaLive = Layer.effect(Mecmua)(
 			return toMecmuaPostRow({...existing, publishedAt, updatedAt: now});
 		});
 
-		return {saveDraft, publish};
+		const subscribe = Effect.fn("Mecmua.subscribe")(function* (input: MecmuaSubscriptionInput) {
+			// Idempotent: the (subscriber, author) primary key makes a re-subscribe a no-op
+			// rather than a duplicate-key failure — one follow edge, at most.
+			yield* run((db) =>
+				db
+					.insert(schema.mecmuaSubscription)
+					.values({
+						subscriberId: input.subscriberId,
+						authorId: input.authorId,
+						createdAt: new Date(),
+					})
+					.onConflictDoNothing(),
+			);
+		});
+
+		const unsubscribe = Effect.fn("Mecmua.unsubscribe")(function* (input: MecmuaSubscriptionInput) {
+			yield* run((db) =>
+				db
+					.delete(schema.mecmuaSubscription)
+					.where(
+						and(
+							eq(schema.mecmuaSubscription.subscriberId, input.subscriberId),
+							eq(schema.mecmuaSubscription.authorId, input.authorId),
+						),
+					),
+			);
+		});
+
+		const listSubscribedAuthorIds = Effect.fn("Mecmua.listSubscribedAuthorIds")(function* (
+			subscriberId: string,
+		) {
+			const rows = yield* run((db) =>
+				db
+					.select({authorId: schema.mecmuaSubscription.authorId})
+					.from(schema.mecmuaSubscription)
+					.where(eq(schema.mecmuaSubscription.subscriberId, subscriberId)),
+			);
+			return rows.map((r) => r.authorId);
+		});
+
+		const listFeedConnection = Effect.fn("Mecmua.listFeedConnection")(function* (
+			input: MecmuaFeedInput,
+		) {
+			const first = Math.max(1, Math.min(input.first ?? FEED_DEFAULT_FIRST, FEED_MAX_FIRST));
+			const after = input.after ?? null;
+
+			const authorIds = yield* listSubscribedAuthorIds(input.subscriberId);
+			// No subscriptions ⇒ no feed. Short-circuit before any post read (and avoid an
+			// empty `IN ()`), returning the shared empty page.
+			if (authorIds.length === 0) return emptyKeysetPage satisfies MecmuaFeedPage;
+
+			// The published mask (drafts excluded for everyone, author included) reused from
+			// `MecmuaPostVisibility` against the anonymous viewer — a feed is a reading surface.
+			const publishedWhere = mecmuaPostVisibleWhere(
+				{publishedAt: schema.mecmuaPost.publishedAt, authorId: schema.mecmuaPost.authorId},
+				anonymousMecmuaViewer,
+			);
+			const baseWhere = and(inArray(schema.mecmuaPost.authorId, authorIds), publishedWhere);
+
+			// Resolve the `after` cursor to its `publishedAt` anchor, gated by the SAME
+			// published mask so a cursor naming a now-draft/absent row misses → empty page.
+			const resolvedRow = after
+				? ((yield* run((db) =>
+						db
+							.select({publishedAt: schema.mecmuaPost.publishedAt})
+							.from(schema.mecmuaPost)
+							.where(and(eq(schema.mecmuaPost.id, after), publishedWhere))
+							.get(),
+					)) ?? null)
+				: null;
+			const cursor = resolveCursor(after, resolvedRow);
+			if (cursor.kind === "miss") return emptyKeysetPage satisfies MecmuaFeedPage;
+			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
+
+			// Predicate + `orderBy` both derive from `MECMUA_FEED_ORDERING`; the opaque `id`
+			// cursor value is the `after` string (the anchor row carries only `publishedAt`).
+			const cursorPredicate = keysetAfter(
+				keysetKeys(MECMUA_FEED_ORDERING, (field) =>
+					field === "id" ? after : (cursorRow?.publishedAt ?? null),
+				),
+			);
+
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.mecmuaPost)
+					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
+					.orderBy(...orderByColumns(MECMUA_FEED_ORDERING))
+					.limit(first + 1),
+			);
+
+			// The published-mask + ordering are enforced authoritatively in JS here (the SQL
+			// above mirrors them for an index-friendly pre-filter), so the feed's two ACs hold
+			// on the served path, not only in the query planner — see `feed-selection.ts`.
+			const selected = selectMecmuaFeed(fetched.map(toMecmuaPostRow), new Set(authorIds));
+			return forwardPage(selected, first, (r) => r.id) satisfies MecmuaFeedPage;
+		});
+
+		return {
+			saveDraft,
+			publish,
+			subscribe,
+			unsubscribe,
+			listSubscribedAuthorIds,
+			listFeedConnection,
+		};
 	}),
 );

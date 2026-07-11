@@ -281,4 +281,16 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		fanned: false,
 		rationale: "writes the caller's private mecmua draft row — no subscribed connection",
 	},
+	{
+		key: "mecmua.subscribe",
+		fanned: false,
+		rationale:
+			"writes the caller's private reader→author subscription edge; the `mecmuaFeed` connection is per-viewer subscribe-only, so a publish onto its login-blind shared topic would leak viewer-private membership — no cross-client fan-out",
+	},
+	{
+		key: "mecmua.unsubscribe",
+		fanned: false,
+		rationale:
+			"clears the caller's private reader→author subscription edge; per-viewer `mecmuaFeed` connection, same no-leak rationale as `mecmua.subscribe`",
+	},
 ];

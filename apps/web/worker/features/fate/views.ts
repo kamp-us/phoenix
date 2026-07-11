@@ -30,8 +30,8 @@ export {
 } from "../divan/views.ts";
 export type {FunnelSummary} from "../funnel/views.ts";
 export {funnelSummaryDataView} from "../funnel/views.ts";
-export type {MecmuaPost} from "../mecmua/views.ts";
-export {mecmuaPostDataView} from "../mecmua/views.ts";
+export type {MecmuaPost, MecmuaSubscriptionReceipt} from "../mecmua/views.ts";
+export {mecmuaPostDataView, mecmuaSubscriptionReceiptDataView} from "../mecmua/views.ts";
 export type {Comment, Post, PostOverlay, Tag} from "../pano/views.ts";
 export {
 	commentDataView,

@@ -92,6 +92,16 @@ export const PANO_BASE_FEED = "pano-base-feed";
 export const MECMUA_PUBLIC_READ = "mecmua-public-read";
 
 /**
+ * mecmua subscribed-author feed dark-ship flag (#2500, epic #2467). The SINGLE seam
+ * the feed surface gates behind — the `mecmuaFeed` list root (empty when off), the
+ * `mecmua.subscribe` / `mecmua.unsubscribe` mutations, AND the `/mecmua` feed page
+ * (self-404). Default-off so the whole feed path ships dark until a human flips it at
+ * release (ADR 0083). Its own `mecmua-` key, scoped to the feed — the read (#2498) and
+ * write (#2497) paths ship behind their own seams.
+ */
+export const MECMUA_FEED = "mecmua-feed";
+
+/**
  * Earned-authorship loop (çaylak→yazar) dark-ship flag (#1204, epic #1202). The
  * single seam every authorship-loop surface gates behind: cross-cutting
  * (`phoenix`) because the loop touches sözlük/pano/pasaport, default-off so the

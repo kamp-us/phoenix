@@ -522,3 +522,29 @@ export const mecmuaPost = sqliteTable(
 		index("mecmua_post_author_created").on(t.authorId, sql`${t.createdAt} DESC`),
 	],
 );
+
+/**
+ * The mecmua subscribed-author edge (#2500, epic #2467) — the reader→author
+ * follow relation the subscribed-author time feed reads to select authors. One row
+ * per (subscriber, author) pair: `subscriber_id` follows `author_id`. Deliberately
+ * MINIMAL (v1) — no display name, no notification prefs, no named-publication scope;
+ * just the edge the feed keysets over. A dedicated table (not the generic
+ * `relation_tuple`, which has no runtime write path) so the feed join is a plain
+ * index read and the subscribe/unsubscribe writes are ordinary D1-direct mutations.
+ * Worker-private, so it lives here and not the shared `@kampus/db-schema` leaf.
+ */
+export const mecmuaSubscription = sqliteTable(
+	"mecmua_subscription",
+	{
+		authorId: text("author_id").notNull(),
+		subscriberId: text("subscriber_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		// The edge identity — one subscription per (subscriber, author); a re-subscribe is
+		// an idempotent no-op, not a duplicate row.
+		primaryKey({columns: [t.subscriberId, t.authorId]}),
+		// WHERE subscriber_id = ? — the feed's "which authors does this reader follow" read.
+		index("mecmua_subscription_subscriber").on(t.subscriberId, sql`${t.createdAt} DESC`),
+	],
+);
