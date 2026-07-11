@@ -50,7 +50,9 @@ answerable question of fact — wayfinder **surfaces the fork and stops**: it pr
 options and their trade-offs on the map and hands the choice to the human, rather than picking
 one on its own authority. This is the deliberate human-in-the-loop seam the whole ideation
 layer is built to preserve (the same product-driven-decision boundary the pipeline honors
-elsewhere): wayfinder does the legwork that *frames* a decision, never the deciding.
+elsewhere): wayfinder does the legwork that *frames* a decision, never the deciding. The routing
+mechanics — how a fork is framed for the founder, what the map records, and how the agent blocks
+on the answer — are the [founder-decision-fork seam](#the-founder-decision-fork-seam--routing-the-fork-to-the-founder).
 
 ## What wayfinder is not
 
@@ -109,8 +111,9 @@ Research / Grilling / Prototype (decisions and unknowns), never Task (deliverabl
 autonomous rows file `type:investigation` tickets WORK mode clears on its own; the Grilling row
 files a `type:decision` ticket flagged a **founder-decision-fork**, which WORK mode *surfaces and
 stops on* rather than resolving — the fork-routing mechanics themselves live in the
-founder-decision-fork seam (out of scope here). CHART's job for a fork is only to *recognize* the
-unknown as a founder call, file it as `type:decision`, and mark it a fork on the map. The
+[founder-decision-fork seam](#the-founder-decision-fork-seam--routing-the-fork-to-the-founder)
+below. CHART's job for a fork is only to *recognize* the unknown as a founder call, file it as
+`type:decision`, and mark it a fork on the map. The
 **Task** row is deliberately not a frontier ticket: it is the deliverable side of the
 plan-don't-do line, so it enters the pipeline only via emission, never as fog.
 
@@ -257,9 +260,79 @@ WORK clears investigation fog autonomously, but it **never auto-resolves a found
 — the one preserved human seam (see [Two modes, one preserved human seam](#two-modes-one-preserved-human-seam)
 for the *why*). When the ticket WORK would pick is a fork, it does **not** hand it to a subagent
 and does **not** pick an option: it leaves the fork on `## Open frontier`, surfaces that the map is
-awaiting a founder call, and stops. The mechanics of *routing* a fork to the founder — how the
-choice is presented and consumed — are the founder-decision-fork seam (#2424), out of scope here;
-WORK's obligation is only to **recognize the fork and refuse to resolve it**.
+awaiting a founder call, and stops. The mechanics of *routing* a fork to the founder — framing the
+decision-request, recording the awaiting-founder state, and blocking on the founder's answer —
+are the [founder-decision-fork seam](#the-founder-decision-fork-seam--routing-the-fork-to-the-founder)
+below, which this step calls into; WORK's obligation here is only to **recognize the fork and
+refuse to resolve it**, then hand off to that routing contract.
+
+## The founder-decision-fork seam — routing the fork to the founder
+
+This is the **one preserved human seam** of the whole ideation layer, and this section is its
+**routing contract** — the mechanics WORK mode's
+[founder-decision-fork seam](#the-founder-decision-fork-seam--surfaced-never-resolved-by-work)
+calls into once it has recognized the ticket it would pick as a fork. wayfinder automates the
+ideation layer end to end **except here**: a founder-decision-fork — a product/strategy/§CP choice
+that is the founder's to make, not an answerable question of fact — is **never** resolved by the
+agent. The agent **frames** it; the founder **decides** it. Two properties are asserted and held
+load-bearing: **no second human gate is added anywhere in wayfinder** (this is the *only* one), and
+**this seam is not a scaffold to be automated away later** — it is the telos constraint the
+ideation layer exists to preserve, the same product-driven-decision boundary the execution
+pipeline's §CP control point honors (ADR
+[0078](https://github.com/kamp-us/phoenix/blob/main/.decisions/0078-product-driven-decisions-by-default.md)).
+
+### Route — frame the fork as a sharp decision-request addressed to the founder
+
+A fork already lives on the map as a `type:decision` sub-issue — CHART files it that way (the
+Grilling row of the
+[translation table](#the-ticket-type-translation-table--reuse-existing-types-invent-no-new-machinery)),
+reusing the pipeline's existing `type:decision` type, inventing no new label. Routing it to the
+founder is the **framing legwork** — the work that *frames* a decision without *making* it:
+
+1. **Make the `type:decision` sub-issue decision-ready.** Its body must carry an explicit
+   **decision-request** addressed to the founder: the one sharp question, the concrete **options**,
+   and each option's **trade-offs** — the legwork that lets the founder decide in a single read
+   rather than re-derive the analysis. The agent supplies everything *except the choice*.
+2. **Never voice the founder.** The agent lays out the options and their trade-offs; it does
+   **not** pre-pick a default, phrase a recommendation *as* the decision, or write the answer "the
+   founder would probably give." A fork carrying an agent-supplied choice is the exact failure this
+   seam exists to prevent — the agent's authority ends at the frame.
+
+### Record — the fork stays on the frontier, marked awaiting the founder
+
+Routing a fork touches the map's `## Open frontier` only, never `## Decisions-so-far`:
+
+- The fork's line **stays on `## Open frontier`**, marked `(founder-decision-fork — awaiting
+  founder)` and referencing its `type:decision` sub-issue — the map-shape contract's fork-marking
+  ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), §The `wayfinder:map` issue
+  shape).
+- It **does not graduate.** The lockstep invariant is that a ticket leaves `## Open frontier` only
+  when its answer lands in `## Decisions-so-far`; a routed fork has **no answer yet**, so nothing is
+  written to `## Decisions-so-far` and the fork is never moved to `## Graduated fog` at routing
+  time. The agent has decided nothing, so the map records no decision.
+
+### Block — the map waits on the founder; WORK never steps in
+
+Once a fork is routed, the agent **blocks** on the founder's answer:
+
+- A WORK run **skips** an awaiting-founder fork and takes the next investigation ticket instead
+  (WORK's [seam step](#the-founder-decision-fork-seam--surfaced-never-resolved-by-work)) — the fork
+  is simply not agent-resolvable.
+- If **every** remaining frontier ticket is a fork awaiting the founder, the map is **blocked on
+  the human**: there is nothing for WORK to resolve, so it surfaces that the map awaits a founder
+  call and stops. This block is the seam **working, not a stall** — never route around it by having
+  the agent pick an option to "unblock" the map.
+
+### Consume — the founder's answer graduates the fork, the founder's voice as the answer
+
+The founder answers by recording their choice on the `type:decision` sub-issue — their call, in
+their own voice. That answer **unblocks** the fork: a later WORK run then treats it exactly as it
+treats any resolved frontier ticket — it appends the founder's decision into `## Decisions-so-far`
+(`— from #N`) and graduates the fork into `## Graduated fog`, in the same lockstep the
+[WORK walk](#the-walk-1) holds for an investigation, and spawns any new frontier the decision
+reveals. The **only** difference from an investigation is *whose answer it is*: the deciding voice
+was the founder's, never the agent's. wayfinder did the framing legwork, the founder made the call,
+and the map records it and moves on.
 
 ## Handoff — the map graduates into the pipeline
 
@@ -271,9 +344,9 @@ is concrete enough to enter the execution pipeline: its accreted decisions becom
 front of that funnel, not a replacement for it.
 
 > **Build status.** The construct — the `wayfinder:map` label, the map-issue shape contract, and
-> the two-mode + one-seam description — and both mode walks, **CHART** and **WORK**, are in place
-> (#2421, #2422, #2423). Still to land: the **founder-decision-fork** routing mechanics (#2424,
-> which WORK surfaces-and-stops for but does not itself resolve), the **emission** path into the
-> pipeline (#2425), and the **CLI tool** (#2426, the `wayfinder-map` reader/writer WORK's map-state
-> ops go through). Each fills in against the map-shape contract linked above; do not let a mode
-> drift from that single source.
+> the two-mode + one-seam description — both mode walks, **CHART** and **WORK**, and the
+> **founder-decision-fork** routing contract WORK surfaces-and-stops for are in place (#2421,
+> #2422, #2423, #2424). Still to land: the **emission** path into the pipeline (#2425) and the
+> **CLI tool** (#2426, the `wayfinder-map` reader/writer WORK's map-state ops go through). Each
+> fills in against the map-shape contract linked above; do not let a mode drift from that single
+> source.
