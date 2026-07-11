@@ -48,7 +48,7 @@ install by git commit SHA, and every commit is the new "version".
   contract. The absence is the correct state.
 - Because `plugin.json` is strict JSON (no comments), the rationale cannot live inline in the
   manifest. The builder-facing note lives in
-  [`claude-plugins/kampus-pipeline/skills/README.md`](../claude-plugins/kampus-pipeline/skills/README.md),
+  [`claude-plugins/kampus-pipeline/README.md`](../claude-plugins/kampus-pipeline/README.md),
   which points at this ADR for the why + history; this ADR is the canonical decision record.
 
 ## Consequences
