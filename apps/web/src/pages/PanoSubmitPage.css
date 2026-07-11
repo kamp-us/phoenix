@@ -115,7 +115,7 @@
 .kp-pano-submit__field-label {
 	display: inline-flex;
 	align-items: baseline;
-	gap: 6px;
+	gap: var(--s-1);
 }
 .kp-pano-submit__required {
 	font: var(--t-meta);
