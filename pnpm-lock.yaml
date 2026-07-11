@@ -238,6 +238,9 @@ importers:
       '@kampus/authz':
         specifier: workspace:*
         version: link:../../packages/authz
+      '@kampus/composer':
+        specifier: workspace:*
+        version: link:../../packages/composer
       '@kampus/db-schema':
         specifier: workspace:*
         version: link:../../packages/db-schema
@@ -256,21 +259,6 @@ importers:
       '@sentry/react':
         specifier: 'catalog:'
         version: 10.62.0(react@19.2.6)
-      '@tiptap/core':
-        specifier: 'catalog:'
-        version: 3.27.3(@tiptap/pm@3.27.3)
-      '@tiptap/markdown':
-        specifier: 'catalog:'
-        version: 3.27.3(@tiptap/core@3.27.3(@tiptap/pm@3.27.3))(@tiptap/pm@3.27.3)
-      '@tiptap/pm':
-        specifier: 'catalog:'
-        version: 3.27.3
-      '@tiptap/react':
-        specifier: 'catalog:'
-        version: 3.27.3(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.3(@tiptap/pm@3.27.3))(@tiptap/pm@3.27.3)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@tiptap/starter-kit':
-        specifier: 'catalog:'
-        version: 3.27.3
       '@usirin/forge':
         specifier: 'catalog:'
         version: 0.2.0
@@ -716,6 +704,55 @@ importers:
       '@typescript/native-preview':
         specifier: 'catalog:'
         version: 7.0.0-dev.20260509.2
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/composer:
+    dependencies:
+      '@tiptap/core':
+        specifier: 'catalog:'
+        version: 3.27.3(@tiptap/pm@3.27.3)
+      '@tiptap/markdown':
+        specifier: 'catalog:'
+        version: 3.27.3(@tiptap/core@3.27.3(@tiptap/pm@3.27.3))(@tiptap/pm@3.27.3)
+      '@tiptap/pm':
+        specifier: 'catalog:'
+        version: 3.27.3
+      '@tiptap/react':
+        specifier: 'catalog:'
+        version: 3.27.3(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.3(@tiptap/pm@3.27.3))(@tiptap/pm@3.27.3)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@tiptap/starter-kit':
+        specifier: 'catalog:'
+        version: 3.27.3
+    devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.5.2
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.2
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.14)
+      '@typescript/native-preview':
+        specifier: 'catalog:'
+        version: 7.0.0-dev.20260509.2
+      jsdom:
+        specifier: 'catalog:'
+        version: 26.1.0
+      react:
+        specifier: 'catalog:'
+        version: 19.2.6
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.6(react@19.2.6)
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

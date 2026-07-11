@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"composite": true,
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		// This package ships React components (<Composer>) + a hook, so it needs the
+		// JSX transform and the DOM lib the tiptap EditorView is typed against — the
+		// same app-side surface as apps/web/tsconfig.app.json.
+		"jsx": "react-jsx",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"types": ["node"]
+	},
+	"include": ["src", "vitest.config.ts"]
+}
