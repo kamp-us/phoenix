@@ -17,13 +17,11 @@ decides whether a PR is §CP (human-merge-gated by a `@kamp-us/control-plane` ap
 `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` (line 1359, §CP) and copied
 verbatim into the gate consumers; `ship-it` Step 0 resolves it from `origin/main` at run time
 and classifies against it (`ship-it/SKILL.md` §Step 0, lines 190–266). Its
-`claude-plugins/kampus-pipeline/skills/` alternative is:
-
-```
-^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/
-```
-
-— it matches only a **gate subdir** (note the trailing `/`), plus the exact file
+`claude-plugins/kampus-pipeline/skills/` alternative — the gate-subdir clause of the canonical
+`CONTROL_PLANE_RE` (defined once in
+`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`, §CP; read it there rather
+than trust a copy inlined here, which re-drifts every time the gate-subdir set changes) — matches
+only a **gate subdir** (note the trailing `/`), plus the exact file
 `^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$`. A **bare `.sh` sitting
 directly under `skills/`** matches neither alternative.
 
