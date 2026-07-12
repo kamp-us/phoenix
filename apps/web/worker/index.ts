@@ -35,6 +35,7 @@ import {Flagship as FlagshipResource} from "./features/flagship/resources.ts";
 import {subscribeHotScoreDecay} from "./features/pano/hot-score-decay-cron.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
+import {subscribeSozlukReconcile} from "./features/sozluk/sozluk-reconcile-cron.ts";
 import {Events as TelemetryEvents} from "./features/telemetry/resources.ts";
 import {TelemetryClient} from "./features/telemetry/Telemetry.ts";
 import {makeAppLive} from "./http/app.ts";
@@ -276,6 +277,15 @@ export default Phoenix.make(
 		// Provided the built `fateLayer` so it resolves `Pano` at dispatch. `subscribe` only
 		// registers a listener (no async/timer work), so it is init-safe.
 		yield* subscribeHotScoreDecay(fateLayer);
+
+		// The sözlük backstop-reconciliation Cron Trigger (#2558): re-runs the recomputable
+		// cache refresh (term summary + FTS + sözlük stats) for every term on a 6-hourly
+		// schedule, so a term/stat left stale by a SWALLOWED last-write refresh
+		// (`swallowRefresh`, #2012) is eventually re-converged without waiting for a next
+		// user write. Rides the SAME `CronEventSourceLive` seam as the decay above (a second
+		// `Cron(<expr>)` binding, dispatched at runtime by `controller.cron`, so the two
+		// coexist); the built `fateLayer` resolves `Sozluk` at dispatch. Init-safe.
+		yield* subscribeSozlukReconcile(fateLayer);
 
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace resolved
 		// once above, wrapped as worker-level services. One namespace plays both
