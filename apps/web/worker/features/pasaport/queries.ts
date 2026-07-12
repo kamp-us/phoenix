@@ -11,6 +11,7 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_USER_BAN} from "../../../src/flags/keys.ts";
+import {UserId} from "../../lib/ids.ts";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
@@ -41,7 +42,7 @@ const userBanOn = Effect.gen(function* () {
 });
 
 const BanStateArgs = Schema.Struct({
-	userId: Schema.String,
+	userId: UserId,
 });
 
 // Nested connection args are scoped under the field path
@@ -179,7 +180,7 @@ export const queries = {
 // The post-gate ban-state read — runnable only with an `Admin` `Grant` in R
 // (`requireAdmin` provides it); `yield* Admin` requires the proof, so reading an
 // account's ban-state without a discharged grant is a compile error (ADR 0107).
-const banStateGated = Effect.fn("user.banStateGated")(function* (userId: string) {
+const banStateGated = Effect.fn("user.banStateGated")(function* (userId: UserId) {
 	yield* Admin;
 	const pasaport = yield* Pasaport;
 	return toBanState(userId, yield* pasaport.getBanState(userId));
