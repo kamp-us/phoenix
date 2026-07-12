@@ -7,7 +7,7 @@
  * in `.patterns/feature-services.md`). See `.patterns/fate-effect-sources.md`.
  */
 import {CurrentUser, Fate} from "@kampus/fate-effect";
-import {PANO_BASE_FEED} from "../../../src/flags/keys.ts";
+import {PANO_BASE_FEED, PHOENIX_PANO_STAMP_WAVE} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
@@ -60,7 +60,17 @@ export const commentSource = Fate.source(
 		byIds: function* (ids) {
 			const pano = yield* Pano;
 			const sandboxViewer = yield* currentSandboxViewer;
-			return yield* pano.getCommentsByIds(ids, {viewerId: sandboxViewer.viewerId, sandboxViewer});
+			// The read-path collapse is contained behind its default-off flag (#2710): off ⇒
+			// the stamps run serially (today), on ⇒ one concurrent wave. Same wire output.
+			const flags = yield* Flags;
+			const parallelStamps = yield* flags
+				.getBoolean(PHOENIX_PANO_STAMP_WAVE, false)
+				.pipe(provideRequestFlags);
+			return yield* pano.getCommentsByIds(ids, {
+				viewerId: sandboxViewer.viewerId,
+				sandboxViewer,
+				parallelStamps,
+			});
 		},
 	},
 );
