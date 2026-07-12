@@ -19,6 +19,7 @@ import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {MecmuaSubnavLayout} from "./components/mecmua/MecmuaSubnavLayout";
+import {EmailDeliveryNoticeMount} from "./components/membrane/EmailDeliveryNoticeMount";
 import {actorLabel} from "./components/moderation/actor-identity";
 import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
@@ -310,10 +311,17 @@ function LayoutContent() {
 		return () => setChips?.(null);
 	}, [chips, setChips]);
 
-	return needsBootstrap && sessionUser ? (
-		<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
-	) : (
-		<Outlet />
+	return (
+		<>
+			{/* Membrane notice for a signed-in user whose email is failing (epic #2687, #2693) —
+			    dark behind its flag, inert until the worker exposes the failing signal on `me`. */}
+			<EmailDeliveryNoticeMount me={me} />
+			{needsBootstrap && sessionUser ? (
+				<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
+			) : (
+				<Outlet />
+			)}
+		</>
 	);
 }
 

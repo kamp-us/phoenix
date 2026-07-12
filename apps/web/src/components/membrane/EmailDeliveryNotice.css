@@ -1,0 +1,50 @@
+.kp-email-notice {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-3);
+	padding: var(--s-3);
+	margin-bottom: var(--s-3);
+	border: 1px solid var(--border);
+	/* Warning-tinted left edge carries the alert weight; the copy carries the meaning,
+	   so a color-blind reader is not gated on the hue (four-pillars contrast pillar). */
+	border-left: 2px solid var(--warning);
+	border-radius: var(--r-md);
+	background: var(--surface-raised);
+	box-shadow: var(--shadow-raised);
+}
+
+.kp-email-notice__body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	min-width: 0;
+}
+
+.kp-email-notice__title {
+	margin: 0;
+	font: var(--t-body);
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.kp-email-notice__text {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-email-notice__actions {
+	display: flex;
+	align-items: center;
+	gap: var(--s-2);
+}
+
+/* ≥36px hit area for the recovery CTA (four-pillars tap-target floor). --s-8 is 40px at
+   the compact base and larger in every denser ramp, so the floor holds across densities. */
+.kp-email-notice__cta {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--s-8);
+}

@@ -231,6 +231,14 @@ export const PHOENIX_USER_BAN = "phoenix-user-ban";
 export const PHOENIX_EMAIL_DELIVERY_ADMIN = "phoenix-email-delivery-admin";
 
 /**
+ * Failing-email membrane notice dark-ship flag (#2693, email-bounce epic #2687). The seam the
+ * user-facing notice gates behind — with it off the membrane mount renders nothing, so the
+ * surface ships dark until a human flips it at release (ADR 0083). Default-off, its own
+ * `phoenix-` key: the notice is a cross-product membrane element, not scoped to one product.
+ */
+export const PHOENIX_EMAIL_DELIVERY_NOTICE = "phoenix-email-delivery-notice";
+
+/**
  * Nav-IA (per-product Subnav zones) dark-ship flag (#2598, epic #2596). The SINGLE
  * cross-cutting seam the whole nav-IA surface gates behind — the per-product nested
  * layout routes + Subnav CTA slot substrate (#2598) and every per-product delta
