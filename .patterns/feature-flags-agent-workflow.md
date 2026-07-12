@@ -24,6 +24,35 @@ Substrate decision: ADR
 `apps/web/worker/features/flagship/` (the `Flags` service) and `apps/web/src/flags/` (`useFlag` /
 `FlagGate`). When this doc and the source disagree, the source wins — fix the doc.
 
+## Checking a flag's live prod serving state
+
+To answer "is this feature actually live in production right now?" read the flag's **effective
+serving state** with the `cf-utils` CLI ([`../packages/cf-utils/README.md`](../packages/cf-utils/README.md)):
+
+```bash
+node packages/cf-utils/src/bin.ts flag get <key> --env prod
+```
+
+Two traps travel with this read — both are correctness footguns, not cosmetics:
+
+- **`serves:` is the load-bearing field, not `enabled:`.** `enabled` only means the flag is
+  *registered in Flagship*; `serves` is *what prod actually serves*. A flag can read `enabled: on`
+  yet `serves: off (default)` — registered but dark, because no rule/no-match split serves it. Read
+  `enabled` as "is it live?" and you get the wrong answer; the `serves:` line is the truth. (The
+  serves-vs-enabled computation is `computeEffectiveServing` / `renderEffectiveServing` in
+  [`../packages/cf-utils/src/flag.ts`](../packages/cf-utils/src/flag.ts) — the #1726 fix so a flag
+  can't lie about its `defaultVariation`.)
+- **The prod env is named `prod`, not `production`.** `--env production` errors with
+  `FlagEnvNotFound`.
+
+Worked example (live read, 2026-07-12): `phoenix-nav-ia` reads `enabled: on` but `serves: off
+(default)` — registered, but dark in prod. This is the read behind the "verify flag state, not
+crew framing" discipline: check `serves:` before asserting a feature is live.
+
+> **Scope with `--env prod`.** An unscoped `flag get` enumerates every env and noisily
+> `WARN`-skips inaccessible ephemeral `it-*` / `pr-*` preview apps — expected, not an error.
+> Passing `--env prod` scopes the read to production and drops the noise.
+
 ## Two orthogonal gates: runtime flag vs merge-time boundary
 
 The flag is the **runtime** containment gate; the **path-based control-plane boundary** (ADRs

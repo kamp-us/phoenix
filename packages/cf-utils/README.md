@@ -131,6 +131,11 @@ export CLOUDFLARE_ACCOUNT_ID=<the account to enumerate>
 # List every Flagship flag × env (key, env, enabled, EFFECTIVE serving) as a table:
 node src/bin.ts flag list
 
+# Read one flag's live prod serving state — `serves:` (NOT `enabled:`) answers "is it live?".
+# The prod env is named `prod` (`--env production` → FlagEnvNotFound). See the agent-facing note in
+# ../../.patterns/feature-flags-agent-workflow.md ("Checking a flag's live prod serving state").
+node src/bin.ts flag get <key> --env prod
+
 # Dry-run a full release — print the current → target diff, write nothing:
 node src/bin.ts flag set authorship-loop on --env prod
 
