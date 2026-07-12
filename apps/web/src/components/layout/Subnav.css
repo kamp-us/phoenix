@@ -111,13 +111,13 @@
 	color: var(--text-faint);
 }
 
+/* The crumb slot folds pano's active site-filter in as TRANSIENT state paint (only
+   rendered while a filter is applied) — so it carries no resting fill/pill (the
+   containment law forbids resting chrome; inventory #2585). Plain inline text + the
+   `× filtreyi kaldır` clear; the accent-faint pill was the dead resting-chrome path. */
 .kp-subnav__crumb {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	padding: 2px var(--s-2);
-	background: var(--accent-faint);
-	border-radius: var(--r-sm);
 	color: var(--text-primary);
 	font: var(--t-meta);
 }
