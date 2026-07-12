@@ -16,7 +16,7 @@ import type {Effect, Layer} from "effect";
 import {describe, expectTypeOf, it} from "vitest";
 import type {Drizzle, DrizzleDb, Stmt} from "../../db/Drizzle.ts";
 import type {Telemetry} from "../telemetry/Telemetry.ts";
-import type {KarmaBump, Vote, VoteLive, VoterStanding} from "./Vote.ts";
+import type {KarmaBump, KarmaBumpInput, Vote, VoteLive, VoterStanding} from "./Vote.ts";
 
 describe("Vote's public surface is feature-clean (type pins)", () => {
 	it("VoteLive requires the db seam + Vote's own KarmaBump + VoterStanding + the shared Telemetry seam", () => {
@@ -32,12 +32,14 @@ describe("Vote's public surface is feature-clean (type pins)", () => {
 		>();
 	});
 
-	it("the KarmaBump contract names only db primitives (DrizzleDb in, Stmt out)", () => {
-		// Nothing pasaport-shaped is nameable through the contract. Also künye's
-		// swap point — a DO-backed bump replaces the provided value in
-		// `fate/layers.ts`, never Vote's internals.
+	it("the KarmaBump contract names only db primitives (DrizzleDb + KarmaBumpInput in, Stmt pair out)", () => {
+		// Nothing pasaport-shaped is nameable through the contract: `KarmaBumpInput` names only
+		// db-level primitives (`TargetKind`/`KarmaEventReason` from `db/`, not a pasaport type),
+		// and the output is the bump + its ledger row as a `[Stmt, Stmt]` pair (#2592). Also
+		// künye's swap point — a DO-backed bump replaces the provided value in `fate/layers.ts`,
+		// never Vote's internals.
 		expectTypeOf<typeof KarmaBump.Service>().toEqualTypeOf<{
-			readonly statement: (db: DrizzleDb, userId: string, delta: number) => Stmt;
+			readonly statements: (db: DrizzleDb, input: KarmaBumpInput) => readonly [Stmt, Stmt];
 		}>();
 	});
 

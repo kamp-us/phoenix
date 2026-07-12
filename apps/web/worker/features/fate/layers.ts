@@ -35,7 +35,7 @@ import {MecmuaLive} from "../mecmua/Mecmua.ts";
 import {BookmarkLive} from "../pano/Bookmark.ts";
 import {PanoFeedCache} from "../pano/feed-cache.ts";
 import {PanoLive} from "../pano/Pano.ts";
-import {karmaBumpStatement} from "../pasaport/karma.ts";
+import {karmaBumpStatements} from "../pasaport/karma.ts";
 import {makePasaportLive} from "../pasaport/Pasaport.ts";
 import {ReactionLive} from "../reaction/Reaction.ts";
 import {ReportLive} from "../report/Report.ts";
@@ -124,7 +124,7 @@ const PasaportFromTag = Layer.unwrap(
  * arrow exists only at this seam, never inside Vote; künye later swaps this for a
  * DO-backed bump without touching Vote.
  */
-const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statement: karmaBumpStatement});
+const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statements: karmaBumpStatements});
 
 /**
  * Künye's implementation of the `VoterStanding` contract Vote owns (dependency
