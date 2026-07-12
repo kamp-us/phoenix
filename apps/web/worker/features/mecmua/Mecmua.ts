@@ -32,14 +32,19 @@ import {
 	resolveCursor,
 } from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import type {UserId} from "../../lib/ids.ts";
 import {MecmuaPostNotFound, MecmuaTitleRequired} from "./errors.ts";
 import {selectMecmuaFeed} from "./feed-selection.ts";
+import type {MecmuaPostId} from "./ids.ts";
 import {anonymousMecmuaViewer, mecmuaPostVisibleWhere} from "./MecmuaPostVisibility.ts";
 import {MECMUA_FEED_ORDERING, MECMUA_MINE_ORDERING} from "./ordering.ts";
 import {type MecmuaPostRow, toMecmuaPostRow} from "./post-fields.ts";
 
+// The write-path input ids carry their brands (MecmuaPostId / UserId) so a
+// transposed `{id, authorId}` is a compile error at the resolver call site — the
+// brands are type-only, so the DB where/values still see plain strings (#2700).
 export interface SaveMecmuaDraftInput {
-	authorId: string;
+	authorId: UserId;
 	/** Optional on a draft — a half-filled form persists (empty ⇒ stored as ""). */
 	title?: string | null;
 	body?: string | null;
@@ -48,17 +53,17 @@ export interface SaveMecmuaDraftInput {
 
 export interface PublishMecmuaInput {
 	/** The draft to publish. */
-	id: string;
+	id: MecmuaPostId;
 	/** The caller — the write is scoped to their OWN draft. */
-	authorId: string;
+	authorId: UserId;
 }
 
 /** One reader→author subscription edge (#2500). */
 export interface MecmuaSubscriptionInput {
 	/** The reader who follows. */
-	subscriberId: string;
+	subscriberId: UserId;
 	/** The author followed. */
-	authorId: string;
+	authorId: UserId;
 }
 
 /** The subscribed-author feed page request — `subscriberId` + forward keyset window. */
@@ -102,7 +107,7 @@ export class Mecmua extends Context.Service<
 		) => Effect.Effect<ReadonlyArray<string>>;
 
 		/** Whether `subscriberId` follows `authorId` — the subscribe-affordance state read (#2527). */
-		readonly isSubscribed: (subscriberId: string, authorId: string) => Effect.Effect<boolean>;
+		readonly isSubscribed: (subscriberId: UserId, authorId: UserId) => Effect.Effect<boolean>;
 
 		/**
 		 * The subscribed-author time feed (#2500): a forward keyset page of PUBLISHED

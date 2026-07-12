@@ -21,10 +21,12 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {MECMUA_FEED, MECMUA_WRITE} from "../../../src/flags/keys.ts";
+import {UserId} from "../../lib/ids.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {RequiresLevel} from "../kunye/errors.ts";
 import {MecmuaDisabled, MecmuaPostNotFound, MecmuaTitleRequired} from "./errors.ts";
+import {MecmuaPostId} from "./ids.ts";
 import {Mecmua} from "./Mecmua.ts";
 import {PublishMecmua, requirePublishMecmua} from "./PublishMecmua.ts";
 import type {MecmuaPostRow} from "./post-fields.ts";
@@ -48,7 +50,7 @@ const toMecmuaPost = (r: MecmuaPostRow): MecmuaPost => ({__typename: "MecmuaPost
 
 /** The subscribe/unsubscribe receipt shaper — the target author + the post-write edge state. */
 const toSubscriptionReceipt = (
-	authorId: string,
+	authorId: UserId,
 	subscribed: boolean,
 ): MecmuaSubscriptionReceipt => ({
 	__typename: "MecmuaSubscriptionReceipt",
@@ -56,8 +58,10 @@ const toSubscriptionReceipt = (
 	subscribed,
 });
 
+// Branded wire inputs (type-only, byte-identical decode): `authorId`/`id` arrive
+// tagged UserId / MecmuaPostId, so a transposed service call is a compile error (#2700).
 const SubscriptionInput = Schema.Struct({
-	authorId: Schema.String,
+	authorId: UserId,
 });
 
 const SaveDraftInput = Schema.Struct({
@@ -67,7 +71,7 @@ const SaveDraftInput = Schema.Struct({
 });
 
 const PublishInput = Schema.Struct({
-	id: Schema.String,
+	id: MecmuaPostId,
 });
 
 export const mutations = {
@@ -95,7 +99,7 @@ export const mutations = {
 				Effect.gen(function* () {
 					yield* PublishMecmua;
 					const mecmua = yield* Mecmua;
-					const row = yield* mecmua.publish({id: input.id, authorId: user.id});
+					const row = yield* mecmua.publish({id: input.id, authorId: UserId.make(user.id)});
 					return toMecmuaPost(row);
 				}),
 			);
@@ -114,7 +118,7 @@ export const mutations = {
 			}
 			const mecmua = yield* Mecmua;
 			const row = yield* mecmua.saveDraft({
-				authorId: user.id,
+				authorId: UserId.make(user.id),
 				...(input.title != null ? {title: input.title} : {}),
 				...(input.body != null ? {body: input.body} : {}),
 				...(input.slug != null ? {slug: input.slug} : {}),
@@ -132,7 +136,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			if (!(yield* feedOn)) return yield* new MecmuaDisabled({message: "mecmua şu an kapalı"});
 			const mecmua = yield* Mecmua;
-			yield* mecmua.subscribe({subscriberId: user.id, authorId: input.authorId});
+			yield* mecmua.subscribe({subscriberId: UserId.make(user.id), authorId: input.authorId});
 			return toSubscriptionReceipt(input.authorId, true);
 		}),
 	),
@@ -146,7 +150,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			if (!(yield* feedOn)) return yield* new MecmuaDisabled({message: "mecmua şu an kapalı"});
 			const mecmua = yield* Mecmua;
-			yield* mecmua.unsubscribe({subscriberId: user.id, authorId: input.authorId});
+			yield* mecmua.unsubscribe({subscriberId: UserId.make(user.id), authorId: input.authorId});
 			return toSubscriptionReceipt(input.authorId, false);
 		}),
 	),
