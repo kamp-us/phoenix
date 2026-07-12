@@ -1243,6 +1243,15 @@ native `APPROVE` path (which posts a review, not a comment `verdict post` can gu
 **same** gate as an explicit read-back assertion first — `verdict validate` — so a malformed
 marker fails loud **before** the APPROVE, never landing in a public review body.
 
+**MANDATE (hard invariant, not a suggestion):** the guarded path is the **only** permitted way to
+emit this verdict marker — `$VERDICT post` for the comment, or the `verdict validate` read-back
+before the native `APPROVE`. A bare `gh api …/comments` / `gh pr comment` hand-post of the marker
+that skips the guard is **FORBIDDEN** (it is the emit-side hole #2789 / #2816 / #2818 rode:
+hand-posting off the verdict lib means `emissionDefect` never runs). If a raw post is ever
+genuinely unavoidable, the body **MUST** first pass `pipeline-cli leak-guard scan-comment` (the
+#2823 pre-post net) before the post. This is the single-source rule in
+[gh-issue-intake-formats.md](../gh-issue-intake-formats.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
+
 ```bash
 # resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
 if [ -f packages/pipeline-cli/src/bin.ts ]; then

@@ -1152,6 +1152,42 @@ branches runs, call `verdict_post_verify "$PR" <gate> "$HEAD_SHA" || exit 1`. On
 between post and verify the head advanced *during* review — re-resolve the head, re-verify against it
 (the gate is stateless), and re-post; never loosen the match to paper over a moved head.
 
+### The guarded emit path is MANDATORY — never hand-post a verdict marker off the guard
+
+`verdict_post_verify` above is the *read-back*: it re-scans PR state **after** a post and fails loud
+on a marker that landed broken or leaking. But a read-back cannot police a post it never sees. An
+agent that **hand-posts** the verdict marker with a raw `gh api …/comments` or `gh pr comment` call
+bypasses the verdict lib entirely, so `emissionDefect` never fires — and, worse, the marker often
+never resolves through `verdict_post_verify`'s re-scan either, so nothing catches it. That is the
+**emit-side hole** the recurrences rode: #2789 (the whole body was an `@filepath`), #2816 / #2818 (a
+`/var/folders` mktemp path glued into the `@ <sha>` field) — each leaked because the marker was
+hand-posted off the verdict lib, not because the lib's guard was wrong. Code cannot force a hand-post
+through a guard the reviewer never invokes; the **emit path itself** must be mandated, not just
+described.
+
+So for **all four PR gates** — `review-code`, `review-doc`, `review-skill`, `review-design` — routing
+every verdict-marker post through the guarded path is a **hard invariant, not a suggestion**:
+
+- **MUST** post every verdict marker through `pipeline-cli verdict post` — the single marker-emit
+  choke point that runs `emissionDefect` (the body-wide machine-local-path scan added by #2823, plus
+  the 40-hex `@ <sha>` field guards, #2683) and **refuses fail-closed** on a leaking or malformed
+  body. For the native `APPROVE` review body (which `verdict post` cannot emit), run the **same** gate
+  as an explicit read-back assertion — `verdict validate` — **before** the `APPROVE`, so a
+  malformed/leaking marker fails loud rather than landing in a public review body.
+- **FORBIDDEN:** a bare `gh api …/comments` / `gh pr comment` hand-post of a verdict marker that skips
+  the guard. The guarded tool is the **only** sanctioned emit path; a free-form raw post is a bypass,
+  never an equivalent — a reviewer must not free-form the marker even when the body "looks clean."
+- **The one escape hatch, itself guarded:** if a raw post is genuinely unavoidable, the body **MUST**
+  first pass `pipeline-cli leak-guard scan-comment` (the standalone pre-post net #2823 added — reads
+  the body on stdin / `--body-file`, exits non-zero on a machine-local path) **before** the post. A
+  raw post whose body was never scanned is the forbidden case; a scanned one is the escape hatch.
+
+This is the **enforcement complement** to #2823: #2823 hardened the guard *code* (`emissionDefect`'s
+body-wide scan + the `leak-guard scan-comment` CLI); this mandate closes the emit-side hole by
+forbidding the reviewer from routing around it — the two together are what actually close #2796. Each
+review gate **references this rule as the single source** (it does not re-derive the *why* per skill).
+Per #2393 the guard stays generic path-shape patterns, never a named-path deny-list.
+
 ---
 
 ## 3. Progress-comment format

@@ -192,6 +192,12 @@ Given an epic number it fetches the `EpicLedger` via the `Github` capability, ru
 FAIL verdict and flips **nothing**. It returns a structured `GateVerdict`
 (`{_tag: "pass", flipped}` or `{_tag: "fail", defects, signature}`).
 
+**Guarded-emit scope note (the emit-side mandate, gh-issue-intake-formats.md).** Unlike the four
+PR gates, `review-plan` **never hand-posts** its verdict comment: `runGate` emits it deterministically
+through the `epic-ledger` action's `Github` capability, so there is no free-form `gh api …/comments` /
+`gh pr comment` marker post to route through the guard. That structural non-hand-post *is* the
+mandate for this gate — never bypass `runGate` to hand-post a `review-plan` verdict comment yourself.
+
 Invoke it through the package's CLI (the `bin.ts` entry, wired over `NodeRuntime.runMain` +
 `NodeServices.layer` — you run the binary, you don't re-implement the floor in prose). Which
 binary — the in-repo `packages/pipeline-cli/src/bin.ts epic-ledger` or the published
