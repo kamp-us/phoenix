@@ -89,3 +89,15 @@ export class BanReasonRequired extends Schema.TaggedErrorClass<BanReasonRequired
 	},
 	{[FateWireCode]: "BAN_REASON_REQUIRED"},
 ) {}
+
+// An admin `emailDelivery.mark` submitted without a reason. A manual failing-mark MUST
+// carry a reason (Child #2692 — the audit note is why the address was marked out-of-band),
+// so the server rejects a blank submit as the authoritative floor even though the admin UI
+// marks the field required. The `clear` carries no reason and has no such floor.
+export class EmailFailingReasonRequired extends Schema.TaggedErrorClass<EmailFailingReasonRequired>()(
+	"pasaport/EmailFailingReasonRequired",
+	{
+		message: Schema.String,
+	},
+	{[FateWireCode]: "EMAIL_FAILING_REASON_REQUIRED"},
+) {}

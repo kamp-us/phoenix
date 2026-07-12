@@ -218,6 +218,19 @@ export const PHOENIX_KARMA_GATES = "phoenix-karma-gates";
 export const PHOENIX_USER_BAN = "phoenix-user-ban";
 
 /**
+ * Admin email-delivery (failing-address) surface dark-ship flag (#2692, email-bounce
+ * epic #2687). The SINGLE seam the admin failing-address surface gates behind — the
+ * `emailDelivery.mark` / `emailDelivery.clear` admin mutations AND the
+ * `emailDelivery.failing` admin roll-up read all read this one key. Default-off so the
+ * whole admin path reaches production dark until a human flips it at release (ADR 0083):
+ * with it off the mutations/read fail the invisible `Denied` (like a non-admin call), so
+ * no manual failing-mark or roll-up leaks before release. Its OWN key, not the ban seam —
+ * the manual failing-address surface is a distinct admin capability with its own lifecycle
+ * (the `phoenix-user-ban` admin-surface precedent).
+ */
+export const PHOENIX_EMAIL_DELIVERY_ADMIN = "phoenix-email-delivery-admin";
+
+/**
  * Nav-IA (per-product Subnav zones) dark-ship flag (#2598, epic #2596). The SINGLE
  * cross-cutting seam the whole nav-IA surface gates behind — the per-product nested
  * layout routes + Subnav CTA slot substrate (#2598) and every per-product delta

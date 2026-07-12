@@ -85,6 +85,11 @@ export const FATE_WIRE_CODES = [
 	// server-authoritative floor the admin `user.banUser` mutation raises against a
 	// blank gerekçe, since a ban's audit record is meaningless without one.
 	"BAN_REASON_REQUIRED",
+	// A manual failing-address mark submitted without a reason
+	// (`pasaport/EmailFailingReasonRequired`, #2692) — the server-authoritative floor the
+	// admin `emailDelivery.mark` mutation raises against a blank note, since the audit
+	// record of why an address was marked failing out-of-band is meaningless without one.
+	"EMAIL_FAILING_REASON_REQUIRED",
 	// mecmua write path is gated on the `mecmua-write` flag; the server raises this
 	// when `mecmua.publish` / `mecmua.saveDraft` run with the flag off (#2497).
 	"MECMUA_DISABLED",

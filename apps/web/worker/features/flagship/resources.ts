@@ -23,6 +23,7 @@ import {
 	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
+	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_MOD_QUEUE,
@@ -796,6 +797,38 @@ export const USER_BAN_FLAG = {
  */
 export const userBanFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_user_ban", {appId, ...USER_BAN_FLAG});
+
+/**
+ * The admin email-delivery (failing-address) surface dark-ship flag config (#2692,
+ * email-bounce epic #2687). Default-OFF so the whole admin path reaches production dark:
+ * with it off the `emailDelivery.mark` / `emailDelivery.clear` mutations and the
+ * `emailDelivery.failing` roll-up read fail the invisible `Denied` (like a non-admin
+ * call), so no manual failing-mark or roll-up leaks. Flipping it on is the human release
+ * act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `USER_BAN_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           pasaport (the identity + email-delivery surface)
+ *   - originating:     #2692 (epic: email-bounce, #2687)
+ *   - removal trigger: once the admin failing-address surface graduates to on at 100%
+ *                      and stable for one release, retire the flag and inline the path.
+ */
+export const EMAIL_DELIVERY_ADMIN_FLAG = {
+	key: PHOENIX_EMAIL_DELIVERY_ADMIN,
+	description:
+		"admin failing-address mark/clear + roll-up dark-ship (#2692, epic #2687). owner: pasaport. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const emailDeliveryAdminFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_email_delivery_admin", {appId, ...EMAIL_DELIVERY_ADMIN_FLAG});
 
 /**
  * The mecmua public-read dark-ship flag config (#2498, epic #2467). The SINGLE seam

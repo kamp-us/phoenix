@@ -15,6 +15,8 @@ import {
 	AuthorshipStandingView,
 	BanStateView,
 	ContributionView,
+	EmailDeliveryStateView,
+	FailingAddressView,
 	ProfileView,
 	PromotionReceiptView,
 	UserView,
@@ -84,3 +86,16 @@ export const authorshipStandingSource = Fate.syntheticSource(AuthorshipStandingV
 // source-completeness accepts the view-reachable result type; mirrors
 // `promotionReceiptSource`.
 export const banStateSource = Fate.syntheticSource(BanStateView);
+
+// `EmailDeliveryState` has no by-id fetch path — it is produced ONLY past the
+// `requireAdmin` gate (epic #2687), by the `emailDelivery.mark` / `emailDelivery.clear`
+// mutation acks, never a public by-id load (a by-id source would be an ungated leak of an
+// address's delivery-state). Registered with ZERO capabilities so source-completeness
+// accepts the view-reachable result type; mirrors `banStateSource`.
+export const emailDeliveryStateSource = Fate.syntheticSource(EmailDeliveryStateView);
+
+// `FailingAddress` has no by-id fetch path — the roll-up rows are delivered INLINE by the
+// `emailDelivery.failing` list resolver (a private admin surface), never read by id.
+// Registered with ZERO capabilities so source-completeness accepts the view-reachable
+// result type; mirrors divan's list-item synthetic sources.
+export const failingAddressSource = Fate.syntheticSource(FailingAddressView);

@@ -310,6 +310,18 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		fanned: false,
 		rationale: "appends an audited unban event on the identity surface — no fanned content entity",
 	},
+	{
+		key: "emailDelivery.mark",
+		fanned: false,
+		rationale:
+			"appends a manual `fail` event to the append-only email-delivery log (an admin audit surface, epic #2687) — no Post/Comment/Definition in a subscribed content connection",
+	},
+	{
+		key: "emailDelivery.clear",
+		fanned: false,
+		rationale:
+			"appends a `clear` event to the email-delivery log — no fanned content entity (mirrors emailDelivery.mark)",
+	},
 
 	// mecmua — long-form posts (#2497, epic #2467). mecmua Post does NOT yet live in a
 	// subscribed `/fate/live` connection (no mecmua root is wired), so neither write fans;

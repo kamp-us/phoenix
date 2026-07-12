@@ -57,6 +57,7 @@ import {
 import {
 	BanReasonRequired,
 	DisplayNameEmpty,
+	EmailFailingReasonRequired,
 	UserNotFound,
 	UsernameAlreadySet,
 	UsernameInvalidFormat,
@@ -121,6 +122,9 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	// pasaport ban-reason floor (#970) — reachable from fateConfig via `user.banUser`'s
 	// error union. Message-only, so also a round-trip representative below.
 	[BanReasonRequired, "BAN_REASON_REQUIRED"],
+	// pasaport email-failing-mark floor (#2692) — reachable via `emailDelivery.mark`'s
+	// error union. Message-only, so also a round-trip representative below.
+	[EmailFailingReasonRequired, "EMAIL_FAILING_REASON_REQUIRED"],
 	// künye moderation gate + the package-side gate the SPA already decodes for writes
 	[Denied, "UNAUTHORIZED"],
 	[Unauthorized, "UNAUTHORIZED"],
@@ -178,6 +182,7 @@ const ROUND_TRIP_CLASSES = [
 	UsernameTooLong,
 	DisplayNameEmpty,
 	BanReasonRequired,
+	EmailFailingReasonRequired,
 	Denied,
 	Unauthorized,
 ] as const satisfies ReadonlyArray<new (props: {message: string}) => unknown>;

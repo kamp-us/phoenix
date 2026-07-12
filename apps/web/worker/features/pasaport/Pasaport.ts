@@ -24,6 +24,15 @@ import {
 import {postVisibleWhere} from "../pano/PostVisibility.ts";
 import {type BanEvent, type BanState, NOT_BANNED, resolveBanState} from "./ban.ts";
 import {
+	DELIVERABLE,
+	type EmailDeliveryEvent,
+	type EmailDeliveryEventRow,
+	type EmailDeliveryState,
+	type FailingAddress,
+	resolveEmailDeliveryState,
+	selectFailingAddresses,
+} from "./email-delivery.ts";
+import {
 	DisplayNameEmpty,
 	UserNotFound,
 	UsernameAlreadySet,
@@ -173,6 +182,15 @@ export interface ContributionConnection {
 	totalCount: number;
 }
 
+// A per-target email-delivery read/write result: the server-resolved `address` (the
+// projection's stable key + the ack's normalization key) paired with its projected
+// `state`. Returned by the mark/clear/read methods so the resolver keys its ack on the
+// address without a second user lookup (epic #2687).
+export interface EmailDeliveryResult {
+	readonly address: string;
+	readonly state: EmailDeliveryState;
+}
+
 export class Pasaport extends Context.Service<
 	Pasaport,
 	{
@@ -297,6 +315,40 @@ export class Pasaport extends Context.Service<
 			userId: string;
 			actorId: string;
 		}) => Effect.Effect<BanState, UserNotFound>;
+
+		// The target account's current email-delivery state, projected from the latest
+		// `email_delivery_event` row for its address (email-bounce epic #2687). A fresh
+		// read of the append-only log — the same projection the admin roll-up and the
+		// send-time capture feed, so "marked failing" and "reported failing" can't
+		// disagree. Returns the resolved `address` with the `state` so the ack keys on the
+		// server-resolved address. `UserNotFound` on an unknown target.
+		readonly getEmailDeliveryState: (
+			userId: string,
+		) => Effect.Effect<EmailDeliveryResult, UserNotFound>;
+
+		// Manually mark the target account's address as failing (Child #2692): append a
+		// `fail` event carrying the admin's reason, so an out-of-band bounce report an
+		// admin learns of shares the SAME log the send-time capture writes. Returns the
+		// resolved address + resulting (failing) state. `UserNotFound` on an unknown
+		// target. The AUTHORITY is discharged at the resolver (`requireAdmin`), never here.
+		readonly markEmailFailing: (input: {
+			userId: string;
+			reason: string;
+		}) => Effect.Effect<EmailDeliveryResult, UserNotFound>;
+
+		// Manually clear the target account's failing address (Child #2692): append a
+		// `clear` event, lifting the failing-state without mutating the `fail` row (full
+		// reversibility, as in unban). Returns the resolved address + resulting
+		// (deliverable) state. Idempotent — clearing a deliverable address appends a benign
+		// `clear` and still reads deliverable. `UserNotFound` on an unknown target.
+		readonly clearEmailFailing: (input: {
+			userId: string;
+		}) => Effect.Effect<EmailDeliveryResult, UserNotFound>;
+
+		// The admin failing-address roll-up (Child #2692): every address whose latest
+		// event projects to `failing`, newest-first. Read only past `requireAdmin`; the
+		// set is derived from the log, never a stored flag.
+		readonly listFailingAddresses: () => Effect.Effect<ReadonlyArray<FailingAddress>>;
 	}
 >()("@kampus/pasaport/Pasaport") {}
 
@@ -534,6 +586,60 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 							return resolveBanState(latest, new Date());
 						}),
 				);
+
+			// The address's current email-delivery state — a FRESH read of the latest
+			// `email_delivery_event` row projected by `resolveEmailDeliveryState` (epic
+			// #2687). Keyed by ADDRESS (the projection's stable key, index-backed by
+			// `email_delivery_event_address_created`), so the admin mark/clear ack, the
+			// per-target read, and the roll-up all resolve the same latest-event-wins truth.
+			const readEmailDeliveryState = (address: string): Effect.Effect<EmailDeliveryState> =>
+				run((db) =>
+					db
+						.select({
+							action: schema.emailDeliveryEvent.action,
+							reason: schema.emailDeliveryEvent.reason,
+							createdAt: schema.emailDeliveryEvent.createdAt,
+						})
+						.from(schema.emailDeliveryEvent)
+						.where(eq(schema.emailDeliveryEvent.address, address))
+						.orderBy(desc(schema.emailDeliveryEvent.createdAt), desc(schema.emailDeliveryEvent.id))
+						.limit(1)
+						.then((rows): EmailDeliveryState => {
+							const row = rows[0];
+							if (!row) return DELIVERABLE;
+							const latest: EmailDeliveryEvent = {
+								action: row.action,
+								reason: row.reason,
+								createdAt: row.createdAt ?? new Date(0),
+							};
+							return resolveEmailDeliveryState(latest, new Date());
+						}),
+				);
+
+			// Append one `email_delivery_event` for a target account's address, then read
+			// back its projected state. Rejects an unknown target up front so a mark/clear
+			// can't be recorded against a non-existent id (the audit log stays meaningful),
+			// and resolves the target's own `email` as the address the event is keyed by.
+			const appendEmailDeliveryEvent = (
+				userId: string,
+				action: EmailDeliveryEvent["action"],
+				reason: string | null,
+			): Effect.Effect<EmailDeliveryResult, UserNotFound> =>
+				Effect.gen(function* () {
+					const target = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
+					if (!target) return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
+					yield* run((db) =>
+						db.insert(schema.emailDeliveryEvent).values({
+							id: crypto.randomUUID(),
+							userId,
+							address: target.email,
+							action,
+							reason,
+							createdAt: new Date(),
+						}),
+					);
+					return {address: target.email, state: yield* readEmailDeliveryState(target.email)};
+				});
 
 			return {
 				validateSession: Effect.fn("Pasaport.validateSession")(function* (headers: Headers) {
@@ -1006,6 +1112,55 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						}),
 					);
 					return yield* readBanState(input.userId);
+				}),
+
+				getEmailDeliveryState: Effect.fn("Pasaport.getEmailDeliveryState")(function* (
+					userId: string,
+				) {
+					const target = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
+					if (!target) return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
+					return {address: target.email, state: yield* readEmailDeliveryState(target.email)};
+				}),
+
+				markEmailFailing: Effect.fn("Pasaport.markEmailFailing")(function* (input: {
+					userId: string;
+					reason: string;
+				}) {
+					return yield* appendEmailDeliveryEvent(input.userId, "fail", input.reason);
+				}),
+
+				clearEmailFailing: Effect.fn("Pasaport.clearEmailFailing")(function* (input: {
+					userId: string;
+				}) {
+					return yield* appendEmailDeliveryEvent(input.userId, "clear", null);
+				}),
+
+				listFailingAddresses: Effect.fn("Pasaport.listFailingAddresses")(function* () {
+					// The failure log is small (only send rejections + admin marks land here),
+					// so read it whole and reduce to latest-per-address in the pure projection
+					// (`selectFailingAddresses`) rather than a group-wise-latest SQL — one
+					// projection rule, unit-tested, shared with the per-address read.
+					const rows = yield* run((db) =>
+						db
+							.select({
+								id: schema.emailDeliveryEvent.id,
+								userId: schema.emailDeliveryEvent.userId,
+								address: schema.emailDeliveryEvent.address,
+								action: schema.emailDeliveryEvent.action,
+								reason: schema.emailDeliveryEvent.reason,
+								createdAt: schema.emailDeliveryEvent.createdAt,
+							})
+							.from(schema.emailDeliveryEvent),
+					);
+					const events: ReadonlyArray<EmailDeliveryEventRow> = rows.map((row) => ({
+						id: row.id,
+						userId: row.userId,
+						address: row.address,
+						action: row.action,
+						reason: row.reason,
+						createdAt: row.createdAt ?? new Date(0),
+					}));
+					return selectFailingAddresses(events, new Date());
 				}),
 			};
 		}),
