@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   check:
-    name: check every package.json dep is on catalog:/workspace:
+    name: "check every package.json dep is on catalog:/workspace:"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -33,5 +33,5 @@ jobs:
 
       # Exit 1 when any workspace package.json dep pins a hardcoded version (the report
       # is on stderr), or when zero manifests are in scope (fail-closed). See #2737.
-      - name: Check every package.json dep is on catalog:/workspace:
+      - name: "Check every package.json dep is on catalog:/workspace:"
         run: node packages/pipeline-cli/src/bin.ts catalog-guard check
