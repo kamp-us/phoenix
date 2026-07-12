@@ -1,0 +1,92 @@
+/* Email-delivery console module (#2732). Role tokens only; the controls carry the 36px
+   hit-area floor (design law pillar 4). */
+
+.kp-email-delivery {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.kp-email-delivery__form {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--s-2);
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	background: var(--surface-raised);
+}
+
+.kp-email-delivery__field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+}
+
+.kp-email-delivery__user-input,
+.kp-email-delivery__reason {
+	min-height: var(--tap-min);
+	padding: var(--s-1) var(--s-2);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text-primary);
+	font: var(--t-body-sm);
+}
+
+.kp-email-delivery__reason {
+	min-width: 16rem;
+	resize: vertical;
+}
+
+/* Design law pillar 4: the 36px minimum hit area, from the --tap-min floor token. */
+.kp-email-delivery__btn {
+	min-height: var(--tap-min);
+	min-width: var(--tap-min);
+}
+
+.kp-email-delivery__table {
+	width: 100%;
+	border-collapse: collapse;
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+}
+
+.kp-email-delivery__caption {
+	text-align: left;
+	color: var(--text-secondary);
+	font: var(--t-meta);
+	padding-bottom: var(--s-1);
+}
+
+.kp-email-delivery__table th,
+.kp-email-delivery__table td {
+	text-align: left;
+	padding: var(--s-1) var(--s-2);
+	border-bottom: 1px solid var(--border-faint);
+	vertical-align: top;
+}
+
+.kp-email-delivery__table th {
+	color: var(--text-muted);
+	font: var(--t-meta);
+	font-weight: 600;
+}
+
+.kp-email-delivery__address {
+	font-weight: 600;
+}
+
+.kp-email-delivery__empty,
+.kp-email-delivery__loading {
+	color: var(--text-muted);
+	font: var(--t-body-sm);
+}
+
+.kp-email-delivery__message {
+	color: var(--text-primary);
+	font: var(--t-body-sm);
+}
