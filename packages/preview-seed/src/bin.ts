@@ -23,10 +23,16 @@
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {makeD1Rest} from "@kampus/d1-rest";
-import {Config, Console, Effect, Layer, Option} from "effect";
+import {Config, Console, Effect, Layer, Option, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {seed} from "./seed.ts";
+
+/** A D1 REST call (seed over the query API) rejected — network/HTTP fault. */
+class D1RestError extends Schema.TaggedErrorClass<D1RestError>()(
+	"@kampus/preview-seed/D1RestError",
+	{cause: Schema.Defect()},
+) {}
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID to seed"),
@@ -50,7 +56,10 @@ const run = Command.make(
 			: yield* Config.string("CLOUDFLARE_ACCOUNT_ID");
 
 		const d1 = makeD1Rest({accountId: resolvedAccount, databaseId, layer: restLayer});
-		const report = yield* Effect.promise(() => seed(d1));
+		const report = yield* Effect.tryPromise({
+			try: () => seed(d1),
+			catch: (cause) => new D1RestError({cause}),
+		});
 
 		yield* Console.log(
 			`preview-seed: ok — wrote ${report.terms} term(s), ${report.definitions} definition(s), ${report.posts} post(s), ${report.termsFts} term-search + ${report.postsFts} post-search FTS row(s) to D1 ${databaseId} (idempotent upsert)`,

@@ -24,9 +24,15 @@
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {makeD1RestFromEnv} from "@kampus/d1-rest";
-import {Config, Console, Effect, Option} from "effect";
+import {Config, Console, Effect, Option, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {backfill} from "./backfill.ts";
+
+/** A D1 REST call (FTS backfill over the query API) rejected — network/HTTP fault. */
+class D1RestError extends Schema.TaggedErrorClass<D1RestError>()(
+	"@kampus/fts-backfill/D1RestError",
+	{cause: Schema.Defect()},
+) {}
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID to backfill"),
@@ -47,7 +53,10 @@ const run = Command.make(
 			: yield* Config.string("CLOUDFLARE_ACCOUNT_ID");
 
 		const d1 = makeD1RestFromEnv({accountId: resolvedAccount, databaseId});
-		const report = yield* Effect.promise(() => backfill(d1));
+		const report = yield* Effect.tryPromise({
+			try: () => backfill(d1),
+			catch: (cause) => new D1RestError({cause}),
+		});
 
 		yield* Console.log(
 			`fts-backfill: ok — re-indexed ${report.terms} term(s), ${report.posts} post(s) into term_search/post_search on D1 ${databaseId} (idempotent upsert)`,

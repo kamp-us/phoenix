@@ -17,12 +17,23 @@
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {makeD1Rest} from "@kampus/d1-rest";
-import {Config, Console, Data, Effect, Layer, Option} from "effect";
+import {Config, Console, Effect, Layer, Option, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {assignAdmin, listAdmins, makeGrantDb, revokeAdmin, type Selector} from "./grant.ts";
 
-class SelectorRequired extends Data.TaggedError("SelectorRequired")<{message: string}> {}
+class SelectorRequired extends Schema.TaggedErrorClass<SelectorRequired>()(
+	"@kampus/admin-grant/SelectorRequired",
+	{message: Schema.String},
+) {}
+
+/** A D1 REST call (grant/revoke/list over the query API) rejected — network/HTTP fault. */
+class D1RestError extends Schema.TaggedErrorClass<D1RestError>()(
+	"@kampus/admin-grant/D1RestError",
+	{
+		cause: Schema.Defect(),
+	},
+) {}
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID"),
@@ -71,7 +82,10 @@ const grant = Command.make(
 		const account = yield* resolveAccount(accountId);
 		const selector = yield* resolveSelector(username, userId);
 		const db = makeDb(account, databaseId);
-		const res = yield* Effect.promise(() => assignAdmin(db, selector));
+		const res = yield* Effect.tryPromise({
+			try: () => assignAdmin(db, selector),
+			catch: (cause) => new D1RestError({cause}),
+		});
 		yield* res.subject === null
 			? Console.log(`admin-grant: no user matched ${selector.by}=${selector.value} (no change)`)
 			: res.inserted > 0
@@ -98,7 +112,10 @@ const revoke = Command.make(
 		const account = yield* resolveAccount(accountId);
 		const selector = yield* resolveSelector(username, userId);
 		const db = makeDb(account, databaseId);
-		const res = yield* Effect.promise(() => revokeAdmin(db, selector));
+		const res = yield* Effect.tryPromise({
+			try: () => revokeAdmin(db, selector),
+			catch: (cause) => new D1RestError({cause}),
+		});
 		yield* res.subject === null
 			? Console.log(`admin-grant: no user matched ${selector.by}=${selector.value} (no change)`)
 			: res.removed > 0
@@ -117,7 +134,10 @@ const list = Command.make(
 	Effect.fn(function* ({databaseId, accountId}) {
 		const account = yield* resolveAccount(accountId);
 		const db = makeDb(account, databaseId);
-		const admins = yield* Effect.promise(() => listAdmins(db));
+		const admins = yield* Effect.tryPromise({
+			try: () => listAdmins(db),
+			catch: (cause) => new D1RestError({cause}),
+		});
 		yield* Console.log(
 			admins.length === 0
 				? "admin-grant: no admins"
