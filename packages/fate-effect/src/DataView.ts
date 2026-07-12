@@ -200,3 +200,62 @@ export type WorkerEntity<
 	DateKeys extends keyof WireResult<View> = never,
 	Override extends Record<string, unknown> = Record<never, never>,
 > = Entity<View, Omit<DateCorrection<View, DateKeys>, keyof Override> & Override>;
+
+// --- Loud-fail guard for the silent field-map symbol slip (#2808) -----------
+//
+// The forcing failure this guards: fate recovers a view's literal field map off
+// the `dataViewFieldsKey` symbol property `KernelDataView` stamps. When that
+// symbol identity slips (a cross-project dedup drift, or a stale TS incremental
+// artifact holding a mid-landing resolution — the #2805 transient), fate's
+// `ViewFieldConfig` misses its symbol branch and falls to the wide `V['fields']`
+// fallback (`Record<string, DataField>`). The entity loses every literal key, and
+// the ONLY downstream signal is a `never` at the far-away `view<>()` call — a
+// silent degrade indistinguishable from a genuine under-typing defect, which cost
+// a full investigation cycle (#2805). These types turn that silent `never` into a
+// named failure legible at the entity-definition site.
+
+/**
+ * The literal field map fate recovers for a view — mirrors the kernel's own
+ * `ViewFieldConfig<V> = V extends {[dataViewFieldsKey]: infer F} ? F : V['fields']`,
+ * spelled with this module's portable `DataViewFieldsKey`. A healthy recovery
+ * hits the symbol branch and yields the literal `{id: true, …}` config; a slip
+ * misses it and falls to the wide `V['fields']`.
+ */
+type RecoveredFieldConfig<View extends {readonly view: DataViewOf<AnyRow>}> = View["view"] extends {
+	readonly [K in DataViewFieldsKey]: infer Fields;
+}
+	? Fields
+	: View["view"]["fields"];
+
+/**
+ * True iff the field-map recovery kept its literal keys. The discriminator is
+ * `string extends keyof …`: a healthy recovery's keys are a literal field-name
+ * union (`"id" | "slug" | …`), of which `string` is never a subtype ⇒ `false`
+ * branch ⇒ `true`; the degraded `V['fields']` fallback keys as the wide `string`,
+ * so `string extends string` ⇒ the slip is caught. This is the whole
+ * false-positive-safety argument: a literal field-name union can never satisfy
+ * `string extends K` (no field is authored under an index signature), so the
+ * guard fires ONLY on the wide-fallback slip, never on a healthy entity.
+ */
+export type FieldMapResolved<View extends {readonly view: DataViewOf<AnyRow>}> =
+	string extends keyof RecoveredFieldConfig<View> ? false : true;
+
+/**
+ * The named, `@ts-expect-error`-detectable failure a degraded view resolves to —
+ * carrying its own name (and the view's type name) instead of a bare `never`, so
+ * a reader sees *why* at the definition site (see #2808).
+ */
+export interface FieldMapRecoveryFailed<Name extends string = string> {
+	readonly __fateError: "field-map symbol recovery slipped to the wide `V['fields']` fallback — `keyof ViewFieldConfig` degraded from the literal field union to `string`; every downstream `view<>()` selection would collapse to `never` (see #2808)";
+	readonly viewName: Name;
+}
+
+/**
+ * Loud-fail assertion: resolves to `View` on a healthy field-map recovery, or the
+ * named `FieldMapRecoveryFailed<name>` brand when the recovery slipped. Apply it at
+ * an entity/view definition site (`AssertFieldMapResolved<typeof XView>`) so a slip
+ * surfaces a legible, named error *there* rather than a distant `never` at `view<>()`.
+ */
+export type AssertFieldMapResolved<
+	View extends {readonly view: DataViewOf<AnyRow>; readonly typeName: string},
+> = FieldMapResolved<View> extends true ? View : FieldMapRecoveryFailed<View["typeName"]>;
