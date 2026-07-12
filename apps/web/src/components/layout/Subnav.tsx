@@ -19,6 +19,7 @@ export function Subnav({
 	onFilterChange,
 	links,
 	crumb,
+	input,
 	meta,
 	cta,
 }: {
@@ -29,6 +30,11 @@ export function Subnav({
 	onFilterChange?: (id: string) => void;
 	links?: SubnavLink[];
 	crumb?: {label: React.ReactNode; onClear?: () => void};
+	// The input slot (#2602): a product-scoped on-demand utility control — sözlük's
+	// go-to-or-create box (distinct from the topbar `ara`, #1669). Carries the input
+	// treatment itself; the slot only positions it (never the filter/CTA treatment,
+	// #2586 taxonomy / #2590 IA rule). Absent ⇒ nothing renders.
+	input?: React.ReactNode;
 	meta?: React.ReactNode;
 	// The primary-action slot (placement law #2587): a product's promoted verb (pano/yeni,
 	// mecmua yaz) renders here in the dedicated primary-action position. The passed node
@@ -72,6 +78,7 @@ export function Subnav({
 				</span>
 			) : null}
 			<span className="kp-subnav__spacer" />
+			{input ? <span className="kp-subnav__input-slot">{input}</span> : null}
 			{count ? <span className="kp-subnav__meta">{count}</span> : null}
 			{meta ? <span className="kp-subnav__meta">{meta}</span> : null}
 			{cta ? <span className="kp-subnav__cta">{cta}</span> : null}

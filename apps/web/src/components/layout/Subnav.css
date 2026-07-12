@@ -69,6 +69,48 @@
 	align-items: center;
 }
 
+/* Input slot (#2602) — a product-scoped on-demand utility box (sözlük go-to-or-create),
+   pinned after the spacer. The wrapper positions; the box treatment (sunken input, accent
+   focus) lives on `.kp-subnav__input` — an input affordance's own chrome, not a resting
+   filter/CTA fill (#2586 taxonomy / #2590 IA rule). Mirrors the masthead searchbar so the
+   flag-on box reads identically to today's flag-off one. */
+.kp-subnav__input-slot {
+	display: inline-flex;
+	align-items: center;
+}
+.kp-subnav__input {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 10px;
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	width: 280px;
+	max-width: 40vw;
+}
+.kp-subnav__input:focus-within {
+	border-color: var(--accent);
+}
+/* The accent `+` glyph marks it go-to-or-create, not search (#1669) — the topbar `ara`
+   keeps the muted magnifier. */
+.kp-subnav__input svg {
+	color: var(--accent);
+	flex-shrink: 0;
+}
+.kp-subnav__input input {
+	flex: 1;
+	background: transparent;
+	border: 0;
+	outline: none;
+	font: var(--t-body-sm);
+	min-width: 0;
+}
+.kp-subnav__input input::placeholder {
+	color: var(--text-faint);
+}
+
 .kp-subnav__crumb {
 	display: inline-flex;
 	align-items: center;
