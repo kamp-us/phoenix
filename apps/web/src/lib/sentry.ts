@@ -42,6 +42,25 @@ export function browserOptions(dsn: string): Sentry.BrowserOptions {
 	};
 }
 
+/**
+ * Feature-flag attribution on captured errors (#1821). A flag the session resolves becomes the
+ * Sentry tag `flag.<key>` with value `"on"`/`"off"`, so a single flag's on-path error rate is
+ * isolable for the dark→release→burn-in→graduate gate the flag lifecycle depends on (#1822
+ * consumes this). The graduation query is `flag.<key>:on` — e.g. `flag.phoenix-bildirim:on`
+ * counts errors captured while `phoenix-bildirim` was on for the session, and `flag.<key>:off`
+ * the comparison off-path. Keys are the `flags/keys.ts` constants (non-PII), so tagging is
+ * orthogonal to the ADR 0118 `dataCollection` PII scrub and touches none of it.
+ */
+export const FLAG_TAG_PREFIX = "flag.";
+
+/**
+ * The `(tagKey, tagValue)` a resolved flag maps to — pure, so the tag-naming contract is
+ * unit-testable without Sentry (the pure-core idiom of `browserOptions`).
+ */
+export function flagTag(key: string, value: boolean): {tagKey: string; tagValue: "on" | "off"} {
+	return {tagKey: `${FLAG_TAG_PREFIX}${key}`, tagValue: value ? "on" : "off"};
+}
+
 const dsn = import.meta.env.VITE_SENTRY_DSN;
 
 /** Initialize Sentry for the SPA — a no-op when no DSN is provisioned (inert). */
@@ -64,4 +83,17 @@ export function captureBoundaryError(error: unknown, componentStack?: string | n
 		error,
 		componentStack ? {contexts: {react: {componentStack}}} : undefined,
 	);
+}
+
+/**
+ * Record a resolved flag on the global Sentry scope so subsequently-captured errors carry its
+ * state as a queryable `flag.<key>` tag (#1821). No-ops when inert (no DSN) — no scope mutation,
+ * no network, mirroring init/capture — so tagging adds nothing while Sentry is off.
+ */
+export function tagFlag(key: string, value: boolean): void {
+	if (!sentryEnabled(dsn)) {
+		return;
+	}
+	const {tagKey, tagValue} = flagTag(key, value);
+	Sentry.setTag(tagKey, tagValue);
 }

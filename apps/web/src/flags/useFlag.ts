@@ -27,6 +27,7 @@ import {
 	type FlagEvaluateRequest,
 	resolveFlag,
 } from "../../worker/features/flagship/evaluate-contract";
+import {tagFlag} from "../lib/sentry";
 
 /** A flag read: its current value plus whether the server result is in yet. */
 export interface FlagState {
@@ -83,6 +84,12 @@ export function useFlag(key: string, defaultValue: boolean): FlagState {
 				if (!active) return;
 				setValue(resolved);
 				setLoading(false);
+				// Attribute captured errors to this flag's resolved state (#1821): once the
+				// server resolves the flag it becomes a queryable Sentry `flag.<key>` tag on the
+				// scope, so a graduation query can isolate its on-path error rate. Inert when
+				// Sentry has no DSN. Only on a genuine server resolution — the catch below holds
+				// the default without a server answer, so nothing is attributed there.
+				tagFlag(key, resolved);
 			})
 			.catch(() => {
 				// Any failure stays at the default — the off/old/safe path (#488).
