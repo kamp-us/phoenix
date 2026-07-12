@@ -5,16 +5,16 @@
  * reaches a non-admin's bundle; each module's panel is itself `React.lazy`-wrapped, so a
  * module's panel chunk loads only when its nav entry is selected.
  *
- * Registering a module is one entry here. The flags module (#2742) is the first real
- * tenant — it registers its `bayraklar` panel and this placeholder is dropped.
+ * Registering a module is one entry here. The flags module (#2742) is the first real tenant —
+ * its `bayraklar` panel writes the `phoenix_flag_overrides` cookie per-browser.
  */
 import {lazy} from "react";
 import {consoleRegistry} from "./module-registry.ts";
 
 consoleRegistry.register({
-	id: "yer-tutucu",
-	label: "yer tutucu",
-	panel: lazy(() => import("./PlaceholderPanel.tsx")),
+	id: "bayraklar",
+	label: "özellik bayrakları",
+	panel: lazy(() => import("./flags/FlagsPanel.tsx")),
 });
 
 export {consoleRegistry};

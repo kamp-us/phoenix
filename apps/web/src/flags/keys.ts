@@ -293,3 +293,46 @@ export const PHOENIX_NAV_IA = "phoenix-nav-ia";
  * lifecycle behind its own flag (the `phoenix-user-ban` admin-surface precedent).
  */
 export const PHOENIX_ADMIN_CONSOLE = "phoenix-admin-console";
+
+/** A declared flag paired with its default variation — the row the flags console lists (#2742). */
+export interface FlagDeclaration {
+	readonly key: string;
+	/** The declared default variation (mirrors `resources.ts`; every containment flag is off). */
+	readonly defaultValue: boolean;
+}
+
+/**
+ * The declared flags enumerated for a UI that must list them all — the flags console module
+ * (#2742) reads this to render one on/off/clear row per flag. The plain constants above are the
+ * single home for the key *strings*; this array is their enumeration, so the console can never
+ * name a flag that isn't declared here. Every entry is a default-off containment flag (each key's
+ * docblock above; the server default lives in `worker/features/flagship/resources.ts`).
+ */
+export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
+	{key: PANO_DRAFT_SAVE, defaultValue: false},
+	{key: PHOENIX_SOZLUK_STAMP_WAVE, defaultValue: false},
+	{key: PHOENIX_PANO_STAMP_WAVE, defaultValue: false},
+	{key: MECMUA_WRITE, defaultValue: false},
+	{key: PANO_FEED_EDGE_CACHE, defaultValue: false},
+	{key: PANO_OPTIMISTIC_SUBMIT, defaultValue: false},
+	{key: PANO_OPTIMISTIC_COMMENT_ADD, defaultValue: false},
+	{key: PANO_OPTIMISTIC_COMMENT_DELETE, defaultValue: false},
+	{key: PANO_OPTIMISTIC_POST_DELETE, defaultValue: false},
+	{key: PANO_BASE_FEED, defaultValue: false},
+	{key: MECMUA_PUBLIC_READ, defaultValue: false},
+	{key: MECMUA_FEED, defaultValue: false},
+	{key: PHOENIX_AUTHORSHIP_LOOP, defaultValue: false},
+	{key: PHOENIX_BILDIRIM, defaultValue: false},
+	{key: PHOENIX_FUNNEL_READOUT, defaultValue: false},
+	{key: PHOENIX_MOD_QUEUE, defaultValue: false},
+	{key: PHOENIX_OPTIMISTIC_EDITS, defaultValue: false},
+	{key: PHOENIX_OPTIMISTIC_DEFINITION_ADD, defaultValue: false},
+	{key: PHOENIX_OPTIMISTIC_DEFINITION_DELETE, defaultValue: false},
+	{key: PHOENIX_REACTIONS, defaultValue: false},
+	{key: PHOENIX_KARMA_GATES, defaultValue: false},
+	{key: PHOENIX_USER_BAN, defaultValue: false},
+	{key: PHOENIX_EMAIL_DELIVERY_ADMIN, defaultValue: false},
+	{key: PHOENIX_EMAIL_DELIVERY_NOTICE, defaultValue: false},
+	{key: PHOENIX_NAV_IA, defaultValue: false},
+	{key: PHOENIX_ADMIN_CONSOLE, defaultValue: false},
+];
