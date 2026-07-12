@@ -279,3 +279,17 @@ export const PHOENIX_EMAIL_DELIVERY_NOTICE = "phoenix-email-delivery-notice";
  * `phoenix-authorship-loop` / `phoenix-reactions` shared-seam precedent.
  */
 export const PHOENIX_NAV_IA = "phoenix-nav-ia";
+
+/**
+ * Admin-console shell dark-ship flag (#2740, epic #2711). The SINGLE seam the whole
+ * in-product admin console gates behind — the `/admin` route, the client `admin.probe`
+ * signal that decides whether to mount+fetch the lazy console bundle, AND the worker
+ * `admin.probe` gated read all key off this one string. Default-off so the console
+ * reaches production dark until a human flips it at release (ADR 0083): with it off the
+ * probe short-circuits (client) / fails the invisible `Denied` (server) for everyone, so
+ * the route resolves inert (the ordinary not-found state) and no console chunk is ever
+ * fetched. Its OWN cross-cutting (`phoenix`) key — the console is a host for future
+ * admin modules (flags is module #1, #2742), each of which keeps its own capability
+ * lifecycle behind its own flag (the `phoenix-user-ban` admin-surface precedent).
+ */
+export const PHOENIX_ADMIN_CONSOLE = "phoenix-admin-console";

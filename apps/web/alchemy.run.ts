@@ -40,6 +40,7 @@ import {PhoenixDb} from "./worker/db/resources.ts";
 import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
 import {
+	adminConsoleFlag,
 	authorshipLoopFlag,
 	bildirimFlag,
 	demoTargetingFlag,
@@ -167,6 +168,10 @@ export default Alchemy.Stack(
 		// thread/comment reads' stamp wave passes: off ⇒ serial (today), on ⇒ one concurrent
 		// wave, until a human release.
 		yield* panoStampWaveFlag(flagship.appId);
+		// The admin-console shell dark-ship flag, default-off (#2740, epic #2711) — the
+		// single seam the /admin route + client probe + worker `admin.probe` read gate
+		// behind until a human release, so the console ships dark (no chunk fetched).
+		yield* adminConsoleFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
