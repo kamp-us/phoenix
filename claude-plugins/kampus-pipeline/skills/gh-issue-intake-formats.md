@@ -172,25 +172,36 @@ two: a standalone issue gets it from `triage` (the human-judgment gate at intake
 layer — ADR [0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md)). Either way,
 `status:triaged` is a **post-gate** state, never the immediate output of `plan-epic`.
 
-### The `wayfinder:map` issue-shape marker — not a pipeline state, not a `type:*`
+### The `wayfinder:map` / `wayfinder:backlog` ideation-layer markers — not pipeline states, not `type:*`
 
-One more label sits in this table's neighborhood but is **neither a `status:*` pipeline state
-nor a `type:*`**: **`wayfinder:map`** is an **issue-shape marker** (epic #2421). It marks an
-issue as a **wayfinder map** — the ideation-layer front door that sits *upstream* of this
-execution pipeline (chart a fuzzy destination, work its open frontier of investigation/decision
-tickets, then hand a concrete plan to `triage` / `plan-epic`). It **reuses the existing issue
-infrastructure** rather than minting a new `type:*`, so it ripples no intake floor: the
-`write-code` pick predicate keys on `status:triaged` and is untouched by it.
+Two labels sit in this table's neighborhood but are **neither a `status:*` pipeline state
+nor a `type:*`** — the ideation-layer marker set. **`wayfinder:map`** is an **issue-shape
+marker** (epic #2421). It marks an issue as a **wayfinder map** — the ideation-layer front
+door that sits *upstream* of this execution pipeline (chart a fuzzy destination, work its open
+frontier of investigation/decision tickets, then hand a concrete plan to `triage` /
+`plan-epic`). It **reuses the existing issue infrastructure** rather than minting a new
+`type:*`, so it ripples no intake floor: the `write-code` pick predicate keys on
+`status:triaged` and is untouched by it.
+
+**`wayfinder:backlog`** is its upstream sibling — the **cartographer's backlog**. It marks an
+issue as a **destination queued for a wayfinding chart**: a fuzzy end-state named but not yet
+charted into a map. Like `wayfinder:map` it reuses the existing issue infrastructure and mints
+no new `type:*`, and like it, it is an **ideation-queue marker**, not a buildable status — it
+sits one step further upstream still, before charting even begins.
 
 | Label | Meaning | Pickable by `write-code`? |
 |---|---|---|
 | `wayfinder:map` | **Issue-shape marker** (not a state, not a type) — this issue is a **wayfinder map**: the ideation-layer map whose body carries the four-section map shape (`## Destination` / `## Decisions-so-far` / `## Open frontier` / `## Graduated fog`) the `wayfinder` skill's chart/work modes and the wayfinder CLI read and write. Upstream of the pipeline (#2421). | No (an ideation surface, not pickable execution work) |
+| `wayfinder:backlog` | **Ideation-queue marker** (not a state, not a type) — this issue is a **destination queued for a wayfinding chart**: the cartographer's backlog of fuzzy end-states named but not yet charted. Sits upstream of triage, one step further up than `wayfinder:map`. | No (an ideation surface, not pickable execution work) |
 
 The **body shape** a `wayfinder:map` issue carries is defined below in
-[§The `wayfinder:map` issue shape](#the-wayfindermap-issue-shape); this row documents only
-the label. A `wayfinder:map` issue is not `write-code`-pickable: it is worked by the
+[§The `wayfinder:map` issue shape](#the-wayfindermap-issue-shape); these rows document only
+the labels. Neither is `write-code`-pickable: a `wayfinder:map` issue is worked by the
 `wayfinder` skill, and only the concrete work it *graduates* into `triage` / `plan-epic`
-becomes pickable execution issues.
+becomes pickable execution issues. A `wayfinder:backlog` destination graduates one step
+earlier — the cartographer **charts** it into a `wayfinder:map` (which then graduates its
+cleared frontier into that emitted factory work), so a charted destination drops
+`wayfinder:backlog`; keeping the label after it has been charted violates that discipline.
 
 ### The `planned → triaged` flip
 
@@ -815,7 +826,7 @@ immutable; re-read it each round.
 
 ## The `wayfinder:map` issue shape
 
-A `wayfinder:map` issue (the [`wayfinder:map` label](#the-wayfindermap-issue-shape-marker--not-a-pipeline-state-not-a-type)) is not a task and not an epic — it is a **living map**: the
+A `wayfinder:map` issue (the [`wayfinder:map` label](#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)) is not a task and not an epic — it is a **living map**: the
 ideation-layer surface the `wayfinder` skill's **chart** and **work** modes and the wayfinder
 CLI all read and write. This section is the **single source** of that body shape, so every one
 of those consumers cites *one* definition and cannot drift (the same single-source discipline
@@ -896,6 +907,13 @@ surfaces and stops on — never auto-resolves.
 - **The map is not `write-code`-pickable.** Only the concrete work a map *graduates* into
   `triage` / `plan-epic` becomes pickable execution issues; the map itself is worked by
   `wayfinder`, never picked by `write-code`.
+- **A `wayfinder:backlog` destination has no map body yet.** The [`wayfinder:backlog`
+  label](#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)
+  marks a destination *queued* for charting — a named end-state, not yet a living map — so it
+  carries no four-section shape. Charting it is what *produces* this body shape: a
+  `wayfinder:backlog` destination graduates when the cartographer charts it into a
+  `wayfinder:map`, which then graduates its cleared frontier into emitted factory work. Like
+  the map, it is never picked by `write-code`.
 
 ---
 
