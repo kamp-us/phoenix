@@ -84,6 +84,27 @@ pre-commit:
           exit 1
         fi
 
+    # Read-only ATTRIBUTION for the #2778 primary-index mass-staged-deletion corruption: the
+    # primary checkout's index accumulating a mass of staged deletions of the instruction-trust set
+    # (.claude/**, .decisions/**, …) is the loaded-gun state — a commit + push from the primary would
+    # land a control-plane mass-deletion on origin/main. This leg RECORDS (never blocks) the actor
+    # about to commit that state at the one caller-agnostic choke point git fires — pre-commit —
+    # capturing agent-type / session-id / cwd so the next occurrence is attributable. It NEVER gates
+    # a commit (the recorder always exits 0); *preventing* the staging + *blocking* the commit is the
+    # §CP hardening fix (ops/incidents/2778-primary-index-mass-staged-deletion.md), out of scope here.
+    #
+    # Fail-OPEN on an absent toolchain, exactly like leak-guard: a stripped-PATH / no-node worktree
+    # can't run the recorder — SKIP (exit 0), never abort a commit. A resolved recorder is itself
+    # non-blocking, so this leg can NEVER block a commit; CI/the §CP fix stay the real defense.
+    primary-index-tripwire:
+      run: |
+        command -v node >/dev/null 2>&1 || {
+          echo "primary-index-tripwire: no node on PATH (stripped-PATH/lean worktree); skipping #2778 attribution — read-only, non-blocking anyway" >&2
+          exit 0
+        }
+        node packages/primary-index-tripwire/src/bin.ts record || true
+        exit 0
+
 # The deps-dependent fast-fail tier (#2147): typecheck + changed-scoped unit tests fire
 # at PUSH time, not commit time, because they need `node_modules` (unlike biome). Scoped so
 # each push stays cheap — vitest `--changed origin/main` runs only the suites related to

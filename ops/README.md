@@ -47,3 +47,13 @@ sections in the same order:
 The capacity baseline is a measurement record rather than a failure-mode procedure, so it
 documents the **numbers and the method that produced them** instead of following the shape
 above.
+
+## Incidents
+
+Post-incident diagnoses of pipeline/infra corruption — the mechanism trace, the vectors ruled
+in/out, the containment that caught it, and the follow-up fix it names. Unlike a runbook (a
+procedure to *run*), an incident diagnosis is a *record* of what happened and why.
+
+| Incident | Covers |
+|---|---|
+| [#2778 primary-index mass staged deletion](./incidents/2778-primary-index-mass-staged-deletion.md) | The shared primary checkout's index accumulating 248 staged deletions of the instruction-trust set (`.claude/**`, `.decisions/**`) under worktree-isolated agents — vectors, main-sync's incidental containment, and the read-only attribution tripwire. |
