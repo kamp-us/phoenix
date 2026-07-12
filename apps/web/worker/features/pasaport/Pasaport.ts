@@ -327,22 +327,26 @@ export class Pasaport extends Context.Service<
 		) => Effect.Effect<EmailDeliveryResult, UserNotFound>;
 
 		// Manually mark the target account's address as failing (Child #2692): append a
-		// `fail` event carrying the admin's reason, so an out-of-band bounce report an
-		// admin learns of shares the SAME log the send-time capture writes. Returns the
-		// resolved address + resulting (failing) state. `UserNotFound` on an unknown
-		// target. The AUTHORITY is discharged at the resolver (`requireAdmin`), never here.
+		// `fail` event carrying the admin's reason and the acting admin (`actorId`, #2734),
+		// so an out-of-band bounce report an admin learns of shares the SAME log the
+		// send-time capture writes and attributes who acted. Returns the resolved address +
+		// resulting (failing) state. `UserNotFound` on an unknown target. The AUTHORITY is
+		// discharged at the resolver (`requireAdmin`), never here.
 		readonly markEmailFailing: (input: {
 			userId: string;
+			actorId: string;
 			reason: string;
 		}) => Effect.Effect<EmailDeliveryResult, UserNotFound>;
 
 		// Manually clear the target account's failing address (Child #2692): append a
-		// `clear` event, lifting the failing-state without mutating the `fail` row (full
-		// reversibility, as in unban). Returns the resolved address + resulting
-		// (deliverable) state. Idempotent — clearing a deliverable address appends a benign
-		// `clear` and still reads deliverable. `UserNotFound` on an unknown target.
+		// `clear` event stamped with the acting admin (`actorId`, #2734), lifting the
+		// failing-state without mutating the `fail` row (full reversibility, as in unban).
+		// Returns the resolved address + resulting (deliverable) state. Idempotent —
+		// clearing a deliverable address appends a benign `clear` and still reads
+		// deliverable. `UserNotFound` on an unknown target.
 		readonly clearEmailFailing: (input: {
 			userId: string;
+			actorId: string;
 		}) => Effect.Effect<EmailDeliveryResult, UserNotFound>;
 
 		// The admin failing-address roll-up (Child #2692): every address whose latest
@@ -620,8 +624,12 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 			// back its projected state. Rejects an unknown target up front so a mark/clear
 			// can't be recorded against a non-existent id (the audit log stays meaningful),
 			// and resolves the target's own `email` as the address the event is keyed by.
+			// The only caller is the admin mark/clear below, so `actorId` is always the acting
+			// admin's id (#2734) — the send-time capture writes its own actor-less rows through
+			// `EmailDeliveryLog` (`email-delivery-log.ts`), not this helper.
 			const appendEmailDeliveryEvent = (
 				userId: string,
+				actorId: string,
 				action: EmailDeliveryEvent["action"],
 				reason: string | null,
 			): Effect.Effect<EmailDeliveryResult, UserNotFound> =>
@@ -632,6 +640,7 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						db.insert(schema.emailDeliveryEvent).values({
 							id: crypto.randomUUID(),
 							userId,
+							actorId,
 							address: target.email,
 							action,
 							reason,
@@ -1124,15 +1133,17 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 
 				markEmailFailing: Effect.fn("Pasaport.markEmailFailing")(function* (input: {
 					userId: string;
+					actorId: string;
 					reason: string;
 				}) {
-					return yield* appendEmailDeliveryEvent(input.userId, "fail", input.reason);
+					return yield* appendEmailDeliveryEvent(input.userId, input.actorId, "fail", input.reason);
 				}),
 
 				clearEmailFailing: Effect.fn("Pasaport.clearEmailFailing")(function* (input: {
 					userId: string;
+					actorId: string;
 				}) {
-					return yield* appendEmailDeliveryEvent(input.userId, "clear", null);
+					return yield* appendEmailDeliveryEvent(input.userId, input.actorId, "clear", null);
 				}),
 
 				listFailingAddresses: Effect.fn("Pasaport.listFailingAddresses")(function* () {

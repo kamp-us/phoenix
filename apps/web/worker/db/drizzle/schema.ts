@@ -210,6 +210,12 @@ export const emailDeliveryEvent = sqliteTable(
 		// reads only the latest row, so a `clear` after a `fail` restores deliverability
 		// without mutating or deleting the fail row — full reversibility, as in ban.
 		action: text("action", {enum: ["fail", "clear"]}).notNull(),
+		// The admin who performed a manual mark/clear (the discharged `Admin` grant's account
+		// id, #2734), mirroring {@link userBanEvent}'s `actorId`. NULLABLE, unlike ban's
+		// NOT NULL: this log is multi-writer — the send-time `SendEmailError` capture (#2691)
+		// and the CF async ingestion (#2694) are non-admin appenders with no actor, and
+		// pre-#2734 rows carry none. Only the admin mark/clear stamps it.
+		actorId: text("actor_id"),
 		// The failure detail (a `SendEmailError` message, or an admin note); null for a `clear`.
 		reason: text("reason"),
 		createdAt: timestamp("created_at").notNull(),

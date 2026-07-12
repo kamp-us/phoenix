@@ -421,31 +421,38 @@ const unbanGated = Effect.fn("user.unbanGated")(function* (input: typeof UnbanUs
 });
 
 // The post-gate mark body — runnable only with an `Admin` `Grant` in R (`requireAdmin`
-// provides it); `yield* Admin` requires the proof, so marking without a discharged grant
-// is a compile error (ADR 0107). A blank reason fails `EmailFailingReasonRequired` (a
-// manual mark must carry the out-of-band note); an unknown target fails `UserNotFound`.
-// The ack is keyed on the server-resolved address, so the roll-up read reconciles it.
+// provides it); `yield* adminOf(grant)` reads the authority-checked actor id the audit row
+// is stamped with (#2734, mirroring `banGated`), so a mark is never attributed to a
+// client-supplied identity. A blank reason fails `EmailFailingReasonRequired` (a manual mark
+// must carry the out-of-band note); an unknown target fails `UserNotFound`. The ack is keyed
+// on the server-resolved address, so the roll-up read reconciles it.
 const markEmailFailingGated = Effect.fn("emailDelivery.markGated")(function* (
 	input: typeof MarkEmailFailingInput.Type,
 ) {
-	yield* Admin;
+	const grant = yield* Admin;
+	const actorId = yield* adminOf(grant);
 	const reason = input.reason.trim();
 	if (reason.length === 0) {
 		return yield* new EmailFailingReasonRequired({message: "İşaretleme gerekçesi zorunludur."});
 	}
 	const pasaport = yield* Pasaport;
-	const {address, state} = yield* pasaport.markEmailFailing({userId: input.userId, reason});
+	const {address, state} = yield* pasaport.markEmailFailing({
+		userId: input.userId,
+		actorId,
+		reason,
+	});
 	return toEmailDeliveryState(address, state);
 });
 
 // The post-gate clear body — runnable only with an `Admin` `Grant` in R. Appends a
-// `clear` (no reason floor); `UserNotFound` on an unknown target.
+// `clear` stamped with the discharged admin's id (#2734); `UserNotFound` on an unknown target.
 const clearEmailFailingGated = Effect.fn("emailDelivery.clearGated")(function* (
 	input: typeof ClearEmailFailingInput.Type,
 ) {
-	yield* Admin;
+	const grant = yield* Admin;
+	const actorId = yield* adminOf(grant);
 	const pasaport = yield* Pasaport;
-	const {address, state} = yield* pasaport.clearEmailFailing({userId: input.userId});
+	const {address, state} = yield* pasaport.clearEmailFailing({userId: input.userId, actorId});
 	return toEmailDeliveryState(address, state);
 });
 
