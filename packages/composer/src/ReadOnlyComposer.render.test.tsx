@@ -42,7 +42,6 @@ Bir paragraf **kalın** ve *italik* içerir. [kamp.us](https://kamp.us) bağlant
 
 describe("ReadOnlyComposer render path (#2581)", () => {
 	it("renders composer-authored markdown as rich read-only DOM (no raw ## / \\[ \\] / &nbsp;)", async () => {
-		// The real reader flow: author via composer → the stored markdown → render read-only.
 		const stored = await authorAndStore(SAMPLE);
 		const {container} = render(<ReadOnlyComposer content={stored} />);
 		const el = await surface(container);
@@ -105,7 +104,6 @@ describe("ReadOnlyComposer render path (#2581)", () => {
 		const {container} = render(<ReadOnlyComposer content={payload} />);
 		const el = await surface(container);
 
-		// No script node, no surviving event-handler attribute, no javascript: href.
 		expect(container.querySelectorAll("script").length).toBe(0);
 		expect(el.querySelector("[onerror]")).toBeNull();
 		for (const a of el.querySelectorAll("a")) {

@@ -46,7 +46,6 @@ describe("renderTestMarkdown through useComposerEditor (render path)", () => {
 		act(() => handle.setContent(renderTestMarkdown));
 		const out = handle.getMarkdown();
 
-		// Every block + inline element the fixture claims survives the round-trip.
 		expect(out).toContain("# Composer render testi");
 		expect(out).toContain("###### Altıncı seviye başlık");
 		expect(out).toContain("**kalın**");
