@@ -83,6 +83,23 @@ specific prohibition in the verdict:
 6. **Colour-alone meaning.** State or meaning signalled by **colour alone** — a selected/active/error
    state distinguished only by hue, with no second channel (icon, text, shape, weight). (Pillar 4.)
 
+### The render-exception hard-FAIL — a thrown runtime error fails the gate, regardless of the pixels (#2594)
+
+The six above are **visual facts**. This seventh is a **deterministic** one: a UI that throws an
+**uncaught runtime exception** during the capture render (e.g. a `TypeError`) hard-FAILs the gate —
+**even when the captured frame looks acceptable on that tick**. A single screenshot only sees pixels,
+so a mount/init race that crashes on a "bad tick" while rendering fine on a "good tick" (the
+`@kampus/composer` read-only null-editor `TypeError: Cannot read properties of null (reading
+'commands')`, #2593) slipped straight through the visual six and reached live. So the capture render
+also **listens for page errors**, and a thrown exception is a FAIL by itself.
+
+This check is **not a taste call** — it reads the capture helper's per-surface `pageErrors` (Step 2),
+so it is exact and needs no vision judgment. Its verdict is **conjunctive with the six**: a surface
+that threw fails the gate no matter how its screenshot scores. Only an **uncaught exception**
+(`kind: "pageerror"`) hard-FAILs; a bare `console.error` (`kind: "console.error"`) rides **advisory**,
+because dev console.error is noisy (React key/prop warnings) and failing on it would trip the gate on
+benign output — consistent with the fail-conservative calibration.
+
 **Holistic / taste** — cohesiveness drift, muddy hierarchy, cramped rhythm, an off-brand
 composition, a primitive that *could* have been reached for but wasn't yet renders acceptably — is
 **advisory**, surfaced in the same comment under an **Advisory (non-blocking)** heading. Advisory
@@ -291,10 +308,12 @@ implementation legs land to match):
 - **Input:** the preview URL, the route+state surface list (Step 1), an output dir for the PNG bytes,
   and the target `repository_id` (for the upload).
 - **Output (stdout JSON):** one record per captured surface —
-  `{ surface, route, state, localPath, hostedUrl, uploadError }`. `localPath` is the on-disk PNG the
-  gate judges; `hostedUrl` is the GitHub user-attachments URL for evidence (or `null` with
-  `uploadError` set when the undocumented upload endpoint fails — a **tolerated** degradation: the
-  gate still judges `localPath`).
+  `{ surface, route, state, localPath, hostedUrl, uploadError, pageErrors }`. `localPath` is the
+  on-disk PNG the gate judges; `hostedUrl` is the GitHub user-attachments URL for evidence (or `null`
+  with `uploadError` set when the undocumented upload endpoint fails — a **tolerated** degradation:
+  the gate still judges `localPath`). **`pageErrors`** is the array of runtime errors thrown into the
+  page during that surface's render — each `{ kind: "pageerror" | "console.error", text }` — the
+  deterministic #2594 crash signal (a `pageerror` is the hard-FAIL; a `console.error` is advisory).
 
 ```bash
 # Drive the helper (the seam; #2247 owns the Playwright + upload mechanics):
@@ -312,6 +331,24 @@ multimodal input — you look at the actual rendered pixels. The `hostedUrl` is 
 it is embedded in the verdict as evidence only (ADR 0165). If a capture's `hostedUrl` is `null` (an
 upload failure), that does **not** affect the verdict — you judged the local bytes; note the upload
 degradation in the evidence section and proceed.
+
+**Then extract the deterministic render-exception signal** (#2594) — no vision needed, just read
+`pageErrors`. A surface that threw an **uncaught exception** (`kind == "pageerror"`) during its render
+hard-FAILs the gate regardless of how its screenshot looks; a bare `console.error` is advisory. The
+`design-capture` bin also prints a `render FAILED — …` summary to stderr when any surface threw:
+
+```bash
+# uncaught exceptions → hard-FAIL rows (surface + message); console.error → advisory
+RENDER_CRASHES="$(printf '%s' "$CAPTURES" | jq -r '
+  [ .[] | . as $r | $r.pageErrors[]? | select(.kind=="pageerror")
+    | "\($r.surface): \(.text)" ] | .[]')"
+RENDER_ADVISORIES="$(printf '%s' "$CAPTURES" | jq -r '
+  [ .[] | . as $r | $r.pageErrors[]? | select(.kind=="console.error")
+    | "\($r.surface): \(.text)" ] | .[]')"
+```
+
+A non-empty `RENDER_CRASHES` is a **FAIL** (Step 3), naming each thrown error + its surface so a
+`write-code` repair round can act on it cold.
 
 ---
 
@@ -343,9 +380,11 @@ hierarchy, cramped rhythm, a primitive that could have been reached for, an off-
 plus every borderline call you downgraded. These ride in the same comment and **never** flip the
 verdict.
 
-**The design verdict is conjunctive over the six hard-FAIL prohibitions:** every applicable
-prohibition must PASS (or be N/A). One objective FAIL → the PR fails the gate. Advisory notes do not
-count against the verdict.
+**The design verdict is conjunctive over the six hard-FAIL prohibitions plus the deterministic
+render-exception check (#2594):** every applicable prohibition must PASS (or be N/A) **and** no
+surface may have thrown an uncaught exception during its render (`RENDER_CRASHES` empty). One
+objective visual FAIL, or one thrown render exception, → the PR fails the gate. Advisory notes
+(taste + `console.error`) do not count against the verdict.
 
 ---
 
@@ -413,9 +452,10 @@ Reviewed-head: @ <HEAD_SHA>
 - [N/A]  Void empty state — no list/detail empty state in the changed surfaces
 - [PASS] Sub-36px tap target — <surface>: hit area ≥ 36px
 - [PASS] Colour-alone meaning — <surface>: state carries a second channel
+- [PASS] Render exception (#2594) — no surface threw an uncaught exception during render
 
 **Advisory (non-blocking)**
-- <holistic/taste note, or "none">
+- <holistic/taste note, or a captured console.error, or "none">
 
 **Evidence**
 - <surface>[:state] — ![<surface>](<hostedUrl>)
@@ -447,6 +487,7 @@ screenshots are evidence only) — all objective prohibitions pass:
 
 **Hard-FAIL prohibitions (ADR 0162)**
 - [PASS/N/A] <the six, as above>
+- [PASS] Render exception (#2594) — no surface threw an uncaught exception during render
 
 **Advisory (non-blocking)**
 - <note, or "none">
@@ -455,9 +496,10 @@ screenshots are evidence only) — all objective prohibitions pass:
 - <surface>[:state] — ![<surface>](<hostedUrl>)
 ```
 
-### Fail path — an objective prohibition violated
+### Fail path — an objective prohibition violated, or a render exception was thrown
 
-One or more of the six hard-FAIL prohibitions is **objectively** violated. **Nothing merges. The PR
+One or more of the six hard-FAIL prohibitions is **objectively** violated, **or** a surface threw an
+uncaught exception during its render (`RENDER_CRASHES` non-empty, #2594). **Nothing merges. The PR
 stays open; the linked issue stays open and assigned** — don't unassign, relabel, or close. Post the
 SHA-bound FAIL marker (the seam `write-code`'s fix round-trip keys on) with the full per-prohibition
 table — the passing rows too, so the author sees how close they are — and the **specific prohibition
@@ -475,15 +517,17 @@ Reviewed-head: @ <HEAD_SHA>
 - [PASS] <prohibition> — <surface>: <what you saw>
 - [FAIL] Missing focus ring — <surface>: the <control> shows no focus ring in :focus-visible
   (ADR 0162 Pillar 4 — "never ship an interactive control with no focus ring")
+- [FAIL] Render exception (#2594) — <surface>: threw `TypeError: …` during render (uncaught
+  pageerror; the frame looked acceptable on this tick but the surface crashes on a bad tick)
 - [PASS/N/A] <the rest>
 
 **Advisory (non-blocking)**
-- <note, or "none">
+- <note, or a captured console.error, or "none">
 
 **Evidence**
 - <surface>[:state] — ![<surface>](<hostedUrl>)
 
-The FAILed prohibition(s) above must be fixed before this PR can merge. The PR stays open and
+The FAILed prohibition(s) / render exception(s) above must be fixed before this PR can merge. The PR stays open and
 unmerged; #<ISSUE> stays open and assigned. `write-code` repair mode consumes this FAIL — fix on the
 same branch and re-request review.
 ```
@@ -520,10 +564,12 @@ match to paper over a moved head.
 A single invocation gates one UI PR end to end: classify UI-affecting + blocking/non-blocking via the
 canonical §CP set (Step 0, mis-route off-ramp if not a UI PR), resolve the PR / head SHA / preview
 URL / changed surfaces (Step 1), drive the #2247 helper to capture over the preview deploy and read
-the **local bytes** (Step 2), judge each surface against the six objective ADR-0162 prohibitions with
-advisory taste alongside — calibrated to FAIL conservatively (Step 3), then land the SHA-bound
+the **local bytes** + the per-surface `pageErrors` (Step 2), judge each surface against the six
+objective ADR-0162 prohibitions plus the deterministic render-exception check (#2594), with advisory
+taste alongside — calibrated to FAIL conservatively (Step 3), then land the SHA-bound
 `review-design` verdict — PASS (non-blocking) / advisory (blocking) on a full pass, or FAIL on an
-objective violation — with the hosted screenshots embedded as evidence, and close with the read-back
+objective violation or a thrown render exception — with the hosted screenshots embedded as evidence,
+and close with the read-back
 guard (Step 4). **You never merge, and you never emit a `review-code`/`review-doc`/`review-skill`
 marker.**
 

@@ -21,6 +21,7 @@
 import {Effect} from "effect";
 import type {HttpClient} from "effect/unstable/http/HttpClient";
 import {type CapturedSurface, CaptureError, type CaptureOptions, captureShots} from "./capture.ts";
+import type {PageError} from "./page-errors.ts";
 import {buildCapturePlan, type Surface, type Viewport} from "./plan.ts";
 import {type UploadOutcome, uploadAsset} from "./upload.ts";
 
@@ -35,6 +36,8 @@ export interface CaptureRecord {
 	readonly hostedUrl: string | null;
 	/** The upload diagnostic when the fallback fired, else `null`. */
 	readonly uploadError: string | null;
+	/** Runtime errors thrown into the page during the render — the #2594 crash signal. */
+	readonly pageErrors: readonly PageError[];
 }
 
 export interface CaptureAndUploadRequest {
@@ -67,6 +70,7 @@ export const mergeRecord = (captured: CapturedSurface, outcome: UploadOutcome): 
 	localPath: captured.localPath,
 	hostedUrl: outcome.hostedUrl,
 	uploadError: outcome.uploadError,
+	pageErrors: captured.pageErrors,
 });
 
 /**
