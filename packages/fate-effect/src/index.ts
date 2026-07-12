@@ -23,11 +23,14 @@ export type {
 export type {CompiledFateSources} from "./Compiled.ts";
 export {CurrentUser, type CurrentUserInfo, Unauthorized} from "./CurrentUser.ts";
 export {
+	type AssertFieldMapResolved,
 	type DataViewFieldsKey,
 	type DataViewOf,
 	type Entity,
 	FateDataView,
 	type FateDataViewClass,
+	type FieldMapRecoveryFailed,
+	type FieldMapResolved,
 	type FieldsConfigOf,
 	type KernelDataView,
 	type ListFieldOf,
