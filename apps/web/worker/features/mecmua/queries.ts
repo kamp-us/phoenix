@@ -15,14 +15,17 @@ import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {MECMUA_FEED} from "../../../src/flags/keys.ts";
+import {UserId} from "../../lib/ids.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Mecmua} from "./Mecmua.ts";
 import type {MecmuaSubscriptionReceipt} from "./views.ts";
 import {MecmuaSubscriptionReceiptView} from "./views.ts";
 
+// `authorId` decodes byte-identically but arrives typed as UserId, so the
+// receipt + the `isSubscribed` read below carry the brand end-to-end (#2700).
 const SubscriptionStateArgs = Schema.Struct({
-	authorId: Schema.String,
+	authorId: UserId,
 });
 
 /** Is the mecmua feed on for this request? Safe-default `false` (ships dark). */
@@ -31,7 +34,7 @@ const feedOn = Effect.gen(function* () {
 	return yield* flags.getBoolean(MECMUA_FEED, false).pipe(provideRequestFlags);
 });
 
-const toReceipt = (authorId: string, subscribed: boolean): MecmuaSubscriptionReceipt => ({
+const toReceipt = (authorId: UserId, subscribed: boolean): MecmuaSubscriptionReceipt => ({
 	__typename: "MecmuaSubscriptionReceipt",
 	id: authorId,
 	subscribed,
@@ -44,7 +47,10 @@ export const queries = {
 			const {user} = yield* CurrentUser;
 			if (!user || !(yield* feedOn)) return toReceipt(args.authorId, false);
 			const mecmua = yield* Mecmua;
-			return toReceipt(args.authorId, yield* mecmua.isSubscribed(user.id, args.authorId));
+			return toReceipt(
+				args.authorId,
+				yield* mecmua.isSubscribed(UserId.make(user.id), args.authorId),
+			);
 		}),
 	),
 };

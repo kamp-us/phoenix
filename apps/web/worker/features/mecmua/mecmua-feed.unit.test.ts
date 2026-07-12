@@ -11,6 +11,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import type * as schema from "../../db/drizzle/schema.ts";
+import {UserId} from "../../lib/ids.ts";
 import {selectMecmuaFeed} from "./feed-selection.ts";
 import {Mecmua, MecmuaLive} from "./Mecmua.ts";
 import type {MecmuaPostRow} from "./post-fields.ts";
@@ -133,14 +134,14 @@ describe("Mecmua.isSubscribed — the subscribe-affordance state read (#2527)", 
 	it.effect("returns true when a (subscriber, author) edge row exists", () =>
 		Effect.gen(function* () {
 			const mecmua = yield* Mecmua;
-			assert.isTrue(yield* mecmua.isSubscribed("reader", "A"));
+			assert.isTrue(yield* mecmua.isSubscribed(UserId.make("reader"), UserId.make("A")));
 		}).pipe(Effect.provide(mecmuaLayer(scriptedAccess([[{authorId: "A"}]])))),
 	);
 
 	it.effect("returns false when no edge row matches", () =>
 		Effect.gen(function* () {
 			const mecmua = yield* Mecmua;
-			assert.isFalse(yield* mecmua.isSubscribed("reader", "A"));
+			assert.isFalse(yield* mecmua.isSubscribed(UserId.make("reader"), UserId.make("A")));
 		}).pipe(Effect.provide(mecmuaLayer(scriptedAccess([[]])))),
 	);
 });
