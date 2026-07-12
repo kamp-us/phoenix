@@ -287,6 +287,85 @@ systematic layer — a11y is a property of the shared primitives, not a per-comp
 
 ---
 
+## Navigation IA — the element taxonomy + placement law
+
+Per ADR
+[0176](https://github.com/kamp-us/phoenix/blob/main/.decisions/0176-nav-ia-discipline.md)
+(founder-ratified on wayfinder map
+[#2583](https://github.com/kamp-us/phoenix/issues/2583)). This section governs the
+**navigation surface** — the topbar and the per-product Subnavs — so a nav affordance cannot
+be bolted on without a placement law ("drift unrepresentable"). `write-code` reads it before
+generating or editing any nav UI, the same way it reads the four pillars.
+
+**The topbar job statement** (the criterion any element argues against): *the topbar answers
+three questions, always — where can I go (destinations), who am I here (identity + account),
+what needs my attention (signals) — plus at most ONE promoted action. Anything else must argue
+its way in.*
+
+### The element taxonomy (closed list — assign a class before you place)
+
+Every nav element is exactly one of these four classes. It is a **closed list**: never add a
+nav element without first assigning its class.
+
+| Class | What it is | Examples |
+|---|---|---|
+| **destination** | A place you go — a product noun or top-level feed. | sözlük, pano, mecmua |
+| **primary action** | The one verb the surface promotes (exactly one per surface). | the global `+` create menu |
+| **utility** | An ambient control reached for on demand. | search (`⌘K`), theme (profile page) |
+| **signal** | Read-only state reporting "what needs your attention". | bildirim (bell + count), divan, karma |
+
+### The placement law — zone grammar (each class lives in one tier)
+
+Placement is two-tier plus the account menu. An element may only sit in a zone whose grammar
+admits its class.
+
+| Zone | Admits | Never admits |
+|---|---|---|
+| **Topbar** (global) | destinations · signals · identity/account · the one primary action | a product-scoped action · a sub-destination · a page-scoped filter |
+| **Subnav** (per-product) | product sub-destinations · product filters · the contextual (product-scoped) create CTA | a global destination · the global primary action |
+| **User menu** | account-scoped utilities + account items | a destination · a signal · the primary action |
+
+The topbar destinations row is **purely sözlük / pano / mecmua**. A product-scoped create verb
+lives as a contextual CTA in *that product's* Subnav — never as a global topbar button.
+
+### The class table — every current nav element → class → sanctioned zone
+
+| Element | Class | Sanctioned zone |
+|---|---|---|
+| sözlük · pano · mecmua | destination | Topbar (destinations row) |
+| the global `+` create menu | primary action | Topbar (the one promoted action) |
+| a product-scoped create CTA (e.g. pano "new post") | primary action (contextual) | that product's Subnav |
+| search (`⌘K`) | utility | Topbar |
+| theme (light/dark/auto) | utility | Profile page only (no topbar toggle) |
+| bildirim (bell + count → dropdown) | signal | Topbar (signals zone) |
+| divan (gated glyph + tooltip) | signal | Topbar (signals zone) |
+| karma | signal | Folded into the user-menu trigger as `name (karma)` |
+| `akış` / `yazılarım` | destination (sub) | mecmua's Subnav |
+
+### Prohibitions (machine-checkable)
+
+- **Never** place a non-destination in the topbar destinations row (the destinations row is
+  purely product nouns — sözlük / pano / mecmua).
+- **Never** style a utility with the primary-action treatment — the primary action is
+  distinguished by **container scarcity**: the `+` create menu is the **only** accent-filled
+  element (`--accent` / `--accent-fg`) in the topbar. A second accent fill on the bar is a
+  utility masquerading as the CTA.
+- **Never** add a nav element without assigning its class (the taxonomy is a closed list).
+- **Never** place an element in a zone whose grammar does not admit its class (a product-scoped
+  action or a sub-destination in the topbar; a global destination or the global primary action
+  in a Subnav).
+- **Never** promote more than one primary action per surface.
+
+### Where the IA law is silent, surface the gap — do not fill it
+
+This section transcribes only what ADR 0176 (via map #2583) ratified. A nav decision not
+covered by the taxonomy, the zone grammar, the class table, or a prohibition above is a **gap
+to surface to the founder** (file it via the [report](.claude/skills/report/SKILL.md) skill) —
+never a blank for an agent to fill with invented IA law. The IA section grows only when the
+founder ratifies more law into ADR 0176 (or a successor).
+
+---
+
 ## Where the ADR is silent, surface the gap — do not fill it
 
 This manifest transcribes only what ADR 0162 ratified. If a UI decision is not covered by a
