@@ -28,6 +28,7 @@ import {Footer} from "./components/layout/Footer";
 import {ProductSubnavLayout} from "./components/layout/ProductSubnavLayout";
 import {Topbar} from "./components/layout/Topbar";
 import {actorLabel} from "./components/moderation/actor-identity";
+import {PanoSubnavCta} from "./components/pano/PanoSubnavCta";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
@@ -115,6 +116,11 @@ function Layout() {
 	// link on the route's own seam is what keeps it from ever pointing at a dark 404: off ⇒
 	// no entry, so subscribing (also `mecmua-feed`) and its feed destination appear together.
 	const {value: feedOn} = useFlag(MECMUA_FEED, false);
+	// The nav-IA seam (#2600, epic #2596): with it on, pano's `+ gönderi` primary action
+	// lives in the pano Subnav CTA zone (placement law #2587), so the topbar no longer
+	// carries it — the eviction half of the atomic move. Off ⇒ the topbar is exactly as
+	// today. Same read as `App`'s zone-wrapping gate; `useFlag` is fate-free, safe here.
+	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
 
 	// The two-tier fate provider's public first paint (ADR 0167). While `get-session`
 	// is still in flight the authed `FateProvider` gate below returns null, so the
@@ -181,17 +187,17 @@ function Layout() {
 						onToggleTheme={toggleTheme}
 						onLogout={onSignOut}
 						actions={
-							isSignedIn ? (
+							!isSignedIn ? (
+								<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
+									giriş yap
+								</button>
+							) : navIaOn ? null : (
 								<button
 									type="button"
 									className="kp-topbar__btn"
 									onClick={() => navigate("/pano/yeni")}
 								>
 									+ gönderi
-								</button>
-							) : (
-								<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
-									giriş yap
 								</button>
 							)
 						}
@@ -344,9 +350,9 @@ function ComposerRouteFallback() {
  * layout route is transparent to matching — so wrapping a product's routes changes only
  * *what renders above them*, never *which* route matches (#2598, placement law #2587).
  */
-function productZone(navIaOn: boolean, key: string, routes: ReactNode) {
+function productZone(navIaOn: boolean, key: string, routes: ReactNode, cta?: ReactNode) {
 	return navIaOn ? (
-		<Route key={key} element={<ProductSubnavLayout />}>
+		<Route key={key} element={<ProductSubnavLayout cta={cta} />}>
 			{routes}
 		</Route>
 	) : (
@@ -415,7 +421,7 @@ export function App() {
 				<Routes>
 					<Route element={<Layout />}>
 						<Route path="/" element={<LandingPage />} />
-						{productZone(navIaOn, "pano-zone", panoRoutes)}
+						{productZone(navIaOn, "pano-zone", panoRoutes, <PanoSubnavCta />)}
 						{productZone(navIaOn, "mecmua-zone", mecmuaRoutes)}
 						{productZone(navIaOn, "sozluk-zone", sozlukRoutes)}
 						{productZone(navIaOn, "divan-zone", divanRoutes)}

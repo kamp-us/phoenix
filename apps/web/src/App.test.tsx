@@ -337,6 +337,60 @@ describe("nav-IA per-product Subnav zone substrate (#2598)", () => {
 	});
 });
 
+// The atomic coupling (#2600, epic #2596): pano/yeni moves into the pano Subnav CTA slot
+// AND the topbar `+ gönderi` button is evicted — both gated on the SAME `phoenix-nav-ia`
+// seam so they release as one unit. Off ⇒ today's surface (topbar `+ gönderi`, no CTA);
+// on ⇒ the CTA lives in pano's product zone and the topbar no longer carries it. The
+// signed-out `giriş yap` affordance is untouched in either flag state.
+const SIGNED_IN = {data: {user: {id: "u1", name: "Elif", email: "elif@kamp.us"}}, isPending: false};
+describe("nav-IA coupling: pano/yeni Subnav CTA ↔ topbar + gönderi eviction (#2600)", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+		flags.navIa = false;
+	});
+	afterEach(() => {
+		flags.navIa = false;
+		vi.clearAllMocks();
+	});
+
+	it("flag off, signed in: the topbar carries + gönderi and there is no Subnav CTA (today's surface)", () => {
+		renderApp("/pano");
+		act(() => {
+			setSession(SIGNED_IN);
+		});
+		expect(screen.getByRole("button", {name: "+ gönderi"})).toBeTruthy();
+		expect(screen.queryByRole("button", {name: "yeni gönderi"})).toBeNull();
+	});
+
+	it("flag on, signed in: the topbar + gönderi is evicted and the CTA lives in the pano Subnav zone", () => {
+		flags.navIa = true;
+		const {container} = renderApp("/pano");
+		act(() => {
+			setSession(SIGNED_IN);
+		});
+		// Eviction half: the topbar no longer carries the pano primary action.
+		expect(screen.queryByRole("button", {name: "+ gönderi"})).toBeNull();
+		// Landing half: the primary action is reachable from the pano product Subnav zone,
+		// not the global topbar.
+		const cta = screen.getByRole("button", {name: "yeni gönderi"});
+		expect(container.querySelector(".kp-subnav")?.contains(cta)).toBe(true);
+		expect(container.querySelector(".kp-topbar")?.contains(cta)).toBe(false);
+	});
+
+	it("flag on, signed out: the topbar giriş yap is unchanged and no CTA appears (signed-in only)", () => {
+		flags.navIa = true;
+		const {container} = renderApp("/pano");
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
+		expect(screen.queryByRole("button", {name: "yeni gönderi"})).toBeNull();
+		// The pano product zone still paints its Subnav frame — just with an empty CTA slot.
+		expect(container.querySelector(".kp-subnav")).toBeTruthy();
+	});
+});
+
 // The two-tier fate provider's public first paint (ADR 0167 / #2285): the anon-capable
 // /pano feed paints over the PUBLIC (always-anonymous) client ABOVE the session gate,
 // in parallel with `get-session`, then hands off to the authed feed once the gate
