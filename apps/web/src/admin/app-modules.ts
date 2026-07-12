@@ -17,4 +17,10 @@ consoleRegistry.register({
 	panel: lazy(() => import("./flags/FlagsPanel.tsx")),
 });
 
+consoleRegistry.register({
+	id: "e-posta-teslimati",
+	label: "e-posta teslimatı",
+	panel: lazy(() => import("./email-delivery/EmailDeliveryPanel.tsx")),
+});
+
 export {consoleRegistry};
