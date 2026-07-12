@@ -99,31 +99,37 @@ const wireCodeOf = (cause: Cause.Cause<unknown>): unknown => {
 const noWriteReached = Layer.mergeAll(makePasaportStub(), agentAuthorityStub);
 
 describe("emailDelivery.mark — admin authority (fail closed)", () => {
-	it.effect("an admin marks a target; the append runs and reports failing", () =>
-		Effect.gen(function* () {
+	it.effect("an admin marks a target; the append runs, stamps the actor, reports failing", () => {
+		// Capture the actor threaded to the write (#2734): the mark must stamp the discharged
+		// admin's id (`u-admin`), never a client-supplied identity.
+		const seen: {actorId?: string} = {};
+		return Effect.gen(function* () {
 			const receipt = yield* mark("u-target", "user reports no magic-links");
 			assert.strictEqual((receipt as {failing: boolean}).failing, true);
 			assert.strictEqual(
 				(receipt as {reason: string | null}).reason,
 				"user reports no magic-links",
 			);
+			assert.strictEqual(seen.actorId, "u-admin");
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
 					makePasaportStub({
-						markEmailFailing: () =>
-							Effect.succeed({
+						markEmailFailing: ({actorId}) => {
+							seen.actorId = actorId;
+							return Effect.succeed({
 								address: "t@x.co",
 								state: {failing: true, reason: "user reports no magic-links"},
-							}),
+							});
+						},
 					}),
 					adminStoreOf(["u-admin"]),
 					agentAuthorityStub,
 					requestContext(human("u-admin"), true),
 				),
 			),
-		),
-	);
+		);
+	});
 
 	it.effect("a non-admin gets the invisible UNAUTHORIZED — and never reaches the write", () =>
 		Effect.gen(function* () {
@@ -197,23 +203,30 @@ describe("emailDelivery.mark — admin authority (fail closed)", () => {
 });
 
 describe("emailDelivery.clear — admin authority (fail closed)", () => {
-	it.effect("an admin clears a target; the address reads deliverable (not failing)", () =>
-		Effect.gen(function* () {
-			const receipt = yield* clear("u-target");
-			assert.strictEqual((receipt as {failing: boolean}).failing, false);
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makePasaportStub({
-						clearEmailFailing: () =>
-							Effect.succeed({address: "t@x.co", state: {failing: false, reason: null}}),
-					}),
-					adminStoreOf(["u-admin"]),
-					agentAuthorityStub,
-					requestContext(human("u-admin"), true),
+	it.effect(
+		"an admin clears a target; the actor is stamped and the address reads deliverable",
+		() => {
+			const seen: {actorId?: string} = {};
+			return Effect.gen(function* () {
+				const receipt = yield* clear("u-target");
+				assert.strictEqual((receipt as {failing: boolean}).failing, false);
+				assert.strictEqual(seen.actorId, "u-admin");
+			}).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						makePasaportStub({
+							clearEmailFailing: ({actorId}) => {
+								seen.actorId = actorId;
+								return Effect.succeed({address: "t@x.co", state: {failing: false, reason: null}});
+							},
+						}),
+						adminStoreOf(["u-admin"]),
+						agentAuthorityStub,
+						requestContext(human("u-admin"), true),
+					),
 				),
-			),
-		),
+			);
+		},
 	);
 
 	it.effect("a non-admin gets the invisible UNAUTHORIZED — and never reaches the write", () =>
