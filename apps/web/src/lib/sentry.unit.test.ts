@@ -8,12 +8,16 @@
  */
 import {afterEach, describe, expect, it, vi} from "vitest";
 
-const {init, captureException} = vi.hoisted(() => ({init: vi.fn(), captureException: vi.fn()}));
-vi.mock("@sentry/react", () => ({init, captureException}));
+const {init, captureException, setTag} = vi.hoisted(() => ({
+	init: vi.fn(),
+	captureException: vi.fn(),
+	setTag: vi.fn(),
+}));
+vi.mock("@sentry/react", () => ({init, captureException, setTag}));
 
-// The inert block imports `initSentry`/`captureBoundaryError` dynamically (after stubbing the
-// DSN), so only the DSN-independent helpers are imported statically here.
-import {browserOptions, sentryEnabled} from "./sentry";
+// The inert block imports `initSentry`/`captureBoundaryError`/`tagFlag` dynamically (after stubbing
+// the DSN), so only the DSN-independent helpers are imported statically here.
+import {browserOptions, flagTag, sentryEnabled} from "./sentry";
 
 afterEach(() => {
 	vi.clearAllMocks();
@@ -57,6 +61,42 @@ describe("inert without a DSN (the whole point of ADR 0118's parked-provisioning
 		const {captureBoundaryError} = await loadInert();
 		expect(() => captureBoundaryError(new Error("boom"), "  at X")).not.toThrow();
 		expect(captureException).not.toHaveBeenCalled();
+	});
+
+	it("tagFlag does not tag and does not throw (no scope mutation while inert)", async () => {
+		const {tagFlag} = await loadInert();
+		expect(() => tagFlag("phoenix-bildirim", true)).not.toThrow();
+		expect(setTag).not.toHaveBeenCalled();
+	});
+});
+
+describe("flag attribution — the tag-naming contract (#1821)", () => {
+	// The DSN-independent naming: `flag.<key>` = `on|off`, so a graduation query is `flag.<key>:on`.
+	it("flagTag maps a resolved flag to a queryable flag.<key> tag", () => {
+		expect(flagTag("phoenix-bildirim", true)).toEqual({
+			tagKey: "flag.phoenix-bildirim",
+			tagValue: "on",
+		});
+		expect(flagTag("pano-optimistic-comment-add", false)).toEqual({
+			tagKey: "flag.pano-optimistic-comment-add",
+			tagValue: "off",
+		});
+	});
+
+	// With a DSN, a resolved flag lands on the global Sentry scope as a queryable tag. The loader
+	// stubs a real DSN + re-imports so `tagFlag` reads the enabled gate (mirrors `loadInert`).
+	const loadEnabled = async () => {
+		vi.stubEnv("VITE_SENTRY_DSN", "https://abc@o0.ingest.de.sentry.io/1");
+		vi.resetModules();
+		return import("./sentry");
+	};
+
+	it("tagFlag sets flag.<key>=on/off on the scope when a DSN is provisioned", async () => {
+		const {tagFlag} = await loadEnabled();
+		tagFlag("phoenix-bildirim", true);
+		expect(setTag).toHaveBeenCalledWith("flag.phoenix-bildirim", "on");
+		tagFlag("pano-optimistic-comment-add", false);
+		expect(setTag).toHaveBeenCalledWith("flag.pano-optimistic-comment-add", "off");
 	});
 });
 
