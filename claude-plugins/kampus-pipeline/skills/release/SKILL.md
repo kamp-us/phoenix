@@ -1,7 +1,7 @@
 ---
 name: release
 description: >-
-  The human release act made one guarded command — release a dark-shipped feature end to end without ever touching the Cloudflare dashboard. Given a flag key, run the five-step ritual: pre-flight the flag's effective serving via cf-utils and confirm it is currently dark, flip it live through cf-utils' 100%-no-match-split lever (dry-run → --execute), post-flight verify the flip took (dark → live), clear status:awaiting-release on the linked issue, and emit a human-readable release note. Supports `/release <flag-key> --percent <n>` for a ramped release. HUMAN-ONLY — an autonomous agent invoking it is hard-refused, the same enforcement shape as ship-it refusing to self-merge a control-plane PR (ADR 0053). Trigger on "release <flag-key>", "flip <flag-key> live", "release the dark feature", "/release". This is the human half of the agents-deploy / humans-release boundary (ADR 0083); the deploy is the agent's autonomous merge, the flip is yours.
+  The human release act made one guarded command — release a dark-shipped feature end to end without ever touching the Cloudflare dashboard. Given a flag key, run the guarded release ritual: pre-flight the flag's effective serving via cf-utils and confirm it is currently dark, refuse the flip when the flag's user-facing slice is unreachable via pipeline-cli reachability-guard (no consuming UI / no registered journey e2e, ADR 0173), flip it live through cf-utils' 100%-no-match-split lever (dry-run → --execute), post-flight verify the flip took (dark → live), clear status:awaiting-release on the linked issue, and emit a human-readable release note. Supports `/release <flag-key> --percent <n>` for a ramped release. HUMAN-ONLY — an autonomous agent invoking it is hard-refused, the same enforcement shape as ship-it refusing to self-merge a control-plane PR (ADR 0053). Trigger on "release <flag-key>", "flip <flag-key> live", "release the dark feature", "/release". This is the human half of the agents-deploy / humans-release boundary (ADR 0083); the deploy is the agent's autonomous merge, the flip is yours.
 ---
 
 # release
@@ -12,8 +12,9 @@ until someone deliberately flips it (ADR
 [0083](https://github.com/kamp-us/phoenix/blob/main/.decisions/0083-agents-deploy-humans-release.md):
 *agents deploy, humans release*). This skill is that flip, made **one guarded command** so the
 release act is a reviewable, verified ritual instead of an untraceable click in the Cloudflare
-dashboard. You run the five steps below end to end — pre-flight, flip, post-flight verify, clear
-the queue label, emit the release note — and you never open the dashboard.
+dashboard. You run the steps below end to end — pre-flight, the reachability gate (refuse the flip
+if the flag's user-facing slice is unbuilt, ADR 0173), flip, post-flight verify, clear the queue
+label, emit the release note — and you never open the dashboard.
 
 The tool under every read and write here is **`@kampus/cf-utils`** — the human-operated Flagship
 CLI (`packages/cf-utils`, ADR
@@ -150,6 +151,66 @@ LINKED_ISSUE="<that issue number>"
 If no `status:awaiting-release` issue names this flag, or the match is ambiguous, **ask the human
 to confirm the issue number** (or confirm there is no queue entry to clear) rather than guessing —
 a wrong dequeue clears another feature's queue entry. Never silently skip Step 4.
+
+---
+
+## Step 1.5 — Reachability gate: refuse the flip unless the flag's UI slice is reachable (ADR 0173)
+
+Between resolving the flag (Step 1) and flipping it (Step 2), assert the flag's vertical is
+**reachable**: a user-facing flag graduates to 100% (or ramps) only once a **consuming UI** and a
+**registered journey e2e** exist for its key. This closes the "graduate a flag nothing consumes"
+gap — reactions reached 100% in prod with **zero `.tsx` consuming `PHOENIX_REACTIONS`**, caught
+only when a human happened to notice (ADR
+[0173](https://github.com/kamp-us/phoenix/blob/main/.decisions/0173-vertical-completeness-gate.md),
+epic [#1943](https://github.com/kamp-us/phoenix/issues/1943)). The gate converts "someone happens
+to notice an unreachable feature" into "the release path structurally won't flip one."
+
+The check is the **one shared `reachability-guard` contract** `plan-epic` also keys off — never a
+second, drifting notion of "reachable" (ADR 0173 §1). Given `$FLAG_KEY` it asserts both a
+consuming `apps/web/src/**/*.tsx` reference to the flag-key constant and a `@journey:$FLAG_KEY`-tagged
+spec under `apps/web/tests/e2e/`, and **fails closed** (non-zero exit) naming exactly what's
+missing. Run it for the resolved key **before the dry-run flip**:
+
+```bash
+# phoenix-local: the in-repo consolidated bin; foreign install: the published CLI
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  REACH="node packages/pipeline-cli/src/bin.ts reachability-guard check"
+else
+  REACH="pnpm dlx @kampus/pipeline-cli@0.1.0 reachability-guard check"
+fi
+
+# HARD-REFUSE the flip on a non-zero exit — the report (on stderr) names which assertion failed
+# (no consuming UI / no journey e2e for $FLAG_KEY, or an unknown/unclassified flag). The flag
+# stays dark; do NOT proceed to Step 2.
+if ! $REACH "$FLAG_KEY"; then
+  cat >&2 <<EOF
+release: REFUSED — reachability gate. \`$FLAG_KEY\` is UNREACHABLE (see the reachability-guard
+report above): its vertical's user-facing slice is unbuilt, so it must not graduate to 100%
+(ADR 0173, epic #1943). The flag stays DARK. Build + wire the missing slice — the consuming
+.tsx and/or the @journey:$FLAG_KEY-tagged e2e the report named — then re-run /release. If this
+flag is UI-less by design (an infra/containment flag), mark it @reachability-exempt: <reason>
+at its apps/web/src/flags/keys.ts definition; the gate then passes it.
+EOF
+  exit 1
+fi
+```
+
+- **Non-zero exit → hard-refuse the flip.** This is the identical fail-closed refusal shape as
+  the skill's guard-0 human-only refusal and the Step-3 post-flight verify-before-record stop —
+  a structural boundary the ritual never routes around, never a soft warning it proceeds past.
+  The flag stays dark; the human builds the missing user-facing slice first, then re-runs
+  `/release`.
+- **Exit 0 → reachable *or* exempt → proceed to Step 2.** A legitimately UI-less
+  infra/containment flag (e.g. `pano-feed-edge-cache`, `PANO_FEED_EDGE_CACHE` — ADR 0170) passes
+  here **because it carries a `@reachability-exempt: <reason>` marker at its `keys.ts`
+  definition** (ADR 0173 §3). The refusal targets unreachable **user-facing** flags only; it
+  never blocks a stated-exempt infra flag.
+
+This gate is a check **the human's `/release` run** performs — it slots *after* guard 0, so a
+human is already at the lever (ADR 0083); it adds a precondition to the flip, it does **not** make
+`/release` autonomous. `reachability-guard` proves *presence* (a consuming reference + a
+registered e2e exist), not correctness — a stub consumer or an empty journey spec passes; the gate
+makes the zero-UI graduation unrepresentable, not the shallow-UI one.
 
 ---
 
