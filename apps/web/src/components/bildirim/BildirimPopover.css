@@ -1,0 +1,82 @@
+/* The interactive status-zone bildirim bell + its popover (#2787). Role tokens
+   only; the bell is a signal, never the promoted action, so it carries NO accent
+   fill (accent-scarcity law, design-manifest §Nav IA). Focus is the shared
+   spacer ring from global.css — never a per-component outline. Kept in its own
+   scoped file (not Topbar.css) so the popover styling is disjoint from the shared
+   topbar sheet. */
+
+/* The trigger: a button-reset bell. The glyph is 16px (dense/inline, ADR 0166),
+   decoupled from the 36px minimum hit area — padding fills the target, the glyph
+   does not inflate (design-manifest §Tap target / icon idiom). */
+.kp-bildirim-pop__trigger {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--s-1);
+	min-width: 36px;
+	min-height: 36px;
+	padding: 0 var(--s-1);
+	border: 0;
+	border-radius: var(--r-md);
+	background: none;
+	color: var(--text-secondary);
+	cursor: pointer;
+}
+.kp-bildirim-pop__trigger:hover {
+	color: var(--text-primary);
+}
+.kp-bildirim-pop__trigger .kp-icon {
+	color: inherit;
+}
+.kp-bildirim-pop__count {
+	font: var(--t-meta);
+	color: var(--text-primary);
+}
+
+/* The Positioner carries the stacking rank (the `position: fixed` element), the
+   same rule the Menu/Tooltip wrappers document — outrank the sticky Subnav. */
+.kp-bildirim-pop__positioner {
+	z-index: 70;
+}
+
+.kp-bildirim-pop__popup {
+	display: flex;
+	flex-direction: column;
+	width: 340px;
+	max-width: calc(100vw - var(--s-4));
+	max-height: min(70vh, 480px);
+	background: var(--surface-raised);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	box-shadow: var(--shadow-dropdown);
+	overflow: hidden;
+}
+
+.kp-bildirim-pop__head {
+	padding: var(--s-2) var(--s-3);
+	border-bottom: 1px solid var(--border-faint);
+}
+.kp-bildirim-pop__title {
+	margin: 0;
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+}
+
+/* The list body scrolls within the popover; the head + footer stay pinned. */
+.kp-bildirim-pop__body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: var(--s-1) var(--s-3);
+}
+
+.kp-bildirim-pop__foot {
+	display: flex;
+	justify-content: center;
+	padding: var(--s-2) var(--s-3);
+	border-top: 1px solid var(--border-faint);
+}
+.kp-bildirim-pop__see-all {
+	font: var(--t-body-sm);
+	color: var(--link);
+}

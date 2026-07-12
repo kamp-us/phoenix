@@ -211,7 +211,7 @@ describe("Topbar status/signal zone (#2613)", () => {
 		);
 	}
 
-	it("flag on: the unread bildirim renders a bell affordance in the status zone, not a bare number", () => {
+	it("flag on: the unread bildirim renders an INTERACTIVE bell in the status zone, not a bare number (#2787)", () => {
 		const {container} = renderStatus({navIa: true, bildirim: {to: "/bildirimler", unread: 3}});
 		const signal = screen.getByTestId("topbar-bildirim-badge");
 		// Lives in the status-signal zone, not on the user-menu trigger (its today's home).
@@ -221,8 +221,15 @@ describe("Topbar status/signal zone (#2613)", () => {
 		// bare number; the count text is still present and the accessible name carries it.
 		expect(signal.querySelector("svg")).not.toBeNull();
 		expect(signal.textContent).toContain("3");
-		expect(signal.getAttribute("role")).toBe("status");
+		// #2787 evolves the display-only status bell into a disclosure button: it is now an
+		// interactive popover trigger (aria-haspopup/expanded), and the unread count stays its
+		// accessible name (ADR 0166). The live announcement moves to a sibling role="status".
+		expect(signal.tagName).toBe("BUTTON");
+		expect(signal.getAttribute("aria-haspopup")).toBe("dialog");
+		expect(signal.getAttribute("aria-expanded")).toBe("false");
 		expect(signal.getAttribute("aria-label")).toBe("3 okunmamış bildirim");
+		const live = within(screen.getByTestId("topbar-zone-status-signal")).getByRole("status");
+		expect(live.textContent).toBe("3 okunmamış bildirim");
 	});
 
 	it("flag on: no bildirim signal renders when unread is 0", () => {
