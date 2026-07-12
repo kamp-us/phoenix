@@ -110,6 +110,15 @@ export interface ResolveTargetInput {
 export interface ResolveTargetResult {
 	/** How many open reports on this target were collapsed in the batch. */
 	collapsed: number;
+	/**
+	 * Whether THIS resolve owned the `open → terminal` transition — true iff it
+	 * flipped at least one open row (`collapsed > 0`). The terminal stamp is the one
+	 * point that arbitrates the transition, so the resolve mutation keys its removal
+	 * leg on this: a moderator whose concurrent resolve stamped the report terminal
+	 * first leaves `wonTransition` false here, and the removal is skipped — content is
+	 * never removed under another moderator's (e.g. dismissed) verdict (#2555).
+	 */
+	wonTransition: boolean;
 }
 
 export class Report extends Context.Service<
@@ -401,7 +410,8 @@ export const ReportLive = Layer.effect(Report)(
 					)
 					.run(),
 			);
-			return {collapsed: result.meta.changes} satisfies ResolveTargetResult;
+			const collapsed = result.meta.changes;
+			return {collapsed, wonTransition: collapsed > 0} satisfies ResolveTargetResult;
 		});
 
 		const reopenForTarget = Effect.fn("Report.reopenForTarget")(function* (input: {

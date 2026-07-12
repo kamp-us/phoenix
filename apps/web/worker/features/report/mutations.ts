@@ -215,12 +215,35 @@ const resolveGated = Effect.fn("report.resolveGated")(function* (
 	const now = new Date();
 	let targetRemoved = false;
 
-	if (input.action === "remove") {
-		// Act on the target via the 0096 substrate (reason `Moderated`); the
-		// reportId carried into the removal is the FIRST open report id on the
-		// target, so a later restore can reopen the group.
-		const firstId = yield* report.firstOpenReportId(target.targetKind, target.targetId);
-		const reportId = firstId ?? input.reportId ?? targetKey(target.targetKind, target.targetId);
+	// Capture the representative open report id BEFORE the stamp (below) flips
+	// open → terminal: the removal links its `Moderated` reason to it so a later
+	// restore reopens the group, and after the stamp there are no open rows left to
+	// read. Only the remove leg consumes it.
+	const firstOpenId =
+		input.action === "remove"
+			? yield* report.firstOpenReportId(target.targetKind, target.targetId)
+			: null;
+
+	// Stamp first, then remove only if this resolve WON the transition (#2555): the
+	// terminal stamp is the single arbiter of open → terminal, so keying the removal on
+	// `wonTransition` makes the two legs unable to disagree. A concurrent moderator who
+	// stamped the report terminal first leaves `wonTransition` false, so the removal is
+	// skipped — content is never removed under their (e.g. dismissed) verdict.
+	const {collapsed, wonTransition} = yield* report.resolveTarget({
+		targetKind: target.targetKind,
+		targetId: target.targetId,
+		resolverId: moderatorId,
+		action: input.action,
+		resolvedAt: now,
+		// Stamp the wave grouping when this resolve is one target of a wave gesture
+		// (#1855); null on a single-target resolve.
+		waveId: input.waveId ?? null,
+	});
+
+	if (input.action === "remove" && wonTransition) {
+		// Act on the target via the 0096 substrate (reason `Moderated`), keyed to the
+		// first open report id captured above.
+		const reportId = firstOpenId ?? input.reportId ?? targetKey(target.targetKind, target.targetId);
 		targetRemoved = yield* moderateRemove(target, moderatorId, reportId);
 		// The moderator-remove hides content that lives in the subscribed
 		// `posts` / `Post.comments` / `Term.definitions` connections; publish the
@@ -231,17 +254,6 @@ const resolveGated = Effect.fn("report.resolveGated")(function* (
 			yield* publishRemoved(live, target);
 		}
 	}
-
-	const {collapsed} = yield* report.resolveTarget({
-		targetKind: target.targetKind,
-		targetId: target.targetId,
-		resolverId: moderatorId,
-		action: input.action,
-		resolvedAt: now,
-		// Stamp the wave grouping when this resolve is one target of a wave gesture
-		// (#1855); null on a single-target resolve.
-		waveId: input.waveId ?? null,
-	});
 
 	return toResolveReceipt({
 		targetKind: target.targetKind,

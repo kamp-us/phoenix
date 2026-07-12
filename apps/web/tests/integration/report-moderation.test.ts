@@ -94,6 +94,17 @@ const listOpen = (cookie?: string) =>
 const getPost = (idOrSlug: string) =>
 	h.fate({kind: "query", name: "post", args: {idOrSlug}, select: ["id"]});
 
+const listResolved = (cookie: string) =>
+	h.fate(
+		{
+			kind: "list",
+			name: "report.listResolved",
+			args: {},
+			select: ["id", "targetKind", "targetId", "resolution"],
+		},
+		{cookie},
+	);
+
 beforeAll(async () => {
 	moderator = await h.signUp(`${NS}-mod@test.local`, "hunter2hunter2", "mod");
 	reporterA = await h.signUp(`${NS}-ra@test.local`, "hunter2hunter2", "ra");
@@ -248,5 +259,69 @@ describe("report.resolve — act-on-target via substrate + repeat-offender + reo
 				.items;
 			expect(rows.find((e) => e.node.targetId === postId)?.node.reportCount).toBe(2);
 		}
+	});
+});
+
+// #2555 regression: a `remove` resolve must be conditional on winning the open → terminal
+// transition, so it can never remove content under a verdict a concurrent moderator already
+// stamped. The interleave is driven deterministically — the concurrent terminal stamp lands
+// first (a dismiss), then the losing `remove` runs — which is exactly the state a true race
+// reaches once the dismiss's transaction commits ahead of the remove's stamp.
+describe("report.resolve — a remove that lost the transition removes nothing (#2555)", () => {
+	let racePostId = "";
+
+	it("seeds a fresh reported post for the interleave", async () => {
+		const post = await h.fate(
+			{
+				kind: "mutation",
+				name: "post.submit",
+				input: {title: `${NS} race target`, tags: [{kind: "tartışma"}]},
+				select: ["id"],
+			},
+			{cookie: author.cookie},
+		);
+		expect(post.ok).toBe(true);
+		if (!post.ok) return;
+		racePostId = (post.data as {id: string}).id;
+		expect((await reportPost(racePostId, reporterA.cookie, "spam")).ok).toBe(true);
+	});
+
+	it("a dismiss stamps the report terminal first; a later remove leaves the content live", async () => {
+		// The concurrent terminal stamp lands first: the report is now `dismissed`, content present.
+		const dismissed = await resolve(
+			{targetKind: "post", targetId: racePostId, action: "dismiss"},
+			moderator.cookie,
+		);
+		expect(dismissed.ok).toBe(true);
+		if (!dismissed.ok) return;
+		const dismissReceipt = dismissed.data as {resolution: string; collapsed: number};
+		expect(dismissReceipt.resolution).toBe("dismissed");
+		expect(dismissReceipt.collapsed).toBe(1);
+
+		// The losing `remove` runs against the now-terminal report: it wins no transition, so
+		// the removal leg is skipped — nothing collapses, nothing is removed, no fan-out fires.
+		const removed = await resolve(
+			{targetKind: "post", targetId: racePostId, action: "remove"},
+			moderator.cookie,
+		);
+		expect(removed.ok).toBe(true);
+		if (!removed.ok) return;
+		const removeReceipt = removed.data as {targetRemoved: boolean; collapsed: number};
+		expect(removeReceipt.collapsed).toBe(0);
+		expect(removeReceipt.targetRemoved).toBe(false);
+
+		// The content is still live — NOT removed under the dismissed verdict.
+		const post = await getPost(racePostId);
+		expect(post.ok && post.data !== null).toBe(true);
+
+		// Feed and reality agree: the decision feed records the target as `dismissed`, and the
+		// content it points at is present — the exact consistency the guard restores.
+		const resolvedList = await listResolved(moderator.cookie);
+		expect(resolvedList.ok).toBe(true);
+		if (!resolvedList.ok) return;
+		const decided = (
+			resolvedList.data as {items: Array<{node: {targetId: string; resolution: string}}>}
+		).items.find((e) => e.node.targetId === racePostId);
+		expect(decided?.node.resolution).toBe("dismissed");
 	});
 });
