@@ -31,6 +31,21 @@
 export const ALLOWLIST: ReadonlyArray<string> = ["claude-opus-4-8", "claude-opus-4-8[1m]"] as const;
 
 /**
+ * Harness model aliases → canonical allowlist IDs. The Task/Workflow `model` param is
+ * expressed in the harness's short vocabulary (`opus`, `opus[1m]`), never the canonical
+ * `claude-opus-4-8*` id — so an explicit `opus` spawn (the very Opus-4.8 family the
+ * allowlist exists to permit) was denied by an allowlist that held only canonical ids
+ * (#2565). Only the Opus-4.8 family has an entry — `sonnet` / `haiku` are deliberately
+ * absent, so they never canonicalize onto the allowlist and stay a fail-closed DENY
+ * (ADR 0092). Mapping resolves an alias for the allowlist *check* only; the guard never
+ * rewrites the request to the canonical id (#776 — the Task tool rejects the full id).
+ */
+export const MODEL_ALIASES: Readonly<Record<string, string>> = {
+	opus: "claude-opus-4-8",
+	"opus[1m]": "claude-opus-4-8[1m]",
+};
+
+/**
  * The committed, allowlisted pin an unset `WORKFLOW_MODEL` falls back to (ADR 0116).
  * Durable in source, so an unset spawn resolves to allow-inherit regardless of the
  * launching shell — the fix for the #943 fragility where the inherit path depended on
@@ -62,8 +77,18 @@ const norm = (m: string | null | undefined): string | null => {
 	return t.length === 0 ? null : t;
 };
 
-export const isOnAllowlist = (model: string | null | undefined): boolean => {
+/**
+ * Resolve a harness alias to its canonical id; a value that is not an alias (including a
+ * canonical id already) passes through unchanged. Null/empty normalizes to null.
+ */
+export const canonicalModel = (model: string | null | undefined): string | null => {
 	const m = norm(model);
+	if (m === null) return null;
+	return MODEL_ALIASES[m] ?? m;
+};
+
+export const isOnAllowlist = (model: string | null | undefined): boolean => {
+	const m = canonicalModel(model);
 	return m !== null && ALLOWLIST.includes(m);
 };
 
