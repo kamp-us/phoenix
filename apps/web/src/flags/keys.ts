@@ -12,6 +12,20 @@
 export const PANO_DRAFT_SAVE = "pano-draft-save";
 
 /**
+ * Sözlük parallel-stamp-wave containment flag (#2709, epic #2567). Default-off. The
+ * sözlük definition reads (`getDefinitionsByIds` / `listDefinitionsKeyset`) always
+ * route their independent stamps through the shared `parallelStampWave`; this flag is
+ * the concurrency knob it passes — OFF ⇒ the wave runs at `concurrency: 1` (the reads
+ * stay serial, byte-for-byte today's behavior), ON ⇒ `"unbounded"` collapses the stamp
+ * chain into one concurrent wave (the #2567 win). Flipping it on is the human release
+ * act (ADR 0083). Its own `phoenix-` key — the combinator is cross-product (the pano
+ * sibling #2710 ships behind its own seam), read-path only.
+ *
+ * @reachability-exempt: server read-path performance flag, no user-facing surface (identical wire output either way; only wall time changes).
+ */
+export const PHOENIX_SOZLUK_STAMP_WAVE = "phoenix-sozluk-stamp-wave";
+
+/**
  * mecmua write-path dark-ship flag (#2497, epic #2467). The single seam the mecmua
  * write surface gates behind — the `mecmua.publish` + `mecmua.saveDraft` mutations
  * fail `MECMUA_DISABLED` with it off, so the whole write path ships dark until a

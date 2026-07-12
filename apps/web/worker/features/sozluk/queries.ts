@@ -11,7 +11,10 @@ import {Fate} from "@kampus/fate-effect";
 import {hasNestedSelection} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {PHOENIX_SOZLUK_STAMP_WAVE} from "../../../src/flags/keys.ts";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
+import {Flags} from "../flagship/Flags.ts";
+import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {toDefinition, toTermFromPage} from "./shapers.ts";
@@ -48,10 +51,17 @@ export const queries = {
 				return base;
 			}
 
+			// Contained behind the default-off flag (#2709): off ⇒ serial stamps (today), on
+			// ⇒ one concurrent wave. Identical wire output — only wall time collapses.
+			const flags = yield* Flags;
+			const parallelStamps = yield* flags
+				.getBoolean(PHOENIX_SOZLUK_STAMP_WAVE, false)
+				.pipe(provideRequestFlags);
 			const connection = yield* sozluk.listDefinitionsKeyset(args.slug, {
 				...keysetInput(args.definitions, DEFINITIONS_PAGE_SIZE),
 				viewerId,
 				sandboxViewer,
+				parallelStamps,
 			});
 			const definitions = toConnection<(typeof connection.rows)[number], Definition>(
 				connection,

@@ -17,6 +17,7 @@ import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {stampAuthorIdentity} from "../fate/author-identity.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
+import {parallelStampWave} from "../fate/stamp-wave.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {applyRemovalTransition, swallowRefresh} from "../lifecycle/apply-removal-transition.ts";
 import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
@@ -342,6 +343,14 @@ export class Sozluk extends Context.Service<
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
+				/**
+				 * Route the page's independent stamps (viewer scalars + reaction aggregate +
+				 * author identity) through the concurrent {@link parallelStampWave} instead of
+				 * the serial chain (#2709). Default/off ⇒ the wave runs at `concurrency: 1`
+				 * (serial, byte-for-byte today); the resolver flips it from the containment
+				 * flag. Output is identical either way — only wall time collapses.
+				 */
+				parallelStamps?: boolean | undefined;
 			},
 		) => Effect.Effect<DefinitionConnectionPage>;
 
@@ -353,7 +362,12 @@ export class Sozluk extends Context.Service<
 		 */
 		readonly getDefinitionsByIds: (
 			ids: ReadonlyArray<string>,
-			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
+			opts?: {
+				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
+				/** See {@link listDefinitionsKeyset}'s `parallelStamps` (#2709). */
+				parallelStamps?: boolean | undefined;
+			},
 		) => Effect.Effect<DefinitionRow[]>;
 
 		/**
@@ -512,6 +526,29 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			read: (viewerId: string | null | undefined, ids: ReadonlyArray<string>) =>
 				voteSvc.readMine(viewerId, "definition", ids),
 		} as const;
+
+		// The three independent finalize stamps every definition read shares — `myVote`
+		// (viewer scalar), the reaction aggregate, live author identity — each independent
+		// given the fetched rows. `parallelStampWave` runs them over the SAME rows and
+		// merges; `parallelStamps` picks the concurrency: off ⇒ `1` (serial, byte-for-byte
+		// today), on ⇒ `"unbounded"` (one wave, the #2709 collapse). The reaction stamp's
+		// own two D1 reads inherit the same knob so the whole wave is one phase when on.
+		const stampDefinitions = <R extends {id: string; authorId: string}>(
+			rows: ReadonlyArray<R>,
+			viewerId: string | null,
+			parallelStamps: boolean,
+		) => {
+			const concurrency = parallelStamps ? "unbounded" : 1;
+			return parallelStampWave(
+				rows,
+				[
+					(rs) => stampViewerScalars(rs, viewerId, [definitionVoteScalar]),
+					(rs) => stampReactionAggregate(reactionSvc, "definition", rs, viewerId, {concurrency}),
+					(rs) => stampAuthorIdentity(pasaport.getProfileIdentitiesByIds, rs),
+				],
+				{concurrency},
+			);
+		};
 
 		// Recompute one slug's `term_record` row from its live `definition_record`
 		// slice. The closure is just the port: read rows via `run`, call the pure
@@ -725,6 +762,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
+				parallelStamps?: boolean | undefined;
 			} = {},
 		) {
 			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
@@ -803,16 +841,18 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					sandboxed: ownSandboxed(d, viewerId),
 				}),
 			);
-			const scalared = yield* stampViewerScalars(page.rows, viewerId, [definitionVoteScalar]);
-			const reacted = yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
-			const rows = yield* stampAuthorIdentity(pasaport.getProfileIdentitiesByIds, reacted);
+			const rows = yield* stampDefinitions(page.rows, viewerId, opts.parallelStamps ?? false);
 
 			return {...page, rows, totalCount} satisfies DefinitionConnectionPage;
 		});
 
 		const getDefinitionsByIds = Effect.fn("Sozluk.getDefinitionsByIds")(function* (
 			ids: ReadonlyArray<string>,
-			opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
+			opts: {
+				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
+				parallelStamps?: boolean | undefined;
+			} = {},
 		) {
 			if (ids.length === 0) return [];
 			const viewerId = opts.viewerId ?? null;
@@ -835,13 +875,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						),
 					),
 			);
-			const scalared = yield* stampViewerScalars(
-				fetched.map((d) => ({...toDefinitionRow(d), sandboxed: ownSandboxed(d, viewerId)})),
-				viewerId,
-				[definitionVoteScalar],
-			);
-			const reacted = yield* stampReactionAggregate(reactionSvc, "definition", scalared, viewerId);
-			return yield* stampAuthorIdentity(pasaport.getProfileIdentitiesByIds, reacted);
+			const base = fetched.map((d) => ({
+				...toDefinitionRow(d),
+				sandboxed: ownSandboxed(d, viewerId),
+			}));
+			return yield* stampDefinitions(base, viewerId, opts.parallelStamps ?? false);
 		});
 
 		const listSandboxedDefinitions = Effect.fn("Sozluk.listSandboxedDefinitions")(function* (

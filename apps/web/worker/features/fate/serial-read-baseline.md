@@ -44,6 +44,17 @@ collapse folds into **1 concurrent wave**, so each read path drops **3 serial ph
 (by-id 5 → 2; connection first-page 6 → 3). That 3-phase drop, not any absolute wall-time,
 is the placement-invariant number each collapse child proves its win against.
 
+### Realized — sözlük (#2709)
+
+The sözlük definition reads (`getDefinitionsByIds` / `listDefinitionsKeyset`) now route their
+three stamps through the shared `parallelStampWave` combinator
+([`stamp-wave.ts`](./stamp-wave.ts)), and the reaction stamp's own two reads join the wave via
+`Reaction.readAggregate`'s new `concurrency` option — so the **full 4-phase tail collapses to 1
+concurrent wave** when the flag is on: **by-id 5 → 2, connection first-page 6 → 3 (the documented
+3-phase drop).** With the default-off `phoenix-sozluk-stamp-wave` flag the wave runs at
+`concurrency: 1` — the reads stay serial, byte-for-byte today's output. The knob flips wall time
+only; the pano sibling (#2710) reuses the same combinator behind its own seam.
+
 ## Wall-time baseline (method + numbers)
 
 **Method** — reuse the 2026-07-06 production investigation's surface (#2275, ADR 0168):

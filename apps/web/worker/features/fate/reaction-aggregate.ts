@@ -17,6 +17,7 @@
  */
 import type {Effect} from "effect";
 import {Effect as Eff} from "effect";
+import type {Concurrency} from "effect/Types";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {
 	EMPTY_REACTION_AGGREGATE,
@@ -30,16 +31,22 @@ import {
  * none). One read for the whole batch — never per row. The stamped field is
  * *added* to the input row shape, so a read that wants the aggregate must route
  * through here (a path that skips the stamp never produces the field).
+ *
+ * `readAggregate` itself issues TWO D1 reads (the per-target `GROUP BY` + the
+ * viewer's `readMine`); pass `{concurrency: "unbounded"}` to fan those two out so
+ * this stamp is a single wave phase when run inside `parallelStampWave`. Default
+ * (absent) keeps them sequential — today's behavior for every non-opted caller.
  */
 export const stampReactionAggregate = <R extends {id: string}>(
 	reactionSvc: typeof Reaction.Service,
 	kind: TargetKind,
 	rows: ReadonlyArray<R>,
 	viewerId: string | null | undefined,
+	options?: {readonly concurrency?: Concurrency},
 ): Effect.Effect<Array<R & {reactions: ReactionAggregate}>> =>
 	Eff.gen(function* () {
 		const ids = rows.map((row) => row.id);
-		const byId = yield* reactionSvc.readAggregate(viewerId, kind, ids);
+		const byId = yield* reactionSvc.readAggregate(viewerId, kind, ids, options);
 		return rows.map((row) => ({
 			...row,
 			reactions: byId.get(row.id) ?? EMPTY_REACTION_AGGREGATE,

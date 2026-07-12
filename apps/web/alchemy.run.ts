@@ -63,6 +63,7 @@ import {
 	panoOptimisticPostDeleteFlag,
 	panoOptimisticSubmitFlag,
 	reactionsFlag,
+	sozlukStampWaveFlag,
 	userBanFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
@@ -156,6 +157,10 @@ export default Alchemy.Stack(
 		// #2596) — the single cross-cutting seam the nested layout routes + Subnav CTA slot
 		// substrate + every per-product delta gate behind until a human release.
 		yield* navIaFlag(flagship.appId);
+		// The sözlük parallel-stamp-wave read-collapse dark-ship flag, default-off (#2709,
+		// epic #2567) — the concurrency knob the definition reads' stamp wave passes: off ⇒
+		// serial (today), on ⇒ one concurrent wave, until a human release.
+		yield* sozlukStampWaveFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
