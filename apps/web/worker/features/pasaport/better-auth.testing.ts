@@ -8,6 +8,7 @@
  * A **factory, not a shared instance** (`.patterns/effect-testing.md`).
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
+import {apiKey} from "@better-auth/api-key";
 import {type Auth, type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
 import {drizzleAdapter} from "better-auth/adapters/drizzle";
 import {bearer} from "better-auth/plugins";
@@ -18,7 +19,7 @@ import * as Layer from "effect/Layer";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as schema from "../../db/drizzle/schema.ts";
-import {BetterAuthHandlerError} from "./better-auth-live.ts";
+import {apiKeyRateLimit, BetterAuthHandlerError} from "./better-auth-live.ts";
 
 /**
  * A REAL better-auth instance over a test `D1Database` handle, reproducing
@@ -26,9 +27,9 @@ import {BetterAuthHandlerError} from "./better-auth-live.ts";
  * stack the node test pool lacks.
  *
  * MUST stay in lockstep with `BetterAuthLive` (same `emailAndPassword`,
- * `drizzleAdapter`, `bearer()`, `additionalFields.username`) — if they drift the
- * guard suites silently test a different shape than production. Test-only diffs,
- * immaterial to the shape under test: literal `secret`/`baseURL`/`trustedOrigins`
+ * `drizzleAdapter`, `bearer()`, `apiKey()`, `additionalFields.username`) — if they
+ * drift the guard suites silently test a different shape than production. Test-only
+ * diffs, immaterial to the shape under test: literal `secret`/`baseURL`/`trustedOrigins`
  * and no `magicLink` plugin.
  *
  * Returns a concrete `Auth<{…}>`; callers widen to the generic `Auth` (see {@link layerTest}).
@@ -46,7 +47,7 @@ export function makeRealAuthForTest(d1: D1Database) {
 				username: {type: "string", required: false, input: false},
 			},
 		},
-		plugins: [bearer()],
+		plugins: [bearer(), apiKey({rateLimit: apiKeyRateLimit})],
 	} satisfies BetterAuthOptions);
 }
 

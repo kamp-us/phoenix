@@ -31,6 +31,7 @@
 	"dependencies": {
 		"@alchemy.run/better-auth": "catalog:",
 		"@base-ui/react": "catalog:",
+		"@better-auth/api-key": "catalog:",
 		"@better-auth/core": "catalog:",
 		"@effect/platform-bun": "catalog:",
 		"@effect/platform-node": "catalog:",

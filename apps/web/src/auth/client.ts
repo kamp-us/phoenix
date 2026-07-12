@@ -1,6 +1,7 @@
 // Re-anchor transitive type specifiers away from `.pnpm/<hash>/...` paths
 // so tsgo can portably name plugin types under composite project refs.
 // Mirrors worker/features/pasaport/better-auth-live.ts.
+import {apiKeyClient} from "@better-auth/api-key/client";
 import type {} from "@better-auth/core";
 import type {} from "better-auth/client";
 import {inferAdditionalFields} from "better-auth/client/plugins";
@@ -21,7 +22,15 @@ export const authClient = createAuthClient({
 	// keeps the worker auth instance out of the SPA bundle. `username` is immutable
 	// once set, so this session value equals `me.username` — see `useMe` for the one
 	// transient (right after a `setUsername` write) where the canonical row still wins.
-	plugins: [inferAdditionalFields({user: {username: {type: "string", required: false}}})],
+	// `apiKeyClient` surfaces the minimal documented mint path for a logged-in human to
+	// obtain a durable agent credential (ADR 0044 Decision 3, #108): a session can mint +
+	// copy a key with `await authClient.apiKey.create({name})`, reading the one-time
+	// plaintext off `res.data.key` to hand to an agent (which then sends it as the
+	// `x-api-key` header). The full `kampus auth` PAT UX is the separate CLI epic (#113).
+	plugins: [
+		inferAdditionalFields({user: {username: {type: "string", required: false}}}),
+		apiKeyClient(),
+	],
 	fetchOptions: {
 		auth: {
 			type: "Bearer",
