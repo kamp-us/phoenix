@@ -20,12 +20,20 @@ import * as FateEffect from "@kampus/fate-effect";
 import {declaredWireCodes} from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
 import {decodeFateWireCode, FATE_WIRE_CODES} from "../../../src/lib/fateWireCodes.ts";
+import {THROTTLE_WIRE_CODES} from "../throttle/wire-codes.ts";
 import {fateConfig} from "./config.ts";
 
 describe("wire-code contract", () => {
 	const spaCodes: ReadonlySet<string> = new Set(FATE_WIRE_CODES);
 
-	const serverCodes = declaredWireCodes(fateConfig);
+	// The server can emit two flavors: codes from a mutation's DECLARED error union
+	// (what `declaredWireCodes` walks) PLUS the throttle codes injected at the fate
+	// composition seam (ADR 0177) — the latter have no declared union to walk, so
+	// they are unioned in here so the SPA-coverage assertion still binds them.
+	const serverCodes: ReadonlySet<string> = new Set([
+		...declaredWireCodes(fateConfig),
+		...THROTTLE_WIRE_CODES,
+	]);
 
 	it("the annotation key is exported under its one canonical name `FateWireCode`", () => {
 		// Names drift under a value-only guard (#1032): the codec reads the

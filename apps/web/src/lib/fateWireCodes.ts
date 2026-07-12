@@ -42,6 +42,12 @@ export const FATE_WIRE_CODES = [
 	// flagging (≥ 50). Distinct from the tier-ladder `FORBIDDEN` — this is a raw
 	// karma-count anti-abuse floor, a separate axis (no double-gating, #150 rescope).
 	"INSUFFICIENT_KARMA",
+	// The per-actor mutation throttle tripped — the actor is issuing writes faster
+	// than their token bucket refills (`throttle/RateLimitExceeded`, ADR 0177).
+	// Cross-cutting: injected at the fate mutation seam, so ANY mutation can surface
+	// it. Not in `declaredWireCodes` (no declared union carries it); the coverage
+	// guard unions `THROTTLE_WIRE_CODES` so this list must still cover it.
+	"RATE_LIMIT_EXCEEDED",
 	"DEFINITION_NOT_FOUND",
 	"POST_NOT_FOUND",
 	// A pano post's removal WRITE failed at the D1 layer (`pano/PostDeleteFailed`,

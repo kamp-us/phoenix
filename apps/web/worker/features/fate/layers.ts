@@ -43,6 +43,9 @@ import {SearchLive} from "../search/Search.ts";
 import {SozlukLive} from "../sozluk/Sozluk.ts";
 import {StatsLive} from "../stats/Stats.ts";
 import {type TelemetryClient, TelemetryLive} from "../telemetry/Telemetry.ts";
+import {RateLimiterLive} from "../throttle/RateLimiter.ts";
+import {InIsolateRateLimitStoreLive} from "../throttle/RateLimitStore.ts";
+import {throttleMutations} from "../throttle/throttle-mutations.ts";
 import {KarmaBump, VoteLive, VoterStanding} from "../vote/Vote.ts";
 import {fateConfig} from "./config.ts";
 
@@ -263,6 +266,13 @@ export const makeFateLayer = Layer.mergeAll(
 	// The authorship-vouch ledger (#1206) — the `user.vouch` recorded-act store.
 	// Reads/writes the `authorship_vouch` table off the same `Drizzle` seam below.
 	VouchLedgerLive,
+	// The per-actor mutation throttle (ADR 0177) — a cross-cutting service bounding
+	// each actor's write volume, applied over the merged mutations record in
+	// `PhoenixFateLive` (`throttleMutations`). Its `RateLimitStore` backing is
+	// discharged HERE with `Layer.provide` (the storage swap point, in-isolate for
+	// v1) so `RateLimiter` reaches the composition root's captured services with no
+	// external R — the same internal-seam idiom as `KarmaBumpFromPasaport`.
+	RateLimiterLive.pipe(Layer.provide(InIsolateRateLimitStoreLive)),
 	// `Flags` is the dark-ship read surface fate resolvers/mutations gate on (#746,
 	// #1868). Environment-selected by {@link FateFlagsLive}: the dev-override wrapper
 	// under `development` (so the #622 override cookie is honored on the fate mutation
@@ -294,6 +304,12 @@ export const PhoenixFateLive: Layer.Layer<
 	WorkerFateServices | FateServer,
 	never,
 	Database | BetterAuth.BetterAuth | Flagship | TelemetryClient | RuntimeContext
-> = FateServer.layer(fateConfig, [CurrentActor, RequestFlagOverrides, PanoFeedCache]).pipe(
-	Layer.provideMerge(makeFateLayer),
-);
+> = FateServer.layer(
+	// The served config, with every mutation's `resolve` wrapped by the per-actor
+	// throttle (ADR 0177). Only the serving path is throttled — the codegen path
+	// (`schema.ts`) consumes the plain `fateConfig`, so build-time codegen is
+	// untouched. `RateLimiter`/`CurrentActor` are provided at run time (worker
+	// layer / per-request), so the wrapped config keeps `fateConfig`'s type.
+	{...fateConfig, mutations: throttleMutations(fateConfig.mutations)},
+	[CurrentActor, RequestFlagOverrides, PanoFeedCache],
+).pipe(Layer.provideMerge(makeFateLayer));
