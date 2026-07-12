@@ -16,6 +16,7 @@ import {wireCodeOfClass} from "@kampus/fate-effect";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
 import {TARGET_KINDS} from "../../db/target-kind.ts";
+import {UserId} from "../../lib/ids.ts";
 import type {TelemetryEvent} from "../telemetry/schema.ts";
 import {Telemetry} from "../telemetry/Telemetry.ts";
 import {VOTE_ELIGIBILITY_WIRE_CODE, VOTE_REQUIRED_TIER, VoterNotEligible} from "./errors.ts";
@@ -375,7 +376,11 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 	it("VoterNotEligible.need + its wire code are single-sourced from VOTE_REQUIRED_TIER (#2021)", () => {
 		// The tier name and the wire code are ONE fact: the error's `need` is `VOTE_REQUIRED_TIER`
 		// and its `FateWireCode` is derived from it, so a ladder move can't drift them apart.
-		const err = new VoterNotEligible({voterId: "u1", need: VOTE_REQUIRED_TIER, message: "x"});
+		const err = new VoterNotEligible({
+			voterId: UserId.make("u1"),
+			need: VOTE_REQUIRED_TIER,
+			message: "x",
+		});
 		assert.strictEqual(err.need, VOTE_REQUIRED_TIER);
 		assert.strictEqual(
 			VOTE_ELIGIBILITY_WIRE_CODE,

@@ -42,3 +42,16 @@ export type DefinitionId = typeof DefinitionId.Type;
 /** A sözlük term (başlık) slug — the başlık's stable identifier. */
 export const TermSlug = brandedId("TermSlug");
 export type TermSlug = typeof TermSlug.Type;
+
+/**
+ * A vote/reaction/report **target** id — the row id of the entity being scored or
+ * flagged. Cross-feature (vote, reaction, and the moderation surfaces all reference
+ * it), so it lives here rather than in one feature. It is *polymorphic* over the
+ * `TargetKind` set (`definition` | `post` | `comment`, `db/target-kind.ts`): one broad
+ * brand tags the raw id, and the accompanying `targetKind` carries the discriminator —
+ * the same (kind, id) pairing already threaded through every target surface. The brand
+ * only stops a `TargetId` being confused with a `UserId` (a voter/target swap), not one
+ * target kind for another; the kind guard is `TargetKind`'s job.
+ */
+export const TargetId = brandedId("TargetId");
+export type TargetId = typeof TargetId.Type;

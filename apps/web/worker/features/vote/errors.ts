@@ -9,12 +9,13 @@
 import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 import {TargetKindSchema} from "../../db/target-kind.ts";
+import {TargetId, UserId} from "../../lib/ids.ts";
 
 export class VoteTargetNotFound extends Schema.TaggedErrorClass<VoteTargetNotFound>()(
 	"vote/VoteTargetNotFound",
 	{
 		targetKind: TargetKindSchema,
-		targetId: Schema.String,
+		targetId: TargetId,
 		message: Schema.String,
 	},
 ) {}
@@ -32,7 +33,7 @@ export class VoteTargetSandboxed extends Schema.TaggedErrorClass<VoteTargetSandb
 	"vote/VoteTargetSandboxed",
 	{
 		targetKind: TargetKindSchema,
-		targetId: Schema.String,
+		targetId: TargetId,
 		message: Schema.String,
 	},
 ) {}
@@ -76,7 +77,7 @@ export const VOTE_ELIGIBILITY_WIRE_CODE =
 export class VoterNotEligible extends Schema.TaggedErrorClass<VoterNotEligible>()(
 	"vote/VoterNotEligible",
 	{
-		voterId: Schema.String,
+		voterId: UserId,
 		need: Schema.String,
 		message: Schema.String,
 	},
@@ -97,6 +98,11 @@ export class VoterNotEligible extends Schema.TaggedErrorClass<VoterNotEligible>(
 export class SelfVoteNotAllowed extends Schema.TaggedErrorClass<SelfVoteNotAllowed>()(
 	"vote/SelfVoteNotAllowed",
 	{
+		// Unbranded `Schema.String` (unlike VoterNotEligible's `UserId`) on purpose:
+		// this error is constructed at each feature's own self-vote guard — pano
+		// (post/comment) and sözlük — not inside Vote. Until those features brand
+		// their voter id (pano #2713), a `UserId` here would fail repo-wide typecheck
+		// at the pano call sites, which the epic #2700 forbids (#2723 stays vote-local).
 		voterId: Schema.String,
 		message: Schema.String,
 	},
