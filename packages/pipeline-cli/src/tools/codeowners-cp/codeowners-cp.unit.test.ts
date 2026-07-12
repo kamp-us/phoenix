@@ -18,7 +18,7 @@ import {
 // The lockstep test at the bottom of this file asserts this fixture still equals the
 // canonical §CP line on disk, so it can't silently drift again (#2343).
 const LIVE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
+	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
 
 describe("extractControlPlaneRe", () => {
 	it("pulls the regex from the canonical CONTROL_PLANE_RE='…' assignment line", () => {
@@ -37,7 +37,7 @@ describe("splitTopLevelBranches", () => {
 		const branches = splitTopLevelBranches(LIVE_RE);
 		expect(branches).toEqual([
 			"(\\.claude|\\.github)/",
-			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/",
+			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/",
 			"claude-plugins/kampus-pipeline/agents/",
 			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$",
 			"claude-plugins/kampus-pipeline/hooks(/|\\.json$)",
@@ -55,9 +55,9 @@ describe("expandBranch", () => {
 		]);
 	});
 
-	it("expands the six skill dirs", () => {
+	it("expands the nine skill dirs", () => {
 		const out = expandBranch(
-			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/",
+			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/",
 		);
 		expect(out.map((p) => p.path)).toEqual([
 			"claude-plugins/kampus-pipeline/skills/ship-it/",
@@ -66,6 +66,9 @@ describe("expandBranch", () => {
 			"claude-plugins/kampus-pipeline/skills/review-skill/",
 			"claude-plugins/kampus-pipeline/skills/review-design/",
 			"claude-plugins/kampus-pipeline/skills/review-plan/",
+			"claude-plugins/kampus-pipeline/skills/triage/",
+			"claude-plugins/kampus-pipeline/skills/write-code/",
+			"claude-plugins/kampus-pipeline/skills/plan-epic/",
 		]);
 		expect(out.every((p) => p.kind === "dir")).toBe(true);
 	});
@@ -99,7 +102,7 @@ describe("expandBranch", () => {
 });
 
 describe("cpPaths over the live regex", () => {
-	it("resolves the full §CP path set (14 paths: dirs + the two exact files)", () => {
+	it("resolves the full §CP path set (17 paths: dirs + the two exact files)", () => {
 		expect(cpPaths(LIVE_RE).map((p) => p.path)).toEqual([
 			".claude/",
 			".github/",
@@ -109,6 +112,9 @@ describe("cpPaths over the live regex", () => {
 			"claude-plugins/kampus-pipeline/skills/review-skill/",
 			"claude-plugins/kampus-pipeline/skills/review-design/",
 			"claude-plugins/kampus-pipeline/skills/review-plan/",
+			"claude-plugins/kampus-pipeline/skills/triage/",
+			"claude-plugins/kampus-pipeline/skills/write-code/",
+			"claude-plugins/kampus-pipeline/skills/plan-epic/",
 			"claude-plugins/kampus-pipeline/agents/",
 			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
 			"claude-plugins/kampus-pipeline/hooks/",
@@ -183,6 +189,9 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/skills/review-skill/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-design/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-plan/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
 			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/claude-plugins/kampus-pipeline/hooks/ @usirin",
@@ -204,6 +213,9 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/skills/review-skill/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-design/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-plan/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
 			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/packages/ci-required/ @usirin",

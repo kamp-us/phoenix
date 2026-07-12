@@ -6,7 +6,7 @@ import {Effect, Exit} from "effect";
 import {type CheckFailed, CODEOWNERS_PATH, checkCodeownersCp, FORMATS_PATH} from "./gate.ts";
 
 const LIVE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
+	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
 
 const FULL_CODEOWNERS = [
 	"/.claude/ @usirin",
@@ -17,6 +17,9 @@ const FULL_CODEOWNERS = [
 	"/claude-plugins/kampus-pipeline/skills/review-skill/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/review-design/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/review-plan/ @usirin",
+	"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
+	"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
+	"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
 	"/claude-plugins/kampus-pipeline/agents/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 	"/claude-plugins/kampus-pipeline/hooks/ @usirin",

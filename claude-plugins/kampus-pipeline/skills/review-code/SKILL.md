@@ -514,7 +514,7 @@ snapshot once mis-classified a now-control-plane PR (#981); reading §CP freshly
 # is current — a pre-amendment snapshot once mis-classified a now-control-plane PR (#981). So the
 # literal below is the fail-closed reference + the validate-gate-path-drift lockstep target, NOT the
 # live decision source: the regex actually classified is re-resolved from origin/main right after it.
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set (ADR 0073 §6; hooks added by 0103/#1003; the standalone -guard clause retired with those packages by #1003; agents/ added by 0150/#2003)
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set (ADR 0073 §6; hooks added by 0103/#1003; the standalone -guard clause retired with those packages by #1003; agents/ added by 0150/#2003)
 # Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-flag a now-control-plane
 # PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
 # freshly via REST raw (never GraphQL). origin/main's line wins over the snapshot; fail closed on read failure.
