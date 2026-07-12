@@ -21,10 +21,14 @@ This is not one bad feature; it is a systemic blind spot with three confirmed in
 [#1943](https://github.com/kamp-us/phoenix/issues/1943)):
 
 - **reactions** — the backend vertical shipped in full (react/change/retract mutations, the
-  `reactions` view field on pano post/comment + sözlük definition, aggregate reads), the
-  `PHOENIX_REACTIONS` dark-ship flag reached 100% in production, and **zero `.tsx` in
-  `apps/web/src` consumes it** — the flag key is referenced only by its own definition in
-  `apps/web/src/flags/keys.ts`. UI slice externally owned by #1867 under epic #1840.
+  `reactions` view field on pano post/comment + sözlük definition, aggregate reads) and the
+  `PHOENIX_REACTIONS` dark-ship flag reached 100% in production while **no `.tsx` in
+  `apps/web/src` consumed it** — the flag key was referenced only by its own definition in
+  `apps/web/src/flags/keys.ts`, the exact zero-UI graduation this gate exists to prevent. (This
+  was the *motivating* instance, not a still-open one: the reactions UI slice —
+  `apps/web/src/components/reaction/ReactionBarSlot.tsx`, PR #2055, landed 2026-07-05 — has since
+  consumed the flag, so `phoenix-reactions` now **passes** the consuming-UI assertion. UI slice
+  externally owned by #1867 under epic #1840.)
 - **mecmua discovery** (#2512) — no nav entry / index page; reachable only by direct slug URL.
 - **mecmua subscribe** (#2527) — subscribe/unsubscribe mutations exist, no UI to subscribe.
 
