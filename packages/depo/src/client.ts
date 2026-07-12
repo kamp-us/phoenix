@@ -24,6 +24,7 @@ import {
 } from "./domain.ts";
 import {
 	ContentAddressConflict,
+	type DigestError,
 	FileReadError,
 	PayloadTooLarge,
 	Unauthorized,
@@ -66,6 +67,7 @@ interface DoormanSuccessBody {
 }
 
 const parseSuccess = (body: string): DoormanSuccessBody | null => {
+	// biome-ignore lint/plugin: a malformed doorman body is a benign null ("not a success body" → fall back to the client-derived URL), not a failure to lift into E — wrapping this JSON.parse guard in Effect.try only to re-collapse the error to null is noise.
 	try {
 		const parsed = JSON.parse(body) as Partial<DoormanSuccessBody>;
 		if (typeof parsed.key === "string" && typeof parsed.url === "string") {
@@ -94,7 +96,12 @@ export const putBytes = (input: {
 	readonly body: Uint8Array;
 }): Effect.Effect<
 	string,
-	Unauthorized | UnsupportedMediaType | PayloadTooLarge | ContentAddressConflict | UploadFailed,
+	| DigestError
+	| Unauthorized
+	| UnsupportedMediaType
+	| PayloadTooLarge
+	| ContentAddressConflict
+	| UploadFailed,
 	DoormanClient
 > =>
 	Effect.gen(function* () {

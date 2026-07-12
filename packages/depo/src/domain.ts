@@ -10,7 +10,7 @@
  * unit tier).
  */
 import * as Effect from "effect/Effect";
-import {UnsupportedFile} from "./errors.ts";
+import {DigestError, UnsupportedFile} from "./errors.ts";
 
 /**
  * The content-type allowlist and its extension — the single source the client
@@ -57,10 +57,13 @@ export const contentTypeForFile = (
 };
 
 /** Lowercase hex of a SHA-256 digest — the content-address stem. */
-export const sha256Hex = (bytes: Uint8Array): Effect.Effect<string> =>
-	// `.slice()` yields a fresh `Uint8Array<ArrayBuffer>` (never a SharedArrayBuffer),
-	// which is what `crypto.subtle.digest`'s `BufferSource` requires under strict TS.
-	Effect.promise(() => crypto.subtle.digest("SHA-256", bytes.slice())).pipe(
+export const sha256Hex = (bytes: Uint8Array): Effect.Effect<string, DigestError> =>
+	Effect.tryPromise({
+		// `.slice()` yields a fresh `Uint8Array<ArrayBuffer>` (never a SharedArrayBuffer),
+		// which is what `crypto.subtle.digest`'s `BufferSource` requires under strict TS.
+		try: () => crypto.subtle.digest("SHA-256", bytes.slice()),
+		catch: (cause) => new DigestError({cause}),
+	}).pipe(
 		Effect.map((buf) =>
 			Array.from(new Uint8Array(buf))
 				.map((b) => b.toString(16).padStart(2, "0"))
@@ -72,7 +75,7 @@ export const sha256Hex = (bytes: Uint8Array): Effect.Effect<string> =>
 export const contentAddressKey = (
 	bytes: Uint8Array,
 	contentType: AllowedContentType,
-): Effect.Effect<string> =>
+): Effect.Effect<string, DigestError> =>
 	sha256Hex(bytes).pipe(Effect.map((hex) => `${hex}.${ALLOWED_TYPES[contentType]}`));
 
 /** The permanent public URL for a stored key: `https://depo.kamp.us/<key>`. */
