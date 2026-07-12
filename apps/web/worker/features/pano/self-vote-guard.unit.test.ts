@@ -13,12 +13,14 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit} from "effect";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
+import {UserId} from "../../lib/ids.ts";
 import type {Vote, VoteInput, VoteResult} from "../vote/Vote.ts";
+import {PostId} from "./ids.ts";
 import {makePostOperations, type PostOperationsDeps} from "./post-operations.ts";
 
-const AUTHOR = "u-author";
-const OTHER = "u-other";
-const POST_ID = "post_1";
+const AUTHOR = UserId.make("u-author");
+const OTHER = UserId.make("u-other");
+const POST_ID = PostId.make("post_1");
 
 // The `post_record` the up-front load returns. Only `authorId` drives the guard; the
 // rest satisfy the row shape the return projection reads.

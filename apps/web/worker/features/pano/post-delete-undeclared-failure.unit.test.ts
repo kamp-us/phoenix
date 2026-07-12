@@ -25,12 +25,14 @@ import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, type Context, Effect, Exit, Layer} from "effect";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
+import {UserId} from "../../lib/ids.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
+import {PostId} from "./ids.ts";
 import {mutations} from "./mutations.ts";
 import {Pano, PanoLive} from "./Pano.ts";
 
@@ -108,7 +110,7 @@ describe("post.delete — (a) no undeclared failure channel at the wire boundary
 });
 
 // The stamp batch commits (source of truth), then the post-commit stats refresh dies.
-const ownerId = AUTHOR.id;
+const ownerId = UserId.make(AUTHOR.id);
 const removalCommitsThenStatsDie = (): DrizzleAccess => {
 	let runs = 0;
 	return {
@@ -160,7 +162,9 @@ describe("post.delete — (b) a post-commit cache refresh cannot fail a committe
 		Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
 				const pano = yield* Pano;
-				return yield* pano.deletePost({postId: "post_1", actorId: ownerId}).pipe(Effect.exit);
+				return yield* pano
+					.deletePost({postId: PostId.make("post_1"), actorId: ownerId})
+					.pipe(Effect.exit);
 			}).pipe(Effect.provide(panoServiceLayer(removalCommitsThenStatsDie())));
 			assert.isTrue(
 				Exit.isSuccess(exit),

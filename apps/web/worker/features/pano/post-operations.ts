@@ -26,6 +26,7 @@ import {computeHotScore} from "../../db/hotScore.ts";
 import {decayHotScores, type HotDecayRow, type HotDecayUpdate} from "../../db/hotScoreDecay.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import type {UserId} from "../../lib/ids.ts";
 import {type ReadProfileIdentities, stampAuthorIdentity} from "../fate/author-identity.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
@@ -56,6 +57,7 @@ import {
 	UrlInvalid,
 } from "./errors.ts";
 import {excerpt} from "./excerpt.ts";
+import type {PostId} from "./ids.ts";
 import {isHttpUrl} from "./link-metadata.ts";
 import {postVisibleTo, postVisibleWhere} from "./PostVisibility.ts";
 import type {PersistPanoStats} from "./pano-stats.ts";
@@ -83,7 +85,7 @@ export interface SubmitPostInput {
 	url?: string | undefined;
 	body?: string | undefined;
 	tags: ReadonlyArray<{kind: string; label?: string | undefined}>;
-	authorId: string;
+	authorId: UserId;
 	authorName: string;
 	/**
 	 * The çaylak mod-only sandbox stamp (#1205), decided by the resolver from the
@@ -107,7 +109,7 @@ export interface SubmitPostResult {
 }
 
 export interface SaveDraftInput {
-	authorId: string;
+	authorId: UserId;
 	authorName: string;
 	title?: string | undefined;
 	url?: string | undefined;
@@ -121,7 +123,7 @@ export interface SaveDraftResult extends SubmitPostResult {
 }
 
 export interface DiscardDraftInput {
-	authorId: string;
+	authorId: UserId;
 }
 
 export interface DiscardDraftResult {
@@ -129,8 +131,8 @@ export interface DiscardDraftResult {
 }
 
 export interface VoteOnPostInput {
-	postId: string;
-	voterId: string;
+	postId: PostId;
+	voterId: UserId;
 }
 
 export interface VoteOnPostResult {
@@ -151,8 +153,8 @@ export interface VoteOnPostResult {
 }
 
 export interface ReactToPostInput {
-	postId: string;
-	userId: string;
+	postId: PostId;
+	userId: UserId;
 	/**
 	 * The reaction intent: a curated-palette member sets/changes the user's single
 	 * reaction; `null` retracts it (toggle off). Already decoded against
@@ -174,8 +176,8 @@ export interface ReactToPostResult {
 }
 
 export interface EditPostInput {
-	postId: string;
-	actorId: string;
+	postId: PostId;
+	actorId: UserId;
 	title?: string | undefined;
 	body?: string | undefined;
 }
@@ -197,8 +199,8 @@ export interface EditPostResult {
 }
 
 export interface DeletePostInput {
-	postId: string;
-	actorId: string;
+	postId: PostId;
+	actorId: UserId;
 	/** Why the post is removed (ADR 0096). Defaults to `AuthorDeletion`. */
 	reason?: Removal.RemovalReason;
 }

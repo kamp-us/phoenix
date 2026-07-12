@@ -13,12 +13,14 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit} from "effect";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
+import {UserId} from "../../lib/ids.ts";
 import type {Vote, VoteInput, VoteResult} from "../vote/Vote.ts";
 import {type CommentOperationsDeps, makeCommentOperations} from "./comment-operations.ts";
+import {CommentId} from "./ids.ts";
 
-const AUTHOR = "u-author";
-const OTHER = "u-other";
-const COMMENT_ID = "comment_1";
+const AUTHOR = UserId.make("u-author");
+const OTHER = UserId.make("u-other");
+const COMMENT_ID = CommentId.make("comment_1");
 
 // The `comment_record` the up-front load returns. Only `authorId` drives the guard; the
 // rest satisfy the fields the return projection reads.
