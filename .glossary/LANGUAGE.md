@@ -204,6 +204,32 @@ mutated store — `user_profile`, `content_report`, the stats singletons — is 
 too, but lives in the worker schema without the suffix, so lacking `*_record` is not a
 convention violation for those.
 
+### Branded ID schema
+
+An **entity id typed via `Schema.String.pipe(Schema.brand("Name"))`** — carrying the type
+`Brand.Branded<string, "Name">`, a **compile-time-only nominal marker** (no runtime
+allocation; the value is still a plain string) that makes passing the wrong id a typecheck
+error instead of a silent cross-entity mix-up. The term is coined by epic
+[#2700](https://github.com/kamp-us/phoenix/issues/2700) so its child `write-code` agents
+inherit one canonical name rather than re-coining "nominal id" / "id brand" synonyms (the
+one-concept-named-four-ways drift, #851); it surfaces at coinage time per ADR
+[0128](../.decisions/0128-glossary-concept-trigger-off-the-gate.md).
+
+The idiom is effect-smol's `Brand` / `Schema.brand` (ground the `Schema.brand` call site
+against effect-smol's `LLMS.md`, not intuition). Ownership splits two ways:
+
+- **Shared cross-feature id — `UserId`.** The one id every feature references is declared
+  once in the shared brand-schema module (established by the epic's tracer
+  [#2712](https://github.com/kamp-us/phoenix/issues/2712)) and imported wherever a user is
+  named. When #2712 lands, replace this note with the module's real path and a real
+  `Schema.brand` call site — this row is coinage-time canon written ahead of source.
+- **Feature-owned ids live with their feature.** `DefinitionId` (sözlük), `PostId` (pano),
+  and the like are declared in their own feature, not the shared module — only the genuinely
+  cross-feature id graduates to the shared home.
+
+The test: two ids that are both `string` at runtime are **distinct types** at compile time,
+so `getPost(userId)` is a type error, never a lookup miss.
+
 ### The LiveDO connection / topic roles
 
 Cross-isolate live (SSE) fan-out is carried by **one** `LiveDO` Durable Object class that
