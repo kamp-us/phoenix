@@ -28,6 +28,7 @@ import {
 	makeRequestFlagsContext,
 	RequestFlagOverrides,
 } from "../flagship/FlagsContext.ts";
+import {overridesAuthorized} from "../flagship/override-authz.ts";
 import {currentActorContext} from "../kunye/CurrentActorLive.ts";
 import {PanoFeedCache, panoFeedCacheFor} from "../pano/feed-cache.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
@@ -68,18 +69,30 @@ export const handleFate = Effect.gen(function* () {
 		waitUntil,
 	});
 
+	// May this request honor its `phoenix_flag_overrides` cookie (#2741)? Resolved ONCE
+	// at the edge (dev, or an admin with `phoenix-admin-console` on) over the request's
+	// actor, then threaded on `RequestFlagOverrides` so `provideRequestFlags` gates every
+	// resolver's flag read off it — the admin verdict can't be recomputed per resolver.
+	// The gate flag reads against the anonymous `flagsContext` (no cookie), so a cookie
+	// can never self-authorize the gate.
+	const overridesAllowed = yield* overridesAuthorized(flagsContext).pipe(
+		Effect.provide(currentActorContext(session?.user)),
+	);
+
 	// ONE context object for the whole request — never copy or rebuild it per
 	// resolver. No `signal` field: interruption is wired at this edge (below).
 	// `requestServices` fulfills the `[CurrentActor, RequestFlagOverrides]`
 	// registered in `layers.ts`: `CurrentActor` derived from the validated session
-	// (ADR 0107 §7), `RequestFlagOverrides` carrying the raw `Cookie` header so a
-	// flag-gated resolver's `provideRequestFlags` can source the dev-override cookie
-	// (#622) — the environment gate stays in `makeRequestFlagsContext`, so it is
-	// inert in every deployed stage.
+	// (ADR 0107 §7), `RequestFlagOverrides` carrying the raw `Cookie` header + the
+	// `overridesAllowed` verdict so a flag-gated resolver's `provideRequestFlags` can
+	// source the #622 cookie only when authorized (dev, or admin + flag; #2741).
 	const requestServices = Context.merge(
 		currentActorContext(session?.user),
 		Context.merge(
-			Context.make(RequestFlagOverrides, {cookieHeader: raw.headers.get("cookie")}),
+			Context.make(RequestFlagOverrides, {
+				cookieHeader: raw.headers.get("cookie"),
+				overridesAllowed,
+			}),
 			Context.make(PanoFeedCache, feedCache),
 		),
 	);

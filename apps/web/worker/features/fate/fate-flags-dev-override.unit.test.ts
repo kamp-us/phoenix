@@ -1,26 +1,21 @@
 /**
- * The fate data-plane `Flags` layer honors the dev-override cookie ONLY under
- * `development` — the fate-runtime twin of the raw-route selection in `http/app.ts`
- * (the #622 gate), proven here at the seam that broke #1868.
+ * The fate data-plane `Flags` layer installs the #622 local-override wrapper — so a
+ * flag-gated fate resolver/mutation honors an `overrides` entry in its per-request
+ * `FlagsContext`. This is the #1868 regression guard (before it, `makeFateLayer` baked
+ * the PLAIN `FlagsLive`, so the decorator was never on the fate path and the flag-flip
+ * cookie had no effect on a mutation).
  *
- * The gap this covers: `makeFateLayer` baked the PLAIN `FlagsLive` unconditionally, so
- * the `withDevOverrides` decorator was never on the fate mutation/resolver path — a
- * flag-gated `definition.react` on the integration `development` stage ignored the
- * `phoenix_flag_overrides` cookie `provideRequestFlags` threads, and the live-reconcile
- * integration test's flag-flip had no effect. `FateFlagsLive` (`layers.ts`) selects the
- * dev-override wrapper under `development` and the plain layer everywhere else.
+ * As of #2741 the wrapper is installed UNCONDITIONALLY (not env-selected): whether an
+ * override is HONORED is decided upstream, per request, by `overridesAuthorized` (dev,
+ * or an admin with `phoenix-admin-console` on) which populates `FlagsContext.overrides`.
+ * That gate — including the prod fail-closed "a non-admin's cookie is inert" invariant —
+ * is proven in `flagship/override-authz.unit.test.ts`. This test proves only the
+ * mechanism it feeds: given an override in context, the fate layer honors it.
  *
- * Two properties, no binding / no I/O — `FateFlagsLive` over a stub `Flagship` whose
- * real eval always returns the dark-ship default OFF, with the environment supplied via
- * a `ConfigProvider` (mirroring the worker-scope `AppConfig` read):
- *
- *   - `development` — the override in `FlagsContext.overrides` forces the flag ON even
- *     though real eval says OFF: the decorator is installed, so the cookie takes effect.
- *   - `production` / `preview` — the SAME override in context is IGNORED and the flag
- *     stays at the real-eval default OFF: the plain layer is installed, so an
- *     attacker-supplied override cookie can never flip a flag on a deployed stage (the
- *     load-bearing prod fail-closed gate). This is the fate-path complement to
- *     `http/app.ts`'s `environment === "development"` install gate.
+ * No binding / no I/O — `FateFlagsLive` over a stub `Flagship` whose real eval always
+ * returns the supplied default (dark-ship OFF for `phoenix-reactions`): the only way the
+ * flag reads ON is the override decorator short-circuiting on `FlagsContext.overrides`,
+ * so a passing ON assertion proves the wrapper is installed — not that real eval flipped.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
@@ -44,10 +39,6 @@ const RuntimeContextStub = Layer.succeed(RuntimeContext)(runtimeContext);
 const unexercised = (method: string) => () =>
 	Effect.die(`Flagship.${method} not exercised in fate-flags-dev-override.unit.test`);
 
-// A `Flagship` whose real boolean eval ALWAYS returns the supplied default (dark-ship
-// OFF for `phoenix-reactions`): the only way the flag reads ON is the dev-override
-// decorator short-circuiting on `FlagsContext.overrides`, so a passing ON assertion
-// proves the wrapper is installed — not that real eval flipped.
 const darkFlagship: Layer.Layer<Flagship> = Layer.succeed(Flagship)(
 	Flagship.of({
 		raw: Effect.die("Flagship.raw not exercised"),
@@ -63,49 +54,43 @@ const darkFlagship: Layer.Layer<Flagship> = Layer.succeed(Flagship)(
 	}),
 );
 
-/** Mirror the worker-scope `ConfigProvider` with a fixed `ENVIRONMENT` stage. */
 const withEnvironment = (environment: string) =>
 	Effect.provideService(
 		ConfigProvider.ConfigProvider,
 		ConfigProvider.fromUnknown({ENVIRONMENT: environment}),
 	);
 
-// Read `phoenix-reactions` (default OFF) through the environment-selected fate `Flags`
-// layer, with an override forcing it ON present in the request `FlagsContext` — the
-// exact shape `provideRequestFlags` builds from the threaded cookie under development.
-const resolveWithOverride = (environment: string) =>
+// Read `phoenix-reactions` (default OFF) through the fate `Flags` layer with a given
+// `FlagsContext` — `overrides` populated or not — mirroring what `provideRequestFlags`
+// hands a resolver once `overridesAuthorized` has decided.
+const resolveWith = (context: {environment: string; overrides?: Record<string, boolean>}) =>
 	Effect.gen(function* () {
 		const flags = yield* Flags;
-		return yield* flags.getBoolean(PHOENIX_REACTIONS, false).pipe(
-			Effect.provideService(FlagsContext, {
-				environment,
-				overrides: {[PHOENIX_REACTIONS]: true},
-			}),
-		);
+		return yield* flags
+			.getBoolean(PHOENIX_REACTIONS, false)
+			.pipe(Effect.provideService(FlagsContext, context));
 	}).pipe(
 		Effect.provide(
 			Layer.mergeAll(FateFlagsLive.pipe(Layer.provide(darkFlagship)), RuntimeContextStub),
 		),
-		withEnvironment(environment),
+		withEnvironment(context.environment),
 	);
 
-describe("fate Flags layer — dev-override honored only under development", () => {
-	it.effect("development: the override cookie forces phoenix-reactions ON", () =>
+describe("fate Flags layer — the override wrapper is installed (#1868/#2741)", () => {
+	it.effect("an override in context forces phoenix-reactions ON (real eval says OFF)", () =>
 		Effect.gen(function* () {
-			// Real eval says OFF; the ON result can only come from the dev-override wrapper.
-			assert.strictEqual(yield* resolveWithOverride("development"), true);
+			const value = yield* resolveWith({
+				environment: "production",
+				overrides: {[PHOENIX_REACTIONS]: true},
+			});
+			// The ON result can only come from the installed override wrapper.
+			assert.strictEqual(value, true);
 		}),
 	);
 
-	it.effect("production: the same override is IGNORED — flag stays OFF (prod fail-closed)", () =>
+	it.effect("no override in context delegates to real eval — stays OFF", () =>
 		Effect.gen(function* () {
-			assert.strictEqual(yield* resolveWithOverride("production"), false);
-		}),
-	);
-
-	it.effect("preview: the same override is IGNORED — flag stays OFF (deployed fail-closed)", () =>
-		Effect.gen(function* () {
-			assert.strictEqual(yield* resolveWithOverride("preview"), false);
+			assert.strictEqual(yield* resolveWith({environment: "production"}), false);
 		}),
 	);
 });

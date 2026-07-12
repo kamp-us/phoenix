@@ -40,13 +40,14 @@ export interface FlagsContextValue {
 	 */
 	readonly environment?: string;
 	/**
-	 * Dev-only local flag overrides (#622), read from the request's
-	 * `phoenix_flag_overrides` cookie. ONLY ever populated by `provideRequestFlags`
-	 * when `environment === "development"` (fail-closed); in every deployed stage it
-	 * stays `undefined` and the dev-only override wrapper that reads it isn't even
-	 * installed (`http/app.ts`), so this never affects a deployed flag read. Carried
-	 * here — not mapped into the provider wire shape (`toEvaluationContext` ignores
-	 * it) — because it is a local short-circuit, not a targeting attribute.
+	 * Per-browser local flag overrides (#622), read from the request's
+	 * `phoenix_flag_overrides` cookie. Populated by the request path ONLY when the
+	 * request may honor overrides — `environment === "development"`, OR an admin
+	 * request with the `phoenix-admin-console` flag on (#2741, `overridesAuthorized`);
+	 * every other request leaves it `undefined` (fail-closed), so an attacker-supplied
+	 * cookie is a no-op for a non-admin on a deployed stage. Carried here — not mapped
+	 * into the provider wire shape (`toEvaluationContext` ignores it) — because it is a
+	 * local short-circuit, not a targeting attribute.
 	 */
 	readonly overrides?: FlagOverrides;
 }
@@ -64,14 +65,17 @@ export class FlagsContext extends Context.Service<FlagsContext, FlagsContextValu
  * declared to `FateServer.layer` (`layers.ts`), so — like `CurrentActor` — it is
  * excluded from build-time `R` and never provided by a worker-level layer.
  *
- * `header` is `null` when the request carries no `Cookie` header. The dev-only
- * gate stays in {@link makeRequestFlagsContext} (environment === "development"), so
- * this service is inert in every deployed stage: it merely transports the header,
- * it grants no capability of its own.
+ * `cookieHeader` is `null` when the request carries no `Cookie` header.
+ * `overridesAllowed` is the per-request authorization verdict (#2741) resolved once
+ * at the `/fate` route edge by {@link overridesAuthorized} — `true` under
+ * `development` or for an admin request with `phoenix-admin-console` on. The service
+ * grants no capability of its own: it merely transports the header + the verdict, and
+ * {@link makeRequestFlagsContext} is the single site that decides (from both) whether
+ * to parse the cookie.
  */
 export class RequestFlagOverrides extends Context.Service<
 	RequestFlagOverrides,
-	{readonly cookieHeader: string | null}
+	{readonly cookieHeader: string | null; readonly overridesAllowed: boolean}
 >()("@kampus/RequestFlagOverrides") {}
 
 /** The anonymous request context — no identity to bucket on. */
@@ -91,25 +95,29 @@ export const anonymousFlagsContext: FlagsContextValue = {};
  * unauthenticated request. The environment is always populated from the stage —
  * it is a deploy-time fact about the request, not a per-user one.
  *
- * `cookieHeader` is the request's raw `Cookie` header (#622). Dev overrides are
- * parsed from it ONLY when `environment === "development"` — the load-bearing
- * fail-closed gate: since `ENVIRONMENT` defaults to `"production"` (`config.ts`),
- * a deployed stage never reads the cookie, so `overrides` stays `undefined` and an
- * attacker-supplied `phoenix_flag_overrides` cookie can never flip a flag in prod.
+ * `cookieHeader` is the request's raw `Cookie` header (#622). Overrides are parsed
+ * from it ONLY when `environment === "development"` OR `overridesAllowed` — the
+ * latter the per-request admin verdict (#2741). The load-bearing fail-closed gate:
+ * since `ENVIRONMENT` defaults to `"production"` (`config.ts`) and `overridesAllowed`
+ * defaults `false`, a deployed non-admin request never reads the cookie, so
+ * `overrides` stays `undefined` and an attacker-supplied `phoenix_flag_overrides`
+ * cookie can never flip a flag in prod.
  */
 export const makeRequestFlagsContext = (
 	identity: FlagsContextValue,
 	cookieHeader?: string | null,
+	overridesAllowed = false,
 ) =>
 	Effect.gen(function* () {
 		// `orDie`: a `ConfigError` (value outside the two literals) is a malformed
 		// env, unrecoverable — match the health route's read of the same var.
 		const {environment} = yield* AppConfig.pipe(Effect.orDie);
-		// THE GATE: overrides exist only under `development`. Any other stage (incl.
-		// the `production` fail-closed default) drops the cookie entirely. An empty
-		// map (no cookie / a cleared one) is dropped too, so the context carries
-		// `overrides` only when there's an actual local flip to apply.
-		const parsed = environment === "development" ? parseOverrideCookie(cookieHeader) : undefined;
+		// THE GATE: overrides exist only under `development` (the #622 dev convenience)
+		// or for an authorized admin-on-prod request (#2741). Any other request drops the
+		// cookie entirely. An empty map (no cookie / a cleared one) is dropped too, so the
+		// context carries `overrides` only when there's an actual local flip to apply.
+		const honorOverrides = environment === "development" || overridesAllowed;
+		const parsed = honorOverrides ? parseOverrideCookie(cookieHeader) : undefined;
 		const overrides = parsed && Object.keys(parsed).length > 0 ? parsed : undefined;
 		return {
 			...identity,
@@ -134,15 +142,16 @@ export const provideRequestFlags = <A, E, R>(
 ): Effect.Effect<A, E, Exclude<R, FlagsContext> | CurrentUser | RequestFlagOverrides> =>
 	Effect.gen(function* () {
 		const {user} = yield* CurrentUser;
-		// The dev-override cookie (#622) rides the per-request `RequestFlagOverrides`
-		// service, fulfilled at the `/fate` route edge — so a flag-gated resolver's
-		// override is honored on the mutation path, not only on the flagship route.
-		// The environment gate stays in `makeRequestFlagsContext`, so this is inert in
-		// every deployed stage.
-		const {cookieHeader} = yield* RequestFlagOverrides;
+		// The override cookie (#622) rides the per-request `RequestFlagOverrides` service,
+		// fulfilled at the `/fate` route edge — so a flag-gated resolver's override is
+		// honored on the mutation path, not only on the flagship route. `overridesAllowed`
+		// is the admin-on-prod verdict the edge resolved once (#2741); the gate itself
+		// lives in `makeRequestFlagsContext`, so this stays a thin pass-through.
+		const {cookieHeader, overridesAllowed} = yield* RequestFlagOverrides;
 		const context = yield* makeRequestFlagsContext(
 			user ? {userId: user.id} : anonymousFlagsContext,
 			cookieHeader,
+			overridesAllowed,
 		);
 		return yield* effect.pipe(Effect.provideService(FlagsContext, context));
 	});

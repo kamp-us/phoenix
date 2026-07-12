@@ -44,7 +44,10 @@ import {PanoFeedCache} from "../pano/feed-cache.ts";
  * effect DIRECTLY (not through `resolveWire`) merges {@link noRequestFlagOverrides}
  * into its context layer instead.
  */
-const NO_COOKIE_OVERRIDES = RequestFlagOverrides.of({cookieHeader: null});
+const NO_COOKIE_OVERRIDES = RequestFlagOverrides.of({
+	cookieHeader: null,
+	overridesAllowed: false,
+});
 
 /** The shared no-cookie {@link RequestFlagOverrides} stub layer — see {@link NO_COOKIE_OVERRIDES}. */
 export const noRequestFlagOverrides: Layer.Layer<RequestFlagOverrides> = Layer.succeed(

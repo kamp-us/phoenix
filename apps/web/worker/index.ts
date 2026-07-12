@@ -19,7 +19,7 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {AppConfig, ENV_BINDINGS, envBindings, sentryDsn} from "./config.ts";
+import {ENV_BINDINGS, envBindings, sentryDsn} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
 import {DrizzleLive} from "./db/Drizzle.ts";
 import {customHostname, resolveStateMode} from "./env.ts";
@@ -234,12 +234,6 @@ export default Phoenix.make(
 		// per-call requirement); `makeAppLive` reuses it for the `/api/auth/*` route.
 		const runtimeContext = yield* RuntimeContext;
 
-		// The deploy environment, resolved once in init (off the auto-wired
-		// ConfigProvider). `makeAppLive` uses it for the load-bearing #622 gate:
-		// install the dev-only flag-override wrapper ONLY under `development`. `orDie`:
-		// a value outside the three literals is a malformed env, unrecoverable.
-		const {environment: appEnvironment} = yield* AppConfig.pipe(Effect.orDie);
-
 		// The one worker-level runtime (ADR 0041/0043 — init-only wiring): exactly
 		// one per isolate from `PhoenixFateLive` (`R = Database | BetterAuth`, both
 		// provided here). It is a layer-build vehicle only, no runtime on the
@@ -350,7 +344,6 @@ export default Phoenix.make(
 			betterAuthLayer,
 			flagshipLayer,
 			runtimeContext,
-			environment: appEnvironment,
 		});
 
 		// The optional Sentry DSN, read once in init off the auto-wired ConfigProvider.

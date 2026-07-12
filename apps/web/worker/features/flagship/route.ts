@@ -20,6 +20,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import {currentActorContext} from "../kunye/CurrentActorLive.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {type FlagEvaluateResult, parseFlagEvaluateRequest} from "./evaluate-contract.ts";
 import {Flags} from "./Flags.ts";
@@ -29,6 +30,7 @@ import {
 	type FlagsContextValue,
 	makeRequestFlagsContext,
 } from "./FlagsContext.ts";
+import {overridesAuthorized} from "./override-authz.ts";
 
 /** The dark-ship flag this probe gates on — undeclared, so it reads its default. */
 const PROBE_FLAG = "phoenix-flags-probe";
@@ -90,13 +92,24 @@ export const handleFlagsEvaluate = Effect.gen(function* () {
 	const keys = parseFlagEvaluateRequest(body);
 
 	const session = yield* pasaport.validateSession(raw.headers);
-	// Same per-request context as the probe: session-derived identity plus the
-	// stage `environment` (#512), so every key is evaluated under the full
-	// targeting context — identity stays server-side, never from the body. The
-	// cookie carries any dev-only local override (#622), dev-gated in the builder.
+	const identity = contextFromSession(session);
+	// May this request honor its `phoenix_flag_overrides` cookie (#2741)? The SPA
+	// delivery seam (#510) must reflect an admin's local override, so resolve the
+	// verdict here (dev, or admin + `phoenix-admin-console`) over the session actor,
+	// reading the gate flag against the baseline (no-cookie) context so a cookie can
+	// never self-authorize.
+	const baseline = yield* makeRequestFlagsContext(identity, null);
+	const overridesAllowed = yield* overridesAuthorized(baseline).pipe(
+		Effect.provide(currentActorContext(session?.user)),
+	);
+	// Same per-request context as the probe: session-derived identity plus the stage
+	// `environment` (#512), so every key is evaluated under the full targeting context —
+	// identity stays server-side, never from the body. The cookie is honored only when
+	// authorized (#622/#2741).
 	const context = yield* makeRequestFlagsContext(
-		contextFromSession(session),
+		identity,
 		raw.headers.get("cookie"),
+		overridesAllowed,
 	);
 
 	// Evaluate every requested flag server-side under the session-derived context.
