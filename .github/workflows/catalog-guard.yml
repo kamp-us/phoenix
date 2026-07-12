@@ -11,6 +11,12 @@ name: catalog-guard
 on:
   pull_request:
 
+# Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs the
+# guard, which fails via exit code — it posts no check-run/status/PR comment — so
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
