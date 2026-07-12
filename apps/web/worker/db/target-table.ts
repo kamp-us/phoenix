@@ -13,7 +13,7 @@
  * nothing of the feature services, so a `report/mutations.ts` *service* fan-out
  * (Sözlük/Pano) is a different seam and stays out of here.
  */
-import {and, eq, sql} from "drizzle-orm";
+import {and, eq, exists, notExists, type SQL, sql} from "drizzle-orm";
 import type {DrizzleDb, Stmt} from "./Drizzle.ts";
 import * as schema from "./drizzle/schema.ts";
 import {hotMultiplier} from "./hotScore.ts";
@@ -48,6 +48,21 @@ export interface TargetTableDescriptor {
 	readonly loadMeta: (db: DrizzleDb, targetId: string) => Promise<TargetRecordMeta | null>;
 	/** Vote-presence point lookup on `(targetId, voterId)` — the idempotency probe. */
 	readonly probeVote: (db: DrizzleDb, targetId: string, voterId: string) => Promise<boolean>;
+	/**
+	 * The karma-change guard: an `SQL` predicate true iff the vote write will
+	 * actually change the row's presence — `NOT EXISTS(vote row)` on a cast,
+	 * `EXISTS(vote row)` on a retract. Threaded into the karma bump + ledger
+	 * statements and ordered ahead of the vote-row write, so it reads PRE-mutation
+	 * state: a duplicate concurrent cast finds the row already present (cast) or
+	 * already gone (retract) and applies the karma delta zero times (#2552). This
+	 * is the in-batch backstop the out-of-batch `probeVote` fast-path can race past.
+	 */
+	readonly voteChangeGuard: (
+		db: DrizzleDb,
+		targetId: string,
+		voterId: string,
+		isCast: boolean,
+	) => SQL;
 	/** The truth-derived score cached on the record row (0 when the row is gone). */
 	readonly readScore: (db: DrizzleDb, targetId: string) => Promise<number>;
 	/** Insert the per-target vote row (idempotent on the PK). */
@@ -89,6 +104,18 @@ export const targetTable: {readonly [K in TargetKind]: TargetTableDescriptor} = 
 			db.query.definitionVote
 				.findFirst({where: {definitionId: targetId, voterId}})
 				.then((row) => row != null),
+		voteChangeGuard: (db, targetId, voterId, isCast) => {
+			const probe = db
+				.select({one: sql`1`})
+				.from(schema.definitionVote)
+				.where(
+					and(
+						eq(schema.definitionVote.definitionId, targetId),
+						eq(schema.definitionVote.voterId, voterId),
+					),
+				);
+			return isCast ? notExists(probe) : exists(probe);
+		},
 		readScore: (db, targetId) =>
 			db.query.definitionRecord
 				.findFirst({where: {id: targetId}, columns: {score: true}})
@@ -124,6 +151,13 @@ export const targetTable: {readonly [K in TargetKind]: TargetTableDescriptor} = 
 				.then((row) => (row ? metaOf(row) : null)),
 		probeVote: (db, targetId, voterId) =>
 			db.query.postVote.findFirst({where: {postId: targetId, voterId}}).then((row) => row != null),
+		voteChangeGuard: (db, targetId, voterId, isCast) => {
+			const probe = db
+				.select({one: sql`1`})
+				.from(schema.postVote)
+				.where(and(eq(schema.postVote.postId, targetId), eq(schema.postVote.voterId, voterId)));
+			return isCast ? notExists(probe) : exists(probe);
+		},
 		readScore: (db, targetId) =>
 			db.query.postRecord
 				.findFirst({where: {id: targetId}, columns: {score: true}})
@@ -164,6 +198,15 @@ export const targetTable: {readonly [K in TargetKind]: TargetTableDescriptor} = 
 			db.query.commentVote
 				.findFirst({where: {commentId: targetId, voterId}})
 				.then((row) => row != null),
+		voteChangeGuard: (db, targetId, voterId, isCast) => {
+			const probe = db
+				.select({one: sql`1`})
+				.from(schema.commentVote)
+				.where(
+					and(eq(schema.commentVote.commentId, targetId), eq(schema.commentVote.voterId, voterId)),
+				);
+			return isCast ? notExists(probe) : exists(probe);
+		},
 		readScore: (db, targetId) =>
 			db.query.commentRecord
 				.findFirst({where: {id: targetId}, columns: {score: true}})

@@ -490,6 +490,52 @@ describe("Vote.cast — karma provenance ledger (#2592, mocked Drizzle seam)", (
 	});
 });
 
+describe("Vote.cast — the guarded karma pair leads the batch (#2552, mocked Drizzle seam)", () => {
+	// The double-bump fix: the karma bump + its ledger row are gated on the vote row's
+	// PRE-mutation presence, so a duplicate cast that raced the out-of-batch probe writes
+	// neither. That guard is only correct if the karma pair is evaluated BEFORE the vote-row
+	// write in the batch — so this pins the ordering. `recordingKarma` returns the two karma
+	// sentinels; the vote/score/mirror statements come from the db proxy, so the sentinels
+	// leading `batches[0]` proves karma is sequenced first, and `inputs[0].guard` proves Vote
+	// threaded the pre-mutation predicate through.
+	it.effect(
+		"karma bump + ledger row are the first two batch statements, and carry the guard",
+		() => {
+			const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
+			const {layer: karma, inputs} = recordingKarma();
+			return Effect.gen(function* () {
+				const vote = yield* Vote;
+				yield* vote.cast({
+					userId: "voter-1",
+					targetKind: "definition",
+					targetId: "def-1",
+					value: true,
+				});
+				const stmts = batches[0] as ReadonlyArray<{__karmaBump?: true; __karmaEvent?: true}>;
+				assert.strictEqual(stmts.length, 5, "the full atomic batch");
+				assert.isTrue(
+					stmts[0]?.__karmaBump,
+					"the karma bump is sequenced first (pre-mutation guard)",
+				);
+				assert.isTrue(stmts[1]?.__karmaEvent, "its ledger row is second — ahead of the vote write");
+				assert.isDefined(
+					inputs[0]?.guard,
+					"Vote threads the pre-mutation vote-change guard through",
+				);
+			}).pipe(
+				Effect.provide(
+					VoteLive.pipe(
+						Layer.provide(karma),
+						Layer.provide(VoterStandingStub(true)),
+						Layer.provide(recordingTelemetry([])),
+						Layer.provide(Layer.succeed(Drizzle, access)),
+					),
+				),
+			);
+		},
+	);
+});
+
 describe("Vote.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle seam)", () => {
 	for (const kind of TARGET_KINDS) {
 		it.effect(`${kind}: one batch of exactly two statements, karma KEPT`, () => {

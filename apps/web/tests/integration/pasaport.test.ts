@@ -385,6 +385,80 @@ describe("pasaport — profile reads", () => {
 		expect(await karmaOf()).toBe(0);
 	});
 
+	it("concurrent duplicate casts bump total_karma exactly once — no double-bump (#2552)", async () => {
+		// The double-bump race: `Vote.castImpl` probes idempotency OUTSIDE the atomic batch, so
+		// two concurrent identical casts both see `alreadyCast=false` and both run the batch. The
+		// vote row (`onConflictDoNothing`) and the `COUNT(*)` score stay correct, but before #2552
+		// the unconditional karma UPDATE bumped `total_karma` TWICE (and appended a second ledger
+		// row). The fix gates the karma bump + its ledger row on the vote row's PRE-mutation
+		// presence, so the duplicate is a karma no-op. This is the real-D1 reproduction: fire the
+		// two casts truly concurrently and assert the author gains exactly one karma — a value that
+		// is invariant under the fix whether or not the probes actually raced, and was `2` (flaky)
+		// before it. The retract direction is symmetric (a single net -1, never -2).
+		const authorUsername = uname("race");
+		const author = await h.signUp(`${NS}-race@test.local`, "hunter2hunter2", "Race Author");
+		await setUsername(author.cookie, authorUsername);
+
+		const added = await h.fate(
+			{
+				kind: "mutation",
+				name: "definition.add",
+				input: {
+					termSlug: `${NS}-race-term`,
+					termTitle: "Race Term",
+					body: "a definition whose concurrent votes must not double-credit karma",
+				},
+				select: ["id"],
+			},
+			{cookie: author.cookie},
+		);
+		expect(added.ok).toBe(true);
+		if (!added.ok) return;
+		const definitionId = (added.data as {id: string}).id;
+
+		const karmaOf = async (): Promise<number> => {
+			const res = await h.fate({
+				kind: "query",
+				name: "profile",
+				args: {username: authorUsername},
+				select: ["totalKarma"],
+			});
+			expect(res.ok).toBe(true);
+			if (!res.ok) throw new Error("profile read failed");
+			return (res.data as ProfileNode).totalKarma;
+		};
+
+		expect(await karmaOf()).toBe(0);
+
+		// One promoted voter casts the SAME up-vote twice concurrently (two tabs / a retry).
+		const voter = await h.signUp(`${NS}-race-voter@test.local`, "hunter2hunter2", "Race Voter");
+		await h.promoteToYazar(voter.userId);
+		const castOnce = () =>
+			h.fate(
+				{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
+				{cookie: voter.cookie},
+			);
+		const casts = await Promise.all([castOnce(), castOnce()]);
+		for (const c of casts) expect(c.ok).toBe(true);
+		// Both casts committed, but the author gained ONE karma, not two.
+		expect(await karmaOf()).toBe(1);
+
+		// Symmetric on retract: two concurrent retractions net a single -1, not -2.
+		const retractOnce = () =>
+			h.fate(
+				{
+					kind: "mutation",
+					name: "definition.retractVote",
+					input: {id: definitionId},
+					select: ["score"],
+				},
+				{cookie: voter.cookie},
+			);
+		const retracts = await Promise.all([retractOnce(), retractOnce()]);
+		for (const r of retracts) expect(r.ok).toBe(true);
+		expect(await karmaOf()).toBe(0);
+	});
+
 	it("Profile.contributions paginates by keyset with no skips/dupes, discriminant preserved", async () => {
 		// Page 1: first 2 in (createdAt desc, id desc) order.
 		const page1 = await h.fate({

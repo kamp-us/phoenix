@@ -16,7 +16,7 @@
  * bump (via {@link KarmaBump}) — in one batch that commits or rolls back as a
  * unit. See ADR 0014 (batch as service method).
  */
-import {and, eq, inArray} from "drizzle-orm";
+import {and, eq, inArray, type SQL} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -77,6 +77,15 @@ export interface KarmaBumpInput {
 	readonly reason: KarmaEventReason;
 	/** Commit timestamp, shared with the rest of the cast batch. */
 	readonly at: Date;
+	/**
+	 * The pre-mutation vote-change guard (`targetTable[kind].voteChangeGuard`): an
+	 * `SQL` predicate gating BOTH statements so the karma delta commits only when the
+	 * vote write actually changes the row's presence. A duplicate concurrent cast that
+	 * raced the out-of-batch idempotency probe finds the vote row already present (or
+	 * already gone) and bumps `total_karma` — and appends its ledger row — zero times,
+	 * so `SUM(karma_event.delta)` still reconciles to `total_karma` (#2552).
+	 */
+	readonly guard: SQL;
 }
 
 /**
@@ -365,9 +374,13 @@ function buildClearTargetStatements(db: DrizzleDb, kind: TargetKind, targetId: s
 
 /**
  * The tuple of statements making up one atomic state-change, in order:
- * vote-table mutation (truth source), score-cache update, `user_vote` mirror,
- * karma bump + its provenance ledger row (both from `KarmaBump`, #2592).
- * `db.batch([...])` commits all or none. See ADR 0014.
+ * karma bump + its provenance ledger row (both from `KarmaBump`, #2592, guarded on
+ * the PRE-mutation vote-row state), then the vote-table mutation (truth source),
+ * score-cache update, and `user_vote` mirror. `db.batch([...])` commits all or none
+ * (ADR 0014) and runs the tuple in order, so the karma pair is evaluated BEFORE the
+ * vote write it credits — the guard reads the row's presence as it was, which is what
+ * makes a raced duplicate cast a karma no-op (#2552). The vote/score/mirror writes are
+ * each already collision-tolerant (`onConflictDoNothing`, `COUNT(*)` recompute).
  */
 function buildBatchStatements(
 	db: DrizzleDb,
@@ -379,6 +392,16 @@ function buildBatchStatements(
 	karmaBump: KarmaBumpService,
 ) {
 	const table = targetTable[input.targetKind];
+
+	const [karmaBumpRow, karmaEventRow] = karmaBump.statements(db, {
+		recipientId: meta.authorId,
+		delta: karmaDelta,
+		source: {kind: input.targetKind, id: input.targetId},
+		reason: isCast ? "vote" : "retract",
+		at: now,
+		guard: table.voteChangeGuard(db, input.targetId, input.userId, isCast),
+	});
+
 	const voteRow = isCast
 		? table.voteInsert(db, input.targetId, input.userId, now)
 		: table.voteDelete(db, input.targetId, input.userId);
@@ -405,13 +428,5 @@ function buildBatchStatements(
 					),
 				);
 
-	const [karmaBumpRow, karmaEventRow] = karmaBump.statements(db, {
-		recipientId: meta.authorId,
-		delta: karmaDelta,
-		source: {kind: input.targetKind, id: input.targetId},
-		reason: isCast ? "vote" : "retract",
-		at: now,
-	});
-
-	return [voteRow, scoreUpdate, userVoteRow, karmaBumpRow, karmaEventRow] as const;
+	return [karmaBumpRow, karmaEventRow, voteRow, scoreUpdate, userVoteRow] as const;
 }
