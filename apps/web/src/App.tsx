@@ -1,13 +1,4 @@
-import {
-	createContext,
-	lazy,
-	type ReactNode,
-	Suspense,
-	useContext,
-	useEffect,
-	useMemo,
-	useState,
-} from "react";
+import {createContext, lazy, Suspense, useContext, useEffect, useMemo, useState} from "react";
 import {
 	Navigate,
 	Outlet,
@@ -21,11 +12,11 @@ import {
 import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {useMe} from "./auth/useMe";
 import {useBildirimUnread} from "./components/bildirim/useBildirimUnread";
+import {DivanSubnavLayout} from "./components/divan/DivanSubnavLayout";
 import {shouldShowDivanEntry} from "./components/divan/divanGating";
 import {useDivanAccess} from "./components/divan/useDivanAccess";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
-import {ProductSubnavLayout} from "./components/layout/ProductSubnavLayout";
 import {Topbar} from "./components/layout/Topbar";
 import {MecmuaSubnavLayout} from "./components/mecmua/MecmuaSubnavLayout";
 import {actorLabel} from "./components/moderation/actor-identity";
@@ -350,23 +341,6 @@ function ComposerRouteFallback() {
 	);
 }
 
-/**
- * A product's leaf routes, either wrapped under `ProductSubnavLayout` (the persistent
- * product Subnav zone, flag on) or returned flat (flag off — the router is exactly as
- * today). React Router ranks routes by path specificity, not source order, and a pathless
- * layout route is transparent to matching — so wrapping a product's routes changes only
- * *what renders above them*, never *which* route matches (#2598, placement law #2587).
- */
-function productZone(navIaOn: boolean, key: string, routes: ReactNode, cta?: ReactNode) {
-	return navIaOn ? (
-		<Route key={key} element={<ProductSubnavLayout cta={cta} />}>
-			{routes}
-		</Route>
-	) : (
-		routes
-	);
-}
-
 export function App() {
 	// The per-product Subnav zones ride the shared nav-IA seam (#2598, epic #2596),
 	// default-off. With it off the router is flat (today's structure); with it on each
@@ -460,7 +434,17 @@ export function App() {
 						) : (
 							sozlukRoutes
 						)}
-						{productZone(navIaOn, "divan-zone", divanRoutes)}
+						{/* divan's zone hosts the çaylaklar ↔ raporlar section switch, published up from
+						    the routed page as Subnav filters, so it wraps under its own `DivanSubnavLayout`
+						    rather than the generic empty/cta-only frame (#2604). Off ⇒ flat, and
+						    DivanWorkspace renders its own in-page section nav as today. */}
+						{navIaOn ? (
+							<Route key="divan-zone" element={<DivanSubnavLayout />}>
+								{divanRoutes}
+							</Route>
+						) : (
+							divanRoutes
+						)}
 						<Route path="/search" element={<SearchPage />} />
 						<Route path="/auth" element={<AuthPage />} />
 						{/* The founder/mod conversion readout (#1589) — the page self-gates on

@@ -63,12 +63,16 @@
 	margin-bottom: var(--s-4);
 }
 
+/* A section switcher (utility taxonomy, #2586) carries no resting boxed chrome (#2590): the
+   border is transparent at rest — reserving space so the active accent border adds no layout
+   shift — and there is no resting fill. The active-state accent pill below is legal transient
+   paint (#2604). */
 .kp-divan__nav-tab {
 	font: var(--t-body-sm);
 	padding: var(--s-1) var(--s-3);
-	border: 1px solid var(--border);
+	border: 1px solid transparent;
 	border-radius: var(--r-sm);
-	background: var(--surface);
+	background: none;
 	color: var(--text-secondary);
 	cursor: pointer;
 }

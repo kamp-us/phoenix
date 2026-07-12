@@ -18,20 +18,29 @@
  * The moderator-only raporlar section (#1701) sits inside this workspace behind
  * its own `phoenix-mod-queue` flag — see `raporlarGating.ts` / `Raporlar.tsx`.
  */
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import {useMe} from "../auth/useMe";
 import {CaylakDetail} from "../components/divan/CaylakDetail";
 import {DecisionFeed} from "../components/divan/DecisionFeed";
 import {DivanRoster} from "../components/divan/DivanRoster";
+import {useSetDivanSubnavContent} from "../components/divan/DivanSubnavLayout";
 import {shouldRenderDivanPage} from "../components/divan/divanGating";
 import {Raporlar} from "../components/divan/Raporlar";
 import {shouldShowRaporlar} from "../components/divan/raporlarGating";
 import {TriageLoop} from "../components/divan/TriageLoop";
+import type {SubnavFilter} from "../components/layout/Subnav";
 import {Screen} from "../fate/Screen";
-import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_MOD_QUEUE} from "../flags/keys";
+import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_MOD_QUEUE, PHOENIX_NAV_IA} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {NotFoundPage} from "./NotFoundPage";
 import "../components/divan/Divan.css";
+
+// The çaylaklar ↔ raporlar section switch as Subnav filters (#2604): when the nav-IA zone is
+// mounted, the switch is published up to the persistent divan Subnav rather than painted in-page.
+const DIVAN_SECTION_FILTERS: SubnavFilter[] = [
+	{id: "caylaklar", label: "çaylaklar"},
+	{id: "raporlar", label: "raporlar"},
+];
 
 export function DivanPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
@@ -69,6 +78,39 @@ function DivanWorkspace() {
 	// de-escalates to the grid without leaving the section.
 	const [raporlarMode, setRaporlarMode] = useState<"loop" | "grid">("loop");
 
+	// nav-IA (#2604, epic #2596): with the flag on, the section switch lives in divan's persistent
+	// Subnav zone. The page owns the switch state (roster vs raporlar pane below), so it publishes
+	// the switchers UP to the zone (the pano publish-up shape) and drops its own in-page nav. Only a
+	// moderator has a second section, so a non-mod viewer publishes null (a bare Subnav bar). Off ⇒
+	// no zone ancestor ⇒ setter null ⇒ the in-page nav renders exactly as today.
+	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
+	const setDivanSubnav = useSetDivanSubnavContent();
+	const inZone = navIaOn && setDivanSubnav != null;
+
+	useEffect(() => {
+		if (!inZone || !setDivanSubnav) return;
+		setDivanSubnav(
+			raporlarVisible
+				? {
+						filters: DIVAN_SECTION_FILTERS,
+						activeFilter: section,
+						onFilterChange: (id) => {
+							if (id === "raporlar") {
+								setSection("raporlar");
+								setRaporlarMode("loop");
+							} else {
+								setSection("caylaklar");
+							}
+						},
+					}
+				: null,
+		);
+	}, [inZone, setDivanSubnav, raporlarVisible, section]);
+	// Clear the zone's content on unmount, so the persistent zone falls back to the bare bar.
+	useEffect(() => {
+		return () => setDivanSubnav?.(null);
+	}, [setDivanSubnav]);
+
 	return (
 		<div className="kp-divan" data-testid="divan-page">
 			<div className="kp-divan__inner">
@@ -80,7 +122,7 @@ function DivanWorkspace() {
 					</p>
 				</header>
 
-				{raporlarVisible && (
+				{!inZone && raporlarVisible && (
 					<nav className="kp-divan__nav" aria-label="divan bölümleri">
 						<button
 							type="button"
