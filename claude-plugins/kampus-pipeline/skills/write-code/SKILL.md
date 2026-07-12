@@ -281,11 +281,17 @@ Milestone shapes the pick in two modes:
   candidates, **break the tie toward the active milestone**: prefer the in-milestone
   candidate over an equal-priority out-of-milestone one; fall back to oldest-first when
   the milestone dimension doesn't separate them (both in, both out, or no active
-  milestone). The "active milestone" is the campaign currently being driven — the one the
-  operator names, or the obvious single open strategic milestone; if it's ambiguous,
-  there is no active milestone and this degrades cleanly to plain oldest-first. Because
-  the tiebreaker lives *inside* a bucket, it can only reorder equal-priority issues — it
-  can never pull a lower-priority in-milestone issue ahead of a higher-priority one.
+  milestone). The "active milestone" is resolved from a **single durable surface, not a
+  per-run guess**: it is the arc pinned by the one `active` row of
+  [`ROADMAP.md`](https://github.com/kamp-us/phoenix/blob/main/ROADMAP.md)'s `## Arcs` table
+  (the founder-voice roadmap projects each arc onto a GitHub milestone; exactly one arc is
+  `active` at a time — ADR
+  [0078](https://github.com/kamp-us/phoenix/blob/main/.decisions/0078-product-driven-decisions-by-default.md)).
+  An operator's explicit `work milestone N` still overrides it (the mode below). When **no**
+  `## Arcs` row is marked `active`, there is no active milestone and this degrades cleanly
+  to plain oldest-first. Because the tiebreaker lives *inside* a bucket, it can only reorder
+  equal-priority issues — it can never pull a lower-priority in-milestone issue ahead of a
+  higher-priority one.
 
 - **Explicit `work milestone N` mode — drain that milestone.** When invoked as "work
   milestone N" (or "drain milestone N"), scope the pool to that milestone via the REST

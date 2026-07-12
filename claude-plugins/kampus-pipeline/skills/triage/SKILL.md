@@ -438,10 +438,18 @@ ranking. Priority is **milestone-relative**, not an absolute urgency score: `p1`
 current arc instead of becoming the catch-all. The **default is `p2`** — most real work
 isn't the current focus.
 
+The **active milestone is not a judgment call**: it is the arc pinned by the single
+`active` row of [`ROADMAP.md`](../../../../ROADMAP.md)'s `## Arcs` table — the founder-voice
+roadmap that projects each arc onto a GitHub milestone (ADR
+[0078](https://github.com/kamp-us/phoenix/blob/main/.decisions/0078-product-driven-decisions-by-default.md);
+exactly one arc is `active` at a time). Read that row to know what `p1` is bounded to; if
+no `## Arcs` row is marked `active`, there is no active milestone and the fallbacks below
+apply.
+
 | Priority | Use when… |
 |---|---|
 | **`p0`** | **Fire only.** Drop-everything: actively breaking something people rely on, blocking other work, a data-loss or security risk, or a release gate. If it's not a genuine emergency, it's not p0 — reserve it so the bucket stays meaningful. |
-| **`p1`** | **Serves the active milestone.** Real, actionable work that belongs to the current arc — you'd pull it next. Milestone-bounded on purpose: p1 is *not* a general "worth doing soon" tier, so a solid issue that isn't part of the current focus is **not** p1. If there's no active milestone, keep p1 for the small set of things you'd genuinely pick up next; everything else is p2. |
+| **`p1`** | **Serves the active milestone** — the arc pinned by `ROADMAP.md`'s single `active` `## Arcs` row (defined just above). Real, actionable work that belongs to that active arc — you'd pull it next. Milestone-bounded on purpose: p1 is *not* a general "worth doing soon" tier, so a solid issue outside the active arc is **not** p1. If no `## Arcs` row is marked `active`, keep p1 for the small set of things you'd genuinely pick up next; everything else is p2. |
 | **`p2`** | **The default.** Real, actionable work that isn't the current focus — most of the backlog. Also nice-to-have, cleanup, "don't forget to reconsider" trackers, low-impact refactors, deferred investigations. Real work, no time pressure to pull it ahead of the active arc. |
 
 Most of a healthy backlog is `p2`, with a bounded `p1` set tracking the active
