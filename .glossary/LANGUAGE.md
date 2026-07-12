@@ -177,6 +177,30 @@ pure-membership and batch-mergeable, the resolver is where authorization-masking
 error-translation happen. fate itself never queries the database — handlers delegate to
 the domain services.
 
+### Branded ID schema
+
+A **branded ID schema** is an entity id typed as a nominal brand over a plain string —
+`Schema.String.pipe(Schema.brand("Name"))`, output type `Brand.Branded<string, "Name">` —
+so two ids that are both `string` at runtime (a user id, a definition id) become **distinct
+types** the checker won't let you pass for one another. The brand is **compile-time only**:
+it narrows the output type without validating, so `.make`/decode return the input unchanged
+and the wire + D1 bytes stay byte-identical — no runtime allocation, no runtime check. (Epic
+[#2700](https://github.com/kamp-us/phoenix/issues/2700); idiom grounded in effect-smol
+`SCHEMA.md` §Branding — the top-level `Schema.brand` form, not a hand-rolled phantom symbol.)
+
+- **The shared home + the mint.** All branded ids live in one module,
+  [`apps/web/worker/lib/ids.ts`](../apps/web/worker/lib/ids.ts), and are minted by its
+  `brandedId(name)` helper (`export const UserId = brandedId("UserId")`). A write boundary
+  brands a raw session string at the call site with `.make` — e.g. `UserId.make(user.id)` in
+  [`features/sozluk/mutations.ts`](../apps/web/worker/features/sozluk/mutations.ts).
+- **Shared cross-feature vs. feature-owned.** `UserId` is the **cross-feature** id — the
+  authenticated user threaded as every write's actor/author/voter/reactor argument. A
+  **feature-owned** id belongs to one product surface: sözlük's `DefinitionId` / `TermSlug`.
+  Feature-owned ids co-locate in `lib/ids.ts` beside `UserId` (one import for every child of
+  #2700), but stay conceptually owned by their feature — a `PostId` (pano) is declared with
+  its own surface, not reused across features. Distinct brands are what make an argument swap
+  like `voteDefinition({definitionId, voterId})` a typecheck error instead of a live bug.
+
 ### Store of record vs. data view — "view" names the fate read-shape only
 
 Two unrelated module kinds in the same feature folder once both wore the word "view"; the
