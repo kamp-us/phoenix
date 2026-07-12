@@ -69,6 +69,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # shellcheck disable=SC2016  # backticks are intended-literal markdown in the issue body, not shell expansion
           gh issue create --repo "$GITHUB_REPOSITORY" \
             --title "roadmap-guard: ROADMAP.md ↔ milestone drift detected" \
             --label "status:needs-triage" \
