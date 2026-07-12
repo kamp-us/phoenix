@@ -541,6 +541,46 @@ The judgment of user-facing-vs-exempt is **yours** — it's the same slice-level
 that set the child's type and priority. write-code (ship dark) and review-code (verify the
 gating) *read* this marker downstream; they never write it.
 
+### Emit the reachability/journey child for a user-facing epic (release-blocking)
+
+The story-coverage invariant above guarantees every story has ≥ 1 child — but it does **not**
+force the slice that makes a dark-shipped feature *reachable* (a consuming UI **and** a journey
+e2e) to exist as its own blocking child. That gap is exactly how a feature reaches backend-100%
+while its UI is never built: the reachability work gets buried inside a backend slice's
+acceptance criteria (then silently dropped), or tacked on as an optional tail after the "real"
+work — the reactions and the two mecmua instances all graduated backend-complete with no
+consuming UI. So when this plan contains **any** user-facing (dark-ship) child — one you stamped
+`**Containment:** flag (default-off)` above — emit the reachability work as a **first-class,
+release-blocking child of its own**, never an optional tail.
+
+This is the plan-epic side of the vertical-completeness gate (ADR
+[0173](https://github.com/kamp-us/phoenix/blob/main/.decisions/0173-vertical-completeness-gate.md),
+#2528). Its runtime enforcer is `pipeline-cli reachability-guard check <flag-key>` (#2529) and the
+`/release` refusal (#2531) is its sibling consumer — the emitted child and both enforcers key off
+**one** notion of reachability, defined once in ADR 0173; don't invent a second here.
+
+**One reachability child per graduating flag key.** A user-facing epic ships behind a Flagship
+flag key (the `flag (default-off)` containment); emit one reachability child per such key. Its
+`### What to build` names **both** halves of the ADR-0173 reachability contract concretely, so a
+`write-code` agent knows what to build and `reachability-guard` can verify it:
+
+- **A consuming UI** — a component under `apps/web/src/**` that references the flag-key constant
+  declared in `apps/web/src/flags/keys.ts` (beyond the definition itself), so the feature is
+  actually rendered to a user when the flag is on (ADR 0173 §1a).
+- **A registered journey e2e** — a spec under `apps/web/tests/e2e/` whose `test`/`describe` title
+  carries the `@journey:<flag-key>` tag, exercising the user's path through the feature (ADR
+  0173 §2).
+
+The child follows the normal format-2 shape, preserving every existing invariant: it carries a
+`**Stories:**` line as **bare numbers** tracing to the user-facing story(ies) it makes reachable
+(this child is what *covers* the "as a user I can see/use X" story — not scope creep), ≥ 1
+acceptance criterion phrased against the reachability contract (e.g. *"`pipeline-cli
+reachability-guard check <flag-key>` passes — a `.tsx` under `apps/web/src/**` consumes the
+flag-key constant AND a `@journey:<flag-key>` e2e under `apps/web/tests/e2e/` is registered"*),
+and `**Containment:** flag (default-off)` (it is itself user-facing). A genuinely UI-less flag is
+the ADR 0173 §3 exemption (a `@reachability-exempt: <reason>` marker in `keys.ts`), not a missing
+child — if the epic's flag is exempt, record that in the plan and emit no reachability child.
+
 ---
 
 ## Step 4 — Link children as native sub-issues
@@ -602,6 +642,15 @@ concurrency caps, or code flags (those are the out-of-repo orchestrator's, per A
 Derive the topology from the task-split rationale: independent slices share a phase (parallel);
 a slice that needs another's output sits in a later phase, or carries a `requires:` for a
 single specific predecessor.
+
+**Place the reachability/journey child (Step 3) as a release-blocking sibling, never an optional
+tail.** It is what makes a dark-shipped feature graduate-eligible, so the topology must make
+graduation *depend* on it: put it in the phase that gates the feature's completion — a sibling
+of, or a phase after, the backend slices it consumes — and carry a `requires: #N` on each backend
+slice whose surface it renders, so it sits on the critical path to graduation. A reachability
+child that nothing gates on, or that lands in a trailing catch-all phase no other slice depends
+on, *is* the "optional tail" this exists to prevent (ADR 0173); the graduation the `/release`
+refusal (#2531) blocks and the child this topology pins are the same reachability edge.
 
 ```markdown
 ## Dependencies
