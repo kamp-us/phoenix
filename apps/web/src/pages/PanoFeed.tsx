@@ -13,16 +13,17 @@
  */
 import * as React from "react";
 import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
-import {Link, Navigate, useSearchParams} from "react-router";
+import {Link, Navigate, useNavigate, useSearchParams} from "react-router";
 import {useSession} from "../auth/client";
 import {Subnav, type SubnavFilter} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {PanoFeedSkeleton} from "../components/pano/PanoSkeleton";
+import {useSetPanoSubnavContent} from "../components/pano/PanoSubnavLayout";
 import {Screen} from "../fate/Screen";
 import {FEED_SNAPSHOT_ENABLED} from "../fate/snapshot";
 import {LoadMoreButton} from "../fate/wire";
-import {PANO_BASE_FEED} from "../flags/keys";
+import {PANO_BASE_FEED, PHOENIX_NAV_IA} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {markFeedPaintOnce} from "../lib/feedPerf";
 import {
@@ -365,10 +366,49 @@ interface ChromeProps {
 function FeedChrome({host, filterId, setFilterId, signedIn, meta, children}: ChromeProps) {
 	// kaydedilenler is a per-viewer chip, so it joins the sort chips only signed-in —
 	// same subnav row, driven by the same `onFilterChange` → `?sort=` mechanism (#1641).
-	const filters: SubnavFilter[] = signedIn
-		? [...PANO_FILTERS, {id: SAVED_PANO_FILTER_ID, label: "kaydedilenler"}]
-		: PANO_FILTERS;
+	const filters = React.useMemo<SubnavFilter[]>(
+		() =>
+			signedIn
+				? [...PANO_FILTERS, {id: SAVED_PANO_FILTER_ID, label: "kaydedilenler"}]
+				: PANO_FILTERS,
+		[signedIn],
+	);
+	// Under nav-IA (#2601), pano's Subnav lives in the persistent product zone
+	// (`PanoSubnavLayout`), not per-page here: publish this feed's filters/meta/crumb UP into
+	// that zone rather than painting a second Subnav, and fold the active site-filter into the
+	// zone's crumb slot as transient state paint — so the resting-chrome PanoCrumb strip is
+	// gone. `inZone` also requires the zone ancestor's setter, so the eager public paint above
+	// the router (App.tsx, no ancestor) and the flag-off path both keep today's own Subnav +
+	// PanoCrumb strip exactly.
+	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
+	const setPanoSubnav = useSetPanoSubnavContent();
+	const navigate = useNavigate();
+	const inZone = navIaOn && setPanoSubnav != null;
 
+	React.useEffect(() => {
+		if (!inZone || !setPanoSubnav) return;
+		setPanoSubnav({
+			filters,
+			activeFilter: filterId,
+			onFilterChange: setFilterId,
+			meta,
+			...(host ? {crumb: {label: <>site / {host}</>, onClear: () => navigate("/pano")}} : {}),
+		});
+	}, [inZone, setPanoSubnav, filters, filterId, setFilterId, meta, host, navigate]);
+	// Clear the zone's content when this feed leaves for a non-feed `/pano/*` route, so the
+	// persistent zone falls back to just its CTA. Keyed on the stable setter, so it fires on
+	// unmount only — not on every filter/meta change (which the publish effect above tracks).
+	React.useEffect(() => {
+		return () => setPanoSubnav?.(null);
+	}, [setPanoSubnav]);
+
+	if (inZone) {
+		return (
+			<div className="kp-page">
+				<div className="kp-page__inner">{children}</div>
+			</div>
+		);
+	}
 	return (
 		<>
 			<Subnav filters={filters} activeFilter={filterId} onFilterChange={setFilterId} meta={meta} />

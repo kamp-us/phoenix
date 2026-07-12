@@ -29,7 +29,7 @@ import {ProductSubnavLayout} from "./components/layout/ProductSubnavLayout";
 import {Topbar} from "./components/layout/Topbar";
 import {MecmuaSubnavLayout} from "./components/mecmua/MecmuaSubnavLayout";
 import {actorLabel} from "./components/moderation/actor-identity";
-import {PanoSubnavCta} from "./components/pano/PanoSubnavCta";
+import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
@@ -427,7 +427,17 @@ export function App() {
 				<Routes>
 					<Route element={<Layout />}>
 						<Route path="/" element={<LandingPage />} />
-						{productZone(navIaOn, "pano-zone", panoRoutes, <PanoSubnavCta />)}
+						{/* pano's zone hosts feed-scoped filters/meta + the site-filter crumb
+						    (published up from the routed feed) and its primary-action CTA, so it
+						    wraps under its own `PanoSubnavLayout` rather than the generic empty/
+						    cta-only frame (#2601). Off ⇒ flat, as today. */}
+						{navIaOn ? (
+							<Route key="pano-zone" element={<PanoSubnavLayout />}>
+								{panoRoutes}
+							</Route>
+						) : (
+							panoRoutes
+						)}
 						{/* mecmua's zone hosts flag-composed destinations + a primary-action CTA,
 						    so it wraps under its own `MecmuaSubnavLayout` (which composes both)
 						    rather than the generic empty/cta-only frame (#2603). Off ⇒ flat, as today. */}
