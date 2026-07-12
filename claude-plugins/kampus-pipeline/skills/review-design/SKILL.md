@@ -361,12 +361,15 @@ HEAD_NOW="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 ```
 
 Write the verdict to a per-run temp file so multi-line markdown + backticks survive the shell, then
-**upsert** it: scan the PR for *your own* prior `review-design:` marker comment and `PATCH` it with
-the fresh verdict, else `POST` a new one — exactly **one** `review-design` verdict comment per PR
-(ADR 0058 rule 2). The `mktemp` handle must be run-unique (the PR number alone isn't — two concurrent
-reviews of the same PR would collide on a fixed path). Post it **as a comment, never a native
-review** (ADR 0058 rule 4): a native review can't carry the `@ <sha>` in the shape this contract
-controls, so the comment is the single carrier.
+**upsert** it — exactly **one** `review-design` verdict comment per PR (ADR 0058 rule 2), the
+`mktemp` handle run-unique (the PR number alone isn't — two concurrent reviews would collide). That
+upsert plus its emission guards are the ADR-0058 glue **all four gates share**, so — exactly as
+`review-doc` — post through the deterministic, unit-tested tool (`pipeline-cli verdict post`, #2102).
+**The tool is the marker-emit choke point:** it refuses fail-closed *before* landing unless every SHA
+field (the first-line `@ <sha>` and the `Reviewed-head:` anchor) is a clean full 40-hex head SHA —
+closing the mktemp-path leak where a scratch path bled into the `@ <sha>` field (#2683). Post it **as
+a comment, never a native review** (ADR 0058 rule 4): a native review can't carry the `@ <sha>` in
+the shape this contract controls, so the comment is the single carrier.
 
 The SHA in the first line is **load-bearing**: `ship-it` refuses any verdict not bound to the PR's
 current head (ADR 0058). **Token order is fixed** (§5): `@ <HEAD_SHA>` comes **immediately after**
@@ -379,16 +382,16 @@ from exactly that line. Every body also carries an **Evidence** section embeddin
 GitHub-hosted screenshot URLs so a human can see what you judged.
 
 ```bash
-ME="$(gh api user --jq .login)"
-find_mine() {   # the namespace-anchored find filter — matches PASS/FAIL/advisory, never a foreign gate
-  gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-    | jq -r --arg me "$ME" 'map(select(.user.login==$me
-        and (.body | test("^\\s*\\**\\s*review-design:"; "i")))) | last | .id // empty'
-}
-upsert() {   # $1 = path to the composed verdict body
-  local BODY; BODY="$(cat "$1")"; local MINE; MINE="$(find_mine)"
-  if [ -n "$MINE" ]; then gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY" --jq .id
-  else gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$BODY" --jq .id; fi
+# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
+else
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.1.0 verdict"     # foreign install: the published CLI
+fi
+upsert() {   # $1 = path to the composed verdict body → prints the upserted comment id; fails loud on a malformed marker
+  local out
+  out="$($VERDICT post --pr "$PR" --gate design --body-file "$1")" || return 1   # namespace-anchored upsert (PATCH own prior marker, else POST), fail-closed on a bad @ <sha>
+  printf '%s\n' "$out" | awk '{print $2}'   # `posted <id>` / `patched <id>` → the comment id
 }
 ```
 

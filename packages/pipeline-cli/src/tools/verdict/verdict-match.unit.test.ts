@@ -1,9 +1,11 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	emissionDefect,
 	isBoundToHead,
 	isNamespaceMarker,
 	isReviewed,
 	isUnboundPolarityMarker,
+	malformedEmittedSha,
 	parseVerdict,
 	resolveVerdict,
 	type VerdictComment,
@@ -317,4 +319,58 @@ describe("isUnboundPolarityMarker — the post SHA-required-for-polarity guard (
 		assert.isFalse(isUnboundPolarityMarker("review-doc: advisory — see thread", "doc")));
 	it("allows another gate's marker (not this namespace's concern)", () =>
 		assert.isFalse(isUnboundPolarityMarker("review-code: PASS — merge-ready", "doc")));
+});
+
+describe("malformedEmittedSha — the post full-40-hex emission guard (#2683)", () => {
+	const SHA40 = "a".repeat(40);
+	const MKTEMP = "/var/folders/8f/r3k3t6817cgbsxsxvxk83q4c0000gn/T/tmp.TgExIt22qT";
+
+	it("flags a PASS marker whose `@ <sha>` is a full mktemp path (the observed leak shape)", () =>
+		assert.isNotNull(malformedEmittedSha(`review-code: PASS @${MKTEMP} — merge-ready`, "code")));
+	it("flags a 40-hex SHA glued to a trailing path (the ≥7-hex-prefix gap isUnbound misses)", () =>
+		assert.isNotNull(
+			malformedEmittedSha(`review-code: PASS @ ${SHA40}${MKTEMP} — merge-ready`, "code"),
+		));
+	it("flags a short (7–39 hex) first-line SHA — emission requires the FULL 40", () =>
+		assert.isNotNull(
+			malformedEmittedSha("review-code: PASS @ abc1234def5678 — merge-ready", "code"),
+		));
+	it("flags a §CP advisory whose `Reviewed-head:` anchor is an mktemp path (the PR #2680 site)", () =>
+		assert.isNotNull(
+			malformedEmittedSha(
+				`review-code: advisory — see thread\n\nReviewed-head: @${MKTEMP}`,
+				"code",
+			),
+		));
+	it("flags a §CP advisory whose `Reviewed-head:` anchor is a short SHA", () =>
+		assert.isNotNull(
+			malformedEmittedSha(`review-code: advisory\n\nReviewed-head: @ abc1234def5678`, "code"),
+		));
+
+	it("passes a clean full-40-hex PASS marker", () =>
+		assert.isNull(malformedEmittedSha(`review-code: PASS @ ${SHA40} — merge-ready`, "code")));
+	it("passes a §CP advisory with a clean full-40-hex `Reviewed-head:` anchor", () =>
+		assert.isNull(
+			malformedEmittedSha(
+				`review-code: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${SHA40}`,
+				"code",
+			),
+		));
+	it("passes a bare advisory with no SHA field at all", () =>
+		assert.isNull(malformedEmittedSha("review-code: advisory — see thread", "code")));
+});
+
+describe("emissionDefect — the one gate `post` and `validate` share (#2683)", () => {
+	const SHA40 = "a".repeat(40);
+
+	it("null (postable) for a clean full-40-hex PASS marker", () =>
+		assert.isNull(emissionDefect(`review-doc: PASS @ ${SHA40} — merge-ready`, "doc")));
+	it("defect for a cross-namespace body (review-code on the doc gate)", () =>
+		assert.isNotNull(emissionDefect(`review-code: PASS @ ${SHA40} — merge-ready`, "doc")));
+	it("defect for an unbound `@-` polarity marker (the #2646 case)", () =>
+		assert.isNotNull(emissionDefect("review-doc: PASS @ -", "doc")));
+	it("defect for a path-glued SHA field (the #2683 case)", () =>
+		assert.isNotNull(
+			emissionDefect("review-doc: PASS @ /var/folders/T/tmp.X — merge-ready", "doc"),
+		));
 });

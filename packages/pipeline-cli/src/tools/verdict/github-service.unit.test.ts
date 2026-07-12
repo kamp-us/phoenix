@@ -77,6 +77,10 @@ const PR = 500;
 const P = `repos/kamp-us/phoenix`;
 const HEAD = "abc1234def5678";
 const OLD = "0000000aaaa1111";
+// A full 40-hex head SHA — the shape a real `.head.sha` carries and the ONLY shape the tightened
+// emission guard (#2683) accepts on a POSTed body. `HEAD`/`OLD` stay short: they exercise the READ
+// side, whose {7,40} staleness matcher (ADR 0058 rule 3) is deliberately looser and left unchanged.
+const HEAD40 = `${"a1b2c3d4e5f6".repeat(3)}a1b2`; // 12*3 + 4 = 40 hex
 
 const comment = (over: {
 	readonly id: number;
@@ -162,7 +166,7 @@ describe("Github.read — resolve a PR's SHA-bound verdict over a mock gh spawne
 });
 
 describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", () => {
-	const BODY = `review-doc: PASS @ ${HEAD} — merge-ready\n\nReviewed-head: @ ${HEAD}`;
+	const BODY = `review-doc: PASS @ ${HEAD40} — merge-ready\n\nReviewed-head: @ ${HEAD40}`;
 
 	it.effect("no prior marker → POST a fresh verdict comment", () =>
 		Effect.gen(function* () {
@@ -275,6 +279,68 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 				"GET user": "usirin",
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
 				[`POST ${P}/issues/${PR}/comments`]: "888",
+			}),
+		),
+	);
+
+	// The #2683 emission tightening: the observed leak substituted a full `mktemp` scratch path into
+	// the `@ <sha>` field. Every SHA field must be a clean full 40-hex; a partial/non-hex/path-glued
+	// value is refused fail-closed at emission, never POSTed. No write fixture: a POST would 404.
+	const MKTEMP = "/var/folders/8f/r3k3t6817cgbsxsxvxk83q4c0000gn/T/tmp.TgExIt22qT";
+
+	it.effect("a PASS marker whose `@ <sha>` is an mktemp PATH → VerdictInputError, no write", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				(yield* Github).post(PR, "doc", `review-doc: PASS @${MKTEMP} — merge-ready`),
+			);
+			assert.isTrue(error instanceof VerdictInputError);
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+			}),
+		),
+	);
+
+	it.effect("a PASS marker with a 40-hex SHA glued to a trailing PATH → VerdictInputError", () =>
+		Effect.gen(function* () {
+			const glued = `review-doc: PASS @ ${"a".repeat(40)}${MKTEMP} — merge-ready`;
+			const error = yield* Effect.flip((yield* Github).post(PR, "doc", glued));
+			assert.isTrue(error instanceof VerdictInputError);
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+			}),
+		),
+	);
+
+	// The actual PR #2680 leak site: a §CP advisory (SHA-less first line, so it passes the polarity
+	// guard) whose `Reviewed-head:` anchor carries the mktemp path — the field the first-line-only
+	// guards never inspected. This is the regression the tightened guard closes.
+	it.effect("a §CP advisory whose `Reviewed-head:` is an mktemp PATH → VerdictInputError", () =>
+		Effect.gen(function* () {
+			const advisory = `review-doc: advisory — see thread\n\nReviewed-head: @${MKTEMP}`;
+			const error = yield* Effect.flip((yield* Github).post(PR, "doc", advisory));
+			assert.isTrue(error instanceof VerdictInputError);
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+			}),
+		),
+	);
+
+	it.effect("a §CP advisory with a clean full-40-hex `Reviewed-head:` → POSTed", () =>
+		Effect.gen(function* () {
+			const advisory = `review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${HEAD40}`;
+			const result = yield* (yield* Github).post(PR, "doc", advisory);
+			assert.deepStrictEqual(result, {_tag: "posted", commentId: 890});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`POST ${P}/issues/${PR}/comments`]: "890",
 			}),
 		),
 	);

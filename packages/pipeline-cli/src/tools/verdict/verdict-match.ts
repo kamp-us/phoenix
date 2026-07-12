@@ -225,3 +225,62 @@ export const isNamespaceMarker = (body: string, gate: VerdictGate): boolean =>
  */
 export const isUnboundPolarityMarker = (body: string, gate: VerdictGate): boolean =>
 	polarityRe(gate).test(body) && !verdictRe(gate).test(body);
+
+/**
+ * A well-formed EMITTED head SHA: the full 40-hex, terminated by whitespace or line/string end —
+ * `(?=$|\s)` rejects a value that glues trailing garbage onto a hex prefix (`<40hex>/var/folders/…`)
+ * as well as a bare non-hex path. This is deliberately STRICTER than the {7,40} read matchers
+ * (`verdictRe` / ship-it's `Reviewed-head` read): staleness resolution must keep prefix-matching an
+ * abbreviated SHA (ADR 0058 rule 3), but at EMISSION the full head SHA is always in hand, so an
+ * emitted marker binds it exactly. Anything else is a defect the post guard refuses (#2683).
+ */
+const CLEAN_FULL_SHA = "[0-9a-f]{40}(?=$|\\s)";
+
+const emittedMarkerRe = (gate: VerdictGate): RegExp =>
+	new RegExp(
+		`^\\s*\\*{0,2}\\s*${GATE_KEYWORD[gate]}:\\s*(?:PASS|FAIL)\\s*@\\s*${CLEAN_FULL_SHA}`,
+		"i",
+	);
+
+const anyReviewedHeadLineRe = /^\s*Reviewed-head:/im;
+const cleanReviewedHeadRe = new RegExp(`^\\s*Reviewed-head:\\s*@?\\s*${CLEAN_FULL_SHA}`, "im");
+
+/**
+ * The post-emission SHA-shape guard (#2683). A verdict body about to be POSTed must bind the FULL
+ * 40-hex head SHA in every SHA field it carries; a partial/non-hex/path-glued value (the observed
+ * `mktemp` scratch path leaked into the `@ <sha>` field on §CP PR #2680) both false-blocks ship-it
+ * (the read side can't resolve it) and leaks a machine-local path into a public comment. Two fields
+ * carry a SHA: the first-line PASS/FAIL marker's `@ <sha>`, and the §CP advisory's `Reviewed-head:`
+ * anchor line (ADR 0151) — the latter is where the #2680 leak actually landed, invisible to the
+ * first-line-only `isUnboundPolarityMarker`. Returns a human-readable defect description, or null
+ * when every SHA field is a clean full 40-hex.
+ */
+export const malformedEmittedSha = (body: string, gate: VerdictGate): string | null => {
+	if (polarityRe(gate).test(body) && !emittedMarkerRe(gate).test(body)) {
+		return `the ${GATE_KEYWORD[gate]}: PASS/FAIL marker's '@ <sha>' is not a clean 40-hex head SHA — a partial/non-hex/path-glued value (e.g. an mktemp scratch path) false-blocks ship-it and leaks a machine-local path into a public comment (#2683)`;
+	}
+	if (anyReviewedHeadLineRe.test(body) && !cleanReviewedHeadRe.test(body)) {
+		return `the 'Reviewed-head: @ <sha>' anchor line is not a clean 40-hex head SHA — the §CP advisory head binding (ADR 0151) leaked a non-hex/path value, the #2683 leak observed on PR #2680`;
+	}
+	return null;
+};
+
+/**
+ * The single fail-closed gate every verdict EMISSION passes before it can reach GitHub — the one
+ * source `Github.post` and `verdict validate` both consume so a raw-`gh api` skill and the tool
+ * enforce identical rules. Returns the first structural defect (as a human-readable reason), or
+ * null when the body is postable. Three ordered checks:
+ *   1. cross-namespace — the first line must be *this* gate's marker (ADR 0058 §Scope);
+ *   2. unbound polarity — a PASS/FAIL first line must carry a bindable `@ <sha>` (the `@-` bug, #2646);
+ *   3. malformed emitted SHA — every SHA field (first-line marker + `Reviewed-head:` anchor) must be
+ *      a clean full 40-hex, never a partial/non-hex/path-glued value (the mktemp-path leak, #2683).
+ */
+export const emissionDefect = (body: string, gate: VerdictGate): string | null => {
+	if (!isNamespaceMarker(body, gate)) {
+		return `the body's first line is not a ${GATE_KEYWORD[gate]}: marker — a verdict must carry its own gate's marker on line one (the cross-namespace emission bug, ADR 0058 §Scope)`;
+	}
+	if (isUnboundPolarityMarker(body, gate)) {
+		return `a ${GATE_KEYWORD[gate]}: PASS/FAIL verdict must carry a well-formed '@ <sha>' (≥7 hex) — this polarity-bearing body has an empty/malformed SHA, which posts an unbindable marker the fail-closed read side refuses (the '@-' emission bug, ADR 0058, #2646)`;
+	}
+	return malformedEmittedSha(body, gate);
+};
