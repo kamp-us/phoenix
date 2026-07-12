@@ -1,7 +1,11 @@
 # @kampus/fts-backfill
 
-One-time, direct-D1 **FTS backfill** — re-index existing sözlük/pano content for
-search (issue #534).
+Direct-D1 **FTS index rebuild** — re-derive the `term_search` / `post_search` FTS5
+index from the base `term_record` / `post_record` rows. Two callers, one command
+(`fts-backfill run`): the one-time backfill of pre-dual-write content (issue #534),
+and the standing rebuild the D1 export/restore runbook depends on (issue #2754 /
+#2703). Both are the same operation — the FTS index is fully derived from the base
+tables, so rebuilding it is always "replay the dual-write over every base row".
 
 ## Why
 
@@ -51,9 +55,8 @@ A pure, unit-tested core + a thin Effect bin (the repo tooling idiom):
 - `src/backfill.ts` — `buildBackfillStatements` (pure: source rows → FTS upsert
   SQL via the worker's sync builders) + `backfill(d1)` (reads rows, runs the
   atomic batch).
-- `src/d1-rest.ts` — a `D1Database` over the Cloudflare D1 REST API (same adapter
-  as `@kampus/preview-seed`).
-- `src/bin.ts` — the `fts-backfill run` CLI.
+- `src/bin.ts` — the `fts-backfill run` CLI. Its `D1Database` transport is the
+  shared `@kampus/d1-rest` REST adapter (same one `@kampus/preview-seed` uses).
 
 ## Running it against a real D1
 
@@ -72,3 +75,27 @@ node packages/fts-backfill/src/bin.ts run --database-id <stage-d1-uuid>
 Run **once per environment** whose data predates the FTS migration (production
 after the search rollout; any preview/staging migrated onto the FTS tables). New
 writes stay current automatically via the dual-write.
+
+## As the D1-restore FTS rebuild (restore step-3)
+
+D1 cannot export a database that contains virtual tables (ADR 0080), so the
+export/restore runbook ([#2703]) exports the base tables only and skips
+`term_search` / `post_search`; a restore therefore lands with the base rows intact
+but the FTS index **empty** (the virtual tables recreated bare by the migration).
+`fts-backfill run` **is** that runbook's restore step-3 — the first-class,
+one-command path to reconstruct the whole index from the restored base rows,
+deriving `norm` through the real `normalizeSearchText` fold (never a raw-SQL
+re-spelling):
+
+```bash
+node packages/fts-backfill/src/bin.ts run --database-id <restored-stage-d1-uuid>
+```
+
+Because each sync is a keyed delete-then-insert (see [Idempotency](#idempotency)),
+it is safe on a freshly-restored D1 whose FTS tables are already empty, and safe to
+re-run if a rebuild is interrupted. The restore-scenario proof — both FTS tables
+wiped, then one run reconstructs the full index with correct row counts + exact and
+prefix `MATCH` on real D1 — lives in
+`apps/web/tests/integration/fts-backfill-restore.test.ts` (#2754).
+
+[#2703]: https://github.com/kamp-us/phoenix/issues/2703
