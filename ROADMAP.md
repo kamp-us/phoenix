@@ -35,6 +35,11 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 |----------|-----------|-------|
 | Mentor Audit | #27 | active |
 
+**The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
+
+- **Columns** are `Campaign | Milestone | State`, in that order. `Campaign` is the founder-voice name; `Milestone` pins the campaign to its GitHub milestone **by number** (`#N`) — the same row→milestone-by-number binding the roadmap-guard already enforces on `## Arcs`, and that number is the one link to the operational projection. `State` is the lifecycle cell.
+- **`State ∈ {active, done}`** — the symmetric two-state lifecycle. A campaign is `active` while its milestone is draining, and flips to `done` once that milestone is fully drained (its GitHub milestone closed). There is no `queued` state: unlike an arc, a campaign is not sequenced ahead — it opens `active` when the founder starts it and ends `done`, running concurrently with whichever arc is active.
+
 **Mentor Audit** — a security & architecture audit wave (the staff-mentor findings: the karma double-bump race, per-actor rate limiting, ops runbooks, `SECURITY.md`, …). To be solved ASAP; drains via the platform lane alongside Four Pillars.
 
 ## Standing lanes
