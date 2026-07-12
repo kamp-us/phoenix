@@ -23,6 +23,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import type {KarmaEventReason} from "../../db/karma-event.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {type TargetRecordMeta, targetTable} from "../../db/target-table.ts";
+import {TargetId, UserId} from "../../lib/ids.ts";
 import {Telemetry} from "../telemetry/Telemetry.ts";
 import {
 	VOTE_REQUIRED_TIER,
@@ -204,7 +205,7 @@ export const VoteLive = Layer.effect(Vote)(
 			if (!meta) {
 				return yield* new VoteTargetNotFound({
 					targetKind: kind,
-					targetId,
+					targetId: TargetId.make(targetId),
 					message: `vote target ${kind} ${targetId} not found`,
 				});
 			}
@@ -274,7 +275,7 @@ export const VoteLive = Layer.effect(Vote)(
 				const eligible = yield* voterStanding.isAboveNewcomer(input.userId);
 				if (!eligible) {
 					return yield* new VoterNotEligible({
-						voterId: input.userId,
+						voterId: UserId.make(input.userId),
 						need: VOTE_REQUIRED_TIER,
 						message: `voter ${input.userId} is below the vote-eligibility floor (must be promoted above çaylak)`,
 					});
@@ -286,7 +287,7 @@ export const VoteLive = Layer.effect(Vote)(
 			if (meta.sandboxed && !allowSandboxed) {
 				return yield* new VoteTargetSandboxed({
 					targetKind: input.targetKind,
-					targetId: input.targetId,
+					targetId: TargetId.make(input.targetId),
 					message: `vote target ${input.targetKind} ${input.targetId} is sandboxed`,
 				});
 			}

@@ -38,6 +38,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {REACTION_EMOJI, type ReactionEmoji} from "../../db/reaction-emoji.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {targetTable} from "../../db/target-table.ts";
+import {TargetId} from "../../lib/ids.ts";
 import {Telemetry} from "../telemetry/Telemetry.ts";
 import {ReactionTargetNotFound} from "./errors.ts";
 
@@ -179,7 +180,7 @@ export const ReactionLive = Layer.effect(Reaction)(
 			if (!meta) {
 				return yield* new ReactionTargetNotFound({
 					targetKind: kind,
-					targetId,
+					targetId: TargetId.make(targetId),
 					message: `reaction target ${kind} ${targetId} not found`,
 				});
 			}

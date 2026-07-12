@@ -8,6 +8,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {TargetId} from "../../lib/ids.ts";
 import {VoteTargetNotFound, VoteTargetSandboxed} from "./errors.ts";
 import {translateVoteMiss} from "./translate-vote-miss.ts";
 
@@ -20,12 +21,12 @@ const makeNotFound = () => new FeatureNotFound({id: "x", message: "x not found"}
 
 const notFound = new VoteTargetNotFound({
 	targetKind: "post",
-	targetId: "x",
+	targetId: TargetId.make("x"),
 	message: "gone",
 });
 const sandboxed = new VoteTargetSandboxed({
 	targetKind: "post",
-	targetId: "x",
+	targetId: TargetId.make("x"),
 	message: "sandboxed",
 });
 
