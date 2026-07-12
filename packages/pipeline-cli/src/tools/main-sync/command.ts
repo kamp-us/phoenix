@@ -37,6 +37,7 @@
  * provides.
  */
 import {execFileSync} from "node:child_process";
+import {isControlPlaneDeletion, parseNameStatus} from "@kampus/primary-index-tripwire";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {decideMainRefresh, decideMainSync, type HeadState, MAIN_BRANCH} from "./main-sync.ts";
@@ -91,6 +92,19 @@ const treeHasTrackedModifications = (): boolean => {
 };
 
 /**
+ * The count of staged deletions under the instruction-trust prefixes — the #2778 signature (#2784),
+ * classified with `@kampus/primary-index-tripwire`'s detection so main-sync's guaranteed refusal and
+ * the §CP `primary-index-guard` block share one definition. Indeterminate probe (command failed) ⇒ 0:
+ * this count only ever TIGHTENS the guard (a positive count refuses), so a 0 fallback never
+ * false-refuses; the incidental dirty checks still stand behind it.
+ */
+const stagedControlPlaneDeletionCount = (): number => {
+	const r = runGit(["diff", "--cached", "--name-status", "--diff-filter=D"]);
+	if (!r.ok) return 0;
+	return parseNameStatus(r.stdout).filter((e) => isControlPlaneDeletion(e.path)).length;
+};
+
+/**
  * The gentle post-merge refresh (#2056) — the HEAD-preserving counterpart to the drain-sync
  * below. `decideMainRefresh` is the safety policy; this runs it. A `leave-alone` plan is a
  * clean exit-0 no-op (the whole point: a stale checkout is acceptable, disturbing the owner
@@ -110,6 +124,15 @@ const runPostMergeRefresh = Effect.fn(function* (head: HeadState, execute: boole
 	yield* Console.log(
 		`main-sync --post-merge: HEAD ${head.branch ?? "(detached)"}, tree ${treeLabel} — plan: ${plan.action}${execute ? " (EXECUTE)" : " (dry-run)"}`,
 	);
+
+	if (plan.action === "refuse-mass-deletion") {
+		// The one refresh outcome that is LOUD (exit 1), not a silent no-op: the #2778 loaded-gun
+		// state must surface, never be skipped as ordinary dirt (#2784).
+		yield* Console.error(
+			`main-sync --post-merge REFUSED (fail-closed): the primary index carries ${plan.count} control-plane staged deletion(s) — the #2778 mass-staged-deletion signature. Refusing to refresh a primary in the loaded-gun state (a commit + push would fast-forward this control-plane mass deletion to origin/main). Unstage and recover by hand (0 commits ahead ⇒ \`git reset --hard origin/main\`), then re-run.`,
+		);
+		return yield* Effect.sync(() => process.exit(1));
+	}
 
 	if (plan.action === "leave-alone") {
 		yield* Console.log(
@@ -169,6 +192,7 @@ const mainSync = Command.make(
 			branch: headBranch(),
 			isDirty: treeIsDirty(),
 			hasTrackedModifications: treeHasTrackedModifications(),
+			stagedControlPlaneDeletionCount: stagedControlPlaneDeletionCount(),
 		};
 
 		if (postMerge) {
@@ -181,6 +205,15 @@ const mainSync = Command.make(
 		yield* Console.log(
 			`main-sync: HEAD ${head.branch ?? "(detached)"}, tree ${head.isDirty ? "DIRTY" : "clean"} — plan: ${plan.action}${execute ? " (EXECUTE)" : " (dry-run)"}`,
 		);
+
+		if (plan.action === "blocked-mass-deletion") {
+			// The guaranteed catch (#2784): refuse by NAME on the #2778 signature, before any reattach
+			// or merge — not the incidental dirty gate. Detection + refusal only, never a `git reset`.
+			yield* Console.error(
+				`main-sync REFUSED (fail-closed): the primary index carries ${plan.count} control-plane staged deletion(s) — the #2778 mass-staged-deletion signature. Refusing to sync a primary in the loaded-gun state (a commit + push would fast-forward this control-plane mass deletion to origin/main). Unstage and recover by hand (0 commits ahead ⇒ \`git reset --hard origin/main\`), then re-run.`,
+			);
+			return yield* Effect.sync(() => process.exit(1));
+		}
 
 		if (plan.action === "blocked-dirty") {
 			// Detect-and-surface, never discard: refuse the reattach on a dirty tree (#1494 AC #3).

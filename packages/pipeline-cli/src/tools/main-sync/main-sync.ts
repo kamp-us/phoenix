@@ -32,6 +32,17 @@
  * than today; yanking the owner off their feature branch or clobbering their tracked work is).
  * It ff's through untracked-only dirt, which a fast-forward never touches (see
  * `decideMainRefresh`, #2455). Failing-to-refresh is acceptable; failing-loudly or clobbering is not.
+ *
+ * A THIRD guard, orthogonal to both above (#2784): an EXPLICIT refusal on the #2778
+ * mass-staged-deletion signature. The #2778 incident was caught only INCIDENTALLY — the mass of
+ * staged deletions happened to trip `hasTrackedModifications`, so `decideMainRefresh` left the tree
+ * alone. That is not a guarantee: it is a side-effect of one dirt probe, and a future variant (e.g.
+ * a mass deletion already committed, or a config where the incidental gate doesn't fire) could slip
+ * through. So both decide functions now check the mass-deletion signature FIRST and refuse it by
+ * NAME — a guaranteed, LOUD fail-closed refusal keyed on the same signature the §CP
+ * `primary-index-guard` blocks at pre-commit, not a byproduct of the generic dirty check. The
+ * signature count is classified with `@kampus/primary-index-tripwire`'s detection at the git
+ * boundary (single source of "what is a #2778 mass deletion"); this core reads the resulting count.
  */
 
 /**
@@ -65,10 +76,27 @@ export interface HeadState {
 	 * through (see #2455). Implies `isDirty` (tracked dirt is a subset of all dirt).
 	 */
 	readonly hasTrackedModifications: boolean;
+	/**
+	 * The count of staged deletions under the instruction-trust prefixes (`.claude/**`,
+	 * `.decisions/**`, …) — the #2778 signature, classified at the git boundary with
+	 * `@kampus/primary-index-tripwire`'s detection. Its own value is what makes the catch a
+	 * GUARANTEE rather than the incidental `hasTrackedModifications` side-effect it was (#2784).
+	 */
+	readonly stagedControlPlaneDeletionCount: number;
 }
 
 /** The name of the branch the primary checkout must be attached to for a clean main-sync. */
 export const MAIN_BRANCH = "main";
+
+// Re-exported single source: main-sync refuses at the SAME "mass" threshold the §CP
+// `primary-index-guard` blocks at, so the sync-path refusal and the pre-commit block agree.
+export {MASS_DELETION_BLOCK_THRESHOLD} from "@kampus/primary-index-tripwire";
+
+import {MASS_DELETION_BLOCK_THRESHOLD} from "@kampus/primary-index-tripwire";
+
+/** True when the primary index carries a #2778 mass control-plane staged deletion (at/above the block threshold). */
+export const isMassControlPlaneDeletion = (head: HeadState): boolean =>
+	head.stagedControlPlaneDeletionCount >= MASS_DELETION_BLOCK_THRESHOLD;
 
 /**
  * What the orchestrator should do to bring the primary checkout to a state where
@@ -76,6 +104,12 @@ export const MAIN_BRANCH = "main";
  * safety policy.
  */
 export type MainSyncPlan =
+	/**
+	 * The primary index carries a #2778 mass control-plane staged deletion — REFUSE, by name,
+	 * before any other consideration (#2784). This is the guaranteed catch: the orchestrator must
+	 * NOT sync a primary in the loaded-gun state; a human resolves the staged deletion first.
+	 */
+	| {readonly action: "blocked-mass-deletion"; readonly count: number}
 	/**
 	 * HEAD is already on `main` — no reattach needed. The orchestrator proceeds
 	 * straight to `fetch` + `merge --ff-only`. This is the healthy steady state.
@@ -106,6 +140,9 @@ const fromLabel = (branch: string | null): string => branch ?? DETACHED_LABEL;
 /**
  * Decide the main-sync plan from the primary checkout's HEAD state:
  *
+ *   0. #2778 mass control-plane staged deletion present → `blocked-mass-deletion`. Checked FIRST,
+ *      by name — the guaranteed catch (#2784), not the incidental dirt gate. Refuse to sync a
+ *      primary in the loaded-gun state regardless of branch/dirt.
  *   1. On `main` → `already-on-main`. No HEAD move needed; sync can proceed. The
  *      dirty flag is irrelevant here — `merge --ff-only` fails safe on its own if
  *      the tree conflicts, and this tool never touches a tree that is already on the
@@ -120,6 +157,9 @@ const fromLabel = (branch: string | null): string => branch ?? DETACHED_LABEL;
  * surfaced, never checked out.
  */
 export const decideMainSync = (head: HeadState): MainSyncPlan => {
+	if (isMassControlPlaneDeletion(head)) {
+		return {action: "blocked-mass-deletion", count: head.stagedControlPlaneDeletionCount};
+	}
 	if (head.branch === MAIN_BRANCH) {
 		return {action: "already-on-main", branch: MAIN_BRANCH};
 	}
@@ -136,6 +176,13 @@ export const decideMainSync = (head: HeadState): MainSyncPlan => {
  * #2056): either a fast-forward is safe, or the checkout is left exactly as it is.
  */
 export type MainRefreshPlan =
+	/**
+	 * The primary index carries a #2778 mass control-plane staged deletion — a LOUD fail-closed
+	 * REFUSAL (#2784), distinct from the silent `leave-alone` no-op below. The refresh's normal
+	 * failure mode is "do nothing quietly", but the loaded-gun state must SURFACE, not be silently
+	 * skipped — so this exits non-zero at the command boundary, unlike every other refresh outcome.
+	 */
+	| {readonly action: "refuse-mass-deletion"; readonly count: number}
 	/**
 	 * HEAD is on `main` AND free of tracked modifications — the state in which a `git merge
 	 * --ff-only origin/main` is both possible and non-destructive (untracked-only dirt is
@@ -161,6 +208,10 @@ export type MainRefreshPlan =
 /**
  * Decide the post-merge refresh plan from the primary checkout's HEAD state (#2056):
  *
+ *   0. #2778 mass control-plane staged deletion present → `refuse-mass-deletion`. Checked FIRST,
+ *      by name — a LOUD fail-closed refusal (#2784), NOT the silent `leave-alone` no-op. The
+ *      incidental `hasTrackedModifications` gate below would also skip the ff, but silently; the
+ *      loaded-gun state must surface loudly instead.
  *   1. Not on `main` → `leave-alone` (reason `off-main`). The owner is on their own
  *      feature branch (or detached); a fast-forward of `main` cannot advance it, and
  *      yanking them onto `main` is exactly the disruption the refresh must avoid. No-op.
@@ -182,6 +233,9 @@ export type MainRefreshPlan =
  * consults dirt once already on `main`.
  */
 export const decideMainRefresh = (head: HeadState): MainRefreshPlan => {
+	if (isMassControlPlaneDeletion(head)) {
+		return {action: "refuse-mass-deletion", count: head.stagedControlPlaneDeletionCount};
+	}
 	if (head.branch !== MAIN_BRANCH) {
 		return {action: "leave-alone", reason: "off-main", branch: fromLabel(head.branch)};
 	}

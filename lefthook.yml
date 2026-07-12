@@ -105,6 +105,31 @@ pre-commit:
         node packages/primary-index-tripwire/src/bin.ts record || true
         exit 0
 
+    # The BLOCKING §CP containment for the #2778 corruption (#2784) — the prevention half the
+    # record-only tripwire above names. It REFUSES a commit carrying the mass-staged-deletion
+    # signature (a mass control-plane staged deletion) on the PRIMARY checkout: the one
+    # caller-agnostic choke point that fires as the loaded-gun commit is CREATED, before a push can
+    # fast-forward it to origin/main (ref-guard allows a fast-forward, so it can't catch this).
+    # Scoped to the primary — a linked worktree's commit lands on a PR-reviewed feature branch.
+    #
+    # Fail-CLOSED on the guard's own refuse, fail-OPEN when the CLI can't RUN — same contract as
+    # ref-guard: a not-yet-installed / stripped-PATH env (#787) or a bin remediation exit (#1798)
+    # must NOT abort every commit repo-wide, so the guard signals a deliberate refuse with a
+    # DEDICATED code (REFUSE_EXIT_CODE = 3), distinct from success (0) and any infra failure. ONLY
+    # code 3 blocks; every other non-zero swallows to a clean allow.
+    primary-index-guard:
+      run: |
+        command -v node >/dev/null 2>&1 || {
+          echo "primary-index-guard: no node on PATH (stripped-PATH/lean worktree); skipping #2778 block — CI/the §CP fix stay the authority" >&2
+          exit 0
+        }
+        status=0
+        node packages/pipeline-cli/src/bin.ts primary-index-guard pre-commit || status=$?
+        # exit 3 == the guard's deliberate refuse (abort the commit); any other non-zero == the CLI
+        # couldn't run (node/CLI/module absent, crash) → fail-OPEN, allow.
+        [ "$status" -eq 3 ] && exit 1
+        exit 0
+
 # The deps-dependent fast-fail tier (#2147): typecheck + changed-scoped unit tests fire
 # at PUSH time, not commit time, because they need `node_modules` (unlike biome). Scoped so
 # each push stays cheap — vitest `--changed origin/main` runs only the suites related to

@@ -4,7 +4,9 @@ import {
 	decideMainRefresh,
 	decideMainSync,
 	type HeadState,
+	isMassControlPlaneDeletion,
 	MAIN_BRANCH,
+	MASS_DELETION_BLOCK_THRESHOLD,
 	type MainRefreshPlan,
 	type MainSyncPlan,
 } from "./main-sync.ts";
@@ -13,6 +15,7 @@ const head = (over: Partial<HeadState> = {}): HeadState => ({
 	branch: "main",
 	isDirty: false,
 	hasTrackedModifications: false,
+	stagedControlPlaneDeletionCount: 0,
 	...over,
 });
 
@@ -55,8 +58,8 @@ describe("decideMainSync — blocked-dirty (detect-and-surface, never discard)",
 
 	it("dirty NEVER yields a reattach on the off-main path (safety invariant)", () => {
 		const plans: MainSyncPlan[] = [
-			decideMainSync({branch: null, isDirty: true, hasTrackedModifications: true}),
-			decideMainSync({branch: "x", isDirty: true, hasTrackedModifications: true}),
+			decideMainSync(head({branch: null, isDirty: true, hasTrackedModifications: true})),
+			decideMainSync(head({branch: "x", isDirty: true, hasTrackedModifications: true})),
 		];
 		for (const plan of plans) {
 			assert.notStrictEqual(plan.action, "reattach");
@@ -67,12 +70,12 @@ describe("decideMainSync — blocked-dirty (detect-and-surface, never discard)",
 describe("decideMainSync — totality", () => {
 	it("every HeadState maps to exactly one of the three actions", () => {
 		const cases: HeadState[] = [
-			{branch: "main", isDirty: false, hasTrackedModifications: false},
-			{branch: "main", isDirty: true, hasTrackedModifications: true},
-			{branch: null, isDirty: false, hasTrackedModifications: false},
-			{branch: null, isDirty: true, hasTrackedModifications: true},
-			{branch: "feature", isDirty: false, hasTrackedModifications: false},
-			{branch: "feature", isDirty: true, hasTrackedModifications: true},
+			head({branch: "main", isDirty: false, hasTrackedModifications: false}),
+			head({branch: "main", isDirty: true, hasTrackedModifications: true}),
+			head({branch: null, isDirty: false, hasTrackedModifications: false}),
+			head({branch: null, isDirty: true, hasTrackedModifications: true}),
+			head({branch: "feature", isDirty: false, hasTrackedModifications: false}),
+			head({branch: "feature", isDirty: true, hasTrackedModifications: true}),
 		];
 		const actions = new Set(["already-on-main", "reattach", "blocked-dirty"]);
 		for (const c of cases) {
@@ -131,17 +134,61 @@ describe("decideMainRefresh — leave-alone (never move HEAD, never error)", () 
 
 	it("NEVER yields a HEAD-moving action — leave-alone or fast-forward only, no reattach/checkout", () => {
 		const cases: HeadState[] = [
-			{branch: "main", isDirty: false, hasTrackedModifications: false},
-			{branch: "main", isDirty: true, hasTrackedModifications: true},
-			{branch: "main", isDirty: true, hasTrackedModifications: false},
-			{branch: null, isDirty: false, hasTrackedModifications: false},
-			{branch: null, isDirty: true, hasTrackedModifications: true},
-			{branch: "feature", isDirty: false, hasTrackedModifications: false},
-			{branch: "feature", isDirty: true, hasTrackedModifications: true},
+			head({branch: "main", isDirty: false, hasTrackedModifications: false}),
+			head({branch: "main", isDirty: true, hasTrackedModifications: true}),
+			head({branch: "main", isDirty: true, hasTrackedModifications: false}),
+			head({branch: null, isDirty: false, hasTrackedModifications: false}),
+			head({branch: null, isDirty: true, hasTrackedModifications: true}),
+			head({branch: "feature", isDirty: false, hasTrackedModifications: false}),
+			head({branch: "feature", isDirty: true, hasTrackedModifications: true}),
 		];
 		const actions = new Set<MainRefreshPlan["action"]>(["fast-forward", "leave-alone"]);
 		for (const c of cases) {
 			assert.isTrue(actions.has(decideMainRefresh(c).action));
 		}
+	});
+});
+
+describe("#2778 mass-staged-deletion refusal — the guaranteed catch, not incidental (#2784)", () => {
+	const T = MASS_DELETION_BLOCK_THRESHOLD;
+
+	it("isMassControlPlaneDeletion trips at/above the threshold, quiet below", () => {
+		assert.isFalse(isMassControlPlaneDeletion(head({stagedControlPlaneDeletionCount: T - 1})));
+		assert.isTrue(isMassControlPlaneDeletion(head({stagedControlPlaneDeletionCount: T})));
+		assert.isTrue(isMassControlPlaneDeletion(head({stagedControlPlaneDeletionCount: 248})));
+	});
+
+	it("decideMainSync refuses by NAME on the mass-deletion signature, before branch/dirt", () => {
+		// The whole point: even a clean HEAD on main is refused when the signature is present —
+		// the catch is now the signature itself, not the incidental dirty gate.
+		const plan = decideMainSync(
+			head({branch: "main", isDirty: false, stagedControlPlaneDeletionCount: 248}),
+		);
+		assert.deepStrictEqual(plan, {action: "blocked-mass-deletion", count: 248});
+	});
+
+	it("decideMainSync mass-deletion refusal outranks reattach and blocked-dirty", () => {
+		const detachedDirty = decideMainSync(
+			head({branch: null, isDirty: true, stagedControlPlaneDeletionCount: T}),
+		);
+		assert.strictEqual(detachedDirty.action, "blocked-mass-deletion");
+	});
+
+	it("decideMainRefresh refuses LOUDLY (refuse-mass-deletion), not the silent leave-alone", () => {
+		// On main + the signature: the incidental hasTrackedModifications gate would ALSO skip the ff,
+		// but silently (leave-alone). The signature must surface as an explicit refusal instead.
+		const plan = decideMainRefresh(
+			head({branch: "main", hasTrackedModifications: true, stagedControlPlaneDeletionCount: T}),
+		);
+		assert.deepStrictEqual(plan, {action: "refuse-mass-deletion", count: T});
+	});
+
+	it("a below-threshold control-plane deletion does NOT refuse (no false-block of a small refactor)", () => {
+		const sync = decideMainSync(head({branch: "main", stagedControlPlaneDeletionCount: T - 1}));
+		assert.strictEqual(sync.action, "already-on-main");
+		const refresh = decideMainRefresh(
+			head({branch: "main", stagedControlPlaneDeletionCount: T - 1}),
+		);
+		assert.strictEqual(refresh.action, "fast-forward");
 	});
 });

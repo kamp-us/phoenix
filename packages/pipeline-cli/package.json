@@ -38,6 +38,7 @@
 		"@effect/platform-node": "catalog:",
 		"@kampus/ci-required": "workspace:*",
 		"@kampus/gh-phoenix": "workspace:*",
+		"@kampus/primary-index-tripwire": "workspace:*",
 		"effect": "catalog:",
 		"fast-xml-parser": "catalog:",
 		"yaml": "catalog:"

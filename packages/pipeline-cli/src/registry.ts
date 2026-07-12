@@ -32,6 +32,7 @@ import {mainSyncCommand} from "./tools/main-sync/command.ts";
 import {mergeQueueClassifyCommand} from "./tools/merge-queue-classify/command.ts";
 import {pathFilterGuardCommand} from "./tools/path-filter-guard/command.ts";
 import {pointerGuardCommand} from "./tools/pointer-guard/command.ts";
+import {primaryIndexGuardCommand} from "./tools/primary-index-guard/command.ts";
 import {reachabilityGuardCommand} from "./tools/reachability-guard/command.ts";
 import {readmeGuardCommand} from "./tools/readme-guard/command.ts";
 import {refGuardCommand} from "./tools/ref-guard/command.ts";
@@ -119,6 +120,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	evalHarnessCommand,
 	mainSyncCommand,
 	refGuardCommand,
+	primaryIndexGuardCommand,
 	settingsEnvGuardCommand,
 	verdictCommand,
 	campaignCommand,

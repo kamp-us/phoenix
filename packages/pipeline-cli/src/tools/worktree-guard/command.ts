@@ -31,6 +31,12 @@
 import {execFileSync} from "node:child_process";
 import {existsSync, statSync} from "node:fs";
 import {resolve} from "node:path";
+import {
+	appendRecord,
+	decideBashStagingAttribution,
+	defaultLogPath,
+	renderBashStagingNote,
+} from "@kampus/primary-index-tripwire";
 import {Console, Data, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {isIsolationExpected, pinBash} from "./bash-pin.ts";
@@ -65,6 +71,32 @@ const onPrimaryCheckout = (cwd: string): boolean => {
 		return gitDir === commonDir;
 	} catch {
 		return false;
+	}
+};
+
+/**
+ * Run-time #2778 attribution (#2784, part 2): record — never block — a bulk-staging Bash command at
+ * the `pre-bash` boundary, where the offending COMMAND string + cwd are still in hand (the
+ * pre-commit tripwire sees only post-hoc index state). Best-effort and total: any failure is
+ * swallowed so it can NEVER perturb the pin decision this hook actually emits. Writes through the
+ * same out-of-repo log the read-only `primary-index-tripwire record` bin uses (no second surface).
+ */
+const recordBashStaging = (command: string, cwd: string): void => {
+	try {
+		const decision = decideBashStagingAttribution({
+			command,
+			cwd,
+			onPrimaryCheckout: onPrimaryCheckout(cwd),
+			agentType: process.env.CLAUDE_CODE_AGENT ?? "",
+			sessionId: process.env.CLAUDE_CODE_SESSION_ID ?? "",
+			worktreeRoot: WORKTREE_ROOT,
+			at: new Date().toISOString(),
+		});
+		if (decision.kind !== "record") return;
+		appendRecord(defaultLogPath(), `${JSON.stringify(decision.record)}\n`);
+		process.stderr.write(`${renderBashStagingNote(decision.record)}\n`);
+	} catch {
+		// Attribution is best-effort; a recording failure must never affect the pin decision.
 	}
 };
 
@@ -162,6 +194,9 @@ const preBash = Command.make(
 		const toolInput = (field(input, "tool_input") as Record<string, unknown>) ?? {};
 		const command = str(toolInput.command);
 		const cwd = str(field(input, "cwd"));
+		// Run-time #2778 attribution (#2784): record a bulk-staging op before deciding the pin. Purely
+		// additive and best-effort — it never changes the pin decision emitted below.
+		recordBashStaging(command, cwd);
 		const decision = pinBash({
 			worktreeRoot: WORKTREE_ROOT,
 			command,
