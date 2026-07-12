@@ -164,3 +164,21 @@
 	min-width: 1.25em;
 	text-align: center;
 }
+
+/* Accent-scarcity containment law (#2614, epic #2595). Under the nav-IA zone grammar the
+   topbar holds ZERO accent fills: #2600 relocated the one promoted `+ gönderi` CTA to the
+   pano Subnav, so no surviving topbar element may claim the accent budget (design-manifest
+   §Nav IA law — the `+` create menu is the sole accent-filled element, and it does not live
+   here). These overrides strip the two drift treatments the epic supersedes down to neutral
+   role tokens — the active-page accent pill (the #2543 verb-among-nouns class) and the tema
+   accent hover (the #2582 misclick class). Scoped under the zone wrappers, which exist only
+   when the flag is on, so the flag-off topbar stays byte-identical to today. Placed after
+   the base rules so each override follows the declaration it supersedes (ascending cascade). */
+.kp-topbar__zone--destination .kp-topbar__nav a[aria-current="page"],
+.kp-topbar__zone--status-signal .kp-topbar__signal-link[aria-current="page"] {
+	color: var(--text-primary);
+	background: var(--surface-raised);
+}
+.kp-topbar__zone--utility .kp-topbar__btn:hover {
+	color: var(--text-primary);
+}

@@ -6,6 +6,8 @@
  * status-signal / primary-action, #2586/#2587), each zone stably classed + testid'd. The
  * two states are total — never a half-migrated mix.
  */
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {render, screen} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it} from "vitest";
@@ -81,6 +83,29 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		expect(primaryAction.childElementCount).toBe(0);
 	});
 
+	it("flag on: the active destination link and divan render inside their zones (the accent-override site)", () => {
+		// initialEntries=/pano makes the pano NavLink aria-current="page" — the exact
+		// element the containment-law overrides below target. Asserting it sits in the
+		// destination zone ties the CSS-source guard to a real DOM occupant.
+		render(
+			<MemoryRouter initialEntries={["/pano"]}>
+				<Topbar
+					navIa
+					nav={NAV}
+					divanTo="/divan"
+					karma={42}
+					user={{name: "Elif", username: "elif"}}
+				/>
+			</MemoryRouter>,
+		);
+		const activePano = screen.getByRole("link", {name: "pano"});
+		expect(activePano.getAttribute("aria-current")).toBe("page");
+		expect(screen.getByTestId("topbar-zone-destination").contains(activePano)).toBe(true);
+		expect(
+			screen.getByTestId("topbar-divan-link").classList.contains("kp-topbar__signal-link"),
+		).toBe(true);
+	});
+
 	it("no half-migrated state: off is byte-identical to the default, and differs from on", () => {
 		const off = renderTopbar(false);
 		const offHtml = stripMenuId(off.container.querySelector(".kp-topbar")?.outerHTML ?? "");
@@ -97,5 +122,76 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		expect(stripMenuId(on.container.querySelector(".kp-topbar")?.outerHTML ?? "")).not.toBe(
 			offHtml,
 		);
+	});
+});
+
+// The single-accent-budget invariant is a CSS *paint* fact — which selector wins the cascade
+// for `background: var(--accent)` — and jsdom computes no applied CSS, so it is locked at the
+// stylesheet SOURCE, the same tripwire idiom the focus-ring/reduced-motion axes use
+// (entry-row-spine.test.tsx). The guard: an accent FILL is `background: var(--accent)` (the
+// solid primary-accent surface per design-manifest §Accent roles — `--accent-fg` text and the
+// `--accent` focus border are not fills); under the nav-IA zone grammar the topbar carries zero.
+// A variable path (not a string literal) so Vite does not statically rewrite
+// `new URL(..., import.meta.url)` into an asset URL — the entry-row-spine idiom.
+const readSource = (rel: string): string =>
+	readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+const TOPBAR_CSS = readSource("./Topbar.css");
+const ACCENT_FILL = /background:\s*var\(--accent\)/;
+type Rule = {selector: string; body: string};
+const cssRules = (css: string): Rule[] =>
+	[...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({
+		selector: (m[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, " ").trim(),
+		body: m[2] ?? "",
+	}));
+
+describe("Topbar accent-scarcity containment law (#2614)", () => {
+	const rules = cssRules(TOPBAR_CSS);
+
+	it("single-accent-budget: the only accent fill in the stylesheet is the flag-off active pill", () => {
+		// Exactly one rule paints `background: var(--accent)` — the legacy flag-off active-page
+		// pill (`aria-current`, not zone-scoped). Any *new* accent fill (a tema button, a
+		// re-added CTA-styled utility, a zone-scoped fill) grows this set and fails the test —
+		// the #2582 misclick and #2543 verb-pill classes cannot silently return.
+		const accentFills = rules.filter((r) => ACCENT_FILL.test(r.body));
+		expect(accentFills).toHaveLength(1);
+		expect(accentFills[0]?.selector).toMatch(/aria-current/);
+		expect(accentFills[0]?.selector).not.toMatch(/kp-topbar__zone--/);
+	});
+
+	it("no taxonomy zone (utility / status-signal / destination) paints an accent fill", () => {
+		// The accent budget is reserved for the promoted primary action alone; the non-CTA
+		// zones carry neutral role tokens only. (The primary-action zone is empty post-#2600,
+		// so today the reclassed topbar renders zero accent fills.)
+		for (const r of rules.filter((r) => ACCENT_FILL.test(r.body))) {
+			expect(r.selector).not.toMatch(/kp-topbar__zone--(utility|status-signal|destination)/);
+		}
+	});
+
+	it("the flag-off active pill is neutralized under the zone grammar (a zero-accent reclassed topbar)", () => {
+		// Both zone-scoped active-link overrides reset the fill to a neutral surface token — so
+		// with the flag on the destination/status active link paints no accent. Deleting an
+		// override would leak the flag-off pill into the reclassed bar and fail here.
+		const dest = rules.find(
+			(r) =>
+				/kp-topbar__zone--destination/.test(r.selector) && /aria-current="page"/.test(r.selector),
+		);
+		const signal = rules.find(
+			(r) =>
+				/kp-topbar__zone--status-signal/.test(r.selector) && /aria-current="page"/.test(r.selector),
+		);
+		for (const r of [dest, signal]) {
+			expect(r).toBeDefined();
+			expect(r?.body).toMatch(/background:\s*var\(--surface-raised\)/);
+			expect(ACCENT_FILL.test(r?.body ?? "")).toBe(false);
+		}
+	});
+
+	it("#2582 tema class: the utility-zoned tema button hover carries no accent", () => {
+		const temaHover = rules.find(
+			(r) => /kp-topbar__zone--utility/.test(r.selector) && /kp-topbar__btn:hover/.test(r.selector),
+		);
+		expect(temaHover).toBeDefined();
+		expect(temaHover?.body).toMatch(/color:\s*var\(--text-primary\)/);
+		expect(temaHover?.body).not.toMatch(/var\(--accent(-11)?\)/);
 	});
 });
