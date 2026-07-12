@@ -3,10 +3,12 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit} from "effect";
+import {CONTROL_PLANE_RE} from "../control-plane-paths/control-plane-re.ts";
 import {type CheckFailed, CODEOWNERS_PATH, checkCodeownersCp, FORMATS_PATH} from "./gate.ts";
 
-const LIVE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
+// The gate derives paths from the single-source const (#2761); a fixture formats doc must
+// carry a matching CONTROL_PLANE_RE= line or the gate's const↔formats drift check fires.
+const LIVE_RE = CONTROL_PLANE_RE;
 
 const FULL_CODEOWNERS = [
 	"/.claude/ @usirin",
@@ -20,6 +22,9 @@ const FULL_CODEOWNERS = [
 	"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
+	"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
+	"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
+	"/claude-plugins/kampus-pipeline/skills/*.sh @usirin",
 	"/claude-plugins/kampus-pipeline/agents/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 	"/claude-plugins/kampus-pipeline/hooks/ @usirin",
@@ -83,10 +88,13 @@ describe("checkCodeownersCp", () => {
 		}
 	}, 30_000);
 
-	it("fails closed when the regex resolves zero §CP paths", async () => {
-		const dir = makeRepo({formats: "CONTROL_PLANE_RE=''", codeowners: FULL_CODEOWNERS});
+	it("fails closed when the formats-doc CONTROL_PLANE_RE has drifted from the single-source const", async () => {
+		// The formats line carries a stale (shorter) boundary — the exact origin/main-read copy
+		// that must never diverge from the const the gate derives from (#2761/#981).
+		const drifted = "^(\\.claude|\\.github)/|^packages/pipeline-cli/";
+		const dir = makeRepo({formats: `CONTROL_PLANE_RE='${drifted}'`, codeowners: FULL_CODEOWNERS});
 		try {
-			assert.include(await reasonOf(dir), "ZERO §CP paths");
+			assert.include(await reasonOf(dir), "has drifted from the pipeline-cli single-source const");
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
 		}

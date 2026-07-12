@@ -2,14 +2,14 @@ import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {extractControlPlaneRe} from "../codeowners-cp/codeowners-cp.ts";
+import {CONTROL_PLANE_RE} from "../control-plane-paths/control-plane-re.ts";
 import {type ClassifyOptions, classify, parseUnifiedDiff} from "./trivial-diff.ts";
 
-// The live CONTROL_PLANE_RE (gh-issue-intake-formats.md §CP) — a fixture only. The bin
-// re-resolves this from origin/main at run time; the core takes it as a string input.
-// The lockstep test at the bottom of this file asserts this fixture still equals the
-// canonical §CP line on disk, so it can't silently drift again (#2343).
-const LIVE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
+// The live CONTROL_PLANE_RE, IMPORTED from its single source (#2761) — never re-literaled
+// here, so this fixture cannot drift from the boundary the way the old hand-copy did (the
+// #2673 class). The bin re-resolves it from origin/main at run time; the core takes it as a
+// string input. The lockstep test at the bottom re-checks the const against the formats-doc.
+const LIVE_RE = CONTROL_PLANE_RE;
 
 const opts = (over: Partial<ClassifyOptions> = {}): ClassifyOptions => ({
 	controlPlaneRe: LIVE_RE,
@@ -168,10 +168,10 @@ describe("classify — unparseable / empty diff forces non-trivial (fail-closed)
 	});
 });
 
-// Lockstep: extract the canonical §CP line from the real gh-issue-intake-formats.md on
-// disk (via the single-sourced extractControlPlaneRe) and assert LIVE_RE still equals it,
-// so this fixture can't silently drift from §CP again (#2343).
-describe("LIVE_RE fixture stays in lockstep with §CP on disk", () => {
+// Lockstep: assert the single-source const equals the CONTROL_PLANE_RE= line in the real
+// gh-issue-intake-formats.md on disk — the const↔formats-doc drift check, redundant with
+// codeowners-cp + validate-gate-path-drift.sh but cheap belt-and-suspenders (#2761/#2343).
+describe("the §CP const stays in lockstep with the formats doc on disk", () => {
 	const FORMATS_PATH = fileURLToPath(
 		new URL(
 			"../../../../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",

@@ -1,6 +1,7 @@
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import {CONTROL_PLANE_RE} from "../control-plane-paths/control-plane-re.ts";
 import {
 	type CpPath,
 	covers,
@@ -13,12 +14,10 @@ import {
 	splitTopLevelBranches,
 } from "./codeowners-cp.ts";
 
-// The live CONTROL_PLANE_RE (gh-issue-intake-formats.md §CP) — kept here only as a
-// fixture for the parser; the gate reads it from disk, never from a hardcoded copy.
-// The lockstep test at the bottom of this file asserts this fixture still equals the
-// canonical §CP line on disk, so it can't silently drift again (#2343).
-const LIVE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
+// The live CONTROL_PLANE_RE, IMPORTED from its single source (#2761) — never re-literaled,
+// so this fixture cannot drift from the boundary (the #2673 class). The lockstep test at the
+// bottom re-checks the const against the CONTROL_PLANE_RE= line on disk.
+const LIVE_RE = CONTROL_PLANE_RE;
 
 describe("extractControlPlaneRe", () => {
 	it("pulls the regex from the canonical CONTROL_PLANE_RE='…' assignment line", () => {
@@ -37,7 +36,8 @@ describe("splitTopLevelBranches", () => {
 		const branches = splitTopLevelBranches(LIVE_RE);
 		expect(branches).toEqual([
 			"(\\.claude|\\.github)/",
-			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/",
+			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/",
+			"claude-plugins/kampus-pipeline/skills/[^/]+\\.sh$",
 			"claude-plugins/kampus-pipeline/agents/",
 			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$",
 			"claude-plugins/kampus-pipeline/hooks(/|\\.json$)",
@@ -55,9 +55,9 @@ describe("expandBranch", () => {
 		]);
 	});
 
-	it("expands the nine skill dirs", () => {
+	it("expands the eleven skill dirs", () => {
 		const out = expandBranch(
-			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/",
+			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/",
 		);
 		expect(out.map((p) => p.path)).toEqual([
 			"claude-plugins/kampus-pipeline/skills/ship-it/",
@@ -69,8 +69,16 @@ describe("expandBranch", () => {
 			"claude-plugins/kampus-pipeline/skills/triage/",
 			"claude-plugins/kampus-pipeline/skills/write-code/",
 			"claude-plugins/kampus-pipeline/skills/plan-epic/",
+			"claude-plugins/kampus-pipeline/skills/release/",
+			"claude-plugins/kampus-pipeline/skills/review-trivial/",
 		]);
 		expect(out.every((p) => p.kind === "dir")).toBe(true);
+	});
+
+	it("expands the bare `[^/]+\\.sh$` branch to a `*.sh` glob path", () => {
+		expect(expandBranch("claude-plugins/kampus-pipeline/skills/[^/]+\\.sh$")).toEqual([
+			{path: "claude-plugins/kampus-pipeline/skills/*.sh", kind: "glob"},
+		]);
 	});
 
 	it("passes the group-free agents dir branch through as a single dir (ADR 0150)", () => {
@@ -102,7 +110,7 @@ describe("expandBranch", () => {
 });
 
 describe("cpPaths over the live regex", () => {
-	it("resolves the full §CP path set (17 paths: dirs + the two exact files)", () => {
+	it("resolves the full §CP path set (20 paths: dirs, the two exact files, + the *.sh glob)", () => {
 		expect(cpPaths(LIVE_RE).map((p) => p.path)).toEqual([
 			".claude/",
 			".github/",
@@ -115,6 +123,9 @@ describe("cpPaths over the live regex", () => {
 			"claude-plugins/kampus-pipeline/skills/triage/",
 			"claude-plugins/kampus-pipeline/skills/write-code/",
 			"claude-plugins/kampus-pipeline/skills/plan-epic/",
+			"claude-plugins/kampus-pipeline/skills/release/",
+			"claude-plugins/kampus-pipeline/skills/review-trivial/",
+			"claude-plugins/kampus-pipeline/skills/*.sh",
 			"claude-plugins/kampus-pipeline/agents/",
 			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
 			"claude-plugins/kampus-pipeline/hooks/",
@@ -174,6 +185,11 @@ describe("covers", () => {
 			covers(dir("packages/pipeline-cli"), {path: "packages/pipeline-cli/", kind: "dir"}),
 		).toBe(true);
 	});
+	it("a glob §CP path is covered by an identical `*`-glob row, not a mismatched literal", () => {
+		const glob: CpPath = {path: "claude-plugins/kampus-pipeline/skills/*.sh", kind: "glob"};
+		expect(covers(dir("claude-plugins/kampus-pipeline/skills/*.sh"), glob)).toBe(true);
+		expect(covers(dir("claude-plugins/kampus-pipeline/skills/ship-it/"), glob)).toBe(false);
+	});
 });
 
 describe("findUncovered — the drift check", () => {
@@ -192,6 +208,9 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/*.sh @usirin",
 			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/claude-plugins/kampus-pipeline/hooks/ @usirin",
@@ -216,6 +235,9 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
+			"/claude-plugins/kampus-pipeline/skills/*.sh @usirin",
 			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/packages/ci-required/ @usirin",
