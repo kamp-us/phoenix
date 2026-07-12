@@ -9,11 +9,14 @@
  *   resolved  ──reopen──▶ open            (a restore re-opens; bounded)
  *   dismissed ──reopen──▶ open
  *
- * Transitions are decided by `Match.tagsExhaustive` over the source status, so an
- * illegal transition (e.g. `resolved → dismissed`) is a compile error at the
- * `transition` site — the machine is a type, not a convention.
+ * Transitions are decided by `Match.tagsExhaustive` over the source status, which
+ * forces every status to be addressed. A transition from a *dynamic* source status
+ * that is illegal (e.g. re-resolving a terminal report) surfaces as a typed
+ * `Result.Failure(IllegalTransition)` — a value in the caller's error channel, never a
+ * bare `throw`: inside `Effect.fn` callers a throw becomes an untyped defect/500, so the
+ * domain condition must ride the typed channel instead (#2560).
  */
-import {Match} from "effect";
+import {Match, Result} from "effect";
 
 /**
  * The closed status set, as the one runtime tuple the `content_report.status`
@@ -67,38 +70,35 @@ export class IllegalTransition extends Error {
 
 /**
  * `resolve(action)` is legal only from `open`. The `Match.tagsExhaustive` forces
- * every status to be addressed; re-resolving an already-terminal report is
- * rejected as an `IllegalTransition` rather than silently re-stamping the audit.
+ * every status to be addressed; re-resolving an already-terminal report is a
+ * `Result.Failure(IllegalTransition)` — the caller threads it through the typed error
+ * channel rather than silently re-stamping the audit (#2560).
  */
 export const resolve = (
 	from: ReportStatus,
 	action: ResolveAction,
-): {status: ReportStatus; resolution: Resolution} =>
+): Result.Result<{status: ReportStatus; resolution: Resolution}, IllegalTransition> =>
 	Match.valueTags(tagged(from), {
 		open: () =>
-			action === "remove"
-				? ({status: "resolved", resolution: "removed"} as const)
-				: ({status: "dismissed", resolution: "dismissed"} as const),
-		resolved: () => {
-			throw new IllegalTransition(from, `resolve(${action})`);
-		},
-		dismissed: () => {
-			throw new IllegalTransition(from, `resolve(${action})`);
-		},
+			Result.succeed(
+				action === "remove"
+					? ({status: "resolved", resolution: "removed"} as const)
+					: ({status: "dismissed", resolution: "dismissed"} as const),
+			),
+		resolved: () => Result.fail(new IllegalTransition(from, `resolve(${action})`)),
+		dismissed: () => Result.fail(new IllegalTransition(from, `resolve(${action})`)),
 	});
 
 /**
  * `reopen` is legal only from a terminal state (`resolved` | `dismissed`) — a
  * restore of a moderated entity reopens its report (ADR 0096 §4 ↔ 0098 §3).
- * Reopening an already-open report is an `IllegalTransition`.
+ * Reopening an already-open report is a `Result.Failure(IllegalTransition)` (#2560).
  */
-export const reopen = (from: ReportStatus): ReportStatus =>
+export const reopen = (from: ReportStatus): Result.Result<ReportStatus, IllegalTransition> =>
 	Match.valueTags(tagged(from), {
-		open: () => {
-			throw new IllegalTransition(from, "reopen");
-		},
-		resolved: () => "open" as const,
-		dismissed: () => "open" as const,
+		open: () => Result.fail(new IllegalTransition(from, "reopen")),
+		resolved: () => Result.succeed("open" as const),
+		dismissed: () => Result.succeed("open" as const),
 	});
 
 export const isTerminal = (status: ReportStatus): boolean => status !== "open";
