@@ -50,7 +50,11 @@
 	},
 	"plugins": [
 		"./biome-plugins/no-type-assertions.grit",
-		"./biome-plugins/no-node-sqlite-test-backing.grit"
+		"./biome-plugins/no-node-sqlite-test-backing.grit",
+		"./biome-plugins/no-effect-promise.grit",
+		"./biome-plugins/no-context-tag.grit",
+		"./biome-plugins/no-data-taggederror.grit",
+		"./biome-plugins/no-raw-try-catch.grit"
 	],
 	"linter": {
 		"enabled": true,

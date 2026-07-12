@@ -1,0 +1,37 @@
+// Ban `Effect.promise(...)` and single-arg `Effect.tryPromise(...)` — require the
+// object-notation `Effect.tryPromise({ try, catch })` with an explicit tagged-error `catch`.
+//
+// Rationale (single site; .patterns/index.md house rule "Effect.tryPromise always uses
+// object notation"): `Effect.promise` and the single-arg `Effect.tryPromise(() => p)`
+// carry no `catch`, so a rejection surfaces as an uncatchable DEFECT with an empty `E`
+// channel instead of a typed, recoverable failure — the "cosplay as Effect" tell the
+// #2736 audit found across the CLI packages. The object form forces a `catch` that maps
+// the cause into a tagged error, keeping the failure in `E`.
+//
+// Discriminator: the object form's sole argument is an object literal
+// (`JsObjectExpression`); the single-arg thunk form is anything else (an arrow, a
+// function expression, a bare identifier). So `Effect.tryPromise($arg)` is flagged only
+// when `$arg` is NOT an object literal — the object-notation call is left alone.
+//
+// Registered via biome.jsonc `"plugins"` at `warn` (Phase 1 of #2736 — the flip to
+// `error` is the Phase-3 capstone #2753; warn keeps CI green while every site is
+// remediated). A genuine exception is a per-line `// biome-ignore lint/plugin: <reason>`.
+language js;
+
+or {
+	`Effect.promise($arg)` where {
+		register_diagnostic(
+			span = $arg,
+			message = "`Effect.promise(...)` is banned — a rejection becomes an uncatchable defect with an empty error channel (.patterns/index.md; #2736). Fix: use object-notation `Effect.tryPromise({ try, catch: (cause) => new SomeError({ cause }) })` with a `Schema.TaggedErrorClass`, or lift the pure core to an `Effect.fn` returning a typed `Effect` — copy `packages/pipeline-cli/src/tools/epic-ledger/github.ts` (or `packages/fate-effect`). Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Effect.tryPromise($arg)` where {
+		$arg <: not JsObjectExpression(),
+		register_diagnostic(
+			span = $arg,
+			message = "Single-arg `Effect.tryPromise(() => ...)` is banned — with no `catch` a rejection becomes an uncatchable defect with an empty error channel (.patterns/index.md; #2736). Fix: use object-notation `Effect.tryPromise({ try, catch: (cause) => new SomeError({ cause }) })` with a `Schema.TaggedErrorClass` — copy `packages/pipeline-cli/src/tools/epic-ledger/github.ts` (or `packages/fate-effect`). Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	}
+}
