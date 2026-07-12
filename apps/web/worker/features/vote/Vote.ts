@@ -20,6 +20,7 @@ import {and, eq, inArray} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import type {KarmaEventReason} from "../../db/karma-event.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {type TargetRecordMeta, targetTable} from "../../db/target-table.ts";
 import {Telemetry} from "../telemetry/Telemetry.ts";
@@ -60,13 +61,33 @@ export interface VoteResult {
 }
 
 /**
- * The karma-bump capability as Vote consumes it: given recipient and delta
- * (`+1` cast, `-1` retraction), the **unexecuted** statement to include in the
- * cast batch — so the karma adjustment commits atomically with the vote, or
- * not at all.
+ * The context of one karma bump, passed from Vote (which knows the cast) to the
+ * `KarmaBump` implementation (which owns the karma schema) so the implementation
+ * can write the provenance ledger row without Vote importing its internals —
+ * preserving the dependency inversion (#2592).
+ */
+export interface KarmaBumpInput {
+	/** The karma recipient — the vote target's author. */
+	readonly recipientId: string;
+	/** Signed karma delta: `+1` cast, `-1` retraction. */
+	readonly delta: number;
+	/** The vote target the delta came from — its kind and id. */
+	readonly source: {readonly kind: TargetKind; readonly id: string};
+	/** The event kind driving the bump (`vote` cast / `retract`). */
+	readonly reason: KarmaEventReason;
+	/** Commit timestamp, shared with the rest of the cast batch. */
+	readonly at: Date;
+}
+
+/**
+ * The karma-bump capability as Vote consumes it: given the bump's context, the
+ * **unexecuted** statements to include in the cast batch — the `total_karma`
+ * adjustment AND its append-only ledger row (#2592) — so both commit atomically
+ * with the vote, or not at all. Two statements, never one: a bump can't land
+ * without its provenance event.
  */
 export interface KarmaBumpService {
-	readonly statement: (db: DrizzleDb, userId: string, delta: number) => Stmt;
+	readonly statements: (db: DrizzleDb, input: KarmaBumpInput) => readonly [Stmt, Stmt];
 }
 
 /**
@@ -345,7 +366,8 @@ function buildClearTargetStatements(db: DrizzleDb, kind: TargetKind, targetId: s
 /**
  * The tuple of statements making up one atomic state-change, in order:
  * vote-table mutation (truth source), score-cache update, `user_vote` mirror,
- * karma bump. `db.batch([...])` commits all or none. See ADR 0014.
+ * karma bump + its provenance ledger row (both from `KarmaBump`, #2592).
+ * `db.batch([...])` commits all or none. See ADR 0014.
  */
 function buildBatchStatements(
 	db: DrizzleDb,
@@ -383,7 +405,13 @@ function buildBatchStatements(
 					),
 				);
 
-	const karma = karmaBump.statement(db, meta.authorId, karmaDelta);
+	const [karmaBumpRow, karmaEventRow] = karmaBump.statements(db, {
+		recipientId: meta.authorId,
+		delta: karmaDelta,
+		source: {kind: input.targetKind, id: input.targetId},
+		reason: isCast ? "vote" : "retract",
+		at: now,
+	});
 
-	return [voteRow, scoreUpdate, userVoteRow, karma] as const;
+	return [voteRow, scoreUpdate, userVoteRow, karmaBumpRow, karmaEventRow] as const;
 }

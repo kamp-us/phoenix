@@ -10,6 +10,7 @@ import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-
 import {NOTIFICATION_TARGET_KINDS} from "../../features/bildirim/target.ts";
 import {STORED_TIERS} from "../../features/kunye/standing.ts";
 import {REPORT_STATUSES, RESOLUTIONS} from "../../features/report/resolution.ts";
+import {KARMA_EVENT_REASONS} from "../karma-event.ts";
 import {REACTION_EMOJI} from "../reaction-emoji.ts";
 import {TARGET_KINDS} from "../target-kind.ts";
 
@@ -330,7 +331,8 @@ export const userReaction = sqliteTable(
 /**
  * Per-user denormalized profile row. `total_karma` is the running sum of upvotes
  * received across all of this user's contributions, maintained inline by
- * `Vote.cast`'s atomic batch (D1-direct, see ADR 0009).
+ * `Vote.cast`'s atomic batch (D1-direct, see ADR 0009). Its provenance — one row
+ * per bump — lives in {@link karmaEvent}, co-committed in that same batch (#2592).
  */
 export const userProfile = sqliteTable(
 	"user_profile",
@@ -348,6 +350,34 @@ export const userProfile = sqliteTable(
 		updatedAt: timestamp("updated_at").notNull(),
 	},
 	(t) => [index("user_profile_username").on(t.username)],
+);
+
+/**
+ * Append-only provenance ledger for `user_profile.total_karma` (#2592) — one row
+ * per karma bump, co-committed in `Vote.cast`'s atomic batch (via the `KarmaBump`
+ * contract's pasaport implementation, `features/pasaport/karma.ts`), so a delta
+ * can never land without its event nor an event without its delta. The same
+ * append-only-log shape as {@link userBanEvent}: a retraction is a NEGATIVE-`delta`
+ * row, never a mutation or deletion of a prior one, so `SUM(delta)` per `user_id`
+ * reconstructs the accumulator exactly. `reason` distinguishes the event kind
+ * (`vote` cast / `retract`); `(source_kind, source_id)` names the vote target the
+ * delta came from. `onDelete: cascade` ties the ledger to the account row (an
+ * account deletion is a kept tombstone, ADR 0097, so this history survives it).
+ */
+export const karmaEvent = sqliteTable(
+	"karma_event",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, {onDelete: "cascade"}),
+		delta: integer("delta").notNull(),
+		sourceKind: text("source_kind", {enum: [...TARGET_KINDS]}).notNull(),
+		sourceId: text("source_id").notNull(),
+		reason: text("reason", {enum: [...KARMA_EVENT_REASONS]}).notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [index("karma_event_user_created").on(t.userId, sql`${t.createdAt} DESC`)],
 );
 
 /**

@@ -19,7 +19,7 @@ import {TARGET_KINDS} from "../../db/target-kind.ts";
 import type {TelemetryEvent} from "../telemetry/schema.ts";
 import {Telemetry} from "../telemetry/Telemetry.ts";
 import {VOTE_ELIGIBILITY_WIRE_CODE, VOTE_REQUIRED_TIER, VoterNotEligible} from "./errors.ts";
-import {KarmaBump, Vote, VoteLive, VoterStanding} from "./Vote.ts";
+import {KarmaBump, type KarmaBumpInput, Vote, VoteLive, VoterStanding} from "./Vote.ts";
 
 // A recording `Telemetry` seam: `emit` pushes each event into `sink` and succeeds,
 // so a test can assert the exact `{feature, action, surface, userId}` a cast emitted
@@ -72,8 +72,8 @@ function scriptedAccess(results: ReadonlyArray<unknown>): {access: DrizzleAccess
 }
 
 const KarmaBumpStub = Layer.succeed(KarmaBump, {
-	statement: () => {
-		throw new Error("KarmaBump.statement must not be reached on a no-op cast");
+	statements: () => {
+		throw new Error("KarmaBump.statements must not be reached on a no-op cast");
 	},
 });
 
@@ -222,20 +222,26 @@ function recordingCastAccess(reads: ReadonlyArray<unknown>): {
 	return {access, batches};
 }
 
-// A KarmaBump that RECORDS each bump (recipient + delta) and returns a sentinel
-// statement, so a cast's karma credit is observable: who got karma and by how much.
+// A KarmaBump that RECORDS each bump's full context and returns the TWO sentinel
+// statements the real contract now emits (the `total_karma` bump + its `karma_event`
+// provenance row, #2592), so a cast's karma credit is observable: who got karma, by how
+// much, from which source, and why. `calls` keeps the recipient+delta shape prior
+// assertions read; `inputs` exposes the source/reason/timestamp the ledger row carries.
 function recordingKarma(): {
 	layer: Layer.Layer<KarmaBump>;
 	calls: {userId: string; delta: number}[];
+	inputs: KarmaBumpInput[];
 } {
 	const calls: {userId: string; delta: number}[] = [];
+	const inputs: KarmaBumpInput[] = [];
 	const layer = Layer.succeed(KarmaBump, {
-		statement: ((_db: unknown, userId: string, delta: number) => {
-			calls.push({userId, delta});
-			return {__karma: true} as never;
-		}) as KarmaBump["Service"]["statement"],
+		statements: ((_db: unknown, input: KarmaBumpInput) => {
+			inputs.push(input);
+			calls.push({userId: input.recipientId, delta: input.delta});
+			return [{__karmaBump: true}, {__karmaEvent: true}] as never;
+		}) as KarmaBump["Service"]["statements"],
 	});
-	return {layer, calls};
+	return {layer, calls, inputs};
 }
 
 const sandboxedMeta = {authorId: "caylak-1", createdAtMs: 0, sandboxed: true};
@@ -259,7 +265,7 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 		// reads: loadMeta (sandboxed) → probe (not yet cast) → post-batch score. The cast
 		// reaches the atomic batch; the recording karma proves +1 credited to the AUTHOR.
 		const {access, batches} = recordingCastAccess([sandboxedMeta, false, 1]);
-		const {layer: karma, calls} = recordingKarma();
+		const {layer: karma, calls, inputs} = recordingKarma();
 		return Effect.gen(function* () {
 			const vote = yield* Vote;
 			const result = yield* vote.castOnSandboxed({
@@ -271,12 +277,19 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 			assert.isTrue(result.changed, "the sandboxed vote is a real state change");
 			assert.strictEqual(result.score, 1);
 			assert.strictEqual(batches.length, 1, "scoring + karma land in one atomic batch (ADR 0014)");
-			assert.strictEqual(batches[0]?.length, 4, "vote + score-cache + user_vote + karma");
+			assert.strictEqual(
+				batches[0]?.length,
+				5,
+				"vote + score-cache + user_vote + karma-bump + karma-event (#2592: the ledger row co-commits)",
+			);
 			assert.deepStrictEqual(
 				calls,
 				[{userId: "caylak-1", delta: 1}],
 				"karma credited to the content author, +1 (D2 global karma, D3 equal weight)",
 			);
+			// The provenance the ledger row records: source target + reason (#2592).
+			assert.deepStrictEqual(inputs[0]?.source, {kind: "definition", id: "def-sb"});
+			assert.strictEqual(inputs[0]?.reason, "vote");
 		}).pipe(
 			Effect.provide(
 				VoteLive.pipe(
@@ -293,7 +306,7 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 
 	it.effect("cast on a LIVE target is unaffected — the inline path still scores + credits", () => {
 		const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
-		const {layer: karma, calls} = recordingKarma();
+		const {layer: karma, calls, inputs} = recordingKarma();
 		return Effect.gen(function* () {
 			const vote = yield* Vote;
 			const result = yield* vote.cast({
@@ -303,8 +316,14 @@ describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () =>
 				value: true,
 			});
 			assert.isTrue(result.changed);
-			assert.strictEqual(batches[0]?.length, 4, "live vote still writes the full batch");
+			assert.strictEqual(
+				batches[0]?.length,
+				5,
+				"live vote still writes the full batch + ledger row",
+			);
 			assert.deepStrictEqual(calls, [{userId: "author-1", delta: 1}]);
+			assert.deepStrictEqual(inputs[0]?.source, {kind: "definition", id: "def-live"});
+			assert.strictEqual(inputs[0]?.reason, "vote");
 		}).pipe(
 			Effect.provide(
 				VoteLive.pipe(
@@ -382,7 +401,7 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 				value: true,
 			});
 			assert.isTrue(result.changed, "a promoted voter's cast is a real state change");
-			assert.strictEqual(batches[0]?.length, 4, "the full vote batch still writes");
+			assert.strictEqual(batches[0]?.length, 5, "the full vote batch + ledger row still writes");
 			assert.deepStrictEqual(calls, [{userId: "author-1", delta: 1}], "author credited +1");
 		}).pipe(
 			Effect.provide(
@@ -435,6 +454,40 @@ describe("Vote.cast — voter-tier gate ('earn to vote', #1810, mocked Drizzle s
 				assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /VoteTargetSandboxed/);
 			}).pipe(Effect.provide(voteLayer(scriptedAccess([sandboxedMeta]).access, true))),
 	);
+});
+
+describe("Vote.cast — karma provenance ledger (#2592, mocked Drizzle seam)", () => {
+	it.effect("a real retraction co-commits a -1 ledger event with reason 'retract'", () => {
+		// reads: loadMeta (live) → probe (already cast) → post-batch score. `value:false` on an
+		// existing vote is a state change, so it reaches the batch with karmaDelta -1 — and the
+		// ledger row records the negative delta as an event, never a deletion (append-only).
+		const {access, batches} = recordingCastAccess([liveMeta, true, 0]);
+		const {layer: karma, calls, inputs} = recordingKarma();
+		return Effect.gen(function* () {
+			const vote = yield* Vote;
+			const result = yield* vote.cast({
+				userId: "voter-1",
+				targetKind: "post",
+				targetId: "post-9",
+				value: false,
+			});
+			assert.isTrue(result.changed, "retracting an existing vote is a real state change");
+			assert.strictEqual(batches[0]?.length, 5, "retraction batch still carries the ledger row");
+			assert.deepStrictEqual(calls, [{userId: "author-1", delta: -1}], "author debited -1");
+			assert.deepStrictEqual(inputs[0]?.source, {kind: "post", id: "post-9"});
+			assert.strictEqual(inputs[0]?.reason, "retract");
+			assert.strictEqual(inputs[0]?.delta, -1, "the ledger event carries the negative delta");
+		}).pipe(
+			Effect.provide(
+				VoteLive.pipe(
+					Layer.provide(karma),
+					Layer.provide(VoterStandingStub(true)),
+					Layer.provide(recordingTelemetry([])),
+					Layer.provide(Layer.succeed(Drizzle, access)),
+				),
+			),
+		);
+	});
 });
 
 describe("Vote.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle seam)", () => {
