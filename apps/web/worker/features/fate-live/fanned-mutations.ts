@@ -12,7 +12,8 @@
  * whole reason for this manifest + the `fanout-guard` CI check.
  *
  * Every `entity.verb` mutation key MUST appear here with a `fanned` flag and a
- * one-line rationale. `pipeline-cli fanout-guard check` enforces two invariants:
+ * one-line rationale; every `fanned: true` row MUST also declare its `topics`.
+ * `pipeline-cli fanout-guard check` enforces three invariants:
  *
  *   1. Drift — the set of keys here EQUALS the set discovered in
  *      `apps/web/worker/features/*.mutations.ts`. A new mutation with no row here
@@ -20,17 +21,31 @@
  *   2. Publish — every `fanned: true` mutation's feature references a
  *      `WorkerLivePublisher` publish. A fanned mutation whose feature omits the
  *      publish fails the build.
+ *   3. Topic aim — every `fanned: true` row declares the `/fate/live` target(s) it
+ *      publishes to, and each declared target is reachable from the feature's
+ *      `live.ts` binding. A fanned row with no `topics`, or a `topics` value the
+ *      feature's `live.ts` no longer targets (a mis-aimed publish, #2554), fails the
+ *      build. Invariant 2 proves a publish EXISTS; this proves it AIMS correctly.
  *
- * The rationale field is for the human reader (and the guard's report); the guard
- * keys only on `fanned`.
+ * A `topics` value is either a connection topic (a `LiveTopic` value — `posts` /
+ * `Post.comments` / `Term.definitions`) or an entity-update typename (`Post` /
+ * `Comment` / `Definition` / `User`) — the two shapes a publish takes. Declare EVERY
+ * target the mutation fans into (a delete that drops an edge AND touches a parent field
+ * lists both). The rationale field is for the human reader (and the guard's report);
+ * the guard keys on `fanned` and `topics`.
  */
 
-/** One mutation's fanned classification + the rationale for it. */
+/** One mutation's fanned classification, its publish target(s), and the rationale. */
 export interface FannedMutationEntry {
 	/** The `entity.verb` mutation key, exactly as it appears in `Fate.mutation("<key>", …)`. */
 	readonly key: string;
 	/** True ⇒ writes a fanned entity ⇒ must publish a `/fate/live` invalidation. */
 	readonly fanned: boolean;
+	/**
+	 * The `/fate/live` target(s) a `fanned: true` mutation publishes to — a `LiveTopic`
+	 * value or an entity typename (see the module docblock). Omitted on a not-fanned row.
+	 */
+	readonly topics?: ReadonlyArray<string>;
 	/** One line: WHY it does / does not fan (which subscribed connection it touches, or why none). */
 	readonly rationale: string;
 }
@@ -45,6 +60,7 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 	{
 		key: "post.submit",
 		fanned: true,
+		topics: ["posts"],
 		rationale: "prepends a new Post edge into the `posts` feed connection",
 	},
 	{
@@ -60,16 +76,19 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 	{
 		key: "post.vote",
 		fanned: true,
+		topics: ["Post"],
 		rationale: "updates the Post's score/myVote fields other clients subscribe to",
 	},
 	{
 		key: "post.retractVote",
 		fanned: true,
+		topics: ["Post"],
 		rationale: "updates the Post's score/myVote fields other clients subscribe to",
 	},
 	{
 		key: "post.react",
 		fanned: true,
+		topics: ["Post"],
 		rationale: "updates the Post's reaction aggregate other clients subscribe to",
 	},
 	{
@@ -87,52 +106,64 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 	{
 		key: "post.edit",
 		fanned: true,
+		topics: ["Post"],
 		rationale: "updates the Post's body/title fields other clients subscribe to",
 	},
 	{
 		key: "post.delete",
 		fanned: true,
+		topics: ["Post", "posts"],
 		rationale: "drops the Post edge from the `posts` feed connection",
 	},
 	{
 		key: "post.restore",
 		fanned: true,
+		topics: ["posts"],
 		rationale: "re-appends the Post edge into the `posts` feed connection",
 	},
 	{
 		key: "comment.add",
 		fanned: true,
+		topics: ["Post.comments"],
 		rationale: "appends a new Comment edge into the post's `Post.comments` connection",
 	},
 	{
 		key: "comment.vote",
 		fanned: true,
+		topics: ["Comment"],
 		rationale: "updates the Comment's score/myVote fields other clients subscribe to",
 	},
 	{
 		key: "comment.retractVote",
 		fanned: true,
+		topics: ["Comment"],
 		rationale: "updates the Comment's score/myVote fields other clients subscribe to",
 	},
 	{
 		key: "comment.react",
 		fanned: true,
+		topics: ["Comment"],
 		rationale: "updates the Comment's reaction aggregate other clients subscribe to",
 	},
 	{
 		key: "comment.edit",
 		fanned: true,
+		topics: ["Comment"],
 		rationale: "updates the Comment's body other clients subscribe to",
 	},
 	{
 		key: "comment.delete",
 		fanned: true,
-		rationale: "tombstones/drops the Comment edge in `Post.comments`",
+		topics: ["Comment", "Post.comments", "Post"],
+		rationale:
+			"tombstones/drops the Comment edge in `Post.comments` and updates the parent Post's commentCount",
 	},
 	{
 		key: "comment.restore",
 		fanned: true,
-		rationale: "re-appends the Comment edge into `Post.comments`",
+		topics: ["Post.comments", "Post"],
+		rationale:
+			"re-appends the Comment edge into `Post.comments` and updates the parent Post's commentCount",
 	},
 
 	// sözlük — terms + definitions. Definition membership + field changes fan into
@@ -140,36 +171,43 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 	{
 		key: "definition.add",
 		fanned: true,
+		topics: ["Term.definitions"],
 		rationale: "appends a new Definition edge into the term's `Term.definitions` connection",
 	},
 	{
 		key: "definition.vote",
 		fanned: true,
+		topics: ["Definition"],
 		rationale: "updates the Definition's score/myVote fields other clients subscribe to",
 	},
 	{
 		key: "definition.retractVote",
 		fanned: true,
+		topics: ["Definition"],
 		rationale: "updates the Definition's score/myVote fields other clients subscribe to",
 	},
 	{
 		key: "definition.react",
 		fanned: true,
+		topics: ["Definition"],
 		rationale: "updates the Definition's reaction aggregate other clients subscribe to",
 	},
 	{
 		key: "definition.edit",
 		fanned: true,
+		topics: ["Definition"],
 		rationale: "updates the Definition's body other clients subscribe to",
 	},
 	{
 		key: "definition.delete",
 		fanned: true,
+		topics: ["Definition", "Term.definitions"],
 		rationale: "drops the Definition edge from `Term.definitions`",
 	},
 	{
 		key: "definition.restore",
 		fanned: true,
+		topics: ["Term.definitions"],
 		rationale: "re-appends the Definition edge into `Term.definitions`",
 	},
 
@@ -181,20 +219,26 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		fanned: false,
 		rationale: "writes a report row on the moderation queue — no subscribed content connection",
 	},
+	// report publishes THROUGH pano/sözlük's bindings (report/live.ts delegates to
+	// `panoLive`/`sozlukLive`), so its target set is their union — the moderated target
+	// may be any fanned kind. The guard resolves the delegation to reach these topics.
 	{
 		key: "report.resolve",
 		fanned: true,
+		topics: ["Post", "posts", "Comment", "Post.comments", "Definition", "Term.definitions"],
 		rationale:
 			"a `remove` action evicts a fanned Post/Comment/Definition from its subscribed connection",
 	},
 	{
 		key: "report.restore",
 		fanned: true,
+		topics: ["Post", "posts", "Comment", "Post.comments", "Definition", "Term.definitions"],
 		rationale: "re-enters a moderator-restored fanned entity into its subscribed connection",
 	},
 	{
 		key: "report.restoreWave",
 		fanned: true,
+		topics: ["Post", "posts", "Comment", "Post.comments", "Definition", "Term.definitions"],
 		rationale: "re-enters every fanned entity in the restored wave into its subscribed connection",
 	},
 
