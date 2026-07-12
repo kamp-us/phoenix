@@ -70,14 +70,19 @@
 }
 
 /* Input slot (#2602) — a product-scoped on-demand utility box (sözlük go-to-or-create),
-   pinned after the spacer. The wrapper positions; the box treatment (sunken input, accent
-   focus) lives on `.kp-subnav__input` — an input affordance's own chrome, not a resting
-   filter/CTA fill (#2586 taxonomy / #2590 IA rule). Mirrors the masthead searchbar so the
-   flag-on box reads identically to today's flag-off one. */
+   left-anchored in the leading zone before the spacer (#2790) so it can't right-jam under
+   the topbar's trailing-edge `ara` and read as a second search. The wrapper positions; the
+   box treatment (sunken input, accent focus) lives on `.kp-subnav__input` — an input
+   affordance's own chrome, not a resting filter/CTA fill (#2586 taxonomy / #2590 IA rule).
+   Mirrors the masthead searchbar so the flag-on box reads identically to today's flag-off one. */
 .kp-subnav__input-slot {
 	display: inline-flex;
 	align-items: center;
 }
+/* Width fits the go-to-or-create placeholder with room to spare so it never clips mid-word;
+   the old `max-width: 40vw` clamp shrank the box below the placeholder on narrow viewports
+   (the #2790 `…ic` truncation). Fluid down to the container via max-width, and the ≤640px
+   reflow fills the row like the masthead's phone rule (SozlukHome.css). */
 .kp-subnav__input {
 	display: flex;
 	align-items: center;
@@ -87,8 +92,9 @@
 	background: var(--surface-sunken);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
-	width: 280px;
-	max-width: 40vw;
+	width: 260px;
+	max-width: 100%;
+	min-width: 0;
 }
 .kp-subnav__input:focus-within {
 	border-color: var(--accent);
@@ -109,6 +115,16 @@
 }
 .kp-subnav__input input::placeholder {
 	color: var(--text-faint);
+}
+/* Phone reflow (≤640px, the repo's 640px container convention) — let the box fill the
+   Subnav row instead of a fixed 260px, so it shrinks fluidly rather than overflowing. */
+@media (max-width: 640px) {
+	.kp-subnav__input-slot {
+		flex: 1;
+	}
+	.kp-subnav__input {
+		width: 100%;
+	}
 }
 
 /* The crumb slot folds pano's active site-filter in as TRANSIENT state paint (only
