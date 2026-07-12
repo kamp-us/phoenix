@@ -27,6 +27,7 @@ import {defineRelations} from "drizzle-orm/relations";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
@@ -42,6 +43,16 @@ import {
 } from "./email-templates.ts";
 
 type AdditionalUserFields = NonNullable<NonNullable<BetterAuthOptions["user"]>["additionalFields"]>;
+
+/**
+ * A rejection from better-auth's own `handler` — an infra failure at the `/api/auth/*`
+ * bridge that dies (mirroring the prior `Effect.promise` defect). Shared with the test
+ * layer (`better-auth.testing.ts`) so both bridges map the same boundary.
+ */
+export class BetterAuthHandlerError extends Schema.TaggedErrorClass<BetterAuthHandlerError>()(
+	"pasaport/BetterAuthHandlerError",
+	{cause: Schema.Defect()},
+) {}
 
 /**
  * The better-auth `user.additionalFields` shape. **Every field is `input:false`** —
@@ -203,9 +214,10 @@ export const BetterAuthLive = Layer.effect(
 			fetch: Effect.gen(function* () {
 				const request = yield* HttpServerRequest.HttpServerRequest;
 				const authInstance = yield* auth;
-				const response = yield* Effect.promise(() =>
-					authInstance.handler(request.source as Request),
-				);
+				const response = yield* Effect.tryPromise({
+					try: () => authInstance.handler(request.source as Request),
+					catch: (cause) => new BetterAuthHandlerError({cause}),
+				}).pipe(Effect.orDie);
 				return HttpServerResponse.fromWeb(response);
 			}),
 		};

@@ -118,6 +118,21 @@ export function isHttpUrl(raw: string): URL | null {
 }
 
 /**
+ * Resolve a (possibly relative) redirect `Location` against `base`, returning
+ * `null` for an unparseable ref. Lives here (a non-Effect helper) so the base-aware
+ * `new URL` parse — which throws on a malformed ref — stays a plain guarded parse
+ * rather than an `Effect.try` in the route; the caller re-screens the result through
+ * {@link isSafeFetchUrl}.
+ */
+export function resolveUrl(location: string, base: URL): URL | null {
+	try {
+		return new URL(location, base);
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Parse `raw` and return the {@link URL} only if it is safe to fetch
  * server-side; otherwise `null`. Fail-closed: an unparseable URL, a
  * non-`http(s)` scheme, or a private/loopback/link-local/CGNAT/metadata IP

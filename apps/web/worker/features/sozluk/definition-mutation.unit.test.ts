@@ -24,6 +24,7 @@ import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
+import * as Schema from "effect/Schema";
 import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import {Divan} from "../divan/Divan.ts";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
@@ -33,6 +34,11 @@ import {Kunye} from "../kunye/Kunye.ts";
 import {mutations} from "./mutations.ts";
 import type {AddDefinitionResult} from "./Sozluk.ts";
 import {Sozluk} from "./Sozluk.ts";
+
+/** A rejection while draining scheduled `waitUntil` work — dies the fiber. */
+class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
+	cause: Schema.Unknown,
+}) {}
 
 const AUTHOR = {id: "u-author", email: "yazar@example.com", name: "yazar"};
 
@@ -155,7 +161,10 @@ it.effect(
 					Effect.provideService(CurrentActor, {actor: human(AUTHOR.id)}),
 					Effect.provideService(RuntimeContext, runtimeContextStub),
 				);
-			yield* Effect.promise(() => Promise.allSettled(scheduled));
+			yield* Effect.tryPromise({
+				try: () => Promise.allSettled(scheduled),
+				catch: (cause) => new DrainRejected({cause}),
+			}).pipe(Effect.orDie);
 
 			// The contract: the resolver routes the new node to the term's args-scoped
 			// connection topic (keyed by `{id: slug}`), so only that term's open page

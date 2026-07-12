@@ -28,6 +28,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
+import * as Schema from "effect/Schema";
 import {noopPanoFeedCache} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import type {CommentRow} from "../pano/comment-fields.ts";
@@ -67,8 +68,16 @@ const recordingLive = () => {
 	return {recorded, scheduled, layer};
 };
 
+/** A rejection while draining scheduled `waitUntil` work — dies the fiber. */
+class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
+	cause: Schema.Unknown,
+}) {}
+
 const drain = (scheduled: Array<Promise<unknown>>) =>
-	Effect.promise(() => Promise.allSettled(scheduled));
+	Effect.tryPromise({
+		try: () => Promise.allSettled(scheduled),
+		catch: (cause) => new DrainRejected({cause}),
+	}).pipe(Effect.orDie);
 
 // Service stubs (the `definition-mutation.unit.test.ts` proxy idiom): only the
 // methods the restore resolver reaches are scripted; every other method dies on

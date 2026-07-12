@@ -16,7 +16,13 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
-import {createDrizzle, Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
+import {
+	createDrizzle,
+	Drizzle,
+	type DrizzleAccess,
+	type DrizzleDb,
+	DrizzleError,
+} from "../../db/Drizzle.ts";
 import {Report, ReportLive} from "./Report.ts";
 
 const throwingAccess: DrizzleAccess = {
@@ -69,7 +75,8 @@ function capturingDrizzle(): {
 	} as unknown as D1Database;
 	const db = createDrizzle(fakeD1);
 	const access: DrizzleAccess = {
-		run: <A>(fn: (db: DrizzleDb) => Promise<A>) => Effect.promise(() => fn(db)),
+		run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
+			Effect.tryPromise({try: () => fn(db), catch: (cause) => new DrizzleError({cause})}),
 		batch: () => Effect.die(new Error("wave writes issue no batch")),
 	};
 	return {access, captured};

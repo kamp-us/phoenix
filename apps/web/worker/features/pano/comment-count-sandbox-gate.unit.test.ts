@@ -19,6 +19,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
+import * as Schema from "effect/Schema";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
@@ -115,9 +116,17 @@ const deps = (run: DrizzleAccessOrDie["run"]): CommentOperationsDeps => ({
 		Effect.die(new Error("comment delete-count path must not read author identity")),
 });
 
+/** A rejection from the stubbed `run` thunk — dies, matching `run`'s `never` channel. */
+class RunRejected extends Schema.TaggedErrorClass<RunRejected>()("test/RunRejected", {
+	cause: Schema.Unknown,
+}) {}
+
 const runOverDb = (db: unknown): DrizzleAccessOrDie["run"] =>
 	(<A>(fn: (d: never) => Promise<A> | A) =>
-		Effect.promise(async () => fn(db as never))) as DrizzleAccessOrDie["run"];
+		Effect.tryPromise({
+			try: async () => fn(db as never),
+			catch: (cause) => new RunRejected({cause}),
+		}).pipe(Effect.orDie)) as DrizzleAccessOrDie["run"];
 
 describe("commentCount is sandbox-symmetric across create/delete (#1831)", () => {
 	it.effect("deleting a SANDBOXED comment leaves the public count unchanged (-0, not -1)", () =>

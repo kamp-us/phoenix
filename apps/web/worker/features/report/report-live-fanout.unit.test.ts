@@ -23,6 +23,7 @@ import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Layer} from "effect";
+import * as Schema from "effect/Schema";
 import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import {noopPanoFeedCache, noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
@@ -174,8 +175,16 @@ const recordingPublisher = () => {
 	return {recorded, scheduled, layer};
 };
 
+/** A rejection while draining scheduled `waitUntil` work — dies the fiber. */
+class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
+	cause: Schema.Unknown,
+}) {}
+
 const flush = (scheduled: Array<Promise<unknown>>) =>
-	Effect.promise(() => Promise.allSettled(scheduled));
+	Effect.tryPromise({
+		try: () => Promise.allSettled(scheduled),
+		catch: (cause) => new DrainRejected({cause}),
+	}).pipe(Effect.orDie);
 
 describe("report.resolve remove — publishes the content-topic invalidation", () => {
 	it.effect("a moderator remove of a post evicts the entity + drops its feed edge", () => {

@@ -18,6 +18,7 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {currentActorContext} from "../kunye/CurrentActorLive.ts";
@@ -31,6 +32,12 @@ import {
 	makeRequestFlagsContext,
 } from "./FlagsContext.ts";
 import {overridesAuthorized} from "./override-authz.ts";
+
+/** A malformed request body — mapped then recovered to the empty-keys default below. */
+class FlagEvaluateBodyError extends Schema.TaggedErrorClass<FlagEvaluateBodyError>()(
+	"flagship/FlagEvaluateBodyError",
+	{cause: Schema.Defect()},
+) {}
 
 /** The dark-ship flag this probe gates on — undeclared, so it reads its default. */
 const PROBE_FLAG = "phoenix-flags-probe";
@@ -86,7 +93,10 @@ export const handleFlagsEvaluate = Effect.gen(function* () {
 	const pasaport = yield* Pasaport;
 	const flags = yield* Flags;
 
-	const body = yield* Effect.promise(() => raw.json().catch(() => null));
+	const body = yield* Effect.tryPromise({
+		try: () => raw.json(),
+		catch: (cause) => new FlagEvaluateBodyError({cause}),
+	}).pipe(Effect.orElseSucceed(() => null));
 	// A malformed body yields zero requested keys, so the response is `{flags:{}}`
 	// and the client stays at its defaults — the safe-default contract end to end.
 	const keys = parseFlagEvaluateRequest(body);

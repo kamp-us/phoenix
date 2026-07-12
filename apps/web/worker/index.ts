@@ -17,6 +17,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {ENV_BINDINGS, envBindings, sentryDsn} from "./config.ts";
@@ -45,6 +46,16 @@ import {workerFirstGlobs} from "./http/worker-routes.ts";
 import {workerOptions} from "./lib/sentry.ts";
 import {captureUnhandled} from "./lib/sentry-capture.ts";
 import {SentryEffectLive} from "./lib/sentry-effect.ts";
+
+/**
+ * A rejection escaping `wrapRequestHandler` past the `captureErrors` backstop — an
+ * infra failure at the worker fetch boundary that dies (mirroring the prior
+ * `Effect.promise` defect).
+ */
+class RequestHandlerError extends Schema.TaggedErrorClass<RequestHandlerError>()(
+	"web/RequestHandlerError",
+	{cause: Schema.Defect()},
+) {}
 
 /**
  * Lift a publish-side `PublishMessage` to the `DeliverFrame` `LiveDO.publish`
@@ -400,15 +411,17 @@ export default Phoenix.make(
 						// backstop for anything that still rejects the thunk. Full rationale + the
 						// flush-on-die finding live in `sentry-capture.ts`.
 						const captured = captureUnhandled(httpEffect);
-						const webResponse = yield* Effect.promise(() =>
-							wrapRequestHandler(
-								{options: workerOptions(value), request, context, captureErrors: true},
-								() =>
-									Effect.runPromise(
-										toWebResponse(request, captured).pipe(Effect.provide(requestContext)),
-									),
-							),
-						);
+						const webResponse = yield* Effect.tryPromise({
+							try: () =>
+								wrapRequestHandler(
+									{options: workerOptions(value), request, context, captureErrors: true},
+									() =>
+										Effect.runPromise(
+											toWebResponse(request, captured).pipe(Effect.provide(requestContext)),
+										),
+								),
+							catch: (cause) => new RequestHandlerError({cause}),
+						}).pipe(Effect.orDie);
 						return HttpServerResponse.fromWeb(webResponse);
 					}),
 				),

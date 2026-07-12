@@ -14,6 +14,7 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {
@@ -22,11 +23,18 @@ import {
 	MAX_METADATA_BYTES,
 	MAX_REDIRECT_HOPS,
 	parseLinkMetadata,
+	resolveUrl,
 } from "./link-metadata.ts";
 import type {LinkMetadata} from "./link-metadata-contract.ts";
 
 /** The empty result — the safe-default this route returns on every failure. */
 const EMPTY: LinkMetadata = {};
+
+/** An unexpected `fetchMetadata` rejection — mapped then recovered to {@link EMPTY}. */
+class LinkMetadataFetchError extends Schema.TaggedErrorClass<LinkMetadataFetchError>()(
+	"pano/LinkMetadataFetchError",
+	{cause: Schema.Defect()},
+) {}
 
 /**
  * Read up to {@link MAX_METADATA_BYTES} of the response body as UTF-8, then
@@ -79,12 +87,8 @@ async function fetchFollowingSafeRedirects(
 		if (redirects >= MAX_REDIRECT_HOPS) return null;
 		const location = res.headers.get("location");
 		if (location === null || location === "") return null;
-		let next: URL;
-		try {
-			next = new URL(location, current);
-		} catch {
-			return null;
-		}
+		const next = resolveUrl(location, current);
+		if (next === null) return null;
 		const safe = isSafeFetchUrl(next.toString());
 		if (safe === null) return null;
 		current = safe;
@@ -116,9 +120,13 @@ export const handleLinkMetadata = Effect.gen(function* () {
 	const requested = new URL(raw.url).searchParams.get("url") ?? "";
 	const safe = isSafeFetchUrl(requested);
 	if (safe === null) return HttpServerResponse.jsonUnsafe(EMPTY);
-	// `Effect.promise` because `fetchMetadata` never rejects — it maps every
-	// failure to `EMPTY`, so the route can't surface a defect to the client.
-	const metadata = yield* Effect.promise(() => fetchMetadata(safe));
+	// `fetchMetadata` never rejects — it maps every failure to `EMPTY` — so the
+	// mapped-then-recovered `catch` is unreachable and the route can't surface a
+	// defect to the client.
+	const metadata = yield* Effect.tryPromise({
+		try: () => fetchMetadata(safe),
+		catch: (cause) => new LinkMetadataFetchError({cause}),
+	}).pipe(Effect.orElseSucceed(() => EMPTY));
 	return HttpServerResponse.jsonUnsafe(metadata);
 });
 
