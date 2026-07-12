@@ -305,6 +305,15 @@ WT_FILE="$(mktemp /tmp/review-code-wt.XXXXXX)"
 # explicit denylist removal + absence-assert below, NOT by any include/cone pattern set.
 git worktree add "$REVIEW_WT" "$PR_REF"
 
+# LAYER-2 containment (#2666): a freshly materialized worktree MUST come up pristine — assert it
+# clean NOW, before the denylist `rm --cached` below deliberately dirties it. A dirty materialization
+# means a corrupted head checkout, and reviewing a contaminated tree is a false signal. Fail-closed
+# LOUD via the single-sourced, tested helper (packages/pipeline-cli/src/tools/worktree-guard).
+node packages/pipeline-cli/src/bin.ts worktree-guard assert-clean --path "$REVIEW_WT" || {
+  echo "FATAL: review worktree came up dirty at materialization — aborting (never review a contaminated tree; #2666)." >&2
+  exit 1
+}
+
 # Enforce the instruction denylist EXPLICITLY: remove the head's instruction surfaces from
 # the review tree so they never reach the reviewing agent's path (ADR 0049/0052 boundary; a
 # full checkout would otherwise leave root CLAUDE.md on disk). Config still comes from the

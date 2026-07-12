@@ -200,6 +200,10 @@ PR=<pr number>
 # checkout ($WORKTREE_ROOT unset — the #2452/#2453 condition), fail closed LOUD and route up rather
 # than run any git op there. Single-sourced in gh-issue-intake-formats.md §RO-iso (ADR 0172; the
 # write-code wt_preflight sibling). A genuine standalone `/ship-it` on the owner's checkout still proceeds.
+# This iso_preflight is ship-it's whole stake in the #2690 worktree-hardening consolidation: LAYER 1
+# (prevention) lives here, while LAYER 2 (the clean-tree assertion + the stage-all `git add -A` ban)
+# has NO surface in ship-it — it stages/commits nothing — so it is enforced upstream in the pre-bash
+# hook + write-code/review-code, not duplicated here.
 iso_preflight ship-it || exit 1   # ../gh-issue-intake-formats.md §RO-iso — define it there, cite here
 gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
 ```

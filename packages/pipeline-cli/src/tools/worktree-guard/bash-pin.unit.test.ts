@@ -1,5 +1,11 @@
 import {assert, describe, it} from "@effect/vitest";
-import {hasLeadingCd, inspectGitHeadMove, isIsolationExpected, pinBash} from "./bash-pin.ts";
+import {
+	hasLeadingCd,
+	inspectGitHeadMove,
+	inspectGitStageAll,
+	isIsolationExpected,
+	pinBash,
+} from "./bash-pin.ts";
 
 const WT = "/Users/dev/code/phoenix/.claude/worktrees/wf_abc123";
 
@@ -235,6 +241,86 @@ describe("isIsolationExpected — the ADR-0172 gate, re-keyed onto git-dir == co
 		assert.isFalse(isIsolationExpected({agentType: "", onPrimaryCheckout: true}));
 		assert.isFalse(isIsolationExpected({agentType: "   ", onPrimaryCheckout: true}));
 		assert.isFalse(isIsolationExpected({agentType: "", onPrimaryCheckout: false}));
+	});
+});
+
+// #2666 containment: a fresh worktree can come up dirty, so an auto-stage-all captures unauthored
+// bleed into the commit — banned in a guarded worktree, commits stage by explicit path only.
+describe("pinBash — refuse an auto-stage-all git op in a guarded worktree (#2666)", () => {
+	it("refuses `git add -A`, `git add .`, and `git add --all`", () => {
+		for (const cmd of ["git add -A", "git add .", "git add --all"]) {
+			assert.strictEqual(pinBash({worktreeRoot: WT, command: cmd}).kind, "refuse", cmd);
+		}
+	});
+	it("refuses `git commit -a` / `-am` (auto-stage-then-commit)", () => {
+		assert.strictEqual(pinBash({worktreeRoot: WT, command: "git commit -a"}).kind, "refuse");
+		assert.strictEqual(pinBash({worktreeRoot: WT, command: 'git commit -am "wip"'}).kind, "refuse");
+		assert.strictEqual(pinBash({worktreeRoot: WT, command: "git commit --all"}).kind, "refuse");
+	});
+	// Scoping does NOT make it safe (unauthored-hunk capture, not a primary-tree escape) — fire anyway.
+	it('refuses even the `-C "$WT"` scoped and leading-`cd` forms', () => {
+		assert.strictEqual(pinBash({worktreeRoot: WT, command: 'git -C "$WT" add -A'}).kind, "refuse");
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: `cd "${WT}" && git add -A`}).kind,
+			"refuse",
+		);
+	});
+	// Caught even when a benign git op precedes it in a chain (fail-closed: scan every segment).
+	it("refuses a stage-all buried after a benign git op in a chain", () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: "git status && git add -A"}).kind,
+			"refuse",
+		);
+	});
+	it("does NOT refuse explicit-path staging or an amend-without-`-a`", () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: "git add apps/web/foo.ts"}).kind,
+			"rewrite",
+		);
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: 'git commit -m "add auth guard"'}).kind,
+			"rewrite",
+		);
+		assert.strictEqual(
+			pinBash({worktreeRoot: WT, command: "git commit --amend --no-edit"}).kind,
+			"rewrite",
+		);
+	});
+	it("does NOT refuse a stage-all when NOT a guarded worktree and isolation not expected", () => {
+		assert.strictEqual(pinBash({worktreeRoot: "", command: "git add -A"}).kind, "allow");
+	});
+	it("refuses a stage-all when root unset but isolation WAS expected (#2440 no-op on primary)", () => {
+		assert.strictEqual(
+			pinBash({worktreeRoot: "", command: "git add -A", isolationExpected: true}).kind,
+			"refuse",
+		);
+	});
+});
+
+describe("inspectGitStageAll — the pure parse", () => {
+	it("flags the add-all pathspecs", () => {
+		for (const cmd of ["git add -A", "git add .", "git add --all", "git add -Av"]) {
+			assert.isTrue(inspectGitStageAll(cmd), cmd);
+		}
+	});
+	it("flags `git commit -a` / `-am` / `--all`", () => {
+		for (const cmd of ["git commit -a", "git commit -am x", "git commit --all"]) {
+			assert.isTrue(inspectGitStageAll(cmd), cmd);
+		}
+	});
+	it("does not flag explicit-path add, `-u`, or a `-m`-only commit", () => {
+		for (const cmd of ["git add src/foo.ts", "git add -u src", 'git commit -m "msg"']) {
+			assert.isFalse(inspectGitStageAll(cmd), cmd);
+		}
+	});
+	it("does not flag `--amend` (double dash, no `-a`)", () => {
+		assert.isFalse(inspectGitStageAll("git commit --amend --no-edit"));
+	});
+	it("does not flag a non-git command that merely contains `add`/`-A`", () => {
+		assert.isFalse(inspectGitStageAll("echo add -A"));
+	});
+	it("sees a stage-all across a `-C <path>` scope prefix", () => {
+		assert.isTrue(inspectGitStageAll('git -C "$WT" add -A'));
 	});
 });
 

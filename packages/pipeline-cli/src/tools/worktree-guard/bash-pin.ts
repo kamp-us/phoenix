@@ -33,6 +33,12 @@
  * The orchestrator's own shell runs no such hook, carries no `$WORKTREE_ROOT`, and asserts no
  * isolation, so its legitimate `git checkout main` (the ff-pull/reattach flow) can never reach
  * either refusal. See `.patterns/worktree-agent-constraints.md` (the guard route, now enforced).
+ *
+ * A second, distinct refusal is the **auto-stage-all containment** (#2666): `git add -A/--all/.`
+ * and `git commit -a` are refused in a guarded worktree because a fresh worktree can come up dirty
+ * (an unauthored hunk present at spawn), so staging the whole tree captures that bleed into the
+ * commit. Unlike the HEAD-move class this fires regardless of `-C "$WT"` scoping — the hazard is
+ * unauthored-hunk capture, not a primary-tree escape — so commits must stage by explicit path only.
  */
 
 export type BashDecision =
@@ -125,6 +131,76 @@ export const inspectGitHeadMove = (
 	return {isHeadMove: HEAD_MOVING.has(subcommand), worktreeScoped: scoped};
 };
 
+/**
+ * Detect a `git` invocation that AUTO-STAGES THE WHOLE TREE rather than explicit paths — `git add`
+ * with an all-staging pathspec (`-A` / `--all` / `.` / `--no-ignore-removal`), or `git commit -a`
+ * (the `-am` bundle included). Containment for #2666: a fresh worktree can come up dirty (an
+ * unauthored uncommitted hunk present at spawn), so a stage-everything op captures that bleed into
+ * the commit silently — the fix is to stage by explicit path only.
+ *
+ * The parse mirrors {@link inspectGitHeadMove}'s shallow, fail-closed philosophy but scans EVERY
+ * git segment (split on shell connectors), so a chained `git status && git add -A` is caught — and
+ * errs toward *seeing* a stage-all (ambiguity → refuse). Unlike a HEAD-move, `-C "$WT"` scoping
+ * does NOT make this safe: the hazard is unauthored-hunk capture, not a primary-tree escape, so the
+ * caller refuses it regardless of worktree-scope or a leading `cd`.
+ */
+export const inspectGitStageAll = (command: string): boolean => {
+	for (const segment of command.split(/&&|\|\||[;|]/)) {
+		if (segmentStagesAll(segment)) return true;
+	}
+	return false;
+};
+
+/** A `git add` pathspec that stages the whole tree (not an explicit path). */
+const isAddAllPathspec = (t: string): boolean =>
+	t === "." || t === "--all" || t === "--no-ignore-removal" || /^-[A-Za-z]*A[A-Za-z]*$/.test(t); // a short-flag cluster carrying `-A` (e.g. `-A`, `-Av`); NOT `--all`
+
+/** A `git commit` flag that auto-stages tracked changes (`-a` / `-am` / `--all`); NOT `--amend`. */
+const isCommitAllFlag = (t: string): boolean => t === "--all" || /^-[a-z]*a[a-z]*$/.test(t);
+
+/** Walk a segment's git global options to the subcommand token index (skips `-C`/`-c`/`--git-dir`/`--work-tree` args). */
+const gitSubcommandStart = (tokens: string[], gi: number): number => {
+	let i = gi + 1;
+	while (i < tokens.length) {
+		const t = tokens[i] ?? "";
+		if (t === "-C" || t === "--git-dir" || t === "--work-tree" || t === "-c") {
+			i += 2;
+			continue;
+		}
+		if (/^(--git-dir|--work-tree)=/.test(t)) {
+			i += 1;
+			continue;
+		}
+		if (t.startsWith("-")) {
+			i += 1;
+			continue;
+		}
+		break;
+	}
+	return i;
+};
+
+const segmentStagesAll = (segment: string): boolean => {
+	const tokens = segment
+		.trim()
+		.split(/\s+/)
+		.filter((t) => t !== "");
+	const gi = tokens.indexOf("git");
+	if (gi < 0) return false;
+	const i = gitSubcommandStart(tokens, gi);
+	const subcommand = tokens[i] ?? "";
+	const rest = tokens.slice(i + 1);
+	if (subcommand === "add") return rest.some(isAddAllPathspec);
+	if (subcommand === "commit") return rest.some(isCommitAllFlag);
+	return false;
+};
+
+const REFUSE_REASON_STAGE_ALL =
+	"refused an auto-stage-all git op (git add -A/--all/., or git commit -a) in a guarded worktree — " +
+	"a fresh worktree can come up dirty (an unauthored hunk present at spawn, #2666), so staging the " +
+	"whole tree captures that bleed into the commit silently. Stage by EXPLICIT path only: " +
+	'`git -C "$WT" add <path> …` then a plain `git -C "$WT" commit` (never `-a`).';
+
 const REFUSE_REASON =
 	"refused a bare working-state-mutating git op (checkout/switch/reset/rebase/stash/merge) in a " +
 	"guarded worktree — unscoped, it would execute against the shared PRIMARY .git after the cwd " +
@@ -179,6 +255,9 @@ export const isIsolationExpected = (args: {
  *   #2440 no-op / #2452 detach), and the $WORKTREE_ROOT-keyed branch below is disarmed, so this is
  *   the surviving refusal (ADR 0172). A non-head-move command still allows (no over-refusal).
  * - An empty/whitespace-only command → **allow** (nothing to pin).
+ * - An auto-stage-all git op (`git add -A/--all/.`, or `git commit -a`) → **refuse** even in its
+ *   `cd "$WT" &&` / `-C "$WT"` scoped form: a fresh worktree can be dirty at spawn, so staging the
+ *   whole tree captures unauthored bleed into the commit — stage by explicit path only (#2666).
  * - A command with a leading `cd ` → **allow** (it sets its own cwd; don't fight it).
  * - A working-state-mutating git op (`checkout`/`switch`/`reset`/`rebase`/`stash`/`merge`) NOT
  *   scoped to the worktree → **refuse** (issue #1571; `stash`/`merge` added #2030).
@@ -194,7 +273,11 @@ export const pinBash = (args: {
 	const {worktreeRoot, command, isolationExpected = false} = args;
 	if (!worktreeRoot || !isManagedWorktree(worktreeRoot)) {
 		// No managed worktree. Normally a clean allow — but if isolation was expected, the harness
-		// no-op'd provisioning (#2440) and a head-moving git op here hits the PRIMARY checkout (#2453).
+		// no-op'd provisioning (#2440) and a mutating git op here hits the PRIMARY checkout: a
+		// head-move detaches it (#2453), and a stage-all captures the owner's tree state (#2666).
+		if (isolationExpected && command.trim() !== "" && inspectGitStageAll(command)) {
+			return {kind: "refuse", reason: REFUSE_REASON_STAGE_ALL};
+		}
 		if (
 			isolationExpected &&
 			command.trim() !== "" &&
@@ -206,6 +289,9 @@ export const pinBash = (args: {
 		return {kind: "allow"};
 	}
 	if (command.trim() === "") return {kind: "allow"};
+	// A stage-all is refused BEFORE the leading-cd allow: `cd "$WT" && git add -A` still captures
+	// unauthored bleed, and `-C "$WT"` scoping doesn't make it safe (#2666) — so it fires regardless.
+	if (inspectGitStageAll(command)) return {kind: "refuse", reason: REFUSE_REASON_STAGE_ALL};
 	if (hasLeadingCd(command)) return {kind: "allow"};
 
 	const gm = inspectGitHeadMove(command, worktreeRoot);

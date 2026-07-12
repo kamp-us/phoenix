@@ -2,9 +2,10 @@
  * The `worktree-guard` tool — `pipeline-cli worktree-guard <pre-file|pre-bash|pre-enter|reap>`.
  *
  * The worktree-pinning hook surface for an `isolation:worktree` subagent (issue
- * #741), moved into the pipeline-cli registry (epic #994, Phase 2 / #998). Four
- * subcommands, each reading the hook's stdin JSON envelope, running a pure core,
- * and emitting the matching hook output. All read `$WORKTREE_ROOT` from the process
+ * #741), moved into the pipeline-cli registry (epic #994, Phase 2 / #998). The four
+ * hook subcommands each read the hook's stdin JSON envelope, run a pure core, and
+ * emit the matching hook output; a fifth (`assert-clean`, #2666) is an operator/skill
+ * invocation — not a hook — that fails closed on a dirty worktree. All read `$WORKTREE_ROOT` from the process
  * env (injected at spawn for an `isolation:worktree` subagent); an UNSET root makes
  * every subcommand a clean allow/skip no-op, so a non-worktree session is never
  * affected — with ONE exception (ADR 0172): `pre-bash` still refuses a head-moving git
@@ -19,6 +20,8 @@
  *     pre-enter (matcher EnterWorktree)   — hard-block a nested worktree
  *   SubagentStop:
  *     reap                                — `git worktree remove` (no --force) when clean
+ *   Skill/operator invocation (not a hook):
+ *     assert-clean [--path <d>]           — fail closed LOUD if the tree is dirty (#2666)
  *
  * The handlers are byte-identical to the former package's `bin.run.ts`. Its thin
  * `bin.ts` #777 stale-tree shim (a dynamic import gated on a dep-resolution probe)
@@ -28,12 +31,15 @@
 import {execFileSync} from "node:child_process";
 import {existsSync, statSync} from "node:fs";
 import {resolve} from "node:path";
-import {Console, Data, Effect} from "effect";
-import {Command} from "effect/unstable/cli";
+import {Console, Data, Effect, Option} from "effect";
+import {Command, Flag} from "effect/unstable/cli";
 import {isIsolationExpected, pinBash} from "./bash-pin.ts";
+import {decideCleanTree} from "./clean-tree.ts";
 import {guardEnterWorktree} from "./enter-guard.ts";
 import {mainCheckoutPrefix, resolvePath} from "./path-resolve.ts";
 import {decideReap} from "./reap.ts";
+
+const GATE_FAIL_EXIT_CODE = 1;
 
 const WORKTREE_ROOT = process.env.WORKTREE_ROOT ?? "";
 
@@ -260,7 +266,48 @@ const reap = Command.make(
 	),
 );
 
+const pathFlag = Flag.string("path").pipe(
+	Flag.optional,
+	Flag.withDescription("the worktree to assert clean (default: $WORKTREE_ROOT)"),
+);
+
+// Read `git status --porcelain` at a path; null when git cannot run there (not a repo, missing
+// dir) — the null is the fail-closed signal decideCleanTree maps to DIRTY, never a false clean.
+const readPorcelain = (path: string): string | null => {
+	try {
+		return execFileSync("git", ["-C", path, "status", "--porcelain"], {encoding: "utf8"});
+	} catch {
+		return null;
+	}
+};
+
+const assertClean = Command.make(
+	"assert-clean",
+	{path: pathFlag},
+	Effect.fn(function* ({path: pathOpt}) {
+		const target = Option.getOrElse(pathOpt, () => WORKTREE_ROOT);
+		if (!target) {
+			yield* Console.error(
+				"worktree-guard assert-clean: no target — pass --path or set $WORKTREE_ROOT.",
+			);
+			return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+		}
+		const decision = decideCleanTree({path: target, porcelain: readPorcelain(target)});
+		if (decision.kind === "clean") {
+			return yield* Console.error(`worktree-guard assert-clean: ${decision.reason}`);
+		}
+		yield* Console.error(
+			`worktree-guard assert-clean FAILED (fail-closed, LOUD): ${decision.reason}`,
+		);
+		return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+	}),
+).pipe(
+	Command.withDescription(
+		"Assert a worktree is clean (git status --porcelain); fail-closed LOUD on a dirty fresh tree (#2666)",
+	),
+);
+
 export const worktreeGuardCommand = Command.make("worktree-guard").pipe(
-	Command.withSubcommands([preFile, preBash, preEnter, reap]),
+	Command.withSubcommands([preFile, preBash, preEnter, reap, assertClean]),
 	Command.withDescription("Worktree-pinning PreToolUse hooks + a SubagentStop reaper (issue #741)"),
 );
