@@ -39,8 +39,9 @@ export interface SandboxColumns {
 }
 
 /**
- * The sandbox-dimension read arm each lifecycle state contributes for a **non-moderator**
- * viewer — the SQL half of that state's {@link lifecycleVisibilityRule}, keyed by the
+ * The reusable per-tag SQL arm builder {@link sandboxVisibleWhere} folds together — the
+ * sandbox-dimension read arm each lifecycle state contributes for a **non-moderator**
+ * viewer, the SQL half of that state's {@link lifecycleVisibilityRule}, keyed by the
  * closed {@link LifecycleTag} discriminant so the SQL encoding is tied to the SAME
  * exhaustive tag set the TS `isVisibleTo` uses (#2013). An exhaustive `switch`: a new
  * lifecycle tag has no case, so this **fails to compile** until its sandbox arm is
@@ -55,7 +56,7 @@ export interface SandboxColumns {
  *   `canSeeSandboxed` short-circuit in {@link sandboxVisibleWhere} (no restriction).
  * - `Removed` (`NoOne`) — `undefined`: not selected in the sandbox dimension.
  */
-const sandboxArm = (
+export const sandboxArm = (
 	tag: LifecycleTag,
 	cols: SandboxColumns,
 	viewer: SandboxViewer,

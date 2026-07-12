@@ -111,3 +111,33 @@ describe("Stats.getLandingStats — public totalAuthors excludes sandbox-only/dr
 		}),
 	);
 });
+
+describe("Stats.getLandingStats — the author counter's UNION structure (#2031, AC4)", () => {
+	// Guards the query SHAPE the prior suite doesn't: three arms combined by `UNION`
+	// (deduplicating, not `UNION ALL`), one per record table in a fixed order, wrapped in
+	// a `COUNT(DISTINCT author_id)` subquery. Distinct from the rendered-string guard
+	// checks above (which assert the per-arm filters are wired): this asserts the arms
+	// compose into the intended set operation, so a regression that dropped an arm, split
+	// the count across separate reads, or swapped `UNION`→`UNION ALL` fails here.
+	const flatten = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+
+	it.effect("three arms are joined by two deduplicating UNION operators (not UNION ALL)", () =>
+		Effect.gen(function* () {
+			const flat = flatten(yield* recordAuthorUnion);
+			const unions = flat.match(/\bunion\b(?!\s+all)/g) ?? [];
+			assert.strictEqual(unions.length, 2, "exactly two UNION operators join three arms");
+			assert.notMatch(flat, /\bunion\s+all\b/, "arms deduplicate with UNION, never UNION ALL");
+		}),
+	);
+
+	it.effect("the three record-table arms appear in order inside a COUNT(DISTINCT) subquery", () =>
+		Effect.gen(function* () {
+			const flat = flatten(yield* recordAuthorUnion);
+			assert.match(
+				flat,
+				/count\(distinct author_id\)[^(]*\(\s*select author_id from definition_record where .+ union select author_id from post_record where .+ union select author_id from comment_record where .+\)/,
+				"COUNT(DISTINCT author_id) over (definition_record UNION post_record UNION comment_record)",
+			);
+		}),
+	);
+});
