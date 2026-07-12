@@ -103,6 +103,16 @@ const matcher = (
  * set, identical to ship-it's required-namespace set for the same diff). Mirrors the
  * §CLASS bash exactly: has-code / has-skills are direct matches; has-docs is
  * carve-then-test (`grep -Ev exclude | grep -Eq docs`).
+ *
+ * No-class fail-closed (#2765): a changed file matching NONE of the three class probes —
+ * root-level executable build/lint tooling outside the code roots (`biome-plugins/**`,
+ * `biome.jsonc`, `turbo.json`, `pnpm-workspace.yaml`, …) — used to leave the diff spanning
+ * zero classes, so ship-it required zero gates and it could merge un-reviewed (PR #2760 was
+ * safe only by carrying an unrequired review-code PASS). Such a file now rides **has-code**
+ * (review-code, the general logic gate), making the invalid "non-empty diff, zero required
+ * gates" state unrepresentable. An empty diff still spans no class — nothing to gate. This
+ * is not a fourth class or a widened regex (that regex single-source is #2761); it is the
+ * fail-closed default of the same ADR 0092 idiom the FAILCLOSED_PROBES over-dispatch uses.
  */
 export const classify = (
 	files: ReadonlyArray<string>,
@@ -112,11 +122,13 @@ export const classify = (
 	const isSkills = matcher(probes.hasSkills, () => true);
 	const isExcluded = matcher(probes.docsExclude, () => false);
 	const isDocPath = matcher(probes.docs, () => true);
+	const isDoc = (f: string): boolean => !isExcluded(f) && isDocPath(f);
+	const isClassified = (f: string): boolean => isCode(f) || isSkills(f) || isDoc(f);
 
 	const present = new Set<ArtifactClass>();
-	if (files.some(isCode)) present.add("has-code");
+	if (files.some(isCode) || files.some((f) => !isClassified(f))) present.add("has-code");
 	if (files.some(isSkills)) present.add("has-skills");
-	if (files.some((f) => !isExcluded(f) && isDocPath(f))) present.add("has-docs");
+	if (files.some(isDoc)) present.add("has-docs");
 
 	return CLASS_ORDER.filter((c) => present.has(c));
 };
