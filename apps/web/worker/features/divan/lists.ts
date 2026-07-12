@@ -21,6 +21,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
 import {targetKey} from "../../db/target-kind.ts";
+import {UserId} from "../../lib/ids.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied} from "../kunye/errors.ts";
@@ -39,7 +40,7 @@ const RosterArgs = Schema.Struct({
 });
 
 const BacklogArgs = Schema.Struct({
-	authorId: Schema.String,
+	authorId: UserId,
 	first: Schema.optional(Schema.Number),
 });
 
@@ -94,7 +95,7 @@ const rosterGated = Effect.fn("divan.rosterGated")(function* () {
 	} satisfies ConnectionResult<DivanCaylak>;
 });
 
-const backlogGated = Effect.fn("divan.backlogGated")(function* (authorId: string) {
+const backlogGated = Effect.fn("divan.backlogGated")(function* (authorId: UserId) {
 	yield* ViewDivan;
 	const divan = yield* Divan;
 	const items = yield* divan.backlogOf(authorId);

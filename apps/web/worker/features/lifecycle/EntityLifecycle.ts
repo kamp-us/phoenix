@@ -36,6 +36,13 @@ export class Anonymized extends Schema.Class<Anonymized>("lifecycle/Anonymized")
 
 export class Moderated extends Schema.Class<Moderated>("lifecycle/Moderated")({
 	_tag: Schema.tag("Moderated"),
+	// Unbranded `Schema.String` (not report's `ReportId`) on purpose: this reason is
+	// constructed at each content feature's moderator-remove site — pano
+	// (`post-operations.ts`/`comment-operations.ts`) and sözlük (`Sozluk.ts`) — with a
+	// plain-string `reportId`, so a `ReportId` here would fail typecheck at those
+	// out-of-feature construction sites, which epic #2700's report slice (#2721) does not
+	// touch. Deferred to a follow-up that brands the content services' `moderateRemove*`
+	// reportId params (mirrors vote's deferred `SelfVoteNotAllowed.voterId`, #2723).
 	reportId: Schema.String,
 }) {}
 

@@ -5,12 +5,13 @@
  * blank-author (author-deleted placeholder) row is skipped.
  */
 import {assert, describe, it} from "@effect/vitest";
+import {UserId} from "../../lib/ids.ts";
 import {buildRoster, type DivanItem} from "./roster.ts";
 
 const item = (kind: DivanItem["kind"], id: string, authorId: string): DivanItem => ({
 	kind,
 	id,
-	authorId,
+	authorId: UserId.make(authorId),
 	createdAt: new Date("2026-06-25T00:00:00.000Z"),
 	preview: `${kind}:${id}`,
 });

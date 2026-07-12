@@ -24,6 +24,7 @@ import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
+import {TargetId} from "../../lib/ids.ts";
 import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import {noopPanoFeedCache, noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
@@ -31,6 +32,7 @@ import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {Pano} from "../pano/Pano.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
+import {WaveId} from "./ids.ts";
 import {mutations} from "./mutations.ts";
 import {makeReportStub} from "./Report.testing.ts";
 
@@ -191,7 +193,7 @@ describe("report.resolve remove — publishes the content-topic invalidation", (
 		const {recorded, scheduled, layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			yield* mutations["report.resolve"].handler({
-				input: {targetKind: "post", targetId: "p1", action: "remove"},
+				input: {targetKind: "post", targetId: TargetId.make("p1"), action: "remove"},
 				select: ["id"],
 			});
 			yield* flush(scheduled);
@@ -202,7 +204,7 @@ describe("report.resolve remove — publishes the content-topic invalidation", (
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					reportStub({targetKind: "post", targetId: "p1"}),
+					reportStub({targetKind: "post", targetId: TargetId.make("p1")}),
 					Layer.succeed(
 						Pano,
 						panoStub({moderateRemovePost: () => Effect.succeed({removed: true})}),
@@ -221,7 +223,7 @@ describe("report.resolve remove — publishes the content-topic invalidation", (
 		const {recorded, scheduled, layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			yield* mutations["report.resolve"].handler({
-				input: {targetKind: "comment", targetId: "c1", action: "remove"},
+				input: {targetKind: "comment", targetId: TargetId.make("c1"), action: "remove"},
 				select: ["id"],
 			});
 			yield* flush(scheduled);
@@ -229,7 +231,7 @@ describe("report.resolve remove — publishes the content-topic invalidation", (
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					reportStub({targetKind: "comment", targetId: "c1"}),
+					reportStub({targetKind: "comment", targetId: TargetId.make("c1")}),
 					Layer.succeed(
 						Pano,
 						panoStub({
@@ -251,7 +253,7 @@ describe("report.resolve remove — publishes the content-topic invalidation", (
 		const {recorded, scheduled, layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			yield* mutations["report.resolve"].handler({
-				input: {targetKind: "definition", targetId: "d1", action: "remove"},
+				input: {targetKind: "definition", targetId: TargetId.make("d1"), action: "remove"},
 				select: ["id"],
 			});
 			yield* flush(scheduled);
@@ -262,7 +264,7 @@ describe("report.resolve remove — publishes the content-topic invalidation", (
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					reportStub({targetKind: "definition", targetId: "d1"}),
+					reportStub({targetKind: "definition", targetId: TargetId.make("d1")}),
 					Layer.succeed(Pano, panoStub({})),
 					Layer.succeed(
 						Sozluk,
@@ -284,7 +286,7 @@ describe("report.resolve remove — publishes the content-topic invalidation", (
 		const {recorded, scheduled, layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			yield* mutations["report.resolve"].handler({
-				input: {targetKind: "post", targetId: "p1", action: "remove"},
+				input: {targetKind: "post", targetId: TargetId.make("p1"), action: "remove"},
 				select: ["id"],
 			});
 			yield* flush(scheduled);
@@ -292,7 +294,7 @@ describe("report.resolve remove — publishes the content-topic invalidation", (
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					reportStub({targetKind: "post", targetId: "p1"}),
+					reportStub({targetKind: "post", targetId: TargetId.make("p1")}),
 					Layer.succeed(
 						Pano,
 						panoStub({moderateRemovePost: () => Effect.succeed({removed: false})}),
@@ -315,7 +317,7 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 			const {recorded, scheduled, layer} = recordingPublisher();
 			return Effect.gen(function* () {
 				yield* mutations["report.restore"].handler({
-					input: {targetKind: "post", targetId: "p1"},
+					input: {targetKind: "post", targetId: TargetId.make("p1")},
 					select: ["id"],
 				});
 				yield* flush(scheduled);
@@ -323,7 +325,7 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 			}).pipe(
 				Effect.provide(
 					Layer.mergeAll(
-						reportStub({targetKind: "post", targetId: "p1"}),
+						reportStub({targetKind: "post", targetId: TargetId.make("p1")}),
 						Layer.succeed(
 							Pano,
 							panoStub({
@@ -348,7 +350,7 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 			const {recorded, scheduled, layer} = recordingPublisher();
 			return Effect.gen(function* () {
 				yield* mutations["report.restore"].handler({
-					input: {targetKind: "post", targetId: "p1"},
+					input: {targetKind: "post", targetId: TargetId.make("p1")},
 					select: ["id"],
 				});
 				yield* flush(scheduled);
@@ -358,7 +360,7 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 			}).pipe(
 				Effect.provide(
 					Layer.mergeAll(
-						reportStub({targetKind: "post", targetId: "p1"}),
+						reportStub({targetKind: "post", targetId: TargetId.make("p1")}),
 						Layer.succeed(
 							Pano,
 							panoStub({
@@ -382,7 +384,7 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 		const {recorded, scheduled, layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			yield* mutations["report.restore"].handler({
-				input: {targetKind: "comment", targetId: "c1"},
+				input: {targetKind: "comment", targetId: TargetId.make("c1")},
 				select: ["id"],
 			});
 			yield* flush(scheduled);
@@ -390,7 +392,7 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					reportStub({targetKind: "comment", targetId: "c1"}),
+					reportStub({targetKind: "comment", targetId: TargetId.make("c1")}),
 					Layer.succeed(
 						Pano,
 						panoStub({
@@ -413,7 +415,7 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 		const {recorded, scheduled, layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			yield* mutations["report.restore"].handler({
-				input: {targetKind: "definition", targetId: "d1"},
+				input: {targetKind: "definition", targetId: TargetId.make("d1")},
 				select: ["id"],
 			});
 			yield* flush(scheduled);
@@ -421,7 +423,7 @@ describe("report.restore — re-enters the target so a second moderator reconcil
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					reportStub({targetKind: "definition", targetId: "d1"}),
+					reportStub({targetKind: "definition", targetId: TargetId.make("d1")}),
 					Layer.succeed(Pano, panoStub({})),
 					Layer.succeed(
 						Sozluk,
@@ -453,14 +455,14 @@ describe("fail-safe — a failed publish does not fail the moderation action", (
 			// The receipt still resolves even though every publish dies — the publisher's
 			// `never` error channel swallows the failure off the request path.
 			const receipt = yield* mutations["report.resolve"].handler({
-				input: {targetKind: "post", targetId: "p1", action: "remove"},
+				input: {targetKind: "post", targetId: TargetId.make("p1"), action: "remove"},
 				select: ["id", "targetRemoved"],
 			});
 			assert.strictEqual((receipt as {targetRemoved: boolean}).targetRemoved, true);
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
-					reportStub({targetKind: "post", targetId: "p1"}),
+					reportStub({targetKind: "post", targetId: TargetId.make("p1")}),
 					Layer.succeed(
 						Pano,
 						panoStub({moderateRemovePost: () => Effect.succeed({removed: true})}),
@@ -507,7 +509,12 @@ describe("report.resolve — threads the wave grouping id to resolveTarget (#185
 		const {layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			yield* mutations["report.resolve"].handler({
-				input: {targetKind: "post", targetId: "p1", action: "dismiss", waveId: "wave-1"},
+				input: {
+					targetKind: "post",
+					targetId: TargetId.make("p1"),
+					action: "dismiss",
+					waveId: WaveId.make("wave-1"),
+				},
 				select: ["id"],
 			});
 			assert.strictEqual(sink.waveId, "wave-1", "the shared wave id reaches resolveTarget");
@@ -519,7 +526,7 @@ describe("report.resolve — threads the wave grouping id to resolveTarget (#185
 		const {layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			yield* mutations["report.resolve"].handler({
-				input: {targetKind: "post", targetId: "p1", action: "dismiss"},
+				input: {targetKind: "post", targetId: TargetId.make("p1"), action: "dismiss"},
 				select: ["id"],
 			});
 			assert.strictEqual(sink.waveId, null, "a lone resolve carries no wave grouping");
@@ -545,7 +552,7 @@ describe("report.restoreWave — restores the batch as a unit (#1704 AC3)", () =
 		const {recorded, scheduled, layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			const receipt = yield* mutations["report.restoreWave"].handler({
-				input: {waveId: "wave-1"},
+				input: {waveId: WaveId.make("wave-1")},
 				select: ["id", "collapsed"],
 			});
 			yield* flush(scheduled);
@@ -560,8 +567,8 @@ describe("report.restoreWave — restores the batch as a unit (#1704 AC3)", () =
 			Effect.provide(
 				Layer.mergeAll(
 					waveReportStub([
-						{targetKind: "post", targetId: "p1"},
-						{targetKind: "definition", targetId: "d1"},
+						{targetKind: "post", targetId: TargetId.make("p1")},
+						{targetKind: "definition", targetId: TargetId.make("d1")},
 					]),
 					Layer.succeed(
 						Pano,
@@ -591,7 +598,7 @@ describe("report.restoreWave — restores the batch as a unit (#1704 AC3)", () =
 		const {recorded, scheduled, layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			const receipt = yield* mutations["report.restoreWave"].handler({
-				input: {waveId: "wave-gone"},
+				input: {waveId: WaveId.make("wave-gone")},
 				select: ["id", "collapsed"],
 			});
 			yield* flush(scheduled);
@@ -619,7 +626,10 @@ describe("report.restoreWave — restores the batch as a unit (#1704 AC3)", () =
 		const {layer} = recordingPublisher();
 		return Effect.gen(function* () {
 			const exit = yield* Effect.exit(
-				mutations["report.restoreWave"].handler({input: {waveId: "wave-1"}, select: ["id"]}),
+				mutations["report.restoreWave"].handler({
+					input: {waveId: WaveId.make("wave-1")},
+					select: ["id"],
+				}),
 			);
 			assert.isTrue(exit._tag === "Failure", "a non-moderator restoreWave is denied");
 			if (exit._tag === "Failure") {
@@ -656,7 +666,7 @@ describe("report.submit — the audit refuted submit; the CONTENT path fans out 
 				const {recorded, scheduled, layer} = recordingPublisher();
 				const receipt = yield* mutations["report.submit"]
 					.handler({
-						input: {targetKind: "post", targetId: "p1"},
+						input: {targetKind: "post", targetId: TargetId.make("p1")},
 						select: ["id", "created"],
 					})
 					.pipe(
@@ -664,7 +674,12 @@ describe("report.submit — the audit refuted submit; the CONTENT path fans out 
 						Effect.provide(
 							Layer.mergeAll(
 								makeReportStub({
-									submit: () => Effect.succeed({targetKind: "post", targetId: "p1", created: true}),
+									submit: () =>
+										Effect.succeed({
+											targetKind: "post",
+											targetId: TargetId.make("p1"),
+											created: true,
+										}),
 								}),
 								layer,
 								actorContext(human("u-reporter")),

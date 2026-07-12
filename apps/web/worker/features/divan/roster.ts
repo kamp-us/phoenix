@@ -18,6 +18,7 @@
  */
 
 import type {TargetKind} from "../../db/target-kind.ts";
+import type {UserId} from "../../lib/ids.ts";
 
 /**
  * The content kind a sandboxed backlog item came from. Aliased to the shared
@@ -36,7 +37,7 @@ export type DivanItemKind = TargetKind;
 export interface DivanItem {
 	readonly kind: DivanItemKind;
 	readonly id: string;
-	readonly authorId: string;
+	readonly authorId: UserId;
 	readonly createdAt: Date;
 	/** A short text preview for the queue row (body / title), never the full node. */
 	readonly preview: string;
@@ -48,7 +49,7 @@ export interface DivanItem {
  * separately as that çaylak's backlog (`Divan.backlogOf`).
  */
 export interface DivanCaylakEntry {
-	readonly authorId: string;
+	readonly authorId: UserId;
 	readonly definitionCount: number;
 	readonly postCount: number;
 	readonly commentCount: number;
@@ -91,7 +92,7 @@ export type DivanRosterRow = DivanCaylakEntry & CaylakIdentityFields;
  * here.
  */
 export const buildRoster = (items: ReadonlyArray<DivanItem>): ReadonlyArray<DivanCaylakEntry> => {
-	const byAuthor = new Map<string, {definitions: number; posts: number; comments: number}>();
+	const byAuthor = new Map<UserId, {definitions: number; posts: number; comments: number}>();
 	for (const item of items) {
 		if (item.authorId === "") continue;
 		const counts = byAuthor.get(item.authorId) ?? {definitions: 0, posts: 0, comments: 0};

@@ -20,6 +20,7 @@
  *     #1290 detail view), newest first.
  */
 import {Context, Effect, Layer} from "effect";
+import {UserId} from "../../lib/ids.ts";
 import {Pano} from "../pano/Pano.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
@@ -34,7 +35,7 @@ export class Divan extends Context.Service<
 		/** The pending-çaylak roster: every çaylak with ≥1 sandboxed, not-removed item. */
 		readonly roster: () => Effect.Effect<ReadonlyArray<DivanRosterRow>>;
 		/** One çaylak's sandboxed backlog (newest first) — the detail-view items. */
-		readonly backlogOf: (authorId: string) => Effect.Effect<ReadonlyArray<DivanItem>>;
+		readonly backlogOf: (authorId: UserId) => Effect.Effect<ReadonlyArray<DivanItem>>;
 		/**
 		 * How many still-pending (sandboxed, not-removed) items one author has across
 		 * all three kinds — the mod-notification transition gate (#1699): a create path
@@ -42,6 +43,10 @@ export class Divan extends Context.Service<
 		 * right after a çaylak's item committed (their 0→1 entry onto the roster), so a
 		 * çaylak's second and later items don't re-page the team.
 		 */
+		// `authorId` stays unbranded `string` (unlike `backlogOf`'s `UserId`): the only
+		// caller is bildirim's `notifyCaylakEntersDivan` (`mod-emitters.ts`), which passes a
+		// plain-string author id — branding this param would fail typecheck in that
+		// out-of-feature site, which epic #2700's report slice (#2721) does not touch.
 		readonly pendingCountOf: (authorId: string) => Effect.Effect<number>;
 	}
 >()("divan/Divan") {}
@@ -69,7 +74,7 @@ export const DivanLive = Layer.effect(Divan)(
 					(d): DivanItem => ({
 						kind: "definition",
 						id: d.id,
-						authorId: d.authorId,
+						authorId: UserId.make(d.authorId),
 						createdAt: d.createdAt,
 						preview: preview(d.body),
 					}),
@@ -78,7 +83,7 @@ export const DivanLive = Layer.effect(Divan)(
 					(p): DivanItem => ({
 						kind: "post",
 						id: p.id,
-						authorId: p.authorId,
+						authorId: UserId.make(p.authorId),
 						createdAt: p.createdAt,
 						preview: preview(p.title),
 					}),
@@ -87,7 +92,7 @@ export const DivanLive = Layer.effect(Divan)(
 					(c): DivanItem => ({
 						kind: "comment",
 						id: c.id,
-						authorId: c.authorId,
+						authorId: UserId.make(c.authorId),
 						createdAt: c.createdAt,
 						preview: preview(c.body),
 					}),
