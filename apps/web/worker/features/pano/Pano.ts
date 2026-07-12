@@ -309,10 +309,14 @@ export class Pano extends Context.Service<
 			commentId: string;
 		}) => Effect.Effect<{restored: boolean; sandboxedAt: Date | null}>;
 
-		// `VoterNotEligible` (#1810) — see `voteOnPost`. Cast path only; retraction is exempt.
+		// `VoterNotEligible` (#1810) + `SelfVoteNotAllowed` (#2216) — see `voteOnPost`. Both
+		// fire on the cast path only; retraction is exempt.
 		readonly voteOnComment: (
 			input: VoteOnCommentInput,
-		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | VoterNotEligible>;
+		) => Effect.Effect<
+			VoteOnCommentResult,
+			CommentNotFound | VoterNotEligible | SelfVoteNotAllowed
+		>;
 
 		readonly retractCommentVote: (
 			input: VoteOnCommentInput,
