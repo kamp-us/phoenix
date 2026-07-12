@@ -23,6 +23,7 @@ import {Config, Console, Effect, Redacted} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {captureAndUpload} from "./orchestrate.ts";
+import {renderCrashFailure} from "./page-errors.ts";
 import {parseSurfaceSpec} from "./plan.ts";
 
 const previewUrlFlag = Flag.string("preview-url").pipe(
@@ -61,6 +62,12 @@ const capture = Command.make(
 			token: Redacted.value(token),
 		}).pipe(Effect.provide(FetchHttpClient.layer));
 		yield* Console.log(JSON.stringify(records, null, 2));
+		// stdout stays the clean JSON array (the gate's input); the crash summary
+		// goes to stderr as a loud operator signal without perturbing the contract.
+		const crash = renderCrashFailure(records);
+		if (crash !== null) {
+			yield* Console.error(`design-capture: render FAILED — ${crash}`);
+		}
 	}),
 ).pipe(Command.withDescription("Capture a PR's changed surfaces over its preview and host them"));
 

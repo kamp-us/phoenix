@@ -16,6 +16,7 @@ const captured: CapturedSurface = {
 	localPath: "/tmp/out/sozluk-empty@desktop.png",
 	fileName: "sozluk-empty@desktop.png",
 	pngBytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+	pageErrors: [],
 };
 
 describe("mergeRecord — localPath is always preserved", () => {
@@ -29,7 +30,21 @@ describe("mergeRecord — localPath is always preserved", () => {
 			localPath: "/tmp/out/sozluk-empty@desktop.png",
 			hostedUrl: url,
 			uploadError: null,
+			pageErrors: [],
 		});
+	});
+
+	it("carries the captured pageErrors through onto the record (#2594 crash signal)", () => {
+		const crashed: CapturedSurface = {
+			...captured,
+			pageErrors: [
+				{kind: "pageerror", text: "TypeError: Cannot read properties of null (reading 'commands')"},
+			],
+		};
+		const rec = mergeRecord(crashed, {hostedUrl: null, uploadError: null});
+		assert.deepStrictEqual(rec.pageErrors, [
+			{kind: "pageerror", text: "TypeError: Cannot read properties of null (reading 'commands')"},
+		]);
 	});
 
 	it("KEEPS localPath when the upload fell back (hostedUrl null, uploadError set)", () => {
@@ -40,11 +55,12 @@ describe("mergeRecord — localPath is always preserved", () => {
 		assert.strictEqual(rec.uploadError, "HTTP 500: boom");
 	});
 
-	it("emits exactly the {surface, route, state, localPath, hostedUrl, uploadError} shape", () => {
+	it("emits the {surface, route, state, localPath, hostedUrl, uploadError, pageErrors} shape", () => {
 		const rec = mergeRecord(captured, {hostedUrl: null, uploadError: "x"});
 		assert.deepStrictEqual(Object.keys(rec).sort(), [
 			"hostedUrl",
 			"localPath",
+			"pageErrors",
 			"route",
 			"state",
 			"surface",

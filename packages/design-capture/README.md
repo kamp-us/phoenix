@@ -37,10 +37,13 @@ const records = yield* captureAndUpload({
   token: process.env.GITHUB_TOKEN!,                  // write access to the target repo
 });
 // records: CaptureRecord[] — one per surface:
-//   { surface, route, state, localPath, hostedUrl, uploadError }
+//   { surface, route, state, localPath, hostedUrl, uploadError, pageErrors }
 //   • localPath  — ALWAYS present on a successful capture: the PNG the gate JUDGES
 //   • hostedUrl  — the GitHub asset URL to embed, or null when the upload fell back
 //   • uploadError — the diagnostic when the fallback fired, else null
+//   • pageErrors — runtime errors thrown into the page during THIS render (#2594):
+//       [{ kind: "pageerror" | "console.error", text }] — a `pageerror` (uncaught
+//       exception) hard-fails the gate; a `console.error` is advisory
 ```
 
 - `captureAndUpload(request): Effect<CaptureRecord[], CaptureError, HttpClient>` —
@@ -56,8 +59,10 @@ const records = yield* captureAndUpload({
 
 Pure cores also exported for reuse/testing: `parseSurfaceSpec`,
 `buildCapturePlan`, `joinPreviewUrl`, `surfaceFileName`, `mergeRecord`,
-`parseUploadResponse`, `uploadEndpoint`, and the viewport constants
-(`DESKTOP_VIEWPORT` 1280×800, `MOBILE_VIEWPORT` 390×844, `DEFAULT_VIEWPORT`).
+`parseUploadResponse`, `uploadEndpoint`, `renderCrashFailure` / `isRenderCrash` /
+`toPageError` (the render-exception gate decision, #2594), and the viewport
+constants (`DESKTOP_VIEWPORT` 1280×800, `MOBILE_VIEWPORT` 390×844,
+`DEFAULT_VIEWPORT`).
 
 ## `localPath` is the primary judged artifact — never lost to an upload failure
 
@@ -67,6 +72,20 @@ afterward (`mergeRecord`). So even when the upload endpoint is down, the record
 still carries `localPath` — the gate has bytes to judge **exactly** when hosting
 fails. (This is the correctness fix over an earlier shape that dropped the image
 on the fallback path.)
+
+## A thrown render exception fails the gate — regardless of the pixels (#2594)
+
+A single screenshot only sees pixels, so a mount/init race that throws on a "bad
+tick" but renders fine on a "good tick" (the `@kampus/composer` read-only
+null-editor `TypeError`, #2593) slipped past the visual prohibitions and reached
+live. So the capture render **listens for page errors** across the whole
+navigation window (`page.on("pageerror" | "console")`, attached before `goto`) and
+returns them per surface as `pageErrors`. An uncaught exception (`kind:
+"pageerror"`) is a **hard FAIL** for the `review-design` gate; a `console.error` is
+**advisory** (dev console.error is noisy — React key/prop warnings — so failing on
+it would trip the gate on benign output). The pure decision core
+(`renderCrashFailure`) is unit-tested against the #2593 crash class; the `capture`
+bin also prints a `render FAILED — …` summary to stderr when any surface threw.
 
 ## The undocumented endpoint + the fallback (load-bearing)
 
