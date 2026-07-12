@@ -18,6 +18,29 @@ import {
 } from "@nkzw/fate/server";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import {brandedId} from "../../lib/ids.ts";
+
+/**
+ * A LiveDO connection id — the client's stream identity the connection role is
+ * addressed by (`connection:<connectionId>`). Branded distinctly from {@link EntityId}
+ * so the two live-protocol ids can't be transposed at a call site (they are both bare
+ * strings on the wire, and the LiveDO plays both the connection and topic roles).
+ * Type-only, so the SSE wire form decodes byte-identically. Shared brand idiom + the
+ * cross-feature `UserId` live in `lib/ids.ts` (epic #2700); the two ids branded here are
+ * fate-live-owned, so they stay feature-local.
+ */
+export const ConnectionId = brandedId("ConnectionId");
+export type ConnectionId = typeof ConnectionId.Type;
+
+/**
+ * A fate protocol entity id — fate's `isProtocolId` admits a string OR a number, so the
+ * brand is applied to the *union* (not a branded string with a discarded number arm):
+ * `(string | number) & Brand<"EntityId">` keeps both wire arms while staying nominally
+ * distinct from {@link ConnectionId}. Brand is type-only, so the union decodes/serializes
+ * byte-identically.
+ */
+export const EntityId = Schema.Union([Schema.String, Schema.Number]).pipe(Schema.brand("EntityId"));
+export type EntityId = typeof EntityId.Type;
 
 /**
  * The ONE source of every live topic name: the string is
@@ -171,8 +194,7 @@ const SubscribeOp = Schema.Struct({
 	id: Schema.String,
 	kind: Schema.Literal("subscribe"),
 	type: Schema.String,
-	// fate's `isProtocolId`: a string or number entity id.
-	entityId: Schema.Union([Schema.String, Schema.Number]),
+	entityId: EntityId,
 	args: OptionalArgs,
 	lastEventId: Schema.optional(Schema.String),
 	select: Schema.Array(Schema.String),
@@ -203,7 +225,7 @@ const LiveControlOperationSchema = Schema.Union([
 
 const LiveControlRequestSchema = Schema.Struct({
 	version: Schema.Literal(1),
-	connectionId: Schema.String,
+	connectionId: ConnectionId,
 	operations: Schema.Array(LiveControlOperationSchema),
 });
 
