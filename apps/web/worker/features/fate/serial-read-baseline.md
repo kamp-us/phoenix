@@ -19,21 +19,30 @@ rows:
 Each stamp is already batched (one `IN (…)` read per stamp for the whole page, never a
 per-row N+1) — the *phases* are serial, not the per-row reads. `stampReactionAggregate`
 (`reaction-aggregate.ts` → `Reaction.readAggregate`) issues **two** D1 reads — a per-target
-`GROUP BY count(*)` + the viewer's `readMine` — but they run concurrently inside one
-`Effect.all`, so the aggregate is **one serial phase / two round-trips**. `readMine`
-(`Vote.readMine`) and `getProfileIdentitiesByIds` (`Pasaport`) are one read each.
+`GROUP BY count(*)` + the viewer's `readMine`. They are wrapped in one `Effect.all([...])`
+**with no `concurrency` option**, so they run **sequentially on the critical path**: the
+aggregate is **two serial phases / two round-trips**, not one. `readMine` (`Vote.readMine`)
+and `getProfileIdentitiesByIds` (`Pasaport`) are one read each.
+
+The reaction aggregate's `Effect.all` is itself sequential because `concurrency` is never
+opted into — a factual property of the current code (`Reaction.ts` `readAggregate`) the
+collapse work (#2709/#2710) will address. Grounded in the pinned `effect` `4.0.0-beta.92`
+(catalog): `Effect.all` over a tuple is an iterable, so `all` delegates to `forEach`
+(`internal/effect.ts` `all` iterable branch, line 4272), whose default is
+`concurrency ?? 1` → `1` (line 4514) → `if (concurrency === 1) return forEachSequential(…)`
+(lines 4519–4520). Default execution is in-order/sequential; concurrency must be opted into.
 
 | Read | Serial phases (critical path) | D1 round-trips |
 |------|------|------|
-| `getDefinitionsByIds` / `getCommentsByIds` (by-id) | **4** — fetch → viewer-scalars → reaction-aggregate → author-identity | 5 (reaction phase issues 2 concurrent) |
-| `listDefinitionsKeyset` / `listCommentsKeyset` (connection, first page) | **5** — totalCount → fetch → viewer-scalars → reaction-aggregate → author-identity | 6 |
-| connection read with a cursor (`after` present) | **6** — adds the cursor-resolve read before fetch | 7 |
+| `getDefinitionsByIds` / `getCommentsByIds` (by-id) | **5** — fetch → viewer-scalars → reaction-aggregate (2 sequential reads) → author-identity | 5 |
+| `listDefinitionsKeyset` / `listCommentsKeyset` (connection, first page) | **6** — totalCount → fetch → viewer-scalars → reaction-aggregate (2 sequential reads) → author-identity | 6 |
+| connection read with a cursor (`after` present) | **7** — adds the cursor-resolve read before fetch | 7 |
 
 The **collapsible tail** is the three stamps (viewer-scalars → reaction-aggregate →
-author-identity): **3 serial phases the collapse folds into 1 concurrent wave**, so each
-read path drops **2 serial phases** (by-id 4 → 2; connection first-page 5 → 3). That 2-phase
-drop, not any absolute wall-time, is the placement-invariant number each collapse child
-proves its win against.
+author-identity), which are **4 serial phases** (the reaction stamp is two of them) that the
+collapse folds into **1 concurrent wave**, so each read path drops **3 serial phases**
+(by-id 5 → 2; connection first-page 6 → 3). That 3-phase drop, not any absolute wall-time,
+is the placement-invariant number each collapse child proves its win against.
 
 ## Wall-time baseline (method + numbers)
 
@@ -53,10 +62,10 @@ two read paths gives the pre-placement cross-region baseline:
 
 | Read | Serial phases | Baseline wall time (pre-placement, ~70–80 ms/phase) |
 |------|------|------|
-| sözlük by-id (`getDefinitionsByIds`) | 4 | ~280–320 ms |
-| sözlük connection first page (`listDefinitionsKeyset`) | 5 | ~350–400 ms |
-| pano by-id (`getCommentsByIds`) | 4 | ~280–320 ms |
-| pano connection first page (`listCommentsKeyset`) | 5 | ~350–400 ms |
+| sözlük by-id (`getDefinitionsByIds`) | 5 | ~350–400 ms |
+| sözlük connection first page (`listDefinitionsKeyset`) | 6 | ~420–480 ms |
+| pano by-id (`getCommentsByIds`) | 5 | ~350–400 ms |
+| pano connection first page (`listCommentsKeyset`) | 6 | ~420–480 ms |
 
 **Post-Smart-Placement caveat (ADR 0168).** The worker now runs co-located with the ENAM
 D1 primary (`index.ts` `placement: {mode: "smart"}`), so each hop is in-region and the
