@@ -32,6 +32,7 @@ import {
 	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
 	PHOENIX_OPTIMISTIC_EDITS,
 	PHOENIX_REACTIONS,
+	PHOENIX_SOZLUK_STAMP_WAVE,
 	PHOENIX_USER_BAN,
 } from "../../../src/flags/keys.ts";
 import {AUDIT_ENVIRONMENT} from "../../environment.ts";
@@ -894,3 +895,35 @@ export const NAV_IA_FLAG = {
  */
 export const navIaFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_nav_ia", {appId, ...NAV_IA_FLAG});
+
+/**
+ * The sözlük parallel-stamp-wave containment flag config (#2709, epic #2567).
+ * Default-OFF so the read-path collapse reaches production dark: with it off the
+ * sözlük definition reads run their stamp wave at `concurrency: 1` (serial, exactly
+ * today); flipping it on passes `"unbounded"` so the independent stamps fan out into
+ * one concurrent wave. Wire output is identical either way — only wall time changes.
+ * Flipping it on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `PANO_BASE_FEED_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           sözlük (the definition read path)
+ *   - originating:     #2709 (epic: collapse the serial stamp chain, #2567)
+ *   - removal trigger: once the wave graduates to on at 100% and stable for one
+ *                      release, retire the flag and inline `"unbounded"`.
+ */
+export const SOZLUK_STAMP_WAVE_FLAG = {
+	key: PHOENIX_SOZLUK_STAMP_WAVE,
+	description:
+		"sözlük parallel-stamp-wave read collapse dark-ship (#2709, epic #2567). owner: sözlük. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const sozlukStampWaveFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_sozluk_stamp_wave", {appId, ...SOZLUK_STAMP_WAVE_FLAG});

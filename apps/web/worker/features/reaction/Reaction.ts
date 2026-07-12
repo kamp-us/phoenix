@@ -32,6 +32,7 @@
  */
 import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
+import type {Concurrency} from "effect/Types";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {REACTION_EMOJI, type ReactionEmoji} from "../../db/reaction-emoji.ts";
@@ -130,11 +131,16 @@ export class Reaction extends Context.Service<
 		 * A target with no reactions is ABSENT from the map (the caller fills the empty
 		 * aggregate). Missing/empty `targetIds` short-circuits to an empty Map with no
 		 * read.
+		 *
+		 * The two reads (the `GROUP BY` tally + the viewer's `readMine`) are independent;
+		 * `options.concurrency` opts them into concurrent execution (`"unbounded"` for the
+		 * stamp-wave collapse, #2709). Absent ⇒ sequential, the unchanged default.
 		 */
 		readonly readAggregate: (
 			viewerId: string | null | undefined,
 			kind: TargetKind,
 			targetIds: ReadonlyArray<string>,
+			options?: {readonly concurrency?: Concurrency},
 		) => Effect.Effect<Map<string, ReactionAggregate>>;
 		/**
 		 * The single reaction-cleanup home for the removal substrate (ADR 0096 §3,
@@ -218,32 +224,39 @@ export const ReactionLive = Layer.effect(Reaction)(
 			viewerId: string | null | undefined,
 			kind: TargetKind,
 			targetIds: ReadonlyArray<string>,
+			options?: {readonly concurrency?: Concurrency},
 		) {
 			const out = new Map<string, ReactionAggregate>();
 			if (targetIds.length === 0) return out;
 
 			// One GROUP BY over the whole page — per (target, emoji) COUNT(*), served
 			// by the `user_reaction_target` index (schema.ts). Anonymous viewer's own
-			// reaction is `null` (readMine short-circuits with no read).
-			const [rows, mine] = yield* Effect.all([
-				run((db) =>
-					db
-						.select({
-							targetId: schema.userReaction.targetId,
-							emoji: schema.userReaction.emoji,
-							count: sql<number>`count(*)`,
-						})
-						.from(schema.userReaction)
-						.where(
-							and(
-								eq(schema.userReaction.targetKind, kind),
-								inArray(schema.userReaction.targetId, [...targetIds]),
-							),
-						)
-						.groupBy(schema.userReaction.targetId, schema.userReaction.emoji),
-				),
-				readMine(viewerId, kind, targetIds),
-			]);
+			// reaction is `null` (readMine short-circuits with no read). The two reads
+			// are independent; `Effect.all` runs them sequentially by default (effect's
+			// `concurrency ?? 1`), so `options.concurrency` is what collapses them into
+			// one wave phase for the #2709 stamp-wave — omitted ⇒ unchanged sequential.
+			const [rows, mine] = yield* Effect.all(
+				[
+					run((db) =>
+						db
+							.select({
+								targetId: schema.userReaction.targetId,
+								emoji: schema.userReaction.emoji,
+								count: sql<number>`count(*)`,
+							})
+							.from(schema.userReaction)
+							.where(
+								and(
+									eq(schema.userReaction.targetKind, kind),
+									inArray(schema.userReaction.targetId, [...targetIds]),
+								),
+							)
+							.groupBy(schema.userReaction.targetId, schema.userReaction.emoji),
+					),
+					readMine(viewerId, kind, targetIds),
+				],
+				{concurrency: options?.concurrency ?? 1},
+			);
 
 			// Fold the flat (target, emoji, count) rows into per-target count arrays.
 			const byTarget = new Map<string, ReactionCount[]>();

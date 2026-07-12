@@ -6,6 +6,9 @@
  * `E = never` — see `.patterns/fate-effect-sources.md`.
  */
 import {Fate} from "@kampus/fate-effect";
+import {PHOENIX_SOZLUK_STAMP_WAVE} from "../../../src/flags/keys.ts";
+import {Flags} from "../flagship/Flags.ts";
+import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {DefinitionView, TermView} from "./views.ts";
@@ -17,9 +20,16 @@ export const definitionSource = Fate.source(
 		byIds: function* (ids) {
 			const sozluk = yield* Sozluk;
 			const sandboxViewer = yield* currentSandboxViewer;
+			// The read-path collapse is contained behind its default-off flag (#2709): off ⇒
+			// the stamps run serially (today), on ⇒ one concurrent wave. Same wire output.
+			const flags = yield* Flags;
+			const parallelStamps = yield* flags
+				.getBoolean(PHOENIX_SOZLUK_STAMP_WAVE, false)
+				.pipe(provideRequestFlags);
 			return yield* sozluk.getDefinitionsByIds(ids, {
 				viewerId: sandboxViewer.viewerId,
 				sandboxViewer,
+				parallelStamps,
 			});
 		},
 	},
