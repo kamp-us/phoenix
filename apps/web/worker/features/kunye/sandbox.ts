@@ -22,7 +22,7 @@
 
 import {CurrentUser} from "@kampus/fate-effect";
 import type {RuntimeContext} from "alchemy";
-import {Effect} from "effect";
+import {Brand, Effect} from "effect";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags, type RequestFlagOverrides} from "../flagship/FlagsContext.ts";
@@ -75,13 +75,6 @@ export const currentSandboxViewer = Effect.gen(function* () {
 	return {viewerId: user?.id ?? null, canSeeSandboxed} satisfies SandboxViewer;
 });
 
-// The brand makes `PublishDecision` opaque: a value with the phantom `never`
-// property is unconstructible outside this module, so the only way to obtain one is
-// `decidePublish` or `alwaysLive` below. A node-broadcasting publish requires one
-// (`live.ts`), so omitting the sandbox check is a missing-argument compile error,
-// not a code-review catch — the #1280 hardening.
-declare const PublishDecisionBrand: unique symbol;
-
 /**
  * Whether a brand-new content node may be broadcast to a public (viewer-blind)
  * fate-live topic. The type-level form of the #1205 gate: every node-broadcasting
@@ -89,14 +82,22 @@ declare const PublishDecisionBrand: unique symbol;
  * it is constructible ONLY from {@link decidePublish} (the sandbox-gated create path)
  * or {@link alwaysLive} (the explicit always-Live escape hatch). So a future create
  * mutation cannot broadcast a node without first discharging the sandbox check —
- * ADR 0107's make-the-mistake-untypeable, applied here.
+ * ADR 0107's make-the-mistake-untypeable, applied here (the #1280 hardening).
+ *
+ * Branded via effect-smol's standard `Brand` vocabulary (`Brand.Branded`, grounded
+ * in effect-smol `Brand.ts`) — NOT a hand-rolled `unique symbol` phantom. The brand
+ * is type-only: a `PublishDecision` is byte-identical to `{broadcast}` at runtime,
+ * nominal only at the type level. Unconstructibility rests on the private
+ * {@link makePublishDecision} constructor below staying module-local, so
+ * {@link decidePublish} / {@link alwaysLive} remain the only exported constructors.
  */
-export interface PublishDecision {
-	readonly broadcast: boolean;
-	readonly [PublishDecisionBrand]: never;
-}
+export type PublishDecision = Brand.Branded<{readonly broadcast: boolean}, "PublishDecision">;
 
-const branded = (broadcast: boolean): PublishDecision => ({broadcast}) as PublishDecision;
+// `Brand.nominal` is the type-only constructor, kept PRIVATE so the module retains the
+// only two exported ways to mint a `PublishDecision` (decidePublish / alwaysLive). It
+// applies no runtime check (per effect-smol `Brand.ts`) — it returns its input.
+const makePublishDecision = Brand.nominal<PublishDecision>();
+const branded = (broadcast: boolean): PublishDecision => makePublishDecision({broadcast});
 
 /**
  * The sandbox-gated decision a create path discharges: broadcast iff the new row is
