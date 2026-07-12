@@ -1,0 +1,79 @@
+/* Flags console module (#2742). Role tokens only; the toggle controls carry the 36px hit-area
+   floor (design law pillar 4). */
+
+.kp-flags {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.kp-flags__intro {
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+}
+
+.kp-flags__list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.kp-flags__row {
+	list-style: none;
+}
+
+/* The fieldset groups a flag's controls (its <legend> is the key); reset its default chrome. */
+.kp-flags__group {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-2);
+	margin: 0;
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	background: var(--surface-raised);
+}
+
+.kp-flags__legend {
+	padding: 0;
+}
+
+.kp-flags__meta {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.kp-flags__key {
+	color: var(--text-primary);
+	font: var(--t-body-sm);
+	font-weight: 600;
+}
+
+.kp-flags__default,
+.kp-flags__override,
+.kp-flags__effective {
+	color: var(--text-muted);
+	font: var(--t-meta);
+}
+
+.kp-flags__actions {
+	display: flex;
+	gap: var(--s-1);
+}
+
+/* Design law pillar 4: the 36px minimum hit area, from the --tap-min floor token. */
+.kp-flags__btn {
+	min-height: var(--tap-min);
+	min-width: var(--tap-min);
+}
+
+.kp-flags__message {
+	color: var(--text-primary);
+	font: var(--t-body-sm);
+}
