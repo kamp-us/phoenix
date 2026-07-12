@@ -387,7 +387,14 @@ export const ReportLive = Layer.effect(Report)(
 			// machine (open → resolved/removed | dismissed/dismissed); the `status='open'`
 			// WHERE guard below is the SQL-level counterpart that makes the transition
 			// apply only to open rows.
-			const {status, resolution} = Resolution.resolve("open", input.action);
+			// The machine now returns the transition as a typed `Result` so a bad source
+			// status surfaces in the type, never a bare throw/defect-500 (#2560). Here the
+			// source is the hardcoded-legal `"open"`, so the `Result` is always a success;
+			// `orDie` discharges the impossible `IllegalTransition` as a defect — it can only
+			// fire if this `"open"` literal is ever changed to a non-open source.
+			const {status, resolution} = yield* Effect.orDie(
+				Effect.fromResult(Resolution.resolve("open", input.action)),
+			);
 			const result = yield* run((db) =>
 				db
 					.update(schema.contentReport)
@@ -418,16 +425,20 @@ export const ReportLive = Layer.effect(Report)(
 			targetKind: TargetKind;
 			targetId: string;
 		}) {
+			// The target status AND the terminal-source guard are decided by the state
+			// machine (terminal → open); the SQL guard below is the counterpart that
+			// applies the reopen only to terminal rows. The machine returns a typed `Result`
+			// (#2560); the hardcoded-terminal `"resolved"` source is always legal, so `orDie`
+			// discharges the impossible `IllegalTransition` — reachable only if this literal
+			// is later changed to a non-terminal source.
+			const status = yield* Effect.orDie(Effect.fromResult(Resolution.reopen("resolved")));
 			const result = yield* run((db) =>
 				db
 					.update(schema.contentReport)
 					// Clearing `waveId` too keeps the invariant: an OPEN report never carries
 					// a stale wave grouping (#1855).
 					.set({
-						// The target status AND the terminal-source guard are decided by the
-						// state machine (terminal → open); the SQL guard below is the
-						// counterpart that applies the reopen only to terminal rows.
-						status: Resolution.reopen("resolved"),
+						status,
 						resolverId: null,
 						resolvedAt: null,
 						resolution: null,
@@ -446,11 +457,15 @@ export const ReportLive = Layer.effect(Report)(
 		});
 
 		const reopenForWave = Effect.fn("Report.reopenForWave")(function* (waveId: string) {
+			// Reopen is a machine transition (terminal → open). The machine returns a typed
+			// `Result` (#2560); the hardcoded-terminal `"resolved"` source is always legal, so
+			// `orDie` discharges the impossible `IllegalTransition` (see `reopenForTarget`).
+			const status = yield* Effect.orDie(Effect.fromResult(Resolution.reopen("resolved")));
 			const result = yield* run((db) =>
 				db
 					.update(schema.contentReport)
 					.set({
-						status: Resolution.reopen("resolved"),
+						status,
 						resolverId: null,
 						resolvedAt: null,
 						resolution: null,
