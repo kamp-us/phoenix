@@ -33,8 +33,15 @@ export function createComposerHandle(editor: Editor): ComposerHandle {
 		getMarkdown: () => editor.getMarkdown(),
 		// Default the content type to "markdown" — the only value v1 accepts — so a bare
 		// setContent(md) is the common path and an explicit contentType stays type-checked.
-		setContent: (markdown, options) =>
-			editor.commands.setContent(markdown, {contentType: options?.contentType ?? "markdown"}),
+		// No-op once the editor is torn down: tiptap's `destroy()` nulls `commandManager`, so the
+		// `editor.commands` getter throws `Cannot read properties of null (reading 'commands')` — a
+		// stale re-seed after a StrictMode/remount teardown hit exactly that and hard-crashed the
+		// read-only mecmua reader (#2593). `isDestroyed` is the readiness signal safe to read
+		// post-teardown; gating here fixes every consumer of setContent, not just one call site.
+		setContent: (markdown, options) => {
+			if (editor.isDestroyed) return;
+			editor.commands.setContent(markdown, {contentType: options?.contentType ?? "markdown"});
+		},
 		toJSON: () => editor.getJSON(),
 	};
 }
