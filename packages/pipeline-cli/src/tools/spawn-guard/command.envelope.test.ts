@@ -50,6 +50,19 @@ describe("spawn-guard guard CLI — PreToolUse envelope", () => {
 		assert.notProperty(out.hookSpecificOutput, "updatedInput");
 	}, 30_000);
 
+	it("ALLOWS an explicit `opus` harness alias — the model param the caller actually passes (#2565)", async () => {
+		const {stdout} = await run(["guard"], envelope("opus"));
+		const out = JSON.parse(stdout);
+		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
+		assert.notProperty(out.hookSpecificOutput, "updatedInput");
+	}, 30_000);
+
+	it("DENIES an off-family alias (`sonnet`) — fail-closed on the caller's vocabulary too (ADR 0092)", async () => {
+		const {stdout} = await run(["guard"], envelope("sonnet"));
+		const out = JSON.parse(stdout);
+		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "deny");
+	}, 30_000);
+
 	it("DENIES an off-allowlist model with no pin and emits what it checked (ADR 0092)", async () => {
 		const {stdout} = await run(["guard"], envelope("claude-fable-5"));
 		const out = JSON.parse(stdout);

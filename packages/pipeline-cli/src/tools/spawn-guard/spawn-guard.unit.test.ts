@@ -1,10 +1,12 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
 	ALLOWLIST,
+	canonicalModel,
 	DEFAULT_PIN,
 	decideSpawn,
 	formatSessionCost,
 	isOnAllowlist,
+	MODEL_ALIASES,
 } from "./spawn-guard.ts";
 
 describe("isOnAllowlist — only the opus-4.8 family", () => {
@@ -33,6 +35,53 @@ describe("isOnAllowlist — only the opus-4.8 family", () => {
 		assert.isFalse(isOnAllowlist(undefined));
 		assert.isFalse(isOnAllowlist(""));
 		assert.isFalse(isOnAllowlist("   "));
+	});
+
+	it("accepts the harness aliases the caller actually passes (opus / opus[1m], #2565)", () => {
+		assert.isTrue(isOnAllowlist("opus"));
+		assert.isTrue(isOnAllowlist("opus[1m]"));
+		assert.isTrue(isOnAllowlist("  opus  ")); // still trimmed before alias resolution
+	});
+
+	it("rejects off-family aliases — sonnet / haiku have no allowlist mapping (ADR 0092)", () => {
+		assert.isFalse(isOnAllowlist("sonnet"));
+		assert.isFalse(isOnAllowlist("haiku"));
+		assert.isFalse(isOnAllowlist("fable-5"));
+		assert.isFalse(isOnAllowlist("opusplan"));
+	});
+});
+
+describe("canonicalModel — harness alias → canonical id resolution", () => {
+	it("maps the opus-family aliases to their canonical ids", () => {
+		assert.strictEqual(canonicalModel("opus"), "claude-opus-4-8");
+		assert.strictEqual(canonicalModel("opus[1m]"), "claude-opus-4-8[1m]");
+	});
+
+	it("passes a canonical id through unchanged (idempotent — no double mapping)", () => {
+		assert.strictEqual(canonicalModel("claude-opus-4-8"), "claude-opus-4-8");
+		assert.strictEqual(canonicalModel("claude-opus-4-8[1m]"), "claude-opus-4-8[1m]");
+	});
+
+	it("passes an unknown value through unchanged (the allowlist check then denies it)", () => {
+		assert.strictEqual(canonicalModel("sonnet"), "sonnet");
+		assert.strictEqual(canonicalModel("garbage"), "garbage");
+	});
+
+	it("normalizes null / empty / whitespace to null", () => {
+		assert.strictEqual(canonicalModel(null), null);
+		assert.strictEqual(canonicalModel(undefined), null);
+		assert.strictEqual(canonicalModel(""), null);
+		assert.strictEqual(canonicalModel("   "), null);
+	});
+
+	it("maps only the opus-4.8 family — every alias target is on the allowlist", () => {
+		assert.deepStrictEqual(MODEL_ALIASES, {
+			opus: "claude-opus-4-8",
+			"opus[1m]": "claude-opus-4-8[1m]",
+		});
+		for (const canonical of Object.values(MODEL_ALIASES)) {
+			assert.isTrue(ALLOWLIST.includes(canonical));
+		}
 	});
 });
 
@@ -123,6 +172,40 @@ describe("decideSpawn — allowlist guard (allow / allow-inherit / deny)", () =>
 
 	it("the allowlist is exactly the opus-4.8 family", () => {
 		assert.deepStrictEqual([...ALLOWLIST], ["claude-opus-4-8", "claude-opus-4-8[1m]"]);
+	});
+
+	it("ALLOWS an explicit `opus` alias spawn — the family the allowlist exists to permit (#2565)", () => {
+		const d = decideSpawn("opus", null);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("ALLOWS the explicit `opus[1m]` alias spawn (the 1m variant, #2565)", () => {
+		const d = decideSpawn("opus[1m]", null);
+		assert.strictEqual(d.kind, "allow");
+	});
+
+	it("does NOT rewrite an alias request to the full pin id — the allow carries the raw request (#776)", () => {
+		// The Task tool rejects the full id `claude-opus-4-8[1m]`, so the decision must never
+		// surface it as a rewrite; the allow echoes what the caller asked (`opus[1m]`), not the
+		// canonical id the allowlist check resolved internally.
+		const d = decideSpawn("opus[1m]", null);
+		assert.strictEqual(d.kind === "allow" ? d.model : "", "opus[1m]");
+		assert.notStrictEqual(d.kind === "allow" ? d.model : "", "claude-opus-4-8[1m]");
+	});
+
+	it("DENIES off-family aliases (sonnet / haiku / fable-5 / garbage) — fail-closed preserved (ADR 0092)", () => {
+		for (const alias of ["sonnet", "haiku", "fable-5", "opusplan", "not-a-model"]) {
+			const d = decideSpawn(alias, null);
+			assert.strictEqual(d.kind, "deny", `expected ${alias} to deny`);
+			// The absent env pin defaults to the valid DEFAULT_PIN, so an off-family REQUEST is the
+			// explicit-off-allowlist deny (the pin can't override it, #776) — not the no-valid-pin one.
+			assert.strictEqual(d.kind === "deny" ? d.explicitOffAllowlist : false, true);
+		}
+	});
+
+	it("an unset request still resolves to allow-inherit — alias support is request-only (ADR 0116 unchanged)", () => {
+		const d = decideSpawn(null, null);
+		assert.strictEqual(d.kind, "allow-inherit");
 	});
 });
 
