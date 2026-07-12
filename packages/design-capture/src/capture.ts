@@ -17,7 +17,8 @@
 import {mkdir, writeFile} from "node:fs/promises";
 import {join} from "node:path";
 import {chromium} from "@playwright/test";
-import {Data, Effect} from "effect";
+import {Effect} from "effect";
+import * as Schema from "effect/Schema";
 import type {Shot} from "./plan.ts";
 
 /** The captured bytes + on-disk path for one surface. */
@@ -33,10 +34,13 @@ export interface CapturedSurface {
 }
 
 /** A Playwright launch/navigation/screenshot/write failure — surfaced, never swallowed. */
-export class CaptureError extends Data.TaggedError("CaptureError")<{
-	readonly message: string;
-	readonly cause?: unknown;
-}> {}
+export class CaptureError extends Schema.TaggedErrorClass<CaptureError>()(
+	"@kampus/design-capture/CaptureError",
+	{
+		message: Schema.String,
+		cause: Schema.optional(Schema.Unknown),
+	},
+) {}
 
 export interface CaptureOptions {
 	/** Per-navigation timeout in ms (default 30s). */
@@ -100,6 +104,10 @@ export const captureShots = (
 					}),
 				{concurrency: 1},
 			),
-		(browser) => Effect.promise(() => browser.close()),
+		(browser) =>
+			Effect.tryPromise({
+				try: () => browser.close(),
+				catch: (cause) => new CaptureError({message: "failed to close chromium", cause}),
+			}),
 	);
 };

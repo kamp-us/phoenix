@@ -150,14 +150,10 @@ const resolveD1DatabaseId = (
 	});
 
 const parseJson = (phase: StagePhase, raw: string): Effect.Effect<unknown, StageLifecycleError> =>
-	Effect.suspend(() => {
-		try {
-			return Effect.succeed(JSON.parse(raw) as unknown);
-		} catch (cause) {
-			return Effect.fail(
-				new StageLifecycleError({phase, message: `expected JSON but got: ${String(cause)}`}),
-			);
-		}
+	Effect.try({
+		try: () => JSON.parse(raw) as unknown,
+		catch: (cause) =>
+			new StageLifecycleError({phase, message: `expected JSON but got: ${String(cause)}`}),
 	});
 
 // Pick the uuid of the first D1 whose name carries the stage prefix, tolerating the CF

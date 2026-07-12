@@ -12,6 +12,7 @@
 import type {Credentials} from "@distilled.cloud/cloudflare/Credentials";
 import {makeD1Rest} from "@kampus/d1-rest";
 import {Config, Console, Effect, type Layer, Option} from "effect";
+import * as Schema from "effect/Schema";
 import {Command, Flag} from "effect/unstable/cli";
 import type {HttpClient} from "effect/unstable/http/HttpClient";
 import {
@@ -41,6 +42,15 @@ const confirmFlag = Flag.string("confirm").pipe(
 
 const accountId = Config.string("CLOUDFLARE_ACCOUNT_ID");
 
+/** A D1 REST scan/scrub query rejected — keeps the failure in `E`, never a swallowed defect. */
+export class ScrubDbError extends Schema.TaggedErrorClass<ScrubDbError>()(
+	"@kampus/cf-utils/ScrubDbError",
+	{
+		op: Schema.Literals(["scan", "scrub"]),
+		cause: Schema.Unknown,
+	},
+) {}
+
 /**
  * `scrub-author-email` — the one destructive verb. It runs the dry-run scan first ALWAYS (so a
  * founder sees the per-table counts before any write), then consults the pure confirm-gate: a
@@ -62,7 +72,10 @@ export const makeScrubCommand = (restLayer: Layer.Layer<Credentials | HttpClient
 			const db = makeScrubDb(makeD1Rest({accountId: account, databaseId, layer: restLayer}));
 
 			// The dry-run scan runs ALWAYS — the count-only report a founder reads before any write.
-			const affected = yield* Effect.promise(() => scanAffected(db));
+			const affected = yield* Effect.tryPromise({
+				try: () => scanAffected(db),
+				catch: (cause) => new ScrubDbError({op: "scan", cause}),
+			});
 			yield* Console.log(renderDryRun(affected));
 
 			const decision = decideWrite({
@@ -81,7 +94,10 @@ export const makeScrubCommand = (restLayer: Layer.Layer<Credentials | HttpClient
 			}
 
 			// Gate authorized (--execute + --confirm scrub-author-email) and there ARE rows: rewrite.
-			const scrubbed = yield* Effect.promise(() => scrubEmails(db));
+			const scrubbed = yield* Effect.tryPromise({
+				try: () => scrubEmails(db),
+				catch: (cause) => new ScrubDbError({op: "scrub", cause}),
+			});
 			yield* Console.log(renderScrubbed(scrubbed));
 		}),
 	).pipe(

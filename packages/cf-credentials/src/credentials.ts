@@ -18,7 +18,8 @@ import {
 } from "@distilled.cloud/cloudflare/Credentials";
 import {ConfigError} from "@distilled.cloud/cloudflare/Errors";
 import * as flagship from "@distilled.cloud/cloudflare/flagship";
-import {ConfigProvider, Data, Effect, Layer, Stream} from "effect";
+import {ConfigProvider, Effect, Layer, Stream} from "effect";
+import * as Schema from "effect/Schema";
 import type {HttpClient} from "effect/unstable/http/HttpClient";
 import {ACCOUNT_ID_ACCOUNT, API_TOKEN_ACCOUNT, Keychain} from "./keychain.ts";
 
@@ -100,9 +101,12 @@ export const credentialSources: Effect.Effect<CredentialSources, never, Keychain
 );
 
 /** The pasted credentials failed the pre-persist validating read. Nothing was stored. */
-export class CredentialValidationFailed extends Data.TaggedError("CredentialValidationFailed")<{
-	readonly reason: string;
-}> {
+export class CredentialValidationFailed extends Schema.TaggedErrorClass<CredentialValidationFailed>()(
+	"@kampus/cf-credentials/CredentialValidationFailed",
+	{
+		reason: Schema.String,
+	},
+) {
 	override get message(): string {
 		return `credential validation failed — nothing was stored: ${this.reason}`;
 	}

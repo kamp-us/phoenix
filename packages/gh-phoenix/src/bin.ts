@@ -25,7 +25,8 @@
 import {spawnSync} from "node:child_process";
 import {readFileSync} from "node:fs";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Console, Data, Effect} from "effect";
+import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {Argument, Command} from "effect/unstable/cli";
 import {isZeroScope, lintCorpus, type ScanFile} from "./lint.ts";
 import {fileExists, resolveRealGh, resolveRepo} from "./resolve.ts";
@@ -74,16 +75,14 @@ const runShim = (argv: ReadonlyArray<string>): never => {
 
 // ── The `lint-skills` subcommand (the Effect CLI surface) ──────────────────────
 
-class FindingsFound extends Data.TaggedError("FindingsFound")<{readonly count: number}> {}
-class ZeroScope extends Data.TaggedError("ZeroScope")<{}> {}
+class FindingsFound extends Schema.TaggedErrorClass<FindingsFound>()(
+	"@kampus/gh-phoenix/FindingsFound",
+	{count: Schema.Number},
+) {}
+class ZeroScope extends Schema.TaggedErrorClass<ZeroScope>()("@kampus/gh-phoenix/ZeroScope", {}) {}
 
-const readFileOrSkip = (file: string): string | null => {
-	try {
-		return readFileSync(file, "utf8");
-	} catch {
-		return null;
-	}
-};
+const readFileOrSkip = (file: string): Effect.Effect<string | null> =>
+	Effect.try(() => readFileSync(file, "utf8")).pipe(Effect.orElseSucceed(() => null));
 
 const fileArg = Argument.string("file").pipe(
 	Argument.atLeast(1),
@@ -98,7 +97,7 @@ const lintSkills = Command.make(
 	Effect.fn(function* ({files}) {
 		const scanInput: ScanFile[] = [];
 		for (const file of files) {
-			const content = readFileOrSkip(file);
+			const content = yield* readFileOrSkip(file);
 			if (content !== null) scanInput.push({file, content});
 		}
 
@@ -171,8 +170,12 @@ if (sub !== undefined && sub !== "lint-skills" && !sub.startsWith("-")) {
 } else {
 	cli.pipe(
 		Command.run({version: "0.0.0"}),
-		Effect.catchTag("ZeroScope", () => Effect.sync(() => process.exit(ZERO_SCOPE_EXIT_CODE))),
-		Effect.catchTag("FindingsFound", () => Effect.sync(() => process.exit(FINDING_EXIT_CODE))),
+		Effect.catchTag("@kampus/gh-phoenix/ZeroScope", () =>
+			Effect.sync(() => process.exit(ZERO_SCOPE_EXIT_CODE)),
+		),
+		Effect.catchTag("@kampus/gh-phoenix/FindingsFound", () =>
+			Effect.sync(() => process.exit(FINDING_EXIT_CODE)),
+		),
 		Effect.provide(NodeServices.layer),
 		NodeRuntime.runMain,
 	);
