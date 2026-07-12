@@ -52,7 +52,7 @@
 .kp-toggle-group--segmented .kp-toggle {
 	/* min-height keeps the ≥36px hit area decoupled from the --t-meta glyph — the base
 	   .kp-toggle flex-centers, so the box pads up to the floor without inflating type (ADR 0162 §Tap target). */
-	min-height: 36px;
+	min-height: var(--tap-min);
 	border-radius: var(--r-sm);
 	padding: 3px var(--s-2);
 	font: var(--t-meta);

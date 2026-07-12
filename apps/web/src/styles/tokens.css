@@ -526,6 +526,10 @@
 
 	--content-w: 980px;
 
+	/* Density-invariant tap-target floor — a minimum hit area holds regardless of density,
+	   so it lives here, not on the scaled --s-N ramp (ADR 0162 §Tap target). */
+	--tap-min: 36px;
+
 	/* density — compact (default) */
 	--s-1: 4px;
 	--s-2: 8px;
