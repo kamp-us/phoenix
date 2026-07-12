@@ -1,3 +1,29 @@
+diff --git a/bin/exec.js b/bin/exec.js
+index e23fa78794661504bbd4ae48457b37c3a2a094d1..31aca3fb0b20f668239a7a7e6c56afa39c0d396d 100644
+--- a/bin/exec.js
++++ b/bin/exec.js
+@@ -9,6 +9,7 @@ import * as Path$1 from "effect/Path";
+ import { Path } from "effect/Path";
+ import * as Redacted from "effect/Redacted";
+ import path from "pathe";
++import { pathToFileURL } from "node:url";
+ import * as Config from "effect/Config";
+ import os from "node:os";
+ import * as Semaphore from "effect/Semaphore";
+@@ -2688,7 +2689,12 @@ const printProfile = Effect.fn(function* (profile$1, stored, registry) {
+ });
+ const importStack = Effect.fn(function* (main) {
+ 	const path$1 = yield* Path$1.Path;
+-	const url = import.meta.resolve(path$1.resolve(main));
++	// phoenix in-repo patch (ADR 0038, #2634): pathToFileURL, not
++	// import.meta.resolve — a Windows absolute path (C:\...) makes resolve
++	// mis-read the drive letter as a URL scheme, so import() gets a c:-scheme
++	// URL the ESM loader rejects. pathToFileURL yields a valid file:// URL on
++	// both Windows and POSIX (identical to resolve's output on POSIX).
++	const url = pathToFileURL(path$1.resolve(main)).href;
+ 	const stackEffect = (yield* Effect.promise(() => import(__rewriteRelativeImportExtension(url)))).default;
+ 	if (!Effect.isEffect(stackEffect)) return yield* Effect.die(/* @__PURE__ */ new Error(`Main file '${main}' must export a default stack definition (export default Alchemy.Stack({...}))`));
+ 	return stackEffect;
 diff --git a/lib/Cloudflare/Flagship/Flag.js b/lib/Cloudflare/Flagship/Flag.js
 index 7de47700579646b223752697256ea351f4532a69..b5eee14cc9948af0ae34480301cdb3a0b3f1c402 100644
 --- a/lib/Cloudflare/Flagship/Flag.js
