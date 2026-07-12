@@ -5,16 +5,20 @@
  * #855). `command.ts` wires this effect to the Effect CLI and maps the failures to
  * the non-zero gate exit; the exit-code contract lives there.
  *
- * The gate reads the canonical `CONTROL_PLANE_RE` from `gh-issue-intake-formats.md`
- * (the SINGLE source — never a re-hardcoded copy) + `.github/CODEOWNERS`, derives
- * the §CP path set from the regex, and fails when any §CP path has no covering
- * CODEOWNERS row. It is fail-closed (ADR 0092): a missing/unreadable source, a regex
- * it cannot parse, a CODEOWNERS with zero owned entries, OR a regex that resolves to
- * ZERO §CP paths all FAIL — only a fully-covered, non-empty §CP set passes.
+ * The §CP boundary is the single-source const `CONTROL_PLANE_RE` in
+ * `control-plane-paths/control-plane-re.ts` (issue #2761). The gate derives the §CP
+ * path set from THAT const, and also reads the `CONTROL_PLANE_RE=` line the live gates
+ * consume from `gh-issue-intake-formats.md` and fails if it has drifted from the const —
+ * so this job doubles as the unconditional const↔formats-doc drift guard (the un-importable
+ * prose surface). It then fails when any §CP path has no covering `.github/CODEOWNERS` row.
+ * Fail-closed (ADR 0092): a missing/unreadable source, a formats line it cannot parse, a
+ * formats line that has drifted from the const, a CODEOWNERS with zero owned entries, OR a
+ * const that resolves to ZERO §CP paths all FAIL — only a fully-covered, in-sync §CP set passes.
  */
 import {existsSync, readFileSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
 import {Console, Data, Effect} from "effect";
+import {CONTROL_PLANE_RE} from "../control-plane-paths/control-plane-re.ts";
 import {
 	type CpPath,
 	cpPaths,
@@ -63,7 +67,21 @@ export const checkCodeownersCp = (root: string): Effect.Effect<void, IoError | C
 			);
 		}
 
-		const paths = cpPaths(re);
+		// Drift guard for the un-importable prose surface: the live merge-deciding gates read
+		// CONTROL_PLANE_RE from this formats line on origin/main (#981), so it must stay byte-equal
+		// to the single-source const. Fail-closed on any divergence (#2761).
+		if (re !== CONTROL_PLANE_RE) {
+			return yield* Effect.fail(
+				new CheckFailed({
+					reason:
+						`CONTROL_PLANE_RE in ${FORMATS_PATH} has drifted from the pipeline-cli single-source const ` +
+						`(control-plane-paths/control-plane-re.ts) — the two must match (#2761). Re-sync the formats line ` +
+						`to \`pipeline-cli control-plane-paths\`.\n  const:   ${CONTROL_PLANE_RE}\n  formats: ${re}`,
+				}),
+			);
+		}
+
+		const paths = cpPaths(CONTROL_PLANE_RE);
 		if (paths.length === 0) {
 			return yield* Effect.fail(
 				new CheckFailed({
