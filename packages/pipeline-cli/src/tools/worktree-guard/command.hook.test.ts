@@ -1,5 +1,5 @@
 import {execFile, execFileSync} from "node:child_process";
-import {existsSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
+import {existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -125,6 +125,21 @@ describe("worktree-guard reap — SubagentStop reaper against a REAL git worktre
 	const git = (cwd: string, ...args: string[]) =>
 		execFileSync("git", ["-C", cwd, ...args], {encoding: "utf8"});
 
+	// The #2798 owner signal lives in the payload: `transcript_path` points at the stopping agent's
+	// transcript, whose sibling `.meta.json` records the worktree that agent OWNS. Build that sidecar
+	// so a reap invocation carries a real owner (or nested-descendant) stop payload.
+	const ownerStopPayload = (owningWorktree: string, slug: string) => {
+		const subDir = join(mainRepo, "subagents");
+		mkdirSync(subDir, {recursive: true});
+		const transcript = join(subDir, `${slug}.jsonl`);
+		writeFileSync(transcript, "");
+		writeFileSync(
+			join(subDir, `${slug}.meta.json`),
+			JSON.stringify({worktreePath: owningWorktree}),
+		);
+		return {hook_event_name: "SubagentStop", transcript_path: transcript};
+	};
+
 	beforeAll(() => {
 		// A real main checkout with a worktree under the managed .claude/worktrees layout.
 		mainRepo = mkdtempSync(join(tmpdir(), "wtg-main-"));
@@ -144,18 +159,35 @@ describe("worktree-guard reap — SubagentStop reaper against a REAL git worktre
 		rmSync(mainRepo, {recursive: true, force: true});
 	});
 
-	it("REAPS a clean worktree (it is removed)", async () => {
+	it("REAPS a clean worktree under an OWNER stop payload (it is removed)", async () => {
 		assert.isTrue(existsSync(wtRoot));
-		const {stderr} = await run("reap", {hook_event_name: "SubagentStop"}, {WORKTREE_ROOT: wtRoot});
+		const {stderr} = await run("reap", ownerStopPayload(wtRoot, "agent-owner"), {
+			WORKTREE_ROOT: wtRoot,
+		});
 		assert.include(stderr, "reaped clean worktree");
 		assert.isFalse(existsSync(wtRoot));
 	}, 30_000);
 
-	it("REFUSES (keeps) a dirty worktree — never --force", async () => {
+	it("KEEPS a live worktree on a NESTED-DESCENDANT stop (inherited $WORKTREE_ROOT, owns another tree)", async () => {
+		const liveWt = join(mainRepo, ".claude", "worktrees", "wf_live");
+		git(mainRepo, "worktree", "add", "-q", "--detach", liveWt, "HEAD");
+		// The nested child owns a DIFFERENT worktree; it only inherited WORKTREE_ROOT=liveWt.
+		const {stderr} = await run(
+			"reap",
+			ownerStopPayload("/some/other/.claude/worktrees/wf_child", "agent-child"),
+			{WORKTREE_ROOT: liveWt},
+		);
+		assert.match(stderr, /does not own|KEEP/);
+		assert.isTrue(existsSync(liveWt), "a live parent's worktree must survive a nested-child stop");
+	}, 30_000);
+
+	it("REFUSES (keeps) a dirty worktree — never --force (under an owner stop)", async () => {
 		const dirtyWt = join(mainRepo, ".claude", "worktrees", "wf_dirty");
 		git(mainRepo, "worktree", "add", "-q", "--detach", dirtyWt, "HEAD");
 		writeFileSync(join(dirtyWt, "uncommitted.txt"), "unpushed work");
-		const {stderr} = await run("reap", {hook_event_name: "SubagentStop"}, {WORKTREE_ROOT: dirtyWt});
+		const {stderr} = await run("reap", ownerStopPayload(dirtyWt, "agent-dirty"), {
+			WORKTREE_ROOT: dirtyWt,
+		});
 		assert.include(stderr, "KEPT");
 		assert.isTrue(existsSync(dirtyWt), "dirty worktree must be kept");
 		assert.isTrue(existsSync(join(dirtyWt, "uncommitted.txt")), "unpushed file must survive");
