@@ -1,9 +1,11 @@
+import {Bell, Gavel} from "lucide-react";
 import type * as React from "react";
 import {useEffect, useRef} from "react";
 import {Link, NavLink, useNavigate} from "react-router";
 import {isSearchShortcut} from "../../lib/searchShortcut";
 import type {ThemeChoice} from "../../lib/theme";
 import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
+import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
 import {Avatar} from "../ui/Avatar";
 import {Menu} from "../ui/Menu";
@@ -52,7 +54,8 @@ export function Topbar({
 	 * The bildirim entry (#1694). Rendered only when set — the Layout passes it
 	 * solely when the `phoenix-bildirim` flag is on AND the viewer is signed in,
 	 * so with the flag off (the dark default) the topbar is exactly as before.
-	 * The unread chip on the trigger renders only when `unread > 0` (the AC).
+	 * The unread signal renders only when `unread > 0`: the bare chip on the
+	 * user-menu trigger with nav-IA off, the status-zone bell with it on (#2613).
 	 */
 	bildirim?: {to: string; unread: number};
 	actions?: React.ReactNode;
@@ -128,18 +131,21 @@ export function Topbar({
 			{n.label}
 		</NavLink>
 	));
-	// Under the zone grammar divan leaves `.kp-topbar__nav`, so it carries
-	// `kp-topbar__signal-link` to keep the nav-link treatment (grouped in the CSS). Off,
-	// it stays inside the nav and needs no class — omitting it keeps the flag-off DOM
-	// byte-identical to today (`undefined` renders no `class` attribute).
+	// Under the zone grammar divan is a status/signal glyph (#2613): a gated signal, not a
+	// peer product noun, so it leaves `.kp-topbar__nav` for the status zone and reads as the
+	// canonical Gavel icon (ADR 0166) with an accessible "divan" name, keeping the
+	// `kp-topbar__signal-link` treatment (grouped in the CSS). Off, it stays the plain text
+	// nav entry with no class — keeping the flag-off DOM byte-identical to today.
 	const divanLink = divanTo ? (
 		<NavLink
 			key={divanTo}
 			to={divanTo}
 			data-testid="topbar-divan-link"
 			className={navIa ? "kp-topbar__signal-link" : undefined}
+			aria-label={navIa ? "divan" : undefined}
+			title={navIa ? "divan" : undefined}
 		>
-			divan
+			{navIa ? <Icon icon={Gavel} size={16} /> : "divan"}
 		</NavLink>
 	) : null;
 	const searchForm = (
@@ -197,12 +203,35 @@ export function Topbar({
 		typeof karma === "number" ? (
 			<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />
 		) : null;
+	// The unread bildirim signal in the status zone (#2613). Under the zone grammar the count
+	// carries a legible Bell affordance (ADR 0166) so it reads as "unread notifications" at a
+	// glance, not a bare number. Same render rule as the flag-off badge — only when the
+	// `phoenix-bildirim` flag put a `bildirim` here AND unread > 0 (the badge's a11y label is
+	// the accessible name; the bell is decorative). Off, the count stays the bare chip on the
+	// user-menu trigger below (byte-identical to today).
+	const bildirimSignal =
+		navIa && bildirim && showUnreadBadge(bildirim.unread) ? (
+			<span
+				className="kp-topbar__bildirim-signal"
+				data-testid="topbar-bildirim-badge"
+				role="status"
+				aria-label={`${bildirim.unread} okunmamış bildirim`}
+			>
+				<Icon icon={Bell} size={16} />
+				<span className="kp-topbar__bildirim-count" aria-hidden="true">
+					{formatUnreadBadge(bildirim.unread)}
+				</span>
+			</span>
+		) : null;
 	const userMenu = user ? (
 		<Menu.Root>
 			<Menu.Trigger className="kp-topbar__user">
 				<Avatar name={user.name} src={user.src} />
 				<span>{user.name}</span>
-				{bildirim && showUnreadBadge(bildirim.unread) ? (
+				{/* Flag off, the unread count is the bare chip on the trigger (today's shape); on,
+				    it moves to the status-zone bell (`bildirimSignal`) so the signal sits in its
+				    lawful zone (#2613) and the trigger stays unbadged. */}
+				{!navIa && bildirim && showUnreadBadge(bildirim.unread) ? (
 					<span
 						className="kp-topbar__bildirim-badge"
 						data-testid="topbar-bildirim-badge"
@@ -244,8 +273,9 @@ export function Topbar({
 	// user menu) are the structural spine, not a taxonomy class. The primary-action zone
 	// is empty/reserved — #2600 relocated the promoted `+ gönderi` verb to the pano
 	// Subnav CTA, so no product-scoped occupant lives in the global bar (it does not
-	// re-add one). divan/karma move into the status-signal zone here; their affordance
-	// rework is the status/signal child's (#2613) job, not this spine's.
+	// re-add one). The status-signal zone carries the read-only signals reworked in #2613:
+	// the divan glyph, the karma glyph, and the bildirim bell — each a legible affordance in
+	// its lawful zone, none a control or accent.
 	if (navIa) {
 		return (
 			<header className="kp-topbar">
@@ -276,6 +306,7 @@ export function Topbar({
 				>
 					{divanLink}
 					{karmaChip}
+					{bildirimSignal}
 				</div>
 				{actions}
 				{userMenu}

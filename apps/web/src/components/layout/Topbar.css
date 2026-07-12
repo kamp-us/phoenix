@@ -38,17 +38,25 @@
 	display: flex;
 	gap: 2px;
 }
-/* The status-signal zone's divan link (#2611) reuses the destination nav-link
-   treatment for now — it left `.kp-topbar__nav` under the taxonomy reclass but its
-   affordance rework is the status/signal child's (#2613) job. Grouped, not duplicated. */
+/* The status-signal zone's divan link (#2611) reuses the destination nav-link treatment —
+   it left `.kp-topbar__nav` under the taxonomy reclass. Under #2613 it renders the Gavel
+   glyph, so it is an inline-flex box centering the icon; the glyph inherits the link's role
+   token (below) so hover/active stay monochrome. Grouped with the nav links, not duplicated. */
 .kp-topbar__nav a,
 .kp-topbar__signal-link {
+	display: inline-flex;
+	align-items: center;
 	padding: 4px 8px;
 	font: var(--t-body-sm);
 	font-weight: 500;
 	color: var(--text-secondary);
 	border-radius: var(--r-sm);
 	text-decoration: none;
+}
+/* The divan glyph follows its link's role token (icon.css pins `--text-secondary` by
+   default, so without this the parent hover/active color wouldn't reach it). */
+.kp-topbar__signal-link .kp-icon {
+	color: inherit;
 }
 .kp-topbar__nav a:hover,
 .kp-topbar__signal-link:hover {
@@ -154,7 +162,8 @@
 }
 
 /* The quiet unread bildirim chip on the user-menu trigger (#1694) — count is
-   text in a subtle outline, never color-only state. */
+   text in a subtle outline, never color-only state. Flag-off shape (nav-IA on relocates
+   the signal to the status-zone bell below). */
 .kp-topbar__bildirim-badge {
 	font: var(--t-meta);
 	color: var(--text-primary);
@@ -163,6 +172,23 @@
 	padding: 0 var(--s-1);
 	min-width: 1.25em;
 	text-align: center;
+}
+
+/* The status-zone unread bildirim signal (#2613) — the Bell glyph (ADR 0166) + count read
+   as "unread notifications" at a glance. A read-only signal: neutral role tokens, no accent,
+   no button/link chrome; the icon inherits the signal's color. */
+.kp-topbar__bildirim-signal {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-1);
+	color: var(--text-secondary);
+}
+.kp-topbar__bildirim-signal .kp-icon {
+	color: inherit;
+}
+.kp-topbar__bildirim-count {
+	font: var(--t-meta);
+	color: var(--text-primary);
 }
 
 /* Accent-scarcity containment law (#2614, epic #2595). Under the nav-IA zone grammar the
