@@ -170,6 +170,10 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   echo "$CHANGED" | grep -Eq "$HAS_CODE_RE"   && echo "has-code → dispatch review-code"
   echo "$CHANGED" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills → dispatch review-skill"
   echo "$CHANGED" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs → dispatch review-doc"
+  # No-class fail-closed (#2765): a file matching NONE of the three classes above — root tooling
+  # outside the code roots (biome-plugins/**, biome.jsonc, turbo.json) — rides has-code → dispatch
+  # review-code (§CLASS no-class fail-closed rule). `class-probe classify` folds this in, so the fan
+  # never leaves a non-empty diff with zero dispatched gates. Not a widened HAS_CODE_RE (that is #2761).
   ```
   Dispatch each gate the probe names — class gates **and** the additive `review-design` when it
   appears — and post its SHA-bound marker in this same pass. A single-class PR simply fires one

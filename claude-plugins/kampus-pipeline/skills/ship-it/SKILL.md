@@ -313,6 +313,11 @@ HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed:
 echo "$FILES" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills"   # → review-skill (ADR 0073/0150); §CP-blocking for merge via CONTROL_PLANE_RE above
 echo "$FILES" | grep -Eq "$HAS_CODE_RE" && echo "has-code"       # → review-code; the has-code roots agree with the docs-exclusion below in lockstep (§CLASS/§DOC, #663/#919/#1987)
 echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs"   # → review-doc; carve out code roots/skills/.glossary first, then test for a doc path (§DOC contract)
+# No-class fail-closed (#2765): a NON-EMPTY diff whose files match NONE of the three classes above
+# — root tooling outside the code roots (biome-plugins/**, biome.jsonc, turbo.json) — must NOT ship
+# un-gated. `pipeline-cli class-probe classify` (the live decision source above) folds this in: any
+# unclassified changed file rides has-code → review-code, so a non-empty diff never requires zero
+# gates. This is the §CLASS "no-class fail-closed" rule, NOT a widened HAS_CODE_RE (that is #2761).
 # UI probe → review-design (ADDITIVE, not a class): a changed path under apps/web/src — the
 # rendered frontend surface (React components, styles, tokens, routes). `pipeline-cli class-probe
 # classify` above ALSO emits `has-ui` (it parses this same UI_RE from its single source,

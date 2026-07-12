@@ -1593,6 +1593,22 @@ HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed:
 HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
 ```
 
+**No-class fail-closed — a non-empty diff can never require zero gates (#2765).** A changed file
+that matches **none** of the three class probes above — root-level executable build/lint tooling
+outside the code roots (`biome-plugins/**`, `biome.jsonc`, `turbo.json`, `pnpm-workspace.yaml`, a
+root `tsconfig`) — used to leave the diff spanning **no** class, so `ship-it` required **zero**
+review verdicts and the PR could merge un-gated (PR #2760's GritQL biome plugins shipped safe only
+by carrying an *unrequired* `review-code` PASS). That is a fail-**open** in the gate itself. The
+fix is the same ADR 0092 fail-closed idiom the `reresolve_re` defaults use: **any unclassified
+changed file rides `has-code` → `review-code`** (the general logic gate), so a non-empty diff always
+requires at least one gate. This is **not** a fourth class or a widened `HAS_CODE_RE` (single-sourcing
+the whole regex is the separate #2761) — it is the fail-closed *default* of the existing classes,
+implemented once in the shared core (`pipeline-cli class-probe`, which `ship-it` Step 0 and the
+reviewer fan both run) so `required == dispatched` holds. An **empty** diff still spans no class —
+the default fires only on a real unclassified file, never on nothing. Note the §CP interaction (which
+this fix leaves untouched): a no-class PR that is *also* control-plane already stops at human merge
+via `CONTROL_PLANE_RE`; this closes the gap for the no-class PR that is **not** control-plane.
+
 `review-design`/`has-ui` is **additive** and stays single-sourced in `ship-it/SKILL.md`'s
 `UI_RE=` (dispatched alongside whatever class gate(s) fire, never as a class of its own — see the
 `ui_reresolve` invariant in `reviewer.md`); the `HAS_*` lines above cover the three mutually-inclusive

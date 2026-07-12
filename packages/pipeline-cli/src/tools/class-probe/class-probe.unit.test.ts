@@ -107,6 +107,50 @@ describe("classify — the other artifact classes still route correctly", () => 
 	});
 });
 
+describe("classify — the no-class fail-open is closed: root tooling requires a gate (#2765)", () => {
+	// The #2765 fail-open: root-level executable build/lint tooling sits outside the four
+	// code roots, so it matched HAS_CODE_RE / HAS_SKILLS_RE / HAS_DOCS_RE none-for-none and
+	// classed as "no artifact class" → ship-it required ZERO gates → un-reviewed merge. PR
+	// #2760 (GritQL biome plugins) shipped safe only by carrying an unrequired review-code
+	// PASS. An unclassified changed file now rides has-code (review-code) — a non-empty diff
+	// can never require zero gates.
+	it("classifies biome.jsonc as has-code (was: no artifact class)", () => {
+		const classes = classify(["biome.jsonc"], LIVE_PROBES);
+		expect(classes).toEqual(["has-code"]);
+		expect(requiredNamespaces(classes)).toEqual(["review-code"]);
+	});
+
+	it("classifies a biome-plugins/*.grit lint rule as has-code", () => {
+		expect(classify(["biome-plugins/no-console.grit"], LIVE_PROBES)).toEqual(["has-code"]);
+	});
+
+	it("gates the PR #2760 shape (biome-plugins/*.grit + biome.jsonc) with review-code", () => {
+		const files = ["biome-plugins/no-console.grit", "biome.jsonc"];
+		const classes = classify(files, LIVE_PROBES);
+		expect(classes).toEqual(["has-code"]);
+		// The load-bearing assertion: the required namespace set is NOT empty — a gate runs.
+		expect(requiredNamespaces(classes)).toEqual(["review-code"]);
+		expect(requiredNamespaces(classes).length).toBeGreaterThan(0);
+	});
+
+	it("routes other root build/lint governors the same way (turbo.json, pnpm-workspace.yaml)", () => {
+		expect(classify(["turbo.json"], LIVE_PROBES)).toEqual(["has-code"]);
+		expect(classify(["pnpm-workspace.yaml"], LIVE_PROBES)).toEqual(["has-code"]);
+	});
+
+	it("an unclassified file rides review-code ALONGSIDE a classified sibling's gate", () => {
+		// A docs+tooling diff: the .md is has-docs, the un-classed biome.jsonc pulls in has-code
+		// (review-code), so the executable tooling is not left gated only by review-doc.
+		const classes = classify([".decisions/0173-x.md", "biome.jsonc"], LIVE_PROBES);
+		expect(classes).toEqual(["has-code", "has-docs"]);
+		expect(requiredNamespaces(classes)).toContain("review-code");
+	});
+
+	it("an empty diff is still un-gated — the fail-closed default fires only on a real file", () => {
+		expect(classify([], LIVE_PROBES)).toEqual([]);
+	});
+});
+
 describe("classify — fail-closed on an unreadable source over-dispatches, never skips", () => {
 	it("dispatches every class when the source is empty (fail-closed probes)", () => {
 		// A single arbitrary path matches every class under the fail-closed defaults —
