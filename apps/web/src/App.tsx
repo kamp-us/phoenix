@@ -164,6 +164,7 @@ function Layout() {
 				<AppShell>
 					<Topbar
 						brandName="kamp.us"
+						navIa={navIaOn}
 						nav={[
 							{to: "/sozluk", label: "sözlük"},
 							{to: "/pano", label: "pano"},

@@ -38,7 +38,11 @@
 	display: flex;
 	gap: 2px;
 }
-.kp-topbar__nav a {
+/* The status-signal zone's divan link (#2611) reuses the destination nav-link
+   treatment for now — it left `.kp-topbar__nav` under the taxonomy reclass but its
+   affordance rework is the status/signal child's (#2613) job. Grouped, not duplicated. */
+.kp-topbar__nav a,
+.kp-topbar__signal-link {
 	padding: 4px 8px;
 	font: var(--t-body-sm);
 	font-weight: 500;
@@ -46,15 +50,27 @@
 	border-radius: var(--r-sm);
 	text-decoration: none;
 }
-.kp-topbar__nav a:hover {
+.kp-topbar__nav a:hover,
+.kp-topbar__signal-link:hover {
 	color: var(--text-primary);
 	background: var(--surface-raised);
 	text-decoration: none;
 }
-.kp-topbar__nav a[aria-current="page"] {
+.kp-topbar__nav a[aria-current="page"],
+.kp-topbar__signal-link[aria-current="page"] {
 	color: var(--accent-fg);
 	background: var(--accent);
 	font-weight: 600;
+}
+
+/* Nav-IA zone grammar (#2611, epic #2595). Each taxonomy zone (destination / utility /
+   status-signal / primary-action) is a semantic grouping with a stable class +
+   data-testid for headless targeting; `display: contents` keeps its children in the
+   topbar's flex row, so the reclass adds zones without disturbing spacing. The
+   primary-action zone stays empty/reserved in the global bar — #2600 moved the promoted
+   verb to the pano Subnav CTA. Present only under the flag; off ⇒ no zone markup. */
+.kp-topbar__zone {
+	display: contents;
 }
 
 .kp-topbar__spacer {
