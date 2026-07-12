@@ -163,6 +163,15 @@ flowchart LR
 
 Two more skills serve the docs rather than the chain: [`adr`](./.claude/skills/adr/SKILL.md) records a decision in `.decisions/`, and [`deslop-comments`](./.claude/skills/deslop-comments/SKILL.md) cuts comments that bury the code.
 
+## Ops runbooks
+
+When the running system breaks, the procedures live in **[ops/](./ops/README.md)** — a peer
+operational doc surface alongside this file. It carries the failure-mode runbooks (D1 restore,
+live plane degraded, Cloudflare down) and the measured capacity baseline, each grounded in
+phoenix's real stack. It sits apart from `.decisions/` (the *why*) and `.patterns/` (how the
+code is shaped) on purpose: `ops/` is **how to operate** the system during an incident. Start at
+[ops/README.md](./ops/README.md).
+
 ## Where to read deeper
 
 Two doc surfaces carry the rest: **[.decisions/](./.decisions/)** holds the ADRs — the *why* behind each choice and the history of how it got here; **[.patterns/](./.patterns/index.md)** describes *how* the current code is shaped. Read a pattern when you're about to write that kind of code; read an ADR when you want to revisit a decision. New decisions go through `/adr`. When a doc and `apps/web/worker/` disagree, the source wins — fix the doc.
