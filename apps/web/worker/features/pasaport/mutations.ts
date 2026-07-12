@@ -14,6 +14,7 @@ import {
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_USER_BAN,
 } from "../../../src/flags/keys.ts";
+import {UserId} from "../../lib/ids.ts";
 import {notifyKefil, notifyPromotion} from "../bildirim/rite-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -33,6 +34,7 @@ import {
 	UsernameInvalidErrors,
 	UsernameTaken,
 } from "./errors.ts";
+import {CandidateId} from "./ids.ts";
 import {pasaportLive} from "./live.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {publishPromotion} from "./promote-live.ts";
@@ -110,17 +112,17 @@ const DeleteAccountInput = Schema.Struct({
 // so a client can never request a target tier — `yazar` is the only destination the
 // server writes (#1203), and the path is the only writer.
 const PromoteInput = Schema.Struct({
-	userId: Schema.String,
+	userId: UserId,
 });
 
 const VouchInput = Schema.Struct({
-	candidateId: Schema.String,
+	candidateId: CandidateId,
 });
 
 // Withdraw names the same target as a vouch — the voucher is the discharged-`Vouch`
 // actor, never an arg, so a yazar can only withdraw their OWN vouch for `candidateId`.
 const WithdrawVouchInput = Schema.Struct({
-	candidateId: Schema.String,
+	candidateId: CandidateId,
 });
 
 // Ban a target account by id: a `reason` (required — enforced non-empty in the gated
@@ -128,13 +130,13 @@ const WithdrawVouchInput = Schema.Struct({
 // permanent). No `actor` arg — the acting admin is the discharged `Admin` grant's id,
 // never client-supplied, so a ban is always audited against its real author.
 const BanUserInput = Schema.Struct({
-	userId: Schema.String,
+	userId: UserId,
 	reason: Schema.String,
 	expiresAt: Schema.optional(Schema.NullOr(Schema.Number)),
 });
 
 const UnbanUserInput = Schema.Struct({
-	userId: Schema.String,
+	userId: UserId,
 });
 
 // Mark a target account's address as failing: a `reason` (required — enforced non-empty
@@ -142,12 +144,12 @@ const UnbanUserInput = Schema.Struct({
 // is named by id and its address is server-resolved, so an admin can't mark an arbitrary
 // address, and the acting admin is the discharged `Admin` grant (never client-supplied).
 const MarkEmailFailingInput = Schema.Struct({
-	userId: Schema.String,
+	userId: UserId,
 	reason: Schema.String,
 });
 
 const ClearEmailFailingInput = Schema.Struct({
-	userId: Schema.String,
+	userId: UserId,
 });
 
 export const mutations = {
