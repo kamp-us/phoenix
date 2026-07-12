@@ -15,11 +15,17 @@
  * and checks every §CP path branch has a covering CODEOWNERS entry.
  */
 
-/** One §CP path the regex marks control-plane: a path + whether it's a dir-prefix or an exact file. */
+/**
+ * One §CP path the regex marks control-plane: a path + its shape.
+ * - `dir`  — a directory prefix (keeps its trailing `/`).
+ * - `file` — an exact `$`-anchored leaf (no trailing `/`).
+ * - `glob` — a within-segment wildcard leaf: a `[^/]+` regex class translated to a
+ *   gitignore `*` (e.g. `.../skills/*.sh`), owned by a matching `*`-glob CODEOWNERS row.
+ */
 export interface CpPath {
-	/** Normalized path with no leading `/`. A `dir` keeps its trailing `/`; a `file` has none. */
+	/** Normalized path with no leading `/`. A `dir` keeps its trailing `/`; `file`/`glob` have none. */
 	readonly path: string;
-	readonly kind: "dir" | "file";
+	readonly kind: "dir" | "file" | "glob";
 }
 
 /** A CODEOWNERS pattern with at least one owner: the normalized pattern (no leading `/`) + its owners. */
@@ -61,12 +67,20 @@ export const splitTopLevelBranches = (re: string): ReadonlyArray<string> =>
  * `(\.claude|\.github)/`, `…/skills/(ship-it|review-code|…)/`, or
  * `…/hooks(/|\.json$)`. We cartesian-expand every `(…)` group, then normalize each
  * expansion to a path: unescape `\.`→`.` and drop a regex `$` end-anchor. A trailing
- * `/` ⇒ a directory prefix; otherwise an exact file (the `$`-anchored leaf).
+ * `/` ⇒ a directory prefix; a `[^/]+` within-segment class ⇒ a `glob` (translated to a
+ * gitignore `*`, e.g. `.../skills/[^/]+\.sh$` → `.../skills/*.sh`); otherwise an exact
+ * file (the `$`-anchored leaf).
  */
 export const expandBranch = (branch: string): ReadonlyArray<CpPath> => {
 	const normalize = (s: string): CpPath => {
-		const path = s.replace(/\$/g, "").replace(/\\\./g, ".");
-		return {path, kind: path.endsWith("/") ? "dir" : "file"};
+		const base = s.replace(/\$/g, "").replace(/\\\./g, ".");
+		// `[^/]+` (one-or-more non-slash) is a within-segment regex wildcard; gitignore's
+		// `*` (which CODEOWNERS uses) means the same, so translate it to a real glob a
+		// CODEOWNERS row can own (the bare gate-critical `skills/*.sh` guards — ADR 0174).
+		if (base.includes("[^/]+")) {
+			return {path: base.replace(/\[\^\/\]\+/g, "*"), kind: "glob"};
+		}
+		return {path: base, kind: base.endsWith("/") ? "dir" : "file"};
 	};
 	// Cartesian-expand each `(alt|alt|…)` group, left to right. The regex only ever
 	// carries one group per branch, but expanding all groups keeps this robust to a
@@ -137,9 +151,17 @@ export const parseCodeownersPatterns = (codeownersText: string): ReadonlyArray<O
  * - A non-directory entry covers `p` by exact match, or as an ancestor directory
  *   named without a trailing slash (`p.startsWith(e + "/")`, gitignore's bare-name
  *   dir semantics).
+ * - A `glob` §CP path (e.g. `.../skills/*.sh`) is covered by an identical `*`-glob
+ *   CODEOWNERS row, or by an ancestor directory entry that owns the whole segment it
+ *   sits in.
  */
 export const covers = (e: OwnedPattern, p: CpPath): boolean => {
 	const pat = e.pattern;
+	if (p.kind === "glob") {
+		if (pat === p.path) return true;
+		const dir = p.path.slice(0, p.path.lastIndexOf("/") + 1);
+		return pat.endsWith("/") && (dir === pat || dir.startsWith(pat));
+	}
 	if (pat.endsWith("/")) return p.path === pat || p.path.startsWith(pat);
 	return p.path === pat || p.path.startsWith(`${pat}/`);
 };

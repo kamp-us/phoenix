@@ -385,6 +385,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
+      # pnpm + node so validate-gate-path-drift.sh can read the §CP CONTROL_PLANE_RE from
+      # its single-source const via `pipeline-cli control-plane-paths` (#2761) — this job
+      # runs UNCONDITIONALLY (no path filter), so the const↔formats-doc drift check fires
+      # on a formats-doc-only edit too, closing the merge_group-only gap that ejected #2673.
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
       # Pure-bash guard, no toolchain: every .claude/skills/*/SKILL.md must carry
       # valid frontmatter (name + description, name == dir) or a skill silently
       # stops routing. Same script runs locally: `bash .claude/skills/validate-skills.sh`.

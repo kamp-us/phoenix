@@ -1300,8 +1300,29 @@ closing the #375 drift class).
   - `claude-plugins/kampus-pipeline/skills/review-code/**`
   - `claude-plugins/kampus-pipeline/skills/review-doc/**`
   - `claude-plugins/kampus-pipeline/skills/review-skill/**`
+  - `claude-plugins/kampus-pipeline/skills/review-design/**`
   - `claude-plugins/kampus-pipeline/skills/review-plan/**`
+  - `claude-plugins/kampus-pipeline/skills/review-trivial/**` — the trivial-diff gate emits
+    SHA-bound, merge-consumed verdicts, so it is gate-critical exactly like the other reviewers;
+    its omission was a live fail-**open** §CP-bypass (ADR
+    [0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md), #2679).
+  - `claude-plugins/kampus-pipeline/skills/triage/**`
+  - `claude-plugins/kampus-pipeline/skills/write-code/**`
+  - `claude-plugins/kampus-pipeline/skills/plan-epic/**`
+  - `claude-plugins/kampus-pipeline/skills/release/**` — the release machinery (ADR 0174, #2679).
+  - `claude-plugins/kampus-pipeline/skills/*.sh` — the bare gate-critical guard scripts directly
+    under `skills/` (`validate-gate-path-drift.sh`, `validate-skills.sh`, `validate-cycle-*.sh`):
+    executable enforcement that runs the gates, control-plane *by nature* like the guard packages.
+    The `^claude-plugins/kampus-pipeline/skills/[^/]+\.sh$` branch classifies them (ADR
+    [0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md), #2576);
+    the `[^/]+` matches a bare filename only, so it never reaches into the skill *dirs* above.
   - `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` (this file)
+
+  **Deliberately OUT of §CP** (recorded so their absence is a decision, not an oversight): the
+  `heal-ci`, `what-shipped`, `doctor`, and `wayfinder` skills are operational diagnostics /
+  reporting / orientation — they neither gate a merge nor hold release authority nor sit on a
+  gate-critical path, so they auto-merge on a `review-skill` PASS like any ordinary skill. Do
+  **not** add them to the boundary (ADR 0174).
 - the **pipeline agent definitions** — `claude-plugins/kampus-pipeline/agents/**`: the behavior
   instructions for the very agents that run the pipeline, including `shipper.md` (the merge
   authority) and `reviewer.md` (the verdict gate). An agents-only PR matched **no** §CP clause
@@ -1349,7 +1370,11 @@ through the consolidated `^packages/pipeline-cli/` package per ADR
 [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md);
 the **pipeline agent definitions** (`claude-plugins/kampus-pipeline/agents/**`) added by ADR
 [0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
-since a gate/merge agent's own instructions are a self-weakening surface). Everything else — `apps/**`,
+since a gate/merge agent's own instructions are a self-weakening surface; the **bare gate-critical
+`.sh` guards** under `skills/` and the **`release`/`review-trivial` skill dirs** added by ADR
+[0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md)
+(#2576/#2679), since a guard script and a SHA-bound-verdict gate are self-weakening surfaces that
+were escaping the boundary). Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
 clause below), `.patterns/**`, every prose doc `*.md` (the
 §DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
@@ -1365,16 +1390,21 @@ code-root `*.md` is non-blocking here yet rides `review-code`, not `review-doc`,
 ### The canonical matcher
 
 Every consumer matches the set with this **one** anchored regex (POSIX ERE; the jq/`grep`
-form below). Cite this regex; do **not** re-hard-code the path list:
-
-```
-^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/
-```
+form below). The regex is **single-sourced** in the `CONTROL_PLANE_RE` const at
+[`packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts`](https://github.com/kamp-us/phoenix/blob/main/packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts)
+(issue #2761) — run `pipeline-cli control-plane-paths` to print it (or `--paths` for the expanded
+§CP path set). Cite it; do **not** re-hard-code the path list. The one machine-readable
+`CONTROL_PLANE_RE=` copy below is kept **byte-in-sync with that const** — guarded by `codeowners-cp`
+and `validate-gate-path-drift.sh`, both of which fail closed on any divergence — and is retained
+**only** because the live merge-deciding gates re-resolve it from THIS file on `origin/main` (#981);
+that origin/main read is the anti-self-authorization property (a boundary-editing PR is classified
+against MAIN's boundary, not its own edit) and must not move to an in-tree import.
 
 ```bash
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
-# Step 0 all use — one definition, no fourth copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic)/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'
+# Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
+# re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'
 # --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
 # concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
 # API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a

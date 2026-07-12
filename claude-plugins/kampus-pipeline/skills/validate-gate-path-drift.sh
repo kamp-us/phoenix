@@ -2,20 +2,22 @@
 # Mechanical drift guard for the §CP canonical regex and the .claude/skills symlink
 # (issue #720). Two invariants, both runnable in CI/locally:
 #
-#   1. REGEX COPIES — the CONTROL_PLANE_RE= copies in ship-it, review-code,
-#      review-doc, review-skill, review-design, and gh-issue-intake-formats
-#      (§CP, the source) must be byte-identical to the §CP canonical line. A
-#      rename of the plugin path string currently requires ~11 lockstep edits
-#      with no guard; this fails CI on any copy that drifts from §CP.
+#   1. CONTROL_PLANE_RE ↔ single-source const — the §CP boundary is now single-sourced
+#      as the CONTROL_PLANE_RE const in packages/pipeline-cli (issue #2761), emitted by
+#      `pipeline-cli control-plane-paths`. The gate skills no longer carry a copy (they
+#      re-resolve the boundary from origin/main at run time, #981). The ONE un-importable
+#      copy left is the CONTROL_PLANE_RE= line of gh-issue-intake-formats.md, which the
+#      live gates read from origin/main. This invariant READS the const via the CLI and
+#      diffs it against that one line — the residual drift guard for the last prose
+#      surface, no byte-compare of N hand-copies.
 #
 #   2. SYMLINK ↔ MARKETPLACE — .claude/skills must resolve to the same directory
 #      as marketplace.json's `source` field + /skills. Both express the same plugin
 #      root; divergence means the harness loads skills from a different tree than
 #      the one the marketplace advertises.
 #
-# The source-of-truth for invariant 1 is §CP in gh-issue-intake-formats.md (ADR
-# 0073 §6): the one definition every consumer must cite. This script extracts it
-# and diffs it against the four consumer copies — no copy is re-hardcoded here.
+# The single source for invariant 1 is the pipeline-cli const (ADR 0073 §6; #2761): the
+# CLI emits it, this script diffs the formats-doc line against it — no copy re-hardcoded.
 #
 # Bash 3.2 compatible (macOS default shell). No associative arrays, no process
 # substitution with mapfile. Same self-locating idiom as validate-skills.sh.
@@ -34,72 +36,42 @@ checks=0
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok()   { echo "ok: $*";   checks=$((checks + 1)); }
 
-# ── Invariant 1: CONTROL_PLANE_RE copies match §CP ──────────────────────────
+# ── Invariant 1: formats-doc CONTROL_PLANE_RE matches the single-source const ─
 #
-# Extract the canonical value from §CP in gh-issue-intake-formats.md.
-# The canonical line has no leading whitespace and no trailing comment:
-#   CONTROL_PLANE_RE='...'
+# The §CP boundary is single-sourced in packages/pipeline-cli (#2761), emitted by
+# `pipeline-cli control-plane-paths`. Read it from THERE (not a byte-compare of N
+# hand-copies), then diff it against the one un-importable copy — the CONTROL_PLANE_RE=
+# line of gh-issue-intake-formats.md that the live gates re-resolve from origin/main (#981).
 FORMATS_MD="$skills_dir/gh-issue-intake-formats.md"
 if [ ! -f "$FORMATS_MD" ]; then
-	fail "gh-issue-intake-formats.md not found at $FORMATS_MD — cannot extract §CP canonical regex"
+	fail "gh-issue-intake-formats.md not found at $FORMATS_MD — cannot verify §CP CONTROL_PLANE_RE"
 	echo "validate-gate-path-drift: FAILED — $errors error(s)"
 	exit 1
 fi
 
-# `|| true`: under `set -euo pipefail` a no-match `grep` (exit 1) would abort the script here,
-# before the explicit empty-check + `fail` below ever runs — losing the diagnostic. Let the
-# substitution yield empty so the intended fail-with-message path handles it.
-CANONICAL=$(grep "^CONTROL_PLANE_RE=" "$FORMATS_MD" | head -n1 | sed 's/^CONTROL_PLANE_RE=//' || true)
-if [ -z "$CANONICAL" ]; then
-	fail "§CP canonical CONTROL_PLANE_RE= not found in $FORMATS_MD — line must start with CONTROL_PLANE_RE="
+# The single source: the const the CLI prints (raw regex, no surrounding quotes). `|| true`
+# so a failed run yields empty and hits the explicit empty-check below instead of aborting
+# under set -e.
+CONST_RE=$(node "$repo_root/packages/pipeline-cli/src/bin.ts" control-plane-paths 2>/dev/null || true)
+if [ -z "$CONST_RE" ]; then
+	fail "could not read the §CP CONTROL_PLANE_RE const via \`pipeline-cli control-plane-paths\` (single source: packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts) — is pipeline-cli installed?"
 	echo "validate-gate-path-drift: FAILED — $errors error(s)"
 	exit 1
 fi
-ok "§CP canonical regex extracted from gh-issue-intake-formats.md"
+ok "§CP CONTROL_PLANE_RE read from the single-source const (pipeline-cli control-plane-paths)"
 
-# The four consumer skills that carry a copy.
-# Each is compared against $CANONICAL after:
-#   - stripping leading whitespace (review-doc indents the assignment)
-#   - stripping the CONTROL_PLANE_RE= prefix
-#   - stripping any trailing whitespace + inline comment (# ...)
-CONSUMERS="
-ship-it/SKILL.md
-review-code/SKILL.md
-review-doc/SKILL.md
-review-skill/SKILL.md
-review-design/SKILL.md
-"
-
-for rel in $CONSUMERS; do
-	md="$skills_dir/$rel"
-	if [ ! -f "$md" ]; then
-		fail "$rel: file not found — cannot verify CONTROL_PLANE_RE copy"
-		continue
-	fi
-
-	# Extract the first CONTROL_PLANE_RE= line (with or without leading whitespace)
-	LINE=$(grep "CONTROL_PLANE_RE=" "$md" | head -n1 || true)   # || true: no-match must hit the fail below, not abort under set -e
-	if [ -z "$LINE" ]; then
-		fail "$rel: no CONTROL_PLANE_RE= line found — consumer must carry a copy matching §CP"
-		continue
-	fi
-
-	# Strip leading whitespace
-	STRIPPED="${LINE#"${LINE%%[![:space:]]*}"}"
-	# Strip "CONTROL_PLANE_RE=" prefix
-	VAL="${STRIPPED#CONTROL_PLANE_RE=}"
-	# Strip trailing whitespace + inline comment of the form '   # ...'
-	# The regex value ends with $' so cut at the first trailing '   #'
-	VAL_CLEAN=$(printf '%s\n' "$VAL" | sed "s/'[[:space:]]*#.*$/'/")
-
-	if [ "$VAL_CLEAN" = "$CANONICAL" ]; then
-		ok "$rel CONTROL_PLANE_RE matches §CP canonical"
-	else
-		fail "$rel CONTROL_PLANE_RE has drifted from §CP canonical
-  §CP:  $CANONICAL
-  copy: $VAL_CLEAN"
-	fi
-done
+# The one remaining copy: the origin/main-read line in gh-issue-intake-formats.md. Strip the
+# CONTROL_PLANE_RE=' … ' wrapper to compare the raw regex against the const.
+FORMATS_RE=$(grep "^CONTROL_PLANE_RE=" "$FORMATS_MD" | head -n1 | sed "s/^CONTROL_PLANE_RE='//; s/'$//" || true)
+if [ -z "$FORMATS_RE" ]; then
+	fail "§CP CONTROL_PLANE_RE= not found in $FORMATS_MD — the origin/main-read copy must be present and match the const"
+elif [ "$FORMATS_RE" = "$CONST_RE" ]; then
+	ok "gh-issue-intake-formats.md CONTROL_PLANE_RE matches the single-source const"
+else
+	fail "gh-issue-intake-formats.md CONTROL_PLANE_RE has drifted from the single-source const
+  const:   $CONST_RE
+  formats: $FORMATS_RE"
+fi
 
 # ── Invariant 1b: GUARD_ADR_RE copy matches §CP (ADR 0164) ──────────────────
 #
@@ -142,9 +114,9 @@ fi
 # 0's class fan. A stale copy mis-classes a PR's changed-path fan (the #2434
 # `.glossary/**→has-code` miss that emptied a review namespace and stalled ship-it),
 # and that drift was caught only by hand during #2434/#2486 — the exact gap this
-# invariant closes. Same grep-extract-then-diff idiom as Invariant 1; kept pure bash
-# rather than routed through `pipeline-cli class-probe` because this guard runs in the
-# toolchain-free `skills` CI job (no node/pnpm), where a class-probe call can't reach.
+# invariant closes. Kept as a pure-bash grep-extract-then-diff (the HAS_*_RE regexes
+# are not part of #2761's CONTROL_PLANE_RE single-sourcing) rather than routed through
+# `pipeline-cli class-probe`, even though Invariant 1 now makes `node` available in the job.
 HAS_NAMES="HAS_CODE_RE HAS_SKILLS_RE HAS_DOCS_EXCLUDE_RE HAS_DOCS_RE"
 # Surfaces carrying a copy of the §CP block, enumerated like Invariant 1's CONSUMERS.
 # ship-it's copies are one-per-line; reviewer.md's `class_reresolve` fail-closed reference
