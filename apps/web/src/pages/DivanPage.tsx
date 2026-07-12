@@ -117,8 +117,8 @@ function DivanWorkspace() {
 				<header className="kp-divan__masthead">
 					<h1 className="kp-divan__title">divan</h1>
 					<p className="kp-divan__lead">
-						çaylakların incelemedeki katkılarını burada değerlendirirsin. en çok katkı veren, en az
-						incelenen çaylaklar üstte.
+						çaylakların ürettiklerini burada değerlendirirsin. en çok üreten, en az incelenmiş
+						çaylaklar üstte.
 					</p>
 				</header>
 

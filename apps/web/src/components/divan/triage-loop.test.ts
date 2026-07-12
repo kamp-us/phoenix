@@ -20,6 +20,7 @@ import {
 	needsConfirm,
 	nextChamber,
 	reporterDiversityLabel,
+	triageLegend,
 } from "./triage-loop";
 
 const q = (...ids: string[]): ReadonlyArray<{targetKind: TargetKind; targetId: string}> =>
@@ -165,7 +166,7 @@ describe("authorReputationLabel — the reputation-in-row copy", () => {
 
 describe("maskedExcerpt — the reveal-on-O gate (never force-fed a slur)", () => {
 	it("masks the excerpt by default, hinting O to reveal", () => {
-		expect(maskedExcerpt("kötü söz", false)).toBe("içerik gizli — göstermek için O");
+		expect(maskedExcerpt("kötü söz", false)).toBe("içerik gizli · O ile göster");
 	});
 
 	it("shows the excerpt once revealed", () => {
@@ -185,5 +186,24 @@ describe("drainedLabel — the earned empty state", () => {
 
 	it("reads clean without a count for an already-empty queue", () => {
 		expect(drainedLabel(0)).toBe("raporlar temiz");
+	});
+});
+
+describe("triageLegend — the HUD key legend (#2726)", () => {
+	it("names every bound gesture with keycap(s) + a lowercase action", () => {
+		const byLabel = new Map(triageLegend.map((e) => [e.label, e.keys]));
+		expect(byLabel.get("gez")).toEqual(["j", "k"]);
+		expect(byLabel.get("yoksay")).toEqual(["Y"]);
+		expect(byLabel.get("kaldır")).toEqual(["R"]);
+		expect(byLabel.get("bölme")).toEqual(["V", "M"]);
+		expect(byLabel.get("dalga")).toEqual(["X"]);
+	});
+
+	it("carries a keycap for every verdict/undo/reveal binding keyToAction maps", () => {
+		const legendKeys = new Set(triageLegend.flatMap((e) => e.keys));
+		for (const k of ["j", "k", "Y", "R", "U", "O"]) {
+			expect(keyToAction(k)).not.toBeNull();
+			expect(legendKeys.has(k)).toBe(true);
+		}
 	});
 });

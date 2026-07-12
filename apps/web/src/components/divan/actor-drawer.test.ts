@@ -112,19 +112,19 @@ describe("uretimLabel — the actor's live content footprint", () => {
 
 describe("kaldirilanLabel — the prior-removals trust tell", () => {
 	it("counts removals when the actor has them", () => {
-		expect(kaldirilanLabel(2)).toBe("2 kaldırılan");
+		expect(kaldirilanLabel(2)).toBe("2 kaldırıldı");
 	});
 
-	it("reads temiz sicil at zero, null when unresolved", () => {
-		expect(kaldirilanLabel(0)).toBe("temiz sicil");
+	it("reads temiz at zero (the value no longer re-states the sicil key), null when unresolved", () => {
+		expect(kaldirilanLabel(0)).toBe("temiz");
 		expect(kaldirilanLabel(null)).toBeNull();
 	});
 });
 
 describe("bildirilenLabel — the pile-on breadth tell", () => {
-	it("counts distinct reporters, clamped to at least 1", () => {
-		expect(bildirilenLabel(7)).toBe("7 kişi bildirdi");
-		expect(bildirilenLabel(0)).toBe("1 kişi bildirdi");
+	it("counts distinct reporters (bare count under the bildiren key), clamped to at least 1", () => {
+		expect(bildirilenLabel(7)).toBe("7 kişi");
+		expect(bildirilenLabel(0)).toBe("1 kişi");
 	});
 });
 
@@ -137,13 +137,13 @@ describe("kefilDurumuLabel — the vouch tell", () => {
 });
 
 describe("buAktorLabel — the #1855 remove-the-wave entry point", () => {
-	it("counts the actor's other reported targets", () => {
-		expect(buAktorLabel(3)).toBe("bu aktörün 3 raporlu içeriği var");
+	it("counts the actor's other reported targets (bare under the bu aktör key)", () => {
+		expect(buAktorLabel(3)).toBe("3 raporlu içerik");
 	});
 
-	it("reads the clean singular line at 0/1, null when unresolved", () => {
-		expect(buAktorLabel(1)).toBe("bu aktörün başka raporlu içeriği yok");
-		expect(buAktorLabel(0)).toBe("bu aktörün başka raporlu içeriği yok");
+	it("reads the clean line at 0/1, null when unresolved", () => {
+		expect(buAktorLabel(1)).toBe("başka raporlu içerik yok");
+		expect(buAktorLabel(0)).toBe("başka raporlu içerik yok");
 		expect(buAktorLabel(null)).toBeNull();
 	});
 });

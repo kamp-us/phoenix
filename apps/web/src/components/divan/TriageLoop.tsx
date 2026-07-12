@@ -17,6 +17,7 @@
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport, ResolveReceipt} from "../../../worker/features/report/views";
+import {Kbd} from "../ui/atoms";
 import {Surface} from "../ui/Card";
 import {ActorDrawer} from "./ActorDrawer";
 import {type Chamber, drawerDefaultOpen, drawerKeyToAction, hopTarget} from "./actor-drawer";
@@ -53,6 +54,7 @@ import {
 	moveFocus,
 	needsConfirm,
 	reporterDiversityLabel,
+	triageLegend,
 	type Verdict,
 } from "./triage-loop";
 
@@ -384,12 +386,19 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	return (
 		<div className="kp-triage" data-testid="triage-loop">
 			<div className="kp-triage__hud" aria-hidden="true">
-				<span>
+				<span className="kp-triage__pos">
 					{Math.min(index, live.length - 1) + 1} / {live.length}
 				</span>
-				<span className="kp-triage__keys">
-					j/k gez · Y yoksay · R kaldır · U geri al · O göster · A künye · V/M oda · X dalga
-				</span>
+				<ul className="kp-triage__legend">
+					{triageLegend.map((entry) => (
+						<li className="kp-triage__legend-item" key={entry.label}>
+							{entry.keys.map((k) => (
+								<Kbd key={k}>{k}</Kbd>
+							))}
+							<span className="kp-triage__legend-label">{entry.label}</span>
+						</li>
+					))}
+				</ul>
 			</div>
 
 			<div className="kp-triage__stage" data-drawer={drawerOpen}>
