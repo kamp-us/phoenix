@@ -2,22 +2,30 @@
  * `/mecmua/:slug` — the PUBLIC reader for a single published mecmua post (#2498, epic
  * #2467). Client-only per the map (#2466 — SEO/prerender explicitly deferred): it
  * fetches the anonymous `GET /fate/mecmua/post/:slug` route and renders the published
- * post's başlık + markdown body, reusing the shared `lib/markdown` render (no new
- * markdown lib). A draft / miss / off-flag all 404 server-side, surfaced here as the
- * shared NotFoundPage.
+ * post's başlık + markdown body through `@kampus/composer` in read-only mode (#2581) —
+ * the reader is the editor with editing switched off, so write and read share ONE tiptap
+ * render path (editor≈reader parity) and can't re-diverge (the raw-markdown bug #2578).
+ * A draft / miss / off-flag all 404 server-side, surfaced here as the shared NotFoundPage.
+ *
+ * Tiptap is kept OFF public first-paint: the body renders through `MecmuaPostBody`, a
+ * `React.lazy` chunk that alone imports the composer (the #2523 lazy-split applied to the
+ * reader) — landing/index/other routes carry no tiptap; opening a post loads that chunk.
  *
  * The whole surface ships dark behind `MECMUA_PUBLIC_READ` (default-off): the page
  * self-gates (off ⇒ 404), mirroring `DivanPage`, so the route is absent until a human
  * flips the flag at release (ADR 0083). The route itself also 404s while the flag is
  * off — the page gate just avoids a fetch and a flash.
  */
-import {useEffect, useState} from "react";
+import {lazy, Suspense, useEffect, useState} from "react";
 import {useParams} from "react-router";
 import {MecmuaSubscribeButton} from "../components/mecmua/MecmuaSubscribeButton";
 import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
-import {renderMarkdownInline, splitMarkdownBlocks} from "../lib/markdown";
 import {NotFoundPage} from "./NotFoundPage";
+
+// The composer (and tiptap) live behind this dynamic import so they stay off mecmua public
+// first-paint — the reader route's own module graph never statically references tiptap.
+const MecmuaPostBody = lazy(() => import("../components/mecmua/MecmuaPostBody"));
 
 /**
  * The wire shape the anon read route returns. `authorId` is the subscribe target — the
@@ -110,22 +118,21 @@ function MecmuaPostReader({slug}: {slug: string}) {
 		);
 	}
 
-	const blocks = splitMarkdownBlocks(state.post.body);
 	return (
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<article data-testid="mecmua-post">
 					<h1>{state.post.title}</h1>
 					<MecmuaSubscribeButton authorId={state.post.authorId} />
-					<div className="kp-prose">
-						{blocks.map((block, i) =>
-							block.kind === "code" ? (
-								<pre key={i}>{block.text}</pre>
-							) : (
-								<p key={i}>{renderMarkdownInline(block.text)}</p>
-							),
-						)}
-					</div>
+					<Suspense
+						fallback={
+							<div className="kp-prose">
+								<p>yükleniyor…</p>
+							</div>
+						}
+					>
+						<MecmuaPostBody body={state.post.body} />
+					</Suspense>
 				</article>
 			</div>
 		</div>

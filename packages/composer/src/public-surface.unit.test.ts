@@ -25,7 +25,29 @@ describe("public export surface", () => {
 		expect(typeof composer.useComposerEditor).toBe("function");
 		expect(typeof composer.Composer).toBe("function");
 		expect(typeof composer.baseKit).toBe("function");
+		// The read-only render mode (#2581) is part of the public surface — a consumer (mecmua
+		// reader) renders through it without importing tiptap or reaching a deep path.
+		expect(typeof composer.ReadOnlyComposer).toBe("function");
 		// No deep-path import is required of a consumer: everything above resolves from the root.
+	});
+});
+
+describe("read-only render mode over baseKit() (#2581)", () => {
+	// The reader is the editor with editing switched off: the SAME baseKit path, `editable:false`.
+	// This no-render unit pins that the mode is non-editable and serializes the stored markdown
+	// identically to the editable path — the render-path DOM assertions live in the .render test.
+	it("an editable:false editor is non-editable yet round-trips the same markdown", () => {
+		const ro = createComposerHandle(new Editor({...baseKit(), editable: false}));
+		const rw = createComposerHandle(new Editor(baseKit()));
+		expect(ro.editor.isEditable).toBe(false);
+		expect(rw.editor.isEditable).toBe(true);
+
+		ro.setContent(SAMPLE);
+		rw.setContent(SAMPLE);
+		// Editor≈reader parity at the serialization layer: the same input yields identical
+		// markdown regardless of editability — one render path, no divergence.
+		expect(ro.getMarkdown()).toBe(rw.getMarkdown());
+		expect(ro.getMarkdown()).toContain("# Başlık");
 	});
 });
 
