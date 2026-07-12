@@ -45,18 +45,33 @@ apps/web/
     ├── env.ts             # deploy-time env resolution (fails closed)
     ├── db/                # D1 binding, Drizzle schema, migrations, keyset cursors
     ├── http/              # router composition (app.ts) + health route
-    └── features/          # every named grouping, one folder each
+    └── features/          # every named grouping, one folder each (all 21 below)
+        │                  # — platform & framework concerns —
         ├── fate/          # the fate config + route, layer assembly, barrels
         ├── fate-live/     # the live SSE plane — LiveDO + LivePublisher + protocol
-        ├── pasaport/      # auth — better-auth fork + session capability
-        ├── sozluk/        # product — dictionary
+        ├── pasaport/      # authn — better-auth fork + session capability
+        ├── kunye/         # authz home (künye) — capability instances + earned standing (ADR 0107)
+        ├── flagship/      # feature-flag substrate — Cloudflare Flagship binding + flag IaC (ADR 0081)
+        ├── throttle/      # per-actor mutation-volume rate limiter — token bucket (ADR 0177)
+        ├── telemetry/     # product-usage telemetry seam over Analytics Engine (ADR 0153)
+        ├── lifecycle/     # the uniform soft-removal substrate — EntityLifecycle (ADR 0096)
+        ├── search/        # lexical FTS5 site-search over term + post titles (ADR 0080)
+        │                  # — products & product surfaces —
+        ├── sozluk/        # product — dictionary (sözlük)
         ├── pano/          # product — link aggregator
-        ├── vote/          # product — votes
-        ├── stats/         # product — read-only counts
+        ├── mecmua/        # product — long-form publishing (mecmua)
+        ├── vote/          # votes on the three targets (definition / post / comment)
+        ├── reaction/      # ungated, karma-free emoji reactions — the vote-engine twin
+        ├── divan/         # the çaylak proving-ground reviewer surface (divan)
+        ├── funnel/        # mod-gated çaylak→yazar conversion-funnel readout
+        ├── bildirim/      # notifications — recipient-keyed store + topbar unread badge
+        ├── report/        # content-reporting for moderation (bildir)
+        ├── rss/           # RSS/Atom feeds of pano/sözlük activity
+        ├── stats/         # read-only landing counts
         └── text/          # utility — excerpt()
 ```
 
-`features/` is the home for **any** named app-level grouping — product domains, framework concerns, and single-file utilities alike. If a concern has a coherent name worth grouping, it's a feature; the few things that aren't (entry, env, db, http) sit beside `features/` (ADR [0036](./.decisions/0036-features-as-any-named-app-grouping.md)).
+`features/` is the home for **any** named app-level grouping — product domains, framework concerns, and single-file utilities alike. If a concern has a coherent name worth grouping, it's a feature; the few things that aren't (entry, env, db, http) sit beside `features/` (ADR [0036](./.decisions/0036-features-as-any-named-app-grouping.md)). The tree above is the full folder set — keep it in sync with `ls apps/web/worker/features/`, which is authoritative.
 
 **The runtime.** Services are built once and live for the isolate — `Drizzle`, the feature layers, and the composed `FateServer` are assembled into one worker-level `ManagedRuntime` in `worker/index.ts` (init-only: the layer-build vehicle behind the route context layer), not per request. A request to `/fate` provides only the per-request pair (`CurrentUser`, `LivePublisher`) as values and serves through the native interpreter (`FateInterpreter.handleRequest`, `@kampus/fate-effect`) on the request fiber — no runtime, no Effect→Promise hop on the request path. Handlers carry no leftover requirements. Read [.patterns/fate-effect-worker-wiring.md](./.patterns/fate-effect-worker-wiring.md) and [.patterns/fate-effect-interpreter.md](./.patterns/fate-effect-interpreter.md) before touching server-side fate code.
 
@@ -93,6 +108,32 @@ Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — w
 - **pnpm, not npm.** Biome formatting: tabs, 100 col, no bracket spacing.
 
 Data tasks (seeding, backfills) are one-off direct-D1 scripts against the bound database, not worker routes.
+
+## CI guards
+
+CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the integration suite, the deploy-preview e2e) **plus** a set of narrow, fail-closed guards under [.github/workflows/](./.github/workflows/). Each guard answers "which rule did my PR break?" *before* you trip it on a red run. Most are one `pipeline-cli <name> check` invocation and **fail closed on zero scope** (a missing file / empty match reds the build, not passes it — ADR [0092](./.decisions/0092-gates-fail-closed-on-zero-scope.md)); the scan logic lives once in the tool, never re-grepped in the workflow.
+
+| Guard | What it checks | What trips it |
+|---|---|---|
+| [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (effect-tsgo), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
+| [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc surfaces carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, `/Users/…`, vault, or sibling-repo path — or an operator email — in a changed doc. |
+| [`gitleaks`](./.github/workflows/gitleaks.yml) | The PR's new commits for committed secrets (API keys, tokens, private keys). | A credential committed anywhere in the diff. |
+| [`crew-leak-guard`](./.github/workflows/crew-leak-guard.yml) | The `claude-plugins/pipeline-crew` tree for any personal-data class (local paths, emails, tmux pane ids, memory refs). | Re-personalizing a crew def with real operator data. |
+| [`fanout-guard`](./.github/workflows/fanout-guard.yml) | Every `Fate.mutation` is classified fanned/not, and each fanned mutation's feature publishes the `/fate/live` invalidation (ADR 0155). | An unclassified mutation, or a fanned mutation whose feature omits the `WorkerLivePublisher` publish. |
+| [`readme-guard`](./.github/workflows/readme-guard.yml) | Every `packages/*` workspace member (a dir with `package.json`) carries a `README.md`. | Adding a package without a README. |
+| [`migrations-guard`](./.github/workflows/migrations-guard.yml) | The hand-authored D1 migrations tree: `.sql` ↔ journal ↔ snapshots agree, contiguous-unique ordering, journaled-SQL immutability (ADR 0108). | Editing a historical migration, or an out-of-order / inconsistent new one. |
+| [`design-token-guard`](./.github/workflows/design-token-guard.yml) | Component CSS consumes the design-token seam — every `var(--…)` resolves, no raw hex outside `tokens.css`, no off-grid px beyond each file's grandfathered ceiling (ADR 0162). | A dead token ref, a raw hex, or an off-grid px in a component stylesheet. |
+| [`a11y-pbt`](./.github/workflows/a11y-pbt.yml) | Property-based a11y invariants over the `apps/web` `ui/` primitives (accessible name, valid ARIA, keyboard focusability). | A primitive that violates an enforced pillar-4 invariant, or a new unclassified primitive. |
+| [`doc-links`](./.github/workflows/doc-links.yml) | Every git-tracked `.md`'s relative/internal links resolve on disk, repo-wide (via lychee). | A dead internal link — including one orphaned by a rename outside your own diff. |
+| [`pointer-guard`](./.github/workflows/pointer-guard.yml) | Backticked repo-path pointers in `**/CLAUDE.md` resolve on disk. | A moved/renamed file behind a backticked path pointer in a CLAUDE.md. |
+| [`codeowners-cp`](./.github/workflows/codeowners-cp.yml) | Every §CP control-plane path (from the canonical regex) has a covering `.github/CODEOWNERS` row. | Adding a §CP path to the regex without a CODEOWNERS entry. |
+| [`path-filter-guard`](./.github/workflows/path-filter-guard.yml) | `deploy.yml`'s `changes.deploy` and `ci.yml`'s `changes.e2e` paths-filter lists are the same set of globs. | Editing one paths-filter list without the other. |
+| [`settings-env-guard`](./.github/workflows/settings-env-guard.yml) | No `.claude/settings.json` `env` value carries an unexpanded `${…}` token (applied verbatim, so it never resolves). | A `${VAR}` left literal in a settings env value. |
+| [`skill-gh-lint`](./.github/workflows/skill-gh-lint.yml) | The skill + agent corpus: REST-only `gh` (no GraphQL paths) and valid frontmatter YAML. | A `gh project` / GraphQL call, or malformed `---` frontmatter, in a SKILL.md / agents/*.md. |
+| [`workflow-contract`](./.github/workflows/workflow-contract.yml) | Every `.claude/workflows/*.js` conforms to the runtime load shape (`export const meta = {…}`, no `export default`). | A workflow script with a default export or a missing `meta`. |
+| [`decisions-index`](./.github/workflows/decisions-index.yml) | The `.decisions/*` ADR files carry no duplicate `id` and no filename ↔ front-matter number mismatch. | A new ADR that collides on number or mismatches its filename. |
+
+Not every workflow is a PR gate. [`run-evidence`](./.github/workflows/run-evidence.yml) *produces* the SHA-bound run-evidence artifact the `ship-it` / `review-code` gates consume (ADR [0054](./.decisions/0054-run-evidence-bundle.md)); [`deploy`](./.github/workflows/deploy.yml) / [`pr-cleanup`](./.github/workflows/pr-cleanup.yml) stand up and tear down per-PR preview stacks; [`changelog`](./.github/workflows/changelog.yml) / [`publish`](./.github/workflows/publish.yml) fire on a release tag; and [`epic-autoclose`](./.github/workflows/epic-autoclose.yml), [`glossary-drift`](./.github/workflows/glossary-drift.yml), and [`orphan-sweep`](./.github/workflows/orphan-sweep.yml) run on issue-close or a schedule rather than on your PR. Ground truth for the full set is `ls .github/workflows/`.
 
 ## The pipeline
 
