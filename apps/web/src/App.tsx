@@ -102,10 +102,12 @@ function Layout() {
 	const {toggle: toggleTheme, choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
 	// The mecmua nav entry (#2512), dark behind `mecmua-public-read` — the same seam the
-	// reader/index gate on. `useFlag` reads over `fetch` (no fate client), so it is safe in
-	// this always-painting shell frame: the entry simply appears once the flag resolves on,
-	// never blocking first paint (Pillar 1). Off ⇒ the nav is exactly as before.
-	const {value: mecmuaOn} = useFlag(MECMUA_PUBLIC_READ, false);
+	// reader/index routes self-gate on (so this stays a pure kill-switch view; the gating
+	// lives server-side). `persist` seeds first paint from the last-resolved value so the
+	// entry no longer pops in *after* the ungated sözlük/pano links on every load — the CLS
+	// of #2828. The server evaluate stays authoritative, so a kill-switch flip self-corrects
+	// on the next response (and re-seeds off). Never blocks first paint (Pillar 1).
+	const {value: mecmuaOn} = useFlag(MECMUA_PUBLIC_READ, false, {persist: true});
 	// The mecmua feed (akış) nav entry (#2547), dark behind its own `mecmua-feed` seam —
 	// the SAME flag the `/mecmua/akis` route self-gates on (self-404 when off). Gating the
 	// link on the route's own seam is what keeps it from ever pointing at a dark 404: off ⇒

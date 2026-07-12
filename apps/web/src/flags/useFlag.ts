@@ -21,12 +21,22 @@
  * sit anywhere in the tree, including above a `<Screen>` Suspense boundary, so it
  * must resolve to a safe default rather than suspend — the same reasoning as
  * `useMe` / `useProfileStats`.
+ *
+ * Opt-in `persist` seeds first paint from the last-resolved value (#2828). A
+ * gated nav slot whose flag defaults `false` pops in *after* the ungated links on
+ * every load (the mecmua topnav CLS) — the false→true flip is the shift. With
+ * `persist` the first render seeds from the cached last-known value instead of the
+ * raw default, so a returning visitor's gated slot paints stable; the server
+ * evaluate stays authoritative and rewrites the cache, so gating never changes and
+ * a killed flag self-corrects on the next response. Off by default — every other
+ * caller is byte-identical to before.
  */
 import {useEffect, useState} from "react";
 import {
 	type FlagEvaluateRequest,
 	resolveFlag,
 } from "../../worker/features/flagship/evaluate-contract";
+import {readCachedFlag, writeCachedFlag} from "./flagCache";
 
 /** A flag read: its current value plus whether the server result is in yet. */
 export interface FlagState {
@@ -68,18 +78,41 @@ export function resolveFlagResponse(
 	return resolveFlag(body, key, defaultValue);
 }
 
-export function useFlag(key: string, defaultValue: boolean): FlagState {
-	const [value, setValue] = useState(defaultValue);
+/** Extra behavior a call-site can opt into. */
+export interface UseFlagOptions {
+	/**
+	 * Seed first paint from (and write back) the last-resolved value in
+	 * `localStorage`, so a gated slot paints stable across loads instead of
+	 * flipping default→resolved on every render (#2828). Off by default.
+	 */
+	readonly persist?: boolean;
+}
+
+function flagStorage(): Storage | undefined {
+	return typeof window === "undefined" ? undefined : window.localStorage;
+}
+
+export function useFlag(key: string, defaultValue: boolean, options?: UseFlagOptions): FlagState {
+	const persist = options?.persist ?? false;
+	// With persist on, the first render's seed is the cached last-known value (falling
+	// back to the default when absent/garbage/unavailable); otherwise the raw default,
+	// exactly as before. The server evaluate below still overwrites it, so this only
+	// changes the *pre-response* paint — never the resolved gating.
+	const [value, setValue] = useState(() =>
+		persist ? readCachedFlag(flagStorage(), key, defaultValue) : defaultValue,
+	);
 	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
 		let active = true;
 		setLoading(true);
-		// Reset to the default before each read so a key change can't briefly show
-		// the previous key's value.
-		setValue(defaultValue);
+		// Reset before each read so a key change can't briefly show the previous key's
+		// value — to the cached seed under persist (so no key change reintroduces the
+		// flip), else the raw default.
+		setValue(persist ? readCachedFlag(flagStorage(), key, defaultValue) : defaultValue);
 		fetchFlag(key, defaultValue)
 			.then((resolved) => {
+				if (persist) writeCachedFlag(flagStorage(), key, resolved);
 				if (!active) return;
 				setValue(resolved);
 				setLoading(false);
@@ -93,7 +126,7 @@ export function useFlag(key: string, defaultValue: boolean): FlagState {
 		return () => {
 			active = false;
 		};
-	}, [key, defaultValue]);
+	}, [key, defaultValue, persist]);
 
 	return {value, loading};
 }
