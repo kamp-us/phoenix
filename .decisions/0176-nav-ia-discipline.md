@@ -2,9 +2,13 @@
 id: 0176
 title: Nav IA discipline — element taxonomy + placement law, encoded in the design manifest
 status: accepted
+date: 2026-07-11
+tags: [design, frontend, navigation, information-architecture, manifest]
 ---
 
-# Nav IA discipline — element taxonomy + placement law
+# 0176 — Nav IA discipline — element taxonomy + placement law
+
+## Context
 
 The kamp.us navigation surface had **no information-architecture discipline**. Elements
 accreted onto the topbar one affordance at a time, each classified nowhere and placed by
@@ -22,7 +26,7 @@ law `write-code` reads before generating nav UI. It is the nav-surface analogue 
 agent-transcribed into [`design-system-manifest.md`](../design-system-manifest.md), enforced
 by the same design gates.
 
-## Provenance
+### Provenance
 
 This is a **conversation/chart-authored** decision, authored directly (not via report → triage)
 and merged issueless on the doc lane per ADR
@@ -42,7 +46,9 @@ graduated six founder-decision-forks into its Decisions-so-far log:
 The claims here are grounded in those forks' ratified resolutions, not in intuition. Where
 this ADR and the forks disagree, the forks (and the map's Decisions-so-far) are authoritative.
 
-## The topbar job statement (the criterion)
+## Decision
+
+### The topbar job statement (the criterion)
 
 Ratified on #2591. The topbar is not a shelf for whatever needs a home; it answers three
 questions and promotes one action:
@@ -56,7 +62,7 @@ of the three questions and is not *the* one promoted action does not earn perman
 top-bar real estate — it is demoted to a product zone, folded into the account trigger, or
 killed.
 
-## The element taxonomy (four classes, closed list)
+### The element taxonomy (four classes, closed list)
 
 Ratified on #2586. Every nav element is assigned to exactly one of four classes. This is a
 **closed list** — a new affordance is not added until its class is chosen.
@@ -76,7 +82,7 @@ The model is deliberately two-level: **classes** say what an element *is*; **zon
 say where a class *lives*. Keeping them separate is what makes the placement law checkable —
 you assign the class once, and the zone follows from law.
 
-## The placement law (Model 2 — two-tier + zone grammar)
+### The placement law (Model 2 — two-tier + zone grammar)
 
 Ratified on #2587. Placement is two-tier: a **global** zone (the topbar) and a **product**
 zone (the per-product Subnav), plus the **user menu** for account-scoped utilities. Each
@@ -94,7 +100,7 @@ zone**. A product-scoped create verb (e.g. pano's "new post") is a *contextual C
 product's Subnav*, never a global topbar button wearing global placement — that mismatch is
 exactly the #2543 shape.
 
-## How the primary CTA is distinguished (container scarcity)
+### How the primary CTA is distinguished (container scarcity)
 
 Ratified on #2589. The primary action — the global `+` create menu — is distinguished **not**
 by a bespoke spatial rule but by **container scarcity under the containment law**: it is the
@@ -103,7 +109,7 @@ containment law already forbids resting accent chrome elsewhere on the bar, "a u
 as the CTA" is unrepresentable — there is no second accent fill for a utility to borrow. One
 accent container, one promoted action.
 
-## The seven element verdicts (the taxonomy applied)
+### The seven element verdicts (the taxonomy applied)
 
 Ratified on #2591 (with #2588 for `tema`). Applying the law to today's topbar produced seven
 verdicts — the concrete restructure the discipline demands:
@@ -129,7 +135,7 @@ These verdicts are recorded here as the ratified target; the topbar restructure 
 standardization that implement them ship as separate epics downstream of this ADR (the map's
 hand-off items 2 and 3).
 
-## The manifest IA rule
+### The manifest IA rule
 
 Ratified on #2590. The discipline is only load-bearing if `write-code` reads it before
 generating nav UI, the same way it reads the four pillars. So the taxonomy and placement law
@@ -161,7 +167,7 @@ section grows only when the founder ratifies more law.
 - This ADR **adds** the IA law; it relaxes no existing guard. It is a doc/knowledge change on
   `.decisions/**` + the manifest, not a control-plane change.
 
-## References
+### References
 
 - Wayfinder map [#2583](https://github.com/kamp-us/phoenix/issues/2583) — the chart + ratified
   Decisions-so-far this ADR transcribes.
@@ -175,4 +181,3 @@ section grows only when the founder ratifies more law.
   mechanism this section extends.
 - ADR [0075](0075-issueless-doc-pr-merge-seam.md) — the issueless doc-PR merge seam (the
   conversation-authored doc lane this PR ships on).
-</content>
