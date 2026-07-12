@@ -46,6 +46,12 @@
 .kp-topbar__signal-link {
 	display: inline-flex;
 	align-items: center;
+	/* Icon-only links (the divan Gavel glyph) carry no text width to pad out, so the box
+	   floors to --tap-min in both axes and flex-centers the glyph — hit area decoupled from
+	   the glyph, text links unaffected (they already exceed it). ADR 0162 §Tap target. */
+	justify-content: center;
+	min-height: var(--tap-min);
+	min-width: var(--tap-min);
 	padding: 4px 8px;
 	font: var(--t-body-sm);
 	font-weight: 500;
