@@ -4,7 +4,9 @@ import {readStoredChoice, writeStoredChoice} from "./themeStorage";
 export type ThemeChoice = "light" | "dark" | "auto";
 type ResolvedTheme = "light" | "dark";
 
-const DEFAULT_CHOICE: ThemeChoice = "dark";
+// A first-time visitor with no stored choice follows their system preference (#2612):
+// `auto` resolves to the OS light/dark setting rather than forcing dark on everyone.
+const DEFAULT_CHOICE: ThemeChoice = "auto";
 
 function browserStorage(): Storage | undefined {
 	return typeof window === "undefined" ? undefined : window.localStorage;

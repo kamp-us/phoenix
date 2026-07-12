@@ -97,7 +97,7 @@ function Layout() {
 	const session = useSession();
 	const navigate = useNavigate();
 	const location = useLocation();
-	const {toggle: toggleTheme} = useTheme();
+	const {toggle: toggleTheme, choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
 	// The mecmua nav entry (#2512), dark behind `mecmua-public-read` — the same seam the
 	// reader/index gate on. `useFlag` reads over `fetch` (no fate client), so it is safe in
@@ -183,7 +183,12 @@ function Layout() {
 							const target = searchTarget(query);
 							if (target) navigate(target);
 						}}
-						onToggleTheme={toggleTheme}
+						// The tema toggle is wired only with nav-IA off; on, the three-way
+						// theme picker is the sole control (#2612), so onToggleTheme stays
+						// unwired and no tema button renders.
+						onToggleTheme={navIaOn ? undefined : toggleTheme}
+						themeChoice={themeChoice}
+						onThemeChange={setThemeChoice}
 						onLogout={onSignOut}
 						actions={
 							!isSignedIn ? (

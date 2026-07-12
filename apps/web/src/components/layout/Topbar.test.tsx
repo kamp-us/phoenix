@@ -8,9 +8,9 @@
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import {render, screen} from "@testing-library/react";
+import {fireEvent, render, screen, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
-import {describe, expect, it} from "vitest";
+import {describe, expect, it, vi} from "vitest";
 import {Topbar} from "./Topbar";
 
 const NAV = [
@@ -193,5 +193,98 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		expect(temaHover).toBeDefined();
 		expect(temaHover?.body).toMatch(/color:\s*var\(--text-primary\)/);
 		expect(temaHover?.body).not.toMatch(/var\(--accent(-11)?\)/);
+	});
+});
+
+describe("Topbar tema toggle → theme picker (#2612)", () => {
+	it("flag off: the tema toggle still renders and behaves exactly as today", () => {
+		const onToggleTheme = vi.fn();
+		render(
+			<MemoryRouter>
+				<Topbar
+					nav={NAV}
+					onToggleTheme={onToggleTheme}
+					themeChoice="dark"
+					onThemeChange={() => {}}
+				/>
+			</MemoryRouter>,
+		);
+		const tema = screen.getByRole("button", {name: "tema"});
+		fireEvent.click(tema);
+		expect(onToggleTheme).toHaveBeenCalledOnce();
+		// The three-way picker is dark behind the flag — no picker surface renders.
+		expect(screen.queryByTestId("topbar-theme-picker")).toBeNull();
+	});
+
+	it("flag on: no tema toggle renders, in either auth state", () => {
+		const {rerender} = render(
+			<MemoryRouter>
+				<Topbar
+					navIa
+					nav={NAV}
+					onToggleTheme={vi.fn()}
+					themeChoice="auto"
+					onThemeChange={() => {}}
+					user={{name: "Elif", username: "elif"}}
+				/>
+			</MemoryRouter>,
+		);
+		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
+		rerender(
+			<MemoryRouter>
+				<Topbar
+					navIa
+					nav={NAV}
+					onToggleTheme={vi.fn()}
+					themeChoice="auto"
+					onThemeChange={() => {}}
+				/>
+			</MemoryRouter>,
+		);
+		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
+	});
+
+	it("flag on, signed in: the theme picker lives in the user menu next to ayarlar", () => {
+		const onThemeChange = vi.fn();
+		render(
+			<MemoryRouter>
+				<Topbar
+					navIa
+					nav={NAV}
+					themeChoice="dark"
+					onThemeChange={onThemeChange}
+					user={{name: "Elif", username: "elif"}}
+				/>
+			</MemoryRouter>,
+		);
+		// The picker is portaled inside the account menu — open it, then it appears.
+		fireEvent.click(screen.getByText("Elif"));
+		// `ayarlar` (the settings item) sits directly above the theme row — the picker is
+		// the next control in the account menu, not the topbar utility zone.
+		expect(screen.getByText("ayarlar")).toBeTruthy();
+		const row = screen.getByTestId("topbar-theme-row");
+		expect(within(row).getByText("tema")).toBeTruthy();
+		const picker = within(row).getByTestId("topbar-theme-picker");
+		expect(within(picker).getByRole("button", {name: "koyu"}).getAttribute("aria-pressed")).toBe(
+			"true",
+		);
+		fireEvent.click(within(picker).getByRole("button", {name: "otomatik"}));
+		expect(onThemeChange).toHaveBeenLastCalledWith("auto");
+	});
+
+	it("flag on, signed out: the same light/dark/auto picker is reachable in the topbar utility zone", () => {
+		const onThemeChange = vi.fn();
+		render(
+			<MemoryRouter>
+				<Topbar navIa nav={NAV} themeChoice="light" onThemeChange={onThemeChange} />
+			</MemoryRouter>,
+		);
+		const utility = screen.getByTestId("topbar-zone-utility");
+		const picker = within(utility).getByTestId("topbar-theme-picker");
+		for (const label of ["açık", "koyu", "otomatik"]) {
+			expect(within(picker).getByRole("button", {name: label})).toBeTruthy();
+		}
+		fireEvent.click(within(picker).getByRole("button", {name: "koyu"}));
+		expect(onThemeChange).toHaveBeenLastCalledWith("dark");
 	});
 });

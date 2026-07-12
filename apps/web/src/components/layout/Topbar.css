@@ -182,3 +182,19 @@
 .kp-topbar__zone--utility .kp-topbar__btn:hover {
 	color: var(--text-primary);
 }
+
+/* The three-way theme picker (#2612) that replaces the tema toggle. In the user menu it
+   reads as a labeled settings row (label left, segmented control right); in the utility
+   zone the label is absent and the segmented control sits inline. The control is the
+   neutral `segmented` ToggleGroup, so it carries no accent fill (#2614 stays satisfied). */
+.kp-topbar__theme-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-3);
+	padding: var(--s-1) var(--s-2);
+}
+.kp-topbar__theme-label {
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
