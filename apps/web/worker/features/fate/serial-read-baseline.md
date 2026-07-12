@@ -55,6 +55,18 @@ concurrent wave** when the flag is on: **by-id 5 → 2, connection first-page 6 
 `concurrency: 1` — the reads stay serial, byte-for-byte today's output. The knob flips wall time
 only; the pano sibling (#2710) reuses the same combinator behind its own seam.
 
+### Realized — pano (#2710)
+
+The pano thread/comment reads (`getCommentsByIds` / `listCommentsKeyset`) now route their three
+stamps through the same shared `parallelStampWave` combinator ([`stamp-wave.ts`](./stamp-wave.ts)),
+and the reaction stamp's own two reads join the wave via `Reaction.readAggregate`'s `concurrency`
+option — so the **full 4-phase tail collapses to 1 concurrent wave** when the flag is on: **by-id
+5 → 2, connection first-page 6 → 3 (the documented 3-phase drop).** With the default-off
+`phoenix-pano-stamp-wave` flag the wave runs at `concurrency: 1` — the reads stay serial,
+byte-for-byte today's output. Scoped to the thread read only; the pano feed
+(`listPostsConnection`, the #2322 base/overlay split) is untouched — it is the reference pattern,
+not a target.
+
 ## Wall-time baseline (method + numbers)
 
 **Method** — reuse the 2026-07-06 production investigation's surface (#2275, ADR 0168):

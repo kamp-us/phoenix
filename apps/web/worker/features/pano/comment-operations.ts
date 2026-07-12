@@ -21,6 +21,7 @@ import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {type ReadProfileIdentities, stampAuthorIdentity} from "../fate/author-identity.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
+import {parallelStampWave} from "../fate/stamp-wave.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
@@ -267,6 +268,30 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			voteSvc.readMine(viewerId, "comment", ids),
 	} as const;
 
+	// The three independent finalize stamps every comment read shares — `myVote` (viewer
+	// scalar), the reaction aggregate, live author identity — each independent given the
+	// fetched rows. `parallelStampWave` runs them over the SAME rows and merges; the
+	// `parallelStamps` flag picks the concurrency: off ⇒ `1` (serial, byte-for-byte today),
+	// on ⇒ `"unbounded"` (one wave, the #2710 collapse). The reaction stamp's own two D1
+	// reads inherit the same knob so the whole wave is one phase when on. Mirrors sözlük's
+	// `stampDefinitions` (#2709), reusing the same combinator behind pano's own seam.
+	const stampComments = <R extends {id: string; authorId: string}>(
+		rows: ReadonlyArray<R>,
+		viewerId: string | null,
+		parallelStamps: boolean,
+	) => {
+		const concurrency = parallelStamps ? "unbounded" : 1;
+		return parallelStampWave(
+			rows,
+			[
+				(rs) => stampViewerScalars(rs, viewerId, [commentVoteScalar]),
+				(rs) => stampReactionAggregate(reactionSvc, "comment", rs, viewerId, {concurrency}),
+				(rs) => stampAuthorIdentity(readProfileIdentities, rs),
+			],
+			{concurrency},
+		);
+	};
+
 	// The tombstone is rendered HERE, from the lifecycle projection — not written
 	// into the canonical body by the delete path (ADR 0096 §5). A `Removed`
 	// comment surfaces as the `[silindi]` placeholder with author elided; its real
@@ -295,6 +320,13 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			after?: string | null | undefined;
 			viewerId?: string | null | undefined;
 			sandboxViewer?: SandboxViewer | undefined;
+			/**
+			 * Route the finalize stamps through the concurrent {@link parallelStampWave}
+			 * instead of the serial chain (#2710). Default/off ⇒ the wave runs at
+			 * `concurrency: 1` — byte-for-byte today. The resolver resolves it from the
+			 * default-off `phoenix-pano-stamp-wave` flag.
+			 */
+			parallelStamps?: boolean | undefined;
 		} = {},
 	) {
 		const first = Math.max(1, Math.min(opts.first ?? 50, 200));
@@ -361,16 +393,19 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		);
 
 		const page = forwardPage(fetched, first, (r: CommentRow) => r.id, rowToCommentRow);
-		const scalared = yield* stampViewerScalars(page.rows, viewerId, [commentVoteScalar]);
-		const reacted = yield* stampReactionAggregate(reactionSvc, "comment", scalared, viewerId);
-		const rows = yield* stampAuthorIdentity(readProfileIdentities, reacted);
+		const rows = yield* stampComments(page.rows, viewerId, opts.parallelStamps ?? false);
 
 		return {...page, rows, totalCount} satisfies CommentConnectionPage;
 	});
 
 	const getCommentsByIds = Effect.fn("Pano.getCommentsByIds")(function* (
 		ids: ReadonlyArray<string>,
-		opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
+		opts: {
+			viewerId?: string | null | undefined;
+			sandboxViewer?: SandboxViewer | undefined;
+			/** See `listCommentsKeyset`'s `parallelStamps` (#2710). */
+			parallelStamps?: boolean | undefined;
+		} = {},
 	) {
 		if (ids.length === 0) return [];
 		const viewerId = opts.viewerId ?? null;
@@ -391,11 +426,11 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 					),
 				),
 		);
-		const scalared = yield* stampViewerScalars(fetched.map(rowToCommentRow), viewerId, [
-			commentVoteScalar,
-		]);
-		const reacted = yield* stampReactionAggregate(reactionSvc, "comment", scalared, viewerId);
-		return yield* stampAuthorIdentity(readProfileIdentities, reacted);
+		return yield* stampComments(
+			fetched.map(rowToCommentRow),
+			viewerId,
+			opts.parallelStamps ?? false,
+		);
 	});
 
 	// The moderator sandbox-queue / promotion-backlog read model (#1205, the #1206

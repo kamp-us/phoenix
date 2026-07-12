@@ -10,7 +10,10 @@ import {Fate} from "@kampus/fate-effect";
 import {hasNestedSelection} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {PHOENIX_PANO_STAMP_WAVE} from "../../../src/flags/keys.ts";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
+import {Flags} from "../flagship/Flags.ts";
+import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPostFromPage} from "./shapers.ts";
@@ -62,10 +65,17 @@ export const queries = {
 				return base;
 			}
 
+			// The thread read's stamp collapse is contained behind its default-off flag
+			// (#2710): off ⇒ the stamps run serially (today), on ⇒ one concurrent wave.
+			const flags = yield* Flags;
+			const parallelStamps = yield* flags
+				.getBoolean(PHOENIX_PANO_STAMP_WAVE, false)
+				.pipe(provideRequestFlags);
 			const connection = yield* pano.listCommentsKeyset(page.id, {
 				...keysetInput(args.comments, COMMENTS_PAGE_SIZE),
 				viewerId,
 				sandboxViewer,
+				parallelStamps,
 			});
 			const comments = toConnection<(typeof connection.rows)[number], Comment>(
 				connection,

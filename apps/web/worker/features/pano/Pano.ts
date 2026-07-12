@@ -160,6 +160,8 @@ export class Pano extends Context.Service<
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
+				/** Collapse the finalize stamps into one concurrent wave (#2710). Default off. */
+				parallelStamps?: boolean | undefined;
 			},
 		) => Effect.Effect<CommentConnectionPage>;
 
@@ -185,7 +187,12 @@ export class Pano extends Context.Service<
 		/** Comment source `byIds` — batched read avoiding the relation N+1. */
 		readonly getCommentsByIds: (
 			ids: ReadonlyArray<string>,
-			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
+			opts?: {
+				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
+				/** Collapse the finalize stamps into one concurrent wave (#2710). Default off. */
+				parallelStamps?: boolean | undefined;
+			},
 		) => Effect.Effect<ReadonlyArray<CommentRow>>;
 
 		/**
