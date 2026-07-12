@@ -46,10 +46,12 @@ const noop: RemovalTransitionOutcome = {committed: false};
 
 /**
  * Wrap a recomputable-cache refresh in the uniform swallow-and-log (#2012, #1639): the
- * transition has committed, so a refresh die must not fail it. One place, so every arm
- * shares the policy.
+ * write it follows has already committed, so a refresh die (a recomputable cache over
+ * `DrizzleAccessOrDie`, ADR 0011/0117) must not flip it into a raw 500 — totals reconverge
+ * on the next write. One place, so the removal/restore arms AND the create paths that
+ * committed-then-refresh (`addDefinition`, `submitPost`, #2556) share the single policy.
  */
-const swallowRefresh = (label: string, refresh: Effect.Effect<void>): Effect.Effect<void> =>
+export const swallowRefresh = (label: string, refresh: Effect.Effect<void>): Effect.Effect<void> =>
 	refresh.pipe(
 		Effect.catchCause((cause) => Effect.logWarning(`${label}: cache refresh failed`, cause)),
 	);
