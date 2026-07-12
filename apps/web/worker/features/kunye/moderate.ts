@@ -13,6 +13,7 @@
  */
 import {Capability, Grant, matchActor, platform, RelationStore} from "@kampus/authz";
 import {Effect} from "effect";
+import {UserId} from "../../lib/ids.ts";
 import {Denied} from "./errors.ts";
 
 export class Moderate extends Capability.Relation<Moderate>()("kunye/Moderate", {
@@ -85,11 +86,12 @@ export const requireModeration = <A, E, R>(body: Effect.Effect<A, E, Moderate | 
 /**
  * The moderator's account id from a discharged `Moderate` grant — the
  * authority-checked identity a moderation write stamps as `resolver_id` /
- * `removed_by`. A discharged grant is never anonymous (`Moderate.over` fails
- * `Denied` on the `Unauthenticated` arm before minting), so the anonymous arm is
- * unreachable and dies as the defect it would be.
+ * `removed_by`, minted as the shared branded {@link UserId} (see `lib/ids.ts`). A
+ * discharged grant is never anonymous (`Moderate.over` fails `Denied` on the
+ * `Unauthenticated` arm before minting), so the anonymous arm is unreachable and
+ * dies as the defect it would be.
  */
-export const moderatorOf = (grant: Grant<Moderate>): Effect.Effect<string> =>
+export const moderatorOf = (grant: Grant<Moderate>): Effect.Effect<UserId> =>
 	matchActor(grant.actor, {
 		onUnauthenticated: () =>
 			Effect.die(
@@ -97,6 +99,6 @@ export const moderatorOf = (grant: Grant<Moderate>): Effect.Effect<string> =>
 					"Moderate grant carried an unauthenticated actor — Moderate.over denies anonymous",
 				),
 			),
-		onHuman: (subject) => Effect.succeed(subject.id),
-		onAgent: (acting) => Effect.succeed(acting.id),
+		onHuman: (subject) => Effect.succeed(UserId.make(subject.id)),
+		onAgent: (acting) => Effect.succeed(UserId.make(acting.id)),
 	});

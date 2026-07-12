@@ -16,6 +16,7 @@
  */
 import {Capability, Grant, matchActor, type Principal} from "@kampus/authz";
 import {Effect} from "effect";
+import {UserId} from "../../lib/ids.ts";
 import {RequiresLevel} from "./errors.ts";
 import {authorshipLadder, Kunye} from "./Kunye.ts";
 
@@ -44,16 +45,17 @@ export const requireVouch = <A, E, R>(body: Effect.Effect<A, E, Vouch | R>) =>
 
 /**
  * The voucher's account id from a discharged `Vouch` grant — the vouching actor the
- * vouch record preserves. A discharged grant is never anonymous (`Vouch.require`
- * fails on the `Unauthenticated` arm before minting), so the anonymous arm is
- * unreachable and dies as the defect it would be.
+ * vouch record preserves, minted as the shared branded {@link UserId} (see
+ * `lib/ids.ts`). A discharged grant is never anonymous (`Vouch.require` fails on the
+ * `Unauthenticated` arm before minting), so the anonymous arm is unreachable and
+ * dies as the defect it would be.
  */
-export const voucherOf = (grant: Grant<Vouch>): Effect.Effect<string> =>
+export const voucherOf = (grant: Grant<Vouch>): Effect.Effect<UserId> =>
 	matchActor(grant.actor, {
 		onUnauthenticated: () =>
 			Effect.die(
 				new Error("Vouch grant carried an unauthenticated actor — Vouch.require denies anonymous"),
 			),
-		onHuman: (subject) => Effect.succeed(subject.id),
-		onAgent: (acting) => Effect.succeed(acting.id),
+		onHuman: (subject) => Effect.succeed(UserId.make(subject.id)),
+		onAgent: (acting) => Effect.succeed(UserId.make(acting.id)),
 	});

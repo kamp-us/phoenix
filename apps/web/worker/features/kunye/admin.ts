@@ -15,6 +15,7 @@
  */
 import {Capability, Grant, matchActor, platform} from "@kampus/authz";
 import {Effect} from "effect";
+import {UserId} from "../../lib/ids.ts";
 import {Denied} from "./errors.ts";
 
 export class Admin extends Capability.Relation<Admin>()("kunye/Admin", {
@@ -37,16 +38,17 @@ export const requireAdmin = <A, E, R>(body: Effect.Effect<A, E, Admin | R>) =>
 
 /**
  * The admin's account id from a discharged `Admin` grant — the authority-checked
- * identity an admin write stamps. A discharged grant is never anonymous
- * (`Admin.over` fails `Denied` on the `Unauthenticated` arm before minting), so the
- * anonymous arm is unreachable and dies as the defect it would be.
+ * identity an admin write stamps, minted as the shared branded {@link UserId} (see
+ * `lib/ids.ts`). A discharged grant is never anonymous (`Admin.over` fails `Denied`
+ * on the `Unauthenticated` arm before minting), so the anonymous arm is unreachable
+ * and dies as the defect it would be.
  */
-export const adminOf = (grant: Grant<Admin>): Effect.Effect<string> =>
+export const adminOf = (grant: Grant<Admin>): Effect.Effect<UserId> =>
 	matchActor(grant.actor, {
 		onUnauthenticated: () =>
 			Effect.die(
 				new Error("Admin grant carried an unauthenticated actor — Admin.over denies anonymous"),
 			),
-		onHuman: (subject) => Effect.succeed(subject.id),
-		onAgent: (acting) => Effect.succeed(acting.id),
+		onHuman: (subject) => Effect.succeed(UserId.make(subject.id)),
+		onAgent: (acting) => Effect.succeed(UserId.make(acting.id)),
 	});
