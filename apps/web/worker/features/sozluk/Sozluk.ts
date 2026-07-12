@@ -8,7 +8,7 @@
  * its wire codes unit-test off-DB THROUGH the mutation (ADR 0013 / 0082).
  */
 import {id} from "@usirin/forge";
-import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
+import {and, asc, desc, eq, gt, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -162,6 +162,63 @@ export const recomputeTermSummary = (
 		lastEditAt: latestEditAt(rows) ?? now,
 	};
 };
+
+/**
+ * The backstop-reconciliation chunk size (#2558): the slug-keyset page width the periodic
+ * sweep pages `term_record` in. Sized well above the v1 cohort so today's pass is a single
+ * short page, while the bound holds as the table grows — mirrors `HOT_SCORE_DECAY_CHUNK`.
+ */
+export const SOZLUK_RECONCILE_CHUNK = 200;
+
+/** One term the reconciliation sweep re-converges: the slug + its stored title. */
+export interface TermRef {
+	readonly slug: string;
+	readonly title: string;
+}
+
+/**
+ * The DB seam the reconciliation sweep drives (#2558), factored so {@link scanReconcileChunks}'s
+ * cursor-advance + full-coverage control flow is unit-testable over in-memory ports (ADR 0082
+ * litmus — wrong-or-right with no SQL engine). `fetchChunk(afterSlug, limit)` returns up to
+ * `limit` term rows with `slug > afterSlug` in ascending slug order (`null` ⇒ from the head);
+ * `refreshTerm` re-runs the convergent cache refresh for one term.
+ */
+export interface SozlukReconcileScanPorts {
+	readonly fetchChunk: (
+		afterSlug: string | null,
+		limit: number,
+	) => Effect.Effect<ReadonlyArray<TermRef>>;
+	readonly refreshTerm: (term: TermRef) => Effect.Effect<void>;
+}
+
+/**
+ * Keyset-chunk the backstop reconciliation sweep (#2558): page slug-ordered slices of at most
+ * `chunkSize` terms, re-running the convergent refresh for each before fetching the next, so no
+ * single query materializes the whole `term_record` table (mirrors the #2559 decay-sweep bound).
+ * Every term is visited each pass — the slug-keyset cursor bounds each page, it never excludes a
+ * term. Loops until a short (`< chunkSize`) page marks the tail; an exact-multiple table takes
+ * one extra empty page to terminate. Returns the pass's scanned count.
+ */
+export const scanReconcileChunks = (
+	ports: SozlukReconcileScanPorts,
+	chunkSize: number,
+): Effect.Effect<{scanned: number}> =>
+	Effect.gen(function* () {
+		let after: string | null = null;
+		let scanned = 0;
+		for (;;) {
+			const rows: ReadonlyArray<TermRef> = yield* ports.fetchChunk(after, chunkSize);
+			if (rows.length === 0) break;
+			for (const term of rows) {
+				yield* ports.refreshTerm(term);
+				scanned++;
+			}
+			const last = rows[rows.length - 1];
+			if (rows.length < chunkSize || !last) break;
+			after = last.slug;
+		}
+		return {scanned};
+	});
 
 // The term-summary list sort — defined with the orderings it selects (`ordering.ts`).
 export type ListSort = TermSummarySort;
@@ -412,6 +469,20 @@ export class Sozluk extends Context.Service<
 		readonly reactToDefinition: (
 			input: ReactDefinitionInput,
 		) => Effect.Effect<DefinitionRow, DefinitionNotFound>;
+
+		/**
+		 * Backstop reconciliation (#2558): re-run the recomputable-cache refresh
+		 * (`persistTermSummary` — the term summary + its `term_search` FTS dual-write — and
+		 * `recomputeSozlukStats`) for EVERY sözlük term, so a term/stat left stale by a
+		 * swallowed last-write refresh (`swallowRefresh`, #2012) is eventually re-converged
+		 * WITHOUT waiting for a next user write. Driven by a periodic cron trigger
+		 * (`sozluk-reconcile-cron.ts`); the request-path swallow is unchanged — this is the
+		 * additive long-tail backstop. The sweep pages `term_record` in slug-keyset chunks
+		 * (`scanReconcileChunks`). Idempotent: `persistTermSummary` is a pure convergent fold,
+		 * so re-running it on an already-fresh term rewrites the identical row. Returns the
+		 * pass's scanned count for observability.
+		 */
+		readonly reconcileCaches: (now: Date) => Effect.Effect<{readonly scanned: number}>;
 	}
 >()("@kampus/sozluk/Sozluk") {}
 
@@ -575,6 +646,34 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				yield* persistTermSummary(slug, title, now);
 				yield* recomputeSozlukStats(now);
 			});
+
+		// The backstop reconciliation sweep (#2558): re-run the convergent cache refresh for
+		// EVERY term so a term/stat left stale by a swallowed last-write refresh
+		// (`swallowRefresh`, #2012) is eventually re-converged without a next user write. Pages
+		// `term_record` in slug-keyset chunks (bounded scan, mirrors #2559) refreshing each term
+		// summary + its FTS row, then refreshes `sozluk_stats` once for the whole pass. Driven by
+		// the cron trigger (`index.ts` → `sozluk-reconcile-cron.ts`). Idempotent by construction —
+		// `persistTermSummary` is a pure convergent fold, so an already-fresh term rewrites the
+		// identical row, meaning a full sweep needs no persisted "refresh failed" flag to target.
+		const reconcileCaches = Effect.fn("Sozluk.reconcileCaches")(function* (now: Date) {
+			const ports: SozlukReconcileScanPorts = {
+				fetchChunk: (afterSlug, limit) =>
+					run((db) =>
+						db
+							.select({slug: schema.termRecord.slug, title: schema.termRecord.title})
+							.from(schema.termRecord)
+							.where(afterSlug === null ? undefined : gt(schema.termRecord.slug, afterSlug))
+							.orderBy(asc(schema.termRecord.slug))
+							.limit(limit),
+					),
+				refreshTerm: (term) => persistTermSummary(term.slug, term.title, now),
+			};
+			const {scanned} = yield* scanReconcileChunks(ports, SOZLUK_RECONCILE_CHUNK);
+			// One stats refresh for the whole pass — `sozluk_stats` totals are table-wide, not
+			// per-term, so re-deriving them once after the term sweep is sufficient and cheapest.
+			yield* recomputeSozlukStats(now);
+			return {scanned};
+		});
 
 		const getTerm = Effect.fn("Sozluk.getTerm")(function* (
 			slug: string,
@@ -1320,6 +1419,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			voteDefinition,
 			retractDefinitionVote,
 			reactToDefinition,
+			reconcileCaches,
 		};
 	}),
 );
