@@ -589,8 +589,9 @@ export const mutations = {
 			input: CommentIdInput,
 			type: CommentView,
 			// `VoterNotEligible` (wire `VOTE_REQUIRES_YAZAR`) — the "earn to vote" gate (#1810), same as
-			// `post.vote`. Retraction is exempt for the same reason.
-			error: Schema.Union([Unauthorized, CommentNotFound, VoterNotEligible]),
+			// `post.vote`. `SelfVoteNotAllowed` (wire `SELF_VOTE_NOT_ALLOWED`, #2216) — a cast on one's
+			// own comment is rejected, mirroring `post.vote`. Retraction is exempt for the same reason.
+			error: Schema.Union([Unauthorized, CommentNotFound, VoterNotEligible, SelfVoteNotAllowed]),
 		},
 		Effect.fn("comment.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;

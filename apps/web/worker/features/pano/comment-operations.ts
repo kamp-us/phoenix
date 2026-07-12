@@ -32,6 +32,7 @@ import {
 } from "../lifecycle/SandboxVisibility.ts";
 import type {ReactionTargetNotFound} from "../reaction/errors.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
+import {SelfVoteNotAllowed} from "../vote/errors.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
 import type {Vote} from "../vote/Vote.ts";
 import {type CommentConnectionPage, type CommentRow, toCommentRow} from "./comment-fields.ts";
@@ -769,6 +770,17 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			});
 		}
 
+		// Self-vote guard (#2216, founder-ruled) — the comment twin of `applyPostVote`'s
+		// guard: a cast on one's OWN comment is rejected at the domain, so an inflated
+		// self-score is unrepresentable rather than caught downstream. Cast-only (a
+		// retraction is exempt because a blocked cast leaves nothing to retract).
+		if (isVote && row.authorId === input.voterId) {
+			return yield* new SelfVoteNotAllowed({
+				voterId: input.voterId,
+				message: "kendi yorumuna oy veremezsin",
+			});
+		}
+
 		const voteResult = yield* voteSvc
 			.cast({
 				userId: input.voterId,
@@ -808,11 +820,15 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 	const retractCommentVote = Effect.fn("Pano.retractCommentVote")(function* (
 		input: VoteOnCommentInput,
 	) {
-		// See `retractPostVote`: the tier gate fires on the cast direction only, so a
-		// retraction never raises `VoterNotEligible` — die if it somehow does, keeping this
-		// method's channel to `CommentNotFound`.
+		// See `retractPostVote`: the tier gate and the self-vote guard both fire on the cast
+		// direction only, so a retraction never raises `VoterNotEligible` /
+		// `SelfVoteNotAllowed` — die if one somehow does, keeping this method's channel to
+		// `CommentNotFound`.
 		return yield* applyCommentVote(input, false).pipe(
-			Effect.catchTag("vote/VoterNotEligible", (e) => Effect.die(e)),
+			Effect.catchTags({
+				"vote/VoterNotEligible": (e) => Effect.die(e),
+				"vote/SelfVoteNotAllowed": (e) => Effect.die(e),
+			}),
 		);
 	});
 

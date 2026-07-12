@@ -102,11 +102,11 @@ beforeAll(async () => {
 	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", `${NS}-yazar`);
 	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", `${NS}-davetsiz`);
 	voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", `${NS}-oycu`);
-	// `author` casts comment votes below (comment self-vote is not blocked). Post votes,
-	// however, must come from a non-author since #2216 blocks self-voting on posts — `voter`
-	// casts those. A fresh account is a çaylak and, since #1810's "earn to vote" gate, is
-	// rejected at cast, so promote both casters to yazar. `intruder` never votes
-	// (unauthorized-mutation cases), so it stays a çaylak.
+	// Votes must come from a non-author since #2216 blocks self-voting on both posts and
+	// comments — `voter` casts those. A fresh account is a çaylak and, since #1810's "earn
+	// to vote" gate, is rejected at cast, so promote both `author` (it votes on others'
+	// content elsewhere) and `voter` to yazar. `intruder` never votes (unauthorized-mutation
+	// cases), so it stays a çaylak.
 	await h.promoteToYazar(author.userId);
 	await h.promoteToYazar(voter.userId);
 });
@@ -534,9 +534,11 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 		if (!added.ok) return;
 		const id = (added.data as CommentNode).id;
 
+		// `voter` (a non-author yazar) casts — `author` can no longer self-vote its own comment
+		// since #2216, so the vote/retract round-trip runs from a different account.
 		const voted = await h.fate(
 			{kind: "mutation", name: "comment.vote", input: {id}, select: ["id", "score", "myVote"]},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
@@ -550,7 +552,7 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 				input: {id},
 				select: ["id", "score", "myVote"],
 			},
-			{cookie: author.cookie},
+			{cookie: voter.cookie},
 		);
 		expect(retracted.ok).toBe(true);
 		if (!retracted.ok) return;
@@ -596,6 +598,35 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
 		expect(result.error.code).toBe("COMMENT_NOT_FOUND");
+	});
+
+	// The self-vote block (#2216) proven end-to-end through the real `comment.vote` mutation,
+	// not just the domain unit (comment-self-vote-guard.unit.test.ts): `author` is a promoted
+	// yazar, so it clears the earn-to-vote gate (#1810) and it is the self-vote guard
+	// specifically that rejects a cast on its own comment with the `SELF_VOTE_NOT_ALLOWED`
+	// wire code the client receives — the comment twin of the `post.vote` case above.
+	it("comment.vote by the comment's own author is rejected with SELF_VOTE_NOT_ALLOWED", async () => {
+		const postId = await seedPost({title: `${NS} comment self-vote target`});
+		const added = await h.fate(
+			{
+				kind: "mutation",
+				name: "comment.add",
+				input: {postId, body: "my own comment"},
+				select: ["id"],
+			},
+			{cookie: author.cookie},
+		);
+		expect(added.ok).toBe(true);
+		if (!added.ok) return;
+		const id = (added.data as CommentNode).id;
+
+		const result = await h.fate(
+			{kind: "mutation", name: "comment.vote", input: {id}, select: ["id", "score", "myVote"]},
+			{cookie: author.cookie},
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.error.code).toBe("SELF_VOTE_NOT_ALLOWED");
 	});
 
 	it("delete returns the re-resolved parent Post with the surviving commentCount", async () => {
