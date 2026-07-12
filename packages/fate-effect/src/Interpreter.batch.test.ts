@@ -10,6 +10,7 @@
  * both backends from the shared sozluk world (`Oracle.fixture.ts`).
  */
 import {Effect, Layer, ManagedRuntime, Tracer} from "effect";
+import * as Schema from "effect/Schema";
 import {describe, expect, it} from "vitest";
 import {FateDataView} from "./DataView.ts";
 import {FateInterpreter} from "./Interpreter.ts";
@@ -250,10 +251,20 @@ describe("FateInterpreter — concurrent dispatch", () => {
 					}
 				}
 			});
+		// The barrier never rejects, but object-notation `Effect.tryPromise` (the #2736 idiom)
+		// requires a `catch` mapping to a tagged error; `orDie` then keeps the handler's error
+		// channel `never` (the query declares no errors).
+		class BarrierRejected extends Schema.TaggedErrorClass<BarrierRejected>()(
+			"test/BarrierRejected",
+			{cause: Schema.Unknown},
+		) {}
 		const paired = Fate.query(
 			{type: "Paired"},
 			Effect.fn("paired")(function* () {
-				yield* Effect.promise(() => arrive());
+				yield* Effect.tryPromise({
+					try: () => arrive(),
+					catch: (cause) => new BarrierRejected({cause}),
+				}).pipe(Effect.orDie);
 				return {ok: true};
 			}),
 		);

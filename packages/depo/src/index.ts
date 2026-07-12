@@ -26,6 +26,7 @@ export {
 } from "./domain.ts";
 export {
 	ContentAddressConflict,
+	DigestError,
 	FileReadError,
 	MissingCredential,
 	PayloadTooLarge,

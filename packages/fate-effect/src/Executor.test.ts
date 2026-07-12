@@ -100,6 +100,15 @@ const makeContext = (
 	livePublisher: options.publisher ?? recordingPublisher().publisher,
 });
 
+/**
+ * The barrier's promise never rejects, but object-notation `Effect.tryPromise` (the
+ * #2736 idiom) requires a `catch` mapping to a tagged error; `orDie` then keeps the
+ * handler's error channel `never` (the query declares no errors).
+ */
+class BarrierRejected extends Schema.TaggedErrorClass<BarrierRejected>()("test/BarrierRejected", {
+	cause: Schema.Unknown,
+}) {}
+
 /** Resolve once `count` callers have arrived — holds requests concurrently in flight. */
 const makeBarrier = (count: number): {arrive: () => Promise<void>} => {
 	const waiters: Array<() => void> = [];
@@ -375,8 +384,14 @@ describe("FateExecutor — per-request services", () => {
 			{type: "Session"},
 			Effect.fn("whoami")(function* () {
 				const {user: sessionUser} = yield* CurrentUser;
-				// Hold until BOTH requests are in flight — the two resolutions overlap.
-				yield* Effect.promise(() => barrier.arrive());
+				// Hold until BOTH requests are in flight — the two resolutions overlap. The
+				// barrier never rejects, and the query declares no errors (E = never), so a
+				// rejection is a defect (orDie) — the faithful object-notation form of the old
+				// `Effect.promise` (#2736).
+				yield* Effect.tryPromise({
+					try: () => barrier.arrive(),
+					catch: (cause) => new BarrierRejected({cause}),
+				}).pipe(Effect.orDie);
 				const live = yield* LivePublisher;
 				const id = sessionUser?.id ?? "anon";
 				yield* live.update("Session", id);

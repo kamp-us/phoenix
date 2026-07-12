@@ -15,6 +15,7 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {put} from "./client.ts";
 import type {
 	ContentAddressConflict,
+	DigestError,
 	FileReadError,
 	MissingCredential,
 	PayloadTooLarge,
@@ -30,6 +31,7 @@ type PutFailure =
 	| MissingCredential
 	| UnsupportedFile
 	| FileReadError
+	| DigestError
 	| Unauthorized
 	| UnsupportedMediaType
 	| PayloadTooLarge
@@ -67,6 +69,8 @@ const reasonOf = (error: PutFailure): string => {
 			return `unsupported file ${error.filename} (.${error.ext}) — allowed: png, jpg, jpeg, webp`;
 		case "depo/FileReadError":
 			return `cannot read ${error.path}: ${String(error.cause)}`;
+		case "depo/DigestError":
+			return `could not compute content address: ${String(error.cause)}`;
 		case "depo/Unauthorized":
 			return `unauthorized (401): ${error.message}`;
 		case "depo/UnsupportedMediaType":
