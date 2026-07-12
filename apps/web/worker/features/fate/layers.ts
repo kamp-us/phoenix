@@ -22,7 +22,8 @@ import type {Database} from "../../db/Database.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
 import {NotificationLive} from "../bildirim/Notification.ts";
 import {DivanLive} from "../divan/Divan.ts";
-import {FlagsDevOverrideLive, FlagsLive} from "../flagship/Flags.ts";
+import {FlagOverrideStoreLive} from "../flagship/FlagOverrideStore.ts";
+import {FlagsDevAndRuntimeOverrideLive, FlagsRuntimeOverrideLive} from "../flagship/Flags.ts";
 import {RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
 import {FunnelLive} from "../funnel/Funnel.ts";
@@ -168,7 +169,14 @@ const VoterStandingFromKunye = Layer.effect(VoterStanding)(
 export const FateFlagsLive = Layer.unwrap(
 	Effect.gen(function* () {
 		const {environment} = yield* AppConfig.pipe(Effect.orDie);
-		return environment === "development" ? FlagsDevOverrideLive : FlagsLive;
+		// Both arms now install the DURABLE runtime-override wrapper (#2741) so an admin's
+		// in-app flag flip is honored on the fate mutation/read path in EVERY stage; the
+		// `development` arm additionally layers the dev-only cookie override (#622) on top.
+		// `FlagOverrideStore` is discharged by the `provideMerge(FlagOverrideStoreLive)` on
+		// `makeFateLayer` (its `Drizzle` seam bubbles to the same root as `Database`).
+		return environment === "development"
+			? FlagsDevAndRuntimeOverrideLive
+			: FlagsRuntimeOverrideLive;
 	}),
 );
 
@@ -281,7 +289,16 @@ export const makeFateLayer = Layer.mergeAll(
 	// `RuntimeContext`/`FlagsContext` are per-call, supplied by the resolver, not at
 	// layer build.
 	FateFlagsLive,
-).pipe(Layer.provideMerge(PasaportFromTag), Layer.provideMerge(DrizzleLive));
+).pipe(
+	// The durable runtime flag-override store (#2741) — the append-only `flag_override_event`
+	// log the flag-flip mutation writes and the flag-state view reads. `provideMerge` so the
+	// ONE instance both discharges {@link FateFlagsLive}'s build-time `FlagOverrideStore`
+	// requirement AND stays a {@link WorkerFateServices} output the mutation/view resolvers
+	// `yield*`. Its `Drizzle` seam bubbles to the final `provideMerge(DrizzleLive)` below.
+	Layer.provideMerge(FlagOverrideStoreLive),
+	Layer.provideMerge(PasaportFromTag),
+	Layer.provideMerge(DrizzleLive),
+);
 
 /**
  * The composed fate-server layer (`.patterns/fate-effect-server.md`):

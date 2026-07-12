@@ -30,6 +30,7 @@ import {FateServer} from "@kampus/fate-effect";
 import {fateModule as bildirimModule} from "../bildirim/fate-module.ts";
 import {fateModule as divanModule} from "../divan/fate-module.ts";
 import {liveBusConfig} from "../fate-live/event-bus.ts";
+import {fateModule as flagshipModule} from "../flagship/fate-module.ts";
 import {fateModule as funnelModule} from "../funnel/fate-module.ts";
 import {fateModule as mecmuaModule} from "../mecmua/fate-module.ts";
 import {fateModule as panoModule} from "../pano/fate-module.ts";
@@ -54,6 +55,7 @@ export const modules = [
 	funnelModule,
 	bildirimModule,
 	mecmuaModule,
+	flagshipModule,
 ];
 
 export const fateConfig = FateServer.config({

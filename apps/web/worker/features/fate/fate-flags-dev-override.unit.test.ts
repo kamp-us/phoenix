@@ -27,6 +27,7 @@ import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
+import {FlagOverrideStore} from "../flagship/FlagOverrideStore.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {FlagsContext} from "../flagship/FlagsContext.ts";
 import {Flagship} from "../flagship/Flagship.ts";
@@ -63,6 +64,17 @@ const darkFlagship: Layer.Layer<Flagship> = Layer.succeed(Flagship)(
 	}),
 );
 
+// A no-op runtime-override store (#2741): no key carries a durable override, so the
+// runtime-override wrapper `FateFlagsLive` now installs delegates straight to real eval —
+// isolating THIS test to the dev-override cookie behavior it asserts.
+const noRuntimeOverrides: Layer.Layer<FlagOverrideStore> = Layer.succeed(FlagOverrideStore)(
+	FlagOverrideStore.of({
+		record: () => Effect.void,
+		getActiveOverride: () => Effect.succeed(undefined),
+		listActiveOverrides: () => Effect.succeed(new Map()),
+	}),
+);
+
 /** Mirror the worker-scope `ConfigProvider` with a fixed `ENVIRONMENT` stage. */
 const withEnvironment = (environment: string) =>
 	Effect.provideService(
@@ -84,7 +96,10 @@ const resolveWithOverride = (environment: string) =>
 		);
 	}).pipe(
 		Effect.provide(
-			Layer.mergeAll(FateFlagsLive.pipe(Layer.provide(darkFlagship)), RuntimeContextStub),
+			Layer.mergeAll(
+				FateFlagsLive.pipe(Layer.provide(darkFlagship), Layer.provide(noRuntimeOverrides)),
+				RuntimeContextStub,
+			),
 		),
 		withEnvironment(environment),
 	);

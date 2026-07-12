@@ -35,6 +35,7 @@ import {
 	wireCodeOfClass,
 } from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
+import {UnknownFlagKey} from "../flagship/errors.ts";
 import {Denied, InsufficientKarma, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
 import {MecmuaDisabled, MecmuaPostNotFound, MecmuaTitleRequired} from "../mecmua/errors.ts";
 import {
@@ -125,6 +126,10 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	// pasaport email-failing-mark floor (#2692) — reachable via `emailDelivery.mark`'s
 	// error union. Message-only, so also a round-trip representative below.
 	[EmailFailingReasonRequired, "EMAIL_FAILING_REASON_REQUIRED"],
+	// flagship admin console (#2741) — reachable from fateConfig via `flag.setOverride`'s error
+	// union. Message-only, so also a round-trip representative below; shares the `BAD_REQUEST`
+	// code with the package-intrinsic bad-request path.
+	[UnknownFlagKey, "BAD_REQUEST"],
 	// künye moderation gate + the package-side gate the SPA already decodes for writes
 	[Denied, "UNAUTHORIZED"],
 	[Unauthorized, "UNAUTHORIZED"],
@@ -183,6 +188,7 @@ const ROUND_TRIP_CLASSES = [
 	DisplayNameEmpty,
 	BanReasonRequired,
 	EmailFailingReasonRequired,
+	UnknownFlagKey,
 	Denied,
 	Unauthorized,
 ] as const satisfies ReadonlyArray<new (props: {message: string}) => unknown>;

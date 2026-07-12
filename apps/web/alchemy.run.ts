@@ -40,6 +40,7 @@ import {PhoenixDb} from "./worker/db/resources.ts";
 import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
 import {
+	adminConsoleFlag,
 	authorshipLoopFlag,
 	bildirimFlag,
 	demoTargetingFlag,
@@ -145,6 +146,10 @@ export default Alchemy.Stack(
 		// (#2692, epic #2687) — the single seam the emailDelivery.mark/clear mutations + the
 		// emailDelivery.failing admin roll-up gate behind until a human release.
 		yield* emailDeliveryAdminFlag(flagship.appId);
+		// The admin-console dark-ship flag, default-off (#2711) — the single seam the console
+		// shell + probe (#2740) and the worker flag-state view / runtime-flip mutation (#2741)
+		// gate behind, so no admin surface leaks until a human release.
+		yield* adminConsoleFlag(flagship.appId);
 		// The mecmua public-read dark-ship flag, default-off (#2498, epic #2467) — the
 		// single seam the anon GET route + reader page gate behind until a human release.
 		yield* mecmuaPublicReadFlag(flagship.appId);

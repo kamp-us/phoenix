@@ -23,6 +23,7 @@
  */
 import type {RuntimeContext} from "alchemy";
 import {type Cause, Context, Effect, Layer} from "effect";
+import {FlagOverrideStore} from "./FlagOverrideStore.ts";
 import {FlagsContext, toEvaluationContext} from "./FlagsContext.ts";
 import {Flagship} from "./Flagship.ts";
 
@@ -175,5 +176,64 @@ export const FlagsDevOverrideLive = Layer.effect(
 	Effect.gen(function* () {
 		const flagship = yield* Flagship;
 		return Flags.of(withDevOverrides(buildRealFlags(flagship)));
+	}),
+);
+
+/**
+ * Decorate a real {@link FlagsAccess} with the DURABLE, all-stages runtime override
+ * (admin-console epic #2711, #2741): a boolean read whose key carries an active
+ * `FlagOverrideStore` override returns the forced value; every other read (and every
+ * typed/non-boolean read) delegates unchanged to `inner`.
+ *
+ * Unlike {@link withDevOverrides} (a dev-only, per-request cookie map), this reads the
+ * durable, `requireAdmin`-written, append-only-projected override store — the admin's
+ * in-app flip persisted in D1, honored in EVERY stage. `store.getActiveOverride` is
+ * fail-soft (`E = never`): a store outage resolves `undefined`, so the read delegates to
+ * `inner` and a Flagship outage still degrades to the caller's safe default — the override
+ * layer never turns the never-throwing flag contract fail-open (epic #2711 story 8). Pure
+ * decorator (no Layer) so the short-circuit is unit-testable over stub `FlagsAccess` +
+ * store, with no binding.
+ */
+export const withRuntimeOverrides = (
+	inner: FlagsAccess,
+	store: FlagOverrideStore["Service"],
+): FlagsAccess => ({
+	...inner,
+	getBoolean: (key, defaultValue) =>
+		Effect.gen(function* () {
+			const override = yield* store.getActiveOverride(key);
+			return override !== undefined ? override : yield* inner.getBoolean(key, defaultValue);
+		}),
+});
+
+/**
+ * The durable runtime-override `Flags` layer (#2741): `FlagsLive`'s surface decorated with
+ * {@link withRuntimeOverrides}. Installed on EVERY stage (the admin console operates on local
+ * AND prod), so the override branch is present in every deployed flag path — the opposite of
+ * the dev-only {@link FlagsDevOverrideLive} gate. Requires `Flagship` + `FlagOverrideStore`,
+ * both discharged at the composition root (`fate/layers.ts`).
+ */
+export const FlagsRuntimeOverrideLive = Layer.effect(
+	Flags,
+	Effect.gen(function* () {
+		const flagship = yield* Flagship;
+		const store = yield* FlagOverrideStore;
+		return Flags.of(withRuntimeOverrides(buildRealFlags(flagship), store));
+	}),
+);
+
+/**
+ * The `development`-stage flag layer: the durable runtime override composed UNDER the dev-only
+ * cookie override, so a local dev's `phoenix_flag_overrides` cookie flip (#622) still wins
+ * outermost, falling through to the durable admin override, then the real evaluation. In every
+ * deployed stage {@link FlagsRuntimeOverrideLive} (no dev-cookie branch) is built instead — the
+ * same fail-closed dev-only gate the raw path applies, now over the runtime-override base.
+ */
+export const FlagsDevAndRuntimeOverrideLive = Layer.effect(
+	Flags,
+	Effect.gen(function* () {
+		const flagship = yield* Flagship;
+		const store = yield* FlagOverrideStore;
+		return Flags.of(withDevOverrides(withRuntimeOverrides(buildRealFlags(flagship), store)));
 	}),
 );

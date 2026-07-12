@@ -323,6 +323,15 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 			"appends a `clear` event to the email-delivery log — no fanned content entity (mirrors emailDelivery.mark)",
 	},
 
+	// flagship — the admin console's runtime flag-override write (#2741, epic #2711). A
+	// `requireAdmin`-gated admin audit surface, not a subscribed content connection.
+	{
+		key: "flag.setOverride",
+		fanned: false,
+		rationale:
+			"appends an audited runtime override event to the append-only `flag_override_event` log (an admin audit surface, epic #2711) — no Post/Comment/Definition in a subscribed content connection (mirrors emailDelivery.mark)",
+	},
+
 	// mecmua — long-form posts (#2497, epic #2467). mecmua Post does NOT yet live in a
 	// subscribed `/fate/live` connection (no mecmua root is wired), so neither write fans;
 	// if a mecmua mutation is later classified fanned it must publish via `WorkerLivePublisher`.

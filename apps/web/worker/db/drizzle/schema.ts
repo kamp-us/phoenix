@@ -221,6 +221,37 @@ export const emailDeliveryEvent = sqliteTable(
 );
 
 /**
+ * Append-only runtime feature-flag override log — the SINGLE source of both the audit
+ * trail and the current per-flag runtime override (admin-console epic #2711, #2741). The
+ * effective override is a projection of the latest event for a flag key (see
+ * `features/flagship/flag-override.ts` `resolveFlagOverride`), mirroring {@link userBanEvent}
+ * / {@link emailDeliveryEvent}: latest-event-wins, so an admin's runtime flip can never
+ * drift from history and every prod flip is auditable by construction.
+ *
+ * `action` is tri-state: `on`/`off` force the flag's effective value, `clear` lifts the
+ * override (the projection then reads the real Flagship evaluation). The `actor_id` is the
+ * discharged `Admin` grant's account id (plain text, no FK — the audit stamp mirrors
+ * `user_ban_event.actor_id`). The `(flag_key, created_at DESC)` index is the projection's
+ * hot read key. No `user`/account FK — the row is keyed by flag, not account.
+ */
+export const flagOverrideEvent = sqliteTable(
+	"flag_override_event",
+	{
+		id: text("id").primaryKey(),
+		// The Flagship flag key the override targets (the shared `src/flags/keys.ts` constant).
+		flagKey: text("flag_key").notNull(),
+		// The event kind: `on`/`off` force the effective value, `clear` lifts the override.
+		// The projection reads only the latest row, so a `clear` after an `on`/`off` restores
+		// the real evaluation without mutating or deleting the forcing row — full reversibility.
+		action: text("action", {enum: ["on", "off", "clear"]}).notNull(),
+		// The admin who performed the flip (a discharged `Admin` grant's account id).
+		actorId: text("actor_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [index("flag_override_event_key_created").on(t.flagKey, sql`${t.createdAt} DESC`)],
+);
+
+/**
  * Per-(definition, voter) up-vote presence row. `user_vote` and
  * `definition_record.score` (COUNT(*) under `WHERE definition_id = ?`) are both
  * denormalized off this, recomputed inline in the same D1 batch as the vote write.

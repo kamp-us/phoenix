@@ -28,6 +28,8 @@ export {
 	divanCaylakDataView,
 	divanVoteReceiptDataView,
 } from "../divan/views.ts";
+export type {FlagStateEntity as FlagState} from "../flagship/views.ts";
+export {flagStateDataView} from "../flagship/views.ts";
 export type {FunnelSummary} from "../funnel/views.ts";
 export {funnelSummaryDataView} from "../funnel/views.ts";
 export type {MecmuaPost, MecmuaSubscriptionReceipt} from "../mecmua/views.ts";

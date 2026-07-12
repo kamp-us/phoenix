@@ -231,6 +231,24 @@ export const PHOENIX_USER_BAN = "phoenix-user-ban";
 export const PHOENIX_EMAIL_DELIVERY_ADMIN = "phoenix-email-delivery-admin";
 
 /**
+ * Admin console dark-ship flag (#2711, admin-console epic). The SINGLE seam the whole
+ * admin-console surface gates behind — the lazy-loaded admin-only console shell + probe
+ * (#2740) AND the worker flag-state view / runtime-override mutation (#2741) all read this
+ * one key. Default-off so the console reaches production dark until a human flips it at
+ * release (ADR 0083): with it off the worker view/mutation fail the invisible `Denied`
+ * (like a non-admin call) and the shell never mounts, so no admin surface leaks before
+ * release. Its OWN cross-cutting (`phoenix`) key — the console is a host for many future
+ * admin modules, the `phoenix-user-ban` / `phoenix-email-delivery-admin` admin-surface
+ * precedent.
+ *
+ * OVERLAP (#2740/#2741 parallel Phase-1): both halves need this constant. Whichever of the
+ * two PRs merges SECOND drops its duplicate declaration (this constant + the IaC in
+ * `worker/features/flagship/resources.ts` + the `alchemy.run.ts` wiring) and keeps the
+ * first's — a trivial dedup, not a semantic conflict (identical key string).
+ */
+export const PHOENIX_ADMIN_CONSOLE = "phoenix-admin-console";
+
+/**
  * Nav-IA (per-product Subnav zones) dark-ship flag (#2598, epic #2596). The SINGLE
  * cross-cutting seam the whole nav-IA surface gates behind — the per-product nested
  * layout routes + Subnav CTA slot substrate (#2598) and every per-product delta

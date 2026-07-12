@@ -21,6 +21,7 @@ import {
 	PANO_OPTIMISTIC_COMMENT_DELETE,
 	PANO_OPTIMISTIC_POST_DELETE,
 	PANO_OPTIMISTIC_SUBMIT,
+	PHOENIX_ADMIN_CONSOLE,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
@@ -829,6 +830,42 @@ export const EMAIL_DELIVERY_ADMIN_FLAG = {
  */
 export const emailDeliveryAdminFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_email_delivery_admin", {appId, ...EMAIL_DELIVERY_ADMIN_FLAG});
+
+/**
+ * The admin-console dark-ship flag config (#2711, admin-console epic). The SINGLE seam the
+ * whole console surface gates behind — the lazy-loaded shell + probe (#2740) AND the worker
+ * flag-state view / runtime-override mutation (#2741). Default-OFF so the console reaches
+ * production dark: with it off the worker view/mutation fail the invisible `Denied` (like a
+ * non-admin call) and the shell never mounts, so no admin surface leaks. Flipping it on is the
+ * human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable WITHOUT
+ * constructing the alchemy resource (mirrors `EMAIL_DELIVERY_ADMIN_FLAG`).
+ *
+ * OVERLAP (#2740/#2741 parallel Phase-1): both halves declare this flag. Whichever PR merges
+ * SECOND drops its duplicate (this config + factory, the `src/flags/keys.ts` constant, and the
+ * `alchemy.run.ts` wiring) and keeps the first's — a trivial dedup (identical key/config).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           flagship (the flag-eval + admin-console surface)
+ *   - originating:     #2711 (admin-console epic)
+ *   - removal trigger: once the admin console graduates to on at 100% and stable for one
+ *                      release, retire the flag and inline the always-on console.
+ */
+export const ADMIN_CONSOLE_FLAG = {
+	key: PHOENIX_ADMIN_CONSOLE,
+	description:
+		"admin console (shell + flags module) dark-ship (#2711). owner: flagship. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const adminConsoleFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_admin_console", {appId, ...ADMIN_CONSOLE_FLAG});
 
 /**
  * The mecmua public-read dark-ship flag config (#2498, epic #2467). The SINGLE seam
