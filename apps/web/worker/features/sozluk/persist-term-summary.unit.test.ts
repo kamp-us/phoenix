@@ -18,6 +18,7 @@ import {drizzle} from "drizzle-orm/d1";
 import {type Context, Effect, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
+import {DefinitionId, UserId} from "../../lib/ids.ts";
 import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -87,7 +88,7 @@ const sozlukOver = (access: DrizzleAccess) =>
 
 const SLUG = "kelime";
 const TITLE = "Kelime";
-const OWNER = "u1";
+const OWNER = UserId.make("u1");
 
 // The definition `editDefinition` resolves first (its findFirst result) — author
 // matches the actor so the mutation proceeds to the summary recompute.
@@ -122,7 +123,11 @@ const renderUpsert = () =>
 		const {access, batched} = scriptedAccess([editedDefinition, {}, liveDefs]);
 		yield* Effect.gen(function* () {
 			const sozluk = yield* Sozluk;
-			yield* sozluk.editDefinition({definitionId: "def_1", actorId: OWNER, body: "a fresh body"});
+			yield* sozluk.editDefinition({
+				definitionId: DefinitionId.make("def_1"),
+				actorId: OWNER,
+				body: "a fresh body",
+			});
 		}).pipe(Effect.provide(sozlukOver(access)));
 		return batched;
 	});

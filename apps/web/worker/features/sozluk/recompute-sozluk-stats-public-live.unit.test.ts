@@ -17,6 +17,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {createDrizzle, Drizzle, makeDrizzleAccess} from "../../db/Drizzle.ts";
+import {TermSlug, UserId} from "../../lib/ids.ts";
 import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {ReactionStub} from "../reaction/Reaction.testing.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -67,9 +68,9 @@ const recordRecomputeCounts = Effect.gen(function* () {
 	yield* Effect.gen(function* () {
 		const sozluk = yield* Sozluk;
 		yield* sozluk.addDefinition({
-			termSlug: "x",
+			termSlug: TermSlug.make("x"),
 			termTitle: "X",
-			authorId: "a1",
+			authorId: UserId.make("a1"),
 			authorName: "n",
 			body: "a valid definition body",
 		});

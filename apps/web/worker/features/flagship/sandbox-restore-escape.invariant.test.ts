@@ -29,6 +29,7 @@ import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
+import {DefinitionId} from "../../lib/ids.ts";
 import {noopPanoFeedCache} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import type {CommentRow} from "../pano/comment-fields.ts";
@@ -265,7 +266,7 @@ describe("çaylak sandbox-escape via delete→restore is structurally prevented 
 				getTerm: () => Effect.succeed(termPage()),
 			});
 			yield* sozlukMutations["definition.restore"]
-				.handler({input: {id: "def-1"}, select: ["id"]})
+				.handler({input: {id: DefinitionId.make("def-1")}, select: ["id"]})
 				.pipe(
 					Effect.provide(Layer.mergeAll(sozluk, layer)),
 					Effect.provideService(CurrentUser, {user: AUTHOR}),

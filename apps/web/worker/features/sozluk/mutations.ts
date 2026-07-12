@@ -15,6 +15,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
 import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
+import {DefinitionId, TermSlug, UserId} from "../../lib/ids.ts";
 import {notifyCaylakEntersDivan} from "../bildirim/mod-emitters.ts";
 import {notifyContentVote} from "../bildirim/vote-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
@@ -37,19 +38,22 @@ import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition} from "./views.ts";
 import {DefinitionView, TermView} from "./views.ts";
 
+// Branded id schemas decode byte-identically (the brand is type-only) but carry
+// the nominal tag downstream, so `input.id` / `input.termSlug` arrive already
+// typed as DefinitionId / TermSlug for the service-call surface below.
 const AddDefinitionInput = Schema.Struct({
-	termSlug: Schema.String,
+	termSlug: TermSlug,
 	termTitle: Schema.optional(Schema.NullOr(Schema.String)),
 	body: Schema.String,
 });
 
 const EditDefinitionInput = Schema.Struct({
-	id: Schema.String,
+	id: DefinitionId,
 	body: Schema.String,
 });
 
 const DefinitionIdInput = Schema.Struct({
-	id: Schema.String,
+	id: DefinitionId,
 });
 
 // The reaction intent decodes against the curated `REACTION_EMOJI` palette at the
@@ -57,7 +61,7 @@ const DefinitionIdInput = Schema.Struct({
 // retracts it, and a NON-palette string fails to decode — so an arbitrary emoji is
 // structurally unrepresentable, never reaching the service (#1865 AC#1).
 const ReactDefinitionInput = Schema.Struct({
-	id: Schema.String,
+	id: DefinitionId,
 	emoji: Schema.NullOr(ReactionEmojiSchema),
 });
 
@@ -101,7 +105,7 @@ export const mutations = {
 				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
 				const result = yield* sozluk.addDefinition({
 					termSlug: input.termSlug,
-					authorId: user.id,
+					authorId: UserId.make(user.id),
 					authorName: authorDisplayLabel(user),
 					body: input.body,
 					sandboxedAt,
@@ -140,7 +144,10 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
 			const live = sozlukLive(yield* WorkerLivePublisher);
-			const result = yield* sozluk.voteDefinition({definitionId: input.id, voterId: user.id});
+			const result = yield* sozluk.voteDefinition({
+				definitionId: input.id,
+				voterId: UserId.make(user.id),
+			});
 			const definition = shapeDefinition(result);
 			// `myVote` is viewer-specific, so it's omitted from `changed`.
 			yield* live.definition.update(definition.id, {changed: ["score"], data: definition});
@@ -170,7 +177,7 @@ export const mutations = {
 			const live = sozlukLive(yield* WorkerLivePublisher);
 			const result = yield* sozluk.retractDefinitionVote({
 				definitionId: input.id,
-				voterId: user.id,
+				voterId: UserId.make(user.id),
 			});
 			const definition = shapeDefinition(result);
 			yield* live.definition.update(definition.id, {changed: ["score"], data: definition});
@@ -217,7 +224,7 @@ export const mutations = {
 			const live = sozlukLive(yield* WorkerLivePublisher);
 			const row = yield* sozluk.reactToDefinition({
 				definitionId: input.id,
-				reactorId: user.id,
+				reactorId: UserId.make(user.id),
 				emoji: input.emoji,
 			});
 			const definition = toDefinition(row);
@@ -243,7 +250,7 @@ export const mutations = {
 			const live = sozlukLive(yield* WorkerLivePublisher);
 			const result = yield* sozluk.editDefinition({
 				definitionId: input.id,
-				actorId: user.id,
+				actorId: UserId.make(user.id),
 				body: input.body,
 			});
 			// Re-read the viewer's vote so the edit doesn't drop `myVote` (edit
@@ -268,7 +275,7 @@ export const mutations = {
 			const live = sozlukLive(yield* WorkerLivePublisher);
 			// Resolve the parent slug before the delete, while the row still exists.
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
-			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: user.id});
+			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: UserId.make(user.id)});
 			yield* live.definition.delete(input.id);
 			if (slug) {
 				yield* live.definition.term(slug).deleteEdge(input.id);
@@ -294,7 +301,7 @@ export const mutations = {
 			const live = sozlukLive(yield* WorkerLivePublisher);
 			const restoreResult = yield* sozluk.restoreDefinition({
 				definitionId: input.id,
-				actorId: user.id,
+				actorId: UserId.make(user.id),
 			});
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
 			if (!slug) return null;

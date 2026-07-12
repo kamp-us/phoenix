@@ -15,6 +15,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import type {DefinitionId, TermSlug, UserId} from "../../lib/ids.ts";
 import {stampAuthorIdentity} from "../fate/author-identity.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {parallelStampWave} from "../fate/stamp-wave.ts";
@@ -225,8 +226,8 @@ export const scanReconcileChunks = (
 export type ListSort = TermSummarySort;
 
 export interface AddDefinitionInput {
-	termSlug: string;
-	authorId: string;
+	termSlug: TermSlug;
+	authorId: UserId;
 	authorName: string;
 	body: string;
 	/** Optional human title. Falls back to slug-with-spaces. */
@@ -249,9 +250,12 @@ export interface AddDefinitionResult {
 	updatedAt: Date;
 }
 
+// `definitionId` and `voterId` are distinct brands (DefinitionId vs UserId), so
+// transposing them at a call site is a compile error — the #2712 arg-swap the
+// bare-`string` shape allowed is now unrepresentable.
 export interface VoteDefinitionInput {
-	definitionId: string;
-	voterId: string;
+	definitionId: DefinitionId;
+	voterId: UserId;
 }
 
 export interface VoteDefinitionResult {
@@ -269,8 +273,8 @@ export interface VoteDefinitionResult {
 }
 
 export interface ReactDefinitionInput {
-	definitionId: string;
-	reactorId: string;
+	definitionId: DefinitionId;
+	reactorId: UserId;
 	/**
 	 * The reaction intent, a curated-`REACTION_EMOJI` member or a retract. A palette
 	 * emoji sets/changes the reactor's single reaction; `null` retracts it. The type
@@ -281,8 +285,8 @@ export interface ReactDefinitionInput {
 }
 
 export interface EditDefinitionInput {
-	definitionId: string;
-	actorId: string;
+	definitionId: DefinitionId;
+	actorId: UserId;
 	body: string;
 }
 
@@ -297,8 +301,8 @@ export interface EditDefinitionResult {
 }
 
 export interface DeleteDefinitionInput {
-	definitionId: string;
-	actorId: string;
+	definitionId: DefinitionId;
+	actorId: UserId;
 	/**
 	 * Why the definition is being removed (ADR 0096). Defaults to `AuthorDeletion`
 	 * — the author-delete mutation passes nothing; account-deletion (0097) and
