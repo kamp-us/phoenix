@@ -20,7 +20,7 @@ import {EmptyState} from "../components/ui/EmptyState";
 import {MetaRow} from "../components/ui/MetaRow";
 import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
-import {MECMUA_WRITE} from "../flags/keys";
+import {MECMUA_WRITE, PHOENIX_NAV_IA} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {formatDateTR} from "../lib/datetime";
 import {NotFoundPage} from "./NotFoundPage";
@@ -47,6 +47,11 @@ function MecmuaWriteCta() {
 
 export function MecmuaDraftsPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_WRITE, false);
+	// Under nav-IA the write CTA lives once in the mecmua Subnav's primary-action slot, so
+	// the in-page copies (header + empty state) are suppressed to leave exactly one mecmua
+	// write CTA (#2603 de-dup). Off ⇒ today's in-page CTA, unchanged.
+	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
+	const showInlineCta = !navIaOn;
 
 	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first (the
 	// MecmuaEditorPage / MecmuaPostPage self-gate idiom).
@@ -68,7 +73,7 @@ export function MecmuaDraftsPage() {
 				<header className="kp-mecmua-drafts__head">
 					<div className="kp-mecmua-drafts__head-row">
 						<h1 className="kp-mecmua-drafts__title">yazılarım</h1>
-						<MecmuaWriteCta />
+						{showInlineCta ? <MecmuaWriteCta /> : null}
 					</div>
 					<p className="kp-mecmua-drafts__lede">taslakların ve yayımladığın yazılar.</p>
 				</header>
@@ -80,14 +85,14 @@ export function MecmuaDraftsPage() {
 						</p>
 					)}
 				>
-					<MecmuaDraftsList />
+					<MecmuaDraftsList showInlineCta={showInlineCta} />
 				</Screen>
 			</div>
 		</div>
 	);
 }
 
-function MecmuaDraftsList() {
+function MecmuaDraftsList({showInlineCta}: {showInlineCta: boolean}) {
 	const {mecmuaMyPosts} = useRequest(myPostsRequest);
 	const [items] = useListView(MyPostsConnectionView, mecmuaMyPosts);
 
@@ -97,7 +102,7 @@ function MecmuaDraftsList() {
 				icon={<Icon icon={NotebookPen} size={24} />}
 				title="henüz yazın yok"
 				description="yeni bir yazıya başla; taslakların burada birikir."
-				action={<MecmuaWriteCta />}
+				action={showInlineCta ? <MecmuaWriteCta /> : undefined}
 			/>
 		);
 	}

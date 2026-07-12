@@ -19,7 +19,7 @@ import {Icon} from "../components/Icon";
 import {Card} from "../components/ui/Card";
 import {EmptyState} from "../components/ui/EmptyState";
 import {MetaRow} from "../components/ui/MetaRow";
-import {MECMUA_PUBLIC_READ, MECMUA_WRITE} from "../flags/keys";
+import {MECMUA_PUBLIC_READ, MECMUA_WRITE, PHOENIX_NAV_IA} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {formatDateTR} from "../lib/datetime";
 // The gate helper lives composer-free (#2523) so this public index never pulls the tiptap
@@ -78,7 +78,10 @@ function MecmuaIndex() {
 	// The write CTA shares the editor's own publish gate (yazar tier + MECMUA_WRITE live),
 	// so it never dead-ends a çaylak/visitor into a page they can't publish from (#2532).
 	const {value: writeFlagOn} = useFlag(MECMUA_WRITE, false);
-	const showWriteCta = shouldShowMecmuaWriteCta(writeFlagOn, !!session.data, me?.tier);
+	// Under nav-IA the write CTA lives once in the mecmua Subnav's primary-action slot, so
+	// the in-page copy is suppressed to leave exactly one mecmua write CTA (#2603 de-dup).
+	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
+	const showWriteCta = !navIaOn && shouldShowMecmuaWriteCta(writeFlagOn, !!session.data, me?.tier);
 
 	useEffect(() => {
 		let cancelled = false;

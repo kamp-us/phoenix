@@ -391,6 +391,57 @@ describe("nav-IA coupling: pano/yeni Subnav CTA ↔ topbar + gönderi eviction (
 	});
 });
 
+// The mecmua nav-IA delta (#2603, epic #2596): the akış sub-destination is pulled OUT of the
+// global topbar product-noun row and into the mecmua Subnav zone. Off ⇒ today's surface (akış
+// in the topbar, gated on mecmua-feed); on ⇒ akış leaves the topbar and lives in the mecmua
+// product zone, still gated on the same mecmua-feed seam (never a dead link).
+describe("nav-IA mecmua delta: akış moves from topbar into the mecmua Subnav zone (#2603)", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+		flags.navIa = false;
+		flags.mecmuaFeed = false;
+	});
+	afterEach(() => {
+		flags.navIa = false;
+		flags.mecmuaFeed = false;
+		vi.clearAllMocks();
+	});
+
+	it("flag off: akış stays in the topbar (today's surface, gated on mecmua-feed)", () => {
+		flags.mecmuaFeed = true;
+		const {container} = renderApp("/mecmua");
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+		const akis = screen.getByRole("link", {name: "akış"});
+		expect(container.querySelector(".kp-topbar")?.contains(akis)).toBe(true);
+	});
+
+	it("flag on: akış is evicted from the topbar and lives in the mecmua Subnav zone", () => {
+		flags.navIa = true;
+		flags.mecmuaFeed = true;
+		const {container} = renderApp("/mecmua");
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+		const akis = screen.getByRole("link", {name: "akış"});
+		// Eviction half: the topbar product-noun row no longer carries akış.
+		expect(container.querySelector(".kp-topbar")?.contains(akis)).toBe(false);
+		// Landing half: akış lives in the mecmua product Subnav zone.
+		expect(container.querySelector(".kp-subnav")?.contains(akis)).toBe(true);
+	});
+
+	it("flag on, mecmua-feed off: no akış link anywhere (still gated on its own seam)", () => {
+		flags.navIa = true;
+		renderApp("/mecmua");
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+		expect(screen.queryByRole("link", {name: "akış"})).toBeNull();
+	});
+});
+
 // The two-tier fate provider's public first paint (ADR 0167 / #2285): the anon-capable
 // /pano feed paints over the PUBLIC (always-anonymous) client ABOVE the session gate,
 // in parallel with `get-session`, then hands off to the authed feed once the gate

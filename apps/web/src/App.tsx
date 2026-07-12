@@ -27,6 +27,7 @@ import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {ProductSubnavLayout} from "./components/layout/ProductSubnavLayout";
 import {Topbar} from "./components/layout/Topbar";
+import {MecmuaSubnavLayout} from "./components/mecmua/MecmuaSubnavLayout";
 import {actorLabel} from "./components/moderation/actor-identity";
 import {PanoSubnavCta} from "./components/pano/PanoSubnavCta";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
@@ -115,6 +116,8 @@ function Layout() {
 	// the SAME flag the `/mecmua/akis` route self-gates on (self-404 when off). Gating the
 	// link on the route's own seam is what keeps it from ever pointing at a dark 404: off ⇒
 	// no entry, so subscribing (also `mecmua-feed`) and its feed destination appear together.
+	// Under nav-IA (below) akış is a mecmua SUB-destination, so it moves out of this topbar
+	// product-noun row into the mecmua Subnav zone (#2603) — hence gated off here when navIaOn.
 	const {value: feedOn} = useFlag(MECMUA_FEED, false);
 	// The nav-IA seam (#2600, epic #2596): with it on, pano's `+ gönderi` primary action
 	// lives in the pano Subnav CTA zone (placement law #2587), so the topbar no longer
@@ -173,7 +176,10 @@ function Layout() {
 							{to: "/sozluk", label: "sözlük"},
 							{to: "/pano", label: "pano"},
 							...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
-							...(feedOn ? [{to: "/mecmua/akis", label: "akış"}] : []),
+							// akış stays a topbar entry only while nav-IA is off; on, it lives in
+							// the mecmua Subnav zone (#2603) — the topbar keeps just the `mecmua`
+							// product noun (a cross-product destination, per placement law #2587).
+							...(feedOn && !navIaOn ? [{to: "/mecmua/akis", label: "akış"}] : []),
 						]}
 						divanTo={chips?.divanTo}
 						{...(chips?.userProps ?? {})}
@@ -422,7 +428,16 @@ export function App() {
 					<Route element={<Layout />}>
 						<Route path="/" element={<LandingPage />} />
 						{productZone(navIaOn, "pano-zone", panoRoutes, <PanoSubnavCta />)}
-						{productZone(navIaOn, "mecmua-zone", mecmuaRoutes)}
+						{/* mecmua's zone hosts flag-composed destinations + a primary-action CTA,
+						    so it wraps under its own `MecmuaSubnavLayout` (which composes both)
+						    rather than the generic empty/cta-only frame (#2603). Off ⇒ flat, as today. */}
+						{navIaOn ? (
+							<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
+								{mecmuaRoutes}
+							</Route>
+						) : (
+							mecmuaRoutes
+						)}
 						{productZone(navIaOn, "sozluk-zone", sozlukRoutes)}
 						{productZone(navIaOn, "divan-zone", divanRoutes)}
 						<Route path="/search" element={<SearchPage />} />
