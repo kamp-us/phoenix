@@ -1,202 +1,209 @@
 {
-  "version": "7",
-  "dialect": "sqlite",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "6",
-      "when": 1779059966153,
-      "tag": "0000_d1_baseline",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1781469752872,
-      "tag": "0001_content_report",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1782000000000,
-      "tag": "0002_search_fts",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1782500000000,
-      "tag": "0003_post_bookmark",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1783000000000,
-      "tag": "0004_pano_draft",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1783500000000,
-      "tag": "0005_removal_substrate",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1784000000000,
-      "tag": "0006_account_deletion_tombstone_silinen",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1784500000000,
-      "tag": "0007_moderation_role_resolution",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1785000000000,
-      "tag": "0008_rename_store_of_record",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1785500000000,
-      "tag": "0009_summary_to_record",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "6",
-      "when": 1786000000000,
-      "tag": "0010_relation_tuple",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "6",
-      "when": 1786500000000,
-      "tag": "0011_authorship_tier",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "6",
-      "when": 1787000000000,
-      "tag": "0012_caylak_sandbox",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "6",
-      "when": 1787500000000,
-      "tag": "0013_authorship_vouch",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "6",
-      "when": 1788000000000,
-      "tag": "0014_imge_object",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "6",
-      "when": 1788500000000,
-      "tag": "0015_drop_last_event_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "6",
-      "when": 1790000000000,
-      "tag": "0016_yazar_promoted_at",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "6",
-      "when": 1790500000000,
-      "tag": "0017_notification",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "6",
-      "when": 1791000000000,
-      "tag": "0018_reaction",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "6",
-      "when": 1791500000000,
-      "tag": "0019_remove_the_wave",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "6",
-      "when": 1792000000000,
-      "tag": "0020_drop_imge_object",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "6",
-      "when": 1792500000000,
-      "tag": "0021_hot_score_backfill",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "6",
-      "when": 1793000000000,
-      "tag": "0022_display_name_backfill",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "6",
-      "when": 1793500000000,
-      "tag": "0023_drop_hot_score_backfill",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "6",
-      "when": 1794000000000,
-      "tag": "0024_user_ban_event",
-      "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "6",
-      "when": 1794500000000,
-      "tag": "0025_mecmua_post",
-      "breakpoints": true
-    },
-    {
-      "idx": 26,
-      "version": "6",
-      "when": 1795000000000,
-      "tag": "0026_mecmua_subscription",
-      "breakpoints": true
-    },
-    {
-      "idx": 27,
-      "version": "6",
-      "when": 1795500000000,
-      "tag": "0027_karma_event",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "sqlite",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "6",
+			"when": 1779059966153,
+			"tag": "0000_d1_baseline",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "6",
+			"when": 1781469752872,
+			"tag": "0001_content_report",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "6",
+			"when": 1782000000000,
+			"tag": "0002_search_fts",
+			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "6",
+			"when": 1782500000000,
+			"tag": "0003_post_bookmark",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "6",
+			"when": 1783000000000,
+			"tag": "0004_pano_draft",
+			"breakpoints": true
+		},
+		{
+			"idx": 5,
+			"version": "6",
+			"when": 1783500000000,
+			"tag": "0005_removal_substrate",
+			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "6",
+			"when": 1784000000000,
+			"tag": "0006_account_deletion_tombstone_silinen",
+			"breakpoints": true
+		},
+		{
+			"idx": 7,
+			"version": "6",
+			"when": 1784500000000,
+			"tag": "0007_moderation_role_resolution",
+			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "6",
+			"when": 1785000000000,
+			"tag": "0008_rename_store_of_record",
+			"breakpoints": true
+		},
+		{
+			"idx": 9,
+			"version": "6",
+			"when": 1785500000000,
+			"tag": "0009_summary_to_record",
+			"breakpoints": true
+		},
+		{
+			"idx": 10,
+			"version": "6",
+			"when": 1786000000000,
+			"tag": "0010_relation_tuple",
+			"breakpoints": true
+		},
+		{
+			"idx": 11,
+			"version": "6",
+			"when": 1786500000000,
+			"tag": "0011_authorship_tier",
+			"breakpoints": true
+		},
+		{
+			"idx": 12,
+			"version": "6",
+			"when": 1787000000000,
+			"tag": "0012_caylak_sandbox",
+			"breakpoints": true
+		},
+		{
+			"idx": 13,
+			"version": "6",
+			"when": 1787500000000,
+			"tag": "0013_authorship_vouch",
+			"breakpoints": true
+		},
+		{
+			"idx": 14,
+			"version": "6",
+			"when": 1788000000000,
+			"tag": "0014_imge_object",
+			"breakpoints": true
+		},
+		{
+			"idx": 15,
+			"version": "6",
+			"when": 1788500000000,
+			"tag": "0015_drop_last_event_id",
+			"breakpoints": true
+		},
+		{
+			"idx": 16,
+			"version": "6",
+			"when": 1790000000000,
+			"tag": "0016_yazar_promoted_at",
+			"breakpoints": true
+		},
+		{
+			"idx": 17,
+			"version": "6",
+			"when": 1790500000000,
+			"tag": "0017_notification",
+			"breakpoints": true
+		},
+		{
+			"idx": 18,
+			"version": "6",
+			"when": 1791000000000,
+			"tag": "0018_reaction",
+			"breakpoints": true
+		},
+		{
+			"idx": 19,
+			"version": "6",
+			"when": 1791500000000,
+			"tag": "0019_remove_the_wave",
+			"breakpoints": true
+		},
+		{
+			"idx": 20,
+			"version": "6",
+			"when": 1792000000000,
+			"tag": "0020_drop_imge_object",
+			"breakpoints": true
+		},
+		{
+			"idx": 21,
+			"version": "6",
+			"when": 1792500000000,
+			"tag": "0021_hot_score_backfill",
+			"breakpoints": true
+		},
+		{
+			"idx": 22,
+			"version": "6",
+			"when": 1793000000000,
+			"tag": "0022_display_name_backfill",
+			"breakpoints": true
+		},
+		{
+			"idx": 23,
+			"version": "6",
+			"when": 1793500000000,
+			"tag": "0023_drop_hot_score_backfill",
+			"breakpoints": true
+		},
+		{
+			"idx": 24,
+			"version": "6",
+			"when": 1794000000000,
+			"tag": "0024_user_ban_event",
+			"breakpoints": true
+		},
+		{
+			"idx": 25,
+			"version": "6",
+			"when": 1794500000000,
+			"tag": "0025_mecmua_post",
+			"breakpoints": true
+		},
+		{
+			"idx": 26,
+			"version": "6",
+			"when": 1795000000000,
+			"tag": "0026_mecmua_subscription",
+			"breakpoints": true
+		},
+		{
+			"idx": 27,
+			"version": "6",
+			"when": 1795500000000,
+			"tag": "0027_karma_event",
+			"breakpoints": true
+		},
+		{
+			"idx": 28,
+			"version": "6",
+			"when": 1796000000000,
+			"tag": "0028_email_delivery_event",
+			"breakpoints": true
+		}
+	]
 }

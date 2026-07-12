@@ -28,6 +28,7 @@ import {Email} from "alchemy/Cloudflare";
 import {Context, Effect, Layer} from "effect";
 import {environment} from "../../config.ts";
 import {type Environment, isProduction} from "../../environment.ts";
+import {EmailDeliveryLog} from "./email-delivery-log.ts";
 
 /**
  * A transactional message. Invalid states are unrepresentable: `to` + `subject`
@@ -80,14 +81,20 @@ export const EmailSenderBinding = Email.SendEmail("EmailSender", {
 /**
  * Production adapter — delivers via the Cloudflare Email Service `send_email`
  * binding (alchemy `Cloudflare.SendEmail`, runtime `.send(...)`). The binding's
- * `send` already wraps any failure in a typed `SendEmailError`; this adapter
- * swallows it (`Effect.ignore({log: "Warn"})`) so the callback never throws and
- * the public method's `E = never`.
+ * `send` already wraps any failure in a typed `SendEmailError`; on that rejection
+ * the adapter appends a `fail` event to the delivery log (`EmailDeliveryLog`) and
+ * swallows the error so the callback never throws and the public method's `E = never`.
  *
- * The binding's `.send` carries `R = RuntimeContext`; it's resolved once at
- * layer build (ambient at worker scope, stable for the isolate) and baked into
- * the closure, so the public `send` is `Effect<void, never, never>` — runnable
- * standalone from better-auth's async callbacks without re-threading context.
+ * The captured signal's honest limit (epic #2687, Child #2691): a synchronous
+ * `SendEmailError` is a send REJECTION caught at send time — NOT an asynchronous hard
+ * bounce or spam complaint, which arrive after the SMTP handshake and need the CF
+ * delivery-event surface (Child #2694, CF-gated). That buildable-today vs CF-gated
+ * fault line is what the epic splits on; this adapter only records the synchronous half.
+ *
+ * The binding's `.send` carries `R = RuntimeContext`; it and `EmailDeliveryLog` are
+ * resolved once at layer build (ambient/stable for the isolate) and baked into the
+ * closure, so the public `send` is `Effect<void, never, never>` — runnable standalone
+ * from better-auth's async callbacks without re-threading context.
  */
 export const EmailSenderCloudflareLive = Layer.effect(
 	EmailSender,
@@ -95,6 +102,7 @@ export const EmailSenderCloudflareLive = Layer.effect(
 		const descriptor = yield* EmailSenderBinding;
 		const email = yield* Email.Send(descriptor);
 		const runtimeContext = yield* RuntimeContext;
+		const deliveryLog = yield* EmailDeliveryLog;
 		return EmailSender.of({
 			send: (message) =>
 				email
@@ -107,7 +115,9 @@ export const EmailSenderCloudflareLive = Layer.effect(
 					.pipe(
 						Effect.provideService(RuntimeContext, runtimeContext),
 						Effect.asVoid,
-						Effect.ignore({log: "Warn"}),
+						Effect.catch((error) =>
+							deliveryLog.recordSendFailure({address: message.to, reason: error.message}),
+						),
 					),
 		});
 	}),
@@ -121,19 +131,22 @@ export const EmailSenderCloudflareLive = Layer.effect(
  */
 export const emailSenderLayerFor = (
 	env: Environment,
-): Layer.Layer<EmailSender, never, RuntimeContext | Email.Send> =>
+): Layer.Layer<EmailSender, never, RuntimeContext | Email.Send | EmailDeliveryLog> =>
 	isProduction(env) ? EmailSenderCloudflareLive : EmailSenderLog;
 
 /**
  * The resolved-from-Config layer used at the worker entry. Reads `ENVIRONMENT`
  * (fail-closed default `production`, ADR 0088) and defers to `emailSenderLayerFor`.
  */
-export const EmailSenderLive: Layer.Layer<EmailSender, never, RuntimeContext | Email.Send> =
-	Layer.unwrap(
-		Effect.gen(function* () {
-			// `orDie`: a value outside the three literals is a malformed env, unrecoverable
-			// (same stance as `better-auth-live.ts`).
-			const env = yield* environment.pipe(Effect.orDie);
-			return emailSenderLayerFor(env);
-		}),
-	);
+export const EmailSenderLive: Layer.Layer<
+	EmailSender,
+	never,
+	RuntimeContext | Email.Send | EmailDeliveryLog
+> = Layer.unwrap(
+	Effect.gen(function* () {
+		// `orDie`: a value outside the three literals is a malformed env, unrecoverable
+		// (same stance as `better-auth-live.ts`).
+		const env = yield* environment.pipe(Effect.orDie);
+		return emailSenderLayerFor(env);
+	}),
+);

@@ -21,6 +21,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {AppConfig, ENV_BINDINGS, envBindings, sentryDsn} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
+import {DrizzleLive} from "./db/Drizzle.ts";
 import {customHostname, resolveStateMode} from "./env.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
 import {
@@ -34,6 +35,7 @@ import {Flagship, FlagshipLive} from "./features/flagship/Flagship.ts";
 import {Flagship as FlagshipResource} from "./features/flagship/resources.ts";
 import {subscribeHotScoreDecay} from "./features/pano/hot-score-decay-cron.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
+import {EmailDeliveryLogLive} from "./features/pasaport/email-delivery-log.ts";
 import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
 import {subscribeSozlukReconcile} from "./features/sozluk/sozluk-reconcile-cron.ts";
 import {Events as TelemetryEvents} from "./features/telemetry/resources.ts";
@@ -437,10 +439,20 @@ export default Phoenix.make(
 				// `send_email` descriptor through alchemy's `SendEmailBindingLive`
 				// (`WorkerEnvironment`/`RuntimeContext` ambient), the same binding-graph
 				// shape as Flagship below; dev/preview pick the log sink and never touch
-				// the binding.
+				// the binding. The CF adapter also records a send-time rejection to the
+				// append-only delivery log (epic #2687), so `EmailDeliveryLogLive` (over its
+				// own `DrizzleLive`/`DatabaseLive`, D1 binding satisfied at the base) is
+				// provided in alongside the send binding.
 				BetterAuthLive.pipe(
 					Layer.provideMerge(DatabaseLive),
-					Layer.provide(EmailSenderLive.pipe(Layer.provide(Cloudflare.Email.SendBinding))),
+					Layer.provide(
+						EmailSenderLive.pipe(
+							Layer.provide(Cloudflare.Email.SendBinding),
+							Layer.provide(
+								EmailDeliveryLogLive.pipe(Layer.provide(DrizzleLive), Layer.provide(DatabaseLive)),
+							),
+						),
+					),
 				),
 				// The `Flagship` seam (`bind()`-in-init) resolves through alchemy's
 				// Flagship binding graph: `FlagshipBindingLive` turns the app resource
