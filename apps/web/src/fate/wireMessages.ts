@@ -53,6 +53,7 @@ export const WIRE_MESSAGES: Record<FateWireCode, string> = {
 	USER_NOT_FOUND: "kullanıcı bulunamadı",
 	DISPLAY_NAME_EMPTY: "görünen ad boş olamaz",
 	BAN_REASON_REQUIRED: "yasaklama gerekçesi zorunludur",
+	EMAIL_FAILING_REASON_REQUIRED: "işaretleme gerekçesi zorunludur",
 	MECMUA_DISABLED: "mecmua şu an kapalı",
 	MECMUA_POST_NOT_FOUND: "yazı bulunamadı",
 	BAD_REQUEST: "geçersiz istek",

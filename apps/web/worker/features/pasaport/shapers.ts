@@ -5,6 +5,7 @@
  */
 
 import type {BanState} from "./ban.ts";
+import type {EmailDeliveryState, FailingAddress} from "./email-delivery.ts";
 import {
 	CONTRIBUTION_VARIANT_FIELD_NAMES,
 	type ContributionNode,
@@ -16,6 +17,8 @@ import type {
 	AccountDeletionReceipt,
 	AuthorshipStanding,
 	BanStateEntity,
+	EmailDeliveryStateEntity,
+	FailingAddressEntity,
 	Profile,
 	PromotionReceipt,
 	User,
@@ -100,6 +103,32 @@ export const toBanState = (userId: string, state: BanState): BanStateEntity => (
 	banned: state.banned,
 	reason: state.reason,
 	expiresAt: state.expiresAt === null ? null : state.expiresAt.getTime(),
+});
+
+// The single spelling of the email-delivery-state ack (epic #2687) — the mark AND the
+// clear resolve the SAME entity, keyed on the target address, so a mutation ack
+// reconciles the roll-up's earlier read. Carries only the projected state (`failing` +
+// `reason`), never the log rows.
+export const toEmailDeliveryState = (
+	address: string,
+	state: EmailDeliveryState,
+): EmailDeliveryStateEntity => ({
+	__typename: "EmailDeliveryState",
+	id: address,
+	failing: state.failing,
+	reason: state.reason,
+});
+
+// The single spelling of one failing-address roll-up item (epic #2687). `id` === the
+// address (the client normalization key); `since` crosses the wire as epoch-millis, so
+// the domain `Date` projects to a plain scalar here at the one seam.
+export const toFailingAddress = (row: FailingAddress): FailingAddressEntity => ({
+	__typename: "FailingAddress",
+	id: row.address,
+	address: row.address,
+	userId: row.userId,
+	reason: row.reason,
+	since: row.since.getTime(),
 });
 
 // Flatten a discriminated `ContributionNode` onto the flat `ContributionRow`

@@ -48,3 +48,65 @@ export const resolveEmailDeliveryState = (
 	if (latest === null || latest.action === "clear") return DELIVERABLE;
 	return {failing: true, reason: latest.reason};
 };
+
+/**
+ * One append-only log row as the admin failing-address roll-up (Child #2692) needs it:
+ * the projection fields plus the address/user the row is keyed by and the server
+ * `id`/`createdAt` ordering pair used to pick the latest event per address.
+ */
+export interface EmailDeliveryEventRow extends EmailDeliveryEvent {
+	readonly id: string;
+	readonly address: string;
+	readonly userId: string | null;
+}
+
+/** One currently-failing address in the admin roll-up — the address, who it resolves to, and why. */
+export interface FailingAddress {
+	readonly address: string;
+	readonly userId: string | null;
+	readonly reason: string | null;
+	/** The `createdAt` of the active `fail` event — when the address started failing. */
+	readonly since: Date;
+}
+
+// Latest wins by (createdAt, id) — the same server-assigned ordering the ban read and
+// the per-address index (`email_delivery_event_address_created`) resolve by, so the pure
+// roll-up and a DB `ORDER BY … DESC LIMIT 1` per address agree.
+const isNewer = (a: EmailDeliveryEventRow, b: EmailDeliveryEventRow): boolean => {
+	const at = a.createdAt.getTime();
+	const bt = b.createdAt.getTime();
+	return at !== bt ? at > bt : a.id > b.id;
+};
+
+/**
+ * The admin failing-address projection (Child #2692): the set of addresses whose LATEST
+ * event is a `fail`, derived from the SAME append-only log the send-time capture and the
+ * per-address `resolveEmailDeliveryState` read — never a separate stored flag. Reduces the
+ * rows to the newest event per address, keeps those that project to `failing`, and orders
+ * them newest-failing first. Pure over the full failure log (which is small — only send
+ * rejections and admin marks land here, not every send), so the roll-up is unit-testable
+ * without D1.
+ */
+export const selectFailingAddresses = (
+	rows: ReadonlyArray<EmailDeliveryEventRow>,
+	now: Date,
+): ReadonlyArray<FailingAddress> => {
+	const latest = new Map<string, EmailDeliveryEventRow>();
+	for (const row of rows) {
+		const seen = latest.get(row.address);
+		if (!seen || isNewer(row, seen)) latest.set(row.address, row);
+	}
+	const failing: FailingAddress[] = [];
+	for (const row of latest.values()) {
+		const state = resolveEmailDeliveryState(row, now);
+		if (state.failing) {
+			failing.push({
+				address: row.address,
+				userId: row.userId,
+				reason: state.reason,
+				since: row.createdAt,
+			});
+		}
+	}
+	return failing.sort((a, b) => b.since.getTime() - a.since.getTime());
+};

@@ -1,5 +1,7 @@
 /** pasaport's contribution to the one fate config. See `../fate/module.ts`. */
+import {list} from "@nkzw/fate/server";
 import type {FateModule, FateRootsRecord} from "../fate/module.ts";
+import {lists} from "./lists.ts";
 import {mutations} from "./mutations.ts";
 import {queries} from "./queries.ts";
 import {
@@ -7,6 +9,8 @@ import {
 	authorshipStandingSource,
 	banStateSource,
 	contributionSource,
+	emailDeliveryStateSource,
+	failingAddressSource,
 	profileSource,
 	promotionReceiptSource,
 	userSource,
@@ -14,6 +18,7 @@ import {
 import {
 	authorshipStandingDataView,
 	banStateDataView,
+	failingAddressDataView,
 	profileDataView,
 	userDataView,
 } from "./views.ts";
@@ -28,10 +33,14 @@ const roots: FateRootsRecord = {
 	// The admin ban-state read (#970, epic #968) — `requireAdmin`-gated + behind
 	// `phoenix-user-ban`; the `user.banState` resolver owns the gate.
 	"user.banState": banStateDataView,
+	// The admin failing-address roll-up (#2692, epic #2687) — `requireAdmin`-gated + behind
+	// `phoenix-email-delivery-admin`; the `emailDelivery.failing` list resolver owns the gate.
+	"emailDelivery.failing": list(failingAddressDataView),
 };
 
 export const fateModule = {
 	queries,
+	lists,
 	mutations,
 	sources: [
 		userSource,
@@ -41,6 +50,8 @@ export const fateModule = {
 		promotionReceiptSource,
 		authorshipStandingSource,
 		banStateSource,
+		emailDeliveryStateSource,
+		failingAddressSource,
 	],
 	roots,
 } satisfies FateModule;

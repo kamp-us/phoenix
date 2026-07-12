@@ -43,6 +43,7 @@ import {
 	authorshipLoopFlag,
 	bildirimFlag,
 	demoTargetingFlag,
+	emailDeliveryAdminFlag,
 	Flagship,
 	funnelReadoutFlag,
 	karmaGatesFlag,
@@ -140,6 +141,10 @@ export default Alchemy.Stack(
 		// seam the ban mutations + admin read + moderator-UI controls gate behind, so an
 		// unreleased ban can never refuse a real user's session until a human release.
 		yield* userBanFlag(flagship.appId);
+		// The admin email-delivery (failing-address) surface dark-ship flag, default-off
+		// (#2692, epic #2687) — the single seam the emailDelivery.mark/clear mutations + the
+		// emailDelivery.failing admin roll-up gate behind until a human release.
+		yield* emailDeliveryAdminFlag(flagship.appId);
 		// The mecmua public-read dark-ship flag, default-off (#2498, epic #2467) — the
 		// single seam the anon GET route + reader page gate behind until a human release.
 		yield* mecmuaPublicReadFlag(flagship.appId);

@@ -37,6 +37,10 @@ const failOnContact: PasaportShape = {
 	getBanState: die("getBanState"),
 	banUser: die("banUser"),
 	unbanUser: die("unbanUser"),
+	getEmailDeliveryState: die("getEmailDeliveryState"),
+	markEmailFailing: die("markEmailFailing"),
+	clearEmailFailing: die("clearEmailFailing"),
+	listFailingAddresses: die("listFailingAddresses"),
 };
 
 export const makePasaportStub = (overrides: Partial<PasaportShape> = {}): Layer.Layer<Pasaport> =>

@@ -132,6 +132,47 @@ export class BanStateView extends FateDataView<BanStateViewRow>()("BanState")({
 	expiresAt: true,
 } satisfies {[K in keyof BanStateViewRow]: true}) {}
 
+// The admin email-delivery-state ack (email-bounce epic #2687) — the projected current
+// delivery-state for one address, returned by the `emailDelivery.mark` / `emailDelivery.clear`
+// mutations. `id` === the target address (the client normalization key), so the mark and the
+// clear reconcile the SAME entity. It carries ONLY the delivery-state (`failing` + the active
+// `reason`) — no session, no PII beyond the address the admin already targeted — and is only
+// ever produced past the `requireAdmin` gate + the dark-ship flag, so it never leaks.
+export type EmailDeliveryStateViewRow = ViewRow<{
+	id: string;
+	failing: boolean;
+	reason: string | null;
+}>;
+
+export class EmailDeliveryStateView extends FateDataView<EmailDeliveryStateViewRow>()(
+	"EmailDeliveryState",
+)({
+	id: true,
+	failing: true,
+	reason: true,
+} satisfies {[K in keyof EmailDeliveryStateViewRow]: true}) {}
+
+// One currently-failing address in the admin roll-up (`emailDelivery.failing`, epic #2687)
+// — the address, who it resolves to (nullable: a send can fail to an address with no account
+// row), why, and when it started failing (`since`, epoch-millis to keep the wire scalar
+// plain). `id` === the address (the client normalization key). Only ever produced past the
+// `requireAdmin` gate + the dark-ship flag, so the roll-up never leaks.
+export type FailingAddressViewRow = ViewRow<{
+	id: string;
+	address: string;
+	userId: string | null;
+	reason: string | null;
+	since: number;
+}>;
+
+export class FailingAddressView extends FateDataView<FailingAddressViewRow>()("FailingAddress")({
+	id: true,
+	address: true,
+	userId: true,
+	reason: true,
+	since: true,
+} satisfies {[K in keyof FailingAddressViewRow]: true}) {}
+
 // The çaylak-SELF authorship-standing aggregate (#1316, epic #1202) — the
 // "yazarlığa giden yol" read the #1291 status block consumes about ITSELF. The
 // subject is always the authenticated çaylak (the `myAuthorshipStanding` resolver
@@ -172,6 +213,8 @@ export const accountDeletionReceiptDataView = AccountDeletionReceiptView.view;
 export const promotionReceiptDataView = PromotionReceiptView.view;
 export const authorshipStandingDataView = AuthorshipStandingView.view;
 export const banStateDataView = BanStateView.view;
+export const emailDeliveryStateDataView = EmailDeliveryStateView.view;
+export const failingAddressDataView = FailingAddressView.view;
 
 export type User = WorkerEntity<typeof UserView>;
 export type Contribution = WorkerEntity<typeof ContributionView, "createdAt">;
@@ -180,3 +223,5 @@ export type AccountDeletionReceipt = WorkerEntity<typeof AccountDeletionReceiptV
 export type PromotionReceipt = WorkerEntity<typeof PromotionReceiptView>;
 export type AuthorshipStanding = WorkerEntity<typeof AuthorshipStandingView>;
 export type BanStateEntity = WorkerEntity<typeof BanStateView>;
+export type EmailDeliveryStateEntity = WorkerEntity<typeof EmailDeliveryStateView>;
+export type FailingAddressEntity = WorkerEntity<typeof FailingAddressView>;

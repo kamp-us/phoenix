@@ -9,7 +9,11 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_USER_BAN} from "../../../src/flags/keys.ts";
+import {
+	PHOENIX_AUTHORSHIP_LOOP,
+	PHOENIX_EMAIL_DELIVERY_ADMIN,
+	PHOENIX_USER_BAN,
+} from "../../../src/flags/keys.ts";
 import {notifyKefil, notifyPromotion} from "../bildirim/rite-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -23,6 +27,7 @@ import {requireVouch, Vouch, voucherOf} from "../kunye/vouch.ts";
 import {
 	BanReasonRequired,
 	DisplayNameEmpty,
+	EmailFailingReasonRequired,
 	UserNotFound,
 	UsernameAlreadySet,
 	UsernameInvalidErrors,
@@ -31,10 +36,21 @@ import {
 import {pasaportLive} from "./live.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {publishPromotion} from "./promote-live.ts";
-import {toAccountDeletionReceipt, toBanState, toPromotionReceipt} from "./shapers.ts";
+import {
+	toAccountDeletionReceipt,
+	toBanState,
+	toEmailDeliveryState,
+	toPromotionReceipt,
+} from "./shapers.ts";
 import {resolveTandem} from "./tandem.ts";
 import {toTrustedUser} from "./trusted-user.ts";
-import {AccountDeletionReceiptView, BanStateView, PromotionReceiptView, UserView} from "./views.ts";
+import {
+	AccountDeletionReceiptView,
+	BanStateView,
+	EmailDeliveryStateView,
+	PromotionReceiptView,
+	UserView,
+} from "./views.ts";
 
 /**
  * Is the #1204 authorship-loop dark-ship flag on for this request? The promotion
@@ -56,6 +72,17 @@ const authorshipLoopOn = Effect.gen(function* () {
 const userBanOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(PHOENIX_USER_BAN, false).pipe(provideRequestFlags);
+});
+
+/**
+ * Is the #2692 admin email-delivery dark-ship flag on for this request? Safe-default
+ * `false` (dark), the ban `userBanOn` idiom: with the flag off (default / Flagship
+ * outage) the mark/clear path fails the invisible `Denied` exactly like a non-admin
+ * call, so an unreleased failing-mark can never touch a real address (ADR 0083).
+ */
+const emailDeliveryAdminOn = Effect.gen(function* () {
+	const flags = yield* Flags;
+	return yield* flags.getBoolean(PHOENIX_EMAIL_DELIVERY_ADMIN, false).pipe(provideRequestFlags);
 });
 
 const SetUsernameInput = Schema.Struct({
@@ -107,6 +134,19 @@ const BanUserInput = Schema.Struct({
 });
 
 const UnbanUserInput = Schema.Struct({
+	userId: Schema.String,
+});
+
+// Mark a target account's address as failing: a `reason` (required — enforced non-empty
+// in the gated body, `EmailFailingReasonRequired`). No `actor`/`address` arg — the target
+// is named by id and its address is server-resolved, so an admin can't mark an arbitrary
+// address, and the acting admin is the discharged `Admin` grant (never client-supplied).
+const MarkEmailFailingInput = Schema.Struct({
+	userId: Schema.String,
+	reason: Schema.String,
+});
+
+const ClearEmailFailingInput = Schema.Struct({
 	userId: Schema.String,
 });
 
@@ -306,6 +346,45 @@ export const mutations = {
 			return yield* requireAdmin(unbanGated(input));
 		}),
 	),
+
+	// Manually mark a target account's address as failing (Child #2692, email-bounce epic
+	// #2687) — `requireAdmin`-gated, behind the `phoenix-email-delivery-admin` dark-ship
+	// flag. With the flag off the mutation fails the invisible `Denied` (like a non-admin
+	// call), so an unreleased mark never touches a real address. The write appends to the
+	// SAME `email_delivery_event` log the send-time capture feeds (one audit trail, one
+	// projection). Not fanned (`fanned-mutations.ts`): the log isn't a subscribed content
+	// connection (mirrors `user.banUser`).
+	"emailDelivery.mark": Fate.mutation(
+		{
+			input: MarkEmailFailingInput,
+			type: EmailDeliveryStateView,
+			error: Schema.Union([Denied, UserNotFound, EmailFailingReasonRequired]),
+		},
+		Effect.fn("emailDelivery.mark")(function* ({input}) {
+			if (!(yield* emailDeliveryAdminOn)) {
+				return yield* Effect.fail(new Denied({message: "Bu işlem şu an kapalı."}));
+			}
+			return yield* requireAdmin(markEmailFailingGated(input));
+		}),
+	),
+
+	// Manually clear a target account's failing address (Child #2692) — the
+	// `requireAdmin`-gated, flag-gated reversal. Appends a `clear` event; idempotent
+	// (clearing a deliverable address still reads deliverable). No reason floor — a clear
+	// carries none.
+	"emailDelivery.clear": Fate.mutation(
+		{
+			input: ClearEmailFailingInput,
+			type: EmailDeliveryStateView,
+			error: Schema.Union([Denied, UserNotFound]),
+		},
+		Effect.fn("emailDelivery.clear")(function* ({input}) {
+			if (!(yield* emailDeliveryAdminOn)) {
+				return yield* Effect.fail(new Denied({message: "Bu işlem şu an kapalı."}));
+			}
+			return yield* requireAdmin(clearEmailFailingGated(input));
+		}),
+	),
 };
 
 // The post-gate ban body — runnable only with an `Admin` `Grant` in R
@@ -339,6 +418,35 @@ const unbanGated = Effect.fn("user.unbanGated")(function* (input: typeof UnbanUs
 	const pasaport = yield* Pasaport;
 	const state = yield* pasaport.unbanUser({userId: input.userId, actorId});
 	return toBanState(input.userId, state);
+});
+
+// The post-gate mark body — runnable only with an `Admin` `Grant` in R (`requireAdmin`
+// provides it); `yield* Admin` requires the proof, so marking without a discharged grant
+// is a compile error (ADR 0107). A blank reason fails `EmailFailingReasonRequired` (a
+// manual mark must carry the out-of-band note); an unknown target fails `UserNotFound`.
+// The ack is keyed on the server-resolved address, so the roll-up read reconciles it.
+const markEmailFailingGated = Effect.fn("emailDelivery.markGated")(function* (
+	input: typeof MarkEmailFailingInput.Type,
+) {
+	yield* Admin;
+	const reason = input.reason.trim();
+	if (reason.length === 0) {
+		return yield* new EmailFailingReasonRequired({message: "İşaretleme gerekçesi zorunludur."});
+	}
+	const pasaport = yield* Pasaport;
+	const {address, state} = yield* pasaport.markEmailFailing({userId: input.userId, reason});
+	return toEmailDeliveryState(address, state);
+});
+
+// The post-gate clear body — runnable only with an `Admin` `Grant` in R. Appends a
+// `clear` (no reason floor); `UserNotFound` on an unknown target.
+const clearEmailFailingGated = Effect.fn("emailDelivery.clearGated")(function* (
+	input: typeof ClearEmailFailingInput.Type,
+) {
+	yield* Admin;
+	const pasaport = yield* Pasaport;
+	const {address, state} = yield* pasaport.clearEmailFailing({userId: input.userId});
+	return toEmailDeliveryState(address, state);
 });
 
 // The post-gate moderator-promote body — runnable only with a `Moderate` `Grant` in
