@@ -4,7 +4,8 @@
  * The CI-callable scan for issue #173, moved into the pipeline-cli registry (epic
  * #994, Phase 2 / #999):
  *
- *   pipeline-cli leak-guard scan <file>...   # report user-local path leaks; exit 2 on a leak
+ *   pipeline-cli leak-guard scan <file>...        # report user-local path leaks in doc files; exit 2 on a leak
+ *   pipeline-cli leak-guard scan-comment          # scan a PR/issue comment body (stdin) before posting; exit 2 on a leak
  *
  * Reads each file, runs the pure `findLeaks` core, and reports
  * `<file>: <matched> — <reason>` lines on stderr. A missing/unreadable file is
@@ -29,7 +30,7 @@ import {Console, Data, Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, CREW_DIR, sweepCrew} from "./crew-gate.ts";
-import {findLeaks, type Leak} from "./leak-guard.ts";
+import {findCommentLeaks, findLeaks, type Leak} from "./leak-guard.ts";
 
 // 2 = a confirmed leak; any OTHER non-zero from this process means the scan
 // could not complete, which the pre-commit hook treats as warn-and-allow while
@@ -153,7 +154,56 @@ const sweep = Command.make(
 	),
 );
 
+// The pre-post net for a PR/issue COMMENT body (#2796). Where `scan` takes doc FILES and
+// `findLeaks` scopes to doc surfaces, this takes a single comment body on stdin/`--body-file`
+// and runs `findCommentLeaks` — which has no doc-surface gate (a comment is unconditionally a
+// public artifact) and the stricter temp-root patterns (`/var/folders`, `/private/tmp`, `/tmp`).
+// A `review-*` verdict-posting step runs it before `gh api …/comments` so a bypass of the
+// verdict-lib `post` seam can't silently land a scratchpad/@-filepath body on a public PR.
+const commentBodyFlag = Flag.string("body-file").pipe(
+	Flag.optional,
+	Flag.withDescription("path to the comment body to scan (default: read the body from stdin)"),
+);
+
+const readCommentBody = (bodyFile: Option.Option<string>): Effect.Effect<string> =>
+	Effect.sync(() =>
+		Option.match(bodyFile, {
+			onNone: () => readFileSync(0, "utf8"),
+			onSome: (path) => readFileSync(path, "utf8"),
+		}),
+	);
+
+const scanComment = Command.make(
+	"scan-comment",
+	{bodyFile: commentBodyFlag},
+	Effect.fn(function* ({bodyFile}) {
+		const run = Effect.gen(function* () {
+			const body = yield* readCommentBody(bodyFile);
+			const leaks = findCommentLeaks(body);
+			if (leaks.length === 0) {
+				yield* Console.log("leak-guard: clean — no machine-local paths in the comment body");
+				return;
+			}
+			yield* Console.error(
+				"leak-guard: blocked — machine-local path(s) in a PR/issue comment body (issue #2796):",
+			);
+			for (const leak of leaks) {
+				yield* Console.error(`  ${leak.matched} — ${leak.reason}`);
+			}
+			yield* Console.error(
+				"A verdict/PR comment must inline its TEXT with repo-relative paths only — never a scratchpad/@-filepath ref or a temp path. Post the verdict CONTENT, not a local path.",
+			);
+			return yield* Effect.fail(new LeakFound({count: leaks.length}));
+		});
+		yield* run.pipe(Effect.catchTag("LeakFound", onLeakFound));
+	}),
+).pipe(
+	Command.withDescription(
+		"Scan a PR/issue comment body for machine-local path leaks before posting (exit 2 on a leak)",
+	),
+);
+
 export const leakGuardCommand = Command.make("leak-guard").pipe(
-	Command.withSubcommands([scan, sweep]),
+	Command.withSubcommands([scan, sweep, scanComment]),
 	Command.withDescription("Block user-local paths from entering shared-artifact doc surfaces"),
 );

@@ -1,7 +1,8 @@
 import {assert, describe, it} from "@effect/vitest";
-import {findLeaks, isSelfExempt, isSharedArtifact} from "./leak-guard.ts";
+import {findCommentLeaks, findLeaks, isSelfExempt, isSharedArtifact} from "./leak-guard.ts";
 
 const hasLeak = (filePath: string, text: string): boolean => findLeaks(filePath, text).length > 0;
+const hasCommentLeak = (text: string): boolean => findCommentLeaks(text).length > 0;
 
 describe("findLeaks — BLOCK matrix (a real local path in a shared artifact)", () => {
 	it("blocks an absolute /Users/<name> path in a .md", () => {
@@ -68,6 +69,53 @@ describe("findLeaks — ALLOW matrix (legitimate content must NOT be flagged)", 
 	it("allows a clean shared artifact with no local paths", () => {
 		assert.isFalse(hasLeak("README.md", "this is ordinary prose with no paths at all"));
 	});
+});
+
+describe("findCommentLeaks — PR/issue comment body scan (#2796, stricter than the file surface)", () => {
+	const MKTEMP = "/var/folders/8f/r3k3t6817cgbsxsxvxk83q4c0000gn/T/tmp.TgExIt22qT";
+
+	it("blocks a /var/folders mktemp path (the #2816/#2818 @<sha>-field recurrence)", () => {
+		const leaks = findCommentLeaks(`review-code: PASS @${MKTEMP} — merge-ready`);
+		assert.isAbove(leaks.length, 0);
+	});
+	it("blocks a whole-body @filepath scratchpad ref (the #2789 case)", () =>
+		assert.isTrue(hasCommentLeak("@/private/tmp/claude-501/session/scratchpad/verdict.md")));
+	it("blocks a /private/tmp scratchpad path", () =>
+		assert.isTrue(hasCommentLeak("wrote it to /private/tmp/claude/scratchpad/verdict.md")));
+	it("blocks a bare /tmp scratch path (no doc carve-out on a public comment)", () =>
+		assert.isTrue(hasCommentLeak("verdict staged at /tmp/review-code-verdict-12.md")));
+	it("blocks an absolute /Users/<name> path", () =>
+		assert.isTrue(hasCommentLeak("see /Users/foo/project/notes")));
+	it("blocks a temp path that sits in verdict PROSE, not a SHA field", () =>
+		assert.isTrue(hasCommentLeak(`review-code: advisory — see thread\n\nnotes at ${MKTEMP}`)));
+
+	it("allows an inline verdict body with repo-relative paths and a real SHA", () =>
+		assert.isFalse(
+			hasCommentLeak(
+				`review-code: PASS @ ${"a".repeat(40)} — verified apps/web/worker and packages/pipeline-cli`,
+			),
+		));
+	it("allows a §CP advisory with a clean Reviewed-head anchor", () =>
+		assert.isFalse(
+			hasCommentLeak(
+				`review-code: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${"b".repeat(40)}`,
+			),
+		));
+	it("allows a GitHub PR URL (not a machine-local path)", () =>
+		assert.isFalse(
+			hasCommentLeak("cross-linked with https://github.com/kamp-us/phoenix/pull/2796"),
+		));
+	it("reports each leak once, no double-fire on /private/tmp vs /tmp", () => {
+		const leaks = findCommentLeaks("staged at /private/tmp/claude/scratchpad/verdict.md");
+		assert.strictEqual(leaks.length, 1);
+	});
+});
+
+describe("findLeaks — file surface keeps its /tmp carve-out (unchanged by the comment scan)", () => {
+	it("still allows a bare /tmp path in a doc surface", () =>
+		assert.isFalse(hasLeak("notes.md", "progress at /tmp/write-code-progress.md")));
+	it("still allows /var/folders in a doc surface (temp roots are comment-body-only)", () =>
+		assert.isFalse(hasLeak("notes.md", "ran under /var/folders/8f/T/tmp.abc")));
 });
 
 describe("surface predicates", () => {

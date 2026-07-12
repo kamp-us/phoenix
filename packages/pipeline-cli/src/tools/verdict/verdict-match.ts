@@ -15,6 +15,7 @@
  * exactly as `epic-lock`'s claim core takes it — a forged marker from a non-collaborator
  * never enters the candidate set, and an empty authorized set resolves NO verdict (fail-closed).
  */
+import {findCommentLeaks} from "../leak-guard/leak-guard.ts";
 
 /** The four PR-layer gate namespaces (ADR 0058 §Scope + ADR 0150/0162). */
 export type VerdictGate = "code" | "doc" | "skill" | "design";
@@ -269,18 +270,31 @@ export const malformedEmittedSha = (body: string, gate: VerdictGate): string | n
  * The single fail-closed gate every verdict EMISSION passes before it can reach GitHub — the one
  * source `Github.post` and `verdict validate` both consume so a raw-`gh api` skill and the tool
  * enforce identical rules. Returns the first structural defect (as a human-readable reason), or
- * null when the body is postable. Three ordered checks:
- *   1. cross-namespace — the first line must be *this* gate's marker (ADR 0058 §Scope);
+ * null when the body is postable. Four ordered checks:
+ *   1. cross-namespace — the first line must be *this* gate's marker (ADR 0058 §Scope); this also
+ *      refuses the whole-body bare `@filepath` case, whose first line is not a marker (#2796);
  *   2. unbound polarity — a PASS/FAIL first line must carry a bindable `@ <sha>` (the `@-` bug, #2646);
  *   3. malformed emitted SHA — every SHA field (first-line marker + `Reviewed-head:` anchor) must be
- *      a clean full 40-hex, never a partial/non-hex/path-glued value (the mktemp-path leak, #2683).
+ *      a clean full 40-hex, never a partial/non-hex/path-glued value (the mktemp-path leak, #2683/#2772);
+ *   4. body-wide leak — NO machine-local path (home / `/var/folders` mktemp / `/private/tmp` / `/tmp`)
+ *      anywhere in the body, closing the gap checks 1–3 miss: a temp path that sits in the verdict PROSE
+ *      rather than a SHA field (checks 3's field-scan skips it) or a whole-body scratchpad ref would
+ *      otherwise post a local path into a public comment (#2796/#2822). The verdict body must inline
+ *      verdict TEXT with repo-relative paths only.
  */
 export const emissionDefect = (body: string, gate: VerdictGate): string | null => {
 	if (!isNamespaceMarker(body, gate)) {
-		return `the body's first line is not a ${GATE_KEYWORD[gate]}: marker — a verdict must carry its own gate's marker on line one (the cross-namespace emission bug, ADR 0058 §Scope)`;
+		return `the body's first line is not a ${GATE_KEYWORD[gate]}: marker — a verdict must carry its own gate's marker on line one (the cross-namespace emission bug, ADR 0058 §Scope; also the whole-body bare @filepath case, #2796)`;
 	}
 	if (isUnboundPolarityMarker(body, gate)) {
 		return `a ${GATE_KEYWORD[gate]}: PASS/FAIL verdict must carry a well-formed '@ <sha>' (≥7 hex) — this polarity-bearing body has an empty/malformed SHA, which posts an unbindable marker the fail-closed read side refuses (the '@-' emission bug, ADR 0058, #2646)`;
 	}
-	return malformedEmittedSha(body, gate);
+	const shaDefect = malformedEmittedSha(body, gate);
+	if (shaDefect !== null) return shaDefect;
+	const leaks = findCommentLeaks(body);
+	if (leaks.length > 0) {
+		const leak = leaks[0];
+		return `the verdict body carries a machine-local path (${leak?.matched} — ${leak?.reason}) — a verdict comment must inline verdict TEXT with repo-relative paths only, never a scratchpad/@-filepath ref or a temp path (the silent-gate-loss + path-leak recurrence, #2796/#2822/#2683/#2772)`;
+	}
+	return null;
 };

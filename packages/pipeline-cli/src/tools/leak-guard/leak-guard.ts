@@ -83,7 +83,46 @@ const LEAK_PATTERNS: ReadonlyArray<LeakPattern> = [
 	},
 ];
 
+// Machine-local temp/scratch roots — a PR/issue COMMENT (or verdict) body must never carry
+// one (the #2796/#2822 scratchpad-`@filepath` and #2683/#2772 mktemp-in-`@sha` leaks). This is
+// deliberately STRICTER than the doc-surface `findLeaks`, which carves out a bare `/tmp` for
+// illustrative examples in docs — a public PR comment has no such legitimate use, so these are
+// scanned by `findCommentLeaks` only, never by the file-surface path. Generic path shapes, NOT
+// a named deny-list (#2393): the macOS mktemp dirs and a bare `/tmp` scratch path. The
+// `(?<![\w.])` lookbehind stops a `/private/tmp/...` match from also double-firing the `/tmp/`
+// pattern (its preceding char is a word char), so each leak reports once.
+const TEMP_PATTERNS: ReadonlyArray<LeakPattern> = [
+	{
+		pattern: /(?<![\w.])\/var\/folders\/[A-Za-z0-9._/-]+/g,
+		reason: "macOS per-user mktemp dir (/var/folders/...)",
+	},
+	{
+		pattern: /(?<![\w.])\/private\/(?:tmp|var)\/[A-Za-z0-9._/-]+/g,
+		reason: "macOS resolved temp root (/private/tmp/..., /private/var/...)",
+	},
+	{
+		pattern: /(?<![\w.])\/tmp\/[A-Za-z0-9._/-]+/g,
+		reason: "machine-local temp/scratch path (/tmp/...)",
+	},
+];
+
 const normalize = (path: string): string => path.replace(/\\/g, "/");
+
+/** Every leak in `text` for `patterns`, deduped on matched+reason (report order = pattern order). */
+const scanPatterns = (text: string, patterns: ReadonlyArray<LeakPattern>): ReadonlyArray<Leak> => {
+	const seen = new Set<string>();
+	const leaks: Leak[] = [];
+	for (const {pattern, reason} of patterns) {
+		for (const match of text.matchAll(pattern)) {
+			const matched = match[0];
+			const key = `${matched}\t${reason}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			leaks.push({matched, reason});
+		}
+	}
+	return leaks;
+};
 
 export const isSharedArtifact = (path: string): boolean => {
 	const p = normalize(path);
@@ -106,17 +145,18 @@ export const findLeaks = (filePath: string, text: string): ReadonlyArray<Leak> =
 	if (!filePath || !text) return [];
 	if (!isSharedArtifact(filePath)) return [];
 	if (isSelfExempt(filePath)) return [];
+	return scanPatterns(text, LEAK_PATTERNS);
+};
 
-	const seen = new Set<string>();
-	const leaks: Leak[] = [];
-	for (const {pattern, reason} of LEAK_PATTERNS) {
-		for (const match of text.matchAll(pattern)) {
-			const matched = match[0];
-			const key = `${matched}\t${reason}`;
-			if (seen.has(key)) continue;
-			seen.add(key);
-			leaks.push({matched, reason});
-		}
-	}
-	return leaks;
+/**
+ * Every machine-local path leak in a PR/issue COMMENT body — the surface `findLeaks` never
+ * reaches (it scopes to doc *files*), the gap that let a `review-*` verdict comment carry a
+ * `/private/tmp/.../scratchpad/verdict.md` scratchpad ref and a `@/var/folders/.../tmp.XXXX`
+ * mktemp path onto public PRs (#2796/#2822/#2683/#2772). A comment body is UNCONDITIONALLY a
+ * shared public artifact, so there is no doc-surface gate and no self-exempt list — it scans
+ * the home-dir `LEAK_PATTERNS` AND the stricter `TEMP_PATTERNS`. Generic path shapes only (#2393).
+ */
+export const findCommentLeaks = (text: string): ReadonlyArray<Leak> => {
+	if (!text) return [];
+	return scanPatterns(text, [...LEAK_PATTERNS, ...TEMP_PATTERNS]);
 };
