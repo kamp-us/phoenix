@@ -258,6 +258,22 @@ vocabulary; this names those nouns. The map-issue shape contract lives in
 | fog-graduation | The map's forward motion: a frontier ticket's answer landing in **decisions-so-far** and the ticket **graduating** off `## Open frontier` into **`## Graduated fog`** — often spawning the next frontier ticket (`→ spawned #M`). `## Graduated fog` records *how the fog cleared* (the history of motion), distinct from decisions-so-far's record of *what was decided*. The three move in lockstep, so a resolved unknown is never left without a recorded answer. | a decision-so-far (that records *what*; fog-graduation records *how it moved*); deleting the ticket (it moves to graduated fog, staying auditable) |
 | founder-decision-fork | The **one preserved human seam**: a frontier ticket that is a product/direction choice the **founder** must make — not an answerable question of fact. wayfinder **surfaces the fork** (options + trade-offs on the map) **and stops**, never auto-resolving it — the human-in-the-loop boundary the whole ideation layer preserves (the product-driven-decision boundary, ADR 0078). | an investigation ticket (which **work** mode clears autonomously); a decision wayfinder makes on its own authority (it frames, never decides) |
 
+## Campaigns (the roadmap campaign layer — epic #2652)
+
+The roadmap-layer container for audit/work waves: a bounded, milestone-backed push
+drained through the **platform lane** concurrent with the active product arc. Coined
+by the campaign-skill epic #2652 (roadmap map #2620, decisions #2641); grounded in
+`ROADMAP.md` `## Campaigns` + ADR [0072](../.decisions/0072-milestones-encode-strategic-sequencing.md)
+(milestones-encode-sequencing) and ADR [0078](../.decisions/0078-product-driven-decisions-by-default.md)
+(engineering-led on platform). This names the nouns.
+
+| Term | Definition | Not |
+|---|---|---|
+| campaign | A bounded, milestone-backed **roadmap object** drained through the **platform lane**, running *concurrent* with the active product arc (`ROADMAP.md` `## Campaigns`; milestone-as-strategic-sequencing per ADR 0072, engineering-led per ADR 0078). Each campaign owns its own milestone; the first instance is the **Mentor Audit** campaign (milestone #27, the parked #2551–2570 mentor-audit cluster). | a product-arc milestone (a campaign runs *alongside* the product arc, engineering-led, not on it); a label-only bucket with no milestone; a feature-breakdown epic (decomposition stays with epics + sub-issues, ADR 0072) |
+| wave label | The shared GitHub **label** marking an audit/work wave (e.g. `mentor-audit`) that a **campaign** formalizes into a milestone-backed object — the mentor-audit wave entered as bulk report-filed issues under one shared label (#2641). The label is the raw wave; the campaign is its recorded, milestone-backed form. | a milestone (the label is pre-campaign; formalizing it *creates* the milestone + assignments); a `type:*` / `status:*` pipeline label (it marks a wave, not a pipeline state) |
+| founder-approval trace | The **fail-closed approval marker** on a **wave label** that gates **campaign** creation — a campaign is created only with the trace present. **Invoker-agnostic:** a human OR an agent may invoke the campaign skill, but the *trace* (not the invoker's identity) is the gate — the gated-audit-wave play, findings returned to the founder for approval before filing (#2641). | the invoker's identity (the trace is the gate, not who invokes); a default-open path (absent trace ⇒ no campaign — fail-closed); wayfinder's founder-decision-fork (a different human seam) |
+| campaign lifecycle (active/done) | The two **symmetric campaign states** — `active` (draining) and `done` (complete) — carried in the `ROADMAP.md` `## Campaigns` table's State column, with **guard coverage**: the active↔done lifecycle guard (the `roadmap-guard` idiom, #2660) fails closed on an ill-formed transition. | a one-way / write-once status (the two states are symmetric); an unguarded free-text field (the lifecycle guard covers the transition) |
+
 ## Apps
 
 | Term | Definition | Not |
