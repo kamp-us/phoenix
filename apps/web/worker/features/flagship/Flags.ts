@@ -22,7 +22,7 @@
  * targeting/percentage is #511.
  */
 import type {RuntimeContext} from "alchemy";
-import {Context, Effect, Layer} from "effect";
+import {type Cause, Context, Effect, Layer} from "effect";
 import {FlagsContext, toEvaluationContext} from "./FlagsContext.ts";
 import {Flagship} from "./Flagship.ts";
 
@@ -74,6 +74,23 @@ export interface FlagsAccess {
 export class Flags extends Context.Service<Flags, FlagsAccess>()("@kampus/Flags") {}
 
 /**
+ * Collapse any evaluation failure to the caller's safe default — the single site
+ * of contract 1 (safe-default, error channel `never`). `catchCause` (not a typed
+ * `catch`) so a binding DEFECT degrades safe too, matching the fire-and-forget
+ * swallow-with-log idiom of the bildirim emitters (`swallow`). The discarded cause
+ * is now LOGGED (`logWarning`) before the default is returned, so a misconfigured
+ * or unreachable Flagship binding is observable instead of silently absorbed
+ * (#2685) — the safe-default behavior is unchanged, only the silence is removed.
+ * A telemetry counter is deliberately out of scope here (it rides #1821).
+ */
+const swallowToDefault = <A>(key: string, defaultValue: A) =>
+	Effect.catchCause((cause: Cause.Cause<unknown>) =>
+		Effect.logWarning(`flags: evaluation of "${key}" failed — falling back to default`, cause).pipe(
+			Effect.as(defaultValue),
+		),
+	);
+
+/**
  * Build the real {@link FlagsAccess} over a resolved `Flagship` client — the
  * per-isolate read surface, captured at layer build so each read's only
  * per-request requirement is the `FlagsContext` it reads at call time. Extracted
@@ -85,31 +102,28 @@ const buildRealFlags = (flagship: Flagship["Service"]): FlagsAccess => ({
 			const context = yield* FlagsContext;
 			return yield* flagship
 				.getBooleanValue(key, defaultValue, toEvaluationContext(context))
-				// Any `FlagshipError` (misconfigured/unreachable binding) collapses to
-				// the supplied default — the safe-default contract that makes a
-				// Flagship outage degrade safe (contract 1 above).
-				.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+				.pipe(swallowToDefault(key, defaultValue));
 		}),
 	getString: (key, defaultValue) =>
 		Effect.gen(function* () {
 			const context = yield* FlagsContext;
 			return yield* flagship
 				.getStringValue(key, defaultValue, toEvaluationContext(context))
-				.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+				.pipe(swallowToDefault(key, defaultValue));
 		}),
 	getNumber: (key, defaultValue) =>
 		Effect.gen(function* () {
 			const context = yield* FlagsContext;
 			return yield* flagship
 				.getNumberValue(key, defaultValue, toEvaluationContext(context))
-				.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+				.pipe(swallowToDefault(key, defaultValue));
 		}),
 	getObject: (key, defaultValue) =>
 		Effect.gen(function* () {
 			const context = yield* FlagsContext;
 			return yield* flagship
 				.getObjectValue(key, defaultValue, toEvaluationContext(context))
-				.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+				.pipe(swallowToDefault(key, defaultValue));
 		}),
 });
 
