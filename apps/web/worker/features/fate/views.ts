@@ -10,6 +10,8 @@
 import {modules} from "./config.ts";
 import {mergeFateRoots} from "./module.ts";
 
+export type {AdminProbe} from "../admin-console/probe-view.ts";
+export {adminProbeDataView} from "../admin-console/probe-view.ts";
 export type {
 	Notification,
 	NotificationChannel,

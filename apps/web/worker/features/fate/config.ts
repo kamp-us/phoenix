@@ -27,6 +27,7 @@
  * See `.patterns/fate-connections.md`, `.patterns/fate-effect-sources.md`.
  */
 import {FateServer} from "@kampus/fate-effect";
+import {fateModule as adminConsoleModule} from "../admin-console/fate-module.ts";
 import {fateModule as bildirimModule} from "../bildirim/fate-module.ts";
 import {fateModule as divanModule} from "../divan/fate-module.ts";
 import {liveBusConfig} from "../fate-live/event-bus.ts";
@@ -45,6 +46,7 @@ import {mergeFateModules} from "./module.ts";
 // is this single array entry — its queries/lists/mutations/sources AND its roots.
 export const modules = [
 	statsModule,
+	adminConsoleModule,
 	pasaportModule,
 	sozlukModule,
 	panoModule,
