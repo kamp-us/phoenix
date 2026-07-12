@@ -1,9 +1,10 @@
-import {Bell, Gavel} from "lucide-react";
+import {Gavel} from "lucide-react";
 import type * as React from "react";
 import {useEffect, useRef} from "react";
 import {Link, NavLink, useNavigate} from "react-router";
 import {isSearchShortcut} from "../../lib/searchShortcut";
 import type {ThemeChoice} from "../../lib/theme";
+import {BildirimPopover} from "../bildirim/BildirimPopover";
 import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
@@ -203,25 +204,16 @@ export function Topbar({
 		typeof karma === "number" ? (
 			<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />
 		) : null;
-	// The unread bildirim signal in the status zone (#2613). Under the zone grammar the count
-	// carries a legible Bell affordance (ADR 0166) so it reads as "unread notifications" at a
-	// glance, not a bare number. Same render rule as the flag-off badge — only when the
-	// `phoenix-bildirim` flag put a `bildirim` here AND unread > 0 (the badge's a11y label is
-	// the accessible name; the bell is decorative). Off, the count stays the bare chip on the
-	// user-menu trigger below (byte-identical to today).
+	// The unread bildirim signal in the status zone (#2613), now an INTERACTIVE bell that
+	// opens an in-place popover of recent bildirimler (#2787) — the near-universal
+	// bell→dropdown pattern, with the full `/bildirimler` page kept as the "tümünü gör"
+	// destination. The count is still the trigger's accessible name (ADR 0166). Same render
+	// rule as the flag-off badge — only when the `phoenix-bildirim` flag put a `bildirim`
+	// here AND unread > 0. Off, the count stays the bare chip on the user-menu trigger below
+	// (byte-identical to today).
 	const bildirimSignal =
 		navIa && bildirim && showUnreadBadge(bildirim.unread) ? (
-			<span
-				className="kp-topbar__bildirim-signal"
-				data-testid="topbar-bildirim-badge"
-				role="status"
-				aria-label={`${bildirim.unread} okunmamış bildirim`}
-			>
-				<Icon icon={Bell} size={16} />
-				<span className="kp-topbar__bildirim-count" aria-hidden="true">
-					{formatUnreadBadge(bildirim.unread)}
-				</span>
-			</span>
+			<BildirimPopover to={bildirim.to} unread={bildirim.unread} />
 		) : null;
 	const userMenu = user ? (
 		<Menu.Root>
