@@ -1,0 +1,84 @@
+name: roadmap-guard
+
+# CI gate for roadmap map #2620 / founder ruling #2628: ROADMAP.md's founder-voice
+# `## Arcs`/`## Campaigns` tables and the GitHub milestone projection they pin to must
+# stay in sync — sync-drift diligence is load-bearing, so it is GUARDED fail-closed, not
+# left to vigilance. The tool parses ROADMAP.md (the sole parsed surface) and validates
+# I1–I4 against the live milestone REST projection:
+#   I1 arc/campaign pinned to an existing milestone by number (a queued arc may defer)
+#   I2 exactly one active arc  ·  I3 no unclaimed open milestone
+#   I4 fail-closed on zero scope (ADR 0092)
+# The check lives once in pipeline-cli (`roadmap-guard check`); this workflow only wires
+# it to the four triggers.
+on:
+  # Block a PR that drifts ROADMAP.md ↔ milestones.
+  pull_request:
+  # Re-check when a milestone is created/edited/closed/reopened/deleted — the projection
+  # side of the contract just moved.
+  milestone:
+  # Weekly backstop: the projection can drift with no PR touching ROADMAP.md (a milestone
+  # closed out of band). On red, file a status:needs-triage issue (the report-on-drift path).
+  schedule:
+    # Monday 05:23 UTC — off-hours and off the top of the hour (the scheduler congests
+    # on-the-hour crons). Weekly keeps the filed-issue rate low enough to stay signal.
+    - cron: "23 5 * * 1"
+  # Manual re-run.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read # checkout
+  issues: write # file the drift issue on a scheduled red
+
+jobs:
+  check:
+    name: check ROADMAP.md ↔ milestone sync (I1–I4)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The guard reads the live milestone projection over `gh api`, so it needs a token.
+      # `continue-on-error` lets a red proceed to the scheduled issue-filing step below;
+      # the final gate step re-fails the job for the blocking (non-schedule) triggers.
+      - name: roadmap-guard check
+        id: guard
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          node packages/pipeline-cli/src/bin.ts roadmap-guard check 2>&1 | tee guard-output.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      # Scheduled red → file a status:needs-triage issue (the out-of-band drift the PR
+      # trigger can't see). No PR to block on a schedule run, so the issue IS the signal.
+      - name: File a status:needs-triage issue on scheduled drift
+        if: ${{ github.event_name == 'schedule' && steps.guard.outputs.code != '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # shellcheck disable=SC2016  # backticks are intended-literal markdown in the issue body, not shell expansion
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "roadmap-guard: ROADMAP.md ↔ milestone drift detected" \
+            --label "status:needs-triage" \
+            --body "$(printf 'The weekly roadmap-guard sweep found ROADMAP.md ↔ GitHub-milestone drift. Reconcile ROADMAP.md'\''s `## Arcs`/`## Campaigns` tables with the milestone projection (roadmap map #2620; invariants I1–I4, #2632).\n\nGuard output:\n\n```\n%s\n```\n' "$(cat guard-output.txt)")"
+
+      # Block the PR / milestone-event / dispatch run on red. On a schedule run the drift
+      # was already reported as an issue above, so the job does not hard-fail there.
+      - name: Fail the job on drift (blocking triggers)
+        if: ${{ github.event_name != 'schedule' && steps.guard.outputs.code != '0' }}
+        run: |
+          echo "roadmap-guard: ROADMAP.md ↔ milestone drift — see the check step output above." >&2
+          exit 1
