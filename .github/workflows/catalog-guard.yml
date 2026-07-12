@@ -1,0 +1,37 @@
+name: catalog-guard
+
+# CI gate for #2737: every dependency in every workspace `package.json` must be
+# sourced via the pnpm `catalog:` (declared once in `pnpm-workspace.yaml`) or a
+# `workspace:` ref — never a hardcoded version string. A hardcoded semver introduces
+# a second version and breaks frozen-lockfile CI downstream (the PR #535 failure mode:
+# `@distilled.cloud/cloudflare` hardcoded). The convention was written in CLAUDE.md but
+# unenforced. This job scopes to real workspace members (dirs with a package.json) plus
+# the root manifest, and fails closed if it scans zero manifests (ADR 0092). It reuses
+# pipeline-cli's `catalog-guard check` mode — the scan lives once in the tool.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check every package.json dep is on catalog:/workspace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when any workspace package.json dep pins a hardcoded version (the report
+      # is on stderr), or when zero manifests are in scope (fail-closed). See #2737.
+      - name: Check every package.json dep is on catalog:/workspace:
+        run: node packages/pipeline-cli/src/bin.ts catalog-guard check
