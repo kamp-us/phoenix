@@ -19,6 +19,15 @@ describe("isTransientDeployError", () => {
 		// signature from the `search-error-vs-empty` main-red was `{retryAfter: undefined,
 		// _tag: 'BadRequest'}` — the core `BadRequest` class has no `retryAfter` field.
 		["BadRequest", {_tag: "BadRequest", retryAfter: undefined, message: "Bad Request"}],
+		// #2638: the CF D1 control-plane rate-limit (code 971 / HTTP 429 / rate-limit message all
+		// decode to `_tag: "TooManyRequests"` per `@distilled.cloud/cloudflare` `src/client/api.ts`).
+		// A whole-tag transient — core marks the class retryable/throttling — so a bare tag classifies
+		// transient regardless of message; the two shapes below pin the code-971 and HTTP-429 paths.
+		[
+			"TooManyRequests (code 971 envelope)",
+			{_tag: "TooManyRequests", message: "Please wait and consider throttling your request speed"},
+		],
+		["TooManyRequests (HTTP 429)", {_tag: "TooManyRequests", message: "Too Many Requests"}],
 	])("retries the transient deploy tag %s", (_label, err) => {
 		expect(isTransientDeployError(err)).toBe(true);
 	});

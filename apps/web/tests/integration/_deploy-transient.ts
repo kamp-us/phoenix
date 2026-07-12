@@ -22,11 +22,21 @@
 // proof it's transient: the SAME commit re-runs green (`search-error-vs-empty` red main with
 // `{_tag:'BadRequest'}`; #1146 added 2 more dedicated stages, widening the surface — #1153). The
 // bounded `deployTransientRetry` preserves fail-fast: a real malformed script's 400 exhausts the cap.
+// `TooManyRequests` (a WHOLE-tag transient, unlike the message-scoped cases below): the CF D1
+// control-plane rate-limit that reds `integration` on unrelated PRs when two PRs' CI overlap on
+// the one shared account (#2638; observed on PR #2625/#2635). Grounded in the
+// `@distilled.cloud/cloudflare` decode (`src/client/api.ts`): the in-band `code: 971` ("Please
+// wait and consider throttling your request speed"), a bare HTTP-429, and the global rate-limit
+// message ALL decode to `_tag: "TooManyRequests"` (`GLOBAL_ERROR_CODE_MAP[971]` and the
+// `status === 429` branch). It joins the set UNSCOPED — no message match — because core marks the
+// class `Category.withRetryable({throttling: true})`: a rate limit is transient by construction, so
+// the whole tag rides the bounded backoff (a persistent limit still exhausts the cap and fails fast).
 const DEPLOY_TRANSIENT_TAGS = new Set([
 	"WorkerNotFound",
 	"InternalServerError",
 	"UnknownCloudflareError",
 	"BadRequest",
+	"TooManyRequests",
 ]);
 
 // One more eventually-consistent signature, decoded NOT to a code-specific tag but to the
