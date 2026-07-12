@@ -4,8 +4,9 @@
  *
  *   - `EmailSenderCloudflareLive` over a FAKE `Email.Send`: asserts it
  *     calls the binding's `.send` with the correct from/to/subject/body shape,
- *     and that a binding failure is swallowed (the public `send` is `E = never`,
- *     so a delivery failure never throws into better-auth);
+ *     and that a binding `SendEmailError` is recorded to the delivery log AND
+ *     swallowed (the public `send` is `E = never`, so a delivery failure never
+ *     throws into better-auth — epic #2687, Child #2691);
  *   - `EmailSenderLog`: the dev/preview sink resolves without a binding;
  *   - `emailSenderLayerFor`: the ENVIRONMENT gate picks the log sink for
  *     development/preview and the CF adapter for production.
@@ -14,6 +15,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {RuntimeContext} from "alchemy";
 import {Email} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
+import {EmailDeliveryLog} from "./email-delivery-log.ts";
 import {
 	EMAIL_FROM,
 	EmailSender,
@@ -29,6 +31,19 @@ const runtimeContext = Layer.succeed(RuntimeContext)({
 	get: () => Effect.succeed(undefined),
 	set: (id) => Effect.succeed(id),
 });
+
+type RecordedFailure = {address: string; reason: string};
+
+/**
+ * A fake `EmailDeliveryLog` that captures every `recordSendFailure` call into `sink`,
+ * so the CF adapter's send-time capture is assertable without a `Drizzle`/D1.
+ */
+const fakeDeliveryLog = (sink: RecordedFailure[]): Layer.Layer<EmailDeliveryLog> =>
+	Layer.succeed(EmailDeliveryLog)(
+		EmailDeliveryLog.of({
+			recordSendFailure: (input) => Effect.sync(() => void sink.push(input)),
+		}),
+	);
 
 type SentMessage = Parameters<Email.SendClient["send"]>[0];
 
@@ -69,6 +84,7 @@ describe("EmailSenderCloudflareLive", () => {
 							}),
 						),
 						Layer.provide(runtimeContext),
+						Layer.provide(fakeDeliveryLog([])),
 					),
 				),
 			);
@@ -100,6 +116,7 @@ describe("EmailSenderCloudflareLive", () => {
 							}),
 						),
 						Layer.provide(runtimeContext),
+						Layer.provide(fakeDeliveryLog([])),
 					),
 				),
 			);
@@ -113,14 +130,16 @@ describe("EmailSenderCloudflareLive", () => {
 		}),
 	);
 
-	it.effect("fails soft: a binding send error never throws into the caller", () =>
+	it.effect("records a SendEmailError to the delivery log AND stays fail-soft", () =>
 		Effect.gen(function* () {
+			const recorded: RecordedFailure[] = [];
 			const program = Effect.flatMap(EmailSender, (sender) =>
 				sender.send({to: "user@example.com", subject: "x", text: "y"}),
 			);
 
-			// The send fails at the binding, but the public `send` is E = never — the
-			// program completes with void rather than failing.
+			// The send is REJECTED at the binding. The adapter must (1) append the rejection
+			// to the delivery log for that recipient, and (2) still complete with void — the
+			// public `send` is E = never, so a delivery failure never fails the auth flow.
 			const result = yield* program.pipe(
 				Effect.provide(
 					EmailSenderCloudflareLive.pipe(
@@ -128,12 +147,14 @@ describe("EmailSenderCloudflareLive", () => {
 							fakeBinding(() => Effect.fail(new Email.SendEmailError({message: "binding boom"}))),
 						),
 						Layer.provide(runtimeContext),
+						Layer.provide(fakeDeliveryLog(recorded)),
 					),
 				),
 				Effect.exit,
 			);
 
 			assert.isTrue(result._tag === "Success");
+			assert.deepStrictEqual(recorded, [{address: "user@example.com", reason: "binding boom"}]);
 		}),
 	);
 });

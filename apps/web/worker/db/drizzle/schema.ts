@@ -187,6 +187,40 @@ export const userBanEvent = sqliteTable(
 );
 
 /**
+ * Append-only transactional-email delivery-failure log — the SINGLE source of both
+ * the audit trail and the current per-address failing-state (email-bounce epic #2687).
+ * Failing-state is a projection of the latest event for an address (see
+ * `features/pasaport/email-delivery.ts` `resolveEmailDeliveryState`), mirroring
+ * {@link userBanEvent}: latest-event-wins, so a stale "bouncing flag" is
+ * unrepresentable. Every feed appends here — the send-time capture (Child #2691), the
+ * admin mark/clear (Child #2692), and the CF async ingestion (Child #2694).
+ *
+ * The recipient is keyed by `address` (always known from the send), with `userId` a
+ * nullable FK when the address resolves to an account — a send can target an address
+ * with no `user` row. `onDelete: set null` keeps the delivery history when the account
+ * is deleted (the address remains the stable key).
+ */
+export const emailDeliveryEvent = sqliteTable(
+	"email_delivery_event",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id").references(() => user.id, {onDelete: "set null"}),
+		address: text("address").notNull(),
+		// A `fail` opens/refreshes a failing-state, a `clear` lifts it. The projection
+		// reads only the latest row, so a `clear` after a `fail` restores deliverability
+		// without mutating or deleting the fail row — full reversibility, as in ban.
+		action: text("action", {enum: ["fail", "clear"]}).notNull(),
+		// The failure detail (a `SendEmailError` message, or an admin note); null for a `clear`.
+		reason: text("reason"),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		index("email_delivery_event_address_created").on(t.address, sql`${t.createdAt} DESC`),
+		index("email_delivery_event_user_created").on(t.userId, sql`${t.createdAt} DESC`),
+	],
+);
+
+/**
  * Per-(definition, voter) up-vote presence row. `user_vote` and
  * `definition_record.score` (COUNT(*) under `WHERE definition_id = ?`) are both
  * denormalized off this, recomputed inline in the same D1 batch as the vote write.
