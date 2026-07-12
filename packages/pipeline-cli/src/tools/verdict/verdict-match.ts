@@ -214,3 +214,14 @@ export const outcomeReason = (outcome: VerdictOutcome, expect: Polarity): string
  */
 export const isNamespaceMarker = (body: string, gate: VerdictGate): boolean =>
 	namespaceRe(gate).test(body);
+
+/**
+ * The `post` emission guard: does this body declare a PASS/FAIL polarity but carry no bindable
+ * `@ <sha>` (≥7 hex)? Such a body posts an unbindable marker — the observed empty-SHA `@-` case
+ * (#2646) — that the fail-closed read side then refuses (`sha-less`), false-BLOCKing a legitimate
+ * ship until a manual re-post. `post` rejects it fail-closed at emission so the broken marker never
+ * reaches GitHub. Keys on "polarity present ⇒ SHA required": an advisory (namespaced, no PASS/FAIL)
+ * carries no polarity, so it returns false and stays postable SHA-less.
+ */
+export const isUnboundPolarityMarker = (body: string, gate: VerdictGate): boolean =>
+	polarityRe(gate).test(body) && !verdictRe(gate).test(body);

@@ -224,4 +224,58 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 				}),
 			),
 	);
+
+	// The #2646 emission guard: a polarity-bearing (PASS/FAIL) body with an empty/malformed SHA is
+	// the observed unbindable `@-` marker — refused fail-closed at emission, never POSTed, so the
+	// read side never has to false-BLOCK it. No POST/PATCH fixture is supplied: a write would 404.
+	it.effect("a PASS body with an EMPTY `@ <sha>` → VerdictInputError, no write", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip((yield* Github).post(PR, "doc", "review-doc: PASS @ -"));
+			assert.isTrue(error instanceof VerdictInputError);
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+			}),
+		),
+	);
+
+	it.effect("a FAIL body with a too-short (<7 hex) SHA → VerdictInputError, no write", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip((yield* Github).post(PR, "doc", "review-doc: FAIL @ abc12"));
+			assert.isTrue(error instanceof VerdictInputError);
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+			}),
+		),
+	);
+
+	it.effect("a well-formed `PASS @ <40hex>` body → POSTed (the guard passes it through)", () =>
+		Effect.gen(function* () {
+			const sha40 = "a".repeat(40);
+			const result = yield* (yield* Github).post(PR, "doc", `review-doc: PASS @ ${sha40}`);
+			assert.deepStrictEqual(result, {_tag: "posted", commentId: 777});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`POST ${P}/issues/${PR}/comments`]: "777",
+			}),
+		),
+	);
+
+	it.effect("an advisory (SHA-less, no polarity) body is still POSTed", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).post(PR, "doc", "review-doc: advisory — see thread");
+			assert.deepStrictEqual(result, {_tag: "posted", commentId: 888});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`POST ${P}/issues/${PR}/comments`]: "888",
+			}),
+		),
+	);
 });
