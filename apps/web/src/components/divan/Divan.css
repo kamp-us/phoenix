@@ -440,13 +440,36 @@
 	display: flex;
 	justify-content: space-between;
 	align-items: baseline;
-	gap: var(--s-2);
+	gap: var(--s-3);
+	flex-wrap: wrap;
 	font: var(--t-meta);
 	color: var(--text-muted);
 }
 
-.kp-triage__keys {
+.kp-triage__pos {
+	font-variant-numeric: tabular-nums;
+}
+
+/* The keyboard legend (#2726): the founder-flagged dense strip rebuilt as a scannable
+   row of keycap chips + their action, wrapping on narrow surfaces. */
+.kp-triage__legend {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--s-1) var(--s-3);
+}
+
+.kp-triage__legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-1);
+}
+
+.kp-triage__legend-label {
 	text-transform: lowercase;
+	color: var(--text-muted);
 }
 
 /* Shell (surface-raised · border · r-sm · pad-lg) is the shared Surface primitive

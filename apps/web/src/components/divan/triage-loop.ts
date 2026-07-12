@@ -182,8 +182,31 @@ export function authorReputationLabel(
 export function maskedExcerpt(excerpt: string | null, revealed: boolean): string {
 	const trimmed = excerpt?.trim();
 	if (!trimmed) return "içerik yüklenemedi";
-	return revealed ? trimmed : "içerik gizli — göstermek için O";
+	return revealed ? trimmed : "içerik gizli · O ile göster";
 }
+
+/**
+ * The keyboard legend the HUD renders (ADR 0138): one entry per bound gesture — the
+ * keycap(s) plus its lowercase-Turkish action. The founder-flagged dense strip is
+ * replaced by this structured legend so a moderator can scan the loop's grammar; the
+ * keycaps render as `<kbd>` chips (the manifest's key-legend rule). Copy lives here,
+ * DOM-free, beside the `keyToAction` map it mirrors.
+ */
+export interface LegendEntry {
+	readonly keys: ReadonlyArray<string>;
+	readonly label: string;
+}
+
+export const triageLegend: ReadonlyArray<LegendEntry> = [
+	{keys: ["j", "k"], label: "gez"},
+	{keys: ["Y"], label: "yoksay"},
+	{keys: ["R"], label: "kaldır"},
+	{keys: ["U"], label: "geri al"},
+	{keys: ["O"], label: "göster"},
+	{keys: ["A"], label: "künye"},
+	{keys: ["V", "M"], label: "bölme"},
+	{keys: ["X"], label: "dalga"},
+];
 
 /**
  * The earned drained-queue line (ADR 0138): `raporlar temiz` plus today's decision

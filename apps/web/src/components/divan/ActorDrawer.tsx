@@ -98,14 +98,14 @@ export function ActorDrawer({
 					</div>
 				)}
 				<div className="kp-actor__tell">
-					<dt className="kp-actor__tell-key">bildirilen</dt>
+					<dt className="kp-actor__tell-key">bildiren</dt>
 					<dd className="kp-actor__tell-val" data-testid="actor-bildirilen">
 						{bildirilenLabel(standing.distinctReporters)}
 					</dd>
 				</div>
 				{kefilDurumu !== null && (
 					<div className="kp-actor__tell">
-						<dt className="kp-actor__tell-key">kefil durumu</dt>
+						<dt className="kp-actor__tell-key">kefil</dt>
 						<dd className="kp-actor__tell-val" data-testid="actor-kefil">
 							{kefilDurumu}
 						</dd>

@@ -131,24 +131,26 @@ export function uretimLabel(standing: ActorStanding): string | null {
 }
 
 /**
- * The `kaldırılan` trust tell (ADR 0138): `N kaldırılan` when the actor has prior
- * removals, else the clean `temiz sicil`. `null` when unresolved — the drawer then
+ * The `sicil` trust tell (ADR 0138): `N kaldırıldı` when the actor has prior removals,
+ * else the clean `temiz` — read under the `sicil` key, so the value no longer re-states
+ * the noun (the old `temiz sicil` doubled it). `null` when unresolved — the drawer then
  * renders no removal line rather than a false "temiz".
  */
 export function kaldirilanLabel(priorRemovals: number | null): string | null {
 	if (priorRemovals === null) return null;
-	if (priorRemovals <= 0) return "temiz sicil";
-	return `${priorRemovals} kaldırılan`;
+	if (priorRemovals <= 0) return "temiz";
+	return `${priorRemovals} kaldırıldı`;
 }
 
 /**
- * The `bildirilen` trust tell (ADR 0138): `N kişi bildirdi` — how many distinct
- * reporters stand behind the focused report, the pile-on's real breadth. Clamped to ≥1
- * for a real reported target; the diversity numerator #1855's wave slice also reads.
+ * The `bildiren` trust tell (ADR 0138): `N kişi` — how many distinct reporters stand
+ * behind the focused report, the pile-on's real breadth. Read under the `bildiren` key,
+ * so the value is the bare count (the old `N kişi bildirdi` re-stated the verb). Clamped
+ * to ≥1 for a real reported target; the diversity numerator #1855's wave slice also reads.
  */
 export function bildirilenLabel(distinctReporters: number): string {
 	const n = Math.max(1, Math.floor(distinctReporters));
-	return `${n} kişi bildirdi`;
+	return `${n} kişi`;
 }
 
 /**
@@ -162,12 +164,13 @@ export function kefilDurumuLabel(kefil: boolean | null): string | null {
 }
 
 /**
- * The "bu aktör" line (ADR 0138): `bu aktörün N raporlu içeriği var` — the entry point
- * #1855's remove-the-wave grows from (actor-grouped selection). `null` when unresolved.
- * Zero renders the singular clean line (`bu aktörün başka raporlu içeriği yok`).
+ * The "bu aktör" line (ADR 0138): `N raporlu içerik` — the entry point #1855's
+ * remove-the-wave grows from (actor-grouped selection). Read under the `bu aktör` key,
+ * so the value no longer re-states "bu aktörün" (the old line doubled it). `null` when
+ * unresolved. Zero/one renders the clean `başka raporlu içerik yok`.
  */
 export function buAktorLabel(reportedTargets: number | null): string | null {
 	if (reportedTargets === null) return null;
-	if (reportedTargets <= 1) return "bu aktörün başka raporlu içeriği yok";
-	return `bu aktörün ${reportedTargets} raporlu içeriği var`;
+	if (reportedTargets <= 1) return "başka raporlu içerik yok";
+	return `${reportedTargets} raporlu içerik`;
 }
