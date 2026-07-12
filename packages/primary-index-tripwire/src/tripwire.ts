@@ -46,6 +46,19 @@ export const CONTROL_PLANE_DELETION_PREFIXES: readonly string[] = [
 export const isControlPlaneDeletion = (path: string): boolean =>
 	CONTROL_PLANE_DELETION_PREFIXES.some((p) => path.startsWith(p));
 
+/**
+ * The count of control-plane staged deletions at which the #2778 signature is treated as a
+ * MASS deletion that a downstream guard REFUSES (not merely records). Single-sourced here so the
+ * two §CP block sites — `pipeline-cli primary-index-guard` (the pre-commit block) and `main-sync`
+ * (the sync-path refusal) — agree on what "mass" means. Deliberately HIGHER than the record-only
+ * noise floor (`bin.ts`'s `--threshold` default of 10): recording trips early for observability,
+ * but blocking is consequential, so it needs a stronger signal to never false-refuse a legitimate
+ * multi-file control-plane refactor — and it only ever fires on the PRIMARY checkout, where a
+ * direct commit is already off the sanctioned worktree+PR path (a mass deletion committed there is
+ * the corruption, not routine work). The 248-deletion incident sits far above it.
+ */
+export const MASS_DELETION_BLOCK_THRESHOLD = 25;
+
 /** The git + environment facts the decision needs, gathered read-only at the caller's IO boundary. */
 export interface TripwireInput {
 	/**
