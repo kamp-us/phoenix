@@ -29,7 +29,18 @@
 import {captureException, flush} from "@sentry/cloudflare";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+
+/**
+ * A rejection from the inline capture/flush path — an infra failure that dies
+ * (mirroring the prior `Effect.promise` defect), keeping this seam's `E` channel
+ * `never` as its callers require.
+ */
+class SentryCaptureError extends Schema.TaggedErrorClass<SentryCaptureError>()(
+	"web/SentryCaptureError",
+	{cause: Schema.Defect()},
+) {}
 
 /**
  * The pure gate (unit-tested): a real (non-interrupt) failure worth capturing. Mirrors
@@ -58,16 +69,19 @@ export function captureUnhandled<E, R>(
 		if (!shouldCaptureCause(cause)) {
 			return Effect.succeed(HttpServerResponse.empty({status: 499}));
 		}
-		return Effect.promise(async () => {
-			console.error("HTTP handler failed", Cause.pretty(cause));
-			for (const error of Cause.prettyErrors(cause)) {
-				captureException(error);
-			}
-			await flush(2000);
-			return HttpServerResponse.text("Internal Server Error", {
-				status: 500,
-				statusText: "Internal Server Error",
-			});
-		});
+		return Effect.tryPromise({
+			try: async () => {
+				console.error("HTTP handler failed", Cause.pretty(cause));
+				for (const error of Cause.prettyErrors(cause)) {
+					captureException(error);
+				}
+				await flush(2000);
+				return HttpServerResponse.text("Internal Server Error", {
+					status: 500,
+					statusText: "Internal Server Error",
+				});
+			},
+			catch: (flushCause) => new SentryCaptureError({cause: flushCause}),
+		}).pipe(Effect.orDie);
 	});
 }

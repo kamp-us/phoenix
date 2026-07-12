@@ -18,6 +18,7 @@ import * as Layer from "effect/Layer";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as schema from "../../db/drizzle/schema.ts";
+import {BetterAuthHandlerError} from "./better-auth-live.ts";
 
 /**
  * A REAL better-auth instance over a test `D1Database` handle, reproducing
@@ -62,7 +63,10 @@ export const layerTest = (instance: Auth): Layer.Layer<BetterAuth.BetterAuth> =>
 		auth: Effect.succeed(instance),
 		fetch: Effect.gen(function* () {
 			const request = yield* HttpServerRequest.HttpServerRequest;
-			const response = yield* Effect.promise(() => instance.handler(request.source as Request));
+			const response = yield* Effect.tryPromise({
+				try: () => instance.handler(request.source as Request),
+				catch: (cause) => new BetterAuthHandlerError({cause}),
+			}).pipe(Effect.orDie);
 			return HttpServerResponse.fromWeb(response);
 		}),
 	});

@@ -21,7 +21,9 @@ const ExecOptions = Schema.Struct({
 	dev: Schema.optional(Schema.Unknown),
 	stage: Schema.optional(Schema.Unknown),
 });
-const decodeExecOptions = Schema.decodeUnknownOption(ExecOptions);
+// `fromJsonString` parses the blob AND decodes it in one step, folding a JSON
+// parse failure into a `None` — so a malformed blob needs no raw `try/catch`.
+const decodeExecOptions = Schema.decodeUnknownOption(Schema.fromJsonString(ExecOptions));
 
 /** The subset of the deploy-time process env the selector reads. */
 export interface DeployEnvInput {
@@ -66,13 +68,11 @@ const isOfflinePath = (env: DeployEnvInput): boolean => {
 	if (devOverride === "1" || devOverride === "true") return true;
 
 	if (env.ALCHEMY_EXEC_OPTIONS) {
-		try {
-			const parsed = decodeExecOptions(JSON.parse(env.ALCHEMY_EXEC_OPTIONS));
-			if (Option.isSome(parsed) && parsed.value.dev === true) return true;
-		} catch {
-			// A malformed blob is not a dev signal — fall through to deploy (shared
-			// store). Failing safe toward the shared store keeps collab/diff intact.
-		}
+		// A malformed blob decodes to `None`, so it's not a dev signal — fall through
+		// to deploy (shared store). Failing safe toward the shared store keeps
+		// collab/diff intact.
+		const parsed = decodeExecOptions(env.ALCHEMY_EXEC_OPTIONS);
+		if (Option.isSome(parsed) && parsed.value.dev === true) return true;
 	}
 
 	return false;
@@ -101,13 +101,10 @@ export const resolveStateMode = (env: DeployEnvInput): StateMode =>
  */
 export const resolveDevStage = (env: DeployEnvInput): string | undefined => {
 	if (!isOfflinePath(env) || !env.ALCHEMY_EXEC_OPTIONS) return undefined;
-	try {
-		const parsed = decodeExecOptions(JSON.parse(env.ALCHEMY_EXEC_OPTIONS));
-		if (Option.isSome(parsed) && typeof parsed.value.stage === "string" && parsed.value.stage) {
-			return parsed.value.stage;
-		}
-	} catch {
-		// Malformed blob → no stage → auto-name (matches resolveStateMode's fail-safe).
+	// Malformed blob → `None` → no stage → auto-name (matches resolveStateMode's fail-safe).
+	const parsed = decodeExecOptions(env.ALCHEMY_EXEC_OPTIONS);
+	if (Option.isSome(parsed) && typeof parsed.value.stage === "string" && parsed.value.stage) {
+		return parsed.value.stage;
 	}
 	return undefined;
 };

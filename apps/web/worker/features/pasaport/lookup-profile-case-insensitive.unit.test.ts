@@ -13,7 +13,13 @@
 import {assert, describe, it} from "@effect/vitest";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
-import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
+import {
+	Drizzle,
+	type DrizzleAccess,
+	type DrizzleDb,
+	DrizzleError,
+	relations,
+} from "../../db/Drizzle.ts";
 import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
 const inertAuth = {} as BetterAuthInstance;
@@ -61,15 +67,18 @@ function capturingAccess(
 	const state = {i: 0};
 	const access: DrizzleAccess = {
 		run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
-			Effect.promise(async () => {
-				const built = fn(renderDb) as unknown;
-				if (hasToSQL(built)) {
-					const compiled = built.toSQL();
-					builders.push({sql: compiled.sql, params: compiled.params});
-				} else if (isThenable(built)) {
-					await built;
-				}
-				return results[state.i++] as A;
+			Effect.tryPromise({
+				try: async () => {
+					const built = fn(renderDb) as unknown;
+					if (hasToSQL(built)) {
+						const compiled = built.toSQL();
+						builders.push({sql: compiled.sql, params: compiled.params});
+					} else if (isThenable(built)) {
+						await built;
+					}
+					return results[state.i++] as A;
+				},
+				catch: (cause) => new DrizzleError({cause}),
 			}),
 		batch: () => Effect.die(new Error("lookupProfile must not batch")),
 	};

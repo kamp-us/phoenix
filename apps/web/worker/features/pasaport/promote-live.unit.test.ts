@@ -22,9 +22,15 @@ import {RelationStore} from "@kampus/authz";
 import {LivePublisher} from "@kampus/fate-effect";
 import {liveEntityTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
+import * as Schema from "effect/Schema";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {makePasaportStub} from "./Pasaport.testing.ts";
 import {publishPromotion} from "./promote-live.ts";
+
+/** A rejection while draining scheduled `waitUntil` work — dies the fiber. */
+class DrainRejected extends Schema.TaggedErrorClass<DrainRejected>()("test/DrainRejected", {
+	cause: Schema.Unknown,
+}) {}
 
 // A `RelationStore` where nobody moderates — `moderatorsAmong` (the `isModerator`
 // join in `getUsersWithModerationByIds`) reads `hasSubjects`, and a promoted yazar
@@ -89,7 +95,10 @@ describe("publishPromotion — the shared post-promote live-publish (#1886)", ()
 		const {layer, recorded, scheduled} = recordingLive();
 		return Effect.gen(function* () {
 			yield* publishPromotion("u-target");
-			yield* Effect.promise(() => Promise.allSettled(scheduled));
+			yield* Effect.tryPromise({
+				try: () => Promise.allSettled(scheduled),
+				catch: (cause) => new DrainRejected({cause}),
+			}).pipe(Effect.orDie);
 			// The `User` entity topic keyed on the promoted id — what the global live pin
 			// (`.patterns/fate-live-views.md#global-pin`) subscribes, so the profile view
 			// reconciles the new tier live.
@@ -101,7 +110,10 @@ describe("publishPromotion — the shared post-promote live-publish (#1886)", ()
 		const {layer, recorded, scheduled} = recordingLive();
 		return Effect.gen(function* () {
 			yield* publishPromotion("u-gone");
-			yield* Effect.promise(() => Promise.allSettled(scheduled));
+			yield* Effect.tryPromise({
+				try: () => Promise.allSettled(scheduled),
+				catch: (cause) => new DrainRejected({cause}),
+			}).pipe(Effect.orDie);
 			assert.deepStrictEqual(recorded, []);
 		}).pipe(
 			Effect.provide(
@@ -120,7 +132,10 @@ describe("publishPromotion — the shared post-promote live-publish (#1886)", ()
 			// The helper itself must succeed even though delivery dies — the failure is
 			// caught on the detached promise, never surfacing into this effect.
 			yield* publishPromotion("u-target");
-			yield* Effect.promise(() => Promise.allSettled(scheduled));
+			yield* Effect.tryPromise({
+				try: () => Promise.allSettled(scheduled),
+				catch: (cause) => new DrainRejected({cause}),
+			}).pipe(Effect.orDie);
 		}).pipe(Effect.provide(Layer.mergeAll(pasaportWithUser, relationStoreEmpty, layer)));
 	});
 });

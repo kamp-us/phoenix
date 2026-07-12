@@ -13,8 +13,14 @@
  */
 import {assert, it} from "@effect/vitest";
 import {Effect, Exit} from "effect";
+import * as Schema from "effect/Schema";
 import {expectTypeOf, vi} from "vitest";
 import {PANO_FEED_CACHE_TAG, panoFeedCacheFor} from "./feed-cache.ts";
+
+/** A rejection from the test harness flush thunk — dies the fiber. */
+class FlushRejected extends Schema.TaggedErrorClass<FlushRejected>()("test/FlushRejected", {
+	cause: Schema.Unknown,
+}) {}
 
 interface PurgeCall {
 	readonly tags: string[];
@@ -53,7 +59,9 @@ it.effect("enabled ⇒ one tag purge scheduled through waitUntil", () =>
 		yield* cache.purge();
 		// scheduled synchronously, but the delivery is not awaited on the caller path
 		assert.strictEqual(scheduled.length, 1);
-		yield* Effect.promise(flush);
+		yield* Effect.tryPromise({try: flush, catch: (cause) => new FlushRejected({cause})}).pipe(
+			Effect.orDie,
+		);
 
 		assert.deepStrictEqual(purges, [{tags: [PANO_FEED_CACHE_TAG]}]);
 	}),
@@ -92,7 +100,9 @@ it.effect("a rejecting purge cannot fail the calling effect", () => {
 		const exit = yield* Effect.exit(cache.purge());
 		assert.isTrue(Exit.isSuccess(exit));
 
-		yield* Effect.promise(flush); // the detached rejection stays off the caller
+		yield* Effect.tryPromise({try: flush, catch: (cause) => new FlushRejected({cause})}).pipe(
+			Effect.orDie,
+		); // the detached rejection stays off the caller
 	}).pipe(
 		Effect.ensuring(
 			Effect.sync(() => {

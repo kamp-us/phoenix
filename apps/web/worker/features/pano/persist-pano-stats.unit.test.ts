@@ -14,8 +14,15 @@
 import {describe, it} from "@effect/vitest";
 import {SQLiteDialect} from "drizzle-orm/sqlite-core";
 import {Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {assert} from "vitest";
 import type {DrizzleAccessOrDie, DrizzleDb} from "../../db/Drizzle.ts";
+
+/** A rejection from the stubbed `run` thunk — dies, matching `run`'s `never` channel. */
+class RunRejected extends Schema.TaggedErrorClass<RunRejected>()("test/RunRejected", {
+	cause: Schema.Unknown,
+}) {}
+
 import {makePersistPanoStats} from "./pano-stats.ts";
 
 const dialect = new SQLiteDialect();
@@ -41,7 +48,10 @@ function scriptedRun(counts: readonly [number, number, number]): {
 				return Promise.resolve({results: []});
 			},
 		} as unknown as DrizzleDb;
-		return Effect.promise(() => fn(captureDb));
+		return Effect.tryPromise({
+			try: () => fn(captureDb),
+			catch: (cause) => new RunRejected({cause}),
+		}).pipe(Effect.orDie);
 	}) as DrizzleAccessOrDie["run"];
 	return {
 		run,

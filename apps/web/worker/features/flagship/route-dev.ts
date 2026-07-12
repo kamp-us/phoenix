@@ -18,6 +18,7 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {AppConfig} from "../../config.ts";
@@ -32,6 +33,12 @@ import {
 } from "./dev-override.ts";
 
 const DEV_ROUTE_PATH = "/api/flags/dev";
+
+/** Reading the request form body failed — an unexpected infra failure, so it dies. */
+class RequestBodyReadError extends Schema.TaggedErrorClass<RequestBodyReadError>()(
+	"flagship/RequestBodyReadError",
+	{cause: Schema.Defect()},
+) {}
 
 /** A `404` body that names why — the route exists but is dev-only. */
 const notInDevelopment = HttpServerResponse.text(
@@ -59,7 +66,11 @@ export const flagsDevPageRoute = HttpRouter.add("GET", DEV_ROUTE_PATH, handleFla
 export const handleFlagsDevApply = Effect.gen(function* () {
 	if (!(yield* isDevelopment)) return notInDevelopment;
 	const raw = yield* Cloudflare.Request;
-	const form = new URLSearchParams(yield* Effect.promise(() => raw.text()));
+	const text = yield* Effect.tryPromise({
+		try: () => raw.text(),
+		catch: (cause) => new RequestBodyReadError({cause}),
+	}).pipe(Effect.orDie);
+	const form = new URLSearchParams(text);
 	const action = parseOverrideAction(form);
 	const current = parseOverrideCookie(raw.headers.get("cookie"));
 	const next = action ? applyOverride(current, action) : current;

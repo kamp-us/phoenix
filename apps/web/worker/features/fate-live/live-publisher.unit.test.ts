@@ -18,10 +18,16 @@ import {assert, it} from "@effect/vitest";
 import type {LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {Effect, Exit} from "effect";
+import * as Schema from "effect/Schema";
 import {expectTypeOf, vi} from "vitest";
 import {LiveTransportError} from "./cold-start-retry.ts";
 import {livePublisherFor} from "./live-publisher.ts";
 import type {PublishMessage} from "./protocol.ts";
+
+/** A rejection from a test harness thunk (flush / gated publish) — dies the fiber. */
+class PromiseRejected extends Schema.TaggedErrorClass<PromiseRejected>()("test/PromiseRejected", {
+	cause: Schema.Unknown,
+}) {}
 
 interface Recorded {
 	readonly topicKey: string;
@@ -95,7 +101,9 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 		yield* definitions.invalidate({eventId: "e5"});
 		// no-args topic → the procedure-wide global wildcard topic
 		yield* live.topic("posts").appendNode("Post", "p1", {node: {id: "p1"}});
-		yield* Effect.promise(flush);
+		yield* Effect.tryPromise({try: flush, catch: (cause) => new PromiseRejected({cause})}).pipe(
+			Effect.orDie,
+		);
 
 		const definitionsTopic = liveConnectionTopic("Term.definitions", {slug: "effect"});
 		assert.deepStrictEqual(recorded, [
@@ -189,7 +197,9 @@ it.effect("a rejecting topic publish cannot fail the calling effect", () => {
 		);
 		assert.isTrue(Exit.isSuccess(exit));
 
-		yield* Effect.promise(flush); // the detached failure stays off the caller
+		yield* Effect.tryPromise({try: flush, catch: (cause) => new PromiseRejected({cause})}).pipe(
+			Effect.orDie,
+		); // the detached failure stays off the caller
 	}).pipe(
 		Effect.ensuring(
 			Effect.sync(() => {
@@ -225,7 +235,9 @@ it.effect(
 			);
 			assert.isTrue(Exit.isSuccess(exit), "the mutation never fails on an exhausted publish");
 
-			yield* Effect.promise(flush);
+			yield* Effect.tryPromise({try: flush, catch: (cause) => new PromiseRejected({cause})}).pipe(
+				Effect.orDie,
+			);
 			assert.isTrue(
 				logged.some((line) => line.includes("live publish to topic:")),
 				"the exhausted publish was logged through the Effect logger",
@@ -250,11 +262,13 @@ it.effect("a slow publish does not block the request path — waitUntil carries 
 			release = resolve;
 		});
 		const {live, flush} = makeHarness(() =>
-			Effect.promise(() =>
-				gate.then(() => {
-					settled = true;
-				}),
-			),
+			Effect.tryPromise({
+				try: () =>
+					gate.then(() => {
+						settled = true;
+					}),
+				catch: (cause) => new PromiseRejected({cause}),
+			}).pipe(Effect.orDie),
 		);
 
 		// The publish effect completes NOW, while the topic call is still hung —
@@ -263,7 +277,9 @@ it.effect("a slow publish does not block the request path — waitUntil carries 
 		assert.isFalse(settled);
 
 		release();
-		yield* Effect.promise(flush);
+		yield* Effect.tryPromise({try: flush, catch: (cause) => new PromiseRejected({cause})}).pipe(
+			Effect.orDie,
+		);
 		assert.isTrue(settled);
 	}),
 );
