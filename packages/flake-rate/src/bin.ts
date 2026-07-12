@@ -71,13 +71,8 @@ const clampWindow = (n: number): number => Math.max(1, Math.min(100, n));
 
 // Read the inventory markdown; a missing/unreadable file means "no recorded fixes" (an
 // empty discount set), never a hard failure — the budget then measures every run.
-const readInventory = (path: string): string => {
-	try {
-		return readFileSync(path, "utf8");
-	} catch {
-		return "";
-	}
-};
+const readInventory = (path: string): Effect.Effect<string> =>
+	Effect.try(() => readFileSync(path, "utf8")).pipe(Effect.orElseSucceed(() => ""));
 
 const report = Command.make(
 	"report",
@@ -92,7 +87,7 @@ const report = Command.make(
 		const perPage = clampWindow(window);
 		const github = yield* Github;
 		const runs = yield* github.workflowRuns({workflow, branch, perPage});
-		const fixes = yield* github.inventoryFixes(readInventory(inventory));
+		const fixes = yield* github.inventoryFixes(yield* readInventory(inventory));
 
 		const trend = flakeTrend(runs, Math.max(1, bucket));
 		const discounted = checkBudgetWithDiscount(runs, fixes, ZERO_FLAKE_BUDGET);

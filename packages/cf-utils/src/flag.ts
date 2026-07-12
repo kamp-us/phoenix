@@ -23,7 +23,7 @@
  * `${stack}-${id}-${stage}-${suffix}`, `_`→`-` lowercased).
  */
 
-import {Data} from "effect";
+import * as Schema from "effect/Schema";
 
 const STACK = "phoenix";
 
@@ -178,10 +178,13 @@ export const ENV_HELP =
  * with BEFORE any read/write, so an unknown `--env` never reaches the mutation. Carries the
  * envs that DO resolve, so the message points the operator at a valid one.
  */
-export class FlagEnvNotFound extends Data.TaggedError("FlagEnvNotFound")<{
-	readonly env: string;
-	readonly knownEnvs: ReadonlyArray<string>;
-}> {
+export class FlagEnvNotFound extends Schema.TaggedErrorClass<FlagEnvNotFound>()(
+	"@kampus/cf-utils/FlagEnvNotFound",
+	{
+		env: Schema.String,
+		knownEnvs: Schema.Array(Schema.String),
+	},
+) {
 	override get message(): string {
 		const known = this.knownEnvs.length > 0 ? this.knownEnvs.join(", ") : "(none)";
 		return `no Flagship app for env "${this.env}" — known envs: ${known} (run \`flag list\` to see them)`;
@@ -195,10 +198,13 @@ export class FlagEnvNotFound extends Data.TaggedError("FlagEnvNotFound")<{
  * the message points the operator at a valid one. The `--env`-scoped `flag get` instead fails
  * with the SDK's `FlagshipFlagNotFound` straight off the single-flag read.
  */
-export class FlagKeyNotFound extends Data.TaggedError("FlagKeyNotFound")<{
-	readonly key: string;
-	readonly knownKeys: ReadonlyArray<string>;
-}> {
+export class FlagKeyNotFound extends Schema.TaggedErrorClass<FlagKeyNotFound>()(
+	"@kampus/cf-utils/FlagKeyNotFound",
+	{
+		key: Schema.String,
+		knownKeys: Schema.Array(Schema.String),
+	},
+) {
 	override get message(): string {
 		const known = this.knownKeys.length > 0 ? this.knownKeys.join(", ") : "(none)";
 		return `no flag "${this.key}" in any env — known flags: ${known}`;
@@ -210,9 +216,12 @@ export class FlagKeyNotFound extends Data.TaggedError("FlagKeyNotFound")<{
  * mutually exclusive and exactly one is required, enforced with a legible usage error rather
  * than a silent default.
  */
-export class FlagSetTargetInvalid extends Data.TaggedError("FlagSetTargetInvalid")<{
-	readonly reason: string;
-}> {
+export class FlagSetTargetInvalid extends Schema.TaggedErrorClass<FlagSetTargetInvalid>()(
+	"@kampus/cf-utils/FlagSetTargetInvalid",
+	{
+		reason: Schema.String,
+	},
+) {
 	override get message(): string {
 		return `flag set: ${this.reason} — pass exactly one of "on", "off", or --percent N`;
 	}
@@ -226,9 +235,12 @@ export class FlagSetTargetInvalid extends Data.TaggedError("FlagSetTargetInvalid
  * path — a human at a terminal who answered `n`/empty/EOF. The message names the recoverable fix
  * (re-run and answer the prompt affirmatively).
  */
-export class LeverGuardRefused extends Data.TaggedError("LeverGuardRefused")<{
-	readonly reason: string;
-}> {
+export class LeverGuardRefused extends Schema.TaggedErrorClass<LeverGuardRefused>()(
+	"@kampus/cf-utils/LeverGuardRefused",
+	{
+		reason: Schema.String,
+	},
+) {
 	override get message(): string {
 		return (
 			`flag set --execute refused: ${this.reason}. ` +

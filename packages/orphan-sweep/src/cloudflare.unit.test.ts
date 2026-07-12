@@ -121,6 +121,7 @@ const renderedSurfaces = (cause: Cause.Cause<unknown>): string => {
 	return [
 		inspect(error, {depth: null}),
 		(() => {
+			// biome-ignore lint/plugin: pure total test helper — JSON.stringify can throw on a circular error object; the failure is fully absorbed into "" (one of the leak-surface strings being collected), never the E channel, so this is not Effect control flow to model.
 			try {
 				return JSON.stringify(error);
 			} catch {

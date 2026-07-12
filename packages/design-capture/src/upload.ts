@@ -75,6 +75,7 @@ export const parseUploadResponse = (res: RawUploadResponse): UploadOutcome => {
 		};
 	}
 	let parsed: unknown;
+	// biome-ignore lint/plugin: pure total classifier — the JSON.parse failure is fully absorbed into a returned UploadOutcome, never the E channel, so this is not the Effect-cosplay the rule targets; lifting it into Effect.try would break the documented pure/unit-tested contract (parseUploadResponse is called inside Effect.map at the seam).
 	try {
 		parsed = JSON.parse(res.body);
 	} catch {

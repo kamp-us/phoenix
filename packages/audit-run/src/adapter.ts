@@ -40,35 +40,33 @@ const decode = (stream: Stream.Stream<Uint8Array, unknown>): Effect.Effect<strin
 const parseDimensions = (
 	raw: string,
 ): Effect.Effect<ReadonlyArray<DimensionResult>, StageLifecycleError> =>
-	Effect.suspend(() => {
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(raw) as unknown;
-		} catch (cause) {
-			return Effect.fail(
-				new StageLifecycleError({
-					phase: "run-hook",
-					message: `walk command did not print valid JSON findings: ${String(cause)}`,
-				}),
-			);
-		}
-		const dimensions =
-			typeof parsed === "object" && parsed !== null
-				? (parsed as {dimensions?: unknown}).dimensions
-				: undefined;
-		// Story 11: a walk that yields no dimensions is NEVER a silent pass — an empty findings
-		// set would build a vacuous PASS verdict, so refuse it here at the seam that emits it.
-		if (!Array.isArray(dimensions) || dimensions.length === 0) {
-			return Effect.fail(
-				new StageLifecycleError({
-					phase: "run-hook",
-					message:
-						"walk command produced no dimensions ({ dimensions: DimensionResult[] } expected, non-empty)",
-				}),
-			);
-		}
-		return Effect.succeed(dimensions as ReadonlyArray<DimensionResult>);
-	});
+	Effect.try({
+		try: () => JSON.parse(raw) as unknown,
+		catch: (cause) =>
+			new StageLifecycleError({
+				phase: "run-hook",
+				message: `walk command did not print valid JSON findings: ${String(cause)}`,
+			}),
+	}).pipe(
+		Effect.flatMap((parsed) => {
+			const dimensions =
+				typeof parsed === "object" && parsed !== null
+					? (parsed as {dimensions?: unknown}).dimensions
+					: undefined;
+			// Story 11: a walk that yields no dimensions is NEVER a silent pass — an empty findings
+			// set would build a vacuous PASS verdict, so refuse it here at the seam that emits it.
+			if (!Array.isArray(dimensions) || dimensions.length === 0) {
+				return Effect.fail(
+					new StageLifecycleError({
+						phase: "run-hook",
+						message:
+							"walk command produced no dimensions ({ dimensions: DimensionResult[] } expected, non-empty)",
+					}),
+				);
+			}
+			return Effect.succeed(dimensions as ReadonlyArray<DimensionResult>);
+		}),
+	);
 
 const spawnWalk = (
 	command: string,
