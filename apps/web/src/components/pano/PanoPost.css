@@ -81,8 +81,12 @@
 	display: flex;
 	align-items: baseline;
 	gap: var(--title-row-gap);
-	row-gap: 4px;
-	flex-wrap: wrap;
+	/* nowrap so a wide title shrinks + ellipsizes beside the tag instead of dropping to
+	   its own line below it: under flex-wrap the row wraps the title before shrinking,
+	   defeating the one-line clamp it's built around (#2573, regressing #2303). The title
+	   is the flex-growing item (`flex: 1 1 0` + `min-width: 0`) so it takes the leftover
+	   track and ellipsizes; the tag and site keep their content width. */
+	flex-wrap: nowrap;
 }
 
 .kp-pano-post__title {
@@ -92,8 +96,9 @@
 	text-decoration: none;
 	/* Clamp a long feed title to one line so the row stays uniform and the feed
 	   scans (#2303); the full title lives on the detail-page h1 + this link's
-	   `title`. `min-width: 0` lets the anchor shrink below its content — without it
-	   the `flex-wrap` title-row grows it full-width instead of ellipsizing. */
+	   `title`. `flex: 1 1 0` + `min-width: 0` make the anchor the shrinking item on the
+	   nowrap title-row, so it ellipsizes beside the tag rather than growing full-width. */
+	flex: 1 1 0;
 	min-width: 0;
 	display: -webkit-box;
 	-webkit-line-clamp: 1;
