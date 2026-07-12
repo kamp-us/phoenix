@@ -16,14 +16,14 @@
  * Validation lives in the service methods, not resolvers (ADR 0013).
  */
 import {id} from "@usirin/forge";
-import {and, desc, eq, inArray, isNull, sql} from "drizzle-orm";
+import {and, asc, desc, eq, gt, inArray, isNull, sql} from "drizzle-orm";
 import {Effect} from "effect";
 import {POST_SORT_LEAD_COLUMN, type PostSort} from "../../../src/lib/panoFeedSort.ts";
 import {isPostTagKind} from "../../../src/lib/panoTags.ts";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
-import {decayHotScores} from "../../db/hotScoreDecay.ts";
+import {decayHotScores, type HotDecayRow, type HotDecayUpdate} from "../../db/hotScoreDecay.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {type ReadProfileIdentities, stampAuthorIdentity} from "../fate/author-identity.ts";
@@ -350,68 +350,149 @@ export interface PostOperationsDeps {
 }
 
 /**
- * The periodic sıcak/hot decay-refresh (#2027, made WINDOWLESS in #2133), factored to
- * the ONE dep it reads (`run`) so it builds standalone. `hot_score` is a stored,
- * keyset-read column written only at activity sites, so an inactive post's age term
- * freezes and it squats the hot feed. This re-decays the stored column on a schedule
- * (the cron trigger in `index.ts`) so ranking keeps decaying with age WITHOUT a
- * read-time recompute — the keyset-cursor contract and the no-`POW` constraint both need
+ * Max live-non-draft rows a single decay SELECT materializes before the sweep advances
+ * its keyset cursor (#2559). Bounds the isolate's per-query working set so a growing table
+ * never loads an unbounded result set into memory in one shot — the sweep still visits
+ * EVERY post each tick (windowless, #2133), just in id-ordered pages. Sized well above the
+ * v1 cohort's tens-of-posts so today's pass is a single short page (no behavior change at
+ * current scale) while the bound holds as the table grows; a named constant, tunable.
+ */
+export const HOT_SCORE_DECAY_CHUNK = 200;
+
+/**
+ * The DB seam the chunked decay sweep drives, factored out so {@link scanDecayChunks}'s
+ * cursor-advance + full-coverage (windowless) logic is unit-testable with in-memory ports
+ * — no D1, mirroring the pure/`decayHotScores` split. `fetchChunk(afterId, limit)` returns
+ * up to `limit` live-non-draft rows with `id > afterId` in ascending id order (`afterId`
+ * `null` ⇒ from the head); `writeBack` persists the changed `hot_score`s of one page.
+ */
+export interface HotDecayScanPorts {
+	readonly fetchChunk: (
+		afterId: string | null,
+		limit: number,
+	) => Effect.Effect<ReadonlyArray<HotDecayRow>>;
+	readonly writeBack: (updates: ReadonlyArray<HotDecayUpdate>) => Effect.Effect<void>;
+}
+
+/**
+ * Keyset-chunk the windowless decay sweep: page id-ordered slices of at most `chunkSize`
+ * rows, decaying + writing back each page before fetching the next, so no single query
+ * scans the whole table in one shot (#2559). The sweep still covers every live non-draft
+ * post per call — chunking is a mechanical batching of the same full pass, NOT a recency
+ * window (#2133): the id-keyset cursor only bounds each page, it never excludes a post by
+ * age. Loops until a short (`< chunkSize`) page marks the tail; an exact-multiple table
+ * takes one extra empty page to terminate. Returns the pass's scanned/updated totals.
+ */
+export const scanDecayChunks = (
+	ports: HotDecayScanPorts,
+	nowMs: number,
+	chunkSize: number,
+): Effect.Effect<{scanned: number; updated: number}> =>
+	Effect.gen(function* () {
+		let after: string | null = null;
+		let scanned = 0;
+		let updated = 0;
+		for (;;) {
+			const rows: ReadonlyArray<HotDecayRow> = yield* ports.fetchChunk(after, chunkSize);
+			if (rows.length === 0) break;
+			scanned += rows.length;
+			const updates = decayHotScores(rows, nowMs);
+			// Nothing changed ⇒ no write (the common steady state) — writeBack is skipped, not
+			// called with an empty batch.
+			if (updates.length > 0) {
+				yield* ports.writeBack(updates);
+				updated += updates.length;
+			}
+			const last = rows[rows.length - 1];
+			if (rows.length < chunkSize || !last) break;
+			after = last.id;
+		}
+		return {scanned, updated};
+	});
+
+/**
+ * The periodic sıcak/hot decay-refresh (#2027, WINDOWLESS since #2133, keyset-chunked in
+ * #2559), factored to the ONE dep it reads (`run`) so it builds standalone. `hot_score` is
+ * a stored, keyset-read column written only at activity sites, so an inactive post's age
+ * term freezes and it squats the hot feed. This re-decays the stored column on a schedule
+ * (the cron trigger in `index.ts`) so ranking keeps decaying with age WITHOUT a read-time
+ * recompute — the READ-PATH keyset-cursor contract and the no-`POW` constraint both need
  * `hot_score` to stay a stored, indexed, monotonic-per-snapshot column. Scoped only to
  * live, non-draft posts (a removed post's `hot_score` is already zeroed by the removal
  * batch); the pure decision (formula reuse + changed-only filter) lives in
- * `db/hotScoreDecay.ts`.
+ * `db/hotScoreDecay.ts`, and the chunk-sweep control flow in {@link scanDecayChunks}.
  *
- * WINDOWLESS by design (#2133): earlier this pass scanned only a 72h recency window, so a
- * post that froze high and drifted past 72h was never re-selected and squatted the feed
- * forever (the ~18-day, hot_score=285 post the founder observed). Every live non-draft
- * post is now re-decayed each pass, so age keeps eroding rank at any age. The accepted
- * tradeoff: a pass is O(all live non-draft posts) per 15-min tick, not O(recent) — fine
- * at the v1 cohort's scale (tens of posts); revisit (batch/window the SCAN, not the
- * decay) only if the table grows large.
+ * WINDOWLESS (#2133): earlier this pass scanned only a 72h recency window, so a post that
+ * froze high and drifted past 72h was never re-selected and squatted the feed forever (the
+ * ~18-day, hot_score=285 post the founder observed). Every live non-draft post is now
+ * re-decayed each pass, so age keeps eroding rank at any age.
  *
- * Exported (not inlined in `makePostOperations`) so the AC4 integration test can drive
- * the SHIPPED method against real remote D1 built from just a `run` — no full
+ * KEYSET-CHUNKED SCAN (#2559): the sweep is bounded by an ascending-id keyset cursor into
+ * `HOT_SCORE_DECAY_CHUNK`-sized pages rather than one unbounded SELECT, so the isolate
+ * never materializes the whole table at once. The chunking is a WRITE/SCAN-path bound and
+ * is distinct from the read-path feed pagination above — it does NOT reintroduce a window:
+ * the cursor pages through EVERY post each tick, preserving #2133.
+ *
+ * Exported (not inlined in `makePostOperations`) so the AC4 integration test can drive the
+ * SHIPPED method against real remote D1 built from just a `run` — no full
  * `PostOperationsDeps` graph, no re-implementation of the query.
  */
 export const makeRefreshHotScores = (run: DrizzleAccessOrDie["run"]) =>
 	Effect.fn("Pano.refreshHotScores")(function* (now: Date) {
-		const nowMs = now.getTime();
-		const rows = yield* run((db) =>
-			db
-				.select({
-					id: schema.postRecord.id,
-					score: schema.postRecord.score,
-					hotScore: schema.postRecord.hotScore,
-					createdAt: schema.postRecord.createdAt,
-				})
-				.from(schema.postRecord)
-				.where(
-					and(isNull(schema.postRecord.removedAt), sql`${schema.postRecord.isDraft} is not 1`),
-				),
-		);
-		const updates = decayHotScores(
-			rows.map((r) => ({
-				id: r.id,
-				score: r.score,
-				hotScore: r.hotScore,
-				createdAtMs: (r.createdAt ?? now).getTime(),
-			})),
-			nowMs,
-		);
-		// One UPDATE per changed row, all in the fetched-clock reading. Nothing changed ⇒ no
-		// write (the common steady state). `Effect.forEach` sequences them.
-		yield* Effect.forEach(
-			updates,
-			(u) =>
+		const ports: HotDecayScanPorts = {
+			fetchChunk: (afterId, limit) =>
 				run((db) =>
 					db
-						.update(schema.postRecord)
-						.set({hotScore: u.hotScore})
-						.where(eq(schema.postRecord.id, u.id)),
+						.select({
+							id: schema.postRecord.id,
+							score: schema.postRecord.score,
+							hotScore: schema.postRecord.hotScore,
+							createdAt: schema.postRecord.createdAt,
+						})
+						.from(schema.postRecord)
+						.where(
+							and(
+								isNull(schema.postRecord.removedAt),
+								sql`${schema.postRecord.isDraft} is not 1`,
+								afterId === null ? undefined : gt(schema.postRecord.id, afterId),
+							),
+						)
+						.orderBy(asc(schema.postRecord.id))
+						.limit(limit),
+				).pipe(
+					Effect.map(
+						(
+							rows: ReadonlyArray<{
+								id: string;
+								score: number;
+								hotScore: number;
+								createdAt: Date | null;
+							}>,
+						): ReadonlyArray<HotDecayRow> =>
+							rows.map((r) => ({
+								id: r.id,
+								score: r.score,
+								hotScore: r.hotScore,
+								createdAtMs: (r.createdAt ?? now).getTime(),
+							})),
+					),
 				),
-			{discard: true},
-		);
-		return {scanned: rows.length, updated: updates.length};
+			// One UPDATE per changed row of the page, all in the caller's single clock reading.
+			// `Effect.forEach` sequences them.
+			writeBack: (updates) =>
+				Effect.forEach(
+					updates,
+					(u) =>
+						run((db) =>
+							db
+								.update(schema.postRecord)
+								.set({hotScore: u.hotScore})
+								.where(eq(schema.postRecord.id, u.id)),
+						),
+					{discard: true},
+				),
+		};
+		return yield* scanDecayChunks(ports, now.getTime(), HOT_SCORE_DECAY_CHUNK);
 	});
 
 export const makePostOperations = (deps: PostOperationsDeps) => {

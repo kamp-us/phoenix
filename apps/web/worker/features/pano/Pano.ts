@@ -335,12 +335,15 @@ export class Pano extends Context.Service<
 		) => Effect.Effect<ReactToCommentResult, CommentNotFound>;
 
 		/**
-		 * Periodic sıcak/hot decay-refresh (#2027, windowless since #2133): recompute the
-		 * stored `hot_score` for EVERY live, non-draft post at `now` and write back the
-		 * changed rows, so an inactive post's ranking decays with age at any age without an
-		 * activity write. Driven by the cron trigger (`index.ts`); the stored-column +
-		 * keyset-cursor design is preserved (no read-time recompute). Returns the pass's
-		 * scanned/updated counts for observability.
+		 * Periodic sıcak/hot decay-refresh (#2027, windowless since #2133, keyset-chunked in
+		 * #2559): recompute the stored `hot_score` for EVERY live, non-draft post at `now` and
+		 * write back the changed rows, so an inactive post's ranking decays with age at any age
+		 * without an activity write. Driven by the cron trigger (`index.ts`). The decay stays a
+		 * stored-column refresh with no read-time recompute, so the FEED's read-path keyset-cursor
+		 * pagination design is preserved (that read-path design is what "keyset-cursor" names here
+		 * — NOT the sweep's own scan shape). The sweep itself reads in ascending-id keyset chunks
+		 * (`post-operations.ts`), a distinct write-path bound. Returns the pass's scanned/updated
+		 * counts for observability.
 		 */
 		readonly refreshHotScores: (
 			now: Date,

@@ -15,8 +15,9 @@
  * formula moves a young post's floored score by a meaningful step only over tens of
  * minutes — so a 15-minute pass keeps the visible feed fresh without over-writing the
  * `hot_score` column. Each pass re-decays ALL live non-draft posts (windowless since
- * #2133), so an aged squatter keeps decaying at any age; see `Pano.refreshHotScores` for
- * the O(all-posts)-per-tick tradeoff, accepted at the current cohort scale.
+ * #2133), so an aged squatter keeps decaying at any age; the sweep reads in ascending-id
+ * keyset chunks (#2559) so no single tick materializes the whole table at once — see
+ * `Pano.refreshHotScores`.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
