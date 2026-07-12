@@ -11,6 +11,8 @@ import * as React from "react";
 import {useListView, useRequest, useView, type ViewRef} from "react-fate";
 import {useNavigate, useSearchParams} from "react-router";
 import {SozlukAlphabet} from "../components/sozluk/index";
+import {SozlukGoToCreate} from "../components/sozluk/SozlukGoToCreate";
+import {useSozlukSubnavQuery} from "../components/sozluk/SozlukSubnavLayout";
 import {TermRow, TermRowView} from "../components/sozluk/TermRow";
 import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
@@ -36,14 +38,28 @@ type TermConnection = ReturnType<typeof useRequest<typeof homeRequest>>["recentT
 export function SozlukHome() {
 	const [params] = useSearchParams();
 	const letter = params.get("harf") ?? undefined;
-	const [query, setQuery] = React.useState("");
+	// The go-to-or-create query is shared with the persistent Subnav zone when it owns the
+	// box (flag on, #2602): read the zone's query so the client-side column filter still
+	// tracks the typed text even though the box now lives up in the Subnav. Off ⇒ no zone
+	// ancestor, so own the local query state and render the masthead box, exactly as today.
+	const zone = useSozlukSubnavQuery();
+	const [localQuery, setLocalQuery] = React.useState("");
+	const inZone = zone != null;
+	const query = zone ? zone.query : localQuery;
+	const setQuery = zone ? zone.setQuery : setLocalQuery;
 
 	return (
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<Screen
 					fallback={
-						<SozlukHomeChrome letter={letter} query={query} setQuery={setQuery} status="loading">
+						<SozlukHomeChrome
+							letter={letter}
+							query={query}
+							setQuery={setQuery}
+							inZone={inZone}
+							status="loading"
+						>
 							{null}
 						</SozlukHomeChrome>
 					}
@@ -52,6 +68,7 @@ export function SozlukHome() {
 							letter={letter}
 							query={query}
 							setQuery={setQuery}
+							inZone={inZone}
 							status="error"
 							errorMessage={code.toLowerCase()}
 						>
@@ -59,7 +76,7 @@ export function SozlukHome() {
 						</SozlukHomeChrome>
 					)}
 				>
-					<SozlukHomeContent letter={letter} query={query} setQuery={setQuery} />
+					<SozlukHomeContent letter={letter} query={query} setQuery={setQuery} inZone={inZone} />
 				</Screen>
 			</div>
 		</div>
@@ -70,13 +87,16 @@ interface ContentProps {
 	letter: string | undefined;
 	query: string;
 	setQuery: (q: string) => void;
+	// True when the persistent Subnav zone owns the go-to-or-create box + alphabet (#2602),
+	// so this page must not paint a second copy of either.
+	inZone: boolean;
 }
 
-function SozlukHomeContent({letter, query, setQuery}: ContentProps) {
+function SozlukHomeContent({letter, query, setQuery, inZone}: ContentProps) {
 	const {recentTerms, popularTerms} = useRequest(homeRequest);
 
 	return (
-		<SozlukHomeChrome letter={letter} query={query} setQuery={setQuery} status="ok">
+		<SozlukHomeChrome letter={letter} query={query} setQuery={setQuery} inZone={inZone} status="ok">
 			<RecentColumn connection={recentTerms} letter={letter} query={query} />
 			<PopularColumn connection={popularTerms} letter={letter} query={query} />
 		</SozlukHomeChrome>
@@ -89,20 +109,16 @@ interface ChromeProps extends ContentProps {
 	children: React.ReactNode;
 }
 
-function SozlukHomeChrome({letter, query, setQuery, status, errorMessage, children}: ChromeProps) {
-	const navigate = useNavigate();
+function SozlukHomeChrome({
+	letter,
+	query,
+	setQuery,
+	inZone,
+	status,
+	errorMessage,
+	children,
+}: ChromeProps) {
 	const totalsLine = status === "ok" ? "" : status === "loading" ? "yükleniyor…" : "yüklenemedi";
-
-	// Go-to-or-create, NOT search (#1669). Deliberately distinct from the topbar's
-	// federated `ara` (icon+"ara" = ranked `/search?q=` site-wide): on Enter this routes
-	// the typed term to the fresh-slug composer branch at `/sozluk/:slug` — no new creation
-	// backend (issue #97). Signed-in users land on `NewTermComposer`; signed-out users get
-	// that page's unchanged 404/sign-in.
-	function onGoToOrCreate(e: React.SyntheticEvent) {
-		e.preventDefault();
-		const slug = slugifyTerm(query);
-		if (slug) navigate(`/sozluk/${slug}`);
-	}
 
 	return (
 		<>
@@ -112,31 +128,18 @@ function SozlukHomeChrome({letter, query, setQuery, status, errorMessage, childr
 						sözlük {totalsLine ? <small>{totalsLine}</small> : null}
 					</h1>
 				</div>
-				<form
-					className="kp-sozluk-home__searchbar kp-sozluk-home__gotocreate"
-					onSubmit={onGoToOrCreate}
-				>
-					<svg
-						width="11"
-						height="11"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="2.4"
-						aria-hidden="true"
-					>
-						<path d="M12 5v14M5 12h14" />
-					</svg>
-					<input
-						value={query}
-						onChange={(e) => setQuery(e.currentTarget.value)}
-						placeholder="terime git ya da oluştur: race condition, idempotent…"
-						aria-label="Terime git ya da oluştur"
+				{/* Flag on: the go-to-or-create box lives in the persistent Subnav zone (#2602),
+				    so the masthead drops it here to avoid a duplicate. Off ⇒ render it as today. */}
+				{inZone ? null : (
+					<SozlukGoToCreate
+						className="kp-sozluk-home__searchbar kp-sozluk-home__gotocreate"
+						query={query}
+						setQuery={setQuery}
 					/>
-				</form>
+				)}
 			</header>
 
-			<SozlukAlphabet value={letter} />
+			{inZone ? null : <SozlukAlphabet value={letter} />}
 
 			{status === "error" ? (
 				<p style={{font: "var(--t-meta)", color: "var(--danger)", padding: "var(--s-3) 0"}}>

@@ -31,6 +31,7 @@ import {MecmuaSubnavLayout} from "./components/mecmua/MecmuaSubnavLayout";
 import {actorLabel} from "./components/moderation/actor-identity";
 import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
+import {SozlukSubnavLayout} from "./components/sozluk/SozlukSubnavLayout";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
@@ -448,7 +449,17 @@ export function App() {
 						) : (
 							mecmuaRoutes
 						)}
-						{productZone(navIaOn, "sozluk-zone", sozlukRoutes)}
+						{/* sözlük's zone hosts its persistent go-to-or-create box (the Subnav input
+						    slot) + the URL-driven alphabet filter row, so it wraps under its own
+						    `SozlukSubnavLayout` rather than the generic empty/cta-only frame (#2602).
+						    Off ⇒ flat, and SozlukHome renders its own masthead box + alphabet as today. */}
+						{navIaOn ? (
+							<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
+								{sozlukRoutes}
+							</Route>
+						) : (
+							sozlukRoutes
+						)}
 						{productZone(navIaOn, "divan-zone", divanRoutes)}
 						<Route path="/search" element={<SearchPage />} />
 						<Route path="/auth" element={<AuthPage />} />
