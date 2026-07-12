@@ -43,7 +43,7 @@ export function SozlukGoToCreate({
 			<input
 				value={query}
 				onChange={(e) => setQuery(e.currentTarget.value)}
-				placeholder="terime git ya da oluştur: race condition, idempotent…"
+				placeholder="terime git ya da oluştur…"
 				aria-label="Terime git ya da oluştur"
 			/>
 		</form>
