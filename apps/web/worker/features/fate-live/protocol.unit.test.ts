@@ -10,7 +10,15 @@
 
 import {assert, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {LiveTopic, parseLiveControlRequest} from "./protocol.ts";
+import {expectTypeOf, it as vit} from "vitest";
+import {
+	type ConnectionId,
+	type EntityId,
+	type LiveControlOperation,
+	type LiveControlRequest,
+	LiveTopic,
+	parseLiveControlRequest,
+} from "./protocol.ts";
 
 const subscribeConnectionRequest = (procedure: string) => ({
 	version: 1,
@@ -47,3 +55,22 @@ it.effect("rejects a subscribeConnection on an unregistered procedure with BAD_R
 		assert.strictEqual(error.code, "BAD_REQUEST");
 	}),
 );
+
+// A connectionId/entityId swap fails typecheck: the two live-protocol ids carry
+// distinct nominal brands, so neither is assignable to the other and the decoded
+// `LiveControlRequest`/subscribe-op surfaces expose the branded types. Pinned with
+// expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's TS377003 escapes the
+// directive (see vote-boundary.unit.test.ts). This is the type-level half of the guard;
+// the decode tests above cover the byte-identical runtime.
+vit("connectionId and entityId are distinct branded surfaces", () => {
+	// Each id is branded, not a bare string / bare union (the brand is what a swap trips).
+	expectTypeOf<ConnectionId>().not.toEqualTypeOf<string>();
+	expectTypeOf<EntityId>().not.toEqualTypeOf<string | number>();
+	// The two brands are distinct, so a connectionId can't stand in for an entityId.
+	expectTypeOf<ConnectionId>().not.toEqualTypeOf<EntityId>();
+	// The decoded protocol surfaces expose the branded types (not bare strings/unions).
+	expectTypeOf<LiveControlRequest["connectionId"]>().toEqualTypeOf<ConnectionId>();
+	expectTypeOf<
+		Extract<LiveControlOperation, {kind: "subscribe"}>["entityId"]
+	>().toEqualTypeOf<EntityId>();
+});
