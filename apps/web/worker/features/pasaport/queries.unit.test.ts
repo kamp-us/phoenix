@@ -62,7 +62,13 @@ const storedUser = (tier: StoredTier): UserRow => ({
 });
 
 const pasaportWithStoredTier = (tier: StoredTier) =>
-	({getUserById: () => Effect.succeed(storedUser(tier))}) as never;
+	({
+		getUserById: () => Effect.succeed(storedUser(tier)),
+		// The `me` resolver reads the self-only `emailFailing` (#2730) off the
+		// `email_delivery_event` projection; these tests assert `tier`/`isModerator`, so a
+		// fixed deliverable (`false`) keeps the read from dying without affecting them.
+		readEmailFailing: () => Effect.succeed(false),
+	}) as never;
 
 // Drive `me` to the resolved wire object's `tier` scalar over the REAL `Kunye`
 // (KunyeLive) layered on a stored-tier Pasaport stub — exercising the trusted
@@ -154,7 +160,12 @@ it.effect("me ranks a row-missing principal as visitor (Kunye.tierOf fallback)",
 		} satisfies CurrentUserInfo;
 		// No stored row → both the canonical read and Kunye.tierOf see null → visitor,
 		// the read-time rank the column can never store.
-		const noRowPasaport = {getUserById: () => Effect.succeed(null)} as never;
+		const noRowPasaport = {
+			getUserById: () => Effect.succeed(null),
+			// The `!fresh` branch still resolves the self-only `emailFailing` (#2730) off the
+			// session email; a fixed deliverable (`false`) keeps it from dying (this asserts tier).
+			readEmailFailing: () => Effect.succeed(false),
+		} as never;
 		const tier = yield* resolveMeTier(user, noRowPasaport);
 		assert.strictEqual(tier, "visitor");
 	}),
