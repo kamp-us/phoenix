@@ -90,7 +90,7 @@ const reportStub = (target: {targetKind: "post" | "comment" | "definition"; targ
 	makeReportStub({
 		lookupReportTarget: () => Effect.succeed(target),
 		firstOpenReportId: () => Effect.succeed("r1"),
-		resolveTarget: () => Effect.succeed({collapsed: 1}),
+		resolveTarget: () => Effect.succeed({collapsed: 1, wonTransition: true}),
 		reopenForTarget: () => Effect.succeed({reopened: 1}),
 	});
 
@@ -477,7 +477,7 @@ describe("report.resolve — threads the wave grouping id to resolveTarget (#185
 			resolveTarget: (input) =>
 				Effect.sync(() => {
 					sink.waveId = input.waveId ?? null;
-					return {collapsed: 1};
+					return {collapsed: 1, wonTransition: true};
 				}),
 		});
 
