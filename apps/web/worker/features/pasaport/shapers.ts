@@ -24,6 +24,10 @@ import type {
 	User,
 } from "./views.ts";
 
+// `emailFailing` (#2693) rides here like the other resolver-stamped fields: truthful on
+// the self `me` read, a flat `false` on every other `User` (the by-id batch stamps it),
+// so a non-self row never carries another account's delivery-state. Its single home is
+// `user-fields.ts`'s `UserFields.emailFailing`.
 export const toUser = (r: UserFields): User => ({
 	__typename: "User",
 	id: r.id,
@@ -33,6 +37,7 @@ export const toUser = (r: UserFields): User => ({
 	username: r.username,
 	tier: r.tier,
 	isModerator: r.isModerator,
+	emailFailing: r.emailFailing,
 });
 
 // Stamps the client normalization key `id` === `userId` (a `Profile` is

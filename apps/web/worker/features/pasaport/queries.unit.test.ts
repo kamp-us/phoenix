@@ -20,6 +20,8 @@ import {assert} from "vitest";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {Kunye, KunyeLive} from "../kunye/Kunye.ts";
 import type {StoredTier} from "../kunye/standing.ts";
+import {DELIVERABLE} from "./email-delivery.ts";
+import {UserNotFound} from "./errors.ts";
 import type {UserRow} from "./Pasaport.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {queries} from "./queries.ts";
@@ -61,8 +63,17 @@ const storedUser = (tier: StoredTier): UserRow => ({
 	tier,
 });
 
-const pasaportWithStoredTier = (tier: StoredTier) =>
-	({getUserById: () => Effect.succeed(storedUser(tier))}) as never;
+// The `me` resolver also reads the SELF failing-delivery signal (#2693) via
+// `getEmailDeliveryState`; deliverable by default so the tier/isModerator paths run
+// unaffected. `deliveryState` overrides it for the emailFailing coverage below.
+const pasaportWithStoredTier = (
+	tier: StoredTier,
+	deliveryState: {failing: boolean; reason: string | null} = DELIVERABLE,
+) =>
+	({
+		getUserById: () => Effect.succeed(storedUser(tier)),
+		getEmailDeliveryState: () => Effect.succeed({address: "u1@kamp.us", state: deliveryState}),
+	}) as never;
 
 // Drive `me` to the resolved wire object's `tier` scalar over the REAL `Kunye`
 // (KunyeLive) layered on a stored-tier Pasaport stub — exercising the trusted
@@ -153,8 +164,13 @@ it.effect("me ranks a row-missing principal as visitor (Kunye.tierOf fallback)",
 			image: null,
 		} satisfies CurrentUserInfo;
 		// No stored row → both the canonical read and Kunye.tierOf see null → visitor,
-		// the read-time rank the column can never store.
-		const noRowPasaport = {getUserById: () => Effect.succeed(null)} as never;
+		// the read-time rank the column can never store. `getEmailDeliveryState` fails
+		// `UserNotFound` for the row-missing address, which the `me` resolver catches to a
+		// deliverable signal (proving the catch keeps the read from crashing).
+		const noRowPasaport = {
+			getUserById: () => Effect.succeed(null),
+			getEmailDeliveryState: () => new UserNotFound({message: "kullanıcı bulunamadı"}),
+		} as never;
 		const tier = yield* resolveMeTier(user, noRowPasaport);
 		assert.strictEqual(tier, "visitor");
 	}),
@@ -196,5 +212,32 @@ it.effect("me carries isModerator false for a yazar who holds no moderates tuple
 			relationStoreReturning(false),
 		);
 		assert.strictEqual(isMod, false);
+	}),
+);
+
+// #2693 — the SELF failing-delivery signal the membrane notice reads. Stamped on the
+// `me` read from #2691's projection, self-scoped so it can only describe the reader.
+const resolveMeEmailFailing = (pasaport: never) =>
+	resolveWire(queries.me, {args: undefined, select: ["id", "emailFailing"]}).pipe(
+		Effect.provideService(CurrentUser, {user: u1}),
+		Effect.provide(KunyeLive),
+		Effect.provideService(Pasaport, pasaport),
+		Effect.provideService(RelationStore, relationStoreReturning(false)),
+		Effect.map((me) => (me as {emailFailing?: boolean}).emailFailing),
+	);
+
+it.effect("me stamps emailFailing true when the reader's own address is failing", () =>
+	Effect.gen(function* () {
+		const failing = yield* resolveMeEmailFailing(
+			pasaportWithStoredTier("yazar", {failing: true, reason: "hard-bounce"}),
+		);
+		assert.strictEqual(failing, true);
+	}),
+);
+
+it.effect("me stamps emailFailing false when the reader's own address is deliverable", () =>
+	Effect.gen(function* () {
+		const failing = yield* resolveMeEmailFailing(pasaportWithStoredTier("yazar"));
+		assert.strictEqual(failing, false);
 	}),
 );

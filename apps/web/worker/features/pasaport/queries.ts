@@ -62,27 +62,37 @@ export const queries = {
 			const user = yield* CurrentUser.required;
 			const pasaport = yield* Pasaport;
 			const fresh = yield* pasaport.getUserById(user.id);
-			// `toTrustedUser` resolves the trusted standing (tier via `Kunye.tierOf`,
-			// the moderator signal via the `moderates` tuple) — one shared home for the
-			// `User` shape `setUsername` and the by-id loader also build. The session
-			// supplies email/name/image; the canonical row, when present, overrides them
-			// so a fresh `username` round-trips before better-auth's session catches up.
-			if (!fresh) {
-				return yield* toTrustedUser({
-					id: user.id,
-					email: user.email,
-					name: user.name ?? null,
-					image: user.image ?? null,
-					username: null,
-				});
-			}
-			return yield* toTrustedUser({
-				id: fresh.id,
-				email: fresh.email,
-				name: fresh.name,
-				image: fresh.image,
-				username: fresh.username,
-			});
+			// The session supplies email/name/image; the canonical row, when present,
+			// overrides them so a fresh `username` round-trips before better-auth's
+			// session catches up.
+			const base = fresh
+				? {
+						id: fresh.id,
+						email: fresh.email,
+						name: fresh.name,
+						image: fresh.image,
+						username: fresh.username,
+					}
+				: {
+						id: user.id,
+						email: user.email,
+						name: user.name ?? null,
+						image: user.image ?? null,
+						username: null,
+					};
+			// The SELF failing-delivery signal (#2693): the reader’s own address projected
+			// through #2691’s `resolveEmailDeliveryState`. Stamped ONLY here (never on the
+			// by-id batch), so #2727’s membrane notice lights up for the current user without
+			// exposing any other account’s delivery-state. A row-missing principal has no
+			// events, so `UserNotFound` reads deliverable.
+			const emailFailing = yield* pasaport.getEmailDeliveryState(base.id).pipe(
+				Effect.map((r) => r.state.failing),
+				Effect.catchTag("pasaport/UserNotFound", () => Effect.succeed(false)),
+			);
+			// `toTrustedUser` resolves the trusted standing (tier via `Kunye.tierOf`, the
+			// moderator signal via the `moderates` tuple) — the one shared home for the
+			// `User` shape `setUsername` and the by-id loader also build.
+			return yield* toTrustedUser({...base, emailFailing});
 		}),
 	),
 	// `contributions` is delivered inline (not via a source `connection`

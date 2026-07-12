@@ -44,10 +44,19 @@ export type UserRow = {
  * the record-derived fields with `tier` widened to the read-time `Tier` and the
  * `isModerator` relation-tuple signal stamped by the resolver (`trusted-user.ts`),
  * never read from the record. Derived from `UserRow` so the field set can't drift.
+ *
+ * `emailFailing` is the SELF-scoped failing-delivery signal (#2693, epic #2687),
+ * stamped by the resolver like `tier`/`isModerator` and, like them, ALWAYS present:
+ * the `queries.me` resolver projects the reader's own state from #2691's
+ * `resolveEmailDeliveryState`, and every other `User` resolution (the by-id
+ * `userSource` batch) stamps a flat `false` — a non-self row never carries another
+ * account's real delivery-state, so nothing leaks. The client reads it through the
+ * `emailFailing?` seam (`emailDeliveryNoticeGate.ts`).
  */
 export interface UserFields extends Omit<UserRow, "tier"> {
 	tier: Tier;
 	isModerator: boolean;
+	emailFailing: boolean;
 }
 
 /**
@@ -65,6 +74,7 @@ export const userViewFields = {
 	username: true,
 	tier: true,
 	isModerator: true,
+	emailFailing: true,
 } as const satisfies Record<keyof UserFields, true>;
 
 /**
