@@ -34,6 +34,14 @@ import {defaultLiveLimits, encodeFrame, SSE_HEADERS} from "./protocol.ts";
 
 const GENERATION_KEY = "connection:generation";
 
+/**
+ * Connection-role: the persisted owner user id. Bound on the first open and read by
+ * {@link openStream} to fence a foreign re-open (#2563) — persisted (like
+ * `generation`) so the owner-isolation guard survives eviction, not only while the
+ * held stream pins the DO warm.
+ */
+const OWNER_KEY = "connection:owner";
+
 /** Topic-role: the monotonic per-topic publish ordinal backing the replay buffer. */
 const BUFFER_SEQ_KEY = "topic:buffer:seq";
 
@@ -229,6 +237,15 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		return generation;
 	});
 
+	// The bound owner, read from storage on first miss so the open-time fence (#2563)
+	// holds after eviction — the closure var is undefined on a fresh wake.
+	const loadOwner = Effect.gen(function* () {
+		if (ownerId === undefined) {
+			ownerId = yield* state.storage.get<string>(OWNER_KEY);
+		}
+		return ownerId;
+	});
+
 	const closeStream = Effect.gen(function* () {
 		const q = framesQueue;
 		if (q !== undefined) {
@@ -245,6 +262,19 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			if (role.kind !== "connection") {
 				return HttpServerResponse.empty({status: 404});
 			}
+			// Owner-isolation fence on OPEN (#2563): a re-open whose session user
+			// differs from the connection's bound owner is refused WITHOUT disturbing
+			// the prior holder — no generation bump, no owner overwrite, no
+			// subscription clear, no stream teardown. `subscribe` already enforces this
+			// invariant (:owner check below), but it compared against whatever the
+			// latest open wrote, so a hostile re-open reset the holder before any
+			// subscribe ran. The fence lives here at the DO seam because the DO must not
+			// trust the caller-supplied `ownerId` to self-authorize a takeover; a first
+			// open (no bound owner) and a same-owner reconnect both pass through.
+			const boundOwner = yield* loadOwner;
+			if (boundOwner !== undefined && boundOwner !== input.ownerId) {
+				return HttpServerResponse.empty({status: 403});
+			}
 			// A (re)connect bumps the persisted generation so any subscriber row a
 			// topic DO still holds from the prior stream is detected stale on the next
 			// deliver/check. The counter survives eviction, so a reconnect after
@@ -254,6 +284,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			epochStartedAt = Date.now();
 			yield* state.storage.put(GENERATION_KEY, next);
 			ownerId = input.ownerId;
+			if (input.ownerId !== undefined) {
+				yield* state.storage.put(OWNER_KEY, input.ownerId);
+			}
 			subscriptions.clear();
 			yield* closeStream;
 

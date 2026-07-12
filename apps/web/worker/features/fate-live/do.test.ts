@@ -1543,3 +1543,109 @@ describe("LiveDO alarm reap branches (#1369)", () => {
 		expect(stale).toEqual([0, 1]);
 	});
 });
+
+// The owner-isolation fence on OPEN (#2563): the invariant `subscribe` already
+// enforces (:owner check) was absent on `openStream`, so any session re-opening a
+// live `connectionId` reset the prior holder (generation bump + subscription clear +
+// stream teardown) — a cross-session griefing primitive. The fence refuses a foreign
+// re-open at the DO seam WITHOUT disturbing the holder; a first open (no bound owner)
+// and a same-owner reconnect pass through unchanged.
+describe("LiveDO open-owner fence (#2563)", () => {
+	const GENERATION_KEY = "connection:generation";
+	const OWNER_KEY = "connection:owner";
+
+	function makeConnectionWithState(cell: LiveCell, connectionId: string) {
+		const name = makeConnectionName(connectionId);
+		const fake = makeDurableObjectStateForTest({id: name});
+		const instance = makeLiveInstance(fake.state, cell.live as never);
+		cell.register(name, instance);
+		return {instance, fake};
+	}
+
+	it("a foreign re-open is refused (403) and leaves the holder's stream, generation and owner intact", async () => {
+		const cell = makeLiveCell();
+		const {instance: connection, fake} = makeConnectionWithState(cell, "conn-fence");
+		const topicKey = "Post:post-fence";
+		const {instance: topic} = makeTopic(cell, topicKey);
+
+		const ownerA = "owner-a";
+		const subId = "sub-a";
+		const res = await run(
+			connection.openStream({
+				ownerId: ownerA,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+		await run(connection.subscribe({subId, topics: [topicKey], ownerId: ownerA, limits: LIMITS}));
+		expect(await run(fake.state.storage.get<number>(GENERATION_KEY))).toBe(1);
+		expect(await run(fake.state.storage.get<string>(OWNER_KEY))).toBe(ownerA);
+
+		// A different session user re-opens the SAME connectionId.
+		const hostile = await run(
+			connection.openStream({
+				ownerId: "attacker",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const web = HttpServerResponse.toWeb(hostile);
+		expect(web.status).toBe(403);
+		expect(web.headers.get("content-type") ?? "").not.toContain("text/event-stream");
+
+		// Nothing was disturbed: generation not bumped, owner unchanged, and A's
+		// subscription is still live — a publish reaches A. A missing fence would have
+		// bumped the generation and cleared A's row, so `delivered` would be 0.
+		expect(await run(fake.state.storage.get<number>(GENERATION_KEY))).toBe(1);
+		expect(await run(fake.state.storage.get<string>(OWNER_KEY))).toBe(ownerA);
+		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		expect(pub.delivered).toBe(1);
+		expect(payloadOf(await stream.next()).id).toBe(subId);
+
+		await stream.cancel();
+	});
+
+	it("a first open of a fresh connectionId binds the owner", async () => {
+		const cell = makeLiveCell();
+		const {instance: connection, fake} = makeConnectionWithState(cell, "conn-fresh");
+		expect(await run(fake.state.storage.get<string>(OWNER_KEY))).toBeUndefined();
+
+		const res = await run(
+			connection.openStream({
+				ownerId: "owner-fresh",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+		expect(await run(fake.state.storage.get<string>(OWNER_KEY))).toBe("owner-fresh");
+
+		await stream.cancel();
+	});
+
+	it("a same-owner reconnect still streams and bumps the generation (reconnect path unbroken)", async () => {
+		const cell = makeLiveCell();
+		const {instance: connection, fake} = makeConnectionWithState(cell, "conn-reopen-same");
+		const ownerA = "owner-same";
+
+		await run(
+			connection.openStream({
+				ownerId: ownerA,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		expect(await run(fake.state.storage.get<number>(GENERATION_KEY))).toBe(1);
+
+		const res = await run(
+			connection.openStream({
+				ownerId: ownerA,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+		expect(await run(fake.state.storage.get<number>(GENERATION_KEY))).toBe(2);
+
+		await stream.cancel();
+	});
+});
