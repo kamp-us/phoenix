@@ -46,7 +46,15 @@ export type BashDecision =
 	| {readonly kind: "rewrite"; readonly command: string; readonly reason: string}
 	| {readonly kind: "refuse"; readonly reason: string};
 
-const stripTrailingSlash = (p: string): string => (p.length > 1 ? p.replace(/\/+$/, "") : p);
+// Strip trailing slashes without a `\/+$` regex (that `+` is a CodeQL ReDoS finding on
+// many-slash input; mirrors `bash-attribution.ts`'s `stripTrailingSlashes`, #2792/#2789). The
+// `length > 1` guard is preserved: a bare `/` (or shorter) is returned untouched.
+const stripTrailingSlash = (p: string): string => {
+	if (p.length <= 1) return p;
+	let end = p.length;
+	while (end > 0 && p[end - 1] === "/") end--;
+	return p.slice(0, end);
+};
 
 const WORKTREE_SEGMENT = "/.claude/worktrees/";
 
@@ -151,12 +159,22 @@ export const inspectGitStageAll = (command: string): boolean => {
 	return false;
 };
 
+// The short-flag-cluster predicates split "is a single-dash letter cluster" (a linear
+// `^-[letters]$` test) from "carries the staging letter" (`includes`), deliberately NOT the
+// ambiguous `^-[A-Za-z]*A[A-Za-z]*$` overlapping-quantifier form — that is polynomial
+// backtracking on `-AAA…` (a CodeQL ReDoS finding); the split form is equivalent and linear
+// (#2792, mirroring the rewrite `bash-attribution.ts` already carries from #2789).
+
 /** A `git add` pathspec that stages the whole tree (not an explicit path). */
 const isAddAllPathspec = (t: string): boolean =>
-	t === "." || t === "--all" || t === "--no-ignore-removal" || /^-[A-Za-z]*A[A-Za-z]*$/.test(t); // a short-flag cluster carrying `-A` (e.g. `-A`, `-Av`); NOT `--all`
+	t === "." ||
+	t === "--all" ||
+	t === "--no-ignore-removal" ||
+	(/^-[A-Za-z]*$/.test(t) && t.includes("A")); // a short-flag cluster carrying `-A` (e.g. `-A`, `-Av`); NOT `--all`
 
 /** A `git commit` flag that auto-stages tracked changes (`-a` / `-am` / `--all`); NOT `--amend`. */
-const isCommitAllFlag = (t: string): boolean => t === "--all" || /^-[a-z]*a[a-z]*$/.test(t);
+const isCommitAllFlag = (t: string): boolean =>
+	t === "--all" || (/^-[a-z]*$/.test(t) && t.includes("a"));
 
 /** Walk a segment's git global options to the subcommand token index (skips `-C`/`-c`/`--git-dir`/`--work-tree` args). */
 const gitSubcommandStart = (tokens: string[], gi: number): number => {
