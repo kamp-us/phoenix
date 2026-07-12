@@ -16,10 +16,9 @@ import type {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import type {Environment} from "../config.ts";
 import type {WorkerFateServices} from "../features/fate/layers.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
-import {FlagsDevOverrideLive, FlagsLive} from "../features/flagship/Flags.ts";
+import {FlagsDevOverrideLive} from "../features/flagship/Flags.ts";
 import type {Flagship} from "../features/flagship/Flagship.ts";
 import {healthApiLayer} from "./health.ts";
 import {rawWorkerRouteLayers} from "./worker-routes.ts";
@@ -61,15 +60,6 @@ export const makeAppLive = (options: {
 	 * prove the binding resolves end-to-end; the flag Effect service lands in #508.
 	 */
 	readonly flagshipLayer: Layer.Layer<Flagship>;
-	/**
-	 * The deploy environment (`ENVIRONMENT`, ADR 0057/0088), resolved in init. THE
-	 * load-bearing #622 gate: the dev-only flag-override `Flags` wrapper
-	 * (`FlagsDevOverrideLive`) is installed instead of `FlagsLive` ONLY when this is
-	 * `"development"`. Since `ENVIRONMENT` fail-closes to `"production"` (`config.ts`),
-	 * the override branch is structurally absent from every deployed stage's flag
-	 * path — not merely guarded, but never built.
-	 */
-	readonly environment: Environment;
 }) => {
 	// The health route's only worker-level requirement is the `Flagship` client
 	// (its `ConfigProvider` is auto-wired at worker scope); discharge it here.
@@ -79,12 +69,12 @@ export const makeAppLive = (options: {
 	// isolate-level, so it's built once here from `flagshipLayer` and provided into
 	// the per-request set. The probe route reads it; `getBoolean`'s `FlagsContext`
 	// is supplied inline by the handler from the session, so it isn't wired here.
-	// Under local `alchemy dev` ONLY, the dev-override wrapper replaces the real
-	// layer so a local flip can force a flag on (#622) — the gate is the install
-	// site here, fail-closed: any deployed stage builds `FlagsLive`, never the
-	// wrapper.
-	const flagsBase = options.environment === "development" ? FlagsDevOverrideLive : FlagsLive;
-	const flagsLayer = flagsBase.pipe(Layer.provide(options.flagshipLayer));
+	// The local-override wrapper is installed UNCONDITIONALLY (#2741): it is a no-op
+	// unless the per-request `FlagsContext.overrides` is populated, which
+	// `makeRequestFlagsContext` does only when the request is authorized (dev, or an
+	// admin with `phoenix-admin-console` on) — so a deployed non-admin read is
+	// byte-identical to the plain `FlagsLive`.
+	const flagsLayer = FlagsDevOverrideLive.pipe(Layer.provide(options.flagshipLayer));
 
 	// `provideRequest` discharges the route-requirement markers `HttpRouter.add`
 	// lifts (plain `Layer.provide` does not). All provided layers are

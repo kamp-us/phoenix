@@ -80,7 +80,7 @@ const run = (
 					kunyeWithKarma(opts.karma),
 					flagsStub(opts.flagOn),
 					Layer.succeed(CurrentUser, {user: opts.user}),
-					Layer.succeed(RequestFlagOverrides, {cookieHeader: null}),
+					Layer.succeed(RequestFlagOverrides, {cookieHeader: null, overridesAllowed: false}),
 					Layer.succeed(
 						ConfigProvider.ConfigProvider,
 						ConfigProvider.fromUnknown({ENVIRONMENT: "production"}),
