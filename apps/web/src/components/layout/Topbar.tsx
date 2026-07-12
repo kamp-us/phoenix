@@ -2,10 +2,12 @@ import type * as React from "react";
 import {useEffect, useRef} from "react";
 import {Link, NavLink, useNavigate} from "react-router";
 import {isSearchShortcut} from "../../lib/searchShortcut";
+import type {ThemeChoice} from "../../lib/theme";
 import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
 import {Karma} from "../karma/Karma";
 import {Avatar} from "../ui/Avatar";
 import {Menu} from "../ui/Menu";
+import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import "./Topbar.css";
 
 export type NavItem = {to: string; label: string};
@@ -22,6 +24,8 @@ export function Topbar({
 	searchQuery = "",
 	onSearchSubmit,
 	onToggleTheme,
+	themeChoice,
+	onThemeChange,
 	onLogout,
 	navIa = false,
 }: {
@@ -60,7 +64,21 @@ export function Topbar({
 	 */
 	searchQuery?: string;
 	onSearchSubmit?: (query: string) => void;
+	/**
+	 * The legacy light↔dark tema toggle (#2612). Wired by the Layout only when the
+	 * nav-IA flag is OFF — on, the three-way theme picker (below) is the sole control,
+	 * so no `tema` button renders and this stays unwired. Kept so the flag-off topbar
+	 * behaves exactly as today.
+	 */
 	onToggleTheme?: () => void;
+	/**
+	 * The current theme selection + its setter, driving the three-way theme picker
+	 * (light/dark/auto) that replaces the tema toggle under nav-IA (#2612). The picker
+	 * renders only when the flag is on: in the user menu for a signed-in visitor, and in
+	 * the utility zone for a signed-out one — so every visitor keeps one theme control.
+	 */
+	themeChoice?: ThemeChoice;
+	onThemeChange?: (choice: ThemeChoice) => void;
 	onLogout?: () => void;
 	/**
 	 * The nav-IA restructure seam (#2611, epic #2595) — the shared default-off
@@ -163,6 +181,18 @@ export function Topbar({
 			tema
 		</button>
 	) : null;
+	// The three-way theme picker (#2612), present only under the zone grammar. Null when
+	// the flag is off, so it renders nothing in the flag-off topbar (byte-identical to
+	// today) and inside the user menu below. Signed-in ⇒ it lives in the menu next to
+	// `ayarlar`; signed-out ⇒ in the utility zone (both wired in the navIa branch).
+	const themePicker =
+		navIa && themeChoice && onThemeChange ? (
+			<ThemeChoicePicker
+				choice={themeChoice}
+				onChange={onThemeChange}
+				testId="topbar-theme-picker"
+			/>
+		) : null;
 	const karmaChip =
 		typeof karma === "number" ? (
 			<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />
@@ -196,6 +226,12 @@ export function Topbar({
 					</Menu.Item>
 				) : null}
 				<Menu.Item onClick={() => navigate("/profile")}>ayarlar</Menu.Item>
+				{themePicker ? (
+					<div className="kp-topbar__theme-row" data-testid="topbar-theme-row">
+						<span className="kp-topbar__theme-label">tema</span>
+						{themePicker}
+					</div>
+				) : null}
 				<Menu.Separator />
 				<Menu.Item onClick={onLogout}>çıkış</Menu.Item>
 			</Menu.Popup>
@@ -229,7 +265,10 @@ export function Topbar({
 				<span className="kp-topbar__spacer" />
 				<div className="kp-topbar__zone kp-topbar__zone--utility" data-testid="topbar-zone-utility">
 					{searchForm}
-					{themeButton}
+					{/* No `tema` toggle under the flag (#2612) — the theme picker is the sole
+					    control. Signed-out visitors reach it here; signed-in ones in the user
+					    menu (above), so exactly one theme control renders either way. */}
+					{!user ? themePicker : null}
 				</div>
 				<div
 					className="kp-topbar__zone kp-topbar__zone--status-signal"
