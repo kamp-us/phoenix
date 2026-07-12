@@ -246,7 +246,9 @@ const resolveGated = Effect.fn("report.resolveGated")(function* (
 	if (input.action === "remove" && wonTransition) {
 		// Act on the target via the 0096 substrate (reason `Moderated`), keyed to the
 		// first open report id captured above.
-		const reportId = firstOpenId ?? input.reportId ?? targetKey(target.targetKind, target.targetId);
+		const reportId = ReportId.make(
+			firstOpenId ?? input.reportId ?? targetKey(target.targetKind, target.targetId),
+		);
 		targetRemoved = yield* moderateRemove(target, moderatorId, reportId);
 		// The moderator-remove hides content that lives in the subscribed
 		// `posts` / `Post.comments` / `Term.definitions` connections; publish the
@@ -352,7 +354,7 @@ const restoreWaveGated = Effect.fn("report.restoreWaveGated")(function* (
 const moderateRemove = Effect.fn("report.moderateRemove")(function* (
 	target: {targetKind: TargetKind; targetId: string},
 	resolverId: string,
-	reportId: string,
+	reportId: ReportId,
 ) {
 	switch (target.targetKind) {
 		case "definition": {

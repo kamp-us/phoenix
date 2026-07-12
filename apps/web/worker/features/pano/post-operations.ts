@@ -41,6 +41,7 @@ import {
 } from "../lifecycle/SandboxVisibility.ts";
 import type {ReactionTargetNotFound} from "../reaction/errors.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
+import type {ReportId} from "../report/ids.ts";
 import {syncPostSearch} from "../search/fts-sync.ts";
 import {SelfVoteNotAllowed} from "../vote/errors.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
@@ -1114,7 +1115,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 	const moderateRemovePost = Effect.fn("Pano.moderateRemovePost")(function* (input: {
 		postId: string;
 		resolverId: string;
-		reportId: string;
+		reportId: ReportId;
 	}) {
 		const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 		if (!meta) return {removed: false};

@@ -27,6 +27,7 @@ import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
+import type {ReportId} from "../report/ids.ts";
 import type {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
@@ -244,7 +245,7 @@ export class Pano extends Context.Service<
 		readonly moderateRemovePost: (input: {
 			postId: string;
 			resolverId: string;
-			reportId: string;
+			reportId: ReportId;
 		}) => Effect.Effect<{removed: boolean}>;
 
 		/**
@@ -304,7 +305,7 @@ export class Pano extends Context.Service<
 		readonly moderateRemoveComment: (input: {
 			commentId: string;
 			resolverId: string;
-			reportId: string;
+			reportId: ReportId;
 		}) => Effect.Effect<{removed: boolean}>;
 
 		/**
