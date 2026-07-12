@@ -36,6 +36,7 @@ import {reachabilityGuardCommand} from "./tools/reachability-guard/command.ts";
 import {readmeGuardCommand} from "./tools/readme-guard/command.ts";
 import {refGuardCommand} from "./tools/ref-guard/command.ts";
 import {resumePolicyCommand} from "./tools/resume-policy/command.ts";
+import {roadmapCommand} from "./tools/roadmap/command.ts";
 import {roadmapGuardCommand} from "./tools/roadmap-guard/command.ts";
 import {settingsEnvGuardCommand} from "./tools/settings-env-guard/command.ts";
 import {shipDigestCommand} from "./tools/ship-digest/command.ts";
@@ -88,6 +89,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	epicLockCommand,
 	decisionsIndexCommand,
 	readmeGuardCommand,
+	roadmapCommand,
 	roadmapGuardCommand,
 	worktreeGuardCommand,
 	spawnGuardCommand,
