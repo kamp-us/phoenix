@@ -3,6 +3,7 @@ import {
 	isBoundToHead,
 	isNamespaceMarker,
 	isReviewed,
+	isUnboundPolarityMarker,
 	parseVerdict,
 	resolveVerdict,
 	type VerdictComment,
@@ -301,4 +302,19 @@ describe("isNamespaceMarker — the post cross-namespace guard", () => {
 		assert.isFalse(isNamespaceMarker(`review-code: PASS @ ${HEAD} — merge-ready`, "doc")));
 	it("rejects a non-marker first line", () =>
 		assert.isFalse(isNamespaceMarker("just a normal comment", "doc")));
+});
+
+describe("isUnboundPolarityMarker — the post SHA-required-for-polarity guard (#2646)", () => {
+	it("flags a PASS with an empty `@ -` SHA (the observed `@-` case)", () =>
+		assert.isTrue(isUnboundPolarityMarker("review-doc: PASS @ -", "doc")));
+	it("flags a PASS with no `@ <sha>` at all", () =>
+		assert.isTrue(isUnboundPolarityMarker("review-doc: PASS — merge-ready", "doc")));
+	it("flags a FAIL with a too-short (<7 hex) SHA", () =>
+		assert.isTrue(isUnboundPolarityMarker("review-doc: FAIL @ abc12", "doc")));
+	it("allows a well-formed PASS @ <sha>", () =>
+		assert.isFalse(isUnboundPolarityMarker(`review-doc: PASS @ ${HEAD} — merge-ready`, "doc")));
+	it("allows an advisory (SHA-less, no polarity) line", () =>
+		assert.isFalse(isUnboundPolarityMarker("review-doc: advisory — see thread", "doc")));
+	it("allows another gate's marker (not this namespace's concern)", () =>
+		assert.isFalse(isUnboundPolarityMarker("review-code: PASS — merge-ready", "doc")));
 });
