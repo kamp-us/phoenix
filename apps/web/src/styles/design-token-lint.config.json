@@ -37,7 +37,7 @@
 		"apps/web/src/components/ui/Button.css": 4,
 		"apps/web/src/components/ui/Form.css": 4,
 		"apps/web/src/components/bildirim/Bildirim.css": 3,
-		"apps/web/src/components/layout/Subnav.css": 3,
+		"apps/web/src/components/layout/Subnav.css": 7,
 		"apps/web/src/components/sozluk/Sozluk.css": 3,
 		"apps/web/src/components/ui/atoms.css": 3,
 		"apps/web/src/pages/SearchPage.css": 3,
