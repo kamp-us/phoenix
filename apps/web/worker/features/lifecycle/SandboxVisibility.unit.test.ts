@@ -12,7 +12,12 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as L from "./EntityLifecycle.ts";
-import {ownSandboxed, publicLiveWhere, sandboxVisibleWhere} from "./SandboxVisibility.ts";
+import {
+	ownSandboxed,
+	publicLiveWhere,
+	sandboxArm,
+	sandboxVisibleWhere,
+} from "./SandboxVisibility.ts";
 
 const at = new Date("2026-06-25T00:00:00.000Z");
 const AUTHOR = "caylak-author";
@@ -81,6 +86,26 @@ describe("sandbox visibility matrix — Sandboxed content (the #1205 rule)", () 
 	it("an anonymous/public viewer NEVER sees sandboxed content", () => {
 		assert.isFalse(L.isVisibleTo(sandboxed, AUTHOR, viewers.anonymous));
 		assert.isFalse(L.isVisibleTo(sandboxed, OTHER, viewers.anonymous));
+	});
+});
+
+describe("sandboxArm — the exported reusable per-tag arm builder (#2031)", () => {
+	const cols = {sandboxedAt: {} as never, authorId: {} as never};
+
+	it("Live contributes an arm (the `sandboxed_at IS NULL` public base)", () => {
+		assert.isDefined(sandboxArm("Live", cols, viewers.anonymous));
+	});
+
+	it("Removed contributes no arm — undefined (the caller's removal guard filters it)", () => {
+		assert.isUndefined(sandboxArm("Removed", cols, viewers.caylakAuthor));
+	});
+
+	it("Sandboxed contributes the author arm for a signed-in viewer", () => {
+		assert.isDefined(sandboxArm("Sandboxed", cols, viewers.caylakAuthor));
+	});
+
+	it("Sandboxed contributes no arm for an anonymous viewer (no author to match)", () => {
+		assert.isUndefined(sandboxArm("Sandboxed", cols, viewers.anonymous));
 	});
 });
 
