@@ -37,6 +37,11 @@ export type ContributionViewRow = ViewRow<ContributionRow>;
 // ever the viewer's OWN mod status. Like `tier` it is always present (the divan
 // "yazar yap" affordance is gated frontend-side); a dual-role yazar+moderator reads
 // `tier: "yazar"` + `isModerator: true`, which `tier` alone cannot express.
+//
+// `emailFailing` is the SELF email-delivery signal (#2730): the `me` resolver stamps
+// it from the viewer's own `email_delivery_event` projection (`Pasaport.readEmailFailing`)
+// so the flag-gated membrane notice can render; like `isModerator` it is self-only and
+// defaults `false` on the batched by-id path (never another account's delivery state).
 export class UserView extends FateDataView<UserViewRow>()("User")(userViewFields) {}
 
 // The **discriminant** view for the profile contributions feed: fate has no

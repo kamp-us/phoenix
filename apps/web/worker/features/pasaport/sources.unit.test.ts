@@ -161,7 +161,7 @@ it.effect("userSource.byIds carries through the underlying row fields unchanged"
 			Effect.provideService(Pasaport, pasaportWithCorpus),
 			Effect.provideService(RelationStore, relationStoreFor(new Set())),
 		);
-		assert.deepStrictEqual(rows[0], {...storedUser("u1"), isModerator: false});
+		assert.deepStrictEqual(rows[0], {...storedUser("u1"), isModerator: false, emailFailing: false});
 	}),
 );
 

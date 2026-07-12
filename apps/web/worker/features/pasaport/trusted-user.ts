@@ -31,15 +31,23 @@ export interface TrustedUserBase {
  * column, never the session field) + OWN moderator signal (`isModerator`, the
  * `moderates` tuple) stamped onto `toUser`. `me` and `setUsername` route through
  * here so their `User` shape can't drift.
+ *
+ * `emailFailing` (#2730) is the third self-only trusted field, but — unlike `tier`
+ * and `isModerator`, which this home resolves — it is passed IN by the caller: it
+ * projects off the `email_delivery_event` log (`Pasaport.readEmailFailing`), and
+ * requiring `Pasaport` here would cycle (the mutation acks that call `toTrustedUser`
+ * live inside the Pasaport service). The caller already holds `Pasaport`, so it
+ * resolves the boolean and threads it through.
  */
 export const toTrustedUser = (
 	base: TrustedUserBase,
+	emailFailing: boolean,
 ): Effect.Effect<User, never, Kunye | RelationStore> =>
 	Effect.gen(function* () {
 		const kunye = yield* Kunye;
 		const tier = yield* kunye.tierOf(base.id);
 		const isMod = yield* isModerator(base.id);
-		return toUser({...base, tier, isModerator: isMod});
+		return toUser({...base, tier, isModerator: isMod, emailFailing});
 	});
 
 /**
@@ -55,5 +63,7 @@ export const getUsersWithModerationByIds = (ids: ReadonlyArray<string>) =>
 		const pasaport = yield* Pasaport;
 		const rows = yield* pasaport.getUsersByIds(ids);
 		const mods = yield* moderatorsAmong(rows.map((row) => row.id));
-		return rows.map((row) => ({...row, isModerator: mods.has(row.id)}));
+		// `emailFailing` is self-only (#2730): a by-id load is another account's row, so it
+		// never carries that account's delivery state — always `false` on the batch path.
+		return rows.map((row) => ({...row, isModerator: mods.has(row.id), emailFailing: false}));
 	});

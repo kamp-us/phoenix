@@ -61,27 +61,39 @@ export const queries = {
 			const user = yield* CurrentUser.required;
 			const pasaport = yield* Pasaport;
 			const fresh = yield* pasaport.getUserById(user.id);
+			// The SELF email-delivery signal (#2730): resolve the viewer's OWN failing state
+			// off the `email_delivery_event` log so `me` lights the (flag-gated) membrane
+			// notice. The account's email is stable across a username edit, so the session
+			// email keys it in both branches. `toTrustedUser` takes it as a param — resolving
+			// it inside that shared home would cycle (its mutation-ack callers are in Pasaport).
+			const emailFailing = yield* pasaport.readEmailFailing(user.email);
 			// `toTrustedUser` resolves the trusted standing (tier via `Kunye.tierOf`,
 			// the moderator signal via the `moderates` tuple) — one shared home for the
 			// `User` shape `setUsername` and the by-id loader also build. The session
 			// supplies email/name/image; the canonical row, when present, overrides them
 			// so a fresh `username` round-trips before better-auth's session catches up.
 			if (!fresh) {
-				return yield* toTrustedUser({
-					id: user.id,
-					email: user.email,
-					name: user.name ?? null,
-					image: user.image ?? null,
-					username: null,
-				});
+				return yield* toTrustedUser(
+					{
+						id: user.id,
+						email: user.email,
+						name: user.name ?? null,
+						image: user.image ?? null,
+						username: null,
+					},
+					emailFailing,
+				);
 			}
-			return yield* toTrustedUser({
-				id: fresh.id,
-				email: fresh.email,
-				name: fresh.name,
-				image: fresh.image,
-				username: fresh.username,
-			});
+			return yield* toTrustedUser(
+				{
+					id: fresh.id,
+					email: fresh.email,
+					name: fresh.name,
+					image: fresh.image,
+					username: fresh.username,
+				},
+				emailFailing,
+			);
 		}),
 	),
 	// `contributions` is delivered inline (not via a source `connection`

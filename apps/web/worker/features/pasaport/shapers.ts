@@ -33,6 +33,7 @@ export const toUser = (r: UserFields): User => ({
 	username: r.username,
 	tier: r.tier,
 	isModerator: r.isModerator,
+	emailFailing: r.emailFailing,
 });
 
 // Stamps the client normalization key `id` === `userId` (a `Profile` is

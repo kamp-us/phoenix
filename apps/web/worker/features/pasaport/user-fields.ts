@@ -48,6 +48,15 @@ export type UserRow = {
 export interface UserFields extends Omit<UserRow, "tier"> {
 	tier: Tier;
 	isModerator: boolean;
+	/**
+	 * The SELF email-delivery signal (#2730): `true` when the viewer's OWN address is
+	 * currently failing, projected from the latest `email_delivery_event` row
+	 * (`resolveEmailDeliveryState`, the #2691 projection) and stamped by the resolver,
+	 * never read from the `user` record. Like `isModerator` it is per-viewer and
+	 * self-only — the batched by-id path (`getUsersWithModerationByIds`) never leaks
+	 * another account's delivery state, so it defaults `false` there.
+	 */
+	emailFailing: boolean;
 }
 
 /**
@@ -65,6 +74,7 @@ export const userViewFields = {
 	username: true,
 	tier: true,
 	isModerator: true,
+	emailFailing: true,
 } as const satisfies Record<keyof UserFields, true>;
 
 /**

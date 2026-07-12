@@ -169,14 +169,20 @@ export const mutations = {
 			const result = yield* pasaport.setUsername({userId: user.id, value: input.value});
 			// email comes from the session, the rest from the service result; the trusted
 			// standing (tier + moderator signal) and the `User` shape come from the one
-			// shared `toTrustedUser` home `me` also routes through (#1297/#1320).
-			return yield* toTrustedUser({
-				id: result.userId,
-				email: user.email,
-				name: result.displayName,
-				image: result.image,
-				username: result.username,
-			});
+			// shared `toTrustedUser` home `me` also routes through (#1297/#1320). The
+			// self-only `emailFailing` (#2730) is resolved here too so the ack's `User`
+			// matches the `me` read byte-for-byte (a username edit never touches it).
+			const emailFailing = yield* pasaport.readEmailFailing(user.email);
+			return yield* toTrustedUser(
+				{
+					id: result.userId,
+					email: user.email,
+					name: result.displayName,
+					image: result.image,
+					username: result.username,
+				},
+				emailFailing,
+			);
 		}),
 	),
 
@@ -207,13 +213,20 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pasaport = yield* Pasaport;
 			const result = yield* pasaport.setDisplayName({userId: user.id, value: input.value});
-			const trusted = yield* toTrustedUser({
-				id: result.userId,
-				email: user.email,
-				name: result.displayName,
-				image: result.image,
-				username: result.username,
-			});
+			// Resolve the self-only `emailFailing` (#2730) so the published reconcile carries
+			// the viewer's true delivery state — a display-name edit must not transiently
+			// clear the membrane notice over the live pin (the notice reads it off this row).
+			const emailFailing = yield* pasaport.readEmailFailing(user.email);
+			const trusted = yield* toTrustedUser(
+				{
+					id: result.userId,
+					email: user.email,
+					name: result.displayName,
+					image: result.image,
+					username: result.username,
+				},
+				emailFailing,
+			);
 			// `trusted` is already the wire `User` (`toTrustedUser` → `toUser`), so publish
 			// it inline as the reconcile data — the same byte-identical shape a fresh fetch
 			// yields, masked per-client (the inline-data contract).

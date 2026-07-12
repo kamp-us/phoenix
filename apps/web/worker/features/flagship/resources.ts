@@ -25,6 +25,7 @@ import {
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
+	PHOENIX_EMAIL_DELIVERY_NOTICE,
 	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_MOD_QUEUE,
@@ -832,6 +833,34 @@ export const EMAIL_DELIVERY_ADMIN_FLAG = {
  */
 export const emailDeliveryAdminFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_email_delivery_admin", {appId, ...EMAIL_DELIVERY_ADMIN_FLAG});
+
+/**
+ * The member-facing email-delivery membrane notice release flag (#2693, epic #2687).
+ * Default-off so the (already-shipped, inert) notice reaches production dark until a
+ * human flips it at release (ADR 0083). Exported as a plain object so the
+ * default-=-safe-state invariant is unit-inspectable WITHOUT constructing the alchemy
+ * resource (mirrors `EMAIL_DELIVERY_ADMIN_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           pasaport (the membrane notice surface)
+ *   - originating:     #2693 (worker enabler #2730, epic: #2687)
+ *   - removal trigger: once the notice graduates to on at 100% and stable for one
+ *                      release, retire the flag and inline the notice.
+ */
+export const EMAIL_DELIVERY_NOTICE_FLAG = {
+	key: PHOENIX_EMAIL_DELIVERY_NOTICE,
+	description:
+		"member email-delivery membrane notice release (#2693, epic #2687). owner: pasaport. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const emailDeliveryNoticeFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_email_delivery_notice", {appId, ...EMAIL_DELIVERY_NOTICE_FLAG});
 
 /**
  * The mecmua public-read dark-ship flag config (#2498, epic #2467). The SINGLE seam

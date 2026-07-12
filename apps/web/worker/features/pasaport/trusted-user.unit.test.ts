@@ -54,15 +54,18 @@ const relationStoreOf = (mods: ReadonlyArray<string>): Layer.Layer<RelationStore
 	});
 
 describe("toTrustedUser — the SELF trusted User shape", () => {
-	it.effect("stamps the trusted tier + moderator signal onto toUser", () =>
+	it.effect("stamps the trusted tier + moderator signal + emailFailing onto toUser", () =>
 		Effect.gen(function* () {
-			const user = yield* toTrustedUser({
-				id: "u1",
-				email: "u1@kamp.us",
-				name: "U One",
-				image: null,
-				username: "u-one",
-			}).pipe(Effect.provide(Layer.mergeAll(kunyeOf({u1: "yazar"}), relationStoreOf(["u1"]))));
+			const user = yield* toTrustedUser(
+				{
+					id: "u1",
+					email: "u1@kamp.us",
+					name: "U One",
+					image: null,
+					username: "u-one",
+				},
+				true,
+			).pipe(Effect.provide(Layer.mergeAll(kunyeOf({u1: "yazar"}), relationStoreOf(["u1"]))));
 			assert.deepStrictEqual(user, {
 				__typename: "User",
 				id: "u1",
@@ -72,21 +75,27 @@ describe("toTrustedUser — the SELF trusted User shape", () => {
 				username: "u-one",
 				tier: "yazar",
 				isModerator: true,
+				emailFailing: true,
 			});
 		}),
 	);
 
 	it.effect("a non-moderator reads isModerator false, tier off the stored column", () =>
 		Effect.gen(function* () {
-			const user = yield* toTrustedUser({
-				id: "u2",
-				email: "u2@kamp.us",
-				name: null,
-				image: null,
-				username: null,
-			}).pipe(Effect.provide(Layer.mergeAll(kunyeOf({u2: "çaylak"}), relationStoreOf([]))));
+			const user = yield* toTrustedUser(
+				{
+					id: "u2",
+					email: "u2@kamp.us",
+					name: null,
+					image: null,
+					username: null,
+				},
+				false,
+			).pipe(Effect.provide(Layer.mergeAll(kunyeOf({u2: "çaylak"}), relationStoreOf([]))));
 			assert.strictEqual(user.tier, "çaylak");
 			assert.isFalse(user.isModerator);
+			// `emailFailing` is passed IN by the caller (self-only #2730), threaded to `toUser`.
+			assert.isFalse(user.emailFailing);
 		}),
 	);
 });
@@ -113,6 +122,12 @@ describe("getUsersWithModerationByIds — the batched by-id user rows + moderato
 					{id: "u2", tier: "çaylak", isModerator: false},
 					{id: "u3", tier: "yazar", isModerator: true},
 				],
+			);
+			// `emailFailing` is self-only (#2730): the batch by-id path never carries another
+			// account's delivery state, so every row defaults `false`.
+			assert.deepStrictEqual(
+				users.map((u) => u.emailFailing),
+				[false, false, false],
 			);
 		}),
 	);

@@ -353,6 +353,12 @@ export class Pasaport extends Context.Service<
 		// event projects to `failing`, newest-first. Read only past `requireAdmin`; the
 		// set is derived from the log, never a stored flag.
 		readonly listFailingAddresses: () => Effect.Effect<ReadonlyArray<FailingAddress>>;
+
+		// The SELF email-delivery signal for the membrane notice (#2730): `true` when the
+		// given address's latest `email_delivery_event` projects to `failing`. A boolean
+		// over the same per-address projection the admin per-target read uses; the `me`
+		// resolver calls it with the viewer's own email to stamp `User.emailFailing`.
+		readonly readEmailFailing: (address: string) => Effect.Effect<boolean>;
 	}
 >()("@kampus/pasaport/Pasaport") {}
 
@@ -1173,6 +1179,14 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 					}));
 					return selectFailingAddresses(events, new Date());
 				}),
+
+				// The SELF membrane-notice read (#2730): does the given address currently
+				// project to `failing`? A boolean projection over the same per-address
+				// latest-event read the admin per-target read uses (`readEmailDeliveryState`),
+				// exposed for the `me` resolver to stamp `User.emailFailing`. Keyed by address
+				// (the viewer's own email), not userId — the caller already holds it.
+				readEmailFailing: (address: string) =>
+					readEmailDeliveryState(address).pipe(Effect.map((state) => state.failing)),
 			};
 		}),
 	);
