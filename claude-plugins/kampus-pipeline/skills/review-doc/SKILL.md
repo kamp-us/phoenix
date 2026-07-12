@@ -350,10 +350,20 @@ REVIEW_WT="$(mktemp -d)/review-doc-head-$PR"
 WT_FILE="$(mktemp /tmp/review-doc-wt.XXXXXX)"          # run-unique handle, never a fixed/PR-only path
 { echo "REVIEW_WT='$REVIEW_WT'"; echo "PR_REF='$PR_REF'"; } > "$WT_FILE"
 git worktree add "$REVIEW_WT" "$PR_REF"
+# Register teardown as a trap so a mid-block error still tears the throwaway tree down:
+trap 'rm -rf "$REVIEW_WT"; git worktree prune' EXIT
 # … later steps: `. "$WT_FILE"` re-sources $REVIEW_WT/$PR_REF after a between-call reset,
 # never re-deriving from the shared leaf name.
-rm -rf "$REVIEW_WT" && git worktree prune   # tear it down after
+rm -rf "$REVIEW_WT" && git worktree prune   # tear it down on EVERY exit path — PASS or FAIL
 ```
+
+**Teardown runs on both the success and the failure path**, not just when the check passed —
+run the `rm -rf` even when the review exits `FAIL` or aborts mid-run, so no `review-doc-head-*`
+tree leaks onto the shared primary (#2785). The `rm -rf` of the review's own detached, already-
+pushed throwaway is safe (it holds no branch/unpushed work). The standing net for a session-end
+abort between Bash calls (which no in-shell trap can reach) is `pipeline-cli worktree-sweep
+--execute` (#2785): it reclaims a leaked `review-doc-head-*` tree only when clean + idle +
+unlocked, **without** `--force` (dirty / active / locked is KEPT — the #2240 liveness guard).
 
 Never `git checkout` / `git switch` / `gh pr checkout` in the checkout you were launched in —
 not even `git -C`-scoped to your own worktree (the harness cwd-reset would still land a bare one

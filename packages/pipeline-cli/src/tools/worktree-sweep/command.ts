@@ -1,12 +1,14 @@
 /**
  * The `worktree-sweep` tool — `pipeline-cli worktree-sweep [--execute]`.
  *
- * The sanctioned, safe-by-default bulk drain for accumulated agent worktrees under
- * `.claude/worktrees/` (issue #1243). The harness does not auto-remove a worktree
- * that made commits, so they pile up without bound and slow every git op. This
- * command enumerates them, classifies each via the pure core (`worktree-sweep.ts`),
- * prints the plan, and — ONLY with `--execute` — runs `git worktree remove` (NEVER
- * `--force`) on the removable set.
+ * The sanctioned, safe-by-default bulk drain for accumulated agent worktrees (issue
+ * #1243). It sweeps two leaked classes (#2785): the harness-provisioned build trees under
+ * `.claude/worktrees/`, and the `$TMPDIR`-rooted `review-head-*` detached checkouts the
+ * review gates materialize. The harness does not auto-remove a build tree that made commits,
+ * and nothing at all reclaims a review-head tree, so both pile up without bound and slow every
+ * git op. This command enumerates them, classifies each via the pure core (`worktree-sweep.ts`),
+ * prints the plan, and — ONLY with `--execute` — runs `git worktree remove` (NEVER `--force`)
+ * on the removable set.
  *
  * Safe by construction (enforcement lines):
  *   1. The pure classifier only marks a worktree removable when it is CLEAN, reachable
@@ -32,6 +34,7 @@ import {Command, Flag} from "effect/unstable/cli";
 import {
 	computeWorktreeSweepPlan,
 	isManagedWorktree,
+	isReviewHeadWorktree,
 	parseWorktreeList,
 	type WorktreeRecord,
 } from "./worktree-sweep.ts";
@@ -200,14 +203,19 @@ const worktreeSweep = Command.make(
 			.filter((p) => !p.bare)
 			.map((p) => {
 				const managed = isManagedWorktree(p.path);
+				// A review-head tree is a swept candidate too (#2785), so its liveness (idle mtime)
+				// must be probed. Its detached HEAD carries no branch, so the open-PR probe below
+				// (branch-keyed) is N/A for it — the dirty/locked/idle triple carries its liveness.
+				const swept = managed || isReviewHeadWorktree(p.path);
 				const isDirty = worktreeIsDirty(p.path);
 				const reachable = reachableFromOriginMain(p.head);
 				// Only probe the costlier squash signal when ancestry already missed.
 				const squashMerged = reachable ? false : squashMergedToOriginMain(p.head);
-				const recentlyActive = managed ? worktreeRecentlyActive(p.path) : false;
-				// The network open-PR probe fires ONLY for a tree that would otherwise be swept —
+				const recentlyActive = swept ? worktreeRecentlyActive(p.path) : false;
+				// The network open-PR probe fires ONLY for a BUILD tree that would otherwise be swept —
 				// managed, clean, unlocked, idle, and content-merged — so SessionStart makes at most
-				// one gh call per reap candidate (usually zero), never one per worktree.
+				// one gh call per reap candidate (usually zero), never one per worktree. A review-head
+				// tree never enters here (no branch, and its classifier branch precedes the open-PR gate).
 				const wouldRemove =
 					managed && !isDirty && !p.locked && !recentlyActive && (reachable || squashMerged);
 				const hasOpenPr = wouldRemove ? branchHasOpenPr(p.branch) : false;
@@ -265,7 +273,7 @@ const worktreeSweep = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Safe bulk drain of accumulated .claude/worktrees/ agent worktrees — clean+merged only, never --force (#1243)",
+		"Safe bulk drain of accumulated agent build worktrees + leaked review-head checkouts — clean+idle only, never --force (#1243/#2785)",
 	),
 );
 

@@ -850,7 +850,12 @@ docblocks in a file (the `coder.md` standing invariant is the source; #2186).
 > concurrent fallback runs collide on neither the branch nor the dir: `git fetch origin main;
 > WT="../wt-issue-<N>-$(uuidgen | head -c 8)"; git worktree add -b "$BRANCH" "$WT" FETCH_HEAD`,
 > then `cd "$WT"`. Branch off `FETCH_HEAD` (the just-fetched origin tip), **never** the possibly-stale
-> `origin/main` ref. When you're done, remove it with `git worktree remove "$WT"`. After the `cd "$WT"`, **re-run the Step 4 preflight** — the
+> `origin/main` ref. When you're done, remove it with `git worktree remove "$WT"` (never
+> `--force` — a dirty tree then errors out and is KEPT). A build worktree that made commits and
+> is *not* removed here (an aborted run, a fallback that never reached its done-step) does not
+> leak unbounded: it is backstopped by `pipeline-cli worktree-sweep --execute` (#1243/#2785),
+> which reclaims a `.claude/worktrees/` build tree only once it is clean + merged + idle +
+> unlocked with no open PR — the #2240 liveness guard, non-`--force`. After the `cd "$WT"`, **re-run the Step 4 preflight** — the
 > fresh worktree's git-dir now differs from the common dir, so the check passes and you may
 > mutate. This fallback is **only for the standalone (`isolation-expected=0`) path** — a run where
 > isolation was *expected* must NOT reach it: the preflight's loud branch (ADR 0172, #2443) hard-stops

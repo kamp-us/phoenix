@@ -345,11 +345,22 @@ You're reading, not building — no `pnpm install`, no typecheck, no test suite.
 head's skill text in `$REVIEW_WT/skills/`, and the freshly-fetched `origin/$BASE_REF` for any
 shipped-state check are your whole evidence base.
 
-When you're done reading, tear the throwaway tree + ref down:
+Tear the throwaway tree + ref down on **every** exit path — PASS, FAIL, or a mid-run error,
+not only when you finish reading clean:
 
 ```bash
 rm -rf "$REVIEW_WT" && git worktree prune && git update-ref -d "$PR_REF"
 ```
+
+Run this even when the review is exiting `FAIL` or aborting mid-run, so no `review-skill-head-*`
+tree leaks onto the shared primary (#2785); the `rm -rf` of the review's own detached, already-
+pushed throwaway is safe (no branch/unpushed work). To catch a mid-block error, register it as a
+trap right after `git worktree add`:
+`trap 'rm -rf "$REVIEW_WT"; git worktree prune; git update-ref -d "$PR_REF"' EXIT`. The standing
+net for a session-end abort between Bash calls (no in-shell trap reaches it) is `pipeline-cli
+worktree-sweep --execute` (#2785): it reclaims a leaked `review-skill-head-*` tree only when
+clean + idle + unlocked, **without** `--force` (dirty / active / locked is KEPT — the #2240
+liveness guard).
 
 ---
 

@@ -240,16 +240,28 @@ pnpm pipeline-cli worktree-sweep            # dry-run: print the keep/remove pla
 pnpm pipeline-cli worktree-sweep --execute  # remove the clean+merged ones
 ```
 
-It is **safe by default** and mirrors the `@kampus/worktree-guard` reaper's rule
-(MEMORY "Safe worktree prune"): a worktree is removed **only** when it is CLEAN
-**and** its HEAD is already reachable from `origin/main` (its branch merged, or it
-sits detached at a merged commit). A **dirty** tree or an **unmerged** branch — e.g.
-a sibling agent's live, in-flight PR branch — is **KEPT**. It runs `git worktree
-remove` **without `--force`**, so git itself refuses any tree it judges unsafe and
-that refusal is reported as kept, never escalated. Draining the existing pile is the
-operator's explicit call; the command never force-discards unpushed work. The pure
-classifier (`packages/pipeline-cli/src/tools/worktree-sweep/worktree-sweep.ts`) is
-unit-tested branch-by-branch.
+It sweeps **two leaked classes** (#2785):
+
+- **Build worktrees** under `.claude/worktrees/` — a harness-provisioned agent tree
+  carrying a real branch and possibly unpushed work. Removed **only** when it is CLEAN
+  **and** its HEAD is already reachable from `origin/main` (its branch merged, or it
+  sits detached at a merged commit — the squash case #1328 included). A **dirty** tree
+  or an **unmerged** branch — e.g. a sibling agent's live, in-flight PR branch — is **KEPT**.
+- **Review-head worktrees** — the `$TMPDIR`-rooted `review-head-*` / `review-doc-head-*`
+  / `review-skill-head-*` DETACHED checkouts the `review-*` gates materialize from a PR
+  head. These carry no branch and no unpushed work, so there is **no merge gate**: a leaked
+  one is reclaimed once it is CLEAN + idle + unlocked (an unmerged PR head is still reclaimed,
+  which the merge gate would strand for the PR's whole open life). Before this class they were
+  `not-managed` and never reaped, so they were the bulk of the 562-worktree leak.
+
+Both classes share the **#2240 liveness guard**: a **locked**, **recently-active** (mtime
+within the idle threshold), or (build class) **open-PR** tree is **KEPT**. It runs `git worktree
+remove` **without `--force`**, so git itself refuses any tree it judges unsafe and that refusal is
+reported as kept, never escalated (mirrors the `@kampus/worktree-guard` reaper's rule, MEMORY
+"Safe worktree prune"). Draining the pile is the operator's explicit call; the command never
+force-discards unpushed work. The pure classifier
+(`packages/pipeline-cli/src/tools/worktree-sweep/worktree-sweep.ts`) is unit-tested branch-by-branch,
+and `command.hook.test.ts` proves both classes through the real-git command boundary.
 
 ## Why these constraints exist (and where the real fix lives)
 
