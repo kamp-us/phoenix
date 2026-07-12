@@ -1,0 +1,36 @@
+// Ban raw `try/catch` in any file that imports `effect` — require `Effect.try` /
+// `Effect.tryPromise`.
+//
+// Rationale (single site; #2736): real Effect code models failure in the `E` channel
+// via `Effect.try` / `Effect.tryPromise`; a bare `try/catch` inside an effect-importing
+// file is the "cosplay as Effect" tell — the failure escapes the type system. Scoped to
+// effect-importing files (bare `"effect"` or an `"effect/…"` subpath) so a pure Node
+// script that legitimately uses try/catch is not touched.
+//
+// A genuine pre-runtime bootstrap `try/catch` (e.g. a dynamic-import guard that must run
+// before the Effect runtime loads) is exempted per-line with a
+// `// biome-ignore lint/plugin: <reason>`, never a blanket exemption.
+//
+// The match anchors on the `try` statement (so the diagnostic underlines the offending
+// try, not the whole module) but fires only when the enclosing module also imports
+// `effect`. GritQL notes at the pinned biome 2.4.15: regex patterns (`r"…"`) are not
+// honored, so the effect-import test is two exact string-snippet arms — the bare
+// `"effect"` and the metavariable subpath `"effect/$rest"`. Registered via biome.jsonc
+// `"plugins"` at `warn` (Phase 1 of #2736; the flip to `error` is the Phase-3 capstone
+// #2753).
+language js;
+
+JsTryStatement() as $try where {
+	$try <: within JsModule() as $mod,
+	$mod <: contains (JsImport() as $imp where {
+		or {
+			$imp <: contains `"effect"`,
+			$imp <: contains `"effect/$rest"`
+		}
+	}),
+	register_diagnostic(
+		span = $try,
+		message = "Raw `try/catch` is banned in an effect-importing file — real Effect code models failure in the `E` channel, not a native throw (#2736). Fix: use `Effect.try({ try, catch })` (sync) or `Effect.tryPromise({ try, catch })` (async), mapping the cause into a `Schema.TaggedErrorClass` — copy `packages/pipeline-cli/src/tools/epic-ledger/github.ts` (or `packages/fate-effect`). Exception (e.g. a pre-runtime bootstrap guard): // biome-ignore lint/plugin: <reason>.",
+		severity = "warn"
+	)
+}

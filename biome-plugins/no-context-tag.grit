@@ -1,0 +1,43 @@
+// Ban the pre-v4 service forms `Context.Tag(...)` / `Context.GenericTag(...)` /
+// `Effect.Service(...)` — require Effect-v4 `Context.Service`.
+//
+// Rationale (single site; .patterns/effect-context-service.md): phoenix is on Effect v4
+// (the effect-smol line). The v3 service idioms — `Context.Tag`, `Context.GenericTag`,
+// and the `Effect.Service` helper — are wrong here; the single v4 idiom is
+// `class S extends Context.Service<S, Shape>()("id") {}`. This rule is a pure regression
+// gate: the repo scan for #2736 found ZERO existing violations (the codebase is already
+// all-v4), so it exists only to stop a v3 form from re-entering.
+//
+// Matched on the member-access callee (`Context.Tag` etc.) rather than a call snippet,
+// because the forms differ in arity/type-args (`Context.Tag("id")<S, Shape>()`,
+// `Context.GenericTag<Shape>("id")`, `Effect.Service<S>()("id", {...})`) — the bare
+// member is the stable shape common to all of them.
+//
+// Registered via biome.jsonc `"plugins"` at `warn` (Phase 1 of #2736; the flip to
+// `error` is the Phase-3 capstone #2753). A genuine exception is a per-line
+// `// biome-ignore lint/plugin: <reason>`.
+language js;
+
+or {
+	`Context.Tag` as $ref where {
+		register_diagnostic(
+			span = $ref,
+			message = "`Context.Tag(...)` is the Effect-v3 service form and is banned — phoenix is on Effect v4 (.patterns/effect-context-service.md; #2736). Fix: define the service as `class S extends Context.Service<S, Shape>()('id') {}` — copy `packages/fate-effect/src/CurrentUser.ts` (or `apps/web/worker/db/Drizzle.ts`). Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Context.GenericTag` as $ref where {
+		register_diagnostic(
+			span = $ref,
+			message = "`Context.GenericTag(...)` is the Effect-v3 service form and is banned — phoenix is on Effect v4 (.patterns/effect-context-service.md; #2736). Fix: define the service as `class S extends Context.Service<S, Shape>()('id') {}` — copy `packages/fate-effect/src/CurrentUser.ts` (or `apps/web/worker/db/Drizzle.ts`). Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Effect.Service` as $ref where {
+		register_diagnostic(
+			span = $ref,
+			message = "`Effect.Service(...)` is not used in phoenix — v4 uses `Context.Service` only (.patterns/effect-context-service.md; #2736). Fix: define the service as `class S extends Context.Service<S, Shape>()('id') {}` — copy `packages/fate-effect/src/CurrentUser.ts` (or `apps/web/worker/db/Drizzle.ts`). Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	}
+}

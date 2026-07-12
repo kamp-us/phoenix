@@ -1,0 +1,24 @@
+// Ban `class ... extends Data.TaggedError(...)` — require `Schema.TaggedErrorClass`.
+//
+// Rationale (single site; .patterns/effect-errors.md): every phoenix error class is a
+// `Schema.TaggedErrorClass` so the `FateWireCode` wire-code annotation can ride the
+// class's AST — `Data.TaggedError` has nowhere to put one. The ban applies uniformly,
+// including CLI-only errors that never reach the fate wire (pipeline-cli's own gold
+// boundary files already use `Schema.TaggedErrorClass` for CLI-only errors; a
+// wire/non-wire carve-out would fragment the rule for no benefit — #2736 resolved).
+//
+// Matched on the member-access callee `Data.TaggedError` (the extends-clause is a call
+// `Data.TaggedError("Tag")<Shape>`), the stable shape across its arity/type-arg variants.
+//
+// Registered via biome.jsonc `"plugins"` at `warn` (Phase 1 of #2736; the flip to
+// `error` is the Phase-3 capstone #2753). A genuine exception is a per-line
+// `// biome-ignore lint/plugin: <reason>`.
+language js;
+
+`Data.TaggedError` as $ref where {
+	register_diagnostic(
+		span = $ref,
+		message = "`class ... extends Data.TaggedError` is banned — errors must be `Schema.TaggedErrorClass` so the `FateWireCode` annotation can ride the AST (.patterns/effect-errors.md; #2736). Fix: `class MyError extends Schema.TaggedErrorClass<MyError>()('feature/MyError', { ...fields }, { [FateWireCode]: 'CODE' }) {}` — copy `packages/fate-effect/src/CurrentUser.ts` (or `packages/pipeline-cli/src/tools/epic-ledger/github.ts` for a CLI-only error). Exception: // biome-ignore lint/plugin: <reason>.",
+		severity = "warn"
+	)
+}
