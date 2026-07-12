@@ -34,6 +34,7 @@ import {
 } from "../lifecycle/SandboxVisibility.ts";
 import type {ReactionTargetNotFound} from "../reaction/errors.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
+import type {ReportId} from "../report/ids.ts";
 import {SelfVoteNotAllowed} from "../vote/errors.ts";
 import {translateVoteMiss} from "../vote/translate-vote-miss.ts";
 import type {Vote} from "../vote/Vote.ts";
@@ -736,7 +737,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 	const moderateRemoveComment = Effect.fn("Pano.moderateRemoveComment")(function* (input: {
 		commentId: string;
 		resolverId: string;
-		reportId: string;
+		reportId: ReportId;
 	}) {
 		const row = yield* run((db) =>
 			db.query.commentRecord.findFirst({where: {id: input.commentId}}),

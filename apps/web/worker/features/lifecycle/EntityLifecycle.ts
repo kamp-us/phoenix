@@ -18,6 +18,7 @@
 import * as Data from "effect/Data";
 import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
+import {ReportId} from "../report/ids.ts";
 
 /**
  * Why a piece of content was removed — the audit's "why". A `Schema.Union` of
@@ -36,14 +37,10 @@ export class Anonymized extends Schema.Class<Anonymized>("lifecycle/Anonymized")
 
 export class Moderated extends Schema.Class<Moderated>("lifecycle/Moderated")({
 	_tag: Schema.tag("Moderated"),
-	// Unbranded `Schema.String` (not report's `ReportId`) on purpose: this reason is
-	// constructed at each content feature's moderator-remove site — pano
-	// (`post-operations.ts`/`comment-operations.ts`) and sözlük (`Sozluk.ts`) — with a
-	// plain-string `reportId`, so a `ReportId` here would fail typecheck at those
-	// out-of-feature construction sites, which epic #2700's report slice (#2721) does not
-	// touch. Deferred to a follow-up that brands the content services' `moderateRemove*`
-	// reportId params (mirrors vote's deferred `SelfVoteNotAllowed.voterId`, #2723).
-	reportId: Schema.String,
+	// The originating report, branded (#2820, deferred slice of #2721): the content
+	// features mint it via `ReportId.make(...)` at the report→service boundary
+	// (`report/mutations.ts`), so a report/target/user id swap is a compile error here.
+	reportId: ReportId,
 }) {}
 
 export const RemovalReason = Schema.Union([AuthorDeletion, Anonymized, Moderated]);
@@ -349,7 +346,7 @@ export const reasonLabel: (reason: RemovalReason) => string = Match.type<Removal
 );
 
 /** The originating report of a `Moderated` removal, else null — `Match` exhaustive. */
-export const reasonReportId: (reason: RemovalReason) => string | null =
+export const reasonReportId: (reason: RemovalReason) => ReportId | null =
 	Match.type<RemovalReason>().pipe(
 		Match.tagsExhaustive({
 			AuthorDeletion: () => null,

@@ -25,6 +25,7 @@ import {UserId} from "../../lib/ids.ts";
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
+import {ReportId} from "../report/ids.ts";
 import type {Vote} from "../vote/Vote.ts";
 import {type CommentOperationsDeps, makeCommentOperations} from "./comment-operations.ts";
 import {CommentId, PostId} from "./ids.ts";
@@ -230,7 +231,9 @@ const removedRow = (sandboxedAt: Date | null): CommentRow =>
 	commentRow({
 		removedAt: NOW,
 		removedBy: "u-mod",
-		removedReason: Lifecycle.encodeReason(new Lifecycle.Moderated({reportId: "rep_1"})),
+		removedReason: Lifecycle.encodeReason(
+			new Lifecycle.Moderated({reportId: ReportId.make("rep_1")}),
+		),
 		sandboxedAt,
 	});
 
@@ -247,7 +250,7 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 			const result = yield* ops.moderateRemoveComment({
 				commentId: "comm_1",
 				resolverId: "u-mod",
-				reportId: "rep_1",
+				reportId: ReportId.make("rep_1"),
 			});
 			assert.isTrue(result.removed, "the mod-remove still soft-removes the comment");
 			assert.strictEqual(
@@ -265,7 +268,7 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 			const result = yield* ops.moderateRemoveComment({
 				commentId: "comm_1",
 				resolverId: "u-mod",
-				reportId: "rep_1",
+				reportId: ReportId.make("rep_1"),
 			});
 			assert.isTrue(result.removed, "the mod-remove soft-removes the comment");
 			assert.strictEqual(captured.postCommentCount, 4, "a live comment's mod-remove decrements -1");
@@ -304,7 +307,7 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 			yield* opsRemove.moderateRemoveComment({
 				commentId: "comm_1",
 				resolverId: "u-mod",
-				reportId: "rep_1",
+				reportId: ReportId.make("rep_1"),
 			});
 			assert.strictEqual(remove.captured.postCommentCount, 5, "mod-remove of sandboxed is -0");
 
@@ -330,7 +333,7 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 				yield* opsRemove.moderateRemoveComment({
 					commentId: "comm_1",
 					resolverId: "u-mod",
-					reportId: "rep_1",
+					reportId: ReportId.make("rep_1"),
 				});
 				assert.strictEqual(remove.captured.postCommentCount, 5, "mod-remove of sandboxed is -0");
 

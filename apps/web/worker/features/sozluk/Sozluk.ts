@@ -32,6 +32,7 @@ import {
 } from "../lifecycle/SandboxVisibility.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
+import type {ReportId} from "../report/ids.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import {SelfVoteNotAllowed, type VoterNotEligible} from "../vote/errors.ts";
@@ -443,7 +444,7 @@ export class Sozluk extends Context.Service<
 		readonly moderateRemoveDefinition: (input: {
 			definitionId: string;
 			resolverId: string;
-			reportId: string;
+			reportId: ReportId;
 		}) => Effect.Effect<{removed: boolean}>;
 
 		/**
@@ -1242,7 +1243,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		});
 
 		const moderateRemoveDefinition = Effect.fn("Sozluk.moderateRemoveDefinition")(
-			function* (input: {definitionId: string; resolverId: string; reportId: string}) {
+			function* (input: {definitionId: string; resolverId: string; reportId: ReportId}) {
 				const definition = yield* run((db) =>
 					db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 				);

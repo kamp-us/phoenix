@@ -7,6 +7,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {expectTypeOf} from "vitest";
+import {ReportId} from "../report/ids.ts";
 import * as L from "./EntityLifecycle.ts";
 
 const fixedNow = new Date("2026-06-20T12:00:00.000Z");
@@ -38,7 +39,7 @@ describe("EntityLifecycle — type transitions", () => {
 		const removed = L.remove({
 			removedAt: fixedNow,
 			removedBy: "user-1",
-			reason: new L.Moderated({reportId: "rep-9"}),
+			reason: new L.Moderated({reportId: ReportId.make("rep-9")}),
 			sandboxedAt: null,
 		});
 		const live = L.restore(removed);
@@ -245,7 +246,7 @@ describe("EntityLifecycle — exhaustive reason handling", () => {
 		assert.strictEqual(L.reasonLabel(new L.AuthorDeletion()), "yazar tarafından silindi");
 		assert.strictEqual(L.reasonLabel(new L.Anonymized()), "hesap silindiği için kaldırıldı");
 		assert.strictEqual(
-			L.reasonLabel(new L.Moderated({reportId: "rep-1"})),
+			L.reasonLabel(new L.Moderated({reportId: ReportId.make("rep-1")})),
 			"moderasyon kararıyla kaldırıldı",
 		);
 	});
@@ -253,6 +254,9 @@ describe("EntityLifecycle — exhaustive reason handling", () => {
 	it("reasonReportId extracts only the Moderated report id", () => {
 		assert.strictEqual(L.reasonReportId(new L.AuthorDeletion()), null);
 		assert.strictEqual(L.reasonReportId(new L.Anonymized()), null);
-		assert.strictEqual(L.reasonReportId(new L.Moderated({reportId: "rep-7"})), "rep-7");
+		assert.strictEqual(
+			L.reasonReportId(new L.Moderated({reportId: ReportId.make("rep-7")})),
+			"rep-7",
+		);
 	});
 });
