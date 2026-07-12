@@ -286,11 +286,17 @@ export default Phoenix.make(
 		const liveLayer = Layer.mergeAll(
 			Layer.succeed(LiveTopics)(
 				LiveTopics.of({
+					// Cold-start resilience via the same `withColdStartRetry` as the sibling
+					// `subscribe`/`unsubscribe` below (rationale there, #842). Bare, a publish
+					// to an idle-evicted `topic:` DO dropped its invalidation silently (#2551).
 					publish: (topicKey, message, limits) =>
 						Effect.asVoid(
-							topicOf(live, topicKey)
-								.publish({topicKey, frame: deliverFrameOf(message), limits})
-								.pipe(Effect.provideService(RuntimeContext, runtimeContext)),
+							withColdStartRetry(
+								"publish",
+								topicOf(live, topicKey)
+									.publish({topicKey, frame: deliverFrameOf(message), limits})
+									.pipe(Effect.provideService(RuntimeContext, runtimeContext)),
+							),
 						),
 				}),
 			),

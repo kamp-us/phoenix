@@ -19,6 +19,7 @@ import type {LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
 import {Effect, Exit} from "effect";
 import {expectTypeOf, vi} from "vitest";
+import {LiveTransportError} from "./cold-start-retry.ts";
 import {livePublisherFor} from "./live-publisher.ts";
 import type {PublishMessage} from "./protocol.ts";
 
@@ -32,7 +33,9 @@ interface Recorded {
  * `waitUntil` collects the scheduled promises so a test can `flush` (or
  * deliberately NOT flush) the fire-and-forget work.
  */
-function makeHarness(publish?: (topicKey: string, message: PublishMessage) => Effect.Effect<void>) {
+function makeHarness(
+	publish?: (topicKey: string, message: PublishMessage) => Effect.Effect<void, LiveTransportError>,
+) {
 	const recorded: Array<Recorded> = [];
 	const scheduled: Array<Promise<unknown>> = [];
 	const live = livePublisherFor({
@@ -175,8 +178,9 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 );
 
 it.effect("a rejecting topic publish cannot fail the calling effect", () => {
-	// Silence the publisher's failure log so the run stays quiet.
-	const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+	// Silence the publisher's Warn failure log (the `ignoreCause({log: "Warn"})` default sink
+	// is `console.log`) so the run stays quiet.
+	const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 	return Effect.gen(function* () {
 		const {live, flush} = makeHarness(() => Effect.die(new Error("DO unreachable")));
 
@@ -189,11 +193,54 @@ it.effect("a rejecting topic publish cannot fail the calling effect", () => {
 	}).pipe(
 		Effect.ensuring(
 			Effect.sync(() => {
-				errorSpy.mockRestore();
+				logSpy.mockRestore();
 			}),
 		),
 	);
 });
+
+it.effect(
+	"an exhausted-cold-start publish is logged through the Effect logger, never a bare console.error or a silent drop (#2551)",
+	() => {
+		// The bug: the detached publish's terminal catch routed an exhausted-cold-start
+		// LiveTransportError to a bare `console.error` — invisible to the Effect logger and
+		// Sentry breadcrumbs, so the lost invalidation was silent by construction. It now
+		// flows through `Effect.ignoreCause({log: "Warn"})`: logged at Warn through the Effect
+		// logger (whose default runtime sink emits one `console.log` line; a Sentry logger
+		// layer routes it to breadcrumbs), OFF the bare `console.error`, and still swallowed
+		// (the calling mutation never fails). The detached fiber runs on the default runtime,
+		// so its logger writes to the real `console.log` this test captures.
+		const logged: Array<string> = [];
+		const logSpy = vi.spyOn(console, "log").mockImplementation((...args: Array<unknown>) => {
+			logged.push(args.map(String).join(" "));
+		});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		return Effect.gen(function* () {
+			const {live, flush} = makeHarness(() =>
+				Effect.fail(new LiveTransportError({method: "publish", cause: new Error("cold topic DO")})),
+			);
+
+			const exit = yield* Effect.exit(
+				live.topic("Term.definitions", {slug: "effect"}).invalidate(),
+			);
+			assert.isTrue(Exit.isSuccess(exit), "the mutation never fails on an exhausted publish");
+
+			yield* Effect.promise(flush);
+			assert.isTrue(
+				logged.some((line) => line.includes("live publish to topic:")),
+				"the exhausted publish was logged through the Effect logger",
+			);
+			assert.strictEqual(errorSpy.mock.calls.length, 0, "off the bare console.error sink");
+		}).pipe(
+			Effect.ensuring(
+				Effect.sync(() => {
+					logSpy.mockRestore();
+					errorSpy.mockRestore();
+				}),
+			),
+		);
+	},
+);
 
 it.effect("a slow publish does not block the request path — waitUntil carries it", () =>
 	Effect.gen(function* () {

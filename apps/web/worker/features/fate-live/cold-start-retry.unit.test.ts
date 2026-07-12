@@ -82,6 +82,27 @@ it.effect("withColdStartRetry: a surviving RpcCallError failure → LiveTranspor
 	}),
 );
 
+it.effect(
+	"withColdStartRetry: a cold `topic:`-DO publish retries the RpcCallError, then LiveTransportError (#2551)",
+	() =>
+		// The publish seam now shares the RPC-channel retry (index.ts `LiveTopics.publish`):
+		// a publish to an idle-evicted `topic:` DO fails on the cold first RPC and must be
+		// retried across the bounded window, not dropped bare. Assert the retry FIRES (five
+		// attempts: one + four retries) and the surviving transport failure is the typed
+		// `LiveTransportError` — never an unretried rejection.
+		Effect.gen(function* () {
+			let attempts = 0;
+			const coldPublish = Effect.suspend(() => {
+				attempts += 1;
+				return Effect.fail(rpcCallError(new Error("cold topic DO"), "publish"));
+			});
+			const exit = yield* runPastBackoff(withColdStartRetry("publish", coldPublish));
+			assert.strictEqual(attempts, 5, "the bounded retry fired (1 attempt + 4 retries)");
+			assert.isTrue(Exit.isFailure(exit));
+			assert.instanceOf(failureValue(exit), LiveTransportError);
+		}),
+);
+
 it.effect("withColdStartRetry: a non-transport app error fails fast, unconverted", () =>
 	Effect.gen(function* () {
 		const exit = yield* runPastBackoff(

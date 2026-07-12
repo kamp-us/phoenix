@@ -18,14 +18,19 @@ export class LiveTopics extends Context.Service<
 	LiveTopics,
 	{
 		/**
-		 * Fire the typed `LiveDO.publish` RPC for one resolved topic key. Cannot
-		 * fail — the DO RPC's errors are swallowed best-effort at the call site.
+		 * Fire the typed `LiveDO.publish` RPC for one resolved topic key.
+		 * `LiveTransportError` is the truthful channel the alchemy stub's `never`
+		 * hides (#842, #2551): a publish to an idle-evicted `topic:` DO can fail on
+		 * the cold first RPC, so the worker seam wraps this in `withColdStartRetry`
+		 * (the same bounded retry the sibling `subscribe`/`unsubscribe` use) and
+		 * surfaces this on exhaustion. The publisher swallows-and-logs it best-effort
+		 * off the request path — a publish still must not fail the committed mutation.
 		 */
 		readonly publish: (
 			topicKey: string,
 			message: PublishMessage,
 			limits: LiveLimits,
-		) => Effect.Effect<void, never, never>;
+		) => Effect.Effect<void, LiveTransportError, never>;
 	}
 >()("@kampus/LiveTopics") {}
 

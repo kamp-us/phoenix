@@ -25,6 +25,7 @@
 import type {LivePublisher} from "@kampus/fate-effect";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import type {LiveTransportError} from "./cold-start-retry.ts";
 import {
 	type ConnectionFrame,
 	type EntityFrame,
@@ -50,10 +51,15 @@ export class LivePublishError extends Schema.TaggedErrorClass<LivePublishError>(
 export interface LivePublisherOptions {
 	/**
 	 * Deliver one resolved topic publish — in production the worker-init
-	 * `LiveTopics.publish`, in tests a recording/failing/slow stub. `E = never` by
-	 * contract; a misbehaving delivery is caught on the detached promise below.
+	 * `LiveTopics.publish`, in tests a recording/failing/slow stub. Its only failure
+	 * is `LiveTransportError`, the cold-start-retry-exhausted publish (#842, #2551);
+	 * it is swallowed-and-logged on the detached promise below, never reaching the
+	 * committed mutation.
 	 */
-	readonly publish: (topicKey: string, message: PublishMessage) => Effect.Effect<void>;
+	readonly publish: (
+		topicKey: string,
+		message: PublishMessage,
+	) => Effect.Effect<void, LiveTransportError>;
 	/** The request's `ExecutionContext.waitUntil`. */
 	readonly waitUntil: (promise: Promise<unknown>) => void;
 }
@@ -78,13 +84,20 @@ const nodeFrame = (
 
 /** Build the per-request `LivePublisher` service value. */
 export function livePublisherFor(options: LivePublisherOptions): typeof LivePublisher.Service {
-	// One topic publish = one detached promise; the terminal `.catch` is the async
-	// half of the swallow-with-log contract.
+	// One topic publish = one detached promise. `ignoreCause({log: "Warn"})` is the
+	// async half of the swallow-with-log contract: it collapses the whole failure
+	// cause (an exhausted-cold-start `LiveTransportError` OR a defect) to `void` and
+	// logs it at Warn through the Effect logger — so an exhausted publish reaches the
+	// logger and Sentry breadcrumbs, not a bare `console.error` nothing watches (#2551).
 	const schedule: PublishToTopic = (topicKey, message) => {
 		options.waitUntil(
-			Effect.runPromise(options.publish(topicKey, message)).catch((error: unknown) => {
-				console.error(`live publish to topic:${topicKey} failed`, error);
-			}),
+			Effect.runPromise(
+				options
+					.publish(topicKey, message)
+					.pipe(
+						Effect.ignoreCause({log: "Warn", message: `live publish to topic:${topicKey} failed`}),
+					),
+			),
 		);
 	};
 
