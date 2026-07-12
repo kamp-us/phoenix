@@ -196,6 +196,87 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 	});
 });
 
+describe("Topbar status/signal zone (#2613)", () => {
+	function renderStatus(props: Partial<Parameters<typeof Topbar>[0]>) {
+		return render(
+			<MemoryRouter>
+				<Topbar
+					nav={NAV}
+					divanTo="/divan"
+					karma={42}
+					user={{name: "Elif", username: "elif"}}
+					{...props}
+				/>
+			</MemoryRouter>,
+		);
+	}
+
+	it("flag on: the unread bildirim renders a bell affordance in the status zone, not a bare number", () => {
+		const {container} = renderStatus({navIa: true, bildirim: {to: "/bildirimler", unread: 3}});
+		const signal = screen.getByTestId("topbar-bildirim-badge");
+		// Lives in the status-signal zone, not on the user-menu trigger (its today's home).
+		expect(screen.getByTestId("topbar-zone-status-signal").contains(signal)).toBe(true);
+		expect(container.querySelector(".kp-topbar__user")?.contains(signal)).toBe(false);
+		// A drawn Lucide bell (an <svg>), so the count reads as "unread notifications", not a
+		// bare number; the count text is still present and the accessible name carries it.
+		expect(signal.querySelector("svg")).not.toBeNull();
+		expect(signal.textContent).toContain("3");
+		expect(signal.getAttribute("role")).toBe("status");
+		expect(signal.getAttribute("aria-label")).toBe("3 okunmamış bildirim");
+	});
+
+	it("flag on: no bildirim signal renders when unread is 0", () => {
+		renderStatus({navIa: true, bildirim: {to: "/bildirimler", unread: 0}});
+		expect(screen.queryByTestId("topbar-bildirim-badge")).toBeNull();
+	});
+
+	it("flag off: the unread bildirim stays the bare chip on the user-menu trigger (today's shape)", () => {
+		const {container} = renderStatus({navIa: false, bildirim: {to: "/bildirimler", unread: 3}});
+		const badge = screen.getByTestId("topbar-bildirim-badge");
+		expect(container.querySelector(".kp-topbar__user")?.contains(badge)).toBe(true);
+		// The flag-off chip is the bare number — no bell glyph.
+		expect(badge.querySelector("svg")).toBeNull();
+		expect(badge.textContent).toBe("3");
+	});
+
+	it("flag on: karma is a read-only status glyph — no button/link/accent affordance", () => {
+		renderStatus({navIa: true});
+		const karma = screen.getByTestId("topbar-karma");
+		expect(screen.getByTestId("topbar-zone-status-signal").contains(karma)).toBe(true);
+		// A read-only glyph, never a control: not rendered as (nor wrapped by) a button/link.
+		expect(karma.tagName).toBe("SPAN");
+		expect(karma.closest("button")).toBeNull();
+		expect(karma.closest("a")).toBeNull();
+	});
+
+	it("flag on: the divan entry renders as a status glyph (Lucide icon) with an accessible name", () => {
+		renderStatus({navIa: true});
+		const divan = screen.getByTestId("topbar-divan-link");
+		expect(screen.getByTestId("topbar-zone-status-signal").contains(divan)).toBe(true);
+		expect(divan.classList.contains("kp-topbar__signal-link")).toBe(true);
+		// A drawn glyph, not a text peer-noun — an <svg>, with "divan" carried as the link's
+		// accessible name so it stays discoverable without reading as a destination noun.
+		expect(divan.querySelector("svg")).not.toBeNull();
+		expect(screen.getByRole("link", {name: "divan"})).toBe(divan);
+	});
+
+	it("flag off: divan stays a plain-text entry in the nav row (byte-identical to today)", () => {
+		const {container} = renderStatus({navIa: false});
+		const divan = screen.getByTestId("topbar-divan-link");
+		expect(container.querySelector(".kp-topbar__nav")?.contains(divan)).toBe(true);
+		expect(divan.querySelector("svg")).toBeNull();
+		expect(divan.textContent).toBe("divan");
+	});
+
+	it("flag off: karma / bildirim / divan render exactly as today (the AC-4 no-op)", () => {
+		// Same three signals passed, flag off ⇒ no bell, no glyph, no zones — the pre-#2613 shape.
+		const {container} = renderStatus({navIa: false, bildirim: {to: "/bildirimler", unread: 3}});
+		for (const id of ZONE_TESTIDS) expect(screen.queryByTestId(id)).toBeNull();
+		expect(container.querySelector(".kp-topbar__bildirim-signal")).toBeNull();
+		expect(screen.getByTestId("topbar-divan-link").querySelector("svg")).toBeNull();
+	});
+});
+
 describe("Topbar tema toggle → theme picker (#2612)", () => {
 	it("flag off: the tema toggle still renders and behaves exactly as today", () => {
 		const onToggleTheme = vi.fn();
