@@ -29,7 +29,7 @@ import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
 import {type ReadProfileIdentities, stampAuthorIdentity} from "../fate/author-identity.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
-import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
+import {applyRemovalTransition, swallowRefresh} from "../lifecycle/apply-removal-transition.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
@@ -760,7 +760,10 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			...syncPostSearch(db, postId, title),
 		]);
 
-		yield* persistPanoStats(now);
+		// The post row committed in the batch above; its stats refresh is a recomputable
+		// cache, so swallow-and-log a die rather than 500 the mutation and provoke a retry
+		// that mints a duplicate row (#2556, the create-path twin of #2012).
+		yield* swallowRefresh("Pano.submitPost", persistPanoStats(now));
 
 		return {
 			postId,
