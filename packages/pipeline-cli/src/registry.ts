@@ -12,6 +12,7 @@
  */
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
+import {campaignCommand} from "./tools/campaign/command.ts";
 import {changelogDeriveCommand} from "./tools/changelog-derive/command.ts";
 import {ciRequiredCommand} from "./tools/ci-required/command.ts";
 import {classProbeCommand} from "./tools/class-probe/command.ts";
@@ -116,4 +117,5 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	refGuardCommand,
 	settingsEnvGuardCommand,
 	verdictCommand,
+	campaignCommand,
 ];
