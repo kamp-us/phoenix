@@ -19,6 +19,7 @@ import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import type {UserId} from "../../lib/ids.ts";
 import {type ReadProfileIdentities, stampAuthorIdentity} from "../fate/author-identity.ts";
 import {stampReactionAggregate} from "../fate/reaction-aggregate.ts";
 import {parallelStampWave} from "../fate/stamp-wave.ts";
@@ -46,6 +47,7 @@ import {
 	UnauthorizedCommentMutation,
 } from "./errors.ts";
 import {excerpt} from "./excerpt.ts";
+import type {CommentId, PostId} from "./ids.ts";
 import {COMMENT_ORDERING} from "./ordering.ts";
 import type {PersistPanoStats} from "./pano-stats.ts";
 
@@ -59,11 +61,11 @@ export const COMMENT_BODY_MAX = 5_000;
 export const SILINDI_PLACEHOLDER = "[silindi]";
 
 export interface AddCommentInput {
-	postId: string;
-	authorId: string;
+	postId: PostId;
+	authorId: UserId;
 	authorName: string;
 	body: string;
-	parentId?: string | null | undefined;
+	parentId?: CommentId | null | undefined;
 	/**
 	 * The çaylak mod-only sandbox stamp (#1205), decided by the resolver from the
 	 * authorship flag + author tier. `null`/absent ⇒ created live (today's behavior).
@@ -96,8 +98,8 @@ export interface AddCommentResult {
 }
 
 export interface VoteOnCommentInput {
-	commentId: string;
-	voterId: string;
+	commentId: CommentId;
+	voterId: UserId;
 }
 
 export interface VoteOnCommentResult {
@@ -114,8 +116,8 @@ export interface VoteOnCommentResult {
 }
 
 export interface ReactToCommentInput {
-	commentId: string;
-	userId: string;
+	commentId: CommentId;
+	userId: UserId;
 	/**
 	 * The reaction intent: a curated-palette member sets/changes the user's single
 	 * reaction; `null` retracts it (toggle off). Already decoded against
@@ -137,8 +139,8 @@ export interface ReactToCommentResult {
 }
 
 export interface EditCommentInput {
-	commentId: string;
-	actorId: string;
+	commentId: CommentId;
+	actorId: UserId;
 	body: string;
 }
 
@@ -155,8 +157,8 @@ export interface EditCommentResult {
 }
 
 export interface DeleteCommentInput {
-	commentId: string;
-	actorId: string;
+	commentId: CommentId;
+	actorId: UserId;
 	/** Why the comment is removed (ADR 0096). Defaults to `AuthorDeletion`. */
 	reason?: Removal.RemovalReason;
 }

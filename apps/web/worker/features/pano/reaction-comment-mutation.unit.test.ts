@@ -26,12 +26,14 @@ import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Exit, Layer} from "effect";
+import {UserId} from "../../lib/ids.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {EMPTY_REACTION_AGGREGATE, type ReactionAggregate} from "../reaction/Reaction.ts";
 import type {CommentRow} from "./comment-fields.ts";
 import type {ReactToCommentInput, ReactToCommentResult} from "./comment-operations.ts";
+import {CommentId} from "./ids.ts";
 import {mutations} from "./mutations.ts";
 import {Pano} from "./Pano.ts";
 
@@ -127,7 +129,9 @@ describe("comment.react — (1) flag ON delegates and echoes the aggregate", () 
 				true,
 				{id: "comment_1", emoji: "👍"},
 			);
-			assert.deepStrictEqual(calls, [{commentId: "comment_1", userId: CAYLAK.id, emoji: "👍"}]);
+			assert.deepStrictEqual(calls, [
+				{commentId: CommentId.make("comment_1"), userId: UserId.make(CAYLAK.id), emoji: "👍"},
+			]);
 			assert.deepStrictEqual((comment as {reactions?: unknown}).reactions, {
 				counts: [{emoji: "👍", count: 1}],
 				myReaction: "👍",

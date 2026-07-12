@@ -153,7 +153,7 @@ describe("submitPost — a post-commit refresh die cannot 500 a committed insert
 						body: "gövde",
 						url: undefined,
 						tags: [{kind: "soru"}],
-						authorId: "u1",
+						authorId: UserId.make("u1"),
 						authorName: "umut",
 					});
 				}).pipe(

@@ -27,10 +27,12 @@ import {it} from "@effect/vitest";
 import {Cause, type Context, Effect, Exit, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
+import {UserId} from "../../lib/ids.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
+import {type CommentId, PostId} from "./ids.ts";
 import {COMMENT_BODY_MAX, Pano, PanoLive, POST_BODY_MAX, POST_TITLE_MAX} from "./Pano.ts";
 
 // Every DB call dies, so any path that reaches the seam fails the test: the
@@ -107,7 +109,7 @@ const expectReachedDb = (exit: Exit.Exit<unknown, unknown>) => {
 	}
 };
 
-const ownerId = "u1";
+const ownerId = UserId.make("u1");
 
 const baseSubmit = {
 	title: "geçerli başlık",
@@ -250,11 +252,11 @@ it.effect("saveDraft: a tag outside the enum rejects with TagInvalid before any 
 );
 
 const baseComment = {
-	postId: "post_1",
+	postId: PostId.make("post_1"),
 	authorId: ownerId,
 	authorName: "umut",
 	body: "yorum",
-	parentId: null as string | null,
+	parentId: null as CommentId | null,
 };
 
 const runComment = (overrides: Partial<typeof baseComment>) =>
@@ -295,15 +297,20 @@ const ownedPostRow = {
 };
 
 const runEdit = (overrides: {
-	postId?: string;
-	actorId?: string;
+	postId?: PostId;
+	actorId?: UserId;
 	title?: string | undefined;
 	body?: string | undefined;
 }) =>
 	Effect.gen(function* () {
 		const pano = yield* Pano;
 		return yield* pano
-			.editPost({postId: "post_1", actorId: ownerId, title: "yeni başlık", ...overrides})
+			.editPost({
+				postId: PostId.make("post_1"),
+				actorId: ownerId,
+				title: "yeni başlık",
+				...overrides,
+			})
 			.pipe(Effect.exit);
 	}).pipe(Effect.provide(panoLayer(editPostReadThenDieAccess(ownedPostRow))));
 

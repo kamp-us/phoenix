@@ -21,13 +21,15 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import type {DrizzleAccessOrDie} from "../../db/Drizzle.ts";
+import {UserId} from "../../lib/ids.ts";
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import type * as Removal from "../lifecycle/removal.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
 import type {Vote} from "../vote/Vote.ts";
 import {type CommentOperationsDeps, makeCommentOperations} from "./comment-operations.ts";
+import {CommentId, PostId} from "./ids.ts";
 
-const POST_ID = "post_1";
+const POST_ID = PostId.make("post_1");
 const NOW = new Date("2026-07-03T00:00:00.000Z");
 
 type CommentRow = {
@@ -136,7 +138,10 @@ describe("commentCount is sandbox-symmetric across create/delete (#1831)", () =>
 				startCount: 5,
 			});
 			const ops = makeCommentOperations(deps(runOverDb(db)));
-			const result = yield* ops.deleteComment({commentId: "comm_1", actorId: "u-author"});
+			const result = yield* ops.deleteComment({
+				commentId: CommentId.make("comm_1"),
+				actorId: UserId.make("u-author"),
+			});
 			assert.isTrue(result.deleted, "the delete still soft-removes the comment");
 			assert.strictEqual(
 				captured.postCommentCount,
@@ -153,7 +158,10 @@ describe("commentCount is sandbox-symmetric across create/delete (#1831)", () =>
 				startCount: 5,
 			});
 			const ops = makeCommentOperations(deps(runOverDb(db)));
-			const result = yield* ops.deleteComment({commentId: "comm_1", actorId: "u-author"});
+			const result = yield* ops.deleteComment({
+				commentId: CommentId.make("comm_1"),
+				actorId: UserId.make("u-author"),
+			});
 			assert.isTrue(result.deleted, "the delete soft-removes the comment");
 			assert.strictEqual(
 				captured.postCommentCount,
@@ -170,7 +178,10 @@ describe("commentCount is sandbox-symmetric across create/delete (#1831)", () =>
 				startCount: 0,
 			});
 			const ops = makeCommentOperations(deps(runOverDb(db)));
-			yield* ops.deleteComment({commentId: "comm_1", actorId: "u-author"});
+			yield* ops.deleteComment({
+				commentId: CommentId.make("comm_1"),
+				actorId: UserId.make("u-author"),
+			});
 			assert.strictEqual(
 				captured.postCommentCount,
 				0,
@@ -187,7 +198,7 @@ describe("commentCount is sandbox-symmetric across create/delete (#1831)", () =>
 			const ops = makeCommentOperations(deps(runOverDb(db)));
 			yield* ops.addComment({
 				postId: POST_ID,
-				authorId: "u-author",
+				authorId: UserId.make("u-author"),
 				authorName: "yazar",
 				body: "sandboxed",
 				sandboxedAt: NOW,
@@ -202,7 +213,7 @@ describe("commentCount is sandbox-symmetric across create/delete (#1831)", () =>
 			const ops = makeCommentOperations(deps(runOverDb(db)));
 			yield* ops.addComment({
 				postId: POST_ID,
-				authorId: "u-author",
+				authorId: UserId.make("u-author"),
 				authorName: "yazar",
 				body: "live",
 				sandboxedAt: null,
@@ -326,7 +337,10 @@ describe("commentCount is sandbox-gated across the MODERATOR remove/restore pair
 				// author restoreComment of the removed-AND-sandboxed row: +0 (author-gated, #1811)
 				const restore = fakeDb({comment: removedRow(NOW), startCount: 5});
 				const opsRestore = makeCommentOperations(deps(runOverDb(restore.db)));
-				yield* opsRestore.restoreComment({commentId: "comm_1", actorId: "u-author"});
+				yield* opsRestore.restoreComment({
+					commentId: CommentId.make("comm_1"),
+					actorId: UserId.make("u-author"),
+				});
 				assert.strictEqual(
 					restore.captured.postCommentCount,
 					5,
@@ -345,7 +359,10 @@ describe("commentCount is sandbox-gated on the author restoreComment path (#1811
 		Effect.gen(function* () {
 			const {db, captured} = fakeDb({comment: removedRow(null), startCount: 5});
 			const ops = makeCommentOperations(deps(runOverDb(db)));
-			const result = yield* ops.restoreComment({commentId: "comm_1", actorId: "u-author"});
+			const result = yield* ops.restoreComment({
+				commentId: CommentId.make("comm_1"),
+				actorId: UserId.make("u-author"),
+			});
 			assert.isTrue(result.deleted, "the author-restore un-removes the comment");
 			assert.strictEqual(
 				captured.postCommentCount,

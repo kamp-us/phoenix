@@ -17,6 +17,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {PHOENIX_REACTIONS} from "../../../src/flags/keys.ts";
 import {ReactionEmojiSchema} from "../../db/reaction-emoji.ts";
+import {UserId} from "../../lib/ids.ts";
 import {notifyCommentReply} from "../bildirim/conversation-emitters.ts";
 import {notifyCaylakEntersDivan} from "../bildirim/mod-emitters.ts";
 import {notifyContentVote} from "../bildirim/vote-emitters.ts";
@@ -41,6 +42,7 @@ import {
 	UnauthorizedPostMutation,
 } from "./errors.ts";
 import {PanoFeedCache} from "./feed-cache.ts";
+import {CommentId, PostId} from "./ids.ts";
 import {panoLive} from "./live.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPost, toPostFromPage} from "./shapers.ts";
@@ -76,7 +78,7 @@ const SaveDraftInput = Schema.Struct({
 const DiscardDraftInput = Schema.Struct({});
 
 const PostIdInput = Schema.Struct({
-	id: Schema.String,
+	id: PostId,
 });
 
 // `emoji` decodes against the curated `REACTION_EMOJI` palette (or `null` to
@@ -84,24 +86,24 @@ const PostIdInput = Schema.Struct({
 // bad emoji never reaches `Reaction.react` — the rejection is structural, not a
 // service error (the settled curated-fixed-palette model, #1859/#1863).
 const ReactToPostInput = Schema.Struct({
-	id: Schema.String,
+	id: PostId,
 	emoji: Schema.NullOr(ReactionEmojiSchema),
 });
 
 const EditPostInput = Schema.Struct({
-	id: Schema.String,
+	id: PostId,
 	title: Schema.optional(Schema.NullOr(Schema.String)),
 	body: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 const AddCommentInput = Schema.Struct({
-	postId: Schema.String,
-	parentId: Schema.optional(Schema.NullOr(Schema.String)),
+	postId: PostId,
+	parentId: Schema.optional(Schema.NullOr(CommentId)),
 	body: Schema.String,
 });
 
 const CommentIdInput = Schema.Struct({
-	id: Schema.String,
+	id: CommentId,
 });
 
 // `emoji` decodes against the curated `REACTION_EMOJI` palette (or `null` to
@@ -109,12 +111,12 @@ const CommentIdInput = Schema.Struct({
 // bad emoji never reaches `Reaction.react` — the rejection is structural, not a
 // service error (the settled curated-fixed-palette model, #1859/#1864).
 const ReactToCommentInput = Schema.Struct({
-	id: Schema.String,
+	id: CommentId,
 	emoji: Schema.NullOr(ReactionEmojiSchema),
 });
 
 const EditCommentInput = Schema.Struct({
-	id: Schema.String,
+	id: CommentId,
 	body: Schema.String,
 });
 
@@ -201,7 +203,7 @@ export const mutations = {
 					...(input.url ? {url: input.url} : {}),
 					...(input.body ? {body: input.body} : {}),
 					tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})})),
-					authorId: user.id,
+					authorId: UserId.make(user.id),
 					authorName: authorDisplayLabel(user),
 					sandboxedAt,
 				});
@@ -248,7 +250,7 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.saveDraft({
-				authorId: user.id,
+				authorId: UserId.make(user.id),
 				authorName: authorDisplayLabel(user),
 				...(input.title != null ? {title: input.title} : {}),
 				...(input.url != null ? {url: input.url} : {}),
@@ -280,7 +282,7 @@ export const mutations = {
 			}
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			const r = yield* pano.discardDraft({authorId: user.id});
+			const r = yield* pano.discardDraft({authorId: UserId.make(user.id)});
 			if (!r.postId) return null;
 			yield* live.post.delete(r.postId);
 			// Id-only eviction ref: the draft row is gone (see post.delete).
@@ -302,7 +304,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
+			const r = yield* pano.voteOnPost({postId: input.id, voterId: UserId.make(user.id)});
 			// Re-resolve the affected post via the same batched read `post.save`/`post.unsave`
 			// use, so the returned AND published projection carries the real `isSaved` + live
 			// author identity. The write result (`VoteOnPostResult`) has neither, and its
@@ -339,7 +341,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			yield* pano.retractPostVote({postId: input.id, voterId: user.id});
+			yield* pano.retractPostVote({postId: input.id, voterId: UserId.make(user.id)});
 			// Re-resolve like `post.vote` above so the returned/published projection keeps the
 			// real `isSaved` + author identity instead of the null-bearing write shape (#2213).
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
@@ -385,7 +387,11 @@ export const mutations = {
 				return toPost(current);
 			}
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			const r = yield* pano.reactToPost({postId: input.id, userId: user.id, emoji: input.emoji});
+			const r = yield* pano.reactToPost({
+				postId: input.id,
+				userId: UserId.make(user.id),
+				emoji: input.emoji,
+			});
 			const post = toPost(r.post);
 			yield* live.post.update(post.id, {changed: ["reactions"], data: post});
 			return post;
@@ -408,7 +414,7 @@ export const mutations = {
 			const pano = yield* Pano;
 			const bookmark = yield* Bookmark;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			yield* bookmark.toggle({userId: user.id, postId: input.id, value: true});
+			yield* bookmark.toggle({userId: UserId.make(user.id), postId: input.id, value: true});
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
@@ -429,7 +435,7 @@ export const mutations = {
 			const pano = yield* Pano;
 			const bookmark = yield* Bookmark;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			yield* bookmark.toggle({userId: user.id, postId: input.id, value: false});
+			yield* bookmark.toggle({userId: UserId.make(user.id), postId: input.id, value: false});
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
@@ -456,7 +462,7 @@ export const mutations = {
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.editPost({
 				postId: input.id,
-				actorId: user.id,
+				actorId: UserId.make(user.id),
 				...(input.title != null ? {title: input.title} : {}),
 				...(input.body != null ? {body: input.body} : {}),
 			});
@@ -483,7 +489,7 @@ export const mutations = {
 			// (#1639). Catch that defect into the declared, user-readable `PostDeleteFailed`;
 			// the typed `UnauthorizedPostMutation` (a failure, not a defect) passes through.
 			const r = yield* pano
-				.deletePost({postId: input.id, actorId: user.id})
+				.deletePost({postId: input.id, actorId: UserId.make(user.id)})
 				.pipe(
 					Effect.catchDefect(
 						() => new PostDeleteFailed({message: "Gönderi silinemedi. Lütfen tekrar deneyin."}),
@@ -508,7 +514,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			const restored = yield* pano.restorePost({postId: input.id, actorId: user.id});
+			const restored = yield* pano.restorePost({postId: input.id, actorId: UserId.make(user.id)});
 			const page = yield* pano.getPost(input.id);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
@@ -551,7 +557,7 @@ export const mutations = {
 				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
 				const r = yield* pano.addComment({
 					postId: input.postId,
-					authorId: user.id,
+					authorId: UserId.make(user.id),
 					authorName: authorDisplayLabel(user),
 					body: input.body,
 					sandboxedAt,
@@ -597,7 +603,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			const r = yield* pano.voteOnComment({commentId: input.id, voterId: user.id});
+			const r = yield* pano.voteOnComment({commentId: input.id, voterId: UserId.make(user.id)});
 			const comment = shapeComment(r);
 			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
 			// Aggregated vote notification (#1698): see `post.vote` — a landed upvote
@@ -623,7 +629,10 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			const r = yield* pano.retractCommentVote({commentId: input.id, voterId: user.id});
+			const r = yield* pano.retractCommentVote({
+				commentId: input.id,
+				voterId: UserId.make(user.id),
+			});
 			const comment = shapeComment(r);
 			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
 			return comment;
@@ -670,7 +679,7 @@ export const mutations = {
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.reactToComment({
 				commentId: input.id,
-				userId: user.id,
+				userId: UserId.make(user.id),
 				emoji: input.emoji,
 			});
 			const comment = toComment(r.comment);
@@ -693,7 +702,11 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-			const r = yield* pano.editComment({commentId: input.id, actorId: user.id, body: input.body});
+			const r = yield* pano.editComment({
+				commentId: input.id,
+				actorId: UserId.make(user.id),
+				body: input.body,
+			});
 			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
 			const comment = shapeComment({...r, myVote: fresh?.myVote ?? null});
 			yield* live.comment.update(comment.id, {changed: ["body"], data: comment});
@@ -712,7 +725,10 @@ export const mutations = {
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			// Resolve the parent post id before the delete, while the row exists.
 			const postId = yield* pano.lookupCommentPostId(input.id);
-			const result = yield* pano.deleteComment({commentId: input.id, actorId: user.id});
+			const result = yield* pano.deleteComment({
+				commentId: input.id,
+				actorId: UserId.make(user.id),
+			});
 			if (!postId) return null;
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;
@@ -761,7 +777,10 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const postId = yield* pano.lookupCommentPostId(input.id);
-			const restored = yield* pano.restoreComment({commentId: input.id, actorId: user.id});
+			const restored = yield* pano.restoreComment({
+				commentId: input.id,
+				actorId: UserId.make(user.id),
+			});
 			if (!postId) return null;
 			const [comment] = yield* pano.getCommentsByIds([input.id], {viewerId: user.id});
 			if (comment) {

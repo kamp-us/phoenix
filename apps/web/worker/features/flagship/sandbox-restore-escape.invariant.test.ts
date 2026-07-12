@@ -33,6 +33,7 @@ import {DefinitionId} from "../../lib/ids.ts";
 import {noopPanoFeedCache} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import type {CommentRow} from "../pano/comment-fields.ts";
+import {CommentId, PostId} from "../pano/ids.ts";
 import {mutations as panoMutations} from "../pano/mutations.ts";
 import {Pano, type PostPage} from "../pano/Pano.ts";
 import type {PostSummaryRow} from "../pano/post-fields.ts";
@@ -177,7 +178,7 @@ describe("çaylak sandbox-escape via delete→restore is structurally prevented 
 				getPostsByIds: () => Effect.succeed([postSummaryRow()]),
 			});
 			yield* panoMutations["post.restore"]
-				.handler({input: {id: "post-1"}, select: ["id"]})
+				.handler({input: {id: PostId.make("post-1")}, select: ["id"]})
 				.pipe(
 					Effect.provide(Layer.mergeAll(pano, layer)),
 					Effect.provideService(CurrentUser, {user: AUTHOR}),
@@ -226,7 +227,7 @@ describe("çaylak sandbox-escape via delete→restore is structurally prevented 
 				getPostsByIds: () => Effect.succeed([postSummaryRow()]),
 			});
 			yield* panoMutations["comment.restore"]
-				.handler({input: {id: "comment-1"}, select: ["id"]})
+				.handler({input: {id: CommentId.make("comment-1")}, select: ["id"]})
 				.pipe(
 					Effect.provide(Layer.mergeAll(pano, layer)),
 					Effect.provideService(CurrentUser, {user: AUTHOR}),
