@@ -19,12 +19,17 @@ import {Console, Data, Effect} from "effect";
 import {
 	type DiscoveredMutation,
 	type FeaturePublishes,
+	type FeatureTargets,
 	judge,
 	type ManifestEntry,
+	parseFeatureDelegations,
+	parseFeatureTargets,
+	parseLiveTopicMap,
 	parseManifestEntries,
 	parseMutationKeys,
 	referencesPublisher,
 	renderReport,
+	resolveReachableTargets,
 } from "./fanout-guard.ts";
 
 /** A directory/file IO failure: the run couldn't complete. */
@@ -38,39 +43,79 @@ export class CheckFailed extends Data.TaggedError("CheckFailed")<{readonly reaso
 
 const FEATURES_DIR = join("apps", "web", "worker", "features");
 const MUTATIONS_FILE = "mutations.ts";
+const LIVE_FILE = "live.ts";
 const MANIFEST_PATH = join(FEATURES_DIR, "fate-live", "fanned-mutations.ts");
+const PROTOCOL_PATH = join(FEATURES_DIR, "fate-live", "protocol.ts");
 
-/** The gathered facts across all feature mutation files. */
+/** The gathered facts across all feature mutation + live files. */
 interface GatheredFeatures {
 	readonly discovered: ReadonlyArray<DiscoveredMutation>;
 	readonly featurePublishes: FeaturePublishes;
+	readonly featureTargets: FeatureTargets;
 }
 
 /**
  * Enumerate `<root>/apps/web/worker/features/*` and, for each that holds a
- * `mutations.ts`, parse its `Fate.mutation` keys and whether it references a publish.
+ * `mutations.ts`, parse its `Fate.mutation` keys and whether it references a publish;
+ * for each that holds a `live.ts`, gather the `/fate/live` targets it reaches (topics +
+ * one-hop delegation, resolved via the `LiveTopic` map). `live.ts` is scanned even for a
+ * feature with no `mutations.ts`, so a delegated-through binding (report → pano/sözlük)
+ * contributes its targets to the closure.
  */
-const gatherFeatures = (root: string): Effect.Effect<GatheredFeatures, IoError> =>
+const gatherFeatures = (
+	root: string,
+	liveTopicMap: ReadonlyMap<string, string>,
+): Effect.Effect<GatheredFeatures, IoError> =>
 	Effect.try({
 		try: () => {
 			const base = join(root, FEATURES_DIR);
 			const entries = readdirSync(base, {withFileTypes: true});
 			const discovered: Array<DiscoveredMutation> = [];
 			const featurePublishes = new Map<string, boolean>();
+			const directTargets = new Map<string, ReadonlySet<string>>();
+			const delegations = new Map<string, ReadonlySet<string>>();
 			for (const entry of entries) {
 				const abs = join(base, entry.name);
 				if (!statSync(abs).isDirectory()) continue;
 				const mutationsPath = join(abs, MUTATIONS_FILE);
-				if (!existsSync(mutationsPath)) continue;
-				const source = readFileSync(mutationsPath, "utf8");
-				for (const key of parseMutationKeys(source)) {
-					discovered.push({key, feature: entry.name});
+				if (existsSync(mutationsPath)) {
+					const source = readFileSync(mutationsPath, "utf8");
+					for (const key of parseMutationKeys(source)) {
+						discovered.push({key, feature: entry.name});
+					}
+					featurePublishes.set(entry.name, referencesPublisher(source));
 				}
-				featurePublishes.set(entry.name, referencesPublisher(source));
+				const livePath = join(abs, LIVE_FILE);
+				if (existsSync(livePath)) {
+					const liveSource = readFileSync(livePath, "utf8");
+					directTargets.set(entry.name, parseFeatureTargets(liveSource, liveTopicMap));
+					delegations.set(entry.name, parseFeatureDelegations(liveSource));
+				}
 			}
-			return {discovered, featurePublishes};
+			return {
+				discovered,
+				featurePublishes,
+				featureTargets: resolveReachableTargets(directTargets, delegations),
+			};
 		},
 		catch: (cause) => new IoError({path: join(root, FEATURES_DIR), cause}),
+	});
+
+/**
+ * Read + parse the `LiveTopic` map from `fate-live/protocol.ts` — the source of truth
+ * mapping a `LiveTopic.<prop>` reference (as a `live.ts` binding uses it) to its wire
+ * value (as the manifest declares it). A missing protocol file yields an empty map; the
+ * topic check then reports every declared connection topic as unreachable, which
+ * fail-closes loudly (a moved protocol file is a real misconfiguration).
+ */
+const readLiveTopicMap = (root: string): Effect.Effect<ReadonlyMap<string, string>, IoError> =>
+	Effect.try({
+		try: () => {
+			const protocolPath = join(root, PROTOCOL_PATH);
+			if (!existsSync(protocolPath)) return new Map<string, string>();
+			return parseLiveTopicMap(readFileSync(protocolPath, "utf8"));
+		},
+		catch: (cause) => new IoError({path: join(root, PROTOCOL_PATH), cause}),
 	});
 
 /** Read + parse the fanned-mutation manifest; a missing manifest fails closed. */
@@ -99,15 +144,19 @@ const readManifest = (
 	});
 
 /**
- * The CI gate: succeed when every worker mutation is classified and every fanned
- * mutation's feature publishes a `/fate/live` invalidation, else `CheckFailed`. Fails
- * closed on zero mutations in scope (ADR 0092).
+ * The CI gate: succeed when every worker mutation is classified, every fanned mutation's
+ * feature publishes a `/fate/live` invalidation, and each publish aims at its declared
+ * topic, else `CheckFailed`. Fails closed on zero mutations in scope (ADR 0092).
  */
 export const checkFanout = (root: string): Effect.Effect<void, IoError | CheckFailed> =>
 	Effect.gen(function* () {
 		const manifest = yield* readManifest(root);
-		const {discovered, featurePublishes} = yield* gatherFeatures(root);
-		const verdict = judge({discovered, manifest, featurePublishes});
+		const liveTopicMap = yield* readLiveTopicMap(root);
+		const {discovered, featurePublishes, featureTargets} = yield* gatherFeatures(
+			root,
+			liveTopicMap,
+		);
+		const verdict = judge({discovered, manifest, featurePublishes, featureTargets});
 		if (verdict.pass) {
 			yield* Console.log(renderReport(verdict));
 			return;
