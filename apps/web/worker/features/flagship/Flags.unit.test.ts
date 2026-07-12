@@ -5,12 +5,14 @@
  *
  *   - on/off branching: a flag returning true/false surfaces that value;
  *   - safe-default fallback: a `FlagshipError` from the client collapses to the
- *     supplied default, and the public `getBoolean` error channel is `never`.
+ *     supplied default, and the public `getBoolean` error channel is `never`;
+ *   - observability (#2685): the swallowed cause is LOGGED at warn before the
+ *     default is returned, so a misconfigured binding is no longer silent.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Flagship as CfFlagship} from "alchemy/Cloudflare";
-import {Effect, Layer} from "effect";
+import {Effect, Layer, Logger} from "effect";
 import {Flags, type FlagsAccess, FlagsLive, withDevOverrides} from "./Flags.ts";
 import {anonymousFlagsContext, FlagsContext} from "./FlagsContext.ts";
 import {Flagship} from "./Flagship.ts";
@@ -28,6 +30,30 @@ const RuntimeContextStub = Layer.succeed(RuntimeContext)(runtimeContext);
 
 const unexercised = (method: string) => () =>
 	Effect.die(`Flagship.${method} not exercised in Flags.unit.test`);
+
+/**
+ * Capture warn-level log lines into `lines` for the duration of `effect` (#2685):
+ * a scoped {@link Logger.layer} whose logger pushes each warn message's head
+ * string, so a test can assert the swallowed cause was actually logged rather than
+ * silently absorbed. The head is the first `logWarning` argument (its message
+ * template); the `Cause` argument is not serialized.
+ */
+const captureWarnings = <A, E, R>(
+	effect: Effect.Effect<A, E, R>,
+): Effect.Effect<{value: A; warnings: ReadonlyArray<string>}, E, R> =>
+	Effect.suspend(() => {
+		const lines: string[] = [];
+		const capture = Logger.layer([
+			Logger.make(({logLevel, message}) => {
+				if (logLevel !== "Warn") return;
+				lines.push(String(Array.isArray(message) ? message[0] : message));
+			}),
+		]);
+		return effect.pipe(
+			Effect.provide(capture),
+			Effect.map((value) => ({value, warnings: lines as ReadonlyArray<string>})),
+		);
+	});
 
 /**
  * A `Flagship` stub whose `getBooleanValue` is supplied by the test; every other
@@ -86,6 +112,30 @@ describe("Flags.getBoolean", () => {
 				.getBoolean("feature-erroring", false)
 				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
 			assert.strictEqual(enabled, false);
+		}).pipe(
+			Effect.provide(
+				flagsOver(() =>
+					Effect.fail(
+						new CfFlagship.FlagshipError({message: "binding unavailable", cause: undefined}),
+					),
+				),
+			),
+		),
+	);
+
+	it.effect("a FlagshipError is LOGGED at warn before the default is returned (#2685)", () =>
+		Effect.gen(function* () {
+			const flags = yield* Flags;
+			// The swallow must be OBSERVABLE: the default is still returned (degrade
+			// safe), AND a warn line naming the failing key was emitted — no longer silent.
+			const {value, warnings} = yield* captureWarnings(
+				flags
+					.getBoolean("feature-erroring", false)
+					.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext)),
+			);
+			assert.strictEqual(value, false);
+			assert.isAtLeast(warnings.length, 1);
+			assert.isTrue(warnings.some((line) => line.includes("feature-erroring")));
 		}).pipe(
 			Effect.provide(
 				flagsOver(() =>
