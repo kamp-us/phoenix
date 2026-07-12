@@ -17,6 +17,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {type Context, Effect, Exit, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, DrizzleError} from "../../db/Drizzle.ts";
+import {TermSlug, UserId} from "../../lib/ids.ts";
 import {Bookmark} from "../pano/Bookmark.ts";
 import {Pano, PanoLive} from "../pano/Pano.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
@@ -106,9 +107,9 @@ describe("addDefinition — a post-commit refresh die cannot 500 a committed ins
 				Effect.gen(function* () {
 					const sozluk = yield* Sozluk;
 					return yield* sozluk.addDefinition({
-						termSlug: "x",
+						termSlug: TermSlug.make("x"),
 						termTitle: "X",
-						authorId: "a1",
+						authorId: UserId.make("a1"),
 						authorName: "n",
 						body: "a valid definition body",
 					});

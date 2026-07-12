@@ -21,6 +21,7 @@ import {it} from "@effect/vitest";
 import {Cause, type Context, Effect, Exit, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
+import {DefinitionId, TermSlug, UserId} from "../../lib/ids.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -64,14 +65,14 @@ const expectTag = (exit: Exit.Exit<unknown, unknown>, tag: string) => {
 	}
 };
 
-const ownerId = "u1";
+const ownerId = UserId.make("u1");
 
 const runAdd = (body: string | undefined) =>
 	Effect.gen(function* () {
 		const sozluk = yield* Sozluk;
 		return yield* sozluk
 			.addDefinition({
-				termSlug: "fate",
+				termSlug: TermSlug.make("fate"),
 				authorId: ownerId,
 				authorName: "umut",
 				body: body as string,
@@ -83,7 +84,11 @@ const runEdit = (body: string | undefined) =>
 	Effect.gen(function* () {
 		const sozluk = yield* Sozluk;
 		return yield* sozluk
-			.editDefinition({definitionId: "def_1", actorId: ownerId, body: body as string})
+			.editDefinition({
+				definitionId: DefinitionId.make("def_1"),
+				actorId: ownerId,
+				body: body as string,
+			})
 			.pipe(Effect.exit);
 	}).pipe(Effect.provide(sozlukLayer));
 

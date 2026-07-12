@@ -18,6 +18,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Exit, Layer} from "effect";
+import {DefinitionId, UserId} from "../../lib/ids.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -113,7 +114,13 @@ describe("definition.react — dark-ship + delegation", () => {
 				input: {id: "def-1", emoji: "👍"},
 				select: ["id", "reactions"],
 			});
-			assert.deepStrictEqual(calls, [{definitionId: "def-1", reactorId: "u-reactor", emoji: "👍"}]);
+			assert.deepStrictEqual(calls, [
+				{
+					definitionId: DefinitionId.make("def-1"),
+					reactorId: UserId.make("u-reactor"),
+					emoji: "👍",
+				},
+			]);
 			assert.deepStrictEqual((def as {reactions: unknown}).reactions, {
 				counts: [{emoji: "👍", count: 1}],
 				myReaction: "👍",

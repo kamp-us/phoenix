@@ -12,15 +12,16 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer} from "effect";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
+import {DefinitionId, UserId} from "../../lib/ids.ts";
 import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {Reaction} from "../reaction/Reaction.ts";
 import type {VoteInput, VoteResult} from "../vote/Vote.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Sozluk, SozlukLive} from "./Sozluk.ts";
 
-const AUTHOR = "u-author";
-const OTHER = "u-other";
-const DEF_ID = "def-1";
+const AUTHOR = UserId.make("u-author");
+const OTHER = UserId.make("u-other");
+const DEF_ID = DefinitionId.make("def-1");
 
 // The `definition_record` the up-front load returns. Only `authorId` drives the guard; the
 // rest satisfy the row shape the return projection reads. `changed:false` from the Vote

@@ -19,6 +19,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer} from "effect";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
 import type {ReactionEmoji} from "../../db/reaction-emoji.ts";
+import {DefinitionId, UserId} from "../../lib/ids.ts";
 import {PasaportIdentityStub} from "../pasaport/Pasaport.testing.ts";
 import {
 	EMPTY_REACTION_AGGREGATE,
@@ -30,8 +31,8 @@ import {
 import {Vote} from "../vote/Vote.ts";
 import {Sozluk, SozlukLive} from "./Sozluk.ts";
 
-const DEF_ID = "def-1";
-const REACTOR = "u-reactor";
+const DEF_ID = DefinitionId.make("def-1");
+const REACTOR = UserId.make("u-reactor");
 
 // The scripted `definition_record` the up-front load returns (or `undefined` for the
 // not-found path). The reads only touch `toDefinitionRow`'s columns; the rest satisfy

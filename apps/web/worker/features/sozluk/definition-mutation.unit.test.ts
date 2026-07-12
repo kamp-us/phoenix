@@ -25,6 +25,7 @@ import {liveConnectionTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server"
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
+import {TermSlug} from "../../lib/ids.ts";
 import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import {Divan} from "../divan/Divan.ts";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
@@ -143,7 +144,7 @@ it.effect(
 			);
 
 			yield* mutations["definition.add"]
-				.handler({input: {termSlug: slug, body: ADD_RESULT.body}, select: ["id"]})
+				.handler({input: {termSlug: TermSlug.make(slug), body: ADD_RESULT.body}, select: ["id"]})
 				.pipe(
 					Effect.provide(
 						Layer.mergeAll(
@@ -196,7 +197,7 @@ it.effect("definition.add never persists a null-name author's email as authorNam
 		);
 
 		yield* mutations["definition.add"]
-			.handler({input: {termSlug: "gizli", body: ADD_RESULT.body}, select: ["id"]})
+			.handler({input: {termSlug: TermSlug.make("gizli"), body: ADD_RESULT.body}, select: ["id"]})
 			.pipe(
 				Effect.provide(
 					Layer.mergeAll(
