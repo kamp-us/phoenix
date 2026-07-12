@@ -12,6 +12,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
+import {UserId} from "../../lib/ids.ts";
 import {type CommentRow, Pano, type PostSummaryRow} from "../pano/Pano.ts";
 import {makePasaportStub} from "../pasaport/Pasaport.testing.ts";
 import type {ProfileIdentityRow} from "../pasaport/Pasaport.ts";
@@ -204,7 +205,7 @@ describe("Divan.roster — person-grouped, removed & live excluded", () => {
 		const roster = run(Effect.flatMap(Divan, (d) => d.roster()));
 		assert.deepStrictEqual(roster, [
 			{
-				authorId: "cyl-a",
+				authorId: UserId.make("cyl-a"),
 				username: "ada",
 				displayName: "Ada Lovelace",
 				totalKarma: 7,
@@ -215,7 +216,7 @@ describe("Divan.roster — person-grouped, removed & live excluded", () => {
 			},
 			// cyl-b has no profile row → the join degrades to null handle + 0 karma.
 			{
-				authorId: "cyl-b",
+				authorId: UserId.make("cyl-b"),
 				username: null,
 				displayName: null,
 				totalKarma: 0,
@@ -251,7 +252,9 @@ describe("Divan preview — a short excerpt, never the full node", () => {
 
 	it("truncates a long body to the ellipsis excerpt form", () => {
 		const items = Effect.runSync(
-			Effect.flatMap(Divan, (d) => d.backlogOf("cyl-a")).pipe(Effect.provide(longLayer)),
+			Effect.flatMap(Divan, (d) => d.backlogOf(UserId.make("cyl-a"))).pipe(
+				Effect.provide(longLayer),
+			),
 		);
 		const item = items[0];
 		if (item === undefined) throw new Error("expected one backlog item");
@@ -263,7 +266,7 @@ describe("Divan preview — a short excerpt, never the full node", () => {
 
 describe("Divan.backlogOf — one çaylak's sandboxed backlog, newest first", () => {
 	it("returns only that author's sandboxed-not-removed items, newest first", () => {
-		const items = run(Effect.flatMap(Divan, (d) => d.backlogOf("cyl-a")));
+		const items = run(Effect.flatMap(Divan, (d) => d.backlogOf(UserId.make("cyl-a"))));
 		assert.deepStrictEqual(
 			items.map((i) => ({kind: i.kind, id: i.id})),
 			[
@@ -274,7 +277,7 @@ describe("Divan.backlogOf — one çaylak's sandboxed backlog, newest first", ()
 	});
 
 	it("excludes a removed item from the scoped backlog", () => {
-		const items = run(Effect.flatMap(Divan, (d) => d.backlogOf("cyl-b")));
+		const items = run(Effect.flatMap(Divan, (d) => d.backlogOf(UserId.make("cyl-b"))));
 		// cyl-b has c1 (06:00, sandboxed), c2 (07:00, REMOVED), d3 (03:00, sandboxed):
 		// the removed c2 is absent; the rest newest-first.
 		assert.deepStrictEqual(

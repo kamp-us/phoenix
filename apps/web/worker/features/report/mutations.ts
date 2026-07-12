@@ -24,6 +24,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {type TargetKind, TargetKindSchema, targetKey} from "../../db/target-kind.ts";
+import {TargetId} from "../../lib/ids.ts";
 import {notifyReportFiled} from "../bildirim/mod-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Denied, InsufficientKarma} from "../kunye/errors.ts";
@@ -37,6 +38,7 @@ import {DefinitionNotFound} from "../sozluk/errors.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
 import {toDefinition} from "../sozluk/shapers.ts";
 import type {ReportTargetNotFound} from "./errors.ts";
+import {ReportId, WaveId} from "./ids.ts";
 import {reportLive} from "./live.ts";
 import {Report} from "./Report.ts";
 import {outcomeOf} from "./resolution.ts";
@@ -45,7 +47,7 @@ import {ReportReceiptView, ResolveReceiptView} from "./views.ts";
 
 const SubmitReportInput = Schema.Struct({
 	targetKind: TargetKindSchema,
-	targetId: Schema.String,
+	targetId: TargetId,
 	reason: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
@@ -53,26 +55,27 @@ const SubmitReportInput = Schema.Struct({
 // `targetId`), or pass a `reportId` and the resolve acts on its whole target group.
 // `waveId` is the remove-the-wave grouping id (#1855): the client generates ONE per
 // wave gesture and threads the SAME id through every fanned-out resolve, so the batch
-// reopens as a unit. Absent on a single-target resolve.
+// reopens as a unit. Absent on a single-target resolve. The three ids are distinct
+// brands (ReportId / TargetId / WaveId), so transposing them here is a compile error.
 const ResolveReportInput = Schema.Struct({
-	reportId: Schema.optional(Schema.String),
+	reportId: Schema.optional(ReportId),
 	targetKind: Schema.optional(TargetKindSchema),
-	targetId: Schema.optional(Schema.String),
+	targetId: Schema.optional(TargetId),
 	action: Schema.Literals(["remove", "dismiss"]),
-	waveId: Schema.optional(Schema.NullOr(Schema.String)),
+	waveId: Schema.optional(Schema.NullOr(WaveId)),
 });
 
 const RestoreReportInput = Schema.Struct({
-	reportId: Schema.optional(Schema.String),
+	reportId: Schema.optional(ReportId),
 	targetKind: Schema.optional(TargetKindSchema),
-	targetId: Schema.optional(Schema.String),
+	targetId: Schema.optional(TargetId),
 });
 
 // Restore a whole wave-removal (#1855) as a unit: the `waveId` names the one grouping id
 // the wave gesture stamped across its targets, so restore brings EVERY target in the batch
 // back live and reopens every report sharing the id together.
 const RestoreWaveReportInput = Schema.Struct({
-	waveId: Schema.String,
+	waveId: WaveId,
 });
 
 // Translate the service's kind-blind not-found into the feature-level error its

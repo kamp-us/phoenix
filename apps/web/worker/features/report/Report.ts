@@ -17,6 +17,7 @@ import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {type TargetKind, targetKey} from "../../db/target-kind.ts";
 import {targetTable} from "../../db/target-table.ts";
+import {TargetId} from "../../lib/ids.ts";
 import {ReportTargetNotFound} from "./errors.ts";
 import * as Resolution from "./resolution.ts";
 
@@ -284,7 +285,7 @@ export const ReportLive = Layer.effect(Report)(
 			if (!meta) {
 				return yield* new ReportTargetNotFound({
 					targetKind: kind,
-					targetId,
+					targetId: TargetId.make(targetId),
 					message: `report target ${kind} ${targetId} not found`,
 				});
 			}

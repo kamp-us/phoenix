@@ -17,6 +17,7 @@ import {CurrentActor, human, RelationStore, unauthenticated} from "@kampus/authz
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Layer} from "effect";
+import {TargetId} from "../../lib/ids.ts";
 import {makeNotificationStub} from "../bildirim/Notification.testing.ts";
 import {noRequestFlagOverrides, resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
@@ -111,7 +112,7 @@ const notFound = (input: ReportInput): Effect.Effect<never, ReportTargetNotFound
 	Effect.fail(
 		new ReportTargetNotFound({
 			targetKind: input.targetKind,
-			targetId: input.targetId,
+			targetId: TargetId.make(input.targetId),
 			message: `report target ${input.targetKind} ${input.targetId} not found`,
 		}),
 	);
