@@ -216,3 +216,16 @@ export const PHOENIX_KARMA_GATES = "phoenix-karma-gates";
  * (the `phoenix-funnel-readout` / `phoenix-mod-queue` mod-surface precedent).
  */
 export const PHOENIX_USER_BAN = "phoenix-user-ban";
+
+/**
+ * Nav-IA (per-product Subnav zones) dark-ship flag (#2598, epic #2596). The SINGLE
+ * cross-cutting seam the whole nav-IA surface gates behind — the per-product nested
+ * layout routes + Subnav CTA slot substrate (#2598) and every per-product delta
+ * (#2600–#2604) reuse this one key rather than minting per-child flags, so one human
+ * flip releases the new product zones as a unit. Default-off so the surface ships dark
+ * until a human flips it at release (ADR 0083): with it off the router is exactly as
+ * today (flat product routes, no product Subnav zone). Its own cross-cutting (`phoenix`)
+ * key — the placement law spans all four products (sözlük/pano/mecmua/divan), the
+ * `phoenix-authorship-loop` / `phoenix-reactions` shared-seam precedent.
+ */
+export const PHOENIX_NAV_IA = "phoenix-nav-ia";

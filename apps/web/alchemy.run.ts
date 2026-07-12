@@ -50,6 +50,7 @@ import {
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
 	modQueueFlag,
+	navIaFlag,
 	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
 	optimisticEditsFlag,
@@ -146,6 +147,10 @@ export default Alchemy.Stack(
 		// the single seam the mecmuaFeed root + subscribe/unsubscribe + feed page gate behind
 		// until a human release.
 		yield* mecmuaFeedFlag(flagship.appId);
+		// The nav-IA per-product Subnav zones dark-ship flag, default-off (#2598, epic
+		// #2596) — the single cross-cutting seam the nested layout routes + Subnav CTA slot
+		// substrate + every per-product delta gate behind until a human release.
+		yield* navIaFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

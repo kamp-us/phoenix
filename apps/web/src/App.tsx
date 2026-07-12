@@ -1,4 +1,13 @@
-import {createContext, lazy, Suspense, useContext, useEffect, useMemo, useState} from "react";
+import {
+	createContext,
+	lazy,
+	type ReactNode,
+	Suspense,
+	useContext,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
 import {
 	Navigate,
 	Outlet,
@@ -16,6 +25,7 @@ import {shouldShowDivanEntry} from "./components/divan/divanGating";
 import {useDivanAccess} from "./components/divan/useDivanAccess";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
+import {ProductSubnavLayout} from "./components/layout/ProductSubnavLayout";
 import {Topbar} from "./components/layout/Topbar";
 import {actorLabel} from "./components/moderation/actor-identity";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
@@ -28,6 +38,7 @@ import {
 	MECMUA_PUBLIC_READ,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
+	PHOENIX_NAV_IA,
 } from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {DensityProvider} from "./lib/density";
@@ -326,53 +337,90 @@ function ComposerRouteFallback() {
 	);
 }
 
+/**
+ * A product's leaf routes, either wrapped under `ProductSubnavLayout` (the persistent
+ * product Subnav zone, flag on) or returned flat (flag off — the router is exactly as
+ * today). React Router ranks routes by path specificity, not source order, and a pathless
+ * layout route is transparent to matching — so wrapping a product's routes changes only
+ * *what renders above them*, never *which* route matches (#2598, placement law #2587).
+ */
+function productZone(navIaOn: boolean, key: string, routes: ReactNode) {
+	return navIaOn ? (
+		<Route key={key} element={<ProductSubnavLayout />}>
+			{routes}
+		</Route>
+	) : (
+		routes
+	);
+}
+
 export function App() {
+	// The per-product Subnav zones ride the shared nav-IA seam (#2598, epic #2596),
+	// default-off. With it off the router is flat (today's structure); with it on each
+	// product's routes mount under a pathless layout route rendering its persistent Subnav
+	// zone. `useFlag` reads over `fetch` (no fate client), safe above the providers.
+	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
+	const panoRoutes = [
+		<Route key="pano" path="/pano" element={<PanoFeed />} />,
+		<Route key="pano-yeni" path="/pano/yeni" element={<PanoSubmitPage />} />,
+		<Route key="pano-site" path="/pano/site/:host" element={<PanoSiteFeedRoute />} />,
+		// kaydedilenler folded into PanoFeed as the `?sort=saved` variant (#2196); the
+		// legacy bespoke route redirects so existing links don't break.
+		<Route
+			key="pano-saved"
+			path="/pano/kaydedilenler"
+			element={<Navigate to={SAVED_HREF} replace />}
+		/>,
+		<Route key="pano-detail" path="/pano/:id" element={<PanoPostDetail />} />,
+	];
+	// mecmua — each page self-gates on its flag (off ⇒ 404), so these routes are dark by
+	// default: the public index (#2512) + reader (#2498) on mecmua-public-read, the
+	// subscribed-author feed (#2500) on mecmua-feed, the authoring page (#2499), the
+	// id-addressable draft load + the drafts list (#2544) on mecmua-write. The
+	// static/`yaz`-prefixed paths out-rank the `/mecmua/:slug` reader.
+	const mecmuaRoutes = [
+		<Route key="mecmua" path="/mecmua" element={<MecmuaIndexPage />} />,
+		<Route key="mecmua-akis" path="/mecmua/akis" element={<MecmuaFeedPage />} />,
+		<Route key="mecmua-yazilarim" path="/mecmua/yazilarim" element={<MecmuaDraftsPage />} />,
+		<Route
+			key="mecmua-yaz"
+			path="/mecmua/yaz"
+			element={
+				<Suspense fallback={<ComposerRouteFallback />}>
+					<MecmuaEditorPage />
+				</Suspense>
+			}
+		/>,
+		<Route
+			key="mecmua-yaz-id"
+			path="/mecmua/yaz/:id"
+			element={
+				<Suspense fallback={<ComposerRouteFallback />}>
+					<MecmuaEditorPage />
+				</Suspense>
+			}
+		/>,
+		<Route key="mecmua-slug" path="/mecmua/:slug" element={<MecmuaPostPage />} />,
+	];
+	const sozlukRoutes = [
+		<Route key="sozluk" path="/sozluk" element={<SozlukHome />} />,
+		<Route key="sozluk-slug" path="/sozluk/:slug" element={<SozlukTermPage />} />,
+	];
+	// The divan reviewer workspace (#1290) — the page self-gates on the authorship-loop
+	// flag (off ⇒ 404), so the route is dark by default.
+	const divanRoutes = [<Route key="divan" path="/divan" element={<DivanPage />} />];
 	return (
 		<ThemeProvider>
 			<DensityProvider>
 				<Routes>
 					<Route element={<Layout />}>
 						<Route path="/" element={<LandingPage />} />
-						<Route path="/pano" element={<PanoFeed />} />
-						<Route path="/pano/yeni" element={<PanoSubmitPage />} />
-						<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
-						{/* kaydedilenler folded into PanoFeed as the `?sort=saved` variant (#2196);
-						    the legacy bespoke route redirects so existing links don't break. */}
-						<Route path="/pano/kaydedilenler" element={<Navigate to={SAVED_HREF} replace />} />
-						<Route path="/pano/:id" element={<PanoPostDetail />} />
-						{/* mecmua — each page self-gates on its flag (off ⇒ 404), so these routes
-						    are dark by default: the public index (#2512) + reader (#2498) on
-						    mecmua-public-read, the subscribed-author feed (#2500) on mecmua-feed, the
-						    authoring page (#2499), the id-addressable draft load + the drafts list
-						    (#2544) on mecmua-write. The static/`yaz`-prefixed paths out-rank the
-						    `/mecmua/:slug` reader below them. */}
-						<Route path="/mecmua" element={<MecmuaIndexPage />} />
-						<Route path="/mecmua/akis" element={<MecmuaFeedPage />} />
-						<Route path="/mecmua/yazilarim" element={<MecmuaDraftsPage />} />
-						<Route
-							path="/mecmua/yaz"
-							element={
-								<Suspense fallback={<ComposerRouteFallback />}>
-									<MecmuaEditorPage />
-								</Suspense>
-							}
-						/>
-						<Route
-							path="/mecmua/yaz/:id"
-							element={
-								<Suspense fallback={<ComposerRouteFallback />}>
-									<MecmuaEditorPage />
-								</Suspense>
-							}
-						/>
-						<Route path="/mecmua/:slug" element={<MecmuaPostPage />} />
-						<Route path="/sozluk" element={<SozlukHome />} />
-						<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
+						{productZone(navIaOn, "pano-zone", panoRoutes)}
+						{productZone(navIaOn, "mecmua-zone", mecmuaRoutes)}
+						{productZone(navIaOn, "sozluk-zone", sozlukRoutes)}
+						{productZone(navIaOn, "divan-zone", divanRoutes)}
 						<Route path="/search" element={<SearchPage />} />
 						<Route path="/auth" element={<AuthPage />} />
-						{/* The divan reviewer workspace (#1290) — the page self-gates on the
-					    authorship-loop flag (off ⇒ 404), so the route is dark by default. */}
-						<Route path="/divan" element={<DivanPage />} />
 						{/* The founder/mod conversion readout (#1589) — the page self-gates on
 					    the funnel-readout flag (off ⇒ 404), so the route is dark by default. */}
 						<Route path="/funnel" element={<FunnelPage />} />

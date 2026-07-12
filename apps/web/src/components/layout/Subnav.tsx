@@ -20,6 +20,7 @@ export function Subnav({
 	links,
 	crumb,
 	meta,
+	cta,
 }: {
 	title?: React.ReactNode;
 	count?: React.ReactNode;
@@ -29,6 +30,12 @@ export function Subnav({
 	links?: SubnavLink[];
 	crumb?: {label: React.ReactNode; onClear?: () => void};
 	meta?: React.ReactNode;
+	// The primary-action slot (placement law #2587): a product's promoted verb (pano/yeni,
+	// mecmua yaz) renders here in the dedicated primary-action position. The passed node
+	// carries the sanctioned primary-action treatment itself (the `Button` primitive's
+	// `primary` variant per the #2586 taxonomy) — the slot only positions it, never the
+	// utility filter/tab treatment (#2590). Absent ⇒ nothing renders.
+	cta?: React.ReactNode;
 }) {
 	return (
 		<div className="kp-subnav">
@@ -67,6 +74,7 @@ export function Subnav({
 			<span className="kp-subnav__spacer" />
 			{count ? <span className="kp-subnav__meta">{count}</span> : null}
 			{meta ? <span className="kp-subnav__meta">{meta}</span> : null}
+			{cta ? <span className="kp-subnav__cta">{cta}</span> : null}
 		</div>
 	);
 }

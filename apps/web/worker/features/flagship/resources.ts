@@ -26,6 +26,7 @@ import {
 	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_MOD_QUEUE,
+	PHOENIX_NAV_IA,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
 	PHOENIX_OPTIMISTIC_EDITS,
@@ -828,3 +829,35 @@ export const MECMUA_PUBLIC_READ_FLAG = {
  */
 export const mecmuaPublicReadFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("mecmua_public_read", {appId, ...MECMUA_PUBLIC_READ_FLAG});
+
+/**
+ * The nav-IA (per-product Subnav zones) dark-ship flag config (#2598, epic #2596). The
+ * SINGLE cross-cutting seam the whole nav-IA surface gates behind — the substrate's
+ * nested per-product layout routes + Subnav CTA slot (#2598) and every per-product delta
+ * (#2600–#2604). Default-OFF so the surface reaches production dark: with it off the
+ * router is exactly as today (flat product routes, no product Subnav zone); flipping it
+ * on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `MECMUA_PUBLIC_READ_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           nav-ia (the placement-law surface, map #2583)
+ *   - originating:     #2598 (epic: Subnav placement law, #2596)
+ *   - removal trigger: once the nav-IA surface graduates to on at 100% and stable for
+ *                      one release, retire the flag and inline the nested layout routes.
+ */
+export const NAV_IA_FLAG = {
+	key: PHOENIX_NAV_IA,
+	description:
+		"nav-IA per-product Subnav zones + CTA slot dark-ship (#2598, epic #2596). owner: nav-ia. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const navIaFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_nav_ia", {appId, ...NAV_IA_FLAG});
