@@ -18,7 +18,6 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import type {WorkerFateServices} from "../features/fate/layers.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
-import {FlagsDevOverrideLive} from "../features/flagship/Flags.ts";
 import type {Flagship} from "../features/flagship/Flagship.ts";
 import {healthApiLayer} from "./health.ts";
 import {rawWorkerRouteLayers} from "./worker-routes.ts";
@@ -65,17 +64,14 @@ export const makeAppLive = (options: {
 	// (its `ConfigProvider` is auto-wired at worker scope); discharge it here.
 	const typedJson = healthApiLayer.pipe(Layer.provide(options.flagshipLayer));
 
-	// The `Flags` domain service over the init-resolved `Flagship` client (#508):
-	// isolate-level, so it's built once here from `flagshipLayer` and provided into
-	// the per-request set. The probe route reads it; `getBoolean`'s `FlagsContext`
-	// is supplied inline by the handler from the session, so it isn't wired here.
-	// The local-override wrapper is installed UNCONDITIONALLY (#2741): it is a no-op
-	// unless the per-request `FlagsContext.overrides` is populated, which
-	// `makeRequestFlagsContext` does only when the request is authorized (dev, or an
-	// admin with `phoenix-admin-console` on) — so a deployed non-admin read is
-	// byte-identical to the plain `FlagsLive`.
-	const flagsLayer = FlagsDevOverrideLive.pipe(Layer.provide(options.flagshipLayer));
-
+	// `Flags` is NOT built a second time here (#1438): the raw flag routes resolve it
+	// from `options.fateLayer`, which already exports the ONE `Flags` build the fate
+	// resolvers read — `FateFlagsLive` in `makeFateLayer`, memoized once per isolate by
+	// `makeFateRuntime` (the #622 override wrapper, unconditional since #2741). A separate
+	// `FlagsDevOverrideLive` build here would be a redundant second singleton the raw
+	// routes read instead of the fate one, so the local flag-flip cookie could diverge
+	// between the two consumer sets — the exact duplicated-wiring smell #1438 removes.
+	//
 	// `provideRequest` discharges the route-requirement markers `HttpRouter.add`
 	// lifts (plain `Layer.provide` does not). All provided layers are
 	// dependency-free (`R = never`), so they merge flat.
@@ -85,7 +81,6 @@ export const makeAppLive = (options: {
 				options.fateLayer,
 				options.liveLayer,
 				options.betterAuthLayer,
-				flagsLayer,
 				Layer.succeed(RuntimeContext)(options.runtimeContext),
 			),
 		),
