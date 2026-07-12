@@ -149,9 +149,9 @@ vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: ()
 // (akış) nav entry (#2547) is gated on `mecmua-feed`, flipped via `flags.mecmuaFeed`.
 // Every other read (and other flag key) stays off, matching the default the shell
 // rendered under before.
-const flags = vi.hoisted(() => ({authorshipLoop: false, mecmuaFeed: false}));
+const flags = vi.hoisted(() => ({authorshipLoop: false, mecmuaFeed: false, navIa: false}));
 vi.mock("./flags/useFlag", async () => {
-	const {PHOENIX_AUTHORSHIP_LOOP, MECMUA_FEED} = await import("./flags/keys");
+	const {PHOENIX_AUTHORSHIP_LOOP, MECMUA_FEED, PHOENIX_NAV_IA} = await import("./flags/keys");
 	return {
 		useFlag: (key: string) => ({
 			value:
@@ -159,7 +159,9 @@ vi.mock("./flags/useFlag", async () => {
 					? flags.authorshipLoop
 					: key === MECMUA_FEED
 						? flags.mecmuaFeed
-						: false,
+						: key === PHOENIX_NAV_IA
+							? flags.navIa
+							: false,
 			loading: false,
 		}),
 	};
@@ -288,6 +290,50 @@ describe("mecmua feed nav entry (#2547) — gated on mecmua-feed, never a dead l
 		renderApp();
 		const link = screen.getByRole("link", {name: "akış"});
 		expect(link.getAttribute("href")).toBe("/mecmua/akis");
+	});
+});
+
+// The nav-IA substrate (#2598, epic #2596): each product mounts under a nested layout
+// route rendering a persistent product Subnav zone, gated on the default-off
+// `phoenix-nav-ia` seam. Off ⇒ the router is flat, exactly as today (no product zone);
+// on ⇒ the product route resolves under `ProductSubnavLayout`, which paints a `.kp-subnav`
+// zone above the routed page. The routed page (mocked PanoFeed) mounts below the gate, so
+// these settle the session (signed-out) to commit the routed Outlet.
+describe("nav-IA per-product Subnav zone substrate (#2598)", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+		flags.navIa = false;
+	});
+	afterEach(() => {
+		flags.navIa = false;
+		vi.clearAllMocks();
+	});
+
+	it("flag off: the /pano route is flat — no product Subnav zone (the surface is exactly as before)", () => {
+		const {container} = renderApp("/pano");
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+		expect(container.querySelector(".kp-subnav")).toBeNull();
+	});
+
+	it("flag on: the /pano route mounts under the product layout — a persistent Subnav zone paints above the page", () => {
+		flags.navIa = true;
+		const {container} = renderApp("/pano");
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+		expect(container.querySelector(".kp-subnav")).toBeTruthy();
+	});
+
+	it("flag on: a non-product route (/search) mounts NO product Subnav zone", () => {
+		flags.navIa = true;
+		const {container} = renderApp("/search");
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
+		expect(container.querySelector(".kp-subnav")).toBeNull();
 	});
 });
 

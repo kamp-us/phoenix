@@ -60,6 +60,15 @@
 	color: var(--text-muted);
 }
 
+/* CTA slot — the dedicated primary-action position (placement law #2587), pinned to
+   the trailing edge after the spacer. Positioning only: the sanctioned primary-action
+   treatment (filled --accent) lives on the passed node (the Button primitive's primary
+   variant), never a utility filter/tab fill here (#2586 taxonomy / #2590 IA rule). */
+.kp-subnav__cta {
+	display: inline-flex;
+	align-items: center;
+}
+
 .kp-subnav__crumb {
 	display: inline-flex;
 	align-items: center;
