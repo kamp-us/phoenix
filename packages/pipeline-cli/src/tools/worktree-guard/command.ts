@@ -19,7 +19,8 @@
  *     pre-bash  (matcher Bash)            — pin cwd to $WORKTREE_ROOT
  *     pre-enter (matcher EnterWorktree)   — hard-block a nested worktree
  *   SubagentStop:
- *     reap                                — `git worktree remove` (no --force) when clean
+ *     reap                                — `git worktree remove` (no --force) when clean AND the
+ *                                           stopping agent OWNS $WORKTREE_ROOT (the #2798 owner gate)
  *   Skill/operator invocation (not a hook):
  *     assert-clean [--path <d>]           — fail closed LOUD if the tree is dirty (#2666)
  *
@@ -29,7 +30,7 @@
  * by the time a subcommand runs the runtime dep is always resolved.
  */
 import {execFileSync} from "node:child_process";
-import {existsSync, statSync} from "node:fs";
+import {existsSync, readFileSync, statSync} from "node:fs";
 import {resolve} from "node:path";
 import {
 	appendRecord,
@@ -231,6 +232,27 @@ const preEnter = Command.make(
 	Command.withDescription("PreToolUse EnterWorktree: hard-block when already inside a worktree"),
 );
 
+/**
+ * Derive the STOPPING agent's OWN worktree from the SubagentStop payload — the owner signal the
+ * #2798 gate turns on. The harness writes a per-subagent sidecar next to each subagent transcript
+ * (`…/subagents/agent-<id>.meta.json`) recording the worktree that agent OWNS (`worktreePath`), and
+ * the payload's `transcript_path` points at that transcript. A nested descendant that merely
+ * inherited `$WORKTREE_ROOT` carries its OWN (different, or absent) `worktreePath`, so this
+ * distinguishes an owner-stop from a nested stop. Anything unreadable ⇒ "" ⇒ ownership unprovable ⇒
+ * `decideReap` KEEPs (fail-closed: never reap a possibly-live parent tree).
+ */
+const ownedWorktreeFromPayload = (input: unknown): string => {
+	const transcriptPath = str(field(input, "transcript_path"));
+	if (!transcriptPath) return "";
+	const metaPath = transcriptPath.replace(/\.jsonl$/, ".meta.json");
+	if (metaPath === transcriptPath || !existsSync(metaPath)) return "";
+	try {
+		return str(field(JSON.parse(readFileSync(metaPath, "utf8")) as unknown, "worktreePath"));
+	} catch {
+		return "";
+	}
+};
+
 /** Is the worktree dirty? `git status --porcelain` non-empty ⇒ dirty (also dirty if we can't tell — fail-safe to KEEP). */
 const worktreeIsDirty = (root: string): boolean => {
 	try {
@@ -248,7 +270,7 @@ const reap = Command.make(
 	"reap",
 	{},
 	Effect.fn(function* () {
-		yield* readStdin();
+		const input = yield* readStdin();
 		if (!WORKTREE_ROOT || !existsSync(WORKTREE_ROOT)) {
 			return yield* Console.error("worktree-guard reap: no $WORKTREE_ROOT to reap (skip)");
 		}
@@ -263,6 +285,7 @@ const reap = Command.make(
 		}
 		const decision = decideReap({
 			worktreeRoot: WORKTREE_ROOT,
+			ownedWorktree: ownedWorktreeFromPayload(input),
 			isDirty: worktreeIsDirty(WORKTREE_ROOT),
 		});
 		switch (decision.kind) {
