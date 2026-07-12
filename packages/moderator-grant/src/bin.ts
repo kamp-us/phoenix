@@ -16,12 +16,21 @@
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {makeD1Rest} from "@kampus/d1-rest";
-import {Config, Console, Data, Effect, Layer, Option} from "effect";
+import {Config, Console, Effect, Layer, Option, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {listModerators, makeGrantDb, type Selector, setRole} from "./grant.ts";
 
-class SelectorRequired extends Data.TaggedError("SelectorRequired")<{message: string}> {}
+class SelectorRequired extends Schema.TaggedErrorClass<SelectorRequired>()(
+	"@kampus/moderator-grant/SelectorRequired",
+	{message: Schema.String},
+) {}
+
+/** A D1 REST call (set-role/list over the query API) rejected — network/HTTP fault. */
+class D1RestError extends Schema.TaggedErrorClass<D1RestError>()(
+	"@kampus/moderator-grant/D1RestError",
+	{cause: Schema.Defect()},
+) {}
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID"),
@@ -70,7 +79,10 @@ const grant = Command.make(
 		const account = yield* resolveAccount(accountId);
 		const selector = yield* resolveSelector(username, userId);
 		const db = makeDb(account, databaseId);
-		const res = yield* Effect.promise(() => setRole(db, selector, "moderator"));
+		const res = yield* Effect.tryPromise({
+			try: () => setRole(db, selector, "moderator"),
+			catch: (cause) => new D1RestError({cause}),
+		});
 		yield* res.changed > 0
 			? Console.log(
 					`moderator-grant: ok — ${selector.by}=${selector.value} is now a moderator (D1 ${databaseId})`,
@@ -93,7 +105,10 @@ const revoke = Command.make(
 		const account = yield* resolveAccount(accountId);
 		const selector = yield* resolveSelector(username, userId);
 		const db = makeDb(account, databaseId);
-		const res = yield* Effect.promise(() => setRole(db, selector, "member"));
+		const res = yield* Effect.tryPromise({
+			try: () => setRole(db, selector, "member"),
+			catch: (cause) => new D1RestError({cause}),
+		});
 		yield* res.changed > 0
 			? Console.log(
 					`moderator-grant: ok — ${selector.by}=${selector.value} reverted to member (D1 ${databaseId})`,
@@ -110,7 +125,10 @@ const list = Command.make(
 	Effect.fn(function* ({databaseId, accountId}) {
 		const account = yield* resolveAccount(accountId);
 		const db = makeDb(account, databaseId);
-		const mods = yield* Effect.promise(() => listModerators(db));
+		const mods = yield* Effect.tryPromise({
+			try: () => listModerators(db),
+			catch: (cause) => new D1RestError({cause}),
+		});
 		yield* Console.log(
 			mods.length === 0
 				? "moderator-grant: no moderators"

@@ -10,10 +10,16 @@
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {makeD1Rest} from "@kampus/d1-rest";
-import {Config, Console, Effect, Layer, Option} from "effect";
+import {Config, Console, Effect, Layer, Option, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {listFounderTuples, makeSeedDb, seedFounders} from "./seed.ts";
+
+/** A D1 REST call (seed/list over the query API) rejected — network/HTTP fault. */
+class D1RestError extends Schema.TaggedErrorClass<D1RestError>()(
+	"@kampus/founder-seed/D1RestError",
+	{cause: Schema.Defect()},
+) {}
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID"),
@@ -39,7 +45,10 @@ const seed = Command.make(
 	Effect.fn(function* ({databaseId, accountId}) {
 		const account = yield* resolveAccount(accountId);
 		const db = makeDb(account, databaseId);
-		const res = yield* Effect.promise(() => seedFounders(db));
+		const res = yield* Effect.tryPromise({
+			try: () => seedFounders(db),
+			catch: (cause) => new D1RestError({cause}),
+		});
 		yield* res.cohort === 0
 			? Console.log(
 					`founder-seed: empty cohort (FOUNDER_COHORT is unset) — nothing to mint (D1 ${databaseId})`,
@@ -60,7 +69,10 @@ const list = Command.make(
 	Effect.fn(function* ({databaseId, accountId}) {
 		const account = yield* resolveAccount(accountId);
 		const db = makeDb(account, databaseId);
-		const tuples = yield* Effect.promise(() => listFounderTuples(db));
+		const tuples = yield* Effect.tryPromise({
+			try: () => listFounderTuples(db),
+			catch: (cause) => new D1RestError({cause}),
+		});
 		yield* Console.log(
 			tuples.length === 0
 				? "founder-seed: no founder tuples"
