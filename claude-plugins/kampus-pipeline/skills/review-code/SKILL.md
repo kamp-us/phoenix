@@ -1229,42 +1229,46 @@ wrapping the APPROVE call (e.g. `… 2>&1 | head` for inspection) makes the pipe
 status mask the APPROVE failure, so the `||` fallback silently never fires and no verdict
 lands.
 
-The comment fallback **upserts**, it does not append: scan the PR for *your own* prior
-`review-code:` marker comment and `PATCH` it with the fresh verdict instead of `POST`-ing a
-new one, so there is exactly **one** `review-code` verdict comment per PR (ADR 0058 rule 2).
-A re-review of a new head overwrites the same record with the new `@ <sha>`; the thread never
-accumulates a stale verdict stream. The `… | last | .id` upsert PATCHes only your *newest* own
-marker, so on a PR migrated from the pre-0058 append era a few older SHA-less own markers may
-linger — the one-per-gate invariant is **forward-looking**, and those legacy duplicates are
-tolerated because `ship-it`'s consumer SHA-refuses any marker without an `@ <sha>` on the
-current head (Step 2b), so they can never authorize a merge.
+The comment fallback **upserts**, it does not append: exactly **one** `review-code` verdict
+comment per PR (ADR 0058 rule 2) — a re-review of a new head overwrites the same record with
+the new `@ <sha>`. The upsert (scan your own prior `review-code:` marker → `PATCH` it, else
+`POST`) plus its emission guards are the ADR-0058 glue **all four gates share**, so — exactly as
+`review-doc` — post through the deterministic, unit-tested tool (`pipeline-cli verdict post`,
+#2102), never a hand-rolled `jq`. **The tool is the marker-emit choke point:** `verdict post`
+runs the `emissionDefect` gate on your body and **refuses fail-closed** unless every SHA field is
+a clean full 40-hex head SHA — closing the mktemp-path leak where a scratch path bled into the
+`@ <sha>` field (#2683), the empty-`@-` case (#2646), and any cross-namespace body. For the
+native `APPROVE` path (which posts a review, not a comment `verdict post` can guard), run the
+**same** gate as an explicit read-back assertion first — `verdict validate` — so a malformed
+marker fails loud **before** the APPROVE, never landing in a public review body.
 
 ```bash
+# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
+else
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.1.0 verdict"     # foreign install: the published CLI
+fi
+
 VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"
-BODY="$(cat "$VERDICT_FILE")"   # first line: review-code: PASS @ <HEAD_SHA> — merge-ready
+# write your composed PASS verdict into "$VERDICT_FILE" (first line: review-code: PASS @ <HEAD_SHA> — merge-ready)
+BODY="$(cat "$VERDICT_FILE")"
+# Read-back assertion BEFORE the native APPROVE: the same gate `verdict post` enforces, so a
+# malformed `@ <sha>` (e.g. an mktemp scratch path, #2683) fails loud here, never in a review body.
+$VERDICT validate --gate code --body-file "$VERDICT_FILE" || {
+  echo "FATAL: composed review-code marker is malformed — refusing to post (fix the @ <sha> field; #2683)" >&2
+  exit 1
+}
 if gh api -X POST repos/$REPO/pulls/$PR/reviews \
      -f event=APPROVE -f body="$BODY"; then
   : # native approving review posted (GitHub records its commit_id = the head you approved;
     #  ship-it reads that commit_id for the same staleness test the marker's @ <sha> drives)
 else
-  # APPROVE failed (e.g. 422 on your own PR) — upsert the structured pass comment instead,
-  # whose first line is the SHA-bound marker so a scan finds the verdict unambiguously:
-  #   review-code: PASS @ <HEAD_SHA> — merge-ready
-  ME="$(gh api user --jq .login)"
-  # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
-  # (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
-  # Find filter is namespace-anchored, NOT PASS/FAIL-only: it must also match the advisory
-  # marker (§6.6) so a polarity flip (non-blocking↔blocking across re-reviews) upserts the one
-  # prior review-code verdict instead of leaving a stale one beside the fresh one.
-  MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-          | jq -r --arg me "$ME" 'map(select(.user.login==$me
-            and (.body | test("^\\s*\\**\\s*review-code:"; "i"))))
-          | last | .id // empty')
-  if [ -n "$MINE" ]; then
-    gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"   # upsert
-  else
-    gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"   # first verdict
-  fi
+  # APPROVE failed (e.g. 422 on your own PR) — upsert the structured pass comment instead, through
+  # the guarded tool: it PATCHes your newest own review-code marker (namespace-anchored, so it also
+  # upserts a prior advisory across a non-blocking↔blocking flip) else POSTs the first, and it
+  # fail-closes on a malformed/cross-namespace body so a broken marker never reaches GitHub.
+  $VERDICT post --pr "$PR" --gate code --body-file "$VERDICT_FILE"
 fi
 ```
 
@@ -1409,24 +1413,19 @@ any later use are one single-sourced read, never two independent resolutions tha
 straddle a head move:
 
 ```bash
+# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"
+else
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.1.0 verdict"
+fi
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # resolve ONCE, before authoring the verdict file (mirror the PASS path)
 VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"   # per-run temp, not a fixed/PR-namespaced path (#1465)
 # … author "$VERDICT_FILE" now, embedding `review-code: FAIL @ $HEAD_SHA — not merge-ready` as its first line …
-BODY="$(cat "$VERDICT_FILE")"   # first line: review-code: FAIL @ <HEAD_SHA> — not merge-ready (the SHA resolved just above)
-ME="$(gh api user --jq .login)"
-# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
-# (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
-# Namespace-anchored find filter (matches advisory + PASS + FAIL), as on the pass path — so a
-# fresh FAIL upserts whatever prior review-code marker exists, advisory included.
-MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-        | jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-code:"; "i"))))
-        | last | .id // empty')
-if [ -n "$MINE" ]; then
-  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
-else
-  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"
-fi
+# Upsert through the guarded tool (resolved above), exactly as the PASS path: it upserts the one
+# review-code marker (namespace-anchored, advisory included) and fail-closes on a malformed/
+# cross-namespace body, so the mktemp-path `@ <sha>` leak (#2683) can never reach GitHub.
+$VERDICT post --pr "$PR" --gate code --body-file "$VERDICT_FILE"
 ```
 
 You *may* additionally request changes via a formal review

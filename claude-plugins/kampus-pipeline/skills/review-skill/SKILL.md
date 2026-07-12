@@ -525,10 +525,22 @@ HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you revie
 `review-skill` lands its verdict **only as the SHA-bound comment, never a native review** (ADR
 0058 rule 4 — like `review-doc`): a native review can't carry the `@ <sha>` in the shape this
 contract controls, so the comment is the single carrier. The post is an **upsert**, not an
-append: scan the PR for *your own* prior `review-skill:` marker comment and `PATCH` it with the
-fresh verdict instead of `POST`-ing a new one, so there is exactly **one** `review-skill`
-verdict comment per PR (ADR 0058 rule 2). A re-review of a new head overwrites the same record
-with the new `@ <sha>`. The `… | last | .id` upsert PATCHes only your *newest* own marker.
+append: exactly **one** `review-skill` verdict comment per PR (ADR 0058 rule 2), a re-review of
+a new head overwriting the same record. That upsert plus its emission guards are the ADR-0058
+glue **all four gates share**, so — exactly as `review-doc` — post through the deterministic,
+unit-tested tool (`pipeline-cli verdict post`, #2102), never a hand-rolled `jq`. **The tool is
+the marker-emit choke point:** it refuses fail-closed unless every SHA field (the first-line
+`@ <sha>` and the §CP advisory `Reviewed-head:` anchor) is a clean full 40-hex head SHA — closing
+the mktemp-path leak (#2683), the empty-`@-` case (#2646), and any cross-namespace body. Resolve
+the tool once — in-repo first, published fallback (ADR 0062/0064; epic #994):
+
+```bash
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
+else
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.1.0 verdict"     # foreign install: the published CLI
+fi
+```
 
 ### Pass path — non-blocking PR (the binding signal)
 
@@ -539,23 +551,10 @@ merge on it.
 ```bash
 VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
 # write your composed PASS verdict into "$VERDICT_FILE" (first line: review-skill: PASS @ <HEAD_SHA> — merge-ready)
-BODY="$(cat "$VERDICT_FILE")"
-ME="$(gh api user --jq .login)"
-# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
-# (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
-# Find filter is namespace-anchored, NOT PASS/FAIL-only: it must also match the advisory
-# marker (§6.6) so a polarity flip (blocking↔non-blocking across re-reviews) upserts the one
-# prior review-skill verdict instead of leaving a stale one beside the fresh one. It can't
-# cross-match review-code:/review-doc: — the literal `skill:` suffix excludes both.
-MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-        | jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-skill:"; "i"))))
-        | last | .id // empty')
-if [ -n "$MINE" ]; then
-  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"   # upsert
-else
-  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"   # first verdict
-fi
+# Upsert through the guarded tool: it PATCHes your newest own review-skill marker (namespace-
+# anchored, so a blocking↔non-blocking flip upserts a prior advisory too) else POSTs, and it
+# fail-closes on a malformed/cross-namespace body — the mktemp-path `@ <sha>` leak (#2683) never lands.
+$VERDICT post --pr "$PR" --gate skill --body-file "$VERDICT_FILE"
 ```
 
 Verdict body shape. The first line is the **canonical bare marker** — no leading `**`
@@ -660,17 +659,9 @@ canonical `Reviewed-head: @ <HEAD_SHA>` line (ADR 0151), which `ship-it`'s §CP 
 ```bash
 VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
 # write your composed advisory verdict into "$VERDICT_FILE" (first line: review-skill: advisory — blocking-set PR (manual merge))
-BODY="$(cat "$VERDICT_FILE")"
-ME="$(gh api user --jq .login)"
-MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-        | jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-skill:"; "i"))))
-        | last | .id // empty')
-if [ -n "$MINE" ]; then
-  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
-else
-  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"
-fi
+# The guarded tool also validates the §CP advisory's `Reviewed-head: @ <sha>` anchor line is a clean
+# full 40-hex head SHA — the exact field the #2680 mktemp path leaked into (#2683).
+$VERDICT post --pr "$PR" --gate skill --body-file "$VERDICT_FILE"
 ```
 
 Post it **as a comment, never a native review** (ADR 0058 rule 4). Do **not** emit the
@@ -690,19 +681,9 @@ so the author sees how close they are. **Upsert** it exactly as the PASS path (o
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
 VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
 # write your composed FAIL verdict into "$VERDICT_FILE" (first line: review-skill: FAIL @ <HEAD_SHA> — changes-requested)
-BODY="$(cat "$VERDICT_FILE")"
-ME="$(gh api user --jq .login)"
-# Namespace-anchored find filter (matches advisory + PASS + FAIL), as on the pass path — so a
-# fresh FAIL upserts whatever prior review-skill marker exists, advisory included.
-MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-        | jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-skill:"; "i"))))
-        | last | .id // empty')
-if [ -n "$MINE" ]; then
-  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
-else
-  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"
-fi
+# Upsert through the guarded tool (namespace-anchored, so a fresh FAIL upserts whatever prior
+# review-skill marker exists, advisory included) — fail-closed on a malformed marker (#2683).
+$VERDICT post --pr "$PR" --gate skill --body-file "$VERDICT_FILE"
 ```
 
 Verdict body shape:

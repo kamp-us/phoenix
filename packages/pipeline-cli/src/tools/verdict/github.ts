@@ -21,9 +21,7 @@ import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {
-	GATE_KEYWORD,
-	isNamespaceMarker,
-	isUnboundPolarityMarker,
+	emissionDefect,
 	namespaceRe,
 	type Polarity,
 	resolveVerdict,
@@ -296,12 +294,15 @@ const read = Effect.fn("Github.read")(function* (
 });
 
 /**
- * Upsert this PR's `gate` verdict (ADR 0058 rule 2). Two fail-closed emission guards run first:
- * the body's first line must be *this* gate's marker (rejects a cross-namespace body), and a
+ * Upsert this PR's `gate` verdict (ADR 0058 rule 2). Three fail-closed emission guards run first:
+ * the body's first line must be *this* gate's marker (rejects a cross-namespace body); a
  * polarity-bearing (PASS/FAIL) body must carry a well-formed `@ <sha>` (rejects the unbindable
- * empty-SHA `@-` marker the read side refuses, #2646) — an advisory SHA-less line stays postable.
- * Then scan our OWN prior marker in the namespace (newest by `(created_at, id)`) and PATCH it if
- * present else POST a fresh one. The own-authored scope means two reviewers never stomp each other's records.
+ * empty-SHA `@-` marker the read side refuses, #2646); and every SHA field it carries — the
+ * first-line `@ <sha>` and the §CP advisory `Reviewed-head:` anchor — must be a clean full 40-hex,
+ * not a partial/non-hex/path-glued value (rejects the `mktemp`-path leak of #2683). An advisory
+ * SHA-less first line stays postable. Then scan our OWN prior marker in the namespace (newest by
+ * `(created_at, id)`) and PATCH it if present else POST a fresh one. The own-authored scope means
+ * two reviewers never stomp each other's records.
  */
 const post = Effect.fn("Github.post")(function* (
 	repo: string,
@@ -309,15 +310,9 @@ const post = Effect.fn("Github.post")(function* (
 	gate: VerdictGate,
 	body: string,
 ) {
-	if (!isNamespaceMarker(body, gate)) {
-		return yield* new VerdictInputError({
-			message: `refusing to post: the body's first line is not a ${GATE_KEYWORD[gate]}: marker — a verdict must carry its own gate's marker on line one (the cross-namespace emission bug, ADR 0058 §Scope)`,
-		});
-	}
-	if (isUnboundPolarityMarker(body, gate)) {
-		return yield* new VerdictInputError({
-			message: `refusing to post: a ${GATE_KEYWORD[gate]}: PASS/FAIL verdict must carry a well-formed '@ <sha>' (≥7 hex) — this polarity-bearing body has an empty/malformed SHA, which posts an unbindable marker the fail-closed read side refuses (the '@-' emission bug, ADR 0058, #2646)`,
-		});
+	const defect = emissionDefect(body, gate);
+	if (defect !== null) {
+		return yield* new VerdictInputError({message: `refusing to post: ${defect}`});
 	}
 	const me = (yield* runGh(whoAmIArgs)).trim();
 	const comments = yield* listComments(repo, pr);

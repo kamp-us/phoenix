@@ -1,5 +1,5 @@
 /**
- * The `verdict` tool — `pipeline-cli verdict read` / `pipeline-cli verdict post`.
+ * The `verdict` tool — `pipeline-cli verdict read` / `post` / `validate`.
  *
  * The ADR-0058 SHA-bound verdict read/post glue, extracted from the inline `jq` the
  * `review-*` / `ship-it` / `write-code`-repair / `heal-ci` skills each hand-rolled (#2102).
@@ -13,9 +13,13 @@
  *
  * `post --pr N --gate <g> [--body-file <f>]` upserts a SHA-bound verdict comment (ADR 0058
  * rule 2): it reads the composed verdict body from `--body-file` (or stdin), refuses fail-closed
- * if that body's first line is not this gate's marker (the cross-namespace emission bug), then
- * PATCHes our own prior marker in the namespace if one exists, else POSTs — exactly one verdict
- * comment per (PR, gate). It prints `patched <id>` / `posted <id>` on stdout.
+ * on any `emissionDefect` (wrong namespace, unbindable `@ <sha>`, or a non-full-40-hex/path-glued
+ * SHA field), then PATCHes our own prior marker in the namespace if one exists, else POSTs —
+ * exactly one verdict comment per (PR, gate). It prints `patched <id>` / `posted <id>` on stdout.
+ *
+ * `validate --gate <g> [--body-file <f>]` runs that same `emissionDefect` gate WITHOUT posting —
+ * the read-back assertion an emit path (review-code's native `APPROVE`) runs before a channel
+ * `post` can't guard, exiting non-zero on a malformed marker (the mktemp-path leak, #2683).
  *
  * `GithubLive` is baked in with `Command.provide(...)` so the registered command's residual
  * requirement is the Node platform union (the registry seam, epic #994).
@@ -24,7 +28,13 @@ import {readFileSync} from "node:fs";
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {Github, GithubLive} from "./github.ts";
-import {GATES, outcomeReason, type Polarity, type VerdictGate} from "./verdict-match.ts";
+import {
+	emissionDefect,
+	GATES,
+	outcomeReason,
+	type Polarity,
+	type VerdictGate,
+} from "./verdict-match.ts";
 
 const FAIL_EXIT_CODE = 1;
 
@@ -125,8 +135,36 @@ const post = Command.make(
 	),
 );
 
+/**
+ * `validate --gate <g> [--body-file <f>]` — the read-back assertion a marker-emit path runs on a
+ * composed body BEFORE posting it through a channel `post` can't guard (review-code's native
+ * `APPROVE` review). It runs the SAME `emissionDefect` gate `post` enforces and exits non-zero on
+ * any defect — so a malformed `@ <sha>` (the mktemp-path leak, #2683) fails loud at emission rather
+ * than landing in a public comment. Does no IO: pure body-shape validation, so it needs no `Github`.
+ */
+const validate = Command.make(
+	"validate",
+	{gate: gateFlag, bodyFile: bodyFileFlag},
+	Effect.fn(function* ({gate, bodyFile}) {
+		const g = yield* parseGate(gate);
+		const body = (yield* readBody(bodyFile)).replace(/\s+$/, "");
+		if (body.length === 0) {
+			return yield* fail(
+				"empty verdict body — nothing to validate (pass --body-file or pipe on stdin)",
+			);
+		}
+		const defect = emissionDefect(body, g);
+		if (defect !== null) return yield* fail(defect);
+		yield* Console.log("ok");
+	}),
+).pipe(
+	Command.withDescription(
+		"Assert a composed verdict body is postable (clean full-40-hex @ <sha>, right namespace) — exit 0 = ok, non-zero = malformed",
+	),
+);
+
 export const verdictCommand = Command.make("verdict").pipe(
-	Command.withSubcommands([read, post]),
+	Command.withSubcommands([read, post, validate]),
 	Command.withDescription(
 		"Read/post ADR-0058 SHA-bound gate verdicts (review-code/doc/skill/design) — the shared verdict-match glue",
 	),
