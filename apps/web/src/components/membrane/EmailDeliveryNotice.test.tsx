@@ -4,6 +4,8 @@
  * surface + dismissal) and the mount gate (dark behind the flag, present only for a failing
  * signed-in user, hidden once dismissed).
  */
+import {readFileSync} from "node:fs";
+import {join} from "node:path";
 import {fireEvent, render, screen} from "@testing-library/react";
 import type {ReactNode} from "react";
 import {MemoryRouter, Route, Routes} from "react-router";
@@ -100,5 +102,24 @@ describe("EmailDeliveryNoticeMount — the membrane gate (#2693)", () => {
 		renderNotice(<EmailDeliveryNoticeMount me={makeMe(true)} />);
 		fireEvent.click(screen.getByTestId("email-delivery-notice-dismiss"));
 		expect(screen.queryByTestId("email-delivery-notice")).toBeNull();
+	});
+});
+
+/**
+ * CSS-source tripwire for the four-pillars ≥36px tap-target floor (#2727 review-design). jsdom
+ * can't compute layout, so the floor is pinned against the CSS bytes: the dismiss uses the raw
+ * `--sm` size (24.8px alone), so its hit area comes from `align-items: stretch` on the actions
+ * row inheriting the CTA's `min-height: var(--s-8)` row height. Remove either and the dismiss
+ * drops below the floor — this fails here rather than only under manual design review.
+ */
+describe("EmailDeliveryNotice — tap-target floor (#2727)", () => {
+	const css = readFileSync(join(import.meta.dirname, "EmailDeliveryNotice.css"), "utf8");
+
+	it("the actions row stretches so the dismiss inherits the CTA's row height", () => {
+		expect(css).toMatch(/\.kp-email-notice__actions\s*\{[^}]*align-items:\s*stretch/s);
+	});
+
+	it("the CTA sets the row's ≥36px floor via min-height: var(--s-8)", () => {
+		expect(css).toMatch(/\.kp-email-notice__cta\s*\{[^}]*min-height:\s*var\(--s-8\)/s);
 	});
 });

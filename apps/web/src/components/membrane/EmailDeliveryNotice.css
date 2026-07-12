@@ -35,14 +35,17 @@
 	color: var(--text-secondary);
 }
 
+/* stretch, not center: the dismiss button uses the raw --sm size (24.8px alone, below the
+   36px floor), so it inherits the CTA's row height instead — both interactive controls clear
+   the four-pillars tap-target floor and stay visually balanced at equal height (#2727). */
 .kp-email-notice__actions {
 	display: flex;
-	align-items: center;
+	align-items: stretch;
 	gap: var(--s-2);
 }
 
-/* ≥36px hit area for the recovery CTA (four-pillars tap-target floor). --s-8 is 40px at
-   the compact base and larger in every denser ramp, so the floor holds across densities. */
+/* The CTA's min-height sets the actions row's ≥36px floor (--s-8 is 40px at the compact base
+   and larger in every denser ramp); align-items: stretch above propagates it to the dismiss. */
 .kp-email-notice__cta {
 	display: inline-flex;
 	align-items: center;
