@@ -47,7 +47,6 @@ function Glyph({children}: {children: ReactNode}) {
 	);
 }
 
-/** 👍 beğendim — thumbs-up. */
 function ThumbsUp() {
 	return (
 		<Glyph>
@@ -57,7 +56,6 @@ function ThumbsUp() {
 	);
 }
 
-/** ❤️ sevdim — heart. */
 function Heart() {
 	return (
 		<Glyph>
@@ -66,7 +64,6 @@ function Heart() {
 	);
 }
 
-/** 😂 güldüm — laughing face. */
 function Laughing() {
 	return (
 		<Glyph>
@@ -78,7 +75,6 @@ function Laughing() {
 	);
 }
 
-/** 🤔 düşündürdü — thinking face. */
 function Thinking() {
 	return (
 		<Glyph>
@@ -91,7 +87,6 @@ function Thinking() {
 	);
 }
 
-/** 😢 üzüldüm — crying face. */
 function Crying() {
 	return (
 		<Glyph>
@@ -104,7 +99,6 @@ function Crying() {
 	);
 }
 
-/** 🔥 efsane — flame. */
 function Flame() {
 	return (
 		<Glyph>
