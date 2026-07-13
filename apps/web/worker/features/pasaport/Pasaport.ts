@@ -1213,7 +1213,7 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 
 	const dropSessions = db.delete(schema.session).where(eq(schema.session.userId, userId));
 	const dropAccounts = db.delete(schema.account).where(eq(schema.account.userId, userId));
-	const dropApikeys = db.delete(schema.apikey).where(eq(schema.apikey.userId, userId));
+	const dropApikeys = db.delete(schema.apikey).where(eq(schema.apikey.referenceId, userId));
 
 	const scrubUser = db
 		.update(schema.user)
