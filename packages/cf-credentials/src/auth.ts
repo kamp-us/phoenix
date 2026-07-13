@@ -27,7 +27,6 @@ const accountIdPrompt = Prompt.text({
 			: Effect.fail("expected a 32-hex-char Cloudflare account id"),
 });
 
-// The pasted-token path (#1730): prompt for the token + account id, validate, store.
 const tokenPasteLogin = Effect.fn(function* () {
 	const token = yield* tokenPrompt;
 	const accountId = yield* accountIdPrompt;
