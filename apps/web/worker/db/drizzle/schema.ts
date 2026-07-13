@@ -124,11 +124,19 @@ export const verification = sqliteTable("verification", {
 
 export const apikey = sqliteTable("apiKey", {
 	id: text("id").primaryKey(),
+	// `configId` + `referenceId` are the property names the pinned @better-auth/api-key
+	// plugin resolves against (its declared `apikey` schema names them, with no
+	// `fieldName` override) — the drizzle adapter's `checkMissingFields` indexes the
+	// table object by those exact keys on every create, so a mismatch 500s the mint
+	// (#108). `referenceId` keeps the SQL column `user_id`: with the plugin's default
+	// user-references config the reference IS the user id, so the column name stays
+	// accurate and no destructive column-rename migration is needed.
+	configId: text("config_id").notNull().default("default"),
 	name: text("name"),
 	start: text("start"),
 	prefix: text("prefix"),
 	key: text("key").notNull(),
-	userId: text("user_id")
+	referenceId: text("user_id")
 		.notNull()
 		.references(() => user.id, {onDelete: "cascade"}),
 	refillInterval: integer("refill_interval"),

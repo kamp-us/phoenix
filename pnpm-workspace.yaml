@@ -6,8 +6,14 @@ packages:
 catalog:
   '@alchemy.run/better-auth': 2.0.0-beta.59
   '@base-ui/react': ^1.4.1
-  '@better-auth/api-key': 1.6.10
-  '@better-auth/core': 1.6.10
+  # Lockstep with better-auth 1.6.23 (the `^1.6.13` catalog pin resolves there):
+  # api-key + core pinned to the EXACT version better-auth links transitively, so ONE
+  # `@better-auth/core` lives in the tree. A stale `core: 1.6.10` left apps/web's direct
+  # (type-anchor) core a version behind the transitive 1.6.23 the apiKey plugin's hook
+  # types are built against — two `HookEndpointContext` types → TS2322 in the plugins
+  # array (#108, the CLAUDE.md "don't introduce a second version" catalog invariant).
+  '@better-auth/api-key': 1.6.23
+  '@better-auth/core': 1.6.23
   '@biomejs/biome': ^2.4.15
   '@cloudflare/workers-types': ^4.20260629.1
   '@distilled.cloud/cloudflare': 0.27.0
@@ -46,7 +52,11 @@ catalog:
   # by that incompatibility — don't assume a bump makes them join-compatible (no RQB-v2 adapter
   # release exists yet). See #2286 (guard) / #2291 (re-enable joins via pnpm patch).
   better-auth: ^1.6.13
-  better-call: 1.3.5
+  # better-call's EXACT-pinned peer of `@better-auth/core@1.6.23` (`better-call: 1.3.7`),
+  # also what better-auth 1.6.23 links transitively. A stale 1.3.5 split core@1.6.23 into
+  # two peer-hash instances (one per better-call), re-surfacing the two-`HookEndpointContext`
+  # TS2322 — pinned to 1.3.7 so ONE core/better-call pair lives in the tree (#108).
+  better-call: 1.3.7
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
   effect: 4.0.0-beta.92

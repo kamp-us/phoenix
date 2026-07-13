@@ -211,6 +211,13 @@
 			"when": 2296000000000,
 			"tag": "0029_email_delivery_event_actor_id",
 			"breakpoints": true
+		},
+		{
+			"idx": 30,
+			"version": "6",
+			"when": 2396000000000,
+			"tag": "0030_api_key_plugin_fields",
+			"breakpoints": true
 		}
 	]
 }

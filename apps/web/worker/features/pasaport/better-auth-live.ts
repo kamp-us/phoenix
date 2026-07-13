@@ -14,6 +14,7 @@
  */
 
 import * as BetterAuth from "@alchemy.run/better-auth";
+import {apiKey} from "@better-auth/api-key";
 // Re-anchor transitive type specifiers away from `.pnpm/<hash>/...` paths so
 // tsgo can portably name plugin types under composite project refs.
 // See microsoft/typescript-go#1034 and better-auth#5666 for context.
@@ -80,6 +81,21 @@ export const additionalUserFields = {
 	tier: {type: "string", required: false, input: false},
 	promotedAt: {type: "date", required: false, input: false, returned: false},
 } satisfies AdditionalUserFields;
+
+/**
+ * The apiKey plugin's built-in per-key rate limit — the agent half of the rate
+ * mechanism (ADR 0044 Decision 3). Each agent credential's request velocity is
+ * bounded *independently* on its own rolling window, so one runaway key can't starve
+ * the others. Kept deliberately generous — comfortably above a normal agent burst
+ * (e.g. a multi-screenshot report) — and coupled to the per-user session-path backstop
+ * in #110; keep the two in step. Extracted as a pure value so the numbers are
+ * unit-assertable and the test layer (`better-auth.testing.ts`) shares the exact shape.
+ */
+export const apiKeyRateLimit = {
+	enabled: true,
+	timeWindow: 1000 * 60 * 60, // 1 hour
+	maxRequests: 1000,
+} as const;
 
 /**
  * The better-auth origin/cookie config for one deploy class (ADR 0088). Pure over
@@ -205,6 +221,18 @@ export const BetterAuthLive = Layer.effect(
 							await sendEmail(magicLinkEmail(email, url));
 						},
 					}),
+					// Durable agent credentials (ADR 0044 Decision 3). Exposes the
+					// session-authenticated create endpoint under `/api/auth/api-key/create`
+					// and, with `enableSessionForAPIKeys`, resolves a session for any request
+					// carrying the `x-api-key` header — so a minted key authenticates as its
+					// owning pasaport user through the same `getSession` path `validateSession`
+					// reads. The flag is load-bearing, not decorative: it defaults `false`, and
+					// the plugin's session-from-key before-hook only registers a matcher for a
+					// config with the flag on (`findApiKeyAndConfig` skips flag-off configs), so
+					// without it an `x-api-key` header never mints a session and every key-auth'd
+					// read resolves anonymous. The apikey table is migrated (`schema.ts`). Rate
+					// limit: `apiKeyRateLimit`.
+					apiKey({rateLimit: apiKeyRateLimit, enableSessionForAPIKeys: true}),
 				],
 			} satisfies BetterAuthOptions);
 		}).pipe(Effect.cached);
