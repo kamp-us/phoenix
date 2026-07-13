@@ -4,11 +4,15 @@
 # budget instead of racing the harness default-worktree-path's ~13s readiness limit
 # (the non-deterministic fall-back-to-primary of #2924/#2923). See ADR 0178.
 #
-# Contract (Claude Code WorktreeCreate mechanism):
-#  * stdin  — a JSON payload carrying `worktree_path` (where to create the tree) and
-#             `base_ref` (the ref to check out). Parsed with jq when present, else a
-#             dependency-free grep/sed fallback (a hook may fire before the CLI/toolchain
-#             is warm, so it must not hard-depend on jq — mirrors guard.sh's fail-soft).
+# Contract (Claude Code WorktreeCreate mechanism) — grounded in a CAPTURED REAL payload
+# (ADR 0180), not the incomplete docs that produced #2925:
+#  * stdin  — a JSON payload:
+#        { session_id, transcript_path, cwd, prompt_id, agent_type, hook_event_name, name }
+#      It carries `cwd` (the repo root) + `name` (the worktree id, `agent-<hex>`); the
+#      worktree path is CONSTRUCTED as `<cwd>/.claude/worktrees/<name>`. The payload does
+#      NOT carry `worktree_path` or `base_ref` — #2925 shipped a hook built to those inferred
+#      fields and fail-closed on EVERY worktree spawn crew-wide (the golden fixture +
+#      create-worktree.hook.test.ts now assert the captured shape so that can't recur).
 #  * stdout — ON SUCCESS, ONLY the resulting worktree path (Claude Code adopts it).
 #  * exit   — 0 on success; NON-ZERO on ANY failure. A non-zero WorktreeCreate blocks
 #             creation, so the coder fail-closes on the Step-4 preflight — no worse than
@@ -41,20 +45,21 @@ extract() {
 	fi
 }
 
-worktree_path="$(extract worktree_path)"
-base_ref="$(extract base_ref)"
+cwd="$(extract cwd)"
+name="$(extract name)"
 
-# worktree_path is mandatory — with no destination there is nothing to create.
-if [ -z "$worktree_path" ]; then
-	echo "create-worktree: no worktree_path in the WorktreeCreate payload — cannot provision." >&2
+# cwd + name are both mandatory — the path is CONSTRUCTED from them, so either missing
+# means there is nothing safe to create. Fail-closed (never a silent no-op).
+if [ -z "$cwd" ] || [ -z "$name" ]; then
+	echo "create-worktree: WorktreeCreate payload missing cwd/name — cannot provision (fail-closed)." >&2
 	exit 1
 fi
 
-# base_ref may be absent; fall back to origin/main (the default base every coder branches
-# from) so a payload that omits it still yields a usable tree rather than a hard failure.
-if [ -z "$base_ref" ]; then
-	base_ref="origin/main"
-fi
+worktree_path="$cwd/.claude/worktrees/$name"
+
+# The WorktreeCreate payload carries no base ref; every coder re-branches off origin/main in
+# its Step-4 preflight regardless, so origin/main is the base to check out.
+base_ref="origin/main"
 
 # NOW ensure a full PATH for git + the post-checkout `pnpm install` it fires. The hook exec
 # env's PATH handling is UNDOCUMENTED (the sibling harness `git worktree add` strips PATH to
@@ -63,6 +68,13 @@ fi
 # toolchain locations (Homebrew, /usr/local, system, ~/.local) while PRESERVING the inherited
 # PATH (kept last) — OS/standard dirs only, never a per-machine volta/fnm shim (ADR 0109).
 export PATH="/opt/homebrew/bin:/usr/local/bin:/bin:/usr/bin:${HOME:-}/.local/bin:${PATH:-}"
+
+# Operate on the repo the payload names, not merely the process cwd, so the constructed path
+# and the git op agree even if the hook exec cwd ever drifts from the payload's `cwd`.
+if ! cd "$cwd" 2>/dev/null; then
+	echo "create-worktree: payload cwd '$cwd' is not accessible — refusing (fail-closed)." >&2
+	exit 1
+fi
 
 # `--detach` deliberately: a linked worktree can't check out a base_ref that is a LOCAL
 # branch already checked out in the primary (`git worktree add <p> main` fatals with

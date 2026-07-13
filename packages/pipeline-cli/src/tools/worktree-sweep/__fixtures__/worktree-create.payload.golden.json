@@ -1,0 +1,9 @@
+{
+	"session_id": "37190825-58d1-4029-bc63-d8552d31e636",
+	"transcript_path": "/home/agent/.claude/projects/phoenix/37190825-58d1-4029-bc63-d8552d31e636.jsonl",
+	"cwd": "/home/agent/phoenix",
+	"prompt_id": "b1e2c3d4-5f6a-7089-9abc-def012345678",
+	"agent_type": "agent",
+	"hook_event_name": "WorktreeCreate",
+	"name": "agent-af29767befe6a251a"
+}
