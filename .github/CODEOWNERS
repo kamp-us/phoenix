@@ -21,10 +21,12 @@
 /claude-plugins/kampus-pipeline/skills/plan-epic/                  @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/release/                    @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/review-trivial/             @kamp-us/control-plane
-# Control-plane: the bare gate-critical *.sh guards directly under skills/ (validate-*.sh) — the
-# §CP `skills/[^/]+\.sh$` branch (ADR 0174, #2576). `*.sh` matches a within-segment name only, so
-# it owns the loose scripts without swallowing the skill dirs already owned above.
-/claude-plugins/kampus-pipeline/skills/*.sh                        @kamp-us/control-plane
+# Control-plane: every skill shell helper, at ANY depth under skills/ — the top-level
+# gate guards (validate-*.sh) AND a subdir helper (report/footer.sh, doctor/doctor.sh). The
+# §CP `skills/([^/]+/)*[^/]+\.sh$` branch (ADR 0174, #2576/#2950). `**/*.sh` matches zero-or-more
+# dirs then a `.sh` name, so it owns the loose scripts and subdir helpers without swallowing the
+# skill dirs already owned above.
+/claude-plugins/kampus-pipeline/skills/**/*.sh                     @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md  @kamp-us/control-plane
 # Control-plane: the pipeline agent definitions — the behavior of the very agents that run the
 # pipeline, including shipper.md (merge authority) and reviewer.md (verdict gate). §CP-blocking

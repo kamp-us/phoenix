@@ -68,10 +68,16 @@ export const splitTopLevelBranches = (re: string): ReadonlyArray<string> =>
  * `…/hooks(/|\.json$)`. We cartesian-expand every `(…)` group, then normalize each
  * expansion to a path: unescape `\.`→`.` and drop a regex `$` end-anchor. A trailing
  * `/` ⇒ a directory prefix; a `[^/]+` within-segment class ⇒ a `glob` (translated to a
- * gitignore `*`, e.g. `.../skills/[^/]+\.sh$` → `.../skills/*.sh`); otherwise an exact
- * file (the `$`-anchored leaf).
+ * gitignore `*`, and the any-depth `([^/]+/)*` prefix to a gitignore double-star, so the
+ * skill-`.sh` branch resolves to an any-depth `.sh` glob under `skills/`); otherwise an
+ * exact file (the `$`-anchored leaf).
  */
 export const expandBranch = (branch: string): ReadonlyArray<CpPath> => {
+	// `([^/]+/)*` is the any-depth segment prefix (the skill-`.sh` clause, #2950) — a
+	// quantified group the alternation loop below cannot expand (the trailing `*` isn't an
+	// alternation). Translate it up front to a gitignore/CODEOWNERS `**/` any-depth glob so
+	// the branch normalizes to a real ownable pattern (`…/skills/**/*.sh`).
+	const anyDepth = branch.replace(/\(\[\^\/\]\+\/\)\*/g, "**/");
 	const normalize = (s: string): CpPath => {
 		const base = s.replace(/\$/g, "").replace(/\\\./g, ".");
 		// `[^/]+` (one-or-more non-slash) is a within-segment regex wildcard; gitignore's
@@ -85,7 +91,7 @@ export const expandBranch = (branch: string): ReadonlyArray<CpPath> => {
 	// Cartesian-expand each `(alt|alt|…)` group, left to right. The regex only ever
 	// carries one group per branch, but expanding all groups keeps this robust to a
 	// future multi-group branch.
-	let forms: string[] = [branch];
+	let forms: string[] = [anyDepth];
 	const groupRe = /\(([^()]*)\)/;
 	for (let guard = 0; guard < 16; guard++) {
 		const next: string[] = [];

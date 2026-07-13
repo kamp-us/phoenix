@@ -24,7 +24,7 @@ const FULL_CODEOWNERS = [
 	"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
-	"/claude-plugins/kampus-pipeline/skills/*.sh @usirin",
+	"/claude-plugins/kampus-pipeline/skills/**/*.sh @usirin",
 	"/claude-plugins/kampus-pipeline/agents/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 	"/claude-plugins/kampus-pipeline/hooks/ @usirin",
