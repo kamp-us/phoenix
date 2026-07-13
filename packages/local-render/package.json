@@ -1,0 +1,30 @@
+{
+	"name": "@kampus/local-render",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Local render-and-capture harness (#2963, epic #2953) — renders the composed UI surface over a running local `alchemy dev` build and writes per-surface PNGs, honoring the dev-override cookie + an empty local D1, with capture-side crop/downscale under a documented budget. Reuses @kampus/design-capture's Playwright capture leg, adds local-build targeting on top.",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run --project unit",
+		"test:unit": "vitest run --project unit",
+		"render": "node src/bin.ts render"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"@kampus/design-capture": "workspace:*",
+		"@playwright/test": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}

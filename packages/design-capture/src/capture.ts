@@ -41,11 +41,27 @@ export class CaptureError extends Schema.TaggedErrorClass<CaptureError>()(
 	},
 ) {}
 
+/** A cookie to seed into the capture browser context before navigation. */
+export interface CaptureCookie {
+	readonly name: string;
+	readonly value: string;
+	/** Either `url`, or both `domain` and `path`, per Playwright's `addCookies`. */
+	readonly url?: string;
+	readonly domain?: string;
+	readonly path?: string;
+}
+
 export interface CaptureOptions {
 	/** Per-navigation timeout in ms (default 30s). */
 	readonly navigationTimeoutMs?: number;
 	/** Full-page screenshot (default) vs. above-the-fold only. */
 	readonly fullPage?: boolean;
+	/**
+	 * Cookies seeded into every shot's browser context before navigation — how the
+	 * local render harness honors the `phoenix_flag_overrides` dev-override cookie so
+	 * flag-gated surfaces render under `alchemy dev` (#2963). Absent ⇒ no cookies.
+	 */
+	readonly cookies?: readonly CaptureCookie[];
 }
 
 /**
@@ -75,9 +91,19 @@ export const captureShots = (
 				(shot) =>
 					Effect.tryPromise({
 						try: async (): Promise<CapturedSurface> => {
-							const page = await browser.newPage({
+							// A context per shot (not `browser.newPage`) so a shot's `deviceScaleFactor`
+							// (the downscale lever) and the run's `cookies` (the dev-override cookie)
+							// can be seeded before navigation — both are context-level in Playwright.
+							const context = await browser.newContext({
 								viewport: {width: shot.viewport.width, height: shot.viewport.height},
+								...(shot.deviceScaleFactor === undefined
+									? {}
+									: {deviceScaleFactor: shot.deviceScaleFactor}),
 							});
+							if (options.cookies && options.cookies.length > 0) {
+								await context.addCookies(options.cookies);
+							}
+							const page = await context.newPage();
 							// Listen across the WHOLE navigation window (attached before goto), so a
 							// runtime error thrown during mount/init is caught even when the frame
 							// still renders acceptably (#2594). `networkidle` already settles past
@@ -91,7 +117,13 @@ export const captureShots = (
 							});
 							try {
 								await page.goto(shot.url, {waitUntil: "networkidle", timeout: navigationTimeoutMs});
-								const buffer = await page.screenshot({type: "png", fullPage});
+								// A clip crops to the changed region; Playwright rejects clip + fullPage
+								// together, so a clipped shot is never full-page.
+								const buffer = await page.screenshot(
+									shot.clip === undefined
+										? {type: "png", fullPage}
+										: {type: "png", clip: shot.clip},
+								);
 								const localPath = join(outDir, shot.fileName);
 								await writeFile(localPath, buffer);
 								return {
@@ -104,7 +136,7 @@ export const captureShots = (
 									pageErrors,
 								};
 							} finally {
-								await page.close();
+								await context.close();
 							}
 						},
 						catch: (cause) =>

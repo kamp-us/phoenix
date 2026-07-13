@@ -56,6 +56,14 @@ export const DESKTOP_VIEWPORT: Viewport = {label: "desktop", width: 1280, height
 export const MOBILE_VIEWPORT: Viewport = {label: "mobile", width: 390, height: 844};
 export const DEFAULT_VIEWPORT: Viewport = DESKTOP_VIEWPORT;
 
+/** A crop rectangle in CSS pixels — the changed region the capture is narrowed to. */
+export interface CaptureClip {
+	readonly x: number;
+	readonly y: number;
+	readonly width: number;
+	readonly height: number;
+}
+
 /** One screenshot to take: an absolute URL at a viewport, written to `fileName`. */
 export interface Shot {
 	readonly surface: Surface;
@@ -64,6 +72,19 @@ export interface Shot {
 	readonly viewport: Viewport;
 	/** Filesystem-safe PNG file name (written under the capture out-dir). */
 	readonly fileName: string;
+	/**
+	 * Optional crop to the changed region (CSS px). When set, capture narrows to
+	 * this rectangle instead of the full page — the cost-control lever the local
+	 * render harness computes (#2963). Absent ⇒ the default full-page shot.
+	 */
+	readonly clip?: CaptureClip;
+	/**
+	 * Optional render device-pixel-ratio (`deviceScaleFactor`, per Playwright's
+	 * context option). A value < 1 renders fewer device pixels per CSS pixel — a
+	 * genuine raster downscale (device pixels = CSS pixels × dpr) — the budget
+	 * lever the local render harness computes (#2963). Absent ⇒ the default 1x.
+	 */
+	readonly deviceScaleFactor?: number;
 }
 
 /**
