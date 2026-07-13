@@ -37,8 +37,6 @@ import {
 } from "./Server.ts";
 import {FateWireCode, INTERNAL_WIRE_CODE} from "./WireError.ts";
 
-// --- fixture rows + views (exported: the TS2883 nameability fixture) --------
-
 export type NoteRow = {
 	id: string;
 	body: string;
@@ -48,8 +46,6 @@ export class NoteView extends FateDataView<NoteRow>()("Note")({
 	id: true,
 	body: true,
 }) {}
-
-// --- fixture errors: annotated, and one deliberately un-annotated -----------
 
 class NoteNotFound extends Schema.TaggedErrorClass<NoteNotFound>()(
 	"test/NoteNotFound",
@@ -73,8 +69,6 @@ class RateLimited extends Schema.TaggedErrorClass<RateLimited>()(
 class Unannotated extends Schema.TaggedErrorClass<Unannotated>()("test/Unannotated", {
 	message: Schema.String,
 }) {}
-
-// --- fixture config: error declarations across all three records ------------
 
 export const noteQueries = {
 	note: Fate.query(
@@ -142,8 +136,6 @@ export const noteConfig = FateServer.config({
 	sources: [noteSource],
 });
 
-// --- the contract ------------------------------------------------------------
-
 describe("declaredWireCodes", () => {
 	it("an empty config still carries the package fallbacks, exactly", () => {
 		const codes = declaredWireCodes(FateServer.config({}));
@@ -206,7 +198,7 @@ describe("declaredWireCodes", () => {
 	});
 });
 
-// --- the generic per-request provision seam (ADR 0107 §7) -------------------
+// The generic per-request provision seam (ADR 0107 §7).
 
 /**
  * A stand-in for an app's EXTRA per-request service (the künye `CurrentActor`

@@ -35,8 +35,6 @@ import {
 	type ProtocolSuccessResult,
 } from "./Protocol.ts";
 
-// --- helpers -----------------------------------------------------------------
-
 const decodeOp = Schema.decodeUnknownSync(ProtocolOperation);
 const encodeOp = Schema.encodeUnknownSync(ProtocolOperation);
 const decodeRequest = Schema.decodeUnknownSync(ProtocolRequest);
@@ -69,8 +67,6 @@ const expectRejection = (body: unknown, message: string): void => {
 const expectAccepted = (body: unknown) => Effect.runSync(decodeProtocolRequest(body));
 
 const requestOf = (operations: ReadonlyArray<unknown>) => ({version: 1, operations});
-
-// --- 1. round-trips -------------------------------------------------------------
 
 describe("Protocol — canonical round-trips", () => {
 	it("round-trips every operation kind byte-identically", () => {
@@ -146,8 +142,6 @@ describe("Protocol — canonical round-trips", () => {
 		);
 	});
 });
-
-// --- 2. fate-faithful rejection + leniency ---------------------------------------
 
 describe("decodeProtocolRequest — fate's assertProtocolRequest, staged", () => {
 	it("accepts a valid mixed-kind request and yields validated operations", () => {
@@ -242,8 +236,6 @@ describe("decodeProtocolRequest — fate's assertProtocolRequest, staged", () =>
 		);
 	});
 });
-
-// --- 3. the drift pin (type-level) ----------------------------------------------
 
 /**
  * Normalize mutability ONLY: fate declares mutable arrays/records where the

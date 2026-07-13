@@ -37,8 +37,6 @@ import {
 	type FieldMapResolved,
 } from "./DataView.ts";
 
-// --- the four #2805 comparands, at their exact authoring shape --------------
-
 type BanStateRow = {id: string; reason: string; bannedAt: Date};
 type DivanCaylakRow = {id: string; handle: string; karma: number};
 type FailingAddressRow = {id: string; address: string; userId: string; reason: string; since: Date};
@@ -76,14 +74,11 @@ export class EmailDeliveryStateView extends FateDataView<EmailDeliveryStateRow>(
 	failing: failingField,
 }) {}
 
-// --- the guard applied at each definition site (the load-bearing assertions) -
-
 export type BanStateAsserted = AssertFieldMapResolved<typeof BanStateView>;
 export type DivanCaylakAsserted = AssertFieldMapResolved<typeof DivanCaylakView>;
 export type FailingAddressAsserted = AssertFieldMapResolved<typeof FailingAddressView>;
 export type EmailDeliveryStateAsserted = AssertFieldMapResolved<typeof EmailDeliveryStateView>;
 
-// --- the synthetic slip: a view whose `.view` lost its symbol property -------
 // This is exactly what fate resolves after a `dataViewFieldsKey` identity slip —
 // a bare `DataView<Row>` with no field-map symbol, so `ViewFieldConfig` falls to
 // the wide `V['fields']`. It cannot be authored via `FateDataView` (which always

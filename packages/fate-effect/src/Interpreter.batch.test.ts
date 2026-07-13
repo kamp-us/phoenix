@@ -27,8 +27,6 @@ import {
 } from "./Oracle.fixture.ts";
 import {FateServer} from "./Server.ts";
 
-// --- the batch window (v2-only: where N+1 dies) ------------------------------------
-
 type CountedRow = {id: string; label: string};
 
 class CountedView extends FateDataView<CountedRow>()("Counted")({id: true, label: true}) {}
@@ -235,8 +233,6 @@ describe("FateInterpreter — RequestResolver-batched sources", () => {
 	});
 });
 
-// --- the dispatch loop runs operations concurrently --------------------------------
-
 describe("FateInterpreter — concurrent dispatch", () => {
 	it("operations within one request are in flight concurrently (fate's Promise.all)", async () => {
 		// Both handlers hold at a 2-party barrier: sequential dispatch would
@@ -295,7 +291,6 @@ describe("FateInterpreter — concurrent dispatch", () => {
 	});
 });
 
-// --- span nesting (the cutover observability contract, ADR 0043) -------------------
 //
 // v2 owns no runtime: `handleRequest` runs on the CALLER's fiber, so every
 // handler/source `Effect.fn` span must parent to the caller's ambient span —

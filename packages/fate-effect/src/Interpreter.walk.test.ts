@@ -35,8 +35,6 @@ import {
 import type {FateRequestContext} from "./RequestContext.ts";
 import {FateServer} from "./Server.ts";
 
-// --- the walk fixtures (byId + nested refs over static tables) --------------------
-
 type WalkAuthorRow = {id: string; name: string};
 type WalkChapterRow = {id: string; title: string; pages: number};
 type WalkReviewRow = {id: string; stars: number; secret: string};
@@ -336,8 +334,6 @@ const connectionOf = (
 	};
 };
 
-// --- the walk corpus (byId + nested refs, success and error, both backends) -------
-
 describe("the walk oracle corpus — byId operations + nested ref selections", () => {
 	it("every byId corpus step is byte-equal across fate's walk and the interpreter", async () => {
 		const umut = user("umut");
@@ -480,7 +476,6 @@ describe("the walk oracle corpus — byId operations + nested ref selections", (
 					{id: "d", kind: "byId", type: "WalkAuthor", ids: ["a1", "a2"], select: ["shout"]},
 				],
 			},
-			// -- the connection plane: raw arrays under list-kind fields --
 			{
 				label: "a raw array under a list field wraps without pagination args",
 				operations: [
@@ -596,8 +591,8 @@ describe("the walk oracle corpus — byId operations + nested ref selections", (
 					{id: "1", kind: "byId", type: "WalkBook", ids: ["b1"], select: ["reviews.stars"]},
 				],
 			},
-			// -- the rejection boundary: every invalid pagination bag is fate's
-			//    masked internal arm (the zod throw rides `toProtocolError`) --
+			// The rejection boundary: every invalid pagination bag is fate's
+			// masked internal arm (the zod throw rides `toProtocolError`).
 			{
 				label: "scoped first: 0 is rejected as the internal arm",
 				operations: [

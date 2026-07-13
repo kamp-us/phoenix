@@ -35,8 +35,6 @@ import type {DefinitionErrors, FateOperationServices} from "./Operation.ts";
 import {InputValidationError} from "./Operation.ts";
 import {encodeWireError, FateWireCode} from "./WireError.ts";
 
-// --- fixture row + view (exported: the TS2883 nameability fixture) ----------
-
 export type TermRow = {
 	slug: string;
 	title: string;
@@ -49,8 +47,6 @@ export class TermView extends FateDataView<TermRow>()("Term")({
 	score: true,
 }) {}
 
-// --- fixture service: the handlers' inferred requirement --------------------
-
 export class TermStore extends Context.Service<
 	TermStore,
 	{readonly rows: ReadonlyArray<TermRow>}
@@ -60,8 +56,6 @@ const rows: ReadonlyArray<TermRow> = [
 	{slug: "effect", title: "Effect", score: 4},
 	{slug: "fate", title: "fate", score: 3},
 ];
-
-// --- fixture errors: the declared union --------------------------------------
 
 class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
@@ -79,8 +73,6 @@ class Unrelated extends Schema.TaggedErrorClass<Unrelated>()("test/Unrelated", {
 	message: Schema.String,
 }) {}
 
-// --- fixture schemas: wire input/args ----------------------------------------
-
 /** `score` decodes from a wire string — proof the handler sees DECODED input. */
 const AddTermInput = Schema.Struct({
 	slug: Schema.String,
@@ -93,8 +85,6 @@ const PageArgs = Schema.Struct({
 	first: Schema.optional(Schema.Number),
 	after: Schema.optional(Schema.String),
 });
-
-// --- the realistic authoring shapes (exported: nameability fixtures) --------
 
 export const termQuery = Fate.query(
 	{args: TermArgs, type: TermView},

@@ -30,8 +30,6 @@ import {assertParity, type OracleBackend, user} from "./Oracle.fixture.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
 import {FateServer} from "./Server.ts";
 
-// --- the feature fixture world (pano / pasaport / stats rows + views) --------------
-
 type FxTagRow = {kind: string; label: string};
 type FxCommentRow = {
 	id: string;
