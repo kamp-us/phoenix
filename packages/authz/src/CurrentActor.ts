@@ -7,7 +7,6 @@
 import {Context} from "effect";
 import type {Actor} from "./Actor.ts";
 
-/** The actor behind the current request. */
 export class CurrentActor extends Context.Service<
 	CurrentActor,
 	{

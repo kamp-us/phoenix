@@ -54,14 +54,12 @@ export type CapabilityTag<Self, Id extends string> = Context.ServiceClass<Self, 
 		readonly key: Id;
 	};
 
-/** The generic base capability — discharged by a caller-supplied check. */
 export type ClassCapability<Self, Id extends string, DenyError> = CapabilityTag<Self, Id> & {
 	authorize<E, R>(
 		check: Effect.Effect<boolean, E, R>,
 	): Effect.Effect<Grant<Self>, DenyError | E, CurrentActor | R>;
 };
 
-/** A `Level`-axis capability — discharged by reading standing against a floor. */
 export type LevelCapability<
 	Self,
 	Id extends string,
@@ -76,19 +74,16 @@ export type LevelCapability<
 	>;
 };
 
-/** A `Relation`-axis capability — discharged over a resource's ancestry. */
 export type RelationCapability<Self, Id extends string, DenyError> = CapabilityTag<Self, Id> & {
 	over(
 		object: Resource,
 	): Effect.Effect<Grant<Self>, DenyError, CurrentActor | RelationStore | AgentAuthority>;
 };
 
-/** Config for {@link Class}. */
 export interface ClassConfig<DenyError> {
 	readonly deny: () => DenyError;
 }
 
-/** Config for {@link Level}. */
 export interface LevelConfig<Name extends string, DenyError, ReadError, ReadReqs> {
 	/** The ordered ladder the `min` floor is compared on. */
 	readonly scale: Scale<Name>;
@@ -99,7 +94,6 @@ export interface LevelConfig<Name extends string, DenyError, ReadError, ReadReqs
 	readonly deny: () => DenyError;
 }
 
-/** Config for {@link Relation}. */
 export interface RelationConfig<DenyError> {
 	/** The relation name (the ReBAC verb, e.g. `moderates`). */
 	readonly relation: string;
