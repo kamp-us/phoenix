@@ -22,7 +22,7 @@
  * — a cell's spend is the mean over its reconstructed runs, and a cell with zero reconstructed
  * spends reports a null token axis rather than a fabricated zero.
  */
-import {Data, Result} from "effect";
+import {Result} from "effect";
 import * as Schema from "effect/Schema";
 import {CorpusEntry} from "./corpus.ts";
 import {priceModelSwap, repairChurnCost} from "./repair-churn.ts";
@@ -381,10 +381,13 @@ export const ReportInput = Schema.Array(RunRowSchema);
 export type ReportInput = typeof ReportInput.Type;
 
 /** A typed report-input decode failure — malformed JSON, or a shape that doesn't match the rows schema. */
-export class ReportInputError extends Data.TaggedError("ReportInputError")<{
-	readonly reason: "malformed-json" | "schema-mismatch";
-	readonly message: string;
-}> {}
+export class ReportInputError extends Schema.TaggedErrorClass<ReportInputError>()(
+	"ReportInputError",
+	{
+		reason: Schema.Literals(["malformed-json", "schema-mismatch"]),
+		message: Schema.String,
+	},
+) {}
 
 const decodeUnknownReportInput = Schema.decodeUnknownResult(ReportInput);
 
@@ -392,21 +395,20 @@ const decodeUnknownReportInput = Schema.decodeUnknownResult(ReportInput);
  * Decode the report's input (a serialized `RunRow[]`) from its on-disk text. Total — a non-JSON
  * body or a schema mismatch both return a typed `Result` failure, never a throw.
  */
-export const decodeReportInput = (text: string): Result.Result<ReportInput, ReportInputError> => {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(text);
-	} catch (cause) {
-		return Result.fail(
+export const decodeReportInput = (text: string): Result.Result<ReportInput, ReportInputError> =>
+	Result.try({
+		try: (): unknown => JSON.parse(text),
+		catch: (cause) =>
 			new ReportInputError({
 				reason: "malformed-json",
 				message: cause instanceof Error ? cause.message : String(cause),
 			}),
-		);
-	}
-	return decodeUnknownReportInput(parsed).pipe(
-		Result.mapError(
-			(error) => new ReportInputError({reason: "schema-mismatch", message: error.message}),
+	}).pipe(
+		Result.flatMap((parsed) =>
+			decodeUnknownReportInput(parsed).pipe(
+				Result.mapError(
+					(error) => new ReportInputError({reason: "schema-mismatch", message: error.message}),
+				),
+			),
 		),
 	);
-};

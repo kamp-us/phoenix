@@ -11,23 +11,27 @@
  * (ADR 0082). The router is closed for modification: new tools arrive only
  * via `registry.ts`, never by editing this file.
  */
-import {Data, Result} from "effect";
+import {Result} from "effect";
+import * as Schema from "effect/Schema";
 import type {RegisteredTool} from "./registry.ts";
 
 /** The first argv token named no registered tool. Carries the offender + the known set. */
-export class UnknownToolError extends Data.TaggedError("UnknownToolError")<{
-	readonly tool: string;
-	readonly known: ReadonlyArray<string>;
-}> {
+export class UnknownToolError extends Schema.TaggedErrorClass<UnknownToolError>()(
+	"UnknownToolError",
+	{
+		tool: Schema.String,
+		known: Schema.Array(Schema.String),
+	},
+) {
 	override get message(): string {
 		return `unknown tool "${this.tool}" — known tools: ${this.known.join(", ") || "(none)"}`;
 	}
 }
 
 /** No argv token at all (`pipeline-cli` with no subcommand) — the help/usage case. */
-export class NoToolError extends Data.TaggedError("NoToolError")<{
-	readonly known: ReadonlyArray<string>;
-}> {
+export class NoToolError extends Schema.TaggedErrorClass<NoToolError>()("NoToolError", {
+	known: Schema.Array(Schema.String),
+}) {
 	override get message(): string {
 		return `no tool given — known tools: ${this.known.join(", ") || "(none)"}`;
 	}
