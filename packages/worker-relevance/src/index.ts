@@ -1,10 +1,7 @@
 /**
- * `@kampus/worker-relevance` — the pure verdict for whether a PR's diff can affect
- * the `apps/web` worker (issue #1014). The core (`classify`/`inputFromEnv`) is a
- * pure, IO-free, zero-runtime-dependency classifier; `bin.ts` is the thin Node shell
- * the `changes` job runs to gate the worker `integration`/`e2e` tiers off a diff
- * confined to worker-irrelevant packages — including a `pnpm-lock.yaml` delta
- * confined to their importer blocks — fail-safe to running.
+ * `@kampus/worker-relevance` — public barrel. The pure verdict for whether a PR's
+ * diff can affect the `apps/web` worker (issue #1014); the core + its fail-safe
+ * design live in `./worker-relevance.ts`, the CI shell in `./bin.ts`.
  */
 export {
 	type ClassifyInput,
