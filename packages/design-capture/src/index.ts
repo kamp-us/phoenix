@@ -9,13 +9,13 @@
  * `resolvePreviewUrl` resolves the preview base from the sticky preview-deploy
  * comment, keyed off the per-app `<!-- preview-deploy:<app> -->` anchor.
  */
-export type {CapturedSurface, CaptureOptions} from "./capture.ts";
+export type {CaptureCookie, CapturedSurface, CaptureOptions} from "./capture.ts";
 export {CaptureError, captureShots} from "./capture.ts";
 export type {CaptureAndUploadRequest, CaptureRecord} from "./orchestrate.ts";
 export {captureAndUpload, hostedUrls, mergeRecord} from "./orchestrate.ts";
 export type {PageError, SurfacePageErrors} from "./page-errors.ts";
 export {isRenderCrash, renderCrashFailure, toPageError} from "./page-errors.ts";
-export type {Shot, Surface, Viewport} from "./plan.ts";
+export type {CaptureClip, Shot, Surface, Viewport} from "./plan.ts";
 export {
 	buildCapturePlan,
 	DEFAULT_VIEWPORT,
