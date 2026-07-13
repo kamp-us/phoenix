@@ -8,6 +8,14 @@ tags: [infra, d1, performance, platform]
 
 # 0168 — D1 Region Strategy: Smart Placement First, Read Replication Deferred
 
+> Amended by [ADR 0179](0179-edge-resolved-shell-state-boot-contract.md): the premise below that
+> "static assets are always served from the location nearest to the incoming request" — i.e. the
+> worker never touches HTML — is narrowed for the **HTML document route**. To resolve shell state at
+> the edge, HTML now routes worker-first (`["/*", "!/assets/*"]`) and is subject to Smart Placement's
+> per-worker ENAM bias (an accepted ~70–80ms first-byte hop, offset by killing the post-boot flag
+> fetch). The Smart-Placement-first strategy of this ADR stands; only the static-HTML premise is
+> revised.
+
 ## Context
 
 The authed pano feed's `/fate` request sits on a **~1.0s steady-state latency floor** for
