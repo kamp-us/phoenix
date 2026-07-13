@@ -23,8 +23,6 @@ import {createSourcePlan, dataView, type Entity as KernelEntity, list} from "@nk
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {type Entity, FateDataView} from "./DataView.ts";
 
-// --- fixture rows -----------------------------------------------------------
-
 type DefinitionRow = {
 	id: string;
 	body: string;
@@ -45,8 +43,6 @@ type StatsRow = {
 	id: string;
 	termCount: number;
 };
-
-// --- the nameability fixture: several EXPORTED views (no TS2883 allowed) ----
 
 export class DefinitionView extends FateDataView<DefinitionRow>()("Definition")({
 	id: true,
@@ -79,7 +75,6 @@ export type Definition = Entity<typeof DefinitionView>;
 export type Term = Entity<typeof TermView, {definitions?: Array<Definition>}>;
 export type LandingStats = Entity<typeof StatsView>;
 
-// --- kernel twins: the "equivalent declaration" written with fate directly --
 // Local, non-exported on purpose (exporting these is exactly what TS2883 bans).
 
 const kernelDefinitionView = dataView<DefinitionRow>("Definition")({

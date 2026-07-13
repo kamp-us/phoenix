@@ -293,8 +293,6 @@ const getComputedDeps = (item: AnyRow, select: unknown): AnyRow => {
 	return deps;
 };
 
-// --- the walk itself (fate's resolveNode / filterToViewFields / toConnectionResult) -
-
 interface WalkOptions {
 	readonly args: WalkArgs;
 	readonly context: FateRequestContext;

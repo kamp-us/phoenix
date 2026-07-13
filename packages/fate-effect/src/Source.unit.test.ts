@@ -28,8 +28,6 @@ import {Fate} from "./index.ts";
 import type {FateSourcesList} from "./Server.ts";
 import type {FateSourceServices, SourceHandlerBody} from "./Source.ts";
 
-// --- fixture row + view (exported: the TS2883 nameability fixture) ----------
-
 export type TermRow = {
 	slug: string;
 	title: string;
@@ -42,8 +40,6 @@ export class TermView extends FateDataView<TermRow>()("Term")({
 	score: true,
 }) {}
 
-// --- fixture services: the handlers' inferred requirements ------------------
-
 export class TermStore extends Context.Service<
 	TermStore,
 	{readonly rows: ReadonlyArray<TermRow>}
@@ -52,8 +48,6 @@ export class TermStore extends Context.Service<
 export class Viewer extends Context.Service<Viewer, {readonly id: string}>()(
 	"@kampus/fate-effect/test/Viewer",
 ) {}
-
-// --- the realistic authoring shape (exported: nameability fixture) ----------
 
 export const termSource = Fate.source(
 	TermView,
@@ -267,8 +261,6 @@ describe("Fate.source — type-level contract", () => {
 		expectTypeOf(provided).toEqualTypeOf<Effect.Effect<ReadonlyArray<TermRow>, never, never>>();
 	});
 });
-
-// --- the synthetic escape hatch (exported: nameability fixture) -------------
 
 export type GhostRow = {
 	id: string;

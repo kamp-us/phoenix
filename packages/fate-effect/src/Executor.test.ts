@@ -70,8 +70,6 @@ import {FateServer} from "./Server.ts";
 const PLAN = undefined as never;
 const planWithArgs = (args: Record<string, unknown>) => ({args}) as never;
 
-// --- the wire-driving harness ---------------------------------------------------
-
 const fateRequest = (operations: ReadonlyArray<Record<string, unknown>>): Request =>
 	new Request("https://test.local/fate", {
 		method: "POST",
@@ -166,8 +164,6 @@ const compiledSourcesOf = async (harness: ReturnType<typeof makeHarness>) => {
 	});
 };
 
-// --- 1. the full round-trip (in-memory database behind the runtime) ---------
-
 describe("FateExecutor.toFetchHandler — round-trip", () => {
 	it("wire request → Schema decode → handler over the runtime's domain service → wire result", async () => {
 		const harness = makeHarness();
@@ -255,8 +251,6 @@ describe("FateExecutor.toFetchHandler — round-trip", () => {
 	});
 });
 
-// --- 1b. config validation surfaces here (the layer builds on first call) ---------
-
 describe("FateExecutor.toFetchHandler — config validation", () => {
 	it("a typeless mutation fails the first request with the layer-construction wording", async () => {
 		// Hand-built erased entry — `Fate.mutation` makes this unrepresentable;
@@ -286,8 +280,6 @@ describe("FateExecutor.toFetchHandler — config validation", () => {
 		}
 	});
 });
-
-// --- 2. failure mapping through the FateWireCode codec ---------------------------
 
 describe("FateExecutor — wire errors", () => {
 	it("a declared annotated error produces its annotated wire code", async () => {
@@ -375,8 +367,6 @@ describe("FateExecutor — wire errors", () => {
 	});
 });
 
-// --- 3. the per-request pair under concurrency -----------------------------------
-
 describe("FateExecutor — per-request services", () => {
 	it("two concurrent requests observe their own CurrentUser and LivePublisher", async () => {
 		const barrier = makeBarrier(2);
@@ -427,8 +417,6 @@ describe("FateExecutor — per-request services", () => {
 	});
 });
 
-// --- 5. span nesting (ADR 0041) ---------------------------------------------------
-
 describe("FateExecutor — observability", () => {
 	it("operation and source spans nest under the runtime's request span", async () => {
 		const harness = makeHarness({requestSpan: true});
@@ -456,8 +444,6 @@ describe("FateExecutor — observability", () => {
 		}
 	});
 });
-
-// --- sources: identity-keyed registry, adapted executors ---------------------------
 
 describe("compileFateSources", () => {
 	it("keys the registry by definition identity and resolves getSource by typeName", async () => {
@@ -545,8 +531,6 @@ describe("compileFateSources", () => {
 	});
 });
 
-// --- 6. the single conversion point ------------------------------------------------
-
 describe("the single conversion point", () => {
 	it("no static Effect.run* in package sources; the runtime runner only in Executor.ts", async () => {
 		const srcDir = dirname(fileURLToPath(import.meta.url));
@@ -575,8 +559,6 @@ describe("the single conversion point", () => {
 		}
 	});
 });
-
-// --- type-level pins ---------------------------------------------------------------
 
 describe("FateExecutor — types", () => {
 	it("a wider worker runtime satisfies FateExecutorRuntime (contravariant R)", () => {

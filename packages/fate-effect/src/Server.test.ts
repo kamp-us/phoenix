@@ -40,8 +40,6 @@ import type {AnyFateMutation} from "./Server.ts";
 import {FateServer, FateServerConfigError} from "./Server.ts";
 import {FateWireCode} from "./WireError.ts";
 
-// --- fixture rows + views (exported: the TS2883 nameability fixture) --------
-
 export type DefinitionRow = {
 	id: string;
 	body: string;
@@ -64,8 +62,6 @@ export class TermView extends FateDataView<TermRow>()("Term")({
 	definitions: FateDataView.list(DefinitionView),
 }) {}
 
-// --- fixture domain service: the requirement the worker must discharge ------
-
 export class TermStore extends Context.Service<
 	TermStore,
 	{readonly rows: ReadonlyArray<TermRow>}
@@ -78,15 +74,11 @@ const rows: ReadonlyArray<TermRow> = [
 
 const TermStoreLive = Layer.succeed(TermStore, {rows});
 
-// --- fixture error ------------------------------------------------------------
-
 class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
 	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
-
-// --- the realistic multi-feature authoring shape -----------------------------
 
 /** sozluk-shaped feature records: `Fate.*` entries over the domain service. */
 export const sozlukQueries = {
@@ -182,8 +174,6 @@ export const phoenixLayer = FateServer.layer(phoenixConfig);
 /** The R channel of a layer, for the type-level pins below. */
 type LayerIn<L> = L extends Layer.Layer<infer _ROut, infer _E, infer RIn> ? RIn : never;
 
-// --- harness -----------------------------------------------------------------
-
 const buildService = (layer: Layer.Layer<FateServer>) =>
 	Effect.runPromise(
 		Effect.scoped(
@@ -200,7 +190,7 @@ const buildExit = (layer: Layer.Layer<FateServer>) =>
 const defectOf = (exit: Exit.Exit<unknown, unknown>): unknown =>
 	Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
 
-// --- type-level: R = handler/source requirements minus the per-request pair --
+// Type-level: R = handler/source requirements minus the per-request pair.
 
 describe("FateServer.layer — the R channel", () => {
 	it("R is the requirement union minus CurrentUser and LivePublisher", () => {
@@ -225,8 +215,6 @@ describe("FateServer.layer — the R channel", () => {
 		expectTypeOf<LayerIn<typeof discharged>>().toEqualTypeOf<never>();
 	});
 });
-
-// --- runtime: construction + init-time validation ----------------------------
 
 describe("FateServer.layer — construction", () => {
 	it("builds the service: records, sources, live, and captured services", async () => {

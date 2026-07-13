@@ -33,8 +33,6 @@ import {Fate} from "./index.ts";
 import type {AnyFateMutation} from "./Server.ts";
 import {FateServer, FateServerConfigError} from "./Server.ts";
 
-// --- fixture rows + views ------------------------------------------------------
-
 type TermRow = {
 	slug: string;
 	title: string;
@@ -70,8 +68,6 @@ const SozlukDbLive = Layer.sync(SozlukDb, () => ({
 	definitions: [],
 }));
 
-// --- the shared wire Schemas (both sides of the comparison name their Encoded) --
-
 const TermArgs = Schema.Struct({
 	slug: Schema.String,
 	take: Schema.optional(Schema.FiniteFromString),
@@ -83,12 +79,8 @@ type TermArgsWire = (typeof TermArgs)["Encoded"];
 type TermsArgsWire = (typeof TermsArgs)["Encoded"];
 type AddDefinitionWire = (typeof AddDefinitionInput)["Encoded"];
 
-// --- the reference server's adapterContext shape ---------------------------------
-
 /** The reference server's ctx shape — never surfaces in the API types. */
 type RefCtx = {requestId: string};
-
-// --- the representative config -------------------------------------------------
 
 const termSource = Fate.source(
 	TermView,
@@ -161,7 +153,6 @@ const config = FateServer.config({
 	sources: [termSource, definitionSource],
 });
 
-// --- the live REFERENCE server (fate's own typing over real resolvers) ----------
 //
 // What an honest hand-built live fate server declares for the same wire
 // contract: resolver args/input typed as the Schemas' Encoded side, outputs as
@@ -238,8 +229,6 @@ const codegenServer = toCodegenServer(config);
 type CodegenAPI = InferFateAPI<typeof codegenServer>;
 type LiveAPI = InferFateAPI<typeof liveServer>;
 
-// --- the wire-driving harness (inertness probe) ----------------------------------
-
 const fateRequest = (operations: ReadonlyArray<Record<string, unknown>>): Request =>
 	new Request("https://test.local/fate", {
 		method: "POST",
@@ -259,8 +248,6 @@ const resultsOf = async (res: Response): Promise<ReadonlyArray<WireResult>> => {
 	const body: {results: ReadonlyArray<WireResult>} = JSON.parse(await res.text());
 	return body.results;
 };
-
-// --- 1. manifest equality ---------------------------------------------------------
 
 describe("toCodegenServer — manifest", () => {
 	it("equals the live compiled server's manifest for the same config", async () => {
@@ -290,8 +277,6 @@ describe("toCodegenServer — manifest", () => {
 	});
 });
 
-// --- 2. inertness ------------------------------------------------------------------
-
 describe("toCodegenServer — inert handlers", () => {
 	it("the codegen module evaluates in bare node without touching any backing service", async () => {
 		// The fixture's handlers close over a throw-on-touch Proxy database; a
@@ -309,8 +294,6 @@ describe("toCodegenServer — inert handlers", () => {
 		expect(result?.ok).toBe(false);
 	});
 });
-
-// --- 3. validation parity ------------------------------------------------------------
 
 describe("toCodegenServer — validation", () => {
 	it("an invalid config throws FateServerConfigError at build time (live-init parity)", () => {
@@ -346,8 +329,6 @@ describe("toCodegenServer — validation", () => {
 		expect(() => toCodegenServer(invalid)).toThrow(/mutation "broken\.op" carries no wire type/);
 	});
 });
-
-// --- 4. InferFateAPI fidelity ---------------------------------------------------------
 
 describe("InferFateAPI fidelity — codegen ≡ live", () => {
 	it("the codegen API and the live API are assignable in BOTH directions", () => {

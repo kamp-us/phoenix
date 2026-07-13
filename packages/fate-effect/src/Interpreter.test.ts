@@ -27,8 +27,6 @@
 import {describe, expect, it} from "vitest";
 import {assertParity, makeV1, makeV2, type OracleStep, user} from "./Oracle.fixture.ts";
 
-// --- the harness itself (one operation, raw wire JSON diffed) ---------------------
-
 describe("the differential oracle harness", () => {
 	it("runs one operation through both backends and diffs the raw wire JSON", async () => {
 		const v1 = makeV1();
@@ -53,13 +51,10 @@ describe("the differential oracle harness", () => {
 	});
 });
 
-// --- the corpus (queries + mutations, success and error, in lockstep) -------------
-
 describe("the sozluk oracle corpus — queries and mutations", () => {
 	it("every corpus step is byte-equal across both backends", async () => {
 		const umut = user("umut");
 		const steps: ReadonlyArray<OracleStep> = [
-			// -- queries: success shapes --
 			{
 				label: "query success with Schema-decoded args",
 				operations: [
@@ -74,7 +69,6 @@ describe("the sozluk oracle corpus — queries and mutations", () => {
 				label: "empty operations array",
 				operations: [],
 			},
-			// -- queries: error shapes --
 			{
 				label: "unknown query is NOT_FOUND",
 				operations: [{id: "1", kind: "query", name: "nope", select: []}],
@@ -95,7 +89,6 @@ describe("the sozluk oracle corpus — queries and mutations", () => {
 				label: "empty operation name is a per-operation BAD_REQUEST",
 				operations: [{id: "1", kind: "query", name: "", select: []}],
 			},
-			// -- fate's acceptance leniency --
 			{
 				label: "junk in kind-unchecked fields is accepted and ignored",
 				operations: [
@@ -110,7 +103,6 @@ describe("the sozluk oracle corpus — queries and mutations", () => {
 					},
 				],
 			},
-			// -- mutations: the write path, advancing both worlds --
 			{
 				label: "anonymous mutation is UNAUTHORIZED",
 				operations: [
@@ -181,12 +173,11 @@ describe("the sozluk oracle corpus — queries and mutations", () => {
 					{id: "1", kind: "mutation", name: "definition.vote", input: {id: "def-99"}, select: []},
 				],
 			},
-			// -- batching: order preserved, mixed outcomes. NOTE: no operation in
-			// the batch reads what another WRITES — intra-batch read-after-write
-			// is racy under BOTH backends (fate's Promise.all and the
-			// interpreter's unbounded forEach interleave differently); only
+			// No operation in the batch reads what another WRITES — intra-batch
+			// read-after-write is racy under BOTH backends (fate's Promise.all and
+			// the interpreter's unbounded forEach interleave differently); only
 			// cross-request reads are deterministic, and the oracle only pins
-			// deterministic wire output. --
+			// deterministic wire output.
 			{
 				label: "a mixed batch preserves operation order",
 				user: umut,
@@ -211,7 +202,6 @@ describe("the sozluk oracle corpus — queries and mutations", () => {
 					{id: "1", kind: "query", name: "definitions", args: {term: "fate"}, select: []},
 				],
 			},
-			// -- a list smoke case (the full corpus: the features + walk suites) --
 			{
 				label: "list operation parity (smoke)",
 				operations: [{id: "1", kind: "list", name: "terms", args: {first: 1}, select: []}],

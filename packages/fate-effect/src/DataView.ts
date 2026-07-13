@@ -201,7 +201,6 @@ export type WorkerEntity<
 	Override extends Record<string, unknown> = Record<never, never>,
 > = Entity<View, Omit<DateCorrection<View, DateKeys>, keyof Override> & Override>;
 
-// --- Loud-fail guard for the silent field-map symbol slip (#2808) -----------
 //
 // The forcing failure this guards: fate recovers a view's literal field map off
 // the `dataViewFieldsKey` symbol property `KernelDataView` stamps. When that
