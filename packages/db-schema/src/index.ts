@@ -40,10 +40,6 @@ import {index, integer, sqliteTable, text} from "drizzle-orm/sqlite-core";
 
 const timestamp = (name: string) => integer(name, {mode: "timestamp"});
 
-/**
- * One row per term, keyed by slug. Canonical store for sozluk terms under
- * d1-direct (ADR 0009) — the D1 row IS the term; deleting it destroys it.
- */
 export const termRecord = sqliteTable(
 	"term_record",
 	{
@@ -68,10 +64,8 @@ export const termRecord = sqliteTable(
 );
 
 /**
- * Per-definition row. Canonical store for sozluk definitions after d1-direct
- * (ADR 0009) — the per-term DO is no longer the source of truth. Denormalized
- * with term slug + title so the profile feed renders without joining
- * `term_record`; `body_excerpt` is a denormalized truncation for the feed card.
+ * Denormalized with term slug + title so the profile feed renders without
+ * joining `term_record`; `body_excerpt` is a truncation for the feed card.
  */
 export const definitionRecord = sqliteTable(
 	"definition_record",
@@ -112,10 +106,6 @@ export const definitionRecord = sqliteTable(
 	],
 );
 
-/**
- * One row per post. Canonical store for pano posts under d1-direct (ADR 0009) —
- * the per-post DO is no longer the source of truth; the D1 row IS the post.
- */
 export const postRecord = sqliteTable(
 	"post_record",
 	{
@@ -171,9 +161,8 @@ export const postRecord = sqliteTable(
 );
 
 /**
- * Per-comment row, denormalized with post id + title for the profile feed AND
- * the per-post thread reader. Canonical store for pano comments after d1-direct
- * (ADR 0009) — the per-post DO is no longer the source of truth.
+ * Denormalized with post id + title for the profile feed AND the per-post
+ * thread reader.
  *
  * A removed comment that still has live replies stays as a `Removed` row (its
  * canonical body kept for restore + moderator review); the `[silindi]` tombstone
