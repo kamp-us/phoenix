@@ -413,6 +413,15 @@ closing the mktemp-path leak where a scratch path bled into the `@ <sha>` field 
 a comment, never a native review** (ADR 0058 rule 4): a native review can't carry the `@ <sha>` in
 the shape this contract controls, so the comment is the single carrier.
 
+**MANDATE (hard invariant, not a suggestion):** `$VERDICT post` (here via the `upsert` wrapper
+below) is the **only** permitted way to emit this verdict marker. A bare `gh api …/comments` /
+`gh pr comment` hand-post of the marker that skips the guard is **FORBIDDEN** (it is the emit-side
+hole #2789 / #2816 / #2818 rode: hand-posting off the verdict lib means `emissionDefect` never
+runs). If a raw post is ever genuinely unavoidable, the body **MUST** first pass
+`pipeline-cli leak-guard scan-comment` (the #2823 pre-post net) before the post. This is the
+single-source rule in
+[gh-issue-intake-formats.md](../gh-issue-intake-formats.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
+
 The SHA in the first line is **load-bearing**: `ship-it` refuses any verdict not bound to the PR's
 current head (ADR 0058). **Token order is fixed** (§5): `@ <HEAD_SHA>` comes **immediately after**
 `PASS`/`FAIL`, **before** `— merge-ready`/`— changes-requested` — never a trailing `@ <sha>` (that

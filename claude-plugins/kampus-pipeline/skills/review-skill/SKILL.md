@@ -535,6 +535,14 @@ the marker-emit choke point:** it refuses fail-closed unless every SHA field (th
 the mktemp-path leak (#2683), the empty-`@-` case (#2646), and any cross-namespace body. Resolve
 the tool once — in-repo first, published fallback (ADR 0062/0064; epic #994):
 
+**MANDATE (hard invariant, not a suggestion):** `$VERDICT post` is the **only** permitted way to
+emit this verdict marker. A bare `gh api …/comments` / `gh pr comment` hand-post of the marker that
+skips the guard is **FORBIDDEN** (it is the emit-side hole #2789 / #2816 / #2818 rode: hand-posting
+off the verdict lib means `emissionDefect` never runs). If a raw post is ever genuinely unavoidable,
+the body **MUST** first pass `pipeline-cli leak-guard scan-comment` (the #2823 pre-post net) before
+the post. This is the single-source rule in
+[gh-issue-intake-formats.md](../gh-issue-intake-formats.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
+
 ```bash
 if [ -f packages/pipeline-cli/src/bin.ts ]; then
   VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
