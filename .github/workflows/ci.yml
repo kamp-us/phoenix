@@ -654,6 +654,10 @@ jobs:
             // Match the web app's block in the sticky comment, capturing the URL
             // and the hidden d1 token deploy.yml emits for web only.
             const webRe = /<!-- preview-deploy:web -->\n[^\n]*?(https:\/\/[A-Za-z0-9.-]+\.workers\.dev)[^\n]*?<!-- d1:([0-9a-f-]+) -->/;
+            // Optional, independent of the required URL+D1 match: the forced preview-flag
+            // key set deploy.yml emits (issue #2951). Absent when no `preview-flag:<key>`
+            // label forced anything, so it never gates the poll — only enriches the run env.
+            const flagsRe = /<!-- preview-flags:([^>]*?) -->/;
             while (Date.now() < deadline) {
               const {data: comments} = await github.rest.issues.listComments({
                 ...context.repo, issue_number: context.issue.number, per_page: 100,
@@ -661,9 +665,12 @@ jobs:
               const c = comments.find((x) => x.body?.includes(marker));
               const m = c && c.body.match(webRe);
               if (m) {
+                const fm = c.body.match(flagsRe);
+                const flags = fm ? fm[1] : "";
                 core.setOutput("url", m[1]);
                 core.setOutput("db", m[2]);
-                core.info(`preview ready: ${m[1]} (D1 ${m[2]})`);
+                core.setOutput("flags", flags);
+                core.info(`preview ready: ${m[1]} (D1 ${m[2]})${flags ? ` forced flags: ${flags}` : ""}`);
                 return;
               }
               core.info("waiting for deploy.yml to post the web preview URL + D1 id…");
@@ -705,6 +712,10 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           E2E_D1_DATABASE_ID: ${{ steps.preview.outputs.db }}
+          # The forced preview-flag key set (comma-separated) deploy.yml forced ON in this
+          # preview's Flagship app (issue #2951). Darkship OFF-assertion specs read this to
+          # skip/invert against a forced-ON preview; empty when nothing was forced.
+          E2E_FORCED_FLAGS: ${{ steps.preview.outputs.flags }}
 
       # Upload the report whenever the run completed (pass or fail), so a red run's
       # traces survive for triage; `!cancelled()` keeps it from skipping on failure,
