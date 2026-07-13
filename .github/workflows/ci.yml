@@ -202,9 +202,17 @@ jobs:
             # or apps/web-only PR touches none of these → `packages` false → the job
             # skips (→ green, non-blocking). Narrower than `code`: an apps/web/src
             # change runs `unit` but legitimately not-applicable-skips `packages-tests`.
+            #
+            # Hook scripts (`claude-plugins/kampus-pipeline/hooks/**`) are listed so a
+            # hook-only edit RUNS the golden real-payload handler tests that guard them
+            # (create-worktree.hook.test.ts / command.hook.test.ts in packages-tests) —
+            # ADR 0180. Without this, a change to a hook script skips `packages`, so the
+            # blocking handler test never runs, and a broken hook ships green: exactly
+            # the #2925 gap (a hook built to a fabricated payload passed every gate).
             packages:
               - 'packages/**'
               - 'infra/**'
+              - 'claude-plugins/kampus-pipeline/hooks/**'
               - 'pnpm-workspace.yaml'
               - 'tsconfig*.json'
               - 'pnpm-lock.yaml'
