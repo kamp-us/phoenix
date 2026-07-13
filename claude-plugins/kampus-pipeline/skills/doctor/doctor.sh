@@ -21,12 +21,10 @@ say()  { printf '  %s %s\n' "$1" "$2"; }
 fix()  { printf '      ↳ fix: %s\n' "$1"; }
 hdr()  { printf '\n%s\n' "$1"; }
 
-# ── Target repo resolution (the one snippet every parameterized skill uses) ──
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 
 printf 'kampus-pipeline doctor — target repo: %s\n' "${REPO:-<unresolved>}"
 
-# ── Tier 1 — load-bearing ───────────────────────────────────────────────────
 hdr "Tier 1 — load-bearing (first run fails without these)"
 
 # 1a. gh authenticated
@@ -93,7 +91,6 @@ else
 	fails=$((fails + 1))
 fi
 
-# ── Tier 2 — gating ─────────────────────────────────────────────────────────
 hdr "Tier 2 — gating (a stage fails deep without these)"
 
 # 2a. target repo resolves
@@ -118,7 +115,6 @@ else
 	fails=$((fails + 1))
 fi
 
-# ── Tier 3 — optional (absence degrades a stage, never breaks the pipeline) ──
 hdr "Tier 3 — optional (degrades a stage; pipeline still runs)"
 
 # 3a. the consolidated `pnpm dlx` package adr / review-plan reach for (epic #994:
@@ -148,7 +144,6 @@ else
 	fix "optional: ship .github/workflows/run-evidence.yml + packages/pipeline-cli/src/tools/crabbox-manifest for SHA-bound evidence"
 fi
 
-# ── Verdict ─────────────────────────────────────────────────────────────────
 hdr "Verdict"
 if [ "$fails" -eq 0 ]; then
 	printf '  %s pipeline-ready: all Tier-1 and Tier-2 checks passed.\n' "$PASS"

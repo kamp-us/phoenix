@@ -36,7 +36,7 @@ checks=0
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok()   { echo "ok: $*";   checks=$((checks + 1)); }
 
-# ── Invariant 1: formats-doc CONTROL_PLANE_RE matches the single-source const ─
+# Invariant 1: formats-doc CONTROL_PLANE_RE matches the single-source const.
 #
 # The §CP boundary is single-sourced in packages/pipeline-cli (#2761), emitted by
 # `pipeline-cli control-plane-paths`. Read it from THERE (not a byte-compare of N
@@ -73,7 +73,7 @@ else
   formats: $FORMATS_RE"
 fi
 
-# ── Invariant 1b: GUARD_ADR_RE copy matches §CP (ADR 0164) ──────────────────
+# Invariant 1b: GUARD_ADR_RE copy matches §CP (ADR 0164).
 #
 # The guard-touching-ADR content predicate (ADR 0164, #2191) is single-sourced in §CP the
 # same way CONTROL_PLANE_RE is: one canonical GUARD_ADR_RE= line in gh-issue-intake-formats.md,
@@ -106,7 +106,7 @@ else
 	fi
 fi
 
-# ── Invariant 1c: HAS_*_RE class-fan copies match §CP (issue #2488) ──────────
+# Invariant 1c: HAS_*_RE class-fan copies match §CP (issue #2488).
 #
 # The four class-classification probes — HAS_CODE_RE / HAS_SKILLS_RE /
 # HAS_DOCS_EXCLUDE_RE / HAS_DOCS_RE — are single-sourced as canonical HAS_*_RE='…'
@@ -166,7 +166,7 @@ for name in $HAS_NAMES; do
 	done
 done
 
-# ── Invariant 2: .claude/skills symlink agrees with marketplace source ───────
+# Invariant 2: .claude/skills symlink agrees with marketplace source.
 #
 # .claude/skills -> ../claude-plugins/kampus-pipeline/skills
 # marketplace.json source -> ./claude-plugins/kampus-pipeline
@@ -208,7 +208,6 @@ else
 	fi
 fi
 
-# ── Verdict ──────────────────────────────────────────────────────────────────
 if [ "$errors" -gt 0 ]; then
 	echo "validate-gate-path-drift: FAILED — $errors error(s); gate-path invariants are broken (issue #720)"
 	exit 1
