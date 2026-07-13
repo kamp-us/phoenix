@@ -1,21 +1,13 @@
 /**
  * `@kampus/primary-index-tripwire` pure core — decide whether a to-be-committed staged fileset
- * carries the signature of the #2778 corruption (a mass staged-deletion of the instruction-trust
- * set against the PRIMARY index) and build an attribution record naming WHO/WHERE is about to
- * commit it.
+ * carries the #2778 corruption signature (a mass staged-deletion of the instruction-trust set) and
+ * build an attribution record naming WHO/WHERE is about to commit it.
  *
- * DETECTION + ATTRIBUTION ONLY. This core never blocks a commit and never mutates git — it emits a
- * record so the *next* occurrence is attributable (which actor, on which checkout, from which cwd).
- * Preventing the staging (scoping worktree git ops, guarding the primary index) and *blocking* the
- * dangerous commit are the §CP hardening fix tracked separately — see
- * `ops/incidents/2778-primary-index-mass-staged-deletion.md`. Read-only by construction: the caller
- * (`bin.ts`) gathers git facts with read-only plumbing and this module is IO-free and total.
- *
- * The #2778 signature (from the incident, verbatim): the primary index held 248 staged deletions of
- * tracked files under `.claude/**`, `.decisions/**`, and more — 0 unstaged modifications, 0 commits
- * ahead, a reflog of only clean fast-forward merges. Staging leaves no reflog trace, so the resulting
- * index state alone cannot say *which* actor ran the staging; the record this core builds captures the
- * identity/cwd context at the one caller-agnostic choke point that git itself fires — `pre-commit`.
+ * DETECTION + ATTRIBUTION ONLY, IO-free and total: this core never blocks a commit and never mutates
+ * git — it emits a record so the *next* occurrence is attributable. Staging leaves no reflog trace, so
+ * the index state alone cannot name the actor; the record captures the identity/cwd context at the
+ * caller-agnostic choke point git itself fires (`pre-commit`). Prevention/blocking is the §CP
+ * hardening fix, tracked separately — see `ops/incidents/2778-primary-index-mass-staged-deletion.md`.
  */
 
 /** One `git diff --cached --name-status` row: the status letter plus the path. */
@@ -42,7 +34,6 @@ export const CONTROL_PLANE_DELETION_PREFIXES: readonly string[] = [
 	"claude-plugins/",
 ];
 
-/** True when a path falls under one of the instruction-trust prefixes above. */
 export const isControlPlaneDeletion = (path: string): boolean =>
 	CONTROL_PLANE_DELETION_PREFIXES.some((p) => path.startsWith(p));
 

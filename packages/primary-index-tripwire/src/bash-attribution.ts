@@ -2,19 +2,16 @@
  * Run-time (pre-Bash) attribution for the #2778 corruption — the complement to the pre-commit
  * {@link import("./tripwire.ts").decideTripwire} core.
  *
- * The pre-commit tripwire sees only the POST-HOC index state (a mass of staged deletions), which
- * cannot say WHICH command produced it (staging leaves no reflog trace, #2778). This core runs at
- * the `PreToolUse` Bash boundary instead, where the offending staging COMMAND string + cwd + agent
- * are still in hand — so wiring it into the `worktree-guard pre-bash` hook captures the actor at
- * the moment a bulk-staging op is issued, closing the "which command staged it?" ambiguity for the
- * primary-operator surface the pre-commit leg is blind to.
+ * The pre-commit tripwire sees only the POST-HOC index state, which cannot say WHICH command produced
+ * it (staging leaves no reflog trace, #2778). This core runs at the `PreToolUse` Bash boundary, where
+ * the staging COMMAND string + cwd + agent are still in hand — wiring it into `worktree-guard
+ * pre-bash` captures the actor at the moment a bulk-staging op is issued.
  *
- * RECORD-ONLY, like the pre-commit tripwire: this decides only whether to WRITE an attribution
- * record; it never blocks a command (blocking is the §CP guard on the pre-commit/sync path). It is
- * scoped to the HIGH-SIGNAL bulk-staging shapes that stage deletions EN MASSE — a stage-everything
- * (`git add -A/--all/.`, `git commit -a`), or an index removal (`git rm --cached`, the literal
- * `git rm -r --cached`-class the #2778 signature names). A plain `git add <one-path>` of a
- * modification is deliberately NOT recorded — it is low-signal and would drown the log.
+ * RECORD-ONLY, like the pre-commit tripwire (blocking is the §CP guard on the pre-commit/sync path).
+ * Scoped to the HIGH-SIGNAL shapes that stage deletions EN MASSE — a stage-everything (`git add
+ * -A/--all/.`, `git commit -a`) or an index removal (`git rm --cached`, the literal `git rm -r
+ * --cached`-class #2778 names); a plain `git add <one-path>` is deliberately NOT recorded (low-signal,
+ * would drown the log).
  */
 import {CONTROL_PLANE_DELETION_PREFIXES, isControlPlaneDeletion} from "./tripwire.ts";
 
