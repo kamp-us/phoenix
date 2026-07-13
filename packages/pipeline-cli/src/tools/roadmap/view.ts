@@ -8,17 +8,17 @@
  */
 import {existsSync, readFileSync} from "node:fs";
 import {join} from "node:path";
-import {Console, Data, Effect} from "effect";
-import type * as Schema from "effect/Schema";
+import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import type {GhCommandError, GhParseError, RepoResolutionError} from "./github.ts";
 import {Github} from "./github.ts";
 import {buildView, parseRoadmap, renderView} from "./roadmap.ts";
 
 /** Couldn't read `ROADMAP.md` (absent or unreadable). */
-export class IoError extends Data.TaggedError("IoError")<{
-	readonly path: string;
-	readonly cause: unknown;
-}> {}
+export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
+	path: Schema.String,
+	cause: Schema.Unknown,
+}) {}
 
 const ROADMAP_FILE = "ROADMAP.md";
 

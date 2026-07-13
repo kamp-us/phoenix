@@ -18,15 +18,15 @@
  * `runMain` wiring is dropped — the shared `pipeline-cli` bin owns the run boundary.
  */
 import {readFileSync, writeFileSync} from "node:fs";
-import {Console, Data, Effect} from "effect";
+import {Console, Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {Command, Flag} from "effect/unstable/cli";
 import {type ChangelogEntry, deriveChangelog, type ReleaseMeta} from "./changelog.ts";
 
-class EntriesReadError extends Data.TaggedError("EntriesReadError")<{
-	readonly file: string;
-	readonly cause: unknown;
-}> {}
+class EntriesReadError extends Schema.TaggedErrorClass<EntriesReadError>()("EntriesReadError", {
+	file: Schema.String,
+	cause: Schema.Unknown,
+}) {}
 
 /** One entry as the gathered JSON carries it; decoded at this boundary. */
 const EntrySchema = Schema.Struct({

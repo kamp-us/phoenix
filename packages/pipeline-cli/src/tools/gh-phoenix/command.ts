@@ -29,22 +29,23 @@
  */
 import {readFileSync} from "node:fs";
 import {isZeroScope, type LintResult, lintCorpus, type ScanFile} from "@kampus/gh-phoenix";
-import {Console, Data, Effect} from "effect";
+import {Console, Effect, Result} from "effect";
+import * as Schema from "effect/Schema";
 import {Argument, Command} from "effect/unstable/cli";
 
 const FINDING_EXIT_CODE = 2;
 const ZERO_SCOPE_EXIT_CODE = 3;
 
-class FindingsFound extends Data.TaggedError("FindingsFound")<{readonly count: number}> {}
-class ZeroScope extends Data.TaggedError("ZeroScope")<{}> {}
+class FindingsFound extends Schema.TaggedErrorClass<FindingsFound>()("FindingsFound", {
+	count: Schema.Number,
+}) {}
+class ZeroScope extends Schema.TaggedErrorClass<ZeroScope>()("ZeroScope", {}) {}
 
-const readFileOrSkip = (file: string): string | null => {
-	try {
-		return readFileSync(file, "utf8");
-	} catch {
-		return null;
-	}
-};
+const readFileOrSkip = (file: string): string | null =>
+	Result.getOrElse(
+		Result.try(() => readFileSync(file, "utf8")),
+		() => null,
+	);
 
 const fileArg = Argument.string("file").pipe(
 	Argument.atLeast(1),
