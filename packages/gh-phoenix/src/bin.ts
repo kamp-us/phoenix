@@ -35,8 +35,6 @@ import {route} from "./router.ts";
 const FINDING_EXIT_CODE = 2;
 const ZERO_SCOPE_EXIT_CODE = 3;
 
-// ── The `gh` shim path (short-circuits before the Effect CLI) ──────────────────
-
 /**
  * Run the `gh` shim over `argv` (the args after the binary name). Execs the real
  * `gh` for passthrough/rewrite (inheriting stdio + exit code) or exits non-zero
@@ -72,8 +70,6 @@ const runShim = (argv: ReadonlyArray<string>): never => {
 	const result = spawnSync(realGh, [...decision.argv], {stdio: "inherit"});
 	process.exit(result.status ?? 1);
 };
-
-// ── The `lint-skills` subcommand (the Effect CLI surface) ──────────────────────
 
 class FindingsFound extends Schema.TaggedErrorClass<FindingsFound>()(
 	"@kampus/gh-phoenix/FindingsFound",
