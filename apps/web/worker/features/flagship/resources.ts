@@ -25,6 +25,7 @@ import {
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
+	PHOENIX_EMAIL_DELIVERY_NOTICE,
 	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_MOD_QUEUE,
@@ -832,6 +833,37 @@ export const EMAIL_DELIVERY_ADMIN_FLAG = {
  */
 export const emailDeliveryAdminFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_email_delivery_admin", {appId, ...EMAIL_DELIVERY_ADMIN_FLAG});
+
+/**
+ * The failing-email membrane notice dark-ship flag config (#2693, email-bounce epic
+ * #2687). The seam the user-facing notice gates behind — with it off the membrane mount
+ * renders nothing, so the surface ships dark until a human flips it at release (ADR 0083).
+ * Its OWN key, not the admin seam (#2692): the user-facing notice is a distinct surface
+ * from the admin failing-address console, with its own release lifecycle.
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `EMAIL_DELIVERY_ADMIN_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           pasaport (the identity + email-delivery surface)
+ *   - originating:     #2693 (epic: email-bounce, #2687)
+ *   - removal trigger: once the notice graduates to on at 100% and stable for one
+ *                      release, retire the flag and inline the membrane mount.
+ */
+export const EMAIL_DELIVERY_NOTICE_FLAG = {
+	key: PHOENIX_EMAIL_DELIVERY_NOTICE,
+	description:
+		"failing-email membrane notice dark-ship (#2693, epic #2687). owner: pasaport. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const emailDeliveryNoticeFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_email_delivery_notice", {appId, ...EMAIL_DELIVERY_NOTICE_FLAG});
 
 /**
  * The mecmua public-read dark-ship flag config (#2498, epic #2467). The SINGLE seam

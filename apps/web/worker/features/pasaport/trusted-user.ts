@@ -24,6 +24,10 @@ export interface TrustedUserBase {
 	name: string | null;
 	image: string | null;
 	username: string | null;
+	// The SELF failing-delivery signal (#2693). Only `queries.me` sets it (from #2691's
+	// projection); every other caller omits it and `toTrustedUser` defaults it `false`, so a
+	// non-self trusted `User` never carries real delivery-state (see `user-fields.ts`).
+	emailFailing?: boolean;
 }
 
 /**
@@ -39,7 +43,7 @@ export const toTrustedUser = (
 		const kunye = yield* Kunye;
 		const tier = yield* kunye.tierOf(base.id);
 		const isMod = yield* isModerator(base.id);
-		return toUser({...base, tier, isModerator: isMod});
+		return toUser({...base, tier, isModerator: isMod, emailFailing: base.emailFailing ?? false});
 	});
 
 /**
@@ -55,5 +59,7 @@ export const getUsersWithModerationByIds = (ids: ReadonlyArray<string>) =>
 		const pasaport = yield* Pasaport;
 		const rows = yield* pasaport.getUsersByIds(ids);
 		const mods = yield* moderatorsAmong(rows.map((row) => row.id));
-		return rows.map((row) => ({...row, isModerator: mods.has(row.id)}));
+		// `emailFailing` is a flat `false` on the by-id batch: it is the reader's OWN signal,
+		// resolved only on the self `me` read (#2693), never another account's delivery-state.
+		return rows.map((row) => ({...row, isModerator: mods.has(row.id), emailFailing: false}));
 	});

@@ -72,6 +72,9 @@ describe("toTrustedUser — the SELF trusted User shape", () => {
 				username: "u-one",
 				tier: "yazar",
 				isModerator: true,
+				// A base with no `emailFailing` defaults to `false` — the self signal is set
+				// only on the `me` read (#2693), never here.
+				emailFailing: false,
 			});
 		}),
 	);

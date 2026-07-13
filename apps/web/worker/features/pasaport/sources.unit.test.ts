@@ -161,7 +161,9 @@ it.effect("userSource.byIds carries through the underlying row fields unchanged"
 			Effect.provideService(Pasaport, pasaportWithCorpus),
 			Effect.provideService(RelationStore, relationStoreFor(new Set())),
 		);
-		assert.deepStrictEqual(rows[0], {...storedUser("u1"), isModerator: false});
+		// The batch stamps `emailFailing: false` flat — it is the reader's OWN signal,
+		// resolved only on the self `me` read (#2693), never another account's here.
+		assert.deepStrictEqual(rows[0], {...storedUser("u1"), isModerator: false, emailFailing: false});
 	}),
 );
 

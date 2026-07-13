@@ -28,11 +28,13 @@ import {useSession} from "./client";
  * over the exact scalars `MeView` selects, never a hand-restated interface. `tier`
  * and `isModerator` are trusted account-level signals read server-side (the stored
  * column via `Kunye.tierOf` / the `moderates` relation), surfaced on the row, never
- * inferred from the session.
+ * inferred from the session. `emailFailing` is the SELF failing-delivery signal
+ * (#2693) the membrane notice reads via the `emailFailing?` seam — optional, so a
+ * non-self read (or the not-yet-wired worker) is treated as deliverable.
  */
 export type MeUser = Pick<
 	User,
-	"id" | "email" | "name" | "image" | "username" | "tier" | "isModerator"
+	"id" | "email" | "name" | "image" | "username" | "tier" | "isModerator" | "emailFailing"
 >;
 
 export type MeStatus = "idle" | "loading" | "ok" | "error";
@@ -45,6 +47,7 @@ const MeView = view<User>()({
 	username: true,
 	tier: true,
 	isModerator: true,
+	emailFailing: true,
 });
 
 export function useMe(): {
