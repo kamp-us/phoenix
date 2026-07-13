@@ -418,6 +418,81 @@ jobs:
           fi
           echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
 
+      # Force per-PR preview flags ON from `preview-flag:<key>` PR labels — deploy-time
+      # serving write (issue #2951; mechanism A2, decided in investigation #2946). A label
+      # `preview-flag:<key>` forces that flag key ON in THIS PR's own `pr-<n>` Flagship app,
+      # so the release-blocking flag-ON journey e2e (epic #2926) and a human clicking the
+      # preview link both see flag-gated UI in its ON state — previews are otherwise
+      # flag-dark (each stage's Flagship app mints at IaC defaults, all off). The write is
+      # CI-credentialed and direct-to-store via cf-utils' `setServing` seam (ADR 0134),
+      # with ZERO runtime surface in the worker bundle — the preview-seed idiom, the
+      # deliberate counter-shape of the deleted fail-open seeder (CLAUDE.md "Sözlük seed").
+      #
+      # PRODUCTION HARD-REFUSE — the load-bearing invariant this whole step exists to keep:
+      # forcing must NEVER reach the prod Flagship app. Two independent gates. (1) The step
+      # is `pull_request`-only, and prod deploys only on `push` (STAGE=prod), so it never
+      # runs on a prod deploy. (2) Inside the step, re-resolve `environmentForStage($STAGE)`
+      # from its single owner (apps/web/worker/environment.ts — only `prod` maps to
+      # `production`) and `exit 1` BEFORE any write when it is `production`. The in-step
+      # recompute is deliberately self-contained (not the earlier step's $ENVIRONMENT) so
+      # the guard can't be defeated by an upstream edit; it fails closed (ADR 0092) — the
+      # refusal aborts the step, never downgrades to a silent no-op.
+      #
+      # web-only: the Flagship app (`phoenix_flags`) lives in the web stack
+      # (apps/web/worker/features/flagship/resources.ts). Idempotent: cf-utils `flag set` is
+      # a converging upsert — a re-run on a later push writes nothing when already ON.
+      - name: Force preview flags ON from PR labels (${{ matrix.app }})
+        id: force-flags
+        if: github.event_name == 'pull_request' && matrix.app == 'web'
+        env:
+          # The store write is Cloudflare-credentialed, NOT GITHUB_TOKEN. Least privilege:
+          # the label read below uses the default job token, already scoped by the job's
+          # `permissions:` (contents: read, pull-requests: write — GitHub Actions scopes
+          # permissions per JOB, not per step); this step adds no GitHub token scope.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+
+          # GATE (structural production refuse): recompute the deploy class from the single
+          # owner of the stage→ENVIRONMENT map and abort before any write if it is
+          # production — belt-and-suspenders over the `pull_request`-only `if:` above.
+          ENVIRONMENT_FOR_STAGE="$(node --eval "import('./apps/web/worker/environment.ts').then((m) => process.stdout.write(m.environmentForStage(process.env.STAGE)))")"
+          if [ "$ENVIRONMENT_FOR_STAGE" = "production" ]; then
+            echo "::error::preview flag-forcing REFUSED — stage '$STAGE' resolves to ENVIRONMENT 'production'. This path must never touch the prod Flagship app (issue #2951; fail-closed, ADR 0092)."
+            exit 1
+          fi
+          echo "stage '$STAGE' → ENVIRONMENT '$ENVIRONMENT_FOR_STAGE' (non-prod) — preview flag-forcing permitted"
+
+          # Read the PR's `preview-flag:<key>` labels fresh from the API (so a label added
+          # after this deploy triggered is still honored on this run), stripping the prefix
+          # to the bare flag key.
+          keys="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/labels" \
+            --jq '.[].name | select(startswith("preview-flag:")) | sub("^preview-flag:"; "")')"
+
+          if [ -z "$keys" ]; then
+            echo "no preview-flag:<key> labels on PR #${PR_NUMBER} — nothing to force"
+            echo "forced=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Force each labeled key ON in THIS stage's Flagship app. `flag set <key> on
+          # --env <stage> --execute` resolves the app whose decoded stage == $STAGE
+          # (cf-utils decodeEnv/findAppForEnv) and serves on@100% via the no-match split.
+          # A `flag set` failure (unknown key, no app for the stage) aborts under `set -e`
+          # — fail-loud, never a silently-skipped force.
+          forced=""
+          while IFS= read -r key; do
+            [ -z "$key" ] && continue
+            echo "forcing flag '$key' ON in Flagship env '$STAGE'"
+            node packages/cf-utils/src/bin.ts flag set "$key" on --env "$STAGE" --execute
+            forced="${forced:+$forced,}$key"
+          done <<< "$keys"
+          echo "forced=$forced" >> "$GITHUB_OUTPUT"
+          echo "forced preview flags: ${forced:-none}"
+
       # Post (or update) a sticky comment carrying EVERY app's preview URL on PRs.
       # The outer `<!-- preview-deploy -->` marker makes the comment sticky; a
       # per-app `<!-- preview-deploy:<app> -->` line lets each matrix job upsert
@@ -433,20 +508,26 @@ jobs:
           STAGE_NAME: ${{ env.STAGE }}
           # web-only: the e2e job (ci.yml, #522) parses this token to seed the D1.
           DB_ID: ${{ steps.d1.outputs.uuid }}
+          # web-only: the forced preview-flag key set (issue #2951) the e2e run reads as
+          # E2E_FORCED_FLAGS, so darkship OFF-assertion specs can skip/invert against a
+          # forced-ON preview. Empty when no `preview-flag:<key>` labels forced anything.
+          FORCED_FLAGS: ${{ steps.force-flags.outputs.forced }}
         with:
           script: |
             const marker = "<!-- preview-deploy -->";
             const app = process.env.APP;
             const appMark = `<!-- preview-deploy:${app} -->`;
             const sha = context.sha.slice(0, 7);
-            // A hidden, machine-parseable token the e2e job reads (#522). Only web
-            // resolves a D1 id; other apps omit it. Kept in an HTML comment so it
-            // doesn't clutter the human-facing line.
+            // Hidden, machine-parseable tokens the e2e job reads. Only web resolves a D1 id
+            // (#522) and a forced-flag set (#2951); other apps omit both. Kept in HTML
+            // comments so they don't clutter the human-facing line.
             const dbId = process.env.DB_ID || "";
             const dbToken = dbId ? ` <!-- d1:${dbId} -->` : "";
+            const forcedFlags = process.env.FORCED_FLAGS || "";
+            const flagsToken = forcedFlags ? ` <!-- preview-flags:${forcedFlags} -->` : "";
             const appLine = `${appMark}\n`
               + `- **${app}** — Stage \`${process.env.STAGE_NAME}\` → ${process.env.PREVIEW_URL} `
-              + `<sub>(${sha})</sub>${dbToken}`;
+              + `<sub>(${sha})</sub>${dbToken}${flagsToken}`;
 
             // Replace this app's block in the body (or append it), preserving any
             // other app's block another matrix job may have already written.
