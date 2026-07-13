@@ -165,13 +165,9 @@ const resolveTarget = (
 	return Effect.fail(new FlagSetTargetInvalid({reason: "no target given"}));
 };
 
-// The lever's interactive confirm — the thin IO shell around the pure `decideLeverGuard` core. The
-// lever is agent-invokable (ADR 0134, supersedes 0133): humans-release is enforced at the /release
-// skill + the audit trail, NOT by a structural TTY refuse here. So a non-TTY caller (agent/CI)
-// PROCEEDS, logging the flip for the audit record; a TTY caller (a human at a terminal) is prompted
-// `flip <flag> live? [y/N]` as ergonomics and may decline. It runs ONLY on the `--execute` write
-// branch; the dry-run path never reaches it. See ADR 0134 (this behavior) and ADR 0083 (the
-// humans-release boundary, now enforced at the invocation layer).
+// The lever's interactive confirm — the thin IO shell around the pure `decideLeverGuard` core, which
+// owns the decision semantics (see ADR 0134). Prompts a TTY human `flip <flag> live? [y/N]`; a
+// non-TTY agent/CI caller proceeds. Reached ONLY on the `--execute` write branch.
 const guardLiveFlip = (
 	flagKey: string,
 ): Effect.Effect<void, LeverGuardRefused, Prompt.Environment> =>
@@ -228,9 +224,7 @@ const set = Command.make(
 			return;
 		}
 
-		// Lever confirm (ADR 0134): agent-invokable — a non-TTY caller proceeds (logged for audit);
-		// a TTY human is prompted to confirm. Runs ONLY here, on the changed `--execute` write branch
-		// (dry-run and no-op returned above are untouched).
+		// Lever confirm (ADR 0134) — reached ONLY here, on the changed `--execute` write branch.
 		yield* guardLiveFlip(key);
 
 		const write = yield* FlagshipWrite;

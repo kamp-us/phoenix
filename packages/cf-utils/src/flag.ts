@@ -228,12 +228,9 @@ export class FlagSetTargetInvalid extends Schema.TaggedErrorClass<FlagSetTargetI
 }
 
 /**
- * The interactive confirm's refusal — `flag set --execute` (the live-flip write branch ONLY)
- * declined because a human running the lever in a terminal did not affirm the `[y/N]` prompt.
- * Under ADR 0134 (supersedes 0133) the lever is agent-invokable: a non-TTY caller is NOT refused
- * (it proceeds, logged for the audit record), so this error surfaces ONLY on the TTY ergonomics
- * path — a human at a terminal who answered `n`/empty/EOF. The message names the recoverable fix
- * (re-run and answer the prompt affirmatively).
+ * The interactive confirm's refusal — `flag set --execute` declined because a human at a terminal
+ * did not affirm the `[y/N]` prompt. Surfaces ONLY on the TTY ergonomics path (`decideLeverGuard`,
+ * ADR 0134); a non-TTY agent/CI caller is never refused. The message names the recoverable fix.
  */
 export class LeverGuardRefused extends Schema.TaggedErrorClass<LeverGuardRefused>()(
 	"@kampus/cf-utils/LeverGuardRefused",
