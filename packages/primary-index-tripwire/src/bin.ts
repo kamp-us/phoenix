@@ -2,18 +2,15 @@
 /**
  * `primary-index-tripwire record` — the read-only attribution leg for the #2778 corruption.
  *
- * Gathers git facts with READ-ONLY plumbing (`git-io.ts`), reads the agent-identity env, runs the
- * pure {@link decideTripwire} core, and — on a trip — appends a JSON attribution record to a log path
- * and prints a LOUD stderr warning. It NEVER blocks and NEVER mutates git or the working tree: the
- * exit code is always 0, so wiring it into a `pre-commit` hook (see `lefthook.yml`) records the actor
- * about to commit a mass control-plane deletion without ever preventing a legitimate commit.
- * Prevention/blocking is the §CP hardening fix, out of scope here
+ * Gathers git facts with READ-ONLY plumbing (`git-io.ts`), runs the pure {@link decideTripwire} core,
+ * and on a trip appends a JSON attribution record to a log path and prints a LOUD stderr warning. It
+ * NEVER blocks and NEVER mutates git: the exit code is always 0, so a `pre-commit` hook (`lefthook.yml`)
+ * records the actor without preventing a legitimate commit. Blocking is the §CP fix, out of scope
  * (`ops/incidents/2778-primary-index-mass-staged-deletion.md`).
  *
  * The log path is `$PRIMARY_INDEX_TRIPWIRE_LOG`, else `${TMPDIR:-/tmp}/primary-index-tripwire.jsonl`
  * — an OUT-OF-REPO path so recording never dirties the tree it observes. Wired per effect-smol's CLI
- * guidance (mirrors `@kampus/orphan-sweep`): `effect/unstable/cli` for typed flags over
- * `NodeServices.layer`, run via `NodeRuntime.runMain`; the read-only git/log IO lives in `git-io.ts`.
+ * guidance: `effect/unstable/cli` typed flags over `NodeServices.layer`, run via `NodeRuntime.runMain`.
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Option} from "effect";
