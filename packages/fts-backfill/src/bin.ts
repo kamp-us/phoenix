@@ -1,19 +1,9 @@
 /**
- * `fts-backfill run` — the one-time, direct-D1 FTS backfill for issue #534.
- *
- * Re-indexes every existing `term_record` / `post_record` row into the FTS5
- * `term_search` / `post_search` tables through the worker's own ADR-0080 sync
- * builders, so search works for content written before the dual-write existed.
- * This is the direct-D1 script CLAUDE.md's "Sözlük seed" mandates — NOT a worker
- * route, NOT a `.sql` migration (a migration can't run the app-side Turkish fold
- * the `norm` column needs), and NOT Python (the `effect/unstable/cli` idiom,
- * mirroring `@kampus/preview-seed` / `@kampus/leak-guard`). Idempotent: safe to
- * re-run.
- *
- * Transport: a `D1Database` adapter (`makeD1Rest`) over the Cloudflare D1 REST
- * query API via alchemy's already-installed `@distilled.cloud/cloudflare` (zero
- * new deps) — so the bin runs the SAME `backfill(d1)` path the unit test exercises
- * against an in-memory fake, no workerd binding needed.
+ * `fts-backfill run` — the one-time, direct-D1 FTS backfill for #534 (see
+ * backfill.ts for the why). A thin `effect/unstable/cli` bin over `backfill(d1)`
+ * with a `D1Database` adapter (`makeD1RestFromEnv`) speaking the Cloudflare D1
+ * REST query API, so the bin runs the SAME path the unit test exercises against
+ * an in-memory fake. Idempotent: safe to re-run.
  *
  * Parameterized on the TARGET stage's D1 (never prod-hardcoded):
  *   --database-id  the stage's D1 UUID (from the alchemy state store / `getDatabase`)

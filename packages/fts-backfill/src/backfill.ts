@@ -1,26 +1,17 @@
 /**
- * The FTS backfill core (issue #534): re-index the existing `term_record` /
- * `post_record` rows into the FTS5 `term_search` / `post_search` tables by
- * replaying the ADR-0080 dual-write sync over every source row.
- *
- * Root cause it fixes: the FTS tables are populated ONLY by the application
- * dual-write on new writes (`syncTermSearch` / `syncPostSearch`, ADR 0080) —
- * rows written before that sync existed in the summary tables but were never
- * indexed, so search returns empty for all pre-existing content. This is the
- * one-time backfill CLAUDE.md's "Sözlük seed" section mandates: a direct-D1
- * script, not a worker route, not a `.sql` migration (a migration can't run the
- * app-side Turkish fold the FTS `norm` column needs).
+ * The FTS backfill core (#534): re-index existing `term_record` / `post_record`
+ * rows into the FTS5 `term_search` / `post_search` tables by replaying the
+ * ADR-0080 dual-write over every source row — the one-time backfill CLAUDE.md's
+ * "Sözlük seed" section mandates (a direct-D1 script, not a route/migration).
  *
  * Reuses the worker's OWN sync builders (`@kampus/web/features/search/fts-sync`),
- * NOT a reimplementation — so the indexed `norm` is byte-identical to the
- * dual-write's (issue #534's hard constraint: identical normalization, or the
- * backfilled rows won't match queries). Each builder is a delete-then-insert
- * upsert keyed on slug/id, so the backfill is idempotent: re-running it replaces
- * the same FTS rows rather than duplicating them.
+ * so the indexed `norm` is byte-identical to the dual-write's — #534's hard
+ * constraint: identical normalization, or backfilled rows won't match queries.
+ * The builders are delete-then-insert upserts keyed on slug/id, so the backfill
+ * is idempotent.
  *
- * Posts are filtered to live (`removed_at IS NULL`) rows — the search resolver
- * only hydrates non-removed posts and the dual-write removes a removed post's
- * FTS row, so a removed post must not be searchable.
+ * Posts are filtered to live (`removed_at IS NULL`) rows: the dual-write removes
+ * a removed post's FTS row, so a removed post must not be searchable.
  */
 import type {FtsSyncDb, Stmt} from "@kampus/web/db/Drizzle";
 import {syncPostSearch, syncTermSearch} from "@kampus/web/features/search/fts-sync";
