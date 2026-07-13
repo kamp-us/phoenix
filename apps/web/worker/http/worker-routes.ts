@@ -16,12 +16,21 @@
  * edit to {@link rawWorkerRoutes} — the glob can no longer be forgotten, and the
  * lockstep test (`worker-routes.unit.test.ts`) pins that every route's mount path
  * is matched by a derived glob.
+ *
+ * The edge-render shell route (#2929, ADR 0179) extends this to the CF spa-shell recipe
+ * (`["/*", "!/assets/*"]`): a catch-all `/*` glob pulls every non-asset request through
+ * the worker, and a `!`-prefixed exception ({@link assetExceptionGlobs}) keeps the built
+ * `/assets/*` bundles edge-direct. `globMatches` models a single positive glob;
+ * {@link runsWorkerFirst} composes the positives and the `!`-exceptions the way Cloudflare
+ * evaluates `run_worker_first` (any positive matches AND no exception matches), so the
+ * lockstep test can pin the `!`-exception <-> HTML-route coupling.
  */
 import type {Layer} from "effect/Layer";
 import {fateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import {flagsEvaluateRoute, flagsProbeRoute} from "../features/flagship/route.ts";
 import {flagsDevApplyRoute, flagsDevPageRoute} from "../features/flagship/route-dev.ts";
+import {shellBootRoute} from "../features/flagship/shell-boot-route.ts";
 import {mecmuaIndexRoute} from "../features/mecmua/index-route.ts";
 import {mecmuaPublicReadRoute} from "../features/mecmua/public-read-route.ts";
 import {baseFeedRoute} from "../features/pano/base-feed-route.ts";
@@ -83,7 +92,24 @@ export const rawWorkerRoutes: readonly [WorkerRoute, ...WorkerRoute[]] = [
 	{path: "/api/flags/dev", glob: "/api/*", route: flagsDevApplyRoute},
 	{path: "/api/pano/link-metadata", glob: "/api/*", route: linkMetadataRoute},
 	{path: "/rss.xml", glob: "/rss.xml", route: rssRoute},
+	// The edge-render shell catch-all (#2929, ADR 0179): mounted `* /*` so it serves the
+	// SPA shell through the worker and injects `window.__BOOT__`, dark behind
+	// `PHOENIX_EDGE_SHELL_BOOT`. The `/*` glob pulls every non-asset path worker-first; the
+	// `!/assets/*` exception ({@link assetExceptionGlobs}) keeps the built bundles edge-direct.
+	// Specific routes above win by find-my-way precedence, so this catches only what they don't.
+	{path: "/*", glob: "/*", route: shellBootRoute},
 ];
+
+/**
+ * The `!`-prefixed `run_worker_first` exceptions — globs that keep a matching path
+ * edge-direct even though a positive glob would pull it worker-first. Cloudflare's
+ * `run_worker_first` reads a `!`-prefixed entry as an exclusion (the spa-shell recipe
+ * `["/*", "!/assets/*"]`), so `/assets/*` (the Vite-hashed bundles) stays served by the
+ * `ASSETS` binding at the edge while `/*` routes everything else through the worker.
+ * Kept a module constant so {@link workerFirstGlobs} carries it into `runWorkerFirst` and
+ * {@link runsWorkerFirst} / the lockstep test model it.
+ */
+export const assetExceptionGlobs: readonly string[] = ["!/assets/*"];
 
 /**
  * The raw route layers as a non-empty tuple — `app.ts` spreads this into
@@ -103,16 +129,19 @@ export const rawWorkerRouteLayers: readonly [WorkerRouteLayer, ...WorkerRouteLay
 export const typedWorkerPaths: readonly string[] = ["/api/health"];
 
 /**
- * The deduplicated `runWorkerFirst` glob set, derived from {@link rawWorkerRoutes}.
- * This is what `index.ts` passes to `assets.runWorkerFirst`.
+ * The deduplicated `runWorkerFirst` glob set, derived from {@link rawWorkerRoutes} plus
+ * the {@link assetExceptionGlobs} `!`-exceptions. This is what `index.ts` passes to
+ * `assets.runWorkerFirst`; the exceptions trail the positives so the exclusion is legible.
  */
-export const workerFirstGlobs: readonly string[] = [...new Set(rawWorkerRoutes.map((r) => r.glob))];
+export const workerFirstGlobs: readonly string[] = [
+	...new Set([...rawWorkerRoutes.map((r) => r.glob), ...assetExceptionGlobs]),
+];
 
 /**
- * Does a `runWorkerFirst` glob match a mount path? Mirrors Cloudflare's
- * `runWorkerFirst` matching: a trailing `/*` matches the prefix and anything
- * under it; otherwise an exact path match. Used by the lockstep test to prove
- * coverage — kept deliberately small (the prod matcher is Cloudflare's, not ours).
+ * Does a single POSITIVE `runWorkerFirst` glob match a mount path? Mirrors Cloudflare's
+ * matching: a trailing `/*` matches the prefix and anything under it; otherwise an exact
+ * path match. Deliberately small (the prod matcher is Cloudflare's, not ours) and
+ * exception-blind — a `!`-prefixed glob is composed by {@link runsWorkerFirst}, not here.
  */
 export const globMatches = (glob: string, path: string): boolean => {
 	if (glob.endsWith("/*")) {
@@ -120,4 +149,19 @@ export const globMatches = (glob: string, path: string): boolean => {
 		return path === prefix || path.startsWith(`${prefix}/`);
 	}
 	return glob === path;
+};
+
+/**
+ * Would a path run worker-first under a glob set that may carry `!`-exceptions? Models
+ * Cloudflare's `run_worker_first` composition: a path runs worker-first iff some positive
+ * glob matches it AND no `!`-exception matches it. So `["/*", "!/assets/*"]` routes every
+ * path worker-first except `/assets/*` (the built bundles), which stays edge-direct. The
+ * lockstep test uses this to pin the `!`-exception <-> HTML-route coupling.
+ */
+export const runsWorkerFirst = (globs: readonly string[], path: string): boolean => {
+	const positives = globs.filter((g) => !g.startsWith("!"));
+	const exceptions = globs.filter((g) => g.startsWith("!")).map((g) => g.slice(1));
+	return (
+		positives.some((g) => globMatches(g, path)) && !exceptions.some((g) => globMatches(g, path))
+	);
 };
