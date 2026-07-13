@@ -1,19 +1,14 @@
 /**
- * `ci-required` assertion bin — the CI-callable surface for issue #786.
- *
- * Reads the gating jobs' `needs.*.result` + the single-sourced `*_required`
- * booleans from `process.env` (the `ci-required` step's `env:` block in ci.yml),
- * runs the pure `judge` core, prints the per-job verdicts (ADR 0092 §1
- * "emit what you scanned"), and exits 0 on PASS / 1 on FAIL.
+ * `ci-required` assertion bin — the CI-callable IO shell for the pure `judge`
+ * core (issue #786, ADR 0092): read the gating jobs' `needs.*.result` + the
+ * `*_required` booleans from `process.env`, print the per-job verdicts (ADR 0092
+ * §1 "emit what you scanned"), exit 0 on PASS / 1 on FAIL.
  *
  * ZERO runtime dependencies on purpose: the `ci-required` gate job runs only
- * `actions/checkout` + `node packages/ci-required/src/bin.ts` — no `pnpm install`,
- * so the always-on aggregator stays fast. This file is plain Node (no Effect
- * import) for the same reason; the repo's Effect-CLI idiom would pull
- * `@effect/platform-node` + `effect` into the gate's install path, which the
- * pure-node form avoids. The pure core (`inputFromEnv` + `judge`) is the
- * unit-tested module per the repo "pure core + thin bin" convention; this bin is
- * the IO shell — read env, print, exit.
+ * `actions/checkout` + `node packages/ci-required/src/bin.ts` — no `pnpm install`
+ * — so the always-on aggregator stays fast. Plain Node (no Effect import) for the
+ * same reason: the Effect-CLI idiom would pull `@effect/platform-node` + `effect`
+ * into the gate's install path.
  */
 import {inputFromEnv, judge} from "./ci-required.ts";
 
