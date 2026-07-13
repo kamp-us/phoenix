@@ -58,10 +58,8 @@ export interface CaptureAndUploadRequest {
 }
 
 /**
- * PURE: fold an upload outcome onto a captured surface. The judged image
- * (`localPath`) is copied straight through from the capture and is NEVER
- * conditional on the upload — a fallback (`hostedUrl: null`) still yields a
- * record carrying `localPath`, so the gate always has bytes to judge (ADR 0165).
+ * PURE: fold an upload outcome onto a captured surface. `localPath` is copied
+ * straight through and is never conditional on the upload (ADR 0165).
  */
 export const mergeRecord = (captured: CapturedSurface, outcome: UploadOutcome): CaptureRecord => ({
 	surface: captured.surface,

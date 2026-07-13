@@ -5,18 +5,10 @@
  * (`upload.ts`) hold the unit-tested logic; this file launches a browser, visits
  * each `Shot.url` at its viewport, screenshots it, and persists it.
  *
- * `localPath` is the PRIMARY judged artifact (ADR 0165): the review-design gate
- * reads the local PNG bytes to reach its verdict, decoupled from whether the
- * upload later succeeds. So capture ALWAYS produces `localPath` on success —
- * losing it is never acceptable.
- *
- * Captures over the EXISTING per-PR preview deploy (#2247): the caller passes
- * URLs already rooted at the preview the `preview-deploy` bot stood up — this
- * helper never serves the app itself.
- *
- * Each capture also collects the runtime errors thrown into the page during the
- * render (`pageErrors`) — the crash signal the gate fails on when a mount/init
- * race throws on a bad tick (see `page-errors.ts`, #2594).
+ * `localPath` is the PRIMARY judged artifact (ADR 0165), so capture ALWAYS
+ * produces it on success — losing it is never acceptable. Each capture also
+ * collects the runtime errors thrown into the page during the render
+ * (`pageErrors`) — the crash signal the gate fails on (see `page-errors.ts`, #2594).
  */
 import {mkdir, writeFile} from "node:fs/promises";
 import {join} from "node:path";
