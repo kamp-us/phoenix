@@ -77,7 +77,6 @@ export function toggleWaveRow(selected: ReadonlyArray<string>, key: string): Rea
 	return selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key];
 }
 
-/** Whether a row is currently selected. */
 export function isWaveSelected(selected: ReadonlyArray<string>, key: string): boolean {
 	return selected.includes(key);
 }
