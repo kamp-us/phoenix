@@ -21,7 +21,7 @@
  * counts the run with an explicit `TranscriptMissing` spend rather than crashing, and a
  * malformed artifact grades `fail` through the oracle — never a throw.
  */
-import {Data, Result} from "effect";
+import {Result} from "effect";
 import * as Schema from "effect/Schema";
 import {reconstructSpend, type StageSpend} from "../token-spend/token-spend.ts";
 import {type CorpusEntry, type CorpusManifest, STAGES} from "./corpus.ts";
@@ -101,10 +101,13 @@ export const CaptureManifest = Schema.Struct({
 export type CaptureManifest = typeof CaptureManifest.Type;
 
 /** A typed capture-manifest decode failure — malformed JSON, or a shape that doesn't match the schema. */
-export class CaptureDecodeError extends Data.TaggedError("CaptureDecodeError")<{
-	readonly reason: "malformed-json" | "schema-mismatch";
-	readonly message: string;
-}> {}
+export class CaptureDecodeError extends Schema.TaggedErrorClass<CaptureDecodeError>()(
+	"CaptureDecodeError",
+	{
+		reason: Schema.Literals(["malformed-json", "schema-mismatch"]),
+		message: Schema.String,
+	},
+) {}
 
 const decodeUnknownCapture = Schema.decodeUnknownResult(CaptureManifest);
 
@@ -114,24 +117,23 @@ const decodeUnknownCapture = Schema.decodeUnknownResult(CaptureManifest);
  */
 export const decodeCaptureManifest = (
 	text: string,
-): Result.Result<CaptureManifest, CaptureDecodeError> => {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(text);
-	} catch (cause) {
-		return Result.fail(
+): Result.Result<CaptureManifest, CaptureDecodeError> =>
+	Result.try({
+		try: (): unknown => JSON.parse(text),
+		catch: (cause) =>
 			new CaptureDecodeError({
 				reason: "malformed-json",
 				message: cause instanceof Error ? cause.message : String(cause),
 			}),
-		);
-	}
-	return decodeUnknownCapture(parsed).pipe(
-		Result.mapError(
-			(error) => new CaptureDecodeError({reason: "schema-mismatch", message: error.message}),
+	}).pipe(
+		Result.flatMap((parsed) =>
+			decodeUnknownCapture(parsed).pipe(
+				Result.mapError(
+					(error) => new CaptureDecodeError({reason: "schema-mismatch", message: error.message}),
+				),
+			),
 		),
 	);
-};
 
 /**
  * Load a transcript's raw text for a path, or `null` when it is absent/unreadable. The runner core

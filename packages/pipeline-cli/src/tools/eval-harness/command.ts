@@ -17,7 +17,8 @@
  * decode, render. An unreadable path and a malformed/mismatched input both exit non-zero.
  */
 import {readFileSync} from "node:fs";
-import {Console, Data, Effect, Result} from "effect";
+import {Console, Effect, Result} from "effect";
+import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {decodeManifest, STAGES} from "./corpus.ts";
 import {
@@ -31,9 +32,12 @@ import {
 const GATE_FAIL_EXIT_CODE = 1;
 
 // A named manifest path that could not be read — a hard error (exit 1), not a skip.
-class ManifestUnreadable extends Data.TaggedError("ManifestUnreadable")<{
-	readonly path: string;
-}> {}
+class ManifestUnreadable extends Schema.TaggedErrorClass<ManifestUnreadable>()(
+	"ManifestUnreadable",
+	{
+		path: Schema.String,
+	},
+) {}
 
 const manifestArg = Argument.string("manifest").pipe(
 	Argument.withDescription("path to a corpus manifest JSON file to validate against the schema"),
@@ -73,9 +77,9 @@ const check = Command.make(
 );
 
 // A named report-input path that could not be read — a hard error (exit 1), not a skip.
-class RowsUnreadable extends Data.TaggedError("RowsUnreadable")<{
-	readonly path: string;
-}> {}
+class RowsUnreadable extends Schema.TaggedErrorClass<RowsUnreadable>()("RowsUnreadable", {
+	path: Schema.String,
+}) {}
 
 const rowsArg = Argument.string("rows").pipe(
 	Argument.withDescription(

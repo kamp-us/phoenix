@@ -18,7 +18,7 @@
  * `decodeManifest` is total — it returns a typed `Result` failure on malformed JSON or a
  * schema mismatch, never a throw.
  */
-import {Data, Result} from "effect";
+import {Result} from "effect";
 import * as Schema from "effect/Schema";
 
 /** The five graded pipeline stages a corpus entry can label. */
@@ -118,10 +118,13 @@ export const CorpusManifest = Schema.Struct({
 export type CorpusManifest = typeof CorpusManifest.Type;
 
 /** A typed manifest decode failure — malformed JSON, or a shape that doesn't match the schema. */
-export class ManifestDecodeError extends Data.TaggedError("ManifestDecodeError")<{
-	readonly reason: "malformed-json" | "schema-mismatch";
-	readonly message: string;
-}> {}
+export class ManifestDecodeError extends Schema.TaggedErrorClass<ManifestDecodeError>()(
+	"ManifestDecodeError",
+	{
+		reason: Schema.Literals(["malformed-json", "schema-mismatch"]),
+		message: Schema.String,
+	},
+) {}
 
 const decodeUnknownManifest = Schema.decodeUnknownResult(CorpusManifest);
 const encodeManifest_ = Schema.encodeSync(CorpusManifest);
@@ -130,26 +133,23 @@ const encodeManifest_ = Schema.encodeSync(CorpusManifest);
  * Decode a manifest from its on-disk text. Total — a non-JSON body or a schema mismatch
  * both return a typed `Result` failure, never a throw.
  */
-export const decodeManifest = (
-	text: string,
-): Result.Result<CorpusManifest, ManifestDecodeError> => {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(text);
-	} catch (cause) {
-		return Result.fail(
+export const decodeManifest = (text: string): Result.Result<CorpusManifest, ManifestDecodeError> =>
+	Result.try({
+		try: (): unknown => JSON.parse(text),
+		catch: (cause) =>
 			new ManifestDecodeError({
 				reason: "malformed-json",
 				message: cause instanceof Error ? cause.message : String(cause),
 			}),
-		);
-	}
-	return decodeUnknownManifest(parsed).pipe(
-		Result.mapError(
-			(error) => new ManifestDecodeError({reason: "schema-mismatch", message: error.message}),
+	}).pipe(
+		Result.flatMap((parsed) =>
+			decodeUnknownManifest(parsed).pipe(
+				Result.mapError(
+					(error) => new ManifestDecodeError({reason: "schema-mismatch", message: error.message}),
+				),
+			),
 		),
 	);
-};
 
 /** Serialize a valid manifest to its canonical on-disk text (round-trips with `decodeManifest`). */
 export const encodeManifest = (manifest: CorpusManifest): string =>

@@ -26,7 +26,7 @@
  * the four-`usage`-component offline sum), reused read-only via `tokensFromTranscript` below;
  * this core never mints a second token meter.
  */
-import {Data, Result} from "effect";
+import {Result} from "effect";
 import * as Schema from "effect/Schema";
 import {reconstructSpend} from "../token-spend/token-spend.ts";
 
@@ -52,9 +52,12 @@ export const RepairChurnInput = Schema.Struct({
 export type RepairChurnInput = typeof RepairChurnInput.Type;
 
 /** A typed input-validation failure — an out-of-range `passRate` or a negative token count. */
-export class RepairChurnInputError extends Data.TaggedError("RepairChurnInputError")<{
-	readonly message: string;
-}> {}
+export class RepairChurnInputError extends Schema.TaggedErrorClass<RepairChurnInputError>()(
+	"RepairChurnInputError",
+	{
+		message: Schema.String,
+	},
+) {}
 
 /** The priced churn for one (stage × model), derived from a validated `RepairChurnInput`. */
 export interface RepairChurnCost {
