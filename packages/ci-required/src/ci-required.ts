@@ -12,10 +12,8 @@
  * The required-ness inputs are single-sourced: the `changes` job emits one
  * `*_required` boolean per gating job, derived from the SAME expression that
  * gates that job's own `if:` (see ci.yml `changes` outputs), so run-ness and
- * required-ness can't drift (#375/#738). This module is the behavioral half that
- * was previously an untested inline bash loop: it takes those booleans + each
- * job's `result` + the `changes` job's own result and returns a deterministic
- * verdict. No IO — `bin.ts` reads the GHA `env:` and prints; this decides.
+ * required-ness can't drift (#375/#738). No IO — `bin.ts` reads the GHA `env:`
+ * and prints; this decides.
  */
 
 /**
@@ -26,7 +24,6 @@
  */
 export type JobResult = "success" | "skipped" | "failure" | "cancelled" | "" | (string & {});
 
-/** One gating job's required-ness + observed result, the per-job verdict input. */
 export interface JobInput {
 	readonly name: string;
 	/** Did this job's single-sourced `*_required` predicate say it should run? */
@@ -57,7 +54,6 @@ export interface CiRequiredVerdict {
 	readonly changesReport: JobReport | null;
 }
 
-/** The verdict for one gating job, given its required-ness and observed result. */
 export const judgeJob = (job: JobInput): JobReport => {
 	if (job.required) {
 		// should_run=true ⇒ result MUST be success; a skip (or any non-success) is
