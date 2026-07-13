@@ -37,7 +37,7 @@ describe("splitTopLevelBranches", () => {
 		expect(branches).toEqual([
 			"(\\.claude|\\.github)/",
 			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/",
-			"claude-plugins/kampus-pipeline/skills/[^/]+\\.sh$",
+			"claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$",
 			"claude-plugins/kampus-pipeline/agents/",
 			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$",
 			"claude-plugins/kampus-pipeline/hooks(/|\\.json$)",
@@ -75,9 +75,9 @@ describe("expandBranch", () => {
 		expect(out.every((p) => p.kind === "dir")).toBe(true);
 	});
 
-	it("expands the bare `[^/]+\\.sh$` branch to a `*.sh` glob path", () => {
-		expect(expandBranch("claude-plugins/kampus-pipeline/skills/[^/]+\\.sh$")).toEqual([
-			{path: "claude-plugins/kampus-pipeline/skills/*.sh", kind: "glob"},
+	it("expands the any-depth `([^/]+/)*[^/]+\\.sh$` skill-`.sh` branch to a `**/*.sh` glob path (#2950)", () => {
+		expect(expandBranch("claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$")).toEqual([
+			{path: "claude-plugins/kampus-pipeline/skills/**/*.sh", kind: "glob"},
 		]);
 	});
 
@@ -110,7 +110,7 @@ describe("expandBranch", () => {
 });
 
 describe("cpPaths over the live regex", () => {
-	it("resolves the full §CP path set (20 paths: dirs, the two exact files, + the *.sh glob)", () => {
+	it("resolves the full §CP path set (20 paths: dirs, the two exact files, + the **/*.sh glob)", () => {
 		expect(cpPaths(LIVE_RE).map((p) => p.path)).toEqual([
 			".claude/",
 			".github/",
@@ -125,7 +125,7 @@ describe("cpPaths over the live regex", () => {
 			"claude-plugins/kampus-pipeline/skills/plan-epic/",
 			"claude-plugins/kampus-pipeline/skills/release/",
 			"claude-plugins/kampus-pipeline/skills/review-trivial/",
-			"claude-plugins/kampus-pipeline/skills/*.sh",
+			"claude-plugins/kampus-pipeline/skills/**/*.sh",
 			"claude-plugins/kampus-pipeline/agents/",
 			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
 			"claude-plugins/kampus-pipeline/hooks/",
@@ -186,8 +186,8 @@ describe("covers", () => {
 		).toBe(true);
 	});
 	it("a glob §CP path is covered by an identical `*`-glob row, not a mismatched literal", () => {
-		const glob: CpPath = {path: "claude-plugins/kampus-pipeline/skills/*.sh", kind: "glob"};
-		expect(covers(dir("claude-plugins/kampus-pipeline/skills/*.sh"), glob)).toBe(true);
+		const glob: CpPath = {path: "claude-plugins/kampus-pipeline/skills/**/*.sh", kind: "glob"};
+		expect(covers(dir("claude-plugins/kampus-pipeline/skills/**/*.sh"), glob)).toBe(true);
 		expect(covers(dir("claude-plugins/kampus-pipeline/skills/ship-it/"), glob)).toBe(false);
 	});
 });
@@ -210,7 +210,7 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/*.sh @usirin",
+			"/claude-plugins/kampus-pipeline/skills/**/*.sh @usirin",
 			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/claude-plugins/kampus-pipeline/hooks/ @usirin",
@@ -237,7 +237,7 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/*.sh @usirin",
+			"/claude-plugins/kampus-pipeline/skills/**/*.sh @usirin",
 			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/packages/ci-required/ @usirin",

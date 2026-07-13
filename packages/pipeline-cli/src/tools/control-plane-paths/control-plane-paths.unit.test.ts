@@ -21,6 +21,14 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/review-trivial/SKILL.md")).toBe(
 			true,
 		);
+		// a `.sh` helper in a NON-gate skill's SUBDIR (#2950) — the escape set the any-depth
+		// `([^/]+/)*[^/]+\.sh$` clause closes. `report/footer.sh` emits the filing-provenance
+		// marker triage keys ADR-0159 auto-close eligibility on, so it feeds a gate decision yet
+		// escaped §CP under the old top-level-only `[^/]+\.sh$` anchoring — could auto-merge.
+		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/report/footer.sh")).toBe(true);
+		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/doctor/doctor.sh")).toBe(true);
+		// depth is irrelevant — a hypothetical helper two levels deep is §CP too (no new anchoring accident).
+		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/report/lib/helper.sh")).toBe(true);
 	});
 
 	it("does NOT classify the four deliberately-OUT skill dirs (operational, not gate-critical)", () => {
@@ -32,9 +40,13 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 	it("does NOT classify known non-§CP paths", () => {
 		expect(isControlPlane("apps/web/src/main.tsx")).toBe(false);
 		expect(isControlPlane("packages/some-other-pkg/src/index.ts")).toBe(false);
-		// a nested `.sh` UNDER a non-§CP skill dir is not the bare-guard branch (that requires the
-		// script sit directly under skills/, matched by `[^/]+\.sh$`).
-		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/heal-ci/helper.sh")).toBe(false);
+		// Over-broadening guard (#2950): the any-depth clause matches `.sh` LEAVES only — a
+		// NON-`.sh` file in a non-gate skill's subdir stays non-§CP, so the broadening didn't
+		// silently swallow whole non-gate skill dirs (only their shell helpers).
+		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/heal-ci/helper.md")).toBe(false);
+		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/doctor/notes.txt")).toBe(false);
+		// a `.sh`-suffixed name that is NOT a `.sh` file (no such extension boundary) also stays out
+		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/doctor/doctor.shell")).toBe(false);
 	});
 
 	it("still classifies every PRE-EXISTING §CP path (no branch dropped)", () => {

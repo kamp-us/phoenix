@@ -14,7 +14,17 @@
  *
  * The runtime value (what `pipeline-cli control-plane-paths` prints) is the POSIX-ERE
  * grep/jq form the gates match against; the doubled backslashes here are TS string
- * escapes, so `\\.` is the value `\.` and `[^/]+\\.sh$` is the value `[^/]+\.sh$`.
+ * escapes, so `\\.` is the value `\.` and `([^/]+/)*[^/]+\\.sh$` is the value
+ * `([^/]+/)*[^/]+\.sh$`.
+ *
+ * The skill-`.sh` clause is depth-agnostic on purpose (#2950): `([^/]+/)*[^/]+\.sh$`
+ * matches a shell helper at ANY depth under `skills/` — a top-level `skills/<name>.sh`
+ * (the `validate-*.sh` gate guards, zero dir segments) AND a subdir helper
+ * `skills/<skill>/<helper>.sh` (e.g. `report/footer.sh`, whose provenance marker feeds
+ * triage's ADR-0159 auto-close eligibility). The prior `[^/]+\.sh$` matched top-level
+ * only, so a subdir helper escaped §CP and could auto-merge without control-plane
+ * sign-off. Anchoring to one depth was an accident, not a "subdir helpers are safe"
+ * carve-out — a skill's shell helper is control-plane wherever it sits.
  *
  * Anti-self-authorization is preserved (#981): the live merge-deciding gates still
  * re-resolve the boundary from the formats doc on `origin/main` at run time, so a
@@ -23,4 +33,4 @@
  * runtime resolution off the origin/main read.
  */
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
+	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
