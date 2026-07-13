@@ -44,6 +44,7 @@ import {
 	authorshipLoopFlag,
 	bildirimFlag,
 	demoTargetingFlag,
+	edgeShellBootFlag,
 	emailDeliveryAdminFlag,
 	emailDeliveryNoticeFlag,
 	Flagship,
@@ -176,6 +177,10 @@ export default Alchemy.Stack(
 		// single seam the /admin route + client probe + worker `admin.probe` read gate
 		// behind until a human release, so the console ships dark (no chunk fetched).
 		yield* adminConsoleFlag(flagship.appId);
+		// The edge-resolved shell-boot dark-ship flag, default-off (#2928, epic #2926, ADR
+		// 0179) — the single seam the worker-first shell render + `window.__BOOT__` injection
+		// ships behind: off ⇒ edge-direct HTML byte-identical to today, until a human release.
+		yield* edgeShellBootFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

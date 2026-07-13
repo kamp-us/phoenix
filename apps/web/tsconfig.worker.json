@@ -19,6 +19,7 @@
 		"src/lib/panoTags.ts",
 		"src/lib/panoFeedSort.ts",
 		"src/flags/keys.ts",
+		"src/flags/shell-keys.ts",
 		"alchemy.run.ts",
 		// The black-box integration suite (Vitest node pool → HTTP against the
 		// deployed worker) belongs to the worker project: it needs the same `.ts`
