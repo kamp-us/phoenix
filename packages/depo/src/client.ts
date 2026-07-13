@@ -8,10 +8,7 @@
  *
  * `putBytes` is the seam-testable core (bytes in); `put(path)` is the fs-reading
  * wrapper the bin calls. The mapping from the doorman's HTTP status to a typed
- * failure is the acceptance contract (#1970):
- *   201/200 → success (created / benign idempotent re-PUT), URL returned
- *   401 → Unauthorized   415 → UnsupportedMediaType
- *   413 → PayloadTooLarge   409 → ContentAddressConflict   else → UploadFailed
+ * failure is the acceptance contract (#1970); it lives in `putBytes` below.
  */
 import {readFile} from "node:fs/promises";
 import * as Context from "effect/Context";

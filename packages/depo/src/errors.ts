@@ -4,16 +4,9 @@
  * `Schema.TaggedErrorClass` (the repo-wide error constructor — #2736). These are
  * CLI-only and never reach the fate wire, so they carry no `FateWireCode`
  * annotation. The set is the client-side image of the doorman's HTTP contract
- * (#1970): every 4xx the doorman can return maps to exactly one error here, so a
- * caller `catch`es a typed failure rather than parsing a status code.
- *
- *   doorman 401 → Unauthorized          doorman 415 → UnsupportedMediaType
- *   doorman 413 → PayloadTooLarge        doorman 409 → ContentAddressConflict
- *
- * Plus the client-local faults with no server counterpart: `MissingCredential`
- * (no apiKey resolved before any request), `FileReadError` (the local file could
- * not be read), `DigestError` (the SHA-256 content address could not be computed),
- * and `UploadFailed` (transport failure or an unmapped status).
+ * (#1970): every 4xx the doorman can return maps to exactly one error here (each
+ * class documents its own status below), so a caller `catch`es a typed failure
+ * rather than parsing a status code.
  */
 import * as Schema from "effect/Schema";
 

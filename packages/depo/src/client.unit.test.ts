@@ -2,11 +2,8 @@
  * Unit tests for the client core (`putBytes`) with the doorman behind the
  * `DoormanClient` seam — no live worker (`.patterns/effect-testing.md` unit tier).
  * These assert the acceptance contract: the content-addressed request the client
- * SENDS, and the mapping from each doorman status to a typed outcome.
- *
- *   201/200 → the public URL      401 → Unauthorized
- *   415 → UnsupportedMediaType     413 → PayloadTooLarge
- *   409 → ContentAddressConflict   500/other → UploadFailed
+ * SENDS, and the mapping from each doorman status to a typed outcome (a case per
+ * status below).
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as Effect from "effect/Effect";
