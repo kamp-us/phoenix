@@ -294,6 +294,18 @@ export const PHOENIX_NAV_IA = "phoenix-nav-ia";
  */
 export const PHOENIX_ADMIN_CONSOLE = "phoenix-admin-console";
 
+/**
+ * Edge-resolved shell-boot containment flag (#2928, epic #2926, ADR 0179). The SINGLE seam
+ * the whole worker-first shell render ships behind — with it OFF the SPA HTML stays
+ * edge-direct byte-identical to today (the `assets` binding serves it, the worker never
+ * touches it); with it ON the worker renders the shell per request and injects
+ * `window.__BOOT__` (the shell-key manifest flags under full-session userId context +
+ * `signedIn`). Default-off so the whole edge-render path reaches production dark until a
+ * human flips it at release (ADR 0083). Its own cross-cutting (`phoenix`) key — the render
+ * path spans every product's shell geometry.
+ */
+export const PHOENIX_EDGE_SHELL_BOOT = "phoenix-edge-shell-boot";
+
 /** A declared flag paired with its default variation — the row the flags console lists (#2742). */
 export interface FlagDeclaration {
 	readonly key: string;
@@ -335,4 +347,5 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_EMAIL_DELIVERY_NOTICE, defaultValue: false},
 	{key: PHOENIX_NAV_IA, defaultValue: false},
 	{key: PHOENIX_ADMIN_CONSOLE, defaultValue: false},
+	{key: PHOENIX_EDGE_SHELL_BOOT, defaultValue: false},
 ];

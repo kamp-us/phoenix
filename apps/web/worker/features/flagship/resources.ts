@@ -24,6 +24,7 @@ import {
 	PHOENIX_ADMIN_CONSOLE,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
+	PHOENIX_EDGE_SHELL_BOOT,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
 	PHOENIX_FUNNEL_READOUT,
@@ -1027,3 +1028,35 @@ export const ADMIN_CONSOLE_FLAG = {
  */
 export const adminConsoleFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_admin_console", {appId, ...ADMIN_CONSOLE_FLAG});
+
+/**
+ * The edge-resolved shell-boot containment flag config (#2928, epic #2926, ADR 0179). The
+ * SINGLE seam the whole worker-first shell render ships behind. Default-OFF so the edge-render
+ * path reaches production dark: with it off the SPA HTML stays edge-direct byte-identical to
+ * today (the `assets` binding serves it, the worker never touches HTML); flipping it on has the
+ * worker render the shell per request and inject `window.__BOOT__`. Flipping it on is the human
+ * release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable WITHOUT
+ * constructing the alchemy resource (mirrors `NAV_IA_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           edge-shell (the worker-first shell render, epic #2926)
+ *   - originating:     #2928 (epic: edge-resolved shell state, #2926)
+ *   - removal trigger: once the edge shell render graduates to on at 100% and stable for one
+ *                      release, retire the flag and inline the worker-first render.
+ */
+export const EDGE_SHELL_BOOT_FLAG = {
+	key: PHOENIX_EDGE_SHELL_BOOT,
+	description:
+		"edge-resolved shell-boot (worker-first shell render + __BOOT__ injection) dark-ship (#2928, epic #2926, ADR 0179). owner: edge-shell. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const edgeShellBootFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_edge_shell_boot", {appId, ...EDGE_SHELL_BOOT_FLAG});
