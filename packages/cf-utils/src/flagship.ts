@@ -65,8 +65,7 @@ const toRawFlag = (flag: {
 	enabled: flag.enabled,
 	defaultVariation: flag.defaultVariation,
 	variations: flag.variations,
-	// `rules` carries the no-match split — the actual release lever (#1726). Conditions stay
-	// opaque; the pure core only tests their presence and round-trips them verbatim.
+	// Conditions stay opaque — the pure core only tests their presence and round-trips them verbatim.
 	rules: flag.rules,
 });
 
