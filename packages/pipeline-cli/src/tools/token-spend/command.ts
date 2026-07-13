@@ -14,14 +14,18 @@
  * scan — a bad path is an error, not a silent empty report).
  */
 import {readFileSync} from "node:fs";
-import {Console, Data, Effect} from "effect";
+import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {Argument, Command} from "effect/unstable/cli";
 import {formatStageSpend, reconstructSpend} from "./token-spend.ts";
 
 // A named transcript path that could not be read — a hard error (exit 1), not a skip.
-class TranscriptUnreadable extends Data.TaggedError("TranscriptUnreadable")<{
-	readonly path: string;
-}> {}
+class TranscriptUnreadable extends Schema.TaggedErrorClass<TranscriptUnreadable>()(
+	"TranscriptUnreadable",
+	{
+		path: Schema.String,
+	},
+) {}
 
 const transcriptArg = Argument.string("transcript").pipe(
 	Argument.withDescription(

@@ -27,7 +27,8 @@
 import {execFileSync} from "node:child_process";
 import {existsSync, readFileSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
-import {Console, Data, Effect, Option} from "effect";
+import {Console, Effect, Option} from "effect";
+import * as Schema from "effect/Schema";
 import {Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "../../find-root-dir.ts";
 import {findDrift, parseKnownTerms, renderIssueBody, renderReport} from "./drift.ts";
@@ -37,10 +38,10 @@ const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 const DEFAULT_WINDOW = 25;
 
 /** A shell-out (git/gh) or file-read failure — the run couldn't complete (non-zero exit). */
-class SweepIoError extends Data.TaggedError("SweepIoError")<{
-	readonly step: string;
-	readonly cause: unknown;
-}> {}
+class SweepIoError extends Schema.TaggedErrorClass<SweepIoError>()("SweepIoError", {
+	step: Schema.String,
+	cause: Schema.Unknown,
+}) {}
 
 const defaultRoot = (from: string = process.cwd()): string => {
 	const start = resolve(from);
