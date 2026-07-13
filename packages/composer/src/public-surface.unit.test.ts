@@ -28,7 +28,6 @@ describe("public export surface", () => {
 		// The read-only render mode (#2581) is part of the public surface — a consumer (mecmua
 		// reader) renders through it without importing tiptap or reaching a deep path.
 		expect(typeof composer.ReadOnlyComposer).toBe("function");
-		// No deep-path import is required of a consumer: everything above resolves from the root.
 	});
 });
 
