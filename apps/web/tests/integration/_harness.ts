@@ -34,6 +34,7 @@
  *   - `h.openSse(...)` / `readFrame(...)` — live SSE transport helpers
  */
 
+import {cfFetchWithRateLimitRetry} from "./_d1-rest-retry.ts";
 import {
 	awaitEdgeReady,
 	CloudflarePlaceholder404Error,
@@ -237,15 +238,19 @@ const cloudflareApiToken = (): string => {
 
 // One authenticated request to the Cloudflare REST API; throws on a non-2xx with the
 // response body for diagnosis. Setup-only — never on a test's black-box assertion path.
+// A transient 429 (the shared-account D1 rate-limit that reds the batched ref, #2915) is
+// bounded-retried before the throw — see `_d1-rest-retry.ts` for why 429 is safe to replay.
 async function cloudflareApi(path: string, init?: RequestInit): Promise<Response> {
-	const res = await fetch(`${CLOUDFLARE_API_BASE}${path}`, {
-		...init,
-		headers: {
-			authorization: `Bearer ${cloudflareApiToken()}`,
-			"content-type": "application/json",
-			...init?.headers,
-		},
-	});
+	const res = await cfFetchWithRateLimitRetry(() =>
+		fetch(`${CLOUDFLARE_API_BASE}${path}`, {
+			...init,
+			headers: {
+				authorization: `Bearer ${cloudflareApiToken()}`,
+				"content-type": "application/json",
+				...init?.headers,
+			},
+		}),
+	);
 	if (!res.ok) {
 		throw new Error(
 			`Cloudflare API ${init?.method ?? "GET"} ${path} failed: ${res.status} ${await res.text()}`,
