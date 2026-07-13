@@ -48,7 +48,7 @@ checks=0
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok() { echo "ok: $*"; checks=$((checks + 1)); }
 
-# ── Layer 1: static wiring ───────────────────────────────────────────────────
+# Layer 1: static wiring.
 # Every cycle-aware skill must (a) cite the single canonical probe path and (b) pair it
 # with an absent⇒no-op branch. Proves AC: "the canonical absence-probe is the one each
 # skill branches on — no skill hardcodes flags or assumes the doc exists."
@@ -88,7 +88,7 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 	fi
 done
 
-# ── Layer 2: hermetic runtime walkthrough ────────────────────────────────────
+# Layer 2: hermetic runtime walkthrough.
 # Execute the canonical working-tree form of the probe (formats §1: a skill on a local tree
 # may substitute `test -f product-development-cycle.md` for the gh api read — same probe,
 # same well-known path, same absent⇒no-op rule) against a synthetic repo root that has NO
@@ -166,7 +166,6 @@ else
 	fail "ship-it surfaced a release queue on an absent cycle doc"
 fi
 
-# ── Verdict ──────────────────────────────────────────────────────────────────
 if [ "$errors" -gt 0 ]; then
 	echo "validate-cycle-absence: FAILED — $errors error(s); the graceful-absence guarantee (ADR 0062 / 0083) is broken"
 	exit 1

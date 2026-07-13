@@ -31,7 +31,6 @@ fi
 # Timestamp — always available, UTC ISO-8601.
 parts+=("$(date -u +"%Y-%m-%dT%H:%M:%SZ")")
 
-# Join with " · ".
 line=""
 for p in "${parts[@]}"; do
 	if [[ -z "$line" ]]; then line="$p"; else line="$line · $p"; fi

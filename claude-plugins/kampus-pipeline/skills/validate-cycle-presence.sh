@@ -60,7 +60,7 @@ declare -a scanned_paths=()
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok() { echo "ok: $*"; checks=$((checks + 1)); }
 
-# ── Layer 1: static wiring (present branch) ──────────────────────────────────
+# Layer 1: static wiring (present branch).
 # Every cycle-aware skill must (a) cite the canonical probe path, (b) resolve it to `present`
 # somewhere, and (c) carry the present-path ACTION the cycle requires of it. This is what proves
 # the present branch is real wiring and not dead prose; if a future edit drops a skill's
@@ -97,7 +97,7 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 	fi
 done
 
-# ── Layer 2: hermetic runtime walkthrough (present branch) ───────────────────
+# Layer 2: hermetic runtime walkthrough (present branch).
 # Execute the canonical working-tree form of the probe (formats §1) against a synthetic repo
 # root that HAS a cycle doc, then walk the four present-path decisions exactly as each skill's
 # cycle-step does. This is the doc-present scenario actually run — the inverse of the absence
@@ -157,7 +157,7 @@ else
 	fail "ship-it surfaced no release queue on a present cycle doc + flag containment"
 fi
 
-# ── Zero-scope guard (ADR 0092): the present path MUST actually be exercised ──
+# Zero-scope guard (ADR 0092): the present path MUST actually be exercised.
 # Two ways this gate could scan nothing and pass vacuously, both FAIL CLOSED:
 #   1. The static scope matched zero skills (a moved/renamed skills dir).
 #   2. phoenix's real cycle doc is missing — then the present path is never exercised here,
@@ -172,10 +172,9 @@ else
 	ok "phoenix's real cycle doc is present at $CYCLE_DOC_PATH (present path is live)"
 fi
 
-# ── Emitted scope (ADR 0092): every run states what it looked at ─────────────
+# Emitted scope (ADR 0092): every run states what it looked at.
 echo "scanned scope: ${scanned_skills} cycle-aware skill(s) [${scanned_paths[*]}]; phoenix cycle doc: $([ -f "$repo_root/$CYCLE_DOC_PATH" ] && echo present || echo MISSING)"
 
-# ── Verdict ──────────────────────────────────────────────────────────────────
 if [ "$errors" -gt 0 ]; then
 	echo "validate-cycle-presence: FAILED — $errors error(s); phoenix's present cycle-doc path is not real (a present-branch action is missing, or the gate scanned zero scope — ADR 0091/0092)"
 	exit 1
