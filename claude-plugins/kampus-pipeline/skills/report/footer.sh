@@ -10,13 +10,11 @@ set -euo pipefail
 
 parts=("Filed by an agent")
 
-# Session id — Claude Code exposes it in the environment when running.
 session="${CLAUDE_CODE_SESSION_ID:-}"
 if [[ -n "$session" ]]; then
 	parts+=("session \`${session}\`")
 fi
 
-# Model — env var if present, else nothing (never guess).
 model="${ANTHROPIC_MODEL:-${CLAUDE_MODEL:-}}"
 if [[ -n "$model" ]]; then
 	parts+=("model \`${model}\`")
