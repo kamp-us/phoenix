@@ -47,7 +47,7 @@ export function makeRealAuthForTest(d1: D1Database) {
 				username: {type: "string", required: false, input: false},
 			},
 		},
-		plugins: [bearer(), apiKey({rateLimit: apiKeyRateLimit})],
+		plugins: [bearer(), apiKey({rateLimit: apiKeyRateLimit, enableSessionForAPIKeys: true})],
 	} satisfies BetterAuthOptions);
 }
 

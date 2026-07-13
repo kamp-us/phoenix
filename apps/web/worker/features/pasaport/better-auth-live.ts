@@ -223,11 +223,16 @@ export const BetterAuthLive = Layer.effect(
 					}),
 					// Durable agent credentials (ADR 0044 Decision 3). Exposes the
 					// session-authenticated create endpoint under `/api/auth/api-key/create`
-					// and mock-resolves a session for any request carrying the `x-api-key`
-					// header — so a minted key authenticates as its owning pasaport user
-					// through the same `getSession` path `validateSession` reads. The apikey
-					// table is already migrated (`schema.ts`). Rate limit: `apiKeyRateLimit`.
-					apiKey({rateLimit: apiKeyRateLimit}),
+					// and, with `enableSessionForAPIKeys`, resolves a session for any request
+					// carrying the `x-api-key` header — so a minted key authenticates as its
+					// owning pasaport user through the same `getSession` path `validateSession`
+					// reads. The flag is load-bearing, not decorative: it defaults `false`, and
+					// the plugin's session-from-key before-hook only registers a matcher for a
+					// config with the flag on (`findApiKeyAndConfig` skips flag-off configs), so
+					// without it an `x-api-key` header never mints a session and every key-auth'd
+					// read resolves anonymous. The apikey table is migrated (`schema.ts`). Rate
+					// limit: `apiKeyRateLimit`.
+					apiKey({rateLimit: apiKeyRateLimit, enableSessionForAPIKeys: true}),
 				],
 			} satisfies BetterAuthOptions);
 		}).pipe(Effect.cached);
