@@ -34,9 +34,7 @@
  * so a flag's stage lives in its PARENT app's physical name (`appName`), never in `name`.
  */
 export type CfResource =
-	/** A Worker script; `name` is its physical name (carries the stage). */
 	| {readonly kind: "worker"; readonly name: string}
-	/** A D1 database; `name` is its physical name (carries the stage). */
 	| {readonly kind: "d1"; readonly name: string}
 	/** A Flagship app; `name` is its physical name (carries the stage), `appId` is the delete key (apps delete by server id, not name). */
 	| {readonly kind: "flagship-app"; readonly name: string; readonly appId: string}
