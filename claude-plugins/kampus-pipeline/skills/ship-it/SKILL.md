@@ -1654,19 +1654,22 @@ real dark feature:
 - **(b) the PR body declares the flag key.** An explicit `Flag: <key>` / `Flag key: <key>` line
   naming the kebab-case flag this PR dark-ships — the fallback for a feature that gates behind a
   flag a **prior** PR already declared, so the flag resource isn't in *this* diff.
-- **(c) the PR body names an already-declared flag key in prose.** The body mentions a kebab-case
-  token that is a **real, currently-declared flag key** in the flag-IaC surface on `main` — the
-  reused-flag dark-ship case where `write-code` phrased the flag in prose ("ships dark behind
-  `phoenix-bildirim`") instead of emitting the canonical `Flag:` line, so signals (a) and (b) both
-  miss (#2086). This closes that latent blind spot **without** re-opening the #1257 phantom-release
-  class: the match is **grounded against the actual registry of declared default-off flags** — the
-  `key:` string literals in `resources.ts` (sourced from `apps/web/src/flags/keys.ts`) — so it
-  fires only when the body references a genuine, pre-declared flag, never on arbitrary prose, an
-  undeclared/misspelled key, or a non-flag kebab token. Signal (c) can therefore only *add*
-  coverage for reused-flag dark ships; a truly ungated PR names no declared flag key and still
-  no-ops. **(c) is additive: it never displaces (a) or (b), and never fires without a real
-  declared-flag reference to ground it — so it can only widen detection, never let a real dark ship
-  slip.**
+- **(c) the PR body names an already-declared flag key in a gating-declaration line.** The body
+  carries a **dark-ship gating declaration** — a line asserting *this* PR ships dark behind a
+  **real, currently-declared flag key** ("ships dark behind `phoenix-bildirim`") — the reused-flag
+  dark-ship case where `write-code` phrased the flag in prose instead of emitting the canonical
+  `Flag:` line, so signals (a) and (b) both miss (#2086). (c) fires on **two** grounds, both
+  required: the key is **grounded against the actual registry of declared default-off flags** (the
+  `key:` string literals in `resources.ts`, sourced from `apps/web/src/flags/keys.ts`), **and** it
+  appears in a **gating context**, not documentation/example prose. Registry-grounding alone is
+  *necessary but not sufficient* — it rules out arbitrary prose, undeclared/misspelled keys, and
+  non-flag kebab tokens, but it does **not** distinguish a gating declaration from a docs/example
+  mention of a genuinely-declared key, so a merely-illustrative reference (an example graduation
+  query naming a real flag) mis-fired (c) and queued a **phantom** `status:awaiting-release`
+  (#2897/#2843 — a new instance of the #1257 phantom-release class, via (c)'s context-blindness). The
+  gating-context scoping in `FLAG_IN_PROSE` below closes that: (c) fires only on a line that both
+  names a declared key **and** carries dark-ship gating intent — a truly ungated PR, and a PR that
+  merely documents/exemplifies a flag key, both no-op.
 
 It runs **only** when there is a linked issue *and* the cycle doc is present (the graceful absence
 contract, ADR 0062 — an absent cycle doc means no flag substrate, hence nothing to release). With
@@ -1701,15 +1704,14 @@ if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md"
   FLAG_IN_BODY=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""' \
     | grep -Eiq '^[[:space:]]*(#{1,6}[[:space:]]*)?\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' && echo yes || echo no)
 
-  # (c) the PR BODY names an ALREADY-DECLARED flag key in prose (the reused-flag dark ship, #2086):
-  #     the flag pre-dates this diff (so (a) misses) and write-code phrased it in prose — "ships dark
-  #     behind `phoenix-bildirim`" — rather than the canonical `Flag:` line (so (b) misses). Ground the
-  #     match against the REAL registry of declared default-off flags so it is false-positive-safe: read
-  #     the `key: <CONST>` list from the flag-IaC surface (resources.ts) on `main` and resolve each const
-  #     to its literal via apps/web/src/flags/keys.ts, then fire ONLY if the body mentions one of those
-  #     declared keys as a whole kebab token. An undeclared/misspelled key, arbitrary prose, or a non-flag
-  #     kebab token all miss — so (c) only ADDS coverage for a genuine reused-flag dark ship and can never
-  #     queue an ungated ship (no #1257 phantom-release regression).
+  # (c) the PR BODY names an ALREADY-DECLARED flag key in a GATING-DECLARATION line (the reused-flag
+  #     dark ship, #2086): the flag pre-dates this diff (so (a) misses) and write-code phrased it in
+  #     prose — "ships dark behind `phoenix-bildirim`" — rather than the canonical `Flag:` line (so (b)
+  #     misses). Two grounds, BOTH required (registry-grounding alone was necessary-but-not-sufficient
+  #     — it let a docs/example mention of a real key mis-fire, the #2897/#2843 phantom awaiting-release):
+  #     (1) the key is a REAL declared default-off flag — read the `key: <CONST>` list from the flag-IaC
+  #     surface (resources.ts) on `main`, resolved to literals via apps/web/src/flags/keys.ts; AND (2) it
+  #     appears in GATING context, not documentation/example prose (the FLAG_IN_PROSE scoping below).
   DECLARED_KEYS=$(
     gh api "repos/$REPO/contents/apps/web/worker/features/flagship/resources.ts?ref=main" \
         --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
@@ -1724,11 +1726,30 @@ if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md"
   FLAG_IN_PROSE=no
   if [ -n "$DECLARED_KEYS" ]; then
     BODY_PROSE=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""')
+    # Narrow (c) to a GATING/DECLARATION context — the fix for the #2897/#2843 phantom-release
+    # false positive. A declared key mentioned only as documentation/example prose ("counts errors
+    # captured while phoenix-bildirim was on") reads identically to a real dark-ship declaration
+    # under a whole-body grep, so (c) mis-fired and queued a phantom status:awaiting-release. Two
+    # scopers restore the distinction WITHOUT dropping (c)'s genuine reused-flag coverage (#2086):
+    #   (i) drop fenced ```code``` blocks — an example dark-ship line shown INSIDE a fence is
+    #       documentation ABOUT dark-shipping (e.g. a PR editing a pipeline skill), not THIS PR's own
+    #       gating declaration.
+    #  (ii) keep only GATING-CONTEXT lines — a line carrying `behind` PLUS a dark-ship/gating word,
+    #       the exact prose write-code emits for a reused-flag dark ship it phrased instead of the
+    #       canonical `Flag:` line ("ships dark behind `phoenix-bildirim`", the #2086 case (a)/(b)
+    #       both miss). NOTE the inline `key` backticks are NOT stripped — the whole-token match below
+    #       treats a backtick as a boundary char, so `ships dark behind \`phoenix-bildirim\`` still
+    #       fires; a naive strip-inline-code fix would false-NEGATIVE this genuine case.
+    #  The false positive has no such line (its mention carries no gating intent) ⇒ (c) no-ops.
+    GATING_PROSE=$(printf '%s' "$BODY_PROSE" \
+      | awk '/^[[:space:]]*```/{f=!f; next} !f' \
+      | grep -Ei '(^|[^a-z])behind([^a-z]|$)' \
+      | grep -Ei '(^|[^a-z])(dark|ship|ships|shipped|shipping|gate|gated|gates|gating|guard|guarded|hide|hides|hidden|flag)([^a-z]|$)' || true)
     while IFS= read -r K; do
       [ -z "$K" ] && continue
       # whole-token match: the declared key bounded by non-[a-z0-9-] on each side, so a longer key
       # containing this one as a substring (e.g. phoenix-bildirim-x) is NOT matched by phoenix-bildirim
-      printf '%s' "$BODY_PROSE" | grep -Eq "(^|[^a-z0-9-])$K([^a-z0-9-]|\$)" && { FLAG_IN_PROSE=yes; break; }
+      printf '%s' "$GATING_PROSE" | grep -Eq "(^|[^a-z0-9-])$K([^a-z0-9-]|\$)" && { FLAG_IN_PROSE=yes; break; }
     done <<EOF
 $DECLARED_KEYS
 EOF
