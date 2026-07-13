@@ -1,7 +1,6 @@
 /**
  * The filesystem boundary: load a `MigrationTree` from the flat migrations directory and read
- * the committed immutability baseline. The pure core (`migrations-guard.ts`) decides; this
- * module is the only place that touches disk, so it stays thin and the decision stays testable.
+ * the committed immutability baseline. The only module that touches disk, keeping the core pure.
  */
 import {createHash} from "node:crypto";
 import {readdirSync, readFileSync} from "node:fs";

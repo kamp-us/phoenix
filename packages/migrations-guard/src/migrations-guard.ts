@@ -10,8 +10,8 @@
  *                      content hash (an edit to journaled history is caught; a *new* trailing
  *                      migration absent from the baseline passes).
  *
- * It never touches the filesystem; the `fs.ts` boundary loads the `MigrationTree` and the
- * baseline, this core decides. Total over the loaded input, so every branch is unit-testable.
+ * It never touches the filesystem and is total over the loaded input, so every branch is
+ * unit-testable.
  */
 
 // A journal entry as drizzle-kit writes it into meta/_journal.json.

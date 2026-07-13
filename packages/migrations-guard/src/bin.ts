@@ -9,8 +9,8 @@
  *               a DELIBERATE, audited re-baseline (e.g. the #1306 flat→per-dir cutover). Writing
  *               the baseline is a human-reviewed control-plane act, not something CI does.
  *
- * The pure core (`migrations-guard.ts`) decides; this bin is the thin `effect/unstable/cli`
- * shell over the `fs.ts` disk boundary (same idiom as `@kampus/flake-rate`).
+ * The thin `effect/unstable/cli` shell over the core + `fs.ts` boundary (same idiom as
+ * `@kampus/flake-rate`).
  */
 import {writeFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
