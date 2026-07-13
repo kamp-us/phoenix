@@ -13,6 +13,12 @@
  * 0118's and adjustable there.
  */
 import * as Sentry from "@sentry/react";
+import {flagTag} from "../../worker/features/flagship/flag-tag";
+
+// The `flag.<key>`:`on`/`off` naming contract now lives in one SDK-free module shared with the
+// worker tagger (`worker/lib/sentry.ts`), so both tiers stamp an identical shape and the #1822
+// graduation query reads uniformly across client + worker — see `flag-tag.ts` for the why (#1821).
+export {FLAG_TAG_PREFIX, flagTag} from "../../worker/features/flagship/flag-tag";
 
 /**
  * Whether a usable DSN is present — the single gate every Sentry path checks, so the
@@ -40,25 +46,6 @@ export function browserOptions(dsn: string): Sentry.BrowserOptions {
 			queryParams: false,
 		},
 	};
-}
-
-/**
- * Feature-flag attribution on captured errors (#1821). A flag the session resolves becomes the
- * Sentry tag `flag.<key>` with value `"on"`/`"off"`, so a single flag's on-path error rate is
- * isolable for the dark→release→burn-in→graduate gate the flag lifecycle depends on (#1822
- * consumes this). The graduation query is `flag.<key>:on` — e.g. `flag.phoenix-bildirim:on`
- * counts errors captured while `phoenix-bildirim` was on for the session, and `flag.<key>:off`
- * the comparison off-path. Keys are the `flags/keys.ts` constants (non-PII), so tagging is
- * orthogonal to the ADR 0118 `dataCollection` PII scrub and touches none of it.
- */
-export const FLAG_TAG_PREFIX = "flag.";
-
-/**
- * The `(tagKey, tagValue)` a resolved flag maps to — pure, so the tag-naming contract is
- * unit-testable without Sentry (the pure-core idiom of `browserOptions`).
- */
-export function flagTag(key: string, value: boolean): {tagKey: string; tagValue: "on" | "off"} {
-	return {tagKey: `${FLAG_TAG_PREFIX}${key}`, tagValue: value ? "on" : "off"};
 }
 
 const dsn = import.meta.env.VITE_SENTRY_DSN;

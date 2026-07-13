@@ -23,6 +23,7 @@
  */
 import type {RuntimeContext} from "alchemy";
 import {type Cause, Context, Effect, Layer} from "effect";
+import {tagFlag} from "../../lib/sentry.ts";
 import {FlagsContext, toEvaluationContext} from "./FlagsContext.ts";
 import {Flagship} from "./Flagship.ts";
 
@@ -103,7 +104,18 @@ const buildRealFlags = (flagship: Flagship["Service"]): FlagsAccess => ({
 			return yield* flagship
 				.getBooleanValue(key, defaultValue, toEvaluationContext(context))
 				.pipe(swallowToDefault(key, defaultValue));
-		}),
+		}).pipe(
+			// Worker-tier feature-flag error attribution (#1821, the worker half of the SPA
+			// contract PR #2843 established). Stamp the effective gate value as the Sentry tag
+			// `flag.<key>`:`on`/`off` so a flag's worker-side error rate is isolable in the #1822
+			// graduation query, uniformly with the client tier. This is THE per-request boolean
+			// resolution choke point every worker flag gate flows through, so an error in any
+			// flag-gated worker path is attributed — not just the `/api/flags/evaluate` delivery
+			// seam. The tag is the resolved value the request actually saw (including a
+			// degrade-safe default). Inert when Sentry has no active client (`tagFlag` gates on
+			// `Sentry.isEnabled()`); non-PII, orthogonal to the ADR 0118 `dataCollection` scrub.
+			Effect.tap((value) => Effect.sync(() => tagFlag(key, value))),
+		),
 	getString: (key, defaultValue) =>
 		Effect.gen(function* () {
 			const context = yield* FlagsContext;
