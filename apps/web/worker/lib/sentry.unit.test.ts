@@ -1,14 +1,30 @@
 /**
- * Pins ADR 0118's worker-tier invariant (issue #1502): the worker Sentry module is
- * pure options — no init, no client, no network. "Inert when no DSN" is enforced at
- * the request seam (`index.ts`) via the `sentryEnabled` gate this pins; the module
- * itself never touches `@sentry/cloudflare` at runtime. Mirrors the SPA's
- * `src/lib/sentry.unit.test.ts`. Also pins the DSN gate and the native-`dataCollection` shape.
+ * Pins ADR 0118's worker-tier invariant (issue #1502): the worker Sentry module ships pure
+ * options + the flag-attribution tagger — no init, no client of its own. "Inert when no DSN" is
+ * enforced at the request seam (`index.ts`), where `wrapRequestHandler` runs only with a DSN; the
+ * module's own `tagFlag` gates on `Sentry.isEnabled()`, which is false without an active client.
+ * Mirrors the SPA's `src/lib/sentry.unit.test.ts`. Also pins the DSN gate, the
+ * native-`dataCollection` shape, and the worker half of the #1821 `flag.<key>`:`on`/`off` tagging.
  */
 import * as Cause from "effect/Cause";
-import {describe, expect, it} from "vitest";
-import {sentryEnabled, workerOptions} from "./sentry.ts";
+import {afterEach, describe, expect, it, vi} from "vitest";
+
+// `@sentry/cloudflare` is stubbed so `tagFlag` can be driven across the inert (`isEnabled=false`)
+// and active (`isEnabled=true`) branches without a real client init — mirrors the SPA test's
+// `@sentry/react` mock. Hoisted so the module under test binds these fns at import.
+const {isEnabled, setTag} = vi.hoisted(() => ({
+	isEnabled: vi.fn(() => false),
+	setTag: vi.fn(),
+}));
+vi.mock("@sentry/cloudflare", () => ({isEnabled, setTag}));
+
+import {sentryEnabled, tagFlag, workerOptions} from "./sentry.ts";
 import {shouldCaptureCause} from "./sentry-capture.ts";
+
+afterEach(() => {
+	vi.clearAllMocks();
+	isEnabled.mockReturnValue(false);
+});
 
 describe("sentryEnabled — the inert gate", () => {
 	it("is false for absent/empty/whitespace DSN", () => {
@@ -36,6 +52,22 @@ describe("decided defaults (ADR 0118)", () => {
 			queryParams: false,
 		});
 		expect(opts.beforeSend).toBeUndefined();
+	});
+});
+
+describe("tagFlag — worker-tier flag attribution (#1821)", () => {
+	it("does not tag and does not throw when Sentry is inert (no active client)", () => {
+		isEnabled.mockReturnValue(false);
+		expect(() => tagFlag("phoenix-bildirim", true)).not.toThrow();
+		expect(setTag).not.toHaveBeenCalled();
+	});
+
+	it("sets flag.<key>=on/off on the scope when a client is active", () => {
+		isEnabled.mockReturnValue(true);
+		tagFlag("phoenix-bildirim", true);
+		expect(setTag).toHaveBeenCalledWith("flag.phoenix-bildirim", "on");
+		tagFlag("pano-optimistic-comment-add", false);
+		expect(setTag).toHaveBeenCalledWith("flag.pano-optimistic-comment-add", "off");
 	});
 });
 
