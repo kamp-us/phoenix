@@ -42,7 +42,6 @@ export const toPageError = (kind: PageError["kind"], text: string): PageError =>
 	return {kind, text: trimmed.length === 0 ? "(no message)" : trimmed};
 };
 
-/** Only an uncaught exception hard-fails the gate; console.error rides advisory. */
 export const isRenderCrash = (error: PageError): boolean => error.kind === "pageerror";
 
 /**
