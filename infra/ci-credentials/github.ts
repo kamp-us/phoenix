@@ -4,9 +4,6 @@
  * run `alchemy deploy` (Part 5 of the alchemy tutorial, adapted to phoenix:
  * pnpm + node, not bun; `kamp-us/phoenix`).
  *
- * Authored by Can Sirin (@cansirin) in #19; brought into #12 to land the
- * self-provisioning CI credential flow with the framework foundation.
- *
  * Why a separate stack from `alchemy.run.ts`: the app stack only needs enough
  * Cloudflare permission to deploy the worker. THIS stack *mints a brand-new,
  * scoped Cloudflare API token* (which requires the elevated `API Tokens > Write`
