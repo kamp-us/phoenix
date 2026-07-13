@@ -360,11 +360,19 @@ describe("malformedEmittedSha — the post full-40-hex emission guard (#2683)", 
 		assert.isNull(malformedEmittedSha("review-code: advisory — see thread", "code")));
 });
 
-describe("emissionDefect — the one gate `post` and `validate` share (#2683)", () => {
+describe("emissionDefect — the one gate `post` and `validate` share (#2683/#2772/#2796)", () => {
 	const SHA40 = "a".repeat(40);
+	const MKTEMP = "/var/folders/8f/r3k3t6817cgbsxsxvxk83q4c0000gn/T/tmp.TgExIt22qT";
 
 	it("null (postable) for a clean full-40-hex PASS marker", () =>
 		assert.isNull(emissionDefect(`review-doc: PASS @ ${SHA40} — merge-ready`, "doc")));
+	it("null (postable) for a §CP advisory with an inline body + clean Reviewed-head", () =>
+		assert.isNull(
+			emissionDefect(
+				`review-doc: advisory — blocking-set PR (manual merge)\n\nverified apps/web and packages/pipeline-cli\n\nReviewed-head: @ ${SHA40}`,
+				"doc",
+			),
+		));
 	it("defect for a cross-namespace body (review-code on the doc gate)", () =>
 		assert.isNotNull(emissionDefect(`review-code: PASS @ ${SHA40} — merge-ready`, "doc")));
 	it("defect for an unbound `@-` polarity marker (the #2646 case)", () =>
@@ -372,5 +380,30 @@ describe("emissionDefect — the one gate `post` and `validate` share (#2683)", 
 	it("defect for a path-glued SHA field (the #2683 case)", () =>
 		assert.isNotNull(
 			emissionDefect("review-doc: PASS @ /var/folders/T/tmp.X — merge-ready", "doc"),
+		));
+
+	// The #2816/#2818 recurrence: a /var/folders mktemp path in the @<sha> field, refused loudly.
+	it("defect for a /var/folders mktemp path in the @<sha> field (#2772 variant, #2816/#2818)", () =>
+		assert.isNotNull(emissionDefect(`review-code: PASS @${MKTEMP} — merge-ready`, "code")));
+	it("defect for a /var/folders mktemp path in the Reviewed-head anchor", () =>
+		assert.isNotNull(
+			emissionDefect(`review-code: advisory — see thread\n\nReviewed-head: @${MKTEMP}`, "code"),
+		));
+	// The #2789 case: the whole body is a bare @filepath — its first line is not a marker.
+	it("defect for a whole-body bare @filepath scratchpad ref (#2789/#2796)", () =>
+		assert.isNotNull(
+			emissionDefect("@/private/tmp/claude-501/session/scratchpad/verdict.md", "code"),
+		));
+	// The hole checks 1–3 miss: a valid line-1 marker but a temp path in the PROSE tail.
+	it("defect for a temp path in verdict PROSE with an otherwise-valid marker (the prose hole)", () =>
+		assert.isNotNull(
+			emissionDefect(
+				`review-code: PASS @ ${SHA40}\n\nreviewed the diff staged at ${MKTEMP}`,
+				"code",
+			),
+		));
+	it("defect for a /Users home path in verdict prose", () =>
+		assert.isNotNull(
+			emissionDefect(`review-code: PASS @ ${SHA40}\n\nsee /Users/foo/scratch/notes`, "code"),
 		));
 });
