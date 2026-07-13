@@ -358,6 +358,18 @@ pnpm -C "$REVIEW_WT" lint:worktree   # and/or the specific test the criterion na
 rm -rf "$REVIEW_WT" && git worktree prune && git update-ref -d "$PR_REF"   # tear the throwaway tree + ref down
 ```
 
+**Teardown runs on EVERY exit path — PASS, FAIL, or a mid-run error, not just the happy
+path.** The line above is the review's own `rm -rf` of a detached, already-pushed throwaway
+it materialized itself (safe — it holds no branch and no unpushed work), so run it even when
+the review is exiting `FAIL` or aborting after a typecheck/lint error; a leaked `review-head-*`
+tree accumulates on the shared primary otherwise (#2785). To catch a mid-block error inside a
+single Bash call, register it as a trap right after `git worktree add`:
+`trap 'rm -rf "$REVIEW_WT"; git worktree prune; git update-ref -d "$PR_REF"' EXIT`. And the
+standing net for the un-catchable case — a session-end abort *between* Bash calls, which no
+in-shell trap can reach — is `pipeline-cli worktree-sweep --execute` (#2785): it reclaims any
+leaked `review-head-*` tree that is clean + idle + unlocked, **without** `--force` (a dirty /
+active / locked one is KEPT — the #2240 liveness guard), so nothing accumulates unbounded.
+
 **The in-worktree typecheck is authoritative** (ADR
 [0067](https://github.com/kamp-us/phoenix/blob/main/.decisions/0067-sparse-typecheck-bootstrap.md),
 reversing ADR 0060's deferred-to-CI workaround). The cone-minus-denylist worktree carries

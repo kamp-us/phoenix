@@ -3,12 +3,30 @@ import {
 	classifyWorktree,
 	computeWorktreeSweepPlan,
 	isManagedWorktree,
+	isReviewHeadWorktree,
 	parseWorktreeList,
 	type WorktreeRecord,
 } from "./worktree-sweep.ts";
 
 const MAIN = "/Users/dev/phoenix";
 const wtPath = (id: string) => `${MAIN}/.claude/worktrees/${id}`;
+/** A $TMPDIR-rooted throwaway review checkout, as a review gate materializes it (#2785). */
+const reviewHeadPath = (leaf: string) => `/var/folders/8f/tmp.aBcD1234/${leaf}`;
+
+/** A review-head record: detached (no branch), clean, unlocked, idle — the leaked-and-reclaimable shape. */
+const reviewRecord = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
+	path: reviewHeadPath("review-head-2815"),
+	branch: null,
+	isDirty: false,
+	// A detached review head is often NOT reachable/merged (an open PR's head, pre-squash) — the
+	// leaked class the merge gate can't reclaim. These fields are moot for review-head classification.
+	reachableFromOriginMain: false,
+	squashMergedToOriginMain: false,
+	locked: false,
+	recentlyActive: false,
+	hasOpenPr: false,
+	...over,
+});
 
 const record = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	path: wtPath("agent-clean"),
@@ -37,6 +55,58 @@ describe("isManagedWorktree", () => {
 
 	it("normalizes backslash separators (windows-shaped path)", () => {
 		assert.isTrue(isManagedWorktree("C:\\Users\\dev\\phoenix\\.claude\\worktrees\\agent-a"));
+	});
+
+	it("does NOT classify a $TMPDIR review-head tree as a managed (.claude/worktrees) build tree", () => {
+		assert.isFalse(isManagedWorktree(reviewHeadPath("review-head-2815")));
+	});
+});
+
+describe("isReviewHeadWorktree", () => {
+	it("matches each review gate's leaf (review-code / review-doc / review-skill)", () => {
+		assert.isTrue(isReviewHeadWorktree(reviewHeadPath("review-head-2815")));
+		assert.isTrue(isReviewHeadWorktree(reviewHeadPath("review-doc-head-2815")));
+		assert.isTrue(isReviewHeadWorktree(reviewHeadPath("review-skill-head-2815")));
+	});
+
+	it("anchors to the BASENAME — a build tree under a review-head-named parent is not a review head", () => {
+		assert.isFalse(isReviewHeadWorktree(`${wtPath("review-head-2815")}/agent-x`));
+	});
+
+	it("rejects the primary checkout and a normal build worktree", () => {
+		assert.isFalse(isReviewHeadWorktree(MAIN));
+		assert.isFalse(isReviewHeadWorktree(wtPath("agent-a")));
+	});
+
+	it("normalizes backslash separators (windows-shaped path)", () => {
+		assert.isTrue(isReviewHeadWorktree("C:\\Users\\dev\\AppData\\Temp\\tmp.x\\review-head-9"));
+	});
+});
+
+describe("classifyWorktree — review-head trees (#2785)", () => {
+	it("RECLAIMS a leaked, idle, clean, unlocked review-head tree even though its head is unmerged", () => {
+		const d = classifyWorktree(reviewRecord());
+		assert.deepStrictEqual(d, {kind: "remove", reason: "review-head-idle"});
+	});
+
+	it("keeps a DIRTY review-head tree (liveness preserved — never nuke uncommitted work)", () => {
+		const d = classifyWorktree(reviewRecord({isDirty: true}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "dirty"});
+	});
+
+	it("keeps a LOCKED review-head tree (an operator/agent pinned it — #2240 liveness preserved)", () => {
+		const d = classifyWorktree(reviewRecord({locked: true}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "locked"});
+	});
+
+	it("keeps a RECENTLY-ACTIVE review-head tree (a review still running against the head — #2240)", () => {
+		const d = classifyWorktree(reviewRecord({recentlyActive: true}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "recently-active"});
+	});
+
+	it("dirty wins over the reclaim (still kept, reported as dirty) even for a review-head tree", () => {
+		const d = classifyWorktree(reviewRecord({isDirty: true, recentlyActive: false}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "dirty"});
 	});
 });
 
@@ -178,6 +248,28 @@ describe("computeWorktreeSweepPlan — partition", () => {
 		assert.strictEqual(keepReason(MAIN), "not-managed");
 		assert.strictEqual(keepReason(wtPath("b")), "dirty");
 		assert.strictEqual(keepReason(wtPath("c")), "unmerged");
+	});
+
+	it("partitions a mixed pile of build + review-head trees (both classes, liveness preserved)", () => {
+		const records: ReadonlyArray<WorktreeRecord> = [
+			record({path: wtPath("a"), branch: "umut/1-done"}), // build, merged-clean → remove
+			reviewRecord({path: reviewHeadPath("review-head-10")}), // leaked idle review head → remove
+			reviewRecord({path: reviewHeadPath("review-doc-head-11"), recentlyActive: true}), // live review → keep
+			reviewRecord({path: reviewHeadPath("review-skill-head-12"), isDirty: true}), // dirty review head → keep
+			reviewRecord({path: reviewHeadPath("review-head-13"), locked: true}), // locked review head → keep
+		];
+		const plan = computeWorktreeSweepPlan(records);
+		assert.deepStrictEqual(
+			new Set(plan.toRemove.map((p) => p.worktree.path)),
+			new Set([wtPath("a"), reviewHeadPath("review-head-10")]),
+		);
+		const removeReason = (path: string) =>
+			plan.toRemove.find((r) => r.worktree.path === path)?.reason;
+		assert.strictEqual(removeReason(reviewHeadPath("review-head-10")), "review-head-idle");
+		const keepReason = (path: string) => plan.kept.find((k) => k.worktree.path === path)?.reason;
+		assert.strictEqual(keepReason(reviewHeadPath("review-doc-head-11")), "recently-active");
+		assert.strictEqual(keepReason(reviewHeadPath("review-skill-head-12")), "dirty");
+		assert.strictEqual(keepReason(reviewHeadPath("review-head-13")), "locked");
 	});
 
 	it("an empty list yields an empty plan", () => {

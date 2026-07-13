@@ -43,6 +43,8 @@ const runSweep = (cwd: string, flags: ReadonlyArray<string>): Promise<RunResult>
 
 describe("worktree-sweep --execute — SessionStart cadence against a REAL git repo (#2238/#2240)", () => {
 	let mainRepo: string;
+	// $TMPDIR-shaped roots for review-head trees (removed in afterAll — any the sweep KEEPS must be cleaned).
+	const reviewRoots: Array<string> = [];
 	const git = (cwd: string, ...args: string[]) =>
 		execFileSync("git", ["-C", cwd, ...args], {encoding: "utf8"});
 
@@ -71,6 +73,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 
 	afterAll(() => {
 		rmSync(mainRepo, {recursive: true, force: true});
+		for (const r of reviewRoots) rmSync(r, {recursive: true, force: true});
 	});
 
 	it("removes a CLEAN + IDLE + unlocked orphan, but KEEPS dirty / recently-active / locked (never --force)", async () => {
@@ -108,6 +111,33 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 
 		// unlock so afterAll's rmSync can tear the tree down cleanly.
 		git(mainRepo, "worktree", "unlock", lockedWt);
+	}, 30_000);
+
+	it("reclaims a leaked review-head detached checkout but KEEPS a dirty one (never --force) — #2785", async () => {
+		// The review gates root these under $TMPDIR (outside .claude/worktrees), so mirror that:
+		// a separate temp root, leaf `review-head-<PR>`, which `isReviewHeadWorktree` keys on.
+		const reviewRoot = mkdtempSync(join(tmpdir(), "wts-rev-"));
+		reviewRoots.push(reviewRoot);
+
+		// Clean + idle + unlocked leaked review head → reclaimed (no merge gate for this class).
+		const leakedReviewWt = join(reviewRoot, "review-head-8001");
+		git(mainRepo, "worktree", "add", "-q", "--detach", leakedReviewWt, "HEAD");
+		backdate(leakedReviewWt);
+
+		// Dirty review head → KEPT, its scratch file intact (proves the reclaim never --force-nukes).
+		const dirtyReviewWt = join(reviewRoot, "review-doc-head-8002");
+		git(mainRepo, "worktree", "add", "-q", "--detach", dirtyReviewWt, "HEAD");
+		writeFileSync(join(dirtyReviewWt, "scratch.txt"), "mid-review edit");
+		backdate(dirtyReviewWt);
+
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"]);
+		assert.strictEqual(code, 0, stdout);
+		assert.isFalse(existsSync(leakedReviewWt), "clean+idle leaked review-head must be reclaimed");
+		assert.isTrue(existsSync(dirtyReviewWt), "dirty review-head must be kept (no --force)");
+		assert.isTrue(
+			existsSync(join(dirtyReviewWt, "scratch.txt")),
+			"the dirty review-head's scratch file must survive — remove runs without --force",
+		);
 	}, 30_000);
 
 	it("dry-run (no --execute) touches nothing — even a clean+idle+unlocked orphan", async () => {

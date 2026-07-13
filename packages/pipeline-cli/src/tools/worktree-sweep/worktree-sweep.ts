@@ -1,10 +1,20 @@
 /**
- * `worktree-sweep` pure core — classify each managed agent worktree under
- * `.claude/worktrees/` into KEEP or REMOVE with a reason, for the operator's
- * sanctioned bulk drain (issue #1243). IO-free and total: every decision is a
- * deterministic transform over already-gathered facts. The git boundary
- * (enumerate / status / ancestry / remove) lives in `command.ts`; this module
+ * `worktree-sweep` pure core — classify each swept worktree into KEEP or REMOVE with a
+ * reason, for the operator's sanctioned bulk drain (issue #1243). IO-free and total:
+ * every decision is a deterministic transform over already-gathered facts. The git
+ * boundary (enumerate / status / ancestry / remove) lives in `command.ts`; this module
  * never runs a command and never removes anything.
+ *
+ * Two swept classes (#2785):
+ *   - **Build worktrees** under `.claude/worktrees/` — a harness-provisioned agent tree
+ *     that carries a real branch and may hold unpushed work; removable ONLY when clean AND
+ *     its branch's content already landed on `origin/main` (the merge gate below).
+ *   - **Review-head worktrees** — the `$TMPDIR`-rooted `review-head-*` / `review-doc-head-*`
+ *     / `review-skill-head-*` DETACHED checkouts a review gate materializes from a PR head
+ *     (`isReviewHeadWorktree`). These are throwaway scratch trees of an already-pushed PR
+ *     head: they carry NO branch and no unpushed work, so they need no merge gate — a clean,
+ *     idle, unlocked one holds nothing recoverable. Without this class they were `not-managed`
+ *     and never reaped, so they leaked unbounded (562 accumulated before a manual sweep).
  *
  * The safety property is the whole point (MEMORY "Safe worktree prune", #1243 AC):
  * a worktree is removable ONLY when it is clean AND its branch's content has already
@@ -35,6 +45,23 @@ const MANAGED_SEGMENT = "/.claude/worktrees/";
 /** True when the path is a managed agent worktree — never the primary checkout, never a foreign tree. */
 export const isManagedWorktree = (path: string): boolean =>
 	path.replace(/\\/g, "/").includes(MANAGED_SEGMENT);
+
+/**
+ * The leaf-basename prefix of a `$TMPDIR`-rooted throwaway review checkout — `review-head-<PR>`
+ * (review-code), `review-doc-head-<PR>` (review-doc), `review-skill-head-<PR>` (review-skill).
+ * Anchored to the basename so a substring match on some parent dir can't misclassify a build tree.
+ */
+const REVIEW_HEAD_BASENAME = /^review-(doc-|skill-)?head-/;
+
+/** True when the path is a throwaway detached review-head checkout (a review gate's scratch tree, #2785). */
+export const isReviewHeadWorktree = (path: string): boolean => {
+	const norm = path.replace(/\\/g, "/");
+	return REVIEW_HEAD_BASENAME.test(norm.slice(norm.lastIndexOf("/") + 1));
+};
+
+/** True when the worktree is in scope for the sweep at all — either swept class. */
+export const isSweptWorktree = (path: string): boolean =>
+	isManagedWorktree(path) || isReviewHeadWorktree(path);
 
 /**
  * One worktree reduced to exactly the facts the decision needs. `branch` is the
@@ -71,7 +98,7 @@ export interface WorktreeRecord {
 
 /** Why a worktree is KEPT — the audit trail, so the plan is never an opaque list. */
 export type KeepReason =
-	/** Not under `.claude/worktrees/` — the primary checkout or a foreign tree; never touched. */
+	/** Neither swept class — the primary checkout, a foreign tree, or an unrelated worktree; never touched. */
 	| "not-managed"
 	/** Uncommitted/untracked changes present — keep, never `--force` (unpushed work is sacred). */
 	| "dirty"
@@ -84,14 +111,23 @@ export type KeepReason =
 	/** Branch not merged into `origin/main` (or detached HEAD not reachable) — live/unmerged work. */
 	| "unmerged";
 
-/** Why a worktree is REMOVABLE — clean AND its content already on `origin/main`. */
+/** Why a worktree is REMOVABLE — a build tree clean AND on `origin/main`, or an idle review-head tree. */
 export type RemoveReason =
 	/** Clean, on a branch whose tip is reachable from `origin/main` (merged). */
 	| "merged-clean"
 	/** Clean, detached at a commit reachable from `origin/main`. */
 	| "detached-reachable"
 	/** Clean; tip not an ancestor, but the branch's content squash-merged to `origin/main` (#1328). */
-	| "squash-merged-clean";
+	| "squash-merged-clean"
+	/**
+	 * A `review-head-*` throwaway detached checkout that is clean + unlocked + idle (#2785). No
+	 * merge gate: it holds a detached, already-pushed PR head and no branch/unpushed work, so once
+	 * it is clean, unlocked, and idle it is a pure leak — nothing to strand. Requiring merge here
+	 * would strand it for the PR's entire open life (a review is a bounded one-shot event, not tied
+	 * to PR lifetime), defeating the reclaim; the #2240 liveness triple (dirty/locked/recently-active)
+	 * still guards a live review.
+	 */
+	| "review-head-idle";
 
 export type SweepDecision =
 	| {readonly kind: "keep"; readonly reason: KeepReason}
@@ -115,24 +151,30 @@ export interface WorktreeSweepPlan {
 /**
  * Classify a single worktree. The order of checks IS the safety policy:
  *
- *   1. Not a managed worktree → KEEP (`not-managed`). The primary checkout and any
- *      foreign tree are never candidates, regardless of their other facts.
- *   2. Dirty → KEEP (`dirty`). Wins over every merge signal: a worktree with
- *      working-tree changes is never removed, even when its branch has merged.
- *   3. Liveness gates (#2240) — locked / recently-active / open-PR → KEEP. A clean+merged
- *      tree may still belong to a LIVE sibling lane (just committed+pushed, or PR just
- *      squash-merged mid-repair). These gates run BEFORE the remove branches, so each is a
- *      necessary condition on REMOVE: a tree is swept only when it clears all three.
- *   4. Ancestor-reachable from `origin/main` → REMOVE. `merged-clean` on a branch,
- *      `detached-reachable` when detached at a merged commit. Ancestry wins over the
- *      squash signal (a non-squash merge is the simpler, stronger fact).
- *   5. Else squash-merged to `origin/main` → REMOVE (`squash-merged-clean`). The
- *      #1328 case: a squash merge (ADR 0048) leaves the tip un-ancestored but lands
- *      the branch's content, so the worktree is done.
- *   6. Otherwise → KEEP (`unmerged`). Genuinely unmerged work.
+ *   1. Neither swept class → KEEP (`not-managed`). The primary checkout and any foreign
+ *      tree are never candidates, regardless of their other facts.
+ *   2. Dirty → KEEP (`dirty`). Wins over every other signal for BOTH classes: a worktree
+ *      with working-tree changes is never removed, even when its branch has merged.
+ *   3. Liveness gates (#2240) — locked / recently-active → KEEP, for BOTH classes. A clean
+ *      tree may still belong to a LIVE lane (a build tree just committed+pushed; a review
+ *      still running against its head). These run BEFORE any remove branch, so each is a
+ *      necessary condition on REMOVE.
+ *   4. Review-head tree → REMOVE (`review-head-idle`). Past the dirty+locked+recently-active
+ *      guards, a detached throwaway review checkout holds no branch and no unpushed work, so
+ *      it is a pure leak — no merge/open-PR gate applies (see `review-head-idle`). Returns here
+ *      before the build-tree merge gates so an unmerged PR head is still reclaimed.
+ *   5. (Build tree) open-PR → KEEP. A clean+merged build tree may still belong to a live sibling
+ *      lane whose branch has an open PR (#2240) — an open-PR review-head tree never reaches this
+ *      branch, and its detached HEAD has no branch to query anyway.
+ *   6. (Build tree) ancestor-reachable from `origin/main` → REMOVE — `merged-clean` on a branch,
+ *      `detached-reachable` when detached at a merged commit. Ancestry wins over the squash signal.
+ *   7. (Build tree) else squash-merged to `origin/main` → REMOVE (`squash-merged-clean`). The
+ *      #1328 case: a squash merge (ADR 0048) leaves the tip un-ancestored but lands the content.
+ *   8. Otherwise → KEEP (`unmerged`). Genuinely unmerged work.
  */
 export const classifyWorktree = (wt: WorktreeRecord): SweepDecision => {
-	if (!isManagedWorktree(wt.path)) {
+	const reviewHead = isReviewHeadWorktree(wt.path);
+	if (!isManagedWorktree(wt.path) && !reviewHead) {
 		return {kind: "keep", reason: "not-managed"};
 	}
 	if (wt.isDirty) {
@@ -143,6 +185,9 @@ export const classifyWorktree = (wt: WorktreeRecord): SweepDecision => {
 	}
 	if (wt.recentlyActive) {
 		return {kind: "keep", reason: "recently-active"};
+	}
+	if (reviewHead) {
+		return {kind: "remove", reason: "review-head-idle"};
 	}
 	if (wt.hasOpenPr) {
 		return {kind: "keep", reason: "open-pr"};
