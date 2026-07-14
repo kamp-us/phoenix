@@ -1,6 +1,6 @@
 import {createContext, useContext, useState} from "react";
 import {Outlet, useSearchParams} from "react-router";
-import {Subnav} from "../layout/Subnav";
+import {SubnavShell} from "../layout/SubnavShell";
 import {SozlukAlphabet} from "./index";
 import {SozlukGoToCreate} from "./SozlukGoToCreate";
 
@@ -22,14 +22,15 @@ export function useSozlukSubnavQuery() {
 }
 
 /**
- * sözlük's persistent product Subnav zone (placement law #2587, epic #2596) — the pathless
- * layout-route element that renders sözlük's Subnav once above the routed `<Outlet>`, so the
- * zone stays mounted across `/sozluk/*` (no per-page remount). The go-to-or-create box (a
- * product-scoped utility, #2586 taxonomy — distinct from the topbar `ara`, #1669) fills the
- * Subnav's `input` slot; the URL-driven alphabet (`?harf=<letter>`) is the filters row, its
- * active-letter accent legal transient state paint left as-is. Mounted only behind the
- * `phoenix-nav-ia` flag (App.tsx); off ⇒ the router is flat and SozlukHome renders its own
- * masthead box + alphabet as today.
+ * sözlük's persistent product Subnav zone (placement law #2587, epic #2596), composed through
+ * the blessed `SubnavShell` recipe (ADR 0182, #2974) — the pathless layout-route element that
+ * renders sözlük's Subnav once above the routed `<Outlet>`, so the zone stays mounted across
+ * `/sozluk/*` (no per-page remount). The go-to-or-create box (a product-scoped utility, #2586
+ * taxonomy — distinct from the topbar `ara`, #1669) fills the shell's `leading` zone; the
+ * URL-driven alphabet (`?harf=<letter>`) fills the `destinations` zone so it renders INSIDE the
+ * bar's filters row — not the detached sibling it was before #2974 — its active-letter accent
+ * left as-is. Mounted only behind the `phoenix-nav-ia` flag (App.tsx); off ⇒ the router is flat
+ * and SozlukHome renders its own masthead box + alphabet as today.
  */
 export function SozlukSubnavLayout() {
 	const [query, setQuery] = useState("");
@@ -37,10 +38,12 @@ export function SozlukSubnavLayout() {
 	const letter = params.get("harf") ?? undefined;
 	return (
 		<SozlukSubnavQuery.Provider value={{query, setQuery}}>
-			<Subnav
-				input={<SozlukGoToCreate className="kp-subnav__input" query={query} setQuery={setQuery} />}
+			<SubnavShell
+				leading={
+					<SozlukGoToCreate className="kp-subnav__input" query={query} setQuery={setQuery} />
+				}
+				destinations={<SozlukAlphabet value={letter} />}
 			/>
-			<SozlukAlphabet value={letter} />
 			<Outlet />
 		</SozlukSubnavQuery.Provider>
 	);
