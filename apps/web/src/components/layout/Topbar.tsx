@@ -31,6 +31,7 @@ export function Topbar({
 	onThemeChange,
 	onLogout,
 	navIa = false,
+	reserveSignedInSlots = false,
 }: {
 	brandName?: string;
 	brandTo?: string;
@@ -96,6 +97,16 @@ export function Topbar({
 	 * build on; it does no status-affordance rework of its own.
 	 */
 	navIa?: boolean;
+	/**
+	 * Reserve the signed-in account cluster's geometry at first paint (#2933, ADR 0179 §1).
+	 * Driven by `__BOOT__.signedIn` (`readSignedIn`) in the shell frame: when the edge
+	 * resolved a signed-in session, the account slot renders a fixed-geometry placeholder
+	 * before fate publishes the real `user` chip — so the cluster occupies its final geometry
+	 * from the first frame and the value late-fills in place (#2160), instead of the
+	 * giriş-yap↔user-cluster swap + empty→pop. False (absent `__BOOT__` / signed-out) ⇒ the
+	 * account slot stays null until `user` arrives — today's conditional render.
+	 */
+	reserveSignedInSlots?: boolean;
 }) {
 	const navigate = useNavigate();
 	const searchInputRef = useRef<HTMLInputElement>(null);
@@ -258,6 +269,23 @@ export function Topbar({
 			</Menu.Popup>
 		</Menu.Root>
 	) : null;
+	// The account slot: the real user menu once fate publishes it, else — when `__BOOT__`
+	// reserved a signed-in first paint — a fixed-geometry placeholder that holds the slot open
+	// so the menu late-fills in place with no shift (#2933). Mirrors `.kp-topbar__user`'s box
+	// (avatar + name) and is inert (aria-hidden, not a control). Signed-out / no reservation ⇒
+	// null, exactly today's render.
+	const accountSlot =
+		userMenu ??
+		(reserveSignedInSlots ? (
+			<span
+				className="kp-topbar__user kp-topbar__user--placeholder"
+				data-testid="topbar-user-placeholder"
+				aria-hidden="true"
+			>
+				<span className="kp-avatar" />
+				<span className="kp-topbar__name-placeholder" />
+			</span>
+		) : null);
 
 	// Nav-IA zone grammar (#2611): every element is classed by the #2586 taxonomy and
 	// placed in its one lawful zone (#2587 Model-2). Zones carry a stable class +
@@ -301,7 +329,7 @@ export function Topbar({
 					{bildirimSignal}
 				</div>
 				{actions}
-				{userMenu}
+				{accountSlot}
 			</header>
 		);
 	}
@@ -322,7 +350,7 @@ export function Topbar({
 			{themeButton}
 			{actions}
 			{karmaChip}
-			{userMenu}
+			{accountSlot}
 		</header>
 	);
 }

@@ -376,3 +376,58 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		expect(onThemeChange).toHaveBeenLastCalledWith("dark");
 	});
 });
+
+// Reserved signed-in account slot (#2933, ADR 0179 §1). `reserveSignedInSlots` (driven by
+// `__BOOT__.signedIn` in the shell frame) reserves the account cluster's geometry at first
+// paint: with no `user` yet it renders a fixed-geometry placeholder in the account slot, so
+// when fate publishes the real user menu it fills the same slot with zero cluster shift — no
+// giriş-yap↔user-cluster swap, no empty→pop. Off ⇒ the slot stays null (today's render).
+describe("Topbar reserved signed-in account slot (#2933)", () => {
+	function renderReserved(props: Partial<Parameters<typeof Topbar>[0]>) {
+		return render(
+			<MemoryRouter>
+				<Topbar nav={NAV} {...props} />
+			</MemoryRouter>,
+		);
+	}
+
+	it("reserve on, no user: renders a fixed-geometry account placeholder (inert, not a control)", () => {
+		renderReserved({reserveSignedInSlots: true});
+		const placeholder = screen.getByTestId("topbar-user-placeholder");
+		// Reuses the `.kp-topbar__user` box so the real menu swaps in with no geometry change.
+		expect(placeholder.classList.contains("kp-topbar__user")).toBe(true);
+		expect(placeholder.classList.contains("kp-topbar__user--placeholder")).toBe(true);
+		// A stand-in, never a control: not a button, hidden from assistive tech.
+		expect(placeholder.tagName).toBe("SPAN");
+		expect(placeholder.getAttribute("aria-hidden")).toBe("true");
+		expect(placeholder.closest("button")).toBeNull();
+		// No real user menu yet — the account cluster is reserved, not filled.
+		expect(screen.queryByRole("button", {name: /Elif/})).toBeNull();
+	});
+
+	it("reserve on → user arrives: the placeholder is replaced by the real menu in the SAME account slot (zero cluster shift)", () => {
+		const {container, rerender} = renderReserved({reserveSignedInSlots: true});
+		const header = container.querySelector(".kp-topbar");
+		// The account slot is the header's last child; before fate it holds the placeholder.
+		expect(header?.lastElementChild).toBe(screen.getByTestId("topbar-user-placeholder"));
+
+		// Fate publishes the real user: same reservation, now a real user prop.
+		rerender(
+			<MemoryRouter>
+				<Topbar nav={NAV} reserveSignedInSlots user={{name: "Elif", username: "elif"}} />
+			</MemoryRouter>,
+		);
+		// The placeholder is gone and the real menu trigger occupies the SAME last-child slot —
+		// content filled in place, the cluster position never moved (the AC-4 no-shift proof).
+		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
+		const trigger = container.querySelector(".kp-topbar__user");
+		expect(trigger?.textContent).toContain("Elif");
+		expect(header?.lastElementChild).toBe(trigger);
+	});
+
+	it("reserve off, no user: no placeholder — today's signed-out render (AC-3 no-op)", () => {
+		const {container} = renderReserved({reserveSignedInSlots: false});
+		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
+		expect(container.querySelector(".kp-topbar__user")).toBeNull();
+	});
+});
