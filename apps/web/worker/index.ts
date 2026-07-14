@@ -151,14 +151,22 @@ const phoenixProps =
 				runWorkerFirst: [...workerFirstGlobs],
 			},
 			compatibility: {flags: ["nodejs_compat"]},
-			// Smart Placement (ADR 0168): run the worker near its heaviest upstream — the
-			// D1 primary in ENAM — so the authed `/fate` feed's ~11 sequential D1
-			// round-trips collapse from cross-region hops to in-region ones. Safe only
-			// because no worker code serves static assets via `env.ASSETS.fetch()` (the
-			// `assets` block above is edge-direct), so moving the worker toward ENAM does
-			// not pull asset serving off the edge. Read-replication (D1 Sessions API)
-			// stays deferred per ADR 0168; verify placement post-deploy via the
-			// `cf-placement` response header.
+			// Smart Placement (ADR 0168, amended by ADR 0179): run the worker near its
+			// heaviest upstream — the D1 primary in ENAM — so the authed `/fate` feed's ~11
+			// sequential D1 round-trips collapse from cross-region hops to in-region ones.
+			// ADR 0168's original premise was "no worker code serves assets via
+			// `env.ASSETS.fetch()`, so placement never pulls asset serving off the edge."
+			// The edge-render shell route (#2929) amends that premise: `runWorkerFirst`
+			// (`["/*", "!/assets/*"]`) routes HTML worker-first UNCONDITIONALLY — in both flag
+			// states — so first-byte HTML always takes the ~70–80ms ENAM hop through the worker;
+			// `PHOENIX_EDGE_SHELL_BOOT` gates only the `window.__BOOT__` INJECTION, not the
+			// routing. Flag-off, the worker returns the untransformed `ASSETS` bytes (byte-identical
+			// to the old edge-direct shell); flag-on, it renders per request, non-cached, and injects
+			// `__BOOT__` — the cost the founder ruling (#2833) accepted for cohesiveness (one
+			// correct-first-paint render over a boot waterfall). The `/assets/*` bundles stay
+			// edge-direct in both states (the `!/assets/*` run-worker-first exception).
+			// Read-replication (D1 Sessions API) stays deferred; verify placement post-deploy
+			// via the `cf-placement` response header.
 			placement: {mode: "smart" as const},
 			// Workers Observability, declared explicitly rather than leaning on alchemy's
 			// default-on (Worker.ts `observability ?? {enabled, logs:{enabled,invocationLogs}}`)
