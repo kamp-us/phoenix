@@ -1,10 +1,12 @@
 /**
- * sözlük's persistent product Subnav zone (#2602, placement law #2587). Pins: (1) the zone is a
- * persistent layout — its `.kp-subnav` node survives a within-sozluk navigation (no remount);
- * (2) the go-to-or-create box lives in the zone's `input` slot and performs a term-to-term
- * jump-or-create mid-browse from a term page (not just the home), distinct from the topbar `ara`;
- * (3) the alphabet filter row sits in the zone with its active-letter accent left as-is; (4) the
- * input box carries the `.kp-subnav__input` taxonomy class, never a filter/CTA treatment (#2586/#2590).
+ * sözlük's persistent product Subnav zone, composed through `SubnavShell` (#2974, on the
+ * #2602 zone / #2587 placement law). Pins: (1) the zone is a persistent layout — its
+ * `.kp-subnav` node survives a within-sozluk navigation (no remount); (2) the go-to-or-create
+ * box fills the shell's leading zone and performs a term-to-term jump-or-create mid-browse from
+ * a term page (not just the home), distinct from the topbar `ara`; (3) the alphabet fills the
+ * shell's `destinations` zone so it renders INSIDE the bar's filters row — never the detached
+ * sibling it was before #2974 (the orphan-row regression this file pins closed); (4) the input
+ * box carries the `.kp-subnav__input` taxonomy class, never a filter/CTA treatment (#2586/#2590).
  */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {Link, MemoryRouter, Route, Routes, useParams} from "react-router";
@@ -34,15 +36,32 @@ function renderZone(initial = "/sozluk") {
 	);
 }
 
-describe("SozlukSubnavLayout — sözlük product Subnav zone (#2602)", () => {
+describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShell (#2974)", () => {
 	it("renders one persistent Subnav zone with the go-to-or-create box + alphabet above the Outlet", () => {
 		const {container} = renderZone();
 		expect(container.querySelectorAll(".kp-subnav")).toHaveLength(1);
 		expect(container.querySelector(".kp-subnav__input")).toBeTruthy();
 		expect(screen.getByLabelText("Terime git ya da oluştur")).toBeTruthy();
-		// the alphabet filter row is present in the zone (a couple of populated letters)
 		expect(container.querySelector(".kp-sozluk-alphabet")).toBeTruthy();
 		expect(screen.getByTestId("home-leaf")).toBeTruthy();
+	});
+
+	it("renders the alphabet INSIDE the shell's filters zone — not a detached sibling of the bar (#2974)", () => {
+		const {container} = renderZone();
+		const bar = container.querySelector(".kp-subnav");
+		const alphabet = container.querySelector(".kp-sozluk-alphabet");
+		expect(bar).toBeTruthy();
+		expect(alphabet).toBeTruthy();
+		// the orphan-row regression: the alphabet must live inside the bar, not beside it
+		expect(bar?.contains(alphabet ?? null)).toBe(true);
+		expect(container.querySelector(".kp-subnav__filters .kp-sozluk-alphabet")).toBeTruthy();
+	});
+
+	it("preserves the ?harf= URL-driven active letter on the alphabet", () => {
+		const {container} = renderZone("/sozluk?harf=a");
+		const active = container.querySelector(".kp-sozluk-alphabet__letter.is-active");
+		expect(active?.textContent).toBe("a");
+		expect(active?.getAttribute("aria-current")).toBe("page");
 	});
 
 	it("go-to-or-create performs a term-to-term jump-or-create mid-browse from a term page", () => {
