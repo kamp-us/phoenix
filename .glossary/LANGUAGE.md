@@ -253,6 +253,41 @@ calls *unrepresentable*; 0037 reunified them into a single class (the split's tw
 motivations — a mutual-DO Layer cycle and a SQLite registry — both went away), where a
 misroute now no-ops at runtime (role-guarded) rather than failing to compile.
 
+### Recipe / shell (frontend composition primitives)
+
+Two names for phoenix's frontend layout-composition idiom. (ADR
+[0182](../.decisions/0182-subnavshell-pageshell-composition-api.md) — *SubnavShell / PageShell
+composition API*, building on ADR [0176](../.decisions/0176-nav-ia-discipline.md)'s nav element
+taxonomy.)
+
+**Recipe**
+The composition-primitive idiom: a component that takes **one flat element-prop (a `ReactNode`)
+per zone** rather than a zones-object or compound children, so an element assigned to no declared
+zone is a **type error** (orphan-as-type-error), not a lint-only smell.
+
+**Shell**
+A layout-composition wrapper that names a page's zone-plus-content shape once — `SubnavShell`
+(the per-product subnav zones) and `PageShell` (a subnav shell plus routed content). A shell is a
+recipe: it exposes flat per-zone element-props and wraps the underlying primitive rather than
+replacing it.
+
+### Recipe and shell (the composition primitives)
+
+Two named UI-composition idioms, coined by ADR
+[0182](../.decisions/0182-subnavshell-pageshell-composition-api.md).
+
+**Recipe**
+The composition-primitive idiom: a component that takes **one flat element-prop per zone**
+(not a zones-object, not compound children), so an element unassigned to a declared zone is a
+**type error**, not a lint-caught orphan slot — make-invalid-states-unrepresentable applied to
+layout composition.
+
+**Shell**
+A layout-composition wrapper built as a recipe, naming a surface's zone-plus-content shape once:
+`SubnavShell` (the per-product subnav zones — `leading` / `destinations` / `primaryAction` /
+`signal`) and `PageShell` (a `SubnavShell` plus routed content). A shell wraps an underlying
+primitive (the `Subnav` primitive) rather than replacing it.
+
 ### The three senses of "phoenix"
 
 "phoenix" carries **three distinct meanings**, each with a graduation name —
