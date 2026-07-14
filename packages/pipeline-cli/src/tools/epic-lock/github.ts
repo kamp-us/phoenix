@@ -153,7 +153,7 @@ const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
 	});
 });
 
-// --- REST arg builders (REST only, never GraphQL) --------------------------------
+// REST-only arg builders — never GraphQL.
 
 const issueArgs = (repo: string, epic: number): ReadonlyArray<string> => [
 	"api",
@@ -209,8 +209,6 @@ const permissionArgs = (repo: string, login: string): ReadonlyArray<string> => [
 	".permission",
 ];
 
-// --- boundary decoders -----------------------------------------------------------
-
 /** The issue-label array `[.labels[].name]` returns. */
 const decodeLabels = Schema.decodeUnknownEffect(Schema.Array(Schema.String));
 
@@ -232,8 +230,6 @@ const toClaimComment = (raw: (typeof RawComment)["Type"]): ClaimComment => ({
 
 /** A clean 404 — the only `gh` failure that means "already gone / not found". */
 const is404 = (stderr: string): boolean => /404|not found/i.test(stderr);
-
-// --- IO operations ---------------------------------------------------------------
 
 const labelHeld = Effect.fn("Github.labelHeld")(function* (repo: string, epic: number) {
 	const args = issueArgs(repo, epic);

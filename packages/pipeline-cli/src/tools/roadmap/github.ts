@@ -124,7 +124,7 @@ const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
 	});
 });
 
-// --- REST arg builders (REST only, never GraphQL) --------------------------------
+// REST-only arg builders — never GraphQL.
 
 // `state=all` so I can resolve a done arc's CLOSED milestone by number; `--paginate` for >100.
 const milestonesArgs = (repo: string): ReadonlyArray<string> => [
@@ -171,8 +171,6 @@ const openPullsArgs = (repo: string): ReadonlyArray<string> => [
 	"--paginate",
 ];
 
-// --- boundary decoders -----------------------------------------------------------
-
 /** A raw issue as the issues endpoint returns it; `pull_request` present ⇒ it's a PR, filtered out. */
 const RawIssue = Schema.Struct({
 	number: Schema.Number,
@@ -208,8 +206,6 @@ const RawPull = Schema.Struct({
 	head: Schema.Struct({ref: Schema.String}),
 });
 const decodePulls = Schema.decodeUnknownEffect(Schema.Array(RawPull));
-
-// --- IO operations ---------------------------------------------------------------
 
 const toIssue = (
 	raw: {

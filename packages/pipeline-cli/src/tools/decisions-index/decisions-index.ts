@@ -1,40 +1,19 @@
 /**
- * `@kampus/decisions-index` core — the pure, IO-free derivation of the ADR map(s)
- * from the ADR files.
+ * `@kampus/decisions-index` core — pure, IO-free derivation of the ADR map(s) from the
+ * `.decisions/NNNN-*.md` files. Each file's YAML front-matter (`id`/`title`/`status`/`date`)
+ * is the single source of truth; the compact ambient map (`renderCompact`, ADR 0126) and the
+ * legacy markdown table (`renderIndex`) are derived, ordered by `id` ascending. There is no
+ * committed `index.md` (ADR 0126, supersedes 0066's storage half); the legacy builders are
+ * retained only for the `generate`/`check` surfaces.
  *
- * The single source of truth is each `.decisions/NNNN-*.md` file's YAML
- * front-matter (`id`, `title`, `status`, `date`); both the compact ambient map
- * (`renderCompact` — one line per ADR, the ADR 0126 surface) and the legacy markdown
- * table (`renderIndex`) are *derived* output, deterministically ordered by `id`
- * ascending. There is no committed `index.md` anymore (ADR 0126, supersedes 0066's
- * storage half); discovery is ambient. `renderIndex`/`buildIndex` are retained only
- * for the legacy `generate`/`check` CLI surfaces.
- *
- * `buildIndex` folds the sibling problem in: a **duplicate `id`** across files is
- * a `DuplicateIdError`, so the same gate that catches a stale index catches two
- * same-numbered ADR files coexisting on `main`.
- *
- * The ADR number lives on **two axes** that must agree: the filename `NNNN[a]`
- * prefix (what `/adr` allocates and what humans/git key on) and the front-matter
- * `id`. `parseAdrFile` enforces filename-prefix == `id` (`NumberMismatchError`), so
- * the two can never drift. That single invariant upgrades the front-matter-keyed
- * `findDuplicateId` into a **filename-NNNN** duplicate guard for free: two files
- * sharing a `0114-*.md` prefix necessarily share `id: 0114` (or one mismatches its
- * own filename and is rejected first), so the collision the ledger's filename
- * primary key suffers is caught at `check` time. This is the within-tree half of
- * the #1471 fix; the residual it does NOT catch is two *stale* concurrent PR
- * branches that each add a `0114-*.md` the other can't see — that only becomes a
- * single-tree duplicate once both land on `main`, where the next `check` then fails
- * loudly (a cross-open-PR pre-merge guard is out of scope; see ADR 0066 / #1471).
- *
- * Two non-obvious points, both load-bearing and pinned by the unit tests:
- *  - `title`/`status` render **verbatim** from front-matter — they may carry
- *    inline markdown (a linked `superseded by [0009](…)`), so the front-matter is
- *    the curated display text, not just a bare keyword. Make the file right; the
- *    table mirrors it.
- *  - ordering is numeric-then-suffix so a lettered id like `0034a` sorts between
- *    `0034` and `0035` (a plain string sort would too here, but the explicit
- *    numeric compare keeps it correct if ids ever stop being zero-padded).
+ * Two load-bearing points, both pinned by the unit tests:
+ *  - `title`/`status` render VERBATIM — they may carry inline markdown (a linked
+ *    `superseded by [0009](…)`), so the front-matter is the curated display text.
+ *  - The ADR number lives on two axes that must agree — the filename `NNNN[a]` prefix and
+ *    the front-matter `id`. `parseAdrFile` enforces prefix == `id` (`NumberMismatchError`),
+ *    which for free upgrades the id-keyed `findDuplicateId` into a filename-collision guard
+ *    at `check` time. This is the within-tree half of #1471; two stale concurrent PR branches
+ *    each adding `0114-*.md` are out of scope until both land on `main` (see ADR 0066 / #1471).
  */
 
 export interface AdrEntry {
@@ -198,21 +177,12 @@ const idSortKey = (id: string): [number, string] => {
 export const ADR_ID_WIDTH = 4;
 
 /**
- * The next free ADR number as a zero-padded string — `max(numeric id) + 1`, padded
- * to {@link ADR_ID_WIDTH} (`[…, 0151] → "0152"`, empty set → `0001`). The
- * deterministic allocator that replaces eyeballing `.decisions/` — which goes stale
- * between a local checkout and origin/main, or races two simultaneous authors onto
- * the same guess (#2064). A pure derivation over the parsed entries, reading the same
- * `id` axis the index/validate surfaces read, so the number it hands out is exactly
- * the one `validate` guards.
- *
- * A **lettered** id (`0034a`, a supersede-in-place variant) shares its base numeric
- * with `0034`, so it never advances the allocation past `0035` — the letter suffix is
- * deliberately ignored, only the numeric axis allocates. This is an allocator, **not**
- * a collision guard: the rare two-authors-at-once collision is still caught fail-closed
- * by `validate` (`findDuplicateId`) on merge. `next` kills the stale-guess case,
- * `validate` backs the simultaneous case — the two together are collision-proof without
- * a date-slug rename (#2064, supersedes #2058).
+ * The next free ADR number, zero-padded to {@link ADR_ID_WIDTH} — `max(numeric id) + 1`
+ * (empty set → `0001`). The deterministic allocator replacing an eyeballed `.decisions/`,
+ * which goes stale or races two authors onto the same guess (#2064). A lettered id (`0034a`,
+ * a supersede-in-place variant) shares its base numeric, so it never advances allocation. This
+ * is an allocator, NOT a collision guard: the rare simultaneous collision is still caught by
+ * `validate` (`findDuplicateId`) on merge — the two together are collision-proof (#2064).
  */
 export const nextAdrNumber = (entries: ReadonlyArray<AdrEntry>): string => {
 	let max = 0;
@@ -298,11 +268,10 @@ export const renderIndex = (entries: ReadonlyArray<AdrEntry>): string => {
 };
 
 /**
- * Render the ambient compact ADR map: one line per ADR, `id · title · status`,
- * sorted ascending by id (ADR 0126). This is the map the SessionStart hook injects
- * (#1728) — no table, no links, no committed file; a dense line per ADR the loader
- * surfaces into context the way the skills catalog does. `title`/`status` render
- * verbatim from front-matter, the same source-of-truth as the table rows.
+ * Render the ambient compact ADR map: one line per ADR, `id · title · status`, sorted
+ * ascending by id (ADR 0126). No table, links, or committed file — surfaced on demand via
+ * `pipeline-cli decisions-index compact` (ADR 0129 dropped the SessionStart hook).
+ * `title`/`status` render verbatim, the same source-of-truth as the table rows.
  */
 export const renderCompact = (entries: ReadonlyArray<AdrEntry>): string =>
 	sortEntries(entries)

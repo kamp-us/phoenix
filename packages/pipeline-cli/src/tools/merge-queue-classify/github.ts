@@ -142,7 +142,7 @@ const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
 	});
 });
 
-// --- REST arg builders (REST only, never GraphQL) --------------------------------
+// REST-only arg builders — never GraphQL.
 
 /**
  * `gh pr view --json` for the two working fields (the old `merged` field errors
@@ -166,8 +166,6 @@ const timelineArgs = (repo: string, pr: number): ReadonlyArray<string> => [
 	`repos/${repo}/issues/${pr}/timeline?per_page=100`,
 	"--paginate",
 ];
-
-// --- boundary decoders -----------------------------------------------------------
 
 /** The PR state as `gh pr view` returns it; `state`/`mergeStateStatus` may be absent or null. */
 const RawPrState = Schema.Struct({
@@ -198,8 +196,6 @@ const toPrState = (raw: (typeof RawPrState)["Type"]): PrState => {
 		mergeStateStatus: raw.mergeStateStatus ?? undefined,
 	};
 };
-
-// --- IO operations ---------------------------------------------------------------
 
 const readPrState = Effect.fn("Github.readPrState")(function* (repo: string, pr: number) {
 	const args = prStateArgs(repo, pr);

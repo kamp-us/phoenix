@@ -6,27 +6,18 @@
  * resolve `origin/main`, run `merge-base --is-ancestor`) lives in `command.ts`; this
  * module never runs a command.
  *
- * The problem it codifies (#2143 root cause): the orchestrator/PULLER role force-moved
- * the shared primary checkout's `main` ref off the merge seam — a bare
- * `branch -f main` / `checkout -B main` / `update-ref refs/heads/main` / `push HEAD:main`
- * that landed `main` on a stranding commit DIVERGED from `origin/main` (not a
- * fast-forward), with a ~13.5k-line deletion staged — a "one `git push -f` clobbers
- * `origin/main`" loaded gun. The #1571 `worktree-guard` bash-pin can't reach this
- * class on three counts (the offender has no `$WORKTREE_ROOT`; a ref force-move is not
- * in its `HEAD_MOVING` set; the keystroke is outside the agent Bash tool-call path).
- * A `reference-transaction` hook sits at git's OWN ref boundary, so it catches ANY
- * caller — agent Bash, harness worktree machinery, a manually-run command, or another
- * git hook — which a `PreToolUse` Bash hook cannot.
+ * Why at git's ref boundary (#2143 root cause): the PULLER role force-moved the primary's
+ * `main` off the merge seam onto a diverged commit — a "one `git push -f` clobbers
+ * `origin/main`" loaded gun. The #1571 `worktree-guard` bash-pin can't reach this class (the
+ * offender has no `$WORKTREE_ROOT`; a ref force-move isn't in its `HEAD_MOVING` set; the
+ * keystroke is off the agent Bash path). A `reference-transaction` hook sits at git's OWN ref
+ * boundary, so it catches ANY caller a `PreToolUse` Bash hook can't.
  *
- * The safety property (#2143 AC): a `refs/heads/main` update that would make local
- * `main` a NON-fast-forward of `origin/main` (a divergence) is REFUSED; the legitimate
- * PULLER flow — `checkout main` reattach (no ref move on `main`) + `merge --ff-only
- * origin/main` (a fast-forward ⇒ `origin/main` is an ancestor of the new tip) — is
- * ALLOWED. The core refuses only the diverging move, never the sync.
- *
- * Fail-safe posture (fail-closed on the guarded ref, fail-open off it): every
- * indeterminate fact the git boundary can't resolve is passed as a discriminated flag
- * so the decision is explicit, never a silent allow of a `main` divergence.
+ * Safety property (#2143): a `refs/heads/main` update that would make local `main` a
+ * NON-fast-forward of `origin/main` is REFUSED; the legitimate PULLER flow (reattach +
+ * `merge --ff-only`, both fast-forwards) is ALLOWED — refuse the diverging move, never the sync.
+ * Fail-safe posture: fail-closed on the guarded ref, fail-open off it — every indeterminate
+ * fact is a discriminated flag so a `main` divergence is never a silent allow.
  *
  * A second, orthogonal concern lives here too (#2270, the mechanical half): `decideHeadDetach`
  * refuses a bare HEAD-detaching checkout on the shared PRIMARY checkout — a distinct hazard from
@@ -103,29 +94,12 @@ export type RefDecision =
 	| {readonly kind: "refuse"; readonly reason: string};
 
 /**
- * Decide whether a queued `reference-transaction` update is safe:
- *
- *   1. NOT `refs/heads/main` → `allow`. The guard is scoped to the one shared-primary ref;
- *      every feature branch, tag, and `origin/*` update passes untouched. (Worktree agents
- *      only ever move their OWN branch refs, so they never reach the guarded path.)
- *   2. `refs/heads/main` DELETE (`newOid` all-zeroes) → `refuse`. Deleting the primary's
- *      `main` is never a legitimate PULLER op and is a divergence in the extreme.
- *   3. `refs/heads/main`, `origin/main` unresolvable → `allow`. With no `origin/main` there
- *      is nothing to diverge from (a fresh clone before the first fetch); refusing here would
- *      wedge legitimate setup. This is the ONE fail-OPEN on the guarded ref, safe precisely
- *      because the divergence the guard exists to catch is undefined without an origin.
- *   4. `refs/heads/main`, new tip == `origin/main` → `allow`. In-sync (e.g. a reset/reattach
- *      landing exactly on `origin/main`); trivially a fast-forward.
- *   5. `refs/heads/main`, `origin/main` IS an ancestor of the new tip → `allow`. A
- *      fast-forward-ahead: the legitimate `merge --ff-only origin/main` and any `main` advance
- *      that carries `origin/main`'s history forward.
- *   6. `refs/heads/main`, `origin/main` is NOT an ancestor of the new tip → `refuse`. The
- *      #2143 non-fast-forward divergence: `main` would leave `origin/main`'s history, the exact
- *      loaded-gun state. Fail-closed.
- *
- * Total over every `RefUpdate` × `OriginFacts`. The order above is the policy: the ref-scope
- * check gates first (off-`main` never touches origin facts), then delete, then the origin-absent
- * fail-open, then the two fast-forward allows, then the divergence refuse.
+ * Decide whether a queued `reference-transaction` update is safe. Total over every
+ * `RefUpdate` × `OriginFacts`; each branch's `reason` string carries its own why. The
+ * check order IS the policy: ref-scope first (off-`main` never touches origin facts), then
+ * delete-refuse, then the one fail-OPEN on an unresolvable `origin/main` (no origin ⇒ no
+ * divergence to guard — a fresh clone before first fetch), then the two fast-forward allows,
+ * then the #2143 divergence refuse (fail-closed).
  */
 export const decideRefUpdate = (update: RefUpdate, facts: OriginFacts): RefDecision => {
 	if (update.refName !== GUARDED_REF) {
