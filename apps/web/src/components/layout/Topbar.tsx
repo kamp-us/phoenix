@@ -282,7 +282,7 @@ export function Topbar({
 				data-testid="topbar-user-placeholder"
 				aria-hidden="true"
 			>
-				<span className="kp-topbar__avatar-placeholder" />
+				<span className="kp-avatar" />
 				<span className="kp-topbar__name-placeholder" />
 			</span>
 		) : null);

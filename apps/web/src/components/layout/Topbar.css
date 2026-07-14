@@ -164,19 +164,13 @@
 
 /* Reserved signed-in account slot (#2933, ADR 0179 §1) — a fixed-geometry stand-in for the
    user-menu trigger, rendered from __BOOT__.signedIn while fate has yet to publish the real
-   chip. It reuses `.kp-topbar__user` so the box (gap/padding/height) matches, and the swap to
-   the real menu moves nothing: the cluster holds its final geometry from first paint (no
-   giriş-yap↔cluster swap, no empty→pop), the value late-fills in place (#2160). Quiet
-   `--surface-raised` blocks — decorative only, so a below-4.5:1 token is correct here. */
+   chip. It reuses `.kp-topbar__user` (box: gap/padding/height) and, for the avatar, the real
+   `.kp-avatar` box primitive itself, so the swap to the real menu moves nothing — the placeholder
+   avatar is pixel-identical to the Avatar it replaces. The cluster holds its final geometry from
+   first paint (no giriş-yap↔cluster swap, no empty→pop); the value late-fills in place (#2160).
+   The quiet `--surface-raised` name block is decorative only, so a below-4.5:1 token is correct. */
 .kp-topbar__user--placeholder {
 	cursor: default;
-}
-.kp-topbar__avatar-placeholder {
-	width: var(--avatar-size, 22px);
-	height: var(--avatar-size, 22px);
-	border-radius: var(--r-sm);
-	background: var(--surface-raised);
-	flex-shrink: 0;
 }
 .kp-topbar__name-placeholder {
 	width: 4.5rem;
