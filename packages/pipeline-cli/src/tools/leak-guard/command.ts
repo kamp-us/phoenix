@@ -30,7 +30,9 @@ import {Console, Data, Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, CREW_DIR, sweepCrew} from "./crew-gate.ts";
+import {PrComments, PrCommentsLive} from "./github.ts";
 import {findCommentLeaks, findLeaks, type Leak} from "./leak-guard.ts";
+import {scanPrComments} from "./scan-pr.ts";
 
 // 2 = a confirmed leak; any OTHER non-zero from this process means the scan
 // could not complete, which the pre-commit hook treats as warn-and-allow while
@@ -203,7 +205,50 @@ const scanComment = Command.make(
 	),
 );
 
+// The LANDED-comment scan (#3019). Where `scan-comment` nets a body BEFORE it is posted (an
+// emit-side step a bypass skips), `scan-pr` re-checks the comments that ALREADY landed on a PR —
+// the issue conversation + the inline review comments, straight off the REST boundary — so a leak
+// posted via a raw `gh api …/comments` that never touched the verdict tool is still caught. ship-it
+// runs this as a preflight before enqueue and refuses to merge on a live leak (route to redact-leaks
+// + repair). Exit 2 = a live leak (same LEAK_EXIT_CODE contract as `scan`), 0 = clean.
+const prArg = Argument.integer("pr").pipe(
+	Argument.withDescription("the pull request number whose landed comments to scan for leaks"),
+);
+
+const scanPr = Command.make(
+	"scan-pr",
+	{pr: prArg},
+	Effect.fn(function* ({pr}) {
+		const run = Effect.gen(function* () {
+			const comments = yield* (yield* PrComments).fetch(pr);
+			const leaks = scanPrComments(comments);
+			if (leaks.length === 0) {
+				yield* Console.log(
+					`leak-guard: clean — no machine-local paths in any landed comment on PR #${pr} (${comments.length} scanned)`,
+				);
+				return;
+			}
+			yield* Console.error(
+				`leak-guard: blocked — machine-local path(s) in landed comment(s) on PR #${pr} (issue #3019):`,
+			);
+			for (const {id, kind, leak} of leaks) {
+				yield* Console.error(`  ${kind} comment ${id}: ${leak.matched} — ${leak.reason}`);
+			}
+			yield* Console.error(
+				"Redact each flagged comment (pipeline-cli redact-leaks) and re-post it, then re-run — a merge must not carry a machine-local path in any comment.",
+			);
+			return yield* Effect.fail(new LeakFound({count: leaks.length}));
+		});
+		yield* run.pipe(Effect.catchTag("LeakFound", onLeakFound));
+	}),
+).pipe(
+	Command.withDescription(
+		"Scan a PR's landed comments (issue + review) for machine-local path leaks (exit 2 on a leak)",
+	),
+	Command.provide(PrCommentsLive),
+);
+
 export const leakGuardCommand = Command.make("leak-guard").pipe(
-	Command.withSubcommands([scan, sweep, scanComment]),
+	Command.withSubcommands([scan, sweep, scanComment, scanPr]),
 	Command.withDescription("Block user-local paths from entering shared-artifact doc surfaces"),
 );
