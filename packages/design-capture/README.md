@@ -169,6 +169,47 @@ it records the **approved** sha into the committed pointer — it never re-rende
 re-stores bytes, so "what the founder saw" and "what gets committed" are provably the
 same content address (ADR 0183 §5).
 
+## The candidate-render step (`render-candidates`, #2961)
+
+The candidate-render step produces the small set of candidate screens the founder
+blesses in one sitting (epic #2955 story 1, ADR 0183 §5). It renders the
+**founder-decided priority surfaces, in order** — global shell + product subnav
+(`/sozluk`), sözlük term page (`/sozluk/:slug`), pano feed (`/pano`) — over a
+**flag-forced preview deploy**, PUTs each candidate's bytes to depo, and emits a
+**candidate set** staged for blessing. It does **not** bless — blessing is the
+founder's step (#2962); this step stops at "a deterministic candidate set exists."
+
+- **`priority-surfaces.ts`** (pure) — `PRIORITY_SURFACES` is the ordered founder set;
+  `resolvePrioritySurfaces({termSlug})` substitutes the term route's `:slug` and
+  yields concrete capture surfaces in order, failing closed on an unfilled param,
+  non-contiguous order, or a duplicate surface-id.
+- **`candidate-set.ts`** (pure) — `assembleCandidateSet` folds the resolved surfaces
+  against their rendered-and-stored artifacts into the `CandidateSet` the blessing
+  surface consumes; `serializeCandidateSet` / `parseCandidateSet` are its JSON
+  boundary. Each `CandidateScreen` carries its surface-id (the golden-pointer key) +
+  the **exact depo `sha256`** of the rendered bytes — the ADR 0183 §5 no-re-render
+  anchor: the bless later moves the pointer to that same `sha256`, no re-render.
+- **`candidate-render.ts`** (thin Effect) — `renderCandidateSet` drives the reused
+  capture leg (the same flake canon `review-design` uses) + the depo store leg over
+  the priority set. Both impure legs are injected seams, so the whole orchestration is
+  unit-tested with fakes — no browser, no depo.
+
+```bash
+# render the priority surfaces over a flag-forced preview into a candidate set:
+KAMPUS_TOKEN=<pasaport apiKey> node packages/design-capture/src/bin.ts render-candidates \
+  --preview-url https://pr-123.web.kamp.us \
+  --term-slug amortisman \
+  --out /tmp/candidates \
+  --flag "golden-screens=on" \
+  --emit /tmp/candidates/candidate-set.json
+```
+
+Prints the serialized candidate set on stdout (and to `--emit` if given) — the input
+the blessing surface (#2962) consumes. `--flag "<key>=on|off"` records the forced flag
+state as provenance; this step **consumes** an already-flag-forced preview, it does not
+force flags (that mechanism is emitted separately, #2955). The depo pasaport apiKey
+resolves via `--token`, else `KAMPUS_TOKEN`, else `~/.config/kampus/token` (ADR 0045).
+
 ## The undocumented endpoint + the fallback (load-bearing)
 
 The upload POSTs the PNG bytes to
