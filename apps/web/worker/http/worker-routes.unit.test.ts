@@ -87,16 +87,25 @@ describe("worker-owned path set is in lockstep with runWorkerFirst", () => {
 		}
 	});
 
-	it("derives runWorkerFirst as the deduplicated glob set incl. the `!`-exception", () => {
-		expect([...workerFirstGlobs].sort()).toEqual([
-			"!/assets/*",
-			"/*",
-			"/api/*",
-			"/fate",
-			"/fate/*",
-			"/rss.xml",
-		]);
+	it("derives runWorkerFirst as the MINIMIZED glob set — `/*` + the `!`-exception only", () => {
+		// The `/*` catch-all subsumes every specific route glob, so the CF-valid config collapses
+		// to just `["/*", "!/assets/*"]` (CF rejects redundant positives — #2984).
+		expect([...workerFirstGlobs].sort()).toEqual(["!/assets/*", "/*"]);
 		expect(new Set(workerFirstGlobs).size).toBe(workerFirstGlobs.length);
+	});
+
+	it("carries no redundant positive rule under the `/*` catch-all (CF `run_worker_first` validity)", () => {
+		// CF rejects e.g. `/fate` when `/*` is present (`rule '/*' makes it redundant`, #2984). Assert
+		// no positive glob is subsumed by another, so the derived config can't reintroduce that reject.
+		const positives = workerFirstGlobs.filter((g) => !g.startsWith("!"));
+		for (const g of positives) {
+			for (const other of positives) {
+				if (other === g) continue;
+				const subsumed =
+					other === "/*" || (other.endsWith("/*") && g.startsWith(other.slice(0, -1)));
+				expect(subsumed, `positive glob ${g} is redundant under ${other}`).toBe(false);
+			}
+		}
 	});
 });
 

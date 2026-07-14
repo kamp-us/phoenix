@@ -156,11 +156,14 @@ const phoenixProps =
 			// sequential D1 round-trips collapse from cross-region hops to in-region ones.
 			// ADR 0168's original premise was "no worker code serves assets via
 			// `env.ASSETS.fetch()`, so placement never pulls asset serving off the edge."
-			// The edge-render shell route (#2929) amends that: behind `PHOENIX_EDGE_SHELL_BOOT`
-			// the worker DOES fetch the shell through `ASSETS` to inject `window.__BOOT__`,
-			// so first-byte HTML now takes the ~70–80ms ENAM hop — a cost the founder ruling
-			// (#2833) accepted for cohesiveness (one correct-first-paint render over a boot
-			// waterfall). Off, the shell stays edge-direct; the `/assets/*` bundles stay
+			// The edge-render shell route (#2929) amends that premise: `runWorkerFirst`
+			// (`["/*", "!/assets/*"]`) routes HTML worker-first UNCONDITIONALLY — in both flag
+			// states — so first-byte HTML always takes the ~70–80ms ENAM hop through the worker;
+			// `PHOENIX_EDGE_SHELL_BOOT` gates only the `window.__BOOT__` INJECTION, not the
+			// routing. Flag-off, the worker returns the untransformed `ASSETS` bytes (byte-identical
+			// to the old edge-direct shell); flag-on, it renders per request, non-cached, and injects
+			// `__BOOT__` — the cost the founder ruling (#2833) accepted for cohesiveness (one
+			// correct-first-paint render over a boot waterfall). The `/assets/*` bundles stay
 			// edge-direct in both states (the `!/assets/*` run-worker-first exception).
 			// Read-replication (D1 Sessions API) stays deferred; verify placement post-deploy
 			// via the `cf-placement` response header.

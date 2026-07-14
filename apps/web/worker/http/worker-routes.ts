@@ -129,12 +129,38 @@ export const rawWorkerRouteLayers: readonly [WorkerRouteLayer, ...WorkerRouteLay
 export const typedWorkerPaths: readonly string[] = ["/api/health"];
 
 /**
- * The deduplicated `runWorkerFirst` glob set, derived from {@link rawWorkerRoutes} plus
- * the {@link assetExceptionGlobs} `!`-exceptions. This is what `index.ts` passes to
- * `assets.runWorkerFirst`; the exceptions trail the positives so the exclusion is legible.
+ * Does one POSITIVE glob's covered path set contain another's? A prefix glob `/p/*` covers any
+ * glob whose base (its own prefix, or an exact path) is `/p` or sits under `/p/`; an exact glob
+ * covers only itself. `/*` (empty prefix) therefore covers every `/…` glob. Used to drop
+ * redundant positives below.
+ */
+const globCovers = (broad: string, narrow: string): boolean => {
+	if (!broad.endsWith("/*")) return narrow === broad;
+	const prefix = broad.slice(0, -2);
+	const base = narrow.endsWith("/*") ? narrow.slice(0, -2) : narrow;
+	return base === prefix || base.startsWith(`${prefix}/`);
+};
+
+/**
+ * Cloudflare's `run_worker_first` REJECTS a redundant positive rule — one another positive rule
+ * already subsumes (`BadRequest: rule '/fate' is invalid; rule '/*' makes it redundant`, PR #2984).
+ * With the catch-all `/*` in the derived set, every specific worker-route glob is redundant, so the
+ * config MUST be minimized to the broadest positives before it reaches the CF API. Runtime routing
+ * is unchanged: `/*` already routes every non-asset path worker-first (the `!`-exception keeps the
+ * built bundles edge-direct), and find-my-way precedence dispatches the specific routes.
+ */
+const minimizePositiveGlobs = (positives: readonly string[]): string[] =>
+	positives.filter((g) => !positives.some((other) => other !== g && globCovers(other, g)));
+
+/**
+ * The `runWorkerFirst` glob set `index.ts` passes to `assets.runWorkerFirst`: the deduplicated
+ * positives from {@link rawWorkerRoutes}, MINIMIZED so no positive is redundant under a broader
+ * one (CF rejects redundant rules — #2984), followed by the {@link assetExceptionGlobs}
+ * `!`-exceptions. With the `/*` catch-all present this collapses to `["/*", "!/assets/*"]`.
  */
 export const workerFirstGlobs: readonly string[] = [
-	...new Set([...rawWorkerRoutes.map((r) => r.glob), ...assetExceptionGlobs]),
+	...minimizePositiveGlobs([...new Set(rawWorkerRoutes.map((r) => r.glob))]),
+	...assetExceptionGlobs,
 ];
 
 /**

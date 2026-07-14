@@ -21,17 +21,11 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {currentActorContext} from "../kunye/CurrentActorLive.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {type FlagEvaluateResult, parseFlagEvaluateRequest} from "./evaluate-contract.ts";
 import {Flags} from "./Flags.ts";
-import {
-	anonymousFlagsContext,
-	FlagsContext,
-	type FlagsContextValue,
-	makeRequestFlagsContext,
-} from "./FlagsContext.ts";
-import {overridesAuthorized} from "./override-authz.ts";
+import {FlagsContext, makeRequestFlagsContext} from "./FlagsContext.ts";
+import {contextFromSession, resolveRequestFlagsContext} from "./request-flags-context.ts";
 
 /** A malformed request body — mapped then recovered to the empty-keys default below. */
 class FlagEvaluateBodyError extends Schema.TaggedErrorClass<FlagEvaluateBodyError>()(
@@ -44,10 +38,6 @@ const PROBE_FLAG = "phoenix-flags-probe";
 
 /** A typed (string) variation the probe reads to demonstrate the non-boolean reads (#509). */
 const PROBE_VARIANT_FLAG = "phoenix-flags-probe-variant";
-
-/** Derive the evaluation identity from the session — server-side only, never client-supplied. */
-const contextFromSession = (session: {user: {id: string}} | null): FlagsContextValue =>
-	session ? {userId: session.user.id} : anonymousFlagsContext;
 
 export const handleFlagsProbe = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
@@ -102,25 +92,10 @@ export const handleFlagsEvaluate = Effect.gen(function* () {
 	const keys = parseFlagEvaluateRequest(body);
 
 	const session = yield* pasaport.validateSession(raw.headers);
-	const identity = contextFromSession(session);
-	// May this request honor its `phoenix_flag_overrides` cookie (#2741)? The SPA
-	// delivery seam (#510) must reflect an admin's local override, so resolve the
-	// verdict here (dev, or admin + `phoenix-admin-console`) over the session actor,
-	// reading the gate flag against the baseline (no-cookie) context so a cookie can
-	// never self-authorize.
-	const baseline = yield* makeRequestFlagsContext(identity, null);
-	const overridesAllowed = yield* overridesAuthorized(baseline).pipe(
-		Effect.provide(currentActorContext(session?.user)),
-	);
-	// Same per-request context as the probe: session-derived identity plus the stage
-	// `environment` (#512), so every key is evaluated under the full targeting context —
-	// identity stays server-side, never from the body. The cookie is honored only when
-	// authorized (#622/#2741).
-	const context = yield* makeRequestFlagsContext(
-		identity,
-		raw.headers.get("cookie"),
-		overridesAllowed,
-	);
+	// The per-request context: session-derived identity plus the stage `environment` (#512),
+	// with the #2741 override-authz verdict applied so an authorized admin's cookie is honored.
+	// The SAME seam the edge `__BOOT__` injection uses, so the two never diverge (ADR 0179 AC2).
+	const context = yield* resolveRequestFlagsContext(session, raw.headers.get("cookie"));
 
 	// Evaluate every requested flag server-side under the session-derived context.
 	// Each `getBoolean` honors its own supplied default and never throws. The
