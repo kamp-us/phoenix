@@ -1,0 +1,9 @@
+/* PageShell — the page zone-stack: the persistent Subnav zone on top, the routed content
+   below (ADR 0182). Column flow makes the vertical anatomy explicit; content grows so a
+   short page fills the frame rather than jamming the subnav against the content. */
+.kp-page-shell {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+}
