@@ -855,6 +855,9 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.10.1)
+      '@kampus/depo':
+        specifier: workspace:*
+        version: link:../depo
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.59.1

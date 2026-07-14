@@ -87,6 +87,88 @@ it would trip the gate on benign output). The pure decision core
 (`renderCrashFailure`) is unit-tested against the #2593 crash class; the `capture`
 bin also prints a `render FAILED — …` summary to stderr when any surface threw.
 
+## The golden-baseline seam (store · resolve · deterministic diff)
+
+Beyond capture+upload, this package is the **golden-baseline substrate** the
+generation loop and the `review-design` gate both anchor to — one notion of
+"golden", never two ([#2960](https://github.com/kamp-us/phoenix/issues/2960), epic
+[#2955](https://github.com/kamp-us/phoenix/issues/2955)). The storage design is ADR
+[0183](../../.decisions/0183-golden-screen-storage-depo-git-pointer.md): **golden
+bytes live in depo** (content-addressed, immutable — ADR
+[0144](../../.decisions/0144-depo-internal-asset-cdn.md)); git carries only a tiny
+**pointer**. No golden PNG is ever committed.
+
+- **golden pointer** — a committed `golden-pointer.json` mapping each surface-id
+  (the same `<route>[:state]` capture spec) to its current golden
+  `{ sha256, blessedDate, intent }`. A re-bless is a one-line diff; history never
+  bloats with binaries. This is the migrations-guard committed-baseline + `bless`
+  idiom (ADR 0108): the pointer file is the audited baseline, and depo's write-once
+  immutability IS the "explicit update, never silent overwrite" guarantee — a
+  re-bless is a **new sha256 → new depo URL → a pointer move**, never an in-place
+  overwrite.
+
+```ts
+import {
+  storeGolden,          // PUT blessed PNG → depo:  { sha256, url }
+  resolveGoldenUrl,     // pointer + surface-id → immutable depo URL (or null)
+  resolveGoldenBytes,   // the consumer seam: pointer + surface-id → golden bytes (or null)
+  diffRasters,          // deterministic rendered-vs-golden diff → structured DiffResult
+  blessSurface,         // move the git pointer to an approved sha (immutably)
+  loadGoldenPointer,
+} from "@kampus/design-capture";
+
+// store (bless-time): PUT the approved bytes, get the sha the pointer records
+const {sha256, url} = yield* storeGolden({apiKey, pngBytes});   // needs DoormanClient
+
+// resolve (diff-time): pointer → depo URL → bytes
+const pointer = loadGoldenPointer("packages/design-capture/golden-pointer.json");
+const golden = yield* resolveGoldenBytes(pointer, "/sozluk:empty");  // needs HttpClient
+
+// diff: candidate vs golden — the SIGNAL, not the verdict
+const result = diffRasters(goldenRaster, candidateRaster, {
+  masks: [{x: 0, y: 0, width: 120, height: 24}],  // known-dynamic region (a timestamp)
+});
+// result: { dimensionsMatch, magnitude, diffPixels, comparedPixels, maskedPixels, regions }
+```
+
+- `storeGolden({apiKey, pngBytes})` PUTs through the **depo** client (`@kampus/depo`)
+  so there is one store path; a content-address conflict (bytes already stored — depo
+  is write-once) is an idempotent success.
+- `resolveGoldenUrl(pointer, id)` / `resolveGoldenBytes(pointer, id)` — an **unblessed
+  surface resolves to `null`** (nothing to compare against yet), never an error.
+- `diffRasters(golden, candidate, {masks, channelThreshold})` is the **deterministic
+  diff** — same inputs always yield the same result. It returns a **structured
+  per-surface result** (deviation `magnitude` in [0, 1] + the differing `regions` as
+  bounding boxes), **not a bare boolean**: this is the diff half of calibration B
+  ([#2945](https://github.com/kamp-us/phoenix/issues/2945)); the accept/redline
+  *judgment* is the `review-design` child's, not this core.
+- **Flake-canon split.** The capture-time canon (animations off, reduced-motion,
+  `document.fonts.ready`, srgb, seeded data + frozen clock) is enforced when the
+  bytes are *rendered* (the render harness, #2963). The **diff-time** canon lives
+  here: known-dynamic regions are **masked** out of the compare so a legitimately
+  varying region never reads as a deviation. `diffRasters` operates on **decoded RGBA
+  rasters**, so it needs no PNG codec and stays pure/unit-tested; decoding golden +
+  candidate PNG bytes into a `RasterImage` is the render child's boundary (#2961).
+- The pure cores — `golden-pointer.ts` (resolve/bless), `golden-diff.ts`
+  (determinism/masking/regions), `golden-fs.ts` (pointer round-trip) — are
+  unit-tested per `.patterns/effect-testing.md`.
+
+### Re-bless via the CLI (the audited pointer move)
+
+```bash
+# after the founder approves a surface's candidate in the PR gallery comment,
+# and its bytes are already PUT to depo (the no-re-render guard, ADR 0183 §5):
+node packages/design-capture/src/bin.ts golden-bless \
+  --surface "/sozluk:empty" \
+  --sha256 <64-hex depo content-address of the approved bytes> \
+  --intent "sözlük empty state — initial bless"
+```
+
+`golden-bless` is pure + fs (the golden analogue of migrations-guard's `baseline`):
+it records the **approved** sha into the committed pointer — it never re-renders or
+re-stores bytes, so "what the founder saw" and "what gets committed" are provably the
+same content address (ADR 0183 §5).
+
 ## The undocumented endpoint + the fallback (load-bearing)
 
 The upload POSTs the PNG bytes to

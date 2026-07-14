@@ -11,10 +11,12 @@
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run --project unit",
 		"test:unit": "vitest run --project unit",
-		"capture": "node src/bin.ts capture"
+		"capture": "node src/bin.ts capture",
+		"golden-bless": "node src/bin.ts golden-bless"
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
+		"@kampus/depo": "workspace:*",
 		"@playwright/test": "catalog:",
 		"effect": "catalog:"
 	},
