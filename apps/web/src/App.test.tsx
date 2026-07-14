@@ -149,7 +149,16 @@ vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: ()
 // (akış) nav entry (#2547) is gated on `mecmua-feed`, flipped via `flags.mecmuaFeed`.
 // Every other read (and other flag key) stays off, matching the default the shell
 // rendered under before.
-const flags = vi.hoisted(() => ({authorshipLoop: false, mecmuaFeed: false, navIa: false}));
+// `signedIn` drives the mocked `readSignedIn` (the `__BOOT__.signedIn` presence bit, #2933):
+// the shell frame reads it to reserve the signed-in account cluster before `useSession`
+// settles. Default false = `__BOOT__` absent, so the pre-existing shell tests see today's
+// signed-out first paint unchanged.
+const flags = vi.hoisted(() => ({
+	authorshipLoop: false,
+	mecmuaFeed: false,
+	navIa: false,
+	signedIn: false,
+}));
 vi.mock("./flags/useFlag", async () => {
 	const {PHOENIX_AUTHORSHIP_LOOP, MECMUA_FEED, PHOENIX_NAV_IA} = await import("./flags/keys");
 	return {
@@ -164,6 +173,7 @@ vi.mock("./flags/useFlag", async () => {
 							: false,
 			loading: false,
 		}),
+		readSignedIn: () => flags.signedIn,
 	};
 });
 
@@ -263,6 +273,55 @@ describe("App first-paint invariants (#2177 — pins #2160 flash + #438 remount)
 
 		expect(fateMounts).toHaveLength(1);
 		expect(fateMounts[0]?.key).toBe("anon");
+	});
+});
+
+// Reserved signed-in cluster from __BOOT__.signedIn (#2933, ADR 0179 §1). The shell frame reads
+// the edge presence bit at first paint: signed-in ⇒ no giriş-yap CTA and a reserved account slot
+// BEFORE useSession settles, so the giriş-yap↔user-cluster swap + empty→pop never happen; absent
+// __BOOT__ ⇒ readSignedIn() false ⇒ today's session-gated render (the AC-3 no-op).
+describe("reserved signed-in cluster from __BOOT__.signedIn (#2933)", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+		flags.signedIn = false;
+	});
+	afterEach(() => {
+		flags.signedIn = false;
+		vi.clearAllMocks();
+	});
+
+	it("__BOOT__ present + signedIn: first paint reserves the account slot — no giriş-yap flash, before the session settles", () => {
+		flags.signedIn = true;
+		renderApp();
+		// The session is still isPending (no fate, no chips), yet the shell already knows the
+		// user is signed in from the edge bit: the CTA is gone and the account slot is reserved.
+		expect(screen.queryByRole("button", {name: "giriş yap"})).toBeNull();
+		expect(screen.getByTestId("topbar-user-placeholder")).toBeTruthy();
+		expect(fateMounts).toHaveLength(0);
+	});
+
+	it("__BOOT__ present + signedIn: no giriş-yap↔user-cluster swap when the session settles signed-in", () => {
+		flags.signedIn = true;
+		renderApp(FATE_FREE_ROUTE);
+		// Pre-settle: reserved placeholder, no CTA.
+		expect(screen.queryByRole("button", {name: "giriş yap"})).toBeNull();
+		expect(screen.getByTestId("topbar-user-placeholder")).toBeTruthy();
+		act(() => {
+			setSession({
+				data: {user: {id: "user-42", name: "Elif", email: "elif@kamp.us"}},
+				isPending: false,
+			});
+		});
+		// Settled signed-in: still no CTA — the account cluster held its geometry across settle,
+		// never swapping giriş-yap in then out (the reported jank).
+		expect(screen.queryByRole("button", {name: "giriş yap"})).toBeNull();
+	});
+
+	it("__BOOT__ absent (readSignedIn false): the shell is exactly as today — giriş-yap, no reserved slot (AC-3)", () => {
+		renderApp();
+		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
+		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
 	});
 });
 

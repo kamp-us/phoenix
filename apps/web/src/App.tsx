@@ -36,7 +36,7 @@ import {
 	PHOENIX_BILDIRIM,
 	PHOENIX_NAV_IA,
 } from "./flags/keys";
-import {useFlag} from "./flags/useFlag";
+import {readSignedIn, useFlag} from "./flags/useFlag";
 import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
 import {safeReturnTo} from "./lib/returnTo";
@@ -159,6 +159,17 @@ function Layout() {
 	}
 
 	const isSignedIn = !!session.data;
+	// First-paint shell geometry rides the edge-resolved presence bit (ADR 0179 §1, #2933):
+	// `__BOOT__.signedIn` tells us synchronously — before `useSession` settles — whether the
+	// account cluster should exist, so the giriş-yap↔user-cluster swap and the empty→pop never
+	// happen. Absent `__BOOT__` (flag off / the #2931 never-hang fallback) ⇒ `readSignedIn()`
+	// is false ⇒ the session-gated `isSignedIn` governs, exactly today's behavior.
+	const bootSignedIn = readSignedIn();
+	const signedInAtFirstPaint = bootSignedIn || isSignedIn;
+	// Reserve the account slot only while the edge said signed-in AND we haven't settled to a
+	// definitively signed-out session — so an absent `__BOOT__` never reserves (today's render)
+	// and a boot/session divergence collapses cleanly rather than stranding a phantom slot.
+	const reserveSignedInSlots = bootSignedIn && (session.isPending || isSignedIn);
 
 	return (
 		<TooltipProvider>
@@ -167,6 +178,7 @@ function Layout() {
 					<Topbar
 						brandName="kamp.us"
 						navIa={navIaOn}
+						reserveSignedInSlots={reserveSignedInSlots}
 						nav={[
 							{to: "/sozluk", label: "sözlük"},
 							{to: "/pano", label: "pano"},
@@ -193,7 +205,11 @@ function Layout() {
 						onThemeChange={setThemeChoice}
 						onLogout={onSignOut}
 						actions={
-							!isSignedIn ? (
+							// giriş-yap rides the first-paint presence bit, not the settling session:
+							// `__BOOT__.signedIn` (via signedInAtFirstPaint) suppresses the CTA for a
+							// signed-in user from the first frame, so it never flashes then swaps out
+							// (#2933). Absent `__BOOT__` ⇒ this reduces to `isSignedIn`, today's split.
+							!signedInAtFirstPaint ? (
 								<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
 									giriş yap
 								</button>
