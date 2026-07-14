@@ -1,9 +1,11 @@
 /**
- * mecmua's persistent product Subnav zone (#2603, placement law #2587). Pins two things:
+ * mecmua's persistent product Subnav zone (#2603, placement law #2587). Pins three things:
  * (1) the zone is a persistent layout — its `.kp-subnav` node survives a within-mecmua
  * navigation (no remount); (2) each destination is flag-composed on the SAME seam its
  * route self-gates on, so a link never points at a dark 404 — keşfet on mecmua-public-read,
- * akış on mecmua-feed, yazılarım on the write path (yazar-gated, #2579's missing home).
+ * akış on mecmua-feed, yazılarım on the write path (yazar-gated, #2579's missing home);
+ * (3) after the SubnavShell migration (ADR 0182), the destinations render INSIDE the bar's
+ * sub-destinations zone and the CTA inside the primary-action zone — behavior unchanged.
  */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {Link, MemoryRouter, Route, Routes} from "react-router";
@@ -121,5 +123,24 @@ describe("MecmuaSubnavLayout — mecmua product Subnav zone (#2603)", () => {
 		meTier = "caylak";
 		renderZone();
 		expect(screen.queryByRole("link", {name: "yazılarım"})).toBeNull();
+	});
+
+	// Zone-through-shell (ADR 0182): the destinations fill the shell's one sub-destinations
+	// zone (inside the bar, never a detached sibling) and the CTA fills the primary-action zone.
+	it("renders the destinations INSIDE the shell's sub-destinations zone — no detached sibling", () => {
+		flags.read = true;
+		const {container} = renderZone();
+		const kesfet = screen.getByRole("link", {name: "keşfet"});
+		const filters = container.querySelector(".kp-subnav__filters");
+		expect(filters?.contains(kesfet)).toBe(true);
+	});
+
+	it("renders the CTA in the shell's primary-action zone when the author can write", () => {
+		flags.write = true;
+		signedIn = true;
+		meTier = "yazar";
+		const {container} = renderZone();
+		const cta = screen.getByRole("button", {name: "yeni yazı"});
+		expect(container.querySelector(".kp-subnav__cta")?.contains(cta)).toBe(true);
 	});
 });
