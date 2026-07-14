@@ -950,6 +950,51 @@ exist and are linked, and every story maps to a child (the coverage invariant).
 
 ---
 
+## Step 6 — Close the graduated source investigation (close-on-graduation)
+
+An epic often **graduates from a resolved investigation**: the investigation's diagnosis is
+folded into an epic whose brief declares its provenance (e.g. `Emitted from resolved
+investigation #2570`). Once you've planned that epic, its work is carried forward by the epic +
+its children — so the **source investigation must be closed** as the durable "graduated into
+#EPIC" record, not left open as `status:triaged` looking pickable. Graduation had no
+close-on-source forcing function, so graduated investigations lingered open and inflated the
+backlog until a manual dedup sweep hand-closed them (#2988). plan-epic is the deterministic step
+that always touches a graduated epic, so it closes the source here rather than trusting a human to
+remember — the same enforce-at-the-path discipline the wayfinder emission close applies to maps.
+
+Scan the **brief** (the top section you read in Step 1) for the graduation-provenance marker and
+close each source it names — but only a genuine `type:investigation` source, idempotently:
+
+```bash
+# Extract every source the brief graduated from — tolerant of phrasing ("Emitted from resolved
+# investigation #N", "from resolved investigation #N"). The `resolved investigation` anchor is what
+# distinguishes a graduation provenance from an incidental `#N` cross-reference in the brief.
+SOURCES=$(grep -oiE 'resolved investigation #[0-9]+' /tmp/plan-epic-<EPIC>-current.md \
+  | grep -oE '[0-9]+' | sort -u)
+for SRC in $SOURCES; do
+  # Guard, fail-safe: close ONLY an open type:investigation — never a referenced epic/decision/bug,
+  # and never re-close a closed source (idempotent, so a re-plan run is a clean no-op). This is what
+  # keeps legitimately-open downstream artifacts (the epic itself, sibling epics) untouched.
+  read -r STATE TYPES < <(gh api repos/$REPO/issues/$SRC \
+    --jq '[.state, ([.labels[].name] | map(select(startswith("type:"))) | join(","))] | @tsv')
+  case "$STATE:$TYPES" in
+    open:*type:investigation*) ;;
+    *) echo "plan-epic: source #$SRC is $STATE ($TYPES) — not an open investigation, skipping close."; continue ;;
+  esac
+  # Audit trail (AC): a reason comment recording source → artifact, so a reader can trace the
+  # graduation, then close as completed (the work graduated, it wasn't abandoned).
+  gh api repos/$REPO/issues/$SRC/comments -f body="Graduated into epic #<EPIC> (planned by plan-epic) — closing this investigation as the durable \`graduated into #<EPIC>\` record. Its diagnosis is carried forward by the epic and its planned children." >/dev/null
+  gh api -X PATCH repos/$REPO/issues/$SRC -f state=closed -f state_reason=completed >/dev/null
+  echo "plan-epic: closed graduated source investigation #$SRC → epic #<EPIC>."
+done
+```
+
+Only the *source* that graduated is closed; the epic and every downstream artifact it links stay
+open (AC). If the brief carries no `resolved investigation #N` marker the loop no-ops — a
+plain-authored epic has no source to close.
+
+---
+
 ## Re-plan: reconciling a changed epic
 
 When you're re-run on an epic that already has a plan and children (the brief changed,
@@ -1052,8 +1097,8 @@ stories** / testing strategy) then engineering layer (Step 2), split into tracer
 children that each trace to a story — emitted idempotently (reconciled against the epic's existing
 children and the open backlog so a re-dispatch or overlap mints no duplicate) and transactionally
 (labels applied at create so a half-run leaves no pickable orphan) (Step 3), link them as native
-sub-issues (Step 4), and pin the full body with its `## Dependencies` topology (Step 5). Re-runs
-reconcile.
+sub-issues (Step 4), pin the full body with its `## Dependencies` topology (Step 5), and close the
+graduated source investigation when the epic declares one (Step 6). Re-runs reconcile.
 
 Acquire the `status:planning` epic-lock before you mutate (see [§Acquire the
 epic-lock](#acquire-the-epic-lock-before-you-mutate--release-it-on-every-exit)) and **release

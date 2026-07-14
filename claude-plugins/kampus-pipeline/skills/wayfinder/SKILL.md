@@ -338,13 +338,15 @@ reveals. The **only** difference from an investigation is *whose answer it is*: 
 was the founder's, never the agent's. wayfinder did the framing legwork, the founder made the call,
 and the map records it and moves on.
 
-## Emission — the cleared map emits triaged epics into the pipeline
+## Emission — the cleared map graduates into its durable artifact(s)
 
 This is the **handoff seam** where the ideation layer graduates into the execution pipeline: a
-map that has cleared enough fog emits one or more concrete epics/features into the **existing**
-`report` → `triage` → `plan-epic` → `write-code` funnel. Emission is **not a third mode with new
-machinery** — it is the terminal act of a map's life, reached from a WORK run whose
-graduation-readiness check finds the frontier cleared. Where CHART lays the frontier down and
+map that has cleared enough fog emits its **durable artifact(s)** — most often one or more concrete
+epics/features into the **existing** `report` → `triage` → `plan-epic` → `write-code` funnel, but a
+map whose destination was itself a decision graduates into an **ADR** (authored via `/adr`), and a
+map that charts strategic sequencing graduates into a **ROADMAP.md** entry. Emission is **not a
+third mode with new machinery** — it is the terminal act of a map's life, reached from a WORK run
+whose graduation-readiness check finds the frontier cleared. Where CHART lays the frontier down and
 WORK clears it one ticket at a time, emission is what a map *becomes* once its frontier holds no
 more answerable unknowns: the accreted plan, filed as intake the settled pipeline already knows
 how to drain. Nothing downstream is rebuilt — emission only feeds the funnel from its front.
@@ -431,28 +433,40 @@ EOF
   -f "labels[]=status:needs-triage"
 ```
 
-### Mark the map emitted — the traceable ideation→execution handoff
+### Close the map on graduation — the close-on-source forcing function
 
-Once the epics are filed, **mark the map as emitted** so the ideation→execution loop is traceable
-from both ends:
+Once the map's destination is fully realized in its durable artifact(s) — **whatever their kind:
+epic(s) filed into triage, an ADR authored via `/adr`, and/or a ROADMAP.md entry** — the map is
+**graduated**, and graduation **must close the map as part of the emission**, not leave it a step a
+human/agent remembers to run. A graduated-but-open map is indistinguishable from live ideation
+work: it looks pickable, inflates the backlog, and forces a manual dedup sweep to hand-close it
+(#2988 — maps #2583/#2829/#2467/#2620 all graduated but were closed only by hand; #2940 is the
+exemplar that *was* closed on graduation). The close is the durable "this map graduated into X"
+record; generalize the #2940 close across **every** graduation artifact, not epics alone.
 
-- Post a handoff comment on the map linking **every** emitted issue (`emitted #E1, #E2 → triage`),
-  so a reader of the map can follow it *forward* to the epics it became.
-- Each emitted issue already references the map (`Emitted from wayfinder:map #<MAP>` in its brief),
-  so a reader of any emitted epic can follow it *back* to the map that discovered it. The link is
-  **bidirectional** — that is what makes the ideation→execution handoff traceable.
-- **Close vs annotate.** A map whose buildable plan is **fully** emitted is **closed** — its
-  frontier is cleared and its purpose (charting the fog) is complete; it remains the durable record
-  of *how* the plan was discovered while the emitted issues carry it forward. A map that emits only
-  **part** of its plan (some destinations still fogged, or a fork still awaiting the founder) is
-  **annotated** with the emitted links but stays **open** for a future WORK run to clear the rest
-  and emit again.
+Make the ideation→execution handoff traceable from both ends, then close:
+
+- Post a handoff comment on the map naming **every** artifact it graduated into — emitted epics
+  (`#E1, #E2 → triage`), the ADR (`ADR NNNN`), the roadmap entry — so a reader can follow the map
+  *forward* to what it became. This comment **is** the audit trail; it records source → artifact.
+- Each emitted epic already references the map (`Emitted from wayfinder:map #<MAP>` in its brief),
+  and an ADR/roadmap entry graduated from a map cites it likewise, so a reader of the artifact can
+  follow it *back*. The link is **bidirectional** — that is what makes the handoff traceable.
+- **Close vs annotate.** A map whose destination is **fully** graduated (its whole buildable/decided
+  plan landed as artifacts) is **closed** — its frontier is cleared and its purpose (charting the
+  fog) is complete; it remains the durable record of *how* the plan was discovered while the
+  artifacts carry it forward. A map that graduates only **part** of its plan (some destinations
+  still fogged, or a fork still awaiting the founder) is **annotated** with the artifact links but
+  stays **open** for a future WORK run to clear the rest and graduate again. Only the *source map*
+  is closed; the emitted epics, the ADR, and the roadmap entry are legitimately-live artifacts and
+  stay as they are.
 
 ```bash
-# link the emitted epics on the map, then close it IFF the buildable plan is fully emitted
-BODY="Emitted into the pipeline: #$E1, #$E2 → triage → plan-epic → write-code. Frontier cleared."
+# Name every artifact the map graduated into (epics and/or ADR and/or roadmap), then close it
+# IFF the destination is FULLY graduated. A partial graduation is annotated but stays open.
+BODY="Graduated into: #$E1, #$E2 → triage → plan-epic → write-code; ADR 0176; ROADMAP.md v1. Frontier cleared — closing this map as the durable record of how the plan was discovered."
 gh api repos/$REPO/issues/$MAP/comments -f body="$BODY"
-gh api -X PATCH repos/$REPO/issues/$MAP -f state=closed   # fully-emitted only; a partial emit stays open
+gh api -X PATCH repos/$REPO/issues/$MAP -f state=closed -f state_reason=completed   # fully-graduated only; a partial graduation stays open
 ```
 
 ### What emission is not
