@@ -21,11 +21,15 @@
 import {writeFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Config, Console, Effect, Redacted} from "effect";
+import {DoormanClientLive, resolveApiKey} from "@kampus/depo";
+import {Config, Console, Effect, Layer, Redacted} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import {renderCandidateSet} from "./candidate-render.ts";
+import {serializeCandidateSet} from "./candidate-set.ts";
 import {loadGoldenPointer, serializeGoldenPointer} from "./golden-fs.ts";
 import {blessSurface} from "./golden-pointer.ts";
+import {storeGolden} from "./golden-store.ts";
 import {captureAndUpload} from "./orchestrate.ts";
 import {renderCrashFailure} from "./page-errors.ts";
 import {parseSurfaceSpec} from "./plan.ts";
@@ -127,8 +131,93 @@ const bless = Command.make(
 	),
 );
 
+// --- render-candidates: the candidate-render step (#2961) ------------------------
+
+const termSlugFlag = Flag.string("term-slug").pipe(
+	Flag.withDescription(
+		"the seeded sözlük term slug to render the term page at (a real term on the preview)",
+	),
+);
+
+const forcedFlagFlag = Flag.string("flag").pipe(
+	Flag.withDescription(
+		'the forced flag state the preview is rendered under, "<key>=on|off" (repeatable) — recorded as candidate-set provenance',
+	),
+	Flag.atLeast(0),
+);
+
+const tokenFlag = Flag.string("token").pipe(
+	Flag.withDefault(""),
+	Flag.withDescription(
+		"depo pasaport apiKey (else KAMPUS_TOKEN or ~/.config/kampus/token, ADR 0045)",
+	),
+);
+
+const emitFlag = Flag.string("emit").pipe(
+	Flag.withDefault(""),
+	Flag.withDescription(
+		"also write the serialized candidate set to this path (stdout gets it either way)",
+	),
+);
+
+/** Parse a `<key>=on|off` provenance flag token; a malformed token is a caller bug. */
+const parseForcedFlag = (token: string): readonly [string, boolean] => {
+	const eq = token.indexOf("=");
+	const key = eq <= 0 ? "" : token.slice(0, eq).trim();
+	const raw =
+		eq <= 0
+			? ""
+			: token
+					.slice(eq + 1)
+					.trim()
+					.toLowerCase();
+	if (key.length === 0) {
+		throw new Error(`design-capture: --flag must be "<key>=on|off", got: ${token}`);
+	}
+	if (raw === "on" || raw === "true" || raw === "1") return [key, true];
+	if (raw === "off" || raw === "false" || raw === "0") return [key, false];
+	throw new Error(`design-capture: --flag value must be on/off, got: ${token}`);
+};
+
+// The depo write layer for the store leg — DoormanClientLive over fetch. Golden bytes
+// go to the content-addressed store the pointer references (ADR 0183 §1), so a
+// candidate's emitted sha256 IS what a later bless commits (§5 no-re-render guard).
+const DepoLive = DoormanClientLive.pipe(Layer.provide(FetchHttpClient.layer));
+
+const renderCandidates = Command.make(
+	"render-candidates",
+	{
+		previewUrl: previewUrlFlag,
+		termSlug: termSlugFlag,
+		out: outFlag,
+		flag: forcedFlagFlag,
+		token: tokenFlag,
+		emit: emitFlag,
+	},
+	Effect.fn(function* ({previewUrl, termSlug, out, flag, token, emit}) {
+		const apiKey = yield* resolveApiKey(token.length === 0 ? undefined : token);
+		const forcedFlags = Object.fromEntries(flag.map(parseForcedFlag));
+		const set = yield* renderCandidateSet(
+			{previewUrl, params: {termSlug}, outDir: out, forcedFlags},
+			{
+				store: (pngBytes) => storeGolden({apiKey, pngBytes}).pipe(Effect.provide(DepoLive)),
+			},
+		);
+		const serialized = serializeCandidateSet(set);
+		if (emit.length > 0) {
+			writeFileSync(emit, serialized);
+		}
+		// stdout is the candidate set — the input the blessing surface (#2962) consumes.
+		yield* Console.log(serialized);
+	}),
+).pipe(
+	Command.withDescription(
+		"Render the founder priority surfaces over a flag-forced preview into a blessing candidate set (#2961)",
+	),
+);
+
 const cli = Command.make("design-capture").pipe(
-	Command.withSubcommands([capture, bless]),
+	Command.withSubcommands([capture, bless, renderCandidates]),
 	Command.withDescription(
 		"Playwright-capture + golden-baseline (store/resolve/diff) for the review-design gate (ADR 0165/0183)",
 	),

@@ -9,6 +9,25 @@
  * `resolvePreviewUrl` resolves the preview base from the sticky preview-deploy
  * comment, keyed off the per-app `<!-- preview-deploy:<app> -->` anchor.
  */
+
+// The candidate-render step (ADR 0183 §5, epic #2955 story 1): render the founder
+// priority surfaces over a flag-forced preview into a blessing candidate set, staged
+// for the founder's bless (#2962) — each candidate anchored to the exact depo sha256
+// a later bless commits (the no-re-render guard).
+export type {
+	CaptureLeg as CandidateCaptureLeg,
+	RenderCandidateSetDeps,
+	RenderCandidateSetRequest,
+	StoreLeg,
+} from "./candidate-render.ts";
+export {renderCandidateSet} from "./candidate-render.ts";
+export type {
+	AssembleCandidateSetInput,
+	CandidateScreen,
+	CandidateSet,
+	RenderedCandidate,
+} from "./candidate-set.ts";
+export {assembleCandidateSet, parseCandidateSet, serializeCandidateSet} from "./candidate-set.ts";
 export type {CaptureCookie, CapturedSurface, CaptureOptions} from "./capture.ts";
 export {CaptureError, captureShots} from "./capture.ts";
 // The golden-baseline seam (ADR 0183): bytes in depo, the current-golden pointer in
@@ -46,6 +65,17 @@ export {
 	parseSurfaceSpec,
 	surfaceFileName,
 } from "./plan.ts";
+export type {
+	PrioritySurfaceKey,
+	PrioritySurfaceParams,
+	PrioritySurfaceSpec,
+	ResolvedPrioritySurface,
+} from "./priority-surfaces.ts";
+export {
+	PRIORITY_SURFACES,
+	resolvePrioritySurfaces,
+	substituteRouteParams,
+} from "./priority-surfaces.ts";
 export {resolvePreviewUrl} from "./resolve.ts";
 export type {RawUploadResponse, UploadAssetOptions, UploadOutcome} from "./upload.ts";
 export {parseUploadResponse, uploadAsset, uploadEndpoint} from "./upload.ts";
