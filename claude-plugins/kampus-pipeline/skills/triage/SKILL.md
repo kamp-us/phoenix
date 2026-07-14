@@ -334,10 +334,28 @@ record and the reporter's unedited words. If the body has its own triple-backtic
 code fences, the `<details>` block still nests them fine; don't re-indent or reflow
 the original.
 
-To get the original verbatim:
+**But the leak invariant outranks verbatim-fidelity when the verbatim content is itself a
+leak.** The no-machine-local-paths rule above governs the *whole* body — the enrichment you
+write **and** the original you preserve. "Preserve byte-for-byte" fails *toward* exposure when
+the original itself contains a machine-local path (a `/var/folders/…<user-hash>…` temp path, a
+home path, an absolute `/Users/…`): a naive verbatim re-emit re-commits that leak into a public
+issue (the #2393-class violation; the concrete re-leak was #3019). So **before** the original
+goes into the `<details>` block, run it through the shared `pipeline-cli` leak matcher and
+**redact** any matched local path — REDACT, not strip: the redaction preserves evidential shape
+(`@/var/folders/<redacted>` still documents "a temp path was posted as the whole body") while
+removing the identifying segments (user-hash, temp filename, home path). This reuses the existing
+leak matcher (`findCommentLeaks`, `packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts`) via
+the `redact-leaks` tool — it is **not** a second, divergent leak-pattern definition. A leak-free
+original is passed through byte-for-byte unchanged, exactly as before.
+
+To get the original and redact any leak before preserving it:
 
 ```bash
 gh api "repos/$REPO/issues/<N>" --jq '.body' > /tmp/triage-original-<N>.md
+# redact any machine-local path leak in the ORIGINAL before it goes into <details>; leak-free
+# originals pass through byte-for-byte. Reuses the shared leak matcher — no divergent patterns.
+pipeline-cli redact-leaks --body-file /tmp/triage-original-<N>.md > /tmp/triage-original-<N>.redacted.md
+# assemble the <details> block from the REDACTED original, never the raw one
 ```
 
 Assemble the new body in a temp file and read it into `$BODY` so multi-line markdown,
@@ -369,10 +387,15 @@ prioritize, optionally add a short triage note as a comment, then shape the body
 </details>
 ```
 
+The same leak-outranks-fidelity rule applies to this wrap-in-place preserve: run the epic's
+original brief through `pipeline-cli redact-leaks` before it goes into the `<details>` block, so
+a leak-containing brief can't re-leak. A leak-free brief passes through byte-for-byte — the
+common case, and the exact bytes `plan-epic` splices are then unchanged.
+
 This is a *collapse in place*, not the Step-4 rewrite-on-top: nothing sits above the
 `<details>` but the one-line typed header (so a pre-plan epic body leads with the epic,
-not a bare collapsed element), and the brief inside is verbatim — so the exact bytes
-`plan-epic` splices are unchanged. The `<summary>` is the epic variant of the other
+not a bare collapsed element), and the brief inside is verbatim (post-redaction) — so the
+exact bytes `plan-epic` splices are unchanged for any leak-free brief. The `<summary>` is the epic variant of the other
 types' `Original report (verbatim)` — `Original brief` names an epic's original as its
 *brief* (Step 2's tell), the same verbatim-provenance guarantee. (If an epic was filed
 truly threadbare, prefer `status:needs-info` over mangling it.)
