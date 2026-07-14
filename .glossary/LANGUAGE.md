@@ -253,6 +253,30 @@ calls *unrepresentable*; 0037 reunified them into a single class (the split's tw
 motivations — a mutual-DO Layer cycle and a SQLite registry — both went away), where a
 misroute now no-ops at runtime (role-guarded) rather than failing to compile.
 
+### The composition shell / recipe
+
+A **shell** wraps a nav/page **primitive** and owns a whole zone, exposing it to the page
+as **flat element-props — one `ReactNode` prop per zone** — so an element not assigned to a
+declared zone is a *type* error, not a lint finding. The **recipe** is the composition idiom
+a shell is built on. (ADR
+[0182](../.decisions/0182-subnavshell-pageshell-composition-api.md) — *SubnavShell / PageShell
+composition API — flat element-props*, which coins both terms; it builds on ADR
+[0176](../.decisions/0176-nav-ia-discipline.md)'s nav element taxonomy. The `SubnavShell` /
+`PageShell` source is defined by that ADR — the term is grounded in the ADR until the shells
+land in [`apps/web/src/components/layout/`](../apps/web/src/components/layout/).)
+
+- **`recipe`** — the composition-primitive idiom: **one flat element-prop per zone**,
+  orphan-as-type-error. NOT a zones-object, NOT compound components
+  (`<Shell.Destinations>…`) — a compound API leaves an *orphan slot* (an element rendered
+  but placed nowhere) that only a lint pass catches; flat element-props make that
+  unrepresentable, because an element with no declared zone prop has nowhere to compile in.
+- **`shell`** — the layout-composition wrapper (`SubnavShell` / `PageShell`) that **names a
+  page's zone-plus-content shape once** and hands each zone to the consumer as one prop.
+  `SubnavShell` composes the per-product [`Subnav`](../apps/web/src/components/layout/Subnav.tsx)
+  primitive (wrapping it, not replacing it); `PageShell` composes `SubnavShell` plus the routed
+  page content below it. A shell sits *between* a **primitive** and the page — distinct from a
+  **primitive**, which owns no zone and exposes raw slots.
+
 ### The three senses of "phoenix"
 
 "phoenix" carries **three distinct meanings**, each with a graduation name —
