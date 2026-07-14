@@ -1,10 +1,11 @@
-import {Outlet} from "react-router";
+import {NavLink, Outlet} from "react-router";
 import {useSession} from "../../auth/client";
 import {useMe} from "../../auth/useMe";
 import {MECMUA_FEED, MECMUA_PUBLIC_READ, MECMUA_WRITE} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
 import {shouldShowMecmuaWriteCta} from "../../pages/mecmua-write-gate";
-import {Subnav, type SubnavLink} from "../layout/Subnav";
+import type {SubnavLink} from "../layout/Subnav";
+import {SubnavShell} from "../layout/SubnavShell";
 import {MecmuaSubnavCta} from "./MecmuaSubnavCta";
 
 /**
@@ -12,7 +13,8 @@ import {MecmuaSubnavCta} from "./MecmuaSubnavCta";
  * layout-route element that hosts mecmua's product destinations + its primary action, so
  * they live in the product zone instead of leaking into the global topbar (#2603). Mounted
  * only behind the `phoenix-nav-ia` flag (App.tsx); off ⇒ the router is flat, exactly as
- * today.
+ * today. Composes through `SubnavShell` (ADR 0182): the destination links fill the one
+ * `destinations` zone, the CTA the `primaryAction` zone.
  *
  * Each destination is composed on the SAME flag its route/page self-gates on, so a link
  * never points at a dark 404 (the #2547 "never a dead link" rule): keşfet (the public index)
@@ -35,7 +37,20 @@ export function MecmuaSubnavLayout() {
 	];
 	return (
 		<>
-			<Subnav links={links} cta={<MecmuaSubnavCta />} />
+			<SubnavShell
+				destinations={
+					links.length
+						? links.map((l) => (
+								// NavLink sets aria-current="page" on the active route; the filter treatment is
+								// the utility tab styling (#2586 taxonomy), never the primary-action treatment.
+								<NavLink key={l.to} to={l.to} end={l.end} className="kp-subnav__filter">
+									{l.label}
+								</NavLink>
+							))
+						: null
+				}
+				primaryAction={<MecmuaSubnavCta />}
+			/>
 			<Outlet />
 		</>
 	);
