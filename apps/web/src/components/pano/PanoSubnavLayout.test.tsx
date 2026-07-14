@@ -1,10 +1,13 @@
 /**
- * pano's persistent product Subnav zone (#2601, placement law #2587). Pins: (1) the zone is a
- * persistent layout — its `.kp-subnav` node survives a within-pano navigation (no remount);
- * (2) the routed feed's filters/meta publish UP into that one zone Subnav (the chip-bridge), so
- * there is a single Subnav, not a per-page second one; (3) the active site-filter folds into the
- * zone as a transient crumb with a working `× filtreyi kaldır` clear — and NO resting-chrome
- * `.kp-pano-crumb` strip is painted.
+ * pano's persistent product Subnav zone (#2601, placement law #2587), now composed through
+ * SubnavShell (#2975, ADR 0182). Pins: (1) the zone is a persistent layout — its `.kp-subnav`
+ * node survives a within-pano navigation (no remount); (2) the routed feed's filters/meta publish
+ * UP into that one zone Subnav (the chip-bridge), so there is a single Subnav, not a per-page
+ * second one; (3) the active site-filter folds into the zone as a transient crumb with a working
+ * `× filtreyi kaldır` clear — and NO resting-chrome `.kp-pano-crumb` strip is painted; (4) pano's
+ * content lands in the shell's typed zones — chips in `.kp-subnav__filters`, crumb in
+ * `.kp-subnav__leading`, CTA in `.kp-subnav__cta`, count in `.kp-subnav__meta` — with behavior
+ * unchanged from the pre-shell rendering.
  */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {useEffect} from "react";
@@ -62,7 +65,7 @@ function renderZone(leaf = <PublishingLeaf />) {
 	);
 }
 
-describe("PanoSubnavLayout — pano product Subnav zone (#2601)", () => {
+describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#2975)", () => {
 	afterEach(() => {
 		signedIn = false;
 		vi.clearAllMocks();
@@ -79,6 +82,28 @@ describe("PanoSubnavLayout — pano product Subnav zone (#2601)", () => {
 		expect(screen.getByRole("button", {name: "sıcak"})).toBeTruthy();
 		expect(screen.getByRole("button", {name: "yeni"})).toBeTruthy();
 		expect(screen.getByText("3 başlık")).toBeTruthy();
+	});
+
+	it("lands pano's content in the shell's typed zones — chips in destinations, meta in signal", () => {
+		signedIn = true;
+		const {container} = renderZone(<PublishingLeaf host="foo.com" />);
+		const bar = container.querySelector(".kp-subnav");
+		// chips → destinations zone (the filters row inside the bar)
+		const filtersRow = bar?.querySelector(".kp-subnav__filters");
+		expect(filtersRow?.contains(screen.getByRole("button", {name: "sıcak"}))).toBe(true);
+		expect(filtersRow?.contains(screen.getByRole("button", {name: "yeni"}))).toBe(true);
+		// crumb → leading zone
+		expect(
+			bar?.querySelector(".kp-subnav__leading")?.contains(screen.getByText("site / foo.com")),
+		).toBe(true);
+		// CTA → primaryAction zone
+		expect(
+			bar
+				?.querySelector(".kp-subnav__cta")
+				?.contains(screen.getByRole("button", {name: "yeni gönderi"})),
+		).toBe(true);
+		// count → signal zone
+		expect(bar?.querySelector(".kp-subnav__meta")?.textContent).toContain("3 başlık");
 	});
 
 	it("signed in: the primary-action CTA fills the zone's CTA slot", () => {
@@ -109,7 +134,7 @@ describe("PanoSubnavLayout — pano product Subnav zone (#2601)", () => {
 
 	it("folds the active site-filter into the zone as a transient crumb with a working clear — no resting-chrome strip", () => {
 		const {container} = renderZone(<PublishingLeaf host="foo.com" />);
-		// Transient crumb paint in the Subnav (accent-faint pill), not the resting .kp-pano-crumb strip.
+		// Transient crumb paint in the Subnav, not the resting .kp-pano-crumb strip.
 		expect(container.querySelector(".kp-subnav__crumb")).toBeTruthy();
 		expect(container.querySelector(".kp-pano-crumb")).toBeNull();
 		expect(screen.getByText("site / foo.com")).toBeTruthy();
