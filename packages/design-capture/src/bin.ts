@@ -18,10 +18,14 @@
  * `$GITHUB_TOKEN` (a user/GITHUB_TOKEN with write on the target repo) authorizes
  * the undocumented upload endpoint — read as a redacted Config, never a flag.
  */
+import {writeFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Config, Console, Effect, Redacted} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import {loadGoldenPointer, serializeGoldenPointer} from "./golden-fs.ts";
+import {blessSurface} from "./golden-pointer.ts";
 import {captureAndUpload} from "./orchestrate.ts";
 import {renderCrashFailure} from "./page-errors.ts";
 import {parseSurfaceSpec} from "./plan.ts";
@@ -71,10 +75,62 @@ const capture = Command.make(
 	}),
 ).pipe(Command.withDescription("Capture a PR's changed surfaces over its preview and host them"));
 
-const cli = Command.make("design-capture").pipe(
-	Command.withSubcommands([capture]),
+// The committed golden pointer, co-located with the package (the migrations-guard
+// migration-hashes.json shape, ADR 0108/0183 §4). Resolved relative to src/ so the
+// bless runs the same from any CWD.
+const DEFAULT_POINTER = fileURLToPath(new URL("../golden-pointer.json", import.meta.url));
+
+const pointerFlag = Flag.string("pointer").pipe(
+	Flag.withDefault(DEFAULT_POINTER),
+	Flag.withDescription("path to the committed golden pointer file (golden-pointer.json)"),
+);
+
+const blessSurfaceFlag = Flag.string("surface").pipe(
+	Flag.withDescription(
+		'the surface-id to (re-)bless, "<route>[:state]" (e.g. /sozluk or /sozluk:empty)',
+	),
+);
+
+const blessShaFlag = Flag.string("sha256").pipe(
+	Flag.withDescription(
+		"the 64-hex depo content-address of the APPROVED golden bytes (already PUT to depo)",
+	),
+);
+
+const blessIntentFlag = Flag.string("intent").pipe(
+	Flag.withDescription("human note: what this golden captures / why it was (re-)blessed"),
+);
+
+// Move the git pointer to an already-approved depo sha — the audited `bless`, the
+// golden analogue of migrations-guard's `baseline` (ADR 0183 §4/§5). Pure + fs: it
+// records the sha the founder approved in the gallery comment; it does NOT re-render
+// or re-store bytes (the no-re-render guard — the approved sha IS the committed sha).
+const bless = Command.make(
+	"golden-bless",
+	{pointer: pointerFlag, surface: blessSurfaceFlag, sha256: blessShaFlag, intent: blessIntentFlag},
+	Effect.fn(function* ({pointer, surface, sha256, intent}) {
+		const blessedDate = new Date().toISOString().slice(0, 10);
+		const next = blessSurface(loadGoldenPointer(pointer), {
+			surfaceId: surface,
+			sha256,
+			blessedDate,
+			intent,
+		});
+		writeFileSync(pointer, serializeGoldenPointer(next));
+		yield* Console.log(
+			`design-capture: blessed ${surface} → depo ${sha256}.png (${blessedDate}) → ${pointer}`,
+		);
+	}),
+).pipe(
 	Command.withDescription(
-		"Playwright-capture + GitHub user-attachments upload for the review-design gate (ADR 0165)",
+		"Move the git golden pointer for a surface to an approved depo sha256 (the audited re-bless, ADR 0183)",
+	),
+);
+
+const cli = Command.make("design-capture").pipe(
+	Command.withSubcommands([capture, bless]),
+	Command.withDescription(
+		"Playwright-capture + golden-baseline (store/resolve/diff) for the review-design gate (ADR 0165/0183)",
 	),
 );
 

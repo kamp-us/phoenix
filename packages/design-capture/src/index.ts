@@ -11,6 +11,27 @@
  */
 export type {CaptureCookie, CapturedSurface, CaptureOptions} from "./capture.ts";
 export {CaptureError, captureShots} from "./capture.ts";
+// The golden-baseline seam (ADR 0183): bytes in depo, the current-golden pointer in
+// git; store → resolve → deterministic diff. Consumed by write-code (self-check) and
+// review-design (blocking gate) so there is ONE notion of "golden".
+export type {DiffOptions, DiffRegion, DiffResult, RasterImage, Rect} from "./golden-diff.ts";
+export {diffRasters} from "./golden-diff.ts";
+export {loadGoldenPointer, serializeGoldenPointer} from "./golden-fs.ts";
+export type {BlessInput, GoldenEntry, GoldenPointer} from "./golden-pointer.ts";
+export {
+	blessedSurfaces,
+	blessSurface,
+	isSha256Hex,
+	resolveGoldenEntry,
+} from "./golden-pointer.ts";
+export type {StoredGolden} from "./golden-store.ts";
+export {
+	fetchGoldenBytes,
+	GoldenFetchError,
+	resolveGoldenBytes,
+	resolveGoldenUrl,
+	storeGolden,
+} from "./golden-store.ts";
 export type {CaptureAndUploadRequest, CaptureRecord} from "./orchestrate.ts";
 export {captureAndUpload, hostedUrls, mergeRecord} from "./orchestrate.ts";
 export type {PageError, SurfacePageErrors} from "./page-errors.ts";
