@@ -20,6 +20,7 @@
  * authorized admin's override yields identical values here and from the API (ADR 0179 AC2).
  */
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -64,6 +65,31 @@ export const readShellFlags = (context: FlagsContextValue) =>
 		return Object.fromEntries(entries) as Record<ShellFlagKey, boolean>;
 	});
 
+/**
+ * The never-hang ceiling on the per-request boot resolve — session validation (3 serial D1
+ * queries when signed in) + shell-flag evaluation (ADR 0179 §2). A healthy resolve is well
+ * under this; the cap bounds a slow or dead Flagship/D1 so the edge degrades rather than hangs.
+ * Tunable — the invariant is that a bound EXISTS, not its exact value.
+ */
+export const SHELL_BOOT_READ_TIMEOUT = Duration.seconds(1);
+
+/**
+ * The never-hang / safe-default-on-outage guard (ADR 0179 §4): bound the boot resolve with
+ * {@link SHELL_BOOT_READ_TIMEOUT} and, on timeout OR any Flagship/D1 failure, fall back to the
+ * untransformed asset — byte-identical to the flag-off / edge-direct shell, with no partial
+ * `__BOOT__`. Only expected failures (the `E` channel) + the timeout degrade; a genuine defect
+ * still propagates. Exported so the never-hang invariant is unit-testable (TestClock) without a
+ * deployed worker.
+ */
+export const withNeverHangFallback = <A, E, R>(
+	resolve: Effect.Effect<A, E, R>,
+	untransformed: A,
+): Effect.Effect<A, never, R> =>
+	resolve.pipe(
+		Effect.timeout(SHELL_BOOT_READ_TIMEOUT),
+		Effect.catch(() => Effect.succeed(untransformed)),
+	);
+
 export const handleShellBoot = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
 	const env = yield* Cloudflare.WorkerEnvironment;
@@ -72,9 +98,10 @@ export const handleShellBoot = Effect.gen(function* () {
 	// no cast is needed; `fetch` takes the request as-is and returns the workers-types `Response`.
 	const assets: {fetch(request: typeof raw): Promise<Response>} = env.ASSETS;
 	// The untransformed shell/asset — the same bytes the edge-direct binding served before this
-	// route existed. Worker-first routing is UNCONDITIONAL (not flag-gated), so this fetch runs in
-	// both flag states; a rejection is an infra defect (`orDie`), and #2931 replaces this with the
-	// never-hang timeout + untransformed-asset fallback.
+	// route existed, and the response the never-hang fallback degrades to (#2931). Worker-first
+	// routing is UNCONDITIONAL (not flag-gated), so this fetch runs in both flag states; a rejection
+	// stays an infra defect (`orDie`) — it is the fallback SOURCE, so if it fails there is nothing to
+	// serve. The never-hang timeout wraps the boot READS (session + flags) below, not this fetch.
 	const assetResponse = yield* Effect.tryPromise({
 		try: () => assets.fetch(raw),
 		catch: (cause) => new ShellAssetFetchError({cause}),
@@ -96,14 +123,21 @@ export const handleShellBoot = Effect.gen(function* () {
 	if (!on) return toWebResponse(assetResponse);
 
 	// Flag ON: NOW validate the session and resolve the full context through the SAME override-authz
-	// seam `/api/flags/evaluate` uses (the #2741 third arg), then read the shell flags under it.
-	const pasaport = yield* Pasaport;
-	const session = yield* pasaport.validateSession(raw.headers);
-	const context = yield* resolveRequestFlagsContext(session, raw.headers.get("cookie"));
-	const shellFlags = yield* readShellFlags(context);
+	// seam `/api/flags/evaluate` uses (the #2741 third arg), read the shell flags under it, and inject
+	// the payload. The whole resolve is wrapped in the never-hang guard: on a slow/dead Flagship or
+	// D1 (timeout) or any resolve failure it degrades to the untransformed asset — never a hung or
+	// 500-ing shell (ADR 0179 §4).
+	const resolveAndInject = Effect.gen(function* () {
+		const pasaport = yield* Pasaport;
+		const session = yield* pasaport.validateSession(raw.headers);
+		const context = yield* resolveRequestFlagsContext(session, raw.headers.get("cookie"));
+		const shellFlags = yield* readShellFlags(context);
+		const payload = buildBootPayload(session !== null, shellFlags);
+		return injectBootScript(assetResponse, payload);
+	});
 
-	const payload = buildBootPayload(session !== null, shellFlags);
-	return toWebResponse(injectBootScript(assetResponse, payload));
+	const response = yield* withNeverHangFallback(resolveAndInject, assetResponse);
+	return toWebResponse(response);
 });
 
 export const shellBootRoute = HttpRouter.add("*", "/*", handleShellBoot);
