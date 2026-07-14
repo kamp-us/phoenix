@@ -51,6 +51,13 @@
 	color: var(--text-primary);
 }
 
+/* Leading zone wrapper (SubnavShell recipe, ADR 0182) — positions only; the consumer's
+   composed context/crumb node carries its own treatment. */
+.kp-subnav__leading {
+	display: inline-flex;
+	align-items: center;
+}
+
 .kp-subnav__spacer {
 	flex: 1;
 }
