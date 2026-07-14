@@ -107,12 +107,57 @@ gh api "repos/$REPO/issues/$PR/timeline?per_page=100" \
   --jq '.[] | select(.event=="connected" or .event=="cross-referenced") | .source.issue.number // .issue.number' 2>/dev/null
 ```
 
-Pin down `ISSUE=<N>`. If you genuinely can't find a linked issue, that's a fail you
-can't even start — comment on the PR that there's no linked issue to verify against
-(the `Fixes #N` seam is missing), and stop. There's nothing to gate without the
-criteria.
+Pin down `ISSUE=<N>`. If there is **no** linked issue, the rule is **class-aware** — this is
+the code-lane mirror of `review-doc` Step 1's issueless carve-out (ADR
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)),
+extended to the code lane by ADR
+[0184](https://github.com/kamp-us/phoenix/blob/main/.decisions/0184-review-code-issueless-carve-out.md).
+Reuse the PR's changed-file class — the **same** file set Step 2's class routing reads (one class
+signal, **not** a second taxonomy; the ADR 0075 discipline `review-doc` follows in reusing its
+Step-0 class):
 
-Now pull the issue and its acceptance criteria:
+```bash
+# no linked issue → class-aware. The carve-out is scoped EXACTLY to the conversation-authored
+# coining class: the diff touches the `.glossary/**` CODE-class vocabulary coining site (ADR 0128)
+# AND every changed path lies on a conversation-authored surface — `.glossary/**`, or a doc
+# companion (`.decisions/**` / `.patterns/**`) carried in the same recording — and NOTHING else.
+# Any path off those surfaces (`apps/**`, `packages/**`, `infra/**`, a code-root README, a root
+# script) is behavioral work with a missing `Fixes #N` ⇒ a broken seam ⇒ hard-stop. Same file set +
+# same path-prefix class Step 2's skills-only route uses — no second class mechanism.
+FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
+if [ -n "$FILES" ] \
+   && grep -qE '^\.glossary/' <<<"$FILES" \
+   && ! grep -qvE '^(\.glossary|\.decisions|\.patterns)/' <<<"$FILES"; then
+  echo "conversation-authored .glossary/** coining site, no Fixes #N — legitimate (ADR 0184/0075): ISSUE stays unset, AC half N/A"
+else
+  echo "no linked issue on a PR carrying behavioral code — broken seam: hard-stop (dangling-code guard, ADR 0184)"
+fi
+```
+
+- **Behavioral code is present** (the diff carries any path off the conversation-authored coining
+  surface — `apps/**`, `packages/**`, `infra/**`, a code-root README, or any product code) → stop
+  and report `no linked issue`. In this pipeline `write-code` always writes `Fixes #N`, so a missing
+  link on a PR carrying behavioral code is a **broken seam**, not a normal state — dangling code
+  work with no AC to verify against. Comment on the PR that there's no linked issue to verify
+  against (the `Fixes #N` seam is missing), and stop. ADR 0184 leaves this dangling-code seam guard
+  **intact**: the carve-out **never** widens to behavioral code.
+- **Conversation-authored `.glossary/**` coining site only** (the diff touches `.glossary/**` and
+  every changed path lies on a conversation-authored surface, no behavioral code) → a missing
+  `Fixes #N` is a **legitimate state, not a broken seam**. A conversation-authored vocabulary edit —
+  a [`/adr`](../adr/SKILL.md)-adjacent coining/redefining of a term in `.glossary/LANGUAGE.md` /
+  `.glossary/TERMS.md` (the primary-coining-site artifact ADR
+  [0128](https://github.com/kamp-us/phoenix/blob/main/.decisions/0128-glossary-concept-trigger-off-the-gate.md)
+  routes here) — records a settled choice that was never tracked work, so there is nothing for a
+  `Fixes #N` to close and **no acceptance criteria to verify against**. Leave `ISSUE` unset, treat
+  the acceptance-criteria half as **N/A** (skip the per-criterion Step 3 — there is no checklist),
+  and **let the rest of the `review-code` gate stand as the sole contract**. Emit **no**
+  no-linked-issue refusal; it is not an anomaly. This relaxes **only** the linked-issue half — the
+  SHA-bound verdict (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)),
+  the glossary-freshness (Step 3c) / comment / staleness sub-gates, and the §CP-by-content routing
+  (ADR [0164](https://github.com/kamp-us/phoenix/blob/main/.decisions/0164-guard-relaxing-adr-cp-gate.md))
+  are all unchanged and still apply in full, and the verdict for such a PR rests on them alone.
+
+When `ISSUE` **is** set, honor it as today — pull the issue and its acceptance criteria:
 
 ```bash
 ISSUE=<N>
@@ -123,7 +168,9 @@ gh api "repos/$REPO/issues/$ISSUE/comments?per_page=100" --jq '.[].body'
 
 Extract the `### Acceptance criteria` checklist from the issue body. That list — every
 box — is the contract you verify. (For an epic this won't normally apply; review-code
-gates the PRs that close *executable* issues, which carry the checklist.)
+gates the PRs that close *executable* issues, which carry the checklist. When `ISSUE` is
+unset per the conversation-authored `.glossary/**` carve-out above, the acceptance-criteria
+half is N/A and the rest of the `review-code` gate is the whole contract.)
 
 ---
 
@@ -719,6 +766,11 @@ single-merge-authority are all untouched; the enforcement only makes the *append
 
 ## Step 3 — Verify one criterion at a time
 
+**Skip this step when `ISSUE` is unset** (the conversation-authored `.glossary/**` no-link
+carve-out, Step 1 / ADR 0184) — there is no acceptance-criteria checklist to walk, the
+acceptance-criteria half is **N/A**, and the rest of the `review-code` gate (Steps 2/3c and the
+comment/staleness/§CP sub-gates) is the sole contract. Otherwise walk the checklist as below.
+
 Walk the checklist **one box at a time**. For each criterion, reach an independent
 verdict and capture the *evidence* that supports it. This per-criterion discipline is
 the heart of the gate: a blanket "looks good" is exactly the rubber-stamp the fresh
@@ -783,6 +835,11 @@ review-code verifies the gating before the PR may pass. The marker contract — 
 tolerant-read rule, who writes vs reads it — is defined once in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md#the-product-development-cycle-hook)
 (§The product-development cycle hook); read it there, this step is the *reader's behavior*.
+
+**When `ISSUE` is unset** (the conversation-authored `.glossary/**` no-link carve-out, Step 1 /
+ADR 0184) this step is a clean **no-op** — there is no linked issue carrying a `**Containment:**`
+marker, and a conversation-authored vocabulary recording ships no dark product surface to gate;
+`CONTAINMENT` reads as `none` and this contributes no criterion. Otherwise:
 
 **Read the marker off the linked issue** (the `ISSUE` body already loaded in Step 1), tolerantly
 per the formats §Reading stance — a `**Containment:**` line, with a leading bold-marker, anywhere
@@ -1330,6 +1387,18 @@ All criteria pass. This PR is merge-ready. **review-code does not merge** — `s
 the authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
 ```
 
+**For the conversation-authored `.glossary/**` no-link PR** (`ISSUE` unset, Step 1 / ADR 0184):
+keep the identical first-line marker — `review-code: PASS @ <HEAD_SHA> — merge-ready` (still fully
+SHA-bound, ADR 0058) — but **drop the `#<ISSUE>` references**: there is no linked issue and no
+acceptance-criteria table. In place of the per-criterion table write a single N/A line —
+`Acceptance criteria: N/A — conversation-authored .glossary/** vocab PR, no linked issue (ADR
+0184/0075)` — and let the remaining evidence (the §HEAD read line, the run-evidence bundle, and any
+glossary-freshness / comment / staleness sub-gate result) carry the verdict. The closing sentence
+drops the `Fixes #<ISSUE>` auto-close clause (there is nothing to close) but still states plainly
+that **review-code does not merge** — `ship-it` is the authorized merge step. The verdict for such
+a PR rests on the non-AC sub-gates alone; this is exactly the `review-doc` Step 5 no-link shape,
+mirrored for the code lane.
+
 ### The marker is the contract — emit the canonical line, never a freelance form (governs 4a *and* 4b)
 
 The first line is **the contract `ship-it` consumes**, not a stylistic choice — it must match
@@ -1537,7 +1606,9 @@ skips the guard.
 
 ## Running it
 
-A single invocation gates one PR end to end: resolve the PR ↔ issue pairing (Step 1),
+A single invocation gates one PR end to end: resolve the PR ↔ issue pairing (Step 1) — or,
+for a conversation-authored `.glossary/**` vocab PR with no `Fixes #N`, take the class-aware
+issueless carve-out and leave `ISSUE` unset with the acceptance-criteria half N/A (ADR 0184/0075),
 read the diff/tests and the SHA-bound run-evidence bundle when present (Step 2), verify
 each acceptance criterion with evidence — citing the bundle's structured `checks[]`/`tests`
 where they cover it (Step 3), apply the flag-gating (Step 3b) and glossary-freshness
