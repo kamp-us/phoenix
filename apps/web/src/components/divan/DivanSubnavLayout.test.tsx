@@ -6,7 +6,9 @@
  * resting boxed `.kp-divan__nav-tab` pill); (3) a switch click drives the published onFilterChange;
  * (4) a non-mod page (no second section) publishes null and the zone shows the bare substrate bar;
  * (5) with NO zone ancestor (flag off) the publish hook returns null — the signal DivanWorkspace
- * uses to keep painting its own in-page nav byte-identically as today.
+ * uses to keep painting its own in-page nav byte-identically as today; (6) the switcher renders
+ * through SubnavShell INSIDE the bar's `.kp-subnav__filters` row (ADR 0182 destinations zone),
+ * never a detached sibling.
  */
 import {fireEvent, render, screen} from "@testing-library/react";
 import {useEffect, useState} from "react";
@@ -61,6 +63,14 @@ describe("DivanSubnavLayout — divan product Subnav zone (#2604)", () => {
 		expect(screen.getByRole("button", {name: "çaylaklar"})).toBeTruthy();
 		expect(screen.getByRole("button", {name: "raporlar"})).toBeTruthy();
 		expect(screen.getByTestId("divan-leaf")).toBeTruthy();
+	});
+
+	it("renders the switcher through SubnavShell INSIDE the bar's filters row, not a detached sibling (ADR 0182)", () => {
+		const {container} = renderZone();
+		// the destinations zone lives inside the shell's bar — the switcher buttons are descendants
+		// of `.kp-subnav > .kp-subnav__filters`, closing the orphaned-sibling composition class.
+		const inBar = container.querySelectorAll(".kp-subnav .kp-subnav__filters .kp-subnav__filter");
+		expect(inBar).toHaveLength(2);
 	});
 
 	it("carries the switchers as taxonomy filters — one taxonomy class, no resting boxed pill (#2586/#2590)", () => {
