@@ -354,6 +354,13 @@ lives as a contextual CTA in *that product's* Subnav — never as a global topba
 - **Never** place an element in a zone whose grammar does not admit its class (a product-scoped
   action or a sub-destination in the topbar; a global destination or the global primary action
   in a Subnav).
+- **Never** render a nav element as a **detached sibling of the bar** — a single orphan slot or
+  a detached filter-row floating *next to* the topbar / Subnav instead of *inside* a zone the
+  grammar admits. Every nav element lives inside a declared zone; an element rendered adjacent to
+  the bar with no structural home is the amateur-composition smell (the sözlük-alphabet-as-detached-sibling
+  shape, ADR [0182](https://github.com/kamp-us/phoenix/blob/main/.decisions/0182-subnavshell-pageshell-composition-api.md)).
+  This holds **even where a product has not yet adopted the shell** — the zone grammar governs the
+  render, not shell adoption, so the review-design gate flags the detached slot regardless.
 - **Never** promote more than one primary action per surface.
 
 ### Where the IA law is silent, surface the gap — do not fill it
