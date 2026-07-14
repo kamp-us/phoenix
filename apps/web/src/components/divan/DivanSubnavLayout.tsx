@@ -1,6 +1,7 @@
 import {createContext, useContext, useState} from "react";
 import {Outlet} from "react-router";
-import {Subnav, type SubnavFilter} from "../layout/Subnav";
+import type {SubnavFilter} from "../layout/Subnav";
+import {SubnavShell} from "../layout/SubnavShell";
 
 /**
  * The section-switcher content the routed divan page publishes UP into its persistent Subnav
@@ -28,10 +29,34 @@ export function useSetDivanSubnavContent() {
 	return useContext(SetDivanSubnavContent);
 }
 
+// The switcher buttons carry the #2586 taxonomy filter treatment themselves (`.kp-subnav__filter`
+// + aria-pressed) — SubnavShell's `destinations` zone only positions them INSIDE the bar (ADR
+// 0182), never a detached sibling row. The shell exposes no typed filters array, so the consumer
+// composes the stateful buttons here.
+function DivanSectionSwitcher({filters, activeFilter, onFilterChange}: DivanSubnavContent) {
+	return (
+		<>
+			{filters.map((f) => (
+				<button
+					key={f.id}
+					type="button"
+					className="kp-subnav__filter"
+					aria-pressed={activeFilter === f.id}
+					onClick={() => onFilterChange(f.id)}
+				>
+					{f.label}
+				</button>
+			))}
+		</>
+	);
+}
+
 /**
  * divan's persistent product Subnav zone (placement law #2587, epic #2596) — the pathless
- * layout-route element that renders divan's Subnav once above the routed `<Outlet>`. divan's
- * section switch is page-local state, so the routed page publishes its switchers UP via
+ * layout-route element that renders divan's Subnav once above the routed `<Outlet>`. Composes
+ * through {@link SubnavShell} (ADR 0182): the section switch lands in the `destinations` zone
+ * inside the bar, and divan has no promoted verb, so `primaryAction` is absent by design.
+ * divan's section switch is page-local state, so the routed page publishes its switchers UP via
  * {@link useSetDivanSubnavContent} (the same publish-up shape pano uses) and this frame holds
  * the state. Mounted only behind the `phoenix-nav-ia` flag (App.tsx); off ⇒ the router is flat
  * and DivanWorkspace renders its own in-page section nav as today.
@@ -40,11 +65,7 @@ export function DivanSubnavLayout() {
 	const [content, setContent] = useState<DivanSubnavContent | null>(null);
 	return (
 		<SetDivanSubnavContent.Provider value={setContent}>
-			<Subnav
-				filters={content?.filters}
-				activeFilter={content?.activeFilter}
-				onFilterChange={content?.onFilterChange}
-			/>
+			<SubnavShell destinations={content ? <DivanSectionSwitcher {...content} /> : undefined} />
 			<Outlet />
 		</SetDivanSubnavContent.Provider>
 	);
