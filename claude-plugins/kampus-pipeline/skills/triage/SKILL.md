@@ -127,6 +127,38 @@ pick a real priority; a triage that skips the codebase produces labels nobody do
 can trust. Note **who filed it** and **what shape it's in** — both feed the human-vs-agent
 judgment (Step 5) and the classification (Step 2).
 
+### Intake dedup — is this issue itself a duplicate? (ADR 0181)
+
+You board-read every intake issue anyway, so this is the **zero-new-surface enforcement
+point** for the human path: a UI/hand-filed issue never ran `report`'s pre-file dedup check
+(the #2802 class), so triage is where a human-filed duplicate is caught. Run the same shared
+**intake-dedup tool** the `report` skill uses (ADR 0181), on *this* issue's own title +
+keywords, excluding itself so it never flags itself:
+
+```bash
+node packages/pipeline-cli/src/bin.ts intake-dedup check \
+  --query "<this issue's title + a few distinguishing keywords>" \
+  --exclude <N>
+```
+
+It prints one `#<n>\t<title>` line per candidate open issue that may already cover this
+observation (empty output ⇒ no likely duplicate), fusing the read-after-write `needs-triage`
+queue with the eventually-consistent search index — the two sources this skill used to query
+by hand. It resolves the target repo itself (ADR 0062 §1), so it needs no `$REPO`.
+
+Read the candidates — it's a search, not an oracle. If one genuinely covers the same thing:
+
+- **Agent-filed duplicate** → it is close-eligible. Fold anything this issue adds into the
+  original as a comment, then close this one not-planned as a duplicate via the Step-6 close
+  path ([`close-not-planned.md`](./close-not-planned.md) — the duplicate-content-preservation
+  step is exactly this case).
+- **Human-filed duplicate** → **never auto-closed** (Step 5). Comment linking the original
+  (`duplicate of #M`) and apply `status:needs-info`, or triage it normally with a triage-note
+  cross-link — the human decides whether to close their own. The dedup surfaces it; it does
+  not close it.
+
+An empty result is the common case — proceed to classify.
+
 ---
 
 ## Step 2 — Classify into exactly ONE of six types
@@ -202,22 +234,21 @@ How to split:
 2. **Re-query before you create.** Report agents run concurrently with your sweep
    (several people run them, from their own accounts), so the queue you listed at
    the start is already stale. Immediately before creating *any* new issue — a
-   split child or a follow-up you spotted while triaging — re-list
-   `status:needs-triage` and keyword-search open issues for the same observation:
+   split child or a follow-up you spotted while triaging — run the same shared
+   **intake-dedup tool** (ADR 0181; the one Step 1 and the `report` skill use) on the
+   new unit's title + keywords:
 
    ```bash
-   gh api "repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100" \
-     --jq '.[] | "#\(.number) \(.title)"'
-   gh api "search/issues?q=repo:$REPO+is:issue+is:open+<keywords>" \
-     --jq '.items[] | "#\(.number) \(.title)"'
+   node packages/pipeline-cli/src/bin.ts intake-dedup check \
+     --query "<the new unit's title + a few distinguishing keywords>"
    ```
 
-   The two commands guard different failure modes — don't drop either: the label
-   list is read-after-write consistent and catches an issue filed seconds ago; the
-   search runs against GitHub's eventually-consistent index but covers older open
-   issues that already left the queue. Join keywords with `+`
-   (e.g. `…+is:open+retry+abort`) — raw spaces inside the quoted URL produce a
-   malformed query.
+   It fuses the two sources this check always used — the label list is
+   read-after-write consistent and catches an issue filed seconds ago; the search
+   runs against GitHub's eventually-consistent index but covers older open issues
+   that already left the queue. Keyword joining and query shape are the tool's job
+   now — you pass free text, not a hand-built `q=` string; it resolves the repo
+   itself (ADR 0062 §1), so it needs no `$REPO`.
 
    If an existing issue already covers it, enrich/triage that one instead of filing
    a twin. (This rule exists because a triage run once filed a duplicate of an issue
