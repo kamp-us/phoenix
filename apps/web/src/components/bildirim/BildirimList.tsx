@@ -8,24 +8,13 @@
  * (`bildirimTarget`), never a broken link.
  */
 import {useEffect, useRef, useState} from "react";
-import {
-	useFateClient,
-	useListView,
-	useLiveView,
-	useRequest,
-	useView,
-	type ViewRef,
-	view,
-} from "react-fate";
+import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
-import type {
-	Notification,
-	NotificationChannel,
-	NotificationMarkReceipt,
-} from "../../../worker/features/fate/views";
+import type {Notification, NotificationMarkReceipt} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {LoadMoreButton} from "../../fate/wire";
 import {bildirimCopy, bildirimTarget, rowUnread, targetLinkLabel} from "./bildirim";
+import {useBildirimUnread} from "./useBildirimUnread";
 
 const PAGE_SIZE = 20;
 
@@ -46,24 +35,12 @@ const MarkReceiptView = view<NotificationMarkReceipt>()({
 	unreadCount: true,
 });
 
-const ChannelView = view<NotificationChannel>()({
-	id: true,
-	unreadCount: true,
-});
-
 const BildirimConnectionView = {
 	items: {node: BildirimRowView},
 } as const;
 
-// `bildirim.channel` rides the same request so `useLiveView(channelRef)` below reads a
-// HYDRATED cache instead of fetching a `byId` — `NotificationChannel` is a loader-less
-// `Fate.syntheticSource`, and a `byId` against it 500s through fate's capability-less arm
-// (#2206). `useRequest` suspends the component until this resolves, so the entity is in the
-// cache before `useLiveView`'s `readView` runs (a pure cache hit, no `byId`); the query
-// then reconciles live over `/fate/live` (seed-then-subscribe).
 const bildirimRequest = {
 	"bildirim.list": {list: BildirimConnectionView, args: {first: PAGE_SIZE}},
-	"bildirim.channel": {view: ChannelView},
 } as const;
 
 export function BildirimList() {
@@ -72,23 +49,29 @@ export function BildirimList() {
 	const fate = useFateClient();
 	const userId = useSession().data?.user?.id ?? null;
 
-	// Live-reconcile the center over `/fate/live` (#1700): subscribe the viewer's
-	// own `NotificationChannel` entity (recipient-scoped by construction — the id is
-	// the session user's), and when a recorded notification bumps its live unread
-	// count, refetch the list once (network-only) so the new row surfaces without a
-	// nav or refresh. `bildirim.list` has no per-node live topic; watching the
-	// per-recipient count is the coarse signal that a page re-read is due.
-	const channelRef = userId ? fate.ref("NotificationChannel", userId, ChannelView) : null;
-	const channel = useLiveView(ChannelView, channelRef);
+	// Live-reconcile the center over `/fate/live` (#1700): when a recorded notification
+	// bumps the viewer's live unread count, refetch the list once (network-only) so the
+	// new row surfaces without a nav or refresh. `bildirim.list` has no per-node live
+	// topic; the per-recipient count is the coarse signal that a re-read is due.
+	//
+	// The count comes from `useBildirimUnread` — the same seed-gated, NON-suspending live
+	// read the shell badge uses — NOT a `useLiveView(channelRef)`. `NotificationChannel` is
+	// a loader-less `Fate.syntheticSource`, so the suspending read's `readView` fires a
+	// `byId` on any cache miss, which 500s through fate's capability-less arm as an
+	// `INTERNAL_ERROR` (#2206). That surfaced as the popover's generic "yüklenemedi": the
+	// popover mounts this list from the shell where the co-bundled hydration isn't a hard
+	// guarantee, so the suspending read hit the `byId`. `useBildirimUnread` never issues a
+	// `byId` (it reads only once its own query seed has hydrated the cache), so the live
+	// count is byId-safe in every mount context (#2982).
+	const liveUnread = useBildirimUnread(userId != null, userId);
 	const lastUnread = useRef<number | null>(null);
 	useEffect(() => {
-		const next = channel?.unreadCount ?? null;
-		if (next == null) return;
-		if (lastUnread.current != null && next > lastUnread.current) {
+		if (userId == null) return;
+		if (lastUnread.current != null && liveUnread > lastUnread.current) {
 			void fate.request(bildirimRequest, {mode: "network-only"}).catch(() => {});
 		}
-		lastUnread.current = next;
-	}, [channel?.unreadCount, fate]);
+		lastUnread.current = liveUnread;
+	}, [liveUnread, userId, fate]);
 
 	// This session's mark state — the receipt confirms the write but doesn't
 	// rewrite the listed rows, so rows fold these into their unread reading.
