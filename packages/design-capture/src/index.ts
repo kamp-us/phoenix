@@ -10,6 +10,18 @@
  * comment, keyed off the per-app `<!-- preview-deploy:<app> -->` anchor.
  */
 
+// The blessing surface (ADR 0183 §5, epic #2955 stories 2/9, issue #2962): render the
+// founder gallery comment from a candidate set, parse the founder's verdicts, and fold
+// approve/redline into a golden-pointer move — the human-in-the-loop bless → commit path
+// (no re-render: the blessed sha comes from the set the founder saw).
+export type {
+	ApplyBlessingInput,
+	BlessDecision,
+	BlessedSurface,
+	BlessingResult,
+	BlessVerdict,
+} from "./blessing-surface.ts";
+export {applyBlessing, parseBlessDecisions, renderBlessingGallery} from "./blessing-surface.ts";
 // The candidate-render step (ADR 0183 §5, epic #2955 story 1): render the founder
 // priority surfaces over a flag-forced preview into a blessing candidate set, staged
 // for the founder's bless (#2962) — each candidate anchored to the exact depo sha256

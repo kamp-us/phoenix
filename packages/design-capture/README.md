@@ -210,6 +210,48 @@ state as provenance; this step **consumes** an already-flag-forced preview, it d
 force flags (that mechanism is emitted separately, #2955). The depo pasaport apiKey
 resolves via `--token`, else `KAMPUS_TOKEN`, else `~/.config/kampus/token` (ADR 0045).
 
+## The blessing surface (`golden-gallery` + `golden-bless-set`, #2962)
+
+The blessing surface is the **human-in-the-loop bless → commit path** on top of the
+candidate set (#2961) and the golden pointer (#2960) — epic #2955 stories 2/9, ADR
+0183 §5. The founder takes a candidate set, blesses/redlines it down to the small
+golden set (~5–8 screens), and the approved candidates are committed as golden
+baselines. It renders **no** new bytes: a bless is a **pointer move** to the exact
+`sha256` the founder saw in the gallery (the ADR 0183 §5 no-re-render guard).
+
+- **`blessing-surface.ts`** (pure) —
+  - `renderBlessingGallery(set)` emits the founder-facing GitHub gallery comment
+    (option a): one section per candidate in founder order, embedding the depo URL at
+    full resolution, plus a copy-paste **decision template** (`<surfaceId>
+    approve|redline` per line) the founder marks. The placeholder ships un-defaulted, so
+    a copy without editing fails loud rather than silently blessing.
+  - `parseBlessDecisions(text)` reads the filled-in template (ignoring blanks, `#`
+    comments, and ``` fences) into `{surfaceId, verdict}` decisions.
+  - `applyBlessing({set, decisions, blessedDate, pointer})` folds the verdicts into a
+    golden-pointer move: it blesses each **approved** surface to the `sha256` it carries
+    **in the set** (never a decision-supplied value — the no-re-render guard is
+    structural), leaves **redlined** ones out, and fails closed on an unaddressed
+    candidate, an unknown surface, or a duplicate decision. A re-bless (story 9) is the
+    same fold over the existing pointer — an explicit committed update to the new sha,
+    never a silent overwrite; a redline leaves an existing golden untouched (it is "not
+    re-blessed", not "removed").
+
+```bash
+# 1. render the gallery comment from a candidate set, post it on the PR for the founder:
+node packages/design-capture/src/bin.ts golden-gallery \
+  --set /tmp/candidates/candidate-set.json > gallery.md
+
+# 2. the founder copies the decision template, marks each surface approve|redline into
+#    decisions.txt, then commit the blessed set into the golden pointer:
+node packages/design-capture/src/bin.ts golden-bless-set \
+  --set /tmp/candidates/candidate-set.json \
+  --decisions decisions.txt
+```
+
+`golden-bless-set` writes `golden-pointer.json` (the `--pointer` default) — a one-line
+pointer move per approved surface, reviewable in a normal diff. It is the batch analogue
+of the single-surface `golden-bless`; both are pure + fs and never re-render bytes.
+
 ## The undocumented endpoint + the fallback (load-bearing)
 
 The upload POSTs the PNG bytes to
