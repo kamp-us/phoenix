@@ -331,11 +331,9 @@ export const renderTable = (scorecard: Scorecard): string => {
 	return lines.join("\n");
 };
 
-// --- The report's on-disk input: a serialized array of runner rows (`RunRow[]`) --------------
-//
-// The report command reads the runner's graded rows from a JSON file — the array `collectRuns`
-// produces, serialized. These schemas decode that file totally: a malformed body or a shape
-// mismatch returns a typed `Result` failure, never a throw (mirrors `decodeManifest`).
+// On-disk input: a serialized array of runner rows (`RunRow[]`) — the array `collectRuns`
+// produces. These schemas decode it totally: a malformed body or shape mismatch returns a
+// typed `Result` failure, never a throw (mirrors `decodeManifest`).
 
 const StageSpendSchema = Schema.Struct({
 	input: Schema.Finite,

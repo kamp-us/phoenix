@@ -128,7 +128,7 @@ const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
 	});
 });
 
-// --- REST arg builders (REST only, never GraphQL) --------------------------------
+// REST-only arg builders — never GraphQL.
 
 // `-X GET -f k=v` sends query params (with encoding), so a wave label with special chars is safe.
 const clusterArgs = (repo: string, waveLabel: string): ReadonlyArray<string> => [
@@ -151,8 +151,6 @@ const commentsArgs = (repo: string, issue: number): ReadonlyArray<string> => [
 	`repos/${repo}/issues/${issue}/comments?per_page=100`,
 ];
 
-// --- boundary decoders -----------------------------------------------------------
-
 /** A raw issue as the issues endpoint returns it; `pull_request` present ⇒ it's a PR, filtered out. */
 const RawIssue = Schema.Struct({
 	number: Schema.Number,
@@ -168,8 +166,6 @@ const RawComment = Schema.Struct({
 	user: Schema.NullOr(Schema.Struct({login: Schema.String})),
 });
 const decodeComments = Schema.decodeUnknownEffect(Schema.Array(RawComment));
-
-// --- IO operations ---------------------------------------------------------------
 
 /** The issue numbers carrying the wave label (PRs filtered out — the label binds to issues). */
 const clusterIssues = Effect.fn("Github.clusterIssues")(function* (

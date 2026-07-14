@@ -160,7 +160,7 @@ const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
 	});
 });
 
-// --- REST arg builders (REST only, never GraphQL) --------------------------------
+// REST-only arg builders — never GraphQL.
 
 const headShaArgs = (repo: string, pr: number): ReadonlyArray<string> => [
 	"api",
@@ -206,8 +206,6 @@ const patchCommentArgs = (repo: string, id: number, body: string): ReadonlyArray
 	".id",
 ];
 
-// --- boundary decoders -----------------------------------------------------------
-
 /** A raw comment as the issues/comments endpoint returns it; only these fields are read. */
 const RawComment = Schema.Struct({
 	id: Schema.Number,
@@ -223,8 +221,6 @@ const toVerdictComment = (raw: (typeof RawComment)["Type"]): VerdictComment => (
 	createdAt: raw.created_at,
 	body: raw.body ?? "",
 });
-
-// --- IO operations ---------------------------------------------------------------
 
 const currentHead = Effect.fn("Github.currentHead")(function* (repo: string, pr: number) {
 	return (yield* runGh(headShaArgs(repo, pr))).trim();

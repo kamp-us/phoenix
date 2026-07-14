@@ -89,8 +89,6 @@ export const parseLinkedIssues = (body: string, branch: string): ReadonlyArray<n
 	return [...nums];
 };
 
-// --- view model -------------------------------------------------------------------
-
 /** One epic and its sub-issue children (both states shown; a puller wants the whole tree). */
 export interface EpicNode {
 	readonly epic: Issue;
@@ -208,8 +206,6 @@ export const buildView = (
 		staleP1s: deriveStaleP1s(facts.issues, activeMilestone),
 	};
 };
-
-// --- rendering (pure over the view model) -----------------------------------------
 
 const issueLine = (i: Issue): string => {
 	const prio = i.priority ? ` ${i.priority}` : "";

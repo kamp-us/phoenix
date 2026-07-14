@@ -209,8 +209,6 @@ export const renderReport = (verdict: RoadmapGuardVerdict): string => {
 	);
 };
 
-// --- ROADMAP.md parsing (pure over the file text) --------------------------------
-
 /** Resolve a `## <heading>` markdown table's milestone cell (`#17`) to its number, else null. */
 export const parseMilestoneCell = (cell: string): number | null => {
 	const m = cell.match(/#(\d+)/);
