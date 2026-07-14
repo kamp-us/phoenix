@@ -1427,12 +1427,50 @@ run-evidence) and weakens none of them.
 
 ---
 
+## Step 3.7 — Landed-comment leak scan: refuse to enqueue a PR whose comments carry a machine-local path (guard 4)
+
+Every leak guard *before* this one is **emit-side** — a step the emitter (a `review-*` reviewer, a
+`write-code` progress comment, …) chooses to run: `verdict post`'s `emissionDefect`, its folded-in
+read-back, the `review-*` MANDATE blocks. That makes them all bypassable in one deviation: a reviewer
+who freelances a raw `gh api -f body=@$VERDICT_FILE` post skips the tool AND its verify in a single
+off-mandate step, landing a `/private/tmp/…`/`@filepath` body on a public PR and producing no valid
+marker — and **nothing off that reviewer's own transcript re-checks the comment that actually
+landed** (the #3018 / #3005 bypass; issue #3019). This step closes that structural gap by moving the
+one missing check to the gate **every** merge crosses, regardless of emit path.
+
+Before you enqueue, scan the PR's **landed** comments — the issue conversation (where verdict markers
+live) **and** the inline review comments — for a machine-local path leak, over the `gh api` REST
+boundary. Reuse the shared `findCommentLeaks` detector via the pipeline-cli verb (the same pure
+matcher `redact-leaks` and `verdict post` already consume — one detector, not a re-invented one):
+
+```bash
+# guard 4 — refuse the enqueue on ANY live leak in a landed comment (exit 2 = a leak; ADR 0092 fail-closed)
+pipeline-cli leak-guard scan-pr "$PR" || {
+  echo "ship-it: REFUSING to enqueue #$PR — a landed comment carries a machine-local path (issue #3019)." >&2
+  echo "  Remediate, then re-run ship-it:" >&2
+  echo "  1. redact each flagged comment body — pipeline-cli redact-leaks (the merged #3021 tool) preserves evidential shape;" >&2
+  echo "  2. re-post the redacted body (a verdict via 'pipeline-cli verdict post', which now self-verifies the landed comment, #3019);" >&2
+  echo "  3. the underlying issue is a bypassed emit path — route the PR back to repair so the leaking comment is re-emitted through the mandated choke point." >&2
+  exit 1
+}
+```
+
+Refuse **fail-closed**, exactly like the other pre-enqueue guards: a non-zero `scan-pr` (a live leak)
+STOPS the ship — you do not enqueue, you route to remediation (redact via `redact-leaks`, re-post
+through `verdict post`, and repair the bypass). This guard is **additive**: it layers a new
+pre-enqueue refusal on the existing sequence (Step 0 §CP approval, Step 2/2b current-head PASS, Step 3
+green CI, Step 3.5 run-evidence, Step 3.6 inline threads) and weakens none of them. It catches a
+leaked comment **regardless of how it was emitted** — the property no emit-side guard can offer.
+
+---
+
 ## Step 4 — Enqueue for squash-merge (auto-merge / merge queue)
 
 Every guard cleared: not a control-plane PR without a current-head team approval (Step 0), the
 required gates' latest verdicts are a current-head PASS (Step 2/2b), checks are green (Step 3),
-the run-evidence bundle is present, commit-bound, and all-`pass` (Step 3.5), and **no unresolved
-inline review thread is substantive** (Step 3.6, ADR 0158). **Enqueue** it for a squash merge — the
+the run-evidence bundle is present, commit-bound, and all-`pass` (Step 3.5), **no unresolved
+inline review thread is substantive** (Step 3.6, ADR 0158), and **no landed comment carries a
+machine-local path** (Step 3.7, issue #3019). **Enqueue** it for a squash merge — the
 merge queue owns the final merge, testing the prospective batched merge result against a fresh
 base before it lands (ADR
 [0132](https://github.com/kamp-us/phoenix/blob/main/.decisions/0132-merge-queue-for-base-freshness.md)):

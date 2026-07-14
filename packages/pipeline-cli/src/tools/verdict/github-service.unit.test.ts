@@ -1,7 +1,13 @@
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
 import {Effect, Layer, Sink, Stream} from "effect";
 import {ChildProcessSpawner} from "effect/unstable/process";
-import {Github, GithubLive, type RepoResolutionError, VerdictInputError} from "./github.ts";
+import {
+	Github,
+	GithubLive,
+	type RepoResolutionError,
+	VerdictInputError,
+	VerdictVerifyError,
+} from "./github.ts";
 
 const PINNED_REPO = "kamp-us/phoenix";
 let savedEnv: string | undefined;
@@ -179,6 +185,8 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 					comment({id: 1, login: "someone", body: "just chatter"}),
 				]),
 				[`POST ${P}/issues/${PR}/comments`]: "999",
+				// the #3019 read-back: post re-fetches the landed comment and re-runs emissionDefect
+				[`GET ${P}/issues/comments/999`]: BODY,
 			}),
 		),
 	);
@@ -194,6 +202,7 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 					comment({id: 42, login: "usirin", body: `review-doc: FAIL @ ${OLD} — changes-requested`}),
 				]),
 				[`PATCH ${P}/issues/comments/42`]: "42",
+				[`GET ${P}/issues/comments/42`]: BODY,
 			}),
 		),
 	);
@@ -209,6 +218,7 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 					comment({id: 7, login: "cansirin", body: `review-doc: PASS @ ${OLD} — merge-ready`}),
 				]),
 				[`POST ${P}/issues/${PR}/comments`]: "1000",
+				[`GET ${P}/issues/comments/1000`]: BODY,
 			}),
 		),
 	);
@@ -266,6 +276,7 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 				"GET user": "usirin",
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
 				[`POST ${P}/issues/${PR}/comments`]: "777",
+				[`GET ${P}/issues/comments/777`]: `review-doc: PASS @ ${"a".repeat(40)}`,
 			}),
 		),
 	);
@@ -279,6 +290,7 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 				"GET user": "usirin",
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
 				[`POST ${P}/issues/${PR}/comments`]: "888",
+				[`GET ${P}/issues/comments/888`]: "review-doc: advisory — see thread",
 			}),
 		),
 	);
@@ -341,6 +353,79 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 				"GET user": "usirin",
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
 				[`POST ${P}/issues/${PR}/comments`]: "890",
+				[`GET ${P}/issues/comments/890`]: `review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${HEAD40}`,
+			}),
+		),
+	);
+});
+
+// The #3019 defense-in-depth self-verify: after post writes the comment it re-fetches the LANDED body
+// and re-runs emissionDefect. A clean input that did NOT land as a clean in-namespace, leak-free marker
+// fails the post (VerdictVerifyError) instead of reporting a false success. The input here always passes
+// emissionDefect (a clean `PASS @ <40hex>`) so the write happens — the GET fixture models what landed.
+describe("Github.post — the folded-in landed-comment self-verify (#3019)", () => {
+	const CLEAN_INPUT = `review-doc: PASS @ ${"a".repeat(40)}`;
+
+	it.effect("the landed comment LEAKS a machine-local path → VerdictVerifyError, no success", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip((yield* Github).post(PR, "doc", CLEAN_INPUT));
+			assert.isTrue(error instanceof VerdictVerifyError);
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`POST ${P}/issues/${PR}/comments`]: "555",
+				[`GET ${P}/issues/comments/555`]: `review-doc: PASS @ ${"a".repeat(40)}\n\nsee /private/tmp/review-verdict.E2CYtu`,
+			}),
+		),
+	);
+
+	it.effect(
+		"the landed comment is a bare `@path` / non-marker first line → VerdictVerifyError",
+		() =>
+			Effect.gen(function* () {
+				const error = yield* Effect.flip((yield* Github).post(PR, "doc", CLEAN_INPUT));
+				assert.isTrue(error instanceof VerdictVerifyError);
+			}).pipe((effect) =>
+				provide(effect, {
+					"GET user": "usirin",
+					[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+					[`POST ${P}/issues/${PR}/comments`]: "556",
+					[`GET ${P}/issues/comments/556`]: "@/tmp/review-doc-verdict.E2CYtu",
+				}),
+			),
+	);
+
+	it.effect(
+		"the just-posted comment can't be re-fetched (missing/deleted) → VerdictVerifyError",
+		() =>
+			Effect.gen(function* () {
+				const error = yield* Effect.flip((yield* Github).post(PR, "doc", CLEAN_INPUT));
+				assert.isTrue(error instanceof VerdictVerifyError);
+			}).pipe((effect) =>
+				provide(effect, {
+					"GET user": "usirin",
+					[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+					[`POST ${P}/issues/${PR}/comments`]: "557",
+					[`GET ${P}/issues/comments/557`]: {
+						stdout: "",
+						exitCode: 1,
+						stderr: "HTTP 404: Not Found",
+					},
+				}),
+			),
+	);
+
+	it.effect("a clean marker that landed intact → success (the verify passes it through)", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).post(PR, "doc", CLEAN_INPUT);
+			assert.deepStrictEqual(result, {_tag: "posted", commentId: 558});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`POST ${P}/issues/${PR}/comments`]: "558",
+				[`GET ${P}/issues/comments/558`]: CLEAN_INPUT,
 			}),
 		),
 	);

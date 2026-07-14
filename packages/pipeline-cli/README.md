@@ -104,8 +104,11 @@ semantics; it does **not** change what any gate verifies.
 - **`verdict post --pr N --gate <g> [--body-file <f>]`** — the ADR-0058 rule-2 **upsert**: read
   the composed verdict body (from `--body-file` or stdin), refuse fail-closed if its first line is
   not *this* gate's marker (the cross-namespace emission bug), then PATCH our own prior marker in
-  the namespace if one exists, else POST — exactly one verdict comment per (PR, gate). Prints
-  `patched <id>` / `posted <id>`.
+  the namespace if one exists, else POST — exactly one verdict comment per (PR, gate). It then
+  **re-fetches the landed comment and re-runs `emissionDefect` on its body** (the folded-in
+  self-verify, #3019): a body that passed the input gate but did not land as a clean in-namespace,
+  leak-free marker fails the post (non-zero) instead of reporting a false success — closing the
+  "called `post` but skipped the separate verify line" gap. Prints `patched <id>` / `posted <id>`.
 
 The pure match core (`verdict-match.ts`) is IO-free and unit-tested table-driven; `github.ts` is
 the REST-only `gh api` boundary (the `epic-lock` `github.ts` service pattern).
@@ -143,14 +146,26 @@ node packages/pipeline-cli/src/bin.ts intake-dedup check --query "retry helper s
 node packages/pipeline-cli/src/bin.ts intake-dedup check --query "<title + keywords>" --exclude 2802
 ```
 
-### `leak-guard` — personal-data leak gate for shared artifacts (#173, #2357)
+### `leak-guard` — personal-data leak gate for shared artifacts (#173, #2357, #2796, #3019)
 
-Two modes, one deny-list-per-mode core:
+Four verbs over the shared deny-list-per-surface core (`findLeaks` for doc files, the stricter
+`findCommentLeaks` for comment bodies):
 
 - **`leak-guard scan <file>…`** — the changed-file gate (#173): reports any user-local
   filesystem path (`/Users/<name>`, `~/.claude`, `~/code/…`, `/vault/…`) leaking into a
   shared **doc surface** (`.md`, `.decisions/`, `.patterns/`), exit 2 on a hit. CI hands it
   every changed file; the core (`findLeaks`) self-scopes to doc surfaces.
+- **`leak-guard scan-comment [--body-file <f>]`** — the pre-post net for a single PR/issue
+  **comment body** (stdin or `--body-file`, #2796): a comment is unconditionally a public
+  artifact, so `findCommentLeaks` runs with no doc-surface gate and the stricter temp-root
+  patterns (`/var/folders`, `/private/tmp`, `/tmp`) — exit 2 on a leak, run before a
+  `gh api …/comments` post.
+- **`leak-guard scan-pr <PR>`** — the **landed-comment** scan (#3019): fan `findCommentLeaks`
+  over a PR's already-posted comments — the issue conversation **and** the inline review
+  comments, fetched over `gh api` REST — reporting each leak as `<kind> comment <id>: <span>`,
+  exit 2 on a live leak. This is the check no emit-side guard can offer: it catches a leaked
+  comment **regardless of emit path** (a raw `gh api -f body=@$FILE` bypass, #3018/#3005), which
+  is why `ship-it` runs it as a pre-enqueue preflight (its Step 3.7) and refuses to merge on a hit.
 - **`leak-guard sweep [--dir <d>] [--root <r>]`** — the pipeline-crew sanitization sweep
   (#2357, crew epic #2342 Phase 4). The crew plugin ships **zero real operator data**, so
   its whole tree is swept by a **purely generic, pattern-based** personal-data detector —
@@ -169,6 +184,9 @@ Two modes, one deny-list-per-mode core:
 ```bash
 # changed-file doc-surface scan (exit 2 on a leak)
 node packages/pipeline-cli/src/bin.ts leak-guard scan path/to/file.md
+
+# scan a PR's landed comments (issue + review) — the ship-it pre-enqueue preflight (exit 2 on a leak)
+node packages/pipeline-cli/src/bin.ts leak-guard scan-pr 123
 
 # sweep the whole pipeline-crew tree (exit 1 on any hit or zero scope)
 node packages/pipeline-cli/src/bin.ts leak-guard sweep

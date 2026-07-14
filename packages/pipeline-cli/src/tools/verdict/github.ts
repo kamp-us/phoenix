@@ -65,6 +65,20 @@ export class VerdictInputError extends Schema.TaggedErrorClass<VerdictInputError
 	},
 ) {}
 
+/**
+ * The LANDED verdict comment failed its post-write self-verify: after `post` wrote the comment it
+ * re-fetched it and the landed body is not a clean, in-namespace marker (a `@path`/non-marker first
+ * line, or a machine-local path anywhere in the body). This is the defense-in-depth read-back folded
+ * INTO `post` so the "called `post` but skipped the separate verify line" gap can't leak a bad
+ * marker (issue #3019). Non-recoverable: the tool exits non-zero rather than report a false success.
+ */
+export class VerdictVerifyError extends Schema.TaggedErrorClass<VerdictVerifyError>()(
+	"@kampus/verdict/VerdictVerifyError",
+	{
+		message: Schema.String,
+	},
+) {}
+
 /** The `read` verdict — the resolved outcome plus the head it was resolved against. */
 export interface ReadResult {
 	readonly outcome: VerdictOutcome;
@@ -206,6 +220,16 @@ const patchCommentArgs = (repo: string, id: number, body: string): ReadonlyArray
 	".id",
 ];
 
+// The read-back GET for the post self-verify (#3019): fetch the single comment we just upserted and
+// return its LANDED body, so `emissionDefect` re-checks the marker/leak-clean shape as it actually
+// landed — the same issues/comments/<id> endpoint PATCH targets.
+const getCommentArgs = (repo: string, id: number): ReadonlyArray<string> => [
+	"api",
+	`repos/${repo}/issues/comments/${id}`,
+	"--jq",
+	".body",
+];
+
 /** A raw comment as the issues/comments endpoint returns it; only these fields are read. */
 const RawComment = Schema.Struct({
 	id: Schema.Number,
@@ -224,6 +248,36 @@ const toVerdictComment = (raw: (typeof RawComment)["Type"]): VerdictComment => (
 
 const currentHead = Effect.fn("Github.currentHead")(function* (repo: string, pr: number) {
 	return (yield* runGh(headShaArgs(repo, pr))).trim();
+});
+
+/**
+ * The post self-verify (#3019): re-fetch the comment `post` just upserted and assert its LANDED body
+ * passes the SAME `emissionDefect` gate the input passed — a marker on line one, a bindable `@ <sha>`,
+ * and no machine-local path anywhere. This is the read-back folded INTO `post` so a caller who calls
+ * `post` but skips the separate `validate`/read-back line still can't leave a `@path`/non-marker/leaking
+ * comment on a public PR reporting success. A failed re-fetch (a missing/deleted comment) is itself a
+ * verify failure. Fail-closed: only a clean landed body returns; anything else raises VerdictVerifyError.
+ */
+const verifyLanded = Effect.fn("Github.verifyLanded")(function* (
+	repo: string,
+	id: number,
+	gate: VerdictGate,
+) {
+	const landed = yield* runGh(getCommentArgs(repo, id)).pipe(
+		Effect.catchTag(
+			"@kampus/verdict/GhCommandError",
+			(cause) =>
+				new VerdictVerifyError({
+					message: `could not re-fetch the just-posted verdict comment #${id} to self-verify it (${cause.stderr.trim() || `exit ${cause.exitCode}`}) — refusing to report success on an unverifiable post (#3019)`,
+				}),
+		),
+	);
+	const defect = emissionDefect(landed, gate);
+	if (defect !== null) {
+		return yield* new VerdictVerifyError({
+			message: `the LANDED verdict comment #${id} failed self-verify: ${defect} — a bypassed/hand-rolled body reached GitHub; the post is rejected rather than reported as success (#3019)`,
+		});
+	}
 });
 
 const listComments = Effect.fn("Github.listComments")(function* (repo: string, pr: number) {
@@ -298,7 +352,9 @@ const read = Effect.fn("Github.read")(function* (
  * not a partial/non-hex/path-glued value (rejects the `mktemp`-path leak of #2683). An advisory
  * SHA-less first line stays postable. Then scan our OWN prior marker in the namespace (newest by
  * `(created_at, id)`) and PATCH it if present else POST a fresh one. The own-authored scope means
- * two reviewers never stomp each other's records.
+ * two reviewers never stomp each other's records. Finally, `verifyLanded` re-fetches the upserted
+ * comment and re-runs `emissionDefect` on its LANDED body — the defense-in-depth self-verify (#3019)
+ * that fails the post if the marker didn't land clean, rather than reporting a false success.
  */
 const post = Effect.fn("Github.post")(function* (
 	repo: string,
@@ -317,21 +373,25 @@ const post = Effect.fn("Github.post")(function* (
 		.filter((c) => c.author === me && re.test(c.body))
 		.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id));
 	const priorId = mine[mine.length - 1]?.id;
-	if (priorId !== undefined) {
-		const decoded = yield* json(patchCommentArgs(repo, priorId, body));
-		return {
-			_tag: "patched",
-			commentId: typeof decoded === "number" ? decoded : priorId,
-		} satisfies PostResult;
-	}
-	const decoded = yield* json(postCommentArgs(repo, pr, body));
-	if (typeof decoded !== "number") {
-		return yield* new GhParseError({
-			args: postCommentArgs(repo, pr, "<body>"),
-			message: "comment POST did not return a numeric id",
-		});
-	}
-	return {_tag: "posted", commentId: decoded} satisfies PostResult;
+	const result: PostResult = yield* Effect.gen(function* () {
+		if (priorId !== undefined) {
+			const decoded = yield* json(patchCommentArgs(repo, priorId, body));
+			return {
+				_tag: "patched",
+				commentId: typeof decoded === "number" ? decoded : priorId,
+			} satisfies PostResult;
+		}
+		const decoded = yield* json(postCommentArgs(repo, pr, body));
+		if (typeof decoded !== "number") {
+			return yield* new GhParseError({
+				args: postCommentArgs(repo, pr, "<body>"),
+				message: "comment POST did not return a numeric id",
+			});
+		}
+		return {_tag: "posted", commentId: decoded} satisfies PostResult;
+	});
+	yield* verifyLanded(repo, result.commentId, gate);
+	return result;
 });
 
 /**
@@ -357,7 +417,12 @@ export class Github extends Context.Service<
 			body: string,
 		) => Effect.Effect<
 			PostResult,
-			RepoResolutionError | GhCommandError | GhParseError | VerdictInputError | Schema.SchemaError
+			| RepoResolutionError
+			| GhCommandError
+			| GhParseError
+			| VerdictInputError
+			| VerdictVerifyError
+			| Schema.SchemaError
 		>;
 	}
 >()("@kampus/verdict/Github") {}

@@ -15,7 +15,9 @@
  * rule 2): it reads the composed verdict body from `--body-file` (or stdin), refuses fail-closed
  * on any `emissionDefect` (wrong namespace, unbindable `@ <sha>`, or a non-full-40-hex/path-glued
  * SHA field), then PATCHes our own prior marker in the namespace if one exists, else POSTs —
- * exactly one verdict comment per (PR, gate). It prints `patched <id>` / `posted <id>` on stdout.
+ * exactly one verdict comment per (PR, gate). It then re-fetches the landed comment and re-runs
+ * `emissionDefect` on its body (the folded-in self-verify, #3019), failing non-zero if the marker
+ * didn't land clean rather than reporting a false success. It prints `patched <id>` / `posted <id>`.
  *
  * `validate --gate <g> [--body-file <f>]` runs that same `emissionDefect` gate WITHOUT posting —
  * the read-back assertion an emit path (review-code's native `APPROVE`) runs before a channel
@@ -124,9 +126,12 @@ const post = Command.make(
 				"empty verdict body — nothing to post (pass --body-file or pipe the body on stdin)",
 			);
 		}
-		const result = yield* (yield* Github)
-			.post(pr, g, body)
-			.pipe(Effect.catchTag("@kampus/verdict/VerdictInputError", (error) => fail(error.message)));
+		const result = yield* (yield* Github).post(pr, g, body).pipe(
+			Effect.catchTag("@kampus/verdict/VerdictInputError", (error) => fail(error.message)),
+			// The landed-comment self-verify (#3019): a body that passed the input gate but did not
+			// land as a clean in-namespace, leak-free marker fails the post — never a false success.
+			Effect.catchTag("@kampus/verdict/VerdictVerifyError", (error) => fail(error.message)),
+		);
 		yield* Console.log(`${result._tag} ${result.commentId}`);
 	}),
 ).pipe(
