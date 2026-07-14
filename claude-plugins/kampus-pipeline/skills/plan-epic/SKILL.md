@@ -415,6 +415,53 @@ The invariants you must hold:
   not by reference between child bodies. (The story numbers point into the epic plan's
   `### User stories`, which is shared context, not a sibling body.)
 
+### Emit idempotently — reconcile against what already exists, never re-mint
+
+Child emission is **not** a blind "create one issue per proposed slice." Before you mint a
+single child, read the two sets a re-dispatch must reconcile against, so a retry, a
+double-dispatch, or a decomposition that overlaps existing work creates **zero duplicates**.
+This is the emission-code half of the skill's "re-runs reconcile" promise: the epic-lock
+(§Acquire the epic-lock) only serializes *concurrent* runs, it does **not** stop a *sequential*
+re-dispatch from re-minting a set the epic already has — a prior run's children, or open work
+another issue already tracks (the #2963/#2964/#2965 set re-minted as #2968/#2969/#2970 ~51s
+later; #1968 and #2099 the same verdict-resolver work in two places).
+
+**Read both sets once, before the create loop:**
+
+```bash
+# 1. Already-emitted OPEN children of THIS epic — the re-dispatch idempotency set. A re-run must
+#    SKIP any proposed child that matches one of these (reconcile, don't re-create). The sub-issue
+#    list is the source of truth for what the epic already spawned; on a mixed open/closed epic
+#    prefer it over sub_issues_summary (which undercounts).
+gh api "repos/$REPO/issues/<EPIC>/sub_issues?per_page=100" \
+  --jq '.[] | select(.state=="open") | .title' > /tmp/plan-epic-<EPIC>-existing-children.txt
+
+# 2. The open backlog — the cross-backlog overlap set. A decomposition can re-mint work that
+#    already exists as an open standalone issue or another epic's child, so a proposed child that
+#    overlaps an open issue is surfaced/skipped, not minted. (REST issue list, not GraphQL.)
+gh api "repos/$REPO/issues?state=open&per_page=100" \
+  --jq '.[] | select(.pull_request | not) | "#\(.number)\t\(.title)"' > /tmp/plan-epic-<EPIC>-open-backlog.txt
+```
+
+**Then classify each proposed child before you create it:**
+
+- **Already an open child of this epic** (its slice matches an entry in set 1) → **reconcile,
+  don't re-mint.** Skip the create. If the slice's scope drifted, take the re-plan *Amend* path
+  (PATCH the existing child) rather than minting a second one. This is what makes a fresh
+  re-dispatch on an already-planned epic idempotent — it mints only the children genuinely missing
+  from the epic's current sub-issue set.
+- **Overlaps an open backlog issue that is not one of this epic's own children** (set 2) → **do
+  not mint a duplicate.** Surface the overlap in the plan's `### Task-split rationale` naming the
+  existing `#N`, and either fold the slice into a `requires: #N` edge on that issue or drop it from
+  the split. A borderline overlap is *surfaced for the reviewer*, never silently minted.
+- **Genuinely new** (in neither set) → mint it (atomic create below).
+
+The match is a **judgment call you make**, not a byte-equality gate — normalize titles
+(case/whitespace-folded) and read for the same *unit of work*, the way `report`'s pre-file dedup
+query reads for an existing issue before filing. When in doubt on the epic's own child, prefer
+reconcile (skip/Amend) over a second create; when in doubt on a backlog issue, reference it in the
+rationale and let `review-plan` weigh in.
+
 Create each child via REST, assembling its body from a temp file so multi-line
 markdown and backticks survive the shell. Allocate the body file with `mktemp`
 (every other temp this skill uses is already epic-scoped — `/tmp/plan-epic-<EPIC>-*`),
@@ -439,14 +486,19 @@ cat > "$CHILD_BODY_FILE" <<'EOF'
 - [ ] <…>
 EOF
 BODY="$(cat "$CHILD_BODY_FILE")"
+# ATOMIC create — body AND its type/priority/status:planned labels in ONE REST write. `POST /issues`
+# accepts `labels` inline, so an interrupted run can never leave a label-less child: the create
+# either lands the issue WITH its labels or creates nothing. (Values chosen per the paragraph below.)
 gh api repos/$REPO/issues \
   -f title="<sharp single-unit title>" \
   -f body="$BODY" \
+  -f "labels[]=type:feature" -f "labels[]=p2" -f "labels[]=status:planned" \
   --jq '{number,id}'
 ```
 
 Capture both `number` and `id` from the create — Step 4 links by the `id`, so you won't need
-to re-fetch it.
+to re-fetch it. **Link the child as a native sub-issue (Step 4) immediately after this create** —
+the sooner the epic registers the child, the narrower the window a re-dispatch has to reconcile.
 
 Children get their own type from the work they are (`type:feature`, `type:chore`,
 `type:bug`, `type:decision`, `type:investigation`) — **not** inherited from the epic — plus a
@@ -456,17 +508,25 @@ they don't re-enter triage. But they are **not yet pickable either** — they're
 `status:planned` child stays unpickable until the `review-plan` gate validates the ledger and
 flips `planned → status:triaged` (per ADR
 [0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md) — that flip *is* the whole enforcement
-mechanism: an unverified-but-pickable child is unrepresentable). Apply `status:planned` + a
-`type:*` + a `p*`:
+mechanism: an unverified-but-pickable child is unrepresentable). This is the second half of the
+transactional-emission guarantee: because the birth labels go on **at create** (atomic, above) and
+the birth state is `status:planned` — not `status:triaged` — a half-finished run leaves **no
+pickable orphan**. A child interrupted after its atomic create but before its Step-4 sub-issue
+link carries `status:planned` (so `write-code` skips it) and is reconciled by the idempotency guard
+on the next run — it is never a label-less, pickable ghost (the #2968/#2969/#2970 failure mode, born
+body-first with labels applied after).
+
+The child's `type:*` + `p*` + `status:planned` are therefore applied **inline in the create call
+above**, never as a separate follow-up write. The standalone `POST .../labels` endpoint is
+**additive** (it appends, it doesn't replace) — reserve it for the re-plan *Amend* path, where you
+adjust labels on an **already-existing** child:
 
 ```bash
+# amend-only — append/adjust labels on an EXISTING child. Fresh children are labeled AT CREATE (above),
+# so this never runs on the create path; using it there would reopen the label-less-orphan window.
 gh api repos/$REPO/issues/<CHILD>/labels \
   -f "labels[]=type:feature" -f "labels[]=p2" -f "labels[]=status:planned"
 ```
-
-`POST .../labels` is **additive** — it appends to whatever the child already carries,
-it doesn't replace the set (relevant if you re-apply labels to an existing child during
-an amend).
 
 (Type and priority are your call as planner, the same authority triage has — you're
 the one who understands the slice.)
@@ -989,8 +1049,11 @@ scratch one.
 A single invocation takes one epic from triaged brief to executable ledger: read the epic +
 codebase (Step 1), write the PRD-grade plan — product layer (problem / solution / **user
 stories** / testing strategy) then engineering layer (Step 2), split into tracer-bullet
-children that each trace to a story (Step 3), link them as native sub-issues (Step 4), and pin
-the full body with its `## Dependencies` topology (Step 5). Re-runs reconcile.
+children that each trace to a story — emitted idempotently (reconciled against the epic's existing
+children and the open backlog so a re-dispatch or overlap mints no duplicate) and transactionally
+(labels applied at create so a half-run leaves no pickable orphan) (Step 3), link them as native
+sub-issues (Step 4), and pin the full body with its `## Dependencies` topology (Step 5). Re-runs
+reconcile.
 
 Acquire the `status:planning` epic-lock before you mutate (see [§Acquire the
 epic-lock](#acquire-the-epic-lock-before-you-mutate--release-it-on-every-exit)) and **release
