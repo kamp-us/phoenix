@@ -18,15 +18,16 @@
  * `$GITHUB_TOKEN` (a user/GITHUB_TOKEN with write on the target repo) authorizes
  * the undocumented upload endpoint — read as a redacted Config, never a flag.
  */
-import {writeFileSync} from "node:fs";
+import {readFileSync, writeFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {DoormanClientLive, resolveApiKey} from "@kampus/depo";
 import {Config, Console, Effect, Layer, Redacted} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import {applyBlessing, parseBlessDecisions, renderBlessingGallery} from "./blessing-surface.ts";
 import {renderCandidateSet} from "./candidate-render.ts";
-import {serializeCandidateSet} from "./candidate-set.ts";
+import {parseCandidateSet, serializeCandidateSet} from "./candidate-set.ts";
 import {loadGoldenPointer, serializeGoldenPointer} from "./golden-fs.ts";
 import {blessSurface} from "./golden-pointer.ts";
 import {storeGolden} from "./golden-store.ts";
@@ -216,8 +217,71 @@ const renderCandidates = Command.make(
 	),
 );
 
+// --- the blessing surface: gallery + bless-set (#2962) ---------------------------
+
+const setFlag = Flag.string("set").pipe(
+	Flag.withDescription("path to the serialized candidate set (render-candidates --emit output)"),
+);
+
+// golden-gallery: render the founder-facing GitHub gallery comment from a candidate set
+// (ADR 0183 §5, option a). Emits markdown on stdout for the operator to post on the PR;
+// the founder marks each surface approve/redline in the copied decision template.
+const gallery = Command.make(
+	"golden-gallery",
+	{set: setFlag},
+	Effect.fn(function* ({set}) {
+		const candidateSet = parseCandidateSet(readFileSync(set, "utf8"));
+		yield* Console.log(renderBlessingGallery(candidateSet));
+	}),
+).pipe(
+	Command.withDescription(
+		"Render the founder blessing gallery comment from a candidate set (#2962, ADR 0183)",
+	),
+);
+
+const decisionsFlag = Flag.string("decisions").pipe(
+	Flag.withDescription(
+		"path to the founder's filled-in decision block (one `<surfaceId> approve|redline` per line)",
+	),
+);
+
+// golden-bless-set: fold the founder's approve/redline verdicts into a golden-pointer
+// move — bless every approved candidate to the sha256 it carries in the SET (the ADR
+// 0183 §5 no-re-render guard: never a re-render, the committed sha is exactly what the
+// founder saw), leave redlined ones out, and write the committed pointer. A re-bless is
+// the same fold over the existing pointer (story 9's explicit committed update).
+const blessSet = Command.make(
+	"golden-bless-set",
+	{set: setFlag, decisions: decisionsFlag, pointer: pointerFlag},
+	Effect.fn(function* ({set, decisions, pointer}) {
+		const candidateSet = parseCandidateSet(readFileSync(set, "utf8"));
+		const founderDecisions = parseBlessDecisions(readFileSync(decisions, "utf8"));
+		const blessedDate = new Date().toISOString().slice(0, 10);
+		const result = applyBlessing({
+			set: candidateSet,
+			decisions: founderDecisions,
+			blessedDate,
+			pointer: loadGoldenPointer(pointer),
+		});
+		writeFileSync(pointer, serializeGoldenPointer(result.pointer));
+		for (const b of result.blessed) {
+			yield* Console.log(`design-capture: blessed ${b.surfaceId} → depo ${b.sha256}.png`);
+		}
+		for (const surfaceId of result.redlined) {
+			yield* Console.log(`design-capture: redlined ${surfaceId} (not blessed)`);
+		}
+		yield* Console.log(
+			`design-capture: committed ${result.blessed.length} golden(s) (${blessedDate}) → ${pointer}`,
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Commit the founder's blessed candidate set into the golden pointer (#2962, ADR 0183)",
+	),
+);
+
 const cli = Command.make("design-capture").pipe(
-	Command.withSubcommands([capture, bless, renderCandidates]),
+	Command.withSubcommands([capture, bless, renderCandidates, gallery, blessSet]),
 	Command.withDescription(
 		"Playwright-capture + golden-baseline (store/resolve/diff) for the review-design gate (ADR 0165/0183)",
 	),
