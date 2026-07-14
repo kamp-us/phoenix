@@ -18,6 +18,8 @@ export function Subnav({
 	activeFilter,
 	onFilterChange,
 	links,
+	leading,
+	destinations,
 	crumb,
 	input,
 	meta,
@@ -29,6 +31,14 @@ export function Subnav({
 	activeFilter?: string;
 	onFilterChange?: (id: string) => void;
 	links?: SubnavLink[];
+	// Zone slots for the SubnavShell recipe (ADR 0182): `leading` is the context/crumb zone
+	// and `destinations` is the single sub-destinations/filters zone the consumer composes
+	// its route-links or stateful buttons inside. `destinations` renders INSIDE the bar's
+	// filters row — the structural fix for sözlük's orphaned alphabet, which had rendered as
+	// a detached sibling of the bar. Additive over the older typed `filters`/`links` arrays;
+	// the #2973–#2978 migration moves consumers onto these zones.
+	leading?: React.ReactNode;
+	destinations?: React.ReactNode;
 	crumb?: {label: React.ReactNode; onClear?: () => void};
 	// The input slot (#2602): a product-scoped on-demand utility control — sözlük's
 	// go-to-or-create box (distinct from the topbar `ara`, #1669). Left-anchored in the
@@ -47,7 +57,7 @@ export function Subnav({
 }) {
 	return (
 		<div className="kp-subnav">
-			{filters?.length || links?.length ? (
+			{filters?.length || links?.length || destinations ? (
 				<div className="kp-subnav__filters">
 					{filters?.map((f) => (
 						<button
@@ -66,8 +76,10 @@ export function Subnav({
 							{l.label}
 						</NavLink>
 					))}
+					{destinations}
 				</div>
 			) : null}
+			{leading ? <span className="kp-subnav__leading">{leading}</span> : null}
 			{title ? <span className="kp-subnav__title">{title}</span> : null}
 			{crumb ? (
 				<span className="kp-subnav__crumb">
