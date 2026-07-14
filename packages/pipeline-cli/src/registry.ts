@@ -38,6 +38,7 @@ import {pointerGuardCommand} from "./tools/pointer-guard/command.ts";
 import {primaryIndexGuardCommand} from "./tools/primary-index-guard/command.ts";
 import {reachabilityGuardCommand} from "./tools/reachability-guard/command.ts";
 import {readmeGuardCommand} from "./tools/readme-guard/command.ts";
+import {redactLeaksCommand} from "./tools/redact-leaks/command.ts";
 import {refGuardCommand} from "./tools/ref-guard/command.ts";
 import {resumePolicyCommand} from "./tools/resume-policy/command.ts";
 import {roadmapCommand} from "./tools/roadmap/command.ts";
@@ -130,4 +131,5 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	campaignCommand,
 	catalogGuardCommand,
 	intakeDedupCommand,
+	redactLeaksCommand,
 ];
