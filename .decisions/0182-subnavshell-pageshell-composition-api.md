@@ -112,14 +112,20 @@ because there is no "next to the bar" slot to render into — only the `destinat
   onto `SubnavShell` / `PageShell` behind the existing `phoenix-nav-ia` flag; the sözlük-alphabet
   fix holds in both flag states.
 - **Coupled vocabulary.** This ADR coins `recipe` and `shell` as architecture terms; their
-  canonical one-line definitions land in [`.glossary/LANGUAGE.md`](../.glossary/LANGUAGE.md) in the
-  same PR (see Vocabulary impact below).
+  canonical one-line definitions are routed to [`.glossary/LANGUAGE.md`](../.glossary/LANGUAGE.md)
+  via a separate follow-up ([#2999](https://github.com/kamp-us/phoenix/issues/2999), triage's
+  canon/glossary lane), gated on this ADR landing — **not** shipped in this PR, which stays
+  `.decisions`-only (see Vocabulary impact below).
 - This ADR **builds on** ADR [0176](0176-nav-ia-discipline.md)'s taxonomy and **does not amend or
   supersede** it. It adds a composition-API law where 0176 was silent; it relaxes no existing guard.
 
 ### Vocabulary impact
 
-Two terms coined, both routed to [`.glossary/LANGUAGE.md`](../.glossary/LANGUAGE.md) in this PR:
+Two terms coined, both routed to [`.glossary/LANGUAGE.md`](../.glossary/LANGUAGE.md) via a
+separate follow-up ([#2999](https://github.com/kamp-us/phoenix/issues/2999), triage's canon/glossary
+lane) gated on this ADR landing — not in this PR. This PR stays `.decisions`-only; #2971's AC3
+("terms `recipe`/`shell` defined in `.glossary/LANGUAGE.md`") is satisfied by that follow-up, not
+by this change set:
 
 - **`recipe`** — the composition-primitive idiom (one flat element-prop per zone, orphan-as-type-error).
 - **`shell`** — the layout-composition wrapper (`SubnavShell` / `PageShell`) that names a
