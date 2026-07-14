@@ -84,21 +84,24 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
    concurrently (several people run them at once), so the same observation may have
    been filed minutes ago. Run this check *after* composing the body, as the final
    action before the create call — composing first keeps the window between check
-   and create as small as possible:
+   and create as small as possible. Run the shared **intake-dedup tool** (ADR 0181):
+   one tested implementation of the "is there already an open issue for this?" query,
+   fed your title plus a few keywords:
 
    ```bash
-   gh api 'repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100' \
-     --jq '.[] | "#\(.number) \(.title)"'
-   gh api 'search/issues?q=repo:$REPO+is:issue+is:open+<keywords>' \
-     --jq '.items[] | "#\(.number) \(.title)"'
+   node packages/pipeline-cli/src/bin.ts intake-dedup check \
+     --query "<the title + a few distinguishing keywords>"
    ```
 
-   The two commands guard different failure modes — don't drop either: the label
-   list is read-after-write consistent and catches an issue filed seconds ago, while
-   the search runs against GitHub's eventually-consistent index (fresh issues can
-   lag out of it) but covers older open issues that already left the queue. Join
-   keywords with `+` (e.g. `…+is:open+retry+abort`) — raw spaces inside the quoted
-   URL produce a malformed query.
+   It prints one `#<n>\t<title>` line per candidate duplicate to stdout (empty output
+   ⇒ no likely match) and the candidate count on stderr. Under the hood it runs the
+   same two sources this check always used and fuses them — the label list is
+   read-after-write consistent and catches an issue filed seconds ago, while the
+   search runs against GitHub's eventually-consistent index (fresh issues can lag out
+   of it) but covers older open issues that already left the queue. Keyword joining
+   and query-shape are the tool's job now — you pass free text, not a hand-built
+   `q=` string. It resolves the target repo itself per ADR 0062 §1 (`$CLAUDE_PIPELINE_REPO`
+   → `$GITHUB_REPOSITORY` → the current repo), so it needs no `$REPO`.
 
    If an existing issue covers the same observation, don't file a twin — add anything
    you know that it lacks as a comment there, and return to your task.
@@ -146,4 +149,4 @@ The body never lands on disk under a shared name and never round-trips through a
 This skill is one of a suite that turns GitHub issues into an agent-operable pipeline; the shared formats and label semantics are documented in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) (the report template here is its own type-blind thing, but the label dimensions and progress/handoff formats live there).
 
 - One observation, one issue. If you noticed two genuinely separate things, file two — don't bundle. (Triage can split bundles, but clean intake saves it the work.)
-- The pre-filing re-query (step 3 above) is mandatory, but it's a search, not an oracle: when the results are genuinely ambiguous, file — a duplicate is cheap for triage to close, a lost observation is gone. (Use the REST search shown in step 3, never `gh issue list --search` — that goes through GraphQL, which this org breaks.)
+- The pre-filing re-query (step 3 above) is mandatory, but it's a search, not an oracle: when the results are genuinely ambiguous, file — a duplicate is cheap for triage to close, a lost observation is gone. (Use the `intake-dedup` tool shown in step 3 — it queries via `gh api` REST, never `gh issue list --search`, which goes through GraphQL that this org breaks.)

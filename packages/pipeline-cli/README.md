@@ -117,6 +117,32 @@ node packages/pipeline-cli/src/bin.ts verdict read --pr 123 --gate doc && echo "
 node packages/pipeline-cli/src/bin.ts verdict post --pr 123 --gate doc --body-file "$VERDICT_FILE"
 ```
 
+### `intake-dedup` — the ADR-0181 unified intake-dedup check (#2992)
+
+The "is there already an open issue for this?" query the `report` (pre-file) and `triage`
+(intake board-read + split-pre-create) skills each used to hand-maintain inline, extracted
+into one deterministic, unit-tested tool wired at both intake seams — so the agent path and
+the human path share one implementation and cannot drift. The **pure core**
+(`dedup-match.ts`) is IO-free: `tokenize` + `searchQuery` shape free text into a deterministic
+GitHub search, and `rankCandidates` fuses the two result sources (the read-after-write
+`needs-triage` queue + the eventually-consistent search index) into one deduped,
+title-overlap-ranked candidate list. `github.ts` is the REST-only `gh api` boundary (the
+`verdict`/`epic-lock` `github.ts` service pattern).
+
+- **`intake-dedup check --query "<text>" [--exclude N] [--label L] [--limit N]`** — prints one
+  `#<n>\t<title>` line per candidate duplicate to stdout (empty ⇒ no likely match) and the
+  count on stderr. Advisory, not an oracle (a duplicate is cheap to close, a lost observation
+  is gone): **always exits 0**. `--exclude` omits an issue number (the one being deduped at the
+  triage seam, so it never flags itself); `--label` overrides the intake-queue label
+  (default `status:needs-triage`). It resolves the target repo itself (ADR 0062 §1).
+
+```bash
+# pre-file check (report seam) — pass the title + a few keywords, not a hand-built query
+node packages/pipeline-cli/src/bin.ts intake-dedup check --query "retry helper swallows abort reason"
+# triage intake check — dedup the issue against the board, excluding itself
+node packages/pipeline-cli/src/bin.ts intake-dedup check --query "<title + keywords>" --exclude 2802
+```
+
 ### `leak-guard` — personal-data leak gate for shared artifacts (#173, #2357)
 
 Two modes, one deny-list-per-mode core:
