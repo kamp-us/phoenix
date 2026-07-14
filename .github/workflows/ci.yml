@@ -648,17 +648,30 @@ jobs:
 
       # deploy.yml runs as a SEPARATE workflow on the same PR event; there's no
       # cross-workflow `needs`, so synchronize on its artifact — the sticky
-      # comment. Poll until the web app's line carries both the preview URL and the
-      # `<!-- d1:<uuid> -->` token deploy.yml writes once its deploy + D1 resolve
-      # land. ~10 min budget covers a cold alchemy deploy; a stuck/failed deploy
-      # times out and fails this job (red `ci-required`), never hangs forever.
-      - name: Await preview URL + D1 id from deploy.yml
+      # comment. This step gates readiness in TWO phases inside one ~10-min budget
+      # (a cold alchemy deploy fits; a stuck/failed deploy times out → red
+      # `ci-required`, never hangs forever):
+      #   1. Discover the preview URL + `<!-- d1:<uuid> -->` token off the sticky
+      #      comment deploy.yml posts.
+      #   2. Health-probe that URL until the WORKER actually serves `/api/*`.
+      # Phase 2 exists because the comment is only a PROXY for "deploy started": it
+      # is posted ~43s before the worker goes live, so gating on the comment alone
+      # ran the suite against a preview whose `/api/*` still fell through to the SPA
+      # index → `sign-up/email failed: 404 <!DOCTYPE html>` → fixtures never seeded →
+      # false-red on green PRs (#3016, surfaced on #3014). `GET /api/health` (ADR
+      # 0156) is the readiness signal: the worker's typed-JSON endpoint answers with
+      # `content-type: application/json` + a `flagshipReachable` body on BOTH 200-ok
+      # and 503-degraded (Flagship unreachable is still the worker serving), whereas a
+      # not-live preview returns the `text/html` SPA index — so readiness keys on
+      # "the response came from the worker", not on a 2xx status.
+      - name: Await preview URL + D1 id + live /api from deploy.yml
         id: preview
         uses: actions/github-script@v7.0.1
         with:
           script: |
             const marker = "<!-- preview-deploy -->";
             const deadline = Date.now() + 10 * 60 * 1000;
+            const interval = 15000;
             // Match the web app's block in the sticky comment, capturing the URL
             // and the hidden d1 token deploy.yml emits for web only.
             const webRe = /<!-- preview-deploy:web -->\n[^\n]*?(https:\/\/[A-Za-z0-9.-]+\.workers\.dev)[^\n]*?<!-- d1:([0-9a-f-]+) -->/;
@@ -666,6 +679,10 @@ jobs:
             // key set deploy.yml emits (issue #2951). Absent when no `preview-flag:<key>`
             // label forced anything, so it never gates the poll — only enriches the run env.
             const flagsRe = /<!-- preview-flags:([^>]*?) -->/;
+            const sleep = () => new Promise((r) => setTimeout(r, interval));
+
+            // Phase 1 — discover the preview URL + D1 id from the sticky comment.
+            let url, db, flags = "";
             while (Date.now() < deadline) {
               const {data: comments} = await github.rest.issues.listComments({
                 ...context.repo, issue_number: context.issue.number, per_page: 100,
@@ -673,18 +690,47 @@ jobs:
               const c = comments.find((x) => x.body?.includes(marker));
               const m = c && c.body.match(webRe);
               if (m) {
+                url = m[1];
+                db = m[2];
                 const fm = c.body.match(flagsRe);
-                const flags = fm ? fm[1] : "";
-                core.setOutput("url", m[1]);
-                core.setOutput("db", m[2]);
-                core.setOutput("flags", flags);
-                core.info(`preview ready: ${m[1]} (D1 ${m[2]})${flags ? ` forced flags: ${flags}` : ""}`);
-                return;
+                flags = fm ? fm[1] : "";
+                core.info(`preview URL posted: ${url} (D1 ${db}) — now probing /api/health for real API readiness`);
+                break;
               }
               core.info("waiting for deploy.yml to post the web preview URL + D1 id…");
-              await new Promise((r) => setTimeout(r, 15000));
+              await sleep();
             }
-            core.setFailed("timed out waiting for the preview deploy (URL + D1 id) from deploy.yml");
+            if (!url) {
+              core.setFailed("timed out waiting for the preview deploy (URL + D1 id) from deploy.yml");
+              return;
+            }
+
+            // Phase 2 — probe /api/health until the worker serves it (not the SPA
+            // fallthrough), reusing the SAME deadline so total await stays ~10 min.
+            const healthUrl = `${url.replace(/\/$/, "")}/api/health`;
+            while (Date.now() < deadline) {
+              try {
+                const res = await fetch(healthUrl, {headers: {accept: "application/json"}});
+                const ct = res.headers.get("content-type") || "";
+                const body = await res.text();
+                // Worker-up iff a JSON body carrying the health shape; a text/html
+                // <!DOCTYPE html> (or a body without `flagshipReachable`) is the SPA
+                // index — deploy not live yet. 503-degraded still passes (worker serving).
+                if (ct.includes("application/json") && body.includes("flagshipReachable")) {
+                  core.info(`preview API live: GET ${healthUrl} → ${res.status} ${ct}`);
+                  core.setOutput("url", url);
+                  core.setOutput("db", db);
+                  core.setOutput("flags", flags);
+                  core.info(`preview ready: ${url} (D1 ${db})${flags ? ` forced flags: ${flags}` : ""}`);
+                  return;
+                }
+                core.info(`API not live yet: GET ${healthUrl} → ${res.status} ${ct || "(no content-type)"} — SPA-index fallthrough, backing off`);
+              } catch (e) {
+                core.info(`API probe errored (${e.message}) — deploy edge not up yet, backing off`);
+              }
+              await sleep();
+            }
+            core.setFailed(`preview URL ${url} was posted but GET ${healthUrl} never served the worker API (still SPA-index/unreachable) within the ~10-min budget — deploy is stuck or failed; refusing to run e2e against a not-live preview (#3016).`);
 
       # Seed the preview's (empty) D1 with the minimal sözlük + pano fixtures the
       # read specs assert on and the write/flow specs navigate from — e.g. the
