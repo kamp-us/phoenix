@@ -129,9 +129,8 @@ engine is fungible throughput, so it scales by count, not by a named second offi
   three-flat-family template (`modelTiers.ea`, `tmux.windows.ea`) dies.
 - **The stand-up launcher boots the whole crew from one config** (**#3237**): the tracker + 3
   bridges + N engines, cardinality declared at the launcher.
-- **Operator-local crew defs are deleted at the end of the migration** — the distributable
-  `claude-plugins/pipeline-crew/` plugin becomes the SOLE crew definition ("clear cut"); no
-  operator-personal crew def survives.
+- **The distributable `claude-plugins/pipeline-crew/` plugin becomes the SOLE crew
+  definition** — one artifact; the crew doctrine ships as the plugin's default ("clear cut").
 - Adding a fourth bridge, or a second engine *kind*, now requires showing the role owns an
   un-transferable seam — the accountability test above — not merely that there is more work
   to absorb. Overflow is answered by starting another engine, not by minting an office.
