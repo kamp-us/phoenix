@@ -1,0 +1,27 @@
+/* Manage-my-mutes list (#3117). Role tokens only — no color literal. */
+
+.kp-mute-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-mute-list__row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-3);
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	background: var(--surface);
+}
+
+.kp-mute-list__member {
+	font: var(--t-body);
+	color: var(--text-primary);
+	font-weight: 600;
+}

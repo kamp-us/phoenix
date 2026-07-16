@@ -23,7 +23,7 @@ import {useSetPanoSubnavContent} from "../components/pano/PanoSubnavLayout";
 import {Screen} from "../fate/Screen";
 import {FEED_SNAPSHOT_ENABLED} from "../fate/snapshot";
 import {LoadMoreButton} from "../fate/wire";
-import {PANO_BASE_FEED, PHOENIX_NAV_IA} from "../flags/keys";
+import {MEMBER_MUTE, PANO_BASE_FEED, PHOENIX_NAV_IA} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {markFeedPaintOnce} from "../lib/feedPerf";
 import {
@@ -145,6 +145,10 @@ function FeedContent({
 	// off the post, byte-identical to today. Sort feed only — `?sort=saved` is inherently
 	// per-viewer and stays on the authed path (`SavedContent`), out of the base/overlay split.
 	const {value: composeOverlay} = useFlag(PANO_BASE_FEED, false);
+	// Member-mute (#3117), dark behind `member-mute`. Read once here and threaded to every row
+	// so a card can hide a muted member's post + offer the "sustur" action without each card
+	// re-evaluating the flag. Off (default) ⇒ no mute surface, byte-identical to today.
+	const {value: muteEnabled} = useFlag(MEMBER_MUTE, false);
 	// Feed snapshot (leg A, #2319): under the containment flag, run the feed read
 	// stale-while-revalidate so a snapshot hydrated into the public client paints
 	// synchronously and the network patch lands in the background. Flag off ⇒ an
@@ -166,6 +170,7 @@ function FeedContent({
 			pending={pending}
 			chrome={chrome}
 			compose={composeOverlay}
+			muteEnabled={muteEnabled}
 		/>
 	);
 }
@@ -180,12 +185,14 @@ function FeedRows({
 	pending,
 	chrome,
 	compose,
+	muteEnabled,
 }: {
 	connection: PostConnection;
 	host?: string;
 	pending: boolean;
 	chrome: Chrome;
 	compose: boolean;
+	muteEnabled: boolean;
 }) {
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
@@ -215,7 +222,13 @@ function FeedRows({
 				}
 			>
 				{items.map(({node}, i) => (
-					<PanoPostCard key={node.id} post={node} rank={i + 1} compose={compose} />
+					<PanoPostCard
+						key={node.id}
+						post={node}
+						rank={i + 1}
+						compose={compose}
+						muteEnabled={muteEnabled}
+					/>
 				))}
 			</div>
 			{loadNext ? (
