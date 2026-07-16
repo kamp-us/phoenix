@@ -24,6 +24,15 @@ export {
 export {RoleUniquenessError} from "./errors.ts";
 export {CREW_ROLES, CrewRole, isCrewRole} from "./roles.ts";
 export {
+	type CrewSessionConfig,
+	channelSendFromPeer,
+	crewSessionLayer,
+	inboxAddressFor,
+	inboxSocketFor,
+	runCrewSession,
+	SESSION_SERVER_NAME,
+} from "./session.ts";
+export {
 	type ClaimReply,
 	CrewTracker,
 	crewTrackerSocketLayer,
