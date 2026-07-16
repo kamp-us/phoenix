@@ -35,7 +35,14 @@ import * as Schedule from "effect/Schedule";
 import {inject} from "vitest";
 import Stack from "../../alchemy.run.ts";
 import {isTransientDeployError} from "./_deploy-transient.ts";
-import {awaitEdgeReady, DEPLOY_HEALTH_DEADLINE_MS, edgeFetch} from "./_edge-ready.ts";
+import {
+	awaitEdgeReady,
+	DEPLOY_HEALTH_DEADLINE_MS,
+	edgeFetch,
+	HOOK_TIMEOUT_MS,
+	PER_FILE_HEALTH_DEADLINE_MS,
+	WorkerNotReadyError,
+} from "./_edge-ready.ts";
 import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
 import {type Harness, harness} from "./_harness.ts";
 import {slugify, stageName} from "./_stage-name.ts";
@@ -304,24 +311,27 @@ export const deployTransientRetry = Effect.retry({
  * healthy JSON within the bound (60 × 2s) DIES with a clear message rather than hanging —
  * `Effect.promise` turns the thrown exhaustion error into a defect, the same hard failure the
  * retired `Effect.die` produced. ONE copy for both deploy paths (the per-file `integrationStack`
- * and the shared-stage `_global-setup.ts`).
- *
- * Rides the raised `DEPLOY_HEALTH_DEADLINE_MS` (see its rationale, #3080), not the 60s per-probe
- * default — the concurrent-stage load that overran 60s and died this `beforeAll` is why.
+ * and the shared-stage `_global-setup.ts`), each passing its OWN readiness budget: the shared path
+ * takes the default `DEPLOY_HEALTH_DEADLINE_MS`, the hook-bound per-file path passes the smaller
+ * `PER_FILE_HEALTH_DEADLINE_MS` so the typed throw beats the vitest hook ceiling (#3146; #3080).
  */
-export const awaitWorkerReady = (url: string): Effect.Effect<void, never, never> =>
+export const awaitWorkerReady = (
+	url: string,
+	deadlineMs: number = DEPLOY_HEALTH_DEADLINE_MS,
+): Effect.Effect<void, never, never> =>
 	Effect.promise(async () => {
 		const res = await awaitEdgeReady(() => edgeFetch(`${url}/api/health`), healthReady, {
 			pollMs: WARM_POLL_MS,
-			deadlineMs: DEPLOY_HEALTH_DEADLINE_MS,
+			deadlineMs,
 		});
 		// `awaitEdgeReady` returns the last response even when it never went ready (the #1060
-		// no-early-stop guarantee), so a worker that never served healthy JSON must be turned into
-		// a hard, clear failure here — the throw becomes an `Effect.promise` defect (die).
+		// no-early-stop guarantee), so a worker that never served healthy JSON must be turned into a
+		// hard, clear failure here — the throw becomes an `Effect.promise` defect (die). Thrown TYPED
+		// (`WorkerNotReadyError`, not a bare `Error`) so the diagnostic is greppable, and — with the
+		// per-file `deadlineMs` sized below the hook ceiling — it fires BEFORE the `beforeAll`
+		// guillotine rather than surfacing as the opaque "Hook timed out in 120000ms" (#3146).
 		if (!(await healthReady(res))) {
-			throw new Error(
-				`worker never served a healthy /api/health within the readiness window for ${url}: last status ${res.status}`,
-			);
+			throw new WorkerNotReadyError(url, `last status ${res.status}`);
 		}
 	});
 
@@ -400,12 +410,19 @@ export function integrationStack(metaUrl: string): Harness {
 						return yield* Effect.die(new Error("deploy returned no D1 databaseId"));
 					}
 					d1Target = {accountId: resolved.accountId, databaseId: resolved.databaseId};
-					yield* awaitWorkerReady(url);
+					// Per-file, hook-bound readiness budget (`PER_FILE_HEALTH_DEADLINE_MS`), sized
+					// below the restored hook ceiling so a slow/stuck edge fails as a typed diagnostic
+					// BEFORE the vitest guillotine — never the opaque "Hook timed out" (#3146).
+					yield* awaitWorkerReady(url, PER_FILE_HEALTH_DEADLINE_MS);
 					yield* warmLiveDO(url);
 					yield* warmFateRead(url);
 				}),
 			),
 		),
+		// Undo alchemy `Test.make`'s silent clamp of the deploy hook to its `DEFAULT_TIMEOUT` (120s):
+		// thread the already-configured `hookTimeout` so the hook honors 180s (see `HOOK_TIMEOUT_MS`).
+		// NOT a raised ceiling — a restored one; the readiness budget above stays well under it (#3146).
+		{timeout: HOOK_TIMEOUT_MS},
 	);
 
 	// Force vitest to await the deploy hook even though the harness reads the URL

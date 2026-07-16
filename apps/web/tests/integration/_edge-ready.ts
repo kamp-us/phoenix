@@ -40,6 +40,21 @@ export class CloudflarePlaceholder404Error extends Error {
 export const isCloudflarePlaceholder404Error = (e: unknown): e is CloudflarePlaceholder404Error =>
 	e instanceof CloudflarePlaceholder404Error;
 
+// The typed diagnostic the DEPLOY-time health gate (`awaitWorkerReady`) throws when a freshly-deployed
+// worker never serves a healthy `/api/health` within its readiness budget — a NAMED failure (not a bare
+// `Error`, not the opaque vitest "Hook timed out in 120000ms") so the eviction cause is greppable in CI.
+// Sized below the hook ceiling, this fires BEFORE the `beforeAll` guillotine, turning a nondeterministic
+// hook timeout that ejected clean product PRs from the merge queue into a deterministic diagnostic (#3146).
+export class WorkerNotReadyError extends Error {
+	readonly _tag = "WorkerNotReady";
+	constructor(url: string, detail: string) {
+		super(
+			`worker never served a healthy /api/health within the readiness window for ${url}: ${detail}`,
+		);
+		this.name = "WorkerNotReadyError";
+	}
+}
+
 // The generous cold-start budget the readiness poll defaults to. A cold dedicated stage's first
 // open can take many seconds to clear edge propagation + a cold DO / cold D1 replica; ~60s of
 // polls is generous enough to ride that out, and only delays — never hangs (the poll returns the
@@ -47,16 +62,32 @@ export const isCloudflarePlaceholder404Error = (e: unknown): e is CloudflarePlac
 export const EDGE_READY_DEADLINE_MS = 60_000;
 export const EDGE_READY_POLL_MS = 1_500;
 
-// The raised budget the DEPLOY-time worker-health gate (`awaitWorkerReady`) rides, distinct from the
-// per-probe `EDGE_READY_DEADLINE_MS` above. Under concurrent-stage batch load on the one shared
-// Cloudflare account, a fresh `*.workers.dev` /api/health route's edge propagation routinely overruns
-// the 60s per-probe budget — the module-top `beforeAll(deploy…)` then throws and fails the WHOLE
-// suite to load (#3080, #3075 Signature-A). vitest test-`retry` can't re-run a failed `beforeAll`, so
-// a bigger SINGLE budget — not a redeploy retry, which two deploy+readiness attempts couldn't fit —
-// is the lever. Doubled to 120s: it stays inside the integration `hookTimeout` (180s,
-// `vitest.config.ts`) with room for the deploy + trailing non-fatal warms, and never hangs (the poll
-// returns on the deadline), so a genuinely dead worker still fails fast within the bound.
+// The vitest `beforeAll` HOOK ceiling for the integration deploy hook — single-sourced here and
+// mirrored by `vitest.config.ts`'s `hookTimeout`. Load-bearing (#3146): alchemy `Test.make`'s
+// `beforeAll(eff, opts)` passes `timeoutOf(opts) ?? DEFAULT_TIMEOUT (120_000)` as vitest's EXPLICIT
+// per-hook timeout, and an explicit second arg to `vitest.beforeAll(fn, timeout)` OVERRIDES
+// `config.hookTimeout`. So a `beforeAll(deploy…)` registered with no opts is silently clamped to
+// alchemy's 120_000 and the configured 180s `hookTimeout` never applies — the #3085 mitigation was
+// sized against a 180s ceiling that never existed. Grounded in the active pin: alchemy@2.0.0-beta.59
+// `lib/Test/Vitest.js:7,70-72` (`timeoutOf` reads `.timeout`; `beforeAll` passes `?? DEFAULT_TIMEOUT`)
+// and `@vitest/runner@4.1.5` `beforeAll(fn, timeout = config.hookTimeout)`. `integrationStack` threads
+// `{timeout: HOOK_TIMEOUT_MS}` to UNDO that dependency-default override — restoring the already-declared
+// ceiling, NOT raising a working one.
+export const HOOK_TIMEOUT_MS = 180_000;
+
+// The DEPLOY-time worker-health readiness budget for the SHARED-stage (`_global-setup`) path —
+// UNCHANGED (no shared-path regression). The shared stage deploys once per run (low concurrency), is
+// not vitest-hook-bound (it runs in `globalSetup`, not a `beforeAll`), and was never the timeout, so it
+// keeps its generous single budget (#3080). The per-file, hook-bound path uses the smaller budget below.
 export const DEPLOY_HEALTH_DEADLINE_MS = 120_000;
+
+// The per-file readiness budget for the hook-bound `integrationStack` deploy `beforeAll` (#3146).
+// Sized STRICTLY BELOW `HOOK_TIMEOUT_MS` with headroom for the deploy-before (~40-60s under
+// concurrent-stage batch load) + the trailing non-fatal warms, so the poll GRACEFULLY bounded-returns
+// a typed `WorkerNotReadyError` diagnostic WELL before the vitest hook fires — a deterministic, named
+// failure instead of the opaque "Hook timed out" guillotine that evicted clean product PRs from the
+// merge queue: deploy(≤60) + readiness(100) = 160 < 180, so the typed throw wins the race every time.
+export const PER_FILE_HEALTH_DEADLINE_MS = 100_000;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 

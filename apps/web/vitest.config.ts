@@ -22,6 +22,11 @@
  */
 import react from "@vitejs/plugin-react";
 import {defineConfig} from "vitest/config";
+// Single-source the integration hook ceiling (#3146). The value declared here is DEAD for every
+// `Test.make`-registered hook — alchemy passes an explicit per-hook timeout that overrides
+// `config.hookTimeout` (see `HOOK_TIMEOUT_MS`), so `integrationStack` must ALSO thread it. Importing
+// it here keeps the config and the threaded value provably equal (the module is import-side-effect free).
+import {HOOK_TIMEOUT_MS} from "./tests/integration/_edge-ready.ts";
 
 export default defineConfig({
 	// The `client` project below renders `*.test.tsx` through React's JSX runtime,
@@ -105,7 +110,10 @@ export default defineConfig({
 					// `seedTerm` on retry, so the dedup hazard above doesn't apply. Reversible;
 					// drops when #3075's durable ci.yml worker-relevance filter lands.
 					testTimeout: 120_000,
-					hookTimeout: 180_000,
+					// Silently overridden for `Test.make` hooks by alchemy's explicit per-hook timeout
+					// (`integrationStack` threads `{timeout: HOOK_TIMEOUT_MS}` to honor it); kept here,
+					// single-sourced, for any non-alchemy hook + to document the real ceiling (#3146).
+					hookTimeout: HOOK_TIMEOUT_MS,
 					pool: "forks",
 					// `isolate: false` shares one parsed JS module graph across the files
 					// that run in the same fork, so the phoenix worker barrel chain

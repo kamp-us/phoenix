@@ -24,10 +24,11 @@ import {
 	edgeFetch,
 	isCloudflarePlaceholder404,
 	isCloudflarePlaceholder404Error,
+	WorkerNotReadyError,
 } from "./_edge-ready.ts";
 import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
 import {harness} from "./_harness.ts";
-import {awaitAuthRouteReady} from "./_integration.ts";
+import {awaitAuthRouteReady, awaitWorkerReady} from "./_integration.ts";
 
 // A tiny budget so the tests drive the readiness logic in milliseconds, not the real 60s.
 const BUDGET = {deadlineMs: 120, pollMs: 5} as const;
@@ -187,6 +188,36 @@ describe("awaitAuthRouteReady — the bootstrap auth-route propagation gate (#24
 			Effect.runPromise(awaitAuthRouteReady("https://stage.example.workers.dev")),
 		).resolves.toBeUndefined();
 		expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+	});
+});
+
+// The DEPLOY-time worker-health gate turns a worker that never serves healthy JSON within its
+// readiness budget into a TYPED, greppable `WorkerNotReadyError` — and, sized below the hook ceiling
+// (`PER_FILE_HEALTH_DEADLINE_MS`), that throw fires before the vitest `beforeAll` guillotine so the
+// eviction cause is a named diagnostic, not the opaque "Hook timed out in 120000ms" (#3146).
+describe("awaitWorkerReady — typed readiness diagnostic (#3146)", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("WorkerNotReadyError carries the url + detail in a named, greppable message", () => {
+		const e = new WorkerNotReadyError("https://stage.example.workers.dev", "last status 503");
+		expect(e).toBeInstanceOf(Error);
+		expect(e.name).toBe("WorkerNotReadyError");
+		expect(e._tag).toBe("WorkerNotReady");
+		expect(e.message).toContain("https://stage.example.workers.dev");
+		expect(e.message).toContain("last status 503");
+	});
+
+	it("a worker that never serves healthy JSON within the budget throws the typed diagnostic (not a bare Error, not a hook timeout)", async () => {
+		// A 200 whose body is never `{status:"ok"}` rides the readiness budget and never goes ready;
+		// on deadline `awaitEdgeReady` returns the last (still-not-ready) response, and the gate throws.
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(JSON.stringify({status: "warming"}), {status: 200})),
+		);
+		// A tiny per-call budget drives the exhaustion in milliseconds, not the real 100s.
+		await expect(
+			Effect.runPromise(awaitWorkerReady("https://stage.example.workers.dev", 40)),
+		).rejects.toThrow(/worker never served a healthy \/api\/health within the readiness window/);
 	});
 });
 
