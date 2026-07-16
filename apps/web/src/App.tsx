@@ -55,6 +55,7 @@ import {MecmuaDraftsPage} from "./pages/MecmuaDraftsPage";
 import {MecmuaFeedPage} from "./pages/MecmuaFeedPage";
 import {MecmuaIndexPage} from "./pages/MecmuaIndexPage";
 import {MecmuaPostPage} from "./pages/MecmuaPostPage";
+import {MutesPage} from "./pages/MutesPage";
 import {NotFoundPage} from "./pages/NotFoundPage";
 import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
@@ -527,6 +528,7 @@ export function App() {
 						    unknown slug (never the global 404). ASCII route slug. */}
 						<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
 						<Route path="/profile" element={<ProfilePage />} />
+						<Route path="/susturduklarim" element={<MutesPage />} />
 						<Route path="/u/:username" element={<UserProfilePage />} />
 						{/* The admin console (#2740, epic #2711) — the route element self-gates on
 						    the admin probe + the phoenix-admin-console flag (denied ⇒ the ordinary

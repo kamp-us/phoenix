@@ -18,6 +18,8 @@ import {
 	type ViewerOverlay,
 } from "../../pages/panoFeedOverlay";
 import {actorLabel} from "../moderation/actor-identity";
+import {MuteButton} from "../mute/MuteButton";
+import {useMutedMembers} from "../mute/useMemberMute";
 import {Tag, type TagKind} from "../ui/atoms";
 import {MetaRow} from "../ui/MetaRow";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
@@ -68,6 +70,7 @@ export function PanoPostCard({
 	rank,
 	onHide,
 	compose = false,
+	muteEnabled = false,
 }: {
 	post: ViewRef<"Post">;
 	rank?: number;
@@ -82,10 +85,27 @@ export function PanoPostCard({
 	 * post, byte-identical to today.
 	 */
 	compose?: boolean;
+	/**
+	 * Member-mute (#3117, dark behind `member-mute`) — the feed reads the flag once and
+	 * threads it here so a card can hide a muted member's post + render the "sustur"
+	 * affordance without every card evaluating the flag itself. Off (default / flag-off) ⇒
+	 * no mute surface, byte-identical to today.
+	 */
+	muteEnabled?: boolean;
 }) {
 	const data = useLiveView(PanoPostCardView, post);
 	const session = useSession();
+	const {isMuted} = useMutedMembers();
 	const isOwn = !!session.data?.user && session.data.user.id === data.authorId;
+	const authorLabel = actorLabel(
+		data.authorDisplayName ?? null,
+		data.authorUsername ?? null,
+		data.author,
+	);
+	// A muted member's post disappears from the muter's feed the instant it is muted (the
+	// client overlay; the server read-mask #3113 is the persisted source of truth). Only
+	// under the flag — off, the overlay is always empty so this never fires.
+	if (muteEnabled && data.authorId && isMuted(data.authorId)) return null;
 	// The viewer scalars fed to the vote/save controls: flag-off reads them straight off the
 	// post (byte-identical to today); compose routes them through the identity guard below.
 	const {myVote, isSaved} = compose
@@ -127,15 +147,23 @@ export function PanoPostCard({
 				<MetaRow className="kp-pano-post__meta">
 					{/* Live author identity via `actorLabel` (#2139): current displayName → @username,
 					    falling back to the write-time `author` snapshot for an unstamped/legacy row. */}
-					<span className="author">
-						{actorLabel(data.authorDisplayName ?? null, data.authorUsername ?? null, data.author)}
-					</span>
+					<span className="author">{authorLabel}</span>
 					<MetaRow.Dot />
 					<span>{agoLabel}</span>
 					<MetaRow.Dot />
 					<a href={`${href}#comments`}>{data.commentCount} yorum</a>
 					<MetaRow.Dot />
 					<PostSaveButton postId={data.id} isSaved={isSaved} />
+					{muteEnabled && !isOwn && data.authorId ? (
+						<>
+							<MetaRow.Dot />
+							<MuteButton
+								memberId={data.authorId}
+								memberLabel={authorLabel}
+								testId={`member-mute-${data.authorId}`}
+							/>
+						</>
+					) : null}
 					{onHide ? (
 						<>
 							<MetaRow.Dot />
