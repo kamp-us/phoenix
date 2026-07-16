@@ -76,7 +76,14 @@ afterEach(async () => {
 	await remove(SUBJECT);
 });
 
-describe("RelationStoreLive.has on real D1 — resolves composite-PK tuple existence", () => {
+// #3075 stopgap (reversible): retry-wrap so a transient real-D1 flake in merge_group retries
+// instead of evicting clean, unrelated PRs from the merge queue. Retry, NOT skip — the real-D1
+// coverage stays. `mint()` is onConflictDoNothing (retry-idempotent) and uses no seedTerm, so
+// vitest.config's "no retry" seedTerm-dedup constraint isn't tripped here. Remove once #3075's
+// durable ci.yml worker-relevance filter lands.
+describe("RelationStoreLive.has on real D1 — resolves composite-PK tuple existence", {
+	retry: 2,
+}, () => {
 	it("a seeded tuple reads present; a non-matching tuple reads absent", async () => {
 		await mint(SUBJECT);
 

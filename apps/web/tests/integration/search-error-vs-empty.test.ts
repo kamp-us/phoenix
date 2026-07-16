@@ -40,7 +40,12 @@ beforeAll(async () => {
 	});
 });
 
-describe("search error-vs-empty (#549)", () => {
+// #3075 stopgap (reversible): retry-wrap so a transient real-CF/D1 flake in merge_group retries
+// instead of evicting clean, unrelated PRs from the merge queue. Retry, NOT skip — the real-D1
+// coverage stays. `seedTerm` runs in beforeAll (not re-entered by test retry) and the in-body op
+// is DROP TABLE IF EXISTS (idempotent), so vitest.config's "no retry" seedTerm-dedup constraint
+// isn't tripped here. Remove once #3075's durable ci.yml worker-relevance filter lands.
+describe("search error-vs-empty (#549)", {retry: 2}, () => {
 	it("a legitimate zero-match query succeeds with an empty connection (the 'sonuç yok' branch)", async () => {
 		// A well-formed query that matches nothing: `ok:true` with zero items. This is the
 		// SUCCESS path the page renders as "sonuç yok" — it must stay distinct from the
