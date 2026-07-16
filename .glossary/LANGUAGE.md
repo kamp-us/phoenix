@@ -375,6 +375,8 @@ The Turkish product/brand nouns this repo uses:
 | **depo** | the internal asset store/CDN (was imge) |
 | **divan** | the proving-ground reviewer surface — the gated `/divan` destination where yazar + moderatör review a çaylak's sandboxed work ("work goes before the divan") |
 | **mecmua** | the serious long-form blogging / publishing product (a third surface beside **sözlük** + **pano**, epic #2429) — a **yazar** authors and publishes a long-form post (başlık + markdown body) that anyone may read; a **çaylak** cannot publish (authorship is earned). v1 is a surface on the existing `apps/web` worker, not its own app. Turkish for "magazine / journal / anthology" |
+| **sustur** | mute — the **one-directional, silent, notification-suppressing** member-mute lever (epic #2571; v1 semantics fixed by ADR [0188](../.decisions/0188-mute-v1-semantics.md)). Muting a member both read-masks their content *and* suppresses the **bildirim** their interactions would generate to the muter; the muted member is never notified. Distinct from **engelle** (block) — mute is one-directional and lighter. Turkish for "silence / mute" |
+| **engelle** | block — the heavier, **mutual** interaction-prevention lever (preventing replies/mentions/mutual visibility, symmetry TBD). **Deferred from mute v1** and scoped to its own later decision/epic (ADR [0188](../.decisions/0188-mute-v1-semantics.md)); named here to keep it distinct from the lighter one-directional **sustur** (mute). Turkish for "block / obstruct" |
 
 > This is the brand-noun seed. The full domain-noun glossary (the entities and their
 > precise definitions) lives in its own `.glossary/TERMS.md`; this table fixes only the
