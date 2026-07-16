@@ -29,6 +29,10 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/doctor/doctor.sh")).toBe(true);
 		// depth is irrelevant — a hypothetical helper two levels deep is §CP too (no new anchoring accident).
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/report/lib/helper.sh")).toBe(true);
+		// pipeline-crew-mcp is a new control-plane package (epic #3045); registering its path makes
+		// every crew-mcp child PR classify §CP structurally (banks at cansirin), not auto-merge (#3069).
+		expect(isControlPlane("packages/pipeline-crew-mcp/src/index.ts")).toBe(true);
+		expect(isControlPlane("packages/pipeline-crew-mcp/package.json")).toBe(true);
 	});
 
 	it("does NOT classify the four deliberately-OUT skill dirs (operational, not gate-critical)", () => {
