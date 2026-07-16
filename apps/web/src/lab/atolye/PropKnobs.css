@@ -1,0 +1,22 @@
+.kp-knobs {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.kp-knobs__row {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-knobs__label {
+	color: var(--text-secondary);
+	font-size: var(--t-meta);
+}
+
+.kp-knobs__empty {
+	color: var(--text-muted);
+	font-size: var(--t-body-sm);
+	margin: 0;
+}
