@@ -380,6 +380,11 @@ const LabComposerPage = lazy(() =>
 const MecmuaEditorPage = lazy(() =>
 	import("./pages/MecmuaEditorPage").then((m) => ({default: m.MecmuaEditorPage})),
 );
+// atölye's exhibit catalog (#2473) grows over time and is imported by no other route, so
+// lazy-loading its index keeps that payload out of the entry chunk every public route pays for.
+const AtolyeIndexPage = lazy(() =>
+	import("./lab/atolye/AtolyeIndexPage").then((m) => ({default: m.AtolyeIndexPage})),
+);
 
 function ComposerRouteFallback() {
 	return (
@@ -512,6 +517,16 @@ export function App() {
 							element={
 								<Suspense fallback={<ComposerRouteFallback />}>
 									<LabComposerPage />
+								</Suspense>
+							}
+						/>
+						{/* /lab/atölye — the public exhibit index (#3092, epic #2473), reachable by URL
+						    only, no nav entry (matching the /lab/composer precedent). */}
+						<Route
+							path="/lab/atölye"
+							element={
+								<Suspense fallback={<ComposerRouteFallback />}>
+									<AtolyeIndexPage />
 								</Suspense>
 							}
 						/>
