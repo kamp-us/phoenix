@@ -10,33 +10,36 @@
 import {
 	assertShellBootKeysSingleSourced,
 	BOOT_MEMBER_KEYS,
-	type BootMemberKey,
-	SHELL_SIGNED_IN_KEY,
+	type BootUser,
 	type ShellFlagKey,
 } from "../../../src/flags/shell-keys.ts";
 
 /**
- * The `window.__BOOT__` payload: every `__BOOT__`-member key → boolean. The keys are
- * exactly {@link BOOT_MEMBER_KEYS} (the shell flags + `signedIn`), single-sourced from
- * the manifest so the injected shape can't drift from what the client reads (#2928).
+ * The `window.__BOOT__` payload: the shell flag keys → boolean, plus the edge-resolved current
+ * `user` (`BootUser | null`) carried for synchronous first-paint identity (ADR 0185, amending
+ * 0179 — supersedes #2933's presence-only `signedIn` boolean). The boolean member keys are
+ * exactly {@link BOOT_MEMBER_KEYS}, single-sourced from the manifest so the injected boolean
+ * shape can't drift from what the client reads (#2928); `user` is a distinct typed field,
+ * single-sourced via {@link BootUser}.
  */
-export type BootPayload = Record<BootMemberKey, boolean>;
+export type BootPayload = Record<ShellFlagKey, boolean> & {user: BootUser | null};
 
 /**
- * Assemble the payload from the per-request session presence + the resolved shell-flag
- * values. `signedIn` is the presence bit that drives shell geometry directly (ADR 0179
- * §1), not a flag — so it is set here, not evaluated through the flag service.
+ * Assemble the payload from the edge-resolved current user + the resolved shell-flag values.
+ * `user` is the per-request identity (`null` when signed out), resolved through the SAME
+ * session→user seam the `/fate` `me` view uses, not evaluated through the flag service.
  */
 export const buildBootPayload = (
-	signedIn: boolean,
+	user: BootUser | null,
 	shellFlags: Record<ShellFlagKey, boolean>,
-): BootPayload => ({...shellFlags, [SHELL_SIGNED_IN_KEY]: signedIn});
+): BootPayload => ({...shellFlags, user});
 
 /**
  * The inline `<script>` that seeds `window.__BOOT__` before the app module runs. `<`
  * is escaped to `<` so a value can never close the tag / open a comment — XSS-safe
- * by construction even though today's values are all booleans (defense at the boundary,
- * not a bet on the payload staying boolean).
+ * by construction. Load-bearing now that the payload carries the `user` object's strings
+ * (name/handle/email), not only booleans: a `<` in any user-controlled field can never break
+ * out of the tag.
  */
 export const bootScriptTag = (payload: BootPayload): string =>
 	`<script>window.__BOOT__=${JSON.stringify(payload).replace(/</g, "\\u003c")}</script>`;
@@ -52,7 +55,10 @@ export const bootScriptTag = (payload: BootPayload): string =>
  * drift guard #2928 owns — so a shell key added here without the manifest throws.
  */
 export const injectBootScript = (assetResponse: Response, payload: BootPayload): Response => {
-	assertShellBootKeysSingleSourced(Object.keys(payload), [...BOOT_MEMBER_KEYS]);
+	// The single-source drift guard covers the boolean flag members only; `user` is a distinct
+	// typed field (ADR 0185), not a manifest member key, so it is excluded from the key-set check.
+	const flagKeys = Object.keys(payload).filter((key) => key !== "user");
+	assertShellBootKeysSingleSourced(flagKeys, [...BOOT_MEMBER_KEYS]);
 	const script = bootScriptTag(payload);
 	const rewritten = new HTMLRewriter()
 		.on("head", {

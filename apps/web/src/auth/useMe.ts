@@ -21,21 +21,19 @@ import {useRef} from "react";
 import {view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
 import {useImperativeView} from "../fate/useImperativeView";
+import {readBootUser} from "../flags/boot";
+import type {BootUser} from "../flags/shell-keys";
 import {useSession} from "./client";
 
 /**
- * The `me` shape, derived from the codegen'd `User` Entity (ADR 0022) — a `Pick`
- * over the exact scalars `MeView` selects, never a hand-restated interface. `tier`
- * and `isModerator` are trusted account-level signals read server-side (the stored
- * column via `Kunye.tierOf` / the `moderates` relation), surfaced on the row, never
- * inferred from the session. `emailFailing` is the SELF failing-delivery signal
- * (#2693) the membrane notice reads via the `emailFailing?` seam — optional, so a
- * non-self read (or the not-yet-wired worker) is treated as deliverable.
+ * The `me` shape — the client identity, single-sourced as {@link BootUser} (the wire `User`
+ * minus fate's `__typename`, ADR 0185) so the async `me` read and the synchronous `__BOOT__.user`
+ * seed carry the EXACT same fields. `tier` and `isModerator` are trusted account-level signals
+ * read server-side (the stored column via `Kunye.tierOf` / the `moderates` relation), never
+ * inferred from the session. `emailFailing` is the SELF failing-delivery signal (#2693) the
+ * membrane notice reads via the `emailFailing?` seam — a non-self read is treated as deliverable.
  */
-export type MeUser = Pick<
-	User,
-	"id" | "email" | "name" | "image" | "username" | "tier" | "isModerator" | "emailFailing"
->;
+export type MeUser = BootUser;
 
 export type MeStatus = "idle" | "loading" | "ok" | "error";
 
@@ -64,12 +62,16 @@ export function useMe(): {
 		deps: [session.data],
 	});
 
-	// `me` persists across a `loading` refetch; cleared only when signed out (idle)
-	// or on a read error, mirroring the pre-helper behavior (no flash to null).
-	const meRef = useRef<MeUser | null>(null);
+	// Seed first paint from the edge-resolved `__BOOT__.user` (ADR 0185): the identity renders
+	// synchronously so the signed-in surfaces never swap in content while the async `me` read
+	// settles. The fate read reconciles on session change; absent `__BOOT__` ⇒ null ⇒ today's
+	// async-only behavior. `me` persists across a `loading` refetch and while the session is still
+	// settling (so the seed survives first paint), cleared only on a read error OR a definitively
+	// signed-out session — never a flash to null.
+	const meRef = useRef<MeUser | null>(readBootUser());
 	if (state.status === "ok") {
 		meRef.current = state.data;
-	} else if (state.status !== "loading") {
+	} else if (state.status === "error" || (!session.isPending && !session.data)) {
 		meRef.current = null;
 	}
 

@@ -8,9 +8,9 @@
  */
 import {afterEach, describe, expect, it} from "vitest";
 import type {BootPayload} from "./boot.ts";
-import {readBoot, readBootMember} from "./boot.ts";
-import {MECMUA_PUBLIC_READ, PHOENIX_NAV_IA} from "./keys.ts";
-import {SHELL_SIGNED_IN_KEY} from "./shell-keys.ts";
+import {readBoot, readBootMember, readBootUser} from "./boot.ts";
+import {MECMUA_FEED, MECMUA_PUBLIC_READ, PHOENIX_NAV_IA} from "./keys.ts";
+import type {BootUser} from "./shell-keys.ts";
 
 const withBoot = (boot: unknown) => {
 	(globalThis as {window?: unknown}).window = {__BOOT__: boot};
@@ -38,7 +38,7 @@ describe("readBoot — absent __BOOT__ is a first-class, non-error state", () =>
 	});
 
 	it("returns the injected payload when the edge injected a well-formed object", () => {
-		const payload: BootPayload = {[MECMUA_PUBLIC_READ]: true, [SHELL_SIGNED_IN_KEY]: false};
+		const payload: BootPayload = {[MECMUA_PUBLIC_READ]: true, [MECMUA_FEED]: false};
 		withBoot(payload);
 		expect(readBoot()).toEqual(payload);
 	});
@@ -47,13 +47,13 @@ describe("readBoot — absent __BOOT__ is a first-class, non-error state", () =>
 describe("readBootMember — a member key falls back to the fetch path unless truly present", () => {
 	it("returns undefined for every member when __BOOT__ is absent (the fetch-fallback signal)", () => {
 		expect(readBootMember(MECMUA_PUBLIC_READ)).toBeUndefined();
-		expect(readBootMember(SHELL_SIGNED_IN_KEY)).toBeUndefined();
+		expect(readBootMember(MECMUA_FEED)).toBeUndefined();
 	});
 
 	it("returns the injected boolean when the key is present", () => {
-		withBoot({[MECMUA_PUBLIC_READ]: true, [SHELL_SIGNED_IN_KEY]: true});
+		withBoot({[MECMUA_PUBLIC_READ]: true, [MECMUA_FEED]: true});
 		expect(readBootMember(MECMUA_PUBLIC_READ)).toBe(true);
-		expect(readBootMember(SHELL_SIGNED_IN_KEY)).toBe(true);
+		expect(readBootMember(MECMUA_FEED)).toBe(true);
 	});
 
 	it("returns undefined for a key absent from an otherwise-present payload", () => {
@@ -64,5 +64,34 @@ describe("readBootMember — a member key falls back to the fetch path unless tr
 	it("returns undefined for a non-boolean value rather than fabricating a gate", () => {
 		withBoot({[MECMUA_PUBLIC_READ]: "true"});
 		expect(readBootMember(MECMUA_PUBLIC_READ)).toBeUndefined();
+	});
+});
+
+describe("readBootUser — the synchronous first-paint identity (ADR 0185)", () => {
+	const bootUser: BootUser = {
+		id: "user-42",
+		email: "elif@kamp.us",
+		name: "Elif",
+		image: null,
+		username: "elif",
+		tier: "yazar",
+		isModerator: false,
+		emailFailing: false,
+	};
+
+	it("returns the injected user object when the edge resolved a signed-in viewer", () => {
+		withBoot({[MECMUA_PUBLIC_READ]: true, user: bootUser});
+		expect(readBootUser()).toEqual(bootUser);
+	});
+
+	it("returns null for a signed-out viewer (user explicitly null)", () => {
+		withBoot({[MECMUA_PUBLIC_READ]: true, user: null});
+		expect(readBootUser()).toBeNull();
+	});
+
+	it("returns null when __BOOT__ is absent (never-hang fallback / flag off) — the async fallback", () => {
+		expect(readBootUser()).toBeNull();
+		withBoot({[MECMUA_PUBLIC_READ]: true});
+		expect(readBootUser()).toBeNull();
 	});
 });

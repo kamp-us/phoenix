@@ -46,6 +46,50 @@ export const toTrustedUser = (
 		return toUser({...base, tier, isModerator: isMod, emailFailing: base.emailFailing ?? false});
 	});
 
+/** The validated session identity {@link resolveMeUser} resolves the trusted `User` from. */
+export interface MeSessionUser {
+	id: string;
+	email: string;
+	name?: string | null | undefined;
+	image?: string | null | undefined;
+}
+
+/**
+ * The ONE session→user resolution shared by the `/fate` `me` query and the edge
+ * `__BOOT__.user` injection (ADR 0185), so both read the same canonical row + trusted
+ * standing. Reads the canonical `user` row fresh (so a just-set `username` round-trips before
+ * better-auth's session inference catches up), falling back to the session identity when the
+ * row is absent; projects the SELF failing-delivery signal (#2693); then attaches the trusted
+ * tier + moderator standing via {@link toTrustedUser}.
+ */
+export const resolveMeUser = (
+	sessionUser: MeSessionUser,
+): Effect.Effect<User, never, Pasaport | Kunye | RelationStore> =>
+	Effect.gen(function* () {
+		const pasaport = yield* Pasaport;
+		const fresh = yield* pasaport.getUserById(sessionUser.id);
+		const base = fresh
+			? {
+					id: fresh.id,
+					email: fresh.email,
+					name: fresh.name,
+					image: fresh.image,
+					username: fresh.username,
+				}
+			: {
+					id: sessionUser.id,
+					email: sessionUser.email,
+					name: sessionUser.name ?? null,
+					image: sessionUser.image ?? null,
+					username: null,
+				};
+		const emailFailing = yield* pasaport.getEmailDeliveryState(base.id).pipe(
+			Effect.map((r) => r.state.failing),
+			Effect.catchTag("pasaport/UserNotFound", () => Effect.succeed(false)),
+		);
+		return yield* toTrustedUser({...base, emailFailing});
+	});
+
 /**
  * The BATCHED by-id user rows with moderator standing joined on: fetch the user
  * rows, then ONE `RelationStore` set-membership read (`moderatorsAmong`) decides
