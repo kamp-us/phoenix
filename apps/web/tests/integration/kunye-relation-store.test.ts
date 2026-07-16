@@ -18,7 +18,7 @@
  */
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {type Relation, RelationStore, resource} from "@kampus/authz";
-import {makeD1Rest} from "@kampus/d1-rest";
+import {makeD1Rest, readYourWrite} from "@kampus/d1-rest";
 import {and, eq} from "drizzle-orm";
 import {Effect, Layer} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
@@ -76,19 +76,26 @@ afterEach(async () => {
 	await remove(SUBJECT);
 });
 
-// #3075 stopgap (reversible): retry-wrap so a transient real-D1 flake in merge_group retries
-// instead of evicting clean, unrelated PRs from the merge queue. Retry, NOT skip — the real-D1
-// coverage stays. `mint()` is onConflictDoNothing (retry-idempotent) and uses no seedTerm, so
-// vitest.config's "no retry" seedTerm-dedup constraint isn't tripped here. Remove once #3075's
-// durable ci.yml worker-relevance filter lands.
-describe("RelationStoreLive.has on real D1 — resolves composite-PK tuple existence", {
-	retry: 2,
-}, () => {
+// The mint/remove writes and the `has` read all cross makeD1Rest's REST transport, which carries
+// no read-your-writes guarantee — the /query endpoint takes no D1 session bookmark (see
+// `readYourWrite`), so an immediate read after a write can observe the pre-write state until the
+// account's D1 fabric catches up (#3075 Signature B / #3078). Poll the read until it reflects the
+// just-written truth this test controls, so the read-after-write assertion is deterministic rather
+// than a stale coin-flip. `readYourWrite` returns the real read on exhaustion, so a genuinely-wrong
+// result still fails the assertion loudly — this waits out latency, it does not mask a bug.
+const hasWhen = (tuple: Relation, expected: boolean): Promise<boolean> =>
+	readYourWrite(
+		() => has(tuple),
+		(observed) => observed === expected,
+	);
+
+describe("RelationStoreLive.has on real D1 — resolves composite-PK tuple existence", () => {
 	it("a seeded tuple reads present; a non-matching tuple reads absent", async () => {
 		await mint(SUBJECT);
 
-		expect(await has({subject: SUBJECT, relation: RELATION, object})).toBe(true);
+		expect(await hasWhen({subject: SUBJECT, relation: RELATION, object}, true)).toBe(true);
 
+		// No write targets these keys, so their absence is stable — assert directly.
 		expect(await has({subject: `${NS}-rando`, relation: RELATION, object})).toBe(false);
 		expect(await has({subject: SUBJECT, relation: "admin", object})).toBe(false);
 		expect(
@@ -102,9 +109,9 @@ describe("RelationStoreLive.has on real D1 — resolves composite-PK tuple exist
 
 	it("a removed tuple is denied on the next call (fresh per call, no cached authority)", async () => {
 		await mint(SUBJECT);
-		expect(await has({subject: SUBJECT, relation: RELATION, object})).toBe(true);
+		expect(await hasWhen({subject: SUBJECT, relation: RELATION, object}, true)).toBe(true);
 
 		await remove(SUBJECT);
-		expect(await has({subject: SUBJECT, relation: RELATION, object})).toBe(false);
+		expect(await hasWhen({subject: SUBJECT, relation: RELATION, object}, false)).toBe(false);
 	});
 });

@@ -159,3 +159,48 @@ export const d1RestLayerFromEnv: Layer.Layer<D1RestServices> = Layer.merge(
  */
 export const makeD1RestFromEnv = (target: {accountId: string; databaseId: string}): D1Database =>
 	makeD1Rest({...target, layer: d1RestLayerFromEnv});
+
+const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+export interface ReadYourWriteOptions {
+	/** Max poll attempts, counting the first read (default 6). */
+	readonly maxAttempts?: number;
+	/** Base of the exponential backoff, in ms (default 100). */
+	readonly baseDelayMs?: number;
+	/** Injected for tests — real `setTimeout` sleep by default. */
+	readonly sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Bounded read-your-writes poll for a read issued through {@link makeD1Rest}.
+ *
+ * The REST transport has NO read-your-writes guarantee: each statement is an independent
+ * `queryDatabase` POST to `/d1/database/<id>/query`, and that endpoint neither accepts nor
+ * returns a D1 session bookmark — `@distilled.cloud/cloudflare`'s `QueryDatabaseRequest` carries
+ * only `sql`/`params`/`batch` (verified against the pinned SDK schema, itself generated from
+ * Cloudflare's OpenAPI). D1's Sessions API commit token — the read-your-writes primitive — is
+ * reachable only through the Workers binding (`env.DB.withSession()`), not this REST path. So a
+ * REST read issued immediately after a REST write has no ordering against it and can observe the
+ * pre-write state until the account's D1 fabric catches up (the #3075 künye flake).
+ *
+ * A caller that KNOWS the post-write truth (a test that just minted a row) passes it as
+ * `isConsistent`; this re-reads with exponential backoff until the read reflects it or the attempt
+ * budget is spent, and returns the LAST value either way — it never throws and never fabricates a
+ * result, so the caller's own assertion on the returned value still fails loudly on a
+ * genuinely-wrong read and only a not-yet-visible write is waited out. The transport itself cannot
+ * do this: it cannot tell an absent row from a not-yet-visible one, so the expected state must come
+ * from the caller — which is why this is a caller-invoked helper, not a transport auto-retry.
+ */
+export const readYourWrite = async <T>(
+	read: () => Promise<T>,
+	isConsistent: (value: T) => boolean,
+	options: ReadYourWriteOptions = {},
+): Promise<T> => {
+	const {maxAttempts = 6, baseDelayMs = 100, sleep = defaultSleep} = options;
+	let value = await read();
+	for (let attempt = 1; attempt < maxAttempts && !isConsistent(value); attempt++) {
+		await sleep(baseDelayMs * 2 ** (attempt - 1));
+		value = await read();
+	}
+	return value;
+};

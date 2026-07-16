@@ -12,7 +12,7 @@ import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
 import {assert, describe, it} from "@effect/vitest";
 import {Layer} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import {assertRestParam, makeD1Rest, toRestParams} from "./index.ts";
+import {assertRestParam, makeD1Rest, readYourWrite, toRestParams} from "./index.ts";
 
 const restD1 = (fetch: typeof globalThis.fetch): D1Database =>
 	makeD1Rest({
@@ -105,5 +105,69 @@ describe("makeD1Rest — batch is one REST POST carrying every statement in orde
 		assert.deepStrictEqual(batch[0]!.params, ["sisli"]);
 		assert.strictEqual(batch[1]!.sql, "insert into t (slug, norm) values (?, ?)");
 		assert.deepStrictEqual(batch[1]!.params, ["sisli", "sisli"]);
+	});
+});
+
+// The REST /query endpoint carries no D1 session bookmark (verified against the pinned
+// `@distilled.cloud/cloudflare` `QueryDatabaseRequest` schema), so an immediate read after a
+// write has no read-your-writes guarantee — the #3075 künye flake. `readYourWrite` re-reads until
+// the caller's known post-write truth holds, and — load-bearing — returns the LAST value on
+// exhaustion so a genuinely-wrong read still fails the caller's assertion rather than being masked.
+describe("readYourWrite — bounded read-your-writes poll (#3075/#3078)", () => {
+	// A sleep double that resolves at once (no real timers) and records each backoff it was asked
+	// for, so the poll's cadence is asserted without waiting.
+	const recordingSleep = () => {
+		const delays: number[] = [];
+		return {delays, sleep: async (ms: number) => void delays.push(ms)};
+	};
+
+	it("returns the first read when it is already consistent (no sleep, no re-read)", async () => {
+		let reads = 0;
+		const {delays, sleep} = recordingSleep();
+		const value = await readYourWrite(
+			async () => {
+				reads++;
+				return true;
+			},
+			(v) => v === true,
+			{sleep},
+		);
+		assert.strictEqual(value, true);
+		assert.strictEqual(reads, 1);
+		assert.deepStrictEqual(delays, []);
+	});
+
+	it("re-reads until the write is observed, then returns the consistent value", async () => {
+		// The write becomes visible on the 3rd read (stale, stale, present).
+		const seq = [false, false, true];
+		let i = 0;
+		const {delays, sleep} = recordingSleep();
+		const value = await readYourWrite(
+			async () => seq[i++]!,
+			(v) => v === true,
+			{sleep, baseDelayMs: 100},
+		);
+		assert.strictEqual(value, true);
+		assert.strictEqual(i, 3);
+		// Two backoffs before the 2nd and 3rd reads, exponential from the base.
+		assert.deepStrictEqual(delays, [100, 200]);
+	});
+
+	it("returns the LAST value on budget exhaustion — a genuinely-absent write is not masked", async () => {
+		let reads = 0;
+		const {delays, sleep} = recordingSleep();
+		const value = await readYourWrite(
+			async () => {
+				reads++;
+				return false;
+			},
+			(v) => v === true,
+			{sleep, maxAttempts: 4, baseDelayMs: 50},
+		);
+		// Never became consistent → the real (false) read is returned so the caller's own assertion
+		// fails loudly; the poll never fabricates `true`.
+		assert.strictEqual(value, false);
+		assert.strictEqual(reads, 4);
+		assert.deepStrictEqual(delays, [50, 100, 200]);
 	});
 });

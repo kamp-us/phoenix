@@ -39,7 +39,13 @@ acyclic.
   integration test both run the real direct-D1 work through.
 - `toRestParams` / `assertRestParam` — the REST-wire param transform and its strict-`string[]`
   null guard (#569).
-- `D1RestConfig` / `D1RestServices` types.
+- `readYourWrite(read, isConsistent, options?)` — a bounded read-your-writes poll for callers that
+  need read-after-write consistency over this transport. The REST `/query` endpoint carries no D1
+  session bookmark (that Sessions API primitive is Workers-binding-only), so an immediate read after
+  a write has no ordering guarantee; a caller that knows the post-write truth polls the read until it
+  reflects it. Returns the last read either way — it waits out latency, it never masks a wrong read
+  (#3075 / #3078).
+- `D1RestConfig` / `D1RestServices` / `ReadYourWriteOptions` types.
 
 ## Consumers
 
@@ -53,5 +59,7 @@ acyclic.
 
 The transport's contract is tested **once**, in `src/index.unit.test.ts` (no CF creds, no SQL
 engine — ADR 0082 unit tier): the `meta.changes` mapping (carried + defaulting to 0), the
-`toRestParams` null rejection (#569), and the batch single-POST contract. Each consumer's
-integration tier still exercises the real transport against real D1 end to end.
+`toRestParams` null rejection (#569), the batch single-POST contract, and `readYourWrite`'s
+read-your-writes poll (re-reads until consistent; returns the last value on exhaustion so a real
+absence is never masked). Each consumer's integration tier still exercises the real transport
+against real D1 end to end.
