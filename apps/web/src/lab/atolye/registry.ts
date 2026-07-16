@@ -10,6 +10,7 @@ import {avatarExhibit} from "./exhibits/Avatar.exhibit";
 import {buttonExhibit} from "./exhibits/Button.exhibit";
 import {cardExhibit} from "./exhibits/Card.exhibit";
 import {collapsibleExhibit} from "./exhibits/Collapsible.exhibit";
+import {composerExhibit} from "./exhibits/Composer.exhibit";
 import {copyLinkButtonExhibit} from "./exhibits/CopyLinkButton.exhibit";
 import {countToggleExhibit} from "./exhibits/CountToggle.exhibit";
 import {dialogExhibit} from "./exhibits/Dialog.exhibit";
@@ -28,6 +29,9 @@ import {toggleGroupExhibit} from "./exhibits/ToggleGroup.exhibit";
 import {tooltipExhibit} from "./exhibits/Tooltip.exhibit";
 
 const exhibits: readonly AnyExhibit[] = [
+	// The composer leads the catalog — atölye's first feature-level exhibit (#3095), ahead of
+	// the UI primitives it is built from.
+	composerExhibit,
 	buttonExhibit,
 	avatarExhibit,
 	cardExhibit,
