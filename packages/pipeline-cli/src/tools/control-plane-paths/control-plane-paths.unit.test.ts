@@ -29,10 +29,6 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/doctor/doctor.sh")).toBe(true);
 		// depth is irrelevant — a hypothetical helper two levels deep is §CP too (no new anchoring accident).
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/report/lib/helper.sh")).toBe(true);
-		// pipeline-crew-mcp is a new control-plane package (epic #3045); registering its path makes
-		// every crew-mcp child PR classify §CP structurally (banks at cansirin), not auto-merge (#3069).
-		expect(isControlPlane("packages/pipeline-crew-mcp/src/index.ts")).toBe(true);
-		expect(isControlPlane("packages/pipeline-crew-mcp/package.json")).toBe(true);
 	});
 
 	it("does NOT classify the four deliberately-OUT skill dirs (operational, not gate-critical)", () => {
@@ -44,6 +40,11 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 	it("does NOT classify known non-§CP paths", () => {
 		expect(isControlPlane("apps/web/src/main.tsx")).toBe(false);
 		expect(isControlPlane("packages/some-other-pkg/src/index.ts")).toBe(false);
+		// pipeline-crew-mcp is crew-coordination tooling, NOT gate machinery — declassified from §CP
+		// (#3147, reverse of #3072). Its child PRs auto-merge on the normal review gates; only the
+		// surfaces that perform/enforce merges & reviews stay §CP.
+		expect(isControlPlane("packages/pipeline-crew-mcp/src/index.ts")).toBe(false);
+		expect(isControlPlane("packages/pipeline-crew-mcp/package.json")).toBe(false);
 		// Over-broadening guard (#2950): the any-depth clause matches `.sh` LEAVES only — a
 		// NON-`.sh` file in a non-gate skill's subdir stays non-§CP, so the broadening didn't
 		// silently swallow whole non-gate skill dirs (only their shell helpers).
