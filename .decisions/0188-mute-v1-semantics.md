@@ -15,7 +15,7 @@ shipped a working v1 surface: the read-mask that hides a muted member's content
 ([#3113](https://github.com/kamp-us/phoenix/issues/3113)), the mute/unmute mutations
 ([#3112](https://github.com/kamp-us/phoenix/issues/3112)), and the "manage my mutes"
 management view ([#3114](https://github.com/kamp-us/phoenix/issues/3114)). Sitting atop
-that landed surface, three product-semantics questions were left open and gate what mute
+that landed surface, three product-semantics questions were left open and define what mute
 actually *means* for v1. Decision issue
 [#3118](https://github.com/kamp-us/phoenix/issues/3118) asks them:
 
