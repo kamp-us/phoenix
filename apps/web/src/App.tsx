@@ -221,9 +221,9 @@ function Layout() {
 						onLogout={onSignOut}
 						actions={
 							// giriş-yap rides the first-paint presence bit, not the settling session:
-							// `__BOOT__.signedIn` (via signedInAtFirstPaint) suppresses the CTA for a
+							// `__BOOT__.user != null` (via signedInAtFirstPaint) suppresses the CTA for a
 							// signed-in user from the first frame, so it never flashes then swaps out
-							// (#2933). Absent `__BOOT__` ⇒ this reduces to `isSignedIn`, today's split.
+							// (#2933, ADR 0185). Absent `__BOOT__` ⇒ this reduces to `isSignedIn`, today's split.
 							!signedInAtFirstPaint ? (
 								<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
 									giriş yap
