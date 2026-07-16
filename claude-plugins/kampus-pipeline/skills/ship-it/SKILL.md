@@ -339,14 +339,21 @@ echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && ech
 # made the *require* predicate a superset of review-design's own dispatch/off-ramp predicate
 # (`^apps/web/src/`): a non-web `.tsx` was required-but-unroutable — the dispatched review-design run
 # off-ramped with no marker and ship-it deadlocked on a review-design PASS no run could produce.
+# IN-SRC TEST CARVE-OUT (#3071): a change whose apps/web/src paths are ALL test/spec files renders no
+# surface, so it must NOT mint a required review-design either — the src-colocated `*.test.tsx` next to
+# a component (the established sibling-colocation convention) stalled #3046/#3047 at ship on a gate no
+# run could satisfy. ERE (grep -E) has no negative lookahead, so a single UI_RE can't express "under
+# src, but not a test" — mirror §CLASS's has-docs carve-then-test: strip test/spec files FIRST, THEN
+# test for a UI path. A real component (apps/web/src/**/*.tsx non-test) or a mixed component+test diff
+# survives the carve and STILL gates; only an all-test/spec src diff is exempted.
 UI_RE='^apps/web/src/'
-UI_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^UI_RE=' | head -n1 || true)"
-if [ -n "$UI_LIVE" ]; then
-  UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"   # UI-gating tracks origin/main, not the snapshot's age (#2341)
-else
-  UI_RE='.'   # FAIL CLOSED: can't read origin/main's UI_RE ⇒ treat EVERY path as UI-affecting ⇒ REQUIRE review-design, never silently skip the gate (the safe default is demand-the-gate)
-fi
-echo "$FILES" | grep -Eq "$UI_RE" && echo "has-ui"   # UI-affecting → require review-design ALONGSIDE the class gate(s)
+UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
+UI_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
+UI_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_RE=' | head -n1 || true)"
+UX_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_EXCLUDE_RE=' | head -n1 || true)"
+if [ -n "$UI_LIVE" ]; then UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"; else UI_RE='.'; fi   # FAIL CLOSED: can't read origin/main's UI_RE ⇒ '.' ⇒ every path UI-affecting ⇒ REQUIRE review-design, never silently skip (#2341)
+if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")"; else UI_EXCLUDE_RE='$^'; fi   # FAIL CLOSED: unreadable ⇒ '$^' never-match ⇒ carve out NOTHING ⇒ every apps/web/src path (incl. tests) gates review-design
+echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"   # carve test/spec first, THEN require review-design ALONGSIDE the class gate(s)
 ```
 
 **Routing:**

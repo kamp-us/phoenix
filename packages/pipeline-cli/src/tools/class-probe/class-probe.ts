@@ -152,22 +152,45 @@ export const DESIGN_NAMESPACE = "review-design" as const;
 export const FAILCLOSED_UI_RE = ".";
 
 /**
- * Parse the canonical `UI_RE='…'` line out of `ship-it/SKILL.md` — the single source for the
- * additive has-ui/review-design gate (§CLASS keeps `UI_RE` in ship-it, not in §CLASS itself).
- * A missing line falls back to the fail-closed default; the source is single, so this only
- * bites on a truncated read.
+ * Fail-closed UI carve-out: `$^` (end-anchor before start-anchor ⇒ never matches) ⇒ carve out
+ * NOTHING, so an unreadable/incomplete `UI_EXCLUDE_RE` leaves every apps/web/src path (tests
+ * included) reaching the UI test ⇒ demand review-design. Mirrors §CLASS's `HAS_DOCS_EXCLUDE_RE`
+ * fail-closed sentinel — the safe direction is over-gate, never silently exempt.
+ */
+export const FAILCLOSED_UI_EXCLUDE_RE = "$^";
+
+/**
+ * Parse the canonical `UI_RE='…'` / `UI_EXCLUDE_RE='…'` lines out of `ship-it/SKILL.md` — the
+ * single source for the additive has-ui/review-design gate (§CLASS keeps both in ship-it, not in
+ * §CLASS itself). A missing line falls back to its fail-closed default; the source is single, so
+ * this only bites on a truncated read. (`^UI_RE=` does not match the `UI_EXCLUDE_RE=` line — the
+ * fourth char diverges — so the two never cross-capture.)
  */
 export const parseUiProbe = (shipItText: string): string =>
 	shipItText.match(/^UI_RE='([^']*)'/m)?.[1] ?? FAILCLOSED_UI_RE;
 
+export const parseUiExclude = (shipItText: string): string =>
+	shipItText.match(/^UI_EXCLUDE_RE='([^']*)'/m)?.[1] ?? FAILCLOSED_UI_EXCLUDE_RE;
+
 /**
- * Is the diff UI-affecting (has-ui)? A non-visual `apps/web/src/*.ts` still matches `UI_RE`
- * (`^apps/web/src/`) — that is deliberate here, not a bug to eyeball away: ship-it requires
+ * Is the diff UI-affecting (has-ui)? Carve-then-test, mirroring §CLASS's has-docs probe: a file
+ * counts only if it is NOT a test/spec (`UI_EXCLUDE_RE`) AND matches `UI_RE`. A non-visual
+ * `apps/web/src/*.ts` still counts — deliberate, not a bug to eyeball away: ship-it requires
  * review-design on exactly this predicate, so the fan must dispatch it on exactly this predicate
- * or the PR deadlocks on a phantom-empty review-design namespace (#2485/#2483). Conversely a
- * `.tsx`/`.css` OUTSIDE apps/web/src is NOT has-ui — the scope is `^apps/web/src/` only, so the
- * require predicate never exceeds review-design's dispatch/off-ramp (#2470). Fail-closed: an
- * uncompilable probe matches every path ⇒ has-ui.
+ * or the PR deadlocks on a phantom-empty review-design namespace (#2485/#2483). A `.tsx`/`.css`
+ * OUTSIDE apps/web/src is not has-ui — the scope is `^apps/web/src/` only, so the require predicate
+ * never exceeds review-design's dispatch/off-ramp (#2470). The carve-out (#3071) exempts an
+ * all-test/spec src diff — `*.test.tsx` / `*.spec.ts` render no surface, so a required review-design
+ * on them could only ever no-op PASS (the #3046/#3047 ship stall); a real component or a mixed
+ * component+test diff survives the carve and STILL gates. Fail-closed: an uncompilable UI_RE matches
+ * every path ⇒ has-ui; an uncompilable exclude carves nothing ⇒ still has-ui.
  */
-export const isUiAffecting = (files: ReadonlyArray<string>, uiRe: string): boolean =>
-	files.some(matcher(uiRe, () => true));
+export const isUiAffecting = (
+	files: ReadonlyArray<string>,
+	uiRe: string,
+	uiExclude: string,
+): boolean => {
+	const isUi = matcher(uiRe, () => true);
+	const isTestOrSpec = matcher(uiExclude, () => false);
+	return files.some((f) => !isTestOrSpec(f) && isUi(f));
+};
