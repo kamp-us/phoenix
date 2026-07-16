@@ -35,7 +35,7 @@ import * as Schedule from "effect/Schedule";
 import {inject} from "vitest";
 import Stack from "../../alchemy.run.ts";
 import {isTransientDeployError} from "./_deploy-transient.ts";
-import {awaitEdgeReady, edgeFetch} from "./_edge-ready.ts";
+import {awaitEdgeReady, DEPLOY_HEALTH_DEADLINE_MS, edgeFetch} from "./_edge-ready.ts";
 import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
 import {type Harness, harness} from "./_harness.ts";
 import {slugify, stageName} from "./_stage-name.ts";
@@ -301,15 +301,19 @@ export const deployTransientRetry = Effect.retry({
  * workers.dev route 404s (the CF edge placeholder) for a few seconds while it propagates, so it
  * rides the shared readiness budget (`awaitEdgeReady` + `edgeFetch`, ADR 0127): the thrown
  * placeholder-404 AND any non-ready response retry until healthy. A worker that never serves
- * healthy JSON within the bound (30 × 2s) DIES with a clear message rather than hanging —
+ * healthy JSON within the bound (60 × 2s) DIES with a clear message rather than hanging —
  * `Effect.promise` turns the thrown exhaustion error into a defect, the same hard failure the
  * retired `Effect.die` produced. ONE copy for both deploy paths (the per-file `integrationStack`
  * and the shared-stage `_global-setup.ts`).
+ *
+ * Rides the raised `DEPLOY_HEALTH_DEADLINE_MS` (see its rationale, #3080), not the 60s per-probe
+ * default — the concurrent-stage load that overran 60s and died this `beforeAll` is why.
  */
 export const awaitWorkerReady = (url: string): Effect.Effect<void, never, never> =>
 	Effect.promise(async () => {
 		const res = await awaitEdgeReady(() => edgeFetch(`${url}/api/health`), healthReady, {
 			pollMs: WARM_POLL_MS,
+			deadlineMs: DEPLOY_HEALTH_DEADLINE_MS,
 		});
 		// `awaitEdgeReady` returns the last response even when it never went ready (the #1060
 		// no-early-stop guarantee), so a worker that never served healthy JSON must be turned into
