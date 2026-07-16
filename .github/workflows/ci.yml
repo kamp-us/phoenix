@@ -42,10 +42,11 @@ jobs:
       # PR (the #994 pipeline-cli reorg) edits the lockfile, paying the tier + the
       # #1010/#813 stage-leak flake for nothing. The `@kampus/worker-relevance`
       # classifier (run in the `worker-relevance` step below) attributes the lockfile
-      # delta and FAILS SAFE TO RUNNING. Default `'true'`: the step only runs on PRs
-      # (it needs a base ref), so a `push` keeps the full backstop, and any step
-      # failure/skip leaves the safe default. ANDed into integration/e2e required-ness
-      # below so it can only ever REMOVE a run, never add a skip the old gate didn't.
+      # delta and FAILS SAFE TO RUNNING. Default `'true'`: the step runs on `pull_request`
+      # and `merge_group` (issue #3079) but not `push` (no base ref), so a `push` keeps the
+      # full backstop, and any step failure/skip leaves the safe default. ANDed into
+      # integration/e2e required-ness below so it can only ever REMOVE a run, never add a
+      # skip the old gate didn't.
       worker_relevant: ${{ steps.worker-relevance.outputs.worker_relevant || 'true' }}
       # Per-gating-job *required-ness* (#786): the SINGLE SOURCE of "should this job
       # have run". Each `*_required` output mirrors the SAME inputs that gate the job's
@@ -74,12 +75,25 @@ jobs:
       # The `feature-complete` forcing function still wins (it ORs with `backend`), and
       # since a feature-complete PR is by definition worker-affecting the worker-
       # relevance AND never strips a flagged full sweep in practice.
-      # `merge_group` ORed in FIRST: the batch runs in the trusted base's context (only
-      # already-mergeable PRs enter the queue) with repo secrets, so the fork/author
-      # guard — a PR-only fork-secret safety — is not applicable and the full backstop
-      # runs on the batch (ADR 0132).
+      # `merge_group` now respects the SAME worker-relevance filter the `pull_request`
+      # path trusts (issue #3079), instead of ORing in FIRST to force the full suite on
+      # every batch — the old unconditional merge_group run let a flaky real-CF integration
+      # suite evict clean worker-IRRELEVANT PRs from the queue (#3075: #3067/#3073/#3074/
+      # #3064). The classify step below now runs on `merge_group` too, over the batch's
+      # real `base_sha...head_sha` range (ADR 0132) — the prospective merge of every queued
+      # PR, so a diff over it OR's ALL batched PRs: the batch is worker-relevant if ANY
+      # batched PR touches the worker, and integration is skipped ONLY when EVERY batched PR
+      # is provably worker-irrelevant (`worker_relevant == 'false'`). FAIL-SAFE TO RUNNING is
+      # preserved end to end — `|| 'true'` defaults an absent/empty output to running, the
+      # classify step emits `worker_relevant=true` on any missing base/head SHA or
+      # unresolvable diff, and the classifier core itself fails safe to running — so any
+      # doubt RUNS integration, never skips (the #3079 threat model: a mis-classified
+      # worker-relevant batch must never skip and merge broken). The batch still runs in the
+      # trusted base's context with repo secrets, so the PR-only fork/author guard does not
+      # apply.
       integration_required: >-
-        ${{ github.event_name == 'merge_group' ||
+        ${{ (github.event_name == 'merge_group' &&
+             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false') ||
             ((steps.filter.outputs.backend == 'true' ||
              contains(github.event.pull_request.labels.*.name, 'feature-complete')) &&
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
@@ -229,41 +243,87 @@ jobs:
         with:
           node-version-file: package.json
 
-      # Worker-relevance classifier (issue #1014). Only on a PR (a `push` has no base
-      # ref to diff and keeps the full integration backstop). Emits `worker_relevant`
-      # — `false` ONLY when the whole diff (incl. the `pnpm-lock.yaml` delta, attributed
-      # per importer block) is provably confined to packages the worker never imports;
-      # any worker-affecting path, a shared lockfile section, an unattributable diff, or
-      # any failure leaves it `true` (fail-safe to running). Runs the zero-runtime-dep
-      # `@kampus/worker-relevance` bin directly — no `pnpm install` (the `ci-required`
-      # idiom), so the always-on detector stays fast. `git diff base...head` over the
-      # full-history checkout above gives the PR's changed files + the lockfile diff.
+      # Worker-relevance classifier (issue #1014, extended to the batch by #3079). Runs on
+      # `pull_request` AND `merge_group` — a `push` has no base ref to diff and keeps the
+      # full integration backstop. Emits `worker_relevant` — `false` ONLY when the whole
+      # diff (incl. the `pnpm-lock.yaml` delta, attributed per importer block) is provably
+      # confined to packages the worker never imports; any worker-affecting path, a shared
+      # lockfile section, an unattributable diff, or any failure leaves it `true` (fail-safe
+      # to running). Runs the zero-runtime-dep `@kampus/worker-relevance` bin directly — no
+      # `pnpm install` (the `ci-required` idiom), so the always-on detector stays fast.
+      # The `git diff` over the full-history checkout above gives the changed files + the
+      # lockfile diff: on `pull_request` the range is the PR's merge-base...HEAD (three-dot);
+      # on `merge_group` it is the batch's `base_sha..head_sha` (two-dot — see the range
+      # assignment below for why two-dot is merge-base-safe here; ADR 0132), which OR's the
+      # SAME classifier across every batched PR (#3079 defenses 1/2/4: real base ref,
+      # OR-across-batch, exact classifier reuse).
       - name: Classify worker-relevance of the diff
         id: worker-relevance
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
           BASE_REF: ${{ github.base_ref }}
+          # The batch's real base + head (empty on `pull_request`). The queue builds the
+          # batch on `base_sha` and `head_sha` is its prospective-merge tip (ADR 0132).
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
         run: |
           set -euo pipefail
-          # Full base fetch (no `--depth=1`): the `fetch-depth: 0` checkout above already
-          # has HEAD's full history, but a shallow `--depth=1` base re-fetch can land a base
-          # commit sharing NO ancestor with HEAD on a branch whose base drifted behind a
-          # fast-moving `main`, so `git merge-base` came back empty under `set -e` and
-          # false-red the whole `changes` job (issue #1154). A full base fetch restores a
-          # real merge-base.
-          git fetch --no-tags origin "$BASE_REF"
-          # Fail SAFE to running, not red, if a merge-base still can't be found (orphan/grafted
-          # history): an empty base degrades to the two-dot range against `origin/$BASE_REF`,
-          # which yields a superset diff → `worker_relevant=true` (the step's existing
-          # fail-safe-to-running stance), never a hard step failure.
-          if base="$(git merge-base "origin/$BASE_REF" HEAD)" && [ -n "$base" ]; then
-            range="$base...HEAD"
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+            # #3079 defense 3 (FAIL-SAFE TO RUNNING): any doubt about the batch's diff — an
+            # empty base/head SHA, or an endpoint that can't be resolved in the checkout —
+            # emits `worker_relevant=true` and runs integration; NEVER a skip on doubt, and
+            # never a hard step failure (which would red the batch instead of running it).
+            if [ -z "$MERGE_GROUP_BASE_SHA" ] || [ -z "$MERGE_GROUP_HEAD_SHA" ]; then
+              echo "::warning::worker-relevance: merge_group base_sha/head_sha empty — fail-safe to running"
+              echo "worker_relevant=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # The `fetch-depth: 0` checkout already carries the batch head's history (base_sha
+            # is its ancestor); fetch defensively and fail SAFE to running if either endpoint
+            # is still unresolvable, rather than let `set -e` red the batch.
+            git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA" "$MERGE_GROUP_HEAD_SHA" 2>/dev/null || true
+            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
+               || ! git cat-file -e "${MERGE_GROUP_HEAD_SHA}^{commit}" 2>/dev/null; then
+              echo "::warning::worker-relevance: merge_group base/head SHA unresolvable in checkout — fail-safe to running"
+              echo "worker_relevant=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # TWO-DOT (not three-dot): diff the batch's base and head TREES directly. A
+            # merge_group's base_sha and head_sha need NOT share a merge base, so the three-dot
+            # form (which requires one) exit-128'd the batch under `set -e` before any fail-safe
+            # could run (#3083). head_sha is the prospective-merge tip that already contains
+            # every batched PR, so `base..head` captures the whole batch's cumulative diff.
+            range="$MERGE_GROUP_BASE_SHA..$MERGE_GROUP_HEAD_SHA"
           else
-            echo "::warning::worker-relevance: no merge-base with origin/$BASE_REF — degrading to a full diff (fail-safe to running)"
-            range="origin/$BASE_REF..HEAD"
+            # Full base fetch (no `--depth=1`): the `fetch-depth: 0` checkout above already
+            # has HEAD's full history, but a shallow `--depth=1` base re-fetch can land a base
+            # commit sharing NO ancestor with HEAD on a branch whose base drifted behind a
+            # fast-moving `main`, so `git merge-base` came back empty under `set -e` and
+            # false-red the whole `changes` job (issue #1154). A full base fetch restores a
+            # real merge-base.
+            git fetch --no-tags origin "$BASE_REF"
+            # Fail SAFE to running, not red, if a merge-base still can't be found (orphan/grafted
+            # history): an empty base degrades to the two-dot range against `origin/$BASE_REF`,
+            # which yields a superset diff → `worker_relevant=true` (the step's existing
+            # fail-safe-to-running stance), never a hard step failure.
+            if base="$(git merge-base "origin/$BASE_REF" HEAD)" && [ -n "$base" ]; then
+              range="$base...HEAD"
+            else
+              echo "::warning::worker-relevance: no merge-base with origin/$BASE_REF — degrading to a full diff (fail-safe to running)"
+              range="origin/$BASE_REF..HEAD"
+            fi
           fi
-          CHANGED_FILES="$(git diff --name-only --diff-filter=ACMRD "$range")"
-          LOCKFILE_DIFF="$(git diff "$range" -- pnpm-lock.yaml)"
+          # Guard the diff fail-safe-to-running: ANY failure — a no-merge-base endpoint pair, an
+          # unresolvable SHA, any git error — degrades to running, never `set -e`-reds the batch.
+          # Belt-and-suspenders with the two-dot switch above: the two-dot range already avoids
+          # the merge-base requirement, and this catch keeps a future git edge case fail-safe too
+          # (#3083). Runs in an `if` condition, which is exempt from `set -e`.
+          if ! CHANGED_FILES="$(git diff --name-only --diff-filter=ACMRD "$range")" \
+             || ! LOCKFILE_DIFF="$(git diff "$range" -- pnpm-lock.yaml)"; then
+            echo "::warning::worker-relevance: git diff over '$range' failed — fail-safe to running"
+            echo "worker_relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           export CHANGED_FILES LOCKFILE_DIFF
           node packages/worker-relevance/src/bin.ts
 
