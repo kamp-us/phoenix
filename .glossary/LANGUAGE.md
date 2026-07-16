@@ -363,6 +363,18 @@ though the surface it powers renders Turkish UI copy. Collapsing the two axes ("
 concept shows on a Turkish screen, so its glossary term must be Turkish") is the mistake
 this note exists to stop.
 
+**On a showcase / exhibit surface, the chrome is technical, only the sample content is
+product copy.** Any surface that *demonstrates* components — a design-system storyboard,
+a component gallery, a pattern showcase — layers a component/primitive that renders some
+example content. Split them: the **names** — component names, primitive names, section
+and exhibit labels, and every code identifier or route path around them — are technical,
+so they stay **English**; **only the in-exhibit example/sample content** the component
+renders is user-facing product copy, so **it** is Turkish. Turkish never bleeds up from
+the rendered sample into the technical chrome that frames it: a `Button` exhibit is
+labeled `Button` (English name) showing a `Gönder` sample (Turkish content), never a
+`Düğme` exhibit. This is the general rule for every showcase surface — Turkish-naming the
+components was the atölye-storyboard inversion the founder ruled a standing don't.
+
 The Turkish product/brand nouns this repo uses:
 
 | Noun | What it names |
