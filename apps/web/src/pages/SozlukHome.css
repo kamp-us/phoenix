@@ -1,5 +1,6 @@
-/* Sozluk home — masthead with title + searchbar; two-column layout below
-   alphabet (recent on the left, popular on the right). Mirrors dense .sozluk-home__*. */
+/* Sozluk home — masthead with title + the `+ yeni tanım` create CTA; two-column layout
+   below the alphabet (recent on the left, popular on the right). The go-to search folded
+   into the global ⌘K `ara` (#2995), so the masthead carries no local search box. */
 
 .kp-sozluk-home__masthead {
 	display: grid;
@@ -21,55 +22,6 @@
 	color: var(--text-muted);
 	margin-left: 8px;
 	font-weight: 400;
-}
-
-.kp-sozluk-home__searchbar {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	height: 28px;
-	padding: 0 10px;
-	background: var(--surface-sunken);
-	border: 1px solid var(--border);
-	border-radius: var(--r-sm);
-	width: 320px;
-}
-.kp-sozluk-home__searchbar:focus-within {
-	border-color: var(--accent);
-}
-.kp-sozluk-home__searchbar svg {
-	color: var(--text-muted);
-	flex-shrink: 0;
-}
-.kp-sozluk-home__searchbar input {
-	flex: 1;
-	background: transparent;
-	border: 0;
-	outline: none;
-	font: var(--t-body-sm);
-	min-width: 0;
-}
-.kp-sozluk-home__searchbar input::placeholder {
-	color: var(--text-faint);
-}
-
-/* The masthead box is go-to-or-create, not search (#1669): the accent-tinted `+` glyph
-   sets it apart from the topbar's muted magnifier so its create-on-Enter reads as create. */
-.kp-sozluk-home__gotocreate svg {
-	color: var(--accent);
-}
-
-.kp-sozluk-home__create-cta {
-	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: var(--s-2);
-	padding: var(--s-3) 0;
-}
-.kp-sozluk-home__create-cta p {
-	font: var(--t-body-sm);
-	color: var(--text-muted);
-	margin: 0;
 }
 
 .kp-sozluk-home__empty {
@@ -103,16 +55,10 @@
 }
 
 /* Phone reflow (≤640px, the repo's 640px container convention — ProfilePage/PanoSubmitPage):
-   stack the masthead (searchbar under the title) and the two body columns to one column, and
-   let the fixed-320px searchbar shrink fluidly so it can't force horizontal overflow (#1250). */
+   stack the masthead (create CTA under the title) and the two body columns to one column. */
 @media (max-width: 640px) {
 	.kp-sozluk-home__masthead {
 		grid-template-columns: 1fr;
-	}
-	.kp-sozluk-home__searchbar {
-		width: 100%;
-		max-width: 320px;
-		min-width: 0;
 	}
 	.kp-sozluk-home__columns {
 		grid-template-columns: 1fr;
