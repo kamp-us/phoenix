@@ -22,6 +22,7 @@ import {emptyKeysetPage} from "../../db/keyset.ts";
 import {toConnection} from "../fate/connection.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
+import {currentMutedIds} from "../mute/read-mask.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {Pano, type PostSummaryRow} from "./Pano.ts";
 import {toPost} from "./shapers.ts";
@@ -72,6 +73,9 @@ export const lists = {
 			// hides çaylak-sandboxed posts from anyone but their author + a mod (#1205).
 			const sandboxViewer = yield* currentSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
+			// Mute read-mask (#3113): the muter's muted authors, gated behind the
+			// default-off `member-mute` flag (empty set off ⇒ today's feed unchanged).
+			const mutedIds = yield* currentMutedIds;
 			const pano = yield* Pano;
 			const page = yield* pano.listPostsConnection({
 				sort: toPostSort(args.sort),
@@ -79,6 +83,7 @@ export const lists = {
 				...(args.after !== undefined ? {after: args.after} : {}),
 				...(args.host !== undefined && args.host.length > 0 ? {host: args.host} : {}),
 				sandboxViewer,
+				mutedIds,
 			});
 
 			// Signed-out: serve the keyset page as-is (neutral `myVote`/`isSaved`).

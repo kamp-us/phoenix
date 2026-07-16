@@ -16,6 +16,7 @@ import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentMutedIds} from "../mute/read-mask.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition} from "./views.ts";
@@ -57,10 +58,14 @@ export const queries = {
 			const parallelStamps = yield* flags
 				.getBoolean(PHOENIX_SOZLUK_STAMP_WAVE, false)
 				.pipe(provideRequestFlags);
+			// Mute read-mask (#3113): hide muted authors' definitions from the muter
+			// (default-off `member-mute` ⇒ empty set ⇒ today's definition reads unchanged).
+			const mutedIds = yield* currentMutedIds;
 			const connection = yield* sozluk.listDefinitionsKeyset(args.slug, {
 				...keysetInput(args.definitions, DEFINITIONS_PAGE_SIZE),
 				viewerId,
 				sandboxViewer,
+				mutedIds,
 				parallelStamps,
 			});
 			const definitions = toConnection<(typeof connection.rows)[number], Definition>(

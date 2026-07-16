@@ -32,6 +32,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import {mutedAuthorsWhere} from "../mute/read-mask.ts";
 import type {ReactionTargetNotFound} from "../reaction/errors.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
 import type {ReportId} from "../report/ids.ts";
@@ -323,6 +324,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			after?: string | null | undefined;
 			viewerId?: string | null | undefined;
 			sandboxViewer?: SandboxViewer | undefined;
+			mutedIds?: ReadonlySet<string> | undefined;
 			/**
 			 * Route the finalize stamps through the concurrent {@link parallelStampWave}
 			 * instead of the serial chain (#2710). Default/off ⇒ the wave runs at
@@ -347,7 +349,14 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 			{sandboxedAt: schema.commentRecord.sandboxedAt, authorId: schema.commentRecord.authorId},
 			resolveSandboxViewer(opts),
 		);
-		const baseWhere = and(eq(schema.commentRecord.postId, postId), visible, sandboxClause);
+		// Mute read-mask (#3113): hide muted authors' comments from the muter's thread.
+		const muteClause = mutedAuthorsWhere(schema.commentRecord.authorId, opts.mutedIds);
+		const baseWhere = and(
+			eq(schema.commentRecord.postId, postId),
+			visible,
+			sandboxClause,
+			muteClause,
+		);
 		const totalCount = yield* run((db) =>
 			db
 				.select({n: sql<number>`count(*)`})
@@ -406,6 +415,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 		opts: {
 			viewerId?: string | null | undefined;
 			sandboxViewer?: SandboxViewer | undefined;
+			mutedIds?: ReadonlySet<string> | undefined;
 			/** See `listCommentsKeyset`'s `parallelStamps` (#2710). */
 			parallelStamps?: boolean | undefined;
 		} = {},
@@ -426,6 +436,8 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 							},
 							resolveSandboxViewer(opts),
 						),
+						// Mute read-mask (#3113): drop muted authors' comments from the batch.
+						mutedAuthorsWhere(schema.commentRecord.authorId, opts.mutedIds),
 					),
 				),
 		);

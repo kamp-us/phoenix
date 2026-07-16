@@ -15,6 +15,7 @@ import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentMutedIds} from "../mute/read-mask.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPostFromPage} from "./shapers.ts";
 import type {Comment} from "./views.ts";
@@ -38,12 +39,15 @@ export const queries = {
 			// sandboxed post is hidden from anyone but its author + a moderator (#1205).
 			const sandboxViewer = yield* currentSandboxViewer;
 			const viewerId = sandboxViewer.viewerId;
-			const page = yield* pano.getPost(args.idOrSlug, {sandboxViewer});
+			// Mute read-mask (#3113): a muted author's post + its thread read as
+			// not-found for the muter (default-off `member-mute` ⇒ empty set ⇒ unchanged).
+			const mutedIds = yield* currentMutedIds;
+			const page = yield* pano.getPost(args.idOrSlug, {sandboxViewer, mutedIds});
 			if (!page) return null;
 
 			// Stamp `myVote` + `isSaved` by batching the single post through the same
 			// `user_vote` / `post_bookmark` read — no per-row resolver.
-			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId, sandboxViewer});
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId, sandboxViewer, mutedIds});
 
 			const base = toPostFromPage(
 				page,
@@ -75,6 +79,7 @@ export const queries = {
 				...keysetInput(args.comments, COMMENTS_PAGE_SIZE),
 				viewerId,
 				sandboxViewer,
+				mutedIds,
 				parallelStamps,
 			});
 			const comments = toConnection<(typeof connection.rows)[number], Comment>(
