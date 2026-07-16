@@ -19,6 +19,7 @@ import {ciRequiredCommand} from "./tools/ci-required/command.ts";
 import {classProbeCommand} from "./tools/class-probe/command.ts";
 import {codeownersCpCommand} from "./tools/codeowners-cp/command.ts";
 import {controlPlanePathsCommand} from "./tools/control-plane-paths/command.ts";
+import {cpCardinalityCommand} from "./tools/cp-cardinality/command.ts";
 import {crabboxManifestCommand} from "./tools/crabbox-manifest/command.ts";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
 import {designTokenGuardCommand} from "./tools/design-token-guard/command.ts";
@@ -112,6 +113,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	worktreeSweepCommand,
 	codeownersCpCommand,
 	controlPlanePathsCommand,
+	cpCardinalityCommand,
 	tokenSpendCommand,
 	trivialDiffCommand,
 	classProbeCommand,
