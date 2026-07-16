@@ -96,10 +96,14 @@ export default defineConfig({
 					// Each file's beforeAll(deploy(Stack)) provisions a real worker + D1
 					// under an isolated stage and seeds over the network, then asserts over
 					// HTTP — so a file's wall-clock is deploy + migrate + seed + assert.
-					// Generous timeouts cover that. NO Vitest `retry`: the harness owns
-					// per-request retries at the right layer, and a test-level retry would
+					// Generous timeouts cover that. No project-level Vitest `retry`: the harness
+					// owns per-request retries at the right layer, and a test-level retry would
 					// re-enter `seedTerm` whose process-level (slug, body) dedup then reports
 					// created:false / inserted:0 — breaking the seed assertions it retries.
+					// Exception: two files carry a file-local `describe(..., {retry: 2})` #3075
+					// stopgap (search-error-vs-empty, kunye-relation-store) — neither re-enters
+					// `seedTerm` on retry, so the dedup hazard above doesn't apply. Reversible;
+					// drops when #3075's durable ci.yml worker-relevance filter lands.
 					testTimeout: 120_000,
 					hookTimeout: 180_000,
 					pool: "forks",
