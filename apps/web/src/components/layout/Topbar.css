@@ -163,8 +163,8 @@
 /* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
 
 /* Reserved signed-in account slot (#2933, ADR 0179 §1) — a fixed-geometry stand-in for the
-   user-menu trigger, rendered from __BOOT__.signedIn while fate has yet to publish the real
-   chip. It reuses `.kp-topbar__user` (box: gap/padding/height) and, for the avatar, the real
+   user-menu trigger, driven by the typed __BOOT__.user object (ADR 0185) while fate has yet
+   to publish the real chip. It reuses `.kp-topbar__user` (box: gap/padding/height) and, for the avatar, the real
    `.kp-avatar` box primitive itself, so the swap to the real menu moves nothing — the placeholder
    avatar is pixel-identical to the Avatar it replaces. The cluster holds its final geometry from
    first paint (no giriş-yap↔cluster swap, no empty→pop); the value late-fills in place (#2160).
