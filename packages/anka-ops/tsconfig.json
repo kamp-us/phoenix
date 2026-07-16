@@ -1,0 +1,11 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"composite": true,
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"types": ["node", "@cloudflare/workers-types"]
+	},
+	"include": ["src", "vitest.config.ts"]
+}

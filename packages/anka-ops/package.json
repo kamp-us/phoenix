@@ -1,0 +1,33 @@
+{
+	"name": "@kampus/anka-ops",
+	"version": "0.0.0",
+	"private": true,
+	"description": "The operator CLI for anka-built apps — a framework-tier ops language over hidden infra (epic #2089, ADR 0045). This skeleton ships the scoped keychain-first operator credential every later verb group (flag, report) reuses; no product verb lands here.",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run --project unit",
+		"test:unit": "vitest run --project unit",
+		"auth": "node src/bin.ts auth"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"@kampus/cf-credentials": "workspace:*",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
