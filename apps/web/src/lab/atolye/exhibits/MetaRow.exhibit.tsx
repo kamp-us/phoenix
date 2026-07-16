@@ -18,8 +18,8 @@ function MetaRowDemo() {
 
 export const metaRowExhibit = defineExhibit<Record<string, never>>({
 	id: "meta-row",
-	title: "Üstveri Satırı",
-	summary: "Yazar · zaman · sayı gibi soluk üstverinin nokta ayraçlı ortak satırı.",
+	title: "MetaRow",
+	summary: "The shared dot-separated row for faint metadata like author · time · count.",
 	component: MetaRowDemo,
 	knobs: {},
 });

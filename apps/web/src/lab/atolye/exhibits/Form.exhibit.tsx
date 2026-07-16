@@ -21,9 +21,9 @@ function FormDemo({mono}: {mono?: boolean}) {
 export const formExhibit = defineExhibit<React.ComponentProps<typeof FormDemo>>({
 	id: "form",
 	title: "Form",
-	summary: "Etiket, ipucu ve hata slotlu alanlar — base-ui Field/Input/Textarea üstünde.",
+	summary: "Fields with label, hint, and error slots — built on base-ui Field/Input/Textarea.",
 	component: FormDemo,
 	knobs: {
-		mono: {kind: "boolean", label: "Tek aralıklı alan", default: false},
+		mono: {kind: "boolean", label: "Monospace field", default: false},
 	},
 });

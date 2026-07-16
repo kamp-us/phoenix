@@ -4,11 +4,11 @@ import {defineExhibit} from "../exhibit";
 
 export const copyLinkButtonExhibit = defineExhibit<React.ComponentProps<typeof CopyLinkButton>>({
 	id: "copy-link-button",
-	title: "Bağlantı Kopyala",
-	summary: "Öğenin bağlantısını panoya kopyalar; tıklayınca yerinde geri bildirim verir.",
+	title: "CopyLinkButton",
+	summary: "Copies an item's link to the clipboard; gives inline feedback on click.",
 	component: CopyLinkButton,
 	knobs: {
-		path: {kind: "string", label: "Yol", default: "/pano/ornek"},
-		label: {kind: "string", label: "Etiket", default: "paylaş"},
+		path: {kind: "string", label: "Path", default: "/pano/ornek"},
+		label: {kind: "string", label: "Label", default: "paylaş"},
 	},
 });

@@ -8,8 +8,8 @@ export const draftRestoreBannerExhibit = defineExhibit<
 	React.ComponentProps<typeof DraftRestoreBanner>
 >({
 	id: "draft-restore-banner",
-	title: "Taslak Geri Yükleme",
-	summary: "Auth turundan sonra kurtulan taslağı sunar; sessizce geri enjekte etmez.",
+	title: "DraftRestoreBanner",
+	summary: "Offers a draft recovered after the auth round-trip; never silently re-injects it.",
 	component: DraftRestoreBanner,
 	knobs: {},
 	fixedProps: {onRestore: () => {}, onDismiss: () => {}},

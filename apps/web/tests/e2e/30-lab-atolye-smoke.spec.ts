@@ -10,7 +10,9 @@ import {isCloudflarePlaceholder404} from "../integration/_edge-ready";
  * equivalent, keeping the harness reachable and unbroken as exhibits evolve.
  *
  * Route/slug are ASCII English (`/lab/atolye`) per the routes-are-English convention + founder
- * ruling; the visible brand copy is Turkish (`atölye`, exhibit titles like `Düğme`).
+ * ruling. Only the brand noun stays Turkish (`atölye`); technical chrome — exhibit titles (real
+ * component names like `Button`) and knob labels — is English, only in-exhibit demo copy is
+ * Turkish (#3230).
  *
  * The Button exhibit (`button`) is the fixed anchor: it's the harness's worked exemplar, first in
  * the registry, with a `variant` enum knob whose value paints `kp-btn--<variant>` on the rendered
@@ -57,7 +59,7 @@ test("atölye smoke journey: index lists exhibits → open exhibit → change kn
 	await expect(stagedButton).toHaveClass(/kp-btn--primary/);
 
 	// 3. Changing the `variant` enum knob re-renders the component AND reflects into the URL.
-	await page.locator('[data-knob="variant"]').getByRole("button", {name: "İkincil"}).click();
+	await page.locator('[data-knob="variant"]').getByRole("button", {name: "Secondary"}).click();
 	await expect(stagedButton).toHaveClass(/kp-btn--secondary/);
 	await expect(page).toHaveURL(/[?&]variant=secondary(&|$)/);
 });
@@ -73,7 +75,7 @@ test("atölye knob state round-trips through the URL (deep-link ↔ live twiddle
 
 	// state → URL: toggling back to the schema default drops the param (a pristine exhibit's URL is
 	// param-free), closing the round-trip in both directions.
-	await page.locator('[data-knob="variant"]').getByRole("button", {name: "Birincil"}).click();
+	await page.locator('[data-knob="variant"]').getByRole("button", {name: "Primary"}).click();
 	await expect(stagedButton).toHaveClass(/kp-btn--primary/);
 	await expect(page).not.toHaveURL(/[?&]variant=/);
 });

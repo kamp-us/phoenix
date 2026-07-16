@@ -27,10 +27,17 @@ function ToastDemo({durationMs}: {durationMs?: number}) {
 
 export const toastExhibit = defineExhibit<React.ComponentProps<typeof ToastDemo>>({
 	id: "toast",
-	title: "Bildirim",
-	summary: "Ekranın kenarında beliren, kendiliğinden kapanan geçici bildirim şeridi.",
+	title: "Toast",
+	summary:
+		"A transient, self-dismissing notification strip that appears at the edge of the screen.",
 	component: ToastDemo,
 	knobs: {
-		durationMs: {kind: "number", label: "Süre (ms, 0=kalıcı)", default: 4000, min: 0, step: 500},
+		durationMs: {
+			kind: "number",
+			label: "Duration (ms, 0=persistent)",
+			default: 4000,
+			min: 0,
+			step: 500,
+		},
 	},
 });

@@ -4,12 +4,12 @@ import {defineExhibit} from "../exhibit";
 
 export const switchExhibit = defineExhibit<React.ComponentProps<typeof Switch>>({
 	id: "switch",
-	title: "Anahtar",
-	summary: "İki durumlu aç/kapa anahtarı — base-ui Switch üstünde, rol token'larıyla.",
+	title: "Switch",
+	summary: "A two-state on/off switch — built on base-ui Switch, with role tokens.",
 	component: Switch,
 	knobs: {
-		defaultChecked: {kind: "boolean", label: "Açık", default: true},
-		disabled: {kind: "boolean", label: "Devre dışı", default: false},
+		defaultChecked: {kind: "boolean", label: "On", default: true},
+		disabled: {kind: "boolean", label: "Disabled", default: false},
 	},
 	fixedProps: {"aria-label": "Bildirimler"},
 });
