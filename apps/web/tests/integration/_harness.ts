@@ -34,6 +34,7 @@
  *   - `h.openSse(...)` / `readFrame(...)` — live SSE transport helpers
  */
 
+import {cfApiThrottle} from "./_cf-api-throttle.ts";
 import {cfFetchWithRateLimitRetry} from "./_d1-rest-retry.ts";
 import {
 	awaitEdgeReady,
@@ -240,16 +241,21 @@ const cloudflareApiToken = (): string => {
 // response body for diagnosis. Setup-only — never on a test's black-box assertion path.
 // A transient 429 (the shared-account D1 rate-limit that reds the batched ref, #2915) is
 // bounded-retried before the throw — see `_d1-rest-retry.ts` for why 429 is safe to replay.
+// The whole call funnels through the shared `cfApiThrottle` (proactive concurrency cap +
+// jittered start-pacing, #3081) so the harness's own aggregate CF-API burst stays gentler on
+// the account-global limit; the throttle composes AROUND the per-call retry, not over it.
 async function cloudflareApi(path: string, init?: RequestInit): Promise<Response> {
-	const res = await cfFetchWithRateLimitRetry(() =>
-		fetch(`${CLOUDFLARE_API_BASE}${path}`, {
-			...init,
-			headers: {
-				authorization: `Bearer ${cloudflareApiToken()}`,
-				"content-type": "application/json",
-				...init?.headers,
-			},
-		}),
+	const res = await cfApiThrottle.run(() =>
+		cfFetchWithRateLimitRetry(() =>
+			fetch(`${CLOUDFLARE_API_BASE}${path}`, {
+				...init,
+				headers: {
+					authorization: `Bearer ${cloudflareApiToken()}`,
+					"content-type": "application/json",
+					...init?.headers,
+				},
+			}),
+		),
 	);
 	if (!res.ok) {
 		throw new Error(
