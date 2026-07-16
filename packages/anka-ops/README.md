@@ -12,16 +12,16 @@ to the product-facing surfaces. It is a `packages/` Effect CLI per the repo's
 Node-over-Python convention (the `cf-utils` / `orphan-sweep` idiom): a pure, unit-tested core
 plus a thin `effect/unstable/cli` bin, run with `node src/bin.ts`.
 
-This package is the **framework-tier skeleton**. It ships:
+This package ships:
 
-- the root `anka-ops` command and the verb-group extension point, and
-- the scoped, keychain-first **operator credential** every later verb group reuses.
+- the root `anka-ops` command and the verb-group extension point,
+- the scoped, keychain-first **operator credential** every verb group reuses, and
+- the `flag` verb group ([#3133](https://github.com/kamp-us/phoenix/issues/3133)) — the
+  domain-language surface over Flagship, folding the `@kampus/cf-utils` core (see below).
 
-No product verb lands here. The `flag` verb group (fold cf-utils Flagship,
-[#3133](https://github.com/kamp-us/phoenix/issues/3133)) and the `report` verb group
-(generic AE-read + product-supplied catalog, [#3134](https://github.com/kamp-us/phoenix/issues/3134))
-build on this skeleton — the mechanism-vs-content seam keeps any product-specific query or
-catalog content out of this core.
+The `report` verb group (generic AE-read + product-supplied catalog,
+[#3134](https://github.com/kamp-us/phoenix/issues/3134)) builds on this skeleton next — the
+mechanism-vs-content seam keeps any product-specific query or catalog content out of this core.
 
 ## The credential seam
 
@@ -41,6 +41,31 @@ Credentials resolve **keychain-first** (after `auth login`), falling back to
 byte-for-byte unchanged. A missing or unauthorized credential surfaces a **typed error** on
 the Effect `E` channel, rendered by `NodeRuntime.runMain` — never a raw stack trace.
 
+## The `flag` verb group — fold cf-utils Flagship
+
+`anka-ops flag` is the operator-language surface over Flagship. It **folds** the
+[`@kampus/cf-utils`](../cf-utils/README.md) pure core (`flag.ts`'s no-match-split math +
+renderers, `flagship.ts`'s read/write clients, #1726) rather than re-implementing it — the only
+new logic is the operator-verb → cf-utils-lever mapping in `src/flag.ts`, fully unit-tested.
+
+```bash
+node packages/anka-ops/src/bin.ts flag get <key> [--env <env>]   # read a flag's live serving state
+node packages/anka-ops/src/bin.ts flag open <key> --env <env>    # release on (≡ cf-utils set on: 100% no-match split)
+node packages/anka-ops/src/bin.ts flag close <key> --env <env>   # kill (clear the split + default off)
+node packages/anka-ops/src/bin.ts flag graduate <key>            # verify fully open in prod, file the retirement chore
+```
+
+- **`open`** maps onto the cf-utils lever `set on` — the 100% no-match percentage split, never a
+  `defaultVariation` flip. **`close`** maps onto `set off` — the true kill switch (clear the split
+  *and* set the default off).
+- **`open`/`close` dry-run by default**; the live flip happens only under `--execute`. A non-TTY
+  caller proceeds (logged for the audit record), a TTY human is confirmed first (ADR 0134).
+- **`graduate`** never flips anything: it verifies the flag is fully open in prod (the retirement
+  trigger in [product-development-cycle.md](../../product-development-cycle.md) §Retirement — 100%
+  and stable for one release) and files the retirement chore via the `report` skill idiom
+  (`status:needs-triage`), so `write-code` drains the flag deletion. Dry-run by default,
+  `--execute` to file. An unknown key/env fails with a typed error listing the known keys/envs.
+
 ## The non-TTY posture (ADR 0134)
 
 A write verb's confirmation is decided by the pure `decideConfirm` core (`src/posture.ts`):
@@ -53,8 +78,12 @@ already uses. Keeping the decision IO-free is what lets it be exhaustively unit-
 ## Shape
 
 - **`src/cli.ts`** — the root `anka-ops` command tree, the `VERB_GROUPS` registry (the single
-  extension point children B/C fold their groups into), and `AnkaOpsRuntimeLayer` (the shared
-  credential seam every verb group resolves through).
+  extension point verb groups fold into), and `AnkaOpsRuntimeLayer` (the shared credential seam +
+  the cf-utils Flagship clients every verb group resolves through).
+- **`src/flag.ts`** — the pure `flag` adapter core: the operator-verb → cf-utils-lever mapping and
+  the graduate-eligibility decision. No serving-plan math (that stays in `@kampus/cf-utils`).
+- **`src/flag-command.ts`** — the thin `flag` verb-group IO shell wiring the pure adapter to the
+  cf-utils read/write clients.
 - **`src/posture.ts`** — the pure ADR 0134 non-TTY decision core reused by write verbs.
 - **`src/bin.ts`** — the thin `effect/unstable/cli` shell: wire the command tree, provide the
   runtime layer, run via `NodeRuntime.runMain`.

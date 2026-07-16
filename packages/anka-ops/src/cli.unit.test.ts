@@ -17,8 +17,8 @@ describe("ankaOps command tree", () => {
 		assert.strictEqual(ankaOps.name, "anka-ops");
 	});
 
-	it("wires the `auth` verb group (the skeleton's only shipped group)", () => {
-		assert.deepStrictEqual(wiredSubcommandNames(), ["auth"]);
+	it("wires the `auth` + `flag` verb groups", () => {
+		assert.deepStrictEqual(wiredSubcommandNames(), ["auth", "flag"]);
 	});
 
 	it("the registry advertises exactly the wired verb groups (no drift)", () => {
