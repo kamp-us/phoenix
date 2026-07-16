@@ -145,32 +145,39 @@ vi.mock("./components/divan/useDivanAccess", () => ({useDivanAccess: () => false
 vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: () => 0}));
 
 // Controllable flag mock. The eager `/profile` Katkıların skeleton (#2188) is gated on
-// the authorship-loop flag, so its tests flip `flags.authorshipLoop`; the mecmua feed
-// (akış) nav entry (#2547) is gated on `mecmua-feed`, flipped via `flags.mecmuaFeed`.
-// Every other read (and other flag key) stays off, matching the default the shell
-// rendered under before.
+// the authorship-loop flag, so its tests flip `flags.authorshipLoop`; the mecmua nav entry
+// (#2512) on `mecmua-public-read` (`flags.mecmua`); the mecmua feed (akış) nav entry (#2547)
+// on `mecmua-feed` (`flags.mecmuaFeed`). Every other read (and other flag key) stays off,
+// matching the default the shell rendered under before. `loading: false` on every read models
+// the shell-key-manifest members' SYNCHRONOUS `__BOOT__` resolution (ADR 0179, #2828) — a member
+// carries its final value on the first render, no post-boot flip.
 // `signedIn` drives the mocked `readBootUser` (the `__BOOT__.user` edge identity, ADR 0185):
 // the shell frame reads it to reserve AND seed the signed-in account cluster before `useSession`
 // settles. Default false = `__BOOT__` absent, so the pre-existing shell tests see today's
 // signed-out first paint unchanged.
 const flags = vi.hoisted(() => ({
 	authorshipLoop: false,
+	mecmua: false,
 	mecmuaFeed: false,
 	navIa: false,
 	signedIn: false,
 }));
 vi.mock("./flags/useFlag", async () => {
-	const {PHOENIX_AUTHORSHIP_LOOP, MECMUA_FEED, PHOENIX_NAV_IA} = await import("./flags/keys");
+	const {PHOENIX_AUTHORSHIP_LOOP, MECMUA_PUBLIC_READ, MECMUA_FEED, PHOENIX_NAV_IA} = await import(
+		"./flags/keys"
+	);
 	return {
 		useFlag: (key: string) => ({
 			value:
 				key === PHOENIX_AUTHORSHIP_LOOP
 					? flags.authorshipLoop
-					: key === MECMUA_FEED
-						? flags.mecmuaFeed
-						: key === PHOENIX_NAV_IA
-							? flags.navIa
-							: false,
+					: key === MECMUA_PUBLIC_READ
+						? flags.mecmua
+						: key === MECMUA_FEED
+							? flags.mecmuaFeed
+							: key === PHOENIX_NAV_IA
+								? flags.navIa
+								: false,
 			loading: false,
 		}),
 	};
@@ -344,6 +351,50 @@ describe("signed-in cluster seeded from __BOOT__.user (ADR 0185)", () => {
 		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
 		expect(screen.queryByText("Elif")).toBeNull();
 		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
+	});
+});
+
+// The mecmua nav entry (#2828) gates on `mecmua-public-read`, a shell-key-manifest member —
+// so the unified `useFlag` resolves it synchronously from `__BOOT__` and the link is in its
+// final nav position on the FIRST paint (no false→true pop-in after sözlük/pano). These pin the
+// gating AND the first-paint geometry: on ⇒ mecmua present on the first render, in order after
+// pano; off ⇒ absent (the flag's dark-ship kill-switch is retained, ADR 0179).
+describe("mecmua nav entry (#2828) — resolves at first paint from __BOOT__, no pop-in", () => {
+	beforeEach(() => {
+		fateMounts.length = 0;
+		sessionState = {data: null, isPending: true};
+		flags.mecmua = false;
+	});
+	afterEach(() => {
+		flags.mecmua = false;
+		vi.clearAllMocks();
+	});
+
+	it("off: the kill-switch dark ⇒ no mecmua nav link (the route's dark-ship posture is preserved)", () => {
+		renderApp();
+		expect(screen.queryByRole("link", {name: "mecmua"})).toBeNull();
+		// sözlük/pano still paint — the ungated siblings are unaffected.
+		expect(screen.getByRole("link", {name: "sözlük"})).toBeTruthy();
+		expect(screen.getByRole("link", {name: "pano"})).toBeTruthy();
+	});
+
+	it("on: mecmua paints on the FIRST render (session still pending), in final position after pano", () => {
+		flags.mecmua = true;
+		renderApp();
+		// Present on the very first paint — no act()/settle needed: the member resolved
+		// synchronously, so there is no false→true flip that would inject it a tick later.
+		const mecmua = screen.getByRole("link", {name: "mecmua"});
+		expect(mecmua.getAttribute("href")).toBe("/mecmua");
+		// Final geometry: mecmua sits after pano, matching its ungated siblings' order.
+		const navLinks = ["sözlük", "pano", "mecmua"].map((label) =>
+			screen.getByRole("link", {name: label}),
+		);
+		const order = navLinks.map((el) =>
+			Array.prototype.indexOf.call(document.querySelectorAll("a"), el),
+		);
+		expect(order).toEqual([...order].sort((a, b) => a - b));
+		// Still fate-free at first paint — the nav geometry is final without a fate mount.
+		expect(fateMounts).toHaveLength(0);
 	});
 });
 

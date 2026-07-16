@@ -102,22 +102,23 @@ function Layout() {
 	const location = useLocation();
 	const {toggle: toggleTheme, choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
-	// The mecmua nav entry (#2512), dark behind `mecmua-public-read` — the same seam the
-	// reader/index gate on. `useFlag` reads over `fetch` (no fate client), so it is safe in
-	// this always-painting shell frame: the entry simply appears once the flag resolves on,
-	// never blocking first paint (Pillar 1). Off ⇒ the nav is exactly as before.
+	// The three nav-shaping flags (mecmua-public-read, mecmua-feed, nav-IA) are shell-key-manifest
+	// members, so the unified `useFlag` resolves them SYNCHRONOUSLY from `window.__BOOT__` on the
+	// first render (loading:false, no fetch, no repaint): the nav paints its final geometry at first
+	// paint, killing the false→true pop-in these gates used to cost every load (#2828). Absent
+	// `__BOOT__` (flag off / the #2931 never-hang fallback) ⇒ the fetch fallback, exactly today's
+	// behavior. See ADR 0179.
+	//
+	// mecmua-public-read (#2512): the same seam the reader/index gate on; off ⇒ mecmua absent.
 	const {value: mecmuaOn} = useFlag(MECMUA_PUBLIC_READ, false);
-	// The mecmua feed (akış) nav entry (#2547), dark behind its own `mecmua-feed` seam —
-	// the SAME flag the `/mecmua/akis` route self-gates on (self-404 when off). Gating the
-	// link on the route's own seam is what keeps it from ever pointing at a dark 404: off ⇒
-	// no entry, so subscribing (also `mecmua-feed`) and its feed destination appear together.
-	// Under nav-IA (below) akış is a mecmua SUB-destination, so it moves out of this topbar
-	// product-noun row into the mecmua Subnav zone (#2603) — hence gated off here when navIaOn.
+	// mecmua-feed (akış, #2547): the SAME flag the `/mecmua/akis` route self-gates on (self-404 when
+	// off), so the link never points at a dark 404 — subscribing (also `mecmua-feed`) and its feed
+	// destination appear together. Under nav-IA akış is a mecmua SUB-destination, moving out of this
+	// topbar product-noun row into the mecmua Subnav zone (#2603) — hence gated off here when navIaOn.
 	const {value: feedOn} = useFlag(MECMUA_FEED, false);
-	// The nav-IA seam (#2600, epic #2596): with it on, pano's `+ gönderi` primary action
-	// lives in the pano Subnav CTA zone (placement law #2587), so the topbar no longer
-	// carries it — the eviction half of the atomic move. Off ⇒ the topbar is exactly as
-	// today. Same read as `App`'s zone-wrapping gate; `useFlag` is fate-free, safe here.
+	// nav-IA (#2600, epic #2596): with it on, pano's `+ gönderi` primary action lives in the pano
+	// Subnav CTA zone (placement law #2587), so the topbar drops it — the eviction half of the atomic
+	// move. Off ⇒ the topbar is exactly as today. Same read as `App`'s zone-wrapping gate below.
 	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
 
 	// The two-tier fate provider's public first paint (ADR 0167). While `get-session`
@@ -391,7 +392,9 @@ export function App() {
 	// The per-product Subnav zones ride the shared nav-IA seam (#2598, epic #2596),
 	// default-off. With it off the router is flat (today's structure); with it on each
 	// product's routes mount under a pathless layout route rendering its persistent Subnav
-	// zone. `useFlag` reads over `fetch` (no fate client), safe above the providers.
+	// zone. As a shell-key-manifest member nav-IA resolves synchronously from `window.__BOOT__`
+	// (unified `useFlag`, ADR 0179), so the router shape is final at first paint — no restructure
+	// flip. Absent `__BOOT__` ⇒ the fetch fallback, exactly today's behavior.
 	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
 	const panoRoutes = [
 		<Route key="pano" path="/pano" element={<PanoFeed />} />,
