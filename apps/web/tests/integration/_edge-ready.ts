@@ -47,6 +47,17 @@ export const isCloudflarePlaceholder404Error = (e: unknown): e is CloudflarePlac
 export const EDGE_READY_DEADLINE_MS = 60_000;
 export const EDGE_READY_POLL_MS = 1_500;
 
+// The raised budget the DEPLOY-time worker-health gate (`awaitWorkerReady`) rides, distinct from the
+// per-probe `EDGE_READY_DEADLINE_MS` above. Under concurrent-stage batch load on the one shared
+// Cloudflare account, a fresh `*.workers.dev` /api/health route's edge propagation routinely overruns
+// the 60s per-probe budget — the module-top `beforeAll(deploy…)` then throws and fails the WHOLE
+// suite to load (#3080, #3075 Signature-A). vitest test-`retry` can't re-run a failed `beforeAll`, so
+// a bigger SINGLE budget — not a redeploy retry, which two deploy+readiness attempts couldn't fit —
+// is the lever. Doubled to 120s: it stays inside the integration `hookTimeout` (180s,
+// `vitest.config.ts`) with room for the deploy + trailing non-fatal warms, and never hangs (the poll
+// returns on the deadline), so a genuinely dead worker still fails fast within the bound.
+export const DEPLOY_HEALTH_DEADLINE_MS = 120_000;
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
