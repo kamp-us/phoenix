@@ -10,9 +10,8 @@
  * a rejected coalesced flush drops every batched op (not one) and reports the error. Reds
  * if the patch is dropped: unpatched, each `add` POSTs on its own, so N subscribes issue N
  * POSTs and the count assertions fail.
- *
- * @patch-pin: @nkzw/fate@1.3.1
  */
+// @patch-pin: @nkzw/fate@1.3.1
 
 import {createHTTPTransport} from "react-fate";
 import {describe, expect, it, vi} from "vitest";
