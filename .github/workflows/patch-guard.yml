@@ -1,0 +1,45 @@
+name: patch-guard
+
+# CI gate for #3051 (ADR 0038): a maintained `pnpm patch` cannot land without a
+# registered behavior-pinning test — the epic's forcing function. A `pnpm patch` is a
+# silent fork of a dependency's behavior, so each patch must be pinned by a test that
+# fails if the patched behavior regresses; that test self-registers with a
+# `// @patch-pin: <name>@<version>` marker keyed to the exact patchedDependencies entry.
+# This job runs `pipeline-cli patch-guard check`: it reads the patchedDependencies map
+# from pnpm-workspace.yaml and every @patch-pin marker across the test tree, and fails
+# closed on a patched dep with no pin, a stale pin (dep/version not patched), or zero
+# patchedDependencies in scope (ADR 0092). The grammar + discipline are defined in
+# .patterns/dependency-patch-behavior-pins.md. The scan lives once in the tool.
+on:
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs the
+# guard, which fails via exit code — it posts no check-run/status/PR comment — so
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: "check every pnpm patch carries a @patch-pin behavior test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when a maintained patch has no @patch-pin marker, a marker is stale, or
+      # zero patchedDependencies are in scope (fail-closed). Report on stderr. See #3051.
+      - name: "Check every pnpm patch carries a @patch-pin behavior test"
+        run: node packages/pipeline-cli/src/bin.ts patch-guard check
