@@ -60,3 +60,23 @@ export const cfFetchWithRateLimitRetry = async (
 	}
 	return res;
 };
+
+/**
+ * A `fetch` that funnels every send through {@link cfFetchWithRateLimitRetry}, so the SAME 429
+ * discipline the setup path has (#2915/#3089) also covers a test's DATA-PLANE D1 REST calls issued
+ * over `makeD1Rest`'s `restLayer`. Inject it as the `FetchHttpClient.Fetch` reference the rest layer
+ * reads (`Layer.succeed(FetchHttpClient.Fetch, rateLimitRetryingFetch(fetch))`).
+ *
+ * Why this seam and not a per-call catch: `fetch` RESOLVES a 429 as a `Response` (an HTTP status is
+ * not a network error, so it never rejects), so the retry inspects `.status` and re-sends BEFORE
+ * `queryDatabase` maps a settled 429 body to a thrown error. A 429 therefore never surfaces as a
+ * thrown error to drizzle or to `readYourWrite`'s poll — one seam covers every data-plane call
+ * (`has`/`mint`/`remove`), the polled and the direct reads alike, reusing #3089's wrapper unchanged
+ * rather than growing a second retry path (#3099).
+ */
+export const rateLimitRetryingFetch = (
+	base: typeof globalThis.fetch,
+	options: RateLimitRetryOptions = {},
+): typeof globalThis.fetch =>
+	((input: Parameters<typeof globalThis.fetch>[0], init?: Parameters<typeof globalThis.fetch>[1]) =>
+		cfFetchWithRateLimitRetry(() => base(input, init), options)) as typeof globalThis.fetch;

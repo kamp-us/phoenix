@@ -26,13 +26,27 @@ import {afterEach, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle, type DrizzleDb, makeDrizzleLayer} from "../../worker/db/Drizzle.ts";
 import * as schema from "../../worker/db/drizzle/schema.ts";
 import {objectKey, RelationStoreLive} from "../../worker/features/kunye/RelationStore.ts";
+import {rateLimitRetryingFetch} from "./_d1-rest-retry.ts";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
 const h = sharedStack();
 const NS = nsToken(import.meta.url);
 
-const restLayer = Layer.merge(CredentialsFromEnv, FetchHttpClient.layer);
+// Data-plane `has`/`mint`/`remove` cross this REST transport, so its `fetch` carries the same
+// 429-retry the setup path has (#3089): a transient CF 429 (code 971) under merge_group load is
+// re-sent with full-jitter backoff at the transport, not thrown into drizzle/`readYourWrite` (#3099).
+const restLayer = Layer.merge(
+	CredentialsFromEnv,
+	FetchHttpClient.layer.pipe(
+		Layer.provide(
+			Layer.succeed(
+				FetchHttpClient.Fetch,
+				rateLimitRetryingFetch((input, init) => fetch(input, init)),
+			),
+		),
+	),
+);
 
 const object = resource("platform", NS);
 const SUBJECT = `${NS}-alice`;
