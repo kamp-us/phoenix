@@ -316,6 +316,17 @@ export const PHOENIX_EDGE_SHELL_BOOT = "phoenix-edge-shell-boot";
  */
 export const PROFILE_CANVAS = "profile-canvas";
 
+/**
+ * Member-mute (sustur) write-path dark-ship flag (#3112, epic #2035). The SINGLE seam
+ * the mute write path gates behind — the `mute.set` / `mute.remove` fate mutations fail
+ * closed (`MUTE_DISABLED`) with it off, so the whole primitive ships dark until a human
+ * flips it at release (ADR 0083): with it off no member can mute another even if a client
+ * bypasses the (not-yet-built) UI. Default-off, its own `member-` key scoped to the
+ * member-relation surface. The read-mask that consumes a mute (sibling) and the manage
+ * UI (reachability child) ship behind their own slices.
+ */
+export const MEMBER_MUTE = "member-mute";
+
 /** A declared flag paired with its default variation — the row the flags console lists (#2742). */
 export interface FlagDeclaration {
 	readonly key: string;
@@ -359,4 +370,5 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_ADMIN_CONSOLE, defaultValue: false},
 	{key: PHOENIX_EDGE_SHELL_BOOT, defaultValue: false},
 	{key: PROFILE_CANVAS, defaultValue: false},
+	{key: MEMBER_MUTE, defaultValue: false},
 ];

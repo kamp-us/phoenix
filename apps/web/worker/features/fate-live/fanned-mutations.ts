@@ -349,4 +349,23 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		rationale:
 			"clears the caller's private reader→author subscription edge; per-viewer `mecmuaFeed` connection, same no-leak rationale as `mecmua.subscribe`",
 	},
+
+	// mute — member-mute (sustur) presence (#3112, epic #2035). A mute masks ONLY the
+	// muter's OWN reads (the read-mask is a sibling slice), so it writes no
+	// Post/Comment/Definition in a subscribed cross-client connection — and its own
+	// views (feed/thread/manage-mutes) are per-viewer, so a publish onto the login-blind
+	// shared topic would over-fan/leak to every viewer. The `post.save` / `mecmua.subscribe`
+	// per-viewer-private-relation precedent: no cross-viewer fan-out.
+	{
+		key: "mute.set",
+		fanned: false,
+		rationale:
+			"writes the caller's private (muter,muted) mute relation; a mute masks only the muter's OWN reads (the read-mask is a sibling), so it writes no fanned content entity — and its own views are per-viewer, so a publish onto the login-blind shared topic would over-fan/leak to all viewers (the post.save precedent). No cross-viewer fan-out",
+	},
+	{
+		key: "mute.remove",
+		fanned: false,
+		rationale:
+			"clears the caller's private (muter,muted) mute relation; per-viewer own-read mask, same no-fan rationale as `mute.set`",
+	},
 ];

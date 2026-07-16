@@ -31,6 +31,7 @@ import {RelationStoreLive} from "../kunye/RelationStore.ts";
 import {authorshipLadder} from "../kunye/standing.ts";
 import {VouchLedgerLive} from "../kunye/VouchLedger.ts";
 import {MecmuaLive} from "../mecmua/Mecmua.ts";
+import {MuteLive} from "../mute/Mute.ts";
 import {BookmarkLive} from "../pano/Bookmark.ts";
 import {PanoFeedCache} from "../pano/feed-cache.ts";
 import {PanoLive} from "../pano/Pano.ts";
@@ -243,6 +244,10 @@ export const makeFateLayer = Layer.mergeAll(
 	// other domain layers. The publish yazar-floor is discharged at the mutation via
 	// `PublishMecmua` (CurrentActor/AgentAuthority/Kunye already in this graph), not here.
 	MecmuaLive,
+	// The member-mute (sustur) write service (#3112, epic #2035) — the `mute.set` /
+	// `mute.remove` presence writes, depending only on `Drizzle` (discharged below), so
+	// it merges flat like the other domain layers.
+	MuteLive,
 	// The authz ports the moderation gate (`report.resolve`/`restore`/`listOpen`)
 	// discharges `Moderate.over(platform)` against: `RelationStoreLive` reads the
 	// `moderates` tuple off the same `Drizzle` seam (discharged below), and
