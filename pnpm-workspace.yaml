@@ -126,7 +126,23 @@ onlyBuiltDependencies:
 #    `open`, so a feed load with N `useLiveView` mounts issued N single-op POSTs, each
 #    re-validating the session (~22 on an authed /pano load — #2273). Regression test:
 #    apps/web/src/fate/liveSubscribeBatch.test.ts. Not upstreamed in 1.3.1.
+#
+# effect — TWO hunks on 4.0.0-beta.92 (dist only; `effect/unstable/ai` resolves to
+# dist/*.js + dist/*.d.ts), giving the MCP channel edge the two things the fixed public
+# `McpServer`/`McpSchema` surface can't express (#3053, epic #3045):
+# 1. unstable/ai/McpServer.{js,d.ts} — an `experimental` capability passthrough in
+#    `layerHandlers` (+ the `experimental?` option on run/layer/layerStdio/layerHttp),
+#    so a server can advertise `experimental: { "claude/channel": {} }`. The
+#    `ServerCapabilities` schema already carries the slot; only the server wiring was
+#    missing.
+# 2. unstable/ai/McpSchema.{js,d.ts} — a `ChannelNotification`
+#    (`notifications/claude/channel`, `{ message, _meta }`) added to the fixed
+#    `ServerNotificationRpcs` union, so the run-loop's encode union and the
+#    `McpServer.notifications` client both gain the custom notification.
+# Behavior-pinned by packages/pipeline-crew-mcp/src/edge/mcp-channel.test.ts (the
+# `@patch-pin` guard, #3040/#3051). Retire when effect ships these natively.
 patchedDependencies:
   '@nkzw/fate@1.3.1': patches/@nkzw__fate@1.3.1.patch
   alchemy@2.0.0-beta.59: patches/alchemy@2.0.0-beta.59.patch
+  effect@4.0.0-beta.92: patches/effect@4.0.0-beta.92.patch
   react-fate@1.3.1: patches/react-fate@1.3.1.patch

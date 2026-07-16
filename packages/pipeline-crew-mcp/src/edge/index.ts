@@ -2,4 +2,9 @@
  * edge/ — the MCP channel edge: exposes the substrate to an MCP client as channels.
  * Generic (crew-agnostic); see the boundary note in `../index.ts`.
  */
-export {};
+export {
+	CHANNEL_CAPABILITY,
+	CHANNEL_NOTIFICATION_METHOD,
+	type ChannelNotificationPayload,
+	channelExperimentalCapability,
+} from "./mcp-channel.ts";

@@ -1,0 +1,99 @@
+diff --git a/dist/unstable/ai/McpSchema.d.ts b/dist/unstable/ai/McpSchema.d.ts
+index 06fff42d7f240698b9388524f874367c494242e6..8421cf06c7dee8215b690772df8a06a75284d679 100644
+--- a/dist/unstable/ai/McpSchema.d.ts
++++ b/dist/unstable/ai/McpSchema.d.ts
+@@ -3329,7 +3329,17 @@ export declare class ServerRequestRpcs extends ServerRequestRpcs_base {
+  * @since 4.0.0
+  */
+ export type ServerRequestEncoded = RequestEncoded<typeof ServerRequestRpcs>;
+-declare const ServerNotificationRpcs_base: RpcGroup.RpcGroup<typeof CancelledNotification | typeof ProgressNotification | typeof ResourceListChangedNotification | typeof ResourceUpdatedNotification | typeof PromptListChangedNotification | typeof ToolListChangedNotification | typeof LoggingMessageNotification>;
++declare const ChannelNotification_base: Rpc.Rpc<"notifications/claude/channel", Schema.Struct<{
++    message: Schema.String;
++    _meta: Schema.decodeTo<Schema.optional<Schema.$Record<Schema.String, Schema.Codec<Schema.Json, Schema.Json, never, never>>>, Schema.optionalKey<Schema.$Record<Schema.String, Schema.Codec<Schema.Json, Schema.Json, never, never>>>, never, never>;
++}>, Schema.Void, Schema.Never, never, never>;
++/**
++ * phoenix patch (#3053): custom, non-allowlisted server->client channel notification.
++ * See the `McpSchema.js` patch hunk for the rationale.
++ */
++export declare class ChannelNotification extends ChannelNotification_base {
++}
++declare const ServerNotificationRpcs_base: RpcGroup.RpcGroup<typeof CancelledNotification | typeof ProgressNotification | typeof ResourceListChangedNotification | typeof ResourceUpdatedNotification | typeof PromptListChangedNotification | typeof ToolListChangedNotification | typeof LoggingMessageNotification | typeof ChannelNotification>;
+ /**
+  * RPC group for notifications that an MCP server can send to a client,
+  * including cancellation, progress, logging, and list or resource update
+diff --git a/dist/unstable/ai/McpSchema.js b/dist/unstable/ai/McpSchema.js
+index 909ac602a249610fdd9a1f72ae207d8813ebc28a..3f8339d619cf06c6ec1c5686c701dfbb0dbdfdf4 100644
+--- a/dist/unstable/ai/McpSchema.js
++++ b/dist/unstable/ai/McpSchema.js
+@@ -1961,7 +1961,17 @@ export class ServerRequestRpcs extends /*#__PURE__*/RpcGroup.make(Ping, CreateMe
+  * @category protocols
+  * @since 4.0.0
+  */
+-export class ServerNotificationRpcs extends /*#__PURE__*/RpcGroup.make(CancelledNotification, ProgressNotification, LoggingMessageNotification, ResourceUpdatedNotification, ResourceListChangedNotification, ToolListChangedNotification, PromptListChangedNotification) {}
++// phoenix patch (#3053): custom, non-allowlisted server->client channel notification.
++// The MCP spec allows arbitrary `notifications/*` methods; upstream's ServerNotificationRpcs
++// union is fixed, so the run-loop's encode union (built from this group's payload schemas)
++// and the McpServer.notifications client both gain this member by adding it here.
++export class ChannelNotification extends /*#__PURE__*/Rpc.make("notifications/claude/channel", {
++  payload: {
++    ...NotificationMeta.fields,
++    message: Schema.String
++  }
++}) {}
++export class ServerNotificationRpcs extends /*#__PURE__*/RpcGroup.make(CancelledNotification, ProgressNotification, LoggingMessageNotification, ResourceUpdatedNotification, ResourceListChangedNotification, ToolListChangedNotification, PromptListChangedNotification, ChannelNotification) {}
+ const ParamSchemaTypeId = "~effect/ai/McpSchema/ParamSchema";
+ /**
+  * Returns `true` when a schema was created with `param` and therefore carries
+diff --git a/dist/unstable/ai/McpServer.d.ts b/dist/unstable/ai/McpServer.d.ts
+index 87a6f7acdd3d7f89b41fac68e575d80a09748f64..978ddb8206b27201c26fb2ff189dfad19d94f76b 100644
+--- a/dist/unstable/ai/McpServer.d.ts
++++ b/dist/unstable/ai/McpServer.d.ts
+@@ -150,6 +150,7 @@ export declare const run: (options: {
+     readonly name: string;
+     readonly version: string;
+     readonly extensions?: Record<`${string}/${string}`, unknown> | undefined;
++    readonly experimental?: Record<string, {}> | undefined;
+ }) => Effect.Effect<never, never, McpServer | RpcServer.Protocol>;
+ /**
+  * Creates a layer that starts an MCP server over an existing
+@@ -184,6 +185,7 @@ export declare const layer: (options: {
+     readonly name: string;
+     readonly version: string;
+     readonly extensions?: Record<`${string}/${string}`, unknown> | undefined;
++    readonly experimental?: Record<string, {}> | undefined;
+ }) => Layer.Layer<McpServer | McpServerClient, never, RpcServer.Protocol>;
+ /**
+  * Runs the McpServer, using stdio for input and output.
+@@ -247,6 +249,7 @@ export declare const layerStdio: (options: {
+     readonly name: string;
+     readonly version: string;
+     readonly extensions?: Record<`${string}/${string}`, unknown> | undefined;
++    readonly experimental?: Record<string, {}> | undefined;
+ }) => Layer.Layer<McpServer | McpServerClient, never, Stdio>;
+ /**
+  * Registers an HTTP POST JSON-RPC route at `options.path` on the current
+@@ -272,6 +275,7 @@ export declare const layerHttp: (options: {
+     readonly version: string;
+     readonly path: HttpRouter.PathInput;
+     readonly extensions?: Record<`${string}/${string}`, unknown> | undefined;
++    readonly experimental?: Record<string, {}> | undefined;
+ }) => Layer.Layer<McpServer | McpServerClient, never, HttpRouter.HttpRouter>;
+ /**
+  * Registers a `Toolkit` with the `McpServer`.
+diff --git a/dist/unstable/ai/McpServer.js b/dist/unstable/ai/McpServer.js
+index 4cb198b928a5538737af01c0d18a03c7d28eb445..d19e7f7992f437bec6a7b64ed512e3ae5bc90204 100644
+--- a/dist/unstable/ai/McpServer.js
++++ b/dist/unstable/ai/McpServer.js
+@@ -850,6 +850,12 @@ const layerHandlers = (serverInfo, options) => ClientRpcs.toLayer(Effect.gen(fun
+       if (serverInfo.extensions) {
+         capabilities.extensions = serverInfo.extensions;
+       }
++      // phoenix patch (#3053): advertise arbitrary experimental capabilities (e.g.
++      // { "claude/channel": {} }). Upstream wires only `extensions`; the `experimental`
++      // slot already exists on the ServerCapabilities schema but had no server passthrough.
++      if (serverInfo.experimental) {
++        capabilities.experimental = serverInfo.experimental;
++      }
+       return Effect.withFiber(fiber => {
+         const httpRequest = Context.getOrUndefined(fiber.context, HttpServerRequest.HttpServerRequest);
+         if (httpRequest) {
