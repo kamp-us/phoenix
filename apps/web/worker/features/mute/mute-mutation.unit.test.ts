@@ -51,6 +51,7 @@ const muteStub = (impl?: (input: MuteSetInput) => Effect.Effect<MuteSetResult, S
 	Layer.succeed(Mute, {
 		set: impl ?? (() => Effect.die("Mute.set reached on a path that must short-circuit")),
 		readMutedIds: () => Effect.die("Mute.readMutedIds not exercised"),
+		listMine: () => Effect.die("Mute.listMine not exercised"),
 	});
 
 const setMute = (mutedId: string, user?: typeof MUTER) =>
