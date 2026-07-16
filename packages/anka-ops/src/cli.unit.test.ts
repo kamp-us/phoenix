@@ -1,9 +1,8 @@
 /**
  * Verb-wiring: the root `anka-ops` command exposes exactly the verb groups the `VERB_GROUPS`
  * registry advertises. The load-bearing assertion is that the registry and the actual
- * `withSubcommands` tree can't drift — when a child (B `flag` / C `report`) folds in a group it
- * must touch both, and this test reds if it touches only one. No IO: the command tree is a
- * pure value.
+ * `withSubcommands` tree can't drift — when a child folds in a group (`flag`, `report`) it must
+ * touch both, and this test reds if it touches only one. No IO: the command tree is a pure value.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {ankaOps, VERB_GROUPS} from "./cli.ts";
@@ -17,8 +16,8 @@ describe("ankaOps command tree", () => {
 		assert.strictEqual(ankaOps.name, "anka-ops");
 	});
 
-	it("wires the `auth` + `flag` verb groups", () => {
-		assert.deepStrictEqual(wiredSubcommandNames(), ["auth", "flag"]);
+	it("wires the `auth` + `flag` + `report` verb groups", () => {
+		assert.deepStrictEqual(wiredSubcommandNames(), ["auth", "flag", "report"]);
 	});
 
 	it("the registry advertises exactly the wired verb groups (no drift)", () => {

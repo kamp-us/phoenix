@@ -14,6 +14,7 @@
 		"auth": "node src/bin.ts auth"
 	},
 	"dependencies": {
+		"@distilled.cloud/cloudflare": "catalog:",
 		"@effect/platform-node": "catalog:",
 		"@kampus/cf-credentials": "workspace:*",
 		"@kampus/cf-utils": "workspace:*",
