@@ -1153,12 +1153,78 @@ as Step 4b (`git diff --name-only origin/main...HEAD | grep -q '^apps/web/src/'`
   lint:worktree`), never read off a screenshot — vision is unreliable at pixel measurement, reliable
   at gestalt.
 
+### Reference-anchored generation — converge toward the blessed golden (blessed surfaces only)
+
+For a **blessed surface** — one that carries a founder-blessed *golden* baseline — the plain
+render→look→fix loop above has a stronger anchor than taste against the pillars: the exact visual
+reference the surface is meant to match. Feed that golden into the loop so your output converges
+**reference-vs-rendered**, not only clears the six ADR-0162 prohibitions (story 4). This is the
+generation half of the golden-screen loop (epic
+[#2955](https://github.com/kamp-us/phoenix/issues/2955), ADR
+[0183](https://github.com/kamp-us/phoenix/blob/main/.decisions/0183-golden-screen-storage-depo-git-pointer.md)):
+the blessed golden set is the reference you generate *toward* here, and the same baseline the
+independent `review-design` gate blocks *deviation from* — converging in authoring is what keeps that
+gate from having to escalate (its counterpart golden-deviation class, #2967). Read `review-design`'s
+golden-deviation section for the shared vocabulary — *golden*, *blessed surface*, *deviation* — and
+stay consistent with it; do **not** duplicate its blocking logic here (this is a self-check that
+converges, not a gate that fails).
+
+**Scope — blessed surfaces only; an unblessed surface is unchanged.** Resolve the committed golden
+pointer and intersect its blessed surface-ids with the surfaces this diff renders; only that
+intersection gets the reference anchor. A changed surface **not** in the pointer has **no** golden —
+it stays exactly the plain pillars loop above, with **no** new anchor and **no** new gating (the same
+N/A the review side gives an unblessed surface). Never invent a reference for a surface the founder
+never blessed. The pointer is the committed source of truth (`packages/design-capture/golden-pointer.json`,
+its `surfaces` map keyed by the same `<route>[:state]` capture surface-id):
+
+```bash
+# blessed surface-ids: the keys of the committed pointer's `surfaces` map (ADR 0183).
+# Intersect with the surfaces THIS diff renders (Step 4d capture) — only that ∩ is reference-anchored.
+# Empty ∩ ⇒ no blessed surface changed ⇒ this whole sub-loop is a no-op; the plain pillars loop stands.
+POINTER=packages/design-capture/golden-pointer.json
+BLESSED_SURFACES="$(jq -r '.surfaces | keys[]' "$POINTER" 2>/dev/null || true)"
+```
+
+**The reference-anchored loop — consume the seam, never re-implement the diff.** For each blessed
+changed surface, resolve its golden through the `@kampus/design-capture` golden seam (the *one* notion
+of "the golden for this surface", shared with the review side) and add a **compare-to-reference** leg
+to render→look→fix:
+
+- **Resolve the golden.** `resolveGoldenBytes(pointer, surfaceId)` → the golden bytes (an unblessed
+  surface returns `null`, which is your "no reference, skip" signal — never an error), and
+  `resolveGoldenUrl(pointer, surfaceId)` → the immutable depo image URL to **look at beside** your
+  rendered capture. `loadGoldenPointer(POINTER)` gives the in-memory pointer; `blessedSurfaces(pointer)`
+  and `resolveGoldenEntry(pointer, surfaceId)` list/inspect the blessed set. These are real
+  `@kampus/design-capture` exports — call them; do **not** re-derive the pointer parse or the depo URL.
+- **Look, golden beside rendered.** Judge composition/gestalt with the golden as the target, not free
+  taste — does the assembled surface *read as* its blessed reference (balance, rhythm, hierarchy,
+  placement)? If you want the objective magnitude/region signal, run the **same** deterministic diff
+  the review side uses — `diffRasters(golden, candidate, {masks})` → `DiffResult` (`magnitude` in
+  [0, 1] + differing `regions`) — as a *signal to steer by*, never re-implementing the raster compare.
+- **Fix toward the golden, then re-render** — targeting the named deviation below.
+
+**Name the specific golden the render deviates from (story 5).** On a deviation, the self-check
+**names it** — the **surface-id** its golden anchors, plus *which* region/aspect drifts (the
+`DiffResult.regions`, or the gestalt aspect you saw) — so each repair iteration **targets that named
+deviation** instead of guessing. That naming is the whole point: convergence toward a reference the
+loop can point at, not blind self-critique.
+
+**The ~3-iteration cap still bounds it** (reuse the cap above — this compare leg does not add loops,
+it *directs* the existing ones): a blessed surface still visibly deviating from its golden at the cap
+is a note for your Step-6 progress comment naming the surface + residual deviation, not a fourth loop.
+A **can't-resolve-the-golden** (a depo fetch fault from `resolveGoldenBytes`, distinct from the `null`
+an unblessed surface returns) is a "couldn't anchor this surface" progress note — you fall back to the
+plain pillars loop for it, never block on the unobservable.
+
 This is a **self-check, not a gate — the split-role firewall holds** exactly as it does for Step 4c:
 looking at your own render before you push is the sanctioned self-edit, not a review. You do **not**
 run `review-design`/`review-code` on your PR and you do **not** emit a `review-*` verdict; the
 independent `review-design` gate judges the assembled result with fresh eyes against the same four
-pillars. This step only keeps the obvious composition breaks out of what it judges, saving a repair
-round. At PR-open the before/after captures attach to the PR — see Step 5's evidence-attach.
+pillars — and re-diffs the blessed golden itself (#2967), escalating an *unexplained* deviation to a
+FAIL. This reference-anchored self-check converges toward that same golden before you push, so the
+gate rarely has to escalate. It only keeps the obvious composition breaks out of what it judges,
+saving a repair round. At PR-open the before/after captures attach to the PR — see Step 5's
+evidence-attach.
 
 ---
 
