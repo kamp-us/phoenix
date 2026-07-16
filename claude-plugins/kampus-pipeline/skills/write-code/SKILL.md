@@ -1105,6 +1105,63 @@ commit) so the pushed head carries the cleaned diff.
 
 ---
 
+## Step 4d — Render→look→fix: the composition self-check (UI diffs only)
+
+When this diff touches a **user-facing UI surface**, you self-verify the *assembled* result
+before pushing: render the composed surface over a local build, **look** at the screenshot, and
+fix composition defects against the four pillars — the same law `review-design` will grade
+against (ADR
+[0162](https://github.com/kamp-us/phoenix/blob/main/.decisions/0162-four-pillars-design-law.md),
+transcribed for agents in
+[`design-system-manifest.md`](https://github.com/kamp-us/phoenix/blob/main/design-system-manifest.md);
+read it, don't re-derive the pillars here). This catches the class no per-slot check can:
+**every slot is locally law-compliant yet the assembled page reads amateur** — the sözlük-subnav
+detached-sibling smell (manifest §nav placement). The manifest's static prohibition pass (its
+"How write-code consumes this" step 4) verifies each *part*; only looking at the render verifies
+the *whole*.
+
+**Fires only for a UI diff — a no-op otherwise (graceful absence).** Scope it to a diff that
+changes a rendered frontend surface (`apps/web/src/**`); a worker/tooling/docs/skill diff has no
+composed surface to look at, so this step is skipped entirely — the same first-class-absence shape
+as Step 4b (`git diff --name-only origin/main...HEAD | grep -q '^apps/web/src/'`).
+
+**The loop — render → look → fix:**
+
+1. **Render** the composed surface over a running local `alchemy dev` build via the
+   render-and-capture harness (#2963, the `@kampus/design-capture` local-render leg): it targets
+   the local worker, renders against an **empty local D1** (designed-empty states are in scope — no
+   seeding, per the founder v1 non-goal + security guard), honors the dev-override cookie so
+   flag-gated UI renders, and writes a **cropped/downscaled** PNG of the changed region. Don't
+   re-implement capture — invoke the harness.
+2. **Look** at the rendered PNG and judge **composition/gestalt only** — balance, rhythm,
+   alignment, hierarchy, whether the assembled surface hangs together as one page.
+3. **Fix** the composition defects you see against the four pillars, then re-render.
+
+**The encoded constraints — bounds, not suggestions:**
+
+- **Cap at ~3 iterations.** Self-critique gains saturate fast; stop at ~3 render→look→fix passes.
+  A composition still visibly broken at the cap is a note for your Step-6 progress comment, not a
+  fourth loop.
+- **Screenshot at decision points only, and evict stale images between iterations.** Capture only
+  when you need to *decide* (the initial render, and after a fix you must re-judge) — not every
+  edit — and **drop the prior iteration's image from context** once you've acted on it. Vision
+  loops run 10–20× cost unbudgeted; the harness's crop/downscale is the capture-side budget, and
+  evicting stale images is the **context-side** budget that complements it.
+- **Gestalt only — spacing and contrast stay programmatic.** Judge *composition* by eye; **never
+  eyeball pixel metrics.** Spacing, contrast ratios, and token correctness are verified
+  programmatically (the manifest prohibitions, the design lint, the a11y loop, `pnpm
+  lint:worktree`), never read off a screenshot — vision is unreliable at pixel measurement, reliable
+  at gestalt.
+
+This is a **self-check, not a gate — the split-role firewall holds** exactly as it does for Step 4c:
+looking at your own render before you push is the sanctioned self-edit, not a review. You do **not**
+run `review-design`/`review-code` on your PR and you do **not** emit a `review-*` verdict; the
+independent `review-design` gate judges the assembled result with fresh eyes against the same four
+pillars. This step only keeps the obvious composition breaks out of what it judges, saving a repair
+round. At PR-open the before/after captures attach to the PR — see Step 5's evidence-attach.
+
+---
+
 ## Step 5 — Open a PR that closes the issue
 
 Open the PR with **`Fixes #N` in the body** so merging auto-closes the issue (this is
@@ -1311,6 +1368,19 @@ form (`addresses`/`relates to`/`see #M`) and re-run (c), since shipping it is ex
 #1259 silent-auto-close. If (d) reports a missing/malformed `Flag:` line on a Step-4b dark ship,
 patch the body via REST to add the plain `Flag: <FLAG_KEY>` line and re-run (d), since shipping it
 without the line silently drops the dark ship from ship-it's release queue (#1282).
+
+### Attach before/after composition captures (UI diffs only) — the #2964 evidence-attach
+
+When Step 4d fired (a UI diff), attach **before/after** composed-surface captures to the PR via the
+evidence-attach capability (#2964, the `@kampus/design-capture`
+`captureAndUpload`/`hostedUrls` leg): it takes a pre-edit baseline and post-edit result over the
+local build, uploads them, and emits **SHA-bound** PR-attachment markdown bound to the pushed PR
+head — the same convention `review-design`'s evidence path uses (ADR
+[0183](https://github.com/kamp-us/phoenix/blob/main/.decisions/0183-golden-screen-storage-depo-git-pointer.md)
+governs where the bytes live). This hands the `review-design` reviewer the assembled before/after to
+grade, not just a diff. Invoke the capability — don't re-implement upload — and bind it to the
+pushed head SHA. For a non-UI diff Step 4d never fired, so there is nothing to attach and this is a
+no-op.
 
 ---
 
