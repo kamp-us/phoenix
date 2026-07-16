@@ -1,8 +1,9 @@
 /**
  * Pure-core tests for `roadmap-guard` (#2648, roadmap map #2620): the parse of
- * ROADMAP.md's `## Arcs`/`## Campaigns` tables and the I1–I4 verdict (each invariant's
- * pass + every failure mode, plus the zero-scope fail-closed of ADR 0092). No IO — the
- * `gh api`/filesystem seam is crossed in `gate.ts`/`github.ts`.
+ * ROADMAP.md's `## Arcs`/`## Campaigns` tables and the I1–I5 verdict (each invariant's
+ * pass + every failure mode, plus the zero-scope fail-closed of ADR 0092 and the
+ * active↔done state symmetry of #2660). No IO — the `gh api`/filesystem seam is crossed
+ * in `gate.ts`/`github.ts`.
  */
 import {describe, expect, it} from "@effect/vitest";
 import {
@@ -183,6 +184,91 @@ describe("judge — I3 no unclaimed open milestone", () => {
 			[ms(17, "open"), ms(27, "open")],
 		);
 		expect(v.pass).toBe(true);
+	});
+});
+
+describe("judge — I5 active↔done state symmetry (the campaign lifecycle, #2660)", () => {
+	it("PASSES an active campaign over an OPEN milestone (the Mentor Audit #27 validation case)", () => {
+		const v = judge(
+			[arc("Four Pillars", 17, "active")],
+			[campaign("Mentor Audit", 27, "active")],
+			[ms(17, "open"), ms(27, "open", "Mentor Audit campaign")],
+		);
+		expect(v.pass).toBe(true);
+	});
+
+	it("PASSES a done campaign over a CLOSED milestone", () => {
+		const v = judge(
+			[arc("Four Pillars", 17, "active")],
+			[campaign("Past Audit", 30, "done")],
+			[ms(17, "open"), ms(30, "closed")],
+		);
+		expect(v.pass).toBe(true);
+	});
+
+	it("FAILS I5 when an ACTIVE campaign sits over a CLOSED milestone", () => {
+		const v = judge(
+			[arc("Four Pillars", 17, "active")],
+			[campaign("Zombie", 27, "active")],
+			[ms(17, "open"), ms(27, "closed")],
+		);
+		expect(v.pass).toBe(false);
+		if (v.pass === false && v.reason === "violations") {
+			expect(v.violations.some((x) => x.code === "I5" && x.message.includes("Zombie"))).toBe(true);
+		} else {
+			throw new Error("expected a violations verdict");
+		}
+	});
+
+	it("FAILS I5 when a DONE campaign sits over an OPEN milestone", () => {
+		const v = judge(
+			[arc("Four Pillars", 17, "active")],
+			[campaign("Premature", 27, "done")],
+			[ms(17, "open"), ms(27, "open")],
+		);
+		expect(v.pass).toBe(false);
+		if (v.pass === false && v.reason === "violations") {
+			expect(v.violations.some((x) => x.code === "I5" && x.message.includes("Premature"))).toBe(
+				true,
+			);
+		} else {
+			throw new Error("expected a violations verdict");
+		}
+	});
+
+	it("applies symmetry to ARCS too: a done arc over an OPEN milestone FAILS I5", () => {
+		const v = judge(
+			[arc("Now", 17, "active"), arc("Shipped", 10, "done")],
+			[],
+			[ms(17, "open"), ms(10, "open")],
+		);
+		expect(v.pass).toBe(false);
+		if (v.pass === false && v.reason === "violations") {
+			expect(v.violations.some((x) => x.code === "I5" && x.message.includes("Shipped"))).toBe(true);
+		} else {
+			throw new Error("expected a violations verdict");
+		}
+	});
+
+	it("EXEMPTS a queued arc from symmetry (its milestone opens lazily on activation)", () => {
+		// A queued arc pinned to a still-closed milestone is legal — no active/done expectation.
+		const v = judge(
+			[arc("Now", 17, "active"), arc("Later", 24, "queued")],
+			[],
+			[ms(17, "open"), ms(24, "closed")],
+		);
+		expect(v.pass).toBe(true);
+	});
+
+	it("does NOT double-report I5 for a dangling pin (that is an I1, not an I5)", () => {
+		const v = judge([arc("Ghost", 99, "active")], [], [ms(17, "open")]);
+		expect(v.pass).toBe(false);
+		if (v.pass === false && v.reason === "violations") {
+			expect(v.violations.some((x) => x.code === "I1")).toBe(true);
+			expect(v.violations.some((x) => x.code === "I5")).toBe(false);
+		} else {
+			throw new Error("expected a violations verdict");
+		}
 	});
 });
 

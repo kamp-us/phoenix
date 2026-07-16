@@ -4,10 +4,12 @@ name: roadmap-guard
 # `## Arcs`/`## Campaigns` tables and the GitHub milestone projection they pin to must
 # stay in sync — sync-drift diligence is load-bearing, so it is GUARDED fail-closed, not
 # left to vigilance. The tool parses ROADMAP.md (the sole parsed surface) and validates
-# I1–I4 against the live milestone REST projection:
+# I1–I5 against the live milestone REST projection:
 #   I1 arc/campaign pinned to an existing milestone by number (a queued arc may defer)
 #   I2 exactly one active arc  ·  I3 no unclaimed open milestone
 #   I4 fail-closed on zero scope (ADR 0092)
+#   I5 active↔done state symmetry — an active row's milestone is open, a done row's closed
+#      (the campaign lifecycle guard, #2660)
 # The check lives once in pipeline-cli (`roadmap-guard check`); this workflow only wires
 # it to the four triggers.
 on:

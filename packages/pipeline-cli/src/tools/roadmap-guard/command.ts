@@ -6,12 +6,14 @@
  * tables (the sole parsed surface) and validates them against the live milestone
  * projection, fail-closed:
  *
- *   pipeline-cli roadmap-guard check            # CI gate: exit non-zero on any I1–I4 drift
+ *   pipeline-cli roadmap-guard check            # CI gate: exit non-zero on any I1–I5 drift
  *   pipeline-cli roadmap-guard check --root <d> # point at a specific repo root (else: walk up)
  *
- * Invariants (I1–I4, extended to campaign rows; see `roadmap-guard.ts`): I1 arc/campaign
+ * Invariants (I1–I5, extended to campaign rows; see `roadmap-guard.ts`): I1 arc/campaign
  * pinned to an existing milestone by number (a queued arc may defer its pin); I2 exactly
- * one active arc; I3 no unclaimed open milestone; I4 fail-closed on zero scope (ADR 0092).
+ * one active arc; I3 no unclaimed open milestone; I4 fail-closed on zero scope (ADR 0092);
+ * I5 active↔done state symmetry — an active row's milestone is open, a done row's closed
+ * (the campaign lifecycle guard, #2660).
  *
  * The pure decision lives in `roadmap-guard.ts` (unit-tested exhaustively); the file read
  * + `gh api` milestone fetch in `gate.ts`/`github.ts`. `MilestonesLive` is baked in with
@@ -77,7 +79,7 @@ const check = Command.make(
 export const roadmapGuardCommand = Command.make("roadmap-guard").pipe(
 	Command.withSubcommands([check]),
 	Command.withDescription(
-		"Fail-closed gate: ROADMAP.md ↔ GitHub-milestone sync (I1–I4, #2620/#2632)",
+		"Fail-closed gate: ROADMAP.md ↔ GitHub-milestone sync (I1–I5, #2620/#2632/#2660)",
 	),
 	Command.provide(MilestonesLive),
 );

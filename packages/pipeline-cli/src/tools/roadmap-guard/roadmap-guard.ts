@@ -7,7 +7,7 @@
  * fetch live in `gate.ts`/`github.ts`; this module never touches disk or the network.
  *
  * ROADMAP.md is the SOLE parsed surface; milestones are the projection validated
- * against it (#2630/#2632). The invariants (I1–I4, extended to campaign rows):
+ * against it (#2630/#2632). The invariants (I1–I5, extended to campaign rows):
  *   I1 — every row is pinned to its milestone BY NUMBER and that milestone exists.
  *        A QUEUED arc gets its milestone lazily on activation, so a queued arc with
  *        no pin is legal; every other row (active/done arc, any campaign) must pin.
@@ -16,6 +16,13 @@
  *   I3 — NO UNCLAIMED OPEN MILESTONE: every open milestone is claimed by some row.
  *   I4 — FAIL-CLOSED ON ZERO SCOPE (ADR 0092): zero arc rows or zero milestones ⇒
  *        a non-passing verdict, never a vacuous green (the readme-guard precedent).
+ *   I5 — STATE SYMMETRY (the active↔done campaign lifecycle, #2660): an `active` row's
+ *        milestone is OPEN and a `done` row's milestone is CLOSED — no active row over a
+ *        closed milestone, no done row over an open one. Applies to any row whose pin
+ *        resolves and whose state is active/done (arc or campaign); a queued arc is exempt
+ *        (its milestone opens lazily on activation, I1). This is the campaign guard's core:
+ *        it keeps ROADMAP.md's lifecycle cell and the milestone's open/closed reality from
+ *        silently disagreeing.
  */
 
 /** An arc is sequenced ahead (`queued`) then made current (`active`) and retired (`done`). */
@@ -56,7 +63,7 @@ const CAMPAIGN_STATES: ReadonlyArray<string> = ["active", "done"];
  * names the offending row/milestone so the report can print it on stderr (ADR 0092 §1).
  */
 export interface Violation {
-	readonly code: "I1" | "I2" | "I3" | "row-state";
+	readonly code: "I1" | "I2" | "I3" | "I5" | "row-state";
 	readonly message: string;
 }
 
@@ -98,7 +105,7 @@ const pinMayBeAbsent = (row: RoadmapRow): boolean => row.kind === "arc" && row.s
  *
  * Order: I4 (zero-scope) fails closed first — with no arcs or no milestones there is
  * nothing to meaningfully check, so refuse rather than pass vacuously. Otherwise every
- * violation is collected (row well-formedness, then I1, I2, I3) so one run names all
+ * violation is collected (row well-formedness, then I1, I2, I3, I5) so one run names all
  * drift, not just the first.
  */
 export const judge = (
@@ -174,6 +181,22 @@ export const judge = (
 		}
 	}
 
+	// I5 — state symmetry (the active↔done lifecycle, #2660): an active row's milestone is
+	// open, a done row's is closed. Only rows whose pin resolves are checked (an absent or
+	// dangling pin is already I1); a queued arc has no open/closed expectation (I1 lazy pin).
+	for (const row of rows) {
+		if (row.milestone === null) continue;
+		const m = byNumber.get(row.milestone);
+		if (m === undefined) continue; // dangling pin already reported by I1
+		const expected = row.state === "active" ? "open" : row.state === "done" ? "closed" : null;
+		if (expected !== null && m.state !== expected) {
+			violations.push({
+				code: "I5",
+				message: `${row.kind} row "${row.name}" is "${row.state}" but its milestone #${m.number} ("${m.title}") is ${m.state} — an active row needs an open milestone, a done row a closed one`,
+			});
+		}
+	}
+
 	if (violations.length > 0) {
 		return {pass: false, reason: "violations", violations};
 	}
@@ -190,7 +213,7 @@ export const renderReport = (verdict: RoadmapGuardVerdict): string => {
 	if (verdict.pass) {
 		return (
 			`roadmap-guard: in sync — ${verdict.arcCount} arc row(s) + ${verdict.campaignCount} campaign row(s) ` +
-			`validated against ${verdict.milestoneCount} milestone(s) (I1–I4 all green).`
+			`validated against ${verdict.milestoneCount} milestone(s) (I1–I5 all green).`
 		);
 	}
 	if (verdict.reason === "zero-scope") {
@@ -205,7 +228,7 @@ export const renderReport = (verdict: RoadmapGuardVerdict): string => {
 		`roadmap-guard: ${verdict.violations.length} ROADMAP.md ↔ milestone drift violation(s):\n` +
 		`${lines.join("\n")}\n\n` +
 		"ROADMAP.md's `## Arcs`/`## Campaigns` tables and the GitHub milestone projection have drifted.\n" +
-		"Reconcile the offending row(s)/milestone(s) above (roadmap map #2620; invariants I1–I4, #2632)."
+		"Reconcile the offending row(s)/milestone(s) above (roadmap map #2620; invariants I1–I5, #2632/#2660)."
 	);
 };
 
