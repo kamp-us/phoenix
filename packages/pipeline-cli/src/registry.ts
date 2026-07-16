@@ -33,6 +33,7 @@ import {intakeDedupCommand} from "./tools/intake-dedup/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {mainSyncCommand} from "./tools/main-sync/command.ts";
 import {mergeQueueClassifyCommand} from "./tools/merge-queue-classify/command.ts";
+import {patchGuardCommand} from "./tools/patch-guard/command.ts";
 import {pathFilterGuardCommand} from "./tools/path-filter-guard/command.ts";
 import {pointerGuardCommand} from "./tools/pointer-guard/command.ts";
 import {primaryIndexGuardCommand} from "./tools/primary-index-guard/command.ts";
@@ -130,6 +131,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	verdictCommand,
 	campaignCommand,
 	catalogGuardCommand,
+	patchGuardCommand,
 	intakeDedupCommand,
 	redactLeaksCommand,
 ];
