@@ -46,8 +46,8 @@ describe("KnobForType — knob-to-prop soundness (compile-time)", () => {
 		const wrongKind: KnobSchema<DemoProps> = {loading: {kind: "string", default: "x"}};
 		// @ts-expect-error a knob key must be a real prop of the component
 		const wrongKey: KnobSchema<DemoProps> = {nope: {kind: "boolean", default: false}};
-		// @ts-expect-error an enum default must be one of the prop's literal values
 		const wrongEnum: KnobSchema<DemoProps> = {
+			// @ts-expect-error an enum default must be one of the prop's literal values
 			variant: {kind: "enum", default: "nope", options: [{value: "primary"}]},
 		};
 		expect([wrongKind, wrongKey, wrongEnum]).toHaveLength(3);

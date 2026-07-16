@@ -35,7 +35,7 @@ export function PropKnobs({schema, values, onChange}: PropKnobsProps) {
 					key={key}
 					name={key}
 					knob={knob}
-					value={values[key]}
+					value={values[key] ?? knob.default}
 					onChange={(value) => onChange(key, value)}
 				/>
 			))}

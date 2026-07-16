@@ -77,10 +77,18 @@ export type AnyKnobSchema = Readonly<Record<string, AnyKnob>>;
 /** Current knob values keyed by prop name — the object spread onto the host component. */
 export type KnobValues = Readonly<Record<string, KnobValue>>;
 
-/** The initial value map for a schema: each knob's `default`, keyed by its prop name. */
-export function resolveKnobDefaults(schema: AnyKnobSchema): KnobValues {
+/**
+ * The initial value map for a schema: each knob's `default`, keyed by its prop name.
+ *
+ * The param is `Partial<AnyKnobSchema>`, not `AnyKnobSchema`, so a raw authored
+ * `KnobSchema<P>` is accepted at the public boundary without a cast: `KnobSchema<P>` maps
+ * each prop optionally (`[K in keyof P]?`), so its erased values are `AnyKnob | undefined` —
+ * the widened param is the common supertype of that and the runtime `AnyKnobSchema`.
+ */
+export function resolveKnobDefaults(schema: Partial<AnyKnobSchema>): KnobValues {
 	const values: Record<string, KnobValue> = {};
 	for (const [key, knob] of Object.entries(schema)) {
+		if (!knob) continue;
 		values[key] = knob.default;
 	}
 	return values;
