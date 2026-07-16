@@ -37,6 +37,7 @@ import {
 import {describe, expect, it} from "vitest";
 import {Denied, InsufficientKarma, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
 import {MecmuaDisabled, MecmuaPostNotFound, MecmuaTitleRequired} from "../mecmua/errors.ts";
+import {MuteDisabled, SelfMuteRejected} from "../mute/errors.ts";
 import {
 	CommentBodyRequired,
 	CommentBodyTooLong,
@@ -106,6 +107,10 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	[MecmuaDisabled, "MECMUA_DISABLED"],
 	[MecmuaPostNotFound, "MECMUA_POST_NOT_FOUND"],
 	[MecmuaTitleRequired, "TITLE_REQUIRED"],
+	// member-mute write path (#3112) — reachable from fateConfig via `mute.set` /
+	// `mute.remove`. Both message-only, so also round-trip representatives below.
+	[MuteDisabled, "MUTE_DISABLED"],
+	[SelfMuteRejected, "SELF_MUTE_REJECTED"],
 	// sozluk
 	[BodyRequired, "BODY_REQUIRED"],
 	[BodyTooLong, "BODY_TOO_LONG"],

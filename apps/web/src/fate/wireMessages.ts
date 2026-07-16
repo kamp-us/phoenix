@@ -56,6 +56,8 @@ export const WIRE_MESSAGES: Record<FateWireCode, string> = {
 	EMAIL_FAILING_REASON_REQUIRED: "işaretleme gerekçesi zorunludur",
 	MECMUA_DISABLED: "mecmua şu an kapalı",
 	MECMUA_POST_NOT_FOUND: "yazı bulunamadı",
+	MUTE_DISABLED: "sustur şu an kapalı",
+	SELF_MUTE_REJECTED: "kendini susturamazsın",
 	BAD_REQUEST: "geçersiz istek",
 	INTERNAL_SERVER_ERROR: "bir şeyler ters gitti, lütfen tekrar dene",
 };

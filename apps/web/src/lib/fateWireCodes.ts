@@ -96,6 +96,12 @@ export const FATE_WIRE_CODES = [
 	// A `mecmua.publish` target draft doesn't exist or isn't the caller's own
 	// (`mecmua/MecmuaPostNotFound`, #2497) — the ownership-scoped miss.
 	"MECMUA_POST_NOT_FOUND",
+	// member-mute write path is gated on the `member-mute` flag; the server raises this
+	// when `mute.set` / `mute.remove` run with the flag off (#3112).
+	"MUTE_DISABLED",
+	// A member tried to mute themselves (`mute/SelfMuteRejected`, #3112) — the domain
+	// refuses a self-mute before any write.
+	"SELF_MUTE_REJECTED",
 	"BAD_REQUEST",
 	"INTERNAL_SERVER_ERROR",
 ] as const;

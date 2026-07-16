@@ -14,6 +14,7 @@ import {
 	MECMUA_FEED,
 	MECMUA_PUBLIC_READ,
 	MECMUA_WRITE,
+	MEMBER_MUTE,
 	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
 	PANO_FEED_EDGE_CACHE,
@@ -1093,3 +1094,34 @@ export const PROFILE_CANVAS_FLAG = {
  */
 export const profileCanvasFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("profile_canvas", {appId, ...PROFILE_CANVAS_FLAG});
+
+/**
+ * The member-mute (sustur) write-path dark-ship flag config (#3112, epic #2035). The
+ * SINGLE seam the mute write path gates behind — `mute.set` / `mute.remove` fail
+ * `MUTE_DISABLED` with it off, so the whole primitive reaches production dark; flipping
+ * it on is the human release act (ADR 0083). The read-mask (sibling) and the manage UI
+ * (reachability child) ship behind their own slices.
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `PROFILE_CANVAS_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           mute (the member-mute relation surface)
+ *   - originating:     #3112 (epic: free-paint canvas space / member-mute, #2035)
+ *   - removal trigger: once member-mute graduates to on at 100% and stable for one
+ *                      release, retire the flag and inline the now-permanent path.
+ */
+export const MEMBER_MUTE_FLAG = {
+	key: MEMBER_MUTE,
+	description:
+		"member-mute (sustur) write path (mute.set / mute.remove) dark-ship (#3112, epic #2035). owner: mute. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const memberMuteFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("member_mute", {appId, ...MEMBER_MUTE_FLAG});

@@ -53,6 +53,7 @@ import {
 	mecmuaFeedFlag,
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
+	memberMuteFlag,
 	modQueueFlag,
 	navIaFlag,
 	optimisticDefinitionAddFlag,
@@ -188,6 +189,10 @@ export default Alchemy.Stack(
 		// mutation, and paint/save surface gate behind until a human release, so the whole
 		// profile-canvas feature ships dark.
 		yield* profileCanvasFlag(flagship.appId);
+		// The member-mute (sustur) write-path dark-ship flag, default-off (#3112, epic
+		// #2035) — the single seam `mute.set` / `mute.remove` gate behind until a human
+		// release, so the whole mute primitive ships dark.
+		yield* memberMuteFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
