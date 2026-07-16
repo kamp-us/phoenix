@@ -42,9 +42,11 @@ designed.
 
 ## Decision
 
-The founder ruling (2026-07-04) **adopts the founder-leaning proposal as-is,
-without amendment**. Four rules govern a ban's effect on the released vouch/kefil
-graph:
+This is an **evaluate-then-adopt** decision: the founder-leaning proposal (#144's
+body) was evaluated explicitly and **adopted as-is with one clarification**. The
+2026-07-04 ruling adopted the four rules below unchanged; the 2026-07-16 ruling
+re-affirmed them and added the single clarification recorded as rule 5. Five rules
+govern a ban's effect on the released vouch/kefil graph:
 
 1. **A banned yazar's outstanding pre-promotion vouches → revoked; each affected
    çaylak's tandem check re-runs.** A vouch given by a now-banned yazar is no
@@ -72,9 +74,20 @@ graph:
    human moderator judgment**: the mod sees the cluster (rule 3) and acts case by
    case, rather than the system auto-penalizing every account the sponsor touched.
 
+5. **A çaylak who drops below the promotion threshold after the rule-1 tandem
+   re-run reverts to çaylak — re-vouchable, no penalty, not limbo** (clarification,
+   2026-07-16 ruling). Revoking the banned yazar's vouch (rule 1) can leave a
+   not-yet-promoted çaylak short of the tandem bar. That çaylak is simply a çaylak
+   again: they may receive a fresh vouch from any other yazar and re-run tandem
+   normally, they carry **no** mark or penalty from the revoked vouch, and they are
+   **not** placed in a distinct suspended/quarantined state. This is the
+   already-implied behavior of an active-by-existence `VouchLedger` (a revoked
+   vouch is indistinguishable from one never given) stated explicitly, so the
+   mod-UI never invents a limbo status for these çaylaks.
+
 ## Consequences
 
-- **Feeds mod-UI ban controls before they are designed.** These four rules are the
+- **Feeds mod-UI ban controls before they are designed.** These five rules are the
   settled graph semantics that
   [#1665](https://github.com/kamp-us/phoenix/issues/1665) (moderator-UI planning)
   and [#970](https://github.com/kamp-us/phoenix/issues/970) (ban / unban a user
