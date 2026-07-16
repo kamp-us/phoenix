@@ -35,6 +35,7 @@ import {
 	DESIGN_NAMESPACE,
 	isUiAffecting,
 	parseClassProbes,
+	parseUiExclude,
 	parseUiProbe,
 	requiredNamespaces,
 } from "./class-probe.ts";
@@ -114,9 +115,10 @@ const classifyCmd = Command.make(
 		const probes = parseClassProbes(formats ?? "");
 		const shipIt = readShipIt(rootDir);
 		const uiRe = parseUiProbe(shipIt ?? "");
+		const uiExclude = parseUiExclude(shipIt ?? "");
 		const files = readFiles(filesFrom);
 		const classes = classify(files, probes);
-		const uiAffecting = isUiAffecting(files, uiRe);
+		const uiAffecting = isUiAffecting(files, uiRe, uiExclude);
 
 		if (formats === null) {
 			yield* Effect.sync(() =>

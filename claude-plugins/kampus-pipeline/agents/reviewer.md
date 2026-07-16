@@ -195,11 +195,14 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   dispatch, fail-closed to **has-ui** (dispatch `review-design`) if that line is unreadable — never
   fail-open to skip it (#2341, the #981 `?ref=main` idiom):
   ```bash
-  UI_RE='^apps/web/src/'   # fail-closed reference; the live line below is authoritative (#2470: scope is apps/web/src ONLY — a non-web .tsx/.css has no rendered surface, not design-gate work)
-  UI_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^UI_RE=' | head -n1 || true)"
+  UI_RE='^apps/web/src/'   # fail-closed reference; the live lines below are authoritative (#2470: scope is apps/web/src ONLY — a non-web .tsx/.css has no rendered surface, not design-gate work)
+  UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'   # #3071: a src-colocated *.test.tsx/*.spec.ts renders no surface — carve it out (mirrors §CLASS has-docs carve-then-test; ERE has no lookahead, hence the exclude pair)
+  UI_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
+  UI_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_RE=' | head -n1 || true)"; UX_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_EXCLUDE_RE=' | head -n1 || true)"
   if [ -n "$UI_LIVE" ]; then UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"; else UI_RE='.'; fi   # unreadable ⇒ '.' ⇒ every path is UI-affecting ⇒ dispatch review-design (never silently drop it)
+  if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")"; else UI_EXCLUDE_RE='$^'; fi   # unreadable ⇒ '$^' never-match ⇒ carve nothing ⇒ dispatch review-design for every src path (fail-closed)
   CHANGED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
-  echo "$CHANGED" | grep -Eq "$UI_RE" && echo "UI-affecting → dispatch review-design alongside the class gate"
+  echo "$CHANGED" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "UI-affecting → dispatch review-design alongside the class gate"
   ```
   Because all sides resolve the identical live `UI_RE`, `required-gate == dispatched-gate ==
   satisfiable-gate` holds by construction, not by hand-syncing aging copies — the exact staleness
