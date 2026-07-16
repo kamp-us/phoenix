@@ -26,9 +26,12 @@ describe("AtolyeIndexPage — /lab/atolye index (#3092)", () => {
 
 	it("links each exhibit to its ASCII /lab/atolye/:exhibit detail path", () => {
 		renderPage();
+		// Resolve each row by its unique detail href, not by a title regex: a link's
+		// accessible name is title+summary, so real Turkish titles that share a word
+		// (`Düğme` inside `Bildir Düğmesi`) would multi-match a name regex.
+		const hrefs = screen.getAllByRole("link").map((l) => l.getAttribute("href"));
 		for (const exhibit of listExhibits()) {
-			const link = screen.getByRole("link", {name: new RegExp(exhibit.title)});
-			expect(link.getAttribute("href")).toBe(`/lab/atolye/${exhibit.id}`);
+			expect(hrefs).toContain(`/lab/atolye/${exhibit.id}`);
 		}
 	});
 });

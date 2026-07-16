@@ -25,4 +25,35 @@ describe("exhibit registry — headless enumeration", () => {
 		const ids = listExhibits().map((e) => e.id);
 		expect(new Set(ids).size).toBe(ids.length);
 	});
+
+	// The catalog (#3094) covers every UI primitive under components/ui/. This pins the
+	// contract so a newly-added primitive without an exhibit surfaces as a red test.
+	it("catalogs an exhibit for every UI primitive", () => {
+		const ids = new Set(listExhibits().map((e) => e.id));
+		const expected = [
+			"avatar",
+			"button",
+			"card",
+			"collapsible",
+			"copy-link-button",
+			"count-toggle",
+			"dialog",
+			"draft-restore-banner",
+			"edited-indicator",
+			"empty-state",
+			"form",
+			"menu",
+			"meta-row",
+			"report-button",
+			"review-badge",
+			"switch",
+			"tabs",
+			"toast",
+			"toggle-group",
+			"tooltip",
+		];
+		for (const id of expected) {
+			expect(ids).toContain(id);
+		}
+	});
 });
