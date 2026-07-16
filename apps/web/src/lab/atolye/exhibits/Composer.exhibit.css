@@ -1,0 +1,115 @@
+/* The composer exhibit's live demo. Role tokens only (ADR 0162): sizes from the type ramp,
+   spacing/radius/color from role tokens — no raw hex, no raw px. The rich element-level prose
+   treatment for the seeded sample is a compact subset; the full playground is /lab/composer. */
+
+.kp-atolye-composer {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+	width: 100%;
+}
+
+.kp-atolye-composer__surface {
+	font: var(--t-body);
+	color: var(--text-primary);
+	background: var(--surface-raised);
+	border: 1px solid var(--border);
+	border-radius: var(--r-lg);
+	padding: var(--s-3);
+}
+
+/* The ProseMirror editable drops its own default outline; the shared focus layer in
+   global.css (#2169) is the single source of the ring on focus. */
+.kp-atolye-composer__surface .tiptap {
+	outline: none;
+	min-height: calc(var(--s-8) * 2);
+}
+
+.kp-atolye-composer__surface .tiptap > :first-child {
+	margin-top: 0;
+}
+
+.kp-atolye-composer__surface .tiptap > :last-child {
+	margin-bottom: 0;
+}
+
+.kp-atolye-composer__surface .tiptap h2 {
+	font: var(--t-h-feed);
+	font-weight: 700;
+	color: var(--text-primary);
+	margin: var(--s-3) 0 var(--s-2);
+}
+
+.kp-atolye-composer__surface .tiptap p {
+	margin: var(--s-2) 0;
+}
+
+.kp-atolye-composer__surface .tiptap strong {
+	font-weight: 700;
+	color: var(--text-primary);
+}
+
+.kp-atolye-composer__surface .tiptap em {
+	font-style: italic;
+}
+
+.kp-atolye-composer__surface .tiptap code {
+	font: var(--t-mono);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 0 var(--s-1);
+}
+
+.kp-atolye-composer__surface .tiptap ul {
+	list-style: disc;
+	margin: var(--s-2) 0;
+	padding-left: var(--s-5);
+}
+
+.kp-atolye-composer__surface .tiptap li {
+	margin: var(--s-1) 0;
+}
+
+.kp-atolye-composer__surface .tiptap blockquote {
+	margin: var(--s-3) 0;
+	padding: var(--s-1) 0 var(--s-1) var(--s-3);
+	border-left: 2px solid var(--border-strong);
+	color: var(--text-secondary);
+}
+
+.kp-atolye-composer__roundtrip {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-atolye-composer__roundtrip-label {
+	font: var(--t-meta);
+	font-weight: 700;
+	color: var(--text-secondary);
+}
+
+.kp-atolye-composer__out {
+	font: var(--t-mono);
+	color: var(--text-primary);
+	background: var(--surface-sunken);
+	border-radius: var(--r-lg);
+	padding: var(--s-2);
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow-x: auto;
+}
+
+.kp-atolye-composer__note {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-atolye-composer__link {
+	color: var(--link);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}

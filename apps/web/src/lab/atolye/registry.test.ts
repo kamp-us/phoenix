@@ -26,6 +26,17 @@ describe("exhibit registry — headless enumeration", () => {
 		expect(new Set(ids).size).toBe(ids.length);
 	});
 
+	// The composer (#3095) is atölye's first feature-level exhibit — folded in ahead of the UI
+	// primitives it composes, so it leads the curated order the index route lists by.
+	it("leads the catalog with the composer feature exhibit", () => {
+		const exhibits = listExhibits();
+		expect(exhibits[0]?.id).toBe("composer");
+		const composer = getExhibit("composer");
+		expect(composer?.title).toBe("Composer");
+		expect(composer?.component).toBeTruthy();
+		expect(Object.keys(composer?.knobs ?? {})).toContain("readOnly");
+	});
+
 	// The catalog (#3094) covers every UI primitive under components/ui/. This pins the
 	// contract so a newly-added primitive without an exhibit surfaces as a red test.
 	it("catalogs an exhibit for every UI primitive", () => {
