@@ -40,8 +40,9 @@ const readRoadmap = (root: string): Effect.Effect<string, IoError> =>
 
 /**
  * The CI gate: parse `ROADMAP.md`'s `## Arcs`/`## Campaigns` tables, read the live
- * milestone projection, and judge I1–I4 (extended to campaign rows). Succeeds only on a
- * passing verdict; every non-pass — including zero-scope — is a `CheckFailed`.
+ * milestone projection, and judge I1–I5 (extended to campaign rows + the active↔done
+ * lifecycle symmetry, #2660). Succeeds only on a passing verdict; every non-pass —
+ * including zero-scope — is a `CheckFailed`.
  */
 export const checkRoadmap = (
 	root: string,
