@@ -377,6 +377,25 @@ export const userReaction = sqliteTable(
 );
 
 /**
+ * One-directional member mute ("sustur") presence row: a row `(muter_id,
+ * muted_id)` means muter has muted muted, its absence means not. Pure presence in
+ * the `post_bookmark` shape — no value column — but keyed on two users rather than
+ * (user, target). The composite PK `(muter_id, muted_id)` is the cardinality-one
+ * constraint; the `muted_id` reverse index serves the batched viewer-side presence
+ * read (`Mute.readMutedIds`) so read-masking stamps without an N+1. Maintained
+ * inline by `Mute.set` (insert on mute, delete on un-mute; D1-direct, see ADR 0009).
+ */
+export const userMute = sqliteTable(
+	"user_mute",
+	{
+		muterId: text("muter_id").notNull(),
+		mutedId: text("muted_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [primaryKey({columns: [t.muterId, t.mutedId]}), index("user_mute_muted").on(t.mutedId)],
+);
+
+/**
  * Per-user denormalized profile row. `total_karma` is the running sum of upvotes
  * received across all of this user's contributions, maintained inline by
  * `Vote.cast`'s atomic batch (D1-direct, see ADR 0009). Its provenance — one row
