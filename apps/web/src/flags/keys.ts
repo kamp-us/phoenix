@@ -306,6 +306,16 @@ export const PHOENIX_ADMIN_CONSOLE = "phoenix-admin-console";
  */
 export const PHOENIX_EDGE_SHELL_BOOT = "phoenix-edge-shell-boot";
 
+/**
+ * Profile free-paint canvas (duvar) dark-ship flag (#3103, epic #2035). The SINGLE seam
+ * the whole profile-canvas feature gates behind — the fate read view + visitor render
+ * (#3105), the owner enable/toggle mutation (#3108), and the paint/save surface (#3109)
+ * all key off this one string rather than minting per-child flags, so one human flip
+ * releases the mural as a unit. Default-off so the feature ships dark until a human flips
+ * it at release (ADR 0083). Its own `profile-` key, scoped to the profile surface.
+ */
+export const PROFILE_CANVAS = "profile-canvas";
+
 /** A declared flag paired with its default variation — the row the flags console lists (#2742). */
 export interface FlagDeclaration {
 	readonly key: string;
@@ -348,4 +358,5 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_NAV_IA, defaultValue: false},
 	{key: PHOENIX_ADMIN_CONSOLE, defaultValue: false},
 	{key: PHOENIX_EDGE_SHELL_BOOT, defaultValue: false},
+	{key: PROFILE_CANVAS, defaultValue: false},
 ];

@@ -38,6 +38,7 @@ import {
 	PHOENIX_REACTIONS,
 	PHOENIX_SOZLUK_STAMP_WAVE,
 	PHOENIX_USER_BAN,
+	PROFILE_CANVAS,
 } from "../../../src/flags/keys.ts";
 import {AUDIT_ENVIRONMENT} from "../../environment.ts";
 
@@ -1060,3 +1061,35 @@ export const EDGE_SHELL_BOOT_FLAG = {
  */
 export const edgeShellBootFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_edge_shell_boot", {appId, ...EDGE_SHELL_BOOT_FLAG});
+
+/**
+ * The profile free-paint canvas (duvar) dark-ship flag config (#3103, epic #2035). The
+ * SINGLE seam the whole profile-canvas feature gates behind — the fate read view + visitor
+ * render (#3105), the owner enable/toggle mutation (#3108), and the paint/save surface
+ * (#3109). Default-OFF so the whole feature reaches production dark: with it off no canvas
+ * surface renders and the owner-only mutations fail `CANVAS_DISABLED`, so the profile is
+ * exactly as today; flipping it on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `EDGE_SHELL_BOOT_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           pasaport (the profile surface)
+ *   - originating:     #3103 (epic: free-paint canvas space, #2035)
+ *   - removal trigger: once the profile canvas graduates to on at 100% and stable for one
+ *                      release, retire the flag and inline the now-permanent path.
+ */
+export const PROFILE_CANVAS_FLAG = {
+	key: PROFILE_CANVAS,
+	description:
+		"profile free-paint canvas (duvar) dark-ship (#3103, epic #2035). owner: pasaport. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const profileCanvasFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("profile_canvas", {appId, ...PROFILE_CANVAS_FLAG});
