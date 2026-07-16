@@ -39,6 +39,7 @@ import {
 	PHOENIX_NAV_IA,
 } from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
+import {AtolyeIndexPage} from "./lab/atolye/AtolyeIndexPage";
 import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
 import {safeReturnTo} from "./lib/returnTo";
@@ -515,6 +516,10 @@ export function App() {
 								</Suspense>
 							}
 						/>
+						{/* /lab/atolye — public index of atölye, the museum of craft (epic #2473, #3092).
+						    ASCII route slug (routes-are-English); reachable by URL only, no nav entry,
+						    matching the /lab/composer precedent. */}
+						<Route path="/lab/atolye" element={<AtolyeIndexPage />} />
 						<Route path="/profile" element={<ProfilePage />} />
 						<Route path="/u/:username" element={<UserProfilePage />} />
 						{/* The admin console (#2740, epic #2711) — the route element self-gates on
