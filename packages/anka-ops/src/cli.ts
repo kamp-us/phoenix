@@ -18,9 +18,11 @@ import {
 	CredentialsKeychainFirst,
 	KeychainLive,
 } from "@kampus/cf-credentials";
+import {FlagshipReadLive, FlagshipWriteLive} from "@kampus/cf-utils";
 import {Layer} from "effect";
 import {Command} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import {flag} from "./flag-command.ts";
 
 /** A verb group folded under the root `anka-ops` command — the ops-language surface descriptor. */
 export interface VerbGroup {
@@ -30,19 +32,23 @@ export interface VerbGroup {
 
 /**
  * The registry of shipped verb groups — the single place a child extends the ops language.
- * `auth` is the skeleton's only group today; `flag` (#3133) and `report` (#3134) append their
- * descriptors here (and their `Command` into {@link ankaOps}'s `withSubcommands`) as they land.
+ * `flag` folds the cf-utils Flagship core (#3133); `report` (#3134) appends its descriptor here
+ * (and its `Command` into {@link ankaOps}'s `withSubcommands`) as it lands.
  */
 export const VERB_GROUPS: ReadonlyArray<VerbGroup> = [
 	{
 		name: "auth",
 		summary: "Persist the scoped operator credential (keychain-first) — login/status/logout",
 	},
+	{
+		name: "flag",
+		summary: "Read and release Flagship flags — get/open/close/graduate over the cf-utils core",
+	},
 ];
 
-/** The root command. Extension point: children B/C add their `Command` to `withSubcommands`. */
+/** The root command. Extension point: child C adds its `Command` to `withSubcommands`. */
 export const ankaOps = Command.make("anka-ops").pipe(
-	Command.withSubcommands([auth]),
+	Command.withSubcommands([auth, flag]),
 	Command.withDescription(
 		"Operator CLI for anka-built apps — scoped ops over hidden infra (epic #2089, ADR 0045)",
 	),
@@ -55,7 +61,12 @@ const CredentialLayer = Layer.mergeAll(CredentialsKeychainFirst, AccountIdKeycha
 	Layer.provideMerge(KeychainLive),
 );
 
-/** The runtime layer bin.ts provides to `anka-ops`; every verb group resolves credentials through it. */
-export const AnkaOpsRuntimeLayer = CredentialLayer.pipe(
-	Layer.provideMerge(Layer.merge(FetchHttpClient.layer, NodeServices.layer)),
+// The Flagship read/write clients the `flag` verb group resolves through — provided ON TOP of the
+// shared credential seam (ADR 0045: one credential), so the fold reuses cf-utils' clients as-is.
+const FlagshipClients = Layer.mergeAll(FlagshipReadLive, FlagshipWriteLive);
+
+/** The runtime layer bin.ts provides to `anka-ops`; every verb group resolves through it. */
+export const AnkaOpsRuntimeLayer = Layer.provideMerge(
+	FlagshipClients,
+	CredentialLayer.pipe(Layer.provideMerge(Layer.merge(FetchHttpClient.layer, NodeServices.layer))),
 );
