@@ -8,9 +8,11 @@ test.describe("SozlukHome (/sozluk)", () => {
 		await expect(page.locator(".kp-sozluk-home__title")).toBeVisible({timeout: 10_000});
 	});
 
-	test("masthead title + searchbar + alphabet visible", async ({page}) => {
+	test("masthead title + create CTA + alphabet visible", async ({page}) => {
 		await expect(page.locator(".kp-sozluk-home__title")).toContainText("sözlük");
-		await expect(page.locator(".kp-sozluk-home__searchbar input")).toBeVisible();
+		// The local go-to search box is gone — folded into the global ⌘K `ara` (#2995).
+		// The masthead now carries the `+ yeni tanım` create CTA in its place.
+		await expect(page.getByRole("button", {name: /yeni tanım/i})).toBeVisible();
 		await expect(page.locator(".kp-sozluk-alphabet")).toBeVisible();
 		// Each non-empty letter is a navigable link to `/sozluk?harf=<letter>` (#693):
 		// at least one such link renders (the index isn't all-inert).
@@ -28,27 +30,9 @@ test.describe("SozlukHome (/sozluk)", () => {
 		await expect(popular.first().locator(".kp-sozluk-popular__meta")).toBeVisible();
 	});
 
-	test("search filters in real time", async ({page}) => {
-		const firstTitle = page.locator(".kp-sozluk-term-row__title").first();
-		const titleText = (await firstTitle.textContent())?.trim() ?? "";
-		// Pick a substring distinctive enough to narrow the list. Take the
-		// first word; if it's too short, fall back to the full title.
-		const word = titleText.split(/\s+/)[0] ?? titleText;
-		const needle = word.length >= 3 ? word.toLowerCase() : titleText.toLowerCase();
-
-		const totalBefore = await page.locator(".kp-sozluk-term-row").count();
-		await page.locator(".kp-sozluk-home__searchbar input").fill(needle);
-		// SozlukHomeChrome filters synchronously on setQuery — no debounce.
-		await expect
-			.poll(async () => page.locator(".kp-sozluk-term-row").count(), {timeout: 3_000})
-			.toBeLessThanOrEqual(totalBefore);
-		const remaining = page.locator(".kp-sozluk-term-row");
-		expect(await remaining.count()).toBeGreaterThan(0);
-		// Every remaining title should contain the needle (case-insensitive).
-		for (const t of await remaining.locator(".kp-sozluk-term-row__title").allTextContents()) {
-			expect(t.toLowerCase()).toContain(needle);
-		}
-	});
+	// The in-page real-time typed-query filter was removed by design (#2995): the
+	// "go to a term" search folded into the global ⌘K `ara` → `/search` (covered by
+	// 24-search.spec.ts), leaving only the URL-driven alphabet letter filter below.
 
 	test("clicking an alphabet letter navigates to ?harf= and filters the recent column", async ({
 		page,
@@ -73,63 +57,38 @@ test.describe("SozlukHome (/sozluk)", () => {
 });
 
 /**
- * The create-flow #440 shipped in `SozlukHome.tsx`: both the search-Enter submit
- * (`onSearchSubmit`) and the no-match `"<query>" terimini oluştur` CTA route to the
- * fresh-slug composer at `/sozluk/<slugifyTerm(query)>`. A signed-in user lands on
- * `NewTermComposer` (the `.kp-sozluk-term__head` + composer textarea), so each test
- * signs up first to assert it genuinely reaches the create/composer view, not the
- * signed-out 404. The query is per-run unique so it matches no loaded term — which
- * both forces the no-match CTA to appear and keeps the slug brand-new (composer, not
- * an existing term page).
+ * The create-flow #440/#97: the old go-to-or-create box's search half folded into the
+ * global ⌘K `ara` (#2995), leaving the create half as the `+ yeni tanım` CTA
+ * (`SozlukSubnavCta`). It opens a dialog that slugifies the typed term and routes to the
+ * fresh-slug composer at `/sozluk/<slugifyTerm(term)>` — the same target the old box
+ * reached. A signed-in user lands on `NewTermComposer` (the `.kp-sozluk-term__head` +
+ * composer body), so the test signs up first to assert it genuinely reaches the composer
+ * view, not the signed-out 404. The term is per-run unique to keep the slug brand-new (a
+ * composer, not an existing term page).
  */
-test.describe("SozlukHome create-flow (/sozluk → composer)", () => {
+test.describe("SozlukHome create-flow (+ yeni tanım → composer)", () => {
 	test.beforeEach(async ({page}) => {
 		await signUp(page);
 		await completeBootstrap(page);
 		await page.goto("/sozluk");
-		await expect(page.locator(".kp-sozluk-home__searchbar input")).toBeVisible({
-			timeout: 10_000,
-		});
+		await expect(page.getByRole("button", {name: /yeni tanım/i})).toBeVisible({timeout: 10_000});
 	});
 
-	test("search submit (Enter) routes to /sozluk/<slug> and lands on the composer", async ({
+	test("+ yeni tanım dialog routes a fresh term to /sozluk/<slug> and lands on the composer", async ({
 		page,
 	}) => {
-		const query = `e2e create flow ${Date.now().toString(36)}`;
-		const slug = slugifyTerm(query);
+		const term = `e2e create flow ${Date.now().toString(36)}`;
+		const slug = slugifyTerm(term);
 		expect(slug).not.toBe("");
 
-		const input = page.locator(".kp-sozluk-home__searchbar input");
-		await input.fill(query);
-		await input.press("Enter");
+		await page.getByRole("button", {name: /yeni tanım/i}).click();
+		// The dialog collects the term name (the composer is slug-addressed).
+		await page.getByLabel("Terim").fill(term);
+		await page.getByRole("button", {name: /^oluştur$/i}).click();
 
-		// `onSearchSubmit` navigates to the fresh-slug composer route.
+		// The dialog slugifies + navigates to the fresh-slug composer route.
 		await expect(page).toHaveURL(new RegExp(`/sozluk/${slug}$`));
-		// Signed-in fresh slug → NewTermComposer: term head + composer textarea.
-		await expect(page.locator(".kp-sozluk-term__head")).toBeVisible({timeout: 10_000});
-		await expect(page.locator('[data-testid="sozluk-composer-body"]')).toBeVisible();
-	});
-
-	test("no-match CTA appears for an unknown query and navigates to /sozluk/<slug>", async ({
-		page,
-	}) => {
-		const query = `zzqq nomatch ${Date.now().toString(36)}`;
-		const slug = slugifyTerm(query);
-		expect(slug).not.toBe("");
-
-		// Typing a query that matches no loaded term flips the recent column to the
-		// no-match state, which renders the create CTA (#440).
-		await page.locator(".kp-sozluk-home__searchbar input").fill(query);
-
-		const cta = page.locator(".kp-sozluk-home__create-cta");
-		await expect(cta).toBeVisible({timeout: 5_000});
-		const ctaButton = cta.getByRole("button", {name: /terimini oluştur/i});
-		await expect(ctaButton).toBeVisible();
-
-		await ctaButton.click();
-
-		// Same fresh-slug composer route as the search-Enter path.
-		await expect(page).toHaveURL(new RegExp(`/sozluk/${slug}$`));
+		// Signed-in fresh slug → NewTermComposer: term head + composer body.
 		await expect(page.locator(".kp-sozluk-term__head")).toBeVisible({timeout: 10_000});
 		await expect(page.locator('[data-testid="sozluk-composer-body"]')).toBeVisible();
 	});
