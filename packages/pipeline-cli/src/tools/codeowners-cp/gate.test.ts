@@ -31,7 +31,6 @@ const FULL_CODEOWNERS = [
 	"/claude-plugins/kampus-pipeline/hooks.json @usirin",
 	"/packages/ci-required/ @usirin",
 	"/packages/pipeline-cli/ @usirin",
-	"/packages/pipeline-crew-mcp/ @usirin",
 ].join("\n");
 
 /** A throwaway repo carrying just the two source files the gate reads. */

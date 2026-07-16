@@ -42,4 +42,3 @@
 # stays standalone (ADR 0092) and keeps its own owner line.
 /packages/ci-required/          @kamp-us/control-plane
 /packages/pipeline-cli/         @kamp-us/control-plane
-/packages/pipeline-crew-mcp/    @kamp-us/control-plane
