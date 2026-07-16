@@ -1,6 +1,6 @@
 ---
 name: review-design
-description: Verify a UI-affecting PR against the four-pillars design law (ADR 0162) by driving Playwright over the PR's preview deploy, capturing the changed UI surfaces, and judging the rendered screenshots multimodally — the 4th reviewer skill alongside review-code / review-doc / review-skill in the configured target repo's pipeline. It hard-FAILs ONLY on the six enumerable, objective ADR-0162 prohibitions (faint-for-meaning, missing focus ring, off-grid spacing/type, void empty state, sub-36px tap target, colour-alone meaning); all holistic/taste judgment rides as advisory (non-blocking) notes in the same verdict comment, and it is calibrated to FAIL conservatively — a borderline call is downgraded to advisory, never a hard block. Trigger on "review the design of PR #N", "review-design #N", "run the design gate on #N", "gate the UI PR against the pillars", "does this UI PR meet the design law", "run review-design", or whenever you're asked to confirm a UI PR's rendered surfaces obey ADR 0162 before merge. This is the design-class verification stage of the issue-intake pipeline: it consumes the UI PRs write-code opens, renders and looks at them over the preview deploy, and emits a namespaced, SHA-bound `review-design: PASS @ <sha> — merge-ready` / `review-design: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted to one-per-PR, embedding the GitHub-hosted screenshot evidence; on a FAIL it feeds the existing write-code repair loop. It never merges; it never emits a review-code / review-doc / review-skill marker.
+description: Verify a UI-affecting PR against the four-pillars design law (ADR 0162) by driving Playwright over the PR's preview deploy, capturing the changed UI surfaces, and judging the rendered screenshots multimodally — the 4th reviewer skill alongside review-code / review-doc / review-skill in the configured target repo's pipeline. It hard-FAILs on the six enumerable, objective ADR-0162 prohibitions (faint-for-meaning, missing focus ring, off-grid spacing/type, void empty state, sub-36px tap target, colour-alone meaning), on an uncaught render exception, and on an unexplained deviation from a blessed golden on a blessed surface (calibration B, #2945 — the deterministic rendered-vs-golden diff via the `@kampus/design-capture` seam is escalated to multimodal judgment, never auto-failed on the raw diff); all OTHER holistic/taste judgment rides as advisory (non-blocking) notes in the same verdict comment, and it is calibrated to FAIL conservatively — a borderline call is downgraded to advisory, never a hard block. Trigger on "review the design of PR #N", "review-design #N", "run the design gate on #N", "gate the UI PR against the pillars", "does this UI PR meet the design law", "run review-design", or whenever you're asked to confirm a UI PR's rendered surfaces obey ADR 0162 before merge. This is the design-class verification stage of the issue-intake pipeline: it consumes the UI PRs write-code opens, renders and looks at them over the preview deploy, and emits a namespaced, SHA-bound `review-design: PASS @ <sha> — merge-ready` / `review-design: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted to one-per-PR, embedding the GitHub-hosted screenshot evidence; on a FAIL it feeds the existing write-code repair loop. It never merges; it never emits a review-code / review-doc / review-skill marker.
 ---
 
 # review-design
@@ -42,14 +42,18 @@ decision path**: it merely *shows* the evidence to a human reading the PR. If th
 verdict still stands (you judged the local bytes). Never make the verdict depend on the hosted URL —
 embed it as evidence, but decide on what you saw locally.
 
-## The blocking surface is narrow — hard-FAIL only on the six objective prohibitions, everything else is advisory
+## The blocking surface is narrow — hard-FAIL only on the objective blocking classes, everything else is advisory
 
 The gate is **blocking**, but its hard-FAIL surface is deliberately narrow (ADR 0165, "Blocking
-scope — calibrated, fail-conservative"). You hard-FAIL **only** on the six enumerable, objective
-ADR-0162 prohibitions — the "never" rules that are **visual facts** a reviewer can point at without
-taste entering the judgment. Everything holistic or taste-based ("this feels cramped", "the
-hierarchy is muddy") rides as **advisory, non-blocking notes in the same verdict comment**, never as
-a FAIL.
+scope — calibrated, fail-conservative"). You hard-FAIL on a small, enumerated set of **objective**
+classes: the six ADR-0162 prohibitions (the "never" rules below — **visual facts** a reviewer can
+point at without taste entering the judgment), the deterministic render-exception check (#2594), and
+— the one class this gate adds for the golden-screen loop — an **unexplained** deviation from a
+blessed golden on a blessed surface (the escalate-to-judgment class below; calibration B, #2945).
+Everything holistic or taste-based ("this feels cramped", "the hierarchy is muddy") rides as
+**advisory, non-blocking notes in the same verdict comment**, never as a FAIL — the golden-deviation
+class does **not** promote any of those taste notes to blocking (ADR 0165 is unchanged); it adds
+exactly one new hard-FAIL class.
 
 You are **calibrated to fail conservatively**: only a *clear, objective* violation trips a FAIL;
 **anything borderline is downgraded to an advisory note.** When you are unsure whether a rendered
@@ -100,10 +104,127 @@ that threw fails the gate no matter how its screenshot scores. Only an **uncaugh
 because dev console.error is noisy (React key/prop warnings) and failing on it would trip the gate on
 benign output — consistent with the fail-conservative calibration.
 
+### The golden-deviation escalate-to-judgment hard-FAIL — an *unexplained* deviation from a blessed golden (calibration B, #2945)
+
+The six are visual facts; the render-exception is deterministic. This eighth class is different in
+kind: it is **deterministic-diff → escalate-to-judgment, and it NEVER auto-FAILs on the raw diff**
+(founder decision #2945, calibration B). It is the review half of the golden-screen loop (epic
+#2955): a small founder-blessed golden set is the visual reference `write-code` generates toward and
+the baseline you block deviation from — the answer to rule-compliant-but-amateur composition drift
+(#2587/#2602/#2790), where every local rule passes while the composed surface still reads wrong.
+
+**Scope — blessed surfaces only.** This class applies **only** to a changed surface that has a
+**golden baseline**: a surface-id present in the committed `golden-pointer.json`
+(`packages/design-capture/golden-pointer.json`, ADR
+[0183](https://github.com/kamp-us/phoenix/blob/main/.decisions/0183-golden-screen-storage-depo-git-pointer.md)).
+A changed surface with **no** golden is **N/A** for this class and behaves exactly as before (the six
++ render-exception only) — you never block a surface you have no blessed reference for.
+
+**The flow — deterministic diff → escalate → judge:**
+
+1. **Deterministic diff (the objective signal, never the verdict).** For each changed *blessed*
+   surface, compute the rendered-vs-golden diff through the `@kampus/design-capture` golden seam
+   (Step 2b) — `resolveGoldenBytes(pointer, surfaceId)` for the golden bytes,
+   `diffRasters(golden, candidate, {masks, channelThreshold})` for the structured `DiffResult`
+   (`magnitude` in [0,1] + the differing `regions`), under the **diff-time flake canon** (known-
+   dynamic regions masked so they never read as deviation). The diff is a **signal**, not a verdict
+   (the seam's own contract, ADR 0183) — a large magnitude does **not** by itself FAIL anything.
+2. **Trivial deviation → PASS this class (fail-conservative).** A magnitude at or below the noise
+   floor (a masked-clean, sub-perceptual diff — the same borderline→advisory calibration the six use)
+   means the surface still matches its golden: this class **PASSes** for that surface, no escalation.
+3. **Non-trivial deviation → ESCALATE to your multimodal judgment.** A non-trivial magnitude decides
+   nothing on its own — you now **look at the golden beside the rendered candidate** (the golden's
+   depo image via `resolveGoldenUrl`, the rendered bytes via the captured `localPath`) and judge
+   *why* the surface moved:
+   - **Explained / justified → PASS (the intentional-redesign branch, story 8).** The PR
+     **intentionally and legitimately** reshapes this surface — the linked issue / PR body says so,
+     and the render reads as a **deliberate, on-law redesign** (it still obeys the four pillars). A
+     justified redesign is **not** permanently blocked by a stale baseline; the founder keeps the
+     golden current with an explicit **re-bless** (`golden-bless`, story 9, ADR 0183) — that is the
+     sanctioned way the baseline moves, not this gate.
+   - **Unexplained / unjustified → hard-FAIL (the one new blocking class).** The surface deviated but
+     the PR did **not** set out to change it (no stated intent — the change is incidental drift),
+     **or** the change reads as a **regression / off-law composition** on a blessed surface. Name the
+     surface, the diff magnitude + region(s), and *what* reads wrong against the golden so a
+     `write-code` repair round can act on it cold.
+
+**Additive and conjunctive — it can only ever ADD a FAIL, never remove one.** The six prohibitions
+and the render-exception check are untouched, and **all other composition/taste stays advisory** (ADR
+0165 unchanged): this promotes *nothing* else to blocking, it adds exactly the one golden-deviation
+class. Other named composition rules promote to hard-FAIL later, rule-by-rule, only once proven as
+objective as the six (#2945) — not here.
+
+**Can't-resolve-the-golden is a can't-gate, not a FAIL.** If a changed blessed surface's golden bytes
+can't be resolved — a depo fetch fault (`resolveGoldenBytes` **errors**, distinct from the `null` it
+returns for an *unblessed* surface) — you couldn't observe the reference, so you **cannot run this
+class** for that surface: record it as a **can't-gate note** in the evidence section and do **not**
+FAIL on the unobservable, mirroring Step 1's preview-unavailable handling. Never let a fetch fault
+silently become a PASS *or* a FAIL of this class — surface the gap.
+
+### The golden-deviation escalate-to-judgment hard-FAIL — an *unexplained* deviation from a blessed golden (calibration B, #2945)
+
+The six are visual facts; the render-exception is deterministic. This eighth class is **different in
+kind**: it is **deterministic-diff → escalate-to-judgment, and it NEVER auto-FAILs on the raw diff**
+(founder decision #2945, calibration B). It is the review half of the golden-screen loop (epic
+[#2955](https://github.com/kamp-us/phoenix/issues/2955)): a small founder-blessed golden set is the
+visual reference `write-code` generates toward and the baseline you block deviation from — the answer
+to the rule-compliant-but-amateur composition drift the six prohibitions can't catch (#2587/#2602/#2790,
+every local rule passing while the composed surface reads wrong).
+
+**Scope — blessed surfaces only.** This class applies **only** to a changed surface that has a
+**golden baseline** — a surface-id present in the committed `golden-pointer.json`
+(`packages/design-capture/golden-pointer.json`, ADR
+[0183](https://github.com/kamp-us/phoenix/blob/main/.decisions/0183-golden-screen-storage-depo-git-pointer.md)).
+A changed surface with **no** golden is **N/A** for this class and behaves exactly as before (the six
+prohibitions + render-exception only). You never block a surface you have no blessed reference for.
+
+**The flow — deterministic diff → escalate → judge:**
+
+1. **Deterministic diff (the objective signal, never the verdict).** For each changed *blessed*
+   surface, compute the rendered-vs-golden diff through the `@kampus/design-capture` golden seam
+   (Step 2b): `resolveGoldenBytes(pointer, surfaceId)` → the golden bytes, then `diffRasters(golden,
+   candidate, {masks, channelThreshold})` → the structured `DiffResult` (`magnitude` in [0, 1] + the
+   differing `regions`), under the **diff-time flake canon** (known-dynamic regions masked so they
+   never read as deviation). The diff is a **signal**, not a verdict (the seam's own contract, ADR
+   0183) — a large `magnitude` does **not** by itself FAIL anything.
+2. **Trivial deviation → PASS this class (fail-conservative).** A `magnitude` at or below the noise
+   floor (a masked-clean, sub-perceptual diff — the same borderline→advisory calibration the six use)
+   means the surface still matches its golden: this class **PASSes** for that surface, no escalation.
+3. **Non-trivial deviation → ESCALATE to your multimodal judgment.** A non-trivial `magnitude`
+   decides nothing on its own — you now **look at the golden beside the rendered candidate** (the
+   golden's depo image via `resolveGoldenUrl(pointer, surfaceId)`, the rendered bytes via the captured
+   `localPath` from Step 2) and judge *why* the surface moved:
+   - **Explained / justified → PASS (the intentional-redesign branch, story 8).** The PR
+     **intentionally and legitimately** changes this surface — the linked issue / PR body says it
+     reshapes the surface, and the render reads as a **deliberate, on-law redesign** (it still obeys
+     the four pillars). A justified redesign is **not** permanently blocked by a stale baseline; the
+     founder keeps the golden current with an explicit **re-bless** (`golden-bless`, story 9, ADR 0183)
+     — that is the sanctioned way the baseline moves, never this gate silently accepting drift.
+   - **Unexplained / unjustified → hard-FAIL (the one new blocking class).** The surface deviated but
+     the PR did **not** set out to change it (no stated intent — incidental drift), **or** the change
+     reads as a **regression / off-law composition** on a blessed surface. Name the surface, the diff
+     `magnitude` + region(s), and *what* reads wrong against the golden, so a `write-code` repair round
+     can act on it cold.
+
+**Additive and conjunctive — it can only ever ADD a FAIL, never remove one.** The six prohibitions
+and the render-exception check are untouched, and **all other composition/taste stays advisory** (ADR
+0165 unchanged): this promotes *nothing* else to blocking — it adds exactly the one golden-deviation
+class. Other named composition rules promote to hard-FAIL later, rule-by-rule, only once proven as
+objective as the six (#2945) — not here.
+
+**Can't-resolve-the-golden is a can't-gate, not a FAIL.** If a changed blessed surface's golden bytes
+can't be resolved (a depo fetch fault — `resolveGoldenBytes` errors, distinct from the `null` an
+*unblessed* surface returns), you couldn't observe the reference, so you **cannot run this class** for
+that surface: record it as a **can't-gate note** in the evidence section and do **not** FAIL on the
+unobservable — mirroring Step 1's preview-unavailable handling. Never let a fetch fault silently become
+a PASS *or* a FAIL of this class; surface the gap.
+
 **Holistic / taste** — cohesiveness drift, muddy hierarchy, cramped rhythm, an off-brand
 composition, a primitive that *could* have been reached for but wasn't yet renders acceptably — is
 **advisory**, surfaced in the same comment under an **Advisory (non-blocking)** heading. Advisory
-notes never flip the verdict to FAIL.
+notes never flip the verdict to FAIL. (The golden-deviation class above is the **one** exception a
+composition-level concern can rise to a FAIL through, and only via the blessed-golden reference +
+escalate-to-judgment path — never a bare taste call.)
 
 **#2174 is folded in here (ADR 0165 Consequences).** The earlier framing — bolting a "design + a11y
 dimension" onto `review-code` / `review-doc` — is **subsumed** by this gate. Design review is its own
@@ -296,6 +417,25 @@ route that shows it; a changed empty-state primitive → a route in its **empty*
 2), a list's **empty** state (prohibition 4). This route+state list is the input to the capture
 helper.
 
+### Flag which changed surfaces are *blessed* (subject to the golden-deviation class)
+
+Read the committed golden pointer and intersect its blessed surface-ids with the changed surfaces
+above — the intersection is the set the golden-deviation class (Step 2b) diffs against its golden. A
+changed surface **not** in the pointer has no golden and is **N/A** for that class (the six +
+render-exception still apply to it). The pointer is the committed source of truth (ADR 0183); its
+surface-ids are the same `<route>[:state]` capture spec:
+
+```bash
+# blessed surface-ids: the keys of the committed pointer's `surfaces` map (ADR 0183)
+POINTER=packages/design-capture/golden-pointer.json
+BLESSED_SURFACES="$(jq -r '.surfaces | keys[]' "$POINTER" 2>/dev/null || true)"
+# the changed BLESSED surfaces = the capture surface-ids (Step 1) ∩ $BLESSED_SURFACES.
+# Empty ∩ ⇒ no blessed surface changed ⇒ the golden-deviation class is N/A this run (skip Step 2b).
+```
+
+Capture those blessed surfaces in the **same** capture run as the rest (Step 2) so their `localPath`
+bytes are ready to diff against the golden in Step 2b.
+
 ---
 
 ## Step 2 — Capture over the preview deploy, then read the LOCAL bytes (the #2247 helper seam)
@@ -358,6 +498,44 @@ A non-empty `RENDER_CRASHES` is a **FAIL** (Step 3), naming each thrown error + 
 
 ---
 
+## Step 2b — Diff each changed *blessed* surface against its golden (the golden-deviation signal)
+
+**Skip this step entirely when no blessed surface changed** (Step 1's intersection was empty) — the
+golden-deviation class is then N/A and the run is exactly as before. When one or more changed surfaces
+*are* blessed, compute the **deterministic** rendered-vs-golden diff for each through the
+`@kampus/design-capture` golden seam. This is the **signal** that decides whether to escalate — it is
+**not** the verdict, and it **never** auto-FAILs (calibration B, #2945).
+
+**The seam this step codes against** (the golden substrate #2960 landed under ADR 0183 — the same
+package Step 2 captures with; if it later exposes a dedicated golden-diff bin this reference updates
+in lockstep, as Step 2's capture-seam note does):
+
+- **Resolve the golden** — `resolveGoldenBytes(pointer, surfaceId)` ties the committed pointer to the
+  blessed bytes: `loadGoldenPointer("packages/design-capture/golden-pointer.json")` → `resolveGoldenBytes`
+  (pointer → depo URL → bytes). An **unblessed** surface resolves to `null` (already excluded by Step
+  1's intersection); a **depo fetch fault** is an error — the *can't-gate* branch below, never a FAIL.
+- **The candidate bytes** are the surface's captured `localPath` PNG from Step 2.
+- **Diff** — `diffRasters(golden, candidate, {masks, channelThreshold})` returns the structured
+  `DiffResult` — `{ dimensionsMatch, magnitude, diffPixels, comparedPixels, maskedPixels, regions }`.
+  `magnitude` is the fraction of compared (unmasked) pixels that differ, in [0,1]; a dimension
+  mismatch short-circuits to a whole-surface change (`magnitude: 1`, no regions). Apply the
+  **diff-time flake canon**: mask the known-dynamic regions (a timestamp, a live count) so a
+  legitimately varying region never reads as deviation; `channelThreshold` absorbs sub-perceptual
+  raster noise. Same inputs → same result (the determinism the AC requires).
+- **The golden's evidence URL** — `resolveGoldenUrl(pointer, surfaceId)` is the immutable depo image
+  URL you embed beside the rendered `hostedUrl` so the verdict shows golden-vs-rendered.
+
+For each changed blessed surface, record `{ surfaceId, magnitude, regions, goldenUrl, renderedUrl }`.
+A **trivial** magnitude (at/below the noise floor — masked-clean and sub-perceptual) means the
+surface still matches its golden: the golden-deviation class **PASSes** for it, no escalation. A
+**non-trivial** magnitude is the objective trigger to **escalate that surface to multimodal judgment**
+in Step 3 (look at golden vs rendered) — the raw magnitude is never itself a FAIL. If a blessed
+surface's golden **can't be resolved** (a depo fetch fault), you couldn't observe the reference:
+record a **can't-gate note** for that surface and do not FAIL on the unobservable (Step 3 / the
+evidence section carry it) — never a silent PASS or FAIL of this class.
+
+---
+
 ## Step 3 — Judge the rendered surfaces against the six prohibitions + advisory taste
 
 For **each** captured surface, look at the image and reach a per-prohibition verdict. Walk the six
@@ -386,11 +564,27 @@ hierarchy, cramped rhythm, a primitive that could have been reached for, an off-
 plus every borderline call you downgraded. These ride in the same comment and **never** flip the
 verdict.
 
-**The design verdict is conjunctive over the six hard-FAIL prohibitions plus the deterministic
-render-exception check (#2594):** every applicable prohibition must PASS (or be N/A) **and** no
-surface may have thrown an uncaught exception during its render (`RENDER_CRASHES` empty). One
-objective visual FAIL, or one thrown render exception, → the PR fails the gate. Advisory notes
-(taste + `console.error`) do not count against the verdict.
+**Then judge the golden-deviation class for each changed *blessed* surface (Step 2b's escalated
+set).** This class is N/A when no blessed surface changed. For a blessed surface with a **trivial**
+diff magnitude, it PASSes (matches its golden). For a blessed surface with a **non-trivial** magnitude
+(the escalate trigger), **look at the golden beside the rendered candidate** and decide per the flow
+above: **PASS** when the PR **intentionally and legitimately** reshapes the surface (a deliberate,
+four-pillars-obeying redesign the issue/PR states — the founder re-blesses to keep the baseline
+current), **FAIL** only when the deviation is **unexplained/unjustified** (incidental drift the PR
+never set out to make, or a regression / off-law composition on the blessed surface). Never FAIL on
+the raw magnitude alone — the diff is the trigger, your side-by-side judgment is the verdict
+(calibration B, #2945). A surface whose golden couldn't be resolved is a **can't-gate note**, neither
+PASS nor FAIL of this class.
+
+**The design verdict is conjunctive over the six hard-FAIL prohibitions, the deterministic
+render-exception check (#2594), and the golden-deviation class (escalate-to-judgment, #2945):** every
+applicable prohibition must PASS (or be N/A), no surface may have thrown an uncaught exception during
+its render (`RENDER_CRASHES` empty), **and** no changed blessed surface may carry an **unexplained**
+golden-deviation. One objective visual FAIL, one thrown render exception, or one unexplained
+golden-deviation → the PR fails the gate. The golden-deviation class is **purely additive** — it can
+only add a FAIL, it removes none of the seven checks and promotes no taste note to blocking (ADR 0165
+unchanged). Advisory notes (taste + `console.error` + a trivial/explained golden diff) do not count
+against the verdict.
 
 ---
 
@@ -471,12 +665,14 @@ Reviewed-head: @ <HEAD_SHA>
 - [PASS] Sub-36px tap target — <surface>: hit area ≥ 36px
 - [PASS] Colour-alone meaning — <surface>: state carries a second channel
 - [PASS] Render exception (#2594) — no surface threw an uncaught exception during render
+- [PASS/N/A] Golden-deviation (#2945) — <blessed surface>: matches golden (magnitude <m>) / intentional redesign, or N/A (no blessed surface changed)
 
 **Advisory (non-blocking)**
 - <holistic/taste note, or a captured console.error, or "none">
 
 **Evidence**
-- <surface>[:state] — ![<surface>](<hostedUrl>)
+- <surface>[:state] — ![rendered](<hostedUrl>)
+- <blessed surface> golden — ![golden](<goldenUrl>) vs rendered above (diff magnitude <m>)
 
 All objective prohibitions pass. This PR is design-merge-ready. **review-design does not merge** —
 `ship-it` is the authorized merge step.
@@ -506,22 +702,26 @@ screenshots are evidence only) — all objective prohibitions pass:
 **Hard-FAIL prohibitions (ADR 0162)**
 - [PASS/N/A] <the six, as above>
 - [PASS] Render exception (#2594) — no surface threw an uncaught exception during render
+- [PASS/N/A] Golden-deviation (#2945) — <blessed surface>: matches golden / intentional redesign, or N/A
 
 **Advisory (non-blocking)**
 - <note, or "none">
 
 **Evidence**
-- <surface>[:state] — ![<surface>](<hostedUrl>)
+- <surface>[:state] — ![rendered](<hostedUrl>)
+- <blessed surface> golden — ![golden](<goldenUrl>) (diff magnitude <m>)
 ```
 
-### Fail path — an objective prohibition violated, or a render exception was thrown
+### Fail path — an objective prohibition violated, a render exception was thrown, or an unexplained golden-deviation
 
 One or more of the six hard-FAIL prohibitions is **objectively** violated, **or** a surface threw an
-uncaught exception during its render (`RENDER_CRASHES` non-empty, #2594). **Nothing merges. The PR
-stays open; the linked issue stays open and assigned** — don't unassign, relabel, or close. Post the
-SHA-bound FAIL marker (the seam `write-code`'s fix round-trip keys on) with the full per-prohibition
-table — the passing rows too, so the author sees how close they are — and the **specific prohibition
-citation** on each FAIL so the repair round knows exactly what to fix:
+uncaught exception during its render (`RENDER_CRASHES` non-empty, #2594), **or** a changed blessed
+surface carries an **unexplained** golden-deviation (Step 2b escalated it and your side-by-side
+judgment found the deviation unjustified, #2945). **Nothing merges. The PR stays open; the linked
+issue stays open and assigned** — don't unassign, relabel, or close. Post the SHA-bound FAIL marker
+(the seam `write-code`'s fix round-trip keys on) with the full per-prohibition table — the passing
+rows too, so the author sees how close they are — and the **specific citation** on each FAIL so the
+repair round knows exactly what to fix:
 
 ```markdown
 review-design: FAIL @ <HEAD_SHA> — changes-requested
@@ -537,17 +737,22 @@ Reviewed-head: @ <HEAD_SHA>
   (ADR 0162 Pillar 4 — "never ship an interactive control with no focus ring")
 - [FAIL] Render exception (#2594) — <surface>: threw `TypeError: …` during render (uncaught
   pageerror; the frame looked acceptable on this tick but the surface crashes on a bad tick)
+- [FAIL] Golden-deviation (#2945) — <blessed surface>: unexplained deviation from golden (magnitude
+  <m>, region(s) <boxes>); the PR did not set out to change this surface / the change reads off-law —
+  <what looks wrong vs the golden>. (Justified redesigns pass; if this change is intentional, state
+  it in the PR and have the founder re-bless the golden — ADR 0183.)
 - [PASS/N/A] <the rest>
 
 **Advisory (non-blocking)**
-- <note, or a captured console.error, or "none">
+- <note, or a captured console.error, or a trivial/explained golden diff, or "none">
 
 **Evidence**
-- <surface>[:state] — ![<surface>](<hostedUrl>)
+- <surface>[:state] — ![rendered](<hostedUrl>)
+- <blessed surface> golden — ![golden](<goldenUrl>) vs rendered above (diff magnitude <m>)
 
-The FAILed prohibition(s) / render exception(s) above must be fixed before this PR can merge. The PR stays open and
-unmerged; #<ISSUE> stays open and assigned. `write-code` repair mode consumes this FAIL — fix on the
-same branch and re-request review.
+The FAILed prohibition(s) / render exception(s) / golden-deviation(s) above must be fixed before this
+PR can merge. The PR stays open and unmerged; #<ISSUE> stays open and assigned. `write-code` repair
+mode consumes this FAIL — fix on the same branch and re-request review.
 ```
 
 Do **not** post a native `REQUEST_CHANGES` review — `review-design` is comment-only (ADR 0058 rule
@@ -581,15 +786,18 @@ match to paper over a moved head.
 
 A single invocation gates one UI PR end to end: classify UI-affecting + blocking/non-blocking via the
 canonical §CP set (Step 0, mis-route off-ramp if not a UI PR), resolve the PR / head SHA / preview
-URL / changed surfaces (Step 1), drive the #2247 helper to capture over the preview deploy and read
-the **local bytes** + the per-surface `pageErrors` (Step 2), judge each surface against the six
-objective ADR-0162 prohibitions plus the deterministic render-exception check (#2594), with advisory
-taste alongside — calibrated to FAIL conservatively (Step 3), then land the SHA-bound
-`review-design` verdict — PASS (non-blocking) / advisory (blocking) on a full pass, or FAIL on an
-objective violation or a thrown render exception — with the hosted screenshots embedded as evidence,
-and close with the read-back
-guard (Step 4). **You never merge, and you never emit a `review-code`/`review-doc`/`review-skill`
-marker.**
+URL / changed surfaces + flag which changed surfaces are blessed (Step 1), drive the #2247 helper to
+capture over the preview deploy and read the **local bytes** + the per-surface `pageErrors` (Step 2),
+diff each changed *blessed* surface against its golden through the `@kampus/design-capture` seam
+(Step 2b — the deterministic signal, never a raw-diff FAIL), judge each surface against the six
+objective ADR-0162 prohibitions plus the deterministic render-exception check (#2594) plus the
+golden-deviation class (escalate-to-judgment: an unexplained deviation from a blessed golden hard-
+FAILs, a justified redesign passes — #2945), with advisory taste alongside — calibrated to FAIL
+conservatively (Step 3), then land the SHA-bound `review-design` verdict — PASS (non-blocking) /
+advisory (blocking) on a full pass, or FAIL on an objective violation, a thrown render exception, or
+an unexplained golden-deviation — with the hosted golden-vs-rendered screenshots embedded as evidence,
+and close with the read-back guard (Step 4). **You never merge, and you never emit a
+`review-code`/`review-doc`/`review-skill` marker.**
 
 Report back a short ledger: the PR, its class (UI / mixed; blocking/non-blocking), the preview URL,
 the surfaces captured, the per-prohibition verdict (N pass / M fail / K N/A), the advisory notes, the
