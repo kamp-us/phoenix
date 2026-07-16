@@ -138,7 +138,12 @@ export class Pano extends Context.Service<
 	{
 		readonly getPost: (
 			postId: string,
-			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
+			opts?: {
+				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
+				/** Mute read-mask (#3113): a muted author's post reads as not-found. */
+				mutedIds?: ReadonlySet<string> | undefined;
+			},
 		) => Effect.Effect<PostPage | null>;
 
 		readonly listPostsConnection: (opts?: {
@@ -147,6 +152,8 @@ export class Pano extends Context.Service<
 			after?: string | null;
 			host?: string | null;
 			sandboxViewer?: SandboxViewer | undefined;
+			/** Mute read-mask (#3113): the muter's muted authors, hidden from the feed. */
+			mutedIds?: ReadonlySet<string> | undefined;
 		}) => Effect.Effect<PostConnectionPage>;
 
 		/**
@@ -161,6 +168,8 @@ export class Pano extends Context.Service<
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
+				/** Mute read-mask (#3113): muted authors' comments hidden from the thread. */
+				mutedIds?: ReadonlySet<string> | undefined;
 				/** Collapse the finalize stamps into one concurrent wave (#2710). Default off. */
 				parallelStamps?: boolean | undefined;
 			},
@@ -169,7 +178,12 @@ export class Pano extends Context.Service<
 		/** Post source `byIds` — batched read avoiding the relation N+1. */
 		readonly getPostsByIds: (
 			ids: ReadonlyArray<string>,
-			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
+			opts?: {
+				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
+				/** Mute read-mask (#3113): muted authors' posts dropped from the batch. */
+				mutedIds?: ReadonlySet<string> | undefined;
+			},
 		) => Effect.Effect<ReadonlyArray<PostSummaryRow>>;
 
 		/**
@@ -191,6 +205,8 @@ export class Pano extends Context.Service<
 			opts?: {
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
+				/** Mute read-mask (#3113): muted authors' comments dropped from the batch. */
+				mutedIds?: ReadonlySet<string> | undefined;
 				/** Collapse the finalize stamps into one concurrent wave (#2710). Default off. */
 				parallelStamps?: boolean | undefined;
 			},

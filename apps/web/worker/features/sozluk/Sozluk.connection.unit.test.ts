@@ -191,3 +191,29 @@ describe("Sozluk.listDefinitionsKeyset — cursor-miss → empty page, NO furthe
 		}).pipe(Effect.provide(sozlukLayer(access)));
 	});
 });
+
+// Mute read-mask (#3113): the muted-author SQL arm is `and()`ed into the definition
+// fetch, so a muted member's definitions are absent from the muter's definition reads.
+// Rendered over the same `.toSQL()` seam — present-with-mute emits `author_id not in
+// (…)`, absent/off emits nothing (byte-for-byte today's definition read).
+describe("Sozluk.listDefinitionsKeyset — mute read-mask (author_id NOT IN …)", () => {
+	it.effect("masks a muted author when `mutedIds` is non-empty", () => {
+		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);
+		return Effect.gen(function* () {
+			const sozluk = yield* Sozluk;
+			yield* sozluk.listDefinitionsKeyset("a-term", {first: 10, mutedIds: new Set(["u-muted"])});
+			const {sql, params} = fetchQuery(queries);
+			assert.match(sql, /"definition_record"\."author_id" not in \(\?\)/, "muted author excluded");
+			assert.include(params, "u-muted");
+		}).pipe(Effect.provide(sozlukLayer(access)));
+	});
+
+	it.effect("is unchanged with no `mutedIds` (no NOT IN clause)", () => {
+		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);
+		return Effect.gen(function* () {
+			const sozluk = yield* Sozluk;
+			yield* sozluk.listDefinitionsKeyset("a-term", {first: 10});
+			assert.notMatch(fetchQuery(queries).sql, /not in/, "no mask ⇒ today's definition read");
+		}).pipe(Effect.provide(sozlukLayer(access)));
+	});
+});

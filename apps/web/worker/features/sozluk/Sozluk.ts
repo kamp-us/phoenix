@@ -30,6 +30,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import {mutedAuthorsWhere} from "../mute/read-mask.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Reaction} from "../reaction/Reaction.ts";
 import type {ReportId} from "../report/ids.ts";
@@ -348,6 +349,8 @@ export class Sozluk extends Context.Service<
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
+				/** Mute read-mask (#3113): muted authors' definitions hidden from the muter. */
+				mutedIds?: ReadonlySet<string> | undefined;
 				/**
 				 * Route the page's independent stamps (viewer scalars + reaction aggregate +
 				 * author identity) through the concurrent {@link parallelStampWave} instead of
@@ -370,6 +373,8 @@ export class Sozluk extends Context.Service<
 			opts?: {
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
+				/** Mute read-mask (#3113): muted authors' definitions dropped from the batch. */
+				mutedIds?: ReadonlySet<string> | undefined;
 				/** See {@link listDefinitionsKeyset}'s `parallelStamps` (#2709). */
 				parallelStamps?: boolean | undefined;
 			},
@@ -767,6 +772,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
+				mutedIds?: ReadonlySet<string> | undefined;
 				parallelStamps?: boolean | undefined;
 			} = {},
 		) {
@@ -785,6 +791,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					},
 					viewer,
 				),
+				// Mute read-mask (#3113): hide muted authors' definitions from the muter.
+				mutedAuthorsWhere(schema.definitionRecord.authorId, opts.mutedIds),
 			);
 			const totalCount = yield* run((db) =>
 				db
@@ -856,6 +864,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			opts: {
 				viewerId?: string | null | undefined;
 				sandboxViewer?: SandboxViewer | undefined;
+				mutedIds?: ReadonlySet<string> | undefined;
 				parallelStamps?: boolean | undefined;
 			} = {},
 		) {
@@ -877,6 +886,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 								},
 								viewer,
 							),
+							// Mute read-mask (#3113): drop muted authors' definitions from the batch.
+							mutedAuthorsWhere(schema.definitionRecord.authorId, opts.mutedIds),
 						),
 					),
 			);

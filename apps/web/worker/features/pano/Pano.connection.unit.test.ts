@@ -466,3 +466,48 @@ describe("Pano — authed feed: parallelized listPostsConnection composes with t
 		},
 	);
 });
+
+// Mute read-mask (#3113): the muted-author SQL arm is `and()`ed into the pano feed +
+// thread fetch. Rendered over the same `.toSQL()` seam — present-with-mute emits
+// `author_id not in (…)`, absent/off emits nothing (byte-for-byte today's read).
+describe("Pano feed + thread — mute read-mask (author_id NOT IN …)", () => {
+	it.effect("listPostsConnection masks a muted author when `mutedIds` is non-empty", () => {
+		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);
+		return Effect.gen(function* () {
+			const pano = yield* Pano;
+			yield* pano.listPostsConnection({sort: "new", first: 10, mutedIds: new Set(["u-muted"])});
+			const {sql, params} = fetchQuery(queries);
+			assert.match(sql, /"post_record"\."author_id" not in \(\?\)/, "muted author excluded");
+			assert.include(params, "u-muted");
+		}).pipe(Effect.provide(panoLayer(access)));
+	});
+
+	it.effect("listPostsConnection is unchanged with no `mutedIds` (no NOT IN clause)", () => {
+		const {access, queries} = scriptedAccess([1 /* count */, [] /* fetch */]);
+		return Effect.gen(function* () {
+			const pano = yield* Pano;
+			yield* pano.listPostsConnection({sort: "new", first: 10});
+			assert.notMatch(fetchQuery(queries).sql, /not in/, "no mask ⇒ byte-for-byte today's feed");
+		}).pipe(Effect.provide(panoLayer(access)));
+	});
+
+	it.effect("listCommentsKeyset masks a muted author when `mutedIds` is non-empty", () => {
+		const {access, queries} = scriptedAccess([0 /* count */, [] /* fetch */]);
+		return Effect.gen(function* () {
+			const pano = yield* Pano;
+			yield* pano.listCommentsKeyset("post-1", {first: 10, mutedIds: new Set(["u-muted"])});
+			const {sql, params} = fetchQuery(queries);
+			assert.match(sql, /"comment_record"\."author_id" not in \(\?\)/, "muted author excluded");
+			assert.include(params, "u-muted");
+		}).pipe(Effect.provide(panoLayer(access)));
+	});
+
+	it.effect("listCommentsKeyset is unchanged with no `mutedIds` (no NOT IN clause)", () => {
+		const {access, queries} = scriptedAccess([0 /* count */, [] /* fetch */]);
+		return Effect.gen(function* () {
+			const pano = yield* Pano;
+			yield* pano.listCommentsKeyset("post-1", {first: 10});
+			assert.notMatch(fetchQuery(queries).sql, /not in/, "no mask ⇒ byte-for-byte today's thread");
+		}).pipe(Effect.provide(panoLayer(access)));
+	});
+});

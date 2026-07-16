@@ -39,6 +39,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import {isMutedAuthor, mutedAuthorsWhere} from "../mute/read-mask.ts";
 import type {ReactionTargetNotFound} from "../reaction/errors.ts";
 import type {Reaction} from "../reaction/Reaction.ts";
 import type {ReportId} from "../report/ids.ts";
@@ -532,7 +533,11 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 
 	const getPost = Effect.fn("Pano.getPost")(function* (
 		postId: string,
-		opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
+		opts: {
+			viewerId?: string | null | undefined;
+			sandboxViewer?: SandboxViewer | undefined;
+			mutedIds?: ReadonlySet<string> | undefined;
+		} = {},
 	) {
 		const meta = yield* run((db) =>
 			db.query.postRecord.findFirst({
@@ -540,6 +545,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			}),
 		);
 		if (!meta) return null;
+		// Mute read-mask (#3113): a muted author's post reads as not-found for the
+		// muter, the in-memory dual of the feed's `mutedAuthorsWhere` SQL arm.
+		if (isMutedAuthor(meta.authorId, opts.mutedIds)) return null;
 		// The in-memory visibility decision via the ADR 0113 seam (`postVisibleTo`) —
 		// the mirror of the SQL `postVisibleWhere` the batch read uses, applied here
 		// because this single-row read uses the relational query builder. It composes
@@ -565,6 +573,7 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			after?: string | null;
 			host?: string | null;
 			sandboxViewer?: SandboxViewer | undefined;
+			mutedIds?: ReadonlySet<string> | undefined;
 		} = {},
 	) {
 		const sort = opts.sort ?? "hot";
@@ -585,6 +594,9 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			resolveSandboxViewer(opts),
 		);
 		if (sandboxClause) baseConditions.push(sandboxClause);
+		// Mute read-mask (#3113): hide muted authors' posts from the muter's feed.
+		const muteClause = mutedAuthorsWhere(schema.postRecord.authorId, opts.mutedIds);
+		if (muteClause) baseConditions.push(muteClause);
 
 		type CursorRow = {
 			id: string;
@@ -715,7 +727,11 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 
 	const getPostsByIds = Effect.fn("Pano.getPostsByIds")(function* (
 		ids: ReadonlyArray<string>,
-		opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
+		opts: {
+			viewerId?: string | null | undefined;
+			sandboxViewer?: SandboxViewer | undefined;
+			mutedIds?: ReadonlySet<string> | undefined;
+		} = {},
 	) {
 		if (ids.length === 0) return [];
 		const viewerId = opts.viewerId ?? null;
@@ -735,6 +751,8 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 							},
 							resolveSandboxViewer(opts),
 						),
+						// Mute read-mask (#3113): drop muted authors' posts from the muter's batch.
+						mutedAuthorsWhere(schema.postRecord.authorId, opts.mutedIds),
 					),
 				),
 		);

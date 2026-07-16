@@ -11,6 +11,7 @@ import {PANO_BASE_FEED, PHOENIX_PANO_STAMP_WAVE} from "../../../src/flags/keys.t
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {currentMutedIds} from "../mute/read-mask.ts";
 import {Pano, tagLabel} from "./Pano.ts";
 import {CommentView, PostOverlayView, PostView, TagView} from "./views.ts";
 
@@ -21,7 +22,12 @@ export const postSource = Fate.source(
 		byIds: function* (ids) {
 			const pano = yield* Pano;
 			const sandboxViewer = yield* currentSandboxViewer;
-			return yield* pano.getPostsByIds(ids, {viewerId: sandboxViewer.viewerId, sandboxViewer});
+			const mutedIds = yield* currentMutedIds;
+			return yield* pano.getPostsByIds(ids, {
+				viewerId: sandboxViewer.viewerId,
+				sandboxViewer,
+				mutedIds,
+			});
 		},
 	},
 );
@@ -60,6 +66,7 @@ export const commentSource = Fate.source(
 		byIds: function* (ids) {
 			const pano = yield* Pano;
 			const sandboxViewer = yield* currentSandboxViewer;
+			const mutedIds = yield* currentMutedIds;
 			// The read-path collapse is contained behind its default-off flag (#2710): off ⇒
 			// the stamps run serially (today), on ⇒ one concurrent wave. Same wire output.
 			const flags = yield* Flags;
@@ -69,6 +76,7 @@ export const commentSource = Fate.source(
 			return yield* pano.getCommentsByIds(ids, {
 				viewerId: sandboxViewer.viewerId,
 				sandboxViewer,
+				mutedIds,
 				parallelStamps,
 			});
 		},
