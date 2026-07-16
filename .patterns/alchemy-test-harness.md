@@ -125,6 +125,35 @@ create/destroy surface every CF flake class scales with (#1010 / #1019 /
 #1020), which also retired the fork cap: the integration project runs uncapped
 `fileParallelism: true`.
 
+## CF API rate-limit discipline — two complementary halves
+
+The harness's setup-only Cloudflare REST path (`cloudflareApi` → `runD1Query` in
+`_harness.ts`; `setLastActivityAt` / `execD1` / `promoteToYazar`) hits ONE
+account's D1 control-plane, which trips the account-global rate limit (HTTP 429,
+code 971 "TooManyRequests") under concurrent-stage batch load. Two wrappers guard
+it, and a call funnels through both:
+
+- **Reactive per-call retry** — `cfFetchWithRateLimitRetry` (`_d1-rest-retry.ts`):
+  after a 429 fires, replay the one call with full-jitter exponential backoff
+  (429 is a pre-execution reject, so replay is safe; #2915). Bounded — a
+  persistent 429 exhausts the budget and surfaces.
+- **Proactive shared throttle** — `cfApiThrottle` (`_cf-api-throttle.ts`, #3081):
+  a concurrency cap + jittered start-pacing every harness CF REST call funnels
+  through, so fewer 429s fire in the first place. `cloudflareApi` composes it
+  AROUND the retry (`throttle.run(() => cfFetchWithRateLimitRetry(send))`), so
+  each logical call — retries included — is one throttled unit. Both knobs are
+  env-tunable (`CF_API_MAX_CONCURRENT` / `CF_API_MIN_SPACING_MS`).
+
+**Ceiling (why this isn't the whole 429 story):** the throttle is an in-process
+singleton — under `isolate:false` it is shared across files in the same fork, but
+it does NOT reach across forks or across separate CI runs. The observed
+"~24 concurrent" 429 pressure is a CROSS-run aggregate (~4 overlapping
+`merge_group` runs on the one account), and the dominant 429 fires inside
+alchemy's OWN deploy path, which the harness can't wrap. Those need the
+out-of-harness levers named in #3081 (a CI `concurrency:` group; 429 backoff in
+alchemy's deploy path via `pnpm patch`, ADR 0038). This throttle is the
+run-agnostic backoff on the slice the harness owns.
+
 ## Teardown is best-effort — leaked stages are a known class
 
 Both destroy paths (`afterAll` per-file, the globalSetup teardown) are
