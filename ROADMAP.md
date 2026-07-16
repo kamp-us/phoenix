@@ -34,6 +34,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
 | Mentor Audit | #27 | active |
+| Crew-MCP Finish — run the crew off tmux | #28 | active |
 
 **The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
 
