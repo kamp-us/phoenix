@@ -29,6 +29,7 @@ import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
+import {readBootUser} from "./flags/boot";
 import {
 	MECMUA_FEED,
 	MECMUA_PUBLIC_READ,
@@ -36,7 +37,7 @@ import {
 	PHOENIX_BILDIRIM,
 	PHOENIX_NAV_IA,
 } from "./flags/keys";
-import {readSignedIn, useFlag} from "./flags/useFlag";
+import {useFlag} from "./flags/useFlag";
 import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
 import {safeReturnTo} from "./lib/returnTo";
@@ -159,17 +160,31 @@ function Layout() {
 	}
 
 	const isSignedIn = !!session.data;
-	// First-paint shell geometry rides the edge-resolved presence bit (ADR 0179 §1, #2933):
-	// `__BOOT__.signedIn` tells us synchronously — before `useSession` settles — whether the
-	// account cluster should exist, so the giriş-yap↔user-cluster swap and the empty→pop never
-	// happen. Absent `__BOOT__` (flag off / the #2931 never-hang fallback) ⇒ `readSignedIn()`
-	// is false ⇒ the session-gated `isSignedIn` governs, exactly today's behavior.
-	const bootSignedIn = readSignedIn();
+	// First-paint identity rides the edge-resolved `__BOOT__.user` (ADR 0185, superseding #2933's
+	// presence-only `signedIn` bit): the full user is known synchronously — before `useSession`
+	// settles — so the account cluster both exists AND carries its name/handle from the first
+	// frame, killing the giriş-yap↔user-cluster swap and the name content pop-in. Absent `__BOOT__`
+	// (flag off / the #2931 never-hang fallback) ⇒ `readBootUser()` is null ⇒ the session-gated
+	// `isSignedIn` governs, exactly today's behavior.
+	const bootUser = readBootUser();
+	const bootSignedIn = bootUser != null;
 	const signedInAtFirstPaint = bootSignedIn || isSignedIn;
 	// Reserve the account slot only while the edge said signed-in AND we haven't settled to a
 	// definitively signed-out session — so an absent `__BOOT__` never reserves (today's render)
 	// and a boot/session divergence collapses cleanly rather than stranding a phantom slot.
 	const reserveSignedInSlots = bootSignedIn && (session.isPending || isSignedIn);
+	// Seed the topbar identity synchronously from `__BOOT__.user` so the name/handle render on the
+	// first frame, before `FateProvider`/`LayoutContent` publish the fate-derived chips below. Once
+	// those chips arrive (session settled) they take over — the same resolved value, so no visible
+	// swap. Absent `__BOOT__` ⇒ `{}` ⇒ the chips-only path, exactly today's render.
+	const bootUserProps = bootUser
+		? {
+				user: {
+					name: actorLabel(bootUser.name, bootUser.username, "kullanıcı"),
+					username: bootUser.username,
+				},
+			}
+		: {};
 
 	return (
 		<TooltipProvider>
@@ -189,7 +204,7 @@ function Layout() {
 							...(feedOn && !navIaOn ? [{to: "/mecmua/akis", label: "akış"}] : []),
 						]}
 						divanTo={chips?.divanTo}
-						{...(chips?.userProps ?? {})}
+						{...(chips?.userProps ?? bootUserProps)}
 						karma={chips?.karma}
 						{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
 						searchQuery={searchQuery}

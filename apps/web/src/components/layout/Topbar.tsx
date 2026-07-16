@@ -99,12 +99,12 @@ export function Topbar({
 	navIa?: boolean;
 	/**
 	 * Reserve the signed-in account cluster's geometry at first paint (#2933, ADR 0179 §1).
-	 * Driven by `__BOOT__.signedIn` (`readSignedIn`) in the shell frame: when the edge
-	 * resolved a signed-in session, the account slot renders a fixed-geometry placeholder
-	 * before fate publishes the real `user` chip — so the cluster occupies its final geometry
-	 * from the first frame and the value late-fills in place (#2160), instead of the
-	 * giriş-yap↔user-cluster swap + empty→pop. False (absent `__BOOT__` / signed-out) ⇒ the
-	 * account slot stays null until `user` arrives — today's conditional render.
+	 * Driven by `__BOOT__.user != null` (`readBootUser`, ADR 0185) in the shell frame: when the
+	 * edge resolved a signed-in session, the account slot holds its geometry from the first frame.
+	 * With `__BOOT__.user` present the shell also seeds the real `user` chip synchronously, so the
+	 * cluster paints its content immediately rather than a placeholder; this placeholder covers the
+	 * residual reserve-without-content window (a boot/session divergence). False (absent `__BOOT__`
+	 * / signed-out) ⇒ the account slot stays null until `user` arrives — today's conditional render.
 	 */
 	reserveSignedInSlots?: boolean;
 }) {

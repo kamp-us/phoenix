@@ -6,17 +6,17 @@
  * - `resolveFlagResponse` (#1111): the fetch-path safe-default wiring of `resolveFlag` — a
  *   hook that forgot to route the server JSON through `resolveFlag`, or dropped the non-2xx
  *   guard, fails here.
- * - `resolveBootFlag` / `readSignedIn` (#2932, ADR 0179): the synchronous `__BOOT__` member
- *   path — member keys resolve from the injected payload with no fetch, a non-member or an
- *   absent `__BOOT__` returns `undefined` so the hook falls back to fetch, and the `signedIn`
- *   presence bit reads safe-default `false` when `__BOOT__` is absent.
+ * - `resolveBootFlag` (#2932, ADR 0179): the synchronous `__BOOT__` member path — member keys
+ *   resolve from the injected payload with no fetch, a non-member or an absent `__BOOT__` returns
+ *   `undefined` so the hook falls back to fetch. (The signed-in identity moved to the typed
+ *   `__BOOT__.user` object, `readBootUser` in `boot.ts`, covered by `boot.test.ts` — ADR 0185.)
  *
  * Node-tested with no DOM/`fetch`, per the repo's pure-extraction idiom
  * (`toProfileStatsState` / `useToggleAction.test.ts`).
  */
-import {afterEach, describe, expect, it} from "vitest";
+import {describe, expect, it} from "vitest";
 import {MECMUA_FEED, MECMUA_PUBLIC_READ, PHOENIX_NAV_IA} from "./keys";
-import {readSignedIn, resolveBootFlag, resolveFlagResponse} from "./useFlag";
+import {resolveBootFlag, resolveFlagResponse} from "./useFlag";
 
 describe("resolveFlagResponse — useFlag's safe-default wiring of resolveFlag", () => {
 	it("returns the server value when the response is 2xx and the flag is on (the gated path)", () => {
@@ -73,30 +73,5 @@ describe("resolveBootFlag — the synchronous __BOOT__ member resolution", () =>
 		// A non-member key never resolves synchronously even if __BOOT__ happens to carry it.
 		expect(resolveBootFlag({"pano-draft-save": true} as never, "pano-draft-save")).toBeUndefined();
 		expect(resolveBootFlag(undefined, "pano-draft-save")).toBeUndefined();
-	});
-});
-
-describe("readSignedIn — the synchronous signed-in presence bit", () => {
-	afterEach(() => {
-		delete (globalThis as {window?: unknown}).window;
-	});
-
-	it("reads true from window.__BOOT__.signedIn when signed in", () => {
-		(globalThis as {window?: unknown}).window = {__BOOT__: {signedIn: true}};
-		expect(readSignedIn()).toBe(true);
-	});
-
-	it("reads false from window.__BOOT__.signedIn when signed out", () => {
-		(globalThis as {window?: unknown}).window = {__BOOT__: {signedIn: false}};
-		expect(readSignedIn()).toBe(false);
-	});
-
-	it("safe-defaults to false when __BOOT__ is absent (never-hang fallback / flag off)", () => {
-		(globalThis as {window?: unknown}).window = {};
-		expect(readSignedIn()).toBe(false);
-	});
-
-	it("safe-defaults to false when there is no window at all (never throws)", () => {
-		expect(readSignedIn()).toBe(false);
 	});
 });

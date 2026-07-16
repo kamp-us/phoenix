@@ -8,10 +8,14 @@
  * missing payload is a first-class, non-error state, never an assumption that injection happened;
  * the unified `useFlag` (#2932) consumes this, so the optional contract lives here at its source.
  */
-import type {BootMemberKey} from "./shell-keys.ts";
+import type {BootMemberKey, BootUser} from "./shell-keys.ts";
 
-/** The edge-injected payload as the client sees it: every member key MAY be present. */
-export type BootPayload = Partial<Record<BootMemberKey, boolean>>;
+/**
+ * The edge-injected payload as the client sees it: every boolean member key MAY be present, plus
+ * the edge-resolved current `user` (ADR 0185) — absent/`null` for a signed-out viewer or the
+ * absent-`__BOOT__` fallback.
+ */
+export type BootPayload = Partial<Record<BootMemberKey, boolean>> & {user?: BootUser | null};
 
 declare global {
 	interface Window {
@@ -38,4 +42,16 @@ export function readBoot(): BootPayload | undefined {
 export function readBootMember(key: BootMemberKey): boolean | undefined {
 	const value = readBoot()?.[key];
 	return typeof value === "boolean" ? value : undefined;
+}
+
+/**
+ * Read the edge-resolved current user from `window.__BOOT__.user` (ADR 0185, amending 0179):
+ * the full identity, so first-paint surfaces (the navbar cluster, the pano CTA, `useMe`'s seed)
+ * render the signed-in state SYNCHRONOUSLY instead of the async `useMe` fetch. Returns `null`
+ * for a signed-out viewer AND for the absent-`__BOOT__` fallback (flag off / the #2931 never-hang
+ * outage) — the caller then resolves through its async path, never assuming injection happened.
+ */
+export function readBootUser(): BootUser | null {
+	const user = readBoot()?.user;
+	return typeof user === "object" && user !== null ? user : null;
 }

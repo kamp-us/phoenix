@@ -26,8 +26,10 @@ import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {PHOENIX_EDGE_SHELL_BOOT} from "../../../src/flags/keys.ts";
-import {SHELL_FLAG_KEYS, type ShellFlagKey} from "../../../src/flags/shell-keys.ts";
+import {type BootUser, SHELL_FLAG_KEYS, type ShellFlagKey} from "../../../src/flags/shell-keys.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
+import {resolveMeUser} from "../pasaport/trusted-user.ts";
+import type {User} from "../pasaport/views.ts";
 import {Flags} from "./Flags.ts";
 import {
 	anonymousFlagsContext,
@@ -50,6 +52,22 @@ class ShellAssetFetchError extends Schema.TaggedErrorClass<ShellAssetFetchError>
 // that one seam: an `unknown` param + a single narrowing cast (no `as unknown as` laundering).
 const toWebResponse = (response: unknown): HttpServerResponse.HttpServerResponse =>
 	HttpServerResponse.fromWeb(response as Parameters<typeof HttpServerResponse.fromWeb>[0]);
+
+/**
+ * Project the wire `User` down to the client `BootUser` for `__BOOT__.user` — the same fields
+ * `useMe` exposes as `MeUser`, minus fate's transport-only `__typename` (ADR 0185). An explicit
+ * field list (not an `Omit` spread) so a wire-shape change surfaces here as a compile error.
+ */
+const toBootUser = (user: User): BootUser => ({
+	id: user.id,
+	email: user.email,
+	name: user.name,
+	image: user.image,
+	username: user.username,
+	tier: user.tier,
+	isModerator: user.isModerator,
+	emailFailing: user.emailFailing,
+});
 
 /**
  * Resolve the shell flag values under an already-resolved per-request context. Exported so
@@ -132,7 +150,13 @@ export const handleShellBoot = Effect.gen(function* () {
 		const session = yield* pasaport.validateSession(raw.headers);
 		const context = yield* resolveRequestFlagsContext(session, raw.headers.get("cookie"));
 		const shellFlags = yield* readShellFlags(context);
-		const payload = buildBootPayload(session !== null, shellFlags);
+		// Edge-resolve the current user through the SAME session→user seam the `/fate` `me` view
+		// uses (ADR 0185), so first-paint surfaces read identity synchronously off `__BOOT__.user`
+		// instead of the async `useMe`; `null` when signed out. Projected off the wire `User` (drop
+		// fate's `__typename`) to the client `BootUser` shape. These extra D1 reads sit inside the
+		// never-hang guard below, so a slow/dead resolve degrades to the untransformed asset (#2931).
+		const user = session ? toBootUser(yield* resolveMeUser(session.user)) : null;
+		const payload = buildBootPayload(user, shellFlags);
 		return injectBootScript(assetResponse, payload);
 	});
 

@@ -10,7 +10,6 @@ import {
 	assertShellBootKeysSingleSourced,
 	BOOT_MEMBER_KEYS,
 	SHELL_FLAG_KEYS,
-	SHELL_SIGNED_IN_KEY,
 	ShellKeyDriftError,
 } from "./shell-keys";
 
@@ -20,13 +19,12 @@ describe("shell-key manifest — the geometry-law member set", () => {
 		expect([...SHELL_FLAG_KEYS]).toEqual(["phoenix-nav-ia", "mecmua-public-read", "mecmua-feed"]);
 	});
 
-	it("the __BOOT__ shape is the flag keys plus the signedIn presence bit", () => {
-		expect(SHELL_SIGNED_IN_KEY).toBe("signedIn");
-		expect([...BOOT_MEMBER_KEYS]).toEqual([...SHELL_FLAG_KEYS, "signedIn"]);
-	});
-
-	it("signedIn is part of the __BOOT__ shape but is NOT a flag key", () => {
-		expect([...SHELL_FLAG_KEYS]).not.toContain(SHELL_SIGNED_IN_KEY);
+	it("the __BOOT__ boolean-member keys are exactly the flag keys — the user is not a member key", () => {
+		// ADR 0185 superseded #2933's `signedIn` presence bit with the typed `user` object, so the
+		// boolean member set carries the shell flags and nothing else; `user` is a distinct field.
+		expect([...BOOT_MEMBER_KEYS]).toEqual([...SHELL_FLAG_KEYS]);
+		expect([...BOOT_MEMBER_KEYS]).not.toContain("signedIn");
+		expect([...BOOT_MEMBER_KEYS]).not.toContain("user");
 	});
 });
 
@@ -59,9 +57,9 @@ describe("assertShellBootKeysSingleSourced — fail-closed single-source guard",
 		);
 	});
 
-	it("FAILS when the client omits the signedIn presence bit (the non-flag member still drifts)", () => {
-		const consumedMissingSignedIn = canonical.filter((k) => k !== SHELL_SIGNED_IN_KEY);
-		expect(() => assertShellBootKeysSingleSourced(canonical, consumedMissingSignedIn)).toThrow(
+	it("FAILS when the client omits a manifest flag key (client-side drift)", () => {
+		const consumedMissingFeed = canonical.filter((k) => k !== MECMUA_FEED);
+		expect(() => assertShellBootKeysSingleSourced(canonical, consumedMissingFeed)).toThrow(
 			ShellKeyDriftError,
 		);
 	});

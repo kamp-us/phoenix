@@ -378,8 +378,8 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 });
 
 // Reserved signed-in account slot (#2933, ADR 0179 §1). `reserveSignedInSlots` (driven by
-// `__BOOT__.signedIn` in the shell frame) reserves the account cluster's geometry at first
-// paint: with no `user` yet it renders a fixed-geometry placeholder in the account slot, so
+// `__BOOT__.user != null` in the shell frame, ADR 0185) reserves the account cluster's geometry at
+// first paint: with no `user` yet it renders a fixed-geometry placeholder in the account slot, so
 // when fate publishes the real user menu it fills the same slot with zero cluster shift — no
 // giriş-yap↔user-cluster swap, no empty→pop. Off ⇒ the slot stays null (today's render).
 describe("Topbar reserved signed-in account slot (#2933)", () => {

@@ -149,8 +149,8 @@ vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: ()
 // (akış) nav entry (#2547) is gated on `mecmua-feed`, flipped via `flags.mecmuaFeed`.
 // Every other read (and other flag key) stays off, matching the default the shell
 // rendered under before.
-// `signedIn` drives the mocked `readSignedIn` (the `__BOOT__.signedIn` presence bit, #2933):
-// the shell frame reads it to reserve the signed-in account cluster before `useSession`
+// `signedIn` drives the mocked `readBootUser` (the `__BOOT__.user` edge identity, ADR 0185):
+// the shell frame reads it to reserve AND seed the signed-in account cluster before `useSession`
 // settles. Default false = `__BOOT__` absent, so the pre-existing shell tests see today's
 // signed-out first paint unchanged.
 const flags = vi.hoisted(() => ({
@@ -173,9 +173,28 @@ vi.mock("./flags/useFlag", async () => {
 							: false,
 			loading: false,
 		}),
-		readSignedIn: () => flags.signedIn,
 	};
 });
+// The edge-resolved `__BOOT__.user` (ADR 0185): when `flags.signedIn`, the shell reads the full
+// identity synchronously — the account cluster paints its name (`Elif`) on the first frame, before
+// the session settles. Absent (default) ⇒ null ⇒ the signed-out first paint. `importActual` keeps
+// the real `readBoot`/`readBootMember`; only the user read is faked.
+vi.mock("./flags/boot", async (importActual) => ({
+	...(await importActual<typeof import("./flags/boot")>()),
+	readBootUser: () =>
+		flags.signedIn
+			? {
+					id: "user-42",
+					email: "elif@kamp.us",
+					name: "Elif",
+					image: null,
+					username: "elif",
+					tier: "yazar" as const,
+					isModerator: false,
+					emailFailing: false,
+				}
+			: null,
+}));
 
 // Render the real App at a chosen route. Invariant 2's tests settle the session, which
 // commits FateProvider and mounts the routed page BELOW it — so they route to a
@@ -276,11 +295,12 @@ describe("App first-paint invariants (#2177 — pins #2160 flash + #438 remount)
 	});
 });
 
-// Reserved signed-in cluster from __BOOT__.signedIn (#2933, ADR 0179 §1). The shell frame reads
-// the edge presence bit at first paint: signed-in ⇒ no giriş-yap CTA and a reserved account slot
-// BEFORE useSession settles, so the giriş-yap↔user-cluster swap + empty→pop never happen; absent
-// __BOOT__ ⇒ readSignedIn() false ⇒ today's session-gated render (the AC-3 no-op).
-describe("reserved signed-in cluster from __BOOT__.signedIn (#2933)", () => {
+// Signed-in cluster seeded from __BOOT__.user (ADR 0185, superseding #2933's presence-only bit).
+// The shell frame reads the edge identity at first paint: signed-in ⇒ no giriş-yap CTA and the
+// account cluster's CONTENT (the name) rendered synchronously BEFORE useSession settles, so the
+// giriş-yap↔user-cluster swap + the name content pop-in never happen; absent __BOOT__ ⇒
+// readBootUser() null ⇒ today's session-gated render (the AC-3 no-op).
+describe("signed-in cluster seeded from __BOOT__.user (ADR 0185)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
 		sessionState = {data: null, isPending: true};
@@ -291,36 +311,38 @@ describe("reserved signed-in cluster from __BOOT__.signedIn (#2933)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("__BOOT__ present + signedIn: first paint reserves the account slot — no giriş-yap flash, before the session settles", () => {
+	it("__BOOT__ present + user: first paint renders the account name — no giriş-yap flash, before the session settles", () => {
 		flags.signedIn = true;
 		renderApp();
-		// The session is still isPending (no fate, no chips), yet the shell already knows the
-		// user is signed in from the edge bit: the CTA is gone and the account slot is reserved.
+		// The session is still isPending (no fate, no chips), yet the shell already knows WHO is
+		// signed in from the edge user object: the CTA is gone and the name renders synchronously.
 		expect(screen.queryByRole("button", {name: "giriş yap"})).toBeNull();
-		expect(screen.getByTestId("topbar-user-placeholder")).toBeTruthy();
+		expect(screen.getByText("Elif")).toBeTruthy();
 		expect(fateMounts).toHaveLength(0);
 	});
 
-	it("__BOOT__ present + signedIn: no giriş-yap↔user-cluster swap when the session settles signed-in", () => {
+	it("__BOOT__ present + user: no content swap when the session settles signed-in", () => {
 		flags.signedIn = true;
 		renderApp(FATE_FREE_ROUTE);
-		// Pre-settle: reserved placeholder, no CTA.
+		// Pre-settle: the signed-in name is already painted, no CTA.
 		expect(screen.queryByRole("button", {name: "giriş yap"})).toBeNull();
-		expect(screen.getByTestId("topbar-user-placeholder")).toBeTruthy();
+		expect(screen.getByText("Elif")).toBeTruthy();
 		act(() => {
 			setSession({
 				data: {user: {id: "user-42", name: "Elif", email: "elif@kamp.us"}},
 				isPending: false,
 			});
 		});
-		// Settled signed-in: still no CTA — the account cluster held its geometry across settle,
-		// never swapping giriş-yap in then out (the reported jank).
+		// Settled signed-in: still no CTA and the same name — the account cluster held its content
+		// across settle, never swapping giriş-yap in then out nor popping the name in (the jank).
 		expect(screen.queryByRole("button", {name: "giriş yap"})).toBeNull();
+		expect(screen.getByText("Elif")).toBeTruthy();
 	});
 
-	it("__BOOT__ absent (readSignedIn false): the shell is exactly as today — giriş-yap, no reserved slot (AC-3)", () => {
+	it("__BOOT__ absent (readBootUser null): the shell is exactly as today — giriş-yap, no account cluster (AC-3)", () => {
 		renderApp();
 		expect(screen.getByRole("button", {name: "giriş yap"})).toBeTruthy();
+		expect(screen.queryByText("Elif")).toBeNull();
 		expect(screen.queryByTestId("topbar-user-placeholder")).toBeNull();
 	});
 });

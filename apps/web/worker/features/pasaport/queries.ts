@@ -23,7 +23,7 @@ import {promotionBarFor} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toAuthorshipStanding, toBanState, toContributionRow, toProfile} from "./shapers.ts";
-import {toTrustedUser} from "./trusted-user.ts";
+import {resolveMeUser} from "./trusted-user.ts";
 import type {Contribution} from "./views.ts";
 import {AuthorshipStandingView, BanStateView, ProfileView, UserView} from "./views.ts";
 
@@ -55,44 +55,13 @@ const ProfileArgs = Schema.Struct({
 export const queries = {
 	me: Fate.query(
 		{type: UserView, error: Unauthorized},
-		// Reads the canonical row (not the session) so a fresh `username`
-		// round-trips right after `setUsername` — better-auth's session inference
-		// lags. Falls back to the session user when the row isn't found.
+		// The current user, resolved through the shared {@link resolveMeUser} seam (ADR 0185):
+		// the canonical row read fresh (so a just-set `username` round-trips before better-auth's
+		// session inference), the SELF failing-delivery signal (#2693), and the trusted tier +
+		// moderator standing — the SAME resolution the edge `__BOOT__.user` injection reuses.
 		Effect.fn("me")(function* () {
 			const user = yield* CurrentUser.required;
-			const pasaport = yield* Pasaport;
-			const fresh = yield* pasaport.getUserById(user.id);
-			// The session supplies email/name/image; the canonical row, when present,
-			// overrides them so a fresh `username` round-trips before better-auth's
-			// session catches up.
-			const base = fresh
-				? {
-						id: fresh.id,
-						email: fresh.email,
-						name: fresh.name,
-						image: fresh.image,
-						username: fresh.username,
-					}
-				: {
-						id: user.id,
-						email: user.email,
-						name: user.name ?? null,
-						image: user.image ?? null,
-						username: null,
-					};
-			// The SELF failing-delivery signal (#2693): the reader’s own address projected
-			// through #2691’s `resolveEmailDeliveryState`. Stamped ONLY here (never on the
-			// by-id batch), so #2727’s membrane notice lights up for the current user without
-			// exposing any other account’s delivery-state. A row-missing principal has no
-			// events, so `UserNotFound` reads deliverable.
-			const emailFailing = yield* pasaport.getEmailDeliveryState(base.id).pipe(
-				Effect.map((r) => r.state.failing),
-				Effect.catchTag("pasaport/UserNotFound", () => Effect.succeed(false)),
-			);
-			// `toTrustedUser` resolves the trusted standing (tier via `Kunye.tierOf`, the
-			// moderator signal via the `moderates` tuple) — the one shared home for the
-			// `User` shape `setUsername` and the by-id loader also build.
-			return yield* toTrustedUser({...base, emailFailing});
+			return yield* resolveMeUser(user);
 		}),
 	),
 	// `contributions` is delivered inline (not via a source `connection`

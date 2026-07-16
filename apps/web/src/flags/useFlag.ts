@@ -40,7 +40,6 @@ import {
 	assertShellBootKeysSingleSourced,
 	BOOT_MEMBER_KEYS,
 	type BootMemberKey,
-	SHELL_SIGNED_IN_KEY,
 } from "./shell-keys.ts";
 
 /** A flag read: its current value plus whether the server result is in yet. */
@@ -60,9 +59,10 @@ export interface FlagState {
 export type BootPayload = Partial<Record<BootMemberKey, boolean>>;
 
 /**
- * The `__BOOT__`-member key set `useFlag` resolves synchronously — the shell flags plus the
- * `signedIn` presence bit — single-sourced from the one manifest ({@link BOOT_MEMBER_KEYS}),
- * never re-listed here. The consume-side drift guard (ADR 0179 §3) runs once at module load:
+ * The `__BOOT__`-member key set `useFlag` resolves synchronously — the shell flag keys —
+ * single-sourced from the one manifest ({@link BOOT_MEMBER_KEYS}), never re-listed here. (The
+ * signed-in identity is the typed `__BOOT__.user` object, read by `boot.ts`, not a member key —
+ * ADR 0185.) The consume-side drift guard (ADR 0179 §3) runs once at module load:
  * it proves the key set the client reads derives from the manifest, the same fail-closed
  * check the worker runs at injection. A static self-check only — the never-throw runtime
  * paths below read this set, they never re-assert against live `__BOOT__` data (a drift throw
@@ -93,17 +93,6 @@ export function resolveBootFlag(boot: BootPayload | undefined, key: string): boo
 	if (boot === undefined) return undefined;
 	const value = (boot as Record<string, unknown>)[key];
 	return typeof value === "boolean" ? value : undefined;
-}
-
-/**
- * The synchronous signed-in presence bit from `window.__BOOT__` (ADR 0179 §1) — the shell
- * frame reads it to reserve the signed-in cluster's geometry while `useSession` is still
- * settling, rather than swapping in the cluster on a post-settle repaint. Absent `__BOOT__`
- * (flag off / the never-hang fallback) ⇒ `false`: the shell renders its signed-out geometry,
- * the safe default. Never throws.
- */
-export function readSignedIn(): boolean {
-	return resolveBootFlag(readBoot(), SHELL_SIGNED_IN_KEY) ?? false;
 }
 
 async function fetchFlag(key: string, defaultValue: boolean): Promise<boolean> {
