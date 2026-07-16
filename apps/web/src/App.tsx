@@ -30,6 +30,7 @@ import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
 import {readBootUser} from "./flags/boot";
+import {EdgeShellBootMarker} from "./flags/EdgeShellBoot";
 import {
 	MECMUA_FEED,
 	MECMUA_PUBLIC_READ,
@@ -191,6 +192,8 @@ function Layout() {
 		<TooltipProvider>
 			<ToastProvider>
 				<AppShell>
+					{/* reachability tie-in for the edge-shell-boot vertical (ADR 0173 §1a) — geometry-inert */}
+					<EdgeShellBootMarker />
 					<Topbar
 						brandName="kamp.us"
 						navIa={navIaOn}
