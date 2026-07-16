@@ -1,5 +1,18 @@
 /**
- * protocol/ — the wire format: message envelopes and the codec shared by every peer.
- * Generic (crew-agnostic); see the boundary note in `../index.ts`.
+ * protocol/ — the typed message catalog: the crew's 7 message kinds as an Effect
+ * `RpcGroup` with `effect/Schema` payloads, transport-agnostic. Generic (crew-agnostic);
+ * see the boundary note in `../index.ts`. This module defines the wire contract that
+ * tracker, peer, and edge all code against.
  */
-export {};
+export {
+	AckInbox,
+	AnnouncePresence,
+	Claim,
+	CrewProtocol,
+	DrainProgress,
+	EpicHandoff,
+	Heartbeat,
+	IntakePing,
+	LookupRole,
+} from "./group.ts";
+export * as Messages from "./schema.ts";

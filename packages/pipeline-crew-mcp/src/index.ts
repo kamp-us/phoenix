@@ -11,4 +11,5 @@
  * reverse. That one-way boundary is what keeps the substrate reusable — enforcing it
  * is the point of splitting these into directories.
  */
+export * as Protocol from "./protocol/index.ts";
 export {VERSION} from "./version.ts";
