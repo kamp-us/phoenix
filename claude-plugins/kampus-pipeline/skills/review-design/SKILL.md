@@ -106,63 +106,6 @@ benign output — consistent with the fail-conservative calibration.
 
 ### The golden-deviation escalate-to-judgment hard-FAIL — an *unexplained* deviation from a blessed golden (calibration B, #2945)
 
-The six are visual facts; the render-exception is deterministic. This eighth class is different in
-kind: it is **deterministic-diff → escalate-to-judgment, and it NEVER auto-FAILs on the raw diff**
-(founder decision #2945, calibration B). It is the review half of the golden-screen loop (epic
-#2955): a small founder-blessed golden set is the visual reference `write-code` generates toward and
-the baseline you block deviation from — the answer to rule-compliant-but-amateur composition drift
-(#2587/#2602/#2790), where every local rule passes while the composed surface still reads wrong.
-
-**Scope — blessed surfaces only.** This class applies **only** to a changed surface that has a
-**golden baseline**: a surface-id present in the committed `golden-pointer.json`
-(`packages/design-capture/golden-pointer.json`, ADR
-[0183](https://github.com/kamp-us/phoenix/blob/main/.decisions/0183-golden-screen-storage-depo-git-pointer.md)).
-A changed surface with **no** golden is **N/A** for this class and behaves exactly as before (the six
-+ render-exception only) — you never block a surface you have no blessed reference for.
-
-**The flow — deterministic diff → escalate → judge:**
-
-1. **Deterministic diff (the objective signal, never the verdict).** For each changed *blessed*
-   surface, compute the rendered-vs-golden diff through the `@kampus/design-capture` golden seam
-   (Step 2b) — `resolveGoldenBytes(pointer, surfaceId)` for the golden bytes,
-   `diffRasters(golden, candidate, {masks, channelThreshold})` for the structured `DiffResult`
-   (`magnitude` in [0,1] + the differing `regions`), under the **diff-time flake canon** (known-
-   dynamic regions masked so they never read as deviation). The diff is a **signal**, not a verdict
-   (the seam's own contract, ADR 0183) — a large magnitude does **not** by itself FAIL anything.
-2. **Trivial deviation → PASS this class (fail-conservative).** A magnitude at or below the noise
-   floor (a masked-clean, sub-perceptual diff — the same borderline→advisory calibration the six use)
-   means the surface still matches its golden: this class **PASSes** for that surface, no escalation.
-3. **Non-trivial deviation → ESCALATE to your multimodal judgment.** A non-trivial magnitude decides
-   nothing on its own — you now **look at the golden beside the rendered candidate** (the golden's
-   depo image via `resolveGoldenUrl`, the rendered bytes via the captured `localPath`) and judge
-   *why* the surface moved:
-   - **Explained / justified → PASS (the intentional-redesign branch, story 8).** The PR
-     **intentionally and legitimately** reshapes this surface — the linked issue / PR body says so,
-     and the render reads as a **deliberate, on-law redesign** (it still obeys the four pillars). A
-     justified redesign is **not** permanently blocked by a stale baseline; the founder keeps the
-     golden current with an explicit **re-bless** (`golden-bless`, story 9, ADR 0183) — that is the
-     sanctioned way the baseline moves, not this gate.
-   - **Unexplained / unjustified → hard-FAIL (the one new blocking class).** The surface deviated but
-     the PR did **not** set out to change it (no stated intent — the change is incidental drift),
-     **or** the change reads as a **regression / off-law composition** on a blessed surface. Name the
-     surface, the diff magnitude + region(s), and *what* reads wrong against the golden so a
-     `write-code` repair round can act on it cold.
-
-**Additive and conjunctive — it can only ever ADD a FAIL, never remove one.** The six prohibitions
-and the render-exception check are untouched, and **all other composition/taste stays advisory** (ADR
-0165 unchanged): this promotes *nothing* else to blocking, it adds exactly the one golden-deviation
-class. Other named composition rules promote to hard-FAIL later, rule-by-rule, only once proven as
-objective as the six (#2945) — not here.
-
-**Can't-resolve-the-golden is a can't-gate, not a FAIL.** If a changed blessed surface's golden bytes
-can't be resolved — a depo fetch fault (`resolveGoldenBytes` **errors**, distinct from the `null` it
-returns for an *unblessed* surface) — you couldn't observe the reference, so you **cannot run this
-class** for that surface: record it as a **can't-gate note** in the evidence section and do **not**
-FAIL on the unobservable, mirroring Step 1's preview-unavailable handling. Never let a fetch fault
-silently become a PASS *or* a FAIL of this class — surface the gap.
-
-### The golden-deviation escalate-to-judgment hard-FAIL — an *unexplained* deviation from a blessed golden (calibration B, #2945)
-
 The six are visual facts; the render-exception is deterministic. This eighth class is **different in
 kind**: it is **deterministic-diff → escalate-to-judgment, and it NEVER auto-FAILs on the raw diff**
 (founder decision #2945, calibration B). It is the review half of the golden-screen loop (epic
