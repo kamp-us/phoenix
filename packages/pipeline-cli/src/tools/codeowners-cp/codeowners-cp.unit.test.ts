@@ -43,6 +43,7 @@ describe("splitTopLevelBranches", () => {
 			"claude-plugins/kampus-pipeline/hooks(/|\\.json$)",
 			"packages/ci-required/",
 			"packages/pipeline-cli/",
+			"packages/pipeline-crew-mcp/",
 		]);
 	});
 });
@@ -110,7 +111,7 @@ describe("expandBranch", () => {
 });
 
 describe("cpPaths over the live regex", () => {
-	it("resolves the full §CP path set (20 paths: dirs, the two exact files, + the **/*.sh glob)", () => {
+	it("resolves the full §CP path set (21 paths: dirs, the two exact files, + the **/*.sh glob)", () => {
 		expect(cpPaths(LIVE_RE).map((p) => p.path)).toEqual([
 			".claude/",
 			".github/",
@@ -132,6 +133,7 @@ describe("cpPaths over the live regex", () => {
 			"claude-plugins/kampus-pipeline/hooks.json",
 			"packages/ci-required/",
 			"packages/pipeline-cli/",
+			"packages/pipeline-crew-mcp/",
 		]);
 	});
 
@@ -217,6 +219,7 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/hooks.json @usirin",
 			"/packages/ci-required/ @usirin",
 			"/packages/pipeline-cli/ @usirin",
+			"/packages/pipeline-crew-mcp/ @usirin",
 		].join("\n");
 		expect(findUncovered(paths, parseCodeownersPatterns(codeowners))).toEqual([]);
 	});
@@ -247,6 +250,7 @@ describe("findUncovered — the drift check", () => {
 			"claude-plugins/kampus-pipeline/hooks/",
 			"claude-plugins/kampus-pipeline/hooks.json",
 			"packages/pipeline-cli/",
+			"packages/pipeline-crew-mcp/",
 		]);
 	});
 });
