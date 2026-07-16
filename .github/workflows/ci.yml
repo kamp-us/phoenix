@@ -251,11 +251,12 @@ jobs:
       # lockfile section, an unattributable diff, or any failure leaves it `true` (fail-safe
       # to running). Runs the zero-runtime-dep `@kampus/worker-relevance` bin directly — no
       # `pnpm install` (the `ci-required` idiom), so the always-on detector stays fast.
-      # The `git diff base...head` over the full-history checkout above gives the changed
-      # files + the lockfile diff: on `pull_request` the range is the PR's merge-base...HEAD;
-      # on `merge_group` it is the batch's `base_sha...head_sha` (ADR 0132) — the prospective
-      # merge of every queued PR, so the SAME classifier sees, and OR's across, all batched
-      # PRs (#3079 defenses 1/2/4: real base ref, OR-across-batch, exact classifier reuse).
+      # The `git diff` over the full-history checkout above gives the changed files + the
+      # lockfile diff: on `pull_request` the range is the PR's merge-base...HEAD (three-dot);
+      # on `merge_group` it is the batch's `base_sha..head_sha` (two-dot — see the range
+      # assignment below for why two-dot is merge-base-safe here; ADR 0132), which OR's the
+      # SAME classifier across every batched PR (#3079 defenses 1/2/4: real base ref,
+      # OR-across-batch, exact classifier reuse).
       - name: Classify worker-relevance of the diff
         id: worker-relevance
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
@@ -287,7 +288,12 @@ jobs:
               echo "worker_relevant=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            range="$MERGE_GROUP_BASE_SHA...$MERGE_GROUP_HEAD_SHA"
+            # TWO-DOT (not three-dot): diff the batch's base and head TREES directly. A
+            # merge_group's base_sha and head_sha need NOT share a merge base, so the three-dot
+            # form (which requires one) exit-128'd the batch under `set -e` before any fail-safe
+            # could run (#3083). head_sha is the prospective-merge tip that already contains
+            # every batched PR, so `base..head` captures the whole batch's cumulative diff.
+            range="$MERGE_GROUP_BASE_SHA..$MERGE_GROUP_HEAD_SHA"
           else
             # Full base fetch (no `--depth=1`): the `fetch-depth: 0` checkout above already
             # has HEAD's full history, but a shallow `--depth=1` base re-fetch can land a base
@@ -307,8 +313,17 @@ jobs:
               range="origin/$BASE_REF..HEAD"
             fi
           fi
-          CHANGED_FILES="$(git diff --name-only --diff-filter=ACMRD "$range")"
-          LOCKFILE_DIFF="$(git diff "$range" -- pnpm-lock.yaml)"
+          # Guard the diff fail-safe-to-running: ANY failure — a no-merge-base endpoint pair, an
+          # unresolvable SHA, any git error — degrades to running, never `set -e`-reds the batch.
+          # Belt-and-suspenders with the two-dot switch above: the two-dot range already avoids
+          # the merge-base requirement, and this catch keeps a future git edge case fail-safe too
+          # (#3083). Runs in an `if` condition, which is exempt from `set -e`.
+          if ! CHANGED_FILES="$(git diff --name-only --diff-filter=ACMRD "$range")" \
+             || ! LOCKFILE_DIFF="$(git diff "$range" -- pnpm-lock.yaml)"; then
+            echo "::warning::worker-relevance: git diff over '$range' failed — fail-safe to running"
+            echo "worker_relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           export CHANGED_FILES LOCKFILE_DIFF
           node packages/worker-relevance/src/bin.ts
 
