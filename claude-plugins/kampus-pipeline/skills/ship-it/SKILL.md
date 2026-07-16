@@ -365,17 +365,17 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
   #2191; its `review-doc` verdict routing is unchanged, only merge-authority moves) → the PR is
   **§CP: APPROVAL-GATED** (not a blanket refuse — ADR
   [0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md),
-  amending 0053's merge model). Check for a **current-head `@kamp-us/control-plane` team approval**
-  (the [§CP approval gate](#step-0-cp-approval-gate) below):
-  - **present** → the human-judgment gate is satisfied; **carry on** into Step 2's normal machine
+  amending 0053's merge model). Run the **deterministic §CP cardinality check** (the
+  [§CP approval gate](#step-0-cp-approval-gate) below, ADR 0175):
+  - **discharge** → the human-judgment gate is satisfied; **carry on** into Step 2's normal machine
     gates (matching-gate SHA-bound PASS, CI green, run-evidence). Once those pass, ENQUEUE exactly
     like a non-§CP PR (`gh pr merge --auto`, no method flag — the queue owns the SQUASH method;
     QUEUED → auto-merges on green; §CP PRs now
     enter the ADR 0132 queue too). §CP carries **one extra** gate — the team approval — layered on
     the same machine gates every PR clears.
-  - **absent** (or only a stale-head approval) → **STOP.** Report `awaiting control-plane approval`
-    and stop; do **not** enqueue. A `@kamp-us/control-plane` member must APPROVE the PR at its
-    current head. This **replaces** the old blanket refuse.
+  - **stop** (the cardinality branch's required current-head signal is absent, or the team is
+    empty) → **STOP.** Report `awaiting control-plane approval` and stop; do **not** enqueue. This
+    **replaces** the old blanket refuse.
 
   This holds even if the rest of the diff is clean code/docs/skills — a mixed PR that touches the
   control plane needs the team approval for the whole PR, and should be split so the non-§CP half
@@ -387,40 +387,88 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
   auto-merges on a PASS with no team approval.
 
   <a id="step-0-cp-approval-gate"></a>
-  **The §CP approval gate — a current-head team approval, resolved over `gh api` REST.** An approval
-  counts only when it is (a) authored by a `@kamp-us/control-plane` team member and (b) **bound to
-  the PR's current head** — the review's `commit_id` (the commit the review was submitted against,
-  per the [GitHub REST reviews resource](https://docs.github.com/rest/pulls/reviews)) equals the PR
-  head SHA. A stale approval on a superseded head **does not count** — this mirrors ADR
+  **The §CP approval gate — a deterministic team-cardinality check, resolved over `gh api` REST
+  (ADR [0175](https://github.com/kamp-us/phoenix/blob/main/.decisions/0175-cp-self-approval-cardinality-check.md)).**
+  The discharge is a **function of `@kamp-us/control-plane` team shape**, never agent judgment — the
+  same §CP conditions produce the same verdict across agents (killing the #2435 non-determinism where
+  identical single-owner PRs merged in one run and were refused in another). The branch keys on `N`,
+  the count of present, active, human control-plane members, exactly as ADR 0175's `case "$N"`
+  reference specifies:
+  - **`N == 0`** (empty team) → **STOP, fail closed** — no accountable human to discharge the boundary.
+  - **`N == 1`, sole owner *is* the PR author** → a current-head **self-approval marker** by the sole
+    owner discharges (the single-owner degenerate case; GitHub blocks native self-approval, so the
+    signal is a marker comment — ADR 0135/0175).
+  - **`N == 1`, sole member *is not* the author** → that member's current-head **approval** discharges.
+  - **`N >= 2`** (ADR 0135's two-person control, unchanged) → a current-head **APPROVED review by a
+    control-plane member who is NOT the author** discharges; a self-approval never does.
+
+  Every discharge signal is **bound to the PR's current head** — a review's `commit_id` (the commit
+  it was submitted against, per the [GitHub REST reviews resource](https://docs.github.com/rest/pulls/reviews))
+  or the self-approval marker's `@ <sha>` equals the PR head SHA. A stale signal on a superseded head
+  **does not count** — this retains ADR
   [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)'s
-  SHA-staleness rule for machine verdicts (and the `dismiss_stale_reviews_on_push` the Phase-3
-  ruleset sets, which dismisses an approval on any post-approval push). Resolve it via REST, never
-  GraphQL:
+  SHA-staleness rule (and the `dismiss_stale_reviews_on_push` the Phase-3 ruleset sets). The branch
+  itself lives in the pure, unit-tested `cp-cardinality` core (`packages/pipeline-cli`) — the single
+  source ship-it runs, so the verdict cannot drift across shippers (the class-probe/control-plane-paths
+  precedent). Resolve the roster + the two signals over REST, never GraphQL, then decide:
 
   ```bash
+  # ADR 0175: DETERMINISTIC §CP discharge keyed on control-plane team cardinality, not judgment.
   ORG="${REPO%%/*}"                                            # owner half of owner/repo
-  HEAD="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"    # the SHA the approval must bind to
-  # latest review per author, keep APPROVED ones whose commit_id == the current head (SHA-bound)
+  # N = present, active, human control-plane members (REST, never GraphQL — ADR 0135/0175)
+  MEMBERS="$(gh api --paginate "orgs/$ORG/teams/control-plane/members?per_page=100" --jq '.[].login')"
+  AUTHOR="$(gh api "repos/$REPO/pulls/$PR" --jq '.user.login')"
+  HEAD="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"    # every signal binds THIS head (ADR 0058)
+  sha_binds_head() { [ -n "$1" ] || return 1; case "$HEAD" in "$1"*) return 0;; esac; case "$1" in "$HEAD"*) return 0;; esac; return 1; }
+
+  # Signal 1 — a current-head APPROVED review by a control-plane member who is NOT the author
+  # (the N>=2 and N==1-sole!=author discharge). Latest review per author, APPROVED, commit_id == HEAD.
+  NON_AUTHOR_APPROVAL_AT_HEAD=false
   CURRENT_APPROVERS="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" \
     --jq "group_by(.user.login) | map(max_by(.submitted_at))
           | map(select(.state == \"APPROVED\" and .commit_id == \"$HEAD\") | .user.login) | .[]")"
-  # is any current-head approver a @kamp-us/control-plane MEMBER? membership via REST (active state)
-  CP_OK=""
   while IFS= read -r u; do
     [ -z "$u" ] && continue
+    [ "$u" = "$AUTHOR" ] && continue                          # self-approval never counts here (ADR 0175)
     st="$(gh api "orgs/$ORG/teams/control-plane/memberships/$u" --jq '.state' 2>/dev/null)"
-    [ "$st" = "active" ] && { CP_OK=1; break; }
+    [ "$st" = "active" ] && { NON_AUTHOR_APPROVAL_AT_HEAD=true; break; }
   done <<<"$CURRENT_APPROVERS"
-  [ -n "$CP_OK" ] && echo "§CP approval: current-head team approval present → carry on to machine gates" \
-                  || echo "§CP approval: absent → STOP (awaiting control-plane approval)"
+
+  # Signal 2 — a deliberate current-head self-approval MARKER by the sole owner (the ONLY N==1
+  # sole-owner discharge). GitHub records no native self-approval, so the signal is a marker comment:
+  # first line `control-plane-self-approval @ <sha>` — a DISTINCT token from the review-* markers, so
+  # it can never leak a §CP PR into the auto-merge namespace (ADR 0111) — authored by the sole owner
+  # and SHA-bound to the current head. The sole owner posts it to consciously self-approve their own
+  # §CP PR; it is inert unless N==1 and they are the author (cp-cardinality ignores it otherwise).
+  SELF_APPROVAL_AT_HEAD=false
+  SELF_SHA="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
+    --jq "[.[] | select(.user.login == \"$AUTHOR\")
+               | select(.body | test(\"(?i)^\\\\s*\\\\**\\\\s*control-plane-self-approval\\\\b\"))]
+          | last | .body // \"\"" \
+    | grep -ioE 'control-plane-self-approval[[:space:]]*@?[[:space:]]*[0-9a-f]{7,40}' \
+    | grep -ioE '[0-9a-f]{7,40}' | head -n1)"
+  sha_binds_head "$SELF_SHA" && SELF_APPROVAL_AT_HEAD=true
+
+  # The DETERMINISTIC decision — the whole ADR-0175 `case "$N"` branch lives in the tested pure core.
+  # discharge → carry on to the machine gates; stop → STOP (fail closed). Pass a signal flag only when
+  # that signal is present at head; cp-cardinality selects which signal the branch actually requires.
+  if printf '%s\n' "$MEMBERS" | pipeline-cli cp-cardinality decide \
+       --author "$AUTHOR" \
+       $([ "$NON_AUTHOR_APPROVAL_AT_HEAD" = true ] && printf -- '--non-author-approval-at-head') \
+       $([ "$SELF_APPROVAL_AT_HEAD" = true ] && printf -- '--self-approval-at-head'); then
+    echo "§CP approval: discharged deterministically (ADR 0175) → carry on to machine gates"
+  else
+    echo "§CP approval: STOP (awaiting control-plane approval) — cardinality branch not satisfied (ADR 0175)"
+  fi
   ```
 
   This is **only** the §CP unblock — it does not weaken any other guard. The SHA-bound gate verdict
   (Step 2/2b), CI-green (Step 3), the run-evidence bundle (Step 3.5), and single-merge-authority
-  (ADR 0048) all still apply to a §CP PR exactly as to a non-§CP one; the team approval is an
-  **additional** requirement, never a substitute. Note a team member cannot approve their **own**
-  §CP PR (GitHub blocks self-approval) — a §CP change needs the OTHER team member (the deliberate
-  two-person control, ADR 0135).
+  (ADR 0048) all still apply to a §CP PR exactly as to a non-§CP one; the cardinality discharge is an
+  **additional** requirement, never a substitute. The two-person control is preserved exactly where it
+  exists (`N >= 2`): GitHub blocks a member approving their **own** §CP PR, so a §CP change needs the
+  OTHER team member (ADR 0135). Adding a second control-plane member automatically re-tightens the
+  gate to that two-person control with no further edit — the branch keys on live cardinality (ADR 0175).
 - Otherwise, note which **artifact classes are present** (skills, code, docs, or a mix) **and
   whether the diff is UI-affecting** (`has-ui`). Step 2 requires the matching gate's latest
   verdict = PASS for **each class present**: skills → `review-skill` PASS; code → `review-code`
