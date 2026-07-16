@@ -1,6 +1,32 @@
 /**
- * crew/ — the only crew-coupled module: the Role catalog and the wiring that binds the
- * generic substrate to concrete crew roles. Depends inward on protocol/tracker/peer/edge;
- * the generic core never depends back on it (see the boundary note in `../index.ts`).
+ * crew/ — the only crew-coupled module: the Role enum, the seam catalog, and the wiring that
+ * binds the generic substrate (`protocol`/`tracker`/`peer`/`edge`) to the concrete crew
+ * topology. Depends inward on the generic modules; the generic core never depends back on it
+ * (the one-way boundary in `../index.ts`, guarded by `./boundary.test.ts`).
  */
-export {};
+export {
+	ALL_SEAMS,
+	type CrewCatalogEntry,
+	CrewCatalogGroup,
+	type CrewSeamName,
+	CrewSeams,
+	crewCatalog,
+	seamsFor,
+} from "./catalog.ts";
+export {
+	type CrewChannel,
+	type CrewChannelConfig,
+	crewSocketDialerLayer,
+	inboxServerSocketLayer,
+	inboxSocketPathFor,
+	makeCrewChannel,
+} from "./channel-server.ts";
+export {RoleUniquenessError} from "./errors.ts";
+export {CREW_ROLES, CrewRole, isCrewRole} from "./roles.ts";
+export {
+	type ClaimReply,
+	CrewTracker,
+	crewTrackerSocketLayer,
+	peerTrackerLayer,
+	type TrackerRegistryClient,
+} from "./tracker.ts";
