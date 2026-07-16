@@ -66,6 +66,7 @@ import {
 	panoOptimisticPostDeleteFlag,
 	panoOptimisticSubmitFlag,
 	panoStampWaveFlag,
+	profileCanvasFlag,
 	reactionsFlag,
 	sozlukStampWaveFlag,
 	userBanFlag,
@@ -182,6 +183,11 @@ export default Alchemy.Stack(
 		// routing is unconditional): off ⇒ the worker returns the untransformed ASSETS bytes,
 		// byte-identical to today; on ⇒ `__BOOT__` injected, until a human release.
 		yield* edgeShellBootFlag(flagship.appId);
+		// The profile free-paint canvas (duvar) dark-ship flag, default-off (#3103, epic
+		// #2035) — the single seam the fate read view + visitor render, owner enable/toggle
+		// mutation, and paint/save surface gate behind until a human release, so the whole
+		// profile-canvas feature ships dark.
+		yield* profileCanvasFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The
