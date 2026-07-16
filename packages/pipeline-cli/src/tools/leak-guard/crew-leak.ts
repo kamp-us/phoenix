@@ -46,7 +46,9 @@ interface ClassPattern {
 const CLASS_PATTERNS: ReadonlyArray<ClassPattern> = [
 	{
 		class: "path",
-		pattern: /\/Users\/[A-Za-z0-9._-]+/g,
+		// Drive-letter carve-out — see leak-guard.ts LEAK_PATTERNS (#3070): exempts only a
+		// Windows `C:/Users/...` prefix, keeps the bare POSIX `/Users/<name>/` true positive.
+		pattern: /(?<![A-Za-z]:)\/Users\/[A-Za-z0-9._-]+/g,
 		reason: "absolute macOS home path (/Users/<name>/...)",
 	},
 	{

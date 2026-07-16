@@ -66,7 +66,12 @@ interface LeakPattern {
 // Order = report order. Each `g` flag is required for the per-match scan in findLeaks.
 const LEAK_PATTERNS: ReadonlyArray<LeakPattern> = [
 	{
-		pattern: /\/Users\/[A-Za-z0-9._-]+/g,
+		// The `(?<![A-Za-z]:)` drive-letter carve-out keeps this a GENERIC structural check
+		// while dropping the Windows-file-URL false positive: a bare POSIX `/Users/<name>/`
+		// still matches (real macOS-home leak), but a drive-prefixed `C:/Users/...` (e.g.
+		// `file:///C:/Users/ci/...`) does not — that substring is not a macOS home path and
+		// carries no operator PII, yet its FP fail-closed-blocked legitimate PRs (#3070).
+		pattern: /(?<![A-Za-z]:)\/Users\/[A-Za-z0-9._-]+/g,
 		reason: "absolute macOS home path (/Users/<name>/...)",
 	},
 	{

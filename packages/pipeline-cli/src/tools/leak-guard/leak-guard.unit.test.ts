@@ -58,6 +58,10 @@ describe("findLeaks — ALLOW matrix (legitimate content must NOT be flagged)", 
 		assert.isFalse(hasLeak("src/fixture.ts", 'const p = "/Users/foo/x"'));
 	});
 
+	it("allows a Windows drive-prefixed C:/Users/... path in a doc surface (#3070)", () => {
+		assert.isFalse(hasLeak("docs/notes.md", "on Windows the URL is file:///C:/Users/ci/proj/x"));
+	});
+
 	it("allows edits to a self-exempt skill (it names the tokens as patterns)", () => {
 		assert.isFalse(hasLeak("skills/report/SKILL.md", "never cite /Users/... or ~/.usirin paths"));
 	});
@@ -86,6 +90,13 @@ describe("findCommentLeaks — PR/issue comment body scan (#2796, stricter than 
 		assert.isTrue(hasCommentLeak("verdict staged at /tmp/review-code-verdict-12.md")));
 	it("blocks an absolute /Users/<name> path", () =>
 		assert.isTrue(hasCommentLeak("see /Users/foo/project/notes")));
+	// #3070 — the drive-letter carve-out: a Windows `C:/Users/...` file URL is not a macOS-home
+	// leak, so quoting one in a verdict comment must not fail-closed-block enqueue (the #3063 FP);
+	// a bare POSIX `/Users/<name>/` above still fires (true positive preserved).
+	it("allows a Windows drive-prefixed file:///C:/Users/... URL (#3070 FP dropped)", () =>
+		assert.isFalse(
+			hasCommentLeak("derivation-contract example: file:///C:/Users/ci/proj/alchemy.run.ts"),
+		));
 	it("blocks a temp path that sits in verdict PROSE, not a SHA field", () =>
 		assert.isTrue(hasCommentLeak(`review-code: advisory — see thread\n\nnotes at ${MKTEMP}`)));
 

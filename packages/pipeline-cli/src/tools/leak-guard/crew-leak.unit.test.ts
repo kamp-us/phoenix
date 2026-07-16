@@ -24,6 +24,11 @@ describe("findCrewLeaks — match classes", () => {
 			expect(classes(leaks)).toContain("path");
 			expect(matched(leaks)).toContain("/Users/alice");
 		});
+		// #3070 — the drive-letter carve-out drops the Windows-file-URL FP while keeping the
+		// bare POSIX `/Users/<name>/` true positive above.
+		it("does NOT flag a Windows drive-prefixed C:/Users/... file URL (#3070)", () => {
+			expect(findCrewLeaks("spawn from file:///C:/Users/ci/proj/alchemy.run.ts")).toEqual([]);
+		});
 		it("flags /home/<name>", () => {
 			expect(classes(findCrewLeaks("path /home/bob/.config"))).toContain("path");
 		});
