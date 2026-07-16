@@ -1,0 +1,25 @@
+/* /lab/atolye/:exhibit detail (#3093). Role tokens only — atölye dogfoods the ADR-0162 design
+   law it showcases. Shares the .kp-atolye__inner/title/lead frame with the index. */
+
+.kp-atolye-detail__masthead {
+	padding: var(--s-2) 0 var(--s-4);
+	margin-bottom: var(--s-4);
+	border-bottom: 1px solid var(--border);
+}
+
+.kp-atolye-detail__back {
+	display: inline-block;
+	font: var(--t-meta);
+	color: var(--link);
+	text-decoration: none;
+	margin-bottom: var(--s-2);
+}
+
+.kp-atolye-detail__back:hover {
+	text-decoration: underline;
+}
+
+.kp-atolye-detail__slug {
+	font-family: var(--font-mono);
+	color: var(--text-primary);
+}

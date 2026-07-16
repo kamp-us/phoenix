@@ -39,6 +39,7 @@ import {
 	PHOENIX_NAV_IA,
 } from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
+import {AtolyeExhibitPage} from "./lab/atolye/AtolyeExhibitPage";
 import {AtolyeIndexPage} from "./lab/atolye/AtolyeIndexPage";
 import {DensityProvider} from "./lib/density";
 import {SAVED_HREF} from "./lib/panoNav";
@@ -520,6 +521,11 @@ export function App() {
 						    ASCII route slug (routes-are-English); reachable by URL only, no nav entry,
 						    matching the /lab/composer precedent. */}
 						<Route path="/lab/atolye" element={<AtolyeIndexPage />} />
+						{/* /lab/atolye/:exhibit — the exhibit detail route (#3093): resolves the slug
+						    against the registry, renders it through the knobs harness with knob state
+						    deep-linked into the URL, and self-renders an atölye-scoped not-found on an
+						    unknown slug (never the global 404). ASCII route slug. */}
+						<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
 						<Route path="/profile" element={<ProfilePage />} />
 						<Route path="/u/:username" element={<UserProfilePage />} />
 						{/* The admin console (#2740, epic #2711) — the route element self-gates on

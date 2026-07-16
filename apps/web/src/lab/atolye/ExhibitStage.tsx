@@ -2,7 +2,7 @@ import {Surface} from "../../components/ui/Card";
 import type {AnyExhibit} from "./exhibit";
 import {PropKnobs} from "./PropKnobs";
 import "./ExhibitStage.css";
-import {useKnobs} from "./useKnobs";
+import {type KnobState, useKnobs} from "./useKnobs";
 
 const styles = {
 	root: "kp-exhibit-stage",
@@ -13,6 +13,11 @@ const styles = {
 
 export interface ExhibitStageProps {
 	readonly exhibit: AnyExhibit;
+	/**
+	 * Controlled knob state. Omit for a self-contained stage (its own in-memory knobs); the
+	 * detail route passes a URL-backed state (`useUrlKnobs`) so knob twiddling deep-links (#3093).
+	 */
+	readonly knobs?: KnobState;
 }
 
 /**
@@ -20,8 +25,11 @@ export interface ExhibitStageProps {
  * so a knob change re-renders the component with the new prop. The knob-value → props seam is
  * a single spread — `{...fixedProps, ...values}` — over the current knob state.
  */
-export function ExhibitStage({exhibit}: ExhibitStageProps) {
-	const {values, setKnob} = useKnobs(exhibit.knobs);
+export function ExhibitStage({exhibit, knobs}: ExhibitStageProps) {
+	// The uncontrolled fallback is always instantiated (hooks run unconditionally) but goes
+	// unused when a controlled `knobs` state is supplied.
+	const internal = useKnobs(exhibit.knobs);
+	const {values, setKnob} = knobs ?? internal;
 	const Component = exhibit.component;
 	const props = {...exhibit.fixedProps, ...values};
 	return (

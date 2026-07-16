@@ -26,3 +26,4 @@ export {PropKnobs} from "./PropKnobs";
 export {getExhibit, listExhibits} from "./registry";
 export type {KnobState} from "./useKnobs";
 export {useKnobs} from "./useKnobs";
+export {useUrlKnobs} from "./useUrlKnobs";
