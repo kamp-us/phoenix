@@ -1,0 +1,33 @@
+{
+	"name": "@kampus/pipeline-crew-mcp",
+	"version": "0.0.0",
+	"private": true,
+	"description": "pipeline-crew-mcp — the crew's channels-backed messaging substrate: a generic tracker + p2p peers + MCP channel edge, with a thin crew consumer module (epic #3045)",
+	"type": "module",
+	"bin": {
+		"pipeline-crew-mcp": "./src/bin.ts"
+	},
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"cli": "node src/bin.ts"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
