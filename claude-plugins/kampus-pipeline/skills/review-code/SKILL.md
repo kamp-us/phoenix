@@ -1181,6 +1181,18 @@ Surfacing the thread here does **not** resolve it or merge past it — the split
 that refuses to enqueue on a substantive unresolved thread; this step makes the same objection
 **visible at review time**, so it never reaches merge unread.
 
+**This step is machine-enforced fail-closed — it is no longer on your memory (#3331).** The
+`unresolved-threads-guard` CI job (`pipeline-cli unresolved-threads-guard check --pr <n>`,
+`.github/workflows/unresolved-threads-guard.yml`) independently reads the same `reviewThreads`
+state and **reds the PR when a live unresolved thread is unaccounted-for in this verdict** — so a
+`review-code: PASS` that silently omits the accounting cannot pass (the #3329 defect it closes), and
+because it runs on **every** PR it also covers the **§CP manual-merge path**, which never touches
+ship-it Step 3.6. To satisfy the guard, an unresolved substantive thread's accounting row **must name
+its exact `path:line` token** (e.g. `.github/workflows/commands-guard.yml:35`) — that token, verbatim,
+is the guard's accounting key. The only other discharge is ADR 0158's nit path: **resolve the thread
+with a written rationale** (which clears `isResolved`), never a silent skip. Do not rely on
+remembering this row — the guard fails closed if you forget it.
+
 ### Step 3f — Session-caching two-axis staleness gate (ADR 0169)
 
 Session freshness is **security-load-bearing** and a session-perf/caching review is a **two-axis

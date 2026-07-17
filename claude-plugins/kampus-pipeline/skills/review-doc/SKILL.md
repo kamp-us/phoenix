@@ -208,6 +208,13 @@ don't re-derive it. The has-code/docs-exclusion probes both name `.glossary/**` 
 **code**, never docs (the #663/#919 agreement invariant). If the diff is **glossary-only**, report
 `not a doc PR — route to review-code` (a plain note, **not** a `review-doc:` marker) and stop.
 
+**Unresolved inline review threads are not yours to gate either.** `review-doc` has **no**
+unresolved-thread step (the ADR-0158 read lives only in `review-code` Step 3e and `ship-it`
+Step 3.6). Do not add one and do not treat a `review-doc: PASS` as attesting anything about
+inline threads — that channel is enforced fail-closed by the `unresolved-threads-guard` CI job
+on every PR (`.github/workflows/unresolved-threads-guard.yml`, ADR 0158/#3331), independent of
+which review gate ran.
+
 If the diff is **pure product code** with no doc/knowledge file at all, this is the wrong
 gate — that's `review-code`'s PR. Report `not a doc PR — route to review-code` (a plain note,
 **not** a `review-doc:` marker — there's no doc to verdict) and stop.

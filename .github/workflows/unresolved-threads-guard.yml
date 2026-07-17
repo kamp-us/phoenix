@@ -1,0 +1,75 @@
+name: unresolved-threads-guard
+
+# CI gate for #3331 (ADR 0158 enforcement). ADR 0158 made an unresolved inline review
+# thread — human OR bot (CodeQL/github-advanced-security) — a merge gate: review-code
+# Step 3e surfaces it in the verdict, ship-it Step 3.6 refuses to enqueue on it. But
+# Step 3e was soft reviewer-prose (a review-code PASS could silently omit the accounting),
+# AND §CP PRs bank for a MANUAL merge that never touches ship-it Step 3.6 — so a §CP PR's
+# only line of defense was that soft prose. On PR #3329 a CodeQL finding on
+# `.github/workflows/commands-guard.yml:35` reached a human merger flagged merge-ready with
+# no flag. This job runs `pipeline-cli unresolved-threads-guard check --pr <n>`: it reads the
+# PR's review threads (the ONE sanctioned GraphQL `reviewThreads` read, ADR 0158 — REST has
+# no isResolved) + the latest author-gated review-code verdict, and reds when a live
+# unresolved thread is unaccounted-for in that verdict. Running on every PR, it covers the
+# §CP manual-merge path the ship-it backstop never sees. Fails closed if it can't read the
+# thread state. The scan/decision live once in the tool.
+#
+# NOTE (founder step, mirrors ADR 0158's founder-gated flag): to HARD-block the merge button
+# this context must be added to the `main protection` ruleset's required_status_checks — a
+# ruleset edit, not a workflow change. Until then the red check SURFACES the finding on the
+# PR (the §CP hole this closes); promoting it to required makes the block enforced. The
+# `merge_group` no-op below keeps it safe to promote without wedging the queue (see there).
+on:
+  pull_request:
+  # If this is later promoted to a required check, the merge queue will await it on the
+  # batched `merge_group` ref. There is no PR number on that event, and ADR 0158's
+  # conversation-resolution gate is a PR-ADMISSION condition (evaluated before the queue adds
+  # the PR), not a batch-merge condition — so the guard's real work already happened at PR
+  # time. Report a trivial green on the batch rather than await a PR number that isn't there
+  # (the leak-guard/ci.yml merge_group pattern, ADR 0132), so promotion can't hang the queue.
+  merge_group:
+
+# Least-privilege GITHUB_TOKEN: the job reads the repo + the PR's review threads, comments,
+# and collaborator permissions, and fails via exit code — it posts no check-run/status/PR
+# comment. `pull-requests: read` covers the reviewThreads GraphQL read + the issue comments;
+# `contents: read` covers checkout. Default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check no unaccounted unresolved review thread reaches merge-ready
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # On the merge queue's batched ref there is no PR to resolve threads for, and the
+      # PR-admission gate already ran at PR time (ADR 0158/0132) — report green so a required
+      # promotion can't wedge the batch. The real check runs on `pull_request` below.
+      - name: Skip on merge_group (gating happened at PR admission)
+        if: github.event_name == 'merge_group'
+        run: |
+          echo "unresolved-threads-guard: merge_group batch — gated at PR admission (ADR 0158/0132), nothing to re-check."
+
+      # Exit 1 when a substantive unresolved inline review thread (human or CodeQL/GHAS bot)
+      # is unaccounted-for in the latest review-code verdict, or when the review-thread state
+      # can't be read (fail-closed). See #3331 / ADR 0158.
+      - name: Check for unaccounted unresolved review threads
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node packages/pipeline-cli/src/bin.ts unresolved-threads-guard check --pr "${{ github.event.pull_request.number }}"

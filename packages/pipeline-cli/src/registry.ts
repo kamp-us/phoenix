@@ -52,6 +52,7 @@ import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
 import {structuredOutputGuardCommand} from "./tools/structured-output-guard/command.ts";
 import {tokenSpendCommand} from "./tools/token-spend/command.ts";
 import {trivialDiffCommand} from "./tools/trivial-diff/command.ts";
+import {unresolvedThreadsGuardCommand} from "./tools/unresolved-threads-guard/command.ts";
 import {verdictCommand} from "./tools/verdict/command.ts";
 import {wayfinderMapCommand} from "./tools/wayfinder-map/command.ts";
 import {workflowContractCommand} from "./tools/workflow-contract/command.ts";
@@ -138,4 +139,8 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	intakeDedupCommand,
 	redactLeaksCommand,
 	commandsCommand,
+	// The ADR-0158 unresolved-inline-thread merge gate's fail-closed enforcement (#3331):
+	// reds a PR when a substantive unresolved review thread is unaccounted-for in the
+	// review-code verdict, covering the §CP manual-merge path ship-it Step 3.6 never sees.
+	unresolvedThreadsGuardCommand,
 ];
