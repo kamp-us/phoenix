@@ -91,12 +91,16 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 		}),
 	);
 
-	it.effect("channel_send routes to the live peer and returns its delivered-to-inbox ack", () =>
+	it.effect("channel_send routes a valid message to the live peer and returns its inbox ack", () =>
 		Effect.gen(function* () {
 			const {client} = yield* makeInitializedClient;
 			const result = yield* client["tools/call"]({
 				name: "channel_send",
-				arguments: {targetRole: "reviewer", kind: "IntakePing", body: {issue: "3057"}},
+				arguments: {
+					targetRole: "reviewer",
+					kind: "IntakePing",
+					body: {issue: "3057", from: "intake", at: "2026-07-16T10:00:00Z"},
+				},
 			});
 			assert.isFalse(result.isError);
 			const ack = result.structuredContent as {by?: string; messageId?: string};
@@ -110,7 +114,37 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 			const {client} = yield* makeInitializedClient;
 			const result = yield* client["tools/call"]({
 				name: "channel_send",
-				arguments: {targetRole: "ghost", kind: "IntakePing", body: {}},
+				arguments: {
+					targetRole: "ghost",
+					kind: "IntakePing",
+					body: {issue: "3057", from: "intake", at: "2026-07-16T10:00:00Z"},
+				},
+			});
+			assert.isTrue(result.isError);
+		}),
+	);
+
+	// The shape gate (#3229): an unknown kind or a body that fails its kind's schema is rejected
+	// BEFORE any dial, so the sender never gets a delivered-to-inbox ack for a malformed message.
+	it.effect("channel_send rejects an unknown kind before reaching a peer", () =>
+		Effect.gen(function* () {
+			const {client} = yield* makeInitializedClient;
+			const result = yield* client["tools/call"]({
+				name: "channel_send",
+				// a typo'd kind (`IntakePng`) that the catalog does not carry
+				arguments: {targetRole: "reviewer", kind: "IntakePng", body: {issue: "3057"}},
+			});
+			assert.isTrue(result.isError);
+		}),
+	);
+
+	it.effect("channel_send rejects a body that fails its kind's schema before reaching a peer", () =>
+		Effect.gen(function* () {
+			const {client} = yield* makeInitializedClient;
+			const result = yield* client["tools/call"]({
+				name: "channel_send",
+				// a known kind, but the body is missing IntakePing's required `from`/`at`
+				arguments: {targetRole: "reviewer", kind: "IntakePing", body: {issue: "3057"}},
 			});
 			assert.isTrue(result.isError);
 		}),

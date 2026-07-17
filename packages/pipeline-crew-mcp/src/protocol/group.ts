@@ -8,6 +8,7 @@
  * `Schema.Void`. That success/void split is exactly what distinguishes a
  * request-response kind from a fire-and-forget one on the wire.
  */
+import type {Schema} from "effect";
 import {Rpc, RpcGroup} from "effect/unstable/rpc";
 import * as Messages from "./schema.ts";
 
@@ -64,3 +65,21 @@ export const CrewProtocol = RpcGroup.make(
 	Heartbeat,
 	AckInbox,
 );
+
+/** The catalog's wire `kind` names — the `_tag` of every rpc, the set a `channel_send` may name. */
+export const crewMessageKinds: ReadonlyArray<string> = [...CrewProtocol.requests.keys()];
+
+/**
+ * Resolve a wire `kind` name to the Schema payload the catalog types it as — the seam that lets
+ * a boundary decode a message's `body` against its kind instead of trusting `Schema.Unknown`,
+ * so the 7-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
+ * from `CrewProtocol.requests` so it can never drift from the catalog above — the catalog *is*
+ * the map. A kind outside the catalog resolves to `undefined`; the caller rejects it.
+ *
+ * The return is a plain-decoding `Schema.Codec` (no decoding services): `Rpc.payloadSchema`
+ * erases to `Schema.Top` (services `unknown`), but every catalog payload is a plain `Struct`
+ * with no service dependency, so the narrower type is the true one — and it lets a caller
+ * `decodeUnknownEffect` the resolved schema with a `never` requirement channel.
+ */
+export const payloadSchemaForKind = (kind: string): Schema.Codec<unknown> | undefined =>
+	CrewProtocol.requests.get(kind)?.payloadSchema as Schema.Codec<unknown> | undefined;

@@ -9,7 +9,14 @@ import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {Schema} from "effect";
 import {Rpc} from "effect/unstable/rpc";
-import {AnnouncePresence, Claim, CrewProtocol} from "./group.ts";
+import {
+	AnnouncePresence,
+	Claim,
+	CrewProtocol,
+	crewMessageKinds,
+	payloadSchemaForKind,
+} from "./group.ts";
+import * as Messages from "./schema.ts";
 
 describe("protocol/group catalog", () => {
 	it("covers all 7 message kinds (8 rpcs — presence is announce + lookup)", () => {
@@ -46,6 +53,25 @@ describe("protocol/group catalog", () => {
 
 	it("a fire-and-forget kind carries no reply (success is Void)", () => {
 		assert.strictEqual(AnnouncePresence.successSchema, Schema.Void);
+	});
+
+	it("payloadSchemaForKind resolves a catalog kind to its payload schema (#3229)", () => {
+		// the resolver is derived from the catalog, so every kind resolves and a valid payload decodes
+		assert.strictEqual(payloadSchemaForKind("IntakePing"), Messages.IntakePing);
+		const ping = {issue: "3057", from: "intake", at: "2026-07-16T10:00:00Z"};
+		assert.deepStrictEqual(
+			Schema.decodeUnknownSync(payloadSchemaForKind("IntakePing")!)(ping),
+			ping,
+		);
+	});
+
+	it("payloadSchemaForKind returns undefined for a kind outside the catalog (#3229)", () => {
+		assert.strictEqual(payloadSchemaForKind("IntakePng"), undefined);
+		assert.strictEqual(payloadSchemaForKind(""), undefined);
+	});
+
+	it("crewMessageKinds is exactly the catalog's kind names", () => {
+		assert.deepStrictEqual([...crewMessageKinds].sort(), [...CrewProtocol.requests.keys()].sort());
 	});
 
 	it("no protocol source file imports from crew/ (the generic boundary holds)", () => {

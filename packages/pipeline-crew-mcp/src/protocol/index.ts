@@ -9,10 +9,12 @@ export {
 	AnnouncePresence,
 	Claim,
 	CrewProtocol,
+	crewMessageKinds,
 	DrainProgress,
 	EpicHandoff,
 	Heartbeat,
 	IntakePing,
 	LookupRole,
+	payloadSchemaForKind,
 } from "./group.ts";
 export * as Messages from "./schema.ts";
