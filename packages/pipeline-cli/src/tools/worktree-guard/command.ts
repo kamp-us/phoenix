@@ -28,6 +28,13 @@
  * `bin.ts` #777 stale-tree shim (a dynamic import gated on a dep-resolution probe)
  * is dropped: the `pipeline-cli` bin imports `@effect/platform-node` statically, so
  * by the time a subcommand runs the runtime dep is always resolved.
+ *
+ * The sync git/fs probe helpers below are best-effort by contract: a hook must never
+ * crash on a git/fs hiccup, so every probe degrades to a SAFE fallback (allow / keep /
+ * dirty), absorbing the failure into a returned value rather than the `E` channel. That
+ * is why each carries a per-line `biome-ignore lint/plugin` — lifting them into
+ * `Effect.try` only to re-collapse the error to the same fallback is noise, not the
+ * failure-modeling `no-raw-try-catch` targets (the design-capture/upload.ts precedent).
  */
 import {execFileSync} from "node:child_process";
 import {existsSync, readFileSync, statSync} from "node:fs";
@@ -38,7 +45,8 @@ import {
 	defaultLogPath,
 	renderBashStagingNote,
 } from "@kampus/primary-index-tripwire";
-import {Console, Data, Effect, Option} from "effect";
+import {Console, Effect, Option} from "effect";
+import * as Schema from "effect/Schema";
 import {Command, Flag} from "effect/unstable/cli";
 import {isIsolationExpected, pinBash} from "./bash-pin.ts";
 import {decideCleanTree} from "./clean-tree.ts";
@@ -59,6 +67,7 @@ const WORKTREE_ROOT = process.env.WORKTREE_ROOT ?? "";
 // today's allow, never a spurious refusal).
 const onPrimaryCheckout = (cwd: string): boolean => {
 	const base = cwd || process.cwd();
+	// biome-ignore lint/plugin: best-effort probe — an unknowable git dir degrades to false (not primary), never E (see file header).
 	try {
 		const opts = {cwd: base, encoding: "utf8" as const};
 		const gitDir = resolve(
@@ -83,6 +92,7 @@ const onPrimaryCheckout = (cwd: string): boolean => {
  * same out-of-repo log the read-only `primary-index-tripwire record` bin uses (no second surface).
  */
 const recordBashStaging = (command: string, cwd: string): void => {
+	// biome-ignore lint/plugin: best-effort attribution — any recording failure is swallowed so it can never perturb the pin decision, never E (see file header).
 	try {
 		const decision = decideBashStagingAttribution({
 			command,
@@ -103,20 +113,31 @@ const recordBashStaging = (command: string, cwd: string): void => {
 
 // A non-force `git worktree remove` that errors means git judged the tree unsafe to
 // remove — we KEEP it (never escalate to --force). Tagged so the error channel stays typed.
-class RemoveRefused extends Data.TaggedError("RemoveRefused")<{readonly path: string}> {}
+class RemoveRefused extends Schema.TaggedErrorClass<RemoveRefused>()("RemoveRefused", {
+	path: Schema.String,
+}) {}
+
+/** A stdin read that rejected — absorbed to the `{}` envelope so a hook never crashes on it. */
+class StdinUnreadable extends Schema.TaggedErrorClass<StdinUnreadable>()("StdinUnreadable", {
+	cause: Schema.Unknown,
+}) {}
 
 const readStdin = (): Effect.Effect<unknown> =>
-	Effect.promise(async () => {
-		const chunks: Buffer[] = [];
-		for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
-		const raw = Buffer.concat(chunks).toString("utf8").trim();
-		if (raw === "") return {};
-		try {
-			return JSON.parse(raw) as unknown;
-		} catch {
-			return {};
-		}
-	});
+	Effect.tryPromise({
+		try: async () => {
+			const chunks: Buffer[] = [];
+			for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+			const raw = Buffer.concat(chunks).toString("utf8").trim();
+			if (raw === "") return {};
+			// biome-ignore lint/plugin: best-effort parse — a malformed stdin envelope degrades to {} (no fields), never E (see file header).
+			try {
+				return JSON.parse(raw) as unknown;
+			} catch {
+				return {};
+			}
+		},
+		catch: (cause) => new StdinUnreadable({cause}),
+	}).pipe(Effect.orElseSucceed(() => ({})));
 
 const field = (obj: unknown, ...path: string[]): unknown => {
 	let cur: unknown = obj;
@@ -166,6 +187,7 @@ const preFile = Command.make(
 			cwd,
 			candidatePath: candidate,
 			existsInWorktree: (p) => {
+				// biome-ignore lint/plugin: best-effort probe — an unstattable path degrades to false (absent), never E (see file header).
 				try {
 					return existsSync(p);
 				} catch {
@@ -246,6 +268,7 @@ const ownedWorktreeFromPayload = (input: unknown): string => {
 	if (!transcriptPath) return "";
 	const metaPath = transcriptPath.replace(/\.jsonl$/, ".meta.json");
 	if (metaPath === transcriptPath || !existsSync(metaPath)) return "";
+	// biome-ignore lint/plugin: best-effort read — an unreadable/malformed sidecar degrades to "" (ownership unprovable ⇒ decideReap KEEPs), never E (see file header).
 	try {
 		return str(field(JSON.parse(readFileSync(metaPath, "utf8")) as unknown, "worktreePath"));
 	} catch {
@@ -255,6 +278,7 @@ const ownedWorktreeFromPayload = (input: unknown): string => {
 
 /** Is the worktree dirty? `git status --porcelain` non-empty ⇒ dirty (also dirty if we can't tell — fail-safe to KEEP). */
 const worktreeIsDirty = (root: string): boolean => {
+	// biome-ignore lint/plugin: best-effort probe — an indeterminate status degrades to dirty (never reap), never E (see file header).
 	try {
 		const out = execFileSync("git", ["-C", root, "status", "--porcelain"], {
 			encoding: "utf8",
@@ -275,6 +299,7 @@ const reap = Command.make(
 			return yield* Console.error("worktree-guard reap: no $WORKTREE_ROOT to reap (skip)");
 		}
 		let dir = true;
+		// biome-ignore lint/plugin: best-effort probe — an unstattable root degrades to not-a-directory (skip), never E (see file header).
 		try {
 			dir = statSync(WORKTREE_ROOT).isDirectory();
 		} catch {
@@ -332,6 +357,7 @@ const pathFlag = Flag.string("path").pipe(
 // Read `git status --porcelain` at a path; null when git cannot run there (not a repo, missing
 // dir) — the null is the fail-closed signal decideCleanTree maps to DIRTY, never a false clean.
 const readPorcelain = (path: string): string | null => {
+	// biome-ignore lint/plugin: best-effort probe — a non-repo/missing dir degrades to null (decideCleanTree maps to DIRTY, fail-closed), never E (see file header).
 	try {
 		return execFileSync("git", ["-C", path, "status", "--porcelain"], {encoding: "utf8"});
 	} catch {

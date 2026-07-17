@@ -37,6 +37,7 @@
  */
 import {execFileSync} from "node:child_process";
 import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {Argument, Command} from "effect/unstable/cli";
 import {
 	type CheckoutContext,
@@ -61,13 +62,21 @@ import {
  */
 export const REFUSE_EXIT_CODE = 3;
 
-/** Read the whole hook stdin (may be empty) synchronously. */
+/** A stdin read that rejected — absorbed to "" so the guard evaluates no updates (fail-open). */
+class StdinUnreadable extends Schema.TaggedErrorClass<StdinUnreadable>()("StdinUnreadable", {
+	cause: Schema.Unknown,
+}) {}
+
+/** Read the whole hook stdin (may be empty); an unreadable stdin is absorbed to "". */
 const readStdin = (): Effect.Effect<string> =>
-	Effect.promise(async () => {
-		const chunks: Buffer[] = [];
-		for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
-		return Buffer.concat(chunks).toString("utf8");
-	});
+	Effect.tryPromise({
+		try: async () => {
+			const chunks: Buffer[] = [];
+			for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+			return Buffer.concat(chunks).toString("utf8");
+		},
+		catch: (cause) => new StdinUnreadable({cause}),
+	}).pipe(Effect.orElseSucceed(() => ""));
 
 /**
  * Parse git's `reference-transaction` stdin — one `<old-oid> SP <new-oid> SP <ref-name>`
@@ -88,6 +97,7 @@ const parseUpdates = (stdin: string): ReadonlyArray<RefUpdate> => {
 };
 
 const runGit = (args: ReadonlyArray<string>): {ok: boolean; stdout: string} => {
+	// biome-ignore lint/plugin: best-effort probe — a failed git invocation is fully absorbed into {ok:false} (a fail-safe sentinel the caller reads), never the E channel; lifting to Effect.try to re-collapse to the same sentinel is noise, not the failure-modeling no-raw-try-catch targets.
 	try {
 		const stdout = execFileSync("git", [...args], {
 			encoding: "utf8",
@@ -118,6 +128,7 @@ const resolveOriginMain = (): string | null => {
  * the guarded ref the core refuses when a fast-forward can't be proven).
  */
 const originIsAncestorOf = (newOid: string): boolean => {
+	// biome-ignore lint/plugin: best-effort probe — an indeterminate merge-base (bad OID/git error) is absorbed into false (fail-safe: the core refuses when a fast-forward can't be proven), never the E channel; this is a total predicate, not Effect-cosplay.
 	try {
 		execFileSync("git", ["merge-base", "--is-ancestor", "origin/main", newOid], {
 			stdio: "ignore",

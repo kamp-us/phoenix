@@ -49,6 +49,7 @@ interface GitResult {
 }
 
 const runGit = (args: ReadonlyArray<string>): GitResult => {
+	// biome-ignore lint/plugin: best-effort git shell — a non-zero exit is fully absorbed into a {ok:false} GitResult the caller branches on, never the E channel; a total helper, not Effect-cosplay.
 	try {
 		const stdout = execFileSync("git", [...args], {encoding: "utf8"});
 		return {ok: true, stdout, stderr: ""};

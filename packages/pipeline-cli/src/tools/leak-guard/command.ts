@@ -26,7 +26,8 @@
  */
 import {existsSync, readFileSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
-import {Console, Data, Effect, Option} from "effect";
+import {Console, Effect, Option} from "effect";
+import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, CREW_DIR, sweepCrew} from "./crew-gate.ts";
@@ -45,7 +46,9 @@ interface FileLeaks {
 }
 
 // Carries a non-zero process exit (the report is already on stderr).
-class LeakFound extends Data.TaggedError("LeakFound")<{readonly count: number}> {}
+class LeakFound extends Schema.TaggedErrorClass<LeakFound>()("LeakFound", {
+	count: Schema.Number,
+}) {}
 
 /** Read a file as UTF-8, or `null` when it is missing/unreadable (skip, never crash). */
 const readFileOrSkip = (file: string): Effect.Effect<string | null> =>

@@ -14,7 +14,8 @@
  */
 import {readdirSync, readFileSync, statSync} from "node:fs";
 import {join, relative, sep} from "node:path";
-import {Console, Data, Effect} from "effect";
+import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {
 	judge,
 	type PatchedDep,
@@ -25,13 +26,15 @@ import {
 } from "./patch-guard.ts";
 
 /** A directory/file IO failure: the run couldn't complete. */
-export class IoError extends Data.TaggedError("IoError")<{
-	readonly path: string;
-	readonly cause: unknown;
-}> {}
+export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
+	path: Schema.String,
+	cause: Schema.Unknown,
+}) {}
 
 /** Carries the non-zero gate-fail exit (the report is already on stderr). */
-export class CheckFailed extends Data.TaggedError("CheckFailed")<{readonly reason: string}> {}
+export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFailed", {
+	reason: Schema.String,
+}) {}
 
 // Dirs never worth walking for test files: dependency trees, VCS, nested agent
 // worktrees/checkouts (present only in a dev tree, never on a fresh CI checkout), and

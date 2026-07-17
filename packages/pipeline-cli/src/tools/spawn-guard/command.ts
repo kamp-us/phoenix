@@ -143,6 +143,7 @@ const RUNTIME_DEP = "@effect/platform-node";
 
 /** Is `dep` resolvable from here? `false` ⇒ stale `node_modules` (pre-`pnpm install`). */
 const depsInstalled = (dep: string = RUNTIME_DEP): boolean => {
+	// biome-ignore lint/plugin: a pre-runtime dep-resolution probe (the rule's named exception) — an unresolvable dep is absorbed into false (stale node_modules), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		createRequire(import.meta.url).resolve(dep);
 		return true;

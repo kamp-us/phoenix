@@ -12,17 +12,20 @@
  */
 import {readdirSync, readFileSync, statSync} from "node:fs";
 import {join, relative} from "node:path";
-import {Console, Data, Effect} from "effect";
+import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {type CrewLeak, findCrewLeaks} from "./crew-leak.ts";
 
 /** A directory/file IO failure: the sweep couldn't complete. */
-export class IoError extends Data.TaggedError("IoError")<{
-	readonly path: string;
-	readonly cause: unknown;
-}> {}
+export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
+	path: Schema.String,
+	cause: Schema.Unknown,
+}) {}
 
 /** Carries the non-zero gate-fail exit (the report is already on stderr). */
-export class CheckFailed extends Data.TaggedError("CheckFailed")<{readonly reason: string}> {}
+export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFailed", {
+	reason: Schema.String,
+}) {}
 
 /** The default crew directory the sweep scopes over, repo-root-relative. */
 export const CREW_DIR = "claude-plugins/pipeline-crew";

@@ -46,6 +46,7 @@ interface GitResult {
 }
 
 const runGit = (args: ReadonlyArray<string>): GitResult => {
+	// biome-ignore lint/plugin: best-effort git shell — a non-zero exit is fully absorbed into a {ok:false} GitResult the caller branches on, never the E channel; a total helper, not Effect-cosplay.
 	try {
 		const stdout = execFileSync("git", [...args], {encoding: "utf8"});
 		return {ok: true, stdout, stderr: ""};
@@ -108,6 +109,7 @@ const IDLE_THRESHOLD_MS = 30 * 60 * 1000;
 const newestMtimeMs = (paths: ReadonlyArray<string>): number | null => {
 	let newest: number | null = null;
 	for (const p of paths) {
+		// biome-ignore lint/plugin: best-effort probe — an absent/unreadable path is skipped (a wholly unresolvable set falls to the null fail-safe), never the E channel; a total helper, not Effect-cosplay.
 		try {
 			const m = statSync(p).mtimeMs;
 			if (newest === null || m > newest) newest = m;
@@ -138,6 +140,7 @@ const worktreeRecentlyActive = (path: string): boolean => {
 };
 
 const runGh = (args: ReadonlyArray<string>): GitResult => {
+	// biome-ignore lint/plugin: best-effort gh shell — a non-zero exit is fully absorbed into a {ok:false} GitResult the caller branches on, never the E channel; a total helper, not Effect-cosplay.
 	try {
 		const stdout = execFileSync("gh", [...args], {encoding: "utf8"});
 		return {ok: true, stdout, stderr: ""};
