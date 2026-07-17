@@ -28,6 +28,12 @@ import type {ChannelConfig} from "./config.ts";
 export const PIPELINE_CREW_MCP_BIN = "pipeline-crew-mcp";
 /** The subcommand that runs one live crew session (`bin.ts`). */
 export const CREW_SESSION_COMMAND = "session";
+/**
+ * Binds the launcher-assigned per-instance identity (#3297) into the session command, so the
+ * launched engine comes up on THAT address instead of `crew/session.ts` re-minting its own runtime
+ * instance — the C5 handoff #3297 left for bind to turn into argv (#3354, seam 3).
+ */
+export const CREW_SESSION_INSTANCE_FLAG = "--instance";
 export const MCP_CONFIG_FLAG = "--mcp-config";
 /** Allowlist mode: only servers named here load, gated by `allowedChannelPlugins` for plugin refs. */
 export const ALLOWLIST_CHANNEL_FLAG = "--channels";
@@ -37,13 +43,30 @@ export const DEV_CHANNEL_FLAG = "--dangerously-load-development-channels";
 /** The `server:<name>` channel ref that names the crew session server registered under `serverName`. */
 const crewServerRef = (serverName: string): string => `server:${serverName}`;
 
-/** The inline `--mcp-config` JSON: one server keyed by `serverName`, baking the per-invocation session command. */
-const sessionMcpConfigJson = (role: string, projectRoot: string, serverName: string): string =>
+/**
+ * The inline `--mcp-config` JSON: one server keyed by `serverName`, baking the per-invocation session
+ * command. When an engine's launcher-assigned `instance` (#3297) is present it is baked as
+ * `--instance <id>` so the launched session binds THAT identity; a bridge (singleton, no instance)
+ * omits the flag.
+ */
+const sessionMcpConfigJson = (
+	role: string,
+	projectRoot: string,
+	serverName: string,
+	instance: string | undefined,
+): string =>
 	JSON.stringify({
 		mcpServers: {
 			[serverName]: {
 				command: PIPELINE_CREW_MCP_BIN,
-				args: [CREW_SESSION_COMMAND, "--role", role, "--project-root", projectRoot],
+				args: [
+					CREW_SESSION_COMMAND,
+					"--role",
+					role,
+					"--project-root",
+					projectRoot,
+					...(instance !== undefined ? [CREW_SESSION_INSTANCE_FLAG, instance] : []),
+				],
 			},
 		},
 	});
@@ -69,6 +92,12 @@ export interface SessionBindInput {
 	 * defined-but-inert — the fail-closed `CrewServerNotRegisteredError` below.
 	 */
 	readonly serverName: string;
+	/**
+	 * The launcher-assigned per-instance identity (#3297) an engine session binds — baked into the
+	 * session argv as `--instance <id>` so the launched engine comes up on that address rather than
+	 * re-minting its own runtime instance (#3354, seam 3). A bridge is a singleton and omits it.
+	 */
+	readonly instance?: string | undefined;
 	/** The resolved channels dimension of the crew `LaunchConfig` (#3293), consumed read-only. */
 	readonly channels: ChannelConfig;
 }
@@ -112,7 +141,7 @@ export const buildSessionBind = (
 	input: SessionBindInput,
 ): Effect.Effect<SessionBind, CrewServerNotRegisteredError | ChannelPluginNotAllowedError> =>
 	Effect.gen(function* () {
-		const {role, projectRoot, serverName, channels} = input;
+		const {role, projectRoot, serverName, instance, channels} = input;
 		const servers = channels.servers;
 
 		if (!servers.includes(crewServerRef(serverName))) {
@@ -139,7 +168,7 @@ export const buildSessionBind = (
 		const channelFlag = channels.mode === "development" ? DEV_CHANNEL_FLAG : ALLOWLIST_CHANNEL_FLAG;
 		const mcpConfigArg: readonly [string, string] = [
 			MCP_CONFIG_FLAG,
-			sessionMcpConfigJson(role, projectRoot, serverName),
+			sessionMcpConfigJson(role, projectRoot, serverName, instance),
 		];
 		const channelArg: readonly string[] = [channelFlag, ...servers];
 

@@ -14,6 +14,7 @@ import {
 	buildSessionBind,
 	ChannelPluginNotAllowedError,
 	CREW_SESSION_COMMAND,
+	CREW_SESSION_INSTANCE_FLAG,
 	CrewServerNotRegisteredError,
 	DEV_CHANNEL_FLAG,
 	MCP_CONFIG_FLAG,
@@ -122,6 +123,64 @@ describe("standup/bind — per-session bind constructor", () => {
 				assert.instanceOf(error, CrewServerNotRegisteredError);
 				assert.strictEqual(error.serverName, SERVER_NAME);
 				assert.deepStrictEqual([...error.servers], ["server:some-other"]);
+			}),
+	);
+
+	it.effect(
+		"bakes the launcher-assigned per-instance identity into the session argv (seam 3, #3354)",
+		() =>
+			Effect.gen(function* () {
+				const INSTANCE = "e-7f3a";
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				const bind = yield* buildSessionBind({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					instance: INSTANCE,
+					channels,
+				});
+
+				// the instance flag + id ride the inline --mcp-config server command, after --project-root.
+				const expected = JSON.stringify({
+					mcpServers: {
+						[SERVER_NAME]: {
+							command: PIPELINE_CREW_MCP_BIN,
+							args: [
+								CREW_SESSION_COMMAND,
+								"--role",
+								ROLE,
+								"--project-root",
+								PROJECT_ROOT,
+								CREW_SESSION_INSTANCE_FLAG,
+								INSTANCE,
+							],
+						},
+					},
+				});
+				assert.deepStrictEqual(bind.mcpConfigArg, [MCP_CONFIG_FLAG, expected]);
+			}),
+	);
+
+	it.effect(
+		"omits the instance flag when no per-instance identity is given (a bridge singleton)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				const bind = yield* buildSessionBind({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				});
+				assert.notInclude(bind.mcpConfigArg[1], CREW_SESSION_INSTANCE_FLAG);
 			}),
 	);
 

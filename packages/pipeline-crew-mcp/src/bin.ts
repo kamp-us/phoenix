@@ -30,19 +30,12 @@
  * Wired per effect-smol's CLI guidance (mirrors `@kampus/pipeline-cli`'s bin): `effect/unstable/cli`
  * for the typed command, the Node platform over `NodeServices.layer`, run via `NodeRuntime.runMain`.
  */
-import {readFileSync} from "node:fs";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Cause, Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 
 import {CREW_ROLES, RoleUniquenessError, runCrewSession} from "./crew/index.ts";
-import {
-	LaunchConfigError,
-	parseJsonc,
-	resolveConfigPath,
-	runStandUp,
-	type TmuxNaming,
-} from "./standup/index.ts";
+import {runStandUp} from "./standup/index.ts";
 import {isTrackerAddressInUse, launchTracker} from "./tracker/index.ts";
 import {VERSION} from "./version.ts";
 
@@ -94,49 +87,6 @@ const tracker = Command.make(
 	Command.withDescription("Run a standalone per-project tracker (the registry socket server)"),
 );
 
-/**
- * Read the operator's tmux naming (session + per-window names) from the crew config. The typed,
- * validated tmux-dimension reader is tracked separately (config.ts reads only the launch dimensions
- * today); this thin entrypoint marshal threads the operator's `tmux` block through to the
- * orchestration, which fails loud on any bridge window it cannot name. Resolves the config path by
- * the same `$CREW_CONFIG` → `.claude/crew.config.jsonc` order as the launch-dimension reader.
- */
-const readTmuxNaming = (
-	env: {readonly CREW_CONFIG?: string | undefined} = process.env,
-): Effect.Effect<TmuxNaming, LaunchConfigError> =>
-	Effect.gen(function* () {
-		const configPath = resolveConfigPath(env);
-		const text = yield* Effect.try({
-			try: () => readFileSync(configPath, "utf8"),
-			catch: (cause) =>
-				new LaunchConfigError({
-					configPath,
-					reason: `cannot read crew config (run pipeline-crew stand-up first): ${String(cause)}`,
-				}),
-		});
-		const parsed = yield* Effect.try({
-			try: () => parseJsonc(text),
-			catch: (cause) =>
-				new LaunchConfigError({configPath, reason: `invalid JSONC: ${String(cause)}`}),
-		});
-		const tmux = (
-			parsed as {readonly tmux?: {readonly session?: unknown; readonly windows?: unknown}}
-		).tmux;
-		if (
-			tmux === undefined ||
-			typeof tmux.session !== "string" ||
-			tmux.windows === null ||
-			typeof tmux.windows !== "object"
-		) {
-			return yield* new LaunchConfigError({
-				configPath,
-				reason:
-					"missing or malformed `tmux` dimension — expected { session: string, windows: {...} }",
-			});
-		}
-		return {session: tmux.session, windows: tmux.windows as Readonly<Record<string, string>>};
-	});
-
 const standUp = Command.make(
 	"stand-up",
 	{projectRoot: projectRootFlag},
@@ -144,8 +94,9 @@ const standUp = Command.make(
 		yield* Console.error(
 			`pipeline-crew-mcp ${VERSION} — standing up the crew from the operator config (project ${projectRoot})`,
 		);
-		const tmuxNaming = yield* readTmuxNaming();
-		return yield* runStandUp({projectRoot, tmuxNaming}).pipe(
+		// runStandUp reads every launch dimension — including the tmux placement dimension — from the
+		// operator crew config itself (config.ts's typed reader, #3354 seam 1); nothing to inject here.
+		return yield* runStandUp({projectRoot}).pipe(
 			Effect.flatMap((result) =>
 				Console.error(
 					`crew up: tracker pid ${result.tracker.pid ?? "?"} on ${result.tracker.socketPath}; ${result.launched.length} sessions launched (${result.launched
