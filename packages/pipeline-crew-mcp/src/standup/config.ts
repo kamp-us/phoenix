@@ -12,13 +12,13 @@
  * The one non-obvious thing: the reader FAILS CLOSED. A missing or malformed launch
  * dimension is a `LaunchConfigError` naming the offending dimension, never a silent default
  * — a drifted CLI pin or an unlisted channel server is a launch to refuse, not paper over.
- * `LaunchConfig` extracts only the launch dimensions (excess keys operator/modelTiers/… are
- * ignored); the tmux *placement* dimension has its own sibling reader `readTmuxNaming` (#3354),
- * fail-closed the same way, so tmux naming enters from the operator config rather than injected.
+ * `LaunchConfig` extracts only the launch dimensions from the one-role-map seam shape (ADR 0189):
+ * the engine count is folded into `roles["engineering-manager"].count`, and excess seam keys
+ * (operator/notification/tier/wipCap/…) are ignored. There is no config-read tmux dimension —
+ * tmux window placement now derives from role identity at launch (tmux-placement.ts), not config.
  */
 import {readFileSync} from "node:fs";
 import {Effect, Schema} from "effect";
-import type {TmuxNaming} from "./tmux-placement.ts";
 
 /**
  * A channel-server ref, in the exact registration grammar Claude Code 2.1.212 accepts —
@@ -121,20 +121,19 @@ export const LaunchConfig = Schema.Struct({
 export type LaunchConfig = typeof LaunchConfig.Type;
 
 /**
- * The tmux placement dimension of the crew config: the tmux session every crew window is created
- * under + the per-bridge window names, keyed by window key. It decodes to `tmux-placement.ts`'s
- * `TmuxNaming` (the placement layer consumes the resolved shape) — this is the reader #3298's
- * placement doc already anticipated ("#3293's reader resolves from the config `tmux` dimension")
- * but no child built, so `runStandUp` had to inject it in code (#3354, seam 1). Names are
- * `NonEmptyString`: an empty tmux session / window name is a launch to refuse, not paper over.
+ * The one-role-map seam shape on disk (ADR 0189): a `roles` map keyed by the crew role slugs, from
+ * which the launch reader takes exactly ONE value — the engine pool size at
+ * `roles["engineering-manager"].count`. The rest of each role entry (`tier`, `wipCap`) and the
+ * whole bridge entries are def-spawn / prose bindings, not launch inputs, so they decode as ignored
+ * excess keys — only `engineering-manager.count` is a required launch dimension here, fail-closed.
  */
-export const TmuxConfig = Schema.Struct({
-	session: Schema.NonEmptyString,
-	windows: Schema.Record(Schema.String, Schema.NonEmptyString),
+const RawLaunchConfig = Schema.Struct({
+	cliVersion: CliVersion,
+	roles: Schema.Struct({
+		"engineering-manager": Schema.Struct({count: EngineCount}),
+	}),
+	channels: ChannelConfig,
 });
-
-/** The crew config carries the tmux placement dimension under its `tmux` key — read only that key. */
-const CrewConfigTmux = Schema.Struct({tmux: TmuxConfig});
 
 /** A crew config that could not be resolved, read, parsed, or validated — carries the offending dimension. */
 export class LaunchConfigError extends Schema.TaggedErrorClass<LaunchConfigError>()(
@@ -221,26 +220,22 @@ export const parseJsonc = (text: string): unknown => JSON.parse(stripJsonc(text)
 /**
  * Decode an already-parsed value into `LaunchConfig`, failing closed with a `LaunchConfigError`
  * whose `reason` names the offending dimension (the schema issue tree carries the field path).
+ * The engine count is folded out of the role map — `roles["engineering-manager"].count` (ADR 0189)
+ * — into the flat `engineCount` every launcher child consumes, so `LaunchConfig`'s shape is stable
+ * across the seam move; a missing/blank/non-positive count fails closed naming that path.
  */
 export const decodeLaunchConfig = (
 	input: unknown,
 	configPath: string,
 ): Effect.Effect<LaunchConfig, LaunchConfigError> =>
-	Schema.decodeUnknownEffect(LaunchConfig)(input).pipe(
-		Effect.mapError((error) => new LaunchConfigError({configPath, reason: error.message})),
-	);
-
-/**
- * Decode an already-parsed value's `tmux` dimension into `TmuxNaming`, failing closed with a
- * `LaunchConfigError` whose `reason` names the offending field — the same fail-closed shape as
- * `decodeLaunchConfig`, so a missing/blank tmux session or window is a launch to refuse (#3354).
- */
-export const decodeTmuxNaming = (
-	input: unknown,
-	configPath: string,
-): Effect.Effect<TmuxNaming, LaunchConfigError> =>
-	Schema.decodeUnknownEffect(CrewConfigTmux)(input).pipe(
-		Effect.map((cfg) => cfg.tmux),
+	Schema.decodeUnknownEffect(RawLaunchConfig)(input).pipe(
+		Effect.map(
+			(raw): LaunchConfig => ({
+				cliVersion: raw.cliVersion,
+				engineCount: raw.roles["engineering-manager"].count,
+				channels: raw.channels,
+			}),
+		),
 		Effect.mapError((error) => new LaunchConfigError({configPath, reason: error.message})),
 	);
 
@@ -280,16 +275,4 @@ export const readLaunchConfig = (
 ): Effect.Effect<LaunchConfig, LaunchConfigError> =>
 	readParsedConfig(env).pipe(
 		Effect.flatMap(({parsed, configPath}) => decodeLaunchConfig(parsed, configPath)),
-	);
-
-/**
- * Resolve → read → parse → decode the crew config's tmux placement dimension. Same collapse-to-one
- * `LaunchConfigError` contract as `readLaunchConfig`, so `runStandUp` reads tmux naming from the
- * operator config (fail-closed) instead of taking it injected in code (#3354, seam 1).
- */
-export const readTmuxNaming = (
-	env: {readonly CREW_CONFIG?: string | undefined} = process.env,
-): Effect.Effect<TmuxNaming, LaunchConfigError> =>
-	readParsedConfig(env).pipe(
-		Effect.flatMap(({parsed, configPath}) => decodeTmuxNaming(parsed, configPath)),
 	);

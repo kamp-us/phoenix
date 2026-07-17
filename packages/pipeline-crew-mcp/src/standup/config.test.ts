@@ -1,16 +1,17 @@
 /**
- * standup/config — the launch-dimension reader (issue #3293). Covers path resolution, the
- * JSONC strip (comments + trailing commas, string-literal aware), the happy decode against a
- * FULL crew config (excess seam keys ignored), and — the load-bearing part — fail-closed
- * decoding: each required launch dimension absent or malformed yields a `LaunchConfigError`
- * whose reason names that dimension.
+ * standup/config — the launch-dimension reader (issue #3293), reconciled to the one-role-map seam
+ * shape (ADR 0189 / #3236). Covers path resolution, the JSONC strip (comments + trailing commas,
+ * string-literal aware), the happy decode against a FULL one-role-map crew config (excess seam keys
+ * — bridge role entries, per-role tier/wipCap, operator/notification, and no tmux key — ignored),
+ * and — the load-bearing part — fail-closed decoding: each required launch dimension absent or
+ * malformed yields a `LaunchConfigError` whose reason names that dimension. The engine count now
+ * lives at `roles["engineering-manager"].count`, so its fail-closed cases exercise that path.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {
 	DEFAULT_CONFIG_PATH,
 	decodeLaunchConfig,
-	decodeTmuxNaming,
 	LaunchConfigError,
 	parseJsonc,
 	resolveConfigPath,
@@ -18,14 +19,16 @@ import {
 } from "./config.ts";
 
 /**
- * A minimal-but-valid launch dimension set, embedded in a fuller crew config below. The
- * allowlist-mode channels carry only `plugin:<name>@<marketplace>` refs — the exact grammar
- * Claude Code 2.1.212's `--channels` allowlist accepts (a bare `server:` ref can't ride
- * `--channels`; #3328).
+ * A minimal-but-valid launch dimension set in the one-role-map shape: the engine count folds into
+ * `roles["engineering-manager"].count`. The allowlist-mode channels carry only
+ * `plugin:<name>@<marketplace>` refs — the exact grammar Claude Code 2.1.212's `--channels`
+ * allowlist accepts (a bare `server:` ref can't ride `--channels`; #3328).
  */
 const validLaunch = {
 	cliVersion: "2.1.207",
-	engineCount: 2,
+	roles: {
+		"engineering-manager": {count: 2},
+	},
 	channels: {
 		mode: "allowlist",
 		servers: ["plugin:crew-channels@pipeline-crew"],
@@ -33,15 +36,33 @@ const validLaunch = {
 	},
 };
 
-/** The launch dimensions never arrive alone — they sit inside the full personalization config. */
+/**
+ * The launch dimensions never arrive alone — they sit inside the full one-role-map personalization
+ * config (ADR 0189): every bridge role entry, each role's `tier`/`wipCap`, the operator +
+ * notification + controlPlaneApprover blocks, and — post-#3236 — NO tmux key. All of it is excess
+ * to the launch reader, which extracts only cliVersion + the engine count + channels.
+ */
 const fullCrewConfig = {
 	operator: {name: "op", handle: "op"},
-	tmux: {session: "s", windows: {ea: "ea", engineeringManager: "em", triage: "t"}},
+	controlPlaneApprover: {name: "cp", login: "cp"},
+	notification: {operator: {command: "notify", handle: "op"}},
 	...validLaunch,
+	roles: {
+		"chief-of-staff": {tier: "opus"},
+		cartographer: {tier: "fable"},
+		"intake-desk": {tier: "fable"},
+		"engineering-manager": {tier: "opus", count: 2, wipCap: {productLanes: 1, platformLanes: 1}},
+	},
 };
 
 const decodeErr = (input: unknown) =>
 	Effect.flip(decodeLaunchConfig(input, "/tmp/crew.config.jsonc"));
+
+/** A `validLaunch` variant carrying an arbitrary `roles["engineering-manager"].count` value. */
+const withCount = (count: unknown) => ({
+	...validLaunch,
+	roles: {"engineering-manager": {count}},
+});
 
 describe("standup/config — resolveConfigPath", () => {
 	it("prefers $CREW_CONFIG when set and non-blank", () => {
@@ -74,16 +95,19 @@ describe("standup/config — stripJsonc / parseJsonc", () => {
 	});
 });
 
-describe("standup/config — decodeLaunchConfig (happy path)", () => {
-	it.effect("extracts the launch dimensions from a full crew config, ignoring excess keys", () =>
-		Effect.gen(function* () {
-			const cfg = yield* decodeLaunchConfig(fullCrewConfig, DEFAULT_CONFIG_PATH);
-			assert.strictEqual(cfg.cliVersion, "2.1.207");
-			assert.strictEqual(cfg.engineCount, 2);
-			assert.strictEqual(cfg.channels.mode, "allowlist");
-			assert.deepStrictEqual([...cfg.channels.servers], ["plugin:crew-channels@pipeline-crew"]);
-			assert.deepStrictEqual([...cfg.channels.allowedChannelPlugins], ["pipeline-crew"]);
-		}),
+describe("standup/config — decodeLaunchConfig (happy path, one-role-map shape)", () => {
+	it.effect(
+		"extracts the launch dimensions from a full tmux-free one-role-map config, ignoring excess keys",
+		() =>
+			Effect.gen(function* () {
+				const cfg = yield* decodeLaunchConfig(fullCrewConfig, DEFAULT_CONFIG_PATH);
+				assert.strictEqual(cfg.cliVersion, "2.1.207");
+				// engine count read off roles["engineering-manager"].count, not a top-level field.
+				assert.strictEqual(cfg.engineCount, 2);
+				assert.strictEqual(cfg.channels.mode, "allowlist");
+				assert.deepStrictEqual([...cfg.channels.servers], ["plugin:crew-channels@pipeline-crew"]);
+				assert.deepStrictEqual([...cfg.channels.allowedChannelPlugins], ["pipeline-crew"]);
+			}),
 	);
 	it.effect("accepts the development channel mode carrying a top-level server: ref", () =>
 		Effect.gen(function* () {
@@ -164,59 +188,59 @@ describe("standup/config — server: ref reconciles with mode", () => {
 	);
 });
 
-describe("standup/config — decodeTmuxNaming (tmux placement dimension, seam 1 #3354)", () => {
-	const decodeTmuxErr = (input: unknown) =>
-		Effect.flip(decodeTmuxNaming(input, "/tmp/crew.config.jsonc"));
-
-	it.effect(
-		"extracts session + window naming from the tmux dimension of the full crew config",
-		() =>
-			Effect.gen(function* () {
-				const naming = yield* decodeTmuxNaming(fullCrewConfig, DEFAULT_CONFIG_PATH);
-				assert.strictEqual(naming.session, "s");
-				assert.deepStrictEqual(
-					{...naming.windows},
-					{ea: "ea", engineeringManager: "em", triage: "t"},
-				);
-			}),
-	);
-	it.effect("fails closed naming tmux when the dimension is absent", () =>
+describe("standup/config — engine count reads off roles['engineering-manager'].count, fail-closed", () => {
+	it.effect("the roles map absent → fails closed naming roles", () =>
 		Effect.gen(function* () {
-			const err = yield* decodeTmuxErr(validLaunch);
+			const {roles: _omit, ...noRoles} = validLaunch;
+			const err = yield* decodeErr(noRoles);
 			assert.instanceOf(err, LaunchConfigError);
-			assert.include(err.reason, "tmux");
+			assert.include(err.reason, "roles");
 			assert.strictEqual(err.configPath, "/tmp/crew.config.jsonc");
 		}),
 	);
-	it.effect("fails closed on a missing session name", () =>
+	it.effect("the engineering-manager role entry absent → fails closed naming it", () =>
 		Effect.gen(function* () {
-			const err = yield* decodeTmuxErr({tmux: {windows: {ea: "ea"}}});
-			assert.include(err.reason, "session");
+			const err = yield* decodeErr({...validLaunch, roles: {}});
+			assert.include(err.reason, "engineering-manager");
 		}),
 	);
-	it.effect("fails closed on a blank session name", () =>
+	it.effect("count missing → fails closed naming count", () =>
 		Effect.gen(function* () {
-			const err = yield* decodeTmuxErr({tmux: {session: "", windows: {ea: "ea"}}});
-			assert.include(err.reason, "session");
+			const err = yield* decodeErr({...validLaunch, roles: {"engineering-manager": {}}});
+			assert.include(err.reason, "count");
 		}),
 	);
-	it.effect("fails closed on a blank window name", () =>
+	it.effect("count blank/non-numeric → fails closed naming count", () =>
 		Effect.gen(function* () {
-			const err = yield* decodeTmuxErr({tmux: {session: "crew", windows: {ea: ""}}});
-			assert.include(err.reason, "windows");
+			const err = yield* decodeErr(withCount(""));
+			assert.include(err.reason, "count");
+		}),
+	);
+	it.effect("count zero → fails closed naming count", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr(withCount(0));
+			assert.include(err.reason, "count");
+		}),
+	);
+	it.effect("count negative → fails closed naming count", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr(withCount(-1));
+			assert.include(err.reason, "count");
+		}),
+	);
+	it.effect("count non-integer → fails closed naming count", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr(withCount(2.5));
+			assert.include(err.reason, "count");
 		}),
 	);
 });
 
 describe("standup/config — fails closed naming the offending dimension", () => {
-	const without = (key: keyof typeof validLaunch) => {
-		const {[key]: _omit, ...rest} = validLaunch;
-		return rest;
-	};
-
 	it.effect("cliVersion missing", () =>
 		Effect.gen(function* () {
-			const err = yield* decodeErr(without("cliVersion"));
+			const {cliVersion: _omit, ...rest} = validLaunch;
+			const err = yield* decodeErr(rest);
 			assert.instanceOf(err, LaunchConfigError);
 			assert.include(err.reason, "cliVersion");
 			assert.strictEqual(err.configPath, "/tmp/crew.config.jsonc");
@@ -228,27 +252,10 @@ describe("standup/config — fails closed naming the offending dimension", () =>
 			assert.include(err.reason, "cliVersion");
 		}),
 	);
-	it.effect("engineCount missing", () =>
-		Effect.gen(function* () {
-			const err = yield* decodeErr(without("engineCount"));
-			assert.include(err.reason, "engineCount");
-		}),
-	);
-	it.effect("engineCount below one", () =>
-		Effect.gen(function* () {
-			const err = yield* decodeErr({...validLaunch, engineCount: 0});
-			assert.include(err.reason, "engineCount");
-		}),
-	);
-	it.effect("engineCount non-integer", () =>
-		Effect.gen(function* () {
-			const err = yield* decodeErr({...validLaunch, engineCount: 2.5});
-			assert.include(err.reason, "engineCount");
-		}),
-	);
 	it.effect("channels missing", () =>
 		Effect.gen(function* () {
-			const err = yield* decodeErr(without("channels"));
+			const {channels: _omit, ...rest} = validLaunch;
+			const err = yield* decodeErr(rest);
 			assert.include(err.reason, "channels");
 		}),
 	);
