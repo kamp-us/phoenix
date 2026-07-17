@@ -13,14 +13,27 @@
  * mirroring `@kampus/epic-ledger`'s `markdown.ts`.
  */
 
-/** A `### ...` (level-3) heading line; captures the heading text (group 1). */
-const ENTRY_HEADING = /^###\s+(.+?)\s*$/;
+/**
+ * A `### ...` (level-3) heading line; captures the heading text (group 1),
+ * trailing whitespace included — the parser trims the capture in code. The
+ * capture is anchored to a non-whitespace start (`\S.*`) so no two quantified
+ * runs share the whitespace class: this is the linear, non-backtracking form of
+ * the old lazy `(.+?)\s*$`, which CodeQL flagged js/polynomial-redos (#3341).
+ */
+const ENTRY_HEADING = /^###\s+(\S.*)$/;
 
 /** Any deeper section heading; ends the current entry's field scan. */
 const SECTION_BREAK = /^#{1,3}\s+\S/;
 
-/** A `**Status:** \`fixed\`` field, tolerant of casing and surrounding markup. */
-const FIXED_STATUS = /\*\*\s*status\s*:?\s*\*\*\s*:?\s*`?\s*fixed`?/i;
+/**
+ * A `**Status:** \`fixed\`` field, tolerant of casing and surrounding markup.
+ * Each optional colon/backtick is folded into the whitespace run that follows it
+ * (`\s*(?::\s*)?`, `\s*(?::\s*)?(?:`\s*)?`) so no two `\s*` runs are adjacent
+ * across an optional single char — the language is identical to the old
+ * `\s*:?\s*` / `\s*:?\s*`?\s*` form but non-backtracking, clearing the
+ * js/polynomial-redos alerts CodeQL raised at both call sites (#3341).
+ */
+const FIXED_STATUS = /\*\*\s*status\s*(?::\s*)?\*\*\s*(?::\s*)?(?:`\s*)?fixed`?/i;
 
 /** A `PR #NNN` (or `PR [#NNN](...)`) reference; captures the number (group 1). */
 const PR_REF = /\bPR\s*\[?#(\d+)/i;
@@ -58,7 +71,7 @@ export const parseFixedEntries = (markdown: string): ReadonlyArray<FixedEntry> =
 		const head = ENTRY_HEADING.exec(line);
 		if (head?.[1] !== undefined) {
 			flush();
-			heading = head[1];
+			heading = head[1].trimEnd();
 			continue;
 		}
 		if (heading !== undefined && SECTION_BREAK.test(line)) {

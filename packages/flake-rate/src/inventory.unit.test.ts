@@ -55,4 +55,36 @@ describe("parseFixedEntries", () => {
 `;
 		assert.strictEqual(parseFixedEntries(md).length, 0);
 	});
+
+	// Behavior-preservation lock for the linear-time regex rewrite (#3341): the
+	// hardened ENTRY_HEADING / FIXED_STATUS must accept and reject EXACTLY the same
+	// inputs as the old backtracking forms. These pin the tolerant-matching contract
+	// the docblocks promise (heading trailing-whitespace trim, casing/colon/backtick
+	// slack in the Status field) so a future regex edit can't silently regress it.
+	it("trims trailing whitespace off the heading (ENTRY_HEADING linear form)", () => {
+		const md = `###   spaced heading with trailing ws   \t
+
+- **Status:** \`fixed\` → fixed in PR [#900](x).
+`;
+		const entries = parseFixedEntries(md);
+		assert.strictEqual(entries.length, 1);
+		assert.strictEqual(entries[0]?.heading, "spaced heading with trailing ws");
+		assert.strictEqual(entries[0]?.fixPr, 900);
+	});
+
+	it("matches the Status field across casing, colon and backtick slack (FIXED_STATUS linear form)", () => {
+		const md = `### no backtick, extra spaces
+- **Status** :  fixed  — fixed in PR #101.
+
+### uppercase and colon inside markup
+- **STATUS:**: \`fixed\` fixed in PR #102.
+
+### backtick, no colon
+- **Status** \`fixed\` PR #103.
+`;
+		const byHeading = new Map(parseFixedEntries(md).map((e) => [e.heading, e.fixPr]));
+		assert.strictEqual(byHeading.get("no backtick, extra spaces"), 101);
+		assert.strictEqual(byHeading.get("uppercase and colon inside markup"), 102);
+		assert.strictEqual(byHeading.get("backtick, no colon"), 103);
+	});
 });
