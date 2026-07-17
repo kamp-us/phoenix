@@ -8,7 +8,7 @@
  * the exact `ChannelSend` the `channel_send` MCP tool routes through:
  *   - an intake ping sent through `channelSendFromPeer`'s `ChannelSend` reaches the receiver's
  *     channel edge (its recorded `ChannelSink` wake) and returns its delivered-to-inbox ack,
- *   - `inboxAddressFor` addresses all five standing roles distinctly (no role orphaned — the
+ *   - `inboxAddressFor` addresses every standing role distinctly (no role orphaned — the
  *     cartographer included).
  */
 import {assert, describe, it} from "@effect/vitest";
@@ -130,11 +130,19 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 	);
 });
 
-describe("crew/session — the five-role roster is intact (no role orphaned)", () => {
-	it("inboxAddressFor addresses all five standing roles distinctly", () => {
+describe("crew/session — the roster is intact (no role orphaned)", () => {
+	it("inboxAddressFor addresses every standing role distinctly", () => {
 		const addresses = CREW_ROLES.map(inboxAddressFor);
-		assert.lengthOf(addresses, 5, "the roster is exactly five roles (the cartographer included)");
-		assert.strictEqual(new Set(addresses).size, 5, "every role maps to a distinct inbox address");
+		assert.lengthOf(
+			addresses,
+			CREW_ROLES.length,
+			"every standing role gets an inbox address (the cartographer included)",
+		);
+		assert.strictEqual(
+			new Set(addresses).size,
+			CREW_ROLES.length,
+			"every role maps to a distinct inbox address",
+		);
 		assert.include(addresses, "inbox://cartographer", "the cartographer must have an address");
 	});
 });
