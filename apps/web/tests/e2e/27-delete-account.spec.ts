@@ -1,10 +1,11 @@
 import {expect, type Page, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 const CONFIRMATION = "hesabımı kalıcı olarak sil";
 
 async function bootstrapUsername(page: Page): Promise<void> {
-	const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 	await page.locator("input#bootstrap-username").fill(handle);
 	await page.getByRole("button", {name: /devam et/i}).click();
 	await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {

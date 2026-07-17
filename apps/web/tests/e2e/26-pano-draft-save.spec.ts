@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Pano taslak (draft-save) dark-ship invariant — the off-path proven in-browser.
@@ -19,9 +20,9 @@ import {signUp} from "./_helpers/auth";
  */
 test.describe("Pano draft-save (dark-ship, flag default off)", () => {
 	test("the taslak draft button is absent while the flag defaults off", async ({page}) => {
-		const localPart = `pd${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const localPart = `pd${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
-		const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.locator("input#bootstrap-username").fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {

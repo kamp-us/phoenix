@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signOut, signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Sözlük editDefinition / deleteDefinition end-to-end.
@@ -25,7 +26,7 @@ import {signOut, signUp} from "./_helpers/auth";
  */
 test.describe("Sözlük editDefinition / deleteDefinition", () => {
 	test("author can edit and delete their own definition", async ({page}) => {
-		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `ed${suffix}@kamp.us`});
 		const handle = `u-${suffix}`;
 		await page.locator("input#bootstrap-username").fill(handle);
@@ -97,7 +98,7 @@ test.describe("Sözlük editDefinition / deleteDefinition", () => {
 		page,
 	}) => {
 		// User A signs up, bootstraps, writes a definition.
-		const aSuffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const aSuffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `aa${aSuffix}@kamp.us`});
 		await page.locator("input#bootstrap-username").fill(`a-${aSuffix}`);
 		await page.getByRole("button", {name: /devam et/i}).click();
@@ -117,7 +118,7 @@ test.describe("Sözlük editDefinition / deleteDefinition", () => {
 
 		// Sign A out, sign B up.
 		await signOut(page);
-		const bSuffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const bSuffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `bb${bSuffix}@kamp.us`});
 		await page.locator("input#bootstrap-username").fill(`b-${bSuffix}`);
 		await page.getByRole("button", {name: /devam et/i}).click();

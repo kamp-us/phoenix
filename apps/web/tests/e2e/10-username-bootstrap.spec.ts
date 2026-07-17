@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Username bootstrap + topbar profile link.
@@ -32,10 +33,10 @@ test.describe("Username bootstrap", () => {
 	test("submitting the bootstrap form sets username + profile reachable via user menu", async ({
 		page,
 	}) => {
-		const localPart = `bs${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const localPart = `bs${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
 
-		const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 		const input = page.locator("input#bootstrap-username");
 		await input.fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
@@ -51,7 +52,7 @@ test.describe("Username bootstrap", () => {
 	});
 
 	test("client-side validation rejects invalid usernames", async ({page}) => {
-		const localPart = `bs${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const localPart = `bs${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
 		const input = page.locator("input#bootstrap-username");
 		await expect(input).toBeVisible();

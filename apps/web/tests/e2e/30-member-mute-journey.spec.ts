@@ -1,5 +1,6 @@
 import {expect, type Page, test} from "@playwright/test";
 import {completeBootstrap, signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * The reachability journey for the member-mute (sustur) vertical (ADR 0173 §2, epic #2035).
@@ -144,7 +145,7 @@ test.describe("member mute (sustur) @journey:member-mute", () => {
 
 		// A real signed-in session — muting is a signed-in act (CurrentUser is the muter).
 		await signUp(page, {
-			email: `mm${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@kamp.us`,
+			email: `mm${Date.now().toString(36)}${randomSuffix(4)}@kamp.us`,
 		});
 		await completeBootstrap(page);
 

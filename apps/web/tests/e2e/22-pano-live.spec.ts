@@ -1,6 +1,7 @@
 import {type BrowserContext, expect, type Page, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 import {promoteToYazar} from "./_helpers/promote";
+import {randomSuffix} from "./_helpers/rand";
 
 declare global {
 	interface Window {
@@ -36,7 +37,7 @@ declare global {
  * doesn't surface the assigned user id.
  */
 async function signUpAndBootstrap(page: Page): Promise<{email: string}> {
-	const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 	const email = `live${suffix}@kamp.us`;
 	await signUp(page, {email});
 	await page.locator("input#bootstrap-username").fill(`lv-${suffix}`);
@@ -85,7 +86,7 @@ test.describe("Pano live (two clients)", () => {
 
 			// Client B creates the post all live action targets and stays on its detail view —
 			// its live SSE connection + comments/header subscriptions are the observer.
-			const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+			const stamp = `${Date.now().toString(36)}${randomSuffix(3)}`;
 			const title = `live target ${stamp}`;
 			const postPath = await submitPost(pageB, title);
 			await expect(pageB.locator(".kp-pano-postpage__thread-heading")).toHaveText("0 yorum", {
@@ -147,7 +148,7 @@ test.describe("Pano live (two clients)", () => {
 			await promoteToYazar(emailA);
 			await promoteToYazar(emailB);
 
-			const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+			const stamp = `${Date.now().toString(36)}${randomSuffix(3)}`;
 			const title = `reconnect target ${stamp}`;
 			const postPath = await submitPost(pageB, title);
 
@@ -208,7 +209,7 @@ test.describe("Pano live (two clients)", () => {
 	test("definition add/delete + comment delete update in place without a reload", async ({
 		page,
 	}) => {
-		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUpAndBootstrap(page);
 
 		// --- definition.add: the new row appears live on the term page. ---
@@ -332,7 +333,7 @@ test.describe("Pano live (two clients)", () => {
 			});
 
 			// Client A submits a brand-new post.
-			const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+			const stamp = `${Date.now().toString(36)}${randomSuffix(3)}`;
 			const title = `feed live ${stamp}`;
 			await submitPost(pageA, title);
 

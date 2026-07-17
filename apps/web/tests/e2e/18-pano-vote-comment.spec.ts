@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
 
 /**
@@ -34,9 +35,9 @@ test.describe("Pano voteOnComment", () => {
 	// Re-enable = revert to plain test(...).
 	test.fixme("vote → unvote → vote round-trip on a fresh comment", async ({page}) => {
 		// Fresh sign-up + bootstrap.
-		const localPart = `vc${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const localPart = `vc${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
-		const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.locator("input#bootstrap-username").fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {

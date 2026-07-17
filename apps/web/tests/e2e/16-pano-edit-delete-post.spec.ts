@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signOut, signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Pano editPost / deletePost end-to-end.
@@ -18,7 +19,7 @@ import {signOut, signUp} from "./_helpers/auth";
  */
 test.describe("Pano editPost / deletePost", () => {
 	test("author can edit and delete their own post", async ({page}) => {
-		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `ep${suffix}@kamp.us`});
 		await page.locator("input#bootstrap-username").fill(`u-${suffix}`);
 		await page.getByRole("button", {name: /devam et/i}).click();
@@ -88,7 +89,7 @@ test.describe("Pano editPost / deletePost", () => {
 
 	test("non-author does not see edit/delete buttons on someone else's post", async ({page}) => {
 		// User A signs up, bootstraps, submits a post.
-		const aSuffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const aSuffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `aa${aSuffix}@kamp.us`});
 		await page.locator("input#bootstrap-username").fill(`a-${aSuffix}`);
 		await page.getByRole("button", {name: /devam et/i}).click();
@@ -113,7 +114,7 @@ test.describe("Pano editPost / deletePost", () => {
 
 		// Sign A out, sign B up.
 		await signOut(page);
-		const bSuffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const bSuffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `bb${bSuffix}@kamp.us`});
 		await page.locator("input#bootstrap-username").fill(`b-${bSuffix}`);
 		await page.getByRole("button", {name: /devam et/i}).click();

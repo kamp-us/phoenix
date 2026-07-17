@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Landing stats — `landingStats` GraphQL query feeding the landing-page
@@ -26,7 +27,7 @@ test.describe("Landing stats", () => {
 	});
 
 	test("submitting a post bumps totalPosts on /", async ({page}) => {
-		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `ls${suffix}@kamp.us`});
 		const handle = `ls-${suffix}`;
 		await page.locator("input#bootstrap-username").fill(handle);
