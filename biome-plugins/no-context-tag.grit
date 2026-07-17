@@ -23,21 +23,21 @@ or {
 		register_diagnostic(
 			span = $ref,
 			message = "`Context.Tag(...)` is the Effect-v3 service form and is banned — phoenix is on Effect v4 (.patterns/effect-context-service.md; #2736). Fix: define the service as `class S extends Context.Service<S, Shape>()('id') {}` — copy `packages/fate-effect/src/CurrentUser.ts` (or `apps/web/worker/db/Drizzle.ts`). Exception: // biome-ignore lint/plugin: <reason>.",
-			severity = "warn"
+			severity = "error"
 		)
 	},
 	`Context.GenericTag` as $ref where {
 		register_diagnostic(
 			span = $ref,
 			message = "`Context.GenericTag(...)` is the Effect-v3 service form and is banned — phoenix is on Effect v4 (.patterns/effect-context-service.md; #2736). Fix: define the service as `class S extends Context.Service<S, Shape>()('id') {}` — copy `packages/fate-effect/src/CurrentUser.ts` (or `apps/web/worker/db/Drizzle.ts`). Exception: // biome-ignore lint/plugin: <reason>.",
-			severity = "warn"
+			severity = "error"
 		)
 	},
 	`Effect.Service` as $ref where {
 		register_diagnostic(
 			span = $ref,
 			message = "`Effect.Service(...)` is not used in phoenix — v4 uses `Context.Service` only (.patterns/effect-context-service.md; #2736). Fix: define the service as `class S extends Context.Service<S, Shape>()('id') {}` — copy `packages/fate-effect/src/CurrentUser.ts` (or `apps/web/worker/db/Drizzle.ts`). Exception: // biome-ignore lint/plugin: <reason>.",
-			severity = "warn"
+			severity = "error"
 		)
 	}
 }

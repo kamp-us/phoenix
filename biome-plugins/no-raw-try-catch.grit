@@ -31,6 +31,6 @@ JsTryStatement() as $try where {
 	register_diagnostic(
 		span = $try,
 		message = "Raw `try/catch` is banned in an effect-importing file — real Effect code models failure in the `E` channel, not a native throw (#2736). Fix: use `Effect.try({ try, catch })` (sync) or `Effect.tryPromise({ try, catch })` (async), mapping the cause into a `Schema.TaggedErrorClass` — copy `packages/pipeline-cli/src/tools/epic-ledger/github.ts` (or `packages/fate-effect`). Exception (e.g. a pre-runtime bootstrap guard): // biome-ignore lint/plugin: <reason>.",
-		severity = "warn"
+		severity = "error"
 	)
 }

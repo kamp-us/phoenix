@@ -23,7 +23,7 @@ or {
 		register_diagnostic(
 			span = $arg,
 			message = "`Effect.promise(...)` is banned — a rejection becomes an uncatchable defect with an empty error channel (.patterns/index.md; #2736). Fix: use object-notation `Effect.tryPromise({ try, catch: (cause) => new SomeError({ cause }) })` with a `Schema.TaggedErrorClass`, or lift the pure core to an `Effect.fn` returning a typed `Effect` — copy `packages/pipeline-cli/src/tools/epic-ledger/github.ts` (or `packages/fate-effect`). Exception: // biome-ignore lint/plugin: <reason>.",
-			severity = "warn"
+			severity = "error"
 		)
 	},
 	`Effect.tryPromise($arg)` where {
@@ -31,7 +31,7 @@ or {
 		register_diagnostic(
 			span = $arg,
 			message = "Single-arg `Effect.tryPromise(() => ...)` is banned — with no `catch` a rejection becomes an uncatchable defect with an empty error channel (.patterns/index.md; #2736). Fix: use object-notation `Effect.tryPromise({ try, catch: (cause) => new SomeError({ cause }) })` with a `Schema.TaggedErrorClass` — copy `packages/pipeline-cli/src/tools/epic-ledger/github.ts` (or `packages/fate-effect`). Exception: // biome-ignore lint/plugin: <reason>.",
-			severity = "warn"
+			severity = "error"
 		)
 	}
 }
