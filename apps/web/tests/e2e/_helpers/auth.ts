@@ -1,3 +1,4 @@
+import {randomUUID} from "node:crypto";
 import {expect, type Page} from "@playwright/test";
 
 export interface Credentials {
@@ -18,7 +19,9 @@ export interface Credentials {
  * unique-email constraint when re-run.
  */
 function freshCredentials(opts?: Partial<Credentials>): Credentials {
-	const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+	// crypto.randomUUID over Math.random: js/insecure-randomness (#3341) — the suffix
+	// ids a credential fixture, a context where CodeQL expects a cryptographic source.
+	const suffix = `${Date.now()}-${randomUUID().slice(0, 8)}`;
 	return {
 		email: opts?.email ?? `e2e-${suffix}@kamp.us`,
 		password: opts?.password ?? "hunter222!",
@@ -112,7 +115,7 @@ export async function completeBootstrap(page: Page): Promise<void> {
 	const handle =
 		prefilled && prefilled.length >= 3
 			? prefilled
-			: `e2e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+			: `e2e${Date.now().toString(36)}${randomUUID().slice(0, 4)}`;
 	await input.fill(handle);
 
 	// Select by the stable submit class, NOT the label: the label now varies
