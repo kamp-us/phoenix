@@ -1,89 +1,154 @@
 # pipeline-crew
 
-The **pipeline-crew** plugin ships three battle-tested crew agent defs that *conduct* the
-[`kampus-pipeline`](../kampus-pipeline/) skills as a **crew** — three coordinated Claude Code
-sessions, one per seam, that turn the pipeline's report → triage → plan-epic → write-code →
-review → ship-it skills into a standing operation a single operator runs from a tmux window.
+The **pipeline-crew** plugin is the sole definition of the kamp.us crew: **four
+channel-native agent defs on a flat topology** that *conduct* the
+[`kampus-pipeline`](../kampus-pipeline/) skills as a standing operation. The defs address
+each other over a channel substrate (the in-repo `@kampus/pipeline-crew-mcp`), not a hand-run terminal relay, and the plugin ships the crew **doctrine as its default** — the rules that keep an
+agent factory honest are baked in, and only genuinely per-install values ride the
+personalization seam.
+
+The roster is governed by the crew roster law
+([ADR 0189](../../.decisions/0189-crew-roster-law-bridges-engines.md)): **three bridges + an
+engine pool.** A *bridge* owns a unique seam connecting the factory to something outside it,
+so it is singleton (cardinality 1); an *engine* owns no seam and is fungible throughput, so
+it scales by count (cardinality N). Read that law once — it is why the crew is shaped the way
+it is, and it holds every future roster change to the same test.
 
 This README is the **front door for a second operator**: everything below lets you stand up
-the same three-session crew *alone*, with your own people and machine, without copying anyone
-else's personal config. Every example here uses **fictional placeholders** — substitute your
-own values at stand-up.
+the same crew *alone*, with your own people and machine, without copying anyone else's
+personal config. Every operator-specific value enters through the
+[personalization seam](PERSONALIZATION.md); the shipped content carries **zero** operator data.
 
-## What the crew is — three sessions across three seams
-
-The pipeline is a conveyor from a raw observation to a merged PR. The crew is the three
-standing roles that *drive* that conveyor, each owning one seam of it:
+## What the crew is — four roles, flat topology
 
 ```
-    intake seam            execution seam               human seam
-  ┌──────────────┐      ┌─────────────────────┐      ┌────────────────┐
-  │  triage-guy  │ ───▶ │ engineering-manager │ ───▶ │  exec-assistant│
-  │  (intake)    │      │    (execution)      │      │   (EA / human) │
-  └──────────────┘      └─────────────────────┘      └────────────────┘
-   report → triage        coder → reviewer →            situational-
-   → plan-epic →          shipper, under                awareness,
-   canon/adr routing      WIP caps, QUEUED≠MERGED        single-owner
-                          verification, stall            notification,
-                          recovery                       §CP bank-and-relay
+                              ┌───────────────┐
+                              │  the founder  │
+                              └───────────────┘
+                       fog in  ▲             ▲  awareness out
+                               │             │
+                    ┌──────────┴───┐   ┌─────┴──────────┐
+                    │ cartographer │   │ chief-of-staff │   (bridges,
+                    │   (bridge)   │   │    (bridge)    │    cardinality 1)
+                    └──────┬───────┘   └───────┬────────┘
+             IntakePing    │                   │    IntakePing
+                           ▼                   ▼
+                    ┌───────────────────────────────┐
+                    │          intake-desk          │  (bridge)
+                    │  world's observations → work  │
+                    └───────────────┬───────────────┘
+                                    │
+                         the board (status:triaged)
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │     engineering-manager  ×N    │  (engine pool,
+                    │   pulls the board, builds it   │   cardinality N)
+                    └───────────────────────────────┘
 ```
 
-- **triage-guy — the intake seam** ([`agents/triage-guy.md`](agents/triage-guy.md)). The
-  standing intake session: it runs the report → triage loop over the target repo's
-  `status:needs-triage` queue and owns the **planning/canon seam** — spawning the `planner`
-  agent over freshly-triaged epics and the `canon`/`adr` agents for canon/decision-shaped work
-  (mirroring how the execution seam spawns `coder`/`reviewer`/`shipper`), rather than running
-  those skills inline. It hands `status:triaged` issues forward to the execution seam.
-- **engineering-manager — the execution seam**
-  ([`agents/engineering-manager.md`](agents/engineering-manager.md)). The execution conductor:
-  it drives each triaged issue to a *landed* merge by spawning the ephemeral kampus-pipeline
-  subagents (`coder` → `reviewer` → `shipper`) under **bounded WIP caps**, verifies a merge
-  actually landed (a merge-queue enqueue is never "done"), recovers stalled lanes, and banks
-  control-plane (§CP) PRs for human merge instead of shipping them.
-- **exec-assistant — the human seam** ([`agents/exec-assistant.md`](agents/exec-assistant.md)).
-  The executive assistant / chief-of-staff: it fronts the pipeline for the operator, gives
-  situational-awareness reads, routes execution to the engineering-manager session (it never
-  runs the pipeline itself), owns the **single-owner human-notification protocol**, and runs
-  the **§CP bank-and-relay** protocol for control-plane PRs.
+The four roles, each owning one accountability:
 
-The seams are one-directional: intake feeds execution, execution surfaces control-plane work
-and blockers to the human. Each session is a *conductor* — it spawns the ephemeral pipeline
-agents that write, review, and merge; it never does their work by hand.
+- **cartographer — the inbound-ideation bridge**
+  ([`agents/cartographer.md`](agents/cartographer.md)). Turns the founder's *fog* — a fuzzy,
+  not-yet-decided destination — into charted work by running the `wayfinder` skill (the
+  `wayfinder:map` / `wayfinder:backlog` label contract). It sits one stage upstream of triage
+  and never auto-resolves a founder decision — it surfaces the fork on the map and stops.
+- **intake-desk — the intake bridge** ([`agents/intake-desk.md`](agents/intake-desk.md)).
+  Turns the world's raw observations into typed, prioritized work *and talks back to whoever
+  filed* (the talking-back is what makes it a bridge, not a filter). Runs the report → triage
+  loop and owns the planning/canon seam (spawns the `planner` / `canon` / `adr` agents). A
+  *desk* is a standing seat staffed by whoever is on shift (renamed from `triage-guy`, which
+  named a person, not a seat).
+- **engineering-manager — the execution engine**
+  ([`agents/engineering-manager.md`](agents/engineering-manager.md)). Pure throughput,
+  cardinality N: pulls ready work off the board, claims each resource against the tracker to
+  deconflict, and drives coder → reviewer → shipper to a *landed* merge under bounded WIP
+  caps. It owns **no** human-facing seam — it banks §CP PRs on the board, never pings a human.
+- **chief-of-staff — the outbound-awareness bridge**
+  ([`agents/chief-of-staff.md`](agents/chief-of-staff.md)). Turns factory state into the
+  founder's understanding and owns human-facing comms to **both** humans (the founder and the
+  §CP approver). Its charter is the **live verifier**: verify, never relay — a relayed claim
+  is never truth, a self-reported PASS is not truth until the artifact is read, an enqueue is
+  never a merge. It is a conversation *peer, not a switchboard*, and *conversing is not
+  evidence* (renamed from `exec-assistant`; the router identity is deleted, the verifier
+  charter is the value).
 
-## Relationship to kampus-pipeline — a one-way dependency
+The topology is **flat**: the substrate makes peers dial each other directly, so no role
+routes for another. The old three-session hub-and-spoke — where the human seam routed
+execution work to the engineering-manager — is **dead** (ADR 0189): a planned child becomes
+pickable on the board and an engine pulls it; the engine banks a §CP PR on the board and the
+chief-of-staff carries it out.
 
-pipeline-crew **consumes** [`kampus-pipeline`](../kampus-pipeline/) and never the reverse:
+### The comms graph is sparse — the silence is the design
 
-- The crew defs conduct the pipeline's shipped **skills** and spawn its ephemeral **agents**
-  (`coder`, `reviewer`, `shipper`, `reporter`, `triager`, `planner`, `canon`, `adr`) **by their
-  shipped names** — they never re-implement, fork, or edit any file under
-  [`../kampus-pipeline/`](../kampus-pipeline/).
-- **Nothing under `claude-plugins/kampus-pipeline/` references or depends on pipeline-crew.**
-  The dependency direction is structural and one-way (epic #2342): the crew is an optional
-  layer *over* the pipeline, never a prerequisite of it. You can install kampus-pipeline and
-  run the skills by hand with no crew at all; the crew is the proven way to run them
-  continuously.
+Every channel edge is a **latency optimization over the board**, never a work order: the
+board is the durable source of truth, and a channel message just wakes a peer sooner. So the
+graph is deliberately sparse — most coordination is *silent by design*, carried by the board.
+Addressing is the one idiom **`channel_send {targetRole, kind, body}`** (below); the live
+edges are:
+
+| From | To | Kind | Why |
+|---|---|---|---|
+| cartographer | intake-desk | `IntakePing` | charted work reached the board; nudge a triage pass |
+| engineering-manager | intake-desk | `IntakePing` | a follow-up/blocker was filed; nudge a triage pass |
+| chief-of-staff | intake-desk | `IntakePing` | the needs-triage queue is worth a pass |
+| engineering-manager | chief-of-staff | `DrainProgress` (`inFlight`) | how many lanes are in flight — the one crew fact the board structurally cannot express |
+
+Everything else is **silent by design** — and the silences are load-bearing, not omissions:
+
+- **cartographer → engine** and **chief-of-staff → engine** — the deleted hub-and-spoke
+  spine. A direct edge would route *around* triage and hand an engine untriaged work; charted
+  and human work enters through the board.
+- **engine → engine** — engines claim from the board, never hand off to each other.
+- **cartographer ↔ chief-of-staff**, **intake-desk → chief-of-staff**, **engine →
+  cartographer** — no role routes its output through another; the board carries it.
+
+**Offline behavior is log and continue.** A `channel_send` to a down peer returns a
+`PeerUnreachableError` — you **log it and move on**. No retry, no escalation, no ack-required
+kinds: because every edge is an optimization over the board, a failed send costs latency,
+never correctness, and a genuinely-down peer surfaces on the **board** (the needs-triage count
+climbing, a PR state not moving), not through a transport error anyone chases.
+
+### The addressing idiom — `channel_send {targetRole, kind, body}`
+
+Roles address each other by **role**, through one MCP tool — you never discover or name another session;
+the substrate resolves the target role's inbox for you:
+
+- **`channel_send {targetRole, kind, body}`** — discovery is implicit inside the send (the
+  library resolves the role's inbox; there is no separate discover/claim tool). Success returns
+  an `InboxAck`; an unreachable peer returns a `PeerUnreachableError {target, reason}`.
+- **Inbound arrives as a wake tag** — `<channel from="inbox://<role>" kind="…">…JSON…</channel>`.
+- **An ack means delivered-to-inbox + wake enqueued — never seen-by-model.** The peer reads it
+  when it wakes; the ack is not a read receipt and never an answer. (This is the load-bearing
+  corollary the chief-of-staff carries: *conversing is not evidence* — coordinate over the
+  channel, read the board for truth.)
+
+## Relationship to kampus-pipeline and pipeline-crew-mcp
+
+- **pipeline-crew consumes [`kampus-pipeline`](../kampus-pipeline/), never the reverse.** The
+  defs conduct the pipeline's shipped **skills** and spawn its ephemeral **agents** (`coder`,
+  `reviewer`, `shipper`, `reporter`, `triager`, `planner`, `canon`, `adr`) **by their shipped
+  names** — they never re-implement, fork, or edit any file under
+  [`../kampus-pipeline/`](../kampus-pipeline/). The dependency is one-way: you can run the
+  pipeline skills by hand with no crew; the crew is the proven way to run them continuously.
+- **The channel substrate is [`@kampus/pipeline-crew-mcp`](../../packages/pipeline-crew-mcp/),
+  a runtime prerequisite** — the tracker + the `channel_send` toolkit the defs address each
+  other through. It is referenced, not bundled (an npm publish is a future unlock); the crew
+  expects it available on `main` HEAD.
 
 ### The crew is deliberately outside the §CP boundary
 
 kampus-pipeline carries a **control-plane (§CP)** boundary: PRs that touch the agent control
 plane bank for a human merge behind a hard GitHub gate (ADR
-[0135](../../.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)),
-never auto-shipping on green. **pipeline-crew's `agents/` is deliberately *not* part of that
-boundary** — a founder ruling recorded in epic #2342's resolved questions: the crew is an
-optional/extra surface whose PRs **auto-ship on green** by design, with no extension of the
-§CP path set or CODEOWNERS to this directory.
-
-The operational consequence for you: **edits to the crew defs in this directory merge
-automatically once their review gate passes** — they do not wait on a human merge. (PRs that
-touch kampus-pipeline's own §CP surfaces still bank for human merge — the ruling covers only
-this `pipeline-crew/` directory, not the pipeline it consumes.)
+[0135](../../.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)).
+**pipeline-crew's `agents/` is deliberately *not* part of that boundary** — the crew is an
+optional layer whose PRs **auto-ship on green** by design (epic #2342's resolved questions),
+with no extension of the §CP path set to this directory. Edits to the crew defs here merge
+automatically once their review gate passes; PRs that touch kampus-pipeline's own §CP surfaces
+still bank for a human merge.
 
 ## Install by name from the kampus marketplace
-
-The crew ships through the same self-hosted **kampus** marketplace as kampus-pipeline
-([`.claude-plugin/marketplace.json`](../../.claude-plugin/marketplace.json)). Add the
-marketplace once, then install the plugin by name:
 
 ```
 /plugin marketplace add kamp-us/phoenix
@@ -95,150 +160,30 @@ ADR [0110](../../.decisions/0110-plugin-carries-no-version-continuous-ship.md)),
 reach installed operators on the normal update path. Install kampus-pipeline the same way
 (`/plugin install kampus-pipeline@kampus`) — the crew conducts its skills, so you want both.
 
-## Personalize — fill the seam once (fictional examples only)
+## Personalize, then stand up
 
-The shipped plugin carries **zero real operator data** — the three defs, this README, and the
-config template hold only `<placeholders>`. Everything operator-specific enters through the
-**[personalization seam](PERSONALIZATION.md)**: at stand-up you copy the placeholder-only
-template to an operator-owned config file and fill it once. Each crew def resolves that file at
-spawn and addresses *your* people and machine.
+The shipped plugin carries **zero** operator data: the four defs, this README, and the config
+template hold only `<placeholders>`. Everything operator-specific enters through the
+**[personalization seam](PERSONALIZATION.md)** — at stand-up you copy the placeholder-only
+template to an operator-owned config and fill it once; each def resolves that file at spawn and
+addresses *your* people and machine.
 
 ```bash
 # 1. Copy the placeholder-only template to your operator-owned config (default path).
 cp "${CLAUDE_PLUGIN_ROOT}/crew.config.template.jsonc" .claude/crew.config.jsonc
 #    (or keep it anywhere and point $CREW_CONFIG at it).
-
 # 2. Fill EVERY <placeholder>. Leave no <...> behind.
-
 # 3. Git-ignore your copy — it holds your operator data and must never be committed.
 echo ".claude/crew.config.jsonc" >> .gitignore
 ```
 
-Resolution order mirrors kampus-pipeline's repo-as-config seam (ADR
+Resolution mirrors kampus-pipeline's repo-as-config seam (ADR
 [0062](../../.decisions/0062-repo-as-config-plugin.md)): **`$CREW_CONFIG`** if set, else the
 working repo's **`.claude/crew.config.jsonc`**. A def that can't resolve a filled config
-**stops and asks you to run stand-up** — there is no baked-in default human.
-
-### The seam dimensions — what to fill
-
-Every operator-specific dimension is enumerated once, canonically, in
-[`PERSONALIZATION.md`](PERSONALIZATION.md#the-personalization-dimensions--enumerated-here-in-one-place).
-Below is a worked fill using **entirely fictional** values — *never* a real operator, handle,
-or channel; substitute your own:
-
-| Dimension | Config keys | Fictional example |
-|---|---|---|
-| **Operator / founder** — the human the crew serves and reports to | `operator.name`, `operator.handle` | `"Robin Operator"`, `"@robin"` |
-| **Control-plane approver** — who reviews/approves/merges §CP PRs (the second human the EA banks §CP work for, ADR 0135) | `controlPlaneApprover.name`, `controlPlaneApprover.login` | `"Sam Approver"`, `"sam-approver"` |
-| **Notification channel / handle** — where the single-owner notification protocol delivers pings | `notification.channel`, `notification.handle` | `"#crew-pings"`, `"@robin"` |
-| **tmux / session naming** — the session + the three per-role windows the roles address each other by | `tmux.session`, `tmux.windows.ea`, `tmux.windows.engineeringManager`, `tmux.windows.triage` | `"crew"`, `"ea"`, `"em"`, `"triage"` |
-| **Model tiers** — the tier each role runs on (planning-tier intake vs execution/build-tier conductor, so a role never silently downgrades a spawned subagent) | `modelTiers.ea`, `modelTiers.engineeringManager`, `modelTiers.triage` | `"planning-tier"`, `"build-tier"`, `"planning-tier"` |
-| **WIP caps** — the engineering-manager's bounded concurrent-lane count per class (product vs platform/pipeline) | `wipCaps.productLanes`, `wipCaps.platformLanes` | `2`, `2` |
-
-A filled [`crew.config.template.jsonc`](crew.config.template.jsonc) with these fictional values
-looks like:
-
-```jsonc
-{
-  "operator": { "name": "Robin Operator", "handle": "@robin" },
-  "controlPlaneApprover": { "name": "Sam Approver", "login": "sam-approver" },
-  "notification": { "channel": "#crew-pings", "handle": "@robin" },
-  "tmux": {
-    "session": "crew",
-    "windows": { "ea": "ea", "engineeringManager": "em", "triage": "triage" }
-  },
-  "modelTiers": { "ea": "planning-tier", "engineeringManager": "build-tier", "triage": "planning-tier" },
-  "wipCaps": { "productLanes": 2, "platformLanes": 2 }
-}
-```
-
-The model tiers are load-bearing, not cosmetic: because the ephemeral pipeline agents are
-`model: inherit`, a conductor session brought up on the wrong tier silently downgrades every
-subagent it spawns. Bring the **engineering-manager** up on the build tier and the intake
-session on the planning tier — the config records which is which so no role guesses.
-
-## Stand up — one command
-
-Once the config is filled, boot the **whole crew in one command**:
-
-```
-/stand-up
-```
-
-That runs the plugin's thin [`commands/stand-up.md`](commands/stand-up.md), which invokes the
-`@kampus/pipeline-crew-mcp` substrate's `stand-up` subcommand (the launcher home ratified by
-ADR [0192](../../.decisions/0192-standup-launcher-crew-mcp-subcommand.md) — the plugin carries
-**no launcher logic**, only this thin front). You can also run the substrate directly:
-
-```bash
-pipeline-crew-mcp stand-up            # defaults --project-root to the working directory
-```
-
-The launcher runs, **in order**:
-
-1. **Assert the pinned CLI version** (`cliVersion`) — a hard gate, so the crew never launches
-   on a drifted Claude Code CLI (channels are a research preview whose behavior varies by
-   version).
-2. **Ensure the per-project tracker** is up (start-if-absent / reuse-if-present).
-3. **Derive the roster session set** — one session per bridge role + `engineCount` engine
-   sessions, each addressed to its role-lease inbox.
-4. **Build each session's bind** (its inline channel `--mcp-config` + registration flag) and
-   **compute its tmux placement** (a window under `tmux.session`).
-5. **Launch** each `claude` session, bound to its role lease and placed on your screen.
-
-It is **fail-loud with no partial crew**: every bind and placement is resolved and validated
-*before the first session launches*, so a drifted CLI pin, a missing config dimension, an
-unstartable tracker, an inert channel, or an unnamed/colliding tmux window **aborts before any
-session is launched** and names the cause. Nothing is hand-launched — fix the named precondition
-and re-run. This is the launcher-automated path; the by-hand walkthrough below shows what each
-session is and how to bring the crew up manually.
-
-## Stand up by hand — what each session is
-
-You can also bring the crew up manually. Create one tmux session with one window per seam and
-start a Claude Code session in each. The window names come from your `tmux.*` config — the
-fictional fill below uses session `crew` with windows `triage`, `em`, `ea`:
-
-```bash
-# Create the session with the intake window, then add the execution + human windows.
-# Window names are your tmux.windows.* values (fictional here: triage / em / ea).
-tmux new-session -d -s crew -n triage
-tmux new-window  -t crew   -n em
-tmux new-window  -t crew   -n ea
-```
-
-Then, in each window, start Claude Code on that role's configured model tier and give it the
-matching spawn prompt. Which session runs what:
-
-- **`triage` window — the intake seam.** Bring the session up on `modelTiers.triage` (the
-  planning tier). Spawn prompt:
-
-  > *You are the pipeline-crew intake session. Follow the `triage-guy` agent def. Run the
-  > report → triage loop over the `status:needs-triage` queue and plan freshly-triaged epics
-  > (spawning the `planner`). Resolve the personalization seam from `.claude/crew.config.jsonc`
-  > before acting; hand triaged issues to the `em` window.*
-
-- **`em` window — the execution seam.** Bring the session up on
-  `modelTiers.engineeringManager` (the build tier — the one that must not downgrade its
-  subagents). Spawn prompt:
-
-  > *You are the pipeline-crew execution conductor. Follow the `engineering-manager` agent def.
-  > Drive triaged issues to landed merges by spawning `coder` → `reviewer` → `shipper`
-  > (`isolation:worktree`) under the configured WIP caps, verify each merge landed, and bank
-  > §CP PRs for the control-plane approver. Resolve the personalization seam first.*
-
-- **`ea` window — the human seam.** Bring the session up on `modelTiers.ea`. Spawn prompt:
-
-  > *You are the pipeline-crew EA / chief-of-staff. Follow the `exec-assistant` agent def. Give
-  > me situational-awareness reads, route execution to the `em` window (never run the pipeline
-  > yourself), own the single-owner notification protocol, and run §CP bank-and-relay for
-  > control-plane PRs. Resolve the personalization seam first.*
-
-Each session resolves the personalization config at spawn and addresses your people and windows
-by *their* configured names — never a literal. From there the crew runs the pipeline
-continuously: triage-guy feeds triaged work to the engineering-manager, which drives it to
-merged PRs and surfaces control-plane work and blockers to the EA, which is your single point
-of contact.
+**stops and asks you to run stand-up** — there is no baked-in default human. The full dimension
+table, and how the crew boots from that one config (the tracker + the three bridges + the N
+engines the config declares), are the [personalization seam](PERSONALIZATION.md)'s scope; read
+it there rather than duplicating the key list here.
 
 ## Layout
 
@@ -246,30 +191,25 @@ of contact.
 pipeline-crew/
 ├── .claude-plugin/plugin.json    # manifest (no version — continuous-ship, ADR 0110)
 ├── agents/
-│   ├── triage-guy.md             # intake seam
-│   ├── engineering-manager.md    # execution seam
-│   └── exec-assistant.md         # human seam (EA / chief-of-staff)
-├── commands/
-│   └── stand-up.md               # the one stand-up command (thin front for the substrate launcher, ADR 0192)
-├── PERSONALIZATION.md            # the personalization seam — the def contract + dimension table
+│   ├── cartographer.md           # inbound-ideation bridge (wayfinder)
+│   ├── intake-desk.md            # intake bridge (report → triage → plan)
+│   ├── engineering-manager.md    # execution engine (coder → reviewer → shipper), ×N
+│   └── chief-of-staff.md         # outbound-awareness bridge (live verifier, human comms)
+├── PERSONALIZATION.md            # the personalization seam — the config contract + dimensions
 ├── crew.config.template.jsonc    # placeholder-only per-install config template
 └── README.md                     # this file
 ```
 
-The launcher's mechanical logic lives in the `@kampus/pipeline-crew-mcp` substrate
-(`packages/pipeline-crew-mcp/src/standup/`), invoked by the thin `commands/stand-up.md` — the
-plugin ships no launcher Node code (ADR 0192).
-
 ## See also
 
-- [`PERSONALIZATION.md`](PERSONALIZATION.md) — the seam mechanism, the canonical dimension
-  table, and the stand-up contract the three defs write against.
-- [`commands/stand-up.md`](commands/stand-up.md) — the one stand-up command (the thin front for
-  the substrate launcher).
-- ADR [0192](../../.decisions/0192-standup-launcher-crew-mcp-subcommand.md) — the launcher's home
-  + form (the `pipeline-crew-mcp stand-up` subcommand invoked by one thin plugin command).
+- [`PERSONALIZATION.md`](PERSONALIZATION.md) — the seam mechanism, the dimension table, and the
+  stand-up contract the four defs write against.
 - [`../kampus-pipeline/`](../kampus-pipeline/) — the pipeline this crew conducts (the skills +
   ephemeral agents).
+- [`../../packages/pipeline-crew-mcp/`](../../packages/pipeline-crew-mcp/) — the channel
+  substrate (the tracker + `channel_send`) the defs address each other through.
+- ADR [0189](../../.decisions/0189-crew-roster-law-bridges-engines.md) — the crew roster law
+  (bridges vs engines, cardinality-from-kind) that governs this roster.
 - ADR [0062](../../.decisions/0062-repo-as-config-plugin.md) — the repo-as-config seam this
   crew's personalization mirrors.
 - ADR [0110](../../.decisions/0110-plugin-carries-no-version-continuous-ship.md) — why neither
