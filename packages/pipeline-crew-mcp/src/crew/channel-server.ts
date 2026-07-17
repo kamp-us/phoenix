@@ -8,8 +8,10 @@
  * (`CrewTracker`, the peer `Inbox`/`Dialer`/`Tracker` ports) in context, so the tests drive it
  * fully in-memory (`RpcTest` client + an in-memory connect) while production supplies the socket
  * bindings below. The one crew-specific rule the wiring enforces that the generic peer does not:
- * the role-uniqueness lease — a session claims its ROLE up front, and a second live session for a
- * held role is rejected (`RoleUniquenessError`), never allowed to co-occupy it.
+ * the per-kind cardinality lease — a session claims its role slot up front, and a second live
+ * session is rejected (`RoleUniquenessError`) or admitted depending on the role's KIND. This is
+ * the ONE place cardinality is enforced, off `kindOf` (ADR 0189); the generic tracker/protocol
+ * stay role-agnostic (`RoleId` opaque), fed only the derived string lease key.
  *
  * The runnable stdio entry (the edge MCP server + `ChannelSink.layerFromMcpServer` + the send
  * tool's `ChannelSend` bound to this session's peer) is assembled by the bin/cutover (#3062,
@@ -30,8 +32,26 @@ import {
 	type RolePresence,
 } from "../peer/index.ts";
 import {RoleUniquenessError} from "./errors.ts";
-import type {CrewRole} from "./roles.ts";
+import {type CrewRole, kindOf} from "./roles.ts";
 import {type ClaimReply, CrewTracker} from "./tracker.ts";
+
+/**
+ * The cardinality lease key for a role, derived from its KIND — the ONE expression of per-kind
+ * cardinality (ADR 0189). A `bridge` (cardinality 1) leases the bare role, so a second bridge
+ * necessarily targets the SAME key and collides; an `engine` (cardinality N) leases a per-instance
+ * key (role + its inbox address), so N engine instances target DISTINCT keys and never collide.
+ * Cardinality thus falls entirely out of the key — the claim/collision path is identical for both
+ * kinds — which is what makes a bridge-with-two-holders structurally unrepresentable rather than
+ * runtime-checked. The exhaustive switch means a new `CrewRoleKind` fails to compile until kinded.
+ */
+const cardinalityLeaseKey = (role: CrewRole, address: string): string => {
+	switch (kindOf(role)) {
+		case "bridge":
+			return role;
+		case "engine":
+			return `${role}#${address}`;
+	}
+};
 
 export interface CrewChannelConfig {
 	readonly role: CrewRole;
@@ -51,21 +71,21 @@ export interface CrewChannel {
 }
 
 /**
- * Stand up a crew channel for one role: acquire the role-uniqueness lease, then compose the
- * peer (which announces its presence for the connection lifetime). Requires the substrate
- * seams — `CrewTracker`, the peer `Tracker`/`Inbox`/`Dialer` ports — in context.
+ * Stand up a crew channel for one role: acquire its per-kind cardinality lease, then compose the
+ * peer (which announces its presence for the connection lifetime). Requires the substrate seams —
+ * `CrewTracker`, the peer `Tracker`/`Inbox`/`Dialer` ports — in context.
  *
- * The role-uniqueness lease is the one crew-specific rule the generic peer does not enforce:
- * a session claims its ROLE and is REJECTED (not co-occupied) when a different live session
- * already holds it. A resource collision is a value; a role collision is a rejection — that
- * asymmetry is the whole point of the lease (see `./errors.ts`).
+ * The lease is keyed by `cardinalityLeaseKey` (see above): a bridge collides on its shared role
+ * key (a second live holder is REJECTED with `RoleUniquenessError`), an engine gets a per-instance
+ * key (a second holder is admitted). A resource collision is a value; a bridge role collision is a
+ * rejection — that asymmetry is the whole point of the lease (see `./errors.ts`).
  */
 export const makeCrewChannel = Effect.fn("crew.makeCrewChannel")(function* (
 	config: CrewChannelConfig,
 ) {
 	const tracker = yield* CrewTracker;
 	const lease = yield* tracker.claim({
-		resource: config.role,
+		resource: cardinalityLeaseKey(config.role, config.address),
 		claimant: config.address,
 		role: config.role,
 	});
