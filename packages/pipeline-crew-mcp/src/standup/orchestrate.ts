@@ -322,6 +322,9 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 				// Thread the session-set-derived per-instance identity so the launched engine binds it
 				// rather than re-minting its own (#3354 seam 3); a bridge is a singleton and has none.
 				instance: session.kind === "engine" ? session.instance : undefined,
+				// The role's configured model tier → the session's `--model` (#3423); undefined for a
+				// role that set none, so bind emits no `--model` and it boots on the CLI default.
+				tier: config.roleTiers[session.role],
 				channels: config.channels,
 			}),
 		);

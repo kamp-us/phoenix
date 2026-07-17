@@ -16,13 +16,15 @@
  * to an "unpinned" launch (the key is simply absent), so the crew boot stops fail-closing on
  * every frequent Claude Code auto-update; pin ONLY to deliberately lock a version. A pin that
  * IS present must still be a valid `CLI_VERSION_RE` version — a malformed present pin fails closed.
- * `LaunchConfig` extracts only the launch dimensions from the one-role-map seam shape (ADR 0189):
- * the engine count is folded into `roles["engineering-manager"].count`, and excess seam keys
- * (operator/notification/tier/wipCap/…) are ignored. There is no config-read tmux dimension —
+ * `LaunchConfig` extracts the launch dimensions from the one-role-map seam shape (ADR 0189): the
+ * engine count is folded into `roles["engineering-manager"].count`, and each role's optional `tier`
+ * — the session model, #3423 — is folded into `roleTiers`. Remaining seam keys
+ * (operator/notification/wipCap/…) are ignored. There is no config-read tmux dimension —
  * tmux window placement now derives from role identity at launch (tmux-placement.ts), not config.
  */
 import {readFileSync} from "node:fs";
 import {Effect, Schema} from "effect";
+import {CREW_ROLES} from "../crew/index.ts";
 
 /**
  * A channel-server ref, in the exact registration grammar Claude Code 2.1.212 accepts —
@@ -89,6 +91,37 @@ export const EngineCount = Schema.Int.check(
 export type EngineCount = typeof EngineCount.Type;
 
 /**
+ * A role's model tier — the operator's per-role cost/capability control (#3423), decoded so the
+ * launcher can boot each session's `claude` on the tier's model (`--model <alias>`), not the CLI
+ * default. The vocabulary is the set of "latest model family" aliases the installed Claude Code
+ * CLI's `--model` flag accepts, grounded against the bundle NOT intuited (CLAUDE.md's "ground
+ * falsifiable runtime claims in source"): the 2.1.212 `--model` help reads *"Provide an alias for
+ * the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full name (e.g.
+ * 'claude-fable-5')"*, and its `resolveModelAlias` accepts `fable | haiku | opus | sonnet` (VERSION
+ * 2.1.212, GIT_SHA 8b2783a). The `[1m]` / `opusplan` / `default` alias variants are deliberately
+ * excluded — a crew tier names a model FAMILY, not a context-window or plan-mode combo. A malformed
+ * tier decodes to a `LaunchConfigError` naming the `tier` path (fail-closed, no silent default).
+ */
+export const Tier = Schema.Literals(["opus", "sonnet", "haiku", "fable"]);
+export type Tier = typeof Tier.Type;
+
+/**
+ * tier → the `claude --model` alias the launched session boots on. Each family tier is a verbatim
+ * `--model` alias in the installed bundle (grounded on `Tier` above), so the map is identity today —
+ * but it stays an explicit single-source seam so a future tier whose name diverges from its `--model`
+ * alias is one edit here, never a scatter of string literals across the launcher (#3423).
+ */
+export const TIER_MODEL = {
+	opus: "opus",
+	sonnet: "sonnet",
+	haiku: "haiku",
+	fable: "fable",
+} as const satisfies Record<Tier, string>;
+
+/** The `--model <alias>` a tier boots the session on. Total over `Tier` by `TIER_MODEL`'s satisfies. */
+export const tierModel = (tier: Tier): string => TIER_MODEL[tier];
+
+/**
  * The channel-registration dimension: the mode, the servers each session registers, and the
  * plugin allowlist.
  *
@@ -130,21 +163,34 @@ export const LaunchConfig = Schema.Struct({
 	cliVersion: Schema.optionalKey(CliVersion),
 	engineCount: EngineCount,
 	channels: ChannelConfig,
+	/**
+	 * The per-role model tiers (#3423), folded out of the role map into a flat lookup the bind
+	 * constructor consumes by role. A role that omits `tier` is simply absent here — the launcher then
+	 * emits no `--model` for it, preserving the CLI-default boot rather than guessing a tier.
+	 */
+	roleTiers: Schema.Record(Schema.String, Tier),
 });
 export type LaunchConfig = typeof LaunchConfig.Type;
 
+/** A role entry's optional `tier` — the launch dimension #3423 promotes from ignored excess key. */
+const RoleTierEntry = Schema.Struct({tier: Schema.optionalKey(Tier)});
+
 /**
- * The one-role-map seam shape on disk (ADR 0189): a `roles` map keyed by the crew role slugs, from
- * which the launch reader takes exactly ONE value — the engine pool size at
- * `roles["engineering-manager"].count`. The rest of each role entry (`tier`, `wipCap`) and the
- * whole bridge entries are def-spawn / prose bindings, not launch inputs, so they decode as ignored
- * excess keys — only `engineering-manager.count` is a required launch dimension here, fail-closed.
- * `cliVersion` mirrors `LaunchConfig`'s exact-optional shape (issue #3417): omit ⇒ unpinned.
+ * The one-role-map seam shape on disk (ADR 0189): a `roles` map keyed by the crew role slugs. The
+ * launch reader takes the engine pool size at `roles["engineering-manager"].count` AND — as of
+ * #3423 — each role's optional `tier` (its session's `--model`), no longer an ignored excess key.
+ * The bridge entries are `optionalKey` (a role may omit its tier → no `--model`, the CLI default);
+ * `engineering-manager` is required for its `count`, its `tier` optional. Remaining entry keys
+ * (`wipCap`, the operator/notification blocks) stay ignored excess. `cliVersion` mirrors
+ * `LaunchConfig`'s exact-optional shape (issue #3417): omit ⇒ unpinned.
  */
 const RawLaunchConfig = Schema.Struct({
 	cliVersion: Schema.optionalKey(CliVersion),
 	roles: Schema.Struct({
-		"engineering-manager": Schema.Struct({count: EngineCount}),
+		"chief-of-staff": Schema.optionalKey(RoleTierEntry),
+		cartographer: Schema.optionalKey(RoleTierEntry),
+		"intake-desk": Schema.optionalKey(RoleTierEntry),
+		"engineering-manager": Schema.Struct({count: EngineCount, tier: Schema.optionalKey(Tier)}),
 	}),
 	channels: ChannelConfig,
 });
@@ -245,13 +291,21 @@ export const decodeLaunchConfig = (
 	configPath: string,
 ): Effect.Effect<LaunchConfig, LaunchConfigError> =>
 	Schema.decodeUnknownEffect(RawLaunchConfig)(input).pipe(
-		Effect.map(
-			(raw): LaunchConfig => ({
+		Effect.map((raw): LaunchConfig => {
+			// Fold each role's decoded `tier` into the flat lookup, skipping a role that omitted one so
+			// its absence stays absence — the bind then emits no `--model`, preserving the CLI default.
+			const roleTiers: Record<string, Tier> = {};
+			for (const role of CREW_ROLES) {
+				const tier = raw.roles[role]?.tier;
+				if (tier !== undefined) roleTiers[role] = tier;
+			}
+			return {
 				...(raw.cliVersion !== undefined ? {cliVersion: raw.cliVersion} : {}),
 				engineCount: raw.roles["engineering-manager"].count,
 				channels: raw.channels,
-			}),
-		),
+				roleTiers,
+			};
+		}),
 		Effect.mapError((error) => new LaunchConfigError({configPath, reason: error.message})),
 	);
 

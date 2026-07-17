@@ -308,6 +308,27 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 		}),
 	);
 
+	it.effect("threads each role's config tier into its launch --model (#3423, end to end)", () =>
+		Effect.gen(function* () {
+			// rawConfigAt sets the founder ruling — cartographer=fable, the rest=opus — so the boot
+			// proves each session comes up on its configured tier's model, not the CLI default.
+			const {input, launched} = baseInput({engineCount: 2});
+			yield* runStandUp(input);
+
+			const modelOf = (role: string): readonly string[] | undefined =>
+				launched.find((p) => p.session.role === role)?.bind.modelArg;
+			assert.deepStrictEqual([...(modelOf("chief-of-staff") ?? [])], ["--model", "opus"]);
+			assert.deepStrictEqual([...(modelOf("cartographer") ?? [])], ["--model", "fable"]);
+			assert.deepStrictEqual([...(modelOf("intake-desk") ?? [])], ["--model", "fable"]);
+			// every engine boots on the engineering-manager tier (opus).
+			for (const p of launched.filter((x) => x.session.kind === "engine")) {
+				assert.deepStrictEqual([...p.bind.modelArg], ["--model", "opus"]);
+				// --model leads the argv, ahead of the #3425 mcp-config fragment.
+				assert.strictEqual(p.bind.argv[0], "--model");
+			}
+		}),
+	);
+
 	it.effect(
 		"resolves the target session BEFORE placing any window, and opens every window into it (#3418 AC1)",
 		() =>
