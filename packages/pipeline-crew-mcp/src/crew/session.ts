@@ -47,6 +47,7 @@ import {
 	makeCrewChannel,
 } from "./channel-server.ts";
 import type {RoleUniquenessError} from "./errors.ts";
+import {crewHeartbeatLayer} from "./heartbeat.ts";
 import type {CrewRole} from "./roles.ts";
 import {type CrewTracker, crewTrackerHostOrDialLayer, peerTrackerLayer} from "./tracker.ts";
 
@@ -130,14 +131,20 @@ export const crewSessionLayer = (config: CrewSessionConfig) => {
 		experimental: channelExperimentalCapability,
 	}).pipe(Layer.provide(NodeStdio.layer));
 
+	// The peer substrate, built once and SHARED (by memoization) between the outbound binding and the
+	// heartbeat loop, so both drive the one hosted tracker / registry this session announces on.
+	const substrate = peerSocketSubstrate(config);
+
 	// outbound: the channel_send toolkit, its ChannelSend bound to this session's peer.
 	const outbound = McpServer.toolkit(ChannelToolkit).pipe(
 		Layer.provide(channelToolHandlers),
-		Layer.provide(
-			channelSendFromPeer(config.role).pipe(Layer.provide(peerSocketSubstrate(config))),
-		),
+		Layer.provide(channelSendFromPeer(config.role).pipe(Layer.provide(substrate))),
 		Layer.provide(server),
 	);
+
+	// keepalive: refresh this session's presence + role lease under the TTL so it never ages out while
+	// the session is live (#3218). Shares `substrate`, so the beats reach the registry announced on.
+	const heartbeat = crewHeartbeatLayer(address).pipe(Layer.provide(substrate));
 
 	// inbound: the peer-inbox socket server, its deliveries waking THIS running server.
 	const inbound = inboxServerSocketLayer(address).pipe(
@@ -145,7 +152,7 @@ export const crewSessionLayer = (config: CrewSessionConfig) => {
 		Layer.provide(server),
 	);
 
-	return Layer.mergeAll(outbound, inbound);
+	return Layer.mergeAll(outbound, heartbeat, inbound);
 };
 
 /**
