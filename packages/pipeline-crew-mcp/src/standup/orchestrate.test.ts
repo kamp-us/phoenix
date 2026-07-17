@@ -1,16 +1,23 @@
 /**
- * standup/orchestrate — the one stand-up command (issue #3299). These tests pin the two properties
- * the composition owns: the MANDATED ORDER (version assert → ensure tracker → derive roster → per-
- * session bind + tmux placement → launch) and FAIL-LOUD WITH NO PARTIAL CREW (every precondition
- * failure aborts, naming its cause, with zero sessions launched). Every side-effecting step is
- * injected — a version reader, a recording tracker, a recording launcher — so the whole boot runs in
- * a unit test with no real subprocess, tmux, or `claude`.
+ * standup/orchestrate — the one stand-up command (issue #3299), booting against the post-#3236
+ * one-role-map config (ADR 0189): the engine count folds into `roles["engineering-manager"].count`
+ * and there is NO config tmux dimension — window placement derives from role identity at launch.
+ * These tests pin the two properties the composition owns: the MANDATED ORDER (version assert →
+ * ensure tracker → derive roster → per-session bind + tmux placement → launch) and FAIL-LOUD WITH NO
+ * PARTIAL CREW (every precondition failure aborts, naming its cause, with zero sessions launched).
+ * Every side-effecting step is injected — a version reader, a recording tracker, a recording launcher
+ * — so the whole boot runs in a unit test with no real subprocess, tmux, or `claude`.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Schema} from "effect";
+import {Effect} from "effect";
 import {CREW_ROLES, kindOf} from "../crew/index.ts";
 import {CREW_SESSION_INSTANCE_FLAG} from "./bind.ts";
-import {LaunchConfig, LaunchConfigError} from "./config.ts";
+import {
+	DEFAULT_CONFIG_PATH,
+	decodeLaunchConfig,
+	type LaunchConfig,
+	LaunchConfigError,
+} from "./config.ts";
 import {type TrackerHandle, TrackerNotServingError} from "./ensure-tracker.ts";
 import {
 	CliVersionAssertError,
@@ -19,29 +26,38 @@ import {
 	type LaunchPlan,
 	runStandUp,
 	type StandUpInput,
-	TmuxWindowUnnamedError,
 } from "./index.ts";
 
 const PINNED = "2.1.212";
 const SERVER = "@kampus/pipeline-crew-mcp";
 
-/** A dev-mode config carrying the crew's own `server:` ref — the shape bind + config both accept. */
-const configAt = (cliVersion: string, engineCount: number): LaunchConfig =>
-	Schema.decodeUnknownSync(LaunchConfig)({
-		cliVersion,
-		engineCount,
-		channels: {mode: "development", servers: [`server:${SERVER}`], allowedChannelPlugins: []},
-	});
-
-/** Operator tmux naming: a window per bridge role, keyed by the role slug (engines self-name by id). */
-const tmuxNaming = {
-	session: "crew",
-	windows: {
-		"chief-of-staff": "cos",
-		cartographer: "carto",
-		"intake-desk": "intake",
+/**
+ * A post-#3236 one-role-map crew config (raw, on-disk shape): the engine count lives at
+ * `roles["engineering-manager"].count`; bridge entries + per-role tier/wipCap are excess seam keys;
+ * there is NO tmux key. Decoded through `decodeLaunchConfig` so the boot exercises the real
+ * new-template decode end to end (the dogfood: stand up from a config regenerated from the template).
+ */
+const rawConfigAt = (cliVersion: string, engineCount: number): unknown => ({
+	cliVersion,
+	roles: {
+		"chief-of-staff": {tier: "opus"},
+		cartographer: {tier: "fable"},
+		"intake-desk": {tier: "fable"},
+		"engineering-manager": {
+			tier: "opus",
+			count: engineCount,
+			wipCap: {productLanes: 1, platformLanes: 1},
+		},
 	},
-};
+	// dev mode carries the crew's own `server:` ref — the shape bind + config both accept.
+	channels: {mode: "development", servers: [`server:${SERVER}`], allowedChannelPlugins: []},
+});
+
+const configAt = (
+	cliVersion: string,
+	engineCount: number,
+): Effect.Effect<LaunchConfig, LaunchConfigError> =>
+	decodeLaunchConfig(rawConfigAt(cliVersion, engineCount), DEFAULT_CONFIG_PATH);
 
 /** A deterministic engine instance-id generator so the derived set + windows are pinnable. */
 const counter = () => {
@@ -90,8 +106,7 @@ const baseInput = (
 		trackerCalls: calls,
 		input: {
 			projectRoot: "/repo",
-			tmuxConfig: Effect.succeed(tmuxNaming),
-			config: Effect.succeed(configAt(PINNED, engineCount ?? 2)),
+			config: configAt(PINNED, engineCount ?? 2),
 			readVersionOutput: Effect.succeed(`${PINNED} (Claude Code)`),
 			instanceId: counter(),
 			ensureTracker,
@@ -127,9 +142,9 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 					assert.strictEqual(p.bind.role, p.session.role);
 					assert.match(p.session.address, /^inbox:\/\//);
 				}
-				// bridges placed on their operator-named windows, engines on their generated instance ids.
+				// bridges placed on windows derived from their role slug, engines on their generated ids.
 				const cos = launchedBridges.find((p) => p.session.role === "chief-of-staff");
-				assert.strictEqual(cos?.placement.window, "cos");
+				assert.strictEqual(cos?.placement.window, "chief-of-staff");
 				assert.deepStrictEqual(launchedEngines.map((p) => p.placement.window).sort(), [
 					"e0",
 					"e1",
@@ -197,21 +212,6 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 		}),
 	);
 
-	it.effect("aborts when a bridge names no operator tmux window — no partial crew (AC3)", () =>
-		Effect.gen(function* () {
-			const {input, launched} = baseInput({
-				// cartographer/intake-desk unnamed
-				tmuxConfig: Effect.succeed({session: "crew", windows: {"chief-of-staff": "cos"}}),
-			});
-			const err = yield* Effect.flip(runStandUp(input));
-
-			assert.instanceOf(err, TmuxWindowUnnamedError);
-			// placement is resolved for the WHOLE set before the first launch — a single unnamed window
-			// aborts stand-up with zero sessions up (the no-partial-crew line).
-			assert.strictEqual(launched.length, 0);
-		}),
-	);
-
 	it.effect(
 		"aborts when the crew server would be inert (unregistered channel), before any launch (AC3)",
 		() =>
@@ -220,24 +220,6 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				const err = yield* Effect.flip(runStandUp(input));
 
 				assert.instanceOf(err, CrewServerNotRegisteredError);
-				assert.strictEqual(launched.length, 0);
-			}),
-	);
-
-	it.effect(
-		"reads tmux naming from config: a malformed tmux dimension aborts before launch (seam 1)",
-		() =>
-			Effect.gen(function* () {
-				const {input, launched, trackerCalls} = baseInput({
-					tmuxConfig: Effect.fail(
-						new LaunchConfigError({configPath: ".claude/crew.config.jsonc", reason: "tmux"}),
-					),
-				});
-				const err = yield* Effect.flip(runStandUp(input));
-
-				assert.instanceOf(err, LaunchConfigError);
-				// tmux is read alongside the launch config, before the tracker or any launch.
-				assert.strictEqual(trackerCalls(), 0);
 				assert.strictEqual(launched.length, 0);
 			}),
 	);

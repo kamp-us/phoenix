@@ -61,11 +61,10 @@ export {
 } from "./session-set.ts";
 export {
 	computeTmuxPlacement,
+	DEFAULT_TMUX_SESSION,
 	type PlacementTarget,
 	type RosterSession,
-	type TmuxNaming,
 	TmuxWindowCollisionError,
-	TmuxWindowUnnamedError,
 } from "./tmux-placement.ts";
 export {
 	assertPinnedCliVersion,

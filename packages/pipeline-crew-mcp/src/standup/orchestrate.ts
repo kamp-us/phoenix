@@ -10,7 +10,7 @@
  * roster session set → build EVERY per-session bind + compute ALL tmux placements → launch. Every
  * bind and every placement is resolved (and validated) BEFORE the first session launches, so any
  * precondition failure — a drifted CLI pin, a missing config dimension, an inert channel, a colliding
- * or unnamed tmux window — aborts with a named error while zero sessions are up, never a half-launched
+ * tmux window — aborts with a named error while zero sessions are up, never a half-launched
  * crew. No session is hand-launched: the launch of each `claude` session, bound to its role lease, is
  * the injected `launch` step the orchestration drives for the whole derived set.
  *
@@ -28,12 +28,7 @@ import {
 	type CrewServerNotRegisteredError,
 	type SessionBind,
 } from "./bind.ts";
-import {
-	type LaunchConfig,
-	type LaunchConfigError,
-	readLaunchConfig,
-	readTmuxNaming,
-} from "./config.ts";
+import {type LaunchConfig, type LaunchConfigError, readLaunchConfig} from "./config.ts";
 import {
 	ensureTrackerRunning,
 	type TrackerHandle,
@@ -44,9 +39,7 @@ import {
 	computeTmuxPlacement,
 	type PlacementTarget,
 	type RosterSession,
-	type TmuxNaming,
 	type TmuxWindowCollisionError,
-	type TmuxWindowUnnamedError,
 } from "./tmux-placement.ts";
 import {
 	assertPinnedCliVersion,
@@ -87,19 +80,12 @@ export type StandUpError =
 	| TrackerNotServingError
 	| CrewServerNotRegisteredError
 	| ChannelPluginNotAllowedError
-	| TmuxWindowUnnamedError
 	| TmuxWindowCollisionError
 	| StandUpLaunchError;
 
 export interface StandUpInput {
 	/** The project root the tracker + every session join (the per-project socket key). */
 	readonly projectRoot: string;
-	/**
-	 * The operator-configured tmux naming (session + per-bridge window names). Read from the crew
-	 * config's tmux dimension by default (`readTmuxNaming`, #3354 seam 1) rather than injected in
-	 * code; injectable here so the composition stays unit-testable without a config file on disk.
-	 */
-	readonly tmuxConfig?: Effect.Effect<TmuxNaming, LaunchConfigError>;
 	/** The channel-ref name each session's own crew MCP server registers under. Default: `SESSION_SERVER_NAME`. */
 	readonly serverName?: string;
 	/** The launch dimensions to stand up under. Default: read the operator crew config (`readLaunchConfig`). */
@@ -123,17 +109,17 @@ export interface StandUpResult {
 }
 
 /**
- * Project a derived `CrewSession` onto the `RosterSession` tmux-placement consumes: a bridge's window
- * key is its role slug (the operator's `windows` map is keyed by role), an engine's window is its
- * generated per-instance id (an operator cannot name N dynamic engines).
+ * Project a derived `CrewSession` onto the `RosterSession` tmux-placement consumes: a bridge places
+ * on a window named by its role slug, an engine on its generated per-instance id (an operator cannot
+ * name N dynamic engines). Both window names derive from identity — there is no config tmux dimension.
  */
 const toRosterSession = (session: CrewSession): RosterSession =>
 	session.kind === "engine"
 		? {kind: "engine", id: session.instance}
-		: {kind: "bridge", role: session.role, windowKey: session.role};
+		: {kind: "bridge", role: session.role};
 
 /**
- * The production launcher: open a tmux window for the session under the operator's tmux session and
+ * The production launcher: open a tmux window for the session under the launcher-default tmux session and
  * run `claude` there with the session's launch bind. Detached + unref'd + ignored stdio so the crew
  * outlives this launcher process (the `ensureTrackerRunning` spawn idiom). The thin, uncovered edge —
  * tests inject a recording launcher; only a synchronous spawn throw crosses the error channel.
@@ -181,9 +167,6 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 		const launch = input.launch ?? launchSessionInTmux;
 
 		const config = yield* input.config ?? readLaunchConfig();
-		// Read the tmux placement dimension from the operator config too (#3354 seam 1) — a malformed
-		// tmux dimension is a config-time abort, before the tracker or any session launches.
-		const tmuxNaming = yield* input.tmuxConfig ?? readTmuxNaming();
 		// Fail fast on a version drift before starting the tracker or any session — channels vary
 		// across CLI versions, so a mismatch is a stand-up to refuse (version-assert.ts / #3295).
 		yield* assertPinnedCliVersion(config, input.readVersionOutput ?? readInstalledCliVersionOutput);
@@ -192,7 +175,7 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 		const sessions = deriveSessionSet({engineCount: config.engineCount, instanceId});
 
 		// Resolve EVERY bind + placement before launching anything — this is the no-partial-crew line:
-		// an inert channel, an unnamed or colliding window fails here, while zero sessions are up.
+		// an inert channel or a colliding window fails here, while zero sessions are up.
 		const binds = yield* Effect.forEach(sessions, (session) =>
 			buildSessionBind({
 				role: session.role,
@@ -204,7 +187,7 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 				channels: config.channels,
 			}),
 		);
-		const placements = yield* computeTmuxPlacement(tmuxNaming, sessions.map(toRosterSession));
+		const placements = yield* computeTmuxPlacement(sessions.map(toRosterSession));
 		// `binds` and `placements` are each derived from `sessions` in order, so the index is always
 		// populated; the die guard is the unreachable branch that satisfies noUncheckedIndexedAccess.
 		const plans = yield* Effect.forEach(sessions, (session, i) => {
