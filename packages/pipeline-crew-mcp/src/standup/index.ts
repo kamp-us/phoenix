@@ -8,11 +8,12 @@ export {
 	ALLOWLIST_CHANNEL_FLAG,
 	buildSessionBind,
 	ChannelPluginNotAllowedError,
+	CREW_SESSION_BIN_PATH,
 	CREW_SESSION_COMMAND,
 	CrewServerNotRegisteredError,
+	CrewSessionBinUnresolvableError,
 	DEV_CHANNEL_FLAG,
 	MCP_CONFIG_FLAG,
-	PIPELINE_CREW_MCP_BIN,
 	type SessionBind,
 	type SessionBindInput,
 } from "./bind.ts";

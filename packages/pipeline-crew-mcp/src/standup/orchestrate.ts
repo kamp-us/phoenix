@@ -26,6 +26,7 @@ import {
 	buildSessionBind,
 	type ChannelPluginNotAllowedError,
 	type CrewServerNotRegisteredError,
+	type CrewSessionBinUnresolvableError,
 	type SessionBind,
 } from "./bind.ts";
 import {type LaunchConfig, type LaunchConfigError, readLaunchConfig} from "./config.ts";
@@ -139,6 +140,7 @@ export type StandUpError =
 	| LaunchConfigError
 	| CliVersionAssertError
 	| TrackerNotServingError
+	| CrewSessionBinUnresolvableError
 	| CrewServerNotRegisteredError
 	| ChannelPluginNotAllowedError
 	| TmuxWindowCollisionError

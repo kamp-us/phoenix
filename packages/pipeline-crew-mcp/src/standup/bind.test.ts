@@ -7,18 +7,20 @@
  * two fail-closed rejections: a crew server absent from the flag (defined-but-inert), and an
  * allowlist-mode plugin channel whose plugin the config's `allowedChannelPlugins` doesn't list.
  */
+import {existsSync} from "node:fs";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {
 	ALLOWLIST_CHANNEL_FLAG,
 	buildSessionBind,
 	ChannelPluginNotAllowedError,
+	CREW_SESSION_BIN_PATH,
 	CREW_SESSION_COMMAND,
 	CREW_SESSION_INSTANCE_FLAG,
 	CrewServerNotRegisteredError,
+	CrewSessionBinUnresolvableError,
 	DEV_CHANNEL_FLAG,
 	MCP_CONFIG_FLAG,
-	PIPELINE_CREW_MCP_BIN,
 } from "./bind.ts";
 import type {ChannelConfig} from "./config.ts";
 
@@ -27,12 +29,13 @@ const PROJECT_ROOT = "/work/phoenix";
 const SERVER_NAME = "pipeline-crew";
 
 // The exact inline JSON the --mcp-config value must carry: one server, keyed by the session's own
-// channel-server name, whose command bakes the per-invocation `session --role --project-root`.
+// channel-server name, whose command is the launcher's own node (`process.execPath`) running the
+// ABSOLUTE bin.ts path — a resolvable invocation, never the bare unlinked package bin name (#3425).
 const EXPECTED_MCP_JSON = JSON.stringify({
 	mcpServers: {
 		[SERVER_NAME]: {
-			command: PIPELINE_CREW_MCP_BIN,
-			args: ["session", "--role", ROLE, "--project-root", PROJECT_ROOT],
+			command: process.execPath,
+			args: [CREW_SESSION_BIN_PATH, "session", "--role", ROLE, "--project-root", PROJECT_ROOT],
 		},
 	},
 });
@@ -148,8 +151,9 @@ describe("standup/bind — per-session bind constructor", () => {
 				const expected = JSON.stringify({
 					mcpServers: {
 						[SERVER_NAME]: {
-							command: PIPELINE_CREW_MCP_BIN,
+							command: process.execPath,
 							args: [
+								CREW_SESSION_BIN_PATH,
 								CREW_SESSION_COMMAND,
 								"--role",
 								ROLE,
@@ -181,6 +185,57 @@ describe("standup/bind — per-session bind constructor", () => {
 					channels,
 				});
 				assert.notInclude(bind.mcpConfigArg[1], CREW_SESSION_INSTANCE_FLAG);
+			}),
+	);
+
+	it.effect(
+		"the bound server command is a RESOLVABLE invocation: node + an existing absolute bin.ts (#3425)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				const bind = yield* buildSessionBind({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				});
+
+				const server = JSON.parse(bind.mcpConfigArg[1]).mcpServers[SERVER_NAME];
+				// Not the old bare, unlinked package bin name — an absolute node + an absolute bin path.
+				assert.strictEqual(server.command, process.execPath);
+				assert.notStrictEqual(server.command, "pipeline-crew-mcp");
+				assert.strictEqual(server.args[0], CREW_SESSION_BIN_PATH);
+				assert.isTrue(CREW_SESSION_BIN_PATH.startsWith("/"), "bin path must be absolute");
+				assert.match(CREW_SESSION_BIN_PATH, /bin\.ts$/);
+				// The resolvable invocation actually resolves: the baked bin.ts exists on disk.
+				assert.isTrue(existsSync(CREW_SESSION_BIN_PATH), "baked bin.ts must resolve on disk");
+			}),
+	);
+
+	it.effect(
+		"fails closed when the crew server bin.ts does not resolve on disk (the missing sibling guard, #3425)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				const error = yield* buildSessionBind({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+					// The injected resolvability probe reports the bin absent — the launch must refuse.
+					binExists: () => false,
+				}).pipe(Effect.flip);
+
+				assert.instanceOf(error, CrewSessionBinUnresolvableError);
+				assert.strictEqual(error.binPath, CREW_SESSION_BIN_PATH);
 			}),
 	);
 
