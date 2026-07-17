@@ -19,16 +19,19 @@ import {
 	Heartbeat,
 	IntakePing,
 	LookupRole,
+	Release,
 } from "../protocol/index.ts";
 import {CREW_ROLES, type CrewRole} from "./roles.ts";
 
 /**
  * The named crew seams, each mapped to the protocol `Rpc` it rides. `claimCollisionCheck`
- * and `roleUniquenessLease` deliberately share `Claim` — same wire kind, two crew meanings.
+ * and `roleUniquenessLease` deliberately share `Claim` — same wire kind, two crew meanings;
+ * `releaseClaim` is the resource claim's free counterpart (ADR 0191 facet 3).
  */
 export const CrewSeams = {
 	claimCollisionCheck: Claim,
 	roleUniquenessLease: Claim,
+	releaseClaim: Release,
 	epicHandoff: EpicHandoff,
 	drainTally: DrainProgress,
 	intakePing: IntakePing,

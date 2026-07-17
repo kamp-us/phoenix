@@ -40,6 +40,17 @@ export const ClaimReply = Schema.Struct({
 	since: Timestamp,
 });
 
+/**
+ * A holder freeing its own resource claim (fire-and-forget). The `claimant` must be the claim's
+ * holder — the tracker frees only a claim the caller holds, so steal-release is unrepresentable
+ * (ADR 0191 facet 3). No reply: releasing is idempotent.
+ */
+export const ReleaseClaim = Schema.Struct({
+	resource: Schema.NonEmptyString,
+	claimant: PeerId,
+	at: Timestamp,
+});
+
 // Kind 2 — planned-epic handoff (EM → builder).
 
 export const EpicHandoffNotice = Schema.Struct({

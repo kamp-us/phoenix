@@ -36,11 +36,13 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 		}).pipe(Effect.scoped, Effect.provide(handlers)),
 	);
 
-	it.effect("Claim grants a free role lease and collides on a second live acquire", () =>
+	it.effect("Claim grants a free resource and collides on a second acquire (holder present)", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			// The incumbent's claim is live only while its presence is — announce it first (ADR 0191).
+			yield* client.AnnouncePresence({peer: "peer-a", role: "builder", at});
 			const first = yield* client.Claim({
-				resource: "builder",
+				resource: "issue-3054",
 				claimant: "peer-a",
 				role: "builder",
 				at,
@@ -50,14 +52,50 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 			assert.strictEqual(first.owner, "peer-a");
 
 			const second = yield* client.Claim({
-				resource: "builder",
+				resource: "issue-3054",
 				claimant: "peer-b",
 				role: "builder",
 				at,
 			});
 			assert.isFalse(second.granted);
 			assert.isTrue(second.collision);
-			assert.strictEqual(second.owner, "peer-a", "the incumbent keeps the lease");
+			assert.strictEqual(second.owner, "peer-a", "the incumbent keeps the claim");
+		}).pipe(Effect.scoped, Effect.provide(handlers)),
+	);
+
+	it.effect("Release frees a held claim so another peer can then claim the resource", () =>
+		Effect.gen(function* () {
+			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			yield* client.AnnouncePresence({peer: "peer-a", role: "builder", at});
+			yield* client.AnnouncePresence({peer: "peer-b", role: "reviewer", at});
+			yield* client.Claim({resource: "issue-3054", claimant: "peer-a", role: "builder", at});
+			yield* client.Release({resource: "issue-3054", claimant: "peer-a", at});
+			const reclaim = yield* client.Claim({
+				resource: "issue-3054",
+				claimant: "peer-b",
+				role: "reviewer",
+				at,
+			});
+			assert.isTrue(reclaim.granted, "the released resource is free for a new claimant");
+			assert.strictEqual(reclaim.owner, "peer-b");
+		}).pipe(Effect.scoped, Effect.provide(handlers)),
+	);
+
+	it.effect("Release by a non-holder is a no-op — a peer cannot steal-release (ADR 0191)", () =>
+		Effect.gen(function* () {
+			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			yield* client.AnnouncePresence({peer: "peer-a", role: "builder", at});
+			yield* client.Claim({resource: "issue-3054", claimant: "peer-a", role: "builder", at});
+			// peer-b does not hold the claim: its release must not free peer-a's hold.
+			yield* client.Release({resource: "issue-3054", claimant: "peer-b", at});
+			const stillHeld = yield* client.Claim({
+				resource: "issue-3054",
+				claimant: "peer-c",
+				role: "builder",
+				at,
+			});
+			assert.isTrue(stillHeld.collision, "peer-a still holds it — the foreign release was ignored");
+			assert.strictEqual(stillHeld.owner, "peer-a");
 		}).pipe(Effect.scoped, Effect.provide(handlers)),
 	);
 

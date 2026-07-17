@@ -15,11 +15,12 @@ import {
 	CrewProtocol,
 	crewMessageKinds,
 	payloadSchemaForKind,
+	Release,
 } from "./group.ts";
 import * as Messages from "./schema.ts";
 
 describe("protocol/group catalog", () => {
-	it("covers all 7 message kinds (8 rpcs — presence is announce + lookup)", () => {
+	it("covers all 8 message kinds (9 rpcs — presence is announce + lookup, claim is claim + release)", () => {
 		assert.deepStrictEqual([...CrewProtocol.requests.keys()].sort(), [
 			"AckInbox",
 			"AnnouncePresence",
@@ -29,6 +30,7 @@ describe("protocol/group catalog", () => {
 			"Heartbeat",
 			"IntakePing",
 			"LookupRole",
+			"Release",
 		]);
 	});
 
@@ -53,6 +55,10 @@ describe("protocol/group catalog", () => {
 
 	it("a fire-and-forget kind carries no reply (success is Void)", () => {
 		assert.strictEqual(AnnouncePresence.successSchema, Schema.Void);
+	});
+
+	it("Release is fire-and-forget: no reply schema, so releasing is idempotent (ADR 0191)", () => {
+		assert.strictEqual(Release.successSchema, Schema.Void);
 	});
 
 	it("payloadSchemaForKind resolves a catalog kind to its payload schema (#3229)", () => {

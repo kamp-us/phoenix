@@ -48,6 +48,7 @@ describe("crew/catalog — roles mapped to seams over protocol/", () => {
 			"Heartbeat",
 			"IntakePing",
 			"LookupRole",
+			"Release",
 		]);
 	});
 });

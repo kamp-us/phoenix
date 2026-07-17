@@ -1,7 +1,9 @@
 /**
  * tracker/handlers — the `TrackerRegistry` handlers, mapping each registry Rpc onto the
- * `Registry` service. The lease name (the registry key) is the role string: `AnnouncePresence`
- * and `LookupRole` key on `role`, `Claim` keys on `resource` (the named lease it acquires).
+ * `Registry` service across the two keyspaces (ADR 0191). `AnnouncePresence` / `LookupRole` /
+ * `Heartbeat` operate on the role/presence keyspace (keyed by `role`); `Claim` / `Release`
+ * operate on the resource-claim keyspace (keyed by `resource`). `ClaimRequest`'s `role` field is
+ * consumed here as the claim's `claimantRole`.
  *
  * `lastSeen`/`since`/`at` cross the wire as ISO-8601 strings (the protocol `Timestamp`), but the
  * registry reasons in epoch millis against its own clock — the conversion happens here at the
@@ -21,20 +23,22 @@ export const TrackerHandlers = TrackerRegistry.toLayer(
 		return {
 			Claim: (payload) =>
 				registry
-					.acquire({
-						role: payload.resource,
-						peer: payload.claimant,
-						ttlSeconds: DEFAULT_TTL_SECONDS,
+					.claim({
+						resource: payload.resource,
+						claimant: payload.claimant,
+						claimantRole: payload.role,
 					})
 					.pipe(
 						Effect.map((outcome) => ({
 							resource: payload.resource,
 							granted: outcome._tag === "Granted",
 							collision: outcome._tag === "Collision",
-							owner: outcome.owner,
+							owner: outcome.holder,
 							since: iso(outcome.sinceMillis),
 						})),
 					),
+			Release: (payload) =>
+				registry.releaseClaim({resource: payload.resource, claimant: payload.claimant}),
 			AnnouncePresence: (payload) =>
 				registry.announce({
 					role: payload.role,

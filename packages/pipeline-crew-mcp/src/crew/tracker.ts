@@ -22,19 +22,21 @@ import {isTrackerAddressInUse, TrackerRegistry, trackerServerLayer} from "../tra
 /** The typed answer to a claim/collision-check — re-exported so consumers name one type. */
 export type ClaimReply = typeof Schema.ClaimReply.Type;
 type ClaimRequest = typeof Schema.ClaimRequest.Type;
+type ReleaseClaim = typeof Schema.ReleaseClaim.Type;
 type PresenceAnnouncement = typeof Schema.PresenceAnnouncement.Type;
 type RoleLookupQuery = typeof Schema.RoleLookupQuery.Type;
 type RoleLookupResult = typeof Schema.RoleLookupResult.Type;
 type HeartbeatMessage = typeof Schema.Heartbeat.Type;
 
 /**
- * The structural shape of the registry client the crew depends on — the four registry
+ * The structural shape of the registry client the crew depends on — the five registry
  * kinds it drives. Any `RpcClient(TrackerRegistry)` satisfies it (the real socket client,
  * or an in-memory `RpcTest` client in tests); the error channel is `unknown` because it is
  * `orDie`'d at the seam.
  */
 export interface TrackerRegistryClient {
 	readonly Claim: (payload: ClaimRequest) => Effect.Effect<ClaimReply, unknown>;
+	readonly Release: (payload: ReleaseClaim) => Effect.Effect<void, unknown>;
 	readonly AnnouncePresence: (payload: PresenceAnnouncement) => Effect.Effect<void, unknown>;
 	readonly LookupRole: (payload: RoleLookupQuery) => Effect.Effect<RoleLookupResult, unknown>;
 	readonly Heartbeat: (payload: HeartbeatMessage) => Effect.Effect<void, unknown>;
@@ -51,6 +53,22 @@ export class CrewTracker extends Context.Service<
 			readonly claimant: string;
 			readonly role: string;
 		}) => Effect.Effect<ClaimReply>;
+		/**
+		 * Claim `resource` for the enclosing scope: acquire on entry, and on scope close free the
+		 * claim via `Release` iff it was granted — the lane-finish fast path (ADR 0191 facet 3). The
+		 * reply's granted/collision is a VALUE, so a collision holds the scope open with nothing to
+		 * free (release is holder-guarded + idempotent, so freeing a lost claim is a safe no-op).
+		 */
+		readonly acquireClaim: (input: {
+			readonly resource: string;
+			readonly claimant: string;
+			readonly role: string;
+		}) => Effect.Effect<ClaimReply, never, Scope.Scope>;
+		/** Free a resource claim this session holds — the explicit lane-finish release (ADR 0191 facet 3). */
+		readonly release: (input: {
+			readonly resource: string;
+			readonly claimant: string;
+		}) => Effect.Effect<void>;
 		/** Soft presence announce, held for the enclosing scope (connection-is-lease). */
 		readonly announce: (presence: RolePresence) => Effect.Effect<void, never, Scope.Scope>;
 		/**
@@ -71,6 +89,18 @@ export class CrewTracker extends Context.Service<
 		Layer.succeed(CrewTracker, {
 			claim: ({resource, claimant, role}) =>
 				client.Claim({resource, claimant, role, at: now()}).pipe(Effect.orDie),
+			acquireClaim: ({resource, claimant, role}) =>
+				Effect.acquireRelease(
+					client.Claim({resource, claimant, role, at: now()}).pipe(Effect.orDie),
+					// Free on scope close, but only a claim we actually won — release is holder-guarded, so
+					// releasing a collided (un-held) claim would no-op anyway; gating on `granted` keeps intent clear.
+					(reply) =>
+						reply.granted
+							? client.Release({resource, claimant, at: now()}).pipe(Effect.orDie)
+							: Effect.void,
+				),
+			release: ({resource, claimant}) =>
+				client.Release({resource, claimant, at: now()}).pipe(Effect.orDie),
 			announce: (presence) =>
 				Effect.acquireRelease(
 					// peer-id ≡ inbox-address: announce the dialable address so a lookup can dial it back.
