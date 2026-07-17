@@ -54,6 +54,19 @@ elsewhere): wayfinder does the legwork that *frames* a decision, never the decid
 mechanics — how a fork is framed for the founder, what the map records, and how the agent blocks
 on the answer — are the [founder-decision-fork seam](#the-founder-decision-fork-seam--routing-the-fork-to-the-founder).
 
+**The distributable-plugin-only artifact rule — every repo artifact names the crew as the
+distributable plugin, never the operator-local defs.** Every repo-side artifact wayfinder composes —
+the `wayfinder:map` issue, each frontier ticket, an emitted epic, a PR, a comment, ADR framing —
+references **only** the distributable plugin (`claude-plugins/pipeline-crew/`) as the crew
+definition. The operator's local/personal crew definitions are out of repo scope **entirely — not
+even as a concept**: never carry personal-cleanup framing (e.g. "operator-local defs are deleted
+afterward" / "ported from the operator-local def") into a repo artifact. **Suppress it at
+composition time**, at the source — not as a downstream hand-scrub, which is the recurring
+#3233–#3237 / ADR 0189 leak this rule exists to end. **Boundary — do not over-apply:** the
+distributable plugin's own *configuration* surface is legitimately in-repo — operator-*configured*
+transport, session gh-identity routing, and similar. The rule targets the operator's personal crew
+**definitions**, not the word "operator"; a fix that strips every "operator" mention overshoots.
+
 ## What wayfinder is not
 
 - It **does not write code, open a PR, or merge** — its output is a *clarified map/plan*, the
@@ -172,6 +185,10 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    `## Open frontier` section, referencing its number and stating the open question, marking a
    `type:decision` fork as `(founder-decision-fork)`.
 
+   Compose every ticket body (and the map body itself) per §the distributable-plugin-only artifact
+   rule: reference the distributable plugin `claude-plugins/pipeline-crew/` as the sole crew
+   definition, and suppress any operator-local / personal crew-def framing at the source.
+
 6. **Leave `## Graduated fog` empty.** Nothing has cleared yet — a freshly charted map has an open
    frontier and no motion to record. WORK mode is what moves tickets from `## Open frontier` into
    `## Graduated fog` as it resolves them; CHART only lays the frontier down.
@@ -253,6 +270,8 @@ shaped for and the durable seam between runs — WORK mutates the map only throu
    to the same plan-don't-do law: each new ticket resolves a decision or an unknown, never a
    deliverable) — and note them on the graduated line (`→ spawned #M`). A resolved unknown
    routinely reveals the next one; that spawn is the map's forward motion, not a failure to finish.
+   Compose each new ticket body and the recorded decision line per §the distributable-plugin-only
+   artifact rule — the distributable plugin is the sole crew definition, no operator-local framing.
 
 6. **Stop — exactly one ticket resolved.** One frontier ticket is now answered, recorded, and
    graduated, with any newly-revealed fog laid down for a future run. Do **not** pick a second
@@ -387,6 +406,10 @@ The emitted issue's brief is composed from the map's **accreted state**, read th
 One cleared map may emit **one or several** epics/features: decompose the cleared destination into
 the coherent buildable units its accreted decisions now support, and give each emitted issue the
 relevant slice of `## Decisions-so-far` as its givens plus a link back to the map for provenance.
+
+Compose every emitted brief per §the distributable-plugin-only artifact rule: frame the crew as the
+distributable plugin `claude-plugins/pipeline-crew/` only, and carry no operator-local / personal
+crew-def framing — the leak-scrub must not survive into an emitted epic.
 
 ### File into the existing `report` → `triage` entry seam — reuse, don't rebuild
 
