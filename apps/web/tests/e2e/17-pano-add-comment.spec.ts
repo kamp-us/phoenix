@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Pano addComment end-to-end.
@@ -16,7 +17,7 @@ import {signUp} from "./_helpers/auth";
  */
 test.describe("Pano addComment", () => {
 	test("submits a top-level comment, then a nested reply", async ({page}) => {
-		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `cm${suffix}@kamp.us`});
 		await page.locator("input#bootstrap-username").fill(`u-${suffix}`);
 		await page.getByRole("button", {name: /devam et/i}).click();

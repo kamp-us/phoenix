@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * T17 auth-redirect E2E: signed-out vote on a definition routes to
@@ -15,7 +16,7 @@ test.describe("T17 auth-redirect with returnTo", () => {
 		page,
 	}) => {
 		// --- seed: sign up author A, drop a definition, sign out -------------
-		const slug = `t17-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const slug = `t17-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `author-${slug}@kamp.us`});
 		const handleA = `a-${slug}`;
 		await page.locator("input#bootstrap-username").fill(handleA);

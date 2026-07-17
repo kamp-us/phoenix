@@ -150,8 +150,8 @@ const NO_DESTROY = !!process.env.NO_DESTROY;
 
 // Per-PROCESS token for local default (destroy-on) runs: stable for one vitest
 // process, distinct across concurrent local processes. The stage is destroyed in
-// afterAll, so this name never outlives the run — pid + hrtime base36, not
-// Date.now()/Math.random() (the stage is single-use; this is deterministic-enough, short).
+// afterAll, so this name never outlives the run — pid + hrtime base36, not a
+// wall-clock + RNG stamp (the stage is single-use; this is deterministic-enough, short).
 const LOCAL_TOKEN = `${process.pid.toString(36)}${process.hrtime.bigint().toString(36)}`.replace(
 	/[^a-z0-9]/g,
 	"",

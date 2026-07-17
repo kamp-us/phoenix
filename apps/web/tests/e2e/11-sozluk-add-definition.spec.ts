@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Sözlük addDefinition end-to-end.
@@ -22,9 +23,9 @@ test.describe("Sözlük addDefinition", () => {
 		page,
 	}) => {
 		// Fresh sign-up + bootstrap so the user is fully authenticated.
-		const localPart = `bs${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const localPart = `bs${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
-		const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.locator("input#bootstrap-username").fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
@@ -32,7 +33,7 @@ test.describe("Sözlük addDefinition", () => {
 		});
 
 		// Navigate to a slug that doesn't exist yet.
-		const slug = `e2e-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const slug = `e2e-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.goto(`/sozluk/${slug}`);
 
 		const composerBody = page.locator('[data-testid="sozluk-composer-body"]');
@@ -61,16 +62,16 @@ test.describe("Sözlük addDefinition", () => {
 	test("submit is disabled for empty body and surfaces an error for >10000 chars", async ({
 		page,
 	}) => {
-		const localPart = `bs${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const localPart = `bs${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
-		const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.locator("input#bootstrap-username").fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
 			timeout: 10_000,
 		});
 
-		const slug = `e2e-validate-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const slug = `e2e-validate-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.goto(`/sozluk/${slug}`);
 
 		const composerBody = page.locator('[data-testid="sozluk-composer-body"]');

@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Pano submitPost end-to-end.
@@ -13,9 +14,9 @@ import {signUp} from "./_helpers/auth";
  */
 test.describe("Pano submitPost", () => {
 	test("submits a link post and lands on /pano/<id>", async ({page}) => {
-		const localPart = `pp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const localPart = `pp${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
-		const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.locator("input#bootstrap-username").fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
@@ -49,9 +50,9 @@ test.describe("Pano submitPost", () => {
 	test("blocks submit while the title is too short and surfaces validation hint", async ({
 		page,
 	}) => {
-		const localPart = `pp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const localPart = `pp${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
-		const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.locator("input#bootstrap-username").fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {

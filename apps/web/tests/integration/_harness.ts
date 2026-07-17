@@ -34,6 +34,7 @@
  *   - `h.openSse(...)` / `readFrame(...)` — live SSE transport helpers
  */
 
+import {randomBytes} from "node:crypto";
 import {cfApiThrottle} from "./_cf-api-throttle.ts";
 import {cfFetchWithRateLimitRetry} from "./_d1-rest-retry.ts";
 import {
@@ -208,7 +209,7 @@ const liveControlReady = (res: Response): boolean => res.status !== 503;
 // isolated stage + D1, but a `NO_DESTROY` re-run reuses the same stage's D1, so a
 // fresh stamp per process keeps re-run seed identities from colliding with users a
 // prior run left behind.
-const STAMP_SEED = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const STAMP_SEED = `${Date.now()}-${randomBytes(4).toString("hex").slice(0, 6)}`;
 
 // The seed-id counter MUST live at module scope, the SAME scope as STAMP_SEED — NOT inside
 // `harness()`. Every test file builds its own `harness()` (each `const h = sharedStack()`), so a

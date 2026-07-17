@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
 
 /**
@@ -35,9 +36,9 @@ test.describe("Sözlük voteDefinition", () => {
 	// Re-enable = revert to plain test(...).
 	test.fixme("vote → unvote → vote round-trip on a fresh definition", async ({page}) => {
 		// Fresh sign-up + bootstrap so the user is fully authenticated.
-		const localPart = `vt${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const localPart = `vt${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});
-		const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.locator("input#bootstrap-username").fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
@@ -45,7 +46,7 @@ test.describe("Sözlük voteDefinition", () => {
 		});
 
 		// Navigate to a fresh slug + add a definition.
-		const slug = `vote-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const slug = `vote-${Date.now().toString(36)}${randomSuffix(4)}`;
 		await page.goto(`/sozluk/${slug}`);
 
 		const composerBody = page.locator('[data-testid="sozluk-composer-body"]');

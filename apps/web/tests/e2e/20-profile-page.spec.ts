@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Profile page (T14) — `/u/<username>` route + GraphQL `profile(username)`
@@ -16,7 +17,7 @@ import {signUp} from "./_helpers/auth";
  */
 test.describe("Profile page", () => {
 	test("aggregates 1 definition + 1 post + 1 comment on /u/<username>", async ({page}) => {
-		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
 		await signUp(page, {email: `pf${suffix}@kamp.us`});
 		const handle = `u-${suffix}`;
 		await page.locator("input#bootstrap-username").fill(handle);

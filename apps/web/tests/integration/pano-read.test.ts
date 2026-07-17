@@ -31,6 +31,7 @@
  * file's (and this test's) rows. The host-scoping IS the namespace: no ordered assertion
  * reads a feed unfiltered by an NS-host.
  */
+import {randomBytes} from "node:crypto";
 import {beforeAll, describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
@@ -326,7 +327,7 @@ describe("pano reads — /fate", () => {
 	});
 
 	it("host filter narrows to the requested host", async () => {
-		const tag = `${NS}-${Math.random().toString(36).slice(2, 8)}`;
+		const tag = `${NS}-${randomBytes(4).toString("hex").slice(0, 6)}`;
 		const hostA = `${tag}-a.example.com`;
 		const hostB = `${tag}-b.example.com`;
 

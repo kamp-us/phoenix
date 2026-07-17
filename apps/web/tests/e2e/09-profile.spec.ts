@@ -1,5 +1,6 @@
 import {expect, type Page, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 
 /**
  * Helper: complete the bootstrap form so the signed-in user is past the
@@ -7,7 +8,7 @@ import {signUp} from "./_helpers/auth";
  * blocks the Outlet (T13 behaviour).
  */
 async function bootstrapUsername(page: Page): Promise<void> {
-	const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	const handle = `u-${Date.now().toString(36)}${randomSuffix(4)}`;
 	await page.locator("input#bootstrap-username").fill(handle);
 	await page.getByRole("button", {name: /devam et/i}).click();
 	await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {

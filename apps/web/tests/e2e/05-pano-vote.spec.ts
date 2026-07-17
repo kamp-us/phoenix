@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {completeBootstrap, signUp} from "./_helpers/auth";
+import {randomSuffix} from "./_helpers/rand";
 import {expectScoreConsistent} from "./_helpers/wait-for-consistency";
 
 /**
@@ -31,7 +32,7 @@ test.fixme("upvote increments and toggles back (signed in)", async ({page}) => {
 	// Submit a fresh post so we vote on a card nothing else is touching.
 	await page.goto("/pano/yeni");
 	await expect(page.locator('[data-testid="pano-submit-title"]')).toBeVisible({timeout: 10_000});
-	const title = `vote feed target ${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	const title = `vote feed target ${Date.now().toString(36)}${randomSuffix(4)}`;
 	await page
 		.locator('[data-testid="pano-submit-url"]')
 		.fill(`https://example.com/${Date.now().toString(36)}`);
