@@ -32,6 +32,7 @@ import * as Test from "alchemy/Test/Vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import {inject} from "vitest";
 import Stack from "../../alchemy.run.ts";
 import {isTransientDeployError} from "./_deploy-transient.ts";
@@ -67,12 +68,14 @@ import {slugify, stageName} from "./_stage-name.ts";
 // non-"ok" body, is not ready → retry.
 const healthReady = async (res: Response): Promise<boolean> => {
 	if (res.status !== 200) return false;
-	try {
-		const body = (await res.clone().json()) as {status?: unknown} | null;
-		return body?.status === "ok";
-	} catch {
-		return false;
-	}
+	// `.json()` rejects on a non-JSON CF error page → fold that rejection to `null` (⇒ not ready),
+	// rather than a raw try/catch in an effect-importing file (#2736 no-raw-try-catch). Same
+	// semantics: a non-200, a non-JSON body, or a non-"ok" body is not ready → retry.
+	const body = (await res
+		.clone()
+		.json()
+		.catch(() => null)) as {status?: unknown} | null;
+	return body?.status === "ok";
 };
 
 // The `/fate/live` warm is READY on a 200 (the DO warmed) OR a terminal worker JSON 4xx (a real
@@ -89,6 +92,26 @@ const fateReadReady = (res: Response): boolean => res.status === 200;
 // The deploy-probe poll cadence — the ~2s spacing the retired `Schedule.spaced("2 seconds")` used,
 // over `awaitEdgeReady`'s default 60s budget.
 const WARM_POLL_MS = 2_000;
+
+// A readiness/warmup probe's underlying promise rejected. The warm probes (`warmLiveDO`,
+// `warmFateRead`) lift the rejection into `E` via object-notation `Effect.tryPromise` (the #2736
+// Effect-v4 idiom — no single-arg `tryPromise`, which buries a rejection as an uncatchable empty-`E`
+// defect), then swallow it via `Effect.catchCause` since warmup is a non-fatal optimization. The
+// deploy gates (`awaitWorkerReady` / `awaitAuthRouteReady`) instead re-`orDie` their already-typed
+// throws unchanged, so they keep the named-defect diagnostic (#3146) — see each below.
+class ProbeError extends Schema.TaggedErrorClass<ProbeError>()(
+	"@kampus/web/integration/ProbeError",
+	{
+		cause: Schema.Defect(),
+	},
+) {}
+
+// The deploy gates' `catch`: keep the already-tagged `WorkerNotReadyError` unwrapped so `orDie`
+// dies with the SAME greppable diagnostic the retired `Effect.promise` produced (#3146); wrap any
+// other cause (e.g. an edge-propagation `CloudflarePlaceholder404Error`) in the tagged `ProbeError`,
+// so the `E` channel carries only tagged errors (effect `globalErrorInEffectCatch`) and still dies.
+const probeErrorOf = (cause: unknown): WorkerNotReadyError | ProbeError =>
+	cause instanceof WorkerNotReadyError ? cause : new ProbeError({cause});
 
 /**
  * Self-supply the two env values the integration deploy needs when a clean runner has no
@@ -188,52 +211,55 @@ const stageFor = (metaUrl: string): string => {
  * the gate, not by `fate-live.test.ts`'s first subscribe (#1018).
  */
 export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
-	Effect.tryPromise(async () => {
-		const signUp = await fetch(`${url}/api/auth/sign-up/email`, {
-			method: "POST",
-			headers: {"content-type": "application/json", origin: "http://localhost:3000"},
-			body: JSON.stringify({
-				email: `live-warmup-${LOCAL_TOKEN}@warmup.local`,
-				password: "warmup-warmup-warmup",
-				name: "warmup",
-			}),
-		});
-		// A `NO_DESTROY` re-run reuses the stage's D1, so a warmup user from a prior run
-		// makes sign-up 422 USER_ALREADY_EXISTS — fall back to sign-in for the cookie.
-		const authed =
-			signUp.status === 422
-				? await fetch(`${url}/api/auth/sign-in/email`, {
-						method: "POST",
-						headers: {"content-type": "application/json", origin: "http://localhost:3000"},
-						body: JSON.stringify({
-							email: `live-warmup-${LOCAL_TOKEN}@warmup.local`,
-							password: "warmup-warmup-warmup",
-						}),
-					})
-				: signUp;
-		const setCookie = authed.headers.get("set-cookie");
-		if (!authed.ok || !setCookie) {
-			throw new Error(`live warmup auth failed: ${authed.status} ${await authed.text()}`);
-		}
-		const cookie = setCookie
-			.split(/,(?=[^;]+=)/)
-			.map((part) => part.split(";")[0]!.trim())
-			.filter((kv) => kv.includes("="))
-			.join("; ");
-		// Ride the cold `/fate/live` open out on the shared readiness budget: the thrown
-		// placeholder-404 (edge not propagated) AND the 503 cold-start envelope retry until the DO
-		// serves the held SSE 200 (or a terminal worker JSON 4xx stops the poll). Release the
-		// settled response's body — a warmed 200 is a held SSE stream that would otherwise pin the
-		// fetch connection (the warm consumes nothing; it only front-loads the cold cost).
-		const res = await awaitEdgeReady(
-			() =>
-				edgeFetch(`${url}/fate/live?connectionId=live-warmup-${LOCAL_TOKEN}`, {
-					headers: {accept: "text/event-stream", cookie},
+	Effect.tryPromise({
+		try: async () => {
+			const signUp = await fetch(`${url}/api/auth/sign-up/email`, {
+				method: "POST",
+				headers: {"content-type": "application/json", origin: "http://localhost:3000"},
+				body: JSON.stringify({
+					email: `live-warmup-${LOCAL_TOKEN}@warmup.local`,
+					password: "warmup-warmup-warmup",
+					name: "warmup",
 				}),
-			liveWarmReady,
-			{pollMs: WARM_POLL_MS},
-		);
-		await res.body?.cancel().catch(() => {});
+			});
+			// A `NO_DESTROY` re-run reuses the stage's D1, so a warmup user from a prior run
+			// makes sign-up 422 USER_ALREADY_EXISTS — fall back to sign-in for the cookie.
+			const authed =
+				signUp.status === 422
+					? await fetch(`${url}/api/auth/sign-in/email`, {
+							method: "POST",
+							headers: {"content-type": "application/json", origin: "http://localhost:3000"},
+							body: JSON.stringify({
+								email: `live-warmup-${LOCAL_TOKEN}@warmup.local`,
+								password: "warmup-warmup-warmup",
+							}),
+						})
+					: signUp;
+			const setCookie = authed.headers.get("set-cookie");
+			if (!authed.ok || !setCookie) {
+				throw new Error(`live warmup auth failed: ${authed.status} ${await authed.text()}`);
+			}
+			const cookie = setCookie
+				.split(/,(?=[^;]+=)/)
+				.map((part) => part.split(";")[0]!.trim())
+				.filter((kv) => kv.includes("="))
+				.join("; ");
+			// Ride the cold `/fate/live` open out on the shared readiness budget: the thrown
+			// placeholder-404 (edge not propagated) AND the 503 cold-start envelope retry until the DO
+			// serves the held SSE 200 (or a terminal worker JSON 4xx stops the poll). Release the
+			// settled response's body — a warmed 200 is a held SSE stream that would otherwise pin the
+			// fetch connection (the warm consumes nothing; it only front-loads the cold cost).
+			const res = await awaitEdgeReady(
+				() =>
+					edgeFetch(`${url}/fate/live?connectionId=live-warmup-${LOCAL_TOKEN}`, {
+						headers: {accept: "text/event-stream", cookie},
+					}),
+				liveWarmReady,
+				{pollMs: WARM_POLL_MS},
+			);
+			await res.body?.cancel().catch(() => {});
+		},
+		catch: (cause) => new ProbeError({cause}),
 	}).pipe(
 		// Warmup is a readiness OPTIMIZATION, not an assertion: if it can't establish a
 		// cookie or never warms within the bound, the suite still runs (the worker seam's
@@ -262,22 +288,25 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
  * envelope (`{version, operations}`) mirrors the harness `fateBatch`.
  */
 export const warmFateRead = (url: string): Effect.Effect<void, never, never> =>
-	Effect.tryPromise(async () => {
-		// A 200 means the route + D1 read served; a cold PoP placeholder-404 (the thrown edge
-		// transient) / a non-200 that hasn't ripened rides the shared readiness budget → retry.
-		await awaitEdgeReady(
-			() =>
-				edgeFetch(`${url}/fate`, {
-					method: "POST",
-					headers: {"content-type": "application/json", origin: "http://localhost:3000"},
-					body: JSON.stringify({
-						version: 1,
-						operations: [{id: "1", kind: "query", name: "health", select: ["status"]}],
+	Effect.tryPromise({
+		try: async () => {
+			// A 200 means the route + D1 read served; a cold PoP placeholder-404 (the thrown edge
+			// transient) / a non-200 that hasn't ripened rides the shared readiness budget → retry.
+			await awaitEdgeReady(
+				() =>
+					edgeFetch(`${url}/fate`, {
+						method: "POST",
+						headers: {"content-type": "application/json", origin: "http://localhost:3000"},
+						body: JSON.stringify({
+							version: 1,
+							operations: [{id: "1", kind: "query", name: "health", select: ["status"]}],
+						}),
 					}),
-				}),
-			fateReadReady,
-			{pollMs: WARM_POLL_MS},
-		);
+				fateReadReady,
+				{pollMs: WARM_POLL_MS},
+			);
+		},
+		catch: (cause) => new ProbeError({cause}),
 	}).pipe(
 		// Warmup is a readiness OPTIMIZATION, not an assertion (mirrors `warmLiveDO`): the
 		// asserting tests remain the gate, so a warm that never settles must NOT red a green
@@ -319,21 +348,26 @@ export const awaitWorkerReady = (
 	url: string,
 	deadlineMs: number = DEPLOY_HEALTH_DEADLINE_MS,
 ): Effect.Effect<void, never, never> =>
-	Effect.promise(async () => {
-		const res = await awaitEdgeReady(() => edgeFetch(`${url}/api/health`), healthReady, {
-			pollMs: WARM_POLL_MS,
-			deadlineMs,
-		});
-		// `awaitEdgeReady` returns the last response even when it never went ready (the #1060
-		// no-early-stop guarantee), so a worker that never served healthy JSON must be turned into a
-		// hard, clear failure here — the throw becomes an `Effect.promise` defect (die). Thrown TYPED
-		// (`WorkerNotReadyError`, not a bare `Error`) so the diagnostic is greppable, and — with the
-		// per-file `deadlineMs` sized below the hook ceiling — it fires BEFORE the `beforeAll`
-		// guillotine rather than surfacing as the opaque "Hook timed out in 120000ms" (#3146).
-		if (!(await healthReady(res))) {
-			throw new WorkerNotReadyError(url, `last status ${res.status}`);
-		}
-	});
+	Effect.tryPromise({
+		try: async () => {
+			const res = await awaitEdgeReady(() => edgeFetch(`${url}/api/health`), healthReady, {
+				pollMs: WARM_POLL_MS,
+				deadlineMs,
+			});
+			// `awaitEdgeReady` returns the last response even when it never went ready (the #1060
+			// no-early-stop guarantee), so a worker that never served healthy JSON must be turned into a
+			// hard, clear failure here — the throw dies (`orDie` below). Thrown TYPED
+			// (`WorkerNotReadyError`, not a bare `Error`) so the diagnostic is greppable, and — with the
+			// per-file `deadlineMs` sized below the hook ceiling — it fires BEFORE the `beforeAll`
+			// guillotine rather than surfacing as the opaque "Hook timed out in 120000ms" (#3146).
+			if (!(await healthReady(res))) {
+				throw new WorkerNotReadyError(url, `last status ${res.status}`);
+			}
+		},
+		// Object notation (#2736 no-effect-promise); `orDie` reproduces the retired `Effect.promise`
+		// die, and `probeErrorOf` keeps the typed `WorkerNotReadyError` diagnostic intact (#3146).
+		catch: probeErrorOf,
+	}).pipe(Effect.orDie);
 
 /**
  * Probe a freshly-deployed worker's auth-provisioning route (`POST /api/auth/sign-up/email`, the
@@ -357,18 +391,23 @@ export const awaitWorkerReady = (
  * loudly rather than releasing a URL whose auth route still 404s.
  */
 export const awaitAuthRouteReady = (url: string): Effect.Effect<void, never, never> =>
-	Effect.promise(async () => {
-		await awaitEdgeReady(
-			() =>
-				edgeFetch(`${url}/api/auth/sign-up/email`, {
-					method: "POST",
-					headers: {"content-type": "application/json", origin: "http://localhost:3000"},
-					body: "{}",
-				}),
-			() => true,
-			{pollMs: WARM_POLL_MS},
-		);
-	});
+	Effect.tryPromise({
+		try: async () => {
+			await awaitEdgeReady(
+				() =>
+					edgeFetch(`${url}/api/auth/sign-up/email`, {
+						method: "POST",
+						headers: {"content-type": "application/json", origin: "http://localhost:3000"},
+						body: "{}",
+					}),
+				() => true,
+				{pollMs: WARM_POLL_MS},
+			);
+		},
+		// Object notation (#2736 no-effect-promise); `orDie` reproduces the retired `Effect.promise`
+		// die on an un-propagated auth route, `probeErrorOf` keeps the typed throw (no behavior change).
+		catch: probeErrorOf,
+	}).pipe(Effect.orDie);
 
 /**
  * Stand up this file's per-file `Test.make` lifecycle and return the black-box
