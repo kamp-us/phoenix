@@ -10,6 +10,9 @@ name: decisions-index
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     name: validate ADR files — no duplicate/mismatched ADR number

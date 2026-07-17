@@ -35,6 +35,9 @@ concurrency:
   group: run-evidence-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   produce:
     name: produce run-evidence bundle
