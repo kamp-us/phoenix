@@ -19,20 +19,34 @@ import {readFileSync} from "node:fs";
 import {Effect, Schema} from "effect";
 
 /**
- * A channel-server ref, in the launcher's registration grammar:
- *   - `server:<name>`            — a top-level channel MCP server
- *   - `plugin:<plugin>:<server>` — a server contributed by a plugin
- * The two forms are exactly what the bind-builder (#3296) turns into `--channels` args.
+ * A channel-server ref, in the exact registration grammar Claude Code 2.1.212 accepts —
+ * grounded against the installed bundle's channel-tag parser, NOT intuited (CLAUDE.md's
+ * "ground falsifiable runtime claims in source"; VERSION 2.1.212, GIT_SHA 8b2783a):
+ *   - `server:<name>`             — a top-level channel MCP server
+ *   - `plugin:<name>@<marketplace>` — a plugin-provided channel (allowlist enforced)
+ *
+ * The bundle's `--channels` tag loop parses a `plugin:` entry by splitting on `@`
+ * (`let xl=mu.indexOf("@"); if(xl<=0||xl===mu.length-1) reject; else {name:mu.slice(0,xl),
+ * marketplace:mu.slice(xl+1)}`) and its marketplace parser requires exactly two non-empty
+ * parts (`split("@"); if(t.length!==2||!t[0]||!t[1]) return null`). So the OLD
+ * `plugin:<plugin>:<server>` shape (#3293) — no `@` — is rejected by the real runtime; the
+ * channel grammar is unambiguously `<name>@<marketplace>`. (The bundle's distinct
+ * split-on-`:` `plugin:<plugin>:<server>` parser is MCP-server identity within a plugin — a
+ * different surface from this `--channels` allowlist grammar.) See #3328.
  */
-export const CHANNEL_SERVER_REF_RE = /^(?:server:[^:\s]+|plugin:[^:\s]+:[^:\s]+)$/;
+export const CHANNEL_PLUGIN_REF_RE = /^plugin:[^@\s]+@[^@\s]+$/;
+export const CHANNEL_SERVER_REF_RE = /^(?:server:[^:\s]+|plugin:[^@\s]+@[^@\s]+)$/;
 
 export const ChannelServerRef = Schema.String.check(
 	Schema.isPattern(CHANNEL_SERVER_REF_RE, {
 		title: "ChannelServerRef",
-		description: 'a channel-server ref: "server:<name>" or "plugin:<plugin>:<server>"',
+		description: 'a channel-server ref: "server:<name>" or "plugin:<name>@<marketplace>"',
 	}),
 );
 export type ChannelServerRef = typeof ChannelServerRef.Type;
+
+/** Whether a validated channel-server ref is a top-level `server:` ref (vs a `plugin:` ref). */
+const isServerRef = (ref: string): boolean => ref.startsWith("server:");
 
 /**
  * The pinned Claude Code CLI version the stand-up asserts before launching any session
@@ -66,12 +80,34 @@ export const EngineCount = Schema.Int.check(
 );
 export type EngineCount = typeof EngineCount.Type;
 
-/** The channel-registration dimension: the mode, the servers each session registers, and the plugin allowlist. */
+/**
+ * The channel-registration dimension: the mode, the servers each session registers, and the
+ * plugin allowlist.
+ *
+ * The cross-field check makes the runtime-invalid combination unrepresentable at decode: a
+ * top-level `server:` ref only registers via `--dangerously-load-development-channels` (which
+ * alone sets the bundle's `dev` flag). 2.1.212's runtime validator SKIPS a non-dev `server:`
+ * channel under `--channels` (`else if(!o.dev) return {action:"skip", ... "server <X> is not on
+ * the approved channels allowlist (use --dangerously-load-development-channels for local dev)"}`,
+ * VERSION 2.1.212, GIT_SHA 8b2783a). So an `allowlist` config carrying a `server:` ref would
+ * name a channel the runtime silently drops — fail closed here instead (#3328).
+ */
 export const ChannelConfig = Schema.Struct({
 	mode: ChannelMode,
 	servers: Schema.NonEmptyArray(ChannelServerRef),
 	allowedChannelPlugins: Schema.Array(Schema.NonEmptyString),
-});
+}).check(
+	Schema.makeFilter((cfg) => {
+		if (cfg.mode !== "allowlist") return undefined;
+		const bare = cfg.servers.filter(isServerRef);
+		return bare.length === 0
+			? undefined
+			: {
+					path: ["servers"],
+					issue: `allowlist mode registers channels via --channels, which loads only plugin:<name>@<marketplace> refs; a top-level server: ref (${bare.join(", ")}) registers only in development mode (--dangerously-load-development-channels)`,
+				};
+	}),
+);
 export type ChannelConfig = typeof ChannelConfig.Type;
 
 /** The launch dimensions the stand-up reads — the clean type every launcher child imports. */
