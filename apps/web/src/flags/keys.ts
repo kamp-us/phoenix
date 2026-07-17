@@ -295,6 +295,21 @@ export const PHOENIX_NAV_IA = "phoenix-nav-ia";
 export const PHOENIX_ADMIN_CONSOLE = "phoenix-admin-console";
 
 /**
+ * Kullanıcılar (user-roster) admin-console module dark-ship flag (#3200, admin epic).
+ * The SINGLE seam the gated user-list read view gates behind — the `userAdmin.list`
+ * admin fate resolver AND the `kullanıcılar` console panel both key off this one string.
+ * Default-off so the whole roster surface reaches production dark until a human flips it
+ * at release (ADR 0083): with it off the server read fails the invisible `Denied` (like a
+ * non-admin call) and the panel renders nothing, so the roster never leaks before release.
+ * Its OWN key, not the `phoenix-admin-console` shell seam — the roster is a distinct admin
+ * capability (read the user list) with its own lifecycle, hosted BY the shipped console
+ * shell (the `phoenix-user-ban` / `phoenix-email-delivery-admin` admin-surface precedent).
+ * The per-user actions (role-assign, ban/unban) wire into this roster behind their own
+ * seams later — this key gates the read view only.
+ */
+export const PHOENIX_USER_ADMIN = "phoenix-user-admin";
+
+/**
  * Edge-resolved shell-boot containment flag (#2928, epic #2926, ADR 0179). The SINGLE seam
  * the whole worker-first shell render ships behind — with it OFF the SPA HTML stays
  * edge-direct byte-identical to today (the `assets` binding serves it, the worker never
@@ -368,6 +383,7 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_EMAIL_DELIVERY_NOTICE, defaultValue: false},
 	{key: PHOENIX_NAV_IA, defaultValue: false},
 	{key: PHOENIX_ADMIN_CONSOLE, defaultValue: false},
+	{key: PHOENIX_USER_ADMIN, defaultValue: false},
 	{key: PHOENIX_EDGE_SHELL_BOOT, defaultValue: false},
 	{key: PROFILE_CANVAS, defaultValue: false},
 	{key: MEMBER_MUTE, defaultValue: false},

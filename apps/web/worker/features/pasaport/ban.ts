@@ -45,3 +45,38 @@ export const resolveBanState = (latest: BanEvent | null, now: Date): BanState =>
 	if (latest.expiresAt !== null && latest.expiresAt.getTime() <= now.getTime()) return NOT_BANNED;
 	return {banned: true, reason: latest.reason, expiresAt: latest.expiresAt};
 };
+
+/** One ban-log row tagged with the account it belongs to — the batch projection's input. */
+export interface UserBanEvent extends BanEvent {
+	/** The account the event was appended for. */
+	readonly userId: string;
+	/** The event's own id — the same-instant tiebreak the single read uses (`created_at DESC, id DESC`). */
+	readonly id: string;
+}
+
+/**
+ * The batched form of {@link resolveBanState}: project the current ban-state for MANY
+ * accounts from a flat slice of the append-only `user_ban_event` log, so an admin roster
+ * reads one query's worth of events and folds it here instead of an N+1 per-row read. The
+ * same latest-event-wins rule as the single read — group by `userId`, pick the newest event
+ * (by `createdAt`, tie-broken by `id`, matching the single read's `ORDER BY created_at DESC,
+ * id DESC`), then {@link resolveBanState}. A user id with no event is simply absent from the
+ * map; the caller reads it as {@link NOT_BANNED}.
+ */
+export const selectBanStates = (
+	events: ReadonlyArray<UserBanEvent>,
+	now: Date,
+): Map<string, BanState> => {
+	const latest = new Map<string, UserBanEvent>();
+	for (const event of events) {
+		const current = latest.get(event.userId);
+		const newer =
+			!current ||
+			event.createdAt.getTime() > current.createdAt.getTime() ||
+			(event.createdAt.getTime() === current.createdAt.getTime() && event.id > current.id);
+		if (newer) latest.set(event.userId, event);
+	}
+	const states = new Map<string, BanState>();
+	for (const [userId, event] of latest) states.set(userId, resolveBanState(event, now));
+	return states;
+};

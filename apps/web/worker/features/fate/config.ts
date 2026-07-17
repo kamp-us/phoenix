@@ -40,6 +40,7 @@ import {fateModule as reportModule} from "../report/fate-module.ts";
 import {fateModule as searchModule} from "../search/fate-module.ts";
 import {fateModule as sozlukModule} from "../sozluk/fate-module.ts";
 import {fateModule as statsModule} from "../stats/fate-module.ts";
+import {fateModule as userAdminModule} from "../user-admin/fate-module.ts";
 import {mergeFateModules} from "./module.ts";
 
 // The one feature registry. Drives BOTH the served config (`mergeFateModules` below)
@@ -58,6 +59,7 @@ export const modules = [
 	bildirimModule,
 	mecmuaModule,
 	muteModule,
+	userAdminModule,
 ];
 
 export const fateConfig = FateServer.config({

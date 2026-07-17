@@ -23,4 +23,10 @@ consoleRegistry.register({
 	panel: lazy(() => import("./email-delivery/EmailDeliveryPanel.tsx")),
 });
 
+consoleRegistry.register({
+	id: "kullanicilar",
+	label: "kullanıcılar",
+	panel: lazy(() => import("./kullanicilar/KullanicilarPanel.tsx")),
+});
+
 export {consoleRegistry};

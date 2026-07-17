@@ -9,12 +9,19 @@
  * `Pasaport` no longer mounts the handler itself.
  */
 import type {Auth as BetterAuth} from "better-auth";
-import {and, desc, eq, inArray, isNull, type SQL, sql} from "drizzle-orm";
+import {and, desc, eq, inArray, isNull, like, or, type SQL, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {
+	emptyKeysetPage,
+	forwardPage,
+	type KeysetPage,
+	keysetAfter,
+	resolveCursor,
+} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import type {StoredTier} from "../kunye/standing.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {
 	resolveSandboxViewer,
@@ -22,7 +29,14 @@ import {
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
 import {postVisibleWhere} from "../pano/PostVisibility.ts";
-import {type BanEvent, type BanState, NOT_BANNED, resolveBanState} from "./ban.ts";
+import {
+	type BanEvent,
+	type BanState,
+	NOT_BANNED,
+	resolveBanState,
+	selectBanStates,
+	type UserBanEvent,
+} from "./ban.ts";
 import {
 	DELIVERABLE,
 	type EmailDeliveryEvent,
@@ -353,8 +367,45 @@ export class Pasaport extends Context.Service<
 		// event projects to `failing`, newest-first. Read only past `requireAdmin`; the
 		// set is derived from the log, never a stored flag.
 		readonly listFailingAddresses: () => Effect.Effect<ReadonlyArray<FailingAddress>>;
+
+		// The admin user roster read (#3200): one keyset page of accounts ordered
+		// newest-first (`created_at DESC, id DESC`), optionally narrowed by a `search`
+		// substring over username/email/name. Record-derived fields only (id, username,
+		// email, tier, createdAt) — the ban-state, role, and moderator standing are joined
+		// by the resolver ({@link banStatesForAdmin} + `moderatorsAmong`), never read off
+		// the retired `user.role` column. Read only past `requireAdmin`; assumes an
+		// authorized caller. `.patterns/fate-connections.md` keyset envelope.
+		readonly listUsersForAdmin: (opts: {
+			search?: string | null;
+			first?: number;
+			after?: string | null;
+		}) => Effect.Effect<KeysetPage<AdminUserRow>>;
+
+		// The BATCHED ban-state read for a roster page (#3200): the current ban-state of
+		// each id, projected from one query over the small append-only `user_ban_event` log
+		// ({@link selectBanStates}), so the roster never runs a per-row `getBanState` (an
+		// in-page N+1). A missing id reads {@link NOT_BANNED} (absent from the map). Read
+		// only past `requireAdmin`.
+		readonly banStatesForAdmin: (
+			ids: ReadonlyArray<string>,
+		) => Effect.Effect<ReadonlyMap<string, BanState>>;
 	}
 >()("@kampus/pasaport/Pasaport") {}
+
+/**
+ * The record-derived row of the admin user roster (#3200) — the `user` columns the
+ * `userAdmin.list` read exposes, before the resolver joins the ban-state / role. `tier`
+ * rides as the stored value; `createdAt` is the raw column (nullable — the founding cohort
+ * predates it), converted to an epoch-millis wire scalar by the feature's shaper. Kept next
+ * to the query that produces it, mirroring `ProfileRow`.
+ */
+export interface AdminUserRow {
+	readonly id: string;
+	readonly username: string | null;
+	readonly email: string;
+	readonly tier: StoredTier;
+	readonly createdAt: Date | null;
+}
 
 /**
  * The seeded `@[silinen]` sentinel's id + display name (ADR 0097). Migration
@@ -1172,6 +1223,113 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						createdAt: row.createdAt ?? new Date(0),
 					}));
 					return selectFailingAddresses(events, new Date());
+				}),
+
+				listUsersForAdmin: Effect.fn("Pasaport.listUsersForAdmin")(function* (opts: {
+					search?: string | null;
+					first?: number;
+					after?: string | null;
+				}) {
+					const first = Math.max(1, Math.min(opts.first ?? 25, 100));
+					const after = opts.after ?? null;
+					const term = opts.search?.trim().toLowerCase();
+
+					// Narrow by a case-insensitive substring over the identity fields when a
+					// search is given; SQLite `LIKE` is case-insensitive for ASCII, and the
+					// username/email columns are ASCII by rule, so no `lower()` wrap is needed.
+					const searchWhere =
+						term && term.length > 0
+							? or(
+									like(schema.user.username, `%${term}%`),
+									like(schema.user.email, `%${term}%`),
+									like(schema.user.name, `%${term}%`),
+								)
+							: undefined;
+
+					// Exclude the seeded `@[silinen]` sentinel + scrubbed tombstones (ADR 0097):
+					// a `deleted_at` row is not a real account an admin manages.
+					const baseWhere = and(isNull(schema.user.deletedAt), searchWhere);
+
+					// Resolve the opaque `after` (a user id) to its keyset tuple — the DB read is
+					// the port, `resolveCursor` the pure cursor-miss decision (ADR 0082): a cursor
+					// that no longer points at a live row yields the empty page. `created_at DESC,
+					// id DESC` is the roster order; `created_at` is effectively always stamped by
+					// better-auth, so the null-column degrade in `keysetAfter` never bites.
+					const resolvedRow = after
+						? ((yield* run((db) =>
+								db
+									.select({createdAt: schema.user.createdAt})
+									.from(schema.user)
+									.where(eq(schema.user.id, after))
+									.get(),
+							)) ?? null)
+						: null;
+					const cursor = resolveCursor(after, resolvedRow);
+					if (cursor.kind === "miss") return emptyKeysetPage;
+					const cursorRow = cursor.kind === "hit" ? cursor.row : null;
+
+					const cursorPredicate = keysetAfter([
+						{column: schema.user.createdAt, dir: "desc", value: cursorRow?.createdAt ?? null},
+						{column: schema.user.id, dir: "desc", value: after},
+					]);
+
+					const where = cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere;
+
+					const fetched = yield* run((db) =>
+						db
+							.select({
+								id: schema.user.id,
+								username: schema.user.username,
+								email: schema.user.email,
+								tier: schema.user.tier,
+								createdAt: schema.user.createdAt,
+							})
+							.from(schema.user)
+							.where(where)
+							.orderBy(desc(schema.user.createdAt), desc(schema.user.id))
+							.limit(first + 1),
+					);
+
+					return forwardPage(
+						fetched,
+						first,
+						(r: AdminUserRow) => r.id,
+						(row): AdminUserRow => ({
+							id: row.id,
+							username: row.username,
+							email: row.email,
+							tier: row.tier,
+							createdAt: row.createdAt,
+						}),
+					);
+				}),
+
+				banStatesForAdmin: Effect.fn("Pasaport.banStatesForAdmin")(function* (
+					ids: ReadonlyArray<string>,
+				) {
+					if (ids.length === 0) return new Map<string, BanState>();
+					const rows = yield* run((db) =>
+						db
+							.select({
+								id: schema.userBanEvent.id,
+								userId: schema.userBanEvent.userId,
+								action: schema.userBanEvent.action,
+								reason: schema.userBanEvent.reason,
+								expiresAt: schema.userBanEvent.expiresAt,
+								createdAt: schema.userBanEvent.createdAt,
+							})
+							.from(schema.userBanEvent)
+							.where(inArray(schema.userBanEvent.userId, [...ids])),
+					);
+					const events: ReadonlyArray<UserBanEvent> = rows.map((row) => ({
+						id: row.id,
+						userId: row.userId,
+						action: row.action,
+						reason: row.reason,
+						expiresAt: row.expiresAt,
+						createdAt: row.createdAt ?? new Date(0),
+					}));
+					return selectBanStates(events, new Date());
 				}),
 			};
 		}),
