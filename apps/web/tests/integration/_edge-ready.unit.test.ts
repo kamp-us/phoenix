@@ -101,14 +101,15 @@ describe("awaitEdgeReady — the shared cold-start readiness primitive (ADR 0127
 
 	it("`/api/health` shape (ASYNC body predicate): rides a 200-but-not-`ok` body out, then resolves once the body reads `{status:'ok'}`", async () => {
 		let call = 0;
+		// Mirrors production `healthReady`: fold the `.json()` rejection to `null` (⇒ not ready)
+		// rather than a raw try/catch in this effect-importing file (#2736 no-raw-try-catch).
 		const healthReady = async (res: Response): Promise<boolean> => {
 			if (res.status !== 200) return false;
-			try {
-				const body = (await res.clone().json()) as {status?: unknown} | null;
-				return body?.status === "ok";
-			} catch {
-				return false;
-			}
+			const body = (await res
+				.clone()
+				.json()
+				.catch(() => null)) as {status?: unknown} | null;
+			return body?.status === "ok";
 		};
 		const send = vi.fn(async () => {
 			call += 1;
