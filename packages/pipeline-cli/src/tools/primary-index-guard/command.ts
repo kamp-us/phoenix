@@ -31,6 +31,7 @@ import {decidePrimaryIndexCommit, MASS_DELETION_BLOCK_THRESHOLD} from "./primary
 export const REFUSE_EXIT_CODE = 3;
 
 const runGit = (args: ReadonlyArray<string>): {ok: boolean; stdout: string} => {
+	// biome-ignore lint/plugin: best-effort git shell — a non-zero exit is fully absorbed into {ok:false} the caller branches on, never the E channel; a total helper, not Effect-cosplay.
 	try {
 		const stdout = execFileSync("git", [...args], {
 			encoding: "utf8",

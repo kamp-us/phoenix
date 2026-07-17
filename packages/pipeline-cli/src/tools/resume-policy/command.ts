@@ -75,12 +75,14 @@ interface StdinPayload {
  */
 const readStdin = (): StdinPayload => {
 	let raw = "";
+	// biome-ignore lint/plugin: best-effort read — an unreadable stdin is absorbed into empties (the flags fill in, or the core default-denies), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		raw = readFileSync(0, "utf8");
 	} catch {
 		return {signal: {}, ledger: {}};
 	}
 	if (raw.trim() === "") return {signal: {}, ledger: {}};
+	// biome-ignore lint/plugin: best-effort parse — a non-JSON stdin is absorbed into empties (the core default-denies), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		const p = JSON.parse(raw) as Record<string, unknown>;
 		return {

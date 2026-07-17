@@ -28,17 +28,20 @@
 import {execFileSync} from "node:child_process";
 import {existsSync, readFileSync} from "node:fs";
 import {join} from "node:path";
-import {Console, Data, Effect} from "effect";
+import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {findStalePointersIn, renderReport, type StalePointer} from "./pointer-guard.ts";
 
 /** A directory/file/git IO failure: the run couldn't complete. */
-export class IoError extends Data.TaggedError("IoError")<{
-	readonly path: string;
-	readonly cause: unknown;
-}> {}
+export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
+	path: Schema.String,
+	cause: Schema.Unknown,
+}) {}
 
 /** Carries the non-zero gate-fail exit (the report is already on stderr). */
-export class CheckFailed extends Data.TaggedError("CheckFailed")<{readonly reason: string}> {}
+export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFailed", {
+	reason: Schema.String,
+}) {}
 
 /**
  * List the repo's git-tracked `CLAUDE.md` files at any depth (NUL-delimited, so
@@ -63,6 +66,7 @@ export const listClaudeMdFiles = (root: string): Effect.Effect<ReadonlyArray<str
  * generated/runtime path (`apps/web/.env`), so it counts as resolved, not as rot.
  */
 const isGitIgnored = (root: string, path: string): boolean => {
+	// biome-ignore lint/plugin: best-effort probe — check-ignore throws on no-match (exit 1) or error (128), both absorbed into false ("not ignored"), never the E channel; a total predicate, not Effect-cosplay.
 	try {
 		execFileSync("git", ["-C", root, "check-ignore", "-q", "--", path], {stdio: "ignore"});
 		return true;

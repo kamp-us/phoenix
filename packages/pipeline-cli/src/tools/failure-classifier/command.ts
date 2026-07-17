@@ -44,12 +44,14 @@ const stageFlag = Flag.string("stage").pipe(
  */
 const readStdinSignal = (): CrashSignal => {
 	let raw = "";
+	// biome-ignore lint/plugin: best-effort read — an unreadable stdin is absorbed into an empty signal (the core default-denies), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		raw = readFileSync(0, "utf8");
 	} catch {
 		return {};
 	}
 	if (raw.trim() === "") return {};
+	// biome-ignore lint/plugin: best-effort parse — a non-JSON stdin is absorbed into a reason-only signal, never the E channel; a total helper, not Effect-cosplay.
 	try {
 		const parsed = JSON.parse(raw) as Record<string, unknown>;
 		return {

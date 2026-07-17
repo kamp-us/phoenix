@@ -40,6 +40,7 @@ const selfApprovalFlag = Flag.boolean("self-approval-at-head").pipe(
 /** Read the control-plane member logins from stdin; empty/failed read ⇒ N==0 (fail closed). */
 const readMembers = (): ReadonlyArray<string> => {
 	let raw: string;
+	// biome-ignore lint/plugin: best-effort read — an empty/failed stdin is absorbed into [] (⇒ N==0, fail closed), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		raw = readFileSync(0, "utf8");
 	} catch {

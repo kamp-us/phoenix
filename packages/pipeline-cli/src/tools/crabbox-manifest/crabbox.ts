@@ -160,6 +160,7 @@ export const parseJUnit = (xml: string | null | undefined): TestSummary => {
 	if (text.length === 0) return {...ZERO_TESTS};
 
 	let root: unknown;
+	// biome-ignore lint/plugin: best-effort parse — malformed XML is absorbed into ZERO_TESTS (ADR 0054 §2: a no-JUnit run must not crash), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		root = xmlParser.parse(text);
 	} catch {

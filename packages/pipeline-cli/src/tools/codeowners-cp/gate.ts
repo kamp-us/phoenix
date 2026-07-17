@@ -17,7 +17,8 @@
  */
 import {existsSync, readFileSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
-import {Console, Data, Effect} from "effect";
+import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {CONTROL_PLANE_RE} from "../control-plane-paths/control-plane-re.ts";
 import {
 	type CpPath,
@@ -34,13 +35,15 @@ export const FORMATS_PATH = "claude-plugins/kampus-pipeline/skills/gh-issue-inta
 export const CODEOWNERS_PATH = ".github/CODEOWNERS";
 
 /** A file/IO failure: the run couldn't read a required source. */
-export class IoError extends Data.TaggedError("IoError")<{
-	readonly path: string;
-	readonly cause: unknown;
-}> {}
+export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
+	path: Schema.String,
+	cause: Schema.Unknown,
+}) {}
 
 /** Carries the non-zero gate-fail exit (the reason is already rendered for stderr). */
-export class CheckFailed extends Data.TaggedError("CheckFailed")<{readonly reason: string}> {}
+export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFailed", {
+	reason: Schema.String,
+}) {}
 
 const readRepoFile = (root: string, rel: string): Effect.Effect<string, IoError> =>
 	Effect.try({

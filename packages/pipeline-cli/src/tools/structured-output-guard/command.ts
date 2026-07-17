@@ -35,6 +35,7 @@ const EXIT_FAIL = 1;
 const EXIT_RETRY = 2;
 
 const readStdin = (): string => {
+	// biome-ignore lint/plugin: best-effort read — an unreadable stdin is absorbed into "" (no input), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		return readFileSync(0, "utf8");
 	} catch {

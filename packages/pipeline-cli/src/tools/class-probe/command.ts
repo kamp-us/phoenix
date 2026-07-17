@@ -74,6 +74,7 @@ const namespacesFlag = Flag.boolean("namespaces").pipe(
 /** Read the changed-file list from `--files-from` or stdin; empty/failed read ⇒ no files. */
 const readFiles = (filesFrom: Option.Option<string>): ReadonlyArray<string> => {
 	let raw: string;
+	// biome-ignore lint/plugin: best-effort read — an empty/failed read is absorbed into no files ([]), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		raw = Option.match(filesFrom, {
 			onSome: (path) => readFileSync(path, "utf8"),
@@ -90,6 +91,7 @@ const readFiles = (filesFrom: Option.Option<string>): ReadonlyArray<string> => {
 
 /** Read local §CLASS text; null (⇒ fail-closed probes) if the file is unreadable. */
 const readFormats = (root: string): string | null => {
+	// biome-ignore lint/plugin: best-effort read — an unreadable file is absorbed into null (⇒ fail-closed probes), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		return readFileSync(join(root, FORMATS_PATH), "utf8");
 	} catch {
@@ -99,6 +101,7 @@ const readFormats = (root: string): string | null => {
 
 /** Read local ship-it/SKILL.md text; null (⇒ fail-closed `UI_RE`) if the file is unreadable. */
 const readShipIt = (root: string): string | null => {
+	// biome-ignore lint/plugin: best-effort read — an unreadable file is absorbed into null (⇒ fail-closed UI_RE), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		return readFileSync(join(root, SHIP_IT_PATH), "utf8");
 	} catch {

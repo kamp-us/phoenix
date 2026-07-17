@@ -68,6 +68,7 @@ const repoFlag = Flag.string("repo").pipe(
 
 /** Read the diff: from `--diff-file` if given, else stdin (fd 0). Any read failure ⇒ null (fail-closed). */
 const readDiff = (diffFile: Option.Option<string>): string | null => {
+	// biome-ignore lint/plugin: best-effort read — any read failure is absorbed into null (fail-closed: the core then refuses), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		return Option.match(diffFile, {
 			onSome: (path) => readFileSync(path, "utf8"),
@@ -82,6 +83,7 @@ const readDiff = (diffFile: Option.Option<string>): string | null => {
 const resolveRepo = (repo: Option.Option<string>): string | null => {
 	const explicit = Option.getOrUndefined(repo) ?? process.env.CLAUDE_PIPELINE_REPO;
 	if (explicit !== undefined && explicit.trim() !== "") return explicit.trim();
+	// biome-ignore lint/plugin: best-effort probe — a failed gh repo view is absorbed into null (unresolved repo ⇒ fail-closed), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		return execFileSync("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], {
 			encoding: "utf8",
@@ -99,6 +101,7 @@ const resolveRepo = (repo: Option.Option<string>): string | null => {
  */
 const resolveControlPlaneRe = (repo: string | null): string | null => {
 	if (repo === null) return null;
+	// biome-ignore lint/plugin: best-effort probe — any failure (gh missing/unauth, repo unresolved, file absent) is absorbed into null (the core then fails closed), never the E channel; a total helper, not Effect-cosplay.
 	try {
 		const raw = execFileSync(
 			"gh",
