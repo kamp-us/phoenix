@@ -64,6 +64,14 @@
 				"noUnusedImports": "error",
 				"noUnusedVariables": "error"
 			},
+			"style": {
+				// `warn`, not `error`: a non-null assertion (`x!`) discards the
+				// compiler's null-safety proof, so surface every one — but as a
+				// nudge, not a hard gate (the error-level flip is a separate
+				// capstone). The test carve-out below stays `off` on purpose:
+				// idiomatic `!` in fixtures/mocks (PR #9) is not worth the noise.
+				"noNonNullAssertion": "warn"
+			},
 			"suspicious": {
 				"noExplicitAny": "off"
 			}
