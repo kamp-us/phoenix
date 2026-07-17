@@ -148,13 +148,29 @@ pre-push:
   parallel: false
   commands:
     typecheck:
-      # tsgo across the workspace (the same `pnpm typecheck` CI runs) — fast enough to run
-      # whole-repo per push; a type error fails closed and blocks the push.
+      # tsgo across the workspace (the same `pnpm typecheck` CI runs); a type error fails
+      # closed and blocks the push. Docs-only fast-path (#3130): a push whose diff vs
+      # origin/main touches ONLY non-code paths (markdown/docs) has nothing tsgo checks, so
+      # it skips the whole-repo run — mirroring the change-scoping the sibling `unit-changed`
+      # leg gets from `--changed origin/main`. Fail-SAFE: any changed path not recognized as
+      # docs — or a diff that can't be computed (origin/main unfetched) — runs the full
+      # typecheck, so a code change is NEVER skipped. Toolchain-absence still fails open.
       run: |
         command -v pnpm >/dev/null 2>&1 || {
           echo "typecheck: no pnpm on PATH (stripped-PATH/lean worktree); skipping local pre-push typecheck — CI is the authority" >&2
           exit 0
         }
+        CHANGED=$(git diff --name-only origin/main...HEAD 2>/dev/null) || CHANGED=""
+        # NON-DOC = changed paths that are NOT markdown/docs. Empty NON-DOC (with a non-empty
+        # diff) ⇒ docs-only ⇒ skip. Tested via empty-output, not `grep -qv`: the `-q`+`-v`
+        # combo misbehaves under some grep variants (ugrep returns non-zero even with
+        # non-matching lines), which the empty-output form sidesteps portably.
+        NONDOC=""
+        [ -n "$CHANGED" ] && NONDOC=$(printf '%s\n' "$CHANGED" | grep -vE '\.(md|mdx|txt)$')
+        if [ -n "$CHANGED" ] && [ -z "$NONDOC" ]; then
+          echo "typecheck: docs-only push (every path changed vs origin/main is markdown/docs); skipping whole-repo typecheck — CI is the authority" >&2
+          exit 0
+        fi
         pnpm typecheck
     unit-changed:
       # `vitest run --changed origin/main` (unit project) — only the suites related to files
