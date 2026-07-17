@@ -109,6 +109,19 @@ describe("standup/config — decodeLaunchConfig (happy path, one-role-map shape)
 				assert.deepStrictEqual([...cfg.channels.allowedChannelPlugins], ["pipeline-crew"]);
 			}),
 	);
+	it.effect("an omitted cliVersion decodes cleanly to an unpinned launch (issue #3417)", () =>
+		Effect.gen(function* () {
+			// The pin is optional: absent ⇒ NOT a LaunchConfigError, and the field is simply not
+			// present on the decoded config (the "unpinned" launch — a clean absence, not a sentinel).
+			const {cliVersion: _omit, ...unpinned} = validLaunch;
+			const cfg = yield* decodeLaunchConfig(unpinned, DEFAULT_CONFIG_PATH);
+			assert.strictEqual(cfg.cliVersion, undefined);
+			assert.isFalse(Object.hasOwn(cfg, "cliVersion"));
+			// the rest of the launch dimensions still decode as usual
+			assert.strictEqual(cfg.engineCount, 2);
+			assert.strictEqual(cfg.channels.mode, "allowlist");
+		}),
+	);
 	it.effect("accepts the development channel mode carrying a top-level server: ref", () =>
 		Effect.gen(function* () {
 			// A `server:` ref rides --dangerously-load-development-channels, so it is
@@ -237,18 +250,19 @@ describe("standup/config — engine count reads off roles['engineering-manager']
 });
 
 describe("standup/config — fails closed naming the offending dimension", () => {
-	it.effect("cliVersion missing", () =>
+	// NB: an ABSENT cliVersion is NOT a failure — it decodes to the unpinned launch (issue #3417),
+	// covered in the happy-path describe above. Only a PRESENT-but-malformed pin fails closed here.
+	it.effect("cliVersion malformed (present but not a version) still fails closed", () =>
 		Effect.gen(function* () {
-			const {cliVersion: _omit, ...rest} = validLaunch;
-			const err = yield* decodeErr(rest);
+			const err = yield* decodeErr({...validLaunch, cliVersion: "latest"});
 			assert.instanceOf(err, LaunchConfigError);
 			assert.include(err.reason, "cliVersion");
 			assert.strictEqual(err.configPath, "/tmp/crew.config.jsonc");
 		}),
 	);
-	it.effect("cliVersion malformed (not a version)", () =>
+	it.effect("cliVersion present but null still fails closed", () =>
 		Effect.gen(function* () {
-			const err = yield* decodeErr({...validLaunch, cliVersion: "latest"});
+			const err = yield* decodeErr({...validLaunch, cliVersion: null});
 			assert.include(err.reason, "cliVersion");
 		}),
 	);

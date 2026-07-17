@@ -1,8 +1,9 @@
 /**
  * standup/version-assert — the pre-launch pinned-CLI-version assert (issue #3295). Covers the
- * three decisions the assert makes with the launch side stubbed via an injected version reader:
- * installed == pinned proceeds silently, installed != pinned aborts naming both versions, and an
- * unreadable/unparseable installed version aborts. Also covers the pure `parseCliVersion` extractor.
+ * decisions the assert makes with the launch side stubbed via an injected version reader: an
+ * absent pin skips the assert unread (the unpinned launch, issue #3417), installed == pinned
+ * proceeds silently, installed != pinned aborts naming both versions, and an unreadable/unparseable
+ * installed version aborts. Also covers the pure `parseCliVersion` extractor.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
@@ -25,6 +26,17 @@ describe("standup/version-assert — parseCliVersion", () => {
 });
 
 describe("standup/version-assert — assertPinnedCliVersion", () => {
+	it.effect(
+		"proceeds without reading the installed version when the pin is absent (unpinned)",
+		() =>
+			Effect.gen(function* () {
+				// The unpinned launch (issue #3417): with no pin the assert is skipped entirely and the
+				// installed version is accepted UNREAD — a reader that would fail proves it is never run.
+				const readerNeverRuns = Effect.fail("reader must not be invoked when unpinned");
+				yield* assertPinnedCliVersion({}, readerNeverRuns);
+			}),
+	);
+
 	it.effect("proceeds silently when installed == pinned", () =>
 		Effect.gen(function* () {
 			// A void success is the whole contract of a match — no error, nothing to assert on but the exit.
