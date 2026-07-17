@@ -24,12 +24,13 @@ describe("tracker socket path — per-project derivation", () => {
 });
 
 describe("tracker served surface — control-plane only", () => {
-	it("serves exactly the four registry kinds and no message-relay kind", () => {
+	it("serves exactly the five registry kinds and no message-relay kind", () => {
 		assert.deepStrictEqual([...TrackerRegistry.requests.keys()].sort(), [
 			"AnnouncePresence",
 			"Claim",
 			"Heartbeat",
 			"LookupRole",
+			"Release",
 		]);
 		for (const relay of ["AckInbox", "DrainProgress", "EpicHandoff", "IntakePing"]) {
 			assert.isFalse(

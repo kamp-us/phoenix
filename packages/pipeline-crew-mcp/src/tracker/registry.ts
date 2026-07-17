@@ -17,6 +17,12 @@ export interface AnnounceInput {
 	readonly ttlSeconds: number;
 }
 
+export interface ClaimInput {
+	readonly resource: string;
+	readonly claimant: string;
+	readonly claimantRole: string;
+}
+
 export class Registry extends Context.Service<
 	Registry,
 	{
@@ -24,14 +30,21 @@ export class Registry extends Context.Service<
 		readonly acquire: (input: AnnounceInput) => Effect.Effect<Core.AcquireOutcome>;
 		/** Soft presence announce — acquire and discard the outcome (the fire-and-forget wire kind). */
 		readonly announce: (input: AnnounceInput) => Effect.Effect<void>;
-		/** Refresh the TTL window for every lease `peer` holds. */
+		/** Claim `resource` for `claimant`, returning granted or a collision with a live-presence holder. */
+		readonly claim: (input: ClaimInput) => Effect.Effect<Core.ClaimOutcome>;
+		/** Free `resource`'s claim iff `claimant` holds it — steal-release is a no-op (ADR 0191 facet 3). */
+		readonly releaseClaim: (input: {
+			readonly resource: string;
+			readonly claimant: string;
+		}) => Effect.Effect<void>;
+		/** Refresh the TTL window for every role lease `peer` holds (never a claim — ADR 0191 facet 4). */
 		readonly heartbeat: (input: {
 			readonly peer: string;
 			readonly ttlSeconds: number;
 		}) => Effect.Effect<void>;
 		/** The present holders of `role` (empty ⇒ absent/expired — the explicit not-present result). */
 		readonly lookup: (role: string) => Effect.Effect<ReadonlyArray<Core.PresenceRecord>>;
-		/** Free every lease `peer` holds — a connection close (connection-is-lease). */
+		/** Free every lease `peer` holds and reap its claims — a connection close (connection-is-lease). */
 		readonly release: (peer: string) => Effect.Effect<void>;
 	}
 >()("@kampus/pipeline-crew-mcp/tracker/Registry") {}
@@ -47,9 +60,24 @@ export const RegistryLive: Layer.Layer<Registry> = Layer.effect(Registry)(
 					return [outcome, next];
 				});
 			});
+		const claim = (input: ClaimInput) =>
+			Effect.gen(function* () {
+				const nowMillis = yield* Clock.currentTimeMillis;
+				return yield* Ref.modify(ref, (state) => {
+					const {state: next, outcome} = Core.claimResource(state, {
+						resource: input.resource,
+						holder: input.claimant,
+						claimantRole: input.claimantRole,
+						nowMillis,
+					});
+					return [outcome, next];
+				});
+			});
 		return {
 			acquire,
 			announce: (input) => Effect.asVoid(acquire(input)),
+			claim,
+			releaseClaim: (input) => Ref.update(ref, (state) => Core.releaseClaim(state, input)),
 			heartbeat: (input) =>
 				Clock.currentTimeMillis.pipe(
 					Effect.flatMap((nowMillis) =>

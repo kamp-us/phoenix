@@ -16,5 +16,6 @@ export {
 	IntakePing,
 	LookupRole,
 	payloadSchemaForKind,
+	Release,
 } from "./group.ts";
 export * as Messages from "./schema.ts";

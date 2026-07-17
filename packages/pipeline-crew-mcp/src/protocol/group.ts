@@ -1,12 +1,13 @@
 /**
- * protocol/group — the 7 crew message kinds as one Effect `RpcGroup`.
+ * protocol/group — the 8 crew message kinds as one Effect `RpcGroup`.
  *
  * Generic (crew-agnostic); see the boundary note in `../index.ts`. Each kind is an
  * `Rpc` carrying a Schema payload from `./schema.ts`. Kinds that expect an answer
  * (claim/collision-check, role lookup) set a `success` schema — a typed reply the
  * caller awaits; the fire-and-forget kinds leave `success` unset, so it defaults to
- * `Schema.Void`. That success/void split is exactly what distinguishes a
- * request-response kind from a fire-and-forget one on the wire.
+ * `Schema.Void` (effect-smol `Rpc.ts` — `const successSchema = options?.success ?? Schema.Void`).
+ * That success/void split is exactly what distinguishes a request-response kind from a
+ * fire-and-forget one on the wire.
  */
 import type {Schema} from "effect";
 import {Rpc, RpcGroup} from "effect/unstable/rpc";
@@ -16,6 +17,11 @@ import * as Messages from "./schema.ts";
 export const Claim = Rpc.make("Claim", {
 	payload: Messages.ClaimRequest,
 	success: Messages.ClaimReply,
+});
+
+/** Kind 1b — release a held resource claim (fire-and-forget; the claim lifecycle's free, ADR 0191). */
+export const Release = Rpc.make("Release", {
+	payload: Messages.ReleaseClaim,
 });
 
 /** Kind 2 — planned-epic handoff (EM → builder). */
@@ -54,9 +60,10 @@ export const AckInbox = Rpc.make("AckInbox", {
 	payload: Messages.InboxAck,
 });
 
-/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 7 kinds. */
+/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 8 kinds. */
 export const CrewProtocol = RpcGroup.make(
 	Claim,
+	Release,
 	EpicHandoff,
 	DrainProgress,
 	IntakePing,

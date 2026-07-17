@@ -10,9 +10,16 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Context, Effect, Layer, Option} from "effect";
+import {RpcTest} from "effect/unstable/rpc";
 import {SocketServerError, SocketServerOpenError} from "effect/unstable/socket/SocketServer";
+import {TrackerRegistry} from "../tracker/group.ts";
+import {TrackerHandlers} from "../tracker/handlers.ts";
 import {isTrackerAddressInUse} from "../tracker/index.ts";
+import {RegistryLive} from "../tracker/registry.ts";
 import {CrewTracker, crewTrackerHostOrDialLayer} from "./tracker.ts";
+
+const registryHandlers = TrackerHandlers.pipe(Layer.provide(RegistryLive));
+const nowIso = () => new Date().toISOString();
 
 const errWithCode = (code: string): Error => Object.assign(new Error(code), {code});
 
@@ -51,6 +58,63 @@ describe("crew/tracker — first-peer-spawn: two sessions on one project root, o
 			const found = yield* tracker.lookup("reviewer");
 			assert.isTrue(Option.isSome(found), "a session with no peer still has a working tracker");
 		}).pipe(Effect.scoped),
+	);
+});
+
+describe("crew/tracker — acquireClaim + release (the claim lifecycle client, ADR 0191 facet 3)", () => {
+	it.effect("acquireClaim frees the claim on scope close so another peer can then claim it", () =>
+		Effect.gen(function* () {
+			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			const ctx = yield* Layer.build(CrewTracker.fromClient(client));
+			const tracker = Context.get(ctx, CrewTracker);
+			// both holders need live presence for their claims to be live (presence-derived liveness)
+			yield* client.AnnouncePresence({peer: "inbox://a", role: "builder", at: nowIso()});
+			yield* client.AnnouncePresence({peer: "inbox://b", role: "reviewer", at: nowIso()});
+
+			// hold the claim for an inner scope; while held, a foreign claim collides
+			yield* Effect.scoped(
+				Effect.gen(function* () {
+					const reply = yield* tracker.acquireClaim({
+						resource: "issue-1",
+						claimant: "inbox://a",
+						role: "builder",
+					});
+					assert.isTrue(reply.granted);
+					const collided = yield* tracker.claim({
+						resource: "issue-1",
+						claimant: "inbox://b",
+						role: "reviewer",
+					});
+					assert.isTrue(collided.collision, "the claim is held while its scope is open");
+				}),
+			);
+
+			// scope closed ⇒ acquireClaim's Release fired ⇒ the resource is free again
+			const afterRelease = yield* tracker.claim({
+				resource: "issue-1",
+				claimant: "inbox://b",
+				role: "reviewer",
+			});
+			assert.isTrue(afterRelease.granted, "the claim was released on scope close");
+		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
+	);
+
+	it.effect("release frees a claim explicitly (the lane-finish fast path)", () =>
+		Effect.gen(function* () {
+			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			const ctx = yield* Layer.build(CrewTracker.fromClient(client));
+			const tracker = Context.get(ctx, CrewTracker);
+			yield* client.AnnouncePresence({peer: "inbox://a", role: "builder", at: nowIso()});
+			yield* client.AnnouncePresence({peer: "inbox://b", role: "reviewer", at: nowIso()});
+			yield* tracker.claim({resource: "issue-1", claimant: "inbox://a", role: "builder"});
+			yield* tracker.release({resource: "issue-1", claimant: "inbox://a"});
+			const reclaim = yield* tracker.claim({
+				resource: "issue-1",
+				claimant: "inbox://b",
+				role: "reviewer",
+			});
+			assert.isTrue(reclaim.granted, "the explicitly-released resource is free");
+		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
 	);
 });
 

@@ -31,6 +31,14 @@ describe("protocol/schema round-trips", () => {
 		});
 	});
 
+	it("kind 1b — release claim (fire-and-forget, no reply)", () => {
+		roundTrips(Messages.ReleaseClaim, {
+			resource: "issue:3054",
+			claimant: "peer-a",
+			at: "2026-07-16T10:05:00Z",
+		});
+	});
+
 	it("kind 2 — planned-epic handoff (with and without the optional summary)", () => {
 		roundTrips(Messages.EpicHandoffNotice, {
 			epic: "epic:3045",
