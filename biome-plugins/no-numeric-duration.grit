@@ -1,0 +1,110 @@
+// Ban a bare numeric-literal argument to the effect duration-taking APIs — require an
+// `effect/Duration` value (or a unit-tagged string like "100 millis") so the unit is
+// unambiguous at the call site.
+//
+// Rationale (single site; #3196): Effect's `Duration.Input` accepts a bare `number`
+// interpreted as *milliseconds*. `Effect.sleep(5000)` and `Schedule.spaced(1000)` read
+// as "5000 of something" / "1000 of something" — the unit lives only in the reader's
+// head, and a "seconds" mistake (`sleep(5)` meaning to wait 5s but actually waiting 5ms)
+// is invisible at the call site. `Duration.seconds(5)` / `Duration.millis(5000)` (or the
+// tagged string form the codebase already uses, `"100 millis"`) names the unit in the
+// source. GritQL has no type info, so this stays syntactic: it flags only a numeric
+// LITERAL in the duration position of the named APIs — a `Duration.*` value, a tagged
+// string, or a variable are all left alone.
+//
+// Scope discriminator (low false-positive by construction — grounded in effect@4.0-beta
+// Schedule.ts / Effect.ts): only the DURATION-taking APIs are named. `Effect.sleep`,
+// `Effect.timeout`, `Effect.delay` take `Duration.Input`; among the Schedule combinators
+// `spaced`/`exponential`/`fixed`/`windowed` take `Duration.Input`, but `Schedule.recurs(n)`
+// takes a repetition COUNT — a legitimate bare number — and is deliberately NOT flagged
+// (nor are the schedule-combining `both`/`jittered`/`union`/… which take schedules, not
+// numbers). `exponential`'s optional second arg is a numeric `factor` multiplier, also a
+// legitimate bare number, so only its first (base duration) position is matched.
+//
+// Registered via biome.jsonc `"plugins"` at `warn` (#3196 — warnings don't fail CI while
+// existing sites are migrated; the flip to `error` is a separate capstone child). A
+// genuine exception is a per-line `// biome-ignore lint/plugin: <reason>`.
+language js;
+
+or {
+	`Effect.sleep($d)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Effect.timeout($d)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Effect.timeout($self, $d)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Effect.delay($d)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Effect.delay($self, $d)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Schedule.spaced($d)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Schedule.fixed($d)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Schedule.windowed($d)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Schedule.exponential($d)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Schedule.exponential($d, $factor)` where {
+		$d <: JsNumberLiteralExpression(),
+		register_diagnostic(
+			span = $d,
+			message = "Bare numeric duration is banned — a `number` is interpreted as milliseconds, so the unit is invisible at the call site (#3196). Fix: use `Duration.seconds(...)`/`Duration.millis(...)` or a unit-tagged string like `\"5 seconds\"`. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	}
+}

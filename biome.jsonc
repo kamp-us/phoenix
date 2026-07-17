@@ -54,7 +54,8 @@
 		"./biome-plugins/no-effect-promise.grit",
 		"./biome-plugins/no-context-tag.grit",
 		"./biome-plugins/no-data-taggederror.grit",
-		"./biome-plugins/no-raw-try-catch.grit"
+		"./biome-plugins/no-raw-try-catch.grit",
+		"./biome-plugins/no-numeric-duration.grit"
 	],
 	"linter": {
 		"enabled": true,
