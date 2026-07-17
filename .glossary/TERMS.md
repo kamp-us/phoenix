@@ -260,6 +260,19 @@ the seam contract lives in [`claude-plugins/pipeline-crew/PERSONALIZATION.md`](.
 | crew | The **3-session topology** pipeline-crew distributes: **EA / chief-of-staff** (human interface + situational awareness — single-owner notification, §CP bank-and-relay), **engineering-manager** (execution conductor over ephemeral pipeline subagents — WIP caps, queued-vs-merged verification, stall recovery), and **triage-guy** (intake loop + planning/canon seam), coordinated across three seams: **intake → execution → human**. Each role is one spawnable agent def. | a single agent (it is three coordinated sessions); the pipeline *skills* (those are kampus-pipeline — the crew conducts them); personal operator config (the topology is shipped; who fills it is the personalization seam) |
 | personalization seam | The **single per-install configuration surface** through which every operator-specific detail enters a crew install (`claude-plugins/pipeline-crew/PERSONALIZATION.md` + the `crew.config.template.jsonc` template): operator/founder name, control-plane approver, notification channel/handle, tmux/session naming, and model tiers — enumerated once, supplied at stand-up via an operator-owned config file (`$CREW_CONFIG` → `.claude/crew.config.jsonc`), never baked into plugin content. Grounded in the plugin spec's static-component model + the ADR 0062 repo-as-config precedent; the contract every crew def writes against. | a literal in a def (the whole point is that no operator/machine detail is hardcoded); an install-time settings prompt (the spec has none — it is a read-at-runtime file); a surface carrying any real operator data (placeholders only) |
 
+## Deterministic crew mechanics (the Tracker service — epic #3247)
+
+Wave 1 of the #3247 emission (epic [#3258](https://github.com/kamp-us/phoenix/issues/3258)):
+the crew's recurring GitHub-tracker interactions stop being hand-composed `gh api` envelopes
+re-derived per skill and become shared `pipeline-cli` verbs against a domain-shaped **`Tracker`**
+service. This names the noun — and pins the same-word/different-layer collision with the
+crew-MCP **presence** tracker so the two are never wired together (founder-approved boundary,
+disambiguation comments on #3258/#3259).
+
+| Term | Definition | Not |
+|---|---|---|
+| Tracker (GitHub-issue layer) | The shared Effect service (tag + provided layer, epic [#3258](https://github.com/kamp-us/phoenix/issues/3258)) consolidating the `Github`/`GithubLive` idiom into one domain-shaped **GitHub-issue tracker** abstraction — issues / labels / comments / claims / maps. Signatures are domain-shaped (`claim` / `apply-triage` / `post-verdict` / `graduate`) with **NO** GitHub semantics leaking through (no `sub_issue` ids, label strings, or REST idioms in the signature); its `claim` verb is the ADR-0115 issue-claim **envelope**. `GithubTrackerLive` is its **only** implementation. Covers the **tracker surface ONLY** — the merge/review substrate (merge queue, §CP CODEOWNERS, the [ADR 0055](../.decisions/0055-acl-sourced-review-authz.md) ACL trust root) stays GitHub-native, never behind it. | the **crew-MCP presence tracker** ([#3219](https://github.com/kamp-us/phoenix/issues/3219) "tracker launch") and its live work-lease **`Claim`** ([#3228](https://github.com/kamp-us/phoenix/issues/3228)) — a **different layer** (live inter-session presence/coordination, not GitHub issues). Same words, different layer: the two **coexist as distinct layers** and the GitHub `Tracker` is **NOT** wired into the crew-MCP presence tracker (founder-approved, #3258/#3259). Also not a pluggable-adapter surface (`GithubTrackerLive` is the sole impl; the GitHub/Asana/local-markdown adapter future is the separate epic #3256) |
+
 ## wayfinder (the ideation layer — epic #2421)
 
 The pre-triage **ideation layer** that sits *upstream* of the execution pipeline: where the
