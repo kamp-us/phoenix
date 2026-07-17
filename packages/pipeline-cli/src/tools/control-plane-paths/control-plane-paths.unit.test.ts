@@ -31,6 +31,14 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/report/lib/helper.sh")).toBe(true);
 	});
 
+	it("classifies the lint/GritQL governance config as control-plane (ADR 0193)", () => {
+		// An ungated path to weaken a lint rule is a guard-relaxing vector — same class as ADR 0187's
+		// enforcement-surface test. The root biome config and every GritQL plugin rule are §CP.
+		expect(isControlPlane("biome.jsonc")).toBe(true);
+		expect(isControlPlane("biome-plugins/no-raw-try-catch.grit")).toBe(true);
+		expect(isControlPlane("biome-plugins/no-type-assertions.grit")).toBe(true);
+	});
+
 	it("does NOT classify the four deliberately-OUT skill dirs (operational, not gate-critical)", () => {
 		for (const skill of ["heal-ci", "what-shipped", "doctor", "wayfinder"]) {
 			expect(isControlPlane(`claude-plugins/kampus-pipeline/skills/${skill}/SKILL.md`)).toBe(false);
@@ -52,6 +60,11 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/doctor/notes.txt")).toBe(false);
 		// a `.sh`-suffixed name that is NOT a `.sh` file (no such extension boundary) also stays out
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/doctor/doctor.shell")).toBe(false);
+		// biome-governance §CP (ADR 0193) is tightly anchored: some OTHER root config/file stays
+		// non-§CP (a NEGATIVE), and `biome\.jsonc$` end-anchors so a look-alike suffix is not §CP.
+		expect(isControlPlane("turbo.json")).toBe(false);
+		expect(isControlPlane("pnpm-workspace.yaml")).toBe(false);
+		expect(isControlPlane("biome.jsonc.bak")).toBe(false);
 	});
 
 	it("still classifies every PRE-EXISTING §CP path (no branch dropped)", () => {

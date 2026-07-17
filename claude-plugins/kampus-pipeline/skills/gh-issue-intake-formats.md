@@ -1414,7 +1414,10 @@ since a gate/merge agent's own instructions are a self-weakening surface; the **
 `.sh` guards** under `skills/` and the **`release`/`review-trivial` skill dirs** added by ADR
 [0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md)
 (#2576/#2679), since a guard script and a SHA-bound-verdict gate are self-weakening surfaces that
-were escaping the boundary). Everything else — `apps/**`,
+were escaping the boundary; the **lint/GritQL governance config** — `biome.jsonc` and
+`biome-plugins/**` — added by ADR
+[0193](https://github.com/kamp-us/phoenix/blob/main/.decisions/0193-lint-governance-config-is-control-plane.md),
+since an ungated path to weaken a lint rule is a guard-relaxing vector). Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
 clause below), `.patterns/**`, every prose doc `*.md` (the
 §DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
@@ -1444,7 +1447,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\.jsonc$|^biome-plugins/'
 # --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
 # concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
 # API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a
