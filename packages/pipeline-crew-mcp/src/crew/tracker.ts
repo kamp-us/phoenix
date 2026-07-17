@@ -17,7 +17,7 @@ import {Context, Effect, Layer, Option, type Scope} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
 import {type RolePresence, Tracker} from "../peer/index.ts";
 import type * as Schema from "../protocol/schema.ts";
-import {TrackerRegistry} from "../tracker/index.ts";
+import {isTrackerAddressInUse, TrackerRegistry, trackerServerLayer} from "../tracker/index.ts";
 
 /** The typed answer to a claim/collision-check — re-exported so consumers name one type. */
 export type ClaimReply = typeof Schema.ClaimReply.Type;
@@ -106,4 +106,25 @@ const trackerClientSocketProtocol = (socketPath: string) =>
 export const crewTrackerSocketLayer = (socketPath: string) =>
 	Layer.unwrap(RpcClient.make(TrackerRegistry).pipe(Effect.map(CrewTracker.fromClient))).pipe(
 		Layer.provide(trackerClientSocketProtocol(socketPath)),
+	);
+
+/**
+ * The first-peer-spawn `CrewTracker` binding a runnable session uses: host the tracker for this
+ * project if the socket is free, otherwise dial the peer that already hosts it. The first bind wins
+ * the socket; a racing peer's bind raises `EADDRINUSE`, caught here so it dials the existing tracker
+ * instead of crashing — the exact story `../tracker/server.ts` documents, now wired. Two concurrent
+ * sessions on one project root thus resolve to exactly one live tracker.
+ *
+ * `Layer.provide` sequences the bind before the dial (the server layer is built first, so the socket
+ * is listening before the client connects) and keeps the hosted server scoped for the session's
+ * lifetime. A non-`EADDRINUSE` bind failure is re-raised, never dialed over.
+ */
+export const crewTrackerHostOrDialLayer = (socketPath: string): Layer.Layer<CrewTracker, unknown> =>
+	crewTrackerSocketLayer(socketPath).pipe(
+		Layer.provide(trackerServerLayer(socketPath)),
+		Layer.catchCause((cause) =>
+			isTrackerAddressInUse(cause)
+				? crewTrackerSocketLayer(socketPath)
+				: Layer.effect(CrewTracker, Effect.failCause(cause)),
+		),
 	);

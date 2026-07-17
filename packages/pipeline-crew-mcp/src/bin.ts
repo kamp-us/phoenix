@@ -4,12 +4,18 @@
  *
  *   node src/bin.ts                                  # the root command (no seam wired)
  *   node src/bin.ts session --role <role>            # run one live crew session (stdio MCP)
+ *   node src/bin.ts tracker                           # run a standalone per-project tracker
  *
  * The `session` subcommand is the runnable stdio MCP entry (#3062): it stands up one live crew
  * session's `McpServer` over stdio + its channel peer, so the crew's inter-session seams run over
  * the channels protocol. `--role` is one of the five standing `CREW_ROLES` (the roster is the
  * single source — the flag chooses from it, never a re-declared list); the session joins the
- * per-project tracker at `--project-root` (default: cwd). It runs until interrupted.
+ * per-project tracker at `--project-root` (default: cwd), first-peer-spawn hosting it if no peer
+ * has yet. It runs until interrupted.
+ *
+ * The `tracker` subcommand stands a project's tracker up on its own (`launchTracker`), decoupled
+ * from any role session — the explicit way to pre-warm or keep a registry alive across session
+ * restarts. It is idempotent: if a tracker already serves the project it reports so and exits 0.
  *
  * NB: an MCP stdio server owns stdout for JSON-RPC, so the one startup line goes to STDERR — a
  * log on stdout would corrupt the protocol stream.
@@ -18,10 +24,11 @@
  * for the typed command, the Node platform over `NodeServices.layer`, run via `NodeRuntime.runMain`.
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Console, Effect} from "effect";
+import {Cause, Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 
 import {CREW_ROLES, RoleUniquenessError, runCrewSession} from "./crew/index.ts";
+import {isTrackerAddressInUse, launchTracker} from "./tracker/index.ts";
 import {VERSION} from "./version.ts";
 
 const roleFlag = Flag.choice("role", CREW_ROLES).pipe(
@@ -51,6 +58,27 @@ const session = Command.make(
 	}),
 ).pipe(Command.withDescription("Run one live crew session: stdio MCP server + channel peer"));
 
+const tracker = Command.make(
+	"tracker",
+	{projectRoot: projectRootFlag},
+	Effect.fn(function* ({projectRoot}) {
+		yield* Console.error(
+			`pipeline-crew-mcp ${VERSION} — standalone tracker for project ${projectRoot}`,
+		);
+		return yield* launchTracker(projectRoot).pipe(
+			Effect.catchCause((cause) =>
+				isTrackerAddressInUse(cause)
+					? Console.error(`a tracker already serves project ${projectRoot} — nothing to do`)
+					: Console.error(`tracker failed to start: ${String(Cause.squash(cause))}`).pipe(
+							Effect.andThen(Effect.sync(() => process.exit(1))),
+						),
+			),
+		);
+	}),
+).pipe(
+	Command.withDescription("Run a standalone per-project tracker (the registry socket server)"),
+);
+
 const cli = Command.make(
 	"pipeline-crew-mcp",
 	{},
@@ -61,7 +89,7 @@ const cli = Command.make(
 	}),
 ).pipe(
 	Command.withDescription("The crew's channels-backed messaging substrate (epic #3045)"),
-	Command.withSubcommands([session]),
+	Command.withSubcommands([session, tracker]),
 );
 
 cli.pipe(Command.run({version: VERSION}), Effect.provide(NodeServices.layer), NodeRuntime.runMain);

@@ -35,6 +35,7 @@ export {
 export {
 	type ClaimReply,
 	CrewTracker,
+	crewTrackerHostOrDialLayer,
 	crewTrackerSocketLayer,
 	peerTrackerLayer,
 	type TrackerRegistryClient,

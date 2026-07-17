@@ -14,4 +14,9 @@ export {
 	type PresenceRecord,
 	type RegistryState,
 } from "./registry-core.ts";
-export {launchTracker, socketPathFor, trackerServerLayer} from "./server.ts";
+export {
+	isTrackerAddressInUse,
+	launchTracker,
+	socketPathFor,
+	trackerServerLayer,
+} from "./server.ts";
