@@ -14,9 +14,9 @@ import type {AnyKnobSchema, KnobSchema} from "./knob";
 export interface Exhibit<P> {
 	/** Stable kebab-case slug — the URL segment and the registry key; unique across the registry. */
 	readonly id: string;
-	/** Turkish display name shown in the index and as the detail heading. */
+	/** The component's real (English, technical) name shown in the index and as the detail heading. */
 	readonly title: string;
-	/** One-line Turkish thesis — the curation note stating why this piece earns an exhibit. */
+	/** One-line thesis — the curation note stating why this piece earns an exhibit. */
 	readonly summary?: string;
 	readonly component: React.ComponentType<P>;
 	readonly knobs: KnobSchema<P>;

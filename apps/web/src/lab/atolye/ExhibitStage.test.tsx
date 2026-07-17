@@ -39,15 +39,15 @@ describe("ExhibitStage — knob-value → props plumbing (behavior)", () => {
 		const host = container.querySelector(".kp-btn")!;
 		expect(host.classList.contains("kp-btn--lg")).toBe(false);
 
-		fireEvent.click(screen.getByText("Büyük"));
+		fireEvent.click(screen.getByText("Large"));
 
 		expect(host.classList.contains("kp-btn--lg")).toBe(true);
 	});
 
 	it("labels every knob control (accessibility)", () => {
 		render(<ExhibitStage exhibit={buttonExhibit} />);
-		// the loading boolean knob is reachable by its Turkish label
-		expect(screen.getByText("Yükleniyor")).toBeTruthy();
-		expect(screen.getByText("Görünüm")).toBeTruthy();
+		// the knob labels are the component's technical (English) prop names
+		expect(screen.getByText("Loading")).toBeTruthy();
+		expect(screen.getByText("Appearance")).toBeTruthy();
 	});
 });

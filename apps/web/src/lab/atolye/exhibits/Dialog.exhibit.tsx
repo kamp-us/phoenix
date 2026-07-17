@@ -27,11 +27,11 @@ function DialogDemo({showClose, defaultOpen}: {showClose?: boolean; defaultOpen?
 
 export const dialogExhibit = defineExhibit<React.ComponentProps<typeof DialogDemo>>({
 	id: "dialog",
-	title: "İletişim Kutusu",
-	summary: "Başlık, gövde ve eylemleriyle modal iletişim kutusu — base-ui Dialog üstünde.",
+	title: "Dialog",
+	summary: "Modal dialog with a title, body, and actions — built on base-ui Dialog.",
 	component: DialogDemo,
 	knobs: {
-		defaultOpen: {kind: "boolean", label: "Açık başlat", default: false},
-		showClose: {kind: "boolean", label: "Kapat düğmesi", default: true},
+		defaultOpen: {kind: "boolean", label: "Start open", default: false},
+		showClose: {kind: "boolean", label: "Close button", default: true},
 	},
 });

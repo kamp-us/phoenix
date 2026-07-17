@@ -24,7 +24,7 @@ export function PropKnobs({schema, values, onChange}: PropKnobsProps) {
 	if (entries.length === 0) {
 		return (
 			<p className={styles.empty} aria-live="polite">
-				Bu sergide ayarlanabilir bir özellik yok.
+				This exhibit has no adjustable props.
 			</p>
 		);
 	}

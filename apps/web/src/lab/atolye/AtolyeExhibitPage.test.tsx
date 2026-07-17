@@ -55,7 +55,7 @@ describe("AtolyeExhibitPage — /lab/atolye/:exhibit detail route (#3093)", () =
 		const host = container.querySelector(".kp-btn")!;
 		expect(host.classList.contains("kp-btn--lg")).toBe(false);
 
-		fireEvent.click(screen.getByText("Büyük")); // size → lg
+		fireEvent.click(screen.getByText("Large")); // size → lg
 
 		expect(new URLSearchParams(screen.getByTestId("search").textContent ?? "").get("size")).toBe(
 			"lg",
@@ -76,7 +76,7 @@ describe("AtolyeExhibitPage — /lab/atolye/:exhibit detail route (#3093)", () =
 			"lg",
 		);
 
-		fireEvent.click(screen.getByText("Orta")); // size → md, the default
+		fireEvent.click(screen.getByText("Medium")); // size → md, the default
 
 		expect(new URLSearchParams(screen.getByTestId("search").textContent ?? "").has("size")).toBe(
 			false,

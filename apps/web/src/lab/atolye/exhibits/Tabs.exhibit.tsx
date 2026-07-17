@@ -25,17 +25,17 @@ function TabsDemo({variant}: {variant?: "underline" | "pill"}) {
 
 export const tabsExhibit = defineExhibit<React.ComponentProps<typeof TabsDemo>>({
 	id: "tabs",
-	title: "Sekmeler",
-	summary: "Altı çizili veya hap görünümlü sekme grubu — base-ui Tabs üstünde.",
+	title: "Tabs",
+	summary: "An underline or pill tab group — built on base-ui Tabs.",
 	component: TabsDemo,
 	knobs: {
 		variant: {
 			kind: "enum",
-			label: "Görünüm",
+			label: "Appearance",
 			default: "underline",
 			options: [
-				{value: "underline", label: "Altı çizili"},
-				{value: "pill", label: "Hap"},
+				{value: "underline", label: "Underline"},
+				{value: "pill", label: "Pill"},
 			],
 		},
 	},

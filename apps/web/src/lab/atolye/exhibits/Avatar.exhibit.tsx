@@ -5,20 +5,20 @@ import {defineExhibit} from "../exhibit";
 export const avatarExhibit = defineExhibit<React.ComponentProps<typeof Avatar>>({
 	id: "avatar",
 	title: "Avatar",
-	summary: "Kullanıcı avatarı — görsel yoksa ada göre baş harflere düşer, dört boyutta.",
+	summary: "User avatar — falls back to name initials when there is no image, in four sizes.",
 	component: Avatar,
 	knobs: {
-		name: {kind: "string", label: "Ad", default: "Ada Lovelace"},
-		src: {kind: "string", label: "Görsel URL", default: "", placeholder: "boşsa baş harfler"},
+		name: {kind: "string", label: "Name", default: "Ada Lovelace"},
+		src: {kind: "string", label: "Image URL", default: "", placeholder: "empty → initials"},
 		size: {
 			kind: "enum",
-			label: "Boyut",
+			label: "Size",
 			default: "md",
 			options: [
-				{value: "sm", label: "Küçük"},
-				{value: "md", label: "Orta"},
-				{value: "lg", label: "Büyük"},
-				{value: "xl", label: "Çok büyük"},
+				{value: "sm", label: "Small"},
+				{value: "md", label: "Medium"},
+				{value: "lg", label: "Large"},
+				{value: "xl", label: "Extra large"},
 			],
 		},
 	},

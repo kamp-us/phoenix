@@ -7,8 +7,8 @@ import {defineExhibit} from "../exhibit";
 // through `fixedProps` (icon + title + description + action), not on-screen knobs.
 export const emptyStateExhibit = defineExhibit<React.ComponentProps<typeof EmptyState>>({
 	id: "empty-state",
-	title: "Boş Durum",
-	summary: "Seyrek bir alanın boşluk yerine gösterdiği ortalanmış blok — ikon, başlık, eylem.",
+	title: "EmptyState",
+	summary: "A centered block a sparse area shows instead of emptiness — icon, title, action.",
 	component: EmptyState,
 	knobs: {},
 	fixedProps: {

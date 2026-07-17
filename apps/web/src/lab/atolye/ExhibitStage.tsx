@@ -45,7 +45,7 @@ export function ExhibitStage({exhibit, knobs}: ExhibitStageProps) {
 				<Component {...props} />
 			</Surface>
 			<Surface as="aside" tone="raised" radius="md" border padding="md" className={styles.panel}>
-				<h3 className={styles.panelTitle}>Ayarlar</h3>
+				<h3 className={styles.panelTitle}>Controls</h3>
 				<PropKnobs schema={exhibit.knobs} values={values} onChange={setKnob} />
 			</Surface>
 		</div>

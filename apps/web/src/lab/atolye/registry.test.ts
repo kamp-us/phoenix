@@ -11,7 +11,7 @@ describe("exhibit registry — headless enumeration", () => {
 	it("registers the Button exhibit with a component and a knob schema", () => {
 		const button = getExhibit("button");
 		expect(button).toBeDefined();
-		expect(button?.title).toBe("Düğme");
+		expect(button?.title).toBe("Button");
 		expect(button?.component).toBeTruthy();
 		expect(Object.keys(button?.knobs ?? {})).toContain("variant");
 	});

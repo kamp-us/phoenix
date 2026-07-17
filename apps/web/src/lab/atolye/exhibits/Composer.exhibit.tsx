@@ -32,9 +32,9 @@ export const composerExhibit = defineExhibit<React.ComponentProps<typeof Compose
 	id: "composer",
 	title: "Composer",
 	summary:
-		"Paylaşılan @kampus/composer editörü — markdown gidiş-dönüşü ve salt-okunur/düzenlenebilir tek render yolu.",
+		"The shared @kampus/composer editor — markdown round-trip and one read-only/editable render path.",
 	component: ComposerExhibitDemo,
 	knobs: {
-		readOnly: {kind: "boolean", label: "Salt-okunur", default: false},
+		readOnly: {kind: "boolean", label: "Read-only", default: false},
 	},
 });

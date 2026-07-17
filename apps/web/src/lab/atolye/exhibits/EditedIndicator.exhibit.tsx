@@ -7,11 +7,11 @@ import {defineExhibit} from "../exhibit";
 // editing the timestamp.
 export const editedIndicatorExhibit = defineExhibit<React.ComponentProps<typeof EditedIndicator>>({
 	id: "edited-indicator",
-	title: "Düzenlendi İşareti",
-	summary: "Bir içerik düzenlendiğinde beliren, tarihini ipucu olarak taşıyan sessiz işaret.",
+	title: "EditedIndicator",
+	summary: "A quiet marker that appears when content is edited, carrying its date as a tooltip.",
 	component: EditedIndicator,
 	knobs: {
-		updatedAt: {kind: "string", label: "Güncellenme", default: "2026-01-02T12:00:00Z"},
+		updatedAt: {kind: "string", label: "Updated at", default: "2026-01-02T12:00:00Z"},
 	},
 	fixedProps: {createdAt: "2026-01-01T09:00:00Z"},
 });

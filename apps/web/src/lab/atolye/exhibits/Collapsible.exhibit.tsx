@@ -18,10 +18,10 @@ function CollapsibleDemo({defaultOpen}: {defaultOpen?: boolean}) {
 
 export const collapsibleExhibit = defineExhibit<React.ComponentProps<typeof CollapsibleDemo>>({
 	id: "collapsible",
-	title: "Katlanır",
-	summary: "Bir tetikleyiciyle açılıp kapanan içerik paneli — base-ui Collapsible üstünde.",
+	title: "Collapsible",
+	summary: "A content panel that opens and closes from a trigger — built on base-ui Collapsible.",
 	component: CollapsibleDemo,
 	knobs: {
-		defaultOpen: {kind: "boolean", label: "Açık başlat", default: true},
+		defaultOpen: {kind: "boolean", label: "Start open", default: true},
 	},
 });

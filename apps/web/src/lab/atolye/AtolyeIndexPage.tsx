@@ -20,12 +20,12 @@ export function AtolyeIndexPage() {
 				<header className="kp-atolye__masthead">
 					<h1 className="kp-atolye__title">atölye</h1>
 					<p className="kp-atolye__lead">
-						Tasarım sistemimizin canlı vitrini — her parça, kendi prop-düğmeleriyle yaşayan bir
-						sergi. Bir sergiye tıkla, varyantlarını canlı kurcala.
+						The living showcase of our design system — each piece an exhibit alive with its own
+						prop-knobs. Click an exhibit to tinker with its variants live.
 					</p>
 				</header>
 
-				<ul className="kp-atolye__list" aria-label="sergiler">
+				<ul className="kp-atolye__list" aria-label="exhibits">
 					{exhibits.map((exhibit) => (
 						<li key={exhibit.id} className="kp-atolye__item">
 							<Link to={`/lab/atolye/${exhibit.id}`} className="kp-atolye__card">

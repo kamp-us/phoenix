@@ -27,31 +27,31 @@ function MenuDemo({
 
 export const menuExhibit = defineExhibit<React.ComponentProps<typeof MenuDemo>>({
 	id: "menu",
-	title: "Menü",
-	summary: "Kısayol, ayraç ve tehlike öğesiyle açılır menü — base-ui Menu üstünde.",
+	title: "Menu",
+	summary: "A dropdown menu with a shortcut, separator, and danger item — built on base-ui Menu.",
 	component: MenuDemo,
 	knobs: {
 		side: {
 			kind: "enum",
-			label: "Yön",
+			label: "Side",
 			default: "bottom",
 			options: [
-				{value: "top", label: "Üst"},
-				{value: "right", label: "Sağ"},
-				{value: "bottom", label: "Alt"},
-				{value: "left", label: "Sol"},
+				{value: "top", label: "Top"},
+				{value: "right", label: "Right"},
+				{value: "bottom", label: "Bottom"},
+				{value: "left", label: "Left"},
 			],
 		},
 		align: {
 			kind: "enum",
-			label: "Hizalama",
+			label: "Align",
 			default: "start",
 			options: [
-				{value: "start", label: "Başa"},
-				{value: "center", label: "Ortaya"},
-				{value: "end", label: "Sona"},
+				{value: "start", label: "Start"},
+				{value: "center", label: "Center"},
+				{value: "end", label: "End"},
 			],
 		},
-		defaultOpen: {kind: "boolean", label: "Açık başlat", default: false},
+		defaultOpen: {kind: "boolean", label: "Start open", default: false},
 	},
 });

@@ -51,10 +51,11 @@ function ExhibitNotFound({slug}: {slug?: string}) {
 					<Link to="/lab/atolye" className="kp-atolye-detail__back">
 						← atölye
 					</Link>
-					<h1 className="kp-atolye__title">sergi bulunamadı</h1>
+					<h1 className="kp-atolye__title">exhibit not found</h1>
 					<p className="kp-atolye__lead">
-						{slug ? <code className="kp-atolye-detail__slug">{slug}</code> : "bu"} diye bir sergi
-						yok. Vitrindeki parçalara göz atmak ister misin?
+						There's no exhibit called{" "}
+						{slug ? <code className="kp-atolye-detail__slug">{slug}</code> : "that"}. Want to browse
+						the pieces on display?
 					</p>
 				</header>
 			</div>

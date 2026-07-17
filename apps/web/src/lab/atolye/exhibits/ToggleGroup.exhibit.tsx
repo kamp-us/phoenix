@@ -15,19 +15,19 @@ function ToggleGroupDemo({variant}: {variant?: "pill" | "segmented" | "square" |
 
 export const toggleGroupExhibit = defineExhibit<React.ComponentProps<typeof ToggleGroupDemo>>({
 	id: "toggle-group",
-	title: "Değiştirici Grubu",
-	summary: "Tek seçimli segment/hap/kare varyantlarıyla değiştirici grubu — base-ui üstünde.",
+	title: "ToggleGroup",
+	summary: "A single-select toggle group with segment/pill/square variants — built on base-ui.",
 	component: ToggleGroupDemo,
 	knobs: {
 		variant: {
 			kind: "enum",
-			label: "Görünüm",
+			label: "Appearance",
 			default: "segmented",
 			options: [
-				{value: "pill", label: "Hap"},
+				{value: "pill", label: "Pill"},
 				{value: "segmented", label: "Segment"},
-				{value: "square", label: "Kare"},
-				{value: "swatch", label: "Renk"},
+				{value: "square", label: "Square"},
+				{value: "swatch", label: "Swatch"},
 			],
 		},
 	},
