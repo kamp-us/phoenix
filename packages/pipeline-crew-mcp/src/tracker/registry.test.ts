@@ -36,6 +36,21 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 		}).pipe(Effect.scoped, Effect.provide(handlers)),
 	);
 
+	it.effect("two peers announcing one role both surface — the engine pool is not collapsed", () =>
+		Effect.gen(function* () {
+			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			// two engine instances of the same role, distinct per-instance inbox addresses
+			yield* client.AnnouncePresence({peer: "inbox://em/one", role: "em", at});
+			yield* client.AnnouncePresence({peer: "inbox://em/two", role: "em", at});
+			const result = yield* client.LookupRole({role: "em"});
+			assert.lengthOf(result.peers, 2, "the second announce did not overwrite the first");
+			assert.deepStrictEqual(result.peers.map((p) => p.peer).sort(), [
+				"inbox://em/one",
+				"inbox://em/two",
+			]);
+		}).pipe(Effect.scoped, Effect.provide(handlers)),
+	);
+
 	it.effect("Claim grants a free resource and collides on a second acquire (holder present)", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);

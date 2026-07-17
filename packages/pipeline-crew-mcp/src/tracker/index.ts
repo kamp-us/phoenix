@@ -8,7 +8,6 @@ export {TrackerRegistry} from "./group.ts";
 export {TrackerHandlers} from "./handlers.ts";
 export {type AnnounceInput, Registry, RegistryLive} from "./registry.ts";
 export {
-	type AcquireOutcome,
 	DEFAULT_TTL_SECONDS,
 	type Lease,
 	type PresenceRecord,

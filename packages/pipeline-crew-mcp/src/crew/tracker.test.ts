@@ -9,7 +9,7 @@ import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Context, Effect, Layer, Option} from "effect";
+import {Cause, Context, Effect, Layer} from "effect";
 import {RpcTest} from "effect/unstable/rpc";
 import {SocketServerError, SocketServerOpenError} from "effect/unstable/socket/SocketServer";
 import {TrackerRegistry} from "../tracker/group.ts";
@@ -40,8 +40,8 @@ describe("crew/tracker — first-peer-spawn: two sessions on one project root, o
 				address: "inbox://builder",
 			});
 			const found = yield* trackerB.lookup("builder");
-			assert.isTrue(Option.isSome(found), "the dialing session sees the host's registry state");
-			if (Option.isSome(found)) assert.strictEqual(found.value.address, "inbox://builder");
+			assert.lengthOf(found, 1, "the dialing session sees the host's registry state");
+			assert.strictEqual(found[0]?.address, "inbox://builder");
 		}).pipe(Effect.scoped),
 	);
 
@@ -56,7 +56,7 @@ describe("crew/tracker — first-peer-spawn: two sessions on one project root, o
 				address: "inbox://reviewer",
 			});
 			const found = yield* tracker.lookup("reviewer");
-			assert.isTrue(Option.isSome(found), "a session with no peer still has a working tracker");
+			assert.lengthOf(found, 1, "a session with no peer still has a working tracker");
 		}).pipe(Effect.scoped),
 	);
 });

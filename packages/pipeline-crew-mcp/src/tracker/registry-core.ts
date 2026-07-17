@@ -2,18 +2,20 @@
  * tracker/registry-core — the soft-state presence registry as a pure data structure.
  *
  * No Effect, no IO: state transitions only, so the announce / lookup / heartbeat-TTL /
- * role-lease and resource-claim semantics are unit-testable in isolation from the socket
+ * presence and resource-claim semantics are unit-testable in isolation from the socket
  * transport. The service (`./registry.ts`) holds one of these in a `Ref` and supplies the clock.
  *
- * Two keyspaces that never share a map (ADR 0191): role/presence leases keyed by `role`, and
- * resource claims keyed by `resource`. A role lease and an issue claim are different lifecycles —
- * keeping them in distinct typed maps makes "a `lookup` returns a claim holder" unrepresentable
- * rather than checked after the fact.
+ * Two keyspaces that never share a map (ADR 0191): presence leases keyed by `peer`, and
+ * resource claims keyed by `resource`. A presence lease and an issue claim are different
+ * lifecycles — keeping them in distinct typed maps makes "a `lookup` returns a claim holder"
+ * unrepresentable rather than checked after the fact.
  *
  * The three non-obvious model choices:
- *   - A role maps to at MOST ONE live lease (`leases` is keyed by role) — that is how "named
- *     leases for role uniqueness" is made unrepresentable-otherwise rather than checked after the
- *     fact: you cannot store two live holders of one role.
+ *   - Presence is keyed by `peer` (the connection identity), NOT by role — so N distinct peers
+ *     serving one role coexist as N distinct leases (a role's engine pool), and `lookup(role)`
+ *     returns the whole live set. Role uniqueness is NOT a presence concern: a bridge's
+ *     singleton-ness is enforced upstream by the crew per-kind cardinality claim, never here
+ *     (ADR 0189) — so the presence registry stays role-agnostic and never collapses a pool.
  *   - "Connection-is-lease" is modelled by the peer id being the connection identity, and liveness
  *     being measured against the tracker's own clock (never the client-supplied `at`): a peer that
  *     stops heart-beating ages past its TTL and its lease frees, and an explicit `release` (a
@@ -25,15 +27,14 @@
  *     a claim frees on explicit `releaseClaim` or is reaped once its holder has no live presence.
  */
 
-/** The default presence TTL applied on acquire, until the first `heartbeat` sets a real one. */
+/** The default presence TTL applied on announce, until the first `heartbeat` sets a real one. */
 export const DEFAULT_TTL_SECONDS = 30;
 
-/** One role lease: who holds the role, when they took it, and their soft-state liveness window. */
+/** One presence lease: a peer, the role it serves, and its soft-state liveness window. */
 export interface Lease {
 	readonly role: string;
 	readonly peer: string;
 	readonly ttlSeconds: number;
-	readonly leasedAtMillis: number;
 	readonly lastSeenMillis: number;
 }
 
@@ -50,7 +51,7 @@ export interface Claim {
 	readonly claimedAtMillis: number;
 }
 
-/** The whole registry: role/presence leases and resource claims in two separate keyspaces. */
+/** The whole registry: presence leases (keyed by peer) and resource claims (keyed by resource). */
 export interface RegistryState {
 	readonly leases: ReadonlyMap<string, Lease>;
 	readonly claims: ReadonlyMap<string, Claim>;
@@ -62,14 +63,6 @@ export interface PresenceRecord {
 	readonly role: string;
 	readonly lastSeenMillis: number;
 }
-
-/**
- * The result of an acquire: `Granted` when the caller now holds the role, `Collision` when a
- * different live peer already holds it (the lease is NOT stolen — the incumbent keeps it).
- */
-export type AcquireOutcome =
-	| {readonly _tag: "Granted"; readonly owner: string; readonly sinceMillis: number}
-	| {readonly _tag: "Collision"; readonly owner: string; readonly sinceMillis: number};
 
 /**
  * The result of a resource claim: `Granted` when the caller now holds the resource, `Collision`
@@ -85,24 +78,23 @@ export const empty = (): RegistryState => ({leases: new Map(), claims: new Map()
 const isLive = (lease: Lease, nowMillis: number): boolean =>
 	nowMillis <= lease.lastSeenMillis + lease.ttlSeconds * 1000;
 
-/** True iff `holder` holds any live presence lease — the claim-liveness clock (ADR 0191 facet 2). */
+/** True iff `holder` holds a live presence lease — the claim-liveness clock (ADR 0191 facet 2). */
 const holderHasLivePresence = (
 	leases: ReadonlyMap<string, Lease>,
 	holder: string,
 	nowMillis: number,
 ): boolean => {
-	for (const lease of leases.values()) {
-		if (lease.peer === holder && isLive(lease, nowMillis)) return true;
-	}
-	return false;
+	const lease = leases.get(holder);
+	return lease !== undefined && isLive(lease, nowMillis);
 };
 
 /**
- * Acquire the lease for `role` on behalf of `peer`. Granted when the role is free, held by an
- * expired peer, or already held by `peer` itself (re-announce refreshes without moving `since`);
- * a Collision — leaving state untouched — when a *different* live peer holds it.
+ * Register `peer`'s presence for `role`: upsert its lease, bumping `lastSeen` to now. Keyed by
+ * `peer`, so a re-announce refreshes the same lease and two distinct peers on one role coexist —
+ * presence never rejects (role uniqueness is the crew cardinality claim's job, ADR 0189), it only
+ * records who is live where.
  */
-export const acquire = (
+export const announce = (
 	state: RegistryState,
 	input: {
 		readonly role: string;
@@ -110,23 +102,12 @@ export const acquire = (
 		readonly ttlSeconds: number;
 		readonly nowMillis: number;
 	},
-): {readonly state: RegistryState; readonly outcome: AcquireOutcome} => {
+): RegistryState => {
 	const {role, peer, ttlSeconds, nowMillis} = input;
-	const existing = state.leases.get(role);
-	if (existing && existing.peer !== peer && isLive(existing, nowMillis)) {
-		return {
-			state,
-			outcome: {_tag: "Collision", owner: existing.peer, sinceMillis: existing.leasedAtMillis},
-		};
-	}
-	const leasedAtMillis = existing && existing.peer === peer ? existing.leasedAtMillis : nowMillis;
-	const lease: Lease = {role, peer, ttlSeconds, leasedAtMillis, lastSeenMillis: nowMillis};
+	const lease: Lease = {role, peer, ttlSeconds, lastSeenMillis: nowMillis};
 	const leases = new Map(state.leases);
-	leases.set(role, lease);
-	return {
-		state: {...state, leases},
-		outcome: {_tag: "Granted", owner: peer, sinceMillis: leasedAtMillis},
-	};
+	leases.set(peer, lease);
+	return {...state, leases};
 };
 
 /**
@@ -199,50 +180,51 @@ export const claimHolder = (
 };
 
 /**
- * Refresh every role lease held by `peer`: bump `lastSeen` to now and adopt the heartbeat's TTL.
- * Resource claims are never touched — they have no TTL to bump, and their liveness rides presence
- * (ADR 0191 facet 4). Because the keyspaces are split, this loop over `leases` is presence-only
- * by construction.
+ * Refresh `peer`'s presence lease: bump `lastSeen` to now and adopt the heartbeat's TTL. Resource
+ * claims are never touched — they have no TTL to bump, and their liveness rides presence (ADR 0191
+ * facet 4). A beat for a peer with no lease is a no-op (nothing to refresh).
  */
 export const heartbeat = (
 	state: RegistryState,
 	input: {readonly peer: string; readonly ttlSeconds: number; readonly nowMillis: number},
 ): RegistryState => {
 	const {peer, ttlSeconds, nowMillis} = input;
+	const lease = state.leases.get(peer);
+	if (!lease) return state;
 	const leases = new Map(state.leases);
-	for (const [role, lease] of state.leases) {
-		if (lease.peer === peer) {
-			leases.set(role, {...lease, ttlSeconds, lastSeenMillis: nowMillis});
-		}
-	}
+	leases.set(peer, {...lease, ttlSeconds, lastSeenMillis: nowMillis});
 	return {...state, leases};
 };
 
 /**
- * The present holders of `role` — the single live lease, or `[]` when the role is absent or its
- * holder has aged out. An empty array is the explicit not-present result (never a silent drop).
- * Reads the presence keyspace only, so it can never surface a resource-claim holder (ADR 0191).
+ * The present holders of `role` — every live lease whose peer serves `role`, or `[]` when none is
+ * present. For a bridge the crew cardinality claim guarantees at most one live session, so the set
+ * has one entry; for an engine the set carries every live instance in the pool (ADR 0189). An empty
+ * array is the explicit not-present result (never a silent drop). Reads the presence keyspace only,
+ * so it can never surface a resource-claim holder (ADR 0191).
  */
 export const lookup = (
 	state: RegistryState,
 	role: string,
 	nowMillis: number,
 ): ReadonlyArray<PresenceRecord> => {
-	const lease = state.leases.get(role);
-	if (!lease || !isLive(lease, nowMillis)) return [];
-	return [{peer: lease.peer, role: lease.role, lastSeenMillis: lease.lastSeenMillis}];
+	const present: Array<PresenceRecord> = [];
+	for (const lease of state.leases.values()) {
+		if (lease.role === role && isLive(lease, nowMillis)) {
+			present.push({peer: lease.peer, role: lease.role, lastSeenMillis: lease.lastSeenMillis});
+		}
+	}
+	return present;
 };
 
 /**
- * Free every lease held by `peer` and reap every claim it holds — a graceful connection close
+ * Free `peer`'s presence lease and reap every claim it holds — a graceful connection close
  * (connection-is-lease). The peer's presence is gone, so under presence-derived liveness its
  * claims are stale and dropped with it (ADR 0191 facet 2).
  */
 export const release = (state: RegistryState, peer: string): RegistryState => {
 	const leases = new Map(state.leases);
-	for (const [role, lease] of state.leases) {
-		if (lease.peer === peer) leases.delete(role);
-	}
+	leases.delete(peer);
 	const claims = new Map(state.claims);
 	for (const [resource, claim] of state.claims) {
 		if (claim.holder === peer) claims.delete(resource);
@@ -257,8 +239,8 @@ export const release = (state: RegistryState, peer: string): RegistryState => {
  */
 export const prune = (state: RegistryState, nowMillis: number): RegistryState => {
 	const leases = new Map(state.leases);
-	for (const [role, lease] of state.leases) {
-		if (!isLive(lease, nowMillis)) leases.delete(role);
+	for (const [peer, lease] of state.leases) {
+		if (!isLive(lease, nowMillis)) leases.delete(peer);
 	}
 	const claims = new Map(state.claims);
 	for (const [resource, claim] of state.claims) {

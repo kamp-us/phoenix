@@ -16,10 +16,12 @@
  * the toolkit registers on, and the sink wakes through, the exact transport serving stdio — the
  * same memoization the edge server (#3162) relies on when it provides `layerStdio` to the toolkit.
  *
- * The role-uniqueness lease + presence announce ride the peer's scope (`makeCrewChannel`): a
- * second live session for a held role fails the build with `RoleUniquenessError`, and presence
- * frees on teardown (connection-is-lease, #3035). The address is keyed on the role because the
- * lease guarantees one live session per role, so discovery→dial is deterministic.
+ * The per-kind cardinality lease + presence announce ride the peer's scope (`makeCrewChannel`): a
+ * second live session for a held BRIDGE role fails the build with `RoleUniquenessError`, an ENGINE
+ * role admits N instances, and presence frees on teardown (connection-is-lease, #3035). A bridge's
+ * address is its role (`inbox://<role>`) — its singleton lease keeps discover→dial deterministic;
+ * an engine's is per-instance (`inbox://<role>/<instance>`) so its pool never collapses. See
+ * `inboxAddressFor` (ADR 0189).
  *
  * The binding is transport-injected: `channelSendFromPeer` takes the peer substrate as a
  * requirement (production supplies `peerSocketSubstrate` over unix sockets), so `session.test.ts`
@@ -27,6 +29,7 @@
  * in-memory `Connect`) — the same transport-free idiom `channel-server.test.ts` uses. The one seam
  * not exercised without a live MCP client is the stdio `McpServer` wake itself.
  */
+import {randomUUID} from "node:crypto";
 import {NodeStdio} from "@effect/platform-node";
 import {Effect, Layer} from "effect";
 import {McpServer} from "effect/unstable/ai";
@@ -48,7 +51,7 @@ import {
 } from "./channel-server.ts";
 import type {RoleUniquenessError} from "./errors.ts";
 import {crewHeartbeatLayer} from "./heartbeat.ts";
-import type {CrewRole} from "./roles.ts";
+import {type CrewRole, kindOf} from "./roles.ts";
 import {type CrewTracker, crewTrackerHostOrDialLayer, peerTrackerLayer} from "./tracker.ts";
 
 /** The MCP server identity a crew session advertises over stdio when none is configured. */
@@ -65,15 +68,20 @@ export interface CrewSessionConfig {
 }
 
 /**
- * This session's dialable inbox address. The crew binds peer-id ≡ inbox-address, and the
- * role-uniqueness lease guarantees one live session per role, so keying the address on the role
- * makes discovery→dial deterministic: any peer that discovers `role` dials this exact address
- * (`inboxSocketPathFor` maps it to the unix socket the inbound server binds).
+ * This session's dialable inbox address, keyed by the role's KIND (ADR 0189). A BRIDGE keeps the
+ * deterministic singleton `inbox://<role>`: its cardinality-1 lease guarantees one live session, so
+ * discover→dial stays deterministic without an instance. An ENGINE carries a per-instance
+ * discriminator `inbox://<role>/<instance>`, so N engine sessions hold N distinct presence leases
+ * (keyed by peer in the registry) and resolve to N distinct inbox sockets — never overwriting each
+ * other. `inboxSocketPathFor` hashes the whole address, so two engine instances get collision-free
+ * sockets. The `instance` is a per-session id, generated once in `crewSessionLayer`.
  */
-export const inboxAddressFor = (role: CrewRole): string => `inbox://${role}`;
+export const inboxAddressFor = (role: CrewRole, instance: string): string =>
+	kindOf(role) === "engine" ? `inbox://${role}/${instance}` : `inbox://${role}`;
 
 /** The unix socket this session's peer inbox is served on — the address resolved to a socket path. */
-export const inboxSocketFor = (role: CrewRole): string => inboxSocketPathFor(inboxAddressFor(role));
+export const inboxSocketFor = (role: CrewRole, instance: string): string =>
+	inboxSocketPathFor(inboxAddressFor(role, instance));
 
 /**
  * The peer substrate over real unix sockets: the first-peer-spawn `CrewTracker` (host the tracker
@@ -88,11 +96,12 @@ export const inboxSocketFor = (role: CrewRole): string => inboxSocketPathFor(inb
  */
 export const peerSocketSubstrate = (
 	config: CrewSessionConfig,
+	address: string,
 ): Layer.Layer<CrewTracker | Tracker | Inbox | Dialer, unknown> => {
 	const crewTracker = crewTrackerHostOrDialLayer(socketPathFor(config.projectRoot));
 	return Layer.mergeAll(
 		peerTrackerLayer.pipe(Layer.provideMerge(crewTracker)),
-		Inbox.layer(inboxAddressFor(config.role)),
+		Inbox.layer(address),
 		crewSocketDialerLayer,
 	);
 };
@@ -108,11 +117,12 @@ export const peerSocketSubstrate = (
  */
 export const channelSendFromPeer = (
 	role: CrewRole,
+	address: string,
 ): Layer.Layer<ChannelSend, RoleUniquenessError, CrewTracker | Tracker | Inbox | Dialer> =>
 	Layer.effect(
 		ChannelSend,
 		Effect.gen(function* () {
-			const channel = yield* makeCrewChannel({role, address: inboxAddressFor(role)});
+			const channel = yield* makeCrewChannel({role, address});
 			return {send: channel.peer.send};
 		}),
 	);
@@ -123,7 +133,10 @@ export const channelSendFromPeer = (
  * inbound socket server's `ChannelSink` wakes through it — memoized to a single running transport.
  */
 export const crewSessionLayer = (config: CrewSessionConfig) => {
-	const address = inboxAddressFor(config.role);
+	// One per-session instance id, generated once here and threaded to every address derivation, so
+	// an engine session's inbox/announce/heartbeat all agree on the same per-instance address (a
+	// bridge ignores it and keeps its singleton address). See `inboxAddressFor`.
+	const address = inboxAddressFor(config.role, randomUUID());
 	// The one running stdio McpServer + its channel capability; shared across both channel edges.
 	const server = McpServer.layerStdio({
 		name: config.name ?? SESSION_SERVER_NAME,
@@ -133,12 +146,12 @@ export const crewSessionLayer = (config: CrewSessionConfig) => {
 
 	// The peer substrate, built once and SHARED (by memoization) between the outbound binding and the
 	// heartbeat loop, so both drive the one hosted tracker / registry this session announces on.
-	const substrate = peerSocketSubstrate(config);
+	const substrate = peerSocketSubstrate(config, address);
 
 	// outbound: the channel_send toolkit, its ChannelSend bound to this session's peer.
 	const outbound = McpServer.toolkit(ChannelToolkit).pipe(
 		Layer.provide(channelToolHandlers),
-		Layer.provide(channelSendFromPeer(config.role).pipe(Layer.provide(substrate))),
+		Layer.provide(channelSendFromPeer(config.role, address).pipe(Layer.provide(substrate))),
 		Layer.provide(server),
 	);
 
