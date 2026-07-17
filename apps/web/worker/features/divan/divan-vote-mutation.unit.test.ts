@@ -33,6 +33,7 @@ import {Kunye} from "../kunye/Kunye.ts";
 import type {Tier} from "../kunye/standing.ts";
 import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
 import type {VouchLedger} from "../kunye/VouchLedger.ts";
+import {Mute} from "../mute/Mute.ts";
 import {makePasaportStub} from "../pasaport/Pasaport.testing.ts";
 import type {Pasaport} from "../pasaport/Pasaport.ts";
 import {noopLive} from "../pasaport/promote-live.testing.ts";
@@ -160,8 +161,17 @@ const voteFailOnContact: Layer.Layer<Vote> = Layer.succeed(Vote, {
 // landed flip — so `LivePublisher` is a static requirement of every case (even a
 // denial). `noopLive` satisfies it universally; the case that actually promotes
 // asserts on nothing published, and the tandem-promote case builds its own record.
+// The divan-vote emit now consults `bildirimMutedBy` (#3238), which reads `Mute` — an
+// empty-set stub means no member is muted, so these cases exercise the deliver path
+// unchanged. Muted-suppression is covered in bildirim/mute-suppression.unit.test.ts.
+const noMutes = Layer.succeed(Mute, {
+	set: () => Effect.die("Mute.set not exercised"),
+	listMine: () => Effect.die("Mute.listMine not exercised"),
+	readMutedIds: () => Effect.succeed(new Set<string>()),
+});
+
 const requestContext = (actor: Actor, on: boolean) =>
-	Layer.mergeAll(flagsStub(on), noopLive).pipe(
+	Layer.mergeAll(flagsStub(on), noopLive, noMutes).pipe(
 		Layer.provideMerge(Layer.succeed(CurrentUser, {user: {id: actorId(actor)} as never})),
 		Layer.provideMerge(Layer.succeed(CurrentActor, {actor})),
 		Layer.provideMerge(Layer.succeed(RuntimeContext, runtimeContextStub)),

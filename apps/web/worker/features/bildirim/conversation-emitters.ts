@@ -27,6 +27,7 @@
 import {Effect} from "effect";
 import {bildirimOn} from "./gate.ts";
 import type {NotificationKind} from "./kind.ts";
+import {bildirimMutedBy} from "./mute-suppression.ts";
 import {Notification} from "./Notification.ts";
 
 export const REPLY_KIND: NotificationKind = "reply";
@@ -71,6 +72,8 @@ export const notifyCommentReply = (input: {
 		if (!(yield* bildirimOn)) return;
 		const bildirim = yield* Notification;
 		for (const recipientId of recipients) {
+			// Per-recipient: each recipient is a distinct muter with their own muted set.
+			if (yield* bildirimMutedBy(recipientId, input.actorId)) continue;
 			yield* bildirim.record({
 				recipientId,
 				kind: REPLY_KIND,

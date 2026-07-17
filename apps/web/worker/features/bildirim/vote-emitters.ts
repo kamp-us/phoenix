@@ -28,6 +28,7 @@ import {Effect} from "effect";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {bildirimOn} from "./gate.ts";
 import type {NotificationKind} from "./kind.ts";
+import {bildirimMutedBy} from "./mute-suppression.ts";
 import {Notification} from "./Notification.ts";
 
 export const VOTE_KIND: NotificationKind = "vote";
@@ -55,6 +56,9 @@ export const notifyContentVote = (input: {
 		const recipientId = voteRecipient(input.authorId, input.voterId);
 		if (recipientId === null) return;
 		if (!(yield* bildirimOn)) return;
+		// The aggregate stores `actorId: null`, so the muted-voter check keys on the
+		// real interacting member (`voterId`), the identity that survives only here.
+		if (yield* bildirimMutedBy(recipientId, input.voterId)) return;
 		const bildirim = yield* Notification;
 		yield* bildirim.recordAggregate({
 			recipientId,
