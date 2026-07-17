@@ -42,3 +42,8 @@
 # stays standalone (ADR 0092) and keeps its own owner line.
 /packages/ci-required/          @kamp-us/control-plane
 /packages/pipeline-cli/         @kamp-us/control-plane
+# Control-plane: lint/GritQL governance config — the biome config + GritQL plugin rules. An
+# ungated path to weaken a lint rule (disable a security lint, downgrade a GritQL guard) is a
+# guard-relaxing vector. The §CP `biome\.jsonc$` + `biome-plugins/` branches (ADR 0193).
+/biome.jsonc                    @kamp-us/control-plane
+/biome-plugins/                 @kamp-us/control-plane

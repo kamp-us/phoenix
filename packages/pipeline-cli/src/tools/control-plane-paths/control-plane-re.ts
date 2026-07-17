@@ -26,6 +26,12 @@
  * sign-off. Anchoring to one depth was an accident, not a "subdir helpers are safe"
  * carve-out — a skill's shell helper is control-plane wherever it sits.
  *
+ * The biome-governance clauses (`^biome\.jsonc$`, `^biome-plugins/`) are §CP because
+ * lint/GritQL governance config is a guard-relaxing vector: an ungated path to weaken a
+ * lint rule (disable a security lint, downgrade a GritQL guard) could pass the enforcement
+ * test of ADR 0187 — merging it unreviewed CAN weaken a gate. Same class of decision as
+ * ADR 0187's enforcement-surface test; recorded in ADR 0193.
+ *
  * Anti-self-authorization is preserved (#981): the live merge-deciding gates still
  * re-resolve the boundary from the formats doc on `origin/main` at run time, so a
  * boundary-editing PR is classified against MAIN's boundary, not its own edit. This
@@ -33,4 +39,4 @@
  * runtime resolution off the origin/main read.
  */
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/";
+	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\\.jsonc$|^biome-plugins/";

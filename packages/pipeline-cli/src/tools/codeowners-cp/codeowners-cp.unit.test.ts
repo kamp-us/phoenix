@@ -43,6 +43,8 @@ describe("splitTopLevelBranches", () => {
 			"claude-plugins/kampus-pipeline/hooks(/|\\.json$)",
 			"packages/ci-required/",
 			"packages/pipeline-cli/",
+			"biome\\.jsonc$",
+			"biome-plugins/",
 		]);
 	});
 });
@@ -107,10 +109,15 @@ describe("expandBranch", () => {
 			{path: "packages/pipeline-cli/", kind: "dir"},
 		]);
 	});
+
+	it("expands the biome-governance branches: an exact file + a dir prefix (ADR 0193)", () => {
+		expect(expandBranch("biome\\.jsonc$")).toEqual([{path: "biome.jsonc", kind: "file"}]);
+		expect(expandBranch("biome-plugins/")).toEqual([{path: "biome-plugins/", kind: "dir"}]);
+	});
 });
 
 describe("cpPaths over the live regex", () => {
-	it("resolves the full §CP path set (20 paths: dirs, the two exact files, + the **/*.sh glob)", () => {
+	it("resolves the full §CP path set (dirs, the exact files, the **/*.sh glob, + the biome-governance surfaces)", () => {
 		expect(cpPaths(LIVE_RE).map((p) => p.path)).toEqual([
 			".claude/",
 			".github/",
@@ -132,6 +139,8 @@ describe("cpPaths over the live regex", () => {
 			"claude-plugins/kampus-pipeline/hooks.json",
 			"packages/ci-required/",
 			"packages/pipeline-cli/",
+			"biome.jsonc",
+			"biome-plugins/",
 		]);
 	});
 
@@ -217,6 +226,8 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/hooks.json @usirin",
 			"/packages/ci-required/ @usirin",
 			"/packages/pipeline-cli/ @usirin",
+			"/biome.jsonc @usirin",
+			"/biome-plugins/ @usirin",
 		].join("\n");
 		expect(findUncovered(paths, parseCodeownersPatterns(codeowners))).toEqual([]);
 	});
@@ -241,6 +252,8 @@ describe("findUncovered — the drift check", () => {
 			"/claude-plugins/kampus-pipeline/agents/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/packages/ci-required/ @usirin",
+			"/biome.jsonc @usirin",
+			"/biome-plugins/ @usirin",
 		].join("\n");
 		const uncovered = findUncovered(paths, parseCodeownersPatterns(stale)).map((p) => p.path);
 		expect(uncovered).toEqual([
