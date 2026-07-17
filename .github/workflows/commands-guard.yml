@@ -1,0 +1,39 @@
+name: commands-guard
+
+# CI gate for #3316: every tool registered in pipeline-cli's `registeredTools` must
+# carry a one-line `Command.withDescription`, so the generated `pipeline-cli commands`
+# tool index stays complete as tools are added. Without this a newly-registered tool
+# could ship undescribed and be invisible in the index — the same silent-drift class the
+# stale hand-maintained README fell to. The scan lives once in the tool
+# (`commands check`), which also fails closed on an empty registry (ADR 0092).
+on:
+  pull_request:
+
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check every registered tool has a one-line description
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when a registered tool lacks a description (the report is on stderr),
+      # or when the registry is empty (fail-closed). See #3316.
+      - name: Check every registered tool has a one-line description
+        run: node packages/pipeline-cli/src/bin.ts commands check
