@@ -49,5 +49,27 @@
 	"wipCaps": {
 		"productLanes": "<wip-cap-product-lanes>",
 		"platformLanes": "<wip-cap-platform-lanes>"
+	},
+
+	// The pinned Claude Code CLI version the stand-up launcher asserts before it starts
+	// any session — a hard gate so the crew never launches on a drifted CLI. Fill with the
+	// exact `major.minor.patch` (optionally `-suffix`) your `claude --version` reports.
+	"cliVersion": "<pinned-claude-code-cli-version>",
+
+	// How many engine (build) sessions the stand-up starts (a positive integer).
+	"engineCount": "<engine-count>",
+
+	// Channel MCP registration for every launched session.
+	"channels": {
+		// "allowlist" → sessions launch with `--channels <refs>` (only the listed servers load);
+		// "development" → `--dangerously-load-development-channels` (loads every dev channel; local only).
+		"mode": "<channel-mode: allowlist | development>",
+		// The channel servers each session registers, by ref. Grammar per ref:
+		//   "server:<name>"            — a top-level channel MCP server
+		//   "plugin:<plugin>:<server>" — a server contributed by a plugin
+		"servers": ["<channel-server-ref>"],
+		// Plugins whose channel servers are allowed to load — the allowlist the "allowlist"
+		// mode enforces; each name matches a "plugin:<plugin>:..." ref used in `servers`.
+		"allowedChannelPlugins": ["<allowed-channel-plugin>"]
 	}
 }
