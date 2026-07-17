@@ -102,6 +102,45 @@ deliverable is the failure mode:** reject it and re-frame it as the decision und
 it is already settled, record it in `## Decisions-so-far` instead; if it is downstream build
 work, it is not fog and does not belong on the map at all.
 
+### The given-grounding law — behavioral givens ground in source, design-history givens ground in the founder
+
+CHART's other hard constraint governs what may enter `## Decisions-so-far` (step 3 of the walk).
+A given carries an implicit ground-truth claim, and **two kinds ground differently:**
+
+- **A behavioral given** — how a platform / runtime / dependency *behaves* ("D1 collates this
+  way", "the socket path is address-derived"). Ground it in **source**, per CLAUDE.md's
+  *ground falsifiable platform/runtime/dependency claims in source* rule. This is already
+  covered and works.
+- **A design-history given** — *why a prior design was abandoned* ("X was retired **because** Y",
+  "we do it this way **because** Z failed"). An artifact's narration of why a prior design died is
+  **not** ground truth: it is written after the fact, and can be a post-hoc rationalization that no
+  longer matches what actually happened. Ground it in the **founder**, never in the artifact's own
+  prose (an agent def, an ADR's narration, a README).
+
+**The hard rule: a design-history given may not enter `## Decisions-so-far` from an artifact's
+prose alone.** It is either **founder-verified** — confirmed with the human before it is seeded —
+or it stays on the frontier as an **open question** (a `type:decision` founder-decision-fork, or a
+`type:investigation` where the history is checkable) until the founder confirms it. Seeding
+"design X died because Y" straight from a def or README treats reconstructed rationale as
+established fact, and a wrong one is worse than an unknown: a false history seeds a veto against
+the very design it was written to rationalize, then propagates into the next artifact that cites
+it — self-reinforcing. This is the near-miss that forced the rule (ADR
+[0189](https://github.com/kamp-us/phoenix/blob/main/.decisions/0189-crew-roster-law-bridges-engines.md)):
+while charting wayfinder:map #3207 the cartographer read the `junior-engineer`/`engineering-manager`
+defs' claim that the asymmetric-lane model "supersedes the retired two-agent-pipeline", seeded "two
+symmetric conductors collided → the asymmetric partition was the fix" as a given, and nearly vetoed
+a proposed engine-pool design as "re-proposing a killed model." The founder's actual reason was a
+**role need** — a third agent that could just *talk* (→ the EA/chief-of-staff), not a falsified
+collision; the collision story was post-hoc rationalization written into the defs and cited back as
+evidence for the design it rationalized. ADR 0189 records the corrected retirement rationale.
+
+**Provenance — tag every history-shaped given with `— from <who>`.** Reuse the `— from #N`
+provenance convention already carried on `## Decisions-so-far` entries, extended for the *who*: a
+founder-confirmed reason reads `— from @founder`, a still-unverified doc-scraped one reads `— from
+<artifact>` (and belongs on the frontier as an open question, not seeded as settled). The tag lets
+a later reader tell a confirmed reason from an unverified one at a glance, rather than re-litigating
+its ground truth.
+
 ### The ticket-type translation table — reuse existing types, invent no new machinery
 
 CHART decomposes fog by classifying each unknown against wayfinder's **Pocock→kampus**
@@ -156,7 +195,9 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
 3. **Seed `## Decisions-so-far`.** Record what is *already settled* about the idea — the facts and
    decisions the founder brought in, each a one-line entry. An empty log is fine for a truly
    green-field idea; more often a foggy idea carries a few givens, and naming them up front keeps
-   the frontier focused on what is genuinely open.
+   the frontier focused on what is genuinely open. Ground each given per the given-grounding law
+   above — behavioral claims in source, design-history claims ("X was retired *because* Y") in the
+   founder, never seeded from an artifact's own prose — and tag history-shaped givens `— from <who>`.
 
 4. **Decompose the fog into a frontier of resolvable tickets.** Break the destination's unknowns
    into the smallest set of tickets that, once answered, would make the path buildable. Apply the
