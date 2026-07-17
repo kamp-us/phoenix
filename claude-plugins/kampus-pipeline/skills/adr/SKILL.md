@@ -24,7 +24,7 @@ Capture one decision per file in `.decisions/`. There is no committed index (ADR
 
    This is **detect-and-serialize, not a CAS** — it *narrows* the collision window, it does not eliminate it. Two authors who enumerate in the same window before either PR is visible both pick the same number; that residual is **backstopped by the CI duplicate-`id` check** (the `decisions-index validate` PR job — see [ADR number lock](#adr-number-lock)), which reddens the second-to-merge PR for a manual renumber. The lock turns the *common* "branch after another's ADR PR is open" case from collide-and-renumber into don't-collide; the CI check remains the safety net for the rare residual.
 2. Pick a kebab-case slug from the title (≤ 5 words).
-3. Write `.decisions/NNNN-slug.md` using the template below — the front-matter `title`/`status`/`date` are the **source of truth** for the on-demand `compact` map row (ADR 0126: the compact map derives `id · title · status` straight from frontmatter; rendered on demand, never injected — ADR 0129), so write the exact display text you want there (inline markdown and all). Keep `title` to **one dense line** — it is what the rendered `compact` map shows for this ADR.
+3. Write `.decisions/NNNN-slug.md` using the template below. Directly beneath the `# NNNN — <Title>` heading, write the **required** plain one-line `**What this decides:** …` summary (see the [Rules](#rules)) — the front-matter `title`/`status`/`date` are the **source of truth** for the on-demand `compact` map row (ADR 0126: the compact map derives `id · title · status` straight from frontmatter; rendered on demand, never injected — ADR 0129), so write the exact display text you want there (inline markdown and all). Keep `title` to **one dense line** — it is what the rendered `compact` map shows for this ADR.
 4. **The ADR PR is purely additive — add only `.decisions/NNNN-slug.md`** (plus the superseded file's status edit when superseding). There is no committed `.decisions/index.md` to regenerate or commit (ADR [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md)); discovery is the CLAUDE.md contract — `ls .decisions/` + frontmatter, with `compact` on demand (ADR [0129](https://github.com/kamp-us/phoenix/blob/main/.decisions/0129-adr-discovery-is-the-claude-md-contract.md)) — so nothing else changes. Because ADR PRs carry no shared generated file, two concurrent ADR PRs can't collide — adding an ADR is conflict-free. To **render** the compact map locally you may run the CLI, but there is no index file to stage:
    ```bash
    # OPTIONAL local render of the on-demand compact map — nothing to `git add` (no committed index)
@@ -62,6 +62,8 @@ tags: [<area>, <area>]
 
 # NNNN — <Title>
 
+**What this decides:** <one plain human-language sentence a non-author can parse cold — what the decision *is*, not a restatement of the dense `title`.>
+
 ## Context
 <Why this came up — situation, constraint, prior pain.>
 
@@ -85,6 +87,7 @@ On a **PR**, `.github/workflows/decisions-index.yml` runs `decisions-index valid
 ## Rules
 
 - One decision per file. If the user is describing a sprawling design, that belongs in the vault, not here.
+- **Every new ADR opens with a plain one-line `**What this decides:** …` summary, directly beneath the `# NNNN — <Title>` heading and above `## Context`.** Write it in plain human language — what the decision *is*, so the founder (who ratifies ADRs — ADR [0078](https://github.com/kamp-us/phoenix/blob/main/.decisions/0078-product-driven-decisions-by-default.md)) can parse it cold, without decoding the dense agent-oriented prose below it. It is a reader-facing summary for a non-author, **not** a restatement of the one-line `title` (the `title` is the dense `compact`-map row; this is the human gloss). This line is required on every new ADR — never omit it.
 - **Linking to another ADR — resolve its filename by stable number from disk, never guess the slug from the target's title.** A target ADR's slug is **not derivable from its title** (0048 is `ship-it-merge-actor`, not `single-merge-authority`; 0053 is `control-plane-boundary`, not `control-plane-human-merge`; 0075 is `issueless-doc-pr-merge-seam`, not `conversation-authored-adr-exception`). The stable number `NNNN` is the only reliable key, so **read the real filename off disk** and use it verbatim — never re-apply the Step-2 title→slug heuristic to a *different* ADR you're linking. This is the recurring `review-doc` "links resolve" FAIL (#1777); `doc-links.yml` is the CI backstop, this is the authoring-time fix. Resolve every `[NNNN](NNNN-slug.md)` link's slug this way:
   ```bash
   ls .decisions/NNNN-*.md   # → .decisions/NNNN-real-slug.md — use exactly this filename in the link
