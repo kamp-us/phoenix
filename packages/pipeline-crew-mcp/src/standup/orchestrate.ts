@@ -37,6 +37,7 @@ import {
 import {type CrewSession, deriveSessionSet} from "./session-set.ts";
 import {
 	computeTmuxPlacement,
+	DEFAULT_TMUX_SESSION,
 	type PlacementTarget,
 	type RosterSession,
 	type TmuxWindowCollisionError,
@@ -56,6 +57,61 @@ export class StandUpLaunchError extends Schema.TaggedErrorClass<StandUpLaunchErr
 		reason: Schema.String,
 	},
 ) {}
+
+/**
+ * The launcher-default tmux session could not be ensured (the `has-session` probe missed AND the create
+ * failed to come up). This is the fresh-machine gap that made every `new-window -t crew` fail while
+ * stand-up still counted success — see ADR 0189 for why the session name is derived, not configured (#3418).
+ */
+export class TmuxSessionEnsureError extends Schema.TaggedErrorClass<TmuxSessionEnsureError>()(
+	"@kampus/pipeline-crew-mcp/standup/TmuxSessionEnsureError",
+	{
+		session: Schema.String,
+		reason: Schema.String,
+	},
+) {}
+
+/**
+ * The outcome of running a `tmux` client to exit: its pid and exit code/signal, plus — when the binary
+ * itself could not be spawned or emitted `error` — a spawn-level message. `code === 0` with no `spawnError`
+ * is the only success; every other shape is a launch that did not come up.
+ */
+export interface TmuxRun {
+	readonly pid: number | undefined;
+	readonly code: number | null;
+	readonly signal: NodeJS.Signals | null;
+	readonly spawnError: string | undefined;
+}
+
+/** Run a `tmux` client command to its exit. Injected in tests to drive the exit-code paths without a real tmux. */
+export type TmuxRunner = (args: readonly string[]) => Effect.Effect<TmuxRun>;
+
+/**
+ * Run `tmux <args>` and resolve once the client process EXITS, carrying its exit code — the async exit the
+ * old `Effect.try`-sync-only launcher never inspected (#3418). No detach/unref: `tmux` is client-server, so
+ * the CLI is a short-lived client that hands the request to the tmux server and exits (bounded to await);
+ * the `claude` process it places lives under the tmux server and outlives this launcher regardless. Never
+ * fails — an operational spawn failure (ENOENT/EACCES) arrives on the async `error` event, captured as
+ * `spawnError` data so each caller maps it to its own typed error (no raw try/catch: `spawn` reports
+ * operational errors via `error`, not a throw). This mirrors ensure-tracker's `Effect.callback` node-event idiom.
+ */
+const runTmux: TmuxRunner = (args) =>
+	Effect.callback<TmuxRun>((resume) => {
+		const child = spawn("tmux", [...args], {stdio: "ignore"});
+		let settled = false;
+		const settle = (run: TmuxRun) => {
+			if (settled) return;
+			settled = true;
+			child.removeAllListeners();
+			resume(Effect.succeed(run));
+		};
+		child.once("error", (cause) =>
+			settle({pid: child.pid, code: null, signal: null, spawnError: String(cause)}),
+		);
+		child.once("exit", (code, signal) =>
+			settle({pid: child.pid, code, signal, spawnError: undefined}),
+		);
+	});
 
 /** One derived session's full launch plan: its roster identity, its launch bind (argv), and its tmux placement. */
 export interface LaunchPlan {
@@ -81,6 +137,7 @@ export type StandUpError =
 	| CrewServerNotRegisteredError
 	| ChannelPluginNotAllowedError
 	| TmuxWindowCollisionError
+	| TmuxSessionEnsureError
 	| StandUpLaunchError;
 
 export interface StandUpInput {
@@ -98,6 +155,8 @@ export interface StandUpInput {
 	) => Effect.Effect<TrackerHandle, TrackerNotServingError>;
 	/** Mints each engine instance's distinct id. Default: `randomUUID` (the generator sessions use at runtime). */
 	readonly instanceId?: () => string;
+	/** Ensure the launcher-default tmux session exists before any window is placed. Default: `ensureCrewTmuxSession`. */
+	readonly ensureTmuxSession?: (session: string) => Effect.Effect<void, TmuxSessionEnsureError>;
 	/** Launch one planned session into its tmux window bound to its role lease. Default: `launchSessionInTmux`. */
 	readonly launch?: (plan: LaunchPlan) => Effect.Effect<LaunchedSession, StandUpLaunchError>;
 }
@@ -119,36 +178,67 @@ const toRosterSession = (session: CrewSession): RosterSession =>
 		: {kind: "bridge", role: session.role};
 
 /**
- * The production launcher: open a tmux window for the session under the launcher-default tmux session and
- * run `claude` there with the session's launch bind. Detached + unref'd + ignored stdio so the crew
- * outlives this launcher process (the `ensureTrackerRunning` spawn idiom). The thin, uncovered edge —
- * tests inject a recording launcher; only a synchronous spawn throw crosses the error channel.
+ * Ensure the launcher-default tmux session exists before any window is placed: probe `has-session`, and
+ * create (`new-session -d`) only when it is absent — the idempotent guard that closes the fresh-machine gap
+ * where `new-window -t crew` failed for a missing session (#3418). A create that itself does not come up
+ * fails closed with `TmuxSessionEnsureError`, so stand-up never launches into a session it could not confirm.
+ * The tmux runner is injected so the has-session/create branches are unit-tested without a real tmux.
+ */
+export const ensureCrewTmuxSession = (
+	session: string,
+	runTmuxCommand: TmuxRunner = runTmux,
+): Effect.Effect<void, TmuxSessionEnsureError> =>
+	Effect.gen(function* () {
+		const probe = yield* runTmuxCommand(["has-session", "-t", session]);
+		if (probe.spawnError === undefined && probe.code === 0) return;
+		const created = yield* runTmuxCommand(["new-session", "-d", "-s", session]);
+		if (created.spawnError !== undefined || created.code !== 0) {
+			return yield* Effect.fail(
+				new TmuxSessionEnsureError({
+					session,
+					reason:
+						created.spawnError ??
+						`tmux new-session for "${session}" exited ${created.code ?? created.signal}`,
+				}),
+			);
+		}
+	});
+
+/**
+ * The production launcher: open a tmux window under the launcher-default session and run `claude` there with
+ * the session's launch bind, then CONFIRM the window came up before counting it. `runTmux` awaits the client's
+ * exit, so a spawn failure or any non-zero exit — the fresh-machine `new-window -t crew` with no `crew` session
+ * (#3418) — fails closed with `StandUpLaunchError` naming the role + window; a `LaunchedSession` therefore only
+ * ever exists for a confirmed-live launch. The tmux runner is injected so the exit-code paths are unit-tested.
  */
 export const launchSessionInTmux = (
 	plan: LaunchPlan,
+	runTmuxCommand: TmuxRunner = runTmux,
 ): Effect.Effect<LaunchedSession, StandUpLaunchError> =>
-	Effect.try({
-		try: (): LaunchedSession => {
-			const {placement, bind, session} = plan;
-			const child = spawn(
-				"tmux",
-				["new-window", "-t", placement.session, "-n", placement.window, "claude", ...bind.argv],
-				{detached: true, stdio: "ignore"},
+	Effect.gen(function* () {
+		const {placement, bind, session} = plan;
+		const run = yield* runTmuxCommand([
+			"new-window",
+			"-t",
+			placement.session,
+			"-n",
+			placement.window,
+			"claude",
+			...bind.argv,
+		]);
+		if (run.spawnError !== undefined || run.code !== 0) {
+			return yield* Effect.fail(
+				new StandUpLaunchError({
+					role: session.role,
+					window: placement.window,
+					reason:
+						run.spawnError !== undefined
+							? `cannot launch claude into tmux window "${placement.window}": ${run.spawnError}`
+							: `tmux new-window for "${placement.window}" exited ${run.code ?? run.signal} (no live pane) — is the "${placement.session}" session present?`,
+				}),
 			);
-			child.unref();
-			return {
-				role: session.role,
-				address: session.address,
-				window: placement.window,
-				pid: child.pid,
-			};
-		},
-		catch: (cause) =>
-			new StandUpLaunchError({
-				role: plan.session.role,
-				window: plan.placement.window,
-				reason: `cannot launch claude into tmux window "${plan.placement.window}": ${String(cause)}`,
-			}),
+		}
+		return {role: session.role, address: session.address, window: placement.window, pid: run.pid};
 	});
 
 /**
@@ -164,6 +254,7 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 		const serverName = input.serverName ?? SESSION_SERVER_NAME;
 		const instanceId = input.instanceId ?? randomUUID;
 		const ensureTracker = input.ensureTracker ?? ensureTrackerRunning;
+		const ensureTmuxSession = input.ensureTmuxSession ?? ensureCrewTmuxSession;
 		const launch = input.launch ?? launchSessionInTmux;
 
 		const config = yield* input.config ?? readLaunchConfig();
@@ -198,6 +289,11 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 				: Effect.die(`stand-up plan zip out of range for session "${session.role}"`);
 		});
 
-		const launched = yield* Effect.forEach(plans, launch);
+		// Ensure the launcher-default tmux session exists before placing any window — a missing `crew`
+		// session made every `new-window -t crew` fail on a fresh machine while stand-up still reported
+		// success (#3418). This is the last precondition before the no-partial-crew launch loop.
+		yield* ensureTmuxSession(DEFAULT_TMUX_SESSION);
+		// Wrap so `forEach`'s index arg never lands on the launcher's optional tmux-runner param.
+		const launched = yield* Effect.forEach(plans, (plan) => launch(plan));
 		return {tracker, launched};
 	});

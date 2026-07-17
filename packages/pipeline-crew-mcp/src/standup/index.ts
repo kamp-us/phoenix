@@ -43,6 +43,7 @@ export {
 	tryBecomeTracker,
 } from "./ensure-tracker.ts";
 export {
+	ensureCrewTmuxSession,
 	type LaunchedSession,
 	type LaunchPlan,
 	launchSessionInTmux,
@@ -51,6 +52,9 @@ export {
 	type StandUpInput,
 	StandUpLaunchError,
 	type StandUpResult,
+	type TmuxRun,
+	type TmuxRunner,
+	TmuxSessionEnsureError,
 } from "./orchestrate.ts";
 export {
 	type BridgeSession,

@@ -22,10 +22,16 @@ import {type TrackerHandle, TrackerNotServingError} from "./ensure-tracker.ts";
 import {
 	CliVersionAssertError,
 	CrewServerNotRegisteredError,
+	ensureCrewTmuxSession,
 	type LaunchedSession,
 	type LaunchPlan,
+	launchSessionInTmux,
 	runStandUp,
 	type StandUpInput,
+	StandUpLaunchError,
+	type TmuxRun,
+	type TmuxRunner,
+	TmuxSessionEnsureError,
 } from "./index.ts";
 
 const PINNED = "2.1.212";
@@ -65,11 +71,18 @@ const counter = () => {
 	return () => `e${i++}`;
 };
 
-/** A recording launcher: never touches tmux, just captures the plans it was handed in call order. */
+/**
+ * A recording launcher + ensure-session pair sharing one `order` log, so a test can prove the crew tmux
+ * session is ensured BEFORE any window is placed (the fresh-machine ordering the false-green defeated, #3418).
+ * Neither touches tmux: the launcher captures its plans, the ensurer captures the session names it was asked for.
+ */
 const recordingLauncher = () => {
 	const plans: LaunchPlan[] = [];
+	const order: string[] = [];
+	const ensuredSessions: string[] = [];
 	const launch = (plan: LaunchPlan): Effect.Effect<LaunchedSession, never> => {
 		plans.push(plan);
+		order.push(`launch:${plan.placement.window}`);
 		return Effect.succeed({
 			role: plan.session.role,
 			address: plan.session.address,
@@ -77,7 +90,12 @@ const recordingLauncher = () => {
 			pid: 1000 + plans.length,
 		});
 	};
-	return {plans, launch};
+	const ensureTmuxSession = (session: string): Effect.Effect<void, never> => {
+		ensuredSessions.push(session);
+		order.push(`ensure:${session}`);
+		return Effect.void;
+	};
+	return {plans, order, ensuredSessions, launch, ensureTmuxSession};
 };
 
 const trackerHandle: TrackerHandle = {pid: 4242, socketPath: "/tmp/crew.sock"};
@@ -97,12 +115,20 @@ const recordingTracker = (
 /** The full happy-path input with every side effect injected — a stand-up that never leaves the process. */
 const baseInput = (
 	overrides: Partial<StandUpInput> & {engineCount?: number} = {},
-): {input: StandUpInput; launched: LaunchPlan[]; trackerCalls: () => number} => {
-	const {plans, launch} = recordingLauncher();
+): {
+	input: StandUpInput;
+	launched: LaunchPlan[];
+	order: string[];
+	ensuredSessions: string[];
+	trackerCalls: () => number;
+} => {
+	const {plans, order, ensuredSessions, launch, ensureTmuxSession} = recordingLauncher();
 	const {ensureTracker, calls} = recordingTracker();
 	const {engineCount, ...rest} = overrides;
 	return {
 		launched: plans,
+		order,
+		ensuredSessions,
 		trackerCalls: calls,
 		input: {
 			projectRoot: "/repo",
@@ -110,11 +136,34 @@ const baseInput = (
 			readVersionOutput: Effect.succeed(`${PINNED} (Claude Code)`),
 			instanceId: counter(),
 			ensureTracker,
+			ensureTmuxSession,
 			launch,
 			...rest,
 		},
 	};
 };
+
+/** A recording tmux runner: replays a scripted `TmuxRun` per invocation so `launchSessionInTmux` /
+ * `ensureCrewTmuxSession` run their exit-code branches with no real tmux — the async-exit seam #3418 closed. */
+const scriptedTmux = (runs: readonly TmuxRun[]): {runner: TmuxRunner; argvLog: string[][]} => {
+	const argvLog: string[][] = [];
+	let i = 0;
+	const runner: TmuxRunner = (args) => {
+		argvLog.push([...args]);
+		const run = runs[Math.min(i, runs.length - 1)];
+		i++;
+		return run === undefined ? Effect.die("scriptedTmux: no run scripted") : Effect.succeed(run);
+	};
+	return {runner, argvLog};
+};
+
+const exited = (code: number | null, over: Partial<TmuxRun> = {}): TmuxRun => ({
+	pid: code === 0 ? 4242 : undefined,
+	code,
+	signal: null,
+	spawnError: undefined,
+	...over,
+});
 
 const bridgeRoles = CREW_ROLES.filter((r) => kindOf(r) === "bridge");
 
@@ -242,6 +291,148 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 			// a bridge is a singleton and carries no --instance in its argv.
 			const bridge = launched.find((p) => p.session.kind === "bridge");
 			assert.notInclude(bridge?.bind.mcpConfigArg[1] ?? "", CREW_SESSION_INSTANCE_FLAG);
+		}),
+	);
+
+	it.effect(
+		"ensures the crew tmux session exists BEFORE placing any window, on a fresh env (#3418 AC1)",
+		() =>
+			Effect.gen(function* () {
+				const {input, order, ensuredSessions} = baseInput({engineCount: 2});
+				yield* runStandUp(input);
+
+				// the crew session is ensured exactly once, and every ensure precedes every launch.
+				assert.deepStrictEqual(ensuredSessions, ["crew"]);
+				const firstLaunch = order.findIndex((e) => e.startsWith("launch:"));
+				const lastEnsure = order.map((e) => e.startsWith("ensure:")).lastIndexOf(true);
+				assert.isBelow(lastEnsure, firstLaunch);
+			}),
+	);
+
+	it.effect("aborts fail-loud when the crew tmux session cannot be ensured (#3418 AC3)", () =>
+		Effect.gen(function* () {
+			const {input, launched} = baseInput({
+				ensureTmuxSession: (session: string) =>
+					Effect.fail(new TmuxSessionEnsureError({session, reason: "new-session exited 1"})),
+			});
+			const err = yield* Effect.flip(runStandUp(input));
+
+			assert.instanceOf(err, TmuxSessionEnsureError);
+			// ensure-session sits before the launch loop — nothing launched when it fails.
+			assert.strictEqual(launched.length, 0);
+		}),
+	);
+
+	it.effect(
+		"reports no launch count for a session that never started — a failed launch fails loud (#3418 AC4)",
+		() =>
+			Effect.gen(function* () {
+				const {input} = baseInput({
+					engineCount: 1,
+					launch: (plan) =>
+						Effect.fail(
+							new StandUpLaunchError({
+								role: plan.session.role,
+								window: plan.placement.window,
+								reason: "tmux new-window exited 1 (no live pane)",
+							}),
+						),
+				});
+				const err = yield* Effect.flip(runStandUp(input));
+				assert.instanceOf(err, StandUpLaunchError);
+			}),
+	);
+});
+
+/**
+ * The real launcher primitives against a scripted tmux runner — the async-exit path #3418 closed: a
+ * non-zero exit is inspected and fails closed, not counted as success. No real tmux, no `claude`.
+ */
+describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)", () => {
+	// Capture one real, fully-derived LaunchPlan by running a stand-up whose launcher just records it.
+	const captureOnePlan = Effect.gen(function* () {
+		const {input, launched} = baseInput({engineCount: 1});
+		yield* runStandUp(input);
+		const plan = launched[0];
+		assert.isDefined(plan);
+		return plan as LaunchPlan;
+	});
+
+	it.effect("launchSessionInTmux confirms a live window on a clean exit-0", () =>
+		Effect.gen(function* () {
+			const plan = yield* captureOnePlan;
+			const {runner, argvLog} = scriptedTmux([exited(0)]);
+			const result = yield* launchSessionInTmux(plan, runner);
+
+			assert.strictEqual(result.window, plan.placement.window);
+			assert.strictEqual(result.pid, 4242);
+			// the window is placed under the plan's tmux session with `claude` + the derived bind argv.
+			assert.deepStrictEqual(argvLog[0]?.slice(0, 6), [
+				"new-window",
+				"-t",
+				plan.placement.session,
+				"-n",
+				plan.placement.window,
+				"claude",
+			]);
+		}),
+	);
+
+	it.effect(
+		"launchSessionInTmux fails closed on an async non-zero exit — the swallowed failure #3418",
+		() =>
+			Effect.gen(function* () {
+				const plan = yield* captureOnePlan;
+				const {runner} = scriptedTmux([exited(1)]);
+				const err = yield* Effect.flip(launchSessionInTmux(plan, runner));
+
+				assert.instanceOf(err, StandUpLaunchError);
+				assert.strictEqual(err.window, plan.placement.window);
+				assert.strictEqual(err.role, plan.session.role);
+			}),
+	);
+
+	it.effect("launchSessionInTmux fails closed on a spawn-level error (tmux missing)", () =>
+		Effect.gen(function* () {
+			const plan = yield* captureOnePlan;
+			const {runner} = scriptedTmux([exited(null, {spawnError: "spawn tmux ENOENT"})]);
+			const err = yield* Effect.flip(launchSessionInTmux(plan, runner));
+
+			assert.instanceOf(err, StandUpLaunchError);
+			assert.include(err.reason, "ENOENT");
+		}),
+	);
+
+	it.effect("ensureCrewTmuxSession creates the session when it is absent (fresh env)", () =>
+		Effect.gen(function* () {
+			// has-session exits non-zero (absent) → new-session exits 0 (created).
+			const {runner, argvLog} = scriptedTmux([exited(1), exited(0)]);
+			yield* ensureCrewTmuxSession("crew", runner);
+
+			assert.deepStrictEqual(argvLog, [
+				["has-session", "-t", "crew"],
+				["new-session", "-d", "-s", "crew"],
+			]);
+		}),
+	);
+
+	it.effect("ensureCrewTmuxSession is a no-op create when the session already exists", () =>
+		Effect.gen(function* () {
+			const {runner, argvLog} = scriptedTmux([exited(0)]);
+			yield* ensureCrewTmuxSession("crew", runner);
+
+			// has-session exit-0 short-circuits — no `new-session` is ever run.
+			assert.deepStrictEqual(argvLog, [["has-session", "-t", "crew"]]);
+		}),
+	);
+
+	it.effect("ensureCrewTmuxSession fails loud when the create does not come up", () =>
+		Effect.gen(function* () {
+			const {runner} = scriptedTmux([exited(1), exited(1)]);
+			const err = yield* Effect.flip(ensureCrewTmuxSession("crew", runner));
+
+			assert.instanceOf(err, TmuxSessionEnsureError);
+			assert.strictEqual(err.session, "crew");
 		}),
 	);
 });
