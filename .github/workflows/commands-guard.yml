@@ -9,6 +9,10 @@ name: commands-guard
 on:
   pull_request:
 
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
