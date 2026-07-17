@@ -5,22 +5,18 @@
  * It maps the roster session set (C6, #3297: one entry per bridge + one per engine instance) to
  * tmux placement targets, deriving each window name from the session's own role identity.
  *
- * The one non-obvious thing: placement naming is DERIVED, not config-read. The old config `tmux`
- * dimension (session + per-bridge window names) died with the one-role-map seam (ADR 0189 / #3236):
- * post-MCP a role's address is a lease, not a configured pane, so there is nothing left to name in
- * config. A bridge's window is its role slug; an engine's window is its per-instance id (an operator
- * could never name N dynamic engines). All windows live under a single launcher-default tmux session.
- * The layer stays thin — it maps sessions to placement targets and nothing else: it does NOT register
- * channels or mint identity (C5/C6 own those), and introduces NO tmux-as-transport path (no pane-title
- * discovery, no buffer-paste, no send-keys). Pure derivation over plain data (the `registry-core` idiom).
+ * The one non-obvious thing: this layer derives window NAMES only — it does NOT own the tmux SESSION.
+ * Placement naming is DERIVED, not config-read: the old config `tmux` dimension (session + per-bridge
+ * window names) died with the one-role-map seam (ADR 0189 / #3236) — post-MCP a role's address is a
+ * lease, not a configured pane. A bridge's window is its role slug; an engine's window is its per-instance
+ * id (an operator could never name N dynamic engines). The SESSION the windows open into is resolved at
+ * LAUNCH time to the caller's current tmux session, not named here (founder ruling #3418: stand-up opens
+ * windows in the operator's own session, never a hardcoded one) — so there is no session field on a target.
+ * The layer stays thin: it does NOT register channels or mint identity (C5/C6 own those), and introduces NO
+ * tmux-as-transport path (no pane-title discovery, no buffer-paste, no send-keys). Pure derivation (the
+ * `registry-core` idiom).
  */
 import {Effect, Schema} from "effect";
-
-/**
- * The tmux session every crew window is created under. A launcher default, not a config input: with
- * the config `tmux` dimension gone (ADR 0189), the session name is derived, not operator-supplied.
- */
-export const DEFAULT_TMUX_SESSION = "crew";
 
 /**
  * One session in the roster set (C6, #3297) that must be placed on the operator's screen. A bridge is
@@ -31,10 +27,8 @@ export type RosterSession =
 	| {readonly kind: "bridge"; readonly role: string}
 	| {readonly kind: "engine"; readonly id: string};
 
-/** Where one session is placed: a named window under the launcher-default tmux session. */
+/** Where one session is placed: a named window (the session it opens into is resolved at launch time). */
 export interface PlacementTarget {
-	/** The tmux session this window is created under (`DEFAULT_TMUX_SESSION`). */
-	readonly session: string;
 	/** The resolved tmux window name — a bridge's role slug or an engine's instance id. */
 	readonly window: string;
 	/** The roster session this places — a bridge role slug or an engine instance id. */
@@ -56,18 +50,13 @@ export class TmuxWindowCollisionError extends Schema.TaggedErrorClass<TmuxWindow
 
 const placeOne = (session: RosterSession): PlacementTarget =>
 	session.kind === "engine"
-		? {session: DEFAULT_TMUX_SESSION, window: session.id, sessionRef: session.id, kind: "engine"}
-		: {
-				session: DEFAULT_TMUX_SESSION,
-				window: session.role,
-				sessionRef: session.role,
-				kind: "bridge",
-			};
+		? {window: session.id, sessionRef: session.id, kind: "engine"}
+		: {window: session.role, sessionRef: session.role, kind: "bridge"};
 
 /**
- * Map the roster session set to tmux placement targets: one window per bridge (named by its role
- * slug) + one per engine instance (named by its id), all under the launcher-default tmux session.
- * Fails closed only on two sessions colliding on one window — the launch-time distinctness guard.
+ * Map the roster session set to tmux placement targets: one window per bridge (named by its role slug)
+ * + one per engine instance (named by its id). Fails closed only on two sessions colliding on one window
+ * name — the launch-time distinctness guard (the session they open into is resolved at launch, not here).
  */
 export const computeTmuxPlacement = (
 	sessions: readonly RosterSession[],

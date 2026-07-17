@@ -1,16 +1,15 @@
 /**
- * The tmux placement mapping (AC 4): a sample roster session set — three bridges + N engines — maps
- * to one placement target per session, all under the launcher-default tmux session, with each window
- * name DERIVED from role identity (a bridge's role slug, an engine's per-instance id) rather than a
- * config `tmux` dimension (which died with the one-role-map seam, ADR 0189 / #3236). Also pins the
- * one surviving fail-closed rejection: two sessions colliding on one window. These prove tmux is
- * used only as a window-manager here — the mapping produces placement targets, never a transport path.
+ * The tmux placement mapping (AC 4): a sample roster session set — three bridges + N engines — maps to one
+ * placement target per session, with each window name DERIVED from role identity (a bridge's role slug, an
+ * engine's per-instance id) rather than a config `tmux` dimension (which died with the one-role-map seam, ADR
+ * 0189 / #3236). The SESSION windows open into is NOT this layer's concern — it is resolved at launch time to
+ * the caller's current tmux session (founder ruling #3418), so a target carries no session field. Also pins
+ * the one surviving fail-closed rejection: two sessions colliding on one window name.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {
 	computeTmuxPlacement,
-	DEFAULT_TMUX_SESSION,
 	type RosterSession,
 	TmuxWindowCollisionError,
 } from "./tmux-placement.ts";
@@ -26,20 +25,18 @@ const engines = (n: number): readonly RosterSession[] =>
 	Array.from({length: n}, (_, i) => ({kind: "engine", id: `engine-${i + 1}`}) as const);
 
 describe("standup/tmux-placement — session set → placement targets (derived naming)", () => {
-	it.effect(
-		"places one window per bridge + one per engine, all under the default tmux session",
-		() =>
-			Effect.gen(function* () {
-				const targets = yield* computeTmuxPlacement([...BRIDGES, ...engines(3)]);
-				assert.lengthOf(targets, 6, "3 bridges + 3 engines = 6 placement targets");
-				for (const t of targets) {
-					assert.strictEqual(
-						t.session,
-						DEFAULT_TMUX_SESSION,
-						"every window lives under the launcher-default tmux session",
-					);
-				}
-			}),
+	it.effect("places one window per bridge + one per engine (no session baked into a target)", () =>
+		Effect.gen(function* () {
+			const targets = yield* computeTmuxPlacement([...BRIDGES, ...engines(3)]);
+			assert.lengthOf(targets, 6, "3 bridges + 3 engines = 6 placement targets");
+			for (const t of targets) {
+				assert.notProperty(
+					t,
+					"session",
+					"the target carries no session — it is resolved at launch",
+				);
+			}
+		}),
 	);
 
 	it.effect("derives each bridge window from its role slug", () =>

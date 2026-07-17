@@ -43,10 +43,12 @@ export {
 	tryBecomeTracker,
 } from "./ensure-tracker.ts";
 export {
-	ensureCrewTmuxSession,
+	ensureNamedTmuxSession,
+	FALLBACK_TMUX_SESSION,
 	type LaunchedSession,
 	type LaunchPlan,
 	launchSessionInTmux,
+	resolveTargetTmuxSession,
 	runStandUp,
 	type StandUpError,
 	type StandUpInput,
@@ -65,7 +67,6 @@ export {
 } from "./session-set.ts";
 export {
 	computeTmuxPlacement,
-	DEFAULT_TMUX_SESSION,
 	type PlacementTarget,
 	type RosterSession,
 	TmuxWindowCollisionError,
