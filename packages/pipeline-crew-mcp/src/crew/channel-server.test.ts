@@ -6,8 +6,8 @@
  *   - AC 2: two roles stand up (tracker + peer + edge composed), announce, discover each other,
  *     and exchange a claim/collision-check with a typed reply; a peer-to-peer intake ping wakes
  *     the receiver's edge channel sink and returns its inbox-ack (peer + edge in the loop).
- *   - AC 3: the role-uniqueness lease rejects a second live session for a held role, across all
- *     five standing roles.
+ *   - AC 3: the per-kind cardinality lease — a second live session for a BRIDGE role is rejected
+ *     (cardinality 1), a second live session for an ENGINE role is admitted (cardinality N).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Option, Ref} from "effect";
@@ -26,8 +26,11 @@ import {TrackerHandlers} from "../tracker/handlers.ts";
 import {RegistryLive} from "../tracker/registry.ts";
 import {makeCrewChannel} from "./channel-server.ts";
 import {RoleUniquenessError} from "./errors.ts";
-import {CREW_ROLES} from "./roles.ts";
+import {CREW_ROLES, kindOf} from "./roles.ts";
 import {CrewTracker, peerTrackerLayer} from "./tracker.ts";
+
+const BRIDGE_ROLES = CREW_ROLES.filter((role) => kindOf(role) === "bridge");
+const ENGINE_ROLES = CREW_ROLES.filter((role) => kindOf(role) === "engine");
 
 const registryHandlers = TrackerHandlers.pipe(Layer.provide(RegistryLive));
 
@@ -130,20 +133,21 @@ describe("crew/channel-server — announce, discover, claim/collision-check (AC 
 	);
 });
 
-describe("crew/channel-server — role-uniqueness lease (AC 3)", () => {
-	it.effect("a second live session for a held role is rejected, across all five roles", () =>
+describe("crew/channel-server — per-kind cardinality lease (AC 3)", () => {
+	it.effect("a second live session for a BRIDGE role is rejected (cardinality 1)", () =>
 		Effect.gen(function* () {
-			for (const role of CREW_ROLES) {
+			assert.isAbove(BRIDGE_ROLES.length, 0, "the roster must carry at least one bridge role");
+			for (const role of BRIDGE_ROLES) {
 				const client = yield* RpcTest.makeClient(TrackerRegistry);
 				const tracker = CrewTracker.fromClient(client);
 
-				// first session for the role acquires the lease
+				// first session for the bridge role acquires the singleton lease
 				const first = yield* makeCrewChannel({role, address: `inbox://${role}-1`}).pipe(
 					Effect.provide(channelLayers(tracker, `inbox://${role}-1`, alwaysUnreachable)),
 				);
 				assert.strictEqual(first.role, role);
 
-				// a second session (a DIFFERENT peer) for the same held role is rejected, not shared
+				// a second session (a DIFFERENT peer) for the same held bridge role is rejected, not shared
 				const rejection = yield* makeCrewChannel({role, address: `inbox://${role}-2`}).pipe(
 					Effect.provide(channelLayers(tracker, `inbox://${role}-2`, alwaysUnreachable)),
 					Effect.flip,
@@ -155,23 +159,80 @@ describe("crew/channel-server — role-uniqueness lease (AC 3)", () => {
 		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
 	);
 
-	it.effect(
-		"all five distinct roles hold their leases simultaneously (uniqueness is per role)",
-		() =>
-			Effect.gen(function* () {
+	it.effect("a second live session for an ENGINE role boots cleanly (cardinality N)", () =>
+		Effect.gen(function* () {
+			assert.isAbove(ENGINE_ROLES.length, 0, "the roster must carry at least one engine role");
+			for (const role of ENGINE_ROLES) {
 				const client = yield* RpcTest.makeClient(TrackerRegistry);
 				const tracker = CrewTracker.fromClient(client);
-				for (const role of CREW_ROLES) {
-					const channel = yield* makeCrewChannel({role, address: `inbox://${role}`}).pipe(
-						Effect.provide(channelLayers(tracker, `inbox://${role}`, alwaysUnreachable)),
-					);
-					assert.strictEqual(channel.role, role);
-				}
-				// every role is independently discoverable — five distinct leases coexist
-				for (const role of CREW_ROLES) {
-					const result = yield* client.LookupRole({role});
-					assert.lengthOf(result.peers, 1, `${role} should be present`);
-				}
+
+				// two DIFFERENT-peer sessions for the same engine role both stand up — the per-instance
+				// lease key never collapses onto the single-role key, so neither rejects the other
+				const first = yield* makeCrewChannel({role, address: `inbox://${role}-1`}).pipe(
+					Effect.provide(channelLayers(tracker, `inbox://${role}-1`, alwaysUnreachable)),
+				);
+				const second = yield* makeCrewChannel({role, address: `inbox://${role}-2`}).pipe(
+					Effect.provide(channelLayers(tracker, `inbox://${role}-2`, alwaysUnreachable)),
+				);
+				assert.strictEqual(first.role, role);
+				assert.strictEqual(second.role, role);
+				assert.notStrictEqual(first.address, second.address, "two distinct engine instances");
+
+				// both hold a live per-instance lease: a fresh third instance still boots (N unbounded)
+				const third = yield* makeCrewChannel({role, address: `inbox://${role}-3`}).pipe(
+					Effect.provide(channelLayers(tracker, `inbox://${role}-3`, alwaysUnreachable)),
+				);
+				assert.strictEqual(third.role, role);
+			}
+		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
+	);
+
+	it.effect(
+		"connection-is-lease per kind: a freed bridge lease lets a replacement bridge boot",
+		() =>
+			Effect.gen(function* () {
+				const role = BRIDGE_ROLES[0];
+				assert(role !== undefined, "the roster must carry a bridge role");
+				const client = yield* RpcTest.makeClient(TrackerRegistry);
+				const tracker = CrewTracker.fromClient(client);
+
+				// a bridge boots, holding the singleton lease on the bare role key
+				const incumbent = yield* makeCrewChannel({role, address: `inbox://${role}-a`}).pipe(
+					Effect.provide(channelLayers(tracker, `inbox://${role}-a`, alwaysUnreachable)),
+				);
+				assert.strictEqual(incumbent.role, role);
+
+				// the connection closes → its lease frees (the singleton key is released); a second
+				// bridge before the release would collide, but a release makes the key acquirable again
+				yield* client.Release({
+					resource: role,
+					claimant: `inbox://${role}-a`,
+					at: new Date().toISOString(),
+				});
+
+				// a replacement bridge (a fresh peer) boots cleanly onto the freed singleton lease
+				const replacement = yield* makeCrewChannel({role, address: `inbox://${role}-b`}).pipe(
+					Effect.provide(channelLayers(tracker, `inbox://${role}-b`, alwaysUnreachable)),
+				);
+				assert.strictEqual(replacement.role, role);
 			}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
+	);
+
+	it.effect("all distinct roles hold their leases simultaneously (uniqueness is per role)", () =>
+		Effect.gen(function* () {
+			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			const tracker = CrewTracker.fromClient(client);
+			for (const role of CREW_ROLES) {
+				const channel = yield* makeCrewChannel({role, address: `inbox://${role}`}).pipe(
+					Effect.provide(channelLayers(tracker, `inbox://${role}`, alwaysUnreachable)),
+				);
+				assert.strictEqual(channel.role, role);
+			}
+			// every role is independently discoverable — five distinct leases coexist
+			for (const role of CREW_ROLES) {
+				const result = yield* client.LookupRole({role});
+				assert.lengthOf(result.peers, 1, `${role} should be present`);
+			}
+		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
 	);
 });
