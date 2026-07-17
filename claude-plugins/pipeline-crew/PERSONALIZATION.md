@@ -66,9 +66,24 @@ reference these keys, never a literal.
 | tmux / session naming | `tmux.session`, `tmux.windows.ea`, `tmux.windows.engineeringManager`, `tmux.windows.triage` | The tmux session name and the three per-role window/pane names the stand-up brings up and the roles address each other by. | `<tmux-session-name>`, `<ea-window-name>`, `<em-window-name>`, `<triage-window-name>` |
 | Model-tier preferences | `modelTiers.ea`, `modelTiers.engineeringManager`, `modelTiers.triage` | The model tier each role runs on — the planning-tier intake session vs the execution/build-tier conductor (so a role never silently downgrades a spawned subagent). | `<ea-model-tier>`, `<em-model-tier>`, `<triage-model-tier>` |
 | WIP caps | `wipCaps.productLanes`, `wipCaps.platformLanes` | The engineering-manager's bounded concurrent-lane count per class — how many product vs platform/pipeline coders it drives at once before queueing the rest. | `<wip-cap-product-lanes>`, `<wip-cap-platform-lanes>` |
+| Pinned CLI version | `cliVersion` | The Claude Code CLI version the stand-up launcher asserts before it starts any session — a hard gate so the crew never launches on a drifted CLI (`major.minor.patch`, optional `-suffix`). | `<pinned-claude-code-cli-version>` |
+| Engine count | `engineCount` | How many engine (build) sessions the stand-up starts — a positive integer. | `<engine-count>` |
+| Channel registration | `channels.mode`, `channels.servers`, `channels.allowedChannelPlugins` | How each launched session registers its channel MCP servers: `mode` is `allowlist` (`--channels <refs>`) or `development` (`--dangerously-load-development-channels`, local only); `servers` are the refs each session registers (grammar `server:<name>` / `plugin:<plugin>:<server>`); `allowedChannelPlugins` is the plugin allowlist the `allowlist` mode enforces. | `<channel-mode: allowlist \| development>`, `<channel-server-ref>`, `<allowed-channel-plugin>` |
 
 Adding a new operator-specific dimension is **one row here + one key in the template + one
 reference in the def that needs it** — never a new literal buried in a def.
+
+### The launch dimensions have a typed reader (fail-closed)
+
+The last three rows are **launch dimensions** — inputs the stand-up launcher reads, not
+prose an agent def binds. They resolve through the **same** order as every other seam key
+(`$CREW_CONFIG` → `.claude/crew.config.jsonc`) but are consumed by a typed reader,
+[`packages/pipeline-crew-mcp/src/standup/config.ts`](../../packages/pipeline-crew-mcp/src/standup/config.ts),
+which validates them and **fails closed** — a missing or malformed dimension (a non-version
+CLI pin, an unknown channel mode, a channel ref off-grammar, a non-positive engine count)
+stops the launch with an error naming that dimension, never a silent default. The launcher
+children (version-assert, bind-builder, roster, orchestration) consume the reader's typed
+result; they never re-parse the config.
 
 ## Stand-up
 
