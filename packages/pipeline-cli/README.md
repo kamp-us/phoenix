@@ -2,12 +2,31 @@
 
 The single subcommand-router home all pipeline tooling folds into (epic
 [#994](https://github.com/kamp-us/phoenix/issues/994)). `pipeline-cli <tool> …`
-dispatches to a registered tool; the tools themselves move in over Phase 2
-(#997–#1002).
+dispatches to a registered tool — the deterministic, unit-tested pipeline utilities
+the crew reaches for instead of hand-rolling `gh`/`jq`/`git` glue.
 
-This is the **Phase-1 scaffold** (#996): the package shell, the registry
-extension seam, the pure router core, and one tracer tool (`version`) wired end to
-end. **No existing tool's logic is moved in yet.**
+The tools have long since folded in: `src/registry.ts`'s `registeredTools` wires the
+full set (44 tools + the `version` tracer). A new tool registers by appending one
+`Command` to that array (the [extension seam](#the-extension-seam)) — nothing else.
+
+## Discovering the tools — `pipeline-cli commands` (the rot-proof index)
+
+The authoritative, always-current list is **generated from the registry**, so it can't
+drift the way a hand-maintained list does (the failure this README's old Phase-1 framing
+was itself an instance of — #3316). Run it on demand:
+
+```bash
+# one line per registered tool: name · one-line purpose (the discovery map — #3316)
+node packages/pipeline-cli/src/bin.ts commands compact
+
+# CI gate: red if any registered tool ships without a one-line description (fail-closed)
+node packages/pipeline-cli/src/bin.ts commands check
+```
+
+`commands compact` mirrors `decisions-index compact` (ADR 0126/0129, "discovery is the
+CLAUDE.md contract"): it derives purely from each `Command`'s own `name` + `description`,
+so a newly-registered tool appears automatically. The per-tool `###` sections below are a
+**curated subset with usage detail** — for the complete list, run `commands compact`.
 
 ## Shape
 
@@ -44,13 +63,13 @@ extension.
 ## Usage
 
 ```bash
-# list the registered tools
+# the generated tool index (name · one-line purpose) — start here (#3316)
+node packages/pipeline-cli/src/bin.ts commands compact
+
+# the effect/unstable/cli --help listing of registered tools
 node packages/pipeline-cli/src/bin.ts --help
 
-# the Phase-1 tracer tool
-node packages/pipeline-cli/src/bin.ts version
-
-# dispatch to a registered tool (Phase-2 children)
+# dispatch to a registered tool
 node packages/pipeline-cli/src/bin.ts <tool> …
 ```
 
