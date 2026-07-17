@@ -25,9 +25,10 @@ type ClaimRequest = typeof Schema.ClaimRequest.Type;
 type PresenceAnnouncement = typeof Schema.PresenceAnnouncement.Type;
 type RoleLookupQuery = typeof Schema.RoleLookupQuery.Type;
 type RoleLookupResult = typeof Schema.RoleLookupResult.Type;
+type HeartbeatMessage = typeof Schema.Heartbeat.Type;
 
 /**
- * The structural shape of the registry client the crew depends on — the three registry
+ * The structural shape of the registry client the crew depends on — the four registry
  * kinds it drives. Any `RpcClient(TrackerRegistry)` satisfies it (the real socket client,
  * or an in-memory `RpcTest` client in tests); the error channel is `unknown` because it is
  * `orDie`'d at the seam.
@@ -36,6 +37,7 @@ export interface TrackerRegistryClient {
 	readonly Claim: (payload: ClaimRequest) => Effect.Effect<ClaimReply, unknown>;
 	readonly AnnouncePresence: (payload: PresenceAnnouncement) => Effect.Effect<void, unknown>;
 	readonly LookupRole: (payload: RoleLookupQuery) => Effect.Effect<RoleLookupResult, unknown>;
+	readonly Heartbeat: (payload: HeartbeatMessage) => Effect.Effect<void, unknown>;
 }
 
 const now = (): string => new Date().toISOString();
@@ -51,6 +53,15 @@ export class CrewTracker extends Context.Service<
 		}) => Effect.Effect<ClaimReply>;
 		/** Soft presence announce, held for the enclosing scope (connection-is-lease). */
 		readonly announce: (presence: RolePresence) => Effect.Effect<void, never, Scope.Scope>;
+		/**
+		 * Refresh this session's presence + role lease before it ages out. Presence-only: the sender
+		 * sends one `Heartbeat {peer, ttlSeconds}` and never touches a resource claim (#3228). Driven
+		 * on an interval under the TTL by `crew/heartbeat.ts`.
+		 */
+		readonly heartbeat: (input: {
+			readonly peer: string;
+			readonly ttlSeconds: number;
+		}) => Effect.Effect<void>;
 		/** The live holder of `role`, or `None` when absent/expired — the explicit not-present result. */
 		readonly lookup: (role: string) => Effect.Effect<Option.Option<RolePresence>>;
 	}
@@ -66,10 +77,14 @@ export class CrewTracker extends Context.Service<
 					client
 						.AnnouncePresence({peer: presence.address, role: presence.role, at: now()})
 						.pipe(Effect.orDie),
-					// The release rides the socket lifecycle (a dropped connection ages/frees the lease);
-					// there is no wire release kind, so scope close is a no-op on the client side.
+					// No wire release kind exists, so scope close is a client-side no-op. A live session
+					// keeps its lease via the heartbeat loop (crew/heartbeat.ts) refreshing it under
+					// DEFAULT_TTL_SECONDS; a dropped session's lease frees by TTL-aging once the beats
+					// stop — the tracker has no disconnect hook.
 					() => Effect.void,
 				),
+			heartbeat: ({peer, ttlSeconds}) =>
+				client.Heartbeat({peer, ttlSeconds, at: now()}).pipe(Effect.orDie),
 			lookup: (role) =>
 				client.LookupRole({role}).pipe(
 					Effect.orDie,
