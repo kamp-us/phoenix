@@ -1,7 +1,7 @@
 {
 	"$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
 	"name": "pipeline-crew",
-	"description": "The kamp.us pipeline crew: three spawnable agent defs (EA / engineering-manager / triage-guy) that conduct the kampus-pipeline skills as a 3-session crew over the intake → execution → human seams. Consumes kampus-pipeline's shipped agents; every operator-specific detail is supplied per install through the personalization seam, so the plugin carries zero operator data.",
+	"description": "The kamp.us pipeline crew: four channel-native agent defs on a flat topology (cartographer + intake-desk + chief-of-staff bridges, plus the engineering-manager engine pool) that conduct the kampus-pipeline skills as a standing crew. Roles address each other over the @kampus/pipeline-crew-mcp channel substrate and ship the crew doctrine as the default; every operator-specific detail is supplied per install through the personalization seam, so the plugin carries zero operator data. Governed by the crew roster law (ADR 0189).",
 	"author": {
 		"name": "kamp-us",
 		"url": "https://github.com/kamp-us"
@@ -12,7 +12,7 @@
 	"keywords": [
 		"agent-crew",
 		"pipeline-orchestration",
-		"tmux",
+		"channel-mcp",
 		"agent-workflow",
 		"issue-pipeline",
 		"repo-agnostic"
