@@ -17,7 +17,7 @@ Direction flows top-down: **vision → arcs → milestones → epics → feature
 | Four Pillars | #17 | active |
 | Geçit | #24 | queued |
 | Mecmua v2 | #25 | queued |
-| Atölye | #26 | queued |
+| Atölye | #26 | done |
 
 **Four Pillars** — *active.* Frontend polish and the encoded design system: the four pillars — Performance, Cohesiveness, Usability, Accessibility — made real and enforced (ADR 0162, the design-system manifest). The surface of kamp.us becomes excellent and self-consistent. The nav-IA discipline is mid-flight here.
 
