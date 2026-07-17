@@ -73,7 +73,7 @@ export const EDGE_READY_POLL_MS = 1_500;
 // and `@vitest/runner@4.1.5` `beforeAll(fn, timeout = config.hookTimeout)`. `integrationStack` threads
 // `{timeout: HOOK_TIMEOUT_MS}` to UNDO that dependency-default override — restoring the already-declared
 // ceiling, NOT raising a working one.
-export const HOOK_TIMEOUT_MS = 180_000;
+export const HOOK_TIMEOUT_MS = 300_000;
 
 // The DEPLOY-time worker-health readiness budget for the SHARED-stage (`_global-setup`) path —
 // UNCHANGED (no shared-path regression). The shared stage deploys once per run (low concurrency), is
@@ -83,11 +83,19 @@ export const DEPLOY_HEALTH_DEADLINE_MS = 120_000;
 
 // The per-file readiness budget for the hook-bound `integrationStack` deploy `beforeAll` (#3146).
 // Sized STRICTLY BELOW `HOOK_TIMEOUT_MS` with headroom for the deploy-before (~40-60s under
-// concurrent-stage batch load) + the trailing non-fatal warms, so the poll GRACEFULLY bounded-returns
-// a typed `WorkerNotReadyError` diagnostic WELL before the vitest hook fires — a deterministic, named
-// failure instead of the opaque "Hook timed out" guillotine that evicted clean product PRs from the
-// merge queue: deploy(≤60) + readiness(100) = 160 < 180, so the typed throw wins the race every time.
-export const PER_FILE_HEALTH_DEADLINE_MS = 100_000;
+// concurrent-stage batch load, more with the widened `deployTransientRetry`) + the trailing non-fatal
+// warms, so the poll GRACEFULLY bounded-returns a typed `WorkerNotReadyError`/re-thrown
+// `CloudflarePlaceholder404Error` diagnostic WELL before the vitest hook fires — a deterministic,
+// named failure instead of the opaque "Hook timed out" guillotine that evicted clean product PRs from
+// the merge queue: deploy(≤90) + readiness(180) = 270 < 300, so the typed throw wins the race.
+//
+// Raised 100s→180s for #3409: under merge_group BATCH load (~24 fresh `*.workers.dev` hostnames
+// propagating across the CF edge at once), `/api/health` edge propagation exceeded the prior 100s
+// budget, so `awaitEdgeReady` re-threw the edge-not-propagated `CloudflarePlaceholder404Error` and the
+// documented transient hard-failed the beforeAll instead of riding out as a WAIT — ejecting an
+// innocent co-batched PR (run 29561658100, fts-backfill). 180s gives the propagation transient enough
+// headroom while staying bounded: a worker that genuinely never serves still fails after the budget.
+export const PER_FILE_HEALTH_DEADLINE_MS = 180_000;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
