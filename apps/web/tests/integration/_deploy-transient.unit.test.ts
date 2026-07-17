@@ -41,25 +41,31 @@ describe("isTransientDeployError", () => {
 		).toBe(true);
 	});
 
-	// #2156: the preview-deploy secret-probe AuthError (a non-2xx probe result) — the merge-group
-	// flake that ejected approved PR #2148. Matched on the message, not the bare `AuthError` _tag,
-	// so a genuine auth failure (below) still fails fast.
+	// The preview-deploy edge-session AuthError — every `EdgeSessionError` alchemy wraps carries the
+	// "Edge-preview secret read failed:" prefix (`State.ts:597`), so the match is the prefix, not one
+	// wording. Both observed merge_group-ejecting variants ride out: the #2156 secret-probe result
+	// (ejected approved PR #2148) and the #3409 session-bootstrap failure (run 29560455218). Matched
+	// on the prefix, not the bare `AuthError` _tag, so a genuine auth failure (below) still fails fast.
 	it.each([
 		[
 			"a 400-HTML probe result",
 			"Edge-preview secret read failed: Secret probe returned 400: <!DOCTYPE html>",
 		],
 		["a 502 probe result", "Edge-preview secret read failed: Secret probe returned 502"],
-	])("retries the transient preview-deploy secret-probe AuthError (%s)", (_label, message) => {
+		[
+			"a failed edge-session bootstrap (#3409)",
+			"Edge-preview secret read failed: Failed to create edge preview session",
+		],
+	])("retries the transient preview-deploy edge-session AuthError (%s)", (_label, message) => {
 		expect(isTransientDeployError({_tag: "AuthError", message})).toBe(true);
 	});
 
 	it.each([
 		["a bare NotFound (a genuinely missing resource)", {_tag: "NotFound", message: "gone"}],
-		// A real auth failure carries `AuthError` WITHOUT the secret-probe message — it must fail
-		// fast, never be swallowed by the #2156 secret-probe retry.
+		// A real auth failure carries `AuthError` WITHOUT the edge-preview wrapper prefix — it must
+		// fail fast, never be swallowed by the edge-session retry.
 		[
-			"a genuine auth failure (AuthError without the secret-probe message)",
+			"a genuine auth failure (AuthError without the edge-preview prefix)",
 			{_tag: "AuthError", message: "invalid API token"},
 		],
 		["an auth failure", {_tag: "Unauthorized", message: "bad token"}],

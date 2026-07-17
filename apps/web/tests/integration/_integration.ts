@@ -326,10 +326,21 @@ export const warmFateRead = (url: string): Effect.Effect<void, never, never> =>
  * are convergent: re-running `deploy(Stack, {stage})` reconciles the SAME stage's state
  * (idempotent), so the retry resolves the lag without standing up a duplicate stage or
  * compounding the #1020/#690 teardown leak. Bounded — a persistent error still fails fast.
+ *
+ * The schedule is a delay-capped exponential over up to 10 retries: `exponential("1 second")`
+ * ramps 1→2→4→8s, `either(spaced("10 seconds"))` caps each subsequent wait at 10s, and
+ * `both(recurs(10))` bounds the total (~1+2+4+8+10·6 ≈ 75s worst case). The wider budget is
+ * for the merge_group BATCH: ~24 stages deploy against the one shared account at once, and the
+ * CF control-plane `TooManyRequests` (429) storm that produces outlasted the prior 5-retry cap,
+ * ejecting an innocent co-batched PR (#3409, run 29560455218). Still bounded — a persistent
+ * transient exhausts the 10 retries and fails fast, and a non-transient error never retries.
  */
 export const deployTransientRetry = Effect.retry({
 	while: isTransientDeployError,
-	schedule: Schedule.exponential("1 second").pipe(Schedule.both(Schedule.recurs(5))),
+	schedule: Schedule.exponential("1 second").pipe(
+		Schedule.either(Schedule.spaced("10 seconds")),
+		Schedule.both(Schedule.recurs(10)),
+	),
 });
 
 /**

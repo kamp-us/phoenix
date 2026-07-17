@@ -48,15 +48,21 @@ const DEPLOY_TRANSIENT_TAGS = new Set([
 // This precise substring is the version-propagation race alone.
 const NO_VERSIONS_MESSAGE = "no versions";
 
-// The preview-deploy secret probe's eventually-consistent signature: the `AuthError` _tag with a
-// "Edge-preview secret read failed: Secret probe returned <code>" message (a non-2xx probe result,
-// e.g. `400: <!DOCTYPE html>` or a 5xx). ADR 0061 already documents this verbatim string as a
-// Cloudflare preview-deploy infra flake unrelated to a PR that adds no worker/deploy code; it fired
-// in merge-group CI and ejected an approved PR from the queue (#2156, #2148). Matched on the MESSAGE
-// substring, NOT the bare `AuthError` _tag: a blanket AuthError retry would mask a genuine auth
-// failure (bad/expired token, wrong account), which must still fail fast — only the secret-probe
-// propagation race rides the bounded backoff.
-const SECRET_PROBE_MESSAGE = "Secret probe returned";
+// The preview-deploy edge-session's eventually-consistent signature: the `AuthError` _tag whose
+// message carries the "Edge-preview secret read failed:" prefix. That prefix is the single wrapper
+// alchemy stamps on EVERY `EdgeSessionError` at `Cloudflare/StateStore/State.ts`'s
+// `catchTag("EdgeSessionError")` (grounded: alchemy@2.0.0-beta.59 `State.ts:597`), so it fronts BOTH
+// preview-deploy infra transients we've observed eject an innocent merge_group PR:
+//   - "…: Secret probe returned <code>" — a non-2xx secret probe (`State.ts:792`; 400-HTML / 5xx).
+//     ADR 0061 documents this verbatim as the flake that ejected approved PR #2148 (#2156).
+//   - "…: Failed to create edge preview session" — the edge-session bootstrap itself failing under
+//     the shared account's cross-PR load (`EdgeSession.ts:155`; observed on merge_group run
+//     29560455218, #3409). The prior match pinned only the probe wording, so this sibling escaped
+//     unretried and hard-failed the batch.
+// Matched on the wrapper PREFIX, NOT the bare `AuthError` _tag: a genuine auth failure (bad/expired
+// token, wrong account) is a DIFFERENT AuthError without this prefix and must still fail fast — the
+// bounded `deployTransientRetry` cap also fails fast on a persistent edge-session error.
+const EDGE_PREVIEW_MESSAGE = "Edge-preview secret read failed";
 
 export const isTransientDeployError = (error: unknown): boolean => {
 	if (typeof error !== "object" || error === null || !("_tag" in error)) return false;
@@ -65,6 +71,6 @@ export const isTransientDeployError = (error: unknown): boolean => {
 	if (tag === "NotFound" && typeof message === "string" && message.includes(NO_VERSIONS_MESSAGE))
 		return true;
 	return (
-		tag === "AuthError" && typeof message === "string" && message.includes(SECRET_PROBE_MESSAGE)
+		tag === "AuthError" && typeof message === "string" && message.includes(EDGE_PREVIEW_MESSAGE)
 	);
 };
