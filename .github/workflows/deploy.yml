@@ -24,6 +24,9 @@ concurrency:
 env:
   STAGE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'prod' }}
 
+permissions:
+  contents: read
+
 jobs:
   # Job-level change-detection gating ONLY the `deploy` job (issue #2366): a
   # docs/canon/pipeline-only PR (`.decisions/`, `.patterns/`, `.glossary/`, `*.md`,

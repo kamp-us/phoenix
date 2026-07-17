@@ -13,6 +13,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Least-privilege baseline: every job gets a read-only token unless it declares its own
+# block. `changes` and `e2e` elevate to `pull-requests: read` at the job level below.
+permissions:
+  contents: read
+
 jobs:
   # Which parts of the tree changed — gates the cost-bearing jobs so a docs- or
   # skills-only PR doesn't pay for checks that cover none of the changed files.

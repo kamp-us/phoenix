@@ -39,6 +39,9 @@ concurrency:
 env:
   STAGE: pr-${{ github.event.pull_request.number }}
 
+permissions:
+  contents: read
+
 jobs:
   app-roster:
     name: resolve app roster
