@@ -74,7 +74,13 @@
 				"noNonNullAssertion": "warn"
 			},
 			"suspicious": {
-				"noExplicitAny": "off"
+				"noExplicitAny": "off",
+				// `warn`, not `error`: a blanket `@ts-ignore` silently discards a
+				// type error with no self-invalidation, so flag every one — but as a
+				// nudge (the error-level flip is a separate capstone). Forward-guard:
+				// 0 sites today; the safe-fix rewrites `@ts-ignore` → the
+				// self-invalidating `@ts-expect-error`.
+				"noTsIgnore": "warn"
 			}
 		}
 	},
