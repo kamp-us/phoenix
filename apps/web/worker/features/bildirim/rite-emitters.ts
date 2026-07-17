@@ -27,6 +27,7 @@ import {Effect} from "effect";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {bildirimOn} from "./gate.ts";
 import type {NotificationKind} from "./kind.ts";
+import {bildirimMutedBy} from "./mute-suppression.ts";
 import {Notification} from "./Notification.ts";
 
 export const DIVAN_VOTE_KIND: NotificationKind = "divan-vote";
@@ -52,6 +53,9 @@ export const notifyDivanVote = (input: {
 		const recipientId = riteRecipient(input.authorId, input.actorId);
 		if (recipientId === null) return;
 		if (!(yield* bildirimOn)) return;
+		// The aggregate stores `actorId: null`, so the muted check keys on the real
+		// interacting divan voter (`actorId`), the identity that survives only here.
+		if (yield* bildirimMutedBy(recipientId, input.actorId)) return;
 		const bildirim = yield* Notification;
 		yield* bildirim.recordAggregate({
 			recipientId,
@@ -68,6 +72,7 @@ export const notifyKefil = (input: {candidateId: string; voucherId: string}) =>
 		const recipientId = riteRecipient(input.candidateId, input.voucherId);
 		if (recipientId === null) return;
 		if (!(yield* bildirimOn)) return;
+		if (yield* bildirimMutedBy(recipientId, input.voucherId)) return;
 		const bildirim = yield* Notification;
 		yield* bildirim.record({
 			recipientId,

@@ -25,6 +25,7 @@ import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import type {PublishMessage} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
+import {Mute} from "../mute/Mute.ts";
 import {mutations} from "./mutations.ts";
 import {Pano, type PostSummaryRow, type VoteOnPostResult} from "./Pano.ts";
 
@@ -132,6 +133,14 @@ const notificationStub = makeNotificationStub({
 	recordAggregate: () => Effect.succeed({aggregated: false}),
 });
 
+// The vote emit now consults `bildirimMutedBy` (#3238), which reads `Mute` — an
+// empty-set stub means no member is muted, so the deliver path is unchanged.
+const noMutes = Layer.succeed(Mute, {
+	set: () => Effect.die("Mute.set not exercised"),
+	listMine: () => Effect.die("Mute.listMine not exercised"),
+	readMutedIds: () => Effect.succeed(new Set<string>()),
+});
+
 const drive = (
 	op: (typeof mutations)["post.vote" | "post.retractVote"],
 	pano: Layer.Layer<Pano>,
@@ -141,7 +150,7 @@ const drive = (
 		input: {id: "post_1"},
 		select: ["id", "isSaved", "authorUsername", "authorDisplayName", "myVote", "score"],
 	}).pipe(
-		Effect.provide(Layer.mergeAll(pano, recordingLive(frames), flagsOn, notificationStub)),
+		Effect.provide(Layer.mergeAll(pano, recordingLive(frames), flagsOn, notificationStub, noMutes)),
 		Effect.provideService(CurrentUser, {user: VOTER}),
 		Effect.provideService(RuntimeContext, runtimeContextStub),
 	);

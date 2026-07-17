@@ -31,6 +31,7 @@ import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import type {Tier} from "../kunye/standing.ts";
 import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
+import {Mute} from "../mute/Mute.ts";
 import {mutations} from "./mutations.ts";
 import {makePasaportStub} from "./Pasaport.testing.ts";
 import {noopLive, relationStoreNoModerators} from "./promote-live.testing.ts";
@@ -95,8 +96,16 @@ const kunyeOf = (
 // promote path, so `LivePublisher` is a static requirement of EVERY case (even a
 // denial that never runs the flip). `noopLive` satisfies it universally here; the
 // vouch/withdraw cases (no `RelationStore` of their own) add `relationStoreNone`.
+// The kefil (vouch) emit now consults `bildirimMutedBy` (#3238), which reads `Mute` —
+// an empty-set stub means no member is muted, so the deliver path is unchanged.
+const noMutes = Layer.succeed(Mute, {
+	set: () => Effect.die("Mute.set not exercised"),
+	listMine: () => Effect.die("Mute.listMine not exercised"),
+	readMutedIds: () => Effect.succeed(new Set<string>()),
+});
+
 const requestContext = (actor: Actor, on: boolean) =>
-	Layer.mergeAll(flagsStub(on), noopLive).pipe(
+	Layer.mergeAll(flagsStub(on), noopLive, noMutes).pipe(
 		Layer.provideMerge(Layer.succeed(CurrentUser, {user: undefined})),
 		Layer.provideMerge(Layer.succeed(CurrentActor, {actor})),
 		Layer.provideMerge(Layer.succeed(RuntimeContext, runtimeContextStub)),

@@ -14,6 +14,7 @@ import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
+import {Mute} from "../mute/Mute.ts";
 import {notifyCommentReply, REPLY_KIND, replyRecipients} from "./conversation-emitters.ts";
 import {makeNotificationStub} from "./Notification.testing.ts";
 import type {NotificationRecordInput} from "./Notification.ts";
@@ -50,6 +51,16 @@ const noopLivePublisher = Layer.succeed(LivePublisher)({
 	},
 } as typeof LivePublisher.Service);
 
+// A `Mute` returning no mutes: the emitter now consults `bildirimMutedBy` per recipient,
+// which reads `readMutedIds` — an empty set means no member is muted, so these cases
+// exercise the unchanged (deliver) path. Muted-suppression itself is covered in
+// mute-suppression.unit.test.ts.
+const noMutes = Layer.succeed(Mute, {
+	set: () => Effect.die("Mute.set not exercised"),
+	listMine: () => Effect.die("Mute.listMine not exercised"),
+	readMutedIds: () => Effect.succeed(new Set<string>()),
+});
+
 const requestContext = (on: boolean) =>
 	Layer.mergeAll(
 		flagsStub(on),
@@ -57,6 +68,7 @@ const requestContext = (on: boolean) =>
 		Layer.succeed(RuntimeContext, runtimeContextStub),
 		noRequestFlagOverrides,
 		noopLivePublisher,
+		noMutes,
 	);
 
 const recordingStub = (calls: NotificationRecordInput[]) =>
