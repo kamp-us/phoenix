@@ -5,9 +5,9 @@
  * `Crew.crewSessionLayer` stand up one live session's stdio `McpServer` + `ChannelSend`-from-peer,
  * so every inter-session seam (claim/collision-check, planned-epic handoff, drain tally, intake
  * pings, role discovery/presence, the role-uniqueness lease) runs over the channels protocol
- * instead of the retired tmux relay convention. `Crew.CREW_ROLES` is the single five-role roster
- * every binding consumes — never a re-declared or short list (a four-role list orphans the
- * cartographer, the failure this cutover exists to prevent).
+ * instead of the retired tmux relay convention. `Crew.CREW_ROSTER` is the single kind-typed roster
+ * (three bridges + the engine pool; ADR 0189) every binding consumes via `Crew.CREW_ROLES` /
+ * `Crew.kindOf` — never a re-declared or short list.
  *
  * The one structural invariant the module boundary holds: the generic core is crew-agnostic.
  * `Protocol`, `Tracker`, `Peer`, and `Edge` are the reusable channels substrate and MUST NOT

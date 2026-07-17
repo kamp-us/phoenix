@@ -22,7 +22,18 @@ export {
 	makeCrewChannel,
 } from "./channel-server.ts";
 export {RoleUniquenessError} from "./errors.ts";
-export {CREW_ROLES, CrewRole, isCrewRole} from "./roles.ts";
+export {
+	type CardinalityOf,
+	CREW_ROLES,
+	CREW_ROSTER,
+	CrewRole,
+	type CrewRoleCardinality,
+	type CrewRoleKind,
+	cardinalityOf,
+	cardinalityOfKind,
+	isCrewRole,
+	kindOf,
+} from "./roles.ts";
 export {
 	type CrewSessionConfig,
 	channelSendFromPeer,
