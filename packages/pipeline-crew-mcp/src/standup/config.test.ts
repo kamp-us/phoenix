@@ -16,13 +16,18 @@ import {
 	stripJsonc,
 } from "./config.ts";
 
-/** A minimal-but-valid launch dimension set, embedded in a fuller crew config below. */
+/**
+ * A minimal-but-valid launch dimension set, embedded in a fuller crew config below. The
+ * allowlist-mode channels carry only `plugin:<name>@<marketplace>` refs — the exact grammar
+ * Claude Code 2.1.212's `--channels` allowlist accepts (a bare `server:` ref can't ride
+ * `--channels`; #3328).
+ */
 const validLaunch = {
 	cliVersion: "2.1.207",
 	engineCount: 2,
 	channels: {
 		mode: "allowlist",
-		servers: ["server:crew-channels", "plugin:pipeline-crew:crew-channels"],
+		servers: ["plugin:crew-channels@pipeline-crew"],
 		allowedChannelPlugins: ["pipeline-crew"],
 	},
 };
@@ -75,20 +80,85 @@ describe("standup/config — decodeLaunchConfig (happy path)", () => {
 			assert.strictEqual(cfg.cliVersion, "2.1.207");
 			assert.strictEqual(cfg.engineCount, 2);
 			assert.strictEqual(cfg.channels.mode, "allowlist");
-			assert.deepStrictEqual(
-				[...cfg.channels.servers],
-				["server:crew-channels", "plugin:pipeline-crew:crew-channels"],
-			);
+			assert.deepStrictEqual([...cfg.channels.servers], ["plugin:crew-channels@pipeline-crew"]);
 			assert.deepStrictEqual([...cfg.channels.allowedChannelPlugins], ["pipeline-crew"]);
 		}),
 	);
-	it.effect("accepts the development channel mode", () =>
+	it.effect("accepts the development channel mode carrying a top-level server: ref", () =>
 		Effect.gen(function* () {
+			// A `server:` ref rides --dangerously-load-development-channels, so it is
+			// representable only under development mode — not allowlist (#3328).
 			const cfg = yield* decodeLaunchConfig(
-				{...validLaunch, channels: {...validLaunch.channels, mode: "development"}},
+				{
+					...validLaunch,
+					channels: {
+						...validLaunch.channels,
+						mode: "development",
+						servers: ["server:pipeline-crew"],
+					},
+				},
 				DEFAULT_CONFIG_PATH,
 			);
 			assert.strictEqual(cfg.channels.mode, "development");
+			assert.deepStrictEqual([...cfg.channels.servers], ["server:pipeline-crew"]);
+		}),
+	);
+});
+
+describe("standup/config — channel-ref grammar matches Claude Code 2.1.212", () => {
+	// The 2.1.212 bundle's --channels tag loop parses a plugin entry as
+	// plugin:<name>@<marketplace> (split on @, both parts non-empty); the old
+	// plugin:<plugin>:<server> shape (#3293) has no @ and is rejected (#3328).
+	it.effect("accepts a plugin:<name>@<marketplace> ref under allowlist", () =>
+		Effect.gen(function* () {
+			const cfg = yield* decodeLaunchConfig(
+				{...validLaunch, channels: {...validLaunch.channels, servers: ["plugin:sozluk@kampus"]}},
+				DEFAULT_CONFIG_PATH,
+			);
+			assert.deepStrictEqual([...cfg.channels.servers], ["plugin:sozluk@kampus"]);
+		}),
+	);
+	it.effect("rejects the old plugin:<plugin>:<server> shape", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr({
+				...validLaunch,
+				channels: {...validLaunch.channels, servers: ["plugin:kampus:sozluk"]},
+			});
+			assert.include(err.reason, "servers");
+		}),
+	);
+	it.effect("rejects a plugin ref with an empty name or marketplace", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr({
+				...validLaunch,
+				channels: {...validLaunch.channels, servers: ["plugin:@kampus"]},
+			});
+			assert.include(err.reason, "servers");
+		}),
+	);
+});
+
+describe("standup/config — server: ref reconciles with mode", () => {
+	it.effect("rejects a bare server: ref under allowlist mode (runtime skips it)", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr({
+				...validLaunch,
+				channels: {...validLaunch.channels, mode: "allowlist", servers: ["server:pipeline-crew"]},
+			});
+			assert.include(err.reason, "servers");
+		}),
+	);
+	it.effect("rejects a server: ref mixed among plugin refs under allowlist mode", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr({
+				...validLaunch,
+				channels: {
+					...validLaunch.channels,
+					mode: "allowlist",
+					servers: ["plugin:crew-channels@pipeline-crew", "server:pipeline-crew"],
+				},
+			});
+			assert.include(err.reason, "servers");
 		}),
 	);
 });
