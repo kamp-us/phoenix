@@ -13,7 +13,7 @@
  *     that address back out (matching the `inbox://…` convention the tracker socket test uses).
  */
 import {NodeSocket} from "@effect/platform-node";
-import {Context, Effect, Layer, Option, type Scope} from "effect";
+import {Array as Arr, Context, Effect, Layer, type Scope} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
 import {type RolePresence, Tracker} from "../peer/index.ts";
 import type * as Schema from "../protocol/schema.ts";
@@ -80,8 +80,12 @@ export class CrewTracker extends Context.Service<
 			readonly peer: string;
 			readonly ttlSeconds: number;
 		}) => Effect.Effect<void>;
-		/** The live holder of `role`, or `None` when absent/expired — the explicit not-present result. */
-		readonly lookup: (role: string) => Effect.Effect<Option.Option<RolePresence>>;
+		/**
+		 * The live holders of `role` — every present instance (`[]` ⇒ absent/expired). A bridge
+		 * resolves to its single holder; an engine to its whole live pool, so a sender can address one
+		 * chosen instance or fan across all of them (the wire's `RoleLookupResult.peers` is an array).
+		 */
+		readonly lookup: (role: string) => Effect.Effect<ReadonlyArray<RolePresence>>;
 	}
 >()("@kampus/pipeline-crew-mcp/crew/CrewTracker") {
 	/** Build the service from a live registry client (real socket or in-memory `RpcTest`). */
@@ -115,25 +119,34 @@ export class CrewTracker extends Context.Service<
 				),
 			heartbeat: ({peer, ttlSeconds}) =>
 				client.Heartbeat({peer, ttlSeconds, at: now()}).pipe(Effect.orDie),
+			// peer-id ≡ inbox-address: each present peer IS its own dialable address, so a lookup
+			// recovers the full live set of addresses (one per bridge, N across an engine pool).
 			lookup: (role) =>
 				client.LookupRole({role}).pipe(
 					Effect.orDie,
-					Effect.map((result) => {
-						const first = result.peers[0];
-						return first
-							? Option.some<RolePresence>({role: first.role, peer: first.peer, address: first.peer})
-							: Option.none<RolePresence>();
-					}),
+					Effect.map((result) =>
+						result.peers.map(
+							(entry): RolePresence => ({role: entry.role, peer: entry.peer, address: entry.peer}),
+						),
+					),
 				),
 		});
 }
 
-/** The generic `peer/Tracker` port, derived from `CrewTracker` — what `Peer.make` consumes. */
+/**
+ * The generic `peer/Tracker` port, derived from `CrewTracker` — what `Peer.make` consumes. The
+ * peer port resolves ONE live holder to dial (`peer.send` addresses a role, not an instance), so
+ * it takes the head of `CrewTracker`'s live set: a bridge's single holder, or any one instance of
+ * an engine pool. Fanning across the pool is the crew-facing `discover`'s job, not this port's.
+ */
 export const peerTrackerLayer: Layer.Layer<Tracker, never, CrewTracker> = Layer.effect(
 	Tracker,
 	Effect.gen(function* () {
 		const tracker = yield* CrewTracker;
-		return {announce: tracker.announce, lookup: tracker.lookup};
+		return {
+			announce: tracker.announce,
+			lookup: (role) => tracker.lookup(role).pipe(Effect.map(Arr.head)),
+		};
 	}),
 );
 

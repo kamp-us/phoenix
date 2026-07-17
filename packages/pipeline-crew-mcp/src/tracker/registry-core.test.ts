@@ -1,8 +1,9 @@
 /**
  * The soft-state registry semantics, tested in isolation from any transport: announce/lookup
- * round-trip, heartbeat-driven TTL aging, connection-is-lease role uniqueness + release, and the
- * explicit not-present result — plus the resource-claim lifecycle (ADR 0191): keyspace separation,
- * presence-derived claim liveness, steal-release protection, and presence-only heartbeat refresh.
+ * round-trip, heartbeat-driven TTL aging, per-peer presence multiplicity (an engine pool) + release,
+ * and the explicit not-present result — plus the resource-claim lifecycle (ADR 0191): keyspace
+ * separation, presence-derived claim liveness, steal-release protection, and presence-only heartbeat
+ * refresh.
  */
 import {assert, describe, it} from "@effect/vitest";
 import * as Core from "./registry-core.ts";
@@ -16,11 +17,11 @@ const withPresence = (
 	peer: string,
 	role: string,
 	at: number,
-): Core.RegistryState => Core.acquire(state, {role, peer, ttlSeconds: 30, nowMillis: at}).state;
+): Core.RegistryState => Core.announce(state, {role, peer, ttlSeconds: 30, nowMillis: at});
 
 describe("registry-core — announce / lookup", () => {
 	it("announce then lookup round-trips the peer for its role", () => {
-		const {state} = Core.acquire(Core.empty(), {
+		const state = Core.announce(Core.empty(), {
 			role: "builder",
 			peer: "peer-a",
 			ttlSeconds: 30,
@@ -37,7 +38,7 @@ describe("registry-core — announce / lookup", () => {
 
 describe("registry-core — heartbeat TTL aging", () => {
 	it("a peer that stops heart-beating ages out of lookups past its TTL", () => {
-		const {state} = Core.acquire(Core.empty(), {
+		const state = Core.announce(Core.empty(), {
 			role: "builder",
 			peer: "peer-a",
 			ttlSeconds: 30,
@@ -48,13 +49,13 @@ describe("registry-core — heartbeat TTL aging", () => {
 	});
 
 	it("a heartbeat refreshes the window, keeping the peer discoverable", () => {
-		const acquired = Core.acquire(Core.empty(), {
+		const announced = Core.announce(Core.empty(), {
 			role: "builder",
 			peer: "peer-a",
 			ttlSeconds: 30,
 			nowMillis: T0,
-		}).state;
-		const beat = Core.heartbeat(acquired, {
+		});
+		const beat = Core.heartbeat(announced, {
 			peer: "peer-a",
 			ttlSeconds: 30,
 			nowMillis: T0 + secs(20),
@@ -64,74 +65,71 @@ describe("registry-core — heartbeat TTL aging", () => {
 	});
 });
 
-describe("registry-core — connection-is-lease role uniqueness", () => {
-	it("a second live acquire of a held role collides and does not steal the lease", () => {
-		const held = Core.acquire(Core.empty(), {
-			role: "builder",
-			peer: "peer-a",
+describe("registry-core — per-peer presence multiplicity (an engine pool)", () => {
+	it("two peers on one role both stay present — a lookup returns the whole live set", () => {
+		let state = Core.announce(Core.empty(), {
+			role: "em",
+			peer: "em-a",
 			ttlSeconds: 30,
 			nowMillis: T0,
-		}).state;
-		const {state, outcome} = Core.acquire(held, {
-			role: "builder",
-			peer: "peer-b",
-			ttlSeconds: 30,
-			nowMillis: T0 + secs(1),
 		});
-		assert.deepStrictEqual(outcome, {_tag: "Collision", owner: "peer-a", sinceMillis: T0});
-		assert.deepStrictEqual(Core.lookup(state, "builder", T0 + secs(1)), [
-			{peer: "peer-a", role: "builder", lastSeenMillis: T0},
-		]);
+		state = Core.announce(state, {role: "em", peer: "em-b", ttlSeconds: 30, nowMillis: T0});
+		const found = Core.lookup(state, "em", T0);
+		assert.lengthOf(found, 2, "the second announce does NOT overwrite the first (keyed by peer)");
+		assert.deepStrictEqual(
+			found.map((r) => r.peer).sort(),
+			["em-a", "em-b"],
+			"both engine instances are discoverable",
+		);
 	});
 
-	it("releasing the connection frees the lease for another peer", () => {
-		const held = Core.acquire(Core.empty(), {
-			role: "builder",
-			peer: "peer-a",
+	it("a re-announce by the same peer refreshes its lease in place (no duplicate)", () => {
+		let state = Core.announce(Core.empty(), {
+			role: "em",
+			peer: "em-a",
 			ttlSeconds: 30,
 			nowMillis: T0,
-		}).state;
-		const freed = Core.release(held, "peer-a");
-		assert.deepStrictEqual(Core.lookup(freed, "builder", T0), []);
-		const {outcome} = Core.acquire(freed, {
-			role: "builder",
-			peer: "peer-b",
-			ttlSeconds: 30,
-			nowMillis: T0 + secs(1),
 		});
-		assert.deepStrictEqual(outcome, {_tag: "Granted", owner: "peer-b", sinceMillis: T0 + secs(1)});
-	});
-
-	it("an expired holder frees the lease — a later acquire is granted, not a collision", () => {
-		const held = Core.acquire(Core.empty(), {
-			role: "builder",
-			peer: "peer-a",
-			ttlSeconds: 30,
-			nowMillis: T0,
-		}).state;
-		const {outcome} = Core.acquire(held, {
-			role: "builder",
-			peer: "peer-b",
-			ttlSeconds: 30,
-			nowMillis: T0 + secs(31),
-		});
-		assert.strictEqual(outcome._tag, "Granted");
-	});
-
-	it("a re-acquire by the same peer keeps its original `since`", () => {
-		const held = Core.acquire(Core.empty(), {
-			role: "builder",
-			peer: "peer-a",
-			ttlSeconds: 30,
-			nowMillis: T0,
-		}).state;
-		const {outcome} = Core.acquire(held, {
-			role: "builder",
-			peer: "peer-a",
+		state = Core.announce(state, {
+			role: "em",
+			peer: "em-a",
 			ttlSeconds: 30,
 			nowMillis: T0 + secs(5),
 		});
-		assert.deepStrictEqual(outcome, {_tag: "Granted", owner: "peer-a", sinceMillis: T0});
+		const found = Core.lookup(state, "em", T0 + secs(5));
+		assert.deepStrictEqual(found, [{peer: "em-a", role: "em", lastSeenMillis: T0 + secs(5)}]);
+	});
+
+	it("releasing one peer leaves the rest of the pool present (its lease frees alone)", () => {
+		let state = Core.announce(Core.empty(), {
+			role: "em",
+			peer: "em-a",
+			ttlSeconds: 30,
+			nowMillis: T0,
+		});
+		state = Core.announce(state, {role: "em", peer: "em-b", ttlSeconds: 30, nowMillis: T0});
+		const freed = Core.release(state, "em-a");
+		assert.deepStrictEqual(Core.lookup(freed, "em", T0), [
+			{peer: "em-b", role: "em", lastSeenMillis: T0},
+		]);
+	});
+
+	it("one peer aging out does not evict a live sibling on the same role", () => {
+		let state = Core.announce(Core.empty(), {
+			role: "em",
+			peer: "em-a",
+			ttlSeconds: 30,
+			nowMillis: T0,
+		});
+		// em-b beats later, so it outlives em-a's window
+		state = Core.announce(state, {
+			role: "em",
+			peer: "em-b",
+			ttlSeconds: 30,
+			nowMillis: T0 + secs(20),
+		});
+		const found = Core.lookup(state, "em", T0 + secs(40));
+		assert.deepStrictEqual(found, [{peer: "em-b", role: "em", lastSeenMillis: T0 + secs(20)}]);
 	});
 });
 

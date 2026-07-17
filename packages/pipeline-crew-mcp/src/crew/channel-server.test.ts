@@ -10,7 +10,7 @@
  *     (cardinality 1), a second live session for an ENGINE role is admitted (cardinality N).
  */
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Option, Ref} from "effect";
+import {Effect, Layer, Ref} from "effect";
 import {RpcTest} from "effect/unstable/rpc";
 import {ChannelSink, channelInboxLayer} from "../edge/index.ts";
 import {
@@ -24,7 +24,7 @@ import {
 import {TrackerRegistry} from "../tracker/group.ts";
 import {TrackerHandlers} from "../tracker/handlers.ts";
 import {RegistryLive} from "../tracker/registry.ts";
-import {makeCrewChannel} from "./channel-server.ts";
+import {inboxSocketPathFor, makeCrewChannel} from "./channel-server.ts";
 import {RoleUniquenessError} from "./errors.ts";
 import {CREW_ROLES, kindOf} from "./roles.ts";
 import {CrewTracker, peerTrackerLayer} from "./tracker.ts";
@@ -68,13 +68,13 @@ describe("crew/channel-server — announce, discover, claim/collision-check (AC 
 				Effect.provide(channelLayers(tracker, "inbox://b", alwaysUnreachable)),
 			);
 
-			// discover each other across the flat topology
+			// discover each other across the flat topology (each a singleton set here)
 			const aFindsB = yield* a.discover(roleB);
 			const bFindsA = yield* b.discover(roleA);
-			assert.isTrue(Option.isSome(aFindsB));
-			assert.strictEqual(Option.getOrThrow(aFindsB).address, "inbox://b");
-			assert.isTrue(Option.isSome(bFindsA));
-			assert.strictEqual(Option.getOrThrow(bFindsA).address, "inbox://a");
+			assert.lengthOf(aFindsB, 1);
+			assert.strictEqual(aFindsB[0]?.address, "inbox://b");
+			assert.lengthOf(bFindsA, 1);
+			assert.strictEqual(bFindsA[0]?.address, "inbox://a");
 
 			// a synchronous claim/collision-check with a typed reply: A grants, B collides
 			const granted = yield* a.claim("issue-3059");
@@ -233,6 +233,105 @@ describe("crew/channel-server — per-kind cardinality lease (AC 3)", () => {
 				const result = yield* client.LookupRole({role});
 				assert.lengthOf(result.peers, 1, `${role} should be present`);
 			}
+		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
+	);
+});
+
+describe("crew/channel-server — engine pool discovery + per-instance dial (AC 2)", () => {
+	it.effect("discover returns every live engine instance, each at a distinct inbox socket", () =>
+		Effect.gen(function* () {
+			const engineRole = ENGINE_ROLES[0];
+			const senderRole = BRIDGE_ROLES[0];
+			assert(engineRole !== undefined, "the roster must carry an engine role");
+			assert(senderRole !== undefined, "the roster must carry a bridge role");
+			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			const tracker = CrewTracker.fromClient(client);
+
+			// two engine instances of one role, distinct per-instance addresses, both live
+			const addr1 = `inbox://${engineRole}/1`;
+			const addr2 = `inbox://${engineRole}/2`;
+			const at = new Date().toISOString();
+			yield* client.AnnouncePresence({peer: addr1, role: engineRole, at});
+			yield* client.AnnouncePresence({peer: addr2, role: engineRole, at});
+
+			// a sender channel discovers the WHOLE pool, not a single collapsed holder
+			const senderAddr = `inbox://${senderRole}`;
+			const sender = yield* makeCrewChannel({role: senderRole, address: senderAddr}).pipe(
+				Effect.provide(channelLayers(tracker, senderAddr, alwaysUnreachable)),
+			);
+			const pool = yield* sender.discover(engineRole);
+			assert.lengthOf(pool, 2, "both engine instances are discoverable (no peers[0] collapse)");
+			assert.deepStrictEqual([...pool.map((p) => p.address)].sort(), [addr1, addr2].sort());
+			// two instances resolve to two DISTINCT inbox sockets — per-instance addressing, no collision
+			assert.notStrictEqual(inboxSocketPathFor(addr1), inboxSocketPathFor(addr2));
+		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
+	);
+
+	it.effect("a sender dials ONE chosen engine instance — delivery reaches only that instance", () =>
+		Effect.gen(function* () {
+			const engineRole = ENGINE_ROLES[0];
+			const senderRole = BRIDGE_ROLES[0];
+			assert(engineRole !== undefined, "the roster must carry an engine role");
+			assert(senderRole !== undefined, "the roster must carry a bridge role");
+			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			const tracker = CrewTracker.fromClient(client);
+			const addr1 = `inbox://${engineRole}/1`;
+			const addr2 = `inbox://${engineRole}/2`;
+
+			// each engine instance has its own recording channel edge, reachable by its address
+			const recordingInbox = (address: string) =>
+				Effect.gen(function* () {
+					const wakes = yield* Ref.make<ReadonlyArray<unknown>>([]);
+					const sink = Layer.succeed(ChannelSink, {
+						wake: (payload) => Ref.update(wakes, (xs) => [...xs, payload]),
+					});
+					const inbox = yield* RpcTest.makeClient(PeerInbox).pipe(
+						Effect.provide(
+							Layer.provideMerge(
+								inboxHandlers,
+								channelInboxLayer(address).pipe(Layer.provide(sink)),
+							),
+						),
+					);
+					return {wakes, inbox};
+				});
+			const one = yield* recordingInbox(addr1);
+			const two = yield* recordingInbox(addr2);
+			const connect: Connect = (address) =>
+				address === addr1
+					? Effect.succeed(one.inbox)
+					: address === addr2
+						? Effect.succeed(two.inbox)
+						: Effect.fail(new PeerUnreachableError({target: address, reason: "no route"}));
+
+			const at = new Date().toISOString();
+			yield* client.AnnouncePresence({peer: addr1, role: engineRole, at});
+			yield* client.AnnouncePresence({peer: addr2, role: engineRole, at});
+
+			// discover the pool, pick instance #2 specifically, and dial IT by address via the Dialer
+			const senderAddr = `inbox://${senderRole}`;
+			const ack = yield* Effect.gen(function* () {
+				const dialer = yield* Dialer;
+				const sender = yield* makeCrewChannel({role: senderRole, address: senderAddr});
+				const pool = yield* sender.discover(engineRole);
+				const chosen = pool.find((p) => p.address === addr2);
+				assert(chosen !== undefined, "instance #2 is in the discovered pool");
+				return yield* dialer.send(chosen.address, {
+					messageId: "m-1",
+					from: senderAddr,
+					kind: "IntakePing",
+					body: {issue: "x"},
+					at: new Date().toISOString(),
+				});
+			}).pipe(Effect.provide(channelLayers(tracker, senderAddr, Dialer.layerFromConnect(connect))));
+
+			assert.strictEqual(ack.by, addr2, "the ack came from instance #2's inbox");
+			assert.lengthOf(yield* Ref.get(two.wakes), 1, "instance #2 received the delivery");
+			assert.lengthOf(
+				yield* Ref.get(one.wakes),
+				0,
+				"instance #1 did NOT — the dial was per-instance",
+			);
 		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
 	);
 });

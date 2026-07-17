@@ -19,7 +19,7 @@
  */
 import {createHash} from "node:crypto";
 import {NodeSocket, NodeSocketServer} from "@effect/platform-node";
-import {Effect, Layer, type Option} from "effect";
+import {Effect, Layer} from "effect";
 import {RpcClient, RpcSerialization, RpcServer} from "effect/unstable/rpc";
 import {type ChannelSink, channelInboxLayer} from "../edge/index.ts";
 import {
@@ -64,8 +64,12 @@ export interface CrewChannel {
 	readonly address: string;
 	/** The composed peer: its inbox (`received`) + its direct peer-to-peer `send`. */
 	readonly peer: Peer;
-	/** Role discovery: the live holder of `role` across the flat topology, or `None`. */
-	readonly discover: (role: CrewRole) => Effect.Effect<Option.Option<RolePresence>>;
+	/**
+	 * Role discovery: the live holders of `role` across the flat topology (`[]` ⇒ none). A bridge
+	 * resolves to its single holder; an engine to its whole live pool, so a caller can address one
+	 * chosen instance (dial its `address`) or fan across the set.
+	 */
+	readonly discover: (role: CrewRole) => Effect.Effect<ReadonlyArray<RolePresence>>;
 	/** A claim/collision-check on a resource (e.g. an issue) — the typed granted/collision reply. */
 	readonly claim: (resource: string) => Effect.Effect<ClaimReply>;
 }

@@ -27,7 +27,7 @@ import {
 import {TrackerRegistry} from "../tracker/group.ts";
 import {TrackerHandlers} from "../tracker/handlers.ts";
 import {RegistryLive} from "../tracker/registry.ts";
-import {CREW_ROLES} from "./roles.ts";
+import {CREW_ROLES, kindOf} from "./roles.ts";
 import {channelSendFromPeer, inboxAddressFor} from "./session.ts";
 import {CrewTracker, peerTrackerLayer} from "./tracker.ts";
 
@@ -53,7 +53,8 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
 			const tracker = CrewTracker.fromClient(client);
 			const [senderRole, receiverRole] = [CREW_ROLES[0], CREW_ROLES[1]];
-			const receiverAddress = inboxAddressFor(receiverRole);
+			const senderAddress = inboxAddressFor(senderRole, "sender");
+			const receiverAddress = inboxAddressFor(receiverRole, "receiver");
 
 			// The receiver's channel edge: a channel-bridging inbox recording each wake, reachable as
 			// an in-memory PeerInbox client. This is what a live receiver's inbox socket server hosts.
@@ -87,10 +88,8 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 				return yield* sender.send(receiverRole, "IntakePing", {issue: "3062", from: senderRole});
 			}).pipe(
 				Effect.provide(
-					channelSendFromPeer(senderRole).pipe(
-						Layer.provide(
-							substrate(tracker, inboxAddressFor(senderRole), Dialer.layerFromConnect(connect)),
-						),
+					channelSendFromPeer(senderRole, senderAddress).pipe(
+						Layer.provide(substrate(tracker, senderAddress, Dialer.layerFromConnect(connect))),
 					),
 				),
 			);
@@ -100,7 +99,7 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 			const recorded = yield* Ref.get(wakes);
 			assert.lengthOf(recorded, 1);
 			assert.match(recorded[0]?.message ?? "", /IntakePing/, "the seam rode a channel wake");
-			assert.strictEqual(recorded[0]?._meta?.from, inboxAddressFor(senderRole));
+			assert.strictEqual(recorded[0]?._meta?.from, senderAddress);
 		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
 	);
 
@@ -109,6 +108,7 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
 			const tracker = CrewTracker.fromClient(client);
 			const [senderRole, offlineRole] = [CREW_ROLES[0], CREW_ROLES[2]];
+			const senderAddress = inboxAddressFor(senderRole, "sender");
 			const alwaysUnreachable = Dialer.layerFromConnect((address) =>
 				Effect.fail(new PeerUnreachableError({target: address, reason: "no route"})),
 			);
@@ -118,8 +118,8 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 				return yield* sender.send(offlineRole, "IntakePing", {});
 			}).pipe(
 				Effect.provide(
-					channelSendFromPeer(senderRole).pipe(
-						Layer.provide(substrate(tracker, inboxAddressFor(senderRole), alwaysUnreachable)),
+					channelSendFromPeer(senderRole, senderAddress).pipe(
+						Layer.provide(substrate(tracker, senderAddress, alwaysUnreachable)),
 					),
 				),
 				Effect.flip,
@@ -132,7 +132,7 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 
 describe("crew/session — the roster is intact (no role orphaned)", () => {
 	it("inboxAddressFor addresses every standing role distinctly", () => {
-		const addresses = CREW_ROLES.map(inboxAddressFor);
+		const addresses = CREW_ROLES.map((role) => inboxAddressFor(role, "i"));
 		assert.lengthOf(
 			addresses,
 			CREW_ROLES.length,
@@ -144,5 +144,28 @@ describe("crew/session — the roster is intact (no role orphaned)", () => {
 			"every role maps to a distinct inbox address",
 		);
 		assert.include(addresses, "inbox://cartographer", "the cartographer must have an address");
+	});
+});
+
+describe("crew/session — per-instance engine addressing (AC 1)", () => {
+	const engineRole = CREW_ROLES.find((role) => kindOf(role) === "engine");
+	const bridgeRole = CREW_ROLES.find((role) => kindOf(role) === "bridge");
+
+	it("a bridge keeps the deterministic singleton address, ignoring the instance", () => {
+		assert(bridgeRole !== undefined, "the roster must carry a bridge role");
+		assert.strictEqual(inboxAddressFor(bridgeRole, "one"), `inbox://${bridgeRole}`);
+		assert.strictEqual(
+			inboxAddressFor(bridgeRole, "one"),
+			inboxAddressFor(bridgeRole, "two"),
+			"a bridge's cardinality-1 lease keeps discover→dial deterministic — no instance in the address",
+		);
+	});
+
+	it("an engine folds the instance in — two instances resolve to two distinct addresses", () => {
+		assert(engineRole !== undefined, "the roster must carry an engine role");
+		const one = inboxAddressFor(engineRole, "one");
+		const two = inboxAddressFor(engineRole, "two");
+		assert.strictEqual(one, `inbox://${engineRole}/one`);
+		assert.notStrictEqual(one, two, "N engine instances never collapse onto a single address");
 	});
 });

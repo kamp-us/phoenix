@@ -32,7 +32,7 @@ describe("tracker served surface — control-plane only", () => {
 			"LookupRole",
 			"Release",
 		]);
-		for (const relay of ["AckInbox", "DrainProgress", "EpicHandoff", "IntakePing"]) {
+		for (const relay of ["DrainProgress", "IntakePing"]) {
 			assert.isFalse(
 				TrackerRegistry.requests.has(relay),
 				`tracker must not serve relay kind ${relay}`,

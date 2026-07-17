@@ -26,9 +26,7 @@ export interface ClaimInput {
 export class Registry extends Context.Service<
 	Registry,
 	{
-		/** Acquire `role` for `peer`, returning whether it was granted or collided with a live holder. */
-		readonly acquire: (input: AnnounceInput) => Effect.Effect<Core.AcquireOutcome>;
-		/** Soft presence announce — acquire and discard the outcome (the fire-and-forget wire kind). */
+		/** Register `peer`'s presence for `role` — keyed by peer, so a role's engine pool coexists. */
 		readonly announce: (input: AnnounceInput) => Effect.Effect<void>;
 		/** Claim `resource` for `claimant`, returning granted or a collision with a live-presence holder. */
 		readonly claim: (input: ClaimInput) => Effect.Effect<Core.ClaimOutcome>;
@@ -52,14 +50,6 @@ export class Registry extends Context.Service<
 export const RegistryLive: Layer.Layer<Registry> = Layer.effect(Registry)(
 	Effect.gen(function* () {
 		const ref = yield* Ref.make(Core.empty());
-		const acquire = (input: AnnounceInput) =>
-			Effect.gen(function* () {
-				const nowMillis = yield* Clock.currentTimeMillis;
-				return yield* Ref.modify(ref, (state) => {
-					const {state: next, outcome} = Core.acquire(state, {...input, nowMillis});
-					return [outcome, next];
-				});
-			});
 		const claim = (input: ClaimInput) =>
 			Effect.gen(function* () {
 				const nowMillis = yield* Clock.currentTimeMillis;
@@ -74,8 +64,12 @@ export const RegistryLive: Layer.Layer<Registry> = Layer.effect(Registry)(
 				});
 			});
 		return {
-			acquire,
-			announce: (input) => Effect.asVoid(acquire(input)),
+			announce: (input) =>
+				Clock.currentTimeMillis.pipe(
+					Effect.flatMap((nowMillis) =>
+						Ref.update(ref, (state) => Core.announce(state, {...input, nowMillis})),
+					),
+				),
 			claim,
 			releaseClaim: (input) => Ref.update(ref, (state) => Core.releaseClaim(state, input)),
 			heartbeat: (input) =>

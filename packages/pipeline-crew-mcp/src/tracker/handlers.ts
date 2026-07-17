@@ -1,9 +1,9 @@
 /**
  * tracker/handlers — the `TrackerRegistry` handlers, mapping each registry Rpc onto the
  * `Registry` service across the two keyspaces (ADR 0191). `AnnouncePresence` / `LookupRole` /
- * `Heartbeat` operate on the role/presence keyspace (keyed by `role`); `Claim` / `Release`
- * operate on the resource-claim keyspace (keyed by `resource`). `ClaimRequest`'s `role` field is
- * consumed here as the claim's `claimantRole`.
+ * `Heartbeat` operate on the presence keyspace (keyed by `peer`, so a role's engine pool
+ * coexists); `Claim` / `Release` operate on the resource-claim keyspace (keyed by `resource`).
+ * `ClaimRequest`'s `role` field is consumed here as the claim's `claimantRole`.
  *
  * `lastSeen`/`since`/`at` cross the wire as ISO-8601 strings (the protocol `Timestamp`), but the
  * registry reasons in epoch millis against its own clock — the conversion happens here at the
