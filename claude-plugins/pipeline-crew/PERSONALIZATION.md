@@ -70,7 +70,7 @@ reference these keys, never a literal.
 | — engine count | `roles.engineering-manager.count` | How many `engineering-manager` engines the stand-up boots — the engine is kind `engine` (cardinality N); a positive integer. Bridges omit `count` (they are cardinality 1). | `<engine-count>` |
 | — engine WIP cap | `roles.engineering-manager.wipCap.{productLanes, platformLanes}` | A conductor engine's bounded concurrent-lane count, lane-partitioned — how many product vs platform/pipeline coders one engine drives at once before queueing the rest. The overall cap is the split's sum; the borrow/rebalance behavior is doctrine shipped in the engineering-manager def (the seam carries only the per-install values). | `<wip-cap-product-lanes>`, `<wip-cap-platform-lanes>` |
 | Notification — per recipient | `notification.operator.{command, handle}`, `notification.controlPlaneApprover.{command, handle}` | Per-recipient human notification. The plugin ships **who** gets pinged and **when**; the config supplies **how** — an operator-supplied transport `command` the chief-of-staff invokes, targeting `handle`. The plugin knows nothing of the channel (iMessage/Slack/Discord), so a Discord-bot future is a config swap, not a code change. Any local script path lives only in the operator's config, never in the repo. | `<operator-notification-command>`, `<operator-notification-handle>`, `<control-plane-approver-notification-command>`, `<control-plane-approver-notification-handle>` |
-| Pinned CLI version | `cliVersion` | The Claude Code CLI version the stand-up launcher asserts before it starts any session — a hard gate so the crew never launches on a drifted CLI (`major.minor.patch`, optional `-suffix`). | `<pinned-claude-code-cli-version>` |
+| Pinned CLI version | `cliVersion` | **Optional** (issue #3417). OMIT ⇒ the launcher accepts whatever `claude --version` reports (an "unpinned" launch — so the boot no longer fail-closes on every frequent Claude Code auto-update). Set it ONLY to deliberately lock a version: a present pin (`major.minor.patch`, optional `-suffix`) is a hard exact-match gate asserted before any session starts, so a drifted CLI refuses to launch. | omit, or `<pinned-claude-code-cli-version>` |
 | Channel registration | `channels.mode`, `channels.servers`, `channels.allowedChannelPlugins` | How each launched session registers its channel MCP servers: `mode` is `allowlist` (`--channels <refs>`) or `development` (`--dangerously-load-development-channels`, local only); `servers` are the refs each session registers (grammar `server:<name>` / `plugin:<name>@<marketplace>`); `allowedChannelPlugins` is the plugin allowlist the `allowlist` mode enforces. | `<channel-mode: allowlist \| development>`, `<channel-server-ref>`, `<allowed-channel-plugin>` |
 
 Adding a new operator-specific dimension is **one row here + one key in the template + one
@@ -85,9 +85,11 @@ stand-up launcher reads, not prose an agent def binds. They resolve through the 
 order as every other seam key (`$CREW_CONFIG` → `.claude/crew.config.jsonc`) but are
 consumed by a typed reader,
 [`packages/pipeline-crew-mcp/src/standup/config.ts`](../../packages/pipeline-crew-mcp/src/standup/config.ts),
-which validates them and **fails closed** — a missing or malformed dimension (a non-version
-CLI pin, an unknown channel mode, a channel ref off-grammar, a non-positive engine count)
-stops the launch with an error naming that dimension, never a silent default. The launcher
+which validates them and **fails closed** — a missing or malformed dimension (an unknown
+channel mode, a channel ref off-grammar, a non-positive engine count, or a present-but-non-version
+CLI pin) stops the launch with an error naming that dimension, never a silent default. The lone
+exception is `cliVersion`, which is optional (issue #3417): an OMITTED pin decodes cleanly to an
+unpinned launch — only a present pin is validated and asserted. The launcher
 children (version-assert, bind-builder, roster, orchestration) consume the reader's typed
 result; they never re-parse the config. Because the template leads the launcher in this
 crew-architecture wave (wayfinder:map #3207), reconciling the typed reader to consume the

@@ -68,8 +68,10 @@
 		}
 	},
 
-	// The pinned Claude Code CLI version the stand-up launcher asserts before it starts any
-	// session — a hard gate so the crew never launches on a drifted CLI. Fill with the exact
+	// OPTIONAL (issue #3417). Omit this key to accept whatever `claude --version` reports (an
+	// "unpinned" launch — the boot no longer fail-closes on every frequent Claude Code
+	// auto-update). Set it ONLY to deliberately lock a version: a present pin is a hard
+	// exact-match gate asserted before any session starts. Fill with the exact
 	// `major.minor.patch` (optionally `-suffix`) your `claude --version` reports.
 	"cliVersion": "<pinned-claude-code-cli-version>",
 

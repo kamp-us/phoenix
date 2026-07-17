@@ -11,7 +11,11 @@
  *
  * The one non-obvious thing: the reader FAILS CLOSED. A missing or malformed launch
  * dimension is a `LaunchConfigError` naming the offending dimension, never a silent default
- * — a drifted CLI pin or an unlisted channel server is a launch to refuse, not paper over.
+ * — an unlisted channel server or a bad engine count is a launch to refuse, not paper over.
+ * The lone exception is `cliVersion`: it is OPTIONAL (issue #3417) — an omitted pin decodes
+ * to an "unpinned" launch (the key is simply absent), so the crew boot stops fail-closing on
+ * every frequent Claude Code auto-update; pin ONLY to deliberately lock a version. A pin that
+ * IS present must still be a valid `CLI_VERSION_RE` version — a malformed present pin fails closed.
  * `LaunchConfig` extracts only the launch dimensions from the one-role-map seam shape (ADR 0189):
  * the engine count is folded into `roles["engineering-manager"].count`, and excess seam keys
  * (operator/notification/tier/wipCap/…) are ignored. There is no config-read tmux dimension —
@@ -54,6 +58,8 @@ const isServerRef = (ref: string): boolean => ref.startsWith("server:");
  * The pinned Claude Code CLI version the stand-up asserts before launching any session
  * (#3295 consumes it). A `major.minor.patch` core with an optional pre-release suffix — the
  * shape `claude --version` reports — so a non-version placeholder or a partial pin is rejected.
+ * The pin itself is optional (issue #3417 — see `LaunchConfig.cliVersion`); this regex constrains
+ * a pin only when one is PRESENT — an omitted pin never reaches it.
  */
 export const CLI_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/;
 
@@ -112,9 +118,16 @@ export const ChannelConfig = Schema.Struct({
 );
 export type ChannelConfig = typeof ChannelConfig.Type;
 
-/** The launch dimensions the stand-up reads — the clean type every launcher child imports. */
+/**
+ * The launch dimensions the stand-up reads — the clean type every launcher child imports.
+ *
+ * `cliVersion` is an EXACT-optional key (`Schema.optionalKey`, issue #3417): absent ⇒ the field
+ * is simply not present (`cliVersion?: CliVersion`), which IS the "unpinned" launch — a clean
+ * representable variant, not a sentinel. `optionalKey` (not `optional`) so the only two states are
+ * "absent = unpinned" and "present = a valid pin"; there is no third `undefined`-but-present state.
+ */
 export const LaunchConfig = Schema.Struct({
-	cliVersion: CliVersion,
+	cliVersion: Schema.optionalKey(CliVersion),
 	engineCount: EngineCount,
 	channels: ChannelConfig,
 });
@@ -126,9 +139,10 @@ export type LaunchConfig = typeof LaunchConfig.Type;
  * `roles["engineering-manager"].count`. The rest of each role entry (`tier`, `wipCap`) and the
  * whole bridge entries are def-spawn / prose bindings, not launch inputs, so they decode as ignored
  * excess keys — only `engineering-manager.count` is a required launch dimension here, fail-closed.
+ * `cliVersion` mirrors `LaunchConfig`'s exact-optional shape (issue #3417): omit ⇒ unpinned.
  */
 const RawLaunchConfig = Schema.Struct({
-	cliVersion: CliVersion,
+	cliVersion: Schema.optionalKey(CliVersion),
 	roles: Schema.Struct({
 		"engineering-manager": Schema.Struct({count: EngineCount}),
 	}),
@@ -222,7 +236,9 @@ export const parseJsonc = (text: string): unknown => JSON.parse(stripJsonc(text)
  * whose `reason` names the offending dimension (the schema issue tree carries the field path).
  * The engine count is folded out of the role map — `roles["engineering-manager"].count` (ADR 0189)
  * — into the flat `engineCount` every launcher child consumes, so `LaunchConfig`'s shape is stable
- * across the seam move; a missing/blank/non-positive count fails closed naming that path.
+ * across the seam move; a missing/blank/non-positive count fails closed naming that path. An
+ * omitted `cliVersion` stays omitted through the fold (exact-optional, issue #3417) — the
+ * "unpinned" launch — so the key is spread only when the operator supplied a pin.
  */
 export const decodeLaunchConfig = (
 	input: unknown,
@@ -231,7 +247,7 @@ export const decodeLaunchConfig = (
 	Schema.decodeUnknownEffect(RawLaunchConfig)(input).pipe(
 		Effect.map(
 			(raw): LaunchConfig => ({
-				cliVersion: raw.cliVersion,
+				...(raw.cliVersion !== undefined ? {cliVersion: raw.cliVersion} : {}),
 				engineCount: raw.roles["engineering-manager"].count,
 				channels: raw.channels,
 			}),

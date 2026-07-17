@@ -3,13 +3,15 @@
  * (issue #3295). At stand-up it reads the installed Claude Code CLI version and compares it to the
  * pinned `cliVersion` the operator config carries (#3293's `LaunchConfig`, consumed read-only).
  *
- * The one non-obvious thing: it FAILS FAST, before any tracker or session launch. Channels are a
- * research preview whose behavior varies across CLI versions, so a drift between the installed CLI
- * and the pin is a stand-up to refuse, not paper over — a mismatch (or an unreadable installed
- * version) aborts with a `CliVersionAssertError` naming both versions, and a match proceeds
- * silently. The reader of the installed version is INJECTED so the launcher (#3299) wires the real
- * `claude --version` while tests stub it; running the subprocess synchronously in an `Effect.try`
- * mirrors config.ts's `readFileSync` idiom (no new dependency for a one-shot pre-launch read).
+ * The one non-obvious thing: when a pin IS present it FAILS FAST, before any tracker or session
+ * launch. Channels are a research preview whose behavior varies across CLI versions, so a drift
+ * between the installed CLI and the pin is a stand-up to refuse, not paper over — a mismatch (or an
+ * unreadable installed version) aborts with a `CliVersionAssertError` naming both versions, and a
+ * match proceeds silently. The pin is OPTIONAL (issue #3417): when it is ABSENT the assert is
+ * SKIPPED entirely — the installed version is accepted unread — so the crew boot stops fail-closing
+ * on every frequent Claude Code auto-update. The reader of the installed version is INJECTED so the
+ * launcher (#3299) wires the real `claude --version` while tests stub it; running the subprocess
+ * synchronously in an `Effect.try` mirrors config.ts's `readFileSync` idiom (no new dependency).
  */
 import {execFileSync} from "node:child_process";
 import {Effect, Schema} from "effect";
@@ -57,6 +59,10 @@ export const readInstalledCliVersionOutput: Effect.Effect<string, string> = Effe
  * launch. Reads the installed version via the injected reader (default: the real `claude --version`),
  * and yields `CliVersionAssertError` on an unreadable version, an unparseable version, or a mismatch;
  * a match returns void so the caller proceeds silently.
+ *
+ * The pin is optional (issue #3417): an ABSENT `cliVersion` is the "unpinned" launch — the assert is
+ * skipped and the installed version accepted unread (no subprocess call), so a frequent CLI
+ * auto-update never fail-closes the boot. Only a PRESENT pin runs the read/parse/exact-match below.
  */
 export const assertPinnedCliVersion = (
 	config: Pick<LaunchConfig, "cliVersion">,
@@ -64,6 +70,7 @@ export const assertPinnedCliVersion = (
 ): Effect.Effect<void, CliVersionAssertError> =>
 	Effect.gen(function* () {
 		const pinned = config.cliVersion;
+		if (pinned === undefined) return;
 		const raw = yield* readVersionOutput.pipe(
 			Effect.mapError(
 				(cause) =>
