@@ -19,7 +19,12 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {type PayloadTooLarge, StorageError, type UnsupportedMediaType} from "./errors.ts";
+import {
+	type PayloadTooLarge,
+	RequestBodyUnreadable,
+	StorageError,
+	type UnsupportedMediaType,
+} from "./errors.ts";
 import {DepoBucket, PasaportDb} from "./resources.ts";
 import {Storage} from "./storage.ts";
 import {upload} from "./upload.ts";
@@ -114,7 +119,14 @@ export default Doorman.make(
 			"/",
 			Effect.gen(function* () {
 				const raw = yield* Cloudflare.Request;
-				const body = new Uint8Array(yield* Effect.promise(() => raw.arrayBuffer()));
+				// Reading the body is guaranteed-success here; a rejection is a defect, not a
+				// domain failure — `orDie` keeps the route's `E` channel to its typed refusals.
+				const body = new Uint8Array(
+					yield* Effect.tryPromise({
+						try: () => raw.arrayBuffer(),
+						catch: (cause) => new RequestBodyUnreadable({cause}),
+					}).pipe(Effect.orDie),
+				);
 				return yield* upload({
 					apiKey: apiKeyOf(raw.headers),
 					contentType: raw.headers.get("content-type"),

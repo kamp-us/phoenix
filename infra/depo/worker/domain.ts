@@ -11,7 +11,7 @@
  * the *decision* the orchestrator needs — the content address a body maps to.
  */
 import * as Effect from "effect/Effect";
-import {PayloadTooLarge, UnsupportedMediaType} from "./errors.ts";
+import {DigestFailed, PayloadTooLarge, UnsupportedMediaType} from "./errors.ts";
 
 /**
  * The content-type allowlist and its extension. depo holds exactly PNG / JPEG /
@@ -59,7 +59,13 @@ export const withinSizeCap = (size: number): Effect.Effect<number, PayloadTooLar
 
 /** Lowercase hex of a SHA-256 digest — the content-address stem. */
 export const sha256Hex = (bytes: Uint8Array): Effect.Effect<string> =>
-	Effect.promise(() => crypto.subtle.digest("SHA-256", bytes)).pipe(
+	Effect.tryPromise({
+		try: () => crypto.subtle.digest("SHA-256", bytes),
+		catch: (cause) => new DigestFailed({cause}),
+	}).pipe(
+		// The digest is a guaranteed-success content-address computation; a rejection is
+		// a genuine defect, not a domain failure — keep the `E` channel `never`.
+		Effect.orDie,
 		Effect.map((buf) =>
 			Array.from(new Uint8Array(buf))
 				.map((b) => b.toString(16).padStart(2, "0"))
