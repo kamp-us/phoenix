@@ -8,7 +8,7 @@ allowed-tools: ["Bash"]
 
 This is the **one stand-up command**: it boots the entire crew from your filled operator
 config in one shot. It is a thin front for the substrate launcher — the mechanical logic
-(version assert, tracker ensure, roster derivation, per-session bind, tmux placement,
+(version assert, tracker ensure, roster derivation, per-session bind, screen placement,
 launch) lives in the `@kampus/pipeline-crew-mcp` substrate's `stand-up` subcommand
 (ADR 0192), never in this plugin.
 
@@ -37,9 +37,9 @@ pipeline-crew-mcp stand-up $ARGUMENTS
 
 The launcher runs, **in order**: assert the pinned CLI version → ensure the per-project
 tracker is up → derive the roster session set (one per bridge + N engines) → build each
-session's channel bind + tmux placement → launch each `claude` session bound to its role
+session's channel bind + screen placement → launch each `claude` session bound to its role
 lease. It is **fail-loud with no partial crew**: a drifted CLI pin, a missing config
-dimension, an unstartable tracker, an inert channel, or an unnamed/colliding tmux window
+dimension, an unstartable tracker, an inert channel, or a failed screen placement
 aborts **before any session is launched** and names the cause. Nothing is hand-launched.
 
 Report the tracker pid + socket and the launched sessions on success, or the named abort
