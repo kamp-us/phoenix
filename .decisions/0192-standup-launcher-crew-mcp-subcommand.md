@@ -1,12 +1,12 @@
 ---
-id: 0190
+id: 0192
 title: The stand-up launcher's mechanics live as a `pipeline-crew-mcp stand-up` subcommand (Effect CLI, pure core + thin bin), invoked by a thin plugin command — not as plugin-embedded Node
 status: accepted
 date: 2026-07-16
 tags: [pipeline, pipeline-crew, crew-mcp, plugin, packaging, launcher]
 ---
 
-# 0190 — The stand-up launcher lives in `pipeline-crew-mcp`, not in the plugin
+# 0192 — The stand-up launcher lives in `pipeline-crew-mcp`, not in the plugin
 
 ## Context
 
