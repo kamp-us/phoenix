@@ -10,6 +10,7 @@ import {Effect} from "effect";
 import {
 	DEFAULT_CONFIG_PATH,
 	decodeLaunchConfig,
+	decodeTmuxNaming,
 	LaunchConfigError,
 	parseJsonc,
 	resolveConfigPath,
@@ -159,6 +160,50 @@ describe("standup/config — server: ref reconciles with mode", () => {
 				},
 			});
 			assert.include(err.reason, "servers");
+		}),
+	);
+});
+
+describe("standup/config — decodeTmuxNaming (tmux placement dimension, seam 1 #3354)", () => {
+	const decodeTmuxErr = (input: unknown) =>
+		Effect.flip(decodeTmuxNaming(input, "/tmp/crew.config.jsonc"));
+
+	it.effect(
+		"extracts session + window naming from the tmux dimension of the full crew config",
+		() =>
+			Effect.gen(function* () {
+				const naming = yield* decodeTmuxNaming(fullCrewConfig, DEFAULT_CONFIG_PATH);
+				assert.strictEqual(naming.session, "s");
+				assert.deepStrictEqual(
+					{...naming.windows},
+					{ea: "ea", engineeringManager: "em", triage: "t"},
+				);
+			}),
+	);
+	it.effect("fails closed naming tmux when the dimension is absent", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeTmuxErr(validLaunch);
+			assert.instanceOf(err, LaunchConfigError);
+			assert.include(err.reason, "tmux");
+			assert.strictEqual(err.configPath, "/tmp/crew.config.jsonc");
+		}),
+	);
+	it.effect("fails closed on a missing session name", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeTmuxErr({tmux: {windows: {ea: "ea"}}});
+			assert.include(err.reason, "session");
+		}),
+	);
+	it.effect("fails closed on a blank session name", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeTmuxErr({tmux: {session: "", windows: {ea: "ea"}}});
+			assert.include(err.reason, "session");
+		}),
+	);
+	it.effect("fails closed on a blank window name", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeTmuxErr({tmux: {session: "crew", windows: {ea: ""}}});
+			assert.include(err.reason, "windows");
 		}),
 	);
 });

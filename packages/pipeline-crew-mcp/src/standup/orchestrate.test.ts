@@ -9,6 +9,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Schema} from "effect";
 import {CREW_ROLES, kindOf} from "../crew/index.ts";
+import {CREW_SESSION_INSTANCE_FLAG} from "./bind.ts";
 import {LaunchConfig, LaunchConfigError} from "./config.ts";
 import {type TrackerHandle, TrackerNotServingError} from "./ensure-tracker.ts";
 import {
@@ -89,7 +90,7 @@ const baseInput = (
 		trackerCalls: calls,
 		input: {
 			projectRoot: "/repo",
-			tmuxNaming,
+			tmuxConfig: Effect.succeed(tmuxNaming),
 			config: Effect.succeed(configAt(PINNED, engineCount ?? 2)),
 			readVersionOutput: Effect.succeed(`${PINNED} (Claude Code)`),
 			instanceId: counter(),
@@ -199,7 +200,8 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 	it.effect("aborts when a bridge names no operator tmux window — no partial crew (AC3)", () =>
 		Effect.gen(function* () {
 			const {input, launched} = baseInput({
-				tmuxNaming: {session: "crew", windows: {"chief-of-staff": "cos"}}, // cartographer/intake-desk unnamed
+				// cartographer/intake-desk unnamed
+				tmuxConfig: Effect.succeed({session: "crew", windows: {"chief-of-staff": "cos"}}),
 			});
 			const err = yield* Effect.flip(runStandUp(input));
 
@@ -220,5 +222,44 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				assert.instanceOf(err, CrewServerNotRegisteredError);
 				assert.strictEqual(launched.length, 0);
 			}),
+	);
+
+	it.effect(
+		"reads tmux naming from config: a malformed tmux dimension aborts before launch (seam 1)",
+		() =>
+			Effect.gen(function* () {
+				const {input, launched, trackerCalls} = baseInput({
+					tmuxConfig: Effect.fail(
+						new LaunchConfigError({configPath: ".claude/crew.config.jsonc", reason: "tmux"}),
+					),
+				});
+				const err = yield* Effect.flip(runStandUp(input));
+
+				assert.instanceOf(err, LaunchConfigError);
+				// tmux is read alongside the launch config, before the tracker or any launch.
+				assert.strictEqual(trackerCalls(), 0);
+				assert.strictEqual(launched.length, 0);
+			}),
+	);
+
+	it.effect("threads each engine's per-instance identity into its launch argv (seam 3)", () =>
+		Effect.gen(function* () {
+			const {input, launched} = baseInput({engineCount: 3});
+			yield* runStandUp(input);
+
+			const engines = launched.filter((p) => p.session.kind === "engine");
+			assert.strictEqual(engines.length, 3);
+			for (const p of engines) {
+				assert.strictEqual(p.session.kind, "engine");
+				const instance = p.session.kind === "engine" ? p.session.instance : "";
+				// the instance-flag pair rides the inline --mcp-config JSON (mcpConfigArg[1]).
+				const mcpJson = p.bind.mcpConfigArg[1];
+				assert.include(mcpJson, `"${CREW_SESSION_INSTANCE_FLAG}"`);
+				assert.include(mcpJson, `"${instance}"`);
+			}
+			// a bridge is a singleton and carries no --instance in its argv.
+			const bridge = launched.find((p) => p.session.kind === "bridge");
+			assert.notInclude(bridge?.bind.mcpConfigArg[1] ?? "", CREW_SESSION_INSTANCE_FLAG);
+		}),
 	);
 });

@@ -8,6 +8,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
+import {decodeTmuxNaming} from "./config.ts";
 import {
 	computeTmuxPlacement,
 	type RosterSession,
@@ -107,6 +108,28 @@ describe("standup/tmux-placement — session set → placement targets", () => {
 			assert.instanceOf(failure, TmuxWindowCollisionError);
 			assert.strictEqual(failure.window, "chief-of-staff");
 			assert.deepStrictEqual([...failure.sessionRefs], ["ea-chief-of-staff", "chief-of-staff"]);
+		}),
+	);
+
+	// Seam 1 (#3354): the config tmux-dimension reader's output feeds this placement layer directly —
+	// the naming that was injected in code now comes from the operator config, end to end.
+	it.effect("places sessions from a config-decoded TmuxNaming (reader → placement)", () =>
+		Effect.gen(function* () {
+			const naming = yield* decodeTmuxNaming(
+				{tmux: {session: "crew", windows: {ea: "chief-of-staff"}}},
+				"/tmp/crew.config.jsonc",
+			);
+			const targets = yield* computeTmuxPlacement(naming, [
+				{kind: "bridge", role: "ea-chief-of-staff", windowKey: "ea"},
+				{kind: "engine", id: "engine-1"},
+			]);
+			assert.deepStrictEqual(
+				targets.map((t) => ({session: t.session, window: t.window})),
+				[
+					{session: "crew", window: "chief-of-staff"},
+					{session: "crew", window: "engine-1"},
+				],
+			);
 		}),
 	);
 });

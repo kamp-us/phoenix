@@ -12,11 +12,13 @@
  * The one non-obvious thing: the reader FAILS CLOSED. A missing or malformed launch
  * dimension is a `LaunchConfigError` naming the offending dimension, never a silent default
  * — a drifted CLI pin or an unlisted channel server is a launch to refuse, not paper over.
- * Excess keys (operator, tmux, modelTiers, …) are ignored: this schema extracts only the
- * launch dimensions from the full crew config, so it composes with the rest of the seam.
+ * `LaunchConfig` extracts only the launch dimensions (excess keys operator/modelTiers/… are
+ * ignored); the tmux *placement* dimension has its own sibling reader `readTmuxNaming` (#3354),
+ * fail-closed the same way, so tmux naming enters from the operator config rather than injected.
  */
 import {readFileSync} from "node:fs";
 import {Effect, Schema} from "effect";
+import type {TmuxNaming} from "./tmux-placement.ts";
 
 /**
  * A channel-server ref, in the exact registration grammar Claude Code 2.1.212 accepts —
@@ -118,6 +120,22 @@ export const LaunchConfig = Schema.Struct({
 });
 export type LaunchConfig = typeof LaunchConfig.Type;
 
+/**
+ * The tmux placement dimension of the crew config: the tmux session every crew window is created
+ * under + the per-bridge window names, keyed by window key. It decodes to `tmux-placement.ts`'s
+ * `TmuxNaming` (the placement layer consumes the resolved shape) — this is the reader #3298's
+ * placement doc already anticipated ("#3293's reader resolves from the config `tmux` dimension")
+ * but no child built, so `runStandUp` had to inject it in code (#3354, seam 1). Names are
+ * `NonEmptyString`: an empty tmux session / window name is a launch to refuse, not paper over.
+ */
+export const TmuxConfig = Schema.Struct({
+	session: Schema.NonEmptyString,
+	windows: Schema.Record(Schema.String, Schema.NonEmptyString),
+});
+
+/** The crew config carries the tmux placement dimension under its `tmux` key — read only that key. */
+const CrewConfigTmux = Schema.Struct({tmux: TmuxConfig});
+
 /** A crew config that could not be resolved, read, parsed, or validated — carries the offending dimension. */
 export class LaunchConfigError extends Schema.TaggedErrorClass<LaunchConfigError>()(
 	"@kampus/pipeline-crew-mcp/standup/LaunchConfigError",
@@ -213,13 +231,27 @@ export const decodeLaunchConfig = (
 	);
 
 /**
- * Resolve → read → parse → decode the crew config's launch dimensions. Every failure along the
- * way (path unreadable, JSONC malformed, a dimension missing/invalid) collapses to a single
- * `LaunchConfigError` carrying the resolved path and the reason — never a partial or a default.
+ * Decode an already-parsed value's `tmux` dimension into `TmuxNaming`, failing closed with a
+ * `LaunchConfigError` whose `reason` names the offending field — the same fail-closed shape as
+ * `decodeLaunchConfig`, so a missing/blank tmux session or window is a launch to refuse (#3354).
  */
-export const readLaunchConfig = (
-	env: {readonly CREW_CONFIG?: string | undefined} = process.env,
-): Effect.Effect<LaunchConfig, LaunchConfigError> =>
+export const decodeTmuxNaming = (
+	input: unknown,
+	configPath: string,
+): Effect.Effect<TmuxNaming, LaunchConfigError> =>
+	Schema.decodeUnknownEffect(CrewConfigTmux)(input).pipe(
+		Effect.map((cfg) => cfg.tmux),
+		Effect.mapError((error) => new LaunchConfigError({configPath, reason: error.message})),
+	);
+
+/**
+ * Resolve → read → parse the crew config once, collapsing an unreadable path or malformed JSONC to
+ * a single `LaunchConfigError`. Shared by both dimension readers so the resolve/read/parse contract
+ * lives in one place; each reader decodes its own dimension off the parsed value.
+ */
+const readParsedConfig = (env: {
+	readonly CREW_CONFIG?: string | undefined;
+}): Effect.Effect<{readonly parsed: unknown; readonly configPath: string}, LaunchConfigError> =>
 	Effect.gen(function* () {
 		const configPath = resolveConfigPath(env);
 		const text = yield* Effect.try({
@@ -235,5 +267,29 @@ export const readLaunchConfig = (
 			catch: (cause) =>
 				new LaunchConfigError({configPath, reason: `invalid JSONC: ${String(cause)}`}),
 		});
-		return yield* decodeLaunchConfig(parsed, configPath);
+		return {parsed, configPath};
 	});
+
+/**
+ * Resolve → read → parse → decode the crew config's launch dimensions. Every failure along the
+ * way (path unreadable, JSONC malformed, a dimension missing/invalid) collapses to a single
+ * `LaunchConfigError` carrying the resolved path and the reason — never a partial or a default.
+ */
+export const readLaunchConfig = (
+	env: {readonly CREW_CONFIG?: string | undefined} = process.env,
+): Effect.Effect<LaunchConfig, LaunchConfigError> =>
+	readParsedConfig(env).pipe(
+		Effect.flatMap(({parsed, configPath}) => decodeLaunchConfig(parsed, configPath)),
+	);
+
+/**
+ * Resolve → read → parse → decode the crew config's tmux placement dimension. Same collapse-to-one
+ * `LaunchConfigError` contract as `readLaunchConfig`, so `runStandUp` reads tmux naming from the
+ * operator config (fail-closed) instead of taking it injected in code (#3354, seam 1).
+ */
+export const readTmuxNaming = (
+	env: {readonly CREW_CONFIG?: string | undefined} = process.env,
+): Effect.Effect<TmuxNaming, LaunchConfigError> =>
+	readParsedConfig(env).pipe(
+		Effect.flatMap(({parsed, configPath}) => decodeTmuxNaming(parsed, configPath)),
+	);
