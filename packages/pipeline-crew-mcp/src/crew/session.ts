@@ -48,7 +48,7 @@ import {
 } from "./channel-server.ts";
 import type {RoleUniquenessError} from "./errors.ts";
 import type {CrewRole} from "./roles.ts";
-import {type CrewTracker, crewTrackerSocketLayer, peerTrackerLayer} from "./tracker.ts";
+import {type CrewTracker, crewTrackerHostOrDialLayer, peerTrackerLayer} from "./tracker.ts";
 
 /** The MCP server identity a crew session advertises over stdio when none is configured. */
 export const SESSION_SERVER_NAME = "@kampus/pipeline-crew-mcp" as const;
@@ -75,15 +75,20 @@ export const inboxAddressFor = (role: CrewRole): string => `inbox://${role}`;
 export const inboxSocketFor = (role: CrewRole): string => inboxSocketPathFor(inboxAddressFor(role));
 
 /**
- * The peer substrate over real unix sockets: the socket `CrewTracker`, the peer `Tracker` port
+ * The peer substrate over real unix sockets: the first-peer-spawn `CrewTracker` (host the tracker
+ * if the project socket is free, else dial the peer already hosting it), the peer `Tracker` port
  * derived from it (one shared tracker client), this peer's local inbox log, and the socket dialer.
  * The production substrate `channelSendFromPeer` runs on; the tests inject an in-memory one
  * (an `RpcTest` `CrewTracker` + an in-memory `Dialer`) to drive the same binding transport-free.
+ *
+ * Hosting the tracker here (`crewTrackerHostOrDialLayer`) is what makes a session self-sufficient:
+ * the first session for a project stands the tracker up, later sessions dial it, so a crew no longer
+ * fails at startup on an unserved socket.
  */
 export const peerSocketSubstrate = (
 	config: CrewSessionConfig,
 ): Layer.Layer<CrewTracker | Tracker | Inbox | Dialer, unknown> => {
-	const crewTracker = crewTrackerSocketLayer(socketPathFor(config.projectRoot));
+	const crewTracker = crewTrackerHostOrDialLayer(socketPathFor(config.projectRoot));
 	return Layer.mergeAll(
 		peerTrackerLayer.pipe(Layer.provideMerge(crewTracker)),
 		Inbox.layer(inboxAddressFor(config.role)),

@@ -1,12 +1,16 @@
 /**
- * tracker/server — the standing registry `RpcServer` over a per-project unix socket, and the
- * first-peer-spawn launch entry.
+ * tracker/server — the standing registry `RpcServer` over a per-project unix socket: the raw
+ * `trackerServerLayer` bind, the standalone `launchTracker` entry, and the `EADDRINUSE` detector
+ * (`isTrackerAddressInUse`) the first-peer-spawn dial fallback keys on.
  *
  * The socket path is derived deterministically from the project root (`socketPathFor`), so every
  * peer of one project rendezvous on the same socket while different projects stay isolated — the
  * "per-project socket". The tracker is brought up by whichever peer needs it first (first-peer-
  * spawn): the first bind wins the socket; a later peer's bind gets `EADDRINUSE`, the signal that a
- * tracker is already serving this project, and it connects as a client instead.
+ * tracker is already serving this project, and it connects as a client instead. That host-or-dial
+ * wiring — which combines this server layer with the crew's registry client — lives in
+ * `../crew/tracker.ts` (`crewTrackerHostOrDialLayer`), because it needs both halves; this module
+ * owns only the server half plus the bind-error primitive that path branches on.
  *
  * The served surface is `TrackerRegistry` — registry kinds only (see `./group.ts`); the tracker
  * has no handler for any message-relay kind, so it structurally cannot relay a message.
@@ -15,8 +19,9 @@ import {createHash} from "node:crypto";
 import {tmpdir} from "node:os";
 import {join, resolve} from "node:path";
 import {NodeSocketServer} from "@effect/platform-node";
-import {type Effect, Layer} from "effect";
+import {Cause, type Effect, Layer, Option} from "effect";
 import {RpcSerialization, RpcServer} from "effect/unstable/rpc";
+import {SocketServerError} from "effect/unstable/socket/SocketServer";
 import {TrackerRegistry} from "./group.ts";
 import {TrackerHandlers} from "./handlers.ts";
 import {RegistryLive} from "./registry.ts";
@@ -50,9 +55,32 @@ export const trackerServerLayer = (socketPath: string) =>
 	);
 
 /**
- * First-peer-spawn entry: launch the tracker for `projectRoot` and keep it running until
- * interrupted (`Layer.launch` builds the server layer and blocks, closing it on teardown). A
- * `SocketServerError` from an already-bound socket means a tracker is already up for this project.
+ * Standalone tracker entry: launch a dedicated tracker for `projectRoot` and keep it running until
+ * interrupted (`Layer.launch` builds the server layer and blocks, closing it on teardown). Drives
+ * the bin's `tracker` subcommand — the explicit way to stand a project's tracker up decoupled from
+ * any role session. It fails fast with a `SocketServerError` when the socket is already bound
+ * (`isTrackerAddressInUse`), the signal that a tracker is already up for this project; the caller
+ * decides whether that is a clean no-op (the subcommand treats it as "already serving").
+ *
+ * A live crew session does NOT use this blocking entry — it hosts the tracker as a scoped layer via
+ * `crewTrackerHostOrDialLayer` (first-peer-spawn), so the server runs alongside the session rather
+ * than blocking it.
  */
 export const launchTracker = (projectRoot: string): Effect.Effect<never, unknown> =>
 	Layer.launch(trackerServerLayer(socketPathFor(projectRoot)));
+
+/**
+ * Is this cause a tracker-socket bind that lost the race — an `EADDRINUSE` raised while opening the
+ * server? The first-peer-spawn signal that a tracker is already serving the socket, so the caller
+ * should dial the existing one instead of failing. Narrow on purpose: a non-`EADDRINUSE` bind
+ * failure (bad permissions, a missing runtime dir) is a real error that must propagate, never be
+ * silently swallowed into a dial that would only fail more opaquely.
+ */
+export const isTrackerAddressInUse = (cause: Cause.Cause<unknown>): boolean =>
+	Option.match(Cause.findErrorOption(cause), {
+		onNone: () => false,
+		onSome: (error) =>
+			error instanceof SocketServerError &&
+			error.reason._tag === "SocketServerOpenError" &&
+			(error.reason.cause as NodeJS.ErrnoException | undefined)?.code === "EADDRINUSE",
+	});
