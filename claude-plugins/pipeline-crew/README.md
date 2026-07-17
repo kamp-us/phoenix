@@ -143,7 +143,7 @@ kampus-pipeline carries a **control-plane (§CP)** boundary: PRs that touch the 
 plane bank for a human merge behind a hard GitHub gate (ADR
 [0135](../../.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)).
 **pipeline-crew's `agents/` is deliberately *not* part of that boundary** — the crew is an
-optional layer whose PRs **auto-ship on green** by design (epic #2342's resolved questions),
+optional layer whose PRs **auto-ship on green** by design (a founder ruling in the crew's resolved design questions),
 with no extension of the §CP path set to this directory. Edits to the crew defs here merge
 automatically once their review gate passes; PRs that touch kampus-pipeline's own §CP surfaces
 still bank for a human merge.
