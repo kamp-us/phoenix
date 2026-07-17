@@ -10,12 +10,10 @@
  * and the catalog follows, no per-role special-casing to update.
  */
 import {
-	AckInbox,
 	AnnouncePresence,
 	Claim,
 	CrewProtocol,
 	DrainProgress,
-	EpicHandoff,
 	Heartbeat,
 	IntakePing,
 	LookupRole,
@@ -32,13 +30,11 @@ export const CrewSeams = {
 	claimCollisionCheck: Claim,
 	roleUniquenessLease: Claim,
 	releaseClaim: Release,
-	epicHandoff: EpicHandoff,
 	drainTally: DrainProgress,
 	intakePing: IntakePing,
 	announcePresence: AnnouncePresence,
 	lookupRole: LookupRole,
 	heartbeat: Heartbeat,
-	inboxAck: AckInbox,
 } as const;
 
 export type CrewSeamName = keyof typeof CrewSeams;

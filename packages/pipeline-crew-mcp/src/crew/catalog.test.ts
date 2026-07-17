@@ -17,13 +17,12 @@ describe("crew/catalog — roles mapped to seams over protocol/", () => {
 		assert.strictEqual(crewCatalog.size, CREW_ROLES.length);
 	});
 
-	it("names the six required crew seams over the protocol kinds", () => {
-		// claim/collision-check, role-uniqueness lease, epic handoff, drain tally, intake ping,
+	it("names the required crew seams over the protocol kinds", () => {
+		// claim/collision-check, role-uniqueness lease, drain tally, intake ping,
 		// role discovery/presence (announce + lookup) — the seams the ticket enumerates.
 		for (const seam of [
 			"claimCollisionCheck",
 			"roleUniquenessLease",
-			"epicHandoff",
 			"drainTally",
 			"intakePing",
 			"announcePresence",
@@ -40,11 +39,9 @@ describe("crew/catalog — roles mapped to seams over protocol/", () => {
 
 	it("exposes the crew catalog group as the full protocol catalog", () => {
 		assert.deepStrictEqual([...CrewCatalogGroup.requests.keys()].sort(), [
-			"AckInbox",
 			"AnnouncePresence",
 			"Claim",
 			"DrainProgress",
-			"EpicHandoff",
 			"Heartbeat",
 			"IntakePing",
 			"LookupRole",

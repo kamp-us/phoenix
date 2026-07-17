@@ -3,10 +3,11 @@
  * `RpcGroup` an `RpcServer` serves) plus the `Inbox` service that records deliveries and
  * returns an inbox-ack. Generic (crew-agnostic); see the boundary note in `../index.ts`.
  *
- * The one non-obvious thing: a successful `Deliver` reply is a `Messages.InboxAck`, and
- * that ack means exactly delivered-to-peer-inbox — the reception guarantee capture-pane
- * verification used to fake (locked in #3035), never seen-by-model. The envelope reuses
- * the `protocol/` message schemas; peer/ redefines no message type.
+ * The one non-obvious thing: a successful `Deliver` reply is an `InboxAck`, and that ack
+ * means exactly delivered-to-peer-inbox — the reception guarantee capture-pane verification
+ * used to fake (locked in #3035), never seen-by-model. `InboxAck` is the peer data plane's
+ * own ack (the crew message catalog carries no ack kind — nothing sends one, #3302); it and
+ * the envelope are built from the `protocol/` field primitives (`MessageId`/`PeerId`/…).
  */
 import {Context, Effect, Layer, Ref, Schema} from "effect";
 import {Rpc, RpcGroup} from "effect/unstable/rpc";
@@ -29,12 +30,23 @@ export const InboxEnvelope = Schema.Struct({
 	at: Messages.Timestamp,
 });
 export type InboxEnvelope = typeof InboxEnvelope.Type;
-export type InboxAck = typeof Messages.InboxAck.Type;
+
+/**
+ * The delivered-to-inbox ack: the receiving peer (`by`) echoes the delivery's `messageId` so
+ * the sender can correlate the ack to its send. This is the peer data plane's own reply shape,
+ * not a crew message catalog kind — the catalog has no ack kind because nothing sends one (#3302).
+ */
+export const InboxAck = Schema.Struct({
+	messageId: Messages.MessageId,
+	by: Messages.PeerId,
+	at: Messages.Timestamp,
+});
+export type InboxAck = typeof InboxAck.Type;
 
 /** Deliver one message to this peer's inbox; the reply is the delivered-to-inbox ack. */
 export const Deliver = Rpc.make("Deliver", {
 	payload: InboxEnvelope,
-	success: Messages.InboxAck,
+	success: InboxAck,
 });
 
 /** The peer inbox contract — the one `RpcGroup` an inbox `RpcServer` serves and a dialer speaks. */

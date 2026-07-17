@@ -14,7 +14,7 @@ export {PeerUnreachableError} from "./errors.ts";
 export {
 	Deliver,
 	Inbox,
-	type InboxAck,
+	InboxAck,
 	InboxEnvelope,
 	inboxHandlers,
 	PeerAddress,

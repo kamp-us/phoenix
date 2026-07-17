@@ -1,5 +1,5 @@
 /**
- * The catalog-shape guarantees: the `RpcGroup` covers all 7 kinds (acceptance criterion
+ * The catalog-shape guarantees: the `RpcGroup` covers all 6 kinds (acceptance criterion
  * 1), the claim/collision-check kind is a request-response RPC with a typed reply rather
  * than fire-and-forget (criterion 4), and the whole `protocol/` module imports nothing
  * from `crew/` — the generic boundary holds (criterion 3).
@@ -20,13 +20,11 @@ import {
 import * as Messages from "./schema.ts";
 
 describe("protocol/group catalog", () => {
-	it("covers all 8 message kinds (9 rpcs — presence is announce + lookup, claim is claim + release)", () => {
+	it("covers all 6 message kinds (7 rpcs — presence is announce + lookup, claim is claim + release)", () => {
 		assert.deepStrictEqual([...CrewProtocol.requests.keys()].sort(), [
-			"AckInbox",
 			"AnnouncePresence",
 			"Claim",
 			"DrainProgress",
-			"EpicHandoff",
 			"Heartbeat",
 			"IntakePing",
 			"LookupRole",

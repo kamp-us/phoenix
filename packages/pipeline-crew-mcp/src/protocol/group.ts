@@ -1,5 +1,5 @@
 /**
- * protocol/group — the 8 crew message kinds as one Effect `RpcGroup`.
+ * protocol/group — the 6 crew message kinds as one Effect `RpcGroup`.
  *
  * Generic (crew-agnostic); see the boundary note in `../index.ts`. Each kind is an
  * `Rpc` carrying a Schema payload from `./schema.ts`. Kinds that expect an answer
@@ -24,53 +24,41 @@ export const Release = Rpc.make("Release", {
 	payload: Messages.ReleaseClaim,
 });
 
-/** Kind 2 — planned-epic handoff (EM → builder). */
-export const EpicHandoff = Rpc.make("EpicHandoff", {
-	payload: Messages.EpicHandoffNotice,
-});
-
-/** Kind 3 — drain-progress tally. */
+/** Kind 2 — drain-progress tally. */
 export const DrainProgress = Rpc.make("DrainProgress", {
 	payload: Messages.DrainProgressTally,
 });
 
-/** Kind 4 — intake ping. */
+/** Kind 3 — intake ping. */
 export const IntakePing = Rpc.make("IntakePing", {
 	payload: Messages.IntakePing,
 });
 
-/** Kind 5a — role discovery/presence: announce (fire-and-forget). */
+/** Kind 4a — role discovery/presence: announce (fire-and-forget). */
 export const AnnouncePresence = Rpc.make("AnnouncePresence", {
 	payload: Messages.PresenceAnnouncement,
 });
 
-/** Kind 5b — role discovery/presence: lookup, awaiting a typed `RoleLookupResult`. */
+/** Kind 4b — role discovery/presence: lookup, awaiting a typed `RoleLookupResult`. */
 export const LookupRole = Rpc.make("LookupRole", {
 	payload: Messages.RoleLookupQuery,
 	success: Messages.RoleLookupResult,
 });
 
-/** Kind 6 — heartbeat (presence TTL keepalive). */
+/** Kind 5 — heartbeat (presence TTL keepalive). */
 export const Heartbeat = Rpc.make("Heartbeat", {
 	payload: Messages.Heartbeat,
 });
 
-/** Kind 7 — inbox ack (delivery acknowledgement). */
-export const AckInbox = Rpc.make("AckInbox", {
-	payload: Messages.InboxAck,
-});
-
-/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 8 kinds. */
+/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 6 kinds. */
 export const CrewProtocol = RpcGroup.make(
 	Claim,
 	Release,
-	EpicHandoff,
 	DrainProgress,
 	IntakePing,
 	AnnouncePresence,
 	LookupRole,
 	Heartbeat,
-	AckInbox,
 );
 
 /** The catalog's wire `kind` names — the `_tag` of every rpc, the set a `channel_send` may name. */
@@ -79,7 +67,7 @@ export const crewMessageKinds: ReadonlyArray<string> = [...CrewProtocol.requests
 /**
  * Resolve a wire `kind` name to the Schema payload the catalog types it as — the seam that lets
  * a boundary decode a message's `body` against its kind instead of trusting `Schema.Unknown`,
- * so the 7-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
+ * so the 6-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
  * from `CrewProtocol.requests` so it can never drift from the catalog above — the catalog *is*
  * the map. A kind outside the catalog resolves to `undefined`; the caller rejects it.
  *
