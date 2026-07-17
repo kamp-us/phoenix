@@ -12,52 +12,66 @@
 	"operator": {
 		"name": "<operator-name>",
 		"handle": "<operator-handle>"
+		// The operator's gh identity is deliberately NOT a key here — the intake-desk's triage
+		// routing rule keys on the session's live-authenticated `gh` login, resolved fresh per
+		// run, so a static copy would drift from the actual identity. See PERSONALIZATION.md
+		// § "Tied-off and deferred seam gaps".
 	},
 
-	// Who reviews / approves / merges control-plane (§CP) PRs — the human the EA
-	// banks §CP work for and relays to (ADR 0135).
+	// Who reviews / approves / merges control-plane (§CP) PRs — the human the engine banks
+	// §CP work for on the board and the chief-of-staff relays to (ADR 0135). This is the
+	// approver IDENTITY (who to assign the banked PR to); the transport that PINGS them is
+	// notification.controlPlaneApprover below.
 	"controlPlaneApprover": {
 		"name": "<control-plane-approver-name>",
 		"login": "<control-plane-approver-login>"
 	},
 
-	// Where the single-owner human-notification protocol delivers pings.
-	"notification": {
-		"channel": "<notification-channel>",
-		"handle": "<notification-handle>"
-	},
-
-	// tmux session + the three per-role window/pane names the stand-up brings up.
-	"tmux": {
-		"session": "<tmux-session-name>",
-		"windows": {
-			"ea": "<ea-window-name>",
-			"engineeringManager": "<em-window-name>",
-			"triage": "<triage-window-name>"
+	// One role map — a roster change is ONE edit here. Keyed off the role KINDs declared in
+	// packages/pipeline-crew-mcp/src/crew/roles.ts (ADR 0189): the three bridges are singleton
+	// (cardinality falls out of the kind — no count), the one engine scales by `count`. Each
+	// entry: `tier` (the model tier the role's session runs on), `count?` (engine pool size,
+	// engine-only), `wipCap?` (a conductor engine's concurrent-lane cap, engine-only).
+	"roles": {
+		// Bridges — singleton, tier only.
+		"chief-of-staff": { "tier": "<chief-of-staff-model-tier>" },
+		"cartographer": { "tier": "<cartographer-model-tier>" },
+		"intake-desk": { "tier": "<intake-desk-model-tier>" },
+		// Engine — fungible throughput; `count` engines boot, each holds its own `wipCap`.
+		// The overall cap is the lane split's sum and the borrow/rebalance rule is doctrine
+		// shipped in the engineering-manager def — only the per-install lane values seam here.
+		"engineering-manager": {
+			"tier": "<engineering-manager-model-tier>",
+			"count": "<engine-count>",
+			"wipCap": {
+				"productLanes": "<wip-cap-product-lanes>",
+				"platformLanes": "<wip-cap-platform-lanes>"
+			}
 		}
 	},
 
-	// The model tier each role runs on (planning tier vs execution/build tier).
-	"modelTiers": {
-		"ea": "<ea-model-tier>",
-		"engineeringManager": "<em-model-tier>",
-		"triage": "<triage-model-tier>"
+	// Per-recipient human notification. The plugin ships WHO gets pinged and WHEN; the config
+	// supplies HOW — an operator-supplied transport `command` the chief-of-staff invokes. The
+	// plugin knows nothing of the channel (iMessage / Slack / Discord), so a Discord-bot future
+	// is a config swap, not a code change. Any local script path lives ONLY here, never in the
+	// repo. `handle` is the addressee the command targets.
+	"notification": {
+		// The operator — situational-awareness reads, ping-me-when-X-lands.
+		"operator": {
+			"command": "<operator-notification-command>",
+			"handle": "<operator-notification-handle>"
+		},
+		// The §CP approver — the bank-and-carry relay for a §CP PR at its live head (ADR 0135).
+		"controlPlaneApprover": {
+			"command": "<control-plane-approver-notification-command>",
+			"handle": "<control-plane-approver-notification-handle>"
+		}
 	},
 
-	// The engineering-manager's WIP caps — the bounded number of concurrent lanes
-	// it runs at once, partitioned by class (product vs platform/pipeline).
-	"wipCaps": {
-		"productLanes": "<wip-cap-product-lanes>",
-		"platformLanes": "<wip-cap-platform-lanes>"
-	},
-
-	// The pinned Claude Code CLI version the stand-up launcher asserts before it starts
-	// any session — a hard gate so the crew never launches on a drifted CLI. Fill with the
-	// exact `major.minor.patch` (optionally `-suffix`) your `claude --version` reports.
+	// The pinned Claude Code CLI version the stand-up launcher asserts before it starts any
+	// session — a hard gate so the crew never launches on a drifted CLI. Fill with the exact
+	// `major.minor.patch` (optionally `-suffix`) your `claude --version` reports.
 	"cliVersion": "<pinned-claude-code-cli-version>",
-
-	// How many engine (build) sessions the stand-up starts (a positive integer).
-	"engineCount": "<engine-count>",
 
 	// Channel MCP registration for every launched session.
 	"channels": {
@@ -65,11 +79,11 @@
 		// "development" → `--dangerously-load-development-channels` (loads every dev channel; local only).
 		"mode": "<channel-mode: allowlist | development>",
 		// The channel servers each session registers, by ref. Grammar per ref:
-		//   "server:<name>"              — a top-level channel MCP server
-		//   "plugin:<name>@<marketplace>" — a channel server contributed by a plugin
+		//   "server:<name>"                — a top-level channel MCP server (development mode only)
+		//   "plugin:<name>@<marketplace>"  — a server contributed by an installed plugin
 		"servers": ["<channel-server-ref>"],
 		// Plugins whose channel servers are allowed to load — the allowlist the "allowlist"
-		// mode enforces; each name matches the plugin `<name>` in a "plugin:<name>@<marketplace>" ref used in `servers`.
+		// mode enforces; each name matches a "plugin:<name>@<marketplace>" ref used in `servers`.
 		"allowedChannelPlugins": ["<allowed-channel-plugin>"]
 	}
 }
