@@ -17,5 +17,11 @@ export {
 	type ChannelNotificationPayload,
 	channelExperimentalCapability,
 } from "./mcp-channel.ts";
-export {ChannelSend, ChannelToolkit, channelToolHandlers, SendChannelMessage} from "./send-tool.ts";
+export {
+	ChannelSend,
+	ChannelToolkit,
+	channelToolHandlers,
+	InvalidMessageError,
+	SendChannelMessage,
+} from "./send-tool.ts";
 export {channelServerLayer} from "./server.ts";
