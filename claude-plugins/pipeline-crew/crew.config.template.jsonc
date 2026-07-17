@@ -65,11 +65,11 @@
 		// "development" → `--dangerously-load-development-channels` (loads every dev channel; local only).
 		"mode": "<channel-mode: allowlist | development>",
 		// The channel servers each session registers, by ref. Grammar per ref:
-		//   "server:<name>"            — a top-level channel MCP server
-		//   "plugin:<plugin>:<server>" — a server contributed by a plugin
+		//   "server:<name>"              — a top-level channel MCP server
+		//   "plugin:<name>@<marketplace>" — a channel server contributed by a plugin
 		"servers": ["<channel-server-ref>"],
 		// Plugins whose channel servers are allowed to load — the allowlist the "allowlist"
-		// mode enforces; each name matches a "plugin:<plugin>:..." ref used in `servers`.
+		// mode enforces; each name matches the plugin `<name>` in a "plugin:<name>@<marketplace>" ref used in `servers`.
 		"allowedChannelPlugins": ["<allowed-channel-plugin>"]
 	}
 }
