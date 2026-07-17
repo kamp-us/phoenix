@@ -6,9 +6,13 @@
  *
  * It produces two coupled outputs the launcher inlines per invocation:
  *   1. `--mcp-config <json>` — the session's own channel MCP server as INLINE JSON baking
- *      `pipeline-crew-mcp session --role <role> --project-root <root>`. It must be per-invocation
+ *      `<node> <abs bin.ts> session --role <role> --project-root <root>`. It must be per-invocation
  *      inline (not a static shared `.mcp.json`) because `--role`/`--project-root` vary across the
- *      concurrent sessions a stand-up launches at once.
+ *      concurrent sessions a stand-up launches at once. The command is the launcher's own node
+ *      (`process.execPath`) + the ABSOLUTE `bin.ts` path — a bare, unlinked package bin name never
+ *      resolves on the launched session's PATH, so it would come up silently inert (#3425); this
+ *      mirrors ensure-tracker.ts's detached-child spawn (`process.execPath` + a `fileURLToPath`
+ *      module path), the package's canonical bin.ts runner.
  *   2. the channel-registration flag NAMING that same server — `--channels <refs>` for the
  *      allowlist mode, `--dangerously-load-development-channels <refs>` for dev. A server present
  *      in `.mcp.json`/`--mcp-config` alone is INERT: the Claude Code CLI only activates a channel
@@ -16,16 +20,25 @@
  *      `--channels <servers...>`, `--dangerously-load-development-channels <servers...>`,
  *      `--mcp-config <configs...>` load-from-JSON-string, and the `allowedChannelPlugins` gate).
  *
- * The one non-obvious thing: this FAILS CLOSED, like the config reader it consumes. A crew server
- * defined in `--mcp-config` but absent from the channel flag would come up inert (a silent
- * half-launch), and an allowlist-mode `plugin:` channel whose plugin the operator never allowlisted
- * is exactly what the CLI rejects — both are a launch to refuse with a named error, never paper over.
+ * The one non-obvious thing: this FAILS CLOSED, like the config reader it consumes. Three ways a
+ * bind would come up inert are each a launch to refuse with a named error, never paper over: the
+ * crew server's `bin.ts` not resolving on disk (`CrewSessionBinUnresolvableError`, #3425), the crew
+ * server defined in `--mcp-config` but absent from the channel flag (`CrewServerNotRegisteredError`),
+ * and an allowlist-mode `plugin:` channel whose plugin the operator never allowlisted
+ * (`ChannelPluginNotAllowedError`, the exact rejection the CLI raises).
  */
+import {existsSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {Effect, Schema} from "effect";
 import type {ChannelConfig} from "./config.ts";
 
-/** The bin the session's channel MCP server runs (the package `bin`; AC1 bakes this verbatim). */
-export const PIPELINE_CREW_MCP_BIN = "pipeline-crew-mcp";
+/**
+ * The absolute path to this package's `bin.ts` entry, resolved from THIS module's own location so it
+ * is correct wherever the package is installed (a distributable plugin), never a machine-hardcoded
+ * path. The launched crew MCP server runs `<node> <this> session …`; a bare unlinked bin name would
+ * not resolve on the launched session's PATH (#3425). Same idiom as ensure-tracker.ts's `SELF_PATH`.
+ */
+export const CREW_SESSION_BIN_PATH = fileURLToPath(new URL("../bin.ts", import.meta.url));
 /** The subcommand that runs one live crew session (`bin.ts`). */
 export const CREW_SESSION_COMMAND = "session";
 /**
@@ -58,8 +71,9 @@ const sessionMcpConfigJson = (
 	JSON.stringify({
 		mcpServers: {
 			[serverName]: {
-				command: PIPELINE_CREW_MCP_BIN,
+				command: process.execPath,
 				args: [
+					CREW_SESSION_BIN_PATH,
 					CREW_SESSION_COMMAND,
 					"--role",
 					role,
@@ -100,7 +114,26 @@ export interface SessionBindInput {
 	readonly instance?: string | undefined;
 	/** The resolved channels dimension of the crew `LaunchConfig` (#3293), consumed read-only. */
 	readonly channels: ChannelConfig;
+	/**
+	 * Whether the crew server's `bin.ts` resolves on disk — injected so the fail-closed
+	 * resolvability guard is unit-testable without moving the real file. Default: the real
+	 * `existsSync`, checked against `CREW_SESSION_BIN_PATH` (#3425).
+	 */
+	readonly binExists?: (binPath: string) => boolean;
 }
+
+/**
+ * The crew session's own MCP server names a `bin.ts` that does not resolve on disk, so `<node>
+ * <bin.ts>` would fail to spawn and the channel would come up silently inert — the missing sibling
+ * to `CrewServerNotRegisteredError` that let #3425 be SILENT (registration was guarded, resolvability
+ * was not). Refuse the launch: a bound bind now implies the bin actually resolves.
+ */
+export class CrewSessionBinUnresolvableError extends Schema.TaggedErrorClass<CrewSessionBinUnresolvableError>()(
+	"@kampus/pipeline-crew-mcp/standup/CrewSessionBinUnresolvableError",
+	{
+		binPath: Schema.String,
+	},
+) {}
 
 /**
  * The crew session's own server is defined in `--mcp-config` but not named in the channel flag, so
@@ -139,10 +172,22 @@ const pluginOf = (ref: string): string | undefined =>
  */
 export const buildSessionBind = (
 	input: SessionBindInput,
-): Effect.Effect<SessionBind, CrewServerNotRegisteredError | ChannelPluginNotAllowedError> =>
+): Effect.Effect<
+	SessionBind,
+	CrewSessionBinUnresolvableError | CrewServerNotRegisteredError | ChannelPluginNotAllowedError
+> =>
 	Effect.gen(function* () {
 		const {role, projectRoot, serverName, instance, channels} = input;
+		const binExists = input.binExists ?? existsSync;
 		const servers = channels.servers;
+
+		// Resolvability before anything else: the bin the `--mcp-config` command runs must exist on
+		// disk, else the launched `<node> <bin.ts>` fails to spawn and the channel is inert (#3425).
+		if (!binExists(CREW_SESSION_BIN_PATH)) {
+			return yield* Effect.fail(
+				new CrewSessionBinUnresolvableError({binPath: CREW_SESSION_BIN_PATH}),
+			);
+		}
 
 		if (!servers.includes(crewServerRef(serverName))) {
 			return yield* Effect.fail(new CrewServerNotRegisteredError({serverName, servers}));
