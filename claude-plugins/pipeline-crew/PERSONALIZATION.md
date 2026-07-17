@@ -99,6 +99,25 @@ cp "${CLAUDE_PLUGIN_ROOT}/crew.config.template.jsonc" .claude/crew.config.jsonc
 echo ".claude/crew.config.jsonc" >> .gitignore
 ```
 
+### The one stand-up command
+
+Once the config is filled, boot the whole crew from it in **one command** — `/stand-up`
+(the plugin's thin [`commands/stand-up.md`](commands/stand-up.md)), which invokes the
+`@kampus/pipeline-crew-mcp` substrate's `stand-up` subcommand (ADR
+[0192](../../.decisions/0192-standup-launcher-crew-mcp-subcommand.md)):
+
+```bash
+pipeline-crew-mcp stand-up            # defaults --project-root to the working directory
+```
+
+It resolves the config through the **same** `$CREW_CONFIG` → `.claude/crew.config.jsonc`
+order as every seam key, asserts the pinned CLI version, ensures the tracker, derives the
+roster session set, and launches every session bound to its role lease and placed in tmux —
+**fail-loud with no partial crew**: a missing or malformed launch dimension (or `tmux`
+dimension) aborts the launch naming that dimension, before any session starts. The
+launch-dimension reader ([`config.ts`](../../packages/pipeline-crew-mcp/src/standup/config.ts))
+is the fail-closed validator for the `cliVersion` / `engineCount` / `channels` dimensions.
+
 The three-session tmux topology the config drives (intake → execution → human) and the
 full stand-up walkthrough are the pipeline-crew **README**'s scope (issue #2356); this doc
 owns the *seam* — the config mechanism and the dimension contract.

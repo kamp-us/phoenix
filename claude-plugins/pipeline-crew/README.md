@@ -157,11 +157,47 @@ The model tiers are load-bearing, not cosmetic: because the ephemeral pipeline a
 subagent it spawns. Bring the **engineering-manager** up on the build tier and the intake
 session on the planning tier — the config records which is which so no role guesses.
 
-## Stand up the three tmux sessions
+## Stand up — one command
 
-Once the config is filled, bring up one tmux session with one window per seam and start a
-Claude Code session in each. The window names come from your `tmux.*` config — the fictional
-fill below uses session `crew` with windows `triage`, `em`, `ea`:
+Once the config is filled, boot the **whole crew in one command**:
+
+```
+/stand-up
+```
+
+That runs the plugin's thin [`commands/stand-up.md`](commands/stand-up.md), which invokes the
+`@kampus/pipeline-crew-mcp` substrate's `stand-up` subcommand (the launcher home ratified by
+ADR [0192](../../.decisions/0192-standup-launcher-crew-mcp-subcommand.md) — the plugin carries
+**no launcher logic**, only this thin front). You can also run the substrate directly:
+
+```bash
+pipeline-crew-mcp stand-up            # defaults --project-root to the working directory
+```
+
+The launcher runs, **in order**:
+
+1. **Assert the pinned CLI version** (`cliVersion`) — a hard gate, so the crew never launches
+   on a drifted Claude Code CLI (channels are a research preview whose behavior varies by
+   version).
+2. **Ensure the per-project tracker** is up (start-if-absent / reuse-if-present).
+3. **Derive the roster session set** — one session per bridge role + `engineCount` engine
+   sessions, each addressed to its role-lease inbox.
+4. **Build each session's bind** (its inline channel `--mcp-config` + registration flag) and
+   **compute its tmux placement** (a window under `tmux.session`).
+5. **Launch** each `claude` session, bound to its role lease and placed on your screen.
+
+It is **fail-loud with no partial crew**: every bind and placement is resolved and validated
+*before the first session launches*, so a drifted CLI pin, a missing config dimension, an
+unstartable tracker, an inert channel, or an unnamed/colliding tmux window **aborts before any
+session is launched** and names the cause. Nothing is hand-launched — fix the named precondition
+and re-run. This is the launcher-automated path; the by-hand walkthrough below shows what each
+session is and how to bring the crew up manually.
+
+## Stand up by hand — what each session is
+
+You can also bring the crew up manually. Create one tmux session with one window per seam and
+start a Claude Code session in each. The window names come from your `tmux.*` config — the
+fictional fill below uses session `crew` with windows `triage`, `em`, `ea`:
 
 ```bash
 # Create the session with the intake window, then add the execution + human windows.
@@ -213,15 +249,25 @@ pipeline-crew/
 │   ├── triage-guy.md             # intake seam
 │   ├── engineering-manager.md    # execution seam
 │   └── exec-assistant.md         # human seam (EA / chief-of-staff)
+├── commands/
+│   └── stand-up.md               # the one stand-up command (thin front for the substrate launcher, ADR 0192)
 ├── PERSONALIZATION.md            # the personalization seam — the def contract + dimension table
 ├── crew.config.template.jsonc    # placeholder-only per-install config template
 └── README.md                     # this file
 ```
 
+The launcher's mechanical logic lives in the `@kampus/pipeline-crew-mcp` substrate
+(`packages/pipeline-crew-mcp/src/standup/`), invoked by the thin `commands/stand-up.md` — the
+plugin ships no launcher Node code (ADR 0192).
+
 ## See also
 
 - [`PERSONALIZATION.md`](PERSONALIZATION.md) — the seam mechanism, the canonical dimension
   table, and the stand-up contract the three defs write against.
+- [`commands/stand-up.md`](commands/stand-up.md) — the one stand-up command (the thin front for
+  the substrate launcher).
+- ADR [0192](../../.decisions/0192-standup-launcher-crew-mcp-subcommand.md) — the launcher's home
+  + form (the `pipeline-crew-mcp stand-up` subcommand invoked by one thin plugin command).
 - [`../kampus-pipeline/`](../kampus-pipeline/) — the pipeline this crew conducts (the skills +
   ephemeral agents).
 - ADR [0062](../../.decisions/0062-repo-as-config-plugin.md) — the repo-as-config seam this
