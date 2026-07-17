@@ -51,18 +51,7 @@ export const ReleaseClaim = Schema.Struct({
 	at: Timestamp,
 });
 
-// Kind 2 — planned-epic handoff (EM → builder).
-
-export const EpicHandoffNotice = Schema.Struct({
-	epic: Schema.NonEmptyString,
-	child: Schema.NonEmptyString,
-	from: RoleId,
-	to: RoleId,
-	summary: Schema.optionalKey(Schema.String),
-	at: Timestamp,
-});
-
-// Kind 3 — drain-progress tally.
+// Kind 2 — drain-progress tally.
 
 export const DrainProgressTally = Schema.Struct({
 	scope: Schema.NonEmptyString,
@@ -73,7 +62,7 @@ export const DrainProgressTally = Schema.Struct({
 	at: Timestamp,
 });
 
-// Kind 4 — intake ping.
+// Kind 3 — intake ping.
 
 export const IntakePing = Schema.Struct({
 	issue: Schema.NonEmptyString,
@@ -82,7 +71,7 @@ export const IntakePing = Schema.Struct({
 	at: Timestamp,
 });
 
-// Kind 5 — role discovery / presence (announce + lookup).
+// Kind 4 — role discovery / presence (announce + lookup).
 
 /** One presence record: a peer, the role it serves, and when it was last seen. */
 export const PresenceEntry = Schema.Struct({
@@ -109,18 +98,10 @@ export const RoleLookupResult = Schema.Struct({
 	peers: Schema.Array(PresenceEntry),
 });
 
-// Kind 6 — heartbeat (presence TTL keepalive).
+// Kind 5 — heartbeat (presence TTL keepalive).
 
 export const Heartbeat = Schema.Struct({
 	peer: PeerId,
 	ttlSeconds: Schema.Int,
-	at: Timestamp,
-});
-
-// Kind 7 — inbox ack (delivery acknowledgement).
-
-export const InboxAck = Schema.Struct({
-	messageId: MessageId,
-	by: PeerId,
 	at: Timestamp,
 });

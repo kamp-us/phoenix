@@ -39,25 +39,7 @@ describe("protocol/schema round-trips", () => {
 		});
 	});
 
-	it("kind 2 — planned-epic handoff (with and without the optional summary)", () => {
-		roundTrips(Messages.EpicHandoffNotice, {
-			epic: "epic:3045",
-			child: "issue:3054",
-			from: "em",
-			to: "builder",
-			summary: "protocol/ is the foundation edge codes against",
-			at: "2026-07-16T10:01:00Z",
-		});
-		roundTrips(Messages.EpicHandoffNotice, {
-			epic: "epic:3045",
-			child: "issue:3054",
-			from: "em",
-			to: "builder",
-			at: "2026-07-16T10:01:00Z",
-		});
-	});
-
-	it("kind 3 — drain-progress tally", () => {
+	it("kind 2 — drain-progress tally", () => {
 		roundTrips(Messages.DrainProgressTally, {
 			scope: "milestone:crew-mcp",
 			completed: 3,
@@ -68,7 +50,7 @@ describe("protocol/schema round-trips", () => {
 		});
 	});
 
-	it("kind 4 — intake ping (with and without the optional note)", () => {
+	it("kind 3 — intake ping (with and without the optional note)", () => {
 		roundTrips(Messages.IntakePing, {
 			issue: "issue:3100",
 			from: "triage",
@@ -82,7 +64,7 @@ describe("protocol/schema round-trips", () => {
 		});
 	});
 
-	it("kind 5 — presence announce + role lookup query/result", () => {
+	it("kind 4 — presence announce + role lookup query/result", () => {
 		roundTrips(Messages.PresenceAnnouncement, {
 			peer: "peer-a",
 			role: "builder",
@@ -99,19 +81,11 @@ describe("protocol/schema round-trips", () => {
 		roundTrips(Messages.RoleLookupResult, {role: "builder", peers: []});
 	});
 
-	it("kind 6 — heartbeat", () => {
+	it("kind 5 — heartbeat", () => {
 		roundTrips(Messages.Heartbeat, {
 			peer: "peer-a",
 			ttlSeconds: 30,
 			at: "2026-07-16T10:05:00Z",
-		});
-	});
-
-	it("kind 7 — inbox ack", () => {
-		roundTrips(Messages.InboxAck, {
-			messageId: "msg-1",
-			by: "peer-b",
-			at: "2026-07-16T10:06:00Z",
 		});
 	});
 });

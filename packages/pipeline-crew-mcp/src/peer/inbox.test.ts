@@ -1,5 +1,5 @@
 /**
- * Inbox-ack semantics (AC 2): a `Deliver` to a peer's inbox returns a `Messages.InboxAck`
+ * Inbox-ack semantics (AC 2): a `Deliver` to a peer's inbox returns an `InboxAck`
  * whose meaning is delivered-to-inbox — it echoes the sender's `messageId` and is stamped
  * `by` the receiving peer. Driven over the in-memory no-serialization RPC transport
  * (`RpcTest`), so the assertion is on the real client/server delivery path, not a stub.

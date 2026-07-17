@@ -10,12 +10,12 @@
  */
 import {Context, Effect, Schema} from "effect";
 import {Tool, Toolkit} from "effect/unstable/ai";
-import {type InboxAck, PeerUnreachableError} from "../peer/index.ts";
-import {crewMessageKinds, Messages, payloadSchemaForKind} from "../protocol/index.ts";
+import {InboxAck, PeerUnreachableError} from "../peer/index.ts";
+import {crewMessageKinds, payloadSchemaForKind} from "../protocol/index.ts";
 
 /**
  * A message rejected at the wire because its shape doesn't match the catalog: an unknown
- * `kind` (not one of the 7 catalog kinds) or a `body` that fails that kind's payload schema.
+ * `kind` (not one of the 6 catalog kinds) or a `body` that fails that kind's payload schema.
  * The gate that makes the typed catalog an invariant, not advice (#3229) — the sender gets
  * this typed reject instead of a delivered-to-inbox ack, so a wrong shape never reaches a peer.
  */
@@ -79,7 +79,7 @@ export const SendChannelMessage = Tool.make("channel_send", {
 		kind: Schema.NonEmptyString,
 		body: Schema.Unknown,
 	}),
-	success: Messages.InboxAck,
+	success: InboxAck,
 	failure: Schema.Union([PeerUnreachableError, InvalidMessageError]),
 });
 
