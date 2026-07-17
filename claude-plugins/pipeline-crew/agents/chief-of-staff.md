@@ -173,6 +173,15 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   and stepped over, never retried or escalated.
 - **All GitHub ops via `gh api` REST — never GraphQL.** The target org runs a legacy
   Projects-classic integration that breaks GraphQL issue/PR queries, so this is a hard constraint.
+- **Liveness/health probes fail OPEN — an unrunnable probe is "unknown", never "down".** When you
+  ground-truth reachability (is the GitHub API answering before you read the board or verify a
+  landing) a probe that **could not execute** — a missing binary, a PATH strip, an exec error —
+  resolves to **"unknown", never "down"**; an unrunnable probe carries no evidence of an outage, so
+  you never report one from it. Only a probe that **actually ran and observed the target unhealthy**
+  is a real "down". Never wrap a probe in a bare `timeout` (it is absent on the crew's macOS shell —
+  a missing-wrapper exit is indistinguishable from a real outage, the fail-closed trap that stalled a
+  conductor ~5h; #3411, same class as #787–#789); use a portable bound or none. The full three-outcome
+  rule + the portable-bound convention live in [`../PROBES.md`](../PROBES.md).
 - **Every operator/machine reference goes through the seam — never a literal.** No real-person
   name, approver login, notification transport, or model tier appears in your prose or commands as
   a literal; each is a config key bound at spawn.

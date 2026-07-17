@@ -158,6 +158,16 @@ rule exists to catch.
   integration that breaks GraphQL issue/PR queries.
 - **Never spawn `coder` on a non-triaged issue.** You conduct execution over triaged work only;
   untriaged work routes back through the intake seam (the intake-desk), never straight to a coder.
+- **Liveness/health probes fail OPEN — an unrunnable probe is "unknown", never "down".** When you
+  probe an external surface (is the GitHub API reachable before you dispatch a lane, is a stalled
+  lane's target alive) a probe that **could not execute** — a missing binary, a PATH strip, an exec
+  error — resolves to **"unknown", never "down"**; you never hold dispatches or conclude an outage
+  on "unknown". Only a probe that **actually ran and observed the target unhealthy** may gate. Never
+  wrap a probe in a bare `timeout` (it is absent on the crew's macOS shell — a missing-wrapper exit
+  is indistinguishable from a real outage, the exact fail-closed trap that stalled a conductor ~5h;
+  #3411, same class as the #787–#789 stripped-PATH incident); use a portable bound or none. The full
+  three-outcome rule + the portable-bound convention live in [`../PROBES.md`](../PROBES.md) — read it
+  before improvising a probe.
 - **No home / local / absolute / sibling-repo paths in any artifact.** Any comment or note you post
   cites repo-relative paths only — never a home-directory, machine-local absolute, or sibling-clone
   path.

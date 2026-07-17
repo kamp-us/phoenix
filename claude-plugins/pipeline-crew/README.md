@@ -196,6 +196,7 @@ pipeline-crew/
 │   ├── engineering-manager.md    # execution engine (coder → reviewer → shipper), ×N
 │   └── chief-of-staff.md         # outbound-awareness bridge (live verifier, human comms)
 ├── PERSONALIZATION.md            # the personalization seam — the config contract + dimensions
+├── PROBES.md                     # probe discipline — fail-open liveness/health probes (#3411)
 ├── crew.config.template.jsonc    # placeholder-only per-install config template
 └── README.md                     # this file
 ```
@@ -204,6 +205,8 @@ pipeline-crew/
 
 - [`PERSONALIZATION.md`](PERSONALIZATION.md) — the seam mechanism, the dimension table, and the
   stand-up contract the four defs write against.
+- [`PROBES.md`](PROBES.md) — probe discipline: liveness/health probes fail OPEN (an unrunnable
+  probe is "unknown", never "down") + the no-bare-`timeout` convention. The conductor defs cite it.
 - [`../kampus-pipeline/`](../kampus-pipeline/) — the pipeline this crew conducts (the skills +
   ephemeral agents).
 - [`../../packages/pipeline-crew-mcp/`](../../packages/pipeline-crew-mcp/) — the channel
