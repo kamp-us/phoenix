@@ -312,6 +312,21 @@ by the campaign-skill epic #2652 (roadmap map #2620, decisions #2641); grounded 
 | founder-approval trace | The **fail-closed approval marker** on a **wave label** that gates **campaign** creation — a campaign is created only with the trace present. **Invoker-agnostic:** a human OR an agent may invoke the campaign skill, but the *trace* (not the invoker's identity) is the gate — the gated-audit-wave play, findings returned to the founder for approval before filing (#2641). | the invoker's identity (the trace is the gate, not who invokes); a default-open path (absent trace ⇒ no campaign — fail-closed); wayfinder's founder-decision-fork (a different human seam) |
 | campaign lifecycle (active/done) | The two **symmetric campaign states** — `active` (draining) and `done` (complete) — carried in the `ROADMAP.md` `## Campaigns` table's State column, with **guard coverage**: the active↔done lifecycle guard (the `roadmap-guard` idiom, #2660) fails closed on an ill-formed transition. | a one-way / write-once status (the two states are symmetric); an unguarded free-text field (the lifecycle guard covers the transition) |
 
+## Design coverage (the descriptive/normative firewall — ADR 0194)
+
+The boundary the design-coverage extractor is built on (ADR [0194](../.decisions/0194-design-law-jsdoc-firewall.md),
+issue #3152): an agent may auto-generate the *descriptive* half of the design docs (the component
+inventory) but never the *normative* half (the founder-authored four pillars / prohibitions /
+role-token values in [`design-system-manifest.md`](../design-system-manifest.md)). Grounded in
+ADR [0078](../.decisions/0078-product-driven-decisions-by-default.md) (design-law is founder-authored)
+and ADR [0162](../.decisions/0162-four-pillars-design-law.md) (the four-pillars design law).
+
+| Term | Definition | Not |
+|---|---|---|
+| descriptive/normative firewall | The **hard boundary** (ADR [0194](../.decisions/0194-design-law-jsdoc-firewall.md)) separating what a design-coverage extractor/agent MAY write from what only the founder writes. **Descriptive** (agent-writable): the component inventory — primitives that exist, their props/slots, and a per-component *when-to-use*. **Normative** (founder-authored, never auto-written): the four pillars, the prohibitions, and the role-token values in `design-system-manifest.md`. The edge case — a per-component when-to-use — is firewalled by living *on* the component but being `@agent`-generated and **referencing** the manifest's law, never minting new law (the ADR [0078](../.decisions/0078-product-driven-decisions-by-default.md) guard at the doc layer). | a license to auto-edit the manifest (the normative half is out of the agent's reach); a soft convention (it is a fail-closed drift-guarded boundary); a per-component *copy* of the law (a when-to-use references the law, it does not restate it) |
+| descriptive component inventory | The **agent-writable half** of the design docs (ADR [0194](../.decisions/0194-design-law-jsdoc-firewall.md)): the catalogue of which primitives exist, their props/slots, and each one's *when-to-use*, extracted from JSDoc-on-code and rendered into one central curated-hybrid **index** (inline the when-to-use core, link to source for depth — the effect-smol `LLMS.md` idiom). Kept fresh by a generate command + fail-closed drift guard (pre-commit + CI). | the **normative** design law (the four pillars / prohibitions / role tokens — founder-authored); a hand-maintained doc (it is generated + drift-guarded); a place new design law may be introduced (it only *describes* + *references* the law) |
+| `@agent` directive | A **human-seeded JSDoc tag** on a component (ADR [0194](../.decisions/0194-design-law-jsdoc-firewall.md)) that steers the extractor — the *protected seed* the generate step must preserve rather than overwrite. Rides alongside the descriptive tags (`@component`, `@slot`, prop docs) that source the component inventory; keeps the tag vocabulary lean, a deliberately-minimal v1 expected to evolve with real use. | a descriptive tag the extractor regenerates (`@component`/`@slot`/prop docs are generated; `@agent` is preserved); design law (a directive steers extraction, it does not mint pillars/prohibitions/role tokens); a frozen final schema (the tag vocabulary iterates as gaps surface) |
+
 ## Apps
 
 | Term | Definition | Not |
