@@ -82,6 +82,19 @@ test.describe("SozlukHome create-flow (+ yeni tanım → composer)", () => {
 		expect(slug).not.toBe("");
 
 		await page.getByRole("button", {name: /yeni tanım/i}).click();
+
+		// Let the dialog's `kp-dialog-pop` entry animation (a translate+scale pop-in,
+		// Dialog.css) finish before touching its controls. Mid-animation the popup —
+		// and the `oluştur` submit inside it — is still moving, which trips
+		// Playwright's element-stability check and, on the retry, races a Base UI
+		// portal re-render that detaches the button mid-click (the #3517 flake). This
+		// awaits the actual CSS animation to settle, not a blanket sleep.
+		const dialog = page.locator(".kp-dialog__popup");
+		await expect(dialog).toBeVisible();
+		await dialog.evaluate((el) =>
+			Promise.all(el.getAnimations({subtree: true}).map((a) => a.finished)),
+		);
+
 		// The dialog collects the term name (the composer is slug-addressed).
 		await page.getByLabel("Terim").fill(term);
 		await page.getByRole("button", {name: /^oluştur$/i}).click();
