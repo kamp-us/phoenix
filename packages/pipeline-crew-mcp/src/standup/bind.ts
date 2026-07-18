@@ -77,6 +77,22 @@ export const NAME_FLAG = "--name";
 export const PLUGIN_DIR_FLAG = "--plugin-dir";
 /** Boots the session AS its role persona by resolving the plugin agent-def named `crew-<role>` (see PLUGIN_DIR_FLAG, #3447). */
 export const AGENT_FLAG = "--agent";
+/**
+ * The launcher's initial boot turn: a positional prompt handed to `claude` at launch so the freshly
+ * spawned session TAKES a first turn instead of loading its persona and sitting idle. This is the only
+ * missing piece for the crew engine's cold-start self-drain (#3516): the role def (#3512) already
+ * carries the "on boot, sweep the board and start the self-drain loop" behavior, but a persona-loaded
+ * session only reads that def — it never fires until it is given a turn, and a launcher that passes no
+ * initial prompt never gives it one. It is a bare positional (no flag) so it maps to the CLI's
+ * `[prompt]` argument and — with NO `-p`/`--print` — keeps the session INTERACTIVE, i.e. it runs this
+ * turn and stays alive to self-drain (grounded on the installed CLI 2.1.214:
+ * `Usage: claude [options] [command] [prompt]` — "starts an interactive session by default, use
+ * -p/--print for non-interactive output"). Role-agnostic on purpose: it nudges the session to run
+ * whatever cold-start its own def defines, so it fits every crew role (bridge + engine) without the
+ * launcher re-encoding each persona's boot behavior.
+ */
+export const BOOT_PROMPT =
+	"Begin now. Run your role's on-boot cold-start behavior as defined by your agent instructions: announce your presence on the channel, then start your standing work loop under your own power. Do not wait to be pinged, relayed to, or told to start.";
 /** The pipeline-crew plugin root under a given project root — the dir `--plugin-dir` loads agent-defs from. */
 const crewPluginDir = (projectRoot: string): string =>
 	join(projectRoot, "claude-plugins/pipeline-crew");
@@ -150,10 +166,19 @@ export interface SessionBind {
 	/** `["--agent", "crew-<role>"]` — boots the session AS its role persona (collision-free name, see AGENT_FLAG). */
 	readonly agentArg: readonly [flag: string, agentName: string];
 	/**
-	 * The complete argv `[...modelArg, ...pluginDirArg, ...agentArg, ...channelArg, ...nameArg]` the
-	 * launcher passes to `claude`. It boots the role persona (`--plugin-dir` + `--agent`, #3447) and no
-	 * longer carries `--mcp-config`: the crew server now registers via the pane's project-scope
-	 * `.mcp.json` (`serverConfig`), which is what the channel resolver actually reads (#3444).
+	 * `[BOOT_PROMPT]` — the single positional initial prompt that hands the spawned session its first
+	 * turn so its def's on-boot cold-start fires from launch, not on a hand-kick (#3516; see BOOT_PROMPT).
+	 * It rides the argv TAIL, after the non-variadic `--name <name>`, so it lands as the CLI's `[prompt]`
+	 * positional rather than being swallowed by the variadic `--channels`/dev-channel option ahead of it.
+	 */
+	readonly bootPromptArg: readonly [prompt: string];
+	/**
+	 * The complete argv
+	 * `[...modelArg, ...pluginDirArg, ...agentArg, ...channelArg, ...nameArg, ...bootPromptArg]` the
+	 * launcher passes to `claude`. It boots the role persona (`--plugin-dir` + `--agent`, #3447), then
+	 * gives the session its boot turn via the tail positional prompt (#3516), and no longer carries
+	 * `--mcp-config`: the crew server now registers via the pane's project-scope `.mcp.json`
+	 * (`serverConfig`), which is what the channel resolver actually reads (#3444).
 	 */
 	readonly argv: readonly string[];
 }
@@ -294,6 +319,10 @@ export const buildSessionBind = (
 		// collision-free `crew-<role>`, so map the bare role at this argv site (see AGENT_FLAG for why).
 		const pluginDirArg: readonly [string, string] = [PLUGIN_DIR_FLAG, crewPluginDir(projectRoot)];
 		const agentArg: readonly [string, string] = [AGENT_FLAG, `crew-${role}`];
+		// The launcher's boot turn (#3516): a tail positional prompt so the spawned session fires its
+		// def's cold-start instead of idling. Tail placement (after the non-variadic --name) keeps it out
+		// of the variadic channel option's reach; no -p/--print keeps the session interactive to self-drain.
+		const bootPromptArg: readonly [string] = [BOOT_PROMPT];
 
 		return {
 			role,
@@ -305,6 +334,14 @@ export const buildSessionBind = (
 			nameArg,
 			pluginDirArg,
 			agentArg,
-			argv: [...modelArg, ...pluginDirArg, ...agentArg, ...channelArg, ...nameArg],
+			bootPromptArg,
+			argv: [
+				...modelArg,
+				...pluginDirArg,
+				...agentArg,
+				...channelArg,
+				...nameArg,
+				...bootPromptArg,
+			],
 		};
 	});

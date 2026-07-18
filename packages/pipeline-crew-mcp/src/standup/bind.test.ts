@@ -14,6 +14,7 @@ import {Effect} from "effect";
 import {
 	AGENT_FLAG,
 	ALLOWLIST_CHANNEL_FLAG,
+	BOOT_PROMPT,
 	buildSessionBind,
 	ChannelPluginNotAllowedError,
 	CREW_SESSION_BIN_PATH,
@@ -74,8 +75,8 @@ describe("standup/bind — per-session bind constructor", () => {
 				]);
 
 				// AC2: the argv boots the role persona (--plugin-dir + --agent, #3447), registers the channel,
-				// closes with the visible name (#3443), and carries NO `--mcp-config` — the crew server now
-				// registers via the persisted local scope (#3444).
+				// carries the visible name (#3443), closes with the positional boot-turn prompt (#3516), and
+				// carries NO `--mcp-config` — the crew server now registers via the persisted local scope (#3444).
 				assert.deepStrictEqual(bind.argv, [
 					PLUGIN_DIR_FLAG,
 					EXPECTED_PLUGIN_DIR,
@@ -86,6 +87,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					"plugin:kampus:sozluk",
 					NAME_FLAG,
 					ROLE,
+					BOOT_PROMPT,
 				]);
 				assert.notInclude(bind.argv, "--mcp-config");
 			}),
@@ -120,6 +122,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					...bind.agentArg,
 					...bind.channelArg,
 					...bind.nameArg,
+					...bind.bootPromptArg,
 				]);
 			}),
 	);
@@ -325,8 +328,8 @@ describe("standup/bind — per-session bind constructor", () => {
 			// The tier boots the session's model — a family tier is a verbatim --model alias (config.ts
 			// Tier, grounded on the 2.1.212 bundle), so tier:opus yields `--model opus`.
 			assert.deepStrictEqual([...bind.modelArg], [MODEL_FLAG, "opus"]);
-			// --model leads the argv; then the persona flags (#3447), the channel fragment, and the name
-			// (#3443). No --mcp-config.
+			// --model leads the argv; then the persona flags (#3447), the channel fragment, the name
+			// (#3443), and the tail boot-turn prompt (#3516). No --mcp-config.
 			assert.deepStrictEqual(
 				[...bind.argv],
 				[
@@ -336,6 +339,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					...bind.agentArg,
 					...bind.channelArg,
 					...bind.nameArg,
+					...bind.bootPromptArg,
 				],
 			);
 		}),
@@ -378,11 +382,17 @@ describe("standup/bind — per-session bind constructor", () => {
 				});
 				assert.deepStrictEqual([...bind.modelArg], []);
 				assert.notInclude(bind.argv, MODEL_FLAG);
-				// No tier ⇒ no --model; argv is the persona flags (#3447) + the channel fragment closed by
-				// the name (#3443).
+				// No tier ⇒ no --model; argv is the persona flags (#3447) + the channel fragment + the name
+				// (#3443), closed by the tail boot-turn prompt (#3516).
 				assert.deepStrictEqual(
 					[...bind.argv],
-					[...bind.pluginDirArg, ...bind.agentArg, ...bind.channelArg, ...bind.nameArg],
+					[
+						...bind.pluginDirArg,
+						...bind.agentArg,
+						...bind.channelArg,
+						...bind.nameArg,
+						...bind.bootPromptArg,
+					],
 				);
 			}),
 	);
@@ -403,8 +413,13 @@ describe("standup/bind — per-session bind constructor", () => {
 					channels,
 				});
 				assert.deepStrictEqual([...bind.nameArg], [NAME_FLAG, "chief-of-staff"]);
-				// the name flag rides the tail of the argv, after the channel fragment.
-				assert.deepStrictEqual([...bind.argv].slice(-2), [NAME_FLAG, "chief-of-staff"]);
+				// the name flag rides after the channel fragment, immediately before the tail boot-turn
+				// prompt (#3516) — so it's the last-but-one pair, with BOOT_PROMPT at the very tail.
+				assert.deepStrictEqual([...bind.argv].slice(-3), [
+					NAME_FLAG,
+					"chief-of-staff",
+					BOOT_PROMPT,
+				]);
 			}),
 	);
 
@@ -436,6 +451,65 @@ describe("standup/bind — per-session bind constructor", () => {
 				// the two engine panes come up with DISTINCT visible names, never two identical roles.
 				assert.notStrictEqual(engineOne.nameArg[1], engineTwo.nameArg[1]);
 			}),
+	);
+
+	it.effect(
+		"hands the session its boot turn: a single positional prompt at the argv tail, no -p/--print (#3516)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				const bind = yield* buildSessionBind({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				});
+
+				// The boot prompt is exactly one bare positional (no flag) carrying BOOT_PROMPT — that is
+				// the CLI's `[prompt]` argument, which gives the spawned session its first turn so its def's
+				// cold-start fires from boot instead of idling (#3516).
+				assert.deepStrictEqual([...bind.bootPromptArg], [BOOT_PROMPT]);
+				// It rides the very tail of the argv, after --name (the non-variadic option that stops the
+				// variadic channel flag), so it lands as the positional prompt and isn't swallowed.
+				assert.strictEqual(bind.argv[bind.argv.length - 1], BOOT_PROMPT);
+				// Interactive, not headless: no -p/--print means the session runs this turn AND stays alive
+				// to self-drain (grounded on CLI 2.1.214: interactive by default, -p/--print exits).
+				assert.notInclude(bind.argv, "-p");
+				assert.notInclude(bind.argv, "--print");
+			}),
+	);
+
+	it.effect("every crew role (bridge + engine) gets the same role-agnostic boot turn (#3516)", () =>
+		Effect.gen(function* () {
+			const channels: ChannelConfig = {
+				mode: "development",
+				servers: ["server:pipeline-crew"],
+				allowedChannelPlugins: [],
+			};
+			// A bridge (no instance) and an engine (with instance) both receive the boot prompt — the def
+			// each boots as carries its own cold-start, so the launcher's turn is deliberately generic.
+			const bridge = yield* buildSessionBind({
+				role: "chief-of-staff",
+				projectRoot: PROJECT_ROOT,
+				serverName: SERVER_NAME,
+				channels,
+			});
+			const engine = yield* buildSessionBind({
+				role: "engineering-manager",
+				projectRoot: PROJECT_ROOT,
+				serverName: SERVER_NAME,
+				instance: "e-1",
+				channels,
+			});
+			assert.deepStrictEqual([...bridge.bootPromptArg], [BOOT_PROMPT]);
+			assert.deepStrictEqual([...engine.bootPromptArg], [BOOT_PROMPT]);
+			assert.strictEqual(bridge.argv[bridge.argv.length - 1], BOOT_PROMPT);
+			assert.strictEqual(engine.argv[engine.argv.length - 1], BOOT_PROMPT);
+		}),
 	);
 
 	it.effect("allowlist mode fails closed on a plugin channel whose plugin is not allowlisted", () =>
