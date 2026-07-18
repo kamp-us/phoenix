@@ -67,7 +67,7 @@ Without `return`, the next statement is unreachable but TypeScript won't catch i
 
 ```ts
 const addDefinition = Effect.fn("Sozluk.addDefinition")(function*(input) {
-  yield* run("addDefinition.insert", () => db.insert(...));
+  yield* run((db) => db.insert(definitionRecord).values(...));
   yield* recomputeTermSummary(input.termSlug, input.title, new Date());
   return {/* ... */};
 });
@@ -83,7 +83,7 @@ Both spans appear in the trace, nested. Helpers stay inside the layer's closure 
 
 - **Not a class.** It's a function constructor. Don't try to `new` it or extend it.
 - **Not for top-level Effects.** If you have a single Effect at module scope (no args), just write it as `const program = Effect.gen(function*() {...})` — `Effect.fn` is for argument-taking functions.
-- **Not a replacement for `Effect.gen` inline.** Inside a resolver body, `resolver(function*(_source, args) {...})` is `Generator`, not `Effect.fn`. The resolver wrapper handles the gen lifecycle. `Effect.fn` is for service methods you define separately and call multiple times.
+- **Not reserved for service methods — a fate resolver is one too.** A fate query/mutation resolver *is* an `Effect.fn`, named after its operation key: `Fate.mutation(schema, Effect.fn("definition.add")(function*({input}) {...}))` (`apps/web/worker/features/sozluk/mutations.ts`). The body destructures the decoded `{input}` (mutations) / `{args}` (queries), not a GraphQL `(_source, args)` pair, and the span surfaces the operation in the trace. So `Effect.fn` wraps both the resolver and the service methods it calls; a single no-arg top-level Effect stays plain `Effect.gen` (above).
 
 ## Naming spans well
 
@@ -91,7 +91,7 @@ The span name shows up in OTLP traces. Good names:
 
 - `Sozluk.addDefinition` — service + method
 - `Sozluk.recomputeTermSummary` — service + helper (private to the layer but still useful in traces)
-- `addDefinition.insert` — sub-operation inside a method (used as the `operation` argument to `Drizzle.run`, which uses it for the DB-level span)
+- `definition.addBody` — a sub-step wrapped in its own nested `Effect.fn` inside a resolver or method (`apps/web/worker/features/sozluk/mutations.ts`), so the step gets its own span in the trace
 
 Avoid:
 
@@ -101,19 +101,17 @@ Avoid:
 
 ## Layered tracing in practice
 
-For one resolver call (`addDefinitionMutation`), you'll see a trace like:
+For one fate mutation (`definition.add`), you'll see a trace like:
 
 ```
-graphql.mutation                                  150ms
-  Sozluk.addDefinition                            148ms
-    addDefinition.checkSlug (Drizzle.run)          5ms
-    addDefinition.insert (Drizzle.run)            42ms
-    Sozluk.recomputeTermSummary                    98ms
-      recomputeTermSummary.selectDefs (Drizzle.run) 12ms
-      recomputeTermSummary.upsert (Drizzle.run)   84ms
+POST /fate                                        150ms   ← the router request span (HttpEffect tracer)
+  definition.add                                  149ms   ← the resolver Effect.fn
+    definition.addBody                            148ms   ←   a nested sub-step Effect.fn
+      Sozluk.addDefinition                        140ms   ←   the service method
+        Sozluk.recomputeTermSummary                98ms
 ```
 
-Every span has a clear owner. When something is slow, the trace tells you whether it's the SQL, the orchestration, or the resolver wrapper.
+Handler and service `Effect.fn` spans parent to the router's request span because everything runs on the request fiber's tree (the `HttpEffect.toHandled` tracer middleware; pinned in `Interpreter.batch.test.ts` § observability — [fate-effect-interpreter.md](./fate-effect-interpreter.md)). `Drizzle.run` itself opens no span, so a DB call's time shows under the enclosing method's span. When something is slow, the trace tells you which resolver, method, or sub-step owns it.
 
 ## See also
 
