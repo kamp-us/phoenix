@@ -37,6 +37,7 @@ const failOnContact: PasaportShape = {
 	getBanState: die("getBanState"),
 	banUser: die("banUser"),
 	unbanUser: die("unbanUser"),
+	setRole: die("setRole"),
 	getEmailDeliveryState: die("getEmailDeliveryState"),
 	markEmailFailing: die("markEmailFailing"),
 	clearEmailFailing: die("clearEmailFailing"),

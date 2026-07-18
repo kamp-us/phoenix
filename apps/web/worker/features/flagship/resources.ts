@@ -40,6 +40,7 @@ import {
 	PHOENIX_SOZLUK_STAMP_WAVE,
 	PHOENIX_USER_ADMIN,
 	PHOENIX_USER_BAN,
+	PHOENIX_USER_ROLE_ASSIGN,
 	PROFILE_CANVAS,
 } from "../../../src/flags/keys.ts";
 import {AUDIT_ENVIRONMENT} from "../../environment.ts";
@@ -805,6 +806,37 @@ export const USER_BAN_FLAG = {
  */
 export const userBanFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_user_ban", {appId, ...USER_BAN_FLAG});
+
+/**
+ * The platform-role assignment dark-ship flag config (#3522, admin epic per ADR 0107).
+ * Default-OFF so the whole role-assign path reaches production dark: with it off the
+ * `Admin.over(platform)`-gated `user.setRole` mutation fails the invisible `Denied` (like
+ * a non-admin call), so an unreleased role-grant can never mint a moderator. Flipping it
+ * on is the human release act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `USER_BAN_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           pasaport (the identity + authority surface)
+ *   - originating:     #3522 (epic: admin dashboard, per ADR 0107)
+ *   - removal trigger: once role-assign graduates to on at 100% and stable for one
+ *                      release, retire the flag and inline the now-permanent path.
+ */
+export const USER_ROLE_ASSIGN_FLAG = {
+	key: PHOENIX_USER_ROLE_ASSIGN,
+	description:
+		"platform role assign dark-ship (#3522, ADR 0107). owner: pasaport. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const userRoleAssignFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_user_role_assign", {appId, ...USER_ROLE_ASSIGN_FLAG});
 
 /**
  * The admin email-delivery (failing-address) surface dark-ship flag config (#2692,

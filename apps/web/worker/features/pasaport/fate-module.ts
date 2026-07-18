@@ -13,6 +13,7 @@ import {
 	failingAddressSource,
 	profileSource,
 	promotionReceiptSource,
+	roleStateSource,
 	userSource,
 } from "./sources.ts";
 import {
@@ -50,6 +51,7 @@ export const fateModule = {
 		promotionReceiptSource,
 		authorshipStandingSource,
 		banStateSource,
+		roleStateSource,
 		emailDeliveryStateSource,
 		failingAddressSource,
 	],

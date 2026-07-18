@@ -21,6 +21,7 @@ import {
 	resolveCursor,
 } from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import {moderatorTuple, type PlatformRole} from "../kunye/moderate.ts";
 import type {StoredTier} from "../kunye/standing.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {
@@ -329,6 +330,19 @@ export class Pasaport extends Context.Service<
 			userId: string;
 			actorId: string;
 		}) => Effect.Effect<BanState, UserNotFound>;
+
+		// Assign a target account's platform role (#3522, admin epic per ADR 0107):
+		// `moderator` writes the `(userId, "moderates", platform)` relation tuple,
+		// `member` deletes it — the SPA-invokable writer #969/PR #1266's offline mint
+		// never gave the console. The tuple write IS the authority change (`isModerator`
+		// / `moderatorsAmong` re-read it), and an append to `user_role_event` records the
+		// actor + new role + time. Returns the assigned role. `UserNotFound` on an unknown
+		// target. The AUTHORITY is discharged at the resolver (`requireAdmin`), never here.
+		readonly setRole: (input: {
+			userId: string;
+			actorId: string;
+			role: PlatformRole;
+		}) => Effect.Effect<{readonly role: PlatformRole}, UserNotFound>;
 
 		// The target account's current email-delivery state, projected from the latest
 		// `email_delivery_event` row for its address (email-bounce epic #2687). A fresh
@@ -1172,6 +1186,48 @@ export const makePasaportLive = (auth: BetterAuthInstance) =>
 						}),
 					);
 					return yield* readBanState(input.userId);
+				}),
+
+				setRole: Effect.fn("Pasaport.setRole")(function* (input: {
+					userId: string;
+					actorId: string;
+					role: PlatformRole;
+				}) {
+					// Reject an unknown target up front so a role is never assigned to a
+					// non-existent id (mirrors `banUser`; the audit log stays meaningful).
+					const target = yield* run((db) => db.query.user.findFirst({where: {id: input.userId}}));
+					if (!target) return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
+
+					// The `moderates` tuple IS the authority: `moderator` grants it (idempotent
+					// on re-grant), `member` revokes it. Encoded through kunye's `moderatorTuple`
+					// so the write can't drift from the `isModerator` / `moderatorsAmong` read.
+					const tuple = moderatorTuple(input.userId);
+					yield* run((db) =>
+						input.role === "moderator"
+							? db.insert(schema.relationTuple).values(tuple).onConflictDoNothing()
+							: db
+									.delete(schema.relationTuple)
+									.where(
+										and(
+											eq(schema.relationTuple.subject, tuple.subject),
+											eq(schema.relationTuple.relation, tuple.relation),
+											eq(schema.relationTuple.object, tuple.object),
+										),
+									),
+					);
+
+					// Audit the assignment (actor, target, new role, time) on the append-only
+					// `user_role_event` log — the same audit shape ban/email-delivery use.
+					yield* run((db) =>
+						db.insert(schema.userRoleEvent).values({
+							id: crypto.randomUUID(),
+							userId: input.userId,
+							role: input.role,
+							actorId: input.actorId,
+							createdAt: new Date(),
+						}),
+					);
+					return {role: input.role};
 				}),
 
 				getEmailDeliveryState: Effect.fn("Pasaport.getEmailDeliveryState")(function* (

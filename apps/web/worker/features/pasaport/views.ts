@@ -8,6 +8,7 @@
  */
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
+import type {PlatformRole} from "../kunye/moderate.ts";
 import {CONTRIBUTION_VIEW_ORDER_BY} from "./ordering.ts";
 import type {ContributionRow} from "./Pasaport.ts";
 import {type ProfileRow, profileViewFields} from "./profile-fields.ts";
@@ -173,6 +174,23 @@ export class FailingAddressView extends FateDataView<FailingAddressViewRow>()("F
 	since: true,
 } satisfies {[K in keyof FailingAddressViewRow]: true}) {}
 
+// The admin role-assignment ack (#3522, admin epic per ADR 0107) — the projected
+// role returned by the `user.setRole` mutation. `id` === the target user id (the
+// client normalization key), so the ack reconciles the SAME account the roster
+// (`UserAdmin`) lists; `role` is the newly-assigned platform role (`moderator` iff
+// the `moderates` tuple was granted, else `member`). It carries ONLY the role — no
+// session, no PII — and is only ever produced past the `requireAdmin` gate + the
+// dark-ship flag, so it never leaks. Mirrors `BanStateView`.
+export type RoleStateViewRow = ViewRow<{
+	id: string;
+	role: PlatformRole;
+}>;
+
+export class RoleStateView extends FateDataView<RoleStateViewRow>()("RoleState")({
+	id: true,
+	role: true,
+} satisfies {[K in keyof RoleStateViewRow]: true}) {}
+
 // The çaylak-SELF authorship-standing aggregate (#1316, epic #1202) — the
 // "yazarlığa giden yol" read the #1291 status block consumes about ITSELF. The
 // subject is always the authenticated çaylak (the `myAuthorshipStanding` resolver
@@ -213,6 +231,7 @@ export const accountDeletionReceiptDataView = AccountDeletionReceiptView.view;
 export const promotionReceiptDataView = PromotionReceiptView.view;
 export const authorshipStandingDataView = AuthorshipStandingView.view;
 export const banStateDataView = BanStateView.view;
+export const roleStateDataView = RoleStateView.view;
 export const emailDeliveryStateDataView = EmailDeliveryStateView.view;
 export const failingAddressDataView = FailingAddressView.view;
 
@@ -223,5 +242,6 @@ export type AccountDeletionReceipt = WorkerEntity<typeof AccountDeletionReceiptV
 export type PromotionReceipt = WorkerEntity<typeof PromotionReceiptView>;
 export type AuthorshipStanding = WorkerEntity<typeof AuthorshipStandingView>;
 export type BanStateEntity = WorkerEntity<typeof BanStateView>;
+export type RoleStateEntity = WorkerEntity<typeof RoleStateView>;
 export type EmailDeliveryStateEntity = WorkerEntity<typeof EmailDeliveryStateView>;
 export type FailingAddressEntity = WorkerEntity<typeof FailingAddressView>;

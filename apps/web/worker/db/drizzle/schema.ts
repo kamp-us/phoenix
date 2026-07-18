@@ -235,6 +235,38 @@ export const emailDeliveryEvent = sqliteTable(
 );
 
 /**
+ * Append-only platform-role assignment log (#3522, admin epic per ADR 0107). The
+ * audit trail for the `Admin.over(platform)`-gated `user.setRole` mutation — the
+ * SPA-invokable writer for the `moderates` relation tuple that #969/PR #1266's
+ * offline mint never gave the console. Same append-only, latest-event-wins shape as
+ * {@link userBanEvent}: the newest event's `role` is the current assignment, so the
+ * log can never drift from the authoritative `relation_tuple` write the mutation
+ * commits alongside it. `role` is the NEW role the action set — `moderator` grants
+ * the `(user, "moderates", "platform")` tuple, `member` revokes it — so actor,
+ * target, new role, and time are all captured for the audit AC. The `(user_id,
+ * created_at DESC)` index serves the per-account latest-event read; `onDelete:
+ * cascade` ties the history to the account row (a kept tombstone survives account
+ * deletion, ADR 0097).
+ */
+export const userRoleEvent = sqliteTable(
+	"user_role_event",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, {onDelete: "cascade"}),
+		// The role this action assigned: `moderator` writes the `moderates` tuple,
+		// `member` clears it. The latest row projects to the account's current role.
+		role: text("role", {enum: ["member", "moderator"]}).notNull(),
+		// The admin who performed the action (a discharged `Admin` grant's account id),
+		// mirroring {@link userBanEvent}'s `actorId`.
+		actorId: text("actor_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [index("user_role_event_user_created").on(t.userId, sql`${t.createdAt} DESC`)],
+);
+
+/**
  * Per-(definition, voter) up-vote presence row. `user_vote` and
  * `definition_record.score` (COUNT(*) under `WHERE definition_id = ?`) are both
  * denormalized off this, recomputed inline in the same D1 batch as the vote write.
