@@ -81,10 +81,34 @@ index 87a6f7acdd3d7f89b41fac68e575d80a09748f64..978ddb8206b27201c26fb2ff189dfad1
  /**
   * Registers a `Toolkit` with the `McpServer`.
 diff --git a/dist/unstable/ai/McpServer.js b/dist/unstable/ai/McpServer.js
-index 4cb198b928a5538737af01c0d18a03c7d28eb445..60b2749fc62890cbe01cb103f1c15fce8d71a270 100644
+index 4cb198b928a5538737af01c0d18a03c7d28eb445..61e2bf1044a334b96832b2851757751240ff77a4 100644
 --- a/dist/unstable/ai/McpServer.js
 +++ b/dist/unstable/ai/McpServer.js
-@@ -329,9 +329,14 @@ export const run = /*#__PURE__*/Effect.fnUntraced(function* (options) {
+@@ -303,6 +303,23 @@ export const run = /*#__PURE__*/Effect.fnUntraced(function* (options) {
+                   requestId: String(request.payload.requestId)
+                 });
+               }
++              // phoenix patch (#3499): arm the notification drain's client gate. The run-loop drain
++              // fans every server->client notification (a crew channel wake AND tools/list_changed) by
++              // iterating `server.initializedClients` — a Set that is otherwise NEVER populated, so the
++              // drain iterates nothing and emits nothing (0 tokens delivered despite a returned ack).
++              // Two upstream defects compound: the `notifications/initialized` handler is a no-op, AND
++              // this branch would never reach it anyway — it dispatches client notifications by
++              // `handlers.mapUnsafe.get(request.tag)`, but the handler Context is keyed by `rpc.key`
++              // (`effect/rpc/Rpc/<tag>`), so the bare-tag lookup always misses and returns Effect.void.
++              // Arm the gate at the routing point instead, with the SAME numeric `clientId` the drain
++              // iterates (`clientIds`) and sends to — guaranteeing identity match. The client sends
++              // `notifications/initialized` after the initialize response per the MCP lifecycle
++              // (claude-code v2.1.214's client does). The drain only .delete()s a member once it leaves
++              // the live clientIds (disconnect), never after a send, so a repeat wake still emits. See
++              // ADR 0038.
++              if (request.tag === "notifications/initialized") {
++                server.initializedClients.add(clientId);
++              }
+               const handler = handlers.mapUnsafe.get(request.tag);
+               return handler ? handler.handler(request.payload, {
+                 rpc,
+@@ -329,9 +346,14 @@ export const run = /*#__PURE__*/Effect.fnUntraced(function* (options) {
        }
      })
    });
@@ -101,7 +125,7 @@ index 4cb198b928a5538737af01c0d18a03c7d28eb445..60b2749fc62890cbe01cb103f1c15fce
      const message = {
        _tag: "Request",
        tag: request.tag,
-@@ -850,6 +855,12 @@ const layerHandlers = (serverInfo, options) => ClientRpcs.toLayer(Effect.gen(fun
+@@ -850,6 +872,12 @@ const layerHandlers = (serverInfo, options) => ClientRpcs.toLayer(Effect.gen(fun
        if (serverInfo.extensions) {
          capabilities.extensions = serverInfo.extensions;
        }
