@@ -125,3 +125,39 @@ index 5a3a52dccf3fa3cc5e21ac2190027801fc646b53..d3d9c6762a8b4a04e8ed3bd1c0b0b882
              tags: metadataTags,
              tailConsumers: undefined,
              usageModel: undefined,
+diff --git a/lib/Test/Vitest.js b/lib/Test/Vitest.js
+index a16382c..5e4bba2 100644
+--- a/lib/Test/Vitest.js
++++ b/lib/Test/Vitest.js
+@@ -69,19 +69,19 @@ export const make = (options) => {
+     test.provider = provider;
+     const beforeAll = (eff, hookOptions) => {
+         let result;
+-        vitestBeforeAll(() => runEff(eff).then((v) => (result = v)), timeoutOf(hookOptions) ?? DEFAULT_TIMEOUT);
++        vitestBeforeAll(() => runEff(eff).then((v) => (result = v)), timeoutOf(hookOptions));
+         return Effect.sync(() => result);
+     };
+     const beforeEach = (eff, hookOptions) => {
+         vitestBeforeEach(() => runEff(eff), timeoutOf(hookOptions));
+     };
+     const afterAll = ((eff, hookOptions) => {
+-        vitestAfterAll(() => runEff(eff), timeoutOf(hookOptions) ?? DEFAULT_TIMEOUT);
++        vitestAfterAll(() => runEff(eff), timeoutOf(hookOptions));
+     });
+     afterAll.skipIf = (predicate) => (eff, hookOptions) => {
+         if (predicate)
+             return;
+-        vitestAfterAll(() => runEff(eff), timeoutOf(hookOptions) ?? DEFAULT_TIMEOUT);
++        vitestAfterAll(() => runEff(eff), timeoutOf(hookOptions));
+     };
+     const afterEach = (eff, hookOptions) => {
+         vitestAfterEach(() => runEff(eff), timeoutOf(hookOptions));
+@@ -97,7 +97,7 @@ export const make = (options) => {
+     // user-registered `afterAll` (including `destroy(Stack)`); vitest runs
+     // afterAll hooks in registration order.
+     queueMicrotask(() => {
+-        vitestAfterAll(() => Effect.runPromise(closeScope), DEFAULT_TIMEOUT);
++        vitestAfterAll(() => Effect.runPromise(closeScope));
+     });
+     return {
+         test,

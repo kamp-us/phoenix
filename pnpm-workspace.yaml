@@ -92,7 +92,7 @@ onlyBuiltDependencies:
 # Local patches (policy: patch deps locally, don't depend on an upstream/fork
 # release — ADR 0038). Re-key each on that dep's next version bump.
 #
-# alchemy — two patches on beta.59:
+# alchemy — three patches on beta.59:
 # 1. Cloudflare/Flagship/Flag.js — `FlagshipFlag.reconcile` UPDATE path reconciles
 #    only the schema/metadata IaC owns ({variations, description}) and preserves the
 #    live serving the dashboard owns ({defaultVariation, rules, enabled}); the no-op
@@ -103,6 +103,13 @@ onlyBuiltDependencies:
 #    thread it through the provider as the script-upload metadata's `cache_options`
 #    field, sent only when set. Implements ADR 0170; beta.59 predates the native
 #    knob. Retire both hunks when a future alchemy release ships the field natively.
+# 3. Test/Vitest.js — `Test.make`'s `beforeAll`/`afterAll`/`afterAll.skipIf`/scope-close
+#    hooks drop the `?? DEFAULT_TIMEOUT` (120s) fallback, passing `undefined` when no
+#    `{timeout}` override is given so @vitest/runner resolves `config.hookTimeout`
+#    instead of the hard-coded clamp. The clamp silently shadowed `vitest.config.ts`'s
+#    `hookTimeout` and was the #3146 merge-queue eviction root cause (#3168). Regression
+#    test: apps/web/tests/integration/alchemy-hook-timeout.unit.test.ts. Retire when a
+#    future alchemy release honors the configured hook timeout natively.
 #
 # The prior beta.56 second hunk (DurableObjectNamespace.d.ts — adding
 # `DurableObjectNamespaceScope` to the `DurableObjectServices` union) was DROPPED:
