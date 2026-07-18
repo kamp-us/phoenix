@@ -19,10 +19,10 @@
 
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Core from "alchemy/Test/Core";
-import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type {TestProject} from "vitest/node";
 import Stack from "../../alchemy.run.ts";
+import {runBestEffortTeardown} from "./_best-effort-teardown.ts";
 import {
 	awaitAuthRouteReady,
 	awaitWorkerReady,
@@ -108,20 +108,24 @@ export default async function setup(project: TestProject): Promise<() => Promise
 	// `ensureIntegrationEnv()` set this above (idempotent `??=`); a real `.env`/CI secret wins.
 	project.provide("integrationAuthSecret", process.env.BETTER_AUTH_SECRET ?? "");
 
-	// Best-effort teardown, ONE destroy per run (mirrors the per-file `afterAll(destroy)`):
-	// a CF delete-ordering Conflict / WorkerNotFound is CLEANUP, not an assertion, so catch +
-	// log loud (swept by #690) rather than letting it red a green run. See ADR 0104.
+	// Best-effort teardown, ONE destroy per run (mirrors the per-file `afterAll(destroy)`): a CF
+	// delete-ordering Conflict / WorkerNotFound is CLEANUP, not an assertion, so a failure here must
+	// never red a green run — the leaked stage is swept out-of-band (#690). Best-effort holds at the
+	// returned-Promise boundary via `runBestEffortTeardown`, NOT via an inner `Effect.catchCause`:
+	// `Core.run` (`runPromise(toEffect(...))`) acquires the `Cloudflare.state()`/`providers()` layers
+	// and runs `Effect.scoped` finalization OUTSIDE that inner catch, so a transient credential/scope
+	// failure escaped it and rejected this promise, failing the whole run (#3515 — distinct from
+	// #813's closed-PR `cleanup` guard). See ADR 0104 and `_best-effort-teardown.ts`.
 	return async () => {
 		if (NO_DESTROY) return;
-		await Core.run(
-			Core.destroy(MAKE_OPTIONS, Stack, {stage}).pipe(
-				Effect.catchCause((cause) =>
-					Effect.logWarning(
-						`[integration] best-effort shared-stage teardown failed for stage "${stage}" — stage leaked, sweep via #690 (durable fix #813):\n${Cause.pretty(cause)}`,
-					),
+		await runBestEffortTeardown(
+			() => Core.run(Core.destroy(MAKE_OPTIONS, Stack, {stage}), MAKE_OPTIONS),
+			(error) =>
+				console.warn(
+					`[integration] best-effort shared-stage teardown failed for stage "${stage}" — stage leaked, sweep via #690 (durable fix #813); made non-gating at the Promise boundary so it never reds a green run (#3515):\n${
+						error instanceof Error ? (error.stack ?? error.message) : String(error)
+					}`,
 				),
-			),
-			MAKE_OPTIONS,
 		);
 	};
 }
