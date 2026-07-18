@@ -50,6 +50,13 @@ export const CREW_SESSION_INSTANCE_FLAG = "--instance";
 export const MCP_CONFIG_FLAG = "--mcp-config";
 /** Sets the launched session's model to the role's configured tier (#3423); omitted when no tier. */
 export const MODEL_FLAG = "--model";
+/**
+ * Sets a visible per-session display name — shown in the prompt box, `/resume` picker, and terminal
+ * title (grounded against the installed CLI 2.1.214: `-n, --name <name>`). This is the on-screen
+ * role identity; `--agent` swaps the system prompt but is NOT visible, so it's the wrong flag for
+ * the operator-legibility symptom (#3443).
+ */
+export const NAME_FLAG = "--name";
 /** Allowlist mode: only servers named here load, gated by `allowedChannelPlugins` for plugin refs. */
 export const ALLOWLIST_CHANNEL_FLAG = "--channels";
 /** Dev mode: load channel servers not on the approved allowlist — local development only. */
@@ -97,7 +104,14 @@ export interface SessionBind {
 	readonly channelArg: readonly string[];
 	/** `["--model", "<alias>"]` when the role has a configured tier (#3423), else `[]` (CLI default). */
 	readonly modelArg: readonly string[];
-	/** The complete fragment `[...modelArg, ...mcpConfigArg, ...channelArg]` the launcher inlines for this session. */
+	/**
+	 * `["--name", "<display name>"]` — the visible per-session identity (#3443). A bridge is the
+	 * singleton `role`; an engine is `role-<instance>` so the N engine panes come up distinctly named
+	 * (AC2) rather than N identical `engineering-manager`s — the per-instance discriminator is the
+	 * same one that already keeps engine inboxes collision-free (session-set.ts).
+	 */
+	readonly nameArg: readonly [flag: string, name: string];
+	/** The complete fragment `[...modelArg, ...mcpConfigArg, ...channelArg, ...nameArg]` the launcher inlines for this session. */
 	readonly argv: readonly string[];
 }
 
@@ -229,6 +243,10 @@ export const buildSessionBind = (
 		// The role's tier boots the session on its `--model` (#3423); a role with no tier emits none,
 		// keeping the CLI-default boot rather than guessing. `tierModel` is total over the `Tier` enum.
 		const modelArg: readonly string[] = tier !== undefined ? [MODEL_FLAG, tierModel(tier)] : [];
+		// An engine appends its per-instance discriminator so the N engine panes are distinctly named
+		// (AC2); a bridge is the bare singleton role. Same instance that keeps engine inboxes distinct.
+		const displayName = instance !== undefined ? `${role}-${instance}` : role;
+		const nameArg: readonly [string, string] = [NAME_FLAG, displayName];
 
 		return {
 			role,
@@ -236,6 +254,7 @@ export const buildSessionBind = (
 			mcpConfigArg,
 			channelArg,
 			modelArg,
-			argv: [...modelArg, ...mcpConfigArg, ...channelArg],
+			nameArg,
+			argv: [...modelArg, ...mcpConfigArg, ...channelArg, ...nameArg],
 		};
 	});
