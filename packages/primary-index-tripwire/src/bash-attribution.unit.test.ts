@@ -98,6 +98,7 @@ describe("decideBashStagingAttribution — carries severity + identity for attri
 
 	it("renders a primary-checkout note LOUDLY", () => {
 		const d = decideBashStagingAttribution(input("git add -A"));
+		expect(d.kind).toBe("record");
 		if (d.kind === "record") {
 			expect(renderBashStagingNote(d.record)).toContain("the PRIMARY checkout");
 			expect(renderBashStagingNote(d.record)).toContain("#2778");
