@@ -499,6 +499,26 @@ Run each, scoped to the files the PR touches:
    `accepted`, `superseded`/`superseded by …`, `amended-in-part by …`, `retired`,
    `reference`) and is *coherent* with the content — e.g. an ADR that announces a settled
    boundary the suite already depends on should not be left `proposed` without reason.
+7. **Single Diátaxis mode — no type-mixing (writing-craft).** A prose page holds **one**
+   Diátaxis mode; a page that drifts into a second is a doc-hygiene finding. Run the
+   [`diataxis`](../diataxis/SKILL.md) skill over each changed prose page — its classification
+   procedure, then its type-mixing flag — and record the result: a clean `single-mode:
+   <mode>` is a PASS; a named mix is a FAIL that cites the **host** mode, the **intruding**
+   passage, and the **split** that resolves it (which content moves to which surface). This
+   is a check on the page's structural *shape*, not its wording, so it is language-agnostic
+   and leaves the TR/EN law untouched (`diataxis` Scope boundaries). Sourced from that skill —
+   do not re-derive the four modes here.
+8. **Clear, concise prose — Strunk + no AI-tell density (writing-craft).** The English prose
+   the diff adds reads clearly and carries no density of AI writing tells. Apply the
+   [`writing-clearly-and-concisely`](../writing-clearly-and-concisely/SKILL.md) skill: active
+   voice, positive form, concrete language, needless words omitted, and its AI-tells catalog
+   (magic adverbs, negative parallelism, em-dash addiction, bold-first bullets, stakes
+   inflation). The bar is **density, not a lone instance** — one adverb is not a FAIL; a
+   sustained slop pattern or genuinely unclear prose is. Never trim a pointer or a one-line
+   invariant for concision (it is already at its floor), and treat the house idioms the skill
+   exempts (`§CP`, `Fixes #N`, `fail-closed`, the progress-comment headers, ADR frontmatter)
+   as established vocabulary, not slop. Turkish product/brand copy is out of scope — this
+   check is English-register only. Sourced from that skill — do not re-derive its rules here.
 
 Build the hygiene findings into the same evidence shape as the AC table:
 
@@ -506,6 +526,8 @@ Build the hygiene findings into the same evidence shape as the AC table:
 - [PASS] House-format — ADR has Context/Decision/Consequences (.decisions/0053-*.md)
 - [PASS] Index row — ADR frontmatter status `accepted`; index regenerated on merge, not in PR (#1492)
 - [PASS] No leaked paths — grep of added lines clean
+- [PASS] Single Diátaxis mode — single-mode: explanation (diataxis skill, no type-mixing)
+- [PASS] Clear, concise prose — active voice, no AI-tell density (writing-clearly skill)
 ```
 
 ---
@@ -669,6 +691,8 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE> + the doc-hygiene 
 - [PASS] No leaked local/home paths — <evidence>
 - [PASS] Supersession noted + cross-linked — <evidence / n/a>
 - [PASS] Status sanity — <evidence>
+- [PASS] Single Diátaxis mode (no type-mixing) — <evidence: single-mode: <mode>>
+- [PASS] Clear, concise prose (Strunk, no AI-tell density) — <evidence>
 
 Read the PR head (§HEAD): all files under review sourced from `<HEAD_SHA>` via
 `git show "$PR_REF:<path>"`, never the launched checkout's working copy.
@@ -733,6 +757,8 @@ Verified against #<ISSUE>'s acceptance criteria + doc hygiene — all checks pas
 - [PASS] No leaked local/home paths — <evidence>
 - [PASS] Supersession noted + cross-linked — <evidence / n/a>
 - [PASS] Status sanity — <evidence>
+- [PASS] Single Diátaxis mode (no type-mixing) — <evidence: single-mode: <mode>>
+- [PASS] Clear, concise prose (Strunk, no AI-tell density) — <evidence>
 ```
 
 Post the advisory line **as a comment, not a native `REQUEST_CHANGES`/review** — the
@@ -787,6 +813,8 @@ Verified PR #<PR> against #<ISSUE>'s acceptance criteria + the doc-hygiene check
 **Doc hygiene**
 - [PASS] House-format — <evidence>
 - [FAIL] No leaked local/home paths — `<the leaked /Users/… or ~/… line>` at <file:line>
+- [FAIL] Single Diátaxis mode — host <mode> intrudes into <mode> at <file:line>; split <what> to <surface>
+- [PASS] Clear, concise prose (Strunk, no AI-tell density) — <evidence>
 - [UNVERIFIABLE] <check> — <why; what'd make it checkable>
 
 Failing items above must be addressed before this PR can merge. The PR stays open and
