@@ -10,9 +10,10 @@
  * roster session set → build EVERY per-session bind + compute ALL tmux placements → launch. Every
  * bind and every placement is resolved (and validated) BEFORE the first session launches, so any
  * precondition failure — a drifted CLI pin, a missing config dimension, an inert channel, a colliding
- * tmux window — aborts with a named error while zero sessions are up, never a half-launched
+ * pane label — aborts with a named error while zero sessions are up, never a half-launched
  * crew. No session is hand-launched: the launch of each `claude` session, bound to its role lease, is
- * the injected `launch` step the orchestration drives for the whole derived set.
+ * the injected `launch` step the orchestration drives for the whole derived set (all panes of one
+ * tiled crew window, founder ruling #3424).
  *
  * The side-effecting steps are injected (defaulting to production) so the composition is pure over
  * its inputs and unit-testable end to end — the same injection idiom version-assert (its version
@@ -40,7 +41,7 @@ import {
 	computeTmuxPlacement,
 	type PlacementTarget,
 	type RosterSession,
-	type TmuxWindowCollisionError,
+	type TmuxPaneCollisionError,
 } from "./tmux-placement.ts";
 import {
 	assertPinnedCliVersion,
@@ -48,12 +49,12 @@ import {
 	readInstalledCliVersionOutput,
 } from "./version-assert.ts";
 
-/** A `claude` session that could not be launched into its tmux window — carries the window + role it named. */
+/** A `claude` session that could not be launched into its pane of the crew window — carries the role + pane it named. */
 export class StandUpLaunchError extends Schema.TaggedErrorClass<StandUpLaunchError>()(
 	"@kampus/pipeline-crew-mcp/standup/StandUpLaunchError",
 	{
 		role: Schema.String,
-		window: Schema.String,
+		pane: Schema.String,
 		reason: Schema.String,
 	},
 ) {}
@@ -126,12 +127,15 @@ export interface LaunchPlan {
 	readonly placement: PlacementTarget;
 }
 
-/** A launched crew session: the role + lease it came up holding, the tmux window it lives in, and its pid. */
+/** A launched crew session: the role + lease it came up holding, the crew window + pane it lives in, and its pid. */
 export interface LaunchedSession {
 	readonly role: string;
 	/** The role-lease key inbox address the session-set minted (`inbox://<role>[/<instance>]`). */
 	readonly address: string;
+	/** The single tiled crew window every session shares — a tmux window id/target that later panes split into. */
 	readonly window: string;
+	/** This session's pane label within the crew window (its role slug or engine instance id). */
+	readonly pane: string;
 	readonly pid: number | undefined;
 }
 
@@ -143,7 +147,7 @@ export type StandUpError =
 	| CrewSessionBinUnresolvableError
 	| CrewServerNotRegisteredError
 	| ChannelPluginNotAllowedError
-	| TmuxWindowCollisionError
+	| TmuxPaneCollisionError
 	| TmuxSessionEnsureError
 	| StandUpLaunchError;
 
@@ -165,10 +169,13 @@ export interface StandUpInput {
 	/** Resolve the tmux session windows open into — the caller's current session, else a created fallback.
 	 * Default: `resolveTargetTmuxSession` (reads `$TMUX` + `display-message`). */
 	readonly resolveTargetSession?: () => Effect.Effect<string, TmuxSessionEnsureError>;
-	/** Launch one planned session into a window under `targetSession`, bound to its role lease. Default: `launchSessionInTmux`. */
+	/** Launch one planned session as a pane of the crew window under `targetSession`, bound to its role lease. The
+	 * first session (`intoWindow` undefined) opens the crew window and returns its id; every later session splits
+	 * into that window id. Default: `launchSessionInTmux`. */
 	readonly launch?: (
 		plan: LaunchPlan,
 		targetSession: string,
+		intoWindow: string | undefined,
 	) => Effect.Effect<LaunchedSession, StandUpLaunchError>;
 }
 
@@ -180,8 +187,8 @@ export interface StandUpResult {
 
 /**
  * Project a derived `CrewSession` onto the `RosterSession` tmux-placement consumes: a bridge places
- * on a window named by its role slug, an engine on its generated per-instance id (an operator cannot
- * name N dynamic engines). Both window names derive from identity — there is no config tmux dimension.
+ * on a pane labelled by its role slug, an engine on its generated per-instance id (an operator cannot
+ * name N dynamic engines). Both pane labels derive from identity — there is no config tmux dimension.
  */
 const toRosterSession = (session: CrewSession): RosterSession =>
 	session.kind === "engine"
@@ -250,42 +257,75 @@ const resolveTargetSessionDefault = (): Effect.Effect<string, TmuxSessionEnsureE
 		fallbackSession: FALLBACK_TMUX_SESSION,
 	});
 
+/** The single tiled window every crew pane opens into (founder ruling #3424): one window, all roles visible at once. */
+export const CREW_WINDOW = "crew";
+
+/** Map a non-zero exit / spawn error from one tmux step to the fail-loud `StandUpLaunchError` naming the role + pane. */
+const launchFailure = (
+	session: CrewSession,
+	pane: string,
+	run: TmuxRun,
+	what: string,
+): StandUpLaunchError =>
+	new StandUpLaunchError({
+		role: session.role,
+		pane,
+		reason:
+			run.spawnError !== undefined
+				? `cannot ${what} for pane "${pane}": ${run.spawnError}`
+				: `tmux ${what} for pane "${pane}" exited ${run.code ?? run.signal} (no live pane)`,
+	});
+
 /**
- * The production launcher: open a tmux window under `targetSession` (the resolved caller session) and run
- * `claude` there with the session's launch bind, then CONFIRM the window came up before counting it. `runTmux`
- * awaits the client's async exit, so a spawn failure or any non-zero exit — the swallowed failure of #3418 —
- * fails closed with `StandUpLaunchError` naming the role + window; a `LaunchedSession` therefore only ever
- * exists for a confirmed-live launch. The tmux runner is injected so the exit-code paths are unit-tested.
+ * The production launcher: place one `claude` session as a PANE of the single crew window under `targetSession`
+ * (the resolved caller session, #3418), then CONFIRM the pane came up before counting it. The first session
+ * (`intoWindow` undefined) opens the crew window with `new-window` and returns its id; every later session
+ * `split-window`s into that window id and re-`select-layout tiled`s so all roles stay evenly tiled and visible
+ * at once (founder ruling #3424, refining #3418). `runTmux` awaits each client's async exit, so a spawn failure
+ * or any non-zero exit — the swallowed failure #3418 closed — fails closed with `StandUpLaunchError` naming the
+ * role + pane; a `LaunchedSession` therefore only ever exists for a confirmed-live pane. The tmux runner is
+ * injected so the new-window / split-window / select-layout exit-code paths are unit-tested.
  */
 export const launchSessionInTmux = (
 	plan: LaunchPlan,
 	targetSession: string,
+	intoWindow: string | undefined,
 	runTmuxCommand: TmuxRunner = runTmux,
 ): Effect.Effect<LaunchedSession, StandUpLaunchError> =>
 	Effect.gen(function* () {
 		const {placement, bind, session} = plan;
-		const run = yield* runTmuxCommand([
-			"new-window",
-			"-t",
-			targetSession,
-			"-n",
-			placement.window,
-			"claude",
-			...bind.argv,
-		]);
-		if (run.spawnError !== undefined || run.code !== 0) {
-			return yield* Effect.fail(
-				new StandUpLaunchError({
-					role: session.role,
-					window: placement.window,
-					reason:
-						run.spawnError !== undefined
-							? `cannot launch claude into tmux window "${placement.window}": ${run.spawnError}`
-							: `tmux new-window for "${placement.window}" in session "${targetSession}" exited ${run.code ?? run.signal} (no live pane)`,
-				}),
-			);
+		const pane = placement.paneLabel;
+		if (intoWindow === undefined) {
+			// First session: open the crew window and capture its id (`-P -F '#{window_id}'`) so every later
+			// pane splits into exactly this window, never a stale same-named one.
+			const opened = yield* runTmuxCommand([
+				"new-window",
+				"-t",
+				targetSession,
+				"-n",
+				CREW_WINDOW,
+				"-P",
+				"-F",
+				"#{window_id}",
+				"claude",
+				...bind.argv,
+			]);
+			if (opened.spawnError !== undefined || opened.code !== 0) {
+				return yield* Effect.fail(launchFailure(session, pane, opened, "new-window"));
+			}
+			const window = opened.stdout.trim() || CREW_WINDOW;
+			return {role: session.role, address: session.address, window, pane, pid: opened.pid};
 		}
-		return {role: session.role, address: session.address, window: placement.window, pid: run.pid};
+		// Later session: split into the crew window, then re-tile so every pane is even and visible at once.
+		const split = yield* runTmuxCommand(["split-window", "-t", intoWindow, "claude", ...bind.argv]);
+		if (split.spawnError !== undefined || split.code !== 0) {
+			return yield* Effect.fail(launchFailure(session, pane, split, "split-window"));
+		}
+		const tiled = yield* runTmuxCommand(["select-layout", "-t", intoWindow, "tiled"]);
+		if (tiled.spawnError !== undefined || tiled.code !== 0) {
+			return yield* Effect.fail(launchFailure(session, pane, tiled, "select-layout tiled"));
+		}
+		return {role: session.role, address: session.address, window: intoWindow, pane, pid: split.pid};
 	});
 
 /**
@@ -339,11 +379,20 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 				: Effect.die(`stand-up plan zip out of range for session "${session.role}"`);
 		});
 
-		// Resolve the target tmux session before placing any window: the caller's CURRENT session inside
+		// Resolve the target tmux session before placing any pane: the caller's CURRENT session inside
 		// tmux (which always exists — dissolving the fresh-machine "no crew session" failure), else a
 		// created fallback (founder ruling #3418). Last precondition before the no-partial-crew launch loop.
 		const targetSession = yield* resolveTargetSession();
-		// Wrap so `forEach`'s index arg never lands on the launcher's optional tmux-runner param.
-		const launched = yield* Effect.forEach(plans, (plan) => launch(plan, targetSession));
+		// Launch the whole crew into ONE tiled window (founder ruling #3424): the first session opens the
+		// crew window, and its resolved window id threads into every later session so they split into that
+		// exact window. Sequential (not `forEach`) because each pane splits the window the first one opened;
+		// any failed launch short-circuits fail-loud with no partial crew.
+		const launched: LaunchedSession[] = [];
+		let crewWindow: string | undefined;
+		for (const plan of plans) {
+			const session = yield* launch(plan, targetSession, crewWindow);
+			launched.push(session);
+			crewWindow ??= session.window;
+		}
 		return {tracker, launched};
 	});

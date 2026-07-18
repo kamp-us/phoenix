@@ -1,7 +1,7 @@
 /**
  * standup/orchestrate — the one stand-up command (issue #3299), booting against the post-#3236
  * one-role-map config (ADR 0189): the engine count folds into `roles["engineering-manager"].count`
- * and there is NO config tmux dimension — window placement derives from role identity at launch.
+ * and there is NO config tmux dimension — pane placement derives from role identity at launch.
  * These tests pin the two properties the composition owns: the MANDATED ORDER (version assert →
  * ensure tracker → derive roster → per-session bind + tmux placement → launch) and FAIL-LOUD WITH NO
  * PARTIAL CREW (every precondition failure aborts, naming its cause, with zero sessions launched).
@@ -21,6 +21,7 @@ import {
 import {type TrackerHandle, TrackerNotServingError} from "./ensure-tracker.ts";
 import {
 	CliVersionAssertError,
+	CREW_WINDOW,
 	CrewServerNotRegisteredError,
 	ensureNamedTmuxSession,
 	FALLBACK_TMUX_SESSION,
@@ -75,28 +76,38 @@ const counter = () => {
 
 const RESOLVED_SESSION = "operator-session";
 
+/** The window id the recording launcher's first pane "opens" — threaded into every later pane's `intoWindow`. */
+const RECORDED_CREW_WINDOW = "@crew";
+
 /**
  * A recording launcher + target-session resolver sharing one `order` log, so a test can prove the target
- * session is resolved BEFORE any window is placed and that each window is opened into THAT session (founder
- * ruling #3418: the caller's current session, not a hardcoded one). Neither touches tmux: the launcher captures
- * its plans + the session it was told to open into; the resolver captures its calls and returns `RESOLVED_SESSION`.
+ * session is resolved BEFORE any pane is placed and that every pane opens into THAT session (founder ruling
+ * #3418: the caller's current session, not a hardcoded one). It also records each launch's `intoWindow`, so a
+ * test can prove the FIRST session opens the crew window (`intoWindow` undefined) and every later one splits into
+ * the window id the first returned (founder ruling #3424). Neither touches tmux: the launcher captures its plans,
+ * the session it was told to open into, and its `intoWindow`; the resolver captures its calls and returns `RESOLVED_SESSION`.
  */
 const recordingLauncher = () => {
 	const plans: LaunchPlan[] = [];
 	const order: string[] = [];
 	const targetSessions: string[] = [];
+	const intoWindows: (string | undefined)[] = [];
 	const resolveCalls = {n: 0};
 	const launch = (
 		plan: LaunchPlan,
 		targetSession: string,
+		intoWindow: string | undefined,
 	): Effect.Effect<LaunchedSession, never> => {
 		plans.push(plan);
 		targetSessions.push(targetSession);
-		order.push(`launch:${plan.placement.window}`);
+		intoWindows.push(intoWindow);
+		order.push(`launch:${plan.placement.paneLabel}`);
 		return Effect.succeed({
 			role: plan.session.role,
 			address: plan.session.address,
-			window: plan.placement.window,
+			// the first pane opens the crew window and returns its id; every later pane rides the threaded id.
+			window: intoWindow ?? RECORDED_CREW_WINDOW,
+			pane: plan.placement.paneLabel,
 			pid: 1000 + plans.length,
 		});
 	};
@@ -105,7 +116,7 @@ const recordingLauncher = () => {
 		order.push("resolve");
 		return Effect.succeed(RESOLVED_SESSION);
 	};
-	return {plans, order, targetSessions, resolveCalls, launch, resolveTargetSession};
+	return {plans, order, targetSessions, intoWindows, resolveCalls, launch, resolveTargetSession};
 };
 
 const trackerHandle: TrackerHandle = {pid: 4242, socketPath: "/tmp/crew.sock"};
@@ -130,10 +141,11 @@ const baseInput = (
 	launched: LaunchPlan[];
 	order: string[];
 	targetSessions: string[];
+	intoWindows: (string | undefined)[];
 	resolveCalls: {n: number};
 	trackerCalls: () => number;
 } => {
-	const {plans, order, targetSessions, resolveCalls, launch, resolveTargetSession} =
+	const {plans, order, targetSessions, intoWindows, resolveCalls, launch, resolveTargetSession} =
 		recordingLauncher();
 	const {ensureTracker, calls} = recordingTracker();
 	const {engineCount, ...rest} = overrides;
@@ -141,6 +153,7 @@ const baseInput = (
 		launched: plans,
 		order,
 		targetSessions,
+		intoWindows,
 		resolveCalls,
 		trackerCalls: calls,
 		input: {
@@ -183,7 +196,7 @@ const bridgeRoles = CREW_ROLES.filter((r) => kindOf(r) === "bridge");
 
 describe("standup/orchestrate — the one stand-up command (issue #3299)", () => {
 	it.effect(
-		"stands up tracker + one window per bridge + N engine sessions, in roster order (AC1,AC2)",
+		"stands up tracker + one pane per bridge + N engine panes, in roster order (AC1,AC2)",
 		() =>
 			Effect.gen(function* () {
 				const N = 3;
@@ -205,14 +218,36 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 					assert.strictEqual(p.bind.role, p.session.role);
 					assert.match(p.session.address, /^inbox:\/\//);
 				}
-				// bridges placed on windows derived from their role slug, engines on their generated ids.
+				// bridges labelled by their role slug, engines by their generated ids.
 				const cos = launchedBridges.find((p) => p.session.role === "chief-of-staff");
-				assert.strictEqual(cos?.placement.window, "chief-of-staff");
-				assert.deepStrictEqual(launchedEngines.map((p) => p.placement.window).sort(), [
+				assert.strictEqual(cos?.placement.paneLabel, "chief-of-staff");
+				assert.deepStrictEqual(launchedEngines.map((p) => p.placement.paneLabel).sort(), [
 					"e0",
 					"e1",
 					"e2",
 				]);
+			}),
+	);
+
+	it.effect(
+		"launches the crew as PANES of ONE window: first opens it, every later pane splits into that id (#3424 AC1,AC2)",
+		() =>
+			Effect.gen(function* () {
+				const {input, intoWindows, launched} = baseInput({engineCount: 2});
+				const result = yield* runStandUp(input);
+
+				// exactly one session opens the crew window (intoWindow undefined); every later one splits into it.
+				assert.strictEqual(intoWindows.length, launched.length);
+				assert.strictEqual(intoWindows[0], undefined, "the first session opens the crew window");
+				for (const w of intoWindows.slice(1)) {
+					assert.strictEqual(
+						w,
+						RECORDED_CREW_WINDOW,
+						"every later pane splits into the opened window id",
+					);
+				}
+				// every launched session reports the one shared crew window.
+				for (const s of result.launched) assert.strictEqual(s.window, RECORDED_CREW_WINDOW);
 			}),
 	);
 
@@ -330,13 +365,13 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 	);
 
 	it.effect(
-		"resolves the target session BEFORE placing any window, and opens every window into it (#3418 AC1)",
+		"resolves the target session BEFORE placing any pane, and opens every pane into it (#3418 AC1)",
 		() =>
 			Effect.gen(function* () {
 				const {input, order, targetSessions} = baseInput({engineCount: 2});
 				yield* runStandUp(input);
 
-				// the target session is resolved before any launch, and every window is opened into it.
+				// the target session is resolved before any launch, and every pane is opened into it.
 				const firstLaunch = order.findIndex((e) => e.startsWith("launch:"));
 				const lastResolve = order.lastIndexOf("resolve");
 				assert.isBelow(lastResolve, firstLaunch);
@@ -369,11 +404,11 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 			Effect.gen(function* () {
 				const {input} = baseInput({
 					engineCount: 1,
-					launch: (plan, _targetSession) =>
+					launch: (plan, _targetSession, _intoWindow) =>
 						Effect.fail(
 							new StandUpLaunchError({
 								role: plan.session.role,
-								window: plan.placement.window,
+								pane: plan.placement.paneLabel,
 								reason: "tmux new-window exited 1 (no live pane)",
 							}),
 						),
@@ -400,37 +435,100 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 
 	const TARGET = "operator-session";
 
-	it.effect("launchSessionInTmux opens the window into the resolved target session on exit-0", () =>
-		Effect.gen(function* () {
-			const plan = yield* captureOnePlan;
-			const {runner, argvLog} = scriptedTmux([exited(0)]);
-			const result = yield* launchSessionInTmux(plan, TARGET, runner);
+	it.effect(
+		"launchSessionInTmux (first pane) opens the crew window into the resolved session and captures its id (#3424)",
+		() =>
+			Effect.gen(function* () {
+				const plan = yield* captureOnePlan;
+				// the first pane runs `new-window -P -F '#{window_id}'`; its stdout is the crew window id.
+				const {runner, argvLog} = scriptedTmux([exited(0, {stdout: "@7\n"})]);
+				const result = yield* launchSessionInTmux(plan, TARGET, undefined, runner);
 
-			assert.strictEqual(result.window, plan.placement.window);
-			assert.strictEqual(result.pid, 4242);
-			// the window opens into the RESOLVED session (the caller's, #3418), not a hardcoded one.
-			assert.deepStrictEqual(argvLog[0]?.slice(0, 6), [
-				"new-window",
-				"-t",
-				TARGET,
-				"-n",
-				plan.placement.window,
-				"claude",
-			]);
-		}),
+				assert.strictEqual(
+					result.window,
+					"@7",
+					"the captured crew window id threads to later panes",
+				);
+				assert.strictEqual(result.pane, plan.placement.paneLabel);
+				assert.strictEqual(result.pid, 4242);
+				// the crew window opens into the RESOLVED session (the caller's, #3418), not a hardcoded one.
+				assert.deepStrictEqual(argvLog[0], [
+					"new-window",
+					"-t",
+					TARGET,
+					"-n",
+					CREW_WINDOW,
+					"-P",
+					"-F",
+					"#{window_id}",
+					"claude",
+					...plan.bind.argv,
+				]);
+			}),
 	);
 
 	it.effect(
-		"launchSessionInTmux fails closed on an async non-zero exit — the swallowed failure #3418",
+		"launchSessionInTmux (later pane) splits into the crew window and re-tiles on exit-0 (#3424 AC1,AC2)",
+		() =>
+			Effect.gen(function* () {
+				const plan = yield* captureOnePlan;
+				// split-window then select-layout tiled — two tmux clients, both must exit 0.
+				const {runner, argvLog} = scriptedTmux([exited(0), exited(0)]);
+				const result = yield* launchSessionInTmux(plan, TARGET, "@7", runner);
+
+				assert.strictEqual(result.window, "@7", "a later pane rides the threaded crew window id");
+				assert.strictEqual(result.pane, plan.placement.paneLabel);
+				assert.deepStrictEqual(argvLog[0], [
+					"split-window",
+					"-t",
+					"@7",
+					"claude",
+					...plan.bind.argv,
+				]);
+				assert.deepStrictEqual(argvLog[1], ["select-layout", "-t", "@7", "tiled"]);
+			}),
+	);
+
+	it.effect(
+		"launchSessionInTmux (first pane) fails closed on an async non-zero exit — the swallowed failure #3418",
 		() =>
 			Effect.gen(function* () {
 				const plan = yield* captureOnePlan;
 				const {runner} = scriptedTmux([exited(1)]);
-				const err = yield* Effect.flip(launchSessionInTmux(plan, TARGET, runner));
+				const err = yield* Effect.flip(launchSessionInTmux(plan, TARGET, undefined, runner));
 
 				assert.instanceOf(err, StandUpLaunchError);
-				assert.strictEqual(err.window, plan.placement.window);
+				assert.strictEqual(err.pane, plan.placement.paneLabel);
 				assert.strictEqual(err.role, plan.session.role);
+			}),
+	);
+
+	it.effect(
+		"launchSessionInTmux (later pane) fails closed when the split-window exits non-zero (#3424 AC3)",
+		() =>
+			Effect.gen(function* () {
+				const plan = yield* captureOnePlan;
+				const {runner} = scriptedTmux([exited(1)]);
+				const err = yield* Effect.flip(launchSessionInTmux(plan, TARGET, "@7", runner));
+
+				assert.instanceOf(err, StandUpLaunchError);
+				assert.strictEqual(err.pane, plan.placement.paneLabel);
+				assert.strictEqual(err.role, plan.session.role);
+				assert.include(err.reason, "split-window");
+			}),
+	);
+
+	it.effect(
+		"launchSessionInTmux (later pane) fails closed when select-layout exits non-zero (#3424 AC3)",
+		() =>
+			Effect.gen(function* () {
+				const plan = yield* captureOnePlan;
+				// split-window succeeds, but the re-tile does not — still fails loud, no silently-untiled crew.
+				const {runner} = scriptedTmux([exited(0), exited(1)]);
+				const err = yield* Effect.flip(launchSessionInTmux(plan, TARGET, "@7", runner));
+
+				assert.instanceOf(err, StandUpLaunchError);
+				assert.include(err.reason, "select-layout tiled");
 			}),
 	);
 
@@ -438,7 +536,7 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 		Effect.gen(function* () {
 			const plan = yield* captureOnePlan;
 			const {runner} = scriptedTmux([exited(null, {spawnError: "spawn tmux ENOENT"})]);
-			const err = yield* Effect.flip(launchSessionInTmux(plan, TARGET, runner));
+			const err = yield* Effect.flip(launchSessionInTmux(plan, TARGET, undefined, runner));
 
 			assert.instanceOf(err, StandUpLaunchError);
 			assert.include(err.reason, "ENOENT");

@@ -44,6 +44,7 @@ export {
 	tryBecomeTracker,
 } from "./ensure-tracker.ts";
 export {
+	CREW_WINDOW,
 	ensureNamedTmuxSession,
 	FALLBACK_TMUX_SESSION,
 	type LaunchedSession,
@@ -70,7 +71,7 @@ export {
 	computeTmuxPlacement,
 	type PlacementTarget,
 	type RosterSession,
-	TmuxWindowCollisionError,
+	TmuxPaneCollisionError,
 } from "./tmux-placement.ts";
 export {
 	assertPinnedCliVersion,
