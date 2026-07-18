@@ -16,6 +16,7 @@ export {
 export {
 	isTrackerAddressInUse,
 	launchTracker,
+	reclaimStaleSocket,
 	socketPathFor,
 	trackerServerLayer,
 } from "./server.ts";

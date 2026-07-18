@@ -58,7 +58,7 @@ export const socketPathFor = (projectRoot: string): string => {
  * unlink is best-effort — if a concurrent peer reclaimed+rebound in the probe→unlink window, our
  * bind then loses the race with `EADDRINUSE` and the caller dials, the same convergence as a live host.
  */
-const reclaimStaleSocket = (socketPath: string): Effect.Effect<void> =>
+export const reclaimStaleSocket = (socketPath: string): Effect.Effect<void> =>
 	probeStaleSocket(socketPath).pipe(
 		Effect.flatMap((isStale) =>
 			isStale

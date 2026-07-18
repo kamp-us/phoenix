@@ -31,6 +31,7 @@ import {
 	PeerUnreachableError,
 	type RolePresence,
 } from "../peer/index.ts";
+import {reclaimStaleSocket} from "../tracker/index.ts";
 import {RoleUniquenessError} from "./errors.ts";
 import {type CrewRole, kindOf} from "./roles.ts";
 import {type ClaimReply, CrewTracker} from "./tracker.ts";
@@ -147,6 +148,14 @@ export const crewSocketDialerLayer: Layer.Layer<Dialer> = Layer.succeed(Dialer, 
  * The peer-inbox `RpcServer` over a unix socket at `address`, serving `PeerInbox` with the
  * channel-bridging inbox (`edge`) so each delivery wakes the session — mirrors the tracker's
  * socket server. Requires a `ChannelSink` (the edge's last-mile wake port).
+ *
+ * The socket transport is reclamation-guarded exactly like the tracker's (`reclaimStaleSocket`,
+ * #3280): the deterministic per-instance path is unlinked before bind IFF a connect proves it a
+ * crashed process's orphaned socket (`ECONNREFUSED`) — `NodeSocketServer` only unlinks on CLEAN
+ * scope teardown, so a crash/SIGKILL leaves the file, and a raw bind over it dies with
+ * `SocketServerError: Open`, crashing the whole crew session (#3489). A genuinely-live listener is
+ * never reclaimed (connect succeeds ⇒ not stale), so the raw bind still fails closed on a real
+ * competitor. `Layer.unwrap` sequences the reclaim ahead of the bind.
  */
 export const inboxServerSocketLayer = (address: string): Layer.Layer<never, unknown, ChannelSink> =>
 	RpcServer.layer(PeerInbox).pipe(
@@ -155,7 +164,11 @@ export const inboxServerSocketLayer = (address: string): Layer.Layer<never, unkn
 			RpcServer.layerProtocolSocketServer.pipe(
 				Layer.provide([
 					RpcSerialization.layerNdjson,
-					NodeSocketServer.layer({path: inboxSocketPathFor(address)}),
+					Layer.unwrap(
+						reclaimStaleSocket(inboxSocketPathFor(address)).pipe(
+							Effect.as(NodeSocketServer.layer({path: inboxSocketPathFor(address)})),
+						),
+					),
 				]),
 			),
 		),
