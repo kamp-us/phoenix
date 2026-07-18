@@ -51,6 +51,38 @@ export const CREW_ROSTER = {
 export const kindOf = (role: CrewRole): CrewRoleKind => CREW_ROSTER[role];
 
 /**
+ * A role's DRIVE governs how it STARTS — orthogonal to its kind (which governs cardinality). A
+ * self-driving role runs a standing work loop under its own power, so it is autobooted on every
+ * stand-up and takes a cold-start boot turn. A human-in-the-loop role has NO standing loop: it is an
+ * on-demand, per-session partner a human spawns when they want it (the cartographer's charting
+ * session), so it is never autobooted and, if launched, comes up idle waiting for the human rather
+ * than confabulating work. See ADR 0189 (roster law) + #3524.
+ */
+export type CrewRoleDrive = "self-driving" | "human-in-the-loop";
+
+/**
+ * The drive of each roster role — the single source of which roles self-drive a standing loop.
+ * `satisfies Record<CrewRole, CrewRoleDrive>` makes it TOTAL over the roster: add a role to
+ * `CREW_ROLES` without kinding its drive here and this stops compiling. The cartographer is the one
+ * human-in-the-loop role (a HITL ideation partner with nothing to autorun, #3524); the rest self-drive.
+ */
+export const CREW_DRIVE = {
+	"chief-of-staff": "self-driving",
+	cartographer: "human-in-the-loop",
+	"intake-desk": "self-driving",
+	"engineering-manager": "self-driving",
+} as const satisfies Record<CrewRole, CrewRoleDrive>;
+
+/** Total: the drive of any crew role, read straight off the roster map. */
+export const driveOf = (role: CrewRole): CrewRoleDrive => CREW_DRIVE[role];
+
+/**
+ * Whether a role is autobooted on stand-up: exactly the self-driving roles. A human-in-the-loop role
+ * is on-demand — spawned by a human when wanted — and is never part of the standing drain crew (#3524).
+ */
+export const isAutobooted = (role: CrewRole): boolean => driveOf(role) === "self-driving";
+
+/**
  * Cardinality is a FUNCTION of kind, never a free field — a bridge is exactly one (nobody else
  * owns its seam), an engine is an unbounded pool (`"N"`). Because the only way to name a
  * cardinality is through the kind, a bridge with cardinality 2 does not typecheck. See ADR 0189.

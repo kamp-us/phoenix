@@ -10,7 +10,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {CREW_ROLES, kindOf} from "../crew/index.ts";
+import {CREW_ROLES, isAutobooted, kindOf} from "../crew/index.ts";
 import {CREW_SESSION_INSTANCE_FLAG} from "./bind.ts";
 import {
 	DEFAULT_CONFIG_PATH,
@@ -258,7 +258,8 @@ const exited = (code: number | null, over: Partial<TmuxRun> = {}): TmuxRun => ({
 	...over,
 });
 
-const bridgeRoles = CREW_ROLES.filter((r) => kindOf(r) === "bridge");
+// The autobooted bridges — a HITL bridge (the cartographer) is on-demand, not stood up (#3524).
+const bridgeRoles = CREW_ROLES.filter((r) => kindOf(r) === "bridge" && isAutobooted(r));
 
 describe("standup/orchestrate — the one stand-up command (issue #3299)", () => {
 	it.effect(
@@ -485,14 +486,17 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 	it.effect("threads each role's config tier into its launch --model (#3423, end to end)", () =>
 		Effect.gen(function* () {
 			// rawConfigAt sets the founder ruling — cartographer=fable, the rest=opus — so the boot
-			// proves each session comes up on its configured tier's model, not the CLI default.
+			// proves each session comes up on its configured tier's model, not the CLI default. The
+			// cartographer is not autobooted (#3524), so it never launches here; its tier is asserted at the
+			// on-demand spawn path, not the stand-up. intake-desk carries the fable tier among the autobooted.
 			const {input, launched} = baseInput({engineCount: 2});
 			yield* runStandUp(input);
 
 			const modelOf = (role: string): readonly string[] | undefined =>
 				launched.find((p) => p.session.role === role)?.bind.modelArg;
 			assert.deepStrictEqual([...(modelOf("chief-of-staff") ?? [])], ["--model", "opus"]);
-			assert.deepStrictEqual([...(modelOf("cartographer") ?? [])], ["--model", "fable"]);
+			// the cartographer is on-demand, never in the standing stand-up — no launched session for it.
+			assert.isUndefined(launched.find((p) => p.session.role === "cartographer"));
 			assert.deepStrictEqual([...(modelOf("intake-desk") ?? [])], ["--model", "fable"]);
 			// every engine boots on the engineering-manager tier (opus).
 			for (const p of launched.filter((x) => x.session.kind === "engine")) {

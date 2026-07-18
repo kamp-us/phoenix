@@ -483,33 +483,63 @@ describe("standup/bind — per-session bind constructor", () => {
 			}),
 	);
 
-	it.effect("every crew role (bridge + engine) gets the same role-agnostic boot turn (#3516)", () =>
-		Effect.gen(function* () {
-			const channels: ChannelConfig = {
-				mode: "development",
-				servers: ["server:pipeline-crew"],
-				allowedChannelPlugins: [],
-			};
-			// A bridge (no instance) and an engine (with instance) both receive the boot prompt — the def
-			// each boots as carries its own cold-start, so the launcher's turn is deliberately generic.
-			const bridge = yield* buildSessionBind({
-				role: "chief-of-staff",
-				projectRoot: PROJECT_ROOT,
-				serverName: SERVER_NAME,
-				channels,
-			});
-			const engine = yield* buildSessionBind({
-				role: "engineering-manager",
-				projectRoot: PROJECT_ROOT,
-				serverName: SERVER_NAME,
-				instance: "e-1",
-				channels,
-			});
-			assert.deepStrictEqual([...bridge.bootPromptArg], [BOOT_PROMPT]);
-			assert.deepStrictEqual([...engine.bootPromptArg], [BOOT_PROMPT]);
-			assert.strictEqual(bridge.argv[bridge.argv.length - 1], BOOT_PROMPT);
-			assert.strictEqual(engine.argv[engine.argv.length - 1], BOOT_PROMPT);
-		}),
+	it.effect(
+		"every SELF-DRIVING role (bridge + engine) gets the same role-agnostic boot turn (#3516)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				// A self-driving bridge (no instance) and an engine (with instance) both receive the boot
+				// prompt — the def each boots as carries its own cold-start, so the launcher's turn is generic.
+				const bridge = yield* buildSessionBind({
+					role: "chief-of-staff",
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				});
+				const engine = yield* buildSessionBind({
+					role: "engineering-manager",
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					instance: "e-1",
+					channels,
+				});
+				assert.deepStrictEqual([...bridge.bootPromptArg], [BOOT_PROMPT]);
+				assert.deepStrictEqual([...engine.bootPromptArg], [BOOT_PROMPT]);
+				assert.strictEqual(bridge.argv[bridge.argv.length - 1], BOOT_PROMPT);
+				assert.strictEqual(engine.argv[engine.argv.length - 1], BOOT_PROMPT);
+			}),
+	);
+
+	it.effect(
+		"a human-in-the-loop role (the cartographer) gets NO boot turn — it boots idle (#3524)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				// The cartographer has no standing loop, so it must NOT be handed the self-driving BOOT_PROMPT
+				// — that is what made it confabulate work. Even launched on-demand, its argv carries no
+				// positional prompt, so the CLI opens an interactive session that idles waiting for the human.
+				const bind = yield* buildSessionBind({
+					role: "cartographer",
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				});
+				assert.deepStrictEqual([...bind.bootPromptArg], []);
+				assert.notInclude(bind.argv, BOOT_PROMPT);
+				// Interactive and idle: still no -p/--print (an interactive session), and the argv ends at the
+				// visible --name pair rather than a boot-turn prompt — it waits for the human, not a loop.
+				assert.notInclude(bind.argv, "-p");
+				assert.notInclude(bind.argv, "--print");
+				assert.deepStrictEqual([...bind.argv].slice(-2), [...bind.nameArg]);
+			}),
 	);
 
 	it.effect("allowlist mode fails closed on a plugin channel whose plugin is not allowlisted", () =>
