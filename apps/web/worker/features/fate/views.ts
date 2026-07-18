@@ -42,6 +42,7 @@ import type {
 } from "../report/views.ts";
 import type {DefinitionView, TermView} from "../sozluk/views.ts";
 import type {LandingStatsView} from "../stats/views.ts";
+import type {UserAdminView} from "../user-admin/views.ts";
 import {modules} from "./config.ts";
 import {mergeFateRoots} from "./module.ts";
 
@@ -116,6 +117,8 @@ export type {Definition, Term} from "../sozluk/views.ts";
 export {definitionDataView, termDataView} from "../sozluk/views.ts";
 export type {LandingStats} from "../stats/views.ts";
 export {landingStatsDataView} from "../stats/views.ts";
+export type {UserAdminEntity as UserAdmin, UserAdminRole} from "../user-admin/views.ts";
+export {userAdminDataView} from "../user-admin/views.ts";
 
 /**
  * The client-exposed root map the fate Vite plugin turns into typed client roots
@@ -206,4 +209,5 @@ type _FateViewsFieldMapResolved = [
 	AssertResolved<typeof DefinitionView, AssertFieldMapResolved<typeof DefinitionView>>,
 	AssertResolved<typeof TermView, AssertFieldMapResolved<typeof TermView>>,
 	AssertResolved<typeof LandingStatsView, AssertFieldMapResolved<typeof LandingStatsView>>,
+	AssertResolved<typeof UserAdminView, AssertFieldMapResolved<typeof UserAdminView>>,
 ];

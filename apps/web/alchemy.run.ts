@@ -70,6 +70,7 @@ import {
 	profileCanvasFlag,
 	reactionsFlag,
 	sozlukStampWaveFlag,
+	userAdminFlag,
 	userBanFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
@@ -179,6 +180,10 @@ export default Alchemy.Stack(
 		// single seam the /admin route + client probe + worker `admin.probe` read gate
 		// behind until a human release, so the console ships dark (no chunk fetched).
 		yield* adminConsoleFlag(flagship.appId);
+		// The kullanıcılar (user-roster) read-view dark-ship flag, default-off (#3200, admin
+		// epic) — the single seam the `userAdmin.list` admin read + the `kullanıcılar` console
+		// panel gate behind until a human release, so the roster ships dark (invisible `Denied`).
+		yield* userAdminFlag(flagship.appId);
 		// The edge-resolved shell-boot dark-ship flag, default-off (#2928, epic #2926, ADR
 		// 0179) — the single seam the `window.__BOOT__` INJECTION ships behind (worker-first
 		// routing is unconditional): off ⇒ the worker returns the untransformed ASSETS bytes,

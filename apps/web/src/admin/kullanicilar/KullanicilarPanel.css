@@ -1,0 +1,82 @@
+/* Kullanıcılar (user-roster) console module (#3200). Role tokens only; controls carry the
+   36px hit-area floor (design law pillar 4). Mirrors the email-delivery module's table. */
+
+.kp-kullanicilar {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.kp-kullanicilar__search {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--s-2);
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	background: var(--surface-raised);
+}
+
+.kp-kullanicilar__field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+}
+
+.kp-kullanicilar__search-input {
+	min-height: var(--tap-min);
+	min-width: 16rem;
+	padding: var(--s-1) var(--s-2);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text-primary);
+	font: var(--t-body-sm);
+}
+
+/* Design law pillar 4: the 36px minimum hit area, from the --tap-min floor token. */
+.kp-kullanicilar__btn {
+	min-height: var(--tap-min);
+	min-width: var(--tap-min);
+}
+
+.kp-kullanicilar__table {
+	width: 100%;
+	border-collapse: collapse;
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+}
+
+.kp-kullanicilar__caption {
+	text-align: left;
+	color: var(--text-secondary);
+	font: var(--t-meta);
+	padding-bottom: var(--s-1);
+}
+
+.kp-kullanicilar__table th,
+.kp-kullanicilar__table td {
+	text-align: left;
+	padding: var(--s-1) var(--s-2);
+	border-bottom: 1px solid var(--border-faint);
+	vertical-align: top;
+}
+
+.kp-kullanicilar__table th {
+	color: var(--text-muted);
+	font: var(--t-meta);
+	font-weight: 600;
+}
+
+.kp-kullanicilar__username {
+	font-weight: 600;
+}
+
+.kp-kullanicilar__empty,
+.kp-kullanicilar__loading {
+	color: var(--text-muted);
+	font: var(--t-body-sm);
+}

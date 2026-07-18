@@ -38,6 +38,7 @@ import {
 	PHOENIX_PANO_STAMP_WAVE,
 	PHOENIX_REACTIONS,
 	PHOENIX_SOZLUK_STAMP_WAVE,
+	PHOENIX_USER_ADMIN,
 	PHOENIX_USER_BAN,
 	PROFILE_CANVAS,
 } from "../../../src/flags/keys.ts";
@@ -1030,6 +1031,38 @@ export const ADMIN_CONSOLE_FLAG = {
  */
 export const adminConsoleFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_admin_console", {appId, ...ADMIN_CONSOLE_FLAG});
+
+/**
+ * The kullanıcılar (user-roster) admin-console module dark-ship flag config (#3200, admin
+ * epic). The SINGLE seam the gated user-list read view gates behind — the `userAdmin.list`
+ * admin fate resolver AND the `kullanıcılar` console panel. Default-OFF so the whole roster
+ * surface reaches production dark — with it off the server read fails the invisible `Denied`
+ * (like a non-admin call) and the panel renders nothing; flipping it on is the human release
+ * act (ADR 0083).
+ *
+ * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
+ * WITHOUT constructing the alchemy resource (mirrors `ADMIN_CONSOLE_FLAG`).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           user-admin (the gated user-roster surface, hosted by the console shell)
+ *   - originating:     #3200 (admin epic; supersedes the shell half of #968)
+ *   - removal trigger: once the roster + its per-user actions graduate to on at 100% and
+ *                      stable for one release, retire the flag and inline the module.
+ */
+export const USER_ADMIN_FLAG = {
+	key: PHOENIX_USER_ADMIN,
+	description:
+		"gated user-roster read view dark-ship (#3200, admin epic). owner: user-admin. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
+ * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const userAdminFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_user_admin", {appId, ...USER_ADMIN_FLAG});
 
 /**
  * The edge-resolved shell-boot containment flag config (#2928, epic #2926, ADR 0179). The
