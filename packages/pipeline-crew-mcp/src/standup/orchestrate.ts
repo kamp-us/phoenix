@@ -151,6 +151,23 @@ export type StandUpError =
 	| TmuxSessionEnsureError
 	| StandUpLaunchError;
 
+/**
+ * Render a stand-up abort for the operator: the error tag plus its diagnostic data fields. `String(error)` on a
+ * `Schema.TaggedErrorClass` prints only the tag and drops the fields — yet the fields are the payload an operator
+ * needs (which tmux step + exit code failed, in which role/pane), so surface every schema data field alongside
+ * the tag. Field-generic on purpose: every union member's diagnostic surfaces — including both `reason`-carriers,
+ * `StandUpLaunchError` (role/pane/reason) and `TmuxSessionEnsureError` (session/reason) — and a future member's
+ * fields can't silently regress to tag-only. `Cause.pretty` is not a substitute here: it prints tag + stack but
+ * not the schema fields (#3438).
+ */
+export const renderStandUpError = (error: StandUpError): string => {
+	const detail = Object.entries(error)
+		.filter(([key]) => key !== "_tag")
+		.map(([key, value]) => `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`)
+		.join(", ");
+	return detail ? `${error._tag} (${detail})` : error._tag;
+};
+
 export interface StandUpInput {
 	/** The project root the tracker + every session join (the per-project socket key). */
 	readonly projectRoot: string;
