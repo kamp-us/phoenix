@@ -9,6 +9,14 @@ import "./CountToggle.css";
  * reaction bar's per-emoji buttons are the canonical instance; this extracts the
  * pill so the shape is built once instead of re-assembled per surface. Role
  * tokens only; the 24px floor is the WCAG 2.5.8 minimum target size (#2166).
+ *
+ * @component CountToggle
+ * @whenToUse The pressable count-pill — a reaction/vote/toggle affordance that
+ *   carries an aggregate count. Reach for it over a bare toggle button whenever a
+ *   count rides alongside the on/off state (the reaction bar is the canonical use).
+ * @slot children The visible label; when omitted (icon-only), name the control via
+ *   `aria-label` since the icon is decorative.
+ * @slot icon Leading decorative glyph rendered before the label/count.
  */
 export interface CountToggleProps
 	extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> {

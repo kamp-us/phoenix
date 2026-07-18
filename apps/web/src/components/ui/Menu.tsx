@@ -23,8 +23,11 @@ export function Popup({
 	...rest
 }: {
 	children: React.ReactNode;
+	/** Which edge of the trigger the popup opens from. */
 	side?: "top" | "right" | "bottom" | "left";
+	/** Alignment of the popup along that edge. */
 	align?: "start" | "center" | "end";
+	/** Anchor strategy; `fixed` keeps it attached inside a sticky ancestor (#1640). */
 	positionMethod?: "absolute" | "fixed";
 }) {
 	return (
@@ -60,7 +63,9 @@ export function Item({
 	children,
 	...rest
 }: React.ComponentProps<typeof BaseMenu.Item> & {
+	/** Destructive styling for a delete/remove item. */
 	danger?: boolean;
+	/** Keyboard-shortcut hint rendered trailing the label. */
 	shortcut?: string;
 }) {
 	const cls = danger ? `${styles.item} kp-menu__item--danger` : styles.item;
@@ -76,4 +81,16 @@ export function Separator() {
 	return <BaseMenu.Separator className={styles.separator} />;
 }
 
+/**
+ * @component Menu
+ * @whenToUse The dropdown-menu compound (base-ui). Compose from its parts for any
+ *   contextual action list or overflow menu; each `Item`'s accessible name comes
+ *   from its text child. Its z-index/anchor handling is tuned for the sticky nav
+ *   stack (#1640/#2041) — reach for it rather than a hand-built popup.
+ * @slot Root The open/close state provider wrapping the trigger + popup.
+ * @slot Trigger The element that opens the menu.
+ * @slot Popup The portalled, positioned popup surface holding the items.
+ * @slot Item A menu action; supports `danger` and a `shortcut` hint.
+ * @slot Separator A divider rule between item groups.
+ */
 export const Menu = {Root, Trigger, Popup, Item, Separator};

@@ -38,8 +38,11 @@ export function Head({
 	description,
 	showClose = true,
 }: {
+	/** The dialog heading; wired to `aria-labelledby` by base-ui. */
 	title: React.ReactNode;
+	/** Optional supporting line under the title; wired to `aria-describedby`. */
 	description?: React.ReactNode;
+	/** Render the trailing close (×) affordance. */
 	showClose?: boolean;
 }) {
 	return (
@@ -76,4 +79,17 @@ export function Foot({children}: {children: React.ReactNode}) {
 	return <footer className={styles.foot}>{children}</footer>;
 }
 
+/**
+ * @component Dialog
+ * @whenToUse The modal-dialog compound (base-ui). Compose from its parts for any
+ *   modal (confirm, form, detail overlay); `Head`'s `title` supplies the accessible
+ *   name via `aria-labelledby`, so reach for `Head` rather than a bare heading.
+ * @slot Root The open/close state provider wrapping trigger + popup.
+ * @slot Trigger The element that opens the dialog.
+ * @slot Popup The portalled, backdropped modal surface.
+ * @slot Head The title/description/close header region.
+ * @slot Body The scrollable content region (renders nothing when empty).
+ * @slot Foot The action row (footer).
+ * @slot Close An element that dismisses the dialog.
+ */
 export const Dialog = {Root, Trigger, Close, Popup, Head, Body, Foot};

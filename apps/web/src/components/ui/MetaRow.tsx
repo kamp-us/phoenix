@@ -13,6 +13,12 @@ import "./MetaRow.css";
  *
  * A migrating call-site keeps only its own genuine deltas (a bespoke gap, a
  * top-margin) on its own class; the shared shape moves here.
+ *
+ * @component MetaRow
+ * @whenToUse The muted metadata row shell — author · time · a count · an action,
+ *   dot-separated. Reach for it (with `MetaRow.Dot` between items) for any feed
+ *   row, post/definition header, or comment footer instead of hand-rolling the row.
+ * @slot children The metadata items; separate them with `MetaRow.Dot`.
  */
 export interface MetaRowProps extends React.HTMLAttributes<HTMLElement> {
 	/** Render element (div/footer/header/…). Defaults to `div`. */
