@@ -35,7 +35,7 @@ import {Cause, Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 
 import {CREW_ROLES, RoleUniquenessError, runCrewSession} from "./crew/index.ts";
-import {runStandUp} from "./standup/index.ts";
+import {CREW_WINDOW, runStandUp} from "./standup/index.ts";
 import {isTrackerAddressInUse, launchTracker} from "./tracker/index.ts";
 import {VERSION} from "./version.ts";
 
@@ -99,13 +99,13 @@ const standUp = Command.make(
 		return yield* runStandUp({projectRoot}).pipe(
 			Effect.flatMap((result) =>
 				Console.error(
-					`crew up: tracker pid ${result.tracker.pid ?? "?"} on ${result.tracker.socketPath}; ${result.launched.length} sessions launched (${result.launched
-						.map((s) => `${s.role}→${s.window}`)
+					`crew up: tracker pid ${result.tracker.pid ?? "?"} on ${result.tracker.socketPath}; ${result.launched.length} panes launched in the ${CREW_WINDOW} window (${result.launched
+						.map((s) => `${s.role}→${s.pane}`)
 						.join(", ")})`,
 				),
 			),
 			// Fail-loud, no partial crew: a bad config, a version drift, an unstartable tracker, an inert
-			// channel, or an unnamed/colliding window aborts naming its cause — String(error) carries the tag.
+			// channel, or a colliding pane label aborts naming its cause — String(error) carries the tag.
 			Effect.catch((error: unknown) =>
 				Console.error(`stand-up aborted (no partial crew): ${String(error)}`).pipe(
 					Effect.andThen(Effect.sync(() => process.exit(1))),
