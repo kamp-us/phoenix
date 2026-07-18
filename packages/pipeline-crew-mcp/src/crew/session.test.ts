@@ -13,7 +13,7 @@
  */
 import {randomUUID} from "node:crypto";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Ref, Schema} from "effect";
+import {Deferred, Effect, Layer, Ref, Schema, Stdio, Stream} from "effect";
 import {McpSchema, McpServer} from "effect/unstable/ai";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -45,7 +45,7 @@ import {
 	inboxAddressFor,
 	sessionInstance,
 } from "./session.ts";
-import {CrewTracker, peerTrackerLayer} from "./tracker.ts";
+import {CrewTracker, peerTrackerLayer, type TrackerRegistryClient} from "./tracker.ts";
 
 const registryHandlers = TrackerHandlers.pipe(Layer.provide(RegistryLive));
 
@@ -286,6 +286,126 @@ const bootSessionClient = (address: string) =>
 		});
 		return {client, initialized};
 	});
+
+/**
+ * A substrate whose `CrewTracker.claim` BLOCKS on `gate` before granting — the in-memory stand-in for
+ * the slow unix-socket tracker handshake `makeCrewChannel` runs when it builds `ChannelSend`. It runs
+ * `onClaim` the instant it unblocks (past the gate), so a test can record WHEN the async `ChannelSend`
+ * resolves relative to the served transport. Everything else (announce/lookup/heartbeat) is the real
+ * in-memory registry, so `makeCrewChannel`'s presence announce + role-lease claim behave normally.
+ */
+const gatedRaceSubstrate = (
+	address: string,
+	gate: Deferred.Deferred<void>,
+	onClaim: Effect.Effect<void>,
+) => {
+	const tracker = Layer.unwrap(
+		RpcTest.makeClient(TrackerRegistry).pipe(
+			Effect.map((client) => {
+				const gatedClient: TrackerRegistryClient = {
+					Claim: (payload) =>
+						Deferred.await(gate).pipe(
+							Effect.andThen(onClaim),
+							Effect.andThen(client.Claim(payload)),
+						),
+					Release: (payload) => client.Release(payload),
+					AnnouncePresence: (payload) => client.AnnouncePresence(payload),
+					LookupRole: (payload) => client.LookupRole(payload),
+					Heartbeat: (payload) => client.Heartbeat(payload),
+				};
+				return CrewTracker.fromClient(gatedClient);
+			}),
+		),
+	).pipe(Layer.provide(registryHandlers));
+	return Layer.mergeAll(
+		tracker,
+		peerTrackerLayer.pipe(Layer.provide(tracker)),
+		Inbox.layer(address),
+		Dialer.layerFromConnect((addr) =>
+			Effect.fail(new PeerUnreachableError({target: addr, reason: "race-test stub dialer"})),
+		),
+	);
+};
+
+describe("crew/session — the session-mode server wins the async-ChannelSend build race (#3479 defect B)", () => {
+	// The advertisement guard below drives a synchronous in-memory ChannelSend, so registration wins the
+	// race and it passes EVEN with the pre-fix ordering — it cannot reproduce the live stdio symptom. This
+	// test injects an ASYNC ChannelSend (the gated tracker-claim) and asserts the toolkit registers BEFORE
+	// the forked stdio run-loop begins serving, so a client's `initialize` never sees `server.tools === []`.
+	// It FAILS on the old (transport-built-then-async-toolkit) ordering and PASSES on the claim-first fix.
+	// `it.live` (not `it.effect`): the race turns on REAL async scheduling — the forked run-loop, socket
+	// I/O, the timed gate release — so it must run on the live clock, not `it.effect`'s TestClock.
+	it.live(
+		"the channel_send toolkit registers before the forked run-loop serves, even with an async ChannelSend",
+		() =>
+			Effect.gen(function* () {
+				const address = `inbox://race-test-${randomUUID()}`;
+				const order = yield* Ref.make<ReadonlyArray<string>>([]);
+				const claimGate = yield* Deferred.make<void>();
+				// One Deferred per event, so the assertion waits for BOTH to land (no fixed-sleep guess): the
+				// event log records ORDER, the Deferreds record OCCURRENCE.
+				const servedAt = yield* Deferred.make<void>();
+				const resolvedAt = yield* Deferred.make<void>();
+				const mark = (label: string, at: Deferred.Deferred<void>) =>
+					Ref.update(order, (xs) => [...xs, label]).pipe(
+						Effect.andThen(Deferred.succeed(at, undefined)),
+						Effect.asVoid,
+					);
+
+				// The async ChannelSend: makeCrewChannel's tracker-claim blocks on claimGate (the slow socket
+				// handshake) and records "channel-resolved" the instant it unblocks — the point the toolkit can
+				// finally register channel_send.
+				const substrate = gatedRaceSubstrate(
+					address,
+					claimGate,
+					mark("channel-resolved", resolvedAt),
+				);
+
+				// A fake Stdio whose stdin records "serving-started" the instant the transport's run-loop begins
+				// consuming it, then blocks forever (Stream.never) so the run-loop stays live. This is the
+				// observable proxy for "the server is now able to answer initialize" — the exact moment
+				// channel_send must ALREADY be on server.tools (Effect gates capabilities.tools on tools.length).
+				const stdin = Stream.fromEffect(mark("serving-started", servedAt)).pipe(
+					Stream.drain,
+					Stream.concat(Stream.never),
+				);
+				const transport = McpServer.layerStdio({
+					name: "CrewRaceTestServer",
+					version: "0.0.0",
+					experimental: channelExperimentalCapability,
+				}).pipe(Layer.provide(Stdio.layerTest({stdin})));
+
+				const serverLayer = assembleCrewSession(
+					{role: CREW_ROLES[0], projectRoot: "/x"},
+					address,
+					substrate,
+					transport,
+				).pipe(Layer.orDie);
+
+				// Launch the live session on a scoped fiber. Claim-first (fixed): it blocks in the unwrap on the
+				// gated claim, so nothing serves until the gate opens. Old ordering: the transport builds and its
+				// run-loop starts serving while the toolkit still awaits the gated ChannelSend.
+				yield* Effect.forkScoped(Layer.launch(serverLayer));
+
+				// Give the OLD ordering's forked run-loop a window to record "serving-started" before the gate
+				// opens — so on the bug the order is [serving-started, channel-resolved]. The fix records nothing
+				// until the gate opens (the claim gates the whole build), then [channel-resolved, serving-started];
+				// on the fix channel-resolved ALWAYS precedes serving-started regardless of this delay.
+				yield* Effect.sleep("100 millis");
+				yield* Deferred.succeed(claimGate, undefined);
+
+				// Wait for BOTH events to occur, then read the order they landed in.
+				yield* Deferred.await(servedAt);
+				yield* Deferred.await(resolvedAt);
+				const recorded = yield* Ref.get(order);
+				assert.strictEqual(
+					recorded[0],
+					"channel-resolved",
+					"channel_send must be registered (ChannelSend resolved) BEFORE the run-loop serves initialize — else a client sees Capabilities: none and never lists the tool",
+				);
+			}),
+	);
+});
 
 describe("crew/session — the session-mode server advertises the channel edge (#3479 defect B)", () => {
 	it.effect(
