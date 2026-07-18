@@ -17,11 +17,22 @@ File autonomously. Do **not** propose-first or ask for permission — the whole 
 
 You apply exactly one label: `status:needs-triage`. Nothing else. Typing or prioritizing here would poison the triage queue — a hand-applied type looks identical to a triaged one, and triage can no longer trust the signal.
 
+## Lead with a plain-language summary
+
+Before the structured sections, open the body with a **plain-language, human-first
+summary — 2–3 sentences a reader grasps on a skim**: what you observed and why it's worth
+tracking, in prose, no jargon. It **precedes, never replaces**, the structured body below —
+a triager skimming the queue reads it first (the human-first-summary mandate from
+[#3374](https://github.com/kamp-us/phoenix/issues/3374)). Give it the heading `## Summary`.
+
 ## The 5-section body template
 
-The body is **type-blind** by design: the same five sections fit a bug, a refactor, a question, or an investigation, so you never have to classify to file. Use these exact section headings:
+The body is **type-blind** by design: the same five sections fit a bug, a refactor, a question, or an investigation, so you never have to classify to file. Under the `## Summary` lead above, use these exact section headings:
 
 ```markdown
+## Summary
+<2–3 plain-language sentences a reader grasps on a skim: what you observed and why it's worth tracking. The human-first lead, before the structured sections below.>
+
 ## What I was doing
 <The task in flight when this surfaced. One or two sentences. Concrete: what file, what feature, what command.>
 
@@ -79,7 +90,7 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
 ```
 
 1. Write the title: a short, specific, type-neutral summary of the observation (≤ ~70 chars). Good: "Retry helper in http worker swallows the abort reason". Bad: "Bug in worker" or "BUG: fix retry".
-2. Build the body: the five sections, then a blank line, then the footer block from `footer.sh`.
+2. Build the body: the `## Summary` lead, then the five sections, then a blank line, then the footer block from `footer.sh`.
 3. **Re-query for an existing issue — always, and last.** Report agents run
    concurrently (several people run them at once), so the same observation may have
    been filed minutes ago. Run this check *after* composing the body, as the final
@@ -117,6 +128,9 @@ Stream the composed body **straight into the create call over stdin** — there 
 # never touches the markdown, so backticks and nested ``` fences file intact.
 {
   cat <<'EOF'
+## Summary
+…
+
 ## What I was doing
 …
 

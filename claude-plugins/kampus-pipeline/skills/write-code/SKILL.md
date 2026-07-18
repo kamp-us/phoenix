@@ -1284,6 +1284,16 @@ Open the PR with **`Fixes #N` in the body** so merging auto-closes the issue (th
 the seam `review-code` relies on: pass → merge → `Fixes #N` closes it). Use the issue
 number you're implementing.
 
+**Lead the body with a plain-language, human-first summary.** Before any technical
+detail — the what-changed rundown, the `Fixes #N` seam, a `Flag:` line — open the body
+with **2–3 plain sentences a reviewer or a passer-by can grasp on a skim**: what this PR
+changes and why it matters, in prose, no jargon. The summary **precedes, never replaces**,
+the technical body below it. This is the human-first-summary mandate from
+[#3374](https://github.com/kamp-us/phoenix/issues/3374) — the same wired-in writing-craft
+integration Step 4e authors to, so write the summary to
+[`../writing-clearly-and-concisely/SKILL.md`](../writing-clearly-and-concisely/SKILL.md)
+(clear, concrete, no AI tells).
+
 **The AC-completeness gate — decide `Fixes #N` vs `Part of #N` from whether the diff satisfies
 EVERY acceptance criterion (run this BEFORE you write the keyword).** The closing keyword is a
 **scope claim**, not a formality: `Fixes #N` auto-closes the *whole* issue on merge, so it is
@@ -1412,7 +1422,7 @@ gh pr create \
   --base main \
   --title "<concise PR title>" \
   --body "$(cat <<'EOF'
-<short summary of what changed and why>
+<2–3 plain-language sentences: what changed and why, for a human skimming — the human-first summary that leads the body, before any technical detail>
 
 Fixes #<N>
 Flag: <FLAG_KEY>
