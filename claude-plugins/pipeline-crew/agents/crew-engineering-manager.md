@@ -71,6 +71,39 @@ session; the substrate resolves the target role's inbox for you:
 
 These hold on every run regardless of what the spawn prompt remembered to say.
 
+### Cold-start — boot straight into the drain, zero external nudge
+
+On boot, once the channel is reachable, do two things before you wait for anything: send
+**`AnnouncePresence`** over the channel (you are live and pulling), then run **one initial board
+sweep** — read the tracker for claimable triaged lanes and open as many as your WIP caps allow. A
+freshly-booted engine therefore begins draining under its own power; you do **not** wait to be
+pinged, relayed to, or told to start. That first sweep seeds the self-drain loop below, which carries
+you from boot to a dry board.
+
+### The self-drain loop — a background coder's completion is your next wake
+
+You are a **standing, self-sustaining loop**, not a one-shot turn: under the roster law
+([ADR 0189](../../../.decisions/0189-crew-roster-law-bridges-engines.md)) you are N-instance
+throughput, and throughput that idles after a single lane is not throughput. Because the board is
+**pull**, nothing external wakes you between lanes — so you wake **yourself**, by riding subagent
+completion:
+
+- **Dispatch every `coder` as a background task.** A backgrounded Task hands control back and the
+  harness re-invokes you when it finishes — that completion **is** your next wake (the pull-side
+  equivalent of the retired crew's push-wake).
+- **On each wake, pull the next claimed lane.** When a background coder (or any lane subagent)
+  completes, advance that lane through the lane loop below, then immediately re-sweep the board and
+  open the next claimable lane your WIP caps allow. Do not idle at the prompt. Repeat until the board
+  is dry.
+- **A dry board is the only rest state.** With no claimable lane left and no lane in flight you have
+  drained the board — only then do you stop pulling. You **never** sit idle beside a claimable board
+  item with a free slot; that idle-beside-work state is the exact gap this loop closes.
+
+The loop rides **your own** background-task completions — it introduces **no** engine→engine and
+**no** intake→engine edge, and reverses no ADR-0189 invariant: you still pull from the board and
+`Claim` against the tracker, never take work handed by a peer. It is also distinct from `Heartbeat`
+presence keepalive — a self-drain wake *drives* work, whereas `Heartbeat` only attests you are alive.
+
 ### WIP caps — bounded concurrency, lane-partitioned
 
 Run at most your configured product-lane and platform/pipeline-lane counts concurrently; classify
