@@ -21,7 +21,8 @@ role verbatim as its `--agent` argument.
 That identity map turned out to be unsafe at the agent-def name specifically. `claude`'s
 agent-pool dedup (2.1.214) is **last-write-wins with userSettings applied after plugins**, and
 a bare `name:` frontmatter becomes the def's `agentType` **verbatim, with no plugin-namespace
-prefix**. So a personal `~/.claude/agents/<role>.md` def with the same bare name **shadows** the
+prefix**. So a personal user-scope agent def (one that lives in the CLI's user-level config
+directory rather than the project's `.claude/`) with the same bare name **shadows** the
 plugin def, and `--agent <bare-role>` boots the personal persona instead of the crew one — while
 the plugin-qualified `--agent plugin:name` form does **not** resolve. This is the #3447
 collision; it was fixed by renaming the plugin defs and the launcher argv in PR #3477.
