@@ -1228,6 +1228,56 @@ evidence-attach.
 
 ---
 
+## Step 4e — Author prose in the imported writing-craft house style (prose diffs only)
+
+When this diff **authors prose a human reads** — a doc page, an error message, or a skill — read
+the imported writing-craft skill for that surface **before you write the prose**, then author to it.
+This is the doc-path analog of Step 4d: the same self-check shape, on the writing surface instead of
+the render. It exists because the writing-craft skills were imported as **wired-in, not ambient** —
+the settled integration-depth decision ([#3374](https://github.com/kamp-us/phoenix/issues/3374)):
+write-code consults them on the way *in* so generated prose conforms to Diátaxis + Strunk from the
+first draft, rather than leaving `review-doc`/`review-skill` to catch a mode-mix or an AI tell after
+the fact. This is the authoring counterpart of the same manifest-before-UI move CLAUDE.md names for
+design (`design-system-manifest.md`).
+
+**Fires only for a prose-authoring diff — a no-op otherwise (graceful absence).** Scope it to a diff
+that adds or edits one of the four surfaces below; a pure worker/frontend diff that authors no prose
+skips this step entirely — the same first-class-absence shape as Steps 4b/4d. Read each import
+straight from the pipeline skills dir (they ship with this plugin); a missing import degrades to a
+skip for that surface, never a block.
+
+**Route each surface to its import, and read it before authoring — all four Wave-1 imports:**
+
+- **Any doc page** (an ADR under `.decisions/**`, a pattern under `.patterns/**`, `README`,
+  `DEVELOPMENT.md`, or prose `*.md` outside `.claude/`/`.github/`/`.glossary/`) → read
+  [`../diataxis/SKILL.md`](../diataxis/SKILL.md) and pick the **one** Diátaxis mode the page serves
+  (tutorial / how-to / reference / explanation), then author it to hold that single mode — never let
+  it drift into a second. This is the exact lens `review-doc` gates the page against, so converging
+  here is what keeps the page from coming back a mode-mix FAIL.
+- **The English prose itself**, on **every** surface above (the ADR/pattern body text, not just its
+  shape) → read [`../writing-clearly-and-concisely/SKILL.md`](../writing-clearly-and-concisely/SKILL.md)
+  and write to Strunk — clear, concrete, cut the fluff — while avoiding its catalog of AI tells. The
+  TR/EN language law is untouched: this governs the **English** technical prose; Turkish product copy
+  stays Turkish (`.glossary/LANGUAGE.md`).
+- **Error copy** — the English source string a user reads when an operation fails, in
+  [`apps/web/src/fate/wireMessages.ts`](https://github.com/kamp-us/phoenix/blob/main/apps/web/src/fate/wireMessages.ts)
+  → read [`.patterns/error-copy-law.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/error-copy-law.md)
+  and write each string to the voice-and-clarity law. It governs the copy's wording only; the
+  registry structure and the no-leak codec it names stay their owners' — don't touch them here.
+- **A skill** — a `skills/**/SKILL.md` or its supporting files → read
+  [`../author-skill/SKILL.md`](../author-skill/SKILL.md) and write in the house idiom (the frontmatter
+  `name`/`description` contract, the prose-first body, the imported writing-craft house rules) toward
+  `review-skill`'s four rigor checks, so the gate passes on the first pass.
+
+This is a **self-check, not a gate — the split-role firewall holds** exactly as it does for
+Steps 4c/4d. Reading the writing-craft skills to shape your own prose before you push is the
+sanctioned self-edit, not a review: you do **not** run `review-doc`/`review-skill` on your PR and you
+do **not** emit a `review-*` verdict. The independent gate still judges the result with fresh eyes
+against the same skills — consulting them in authoring is what lets it rarely have to escalate a
+mode-mix or a slop tell it would otherwise FAIL.
+
+---
+
 ## Step 5 — Open a PR that closes the issue
 
 Open the PR with **`Fixes #N` in the body** so merging auto-closes the issue (this is
