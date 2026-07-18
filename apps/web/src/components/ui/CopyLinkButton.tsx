@@ -89,11 +89,21 @@ export function shareFeedbackLabel(
 export interface CopyLinkButtonProps {
 	/** Canonical path of the item, e.g. `/pano/:id` or `/pano/:id#comment-<id>`. */
 	path: string;
+	/** Resting label; defaults to `paylaş`. Feedback states replace it transiently. */
 	label?: string;
 	testId?: string;
 	className?: string;
 }
 
+/**
+ * @component CopyLinkButton
+ * @whenToUse The shared paylaş (share/copy-link) control. Reach for it on any
+ *   shareable item (pano post/comment, sözlük definition) — pass the canonical
+ *   `path` and it resolves the absolute URL, copies it, and flashes inline
+ *   kopyalandı/kopyalanamadı feedback (native share sheet only on coarse-pointer
+ *   surfaces). Don't hand-roll per-page link logic.
+ * @slot none Renders its own label; no children slot.
+ */
 export function CopyLinkButton({path, label = "paylaş", testId, className}: CopyLinkButtonProps) {
 	const [feedback, setFeedback] = React.useState<"copied" | "error" | null>(null);
 	const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -7,12 +7,21 @@ import "./DraftRestoreBanner.css";
  * the user explicitly restores or discards it. Real semantics — a labelled `<section>`
  * landmark with two native buttons (full keyboard path + visible focus from `kp-btn`);
  * state is conveyed by text, not color alone. Copy is lowercase Turkish.
+ *
+ * @component DraftRestoreBanner
+ * @whenToUse The saved-draft restore prompt. Reach for it after a flow that may have
+ *   stashed a draft across the auth round-trip — it OFFERS restore/discard rather
+ *   than silently re-injecting (#1214). Wire `onRestore`/`onDismiss` to the caller's
+ *   draft store.
+ * @slot none Fixed copy + two actions; no children slot.
  */
 export function DraftRestoreBanner({
 	onRestore,
 	onDismiss,
 }: {
+	/** Called when the user accepts — restore the stashed draft. */
 	onRestore: () => void;
+	/** Called when the user declines — discard/ignore the stashed draft. */
 	onDismiss: () => void;
 }) {
 	return (

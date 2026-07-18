@@ -11,6 +11,7 @@ export function Root({
 	children,
 	...rest
 }: React.ComponentProps<typeof BaseTabs.Root> & {
+	/** Visual style of the tab list: `underline` (default) or `pill`. */
 	variant?: "underline" | "pill";
 }) {
 	const cls = `${styles.root} ${variant === "pill" ? "kp-tabs--pill" : ""} ${className}`.trim();
@@ -45,4 +46,15 @@ export function Panel({children, ...rest}: React.ComponentProps<typeof BaseTabs.
 	);
 }
 
+/**
+ * @component Tabs
+ * @whenToUse The tabbed-panels compound (base-ui). Compose from its parts to switch
+ *   between sibling views within one region; supports an `underline` or `pill`
+ *   `variant`. Reach for it over hand-wired show/hide so keyboard + aria roles come
+ *   for free.
+ * @slot Root The selection-state provider wrapping the list + panels.
+ * @slot List The tab strip holding the `Tab` triggers.
+ * @slot Tab A single tab trigger; its text child is its accessible name.
+ * @slot Panel The content region shown for the matching tab.
+ */
 export const Tabs = {Root, List, Tab, Panel};

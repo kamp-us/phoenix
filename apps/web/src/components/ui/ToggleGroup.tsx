@@ -14,6 +14,7 @@ export function Root({
 	children,
 	...rest
 }: React.ComponentProps<typeof BaseToggleGroup> & {
+	/** Visual style of the group: `pill` (default) · `segmented` · `square` · `swatch`. */
 	variant?: ToggleVariant;
 }) {
 	const variantCls = variant === "pill" ? "" : `kp-toggle-group--${variant}`;
@@ -31,6 +32,7 @@ export function Item({
 	children,
 	...rest
 }: React.ComponentProps<typeof Toggle> & {
+	/** For the `swatch` variant: the color rendered as the item's fill (`--swatch-color`). */
 	swatchColor?: string;
 }) {
 	// `--swatch-color` is a CSS custom property; React 19's `CSSProperties` only
@@ -53,4 +55,14 @@ export function Item({
 	);
 }
 
+/**
+ * @component ToggleGroup
+ * @whenToUse The single/multi-select toggle set (base-ui). Compose `Root` + `Item`s
+ *   for a segmented control, a filter set, or a swatch picker (`variant="swatch"`
+ *   with `swatchColor`). Reach for it when a small fixed set of options toggles in
+ *   place; for a binary on/off use `Switch`.
+ * @slot Root The selection-state provider wrapping the items.
+ * @slot Item A single toggle option; text child is its accessible name (or set
+ *   `aria-label` for an icon/swatch-only item).
+ */
 export const ToggleGroup = {Root, Item};
