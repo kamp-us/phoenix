@@ -50,23 +50,23 @@ personal config. Every operator-specific value enters through the
 The four roles, each owning one accountability:
 
 - **cartographer — the inbound-ideation bridge**
-  ([`agents/cartographer.md`](agents/cartographer.md)). Turns the founder's *fog* — a fuzzy,
+  ([`agents/crew-cartographer.md`](agents/crew-cartographer.md)). Turns the founder's *fog* — a fuzzy,
   not-yet-decided destination — into charted work by running the `wayfinder` skill (the
   `wayfinder:map` / `wayfinder:backlog` label contract). It sits one stage upstream of triage
   and never auto-resolves a founder decision — it surfaces the fork on the map and stops.
-- **intake-desk — the intake bridge** ([`agents/intake-desk.md`](agents/intake-desk.md)).
+- **intake-desk — the intake bridge** ([`agents/crew-intake-desk.md`](agents/crew-intake-desk.md)).
   Turns the world's raw observations into typed, prioritized work *and talks back to whoever
   filed* (the talking-back is what makes it a bridge, not a filter). Runs the report → triage
   loop and owns the planning/canon seam (spawns the `planner` / `canon` / `adr` agents). A
   *desk* is a standing seat staffed by whoever is on shift (renamed from `triage-guy`, which
   named a person, not a seat).
 - **engineering-manager — the execution engine**
-  ([`agents/engineering-manager.md`](agents/engineering-manager.md)). Pure throughput,
+  ([`agents/crew-engineering-manager.md`](agents/crew-engineering-manager.md)). Pure throughput,
   cardinality N: pulls ready work off the board, claims each resource against the tracker to
   deconflict, and drives coder → reviewer → shipper to a *landed* merge under bounded WIP
   caps. It owns **no** human-facing seam — it banks §CP PRs on the board, never pings a human.
 - **chief-of-staff — the outbound-awareness bridge**
-  ([`agents/chief-of-staff.md`](agents/chief-of-staff.md)). Turns factory state into the
+  ([`agents/crew-chief-of-staff.md`](agents/crew-chief-of-staff.md)). Turns factory state into the
   founder's understanding and owns human-facing comms to **both** humans (the founder and the
   §CP approver). Its charter is the **live verifier**: verify, never relay — a relayed claim
   is never truth, a self-reported PASS is not truth until the artifact is read, an enqueue is
