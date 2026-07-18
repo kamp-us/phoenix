@@ -13,8 +13,65 @@
  * module '/abs/path'`), which is a real code bug we must not mask.
  */
 
+import {join} from "node:path";
+
 /** The pnpm filter that links this package's own deps in isolation. */
 const FILTER_INSTALL = "pnpm --filter @kampus/pipeline-cli install";
+
+/**
+ * The argv the self-heal install runs pnpm with. `--config.confirm-modules-purge=true`
+ * keeps pnpm's destructive-purge guard ARMED, so a self-heal that would otherwise "remove
+ * and reinstall node_modules from scratch" instead **aborts** under a non-TTY stdin
+ * (`ABORTED_REMOVE_MODULES_DIR_NO_TTY`) rather than wiping the modules farm (#3504).
+ *
+ * Grounded in pnpm 10.27.0 (`purgeModulesDirsOfImporters` in its `dist/pnpm.mjs`), NOT
+ * intuition: the purge path is `if (confirmModulesPurge ?? true) { if (!stdin.isTTY) throw
+ * ABORTED_REMOVE_MODULES_DIR_NO_TTY; … }` — so `true` + no-TTY THROWS (safe), while the
+ * value the original report guessed, `=false`, takes the `else` branch and purges
+ * **silently**. Passing `=false` would be the exact opposite of the fix; we pass `=true`
+ * and the bin runs pnpm with a non-TTY stdin so the abort is guaranteed to fire.
+ */
+export const SELF_HEAL_INSTALL_ARGS: readonly string[] = [
+	"install",
+	"--config.confirm-modules-purge=true",
+];
+
+/**
+ * The refusal message when the self-heal install is asked to run over a symlinked
+ * repo-root `node_modules`. Named separately so the bin and the test share one string.
+ */
+export const selfHealSymlinkRefusal = (nodeModulesPath: string): string =>
+	[
+		`pipeline-cli self-heal: refusing to \`pnpm install\` — \`${nodeModulesPath}\` is a symlink.`,
+		"A destructive install here would follow the link and purge the symlink target's",
+		"node_modules (the shared primary checkout, when a worktree lane symlinks into it) —",
+		"the primary-checkout-corruption class (#2143/#2144/#2270) via the hook+pnpm path (#3504).",
+		"Provision a real per-worktree node_modules instead of symlinking into the primary.",
+	].join("\n");
+
+/** lstat shape the guard needs — just the symlink predicate; `null` when the path is absent. */
+export interface LstatLike {
+	isSymbolicLink(): boolean;
+}
+
+/**
+ * Fail-closed guard run immediately before the self-heal `pnpm install`: throw iff the
+ * repo-root `node_modules` is a **symlink**. That is the #3504 corruption vector — a
+ * worktree lane symlinks its `node_modules` into the shared primary checkout, and a
+ * destructive install follows the link and wipes the primary's farm. Version-robust (it
+ * does not rely on any particular pnpm's purge-confirmation behavior): a symlinked
+ * modules dir is never a path a mutating install may follow, on any pnpm. A real
+ * directory (the normal primary/`main-sync` self-heal) passes untouched.
+ */
+export const assertSelfHealInstallSafe = (
+	rootDir: string,
+	lstat: (path: string) => LstatLike | null,
+): void => {
+	const nodeModulesPath = join(rootDir, "node_modules");
+	if (lstat(nodeModulesPath)?.isSymbolicLink()) {
+		throw new Error(selfHealSymlinkRefusal(nodeModulesPath));
+	}
+};
 
 /**
  * True iff `err` is a Node `ERR_MODULE_NOT_FOUND` for an **unlinked package**
