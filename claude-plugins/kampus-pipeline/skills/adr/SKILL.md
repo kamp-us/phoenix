@@ -45,7 +45,7 @@ The glossary ([`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/mai
 This is a **required, not-silently-skippable** authoring step. When you write the ADR, ask: *does this decision coin a new term, or redefine an existing one?* You must record **exactly one** of two outcomes — you cannot leave it blank:
 
 - **Term(s) coined/redefined → feed the glossary.** Name each term (and, for a redefinition, what changed). Then route it to `.glossary/TERMS.md`: if the term's canonical definition is short and unambiguous, add/update its row directly in the same ADR PR; if it needs the fuller treatment (a "not …" disambiguation, cross-links), **invoke `/glossary`** (`claude-plugins/kampus-pipeline/skills/glossary/SKILL.md`) or file a `report` so the glossary skill picks it up. Either way the term is surfaced, never left implicit in the ADR prose.
-- **No vocabulary impact → record it explicitly.** If the ADR coins/redefines nothing (it re-decides mechanics, sequencing, or policy over already-named concepts), state that plainly — e.g. tell the user "no vocabulary impact" as part of Step 6's report. The explicit "none" is the recorded outcome; it is what distinguishes *"considered and there is none"* from *"forgot to check."*
+- **No vocabulary impact → record it explicitly.** If the ADR coins/redefines nothing (it re-decides mechanics, sequencing, or policy over already-named concepts), state that plainly — record it in the ADR's terminal `## Records` section (see the [Rules](#rules)) and tell the user "no vocabulary impact" as part of Step 6's report. The explicit "none" is the recorded outcome; it is what distinguishes *"considered and there is none"* from *"forgot to check."*
 
 This hook is **off the fail-closed gate by construction**: it is authoring-time judgment in this skill, it blocks no PR, and it does not (and must not) alter `review-code`'s Step 3c. It is the routed-term half of ADR 0128; the un-routed code-PR class is the sibling drift-sweep backstop, not this skill's job.
 
@@ -54,13 +54,13 @@ This hook is **off the fail-closed gate by construction**: it is authoring-time 
 ```markdown
 ---
 id: NNNN
-title: <Title Case>
+title: <one decision-carrying clause, ≤ ~12 words — this is the compact-map row>
 status: accepted
 date: YYYY-MM-DD
 tags: [<area>, <area>]
 ---
 
-# NNNN — <Title>
+# NNNN — <Title, verbatim from the frontmatter `title`>
 
 **What this decides:** <one plain human-language sentence a non-author can parse cold — what the decision *is*, not a restatement of the dense `title`.>
 
@@ -68,10 +68,32 @@ tags: [<area>, <area>]
 <Why this came up — situation, constraint, prior pain.>
 
 ## Decision
-<What we do now, declarative. No hedging.>
+**<One bolded declarative sentence — the decision itself, in a line.>**
+
+<Then the mechanics / reasoning, declarative. No hedging.>
+
+<!-- When (and only when) this ADR constrains future work, follow the reasoning with an
+     austere list — terse, one line per item — under a bolded label. Omit it entirely if
+     the ADR constrains nothing (the 0092/0107 form):
+**Binding constraints.**
+- <constraint>
+**Banned.**
+- <what this rules out> -->
 
 ## Consequences
-<What this makes easier / harder. What's now banned. Any migration cost.>
+<What this makes easier / harder. Any migration cost.>
+
+<!-- Optional terminal sections — add only when they carry content, in this order:
+
+## Records
+     Merge-time bookkeeping, quarantined out of the decision body: backlog reconciliation
+     (`Closes/Reshapes #N`), blocks-cleared, and the Step-5 vocabulary-impact outcome (the
+     term routed to .glossary/TERMS.md, or an explicit "no vocabulary impact").
+
+## Amendments
+     The one sanctioned currency shape — a dated forward note when a later change refines
+     this ADR; the decision above still stands (0107's form, never a top-of-file blockquote):
+- **#NNNN — <what changed> (YYYY-MM-DD).** <the refinement.> -->
 ```
 
 ## Discovery — the CLAUDE.md contract, no committed index
@@ -88,6 +110,10 @@ On a **PR**, `.github/workflows/decisions-index.yml` runs `decisions-index valid
 
 - One decision per file. If the user is describing a sprawling design, that belongs in the vault, not here.
 - **Every new ADR opens with a plain one-line `**What this decides:** …` summary, directly beneath the `# NNNN — <Title>` heading and above `## Context`.** Write it in plain human language — what the decision *is*, so the founder (who ratifies ADRs — ADR [0078](https://github.com/kamp-us/phoenix/blob/main/.decisions/0078-product-driven-decisions-by-default.md)) can parse it cold, without decoding the dense agent-oriented prose below it. It is a reader-facing summary for a non-author, **not** a restatement of the one-line `title` (the `title` is the dense `compact`-map row; this is the human gloss). This line is required on every new ADR — never omit it.
+- **Title discipline — `title` is one decision-carrying clause (≤ ~12 words); the `# NNNN — <Title>` H1 repeats it verbatim.** The frontmatter `title` *is* the `compact`-map row (per the [Discovery](#discovery--the-claudemd-contract-no-committed-index) note that it renders verbatim), so it must **carry the decision, not name the topic** — `Every gate fails closed on zero scope` over `Gate scope handling` — and stay to a single dense clause. The H1 then matches it character-for-character; the human gloss lives in the `**What this decides:**` line above, not in a second, looser title. (0092/0107/0191 already do this.)
+- **`## Decision` opens with one bolded declarative sentence.** State the decision in a single bolded line *before* the mechanics (0092's `**Every gate fails closed…**`, 0107's `**instances + standing…**`) so a reader gets the ruling in one line. When — and only when — the ADR constrains future work, follow the reasoning with an **austere** list (terse, one line per item) under a bolded `**Binding constraints.**` / `**Banned.**` label. This is authoring *guidance*, not a fail-closed template section: an ADR that constrains nothing carries no such list, and nothing reds a PR for omitting it.
+- **Merge-time bookkeeping goes in a terminal `## Records` section, out of the decision body.** Backlog reconciliation (`Closes/Reshapes #N`), blocks-cleared, and the Step-5 vocabulary-impact outcome are housekeeping, not the decision — quarantine them in a terminal `## Records` so `## Decision`/`## Consequences` read as the decision alone. Omit the section when there's nothing to record.
+- **Post-merge currency has one shape: a dated `## Amendments` note.** When a later change refines an *accepted* ADR (the decision itself still stands — this complements "never edit the decision text, supersede instead" above; an amendment refines mechanics/spelling, not the ruling), append a dated forward note — `- **#NNNN — <what> (YYYY-MM-DD).** …` — to a terminal `## Amendments` section (0107's form). **Never** prepend an ad-hoc `> **Update:** …` blockquote at the top of the file (0027's retired form); the top-of-file update blockquote is banned.
 - **Linking to another ADR — resolve its filename by stable number from disk, never guess the slug from the target's title.** A target ADR's slug is **not derivable from its title** (0048 is `ship-it-merge-actor`, not `single-merge-authority`; 0053 is `control-plane-boundary`, not `control-plane-human-merge`; 0075 is `issueless-doc-pr-merge-seam`, not `conversation-authored-adr-exception`). The stable number `NNNN` is the only reliable key, so **read the real filename off disk** and use it verbatim — never re-apply the Step-2 title→slug heuristic to a *different* ADR you're linking. This is the recurring `review-doc` "links resolve" FAIL (#1777); `doc-links.yml` is the CI backstop, this is the authoring-time fix. Resolve every `[NNNN](NNNN-slug.md)` link's slug this way:
   ```bash
   ls .decisions/NNNN-*.md   # → .decisions/NNNN-real-slug.md — use exactly this filename in the link
