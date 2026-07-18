@@ -148,35 +148,30 @@ Everything else (`subscribe`, `register`, `publish`, `check`, …) is a method.
 
 ## The typed error channel is a type lie — retry the cold-start transport seam
 
-Every `LiveRpcSurface` method above has failure channel `never`, but that
+Every `LiveRpcSurface` method above declares failure channel `never`, but that
 `never` is the **declared** shape, not the **runtime** one. The alchemy stub
 (`makeRpcStub`, `src/Cloudflare/Workers/Rpc.ts`) wraps each cross-DO call in
 `Effect.tryPromise({catch: … RpcCallError})`, so a real transport failure —
-crucially, a **cold-start** failure when Cloudflare has evicted an idle DO and the
-first RPC races the warm-up — surfaces as an `RpcCallError` in the **failure
-channel** the static type erases. A bare call (`connectionOf(live, id).subscribe(…)`)
-or an `Effect.orDie` therefore turns a sub-second warm window into a defect → HTTP
-500 that the client can't recover from (the fate live transport deletes the
-operation on a fatal non-200). This is the steady-state production path for the
-global live pin against an idle user's `topic:User:<id>` DO (ADR 0094).
+crucially a **cold-start** race when Cloudflare has evicted an idle DO — surfaces as
+an `RpcCallError` in the failure channel the static type erases. A bare call or an
+`Effect.orDie` therefore turns a sub-second warm window into a defect → an
+unrecoverable HTTP 500 (the steady-state path for the global live pin against an idle
+`topic:User:<id>` DO).
 
-The fix is a **bounded retry keyed on the transport channel only**, at the one seam
-where the runtime error is reachable — the worker `index.ts` `liveLayer` call sites,
-where the stub method is actually invoked. `apps/web/worker/features/fate-live/cold-start-retry.ts`
-owns `withColdStartRetry(method, call)`: it reinterprets the type-lie `never` to the
-runtime reality, retries with capped exponential backoff
-(`Schedule.both(Schedule.exponential("100 millis"), Schedule.recurs(4))`), and on
-exhaustion surfaces a typed `LiveTransportError` the route renders as a graceful 503
-envelope. The retry keys on the `RpcCallError` `_tag` (the class is internal to
-alchemy, off the public export path — a structural tag check is the only seam) via
-`Retry.Options.while`, so a **genuine app error fails fast and passes through
-untouched** — never retried, never masked as a 503. The SSE-open path is the one
-exception: a cold-DO `stub.fetch` rejection arrives as a **defect**, not an
-`RpcCallError` failure, so the open call site uses the sibling
-`withColdStartRetryFetch`, which lifts the transport defect into the same retryable
-shape (#1048). Schedule shape grounds in effect-smol `LLMS.md` §"Working with
-Schedules" (`retryBackoffWithLimit` + `retryableOnly`). See
-[ADR 0095](../.decisions/0095-cold-start-retry-rpc-transport-seam.md).
+The fix wraps each stub call at the one seam where the runtime error is reachable — the
+worker `index.ts` `liveLayer` call sites.
+`apps/web/worker/features/fate-live/cold-start-retry.ts` owns `withColdStartRetry(method,
+call)`: it reinterprets the type-lie `never` to the runtime reality, retries with capped
+exponential backoff, and on exhaustion surfaces a typed `LiveTransportError` the route
+renders as a graceful 503. The retry keys on the `RpcCallError` `_tag` (a structural tag
+check — the class is internal to alchemy), so a **genuine app error fails fast and passes
+through untouched**. The SSE-open path is the one exception: a cold-DO `stub.fetch`
+rejection arrives as a **defect**, not an `RpcCallError` failure, so the open call site
+uses the sibling `withColdStartRetryFetch`, which lifts the transport defect into the same
+retryable shape. Why the cold-start race is the steady state, and the retryable-only
+schedule shape (grounded in effect-smol `LLMS.md`), live in
+[ADR 0095](../.decisions/0095-cold-start-retry-rpc-transport-seam.md) and
+[ADR 0094](../.decisions/0094-app-lifetime-global-live-pin.md).
 
 ```ts
 // index.ts liveLayer — wrap each stub call at the seam, never call it bare:

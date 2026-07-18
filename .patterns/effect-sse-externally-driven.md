@@ -95,50 +95,21 @@ const deliver = (frame: Uint8Array) =>
   from the stream; when the reader cancels (client disconnect), the
   `Stream.ensuring(closeStream)` finalizer fires.
 
-## Why not the raw `ReadableStream` controller approach
+## Why the merged-stream form, not a raw `ReadableStream` controller
 
-The legacy version did this with three independent imperative subsystems:
+The imperative alternative drives this with three independently-coordinated subsystems — a
+`ReadableStream` controller, a `setInterval` heartbeat, and a try/catch around
+`controller.enqueue`. The Effect composition collapses them into one pipeline with linear
+data flow and one finalizer, removing three sharp edges:
 
-```ts
-// Legacy — three subsystems, manually coordinated.
-let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
-let heartbeat: ReturnType<typeof setInterval> | undefined;
-const stream = new ReadableStream({
-  start: (c) => {
-    controller = c;
-    c.enqueue(encoder.encode(": connected\n\n"));
-    heartbeat = setInterval(() => controller?.enqueue(encoder.encode(": heartbeat\n\n")), 25_000);
-  },
-  cancel: () => {
-    if (heartbeat) clearInterval(heartbeat);
-    controller = undefined;
-  },
-});
-const deliver = (frame: Uint8Array) => {
-  try {
-    controller?.enqueue(frame);  // throws if stream closed
-  } catch { /* swallow */ }
-};
-```
-
-Three problems the effect composition removes:
-
-- **The deliver path needs a try/catch** because `controller.enqueue`
-  throws if the stream has been canceled. `Queue.offer` is total — it
-  returns `false` when the queue is shut down, so the handler can branch
-  on the boolean (and report `delivered: false` to the caller, which is
-  the signal the topic DO uses to prune an orphaned subscriber row).
-- **The heartbeat is a sibling subsystem** (`setInterval` outside the
-  stream), so cleanup is a separate `clearInterval` in `cancel`. As a
-  merged `Stream.tick`, the heartbeat is part of the same stream pipeline
-  and is finalized by the same `Stream.ensuring` clause.
-- **The controller reference outlives the stream.** A late `deliver` after
-  cancel could throw past the try/catch in some edge orderings. With the
-  queue + shutdown, the shutdown is idempotent and total — `Queue.offer`
-  can be called any number of times after shutdown without throwing.
-
-The effect form is one pipeline with linear data flow and one finalizer
-clause. The legacy form is three things glued together; this is one.
+- **No try/catch on the deliver path.** `controller.enqueue` throws once the stream is
+  canceled; `Queue.offer` is total — it returns `false` when the queue is shut down, so the
+  handler branches on the boolean and reports `delivered: false` (the signal the topic role
+  uses to prune an orphaned subscriber row).
+- **The heartbeat dies with the stream.** As a merged `Stream.tick`, it is part of the same
+  pipeline and is finalized by the same `Stream.ensuring` clause — no separate `clearInterval`.
+- **A late `deliver` after cancel is safe.** `Queue.shutdown` is idempotent and `Queue.offer`
+  is total, so a `deliver` racing teardown can never throw past a swallowing try/catch.
 
 ## Cleanup
 

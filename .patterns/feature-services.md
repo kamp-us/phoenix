@@ -66,11 +66,9 @@ The trade-off, recorded: callers lose the *option* of typeful infra handling (e.
 
 `worker/features/domain-error-boundary.unit.test.ts` pins the rule per service: a type-level sweep proves no method's `E` contains `DrizzleError`, plus one exact-domain-union pin per service.
 
-### Why `run` / `batch` are NOT statics on the Tag class
+### Why `run` / `batch` are bound methods, not statics on the Tag class
 
-An earlier shape (pre-fbb57d8) put `run` / `batch` as `static readonly` effects on the Tag class — they yielded `Drizzle` internally and wrapped the promise. That looked clean but every method that yielded `Drizzle.run(...)` carried `Drizzle` in its inferred `R` channel, so every service method ended up as `Effect<A, E, Drizzle>` and the dep bled into resolvers and tests. To paper over that, services wrote closure-captured `tryDb` wrappers that re-yielded `Drizzle` once at layer build and then used a captured `db` directly — three parallel APIs (`Drizzle.run` static, `tryDb` closure, raw `Effect.tryPromise` inside batch) all doing the same job.
-
-The current shape (`run` / `batch` as bound methods on the Tag value, destructured at layer build) keeps method types as `R = never` with one canonical API and no wrapper closures. The destructure is the natural place to capture the dep — same code as the old `tryDb` would have produced, just lifted into the foundation.
+`run` / `batch` are **bound methods on the yielded service value, destructured at layer build** — not `static readonly` effects on the Tag class. Statics that yield `Drizzle` internally bleed `Drizzle` into every caller's inferred `R` (`Effect<A, E, Drizzle>`), leaking the dep into resolvers and tests. Destructuring the methods once at layer build keeps method types at `R = never` with one canonical API and no wrapper closures.
 
 The service earns its keep by:
 

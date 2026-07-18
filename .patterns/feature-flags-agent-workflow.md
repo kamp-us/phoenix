@@ -40,8 +40,8 @@ Two traps travel with this read — both are correctness footguns, not cosmetics
   yet `serves: off (default)` — registered but dark, because no rule/no-match split serves it. Read
   `enabled` as "is it live?" and you get the wrong answer; the `serves:` line is the truth. (The
   serves-vs-enabled computation is `computeEffectiveServing` / `renderEffectiveServing` in
-  [`../packages/cf-utils/src/flag.ts`](../packages/cf-utils/src/flag.ts) — the #1726 fix so a flag
-  can't lie about its `defaultVariation`.)
+  [`../packages/cf-utils/src/flag.ts`](../packages/cf-utils/src/flag.ts), so a flag can't lie about
+  its `defaultVariation`.)
 - **The prod env is named `prod`, not `production`.** `--env production` errors with
   `FlagEnvNotFound`.
 
@@ -257,37 +257,25 @@ dashboard** (the deploy would silently revert a live flip).
 A flag is a **temporary** decoupling of deploy from release; left to accumulate, flags rot into dead,
 untested conditionals. Once the new path has been on and stable long enough that reverting is no longer
 realistic, **retire** the flag — the lifecycle's third stage (per
-[#513](./feature-flags-schema-lifecycle.md)), and per ADR
-[0083](../.decisions/0083-agents-deploy-humans-release.md) (Decision item 4, Pipeline touchpoints) the
-stage that **"returns to agents as a drainable chore."** Retirement is the mirror of the flip: the flip is a deliberate *human* release act,
-but retirement is mechanical cleanup with no user-visible effect, so it goes back to the autonomous
-pipeline as a `type:chore` the same way any other chore does.
+[#513](./feature-flags-schema-lifecycle.md)). Retirement mirrors the flip: the flip is a deliberate
+*human* release act, but retirement is mechanical cleanup with no user-visible effect, so it **returns
+to the autonomous pipeline as a `type:chore`** — per ADR
+[0083](../.decisions/0083-agents-deploy-humans-release.md) (Decision item 4).
 
-**Retirement is a filed, drainable chore — never auto-flipped or auto-detected.** There is **no
-auto-retirement detector**: nothing watches a flag's rollout and removes it on its own. ADR
-[0083](../.decisions/0083-agents-deploy-humans-release.md) frames retirement *positively* — it
-"returns to agents as a drainable chore" (Decision item 4), not as a watcher that auto-removes —
-so an auto-detector is the thing the ADR's framing rules out, not a mechanism it ever calls for.
-Automating removal would race the very stability window that makes retirement safe, and add a code
-mechanism the lifecycle deliberately doesn't need. The trigger is a **human (or agent)
-noticing the removal trigger has fired** and filing a chore; the pipeline then drains it like any other.
-No new code mechanism is introduced here beyond what #513/#514 already prescribe — this is purely the
-**wiring of retirement into the pipeline-as-chore loop.**
+**Retirement is a filed, drainable chore — never auto-flipped or auto-detected.** Nothing watches a
+flag's rollout and removes it on its own; automating removal would race the very stability window that
+makes retirement safe. The trigger is a **human (or agent) noticing the removal trigger has fired** and
+filing a chore; the pipeline then drains it like any other. No new code mechanism is introduced beyond
+what #513/#514 prescribe — this is purely the wiring of retirement into the pipeline-as-chore loop.
 
 #### The removal trigger and where it's defined
 
 The condition that says a flag is *ready* to retire is its **removal trigger** — the per-flag metadata
-recorded **at declaration** (Step 1): "remove once `<feature>` is at 100% and stable for one release",
-"remove when the kill-switch is no longer needed", etc. (the home for that metadata, IaC `description`
-vs dashboard description, is fixed in
-[feature-flags-schema-lifecycle.md](./feature-flags-schema-lifecycle.md) §*Per-flag metadata*). The
-**single documented home** for the trigger convention is phoenix's `product-development-cycle.md` (the
-cycle doc authored by [#603](https://github.com/kamp-us/phoenix/issues/603)): it states the
-default-off-for-user-facing rule and routes the retirement stage here. This doc owns the chore *shape*,
-the cycle doc owns *where the trigger lives in the process* and back-links to this section once it
-lands. The per-flag metadata recorded at Step 1
-(owner, originating issue, removal trigger) is what makes a later agent able to retire the flag at all:
-a flag with no recorded removal trigger is a flag that lives forever.
+recorded **at declaration** (Step 1: owner, originating issue, removal trigger). Its home (IaC
+`description` vs dashboard description) is fixed in
+[feature-flags-schema-lifecycle.md](./feature-flags-schema-lifecycle.md) §*Per-flag metadata*, and
+`product-development-cycle.md` owns where the trigger lives in the process; this doc owns the chore
+*shape*. A flag with no recorded removal trigger is a flag that lives forever.
 
 #### Filing the retirement chore (via `report`)
 
