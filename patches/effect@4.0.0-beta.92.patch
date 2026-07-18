@@ -8,8 +8,8 @@ index 06fff42d7f240698b9388524f874367c494242e6..8421cf06c7dee8215b690772df8a06a7
  export type ServerRequestEncoded = RequestEncoded<typeof ServerRequestRpcs>;
 -declare const ServerNotificationRpcs_base: RpcGroup.RpcGroup<typeof CancelledNotification | typeof ProgressNotification | typeof ResourceListChangedNotification | typeof ResourceUpdatedNotification | typeof PromptListChangedNotification | typeof ToolListChangedNotification | typeof LoggingMessageNotification>;
 +declare const ChannelNotification_base: Rpc.Rpc<"notifications/claude/channel", Schema.Struct<{
-+    message: Schema.String;
-+    _meta: Schema.decodeTo<Schema.optional<Schema.$Record<Schema.String, Schema.Codec<Schema.Json, Schema.Json, never, never>>>, Schema.optionalKey<Schema.$Record<Schema.String, Schema.Codec<Schema.Json, Schema.Json, never, never>>>, never, never>;
++    content: Schema.String;
++    meta: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
 +}>, Schema.Void, Schema.Never, never, never>;
 +/**
 + * phoenix patch (#3053): custom, non-allowlisted server->client channel notification.
@@ -30,14 +30,14 @@ index 909ac602a249610fdd9a1f72ae207d8813ebc28a..3f8339d619cf06c6ec1c5686c701dfbb
   * @since 4.0.0
   */
 -export class ServerNotificationRpcs extends /*#__PURE__*/RpcGroup.make(CancelledNotification, ProgressNotification, LoggingMessageNotification, ResourceUpdatedNotification, ResourceListChangedNotification, ToolListChangedNotification, PromptListChangedNotification) {}
-+// phoenix patch (#3053): custom, non-allowlisted server->client channel notification.
++// phoenix patch (#3053, #3479): custom, non-allowlisted server->client channel notification.
 +// The MCP spec allows arbitrary `notifications/*` methods; upstream's ServerNotificationRpcs
-+// union is fixed, so the run-loop's encode union (built from this group's payload schemas)
-+// and the McpServer.notifications client both gain this member by adding it here.
++// union is fixed. Payload is the 2.1.214 Claude Code channel contract `{content, meta}` (NOT
++// `{message, _meta}`, which the client drops); run-loop encode union + notifications client gain it.
 +export class ChannelNotification extends /*#__PURE__*/Rpc.make("notifications/claude/channel", {
 +  payload: {
-+    ...NotificationMeta.fields,
-+    message: Schema.String
++    content: Schema.String,
++    meta: /*#__PURE__*/Schema.optionalKey(/*#__PURE__*/Schema.Record(Schema.String, Schema.String))
 +  }
 +}) {}
 +export class ServerNotificationRpcs extends /*#__PURE__*/RpcGroup.make(CancelledNotification, ProgressNotification, LoggingMessageNotification, ResourceUpdatedNotification, ResourceListChangedNotification, ToolListChangedNotification, PromptListChangedNotification, ChannelNotification) {}

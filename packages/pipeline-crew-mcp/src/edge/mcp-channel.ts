@@ -23,11 +23,14 @@ export const channelExperimentalCapability: Record<string, Record<string, never>
 };
 
 /**
- * Shape of a `notifications/claude/channel` payload. `_meta.from` carries the
- * originating peer (the raw-SDK contract proven by spike #3034); `message` is the
- * channel body.
+ * Shape of a `notifications/claude/channel` payload — the exact params the 2.1.214 Claude
+ * Code channel handler validates: `content` (required string) is the channel body, `meta`
+ * (optional `record<string,string>`) carries the originating peer in `meta.from`. The wake
+ * is DROPPED at the recipient if `content` is absent, so this contract is load-bearing, not
+ * cosmetic (#3479 — the crew emitted `{message, _meta}` and every inbound wake failed the
+ * client's param validation).
  */
 export interface ChannelNotificationPayload {
-	readonly message: string;
-	readonly _meta?: Record<string, unknown> & {readonly from?: string};
+	readonly content: string;
+	readonly meta?: Record<string, string>;
 }
