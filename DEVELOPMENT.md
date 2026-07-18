@@ -1,6 +1,6 @@
 # Developing on phoenix
 
-phoenix is the opinionated stack the kamp.us products (sözlük, pano, vote, stats) are built on — a single Cloudflare Worker on alchemy + Effect + fate that serves the SPA, the data plane, and every backend route. It is not a general-purpose framework; it's this repo's engine, written down precisely enough that you can extend it without reverse-engineering the choices.
+phoenix is the opinionated stack the kamp.us products (sözlük, pano, mecmua) are built on — a single Cloudflare Worker on alchemy + Effect + fate that serves the SPA, the data plane, and every backend route. It is not a general-purpose framework; it's this repo's engine, written down precisely enough that you can extend it without reverse-engineering the choices.
 
 This is the builder's door. For what kamp.us *is* — the products and the ethos — see [README.md](./README.md).
 

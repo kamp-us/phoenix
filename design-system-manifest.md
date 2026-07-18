@@ -17,10 +17,7 @@ brand art and interface are one color system.
 The normative content is **founder-authored, not agent-invented**. It is the machine form of ADR
 [0162](https://github.com/kamp-us/phoenix/blob/main/.decisions/0162-four-pillars-design-law.md) —
 the ratify-root of the frontend audit wave (epic
-[#2168](https://github.com/kamp-us/phoenix/issues/2168)). ADR 0162 lands in parallel via
-[#2195](https://github.com/kamp-us/phoenix/pull/2195); this cross-ref uses its full GitHub URL
-(the ADR / skill cross-ref convention) because the target file is landing alongside this manifest,
-not yet on this branch's disk. An agent **transcribes** these
+[#2168](https://github.com/kamp-us/phoenix/issues/2168)). An agent **transcribes** these
 values into this artifact; it does **not** author design law. Where the ADR is silent, the gap is
 surfaced to the founder — it is never filled here.
 
