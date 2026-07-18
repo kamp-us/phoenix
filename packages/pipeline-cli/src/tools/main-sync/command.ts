@@ -17,6 +17,11 @@
  *      consistent with the #1494 incidents, which were always clean.
  *   2. The sync merge is `git merge --ff-only origin/main` — fast-forward only, so it
  *      never creates a merge commit and fails loudly rather than diverging the primary.
+ *   3. After a successful ff (either policy), if it pulled a dep input (`patches/**` or
+ *      `pnpm-lock.yaml`) the installed node_modules is stale, so re-install with the
+ *      REPO-PINNED pnpm before boot — or FAIL LOUD. See `runDepRefreshAfterFastForward` /
+ *      `dep-refresh.ts` (#3498); this closes the silent stale-runtime trap that inverts a
+ *      live re-test (a merged dep-patch fix reads as "still broken").
  *
  * TWO policies, one runnable surface:
  *   - default (drain-sync, #1494/#1573): AGGRESSIVE — reattaches a detached/off-`main`
@@ -37,9 +42,18 @@
  * provides.
  */
 import {execFileSync} from "node:child_process";
+import {readFileSync} from "node:fs";
+import {join} from "node:path";
 import {isControlPlaneDeletion, parseNameStatus} from "@kampus/primary-index-tripwire";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {
+	decidePnpmVersionGuard,
+	depPathsForcingRefresh,
+	type PnpmVersion,
+	parsePackageManagerPnpm,
+	parsePnpmVersionOutput,
+} from "./dep-refresh.ts";
 import {decideMainRefresh, decideMainSync, type HeadState, MAIN_BRANCH} from "./main-sync.ts";
 
 interface GitResult {
@@ -48,10 +62,18 @@ interface GitResult {
 	readonly stderr: string;
 }
 
-const runGit = (args: ReadonlyArray<string>): GitResult => {
-	// biome-ignore lint/plugin: best-effort git shell — a non-zero exit is fully absorbed into a {ok:false} GitResult the caller branches on, never the E channel; a total helper, not Effect-cosplay.
+const runGit = (args: ReadonlyArray<string>): GitResult => runTool("git", args);
+
+/**
+ * Best-effort external command — a non-zero exit AND a missing binary (ENOENT) both fold into
+ * a `{ok:false}` the caller branches on, never a thrown error. This is what lets a probe like
+ * `runTool("corepack", …).ok` double as an existence check (corepack is absent on a Volta box,
+ * #3498) without a separate `command -v`. A total helper, not Effect-cosplay.
+ */
+const runTool = (bin: string, args: ReadonlyArray<string>, cwd?: string): GitResult => {
+	// biome-ignore lint/plugin: total shell — exit code + ENOENT are absorbed into the GitResult, never the E channel.
 	try {
-		const stdout = execFileSync("git", [...args], {encoding: "utf8"});
+		const stdout = execFileSync(bin, [...args], cwd ? {encoding: "utf8", cwd} : {encoding: "utf8"});
 		return {ok: true, stdout, stderr: ""};
 	} catch (cause) {
 		const e = cause as {stdout?: Buffer | string; stderr?: Buffer | string};
@@ -104,6 +126,133 @@ const stagedControlPlaneDeletionCount = (): number => {
 	if (!r.ok) return 0;
 	return parseNameStatus(r.stdout).filter((e) => isControlPlaneDeletion(e.path)).length;
 };
+
+/** The repo-pinned pnpm major (from `packageManager`) used only to pin corepack; the guard still verifies it. */
+const PNPM_PIN_FALLBACK = "10.27.0";
+
+/**
+ * The resolved pnpm the install will run under: the argv to invoke it + the version we probed
+ * (or `null` when nothing resolved). Prefer corepack (it honors `packageManager`), then a
+ * bare-PATH pnpm — whose version the guard then rejects if it's the wrong major (#3498).
+ */
+interface ResolvedPnpm {
+	readonly bin: string;
+	readonly installArgv: ReadonlyArray<string>;
+	readonly resolved: PnpmVersion | null;
+	readonly pin: string;
+}
+
+const resolvePinnedPnpm = (required: PnpmVersion | null): ResolvedPnpm => {
+	const pin = required?.version ?? PNPM_PIN_FALLBACK;
+	// Prefer corepack — it downloads/runs the exact packageManager-pinned pnpm regardless of the
+	// stale per-machine pnpm on PATH (the bare pnpm@8 the lockfile rejects, #1256/ADR 0109).
+	if (runTool("corepack", ["--version"]).ok) {
+		runTool("corepack", ["prepare", `pnpm@${pin}`, "--activate"]); // best-effort activate; ignore result
+		const v = runTool("corepack", [`pnpm@${pin}`, "--version"]);
+		return {
+			bin: "corepack",
+			installArgv: [`pnpm@${pin}`, "install", "--frozen-lockfile"],
+			resolved: v.ok ? parsePnpmVersionOutput(v.stdout) : null,
+			pin,
+		};
+	}
+	if (runTool("pnpm", ["--version"]).ok) {
+		const v = runTool("pnpm", ["--version"]);
+		return {
+			bin: "pnpm",
+			installArgv: ["install", "--frozen-lockfile"],
+			resolved: v.ok ? parsePnpmVersionOutput(v.stdout) : null,
+			pin,
+		};
+	}
+	// Nothing on PATH — resolved stays null so the guard fail-closes (never a bare-PATH guess).
+	return {
+		bin: "corepack",
+		installArgv: [`pnpm@${pin}`, "install", "--frozen-lockfile"],
+		resolved: null,
+		pin,
+	};
+};
+
+/**
+ * After a successful `merge --ff-only`, re-install `node_modules` when the ff pulled a dep
+ * input — the #3498 fix. A ff that advances `patches/**` or `pnpm-lock.yaml` moves the SOURCE
+ * patch/lockfile but never the installed `.pnpm/…/patched` copy the runtime executes, so a
+ * re-booted crew silently runs the PRE-merge patched dep (a merged fix reads as "still broken").
+ *
+ * Fail-CLOSED, unlike the fail-open `bootstrap-deps` provisioning hook (ADR 0109): if the ff
+ * pulled a dep input but the pinned pnpm can't be resolved at the right major, this REFUSES
+ * (exit 1) rather than leave the runtime silently stale or install under a wrong-major pnpm.
+ * Only reached under `--execute` (the merge itself only runs there).
+ */
+const runDepRefreshAfterFastForward = Effect.fn(function* (oldHead: string) {
+	const diff = runGit(["diff", "--name-only", oldHead, "HEAD"]);
+	if (!diff.ok) {
+		yield* Console.error(
+			`main-sync REFUSED (fail-closed): could not diff ${oldHead}..HEAD to check what the fast-forward pulled — ${diff.stderr.trim() || "git diff failed"}. Refusing to leave a possibly-stale runtime unverified after a merge (#3498).`,
+		);
+		return yield* Effect.sync(() => process.exit(1));
+	}
+	const pulled = diff.stdout
+		.split("\n")
+		.map((l) => l.trim())
+		.filter((l) => l !== "");
+	const forcing = depPathsForcingRefresh(pulled);
+	if (forcing.length === 0) return; // no dep input pulled — the installed node_modules stays valid
+
+	yield* Console.log(
+		`main-sync: fast-forward pulled dep input(s) [${forcing.join(", ")}] — the installed node_modules is now stale (source patch/lockfile advanced, but the .pnpm/…/patched copy the runtime executes did not). Re-installing with the repo-pinned pnpm before the runtime is used (#3498).`,
+	);
+
+	const root = runGit(["rev-parse", "--show-toplevel"]);
+	if (!root.ok) {
+		yield* Console.error(
+			`main-sync REFUSED (fail-closed): a fast-forward pulled dep input(s) [${forcing.join(", ")}] but the repo root could not be resolved (\`git rev-parse --show-toplevel\` failed) — cannot re-install. Resolve by hand before boot (#3498).`,
+		);
+		return yield* Effect.sync(() => process.exit(1));
+	}
+	const rootDir = root.stdout.trim();
+
+	let required: PnpmVersion | null = null;
+	// biome-ignore lint/plugin: total pre-runtime read — an unreadable/unparseable package.json folds to a null required version (guard fail-closes, #3498), never the E channel; same class as runTool above.
+	try {
+		const pkg = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8")) as {
+			packageManager?: string;
+		};
+		required = parsePackageManagerPnpm(pkg.packageManager);
+	} catch {
+		required = null;
+	}
+
+	const {bin, installArgv, resolved, pin} = resolvePinnedPnpm(required);
+	const guard = decidePnpmVersionGuard(required, resolved);
+	if (!guard.ok) {
+		const detail =
+			guard.reason === "unresolved-required"
+				? "the root package.json `packageManager` pin could not be parsed, so the required pnpm version is unknown"
+				: guard.reason === "unresolved-pnpm"
+					? "no corepack/pnpm resolved on PATH to run the pinned install (never fall back to a bare-PATH pnpm of unknown major)"
+					: `the resolved pnpm ${guard.resolved.version} is the wrong major (need ${guard.required.major}.x — a pnpm@${guard.resolved.major} install silently leaves a stale patched dir)`;
+		yield* Console.error(
+			`main-sync REFUSED (fail-closed): a fast-forward pulled dep input(s) [${forcing.join(", ")}] so node_modules MUST be re-installed, but ${detail}. Refusing to (re-)boot on a silently-stale runtime (#3498). Provision with \`corepack pnpm@${pin} install --frozen-lockfile\` (repo-pinned pnpm; never bare-PATH), then re-run.`,
+		);
+		return yield* Effect.sync(() => process.exit(1));
+	}
+
+	yield* Console.log(
+		`main-sync: re-installing deps with pnpm ${guard.resolved.version} (repo-pinned major ${guard.resolved.major}) — \`${bin} ${installArgv.join(" ")}\``,
+	);
+	const installed = runTool(bin, installArgv, rootDir);
+	if (!installed.ok) {
+		yield* Console.error(
+			`main-sync REFUSED (fail-closed): dep re-install \`${bin} ${installArgv.join(" ")}\` failed — ${installed.stderr.trim() || "pnpm install exited non-zero"}. The runtime may be stale; resolve by hand before boot (#3498).`,
+		);
+		return yield* Effect.sync(() => process.exit(1));
+	}
+	yield* Console.log(
+		"main-sync: deps re-installed — the merged patched dep is now materialized in node_modules/.pnpm (#3498).",
+	);
+});
 
 /**
  * The gentle post-merge refresh (#2056) — the HEAD-preserving counterpart to the drain-sync
@@ -158,6 +307,9 @@ const runPostMergeRefresh = Effect.fn(function* (head: HeadState, execute: boole
 		return yield* Effect.sync(() => process.exit(1));
 	}
 
+	// The pre-merge tip: diff it against HEAD after the ff to see what the ff pulled (#3498).
+	const oldHead = runGit(["rev-parse", "HEAD"]).stdout.trim();
+
 	// --ff-only is the invariant that makes the refresh safe: it advances main to origin/main
 	// when it's a strict fast-forward and ABORTS on any divergence — never a merge commit,
 	// never a force. On a clean 'main' the worst case is a no-op, never a clobber (#2056).
@@ -171,6 +323,7 @@ const runPostMergeRefresh = Effect.fn(function* (head: HeadState, execute: boole
 	yield* Console.log(
 		`main-sync --post-merge: primary checkout fast-forwarded to origin/${MAIN_BRANCH}.`,
 	);
+	yield* runDepRefreshAfterFastForward(oldHead);
 });
 
 const executeFlag = Flag.boolean("execute").pipe(
@@ -257,6 +410,11 @@ const mainSync = Command.make(
 			return yield* Effect.sync(() => process.exit(1));
 		}
 
+		// The pre-merge tip: diff it against HEAD after the ff to see what the ff pulled (#3498).
+		// This is the crew re-boot/stand-up path (main-sync ff, then boot), so a pulled dep-patch
+		// change must re-install before the runtime is used, or the boot runs a stale node_modules.
+		const oldHead = runGit(["rev-parse", "HEAD"]).stdout.trim();
+
 		const merged = runGit(["merge", "--ff-only", `origin/${MAIN_BRANCH}`]);
 		if (!merged.ok) {
 			yield* Console.error(
@@ -265,6 +423,7 @@ const mainSync = Command.make(
 			return yield* Effect.sync(() => process.exit(1));
 		}
 		yield* Console.log(`main-sync: primary checkout synced to origin/${MAIN_BRANCH}.`);
+		yield* runDepRefreshAfterFastForward(oldHead);
 	}),
 ).pipe(
 	Command.withDescription(
