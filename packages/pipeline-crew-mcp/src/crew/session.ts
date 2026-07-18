@@ -13,11 +13,11 @@
  *   - inbound  — the peer-inbox socket server whose deliveries wake the session through
  *     `ChannelSink.layerFromMcpServer` (the same running server), rendered as a `<channel>` tag.
  * Both edges MUST land on ONE `McpServer` instance: the toolkit registers its tools on it and the
- * sink wakes through it. That single instance is achieved by MERGING the two registration layers
- * and providing the stdio transport ONCE (`assembleCrewSession`), so `McpServer.layer` memoizes to
- * a single instance across the toolkit registration, the sink, and the run loop. Providing the
- * transport per-registration instead splits the instance and the served server advertises no tools
- * (`/mcp` Capabilities: none) — the #3479 assembly defect. See `.patterns/mcp-server-effect.md`.
+ * sink wakes through it. `assembleCrewSession` achieves that AND wins the two build-order races that
+ * otherwise leave the served session advertising no tools (`/mcp` Capabilities: none, `channel_send`
+ * absent) — the #3479 assembly defect. See `assembleCrewSession` for the mechanism (merge the
+ * registrations + provide the transport once; claim the peer FIRST so `ChannelSend` is an instant
+ * binding when the toolkit registers) and `.patterns/mcp-server-effect.md` for the Effect idiom.
  *
  * The per-kind cardinality lease + presence announce ride the peer's scope (`makeCrewChannel`): a
  * second live session for a held BRIDGE role fails the build with `RoleUniquenessError`, an ENGINE
@@ -29,8 +29,9 @@
  * The binding is transport-injected: `channelSendFromPeer` takes the peer substrate as a
  * requirement (production supplies `peerSocketSubstrate` over unix sockets), so `session.test.ts`
  * drives the exact `ChannelSend`-from-peer binding fully in-memory (an `RpcTest` `CrewTracker` + an
- * in-memory `Connect`) — the same transport-free idiom `channel-server.test.ts` uses. The one seam
- * not exercised without a live MCP client is the stdio `McpServer` wake itself.
+ * in-memory `Connect`) — the same transport-free idiom `channel-server.test.ts` uses. A fake `Stdio`
+ * additionally drives the forked stdio run-loop's serve ordering (the Race-2 guard in
+ * `assembleCrewSession`); the one seam still not exercised is a full live-client stdio wake round-trip.
  */
 import {randomUUID} from "node:crypto";
 import {NodeStdio} from "@effect/platform-node";
@@ -127,10 +128,12 @@ export const peerSocketSubstrate = (
 };
 
 /**
- * The outbound binding: `ChannelSend` resolved to THIS session's peer `send` (`makeCrewChannel`).
- * Building the layer acquires the role-uniqueness lease and announces presence for the layer's
- * scope; a second live session for a held role fails the build with `RoleUniquenessError`. This is
- * the exact `ChannelSend` the `channel_send` MCP tool routes through — the tests drive it directly.
+ * The outbound binding as a standalone layer: `ChannelSend` resolved to THIS session's peer `send`
+ * (`makeCrewChannel`), acquiring the role-uniqueness lease + presence for the layer's scope (a held
+ * role fails the build with `RoleUniquenessError`). It yields the SAME `{send: channel.peer.send}`
+ * binding `assembleCrewSession` hoists inline — but as an ASYNC `Layer.effect`, so it is NOT used in
+ * the live assembly (that path resolves the peer first, then binds `ChannelSend` instantly, to win
+ * Race 2 above). `session.test.ts` drives THIS form directly to prove the send round-trips end to end.
  *
  * The peer substrate (`CrewTracker` + the peer ports) is a REQUIREMENT, not baked in, so the binding
  * is transport-injected: production supplies `peerSocketSubstrate`, the tests an in-memory substrate.
@@ -150,42 +153,58 @@ export const channelSendFromPeer = (
 /**
  * The two registrations that MUST land on the ONE served `McpServer` — outbound (the `channel_send`
  * toolkit) and inbound (the inbox-socket server whose `ChannelSink` wakes through the server) —
- * merged and provided their `transport` exactly ONCE.
+ * merged and provided their `transport` exactly ONCE. This is the load-bearing composition (#3479),
+ * and it must win TWO races or the live session advertises no tools (`/mcp` Capabilities: none).
  *
- * This is the load-bearing composition (#3479). `McpServer.toolkit` INTERNALLY self-provides its own
+ * Race 1 — the single instance (fixed #3480). `McpServer.toolkit` INTERNALLY self-provides its own
  * `McpServer.layer` (`toolkit = effectDiscard(registerToolkit(x)).pipe(Layer.provide(McpServer.layer))`),
- * so providing the transport *per registration* (the old `outbound.pipe(Layer.provide(server))` +
- * `inbound.pipe(Layer.provide(server))`) leaves the toolkit registering its tools into a throwaway
- * McpServer instance while the run loop serves a different one with `server.tools === []`. Effect's
- * initialize handler advertises `capabilities.tools` only `if (server.tools.length > 0)`, so the live
- * session advertised NOTHING — `/mcp` Capabilities: none, `channel_send` absent from the model's
- * toolset. Merging the registrations and providing the transport ONCE lets `McpServer.layer` memoize
- * to a single instance across the toolkit registration, the inbound sink, and the run loop — the
- * documented idiom (`.patterns/mcp-server-effect.md`: merge registrations, then `Layer.provide` the
- * transport once; grounded against the installed dist at the pin).
+ * so providing the transport *per registration* would leave the toolkit registering into a throwaway
+ * instance while the run loop serves a different one with `server.tools === []`. Merging the
+ * registrations and providing the transport ONCE lets `McpServer.layer` memoize to a single instance
+ * across the toolkit registration, the inbound sink, and the run loop.
+ *
+ * Race 2 — claim BEFORE serve (the live #3479 defect this build fixes). `McpServer.layerStdio` forks
+ * its serve/run-loop at layer-BUILD time and begins answering the client's `initialize` immediately;
+ * Effect's initialize handler sets `capabilities.tools` only `if (server.tools.length > 0)` AT THAT
+ * MOMENT, and a client that sees no `tools` capability never calls `tools/list` again. If the toolkit
+ * registration is still awaiting an async `ChannelSend` — the peer's tracker-`claim()` over a unix
+ * socket — when the run-loop answers `initialize`, `server.tools` is empty and `channel_send` is lost
+ * for the session's life. The fix runs `makeCrewChannel` (the claim + presence handshake) FIRST via
+ * `Layer.unwrap`, so `ChannelSend` is an instant `Layer.succeed` with the peer already resolved: the
+ * toolkit registers with no async gap, and by the time the forked run-loop serves `initialize` the
+ * tool is already on `server.tools`. `RoleUniquenessError` still fails the build fail-closed — the
+ * claim is on the critical path of the layer, so a held role slot aborts assembly before it serves.
  *
  * Transport-injected on purpose: production supplies the stdio transport, `session.test.ts` supplies
- * an in-process `McpServer.layerHttp` to drive the served server's `tools/list` + advertised
- * capabilities without a live stdio client.
+ * an in-process `McpServer.layerHttp` (advertised tools + capabilities) and a fake-`Stdio` forked
+ * run-loop (the async-`ChannelSend` race guard), both without a live stdio client.
  */
 export const assembleCrewSession = <RIn>(
 	config: CrewSessionConfig,
 	address: string,
 	substrate: Layer.Layer<CrewTracker | Tracker | Inbox | Dialer, unknown>,
 	transport: Layer.Layer<McpServer.McpServer | McpSchema.McpServerClient, never, RIn>,
-): Layer.Layer<never, unknown, RIn> => {
-	// outbound: the channel_send toolkit, its ChannelSend bound to this session's peer.
-	const outbound = McpServer.toolkit(ChannelToolkit).pipe(
-		Layer.provide(channelToolHandlers),
-		Layer.provide(channelSendFromPeer(config.role, address).pipe(Layer.provide(substrate))),
-	);
-	// inbound: the peer-inbox socket server, its deliveries waking THIS served server.
-	const inbound = inboxServerSocketLayer(address).pipe(
-		Layer.provide(ChannelSink.layerFromMcpServer),
-	);
-	// Provide the transport ONCE to the MERGED registrations — the single-instance memoization above.
-	return Layer.mergeAll(outbound, inbound).pipe(Layer.provide(transport));
-};
+): Layer.Layer<never, unknown, RIn> =>
+	// Claim FIRST (Race 2): the slow tracker-claim/presence handshake runs in the unwrap's effect,
+	// BEFORE the run-loop-forking transport is built, so ChannelSend below is a zero-async binding.
+	Layer.unwrap(
+		makeCrewChannel({role: config.role, address}).pipe(
+			Effect.map((channel) => {
+				// outbound: the channel_send toolkit, its ChannelSend an INSTANT bind to the already-resolved
+				// peer — the toolkit registers with no socket await in its build path (Race 2).
+				const outbound = McpServer.toolkit(ChannelToolkit).pipe(
+					Layer.provide(channelToolHandlers),
+					Layer.provide(Layer.succeed(ChannelSend, {send: channel.peer.send})),
+				);
+				// inbound: the peer-inbox socket server, its deliveries waking THIS served server.
+				const inbound = inboxServerSocketLayer(address).pipe(
+					Layer.provide(ChannelSink.layerFromMcpServer),
+				);
+				// Provide the transport ONCE to the MERGED registrations — the single-instance memo (Race 1).
+				return Layer.mergeAll(outbound, inbound).pipe(Layer.provide(transport));
+			}),
+		),
+	).pipe(Layer.provide(substrate));
 
 /**
  * The full runnable session layer: launch it (`Layer.launch`) to run one live crew session. The one
