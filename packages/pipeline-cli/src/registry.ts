@@ -23,6 +23,7 @@ import {controlPlanePathsCommand} from "./tools/control-plane-paths/command.ts";
 import {cpCardinalityCommand} from "./tools/cp-cardinality/command.ts";
 import {crabboxManifestCommand} from "./tools/crabbox-manifest/command.ts";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
+import {designInventoryCommand} from "./tools/design-inventory/command.ts";
 import {designTokenGuardCommand} from "./tools/design-token-guard/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
 import {epicLockCommand} from "./tools/epic-lock/command.ts";
@@ -126,6 +127,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	fanoutGuardCommand,
 	reachabilityGuardCommand,
 	designTokenGuardCommand,
+	designInventoryCommand,
 	resumePolicyCommand,
 	evalHarnessCommand,
 	mainSyncCommand,
