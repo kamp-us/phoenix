@@ -21,7 +21,6 @@
  */
 import {spawn} from "node:child_process";
 import {randomUUID} from "node:crypto";
-import {rmSync} from "node:fs";
 import {Effect, Schema} from "effect";
 import {SESSION_SERVER_NAME} from "../crew/index.ts";
 import {
@@ -38,13 +37,13 @@ import {
 	type TrackerNotServingError,
 } from "./ensure-tracker.ts";
 import {
-	type CrewLocalEntry,
+	type CrewMcpEntry,
 	crewRunRoot,
 	ensurePaneCwd,
-	LocalScopeWriteError,
-	reapCrewLocalScopeFor,
-	registerCrewLocalScope,
-} from "./register-local-scope.ts";
+	ProjectScopeWriteError,
+	reapCrewProjectScopeFor,
+	registerCrewProjectScope,
+} from "./register-project-scope.ts";
 import {type CrewSession, deriveSessionSet} from "./session-set.ts";
 import {
 	computeTmuxPlacement,
@@ -162,7 +161,7 @@ export type StandUpError =
 	| CrewSessionBinUnresolvableError
 	| CrewServerNotRegisteredError
 	| ChannelPluginNotAllowedError
-	| LocalScopeWriteError
+	| ProjectScopeWriteError
 	| TmuxPaneCollisionError
 	| TmuxSessionEnsureError
 	| StandUpLaunchError;
@@ -184,41 +183,49 @@ export const renderStandUpError = (error: StandUpError): string => {
 	return detail ? `${error._tag} (${detail})` : error._tag;
 };
 
+/** What `register` commits in one shot: every pane's `.mcp.json` entry plus the run/project context the boot-gate seeds need. */
+export interface ProjectScopeRegisterInput {
+	readonly projectRoot: string;
+	readonly runId: string;
+	readonly serverName: string;
+	readonly entries: readonly CrewMcpEntry[];
+}
+
 /**
- * The persisted local-scope collaborator the launcher writes each pane's crew server through (#3444) —
- * the one injected seam for the `~/.claude.json` side effects, so the whole boot is unit-tested with no
- * real config file. `reap` sweeps a prior (crashed) run's entries at stand-up start; `paneCwd` mints a
- * pane's distinct git-valid launch cwd (its isolated `projects[]` key); `register` commits every pane's
- * entry in one locked atomic RMW.
+ * The project-scope collaborator the launcher registers each pane's crew server through (#3444) — the
+ * one injected seam for every filesystem/`~/.claude.json`/`~/.claude/settings.json` side effect, so the
+ * whole boot is unit-tested with no real file. `reap` clears a prior (crashed) run's crew-run dirs +
+ * server approval at stand-up start; `paneCwd` mints a pane's distinct git-valid launch cwd (where its
+ * leaf `.mcp.json` lands); `register` emits every pane's `.mcp.json` + seeds folder trust + server approval.
  */
-export interface LocalScopeRegistrar {
+export interface ProjectScopeRegistrar {
 	readonly reap: (
 		projectRoot: string,
 		serverName: string,
-	) => Effect.Effect<void, LocalScopeWriteError>;
+	) => Effect.Effect<void, ProjectScopeWriteError>;
 	readonly paneCwd: (
 		projectRoot: string,
 		runId: string,
 		paneLabel: string,
-	) => Effect.Effect<string, LocalScopeWriteError>;
+	) => Effect.Effect<string, ProjectScopeWriteError>;
 	readonly register: (
-		entries: readonly CrewLocalEntry[],
-	) => Effect.Effect<void, LocalScopeWriteError>;
+		input: ProjectScopeRegisterInput,
+	) => Effect.Effect<void, ProjectScopeWriteError>;
 }
 
-/** The production local-scope registrar: the real `~/.claude.json` reaper, per-pane cwd, and locked register. */
-export const productionLocalScopeRegistrar: LocalScopeRegistrar = {
-	reap: (projectRoot, serverName) => reapCrewLocalScopeFor(projectRoot, serverName),
+/** The production project-scope registrar: the real crew-run reaper, per-pane cwd, and `.mcp.json`+boot-gate register. */
+export const productionProjectScopeRegistrar: ProjectScopeRegistrar = {
+	reap: (projectRoot, serverName) => reapCrewProjectScopeFor(projectRoot, serverName),
 	paneCwd: (projectRoot, runId, paneLabel) =>
 		Effect.try({
 			try: () => ensurePaneCwd(projectRoot, runId, paneLabel),
 			catch: (cause) =>
-				new LocalScopeWriteError({
+				new ProjectScopeWriteError({
 					configPath: `${crewRunRoot(projectRoot)}/${runId}/${paneLabel}`,
 					reason: `cannot ensure pane cwd: ${String(cause)}`,
 				}),
 		}),
-	register: (entries) => registerCrewLocalScope(entries),
+	register: (input) => registerCrewProjectScope(input),
 };
 
 export interface StandUpInput {
@@ -228,8 +235,8 @@ export interface StandUpInput {
 	readonly serverName?: string;
 	/** Mints the id for this stand-up's per-pane cwd dir tree (`<root>/.claude/crew-run/<runId>/`). Default: `randomUUID`. */
 	readonly runId?: () => string;
-	/** The persisted local-scope collaborator (#3444). Default: `productionLocalScopeRegistrar` (real `~/.claude.json`). */
-	readonly localScope?: LocalScopeRegistrar;
+	/** The project-scope collaborator (#3444). Default: `productionProjectScopeRegistrar` (real `.mcp.json` + `~/.claude*`). */
+	readonly localScope?: ProjectScopeRegistrar;
 	/** The launch dimensions to stand up under. Default: read the operator crew config (`readLaunchConfig`). */
 	readonly config?: Effect.Effect<LaunchConfig, LaunchConfigError>;
 	/** The installed-CLI-version reader the pin is asserted against. Default: the real `claude --version`. */
@@ -426,7 +433,7 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 		const serverName = input.serverName ?? SESSION_SERVER_NAME;
 		const instanceId = input.instanceId ?? randomUUID;
 		const runId = (input.runId ?? randomUUID)();
-		const localScope = input.localScope ?? productionLocalScopeRegistrar;
+		const localScope = input.localScope ?? productionProjectScopeRegistrar;
 		const ensureTracker = input.ensureTracker ?? ensureTrackerRunning;
 		const resolveTargetSession = input.resolveTargetSession ?? resolveTargetSessionDefault;
 		const launch = input.launch ?? launchSessionInTmux;
@@ -437,8 +444,8 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 		yield* assertPinnedCliVersion(config, input.readVersionOutput ?? readInstalledCliVersionOutput);
 		const tracker = yield* ensureTracker(projectRoot);
 
-		// Start-of-stand-up reaper (crash-safety, #3444): sweep any prior run's crew entries the persisted
-		// local scope still carries — a launcher that died mid-run leaves entries this run clears here.
+		// Start-of-stand-up reaper (crash-safety, #3444): clear any prior run's crew-run dirs + the server
+		// approval — a launcher that died mid-run leaves leftovers this run clears here, before it re-mints.
 		yield* localScope.reap(projectRoot, serverName);
 
 		const sessions = deriveSessionSet({engineCount: config.engineCount, instanceId});
@@ -462,7 +469,7 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 		const placements = yield* computeTmuxPlacement(sessions.map(toRosterSession));
 		// `binds` and `placements` are each derived from `sessions` in order, so the index is always
 		// populated; the die guard is the unreachable branch that satisfies noUncheckedIndexedAccess. Each
-		// pane also gets a distinct git-valid launch cwd (its isolated `projects[]` key, #3444) — resolved
+		// pane also gets a distinct git-valid launch cwd (where its leaf `.mcp.json` lands, #3444) — resolved
 		// here, before the register, so an unwritable cwd fails closed with zero panes up.
 		const plans = yield* Effect.forEach(sessions, (session, i) => {
 			const bind = binds[i];
@@ -475,18 +482,22 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 				.pipe(Effect.map((cwd): LaunchPlan => ({session, bind, placement, cwd})));
 		});
 
-		// Register every pane's crew server into the persisted local scope in one locked atomic RMW (#3444):
-		// the channel resolver reads persisted scopes, never the old inline `--mcp-config`. Each entry is under
-		// its own distinct cwd key, so a pane booting in its cwd sees ONLY its own server (no role-lease storm).
-		yield* localScope.register(
-			plans.map(
-				(plan): CrewLocalEntry => ({
+		// Register every pane's crew server as a project-scope leaf `.mcp.json` + seed the two boot gates
+		// (folder trust + server approval) — one fail-closed step (#3444): the channel resolver reads the
+		// persisted project scope, never the old inline `--mcp-config`. Each `.mcp.json` sits in the pane's
+		// own cwd, on no sibling's ancestor chain, so a pane sees ONLY its own server (no role-lease storm).
+		yield* localScope.register({
+			projectRoot,
+			runId,
+			serverName,
+			entries: plans.map(
+				(plan): CrewMcpEntry => ({
 					cwd: plan.cwd,
 					serverName: plan.bind.serverName,
 					serverConfig: plan.bind.serverConfig,
 				}),
 			),
-		);
+		});
 
 		// Resolve the target tmux session before placing any pane: the caller's CURRENT session inside
 		// tmux (which always exists — dissolving the fresh-machine "no crew session" failure), else a
@@ -506,38 +517,29 @@ export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, St
 		return {tracker, launched};
 	});
 
-/** What a stand-down consumes: the project whose crew local-scope entries + launcher-owned cwd dirs to tear down. */
+/** What a stand-down consumes: the project whose crew `.mcp.json` files + crew-run dirs + server approval to tear down. */
 export interface StandDownInput {
 	readonly projectRoot: string;
-	/** The crew server name to sweep. Default: `SESSION_SERVER_NAME`. */
+	/** The crew server name to revoke. Default: `SESSION_SERVER_NAME`. */
 	readonly serverName?: string;
 	/**
-	 * Sweep the persisted crew entries under the crew-run prefix. Default: `reapCrewLocalScopeFor`
-	 * (realpaths the prefix the same way `register` keyed it, against the real `~/.claude.json`).
-	 * Injected in tests so no real config file is touched.
+	 * Remove the launcher-owned crew-run dir tree (every pane's leaf `.mcp.json` with it) + surgically
+	 * revoke the crew server's approval. Default: `reapCrewProjectScopeFor` (against the real
+	 * `~/.claude/settings.json`). Injected in tests so no real config file is touched.
 	 */
-	readonly reap?: () => Effect.Effect<void, LocalScopeWriteError>;
+	readonly reap?: () => Effect.Effect<void, ProjectScopeWriteError>;
 }
 
 /**
- * Tear this run's crew registration down (the symmetric `stand-down`, #3444): sweep every crew server
- * entry the persisted local scope carries under the crew-run prefix, then remove the launcher-owned
- * per-pane cwd dir tree. Removal is safe even while a crew is live — a booted stdio server is never
- * re-read against the file (fact #1). Idempotent: a second stand-down is a clean no-op.
+ * Tear this run's crew registration down (the symmetric `stand-down`, #3444): remove the launcher-owned
+ * crew-run dir tree (every pane's `.mcp.json` with it) and surgically revoke the crew server's approval.
+ * Removal is safe even while a crew is live — a booted stdio server is never re-read against its
+ * `.mcp.json`. Idempotent: a second stand-down is a clean no-op.
  */
-export const runStandDown = (input: StandDownInput): Effect.Effect<void, LocalScopeWriteError> =>
+export const runStandDown = (input: StandDownInput): Effect.Effect<void, ProjectScopeWriteError> =>
 	Effect.gen(function* () {
 		const {projectRoot} = input;
 		const serverName = input.serverName ?? SESSION_SERVER_NAME;
-		const reap = input.reap ?? (() => reapCrewLocalScopeFor(projectRoot, serverName));
+		const reap = input.reap ?? (() => reapCrewProjectScopeFor(projectRoot, serverName));
 		yield* reap();
-		const runRoot = crewRunRoot(projectRoot);
-		yield* Effect.try({
-			try: () => rmSync(runRoot, {recursive: true, force: true}),
-			catch: (cause) =>
-				new LocalScopeWriteError({
-					configPath: runRoot,
-					reason: `cannot remove crew-run dir ${runRoot}: ${String(cause)}`,
-				}),
-		});
 	});

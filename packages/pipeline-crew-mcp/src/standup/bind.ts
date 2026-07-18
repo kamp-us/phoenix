@@ -6,8 +6,8 @@
  *
  * It produces two coupled outputs the launcher wires per invocation:
  *   1. `serverConfig` — the crew channel MCP server's config value (`<node> <abs bin.ts> session
- *      --role <role> --project-root <root>`), which the launcher writes into a PERSISTED config
- *      scope (`~/.claude.json → projects[<pane cwd>].mcpServers[<serverName>]`, register-local-scope.ts).
+ *      --role <role> --project-root <root>`), which the launcher writes into a PERSISTED config scope:
+ *      a per-pane project-scope leaf `.mcp.json` (`<pane cwd>/.mcp.json`, register-project-scope.ts).
  *      The old inline `--mcp-config` path is GONE: claude 2.1.212's channel-ref resolver validates a
  *      `server:<name>` ref against the four persisted scopes only (enterprise/user/project/local) and
  *      NEVER consults an inline `--mcp-config` server, so a server handed only inline is structurally
@@ -26,8 +26,8 @@
  * crew server's `bin.ts` not resolving on disk (`CrewSessionBinUnresolvableError`, #3425), the crew
  * server not named in the channel flag (`CrewServerNotRegisteredError`), and an allowlist-mode
  * `plugin:` channel whose plugin the operator never allowlisted (`ChannelPluginNotAllowedError`, the
- * exact rejection the CLI raises). The persisted-scope WRITE is a launcher side effect, so its own
- * fail-closed guard lives at that write (register-local-scope.ts / orchestrate.ts), not here.
+ * exact rejection the CLI raises). The project-scope WRITE is a launcher side effect, so its own
+ * fail-closed guard lives at that write (register-project-scope.ts / orchestrate.ts), not here.
  */
 import {existsSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -68,8 +68,8 @@ const crewServerRef = (serverName: string): string => `server:${serverName}`;
 
 /**
  * A crew channel MCP server's persisted-scope config value: the `command` + `args` the CLI spawns as
- * the stdio server. This is the value the launcher writes to `~/.claude.json`'s local scope keyed by
- * `serverName` (register-local-scope.ts) — the exact shape a persisted-scope `mcpServers[name]` entry
+ * the stdio server. This is the value the launcher writes to the pane's project-scope `.mcp.json` under
+ * `serverName` (register-project-scope.ts) — the exact shape a persisted-scope `mcpServers[name]` entry
  * carries, so the channel resolver (which reads persisted scopes, #3444) sees the server.
  */
 export interface CrewServerConfig {
@@ -106,7 +106,7 @@ export interface SessionBind {
 	readonly projectRoot: string;
 	/** The channel-server name this session registers under — the `mcpServers[…]` key its persisted-scope entry uses. */
 	readonly serverName: string;
-	/** The crew server's persisted-scope config value the launcher writes to `~/.claude.json` local scope (#3444). */
+	/** The crew server's persisted-scope config value the launcher writes to the pane's project-scope `.mcp.json` (#3444). */
 	readonly serverConfig: CrewServerConfig;
 	/** The channel-registration flag + its server refs, e.g. `["--channels", "server:pipeline-crew", …]`. */
 	readonly channelArg: readonly string[];
@@ -121,8 +121,8 @@ export interface SessionBind {
 	readonly nameArg: readonly [flag: string, name: string];
 	/**
 	 * The complete argv `[...modelArg, ...channelArg, ...nameArg]` the launcher passes to `claude`. It
-	 * no longer carries `--mcp-config`: the crew server now registers via the persisted local scope
-	 * (`serverConfig`), which is what the channel resolver actually reads (#3444).
+	 * no longer carries `--mcp-config`: the crew server now registers via the pane's project-scope
+	 * `.mcp.json` (`serverConfig`), which is what the channel resolver actually reads (#3444).
 	 */
 	readonly argv: readonly string[];
 }
