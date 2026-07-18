@@ -114,3 +114,38 @@ index 4cb198b928a5538737af01c0d18a03c7d28eb445..60b2749fc62890cbe01cb103f1c15fce
        return Effect.withFiber(fiber => {
          const httpRequest = Context.getOrUndefined(fiber.context, HttpServerRequest.HttpServerRequest);
          if (httpRequest) {
+diff --git a/dist/unstable/rpc/RpcSerialization.js b/dist/unstable/rpc/RpcSerialization.js
+index 92e6608cda58cb4a325931a9be154ae86b2807b2..d596537dd79d204425310f276286114dcefcdf76 100644
+--- a/dist/unstable/rpc/RpcSerialization.js
++++ b/dist/unstable/rpc/RpcSerialization.js
+@@ -266,17 +266,27 @@ function encodeJsonRpcResponse(response, batches) {
+ }
+ function encodeJsonRpcMessage(response) {
+   switch (response._tag) {
+-    case "Request":
+-      return {
++    case "Request": {
++      // phoenix patch (#3495): a JSON-RPC notification MUST carry NO `id` member; a request MUST.
++      // The McpServer drain loop builds a notification as {_tag:"Request"} with no `id`, so a nullish
++      // `response.id` IS the notification case — omit the member. Upstream instead did
++      // `id: response.id !== "" ? Number(response.id) : ""`, coercing Number(undefined)→NaN→JSON null;
++      // that `id:null` reads as a malformed request to the MCP-SDK zod client (it routes on id-member
++      // presence) and is never dispatched → 0 delivery. Requests keep their id unchanged. See ADR 0038.
++      const encoded = {
+         jsonrpc: "2.0",
+         method: response.tag,
+         params: response.payload,
+-        id: response.id !== "" ? Number(response.id) : "",
+         headers: response.headers,
+         traceId: response.traceId,
+         spanId: response.spanId,
+         sampled: response.sampled
+       };
++      if (Predicate.isNotNullish(response.id)) {
++        encoded.id = response.id !== "" ? Number(response.id) : "";
++      }
++      return encoded;
++    }
+     case "Ping":
+     case "Pong":
+     case "Interrupt":
