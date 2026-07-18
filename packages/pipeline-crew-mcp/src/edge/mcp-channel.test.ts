@@ -112,14 +112,29 @@ describe("effect MCP edge patch — behavior pin (claude/channel capability + no
 		assert.isTrue(McpSchema.ServerNotificationRpcs.requests.has(CHANNEL_NOTIFICATION_METHOD));
 	});
 
-	it("a channel payload encodes through the exact schema the run-loop uses", () => {
+	// Pin the 2.1.214 CLIENT contract, not just server union membership (#3479). The Claude Code
+	// channel handler validates params as `{ content: string (REQUIRED), meta?: record<string,string> }`
+	// — a `{message, _meta}` payload fails that validation and the inbound wake is DROPPED at the
+	// recipient. The prior pin asserted the old `{message, _meta}` shape, so the drift went undetected;
+	// this asserts the wire keys the client actually requires and that the legacy keys do NOT ride.
+	it("a channel payload encodes to the 2.1.214 client contract {content, meta}", () => {
 		const rpc = McpSchema.ServerNotificationRpcs.requests.get(CHANNEL_NOTIFICATION_METHOD);
 		assert.isDefined(rpc);
 		const encoded = Schema.encodeUnknownSync(rpc!.payloadSchema)({
-			message: "wake",
-			_meta: {from: "a"},
-		}) as {message: string; _meta?: {from?: string}};
-		assert.strictEqual(encoded.message, "wake");
-		assert.strictEqual(encoded._meta?.from, "a");
+			content: "wake",
+			meta: {from: "a"},
+		}) as Record<string, unknown>;
+		assert.strictEqual(encoded.content, "wake");
+		assert.deepEqual(encoded.meta, {from: "a"});
+		assert.notProperty(
+			encoded,
+			"message",
+			"legacy `message` key must not ride the wire — 2.1.214 drops it",
+		);
+		assert.notProperty(
+			encoded,
+			"_meta",
+			"legacy `_meta` key must not ride the wire — 2.1.214 wants `meta`",
+		);
 	});
 });

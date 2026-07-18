@@ -1,7 +1,7 @@
 /**
  * Inbound bridge behavior (AC 2): a delivery to the channel-bridging `Inbox` wakes the
  * session over the `ChannelSink`, carrying the message as a structured `<channel>` tag with
- * the sender in `_meta.from`, and returns a delivered-to-inbox ack stamped by this edge peer.
+ * the sender in `meta.from`, and returns a delivered-to-inbox ack stamped by this edge peer.
  * Driven against a capturing `ChannelSink`, so the bridge logic is under test without a live
  * MCP transport (the real emit-through-the-patched-notification path is `channel-sink.test.ts`).
  */
@@ -38,8 +38,8 @@ describe("edge/bridge — inbound peer-inbox message wakes the session (AC2)", (
 
 				const wakes = yield* Ref.get(captured);
 				assert.strictEqual(wakes.length, 1);
-				assert.strictEqual(wakes[0]?.message, formatChannelTag(envelope({messageId: "m-7"})));
-				assert.strictEqual(wakes[0]?._meta?.from, "peer-a");
+				assert.strictEqual(wakes[0]?.content, formatChannelTag(envelope({messageId: "m-7"})));
+				assert.strictEqual(wakes[0]?.meta?.from, "peer-a");
 			}).pipe(Effect.provide(channelInboxLayer("edge-a").pipe(Layer.provide(CapturingSink))));
 		}),
 	);

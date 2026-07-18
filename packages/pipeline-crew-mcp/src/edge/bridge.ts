@@ -16,7 +16,7 @@ import {ChannelSink} from "./channel-sink.ts";
 /**
  * Render a delivered envelope as the `<channel>` tag the session reads: `from`/`kind` as
  * attributes, the body as content. Identity rides in the tag because the channel carries
- * no addressing (`_meta.from` on the notification is the wire-level echo of the same).
+ * no addressing (`meta.from` on the notification is the wire-level echo of the same).
  */
 export const formatChannelTag = (envelope: InboxEnvelope): string =>
 	`<channel from=${JSON.stringify(envelope.from)} kind=${JSON.stringify(envelope.kind)}>${JSON.stringify(envelope.body)}</channel>`;
@@ -34,7 +34,7 @@ export const channelInboxLayer = (self: string): Layer.Layer<Inbox, never, Chann
 			const log = yield* Ref.make<ReadonlyArray<InboxEnvelope>>([]);
 			return {
 				deliver: (envelope) =>
-					sink.wake({message: formatChannelTag(envelope), _meta: {from: envelope.from}}).pipe(
+					sink.wake({content: formatChannelTag(envelope), meta: {from: envelope.from}}).pipe(
 						Effect.andThen(Ref.update(log, (xs) => [...xs, envelope])),
 						Effect.as<InboxAck>({
 							messageId: envelope.messageId,

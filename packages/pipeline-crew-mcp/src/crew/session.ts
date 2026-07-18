@@ -12,9 +12,12 @@
  *     so a role addresses a peer by role (never a tmux window/pane) and the send dials it directly,
  *   - inbound  — the peer-inbox socket server whose deliveries wake the session through
  *     `ChannelSink.layerFromMcpServer` (the same running server), rendered as a `<channel>` tag.
- * Both edges share one `McpServer` instance by layer memoization (the shared `server` value), so
- * the toolkit registers on, and the sink wakes through, the exact transport serving stdio — the
- * same memoization the edge server (#3162) relies on when it provides `layerStdio` to the toolkit.
+ * Both edges MUST land on ONE `McpServer` instance: the toolkit registers its tools on it and the
+ * sink wakes through it. That single instance is achieved by MERGING the two registration layers
+ * and providing the stdio transport ONCE (`assembleCrewSession`), so `McpServer.layer` memoizes to
+ * a single instance across the toolkit registration, the sink, and the run loop. Providing the
+ * transport per-registration instead splits the instance and the served server advertises no tools
+ * (`/mcp` Capabilities: none) — the #3479 assembly defect. See `.patterns/mcp-server-effect.md`.
  *
  * The per-kind cardinality lease + presence announce ride the peer's scope (`makeCrewChannel`): a
  * second live session for a held BRIDGE role fails the build with `RoleUniquenessError`, an ENGINE
@@ -32,7 +35,7 @@
 import {randomUUID} from "node:crypto";
 import {NodeStdio} from "@effect/platform-node";
 import {Effect, Layer} from "effect";
-import {McpServer} from "effect/unstable/ai";
+import {type McpSchema, McpServer} from "effect/unstable/ai";
 import {
 	ChannelSend,
 	ChannelSink,
@@ -145,9 +148,50 @@ export const channelSendFromPeer = (
 	);
 
 /**
- * The full runnable session layer: launch it (`Layer.launch`) to run one live crew session. The
- * one stdio `McpServer` (`server`) is provided to BOTH edges — the toolkit registers on it, the
- * inbound socket server's `ChannelSink` wakes through it — memoized to a single running transport.
+ * The two registrations that MUST land on the ONE served `McpServer` — outbound (the `channel_send`
+ * toolkit) and inbound (the inbox-socket server whose `ChannelSink` wakes through the server) —
+ * merged and provided their `transport` exactly ONCE.
+ *
+ * This is the load-bearing composition (#3479). `McpServer.toolkit` INTERNALLY self-provides its own
+ * `McpServer.layer` (`toolkit = effectDiscard(registerToolkit(x)).pipe(Layer.provide(McpServer.layer))`),
+ * so providing the transport *per registration* (the old `outbound.pipe(Layer.provide(server))` +
+ * `inbound.pipe(Layer.provide(server))`) leaves the toolkit registering its tools into a throwaway
+ * McpServer instance while the run loop serves a different one with `server.tools === []`. Effect's
+ * initialize handler advertises `capabilities.tools` only `if (server.tools.length > 0)`, so the live
+ * session advertised NOTHING — `/mcp` Capabilities: none, `channel_send` absent from the model's
+ * toolset. Merging the registrations and providing the transport ONCE lets `McpServer.layer` memoize
+ * to a single instance across the toolkit registration, the inbound sink, and the run loop — the
+ * documented idiom (`.patterns/mcp-server-effect.md`: merge registrations, then `Layer.provide` the
+ * transport once; grounded against the installed dist at the pin).
+ *
+ * Transport-injected on purpose: production supplies the stdio transport, `session.test.ts` supplies
+ * an in-process `McpServer.layerHttp` to drive the served server's `tools/list` + advertised
+ * capabilities without a live stdio client.
+ */
+export const assembleCrewSession = <RIn>(
+	config: CrewSessionConfig,
+	address: string,
+	substrate: Layer.Layer<CrewTracker | Tracker | Inbox | Dialer, unknown>,
+	transport: Layer.Layer<McpServer.McpServer | McpSchema.McpServerClient, never, RIn>,
+): Layer.Layer<never, unknown, RIn> => {
+	// outbound: the channel_send toolkit, its ChannelSend bound to this session's peer.
+	const outbound = McpServer.toolkit(ChannelToolkit).pipe(
+		Layer.provide(channelToolHandlers),
+		Layer.provide(channelSendFromPeer(config.role, address).pipe(Layer.provide(substrate))),
+	);
+	// inbound: the peer-inbox socket server, its deliveries waking THIS served server.
+	const inbound = inboxServerSocketLayer(address).pipe(
+		Layer.provide(ChannelSink.layerFromMcpServer),
+	);
+	// Provide the transport ONCE to the MERGED registrations — the single-instance memoization above.
+	return Layer.mergeAll(outbound, inbound).pipe(Layer.provide(transport));
+};
+
+/**
+ * The full runnable session layer: launch it (`Layer.launch`) to run one live crew session. The one
+ * stdio `McpServer` is provided to the merged registrations exactly once (`assembleCrewSession`), so
+ * the served server advertises the `channel_send` tool + the `claude/channel` capability; the
+ * heartbeat rides the same `substrate` the outbound binding announces on.
  */
 export const crewSessionLayer = (config: CrewSessionConfig) => {
 	// One per-session instance id, resolved once here and threaded to every address derivation, so an
@@ -155,7 +199,7 @@ export const crewSessionLayer = (config: CrewSessionConfig) => {
 	// ignores it and keeps its singleton address). Honors the launcher-assigned `config.instance` when
 	// present, minting one only when absent. See `sessionInstance` / `inboxAddressFor`.
 	const address = inboxAddressFor(config.role, sessionInstance(config));
-	// The one running stdio McpServer + its channel capability; shared across both channel edges.
+	// The one running stdio McpServer + its channel capability; the served transport for both edges.
 	const server = McpServer.layerStdio({
 		name: config.name ?? SESSION_SERVER_NAME,
 		version: config.version ?? VERSION,
@@ -166,24 +210,11 @@ export const crewSessionLayer = (config: CrewSessionConfig) => {
 	// heartbeat loop, so both drive the one hosted tracker / registry this session announces on.
 	const substrate = peerSocketSubstrate(config, address);
 
-	// outbound: the channel_send toolkit, its ChannelSend bound to this session's peer.
-	const outbound = McpServer.toolkit(ChannelToolkit).pipe(
-		Layer.provide(channelToolHandlers),
-		Layer.provide(channelSendFromPeer(config.role, address).pipe(Layer.provide(substrate))),
-		Layer.provide(server),
-	);
-
 	// keepalive: refresh this session's presence + role lease under the TTL so it never ages out while
 	// the session is live (#3218). Shares `substrate`, so the beats reach the registry announced on.
 	const heartbeat = crewHeartbeatLayer(address).pipe(Layer.provide(substrate));
 
-	// inbound: the peer-inbox socket server, its deliveries waking THIS running server.
-	const inbound = inboxServerSocketLayer(address).pipe(
-		Layer.provide(ChannelSink.layerFromMcpServer),
-		Layer.provide(server),
-	);
-
-	return Layer.mergeAll(outbound, heartbeat, inbound);
+	return Layer.mergeAll(assembleCrewSession(config, address, substrate, server), heartbeat);
 };
 
 /**

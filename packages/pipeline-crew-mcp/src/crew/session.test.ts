@@ -11,11 +11,22 @@
  *   - `inboxAddressFor` addresses every standing role distinctly (no role orphaned — the
  *     cartographer included).
  */
+import {randomUUID} from "node:crypto";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Ref} from "effect";
-import {RpcTest} from "effect/unstable/rpc";
+import {Effect, Layer, Ref, Schema} from "effect";
+import {McpSchema, McpServer} from "effect/unstable/ai";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import {RpcSerialization, RpcTest} from "effect/unstable/rpc";
+import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type {ChannelNotificationPayload} from "../edge/index.ts";
-import {ChannelSend, ChannelSink, channelInboxLayer} from "../edge/index.ts";
+import {
+	CHANNEL_CAPABILITY,
+	ChannelSend,
+	ChannelSink,
+	channelExperimentalCapability,
+	channelInboxLayer,
+} from "../edge/index.ts";
 import {
 	type Connect,
 	Dialer,
@@ -28,7 +39,12 @@ import {TrackerRegistry} from "../tracker/group.ts";
 import {TrackerHandlers} from "../tracker/handlers.ts";
 import {RegistryLive} from "../tracker/registry.ts";
 import {CREW_ROLES, kindOf} from "./roles.ts";
-import {channelSendFromPeer, inboxAddressFor, sessionInstance} from "./session.ts";
+import {
+	assembleCrewSession,
+	channelSendFromPeer,
+	inboxAddressFor,
+	sessionInstance,
+} from "./session.ts";
 import {CrewTracker, peerTrackerLayer} from "./tracker.ts";
 
 const registryHandlers = TrackerHandlers.pipe(Layer.provide(RegistryLive));
@@ -98,8 +114,8 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 			assert.strictEqual(ack.by, receiverAddress, "acked by the receiver's inbox ⇒ it went to it");
 			const recorded = yield* Ref.get(wakes);
 			assert.lengthOf(recorded, 1);
-			assert.match(recorded[0]?.message ?? "", /IntakePing/, "the seam rode a channel wake");
-			assert.strictEqual(recorded[0]?._meta?.from, senderAddress);
+			assert.match(recorded[0]?.content ?? "", /IntakePing/, "the seam rode a channel wake");
+			assert.strictEqual(recorded[0]?.meta?.from, senderAddress);
 		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
 	);
 
@@ -195,4 +211,114 @@ describe("crew/session — sessionInstance honors the launcher-assigned identity
 			"each absent-instance resolution mints a distinct id",
 		);
 	});
+});
+
+// A dispose() rejection is irrelevant to teardown; surface it as a typed failure and swallow it
+// (never Effect.promise, whose rejection escapes as an uncatchable defect — .patterns/index.md #2736).
+class DisposeError extends Schema.TaggedErrorClass<DisposeError>()(
+	"@kampus/pipeline-crew-mcp/crew/DisposeError",
+	{cause: Schema.Unknown},
+) {}
+
+/**
+ * The in-memory substrate for the outbound `ChannelSend` binding: an `RpcTest`-backed `CrewTracker`
+ * (so `makeCrewChannel`'s role-lease claim + presence announce succeed when the outbound layer is
+ * BUILT) + the peer ports + a stub dialer. `channel_send` is only REGISTERED here, never called
+ * during `tools/list`, so the dialer need only exist.
+ */
+const inMemoryCrewTracker = Layer.unwrap(
+	RpcTest.makeClient(TrackerRegistry).pipe(Effect.map(CrewTracker.fromClient)),
+).pipe(Layer.provide(registryHandlers));
+const inMemorySubstrate = (address: string) =>
+	Layer.mergeAll(
+		inMemoryCrewTracker,
+		peerTrackerLayer.pipe(Layer.provide(inMemoryCrewTracker)),
+		Inbox.layer(address),
+		Dialer.layerFromConnect((addr) =>
+			Effect.fail(new PeerUnreachableError({target: addr, reason: "test stub dialer"})),
+		),
+	);
+
+/**
+ * Boot the SESSION-MODE server assembly (`assembleCrewSession`) in-process over `McpServer.layerHttp`
+ * — the same assembly `bin.ts session --role` serves over stdio, minus the stdio transport — and
+ * return an initialized MCP client of it. Mirrors the in-memory harness in `edge/mcp-channel.test.ts`:
+ * a `HttpRouter.toWebHandler` + a session-replaying `customFetch` drive the real served server, so the
+ * advertised `tools/list` + `capabilities.experimental` are observable without a live stdio client.
+ */
+const bootSessionClient = (address: string) =>
+	Effect.gen(function* () {
+		const serverLayer = assembleCrewSession(
+			{role: CREW_ROLES[0], projectRoot: "/x"},
+			address,
+			inMemorySubstrate(address),
+			McpServer.layerHttp({
+				name: "CrewSessionTestServer",
+				version: "0.0.0",
+				path: "/mcp",
+				experimental: channelExperimentalCapability,
+			}),
+		).pipe(Layer.orDie);
+		const {dispose, handler} = HttpRouter.toWebHandler(serverLayer, {disableLogger: true});
+		yield* Effect.addFinalizer(() =>
+			Effect.tryPromise({try: () => dispose(), catch: (cause) => new DisposeError({cause})}).pipe(
+				Effect.ignore,
+			),
+		);
+
+		let sessionId: string | null = null;
+		const customFetch: typeof fetch = async (input, init) => {
+			const request = input instanceof Request ? input : new Request(input, init);
+			if (sessionId) request.headers.set("Mcp-Session-Id", sessionId);
+			const response = await handler(request);
+			sessionId = response.headers.get("Mcp-Session-Id");
+			return response;
+		};
+		const clientLayer = RpcClient.layerProtocolHttp({url: "http://localhost/mcp"}).pipe(
+			Layer.provideMerge([FetchHttpClient.layer, RpcSerialization.layerJsonRpc()]),
+			Layer.provide(Layer.succeed(FetchHttpClient.Fetch, customFetch)),
+		);
+		const client = yield* RpcClient.make(McpSchema.ClientRpcs).pipe(Effect.provide(clientLayer));
+		const initialized = yield* client.initialize({
+			protocolVersion: "9999-01-01",
+			capabilities: {},
+			clientInfo: {name: "TestClient", version: "0.0.0"},
+		});
+		return {client, initialized};
+	});
+
+describe("crew/session — the session-mode server advertises the channel edge (#3479 defect B)", () => {
+	it.effect(
+		"its tools/list exposes channel_send AND it advertises the claude/channel capability",
+		() =>
+			Effect.gen(function* () {
+				// Unique address ⇒ a collision-free inbox socket path, so parallel test files never clash.
+				const address = `inbox://session-mode-test-${randomUUID()}`;
+				const {client, initialized} = yield* bootSessionClient(address);
+
+				// The `claude/channel` experimental capability rides the initialize response (from the one
+				// served McpServer's serverInfo.experimental).
+				assert.isDefined(
+					initialized.capabilities.experimental,
+					"the served server must advertise an experimental capability set",
+				);
+				assert.deepEqual(
+					initialized.capabilities.experimental?.[CHANNEL_CAPABILITY],
+					{},
+					"the served session must advertise the claude/channel capability",
+				);
+
+				// channel_send must be in the served server's tools/list — the outbound toolkit registered
+				// on the same instance the transport serves. Regression guard for the #3479 completing bar
+				// ("a session can call channel_send"): it pins that `assembleCrewSession` advertises the tool
+				// over a real served transport, so a future recomposition that splits the served instance
+				// from the toolkit's is caught in-process. NB: this in-process HTTP harness advertises under
+				// BOTH the merge-once and the old per-registration provide (McpServer.layer memoizes across
+				// the single build), so it does NOT by itself reproduce the live stdio `/mcp` Capabilities:
+				// none symptom — that final check is EA's live re-boot (see PR notes).
+				const listed = yield* client["tools/list"]({});
+				const names = listed.tools.map((tool) => tool.name);
+				assert.include(names, "channel_send", "the model must be able to call channel_send");
+			}).pipe(Effect.scoped),
+	);
 });
