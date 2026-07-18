@@ -5,6 +5,11 @@
  * process spawn, no argv (the bind constructor #3296 turns each `{role, address}` into argv, the
  * orchestration child spawns them).
  *
+ * The stand-up set is the AUTOBOOTED roles only — the self-driving roster (`isAutobooted`). A
+ * human-in-the-loop role (the cartographer) has no standing loop to autorun, so it is skipped here
+ * and spawned on demand instead; it stays a known/addressable roster role, just not an autobooted one
+ * (#3524, ADR 0189).
+ *
  * The set is derived by iterating the roster (`CREW_ROLES` + `kindOf`), never a re-declared role
  * list, so a roster change flows through here with no edit. Each session carries the `address`
  * `inboxAddressFor` mints — which IS its role-lease key: a bridge's singleton `inbox://<role>` (its
@@ -13,7 +18,7 @@
  * carry no instance because a bridge-with-an-instance is meaningless — the discriminated union makes
  * that state unrepresentable, mirroring `inboxAddressFor`'s own kind branch.
  */
-import {CREW_ROLES, type CrewRole, inboxAddressFor, kindOf} from "../crew/index.ts";
+import {CREW_ROLES, type CrewRole, inboxAddressFor, isAutobooted, kindOf} from "../crew/index.ts";
 import type {EngineCount} from "./config.ts";
 
 /**
@@ -51,13 +56,18 @@ export interface SessionSetInput {
 
 /**
  * Derive the stand-up's session set from the roster-law contract: exactly one bridge session per
- * bridge role and `engineCount` sessions per engine role, each engine instance addressed distinctly.
- * Total by construction — every roster role is kinded, so no role is dropped or double-counted.
+ * autobooted bridge role and `engineCount` sessions per autobooted engine role, each engine instance
+ * addressed distinctly. Scoped to the self-driving roster (`isAutobooted`) — a human-in-the-loop role
+ * has no standing loop to run, so it is never stood up here (#3524). Total over the autobooted roles:
+ * every one is kinded, so none is dropped or double-counted.
  */
 export const deriveSessionSet = (input: SessionSetInput): readonly CrewSession[] => {
 	const {engineCount, instanceId} = input;
 	const sessions: CrewSession[] = [];
 	for (const role of CREW_ROLES) {
+		// Only self-driving roles are autobooted into the stand-up set; a human-in-the-loop role (the
+		// cartographer) is on-demand — spawned by a human when wanted — so it is skipped here (#3524).
+		if (!isAutobooted(role)) continue;
 		if (kindOf(role) === "engine") {
 			for (let i = 0; i < engineCount; i++) {
 				const instance = instanceId();

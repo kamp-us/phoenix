@@ -7,11 +7,14 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Schema} from "effect";
 import {
+	CREW_DRIVE,
 	CREW_ROLES,
 	CREW_ROSTER,
 	CrewRole,
 	cardinalityOf,
 	cardinalityOfKind,
+	driveOf,
+	isAutobooted,
 	isCrewRole,
 	kindOf,
 } from "./roles.ts";
@@ -66,6 +69,33 @@ describe("crew/roles — the kind-typed roster (ADR 0189)", () => {
 		for (const role of CREW_ROLES) {
 			assert.strictEqual(cardinalityOf(role), kindOf(role) === "bridge" ? 1 : "N");
 		}
+	});
+
+	it("kinds each role's drive: cartographer is human-in-the-loop, the rest self-drive (#3524)", () => {
+		assert.deepStrictEqual(CREW_DRIVE, {
+			"chief-of-staff": "self-driving",
+			cartographer: "human-in-the-loop",
+			"intake-desk": "self-driving",
+			"engineering-manager": "self-driving",
+		});
+		// driveOf is total over the roster and reads straight off CREW_DRIVE.
+		for (const role of CREW_ROLES) {
+			assert.strictEqual(driveOf(role), CREW_DRIVE[role]);
+		}
+		assert.strictEqual(driveOf("cartographer"), "human-in-the-loop");
+		assert.strictEqual(driveOf("engineering-manager"), "self-driving");
+	});
+
+	it("isAutobooted is exactly the self-driving roster — the cartographer is on-demand (#3524)", () => {
+		for (const role of CREW_ROLES) {
+			assert.strictEqual(isAutobooted(role), driveOf(role) === "self-driving");
+		}
+		// the cartographer stays a known/addressable roster role but is NOT autobooted (AC4).
+		assert.isFalse(isAutobooted("cartographer"));
+		assert.isTrue(new Set<string>(CREW_ROLES).has("cartographer"));
+		assert.isTrue(isAutobooted("chief-of-staff"));
+		assert.isTrue(isAutobooted("intake-desk"));
+		assert.isTrue(isAutobooted("engineering-manager"));
 	});
 
 	it("a bridge cardinality is the literal 1 at the type level (2 is unrepresentable)", () => {

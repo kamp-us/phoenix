@@ -33,6 +33,7 @@ import {existsSync} from "node:fs";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Effect, Schema} from "effect";
+import {driveOf, isCrewRole} from "../crew/index.ts";
 import {type ChannelConfig, type Tier, tierModel} from "./config.ts";
 
 /**
@@ -87,9 +88,12 @@ export const AGENT_FLAG = "--agent";
  * `[prompt]` argument and — with NO `-p`/`--print` — keeps the session INTERACTIVE, i.e. it runs this
  * turn and stays alive to self-drain (grounded on the installed CLI 2.1.214:
  * `Usage: claude [options] [command] [prompt]` — "starts an interactive session by default, use
- * -p/--print for non-interactive output"). Role-agnostic on purpose: it nudges the session to run
- * whatever cold-start its own def defines, so it fits every crew role (bridge + engine) without the
- * launcher re-encoding each persona's boot behavior.
+ * -p/--print for non-interactive output"). Role-agnostic on purpose within its scope: it nudges the
+ * session to run whatever cold-start its own def defines, so it fits every SELF-DRIVING role (the
+ * bridges + engines that run a standing loop) without the launcher re-encoding each persona's boot
+ * behavior. It is NOT handed to a human-in-the-loop role (the cartographer): a HITL role has no
+ * standing loop, so "start your loop under your own power" would make it confabulate work — it boots
+ * idle with no prompt instead (the drive branch in `buildSessionBind`, #3524).
  */
 export const BOOT_PROMPT =
 	"Begin now. Run your role's on-boot cold-start behavior as defined by your agent instructions: announce your presence on the channel, then start your standing work loop under your own power. Do not wait to be pinged, relayed to, or told to start.";
@@ -166,12 +170,14 @@ export interface SessionBind {
 	/** `["--agent", "crew-<role>"]` — boots the session AS its role persona (collision-free name, see AGENT_FLAG). */
 	readonly agentArg: readonly [flag: string, agentName: string];
 	/**
-	 * `[BOOT_PROMPT]` — the single positional initial prompt that hands the spawned session its first
-	 * turn so its def's on-boot cold-start fires from launch, not on a hand-kick (#3516; see BOOT_PROMPT).
-	 * It rides the argv TAIL, after the non-variadic `--name <name>`, so it lands as the CLI's `[prompt]`
-	 * positional rather than being swallowed by the variadic `--channels`/dev-channel option ahead of it.
+	 * A self-driving role's boot turn: `[BOOT_PROMPT]` — the single positional initial prompt that hands
+	 * the spawned session its first turn so its def's on-boot cold-start fires from launch, not on a
+	 * hand-kick (#3516; see BOOT_PROMPT). It rides the argv TAIL, after the non-variadic `--name <name>`,
+	 * so it lands as the CLI's `[prompt]` positional rather than being swallowed by the variadic
+	 * `--channels`/dev-channel option ahead of it. A human-in-the-loop role emits `[]` (no boot turn) so
+	 * it comes up idle waiting for the human rather than manufacturing work (the drive branch, #3524).
 	 */
-	readonly bootPromptArg: readonly [prompt: string];
+	readonly bootPromptArg: readonly [] | readonly [prompt: string];
 	/**
 	 * The complete argv
 	 * `[...modelArg, ...pluginDirArg, ...agentArg, ...channelArg, ...nameArg, ...bootPromptArg]` the
@@ -322,7 +328,13 @@ export const buildSessionBind = (
 		// The launcher's boot turn (#3516): a tail positional prompt so the spawned session fires its
 		// def's cold-start instead of idling. Tail placement (after the non-variadic --name) keeps it out
 		// of the variadic channel option's reach; no -p/--print keeps the session interactive to self-drain.
-		const bootPromptArg: readonly [string] = [BOOT_PROMPT];
+		// A HITL role (the cartographer) gets NO boot turn — "start your loop under your own power" makes a
+		// role with no standing loop confabulate work, so it boots idle instead (#3524). The drive is a
+		// roster law, derived here (not a per-launch input like tier), so a HITL role can never be handed
+		// the self-driving prompt on any launch path — autoboot or the on-demand spawn. A non-roster role
+		// (never expected) defaults self-driving, preserving today's boot-turn behavior.
+		const selfDriving = !isCrewRole(role) || driveOf(role) === "self-driving";
+		const bootPromptArg: readonly [] | readonly [string] = selfDriving ? [BOOT_PROMPT] : [];
 
 		return {
 			role,

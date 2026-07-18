@@ -24,13 +24,17 @@ export {
 export {RoleUniquenessError} from "./errors.ts";
 export {
 	type CardinalityOf,
+	CREW_DRIVE,
 	CREW_ROLES,
 	CREW_ROSTER,
 	CrewRole,
 	type CrewRoleCardinality,
+	type CrewRoleDrive,
 	type CrewRoleKind,
 	cardinalityOf,
 	cardinalityOfKind,
+	driveOf,
+	isAutobooted,
 	isCrewRole,
 	kindOf,
 } from "./roles.ts";

@@ -1,14 +1,19 @@
 /**
- * standup/session-set — the roster-driven session set (AC 1–4, ADR 0189). These tests pin the
- * derivation against the confirmed roster (three bridges + the engine pool) and a sample engine
- * count: bridge cardinality 1, engine cardinality N, distinct per-instance engine identities, and
- * that the set is derived from the kind-typed roster contract rather than a re-declared role list.
+ * standup/session-set — the roster-driven session set (AC 1–4, ADR 0189; #3524). These tests pin the
+ * derivation against the AUTOBOOTED roster (the self-driving roles — the two self-driving bridges +
+ * the engine pool) and a sample engine count: bridge cardinality 1, engine cardinality N, distinct
+ * per-instance engine identities, that the set is derived from the kind-typed roster contract rather
+ * than a re-declared role list, and that a human-in-the-loop role (the cartographer) is NOT stood up.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Schema} from "effect";
-import {CREW_ROLES, kindOf} from "../crew/index.ts";
+import {CREW_ROLES, isAutobooted, kindOf} from "../crew/index.ts";
 import {EngineCount} from "./config.ts";
 import {type CrewSession, deriveSessionSet} from "./session-set.ts";
+
+// The autobooted roster — the self-driving roles the stand-up brings up. A human-in-the-loop role
+// (the cartographer) is excluded: on-demand, never in the standing drain crew (#3524).
+const AUTOBOOTED = CREW_ROLES.filter(isAutobooted);
 
 // N as the real branded EngineCount (≥1) the launcher hands the derivation, not a bare cast.
 const n = (count: number): EngineCount => Schema.decodeUnknownSync(EngineCount)(count);
@@ -23,12 +28,12 @@ const bridges = (set: readonly CrewSession[]) => set.filter((s) => s.kind === "b
 const engines = (set: readonly CrewSession[]) => set.filter((s) => s.kind === "engine");
 
 describe("standup/session-set — roster-driven session set (ADR 0189)", () => {
-	it("stands up exactly one instance per bridge kind and N of the engine kind (AC1)", () => {
+	it("stands up exactly one instance per autobooted bridge kind and N of the engine kind (AC1)", () => {
 		const N = 3;
 		const set = deriveSessionSet({engineCount: n(N), instanceId: counter()});
 
-		const bridgeRoles = CREW_ROLES.filter((r) => kindOf(r) === "bridge");
-		const engineRoles = CREW_ROLES.filter((r) => kindOf(r) === "engine");
+		const bridgeRoles = AUTOBOOTED.filter((r) => kindOf(r) === "bridge");
+		const engineRoles = AUTOBOOTED.filter((r) => kindOf(r) === "engine");
 
 		// one session per bridge kind — the exact confirmed bridges, each cardinality 1.
 		assert.deepStrictEqual(
@@ -70,10 +75,10 @@ describe("standup/session-set — roster-driven session set (ADR 0189)", () => {
 		}
 	});
 
-	it("derives from the kind-typed roster, not a re-declared list — every role is present (AC3)", () => {
+	it("derives from the kind-typed roster, not a re-declared list — every autobooted role is present (AC3)", () => {
 		const set = deriveSessionSet({engineCount: n(1), instanceId: counter()});
-		// every roster role appears at least once, kinded exactly as the roster says.
-		for (const role of CREW_ROLES) {
+		// every AUTOBOOTED (self-driving) roster role appears at least once, kinded exactly as the roster says.
+		for (const role of AUTOBOOTED) {
 			const forRole = set.filter((s) => s.role === role);
 			assert.isTrue(forRole.length >= 1, `role ${role} missing from the session set`);
 			for (const s of forRole) {
@@ -86,8 +91,19 @@ describe("standup/session-set — roster-driven session set (ADR 0189)", () => {
 		}
 	});
 
+	it("excludes a human-in-the-loop role (the cartographer) from the stand-up set (#3524)", () => {
+		const set = deriveSessionSet({engineCount: n(3), instanceId: counter()});
+		const roles = new Set(set.map((s) => s.role));
+		// the cartographer is a known/addressable roster role but NOT autobooted — on-demand only.
+		assert.isFalse(roles.has("cartographer"), "cartographer must not be autobooted (#3524)");
+		// exactly the self-driving roster is stood up — no HITL role sneaks in.
+		for (const s of set) {
+			assert.isTrue(isAutobooted(s.role), `${s.role} is not autobooted but appears in the set`);
+		}
+	});
+
 	it("scales the engine pool with the config engine count, bridges fixed at 1 (AC1,AC4)", () => {
-		const bridgeCount = CREW_ROLES.filter((r) => kindOf(r) === "bridge").length;
+		const bridgeCount = AUTOBOOTED.filter((r) => kindOf(r) === "bridge").length;
 		for (const N of [1, 2, 5, 10]) {
 			const set = deriveSessionSet({engineCount: n(N), instanceId: counter()});
 			assert.strictEqual(bridges(set).length, bridgeCount);
