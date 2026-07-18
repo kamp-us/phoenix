@@ -28,6 +28,7 @@ import {
 	type LaunchedSession,
 	type LaunchPlan,
 	launchSessionInTmux,
+	renderStandUpError,
 	resolveTargetTmuxSession,
 	runStandUp,
 	type StandUpInput,
@@ -618,4 +619,29 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 			assert.deepStrictEqual(argvLog, [["has-session", "-t", "crew"]]);
 		}),
 	);
+});
+
+// The abort render is the operator's whole diagnostic on a fail-closed boot — `String(error)` on a
+// TaggedError is tag-only, so both `reason`-carrying union members must surface their rich fields (#3438).
+describe("renderStandUpError", () => {
+	it("surfaces role, pane, and reason for a StandUpLaunchError", () => {
+		const reason = `tmux new-window for pane "triage" exited 127 (no live pane)`;
+		const rendered = renderStandUpError(
+			new StandUpLaunchError({role: "triage", pane: "triage", reason}),
+		);
+
+		assert.include(rendered, "StandUpLaunchError");
+		assert.include(rendered, "role=triage");
+		assert.include(rendered, "pane=triage");
+		assert.include(rendered, `reason=${reason}`);
+	});
+
+	it("surfaces session and reason for a TmuxSessionEnsureError", () => {
+		const reason = "has-session missed and new-session failed to come up";
+		const rendered = renderStandUpError(new TmuxSessionEnsureError({session: "crew", reason}));
+
+		assert.include(rendered, "TmuxSessionEnsureError");
+		assert.include(rendered, "session=crew");
+		assert.include(rendered, `reason=${reason}`);
+	});
 });

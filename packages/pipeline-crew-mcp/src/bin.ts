@@ -35,7 +35,7 @@ import {Cause, Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 
 import {CREW_ROLES, RoleUniquenessError, runCrewSession} from "./crew/index.ts";
-import {CREW_WINDOW, runStandUp} from "./standup/index.ts";
+import {CREW_WINDOW, renderStandUpError, runStandUp} from "./standup/index.ts";
 import {isTrackerAddressInUse, launchTracker} from "./tracker/index.ts";
 import {VERSION} from "./version.ts";
 
@@ -105,9 +105,10 @@ const standUp = Command.make(
 				),
 			),
 			// Fail-loud, no partial crew: a bad config, a version drift, an unstartable tracker, an inert
-			// channel, or a colliding pane label aborts naming its cause — String(error) carries the tag.
-			Effect.catch((error: unknown) =>
-				Console.error(`stand-up aborted (no partial crew): ${String(error)}`).pipe(
+			// channel, or a colliding pane label aborts naming its cause — renderStandUpError surfaces the
+			// tagged error's rich fields (reason/role/pane), not just its tag (#3438).
+			Effect.catch((error) =>
+				Console.error(`stand-up aborted (no partial crew): ${renderStandUpError(error)}`).pipe(
 					Effect.andThen(Effect.sync(() => process.exit(1))),
 				),
 			),

@@ -50,6 +50,7 @@ export {
 	type LaunchedSession,
 	type LaunchPlan,
 	launchSessionInTmux,
+	renderStandUpError,
 	resolveTargetTmuxSession,
 	runStandUp,
 	type StandUpError,
