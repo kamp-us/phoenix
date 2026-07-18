@@ -72,6 +72,16 @@ export interface CardProps extends SurfaceProps {
 	interactive?: boolean;
 }
 
+/**
+ * @component Card
+ * @whenToUse The opinionated default for a NEW surface — a bordered, subtly-raised,
+ *   padded box. Reach for `Surface` with explicit props only to preserve an existing
+ *   shell's exact look during a migration (the composite-primitive selection rule is
+ *   the manifest's, referenced not restated — see `design-system-manifest.md`).
+ * @slot children The card's content.
+ * @agent Prefer this composite over hand-rolling a bordered box; do not regenerate
+ *   this selection guidance — it echoes the manifest's component-selection rule.
+ */
 export function Card({interactive = false, className = "", ...props}: CardProps) {
 	const cls = ["kp-card", interactive ? "kp-card--interactive" : "", className]
 		.filter(Boolean)
