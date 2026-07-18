@@ -55,6 +55,7 @@ export {
 	launchSessionInTmux,
 	type ProjectScopeRegisterInput,
 	type ProjectScopeRegistrar,
+	paneClaudeCommand,
 	productionProjectScopeRegistrar,
 	renderStandUpError,
 	resolveTargetTmuxSession,

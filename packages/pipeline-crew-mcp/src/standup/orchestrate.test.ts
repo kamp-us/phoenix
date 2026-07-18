@@ -31,6 +31,7 @@ import {
 	launchSessionInTmux,
 	type ProjectScopeRegistrar,
 	ProjectScopeWriteError,
+	paneClaudeCommand,
 	renderStandUpError,
 	resolveTargetTmuxSession,
 	runStandDown,
@@ -602,8 +603,7 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 					"-P",
 					"-F",
 					"#{window_id}",
-					"claude",
-					...plan.bind.argv,
+					...paneClaudeCommand(plan.bind.argv),
 				]);
 			}),
 	);
@@ -625,8 +625,7 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 					"@7",
 					"-c",
 					plan.cwd,
-					"claude",
-					...plan.bind.argv,
+					...paneClaudeCommand(plan.bind.argv),
 				]);
 				assert.deepStrictEqual(argvLog[1], ["select-layout", "-t", "@7", "tiled"]);
 			}),
@@ -761,6 +760,32 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 			assert.deepStrictEqual(argvLog, [["has-session", "-t", "crew"]]);
 		}),
 	);
+});
+
+// The dev-channel dialog fix (#3419): `claude` runs THROUGH an interactive login shell so the startup
+// confirmation dialog renders + waits (attended boot) instead of a direct exec exiting 1 at the dialog.
+describe("paneClaudeCommand — the dev-channel dialog shell-wrap (#3419)", () => {
+	it("wraps claude+argv as an interactive login shell command, argv re-parsed verbatim", () => {
+		const argv = ["--model", "opus", "--channels", "server:@kampus/pipeline-crew-mcp"];
+		const cmd = paneClaudeCommand(argv);
+
+		// shape: <shell> -lic '<single command string>' — a 3-token pane command, never a direct `claude`.
+		assert.strictEqual(cmd.length, 3);
+		assert.strictEqual(cmd[1], "-lic");
+		assert.notStrictEqual(cmd[0], "claude");
+		// the command string carries claude + every argv token, so the shell re-parses the exact same words.
+		const command = cmd[2] ?? "";
+		for (const token of ["claude", ...argv]) assert.include(command, token);
+	});
+
+	it("single-quotes each token so a value with shell metacharacters survives re-parsing", () => {
+		// a boot prompt carries spaces + an apostrophe — both must round-trip through the shell unchanged.
+		const cmd = paneClaudeCommand(["--name", "chief-of-staff", "Begin now: don't idle"]);
+		const command = cmd[2] ?? "";
+		// the apostrophe is escaped via the POSIX '\'' idiom, not left to split the quoted string.
+		assert.include(command, "'\\''");
+		assert.include(command, "'Begin now: don'\\''t idle'");
+	});
 });
 
 // The abort render is the operator's whole diagnostic on a fail-closed boot — `String(error)` on a

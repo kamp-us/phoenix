@@ -341,6 +341,30 @@ const resolveTargetSessionDefault = (): Effect.Effect<string, TmuxSessionEnsureE
 /** The single tiled window every crew pane opens into (founder ruling #3424): one window, all roles visible at once. */
 export const CREW_WINDOW = "crew";
 
+/** POSIX single-quote one argv token so the wrapping shell re-parses `claude <argv>` into the exact same words. */
+const shellQuote = (token: string): string => `'${token.replace(/'/g, "'\\''")}'`;
+
+/**
+ * The pane command tmux runs — `claude` spawned THROUGH an interactive login shell, not as the direct
+ * tmux pane process. Grounded on the live #3419 diagnosis against CLI 2.1.214: a recent CLI update added
+ * a startup confirmation dialog for `--dangerously-load-development-channels` (the crew channel flag
+ * config.ts's fail-closed cross-field check forces, since the crew's top-level `server:` ref only
+ * registers in development mode). Exec'd DIRECTLY as the tmux pane process, `claude` cannot set up its
+ * interactive raw-mode stdin for that dialog and the pane EXITS 1 immediately — collapsing the crew
+ * window and failing every sibling pane's split ("no live pane"). Spawned as a child of an interactive
+ * login shell (`-lic`), the dialog renders and the pane WAITS for the operator's accept — the
+ * founder-endorsed attended-boot interim (#3419, until the post-preview allowlist path via #3366 removes
+ * the dialog). Deliberately NOT a synthetic-keystroke auto-accept (the version-fragile anti-pattern the
+ * founder vetoed): it only restores the dialog to a state a human — or a `synchronize-panes` Enter —
+ * can accept. The operator's `$SHELL` runs it (falling back to `zsh`, the macOS default the workaround
+ * was proven on); every token is single-quoted so the shell re-parses the argv verbatim.
+ */
+export const paneClaudeCommand = (argv: readonly string[]): readonly string[] => {
+	const shell = process.env.SHELL || "zsh";
+	const command = ["claude", ...argv].map(shellQuote).join(" ");
+	return [shell, "-lic", command];
+};
+
 /** Map a non-zero exit / spawn error from one tmux step to the fail-loud `StandUpLaunchError` naming the role + pane. */
 const launchFailure = (
 	session: CrewSession,
@@ -380,6 +404,8 @@ export const launchSessionInTmux = (
 			// First session: open the crew window and capture its id (`-P -F '#{window_id}'`) so every later
 			// pane splits into exactly this window, never a stale same-named one. `-c <cwd>` boots the pane in
 			// its distinct launch cwd — the persisted-scope `projects[]` key its crew server is registered under (#3444).
+			// The pane runs `claude` THROUGH a login shell so the dev-channel startup dialog waits instead of
+			// exiting 1 (#3419, see paneClaudeCommand).
 			const opened = yield* runTmuxCommand([
 				"new-window",
 				"-t",
@@ -391,8 +417,7 @@ export const launchSessionInTmux = (
 				"-P",
 				"-F",
 				"#{window_id}",
-				"claude",
-				...bind.argv,
+				...paneClaudeCommand(bind.argv),
 			]);
 			if (opened.spawnError !== undefined || opened.code !== 0) {
 				return yield* Effect.fail(launchFailure(session, pane, opened, "new-window"));
@@ -401,14 +426,14 @@ export const launchSessionInTmux = (
 			return {role: session.role, address: session.address, window, pane, pid: opened.pid};
 		}
 		// Later session: split into the crew window in this pane's distinct launch cwd (`-c`), then re-tile.
+		// Same login-shell wrap as the first pane so the dev-channel dialog waits instead of exiting 1 (#3419).
 		const split = yield* runTmuxCommand([
 			"split-window",
 			"-t",
 			intoWindow,
 			"-c",
 			cwd,
-			"claude",
-			...bind.argv,
+			...paneClaudeCommand(bind.argv),
 		]);
 		if (split.spawnError !== undefined || split.code !== 0) {
 			return yield* Effect.fail(launchFailure(session, pane, split, "split-window"));
