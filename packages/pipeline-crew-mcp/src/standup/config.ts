@@ -22,8 +22,7 @@
  * (operator/notification/wipCap/…) are ignored. There is no config-read tmux dimension —
  * tmux window placement now derives from role identity at launch (tmux-placement.ts), not config.
  */
-import {readFileSync} from "node:fs";
-import {Effect, Schema} from "effect";
+import {Effect, FileSystem, Schema} from "effect";
 import {CREW_ROLES} from "../crew/index.ts";
 
 /**
@@ -316,17 +315,26 @@ export const decodeLaunchConfig = (
  */
 const readParsedConfig = (env: {
 	readonly CREW_CONFIG?: string | undefined;
-}): Effect.Effect<{readonly parsed: unknown; readonly configPath: string}, LaunchConfigError> =>
+}): Effect.Effect<
+	{readonly parsed: unknown; readonly configPath: string},
+	LaunchConfigError,
+	FileSystem.FileSystem
+> =>
 	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
 		const configPath = resolveConfigPath(env);
-		const text = yield* Effect.try({
-			try: () => readFileSync(configPath, "utf8"),
-			catch: (cause) =>
-				new LaunchConfigError({
-					configPath,
-					reason: `cannot read crew config (run pipeline-crew stand-up first): ${String(cause)}`,
-				}),
-		});
+		// The `FileSystem` seam (over the bin's NodeServices.layer) reads the config, so a `unit` test
+		// substitutes it in place of the real disk (.patterns/effect-platform-access.md). A read fault is
+		// a typed `PlatformError` on E, folded to the dimension-naming LaunchConfigError this reader owns.
+		const text = yield* fs.readFileString(configPath, "utf8").pipe(
+			Effect.mapError(
+				(cause) =>
+					new LaunchConfigError({
+						configPath,
+						reason: `cannot read crew config (run pipeline-crew stand-up first): ${String(cause)}`,
+					}),
+			),
+		);
 		const parsed = yield* Effect.try({
 			try: () => parseJsonc(text),
 			catch: (cause) =>
@@ -342,7 +350,7 @@ const readParsedConfig = (env: {
  */
 export const readLaunchConfig = (
 	env: {readonly CREW_CONFIG?: string | undefined} = process.env,
-): Effect.Effect<LaunchConfig, LaunchConfigError> =>
+): Effect.Effect<LaunchConfig, LaunchConfigError, FileSystem.FileSystem> =>
 	readParsedConfig(env).pipe(
 		Effect.flatMap(({parsed, configPath}) => decodeLaunchConfig(parsed, configPath)),
 	);

@@ -14,6 +14,7 @@
 import {randomUUID} from "node:crypto";
 import {existsSync} from "node:fs";
 import {assert, describe, it} from "@effect/vitest";
+import {NodeFileSystem} from "@effect/platform-node";
 import {Cause, Effect, Exit, Layer, Stdio, Stream} from "effect";
 import {McpServer} from "effect/unstable/ai";
 import {RpcTest} from "effect/unstable/rpc";
@@ -58,12 +59,15 @@ describe("crew/session — forked-stdio live-wake round-trip (session.ts:34 seam
 					experimental: channelExperimentalCapability,
 				}).pipe(Layer.provide(Stdio.layerTest({stdin: Stream.never})));
 
+				// The inbound socket server's stale-socket reclaim reaches disk through the `FileSystem`
+				// seam; the in-memory substrate carries no `FileSystem`, so provide the real Node one —
+				// discharged here exactly as the bin's `NodeServices.layer` does in production.
 				const serverLayer = assembleCrewSession(
 					{role: "intake-desk", projectRoot: "/x"},
 					address,
 					inMemorySubstrate(address),
 					transport,
-				).pipe(Layer.orDie);
+				).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie);
 
 				yield* Effect.forkScoped(Layer.launch(serverLayer));
 				yield* Effect.sleep("1500 millis"); // window for the forked run-loop + socket bind

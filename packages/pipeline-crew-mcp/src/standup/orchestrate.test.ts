@@ -8,6 +8,7 @@
  * Every side-effecting step is injected — a version reader, a recording tracker, a recording launcher
  * — so the whole boot runs in a unit test with no real subprocess, tmux, or `claude`.
  */
+import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {CREW_ROLES, isAutobooted, kindOf} from "../crew/index.ts";
@@ -45,6 +46,12 @@ import {
 
 const PINNED = "2.1.212";
 const SERVER = "@kampus/pipeline-crew-mcp";
+
+// The per-session bind reaches the platform through the FileSystem/Path seam; provide the real Node
+// platform (the bin's NodeServices.layer) so runStandUp discharges it in-test. These tests inject
+// every side-effecting step, so the only live platform touch is the bind's bin.ts resolvability probe.
+const standUp = (input: Parameters<typeof runStandUp>[0]) =>
+	runStandUp(input).pipe(Effect.provide(NodeServices.layer));
 
 /**
  * A post-#3236 one-role-map crew config (raw, on-disk shape): the engine count lives at
@@ -268,7 +275,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 			Effect.gen(function* () {
 				const N = 3;
 				const {input, launched, trackerCalls} = baseInput({engineCount: N});
-				const result = yield* runStandUp(input);
+				const result = yield* standUp(input);
 
 				assert.strictEqual(trackerCalls(), 1);
 				assert.strictEqual(result.tracker, trackerHandle);
@@ -301,7 +308,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 		() =>
 			Effect.gen(function* () {
 				const {input, intoWindows, launched} = baseInput({engineCount: 2});
-				const result = yield* runStandUp(input);
+				const result = yield* standUp(input);
 
 				// exactly one session opens the crew window (intoWindow undefined); every later one splits into it.
 				assert.strictEqual(intoWindows.length, launched.length);
@@ -322,7 +329,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 		Effect.gen(function* () {
 			for (const N of [1, 4]) {
 				const {input, launched} = baseInput({engineCount: N, instanceId: counter()});
-				yield* runStandUp(input);
+				yield* standUp(input);
 				assert.strictEqual(launched.filter((p) => p.session.kind === "engine").length, N);
 				assert.strictEqual(
 					launched.filter((p) => p.session.kind === "bridge").length,
@@ -339,7 +346,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				const {input, launched, trackerCalls} = baseInput({
 					readVersionOutput: Effect.succeed("2.1.300 (Claude Code)"),
 				});
-				const err = yield* Effect.flip(runStandUp(input));
+				const err = yield* Effect.flip(standUp(input));
 
 				assert.instanceOf(err, CliVersionAssertError);
 				// version assert runs before ensure-tracker: the tracker was never reached, nothing launched.
@@ -355,7 +362,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 					new LaunchConfigError({configPath: ".claude/crew.config.jsonc", reason: "missing"}),
 				),
 			});
-			const err = yield* Effect.flip(runStandUp(input));
+			const err = yield* Effect.flip(standUp(input));
 
 			assert.instanceOf(err, LaunchConfigError);
 			assert.strictEqual(trackerCalls(), 0);
@@ -369,7 +376,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				ensureTracker: (_root: string) =>
 					Effect.fail(new TrackerNotServingError({socketPath: "/tmp/crew.sock"})),
 			});
-			const err = yield* Effect.flip(runStandUp(input));
+			const err = yield* Effect.flip(standUp(input));
 
 			assert.instanceOf(err, TrackerNotServingError);
 			// derive/bind/placement/launch all sit after ensure-tracker — nothing launched.
@@ -382,7 +389,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 		() =>
 			Effect.gen(function* () {
 				const {input, launched} = baseInput({serverName: "not-in-servers"});
-				const err = yield* Effect.flip(runStandUp(input));
+				const err = yield* Effect.flip(standUp(input));
 
 				assert.instanceOf(err, CrewServerNotRegisteredError);
 				assert.strictEqual(launched.length, 0);
@@ -392,7 +399,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 	it.effect("threads each engine's per-instance identity into its launch argv (seam 3)", () =>
 		Effect.gen(function* () {
 			const {input, launched} = baseInput({engineCount: 3});
-			yield* runStandUp(input);
+			yield* standUp(input);
 
 			const engines = launched.filter((p) => p.session.kind === "engine");
 			assert.strictEqual(engines.length, 3);
@@ -418,7 +425,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				const {input, launched, order, reaped, registered, registeredCtx, cwdCalls} = baseInput({
 					engineCount: N,
 				});
-				yield* runStandUp(input);
+				yield* standUp(input);
 
 				// The start-of-stand-up reaper swept once, keyed by the crew server name (the resolver's ref).
 				assert.strictEqual(reaped.length, 1);
@@ -475,7 +482,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 							),
 					},
 				});
-				const err = yield* Effect.flip(runStandUp(input));
+				const err = yield* Effect.flip(standUp(input));
 
 				assert.instanceOf(err, ProjectScopeWriteError);
 				// register sits before the launch loop — a failed registration launches nothing (no partial crew).
@@ -490,7 +497,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 			// cartographer is not autobooted (#3524), so it never launches here; its tier is asserted at the
 			// on-demand spawn path, not the stand-up. intake-desk carries the fable tier among the autobooted.
 			const {input, launched} = baseInput({engineCount: 2});
-			yield* runStandUp(input);
+			yield* standUp(input);
 
 			const modelOf = (role: string): readonly string[] | undefined =>
 				launched.find((p) => p.session.role === role)?.bind.modelArg;
@@ -512,7 +519,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 		() =>
 			Effect.gen(function* () {
 				const {input, order, targetSessions} = baseInput({engineCount: 2});
-				yield* runStandUp(input);
+				yield* standUp(input);
 
 				// the target session is resolved before any launch, and every pane is opened into it.
 				const firstLaunch = order.findIndex((e) => e.startsWith("launch:"));
@@ -533,7 +540,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 							new TmuxSessionEnsureError({session: "crew", reason: "new-session exited 1"}),
 						),
 				});
-				const err = yield* Effect.flip(runStandUp(input));
+				const err = yield* Effect.flip(standUp(input));
 
 				assert.instanceOf(err, TmuxSessionEnsureError);
 				// session resolution sits before the launch loop — nothing launched when it fails.
@@ -556,7 +563,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 							}),
 						),
 				});
-				const err = yield* Effect.flip(runStandUp(input));
+				const err = yield* Effect.flip(standUp(input));
 				assert.instanceOf(err, StandUpLaunchError);
 			}),
 	);
@@ -570,7 +577,7 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 	// Capture one real, fully-derived LaunchPlan by running a stand-up whose launcher just records it.
 	const captureOnePlan = Effect.gen(function* () {
 		const {input, launched} = baseInput({engineCount: 1});
-		yield* runStandUp(input);
+		yield* standUp(input);
 		const plan = launched[0];
 		assert.isDefined(plan);
 		return plan as LaunchPlan;

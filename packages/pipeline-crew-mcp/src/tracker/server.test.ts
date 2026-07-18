@@ -9,12 +9,17 @@ import {randomUUID} from "node:crypto";
 import {existsSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {NodeSocket} from "@effect/platform-node";
+import {NodeFileSystem, NodeSocket} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
 import {TrackerRegistry} from "./group.ts";
 import {isTrackerAddressInUse, socketPathFor, trackerServerLayer} from "./server.ts";
+
+// trackerServerLayer's stale-socket reclaim now reaches disk through the FileSystem seam, so provide
+// the real Node FileSystem — the layer builds in-test exactly as under the bin's NodeServices.layer.
+const hostedTracker = (socketPath: string) =>
+	trackerServerLayer(socketPath).pipe(Layer.provide(NodeFileSystem.layer));
 
 describe("tracker socket path — per-project derivation", () => {
 	it("is deterministic and normalizes the root", () => {
@@ -64,7 +69,7 @@ describe("tracker over a unix socket — RpcServer round-trip", () => {
 			assert.lengthOf(result.peers, 1);
 			assert.strictEqual(result.peers[0]?.peer, "inbox://peer-a");
 		}).pipe(
-			Effect.provide(Layer.mergeAll(socketClientLayer(socketPath), trackerServerLayer(socketPath))),
+			Effect.provide(Layer.mergeAll(socketClientLayer(socketPath), hostedTracker(socketPath))),
 			Effect.scoped,
 		);
 	});
@@ -107,7 +112,7 @@ describe("tracker stale-socket crash recovery (#3280)", () => {
 				// Build the server FIRST so it reclaims the stale file and is listening, THEN dial a client
 				// (the production sequencing: `crewTrackerHostOrDialLayer` provides the client onto the
 				// hosted server). A successful round-trip proves the reclaim re-hosted the tracker.
-				yield* Layer.build(trackerServerLayer(socketPath));
+				yield* Layer.build(hostedTracker(socketPath));
 				const result = yield* Effect.gen(function* () {
 					const client = yield* RpcClient.make(TrackerRegistry);
 					yield* client.AnnouncePresence({
@@ -129,8 +134,8 @@ describe("tracker stale-socket crash recovery (#3280)", () => {
 			const socketPath = join(tmpdir(), `crew-live-${randomUUID().slice(0, 8)}.sock`);
 			return Effect.gen(function* () {
 				// host A is live for the scope; reclaim must NOT unlink it out from under the running host.
-				yield* Layer.build(trackerServerLayer(socketPath));
-				const exit = yield* Effect.exit(Layer.build(trackerServerLayer(socketPath)));
+				yield* Layer.build(hostedTracker(socketPath));
+				const exit = yield* Effect.exit(Layer.build(hostedTracker(socketPath)));
 				assert.isTrue(
 					Exit.isFailure(exit),
 					"a second bind on a LIVE socket must fail, not reclaim",

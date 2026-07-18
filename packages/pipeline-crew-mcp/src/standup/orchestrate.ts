@@ -21,7 +21,7 @@
  */
 import {spawn} from "node:child_process";
 import {randomUUID} from "node:crypto";
-import {Effect, Schema} from "effect";
+import {Effect, type FileSystem, type Path, Schema} from "effect";
 import {SESSION_SERVER_NAME} from "../crew/index.ts";
 import {
 	buildSessionBind,
@@ -452,7 +452,9 @@ export const launchSessionInTmux = (
  * launch each session bound to its role lease. Every derivation and validation completes before the
  * first launch, so any precondition failure aborts (naming its cause) with zero sessions up.
  */
-export const runStandUp = (input: StandUpInput): Effect.Effect<StandUpResult, StandUpError> =>
+export const runStandUp = (
+	input: StandUpInput,
+): Effect.Effect<StandUpResult, StandUpError, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const {projectRoot} = input;
 		const serverName = input.serverName ?? SESSION_SERVER_NAME;

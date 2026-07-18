@@ -13,7 +13,7 @@
  *     that address back out (matching the `inbox://…` convention the tracker socket test uses).
  */
 import {NodeSocket} from "@effect/platform-node";
-import {Array as Arr, Context, Effect, Layer, type Scope} from "effect";
+import {Array as Arr, Context, Effect, type FileSystem, Layer, type Scope} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
 import {type RolePresence, Tracker} from "../peer/index.ts";
 import type * as Schema from "../protocol/schema.ts";
@@ -177,7 +177,9 @@ export const crewTrackerSocketLayer = (socketPath: string) =>
  * is listening before the client connects) and keeps the hosted server scoped for the session's
  * lifetime. A non-`EADDRINUSE` bind failure is re-raised, never dialed over.
  */
-export const crewTrackerHostOrDialLayer = (socketPath: string): Layer.Layer<CrewTracker, unknown> =>
+export const crewTrackerHostOrDialLayer = (
+	socketPath: string,
+): Layer.Layer<CrewTracker, unknown, FileSystem.FileSystem> =>
 	crewTrackerSocketLayer(socketPath).pipe(
 		Layer.provide(trackerServerLayer(socketPath)),
 		Layer.catchCause((cause) =>

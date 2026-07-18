@@ -35,7 +35,7 @@
  */
 import {randomUUID} from "node:crypto";
 import {NodeStdio} from "@effect/platform-node";
-import {Effect, Layer} from "effect";
+import {Effect, type FileSystem, Layer} from "effect";
 import {type McpSchema, McpServer} from "effect/unstable/ai";
 import {
 	ChannelSend,
@@ -118,7 +118,7 @@ export const sessionInstance = (config: CrewSessionConfig): string =>
 export const peerSocketSubstrate = (
 	config: CrewSessionConfig,
 	address: string,
-): Layer.Layer<CrewTracker | Tracker | Inbox | Dialer, unknown> => {
+): Layer.Layer<CrewTracker | Tracker | Inbox | Dialer, unknown, FileSystem.FileSystem> => {
 	const crewTracker = crewTrackerHostOrDialLayer(socketPathFor(config.projectRoot));
 	return Layer.mergeAll(
 		peerTrackerLayer.pipe(Layer.provideMerge(crewTracker)),
@@ -179,12 +179,19 @@ export const channelSendFromPeer = (
  * an in-process `McpServer.layerHttp` (advertised tools + capabilities) and a fake-`Stdio` forked
  * run-loop (the async-`ChannelSend` race guard), both without a live stdio client.
  */
-export const assembleCrewSession = <RIn>(
+export const assembleCrewSession = <RIn, RSub = never>(
 	config: CrewSessionConfig,
 	address: string,
-	substrate: Layer.Layer<CrewTracker | Tracker | Inbox | Dialer, unknown>,
+	// The substrate may carry its own requirement (`RSub`): production's `peerSocketSubstrate` needs
+	// `FileSystem` (the tracker's stale-socket reclaim seam), discharged with `RIn` at the bin's
+	// NodeServices.layer; the in-memory test substrate is `RSub = never`.
+	substrate: Layer.Layer<CrewTracker | Tracker | Inbox | Dialer, unknown, RSub>,
 	transport: Layer.Layer<McpServer.McpServer | McpSchema.McpServerClient, never, RIn>,
-): Layer.Layer<never, unknown, RIn> =>
+	// `FileSystem` is a standing requirement independent of the substrate: the inbound socket server
+	// (`inboxServerSocketLayer`) reclaims a stale inbox socket through the `FileSystem` seam (#3489),
+	// discharged with `RIn`/`RSub` at the bin's `NodeServices.layer` — production's `peerSocketSubstrate`
+	// already carries it in `RSub`, so this widens nothing for the live path.
+): Layer.Layer<never, unknown, RIn | RSub | FileSystem.FileSystem> =>
 	// Claim FIRST (Race 2): the slow tracker-claim/presence handshake runs in the unwrap's effect,
 	// BEFORE the run-loop-forking transport is built, so ChannelSend below is a zero-async binding.
 	Layer.unwrap(

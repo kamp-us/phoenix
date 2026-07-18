@@ -19,7 +19,7 @@
  */
 import {createHash} from "node:crypto";
 import {NodeSocket, NodeSocketServer} from "@effect/platform-node";
-import {Effect, Layer} from "effect";
+import {Effect, type FileSystem, Layer} from "effect";
 import {RpcClient, RpcSerialization, RpcServer} from "effect/unstable/rpc";
 import {type ChannelSink, channelInboxLayer} from "../edge/index.ts";
 import {
@@ -147,7 +147,9 @@ export const crewSocketDialerLayer: Layer.Layer<Dialer> = Layer.succeed(Dialer, 
 /**
  * The peer-inbox `RpcServer` over a unix socket at `address`, serving `PeerInbox` with the
  * channel-bridging inbox (`edge`) so each delivery wakes the session — mirrors the tracker's
- * socket server. Requires a `ChannelSink` (the edge's last-mile wake port).
+ * socket server. Requires a `ChannelSink` (the edge's last-mile wake port) and, since the reclaim
+ * now reaches disk through the `FileSystem` seam (`reclaimStaleSocket`), a `FileSystem` — discharged
+ * at the bin's `NodeServices.layer`, the same seam the tracker's reclaim threads to.
  *
  * The socket transport is reclamation-guarded exactly like the tracker's (`reclaimStaleSocket`,
  * #3280): the deterministic per-instance path is unlinked before bind IFF a connect proves it a
@@ -157,7 +159,9 @@ export const crewSocketDialerLayer: Layer.Layer<Dialer> = Layer.succeed(Dialer, 
  * never reclaimed (connect succeeds ⇒ not stale), so the raw bind still fails closed on a real
  * competitor. `Layer.unwrap` sequences the reclaim ahead of the bind.
  */
-export const inboxServerSocketLayer = (address: string): Layer.Layer<never, unknown, ChannelSink> =>
+export const inboxServerSocketLayer = (
+	address: string,
+): Layer.Layer<never, unknown, ChannelSink | FileSystem.FileSystem> =>
 	RpcServer.layer(PeerInbox).pipe(
 		Layer.provide(inboxHandlers.pipe(Layer.provide(channelInboxLayer(address)))),
 		Layer.provide(

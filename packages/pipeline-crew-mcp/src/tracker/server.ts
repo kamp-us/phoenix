@@ -24,12 +24,11 @@
  * has no handler for any message-relay kind, so it structurally cannot relay a message.
  */
 import {createHash} from "node:crypto";
-import {unlink} from "node:fs";
 import {connect} from "node:net";
 import {tmpdir} from "node:os";
 import {join, resolve} from "node:path";
 import {NodeSocketServer} from "@effect/platform-node";
-import {Cause, Effect, Layer, Option} from "effect";
+import {Cause, Effect, FileSystem, Layer, Option} from "effect";
 import {RpcSerialization, RpcServer} from "effect/unstable/rpc";
 import {SocketServerError} from "effect/unstable/socket/SocketServer";
 import {TrackerRegistry} from "./group.ts";
@@ -41,6 +40,11 @@ import {RegistryLive} from "./registry.ts";
  * yet collision-free across projects, and short enough to stay under the ~104-char unix socket
  * path limit by hashing the root rather than embedding it. Honors `XDG_RUNTIME_DIR` when set,
  * falling back to the OS temp dir.
+ *
+ * A pure synchronous boundary derivation, so its `node:os`/`node:path`/`node:crypto` calls stay raw
+ * per the platform-access bright line (.patterns/effect-platform-access.md): `tmpdir()` is a temp-*path*
+ * boundary read (never a created temp dir), and `createHash`/`join`/`resolve` operate on plain strings
+ * here — none is woven through an Effect service method, so there is nothing to substitute.
  */
 export const socketPathFor = (projectRoot: string): string => {
 	const digest = createHash("sha256").update(resolve(projectRoot)).digest("hex").slice(0, 16);
@@ -58,12 +62,19 @@ export const socketPathFor = (projectRoot: string): string => {
  * unlink is best-effort — if a concurrent peer reclaimed+rebound in the probe→unlink window, our
  * bind then loses the race with `EADDRINUSE` and the caller dials, the same convergence as a live host.
  */
-export const reclaimStaleSocket = (socketPath: string): Effect.Effect<void> =>
+export const reclaimStaleSocket = (
+	socketPath: string,
+): Effect.Effect<void, never, FileSystem.FileSystem> =>
 	probeStaleSocket(socketPath).pipe(
 		Effect.flatMap((isStale) =>
 			isStale
-				? Effect.callback<void>((resume) => {
-						unlink(socketPath, () => resume(Effect.void));
+				? Effect.gen(function* () {
+						// Unlink via the `FileSystem` seam (.patterns/effect-platform-access.md), discharged by
+						// the crew-mcp bin's NodeServices.layer. Best-effort: `force` ignores an already-gone
+						// file, and `ignore` swallows any other fault so a lost probe→unlink race just falls back
+						// to the real bind losing `EADDRINUSE` and the caller dialing — the same convergence.
+						const fs = yield* FileSystem.FileSystem;
+						yield* Effect.ignore(fs.remove(socketPath, {force: true}));
 					})
 				: Effect.void,
 		),
@@ -125,7 +136,9 @@ const boundTrackerServerLayer = (socketPath: string) =>
  * `crewTrackerHostOrDialLayer` (first-peer-spawn), so the server runs alongside the session rather
  * than blocking it.
  */
-export const launchTracker = (projectRoot: string): Effect.Effect<never, unknown> =>
+export const launchTracker = (
+	projectRoot: string,
+): Effect.Effect<never, unknown, FileSystem.FileSystem> =>
 	Layer.launch(trackerServerLayer(socketPathFor(projectRoot)));
 
 /**
