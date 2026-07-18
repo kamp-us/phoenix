@@ -537,20 +537,25 @@ export const runStandUp = (
 		// `placements` is derived from `sessions` in order, so the index is always populated; the die guard
 		// is the unreachable branch that satisfies noUncheckedIndexedAccess. Each session's full plan (bind,
 		// placement, distinct launch cwd) is built by the shared `buildLaunchPlan` — the same per-role step
-		// `spawn-role` runs for one on-demand session (#3519), never a forked launch path.
-		const plans = yield* Effect.forEach(sessions, (session, i) => {
-			const placement = placements[i];
-			if (placement === undefined) {
-				return Effect.die(`stand-up placement zip out of range for session "${session.role}"`);
-			}
-			return buildLaunchPlan(session, placement, {
-				projectRoot,
-				serverName,
-				config,
-				runId,
-				localScope,
-			});
-		});
+		// `spawn-role` runs for one on-demand session (#3519), never a forked launch path. Serial on purpose
+		// (`concurrency: 1`): the plan build stays sequential so a failure fails closed with zero panes up.
+		const plans = yield* Effect.forEach(
+			sessions,
+			(session, i) => {
+				const placement = placements[i];
+				if (placement === undefined) {
+					return Effect.die(`stand-up placement zip out of range for session "${session.role}"`);
+				}
+				return buildLaunchPlan(session, placement, {
+					projectRoot,
+					serverName,
+					config,
+					runId,
+					localScope,
+				});
+			},
+			{concurrency: 1},
+		);
 
 		// Register every pane's crew server as a project-scope leaf `.mcp.json` + seed the two boot gates
 		// (folder trust + server approval) — one fail-closed step (#3444): the channel resolver reads the

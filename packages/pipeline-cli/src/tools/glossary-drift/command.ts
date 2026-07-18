@@ -115,7 +115,9 @@ const sweep = Command.make(
 		);
 
 		yield* Effect.gen(function* () {
-			const [logBlob, termsMd] = yield* Effect.all([gatherMergeLog(window), readTerms(termsPath)]);
+			const [logBlob, termsMd] = yield* Effect.all([gatherMergeLog(window), readTerms(termsPath)], {
+				concurrency: 1,
+			});
 			const lines = parseGitLog(logBlob);
 			const known = parseKnownTerms(termsMd);
 			const drift = findDrift(lines, known);

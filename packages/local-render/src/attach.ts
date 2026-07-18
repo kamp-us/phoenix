@@ -196,7 +196,9 @@ export const attachLocalEvidence = <E = never, R = never>(
 	return Effect.forEach(
 		paired,
 		(p): Effect.Effect<SurfaceEvidence, E, R> =>
-			Effect.all([uploadSide(p.before, "before"), uploadSide(p.after, "after")]).pipe(
+			Effect.all([uploadSide(p.before, "before"), uploadSide(p.after, "after")], {
+				concurrency: 1,
+			}).pipe(
 				Effect.map(([before, after]) => ({
 					surface: p.surface,
 					route: p.route,

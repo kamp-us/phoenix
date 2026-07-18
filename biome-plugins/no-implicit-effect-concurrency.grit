@@ -1,0 +1,56 @@
+// Ban a sequential-default Effect combinator (`Effect.all` / `Effect.forEach` /
+// `Effect.validate`) written WITHOUT an explicit `concurrency` option — make the
+// serial-vs-parallel choice visible at the call site instead of an invisible default.
+//
+// Rationale (single site; .patterns/serial-read-baseline.md): these combinators default
+// to `concurrency: 1` — effect@4.0.0-beta.92 `Effect.forEach` documents "By default, the
+// operations are performed sequentially", and `Effect.all` over an iterable delegates to
+// the same `forEach`. So `Effect.all([a, b, c])` runs three INDEPENDENT effects strictly
+// in series and the reader cannot tell whether that serialization was chosen or inherited.
+// The finalized-read stamp chain paid exactly this cost — N cross-region D1 round trips in
+// sequence for no ordering reason (the #2567 serial-read baseline, remediated with an
+// explicit `{concurrency: "unbounded"}` wave in apps/web/worker/features/fate/stamp-wave.ts).
+// Requiring the option forces the author to state the intent: `"unbounded"` / `<n>` to fan
+// out, or `1` (with a reason) to keep it serial on purpose.
+//
+// GritQL has no type info, so this stays syntactic: match the call on its `Effect.<name>`
+// callee (a lone `$args` metavariable binds the whole argument list at any arity), then
+// exempt any call whose subtree names `concurrency` — `$call <: not contains \`concurrency\``.
+// A call that passes `{ concurrency: … }` at any value is left alone; a call with no options
+// object, or an options object that omits `concurrency`, is flagged. `Effect.validate` is the
+// element-validating form (`Effect.validate(elements, f, options?)`), which shares the same
+// sequential default. Sibling sequential-default collectors (`partition`) are deliberately
+// out of scope until a call site needs them.
+//
+// Registered via biome.jsonc `"plugins"` at `warn` (Phase-1 warn level — warnings keep CI
+// green while existing sites are migrated; the flip to `error` is a separate capstone
+// child). A genuine intentionally-serial site is exempted per-line with a
+// `// biome-ignore lint/plugin: <reason>`, never a blanket exemption.
+language js;
+
+or {
+	`Effect.all($args)` as $call where {
+		$call <: not contains `concurrency`,
+		register_diagnostic(
+			span = $call,
+			message = "`Effect.all(...)` runs its effects SEQUENTIALLY by default — with no explicit `concurrency` the serial-vs-parallel choice is invisible at the call site (.patterns/serial-read-baseline.md; #2567). Fix: pass `{ concurrency: \"unbounded\" }` (or `<n>`) to fan out, or `{ concurrency: 1 }` to keep it serial on purpose. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Effect.forEach($args)` as $call where {
+		$call <: not contains `concurrency`,
+		register_diagnostic(
+			span = $call,
+			message = "`Effect.forEach(...)` runs SEQUENTIALLY by default — with no explicit `concurrency` the serial-vs-parallel choice is invisible at the call site (.patterns/serial-read-baseline.md; #2567). Fix: pass `{ concurrency: \"unbounded\" }` (or `<n>`) to fan out, or `{ concurrency: 1 }` to keep it serial on purpose. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	},
+	`Effect.validate($args)` as $call where {
+		$call <: not contains `concurrency`,
+		register_diagnostic(
+			span = $call,
+			message = "`Effect.validate(...)` runs SEQUENTIALLY by default — with no explicit `concurrency` the serial-vs-parallel choice is invisible at the call site (.patterns/serial-read-baseline.md; #2567). Fix: pass `{ concurrency: \"unbounded\" }` (or `<n>`) to fan out, or `{ concurrency: 1 }` to keep it serial on purpose. Exception: // biome-ignore lint/plugin: <reason>.",
+			severity = "warn"
+		)
+	}
+}

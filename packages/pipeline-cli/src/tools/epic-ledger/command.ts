@@ -27,6 +27,7 @@ const refList = (refs: ReadonlyArray<number>): string => refs.map((n) => `#${n}`
 
 const printDefects = (defects: ReadonlyArray<Defect>) =>
 	Effect.forEach(defects, (d) => Console.log(`  - ${d.type} (${refList(d.refs)}) — ${d.message}`), {
+		concurrency: 1,
 		discard: true,
 	});
 

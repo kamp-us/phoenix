@@ -224,7 +224,7 @@ export const decodeProtocolRequest = (
 		const envelope = yield* decodeEnvelope(body).pipe(
 			Effect.mapError(badRequest("Invalid Fate protocol request.")),
 		);
-		return yield* Effect.forEach(envelope.operations, decodeOperation);
+		return yield* Effect.forEach(envelope.operations, decodeOperation, {concurrency: 1});
 	});
 
 const encodeResponse = Schema.encodeEffect(ProtocolResponse);

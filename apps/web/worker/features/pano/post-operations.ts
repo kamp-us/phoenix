@@ -493,7 +493,7 @@ export const makeRefreshHotScores = (run: DrizzleAccessOrDie["run"]) =>
 								.set({hotScore: u.hotScore})
 								.where(eq(schema.postRecord.id, u.id)),
 						),
-					{discard: true},
+					{concurrency: 1, discard: true},
 				),
 		};
 		return yield* scanDecayChunks(ports, now.getTime(), HOT_SCORE_DECAY_CHUNK);

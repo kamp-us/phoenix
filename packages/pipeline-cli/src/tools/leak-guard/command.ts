@@ -81,7 +81,7 @@ const scan = Command.make(
 	{files: fileArg},
 	Effect.fn(function* ({files}) {
 		const run = Effect.gen(function* () {
-			const results = yield* Effect.forEach(files, scanFile);
+			const results = yield* Effect.forEach(files, scanFile, {concurrency: 1});
 			const flagged = results.filter((r) => r.leaks.length > 0);
 
 			if (flagged.length === 0) {
