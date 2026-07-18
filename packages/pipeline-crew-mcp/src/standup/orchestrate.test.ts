@@ -22,14 +22,18 @@ import {type TrackerHandle, TrackerNotServingError} from "./ensure-tracker.ts";
 import {
 	CliVersionAssertError,
 	CREW_WINDOW,
+	type CrewMcpEntry,
 	CrewServerNotRegisteredError,
 	ensureNamedTmuxSession,
 	FALLBACK_TMUX_SESSION,
 	type LaunchedSession,
 	type LaunchPlan,
 	launchSessionInTmux,
+	type ProjectScopeRegistrar,
+	ProjectScopeWriteError,
 	renderStandUpError,
 	resolveTargetTmuxSession,
+	runStandDown,
 	runStandUp,
 	type StandUpInput,
 	StandUpLaunchError,
@@ -120,6 +124,51 @@ const recordingLauncher = () => {
 	return {plans, order, targetSessions, intoWindows, resolveCalls, launch, resolveTargetSession};
 };
 
+const RUN_ID = "run0";
+
+/** A fake per-pane cwd the recording registrar mints — distinct per pane so each leaf `.mcp.json` is isolated (#3444). */
+const fakePaneCwd = (runId: string, paneLabel: string): string => `/fake-cwd/${runId}/${paneLabel}`;
+
+/**
+ * A recording project-scope registrar sharing the launcher's `order` log, so a test can prove the reaper
+ * runs at stand-up start and the register runs before any pane launches — and can inspect the exact
+ * per-pane entries + run context committed. Touches no real `~/.claude*` or filesystem: every op is
+ * captured in-memory (#3444).
+ */
+const recordingProjectScope = (order: string[]) => {
+	const reaped: {readonly projectRoot: string; readonly serverName: string}[] = [];
+	const registered: CrewMcpEntry[][] = [];
+	const registeredCtx: {
+		readonly projectRoot: string;
+		readonly runId: string;
+		readonly serverName: string;
+	}[] = [];
+	const cwdCalls: {readonly runId: string; readonly paneLabel: string}[] = [];
+	const registrar: ProjectScopeRegistrar = {
+		reap: (projectRoot, serverName) =>
+			Effect.sync(() => {
+				order.push("reap");
+				reaped.push({projectRoot, serverName});
+			}),
+		paneCwd: (_projectRoot, runId, paneLabel) =>
+			Effect.sync(() => {
+				cwdCalls.push({runId, paneLabel});
+				return fakePaneCwd(runId, paneLabel);
+			}),
+		register: (input) =>
+			Effect.sync(() => {
+				order.push("register");
+				registered.push(input.entries.map((e) => ({...e})));
+				registeredCtx.push({
+					projectRoot: input.projectRoot,
+					runId: input.runId,
+					serverName: input.serverName,
+				});
+			}),
+	};
+	return {registrar, reaped, registered, registeredCtx, cwdCalls};
+};
+
 const trackerHandle: TrackerHandle = {pid: 4242, socketPath: "/tmp/crew.sock"};
 
 /** A recording tracker-ensurer: counts calls so "was the tracker reached before the abort?" is checkable. */
@@ -145,10 +194,19 @@ const baseInput = (
 	intoWindows: (string | undefined)[];
 	resolveCalls: {n: number};
 	trackerCalls: () => number;
+	reaped: {readonly projectRoot: string; readonly serverName: string}[];
+	registered: CrewMcpEntry[][];
+	registeredCtx: {
+		readonly projectRoot: string;
+		readonly runId: string;
+		readonly serverName: string;
+	}[];
+	cwdCalls: {readonly runId: string; readonly paneLabel: string}[];
 } => {
 	const {plans, order, targetSessions, intoWindows, resolveCalls, launch, resolveTargetSession} =
 		recordingLauncher();
 	const {ensureTracker, calls} = recordingTracker();
+	const {registrar, reaped, registered, registeredCtx, cwdCalls} = recordingProjectScope(order);
 	const {engineCount, ...rest} = overrides;
 	return {
 		launched: plans,
@@ -157,11 +215,17 @@ const baseInput = (
 		intoWindows,
 		resolveCalls,
 		trackerCalls: calls,
+		reaped,
+		registered,
+		registeredCtx,
+		cwdCalls,
 		input: {
 			projectRoot: "/repo",
 			config: configAt(PINNED, engineCount ?? 2),
 			readVersionOutput: Effect.succeed(`${PINNED} (Claude Code)`),
 			instanceId: counter(),
+			runId: () => RUN_ID,
+			localScope: registrar,
 			ensureTracker,
 			resolveTargetSession,
 			launch,
@@ -333,15 +397,88 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 			for (const p of engines) {
 				assert.strictEqual(p.session.kind, "engine");
 				const instance = p.session.kind === "engine" ? p.session.instance : "";
-				// the instance-flag pair rides the inline --mcp-config JSON (mcpConfigArg[1]).
-				const mcpJson = p.bind.mcpConfigArg[1];
-				assert.include(mcpJson, `"${CREW_SESSION_INSTANCE_FLAG}"`);
-				assert.include(mcpJson, `"${instance}"`);
+				// the instance-flag pair rides the persisted-scope server command (serverConfig.args).
+				const args = [...p.bind.serverConfig.args];
+				assert.include(args, CREW_SESSION_INSTANCE_FLAG);
+				assert.include(args, instance);
 			}
-			// a bridge is a singleton and carries no --instance in its argv.
+			// a bridge is a singleton and carries no --instance in its server command.
 			const bridge = launched.find((p) => p.session.kind === "bridge");
-			assert.notInclude(bridge?.bind.mcpConfigArg[1] ?? "", CREW_SESSION_INSTANCE_FLAG);
+			assert.notInclude([...(bridge?.bind.serverConfig.args ?? [])], CREW_SESSION_INSTANCE_FLAG);
 		}),
+	);
+
+	it.effect(
+		"registers each pane's crew server as a project-scope leaf — reap → register → launch, distinct isolated cwds (#3444)",
+		() =>
+			Effect.gen(function* () {
+				const N = 2;
+				const {input, launched, order, reaped, registered, registeredCtx, cwdCalls} = baseInput({
+					engineCount: N,
+				});
+				yield* runStandUp(input);
+
+				// The start-of-stand-up reaper swept once, keyed by the crew server name (the resolver's ref).
+				assert.strictEqual(reaped.length, 1);
+				assert.deepStrictEqual(reaped[0], {projectRoot: "/repo", serverName: SERVER});
+
+				// Ordering: reap runs before register, and register runs before any pane is launched.
+				const reapAt = order.indexOf("reap");
+				const registerAt = order.indexOf("register");
+				const firstLaunchAt = order.findIndex((e) => e.startsWith("launch:"));
+				assert.isBelow(reapAt, registerAt);
+				assert.isBelow(registerAt, firstLaunchAt);
+
+				// One register batch, carrying the run context the boot-gate seeds need.
+				assert.strictEqual(registered.length, 1);
+				assert.deepStrictEqual(registeredCtx[0], {
+					projectRoot: "/repo",
+					runId: RUN_ID,
+					serverName: SERVER,
+				});
+				const entries = registered[0] ?? [];
+				assert.strictEqual(entries.length, launched.length);
+				assert.strictEqual(entries.length, cwdCalls.length);
+
+				// Each entry is keyed by its pane's DISTINCT cwd (its own leaf .mcp.json), names the crew server,
+				// and carries exactly the bind's server config — the value the resolver reads (#3444).
+				for (const plan of launched) {
+					const entry = entries.find((e) => e.cwd === plan.cwd);
+					assert.isDefined(entry, `an entry exists for pane cwd ${plan.cwd}`);
+					assert.strictEqual(entry?.cwd, fakePaneCwd(RUN_ID, plan.placement.paneLabel));
+					assert.strictEqual(entry?.serverName, SERVER);
+					assert.deepStrictEqual(entry?.serverConfig, plan.bind.serverConfig);
+				}
+				// Every pane cwd is distinct — so a pane booting in its cwd sees ONLY its own leaf .mcp.json.
+				const cwds = entries.map((e) => e.cwd);
+				assert.strictEqual(new Set(cwds).size, cwds.length);
+			}),
+	);
+
+	it.effect(
+		"aborts fail-loud when the project-scope register fails — nothing launched (AC3, #3444)",
+		() =>
+			Effect.gen(function* () {
+				const {input, launched} = baseInput({
+					localScope: {
+						reap: () => Effect.void,
+						paneCwd: (_projectRoot, runId, paneLabel) =>
+							Effect.succeed(fakePaneCwd(runId, paneLabel)),
+						register: () =>
+							Effect.fail(
+								new ProjectScopeWriteError({
+									configPath: "~/.claude.json",
+									reason: "cannot acquire lock ~/.claude.json.lock",
+								}),
+							),
+					},
+				});
+				const err = yield* Effect.flip(runStandUp(input));
+
+				assert.instanceOf(err, ProjectScopeWriteError);
+				// register sits before the launch loop — a failed registration launches nothing (no partial crew).
+				assert.strictEqual(launched.length, 0);
+			}),
 	);
 
 	it.effect("threads each role's config tier into its launch --model (#3423, end to end)", () =>
@@ -359,7 +496,7 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 			// every engine boots on the engineering-manager tier (opus).
 			for (const p of launched.filter((x) => x.session.kind === "engine")) {
 				assert.deepStrictEqual([...p.bind.modelArg], ["--model", "opus"]);
-				// --model leads the argv, ahead of the #3425 mcp-config fragment.
+				// --model leads the argv, ahead of the channel flag.
 				assert.strictEqual(p.bind.argv[0], "--model");
 			}
 		}),
@@ -452,13 +589,16 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 				);
 				assert.strictEqual(result.pane, plan.placement.paneLabel);
 				assert.strictEqual(result.pid, 4242);
-				// the crew window opens into the RESOLVED session (the caller's, #3418), not a hardcoded one.
+				// the crew window opens into the RESOLVED session (the caller's, #3418), not a hardcoded one,
+				// and `-c <cwd>` boots the pane in its distinct launch cwd (the isolated projects[] key, #3444).
 				assert.deepStrictEqual(argvLog[0], [
 					"new-window",
 					"-t",
 					TARGET,
 					"-n",
 					CREW_WINDOW,
+					"-c",
+					plan.cwd,
 					"-P",
 					"-F",
 					"#{window_id}",
@@ -483,6 +623,8 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 					"split-window",
 					"-t",
 					"@7",
+					"-c",
+					plan.cwd,
 					"claude",
 					...plan.bind.argv,
 				]);
@@ -644,4 +786,23 @@ describe("renderStandUpError", () => {
 		assert.include(rendered, "session=crew");
 		assert.include(rendered, `reason=${reason}`);
 	});
+});
+
+// The symmetric teardown (#3444) delegates entirely to the injected reap — which removes the
+// launcher-owned crew-run dir tree (the leaf .mcp.json with it) + revokes the server approval (both
+// exercised end-to-end against injected temp paths in register-project-scope.test.ts). Here we pin only
+// that stand-down invokes reap once per call and is idempotent, touching no real ~/.claude* file.
+describe("runStandDown", () => {
+	it.effect("delegates to reap once per call (idempotent, no real config touched)", () =>
+		Effect.gen(function* () {
+			let reaps = 0;
+			const reap = () => Effect.sync(() => void reaps++);
+			yield* runStandDown({projectRoot: "/repo", reap});
+			assert.strictEqual(reaps, 1);
+
+			// idempotent: a second stand-down is a clean no-op that just re-runs the idempotent reap.
+			yield* runStandDown({projectRoot: "/repo", reap});
+			assert.strictEqual(reaps, 2);
+		}),
+	);
 });

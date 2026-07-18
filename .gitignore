@@ -54,6 +54,11 @@ apps/web/tests/e2e/.auth
 # Per-machine, never committed — mirrors the plugin's ${CLAUDE_PLUGIN_DATA}.
 /.claude/.pipeline-cli-data/
 
+# @kampus/pipeline-crew-mcp writes each crew pane a distinct, git-valid launch cwd here so its
+# ~/.claude.json local-scope entry is isolated (issue #3444). Per-machine, launcher-owned, swept by
+# stand-down + the start-of-stand-up reaper — never committed.
+/.claude/crew-run/
+
 # OS
 .DS_Store
 
