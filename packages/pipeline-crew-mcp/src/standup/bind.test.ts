@@ -80,7 +80,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					PLUGIN_DIR_FLAG,
 					EXPECTED_PLUGIN_DIR,
 					AGENT_FLAG,
-					ROLE,
+					`crew-${ROLE}`,
 					ALLOWLIST_CHANNEL_FLAG,
 					"server:pipeline-crew",
 					"plugin:kampus:sozluk",
@@ -125,7 +125,7 @@ describe("standup/bind — per-session bind constructor", () => {
 	);
 
 	it.effect(
-		"boots each pane AS its role persona: --plugin-dir <crew plugin> + --agent <role>, identity-mapped (#3447)",
+		"boots each pane AS its role persona: --plugin-dir <crew plugin> + --agent crew-<role>, collision-free (#3447)",
 		() =>
 			Effect.gen(function* () {
 				const channels: ChannelConfig = {
@@ -133,8 +133,9 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				// Each role's --agent target is the role verbatim — CREW_ROLES == the agent-defs' `name:`
-				// frontmatter (ADR 0189), so no translation table; --plugin-dir is what makes it resolvable.
+				// Each role's --agent target is the collision-free `crew-<role>` plugin agent-def name (not
+				// the bare role), so a personal `~/.claude/agents/<role>.md` def can't shadow it (#3447
+				// Option B); the bare role stays the key everywhere else. --plugin-dir makes it resolvable.
 				for (const role of [
 					"chief-of-staff",
 					"cartographer",
@@ -148,13 +149,13 @@ describe("standup/bind — per-session bind constructor", () => {
 						channels,
 					});
 					assert.deepStrictEqual([...bind.pluginDirArg], [PLUGIN_DIR_FLAG, EXPECTED_PLUGIN_DIR]);
-					assert.deepStrictEqual([...bind.agentArg], [AGENT_FLAG, role]);
+					assert.deepStrictEqual([...bind.agentArg], [AGENT_FLAG, `crew-${role}`]);
 					// the persona flags lead the argv (ahead of the channel fragment), after any --model.
 					assert.deepStrictEqual([...bind.argv].slice(0, 4), [
 						PLUGIN_DIR_FLAG,
 						EXPECTED_PLUGIN_DIR,
 						AGENT_FLAG,
-						role,
+						`crew-${role}`,
 					]);
 				}
 			}),

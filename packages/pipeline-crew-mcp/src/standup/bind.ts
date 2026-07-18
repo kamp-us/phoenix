@@ -66,12 +66,16 @@ export const NAME_FLAG = "--name";
  * loaded — so without `--plugin-dir <…/claude-plugins/pipeline-crew>` the `--agent <role>` below falls
  * through to the generic general-purpose default (the observed generic boot, #3447). The pipeline-crew
  * plugin declares no MCP server (the crew channel MCP is wired separately via the channel flag), so a
- * plain `--plugin-dir` adds only the agent-defs. Role → agent-def is an IDENTITY map — `CREW_ROLES`
- * equals the agent-defs' `name:` frontmatter (ADR 0189) — so `--agent <role>` passes the role verbatim,
- * no translation table.
+ * plain `--plugin-dir` adds only the agent-defs. The plugin agent-defs are named `crew-<role>`, not
+ * the bare role: a bare `name:` frontmatter becomes the def's `agentType` verbatim with no plugin
+ * namespacing, and the agent pool is last-write-wins with personal `~/.claude/agents/` iterated after
+ * plugins — so a same-named personal def would SHADOW the plugin def and `--agent <role>` would boot
+ * the personal persona instead (the #3447 collision). The `crew-<role>` names are collision-free, so
+ * `--agent` passes `crew-<role>` (the bare role mapped at the argv site below); the bare role stays the
+ * key everywhere else — `CREW_ROLES`, the channel role map, model tiering, `--name` (ADR 0189, #3447).
  */
 export const PLUGIN_DIR_FLAG = "--plugin-dir";
-/** Boots the session AS its role persona by resolving the plugin agent-def named `<role>` (see PLUGIN_DIR_FLAG, #3447). */
+/** Boots the session AS its role persona by resolving the plugin agent-def named `crew-<role>` (see PLUGIN_DIR_FLAG, #3447). */
 export const AGENT_FLAG = "--agent";
 /** The pipeline-crew plugin root under a given project root — the dir `--plugin-dir` loads agent-defs from. */
 const crewPluginDir = (projectRoot: string): string =>
@@ -143,8 +147,8 @@ export interface SessionBind {
 	 * PLUGIN_DIR_FLAG, #3447).
 	 */
 	readonly pluginDirArg: readonly [flag: string, dir: string];
-	/** `["--agent", "<role>"]` — boots the session AS its role persona (identity-mapped, #3447 / ADR 0189). */
-	readonly agentArg: readonly [flag: string, role: string];
+	/** `["--agent", "crew-<role>"]` — boots the session AS its role persona (collision-free name, see AGENT_FLAG). */
+	readonly agentArg: readonly [flag: string, agentName: string];
 	/**
 	 * The complete argv `[...modelArg, ...pluginDirArg, ...agentArg, ...channelArg, ...nameArg]` the
 	 * launcher passes to `claude`. It boots the role persona (`--plugin-dir` + `--agent`, #3447) and no
@@ -285,11 +289,11 @@ export const buildSessionBind = (
 		// (AC2); a bridge is the bare singleton role. Same instance that keeps engine inboxes distinct.
 		const displayName = instance !== undefined ? `${role}-${instance}` : role;
 		const nameArg: readonly [string, string] = [NAME_FLAG, displayName];
-		// The persona boot (#3447): --plugin-dir loads the pipeline-crew plugin so --agent <role>
-		// resolves the role's agent-def instead of falling through to general-purpose. Role → agent-def
-		// is an identity map (CREW_ROLES == the agent-defs' `name:` frontmatter, ADR 0189), so pass verbatim.
+		// The persona boot (#3447): --plugin-dir loads the pipeline-crew plugin so --agent resolves the
+		// role's agent-def instead of falling through to general-purpose. The agent-def name is the
+		// collision-free `crew-<role>`, so map the bare role at this argv site (see AGENT_FLAG for why).
 		const pluginDirArg: readonly [string, string] = [PLUGIN_DIR_FLAG, crewPluginDir(projectRoot)];
-		const agentArg: readonly [string, string] = [AGENT_FLAG, role];
+		const agentArg: readonly [string, string] = [AGENT_FLAG, `crew-${role}`];
 
 		return {
 			role,
