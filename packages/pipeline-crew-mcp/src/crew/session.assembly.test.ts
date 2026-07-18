@@ -13,8 +13,8 @@
  */
 import {randomUUID} from "node:crypto";
 import {existsSync} from "node:fs";
-import {assert, describe, it} from "@effect/vitest";
 import {NodeFileSystem} from "@effect/platform-node";
+import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Layer, Stdio, Stream} from "effect";
 import {McpServer} from "effect/unstable/ai";
 import {RpcTest} from "effect/unstable/rpc";
