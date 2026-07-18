@@ -48,15 +48,20 @@ export class ChannelSend extends Context.Service<
 >()("@kampus/pipeline-crew-mcp/edge/ChannelSend") {}
 
 /**
- * Decode `body` against the catalog schema for `kind` before anything is dialed. An unknown
- * kind or a body that fails its kind's schema short-circuits with an `InvalidMessageError`, so
- * the send never reaches `ChannelSend.send` and the sender never sees a delivered-to-inbox ack
- * for a malformed message (#3229). A valid body passes through unchanged.
+ * Decode `body` against the catalog schema for `kind` and RETURN the decoded struct — the single
+ * boundary normalization for the send path. An unknown kind or a body that fails its kind's schema
+ * short-circuits with an `InvalidMessageError`, so the send never reaches `ChannelSend.send` and the
+ * sender never sees a delivered-to-inbox ack for a malformed message (#3229).
+ *
+ * Returning the decoded value (not `void`) is load-bearing: the handler forwards THIS struct, so a
+ * body that arrived JSON-stringified is normalized to a struct exactly once here — `bridge`'s
+ * `formatChannelTag` then `JSON.stringify`s a struct, not a string, and the wire is single-encoded.
+ * Forwarding the raw `body` instead double-encoded a string body (#3491 defect a).
  */
 const validateOutbound = (
 	kind: string,
 	body: unknown,
-): Effect.Effect<void, InvalidMessageError> => {
+): Effect.Effect<unknown, InvalidMessageError> => {
 	const schema = payloadSchemaForKind(kind);
 	if (schema === undefined) {
 		return Effect.fail(
@@ -74,7 +79,6 @@ const validateOutbound = (
 	// the tolerance is one decode step, not a hand-rolled `typeof body === "string"` JSON.parse.
 	const tolerant = Schema.Union([schema, Schema.fromJsonString(schema)]);
 	return Schema.decodeUnknownEffect(tolerant)(body).pipe(
-		Effect.asVoid,
 		Effect.mapError(
 			(error) =>
 				new InvalidMessageError({
@@ -106,7 +110,9 @@ export const channelToolHandlers = ChannelToolkit.toLayer(
 		const sender = yield* ChannelSend;
 		return {
 			channel_send: ({body, kind, targetRole}) =>
-				validateOutbound(kind, body).pipe(Effect.andThen(sender.send(targetRole, kind, body))),
+				validateOutbound(kind, body).pipe(
+					Effect.flatMap((decoded) => sender.send(targetRole, kind, decoded)),
+				),
 		};
 	}),
 );

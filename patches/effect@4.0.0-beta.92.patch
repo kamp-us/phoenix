@@ -1,5 +1,5 @@
 diff --git a/dist/unstable/ai/McpSchema.d.ts b/dist/unstable/ai/McpSchema.d.ts
-index 06fff42d7f240698b9388524f874367c494242e6..8421cf06c7dee8215b690772df8a06a75284d679 100644
+index 06fff42d7f240698b9388524f874367c494242e6..87d21c376458a4bf05befd752865a78be916ebc4 100644
 --- a/dist/unstable/ai/McpSchema.d.ts
 +++ b/dist/unstable/ai/McpSchema.d.ts
 @@ -3329,7 +3329,17 @@ export declare class ServerRequestRpcs extends ServerRequestRpcs_base {
@@ -22,7 +22,7 @@ index 06fff42d7f240698b9388524f874367c494242e6..8421cf06c7dee8215b690772df8a06a7
   * RPC group for notifications that an MCP server can send to a client,
   * including cancellation, progress, logging, and list or resource update
 diff --git a/dist/unstable/ai/McpSchema.js b/dist/unstable/ai/McpSchema.js
-index 909ac602a249610fdd9a1f72ae207d8813ebc28a..3f8339d619cf06c6ec1c5686c701dfbb0dbdfdf4 100644
+index 909ac602a249610fdd9a1f72ae207d8813ebc28a..fed03caaab728239c6335973e509a867ecd7029f 100644
 --- a/dist/unstable/ai/McpSchema.js
 +++ b/dist/unstable/ai/McpSchema.js
 @@ -1961,7 +1961,17 @@ export class ServerRequestRpcs extends /*#__PURE__*/RpcGroup.make(Ping, CreateMe
@@ -81,10 +81,27 @@ index 87a6f7acdd3d7f89b41fac68e575d80a09748f64..978ddb8206b27201c26fb2ff189dfad1
  /**
   * Registers a `Toolkit` with the `McpServer`.
 diff --git a/dist/unstable/ai/McpServer.js b/dist/unstable/ai/McpServer.js
-index 4cb198b928a5538737af01c0d18a03c7d28eb445..d19e7f7992f437bec6a7b64ed512e3ae5bc90204 100644
+index 4cb198b928a5538737af01c0d18a03c7d28eb445..60b2749fc62890cbe01cb103f1c15fce8d71a270 100644
 --- a/dist/unstable/ai/McpServer.js
 +++ b/dist/unstable/ai/McpServer.js
-@@ -850,6 +850,12 @@ const layerHandlers = (serverInfo, options) => ClientRpcs.toLayer(Effect.gen(fun
+@@ -329,9 +329,14 @@ export const run = /*#__PURE__*/Effect.fnUntraced(function* (options) {
+       }
+     })
+   });
+-  const encodeNotification = Schema.encodeUnknownEffect(Schema.Union(Array.from(ServerNotificationRpcs.requests.values(), rpc => rpc.payloadSchema)));
++  // phoenix patch (#3491, b1): encode each outgoing notification against ITS OWN rpc payloadSchema,
++  // keyed by request.tag — NOT a blind Schema.Union of every payload schema. In the union the
++  // all-optional `*_list_changed` members accept any object and strip unknown keys, and they sit
++  // before `claude/channel`, so a {content, meta} channel payload matches list_changed first and
++  // encodes to {} — the wake ships with empty params and the recipient drops it (0 tokens). See ADR 0038.
++  const encodeNotificationByTag = new Map(Array.from(ServerNotificationRpcs.requests, ([tag, rpc]) => [tag, Schema.encodeUnknownEffect(rpc.payloadSchema)]));
+   yield* Queue.take(server.notificationsQueue).pipe(Effect.flatMap(Effect.fnUntraced(function* (request) {
+-    const encoded = yield* encodeNotification(request.payload);
++    const encoded = yield* encodeNotificationByTag.get(request.tag)(request.payload);
+     const message = {
+       _tag: "Request",
+       tag: request.tag,
+@@ -850,6 +855,12 @@ const layerHandlers = (serverInfo, options) => ClientRpcs.toLayer(Effect.gen(fun
        if (serverInfo.extensions) {
          capabilities.extensions = serverInfo.extensions;
        }
