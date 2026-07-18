@@ -28,7 +28,7 @@ import {TrackerRegistry} from "../tracker/group.ts";
 import {TrackerHandlers} from "../tracker/handlers.ts";
 import {RegistryLive} from "../tracker/registry.ts";
 import {CREW_ROLES, kindOf} from "./roles.ts";
-import {channelSendFromPeer, inboxAddressFor} from "./session.ts";
+import {channelSendFromPeer, inboxAddressFor, sessionInstance} from "./session.ts";
 import {CrewTracker, peerTrackerLayer} from "./tracker.ts";
 
 const registryHandlers = TrackerHandlers.pipe(Layer.provide(RegistryLive));
@@ -167,5 +167,32 @@ describe("crew/session — per-instance engine addressing (AC 1)", () => {
 		const two = inboxAddressFor(engineRole, "two");
 		assert.strictEqual(one, `inbox://${engineRole}/one`);
 		assert.notStrictEqual(one, two, "N engine instances never collapse onto a single address");
+	});
+});
+
+describe("crew/session — sessionInstance honors the launcher-assigned identity (#3445 AC 2)", () => {
+	const engineRole = CREW_ROLES.find((role) => kindOf(role) === "engine");
+	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+	it("binds the passed instance when present, not a freshly minted one", () => {
+		assert(engineRole !== undefined, "the roster must carry an engine role");
+		const instance = "launcher-assigned-uuid";
+		assert.strictEqual(
+			sessionInstance({role: engineRole, projectRoot: "/x", instance}),
+			instance,
+			"the launcher-assigned instance is honored — the engine binds THAT address, not a self-mint",
+		);
+	});
+
+	it("mints a fresh UUID when absent (the bridge/singleton or direct-run case)", () => {
+		assert(engineRole !== undefined, "the roster must carry an engine role");
+		const config = {role: engineRole, projectRoot: "/x"};
+		const minted = sessionInstance(config);
+		assert.match(minted, UUID_RE, "absent ⇒ a minted UUID, preserving pre-#3445 behavior");
+		assert.notStrictEqual(
+			minted,
+			sessionInstance(config),
+			"each absent-instance resolution mints a distinct id",
+		);
 	});
 });

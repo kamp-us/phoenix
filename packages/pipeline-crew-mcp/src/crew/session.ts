@@ -65,6 +65,13 @@ export interface CrewSessionConfig {
 	readonly name?: string;
 	/** The MCP server version advertised over stdio (defaults to the package `VERSION`). */
 	readonly version?: string;
+	/**
+	 * The launcher-assigned per-instance identity (#3297) an engine session binds, threaded from the
+	 * `session --instance <id>` flag (bin.ts) that standup/bind.ts bakes for engine roles. Exact-optional
+	 * (like `name`/`version`): present ⇒ the session comes up on THAT address; absent (a bridge/singleton,
+	 * or a direct run) ⇒ `sessionInstance` mints one. See `sessionInstance` (#3445).
+	 */
+	readonly instance?: string;
 }
 
 /**
@@ -74,7 +81,7 @@ export interface CrewSessionConfig {
  * discriminator `inbox://<role>/<instance>`, so N engine sessions hold N distinct presence leases
  * (keyed by peer in the registry) and resolve to N distinct inbox sockets — never overwriting each
  * other. `inboxSocketPathFor` hashes the whole address, so two engine instances get collision-free
- * sockets. The `instance` is a per-session id, generated once in `crewSessionLayer`.
+ * sockets. The `instance` is a per-session id, resolved once in `crewSessionLayer` (`sessionInstance`).
  */
 export const inboxAddressFor = (role: CrewRole, instance: string): string =>
 	kindOf(role) === "engine" ? `inbox://${role}/${instance}` : `inbox://${role}`;
@@ -82,6 +89,16 @@ export const inboxAddressFor = (role: CrewRole, instance: string): string =>
 /** The unix socket this session's peer inbox is served on — the address resolved to a socket path. */
 export const inboxSocketFor = (role: CrewRole, instance: string): string =>
 	inboxSocketPathFor(inboxAddressFor(role, instance));
+
+/**
+ * This session's per-instance id: the launcher-assigned `config.instance` when present (an engine
+ * bound by standup/bind.ts's `--instance`, #3297), else a freshly minted UUID. The fallback preserves
+ * the pre-#3445 behavior for the no-instance case — a bridge singleton, which folds no instance into
+ * its address anyway, or a direct `session` run — so honoring the launcher's identity never regresses
+ * the absent case. See `inboxAddressFor` for how the id enters the address.
+ */
+export const sessionInstance = (config: CrewSessionConfig): string =>
+	config.instance ?? randomUUID();
 
 /**
  * The peer substrate over real unix sockets: the first-peer-spawn `CrewTracker` (host the tracker
@@ -133,10 +150,11 @@ export const channelSendFromPeer = (
  * inbound socket server's `ChannelSink` wakes through it — memoized to a single running transport.
  */
 export const crewSessionLayer = (config: CrewSessionConfig) => {
-	// One per-session instance id, generated once here and threaded to every address derivation, so
-	// an engine session's inbox/announce/heartbeat all agree on the same per-instance address (a
-	// bridge ignores it and keeps its singleton address). See `inboxAddressFor`.
-	const address = inboxAddressFor(config.role, randomUUID());
+	// One per-session instance id, resolved once here and threaded to every address derivation, so an
+	// engine session's inbox/announce/heartbeat all agree on the same per-instance address (a bridge
+	// ignores it and keeps its singleton address). Honors the launcher-assigned `config.instance` when
+	// present, minting one only when absent. See `sessionInstance` / `inboxAddressFor`.
+	const address = inboxAddressFor(config.role, sessionInstance(config));
 	// The one running stdio McpServer + its channel capability; shared across both channel edges.
 	const server = McpServer.layerStdio({
 		name: config.name ?? SESSION_SERVER_NAME,

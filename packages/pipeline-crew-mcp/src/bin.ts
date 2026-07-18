@@ -31,7 +31,7 @@
  * for the typed command, the Node platform over `NodeServices.layer`, run via `NodeRuntime.runMain`.
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Cause, Console, Effect} from "effect";
+import {Cause, Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 
 import {CREW_ROLES, RoleUniquenessError, runCrewSession} from "./crew/index.ts";
@@ -46,15 +46,30 @@ const projectRootFlag = Flag.string("project-root").pipe(
 	Flag.withDefault(process.cwd()),
 	Flag.withDescription("the project root whose per-project tracker socket this session joins"),
 );
+// The launcher-assigned per-instance identity standup/bind.ts bakes into an engine's argv
+// (`CREW_SESSION_INSTANCE_FLAG`, #3297/#3354 seam 3). Optional: only engine roles carry it — a
+// bridge is a singleton and omits it, so the session mints its own (see `sessionInstance`). This is
+// the consumer the producer shipped without; without it Effect-CLI rejects `--instance` and every
+// engine session dies at parse (#3445).
+const instanceFlag = Flag.optional(Flag.string("instance")).pipe(
+	Flag.withDescription("the launcher-assigned per-instance identity an engine session binds"),
+);
 
 const session = Command.make(
 	"session",
-	{projectRoot: projectRootFlag, role: roleFlag},
-	Effect.fn(function* ({projectRoot, role}) {
+	{projectRoot: projectRootFlag, role: roleFlag, instance: instanceFlag},
+	Effect.fn(function* ({projectRoot, role, instance}) {
 		yield* Console.error(
 			`pipeline-crew-mcp ${VERSION} — crew session for role "${role}" (project ${projectRoot})`,
 		);
-		return yield* runCrewSession({projectRoot, role}).pipe(
+		// Thread the flag through as an EXACT-optional key: include `instance` only when the launcher
+		// passed one (an engine), omit it entirely otherwise (a bridge/singleton, or a direct run) so
+		// `CrewSessionConfig.instance`'s absent case stays absent — `sessionInstance` then mints one.
+		return yield* runCrewSession({
+			projectRoot,
+			role,
+			...(Option.isSome(instance) ? {instance: instance.value} : {}),
+		}).pipe(
 			Effect.catch((error: unknown) =>
 				Console.error(
 					error instanceof RoleUniquenessError
