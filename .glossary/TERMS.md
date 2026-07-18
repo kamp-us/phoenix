@@ -206,6 +206,7 @@ time, correctness over milliseconds). This names the nouns.
 | site search | v1 is a **lexical search bar** (`/search?q=`), not semantic discovery — ADR 0080 splits the two. | semantic search (a separate product) |
 | term_search / post_search | The SQLite **FTS5** virtual tables backing sözlük/pano search; kept current by a dual-write sync path off `term_record` / `post_record`. | |
 | fts-backfill | Direct-D1 one-time CLI re-indexing existing summary rows into the FTS5 tables through the dual-write path (`packages/fts-backfill`). | a runtime backfill route |
+| ⌘K command palette (single search contract) | The single search entry point on kamp.us — "the one search contract made physical" (ADR [0186](../.decisions/0186-command-palette-single-search-contract.md)). One ⌘K palette, one affordance, over the global search contract: the three legacy "ara" surfaces (topbar / subnav / inline) collapse into it. The collapse is incremental, surface-by-surface, with [#2995](https://github.com/kamp-us/phoenix/issues/2995) (sözlük search → ⌘K) as fold step 1; each remaining surface folds toward the end-state the ADR fixes. v1 is search-only. | a **command runner** (v1 is search-only; a command-runner evolution is out of scope); a per-surface search reimplementation (a11y — keyboard / AT / reduced-motion — is code-authoritative via the a11y-spine contract, not redone per fold); a deferred big-bang (the collapse is incremental, surface-by-surface, each fold toward the ADR-fixed end-state) |
 
 ## Run-evidence / CI gating (ADRs 0054/0056/0058/0092)
 
