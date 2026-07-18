@@ -25,7 +25,15 @@ export class InvalidMessageError extends Schema.TaggedErrorClass<InvalidMessageE
 		kind: Schema.String,
 		reason: Schema.String,
 	},
-) {}
+) {
+	// McpServer renders a failed tool call as `Cause.pretty(cause)` (effect-smol McpServer.ts),
+	// which prints an error's `message` — a bare TaggedError's is empty, so `reason` (the actual
+	// why) never reaches the tool output. Fold it into `message` so a decode failure is legible
+	// from the tool result alone, without reading source (#3486 AC#4).
+	override get message(): string {
+		return `${this.kind}: ${this.reason}`;
+	}
+}
 
 /** The outbound send capability: dial the live peer serving `targetRole` and deliver `kind`/`body`. */
 export class ChannelSend extends Context.Service<
@@ -58,7 +66,14 @@ const validateOutbound = (
 			}),
 		);
 	}
-	return Schema.decodeUnknownEffect(schema)(body).pipe(
+	// The MCP `tools/call` client serializes an unconstrained `body` (the tool's `Schema.Unknown`
+	// parameter has no object shape in the generated JSON schema) as a JSON *string*, so `body`
+	// arrives either as the struct itself OR as that struct stringified — the impedance mismatch
+	// that dead-lettered every kind (#3486). Accept both with a typed string→struct transform
+	// (`Schema.fromJsonString`, grounded in effect-smol Schema.ts) unioned with the raw struct, so
+	// the tolerance is one decode step, not a hand-rolled `typeof body === "string"` JSON.parse.
+	const tolerant = Schema.Union([schema, Schema.fromJsonString(schema)]);
+	return Schema.decodeUnknownEffect(tolerant)(body).pipe(
 		Effect.asVoid,
 		Effect.mapError(
 			(error) =>
