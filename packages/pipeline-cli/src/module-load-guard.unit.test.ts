@@ -1,8 +1,11 @@
 import {describe, expect, it, vi} from "vitest";
 import {
+	assertSelfHealInstallSafe,
 	isUnlinkedDependencyError,
 	loadWithSelfHeal,
 	remediationMessage,
+	SELF_HEAL_INSTALL_ARGS,
+	selfHealSymlinkRefusal,
 	shouldSelfHeal,
 	unlinkedPackageName,
 } from "./module-load-guard.ts";
@@ -94,6 +97,44 @@ describe("shouldSelfHeal", () => {
 		expect(shouldSelfHeal({PIPELINE_CLI_NO_SELF_HEAL: ""})).toBe(true);
 		expect(shouldSelfHeal({PIPELINE_CLI_NO_SELF_HEAL: "0"})).toBe(true);
 		expect(shouldSelfHeal({PIPELINE_CLI_NO_SELF_HEAL: "false"})).toBe(true);
+	});
+});
+
+describe("SELF_HEAL_INSTALL_ARGS", () => {
+	it("keeps pnpm's purge guard ARMED (=true), never disarms it (=false)", () => {
+		// pnpm 10.27.0 `purgeModulesDirsOfImporters`: `confirmModulesPurge ?? true` + non-TTY
+		// THROWS ABORTED_REMOVE_MODULES_DIR_NO_TTY; `=false` purges silently. We must pass `=true`.
+		expect(SELF_HEAL_INSTALL_ARGS).toContain("--config.confirm-modules-purge=true");
+		expect(SELF_HEAL_INSTALL_ARGS).not.toContain("--config.confirm-modules-purge=false");
+		expect(SELF_HEAL_INSTALL_ARGS[0]).toBe("install");
+	});
+});
+
+describe("assertSelfHealInstallSafe", () => {
+	const symlink = {isSymbolicLink: () => true};
+	const realDir = {isSymbolicLink: () => false};
+
+	it("REFUSES when repo-root node_modules is a symlink (the #3504 corruption vector)", () => {
+		const lstat = vi.fn().mockReturnValue(symlink);
+		expect(() => assertSelfHealInstallSafe("/repo", lstat)).toThrow(/is a symlink/);
+		expect(lstat).toHaveBeenCalledWith("/repo/node_modules");
+	});
+
+	it("proceeds when node_modules is a real directory (the normal primary/main-sync self-heal)", () => {
+		expect(() =>
+			assertSelfHealInstallSafe("/repo", vi.fn().mockReturnValue(realDir)),
+		).not.toThrow();
+	});
+
+	it("proceeds when node_modules is absent (a fresh checkout — nothing to follow)", () => {
+		expect(() => assertSelfHealInstallSafe("/repo", vi.fn().mockReturnValue(null))).not.toThrow();
+	});
+
+	it("the refusal names the corruption class and the offending path", () => {
+		const msg = selfHealSymlinkRefusal("/repo/node_modules");
+		expect(msg).toContain("/repo/node_modules");
+		expect(msg).toContain("#3504");
+		expect(msg).toContain("symlink");
 	});
 });
 

@@ -17,14 +17,16 @@
  * On the normal (installed) path this is a plain pass-through.
  */
 import {spawnSync} from "node:child_process";
-import {existsSync} from "node:fs";
+import {existsSync, lstatSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {findRootDir} from "./find-root-dir.ts";
 import {
+	assertSelfHealInstallSafe,
 	isUnlinkedDependencyError,
 	loadWithSelfHeal,
 	remediationMessage,
+	SELF_HEAL_INSTALL_ARGS,
 	shouldSelfHeal,
 } from "./module-load-guard.ts";
 
@@ -39,7 +41,15 @@ const install = async (): Promise<void> => {
 	console.error(
 		"pipeline-cli: an unlinked workspace dep — self-healing with a one-shot `pnpm install`…",
 	);
-	const result = spawnSync("pnpm", ["install"], {cwd: rootDir, stdio: "inherit"});
+	// Refuse before pnpm runs if rootDir/node_modules is a symlink — a hook-invoked
+	// destructive install would otherwise follow it into the shared primary and purge it (#3504).
+	assertSelfHealInstallSafe(rootDir, (p) => (existsSync(p) ? lstatSync(p) : null));
+	// Non-TTY stdin (`ignore`) so pnpm can never (auto-)confirm a purge prompt; with the
+	// armed `--config.confirm-modules-purge=true` it aborts on a purge instead (#3504).
+	const result = spawnSync("pnpm", [...SELF_HEAL_INSTALL_ARGS], {
+		cwd: rootDir,
+		stdio: ["ignore", "inherit", "inherit"],
+	});
 	if (result.status !== 0) {
 		throw new Error(
 			`pipeline-cli self-heal: \`pnpm install\` failed (exit ${result.status ?? `signal ${result.signal}`}) — cannot link deps`,
