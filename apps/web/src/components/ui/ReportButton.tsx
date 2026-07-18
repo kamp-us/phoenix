@@ -18,6 +18,14 @@ export interface ReportButtonProps {
 	className?: string;
 }
 
+/**
+ * @component ReportButton
+ * @whenToUse The shared bildir (report) control. Reach for it on any reportable item
+ *   (pano post/comment, sözlük definition) — pass `onReport` to perform the mutation
+ *   and it owns the in-flight lock plus the bildirildi/zaten bildirildi feedback,
+ *   locking once confirmed. Don't hand-roll per-page report logic.
+ * @slot none Renders its own label; no children slot.
+ */
 export function ReportButton({onReport, testId, className}: ReportButtonProps) {
 	const [state, setState] = React.useState<"idle" | "busy" | "reported" | "already">("idle");
 

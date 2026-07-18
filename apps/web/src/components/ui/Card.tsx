@@ -37,6 +37,15 @@ export interface SurfaceProps extends React.HTMLAttributes<HTMLElement> {
 	border?: boolean;
 }
 
+/**
+ * @component Surface
+ * @whenToUse The parameterized surface shell — background/border/radius/padding/
+ *   elevation driven entirely by role-token props. Reach for it (over `Card`) only
+ *   to reproduce an existing shell's exact look during a migration; for a new
+ *   surface prefer `Card`'s opinionated default (the selection rule is the
+ *   manifest's, referenced not restated — see `design-system-manifest.md`).
+ * @slot children The surface's content.
+ */
 export function Surface({
 	as,
 	tone = "default",

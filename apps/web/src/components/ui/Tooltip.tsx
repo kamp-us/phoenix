@@ -5,17 +5,36 @@ import "./Tooltip.css";
 
 const styles = bem("kp-tooltip", ["positioner", "popup"]);
 
+/**
+ * @component TooltipProvider
+ * @whenToUse The tooltip timing/context host (base-ui). Mount it once high in the
+ *   tree so grouped tooltips share open/close delays; every `Tooltip` renders under
+ *   it. Reach for it at the app/shell level, not per tooltip.
+ * @slot children The subtree whose `Tooltip`s share this provider's timing.
+ */
 export const Provider = BaseTooltip.Provider;
 
+/**
+ * @component Tooltip
+ * @whenToUse The hover/focus tooltip (base-ui). Wrap a trigger element to attach a
+ *   short supplementary hint. It is supplementary only — never put essential
+ *   information solely in a tooltip; its z-index is tuned to clear the sticky Subnav
+ *   (#2046). Requires a `TooltipProvider` ancestor.
+ * @slot children The trigger element the tooltip is attached to.
+ */
 export function Tooltip({
 	content,
 	children,
 	side = "top",
 	defaultOpen,
 }: {
+	/** The tooltip's content shown in the popup. */
 	content: React.ReactNode;
+	/** The trigger element the tooltip attaches to. */
 	children: React.ReactNode;
+	/** Which edge of the trigger the popup opens from. Defaults to `top`. */
 	side?: "top" | "right" | "bottom" | "left";
+	/** Render open on mount (e.g. for a one-shot coach-mark). */
 	defaultOpen?: boolean;
 }) {
 	return (

@@ -22,6 +22,14 @@ const ToastContext = React.createContext<ToastContextValue | null>(null);
 
 let nextId = 0;
 
+/**
+ * @component ToastProvider
+ * @whenToUse The transient-notification host. Mount it once near the app root; child
+ *   surfaces raise toasts via the `useToast` hook (`show`/`dismiss`). Reach for it
+ *   for ephemeral status messages (a saved confirmation, a session-expired notice) —
+ *   re-showing the same id replaces rather than stacks.
+ * @slot children The subtree that can raise toasts via `useToast`.
+ */
 export function ToastProvider({children}: {children: React.ReactNode}) {
 	const [toasts, setToasts] = React.useState<ToastDescriptor[]>([]);
 
