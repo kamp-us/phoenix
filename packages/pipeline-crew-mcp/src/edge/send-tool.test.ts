@@ -149,4 +149,47 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 			assert.isTrue(result.isError);
 		}),
 	);
+
+	// #3486: the MCP tools/call client serializes an unconstrained `body` as a JSON *string*, so a
+	// valid payload arrives stringified — every kind dead-lettered because the decode expected the
+	// struct. A stringified valid IntakePing must now decode and deliver just like the object form.
+	it.effect(
+		"channel_send decodes a STRINGIFIED valid body (the wire serializes body as JSON)",
+		() =>
+			Effect.gen(function* () {
+				const {client} = yield* makeInitializedClient;
+				const result = yield* client["tools/call"]({
+					name: "channel_send",
+					arguments: {
+						targetRole: "reviewer",
+						kind: "IntakePing",
+						// the body as the MCP client sends it for an unconstrained param: a JSON string
+						body: JSON.stringify({issue: "3057", from: "intake", at: "2026-07-16T10:00:00Z"}),
+					},
+				});
+				assert.isFalse(result.isError);
+				const ack = result.structuredContent as {by?: string; messageId?: string};
+				assert.strictEqual(ack.by, "peer-b");
+				assert.strictEqual(ack.messageId, "m-9");
+			}),
+	);
+
+	// #3486 AC#4: a genuine decode failure must surface InvalidMessageError.reason in the rendered
+	// tool error (Cause.pretty of the failure) — so a future mismatch is diagnosable from the tool
+	// output alone, not only by reading source.
+	it.effect("channel_send surfaces InvalidMessageError.reason in the rendered tool error", () =>
+		Effect.gen(function* () {
+			const {client} = yield* makeInitializedClient;
+			const result = yield* client["tools/call"]({
+				name: "channel_send",
+				// missing IntakePing's required `from`/`at`, and not a JSON string either
+				arguments: {targetRole: "reviewer", kind: "IntakePing", body: {issue: "3057"}},
+			});
+			assert.isTrue(result.isError);
+			const rendered = (result.content as ReadonlyArray<{text?: string}>)
+				.map((c) => c.text ?? "")
+				.join("\n");
+			assert.include(rendered, `body does not match the "IntakePing" schema`);
+		}),
+	);
 });
