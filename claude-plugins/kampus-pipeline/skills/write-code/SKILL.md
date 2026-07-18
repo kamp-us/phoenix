@@ -950,6 +950,27 @@ land the commit on the primary tree. Don't push to or PR from `main`.
 
 ---
 
+## Step 4a — Read the four-pillars design law before you generate any UI (UI diffs only)
+
+When this diff will **generate or edit a user-facing UI surface**, read
+[`design-system-manifest.md`](https://github.com/kamp-us/phoenix/blob/main/design-system-manifest.md)
+**before you author the UI**, and generate to it — role-token annotations, component-selection
+rules, and the per-pillar prohibitions. That manifest is the agent-readable transcription of the
+four-pillars design law (ADR
+[0162](https://github.com/kamp-us/phoenix/blob/main/.decisions/0162-four-pillars-design-law.md)) —
+the CLAUDE.md-for-design a UI-generating agent applies from the first draft. This is the read-*before*
+counterpart to Step 4d's look-*after* self-check and Step 4e's prose-before read: consult the law on
+the way *in* so the generated UI conforms from the start, rather than leaving `review-design` to catch
+a pillar violation after the fact. Making this an explicit step closes the build-vs-review asymmetry —
+`review-design` binds the manifest explicitly at gate time, so the build side must too, not rely on
+CLAUDE.md happening to name the file.
+
+**Fires only for a UI diff — a no-op otherwise (graceful absence).** Scope it to a diff that changes a
+rendered frontend surface (`apps/web/src/**`, the same probe as Step 4d); a worker/tooling/docs/skill
+diff authors no UI and skips this step entirely — the same first-class-absence shape as Steps 4b/4d/4e.
+
+---
+
 ## Step 4b — Ship dark behind a default-off flag on a containment-marked child
 
 When the child you picked carries **`**Containment:** flag (default-off)`**, the implementation
@@ -1237,7 +1258,7 @@ the render. It exists because the writing-craft skills were imported as **wired-
 the settled integration-depth decision ([#3374](https://github.com/kamp-us/phoenix/issues/3374)):
 write-code consults them on the way *in* so generated prose conforms to Diátaxis + Strunk from the
 first draft, rather than leaving `review-doc`/`review-skill` to catch a mode-mix or an AI tell after
-the fact. This is the authoring counterpart of the same manifest-before-UI move CLAUDE.md names for
+the fact. This is the authoring counterpart of the same manifest-before-UI read Step 4a makes for
 design (`design-system-manifest.md`).
 
 **Fires only for a prose-authoring diff — a no-op otherwise (graceful absence).** Scope it to a diff
