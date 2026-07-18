@@ -109,6 +109,29 @@ describe("standup/config — decodeLaunchConfig (happy path, one-role-map shape)
 				assert.deepStrictEqual([...cfg.channels.allowedChannelPlugins], ["pipeline-crew"]);
 			}),
 	);
+	it.effect(
+		"folds each role's tier into roleTiers instead of dropping it as an excess key (#3423)",
+		() =>
+			Effect.gen(function* () {
+				const cfg = yield* decodeLaunchConfig(fullCrewConfig, DEFAULT_CONFIG_PATH);
+				// The founder ruling — "cartographer = fable, the rest is opus" — is now a real launch
+				// dimension: every configured tier is surfaced by role, no longer a silent no-op.
+				assert.deepStrictEqual(cfg.roleTiers, {
+					"chief-of-staff": "opus",
+					cartographer: "fable",
+					"intake-desk": "fable",
+					"engineering-manager": "opus",
+				});
+			}),
+	);
+	it.effect("a role that omits its tier is simply absent from roleTiers (no guessed default)", () =>
+		Effect.gen(function* () {
+			// validLaunch's only role entry (engineering-manager) carries no tier, so roleTiers is empty
+			// — the bind then emits no --model for it, preserving the CLI-default boot.
+			const cfg = yield* decodeLaunchConfig(validLaunch, DEFAULT_CONFIG_PATH);
+			assert.deepStrictEqual(cfg.roleTiers, {});
+		}),
+	);
 	it.effect("an omitted cliVersion decodes cleanly to an unpinned launch (issue #3417)", () =>
 		Effect.gen(function* () {
 			// The pin is optional: absent ⇒ NOT a LaunchConfigError, and the field is simply not
@@ -245,6 +268,33 @@ describe("standup/config — engine count reads off roles['engineering-manager']
 		Effect.gen(function* () {
 			const err = yield* decodeErr(withCount(2.5));
 			assert.include(err.reason, "count");
+		}),
+	);
+});
+
+describe("standup/config — role tier fails closed (#3423)", () => {
+	it.effect(
+		"an unknown tier is a LaunchConfigError naming the tier path, not a silent default",
+		() =>
+			Effect.gen(function* () {
+				const err = yield* decodeErr({
+					...validLaunch,
+					roles: {"engineering-manager": {count: 2, tier: "turbo"}},
+				});
+				assert.instanceOf(err, LaunchConfigError);
+				assert.include(err.reason, "tier");
+			}),
+	);
+	it.effect("a bridge role's unknown tier also fails closed naming tier", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr({
+				...validLaunch,
+				roles: {
+					"chief-of-staff": {tier: "gpt"},
+					"engineering-manager": {count: 1},
+				},
+			});
+			assert.include(err.reason, "tier");
 		}),
 	);
 });

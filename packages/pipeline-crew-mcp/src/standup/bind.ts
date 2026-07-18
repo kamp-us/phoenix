@@ -30,7 +30,7 @@
 import {existsSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {Effect, Schema} from "effect";
-import type {ChannelConfig} from "./config.ts";
+import {type ChannelConfig, type Tier, tierModel} from "./config.ts";
 
 /**
  * The absolute path to this package's `bin.ts` entry, resolved from THIS module's own location so it
@@ -48,6 +48,8 @@ export const CREW_SESSION_COMMAND = "session";
  */
 export const CREW_SESSION_INSTANCE_FLAG = "--instance";
 export const MCP_CONFIG_FLAG = "--mcp-config";
+/** Sets the launched session's model to the role's configured tier (#3423); omitted when no tier. */
+export const MODEL_FLAG = "--model";
 /** Allowlist mode: only servers named here load, gated by `allowedChannelPlugins` for plugin refs. */
 export const ALLOWLIST_CHANNEL_FLAG = "--channels";
 /** Dev mode: load channel servers not on the approved allowlist — local development only. */
@@ -93,7 +95,9 @@ export interface SessionBind {
 	readonly mcpConfigArg: readonly [flag: string, json: string];
 	/** The channel-registration flag + its server refs, e.g. `["--channels", "server:pipeline-crew", …]`. */
 	readonly channelArg: readonly string[];
-	/** The complete fragment `[...mcpConfigArg, ...channelArg]` the launcher inlines for this session. */
+	/** `["--model", "<alias>"]` when the role has a configured tier (#3423), else `[]` (CLI default). */
+	readonly modelArg: readonly string[];
+	/** The complete fragment `[...modelArg, ...mcpConfigArg, ...channelArg]` the launcher inlines for this session. */
 	readonly argv: readonly string[];
 }
 
@@ -112,6 +116,12 @@ export interface SessionBindInput {
 	 * re-minting its own runtime instance (#3354, seam 3). A bridge is a singleton and omits it.
 	 */
 	readonly instance?: string | undefined;
+	/**
+	 * The role's configured model tier (#3423) — emitted as `--model <alias>` so the launched session
+	 * boots on that tier's model, not the CLI default. Omitted (undefined) ⇒ no `--model`: a role that
+	 * set no tier keeps today's default-model boot rather than being forced onto a guessed one.
+	 */
+	readonly tier?: Tier | undefined;
 	/** The resolved channels dimension of the crew `LaunchConfig` (#3293), consumed read-only. */
 	readonly channels: ChannelConfig;
 	/**
@@ -177,7 +187,7 @@ export const buildSessionBind = (
 	CrewSessionBinUnresolvableError | CrewServerNotRegisteredError | ChannelPluginNotAllowedError
 > =>
 	Effect.gen(function* () {
-		const {role, projectRoot, serverName, instance, channels} = input;
+		const {role, projectRoot, serverName, instance, tier, channels} = input;
 		const binExists = input.binExists ?? existsSync;
 		const servers = channels.servers;
 
@@ -216,12 +226,16 @@ export const buildSessionBind = (
 			sessionMcpConfigJson(role, projectRoot, serverName, instance),
 		];
 		const channelArg: readonly string[] = [channelFlag, ...servers];
+		// The role's tier boots the session on its `--model` (#3423); a role with no tier emits none,
+		// keeping the CLI-default boot rather than guessing. `tierModel` is total over the `Tier` enum.
+		const modelArg: readonly string[] = tier !== undefined ? [MODEL_FLAG, tierModel(tier)] : [];
 
 		return {
 			role,
 			projectRoot,
 			mcpConfigArg,
 			channelArg,
-			argv: [...mcpConfigArg, ...channelArg],
+			modelArg,
+			argv: [...modelArg, ...mcpConfigArg, ...channelArg],
 		};
 	});

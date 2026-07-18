@@ -30,8 +30,10 @@
 	// One role map — a roster change is ONE edit here. Keyed off the role KINDs declared in
 	// packages/pipeline-crew-mcp/src/crew/roles.ts (ADR 0189): the three bridges are singleton
 	// (cardinality falls out of the kind — no count), the one engine scales by `count`. Each
-	// entry: `tier` (the model tier the role's session runs on), `count?` (engine pool size,
-	// engine-only), `wipCap?` (a conductor engine's concurrent-lane cap, engine-only).
+	// entry: `tier` (the model tier the role's session boots on — one of "opus" | "sonnet" |
+	// "haiku" | "fable", passed as the launched session's `claude --model <tier>`; omit it to
+	// boot on the CLI default; #3423), `count?` (engine pool size, engine-only), `wipCap?` (a
+	// conductor engine's concurrent-lane cap, engine-only).
 	"roles": {
 		// Bridges — singleton, tier only.
 		"chief-of-staff": { "tier": "<chief-of-staff-model-tier>" },

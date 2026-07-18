@@ -21,6 +21,7 @@ import {
 	CrewSessionBinUnresolvableError,
 	DEV_CHANNEL_FLAG,
 	MCP_CONFIG_FLAG,
+	MODEL_FLAG,
 } from "./bind.ts";
 import type {ChannelConfig} from "./config.ts";
 
@@ -236,6 +237,73 @@ describe("standup/bind — per-session bind constructor", () => {
 
 				assert.instanceOf(error, CrewSessionBinUnresolvableError);
 				assert.strictEqual(error.binPath, CREW_SESSION_BIN_PATH);
+			}),
+	);
+
+	it.effect("emits --model <tier> at the front of the argv when the role has a tier (#3423)", () =>
+		Effect.gen(function* () {
+			const channels: ChannelConfig = {
+				mode: "development",
+				servers: ["server:pipeline-crew"],
+				allowedChannelPlugins: [],
+			};
+			const bind = yield* buildSessionBind({
+				role: ROLE,
+				projectRoot: PROJECT_ROOT,
+				serverName: SERVER_NAME,
+				tier: "opus",
+				channels,
+			});
+			// The tier boots the session's model — a family tier is a verbatim --model alias (config.ts
+			// Tier, grounded on the 2.1.212 bundle), so tier:opus yields `--model opus`.
+			assert.deepStrictEqual([...bind.modelArg], [MODEL_FLAG, "opus"]);
+			// --model leads the argv; the #3425 mcp-config + channel fragment follows it unchanged.
+			assert.deepStrictEqual(
+				[...bind.argv],
+				[MODEL_FLAG, "opus", ...bind.mcpConfigArg, ...bind.channelArg],
+			);
+		}),
+	);
+
+	it.effect(
+		"cartographer's tier:fable yields --model fable (the planning-tier bridge, #3423)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				const bind = yield* buildSessionBind({
+					role: "cartographer",
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					tier: "fable",
+					channels,
+				});
+				assert.deepStrictEqual([...bind.modelArg], [MODEL_FLAG, "fable"]);
+			}),
+	);
+
+	it.effect(
+		"emits NO --model when the role has no tier — preserves the CLI-default boot (#3423)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				const bind = yield* buildSessionBind({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				});
+				assert.deepStrictEqual([...bind.modelArg], []);
+				assert.notInclude(bind.argv, MODEL_FLAG);
+				// argv is exactly the pre-#3423 fragment when no tier is set.
+				assert.deepStrictEqual([...bind.argv], [...bind.mcpConfigArg, ...bind.channelArg]);
 			}),
 	);
 
