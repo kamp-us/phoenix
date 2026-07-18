@@ -17,7 +17,10 @@
  * `~/Documents` — PASSES, because it leaks no identity of this machine. Plus the
  * `/tmp` scratch carve-out and the path-hygiene self-exempt files. That precise
  * allowlist is the load-bearing false-positive safety, encoded in
- * `leak-guard.unit.test.ts`.
+ * `leak-guard.unit.test.ts`. The `~/.claude` arm is further NARROWED BY SHAPE (#3475)
+ * to exempt the two public, machine-agnostic config *files* `~/.claude.json` and
+ * `~/.claude/settings.json` while still flagging `~/.claude/`-directory internals — the
+ * carve-out lives at the pattern (LEAK_PATTERNS), not in a named allow-list (#2393).
  */
 
 export interface Leak {
@@ -75,8 +78,26 @@ const LEAK_PATTERNS: ReadonlyArray<LeakPattern> = [
 		reason: "absolute macOS home path (/Users/<name>/...)",
 	},
 	{
-		pattern: /(?<![\w.])~\/\.(claude|usirin|agent)\b/g,
-		reason: "agent/tool home dir (~/.claude, ~/.usirin, ~/.agent)",
+		pattern: /(?<![\w.])~\/\.(usirin|agent)\b/g,
+		reason: "agent/tool home dir (~/.usirin, ~/.agent)",
+	},
+	{
+		// The `~/.claude` home-dir detector, NARROWED by shape (not a named allow-list; #2393
+		// and #3475): it still flags any descent into the private agent home tree
+		// (`~/.claude/projects/…`, `~/.claude/todos/…`) and bare `~/.claude`, but the two
+		// negative lookaheads carve out the claude CLI's public, machine-agnostic config *files*
+		// — `~/.claude.json` (a sibling dotfile config, `~/.claude` + a `.json` extension, NOT
+		// the directory) and `~/.claude/settings.json` (the one documented settings file). Those
+		// two are identical on every machine and reveal nothing operator-specific, and they are
+		// the literal subject of packages/pipeline-crew-mcp, so flagging them was a chronic
+		// false positive. The carve-out is SHAPE, not a membership list: the exclusion is a
+		// property of this one generic pattern (a config-file leaf on the marker), so a longer
+		// name (`~/.claude.json.bak`, `~/.claude/settings.local.json`, `~/.claude/settings.jsonc`)
+		// or any deeper path still trips it — the `(?![\w.])` tail pins each carve-out to the
+		// exact public leaf. See the threat-model note on #3475 for what this can no longer catch.
+		pattern: /(?<![\w.])~\/\.claude(?!\.json(?![\w.]))(?!\/settings\.json(?![\w.]))\b/g,
+		reason:
+			"agent/tool home dir (~/.claude internals; public config files ~/.claude.json, ~/.claude/settings.json exempt)",
 	},
 	{
 		pattern: /(?<![\w.])~\/code\//g,

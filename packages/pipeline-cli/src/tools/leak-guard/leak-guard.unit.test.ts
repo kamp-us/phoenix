@@ -15,8 +15,8 @@ describe("findLeaks — BLOCK matrix (a real local path in a shared artifact)", 
 		assert.isTrue(hasLeak("README.md", "the vault lives at ~/.usirin/vault"));
 	});
 
-	it("blocks ~/.claude in a .md", () => {
-		assert.isTrue(hasLeak("guide.md", "edit ~/.claude/settings.json"));
+	it("blocks a ~/.claude directory-internal path in a .md (#3475 — internals stay flagged)", () => {
+		assert.isTrue(hasLeak("guide.md", "session log at ~/.claude/projects/foo/bar.jsonl"));
 	});
 
 	it("blocks ~/code sibling-repo clone in a .md", () => {
@@ -73,6 +73,48 @@ describe("findLeaks — ALLOW matrix (legitimate content must NOT be flagged)", 
 	it("allows a clean shared artifact with no local paths", () => {
 		assert.isFalse(hasLeak("README.md", "this is ordinary prose with no paths at all"));
 	});
+});
+
+describe("~/.claude public-config-file carve-out (#3475 — narrowed by shape, both surfaces)", () => {
+	// The three provably-safe public, machine-agnostic config FILES must PASS on BOTH the doc
+	// surface (findLeaks) and the guard-4 landed-comment surface (findCommentLeaks) — they are
+	// the literal subject of packages/pipeline-crew-mcp and reveal nothing operator-specific.
+	const PUBLIC_CONFIG_FILES = [
+		"registers the server into ~/.claude.json",
+		"edit ~/.claude/settings.json to add the crew server",
+		"the project MCP config lives in .mcp.json",
+	] as const;
+	// The directory internals + operator-specific / config-file-lookalike forms must STILL trip
+	// the detector — the carve-out is pinned to the two exact public leaves by shape.
+	const STILL_FLAGGED = [
+		"session log at ~/.claude/projects/foo/bar.jsonl",
+		"todo state at ~/.claude/todos/list.json",
+		"the ~/.claude directory holds machine state",
+		"local override at ~/.claude/settings.local.json",
+		"backup at ~/.claude.json.bak",
+		"vault at ~/.usirin/vault",
+		"agent home ~/.agent/state",
+		"a real machine path /Users/someone/code/x",
+	] as const;
+
+	for (const text of PUBLIC_CONFIG_FILES) {
+		it(`allows "${text}" on the doc surface`, () => assert.isFalse(hasLeak("guide.md", text)));
+		it(`allows "${text}" on the comment surface (guard-4)`, () =>
+			assert.isFalse(hasCommentLeak(text)));
+	}
+	// The end-to-end guard-4 case from #3475: one crew-mcp comment naming all three at once passes.
+	it("allows a crew-mcp comment naming all three config files at once (guard-4, #3475 e2e)", () =>
+		assert.isFalse(
+			hasCommentLeak(
+				"pipeline-crew-mcp registers servers into ~/.claude.json, ~/.claude/settings.json, and the project .mcp.json",
+			),
+		));
+
+	for (const text of STILL_FLAGGED) {
+		it(`still flags "${text}" on the doc surface`, () => assert.isTrue(hasLeak("guide.md", text)));
+		it(`still flags "${text}" on the comment surface (guard-4)`, () =>
+			assert.isTrue(hasCommentLeak(text)));
+	}
 });
 
 describe("findCommentLeaks — PR/issue comment body scan (#2796, stricter than the file surface)", () => {

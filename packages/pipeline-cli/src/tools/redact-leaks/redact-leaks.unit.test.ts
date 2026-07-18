@@ -33,9 +33,11 @@ describe("redactLeaks — REDACT matched leaks, preserving evidential shape (#30
 		assert.isTrue(isClean(out));
 	});
 
-	it("redacts an agent/tool home dir (~/.claude) down to ~, dropping the tool name", () => {
-		const out = redactLeaks("edit ~/.claude/settings.json please");
-		assert.strictEqual(out, "edit ~/<redacted>/settings.json please");
+	it("redacts a ~/.claude private-home internal down to ~, dropping the tool name", () => {
+		// A descent into the private agent-home tree is still a leak — only the two public
+		// config leaves were exempted by shape (#3475); ~/.claude/projects/... is not one.
+		const out = redactLeaks("edit ~/.claude/projects/foo/session.json please");
+		assert.strictEqual(out, "edit ~/<redacted>/projects/foo/session.json please");
 		assert.isTrue(isClean(out));
 	});
 
@@ -61,6 +63,20 @@ describe("redactLeaks — no regression for leak-free text (#3021 AC5)", () => {
 
 	it("preserves an empty string", () => {
 		assert.strictEqual(redactLeaks(""), "");
+	});
+
+	it("leaves the now-exempt public, machine-agnostic config leaves unredacted (#3475)", () => {
+		// The detector (leak-guard.ts) narrowed the ~/.claude arm by shape to exempt these
+		// public config files — they are no longer leaks, so the redactor, sharing the one
+		// findCommentLeaks source, must return them byte-for-byte (the private-home internals
+		// case above still redacts). Keeps redactor and detector contracts aligned.
+		for (const safe of [
+			"edit ~/.claude.json please",
+			"edit ~/.claude/settings.json please",
+			"see .mcp.json for the server list",
+		]) {
+			assert.strictEqual(redactLeaks(safe), safe);
+		}
 	});
 
 	it("leaves a leak-free multi-line body with code fences byte-for-byte", () => {
