@@ -10,7 +10,7 @@
  * committed `promoteToYazar` must publish a `User` entity update so an open
  * profile view reconciles the new `tier` over `/fate/live` without a manual
  * reload. `User` is the entity the app-lifetime global live pin subscribes
- * (`.patterns/fate-live-views.md#global-pin`, ADR 0094 — `User.id === CurrentUser.id`),
+ * (`.patterns/fate-live-consistency.md#global-pin`, ADR 0094 — `User.id === CurrentUser.id`),
  * so a `live.update("User", id, …)` reaches every open profile/User view of the
  * promoted member.
  *

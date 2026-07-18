@@ -100,7 +100,7 @@ describe("publishPromotion — the shared post-promote live-publish (#1886)", ()
 				catch: (cause) => new DrainRejected({cause}),
 			}).pipe(Effect.orDie);
 			// The `User` entity topic keyed on the promoted id — what the global live pin
-			// (`.patterns/fate-live-views.md#global-pin`) subscribes, so the profile view
+			// (`.patterns/fate-live-consistency.md#global-pin`) subscribes, so the profile view
 			// reconciles the new tier live.
 			assert.deepStrictEqual(recorded, [liveEntityTopic("User", "u-target")]);
 		}).pipe(Effect.provide(Layer.mergeAll(pasaportWithUser, relationStoreEmpty, layer)));
