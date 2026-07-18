@@ -477,7 +477,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -509,13 +509,13 @@ describe("standup/bind — per-session bind constructor", () => {
 				};
 				// A self-driving bridge (no instance) and an engine (with instance) both receive the boot
 				// prompt — the def each boots as carries its own cold-start, so the launcher's turn is generic.
-				const bridge = yield* buildSessionBind({
+				const bridge = yield* build({
 					role: "chief-of-staff",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
 					channels,
 				});
-				const engine = yield* buildSessionBind({
+				const engine = yield* build({
 					role: "engineering-manager",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -541,7 +541,7 @@ describe("standup/bind — per-session bind constructor", () => {
 				// The cartographer has no standing loop, so it must NOT be handed the self-driving BOOT_PROMPT
 				// — that is what made it confabulate work. Even launched on-demand, its argv carries no
 				// positional prompt, so the CLI opens an interactive session that idles waiting for the human.
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: "cartographer",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
