@@ -17,12 +17,14 @@
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
-		"effect": "catalog:"
+		"effect": "catalog:",
+		"proper-lockfile": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
+		"@types/proper-lockfile": "catalog:",
 		"@typescript/native-preview": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"

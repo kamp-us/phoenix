@@ -6,6 +6,7 @@
  *   node src/bin.ts session --role <role>            # run one live crew session (stdio MCP)
  *   node src/bin.ts tracker                           # run a standalone per-project tracker
  *   node src/bin.ts stand-up                          # stand the whole crew up from the operator config
+ *   node src/bin.ts stand-down                        # tear down the crew's persisted local-scope registration
  *
  * The `session` subcommand is the runnable stdio MCP entry (#3062): it stands up one live crew
  * session's `McpServer` over stdio + its channel peer, so the crew's inter-session seams run over
@@ -24,6 +25,12 @@
  * plugin's thin `commands/stand-up.md` invokes this subcommand; the launcher logic lives here in the
  * substrate, never duplicated in the plugin (ADR 0192 decision B).
  *
+ * The `stand-down` subcommand is its symmetric teardown (issue #3444): stand-up registers each pane's
+ * crew server in a PERSISTED config scope (`~/.claude.json` local scope) because claude 2.1.212's
+ * channel-ref resolver reads persisted scopes only, never inline `--mcp-config`; stand-down sweeps that
+ * registration + the launcher-owned per-pane cwd dirs back out. A start-of-stand-up reaper also runs
+ * inside `runStandUp` so a crashed launcher's leftovers are cleared on the next boot regardless.
+ *
  * NB: an MCP stdio server owns stdout for JSON-RPC, so the one startup line goes to STDERR — a
  * log on stdout would corrupt the protocol stream.
  *
@@ -35,7 +42,7 @@ import {Cause, Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 
 import {CREW_ROLES, RoleUniquenessError, runCrewSession} from "./crew/index.ts";
-import {CREW_WINDOW, renderStandUpError, runStandUp} from "./standup/index.ts";
+import {CREW_WINDOW, renderStandUpError, runStandDown, runStandUp} from "./standup/index.ts";
 import {isTrackerAddressInUse, launchTracker} from "./tracker/index.ts";
 import {VERSION} from "./version.ts";
 
@@ -135,6 +142,34 @@ const standUp = Command.make(
 	),
 );
 
+const standDown = Command.make(
+	"stand-down",
+	{projectRoot: projectRootFlag},
+	Effect.fn(function* ({projectRoot}) {
+		yield* Console.error(
+			`pipeline-crew-mcp ${VERSION} — tearing down the crew's persisted local-scope registration (project ${projectRoot})`,
+		);
+		// Symmetric to stand-up (#3444): sweep the persisted `~/.claude.json` crew entries + the
+		// launcher-owned per-pane cwd dirs. Idempotent — safe to run with no crew up, and while one is.
+		return yield* runStandDown({projectRoot}).pipe(
+			Effect.flatMap(() =>
+				Console.error(
+					`crew stood down: removed the persisted local-scope crew entries + launcher cwd dirs for project ${projectRoot}`,
+				),
+			),
+			Effect.catch((error) =>
+				Console.error(`stand-down aborted: ${renderStandUpError(error)}`).pipe(
+					Effect.andThen(Effect.sync(() => process.exit(1))),
+				),
+			),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Tear down the crew's persisted local-scope registration (symmetric to stand-up)",
+	),
+);
+
 const cli = Command.make(
 	"pipeline-crew-mcp",
 	{},
@@ -145,7 +180,7 @@ const cli = Command.make(
 	}),
 ).pipe(
 	Command.withDescription("The crew's channels-backed messaging substrate (epic #3045)"),
-	Command.withSubcommands([session, tracker, standUp]),
+	Command.withSubcommands([session, tracker, standUp, standDown]),
 );
 
 cli.pipe(Command.run({version: VERSION}), Effect.provide(NodeServices.layer), NodeRuntime.runMain);

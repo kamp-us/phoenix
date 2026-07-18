@@ -8,6 +8,9 @@
  * Every side-effecting step is injected — a version reader, a recording tracker, a recording launcher
  * — so the whole boot runs in a unit test with no real subprocess, tmux, or `claude`.
  */
+import {existsSync, mkdirSync, mkdtempSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {CREW_ROLES, kindOf} from "../crew/index.ts";
@@ -22,14 +25,18 @@ import {type TrackerHandle, TrackerNotServingError} from "./ensure-tracker.ts";
 import {
 	CliVersionAssertError,
 	CREW_WINDOW,
+	type CrewLocalEntry,
 	CrewServerNotRegisteredError,
 	ensureNamedTmuxSession,
 	FALLBACK_TMUX_SESSION,
 	type LaunchedSession,
 	type LaunchPlan,
+	type LocalScopeRegistrar,
+	LocalScopeWriteError,
 	launchSessionInTmux,
 	renderStandUpError,
 	resolveTargetTmuxSession,
+	runStandDown,
 	runStandUp,
 	type StandUpInput,
 	StandUpLaunchError,
@@ -120,6 +127,40 @@ const recordingLauncher = () => {
 	return {plans, order, targetSessions, intoWindows, resolveCalls, launch, resolveTargetSession};
 };
 
+const RUN_ID = "run0";
+
+/** A fake per-pane cwd the recording registrar mints — distinct per pane so each `projects[]` key is isolated (#3444). */
+const fakePaneCwd = (runId: string, paneLabel: string): string => `/fake-cwd/${runId}/${paneLabel}`;
+
+/**
+ * A recording local-scope registrar sharing the launcher's `order` log, so a test can prove the reaper
+ * runs at stand-up start and the register runs before any pane launches — and can inspect the exact
+ * per-pane entries committed. Touches no real `~/.claude.json`: every op is captured in-memory (#3444).
+ */
+const recordingLocalScope = (order: string[]) => {
+	const reaped: {readonly projectRoot: string; readonly serverName: string}[] = [];
+	const registered: CrewLocalEntry[][] = [];
+	const cwdCalls: {readonly runId: string; readonly paneLabel: string}[] = [];
+	const registrar: LocalScopeRegistrar = {
+		reap: (projectRoot, serverName) =>
+			Effect.sync(() => {
+				order.push("reap");
+				reaped.push({projectRoot, serverName});
+			}),
+		paneCwd: (_projectRoot, runId, paneLabel) =>
+			Effect.sync(() => {
+				cwdCalls.push({runId, paneLabel});
+				return fakePaneCwd(runId, paneLabel);
+			}),
+		register: (entries) =>
+			Effect.sync(() => {
+				order.push("register");
+				registered.push(entries.map((e) => ({...e})));
+			}),
+	};
+	return {registrar, reaped, registered, cwdCalls};
+};
+
 const trackerHandle: TrackerHandle = {pid: 4242, socketPath: "/tmp/crew.sock"};
 
 /** A recording tracker-ensurer: counts calls so "was the tracker reached before the abort?" is checkable. */
@@ -145,10 +186,14 @@ const baseInput = (
 	intoWindows: (string | undefined)[];
 	resolveCalls: {n: number};
 	trackerCalls: () => number;
+	reaped: {readonly projectRoot: string; readonly serverName: string}[];
+	registered: CrewLocalEntry[][];
+	cwdCalls: {readonly runId: string; readonly paneLabel: string}[];
 } => {
 	const {plans, order, targetSessions, intoWindows, resolveCalls, launch, resolveTargetSession} =
 		recordingLauncher();
 	const {ensureTracker, calls} = recordingTracker();
+	const {registrar, reaped, registered, cwdCalls} = recordingLocalScope(order);
 	const {engineCount, ...rest} = overrides;
 	return {
 		launched: plans,
@@ -157,11 +202,16 @@ const baseInput = (
 		intoWindows,
 		resolveCalls,
 		trackerCalls: calls,
+		reaped,
+		registered,
+		cwdCalls,
 		input: {
 			projectRoot: "/repo",
 			config: configAt(PINNED, engineCount ?? 2),
 			readVersionOutput: Effect.succeed(`${PINNED} (Claude Code)`),
 			instanceId: counter(),
+			runId: () => RUN_ID,
+			localScope: registrar,
 			ensureTracker,
 			resolveTargetSession,
 			launch,
@@ -333,15 +383,81 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 			for (const p of engines) {
 				assert.strictEqual(p.session.kind, "engine");
 				const instance = p.session.kind === "engine" ? p.session.instance : "";
-				// the instance-flag pair rides the inline --mcp-config JSON (mcpConfigArg[1]).
-				const mcpJson = p.bind.mcpConfigArg[1];
-				assert.include(mcpJson, `"${CREW_SESSION_INSTANCE_FLAG}"`);
-				assert.include(mcpJson, `"${instance}"`);
+				// the instance-flag pair rides the persisted-scope server command (serverConfig.args).
+				const args = [...p.bind.serverConfig.args];
+				assert.include(args, CREW_SESSION_INSTANCE_FLAG);
+				assert.include(args, instance);
 			}
-			// a bridge is a singleton and carries no --instance in its argv.
+			// a bridge is a singleton and carries no --instance in its server command.
 			const bridge = launched.find((p) => p.session.kind === "bridge");
-			assert.notInclude(bridge?.bind.mcpConfigArg[1] ?? "", CREW_SESSION_INSTANCE_FLAG);
+			assert.notInclude([...(bridge?.bind.serverConfig.args ?? [])], CREW_SESSION_INSTANCE_FLAG);
 		}),
+	);
+
+	it.effect(
+		"registers each pane's crew server in the persisted local scope — reap → register → launch, distinct isolated cwds (#3444)",
+		() =>
+			Effect.gen(function* () {
+				const N = 2;
+				const {input, launched, order, reaped, registered, cwdCalls} = baseInput({engineCount: N});
+				yield* runStandUp(input);
+
+				// The start-of-stand-up reaper swept once, keyed by the crew server name (the resolver's ref).
+				assert.strictEqual(reaped.length, 1);
+				assert.deepStrictEqual(reaped[0], {projectRoot: "/repo", serverName: SERVER});
+
+				// Ordering: reap runs before register, and register runs before any pane is launched.
+				const reapAt = order.indexOf("reap");
+				const registerAt = order.indexOf("register");
+				const firstLaunchAt = order.findIndex((e) => e.startsWith("launch:"));
+				assert.isBelow(reapAt, registerAt);
+				assert.isBelow(registerAt, firstLaunchAt);
+
+				// One atomic register batch, one entry per pane (bridges + N engines).
+				assert.strictEqual(registered.length, 1);
+				const entries = registered[0] ?? [];
+				assert.strictEqual(entries.length, launched.length);
+				assert.strictEqual(entries.length, cwdCalls.length);
+
+				// Each entry is keyed by its pane's DISTINCT cwd (fact #2 isolation), names the crew server,
+				// and carries exactly the bind's server config — the value the resolver reads (#3444).
+				for (const plan of launched) {
+					const entry = entries.find((e) => e.cwd === plan.cwd);
+					assert.isDefined(entry, `an entry exists for pane cwd ${plan.cwd}`);
+					assert.strictEqual(entry?.cwd, fakePaneCwd(RUN_ID, plan.placement.paneLabel));
+					assert.strictEqual(entry?.serverName, SERVER);
+					assert.deepStrictEqual(entry?.serverConfig, plan.bind.serverConfig);
+				}
+				// Every pane cwd is distinct — so a pane booting in its cwd sees ONLY its own entry.
+				const cwds = entries.map((e) => e.cwd);
+				assert.strictEqual(new Set(cwds).size, cwds.length);
+			}),
+	);
+
+	it.effect(
+		"aborts fail-loud when the persisted local-scope register fails — nothing launched (AC3, #3444)",
+		() =>
+			Effect.gen(function* () {
+				const {input, launched} = baseInput({
+					localScope: {
+						reap: () => Effect.void,
+						paneCwd: (_projectRoot, runId, paneLabel) =>
+							Effect.succeed(fakePaneCwd(runId, paneLabel)),
+						register: () =>
+							Effect.fail(
+								new LocalScopeWriteError({
+									configPath: "~/.claude.json",
+									reason: "cannot acquire lock ~/.claude.json.lock",
+								}),
+							),
+					},
+				});
+				const err = yield* Effect.flip(runStandUp(input));
+
+				assert.instanceOf(err, LocalScopeWriteError);
+				// register sits before the launch loop — a failed registration launches nothing (no partial crew).
+				assert.strictEqual(launched.length, 0);
+			}),
 	);
 
 	it.effect("threads each role's config tier into its launch --model (#3423, end to end)", () =>
@@ -452,13 +568,16 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 				);
 				assert.strictEqual(result.pane, plan.placement.paneLabel);
 				assert.strictEqual(result.pid, 4242);
-				// the crew window opens into the RESOLVED session (the caller's, #3418), not a hardcoded one.
+				// the crew window opens into the RESOLVED session (the caller's, #3418), not a hardcoded one,
+				// and `-c <cwd>` boots the pane in its distinct launch cwd (the isolated projects[] key, #3444).
 				assert.deepStrictEqual(argvLog[0], [
 					"new-window",
 					"-t",
 					TARGET,
 					"-n",
 					CREW_WINDOW,
+					"-c",
+					plan.cwd,
 					"-P",
 					"-F",
 					"#{window_id}",
@@ -483,6 +602,8 @@ describe("standup/orchestrate — launch-liveness + ensure-session (issue #3418)
 					"split-window",
 					"-t",
 					"@7",
+					"-c",
+					plan.cwd,
 					"claude",
 					...plan.bind.argv,
 				]);
@@ -644,4 +765,32 @@ describe("renderStandUpError", () => {
 		assert.include(rendered, "session=crew");
 		assert.include(rendered, `reason=${reason}`);
 	});
+});
+
+// The symmetric teardown (#3444): sweep the persisted crew entries, then remove the launcher-owned
+// crew-run dir tree. The reaper is injected so no real ~/.claude.json is touched; the dir removal runs
+// against a temp project root.
+describe("runStandDown", () => {
+	it.effect(
+		"reaps the crew entries then removes the launcher-owned crew-run dir (idempotent)",
+		() =>
+			Effect.gen(function* () {
+				const projectRoot = mkdtempSync(join(tmpdir(), "crew-standdown-"));
+				const runRoot = join(projectRoot, ".claude", "crew-run");
+				mkdirSync(join(runRoot, "run0", "chief-of-staff"), {recursive: true});
+				assert.isTrue(existsSync(runRoot));
+
+				let reaps = 0;
+				const reap = () => Effect.sync(() => void reaps++);
+				yield* runStandDown({projectRoot, reap});
+				assert.strictEqual(reaps, 1);
+				assert.isFalse(existsSync(runRoot), "the launcher-owned crew-run dir is removed");
+
+				// idempotent: a second stand-down over an already-torn-down project is a clean no-op.
+				yield* runStandDown({projectRoot, reap});
+				assert.strictEqual(reaps, 2);
+
+				rmSync(projectRoot, {recursive: true, force: true});
+			}),
+	);
 });

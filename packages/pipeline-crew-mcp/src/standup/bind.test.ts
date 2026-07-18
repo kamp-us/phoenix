@@ -1,10 +1,11 @@
 /**
- * The per-session bind constructor (AC 1–4): for a role + project root it emits the launch
- * fragment each crew session comes up with — the per-invocation `--mcp-config` inline JSON baking
- * `pipeline-crew-mcp session --role <role> --project-root <root>`, plus the channel-registration
- * flag naming that same server. The tests pin the EXACT argv/JSON for a sample role in both channel
- * modes (allowlist → `--channels`, development → `--dangerously-load-development-channels`), and the
- * two fail-closed rejections: a crew server absent from the flag (defined-but-inert), and an
+ * The per-session bind constructor (AC 1–4): for a role + project root it emits the launch inputs
+ * each crew session comes up with — the crew server's PERSISTED-scope config value (`serverConfig`,
+ * which the launcher writes into `~/.claude.json` local scope, #3444) plus the channel-registration
+ * flag naming that same server. The tests pin the exact server config + argv for a sample role in both
+ * channel modes (allowlist → `--channels`, development → `--dangerously-load-development-channels`),
+ * that the argv NO LONGER carries `--mcp-config` (the resolver never read it, #3444), and the two
+ * fail-closed rejections: a crew server absent from the flag (defined-but-inert), and an
  * allowlist-mode plugin channel whose plugin the config's `allowedChannelPlugins` doesn't list.
  */
 import {existsSync} from "node:fs";
@@ -17,10 +18,10 @@ import {
 	CREW_SESSION_BIN_PATH,
 	CREW_SESSION_COMMAND,
 	CREW_SESSION_INSTANCE_FLAG,
+	type CrewServerConfig,
 	CrewServerNotRegisteredError,
 	CrewSessionBinUnresolvableError,
 	DEV_CHANNEL_FLAG,
-	MCP_CONFIG_FLAG,
 	MODEL_FLAG,
 	NAME_FLAG,
 } from "./bind.ts";
@@ -30,21 +31,17 @@ const ROLE = "engineering-manager";
 const PROJECT_ROOT = "/work/phoenix";
 const SERVER_NAME = "pipeline-crew";
 
-// The exact inline JSON the --mcp-config value must carry: one server, keyed by the session's own
-// channel-server name, whose command is the launcher's own node (`process.execPath`) running the
-// ABSOLUTE bin.ts path — a resolvable invocation, never the bare unlinked package bin name (#3425).
-const EXPECTED_MCP_JSON = JSON.stringify({
-	mcpServers: {
-		[SERVER_NAME]: {
-			command: process.execPath,
-			args: [CREW_SESSION_BIN_PATH, "session", "--role", ROLE, "--project-root", PROJECT_ROOT],
-		},
-	},
-});
+// The exact persisted-scope server config the launcher writes to `~/.claude.json` local scope: the
+// launcher's own node (`process.execPath`) running the ABSOLUTE bin.ts path — a resolvable invocation,
+// never the bare unlinked package bin name (#3425).
+const EXPECTED_SERVER_CONFIG: CrewServerConfig = {
+	command: process.execPath,
+	args: [CREW_SESSION_BIN_PATH, "session", "--role", ROLE, "--project-root", PROJECT_ROOT],
+};
 
 describe("standup/bind — per-session bind constructor", () => {
 	it.effect(
-		"allowlist mode: --mcp-config inline JSON + --channels naming the crew server (AC 1,2,3)",
+		"allowlist mode: persisted-scope serverConfig + --channels naming the crew server, NO inline --mcp-config (AC 1,2,3; #3444)",
 		() =>
 			Effect.gen(function* () {
 				const channels: ChannelConfig = {
@@ -59,8 +56,9 @@ describe("standup/bind — per-session bind constructor", () => {
 					channels,
 				});
 
-				// AC1: the --mcp-config value is the exact inline JSON baking the session command.
-				assert.deepStrictEqual(bind.mcpConfigArg, [MCP_CONFIG_FLAG, EXPECTED_MCP_JSON]);
+				// AC1: the crew server is exposed as its persisted-scope config value, keyed by the server name.
+				assert.strictEqual(bind.serverName, SERVER_NAME);
+				assert.deepStrictEqual(bind.serverConfig, EXPECTED_SERVER_CONFIG);
 				assert.strictEqual(CREW_SESSION_COMMAND, "session");
 
 				// AC3: allowlist mode selects --channels over the config's server refs (grammar preserved).
@@ -70,17 +68,16 @@ describe("standup/bind — per-session bind constructor", () => {
 					"plugin:kampus:sozluk",
 				]);
 
-				// AC2: the full argv carries BOTH — the crew server is named in the flag, never .mcp.json alone —
-				// and closes with the visible-name flag (#3443); a bridge (no instance) names the bare role.
+				// AC2: the argv registers the channel + closes with the visible name (#3443) and carries NO
+				// `--mcp-config` — the crew server now registers via the persisted local scope (#3444).
 				assert.deepStrictEqual(bind.argv, [
-					MCP_CONFIG_FLAG,
-					EXPECTED_MCP_JSON,
 					ALLOWLIST_CHANNEL_FLAG,
 					"server:pipeline-crew",
 					"plugin:kampus:sozluk",
 					NAME_FLAG,
 					ROLE,
 				]);
+				assert.notInclude(bind.argv, "--mcp-config");
 			}),
 	);
 
@@ -102,18 +99,13 @@ describe("standup/bind — per-session bind constructor", () => {
 					channels,
 				});
 
-				assert.deepStrictEqual(bind.mcpConfigArg, [MCP_CONFIG_FLAG, EXPECTED_MCP_JSON]);
+				assert.deepStrictEqual(bind.serverConfig, EXPECTED_SERVER_CONFIG);
 				assert.deepStrictEqual(bind.channelArg, [
 					DEV_CHANNEL_FLAG,
 					"server:pipeline-crew",
 					"plugin:localdev:scratch",
 				]);
-				assert.deepStrictEqual(bind.argv, [
-					MCP_CONFIG_FLAG,
-					EXPECTED_MCP_JSON,
-					...bind.channelArg,
-					...bind.nameArg,
-				]);
+				assert.deepStrictEqual(bind.argv, [...bind.channelArg, ...bind.nameArg]);
 			}),
 	);
 
@@ -140,7 +132,7 @@ describe("standup/bind — per-session bind constructor", () => {
 	);
 
 	it.effect(
-		"bakes the launcher-assigned per-instance identity into the session argv (seam 3, #3354)",
+		"bakes the launcher-assigned per-instance identity into the session server config (seam 3, #3354)",
 		() =>
 			Effect.gen(function* () {
 				const INSTANCE = "e-7f3a";
@@ -157,25 +149,20 @@ describe("standup/bind — per-session bind constructor", () => {
 					channels,
 				});
 
-				// the instance flag + id ride the inline --mcp-config server command, after --project-root.
-				const expected = JSON.stringify({
-					mcpServers: {
-						[SERVER_NAME]: {
-							command: process.execPath,
-							args: [
-								CREW_SESSION_BIN_PATH,
-								CREW_SESSION_COMMAND,
-								"--role",
-								ROLE,
-								"--project-root",
-								PROJECT_ROOT,
-								CREW_SESSION_INSTANCE_FLAG,
-								INSTANCE,
-							],
-						},
-					},
+				// the instance flag + id ride the persisted-scope server command, after --project-root.
+				assert.deepStrictEqual(bind.serverConfig, {
+					command: process.execPath,
+					args: [
+						CREW_SESSION_BIN_PATH,
+						CREW_SESSION_COMMAND,
+						"--role",
+						ROLE,
+						"--project-root",
+						PROJECT_ROOT,
+						CREW_SESSION_INSTANCE_FLAG,
+						INSTANCE,
+					],
 				});
-				assert.deepStrictEqual(bind.mcpConfigArg, [MCP_CONFIG_FLAG, expected]);
 			}),
 	);
 
@@ -194,7 +181,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					serverName: SERVER_NAME,
 					channels,
 				});
-				assert.notInclude(bind.mcpConfigArg[1], CREW_SESSION_INSTANCE_FLAG);
+				assert.notInclude([...bind.serverConfig.args], CREW_SESSION_INSTANCE_FLAG);
 			}),
 	);
 
@@ -214,7 +201,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					channels,
 				});
 
-				const server = JSON.parse(bind.mcpConfigArg[1]).mcpServers[SERVER_NAME];
+				const server = bind.serverConfig;
 				// Not the old bare, unlinked package bin name — an absolute node + an absolute bin path.
 				assert.strictEqual(server.command, process.execPath);
 				assert.notStrictEqual(server.command, "pipeline-crew-mcp");
@@ -266,10 +253,10 @@ describe("standup/bind — per-session bind constructor", () => {
 			// The tier boots the session's model — a family tier is a verbatim --model alias (config.ts
 			// Tier, grounded on the 2.1.212 bundle), so tier:opus yields `--model opus`.
 			assert.deepStrictEqual([...bind.modelArg], [MODEL_FLAG, "opus"]);
-			// --model leads the argv; the #3425 mcp-config + channel fragment follows it, then the name (#3443).
+			// --model leads the argv; the channel fragment follows it, then the name (#3443). No --mcp-config.
 			assert.deepStrictEqual(
 				[...bind.argv],
-				[MODEL_FLAG, "opus", ...bind.mcpConfigArg, ...bind.channelArg, ...bind.nameArg],
+				[MODEL_FLAG, "opus", ...bind.channelArg, ...bind.nameArg],
 			);
 		}),
 	);
@@ -311,11 +298,8 @@ describe("standup/bind — per-session bind constructor", () => {
 				});
 				assert.deepStrictEqual([...bind.modelArg], []);
 				assert.notInclude(bind.argv, MODEL_FLAG);
-				// No tier ⇒ no --model; argv is the mcp-config + channel fragment closed by the name (#3443).
-				assert.deepStrictEqual(
-					[...bind.argv],
-					[...bind.mcpConfigArg, ...bind.channelArg, ...bind.nameArg],
-				);
+				// No tier ⇒ no --model; argv is the channel fragment closed by the name (#3443).
+				assert.deepStrictEqual([...bind.argv], [...bind.channelArg, ...bind.nameArg]);
 			}),
 	);
 

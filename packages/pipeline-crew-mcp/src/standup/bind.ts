@@ -1,31 +1,33 @@
 /**
  * standup/bind — the per-session bind constructor: the launch-time, launcher-owned binding each
- * crew session (epic #3237) comes up with. For a role + project root it derives the launch argv
- * fragment for ONE session — no process spawn here (the orchestration child #3299 spawns), pure
- * argv/JSON derivation over the already-resolved `LaunchConfig` channels dimension (#3293).
+ * crew session (epic #3237) comes up with. For a role + project root it derives the launch inputs
+ * for ONE session — no process spawn here (the orchestration child #3299 spawns), pure derivation
+ * over the already-resolved `LaunchConfig` channels dimension (#3293).
  *
- * It produces two coupled outputs the launcher inlines per invocation:
- *   1. `--mcp-config <json>` — the session's own channel MCP server as INLINE JSON baking
- *      `<node> <abs bin.ts> session --role <role> --project-root <root>`. It must be per-invocation
- *      inline (not a static shared `.mcp.json`) because `--role`/`--project-root` vary across the
- *      concurrent sessions a stand-up launches at once. The command is the launcher's own node
- *      (`process.execPath`) + the ABSOLUTE `bin.ts` path — a bare, unlinked package bin name never
- *      resolves on the launched session's PATH, so it would come up silently inert (#3425); this
- *      mirrors ensure-tracker.ts's detached-child spawn (`process.execPath` + a `fileURLToPath`
- *      module path), the package's canonical bin.ts runner.
+ * It produces two coupled outputs the launcher wires per invocation:
+ *   1. `serverConfig` — the crew channel MCP server's config value (`<node> <abs bin.ts> session
+ *      --role <role> --project-root <root>`), which the launcher writes into a PERSISTED config
+ *      scope (`~/.claude.json → projects[<pane cwd>].mcpServers[<serverName>]`, register-local-scope.ts).
+ *      The old inline `--mcp-config` path is GONE: claude 2.1.212's channel-ref resolver validates a
+ *      `server:<name>` ref against the four persisted scopes only (enterprise/user/project/local) and
+ *      NEVER consults an inline `--mcp-config` server, so a server handed only inline is structurally
+ *      invisible to the resolver and the channel comes up inert crew-wide (issue #3444). The command
+ *      is the launcher's own node (`process.execPath`) + the ABSOLUTE `bin.ts` path — a bare unlinked
+ *      package bin name never resolves on the launched session's PATH (#3425); this mirrors
+ *      ensure-tracker.ts's detached-child spawn, the package's canonical bin.ts runner.
  *   2. the channel-registration flag NAMING that same server — `--channels <refs>` for the
- *      allowlist mode, `--dangerously-load-development-channels <refs>` for dev. A server present
- *      in `.mcp.json`/`--mcp-config` alone is INERT: the Claude Code CLI only activates a channel
- *      once its server is also named in this flag (verified against the 2.1.212 bundle:
- *      `--channels <servers...>`, `--dangerously-load-development-channels <servers...>`,
- *      `--mcp-config <configs...>` load-from-JSON-string, and the `allowedChannelPlugins` gate).
+ *      allowlist mode, `--dangerously-load-development-channels <refs>` for dev. A server present in a
+ *      persisted scope alone is INERT: the CLI only activates a channel once its server is also named
+ *      in this flag (verified against the 2.1.212 bundle: `--channels <servers...>`,
+ *      `--dangerously-load-development-channels <servers...>`, and the `allowedChannelPlugins` gate).
  *
  * The one non-obvious thing: this FAILS CLOSED, like the config reader it consumes. Three ways a
  * bind would come up inert are each a launch to refuse with a named error, never paper over: the
  * crew server's `bin.ts` not resolving on disk (`CrewSessionBinUnresolvableError`, #3425), the crew
- * server defined in `--mcp-config` but absent from the channel flag (`CrewServerNotRegisteredError`),
- * and an allowlist-mode `plugin:` channel whose plugin the operator never allowlisted
- * (`ChannelPluginNotAllowedError`, the exact rejection the CLI raises).
+ * server not named in the channel flag (`CrewServerNotRegisteredError`), and an allowlist-mode
+ * `plugin:` channel whose plugin the operator never allowlisted (`ChannelPluginNotAllowedError`, the
+ * exact rejection the CLI raises). The persisted-scope WRITE is a launcher side effect, so its own
+ * fail-closed guard lives at that write (register-local-scope.ts / orchestrate.ts), not here.
  */
 import {existsSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -47,7 +49,6 @@ export const CREW_SESSION_COMMAND = "session";
  * instance — the C5 handoff #3297 left for bind to turn into argv (#3354, seam 3).
  */
 export const CREW_SESSION_INSTANCE_FLAG = "--instance";
-export const MCP_CONFIG_FLAG = "--mcp-config";
 /** Sets the launched session's model to the role's configured tier (#3423); omitted when no tier. */
 export const MODEL_FLAG = "--model";
 /**
@@ -66,40 +67,47 @@ export const DEV_CHANNEL_FLAG = "--dangerously-load-development-channels";
 const crewServerRef = (serverName: string): string => `server:${serverName}`;
 
 /**
- * The inline `--mcp-config` JSON: one server keyed by `serverName`, baking the per-invocation session
+ * A crew channel MCP server's persisted-scope config value: the `command` + `args` the CLI spawns as
+ * the stdio server. This is the value the launcher writes to `~/.claude.json`'s local scope keyed by
+ * `serverName` (register-local-scope.ts) — the exact shape a persisted-scope `mcpServers[name]` entry
+ * carries, so the channel resolver (which reads persisted scopes, #3444) sees the server.
+ */
+export interface CrewServerConfig {
+	readonly command: string;
+	readonly args: readonly string[];
+}
+
+/**
+ * The crew session's own server config: the launcher's node running the per-invocation session
  * command. When an engine's launcher-assigned `instance` (#3297) is present it is baked as
  * `--instance <id>` so the launched session binds THAT identity; a bridge (singleton, no instance)
  * omits the flag.
  */
-const sessionMcpConfigJson = (
+const sessionServerConfig = (
 	role: string,
 	projectRoot: string,
-	serverName: string,
 	instance: string | undefined,
-): string =>
-	JSON.stringify({
-		mcpServers: {
-			[serverName]: {
-				command: process.execPath,
-				args: [
-					CREW_SESSION_BIN_PATH,
-					CREW_SESSION_COMMAND,
-					"--role",
-					role,
-					"--project-root",
-					projectRoot,
-					...(instance !== undefined ? [CREW_SESSION_INSTANCE_FLAG, instance] : []),
-				],
-			},
-		},
-	});
+): CrewServerConfig => ({
+	command: process.execPath,
+	args: [
+		CREW_SESSION_BIN_PATH,
+		CREW_SESSION_COMMAND,
+		"--role",
+		role,
+		"--project-root",
+		projectRoot,
+		...(instance !== undefined ? [CREW_SESSION_INSTANCE_FLAG, instance] : []),
+	],
+});
 
-/** What one crew session binds at launch: the role, its root, and the derived launch argv fragment. */
+/** What one crew session binds at launch: the role, its root, the persisted-scope server, and the launch argv. */
 export interface SessionBind {
 	readonly role: string;
 	readonly projectRoot: string;
-	/** `["--mcp-config", "<inline JSON>"]`. */
-	readonly mcpConfigArg: readonly [flag: string, json: string];
+	/** The channel-server name this session registers under — the `mcpServers[…]` key its persisted-scope entry uses. */
+	readonly serverName: string;
+	/** The crew server's persisted-scope config value the launcher writes to `~/.claude.json` local scope (#3444). */
+	readonly serverConfig: CrewServerConfig;
 	/** The channel-registration flag + its server refs, e.g. `["--channels", "server:pipeline-crew", …]`. */
 	readonly channelArg: readonly string[];
 	/** `["--model", "<alias>"]` when the role has a configured tier (#3423), else `[]` (CLI default). */
@@ -111,7 +119,11 @@ export interface SessionBind {
 	 * same one that already keeps engine inboxes collision-free (session-set.ts).
 	 */
 	readonly nameArg: readonly [flag: string, name: string];
-	/** The complete fragment `[...modelArg, ...mcpConfigArg, ...channelArg, ...nameArg]` the launcher inlines for this session. */
+	/**
+	 * The complete argv `[...modelArg, ...channelArg, ...nameArg]` the launcher passes to `claude`. It
+	 * no longer carries `--mcp-config`: the crew server now registers via the persisted local scope
+	 * (`serverConfig`), which is what the channel resolver actually reads (#3444).
+	 */
 	readonly argv: readonly string[];
 }
 
@@ -119,9 +131,9 @@ export interface SessionBindInput {
 	readonly role: string;
 	readonly projectRoot: string;
 	/**
-	 * The channel-ref name this session's own crew MCP server registers under (the `--mcp-config`
-	 * map key). It MUST appear as `server:<serverName>` in `channels.servers`, else the server is
-	 * defined-but-inert — the fail-closed `CrewServerNotRegisteredError` below.
+	 * The channel-ref name this session's own crew MCP server registers under (the persisted-scope
+	 * `mcpServers` map key). It MUST appear as `server:<serverName>` in `channels.servers`, else the
+	 * server is defined-but-inert — the fail-closed `CrewServerNotRegisteredError` below.
 	 */
 	readonly serverName: string;
 	/**
@@ -160,8 +172,9 @@ export class CrewSessionBinUnresolvableError extends Schema.TaggedErrorClass<Cre
 ) {}
 
 /**
- * The crew session's own server is defined in `--mcp-config` but not named in the channel flag, so
- * it would come up INERT (`.mcp.json` alone is insufficient). Refuse the launch (AC2).
+ * The crew session's own server is not named in the channel flag, so it would come up INERT (a
+ * persisted-scope entry alone is insufficient — the flag is what activates the channel). Refuse the
+ * launch (AC2).
  */
 export class CrewServerNotRegisteredError extends Schema.TaggedErrorClass<CrewServerNotRegisteredError>()(
 	"@kampus/pipeline-crew-mcp/standup/CrewServerNotRegisteredError",
@@ -190,9 +203,10 @@ const pluginOf = (ref: string): string | undefined =>
 	ref.startsWith("plugin:") ? ref.split(":")[1] : undefined;
 
 /**
- * Build one crew session's launch bind: the inline `--mcp-config` server + the channel-registration
- * flag naming that same server. Fails closed if the crew server would be inert (unnamed in the flag),
- * or — under `--channels` only — if a plugin channel names a plugin outside `allowedChannelPlugins`.
+ * Build one crew session's launch bind: the crew server's persisted-scope config value + the
+ * channel-registration flag naming that same server. Fails closed if the crew server would be inert
+ * (unnamed in the flag), or — under `--channels` only — if a plugin channel names a plugin outside
+ * `allowedChannelPlugins`.
  */
 export const buildSessionBind = (
 	input: SessionBindInput,
@@ -205,8 +219,8 @@ export const buildSessionBind = (
 		const binExists = input.binExists ?? existsSync;
 		const servers = channels.servers;
 
-		// Resolvability before anything else: the bin the `--mcp-config` command runs must exist on
-		// disk, else the launched `<node> <bin.ts>` fails to spawn and the channel is inert (#3425).
+		// Resolvability before anything else: the bin the server command runs must exist on disk, else
+		// the launched `<node> <bin.ts>` fails to spawn and the channel is inert (#3425).
 		if (!binExists(CREW_SESSION_BIN_PATH)) {
 			return yield* Effect.fail(
 				new CrewSessionBinUnresolvableError({binPath: CREW_SESSION_BIN_PATH}),
@@ -235,10 +249,7 @@ export const buildSessionBind = (
 		}
 
 		const channelFlag = channels.mode === "development" ? DEV_CHANNEL_FLAG : ALLOWLIST_CHANNEL_FLAG;
-		const mcpConfigArg: readonly [string, string] = [
-			MCP_CONFIG_FLAG,
-			sessionMcpConfigJson(role, projectRoot, serverName, instance),
-		];
+		const serverConfig = sessionServerConfig(role, projectRoot, instance);
 		const channelArg: readonly string[] = [channelFlag, ...servers];
 		// The role's tier boots the session on its `--model` (#3423); a role with no tier emits none,
 		// keeping the CLI-default boot rather than guessing. `tierModel` is total over the `Tier` enum.
@@ -251,10 +262,11 @@ export const buildSessionBind = (
 		return {
 			role,
 			projectRoot,
-			mcpConfigArg,
+			serverName,
+			serverConfig,
 			channelArg,
 			modelArg,
 			nameArg,
-			argv: [...modelArg, ...mcpConfigArg, ...channelArg, ...nameArg],
+			argv: [...modelArg, ...channelArg, ...nameArg],
 		};
 	});
