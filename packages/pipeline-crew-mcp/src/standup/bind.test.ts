@@ -12,6 +12,7 @@ import {existsSync} from "node:fs";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {
+	AGENT_FLAG,
 	ALLOWLIST_CHANNEL_FLAG,
 	buildSessionBind,
 	ChannelPluginNotAllowedError,
@@ -24,12 +25,16 @@ import {
 	DEV_CHANNEL_FLAG,
 	MODEL_FLAG,
 	NAME_FLAG,
+	PLUGIN_DIR_FLAG,
 } from "./bind.ts";
 import type {ChannelConfig} from "./config.ts";
 
 const ROLE = "engineering-manager";
 const PROJECT_ROOT = "/work/phoenix";
 const SERVER_NAME = "pipeline-crew";
+// The pipeline-crew plugin root under PROJECT_ROOT — the dir `--plugin-dir` loads the role agent-defs
+// from so `--agent <role>` resolves the persona instead of general-purpose (#3447).
+const EXPECTED_PLUGIN_DIR = "/work/phoenix/claude-plugins/pipeline-crew";
 
 // The exact persisted-scope server config the launcher writes to `~/.claude.json` local scope: the
 // launcher's own node (`process.execPath`) running the ABSOLUTE bin.ts path — a resolvable invocation,
@@ -68,9 +73,14 @@ describe("standup/bind — per-session bind constructor", () => {
 					"plugin:kampus:sozluk",
 				]);
 
-				// AC2: the argv registers the channel + closes with the visible name (#3443) and carries NO
-				// `--mcp-config` — the crew server now registers via the persisted local scope (#3444).
+				// AC2: the argv boots the role persona (--plugin-dir + --agent, #3447), registers the channel,
+				// closes with the visible name (#3443), and carries NO `--mcp-config` — the crew server now
+				// registers via the persisted local scope (#3444).
 				assert.deepStrictEqual(bind.argv, [
+					PLUGIN_DIR_FLAG,
+					EXPECTED_PLUGIN_DIR,
+					AGENT_FLAG,
+					ROLE,
 					ALLOWLIST_CHANNEL_FLAG,
 					"server:pipeline-crew",
 					"plugin:kampus:sozluk",
@@ -105,8 +115,69 @@ describe("standup/bind — per-session bind constructor", () => {
 					"server:pipeline-crew",
 					"plugin:localdev:scratch",
 				]);
-				assert.deepStrictEqual(bind.argv, [...bind.channelArg, ...bind.nameArg]);
+				assert.deepStrictEqual(bind.argv, [
+					...bind.pluginDirArg,
+					...bind.agentArg,
+					...bind.channelArg,
+					...bind.nameArg,
+				]);
 			}),
+	);
+
+	it.effect(
+		"boots each pane AS its role persona: --plugin-dir <crew plugin> + --agent <role>, identity-mapped (#3447)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				// Each role's --agent target is the role verbatim — CREW_ROLES == the agent-defs' `name:`
+				// frontmatter (ADR 0189), so no translation table; --plugin-dir is what makes it resolvable.
+				for (const role of [
+					"chief-of-staff",
+					"cartographer",
+					"intake-desk",
+					"engineering-manager",
+				]) {
+					const bind = yield* buildSessionBind({
+						role,
+						projectRoot: PROJECT_ROOT,
+						serverName: SERVER_NAME,
+						channels,
+					});
+					assert.deepStrictEqual([...bind.pluginDirArg], [PLUGIN_DIR_FLAG, EXPECTED_PLUGIN_DIR]);
+					assert.deepStrictEqual([...bind.agentArg], [AGENT_FLAG, role]);
+					// the persona flags lead the argv (ahead of the channel fragment), after any --model.
+					assert.deepStrictEqual([...bind.argv].slice(0, 4), [
+						PLUGIN_DIR_FLAG,
+						EXPECTED_PLUGIN_DIR,
+						AGENT_FLAG,
+						role,
+					]);
+				}
+			}),
+	);
+
+	it.effect("derives --plugin-dir from the project root (never a hardcoded/home path)", () =>
+		Effect.gen(function* () {
+			const channels: ChannelConfig = {
+				mode: "development",
+				servers: ["server:pipeline-crew"],
+				allowedChannelPlugins: [],
+			};
+			const bind = yield* buildSessionBind({
+				role: ROLE,
+				projectRoot: "/some/other/root",
+				serverName: SERVER_NAME,
+				channels,
+			});
+			assert.deepStrictEqual(
+				[...bind.pluginDirArg],
+				[PLUGIN_DIR_FLAG, "/some/other/root/claude-plugins/pipeline-crew"],
+			);
+		}),
 	);
 
 	it.effect(
@@ -253,10 +324,18 @@ describe("standup/bind — per-session bind constructor", () => {
 			// The tier boots the session's model — a family tier is a verbatim --model alias (config.ts
 			// Tier, grounded on the 2.1.212 bundle), so tier:opus yields `--model opus`.
 			assert.deepStrictEqual([...bind.modelArg], [MODEL_FLAG, "opus"]);
-			// --model leads the argv; the channel fragment follows it, then the name (#3443). No --mcp-config.
+			// --model leads the argv; then the persona flags (#3447), the channel fragment, and the name
+			// (#3443). No --mcp-config.
 			assert.deepStrictEqual(
 				[...bind.argv],
-				[MODEL_FLAG, "opus", ...bind.channelArg, ...bind.nameArg],
+				[
+					MODEL_FLAG,
+					"opus",
+					...bind.pluginDirArg,
+					...bind.agentArg,
+					...bind.channelArg,
+					...bind.nameArg,
+				],
 			);
 		}),
 	);
@@ -298,8 +377,12 @@ describe("standup/bind — per-session bind constructor", () => {
 				});
 				assert.deepStrictEqual([...bind.modelArg], []);
 				assert.notInclude(bind.argv, MODEL_FLAG);
-				// No tier ⇒ no --model; argv is the channel fragment closed by the name (#3443).
-				assert.deepStrictEqual([...bind.argv], [...bind.channelArg, ...bind.nameArg]);
+				// No tier ⇒ no --model; argv is the persona flags (#3447) + the channel fragment closed by
+				// the name (#3443).
+				assert.deepStrictEqual(
+					[...bind.argv],
+					[...bind.pluginDirArg, ...bind.agentArg, ...bind.channelArg, ...bind.nameArg],
+				);
 			}),
 	);
 

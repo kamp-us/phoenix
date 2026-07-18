@@ -30,6 +30,7 @@
  * fail-closed guard lives at that write (register-project-scope.ts / orchestrate.ts), not here.
  */
 import {existsSync} from "node:fs";
+import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Effect, Schema} from "effect";
 import {type ChannelConfig, type Tier, tierModel} from "./config.ts";
@@ -58,6 +59,23 @@ export const MODEL_FLAG = "--model";
  * the operator-legibility symptom (#3443).
  */
 export const NAME_FLAG = "--name";
+/**
+ * Boots the crew session's plugin substrate so `--agent <role>` can resolve the role's agent-def as
+ * the session persona. `--agent` binds only an agent-def already in the launched session's resolver,
+ * and a pipeline-crew agent-def enters that resolver as a source:"plugin" def ONLY once the plugin is
+ * loaded — so without `--plugin-dir <…/claude-plugins/pipeline-crew>` the `--agent <role>` below falls
+ * through to the generic general-purpose default (the observed generic boot, #3447). The pipeline-crew
+ * plugin declares no MCP server (the crew channel MCP is wired separately via the channel flag), so a
+ * plain `--plugin-dir` adds only the agent-defs. Role → agent-def is an IDENTITY map — `CREW_ROLES`
+ * equals the agent-defs' `name:` frontmatter (ADR 0189) — so `--agent <role>` passes the role verbatim,
+ * no translation table.
+ */
+export const PLUGIN_DIR_FLAG = "--plugin-dir";
+/** Boots the session AS its role persona by resolving the plugin agent-def named `<role>` (see PLUGIN_DIR_FLAG, #3447). */
+export const AGENT_FLAG = "--agent";
+/** The pipeline-crew plugin root under a given project root — the dir `--plugin-dir` loads agent-defs from. */
+const crewPluginDir = (projectRoot: string): string =>
+	join(projectRoot, "claude-plugins/pipeline-crew");
 /** Allowlist mode: only servers named here load, gated by `allowedChannelPlugins` for plugin refs. */
 export const ALLOWLIST_CHANNEL_FLAG = "--channels";
 /** Dev mode: load channel servers not on the approved allowlist — local development only. */
@@ -120,8 +138,17 @@ export interface SessionBind {
 	 */
 	readonly nameArg: readonly [flag: string, name: string];
 	/**
-	 * The complete argv `[...modelArg, ...channelArg, ...nameArg]` the launcher passes to `claude`. It
-	 * no longer carries `--mcp-config`: the crew server now registers via the pane's project-scope
+	 * `["--plugin-dir", "<projectRoot>/claude-plugins/pipeline-crew"]` — loads the pipeline-crew plugin
+	 * so its agent-defs enter the launched session's resolver, the precondition `--agent` needs (see
+	 * PLUGIN_DIR_FLAG, #3447).
+	 */
+	readonly pluginDirArg: readonly [flag: string, dir: string];
+	/** `["--agent", "<role>"]` — boots the session AS its role persona (identity-mapped, #3447 / ADR 0189). */
+	readonly agentArg: readonly [flag: string, role: string];
+	/**
+	 * The complete argv `[...modelArg, ...pluginDirArg, ...agentArg, ...channelArg, ...nameArg]` the
+	 * launcher passes to `claude`. It boots the role persona (`--plugin-dir` + `--agent`, #3447) and no
+	 * longer carries `--mcp-config`: the crew server now registers via the pane's project-scope
 	 * `.mcp.json` (`serverConfig`), which is what the channel resolver actually reads (#3444).
 	 */
 	readonly argv: readonly string[];
@@ -258,6 +285,11 @@ export const buildSessionBind = (
 		// (AC2); a bridge is the bare singleton role. Same instance that keeps engine inboxes distinct.
 		const displayName = instance !== undefined ? `${role}-${instance}` : role;
 		const nameArg: readonly [string, string] = [NAME_FLAG, displayName];
+		// The persona boot (#3447): --plugin-dir loads the pipeline-crew plugin so --agent <role>
+		// resolves the role's agent-def instead of falling through to general-purpose. Role → agent-def
+		// is an identity map (CREW_ROLES == the agent-defs' `name:` frontmatter, ADR 0189), so pass verbatim.
+		const pluginDirArg: readonly [string, string] = [PLUGIN_DIR_FLAG, crewPluginDir(projectRoot)];
+		const agentArg: readonly [string, string] = [AGENT_FLAG, role];
 
 		return {
 			role,
@@ -267,6 +299,8 @@ export const buildSessionBind = (
 			channelArg,
 			modelArg,
 			nameArg,
-			argv: [...modelArg, ...channelArg, ...nameArg],
+			pluginDirArg,
+			agentArg,
+			argv: [...modelArg, ...pluginDirArg, ...agentArg, ...channelArg, ...nameArg],
 		};
 	});
