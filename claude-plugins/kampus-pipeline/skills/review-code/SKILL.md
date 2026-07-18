@@ -1338,7 +1338,7 @@ genuinely unavoidable, the body **MUST** first pass `pipeline-cli leak-guard sca
 if [ -f packages/pipeline-cli/src/bin.ts ]; then
   VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
 else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.1.0 verdict"     # foreign install: the published CLI
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
 fi
 
 VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"
@@ -1520,7 +1520,7 @@ straddle a head move:
 if [ -f packages/pipeline-cli/src/bin.ts ]; then
   VERDICT="node packages/pipeline-cli/src/bin.ts verdict"
 else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.1.0 verdict"
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"
 fi
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # resolve ONCE, before authoring the verdict file (mirror the PASS path)
 VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"   # per-run temp, not a fixed/PR-namespaced path (#1465)

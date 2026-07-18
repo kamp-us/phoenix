@@ -45,7 +45,7 @@ if [ -f packages/pipeline-cli/src/bin.ts ]; then
 else
   # foreign install: the PUBLISHED consolidated CLI; the pin is the single source-of-truth version
   # shared with the other skills' published-fallback (epic #994) — bump in lockstep on release.
-  DIGEST="pnpm dlx @kampus/pipeline-cli@0.1.0 ship-digest"
+  DIGEST="pnpm dlx @kampus/pipeline-cli@0.2.0 ship-digest"
 fi
 ```
 

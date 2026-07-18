@@ -144,7 +144,7 @@ re-implementing ~50 lines of `jq` inline. Resolve the tool in-repo first, publis
 if [ -f packages/pipeline-cli/src/bin.ts ]; then
   LOCK="node packages/pipeline-cli/src/bin.ts epic-lock"   # phoenix-local: the in-repo consolidated bin
 else
-  LOCK="pnpm dlx @kampus/pipeline-cli@0.1.0 epic-lock"     # foreign install: the published CLI
+  LOCK="pnpm dlx @kampus/pipeline-cli@0.2.0 epic-lock"     # foreign install: the published CLI
 fi
 
 # Acquire the two-layer lock. `epic-lock acquire` runs the WHOLE ADR-0115 protocol over $CLAUDE_CODE_SESSION_ID

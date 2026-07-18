@@ -657,7 +657,7 @@ your composed verdict body by file:
 if [ -f packages/pipeline-cli/src/bin.ts ]; then
   VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
 else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.1.0 verdict"     # foreign install: the published CLI
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
 fi
 
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
