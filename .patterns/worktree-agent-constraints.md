@@ -81,14 +81,10 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   enforced guard route below), because cd-pinning it would only relocate the mutation into
   the worktree rather than surface the mistake. The class this closes: a bare
   `git checkout <pr-head-sha>`, run after a between-calls cwd reset, executes in the
-  **primary** tree and detaches the shared `main`; and (added #2030) a bare
-  `git stash pop` / `git merge` that corrupts the shared primary's **working tree** — the
-  review-doc agent that ran `git stash pop` + `reset --hard` on the owner's checkout,
-  silently discarding its uncommitted state. That silently breaks a sibling puller's `git merge --ff-only origin/main` (it
-  stalls on a detached HEAD / non-ff), with the symptom (puller stuck, merged work not
-  propagating) far from the cause. It recurred on every review/ship agent that checked out a
-  PR head from a shared checkout (#1103, then #1494). The rule, mandatory for **every**
-  worktree/review/ship agent:
+  **primary** tree — detaching the shared `main`, or (for a bare `stash pop` / `merge`)
+  corrupting its working tree — which then stalls a sibling puller's `git merge --ff-only
+  origin/main` with the symptom (puller stuck, merged work not propagating) far from the cause.
+  The rule, mandatory for **every** worktree/review/ship agent:
   - **Capture `WT="$(git rev-parse --show-toplevel)"` once at spawn** (right after the
     opening worktree preflight passes) and run **ALL** git ops as `git -C "$WT" …`, so a
     cwd reset can never silently relocate the command into the primary tree.
@@ -102,54 +98,40 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
     `git -C "$WT" rev-parse --show-toplevel` must equal `$WT`, never the primary — exactly
     as the Step-4 fail-closed preflight asserts.
 
-  **Fix shape (the guard route is now enforced — belt *and* braces):** the prose-only
-  hardening from #1276 (the `git -C "$WT"` rule + the no-bare-checkout prohibition in the
-  agent defs and here) **did not hold** — the detach recurred twice on 2026-06-28, the day
-  after #1276 merged (#1494). That recurrence is exactly the trigger the earlier note
-  reserved ("re-open the guard route only if a recurrence shows the prose rule is
-  insufficient"), so the deferred **guard route is now taken** (#1571). The owner's
-  arm-vs-refuse ruling is **REFUSE**: `@kampus/worktree-guard`'s `pre-bash` core
-  (`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`, `pinBash`) now returns a
-  `refuse` decision — surfaced as a `permissionDecision: "deny"` — for a bare HEAD-moving
-  git op that is **not** scoped to the agent's worktree. The refusal is **scoped to guarded
-  agents**: it fires only when `$WORKTREE_ROOT` names a managed worktree (an
-  `isolation:worktree` subagent running this hook). The orchestrator's own shell carries no
-  `$WORKTREE_ROOT` and runs no such hook, so its legitimate `git checkout main`
-  (ff-pull/reattach) is **never** intercepted. The safe form the refusal points agents to —
-  `git -C "$WT" <op> …`, or `git -C "$WT" fetch origin pull/<N>/head && git -C "$WT" checkout
-  FETCH_HEAD` for a PR head — is recognized as worktree-scoped and **allowed**. The prose
-  rule above is now the **belt** to the guard's **braces**: the guard mechanically blocks the
-  bare op, the prose tells you the shape to write instead.
+  **The guard route is enforced — belt *and* braces.** The prose rule above is the belt; the
+  guard is the braces. `@kampus/worktree-guard`'s `pre-bash` core
+  (`packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`, `pinBash`) returns a `refuse`
+  decision — surfaced as a `permissionDecision: "deny"` — for a bare HEAD-moving git op that is
+  **not** scoped to the agent's worktree. The refusal is **scoped to guarded agents**: it fires
+  only when `$WORKTREE_ROOT` names a managed worktree, so the orchestrator's own shell (no
+  `$WORKTREE_ROOT`) and its legitimate `git checkout main` (ff-pull/reattach) are **never**
+  intercepted. The safe form it points agents to — `git -C "$WT" <op> …`, or `git -C "$WT" fetch
+  origin pull/<N>/head && git -C "$WT" checkout FETCH_HEAD` for a PR head — is recognized as
+  worktree-scoped and **allowed**. The prose-only rule alone did not hold (the detach recurred
+  after it shipped), which is why the mechanical guard route was taken (#1571).
 
-  **Defense-in-depth behind the guard (Unit C, #1573):** even with the guard preventing new
-  detaches, the orchestrator's main-sync is codified as a single runnable surface —
-  `pipeline-cli main-sync` (`packages/pipeline-cli/src/tools/main-sync/`) — that the driving
-  session runs **before/after a drain** instead of the hand-run
-  `git fetch origin main && git merge --ff-only origin/main`. If it finds the primary HEAD
-  already detached (a stray detach the guard didn't catch), it **auto-reattaches to `main`**
-  (`git checkout main`) before the merge, so a single stray detach can't wedge an unattended
-  overnight drain with a silent *"Not possible to fast-forward"*. The reattach is authorized
-  **only on a clean tree** — a dirty off-`main` HEAD is detect-and-surface (refuse, report the
-  dirt), never a blind `checkout` that discards work. Dry-run by default; `--execute` runs the
-  plan. See [`packages/pipeline-cli/README.md`](../packages/pipeline-cli/README.md) (the
-  `main-sync` section) for the full contract.
+  **Defense-in-depth behind the guard: `pipeline-cli main-sync`
+  (`packages/pipeline-cli/src/tools/main-sync/`).** The driving session runs it **before/after a
+  drain** instead of a hand-run `git fetch origin main && git merge --ff-only origin/main`. If it
+  finds the primary HEAD already detached (a stray detach the guard didn't catch), it
+  **auto-reattaches to `main`** before the merge — but **only on a clean tree**; a dirty off-`main`
+  HEAD is detect-and-surface (refuse, report the dirt), never a blind `checkout` that discards
+  work. Dry-run by default; `--execute` runs the plan. See
+  [`packages/pipeline-cli/README.md`](../packages/pipeline-cli/README.md) (the `main-sync`
+  section) for the full contract.
 
-  **The ref-force-move sibling (the caller-agnostic backstop, #2143 / [ADR 0160](../.decisions/0160-ref-transaction-guard-refuses-diverging-primary-main.md)):**
-  the two guards above catch *HEAD* moves by a *Bash-tool* caller — but the orchestrator/PULLER
-  role force-moved the primary's `main` **ref** (`branch -f main` / `checkout -B main` /
-  `update-ref refs/heads/main`) **outside the agent Bash path entirely**, diverging local `main`
-  from `origin/main` with a mass deletion staged (a "one `git push -f` clobbers `origin/main`"
-  loaded gun). Neither the bash-pin (disarmed with no `$WORKTREE_ROOT`; a ref-move is not in its
-  `HEAD_MOVING` set) nor a `PreToolUse` hook (never sees a non-Bash-tool caller) can reach that
-  class. The enforcement is `pipeline-cli ref-guard`
+  **The ref-force-move sibling (the caller-agnostic backstop, [ADR 0160](../.decisions/0160-ref-transaction-guard-refuses-diverging-primary-main.md)):**
+  a force-move of the primary's `main` **ref** (`branch -f main` / `checkout -B main` /
+  `update-ref refs/heads/main`) happens **outside the agent Bash path entirely**, so neither the
+  bash-pin nor a `PreToolUse` hook can reach it. `pipeline-cli ref-guard`
   (`packages/pipeline-cli/src/tools/ref-guard/`), wired via `lefthook.yml` as git's own
-  **`reference-transaction`** hook — which fires for **every** ref update regardless of caller.
-  It **refuses any `refs/heads/main` update that would make local `main` a non-fast-forward of
-  `origin/main`**, so a diverging force-move aborts at the ref boundary; the legitimate
-  `merge --ff-only origin/main` (a fast-forward) and the reattach `checkout main` (no ref move on
-  `main`) both pass. **The PULLER/orchestrator ROE, enforced by this guard: drive sync ONLY
-  through the `main-sync` fetch-inspect-`ff-only` seam — never a bare `checkout -B main` /
-  `branch -f main` / `reset` / `update-ref refs/heads/main` on the primary checkout.**
+  **`reference-transaction`** hook, fires for **every** ref update regardless of caller and
+  **refuses any `refs/heads/main` update that would make local `main` a non-fast-forward of
+  `origin/main`** — a diverging force-move aborts at the ref boundary, while a
+  `merge --ff-only origin/main` and a reattach `checkout main` both pass. **The PULLER/orchestrator
+  ROE, enforced by this guard: drive sync ONLY through the `main-sync` fetch-inspect-`ff-only`
+  seam — never a bare `checkout -B main` / `branch -f main` / `reset` / `update-ref
+  refs/heads/main` on the primary checkout.**
 
 - **Run root `pnpm` scripts as `pnpm -w <script>` (or from the worktree root),
   never from a subdir.** A root-level script (`pnpm lint`, `pnpm typecheck`, …) run
