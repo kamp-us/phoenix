@@ -22,6 +22,7 @@ import {
 	DEV_CHANNEL_FLAG,
 	MCP_CONFIG_FLAG,
 	MODEL_FLAG,
+	NAME_FLAG,
 } from "./bind.ts";
 import type {ChannelConfig} from "./config.ts";
 
@@ -69,13 +70,16 @@ describe("standup/bind — per-session bind constructor", () => {
 					"plugin:kampus:sozluk",
 				]);
 
-				// AC2: the full argv carries BOTH — the crew server is named in the flag, never .mcp.json alone.
+				// AC2: the full argv carries BOTH — the crew server is named in the flag, never .mcp.json alone —
+				// and closes with the visible-name flag (#3443); a bridge (no instance) names the bare role.
 				assert.deepStrictEqual(bind.argv, [
 					MCP_CONFIG_FLAG,
 					EXPECTED_MCP_JSON,
 					ALLOWLIST_CHANNEL_FLAG,
 					"server:pipeline-crew",
 					"plugin:kampus:sozluk",
+					NAME_FLAG,
+					ROLE,
 				]);
 			}),
 	);
@@ -104,7 +108,12 @@ describe("standup/bind — per-session bind constructor", () => {
 					"server:pipeline-crew",
 					"plugin:localdev:scratch",
 				]);
-				assert.deepStrictEqual(bind.argv, [MCP_CONFIG_FLAG, EXPECTED_MCP_JSON, ...bind.channelArg]);
+				assert.deepStrictEqual(bind.argv, [
+					MCP_CONFIG_FLAG,
+					EXPECTED_MCP_JSON,
+					...bind.channelArg,
+					...bind.nameArg,
+				]);
 			}),
 	);
 
@@ -257,10 +266,10 @@ describe("standup/bind — per-session bind constructor", () => {
 			// The tier boots the session's model — a family tier is a verbatim --model alias (config.ts
 			// Tier, grounded on the 2.1.212 bundle), so tier:opus yields `--model opus`.
 			assert.deepStrictEqual([...bind.modelArg], [MODEL_FLAG, "opus"]);
-			// --model leads the argv; the #3425 mcp-config + channel fragment follows it unchanged.
+			// --model leads the argv; the #3425 mcp-config + channel fragment follows it, then the name (#3443).
 			assert.deepStrictEqual(
 				[...bind.argv],
-				[MODEL_FLAG, "opus", ...bind.mcpConfigArg, ...bind.channelArg],
+				[MODEL_FLAG, "opus", ...bind.mcpConfigArg, ...bind.channelArg, ...bind.nameArg],
 			);
 		}),
 	);
@@ -302,8 +311,62 @@ describe("standup/bind — per-session bind constructor", () => {
 				});
 				assert.deepStrictEqual([...bind.modelArg], []);
 				assert.notInclude(bind.argv, MODEL_FLAG);
-				// argv is exactly the pre-#3423 fragment when no tier is set.
-				assert.deepStrictEqual([...bind.argv], [...bind.mcpConfigArg, ...bind.channelArg]);
+				// No tier ⇒ no --model; argv is the mcp-config + channel fragment closed by the name (#3443).
+				assert.deepStrictEqual(
+					[...bind.argv],
+					[...bind.mcpConfigArg, ...bind.channelArg, ...bind.nameArg],
+				);
+			}),
+	);
+
+	it.effect(
+		"emits --name <role> for a bridge (no instance) — the visible pane identity (#3443)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				const bind = yield* buildSessionBind({
+					role: "chief-of-staff",
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				});
+				assert.deepStrictEqual([...bind.nameArg], [NAME_FLAG, "chief-of-staff"]);
+				// the name flag rides the tail of the argv, after the channel fragment.
+				assert.deepStrictEqual([...bind.argv].slice(-2), [NAME_FLAG, "chief-of-staff"]);
+			}),
+	);
+
+	it.effect(
+		"engine sessions get --name <role>-<instance> so the N engine panes are distinctly named (AC2, #3443)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "development",
+					servers: ["server:pipeline-crew"],
+					allowedChannelPlugins: [],
+				};
+				const engineOne = yield* buildSessionBind({
+					role: "engineering-manager",
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					instance: "e-1",
+					channels,
+				});
+				const engineTwo = yield* buildSessionBind({
+					role: "engineering-manager",
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					instance: "e-2",
+					channels,
+				});
+				assert.deepStrictEqual([...engineOne.nameArg], [NAME_FLAG, "engineering-manager-e-1"]);
+				assert.deepStrictEqual([...engineTwo.nameArg], [NAME_FLAG, "engineering-manager-e-2"]);
+				// the two engine panes come up with DISTINCT visible names, never two identical roles.
+				assert.notStrictEqual(engineOne.nameArg[1], engineTwo.nameArg[1]);
 			}),
 	);
 
