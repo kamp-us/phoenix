@@ -94,7 +94,7 @@ onTermCreated(createdId);   // bumps reloadKey → the remount now reads the rea
 Live call sites:
 
 - `apps/web/src/pages/SozlukTermPage.tsx` — the fresh-slug term re-read (#817): the composer force-refetches `term(slug)` imperatively, **then** bumps `reloadKey`. The inline comment at the `fate.request` call documents the exact seam.
-- `apps/web/src/fate/useReadbackRefetch.ts` / `apps/web/src/pages/PanoPostDetail.tsx` — `network-only` driven imperatively (`fate.request`) from a confirmed state change, never via a remount. This is the sanctioned shape ([fate-live-views.md](./fate-live-views.md#read-back)).
+- `apps/web/src/fate/useReadbackRefetch.ts` / `apps/web/src/pages/PanoPostDetail.tsx` — `network-only` driven imperatively (`fate.request`) from a confirmed state change, never via a remount. This is the sanctioned shape ([fate-live-consistency.md](./fate-live-consistency.md#read-back)).
 
 **Recognizing it:** any flow that re-reads data by remounting a component (a `key`/`reloadKey` bump) after a write or navigation that changed server state, expecting the remount's `useRequest` to re-fetch. It won't — the symptom is the screen reading back the *pre-change* value (a cached `null`, a stale list) until a full reload. Drive the re-read with an imperative `fate.request(…, {mode: "network-only"})` before (or instead of) the remount.
 
