@@ -251,6 +251,7 @@ Below the untouched brief, write the plan a `write-code` fleet needs, as a
 ```markdown
 ## Plan (plan-epic)
 
+### Summary
 ### Problem & who has it
 ### What changes
 ### User stories
@@ -267,6 +268,11 @@ of this plan block.) What each section holds:
 
 **Product layer — lead with this.**
 
+- **Summary** — a plain-language, human-first lead: **2–3 sentences a reader grasps on a
+  skim** — what this epic delivers and why it matters, in prose, no jargon — before the
+  structured plan below. It **precedes, never replaces**, the product/engineering layers
+  that follow (the human-first-summary mandate from
+  [#3374](https://github.com/kamp-us/phoenix/issues/3374)).
 - **Problem & who has it** — the problem from the user's perspective: who is affected
   (include automated agents — kamp.us is a human-*and*-agent surface), and why it matters
   now. Grounded in the brief + the existing product, not invented. This is the section
