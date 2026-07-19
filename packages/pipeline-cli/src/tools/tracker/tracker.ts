@@ -6,9 +6,9 @@
  * tag plus its sole implementation `GithubTrackerLive`. `claim` (the ADR-0115
  * agent-distinguishable claim), a generic `readBack`, `applyTriage` (the label-transition
  * envelope, #3263), `createIssue` / `createComment` (the issue/comment create envelope,
- * #3264), and `postVerdict` (the ADR-0058 verdict/comment-post + read-back envelope, #3265)
- * are live; only `graduate` is still *declared* — its interface shape is fixed so the tag
- * locks before its remaining sibling Phase-3 child implements it.
+ * #3264), `postVerdict` (the ADR-0058 verdict/comment-post + read-back envelope, #3265),
+ * and `graduate` (the map/investigation graduation-close envelope, #3266) are all live —
+ * every Phase-3 verb has landed.
  *
  * Two design rules bind every signature here and are the point of the skeleton:
  *
@@ -77,19 +77,6 @@ export class RepoResolutionError extends Schema.TaggedErrorClass<RepoResolutionE
 ) {}
 
 /**
- * A declared-but-not-yet-built verb was called. `claim` / `readBack` / `applyTriage` /
- * `createIssue` / `createComment` / `postVerdict` are live; only `graduate` fails-closed
- * with this typed error until its sibling Phase-3 child implements it — never a silent
- * no-op or a throw.
- */
-export class TrackerNotImplementedError extends Schema.TaggedErrorClass<TrackerNotImplementedError>()(
-	"@kampus/tracker/TrackerNotImplementedError",
-	{
-		verb: Schema.String,
-	},
-) {}
-
-/**
  * A malformed verb judgment the caller must fix — e.g. `postVerdict` handed an unknown gate, or a
  * composed verdict body that trips `emissionDefect` (a polarity with no bindable `@ <sha>`, a
  * non-40-hex head, a machine-local path). A caller error, not an infra fault: it is raised before
@@ -103,9 +90,11 @@ export class TrackerInputError extends Schema.TaggedErrorClass<TrackerInputError
 ) {}
 
 /**
- * A verb's post-write self-verify failed: after `postVerdict` upserted the comment it re-fetched it
- * and the landed body is not a clean, in-namespace, leak-free marker. The read-back folded INTO the
- * write so a bypassed/hand-rolled body can't report a false success (ADR 0058 read-back, #3019).
+ * A verb's post-write self-verify failed: `postVerdict` re-fetched the comment it upserted and the
+ * landed body is not a clean, in-namespace, leak-free marker, or `graduate` closed the source and
+ * the read-back did not come back `state=closed`. The read-back folds INTO the write so a
+ * bypassed/hand-rolled body — or a close that silently didn't land — can't report a false success
+ * (ADR 0058 read-back, #3019).
  */
 export class TrackerVerifyError extends Schema.TaggedErrorClass<TrackerVerifyError>()(
 	"@kampus/tracker/TrackerVerifyError",
@@ -235,10 +224,31 @@ export type VerdictResult = {
 	readonly headRef: string;
 };
 
-/** A lifecycle graduation: the stage the target moves to. */
+/**
+ * A graduation-close judgment (#3266): what the source graduated into (`artifact`, a domain
+ * reference to the durable artifact(s) — an epic, an ADR, a roadmap entry, in prose) and an
+ * optional closing `note`. Domain vocabulary only — no issue-number-as-string, no REST field:
+ * the verb composes the `Graduated into <artifact>` provenance record and does the two-step
+ * close-as-completed at the boundary. Kept prose because a graduation targets *artifacts of many
+ * kinds* (an ADR / a ROADMAP entry are not tracker entities), so `artifact` is a human-readable
+ * reference, not a `TargetId`.
+ */
 export interface GraduateJudgment {
-	readonly stage: string;
+	readonly artifact: string;
+	readonly note?: string;
 }
+
+/**
+ * The `graduate` verdict — the source is now closed as completed, carrying the artifact it
+ * graduated into and the lifecycle `state` read back from the entity (so the caller sees the
+ * close that actually landed). A domain result, never a raw REST issue payload (ADR 0190).
+ */
+export type GraduateResult = {
+	readonly _tag: "graduated";
+	readonly source: TargetId;
+	readonly artifact: string;
+	readonly state: string;
+};
 
 const collect = (stream: Stream.Stream<Uint8Array, unknown>): Effect.Effect<string> =>
 	Stream.decodeText(stream).pipe(
@@ -401,6 +411,20 @@ const createCommentArgs = (repo: string, target: TargetId, body: string): Readon
 	`body=${body}`,
 ];
 
+// Close an issue as *completed* (the graduation-close, #3266) — distinct from triage's
+// `state_reason=not_planned`: the source graduated, it wasn't abandoned. Returns the updated
+// issue JSON so the landed close state is read back at the boundary.
+const closeCompletedArgs = (repo: string, target: TargetId): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"PATCH",
+	`repos/${repo}/issues/${target}`,
+	"-f",
+	"state=closed",
+	"-f",
+	"state_reason=completed",
+];
+
 const permissionArgs = (repo: string, login: string): ReadonlyArray<string> => [
 	"api",
 	`repos/${repo}/collaborators/${login}/permission`,
@@ -455,6 +479,13 @@ const decodeCreatedIssue = Schema.decodeUnknownEffect(RawCreatedIssue);
 /** The created comment as the create endpoint returns it; only its ref is read. */
 const RawCreatedComment = Schema.Struct({id: Schema.Number});
 const decodeCreatedComment = Schema.decodeUnknownEffect(RawCreatedComment);
+
+/** The closed issue as the PATCH endpoint returns it; only the landed close state is read. */
+const RawClosedIssue = Schema.Struct({
+	state: Schema.String,
+	state_reason: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
+const decodeClosedIssue = Schema.decodeUnknownEffect(RawClosedIssue);
 
 const LABEL_STATUS_PREFIX = "status:";
 const QUEUE_STATUS = "needs-triage";
@@ -739,16 +770,58 @@ const createComment = Effect.fn("Tracker.createComment")(function* (
 	return {_tag: "commented", ref: created.id} satisfies CommentResult;
 });
 
+/**
+ * Compose the graduation-provenance record from the judgment: the `Graduated into <artifact>`
+ * prefix the verb OWNS (the audit line that records source → artifact), followed by the caller's
+ * optional closing note. Owning this composition is what lets the adoption-lint (#3254) forbid the
+ * wayfinder/plan skills from hand-rolling the close — they supply only the domain reference + note.
+ */
+const composeGraduationRecord = (artifact: string, note?: string): string => {
+	const trimmed = note?.trim();
+	return trimmed ? `Graduated into ${artifact} — ${trimmed}` : `Graduated into ${artifact}`;
+};
+
+/**
+ * Graduate `target` into its durable artifact(s) and close it as completed (ADR 0190, #3266) — the
+ * map/investigation graduation-close envelope the wayfinder/plan skills hand-rolled, now one
+ * domain-shaped verb. Post the `Graduated into <artifact>` provenance comment (the source → artifact
+ * audit record), then PATCH the source closed with `state_reason=completed` (graduated, not
+ * abandoned — distinct from triage's `not_planned`). The close read-back is Schema-decoded at the
+ * boundary and folded into the write: a close that did not land `state=closed` fails
+ * `TrackerVerifyError` rather than reporting a false graduation (#3019).
+ */
+const graduate = Effect.fn("Tracker.graduate")(function* (
+	repo: string,
+	target: TargetId,
+	judgment: GraduateJudgment,
+) {
+	const record = composeGraduationRecord(judgment.artifact, judgment.note);
+	yield* runGh(createCommentArgs(repo, target, record));
+	const closed = yield* decodeClosedIssue(yield* json(closeCompletedArgs(repo, target)));
+	if (closed.state !== "closed") {
+		return yield* new TrackerVerifyError({
+			message: `graduation-close of #${target} did not land: the source read back state='${closed.state}', not 'closed' — refusing to report a graduation that didn't take (#3019)`,
+		});
+	}
+	return {
+		_tag: "graduated",
+		source: target,
+		artifact: judgment.artifact,
+		state: closed.state,
+	} satisfies GraduateResult;
+});
+
 type TrackerErrors = RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError;
 
 type PostVerdictErrors = TrackerErrors | TrackerInputError | TrackerVerifyError;
 
+type GraduateErrors = TrackerErrors | TrackerVerifyError;
+
 /**
- * `Tracker` — the shared crew tracker capability. `claim`, `readBack`, `applyTriage`,
- * `createIssue`, `createComment`, and `postVerdict` are live; only the still-declared
- * `graduate` fails `TrackerNotImplementedError` until its sibling child builds it (its
- * success type is `never` by design — a not-yet-built verb produces no value). Built by
- * `GithubTrackerLive`, whose `R` is `ChildProcessSpawner`.
+ * `Tracker` — the shared crew tracker capability. Every verb is live: `claim`, `readBack`,
+ * `applyTriage`, `createIssue`, `createComment`, `postVerdict`, and `graduate` (the
+ * map/investigation graduation-close, #3266). Built by `GithubTrackerLive`, whose `R` is
+ * `ChildProcessSpawner`.
  */
 export class Tracker extends Context.Service<
 	Tracker,
@@ -776,12 +849,9 @@ export class Tracker extends Context.Service<
 		readonly graduate: (
 			target: TargetId,
 			judgment: GraduateJudgment,
-		) => Effect.Effect<never, TrackerNotImplementedError>;
+		) => Effect.Effect<GraduateResult, GraduateErrors>;
 	}
 >()("@kampus/tracker/Tracker") {}
-
-const notImplemented = (verb: string): Effect.Effect<never, TrackerNotImplementedError> =>
-	new TrackerNotImplementedError({verb});
 
 /**
  * The live `Tracker` layer over `gh api` REST. The `ChildProcessSpawner` dependency is
@@ -813,7 +883,8 @@ export const GithubTrackerLive: Layer.Layer<
 				repo.pipe(Effect.flatMap((r) => withSpawner(createComment(r, target, judgment.body)))),
 			postVerdict: (target, judgment) =>
 				repo.pipe(Effect.flatMap((r) => withSpawner(postVerdict(r, target, judgment)))),
-			graduate: () => notImplemented("graduate"),
+			graduate: (target, judgment) =>
+				repo.pipe(Effect.flatMap((r) => withSpawner(graduate(r, target, judgment)))),
 		};
 	}),
 );

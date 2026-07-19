@@ -7,7 +7,6 @@ import {
 	type RepoResolutionError,
 	Tracker,
 	TrackerInputError,
-	TrackerNotImplementedError,
 	TrackerVerifyError,
 } from "./tracker.ts";
 
@@ -618,13 +617,76 @@ describe("Tracker.createComment — add a note over a mock gh spawner", () => {
 	);
 });
 
-describe("Tracker — the declared-but-not-yet-built verbs fail closed", () => {
-	it.effect("graduate → TrackerNotImplementedError", () =>
+describe("Tracker.graduate — the map/investigation graduation-close envelope", () => {
+	it.effect(
+		"posts the source → artifact provenance record, closes as completed, reads back → graduated",
+		() =>
+			Effect.gen(function* () {
+				const tracker = yield* Tracker;
+				const result = yield* tracker.graduate(TARGET, {
+					artifact: "epic #4242 (planned by plan-epic)",
+					note: "its diagnosis is carried forward by the epic.",
+				});
+				assert.deepStrictEqual(result, {
+					_tag: "graduated",
+					source: TARGET,
+					artifact: "epic #4242 (planned by plan-epic)",
+					state: "closed",
+				});
+			}).pipe((effect) =>
+				provide(effect, {
+					[`POST ${P}/issues/${TARGET}/comments`]: JSON.stringify({id: 6060}),
+					[`PATCH ${P}/issues/${TARGET}`]: JSON.stringify({
+						state: "closed",
+						state_reason: "completed",
+					}),
+				}),
+			),
+	);
+
+	it.effect("composes `Graduated into <artifact>` with no note when none is given", () =>
 		Effect.gen(function* () {
 			const tracker = yield* Tracker;
-			const error = yield* Effect.flip(tracker.graduate(TARGET, {stage: "triaged"}));
-			assert.isTrue(error instanceof TrackerNotImplementedError);
-			assert.strictEqual(error.verb, "graduate");
+			const result = yield* tracker.graduate(TARGET, {artifact: "#1, #2 → triage; ADR 0176"});
+			assert.deepStrictEqual(result, {
+				_tag: "graduated",
+				source: TARGET,
+				artifact: "#1, #2 → triage; ADR 0176",
+				state: "closed",
+			});
+		}).pipe((effect) =>
+			provide(effect, {
+				[`POST ${P}/issues/${TARGET}/comments`]: JSON.stringify({id: 6061}),
+				[`PATCH ${P}/issues/${TARGET}`]: JSON.stringify({
+					state: "closed",
+					state_reason: "completed",
+				}),
+			}),
+		),
+	);
+
+	it.effect(
+		"the close read-back is not `closed` → TrackerVerifyError (never a false graduation)",
+		() =>
+			Effect.gen(function* () {
+				const tracker = yield* Tracker;
+				const error = yield* Effect.flip(tracker.graduate(TARGET, {artifact: "epic #99"}));
+				assert.isTrue(error instanceof TrackerVerifyError);
+			}).pipe((effect) =>
+				provide(effect, {
+					[`POST ${P}/issues/${TARGET}/comments`]: JSON.stringify({id: 6062}),
+					// the PATCH came back still open — the folded-in read-back rejects the graduation
+					[`PATCH ${P}/issues/${TARGET}`]: JSON.stringify({state: "open", state_reason: null}),
+				}),
+			),
+	);
+
+	it.effect("a non-zero gh exit on the provenance comment → GhCommandError in the E channel", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			// no POST fixture → the comment call exits 1 → GhCommandError before any close, never a throw
+			const error = yield* Effect.flip(tracker.graduate(TARGET, {artifact: "epic #99"}));
+			assert.isTrue(error instanceof GhCommandError);
 		}).pipe((effect) => provide(effect, {})),
 	);
 });

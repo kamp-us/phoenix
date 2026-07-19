@@ -2,16 +2,18 @@
  * The `tracker` tool — `pipeline-cli tracker claim <target>` /
  * `pipeline-cli tracker read-back <target>` / `pipeline-cli tracker apply-triage <target>` /
  * `pipeline-cli tracker create-issue` / `pipeline-cli tracker create-comment <target>` /
- * `pipeline-cli tracker post-verdict <target>`.
+ * `pipeline-cli tracker post-verdict <target>` / `pipeline-cli tracker graduate <target>`.
  *
  * The CLI surface of the Wave-1 `Tracker` service (ADR 0190): `claim` posts the ADR-0115
  * agent-distinguishable claim and exits 0 only when the claim is ours; `read-back` resolves
  * and prints the current owner; `apply-triage` applies a type/priority/status classification
  * and drops the entity out of the needs-triage queue (#3263); `create-issue` files a new
  * issue and `create-comment` adds a note (#3264); `post-verdict` upserts a SHA-bound
- * ADR-0058 gate verdict comment and reads it back (#3265). Judgment-as-parameter: the
- * claiming identity, the classification, the created content, and the verdict (gate /
- * PASS|FAIL / bound head / prose) are supplied, not decided by the tool — the claim session
+ * ADR-0058 gate verdict comment and reads it back (#3265); `graduate` posts the
+ * source → artifact provenance record and closes the source as completed (#3266).
+ * Judgment-as-parameter: the claiming identity, the classification, the created content, the
+ * verdict (gate / PASS|FAIL / bound head / prose), and the graduation artifact are supplied,
+ * not decided by the tool — the claim session
  * id defaults to `$CLAUDE_CODE_SESSION_ID` (the only agent-distinguishable signal under the
  * shared `usirin` login) and `--session` overrides it for the orchestrated/delegated-token
  * path and for tests; an absent value fails closed. A create `--body` defaults to stdin, so
@@ -29,6 +31,7 @@ import {
 	type CommentResult,
 	type CreateIssueResult,
 	GithubTrackerLive,
+	type GraduateResult,
 	type ReadBackResult,
 	Tracker,
 	type TriageResult,
@@ -289,10 +292,60 @@ const postVerdict = Command.make(
 	),
 );
 
-export const trackerCommand = Command.make("tracker").pipe(
-	Command.withSubcommands([claim, readBack, applyTriage, createIssue, createComment, postVerdict]),
+// Judgment-as-parameter (#3252): what the source graduated into (`--artifact`) and an optional
+// closing note (`--note`) are supplied; the verb composes the `Graduated into <artifact>`
+// provenance record and does the two-step close-as-completed — no caller hand-rolls it.
+const artifactFlag = Flag.string("artifact").pipe(
+	Flag.withDescription(
+		"a domain reference to what the source graduated into (epic(s) / ADR / roadmap entry, prose)",
+	),
+);
+
+const noteFlag = Flag.string("note").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"optional closing prose appended after the `Graduated into <artifact>` record",
+	),
+);
+
+const reportGraduated = (target: number, result: GraduateResult): Effect.Effect<void> =>
+	Console.log(
+		`tracker: graduated #${target} into ${result.artifact} — closed as completed (state ${result.state}).`,
+	);
+
+const graduate = Command.make(
+	"graduate",
+	{target: targetArg, artifact: artifactFlag, note: noteFlag},
+	Effect.fn(function* ({target, artifact, note}) {
+		// Only carry `note` when present — `exactOptionalPropertyTypes` forbids `note: undefined`.
+		const judgment = Option.match(note, {
+			onNone: () => ({artifact}),
+			onSome: (n) => ({artifact, note: n}),
+		});
+		const result = yield* (yield* Tracker).graduate(target, judgment).pipe(
+			// A close that did not land `state=closed` fails loud, never a false graduation.
+			Effect.catchTag("@kampus/tracker/TrackerVerifyError", (error) => backOff(error.message)),
+		);
+		yield* reportGraduated(target, result);
+	}),
+).pipe(
 	Command.withDescription(
-		"The crew tracker service (ADR 0190): claim a tracker entity, read back its owner, apply a triage classification, create an issue or a comment, post a gate verdict",
+		"Graduate a source (map/investigation): post the source → artifact provenance record and close the source as completed (#3266)",
+	),
+);
+
+export const trackerCommand = Command.make("tracker").pipe(
+	Command.withSubcommands([
+		claim,
+		readBack,
+		applyTriage,
+		createIssue,
+		createComment,
+		postVerdict,
+		graduate,
+	]),
+	Command.withDescription(
+		"The crew tracker service (ADR 0190): claim a tracker entity, read back its owner, apply a triage classification, create an issue or a comment, post a gate verdict, graduate a source into its artifact",
 	),
 	Command.provide(GithubTrackerLive),
 );
