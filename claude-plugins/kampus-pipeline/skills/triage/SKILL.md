@@ -547,32 +547,21 @@ bootstrap / formats contract ([`../gh-issue-intake-formats.md`](../gh-issue-inta
 triage *applies* labels from that existing set, and must never silently auto-mint an
 off-spec label via `POST .../labels`.
 
-A triaged issue carries: the one `type:*`, one `p*`, and `status:triaged`. Remove
-`status:needs-triage` so it leaves the queue. Do it in REST calls:
+A triaged issue carries the one `type:*`, one `p*`, and `status:triaged`, and leaves the
+queue (its `status:needs-triage` removed). Apply the whole transition with the `Tracker`
+verb — the classification is the parameter, the label plumbing is the verb's:
 
 ```bash
-# add the type, priority, and triaged status
-gh api "repos/$REPO/issues/<N>/labels" \
-  -f "labels[]=type:chore" -f "labels[]=p2" -f "labels[]=status:triaged"
-# remove the needs-triage label — pass the BARE name; gh api encodes the path segment
-# (don't pre-encode the colon as %3A, or gh double-encodes it to %253A → spurious 404)
-gh api -X DELETE "repos/$REPO/issues/<N>/labels/status:needs-triage"
+pipeline-cli tracker apply-triage <N> --type <type> --p <priority>
 ```
 
-A `404 "Label does not exist"` on that DELETE is harmless **only** in one known case:
-the issue never carried `status:needs-triage` to begin with — a pre-bootstrap backlog
-issue that predates the label, which you may triage directly by number. In that case
-the label is already absent, so the goal (issue out of the queue) is met. Do **not**
-blanket-`|| true` the call: a 404 on an issue that *did* carry the label means the
-removal silently failed and the issue is still in the needs-triage queue while looking
-triaged. So if you're not certain it's the pre-bootstrap case, verify the label is
-actually gone after the call rather than swallowing the error:
-
-```bash
-gh api "repos/$REPO/issues/<N>" \
-  --jq '[.labels[].name] | index("status:needs-triage") // "removed"'
-# expect "removed"; anything else means the label is still on the issue — investigate
-```
+The verb adds the `type:` / priority / `status:triaged` labels and drops the queue label
+in one envelope (ADR 0190; `packages/pipeline-cli/src/tools/tracker/`). Dropping the queue
+label is idempotent: a `404 "Label does not exist"` when the issue never carried
+`status:needs-triage` (a pre-bootstrap issue predating the label) is tolerated, since the
+goal — issue out of the queue — is met either way. Pass `--status <stage>` to target a
+different lifecycle stage (e.g. `needs-info`); it defaults to `triaged`. Don't hand-roll
+the REST label calls — that inline envelope is exactly what the adoption lint (#3254) flags.
 
 `status:triaged` is an explicit signature only *you* apply — it tells write-code the
 issue was actually reviewed. Never let a type label alone stand in for it; a
