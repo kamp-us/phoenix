@@ -77,7 +77,7 @@ export const crewMessageKinds: ReadonlyArray<string> = [...CrewProtocol.requests
 /**
  * Resolve a wire `kind` name to the Schema payload the catalog types it as — the seam that lets
  * a boundary decode a message's `body` against its kind instead of trusting `Schema.Unknown`,
- * so the 6-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
+ * so the 7-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
  * from `CrewProtocol.requests` so it can never drift from the catalog above — the catalog *is*
  * the map. A kind outside the catalog resolves to `undefined`; the caller rejects it.
  *

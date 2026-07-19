@@ -1,5 +1,5 @@
 /**
- * The catalog-shape guarantees: the `RpcGroup` covers all 6 kinds (acceptance criterion
+ * The catalog-shape guarantees: the `RpcGroup` covers all 7 kinds (acceptance criterion
  * 1), the claim/collision-check kind is a request-response RPC with a typed reply rather
  * than fire-and-forget (criterion 4), and the whole `protocol/` module imports nothing
  * from `crew/` — the generic boundary holds (criterion 3).
