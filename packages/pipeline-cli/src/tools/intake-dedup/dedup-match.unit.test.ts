@@ -46,6 +46,28 @@ describe("tokenize", () => {
 	it("returns empty for all-noise text", () => {
 		expect(tokenize("the and for a to")).toEqual([]);
 	});
+
+	// #3255 — Turkish letters must survive tokenization; the old ASCII splitter shredded
+	// "sözlük" into "s"/"zl"/"k" (all sub-3-char) and it vanished, so a Turkish-titled
+	// duplicate silently under-flagged.
+	it("keeps a bare Turkish stem instead of shredding it on diacritics", () => {
+		expect(tokenize("sözlük")).toEqual(["sözlük"]);
+	});
+
+	it("survives every Turkish letter and its uppercase form", () => {
+		// ö ü ğ ş ç ı + uppercase Ö Ü Ğ Ş Ç and dotted-capital İ (the U+0307 casing artifact).
+		expect(tokenize("SÖZLÜK öğüt İşleri çalışma sığır")).toEqual([
+			"sözlük",
+			"öğüt",
+			"işleri",
+			"çalışma",
+			"sığır",
+		]);
+	});
+
+	it("drops Turkish function-word stopwords", () => {
+		expect(tokenize("bir sözlük için gibi")).toEqual(["sözlük"]);
+	});
 });
 
 describe("searchQuery", () => {
@@ -73,6 +95,19 @@ describe("titleScore", () => {
 
 	it("is zero for an empty token set", () => {
 		expect(titleScore("anything", [])).toBe(0);
+	});
+
+	// #3255 — agglutinative Turkish inflections share a stem with the bare form; the query
+	// stem "sözlük" must score against inflected title tokens (suffix-preserving "sözlükte"
+	// and the k→ğ consonant-mutating "sözlüğe"), which exact-token matching missed.
+	it("matches an inflected Turkish title against the bare query stem", () => {
+		expect(titleScore("Sözlükte arama çalışmıyor", ["sözlük"])).toBe(1);
+		expect(titleScore("Sözlüğe yeni giriş eklenemiyor", ["sözlük"])).toBe(1);
+	});
+
+	it("does not spuriously match short English derivational overlaps", () => {
+		// "worker"/"workflow" share only a 4-char prefix (< STEM_MIN_LENGTH) — no stem hit.
+		expect(titleScore("workflow runner is slow", ["worker"])).toBe(0);
 	});
 });
 
@@ -131,5 +166,18 @@ describe("rankCandidates", () => {
 			limit: 2,
 		});
 		expect(out).toHaveLength(2);
+	});
+
+	// #3255 — a Turkish-titled queue duplicate must surface. Before the fix its title tokenized
+	// to nothing and the query stem never matched, so the queue row was dropped (score 0) and
+	// the miss was silent.
+	it("surfaces a Turkish-titled queue duplicate against an inflected query stem", () => {
+		const out = rankCandidates({
+			queue: [q(20, "Sözlükte arama sonuçları boş"), q(21, "unrelated worker crash")],
+			search: [],
+			tokens: tokenize("Sözlüğe giriş eklenince arama bozuluyor"),
+			limit: 20,
+		});
+		expect(out.map((c) => c.number)).toEqual([20]);
 	});
 });

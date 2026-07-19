@@ -28,11 +28,15 @@ export interface Candidate {
 }
 
 /**
- * English function words + report-template scaffolding nouns that carry no dedup signal.
- * Kept deliberately small: the goal is to drop pure noise ("the", "when", "issue"), not to
+ * Function words + report-template scaffolding nouns that carry no dedup signal, in both
+ * repo languages: English (technical) and Turkish (product/brand copy, per `.glossary/LANGUAGE.md`).
+ * Turkish titles are the norm for product/brand nouns, so an English-only stoplist let Turkish
+ * function words ("bir", "için", "gibi") through as false keywords (#3255). Kept deliberately
+ * small: the goal is to drop pure noise ("the", "when", "issue" / "ve", "bir", "için"), not to
  * stem — an over-eager stoplist silently starves the search of real keywords.
  */
 const STOPWORDS: ReadonlySet<string> = new Set([
+	// English function words + report scaffolding
 	"the",
 	"and",
 	"for",
@@ -77,10 +81,45 @@ const STOPWORDS: ReadonlySet<string> = new Set([
 	"bug",
 	"report",
 	"todo",
+	// Turkish function words (conjunctions, postpositions, determiners, adverbs); the sub-3-char
+	// ones ("ve", "ile", "bu") are already length-dropped, listed for intent.
+	"ve",
+	"ile",
+	"veya",
+	"ya",
+	"ama",
+	"fakat",
+	"ancak",
+	"çünkü",
+	"için",
+	"gibi",
+	"kadar",
+	"göre",
+	"bir",
+	"birkaç",
+	"her",
+	"hem",
+	"daha",
+	"çok",
+	"ise",
+	"yani",
+	"üzere",
+	"sonra",
+	"önce",
 ]);
 
 /** Tokens shorter than this carry no discriminating signal (`a`, `to`, `id`). */
 const MIN_TOKEN_LENGTH = 3;
+
+/**
+ * A query token shares a stem with a title token when their common prefix is at least this
+ * long — the relaxation that lets agglutinative Turkish inflections match a bare stem
+ * ("sözlük" / "sözlükte" / "sözlüğe", the last also crossing the k→ğ consonant mutation, all
+ * share the "sözlü" prefix). Set above typical English derivational overlap ("work"/"workflow"
+ * share only 4) so exact-token English behavior is preserved: relaxed matching only *adds*
+ * stem hits, never removes an exact one (#3255).
+ */
+const STEM_MIN_LENGTH = 5;
 
 /**
  * Cap on keyword count in the built query. A GitHub search AND-joins its terms, so an
@@ -91,13 +130,21 @@ const MAX_QUERY_TOKENS = 12;
 
 /**
  * Split free text into the deterministic keyword set the search half runs on: lowercase,
- * break on any non-alphanumeric run, drop stopwords and sub-`MIN_TOKEN_LENGTH` tokens,
- * dedupe preserving first-seen order, cap at `MAX_QUERY_TOKENS`.
+ * break on any run of non-letter/non-number characters, drop stopwords and sub-`MIN_TOKEN_LENGTH`
+ * tokens, dedupe preserving first-seen order, cap at `MAX_QUERY_TOKENS`.
+ *
+ * The split class is Unicode `\p{L}\p{N}` (`u` flag), not the old ASCII `[a-z0-9]`, so Turkish
+ * letters (ö ü ğ ş ç ı and their uppercase forms) are word characters that survive tokenization
+ * instead of shredding a stem into sub-`MIN_TOKEN_LENGTH` fragments — the root cause of #3255,
+ * where "sözlük" split into "s"/"zl"/"k" and vanished entirely. The lone casing artifact is
+ * dotted-capital İ, which default `.toLowerCase()` maps to "i" + U+0307 (combining dot); we strip
+ * that combining dot so "İşleri" tokenizes to "işleri" rather than breaking at the mark.
  */
 export const tokenize = (text: string): ReadonlyArray<string> => {
 	const seen = new Set<string>();
 	const out: Array<string> = [];
-	for (const raw of text.toLowerCase().split(/[^a-z0-9]+/)) {
+	const normalized = text.toLowerCase().replace(/\u0307/g, "");
+	for (const raw of normalized.split(/[^\p{L}\p{N}]+/u)) {
 		if (raw.length < MIN_TOKEN_LENGTH || STOPWORDS.has(raw) || seen.has(raw)) continue;
 		seen.add(raw);
 		out.push(raw);
@@ -115,12 +162,29 @@ export const tokenize = (text: string): ReadonlyArray<string> => {
 export const searchQuery = (repo: string, tokens: ReadonlyArray<string>): string =>
 	[`repo:${repo}`, "is:issue", "is:open", ...tokens].join(" ");
 
-/** Count how many of `tokens` appear as a token of `title` — the title-overlap rank score. */
+/** Length of the shared leading run of `a` and `b` — the stem-overlap primitive. */
+const commonPrefixLength = (a: string, b: string): number => {
+	const n = Math.min(a.length, b.length);
+	let i = 0;
+	while (i < n && a[i] === b[i]) i += 1;
+	return i;
+};
+
+/**
+ * Whether a query token and a title token name the same stem: an exact hit, or a shared
+ * prefix of at least `STEM_MIN_LENGTH`. The prefix arm is what surfaces agglutinative Turkish
+ * inflections against a bare stem ("sözlük" vs "sözlükte"/"sözlüğe") without a full morphological
+ * analyzer; the length floor keeps it off short English derivational overlaps (#3255).
+ */
+export const tokensRelated = (a: string, b: string): boolean =>
+	a === b || commonPrefixLength(a, b) >= STEM_MIN_LENGTH;
+
+/** Count how many of `tokens` share a stem with a token of `title` — the title-overlap score. */
 export const titleScore = (title: string, tokens: ReadonlyArray<string>): number => {
 	if (tokens.length === 0) return 0;
-	const titleTokens = new Set(tokenize(title));
+	const titleTokens = tokenize(title);
 	let score = 0;
-	for (const t of tokens) if (titleTokens.has(t)) score += 1;
+	for (const t of tokens) if (titleTokens.some((tt) => tokensRelated(t, tt))) score += 1;
 	return score;
 };
 
