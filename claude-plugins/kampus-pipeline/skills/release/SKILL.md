@@ -176,7 +176,7 @@ missing. Run it for the resolved key **before the dry-run flip**:
 if [ -f packages/pipeline-cli/src/bin.ts ]; then
   REACH="node packages/pipeline-cli/src/bin.ts reachability-guard check"
 else
-  REACH="pnpm dlx @kampus/pipeline-cli@0.1.0 reachability-guard check"
+  REACH="pnpm dlx @kampus/pipeline-cli@0.2.0 reachability-guard check"
 fi
 
 # HARD-REFUSE the flip on a non-zero exit — the report (on stderr) names which assertion failed

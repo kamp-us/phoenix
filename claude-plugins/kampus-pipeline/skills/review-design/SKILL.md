@@ -577,7 +577,7 @@ GitHub-hosted screenshot URLs so a human can see what you judged.
 if [ -f packages/pipeline-cli/src/bin.ts ]; then
   VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
 else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.1.0 verdict"     # foreign install: the published CLI
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
 fi
 upsert() {   # $1 = path to the composed verdict body → prints the upserted comment id; fails loud on a malformed marker
   local out

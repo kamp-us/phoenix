@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/pipeline-cli",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "pipeline-cli — the single subcommand-router home all pipeline tooling folds into; `pipeline-cli <tool> …` dispatches to a registered tool (epic #994)",
 	"license": "MIT",
 	"repository": {

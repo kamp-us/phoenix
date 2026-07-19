@@ -17,7 +17,7 @@ set -u
 
 # The one version pin (single source: also read by guard.sh's data dir; the
 # skills' published-fallback pins must match). Bump to reinstall on next SessionStart.
-PIN="0.1.0"
+PIN="0.2.0"
 PKG="@kampus/pipeline-cli"
 
 . "$(dirname "${BASH_SOURCE[0]}")/resolve-data-dir.sh"

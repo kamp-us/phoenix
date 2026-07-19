@@ -31,7 +31,7 @@ Capture one decision per file in `.decisions/`. There is no committed index (ADR
    if [ -f packages/pipeline-cli/src/bin.ts ]; then
      node packages/pipeline-cli/src/bin.ts decisions-index compact   # phoenix-local: the in-repo consolidated bin
    else
-     pnpm dlx @kampus/pipeline-cli@0.1.0 decisions-index compact      # foreign install: the published consolidated CLI (single-source pin)
+     pnpm dlx @kampus/pipeline-cli@0.2.0 decisions-index compact      # foreign install: the published consolidated CLI (single-source pin)
    fi
    ```
    The published CLI operates on the local `.decisions/` filesystem (no GitHub target), so there is no `$REPO`/`$CLAUDE_PIPELINE_REPO` resolution here — it is purely the in-repo-vs-published invocation swap.
@@ -123,4 +123,4 @@ On a **PR**, `.github/workflows/decisions-index.yml` runs `decisions-index valid
 - Date is today (`date` command if unsure).
 - Never edit an accepted ADR's decision text after the fact — supersede instead.
 - **Always resolve the vocabulary-impact outcome** (Step 5 / [§Vocabulary impact](#vocabulary-impact--catch-a-coined-or-redefined-term-at-its-source)): every ADR ends with *either* a term surfaced to `.glossary/TERMS.md` *or* an explicit recorded "no vocabulary impact." Never leave it unstated — the explicit "none" is a real outcome, not a skip.
-- Your PR adds only the ADR file (plus the superseded file's status edit); there is no committed index. Optional local render of the on-demand compact map (nothing to stage): `node packages/pipeline-cli/src/bin.ts decisions-index compact` when the consolidated bin is on disk, else `pnpm dlx @kampus/pipeline-cli@0.1.0 decisions-index compact`.
+- Your PR adds only the ADR file (plus the superseded file's status edit); there is no committed index. Optional local render of the on-demand compact map (nothing to stage): `node packages/pipeline-cli/src/bin.ts decisions-index compact` when the consolidated bin is on disk, else `pnpm dlx @kampus/pipeline-cli@0.2.0 decisions-index compact`.

@@ -128,7 +128,7 @@ in-repo first, published fallback (ADR 0064) — then branch on its exit status:
 if [ -f packages/pipeline-cli/src/bin.ts ]; then
   LOCK="node packages/pipeline-cli/src/bin.ts epic-lock"   # phoenix-local: the in-repo consolidated bin
 else
-  LOCK="pnpm dlx @kampus/pipeline-cli@0.1.0 epic-lock"     # foreign install: the published CLI (same pin as $GATE)
+  LOCK="pnpm dlx @kampus/pipeline-cli@0.2.0 epic-lock"     # foreign install: the published CLI (same pin as $GATE)
 fi
 
 # Acquire the two-layer lock. `epic-lock acquire` runs the WHOLE ADR-0115 protocol over $CLAUDE_CODE_SESSION_ID
@@ -221,7 +221,7 @@ else
   # foreign install: run the PUBLISHED consolidated CLI. The pin is the single source-of-truth
   # version (`install.sh`'s PIN + the other skills' published-fallback share it; epic #994 / #1003);
   # bump all in lockstep when pipeline-cli releases. Pin a concrete `@<version>` to reproduce a verdict.
-  GATE="pnpm dlx @kampus/pipeline-cli@0.1.0 epic-ledger"
+  GATE="pnpm dlx @kampus/pipeline-cli@0.2.0 epic-ledger"
 fi
 ```
 
