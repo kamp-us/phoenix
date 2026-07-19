@@ -191,41 +191,44 @@ pre-push:
 # pnpm's virtual store holds RELATIVE links into workspace source
 # (node_modules/.pnpm/node_modules/@kampus/* -> ../../../../packages/*), so a shared store
 # resolves a consumer's @kampus/* dep to the PRIMARY checkout's source, not this worktree's
-# edits. `pnpm install` rebuilds those links worktree-local — but it needs node/pnpm, which
-# the harness PATH-stripped spawn env lacks (#1256; see ADR 0109). Two regimes:
-#  * full PATH (a normal `git worktree add`): pin pnpm@10.27.0 and install — version-safe
-#    (never the stale per-machine pnpm 8 the lockfile rejects) and workspace-correct.
+# edits. `pnpm install` rebuilds those links worktree-local — but it needs a pnpm at the
+# pinned major, which the environment may not put on PATH (#1256; see ADR 0109). Regimes:
+#  * corepack present: `corepack pnpm@PIN` — honors packageManager, version-exact.
+#  * an on-PATH pnpm already at the pinned major: use it directly.
+#  * only node+npm (the #3507 case): Node >=25 unbundles corepack and the machine's PATH
+#    pnpm is a stale pnpm 8 the lockfile rejects, so BOTH tiers above miss — but npm ships
+#    with node, so run the pin via `npm exec pnpm@PIN`, which fetches+runs the exact pinned
+#    pnpm with no per-machine shim. This is what keeps a worktree spawn's pre-push gates
+#    runnable instead of forcing --no-verify + a node_modules symlink into the primary.
 #  * harness stripped-PATH spawn env (#787/#789): lefthook itself is unresolvable there, so
 #    the hook never runs and creation never aborts; when this body DOES run with no toolchain
-#    it is a clean SKIP (exit 0) and prints the one command to provision later under full PATH.
-# No per-machine path is hardcoded (volta/Library pnpm shims are local — committing them would
+#    at all it is a clean SKIP (exit 0) and prints the one command to provision later.
+# The pin is read from the root packageManager field (single source of truth, no drift), and
+# no per-machine path is hardcoded (volta/Library pnpm shims are local — committing them would
 # break other devs/CI); the store is resolved by pnpm itself.
 post-checkout:
   commands:
     bootstrap-deps:
       run: |
-        PIN="10.27.0"
-        # Resolve a pnpm at the pinned major; prefer corepack (it honors packageManager).
+        # Read the pin from packageManager (pnpm@X.Y.Z) without a node dependency — this hook
+        # may run before the toolchain is warm; fall back to the literal if unparseable.
+        PIN=$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"pnpm@\([^"+]*\).*/\1/p' package.json 2>/dev/null)
+        [ -z "$PIN" ] && PIN="10.27.0"
+        MAJOR="${PIN%%.*}"
+        # Resolve a runner that executes pnpm at the pinned major (never the stale pnpm 8 the
+        # lockfile rejects, #1256). Tiers, most-preferred first — see the block comment above.
         if command -v corepack >/dev/null 2>&1; then
           corepack prepare "pnpm@${PIN}" --activate >/dev/null 2>&1 || true
           set -- corepack "pnpm@${PIN}"
-        elif command -v pnpm >/dev/null 2>&1; then
+        elif command -v pnpm >/dev/null 2>&1 && [ "$(pnpm --version 2>/dev/null | cut -d. -f1)" = "$MAJOR" ]; then
           set -- pnpm
+        elif command -v npm >/dev/null 2>&1; then
+          set -- npm exec --yes "pnpm@${PIN}" --
         else
-          echo "bootstrap-deps: no pnpm/corepack on PATH (stripped hook exec env, e.g. a harness 'git worktree add') — skipping." >&2
-          echo "bootstrap-deps: provision later with a full PATH: \`corepack pnpm@${PIN} install --prefer-offline --ignore-scripts\` (or \`pnpm install\`)." >&2
+          echo "bootstrap-deps: no corepack, no pinned pnpm, and no npm on PATH (stripped hook exec env, e.g. a harness 'git worktree add') — skipping." >&2
+          echo "bootstrap-deps: provision later with a full PATH: \`npm exec --yes pnpm@${PIN} -- install --prefer-offline --ignore-scripts\`." >&2
           exit 0
         fi
-        # Never install under the wrong major — the stale per-machine pnpm 8 the lockfile rejects (#1256).
-        VER="$("$@" --version 2>/dev/null || echo 0)"
-        case "$VER" in
-          10.*) ;;
-          *)
-            echo "bootstrap-deps: resolved pnpm $VER (not the pinned ${PIN} major) and corepack can't pin it — skipping rather than install under the wrong toolchain (#1256)." >&2
-            echo "bootstrap-deps: provision with \`corepack pnpm@${PIN} install\` once corepack is available." >&2
-            exit 0
-            ;;
-        esac
         # --ignore-scripts: a worktree shares .git/hooks (the common dir), so firing `prepare`
         # (lefthook install) from here would rewrite the SHARED hooks — provision deps, not lifecycle.
         "$@" install --prefer-offline --ignore-scripts
