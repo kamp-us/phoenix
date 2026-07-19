@@ -19,7 +19,6 @@ import {
 	PANO_DRAFT_SAVE,
 	PANO_FEED_EDGE_CACHE,
 	PANO_OPTIMISTIC_COMMENT_ADD,
-	PANO_OPTIMISTIC_COMMENT_DELETE,
 	PANO_OPTIMISTIC_POST_DELETE,
 	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_ADMIN_CONSOLE,
@@ -105,7 +104,6 @@ export {
 	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
 	PANO_OPTIMISTIC_COMMENT_ADD,
-	PANO_OPTIMISTIC_COMMENT_DELETE,
 	PANO_OPTIMISTIC_POST_DELETE,
 	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_AUTHORSHIP_LOOP,
@@ -553,43 +551,6 @@ export const panoOptimisticCommentAddFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("pano_optimistic_comment_add", {
 		appId,
 		...PANO_OPTIMISTIC_COMMENT_ADD_FLAG,
-	});
-
-/**
- * The optimistic `comment.delete` (instant leaf-drop / `[silindi]` tombstone)
- * containment flag config (#1680, epic #1637). Default-OFF so it reaches production
- * dark — with it off, a deleted comment leaves/tombstones the thread only when the
- * server `deleteEdge` / `live.update` frame (or the delete-side read-back) lands,
- * exactly as today; flipping it on applies the reply-aware optimistic write per ADR
- * 0125 (D1). Flipping it on is the human release act (ADR 0083).
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_OPTIMISTIC_COMMENT_ADD_FLAG`).
- *
- * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
- * asks for):
- *   - owner:           pano
- *   - originating:     #1680 (epic: optimistic content mutations, #1637)
- *   - removal trigger: once optimistic comment-delete graduates to on at 100% and
- *                      stable for one release, retire the flag and inline the path.
- */
-export const PANO_OPTIMISTIC_COMMENT_DELETE_FLAG = {
-	key: PANO_OPTIMISTIC_COMMENT_DELETE,
-	description:
-		"optimistic comment.delete (instant leaf-drop / [silindi] tombstone) dark-ship (#1680, epic #1637). owner: pano. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const panoOptimisticCommentDeleteFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("pano_optimistic_comment_delete", {
-		appId,
-		...PANO_OPTIMISTIC_COMMENT_DELETE_FLAG,
 	});
 
 /**

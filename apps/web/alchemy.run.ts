@@ -63,7 +63,6 @@ import {
 	panoDraftSaveFlag,
 	panoFeedEdgeCacheFlag,
 	panoOptimisticCommentAddFlag,
-	panoOptimisticCommentDeleteFlag,
 	panoOptimisticPostDeleteFlag,
 	panoOptimisticSubmitFlag,
 	panoStampWaveFlag,
@@ -123,9 +122,6 @@ export default Alchemy.Stack(
 		// The optimistic comment.add dark-ship flag, default-off (#1678, epic #1637) —
 		// gates the instant nested-thread insert (ADR 0125 A1) until a human release.
 		yield* panoOptimisticCommentAddFlag(flagship.appId);
-		// The optimistic comment.delete dark-ship flag, default-off (#1680, epic #1637)
-		// — gates the reply-aware leaf-drop / tombstone delete (ADR 0125 D1) until release.
-		yield* panoOptimisticCommentDeleteFlag(flagship.appId);
 		// The optimistic definition.add dark-ship flag, default-off (#1679, epic #1637)
 		// — gates the nested-connection client-append (ADR 0125) until a human release.
 		yield* optimisticDefinitionAddFlag(flagship.appId);

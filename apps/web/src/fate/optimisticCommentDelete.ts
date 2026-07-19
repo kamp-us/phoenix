@@ -21,10 +21,6 @@
  * the tombstone (`live.update`, an idempotent field write over the same `changed`
  * set) or shrinks it (`deleteEdge`), never contradicts. Rollback rides fate's
  * snapshot/restore on reject.
- *
- * Gated behind the default-off `pano-optimistic-comment-delete` flag (#1680; ADR
- * 0083) at the call site: off ⇒ no optimistic write, the thread waits for the server
- * frame / read-back exactly as today.
  */
 import {type EntityId, type List, type Snapshot, toEntityId} from "@nkzw/fate";
 
