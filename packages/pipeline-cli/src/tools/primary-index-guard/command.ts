@@ -21,9 +21,8 @@
  * clean allow.
  */
 import {execFileSync} from "node:child_process";
-import {resolve} from "node:path";
 import {appendRecord, defaultLogPath, parseNameStatus} from "@kampus/primary-index-tripwire";
-import {Console, Effect, Option} from "effect";
+import {Console, Effect, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {decidePrimaryIndexCommit, MASS_DELETION_BLOCK_THRESHOLD} from "./primary-index-guard.ts";
 
@@ -54,16 +53,21 @@ const stagedDeletions = (): string => {
  * shared git-common-dir on the primary, differs in a linked worktree (the same signal write-code's
  * worktree preflight and ref-guard use). Indeterminate ⇒ `false` (fail-OPEN: a checkout we cannot
  * prove is the primary is not blocked, so a worktree agent is never false-refused).
+ *
+ * Path normalization goes through the Effect `Path` seam (over the bin's `NodeServices.layer`);
+ * git IO stays a raw read-only subprocess (the subprocess seam is a separate migration —
+ * `.patterns/effect-platform-access.md` / `.patterns/effect-process-cli-shell.md`).
  */
-const resolvePrimaryCheckout = (): boolean => {
+const resolvePrimaryCheckout = Effect.fn(function* () {
+	const path = yield* Path.Path;
 	const gd = runGit(["rev-parse", "--path-format=absolute", "--git-dir"]);
 	const cd = runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
 	if (!gd.ok || !cd.ok) return false;
 	const gitDir = gd.stdout.trim();
 	const commonDir = cd.stdout.trim();
 	if (gitDir === "" || commonDir === "") return false;
-	return resolve(gitDir) === resolve(commonDir);
-};
+	return path.resolve(gitDir) === path.resolve(commonDir);
+});
 
 const thresholdFlag = Flag.integer("threshold").pipe(
 	Flag.withDefault(MASS_DELETION_BLOCK_THRESHOLD),
@@ -82,7 +86,7 @@ const preCommit = Command.make(
 	{threshold: thresholdFlag, log: logFlag},
 	Effect.fn(function* ({threshold, log}) {
 		const decision = decidePrimaryIndexCommit({
-			onPrimaryCheckout: resolvePrimaryCheckout(),
+			onPrimaryCheckout: yield* resolvePrimaryCheckout(),
 			staged: parseNameStatus(stagedDeletions()),
 			cwd: process.cwd(),
 			agentType: process.env.CLAUDE_CODE_AGENT ?? "",

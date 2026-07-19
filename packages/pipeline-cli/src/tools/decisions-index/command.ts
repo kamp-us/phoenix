@@ -32,11 +32,8 @@
  * each subcommand's handler so the contract survives folding into the shared
  * `pipeline-cli` bin (which provides only `NodeServices.layer`, no per-tool catch).
  */
-import {existsSync} from "node:fs";
-import {dirname, join, resolve} from "node:path";
-import {Effect, Option} from "effect";
+import {Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "./decisions-index.ts";
 import type {CheckFailed} from "./gate.ts";
 import {checkIndex, compactIndex, generateIndex, nextIndex, validateAdrs} from "./gate.ts";
 
@@ -55,16 +52,28 @@ const ROOT_MARKERS = [DECISIONS_DIR, "pnpm-workspace.yaml", ".git"] as const;
  * `.decisions` there; this is foreign-repo-safe (no phoenix path hardcoded) and
  * keeps CI working (it runs from the root, where cwd === root). If no marker is
  * found we fall back to cwd's `.decisions` — the pre-fix behavior.
+ *
+ * The marker probes go through the `FileSystem`/`Path` seam (over the bin's
+ * `NodeServices.layer`), so this resolver is testable off real disk
+ * (.patterns/effect-platform-access.md). Mirrors the pure upward walk (dirname to the
+ * fixpoint), but `fs.exists` yields an Effect so the walk lives here; a probe fault
+ * falls through as false, matching the former `existsSync`.
  */
-const defaultDecisionsDir = (from: string = process.cwd()): string => {
-	const start = resolve(from);
-	const root = findRootDir(
-		start,
-		(dir) => ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
-		dirname,
-	);
-	return join(root ?? start, DECISIONS_DIR);
-};
+const defaultDecisionsDir = Effect.fn(function* (from: string = process.cwd()) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const start = path.resolve(from);
+	let dir = start;
+	for (;;) {
+		for (const marker of ROOT_MARKERS) {
+			if (yield* fs.exists(path.join(dir, marker)).pipe(Effect.orElseSucceed(() => false)))
+				return path.join(dir, DECISIONS_DIR);
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) return path.join(start, DECISIONS_DIR);
+		dir = parent;
+	}
+});
 
 // Optional, not defaulted: an absent --dir resolves to the repo-root `.decisions`
 // (see `defaultDecisionsDir`); a passed --dir is honored verbatim, relative to cwd.
@@ -75,8 +84,10 @@ const dirFlag = Flag.string("dir").pipe(
 	),
 );
 
-const resolveDir = (dir: Option.Option<string>): string =>
-	Option.getOrElse(dir, () => defaultDecisionsDir());
+const resolveDir = (
+	dir: Option.Option<string>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+	Option.match(dir, {onNone: () => defaultDecisionsDir(), onSome: Effect.succeed});
 
 // CheckFailed is the expected gate-fail signal — print its reason on stderr and exit
 // non-zero WITHOUT a stack trace; genuine crashes (IoError, etc.) still get the
@@ -93,7 +104,8 @@ const compact = Command.make(
 	"compact",
 	{dir: dirFlag},
 	Effect.fn(function* ({dir: dirOpt}) {
-		yield* compactIndex(resolveDir(dirOpt)).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+		const dir = yield* resolveDir(dirOpt);
+		yield* compactIndex(dir).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
 	}),
 ).pipe(
 	Command.withDescription(
@@ -105,7 +117,8 @@ const next = Command.make(
 	"next",
 	{dir: dirFlag},
 	Effect.fn(function* ({dir: dirOpt}) {
-		yield* nextIndex(resolveDir(dirOpt)).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+		const dir = yield* resolveDir(dirOpt);
+		yield* nextIndex(dir).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
 	}),
 ).pipe(
 	Command.withDescription(
@@ -117,7 +130,8 @@ const generate = Command.make(
 	"generate",
 	{dir: dirFlag},
 	Effect.fn(function* ({dir: dirOpt}) {
-		yield* generateIndex(resolveDir(dirOpt)).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+		const dir = yield* resolveDir(dirOpt);
+		yield* generateIndex(dir).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
 	}),
 ).pipe(Command.withDescription("Regenerate .decisions/index.md from the ADR files"));
 
@@ -125,7 +139,8 @@ const validate = Command.make(
 	"validate",
 	{dir: dirFlag},
 	Effect.fn(function* ({dir: dirOpt}) {
-		yield* validateAdrs(resolveDir(dirOpt)).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+		const dir = yield* resolveDir(dirOpt);
+		yield* validateAdrs(dir).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
 	}),
 ).pipe(
 	Command.withDescription(
@@ -137,7 +152,8 @@ const check = Command.make(
 	"check",
 	{dir: dirFlag},
 	Effect.fn(function* ({dir: dirOpt}) {
-		yield* checkIndex(resolveDir(dirOpt)).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+		const dir = yield* resolveDir(dirOpt);
+		yield* checkIndex(dir).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
 	}),
 ).pipe(
 	Command.withDescription("Verify the committed index.md is fresh and has no duplicate ADR id"),

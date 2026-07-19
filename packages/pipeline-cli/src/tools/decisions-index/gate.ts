@@ -13,9 +13,7 @@
  * rewrites the index. A directory/file IO failure is an `IoError` (also non-zero —
  * both failures, undistinguished, per the bin's contract).
  */
-import {readdirSync, readFileSync, writeFileSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {
 	type AdrFile,
@@ -39,16 +37,28 @@ export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFa
 	reason: Schema.String,
 }) {}
 
-/** Read every ADR file (NNNN[a]-slug.md) in `dir`, excluding the generated index. */
-export const readAdrFiles = (dir: string): Effect.Effect<ReadonlyArray<AdrFile>, IoError> =>
-	Effect.try({
-		try: () =>
-			readdirSync(dir)
-				.filter((f) => f !== INDEX_FILE && ADR_FILE.test(f))
-				.sort()
-				.map((file) => ({file, text: readFileSync(join(dir, file), "utf8")})),
-		catch: (cause) => new IoError({path: dir, cause}),
-	});
+/**
+ * Read every ADR file (NNNN[a]-slug.md) in `dir`, excluding the generated index.
+ *
+ * The directory list + reads go through the Effect `FileSystem`/`Path` seam (over the
+ * bin's `NodeServices.layer`), so a gate `unit` test scripts an in-memory `.decisions`
+ * dir instead of touching real disk (.patterns/effect-platform-access.md); a fs fault
+ * folds `PlatformError` → the `IoError` this gate carries. This is the one why-note for
+ * the file's platform-seam migration — the writers/readers below follow the same shape.
+ */
+export const readAdrFiles = (
+	dir: string,
+): Effect.Effect<ReadonlyArray<AdrFile>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const files = (yield* fs.readDirectory(dir))
+			.filter((f) => f !== INDEX_FILE && ADR_FILE.test(f))
+			.sort();
+		return yield* Effect.forEach(files, (file) =>
+			fs.readFileString(path.join(dir, file), "utf8").pipe(Effect.map((text) => ({file, text}))),
+		);
+	}).pipe(Effect.mapError((cause) => new IoError({path: dir, cause})));
 
 /** Fold a builder's throw (a duplicate id or a malformed file) into a CheckFailed. */
 const toGateFail = (build: () => string): Effect.Effect<string, CheckFailed> =>
@@ -84,21 +94,26 @@ export const buildNextNumber = (
  * index is regenerated and committed on merge to main instead (the `decisions-index`
  * workflow's push job). The built markdown is discarded — validation is the only effect.
  */
-export const validateAdrs = (dir: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const validateAdrs = (
+	dir: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		yield* readAdrFiles(dir).pipe(Effect.flatMap(build));
 		yield* Console.log("decisions-index: ADR files valid (no duplicate or mismatched id)");
 	});
 
 /** Rewrite `<dir>/index.md` from the ADR files. */
-export const generateIndex = (dir: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const generateIndex = (
+	dir: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
 		const markdown = yield* readAdrFiles(dir).pipe(Effect.flatMap(build));
-		const target = join(dir, INDEX_FILE);
-		yield* Effect.try({
-			try: () => writeFileSync(target, markdown),
-			catch: (cause) => new IoError({path: target, cause}),
-		});
+		const target = path.join(dir, INDEX_FILE);
+		yield* fs
+			.writeFileString(target, markdown)
+			.pipe(Effect.mapError((cause) => new IoError({path: target, cause})));
 		yield* Console.log(`decisions-index: wrote ${target}`);
 	});
 
@@ -108,7 +123,9 @@ export const generateIndex = (dir: string): Effect.Effect<void, IoError | CheckF
  * derives from the ADR frontmatter with no committed-file dependency, so it never
  * drifts and needs no regenerate step. `Console.log` writes the map to stdout.
  */
-export const compactIndex = (dir: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const compactIndex = (
+	dir: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const map = yield* readAdrFiles(dir).pipe(Effect.flatMap(buildCompactMap));
 		yield* Console.log(map);
@@ -121,7 +138,9 @@ export const compactIndex = (dir: string): Effect.Effect<void, IoError | CheckFa
  * on an already-broken tree (duplicate / mismatched id) rather than allocate over it —
  * the same fold `validate` uses, so `next` and `validate` never disagree.
  */
-export const nextIndex = (dir: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const nextIndex = (
+	dir: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const next = yield* readAdrFiles(dir).pipe(Effect.flatMap(buildNextNumber));
 		yield* Console.log(next);
@@ -132,14 +151,15 @@ export const nextIndex = (dir: string): Effect.Effect<void, IoError | CheckFaile
  * (stale index or duplicate id). A missing/unreadable committed index reads as
  * empty, so it never matches a non-empty build → stale.
  */
-export const checkIndex = (dir: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const checkIndex = (
+	dir: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
 		const expected = yield* readAdrFiles(dir).pipe(Effect.flatMap(build));
-		const target = join(dir, INDEX_FILE);
-		const committed = yield* Effect.try({
-			try: () => readFileSync(target, "utf8"),
-			catch: () => "",
-		}).pipe(Effect.orElseSucceed(() => ""));
+		const target = path.join(dir, INDEX_FILE);
+		const committed = yield* fs.readFileString(target, "utf8").pipe(Effect.orElseSucceed(() => ""));
 		if (committed === expected) {
 			yield* Console.log("decisions-index: index.md is up to date");
 			return;

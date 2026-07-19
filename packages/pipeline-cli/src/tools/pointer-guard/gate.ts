@@ -26,11 +26,14 @@
  * an `IoError` (also non-zero — both failures, undistinguished, per the bin's contract).
  */
 import {execFileSync} from "node:child_process";
-import {existsSync, readFileSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
-import {findStalePointersIn, renderReport, type StalePointer} from "./pointer-guard.ts";
+import {
+	extractPathRefs,
+	findStalePointersIn,
+	renderReport,
+	type StalePointer,
+} from "./pointer-guard.ts";
 
 /** A directory/file/git IO failure: the run couldn't complete. */
 export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
@@ -75,21 +78,40 @@ const isGitIgnored = (root: string, path: string): boolean => {
 	}
 };
 
-/** Scan every git-tracked `CLAUDE.md` under `root` and collect the stale pointers. */
+/**
+ * Scan every git-tracked `CLAUDE.md` under `root` and collect the stale pointers.
+ *
+ * File reads + on-disk probes route through the Effect `FileSystem`/`Path` seam (over
+ * the bin's `NodeServices.layer`), so a gate `unit` test scripts an in-memory repo
+ * instead of touching real disk (.patterns/effect-platform-access.md); a read fault
+ * folds `PlatformError` → `IoError`. The pure scanner (`findStalePointersIn`) filters
+ * by a *synchronous* `exists` predicate, which the async fs seam can't be inline — so
+ * existence is precomputed per referenced path here and fed to the scanner as a lookup.
+ * A pointer resolves when it exists OR is gitignored (a deliberately-absent
+ * generated/runtime path like `apps/web/.env`); git IO stays a raw subprocess (the
+ * subprocess seam is a separate migration — `.patterns/effect-process-cli-shell.md`).
+ */
 export const scanStalePointers = (
 	root: string,
-): Effect.Effect<ReadonlyArray<StalePointer>, IoError> =>
+): Effect.Effect<ReadonlyArray<StalePointer>, IoError, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
 		const files = yield* listClaudeMdFiles(root);
-		const exists = (path: string): boolean =>
-			existsSync(join(root, path)) || isGitIgnored(root, path);
 		const stale: StalePointer[] = [];
 		for (const file of files) {
-			const text = yield* Effect.try({
-				try: () => readFileSync(join(root, file), "utf8"),
-				catch: (cause) => new IoError({path: file, cause}),
-			});
-			stale.push(...findStalePointersIn(file, text, exists));
+			const text = yield* fs
+				.readFileString(path.join(root, file), "utf8")
+				.pipe(Effect.mapError((cause) => new IoError({path: file, cause})));
+			const resolved = new Map<string, boolean>();
+			for (const ref of extractPathRefs(text)) {
+				if (resolved.has(ref.path)) continue;
+				const onDisk = yield* fs
+					.exists(path.join(root, ref.path))
+					.pipe(Effect.orElseSucceed(() => false));
+				resolved.set(ref.path, onDisk || isGitIgnored(root, ref.path));
+			}
+			stale.push(...findStalePointersIn(file, text, (p) => resolved.get(p) ?? false));
 		}
 		return stale;
 	});
@@ -99,7 +121,9 @@ export const scanStalePointers = (
  * else `CheckFailed` with the per-pointer report. Fails closed on zero CLAUDE.md in
  * scope (ADR 0092) — never a vacuous green on a mis-rooted scan.
  */
-export const checkPointers = (root: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const checkPointers = (
+	root: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const files = yield* listClaudeMdFiles(root);
 		if (files.length === 0) {

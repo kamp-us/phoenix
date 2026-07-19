@@ -12,9 +12,7 @@
  * manifests are in scope (fail-closed, ADR 0092). A directory/file IO failure is an
  * `IoError` (also non-zero — both failures, undistinguished, per the bin's contract).
  */
-import {existsSync, readdirSync, readFileSync, statSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {
 	type AllowlistEntry,
@@ -42,57 +40,83 @@ export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFa
  * the root manifest. Each glob is either a `<dir>/*` member glob (enumerate immediate
  * subdirs that carry a `package.json`) or a literal member path. The root
  * `package.json` is always in scope — its deps are governed by the catalog rule too.
+ *
+ * All directory/path IO goes through the Effect `FileSystem`/`Path` seam (over the
+ * bin's `NodeServices.layer`), so a gate `unit` test substitutes an in-memory fs for
+ * the real disk (.patterns/effect-platform-access.md); a fs fault folds `PlatformError`
+ * → the `IoError` this gate already carries. This is the one why-note for the file's
+ * platform-seam migration — the other IO helpers below follow the same shape.
  */
 const enumerateManifestPaths = (
 	root: string,
 	globs: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyArray<string>, IoError> =>
-	Effect.try({
-		try: () => {
-			const paths = new Set<string>();
-			if (existsSync(join(root, "package.json"))) paths.add("package.json");
-			for (const glob of globs) {
-				if (glob.endsWith("/*")) {
-					const parent = glob.slice(0, -2);
-					const base = join(root, parent);
-					if (!existsSync(base)) continue;
-					for (const entry of readdirSync(base, {withFileTypes: true})) {
-						const abs = join(base, entry.name);
-						if (!statSync(abs).isDirectory()) continue;
-						if (existsSync(join(abs, "package.json")))
-							paths.add(`${parent}/${entry.name}/package.json`);
-					}
-				} else if (existsSync(join(root, glob, "package.json"))) {
-					paths.add(`${glob}/package.json`);
+): Effect.Effect<ReadonlyArray<string>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const paths = new Set<string>();
+		if (yield* fs.exists(path.join(root, "package.json"))) paths.add("package.json");
+		for (const glob of globs) {
+			if (glob.endsWith("/*")) {
+				const parent = glob.slice(0, -2);
+				const base = path.join(root, parent);
+				if (!(yield* fs.exists(base))) continue;
+				for (const name of yield* fs.readDirectory(base)) {
+					const abs = path.join(base, name);
+					if ((yield* fs.stat(abs)).type !== "Directory") continue;
+					if (yield* fs.exists(path.join(abs, "package.json")))
+						paths.add(`${parent}/${name}/package.json`);
 				}
+			} else if (yield* fs.exists(path.join(root, glob, "package.json"))) {
+				paths.add(`${glob}/package.json`);
 			}
-			return [...paths].sort();
-		},
-		catch: (cause) => new IoError({path: root, cause}),
-	});
+		}
+		return [...paths].sort();
+	}).pipe(Effect.mapError((cause) => new IoError({path: root, cause})));
 
 /** Read + parse each manifest path into the pure core's `PackageManifest` shape. */
 const readManifests = (
 	root: string,
 	paths: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyArray<PackageManifest>, IoError> =>
-	Effect.forEach(
-		paths,
-		(path) =>
-			Effect.try({
-				try: (): PackageManifest => {
-					const pkg = JSON.parse(readFileSync(join(root, path), "utf8")) as Record<string, unknown>;
-					return {path, deps: manifestDeps(pkg)};
-				},
-				catch: (cause) => new IoError({path: join(root, path), cause}),
-			}),
-		{concurrency: 1},
-	);
+): Effect.Effect<ReadonlyArray<PackageManifest>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		return yield* Effect.forEach(
+			paths,
+			(rel) => {
+				const abs = path.join(root, rel);
+				return fs.readFileString(abs, "utf8").pipe(
+					Effect.mapError((cause) => new IoError({path: abs, cause})),
+					Effect.flatMap((text) =>
+						Effect.try({
+							try: (): PackageManifest => ({
+								path: rel,
+								deps: manifestDeps(JSON.parse(text) as Record<string, unknown>),
+							}),
+							catch: (cause) => new IoError({path: abs, cause}),
+						}),
+					),
+				);
+			},
+			{concurrency: 1},
+		);
+	});
 
-const readWorkspaceGlobs = (root: string): Effect.Effect<ReadonlyArray<string>, IoError> =>
-	Effect.try({
-		try: () => parseWorkspacePackageGlobs(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8")),
-		catch: (cause) => new IoError({path: join(root, "pnpm-workspace.yaml"), cause}),
+const readWorkspaceGlobs = (
+	root: string,
+): Effect.Effect<ReadonlyArray<string>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const target = path.join(root, "pnpm-workspace.yaml");
+		const text = yield* fs
+			.readFileString(target, "utf8")
+			.pipe(Effect.mapError((cause) => new IoError({path: target, cause})));
+		return yield* Effect.try({
+			try: () => parseWorkspacePackageGlobs(text),
+			catch: (cause) => new IoError({path: target, cause}),
+		});
 	});
 
 /**
@@ -103,7 +127,7 @@ const readWorkspaceGlobs = (root: string): Effect.Effect<ReadonlyArray<string>, 
 export const checkCatalog = (
 	root: string,
 	allowlist: ReadonlyArray<AllowlistEntry> = DEFAULT_ALLOWLIST,
-): Effect.Effect<void, IoError | CheckFailed> =>
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const globs = yield* readWorkspaceGlobs(root);
 		const paths = yield* enumerateManifestPaths(root, globs);
