@@ -1,0 +1,74 @@
+name: orphan-heal
+
+# The orphan-red-PR detector + heal-item emitter — the #3532 boundary path, steps 1–2
+# (#3650). It ships BESIDE orphan-sweep.yml, not folded into it: that workflow sweeps orphan
+# Cloudflare stages (a resource leak), a wholly different "orphan" than a laneless red PR, so
+# conflating the two under one job would couple unrelated schedules and permissions.
+#
+# Engines self-drain and heal only lanes they OWN. An orphan red PR — open, non-draft, CI-red,
+# in no engine lane (hand-/conversation-authored, e.g. an ADR/ROADMAP PR that closes no triaged
+# issue) — is never healed, because no engine adopts a PR with no owned lane. Per the #3532
+# founder ruling this must be a BOUNDARY path: this job runs `pipeline-cli orphan-heal scan`,
+# which detects each such orphan and files one triaged, immediately-claimable "heal red CI on
+# PR #N" heal-item — idempotently (exactly one per PR). An engine then pulls the heal-item and
+# adopts the lane (steps 3–5, existing machinery). Engines never free-scan arbitrary red PRs.
+on:
+  schedule:
+    # Every 6 hours at :23 — off the top of the hour (the GitHub scheduler congests on-the-hour
+    # crons), spaced so an actively-worked red PR clears the grace window before it is flagged.
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: "File the heal-items (true) or dry-run / print the plan only (false)"
+        type: boolean
+        default: false
+      grace-hours:
+        description: "Only flag a PR red at least this many hours"
+        type: string
+        default: "6"
+
+concurrency:
+  # Never let two scans race — a concurrent pair could file duplicate heal-items in the window
+  # before either's issue is visible to the other's idempotency read.
+  group: orphan-heal
+  cancel-in-progress: false
+
+permissions:
+  contents: read # checkout
+  pull-requests: read # list open PRs + read each head's checks / linked issues
+  issues: write # file the heal-items
+
+jobs:
+  scan:
+    name: detect orphan red PRs and emit heal-items
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # A scheduled run always --executes: the point is to convert orphans autonomously. A manual
+      # workflow_dispatch defaults to dry-run so a human can eyeball the plan (which PRs would be
+      # filed against) before opting into filing via the `execute` input.
+      - name: Scan for orphan red PRs and emit heal-items
+        env:
+          # The CLI resolves the repo from GITHUB_REPOSITORY (auto-set) and reads/writes via
+          # `gh api`; GH_TOKEN is what gh authenticates with.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          GRACE="${{ inputs.grace-hours || '6' }}"
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.execute }}" = "true" ]; then
+            echo "Running orphan-heal scan with --execute (filing heal-items; grace ${GRACE}h)."
+            node packages/pipeline-cli/src/bin.ts orphan-heal scan --execute --grace-hours "$GRACE"
+          else
+            echo "Running orphan-heal scan in dry-run mode (printing the plan only; grace ${GRACE}h)."
+            node packages/pipeline-cli/src/bin.ts orphan-heal scan --grace-hours "$GRACE"
+          fi

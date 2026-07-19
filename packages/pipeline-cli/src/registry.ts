@@ -40,6 +40,7 @@ import {intakeDedupCommand} from "./tools/intake-dedup/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {mainSyncCommand} from "./tools/main-sync/command.ts";
 import {mergeQueueClassifyCommand} from "./tools/merge-queue-classify/command.ts";
+import {orphanHealCommand} from "./tools/orphan-heal/command.ts";
 import {patchGuardCommand} from "./tools/patch-guard/command.ts";
 import {pathFilterGuardCommand} from "./tools/path-filter-guard/command.ts";
 import {pointerGuardCommand} from "./tools/pointer-guard/command.ts";
@@ -164,4 +165,8 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// crew bridge (chief-of-staff/cartographer/intake-desk), closing the future-agent hole ADR
 	// 0196 warns of. Fail-closed on zero scope (ADR 0092); roster-law boundary (ADR 0189/0196).
 	crewFanoutGuardCommand,
+	// #3650 — the orphan-red-PR detector + heal-item emitter (the #3532 boundary path, steps
+	// 1–2): convert an open, CI-red, laneless PR into one idempotent triaged "heal red CI on
+	// PR #N" item so an engine adopts the lane, rather than free-scanning arbitrary red PRs.
+	orphanHealCommand,
 ];
