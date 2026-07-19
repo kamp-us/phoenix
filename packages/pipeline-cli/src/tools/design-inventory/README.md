@@ -54,7 +54,7 @@ The `pipeline-cli` guard idiom — a pure IO-free core, a thin filesystem gate, 
   firewall, or `--check` for drift.
 - `command.ts` — wires the gate to `pipeline-cli design-inventory generate`.
 - `*.unit.test.ts` — pure-core and gate-seam tests (T0/T1, ADR
-  [0040](../../../../../.decisions/0040-two-test-tiers.md)).
+  [0040](../../../../../.decisions/0040-testing-taxonomy-and-seam-graduation.md)).
 
 ## Out of scope
 
