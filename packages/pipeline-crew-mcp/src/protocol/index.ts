@@ -10,6 +10,7 @@ export {
 	CrewProtocol,
 	crewMessageKinds,
 	DrainProgress,
+	EngineNudge,
 	Heartbeat,
 	IntakePing,
 	LookupRole,

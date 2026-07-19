@@ -20,11 +20,12 @@ import {
 import * as Messages from "./schema.ts";
 
 describe("protocol/group catalog", () => {
-	it("covers all 6 message kinds (7 rpcs — presence is announce + lookup, claim is claim + release)", () => {
+	it("covers all 7 message kinds (8 rpcs — presence is announce + lookup, claim is claim + release)", () => {
 		assert.deepStrictEqual([...CrewProtocol.requests.keys()].sort(), [
 			"AnnouncePresence",
 			"Claim",
 			"DrainProgress",
+			"EngineNudge",
 			"Heartbeat",
 			"IntakePing",
 			"LookupRole",

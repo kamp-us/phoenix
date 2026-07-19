@@ -1,5 +1,5 @@
 /**
- * protocol/group — the 6 crew message kinds as one Effect `RpcGroup`.
+ * protocol/group — the 7 crew message kinds as one Effect `RpcGroup`.
  *
  * Generic (crew-agnostic); see the boundary note in `../index.ts`. Each kind is an
  * `Rpc` carrying a Schema payload from `./schema.ts`. Kinds that expect an answer
@@ -34,6 +34,15 @@ export const IntakePing = Rpc.make("IntakePing", {
 	payload: Messages.IntakePing,
 });
 
+/**
+ * Kind 6 — engine nudge: advisory, non-routing, fire-and-forget. Rides the same fire-and-forget
+ * shape as `IntakePing` (no reply, dropped ⇒ log-and-continue); scoped chief-of-staff → engine at
+ * the crew catalog. Advisory only — never command authority or lane-assignment (ADR 0189).
+ */
+export const EngineNudge = Rpc.make("EngineNudge", {
+	payload: Messages.EngineNudge,
+});
+
 /** Kind 4a — role discovery/presence: announce (fire-and-forget). */
 export const AnnouncePresence = Rpc.make("AnnouncePresence", {
 	payload: Messages.PresenceAnnouncement,
@@ -50,12 +59,13 @@ export const Heartbeat = Rpc.make("Heartbeat", {
 	payload: Messages.Heartbeat,
 });
 
-/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 6 kinds. */
+/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 7 kinds. */
 export const CrewProtocol = RpcGroup.make(
 	Claim,
 	Release,
 	DrainProgress,
 	IntakePing,
+	EngineNudge,
 	AnnouncePresence,
 	LookupRole,
 	Heartbeat,
