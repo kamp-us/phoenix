@@ -36,7 +36,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Mentor Audit | #27 | active |
 | Crew-MCP Finish — replace the tmux relay with crew-mcp | #28 | active |
 | Deterministic Crew Mechanics | #29 | active |
-| Diátaxis docs — pipeline-crew & -mcp | #31 | active |
+| Diátaxis docs — pipeline-crew & -mcp | #31 | done |
 | pipeline-cli @effect/platform migration | #32 | active |
 | Agentic design-system coverage | #33 | active |
 
