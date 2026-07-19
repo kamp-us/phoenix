@@ -65,7 +65,6 @@ import {
 	panoOptimisticCommentAddFlag,
 	panoOptimisticCommentDeleteFlag,
 	panoOptimisticPostDeleteFlag,
-	panoOptimisticSubmitFlag,
 	panoStampWaveFlag,
 	profileCanvasFlag,
 	reactionsFlag,
@@ -104,9 +103,6 @@ export default Alchemy.Stack(
 		// epic #2316 leg B, ADR 0170) — gates the `Cache-Control`/`Cache-Tag` headers and
 		// the fanned-mutation purge until a human release.
 		yield* panoFeedEdgeCacheFlag(flagship.appId);
-		// The optimistic post.submit (feed root-list insert) containment flag,
-		// default-off (#1676, epic #1637).
-		yield* panoOptimisticSubmitFlag(flagship.appId);
 		// The earned-authorship loop (çaylak→yazar) dark-ship flag, default-off
 		// (#1204, epic #1202) — the single seam the authorship-loop epic gates behind.
 		yield* authorshipLoopFlag(flagship.appId);

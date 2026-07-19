@@ -1,8 +1,7 @@
 /**
- * The optimistic-vs-round-trip membership branch for `post.submit` (#1676, epic
- * #1637), tested off the pure {@link postSubmitMembership} core — no DOM, mirroring
- * `flagGateChild` / `resolveFlagResponse`. Covers the containment flag on/off
- * paths and the optimistic node's no-phantom-self-upvote contract (#707).
+ * The optimistic membership payload for `post.submit` (#1676, epic #1637), tested
+ * off the pure {@link postSubmitMembership} core — no DOM. Covers the optimistic
+ * node shape and its no-phantom-self-upvote contract (#707).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {type OptimisticSubmitInput, postSubmitMembership} from "./panoSubmitArgs";
@@ -19,15 +18,9 @@ const linkInput: OptimisticSubmitInput = {
 	now: NOW,
 };
 
-describe("postSubmitMembership — flag-gated optimistic feed insert", () => {
-	it("flag off ⇒ plain round-trip: insert none, no optimistic node", () => {
-		const args = postSubmitMembership(false, linkInput);
-		assert.deepStrictEqual(args, {insert: "none"});
-		assert.strictEqual("optimistic" in args, false);
-	});
-
-	it("flag on ⇒ prepends an optimistic temp-id node for root-list reconcile", () => {
-		const args = postSubmitMembership(true, linkInput);
+describe("postSubmitMembership — optimistic feed insert", () => {
+	it("prepends an optimistic temp-id node for root-list reconcile", () => {
+		const args = postSubmitMembership(linkInput);
 		assert.strictEqual(args.insert, "before");
 		if (args.insert !== "before") return;
 		const o = args.optimistic;
@@ -43,7 +36,7 @@ describe("postSubmitMembership — flag-gated optimistic feed insert", () => {
 	});
 
 	it("the optimistic node is score 0 / no vote — never a phantom self-upvote (#707)", () => {
-		const args = postSubmitMembership(true, linkInput);
+		const args = postSubmitMembership(linkInput);
 		if (args.insert !== "before") throw new Error("expected optimistic branch");
 		assert.strictEqual(args.optimistic.score, 0);
 		assert.strictEqual(args.optimistic.myVote, null);
@@ -51,7 +44,7 @@ describe("postSubmitMembership — flag-gated optimistic feed insert", () => {
 	});
 
 	it("maps selected tag kinds to {kind,label} pairs", () => {
-		const args = postSubmitMembership(true, linkInput);
+		const args = postSubmitMembership(linkInput);
 		if (args.insert !== "before") throw new Error("expected optimistic branch");
 		assert.deepStrictEqual(args.optimistic.tags, [
 			{kind: "link", label: "link"},
@@ -60,7 +53,7 @@ describe("postSubmitMembership — flag-gated optimistic feed insert", () => {
 	});
 
 	it("text mode (no link) carries null url/host", () => {
-		const args = postSubmitMembership(true, {...linkInput, url: null, host: null});
+		const args = postSubmitMembership({...linkInput, url: null, host: null});
 		if (args.insert !== "before") throw new Error("expected optimistic branch");
 		assert.strictEqual(args.optimistic.url, null);
 		assert.strictEqual(args.optimistic.host, null);

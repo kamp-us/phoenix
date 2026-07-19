@@ -1,17 +1,14 @@
 /**
- * The optimistic-vs-round-trip membership decision for `post.submit`, factored
- * out of {@link PanoSubmitPage} so the branch is unit-testable without a DOM (the
- * pure-core idiom of `flagGateChild` / `resolveFlagResponse`).
+ * The optimistic membership args for `post.submit`, factored out of
+ * {@link PanoSubmitPage} so the payload is unit-testable without a DOM.
  *
  * The pano feed is a **registered root list** (no filter args), so this is fate's
- * documented happy path (`.patterns/fate-mutations-client.md`): with the
- * optimistic flag on, `insert: "before"` prepends a temp-id node that fate
- * reconciles to the server id when the real result arrives — the same server row
- * the `live.post.feed.appendNode` frame carries, so the mutator's own client sees
- * no double-row (reconcile dedups by server id). Gated behind the epic's
- * default-off containment flag (#1676, epic #1637): with the flag off, submit is
- * a plain round-trip (`insert: "none"`, no optimistic node) and the new post
- * appears only when the feed re-reads.
+ * documented happy path (`.patterns/fate-mutations-client.md`): `insert: "before"`
+ * prepends a temp-id node that fate reconciles to the server id when the real
+ * result arrives — the same server row the `live.post.feed.appendNode` frame
+ * carries, so the mutator's own client sees no double-row (reconcile dedups by
+ * server id). Shipped optimistic (#1676, epic #1637); a since-retired containment
+ * flag once gated a non-optimistic round-trip fallback.
  */
 
 /** The already-derived form + author values the optimistic node mirrors. */
@@ -33,16 +30,11 @@ export interface OptimisticSubmitInput {
 }
 
 /**
- * The `post.submit` membership args: the optimistic prepend when the flag is on,
- * else a non-optimistic round-trip. Returned as a spread-in fragment so the call
- * site stays one `fate.mutations.post.submit({input, view, ...})`.
+ * The `post.submit` membership args: the optimistic prepend. Returned as a
+ * spread-in fragment so the call site stays one
+ * `fate.mutations.post.submit({input, view, ...})`.
  */
-export function postSubmitMembership(optimisticEnabled: boolean, input: OptimisticSubmitInput) {
-	if (!optimisticEnabled) {
-		// Off (default/safe) path: no client-side insert, no optimistic node — the
-		// post lands in the feed only when the server row is read back.
-		return {insert: "none" as const};
-	}
+export function postSubmitMembership(input: OptimisticSubmitInput) {
 	return {
 		insert: "before" as const,
 		optimistic: {
