@@ -118,14 +118,15 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
    you know that it lacks as a comment there, and return to your task.
 4. File it, applying only `status:needs-triage`.
 
-Stream the composed body **straight into the create call over stdin** — there is no named temp file to collide on and no shell variable to reuse stale, so two concurrent `report` runs cannot interleave bodies (the cross-filing hazard is structurally unrepresentable, not merely warned against — #2002). `-F body=@-` reads the `body` field verbatim from stdin, and the **quoted** heredoc (`<<'EOF'`) passes the markdown through untouched — so multi-line markdown, backticks, and nested fences survive intact, the "backticks survive the shell" guarantee with no round-trip through a variable:
+Stream the composed body **straight into the create call over stdin** — there is no named temp file to collide on and no shell variable to reuse stale, so two concurrent `report` runs cannot interleave bodies (the cross-filing hazard is structurally unrepresentable, not merely warned against — #2002). The `tracker create-issue` verb reads its `--body` from stdin when the flag is absent, so the **quoted** heredoc (`<<'EOF'`) passes the markdown through untouched — multi-line markdown, backticks, and nested fences survive intact, the "backticks survive the shell" guarantee with no round-trip through a variable. Don't hand-roll the `gh api repos/$REPO/issues` create — that inline envelope is exactly what the adoption lint (#3254) flags; the verb owns it (ADR 0190; `packages/pipeline-cli/src/tools/tracker/`) and enters the needs-triage queue by default:
 
 ```bash
 # The five sections + a blank line + the footer.sh block, piped straight into the
-# REST create over stdin. No mktemp, no $BODY_FILE, no `$(cat …)` — nothing shared to
-# collide on. `-F body=@-` consumes the whole stream as the body field; `-f title`/
-# `-f labels[]` stay ordinary POST fields. The quoted `<<'EOF'` heredoc means the shell
-# never touches the markdown, so backticks and nested ``` fences file intact.
+# create verb over stdin. No mktemp, no $BODY_FILE, no `$(cat …)` — nothing shared to
+# collide on. `create-issue` consumes the whole stream as the body; the quoted `<<'EOF'`
+# heredoc means the shell never touches the markdown, so backticks and nested ``` fences
+# file intact. The verb passes the body by-value through a direct spawn (no `-f body=@file`),
+# so the local-path leak class is gone too.
 {
   cat <<'EOF'
 ## Summary
@@ -148,15 +149,12 @@ Stream the composed body **straight into the create call over stdin** — there 
 EOF
   echo   # blank line before the footer block
   claude-plugins/kampus-pipeline/skills/report/footer.sh   # emits its own `---` + <sub>… line
-} | gh api repos/$REPO/issues \
-  -f title="<title>" \
-  -F body=@- \
-  -f "labels[]=status:needs-triage"
+} | pipeline-cli tracker create-issue --title "<title>"
 ```
 
 The body never lands on disk under a shared name and never round-trips through a variable, so the two named failure paths this hardening closes — "simplify" to a fixed `/tmp/report-body.md`, or reuse one `$BODY_FILE` across two creates — have no surface to occur on: there is no file path to fix and no variable to reuse.
 
-5. Report back to the user in one line: the issue number and URL (`gh api` returns them as `.number` and `.html_url`). Then return to your original task — don't expand into triaging or fixing what you just filed.
+5. Report back to the user in one line: the issue number and URL (`create-issue` prints them as `tracker: created #<n> — <url>`). Then return to your original task — don't expand into triaging or fixing what you just filed.
 
 ## Conventions
 

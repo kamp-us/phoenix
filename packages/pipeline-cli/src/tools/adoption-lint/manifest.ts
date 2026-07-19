@@ -55,6 +55,22 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		reason:
 			"re-derives the label-transition envelope that `pipeline-cli tracker apply-triage` owns (add type/priority/status, remove needs-triage), instead of citing the verb (#3263 / #3254)",
 	},
+	{
+		// `tracker create-issue` owns the intake-create envelope (#3264): file a new issue with a
+		// title/body that enters the needs-triage queue. The fingerprint is the co-occurrence of
+		// both tells — a `-f title=` create field AND the `labels[]=status:needs-triage` intake
+		// label — so an incidental issue read (`/issues/<N>`), or a create at a different stage
+		// (plan-epic's `status:planned` child, wayfinder's `wayfinder:map`), is not a false finding.
+		// A file that cites `pipeline-cli tracker create-issue` is compliant.
+		verb: "tracker create-issue",
+		signature: [
+			/-f\s+"?title=/, // sets a title (a create, not a read)
+			/labels\[\]=status:needs-triage/, // enters the needs-triage intake queue
+		],
+		citation: /pipeline-cli\s+tracker\s+create-issue\b/,
+		reason:
+			"re-derives the intake-create envelope that `pipeline-cli tracker create-issue` owns (POST a titled needs-triage issue), instead of citing the verb (#3264 / #3254)",
+	},
 ];
 
 /**
