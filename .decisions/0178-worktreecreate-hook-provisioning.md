@@ -110,3 +110,34 @@ there is never a dep-less worktree presented as ready. An absent `worktree_path`
 - Sibling context: ADR 0109 (the install this reuses), #2924 (this durable fix), #2923 (the
   acute incident + empirical 13s measurement), #787/#788/#789 (the PATH-strip class defended
   against here).
+
+## Amendment (2026-07-19, #3621) — fetch fresh before branching, and re-register the corrected hook
+
+Two follow-ons close the loop this ADR opened:
+
+1. **Re-registration.** #2925's registration was reverted (#2938) because the handler was built
+   to a wrong inferred payload contract and fail-closed every spawn. #2936 corrected the script
+   against the captured golden payload (`{cwd, name}` → path constructed as
+   `<cwd>/.claude/worktrees/<name>`) and pinned it with `create-worktree.hook.test.ts`, but the
+   registration was never re-added — so the hook sat inert and the harness *default* provisioning
+   ran instead, branching each worktree off the primary checkout's local `main`. #3621 re-adds the
+   `WorktreeCreate` entry (timeout 600) to both `.claude/settings.json` and the plugin's
+   `hooks.json`, now that the golden-fixture gate (#2935/ADR 0180) has proven the corrected handler.
+
+2. **Fetch before branching (the #3621 root cause).** This ADR's original text assumed
+   `origin/main` was a fresh base. It is not: the primary checkout's `origin/main` remote-tracking
+   ref only advances on an explicit `git fetch`, and nothing fetches per-spawn — so a lane spawned
+   right after a sibling lane merged branched off a **stale** tip missing that merge. Two serialized
+   same-file lanes then both went green in isolation and collided only at ship time
+   (`mergeable_state=dirty`, #3620) — or, worse, a clean/green PR silently reverted the sibling's
+   merged work (#3678). The hook now runs `git fetch --quiet origin main` and branches off the
+   just-fetched `FETCH_HEAD` (freshness independent of any remote-tracking refspec), failing **loud**
+   (non-zero → blocks creation → coder fail-closes at its Step-4 preflight) if the fetch fails rather
+   than silently branching from a possibly-stale base.
+
+   **No new corruption surface.** The fetch advances only remote-tracking refs; it **never** moves
+   the primary's local `main` HEAD, so the #2143/#2144 primary-main-corruption class is not
+   reintroduced. A dirty or off-`main` primary is simply irrelevant here — the base is the fetched
+   remote tip, never local `main` — which is why this is preferred over any "sync/fast-forward local
+   main" approach (there is no local ref to clobber). The `--detach` rationale above is unchanged;
+   only the base commit-ish moves from the stale cached ref to the fresh `FETCH_HEAD`.

@@ -186,9 +186,10 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 		assert.notStrictEqual(code, 0, "a payload with no cwd must be rejected");
 	});
 
-	it("fail-closes (non-zero) when git worktree add fails (unresolvable origin/main)", () => {
-		// A fresh repo with NO origin: the payload carries no base_ref, so the hook defaults to
-		// origin/main, which can't resolve here → `git worktree add` fails → fail-closed.
+	it("fail-closes (non-zero) when the fetch fails (no origin → possibly-stale base) — #3621", () => {
+		// A fresh repo with NO origin: the hook fetches origin/main BEFORE branching (#3621), so
+		// the missing origin makes `git fetch origin main` fail → the hook fail-closes at the fetch
+		// rather than silently branching from a possibly-stale base.
 		const bare = mkdtempSync(join(tmpdir(), "wtc-noorigin-"));
 		git(bare, "init", "-q", "-b", "main");
 		git(bare, "config", "user.email", "t@t.t");
@@ -199,7 +200,67 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 		const name = "agent-badbase01";
 		const {code} = run(bare, goldenPayloadFor(bare, name));
 		rmSync(bare, {recursive: true, force: true});
-		assert.notStrictEqual(code, 0, "an unresolvable base must fail-close, blocking creation");
+		assert.notStrictEqual(code, 0, "a failed fetch must fail-close, blocking creation");
+	});
+
+	// THE #3621 regression: reproduce the stale-local-main trap and prove the hook fetches fresh.
+	// A consumer whose cached origin/main AND local main both predate a sibling lane's merge must
+	// still base its new worktree on a tip that INCLUDES that merge — and must do so WITHOUT moving
+	// the primary's local main (the #2143/#2144 primary-main-corruption constraint).
+	it("fetches origin BEFORE branching so the base includes a sibling's just-merged commit, never moving local main (#3621)", () => {
+		const originRepo = mkdtempSync(join(tmpdir(), "wtc-origin-"));
+		git(originRepo, "init", "-q", "-b", "main");
+		git(originRepo, "config", "user.email", "t@t.t");
+		git(originRepo, "config", "user.name", "t");
+		writeFileSync(join(originRepo, "README.md"), "x");
+		git(originRepo, "add", ".");
+		git(originRepo, "commit", "-q", "-m", "init");
+
+		// Consumer tracks origin at the init commit — its origin/main AND local main both point there.
+		const consumer = mkdtempSync(join(tmpdir(), "wtc-consumer-"));
+		git(consumer, "init", "-q", "-b", "main");
+		git(consumer, "config", "user.email", "t@t.t");
+		git(consumer, "config", "user.name", "t");
+		git(consumer, "remote", "add", "origin", originRepo);
+		git(consumer, "fetch", "-q", "origin");
+		git(consumer, "checkout", "-q", "-B", "main", "origin/main");
+		const staleTip = git(consumer, "rev-parse", "main").trim();
+
+		// A sibling lane merges to origin AFTER the consumer last fetched — the exact stale window.
+		writeFileSync(join(originRepo, "sibling.txt"), "merged-by-sibling");
+		git(originRepo, "add", ".");
+		git(originRepo, "commit", "-q", "-m", "sibling merge");
+		const freshTip = git(originRepo, "rev-parse", "HEAD").trim();
+
+		const name = "agent-stale01";
+		const expected = join(consumer, ".claude", "worktrees", name);
+		const {code, stdout} = run(consumer, goldenPayloadFor(consumer, name));
+		assert.strictEqual(code, 0, "the hook must provision, fetching fresh");
+		assert.strictEqual(stdout.trim(), expected);
+
+		const wtHead = git(expected, "rev-parse", "HEAD").trim();
+		assert.strictEqual(
+			wtHead,
+			freshTip,
+			"the worktree base must be the FRESH remote tip (fetched), not the stale local/origin main",
+		);
+		assert.isTrue(
+			existsSync(join(expected, "sibling.txt")),
+			"the sibling's just-merged file must be present in the base",
+		);
+		assert.notStrictEqual(wtHead, staleTip, "the base must NOT be the pre-merge stale tip");
+
+		// The load-bearing no-corruption constraint: the fetch advances only remote-tracking refs,
+		// never the primary's local main HEAD (#2143/#2144).
+		const consumerLocalMain = git(consumer, "rev-parse", "main").trim();
+		assert.strictEqual(
+			consumerLocalMain,
+			staleTip,
+			"the hook must NOT move the primary's local main — only remote-tracking refs (#2143/#2144)",
+		);
+
+		rmSync(consumer, {recursive: true, force: true});
+		rmSync(originRepo, {recursive: true, force: true});
 	});
 
 	// Guard the anti-fabrication invariant directly: the raw fixture bytes fed to the handler

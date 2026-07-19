@@ -52,6 +52,17 @@
 				]
 			}
 		],
+		"WorktreeCreate": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/create-worktree.sh\"",
+						"timeout": 600
+					}
+				]
+			}
+		],
 		"SessionStart": [
 			{
 				"matcher": "startup|resume",

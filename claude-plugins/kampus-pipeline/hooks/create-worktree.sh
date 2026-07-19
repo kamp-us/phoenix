@@ -57,10 +57,6 @@ fi
 
 worktree_path="$cwd/.claude/worktrees/$name"
 
-# The WorktreeCreate payload carries no base ref; every coder re-branches off origin/main in
-# its Step-4 preflight regardless, so origin/main is the base to check out.
-base_ref="origin/main"
-
 # NOW ensure a full PATH for git + the post-checkout `pnpm install` it fires. The hook exec
 # env's PATH handling is UNDOCUMENTED (the sibling harness `git worktree add` strips PATH to
 # /usr/bin — #787/ADR 0109); if that stripping applies here too, `bootstrap-deps` finds no
@@ -76,13 +72,29 @@ if ! cd "$cwd" 2>/dev/null; then
 	exit 1
 fi
 
-# `--detach` deliberately: a linked worktree can't check out a base_ref that is a LOCAL
-# branch already checked out in the primary (`git worktree add <p> main` fatals with
-# 'main is already checked out') — and the coder re-branches off origin/main in its Step-4
-# preflight regardless, so the base HEAD is throwaway. A detached checkout at base_ref's
-# commit sidesteps the collision and still fires post-checkout (ADR 0109 provisioning).
-if ! git worktree add --detach "$worktree_path" "$base_ref" >&2; then
-	echo "create-worktree: git worktree add --detach '$worktree_path' '$base_ref' failed — refusing (fail-closed)." >&2
+# Freshen the remote tip BEFORE branching — the #3621 fix. The primary checkout's `origin/main`
+# remote-tracking ref only advances on an explicit fetch, and nothing fetches per-spawn; so
+# branching off the cached `origin/main` (or the harness default's local `main`) silently bases a
+# lane on a STALE tip, missing a sibling lane's just-merged commit. Two serialized same-file lanes
+# then both go green in isolation and collide only at ship time (mergeable_state=dirty) — or, worse,
+# a clean/green PR silently reverts the sibling's merged work (#3678). The fetch NEVER moves the
+# primary's local `main` HEAD (it advances only remote-tracking refs), so the #2143/#2144
+# primary-main-corruption class is not reintroduced — a dirty or off-`main` primary is irrelevant
+# here because the base is the freshly-fetched remote tip, never local `main`. Fail LOUD if the
+# fetch fails rather than silently branching from a possibly-stale base.
+if ! git fetch --quiet origin main >&2; then
+	echo "create-worktree: git fetch origin main failed — refusing to branch from a possibly-stale base (fail-closed, #3621)." >&2
+	exit 1
+fi
+
+# Branch off the just-fetched tip via FETCH_HEAD — guaranteeing freshness independent of whether a
+# remote-tracking refspec maps `main`→`origin/main` (FETCH_HEAD is exactly what the fetch above
+# just wrote). `--detach` deliberately: a linked worktree can't check out a base that is a LOCAL
+# branch already checked out in the primary (`git worktree add <p> main` fatals with 'main is
+# already checked out'), and the coder re-branches in its Step-4 preflight regardless, so the base
+# HEAD is throwaway. A detached checkout at FETCH_HEAD still fires post-checkout (ADR 0109).
+if ! git worktree add --detach "$worktree_path" FETCH_HEAD >&2; then
+	echo "create-worktree: git worktree add --detach '$worktree_path' FETCH_HEAD failed — refusing (fail-closed)." >&2
 	exit 1
 fi
 
