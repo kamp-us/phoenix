@@ -34,6 +34,15 @@ fork their behavior:
 - **`shipper`** — the single merge authority; enqueues a verified PR for merge. Spawn
   `isolation:worktree`.
 - **`reporter`** — files a follow-up issue when you spot out-of-lane work.
+- **`crew-investigator`** — the read-only fanout (ADR
+  [0196](../../../.decisions/0196-read-only-crew-fanout.md), adopted in
+  [#3543](https://github.com/kamp-us/phoenix/issues/3543)): for an expensive read that would
+  otherwise pollute your context (a codebase grep's `node_modules` noise, a flag/board sweep's
+  WARN spam, a version diff's many-call chatter), dispatch it and receive **only the distilled
+  finding**. It is write-tool-free — a context-hygiene primitive, not an execution edge. You are
+  the engine, so unlike a bridge you carry no `disallowedTools` spawn scoping; the investigator is
+  simply a cleaner way to run the verified reads your lane loop already needs (a head-bound verdict
+  check, a merge-landed confirm) without the artifact byproduct entering your standing seat.
 
 Because those agents are `model: inherit`, a subagent silently downgrades if your session is on the
 wrong tier — so your session must be brought up on its configured build tier, not the planning tier
