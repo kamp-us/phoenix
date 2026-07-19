@@ -24,6 +24,7 @@ import {commandsCommand} from "./tools/commands/command.ts";
 import {controlPlanePathsCommand} from "./tools/control-plane-paths/command.ts";
 import {cpCardinalityCommand} from "./tools/cp-cardinality/command.ts";
 import {crabboxManifestCommand} from "./tools/crabbox-manifest/command.ts";
+import {crewFanoutGuardCommand} from "./tools/crew-fanout-guard/command.ts";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
 import {designInventoryCommand} from "./tools/design-inventory/command.ts";
 import {designTokenGuardCommand} from "./tools/design-token-guard/command.ts";
@@ -156,4 +157,9 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// inline-re-derives a tool-owned decision without citing the owning verb, so the verb
 	// sweep can't grow the unreferenced-tool pile. Fail-closed on zero scope (ADR 0092).
 	adoptionLintCommand,
+	// #3606 — inverts the crew read-only-fanout per-bridge spawn denylist into an ENFORCED
+	// allowlist: reds when a mutating roster agent-type is neither allowlisted nor denied by a
+	// crew bridge (chief-of-staff/cartographer/intake-desk), closing the future-agent hole ADR
+	// 0196 warns of. Fail-closed on zero scope (ADR 0092); roster-law boundary (ADR 0189/0196).
+	crewFanoutGuardCommand,
 ];

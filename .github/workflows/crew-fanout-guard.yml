@@ -1,0 +1,43 @@
+name: crew-fanout-guard
+
+# CI gate for #3606 (residual from #3597/#3605): invert the crew read-only-fanout
+# per-bridge spawn DENYLIST into an ENFORCED ALLOWLIST. claude-code's permission model
+# only *subtracts* denied agent-types — there is no "spawn only X" primitive — so a
+# FUTURE mutating agent-type added to the roster is silently spawnable by every bridge
+# until someone remembers to extend each denylist (the "a future reader silently reopens
+# the deleted edge" risk ADR 0196 warns of). This job asserts every crew bridge
+# (chief-of-staff / cartographer / intake-desk) denies every mutating roster agent-type
+# NOT on its sanctioned allowlist, and fails closed on an uncovered agent-type or zero
+# scope (ADR 0092) — so a new un-denied mutating agent reds the build. Roster-law
+# boundary, ADR 0189/0196. The scan lives once in pipeline-cli's `crew-fanout-guard check`.
+on:
+  pull_request:
+
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: every crew bridge denies non-allowlisted mutating agent-types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 on an uncovered bridge×agent-type pair, a missing bridge def, a stale
+      # allowlist, or zero scope (report on stderr, fail-closed). See #3606.
+      - name: Check crew bridge fanout scoping
+        run: node packages/pipeline-cli/src/bin.ts crew-fanout-guard check
