@@ -134,12 +134,14 @@ a proposed engine-pool design as "re-proposing a killed model." The founder's ac
 collision; the collision story was post-hoc rationalization written into the defs and cited back as
 evidence for the design it rationalized. ADR 0189 records the corrected retirement rationale.
 
-**Provenance — tag every history-shaped given with `— from <who>`.** Reuse the `— from #N`
-provenance convention already carried on `## Decisions-so-far` entries, extended for the *who*: a
-founder-confirmed reason reads `— from @founder`, a still-unverified doc-scraped one reads `— from
-<artifact>` (and belongs on the frontier as an open question, not seeded as settled). The tag lets
-a later reader tell a confirmed reason from an unverified one at a glance, rather than re-litigating
-its ground truth.
+**Provenance — carry the *who* alongside the seed's `— from #<MAP>` ref, never instead of it.**
+A seeded `## Decisions-so-far` entry always carries its resolvable `— from #<MAP>` origin (step 3);
+for a history-shaped given, name the *who* in a trailing parenthetical so a later reader can tell a
+confirmed reason from an unverified one at a glance without re-litigating its ground truth: a
+founder-confirmed reason reads `— from #<MAP> (@founder)`, and a still-unverified doc-scraped one is
+**not seeded at all** — it belongs on the frontier as an open question (`from <artifact>` provenance
+in the ticket, not a settled entry). Keeping the `#<MAP>` ref is what keeps the entry auditable and
+past the validator; the parenthetical *who* rides on top of it.
 
 ### The ticket-type translation table — reuse existing types, invent no new machinery
 
@@ -197,7 +199,14 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    green-field idea; more often a foggy idea carries a few givens, and naming them up front keeps
    the frontier focused on what is genuinely open. Ground each given per the given-grounding law
    above — behavioral claims in source, design-history claims ("X was retired *because* Y") in the
-   founder, never seeded from an artifact's own prose — and tag history-shaped givens `— from <who>`.
+   founder, never seeded from an artifact's own prose — and tag history-shaped givens with the
+   *who* (below). **Attribute every seed `— from #<MAP>`** — the map's own issue number — per the
+   [map-shape contract's `## Decisions-so-far` rule](../gh-issue-intake-formats.md#the-four-sections):
+   a CHART-time given (and an in-session founder ruling) has no frontier ticket to cite, so its
+   honest, resolvable origin is the chart act that created the map. This is the form that passes
+   the wayfinder CLI validator on the first write — an entry with no `— from #N` origin trips
+   `MALFORMED_DECISION_ENTRY`, and `— from #<MAP>` is the sanctioned seed attribution (distinct
+   from a WORK-mode append's `— from #<frontier-ticket>`).
 
 4. **Decompose the fog into a frontier of resolvable tickets.** Break the destination's unknowns
    into the smallest set of tickets that, once answered, would make the path buildable. Apply the
