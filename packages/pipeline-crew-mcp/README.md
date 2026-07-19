@@ -20,7 +20,11 @@ A small, layered substrate split into a **generic core** and one **crew-coupled*
   tracker + peer + edge into a per-role channel server (enforcing the role-uniqueness lease
   the generic peer does not), and — the cutover (#3062) — the **runnable stdio session entry**
   (`crew/session.ts`): one live session's stdio `McpServer` + `ChannelSend`-from-peer, driving
-  both channel edges (outbound `channel_send` tool, inbound inbox→channel wake) off one server.
+  both channel edges (outbound the `channel_send` relay tool + the `channel_claim` resource-claim
+  tool, inbound inbox→channel wake) off one server. `channel_claim` (#3509) surfaces the tracker's
+  resource-keyed `Claim` so an engine can lock an issue before opening a lane — a second claimant on
+  a held resource gets a `collision`, not a second grant (the cross-engine mutual exclusion that a
+  peer-relayed `channel_send` cannot provide).
 
 **The load-bearing boundary:** `protocol/`, `tracker/`, `peer/`, and `edge/` are the reusable
 channels substrate and never import `crew/`; `crew/` depends inward on the generic core, never

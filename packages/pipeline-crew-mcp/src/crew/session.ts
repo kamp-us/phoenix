@@ -38,11 +38,14 @@ import {NodeStdio} from "@effect/platform-node";
 import {Effect, type FileSystem, Layer} from "effect";
 import {type McpSchema, McpServer} from "effect/unstable/ai";
 import {
+	ChannelClaim,
 	ChannelSend,
 	ChannelSink,
 	ChannelToolkit,
+	ClaimToolkit,
 	channelExperimentalCapability,
 	channelToolHandlers,
+	claimToolHandlers,
 } from "../edge/index.ts";
 import {type Dialer, Inbox, type Tracker} from "../peer/index.ts";
 import {socketPathFor} from "../tracker/index.ts";
@@ -203,12 +206,18 @@ export const assembleCrewSession = <RIn, RSub = never>(
 					Layer.provide(channelToolHandlers),
 					Layer.provide(Layer.succeed(ChannelSend, {send: channel.peer.send})),
 				);
+				// deconfliction: the channel_claim toolkit (#3509), its ChannelClaim an INSTANT bind to the
+				// already-resolved channel's tracker claim — same zero-async binding as `outbound` (Race 2).
+				const claim = McpServer.toolkit(ClaimToolkit).pipe(
+					Layer.provide(claimToolHandlers),
+					Layer.provide(Layer.succeed(ChannelClaim, {claim: channel.claim})),
+				);
 				// inbound: the peer-inbox socket server, its deliveries waking THIS served server.
 				const inbound = inboxServerSocketLayer(address).pipe(
 					Layer.provide(ChannelSink.layerFromMcpServer),
 				);
 				// Provide the transport ONCE to the MERGED registrations — the single-instance memo (Race 1).
-				return Layer.mergeAll(outbound, inbound).pipe(Layer.provide(transport));
+				return Layer.mergeAll(outbound, claim, inbound).pipe(Layer.provide(transport));
 			}),
 		),
 	).pipe(Layer.provide(substrate));
@@ -216,8 +225,8 @@ export const assembleCrewSession = <RIn, RSub = never>(
 /**
  * The full runnable session layer: launch it (`Layer.launch`) to run one live crew session. The one
  * stdio `McpServer` is provided to the merged registrations exactly once (`assembleCrewSession`), so
- * the served server advertises the `channel_send` tool + the `claude/channel` capability; the
- * heartbeat rides the same `substrate` the outbound binding announces on.
+ * the served server advertises the `channel_send` + `channel_claim` tools + the `claude/channel`
+ * capability; the heartbeat rides the same `substrate` the outbound binding announces on.
  */
 export const crewSessionLayer = (config: CrewSessionConfig) => {
 	// One per-session instance id, resolved once here and threaded to every address derivation, so an
