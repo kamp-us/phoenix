@@ -4,10 +4,10 @@
  *
  * Grown from the Wave-1 walking skeleton (epic #3258): a `Context.Service` `Tracker`
  * tag plus its sole implementation `GithubTrackerLive`. `claim` (the ADR-0115
- * agent-distinguishable claim), a generic `readBack`, and `applyTriage` (the
- * label-transition envelope, #3263) are live; `postVerdict` / `graduate` are still
- * *declared* — their interface shape is fixed so the tag locks before its remaining
- * sibling Phase-3 children implement them.
+ * agent-distinguishable claim), a generic `readBack`, `applyTriage` (the label-transition
+ * envelope, #3263), and `postVerdict` (the ADR-0058 verdict/comment-post + read-back
+ * envelope, #3265) are live; only `graduate` is still *declared* — its interface shape is
+ * fixed so the tag locks before its remaining sibling Phase-3 child implements it.
  *
  * Two design rules bind every signature here and are the point of the skeleton:
  *
@@ -36,6 +36,17 @@ import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {type ClaimComment, type ClaimWinner, resolveWinner} from "../epic-lock/claim-resolution.ts";
+// The ADR-0058 verdict-marker grammar + emission guard is the SINGLE SOURCE — reused, never
+// re-derived, exactly as the claim decision reuses `epic-lock/claim-resolution.ts`. `postVerdict`
+// composes and self-verifies its comment through this pure core so the tool OWNS the decision the
+// adoption-lint (#3254) forbids the corpus from hand-copying.
+import {
+	emissionDefect,
+	GATE_KEYWORD,
+	GATES,
+	namespaceRe,
+	type VerdictGate,
+} from "../verdict/verdict-match.ts";
 
 /** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
 export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
@@ -65,14 +76,39 @@ export class RepoResolutionError extends Schema.TaggedErrorClass<RepoResolutionE
 ) {}
 
 /**
- * A declared-but-not-yet-built verb was called. `claim` / `readBack` / `applyTriage`
- * are live; `postVerdict` / `graduate` fail-closed with this typed error until a sibling
- * Phase-3 child implements them — never a silent no-op or a throw.
+ * A declared-but-not-yet-built verb was called. `claim` / `readBack` / `applyTriage` /
+ * `postVerdict` are live; only `graduate` fails-closed with this typed error until its sibling
+ * Phase-3 child implements it — never a silent no-op or a throw.
  */
 export class TrackerNotImplementedError extends Schema.TaggedErrorClass<TrackerNotImplementedError>()(
 	"@kampus/tracker/TrackerNotImplementedError",
 	{
 		verb: Schema.String,
+	},
+) {}
+
+/**
+ * A malformed verb judgment the caller must fix — e.g. `postVerdict` handed an unknown gate, or a
+ * composed verdict body that trips `emissionDefect` (a polarity with no bindable `@ <sha>`, a
+ * non-40-hex head, a machine-local path). A caller error, not an infra fault: it is raised before
+ * any write reaches the tracker.
+ */
+export class TrackerInputError extends Schema.TaggedErrorClass<TrackerInputError>()(
+	"@kampus/tracker/TrackerInputError",
+	{
+		message: Schema.String,
+	},
+) {}
+
+/**
+ * A verb's post-write self-verify failed: after `postVerdict` upserted the comment it re-fetched it
+ * and the landed body is not a clean, in-namespace, leak-free marker. The read-back folded INTO the
+ * write so a bypassed/hand-rolled body can't report a false success (ADR 0058 read-back, #3019).
+ */
+export class TrackerVerifyError extends Schema.TaggedErrorClass<TrackerVerifyError>()(
+	"@kampus/tracker/TrackerVerifyError",
+	{
+		message: Schema.String,
 	},
 ) {}
 
@@ -135,12 +171,32 @@ export type TriageResult = {
 	readonly status: string;
 };
 
-/** A gate verdict: which gate, whether it passed, and the head ref it is bound to. */
+/**
+ * A gate verdict (judgment-as-parameter, #3252): which `gate` it decides, whether it `passed`,
+ * the `headRef` the verdict binds to (ADR 0058), and the verdict `body` prose. Domain vocabulary
+ * only — `gate` is the crew's own gate name (`code`/`doc`/`skill`/`design`); the caller never
+ * hand-composes the `review-<gate>:` marker or its `@ <sha>` binding (the divergent-copy class
+ * #3254 names), so no GitHub marker string leaks into the signature. `GithubTrackerLive` composes
+ * the marker from this judgment at the boundary.
+ */
 export interface VerdictJudgment {
 	readonly gate: string;
 	readonly passed: boolean;
 	readonly headRef: string;
+	readonly body: string;
 }
+
+/**
+ * The `postVerdict` verdict: the landed verdict read back from the entity — whether it was a fresh
+ * comment (`posted`) or an upsert of our own prior marker in the namespace (`patched`), and the
+ * gate/passed/headRef it now carries. A domain result, never a raw REST comment id (ADR 0190).
+ */
+export type VerdictResult = {
+	readonly _tag: "posted" | "patched";
+	readonly gate: string;
+	readonly passed: boolean;
+	readonly headRef: string;
+};
 
 /** A lifecycle graduation: the stage the target moves to. */
 export interface GraduateJudgment {
@@ -236,7 +292,9 @@ const listCommentsArgs = (repo: string, target: TargetId): ReadonlyArray<string>
 	`repos/${repo}/issues/${target}/comments?per_page=100`,
 ];
 
-const postClaimArgs = (repo: string, target: TargetId, body: string): ReadonlyArray<string> => [
+// A generic comment POST — the claim marker and the verdict marker are both a body POST that
+// returns the new comment id; single-sourced so the two consumers can't drift.
+const postCommentArgs = (repo: string, target: TargetId, body: string): ReadonlyArray<string> => [
 	"api",
 	"-X",
 	"POST",
@@ -246,6 +304,28 @@ const postClaimArgs = (repo: string, target: TargetId, body: string): ReadonlyAr
 	"--jq",
 	".id",
 ];
+
+const patchCommentArgs = (repo: string, id: number, body: string): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"PATCH",
+	`repos/${repo}/issues/comments/${id}`,
+	"-f",
+	`body=${body}`,
+	"--jq",
+	".id",
+];
+
+// The read-back GET for `postVerdict`'s self-verify (#3019): re-fetch the single comment we just
+// upserted and return its LANDED body, so the marker/leak-clean shape is re-checked as it landed.
+const getCommentBodyArgs = (repo: string, id: number): ReadonlyArray<string> => [
+	"api",
+	`repos/${repo}/issues/comments/${id}`,
+	"--jq",
+	".body",
+];
+
+const whoAmIArgs: ReadonlyArray<string> = ["api", "user", "--jq", ".login"];
 
 const deleteCommentArgs = (repo: string, id: number): ReadonlyArray<string> => [
 	"api",
@@ -384,7 +464,7 @@ const claim = Effect.fn("Tracker.claim")(function* (
 			: ({_tag: "held-by-other", owner: toOwner(before)} satisfies ClaimResult);
 	}
 	const now = new Date().toISOString();
-	const posted = yield* json(postClaimArgs(repo, target, `claim: ${session} · ${now}`));
+	const posted = yield* json(postCommentArgs(repo, target, `claim: ${session} · ${now}`));
 	const claimId = typeof posted === "number" ? posted : null;
 	const winner = yield* resolveAuthorizedWinner(repo, yield* listClaimComments(repo, target));
 	if (winner !== null && winner.session === mine) {
@@ -438,12 +518,127 @@ const applyTriage = Effect.fn("Tracker.applyTriage")(function* (
 	} satisfies TriageResult;
 });
 
-type TrackerErrors = RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError;
+/** Map a domain gate name to the ADR-0058 `VerdictGate`, or `null` if it is not a known gate. */
+const asGate = (gate: string): VerdictGate | null => {
+	const g = gate.trim().toLowerCase();
+	return (GATES as ReadonlyArray<string>).includes(g) ? (g as VerdictGate) : null;
+};
 
 /**
- * `Tracker` — the shared crew tracker capability. `claim`, `readBack`, and `applyTriage`
- * are live; the two still-declared verbs fail `TrackerNotImplementedError` until a sibling
- * child builds them (their success types are `never` by design — a not-yet-built verb
+ * Compose the verdict comment body from the domain judgment: the ADR-0058 SHA-bound marker on line
+ * one (`review-<gate>: <PASS|FAIL> @ <headRef>`) followed by the verdict prose. The caller supplies
+ * only the domain decision (gate/passed/headRef) + prose — never the marker string — so the marker
+ * grammar lives in exactly one place (`verdict-match.ts`).
+ */
+const composeVerdictBody = (
+	gate: VerdictGate,
+	passed: boolean,
+	headRef: string,
+	prose: string,
+): string => `${GATE_KEYWORD[gate]}: ${passed ? "PASS" : "FAIL"} @ ${headRef}\n\n${prose}`;
+
+/**
+ * The post-write self-verify (#3019): re-fetch the comment `postVerdict` just upserted and assert
+ * its LANDED body passes the SAME `emissionDefect` gate the composed input passed — a marker on line
+ * one, a bindable `@ <sha>`, and no machine-local path anywhere. Folds the read-back INTO the write
+ * so a caller can't leave a `@path`/non-marker/leaking comment on a public PR while reporting
+ * success. Fail-closed: a failed re-fetch, or any landed defect, raises `TrackerVerifyError`.
+ */
+const verifyLanded = Effect.fn("Tracker.verifyLanded")(function* (
+	repo: string,
+	id: number,
+	gate: VerdictGate,
+) {
+	const landed = yield* runGh(getCommentBodyArgs(repo, id)).pipe(
+		Effect.catchTag(
+			"@kampus/tracker/GhCommandError",
+			(cause) =>
+				new TrackerVerifyError({
+					message: `could not re-fetch the just-posted verdict comment #${id} to self-verify it (${cause.stderr.trim() || `exit ${cause.exitCode}`}) — refusing to report success on an unverifiable post (#3019)`,
+				}),
+		),
+	);
+	const defect = emissionDefect(landed, gate);
+	if (defect !== null) {
+		return yield* new TrackerVerifyError({
+			message: `the landed verdict comment #${id} failed self-verify: ${defect} — a bypassed/hand-rolled body reached GitHub; the post is rejected rather than reported as success (#3019)`,
+		});
+	}
+});
+
+/**
+ * Upsert `target`'s `gate` verdict and read it back (ADR 0058 rule 2, ADR 0190) — the
+ * verdict/comment-post + read-back envelope the review/ship/heal skills hand-rolled, now one
+ * domain-shaped verb. Compose the SHA-bound marker + prose from the judgment, refuse fail-closed on
+ * any `emissionDefect` (wrong namespace, unbindable/non-40-hex `@ <sha>`, a machine-local path) as a
+ * `TrackerInputError` before any write, then scan our OWN prior marker in the namespace (newest by
+ * `(createdAt, id)`) and PATCH it if present else POST a fresh one — exactly one verdict comment per
+ * (entity, gate), and the own-authored scope means two reviewers never stomp each other's records.
+ * Finally `verifyLanded` re-fetches the upserted comment and re-runs the emission gate on its landed
+ * body. The untrusted comment list is Schema-decoded at the boundary (`listClaimComments`).
+ */
+const postVerdict = Effect.fn("Tracker.postVerdict")(function* (
+	repo: string,
+	target: TargetId,
+	judgment: VerdictJudgment,
+) {
+	const gate = asGate(judgment.gate);
+	if (gate === null) {
+		return yield* new TrackerInputError({
+			message: `unknown gate '${judgment.gate}' — expected one of ${GATES.join(" | ")}`,
+		});
+	}
+	const headRef = judgment.headRef.trim();
+	const body = composeVerdictBody(
+		gate,
+		judgment.passed,
+		headRef,
+		judgment.body.replace(/\s+$/, ""),
+	);
+	const defect = emissionDefect(body, gate);
+	if (defect !== null) {
+		return yield* new TrackerInputError({message: `refusing to post: ${defect}`});
+	}
+	const me = (yield* runGh(whoAmIArgs)).trim();
+	const re = namespaceRe(gate);
+	const mine = (yield* listClaimComments(repo, target))
+		.filter((c) => c.author === me && re.test(c.body))
+		.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id));
+	const priorId = mine[mine.length - 1]?.id;
+	const upsert = yield* Effect.gen(function* () {
+		if (priorId !== undefined) {
+			const decoded = yield* json(patchCommentArgs(repo, priorId, body));
+			return {
+				_tag: "patched" as const,
+				id: typeof decoded === "number" ? decoded : priorId,
+			};
+		}
+		const decoded = yield* json(postCommentArgs(repo, target, body));
+		if (typeof decoded !== "number") {
+			return yield* new GhParseError({
+				args: postCommentArgs(repo, target, "<body>"),
+				message: "comment POST did not return a numeric id",
+			});
+		}
+		return {_tag: "posted" as const, id: decoded};
+	});
+	yield* verifyLanded(repo, upsert.id, gate);
+	return {
+		_tag: upsert._tag,
+		gate: judgment.gate,
+		passed: judgment.passed,
+		headRef,
+	} satisfies VerdictResult;
+});
+
+type TrackerErrors = RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError;
+
+type PostVerdictErrors = TrackerErrors | TrackerInputError | TrackerVerifyError;
+
+/**
+ * `Tracker` — the shared crew tracker capability. `claim`, `readBack`, `applyTriage`, and
+ * `postVerdict` are live; only the still-declared `graduate` fails `TrackerNotImplementedError`
+ * until its sibling child builds it (its success type is `never` by design — a not-yet-built verb
  * produces no value). Built by `GithubTrackerLive`, whose `R` is `ChildProcessSpawner`.
  */
 export class Tracker extends Context.Service<
@@ -461,7 +656,7 @@ export class Tracker extends Context.Service<
 		readonly postVerdict: (
 			target: TargetId,
 			judgment: VerdictJudgment,
-		) => Effect.Effect<never, TrackerNotImplementedError>;
+		) => Effect.Effect<VerdictResult, PostVerdictErrors>;
 		readonly graduate: (
 			target: TargetId,
 			judgment: GraduateJudgment,
@@ -496,7 +691,8 @@ export const GithubTrackerLive: Layer.Layer<
 			readBack: (target) => repo.pipe(Effect.flatMap((r) => withSpawner(readBack(r, target)))),
 			applyTriage: (target, judgment) =>
 				repo.pipe(Effect.flatMap((r) => withSpawner(applyTriage(r, target, judgment)))),
-			postVerdict: () => notImplemented("postVerdict"),
+			postVerdict: (target, judgment) =>
+				repo.pipe(Effect.flatMap((r) => withSpawner(postVerdict(r, target, judgment)))),
 			graduate: () => notImplemented("graduate"),
 		};
 	}),

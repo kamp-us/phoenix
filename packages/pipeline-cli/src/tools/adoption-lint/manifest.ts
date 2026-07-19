@@ -10,9 +10,10 @@
  * without a declared exemption reds the build.
  *
  * Seeded with the canonical #3254 example — `verdict read`, whose ADR-0058
- * SHA-bound marker-resolution three skills hand-copy (#2102). The remaining
- * envelope decisions (claim, apply-triage, create, post-verdict, graduate) arrive
- * with their sibling children (#3262–#3266), each with its own consumer migration.
+ * SHA-bound marker-resolution three skills hand-copy (#2102). `tracker apply-triage`
+ * (#3263) and `tracker post-verdict` (#3265) have since landed; the remaining envelope
+ * decisions (claim, graduate) arrive with their sibling children, each with its own
+ * consumer migration.
  */
 import type {Exemption, OwnedDecision} from "./adoption-lint.ts";
 
@@ -55,6 +56,23 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		reason:
 			"re-derives the label-transition envelope that `pipeline-cli tracker apply-triage` owns (add type/priority/status, remove needs-triage), instead of citing the verb (#3263 / #3254)",
 	},
+	{
+		// `tracker post-verdict` owns the ADR-0058 verdict/comment-post + read-back envelope (#3265):
+		// compose the SHA-bound `review-<gate>: <PASS|FAIL> @ <sha>` marker, PATCH our own prior marker
+		// in the namespace else POST, then re-fetch and self-verify the landed body (#3019). The
+		// fingerprint is the co-occurrence of emitting the marker AS a comment body (`body=review-…`)
+		// and the PATCH-own-prior upsert against the comments endpoint — so a mere DESCRIPTION of the
+		// marker format (which every review skill carries) is NOT a false finding. A file that cites
+		// `pipeline-cli tracker post-verdict` (or the equivalent `pipeline-cli verdict post`) is compliant.
+		verb: "tracker post-verdict",
+		signature: [
+			/body=[^"']{0,80}review-(?:code|doc|skill|design):/, // emits the verdict marker as a comment body
+			/-X\s+PATCH[^\n]*\/comments/, // the PATCH-own-prior upsert leg (else POST)
+		],
+		citation: /pipeline-cli\s+(?:tracker\s+post-verdict|verdict\s+post)\b/,
+		reason:
+			"re-derives the ADR-0058 verdict/comment-post + read-back envelope that `pipeline-cli tracker post-verdict` owns (compose the SHA-bound marker, PATCH-own-prior-else-POST, self-verify the landed body), instead of citing the verb (#3265 / #3254)",
+	},
 ];
 
 /**
@@ -66,8 +84,10 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
  * `drive-issue.js` is the sole legitimate mirror: the orchestrator is a runtime
  * `.js` surface that cannot import the TS verb core, so it must inline what a
  * skill would cite. `heal-ci` and `write-code` are the two current `verdict read`
- * re-derivers named in #3254 — grandfathered here until #3265 (post-verdict)
- * extracts the verb and migrates them same-commit.
+ * re-derivers named in #3254 — their conversion is a non-drop-in rewrite (both scans
+ * do more than a single (PR, gate) resolution: write-code also counts FAIL rounds for
+ * the N=3 repair cap), so #3265 deferred it to its own reviewable PR, tracked by #3619;
+ * they stay grandfathered here until that migration lands and draws them down.
  */
 export const EXEMPTIONS: ReadonlyArray<Exemption> = [
 	{
@@ -80,12 +100,14 @@ export const EXEMPTIONS: ReadonlyArray<Exemption> = [
 		kind: "grandfathered",
 		path: "skills/heal-ci/SKILL.md",
 		verb: "verdict read",
-		reason: "existing `verdict read` re-derivation — migrate to `pipeline-cli verdict` with #3265",
+		reason:
+			"existing `verdict read` re-derivation — migrate to `pipeline-cli verdict read` (deferred by #3265 to its own PR, #3619)",
 	},
 	{
 		kind: "grandfathered",
 		path: "skills/write-code/SKILL.md",
 		verb: "verdict read",
-		reason: "existing `verdict read` re-derivation — migrate to `pipeline-cli verdict` with #3265",
+		reason:
+			"existing `verdict read` re-derivation — migrate to `pipeline-cli verdict read` (deferred by #3265 to its own PR, #3619)",
 	},
 ];

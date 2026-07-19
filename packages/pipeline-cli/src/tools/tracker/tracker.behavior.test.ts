@@ -6,7 +6,9 @@ import {
 	GithubTrackerLive,
 	type RepoResolutionError,
 	Tracker,
+	TrackerInputError,
 	TrackerNotImplementedError,
+	TrackerVerifyError,
 } from "./tracker.ts";
 
 // The live layer resolves its repo lazily (ADR 0062 §1); pin the env override so the
@@ -52,7 +54,10 @@ const mockSpawner = (
 				let cmd = command;
 				while (cmd._tag === "PipedCommand") cmd = cmd.left;
 				const args = cmd._tag === "StandardCommand" ? cmd.args : [];
-				const rawPath = args.find((a) => a.startsWith("repos/")) ?? "";
+				// route on the REST path when present, else on the `gh <sub> <verb>` shape (e.g. `api user`)
+				const rawPath =
+					args.find((a) => a.startsWith("repos/")) ??
+					(args[0] === "api" ? (args[1] ?? "") : args.slice(0, 2).join(" "));
 				const path = rawPath.replace(/\?.*$/, "");
 				const key = `${methodOf(args)} ${path}`;
 				const canned =
@@ -407,18 +412,133 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 	);
 });
 
-describe("Tracker — the declared-but-not-yet-built verbs fail closed", () => {
-	it.effect("postVerdict → TrackerNotImplementedError", () =>
+describe("Tracker.postVerdict — the ADR-0058 verdict/comment-post + read-back envelope", () => {
+	// A full 40-hex head SHA — the ONLY shape the tightened emission guard (#2683) accepts on a
+	// POSTed marker, so the composed `review-<gate>: PASS @ <sha>` first line is bindable.
+	const HEAD40 = `${"a1b2c3d4e5f6".repeat(3)}a1b2`; // 12*3 + 4 = 40 hex
+	const PROSE = "all acceptance criteria met — merge-ready.";
+	const LANDED_PASS = `review-code: PASS @ ${HEAD40}\n\n${PROSE}`;
+
+	const verdictComment = (over: {
+		readonly id: number;
+		readonly login: string;
+		readonly body: string;
+	}) =>
+		({
+			id: over.id,
+			created_at: "2026-07-11T00:00:00Z",
+			user: {login: over.login},
+			body: over.body,
+		}) as const;
+
+	it.effect(
+		"no prior own marker → POST a fresh verdict, self-verify the landed body → posted",
+		() =>
+			Effect.gen(function* () {
+				const tracker = yield* Tracker;
+				const result = yield* tracker.postVerdict(TARGET, {
+					gate: "code",
+					passed: true,
+					headRef: HEAD40,
+					body: PROSE,
+				});
+				assert.deepStrictEqual(result, {
+					_tag: "posted",
+					gate: "code",
+					passed: true,
+					headRef: HEAD40,
+				});
+			}).pipe((effect) =>
+				provide(effect, {
+					"GET user": "usirin",
+					[`GET ${P}/issues/${TARGET}/comments`]: JSON.stringify([]),
+					[`POST ${P}/issues/${TARGET}/comments`]: "999",
+					// the #3019 read-back: postVerdict re-fetches the landed comment and re-runs emissionDefect
+					[`GET ${P}/issues/comments/999`]: LANDED_PASS,
+				}),
+			),
+	);
+
+	it.effect("our own prior marker in the namespace → PATCH it (upsert, not append) → patched", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const result = yield* tracker.postVerdict(TARGET, {
+				gate: "code",
+				passed: true,
+				headRef: HEAD40,
+				body: PROSE,
+			});
+			assert.deepStrictEqual(result, {
+				_tag: "patched",
+				gate: "code",
+				passed: true,
+				headRef: HEAD40,
+			});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				// our own prior review-code marker exists → the upsert PATCHes it, never a second POST
+				[`GET ${P}/issues/${TARGET}/comments`]: JSON.stringify([
+					verdictComment({id: 42, login: "usirin", body: `review-code: FAIL @ ${HEAD40}\n\nstale`}),
+				]),
+				[`PATCH ${P}/issues/comments/42`]: "42",
+				[`GET ${P}/issues/comments/42`]: LANDED_PASS,
+			}),
+		),
+	);
+
+	it.effect("an unknown gate → TrackerInputError before any write", () =>
 		Effect.gen(function* () {
 			const tracker = yield* Tracker;
 			const error = yield* Effect.flip(
-				tracker.postVerdict(TARGET, {gate: "review-code", passed: true, headRef: "deadbeef"}),
+				tracker.postVerdict(TARGET, {gate: "bogus", passed: true, headRef: HEAD40, body: PROSE}),
 			);
-			assert.isTrue(error instanceof TrackerNotImplementedError);
-			assert.strictEqual(error.verb, "postVerdict");
+			assert.isTrue(error instanceof TrackerInputError);
 		}).pipe((effect) => provide(effect, {})),
 	);
 
+	it.effect("a non-40-hex head → emission defect → TrackerInputError, no write", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			// no POST/PATCH fixture: the emission guard must refuse before any write reaches GitHub
+			const error = yield* Effect.flip(
+				tracker.postVerdict(TARGET, {gate: "code", passed: false, headRef: "abc123", body: PROSE}),
+			);
+			assert.isTrue(error instanceof TrackerInputError);
+		}).pipe((effect) => provide(effect, {"GET user": "usirin"})),
+	);
+
+	it.effect("the landed body fails self-verify → TrackerVerifyError (never a false success)", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const error = yield* Effect.flip(
+				tracker.postVerdict(TARGET, {gate: "code", passed: true, headRef: HEAD40, body: PROSE}),
+			);
+			assert.isTrue(error instanceof TrackerVerifyError);
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${TARGET}/comments`]: JSON.stringify([]),
+				[`POST ${P}/issues/${TARGET}/comments`]: "999",
+				// the landed body is not a clean in-namespace marker — the folded-in read-back rejects it
+				[`GET ${P}/issues/comments/999`]: "oops — a hand-edited body with no marker",
+			}),
+		),
+	);
+
+	it.effect("a non-zero gh exit on whoami → GhCommandError in the E channel", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			// no `GET user` fixture → whoami exits 1 → GhCommandError, never a throw or a silent post
+			const error = yield* Effect.flip(
+				tracker.postVerdict(TARGET, {gate: "code", passed: true, headRef: HEAD40, body: PROSE}),
+			);
+			assert.isTrue(error instanceof GhCommandError);
+		}).pipe((effect) => provide(effect, {})),
+	);
+});
+
+describe("Tracker — the declared-but-not-yet-built verbs fail closed", () => {
 	it.effect("graduate → TrackerNotImplementedError", () =>
 		Effect.gen(function* () {
 			const tracker = yield* Tracker;
