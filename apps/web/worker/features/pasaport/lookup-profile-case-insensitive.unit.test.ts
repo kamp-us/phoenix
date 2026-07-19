@@ -109,7 +109,8 @@ const runLookup = (arg: string) =>
 			yield* pasaport.lookupProfile(arg);
 		}).pipe(Effect.provide(pasaportOver(access)));
 		const profileRow = builders[0];
-		if (!profileRow) throw new Error("expected the profile-row SELECT builder to be captured");
+		if (!profileRow)
+			return yield* Effect.die(new Error("expected the profile-row SELECT builder to be captured"));
 		return profileRow;
 	});
 

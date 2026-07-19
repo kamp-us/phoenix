@@ -120,6 +120,7 @@ it.effect("a synchronously-throwing execution context is swallowed too", () =>
 			purge: () => Promise.resolve(),
 			waitUntil: () => {
 				attempts += 1;
+				// biome-ignore lint/plugin: throw is in a nested plain closure (test stub), not the Effect.gen body — lexical matcher can't exempt
 				throw new Error("execution context gone");
 			},
 		});
