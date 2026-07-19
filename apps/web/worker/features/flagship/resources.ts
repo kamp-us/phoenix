@@ -22,7 +22,6 @@ import {
 	PHOENIX_EDGE_SHELL_BOOT,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
-	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_NAV_IA,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
@@ -98,7 +97,6 @@ export {
 	PANO_DRAFT_SAVE,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
-	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_EDITS,
@@ -273,39 +271,6 @@ export const authorshipLoopFlag = (appId: Input<string>) =>
 		...AUTHORSHIP_LOOP_FLAG,
 		rules: AUTHORSHIP_LOOP_RULES,
 	});
-
-/**
- * The conversion-funnel readout dark-ship flag config (#1589) — the founder/mod
- * tier-count surface gates behind this key. Default-OFF so the readout reaches
- * production dark; flipping it on is the human release act (ADR 0083). Its own key
- * (not `phoenix-authorship-loop`) so the funnel destination has an independent
- * lifecycle.
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_DRAFT_SAVE_FLAG`, #746).
- *
- * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
- * asks for):
- *   - owner:           funnel (the conversion-readout founder/mod surface)
- *   - originating:     #1589 (the çaylak→yazar conversion readout)
- *   - removal trigger: once the funnel readout graduates to on at 100% and stable
- *                      for one release, retire the flag and inline the surface.
- */
-export const FUNNEL_READOUT_FLAG = {
-	key: PHOENIX_FUNNEL_READOUT,
-	description:
-		"conversion-funnel readout dark-ship (#1589). owner: funnel. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const funnelReadoutFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("phoenix_funnel_readout", {appId, ...FUNNEL_READOUT_FLAG});
 
 /**
  * The optimistic in-place content-edit dark-ship flag config (#1675, epic #1637).
@@ -532,7 +497,7 @@ export const karmaGatesFlag = (appId: Input<string>) =>
  * the human release act (ADR 0083).
  *
  * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors `FUNNEL_READOUT_FLAG`).
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           pasaport (the identity + session-boundary surface)

@@ -86,15 +86,6 @@ export const PHOENIX_AUTHORSHIP_LOOP = "phoenix-authorship-loop";
 export const PHOENIX_BILDIRIM = "phoenix-bildirim";
 
 /**
- * Conversion-funnel readout dark-ship flag (#1589). The founder/mod aggregate
- * tier-count surface (`/funnel` + the `funnel.summary` read) gates behind this key;
- * default-off so the readout reaches production dark until a human flips it at
- * release (ADR 0083). Its OWN key, not the `phoenix-authorship-loop` seam — the
- * funnel is a separate mod-only destination with its own lifecycle.
- */
-export const PHOENIX_FUNNEL_READOUT = "phoenix-funnel-readout";
-
-/**
  * Optimistic in-place content-edit dark-ship flag (#1675, epic #1637). Gates the
  * three Class-A content edits (`post.edit`, `comment.edit`, `definition.edit`)
  * that render the edited body/title instantly by passing an `optimistic` payload
@@ -167,8 +158,7 @@ export const PHOENIX_KARMA_GATES = "phoenix-karma-gates";
  * until a human flips it at release (ADR 0083): with it off the mutations/read fail
  * the invisible `Denied` (like a non-admin call) and the client controls render
  * nothing, so no session is ever refused by an unreleased feature. Its OWN key, not
- * a shared authz seam — ban is a distinct admin capability with its own lifecycle
- * (the `phoenix-funnel-readout` mod-surface precedent).
+ * a shared authz seam — ban is a distinct admin capability with its own lifecycle.
  */
 export const PHOENIX_USER_BAN = "phoenix-user-ban";
 
@@ -304,7 +294,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: MECMUA_FEED, defaultValue: false},
 	{key: PHOENIX_AUTHORSHIP_LOOP, defaultValue: false},
 	{key: PHOENIX_BILDIRIM, defaultValue: false},
-	{key: PHOENIX_FUNNEL_READOUT, defaultValue: false},
 	{key: PHOENIX_OPTIMISTIC_EDITS, defaultValue: false},
 	{key: PHOENIX_OPTIMISTIC_DEFINITION_ADD, defaultValue: false},
 	{key: PHOENIX_OPTIMISTIC_DEFINITION_DELETE, defaultValue: false},

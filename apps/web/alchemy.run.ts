@@ -48,7 +48,6 @@ import {
 	emailDeliveryAdminFlag,
 	emailDeliveryNoticeFlag,
 	Flagship,
-	funnelReadoutFlag,
 	karmaGatesFlag,
 	mecmuaFeedFlag,
 	mecmuaPublicReadFlag,
@@ -92,9 +91,6 @@ export default Alchemy.Stack(
 		// The earned-authorship loop (çaylak→yazar) dark-ship flag, default-off
 		// (#1204, epic #1202) — the single seam the authorship-loop epic gates behind.
 		yield* authorshipLoopFlag(flagship.appId);
-		// The conversion-funnel readout dark-ship flag, default-off (#1589) — the
-		// founder/mod tier-count surface gates behind this key until a human release.
-		yield* funnelReadoutFlag(flagship.appId);
 		// The optimistic in-place content-edit dark-ship flag, default-off (#1675,
 		// epic #1637) — post/comment/definition edits pass an optimistic payload only
 		// behind this key until a human release.

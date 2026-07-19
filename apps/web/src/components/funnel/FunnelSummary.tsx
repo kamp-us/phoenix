@@ -3,8 +3,8 @@
  * the promotion rate (#1593), the first-contribution rate (#1591), and the vouch rate
  * (#1592) — over the two tier counts (çaylak, yazar) the founder/mod front page
  * renders. Reads the gated
- * `funnel.summary` DESTINATION (founder/mod, behind `phoenix-funnel-readout`); a
- * non-mod read denies the invisible `UNAUTHORIZED`, caught by the page's `<Screen>`.
+ * `funnel.summary` DESTINATION (founder/mod only); a non-mod read denies the
+ * invisible `UNAUTHORIZED`, caught by the page's `<Screen>`.
  *
  * a11y (#1202 baseline): each headline rate is a labelled figure (`<figure>` +
  * `<figcaption>`), and the counts are a real description list (`<dl>`) so each number

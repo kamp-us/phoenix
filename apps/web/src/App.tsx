@@ -502,8 +502,8 @@ export function App() {
 						)}
 						<Route path="/search" element={<SearchPage />} />
 						<Route path="/auth" element={<AuthPage />} />
-						{/* The founder/mod conversion readout (#1589) — the page self-gates on
-					    the funnel-readout flag (off ⇒ 404), so the route is dark by default. */}
+						{/* The founder/mod conversion readout (#1589) — access is server-authoritative
+					    (the gated funnel.summary read denies a non-mod), so the route stays mod-only. */}
 						<Route path="/funnel" element={<FunnelPage />} />
 						{/* The notification center (#1694) — the page self-gates on the
 					    phoenix-bildirim flag (off ⇒ 404), so the route is dark by default. */}

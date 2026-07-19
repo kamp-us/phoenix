@@ -1,9 +1,6 @@
 /**
  * `FunnelPage` — the `/funnel` founder/mod conversion readout (#1589): the tracer
- * bullet for the çaylak→yazar metrics, today just the current tier population. The
- * whole surface ships dark behind the `phoenix-funnel-readout` flag: with the flag
- * off the route renders the 404 (effectively absent); loading shows a neutral
- * placeholder so the 404 never flashes before the flag resolves.
+ * bullet for the çaylak→yazar metrics, today just the current tier population.
  *
  * Access is SERVER-authoritative — the gated `funnel.summary` read denies a non-mod
  * the invisible `UNAUTHORIZED` (`requireFunnelAccess`). The `<Screen>` catches that
@@ -11,29 +8,10 @@
  * may enter, mirroring `DivanPage`.
  */
 import {FunnelSummary} from "../components/funnel/FunnelSummary";
-import {shouldRenderFunnelPage} from "../components/funnel/funnelGating";
 import {Screen} from "../fate/Screen";
-import {PHOENIX_FUNNEL_READOUT} from "../flags/keys";
-import {useFlag} from "../flags/useFlag";
-import {NotFoundPage} from "./NotFoundPage";
 import "../components/funnel/Funnel.css";
 
 export function FunnelPage() {
-	const {value: flagOn, loading: flagLoading} = useFlag(PHOENIX_FUNNEL_READOUT, false);
-
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
-	if (flagLoading) {
-		return (
-			<div className="kp-funnel">
-				<div className="kp-funnel__inner">
-					<p className="kp-funnel__loading">yükleniyor…</p>
-				</div>
-			</div>
-		);
-	}
-
-	if (!shouldRenderFunnelPage(flagOn)) return <NotFoundPage />;
-
 	return (
 		<main className="kp-funnel" data-testid="funnel-page">
 			<div className="kp-funnel__inner">
