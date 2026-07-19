@@ -1,0 +1,46 @@
+name: change-detect-guard
+
+# CI gate for #3245: ci.yml's `changes` (detect changed areas) job must run API-free
+# git-mode change detection — its `dorny/paths-filter` step must set `token: ''`. dorny
+# reads changed files via the GitHub REST API (`pulls.listFiles`) whenever a token is set
+# (and the action defaults it to `${{ github.token }}`), falling back to a pure `git diff`
+# only when the token is empty. That live API read is the sole flake surface of the step: a
+# transient GitHub-API-HTML blip (`invalid character '<'`) hard-fails it and reds the
+# `ci-required` aggregate on a defect-free PR (#3244). This runs
+# `pipeline-cli change-detect-guard check` so a regression back to the API mode cannot merge.
+# It fails closed on zero scope — a missing job/step/`with:` block (ADR 0092). The scan lives
+# once in the tool.
+on:
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs the
+# guard, which fails via exit code — it posts no check-run/status/PR comment — so
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check ci.yml changes job stays API-free git-mode
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when ci.yml's changes-job dorny/paths-filter step isn't in API-free git-mode
+      # (a set/defaulted token), or on zero scope (a missing job/step/with, fail-closed).
+      # Report on stderr. See #3245.
+      - name: Check the ci.yml change-detection API-free git-mode invariant
+        run: node packages/pipeline-cli/src/bin.ts change-detect-guard check
