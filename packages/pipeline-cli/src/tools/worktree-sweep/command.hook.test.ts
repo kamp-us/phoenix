@@ -148,4 +148,55 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		assert.strictEqual(code, 0);
 		assert.isTrue(existsSync(keepWt), "dry-run must never remove a worktree");
 	}, 30_000);
+
+	// #3654: a tree whose working dir was cleaned out from under it (a dead session's temp root)
+	// leaves stale `.git/worktrees/<id>` metadata that `git worktree list` keeps surfacing. The
+	// sweep must prune it via `git worktree prune` (no `git worktree remove` — the path is gone),
+	// and leave a genuinely-present unmerged tree untouched.
+	// Match on the repo-relative tail: macOS git reports the realpath (`/private/var/…`) while
+	// `mainRepo` is the `/var/…` symlink alias, so only an endsWith on the sub-path is stable.
+	const listsPath = (p: string): boolean => {
+		const tail = p.slice(mainRepo.length);
+		return git(mainRepo, "worktree", "list", "--porcelain")
+			.split("\n")
+			.some((l) => l.startsWith("worktree ") && l.slice("worktree ".length).endsWith(tail));
+	};
+
+	it("prunes a gone-dir tree's stale metadata on --execute, but keeps a present unmerged tree", async () => {
+		const goneWt = join(mainRepo, ".claude", "worktrees", "wf_gone");
+		git(mainRepo, "worktree", "add", "-q", "--detach", goneWt, "HEAD");
+		// Remove the working dir out from under git — now only the admin metadata lingers (prunable).
+		rmSync(goneWt, {recursive: true, force: true});
+		assert.isTrue(
+			listsPath(goneWt),
+			"precondition: git still lists the gone tree's stale metadata",
+		);
+
+		// A present, clean, but genuinely UNMERGED tree — a commit past origin/main so its tip is
+		// neither ancestor-reachable nor content-equivalent — must survive (never reaped).
+		const liveWt = join(mainRepo, ".claude", "worktrees", "wf_gone_live");
+		git(mainRepo, "worktree", "add", "-q", "-b", "umut/unmerged-3654", liveWt, "HEAD");
+		writeFileSync(join(liveWt, "feature.txt"), "unmerged feature work");
+		git(liveWt, "add", ".");
+		git(liveWt, "commit", "-q", "-m", "unmerged feature");
+		backdate(liveWt);
+
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"]);
+		assert.strictEqual(code, 0, stdout);
+		assert.isFalse(listsPath(goneWt), "gone-dir metadata must be pruned from git's worktree list");
+		assert.isTrue(existsSync(liveWt), "a present unmerged tree must be kept");
+		assert.isTrue(listsPath(liveWt), "the present unmerged tree stays registered");
+
+		git(mainRepo, "worktree", "remove", "--force", liveWt);
+	}, 30_000);
+
+	it("dry-run leaves gone-dir metadata in place (nothing pruned without --execute)", async () => {
+		const goneWt = join(mainRepo, ".claude", "worktrees", "wf_gone_dry");
+		git(mainRepo, "worktree", "add", "-q", "--detach", goneWt, "HEAD");
+		rmSync(goneWt, {recursive: true, force: true});
+		const {code} = await runSweep(mainRepo, []);
+		assert.strictEqual(code, 0);
+		assert.isTrue(listsPath(goneWt), "dry-run must not prune gone-dir metadata");
+		git(mainRepo, "worktree", "prune"); // clean up the fixture's stale metadata
+	}, 30_000);
 });

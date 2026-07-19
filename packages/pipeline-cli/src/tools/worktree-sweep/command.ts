@@ -2,13 +2,16 @@
  * The `worktree-sweep` tool — `pipeline-cli worktree-sweep [--execute]`.
  *
  * The sanctioned, safe-by-default bulk drain for accumulated agent worktrees (issue
- * #1243). It sweeps two leaked classes (#2785): the harness-provisioned build trees under
- * `.claude/worktrees/`, and the `$TMPDIR`-rooted `review-head-*` detached checkouts the
- * review gates materialize. The harness does not auto-remove a build tree that made commits,
- * and nothing at all reclaims a review-head tree, so both pile up without bound and slow every
- * git op. This command enumerates them, classifies each via the pure core (`worktree-sweep.ts`),
- * prints the plan, and — ONLY with `--execute` — runs `git worktree remove` (NEVER `--force`)
- * on the removable set.
+ * #1243). It sweeps three leaked classes (#2785, #3654): the harness-provisioned build trees
+ * under `.claude/worktrees/`, the `$TMPDIR`-rooted `review-head-*` detached checkouts the
+ * review gates materialize, and gone-dir trees — ANY tree whose working directory is already
+ * missing, leaving only stale `.git/worktrees/<id>` metadata (the cross-session pile). The
+ * harness does not auto-remove a build tree that made commits, nothing reclaims a review-head
+ * tree, and nothing prunes a tree whose session temp-root was cleaned out from under it, so all
+ * three pile up without bound and slow every git op. This command enumerates them, classifies
+ * each via the pure core (`worktree-sweep.ts`), prints the plan, and — ONLY with `--execute` —
+ * runs `git worktree remove` (NEVER `--force`) on the removable set and `git worktree prune`
+ * for the gone-dir metadata.
  *
  * Safe by construction (enforcement lines):
  *   1. The pure classifier only marks a worktree removable when it is CLEAN, reachable
@@ -205,6 +208,23 @@ const worktreeSweep = Command.make(
 		const records: ReadonlyArray<WorktreeRecord> = parsed
 			.filter((p) => !p.bare)
 			.map((p) => {
+				// A gone-dir tree's working directory is missing, so every probe below is either
+				// meaningless or actively errors (`git -C <gone> status` fails → fail-safe dirty,
+				// which would mis-KEEP it). Short-circuit to the safe-to-prune record: the classifier
+				// checks `prunable` first, so the other facts are never consulted for it (#3654).
+				if (p.prunable) {
+					return {
+						path: p.path,
+						branch: p.branch,
+						prunable: true,
+						isDirty: false,
+						reachableFromOriginMain: false,
+						squashMergedToOriginMain: false,
+						locked: p.locked,
+						recentlyActive: false,
+						hasOpenPr: false,
+					};
+				}
 				const managed = isManagedWorktree(p.path);
 				// A review-head tree is a swept candidate too (#2785), so its liveness (idle mtime)
 				// must be probed. Its detached HEAD carries no branch, so the open-PR probe below
@@ -225,6 +245,7 @@ const worktreeSweep = Command.make(
 				return {
 					path: p.path,
 					branch: p.branch,
+					prunable: false,
 					isDirty,
 					reachableFromOriginMain: reachable,
 					squashMergedToOriginMain: squashMerged,
@@ -254,9 +275,27 @@ const worktreeSweep = Command.make(
 			return;
 		}
 
+		// A gone-dir tree has no path to `git worktree remove`; a single `git worktree prune` reaps
+		// ALL prunable admin metadata at once, and every gone-dir record maps to exactly what prune
+		// clears (both keyed on the same `prunable` fact), so the plan and the prune stay consistent.
+		const goneDir = plan.toRemove.filter((r) => r.reason === "gone-dir");
+		const toRemovePaths = plan.toRemove.filter((r) => r.reason !== "gone-dir");
+
+		let pruned = 0;
+		if (goneDir.length > 0) {
+			const res = runGit(["worktree", "prune", "--verbose"]);
+			if (res.ok) {
+				pruned = goneDir.length;
+				for (const r of goneDir)
+					yield* Console.log(`  pruned (gone-dir metadata) ${r.worktree.path}`);
+			} else {
+				yield* Console.error(`  gone-dir prune failed — ${res.stderr.trim()}`);
+			}
+		}
+
 		let removed = 0;
 		let refused = 0;
-		for (const r of plan.toRemove) {
+		for (const r of toRemovePaths) {
 			// NEVER --force: git refuses a tree it judges unsafe, and we KEEP it (report, don't escalate).
 			const res = runGit(["worktree", "remove", r.worktree.path]);
 			if (res.ok) {
@@ -270,13 +309,13 @@ const worktreeSweep = Command.make(
 			}
 		}
 		yield* Console.log(
-			`worktree-sweep: removed ${removed}, kept ${plan.kept.length + refused}` +
+			`worktree-sweep: removed ${removed}, pruned ${pruned}, kept ${plan.kept.length + refused}` +
 				(refused > 0 ? ` (${refused} removable but refused by git → kept)` : ""),
 		);
 	}),
 ).pipe(
 	Command.withDescription(
-		"Safe bulk drain of accumulated agent build worktrees + leaked review-head checkouts — clean+idle only, never --force (#1243/#2785)",
+		"Safe bulk drain of accumulated agent build worktrees + leaked review-head checkouts + gone-dir metadata — clean+idle only, never --force (#1243/#2785/#3654)",
 	),
 );
 
