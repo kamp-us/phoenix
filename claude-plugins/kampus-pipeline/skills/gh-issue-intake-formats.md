@@ -2430,6 +2430,14 @@ comment (§The `status:planning` epic-lock; `plan-epic`/`review-plan`). The
 mis-attribution guard (`write-code` #1456) reads this same surface to prove a target is its
 own before mutating it. Every consumer cites the `CLAIM_RE` and tiebreak defined **here**.
 
+The **resolution** side of this contract — resolve one owner by the earliest authorized
+claim and decide "is it mine?", default-deny — is implemented once as the shared verb
+`pipeline-cli claim is-mine --issue <N>` (#3687, reusing the epic-lock `resolveClaim` core);
+a consumer runs the verb rather than hand-rolling the resolution `jq`, exactly as §5/§6 route
+every marker emit through `pipeline-cli verdict post`. The bash resolution shown below is the
+canonical *reference* the verb implements — read it to understand the tiebreak, run the verb
+to make the decision.
+
 ### Why the bare assignee login cannot be the claim
 
 `write-code` claims by **self-assigning** and the picker's "skip assigned issues" rule

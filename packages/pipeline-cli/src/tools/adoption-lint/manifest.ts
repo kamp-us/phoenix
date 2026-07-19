@@ -159,6 +159,25 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		reason:
 			"re-derives the §HEAD PR-head-checkout that `pipeline-cli review-head materialize` owns (fetch pull/<pr>/head into a per-run ref, check it out detached), instead of citing the verb (#3690 / #793 / #1807 / #3254)",
 	},
+	{
+		// `claim is-mine` owns the ADR-0115 earliest-authorized-claim RESOLUTION (#3687): resolve
+		// one owner among an issue's claim comments — the earliest write+-authored `claim: <sid>`
+		// marker (ADR 0055 trust root) — and decide "is it mine?", default-deny. The fingerprint is
+		// the co-occurrence of all three tells — the CLAIM_RE UUID-body grammar, the write+ ACL
+		// permission loop, and the earliest-(created_at, id) tiebreak — so an incidental prose
+		// mention of "claim" (the many in triage/ship-it) is not a false finding. The single-source
+		// GRAMMAR contract (gh-issue-intake-formats.md §7) and any consuming skill are compliant by
+		// citing `pipeline-cli claim` (as the verdict contract cites `pipeline-cli verdict post`).
+		verb: "claim is-mine",
+		signature: [
+			/\[0-9a-f-\]\{36\}/, // the CLAIM_RE UUID-body grammar (a session-id claim marker)
+			/collaborators\/[^/]*\/?permission|collaborators\//, // the write+ ACL loop (ADR 0055)
+			/sort_by\(\[?\.(?:created_at|at)|earliest authorized claim/, // the earliest-authorized tiebreak
+		],
+		citation: /pipeline-cli\s+claim\b/,
+		reason:
+			"re-derives the ADR-0115 earliest-authorized-claim resolution that `pipeline-cli claim is-mine` owns (resolve one owner by earliest authorized claim, default-deny), instead of citing the verb (#3687 / #3254)",
+	},
 ];
 
 /**

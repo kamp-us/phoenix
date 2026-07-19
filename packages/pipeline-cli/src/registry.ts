@@ -18,6 +18,7 @@ import {catalogGuardCommand} from "./tools/catalog-guard/command.ts";
 import {changeDetectGuardCommand} from "./tools/change-detect-guard/command.ts";
 import {changelogDeriveCommand} from "./tools/changelog-derive/command.ts";
 import {ciRequiredCommand} from "./tools/ci-required/command.ts";
+import {claimCommand} from "./tools/claim/command.ts";
 import {classProbeCommand} from "./tools/class-probe/command.ts";
 import {codeownersCpCommand} from "./tools/codeowners-cp/command.ts";
 import {commandsCommand} from "./tools/commands/command.ts";
@@ -169,6 +170,10 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// reds a PR when a substantive unresolved review thread is unaccounted-for in the
 	// review-code verdict, covering the §CP manual-merge path ship-it Step 3.6 never sees.
 	unresolvedThreadsGuardCommand,
+	// The #3687 issue-scoped claim resolver (epic #3258 verb wave): resolves the ADR-0115
+	// earliest-authorized-claim decision — "is this claim mine?" — default-deny, reusing
+	// epic-lock's pure `resolveClaim` core rather than a second copy.
+	claimCommand,
 	// The #3254 adoption corpus-lint (epic #3258, governing AC): reds a corpus file that
 	// inline-re-derives a tool-owned decision without citing the owning verb, so the verb
 	// sweep can't grow the unreferenced-tool pile. Fail-closed on zero scope (ADR 0092).
