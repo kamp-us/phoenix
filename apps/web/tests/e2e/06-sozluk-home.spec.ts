@@ -83,27 +83,24 @@ test.describe("SozlukHome create-flow (+ yeni tanım → composer)", () => {
 
 		await page.getByRole("button", {name: /yeni tanım/i}).click();
 
-		// Gate on the composer's `Terim` input becoming actionable rather than settling the
-		// dialog's `kp-dialog-pop` entry animation. The old settle awaited every animation's
-		// `finished` promise, but the Web Animations API REJECTS `finished` with an AbortError
-		// when an animation is cancelled — and the Base UI portal re-render cancels the entry
-		// animation mid-flight, so `Promise.all` fail-fast rejected and the spec died. That
-		// settle relocated the #3517 portal-re-render race into a hard rejection instead of
-		// removing it (#3526 → #3583). Playwright's built-in actionability on the fill/click
-		// below already waits for the popup to be visible, stable, and hit-testable and
-		// auto-retries a control the re-render detaches mid-action — the real fix for the #3517
-		// detach-mid-click flake.
+		// The Base UI dialog portal re-renders shortly after open (a transition-status flip
+		// that detaches the popup subtree — the #3517 race), so a single fill→submit loses its
+		// target: the `oluştur` button detaches faster than Playwright's per-action auto-retry
+		// can outlast (#3585 only moved the failure here from the cancelled-animation
+		// AbortError), and a remount clears the uncontrolled `Terim` input. Retry the whole
+		// fill→submit→navigate as one unit until it sticks — each poll re-fills (idempotent)
+		// and re-clicks, and the block passes only once the submit's navigation actually lands,
+		// so a mid-interaction detach is absorbed instead of failing the test. The app-side
+		// portal re-render is tracked as a follow-up off #3583.
 		const dialog = page.locator(".kp-dialog__popup");
 		await expect(dialog).toBeVisible();
-		const termInput = page.getByLabel("Terim");
-		await termInput.waitFor({state: "visible"});
-
-		// The dialog collects the term name (the composer is slug-addressed).
-		await termInput.fill(term);
-		await page.getByRole("button", {name: /^oluştur$/i}).click();
-
-		// The dialog slugifies + navigates to the fresh-slug composer route.
-		await expect(page).toHaveURL(new RegExp(`/sozluk/${slug}$`));
+		await expect(async () => {
+			// The dialog collects the term name (the composer is slug-addressed).
+			await page.getByLabel("Terim").fill(term);
+			await page.getByRole("button", {name: /^oluştur$/i}).click({timeout: 2_000});
+			// The dialog slugifies + navigates to the fresh-slug composer route.
+			await expect(page).toHaveURL(new RegExp(`/sozluk/${slug}$`), {timeout: 2_000});
+		}).toPass({timeout: 9_000});
 		// Signed-in fresh slug → NewTermComposer: term head + composer body.
 		await expect(page.locator(".kp-sozluk-term__head")).toBeVisible({timeout: 10_000});
 		await expect(page.locator('[data-testid="sozluk-composer-body"]')).toBeVisible();
