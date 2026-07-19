@@ -47,6 +47,7 @@ export {
 	tryBecomeTracker,
 } from "./ensure-tracker.ts";
 export {
+	buildLaunchPlan,
 	CREW_WINDOW,
 	ensureNamedTmuxSession,
 	FALLBACK_TMUX_SESSION,
@@ -58,9 +59,12 @@ export {
 	paneClaudeCommand,
 	productionProjectScopeRegistrar,
 	renderStandUpError,
+	renderTaggedError,
 	resolveTargetTmuxSession,
 	runStandDown,
 	runStandUp,
+	runTmux,
+	type SessionPlanContext,
 	type StandDownInput,
 	type StandUpError,
 	type StandUpInput,
@@ -69,6 +73,7 @@ export {
 	type TmuxRun,
 	type TmuxRunner,
 	TmuxSessionEnsureError,
+	toRosterSession,
 } from "./orchestrate.ts";
 export {
 	applyDisableApproval,
@@ -100,10 +105,29 @@ export {
 export {
 	type BridgeSession,
 	type CrewSession,
+	deriveOneSession,
 	deriveSessionSet,
 	type EngineSession,
 	type SessionSetInput,
 } from "./session-set.ts";
+export {
+	CrewPaneKillError,
+	CrewPaneNotFoundError,
+	CrewWindowNotRunningError,
+	findCrewPaneId,
+	productionRetireArtifacts,
+	type RetireArtifacts,
+	RetireRoleArgError,
+	type RetireRoleError,
+	type RetireRoleInput,
+	type RetireRoleResult,
+	resolveCrewWindowId,
+	retireRole,
+	type SpawnRoleError,
+	type SpawnRoleInput,
+	type SpawnRoleResult,
+	spawnRole,
+} from "./single-role.ts";
 export {
 	computeTmuxPlacement,
 	type PlacementTarget,

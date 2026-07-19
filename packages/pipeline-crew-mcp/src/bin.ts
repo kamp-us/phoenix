@@ -7,6 +7,15 @@
  *   node src/bin.ts tracker                           # run a standalone per-project tracker
  *   node src/bin.ts stand-up                          # stand the whole crew up from the operator config
  *   node src/bin.ts stand-down                        # tear down the crew's project-scope .mcp.json + server approval
+ *   node src/bin.ts spawn-role <role>                 # add ONE member to the running crew (no whole-crew re-boot)
+ *   node src/bin.ts retire-role <role> [--instance]   # retire ONE member (kill its pane + reclaim its artifacts)
+ *
+ * The `spawn-role` / `retire-role` subcommands are the single-member membership ops (#3519): dynamic
+ * add/remove/respawn of ONE crew member without the whole-crew re-boot `stand-up`/`stand-down` force.
+ * `spawn-role` reuses the whole-crew per-role launch step but SPLITS the pane into the running crew
+ * window; `retire-role` kills one member's pane (its role lease frees by TTL) and reclaims its inbox
+ * socket + launcher cwd. The runtime already does the join/leave/discover (crew/session.ts + tracker.ts);
+ * these subcommands are the missing CLI surface over it. See `standup/single-role.ts`.
  *
  * The `session` subcommand is the runnable stdio MCP entry (#3062): it stands up one live crew
  * session's `McpServer` over stdio + its channel peer, so the crew's inter-session seams run over
@@ -40,10 +49,18 @@
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Cause, Console, Effect, Option} from "effect";
-import {Command, Flag} from "effect/unstable/cli";
+import {Argument, Command, Flag} from "effect/unstable/cli";
 
 import {CREW_ROLES, RoleUniquenessError, runCrewSession} from "./crew/index.ts";
-import {CREW_WINDOW, renderStandUpError, runStandDown, runStandUp} from "./standup/index.ts";
+import {
+	CREW_WINDOW,
+	renderStandUpError,
+	renderTaggedError,
+	retireRole,
+	runStandDown,
+	runStandUp,
+	spawnRole,
+} from "./standup/index.ts";
 import {isTrackerAddressInUse, launchTracker} from "./tracker/index.ts";
 import {VERSION} from "./version.ts";
 
@@ -171,6 +188,79 @@ const standDown = Command.make(
 	),
 );
 
+// The positional role a single-member membership op targets — any roster role (the `session --role`
+// flag chooses from the SAME `CREW_ROLES` source; this is its positional twin for spawn/retire).
+const roleArg = Argument.choice("role", CREW_ROLES).pipe(
+	Argument.withDescription("the crew role to spawn/retire one member of (one of the CREW_ROLES)"),
+);
+// Which engine INSTANCE to retire — required for a cardinality-N engine, rejected for a singleton
+// bridge (retireRole enforces the kind rule). Optional at the CLI so a bridge omits it.
+const instanceFlagOptional = Flag.optional(Flag.string("instance")).pipe(
+	Flag.withDescription(
+		"the engine instance id to retire (required for an engine role, none for a bridge)",
+	),
+);
+
+const spawnRoleCmd = Command.make(
+	"spawn-role",
+	{projectRoot: projectRootFlag, role: roleArg},
+	Effect.fn(function* ({projectRoot, role}) {
+		yield* Console.error(
+			`pipeline-crew-mcp ${VERSION} — spawning one "${role}" member into the running crew (project ${projectRoot})`,
+		);
+		// Add ONE member to the running crew without a whole-crew re-boot (#3519): reuse the shared
+		// per-role launch step, split into the running crew window, fail-loud if no crew is up.
+		return yield* spawnRole({projectRoot, role}).pipe(
+			Effect.flatMap((result) =>
+				Console.error(
+					`crew member up: ${result.launched.role}→${result.launched.pane} in window ${result.launched.window} (pid ${result.launched.pid ?? "?"})`,
+				),
+			),
+			Effect.catch((error) =>
+				Console.error(`spawn-role aborted: ${renderTaggedError(error)}`).pipe(
+					Effect.andThen(Effect.sync(() => process.exit(1))),
+				),
+			),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Add ONE crew member to the running crew (split into the crew window), no whole-crew re-boot",
+	),
+);
+
+const retireRoleCmd = Command.make(
+	"retire-role",
+	{projectRoot: projectRootFlag, role: roleArg, instance: instanceFlagOptional},
+	Effect.fn(function* ({projectRoot, role, instance}) {
+		yield* Console.error(
+			`pipeline-crew-mcp ${VERSION} — retiring one "${role}" member from the running crew (project ${projectRoot})`,
+		);
+		// Tear ONE member down cleanly: kill its pane (its lease frees by TTL), reclaim its inbox socket +
+		// launcher cwd — leaving every other member running (#3519).
+		return yield* retireRole({
+			projectRoot,
+			role,
+			...(Option.isSome(instance) ? {instance: instance.value} : {}),
+		}).pipe(
+			Effect.flatMap((result) =>
+				Console.error(
+					`crew member retired: ${result.role}${result.instance ? `/${result.instance}` : ""} (killed pane ${result.paneId})`,
+				),
+			),
+			Effect.catch((error) =>
+				Console.error(`retire-role aborted: ${renderTaggedError(error)}`).pipe(
+					Effect.andThen(Effect.sync(() => process.exit(1))),
+				),
+			),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Retire ONE crew member (kill its pane + reclaim its artifacts), leaving the rest running",
+	),
+);
+
 const cli = Command.make(
 	"pipeline-crew-mcp",
 	{},
@@ -181,7 +271,7 @@ const cli = Command.make(
 	}),
 ).pipe(
 	Command.withDescription("The crew's channels-backed messaging substrate (epic #3045)"),
-	Command.withSubcommands([session, tracker, standUp, standDown]),
+	Command.withSubcommands([session, tracker, standUp, standDown, spawnRoleCmd, retireRoleCmd]),
 );
 
 cli.pipe(Command.run({version: VERSION}), Effect.provide(NodeServices.layer), NodeRuntime.runMain);
