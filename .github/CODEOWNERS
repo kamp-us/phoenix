@@ -1,9 +1,9 @@
 # Control-plane: control-plane-team approval required (ADR 0053, 0065, 0071, 0135).
-# Owner is the @kamp-us/control-plane team (usirin + cansirin) — a two-human team so
-# `require_code_owner_review` is SATISFIABLE (a single operator cannot self-approve;
-# GitHub blocks self-approval, so a §CP PR needs the OTHER team member — a deliberate
-# two-person control). The team is humans-only: never an agent/bot, else an ADR-0055
-# agent approval would defeat the human-judgment property (ADR 0135, amending 0071).
+# Owner is the @kamp-us/control-plane team, so `require_code_owner_review` is SATISFIABLE
+# (a single operator cannot self-approve; GitHub blocks self-approval, so a §CP PR needs
+# ANOTHER team member — a deliberate multi-person control). The team is humans-only:
+# never an agent/bot, else an ADR-0055 agent approval would defeat the human-judgment
+# property (ADR 0135, amending 0071).
 #
 # This file is INERT until the `main` ruleset enables `require_code_owner_review`
 # (a human governance action — the Phase-3 ruleset flip after this PR merges; see
