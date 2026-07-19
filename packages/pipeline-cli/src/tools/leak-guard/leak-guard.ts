@@ -10,18 +10,16 @@
  * empty list. No regex over arbitrary source — the match is scoped to doc surfaces
  * exactly as the AC requires.
  *
- * The non-obvious part is the deny-list design: it matches ONLY the specific #158
- * leak dirs (`/Users/<name>`, `~/.claude|.usirin|.agent`, `~/code/`, `/vault/`),
- * NOT a general bare-`~/` catch-all. So any other `~/<x>` — `~/.config`,
- * `~/.alchemy` (a documented tool dir; see .patterns/alchemy-ci-cd.md),
- * `~/Documents` — PASSES, because it leaks no identity of this machine. Plus the
- * `/tmp` scratch carve-out and the path-hygiene self-exempt files. That precise
- * allowlist is the load-bearing false-positive safety, encoded in
- * `leak-guard.unit.test.ts`. The `~/.claude` arm is further NARROWED BY SHAPE (#3475)
- * to exempt the two public, machine-agnostic config *files* `~/.claude.json` and
- * `~/.claude/settings.json` while still flagging `~/.claude/`-directory internals — the
- * carve-out lives at the pattern (LEAK_PATTERNS), not in a named allow-list (#2393).
+ * The machine-local-path shapes themselves — the generic deny-list design and the
+ * `~/.claude` config-file carve-out (#3475/#3505); the `/tmp` arm carries no carve-out,
+ * so it fail-closes on any bare `/tmp/…` (#3492 Option 1) — live in the single shared
+ * `path-matcher.ts` module that both this doc/comment scanner and `crew-leak.ts` import,
+ * so the two detectors can never
+ * drift (the #3506 root bug). This module owns only the doc-surface scoping (which
+ * files get scanned) and the self-exempt list; the path shapes are imported, not
+ * re-declared. See `path-matcher.ts` for the pattern rationale.
  */
+import {MACHINE_LOCAL_PATH_PATTERNS, type PathPattern, TEMP_PATH_PATTERNS} from "./path-matcher.ts";
 
 export interface Leak {
 	/** The exact substring that matched a leak pattern. */
@@ -43,6 +41,10 @@ const DOC_SELF_EXEMPT = [
 	"/packages/leak-guard/README.md",
 	"/packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts",
 	"/packages/pipeline-cli/src/tools/leak-guard/leak-guard.unit.test.ts",
+	// The shared machine-local-path matcher spells the forbidden token shapes out as
+	// patterns (moved out of leak-guard.ts per #3506), so it is exempt like its host was.
+	"/packages/pipeline-cli/src/tools/leak-guard/path-matcher.ts",
+	"/packages/pipeline-cli/src/tools/leak-guard/path-matcher.unit.test.ts",
 	"/packages/pipeline-cli/src/tools/leak-guard/command.ts",
 	// Documents the leak-guard deny-list patterns (the ~/.claude / ~/code/ / /vault
 	// example shapes), so it must spell the forbidden tokens out — exempt like the
@@ -61,81 +63,10 @@ const DOC_SELF_EXEMPT = [
 	"/CLAUDE.md",
 ] as const;
 
-interface LeakPattern {
-	readonly pattern: RegExp;
-	readonly reason: string;
-}
-
-// Order = report order. Each `g` flag is required for the per-match scan in findLeaks.
-const LEAK_PATTERNS: ReadonlyArray<LeakPattern> = [
-	{
-		// The `(?<![A-Za-z]:)` drive-letter carve-out keeps this a GENERIC structural check
-		// while dropping the Windows-file-URL false positive: a bare POSIX `/Users/<name>/`
-		// still matches (real macOS-home leak), but a drive-prefixed `C:/Users/...` (e.g.
-		// `file:///C:/Users/ci/...`) does not — that substring is not a macOS home path and
-		// carries no operator PII, yet its FP fail-closed-blocked legitimate PRs (#3070).
-		pattern: /(?<![A-Za-z]:)\/Users\/[A-Za-z0-9._-]+/g,
-		reason: "absolute macOS home path (/Users/<name>/...)",
-	},
-	{
-		pattern: /(?<![\w.])~\/\.(usirin|agent)\b/g,
-		reason: "agent/tool home dir (~/.usirin, ~/.agent)",
-	},
-	{
-		// The `~/.claude` home-dir detector, NARROWED by shape (not a named allow-list; #2393
-		// and #3475): it still flags any descent into the private agent home tree
-		// (`~/.claude/projects/…`, `~/.claude/todos/…`) and bare `~/.claude`, but the two
-		// negative lookaheads carve out the claude CLI's public, machine-agnostic config *files*
-		// — `~/.claude.json` (a sibling dotfile config, `~/.claude` + a `.json` extension, NOT
-		// the directory) and `~/.claude/settings.json` (the one documented settings file). Those
-		// two are identical on every machine and reveal nothing operator-specific, and they are
-		// the literal subject of packages/pipeline-crew-mcp, so flagging them was a chronic
-		// false positive. The carve-out is SHAPE, not a membership list: the exclusion is a
-		// property of this one generic pattern (a config-file leaf on the marker), so a longer
-		// name (`~/.claude.json.bak`, `~/.claude/settings.local.json`, `~/.claude/settings.jsonc`)
-		// or any deeper path still trips it — the `(?![\w.])` tail pins each carve-out to the
-		// exact public leaf. See the threat-model note on #3475 for what this can no longer catch.
-		pattern: /(?<![\w.])~\/\.claude(?!\.json(?![\w.]))(?!\/settings\.json(?![\w.]))\b/g,
-		reason:
-			"agent/tool home dir (~/.claude internals; public config files ~/.claude.json, ~/.claude/settings.json exempt)",
-	},
-	{
-		pattern: /(?<![\w.])~\/code\//g,
-		reason: "home-dir sibling-repo clone (~/code/...)",
-	},
-	{
-		pattern: /(?<![\w/])\/vault\//g,
-		reason: "vault path (/vault/...)",
-	},
-];
-
-// Machine-local temp/scratch roots — a PR/issue COMMENT (or verdict) body must never carry
-// one (the #2796/#2822 scratchpad-`@filepath` and #2683/#2772 mktemp-in-`@sha` leaks). This is
-// deliberately STRICTER than the doc-surface `findLeaks`, which carves out a bare `/tmp` for
-// illustrative examples in docs — a public PR comment has no such legitimate use, so these are
-// scanned by `findCommentLeaks` only, never by the file-surface path. Generic path shapes, NOT
-// a named deny-list (#2393): the macOS mktemp dirs and a bare `/tmp` scratch path. The
-// `(?<![\w.])` lookbehind stops a `/private/tmp/...` match from also double-firing the `/tmp/`
-// pattern (its preceding char is a word char), so each leak reports once.
-const TEMP_PATTERNS: ReadonlyArray<LeakPattern> = [
-	{
-		pattern: /(?<![\w.])\/var\/folders\/[A-Za-z0-9._/-]+/g,
-		reason: "macOS per-user mktemp dir (/var/folders/...)",
-	},
-	{
-		pattern: /(?<![\w.])\/private\/(?:tmp|var)\/[A-Za-z0-9._/-]+/g,
-		reason: "macOS resolved temp root (/private/tmp/..., /private/var/...)",
-	},
-	{
-		pattern: /(?<![\w.])\/tmp\/[A-Za-z0-9._/-]+/g,
-		reason: "machine-local temp/scratch path (/tmp/...)",
-	},
-];
-
 const normalize = (path: string): string => path.replace(/\\/g, "/");
 
 /** Every leak in `text` for `patterns`, deduped on matched+reason (report order = pattern order). */
-const scanPatterns = (text: string, patterns: ReadonlyArray<LeakPattern>): ReadonlyArray<Leak> => {
+const scanPatterns = (text: string, patterns: ReadonlyArray<PathPattern>): ReadonlyArray<Leak> => {
 	const seen = new Set<string>();
 	const leaks: Leak[] = [];
 	for (const {pattern, reason} of patterns) {
@@ -171,7 +102,7 @@ export const findLeaks = (filePath: string, text: string): ReadonlyArray<Leak> =
 	if (!filePath || !text) return [];
 	if (!isSharedArtifact(filePath)) return [];
 	if (isSelfExempt(filePath)) return [];
-	return scanPatterns(text, LEAK_PATTERNS);
+	return scanPatterns(text, MACHINE_LOCAL_PATH_PATTERNS);
 };
 
 /**
@@ -180,9 +111,10 @@ export const findLeaks = (filePath: string, text: string): ReadonlyArray<Leak> =
  * `/private/tmp/.../scratchpad/verdict.md` scratchpad ref and a `@/var/folders/.../tmp.XXXX`
  * mktemp path onto public PRs (#2796/#2822/#2683/#2772). A comment body is UNCONDITIONALLY a
  * shared public artifact, so there is no doc-surface gate and no self-exempt list — it scans
- * the home-dir `LEAK_PATTERNS` AND the stricter `TEMP_PATTERNS`. Generic path shapes only (#2393).
+ * the shared `MACHINE_LOCAL_PATH_PATTERNS` AND the stricter comment-body-only `TEMP_PATH_PATTERNS`
+ * (which fail-closes on any bare `/tmp/…`, no carve-out — #3492 Option 1). Generic path shapes only (#2393).
  */
 export const findCommentLeaks = (text: string): ReadonlyArray<Leak> => {
 	if (!text) return [];
-	return scanPatterns(text, [...LEAK_PATTERNS, ...TEMP_PATTERNS]);
+	return scanPatterns(text, [...MACHINE_LOCAL_PATH_PATTERNS, ...TEMP_PATH_PATTERNS]);
 };

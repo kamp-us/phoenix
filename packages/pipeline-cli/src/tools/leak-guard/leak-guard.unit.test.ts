@@ -162,6 +162,19 @@ describe("findCommentLeaks — PR/issue comment body scan (#2796, stricter than 
 		const leaks = findCommentLeaks("staged at /private/tmp/claude/scratchpad/verdict.md");
 		assert.strictEqual(leaks.length, 1);
 	});
+
+	// #3492 (Option 1) — the /tmp arm has NO socket carve-out: the comment surface fail-closes on
+	// ANY bare /tmp/…, including the crew-inbox socket glob. The false positive is fixed emit-side
+	// (review-code reviewers write the socket as a bare `kampus-crew-inbox-*.sock` name or fenced),
+	// never by weakening scan-pr Step 3.7.
+	it("blocks a bare /tmp/…-*.sock socket glob in a verdict comment (#3492 — guard stays strict)", () =>
+		assert.isTrue(
+			hasCommentLeak(
+				"review-code: PASS — the /tmp/kampus-crew-inbox-*.sock runtime path is the crew inbox socket",
+			),
+		));
+	it("blocks a concrete /tmp scratch path in a verdict comment (#3492)", () =>
+		assert.isTrue(hasCommentLeak("review-code: notes staged at /tmp/reviewer-scratch/verdict.md")));
 });
 
 describe("findLeaks — file surface keeps its /tmp carve-out (unchanged by the comment scan)", () => {

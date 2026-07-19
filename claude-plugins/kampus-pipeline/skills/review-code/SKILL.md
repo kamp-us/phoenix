@@ -1413,6 +1413,15 @@ that **review-code does not merge** — `ship-it` is the authorized merge step. 
 a PR rests on the non-AC sub-gates alone; this is exactly the `review-doc` Step 5 no-link shape,
 mirrored for the code lane.
 
+### Reviewer discipline — never write a bare `/tmp/…` in the verdict body (#3492)
+
+When a verdict must reference the crew inbox socket, write it as the bare name
+`kampus-crew-inbox-*.sock` (no `/tmp/` prefix) or inside a code fence. leak-guard fail-closes on
+ANY bare `/tmp/…` literal in a landed comment (ship-it Step 3.7 `leak-guard scan-pr`), and that is
+correct — the guard's zero-`/tmp` invariant stays strict (#3492 Option 1; there is deliberately no
+socket carve-out in the shared matcher). A bare `/tmp/kampus-crew-inbox-*.sock` in your prose blocks
+the ship; the bare-name or fenced form conveys the same thing without tripping the guard.
+
 ### The marker is the contract — emit the canonical line, never a freelance form (governs 4a *and* 4b)
 
 The first line is **the contract `ship-it` consumes**, not a stylistic choice — it must match
