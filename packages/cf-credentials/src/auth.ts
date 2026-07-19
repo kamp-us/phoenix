@@ -96,10 +96,10 @@ const logout = Command.make(
 	{},
 	Effect.fn(function* () {
 		const keychain = yield* Keychain;
-		const removed = yield* Effect.all([
-			keychain.remove(API_TOKEN_ACCOUNT),
-			keychain.remove(ACCOUNT_ID_ACCOUNT),
-		]);
+		const removed = yield* Effect.all(
+			[keychain.remove(API_TOKEN_ACCOUNT), keychain.remove(ACCOUNT_ID_ACCOUNT)],
+			{concurrency: 1},
+		);
 		yield* Console.log(
 			removed.some((wasRemoved) => wasRemoved)
 				? "removed stored Cloudflare credentials from the macOS Keychain"

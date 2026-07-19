@@ -56,7 +56,8 @@
 		"./biome-plugins/no-data-taggederror.grit",
 		"./biome-plugins/no-raw-try-catch.grit",
 		"./biome-plugins/no-numeric-duration.grit",
-		"./biome-plugins/no-throw-in-effect-gen.grit"
+		"./biome-plugins/no-throw-in-effect-gen.grit",
+		"./biome-plugins/no-implicit-effect-concurrency.grit"
 	],
 	"linter": {
 		"enabled": true,

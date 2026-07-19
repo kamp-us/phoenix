@@ -428,11 +428,14 @@ export const CloudflareLive: Layer.Layer<
 			listResources: () =>
 				credsRef.pipe(
 					Effect.flatMap((creds) =>
-						Effect.all([
-							withSpawner(listWorkers(creds)),
-							withSpawner(listD1(creds)),
-							withSpawner(listFlagship(creds)),
-						]),
+						Effect.all(
+							[
+								withSpawner(listWorkers(creds)),
+								withSpawner(listD1(creds)),
+								withSpawner(listFlagship(creds)),
+							],
+							{concurrency: 1},
+						),
 					),
 					Effect.map(([workers, d1s, flagship]) => [...workers, ...d1s, ...flagship]),
 				),

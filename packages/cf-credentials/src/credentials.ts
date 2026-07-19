@@ -82,10 +82,10 @@ export interface CredentialSources {
 export const credentialSources: Effect.Effect<CredentialSources, never, Keychain> = Effect.gen(
 	function* () {
 		const keychain = yield* Keychain;
-		const [storedToken, storedAccount] = yield* Effect.all([
-			keychain.get(API_TOKEN_ACCOUNT),
-			keychain.get(ACCOUNT_ID_ACCOUNT),
-		]);
+		const [storedToken, storedAccount] = yield* Effect.all(
+			[keychain.get(API_TOKEN_ACCOUNT), keychain.get(ACCOUNT_ID_ACCOUNT)],
+			{concurrency: 1},
+		);
 		const envToken = process.env.CLOUDFLARE_API_TOKEN;
 		const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
 		const apiToken: CredentialSource =

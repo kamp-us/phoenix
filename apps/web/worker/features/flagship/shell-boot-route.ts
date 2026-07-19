@@ -77,8 +77,10 @@ const toBootUser = (user: User): BootUser => ({
 export const readShellFlags = (context: FlagsContextValue) =>
 	Effect.gen(function* () {
 		const flags = yield* Flags;
-		const entries = yield* Effect.forEach(SHELL_FLAG_KEYS, (key) =>
-			flags.getBoolean(key, false).pipe(Effect.map((value) => [key, value] as const)),
+		const entries = yield* Effect.forEach(
+			SHELL_FLAG_KEYS,
+			(key) => flags.getBoolean(key, false).pipe(Effect.map((value) => [key, value] as const)),
+			{concurrency: 1},
 		).pipe(Effect.provideService(FlagsContext, context));
 		return Object.fromEntries(entries) as Record<ShellFlagKey, boolean>;
 	});

@@ -101,8 +101,11 @@ export const handleFlagsEvaluate = Effect.gen(function* () {
 	// Each `getBoolean` honors its own supplied default and never throws. The
 	// per-request `FlagsContext` is provided ONCE over the whole batch (ADR 0029)
 	// rather than per key, so the loop reads `flags.getBoolean` directly.
-	const entries = yield* Effect.forEach(keys, ({key, default: defaultValue}) =>
-		flags.getBoolean(key, defaultValue).pipe(Effect.map((value) => [key, value] as const)),
+	const entries = yield* Effect.forEach(
+		keys,
+		({key, default: defaultValue}) =>
+			flags.getBoolean(key, defaultValue).pipe(Effect.map((value) => [key, value] as const)),
+		{concurrency: 1},
 	).pipe(Effect.provideService(FlagsContext, context));
 
 	const result: FlagEvaluateResult = {flags: Object.fromEntries(entries)};

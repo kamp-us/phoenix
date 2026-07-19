@@ -83,11 +83,14 @@ describe("Drizzle.run", () => {
 	it.effect("composition: Effect.all over multiple run calls", () =>
 		Effect.gen(function* () {
 			const {run} = yield* Drizzle;
-			const results = yield* Effect.all([
-				run(() => Promise.resolve("a")),
-				run(() => Promise.resolve("b")),
-				run(() => Promise.resolve("c")),
-			]);
+			const results = yield* Effect.all(
+				[
+					run(() => Promise.resolve("a")),
+					run(() => Promise.resolve("b")),
+					run(() => Promise.resolve("c")),
+				],
+				{concurrency: 1},
+			);
 			assert.deepStrictEqual(results, ["a", "b", "c"]);
 		}).pipe(Effect.provide(TestDrizzleLayer)),
 	);

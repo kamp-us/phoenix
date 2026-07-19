@@ -363,13 +363,16 @@ const resolveNode = (
 		for (const [field, relationNode] of node.relations) {
 			const current = getItem()[field];
 			if (isConnectionResult(current)) {
-				const items = yield* Effect.forEach(current.items, (entry) =>
-					Effect.gen(function* () {
-						if (!isRecord(entry)) {
-							return entry;
-						}
-						return {...entry, node: yield* resolveNode(entry.node, relationNode, options)};
-					}),
+				const items = yield* Effect.forEach(
+					current.items,
+					(entry) =>
+						Effect.gen(function* () {
+							if (!isRecord(entry)) {
+								return entry;
+							}
+							return {...entry, node: yield* resolveNode(entry.node, relationNode, options)};
+						}),
+					{concurrency: 1},
 				);
 				assign(field, {...current, items});
 				continue;
@@ -377,7 +380,9 @@ const resolveNode = (
 			if (Array.isArray(current)) {
 				assign(
 					field,
-					yield* Effect.forEach(current, (entry) => resolveNode(entry, relationNode, options)),
+					yield* Effect.forEach(current, (entry) => resolveNode(entry, relationNode, options), {
+						concurrency: 1,
+					}),
 				);
 				continue;
 			}
@@ -489,16 +494,19 @@ const toConnectionResult = (
 			const nextPath = path ? `${path}.${field}` : field;
 			if (isRecord(config) && config.kind === "list") {
 				if (isConnectionResult(current)) {
-					const items = yield* Effect.forEach(current.items, (entry) =>
-						Effect.gen(function* () {
-							if (!isRecord(entry)) {
-								return entry;
-							}
-							return {
-								...entry,
-								node: yield* toConnectionResult(entry.node, config, args, nextPath),
-							};
-						}),
+					const items = yield* Effect.forEach(
+						current.items,
+						(entry) =>
+							Effect.gen(function* () {
+								if (!isRecord(entry)) {
+									return entry;
+								}
+								return {
+									...entry,
+									node: yield* toConnectionResult(entry.node, config, args, nextPath),
+								};
+							}),
+						{concurrency: 1},
 					);
 					assign(field, {...current, items});
 					continue;
@@ -506,8 +514,10 @@ const toConnectionResult = (
 				if (!Array.isArray(current)) {
 					continue;
 				}
-				const nodes = yield* Effect.forEach(current, (entry) =>
-					toConnectionResult(entry, config, args, nextPath),
+				const nodes = yield* Effect.forEach(
+					current,
+					(entry) => toConnectionResult(entry, config, args, nextPath),
+					{concurrency: 1},
 				);
 				assign(field, yield* arrayToConnection(nodes, getScopedArgs(args, nextPath)));
 				continue;
@@ -515,8 +525,10 @@ const toConnectionResult = (
 			if (Array.isArray(current)) {
 				assign(
 					field,
-					yield* Effect.forEach(current, (entry) =>
-						toConnectionResult(entry, config, args, nextPath),
+					yield* Effect.forEach(
+						current,
+						(entry) => toConnectionResult(entry, config, args, nextPath),
+						{concurrency: 1},
 					),
 				);
 				continue;

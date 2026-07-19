@@ -76,14 +76,17 @@ const readManifests = (
 	root: string,
 	paths: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyArray<PackageManifest>, IoError> =>
-	Effect.forEach(paths, (path) =>
-		Effect.try({
-			try: (): PackageManifest => {
-				const pkg = JSON.parse(readFileSync(join(root, path), "utf8")) as Record<string, unknown>;
-				return {path, deps: manifestDeps(pkg)};
-			},
-			catch: (cause) => new IoError({path: join(root, path), cause}),
-		}),
+	Effect.forEach(
+		paths,
+		(path) =>
+			Effect.try({
+				try: (): PackageManifest => {
+					const pkg = JSON.parse(readFileSync(join(root, path), "utf8")) as Record<string, unknown>;
+					return {path, deps: manifestDeps(pkg)};
+				},
+				catch: (cause) => new IoError({path: join(root, path), cause}),
+			}),
+		{concurrency: 1},
 	);
 
 const readWorkspaceGlobs = (root: string): Effect.Effect<ReadonlyArray<string>, IoError> =>
