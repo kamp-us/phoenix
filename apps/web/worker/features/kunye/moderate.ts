@@ -11,18 +11,55 @@
  * invariant). The instance lives here — künye owns the kamp.us capability
  * instances; the vocab-free mechanism is `@kampus/authz`.
  */
-import {Capability, Grant, matchActor, platform, RelationStore} from "@kampus/authz";
+import {
+	Capability,
+	Grant,
+	matchActor,
+	key as objectKey,
+	platform,
+	RelationStore,
+} from "@kampus/authz";
 import {Effect} from "effect";
 import {UserId} from "../../lib/ids.ts";
 import {Denied} from "./errors.ts";
 
+/**
+ * The `relation_tuple.relation` verb the moderator role rides on — the SINGLE source
+ * every moderator read, discharge, and the `user.setRole` runtime write share, so the
+ * read/discharge key and the write key can't drift (#3522).
+ */
+export const MODERATES_RELATION = "moderates";
+
+/**
+ * The two platform roles the admin roster surfaces (#3200): `moderator` iff the
+ * `moderates` tuple is held, else `member`. The value `user.setRole` assigns (#3522).
+ */
+export type PlatformRole = "member" | "moderator";
+
 export class Moderate extends Capability.Relation<Moderate>()("kunye/Moderate", {
-	relation: "moderates",
+	relation: MODERATES_RELATION,
 	deny: () => new Denied({message: "Moderation authority required"}),
 }) {}
 
 // Re-export the platform scope so a moderation surface gates with one import.
 export {platform};
+
+/**
+ * The stored `relation_tuple` row for `(subject, "moderates", platform)` — the SAME
+ * key {@link isModerator} / {@link moderatorsAmong} read and `Moderate.over(platform)`
+ * discharges against, resolved through `@kampus/authz`'s canonical `objectKey` (as
+ * `RelationStoreLive` does). The `Admin.over(platform)`-gated `user.setRole` writer
+ * (#3522) inserts/deletes exactly this row, so the runtime WRITE of the moderator
+ * relation can never encode the tuple differently from the read — the read-key-can't-
+ * drift invariant, now extended to the write.
+ */
+export const moderatorTuple = (
+	subject: string,
+): {subject: string; relation: string; object: string} => ({
+	subject,
+	relation: MODERATES_RELATION,
+	object: objectKey(platform),
+});
 
 /**
  * Is `subject` a platform moderator? The SELF-status read behind the trusted `me`

@@ -72,6 +72,7 @@ import {
 	sozlukStampWaveFlag,
 	userAdminFlag,
 	userBanFlag,
+	userRoleAssignFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
@@ -149,6 +150,10 @@ export default Alchemy.Stack(
 		// seam the ban mutations + admin read + moderator-UI controls gate behind, so an
 		// unreleased ban can never refuse a real user's session until a human release.
 		yield* userBanFlag(flagship.appId);
+		// The platform role-assign dark-ship flag, default-off (#3522, ADR 0107) — the single
+		// seam the `Admin.over(platform)`-gated `user.setRole` mutation gates behind, so an
+		// unreleased role-grant can never mint a moderator until a human release.
+		yield* userRoleAssignFlag(flagship.appId);
 		// The admin email-delivery (failing-address) surface dark-ship flag, default-off
 		// (#2692, epic #2687) — the single seam the emailDelivery.mark/clear mutations + the
 		// emailDelivery.failing admin roll-up gate behind until a human release.

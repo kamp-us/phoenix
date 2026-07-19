@@ -19,6 +19,7 @@ import {
 	FailingAddressView,
 	ProfileView,
 	PromotionReceiptView,
+	RoleStateView,
 	UserView,
 } from "./views.ts";
 
@@ -86,6 +87,13 @@ export const authorshipStandingSource = Fate.syntheticSource(AuthorshipStandingV
 // source-completeness accepts the view-reachable result type; mirrors
 // `promotionReceiptSource`.
 export const banStateSource = Fate.syntheticSource(BanStateView);
+
+// `RoleState` has no by-id fetch path — it is produced ONLY past the `requireAdmin`
+// gate (#3522), by the `user.setRole` mutation ack, never a public by-id load (the
+// derived role IS re-readable via the gated `UserAdmin` roster). Registered with ZERO
+// capabilities so source-completeness accepts the view-reachable result type; mirrors
+// `banStateSource`.
+export const roleStateSource = Fate.syntheticSource(RoleStateView);
 
 // `EmailDeliveryState` has no by-id fetch path — it is produced ONLY past the
 // `requireAdmin` gate (epic #2687), by the `emailDelivery.mark` / `emailDelivery.clear`

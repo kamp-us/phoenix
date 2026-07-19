@@ -32,6 +32,7 @@ import type {
 	FailingAddressView,
 	ProfileView,
 	PromotionReceiptView,
+	RoleStateView,
 	UserView,
 } from "../pasaport/views.ts";
 import type {
@@ -88,6 +89,7 @@ export type {
 	FailingAddressEntity as FailingAddress,
 	Profile,
 	PromotionReceipt,
+	RoleStateEntity as RoleState,
 	User,
 } from "../pasaport/views.ts";
 export {
@@ -99,6 +101,7 @@ export {
 	failingAddressDataView,
 	profileDataView,
 	promotionReceiptDataView,
+	roleStateDataView,
 	userDataView,
 } from "../pasaport/views.ts";
 export type {
@@ -193,6 +196,7 @@ type _FateViewsFieldMapResolved = [
 	>,
 	AssertResolved<typeof PromotionReceiptView, AssertFieldMapResolved<typeof PromotionReceiptView>>,
 	AssertResolved<typeof BanStateView, AssertFieldMapResolved<typeof BanStateView>>,
+	AssertResolved<typeof RoleStateView, AssertFieldMapResolved<typeof RoleStateView>>,
 	AssertResolved<
 		typeof EmailDeliveryStateView,
 		AssertFieldMapResolved<typeof EmailDeliveryStateView>

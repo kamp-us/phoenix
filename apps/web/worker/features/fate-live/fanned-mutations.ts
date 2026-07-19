@@ -311,6 +311,12 @@ export const FANNED_MUTATIONS: ReadonlyArray<FannedMutationEntry> = [
 		rationale: "appends an audited unban event on the identity surface — no fanned content entity",
 	},
 	{
+		key: "user.setRole",
+		fanned: false,
+		rationale:
+			"writes the `moderates` relation tuple + an audited role event on the identity/authority surface (#3522) — no Post/Comment/Definition in a subscribed content connection (mirrors user.banUser); the derived roster role re-reads the tuple through the gated UserAdmin view",
+	},
+	{
 		key: "emailDelivery.mark",
 		fanned: false,
 		rationale:

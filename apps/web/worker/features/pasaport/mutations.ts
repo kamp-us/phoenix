@@ -13,6 +13,7 @@ import {
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_USER_BAN,
+	PHOENIX_USER_ROLE_ASSIGN,
 } from "../../../src/flags/keys.ts";
 import {UserId} from "../../lib/ids.ts";
 import {notifyKefil, notifyPromotion} from "../bildirim/rite-emitters.ts";
@@ -43,6 +44,7 @@ import {
 	toBanState,
 	toEmailDeliveryState,
 	toPromotionReceipt,
+	toRoleState,
 } from "./shapers.ts";
 import {resolveTandem} from "./tandem.ts";
 import {toTrustedUser} from "./trusted-user.ts";
@@ -51,6 +53,7 @@ import {
 	BanStateView,
 	EmailDeliveryStateView,
 	PromotionReceiptView,
+	RoleStateView,
 	UserView,
 } from "./views.ts";
 
@@ -74,6 +77,17 @@ const authorshipLoopOn = Effect.gen(function* () {
 const userBanOn = Effect.gen(function* () {
 	const flags = yield* Flags;
 	return yield* flags.getBoolean(PHOENIX_USER_BAN, false).pipe(provideRequestFlags);
+});
+
+/**
+ * Is the #3522 platform-role-assign dark-ship flag on for this request? Safe-default
+ * `false` (dark), the `userBanOn` idiom: with the flag off (default / Flagship outage)
+ * the `user.setRole` path fails the invisible `Denied` exactly like a non-admin call, so
+ * an unreleased role-grant can never mint a moderator (ADR 0083).
+ */
+const userRoleAssignOn = Effect.gen(function* () {
+	const flags = yield* Flags;
+	return yield* flags.getBoolean(PHOENIX_USER_ROLE_ASSIGN, false).pipe(provideRequestFlags);
 });
 
 /**
@@ -137,6 +151,15 @@ const BanUserInput = Schema.Struct({
 
 const UnbanUserInput = Schema.Struct({
 	userId: UserId,
+});
+
+// Assign a target account's platform role by id: `role` is a `Schema.Literal` union, so a
+// value outside {member, moderator} is an input-DECODE failure — the body never runs on a
+// malformed request. No `actor` arg — the acting admin is the discharged `Admin` grant's
+// id, never client-supplied, so a role change is always audited against its real author.
+const SetRoleInput = Schema.Struct({
+	userId: UserId,
+	role: Schema.Literals(["member", "moderator"]),
 });
 
 // Mark a target account's address as failing: a `reason` (required — enforced non-empty
@@ -349,6 +372,29 @@ export const mutations = {
 		}),
 	),
 
+	// Assign a platform role (#3522, admin epic per ADR 0107) — `requireAdmin`-gated,
+	// behind the `phoenix-user-role-assign` dark-ship flag. With the flag off the mutation
+	// fails the invisible `Denied` (like a non-admin call), so an unreleased role-grant can
+	// never mint a moderator. The write is the `moderates` relation tuple (`moderator`
+	// grants it, `member` revokes it) — the SPA-invokable writer #969/PR #1266's offline
+	// mint never gave the console — plus an audited `user_role_event`. Not fanned
+	// (`fanned-mutations.ts`): the tuple/log are an identity/authority surface, not a
+	// subscribed content connection (mirrors `user.banUser`). The derived roster `role`
+	// cell re-reads the same tuple through the gated `UserAdmin` view.
+	"user.setRole": Fate.mutation(
+		{
+			input: SetRoleInput,
+			type: RoleStateView,
+			error: Schema.Union([Denied, UserNotFound]),
+		},
+		Effect.fn("user.setRole")(function* ({input}) {
+			if (!(yield* userRoleAssignOn)) {
+				return yield* Effect.fail(new Denied({message: "Bu işlem şu an kapalı."}));
+			}
+			return yield* requireAdmin(setRoleGated(input));
+		}),
+	),
+
 	// Manually mark a target account's address as failing (Child #2692, email-bounce epic
 	// #2687) — `requireAdmin`-gated, behind the `phoenix-email-delivery-admin` dark-ship
 	// flag. With the flag off the mutation fails the invisible `Denied` (like a non-admin
@@ -420,6 +466,19 @@ const unbanGated = Effect.fn("user.unbanGated")(function* (input: typeof UnbanUs
 	const pasaport = yield* Pasaport;
 	const state = yield* pasaport.unbanUser({userId: input.userId, actorId});
 	return toBanState(input.userId, state);
+});
+
+// The post-gate role-assign body — runnable only with an `Admin` `Grant` in R
+// (`requireAdmin` provides it); `yield* adminOf(grant)` reads the authority-checked actor
+// id the audit row is stamped with (mirroring `banGated`), so a role change is never
+// attributed to a client-supplied identity. `Pasaport.setRole` writes/clears the
+// `moderates` tuple and appends the audit event; `UserNotFound` on an unknown target.
+const setRoleGated = Effect.fn("user.setRoleGated")(function* (input: typeof SetRoleInput.Type) {
+	const grant = yield* Admin;
+	const actorId = yield* adminOf(grant);
+	const pasaport = yield* Pasaport;
+	const {role} = yield* pasaport.setRole({userId: input.userId, actorId, role: input.role});
+	return toRoleState(input.userId, role);
 });
 
 // The post-gate mark body — runnable only with an `Admin` `Grant` in R (`requireAdmin`

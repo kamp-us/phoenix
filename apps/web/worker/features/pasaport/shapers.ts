@@ -4,6 +4,7 @@
  * (`.patterns/fate-effect-operations.md`).
  */
 
+import type {PlatformRole} from "../kunye/moderate.ts";
 import type {BanState} from "./ban.ts";
 import type {EmailDeliveryState, FailingAddress} from "./email-delivery.ts";
 import {
@@ -21,6 +22,7 @@ import type {
 	FailingAddressEntity,
 	Profile,
 	PromotionReceipt,
+	RoleStateEntity,
 	User,
 } from "./views.ts";
 
@@ -108,6 +110,15 @@ export const toBanState = (userId: string, state: BanState): BanStateEntity => (
 	banned: state.banned,
 	reason: state.reason,
 	expiresAt: state.expiresAt === null ? null : state.expiresAt.getTime(),
+});
+
+// The single spelling of the role-assignment ack (#3522) — keyed on the target user
+// id, so the `user.setRole` ack reconciles the SAME account the roster (`UserAdmin`)
+// lists. Carries only the newly-assigned `role`.
+export const toRoleState = (userId: string, role: PlatformRole): RoleStateEntity => ({
+	__typename: "RoleState",
+	id: userId,
+	role,
 });
 
 // The single spelling of the email-delivery-state ack (epic #2687) — the mark AND the

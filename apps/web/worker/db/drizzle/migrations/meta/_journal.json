@@ -225,6 +225,13 @@
 			"when": 2496000000000,
 			"tag": "0031_user_mute",
 			"breakpoints": true
+		},
+		{
+			"idx": 32,
+			"version": "6",
+			"when": 2596000000000,
+			"tag": "0032_user_role_event",
+			"breakpoints": true
 		}
 	]
 }

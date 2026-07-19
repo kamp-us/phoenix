@@ -247,6 +247,19 @@ export const PHOENIX_KARMA_GATES = "phoenix-karma-gates";
 export const PHOENIX_USER_BAN = "phoenix-user-ban";
 
 /**
+ * Platform-role assignment dark-ship flag (#3522, admin epic per ADR 0107). The SINGLE
+ * seam the `Admin.over(platform)`-gated `user.setRole` mutation gates behind — the writer
+ * for the `moderates` relation tuple #969/PR #1266's offline mint never gave the console.
+ * Default-off so the whole role-assign path reaches production dark until a human flips it
+ * at release (ADR 0083): with it off the mutation fails the invisible `Denied` (like a
+ * non-admin call), so an unreleased role-grant can never mint a moderator. Its OWN key,
+ * not the ban/email-admin seam — role-assign is a distinct admin capability with its own
+ * lifecycle (the `phoenix-user-ban` / `phoenix-email-delivery-admin` admin-surface
+ * precedent). The #3203 roster affordance wires onto this mutation later.
+ */
+export const PHOENIX_USER_ROLE_ASSIGN = "phoenix-user-role-assign";
+
+/**
  * Admin email-delivery (failing-address) surface dark-ship flag (#2692, email-bounce
  * epic #2687). The SINGLE seam the admin failing-address surface gates behind — the
  * `emailDelivery.mark` / `emailDelivery.clear` admin mutations AND the
@@ -379,6 +392,7 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_REACTIONS, defaultValue: false},
 	{key: PHOENIX_KARMA_GATES, defaultValue: false},
 	{key: PHOENIX_USER_BAN, defaultValue: false},
+	{key: PHOENIX_USER_ROLE_ASSIGN, defaultValue: false},
 	{key: PHOENIX_EMAIL_DELIVERY_ADMIN, defaultValue: false},
 	{key: PHOENIX_EMAIL_DELIVERY_NOTICE, defaultValue: false},
 	{key: PHOENIX_NAV_IA, defaultValue: false},
