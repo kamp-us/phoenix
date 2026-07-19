@@ -41,7 +41,6 @@ import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
 import {
 	PANO_OPTIMISTIC_COMMENT_ADD,
-	PANO_OPTIMISTIC_COMMENT_DELETE,
 	PANO_OPTIMISTIC_POST_DELETE,
 	PHOENIX_OPTIMISTIC_EDITS,
 } from "../flags/keys";
@@ -525,9 +524,6 @@ function Comments(props: CommentsProps) {
 	// Optimistic comment-add dark-ship gate (#1678, ADR 0125 A1): off ⇒ no temp node,
 	// the thread waits for the live `appendNode` / read-back exactly as today.
 	const {value: optimisticAdd} = useFlag(PANO_OPTIMISTIC_COMMENT_ADD, false);
-	// Optimistic comment-delete dark-ship gate (#1680, ADR 0125 D1): off ⇒ no optimistic
-	// write, the thread waits for the server `deleteEdge` / `live.update` / read-back.
-	const {value: optimisticDelete} = useFlag(PANO_OPTIMISTIC_COMMENT_DELETE, false);
 
 	const refetchPost = React.useCallback(
 		() =>
@@ -623,7 +619,6 @@ function Comments(props: CommentsProps) {
 		await runDelete(
 			() => {
 				const promise = fate.mutations.comment.delete({input: {id: deletedId}});
-				if (!optimisticDelete) return promise;
 				// Optimistic (ADR 0125 D1): mirror the server branch from the loaded tree —
 				// a client-certain leaf drops its edge, a reply parent OR an incompletely-
 				// loaded thread (uncertain) tombstones. `loadNext == null` ⇒ the whole
