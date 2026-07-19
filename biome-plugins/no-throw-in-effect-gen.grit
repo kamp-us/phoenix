@@ -1,0 +1,41 @@
+// Ban a bare `throw` statement lexically inside an `Effect.gen(...)` generator body or
+// an `Effect.fn(...)` body — the failure must route through the typed `E` channel.
+//
+// Rationale (single site; #2736): a `throw` inside an Effect generator escapes as an
+// uncatchable DEFECT with an empty `E` channel — the caller's `catchTag`/`catchAll` never
+// sees it and the type system can't force it to be handled. This is the exact hole the
+// #2736 Effect-v4 family (`no-raw-try-catch.grit` / `no-effect-promise.grit`) leaves: those
+// ban the try/catch and promise "cosplay as Effect" tells, but a naked `throw` in a gen
+// body slips past both. The fix keeps the failure in the type: `yield* Effect.fail(new
+// SomeError({...}))` (a `Schema.TaggedErrorClass` in `E`) for a recoverable failure, or
+// `yield* Effect.die(cause)` for a genuine, non-recoverable defect stated as one.
+//
+// Match: a `JsThrowStatement` `within` a call expression whose callee is `Effect.gen` /
+// `Effect.fn` — covering the direct form (`Effect.gen(function* …)`) and the curried,
+// span-named `Effect.fn` form (`Effect.fn("name")(function* …)`, whose outer call's callee
+// is `Effect.fn("name")`, matched by `Effect.fn($_)`). `within` reaches any nesting depth,
+// so a `throw` guarded inside an `if` in the generator body is still caught. Containment is
+// lexical (the issue's contract) — GritQL has no type info to distinguish the immediate
+// generator body from a nested plain closure, and the family accepts lexical scoping.
+//
+// Registered via biome.jsonc `"plugins"` at `warn`: this rule extends the #2736 family, so
+// its warn→error flip rides the existing family capstone #2753 (not a new-gate capstone) —
+// see `no-raw-try-catch.grit`. A genuine exception (a real defect stated as a throw at a
+// pre-Effect boundary) is a per-line `// biome-ignore lint/plugin: <reason>`, never blanket.
+language js;
+
+JsThrowStatement() as $throw where {
+	$throw <: within JsCallExpression(callee = $callee) where {
+		$callee <: or {
+			`Effect.gen`,
+			`Effect.fn`,
+			`Effect.gen($_)`,
+			`Effect.fn($_)`
+		}
+	},
+	register_diagnostic(
+		span = $throw,
+		message = "Bare `throw` inside an `Effect.gen`/`Effect.fn` body is banned — a thrown exception escapes the `E` channel as an uncatchable defect (#2736). Fix: `yield* Effect.fail(new SomeError({...}))` (a `Schema.TaggedErrorClass` in the `E` channel) for a recoverable failure, or `yield* Effect.die(cause)` for a genuine defect. Exception: // biome-ignore lint/plugin: <reason>.",
+		severity = "warn"
+	)
+}

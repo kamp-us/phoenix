@@ -148,7 +148,7 @@ describe("persistTermSummary — the recomputeTermSummary → term_record row-wr
 				);
 
 				const upsert = batched[0];
-				if (!upsert) throw new Error("no term_record statement was captured");
+				if (!upsert) return yield* Effect.die(new Error("no term_record statement was captured"));
 				assert.match(upsert.sql, /term_record/, "the first statement targets term_record");
 				assert.isTrue(
 					batched.slice(1).some((s) => /term_search/.test(s.sql)),

@@ -168,7 +168,7 @@ fate config's declared error unions and asserts the SPA's `FATE_WIRE_CODES` cove
 
 ## Anti-patterns
 
-- **Throwing inside an `Effect.fn`.** The throw becomes a defect, not a typed error — it bypasses the `E` channel. Use `return yield* new MyError(...)`.
+- **Throwing inside an `Effect.gen`/`Effect.fn`.** The throw becomes a defect, not a typed error — it bypasses the `E` channel. Use `yield* Effect.fail(new MyError(...))` (or `return yield* new MyError(...)`) for a recoverable failure, `yield* Effect.die(cause)` for a genuine defect. Lint-enforced by `biome-plugins/no-throw-in-effect-gen.grit` (the #2736 Effect-v4 family; warn, flipping to error with the family capstone #2753).
 - **One generic `FeatureError` class with a `code` discriminator field.** Collapses the `E` channel to a single type and forces resolvers to switch on a runtime `.code` field instead of `._tag`. Define one tagged error class per failure case.
 - **Catching infra errors in domain code.** `Effect.catchTag("@kampus/Drizzle/Error", ...)` inside a feature service usually means you're hiding a real failure. Let it propagate to the fate boundary, which encodes it as `INTERNAL_SERVER_ERROR`. Recovery from infra errors belongs in retry middleware, not in domain logic.
 
