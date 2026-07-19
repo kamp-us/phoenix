@@ -13,8 +13,8 @@
 import {spawn} from "node:child_process";
 import {connect} from "node:net";
 import {fileURLToPath} from "node:url";
-import {NodeRuntime} from "@effect/platform-node";
-import {Effect, Layer, type Scope} from "effect";
+import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {Effect, type FileSystem, Layer, type Scope} from "effect";
 import * as Schema from "effect/Schema";
 import type {SocketServerError} from "effect/unstable/socket/SocketServer";
 import {socketPathFor, trackerServerLayer} from "../tracker/index.ts";
@@ -53,7 +53,7 @@ const isAddressInUse = (error: SocketServerError): boolean => {
  */
 export const tryBecomeTracker = (
 	socketPath: string,
-): Effect.Effect<TrackerBindOutcome, SocketServerError, Scope.Scope> =>
+): Effect.Effect<TrackerBindOutcome, SocketServerError, Scope.Scope | FileSystem.FileSystem> =>
 	Layer.build(trackerServerLayer(socketPath)).pipe(
 		Effect.map((): TrackerBindOutcome => "started"),
 		Effect.catchTag("SocketServerError", (error) =>
@@ -71,7 +71,7 @@ export const tryBecomeTracker = (
  */
 export const runStandingTracker = (
 	projectRoot: string,
-): Effect.Effect<TrackerBindOutcome, SocketServerError> =>
+): Effect.Effect<TrackerBindOutcome, SocketServerError, FileSystem.FileSystem> =>
 	Effect.scoped(
 		tryBecomeTracker(socketPathFor(projectRoot)).pipe(
 			Effect.tap((outcome) => (outcome === "started" ? Effect.never : Effect.void)),
@@ -135,5 +135,10 @@ export const ensureTrackerRunning = (
 // Detached-child entry: when this module is the process entrypoint, run the standing tracker for the
 // project root passed as argv[2]. `ensureTrackerRunning` re-enters here in the spawned child.
 if (import.meta.main) {
-	NodeRuntime.runMain(runStandingTracker(process.argv[2] ?? process.cwd()));
+	// The detached-child entrypoint is a bin-level platform-composition boundary (the doc's bright
+	// line): provide the Node platform here so `runStandingTracker`'s `FileSystem` requirement — the
+	// stale-socket reclaim seam — discharges, exactly as bin.ts provides it for `launchTracker`.
+	NodeRuntime.runMain(
+		runStandingTracker(process.argv[2] ?? process.cwd()).pipe(Effect.provide(NodeServices.layer)),
+	);
 }

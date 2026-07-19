@@ -9,8 +9,9 @@
  * allowlist-mode plugin channel whose plugin the config's `allowedChannelPlugins` doesn't list.
  */
 import {existsSync} from "node:fs";
+import {NodePath, NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect} from "effect";
+import {Effect, FileSystem, Layer} from "effect";
 import {
 	AGENT_FLAG,
 	ALLOWLIST_CHANNEL_FLAG,
@@ -33,6 +34,21 @@ import type {ChannelConfig} from "./config.ts";
 const ROLE = "engineering-manager";
 const PROJECT_ROOT = "/work/phoenix";
 const SERVER_NAME = "pipeline-crew";
+
+// The bind constructor reaches the platform through the `FileSystem`/`Path` seam
+// (.patterns/effect-platform-access.md), discharged in-test by the same NodeServices.layer the bin
+// provides — so `build` is the real-disk variant (bin.ts resolves), matching production.
+const build = (input: Parameters<typeof buildSessionBind>[0]) =>
+	buildSessionBind(input).pipe(Effect.provide(NodeServices.layer));
+
+// The seam is what makes the "bin absent" guard testable WITHOUT the old injected `binExists`: a fake
+// `FileSystem` whose `exists` answers false (the whole filesystem substituted, not just a probe fn).
+const buildWithBinAbsent = (input: Parameters<typeof buildSessionBind>[0]) =>
+	buildSessionBind(input).pipe(
+		Effect.provide(
+			Layer.mergeAll(FileSystem.layerNoop({exists: () => Effect.succeed(false)}), NodePath.layer),
+		),
+	);
 // The pipeline-crew plugin root under PROJECT_ROOT — the dir `--plugin-dir` loads the role agent-defs
 // from so `--agent <role>` resolves the persona instead of general-purpose (#3447).
 const EXPECTED_PLUGIN_DIR = "/work/phoenix/claude-plugins/pipeline-crew";
@@ -55,7 +71,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew", "plugin:kampus:sozluk"],
 					allowedChannelPlugins: ["kampus"],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -104,7 +120,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew", "plugin:localdev:scratch"],
 					allowedChannelPlugins: [],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -145,7 +161,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					"intake-desk",
 					"engineering-manager",
 				]) {
-					const bind = yield* buildSessionBind({
+					const bind = yield* build({
 						role,
 						projectRoot: PROJECT_ROOT,
 						serverName: SERVER_NAME,
@@ -171,7 +187,7 @@ describe("standup/bind — per-session bind constructor", () => {
 				servers: ["server:pipeline-crew"],
 				allowedChannelPlugins: [],
 			};
-			const bind = yield* buildSessionBind({
+			const bind = yield* build({
 				role: ROLE,
 				projectRoot: "/some/other/root",
 				serverName: SERVER_NAME,
@@ -193,7 +209,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:some-other"],
 					allowedChannelPlugins: [],
 				};
-				const error = yield* buildSessionBind({
+				const error = yield* build({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -216,7 +232,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -250,7 +266,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -269,7 +285,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -297,13 +313,12 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const error = yield* buildSessionBind({
+				const error = yield* buildWithBinAbsent({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
 					channels,
-					// The injected resolvability probe reports the bin absent — the launch must refuse.
-					binExists: () => false,
+					// The substituted FileSystem reports the bin absent (exists → false) — the launch must refuse.
 				}).pipe(Effect.flip);
 
 				assert.instanceOf(error, CrewSessionBinUnresolvableError);
@@ -318,7 +333,7 @@ describe("standup/bind — per-session bind constructor", () => {
 				servers: ["server:pipeline-crew"],
 				allowedChannelPlugins: [],
 			};
-			const bind = yield* buildSessionBind({
+			const bind = yield* build({
 				role: ROLE,
 				projectRoot: PROJECT_ROOT,
 				serverName: SERVER_NAME,
@@ -354,7 +369,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: "cartographer",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -374,7 +389,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -406,7 +421,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: "chief-of-staff",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -432,14 +447,14 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const engineOne = yield* buildSessionBind({
+				const engineOne = yield* build({
 					role: "engineering-manager",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
 					instance: "e-1",
 					channels,
 				});
-				const engineTwo = yield* buildSessionBind({
+				const engineTwo = yield* build({
 					role: "engineering-manager",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -462,7 +477,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					servers: ["server:pipeline-crew"],
 					allowedChannelPlugins: [],
 				};
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: ROLE,
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -494,13 +509,13 @@ describe("standup/bind — per-session bind constructor", () => {
 				};
 				// A self-driving bridge (no instance) and an engine (with instance) both receive the boot
 				// prompt — the def each boots as carries its own cold-start, so the launcher's turn is generic.
-				const bridge = yield* buildSessionBind({
+				const bridge = yield* build({
 					role: "chief-of-staff",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
 					channels,
 				});
-				const engine = yield* buildSessionBind({
+				const engine = yield* build({
 					role: "engineering-manager",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -526,7 +541,7 @@ describe("standup/bind — per-session bind constructor", () => {
 				// The cartographer has no standing loop, so it must NOT be handed the self-driving BOOT_PROMPT
 				// — that is what made it confabulate work. Even launched on-demand, its argv carries no
 				// positional prompt, so the CLI opens an interactive session that idles waiting for the human.
-				const bind = yield* buildSessionBind({
+				const bind = yield* build({
 					role: "cartographer",
 					projectRoot: PROJECT_ROOT,
 					serverName: SERVER_NAME,
@@ -549,7 +564,7 @@ describe("standup/bind — per-session bind constructor", () => {
 				servers: ["server:pipeline-crew", "plugin:untrusted:evil"],
 				allowedChannelPlugins: ["kampus"],
 			};
-			const error = yield* buildSessionBind({
+			const error = yield* build({
 				role: ROLE,
 				projectRoot: PROJECT_ROOT,
 				serverName: SERVER_NAME,

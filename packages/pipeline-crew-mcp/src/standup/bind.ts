@@ -29,10 +29,8 @@
  * exact rejection the CLI raises). The project-scope WRITE is a launcher side effect, so its own
  * fail-closed guard lives at that write (register-project-scope.ts / orchestrate.ts), not here.
  */
-import {existsSync} from "node:fs";
-import {join} from "node:path";
 import {fileURLToPath} from "node:url";
-import {Effect, Schema} from "effect";
+import {Effect, FileSystem, Path, Schema} from "effect";
 import {driveOf, isCrewRole} from "../crew/index.ts";
 import {type ChannelConfig, type Tier, tierModel} from "./config.ts";
 
@@ -97,9 +95,8 @@ export const AGENT_FLAG = "--agent";
  */
 export const BOOT_PROMPT =
 	"Begin now. Run your role's on-boot cold-start behavior as defined by your agent instructions: announce your presence on the channel, then start your standing work loop under your own power. Do not wait to be pinged, relayed to, or told to start.";
-/** The pipeline-crew plugin root under a given project root — the dir `--plugin-dir` loads agent-defs from. */
-const crewPluginDir = (projectRoot: string): string =>
-	join(projectRoot, "claude-plugins/pipeline-crew");
+/** The pipeline-crew plugin root segment `--plugin-dir` joins onto a project root to load agent-defs from. */
+const CREW_PLUGIN_SUBDIR = "claude-plugins/pipeline-crew";
 /** Allowlist mode: only servers named here load, gated by `allowedChannelPlugins` for plugin refs. */
 export const ALLOWLIST_CHANNEL_FLAG = "--channels";
 /** Dev mode: load channel servers not on the approved allowlist — local development only. */
@@ -212,12 +209,6 @@ export interface SessionBindInput {
 	readonly tier?: Tier | undefined;
 	/** The resolved channels dimension of the crew `LaunchConfig` (#3293), consumed read-only. */
 	readonly channels: ChannelConfig;
-	/**
-	 * Whether the crew server's `bin.ts` resolves on disk — injected so the fail-closed
-	 * resolvability guard is unit-testable without moving the real file. Default: the real
-	 * `existsSync`, checked against `CREW_SESSION_BIN_PATH` (#3425).
-	 */
-	readonly binExists?: (binPath: string) => boolean;
 }
 
 /**
@@ -274,16 +265,27 @@ export const buildSessionBind = (
 	input: SessionBindInput,
 ): Effect.Effect<
 	SessionBind,
-	CrewSessionBinUnresolvableError | CrewServerNotRegisteredError | ChannelPluginNotAllowedError
+	CrewSessionBinUnresolvableError | CrewServerNotRegisteredError | ChannelPluginNotAllowedError,
+	FileSystem.FileSystem | Path.Path
 > =>
 	Effect.gen(function* () {
+		// The platform is the swappable seam (.patterns/effect-platform-access.md): `FileSystem` probes
+		// bin.ts resolvability (a `unit` test substitutes a fake FS instead of the old injected `binExists`),
+		// and `Path` builds the plugin dir. Both discharge from the crew-mcp bin's existing NodeServices.layer.
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
 		const {role, projectRoot, serverName, instance, tier, channels} = input;
-		const binExists = input.binExists ?? existsSync;
 		const servers = channels.servers;
 
 		// Resolvability before anything else: the bin the server command runs must exist on disk, else
-		// the launched `<node> <bin.ts>` fails to spawn and the channel is inert (#3425).
-		if (!binExists(CREW_SESSION_BIN_PATH)) {
+		// the launched `<node> <bin.ts>` fails to spawn and the channel is inert (#3425). A probe fault
+		// folds to "absent" (`orElseSucceed(false)`) so an fs error fails the launch closed under the
+		// existing named error, never leaking a `PlatformError` — matching the old `existsSync` (false on
+		// any fault), so this reader's E channel stays exactly its three launch-refusal errors.
+		const binExists = yield* fs
+			.exists(CREW_SESSION_BIN_PATH)
+			.pipe(Effect.orElseSucceed(() => false));
+		if (!binExists) {
 			return yield* Effect.fail(
 				new CrewSessionBinUnresolvableError({binPath: CREW_SESSION_BIN_PATH}),
 			);
@@ -323,7 +325,10 @@ export const buildSessionBind = (
 		// The persona boot (#3447): --plugin-dir loads the pipeline-crew plugin so --agent resolves the
 		// role's agent-def instead of falling through to general-purpose. The agent-def name is the
 		// collision-free `crew-<role>`, so map the bare role at this argv site (see AGENT_FLAG for why).
-		const pluginDirArg: readonly [string, string] = [PLUGIN_DIR_FLAG, crewPluginDir(projectRoot)];
+		const pluginDirArg: readonly [string, string] = [
+			PLUGIN_DIR_FLAG,
+			path.join(projectRoot, CREW_PLUGIN_SUBDIR),
+		];
 		const agentArg: readonly [string, string] = [AGENT_FLAG, `crew-${role}`];
 		// The launcher's boot turn (#3516): a tail positional prompt so the spawned session fires its
 		// def's cold-start instead of idling. Tail placement (after the non-variadic --name) keeps it out

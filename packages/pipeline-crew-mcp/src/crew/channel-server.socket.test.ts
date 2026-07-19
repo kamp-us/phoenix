@@ -15,6 +15,7 @@
  */
 import {spawn} from "node:child_process";
 import {existsSync} from "node:fs";
+import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer, Ref} from "effect";
 import {type ChannelNotificationPayload, ChannelSink} from "../edge/index.ts";
@@ -63,8 +64,10 @@ describe("crew/channel-server — REAL unix-socket inbox transport", () => {
 				const address = freshAddress();
 				const socketPath = inboxSocketPathFor(address);
 				const wakes = yield* Ref.make<ReadonlyArray<ChannelNotificationPayload>>([]);
+				// The reclaim now reaches disk through the `FileSystem` seam, so provide the real Node
+				// FileSystem — the layer builds in-test exactly as under the bin's `NodeServices.layer`.
 				const serverLayer = inboxServerSocketLayer(address).pipe(
-					Layer.provide(recordingSink(wakes)),
+					Layer.provide([recordingSink(wakes), NodeFileSystem.layer]),
 				);
 
 				const result = yield* Effect.gen(function* () {
@@ -113,7 +116,9 @@ describe("crew/channel-server — REAL unix-socket inbox transport", () => {
 				const exit = yield* Effect.scoped(
 					Effect.gen(function* () {
 						const built = yield* Layer.build(
-							inboxServerSocketLayer(address).pipe(Layer.provide(discardingSink)),
+							inboxServerSocketLayer(address).pipe(
+								Layer.provide([discardingSink, NodeFileSystem.layer]),
+							),
 						).pipe(Effect.exit);
 						assert.isTrue(
 							existsSync(socketPath),
@@ -137,14 +142,20 @@ describe("crew/channel-server — REAL unix-socket inbox transport", () => {
 				yield* Effect.scoped(
 					Effect.gen(function* () {
 						// Stand up a LIVE inbox server first, held for this scope.
-						yield* Layer.build(inboxServerSocketLayer(address).pipe(Layer.provide(discardingSink)));
+						yield* Layer.build(
+							inboxServerSocketLayer(address).pipe(
+								Layer.provide([discardingSink, NodeFileSystem.layer]),
+							),
+						);
 						yield* Effect.sleep("300 millis");
 						assert.isTrue(existsSync(socketPath), "the live listener is bound");
 
 						// A second bind at the same (live) path must FAIL — reclaim skips the unlink when the
 						// connect succeeds, so the raw bind rejects with EADDRINUSE (the live socket is untouched).
 						const second = yield* Layer.build(
-							inboxServerSocketLayer(address).pipe(Layer.provide(discardingSink)),
+							inboxServerSocketLayer(address).pipe(
+								Layer.provide([discardingSink, NodeFileSystem.layer]),
+							),
 						).pipe(Effect.exit);
 						assert.isTrue(
 							Exit.isFailure(second),

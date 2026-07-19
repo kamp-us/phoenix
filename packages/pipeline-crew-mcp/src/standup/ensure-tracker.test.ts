@@ -8,7 +8,7 @@ import {randomUUID} from "node:crypto";
 import {mkdtempSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {NodeSocket} from "@effect/platform-node";
+import {NodeFileSystem, NodeSocket} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
@@ -16,6 +16,14 @@ import {socketPathFor, TrackerRegistry, trackerServerLayer} from "../tracker/ind
 import {ensureTrackerRunning, tryBecomeTracker} from "./ensure-tracker.ts";
 
 const freshSocketPath = () => join(tmpdir(), `ensure-tracker-${randomUUID().slice(0, 8)}.sock`);
+
+// The tracker layer's stale-socket reclaim reaches disk through the FileSystem seam; provide the real
+// Node FileSystem so both the direct host-layer build and `tryBecomeTracker` discharge it in-test
+// (leaving only Scope, which the outer `Effect.scoped` supplies) — as under the bin's NodeServices.layer.
+const hostedTracker = (socketPath: string) =>
+	trackerServerLayer(socketPath).pipe(Layer.provide(NodeFileSystem.layer));
+const attemptBecomeTracker = (socketPath: string) =>
+	tryBecomeTracker(socketPath).pipe(Effect.provide(NodeFileSystem.layer));
 
 const clientLayer = (socketPath: string) =>
 	RpcClient.layerProtocolSocket().pipe(
@@ -31,7 +39,7 @@ describe("tryBecomeTracker — the bind-outcome core", () => {
 	it.effect("start-if-absent: an unbound socket is won ('started') and served afterward", () => {
 		const socketPath = freshSocketPath();
 		return Effect.gen(function* () {
-			const outcome = yield* tryBecomeTracker(socketPath);
+			const outcome = yield* attemptBecomeTracker(socketPath);
 			assert.strictEqual(outcome, "started");
 			// served afterward: a client round-trips through the just-started tracker.
 			const client = yield* RpcClient.make(TrackerRegistry);
@@ -51,9 +59,9 @@ describe("tryBecomeTracker — the bind-outcome core", () => {
 			const socketPath = freshSocketPath();
 			return Effect.gen(function* () {
 				// A tracker is already serving this socket (built into the scope).
-				yield* Layer.build(trackerServerLayer(socketPath));
+				yield* Layer.build(hostedTracker(socketPath));
 				// The second attempt must not crash or double-bind — it reads the EADDRINUSE reuse signal.
-				const outcome = yield* tryBecomeTracker(socketPath);
+				const outcome = yield* attemptBecomeTracker(socketPath);
 				assert.strictEqual(outcome, "already-serving");
 			}).pipe(Effect.scoped);
 		},

@@ -12,6 +12,7 @@
  *     cartographer included).
  */
 import {randomUUID} from "node:crypto";
+import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Deferred, Effect, Layer, Ref, Schema, Stdio, Stream} from "effect";
 import {McpSchema, McpServer} from "effect/unstable/ai";
@@ -258,7 +259,9 @@ const bootSessionClient = (address: string) =>
 				path: "/mcp",
 				experimental: channelExperimentalCapability,
 			}),
-		).pipe(Layer.orDie);
+			// The inbound socket server's stale-socket reclaim reaches disk through the `FileSystem`
+			// seam; the in-memory substrate carries none, so provide the real Node one (as the bin does).
+		).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie);
 		const {dispose, handler} = HttpRouter.toWebHandler(serverLayer, {disableLogger: true});
 		yield* Effect.addFinalizer(() =>
 			Effect.tryPromise({try: () => dispose(), catch: (cause) => new DisposeError({cause})}).pipe(
@@ -380,7 +383,8 @@ describe("crew/session — the session-mode server wins the async-ChannelSend bu
 					address,
 					substrate,
 					transport,
-				).pipe(Layer.orDie);
+					// Provide the real Node `FileSystem` for the inbound reclaim seam (as the bin does).
+				).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie);
 
 				// Launch the live session on a scoped fiber. Claim-first (fixed): it blocks in the unwrap on the
 				// gated claim, so nothing serves until the gate opens. Old ordering: the transport builds and its

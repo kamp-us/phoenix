@@ -8,6 +8,7 @@
 import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Context, Effect, Layer} from "effect";
 import {RpcTest} from "effect/unstable/rpc";
@@ -19,6 +20,11 @@ import {RegistryLive} from "../tracker/registry.ts";
 import {CrewTracker, crewTrackerHostOrDialLayer} from "./tracker.ts";
 
 const registryHandlers = TrackerHandlers.pipe(Layer.provide(RegistryLive));
+
+// The host layer's stale-socket reclaim reaches disk through the FileSystem seam; provide the real
+// Node FileSystem so the host-or-dial layer builds in-test as under the bin's NodeServices.layer.
+const hostOrDial = (socketPath: string) =>
+	crewTrackerHostOrDialLayer(socketPath).pipe(Layer.provide(NodeFileSystem.layer));
 const nowIso = () => new Date().toISOString();
 
 const errWithCode = (code: string): Error => Object.assign(new Error(code), {code});
@@ -29,8 +35,8 @@ describe("crew/tracker — first-peer-spawn: two sessions on one project root, o
 			const socketPath = join(tmpdir(), `crew-hostdial-${randomUUID().slice(0, 8)}.sock`);
 			// Two concurrent sessions on ONE socket: the first hosts, the second must dial the host —
 			// exactly one server binds. If two bound, they'd be two registries and the cross-lookup fails.
-			const ctxA = yield* Layer.build(crewTrackerHostOrDialLayer(socketPath));
-			const ctxB = yield* Layer.build(crewTrackerHostOrDialLayer(socketPath));
+			const ctxA = yield* Layer.build(hostOrDial(socketPath));
+			const ctxB = yield* Layer.build(hostOrDial(socketPath));
 			const trackerA = Context.get(ctxA, CrewTracker);
 			const trackerB = Context.get(ctxB, CrewTracker);
 			// A announces; B looks it up and finds it ⇒ both speak to the SAME registry ⇒ one tracker.
@@ -48,7 +54,7 @@ describe("crew/tracker — first-peer-spawn: two sessions on one project root, o
 	it.effect("a lone session hosts its own tracker (announce→lookup round-trips on one layer)", () =>
 		Effect.gen(function* () {
 			const socketPath = join(tmpdir(), `crew-solo-${randomUUID().slice(0, 8)}.sock`);
-			const ctx = yield* Layer.build(crewTrackerHostOrDialLayer(socketPath));
+			const ctx = yield* Layer.build(hostOrDial(socketPath));
 			const tracker = Context.get(ctx, CrewTracker);
 			yield* tracker.announce({
 				role: "reviewer",
