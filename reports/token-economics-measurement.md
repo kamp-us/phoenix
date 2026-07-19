@@ -378,7 +378,7 @@ redundant install — not the provisioning itself — is the only realizable sav
 ingested output + the command, plus potentially one dedicated Bash turn (whose marginal billed cost is
 `cache_read`-dominated for a heavy stage, §2), per spawn that does it; scaled to a ~25-agent drain,
 ≈4.25k tokens of direct output plus up to ~25 redundant turns. The drift-resistant, quality-neutral fix
-is **documentation, not a harness change**: [`worktree-agent-constraints.md`](./worktree-agent-constraints.md)
+is **documentation, not a harness change**: [`worktree-agent-constraints.md`](../.patterns/worktree-agent-constraints.md)
 now records that a worktree arrives auto-provisioned and that an agent must **verify before installing**
 (install only if `node_modules` is absent) and **never symlink** the primary's `node_modules`. This
 *reinforces* ADR 0109's no-share rule; it never weakens it.
@@ -396,7 +396,7 @@ is no oracle input to move; the §3 gate is trivially preserved. Per ADR 0112 §
 | Lever | Measured before/after | Quality gate (§3) | Outcome |
 |---|---|---|---|
 | worktree dep-provision (auto-provision / share-the-store) | **≈0 billed tokens/run** — provisioning runs out-of-band at `git worktree add`, outside the agent's metered turns; the store is already machine-global + hardlinked; `drive-issue.js` has no provisioning seam. Install itself: 4.5 s wall-clock, ≈170 tok output, warm store | trivially PRESERVED (deterministic env setup; no decision artifact moves) | **NO-GO on the structural lever — measured-negative recorded.** Harness-external (ADR 0109 §4) and already realized. |
-| residual: reflexive-reinstall avoidance | ≈170 tok + up to one turn per spawn that redundantly installs (≈4.25k tok + ~25 turns over a 25-agent drain); also closes the ADR 0109 symlink anti-pattern | PRESERVED | **doc lever shipped** — [`worktree-agent-constraints.md`](./worktree-agent-constraints.md): verify-before-install, never symlink |
+| residual: reflexive-reinstall avoidance | ≈170 tok + up to one turn per spawn that redundantly installs (≈4.25k tok + ~25 turns over a 25-agent drain); also closes the ADR 0109 symlink anti-pattern | PRESERVED | **doc lever shipped** — [`worktree-agent-constraints.md`](../.patterns/worktree-agent-constraints.md): verify-before-install, never symlink |
 
 **Net: the structural per-spawn dep-provision lever is a measured-negative** — the harness already
 provisions out-of-band at ≈0 metered tokens and the store is already shared, so no in-repo structural
