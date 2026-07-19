@@ -106,7 +106,7 @@ export type TmuxRunner = (args: readonly string[]) => Effect.Effect<TmuxRun>;
  * `spawnError` data so each caller maps it to its own typed error (no raw try/catch: `spawn` reports
  * operational errors via `error`, not a throw). This mirrors ensure-tracker's `Effect.callback` node-event idiom.
  */
-const runTmux: TmuxRunner = (args) =>
+export const runTmux: TmuxRunner = (args) =>
 	Effect.callback<TmuxRun>((resume) => {
 		const child = spawn("tmux", [...args], {stdio: ["ignore", "pipe", "ignore"]});
 		let stdout = "";
@@ -167,21 +167,23 @@ export type StandUpError =
 	| StandUpLaunchError;
 
 /**
- * Render a stand-up abort for the operator: the error tag plus its diagnostic data fields. `String(error)` on a
+ * Render any crew tagged error for the operator: the tag plus its diagnostic data fields. `String(error)` on a
  * `Schema.TaggedErrorClass` prints only the tag and drops the fields — yet the fields are the payload an operator
  * needs (which tmux step + exit code failed, in which role/pane), so surface every schema data field alongside
- * the tag. Field-generic on purpose: every union member's diagnostic surfaces — including both `reason`-carriers,
- * `StandUpLaunchError` (role/pane/reason) and `TmuxSessionEnsureError` (session/reason) — and a future member's
- * fields can't silently regress to tag-only. `Cause.pretty` is not a substitute here: it prints tag + stack but
- * not the schema fields (#3438).
+ * the tag. Field-generic on purpose: every error's diagnostic surfaces regardless of its field shape, so a future
+ * member's fields can't silently regress to tag-only. `Cause.pretty` is not a substitute here: it prints tag +
+ * stack but not the schema fields (#3438). Shared by the stand-up path and the single-member membership ops (#3519).
  */
-export const renderStandUpError = (error: StandUpError): string => {
+export const renderTaggedError = (error: {readonly _tag: string}): string => {
 	const detail = Object.entries(error)
 		.filter(([key]) => key !== "_tag")
 		.map(([key, value]) => `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`)
 		.join(", ");
 	return detail ? `${error._tag} (${detail})` : error._tag;
 };
+
+/** Render a stand-up abort — the `StandUpError`-typed alias over the shared field-generic renderer. */
+export const renderStandUpError = (error: StandUpError): string => renderTaggedError(error);
 
 /** What `register` commits in one shot: every pane's `.mcp.json` entry plus the run/project context the boot-gate seeds need. */
 export interface ProjectScopeRegisterInput {
@@ -267,11 +269,63 @@ export interface StandUpResult {
 }
 
 /**
+ * The already-resolved launch dimensions one session's plan is built against — the shared context
+ * both the whole-crew stand-up and a single-member `spawn-role` (#3519) hand `buildLaunchPlan`, so
+ * the per-session bind + cwd derivation is ONE code path (never forked between the two callers).
+ */
+export interface SessionPlanContext {
+	readonly projectRoot: string;
+	readonly serverName: string;
+	readonly config: LaunchConfig;
+	/** The id of the cwd-dir tree this session's launch cwd lands under (`<root>/.claude/crew-run/<runId>/`). */
+	readonly runId: string;
+	readonly localScope: ProjectScopeRegistrar;
+}
+
+/**
+ * Build ONE derived session's full launch plan: its launch bind (argv, #3296), its distinct git-valid
+ * launch cwd (where the pane's leaf `.mcp.json` lands, #3444), and its already-computed tmux placement.
+ * This is the per-role launch-plan step `runStandUp` runs for every roster session AND `spawn-role`
+ * (#3519) runs for one on-demand session — extracted, not forked, so single-role and whole-crew launch
+ * derive identically (a bridge binds its singleton address, an engine binds its per-instance identity).
+ */
+export const buildLaunchPlan = (
+	session: CrewSession,
+	placement: PlacementTarget,
+	ctx: SessionPlanContext,
+): Effect.Effect<
+	LaunchPlan,
+	| CrewSessionBinUnresolvableError
+	| CrewServerNotRegisteredError
+	| ChannelPluginNotAllowedError
+	| ProjectScopeWriteError,
+	FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const bind = yield* buildSessionBind({
+			role: session.role,
+			projectRoot: ctx.projectRoot,
+			serverName: ctx.serverName,
+			// Thread the session-set-derived per-instance identity so the launched engine binds it rather
+			// than re-minting its own (#3354 seam 3); a bridge is a singleton and has none.
+			instance: session.kind === "engine" ? session.instance : undefined,
+			// The role's configured model tier → the session's `--model` (#3423); undefined for a role that
+			// set none, so bind emits no `--model` and it boots on the CLI default.
+			tier: ctx.config.roleTiers[session.role],
+			channels: ctx.config.channels,
+		});
+		// The pane's distinct launch cwd — where its leaf `.mcp.json` lands (#3444). Resolved here so an
+		// unwritable cwd fails closed before the register/launch.
+		const cwd = yield* ctx.localScope.paneCwd(ctx.projectRoot, ctx.runId, placement.paneLabel);
+		return {session, bind, placement, cwd};
+	});
+
+/**
  * Project a derived `CrewSession` onto the `RosterSession` tmux-placement consumes: a bridge places
  * on a pane labelled by its role slug, an engine on its generated per-instance id (an operator cannot
  * name N dynamic engines). Both pane labels derive from identity — there is no config tmux dimension.
  */
-const toRosterSession = (session: CrewSession): RosterSession =>
+export const toRosterSession = (session: CrewSession): RosterSession =>
 	session.kind === "engine"
 		? {kind: "engine", id: session.instance}
 		: {kind: "bridge", role: session.role};
@@ -477,36 +531,25 @@ export const runStandUp = (
 
 		const sessions = deriveSessionSet({engineCount: config.engineCount, instanceId});
 
-		// Resolve EVERY bind + placement before launching anything — this is the no-partial-crew line:
-		// an inert channel or a colliding window fails here, while zero sessions are up.
-		const binds = yield* Effect.forEach(sessions, (session) =>
-			buildSessionBind({
-				role: session.role,
+		// Resolve EVERY bind + placement + cwd before launching anything — this is the no-partial-crew
+		// line: an inert channel or a colliding window fails here, while zero sessions are up.
+		const placements = yield* computeTmuxPlacement(sessions.map(toRosterSession));
+		// `placements` is derived from `sessions` in order, so the index is always populated; the die guard
+		// is the unreachable branch that satisfies noUncheckedIndexedAccess. Each session's full plan (bind,
+		// placement, distinct launch cwd) is built by the shared `buildLaunchPlan` — the same per-role step
+		// `spawn-role` runs for one on-demand session (#3519), never a forked launch path.
+		const plans = yield* Effect.forEach(sessions, (session, i) => {
+			const placement = placements[i];
+			if (placement === undefined) {
+				return Effect.die(`stand-up placement zip out of range for session "${session.role}"`);
+			}
+			return buildLaunchPlan(session, placement, {
 				projectRoot,
 				serverName,
-				// Thread the session-set-derived per-instance identity so the launched engine binds it
-				// rather than re-minting its own (#3354 seam 3); a bridge is a singleton and has none.
-				instance: session.kind === "engine" ? session.instance : undefined,
-				// The role's configured model tier → the session's `--model` (#3423); undefined for a
-				// role that set none, so bind emits no `--model` and it boots on the CLI default.
-				tier: config.roleTiers[session.role],
-				channels: config.channels,
-			}),
-		);
-		const placements = yield* computeTmuxPlacement(sessions.map(toRosterSession));
-		// `binds` and `placements` are each derived from `sessions` in order, so the index is always
-		// populated; the die guard is the unreachable branch that satisfies noUncheckedIndexedAccess. Each
-		// pane also gets a distinct git-valid launch cwd (where its leaf `.mcp.json` lands, #3444) — resolved
-		// here, before the register, so an unwritable cwd fails closed with zero panes up.
-		const plans = yield* Effect.forEach(sessions, (session, i) => {
-			const bind = binds[i];
-			const placement = placements[i];
-			if (bind === undefined || placement === undefined) {
-				return Effect.die(`stand-up plan zip out of range for session "${session.role}"`);
-			}
-			return localScope
-				.paneCwd(projectRoot, runId, placement.paneLabel)
-				.pipe(Effect.map((cwd): LaunchPlan => ({session, bind, placement, cwd})));
+				config,
+				runId,
+				localScope,
+			});
 		});
 
 		// Register every pane's crew server as a project-scope leaf `.mcp.json` + seed the two boot gates

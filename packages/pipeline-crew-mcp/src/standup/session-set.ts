@@ -61,6 +61,32 @@ export interface SessionSetInput {
  * has no standing loop to run, so it is never stood up here (#3524). Total over the autobooted roles:
  * every one is kinded, so none is dropped or double-counted.
  */
+/**
+ * Derive ONE session for a single role — the on-demand membership op's session (#3519), the same
+ * `{role, address}` a stand-up session carries so a spawned member joins the tracker + channel over
+ * the identical runtime path. A bridge is its cardinality-1 singleton (`inbox://<role>`, no instance);
+ * an engine mints one fresh per-instance address (`inbox://<role>/<instance>`) so it deconflicts by
+ * resource claims exactly as a boot-from-stand-up engine does.
+ *
+ * Unlike `deriveSessionSet`, this is NOT gated on `isAutobooted`: `spawn-role` is the explicit human
+ * spawn of an on-demand role — the cartographer (human-in-the-loop) is precisely what it exists to
+ * launch — so the autoboot filter (which excludes HITL roles from the standing drain crew) must not
+ * apply here. The role's DRIVE still governs its boot turn downstream (bind.ts hands a HITL role no
+ * boot prompt, so it comes up idle waiting for the human), #3524.
+ */
+export const deriveOneSession = (input: {
+	readonly role: CrewRole;
+	/** Mints the engine instance's distinct id — injected so the derivation is pure/testable; production passes `randomUUID`. */
+	readonly instanceId: () => string;
+}): CrewSession => {
+	const {role, instanceId} = input;
+	if (kindOf(role) === "engine") {
+		const instance = instanceId();
+		return {kind: "engine", role, instance, address: inboxAddressFor(role, instance)};
+	}
+	return {kind: "bridge", role, address: inboxAddressFor(role, "")};
+};
+
 export const deriveSessionSet = (input: SessionSetInput): readonly CrewSession[] => {
 	const {engineCount, instanceId} = input;
 	const sessions: CrewSession[] = [];
