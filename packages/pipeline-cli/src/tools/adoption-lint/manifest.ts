@@ -38,6 +38,23 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		reason:
 			"re-derives the ADR-0058 SHA-bound verdict-marker resolution that `pipeline-cli verdict read` owns, instead of citing the verb (#3254 / #2102)",
 	},
+	{
+		// `tracker apply-triage` owns the label-transition envelope (#3263): add the
+		// type/priority/status classification then remove the needs-triage queue label. The
+		// fingerprint is the co-occurrence of all three tells — adding a `type:` label, setting
+		// `status:triaged`, and deleting the `status:needs-triage` queue label — so an incidental
+		// `labels[]=type:` (e.g. creating a child issue in plan-epic) is not a false finding. A
+		// file that cites `pipeline-cli tracker apply-triage` is compliant.
+		verb: "tracker apply-triage",
+		signature: [
+			/labels\[\]=type:/, // adds a type label
+			/labels\[\]=status:triaged/, // sets the triaged status
+			/labels\/status:needs-triage/, // removes the needs-triage queue label
+		],
+		citation: /pipeline-cli\s+tracker\s+apply-triage\b/,
+		reason:
+			"re-derives the label-transition envelope that `pipeline-cli tracker apply-triage` owns (add type/priority/status, remove needs-triage), instead of citing the verb (#3263 / #3254)",
+	},
 ];
 
 /**

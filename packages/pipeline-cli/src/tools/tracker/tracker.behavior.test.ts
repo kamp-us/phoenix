@@ -2,6 +2,7 @@ import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
 import {Effect, Layer, Sink, Stream} from "effect";
 import {ChildProcessSpawner} from "effect/unstable/process";
 import {
+	GhCommandError,
 	GithubTrackerLive,
 	type RepoResolutionError,
 	Tracker,
@@ -310,18 +311,103 @@ describe("Tracker.readBack — resolve the current owner", () => {
 	);
 });
 
-describe("Tracker — the declared-but-not-yet-built verbs fail closed", () => {
-	it.effect("applyTriage → TrackerNotImplementedError (never a silent no-op)", () =>
+describe("Tracker.applyTriage — the label-transition envelope over a mock gh spawner", () => {
+	const L = `${P}/issues/${TARGET}/labels`;
+
+	it.effect("adds type/priority/status, removes needs-triage, reads back → triaged", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const result = yield* tracker.applyTriage(TARGET, {type: "feature", priority: "p2"});
+			assert.deepStrictEqual(result, {
+				_tag: "triaged",
+				type: "feature",
+				priority: "p2",
+				status: "triaged",
+			});
+		}).pipe((effect) =>
+			provide(effect, {
+				[`POST ${L}`]: JSON.stringify([{name: "type:feature"}, {name: "p2"}]),
+				[`DELETE ${P}/issues/${TARGET}/labels/status:needs-triage`]: "",
+				// read-back reflects the post-transition state: the queue label is gone.
+				[`GET ${L}`]: JSON.stringify([
+					{name: "type:feature"},
+					{name: "p2"},
+					{name: "status:triaged"},
+				]),
+			}),
+		),
+	);
+
+	it.effect("honors an explicit --status stage and reports the stage that landed", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const result = yield* tracker.applyTriage(TARGET, {
+				type: "bug",
+				priority: "p1",
+				status: "needs-info",
+			});
+			assert.deepStrictEqual(result, {
+				_tag: "triaged",
+				type: "bug",
+				priority: "p1",
+				status: "needs-info",
+			});
+		}).pipe((effect) =>
+			provide(effect, {
+				[`POST ${L}`]: JSON.stringify([{name: "type:bug"}]),
+				[`DELETE ${P}/issues/${TARGET}/labels/status:needs-triage`]: "",
+				[`GET ${L}`]: JSON.stringify([
+					{name: "type:bug"},
+					{name: "p1"},
+					{name: "status:needs-info"},
+				]),
+			}),
+		),
+	);
+
+	it.effect("the queue label already absent (404 on remove) → still triaged (idempotent)", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const result = yield* tracker.applyTriage(TARGET, {type: "chore", priority: "p2"});
+			assert.deepStrictEqual(result, {
+				_tag: "triaged",
+				type: "chore",
+				priority: "p2",
+				status: "triaged",
+			});
+		}).pipe((effect) =>
+			provide(effect, {
+				[`POST ${L}`]: JSON.stringify([{name: "type:chore"}]),
+				// a pre-bootstrap issue never carried the queue label → the remove 404s, tolerated.
+				[`DELETE ${P}/issues/${TARGET}/labels/status:needs-triage`]: {
+					stdout: "",
+					exitCode: 1,
+					stderr: "HTTP 404: Label does not exist",
+				},
+				[`GET ${L}`]: JSON.stringify([
+					{name: "type:chore"},
+					{name: "p2"},
+					{name: "status:triaged"},
+				]),
+			}),
+		),
+	);
+
+	it.effect("a non-zero gh add-labels exit → GhCommandError in the E channel", () =>
 		Effect.gen(function* () {
 			const tracker = yield* Tracker;
 			const error = yield* Effect.flip(
 				tracker.applyTriage(TARGET, {type: "feature", priority: "p2"}),
 			);
-			assert.isTrue(error instanceof TrackerNotImplementedError);
-			assert.strictEqual(error.verb, "applyTriage");
-		}).pipe((effect) => provide(effect, {})),
+			assert.isTrue(error instanceof GhCommandError);
+		}).pipe((effect) =>
+			// no POST fixture → the add-labels call exits 1 → GhCommandError, never a throw.
+			provide(effect, {}),
+		),
 	);
+});
 
+describe("Tracker — the declared-but-not-yet-built verbs fail closed", () => {
 	it.effect("postVerdict → TrackerNotImplementedError", () =>
 		Effect.gen(function* () {
 			const tracker = yield* Tracker;

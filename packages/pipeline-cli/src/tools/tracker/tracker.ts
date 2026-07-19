@@ -2,11 +2,12 @@
  * The `Tracker` service — the shared Effect capability over the crew's issue tracker
  * surface (claims, triage, verdicts, graduation) with **domain-shaped** signatures.
  *
- * This is the walking skeleton of Wave 1 (epic #3258): a `Context.Service` `Tracker`
- * tag plus its sole implementation `GithubTrackerLive`. It seeds one verb end to end —
- * `claim` (the ADR-0115 agent-distinguishable claim) and a generic `readBack` — and
- * *declares* the not-yet-built verbs (`applyTriage` / `postVerdict` / `graduate`) so the
- * interface shape is complete before it locks; sibling Phase-3 children implement them.
+ * Grown from the Wave-1 walking skeleton (epic #3258): a `Context.Service` `Tracker`
+ * tag plus its sole implementation `GithubTrackerLive`. `claim` (the ADR-0115
+ * agent-distinguishable claim), a generic `readBack`, and `applyTriage` (the
+ * label-transition envelope, #3263) are live; `postVerdict` / `graduate` are still
+ * *declared* — their interface shape is fixed so the tag locks before its remaining
+ * sibling Phase-3 children implement them.
  *
  * Two design rules bind every signature here and are the point of the skeleton:
  *
@@ -64,9 +65,9 @@ export class RepoResolutionError extends Schema.TaggedErrorClass<RepoResolutionE
 ) {}
 
 /**
- * A declared-but-not-yet-built verb was called. The skeleton ships `claim` + `readBack`
- * live; `applyTriage` / `postVerdict` / `graduate` fail-closed with this typed error
- * until a sibling Phase-3 child implements them — never a silent no-op or a throw.
+ * A declared-but-not-yet-built verb was called. `claim` / `readBack` / `applyTriage`
+ * are live; `postVerdict` / `graduate` fail-closed with this typed error until a sibling
+ * Phase-3 child implements them — never a silent no-op or a throw.
  */
 export class TrackerNotImplementedError extends Schema.TaggedErrorClass<TrackerNotImplementedError>()(
 	"@kampus/tracker/TrackerNotImplementedError",
@@ -109,11 +110,30 @@ export type ReadBackResult =
 // complete before it locks (ADR 0190). Each stays domain-shaped — no label string, no
 // sub-issue id, no REST field — so a later Asana/local-markdown adapter needs no reshape.
 
-/** Triage classification: the domain type + priority a triage decision assigns. */
+/**
+ * Triage classification (judgment-as-parameter, #3252): the domain type + priority a
+ * triage decision assigns, and the lifecycle stage it moves the entity to (`status`,
+ * default `triaged`). Domain vocabulary only — `type`/`priority`/`status` are the crew's
+ * own terms; `GithubTrackerLive` maps them to `type:` / `status:` label strings at the
+ * boundary, so no GitHub label string leaks into the signature (ADR 0190).
+ */
 export interface TriageJudgment {
 	readonly type: string;
 	readonly priority: string;
+	readonly status?: string;
 }
+
+/**
+ * The `applyTriage` verdict — the entity now carries the classification, with `status`
+ * read back from the entity (so the caller sees the stage that actually landed, not just
+ * the one requested). A domain owner, never a raw REST label payload.
+ */
+export type TriageResult = {
+	readonly _tag: "triaged";
+	readonly type: string;
+	readonly priority: string;
+	readonly status: string;
+};
 
 /** A gate verdict: which gate, whether it passed, and the head ref it is bound to. */
 export interface VerdictJudgment {
@@ -241,6 +261,33 @@ const permissionArgs = (repo: string, login: string): ReadonlyArray<string> => [
 	".permission",
 ];
 
+const addLabelsArgs = (
+	repo: string,
+	target: TargetId,
+	labels: ReadonlyArray<string>,
+): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"POST",
+	`repos/${repo}/issues/${target}/labels`,
+	...labels.flatMap((label) => ["-f", `labels[]=${label}`]),
+];
+
+// The bare label name is passed unencoded: gh encodes the path segment itself, so
+// pre-encoding the `:` would double-encode it (%253A) into a spurious 404.
+const removeLabelArgs = (repo: string, target: TargetId, label: string): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"DELETE",
+	`repos/${repo}/issues/${target}/labels/${label}`,
+];
+
+const listLabelsArgs = (repo: string, target: TargetId): ReadonlyArray<string> => [
+	"api",
+	"--paginate",
+	`repos/${repo}/issues/${target}/labels?per_page=100`,
+];
+
 /** A raw comment as the issues/comments endpoint returns it; only these fields are read. */
 const RawComment = Schema.Struct({
 	id: Schema.Number,
@@ -249,6 +296,13 @@ const RawComment = Schema.Struct({
 	user: Schema.NullOr(Schema.Struct({login: Schema.String})),
 });
 const decodeComments = Schema.decodeUnknownEffect(Schema.Array(RawComment));
+
+/** A raw label as the issues/labels endpoint returns it; only the name is read. */
+const RawLabel = Schema.Struct({name: Schema.String});
+const decodeLabels = Schema.decodeUnknownEffect(Schema.Array(RawLabel));
+
+const LABEL_STATUS_PREFIX = "status:";
+const QUEUE_STATUS = "needs-triage";
 
 const toClaimComment = (raw: (typeof RawComment)["Type"]): ClaimComment => ({
 	id: raw.id,
@@ -350,13 +404,47 @@ const readBack = Effect.fn("Tracker.readBack")(function* (repo: string, target: 
 		: ({_tag: "unclaimed"} satisfies ReadBackResult);
 });
 
+/**
+ * Apply a triage classification to `target` (ADR 0190) — the label-transition envelope
+ * the triage skill hand-rolled, now one verb with the judgment as a parameter. Adds the
+ * `type:` / priority / `status:<stage>` labels, then removes the `status:needs-triage`
+ * queue label so the entity leaves the queue. The removal is idempotent: a `gh` 404 (the
+ * entity never carried the queue label — a pre-bootstrap issue) is not a failure of the
+ * transition, since the triaged end-state is reached either way. Reads the labels back and
+ * Schema-decodes them at the boundary, reporting the `status` stage that actually landed.
+ */
+const applyTriage = Effect.fn("Tracker.applyTriage")(function* (
+	repo: string,
+	target: TargetId,
+	judgment: TriageJudgment,
+) {
+	const status = judgment.status ?? "triaged";
+	const add = [`type:${judgment.type}`, judgment.priority, `${LABEL_STATUS_PREFIX}${status}`];
+	yield* runGh(addLabelsArgs(repo, target, add));
+	yield* runGh(removeLabelArgs(repo, target, `${LABEL_STATUS_PREFIX}${QUEUE_STATUS}`)).pipe(
+		Effect.catchTag("@kampus/tracker/GhCommandError", () => Effect.succeed("")),
+	);
+	const labels = yield* decodeLabels(yield* json(listLabelsArgs(repo, target)));
+	const landedStatus = labels
+		.map((label) => label.name)
+		.filter((name) => name.startsWith(LABEL_STATUS_PREFIX))
+		.map((name) => name.slice(LABEL_STATUS_PREFIX.length))
+		.find((stage) => stage !== QUEUE_STATUS);
+	return {
+		_tag: "triaged",
+		type: judgment.type,
+		priority: judgment.priority,
+		status: landedStatus ?? status,
+	} satisfies TriageResult;
+});
+
 type TrackerErrors = RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError;
 
 /**
- * `Tracker` — the shared crew tracker capability. `claim` and `readBack` are live; the
- * three declared verbs fail `TrackerNotImplementedError` until a sibling child builds them
- * (their success types are `never` by design — a not-yet-built verb produces no value).
- * Built by `GithubTrackerLive`, whose `R` is `ChildProcessSpawner`.
+ * `Tracker` — the shared crew tracker capability. `claim`, `readBack`, and `applyTriage`
+ * are live; the two still-declared verbs fail `TrackerNotImplementedError` until a sibling
+ * child builds them (their success types are `never` by design — a not-yet-built verb
+ * produces no value). Built by `GithubTrackerLive`, whose `R` is `ChildProcessSpawner`.
  */
 export class Tracker extends Context.Service<
 	Tracker,
@@ -369,7 +457,7 @@ export class Tracker extends Context.Service<
 		readonly applyTriage: (
 			target: TargetId,
 			judgment: TriageJudgment,
-		) => Effect.Effect<never, TrackerNotImplementedError>;
+		) => Effect.Effect<TriageResult, TrackerErrors>;
 		readonly postVerdict: (
 			target: TargetId,
 			judgment: VerdictJudgment,
@@ -406,7 +494,8 @@ export const GithubTrackerLive: Layer.Layer<
 			claim: (target, judgment) =>
 				repo.pipe(Effect.flatMap((r) => withSpawner(claim(r, target, judgment.session)))),
 			readBack: (target) => repo.pipe(Effect.flatMap((r) => withSpawner(readBack(r, target)))),
-			applyTriage: () => notImplemented("applyTriage"),
+			applyTriage: (target, judgment) =>
+				repo.pipe(Effect.flatMap((r) => withSpawner(applyTriage(r, target, judgment)))),
 			postVerdict: () => notImplemented("postVerdict"),
 			graduate: () => notImplemented("graduate"),
 		};
