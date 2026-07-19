@@ -3,6 +3,7 @@ import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {extractControlPlaneRe} from "../codeowners-cp/codeowners-cp.ts";
 import {CONTROL_PLANE_RE} from "../control-plane-paths/control-plane-re.ts";
+import {parseGuardAdrRe} from "../guard-content-probe/guard-content-probe.ts";
 import {type ClassifyOptions, classify, parseUnifiedDiff} from "./trivial-diff.ts";
 
 // The live CONTROL_PLANE_RE, IMPORTED from its single source (#2761) — never re-literaled
@@ -11,9 +12,21 @@ import {type ClassifyOptions, classify, parseUnifiedDiff} from "./trivial-diff.t
 // string input. The lockstep test at the bottom re-checks the const against the formats-doc.
 const LIVE_RE = CONTROL_PLANE_RE;
 
+const FORMATS_ON_DISK = fileURLToPath(
+	new URL(
+		"../../../../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
+		import.meta.url,
+	),
+);
+// The live GUARD_ADR_RE (ADR 0164), parsed from the same single source the shared
+// guard-content-probe verb reads — never re-literaled here, so the guard-touching bound cannot
+// drift from §CP. The bin re-resolves it from origin/main; the core takes it as a string.
+const LIVE_GUARD_RE = parseGuardAdrRe(readFileSync(FORMATS_ON_DISK, "utf8"));
+
 const opts = (over: Partial<ClassifyOptions> = {}): ClassifyOptions => ({
 	controlPlaneRe: LIVE_RE,
 	lineBudget: 20,
+	guardAdrRe: LIVE_GUARD_RE,
 	...over,
 });
 
@@ -142,6 +155,41 @@ describe("classify — §CP forces non-trivial (live boundary, checked first)", 
 	});
 });
 
+describe("classify — a guard-touching .decisions/** ADR forces non-trivial (ADR 0164 / #3645)", () => {
+	it("an ADR whose added content relaxes a guard → non-trivial (never the trivial doc branch)", () => {
+		const c = classify(
+			fileDiff(".decisions/0194-x.md", [
+				"This decision relaxes the fail-closed enforcement guard.",
+			]),
+			opts(),
+		);
+		expect(c.verdict).toBe("non-trivial");
+		expect(c.reason).toMatch(/guard-touching/);
+	});
+
+	it("an ordinary product ADR with no guard vocabulary stays trivial", () => {
+		const c = classify(
+			fileDiff(".decisions/0200-sozluk-sort.md", [
+				"Term pages sort entries by score, newest first.",
+			]),
+			opts(),
+		);
+		expect(c.verdict).toBe("trivial");
+	});
+
+	it("null guardAdrRe → fail-closed: any .decisions/** ADR is guard-touching → non-trivial", () => {
+		const c = classify(fileDiff(".decisions/0001-x.md", ["a tweak"]), opts({guardAdrRe: null}));
+		expect(c.verdict).toBe("non-trivial");
+		expect(c.reason).toMatch(/guard-touching/);
+	});
+
+	it("a pure-deletion ADR change (no added lines) → guard-touching (fail-closed)", () => {
+		const del =
+			"diff --git a/.decisions/0001-x.md b/.decisions/0001-x.md\n--- a/.decisions/0001-x.md\n+++ b/.decisions/0001-x.md\n@@ -1 +0,0 @@\n-the guard clause is here\n";
+		expect(classify(del, opts()).verdict).toBe("non-trivial");
+	});
+});
+
 describe("classify — unreadable / unparseable boundary forces non-trivial (fail-closed)", () => {
 	it("null boundary → non-trivial", () => {
 		const c = classify(fileDiff("README.md", ["x"]), opts({controlPlaneRe: null}));
@@ -172,15 +220,8 @@ describe("classify — unparseable / empty diff forces non-trivial (fail-closed)
 // gh-issue-intake-formats.md on disk — the const↔formats-doc drift check, redundant with
 // codeowners-cp + validate-gate-path-drift.sh but cheap belt-and-suspenders (#2761/#2343).
 describe("the §CP const stays in lockstep with the formats doc on disk", () => {
-	const FORMATS_PATH = fileURLToPath(
-		new URL(
-			"../../../../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
-			import.meta.url,
-		),
-	);
-
 	it("equals the canonical CONTROL_PLANE_RE extracted from the formats doc", () => {
-		const canonical = extractControlPlaneRe(readFileSync(FORMATS_PATH, "utf8"));
+		const canonical = extractControlPlaneRe(readFileSync(FORMATS_ON_DISK, "utf8"));
 		expect(canonical).not.toBeNull();
 		expect(LIVE_RE).toBe(canonical);
 	});

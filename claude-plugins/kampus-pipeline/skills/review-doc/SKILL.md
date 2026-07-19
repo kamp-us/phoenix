@@ -193,6 +193,32 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
     --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
   # non-empty → blocking: advisory only; a control-plane approval @head → ship-it enqueues (ADR 0135; §CP set 0053/0065/0073)
   ```
+- **Any guard-touching `.decisions/**` ADR (§CP by CONTENT, ADR 0164)** — a `.decisions/**` ADR is
+  not path-§CP, but one that **relaxes, amends, or widens an exemption on a documented guard** is
+  control-plane by *nature* and its path can't tell it from an ordinary ADR (ADR
+  [0164](https://github.com/kamp-us/phoenix/blob/main/.decisions/0164-guard-relaxing-adr-cp-gate.md),
+  #2191). Classify it by CONTENT with the **shared `pipeline-cli guard-content-probe` verb** — the
+  SAME probe `ship-it` Step 0 and the driver (via `trivial-diff`) call, so a guard-touching ADR reads
+  §CP consistently at every stage, not only at `ship-it` (issue #3645, founder ruling #3416). Before
+  #3645 this gate classified §CP by path alone, so a guard-relaxing ADR (live: PR #3415 / ADR 0194)
+  read NON-§CP here and got a bindable PASS — the latent §CP-routing hole this closes. A guard-touching
+  ADR puts the PR in the **blocking set** exactly like a path-§CP file: you review it and post
+  findings, but **advisory only** (Step 5's blocking-set path). Fail-closed: an unreadable ADR body ⇒
+  §CP (the verb resolves this).
+
+  ```bash
+  # Probe each touched .decisions/** ADR's CONTENT at head with the shared verb (single source of the
+  # ADR-0164 guard vocabulary; #3645). Exit 0 ⇒ guard-touching ⇒ §CP-advisory. Fail-closed inside the verb.
+  HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+  GUARD_TOUCHING=""
+  while IFS= read -r adr; do
+    [ -z "$adr" ] && continue
+    gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
+      | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null \
+      && GUARD_TOUCHING="$GUARD_TOUCHING $adr"
+  done < <(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' | grep -E '^\.decisions/.*\.md$' || true)
+  # non-empty $GUARD_TOUCHING → blocking: §CP-advisory, same as a control-plane path above (ADR 0164/0135)
+  ```
 - **Otherwise** → **non-blocking**, and the doc class — *which* `*.md`/knowledge files are
   yours — is the **canonical §DOC definition** in
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md): cite it, don't re-derive
@@ -716,10 +742,15 @@ false-fails the unconditional `verdict_post_verify … || exit 1`.
 
 ### Pass path — blocking-set PR (advisory only)
 
-Every check passed but Step 0 classified the PR **blocking** (it touches `.claude/**`,
-`.github/**`, or a gate-critical skill). Post the **same evidence**, but the first line is
-**not** a merge-ready go-ahead — it is advice. `ship-it` does not auto-merge this PR on machine
-gates alone — it enqueues only once a `@kamp-us/control-plane` approval is present at head (ADR 0135).
+Every check passed but Step 0 classified the PR **blocking** — it touches `.claude/**`,
+`.github/**`, or a gate-critical skill, **OR** it touches a **guard-touching `.decisions/**` ADR**
+(§CP by content, ADR 0164 — the shared `guard-content-probe` verb returned `guard-touching`). Post
+the **same evidence**, but the first line is **not** a merge-ready go-ahead — it is advice. `ship-it`
+does not auto-merge this PR on machine gates alone — it enqueues only once a `@kamp-us/control-plane`
+approval is present at head (ADR 0135). A guard-touching ADR routes here — a **§CP-advisory** verdict,
+non-bindable, head recorded only in the body's `Reviewed-head:` line — instead of the bindable
+`review-doc: PASS @ <sha> — merge-ready` a non-guard ADR earns; its `review-doc` verdict routing is
+unchanged (it is still doc-class), only the merge-authority moves (ADR 0164 / #3645).
 
 > **The first-line `@ <sha>` is SHA-less by design; the SHA lives in the body; a delegated merge
 > actor confirms from the body, not the first-line marker (ADR
@@ -747,11 +778,12 @@ gates alone — it enqueues only once a `@kamp-us/control-plane` approval is pre
 ```markdown
 review-doc: advisory — blocking-set PR (manual merge)
 
-PR #<PR> touches the control plane (`.claude/`/`.github/` or a gate-critical skill) — the agent
-control plane / pipeline gates (ADR 0053/0065). My verdict is **advisory only**: it does **not**
-authorize a merge. Under the §CP hard gate (ADR 0135), a `@kamp-us/control-plane` member approves
-this at its current head and `ship-it` then enqueues it (ADR 0048 single merge authority) — there
-is no human hand-merge in the §CP path.
+PR #<PR> is §CP — it touches the control plane (`.claude/`/`.github/` or a gate-critical skill), OR
+it touches a **guard-touching `.decisions/**` ADR** (§CP by content, ADR 0164 — the shared
+`guard-content-probe` verb flagged it: `<the .decisions/** path(s)>`). My verdict is **advisory
+only**: it does **not** authorize a merge. Under the §CP hard gate (ADR 0135), a
+`@kamp-us/control-plane` member approves this at its current head and `ship-it` then enqueues it (ADR
+0048 single merge authority) — there is no human hand-merge in the §CP path.
 
 Reviewed-head: @ <HEAD_SHA>
 

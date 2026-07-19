@@ -276,20 +276,19 @@ echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plan
 # §CP CONTENT clause (ADR 0164/#2191): a .decisions/** ADR is §CP by PATH only if it also matches
 # CONTROL_PLANE_RE (it doesn't) — but a guard-RELAXING ADR is control-plane by NATURE and path can't
 # tell it from an ordinary one. So classify a touched .decisions/** ADR §CP when its CONTENT cites or
-# amends a documented guard. GUARD_ADR_RE is single-sourced in gh-issue-intake-formats.md §CP — the
-# literal below is the fail-closed reference + validate-gate-path-drift lockstep target, NOT the live
-# decision source: re-resolve it from origin/main (like CONTROL_PLANE_RE, #981), and read each ADR's
-# body at the PR head. FAIL CLOSED throughout: unreadable boundary ⇒ match-everything; unreadable ADR
-# (delete/404) ⇒ §CP — never auto-ship an ADR that couldn't be read and proven guard-free.
-GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'   # §CP canonical (ADR 0164) — drift-locked to gh-issue-intake-formats.md
-GA_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^GUARD_ADR_RE=' | head -n1 || true)"
-if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched .decisions/** file is §CP
+# amends a documented guard. This probe is the SHARED verb `pipeline-cli guard-content-probe` (issue
+# #3645, founder ruling #3416) — the ONE content probe the review gate and the driver (via
+# trivial-diff) ALSO call, so a guard-touching ADR classifies §CP consistently at every stage, not
+# only here. The GUARD_ADR_RE vocabulary stays single-sourced in gh-issue-intake-formats.md §CP; the
+# verb reads it from the local checkout (immune to the #981 injected-snapshot staleness — it reads
+# disk, not this skill's prompt copy). FAIL CLOSED: an unreadable ADR body (delete/404) ⇒ §CP —
+# never auto-ship an ADR that couldn't be read and proven guard-free (the verb resolves this itself).
 HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
 echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
   [ -z "$adr" ] && continue
-  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-  if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
-  elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
+  gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
+    | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null \
+    && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
 done
 # The has-code/has-docs/has-skills probes are single-sourced as canonical HAS_*_RE= lines in
 # gh-issue-intake-formats.md §CLASS and re-resolved from origin/main here (like CONTROL_PLANE_RE/
