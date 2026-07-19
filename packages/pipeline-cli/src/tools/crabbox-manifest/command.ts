@@ -18,8 +18,7 @@
  * seam, a tool self-contains its services. Only the `Command.run`/`Effect.provide`/
  * `runMain` wiring is dropped — the shared `pipeline-cli` bin owns the run boundary.
  */
-import {readFileSync, writeFileSync} from "node:fs";
-import {Console, Effect, Schema} from "effect";
+import {Console, Effect, FileSystem, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {buildManifest} from "./adapter.ts";
 import {Git, GitLive} from "./commit.ts";
@@ -45,17 +44,39 @@ const parseExtraChecks = (text: string): Effect.Effect<ReadonlyArray<Check>, Cra
 			new CrabboxParseError({message: `malformed --extra-checks: ${String(cause)}`}),
 	});
 
-/** Read a file as UTF-8, lowering an IO fault into the adapter's typed parse error. */
-const readText = (path: string): Effect.Effect<string, CrabboxParseError> =>
-	Effect.try({
-		try: () => readFileSync(path, "utf8"),
-		catch: (cause) => new CrabboxParseError({message: `cannot read ${path}: ${String(cause)}`}),
+/**
+ * Read a file as UTF-8, lowering an IO fault into the adapter's typed parse error.
+ *
+ * The read/write route through the Effect `FileSystem` seam (over the bin's
+ * `NodeServices.layer`), so this stays testable off real disk
+ * (.patterns/effect-platform-access.md); a fs fault folds `PlatformError` → the
+ * `CrabboxParseError` the CLI's exit contract already carries.
+ */
+const readText = (path: string): Effect.Effect<string, CrabboxParseError, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		return yield* fs
+			.readFileString(path, "utf8")
+			.pipe(
+				Effect.mapError(
+					(cause) => new CrabboxParseError({message: `cannot read ${path}: ${String(cause)}`}),
+				),
+			);
 	});
 
-const writeText = (path: string, contents: string): Effect.Effect<void, CrabboxParseError> =>
-	Effect.try({
-		try: () => writeFileSync(path, contents),
-		catch: (cause) => new CrabboxParseError({message: `cannot write ${path}: ${String(cause)}`}),
+const writeText = (
+	path: string,
+	contents: string,
+): Effect.Effect<void, CrabboxParseError, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		yield* fs
+			.writeFileString(path, contents)
+			.pipe(
+				Effect.mapError(
+					(cause) => new CrabboxParseError({message: `cannot write ${path}: ${String(cause)}`}),
+				),
+			);
 	});
 
 const runSummaryFlag = Flag.string("run-summary").pipe(
