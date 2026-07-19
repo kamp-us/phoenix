@@ -37,6 +37,18 @@ describe("findCrewLeaks — match classes", () => {
 			expect(classes(findCrewLeaks("cd ~/.usirin"))).toContain("path");
 			expect(classes(findCrewLeaks("cd ~/.agent"))).toContain("path");
 		});
+		// #3506 — the shared path-matcher's config-file carve-out now applies HERE too (it used to
+		// only be on leak-guard's copy — the drift this ticket fixes). The two public claude CLI
+		// config files pass; a ~/.claude directory-internal still flags.
+		it("exempts the public ~/.claude.json / ~/.claude/settings.json config files (#3506, shared carve-out)", () => {
+			expect(findCrewLeaks("registers the server into ~/.claude.json")).toEqual([]);
+			expect(findCrewLeaks("edit ~/.claude/settings.json to add the crew server")).toEqual([]);
+		});
+		it("still flags a ~/.claude directory-internal path (#3506 — carve-out is leaf-pinned)", () => {
+			expect(classes(findCrewLeaks("session log at ~/.claude/projects/x/y.jsonl"))).toContain(
+				"path",
+			);
+		});
 		it("flags ~/code/ sibling clones", () => {
 			expect(classes(findCrewLeaks("~/code/github.com/x/y"))).toContain("path");
 		});

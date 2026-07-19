@@ -19,11 +19,16 @@
  * fictional `Robin`/`Sam` seam examples), so it is intentionally dropped. Do not add
  * name-literal matching back in any form.
  *
- * The path class mirrors leak-guard's precise deny-list (the specific machine-local home
- * dirs), not a bare-`~/` catch-all — the crew ships `${CLAUDE_PLUGIN_ROOT}` and relative
- * `../../.decisions/...` paths, which are not machine-local and must pass. Every match
- * class is unit-tested in `crew-leak.unit.test.ts`, class by class, on FICTIONAL fixtures.
+ * The `"path"` class is the SHARED `MACHINE_LOCAL_PATH_PATTERNS` from `path-matcher.ts`
+ * (the single source both detectors import, per the #3506 ruling) — so its config-file and
+ * `/tmp` shape carve-outs can never drift from leak-guard's, which was the root bug #3506
+ * records. Layered on top of the shared arm are the crew-only classes this sanitizer adds:
+ * an absolute Linux `/home/<name>` path (stricter than leak-guard's macOS-only home arm),
+ * plus emails, tmux pane ids, and personal auto-memory refs. `${CLAUDE_PLUGIN_ROOT}` and
+ * relative `../../.decisions/...` paths are not machine-local and must pass. Every class is
+ * unit-tested in `crew-leak.unit.test.ts`, class by class, on FICTIONAL fixtures.
  */
+import {MACHINE_LOCAL_PATH_PATTERNS} from "./path-matcher.ts";
 
 export type LeakClass = "path" | "email" | "tmux-id" | "memory-ref";
 
@@ -43,33 +48,16 @@ interface ClassPattern {
 }
 
 // Order = report order. Every pattern carries the global flag for the per-match scan.
+// The `"path"` class is the shared `MACHINE_LOCAL_PATH_PATTERNS` tagged with the class, then the
+// crew-only Linux `/home/<name>` arm and the three non-path classes layered on top (see docblock).
 const CLASS_PATTERNS: ReadonlyArray<ClassPattern> = [
-	{
-		class: "path",
-		// Drive-letter carve-out — see leak-guard.ts LEAK_PATTERNS (#3070): exempts only a
-		// Windows `C:/Users/...` prefix, keeps the bare POSIX `/Users/<name>/` true positive.
-		pattern: /(?<![A-Za-z]:)\/Users\/[A-Za-z0-9._-]+/g,
-		reason: "absolute macOS home path (/Users/<name>/...)",
-	},
+	...MACHINE_LOCAL_PATH_PATTERNS.map(
+		(p): ClassPattern => ({class: "path", pattern: p.pattern, reason: p.reason}),
+	),
 	{
 		class: "path",
 		pattern: /\/home\/[A-Za-z0-9._-]+/g,
 		reason: "absolute Linux home path (/home/<name>/...)",
-	},
-	{
-		class: "path",
-		pattern: /(?<![\w.])~\/\.(?:claude|usirin|agent)\b/g,
-		reason: "agent/tool home dir (~/.claude, ~/.usirin, ~/.agent)",
-	},
-	{
-		class: "path",
-		pattern: /(?<![\w.])~\/code\//g,
-		reason: "home-dir sibling-repo clone (~/code/...)",
-	},
-	{
-		class: "path",
-		pattern: /(?<![\w/])\/vault\//g,
-		reason: "vault path (/vault/...)",
 	},
 	{
 		class: "email",
