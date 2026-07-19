@@ -49,17 +49,6 @@ export const PHOENIX_PANO_STAMP_WAVE = "phoenix-pano-stamp-wave";
 export const MECMUA_WRITE = "mecmua-write";
 
 /**
- * Optimistic `comment.add` (instant nested-thread insert) containment flag (#1678,
- * epic #1637). Default-off: with it off, a new comment/reply joins the thread only
- * when the server `live.comment.thread.appendNode` frame (or the read-back self-heal)
- * lands, exactly as today; flipping it on writes an optimistic temp-node into the
- * nested `Post.comments` connection that reconciles to the server id per ADR 0125
- * (A1 — client-append + canonical-id dedup). Its OWN key (not the epic's shared
- * seam): each optimistic slice has an independent dark-ship lifecycle.
- */
-export const PANO_OPTIMISTIC_COMMENT_ADD = "pano-optimistic-comment-add";
-
-/**
  * Optimistic `post.delete` (instant feed removal on confirm) dark-ship flag (#1677,
  * epic #1637). Gates the optimistic post-delete flow — evict-and-navigate at once,
  * roll back on rejection — so it reaches production dark; with it off, `post.delete`
@@ -342,7 +331,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_SOZLUK_STAMP_WAVE, defaultValue: false},
 	{key: PHOENIX_PANO_STAMP_WAVE, defaultValue: false},
 	{key: MECMUA_WRITE, defaultValue: false},
-	{key: PANO_OPTIMISTIC_COMMENT_ADD, defaultValue: false},
 	{key: PANO_OPTIMISTIC_POST_DELETE, defaultValue: false},
 	{key: PANO_BASE_FEED, defaultValue: false},
 	{key: MECMUA_PUBLIC_READ, defaultValue: false},

@@ -25,9 +25,10 @@
  * non-authors. Non-author membership comes solely from the server `appendNode`,
  * which stays gated by `decidePublish(sandboxedAt)` (unchanged).
  *
- * Gated behind the default-off `pano-optimistic-comment-add` flag (#1678, epic
- * #1637; ADR 0083) at the call site: off ⇒ no optimistic node, the thread waits for
- * the live append / read-back exactly as today.
+ * The optimistic write is live for every author (#1678, epic #1637; the flag that
+ * once dark-shipped it retired at serves-on per ADR 0136): applied at the call site
+ * whenever the author identity is known, else it degrades cleanly to the live
+ * append / read-back.
  */
 import {ConnectionTag, type EntityId, type List, type Snapshot, toEntityId} from "@nkzw/fate";
 

@@ -39,11 +39,7 @@ import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
-import {
-	PANO_OPTIMISTIC_COMMENT_ADD,
-	PANO_OPTIMISTIC_POST_DELETE,
-	PHOENIX_OPTIMISTIC_EDITS,
-} from "../flags/keys";
+import {PANO_OPTIMISTIC_POST_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
@@ -521,9 +517,6 @@ function Comments(props: CommentsProps) {
 	const report = useReportHandler();
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 	const activeCommentId = useCommentAnchor();
-	// Optimistic comment-add dark-ship gate (#1678, ADR 0125 A1): off ⇒ no temp node,
-	// the thread waits for the live `appendNode` / read-back exactly as today.
-	const {value: optimisticAdd} = useFlag(PANO_OPTIMISTIC_COMMENT_ADD, false);
 
 	const refetchPost = React.useCallback(
 		() =>
@@ -651,19 +644,19 @@ function Comments(props: CommentsProps) {
 	}
 
 	// The optimistic-add bundle both composers share (top-level + every reply insert
-	// into the SAME nested `Post.comments` connection). Null unless the flag is on AND
-	// the author identity is known — the temp node mirrors the author, so a missing
-	// name/id degrades cleanly to the non-optimistic round-trip.
+	// into the SAME nested `Post.comments` connection). Null unless the author identity
+	// is known — the temp node mirrors the author, so a missing name/id degrades cleanly
+	// to the non-optimistic round-trip.
 	const optimisticComment = React.useMemo(
 		() =>
-			optimisticAdd && props.currentUserId != null && props.currentUserName != null
+			props.currentUserId != null && props.currentUserName != null
 				? {
 						connection: post.comments,
 						author: props.currentUserName,
 						authorId: props.currentUserId,
 					}
 				: null,
-		[optimisticAdd, post.comments, props.currentUserId, props.currentUserName],
+		[post.comments, props.currentUserId, props.currentUserName],
 	);
 
 	const composerFor = React.useCallback(
@@ -791,7 +784,7 @@ function Comments(props: CommentsProps) {
  * `appendNode` live event merges the new comment into the thread in place (the
  * author's own view included), since nested-connection membership is server-driven.
  *
- * When `optimistic` is set (the `pano-optimistic-comment-add` flag on, ADR 0125 A1),
+ * When `optimistic` is set (the author identity is known, ADR 0125 A1),
  * the temp node also appears in the thread *before* the round-trip: fate's
  * `optimistic` payload writes + reconciles the temp entity, and
  * {@link beginOptimisticCommentMembership} appends the temp id into the nested

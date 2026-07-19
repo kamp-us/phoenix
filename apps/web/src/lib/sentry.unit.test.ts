@@ -77,8 +77,8 @@ describe("flag attribution — the tag-naming contract (#1821)", () => {
 			tagKey: "flag.phoenix-bildirim",
 			tagValue: "on",
 		});
-		expect(flagTag("pano-optimistic-comment-add", false)).toEqual({
-			tagKey: "flag.pano-optimistic-comment-add",
+		expect(flagTag("pano-optimistic-post-delete", false)).toEqual({
+			tagKey: "flag.pano-optimistic-post-delete",
 			tagValue: "off",
 		});
 	});
@@ -95,8 +95,8 @@ describe("flag attribution — the tag-naming contract (#1821)", () => {
 		const {tagFlag} = await loadEnabled();
 		tagFlag("phoenix-bildirim", true);
 		expect(setTag).toHaveBeenCalledWith("flag.phoenix-bildirim", "on");
-		tagFlag("pano-optimistic-comment-add", false);
-		expect(setTag).toHaveBeenCalledWith("flag.pano-optimistic-comment-add", "off");
+		tagFlag("pano-optimistic-post-delete", false);
+		expect(setTag).toHaveBeenCalledWith("flag.pano-optimistic-post-delete", "off");
 	});
 });
 
