@@ -2,12 +2,10 @@
  * `panoFeedCacheFor` — the base-feed edge-cache purger (leg B, #2324, ADR 0170). The
  * contract under test mirrors `live-publisher.unit.test.ts` (its cache-side twin):
  *
- *   1. enabled ⇒ `purge()` schedules ONE `cache.purge({tags: ["pano-feed"]})` through
- *      `waitUntil`, never awaited on the mutation path;
- *   2. disabled (flag off) ⇒ `purge()` schedules NOTHING and touches no capability
- *      (AC#5: flag off ⇒ no purge calls);
- *   3. `purge()`'s error channel is `never` — a rejecting purge cannot fail the caller;
- *   4. a synchronously-throwing execution context (`waitUntil` throws) is swallowed too.
+ *   1. `purge()` schedules ONE `cache.purge({tags: ["pano-feed"]})` through `waitUntil`,
+ *      never awaited on the mutation path;
+ *   2. `purge()`'s error channel is `never` — a rejecting purge cannot fail the caller;
+ *   3. a synchronously-throwing execution context (`waitUntil` throws) is swallowed too.
  *
  * Unit tier (ADR 0082): stubs at the `purge`/`waitUntil` seam, zero platform fake.
  */
@@ -30,14 +28,10 @@ interface PurgeCall {
  * Build a purger over stubbed seams: `purge` defaults to a recorder, `waitUntil`
  * collects the scheduled promises so a test can `flush` the fire-and-forget work.
  */
-function makeHarness(opts?: {
-	enabled?: boolean;
-	purge?: (options: {tags: string[]}) => Promise<unknown>;
-}) {
+function makeHarness(opts?: {purge?: (options: {tags: string[]}) => Promise<unknown>}) {
 	const purges: Array<PurgeCall> = [];
 	const scheduled: Array<Promise<unknown>> = [];
 	const cache = panoFeedCacheFor({
-		enabled: opts?.enabled ?? true,
 		purge:
 			opts?.purge ??
 			((options) => {
@@ -52,7 +46,7 @@ function makeHarness(opts?: {
 	return {cache, purges, scheduled, flush};
 }
 
-it.effect("enabled ⇒ one tag purge scheduled through waitUntil", () =>
+it.effect("one tag purge scheduled through waitUntil", () =>
 	Effect.gen(function* () {
 		const {cache, purges, scheduled, flush} = makeHarness();
 
@@ -64,24 +58,6 @@ it.effect("enabled ⇒ one tag purge scheduled through waitUntil", () =>
 		);
 
 		assert.deepStrictEqual(purges, [{tags: [PANO_FEED_CACHE_TAG]}]);
-	}),
-);
-
-it.effect("disabled (flag off) ⇒ no purge scheduled, no capability touched", () =>
-	Effect.gen(function* () {
-		let purgeCalls = 0;
-		const {cache, scheduled} = makeHarness({
-			enabled: false,
-			purge: () => {
-				purgeCalls += 1;
-				return Promise.resolve();
-			},
-		});
-
-		yield* cache.purge();
-
-		assert.strictEqual(scheduled.length, 0);
-		assert.strictEqual(purgeCalls, 0);
 	}),
 );
 
@@ -116,7 +92,6 @@ it.effect("a synchronously-throwing execution context is swallowed too", () =>
 	Effect.gen(function* () {
 		let attempts = 0;
 		const cache = panoFeedCacheFor({
-			enabled: true,
 			purge: () => Promise.resolve(),
 			waitUntil: () => {
 				attempts += 1;

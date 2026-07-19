@@ -49,18 +49,6 @@ export const PHOENIX_PANO_STAMP_WAVE = "phoenix-pano-stamp-wave";
 export const MECMUA_WRITE = "mecmua-write";
 
 /**
- * Pano base-feed edge-cache containment flag (#2324, epic #2316 leg B, ADR 0170).
- * Default-off. With it off, the base-feed GET emits no `Cache-Control` (nothing is
- * edge-cached) and the fanned-mutation seam fires no purge — the feature ships dark.
- * Flipping it on is the human release act (ADR 0083). Its OWN key, distinct from
- * `pano-base-feed` (which gates the base-feed route's existence): the viewer-invariant
- * base feed can serve without the edge cache, so caching has an independent lifecycle.
- *
- * @reachability-exempt: infra edge-cache flag — no user-facing surface by design (ADR 0170).
- */
-export const PANO_FEED_EDGE_CACHE = "pano-feed-edge-cache";
-
-/**
  * Optimistic `comment.add` (instant nested-thread insert) containment flag (#1678,
  * epic #1637). Default-off: with it off, a new comment/reply joins the thread only
  * when the server `live.comment.thread.appendNode` frame (or the read-back self-heal)
@@ -354,7 +342,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_SOZLUK_STAMP_WAVE, defaultValue: false},
 	{key: PHOENIX_PANO_STAMP_WAVE, defaultValue: false},
 	{key: MECMUA_WRITE, defaultValue: false},
-	{key: PANO_FEED_EDGE_CACHE, defaultValue: false},
 	{key: PANO_OPTIMISTIC_COMMENT_ADD, defaultValue: false},
 	{key: PANO_OPTIMISTIC_POST_DELETE, defaultValue: false},
 	{key: PANO_BASE_FEED, defaultValue: false},

@@ -17,7 +17,6 @@ import {
 	MEMBER_MUTE,
 	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
-	PANO_FEED_EDGE_CACHE,
 	PANO_OPTIMISTIC_COMMENT_ADD,
 	PANO_OPTIMISTIC_POST_DELETE,
 	PHOENIX_ADMIN_CONSOLE,
@@ -146,38 +145,6 @@ export const PANO_BASE_FEED_FLAG = {
  */
 export const panoBaseFeedFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("pano_base_feed", {appId, ...PANO_BASE_FEED_FLAG});
-
-/**
- * The pano base-feed edge-cache containment flag config (#2324, epic #2316 leg B,
- * ADR 0170). Default-OFF so the edge cache reaches production dark: with it off the
- * base-feed GET emits no `Cache-Control` (nothing is cached) and the fanned-mutation
- * seam fires no purge. Flipping it on is the human release act (ADR 0083). Its OWN key
- * (not `pano-base-feed`, which gates the route's existence) so caching has an
- * independent lifecycle from the base-feed split.
- *
- * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `PANO_BASE_FEED_FLAG`).
- *
- * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
- *   - owner:           pano
- *   - originating:     #2324 (epic: instant /pano reload, #2316 leg B)
- *   - removal trigger: once the edge cache graduates to on at 100% and stable for one
- *                      release, retire the flag and inline the cache headers + purge.
- */
-export const PANO_FEED_EDGE_CACHE_FLAG = {
-	key: PANO_FEED_EDGE_CACHE,
-	description:
-		"base-feed edge-cache + fanned-seam purge dark-ship (#2324, epic #2316 leg B, ADR 0170). owner: pano. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const panoFeedEdgeCacheFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("pano_feed_edge_cache", {appId, ...PANO_FEED_EDGE_CACHE_FLAG});
 
 /**
  * The pano `taslak` (draft-save) dark-ship flag config (#746) — the feature-flag

@@ -16,15 +16,12 @@ import {Context} from "effect";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {PANO_FEED_EDGE_CACHE} from "../../../src/flags/keys.ts";
 import {interruptOnAbort} from "../../http/interrupt-on-abort.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {defaultLiveLimits, type PublishMessage} from "../fate-live/protocol.ts";
 import {LiveTopics} from "../fate-live/topics.ts";
-import {Flags} from "../flagship/Flags.ts";
 import {
 	anonymousFlagsContext,
-	FlagsContext,
 	makeRequestFlagsContext,
 	RequestFlagOverrides,
 } from "../flagship/FlagsContext.ts";
@@ -50,21 +47,14 @@ export const handleFate = Effect.gen(function* () {
 	};
 
 	// The base-feed edge-cache purger a fanned pano mutation fires alongside its live
-	// publish (ADR 0170 / #2324). Gated on the leg-B cache flag read under the ANONYMOUS
-	// flags context — the cache is a global rollout, not per-viewer, and reading it here
-	// mirrors the base-feed route's own anon flag read. `ctx.cache.purge` is the worker's
-	// OWN scoped purge capability (no zone purge, no API token); it is absent offline / in
-	// dev (`cache?`), where the purge degrades to a no-op.
-	const flags = yield* Flags;
+	// publish (ADR 0170 / #2324). `ctx.cache.purge` is the worker's OWN scoped purge
+	// capability (no zone purge, no API token); it is absent offline / in dev (`cache?`),
+	// where the purge degrades to a no-op.
 	const flagsContext = yield* makeRequestFlagsContext(
 		anonymousFlagsContext,
 		raw.headers.get("cookie"),
 	);
-	const feedCacheOn = yield* flags
-		.getBoolean(PANO_FEED_EDGE_CACHE, false)
-		.pipe(Effect.provideService(FlagsContext, flagsContext));
 	const feedCache = panoFeedCacheFor({
-		enabled: feedCacheOn,
 		purge: (options) => executionCtx.cache?.purge(options) ?? Promise.resolve(),
 		waitUntil,
 	});
