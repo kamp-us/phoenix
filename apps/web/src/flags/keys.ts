@@ -49,18 +49,6 @@ export const PHOENIX_PANO_STAMP_WAVE = "phoenix-pano-stamp-wave";
 export const MECMUA_WRITE = "mecmua-write";
 
 /**
- * Base-feed / viewer-overlay split dark-ship flag (#2322, epic #2316 leg B). The
- * SINGLE seam every leg-B surface gates behind — the server split (the GET-able
- * viewer-invariant base feed + the authed `PostOverlay` read), the client
- * composition (#2323), and the edge cache (#2324) reuse this one key. Default-off
- * so the whole base/overlay path ships dark until a human flips it at release (ADR
- * 0083): with it off the `GET /fate/pano/feed` route 404s, the `PostOverlay` source
- * resolves inert (null scalars), and the existing per-viewer `posts` feed is the
- * unchanged source of truth. Its own `pano-` key (the surface is pano-only).
- */
-export const PANO_BASE_FEED = "pano-base-feed";
-
-/**
  * mecmua public-read dark-ship flag (#2498, epic #2467). The SINGLE seam the
  * anonymous read surface gates behind — the `GET /fate/mecmua/post/:slug` route's
  * existence (404 until flipped) AND the `/mecmua/:slug` reader page (self-404).
@@ -322,7 +310,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_SOZLUK_STAMP_WAVE, defaultValue: false},
 	{key: PHOENIX_PANO_STAMP_WAVE, defaultValue: false},
 	{key: MECMUA_WRITE, defaultValue: false},
-	{key: PANO_BASE_FEED, defaultValue: false},
 	{key: MECMUA_PUBLIC_READ, defaultValue: false},
 	{key: MECMUA_FEED, defaultValue: false},
 	{key: PHOENIX_AUTHORSHIP_LOOP, defaultValue: false},

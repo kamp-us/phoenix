@@ -73,7 +73,7 @@ export const rawWorkerRoutes: readonly [WorkerRoute, ...WorkerRoute[]] = [
 	{path: "/fate", glob: "/fate", route: fateRoute},
 	{path: "/fate/live", glob: "/fate/*", route: liveRoute},
 	// The GET-able base feed (#2322, epic #2316 leg B); the `/fate/*` glob already
-	// shadows the SPA for it. Dark behind `PANO_BASE_FEED` (404 until flipped).
+	// shadows the SPA for it.
 	{path: "/fate/pano/feed", glob: "/fate/*", route: baseFeedRoute},
 	// The public read of a single published mecmua post (#2498, epic #2467); the
 	// `/fate/*` glob already shadows the SPA for it. Dark behind `MECMUA_PUBLIC_READ`

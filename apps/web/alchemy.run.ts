@@ -59,7 +59,6 @@ import {
 	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
 	optimisticEditsFlag,
-	panoBaseFeedFlag,
 	panoDraftSaveFlag,
 	panoStampWaveFlag,
 	profileCanvasFlag,
@@ -91,10 +90,6 @@ export default Alchemy.Stack(
 		// The mecmua write-path dark-ship flag, default-off (#2497, epic #2467) — the
 		// single seam mecmua.publish + mecmua.saveDraft gate behind until a human release.
 		yield* mecmuaWriteFlag(flagship.appId);
-		// The base-feed / viewer-overlay split dark-ship flag, default-off (#2322,
-		// epic #2316 leg B) — the single seam the GET-able base feed + PostOverlay read
-		// gate behind until a human release.
-		yield* panoBaseFeedFlag(flagship.appId);
 		// The earned-authorship loop (çaylak→yazar) dark-ship flag, default-off
 		// (#1204, epic #1202) — the single seam the authorship-loop epic gates behind.
 		yield* authorshipLoopFlag(flagship.appId);

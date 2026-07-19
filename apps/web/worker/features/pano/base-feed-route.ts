@@ -8,16 +8,12 @@
  * `linkMetadataRoute`) reaching `Pano` through the runtime-derived context layer. See
  * `.patterns/alchemy-http-router.md`.
  *
- * Two load-bearing properties this route exists to hold:
+ * One load-bearing property this route exists to hold:
  *   - **No session validation, no per-viewer work.** It never validates a session and
  *     never reads `CurrentUser`; it reads the ANONYMOUS sandbox viewer, so an anon GET
  *     pays nothing for identity. The per-viewer `myVote`/`isSaved` arrive via the
  *     separate authed `PostOverlay` read on `POST /fate` (ADR 0169 untouched — nothing
  *     session-derived becomes cacheable).
- *   - **Dark behind the leg-B flag.** With `PANO_BASE_FEED` off (the default / a
- *     Flagship outage) the route 404s, so this whole surface ships dark until a human
- *     flips the flag at release (ADR 0083). The flag is read under the anonymous flags
- *     context (no identity), so the gate itself does no session work either.
  *
  * Edge-cache headers (leg B, #2324, ADR 0170): the 200 carries `Cache-Control` (the TTL
  * backstop) + `Cache-Tag: pano-feed`, so the per-Worker edge cache serves repeat anon GETs
@@ -29,15 +25,8 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {PANO_BASE_FEED} from "../../../src/flags/keys.ts";
 import {toPostSort} from "../../../src/lib/panoFeedSort.ts";
 import {toConnection} from "../fate/connection.ts";
-import {Flags} from "../flagship/Flags.ts";
-import {
-	anonymousFlagsContext,
-	FlagsContext,
-	makeRequestFlagsContext,
-} from "../flagship/FlagsContext.ts";
 import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {baseFeedCacheControl, PANO_FEED_CACHE_TAG} from "./feed-cache.ts";
 import {Pano, type PostSummaryRow} from "./Pano.ts";
@@ -48,22 +37,6 @@ const DEFAULT_FIRST = 20;
 
 export const handleBaseFeed = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
-
-	// The dark-ship gate, evaluated under the ANONYMOUS flags context so it reads no
-	// session — an anon GET does zero identity work even to decide the flag. In every
-	// deployed stage this is the real Flagship read; in local dev the `phoenix_flag_overrides`
-	// cookie can force it on (#622), the same seam the integration suite drives.
-	const flags = yield* Flags;
-	const flagsContext = yield* makeRequestFlagsContext(
-		anonymousFlagsContext,
-		raw.headers.get("cookie"),
-	);
-	const on = yield* flags
-		.getBoolean(PANO_BASE_FEED, false)
-		.pipe(Effect.provideService(FlagsContext, flagsContext));
-	if (!on) {
-		return HttpServerResponse.empty({status: 404});
-	}
 
 	const params = new URL(raw.url).searchParams;
 	const host = params.get("host");

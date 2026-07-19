@@ -2,7 +2,7 @@
  * The dark-ship default-=-safe-state invariant for the sözlük parallel-stamp-wave
  * read collapse (#2709, epic #2567). Inspected off the exported `SOZLUK_STAMP_WAVE_FLAG`
  * record (the same object the factory spreads into `FlagshipFlag`), so no alchemy
- * resource is constructed — mirrors `pano-base-feed.invariant.test.ts`.
+ * resource is constructed — mirrors `funnel-readout.invariant.test.ts`.
  *
  * Load-bearing: with the default OFF the definition reads run their stamp wave at
  * `concurrency: 1` (serial, byte-for-byte today) — so the containment is real, the

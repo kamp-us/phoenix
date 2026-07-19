@@ -15,7 +15,6 @@ import {
 	MECMUA_PUBLIC_READ,
 	MECMUA_WRITE,
 	MEMBER_MUTE,
-	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
 	PHOENIX_ADMIN_CONSOLE,
 	PHOENIX_AUTHORSHIP_LOOP,
@@ -97,7 +96,6 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 	});
 
 export {
-	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
@@ -107,40 +105,6 @@ export {
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_EDITS,
 };
-
-/**
- * The base-feed / viewer-overlay split dark-ship flag config (#2322, epic #2316 leg
- * B). The SINGLE seam every leg-B surface gates behind (server split, client
- * composition #2323, edge cache #2324). Default-OFF so the whole base/overlay path
- * reaches production dark — with it off the `GET /fate/pano/feed` route 404s and the
- * `PostOverlay` source resolves inert, so the per-viewer `posts` feed is unchanged;
- * flipping it on is the human release act (ADR 0083).
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_DRAFT_SAVE_FLAG`, #746).
- *
- * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
- * asks for):
- *   - owner:           pano (the feed read path)
- *   - originating:     #2322 (epic: reload-to-feed-paint floor, #2316 leg B)
- *   - removal trigger: once the base/overlay feed graduates to on at 100% and stable
- *                      for one release, retire the flag and inline the split.
- */
-export const PANO_BASE_FEED_FLAG = {
-	key: PANO_BASE_FEED,
-	description:
-		"base-feed / viewer-overlay split dark-ship (#2322, epic #2316 leg B). owner: pano. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const panoBaseFeedFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("pano_base_feed", {appId, ...PANO_BASE_FEED_FLAG});
 
 /**
  * The pano `taslak` (draft-save) dark-ship flag config (#746) — the feature-flag
@@ -730,7 +694,7 @@ export const emailDeliveryNoticeFlag = (appId: Input<string>) =>
  * the authoring/publish path (#2497) ships behind its own seam.
  *
  * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `PANO_BASE_FEED_FLAG`).
+ * WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           mecmua (the long-form read surface)
@@ -794,7 +758,7 @@ export const navIaFlag = (appId: Input<string>) =>
  * Flipping it on is the human release act (ADR 0083).
  *
  * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `PANO_BASE_FEED_FLAG`).
+ * WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           sözlük (the definition read path)
@@ -828,7 +792,7 @@ export const sozlukStampWaveFlag = (appId: Input<string>) =>
  * not the pano feed (the #2322 base/overlay split).
  *
  * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `PANO_BASE_FEED_FLAG`).
+ * WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           pano (the thread/comment read path)

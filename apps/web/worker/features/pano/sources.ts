@@ -7,7 +7,7 @@
  * in `.patterns/feature-services.md`). See `.patterns/fate-effect-sources.md`.
  */
 import {CurrentUser, Fate} from "@kampus/fate-effect";
-import {PANO_BASE_FEED, PHOENIX_PANO_STAMP_WAVE} from "../../../src/flags/keys.ts";
+import {PHOENIX_PANO_STAMP_WAVE} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
@@ -36,10 +36,8 @@ export const postSource = Fate.source(
  * The per-viewer overlay source (#2322, epic #2316 leg B): given the base feed's post
  * ids, return each viewer's own `myVote`/`isSaved`. Session-gated by construction — it
  * reads `CurrentUser` off the authed `POST /fate` edge (ADR 0169 untouched: nothing
- * session-derived rides the cacheable base). Dark behind the leg-B flag: with it OFF
- * (the default / a Flagship outage) it resolves INERT (`null` scalars for every id) so
- * the new capability ships dark; flipping the flag on is the human release act (ADR
- * 0083). An anonymous viewer likewise gets `null` scalars (the read-path convention).
+ * session-derived rides the cacheable base). An anonymous viewer gets `null` scalars
+ * for every id (the read-path convention).
  */
 export const postOverlaySource = Fate.source(
 	PostOverlayView,
@@ -48,9 +46,7 @@ export const postOverlaySource = Fate.source(
 		byIds: function* (ids) {
 			const {user} = yield* CurrentUser;
 			const viewerId = user?.id ?? null;
-			const flags = yield* Flags;
-			const on = yield* flags.getBoolean(PANO_BASE_FEED, false).pipe(provideRequestFlags);
-			if (!on || !viewerId) {
+			if (!viewerId) {
 				return ids.map((id) => ({id, myVote: null, isSaved: null}));
 			}
 			const pano = yield* Pano;
