@@ -218,8 +218,14 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   is exactly what let a mixed code+skill §CP diff (PR #3163) round-trip: it was reviewed for the
   skill but got a `review-code` marker only, and nothing at dispatch surfaced that `review-skill` was
   also required. Then, **before returning, self-check coverage**: for **every** namespace in the
-  emitted set, assert one SHA-bound marker (`review-<ns>: PASS|FAIL @ <HEAD_SHA>`) is present on the
-  PR. A required namespace with **no** `@ HEAD_SHA` marker is an **uncovered gate** — do **not** return
+  emitted set, assert a marker **bound to the current `HEAD_SHA`** is present on the PR in **either**
+  of the two contract forms — the auto-merge lane's non-blocking first-line marker
+  `review-<ns>: PASS|FAIL @ <HEAD_SHA>`, **or** the §CP blocking-set lane's SHA-less advisory
+  (`review-<ns>: advisory — …`) whose head SHA is carried in the body's canonical
+  `Reviewed-head: @ <HEAD_SHA>` line (ADR 0111/0151 — a §CP advisory withholds the first-line `@ <sha>`
+  *by design* so it never enters ship-it's auto-merge namespace, binding head in the body instead; a
+  first-line-`@sha`-only check false-fails every passing §CP advisory, #3163/#3625). A required
+  namespace with **neither** form present at `HEAD_SHA` is an **uncovered gate** — do **not** return
   clean; surface it fail-loud and dispatch the missing gate first. This makes "a mixed diff leaves a
   required namespace empty" unrepresentable from the reviewer's side; it does **not** touch ship-it's
   fail-closed per-namespace PASS gate (the merge authority), which stays the terminal check, untouched.
@@ -230,12 +236,22 @@ These hold on every run regardless of what the spawn prompt remembered to say:
     | pipeline-cli class-probe classify --namespaces)"   # e.g. review-code / review-skill for a mixed diff
   echo "reviewer dispatch: PR $PR @ $HEAD_SHA requires namespaces → ${REQUIRED_NS//$'\n'/ }"
   # … fan + post one SHA-bound marker per required namespace (the invariants above) …
-  # COVERAGE SELF-CHECK — a required namespace uncovered at HEAD_SHA cannot pass silently:
+  # COVERAGE SELF-CHECK — a required namespace uncovered at HEAD_SHA cannot pass silently. A namespace
+  # counts as COVERED by EITHER contract form bound to the current head: the auto-merge lane's
+  # non-blocking first-line marker `review-<ns>: PASS|FAIL @ HEAD_SHA`, OR the §CP blocking-set lane's
+  # SHA-less advisory `review-<ns>: advisory …` whose head is carried in the body's canonical
+  # `Reviewed-head: @ HEAD_SHA` line (ADR 0111/0151 — advisory withholds the first-line @sha by design;
+  # a first-line-@sha-only check false-fails every passing §CP verdict, #3163/#3625). `any(.[]; …)` binds
+  # BOTH advisory clauses to the SAME comment; neither form present at head ⇒ uncovered, fail-loud.
+  comments="$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" --jq '[.[].body]')"
   missing=""
   while IFS= read -r ns; do
     [ -z "$ns" ] && continue
-    gh api "repos/$REPO/issues/$PR/comments?per_page=100" --jq '.[].body' \
-      | grep -qiE "^[[:space:]]*\**[[:space:]]*${ns}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${HEAD_SHA}\b" \
+    printf '%s' "$comments" | jq -e --arg ns "$ns" --arg sha "$HEAD_SHA" '
+      any(.[];
+        test("(?im)^\\s*\\**\\s*" + $ns + ":\\s*(PASS|FAIL)\\s*@\\s*" + $sha + "\\b")            # auto-merge lane
+        or ( test("(?im)^\\s*\\**\\s*" + $ns + ":\\s*advisory\\b")                                # §CP advisory + …
+             and test("(?im)^\\s*Reviewed-head:\\s*@?\\s*" + $sha + "\\b") ) )' >/dev/null \
       || missing="$missing $ns"
   done <<< "$REQUIRED_NS"
   if [ -n "$missing" ]; then
