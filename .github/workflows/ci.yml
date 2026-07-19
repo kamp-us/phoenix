@@ -149,9 +149,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      # API-free git-mode change detection (#3245). dorny/paths-filter reads the changed
+      # file set two ways: on a `pull_request` event it calls the GitHub REST API
+      # (`pulls.listFiles`) WHEN a `token` is set, and ONLY when the token is empty does it
+      # fall back to a pure `git diff` against `pull_request.base.sha` (grounded in dorny
+      # v3.0.2 `src/main.ts` — the PR-event branch of `getChangedFiles`: `if (token) return
+      # getChangedFilesFromApi(...)`, else "Github token is not available - changes will be
+      # detected using git diff"). That live API read is the sole flake surface in this job:
+      # a transient GitHub-API-HTML blip served an error page where JSON was expected
+      # (`invalid character '<'`), hard-failing this step → `produce run-evidence bundle` →
+      # the `ci-required` aggregate went RED on a defect-free docs-only PR (#3244). Setting
+      # `token: ''` forces the git-diff path, removing the API read entirely so the transient
+      # CANNOT occur — a stronger fix than retrying a read we don't need to make. The
+      # `fetch-depth: 0` checkout above carries `base.sha`, so the diff resolves offline; the
+      # `merge_group`/`push` paths never used the API (they always git-diff via
+      # `getChangedFilesFromGit`, no token consumed) and are unaffected. A GENUINE git/detection
+      # error still hard-fails this step (fail-closed) — only the API-HTML transient is removed,
+      # never the real gate signal. `pipeline-cli change-detect-guard check` (change-detect-guard.yml)
+      # fails closed if this `token: ''` ever regresses back to the API mode.
       - uses: dorny/paths-filter@v3.0.2
         id: filter
         with:
+          token: ''
           filters: |
             # apps/**/… (not apps/web/…) so any app under apps/ is covered with no
             # filter edit — the discovery posture the package paths already have (ADR
