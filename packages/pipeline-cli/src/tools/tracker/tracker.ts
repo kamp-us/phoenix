@@ -5,9 +5,10 @@
  * Grown from the Wave-1 walking skeleton (epic #3258): a `Context.Service` `Tracker`
  * tag plus its sole implementation `GithubTrackerLive`. `claim` (the ADR-0115
  * agent-distinguishable claim), a generic `readBack`, `applyTriage` (the label-transition
- * envelope, #3263), and `postVerdict` (the ADR-0058 verdict/comment-post + read-back
- * envelope, #3265) are live; only `graduate` is still *declared* — its interface shape is
- * fixed so the tag locks before its remaining sibling Phase-3 child implements it.
+ * envelope, #3263), `createIssue` / `createComment` (the issue/comment create envelope,
+ * #3264), and `postVerdict` (the ADR-0058 verdict/comment-post + read-back envelope, #3265)
+ * are live; only `graduate` is still *declared* — its interface shape is fixed so the tag
+ * locks before its remaining sibling Phase-3 child implements it.
  *
  * Two design rules bind every signature here and are the point of the skeleton:
  *
@@ -77,8 +78,9 @@ export class RepoResolutionError extends Schema.TaggedErrorClass<RepoResolutionE
 
 /**
  * A declared-but-not-yet-built verb was called. `claim` / `readBack` / `applyTriage` /
- * `postVerdict` are live; only `graduate` fails-closed with this typed error until its sibling
- * Phase-3 child implements it — never a silent no-op or a throw.
+ * `createIssue` / `createComment` / `postVerdict` are live; only `graduate` fails-closed
+ * with this typed error until its sibling Phase-3 child implements it — never a silent
+ * no-op or a throw.
  */
 export class TrackerNotImplementedError extends Schema.TaggedErrorClass<TrackerNotImplementedError>()(
 	"@kampus/tracker/TrackerNotImplementedError",
@@ -169,6 +171,41 @@ export type TriageResult = {
 	readonly type: string;
 	readonly priority: string;
 	readonly status: string;
+};
+
+/**
+ * A create-issue judgment (#3264): the `title` + `body` of the new entity, and the
+ * lifecycle `stage` it enters at (default `needs-triage` — the intake queue). Domain
+ * vocabulary only — `stage` maps to a `status:<stage>` label inside `GithubTrackerLive`,
+ * so no label string or REST field leaks into the signature (ADR 0190). The judgment
+ * carries the *content*; the queue/label plumbing is the verb's.
+ */
+export interface CreateIssueJudgment {
+	readonly title: string;
+	readonly body: string;
+	readonly stage?: string;
+}
+
+/**
+ * The `createIssue` result — the new entity's domain reference (`target`, a `TargetId`
+ * a later verb can act on) and a `url` locator to report. A domain entity ref, never a
+ * raw REST issue payload.
+ */
+export type CreateIssueResult = {
+	readonly _tag: "created";
+	readonly target: TargetId;
+	readonly url: string;
+};
+
+/** A create-comment judgment (#3264): the note `body` to add to an entity. */
+export interface CommentJudgment {
+	readonly body: string;
+}
+
+/** The `createComment` result — the created note's `ref` (its domain reference). */
+export type CommentResult = {
+	readonly _tag: "commented";
+	readonly ref: number;
 };
 
 /**
@@ -334,6 +371,36 @@ const deleteCommentArgs = (repo: string, id: number): ReadonlyArray<string> => [
 	`repos/${repo}/issues/comments/${id}`,
 ];
 
+// Create a new issue. `title` / `body` / each `label` pass as by-value POST fields through
+// the direct `gh` spawn — no shell, no heredoc, no `-f body=@file`, so the whole local-path
+// leak / concurrent-body-collision class the skills hand-guard against (#2002) is structurally
+// absent here, not merely warned against.
+const createIssueArgs = (
+	repo: string,
+	title: string,
+	body: string,
+	labels: ReadonlyArray<string>,
+): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"POST",
+	`repos/${repo}/issues`,
+	"-f",
+	`title=${title}`,
+	"-f",
+	`body=${body}`,
+	...labels.flatMap((label) => ["-f", `labels[]=${label}`]),
+];
+
+const createCommentArgs = (repo: string, target: TargetId, body: string): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"POST",
+	`repos/${repo}/issues/${target}/comments`,
+	"-f",
+	`body=${body}`,
+];
+
 const permissionArgs = (repo: string, login: string): ReadonlyArray<string> => [
 	"api",
 	`repos/${repo}/collaborators/${login}/permission`,
@@ -380,6 +447,14 @@ const decodeComments = Schema.decodeUnknownEffect(Schema.Array(RawComment));
 /** A raw label as the issues/labels endpoint returns it; only the name is read. */
 const RawLabel = Schema.Struct({name: Schema.String});
 const decodeLabels = Schema.decodeUnknownEffect(Schema.Array(RawLabel));
+
+/** The created issue as the create endpoint returns it; only the ref + locator are read. */
+const RawCreatedIssue = Schema.Struct({number: Schema.Number, html_url: Schema.String});
+const decodeCreatedIssue = Schema.decodeUnknownEffect(RawCreatedIssue);
+
+/** The created comment as the create endpoint returns it; only its ref is read. */
+const RawCreatedComment = Schema.Struct({id: Schema.Number});
+const decodeCreatedComment = Schema.decodeUnknownEffect(RawCreatedComment);
 
 const LABEL_STATUS_PREFIX = "status:";
 const QUEUE_STATUS = "needs-triage";
@@ -631,15 +706,49 @@ const postVerdict = Effect.fn("Tracker.postVerdict")(function* (
 	} satisfies VerdictResult;
 });
 
+/**
+ * Create a new issue (ADR 0190) — the intake-create envelope the report / wayfinder /
+ * architecture-audit / triage skills hand-composed, now one verb with the content as a
+ * parameter. The `stage` maps to the single `status:<stage>` label the new entity enters
+ * with (default `needs-triage`, the intake queue); the created ref + locator are
+ * Schema-decoded at the REST boundary and returned domain-shaped.
+ */
+const createIssue = Effect.fn("Tracker.createIssue")(function* (
+	repo: string,
+	judgment: CreateIssueJudgment,
+) {
+	const stage = judgment.stage ?? QUEUE_STATUS;
+	const labels = [`${LABEL_STATUS_PREFIX}${stage}`];
+	const created = yield* decodeCreatedIssue(
+		yield* json(createIssueArgs(repo, judgment.title, judgment.body, labels)),
+	);
+	return {
+		_tag: "created",
+		target: created.number,
+		url: created.html_url,
+	} satisfies CreateIssueResult;
+});
+
+/** Add a comment (note) to `target` (ADR 0190); the created note's ref is decoded back. */
+const createComment = Effect.fn("Tracker.createComment")(function* (
+	repo: string,
+	target: TargetId,
+	body: string,
+) {
+	const created = yield* decodeCreatedComment(yield* json(createCommentArgs(repo, target, body)));
+	return {_tag: "commented", ref: created.id} satisfies CommentResult;
+});
+
 type TrackerErrors = RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError;
 
 type PostVerdictErrors = TrackerErrors | TrackerInputError | TrackerVerifyError;
 
 /**
- * `Tracker` — the shared crew tracker capability. `claim`, `readBack`, `applyTriage`, and
- * `postVerdict` are live; only the still-declared `graduate` fails `TrackerNotImplementedError`
- * until its sibling child builds it (its success type is `never` by design — a not-yet-built verb
- * produces no value). Built by `GithubTrackerLive`, whose `R` is `ChildProcessSpawner`.
+ * `Tracker` — the shared crew tracker capability. `claim`, `readBack`, `applyTriage`,
+ * `createIssue`, `createComment`, and `postVerdict` are live; only the still-declared
+ * `graduate` fails `TrackerNotImplementedError` until its sibling child builds it (its
+ * success type is `never` by design — a not-yet-built verb produces no value). Built by
+ * `GithubTrackerLive`, whose `R` is `ChildProcessSpawner`.
  */
 export class Tracker extends Context.Service<
 	Tracker,
@@ -653,6 +762,13 @@ export class Tracker extends Context.Service<
 			target: TargetId,
 			judgment: TriageJudgment,
 		) => Effect.Effect<TriageResult, TrackerErrors>;
+		readonly createIssue: (
+			judgment: CreateIssueJudgment,
+		) => Effect.Effect<CreateIssueResult, TrackerErrors>;
+		readonly createComment: (
+			target: TargetId,
+			judgment: CommentJudgment,
+		) => Effect.Effect<CommentResult, TrackerErrors>;
 		readonly postVerdict: (
 			target: TargetId,
 			judgment: VerdictJudgment,
@@ -691,6 +807,10 @@ export const GithubTrackerLive: Layer.Layer<
 			readBack: (target) => repo.pipe(Effect.flatMap((r) => withSpawner(readBack(r, target)))),
 			applyTriage: (target, judgment) =>
 				repo.pipe(Effect.flatMap((r) => withSpawner(applyTriage(r, target, judgment)))),
+			createIssue: (judgment) =>
+				repo.pipe(Effect.flatMap((r) => withSpawner(createIssue(r, judgment)))),
+			createComment: (target, judgment) =>
+				repo.pipe(Effect.flatMap((r) => withSpawner(createComment(r, target, judgment.body)))),
 			postVerdict: (target, judgment) =>
 				repo.pipe(Effect.flatMap((r) => withSpawner(postVerdict(r, target, judgment)))),
 			graduate: () => notImplemented("graduate"),

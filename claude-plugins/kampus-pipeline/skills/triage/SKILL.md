@@ -298,10 +298,10 @@ if [ -n "$EXISTING" ]; then
   echo "split-guard: $EXISTING already covers this unit — reusing, not creating a twin"
 else
   # 2. Body MUST carry the `split from #<N>` back-reference — it is the guard's create-once key.
-  gh api "repos/$REPO/issues" \
-    -f title="<single-unit title>" \
-    -f body="$BODY" \
-    -f "labels[]=status:needs-triage"
+  #    The `tracker create-issue` verb owns this intake-create envelope (ADR 0190;
+  #    `packages/pipeline-cli/src/tools/tracker/`), filing a status:needs-triage issue — don't
+  #    hand-roll the `gh api repos/$REPO/issues` create (the adoption lint (#3254) flags it).
+  pipeline-cli tracker create-issue --title "<single-unit title>" --body "$BODY"
   # then cross-link via a comment on the original (Step 6 shows the comment call)
 fi
 ```

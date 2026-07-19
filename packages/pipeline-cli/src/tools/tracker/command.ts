@@ -1,18 +1,22 @@
 /**
  * The `tracker` tool — `pipeline-cli tracker claim <target>` /
  * `pipeline-cli tracker read-back <target>` / `pipeline-cli tracker apply-triage <target>` /
+ * `pipeline-cli tracker create-issue` / `pipeline-cli tracker create-comment <target>` /
  * `pipeline-cli tracker post-verdict <target>`.
  *
  * The CLI surface of the Wave-1 `Tracker` service (ADR 0190): `claim` posts the ADR-0115
  * agent-distinguishable claim and exits 0 only when the claim is ours; `read-back` resolves
  * and prints the current owner; `apply-triage` applies a type/priority/status classification
- * and drops the entity out of the needs-triage queue (#3263); `post-verdict` upserts a
- * SHA-bound ADR-0058 gate verdict comment and reads it back (#3265). Judgment-as-parameter:
- * the claiming identity, the classification, and the verdict (gate / PASS|FAIL / bound head /
- * prose) are supplied, not decided by the tool — the claim session id defaults to
- * `$CLAUDE_CODE_SESSION_ID` (the only agent-distinguishable signal under the shared `usirin`
- * login) and `--session` overrides it for the orchestrated/delegated-token path and for tests;
- * an absent value fails closed.
+ * and drops the entity out of the needs-triage queue (#3263); `create-issue` files a new
+ * issue and `create-comment` adds a note (#3264); `post-verdict` upserts a SHA-bound
+ * ADR-0058 gate verdict comment and reads it back (#3265). Judgment-as-parameter: the
+ * claiming identity, the classification, the created content, and the verdict (gate /
+ * PASS|FAIL / bound head / prose) are supplied, not decided by the tool — the claim session
+ * id defaults to `$CLAUDE_CODE_SESSION_ID` (the only agent-distinguishable signal under the
+ * shared `usirin` login) and `--session` overrides it for the orchestrated/delegated-token
+ * path and for tests; an absent value fails closed. A create `--body` defaults to stdin, so
+ * a composed markdown body streams straight in (no shared temp file, no `-f body=@file`
+ * local-path leak — the #2002 hazard class is gone, not hand-guarded).
  *
  * `GithubTrackerLive` is baked in with `Command.provide(...)` so the registered command's
  * residual requirement is the Node platform union (the registry seam, epic #994).
@@ -22,6 +26,8 @@ import {Console, Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {
 	type ClaimResult,
+	type CommentResult,
+	type CreateIssueResult,
 	GithubTrackerLive,
 	type ReadBackResult,
 	Tracker,
@@ -143,6 +149,72 @@ const applyTriage = Command.make(
 	),
 );
 
+// The create envelope (#3264): title/body/stage as parameters. `--body` defaults to stdin so
+// a composed markdown body streams straight in — the report/wayfinder/architecture-audit
+// intake flows pipe their heredoc into the verb, keeping the #2002 no-shared-temp-file property.
+const titleFlag = Flag.string("title").pipe(Flag.withDescription("the new issue's title"));
+
+const bodyFlag = Flag.string("body").pipe(
+	Flag.optional,
+	Flag.withDescription("the issue/comment body (default: read from stdin)"),
+);
+
+const stageFlag = Flag.string("stage").pipe(
+	Flag.optional,
+	Flag.withDescription("the lifecycle stage the new issue enters at (default: needs-triage)"),
+);
+
+/** The body from `--body`, else streamed from stdin (fd 0); an unreadable stream ⇒ empty. */
+const resolveBody = (body: Option.Option<string>): string => {
+	// biome-ignore lint/plugin: best-effort stdin read — a failed/absent stream is an empty body (the CLI's pre-verb input marshalling), never the E channel; a total helper, not Effect-cosplay. Mirrors trivial-diff's readDiff.
+	try {
+		return Option.match(body, {
+			onSome: (b) => b,
+			onNone: () => readFileSync(0, "utf8"),
+		});
+	} catch {
+		return "";
+	}
+};
+
+const reportCreated = (result: CreateIssueResult): Effect.Effect<void> =>
+	Console.log(`tracker: created #${result.target} — ${result.url}`);
+
+const createIssue = Command.make(
+	"create-issue",
+	{title: titleFlag, body: bodyFlag, stage: stageFlag},
+	Effect.fn(function* ({title, body, stage}) {
+		const result = yield* (yield* Tracker).createIssue({
+			title,
+			body: resolveBody(body),
+			stage: Option.getOrElse(stage, () => "needs-triage"),
+		});
+		yield* reportCreated(result);
+	}),
+).pipe(
+	Command.withDescription(
+		"File a new issue (title/body/stage) — enters the needs-triage queue by default; body from --body or stdin",
+	),
+);
+
+const commentTargetArg = Argument.integer("target").pipe(
+	Argument.withDescription("the tracker entity (issue) number to comment on"),
+);
+
+const reportCommented = (target: number, result: CommentResult): Effect.Effect<void> =>
+	Console.log(`tracker: commented on #${target} (ref ${result.ref}).`);
+
+const createComment = Command.make(
+	"create-comment",
+	{target: commentTargetArg, body: bodyFlag},
+	Effect.fn(function* ({target, body}) {
+		const result = yield* (yield* Tracker).createComment(target, {body: resolveBody(body)});
+		yield* reportCommented(target, result);
+	}),
+).pipe(
+	Command.withDescription("Add a comment (note) to a tracker entity; body from --body or stdin"),
+);
+
 // Judgment-as-parameter (#3252): the verdict decision (gate / PASS|FAIL / bound head / prose body)
 // is supplied, never decided by the tool — the role vocabulary (which reviewer) lives in the agent
 // def, not here. The verb composes the ADR-0058 `review-<gate>:` marker from these parameters so no
@@ -218,9 +290,9 @@ const postVerdict = Command.make(
 );
 
 export const trackerCommand = Command.make("tracker").pipe(
-	Command.withSubcommands([claim, readBack, applyTriage, postVerdict]),
+	Command.withSubcommands([claim, readBack, applyTriage, createIssue, createComment, postVerdict]),
 	Command.withDescription(
-		"The crew tracker service (ADR 0190): claim a tracker entity, read back its owner, apply a triage classification, post a gate verdict",
+		"The crew tracker service (ADR 0190): claim a tracker entity, read back its owner, apply a triage classification, create an issue or a comment, post a gate verdict",
 	),
 	Command.provide(GithubTrackerLive),
 );

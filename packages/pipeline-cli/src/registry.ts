@@ -15,6 +15,7 @@ import type {Command} from "effect/unstable/cli";
 import {adoptionLintCommand} from "./tools/adoption-lint/command.ts";
 import {campaignCommand} from "./tools/campaign/command.ts";
 import {catalogGuardCommand} from "./tools/catalog-guard/command.ts";
+import {changeDetectGuardCommand} from "./tools/change-detect-guard/command.ts";
 import {changelogDeriveCommand} from "./tools/changelog-derive/command.ts";
 import {ciRequiredCommand} from "./tools/ci-required/command.ts";
 import {classProbeCommand} from "./tools/class-probe/command.ts";
@@ -141,6 +142,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	verdictCommand,
 	campaignCommand,
 	catalogGuardCommand,
+	changeDetectGuardCommand,
 	patchGuardCommand,
 	intakeDedupCommand,
 	splitGuardCommand,
