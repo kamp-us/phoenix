@@ -175,15 +175,57 @@ same shipper that ships a non-§CP PR enqueues it:
 - Drive the lane through coder → reviewer to **reviewed-ready**, then **bank it on the board**:
   assign the PR to the approver and label it banked. You do **not** ping a human — the chief-of-staff
   reads the banked PR off the board and carries it out to the approver as "needs your approval."
-- **Once a control-plane team approval lands at the PR's current head**, spawn the approval-aware
-  `shipper` on that approved head. The shipper is itself approval-aware (ADR 0135 §4): it re-checks
-  for a current-head team approval and enqueues, or stops at `awaiting control-plane approval` if the
-  head has moved past the approval. Spawning it **is** the post-approval enqueue — the mechanics 0135
-  hands to the pipeline, so the §CP PR lands through the same merge queue as any other, not by a human
-  hand-merge.
+- **Banking arms an approval-watcher** (below) so you learn *when* the approval lands. Once that
+  watcher wakes you on a control-plane team approval at the PR's **current head** (machine gates still
+  green), spawn the approval-aware `shipper` on that approved head. The shipper is itself
+  approval-aware (ADR 0135 §4): it re-checks for a current-head team approval and enqueues, or stops
+  at `awaiting control-plane approval` if the head has moved past the approval. Spawning it **is** the
+  post-approval enqueue — the mechanics 0135 hands to the pipeline, so the §CP PR lands through the
+  same merge queue as any other, not by a human hand-merge.
 - You still **never hand-merge** a §CP PR and **never ping a human**: the human learns via the
   chief-of-staff's relay, and the enqueue is the shipper's — spawned by you only *after* a current-head
   approval. (Non-§CP product/pipeline lanes ship on green through `shipper` with no approval gate.)
+
+#### The approval-watcher — how the engine learns a banked §CP PR was approved
+
+Banking is not fire-and-forget: a §CP PR that is approved but never re-adopted stalls silently — the
+human did their part, but nothing tells you, so the enqueue never happens. On banking, **arm an
+approval-watcher** and ride it on your existing self-drain loop, so approval → enqueue is prompt and
+never waits on a human re-nudging the crew. The poll-vs-push shape is a self-poll on the loop cadence;
+it adds no engine→engine and no human-facing edge.
+
+- **The watch registry is the board, not session memory — so it survives a restart.** The set you
+  watch is *your banked §CP PRs*, and that set is already durable on the board: a §CP PR you banked is
+  assigned to the approver and carries the banked label. Arming the watcher *is* the bank — each loop
+  tick you re-derive the watch set from the board (`gh api` — open §CP PRs you banked, still awaiting
+  approval), never from an in-memory list a restarted engine would lose. A fresh engine that boots
+  into a live board picks the watch back up with no handoff, the same fungible-capacity property the
+  lane loop has.
+- **The poll predicate is the ship-it §CP approval gate, re-used, never re-derived.** Each tick, for
+  each banked PR, evaluate the **same** deterministic current-head discharge the `shipper` will run —
+  the ADR-0175 cardinality check via `pipeline-cli cp-cardinality`, keyed on `@kamp-us/control-plane`
+  team shape and a non-author `APPROVED` review whose `commit_id` equals the PR head (or, in the sole-
+  owner degenerate case, the self-approval marker bound `@ <head-sha>`), with the machine gates still
+  green. The §CP unblock logic lives once — in ship-it / `cp-cardinality` — and both the watcher and
+  the shipper read that single source, so the trigger fires exactly when the enqueue would discharge
+  and no second copy of the §CP discharge forks into this def.
+- **Approved at the current head + green → wake and spawn the shipper.** When the predicate discharges
+  — a non-author control-plane approval bound to the PR's *current* head, machine gates green — the
+  watcher wakes you to spawn the approval-aware `shipper` on that head. The shipper re-runs the same
+  discharge as the merge authority; the watcher is the cheap trigger, the shipper is the gate. This
+  reconciles with #3536: the **engine** spawns the post-approval shipper, and this watcher is only the
+  trigger that tells it to.
+- **A stale approval never fires — re-arm, don't enqueue.** An approval binds the head it was
+  submitted against (ADR 0058; GitHub's `dismiss_stale_reviews_on_push` also drops it). If the head
+  moved past the approval — a rebase or a new push after it — the predicate does **not** discharge
+  (`commit_id != head`), so the watcher does not fire on the stale approval: it **re-arms** and keeps
+  polling until an approval lands at the *new* current head. The at-current-head gate holds at both
+  layers — the watcher's poll and the shipper's re-check — so a superseded approval enqueues nothing.
+- **The watcher is the engine's inward signal; the human-notification stays the chief-of-staff's.**
+  The watcher only *observes* the banked PR's review state — it never pings the approver and never
+  carries the PR out to a human. The approver still learns a §CP PR needs them via the chief-of-staff's
+  relay off the board; the watcher does not duplicate that approver-ping. It is purely how the engine
+  hears back that the approval it banked for has landed.
 
 ### Stall recovery — detect a dead lane and re-drive or surface it to the board
 
