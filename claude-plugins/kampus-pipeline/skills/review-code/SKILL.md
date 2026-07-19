@@ -591,6 +591,20 @@ fi
 CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
 # non-empty → control-plane: emit the advisory line in the verdict (Step 4a) per ADR 0053/0065/0073
+# §CP by CONTENT (ADR 0164): a touched .decisions/** ADR is not path-§CP, but a guard-RELAXING one is
+# control-plane by nature. Probe each ADR's content at head with the SHARED `guard-content-probe` verb
+# — the SAME probe ship-it Step 0, review-doc, and the driver (via trivial-diff) call, so a guard-touching
+# ADR reads §CP consistently everywhere (issue #3645, founder ruling #3416). A mixed code+guard-ADR PR
+# fans BOTH gates; either flagging the ADR carries the §CP merge-authority hold. Fail-closed inside the verb.
+HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+GUARD_TOUCHING=""
+while IFS= read -r adr; do
+  [ -z "$adr" ] && continue
+  gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
+    | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null \
+    && GUARD_TOUCHING="$GUARD_TOUCHING $adr"
+done < <(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' | grep -E '^\.decisions/.*\.md$' || true)
+# non-empty $GUARD_TOUCHING → §CP-advisory, same as CONTROL_PLANE_TOUCHED above (Step 4a; ADR 0164/0135)
 ```
 
 ---
@@ -1265,8 +1279,10 @@ re-gates.
 ## Step 4a — Pass path: signal merge-ready (do NOT merge)
 
 Every criterion passed. **Branch on the control-plane class first** (the `CONTROL_PLANE_TOUCHED`
-flag from Step 2): a **blocking-set** PR (it touches `.claude/**`, `.github/**`, or a
-gate-critical skill — §CP) does **not** get a binding `PASS @ <sha> — merge-ready` marker. It
+flag from Step 2 — **or** a non-empty `GUARD_TOUCHING`, a guard-touching `.decisions/**` ADR that is
+§CP by content, ADR 0164 / #3645): a **blocking-set** PR (it touches `.claude/**`, `.github/**`, a
+gate-critical skill, or a guard-touching ADR — §CP) does **not** get a binding `PASS @ <sha> —
+merge-ready` marker. It
 gets the **canonical advisory line** instead — `review-code: advisory — blocking-set PR (manual
 merge)`, no `@ <sha>` — the one advisory shape all three gates converge on (ADR
 [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §5;
@@ -1455,8 +1471,10 @@ same forbidden forms — differing only in polarity (`FAIL @ <sha> — not merge
 
 ### Pass path — blocking-set PR (advisory only, the canonical advisory form)
 
-Every criterion passed but `CONTROL_PLANE_TOUCHED` (Step 2) is non-empty — the PR touches the
-control plane (§CP). Post the **same evidence**, but the first line is the **canonical advisory
+Every criterion passed but `CONTROL_PLANE_TOUCHED` **or** `GUARD_TOUCHING` (Step 2) is non-empty —
+the PR touches the control plane, or a guard-touching `.decisions/**` ADR that is §CP by content (ADR
+0164 / #3645; the shared `guard-content-probe` verb returned `guard-touching`). Post the **same
+evidence**, but the first line is the **canonical advisory
 line** (§6.6), **not** a binding merge-ready marker. Its **first line** carries **no `@ <sha>`** by
 design (it authorizes nothing on its first line, so it never enters `ship-it`'s auto-merge PASS
 namespace — ADR 0111); under ADR 0135's approve-then-enqueue a `@kamp-us/control-plane` member
@@ -1482,11 +1500,12 @@ code review namespace via its `commit_id`, defeating the advisory's purpose).
 ```markdown
 review-code: advisory — blocking-set PR (manual merge)
 
-PR #<PR> touches the control plane (`.claude/**`, `.github/**`, or a gate-critical skill — §CP):
-the agent control plane / pipeline gates (ADR 0053/0065). My verdict is **advisory only**: it
-does **not** authorize a merge. Under the §CP hard gate (ADR 0135), a `@kamp-us/control-plane`
-member approves this at its current head and `ship-it` then enqueues it (ADR 0048 single merge
-authority) — there is no human hand-merge in the §CP path.
+PR #<PR> is §CP — it touches the control plane (`.claude/**`, `.github/**`, or a gate-critical
+skill — ADR 0053/0065), OR a guard-touching `.decisions/**` ADR (§CP by content, ADR 0164 — the
+shared `guard-content-probe` verb flagged: `<the .decisions/** path(s)>`). My verdict is **advisory
+only**: it does **not** authorize a merge. Under the §CP hard gate (ADR 0135), a
+`@kamp-us/control-plane` member approves this at its current head and `ship-it` then enqueues it (ADR
+0048 single merge authority) — there is no human hand-merge in the §CP path.
 
 Reviewed-head: @ <HEAD_SHA>
 

@@ -33,6 +33,7 @@ import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {extractControlPlaneRe} from "../codeowners-cp/codeowners-cp.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
+import {parseGuardAdrRe} from "../guard-content-probe/guard-content-probe.ts";
 import {classify} from "./trivial-diff.ts";
 
 /**
@@ -94,16 +95,17 @@ const resolveRepo = (repo: Option.Option<string>): string | null => {
 };
 
 /**
- * Re-resolve the live `CONTROL_PLANE_RE` from `origin/main` via the REST raw contents
- * endpoint (`?ref=main`), then parse it with the single-sourced `extractControlPlaneRe`.
- * Returns null on any failure (gh missing/unauth, repo unresolved, file absent, no
- * assignment line) — the core then fails closed.
+ * Fetch `gh-issue-intake-formats.md` raw from `origin/main` (`?ref=main`) — the single source
+ * for both the §CP boundary (`CONTROL_PLANE_RE`) and the guard-touching-ADR vocabulary
+ * (`GUARD_ADR_RE`, ADR 0164). Returns null on any failure (gh missing/unauth, repo unresolved,
+ * file absent); both bounds then fail closed. One fetch, both regexes — never a second network
+ * round-trip nor a second copy of the boundary grammar.
  */
-const resolveControlPlaneRe = (repo: string | null): string | null => {
+const fetchFormatsRaw = (repo: string | null): string | null => {
 	if (repo === null) return null;
-	// biome-ignore lint/plugin: best-effort probe — any failure (gh missing/unauth, repo unresolved, file absent) is absorbed into null (the core then fails closed), never the E channel; a total helper, not Effect-cosplay.
+	// biome-ignore lint/plugin: best-effort probe — any failure (gh missing/unauth, repo unresolved, file absent) is absorbed into null (both bounds then fail closed), never the E channel; a total helper, not Effect-cosplay.
 	try {
-		const raw = execFileSync(
+		return execFileSync(
 			"gh",
 			[
 				"api",
@@ -113,7 +115,6 @@ const resolveControlPlaneRe = (repo: string | null): string | null => {
 			],
 			{encoding: "utf8"},
 		);
-		return extractControlPlaneRe(raw);
 	} catch {
 		return null;
 	}
@@ -123,7 +124,9 @@ const classifyCmd = Command.make(
 	"classify",
 	{diffFile: diffFileFlag, maxLines: maxLinesFlag, repo: repoFlag},
 	Effect.fn(function* ({diffFile, maxLines, repo}) {
-		const controlPlaneRe = resolveControlPlaneRe(resolveRepo(repo));
+		const formatsRaw = fetchFormatsRaw(resolveRepo(repo));
+		const controlPlaneRe = formatsRaw === null ? null : extractControlPlaneRe(formatsRaw);
+		const guardAdrRe = formatsRaw === null ? null : parseGuardAdrRe(formatsRaw);
 		const diff = readDiff(diffFile);
 		if (diff === null) {
 			// Unreadable diff is itself fail-closed: classify as non-trivial.
@@ -133,7 +136,7 @@ const classifyCmd = Command.make(
 			yield* Console.log("non-trivial");
 			return;
 		}
-		const result = classify(diff, {controlPlaneRe, lineBudget: maxLines});
+		const result = classify(diff, {controlPlaneRe, lineBudget: maxLines, guardAdrRe});
 		yield* Effect.sync(() => process.stderr.write(`trivial-diff: ${result.reason}\n`));
 		yield* Console.log(result.verdict);
 	}),

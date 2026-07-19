@@ -21,7 +21,12 @@
  *      under the line bound `N`.
  *   2. No new surface / code-path change — no dependency/manifest/migration/schema/
  *      config path, and no new module edge (`export` / `import` / `require(`).
- *   3. Not control-plane — no changed path matches the live `CONTROL_PLANE_RE`.
+ *   3. Not control-plane — no changed path matches the live `CONTROL_PLANE_RE`, AND no
+ *      touched `.decisions/**` ADR is guard-touching by content (ADR 0164 / #3645). A
+ *      guard-relaxing ADR is a doc by path — so without this bound it would ride the
+ *      single-doc-file trivial branch onto the lighter gate, exactly the §CP-routing hole
+ *      #3645 closes. The guard-touching content check is the SAME shared verb ship-it Step 0
+ *      and the review gate call — one probe, one classification.
  */
 
 /** One file's slice of a unified diff: its path + line counts + the added-line bodies. */
@@ -35,6 +40,8 @@ export interface ChangedFile {
 	/** The bodies of the added (`+`) content lines, sans the leading `+`. */
 	readonly addedLines: ReadonlyArray<string>;
 }
+
+import {probeGuardContent} from "../guard-content-probe/guard-content-probe.ts";
 
 /** The terminal verdict — two states only, never an "unknown" a caller could read as trivial. */
 export type Verdict = "trivial" | "non-trivial";
@@ -56,6 +63,13 @@ export interface ClassifyOptions {
 	readonly controlPlaneRe: string | null;
 	/** The single-file line bound `N` (added + removed) below which a non-doc file is trivial. */
 	readonly lineBudget: number;
+	/**
+	 * The live `GUARD_ADR_RE` (ADR 0164), re-resolved from `origin/main` by the bin — the SAME
+	 * canonical the shared `guard-content-probe` verb reads. `null` means it could not be read;
+	 * the core then treats every touched `.decisions/**` ADR as guard-touching (fail-closed,
+	 * mirroring the boundary's `CONTROL_PLANE_RE=null` posture).
+	 */
+	readonly guardAdrRe: string | null;
 }
 
 const trivial = (reason: string): Classification => ({verdict: "trivial", reason});
@@ -92,6 +106,9 @@ const isSurfacePath = (path: string): boolean => {
 	if (path.endsWith(".sql")) return true;
 	return /(^|\/)(migrations|drizzle)\//.test(path);
 };
+
+/** True for a `.decisions/**` ADR — the class the guard-touching content bound (ADR 0164) scopes to. */
+const isAdrPath = (path: string): boolean => path.startsWith(".decisions/");
 
 /** True for a doc/comment-only file: a doc extension or a path under a docs dir. */
 const isDocPath = (path: string): boolean => {
@@ -211,6 +228,20 @@ export const classify = (diff: string, opts: ClassifyOptions): Classification =>
 		return nonTrivial(
 			`new module edge added (export/import/require) in ${f.path} — not trivial (ADR 0120 §1.2).`,
 		);
+	}
+
+	// Bound 3 (content) — a guard-touching `.decisions/**` ADR is §CP by nature (ADR 0164) and
+	// must NEVER ride the single-doc-file trivial branch below onto the lighter gate (#3645). Probe
+	// its added content with the SAME shared verb ship-it Step 0 / the review gate call; fail-closed
+	// (null boundary ⇒ match-everything, empty added lines ⇒ guard-touching). Order is deliberate:
+	// this runs BEFORE the isDocPath trivial return, so a guard-relaxing ADR can't be masked as a doc.
+	if (isAdrPath(f.path)) {
+		const probe = probeGuardContent(f.addedLines.join("\n"), opts.guardAdrRe ?? ".");
+		if (probe.guardTouching) {
+			return nonTrivial(
+				`guard-touching .decisions/** ADR (${f.path}: ${probe.reason}) — §CP by content, never trivial (ADR 0164 / #3645).`,
+			);
+		}
 	}
 
 	// Bound 1 — small + single-concern. A doc/comment-only file is trivial at any size;

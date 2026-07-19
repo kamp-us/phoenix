@@ -35,6 +35,7 @@ import {failureClassifierCommand} from "./tools/failure-classifier/command.ts";
 import {fanoutGuardCommand} from "./tools/fanout-guard/command.ts";
 import {ghPhoenixCommand} from "./tools/gh-phoenix/command.ts";
 import {glossaryDriftCommand} from "./tools/glossary-drift/command.ts";
+import {guardContentProbeCommand} from "./tools/guard-content-probe/command.ts";
 import {intakeDedupCommand} from "./tools/intake-dedup/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {mainSyncCommand} from "./tools/main-sync/command.ts";
@@ -129,6 +130,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	wayfinderMapCommand,
 	shipDigestCommand,
 	glossaryDriftCommand,
+	guardContentProbeCommand,
 	failureClassifierCommand,
 	fanoutGuardCommand,
 	reachabilityGuardCommand,
