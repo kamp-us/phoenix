@@ -98,6 +98,12 @@
 	"overrides": [
 		{
 			"includes": ["**/tests/**", "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts"],
+			// Test-only GritQL gate: an `expect(...)` guarded by an `if` passes vacuously
+			// when the branch isn't taken. `overrides.plugins` only ADDS a plugin to a
+			// path, so this is what scopes the rule to test files (see the plugin header +
+			// .patterns/unconditional-test-assertions.md). Severity is `warn`, set in the
+			// `.grit`'s register_diagnostic.
+			"plugins": ["./biome-plugins/no-expect-in-if.grit"],
 			"linter": {
 				"rules": {
 					"style": {
