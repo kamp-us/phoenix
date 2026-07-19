@@ -22,8 +22,6 @@ import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Profile} from "../../../worker/features/fate/views";
 import {Screen} from "../../fate/Screen";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../../flags/keys";
-import {useFlag} from "../../flags/useFlag";
 import {EmptyState} from "../ui/EmptyState";
 import {ContributionRow, ContributionView} from "./ContributionRow";
 import {CONTRIBUTIONS_EMPTY, CONTRIBUTIONS_HEADING} from "./profileContributions";
@@ -87,13 +85,9 @@ export function ProfileContributionSkeleton() {
  * client below the gate — pre-session there is only a skeleton to paint, no anon data.
  * Mounting no `FateClient` is also what makes it #438-safe by construction: with no
  * client above the gate there is nothing to re-key anon→id.
- *
- * Gated on the authorship-loop flag so a flag-off (rollback) load never flashes a
- * Katkıların section the settled page won't render.
  */
 export function EagerProfileContributionSkeleton() {
-	const {value: authorshipLoop} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
-	return authorshipLoop ? <ProfileContributionSkeleton /> : null;
+	return <ProfileContributionSkeleton />;
 }
 
 export function ProfileContributionSignal({username}: {username: string}) {

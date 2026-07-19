@@ -10,7 +10,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {hasNestedSelection} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_USER_BAN} from "../../../src/flags/keys.ts";
+import {PHOENIX_USER_BAN} from "../../../src/flags/keys.ts";
 import {UserId} from "../../lib/ids.ts";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -28,12 +28,6 @@ import type {Contribution} from "./views.ts";
 import {AuthorshipStandingView, BanStateView, ProfileView, UserView} from "./views.ts";
 
 const CONTRIBUTIONS_PAGE_SIZE = 20;
-
-/** Is the earned-authorship loop on for this request? Safe-default `false` (dark). */
-const loopOn = Effect.gen(function* () {
-	const flags = yield* Flags;
-	return yield* flags.getBoolean(PHOENIX_AUTHORSHIP_LOOP, false).pipe(provideRequestFlags);
-});
 
 /** Is the #970 user-ban dark-ship flag on for this request? Safe-default `false` (dark). */
 const userBanOn = Effect.gen(function* () {
@@ -108,9 +102,8 @@ export const queries = {
 	// reader (`CurrentUser.required`, no input arg), so it can only ever describe the
 	// reader's own standing — reading another user's self-status is unrepresentable.
 	//
-	// Dark-ship: behind `PHOENIX_AUTHORSHIP_LOOP`, off ⇒ `null` (not exposed). It is
-	// additive and does NOT relax `requireDivanAccess` — a çaylak still cannot read
-	// `divan.roster`/`divan.backlog`.
+	// It is additive and does NOT relax `requireDivanAccess` — a çaylak still cannot
+	// read `divan.roster`/`divan.backlog`.
 	//
 	// One-way-glass is structural (`AuthorshipStanding` carries no identity field):
 	// `vouchExists` is a bare boolean off `VouchLedger.hasActiveFor` (never WHO
@@ -121,7 +114,6 @@ export const queries = {
 		{type: AuthorshipStandingView, error: Unauthorized},
 		Effect.fn("myAuthorshipStanding")(function* () {
 			const user = yield* CurrentUser.required;
-			if (!(yield* loopOn)) return null;
 
 			const kunye = yield* Kunye;
 			const ledger = yield* VouchLedger;

@@ -51,9 +51,8 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-// The çaylak-sandbox deps the resolver gained (#1205): `Flags` OFF ⇒
-// `sandboxedAtForAuthor` returns null without reading `Kunye`, so the add path is
-// today's live-create. The `Kunye` stub satisfies the type without being exercised.
+// A `Flags` stub with every flag OFF — the karma-gates dep the resolver reads (#150):
+// off ⇒ the add path is today's live-create, no karma read.
 const flagsOffStub = Layer.succeed(Flags, {
 	getBoolean: () => Effect.succeed(false),
 	getString: () => Effect.die("getString not exercised"),
@@ -61,13 +60,15 @@ const flagsOffStub = Layer.succeed(Flags, {
 	getObject: () => Effect.die("getObject not exercised"),
 } as typeof Flags.Service);
 
+// A yazar author ⇒ `sandboxedAtForAuthor` returns null (yazar content is always live),
+// so the add path is a live-create.
 const kunyeStub = Layer.succeed(Kunye, {
 	tierOf: () => Effect.succeed("yazar" as const),
 	karmaOf: () => Effect.succeed(0),
 	rootOf: (id: string) => Effect.succeed(id),
 } as typeof Kunye.Service);
 
-// The mod-emitter deps the resolver gained (#1699). `Flags` OFF ⇒ `sandboxedAtForAuthor`
+// The mod-emitter deps the resolver gained (#1699). A yazar author ⇒ `sandboxedAtForAuthor`
 // returns null ⇒ `notifyCaylakEntersDivan` short-circuits before touching any of these,
 // so they exist only to satisfy the type and die on contact if ever reached.
 const notificationStub = makeNotificationStub();

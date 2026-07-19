@@ -144,40 +144,34 @@ vi.mock("./pages/useProfileStats", () => ({useProfileStats: () => ({status: "idl
 vi.mock("./components/divan/useDivanAccess", () => ({useDivanAccess: () => false}));
 vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: () => 0}));
 
-// Controllable flag mock. The eager `/profile` Katkıların skeleton (#2188) is gated on
-// the authorship-loop flag, so its tests flip `flags.authorshipLoop`; the mecmua nav entry
-// (#2512) on `mecmua-public-read` (`flags.mecmua`); the mecmua feed (akış) nav entry (#2547)
-// on `mecmua-feed` (`flags.mecmuaFeed`). Every other read (and other flag key) stays off,
-// matching the default the shell rendered under before. `loading: false` on every read models
-// the shell-key-manifest members' SYNCHRONOUS `__BOOT__` resolution (ADR 0179, #2828) — a member
+// Controllable flag mock. The mecmua nav entry (#2512) reads `mecmua-public-read`
+// (`flags.mecmua`); the mecmua feed (akış) nav entry (#2547) `mecmua-feed`
+// (`flags.mecmuaFeed`). Every other read (and other flag key) stays off, matching the
+// default the shell rendered under before. `loading: false` on every read models the
+// shell-key-manifest members' SYNCHRONOUS `__BOOT__` resolution (ADR 0179, #2828) — a member
 // carries its final value on the first render, no post-boot flip.
 // `signedIn` drives the mocked `readBootUser` (the `__BOOT__.user` edge identity, ADR 0185):
 // the shell frame reads it to reserve AND seed the signed-in account cluster before `useSession`
 // settles. Default false = `__BOOT__` absent, so the pre-existing shell tests see today's
 // signed-out first paint unchanged.
 const flags = vi.hoisted(() => ({
-	authorshipLoop: false,
 	mecmua: false,
 	mecmuaFeed: false,
 	navIa: false,
 	signedIn: false,
 }));
 vi.mock("./flags/useFlag", async () => {
-	const {PHOENIX_AUTHORSHIP_LOOP, MECMUA_PUBLIC_READ, MECMUA_FEED, PHOENIX_NAV_IA} = await import(
-		"./flags/keys"
-	);
+	const {MECMUA_PUBLIC_READ, MECMUA_FEED, PHOENIX_NAV_IA} = await import("./flags/keys");
 	return {
 		useFlag: (key: string) => ({
 			value:
-				key === PHOENIX_AUTHORSHIP_LOOP
-					? flags.authorshipLoop
-					: key === MECMUA_PUBLIC_READ
-						? flags.mecmua
-						: key === MECMUA_FEED
-							? flags.mecmuaFeed
-							: key === PHOENIX_NAV_IA
-								? flags.navIa
-								: false,
+				key === MECMUA_PUBLIC_READ
+					? flags.mecmua
+					: key === MECMUA_FEED
+						? flags.mecmuaFeed
+						: key === PHOENIX_NAV_IA
+							? flags.navIa
+							: false,
 			loading: false,
 		}),
 	};
@@ -640,10 +634,8 @@ describe("Two-tier fate provider — /profile eager Katkıların skeleton (#2188
 	beforeEach(() => {
 		fateMounts.length = 0;
 		sessionState = {data: null, isPending: true};
-		flags.authorshipLoop = true;
 	});
 	afterEach(() => {
-		flags.authorshipLoop = false;
 		vi.clearAllMocks();
 	});
 
@@ -668,13 +660,6 @@ describe("Two-tier fate provider — /profile eager Katkıların skeleton (#2188
 
 	it("scoped: a non-profile route paints NO eager Katkıların skeleton", () => {
 		renderApp("/sozluk");
-		expect(screen.queryByTestId("signal-loading")).toBeNull();
-		expect(fateMounts).toHaveLength(0);
-	});
-
-	it("flag-off: /profile paints NO eager skeleton — no flash of a section the settled page won't render", () => {
-		flags.authorshipLoop = false;
-		renderApp("/profile");
 		expect(screen.queryByTestId("signal-loading")).toBeNull();
 		expect(fateMounts).toHaveLength(0);
 	});

@@ -5,9 +5,8 @@
  *
  * Three helpers, all resolver-level:
  *   - {@link sandboxedAtForAuthor} — the create-time decision: should a new piece
- *     of content by this author land sandboxed? Gated behind the #1204
- *     authorship-loop flag (default-off ⇒ today's behavior, zero regression), then
- *     by tier (çaylak ⇒ sandboxed, yazar ⇒ live).
+ *     of content by this author land sandboxed? Decided by tier (çaylak ⇒ sandboxed,
+ *     yazar ⇒ live).
  *   - {@link currentSandboxViewer} — the read-time viewer: the signed-in id plus a
  *     non-throwing moderator probe of `Moderate.over(platform)`, resolved once per
  *     read and handed to the `SandboxVisibility` predicates.
@@ -21,36 +20,21 @@
  */
 
 import {CurrentUser} from "@kampus/fate-effect";
-import type {RuntimeContext} from "alchemy";
 import {Brand, Effect} from "effect";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
-import {Flags} from "../flagship/Flags.ts";
-import {provideRequestFlags, type RequestFlagOverrides} from "../flagship/FlagsContext.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Kunye} from "./Kunye.ts";
 import {requireModeration} from "./moderate.ts";
 
 /**
  * The `sandboxed_at` timestamp a new piece of content by `authorId` is created
- * with, or `null` to create it live. Sandboxed only when the authorship-loop flag
- * is ON (safe-default off — a Flagship outage or the unflipped default both read
- * `false`, so content is live exactly as today) AND the author is a `çaylak`. A
- * yazar's content is always live.
+ * with, or `null` to create it live. Sandboxed only when the author is a `çaylak`;
+ * a yazar's content is always live.
  */
 export const sandboxedAtForAuthor = (
 	authorId: string,
 	now: Date,
-): Effect.Effect<
-	Date | null,
-	never,
-	Kunye | Flags | RuntimeContext | CurrentUser | RequestFlagOverrides
-> =>
+): Effect.Effect<Date | null, never, Kunye> =>
 	Effect.gen(function* () {
-		const flags = yield* Flags;
-		const loopOn = yield* flags
-			.getBoolean(PHOENIX_AUTHORSHIP_LOOP, false)
-			.pipe(provideRequestFlags);
-		if (!loopOn) return null;
 		const kunye = yield* Kunye;
 		const tier = yield* kunye.tierOf(authorId);
 		return tier === "çaylak" ? now : null;

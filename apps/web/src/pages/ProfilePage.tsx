@@ -10,8 +10,6 @@ import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
 import {ProfileHeader} from "../components/profile/ProfileHeader";
 import {profileStandingLabel} from "../components/profile/profileStanding";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../flags/keys";
-import {useFlag} from "../flags/useFlag";
 import {type Density, useDensity} from "../lib/density";
 import {type ThemeChoice, useTheme} from "../lib/theme";
 import {useProfileStats} from "./useProfileStats";
@@ -49,9 +47,6 @@ export function ProfilePage() {
 	// window where the session row still lags the just-written username (see `useMe`).
 	const readUsername = u?.username ?? me?.username ?? null;
 	const statsState = useProfileStats(readUsername);
-	// Reinforce the owner's own karma on their identity mirror, dark behind the
-	// authorship-loop flag (#1208). Flag off → no karma stat, profile as today.
-	const {value: authorshipLoop} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	// A failed stats (or `me`) fetch must NOT render as `0` — that's the silent
 	// honest-empty-state bug (#448). Treat either failure as the strip's error.
 	const statsFailed = statsState.status === "error" || meStatus === "error";
@@ -74,11 +69,9 @@ export function ProfilePage() {
 	// defensive not-yet-booted degenerate, never the email local-part.
 	const handle = username ?? "kullanıcı";
 	// The handle-line standing label, derived from the trusted tier (#1302) instead
-	// of the old hard-coded `· yeni üye` lie. `null` (flag off, or no honest tier) →
-	// handle-only, never a placeholder. Dark behind the same authorship-loop flag as
-	// the karma stat / CaylakStatusBlock so the tier surfaces here exactly when the
-	// rest of the loop does.
-	const standingLabel = profileStandingLabel(authorshipLoop, me?.tier);
+	// of the old hard-coded `· yeni üye` lie. `null` (no honest tier) → handle-only,
+	// never a placeholder.
+	const standingLabel = profileStandingLabel(me?.tier);
 
 	const [draftName, setDraftName] = useState(name);
 	const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -172,22 +165,19 @@ export function ProfilePage() {
 					image={me?.image ?? null}
 					stats={stats}
 					statsError={statsFailed}
-					showKarma={authorshipLoop}
+					showKarma
 				/>
 
 				{/* The çaylak's own "yazarlığa giden yol" tracker (#1291), surfaced on the
 				    self-service profile too (#2203) so promotion progress is reachable from
 				    settings, not only the public /u/ page. Reuses the existing block, which
-				    self-gates on the #1204 authorship-loop flag + own-profile + çaylak. */}
+				    self-gates on own-profile + çaylak. */}
 				{me?.id ? <CaylakStatusBlock profileUserId={me.id} /> : null}
 
-				{/* Thin contribution signal (#1209) — the owner's own track record,
-				    dark behind the authorship-loop flag (#1204). Flag off → exactly
-				    today's profile. The owner sees their OWN sandboxed content here
-				    (the feed keys on authorId with no sandbox filter). */}
-				{authorshipLoop && readUsername ? (
-					<ProfileContributionSignal username={readUsername} />
-				) : null}
+				{/* Thin contribution signal (#1209) — the owner's own track record. The
+				    owner sees their OWN sandboxed content here (the feed keys on authorId
+				    with no sandbox filter). */}
+				{readUsername ? <ProfileContributionSignal username={readUsername} /> : null}
 
 				<section className="kp-profile__section">
 					<h3>hesap</h3>

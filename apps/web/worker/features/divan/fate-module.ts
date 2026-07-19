@@ -7,9 +7,8 @@ import {divanBacklogItemSource, divanCaylakSource, divanVoteReceiptSource} from 
 import {divanBacklogItemDataView, divanCaylakDataView} from "./views.ts";
 
 const roots: FateRootsRecord = {
-	// The divan proving-ground reads (#1287, epic #1202) — yazar-OR-mod-gated, behind
-	// the `PHOENIX_AUTHORSHIP_LOOP` flag; the `divan.*` resolvers own the order
-	// (roster by pending desc, backlog newest-first).
+	// The divan proving-ground reads (#1287, epic #1202) — yazar-OR-mod-gated; the
+	// `divan.*` resolvers own the order (roster by pending desc, backlog newest-first).
 	"divan.roster": list(divanCaylakDataView),
 	"divan.backlog": list(divanBacklogItemDataView),
 };

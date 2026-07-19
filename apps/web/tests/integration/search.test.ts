@@ -280,9 +280,9 @@ describe("searchPosts — çaylak sandbox read-mask over real FTS5 (#1358 p0 lea
 	// (the #1312 count/keyset vector), while staying visible to its author and a mod.
 	//
 	// A post is sandboxed by stamping `post_record.sandboxed_at` — the column the
-	// çaylak write path sets via `sandboxedAtForAuthor` (kunye/sandbox.ts), gated in
-	// prod behind the default-off authorship-loop flag. That flag has no HTTP handle
-	// in the harness, so the sandbox state is minted with a setup-only `execD1` UPDATE:
+	// çaylak write path sets via `sandboxedAtForAuthor` (kunye/sandbox.ts). The çaylak
+	// write path has no HTTP handle in the harness, so the sandbox state is minted with
+	// a setup-only `execD1` UPDATE:
 	// the same off-the-binding real-D1 seam `setLastActivityAt` uses for the
 	// server-stamped clock and the founder-seed moderation grant uses for the
 	// `moderates` tuple. The row stays FTS-indexed; only the read-time mask hides it —

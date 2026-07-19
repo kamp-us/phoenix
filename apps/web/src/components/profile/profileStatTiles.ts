@@ -8,9 +8,9 @@
  * is the single source they now share.
  *
  * Canonical order is `[tanım, başlık, yorum]` — sözlük is definition-first, so the
- * tanım count leads. The flag-gated `karma` tile is appended by `ProfileHeader`
- * (via the shared `Karma` atom, `PHOENIX_AUTHORSHIP_LOOP` seam), so it stays
- * structurally last and never enters this reorderable set.
+ * tanım count leads. The owner-only `karma` tile is appended by `ProfileHeader` (via
+ * the shared `Karma` atom), so it stays structurally last and never enters this
+ * reorderable set.
  */
 
 export interface ProfileActivityCounts {

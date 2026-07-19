@@ -7,8 +7,7 @@
  * The acceptance matrix: a yazar OR a mod (the divan audience) votes a sandboxed item and the
  * cast lands crediting the author; a çaylak / visitor / anonymous actor gets the invisible
  * `UNAUTHORIZED` and NEVER reaches the cast (the non-gated rejection — a compile-error gate,
- * not an `if`, ADR 0107). Plus the #1204 dark-ship: flag OFF ⇒ the path is inert (no gate
- * check, no cast). And the karma-side promotion trigger (#1289): a vote that crosses the bar
+ * not an `if`, ADR 0107). And the karma-side promotion trigger (#1289): a vote that crosses the bar
  * WITH an active vouch fires `resolveTandem` → the author is promoted; with no active vouch it
  * is not. The yazar/mod disjunction itself is `gate.unit.test.ts`; the score+karma batch is
  * `vote/Vote.unit.test.ts` and the integration tier; the tandem invariant is `tandem.unit.test.ts`.
@@ -49,17 +48,18 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-const flagsStub = (on: boolean): Layer.Layer<Flags> =>
-	Layer.succeed(
-		Flags,
-		// biome-ignore lint/plugin: a Flags test double — only getBoolean is exercised here.
-		{
-			getBoolean: () => Effect.succeed(on),
-			getString: () => Effect.die(new Error("unused")),
-			getNumber: () => Effect.die(new Error("unused")),
-			getObject: () => Effect.die(new Error("unused")),
-		} as unknown as typeof Flags.Service,
-	);
+// The rite-feedback emitter (notifyDivanVote) reads the `phoenix-bildirim` flag, so
+// every case still provides a Flags service — on, so the bildirim deliver path runs.
+const flagsOn: Layer.Layer<Flags> = Layer.succeed(
+	Flags,
+	// biome-ignore lint/plugin: a Flags test double — only getBoolean is exercised here.
+	{
+		getBoolean: () => Effect.succeed(true),
+		getString: () => Effect.die(new Error("unused")),
+		getNumber: () => Effect.die(new Error("unused")),
+		getObject: () => Effect.die(new Error("unused")),
+	} as unknown as typeof Flags.Service,
+);
 
 const agentAuthorityStub = Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(false)});
 
@@ -170,8 +170,8 @@ const noMutes = Layer.succeed(Mute, {
 	readMutedIds: () => Effect.succeed(new Set<string>()),
 });
 
-const requestContext = (actor: Actor, on: boolean) =>
-	Layer.mergeAll(flagsStub(on), noopLive, noMutes).pipe(
+const requestContext = (actor: Actor) =>
+	Layer.mergeAll(flagsOn, noopLive, noMutes).pipe(
 		Layer.provideMerge(Layer.succeed(CurrentUser, {user: {id: actorId(actor)} as never})),
 		Layer.provideMerge(Layer.succeed(CurrentActor, {actor})),
 		Layer.provideMerge(Layer.succeed(RuntimeContext, runtimeContextStub)),
@@ -215,7 +215,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					kunyeOf({"u-yazar": "yazar"}),
 					agentAuthorityStub,
 					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-					requestContext(human("u-yazar"), true),
+					requestContext(human("u-yazar")),
 				),
 			),
 		);
@@ -239,7 +239,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					kunyeOf({"u-mod": "çaylak"}),
 					agentAuthorityStub,
 					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-					requestContext(human("u-mod"), true),
+					requestContext(human("u-mod")),
 				),
 			),
 		);
@@ -265,7 +265,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 						kunyeOf({"u-yazar": "yazar"}, {"u-author": 15}), // at VOUCH_PROMOTION_KARMA_BAR
 						agentAuthorityStub,
 						makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-						requestContext(human("u-yazar"), true),
+						requestContext(human("u-yazar")),
 					),
 				),
 			);
@@ -289,7 +289,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					kunyeOf({"u-yazar": "yazar"}, {"u-author": 99}),
 					agentAuthorityStub,
 					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-					requestContext(human("u-yazar"), true),
+					requestContext(human("u-yazar")),
 				),
 			),
 		);
@@ -310,7 +310,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					kunyeOf({"u-caylak": "çaylak"}),
 					agentAuthorityStub,
 					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-					requestContext(human("u-caylak"), true),
+					requestContext(human("u-caylak")),
 				),
 			),
 		),
@@ -331,33 +331,7 @@ describe("divan.vote — gated sandboxed vote", () => {
 					kunyeOf({}),
 					agentAuthorityStub,
 					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-					requestContext(unauthenticated, true),
-				),
-			),
-		),
-	);
-
-	it.effect("with the #1204 flag OFF the path is inert — no gate check, no cast", () =>
-		Effect.gen(function* () {
-			const receipt = yield* castVote("definition:def-1", true);
-			assert.strictEqual((receipt as {myVote: boolean}).myVote, false);
-			assert.strictEqual((receipt as {score: number}).score, 0);
-		}).pipe(
-			// The cast, the gate's authority seam, and the promote seam all fail-on-contact: none reached.
-			Effect.provide(
-				Layer.mergeAll(
-					voteFailOnContact,
-					makeVouchLedgerStub(),
-					makePasaportStub(),
-					Layer.succeed(RelationStore, {
-						has: () => Effect.die(new Error("flag OFF must not check authority")),
-						hasSubjects: () => Effect.die(new Error("flag OFF must not check authority")),
-						subjectsOf: () => Effect.die(new Error("flag OFF must not check authority")),
-					}),
-					kunyeOf({"u-yazar": "yazar"}),
-					agentAuthorityStub,
-					makeNotificationStub({recordAggregate: () => Effect.succeed({aggregated: false})}),
-					requestContext(human("u-yazar"), false),
+					requestContext(unauthenticated),
 				),
 			),
 		),
@@ -382,7 +356,7 @@ describe("divan.vote — rite-feedback bildirim (#1695)", () => {
 			kunyeOf({"u-yazar": "yazar"}),
 			agentAuthorityStub,
 			notification,
-			requestContext(human("u-yazar"), true),
+			requestContext(human("u-yazar")),
 		);
 
 	it.effect("a landed upvote emits ONE aggregate notification for the author", () => {

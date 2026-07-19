@@ -19,11 +19,10 @@
  * The deploy classes (ADR 0088), as the canonical literal tuple every site reuses.
  * `audit` is the dedicated isolated stage the rite-audit harness deploys (#1511,
  * epic #1510): a non-production deployed stage, distinct from a per-PR `preview`,
- * that exists so a force-on targeting rule can serve `phoenix-authorship-loop` ON
- * non-interactively without ever reaching production (the rule keys on this class;
- * see `features/flagship/resources.ts`). It is NOT production — `isProduction`
- * stays `=== "production"`, so an audit stage provisions no email subdomain / apex
- * domain, exactly like a preview.
+ * that exists so a force-on targeting rule can serve a dark-ship flag ON
+ * non-interactively without ever reaching production (such a rule keys on this
+ * class). It is NOT production — `isProduction` stays `=== "production"`, so an
+ * audit stage provisions no email subdomain / apex domain, exactly like a preview.
  */
 export const ENVIRONMENTS = ["development", "preview", "production", "audit"] as const;
 
@@ -32,9 +31,9 @@ export type Environment = (typeof ENVIRONMENTS)[number];
 
 /**
  * The dedicated audit deploy class (#1511, epic #1510). Single-sourced here so the
- * stage→ENVIRONMENT map (`environmentForStage`) and the authorship-loop force-on
- * targeting rule (`features/flagship/resources.ts`) name the SAME literal — the
- * rule serves `on` iff the request's `environment` attribute equals this value.
+ * stage→ENVIRONMENT map (`environmentForStage`) and any audit-stage force-on
+ * targeting rule name the SAME literal — such a rule serves `on` iff the request's
+ * `environment` attribute equals this value.
  */
 export const AUDIT_ENVIRONMENT: Environment = "audit";
 

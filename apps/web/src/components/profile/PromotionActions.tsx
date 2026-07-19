@@ -15,9 +15,6 @@
  * sandbox-visibility-for-yazars question (#1205) — is designed. The vouch *mechanism*
  * ships server-side (`user.vouch`); only its surface is held back here.
  *
- * Mounted behind the #1204 authorship-loop flag (default-off) by the page's
- * `FlagGate`, so the whole surface stays dark until a human flips the flag.
- *
  * a11y: a native `<button>` (focusable, keyboard-activatable, visible focus from the
  * app's button styles); the section is a labelled landmark; the outcome is a
  * `role="status" aria-live="polite"` text region (state conveyed as words, never

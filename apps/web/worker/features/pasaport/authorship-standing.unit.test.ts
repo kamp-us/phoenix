@@ -10,8 +10,6 @@
  *     çaylak cannot read another user's self-status;
  *   - `bar` is the vouch-aware promotion bar (reduced when vouched, full otherwise),
  *     so the frontend never hardcodes it;
- *   - dark-ship: flag OFF ⇒ `null`, and NO trusted source is touched (the
- *     fail-on-contact stubs would `die` if reached);
  *   - anonymous ⇒ the wire `UNAUTHORIZED` before any read;
  *   - ONE-WAY-GLASS, structural: the payload TYPE carries ONLY aggregate scalars —
  *     no reviewer/voter/voucher identity field exists to fill (a compile-time guard,
@@ -23,7 +21,6 @@ import {CurrentUser, type CurrentUserInfo} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Cause, Effect, Exit, Layer} from "effect";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
-import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {KARMA_THRESHOLDS, VOUCH_PROMOTION_KARMA_BAR} from "../kunye/standing.ts";
 import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
@@ -51,18 +48,6 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-const flagsStub = (on: boolean): Layer.Layer<Flags> =>
-	Layer.succeed(
-		Flags,
-		// biome-ignore lint/plugin: a Flags test double — only getBoolean is exercised on this gate; the typed variations add nothing.
-		{
-			getBoolean: () => Effect.succeed(on),
-			getString: () => Effect.die(new Error("unused")),
-			getNumber: () => Effect.die(new Error("unused")),
-			getObject: () => Effect.die(new Error("unused")),
-		} as unknown as typeof Flags.Service,
-	);
-
 // A `Kunye` answering karma by id; `tierOf`/`rootOf` die — the standing read never
 // reads them (it reads only `karmaOf`), so a reached call fails the test.
 const kunyeWithKarma = (karmaById: Record<string, number>): Layer.Layer<Kunye> =>
@@ -74,9 +59,8 @@ const kunyeWithKarma = (karmaById: Record<string, number>): Layer.Layer<Kunye> =
 
 const SELF: CurrentUserInfo = {id: "u-self", email: "self@kamp.us", name: "Self", image: null};
 
-// Drive `myAuthorshipStanding` over the flag + the trusted-source stubs, as `SELF`.
+// Drive `myAuthorshipStanding` over the trusted-source stubs, as `SELF`.
 const standingOf = (input: {
-	on: boolean;
 	user?: CurrentUserInfo | undefined;
 	karma?: number;
 	vouchExists?: boolean;
@@ -90,7 +74,6 @@ const standingOf = (input: {
 	}).pipe(
 		Effect.provide(
 			Layer.mergeAll(
-				flagsStub(input.on),
 				input.kunye ?? kunyeWithKarma({[SELF.id]: input.karma ?? 0}),
 				input.ledger ??
 					makeVouchLedgerStub({hasActiveFor: () => Effect.succeed(input.vouchExists ?? false)}),
@@ -106,7 +89,6 @@ describe("myAuthorshipStanding — the çaylak-self aggregate (#1316)", () => {
 	it.effect("returns the reader's own {karma, bar, vouchExists, inReviewCount}", () =>
 		Effect.gen(function* () {
 			const standing = (yield* standingOf({
-				on: true,
 				karma: 12,
 				vouchExists: true,
 				inReviewCount: 3,
@@ -122,7 +104,7 @@ describe("myAuthorshipStanding — the çaylak-self aggregate (#1316)", () => {
 
 	it.effect("vouchExists=true ⇒ bar is the reduced tandem bar", () =>
 		Effect.gen(function* () {
-			const standing = (yield* standingOf({on: true, vouchExists: true})) as AuthorshipStanding;
+			const standing = (yield* standingOf({vouchExists: true})) as AuthorshipStanding;
 			assert.strictEqual(standing.vouchExists, true);
 			assert.strictEqual(standing.bar, VOUCH_PROMOTION_KARMA_BAR);
 		}),
@@ -130,7 +112,7 @@ describe("myAuthorshipStanding — the çaylak-self aggregate (#1316)", () => {
 
 	it.effect("vouchExists=false ⇒ bar is the full unassisted yazar threshold", () =>
 		Effect.gen(function* () {
-			const standing = (yield* standingOf({on: true, vouchExists: false})) as AuthorshipStanding;
+			const standing = (yield* standingOf({vouchExists: false})) as AuthorshipStanding;
 			assert.strictEqual(standing.vouchExists, false);
 			assert.strictEqual(standing.bar, KARMA_THRESHOLDS.yazar);
 		}),
@@ -139,7 +121,6 @@ describe("myAuthorshipStanding — the çaylak-self aggregate (#1316)", () => {
 	it.effect("inReviewCount reflects the reader's own sandboxed-not-removed count", () =>
 		Effect.gen(function* () {
 			const standing = (yield* standingOf({
-				on: true,
 				vouchExists: false,
 				inReviewCount: 7,
 			})) as AuthorshipStanding;
@@ -150,7 +131,6 @@ describe("myAuthorshipStanding — the çaylak-self aggregate (#1316)", () => {
 	it.effect("ONE-WAY-GLASS: the resolved payload carries ONLY aggregate keys", () =>
 		Effect.gen(function* () {
 			const standing = (yield* standingOf({
-				on: true,
 				karma: 5,
 				vouchExists: true,
 				inReviewCount: 1,
@@ -168,28 +148,9 @@ describe("myAuthorshipStanding — the çaylak-self aggregate (#1316)", () => {
 		}),
 	);
 
-	it.effect("dark-ship: flag OFF ⇒ null, and NO trusted source is touched", () =>
+	it.effect("anonymous ⇒ wire UNAUTHORIZED before any read", () =>
 		Effect.gen(function* () {
-			// Every trusted source is fail-on-contact; reaching one would `die`, so a
-			// clean `null` proves the gate short-circuits before any read.
-			const standing = yield* standingOf({
-				on: false,
-				kunye: Layer.succeed(Kunye, {
-					karmaOf: () => Effect.die(new Error("flag OFF must not read karma")),
-					tierOf: () => Effect.die(new Error("unused")),
-					rootOf: (id: string) => Effect.succeed(id),
-				}),
-				ledger: makeVouchLedgerStub({
-					hasActiveFor: () => Effect.die(new Error("flag OFF must not read the vouch ledger")),
-				}),
-			});
-			assert.strictEqual(standing, null);
-		}),
-	);
-
-	it.effect("anonymous ⇒ wire UNAUTHORIZED before the flag or any read", () =>
-		Effect.gen(function* () {
-			const exit = yield* standingOf({on: true, user: undefined}).pipe(Effect.exit);
+			const exit = yield* standingOf({user: undefined}).pipe(Effect.exit);
 			assert.isTrue(Exit.isFailure(exit));
 			if (Exit.isFailure(exit)) {
 				const error = Cause.findErrorOption(exit.cause);

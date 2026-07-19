@@ -8,26 +8,18 @@
  * idiom of `shouldShowOnramp` / `shouldShowCaylakStatus`) so the per-tier mapping
  * is unit-testable without a DOM (`apps/web/src` has no jsdom).
  *
- * Two load-bearing invariants:
- *   - **No false label, ever.** When there is no honest tier to show — the tier is
- *     still loading/errored (`undefined`), or it is the read-time `visitor` rank an
- *     authenticated account never legitimately holds — the function returns `null`,
- *     and the header renders handle-only. It never substitutes a new placeholder
- *     that lies (the exact bug #1302 fixes).
- *   - **Flag-gated, dark by default.** The earned-authorship tier vocabulary ships
- *     dark behind `phoenix-authorship-loop` (ADR 0083), the same seam every other
- *     authorship surface gates on (Karma stat, CaylakStatusBlock #1291,
- *     FirstContributionOnramp). With the flag off the label is `null` → handle-only,
- *     so the tier surfaces here exactly when the rest of the loop does, never
- *     contradicting the dark CaylakStatusBlock.
+ * **No false label, ever.** When there is no honest tier to show — the tier is
+ * still loading/errored (`undefined`), or it is the read-time `visitor` rank an
+ * authenticated account never legitimately holds — the function returns `null`, and
+ * the header renders handle-only. It never substitutes a new placeholder that lies
+ * (the exact bug #1302 fixes).
  *
  * Copy is the lowercase-Turkish glossary rank (`çaylak` / `yazar`,
  * `.glossary/TERMS.md`), never an invented label.
  */
 import type {Tier} from "../../../worker/features/kunye/standing";
 
-export function profileStandingLabel(flagOn: boolean, tier: Tier | undefined): string | null {
-	if (!flagOn) return null;
+export function profileStandingLabel(tier: Tier | undefined): string | null {
 	switch (tier) {
 		case "yazar":
 			return "yazar";

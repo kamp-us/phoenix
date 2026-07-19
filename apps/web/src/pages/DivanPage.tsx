@@ -1,10 +1,7 @@
 /**
  * `DivanPage` — the `/divan` reviewer workspace (#1290, epic #1202): the
  * yazar/mod proving ground where a çaylak's sandboxed work is reviewed toward
- * promotion. The whole surface ships dark behind the `phoenix-authorship-loop`
- * flag (#1204): with the flag off the route renders the 404 (effectively absent);
- * loading shows a neutral placeholder so the 404 never flashes before the flag
- * resolves.
+ * promotion.
  *
  * Access is SERVER-authoritative — the gated `divan.roster` read denies a
  * çaylak/visitor the invisible `UNAUTHORIZED` (`requireDivanAccess`, yazar OR
@@ -24,14 +21,12 @@ import {CaylakDetail} from "../components/divan/CaylakDetail";
 import {DecisionFeed} from "../components/divan/DecisionFeed";
 import {DivanRoster} from "../components/divan/DivanRoster";
 import {useSetDivanSubnavContent} from "../components/divan/DivanSubnavLayout";
-import {shouldRenderDivanPage} from "../components/divan/divanGating";
 import {Raporlar} from "../components/divan/Raporlar";
 import {TriageLoop} from "../components/divan/TriageLoop";
 import type {SubnavFilter} from "../components/layout/Subnav";
 import {Screen} from "../fate/Screen";
-import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_NAV_IA} from "../flags/keys";
+import {PHOENIX_NAV_IA} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
-import {NotFoundPage} from "./NotFoundPage";
 import "../components/divan/Divan.css";
 
 // The çaylaklar ↔ raporlar section switch as Subnav filters (#2604): when the nav-IA zone is
@@ -42,21 +37,6 @@ const DIVAN_SECTION_FILTERS: SubnavFilter[] = [
 ];
 
 export function DivanPage() {
-	const {value: flagOn, loading: flagLoading} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
-
-	// Don't decide 404-vs-page until the flag resolves, or the 404 flashes first.
-	if (flagLoading) {
-		return (
-			<div className="kp-divan">
-				<div className="kp-divan__inner">
-					<p className="kp-divan__loading">yükleniyor…</p>
-				</div>
-			</div>
-		);
-	}
-
-	if (!shouldRenderDivanPage(flagOn)) return <NotFoundPage />;
-
 	return <DivanWorkspace />;
 }
 

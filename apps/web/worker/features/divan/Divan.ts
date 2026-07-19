@@ -9,9 +9,8 @@
  * It does NOT re-derive the predicate and does NOT touch `sandboxVisibleWhere` —
  * inline sözlük/pano reads stay `{mod, author}`. A yazar gains visibility into çaylak
  * work ONLY through this service, reached only past the {@link requireDivanAccess}
- * gate and only when the `PHOENIX_AUTHORSHIP_LOOP` flag is on (both enforced at the
- * fate resolver). The service read itself is unconditional, exactly like the
- * `listSandboxed*` reads it builds on.
+ * gate (enforced at the fate resolver). The service read itself is unconditional,
+ * exactly like the `listSandboxed*` reads it builds on.
  *
  * Two reads:
  *   - {@link Divan.roster} — the pending-çaylak roster (grouped by author, per-kind

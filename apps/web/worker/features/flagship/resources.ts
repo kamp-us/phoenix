@@ -17,7 +17,6 @@ import {
 	MEMBER_MUTE,
 	PANO_DRAFT_SAVE,
 	PHOENIX_ADMIN_CONSOLE,
-	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
 	PHOENIX_EDGE_SHELL_BOOT,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
@@ -35,7 +34,6 @@ import {
 	PHOENIX_USER_ROLE_ASSIGN,
 	PROFILE_CANVAS,
 } from "../../../src/flags/keys.ts";
-import {AUDIT_ENVIRONMENT} from "../../environment.ts";
 
 /**
  * The Cloudflare Flagship app — the container the worker's feature flags live in
@@ -95,7 +93,6 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 
 export {
 	PANO_DRAFT_SAVE,
-	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
@@ -196,81 +193,6 @@ export const MECMUA_FEED_FLAG = {
  */
 export const mecmuaFeedFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("mecmua_feed", {appId, ...MECMUA_FEED_FLAG});
-
-/**
- * The earned-authorship loop (çaylak→yazar) dark-ship flag config (#1204, epic
- * #1202). The SINGLE seam the whole authorship-loop epic gates behind: each
- * subsequent child wraps its surface (sözlük/pano/pasaport resolvers + the UI)
- * behind this one key rather than inventing its own gate. Default-OFF so the loop
- * reaches production dark — with it off, the product behaves exactly as today
- * (public read, existing member|moderator semantics); flipping it on is the human
- * release act (ADR 0083). This child is the contract/seam only — it gates no
- * existing surface (the loop's surfaces don't exist yet), it just provides the
- * readable key.
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_DRAFT_SAVE_FLAG`, #746): the factory spreads it into `FlagshipFlag`; the
- * test asserts `defaultVariation`/`variations.off` on this same record.
- *
- * Per-flag metadata (the IaC ownership record the lifecycle pattern asks for —
- * see `.patterns/feature-flags-schema-lifecycle.md`):
- *   - owner:           sozluk (the çaylak→yazar tier system's home product)
- *   - originating:     #1204 (epic: earned-authorship loop, #1202)
- *   - removal trigger: once the authorship loop is on at 100% and stable for one
- *                      release, retire the flag and inline the now-permanent path.
- */
-export const AUTHORSHIP_LOOP_FLAG = {
-	key: PHOENIX_AUTHORSHIP_LOOP,
-	description:
-		"earned-authorship loop (çaylak→yazar) dark-ship (#1204, epic #1202). owner: sozluk. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * The environment-targeting force-on rule for the authorship loop (#1511, epic
- * #1510 — the rite-audit harness gating prerequisite). The dedicated audit stage's
- * non-interactive force-on seam: a single rule that serves `on` IFF the request's
- * `environment` attribute equals the `audit` deploy class (sourced from the
- * `ENVIRONMENT` config by `makeRequestFlagsContext`, mapped from the `audit` stage
- * by `environmentForStage`). So a stage deployed with `ENVIRONMENT=audit` reads the
- * flag on with zero human interaction.
- *
- * Prod-never is STRUCTURAL, not a convention: a `production` deploy carries
- * `environment: "production"`, and `equals "audit"` cannot match it; the only stage
- * that maps to `audit` is the dedicated `audit` stage (`environmentForStage` maps
- * `prod`→`production`, every other stage→`preview`), so no env value or config can
- * make this rule fire in production. Per-PR `preview` stages carry
- * `environment: "preview"` and never match either. The flag's `defaultVariation`
- * stays `off`, so everything outside the audit class is the unchanged dark-ship safe
- * state (ADR 0083) — this rule adds ZERO production behavior change.
- *
- * Single-sourced as a typed constant so the audit-only / prod-never invariant is
- * unit-inspectable (`authorship-loop-force-on.invariant.test.ts`) off the SAME
- * record the factory ships. The `: FlagshipFlagRule[]` annotation contextually types
- * the `equals` operator literal against the operator union (per
- * `.patterns/feature-flags-targeting.md`'s sanctioned taxonomy).
- */
-export const AUTHORSHIP_LOOP_RULES: Cloudflare.Flagship.FlagRule[] = [
-	{
-		priority: 1,
-		conditions: [{attribute: "environment", operator: "equals", value: AUDIT_ENVIRONMENT}],
-		serveVariation: "on",
-	},
-];
-
-/**
- * The audit-only force-on rule (`AUTHORSHIP_LOOP_RULES`) layered over the default-off
- * dark-ship config. `appId` is resolved at deploy (see `demoTargetingFlag` for why
- * it's a factory, not a module constant).
- */
-export const authorshipLoopFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("phoenix_authorship_loop", {
-		appId,
-		...AUTHORSHIP_LOOP_FLAG,
-		rules: AUTHORSHIP_LOOP_RULES,
-	});
 
 /**
  * The optimistic in-place content-edit dark-ship flag config (#1675, epic #1637).
@@ -458,9 +380,9 @@ export const reactionsFlag = (appId: Input<string>) =>
  * production dark: with it off the karma read never runs and every write behaves
  * exactly as today; flipping it on is the human release act (ADR 0083).
  *
- * A separate axis from the çaylak→yazar authorship-loop flag (tier gating) and the
- * mod-queue flag (ADR 0098 moderation) — these are anti-abuse karma-value floors,
- * not a second tier ladder (no double-gating, #150 rescope 2026-07-02).
+ * A separate axis from the çaylak→yazar tier gating and the mod-queue flag (ADR
+ * 0098 moderation) — these are anti-abuse karma-value floors, not a second tier
+ * ladder (no double-gating, #150 rescope 2026-07-02).
  *
  * Exported as a plain object so the default-=-safe-state invariant is
  * unit-inspectable WITHOUT constructing the alchemy resource (mirrors

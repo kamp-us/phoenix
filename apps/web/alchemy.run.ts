@@ -41,7 +41,6 @@ import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
 import {
 	adminConsoleFlag,
-	authorshipLoopFlag,
 	bildirimFlag,
 	demoTargetingFlag,
 	edgeShellBootFlag,
@@ -88,9 +87,6 @@ export default Alchemy.Stack(
 		// The mecmua write-path dark-ship flag, default-off (#2497, epic #2467) — the
 		// single seam mecmua.publish + mecmua.saveDraft gate behind until a human release.
 		yield* mecmuaWriteFlag(flagship.appId);
-		// The earned-authorship loop (çaylak→yazar) dark-ship flag, default-off
-		// (#1204, epic #1202) — the single seam the authorship-loop epic gates behind.
-		yield* authorshipLoopFlag(flagship.appId);
 		// The optimistic in-place content-edit dark-ship flag, default-off (#1675,
 		// epic #1637) — post/comment/definition edits pass an optimistic payload only
 		// behind this key until a human release.

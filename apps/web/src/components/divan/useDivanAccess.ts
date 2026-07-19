@@ -19,37 +19,28 @@
  * sits in the `Layout` shell above any `<Screen>` Suspense boundary, so it must
  * resolve to a safe default rather than suspend.
  *
- * Two guards keep it dark and fail-closed:
- *   - It only probes when the `phoenix-authorship-loop` flag is on AND the viewer
- *     is signed in. With the flag off the gated read returns an EMPTY connection
- *     (success) for everyone, so probing then would falsely "grant" a çaylak —
- *     gating the probe on the flag is what makes the flag-on denial meaningful.
- *   - Any error (the `UNAUTHORIZED` denial, or a transport failure) ⇒ not granted.
- *     The returned value ANDs the flag back in, so a stale grant can never outlive
- *     the flag.
+ * Fail-closed: it only probes when the viewer is signed in, and any error (the
+ * `UNAUTHORIZED` denial, or a transport failure) ⇒ not granted.
  */
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {DivanCaylak} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import type {MeUser} from "../../auth/useMe";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../../flags/keys";
-import {useFlag} from "../../flags/useFlag";
 import {shouldProbeDivanRoster} from "./divanGating";
 
 const DivanAccessProbeView = view<DivanCaylak>()({id: true});
 const DivanRosterProbeConnection = {items: {node: DivanAccessProbeView}} as const;
 
 export function useDivanAccess(me: MeUser | null): boolean {
-	const {value: flagOn} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	const session = useSession();
 	const fate = useFateClient();
 	const [granted, setGranted] = useState(false);
 	const signedIn = !!session.data;
-	// Fire the wire probe only when the flag+session are on AND access isn't
-	// client-provably denied (#2209): a çaylak/non-mod short-circuits off the wire; a
-	// not-yet-loaded `me`, a yazar, or a moderator is ambiguous ⇒ still probed.
-	const probeWire = shouldProbeDivanRoster(flagOn, signedIn, me?.tier, me?.isModerator);
+	// Fire the wire probe only when signed in AND access isn't client-provably denied
+	// (#2209): a çaylak/non-mod short-circuits off the wire; a not-yet-loaded `me`, a
+	// yazar, or a moderator is ambiguous ⇒ still probed.
+	const probeWire = shouldProbeDivanRoster(signedIn, me?.tier, me?.isModerator);
 
 	const probe = useCallback(async () => {
 		if (!probeWire) {
@@ -72,6 +63,5 @@ export function useDivanAccess(me: MeUser | null): boolean {
 		void probe();
 	}, [probe]);
 
-	// AND the flag back in so a grant can never outlive the flag flipping off.
-	return flagOn && granted;
+	return granted;
 }

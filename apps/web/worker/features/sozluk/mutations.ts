@@ -100,8 +100,7 @@ export const mutations = {
 			const add = Effect.fn("definition.addBody")(function* () {
 				const sozluk = yield* Sozluk;
 				const live = sozlukLive(yield* WorkerLivePublisher);
-				// A çaylak's new definition lands sandboxed when the authorship-loop flag
-				// is on; flag-off / yazar ⇒ live, exactly as today (#1205).
+				// A çaylak's new definition lands sandboxed; a yazar's is live (#1205).
 				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
 				const result = yield* sozluk.addDefinition({
 					termSlug: input.termSlug,

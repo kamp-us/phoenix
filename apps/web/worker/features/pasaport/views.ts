@@ -29,7 +29,7 @@ export type ContributionViewRow = ViewRow<ContributionRow>;
 // `user.tier` column read fresh through pasaport), NEVER from the `input:false`
 // better-auth session additionalField (#1203/#1297). Always present — the value
 // is not secret; the frontend gates rendering of authorship affordances on the
-// `phoenix-authorship-loop` flag, not on the field's presence.
+// trusted tier, not on the field's presence.
 //
 // `isModerator` is the SELF moderator signal (#1320): the resolver reads it
 // server-side off the `moderates` `relation_tuple` (`kunye/moderate.ts`'s

@@ -195,8 +195,7 @@ export const mutations = {
 			const submit = Effect.fn("post.submitBody")(function* () {
 				const pano = yield* Pano;
 				const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-				// A çaylak's new post lands sandboxed when the authorship-loop flag is on;
-				// flag-off / yazar ⇒ live, exactly as today (#1205).
+				// A çaylak's new post lands sandboxed; a yazar's is live (#1205).
 				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
 				const r = yield* pano.submitPost({
 					title: input.title,
@@ -552,8 +551,7 @@ export const mutations = {
 			const add = Effect.fn("comment.addBody")(function* () {
 				const pano = yield* Pano;
 				const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
-				// A çaylak's new comment lands sandboxed when the authorship-loop flag is
-				// on; flag-off / yazar ⇒ live, exactly as today (#1205).
+				// A çaylak's new comment lands sandboxed; a yazar's is live (#1205).
 				const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
 				const r = yield* pano.addComment({
 					postId: input.postId,

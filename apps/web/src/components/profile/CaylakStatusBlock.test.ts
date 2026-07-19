@@ -13,29 +13,25 @@ import {
 	vouchExistsLabel,
 } from "./CaylakStatusBlock";
 
-describe("shouldShowCaylakStatus — the three-gate AND (flag + çaylak + own profile)", () => {
-	it("shows only when the flag is on AND the viewer is a çaylak AND it is their own profile", () => {
-		expect(shouldShowCaylakStatus(true, "çaylak", true)).toBe(true);
+describe("shouldShowCaylakStatus — the two-gate AND (çaylak + own profile)", () => {
+	it("shows only when the viewer is a çaylak AND it is their own profile", () => {
+		expect(shouldShowCaylakStatus("çaylak", true)).toBe(true);
 	});
 
-	it("stays dark when the flag is off (default / dark-ship)", () => {
-		expect(shouldShowCaylakStatus(false, "çaylak", true)).toBe(false);
-	});
-
-	it("never shows on another user's profile, even for a çaylak with the flag on", () => {
-		expect(shouldShowCaylakStatus(true, "çaylak", false)).toBe(false);
+	it("never shows on another user's profile, even for a çaylak", () => {
+		expect(shouldShowCaylakStatus("çaylak", false)).toBe(false);
 	});
 
 	it("never shows for a yazar (their work is not in the çaylak loop)", () => {
-		expect(shouldShowCaylakStatus(true, "yazar", true)).toBe(false);
+		expect(shouldShowCaylakStatus("yazar", true)).toBe(false);
 	});
 
 	it("never shows for a visitor (signed-out / no account)", () => {
-		expect(shouldShowCaylakStatus(true, "visitor", true)).toBe(false);
+		expect(shouldShowCaylakStatus("visitor", true)).toBe(false);
 	});
 
 	it("stays dark while the tier is unknown (me not yet loaded / signed out)", () => {
-		expect(shouldShowCaylakStatus(true, undefined, true)).toBe(false);
+		expect(shouldShowCaylakStatus(undefined, true)).toBe(false);
 	});
 });
 

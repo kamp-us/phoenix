@@ -2,15 +2,14 @@
  * The divan surface's render decisions, factored DOM-free so each gate is
  * unit-testable without a DOM/React runtime — the pure-extraction idiom of
  * `flagGateChild` / `shouldShowOnramp` (`apps/web/src` has no jsdom). The divan
- * (#1290, epic #1202) is the yazar/mod proving ground, shipped dark behind the
- * `phoenix-authorship-loop` flag (#1204).
+ * (#1290, epic #1202) is the yazar/mod proving ground.
  *
  * The role model the gates encode (mirroring the backend `requireDivanAccess`
  * disjunction, divan/gate.ts): the divan is reached by yazar OR mod. The frontend's
- * trusted signals are the flag value and `useMe().me` — both `tier` and the
- * server-authoritative `isModerator` (#1320, read off the `moderates` relation
- * tuple) — plus the server's own access verdict (the gated `divan.roster` read
- * either resolves or denies with the invisible `UNAUTHORIZED`). So:
+ * trusted signals are `useMe().me` — both `tier` and the server-authoritative
+ * `isModerator` (#1320, read off the `moderates` relation tuple) — plus the server's
+ * own access verdict (the gated `divan.roster` read either resolves or denies with
+ * the invisible `UNAUTHORIZED`). So:
  *
  *   - **Access** (topbar entry + page) is server-authoritative: the
  *     `useDivanAccess` probe asks the gated read whether THIS user stands, which
@@ -28,25 +27,6 @@
 import {TARGET_KINDS, type TargetKind} from "../../../worker/db/target-kind";
 import type {Tier} from "../../../worker/features/kunye/standing";
 import {actorLabel} from "../moderation/actor-identity";
-
-/**
- * Show the `/divan` page content iff the authorship-loop flag is on. Off (and
- * every flag failure mode — loading/error/undeclared all resolve to `false`
- * upstream) renders the 404, so with the flag off the route is effectively absent.
- */
-export function shouldRenderDivanPage(flagOn: boolean): boolean {
-	return flagOn;
-}
-
-/**
- * Show the topbar `/divan` entry iff the flag is on AND the server granted divan
- * access (the yazar-OR-mod probe). A çaylak/visitor's probe denies (`accessGranted`
- * false), and a flag-off render never probes — both yield `false`, so the entry is
- * invisible to everyone but a yazar/mod with the loop on.
- */
-export function shouldShowDivanEntry(flagOn: boolean, accessGranted: boolean): boolean {
-	return flagOn && accessGranted;
-}
 
 /**
  * Can the CLIENT prove — from its trusted signals alone — that `divan.roster`
@@ -69,21 +49,20 @@ export function divanAccessDefinitelyDenied(
 
 /**
  * Should `useDivanAccess` fire the server-side `divan.roster` wire probe (#2209)?
- * TRUE only when the flag is on, the viewer is signed in, and access is NOT
- * client-provably denied. A provably-denied çaylak/non-mod ({@link
- * divanAccessDefinitelyDenied}) returns `false` — the guaranteed-`UNAUTHORIZED`
- * request is never issued — while the AMBIGUOUS case (a not-yet-loaded `me`, a
- * yazar, or a moderator) returns `true`, so the server stays the sole authority for
- * the yazar/mod grant. Factored DOM-free so "the probe fires iff …" is asserted
- * without a React runtime (`apps/web/src` has no jsdom).
+ * TRUE only when the viewer is signed in and access is NOT client-provably denied.
+ * A provably-denied çaylak/non-mod ({@link divanAccessDefinitelyDenied}) returns
+ * `false` — the guaranteed-`UNAUTHORIZED` request is never issued — while the
+ * AMBIGUOUS case (a not-yet-loaded `me`, a yazar, or a moderator) returns `true`, so
+ * the server stays the sole authority for the yazar/mod grant. Factored DOM-free so
+ * "the probe fires iff …" is asserted without a React runtime (`apps/web/src` has no
+ * jsdom).
  */
 export function shouldProbeDivanRoster(
-	flagOn: boolean,
 	signedIn: boolean,
 	tier: Tier | undefined,
 	isModerator: boolean | undefined,
 ): boolean {
-	return flagOn && signedIn && !divanAccessDefinitelyDenied(tier, isModerator);
+	return signedIn && !divanAccessDefinitelyDenied(tier, isModerator);
 }
 
 /**

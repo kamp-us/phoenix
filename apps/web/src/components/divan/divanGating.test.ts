@@ -2,8 +2,8 @@
  * The divan surface's gating contract (#1290, epic #1202) — the pure render
  * decisions asserted without a DOM (the pure-extraction idiom of `flagGateChild`
  * / `shouldShowOnramp`; `apps/web/src` has no jsdom/testing-library). These are
- * the AC the surface lives or dies on: flag-off ⇒ no route + no topbar entry;
- * çaylak/visitor ⇒ no topbar entry; vouch disabled until the detail is opened.
+ * the AC the surface lives or dies on: çaylak/visitor ⇒ no topbar entry; vouch
+ * disabled until the detail is opened.
  */
 import {describe, expect, it} from "vitest";
 import {
@@ -16,42 +16,10 @@ import {
 	promoteOutcomeMessage,
 	promoteVisible,
 	shouldProbeDivanRoster,
-	shouldRenderDivanPage,
-	shouldShowDivanEntry,
 	vouchOutcome,
 	vouchOutcomeMessage,
 	vouchVisible,
 } from "./divanGating";
-
-describe("shouldRenderDivanPage — the flag-gated route", () => {
-	it("renders the page when the loop flag is on", () => {
-		expect(shouldRenderDivanPage(true)).toBe(true);
-	});
-
-	it("renders the 404 (route absent) when the flag is off", () => {
-		// loading / fetch-error / undeclared all resolve to `false` upstream, so the
-		// route is absent in every flag failure mode too.
-		expect(shouldRenderDivanPage(false)).toBe(false);
-	});
-});
-
-describe("shouldShowDivanEntry — the yazar/mod-only topbar entry", () => {
-	it("shows the entry only when the flag is on AND access was granted", () => {
-		expect(shouldShowDivanEntry(true, true)).toBe(true);
-	});
-
-	it("hides the entry when the flag is off, even if access was (somehow) granted", () => {
-		expect(shouldShowDivanEntry(false, true)).toBe(false);
-	});
-
-	it("hides the entry for a denied (çaylak/visitor) probe even with the flag on", () => {
-		expect(shouldShowDivanEntry(true, false)).toBe(false);
-	});
-
-	it("hides the entry when both are false", () => {
-		expect(shouldShowDivanEntry(false, false)).toBe(false);
-	});
-});
 
 describe("divanAccessDefinitelyDenied — the #2209 client short-circuit for the roster probe", () => {
 	it("is TRUE for a loaded çaylak non-moderator (the guaranteed-UNAUTHORIZED case → skip the probe)", () => {
@@ -79,25 +47,24 @@ describe("divanAccessDefinitelyDenied — the #2209 client short-circuit for the
 
 describe("shouldProbeDivanRoster — fire the wire probe iff not client-provably denied (#2209)", () => {
 	it("does NOT fire the roster probe for a signed-in çaylak non-moderator (guaranteed UNAUTHORIZED)", () => {
-		expect(shouldProbeDivanRoster(true, true, "çaylak", false)).toBe(false);
+		expect(shouldProbeDivanRoster(true, "çaylak", false)).toBe(false);
 	});
 
 	it("does NOT fire for a signed-in visitor non-moderator", () => {
-		expect(shouldProbeDivanRoster(true, true, "visitor", false)).toBe(false);
+		expect(shouldProbeDivanRoster(true, "visitor", false)).toBe(false);
 	});
 
 	it("DOES fire for the ambiguous not-yet-loaded viewer (undefined signals)", () => {
-		expect(shouldProbeDivanRoster(true, true, undefined, undefined)).toBe(true);
+		expect(shouldProbeDivanRoster(true, undefined, undefined)).toBe(true);
 	});
 
 	it("DOES fire for a yazar and for a çaylak moderator — the server is the authority for the grant", () => {
-		expect(shouldProbeDivanRoster(true, true, "yazar", false)).toBe(true);
-		expect(shouldProbeDivanRoster(true, true, "çaylak", true)).toBe(true);
+		expect(shouldProbeDivanRoster(true, "yazar", false)).toBe(true);
+		expect(shouldProbeDivanRoster(true, "çaylak", true)).toBe(true);
 	});
 
-	it("never fires with the flag off or while signed out, regardless of tier", () => {
-		expect(shouldProbeDivanRoster(false, true, "yazar", true)).toBe(false);
-		expect(shouldProbeDivanRoster(true, false, "yazar", true)).toBe(false);
+	it("never fires while signed out, regardless of tier", () => {
+		expect(shouldProbeDivanRoster(false, "yazar", true)).toBe(false);
 	});
 });
 

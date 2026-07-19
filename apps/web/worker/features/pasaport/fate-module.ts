@@ -28,8 +28,8 @@ const roots: FateRootsRecord = {
 	me: userDataView,
 	profile: profileDataView,
 	// The çaylak-self "yazarlığa giden yol" aggregate (#1316, epic #1202) — a query
-	// root keyed on `CurrentUser` (self-only), aggregate-only (one-way-glass), behind
-	// `PHOENIX_AUTHORSHIP_LOOP`. Resolved inline by the `myAuthorshipStanding` resolver.
+	// root keyed on `CurrentUser` (self-only), aggregate-only (one-way-glass).
+	// Resolved inline by the `myAuthorshipStanding` resolver.
 	myAuthorshipStanding: authorshipStandingDataView,
 	// The admin ban-state read (#970, epic #968) — `requireAdmin`-gated + behind
 	// `phoenix-user-ban`; the `user.banState` resolver owns the gate.

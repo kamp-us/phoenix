@@ -3,14 +3,11 @@
  * the proving ground, crediting the author's GLOBAL karma so a sandboxed çaylak can earn
  * toward the reduced çaylak→yazar promotion bar (#1289).
  *
- * Two gates, exactly the read model's (`lists.ts`):
- *
- *   1. `PHOENIX_AUTHORSHIP_LOOP` (default-off, ADR 0081/0083) — off ⇒ the body short-circuits
- *      to an inert receipt (no gate check, no write), so the path ships dark until release.
- *   2. {@link requireDivanAccess} (yazar OR mod) — `yield* ViewDivan` makes the cast
- *      unreachable without the discharged grant, so a çaylak / public / anonymous actor is
- *      denied the invisible {@link Denied}. This IS the "non-gated actor cannot vote a
- *      sandboxed item" guarantee — a compile-error gate, not an `if` (ADR 0107).
+ * The gate, exactly the read model's (`lists.ts`): {@link requireDivanAccess} (yazar OR
+ * mod) — `yield* ViewDivan` makes the cast unreachable without the discharged grant, so a
+ * çaylak / public / anonymous actor is denied the invisible {@link Denied}. This IS the
+ * "non-gated actor cannot vote a sandboxed item" guarantee — a compile-error gate, not an
+ * `if` (ADR 0107).
  *
  * The cast itself delegates to `Vote.castOnSandboxed` — the ONLY caller of the
  * sandbox-permitting path. The inline sözlük/pano vote paths use `Vote.cast`, which rejects a
@@ -26,22 +23,13 @@
 import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
 import {parseTargetKey, type TargetKind, targetKey} from "../../db/target-kind.ts";
 import {notifyDivanVote} from "../bildirim/rite-emitters.ts";
-import {Flags} from "../flagship/Flags.ts";
-import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied} from "../kunye/errors.ts";
 import {resolveTandem} from "../pasaport/tandem.ts";
 import {Vote} from "../vote/Vote.ts";
 import {requireDivanAccess, ViewDivan} from "./gate.ts";
 import {DivanVoteReceiptView} from "./views.ts";
-
-/** Is the earned-authorship loop on for this request? Safe-default `false` (dark). */
-const loopOn = Effect.gen(function* () {
-	const flags = yield* Flags;
-	return yield* flags.getBoolean(PHOENIX_AUTHORSHIP_LOOP, false).pipe(provideRequestFlags);
-});
 
 const DivanVoteInput = Schema.Struct({
 	/** The backlog item's `<kind>:<itemId>` composite id (see `DivanBacklogItemView`). */
@@ -70,9 +58,6 @@ export const mutations = {
 			error: Schema.Union([Denied]),
 		},
 		Effect.fn("divan.vote")(function* ({input}) {
-			if (!(yield* loopOn)) {
-				return {__typename: "DivanVoteReceipt" as const, id: input.id, score: 0, myVote: false};
-			}
 			const ref = parseItemId(input.id);
 			if (ref === null) {
 				return yield* new Denied({message: "Oy verilecek içerik bulunamadı."});

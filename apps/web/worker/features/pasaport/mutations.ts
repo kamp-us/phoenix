@@ -10,7 +10,6 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {
-	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_USER_BAN,
 	PHOENIX_USER_ROLE_ASSIGN,
@@ -56,17 +55,6 @@ import {
 	RoleStateView,
 	UserView,
 } from "./views.ts";
-
-/**
- * Is the #1204 authorship-loop dark-ship flag on for this request? The promotion
- * surface is gated behind it (default-off), the way #1205 gated its sandbox write —
- * a Flagship outage or the unflipped default both read `false`, so the loop stays
- * dark until a human flips it at release (ADR 0083).
- */
-const authorshipLoopOn = Effect.gen(function* () {
-	const flags = yield* Flags;
-	return yield* flags.getBoolean(PHOENIX_AUTHORSHIP_LOOP, false).pipe(provideRequestFlags);
-});
 
 /**
  * Is the #970 user-ban dark-ship flag on for this request? Safe-default `false`
@@ -271,10 +259,7 @@ export const mutations = {
 
 	// Direct moderator promotion (#1206) — the `Moderate` capability gates it
 	// (`requireModeration`): anonymous or non-moderator → the invisible `Denied`
-	// (`UNAUTHORIZED`), so the surface is invisible to non-moderators. Dark-shipped
-	// behind the #1204 authorship flag: with the flag off the body short-circuits to
-	// an inert receipt (no authority check, no write), so the path is unreachable
-	// until a human flips the flag at release.
+	// (`UNAUTHORIZED`), so the surface is invisible to non-moderators.
 	"user.promote": Fate.mutation(
 		{
 			input: PromoteInput,
@@ -282,9 +267,6 @@ export const mutations = {
 			error: Schema.Union([Denied]),
 		},
 		Effect.fn("user.promote")(function* ({input}) {
-			if (!(yield* authorshipLoopOn)) {
-				return toPromotionReceipt({userId: input.userId, promoted: false, vouchRecorded: false});
-			}
 			return yield* requireModeration(promoteGated(input));
 		}),
 	),
@@ -293,7 +275,7 @@ export const mutations = {
 	// gates it (`requireVouch`): a non-yazar → the public `RequiresLevel` (`FORBIDDEN`).
 	// A çaylak therefore can't vouch and a yazar self-vouch is inert (already yazar), so
 	// self-promotion is impossible across both paths. The concurrent-vouch cap (D5) adds
-	// `VouchLimitReached` past the floor. Same #1204 dark-ship gate.
+	// `VouchLimitReached` past the floor.
 	"user.vouch": Fate.mutation(
 		{
 			input: VouchInput,
@@ -301,22 +283,14 @@ export const mutations = {
 			error: Schema.Union([RequiresLevel, VouchLimitReached]),
 		},
 		Effect.fn("user.vouch")(function* ({input}) {
-			if (!(yield* authorshipLoopOn)) {
-				return toPromotionReceipt({
-					userId: input.candidateId,
-					promoted: false,
-					vouchRecorded: false,
-				});
-			}
 			return yield* requireVouch(vouchGated(input));
 		}),
 	),
 
 	// Withdraw a vouch (#1289) — the `Vouch`-gated inverse of `user.vouch`: a yazar
 	// retracts their own active vouch for `candidateId`, deleting the row and returning
-	// the cap slot. Same yazar floor (`requireVouch`) and #1204 dark-ship gate; the
-	// receipt is a plain ack (`promoted:false`, `vouchRecorded:false`) — withdrawing
-	// never promotes.
+	// the cap slot. Same yazar floor (`requireVouch`); the receipt is a plain ack
+	// (`promoted:false`, `vouchRecorded:false`) — withdrawing never promotes.
 	"user.withdrawVouch": Fate.mutation(
 		{
 			input: WithdrawVouchInput,
@@ -324,13 +298,6 @@ export const mutations = {
 			error: Schema.Union([RequiresLevel]),
 		},
 		Effect.fn("user.withdrawVouch")(function* ({input}) {
-			if (!(yield* authorshipLoopOn)) {
-				return toPromotionReceipt({
-					userId: input.candidateId,
-					promoted: false,
-					vouchRecorded: false,
-				});
-			}
 			return yield* requireVouch(withdrawGated(input));
 		}),
 	),
