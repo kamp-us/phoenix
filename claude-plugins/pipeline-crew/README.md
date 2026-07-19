@@ -207,6 +207,7 @@ pipeline-crew/
 │   └── spawn-role.md             # launch ONE on-demand role (the HITL cartographer, a scaled-up engine)
 ├── REFERENCE.md                  # the plugin's contracts (frontmatter · roster · config keys · transports)
 ├── EXPLANATION.md                # the why: roster law · §CP hard gate · verify-don't-relay · single-owner comms
+├── HOW-TO.md                     # task recipes: add a role · configure personalization · reboot · carry a §CP PR · retire a crew
 ├── PERSONALIZATION.md            # the personalization seam — the config contract + dimensions
 ├── PROBES.md                     # probe discipline — fail-open liveness/health probes (#3411)
 ├── crew.config.template.jsonc    # placeholder-only per-install config template
@@ -219,6 +220,8 @@ pipeline-crew/
   the role roster (bridges vs engine), the `crew.config.jsonc` keys, and the notification transports.
 - [`EXPLANATION.md`](EXPLANATION.md) — the *why* behind the four defs: the roster law, the §CP
   hard gate, verify-don't-relay, and single-owner human comms — pointing out to ADRs 0189/0135/0058.
+- [`HOW-TO.md`](HOW-TO.md) — task recipes against a running crew: add a role, configure
+  personalization, reboot the crew, carry a §CP PR, and retire a crew.
 - [`PERSONALIZATION.md`](PERSONALIZATION.md) — the seam mechanism, the dimension table, and the
   stand-up contract the four defs write against.
 - [`PROBES.md`](PROBES.md) — probe discipline: liveness/health probes fail OPEN (an unrunnable
