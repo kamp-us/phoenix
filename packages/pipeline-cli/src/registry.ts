@@ -49,6 +49,7 @@ import {roadmapGuardCommand} from "./tools/roadmap-guard/command.ts";
 import {settingsEnvGuardCommand} from "./tools/settings-env-guard/command.ts";
 import {shipDigestCommand} from "./tools/ship-digest/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
+import {splitGuardCommand} from "./tools/split-guard/command.ts";
 import {structuredOutputGuardCommand} from "./tools/structured-output-guard/command.ts";
 import {tokenSpendCommand} from "./tools/token-spend/command.ts";
 import {trivialDiffCommand} from "./tools/trivial-diff/command.ts";
@@ -137,6 +138,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	catalogGuardCommand,
 	patchGuardCommand,
 	intakeDedupCommand,
+	splitGuardCommand,
 	redactLeaksCommand,
 	commandsCommand,
 	// The ADR-0158 unresolved-inline-thread merge gate's fail-closed enforcement (#3331):
