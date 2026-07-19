@@ -83,20 +83,23 @@ test.describe("SozlukHome create-flow (+ yeni tanım → composer)", () => {
 
 		await page.getByRole("button", {name: /yeni tanım/i}).click();
 
-		// Let the dialog's `kp-dialog-pop` entry animation (a translate+scale pop-in,
-		// Dialog.css) finish before touching its controls. Mid-animation the popup —
-		// and the `oluştur` submit inside it — is still moving, which trips
-		// Playwright's element-stability check and, on the retry, races a Base UI
-		// portal re-render that detaches the button mid-click (the #3517 flake). This
-		// awaits the actual CSS animation to settle, not a blanket sleep.
+		// Gate on the composer's `Terim` input becoming actionable rather than settling the
+		// dialog's `kp-dialog-pop` entry animation. The old settle awaited every animation's
+		// `finished` promise, but the Web Animations API REJECTS `finished` with an AbortError
+		// when an animation is cancelled — and the Base UI portal re-render cancels the entry
+		// animation mid-flight, so `Promise.all` fail-fast rejected and the spec died. That
+		// settle relocated the #3517 portal-re-render race into a hard rejection instead of
+		// removing it (#3526 → #3583). Playwright's built-in actionability on the fill/click
+		// below already waits for the popup to be visible, stable, and hit-testable and
+		// auto-retries a control the re-render detaches mid-action — the real fix for the #3517
+		// detach-mid-click flake.
 		const dialog = page.locator(".kp-dialog__popup");
 		await expect(dialog).toBeVisible();
-		await dialog.evaluate((el) =>
-			Promise.all(el.getAnimations({subtree: true}).map((a) => a.finished)),
-		);
+		const termInput = page.getByLabel("Terim");
+		await termInput.waitFor({state: "visible"});
 
 		// The dialog collects the term name (the composer is slug-addressed).
-		await page.getByLabel("Terim").fill(term);
+		await termInput.fill(term);
 		await page.getByRole("button", {name: /^oluştur$/i}).click();
 
 		// The dialog slugifies + navigates to the fresh-slug composer route.
