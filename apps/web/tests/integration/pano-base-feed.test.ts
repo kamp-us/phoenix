@@ -38,13 +38,6 @@ const BASE_FEED_ON_COOKIE = `phoenix_flag_overrides=${encodeURIComponent(
 	JSON.stringify({"pano-base-feed": true}),
 )}`;
 
-// Both leg-B flags on: the base-feed route AND its edge cache (#2324, ADR 0170). Only
-// with `pano-feed-edge-cache` on does the 200 carry the `Cache-Control`/`Cache-Tag`
-// headers; with it off (the `BASE_FEED_ON_COOKIE` case) the base feed serves uncached.
-const CACHE_ON_COOKIE = `phoenix_flag_overrides=${encodeURIComponent(
-	JSON.stringify({"pano-base-feed": true, "pano-feed-edge-cache": true}),
-)}`;
-
 interface BaseNode {
 	__typename: string;
 	id: string;
@@ -185,19 +178,12 @@ describe("pano base feed — dark behind the leg-B flag (#2322)", () => {
 	});
 });
 
-describe("pano base feed — edge-cache headers behind the leg-B cache flag (#2324, ADR 0170)", () => {
-	it("stamps Cache-Control + Cache-Tag: pano-feed when the cache flag is ON", async () => {
-		const res = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=50`, CACHE_ON_COOKIE);
+describe("pano base feed — edge-cache headers (#2324, ADR 0170)", () => {
+	it("stamps Cache-Control + Cache-Tag: pano-feed on the served base feed", async () => {
+		const res = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=50`, BASE_FEED_ON_COOKIE);
 		expect(res.status).toBe(200);
 		// The TTL backstop + the purge tag the fanned-mutation seam targets (AC#1).
 		expect(res.headers.get("cache-control")).toContain("s-maxage=");
 		expect(res.headers.get("cache-tag")).toBe("pano-feed");
-	});
-
-	it("stamps NO cache headers with the base feed on but the cache flag OFF (AC#5)", async () => {
-		const res = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=50`, BASE_FEED_ON_COOKIE);
-		expect(res.status).toBe(200);
-		expect(res.headers.get("cache-control")).toBeNull();
-		expect(res.headers.get("cache-tag")).toBeNull();
 	});
 });

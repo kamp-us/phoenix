@@ -11,17 +11,12 @@
  * the committed mutation — the swallow-with-log contract lives here, once, exactly as
  * `live-publisher.ts` holds it for the live fan-out.
  *
- * Two containment properties:
- *   - `enabled` is the leg-B cache flag (`pano-feed-edge-cache`, default-off). Off ⇒
- *     `purge()` is a pure no-op that schedules nothing (AC#5: flag off ⇒ no purge
- *     calls). The base-feed route emits no `Cache-Control` under the same flag, so an
- *     off deploy neither caches nor purges.
- *   - The purge is the worker's OWN runtime capability (`ctx.cache.purge`, injected as
- *     `purge` here), scoped to this worker — no zone-level purge, no standing API token
- *     (ADR 0170 honors the prod-cred-free invariant).
- *
  * A lost purge self-heals within the base feed's TTL backstop (`baseFeedCacheControl`),
  * so correctness never depends on a purge landing.
+ *
+ * Containment: the purge is the worker's OWN runtime capability (`ctx.cache.purge`,
+ * injected as `purge` here), scoped to this worker — no zone-level purge, no standing
+ * API token (ADR 0170 honors the prod-cred-free invariant).
  */
 import {Context} from "effect";
 import * as Effect from "effect/Effect";
@@ -62,10 +57,8 @@ export interface WorkerPanoFeedCache {
 	readonly purge: () => Effect.Effect<void>;
 }
 
-/** The two per-request capabilities the purger closes over, plus the flag gate. */
+/** The two per-request capabilities the purger closes over. */
 export interface PanoFeedCacheOptions {
-	/** The leg-B cache flag state (`pano-feed-edge-cache`). Off ⇒ `purge()` no-ops. */
-	readonly enabled: boolean;
 	/**
 	 * Deliver one tag purge — in production `ctx.cache.purge` (the worker's own cache
 	 * capability), in tests a recording/failing/slow stub. A rejection is caught on the
@@ -78,11 +71,6 @@ export interface PanoFeedCacheOptions {
 
 /** Build the per-request base-feed purger. */
 export function panoFeedCacheFor(options: PanoFeedCacheOptions): WorkerPanoFeedCache {
-	// Flag-off is a pure no-op: schedule nothing, touch no capability (AC#5).
-	if (!options.enabled) {
-		return {purge: () => Effect.void};
-	}
-
 	// One purge = one detached promise; the terminal `.catch` is the async half of the
 	// swallow-with-log contract, mirroring `livePublisherFor`'s `schedule`.
 	const schedule = (): void => {
