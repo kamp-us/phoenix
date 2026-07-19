@@ -205,6 +205,7 @@ pipeline-crew/
 ├── commands/
 │   ├── stand-up.md               # boot the whole crew from the operator config
 │   └── spawn-role.md             # launch ONE on-demand role (the HITL cartographer, a scaled-up engine)
+├── TUTORIAL.md                   # zero → a live crew draining the board (hand-held learning lesson)
 ├── REFERENCE.md                  # the plugin's contracts (frontmatter · roster · config keys · transports)
 ├── EXPLANATION.md                # the why: roster law · §CP hard gate · verify-don't-relay · single-owner comms
 ├── PERSONALIZATION.md            # the personalization seam — the config contract + dimensions
@@ -215,6 +216,8 @@ pipeline-crew/
 
 ## See also
 
+- [`TUTORIAL.md`](TUTORIAL.md) — the learning path: stand up your first crew, zero → a live crew
+  draining the board (install · fill one config · `/stand-up` · watch an engine pull the board).
 - [`REFERENCE.md`](REFERENCE.md) — the plugin's contracts, look-it-up: agent-def frontmatter,
   the role roster (bridges vs engine), the `crew.config.jsonc` keys, and the notification transports.
 - [`EXPLANATION.md`](EXPLANATION.md) — the *why* behind the four defs: the roster law, the §CP
