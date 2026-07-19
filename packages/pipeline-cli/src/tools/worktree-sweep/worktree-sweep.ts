@@ -5,7 +5,7 @@
  * boundary (enumerate / status / ancestry / remove) lives in `command.ts`; this module
  * never runs a command and never removes anything.
  *
- * Two swept classes (#2785):
+ * Three swept classes (#2785, #3654):
  *   - **Build worktrees** under `.claude/worktrees/` — a harness-provisioned agent tree
  *     that carries a real branch and may hold unpushed work; removable ONLY when clean AND
  *     its branch's content already landed on `origin/main` (the merge gate below).
@@ -15,6 +15,12 @@
  *     head: they carry NO branch and no unpushed work, so they need no merge gate — a clean,
  *     idle, unlocked one holds nothing recoverable. Without this class they were `not-managed`
  *     and never reaped, so they leaked unbounded (562 accumulated before a manual sweep).
+ *   - **Gone-dir worktrees** (#3654) — ANY tree, managed or foreign, whose working directory
+ *     is already gone (`git worktree list --porcelain` flags it `prunable`). Only the stale
+ *     `.git/worktrees/<id>` admin metadata lingers; there is no on-disk tree to strand and the
+ *     branch ref survives a prune, so it is reaped unconditionally via `git worktree prune`
+ *     (never `git worktree remove`, whose path is missing). This is the bulk of a cross-session
+ *     pile: trees that outlived the sessions whose temp roots were cleaned from under them.
  *
  * The safety property is the whole point (MEMORY "Safe worktree prune", #1243 AC):
  * a worktree is removable ONLY when it is clean AND its branch's content has already
@@ -74,6 +80,15 @@ export const isSweptWorktree = (path: string): boolean =>
 export interface WorktreeRecord {
 	readonly path: string;
 	readonly branch: string | null;
+	/**
+	 * The tree's working directory is already gone — `git worktree list --porcelain`
+	 * flagged it `prunable` (its gitdir points at a non-existent location, #3654). Only
+	 * the stale `.git/worktrees/<id>` admin metadata survives; there is no on-disk working
+	 * tree to hold unpushed work, and the branch ref is untouched by a prune, so any
+	 * committed work stays in the object store. Checked FIRST in `classifyWorktree` —
+	 * before managed-ness or dirtiness — because it is unconditionally safe to reap.
+	 */
+	readonly prunable: boolean;
 	readonly isDirty: boolean;
 	/** HEAD is a commit-ancestor of `origin/main` (non-squash merge, or detached at a merged commit). */
 	readonly reachableFromOriginMain: boolean;
@@ -113,6 +128,14 @@ export type KeepReason =
 
 /** Why a worktree is REMOVABLE — a build tree clean AND on `origin/main`, or an idle review-head tree. */
 export type RemoveReason =
+	/**
+	 * The working directory is already gone — reap the stale `.git/worktrees/<id>` metadata
+	 * via `git worktree prune` (#3654). No `git worktree remove` (the path is missing); the
+	 * prune only clears admin metadata and never touches a branch ref, so nothing recoverable
+	 * is lost. This is the bulk of a cross-session pile: trees whose sessions' temp roots were
+	 * cleaned out from under them.
+	 */
+	| "gone-dir"
 	/** Clean, on a branch whose tip is reachable from `origin/main` (merged). */
 	| "merged-clean"
 	/** Clean, detached at a commit reachable from `origin/main`. */
@@ -151,8 +174,13 @@ export interface WorktreeSweepPlan {
 /**
  * Classify a single worktree. The order of checks IS the safety policy:
  *
+ *   0. Prunable (working dir already gone) → REMOVE (`gone-dir`), regardless of managed-ness
+ *      (#3654). Wins over everything, INCLUDING `not-managed`: a gone-dir tree — a foreign
+ *      `scratchpad/wt-*` from a dead session as much as a managed one — has no working tree to
+ *      strand and its branch ref survives the prune, so clearing the stale metadata is
+ *      unconditionally safe. This is what reaps the cross-session pile of orphaned trees.
  *   1. Neither swept class → KEEP (`not-managed`). The primary checkout and any foreign
- *      tree are never candidates, regardless of their other facts.
+ *      tree with a LIVE directory are never candidates, regardless of their other facts.
  *   2. Dirty → KEEP (`dirty`). Wins over every other signal for BOTH classes: a worktree
  *      with working-tree changes is never removed, even when its branch has merged.
  *   3. Liveness gates (#2240) — locked / recently-active → KEEP, for BOTH classes. A clean
@@ -173,6 +201,9 @@ export interface WorktreeSweepPlan {
  *   8. Otherwise → KEEP (`unmerged`). Genuinely unmerged work.
  */
 export const classifyWorktree = (wt: WorktreeRecord): SweepDecision => {
+	if (wt.prunable) {
+		return {kind: "remove", reason: "gone-dir"};
+	}
 	const reviewHead = isReviewHeadWorktree(wt.path);
 	if (!isManagedWorktree(wt.path) && !reviewHead) {
 		return {kind: "keep", reason: "not-managed"};
@@ -228,6 +259,8 @@ export interface ParsedWorktree {
 	readonly branch: string | null;
 	readonly bare: boolean;
 	readonly locked: boolean;
+	/** `git worktree list --porcelain` flagged the tree `prunable` — its working dir is gone (#3654). */
+	readonly prunable: boolean;
 }
 
 /**
@@ -243,16 +276,18 @@ export const parseWorktreeList = (porcelain: string): ReadonlyArray<ParsedWorktr
 	let branch: string | null = null;
 	let bare = false;
 	let locked = false;
+	let prunable = false;
 
 	const flush = () => {
 		if (path !== null) {
-			out.push({path, head, branch, bare, locked});
+			out.push({path, head, branch, bare, locked, prunable});
 		}
 		path = null;
 		head = null;
 		branch = null;
 		bare = false;
 		locked = false;
+		prunable = false;
 	};
 
 	for (const raw of porcelain.split("\n")) {
@@ -275,6 +310,8 @@ export const parseWorktreeList = (porcelain: string): ReadonlyArray<ParsedWorktr
 			bare = true;
 		} else if (line.startsWith("locked")) {
 			locked = true;
+		} else if (line.startsWith("prunable")) {
+			prunable = true;
 		}
 	}
 	flush();

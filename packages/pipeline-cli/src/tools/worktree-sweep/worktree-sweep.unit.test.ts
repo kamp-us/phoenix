@@ -17,6 +17,7 @@ const reviewHeadPath = (leaf: string) => `/var/folders/8f/tmp.aBcD1234/${leaf}`;
 const reviewRecord = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	path: reviewHeadPath("review-head-2815"),
 	branch: null,
+	prunable: false,
 	isDirty: false,
 	// A detached review head is often NOT reachable/merged (an open PR's head, pre-squash) — the
 	// leaked class the merge gate can't reclaim. These fields are moot for review-head classification.
@@ -31,6 +32,7 @@ const reviewRecord = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 const record = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	path: wtPath("agent-clean"),
 	branch: "umut/1234-thing",
+	prunable: false,
 	isDirty: false,
 	reachableFromOriginMain: true,
 	squashMergedToOriginMain: false,
@@ -222,6 +224,36 @@ describe("classifyWorktree — REMOVE branches (clean AND reachable)", () => {
 	});
 });
 
+describe("classifyWorktree — gone-dir prune (#3654)", () => {
+	it("prunes a gone-dir MANAGED tree (working dir missing → reap the stale metadata)", () => {
+		const d = classifyWorktree(record({prunable: true}));
+		assert.deepStrictEqual(d, {kind: "remove", reason: "gone-dir"});
+	});
+
+	it("prunes a gone-dir FOREIGN tree too — prunable wins over not-managed (the cross-session pile)", () => {
+		const d = classifyWorktree(record({path: "/Users/dev/scratchpad/wt-3030", prunable: true}));
+		assert.deepStrictEqual(d, {kind: "remove", reason: "gone-dir"});
+	});
+
+	it("prunable wins over a fail-safe dirty flag (the working dir is gone — nothing on disk to strand)", () => {
+		// A gone-dir tree can't be `git status`ed, so the impure shell reads dirty=true fail-safe;
+		// prunable is checked FIRST so the metadata is still reaped (the branch ref survives a prune).
+		const d = classifyWorktree(record({prunable: true, isDirty: true}));
+		assert.deepStrictEqual(d, {kind: "remove", reason: "gone-dir"});
+	});
+
+	it("keeps a still-present (not-prunable) foreign tree — a live human worktree is never reaped", () => {
+		const d = classifyWorktree(
+			record({
+				path: "/Users/dev/scratchpad/wt-live",
+				prunable: false,
+				reachableFromOriginMain: true,
+			}),
+		);
+		assert.deepStrictEqual(d, {kind: "keep", reason: "not-managed"});
+	});
+});
+
 describe("computeWorktreeSweepPlan — partition", () => {
 	it("partitions a mixed pile into removable + kept-with-reason", () => {
 		const records: ReadonlyArray<WorktreeRecord> = [
@@ -272,6 +304,23 @@ describe("computeWorktreeSweepPlan — partition", () => {
 		assert.strictEqual(keepReason(reviewHeadPath("review-head-13")), "locked");
 	});
 
+	it("partitions gone-dir trees (managed + foreign) into removable alongside a merged build tree", () => {
+		const records: ReadonlyArray<WorktreeRecord> = [
+			record({path: wtPath("a"), branch: "umut/1-done"}), // merged-clean → remove
+			record({path: wtPath("gone-managed"), prunable: true}), // gone-dir → remove
+			record({path: "/Users/dev/scratchpad/wt-3030", prunable: true}), // gone-dir foreign → remove
+			record({path: wtPath("live"), reachableFromOriginMain: false}), // unmerged → keep
+		];
+		const plan = computeWorktreeSweepPlan(records);
+		const removeReason = (path: string) =>
+			plan.toRemove.find((r) => r.worktree.path === path)?.reason;
+		assert.strictEqual(removeReason(wtPath("gone-managed")), "gone-dir");
+		assert.strictEqual(removeReason("/Users/dev/scratchpad/wt-3030"), "gone-dir");
+		assert.strictEqual(removeReason(wtPath("a")), "merged-clean");
+		assert.strictEqual(plan.kept.length, 1);
+		assert.strictEqual(plan.kept[0]?.reason, "unmerged");
+	});
+
 	it("an empty list yields an empty plan", () => {
 		assert.deepStrictEqual(computeWorktreeSweepPlan([]), {toRemove: [], kept: []});
 	});
@@ -314,6 +363,7 @@ describe("parseWorktreeList", () => {
 			branch: "main",
 			bare: false,
 			locked: false,
+			prunable: false,
 		});
 		assert.strictEqual(parsed[1]?.branch, "umut/1234-thing");
 		assert.strictEqual(parsed[2]?.branch, null);
@@ -332,6 +382,27 @@ describe("parseWorktreeList", () => {
 		const parsed = parseWorktreeList(porcelain);
 		assert.strictEqual(parsed.length, 1);
 		assert.isTrue(parsed[0]?.locked);
+	});
+
+	it("captures a prunable (gone-dir) worktree — #3654", () => {
+		const porcelain = [
+			`worktree ${wtPath("gone")}`,
+			"HEAD eeee5555",
+			"detached",
+			"prunable gitdir file points to non-existent location",
+			"",
+		].join("\n");
+		const parsed = parseWorktreeList(porcelain);
+		assert.strictEqual(parsed.length, 1);
+		assert.isTrue(parsed[0]?.prunable);
+		assert.isFalse(parsed[0]?.locked);
+	});
+
+	it("a non-prunable block reads prunable=false", () => {
+		const parsed = parseWorktreeList(
+			[`worktree ${wtPath("live")}`, "HEAD ffff6666", "branch refs/heads/umut/9-x", ""].join("\n"),
+		);
+		assert.isFalse(parsed[0]?.prunable);
 	});
 
 	it("tolerates a trailing block with no terminating blank line", () => {
