@@ -21,40 +21,34 @@
  * post, a lost co-acquire — is an observable outcome the command prints, never an
  * exception. See ADR 0059 (the epic-plan lock) and ADR 0115 (the claim marker).
  */
-import {Context, Effect, Layer, Stream} from "effect";
+import {Context, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
-import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
+import {ChildProcessSpawner} from "effect/unstable/process";
+// The `gh api` REST IO seam (runGh / resolveRepo / authorizedAuthors / RawComment) is the SINGLE
+// SOURCE shared with the `Tracker` service and `verdict` — no longer re-copied here (#3262 AC 5).
+// The error types are re-exported below so callers/tests keep importing them from this module.
+import {
+	authorizedAuthors,
+	decodeComments,
+	deleteCommentArgs,
+	type GhCommandError,
+	type GhParseError,
+	json,
+	listCommentsArgs,
+	postCommentArgs,
+	type RawComment,
+	type RepoResolutionError,
+	resolveRepo,
+	runGh,
+} from "../tracker/gh-io.ts";
 import {type ClaimComment, ownClaimCommentIds, resolveWinner} from "./claim-resolution.ts";
+
+// Re-export the shared IO seam's typed failures so callers/tests keep importing them from this
+// module — the single-source classes now live in `../tracker/gh-io.ts` (#3262 AC 5).
+export {GhCommandError, GhParseError, RepoResolutionError} from "../tracker/gh-io.ts";
 
 /** The canonical epic-plan lock label (ADR 0059). */
 export const LOCK_LABEL = "status:planning";
-
-/** A `gh` invocation exited non-zero (auth, not-found, rate-limit, 422 missing label, …). */
-export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
-	"@kampus/epic-lock/GhCommandError",
-	{
-		args: Schema.Array(Schema.String),
-		exitCode: Schema.Number,
-		stderr: Schema.String,
-	},
-) {}
-
-/** `gh` output was not the JSON the loader expected. */
-export class GhParseError extends Schema.TaggedErrorClass<GhParseError>()(
-	"@kampus/epic-lock/GhParseError",
-	{
-		args: Schema.Array(Schema.String),
-		message: Schema.String,
-	},
-) {}
-
-/** No `owner/name` target repo could be resolved (no env override, no current repo). */
-export class RepoResolutionError extends Schema.TaggedErrorClass<RepoResolutionError>()(
-	"@kampus/epic-lock/RepoResolutionError",
-	{
-		message: Schema.String,
-	},
-) {}
 
 /** The `acquire` verdict — exactly one holder, or one of four fail-closed back-offs. */
 export type AcquireResult =
@@ -71,89 +65,9 @@ export type ReleaseResult = {
 	readonly labelRemoved: boolean;
 };
 
-const collect = (stream: Stream.Stream<Uint8Array, unknown>): Effect.Effect<string> =>
-	Stream.decodeText(stream).pipe(
-		Stream.mkString,
-		Effect.orElseSucceed(() => ""),
-	);
-
-/**
- * Run `gh <args>` and return stdout, failing `GhCommandError` on a non-zero exit.
- * `ChildProcessSpawner.string` surfaces only spawn/IO faults, not the process's own
- * exit code — so the handle is spawned directly to read `exitCode` + `stderr` and
- * lower a non-zero exit into a typed error. A spawn/IO `PlatformError` (e.g. `gh`
- * not on PATH) folds into the same typed `GhCommandError` (exit code `-1`).
- */
-const runGh = Effect.fn("Github.runGh")(
-	function* (args: ReadonlyArray<string>) {
-		const handle = yield* ChildProcess.make("gh", args);
-		const [stdout, stderr, exitCode] = yield* Effect.all(
-			[collect(handle.stdout), collect(handle.stderr), handle.exitCode],
-			{concurrency: "unbounded"},
-		);
-		if (exitCode !== 0) {
-			return yield* new GhCommandError({args, exitCode, stderr});
-		}
-		return stdout;
-	},
-	Effect.scoped,
-	(effect, args) =>
-		Effect.catchTag(
-			effect,
-			"PlatformError",
-			(cause) => new GhCommandError({args, exitCode: -1, stderr: cause.message}),
-		),
-);
-
-const parseJson = (
-	args: ReadonlyArray<string>,
-	raw: string,
-): Effect.Effect<unknown, GhParseError> =>
-	Effect.try({
-		try: () => JSON.parse(raw) as unknown,
-		catch: (cause) =>
-			new GhParseError({args, message: cause instanceof Error ? cause.message : String(cause)}),
-	});
-
-const json = Effect.fn("Github.json")(function* (args: ReadonlyArray<string>) {
-	return yield* parseJson(args, yield* runGh(args));
-});
-
-const REPO_RE = /^[^/\s]+\/[^/\s]+$/;
-
-/**
- * Resolve the target repo (`owner/name`) once, per ADR 0062 §1, in order:
- * `CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` (CI) → `gh repo view`. Never silently
- * defaults to a repo: with no env and no resolvable current repo it fails
- * `RepoResolutionError`, so a foreign install can't accidentally operate on phoenix.
- */
-const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
-	const fromEnv = process.env.CLAUDE_PIPELINE_REPO ?? process.env.GITHUB_REPOSITORY;
-	if (fromEnv && REPO_RE.test(fromEnv.trim())) {
-		return fromEnv.trim();
-	}
-	const viewed = yield* runGh([
-		"repo",
-		"view",
-		"--json",
-		"nameWithOwner",
-		"-q",
-		".nameWithOwner",
-	]).pipe(
-		Effect.map((out) => out.trim()),
-		Effect.catchTag("@kampus/epic-lock/GhCommandError", () => Effect.succeed("")),
-	);
-	if (REPO_RE.test(viewed)) {
-		return viewed;
-	}
-	return yield* new RepoResolutionError({
-		message:
-			"could not resolve a target repo: set CLAUDE_PIPELINE_REPO (or GITHUB_REPOSITORY), " +
-			"or run inside a git repo whose origin `gh repo view` can read",
-	});
-});
-
-// REST-only arg builders — never GraphQL.
+// The epic-lock label envelope (the ADR-0059 `status:planning` read/add/remove) is the arg-builder
+// set unique to this lock; the generic comment IO (list/post/delete) is the shared
+// `../tracker/gh-io.ts` seam, so only these three label builders live here — never GraphQL.
 
 const issueArgs = (repo: string, epic: number): ReadonlyArray<string> => [
 	"api",
@@ -178,48 +92,8 @@ const removeLabelArgs = (repo: string, epic: number): ReadonlyArray<string> => [
 	`repos/${repo}/issues/${epic}/labels/${LOCK_LABEL}`,
 ];
 
-const postClaimArgs = (repo: string, epic: number, body: string): ReadonlyArray<string> => [
-	"api",
-	"-X",
-	"POST",
-	`repos/${repo}/issues/${epic}/comments`,
-	"-f",
-	`body=${body}`,
-	"--jq",
-	".id",
-];
-
-const listCommentsArgs = (repo: string, epic: number): ReadonlyArray<string> => [
-	"api",
-	"--paginate",
-	`repos/${repo}/issues/${epic}/comments?per_page=100`,
-];
-
-const deleteCommentArgs = (repo: string, id: number): ReadonlyArray<string> => [
-	"api",
-	"-X",
-	"DELETE",
-	`repos/${repo}/issues/comments/${id}`,
-];
-
-const permissionArgs = (repo: string, login: string): ReadonlyArray<string> => [
-	"api",
-	`repos/${repo}/collaborators/${login}/permission`,
-	"--jq",
-	".permission",
-];
-
 /** The issue-label array `[.labels[].name]` returns. */
 const decodeLabels = Schema.decodeUnknownEffect(Schema.Array(Schema.String));
-
-/** A raw comment as the issues/comments endpoint returns it; only these fields are read. */
-const RawComment = Schema.Struct({
-	id: Schema.Number,
-	created_at: Schema.String,
-	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	user: Schema.NullOr(Schema.Struct({login: Schema.String})),
-});
-const decodeComments = Schema.decodeUnknownEffect(Schema.Array(RawComment));
 
 const toClaimComment = (raw: (typeof RawComment)["Type"]): ClaimComment => ({
 	id: raw.id,
@@ -244,35 +118,6 @@ const listClaimComments = Effect.fn("Github.listClaimComments")(function* (
 	const args = listCommentsArgs(repo, epic);
 	const raw = yield* decodeComments(yield* json(args));
 	return raw.map(toClaimComment);
-});
-
-/**
- * The write+ collaborator subset of `logins` — the ADR 0055 trust root. Each login
- * is probed with `collaborators/<login>/permission`; a non-`admin|maintain|write`
- * permission, or any `gh` fault on the probe (a non-collaborator commonly 404s),
- * drops the login. A forged claim from a non-collaborator therefore never enters the
- * authorized set the core resolves over.
- */
-const authorizedAuthors = Effect.fn("Github.authorizedAuthors")(function* (
-	repo: string,
-	logins: ReadonlyArray<string>,
-) {
-	const results = yield* Effect.forEach(
-		logins,
-		(login) =>
-			runGh(permissionArgs(repo, login)).pipe(
-				Effect.map((out) => ({login, permission: out.trim()})),
-				Effect.catchTag("@kampus/epic-lock/GhCommandError", () =>
-					Effect.succeed({login, permission: "none"}),
-				),
-			),
-		{concurrency: "unbounded"},
-	);
-	return results
-		.filter(
-			(r) => r.permission === "admin" || r.permission === "maintain" || r.permission === "write",
-		)
-		.map((r) => r.login);
 });
 
 const resolveAuthorizedWinner = Effect.fn("Github.resolveAuthorizedWinner")(function* (
@@ -305,20 +150,20 @@ const acquire = Effect.fn("Github.acquire")(function* (
 	// "ok" is the label-landed sentinel; a GhCommandError lowers to the label-missing back-off.
 	const labelResult = yield* runGh(addLabelArgs(repo, epic)).pipe(
 		Effect.as<AcquireResult | "ok">("ok"),
-		Effect.catchTag("@kampus/epic-lock/GhCommandError", (error) =>
+		Effect.catchTag("@kampus/gh-io/GhCommandError", (error) =>
 			Effect.succeed<AcquireResult | "ok">({_tag: "label-missing", stderr: error.stderr}),
 		),
 	);
 	if (labelResult !== "ok") return labelResult;
 
 	const now = new Date().toISOString();
-	const claimResult = yield* json(postClaimArgs(repo, epic, `claim: ${sessionId} · ${now}`)).pipe(
+	const claimResult = yield* json(postCommentArgs(repo, epic, `claim: ${sessionId} · ${now}`)).pipe(
 		Effect.map((v): number | AcquireResult =>
 			typeof v === "number"
 				? v
 				: {_tag: "claim-post-failed", stderr: "claim POST did not return a comment id"},
 		),
-		Effect.catchTag("@kampus/epic-lock/GhCommandError", (error) =>
+		Effect.catchTag("@kampus/gh-io/GhCommandError", (error) =>
 			Effect.succeed<number | AcquireResult>({_tag: "claim-post-failed", stderr: error.stderr}),
 		),
 	);
@@ -354,7 +199,7 @@ const release = Effect.fn("Github.release")(function* (
 		mine,
 		(id) =>
 			runGh(deleteCommentArgs(repo, id)).pipe(
-				Effect.catchTag("@kampus/epic-lock/GhCommandError", (error) =>
+				Effect.catchTag("@kampus/gh-io/GhCommandError", (error) =>
 					is404(error.stderr) ? Effect.void : Effect.fail(error),
 				),
 			),
@@ -362,7 +207,7 @@ const release = Effect.fn("Github.release")(function* (
 	);
 	const labelRemoved = yield* runGh(removeLabelArgs(repo, epic)).pipe(
 		Effect.as(true),
-		Effect.catchTag("@kampus/epic-lock/GhCommandError", (error) =>
+		Effect.catchTag("@kampus/gh-io/GhCommandError", (error) =>
 			is404(error.stderr) ? Effect.succeed(false) : Effect.fail(error),
 		),
 	);

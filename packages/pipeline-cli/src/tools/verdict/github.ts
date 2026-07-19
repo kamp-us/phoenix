@@ -17,9 +17,28 @@
  *    gate's marker (fail-closed on a cross-namespace body), then PATCH our own prior marker in
  *    the namespace if one exists, else POST a fresh one — exactly one verdict comment per (PR, gate).
  */
-import {Context, Effect, Layer, Stream} from "effect";
+import {Context, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
-import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
+import {ChildProcessSpawner} from "effect/unstable/process";
+// The `gh api` REST IO seam (runGh / resolveRepo / authorizedAuthors / RawComment) is the SINGLE
+// SOURCE shared with the `Tracker` service and `epic-lock` — no longer re-copied here (#3262 AC 5).
+// The error types are re-exported below so callers/tests keep importing them from this module.
+import {
+	authorizedAuthors,
+	decodeComments,
+	type GhCommandError,
+	GhParseError,
+	getCommentBodyArgs,
+	json,
+	listCommentsArgs,
+	patchCommentArgs,
+	postCommentArgs,
+	type RawComment,
+	type RepoResolutionError,
+	resolveRepo,
+	runGh,
+	whoAmIArgs,
+} from "../tracker/gh-io.ts";
 import {
 	emissionDefect,
 	namespaceRe,
@@ -30,32 +49,9 @@ import {
 	type VerdictOutcome,
 } from "./verdict-match.ts";
 
-/** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
-export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
-	"@kampus/verdict/GhCommandError",
-	{
-		args: Schema.Array(Schema.String),
-		exitCode: Schema.Number,
-		stderr: Schema.String,
-	},
-) {}
-
-/** `gh` output was not the JSON the loader expected. */
-export class GhParseError extends Schema.TaggedErrorClass<GhParseError>()(
-	"@kampus/verdict/GhParseError",
-	{
-		args: Schema.Array(Schema.String),
-		message: Schema.String,
-	},
-) {}
-
-/** No `owner/name` target repo could be resolved (no env override, no current repo). */
-export class RepoResolutionError extends Schema.TaggedErrorClass<RepoResolutionError>()(
-	"@kampus/verdict/RepoResolutionError",
-	{
-		message: Schema.String,
-	},
-) {}
+// Re-export the shared IO seam's typed failures so callers/tests keep importing them from this
+// module — the single-source classes now live in `../tracker/gh-io.ts` (#3262 AC 5).
+export {GhCommandError, GhParseError, RepoResolutionError} from "../tracker/gh-io.ts";
 
 /** A malformed request the caller must fix — e.g. a `post` body whose first line is the wrong gate's marker. */
 export class VerdictInputError extends Schema.TaggedErrorClass<VerdictInputError>()(
@@ -95,149 +91,15 @@ export interface PostResult {
 	readonly commentId: number;
 }
 
-const collect = (stream: Stream.Stream<Uint8Array, unknown>): Effect.Effect<string> =>
-	Stream.decodeText(stream).pipe(
-		Stream.mkString,
-		Effect.orElseSucceed(() => ""),
-	);
-
-/**
- * Run `gh <args>` and return stdout, failing `GhCommandError` on a non-zero exit — the same
- * direct-spawn shape `epic-lock` uses so a non-zero exit + stderr lower into a typed error
- * rather than a throw. A spawn/IO `PlatformError` (e.g. `gh` not on PATH) folds in as exit `-1`.
- */
-const runGh = Effect.fn("Github.runGh")(
-	function* (args: ReadonlyArray<string>) {
-		const handle = yield* ChildProcess.make("gh", args);
-		const [stdout, stderr, exitCode] = yield* Effect.all(
-			[collect(handle.stdout), collect(handle.stderr), handle.exitCode],
-			{concurrency: "unbounded"},
-		);
-		if (exitCode !== 0) {
-			return yield* new GhCommandError({args, exitCode, stderr});
-		}
-		return stdout;
-	},
-	Effect.scoped,
-	(effect, args) =>
-		Effect.catchTag(
-			effect,
-			"PlatformError",
-			(cause) => new GhCommandError({args, exitCode: -1, stderr: cause.message}),
-		),
-);
-
-const parseJson = (
-	args: ReadonlyArray<string>,
-	raw: string,
-): Effect.Effect<unknown, GhParseError> =>
-	Effect.try({
-		try: () => JSON.parse(raw) as unknown,
-		catch: (cause) =>
-			new GhParseError({args, message: cause instanceof Error ? cause.message : String(cause)}),
-	});
-
-const json = Effect.fn("Github.json")(function* (args: ReadonlyArray<string>) {
-	return yield* parseJson(args, yield* runGh(args));
-});
-
-const REPO_RE = /^[^/\s]+\/[^/\s]+$/;
-
-/**
- * Resolve the target repo (`owner/name`) once, per ADR 0062 §1, in order:
- * `CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` (CI) → `gh repo view`. Never silently defaults —
- * with no env and no resolvable current repo it fails `RepoResolutionError`.
- */
-const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
-	const fromEnv = process.env.CLAUDE_PIPELINE_REPO ?? process.env.GITHUB_REPOSITORY;
-	if (fromEnv && REPO_RE.test(fromEnv.trim())) {
-		return fromEnv.trim();
-	}
-	const viewed = yield* runGh([
-		"repo",
-		"view",
-		"--json",
-		"nameWithOwner",
-		"-q",
-		".nameWithOwner",
-	]).pipe(
-		Effect.map((out) => out.trim()),
-		Effect.catchTag("@kampus/verdict/GhCommandError", () => Effect.succeed("")),
-	);
-	if (REPO_RE.test(viewed)) {
-		return viewed;
-	}
-	return yield* new RepoResolutionError({
-		message:
-			"could not resolve a target repo: set CLAUDE_PIPELINE_REPO (or GITHUB_REPOSITORY), " +
-			"or run inside a git repo whose origin `gh repo view` can read",
-	});
-});
-
-// REST-only arg builders — never GraphQL.
-
+// The PR head-SHA read is the one arg builder unique to `verdict` (the ADR-0058 head binding);
+// the generic comment IO (list/post/patch/get-body) and the `whoami` probe are the shared
+// `../tracker/gh-io.ts` seam.
 const headShaArgs = (repo: string, pr: number): ReadonlyArray<string> => [
 	"api",
 	`repos/${repo}/pulls/${pr}`,
 	"--jq",
 	".head.sha",
 ];
-
-const listCommentsArgs = (repo: string, pr: number): ReadonlyArray<string> => [
-	"api",
-	"--paginate",
-	`repos/${repo}/issues/${pr}/comments?per_page=100`,
-];
-
-const whoAmIArgs: ReadonlyArray<string> = ["api", "user", "--jq", ".login"];
-
-const permissionArgs = (repo: string, login: string): ReadonlyArray<string> => [
-	"api",
-	`repos/${repo}/collaborators/${login}/permission`,
-	"--jq",
-	".permission",
-];
-
-const postCommentArgs = (repo: string, pr: number, body: string): ReadonlyArray<string> => [
-	"api",
-	"-X",
-	"POST",
-	`repos/${repo}/issues/${pr}/comments`,
-	"-f",
-	`body=${body}`,
-	"--jq",
-	".id",
-];
-
-const patchCommentArgs = (repo: string, id: number, body: string): ReadonlyArray<string> => [
-	"api",
-	"-X",
-	"PATCH",
-	`repos/${repo}/issues/comments/${id}`,
-	"-f",
-	`body=${body}`,
-	"--jq",
-	".id",
-];
-
-// The read-back GET for the post self-verify (#3019): fetch the single comment we just upserted and
-// return its LANDED body, so `emissionDefect` re-checks the marker/leak-clean shape as it actually
-// landed — the same issues/comments/<id> endpoint PATCH targets.
-const getCommentArgs = (repo: string, id: number): ReadonlyArray<string> => [
-	"api",
-	`repos/${repo}/issues/comments/${id}`,
-	"--jq",
-	".body",
-];
-
-/** A raw comment as the issues/comments endpoint returns it; only these fields are read. */
-const RawComment = Schema.Struct({
-	id: Schema.Number,
-	created_at: Schema.String,
-	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	user: Schema.NullOr(Schema.Struct({login: Schema.String})),
-});
-const decodeComments = Schema.decodeUnknownEffect(Schema.Array(RawComment));
 
 const toVerdictComment = (raw: (typeof RawComment)["Type"]): VerdictComment => ({
 	id: raw.id,
@@ -263,9 +125,9 @@ const verifyLanded = Effect.fn("Github.verifyLanded")(function* (
 	id: number,
 	gate: VerdictGate,
 ) {
-	const landed = yield* runGh(getCommentArgs(repo, id)).pipe(
+	const landed = yield* runGh(getCommentBodyArgs(repo, id)).pipe(
 		Effect.catchTag(
-			"@kampus/verdict/GhCommandError",
+			"@kampus/gh-io/GhCommandError",
 			(cause) =>
 				new VerdictVerifyError({
 					message: `could not re-fetch the just-posted verdict comment #${id} to self-verify it (${cause.stderr.trim() || `exit ${cause.exitCode}`}) — refusing to report success on an unverifiable post (#3019)`,
@@ -284,34 +146,6 @@ const listComments = Effect.fn("Github.listComments")(function* (repo: string, p
 	const args = listCommentsArgs(repo, pr);
 	const raw = yield* decodeComments(yield* json(args));
 	return raw.map(toVerdictComment);
-});
-
-/**
- * The write+ collaborator subset of `logins` — the ADR 0055 trust root. Each login is probed
- * with `collaborators/<login>/permission`; a non-`admin|maintain|write` permission, or any `gh`
- * fault on the probe (a non-collaborator commonly 404s), drops the login. A forged marker from a
- * non-collaborator therefore never enters the authorized set the core resolves over.
- */
-const authorizedAuthors = Effect.fn("Github.authorizedAuthors")(function* (
-	repo: string,
-	logins: ReadonlyArray<string>,
-) {
-	const results = yield* Effect.forEach(
-		logins,
-		(login) =>
-			runGh(permissionArgs(repo, login)).pipe(
-				Effect.map((out) => ({login, permission: out.trim()})),
-				Effect.catchTag("@kampus/verdict/GhCommandError", () =>
-					Effect.succeed({login, permission: "none"}),
-				),
-			),
-		{concurrency: "unbounded"},
-	);
-	return results
-		.filter(
-			(r) => r.permission === "admin" || r.permission === "maintain" || r.permission === "write",
-		)
-		.map((r) => r.login);
 });
 
 /**
