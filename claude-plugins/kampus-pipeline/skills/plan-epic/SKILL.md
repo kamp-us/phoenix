@@ -746,9 +746,12 @@ native compare-and-swap — so the write is made safe by **two layers**, in orde
 from your in-memory plan and overwrite the whole thing. Re-read the epic's **current** body
 immediately before the write, replace **only the section you changed** (the `## Dependencies`
 block, and — when re-planning — the `## Plan (plan-epic)` block), and leave every other byte of
-the live body exactly as you just read it. A concurrent edit to a *different* part of the body
-(the brief, a sibling's handoff note, a label-driven addition) then cannot collide with your
-write at all — you preserved it verbatim because you never reconstructed it.
+the live body exactly as you just read it. The deterministic splice itself — the heading-count
+guards, the first-time-append vs re-plan-in-place decision, and the byte-preserving section
+replacement — is the `pipeline-cli epic-splice apply` verb (#3689, extracted from #261); the
+block below calls it rather than hand-composing the transform. A concurrent edit to a *different*
+part of the body (the brief, a sibling's handoff note, a label-driven addition) then cannot
+collide with your write at all — the verb preserved it verbatim because it never reconstructed it.
 
 **Layer 2 — optimistic recheck (abort+retry on a same-section race).** Two writers editing the
 *same* section still race. So immediately before the `PATCH`, re-GET the epic's `updated_at` and
@@ -780,14 +783,14 @@ loudly** if `deps.md` was not regenerated since the base it splices onto was rea
 # derived against the body it's splicing onto, never a stale one.
 # A first-time plan has NO `## Dependencies` heading yet (Step 2 doesn't write one) — that case
 # APPENDS the block to EOF; a re-plan has exactly one and SPLICES it in place. Zero headings on a
-# re-plan, or more than one ever, is corruption: abort loudly (step 4).
+# re-plan, or more than one ever, is corruption: the `epic-splice` verb (step 3) exits non-zero.
 #
 # This block is a SKELETON you re-run per attempt, not a one-shot. When the recheck (step 2) fires
 # it stamps the fresh base, BREAKS, and hands back to you to re-derive `deps.md` (+ `plan.md` on a
 # re-plan) against `/tmp/plan-epic-<EPIC>-current.md` — then you re-invoke the block. The freshness
 # guard (step 2.5) refuses to splice a `deps.md` older than the base it would splice onto, so a
 # stale block can never re-clobber a racer's legitimate topology.
-# Per attempt: re-read → recheck (verify unchanged) → freshness guard → anchor guard → splice/append → PATCH
+# Per attempt: re-read → recheck (verify unchanged) → freshness guard → epic-splice apply (guards + splice) → PATCH
 # → re-verify our block landed. `landed=1` only after a pass confirms the round-trip; `patched=1`
 # records that a PATCH was actually issued (so the terminal verdict can tell "raced every time,
 # never wrote" from "wrote and lost"). The terminal check after the loop turns an
@@ -827,52 +830,23 @@ for attempt in 1 2 3; do
     break
   fi
 
-  # 3. anchor guard — the splice keys off the count of exact `## Dependencies` headings:
-  #      0 + first-time plan → no topology pinned yet (Step 2 omits it): APPEND to EOF (step 4a).
-  #      1                   → re-plan with an existing section: SPLICE it in place (step 4b).
-  #      0 + re-plan, or >1  → corruption (heading drifted to `## Dependencies (phased)`, was
-  #                            deleted, or duplicated): a blind splice/append would orphan or
-  #                            double the section. Abort loudly, leave `landed=0`.
-  DEPS_HEADINGS=$(grep -c '^## Dependencies[[:space:]]*$' /tmp/plan-epic-<EPIC>-live.md)
-  if [ "$DEPS_HEADINGS" -gt 1 ] || { [ "$DEPS_HEADINGS" -eq 0 ] && [ "${REPLAN:-0}" = 1 ]; }; then
-    echo "ABORT: live body has $DEPS_HEADINGS exact '## Dependencies' headings (want 0 on a first-time plan, 1 on a re-plan) — refusing to splice; inspect by hand"
+  # 3. splice/append the changed section(s) via the shared verb — `pipeline-cli epic-splice apply`
+  #    owns the deterministic transform (#3689, extracted from #261): the exact-`## Dependencies`
+  #    heading-count guards (0 + first-time → APPEND to EOF; exactly 1 → SPLICE in place; 0 on a
+  #    re-plan or >1 ever → corrupt, exit 1) and, on a re-plan, the in-place `## Plan (plan-epic)`
+  #    splice with its own exactly-one-heading guard. Everything OUTSIDE the replaced section(s) is
+  #    preserved byte-for-byte (the brief especially — layer 1). Pass `--plan-file` ONLY on a
+  #    re-plan: its presence IS the re-plan signal (both sections re-spliced); omit it first-time.
+  #    A corrupt/duplicated/drifted heading makes the verb exit non-zero — break loudly and inspect
+  #    by hand rather than blind-write. The recheck/freshness/round-trip orchestration around it
+  #    stays here (it is live-issue IO, not a text transform).
+  PLAN_ARG=(); [ "${REPLAN:-0}" = 1 ] && PLAN_ARG=(--plan-file /tmp/plan-epic-<EPIC>-plan.md)
+  if ! node packages/pipeline-cli/src/bin.ts epic-splice apply \
+        --body-file /tmp/plan-epic-<EPIC>-live.md \
+        --deps-file /tmp/plan-epic-<EPIC>-deps.md \
+        "${PLAN_ARG[@]}" > /tmp/plan-epic-<EPIC>-body.md; then
+    echo "ABORT: epic-splice refused (corrupt/duplicated/drifted heading — see its stderr) — refusing to splice; inspect by hand"
     break
-  fi
-
-  # 3b. on a re-plan, the Plan splice (step 4) keys off `## Plan (plan-epic)` the same way deps keys
-  #     off `## Dependencies` — and the same drift bites: 0 means the heading drifted (e.g. `## Plan`)
-  #     and the awk would splice NOTHING (the re-planned plan silently dropped); >1 means it'd double.
-  #     Want exactly 1 on a re-plan. (First-time plans don't splice the plan block, so skip the check.)
-  if [ "${REPLAN:-0}" = 1 ]; then
-    PLAN_HEADINGS=$(grep -c '^## Plan (plan-epic)[[:space:]]*$' /tmp/plan-epic-<EPIC>-live.md)
-    if [ "$PLAN_HEADINGS" -ne 1 ]; then
-      echo "ABORT: re-plan but live body has $PLAN_HEADINGS exact '## Plan (plan-epic)' headings (want exactly 1) — refusing to splice; inspect by hand"
-      break
-    fi
-  fi
-
-  # 4. surgical splice/append: write ONLY the changed section(s), keep every other byte verbatim.
-  if [ "$DEPS_HEADINGS" -eq 0 ]; then
-    # 4a. FIRST-TIME plan — no `## Dependencies` heading exists. Append the block to the END of a
-    #     byte-for-byte copy of the live body (the brief + plan above are preserved untouched).
-    cp /tmp/plan-epic-<EPIC>-live.md /tmp/plan-epic-<EPIC>-body.md
-    cat /tmp/plan-epic-<EPIC>-deps.md >> /tmp/plan-epic-<EPIC>-body.md
-  else
-    # 4b. RE-PLAN — `## Dependencies` is the pinned LAST section: cut from its heading to EOF,
-    #     append fresh deps. (DEPS_HEADINGS == 1 here.)
-    awk '/^## Dependencies[[:space:]]*$/{exit} {print}' /tmp/plan-epic-<EPIC>-live.md \
-      > /tmp/plan-epic-<EPIC>-body.md
-    cat /tmp/plan-epic-<EPIC>-deps.md >> /tmp/plan-epic-<EPIC>-body.md
-  fi
-  # On a RE-PLAN, `## Plan (plan-epic)` ALSO changed — splice it in place too: delete the inclusive
-  # `## Plan (plan-epic)`..next-`## ` range and re-insert the fresh plan block at that boundary.
-  if [ "${REPLAN:-0}" = 1 ]; then
-    awk -v plan="/tmp/plan-epic-<EPIC>-plan.md" '
-      /^## Plan \(plan-epic\)[[:space:]]*$/ { while ((getline l < plan) > 0) print l; skip=1; next }
-      skip && /^## / { skip=0 }
-      !skip { print }
-    ' /tmp/plan-epic-<EPIC>-body.md > /tmp/plan-epic-<EPIC>-body.2.md \
-      && mv /tmp/plan-epic-<EPIC>-body.2.md /tmp/plan-epic-<EPIC>-body.md
   fi
   BODY="$(cat /tmp/plan-epic-<EPIC>-body.md)"
 
@@ -927,13 +901,13 @@ if [ "$landed" != 1 ]; then
 fi
 ```
 
-**Keep the brief byte-for-byte.** With the surgical splice/append this is automatic: a first-time
-plan appends the `## Dependencies` block to a verbatim copy of the live body; a re-plan copies the
-live body up to the `## Dependencies` heading verbatim and re-appends the fresh block. Either way
-the brief above the plan is untouched bytes from the live read; on a re-plan the `## Plan
-(plan-epic)` block is itself re-spliced in place (step 4), and everything outside the two changed
-sections is verbatim — don't reflow the brief, don't "tidy" it, don't reconstruct it from memory —
-splice around it.
+**Keep the brief byte-for-byte.** With the `epic-splice` verb's surgical splice/append this is
+automatic: a first-time plan appends the `## Dependencies` block to a verbatim copy of the live
+body; a re-plan copies the live body up to the `## Dependencies` heading verbatim and re-appends
+the fresh block. Either way the brief above the plan is untouched bytes from the live read; on a
+re-plan the `## Plan (plan-epic)` block is itself re-spliced in place, and everything outside the
+two changed sections is verbatim — don't reflow the brief, don't "tidy" it, don't reconstruct it
+from memory — splice around it.
 
 **Honest residual — this narrows the window, it is not a lock.** The recheck (layer 2) only
 *detects* a race that completed before this run's read; a writer who edits **after** your

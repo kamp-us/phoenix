@@ -107,6 +107,23 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		reason:
 			"re-derives the graduation-close envelope that `pipeline-cli tracker graduate` owns (post the source → artifact provenance record, close the source as completed), instead of citing the verb (#3266 / #3254)",
 	},
+	{
+		// `epic-splice apply` owns the deterministic epic-body splice (#3689): the anchor-count
+		// heading guards + first-time-append / re-plan-in-place section replacement `plan-epic`
+		// Step 5 used to hand-compose inline (#261). The fingerprint is the co-occurrence of the
+		// deps-heading anchor count, the surgical `## Dependencies`→EOF cut, and the in-place
+		// `## Plan (plan-epic)` splice — the three tells of a hand-copy of the whole splice, not an
+		// incidental `## Dependencies` mention. A file that cites `pipeline-cli epic-splice` is compliant.
+		verb: "epic-splice apply",
+		signature: [
+			/grep -c '\^## Dependencies/, // the deps-heading anchor count
+			/awk '\/\^## Dependencies\[\[:space:\]\]\*\$\/\{exit\}/, // the surgical deps-section cut
+			/\/\^## Plan \\\(plan-epic\\\)\[\[:space:\]\]\*\$\//, // the in-place plan splice
+		],
+		citation: /pipeline-cli\s+epic-splice\b/,
+		reason:
+			"re-derives the epic-body splice (anchor guards + first-time-append / re-plan-in-place) that `pipeline-cli epic-splice apply` owns, instead of citing the verb (#3689 / #261 / #3254)",
+	},
 ];
 
 /**

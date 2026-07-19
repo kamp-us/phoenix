@@ -30,6 +30,7 @@ import {designInventoryCommand} from "./tools/design-inventory/command.ts";
 import {designTokenGuardCommand} from "./tools/design-token-guard/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
 import {epicLockCommand} from "./tools/epic-lock/command.ts";
+import {epicSpliceCommand} from "./tools/epic-splice/command.ts";
 import {evalHarnessCommand} from "./tools/eval-harness/command.ts";
 import {failureClassifierCommand} from "./tools/failure-classifier/command.ts";
 import {fanoutGuardCommand} from "./tools/fanout-guard/command.ts";
@@ -103,6 +104,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	versionCommand,
 	epicLedgerCommand,
 	epicLockCommand,
+	epicSpliceCommand,
 	decisionsIndexCommand,
 	readmeGuardCommand,
 	roadmapCommand,
