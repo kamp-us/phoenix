@@ -163,16 +163,17 @@ describe("findCommentLeaks — PR/issue comment body scan (#2796, stricter than 
 		assert.strictEqual(leaks.length, 1);
 	});
 
-	// #3492 — the /tmp/…-*.sock glob carve-out reaches the landed-comment surface (scan-pr Step 3.7):
-	// a reviewer verdict narrating the machine-agnostic socket glob no longer fail-closed-blocks the
-	// ship, while a real machine-local /tmp scratch path in a comment still does.
-	it("allows a *-globbed /tmp/…-*.sock socket name in a verdict comment (#3492)", () =>
-		assert.isFalse(
+	// #3492 (Option 1) — the /tmp arm has NO socket carve-out: the comment surface fail-closes on
+	// ANY bare /tmp/…, including the crew-inbox socket glob. The false positive is fixed emit-side
+	// (review-code reviewers write the socket as a bare `kampus-crew-inbox-*.sock` name or fenced),
+	// never by weakening scan-pr Step 3.7.
+	it("blocks a bare /tmp/…-*.sock socket glob in a verdict comment (#3492 — guard stays strict)", () =>
+		assert.isTrue(
 			hasCommentLeak(
-				"review-code: PASS — the /tmp/kampus-crew-inbox-*.sock runtime path is a legit socket-path domain, not a home path",
+				"review-code: PASS — the /tmp/kampus-crew-inbox-*.sock runtime path is the crew inbox socket",
 			),
 		));
-	it("still blocks a concrete /tmp scratch path in a verdict comment (#3492 — no glob)", () =>
+	it("blocks a concrete /tmp scratch path in a verdict comment (#3492)", () =>
 		assert.isTrue(hasCommentLeak("review-code: notes staged at /tmp/reviewer-scratch/verdict.md")));
 });
 

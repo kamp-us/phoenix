@@ -19,11 +19,12 @@
  * Carve-outs live at the pattern (a property of the shape), not in a membership list:
  *  - `~/.claude.json` and `~/.claude/settings.json` — the two public, machine-agnostic claude CLI
  *    config *files* — pass, while any `~/.claude/`-directory descent still flags (#3475/#3505).
- *  - a username-free, `*`-globbed `/tmp/…-*.sock` (e.g. `/tmp/kampus-crew-inbox-*.sock`) passes: it
- *    is a well-known socket's glob NAME, not a machine-local instance, the same public-token class as
- *    the config-file carve-out above (#3492 founder ruling — Option A). A concrete `/tmp/<name>/…`
- *    scratch path (no glob) still flags — the exemption REQUIRES the `*`, so nothing machine-local
- *    is let through.
+ *
+ * There is deliberately NO `/tmp` carve-out: the `TEMP_PATH_PATTERNS` arm fail-closes on ANY bare
+ * `/tmp/…` in a landed comment (including a `/tmp/kampus-crew-inbox-*.sock` socket glob). `/tmp` is
+ * exactly the machine-local category the guard exists to catch, so the reviewer-verdict false
+ * positive is fixed emit-side (review-code reviewers write the socket as the bare `kampus-crew-inbox-*.sock`
+ * name or inside a code fence), never by weakening the guard (#3492 founder ruling — Option 1).
  */
 
 export interface PathPattern {
@@ -89,18 +90,11 @@ export const TEMP_PATH_PATTERNS: ReadonlyArray<PathPattern> = [
 		reason: "macOS resolved temp root (/private/tmp/..., /private/var/...)",
 	},
 	{
-		// The `/tmp/` scratch detector, NARROWED by shape (#3492 founder ruling — Option A, the
-		// same by-shape idiom as the `~/.claude` config-file carve-out above, never a named token
-		// list; #2393). The negative lookahead exempts a username-free, `*`-globbed socket NAME —
-		// `/tmp/kampus-crew-inbox-*.sock` — because a glob is a well-known socket's name, not a
-		// machine-local instance, and reviewer verdicts whose SUBJECT is that socket predictably
-		// narrate it in prose (which was fail-closed-blocking crew-mcp ships at scan-pr Step 3.7).
-		// The exemption REQUIRES the `*` and a single terminal `.sock` leaf with no `/` descent, so
-		// a concrete scratch path (`/tmp/<user>-scratch/…`, any `/tmp/<name>/…`) — which has no glob
-		// or descends into a dir that could hide a username — still flags. A `.sock` backup
-		// (`…-*.sock.bak`) still flags too (the `(?![\w.])` tail pins the exemption to the leaf).
-		pattern:
-			/(?<![\w.])\/tmp\/(?![A-Za-z0-9._-]*\*[A-Za-z0-9._*-]*\.sock(?![\w.]))[A-Za-z0-9._/-]+/g,
+		// The `/tmp/` scratch detector fail-closes on ANY bare `/tmp/…` — including a
+		// `/tmp/kampus-crew-inbox-*.sock` socket glob. `/tmp` is the machine-local category the
+		// guard exists to catch; the reviewer-verdict false positive is fixed emit-side, never by a
+		// guard carve-out (#3492 founder ruling — Option 1). No exemption here by design.
+		pattern: /(?<![\w.])\/tmp\/[A-Za-z0-9._/-]+/g,
 		reason: "machine-local temp/scratch path (/tmp/...)",
 	},
 ];

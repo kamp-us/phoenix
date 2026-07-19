@@ -1,9 +1,10 @@
 /**
  * `path-matcher` unit tests — the single source both leak-guard detectors import (#3506). These
- * pin the two SHAPE carve-outs that must apply uniformly to every consumer: the `~/.claude` public
- * config-file exemption (#3475/#3505) and the `/tmp/…-*.sock` machine-agnostic socket-glob
- * exemption (#3492). The detector-level tests (leak-guard.unit.test.ts / crew-leak.unit.test.ts)
- * assert the carve-outs reach their surfaces; these assert the shared shapes directly.
+ * pin the one SHAPE carve-out that must apply uniformly to every consumer: the `~/.claude` public
+ * config-file exemption (#3475/#3505). The `/tmp` arm has NO carve-out (#3492 Option 1 — the socket
+ * false positive is fixed emit-side, not by weakening the guard), so it fail-closes on ANY bare
+ * `/tmp/…`. The detector-level tests (leak-guard.unit.test.ts / crew-leak.unit.test.ts) assert the
+ * carve-out reaches their surfaces; these assert the shared shapes directly.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {MACHINE_LOCAL_PATH_PATTERNS, TEMP_PATH_PATTERNS} from "./path-matcher.ts";
@@ -50,23 +51,17 @@ describe("MACHINE_LOCAL_PATH_PATTERNS — home/absolute arm", () => {
 	});
 });
 
-describe("TEMP_PATH_PATTERNS — /tmp/…-*.sock glob carve-out (#3492)", () => {
-	it("exempts a username-free, *-globbed socket name", () => {
-		assert.isFalse(hitsTemp("the inbox is /tmp/kampus-crew-inbox-*.sock"));
-		assert.isFalse(hitsTemp("bind /tmp/some-service-*.sock for the fan-out"));
+describe("TEMP_PATH_PATTERNS — fail-close on ANY bare /tmp (no carve-out, #3492 Option 1)", () => {
+	it("flags the socket glob (#3492 — the fix is emit-side, the guard stays strict)", () => {
+		assert.isTrue(hitsTemp("the inbox is /tmp/kampus-crew-inbox-*.sock"));
+		assert.isTrue(hitsTemp("bind /tmp/some-service-*.sock for the fan-out"));
 	});
-
-	it("still flags a concrete /tmp/<name> scratch path (no glob)", () => {
+	it("flags a concrete /tmp/<name> scratch path", () => {
 		assert.isTrue(hitsTemp("staged at /tmp/alice-scratch/verdict.md"));
 		assert.isTrue(hitsTemp("wrote /tmp/write-code-progress.md"));
-		// a concrete socket without a glob is machine-local — still flags
 		assert.isTrue(hitsTemp("bound /tmp/kampus-crew-inbox.sock"));
 	});
-	it("still flags a globbed path that descends into a directory (could hide a username)", () =>
-		assert.isTrue(hitsTemp("under /tmp/alice/*.sock")));
-	it("still flags a .sock backup leaf (the exemption is pinned to the terminal leaf)", () =>
-		assert.isTrue(hitsTemp("stale /tmp/kampus-crew-inbox-*.sock.bak")));
-	it("still flags the mktemp roots (/var/folders, /private/tmp)", () => {
+	it("flags the mktemp roots (/var/folders, /private/tmp)", () => {
 		assert.isTrue(hitsTemp("/var/folders/8f/T/tmp.abc"));
 		assert.isTrue(hitsTemp("/private/tmp/claude/scratchpad/verdict.md"));
 	});

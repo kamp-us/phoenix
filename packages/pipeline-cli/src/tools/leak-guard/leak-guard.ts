@@ -10,10 +10,11 @@
  * empty list. No regex over arbitrary source — the match is scoped to doc surfaces
  * exactly as the AC requires.
  *
- * The machine-local-path shapes themselves — the generic deny-list design, the
- * `~/.claude` config-file carve-out (#3475/#3505), and the `/tmp/…-*.sock` glob
- * carve-out (#3492) — live in the single shared `path-matcher.ts` module that both
- * this doc/comment scanner and `crew-leak.ts` import, so the two detectors can never
+ * The machine-local-path shapes themselves — the generic deny-list design and the
+ * `~/.claude` config-file carve-out (#3475/#3505); the `/tmp` arm carries no carve-out,
+ * so it fail-closes on any bare `/tmp/…` (#3492 Option 1) — live in the single shared
+ * `path-matcher.ts` module that both this doc/comment scanner and `crew-leak.ts` import,
+ * so the two detectors can never
  * drift (the #3506 root bug). This module owns only the doc-surface scoping (which
  * files get scanned) and the self-exempt list; the path shapes are imported, not
  * re-declared. See `path-matcher.ts` for the pattern rationale.
@@ -111,7 +112,7 @@ export const findLeaks = (filePath: string, text: string): ReadonlyArray<Leak> =
  * mktemp path onto public PRs (#2796/#2822/#2683/#2772). A comment body is UNCONDITIONALLY a
  * shared public artifact, so there is no doc-surface gate and no self-exempt list — it scans
  * the shared `MACHINE_LOCAL_PATH_PATTERNS` AND the stricter comment-body-only `TEMP_PATH_PATTERNS`
- * (which carries the `/tmp/…-*.sock` glob carve-out, #3492). Generic path shapes only (#2393).
+ * (which fail-closes on any bare `/tmp/…`, no carve-out — #3492 Option 1). Generic path shapes only (#2393).
  */
 export const findCommentLeaks = (text: string): ReadonlyArray<Leak> => {
 	if (!text) return [];
