@@ -108,7 +108,7 @@ if (error) {
 }
 ```
 
-The server publishes `live.post.feed.deleteEdge(id)` after the commit; that frame reconciles the already-optimistically-evicted edge idempotently — the row **never reappears** and the optimistic and SSE-reconciled states never diverge. Gate this behind a default-off flag (`pano-optimistic-post-delete`, #1677) so it dark-ships. The terminal-outcome decision is a pure core (`src/pages/optimisticPostDelete.ts`, the `savedReconcile` idiom), unit-tested hook-free.
+The server publishes `live.post.feed.deleteEdge(id)` after the commit; that frame reconciles the already-optimistically-evicted edge idempotently — the row **never reappears** and the optimistic and SSE-reconciled states never diverge. This shipped dark behind a default-off flag (#1677); the flag has since graduated (served on at 100%) and been retired, so the optimistic path is now the only path. The terminal-outcome decision is a pure core (`src/pages/optimisticPostDelete.ts`, the `savedReconcile` idiom), unit-tested hook-free.
 
 ## Errors {#errors}
 

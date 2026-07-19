@@ -61,7 +61,6 @@ import {
 	optimisticEditsFlag,
 	panoBaseFeedFlag,
 	panoDraftSaveFlag,
-	panoOptimisticPostDeleteFlag,
 	panoStampWaveFlag,
 	profileCanvasFlag,
 	reactionsFlag,
@@ -106,9 +105,6 @@ export default Alchemy.Stack(
 		// epic #1637) — post/comment/definition edits pass an optimistic payload only
 		// behind this key until a human release.
 		yield* optimisticEditsFlag(flagship.appId);
-		// The optimistic post.delete dark-ship flag, default-off (#1677, epic #1637) —
-		// gates the instant-feed-removal delete flow until a human release.
-		yield* panoOptimisticPostDeleteFlag(flagship.appId);
 		// The optimistic definition.add dark-ship flag, default-off (#1679, epic #1637)
 		// — gates the nested-connection client-append (ADR 0125) until a human release.
 		yield* optimisticDefinitionAddFlag(flagship.appId);

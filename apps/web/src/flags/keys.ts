@@ -49,15 +49,6 @@ export const PHOENIX_PANO_STAMP_WAVE = "phoenix-pano-stamp-wave";
 export const MECMUA_WRITE = "mecmua-write";
 
 /**
- * Optimistic `post.delete` (instant feed removal on confirm) dark-ship flag (#1677,
- * epic #1637). Gates the optimistic post-delete flow — evict-and-navigate at once,
- * roll back on rejection — so it reaches production dark; with it off, `post.delete`
- * keeps today's wait-for-round-trip behavior. Its own key (not the epic's shared
- * seam): each Class-B optimistic slice has an independent lifecycle.
- */
-export const PANO_OPTIMISTIC_POST_DELETE = "pano-optimistic-post-delete";
-
-/**
  * Base-feed / viewer-overlay split dark-ship flag (#2322, epic #2316 leg B). The
  * SINGLE seam every leg-B surface gates behind — the server split (the GET-able
  * viewer-invariant base feed + the authed `PostOverlay` read), the client
@@ -331,7 +322,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_SOZLUK_STAMP_WAVE, defaultValue: false},
 	{key: PHOENIX_PANO_STAMP_WAVE, defaultValue: false},
 	{key: MECMUA_WRITE, defaultValue: false},
-	{key: PANO_OPTIMISTIC_POST_DELETE, defaultValue: false},
 	{key: PANO_BASE_FEED, defaultValue: false},
 	{key: MECMUA_PUBLIC_READ, defaultValue: false},
 	{key: MECMUA_FEED, defaultValue: false},
