@@ -66,8 +66,8 @@ describe("tagFlag — worker-tier flag attribution (#1821)", () => {
 		isEnabled.mockReturnValue(true);
 		tagFlag("phoenix-bildirim", true);
 		expect(setTag).toHaveBeenCalledWith("flag.phoenix-bildirim", "on");
-		tagFlag("pano-optimistic-comment-add", false);
-		expect(setTag).toHaveBeenCalledWith("flag.pano-optimistic-comment-add", "off");
+		tagFlag("pano-optimistic-post-delete", false);
+		expect(setTag).toHaveBeenCalledWith("flag.pano-optimistic-post-delete", "off");
 	});
 });
 

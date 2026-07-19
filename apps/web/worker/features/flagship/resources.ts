@@ -17,7 +17,6 @@ import {
 	MEMBER_MUTE,
 	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
-	PANO_OPTIMISTIC_COMMENT_ADD,
 	PANO_OPTIMISTIC_POST_DELETE,
 	PHOENIX_ADMIN_CONSOLE,
 	PHOENIX_AUTHORSHIP_LOOP,
@@ -101,7 +100,6 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 export {
 	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
-	PANO_OPTIMISTIC_COMMENT_ADD,
 	PANO_OPTIMISTIC_POST_DELETE,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
@@ -448,43 +446,6 @@ export const panoOptimisticPostDeleteFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("pano_optimistic_post_delete", {
 		appId,
 		...PANO_OPTIMISTIC_POST_DELETE_FLAG,
-	});
-
-/**
- * The optimistic `comment.add` (instant nested-thread insert) containment flag
- * config (#1678, epic #1637). Default-OFF so it reaches production dark — with it
- * off, a new comment/reply joins the thread only via the server `appendNode` frame
- * (or the read-back self-heal), exactly as today; flipping it on writes the
- * optimistic temp-node into the nested `Post.comments` connection that reconciles to
- * the server id per ADR 0125 (A1). Flipping it on is the human release act (ADR 0083).
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_OPTIMISTIC_POST_DELETE_FLAG`).
- *
- * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
- * asks for):
- *   - owner:           pano
- *   - originating:     #1678 (epic: optimistic content mutations, #1637)
- *   - removal trigger: once optimistic comment-add graduates to on at 100% and
- *                      stable for one release, retire the flag and inline the path.
- */
-export const PANO_OPTIMISTIC_COMMENT_ADD_FLAG = {
-	key: PANO_OPTIMISTIC_COMMENT_ADD,
-	description:
-		"optimistic comment.add (instant nested-thread insert) dark-ship (#1678, epic #1637). owner: pano. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const panoOptimisticCommentAddFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("pano_optimistic_comment_add", {
-		appId,
-		...PANO_OPTIMISTIC_COMMENT_ADD_FLAG,
 	});
 
 /**
