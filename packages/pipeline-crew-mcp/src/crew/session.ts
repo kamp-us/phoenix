@@ -39,6 +39,7 @@ import {Effect, type FileSystem, Layer} from "effect";
 import {type McpSchema, McpServer} from "effect/unstable/ai";
 import {
 	ChannelClaim,
+	ChannelDescribe,
 	ChannelSend,
 	ChannelSink,
 	ChannelToolkit,
@@ -46,6 +47,8 @@ import {
 	channelExperimentalCapability,
 	channelToolHandlers,
 	claimToolHandlers,
+	KindsToolkit,
+	kindsToolHandlers,
 } from "../edge/index.ts";
 import {type Dialer, Inbox, type Tracker} from "../peer/index.ts";
 import {socketPathFor} from "../tracker/index.ts";
@@ -56,6 +59,7 @@ import {
 	inboxSocketPathFor,
 	makeCrewChannel,
 } from "./channel-server.ts";
+import {resolveChannelContract} from "./contract.ts";
 import type {RoleUniquenessError} from "./errors.ts";
 import {crewHeartbeatLayer} from "./heartbeat.ts";
 import {type CrewRole, kindOf} from "./roles.ts";
@@ -198,35 +202,44 @@ export const assembleCrewSession = <RIn, RSub = never>(
 	// Claim FIRST (Race 2): the slow tracker-claim/presence handshake runs in the unwrap's effect,
 	// BEFORE the run-loop-forking transport is built, so ChannelSend below is a zero-async binding.
 	Layer.unwrap(
-		makeCrewChannel({role: config.role, address}).pipe(
-			Effect.map((channel) => {
-				// outbound: the channel_send toolkit, its ChannelSend an INSTANT bind to the already-resolved
-				// peer — the toolkit registers with no socket await in its build path (Race 2).
-				const outbound = McpServer.toolkit(ChannelToolkit).pipe(
-					Layer.provide(channelToolHandlers),
-					Layer.provide(Layer.succeed(ChannelSend, {send: channel.peer.send})),
-				);
-				// deconfliction: the channel_claim toolkit (#3509), its ChannelClaim an INSTANT bind to the
-				// already-resolved channel's tracker claim — same zero-async binding as `outbound` (Race 2).
-				const claim = McpServer.toolkit(ClaimToolkit).pipe(
-					Layer.provide(claimToolHandlers),
-					Layer.provide(Layer.succeed(ChannelClaim, {claim: channel.claim})),
-				);
-				// inbound: the peer-inbox socket server, its deliveries waking THIS served server.
-				const inbound = inboxServerSocketLayer(address).pipe(
-					Layer.provide(ChannelSink.layerFromMcpServer),
-				);
-				// Provide the transport ONCE to the MERGED registrations — the single-instance memo (Race 1).
-				return Layer.mergeAll(outbound, claim, inbound).pipe(Layer.provide(transport));
-			}),
-		),
+		Effect.gen(function* () {
+			const channel = yield* makeCrewChannel({role: config.role, address});
+			// Startup invariant (#3622): resolve the full discoverable channel contract BEFORE serving.
+			// A shared kind set that can't be fully resolved to a shape fails the build HERE (on the boot
+			// critical path, like the claim), so a peer never discovers a gap at first send.
+			const contract = yield* resolveChannelContract();
+			// outbound: the channel_send toolkit, its ChannelSend an INSTANT bind to the already-resolved
+			// peer — the toolkit registers with no socket await in its build path (Race 2).
+			const outbound = McpServer.toolkit(ChannelToolkit).pipe(
+				Layer.provide(channelToolHandlers),
+				Layer.provide(Layer.succeed(ChannelSend, {send: channel.peer.send})),
+			);
+			// deconfliction: the channel_claim toolkit (#3509), its ChannelClaim an INSTANT bind to the
+			// already-resolved channel's tracker claim — same zero-async binding as `outbound` (Race 2).
+			const claim = McpServer.toolkit(ClaimToolkit).pipe(
+				Layer.provide(claimToolHandlers),
+				Layer.provide(Layer.succeed(ChannelClaim, {claim: channel.claim})),
+			);
+			// discovery: the channel_kinds toolkit (#3622), its ChannelDescribe an INSTANT bind to the
+			// contract resolved just above — a static value, so it never re-derives the catalog nor awaits.
+			const kinds = McpServer.toolkit(KindsToolkit).pipe(
+				Layer.provide(kindsToolHandlers),
+				Layer.provide(Layer.succeed(ChannelDescribe, {view: contract})),
+			);
+			// inbound: the peer-inbox socket server, its deliveries waking THIS served server.
+			const inbound = inboxServerSocketLayer(address).pipe(
+				Layer.provide(ChannelSink.layerFromMcpServer),
+			);
+			// Provide the transport ONCE to the MERGED registrations — the single-instance memo (Race 1).
+			return Layer.mergeAll(outbound, claim, kinds, inbound).pipe(Layer.provide(transport));
+		}),
 	).pipe(Layer.provide(substrate));
 
 /**
  * The full runnable session layer: launch it (`Layer.launch`) to run one live crew session. The one
  * stdio `McpServer` is provided to the merged registrations exactly once (`assembleCrewSession`), so
- * the served server advertises the `channel_send` + `channel_claim` tools + the `claude/channel`
- * capability; the heartbeat rides the same `substrate` the outbound binding announces on.
+ * the served server advertises the `channel_send` + `channel_claim` + `channel_kinds` tools + the
+ * `claude/channel` capability; the heartbeat rides the same `substrate` the outbound binding announces on.
  */
 export const crewSessionLayer = (config: CrewSessionConfig) => {
 	// One per-session instance id, resolved once here and threaded to every address derivation, so an

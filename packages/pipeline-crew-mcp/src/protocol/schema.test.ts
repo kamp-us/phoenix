@@ -14,6 +14,11 @@ const roundTrips = <S extends Schema.Codec<any, any>>(schema: S, value: S["Type"
 	assert.deepStrictEqual(decoded, value);
 };
 
+// Construct branded issue/PR numbers (a bare literal can't satisfy `number & Brand`), the natural
+// NUMBER shape the footgun fix mandates (#3622).
+const asIssue = Schema.decodeUnknownSync(Messages.IssueNumber);
+const asPr = Schema.decodeUnknownSync(Messages.PrNumber);
+
 describe("protocol/schema round-trips", () => {
 	it("kind 1 — claim request + reply", () => {
 		roundTrips(Messages.ClaimRequest, {
@@ -52,13 +57,13 @@ describe("protocol/schema round-trips", () => {
 
 	it("kind 3 — intake ping (with and without the optional note)", () => {
 		roundTrips(Messages.IntakePing, {
-			issue: "issue:3100",
+			issue: asIssue(3100),
 			from: "triage",
 			note: "needs a second look",
 			at: "2026-07-16T10:03:00Z",
 		});
 		roundTrips(Messages.IntakePing, {
-			issue: "issue:3100",
+			issue: asIssue(3100),
 			from: "triage",
 			at: "2026-07-16T10:03:00Z",
 		});
@@ -66,13 +71,13 @@ describe("protocol/schema round-trips", () => {
 
 	it("kind 6 — engine nudge (pr and issue targets, with and without the optional note)", () => {
 		roundTrips(Messages.EngineNudge, {
-			target: {pr: "pr:3649"},
+			target: {pr: asPr(3649)},
 			from: "chief-of-staff",
 			note: "reviewed + banked, worth a look",
 			at: "2026-07-19T10:03:00Z",
 		});
 		roundTrips(Messages.EngineNudge, {
-			target: {issue: "issue:3100"},
+			target: {issue: asIssue(3100)},
 			from: "chief-of-staff",
 			at: "2026-07-19T10:03:00Z",
 		});

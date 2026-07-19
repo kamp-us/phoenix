@@ -16,7 +16,7 @@ const envelope = (over?: Partial<InboxEnvelope>): InboxEnvelope => ({
 	messageId: "msg-1",
 	from: "peer-a",
 	kind: "IntakePing",
-	body: {issue: "3057"},
+	body: {issue: 3057},
 	at: "2026-07-16T10:00:00Z",
 	...over,
 });
@@ -47,6 +47,6 @@ describe("edge/bridge — inbound peer-inbox message wakes the session (AC2)", (
 	it("formatChannelTag renders sender + kind as attributes and the body as content", () => {
 		const tag = formatChannelTag(envelope());
 		assert.match(tag, /^<channel from="peer-a" kind="IntakePing">/);
-		assert.include(tag, '{"issue":"3057"}');
+		assert.include(tag, '{"issue":3057}');
 	});
 });

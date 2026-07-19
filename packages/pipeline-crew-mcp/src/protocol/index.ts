@@ -5,6 +5,13 @@
  * tracker, peer, and edge all code against.
  */
 export {
+	ChannelContractError,
+	describeKind,
+	type KindContract,
+	resolveKindContracts,
+	resolveKindContractsFor,
+} from "./describe.ts";
+export {
 	AnnouncePresence,
 	Claim,
 	CrewProtocol,

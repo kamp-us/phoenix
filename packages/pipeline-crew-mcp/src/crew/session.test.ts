@@ -102,7 +102,7 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 			// The sender's real ChannelSend-from-peer binding (the cutover) — the port channel_send uses.
 			const ack = yield* Effect.gen(function* () {
 				const sender = yield* ChannelSend;
-				return yield* sender.send(receiverRole, "IntakePing", {issue: "3062", from: senderRole});
+				return yield* sender.send(receiverRole, "IntakePing", {issue: 3062, from: senderRole});
 			}).pipe(
 				Effect.provide(
 					channelSendFromPeer(senderRole, senderAddress).pipe(

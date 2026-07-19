@@ -88,9 +88,9 @@ const makeCapturingClient = Effect.gen(function* () {
 
 describe("defect(a): channel_send normalizes body to a struct at the boundary (#3491)", () => {
 	it("a STRUCT body renders single-encoded through formatChannelTag (baseline)", () => {
-		const tag = formatChannelTag(baseEnvelope({issue: "3486", from: "engineering-manager"}));
+		const tag = formatChannelTag(baseEnvelope({issue: 3486, from: "engineering-manager"}));
 		const inner = tag.slice(tag.indexOf(">") + 1, tag.lastIndexOf("<"));
-		assert.strictEqual(inner, '{"issue":"3486","from":"engineering-manager"}');
+		assert.strictEqual(inner, '{"issue":3486,"from":"engineering-manager"}');
 	});
 
 	// The fix: even when the wire delivers `body` as a JSON STRING, the handler forwards the decoded
@@ -105,7 +105,7 @@ describe("defect(a): channel_send normalizes body to a struct at the boundary (#
 					targetRole: "reviewer",
 					kind: "IntakePing",
 					body: JSON.stringify({
-						issue: "3486",
+						issue: 3486,
 						from: "engineering-manager",
 						at: "2026-07-18T00:00:00Z",
 					}),
@@ -119,7 +119,7 @@ describe("defect(a): channel_send normalizes body to a struct at the boundary (#
 				"object",
 				"handler must forward the DECODED struct, not the raw JSON string",
 			);
-			assert.deepInclude(forwarded as object, {issue: "3486", from: "engineering-manager"});
+			assert.deepInclude(forwarded as object, {issue: 3486, from: "engineering-manager"});
 
 			const inner = ((tag) => tag.slice(tag.indexOf(">") + 1, tag.lastIndexOf("<")))(
 				formatChannelTag(baseEnvelope(forwarded)),
@@ -131,7 +131,7 @@ describe("defect(a): channel_send normalizes body to a struct at the boundary (#
 			);
 			assert.strictEqual(
 				inner,
-				'{"issue":"3486","from":"engineering-manager","at":"2026-07-18T00:00:00Z"}',
+				'{"issue":3486,"from":"engineering-manager","at":"2026-07-18T00:00:00Z"}',
 			);
 		}),
 	);

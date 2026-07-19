@@ -125,7 +125,7 @@ describe("crew/channel-server — announce, discover, claim/collision-check (AC 
 				Effect.provide(channelLayers(tracker, "inbox://a", Dialer.layerFromConnect(connect))),
 			);
 
-			const ack = yield* a.peer.send(roleB, "IntakePing", {issue: "3059", from: roleA});
+			const ack = yield* a.peer.send(roleB, "IntakePing", {issue: 3059, from: roleA});
 			assert.strictEqual(ack.by, "inbox://b", "acked by B's inbox ⇒ it went straight to B");
 			const recorded = yield* Ref.get(wakes);
 			assert.lengthOf(recorded, 1);
@@ -320,7 +320,7 @@ describe("crew/channel-server — engine pool discovery + per-instance dial (AC 
 					messageId: "m-1",
 					from: senderAddr,
 					kind: "IntakePing",
-					body: {issue: "x"},
+					body: {issue: 3059},
 					at: new Date().toISOString(),
 				});
 			}).pipe(Effect.provide(channelLayers(tracker, senderAddr, Dialer.layerFromConnect(connect))));

@@ -63,7 +63,7 @@ describe("protocol/group catalog", () => {
 	it("payloadSchemaForKind resolves a catalog kind to its payload schema (#3229)", () => {
 		// the resolver is derived from the catalog, so every kind resolves and a valid payload decodes
 		assert.strictEqual(payloadSchemaForKind("IntakePing"), Messages.IntakePing);
-		const ping = {issue: "3057", from: "intake", at: "2026-07-16T10:00:00Z"};
+		const ping = {issue: 3057, from: "intake", at: "2026-07-16T10:00:00Z"};
 		assert.deepStrictEqual(
 			Schema.decodeUnknownSync(payloadSchemaForKind("IntakePing")!)(ping),
 			ping,
