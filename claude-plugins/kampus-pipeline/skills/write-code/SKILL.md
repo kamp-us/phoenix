@@ -694,6 +694,20 @@ if [ "$GITDIR" = "$COMMON" ]; then
   echo "  Refusing to branch/commit here — a spawn without isolation:worktree (or a cwd reset to the primary tree) would mis-branch the owner's checkout." >&2
   echo "  This run did NOT expect isolation (standalone) — take the Non-isolated fallback below to create a worktree before mutating." >&2
   exit 1
+else
+  # POSITIVE worktree assertion — loud + EARLY (#3458). git-dir != common-dir is the ONE trust
+  # signal for "I am in my own linked worktree" that survives the misleading env a worktree spawn
+  # is handed: $WORKTREE_ROOT is unset (the reverted #2938 provisioning hook) and $CLAUDE_CODE_AGENT
+  # reports the PARENT's value (inherited agent-type, #2462) — so neither can anchor worktree
+  # identity. This git-plumbing check can, and does so independently of both. Capture $WT from THIS
+  # evidence, never from the untrustworthy env and never from a file. This assertion fires BEFORE the
+  # first Edit/Write on purpose: a raw Edit/Write to a primary-checkout absolute path is not a git op,
+  # so neither the repo-side worktree-guard nor wt_preflight fires on it — the ONLY thing standing
+  # between a cwd-reset + stale-Read-cache and a stray write into shared primary `main` is anchoring
+  # every edit under this $WT (see "Anchor every Edit/Write to $WT" below). Establishing $WT loudly
+  # here is what makes that anchoring actionable from the first file touch.
+  WT="$(git rev-parse --show-toplevel)"
+  echo "write-code preflight CONFIRMED (LOUD): in a LINKED worktree at $WT (git-dir != common-dir) — worktree identity established from git plumbing, INDEPENDENT of \$WORKTREE_ROOT (${WORKTREE_ROOT:+set}${WORKTREE_ROOT:-unset}) and \$CLAUDE_CODE_AGENT (${CLAUDE_CODE_AGENT:-unset}), both of which may misreport. Anchor EVERY Edit/Write and git op to this \$WT (absolute) — never a primary-checkout path."
 fi
 ```
 
@@ -733,6 +747,22 @@ what's matched, the run degrades to `isolation-expected=0` (today's silent self-
 dangerous primary-checkout mutation — the loud branch only *adds* a stop, it never removes the
 existing refusal.
 
+**The success path asserts worktree identity LOUDLY, on env-independent evidence (#3458).** When
+`git-dir != common-dir` the preflight no longer proceeds *silently*: it captures `$WT` from that
+positive git-plumbing evidence and prints a `CONFIRMED` line naming the worktree root. This is the
+producer/preflight half of the worktree-misID class — a worktree-isolated spawn is handed a
+**misleading process env** (`$WORKTREE_ROOT` unset because the #2938 provisioning hook was reverted;
+`$CLAUDE_CODE_AGENT` carrying the *parent's* agent-type via inheritance, #2462), so neither env var
+can anchor "am I in my worktree?" The `git-dir != common-dir` plumbing can, and the assertion keys on
+*only* that — never on an agent-type string, so no fix relocates the fragile coupling (the same
+principle as #3406's ADR 0189 note). **This is deliberately distinct from #3406.** #3406 is the
+**consumer/failure-side** change: it re-keys the `ISOLATION_EXPECTED` *detector* (the
+`case "$CLAUDE_CODE_AGENT"` on the `git-dir == common-dir` branch above) onto the same env-independent
+primary-checkout corroboration, to parity with `bash-pin.ts`. This issue is the **positive/success-side**
+assertion. The two live on **opposite sides of the same `if`** and do not overlap: #3406 hardens *when
+to fail closed*, #3458 hardens *what a pass positively establishes*. The `ISOLATION_EXPECTED` detector
+is intentionally left untouched here so the two changes can't double-implement or contradict.
+
 <a id="per-mutation-preflight"></a>
 > **The preflight runs once at Step-4 start AND re-asserts before EVERY git-mutating op.**
 > The harness resets an isolated subagent's shell cwd back to the **primary** checkout
@@ -751,7 +781,7 @@ existing refusal.
 > bypass, same construction as the opening preflight:
 >
 > ```bash
-> WT="$(git rev-parse --show-toplevel)"   # capture ONCE, right after the opening preflight passes
+> WT="$(git rev-parse --show-toplevel)"   # same $WT the opening preflight CONFIRMED; re-derive per Bash call (shell state doesn't survive), never from a file
 > wt_preflight() {   # MANDATED before every git commit/push/branch op — fail-closed, re-correcting cwd
 >   cd "$WT" || { echo "wt_preflight FAILED: cannot cd to worktree root $WT" >&2; return 1; }
 >   GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
@@ -766,6 +796,25 @@ existing refusal.
 > }
 > wt_preflight && git <commit|push|switch …>   # the guard gates the mutation; never run the mutation without it
 > ```
+
+<a id="anchor-edits-to-wt"></a>
+> **Anchor EVERY `Edit`/`Write` to `$WT` — the raw-write path no git guard covers (#3458).**
+> `wt_preflight` and the repo-side worktree-guard both gate **head-moving git ops**. A raw
+> `Edit`/`Write` to a file is **not** a git op, so **neither guard fires on it** — an edit whose
+> target is a **primary-checkout absolute path** writes straight into the shared primary tree,
+> silently, and is caught (if at all) only by a coder noticing the primary went dirty before commit.
+> This is not hypothetical: with `$WORKTREE_ROOT` unset and the cwd reset to the primary checkout
+> between calls, a coder's *first* `Edit`/`Write` took primary-checkout absolute paths from session
+> `gitStatus`/`Read` context and landed edits on primary `main` (#3458 sharpening) — the guards never
+> saw it because it wasn't a git op.
+>
+> So the opening preflight's `$WT` capture is load-bearing for **file edits, not just git ops**:
+> **every `Edit`/`Write` target path MUST be under `$WT`** (the absolute worktree root the preflight
+> `CONFIRMED`), never a bare primary-checkout absolute path — even one the harness handed you in
+> `gitStatus` or a `Read` result. The Edit/Write tools do **not** auto-target the worktree; an
+> absolute path outside `$WT` edit-bleeds into whatever tree it names. Before the first edit, know
+> `$WT`; for every edit, confirm the path begins with `$WT`. Treat a primary-checkout absolute path
+> in your context as **stale** (cwd-reset + Read-cache), not as your worktree.
 
 This constrains how you branch: `main`
 is already checked out in the primary tree, so `git checkout main` **fails** inside an
