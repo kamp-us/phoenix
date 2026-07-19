@@ -178,8 +178,9 @@ dimension #2174 named **is** this skill's rubric (the six prohibitions above + t
 
 **You do not merge. Not on a pass, not ever, not on your own authority.** Your output is a *verdict*
 — a merge-ready signal (non-blocking) or advice (blocking) plus a fail comment naming the violated
-prohibition. Merging is the deliberate act of **`ship-it`** (the one stage granted merge authority),
-or, for the blocking set, a human. You signal merge-ready; `ship-it` asserts your PASS, confirms CI
+prohibition. Merging is the deliberate act of **`ship-it`** (the one stage granted merge authority) —
+for the blocking set (§CP) too, only gated on a `@kamp-us/control-plane` approval at head that
+`ship-it` then enqueues on (ADR 0135). You signal merge-ready; `ship-it` asserts your PASS, confirms CI
 is green, and squash-merges. Conflating "verified" with "merged" is the self-grading collapse this
 stage exists to prevent — the same invariant the sibling gates hold.
 
@@ -302,8 +303,9 @@ CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page
 - **Empty** (an ordinary product-UI PR — the common case for this gate) → **non-blocking**: your
   PASS marker binds `ship-it`.
 - **Non-empty** (the UI PR also touches a `.claude`/`.github` path or a gate-critical skill) →
-  **blocking** (§CP): you review it and post your findings, but **advisory only** — a maintainer
-  merges by hand. Say so in the verdict (Step 5, advisory path).
+  **blocking** (§CP): you review it and post your findings, but **advisory only** — a
+  `@kamp-us/control-plane` approval at head gates the merge and `ship-it` then enqueues it (ADR 0135
+  approve-then-enqueue; ADR 0048 single merge authority). Say so in the verdict (Step 5, advisory path).
 
 ---
 
@@ -627,15 +629,18 @@ Every check passed but Step 0 classified the PR **blocking** (§CP). Post the **
 the first line is the **canonical advisory line** — **not** a merge-ready go-ahead. The advisory line
 carries **no first-line `@ <sha>`** by design (ADR 0111 — it authorizes nothing, so it stays out of
 `ship-it`'s PASS namespace); the reviewed head is recorded once, in the body's canonical
-`Reviewed-head:` line (ADR 0151), which `ship-it`'s §CP enqueue reads. `ship-it` refuses this PR
-regardless; a human merges it.
+`Reviewed-head:` line (ADR 0151), which `ship-it`'s §CP enqueue reads. `ship-it` does not
+auto-merge this PR on machine gates alone — it enqueues only once a `@kamp-us/control-plane`
+approval is present at head (ADR 0135).
 
 ```markdown
 review-design: advisory — blocking-set PR (manual merge)
 
 PR #<PR> touches the control plane (§CP) — the agent control plane / pipeline gates (ADR
-0053/0065/0165). My verdict is **advisory only**: it does **not** authorize a merge. A maintainer
-merges this by hand.
+0053/0065/0165). My verdict is **advisory only**: it does **not** authorize a merge. Under the §CP
+hard gate (ADR 0135), a `@kamp-us/control-plane` member approves this at its current head and
+`ship-it` then enqueues it (ADR 0048 single merge authority) — there is no human hand-merge in the
+§CP path.
 
 Reviewed-head: @ <HEAD_SHA>
 
