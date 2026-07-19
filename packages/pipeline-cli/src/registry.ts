@@ -37,6 +37,7 @@ import {fanoutGuardCommand} from "./tools/fanout-guard/command.ts";
 import {ghPhoenixCommand} from "./tools/gh-phoenix/command.ts";
 import {glossaryDriftCommand} from "./tools/glossary-drift/command.ts";
 import {guardContentProbeCommand} from "./tools/guard-content-probe/command.ts";
+import {intakeComposeCommand} from "./tools/intake-compose/command.ts";
 import {intakeDedupCommand} from "./tools/intake-dedup/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {mainSyncCommand} from "./tools/main-sync/command.ts";
@@ -151,6 +152,11 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	changeDetectGuardCommand,
 	patchGuardCommand,
 	intakeDedupCommand,
+	// The #3688 intake-body composer (epic #3258): one tested verb that emits the
+	// format-2 sub-issue body of the gh-issue-intake-formats.md prose contract, so a
+	// filer cites it instead of re-deriving the format — and owns the by-value handoff
+	// that keeps the `-f body=@file` leak class (#2002 / #754) unreachable.
+	intakeComposeCommand,
 	splitGuardCommand,
 	redactLeaksCommand,
 	commandsCommand,

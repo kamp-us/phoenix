@@ -124,6 +124,24 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		reason:
 			"re-derives the epic-body splice (anchor guards + first-time-append / re-plan-in-place) that `pipeline-cli epic-splice apply` owns, instead of citing the verb (#3689 / #261 / #3254)",
 	},
+	{
+		// `intake-compose sub-issue` owns the format-2 sub-issue body of the intake-formats prose
+		// contract (§2, #3688). The fingerprint is the co-occurrence of the two format-2 section
+		// headings AND a bare `POST /issues` create (the ` \`/` -f` tell right after `/issues`,
+		// never `/issues/<N>`) — i.e. a file that actually FILES a composed format-2 body, not one
+		// that merely documents or reads the format. That create discriminator keeps the contract
+		// file (defines the format, no create) and write-code (reads format-2, creates PRs not
+		// issues) out of scope. A file that cites `pipeline-cli intake-compose` is compliant.
+		verb: "intake-compose sub-issue",
+		signature: [
+			/### What to build/, // the format-2 spec heading
+			/### Acceptance criteria/, // the format-2 acceptance-criteria heading
+			/gh api repos\/\$REPO\/issues(?: \\|\s+-f)/, // a bare POST /issues create (not /issues/<N>)
+		],
+		citation: /pipeline-cli\s+intake-compose\b/,
+		reason:
+			"re-derives the format-2 sub-issue body that `pipeline-cli intake-compose sub-issue` owns (the gh-issue-intake-formats.md prose contract §2), instead of citing the verb (#3688 / #3254)",
+	},
 ];
 
 /**

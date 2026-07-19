@@ -468,30 +468,36 @@ query reads for an existing issue before filing. When in doubt on the epic's own
 reconcile (skip/Amend) over a second create; when in doubt on a backlog issue, reference it in the
 rationale and let `review-plan` weigh in.
 
-Create each child via REST, assembling its body from a temp file so multi-line
-markdown and backticks survive the shell. Allocate the body file with `mktemp`
-(every other temp this skill uses is already epic-scoped — `/tmp/plan-epic-<EPIC>-*`),
-not a fixed `/tmp/plan-epic-child.md`: concurrent `plan-epic` runs on sibling epics
-share `/tmp`, so a fixed path lets one run's child body clobber another's between the
-write and this `cat`, filing a child under the right title but with a **sibling epic's
-`### What to build` + acceptance criteria** — a cross-epic body bleed the structural
-floor can't see (it checks markers, never body fidelity), caught only by `review-plan`'s
+Create each child via REST. **Compose its format-2 body with
+`pipeline-cli intake-compose sub-issue`** — the one tested composer for the intake-formats
+prose contract §2 — rather than hand-re-deriving the format here (the #3254 cite-the-verb
+rule). Hand it the child's fields as a spec JSON and it emits the body **by value** on
+stdout, so multi-line markdown and backticks survive the shell without a `<<EOF` heredoc; it
+enforces the format-2 invariants (the ≥ 1-acceptance-criterion hard floor) and owns the
+leak-safe handoff — a stdout-only verb has no scratchpad file to `@`-reference, so the
+`gh api -f body=@<path>` machine-local-path leak (#2002 / #754 / PR #1567) is unreachable.
+Allocate the **spec** file with `mktemp` (every temp this skill uses is already epic-scoped —
+`/tmp/plan-epic-<EPIC>-*`), not a fixed `/tmp/plan-epic-child.json`: concurrent `plan-epic`
+runs on sibling epics share `/tmp`, so a fixed path lets one run's spec clobber another's
+before it is composed, filing a child under the right title but with a **sibling epic's
+`### What to build` + acceptance criteria** — a cross-epic body bleed the structural floor
+can't see (it checks markers, never body fidelity), caught only by `review-plan`'s
 non-blocking advisor (#754, same `/tmp` collision class as `report`'s per-run `mktemp`):
 
 ```bash
-# write this child's body into a per-run temp file, never a shared fixed path (#754)
-CHILD_BODY_FILE="$(mktemp /tmp/plan-epic-<EPIC>-child.XXXXXX)"
-cat > "$CHILD_BODY_FILE" <<'EOF'
-**Stories:** <bare numbers, e.g. `1` or `1, 3` — no `S` prefix, no parenthetical digits>
-**TDD:** yes | no
-
-### What to build
-<…>
-
-### Acceptance criteria
-- [ ] <…>
+# write this child's spec into a per-run temp file, never a shared fixed path (#754)
+CHILD_SPEC_FILE="$(mktemp /tmp/plan-epic-<EPIC>-child.XXXXXX)"
+cat > "$CHILD_SPEC_FILE" <<'EOF'
+{
+  "stories": "<bare numbers, e.g. `1` or `1, 3` — no `S` prefix; or `none (pure infra — see What to build)`>",
+  "tdd": "yes",
+  "whatToBuild": "<the prose spec>",
+  "acceptanceCriteria": ["<observable, checkable criterion>"]
+}
 EOF
-BODY="$(cat "$CHILD_BODY_FILE")"
+# The verb composes the format-2 body per the contract and emits it BY VALUE to stdout — no
+# hand-re-derived `### What to build` / `### Acceptance criteria`, no `-f body=@file` leak.
+BODY="$(pipeline-cli intake-compose sub-issue --spec "$CHILD_SPEC_FILE")"
 # ATOMIC create — body AND its type/priority/status:planned labels in ONE REST write. `POST /issues`
 # accepts `labels` inline, so an interrupted run can never leave a label-less child: the create
 # either lands the issue WITH its labels or creates nothing. (Values chosen per the paragraph below.)
