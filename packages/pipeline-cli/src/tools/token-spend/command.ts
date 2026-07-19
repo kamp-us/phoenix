@@ -6,7 +6,7 @@
  * token spend from the per-message `usage` components (the pure `reconstructSpend` core)
  * and prints the `formatSessionCost` headline over the four-component breakdown — the
  * one-command replacement for the hand-run `jq` documented in
- * `.patterns/token-economics-measurement.md` §2.
+ * `reports/token-economics-measurement.md` §2.
  *
  * Thin IO shell over a pure core (the `leak-guard` / `ci-required` idiom): read the file,
  * run the core, print. An unreadable/missing transcript fails loudly with a clear stderr

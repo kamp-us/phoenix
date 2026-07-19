@@ -102,7 +102,7 @@ simultaneously**:
 
 - **Token axis** — a real, measured token-per-PR reduction for the trivial path vs the full
   fan-out, against the recorded baseline
-  ([token-economics-measurement.md](./token-economics-measurement.md)).
+  ([token-economics-measurement.md](../reports/token-economics-measurement.md)).
 - **Quality axis (the veto)** — measured gate-accuracy on the frozen set showing the lighter
   gate still catches a bad trivial change (a wrong one-liner, a leaked secret/path). A quality
   regression **vetoes the lever regardless of the token win**.

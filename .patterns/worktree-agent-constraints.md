@@ -187,7 +187,7 @@ harness at `git worktree add` time (a real, version-pinned `pnpm install` — it
 `@kampus/*` links resolve worktree-local and correct, per
 [ADR 0109](../.decisions/0109-worktree-deps-provision-not-share.md)). That provisioning runs
 **out-of-band, before your first turn**, so it costs your metered run nothing
-([token-economics-measurement.md §6](./token-economics-measurement.md)).
+([token-economics-measurement.md §6](../reports/token-economics-measurement.md)).
 
 So **do not reflexively run `pnpm install`** on entry — it is redundant setup overhead (≈170 tokens
 of ingested output, plus a wasted Bash turn) that the harness already paid for you, and it is the
