@@ -407,6 +407,86 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 	);
 });
 
+describe("Tracker.createIssue — the intake-create envelope over a mock gh spawner", () => {
+	it.effect("files a needs-triage issue by default → created with its ref + url", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const result = yield* tracker.createIssue({
+				title: "a new finding",
+				body: "## Summary\n…",
+			});
+			assert.deepStrictEqual(result, {
+				_tag: "created",
+				target: 4242,
+				url: "https://github.com/kamp-us/phoenix/issues/4242",
+			});
+		}).pipe((effect) =>
+			provide(effect, {
+				[`POST ${P}/issues`]: JSON.stringify({
+					number: 4242,
+					html_url: "https://github.com/kamp-us/phoenix/issues/4242",
+				}),
+			}),
+		),
+	);
+
+	it.effect("honors an explicit --stage lifecycle stage", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const result = yield* tracker.createIssue({
+				title: "a planned child",
+				body: "…",
+				stage: "planned",
+			});
+			assert.deepStrictEqual(result, {
+				_tag: "created",
+				target: 77,
+				url: "https://github.com/kamp-us/phoenix/issues/77",
+			});
+		}).pipe((effect) =>
+			provide(effect, {
+				[`POST ${P}/issues`]: JSON.stringify({
+					number: 77,
+					html_url: "https://github.com/kamp-us/phoenix/issues/77",
+				}),
+			}),
+		),
+	);
+
+	it.effect("a non-zero gh create exit → GhCommandError in the E channel", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const error = yield* Effect.flip(tracker.createIssue({title: "t", body: "b"}));
+			assert.isTrue(error instanceof GhCommandError);
+		}).pipe((effect) =>
+			// no POST fixture → the create call exits 1 → GhCommandError, never a throw.
+			provide(effect, {}),
+		),
+	);
+});
+
+describe("Tracker.createComment — add a note over a mock gh spawner", () => {
+	it.effect("posts a note to the entity → commented with its ref", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const result = yield* tracker.createComment(TARGET, {body: "a handoff note"});
+			assert.deepStrictEqual(result, {_tag: "commented", ref: 5150});
+		}).pipe((effect) =>
+			provide(effect, {
+				[`POST ${P}/issues/${TARGET}/comments`]: JSON.stringify({id: 5150}),
+			}),
+		),
+	);
+
+	it.effect("a non-zero gh comment exit → GhCommandError in the E channel", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const error = yield* Effect.flip(tracker.createComment(TARGET, {body: "b"}));
+			assert.isTrue(error instanceof GhCommandError);
+		}).pipe((effect) => provide(effect, {})),
+	);
+});
+
 describe("Tracker — the declared-but-not-yet-built verbs fail closed", () => {
 	it.effect("postVerdict → TrackerNotImplementedError", () =>
 		Effect.gen(function* () {

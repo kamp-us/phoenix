@@ -228,14 +228,16 @@ call). Map the finding into the report template:
   seam), explicitly labeled a guess, never a mandate.
 
 ```bash
-# one finding, one issue — only status:needs-triage, exactly like report
+# one finding, one issue — only status:needs-triage, exactly like report. The
+# `tracker create-issue` verb owns this intake-create envelope (ADR 0190;
+# `packages/pipeline-cli/src/tools/tracker/`) and enters the needs-triage queue by default;
+# don't hand-roll the `gh api repos/$REPO/issues` create — the adoption lint (#3254) flags it.
 BODY_FILE="$(mktemp /tmp/arch-audit-body.XXXXXX)"   # per-run temp file (concurrent runs share /tmp)
 # … write the five sections + footer into "$BODY_FILE" …
 BODY="$(cat "$BODY_FILE")"
-gh api repos/$REPO/issues \
-  -f title="<short, type-neutral finding summary (≤ ~70 chars)>" \
-  -f body="$BODY" \
-  -f "labels[]=status:needs-triage"
+pipeline-cli tracker create-issue \
+  --title "<short, type-neutral finding summary (≤ ~70 chars)>" \
+  --body "$BODY"
 ```
 
 Use the `report` footer helper for the metadata block so it stays free of PII and local paths

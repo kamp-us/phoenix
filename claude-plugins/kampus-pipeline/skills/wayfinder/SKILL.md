@@ -500,11 +500,13 @@ Charted and cleared on wayfinder:map #<MAP>. Downstream is the existing pipeline
 EOF
   echo   # blank line before the footer block
   claude-plugins/kampus-pipeline/skills/report/footer.sh   # emits its own `---` + <sub>… line
-} | gh api repos/$REPO/issues \
-  -f title="<the epic, as one concrete deliverable>" \
-  -F body=@- \
-  -f "labels[]=status:needs-triage"
+} | pipeline-cli tracker create-issue --title "<the epic, as one concrete deliverable>"
 ```
+
+The `tracker create-issue` verb owns this intake-create envelope (ADR 0190;
+`packages/pipeline-cli/src/tools/tracker/`): it files a `status:needs-triage` issue, reading the
+body from stdin so the composed heredoc streams straight in. Don't hand-roll the
+`gh api repos/$REPO/issues` create — that inline envelope is what the adoption lint (#3254) flags.
 
 ### Close the map on graduation — the close-on-source forcing function
 
