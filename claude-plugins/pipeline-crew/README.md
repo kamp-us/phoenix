@@ -185,6 +185,13 @@ table, and how the crew boots from that one config (the tracker + the three brid
 engines the config declares), are the [personalization seam](PERSONALIZATION.md)'s scope; read
 it there rather than duplicating the key list here.
 
+`/stand-up` boots the whole self-driving roster and *excludes* the human-in-the-loop
+cartographer (ADR [0189](../../.decisions/0189-crew-roster-law.md), #3524). To bring up **one**
+on-demand role — the cartographer for a `wayfinder chart`, or a scaled-up extra engine — run
+[`/spawn-role <role>`](commands/spawn-role.md): it adds a single member to the running crew with
+the full launcher bind (so the channel is never inert) and boots a HITL role idle. It fails
+closed if no crew is up — `/stand-up` first.
+
 ## Layout
 
 ```
@@ -195,6 +202,9 @@ pipeline-crew/
 │   ├── intake-desk.md            # intake bridge (report → triage → plan)
 │   ├── engineering-manager.md    # execution engine (coder → reviewer → shipper), ×N
 │   └── chief-of-staff.md         # outbound-awareness bridge (live verifier, human comms)
+├── commands/
+│   ├── stand-up.md               # boot the whole crew from the operator config
+│   └── spawn-role.md             # launch ONE on-demand role (the HITL cartographer, a scaled-up engine)
 ├── PERSONALIZATION.md            # the personalization seam — the config contract + dimensions
 ├── PROBES.md                     # probe discipline — fail-open liveness/health probes (#3411)
 ├── crew.config.template.jsonc    # placeholder-only per-install config template
