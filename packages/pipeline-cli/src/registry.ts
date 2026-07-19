@@ -52,6 +52,7 @@ import {shipDigestCommand} from "./tools/ship-digest/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
 import {structuredOutputGuardCommand} from "./tools/structured-output-guard/command.ts";
 import {tokenSpendCommand} from "./tools/token-spend/command.ts";
+import {trackerCommand} from "./tools/tracker/command.ts";
 import {trivialDiffCommand} from "./tools/trivial-diff/command.ts";
 import {unresolvedThreadsGuardCommand} from "./tools/unresolved-threads-guard/command.ts";
 import {verdictCommand} from "./tools/verdict/command.ts";
@@ -118,6 +119,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	controlPlanePathsCommand,
 	cpCardinalityCommand,
 	tokenSpendCommand,
+	trackerCommand,
 	trivialDiffCommand,
 	classProbeCommand,
 	wayfinderMapCommand,
