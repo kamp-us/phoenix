@@ -54,7 +54,11 @@ export const judge = (ciText: string): ChangeDetectVerdict => {
 	try {
 		doc = parse(ciText);
 	} catch (cause) {
-		return {pass: false, reason: "zero-scope", detail: `could not parse ci.yml YAML (${String(cause)})`};
+		return {
+			pass: false,
+			reason: "zero-scope",
+			detail: `could not parse ci.yml YAML (${String(cause)})`,
+		};
 	}
 	if (!isRecord(doc) || !isRecord(doc.jobs)) {
 		return {pass: false, reason: "zero-scope", detail: "ci.yml has no top-level 'jobs:' mapping"};

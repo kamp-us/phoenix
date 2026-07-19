@@ -40,18 +40,13 @@ describe("judge — the API-free git-mode invariant on ci.yml's changes job", ()
 		expect(judge(ci)).toEqual({pass: true});
 	});
 
-	it("PASSES when the dorny step sets token: \"\" (double-quoted empty)", () => {
+	it('PASSES when the dorny step sets token: "" (double-quoted empty)', () => {
 		const ci = mkCi(['token: ""', "filters: |", "  code:", "    - 'packages/**'"]);
 		expect(judge(ci)).toEqual({pass: true});
 	});
 
 	it("FAILS (api-mode) when the dorny step sets an explicit github.token", () => {
-		const ci = mkCi([
-			"token: ${{ github.token }}",
-			"filters: |",
-			"  code:",
-			"    - 'packages/**'",
-		]);
+		const ci = mkCi(["token: ${{ github.token }}", "filters: |", "  code:", "    - 'packages/**'"]);
 		expect(judge(ci)).toMatchObject({pass: false, reason: "api-mode"});
 	});
 
