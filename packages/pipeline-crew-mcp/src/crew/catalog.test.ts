@@ -25,6 +25,7 @@ describe("crew/catalog — roles mapped to seams over protocol/", () => {
 			"roleUniquenessLease",
 			"drainTally",
 			"intakePing",
+			"engineNudge",
 			"announcePresence",
 			"lookupRole",
 		] as const) {
@@ -42,6 +43,7 @@ describe("crew/catalog — roles mapped to seams over protocol/", () => {
 			"AnnouncePresence",
 			"Claim",
 			"DrainProgress",
+			"EngineNudge",
 			"Heartbeat",
 			"IntakePing",
 			"LookupRole",

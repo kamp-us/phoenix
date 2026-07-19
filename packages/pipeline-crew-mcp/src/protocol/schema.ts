@@ -71,6 +71,29 @@ export const IntakePing = Schema.Struct({
 	at: Timestamp,
 });
 
+// Kind 6 — engine nudge (advisory, non-routing; chief-of-staff → engine).
+
+/**
+ * The nudge's subject: exactly one of a PR or an issue, never both/neither — the `{pr|issue}`
+ * shape modelled as a union so an ill-formed nudge that names both, or neither, is unrepresentable.
+ */
+export const NudgeTarget = Schema.Union([
+	Schema.Struct({pr: Schema.NonEmptyString}),
+	Schema.Struct({issue: Schema.NonEmptyString}),
+]);
+
+/**
+ * An advisory nudge about one specific PR/issue, IntakePing-shaped. It is NOT command authority
+ * and NOT lane-assignment: an engine takes no code dependency on receiving one (the board stays the
+ * authoritative pull-source), and a dropped/offline nudge is log-and-continue. See ADR 0189.
+ */
+export const EngineNudge = Schema.Struct({
+	target: NudgeTarget,
+	from: RoleId,
+	note: Schema.optionalKey(Schema.String),
+	at: Timestamp,
+});
+
 // Kind 4 — role discovery / presence (announce + lookup).
 
 /** One presence record: a peer, the role it serves, and when it was last seen. */

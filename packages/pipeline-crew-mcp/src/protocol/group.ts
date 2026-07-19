@@ -1,5 +1,5 @@
 /**
- * protocol/group — the 6 crew message kinds as one Effect `RpcGroup`.
+ * protocol/group — the 7 crew message kinds as one Effect `RpcGroup`.
  *
  * Generic (crew-agnostic); see the boundary note in `../index.ts`. Each kind is an
  * `Rpc` carrying a Schema payload from `./schema.ts`. Kinds that expect an answer
@@ -34,6 +34,15 @@ export const IntakePing = Rpc.make("IntakePing", {
 	payload: Messages.IntakePing,
 });
 
+/**
+ * Kind 6 — engine nudge: advisory, non-routing, fire-and-forget. Rides the same fire-and-forget
+ * shape as `IntakePing` (no reply, dropped ⇒ log-and-continue); scoped chief-of-staff → engine at
+ * the crew catalog. Advisory only — never command authority or lane-assignment (ADR 0189).
+ */
+export const EngineNudge = Rpc.make("EngineNudge", {
+	payload: Messages.EngineNudge,
+});
+
 /** Kind 4a — role discovery/presence: announce (fire-and-forget). */
 export const AnnouncePresence = Rpc.make("AnnouncePresence", {
 	payload: Messages.PresenceAnnouncement,
@@ -50,12 +59,13 @@ export const Heartbeat = Rpc.make("Heartbeat", {
 	payload: Messages.Heartbeat,
 });
 
-/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 6 kinds. */
+/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 7 kinds. */
 export const CrewProtocol = RpcGroup.make(
 	Claim,
 	Release,
 	DrainProgress,
 	IntakePing,
+	EngineNudge,
 	AnnouncePresence,
 	LookupRole,
 	Heartbeat,
@@ -67,7 +77,7 @@ export const crewMessageKinds: ReadonlyArray<string> = [...CrewProtocol.requests
 /**
  * Resolve a wire `kind` name to the Schema payload the catalog types it as — the seam that lets
  * a boundary decode a message's `body` against its kind instead of trusting `Schema.Unknown`,
- * so the 6-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
+ * so the 7-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
  * from `CrewProtocol.requests` so it can never drift from the catalog above — the catalog *is*
  * the map. A kind outside the catalog resolves to `undefined`; the caller rejects it.
  *

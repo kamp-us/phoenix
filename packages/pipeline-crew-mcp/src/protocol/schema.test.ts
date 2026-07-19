@@ -64,6 +64,20 @@ describe("protocol/schema round-trips", () => {
 		});
 	});
 
+	it("kind 6 — engine nudge (pr and issue targets, with and without the optional note)", () => {
+		roundTrips(Messages.EngineNudge, {
+			target: {pr: "pr:3649"},
+			from: "chief-of-staff",
+			note: "reviewed + banked, worth a look",
+			at: "2026-07-19T10:03:00Z",
+		});
+		roundTrips(Messages.EngineNudge, {
+			target: {issue: "issue:3100"},
+			from: "chief-of-staff",
+			at: "2026-07-19T10:03:00Z",
+		});
+	});
+
 	it("kind 4 — presence announce + role lookup query/result", () => {
 		roundTrips(Messages.PresenceAnnouncement, {
 			peer: "peer-a",

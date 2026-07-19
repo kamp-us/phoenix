@@ -137,3 +137,47 @@ engine is fungible throughput, so it scales by count, not by a named second offi
 
 Records the crew roster law charted on wayfinder:map #3207 (rulings #3213/#3221/#3222/#3224/
 #3210/#3212/#3220). Implemented against by #3234–#3237.
+
+## Amendment — the advisory `chief-of-staff → engine` `EngineNudge` edge (founder ruling #3534, #3649)
+
+The "Topology is FLAT" decision above deleted the **EA→EM routing edge** — correctly: an engine
+must not receive *execution work* through a bridge, or the bridge becomes a switchboard and the
+engine stops being fungible board-pull throughput. But that deletion over-reached in prose,
+leaving the chief-of-staff **silent to the engine entirely** — while it kept a live
+`chief-of-staff → intake-desk` (`IntakePing`) edge of exactly the harmless advisory shape. That
+asymmetry is the human-as-switchboard symptom (#3501): a chief-of-staff that has verified a specific
+banked §CP PR is reviewed-ready cannot even *point the engine at it* without a human relaying by
+hand. Founder ruling #3534 (2026-07-19) restores the advisory shape to the engine without
+reintroducing routing.
+
+**The edge.** A new **non-routing** message kind, `EngineNudge {pr|issue, note}`, on the
+`chief-of-staff → engine` edge, scoped **identically** to `IntakePing`:
+
+- **Advisory about one specific PR/issue only** — never command authority, never lane-assignment.
+- **The board stays the single authoritative pull-source.** An engine takes **no** code dependency
+  on receiving a nudge; it still pulls every unit of work off the board and `Claim`s against the
+  tracker. Cardinality-N is preserved — a second engine that never receives a nudge is unaffected.
+- **Dropped/offline nudge is log-and-continue** — no retry, no escalation, no ack-required, exactly
+  as every other crew edge (a nudge is a latency optimization over the board; a failed send costs
+  freshness, never correctness).
+
+**Why this advisory nudge is safe where execution-routing was not (the hub-and-spoke threat-model).**
+The danger the flat-topology decision guarded against is a bridge becoming a **load-bearing spine**:
+if an engine *depended* on the chief-of-staff to receive its work, then (1) the chief-of-staff would
+be a single point of failure for the whole drain, (2) a second engine would be starved unless the
+bridge fanned work to it — reintroducing routing logic and per-engine addressing — and (3) the
+bridge would hold execution authority it must never have. `EngineNudge` triggers **none** of these:
+it carries no work (only a pointer to a board item the engine can already see and pull itself), so a
+dropped nudge changes nothing an engine does; it creates no dependency, so no engine is starved
+without it; and it confers no authority, since the engine decides what to pull by the board's rules,
+not by the nudge. The invariant that makes it safe is **the engine's code-level independence from the
+edge** — the same property that lets `IntakePing` be a safe `chief-of-staff → intake-desk` nudge. An
+edge that an engine *cannot become dependent on* is not a hub-and-spoke spine, regardless of its
+direction.
+
+**Wiring.** `EngineNudge` is added alongside `IntakePing` in the crew-mcp protocol
+(`packages/pipeline-crew-mcp/src/protocol/` — the `EngineNudge` struct, its `Rpc` in the
+`CrewProtocol` group, the `engineNudge` crew seam) and rides the same fire-and-forget send path
+(`packages/pipeline-crew-mcp/src/edge/`). The chief-of-staff def carries the new outbound edge and
+its reconciled "silent-by-design to the engine" language. Sibling #3532 (the board-native
+orphan-red-PR fix) is orthogonal and not contradicted by this founder-directed targeting edge.

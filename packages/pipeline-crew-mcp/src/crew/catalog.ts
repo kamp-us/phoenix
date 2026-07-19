@@ -14,6 +14,7 @@ import {
 	Claim,
 	CrewProtocol,
 	DrainProgress,
+	EngineNudge,
 	Heartbeat,
 	IntakePing,
 	LookupRole,
@@ -32,6 +33,8 @@ export const CrewSeams = {
 	releaseClaim: Release,
 	drainTally: DrainProgress,
 	intakePing: IntakePing,
+	// chief-of-staff → engine advisory nudge; scoped like intakePing, never routing (ADR 0189).
+	engineNudge: EngineNudge,
 	announcePresence: AnnouncePresence,
 	lookupRole: LookupRole,
 	heartbeat: Heartbeat,

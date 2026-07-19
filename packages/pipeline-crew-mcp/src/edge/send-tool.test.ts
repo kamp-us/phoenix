@@ -124,6 +124,59 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 		}),
 	);
 
+	// The EngineNudge drop path (#3649): an advisory chief-of-staff → engine nudge to an OFFLINE
+	// engine comes back as an error result — never a silent drop — so the caller can log-and-continue
+	// (no retry, no escalation, no ack-required). This mirrors the IntakePing offline test above: the
+	// nudge is a latency optimization over the board, so a dropped one costs freshness, never
+	// correctness (the board stays the authoritative pull-source; ADR 0189).
+	it.effect(
+		"channel_send EngineNudge to an offline engine returns an error result (log-and-continue)",
+		() =>
+			Effect.gen(function* () {
+				const {client} = yield* makeInitializedClient;
+				const result = yield* client["tools/call"]({
+					name: "channel_send",
+					arguments: {
+						targetRole: "ghost",
+						kind: "EngineNudge",
+						body: {
+							target: {pr: "pr:3649"},
+							from: "chief-of-staff",
+							at: "2026-07-19T10:00:00Z",
+						},
+					},
+				});
+				assert.isTrue(result.isError);
+			}),
+	);
+
+	// A valid EngineNudge to a live engine delivers just like any other kind — proving the new kind is
+	// wired through the send-tool identically to IntakePing (the catalog derives the send path).
+	it.effect(
+		"channel_send routes a valid EngineNudge to the live peer and returns its inbox ack",
+		() =>
+			Effect.gen(function* () {
+				const {client} = yield* makeInitializedClient;
+				const result = yield* client["tools/call"]({
+					name: "channel_send",
+					arguments: {
+						targetRole: "reviewer",
+						kind: "EngineNudge",
+						body: {
+							target: {issue: "issue:3100"},
+							from: "chief-of-staff",
+							note: "worth a pass",
+							at: "2026-07-19T10:00:00Z",
+						},
+					},
+				});
+				assert.isFalse(result.isError);
+				const ack = result.structuredContent as {by?: string; messageId?: string};
+				assert.strictEqual(ack.by, "peer-b");
+				assert.strictEqual(ack.messageId, "m-9");
+			}),
+	);
+
 	// The shape gate (#3229): an unknown kind or a body that fails its kind's schema is rejected
 	// BEFORE any dial, so the sender never gets a delivered-to-inbox ack for a malformed message.
 	it.effect("channel_send rejects an unknown kind before reaching a peer", () =>
