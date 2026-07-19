@@ -61,15 +61,6 @@ export const MECMUA_WRITE = "mecmua-write";
 export const PANO_FEED_EDGE_CACHE = "pano-feed-edge-cache";
 
 /**
- * Optimistic `post.submit` (feed root-list insert) containment flag (#1676, epic
- * #1637). Default-off: with it off, submit is a plain round-trip; flipping it on
- * enables the optimistic front-of-feed insert that reconciles to the server row.
- * Its own key (not the authorship-loop seam) — an independent per-mutation
- * dark-ship for the Class B root-list optimistic slice.
- */
-export const PANO_OPTIMISTIC_SUBMIT = "pano-optimistic-submit";
-
-/**
  * Optimistic `comment.add` (instant nested-thread insert) containment flag (#1678,
  * epic #1637). Default-off: with it off, a new comment/reply joins the thread only
  * when the server `live.comment.thread.appendNode` frame (or the read-back self-heal)
@@ -375,7 +366,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_PANO_STAMP_WAVE, defaultValue: false},
 	{key: MECMUA_WRITE, defaultValue: false},
 	{key: PANO_FEED_EDGE_CACHE, defaultValue: false},
-	{key: PANO_OPTIMISTIC_SUBMIT, defaultValue: false},
 	{key: PANO_OPTIMISTIC_COMMENT_ADD, defaultValue: false},
 	{key: PANO_OPTIMISTIC_COMMENT_DELETE, defaultValue: false},
 	{key: PANO_OPTIMISTIC_POST_DELETE, defaultValue: false},

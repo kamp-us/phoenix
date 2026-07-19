@@ -10,8 +10,7 @@ import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import type {WireMessageOverrides} from "../fate/wireMessages";
 import {FlagGate} from "../flags/FlagGate";
-import {PANO_DRAFT_SAVE, PANO_OPTIMISTIC_SUBMIT} from "../flags/keys";
-import {useFlag} from "../flags/useFlag";
+import {PANO_DRAFT_SAVE} from "../flags/keys";
 import {panoSubmitGate} from "../lib/panoSubmitGate";
 import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
@@ -92,9 +91,6 @@ export function PanoSubmitPage() {
 	const [draftSaved, setDraftSaved] = React.useState(false);
 
 	const fate = useFateClient();
-	// Default-off containment flag (#1676, epic #1637): off ⇒ plain round-trip;
-	// on ⇒ optimistic front-of-feed insert that reconciles to the server row.
-	const {value: optimisticSubmit} = useFlag(PANO_OPTIMISTIC_SUBMIT, false);
 	const {fetchMetadata} = useLinkMetadata();
 	const {
 		error,
@@ -179,12 +175,11 @@ export function PanoSubmitPage() {
 		const linkUrl = mode === "link" && trimmedUrl ? trimmedUrl : null;
 		await run(
 			() =>
-				// The pano feed is a registered no-filter root list, so under the
-				// containment flag `insert: "before"` declaratively prepends the new
-				// post with a temp-id optimistic node fate reconciles to the server id
-				// (the same row `live.post.feed.appendNode` carries — reconcile dedups by
-				// id, so no double-row for the mutator's own client). Flag off ⇒ plain
-				// round-trip. See `.patterns/fate-mutations-client.md`.
+				// The pano feed is a registered no-filter root list, so `insert: "before"`
+				// declaratively prepends the new post with a temp-id optimistic node fate
+				// reconciles to the server id (the same row `live.post.feed.appendNode`
+				// carries — reconcile dedups by id, so no double-row for the mutator's own
+				// client). See `.patterns/fate-mutations-client.md`.
 				fate.mutations.post.submit({
 					input: {
 						title: trimmedTitle,
@@ -193,7 +188,7 @@ export function PanoSubmitPage() {
 						...(body.trim() ? {body} : {}),
 					},
 					view: PanoPostCardView,
-					...postSubmitMembership(optimisticSubmit, {
+					...postSubmitMembership({
 						title: trimmedTitle,
 						url: linkUrl,
 						host: linkUrl ? hostOf(linkUrl) : null,

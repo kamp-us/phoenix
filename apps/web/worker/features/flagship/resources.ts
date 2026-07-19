@@ -21,7 +21,6 @@ import {
 	PANO_OPTIMISTIC_COMMENT_ADD,
 	PANO_OPTIMISTIC_COMMENT_DELETE,
 	PANO_OPTIMISTIC_POST_DELETE,
-	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_ADMIN_CONSOLE,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
@@ -107,7 +106,6 @@ export {
 	PANO_OPTIMISTIC_COMMENT_ADD,
 	PANO_OPTIMISTIC_COMMENT_DELETE,
 	PANO_OPTIMISTIC_POST_DELETE,
-	PANO_OPTIMISTIC_SUBMIT,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
 	PHOENIX_FUNNEL_READOUT,
@@ -116,37 +114,6 @@ export {
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_EDITS,
 };
-
-/**
- * The optimistic `post.submit` (feed root-list insert) containment flag config
- * (#1676, epic #1637). Default-OFF so it reaches production dark — with it off,
- * submit is a plain round-trip and the product behaves as today; flipping it on
- * is the human release act (ADR 0083).
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_DRAFT_SAVE_FLAG` / `FUNNEL_READOUT_FLAG`).
- *
- * Per-flag metadata:
- *   - owner:           pano
- *   - originating:     #1676 (epic: optimistic content mutations, #1637)
- *   - removal trigger: once optimistic submit graduates to on at 100% and stable,
- *                      retire the flag and inline the optimistic path.
- */
-export const PANO_OPTIMISTIC_SUBMIT_FLAG = {
-	key: PANO_OPTIMISTIC_SUBMIT,
-	description:
-		"optimistic post.submit feed insert dark-ship (#1676). owner: pano. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const panoOptimisticSubmitFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("pano_optimistic_submit", {appId, ...PANO_OPTIMISTIC_SUBMIT_FLAG});
 
 /**
  * The base-feed / viewer-overlay split dark-ship flag config (#2322, epic #2316 leg
