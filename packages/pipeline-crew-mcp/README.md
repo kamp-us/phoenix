@@ -2,8 +2,8 @@
 
 The crew's channels-backed messaging substrate — the peer-to-peer transport the pipeline
 crew talk over, exposed to each agent as MCP channels (epic #3045). The crew is a flat
-topology of five standing roles (`ea-chief-of-staff`, `engineering-manager`, `triage-guy`,
-`junior-engineer`, `cartographer`), coordinating over a generic p2p tracker + peers with an
+topology of four standing roles (`chief-of-staff`, `cartographer`, `intake-desk`,
+`engineering-manager`), coordinating over a generic p2p tracker + peers with an
 MCP channel edge on top, so an agent joins a channel and sends/receives crew messages through
 its MCP client instead of an out-of-band tmux relay. Internal pipeline tooling, on no kamp.us
 user surface.
@@ -41,7 +41,7 @@ A small, layered substrate split into a **generic core** and one **crew-coupled*
 - **`src/peer/`** — a p2p participant: dials, holds connections, relays messages over the protocol.
 - **`src/edge/`** — the MCP channel edge: exposes the substrate to an MCP client as channels.
 - **`src/crew/`** — the only crew-coupled module and the composition root: the Role enum (the
-  five-role flat topology), the seam catalog (each role's crew interactions mapped over
+  four-role flat topology), the seam catalog (each role's crew interactions mapped over
   `protocol/`), the wiring that composes tracker + peer + edge into a per-role channel server
   (enforcing the role-uniqueness lease the generic peer does not, ADR 0189), and the runnable
   stdio session entry (`crew/session.ts`).
@@ -74,7 +74,7 @@ pnpm --filter @kampus/pipeline-crew-mcp typecheck  # tsgo typecheck
 pnpm --filter @kampus/pipeline-crew-mcp test       # @effect/vitest suite
 ```
 
-The `--role` is one of the five standing `CREW_ROLES` (`ea-chief-of-staff`, `engineering-manager`,
-`triage-guy`, `junior-engineer`, `cartographer`); the session joins the per-project tracker under
+The `--role` is one of the four standing `CREW_ROLES` (`chief-of-staff`, `cartographer`,
+`intake-desk`, `engineering-manager`); the session joins the per-project tracker under
 `--project-root` (default: cwd) and runs until interrupted. See the [Tutorial](./docs/tutorial.md)
 for the first-run walkthrough and the [Reference](./docs/reference.md) for the full CLI surface.
