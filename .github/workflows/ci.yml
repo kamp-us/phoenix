@@ -80,24 +80,33 @@ jobs:
       # The `feature-complete` forcing function still wins (it ORs with `backend`), and
       # since a feature-complete PR is by definition worker-affecting the worker-
       # relevance AND never strips a flagged full sweep in practice.
-      # `merge_group` now respects the SAME worker-relevance filter the `pull_request`
-      # path trusts (issue #3079), instead of ORing in FIRST to force the full suite on
-      # every batch — the old unconditional merge_group run let a flaky real-CF integration
-      # suite evict clean worker-IRRELEVANT PRs from the queue (#3075: #3067/#3073/#3074/
-      # #3064). The classify step below now runs on `merge_group` too, over the batch's
-      # real `base_sha...head_sha` range (ADR 0132) — the prospective merge of every queued
-      # PR, so a diff over it OR's ALL batched PRs: the batch is worker-relevant if ANY
-      # batched PR touches the worker, and integration is skipped ONLY when EVERY batched PR
-      # is provably worker-irrelevant (`worker_relevant == 'false'`). FAIL-SAFE TO RUNNING is
-      # preserved end to end — `|| 'true'` defaults an absent/empty output to running, the
-      # classify step emits `worker_relevant=true` on any missing base/head SHA or
-      # unresolvable diff, and the classifier core itself fails safe to running — so any
-      # doubt RUNS integration, never skips (the #3079 threat model: a mis-classified
-      # worker-relevant batch must never skip and merge broken). The batch still runs in the
-      # trusted base's context with repo secrets, so the PR-only fork/author guard does not
-      # apply.
+      # `merge_group` now respects the SAME two change-detection gates the `pull_request`
+      # path trusts, ANDed together — the `backend` path filter AND the worker-relevance
+      # classifier — instead of ORing in FIRST to force the full suite on every batch. The
+      # old unconditional merge_group run let a flaky real-CF integration suite evict clean
+      # worker-IRRELEVANT PRs from the queue (#3075: #3067/#3073/#3074/#3064; #3079 added the
+      # worker-relevance AND). But worker-relevance alone was still COARSER than the PR-head
+      # gate: it fail-safes any non-`packages/**` path (a docs/markdown/skills diff) to
+      # `relevant`, so a docs-only batch RAN integration on merge_group even though the
+      # `backend` path filter SKIPS it on the PR head — the two contexts disagreed, and a
+      # clean docs-only PR got dequeued when that gating run hit the teardown flake
+      # (#3514/#690/#813; PR #3512, run 29659047210). Fix: gate the merge_group branch on the
+      # SAME `backend` path filter the PR head uses, so the skip decision is consistent across
+      # PR head and merge_group. `steps.filter.outputs.backend` IS computed on merge_group —
+      # `dorny/paths-filter` diffs the merge_group ref against the default branch (`main...ref`
+      # merge-base), i.e. the batch's cumulative diff — so a docs-only batch has
+      # `backend == false` in BOTH contexts. The worker-relevance AND is retained: a
+      # lockfile-triggered-but-worker-irrelevant batch (`backend == true`, `worker_relevant ==
+      # false`) still skips, mirroring the PR head. FAIL-SAFE TO RUNNING is preserved end to
+      # end — `|| 'true'` defaults an absent/empty worker_relevant to running, the classify
+      # step emits `worker_relevant=true` on any missing base/head SHA or unresolvable diff,
+      # and dorny lists a superset of files on any diff ambiguity → `backend=true` → RUN; so
+      # any doubt RUNS integration, never skips (the #3079 threat model: a mis-classified
+      # batch must never skip and merge broken). The batch still runs in the trusted base's
+      # context with repo secrets, so the PR-only fork/author guard does not apply.
       integration_required: >-
         ${{ (github.event_name == 'merge_group' &&
+             steps.filter.outputs.backend == 'true' &&
              (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false') ||
             ((steps.filter.outputs.backend == 'true' ||
              contains(github.event.pull_request.labels.*.name, 'feature-complete')) &&
