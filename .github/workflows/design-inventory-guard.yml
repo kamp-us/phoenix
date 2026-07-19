@@ -1,0 +1,57 @@
+name: design-inventory-guard
+
+# CI gate for #3156 (epic #3150, ADR 0194 — the descriptive/normative firewall): closes the
+# self-updating loop for the DESCRIPTIVE component inventory and ENFORCES the firewall, so both
+# are gated at merge rather than merely intended. Two fail-closed checks:
+#
+#   1. Self-update freshness — re-run the extractor and red when the committed
+#      `design-system-inventory.md` is stale vs the live JSDoc on the annotated
+#      `apps/web/src/components/ui/*` primitives (drift = red; fresh = green). This keeps
+#      agent-facing coverage current without founder re-transcription.
+#   2. Descriptive/normative firewall — regenerate through the extractor (which writes ONLY the
+#      descriptive inventory) and red if the founder-authored `design-system-manifest.md` moved.
+#      A change to normative law must come from a human, never the extraction path.
+#
+# Both fail closed on zero scope (ADR 0092): zero annotated primitives reds the extractor. The
+# scan lives once in `pipeline-cli design-inventory` (the readme-guard / design-token-guard idiom).
+on:
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: the job checks out + reads the repo and runs the guard, which
+# fails via exit code — it posts no check-run/status/PR comment — so contents:read is all it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: descriptive inventory is fresh and the normative manifest is untouched
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # AC1 — self-update freshness. Exit 1 when the committed inventory drifts from a fresh
+      # extraction, or when zero primitives are in scope (fail-closed). Report on stderr.
+      - name: Check the committed descriptive inventory is fresh
+        run: node packages/pipeline-cli/src/bin.ts design-inventory check
+
+      # AC2 — the descriptive/normative firewall. Run the real extraction path (it writes ONLY
+      # the descriptive inventory, structurally — gate.ts's writeDescriptiveArtifact refuses any
+      # other target) and assert the founder-authored normative manifest is byte-unchanged. A
+      # descriptive-only regeneration greens; any auto-mutation of design-system-manifest.md reds.
+      - name: Check the extraction path never mutates the normative manifest (firewall)
+        run: |
+          node packages/pipeline-cli/src/bin.ts design-inventory generate
+          git diff --exit-code -- design-system-manifest.md

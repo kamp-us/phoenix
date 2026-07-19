@@ -8,8 +8,9 @@
  *
  *   pipeline-cli design-inventory generate            # write design-system-inventory.md from the primitives' JSDoc
  *   pipeline-cli design-inventory generate --stdout   # print the index instead of writing it
- *   pipeline-cli design-inventory generate --check     # red on drift (freshness signal; CI wiring is #3156)
+ *   pipeline-cli design-inventory generate --check     # red on drift (freshness signal)
  *   pipeline-cli design-inventory generate --root <d> # point at a specific repo root (else: walk up for one)
+ *   pipeline-cli design-inventory check               # the CI guard: red on a stale inventory (#3156)
  *
  * FIREWALL (ADR 0194): the tool writes ONLY the descriptive inventory artifact; the
  * normative manifest (four pillars / prohibitions / role-token values) is founder-authored
@@ -83,8 +84,28 @@ const generate = Command.make(
 	),
 );
 
+// The canonical guard entrypoint (`pipeline-cli <tool> check`, mirroring readme-guard /
+// design-token-guard) the CI job invokes — the self-update freshness rung of #3156. It reds
+// when the committed inventory drifts from a fresh extraction and fails closed on zero scope;
+// no write, so it's safe on a read-only checkout. It reuses the gate's `--check` path so the
+// scan lives once. The firewall half of #3156 is a git-diff belt in the workflow (a mutation
+// check has no home in a read-only pure gate) backed by the structural refusal in `gate.ts`.
+const check = Command.make(
+	"check",
+	{root: rootFlag},
+	Effect.fn(function* ({root: rootOpt}) {
+		yield* generateInventory(resolveRoot(rootOpt), {stdout: false, check: true}).pipe(
+			Effect.catchTag("CheckFailed", onCheckFailed),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"CI guard: fail closed when the committed descriptive inventory is stale vs the primitives' JSDoc",
+	),
+);
+
 export const designInventoryCommand = Command.make("design-inventory").pipe(
-	Command.withSubcommands([generate]),
+	Command.withSubcommands([generate, check]),
 	Command.withDescription(
 		"Self-updating descriptive component inventory from components/ui JSDoc (issue #3155, ADR 0194)",
 	),
