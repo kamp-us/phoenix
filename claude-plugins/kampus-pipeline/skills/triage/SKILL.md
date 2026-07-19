@@ -253,16 +253,37 @@ How to split:
    If an existing issue already covers it, enrich/triage that one instead of filing
    a twin. (This rule exists because a triage run once filed a duplicate of an issue
    that had landed in the queue minutes earlier.)
-3. **Create one new issue per extra unit** via REST, each labeled
-   `status:needs-triage` so it re-enters the queue (you'll triage the new ones on a
-   later pass — or this same run — like any other). Give each a sharp single-unit
-   title and a body that states the one problem, following the report skill's
-   5-section shape where it fits (see [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)
-   for the surrounding format conventions).
-4. **Cross-link.** Each new issue references the original (`split from #N`), and you
-   add a comment on the original listing the children (`split into #A, #B`). The
-   reader can always trace a unit back to where it came from.
-5. **Resolve the original.** Either keep it as one of the units (triage it normally,
+3. **Create-once guard — key the child-create on the parent back-reference (#3464).**
+   The child-create is otherwise **non-idempotent**: a retry or a re-emit of the same
+   split fires a second byte-identical twin (the #3462/#3463 double-fire — two children
+   5s apart). Before every split-child POST, ask `split-guard` whether a child that
+   already covers *this* `(parent, title)` unit exists — keyed on the durable
+   `split from #<parent>` back-reference each split child carries (item 5 below), **not**
+   body byte-equality, so a twin re-emitted with a slightly different body is still caught:
+
+   ```bash
+   EXISTING=$(node packages/pipeline-cli/src/bin.ts split-guard check \
+     --parent <original #N> --title "<the split-child title>")
+   ```
+
+   It prints the existing child's `#<n>` (⇒ **reuse it, skip the POST**) or nothing
+   (⇒ safe to create). It reads the read-after-write `needs-triage` queue, so a twin
+   created seconds ago is caught where the eventually-consistent search index would miss
+   it. This closes the sequential re-emit hole; the Step-0 claim still guards a concurrent
+   sibling sweep, and Step 3.2's `intake-dedup` still guards a report-agent twin.
+4. **Create one new issue per extra unit** via REST — **only when the create-once guard
+   found no existing child** — each labeled `status:needs-triage` so it re-enters the
+   queue (you'll triage the new ones on a later pass — or this same run — like any other).
+   Give each a sharp single-unit title and a body that states the one problem, following
+   the report skill's 5-section shape where it fits (see
+   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) for the surrounding
+   format conventions).
+5. **Cross-link.** Each new issue references the original (`split from #N`) — this
+   back-reference is the create-once key the guard in item 3 reads, so it is
+   **load-bearing, not decorative** — and you add a comment on the original listing the
+   children (`split into #A, #B`). The reader can always trace a unit back to where it
+   came from.
+6. **Resolve the original.** Either keep it as one of the units (triage it normally,
    having spun the *other* units off) or, if it was purely a container with nothing
    left after splitting, close it not-planned with a `closed-by-triage` reason
    comment pointing at the children (the full close-out protocol — reason comment +
@@ -270,11 +291,19 @@ How to split:
    empty husk open.
 
 ```bash
-gh api "repos/$REPO/issues" \
-  -f title="<single-unit title>" \
-  -f body="$BODY" \
-  -f "labels[]=status:needs-triage"
-# then cross-link via a comment on the original (Step 6 shows the comment call)
+# 1. Create-once guard: skip the POST if a child already covers this (parent, title) unit (#3464).
+EXISTING=$(node packages/pipeline-cli/src/bin.ts split-guard check \
+  --parent "$N" --title "<single-unit title>")
+if [ -n "$EXISTING" ]; then
+  echo "split-guard: $EXISTING already covers this unit — reusing, not creating a twin"
+else
+  # 2. Body MUST carry the `split from #<N>` back-reference — it is the guard's create-once key.
+  gh api "repos/$REPO/issues" \
+    -f title="<single-unit title>" \
+    -f body="$BODY" \
+    -f "labels[]=status:needs-triage"
+  # then cross-link via a comment on the original (Step 6 shows the comment call)
+fi
 ```
 
 ---
