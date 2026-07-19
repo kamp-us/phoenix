@@ -539,9 +539,14 @@ Make the ideation→execution handoff traceable from both ends, then close:
 ```bash
 # Name every artifact the map graduated into (epics and/or ADR and/or roadmap), then close it
 # IFF the destination is FULLY graduated. A partial graduation is annotated but stays open.
-BODY="Graduated into: #$E1, #$E2 → triage → plan-epic → write-code; ADR 0176; ROADMAP.md v1. Frontier cleared — closing this map as the durable record of how the plan was discovered."
-gh api repos/$REPO/issues/$MAP/comments -f body="$BODY"
-gh api -X PATCH repos/$REPO/issues/$MAP -f state=closed -f state_reason=completed   # fully-graduated only; a partial graduation stays open
+# The `tracker graduate` verb owns this graduation-close envelope (ADR 0190, #3266): it posts
+# the `Graduated into <artifact>` source → artifact provenance record and closes the source as
+# completed. Don't hand-roll the comment + `state_reason=completed` PATCH — that inline
+# re-derivation is what the adoption lint (#3254) flags.
+pipeline-cli tracker graduate "$MAP" \
+  --artifact "#$E1, #$E2 → triage → plan-epic → write-code; ADR 0176; ROADMAP.md v1" \
+  --note "Frontier cleared — closing this map as the durable record of how the plan was discovered."
+# fully-graduated only; a partial graduation is annotated (a plain comment) but stays open.
 ```
 
 ### What emission is not

@@ -987,10 +987,14 @@ for SRC in $SOURCES; do
     open:*type:investigation*) ;;
     *) echo "plan-epic: source #$SRC is $STATE ($TYPES) — not an open investigation, skipping close."; continue ;;
   esac
-  # Audit trail (AC): a reason comment recording source → artifact, so a reader can trace the
-  # graduation, then close as completed (the work graduated, it wasn't abandoned).
-  gh api repos/$REPO/issues/$SRC/comments -f body="Graduated into epic #<EPIC> (planned by plan-epic) — closing this investigation as the durable \`graduated into #<EPIC>\` record. Its diagnosis is carried forward by the epic and its planned children." >/dev/null
-  gh api -X PATCH repos/$REPO/issues/$SRC -f state=closed -f state_reason=completed >/dev/null
+  # Audit trail (AC): the `tracker graduate` verb owns the graduation-close envelope (ADR 0190,
+  # #3266) — it posts the source → artifact provenance record so a reader can trace the graduation,
+  # then closes the source as completed (the work graduated, it wasn't abandoned — distinct from
+  # triage's not_planned). Don't hand-roll the comment + `state_reason=completed` PATCH; that inline
+  # re-derivation is what the adoption lint (#3254) flags.
+  pipeline-cli tracker graduate "$SRC" \
+    --artifact "epic #<EPIC> (planned by plan-epic)" \
+    --note "closing this investigation as the durable \`graduated into #<EPIC>\` record. Its diagnosis is carried forward by the epic and its planned children." >/dev/null
   echo "plan-epic: closed graduated source investigation #$SRC → epic #<EPIC>."
 done
 ```

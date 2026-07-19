@@ -11,9 +11,9 @@
  *
  * Seeded with the canonical #3254 example — `verdict read`, whose ADR-0058
  * SHA-bound marker-resolution three skills hand-copy (#2102). `tracker apply-triage`
- * (#3263) and `tracker post-verdict` (#3265) have since landed; the remaining envelope
- * decisions (claim, graduate) arrive with their sibling children, each with its own
- * consumer migration.
+ * (#3263), `tracker post-verdict` (#3265), and `tracker graduate` (#3266) have since
+ * landed with their consumer migrations; the remaining envelope decision (claim) arrives
+ * with its sibling child.
  */
 import type {Exemption, OwnedDecision} from "./adoption-lint.ts";
 
@@ -88,6 +88,24 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		citation: /pipeline-cli\s+(?:tracker\s+post-verdict|verdict\s+post)\b/,
 		reason:
 			"re-derives the ADR-0058 verdict/comment-post + read-back envelope that `pipeline-cli tracker post-verdict` owns (compose the SHA-bound marker, PATCH-own-prior-else-POST, self-verify the landed body), instead of citing the verb (#3265 / #3254)",
+	},
+	{
+		// `tracker graduate` owns the map/investigation graduation-close envelope (#3266): post the
+		// `Graduated into <artifact>` source → artifact provenance record, then close the source as
+		// COMPLETED (graduated, not abandoned). The fingerprint is the co-occurrence of all three
+		// tells — the `Graduated into` provenance record, a comment POST that carries it, and the
+		// close-as-completed PATCH (`state=closed` + `state_reason=completed`, distinct from triage's
+		// `not_planned`) — so the many incidental prose mentions of "graduated" fog in wayfinder are
+		// not a false finding. A file that cites `pipeline-cli tracker graduate` is compliant.
+		verb: "tracker graduate",
+		signature: [
+			/Graduated into/, // the source → artifact provenance record
+			/\/comments\s+-f\s+body=/, // the audit-comment POST leg
+			/state=closed\s+-f\s+state_reason=completed/, // close as completed (not not_planned)
+		],
+		citation: /pipeline-cli\s+tracker\s+graduate\b/,
+		reason:
+			"re-derives the graduation-close envelope that `pipeline-cli tracker graduate` owns (post the source → artifact provenance record, close the source as completed), instead of citing the verb (#3266 / #3254)",
 	},
 ];
 
