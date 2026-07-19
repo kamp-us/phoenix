@@ -16,7 +16,7 @@ grounded here against their defs: the
 [engineering-manager](agents/crew-engineering-manager.md), and the
 [chief-of-staff](agents/crew-chief-of-staff.md).
 
-## The roster law — singleton bridges vs a fungible engine {#roster-law}
+## The roster law — singleton bridges vs a fungible engine
 
 The roster is not an arbitrary list of four roles; its cardinality falls out of a single
 rule. A **bridge** owns a unique seam connecting the factory to something outside it, so it
@@ -44,7 +44,7 @@ another — a planned child becomes pickable on the board and an engine pulls it
 not a relay, is the durable coordination surface, and every channel edge is only a latency
 optimization over it.
 
-## The §CP hard gate — the engine banks, a human approves, the pipeline enqueues {#cp-gate}
+## The §CP hard gate — the engine banks, a human approves, the pipeline enqueues
 
 Some PRs touch the **agent control plane (§CP)** — the surfaces that govern how the factory
 itself behaves. Those are never auto-merged: they need a control-plane human's approval at
@@ -75,7 +75,7 @@ auto-ship on green by a founder ruling (see the [README](README.md#the-crew-is-d
 The §CP flow above governs the crew's handling of §CP work it *drives*, not merges of the
 crew defs themselves.
 
-## Verify, don't relay — a claim is not evidence until you read the artifact {#verify-dont-relay}
+## Verify, don't relay — a claim is not evidence until you read the artifact
 
 The chief-of-staff's charter is the **live verifier**: every fact it hands a human is one it
 verified against ground truth, never one it relayed. This is doctrine because the failure
@@ -100,7 +100,7 @@ unreachable. The SHA-binding half — why a verdict is `@ <sha>`, one-per-gate, 
 when it is not bound to the current head — is
 [ADR 0058](../../.decisions/0058-sha-bound-verdict-contract.md).
 
-## Single-owner human comms — one channel, one owner {#single-owner-comms}
+## Single-owner human comms — one channel, one owner
 
 Exactly one role reaches a human: the chief-of-staff owns the **single** human-notification
 channel, for **both** humans the crew answers to (the operator/founder and the control-plane

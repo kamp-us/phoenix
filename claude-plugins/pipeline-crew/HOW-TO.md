@@ -38,7 +38,7 @@ substrate's `spawn-role` subcommand.
    `claude …` to route around it.
 3. **Mind the cardinality rule.** Only the engine scales by `count`/`--instance`; each bridge
    is singleton, so a second one is a `RoleUniquenessError`, not shared occupancy — that is the
-   roster law ([Explanation → roster law](EXPLANATION.md#roster-law); the bridge-vs-engine
+   roster law ([Explanation → roster law](EXPLANATION.md#the-roster-law--singleton-bridges-vs-a-fungible-engine); the bridge-vs-engine
    split is catalogued in [Reference → role roster](REFERENCE.md#role-roster--bridges-and-the-engine)).
 4. **A HITL role boots idle.** The cartographer comes up waiting for you to give it a turn — it
    is handed no self-driving loop, so it never confabulates work.
@@ -117,7 +117,7 @@ A §CP PR touches the agent control plane, so it cannot auto-ship: it needs a co
 human's **approval at the PR's current head** before the pipeline enqueues it. This is the
 **approve-then-enqueue** model (ADR 0135) — the human owns the *judgment*, the pipeline owns the
 *mechanics*. The flow is split across the crew exactly as
-[Explanation → the §CP hard gate](EXPLANATION.md#cp-gate)
+[Explanation → the §CP hard gate](EXPLANATION.md#the-cp-hard-gate--the-engine-banks-a-human-approves-the-pipeline-enqueues)
 lays out; your job as operator is to move the human gate.
 
 1. **Find the banked PR.** The engine drives a §CP lane to reviewed-ready, then **banks it on
@@ -127,7 +127,7 @@ lays out; your job as operator is to move the human gate.
 2. **Get the approval at the *current* head.** The §CP gate is a control-plane team approval
    bound to the exact head it reviewed — a rebase or any force-push un-binds it. So the approver
    approves the PR at its live head; if the head moved after an earlier approval, it needs a
-   fresh one (the SHA-binding half of [verify-don't-relay](EXPLANATION.md#verify-dont-relay)).
+   fresh one (the SHA-binding half of [verify-don't-relay](EXPLANATION.md#verify-dont-relay--a-claim-is-not-evidence-until-you-read-the-artifact)).
    An author cannot self-approve their own control-plane change — it needs the *other*
    control-plane human (ADR 0135).
 3. **Let the pipeline enqueue — do not hand-merge.** Once a current-head approval lands, the
@@ -155,7 +155,7 @@ stand-up registered.
 
    It kills that member's pane and reclaims its inbox/artifacts; the role lease frees by TTL,
    leaving the rest of the crew running. An engine requires `--instance`; a singleton bridge
-   rejects it (the [roster law](EXPLANATION.md#roster-law) kind rule).
+   rejects it (the [roster law](EXPLANATION.md#the-roster-law--singleton-bridges-vs-a-fungible-engine) kind rule).
 2. **Retire the whole crew:**
 
    ```bash
