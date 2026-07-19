@@ -31,6 +31,25 @@ name. For the server `@kampus/pipeline-crew-mcp` the `@` and `/` sanitize to `_`
 tool-name builder and confirmed against the live `/mcp` tool name — a wrong string
 silently fails closed and re-blocks cutover, so it is copied exactly, never approximated.
 
+## The engine's second tool — `channel_claim` (resource deconfliction)
+
+The **engineering-manager** (the one engine role) additionally carries a second channel tool,
+`channel_claim` — the token derived the same way:
+
+```
+mcp___kampus_pipeline-crew-mcp__channel_claim
+```
+
+`channel_send` and `channel_claim` are **different mechanisms, not variants**: `channel_send`
+relays a typed message to a peer's inbox (coordination), while `channel_claim` invokes the
+tracker's resource-keyed `Claim` and returns a `{granted, collision, owner}` reply — a real
+cross-engine lock. An engine calls `channel_claim {resource: "<issue>"}` **before it opens a
+lane**: `granted` ⇒ it holds the lane, `collision` ⇒ another engine holds it (back off). Sending
+a `Claim`-shaped message via `channel_send` does **not** lock anything — it just delivers a
+message to an inbox — which is why the claim needs its own tool (#3509). Only the engine carries
+it; the bridges (chief-of-staff, cartographer, intake-desk) claim nothing and list `channel_send`
+alone.
+
 ## The boot window — wait and re-check, never diagnose infra
 
 Even with the token in place, the crew server does not advertise `channel_send` the instant a
