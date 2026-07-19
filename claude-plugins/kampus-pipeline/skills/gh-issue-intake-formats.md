@@ -1869,19 +1869,26 @@ ad hoc.
 **The invariant — a review gate MUST source ALL code/prose under review from the PR head, and
 assert it did:**
 
-1. **Resolve the live head SHA up front, via REST/porcelain — never GraphQL** (§Target repo
-   resolution / the all-`gh api` rule). This is the SHA the verdict binds to (§5/ADR 0058):
+1. **Resolve + materialize the head via the shared `pipeline-cli review-head` verb — never
+   re-derive it inline** (#3690 / #793 / #1807; `packages/pipeline-cli/src/tools/review-head/`).
+   The verb owns the deterministic mechanism this section used to spell out inline: it resolves the
+   live head SHA up front via REST (never GraphQL — the SHA the verdict binds to, §5/ADR 0058),
+   fetches the head into a per-run ref (never the launched checkout — the §RO read-only path), and
+   **asserts the fetched ref resolves to exactly that SHA before you review** — aborting on a moved
+   head rather than binding a stale verdict. Two modes, same core:
    ```bash
-   HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
+   # ref-only (review-doc reads via `git show "$PR_REF:<path>"`):
+   eval "$(pipeline-cli review-head materialize --pr "$PR" | jq -r '"PR_REF=\(.prRef); HEAD_SHA=\(.headSha)"')"
+   # full detached head worktree (review-code / review-skill), emitted as `.worktreeDir`:
+   pipeline-cli review-head materialize --pr "$PR" --worktree | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
    ```
-2. **Materialize the head into a per-run ref (never the launched checkout)** — the §RO
-   read-only path — and confirm it resolves to exactly that SHA before reviewing:
-   ```bash
-   PR_REF="refs/pr/$PR-$(uuidgen)"
-   git fetch origin "pull/$PR/head:$PR_REF"
-   FETCHED="$(git rev-parse "$PR_REF")"
-   [ "$FETCHED" = "$HEAD_SHA" ] || { echo "FATAL: fetched head $FETCHED != resolved $HEAD_SHA — aborting" >&2; exit 1; }
-   ```
+   `pull/<pr>/head` resolves same-repo AND cross-fork, and the checkout is always DETACHED onto the
+   per-run ref — never `gh pr checkout` / `git checkout` / `git switch`, which would land the head in
+   the shared PRIMARY the harness resets a subagent's cwd to and detach the human's `main`
+   (#2270/#1103; the verb refuses this outright). Run `iso_preflight` (§RO-iso) BEFORE the verb.
+2. **(owned by the verb, step 1)** — the per-run-ref fetch + the fetched-ref-IS-the-head assertion
+   are the verb's, not a step each gate re-derives; `review-design` reviews a preview URL rather than
+   a tree, so it uses the lighter `pipeline-cli review-head resolve --pr "$PR"` (the head SHA only).
 3. **Read every file under review FROM THE HEAD, never from CWD.** Route full-file reads
    through `git show "$PR_REF:<path>"` (or read from the throwaway head worktree the gate
    already materializes — `git worktree add "$(mktemp -d)/…" "$PR_REF"`, `$REVIEW_WT`), and

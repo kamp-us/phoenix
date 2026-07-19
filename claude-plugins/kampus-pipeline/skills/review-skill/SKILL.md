@@ -70,31 +70,25 @@ reviewing (below), read all skill text from the head, and re-check the live head
 BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main — your trusted config
 git fetch origin "$BASE_REF"
 
-# §HEAD: resolve the live head via REST (never GraphQL) — the SHA the verdict binds to (ADR 0058).
-HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
-
-# Fetch the PR head into a dedicated ref WITHOUT touching the session tree (same-repo AND
-# cross-fork; never `gh pr checkout` / `git checkout` / `git switch`, which materialize the head
-# into a working tree — the harness resets this cwd to the shared PRIMARY between Bash calls, so a
-# bare checkout lands there and detaches the human's `main` (#2270/#1103), and §RO forbids it).
-PR_REF="refs/pr/$PR-$(uuidgen)"
-git fetch origin "pull/$PR/head:$PR_REF"
-# §HEAD #2: confirm the fetched ref IS the resolved head before reviewing — else you'd review a
-# different SHA than the verdict claims. Abort on mismatch rather than bind a stale verdict.
-[ "$(git rev-parse "$PR_REF")" = "$HEAD_SHA" ] || { echo "FATAL: fetched head != resolved $HEAD_SHA — aborting" >&2; exit 1; }
-
-REVIEW_WT="$(mktemp -d)/review-skill-head-${PR}"
-# Persist the run-unique worktree path to a per-run mktemp handle so it survives the harness
-# cwd/shell reset between Bash calls — $REVIEW_WT is a shell var lost across calls, and the leaf
-# `review-skill-head-${PR}` is PR-namespaced, so a later step re-deriving it from `git worktree
-# list` would match a SIBLING reviewer's `review-skill-head-<otherPR>` and read the wrong head's
-# skill text (the #1807 collision: a reviewer re-read a shared pointer and found it flipped to a
-# sibling's worktree). Mirror the VERDICT_FILE (#1465) / report BODY_FILE mktemp discipline:
-# `. "$WT_FILE"` at the start of each later step re-sources these from the run-unique handle,
-# NEVER from the shared leaf name. WT_FILE itself is `$(mktemp)` — never a fixed/PR-only path.
+# §HEAD steps 1–3 (resolve the live head SHA via REST, fetch pull/$PR/head into a nonce-uniqued
+# per-run ref WITHOUT touching the session tree, assert the fetched ref IS that head, add a
+# throwaway DETACHED head worktree) are the shared `pipeline-cli review-head materialize` verb
+# (#3690 / #793 / #1807) — cite it, don't re-derive it. `pull/<pr>/head` resolves same-repo AND
+# cross-fork; the verb never runs `gh pr checkout` / `git checkout` / `git switch` (which would land
+# the head in the shared PRIMARY the harness resets this cwd to and detach the human's `main` —
+# #2270/#1103; §RO), and it internally aborts on a fetched-ref ≠ resolved-head mismatch (§HEAD #2)
+# so you never review a different SHA than the verdict claims. Persist its emitted head/ref/worktree
+# to a per-run mktemp handle so they survive the harness cwd/shell reset between Bash calls (a shell
+# var is lost across calls); re-source them with `. "$WT_FILE"` at each later step — NEVER re-derive
+# from a shared leaf name (a `git worktree list` re-derivation matches a SIBLING reviewer's tree and
+# reads the wrong head's skill text — the #1807 collision). Mirror the VERDICT_FILE (#1465) / report
+# BODY_FILE mktemp discipline; WT_FILE itself is `$(mktemp)`, never a fixed/PR-only path.
 WT_FILE="$(mktemp /tmp/review-skill-wt.XXXXXX)"
-{ echo "REVIEW_WT='$REVIEW_WT'"; echo "PR_REF='$PR_REF'"; echo "HEAD_SHA='$HEAD_SHA'"; } > "$WT_FILE"
-git worktree add "$REVIEW_WT" "$PR_REF"
+pipeline-cli review-head materialize --pr "$PR" --worktree \
+  | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
+. "$WT_FILE"
+[ -n "${REVIEW_WT:-}" ] && [ -n "${PR_REF:-}" ] && [ -n "${HEAD_SHA:-}" ] || {
+  echo "FATAL: review-head materialize did not yield a head worktree — aborting (never review the base tree; §HEAD)." >&2; exit 1; }
 
 # Enforce the instruction denylist EXPLICITLY (a full checkout lands the head's root CLAUDE.md
 # + .claude/.decisions/.patterns): remove them, then ASSERT absent — the load-bearing isolation

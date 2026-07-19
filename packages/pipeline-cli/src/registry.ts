@@ -52,6 +52,7 @@ import {readmeGuardCommand} from "./tools/readme-guard/command.ts";
 import {redactLeaksCommand} from "./tools/redact-leaks/command.ts";
 import {refGuardCommand} from "./tools/ref-guard/command.ts";
 import {resumePolicyCommand} from "./tools/resume-policy/command.ts";
+import {reviewHeadCommand} from "./tools/review-head/command.ts";
 import {roadmapCommand} from "./tools/roadmap/command.ts";
 import {roadmapGuardCommand} from "./tools/roadmap-guard/command.ts";
 import {settingsEnvGuardCommand} from "./tools/settings-env-guard/command.ts";
@@ -141,6 +142,10 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	designTokenGuardCommand,
 	designInventoryCommand,
 	resumePolicyCommand,
+	// The shared PR-head-checkout the review gates cite instead of hand-copying the §HEAD
+	// materialization (#793 / #1807): resolve + fetch the PR's current head into a per-run ref
+	// (+ optional detached worktree), asserting the fetched ref IS the resolved head (ADR 0058).
+	reviewHeadCommand,
 	evalHarnessCommand,
 	mainSyncCommand,
 	refGuardCommand,

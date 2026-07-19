@@ -322,36 +322,28 @@ BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main
 # whose consumers had merged minutes earlier was FAILed against a stale local main.)
 git fetch origin "$BASE_REF"
 
-# Fetch the PR head into a dedicated ref WITHOUT touching the session tree. pull/$PR/head
-# resolves for same-repo AND cross-fork PRs, so there is no separate cross-fork branch to
-# check out into your own tree (the trust inversion ADR 0052 closes — never run
-# `gh pr checkout` / `git checkout` / `git switch`, which materialize the head into a working
-# tree: the harness resets this cwd to the shared PRIMARY between Bash calls, so a bare checkout
-# lands there and detaches the human's `main` (#2270/#1103 detach class) — §RO forbids it outright).
-# Per-run ref: the PR number alone is shared, so a second review of the same PR would
-# overwrite the ref mid-review and you'd verify the wrong SHA — uniquify it per invocation.
-PR_REF="refs/pr/$PR-$(uuidgen)"
-git fetch origin "pull/$PR/head:$PR_REF"
-
-REVIEW_WT="$(mktemp -d)/review-head-${PR}"
-# Persist the run-unique worktree path to a per-run mktemp handle so it survives the harness
-# cwd/shell reset between Bash calls — $REVIEW_WT is a shell var lost across calls, and the leaf
-# `review-head-${PR}` is PR-namespaced, so a later step re-deriving it from `git worktree list`
-# would match a SIBLING reviewer's `review-head-<otherPR>` and pin the wrong head (the collision
-# #1807: a reviewer re-read a shared pointer and found it flipped to a sibling's worktree). Mirror
-# the VERDICT_FILE (#1465) / report BODY_FILE mktemp discipline: `. "$WT_FILE"` at the start of
-# each later step re-sources $REVIEW_WT/$PR_REF from the run-unique handle, NEVER from
-# the shared leaf name. WT_FILE itself is `$(mktemp)` — never a fixed/PR-only path. HEAD_SHA is
-# NOT persisted here: it is re-resolved fresh against the live head at each later step (§HEAD),
-# so only the run-unique tree/ref handles need to survive.
+# §HEAD steps 1–3 (resolve the live head SHA, fetch pull/$PR/head into a per-run ref WITHOUT
+# touching the session tree, assert the fetched ref IS that head, add a throwaway DETACHED head
+# worktree) are the shared `pipeline-cli review-head materialize` verb (#3690 / #793 / #1807) —
+# cite it, don't re-derive it. `pull/<pr>/head` resolves for same-repo AND cross-fork PRs, so there
+# is no separate cross-fork branch to check out (the trust inversion ADR 0052 closes); the verb
+# never runs `gh pr checkout` / `git checkout` / `git switch` (which would land the head in the
+# shared PRIMARY the harness resets this cwd to and detach the human's `main` — #2270/#1103), and it
+# nonce-uniques the ref per invocation so a concurrent review of the same PR can't overwrite it
+# (#1807). It emits the resolved head + ref + worktree as JSON. Persist those to a per-run mktemp
+# handle so they survive the harness cwd/shell reset between Bash calls (a shell var is lost across
+# calls); re-source them with `. "$WT_FILE"` at each later step — NEVER re-derive from a shared leaf
+# name (a `git worktree list` re-derivation matches a SIBLING reviewer's tree and pins the wrong head).
+# The `--worktree` tree is a FULL checkout (ADR 0067): biome.jsonc + biome-plugins/, patches/, the
+# catalog/lockfile, and everything `fate generate` needs are present, so the typecheck bootstrap is
+# whole. A full checkout also lands the head's root CLAUDE.md + .claude/.decisions/.patterns — that
+# leak is closed by the explicit denylist removal + absence-assert below, NOT by any pattern set.
 WT_FILE="$(mktemp /tmp/review-code-wt.XXXXXX)"
-{ echo "REVIEW_WT='$REVIEW_WT'"; echo "PR_REF='$PR_REF'"; } > "$WT_FILE"
-# Cone-mode-minus-denylist (ADR 0067): a FULL checkout materializes the head's whole tree, so
-# biome.jsonc + biome-plugins/, patches/, the catalog/lockfile, and everything `fate generate`
-# needs are present — the typecheck bootstrap is whole. A full checkout (like cone mode) also
-# lands the head's root CLAUDE.md + .claude/.decisions/.patterns — that leak is closed by the
-# explicit denylist removal + absence-assert below, NOT by any include/cone pattern set.
-git worktree add "$REVIEW_WT" "$PR_REF"
+pipeline-cli review-head materialize --pr "$PR" --worktree \
+  | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
+. "$WT_FILE"
+[ -n "${REVIEW_WT:-}" ] && [ -n "${PR_REF:-}" ] && [ -n "${HEAD_SHA:-}" ] || {
+  echo "FATAL: review-head materialize did not yield a head worktree — aborting (never review the base tree; §HEAD)." >&2; exit 1; }
 
 # LAYER-2 containment (#2666): a freshly materialized worktree MUST come up pristine — assert it
 # clean NOW, before the denylist `rm --cached` below deliberately dirties it. A dirty materialization

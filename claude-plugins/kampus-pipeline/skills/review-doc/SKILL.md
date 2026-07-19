@@ -340,13 +340,13 @@ branch cut from `origin/main` (the **base**) — so a plain full-file `Read`/`ca
 reads the **pre-PR base**, and you would review the wrong file version while binding the verdict
 to the right head SHA (issue [#793](https://github.com/kamp-us/phoenix/issues/793); the
 false-PASS hazard). Obey [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §HEAD
-**before** verifying any criterion — cite it, don't re-derive the steps: resolve the live head
-via REST (`gh pr view $PR --repo "$REPO" --json headRefOid -q .headRefOid`), fetch it into the
-per-run `$PR_REF` + assert `git rev-parse "$PR_REF"` equals it, read every full file from the
-head (`git show "$PR_REF:<path>"`) and **never** from CWD, and re-check the live head before
-posting (§HEAD #4). The fetch-into-a-ref read mechanism below *is* §HEAD's read path for this
-diff-only gate; the verdict (§5) must bind to the SHA whose files you actually read and assert
-it read the PR head.
+**before** verifying any criterion — cite it, don't re-derive the steps: run
+`pipeline-cli review-head materialize --pr "$PR"` (the shared verb, #3690 / #793 / #1807) to
+resolve the live head SHA via REST, fetch it into the per-run `$PR_REF`, and assert the fetched
+ref IS that head; then read every full file from the head (`git show "$PR_REF:<path>"`) and
+**never** from CWD, and re-check the live head before posting (§HEAD #4). The verb's
+fetch-into-a-ref is §HEAD's read path for this diff-only gate; the verdict (§5) must bind to the
+SHA whose files you actually read and assert it read the PR head.
 
 Verification is grounded in the **diff**, not the PR's self-description. There is **no
 test-running here** — a doc PR has no behavior to exercise; the artifact *is* the prose,
@@ -364,12 +364,15 @@ the hunk alone — and read it **read-only**, without ever switching the checkou
 **Read-only on git working state** below). Fetch the head into a ref and read off that ref:
 
 ```bash
-# Land the head in a per-run ref WITHOUT touching the working tree (resolves for same-repo
-# AND cross-fork PRs — never `gh pr checkout` / `git checkout` / `git switch`: the harness
-# resets this cwd to the shared PRIMARY between Bash calls, so a checkout lands there and
-# detaches the human's `main` (#2270/#1103), and §RO forbids switching your tree outright):
-PR_REF="refs/pr/$PR-$(uuidgen)"
-git fetch origin "pull/$PR/head:$PR_REF"
+# Land the head in a per-run ref via the shared `pipeline-cli review-head materialize` verb
+# (#3690 / #793 / #1807) — cite it, don't re-derive it. Ref-only mode (no `--worktree`): it
+# resolves the live head SHA (REST), fetches `pull/<pr>/head` into a nonce-uniqued per-run ref
+# WITHOUT touching the working tree, and asserts the fetched ref IS that head. It never runs
+# `gh pr checkout` / `git checkout` / `git switch` (which would land the head in the shared PRIMARY
+# the harness resets this cwd to and detach the human's `main` — #2270/#1103; §RO). It emits the
+# head + ref as JSON:
+eval "$(pipeline-cli review-head materialize --pr "$PR" \
+  | jq -r '"PR_REF=\(.prRef); HEAD_SHA=\(.headSha)"')"
 
 # Read the head's files off the ref — read-only, no checkout:
 git show "$PR_REF:<path>"            # the file's content at the PR head
@@ -378,18 +381,18 @@ git grep -n "<pattern>" "$PR_REF"    # search the head tree without checking it 
 git update-ref -d "$PR_REF"          # drop the throwaway ref when done
 ```
 
-If a check genuinely needs a materialized tree (rare for a doc PR), add a **throwaway
-worktree** from `$PR_REF` and **persist its run-unique path to a per-run `mktemp` handle**
-so a later step recovers the exact own tree rather than re-deriving it from the shared,
-PR-namespaced `review-doc-head-$PR` leaf (which would match a sibling reviewer's
-`review-doc-head-<otherPR>` under a parallel fan-out and pin the wrong head — the #1807
-collision; mirror the `VERDICT_FILE` (#1465) / report `BODY_FILE` `mktemp` discipline):
+If a check genuinely needs a materialized tree (rare for a doc PR), pass `--worktree` to the
+same verb — it adds a throwaway DETACHED head worktree (named `review-head-<pr>-*`) and emits
+its path. **Persist that path to a per-run `mktemp` handle** so a later step recovers the exact
+own tree rather than re-deriving it from a shared, PR-namespaced leaf (which would match a
+sibling reviewer's tree under a parallel fan-out and pin the wrong head — the #1807 collision;
+mirror the `VERDICT_FILE` (#1465) / report `BODY_FILE` `mktemp` discipline):
 
 ```bash
-REVIEW_WT="$(mktemp -d)/review-doc-head-$PR"
 WT_FILE="$(mktemp /tmp/review-doc-wt.XXXXXX)"          # run-unique handle, never a fixed/PR-only path
-{ echo "REVIEW_WT='$REVIEW_WT'"; echo "PR_REF='$PR_REF'"; } > "$WT_FILE"
-git worktree add "$REVIEW_WT" "$PR_REF"
+pipeline-cli review-head materialize --pr "$PR" --worktree \
+  | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)"' > "$WT_FILE"
+. "$WT_FILE"
 # Register teardown as a trap so a mid-block error still tears the throwaway tree down:
 trap 'rm -rf "$REVIEW_WT"; git worktree prune' EXIT
 # … later steps: `. "$WT_FILE"` re-sources $REVIEW_WT/$PR_REF after a between-call reset,
