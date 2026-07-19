@@ -45,20 +45,25 @@ spec for this split, and it **supersedes** ADR
 
   Both are product or knowledge artifacts; gated for quality, but a human at the merge
   adds no security value.
-- **BLOCKING (manual merge).** Anything in the **canonical §CP set** (the single source in
+- **BLOCKING (§CP — approval-gated).** Anything in the **canonical §CP set** (the single source in
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `.claude/**`, `.github/**`,
   or one of the six **gate-critical skills** (`claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`,
   `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`, `claude-plugins/kampus-pipeline/skills/review-plan/**`,
   `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`) — the agent control plane (instructions, tools, hooks),
   CI enforcement, and the pipeline's own gates. A bad merge here is a serious security concern
-  (self-modification of guardrails; CI/secret exfiltration), so a **human merges these by hand**
-  and `ship-it` refuses them. The gate-critical skills were added to this set by ADR
+  (self-modification of guardrails; CI/secret exfiltration), so `ship-it` never auto-merges it on
+  machine gates alone: under the §CP hard gate (ADR
+  [0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md),
+  amending 0053) a `@kamp-us/control-plane` member must **approve** it at its current head, and only
+  then does `ship-it` enqueue it (ADR 0048 single merge authority) — there is no human hand-merge in
+  the §CP path. The gate-critical skills were added to this set by ADR
   [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md),
   with `review-skill/**` added by ADR
   [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md); **§CP is the
   authoritative source of the exact blocking set** (cite it, don't re-hard-code). For a doc PR
   that touches this set, you are **advisory only**: review it, post your findings, but say
-  plainly that your verdict does **not** authorize a merge — a maintainer does.
+  plainly that your verdict does **not** authorize a merge — the control-plane approval does (a
+  `@kamp-us/control-plane` member approves at head; `ship-it` then enqueues — ADR 0135).
 
 So before you verify anything, classify the diff (Step 0). The classification decides
 whether your marker binds `ship-it` or is merely advice.
@@ -68,7 +73,8 @@ whether your marker binds `ship-it` or is merely advice.
 **You do not merge. Not on a pass, not ever, not on your own authority.** Your output is
 a *verdict* — a merge-ready signal (non-blocking) or advice (blocking) plus a fail
 comment listing what's missing. Merging is the deliberate act of **`ship-it`** (the one
-stage granted merge authority) — or, for the blocking set, a human. You signal
+stage granted merge authority) — for the blocking set (§CP) too, only gated on a
+`@kamp-us/control-plane` approval at head that `ship-it` then enqueues on (ADR 0135). You signal
 merge-ready; `ship-it` is the consumer that asserts your PASS, confirms CI is green, and
 squash-merges. Conflating "verified" with "merged" is the self-grading collapse this
 stage exists to prevent — the same invariant `review-code` holds.
@@ -152,8 +158,9 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`, `claude-plugins/kampus-pipeline/skills/review-plan/**`,
   `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`) — → the PR is in the **blocking set**. You review it and
   post your findings, but **advisory only** — your verdict does not authorize a merge; a
-  maintainer merges it by hand (ADR 0053, widened to the gate-critical skills by ADR 0065, with
-  `review-skill/**` added by ADR 0073). **§CP is the authoritative source — cite it, don't
+  `@kamp-us/control-plane` approval at head does, and `ship-it` then enqueues it (ADR 0135
+  approve-then-enqueue; ADR 0048 single merge authority — the §CP set is ADR 0053, widened to the
+  gate-critical skills by ADR 0065, with `review-skill/**` added by ADR 0073). **§CP is the authoritative source — cite it, don't
   re-hard-code the list** (the #375 drift class §CP closes). Say so explicitly in the verdict
   (Step 5). And — like `ship-it` Step 0 and `review-code` Step 2 — **resolve §CP from
   `origin/main` at run time, not from the copy embedded in this skill body** (this advisory flag
@@ -184,7 +191,7 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   # grep exit 1, an empty (non-control-plane) result, not a failure (#725).
   CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
     --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
-  # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065/0073)
+  # non-empty → blocking: advisory only; a control-plane approval @head → ship-it enqueues (ADR 0135; §CP set 0053/0065/0073)
   ```
 - **Otherwise** → **non-blocking**, and the doc class — *which* `*.md`/knowledge files are
   yours — is the **canonical §DOC definition** in
@@ -711,8 +718,8 @@ false-fails the unconditional `verdict_post_verify … || exit 1`.
 
 Every check passed but Step 0 classified the PR **blocking** (it touches `.claude/**`,
 `.github/**`, or a gate-critical skill). Post the **same evidence**, but the first line is
-**not** a merge-ready go-ahead — it is advice. `ship-it` refuses this PR regardless; a human
-merges it.
+**not** a merge-ready go-ahead — it is advice. `ship-it` does not auto-merge this PR on machine
+gates alone — it enqueues only once a `@kamp-us/control-plane` approval is present at head (ADR 0135).
 
 > **The first-line `@ <sha>` is SHA-less by design; the SHA lives in the body; a delegated merge
 > actor confirms from the body, not the first-line marker (ADR
@@ -722,8 +729,10 @@ merges it.
 > It is *not* a dropped binding: you still record the reviewed head in the body's canonical
 > `Reviewed-head: @ <sha>` line + the per-AC PASS below. A delegated control-plane merge actor must
 > **not** try to bind your first-line marker (it would read as `unverified`); it confirms by reading
-> the body's `Reviewed-head: @ <sha>` line against the PR's current head + the per-AC PASS, then
-> applies `ship-it`'s just-in-time guards and merges by hand.
+> the body's `Reviewed-head: @ <sha>` line against the PR's current head + the per-AC PASS; then,
+> once a `@kamp-us/control-plane` approval is present at that head, `ship-it` applies its
+> just-in-time guards and **enqueues** it (ADR 0135 approve-then-enqueue; ADR 0048 single merge
+> authority) — not a human hand-merge.
 
 > **The body's `Reviewed-head:` line is canonical and load-bearing — emit it verbatim (ADR 0151).**
 > `ship-it`'s ADR-0135 approval-aware enqueue reads the reviewed head from **exactly** the
@@ -740,7 +749,9 @@ review-doc: advisory — blocking-set PR (manual merge)
 
 PR #<PR> touches the control plane (`.claude/`/`.github/` or a gate-critical skill) — the agent
 control plane / pipeline gates (ADR 0053/0065). My verdict is **advisory only**: it does **not**
-authorize a merge. A maintainer merges this by hand.
+authorize a merge. Under the §CP hard gate (ADR 0135), a `@kamp-us/control-plane` member approves
+this at its current head and `ship-it` then enqueues it (ADR 0048 single merge authority) — there
+is no human hand-merge in the §CP path.
 
 Reviewed-head: @ <HEAD_SHA>
 
@@ -779,7 +790,8 @@ Do **not** emit the `review-doc: PASS @ <sha> — merge-ready` marker for a bloc
 `ship-it` go-ahead, and `ship-it` must refuse the blocking set. The advisory line keeps
 your verdict out of `ship-it`'s PASS namespace while still recording the advisory verdict
 (as a comment, per ADR 0058 rule 4) — the advisory line carries no `@ <sha>` because no
-`ship-it` namespace consumes it; a human merges these (ADR 0053).
+`ship-it` namespace consumes it; a control-plane approval @head gates it and `ship-it` enqueues it
+(ADR 0135; §CP set ADR 0053).
 
 ### Fail path — any miss (non-blocking or blocking)
 

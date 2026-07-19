@@ -23,7 +23,8 @@ than from the implementer's say-so.
 **You do not merge. Not on a pass, not ever, not on your own authority.** Your output
 is a *verdict* — an approval signal the PR is merge-ready, or a fail comment listing
 what's missing. Merging is a separate, deliberate act performed by the **`ship-it`**
-skill (the one stage granted merge authority) — or a human. You signal merge-ready;
+skill (the one stage granted merge authority) — for the blocking set (§CP) too, only gated on a
+`@kamp-us/control-plane` approval at head that `ship-it` then enqueues on (ADR 0135). You signal merge-ready;
 `ship-it` is the consumer that asserts your PASS signal, confirms CI is green, and
 squash-merges. Your "you never merge" invariant holds precisely because `ship-it` is the
 single writer of the merge. Conflating "verified" with "merged" is exactly the
@@ -1273,8 +1274,9 @@ merge)`, no `@ <sha>` — the one advisory shape all three gates converge on (AD
 per-criterion evidence table, but it authorizes nothing on its first line — it stays *out* of
 `ship-it`'s auto-merge PASS namespace (no first-line `@ <sha>`), and it binds the reviewed head in
 the body's canonical `Reviewed-head: @ <sha>` line instead (ADR 0151). Under ADR 0135's
-approve-then-enqueue, a human merges the §CP PR by hand, **or** `ship-it` enqueues it once a
-`@kamp-us/control-plane` approval is present at head. Skip to **the blocking-set advisory path** below.
+approve-then-enqueue, a `@kamp-us/control-plane` member approves the §CP PR at its current head and
+`ship-it` then enqueues it (ADR 0048 single merge authority) — no human hand-merge. Skip to **the
+blocking-set advisory path** below.
 
 > **Why the advisory line, not "binding PASS + a caveat"?** The old shape — a real
 > `PASS @ <sha> — merge-ready` plus a control-plane warning — put a *binding* marker into
@@ -1448,9 +1450,10 @@ Every criterion passed but `CONTROL_PLANE_TOUCHED` (Step 2) is non-empty — the
 control plane (§CP). Post the **same evidence**, but the first line is the **canonical advisory
 line** (§6.6), **not** a binding merge-ready marker. Its **first line** carries **no `@ <sha>`** by
 design (it authorizes nothing on its first line, so it never enters `ship-it`'s auto-merge PASS
-namespace — ADR 0111); under ADR 0135's approve-then-enqueue a human merges it by hand, **or**
-`ship-it` enqueues it once a `@kamp-us/control-plane` approval is present at head (ADR 0135, amending
-0053). Upsert it exactly as the PASS path (one `review-code:` marker per PR), and — like the PASS
+namespace — ADR 0111); under ADR 0135's approve-then-enqueue a `@kamp-us/control-plane` member
+approves it at its current head and `ship-it` then enqueues it (ADR 0135, amending 0053; ADR 0048
+single merge authority) — no human hand-merge. Upsert it exactly as the PASS path (one `review-code:`
+marker per PR), and — like the PASS
 fallback — post it as a **comment**, not a native `APPROVE` (a native APPROVE would re-enter the
 code review namespace via its `commit_id`, defeating the advisory's purpose).
 
@@ -1472,8 +1475,9 @@ review-code: advisory — blocking-set PR (manual merge)
 
 PR #<PR> touches the control plane (`.claude/**`, `.github/**`, or a gate-critical skill — §CP):
 the agent control plane / pipeline gates (ADR 0053/0065). My verdict is **advisory only**: it
-does **not** authorize a merge. A maintainer merges this by hand, or `ship-it` enqueues it once a
-`@kamp-us/control-plane` approval is present at head (ADR 0135).
+does **not** authorize a merge. Under the §CP hard gate (ADR 0135), a `@kamp-us/control-plane`
+member approves this at its current head and `ship-it` then enqueues it (ADR 0048 single merge
+authority) — there is no human hand-merge in the §CP path.
 
 Reviewed-head: @ <HEAD_SHA>
 

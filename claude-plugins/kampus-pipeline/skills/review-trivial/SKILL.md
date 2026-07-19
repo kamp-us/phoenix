@@ -103,7 +103,8 @@ CONTROL_PLANE_RE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/
 
 - **A control-plane file is present** — any path matching the live `CONTROL_PLANE_RE`
   (`.claude/**`, `.github/**`, a gate-critical skill, the enforcement-guard packages). A
-  control-plane diff is **never** trivial; it takes the full path **and a human merge** (ADR
+  control-plane diff is **never** trivial; it takes the full path **and the §CP approve-then-enqueue
+  gate** — a `@kamp-us/control-plane` approval at head before `ship-it` enqueues it (ADR 0135; ADR
   0053 / 0065 / 0100). It must never have routed here.
 - **The boundary could not be read** — an empty/unresolvable `CONTROL_PLANE_RE`. With no
   boundary you cannot prove the diff is non-control-plane, so you must not treat it as trivial
