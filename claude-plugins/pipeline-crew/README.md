@@ -186,7 +186,7 @@ engines the config declares), are the [personalization seam](PERSONALIZATION.md)
 it there rather than duplicating the key list here.
 
 `/stand-up` boots the whole self-driving roster and *excludes* the human-in-the-loop
-cartographer (ADR [0189](../../.decisions/0189-crew-roster-law.md), #3524). To bring up **one**
+cartographer (ADR [0189](../../.decisions/0189-crew-roster-law-bridges-engines.md), #3524). To bring up **one**
 on-demand role — the cartographer for a `wayfinder chart`, or a scaled-up extra engine — run
 [`/spawn-role <role>`](commands/spawn-role.md): it adds a single member to the running crew with
 the full launcher bind (so the channel is never inert) and boots a HITL role idle. It fails
