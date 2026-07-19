@@ -109,6 +109,53 @@ describe("parseMapBody — the wrapped worked example validates clean (#2426)", 
 	});
 });
 
+describe("parseMapBody — CHART-time seed attribution `— from #<MAP>` (#3405)", () => {
+	// The sanctioned seed idiom (formats §The four sections): a CHART-time founder
+	// given has no frontier ticket to cite, so it is attributed the map's OWN number
+	// (`— from #100` for map #100). That form already parses to a resolvable origin,
+	// so a map seeded per the documented idiom validates clean — no validator change.
+	it("a seed row `— from #<MAP>` yields a resolvable origin and validates clean", () => {
+		const body = [
+			"## Destination",
+			"A working invite flow.",
+			"",
+			"## Decisions-so-far",
+			"- The path is vouch-gated (kefil), not open signup — a founder given. — from #100 (@founder)",
+			"- Invites are karma-gated. — from #101",
+			"",
+			"## Open frontier",
+			"- #103 — Investigation: token storage?",
+			"",
+			"## Graduated fog",
+			"- #101 — Decided karma-gated.",
+		].join("\n");
+		const map = parseMapBody(body);
+		assert.deepStrictEqual(
+			map.decisionsSoFar.entries.map((d) => d.fromIssue),
+			[100, 101],
+		);
+		const defects = validateMap({number: 100, map, subIssues: [101, 103]});
+		assert.notInclude(
+			defects.map((d) => d.type),
+			"MALFORMED_DECISION_ENTRY",
+		);
+	});
+
+	it("a truly-unattributed seed (no `— from #N`) is still rejected", () => {
+		// The floor is not loosened: a given with no resolvable origin still trips
+		// MALFORMED_DECISION_ENTRY — `— from #<MAP>` is the sanctioned form, an absent
+		// ref is not.
+		const body = ["## Decisions-so-far", "- The path is vouch-gated, not open signup."].join("\n");
+		const map = parseMapBody(body);
+		assert.strictEqual(map.decisionsSoFar.entries[0]?.fromIssue, undefined);
+		const defects = validateMap({number: 100, map, subIssues: []});
+		assert.include(
+			defects.map((d) => d.type),
+			"MALFORMED_DECISION_ENTRY",
+		);
+	});
+});
+
 describe("parseMapBody — frontier entries", () => {
 	it("captures the sub-issue ref and the founder-decision-fork flag", () => {
 		const m = parseMapBody(cleanMapBody);

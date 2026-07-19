@@ -845,10 +845,21 @@ A `wayfinder:map` issue body carries exactly these four sections, in order:
   stating *where we want to be*, concretely enough to tell "arrived" from "not yet." This is the
   fixed star the map steers by; it changes rarely, and only in **chart** mode.
 - **`## Decisions-so-far`** — the **accreting answer log**: the settled decisions and
-  established facts, newest last, each a one-line entry naming *what was decided/found* and the
-  frontier ticket it came from (`— from #N`). This is the map's growing spine of certainty; a
-  **work** run appends to it as it resolves each frontier ticket. Nothing is ever deleted here —
-  a decision that is later revisited gets a new superseding entry, so the log stays auditable.
+  established facts, newest last, each a one-line entry naming *what was decided/found* and its
+  resolvable origin (`— from #N`). This is the map's growing spine of certainty; a **work** run
+  appends to it as it resolves each frontier ticket. Nothing is ever deleted here — a decision
+  that is later revisited gets a new superseding entry, so the log stays auditable. **Every entry
+  carries a `— from #N` origin** (the validator's auditability floor); the `#N` differs by *how*
+  the entry entered the log:
+  - **A WORK-mode append** cites the **frontier ticket** it resolved — `— from #<frontier-ticket>`.
+  - **A CHART-time seed** (a founder given brought in at charting, and an in-session founder
+    ruling recorded during a chart/work run) has **no frontier ticket** to cite — it is
+    attributed to the **map's own issue number**, `— from #<MAP>`. The seed *came from* the chart
+    act that created the map, so the map number is its honest origin; this keeps the seed
+    resolvable and auditable without inventing an unattributed form. A history-shaped given whose
+    provenance is a person still uses `— from #<MAP>`, carrying the *who* alongside the ref (e.g.
+    `— from #<MAP> (@founder)`), never *instead of* it — see the [`wayfinder` skill](wayfinder/SKILL.md)'s
+    CHART step 3 for when a design-history given may be seeded at all.
 - **`## Open frontier`** — the **live edge of the unknown**: the open investigation and decision
   tickets, kept as **native sub-issues** of the map (so each is a real, linkable, closable
   GitHub issue, reusing the existing infra). Each line references its sub-issue and states the
@@ -876,6 +887,8 @@ kamp.us has a working invite (kefil) flow: an existing yazar can vouch a new per
 that person lands as a çaylak with a clear first-run path — no founder in the loop.
 
 ## Decisions-so-far
+- The çaylak → yazar path is vouch-gated (kefil), not open signup — a founder given brought in at
+  charting. — from #100 (@founder)
 - Invites are karma-gated, not seat-gated — a yazar spends no quota, the çaylak's own karma
   ramp is the throttle. — from #101
 - The invite artifact is a single-use signed link, not an in-app request/approve handshake. — from #102
@@ -891,10 +904,13 @@ that person lands as a çaylak with a clear first-run path — no founder in the
 - #102 — Decided the artifact is a signed link. → spawned #103 (token storage investigation)
 ```
 
-Here `#101`/`#102` have graduated (their answers are in `## Decisions-so-far`, they sit in
-`## Graduated fog`, and each spawned the next frontier ticket), `#103` is an answerable
-investigation `work` mode can clear, and `#104` is a **founder-decision-fork** `wayfinder`
-surfaces and stops on — never auto-resolves.
+The map here is `#100`. Its first `## Decisions-so-far` entry is a **CHART-time seed** — a
+founder given with no frontier ticket to cite — so it is attributed `— from #100`, the map's own
+number (with `(@founder)` naming the *who*). `#101`/`#102` have graduated (their answers are in
+`## Decisions-so-far`, they sit in `## Graduated fog`, and each spawned the next frontier ticket,
+so those two entries cite their **frontier tickets**), `#103` is an answerable investigation
+`work` mode can clear, and `#104` is a **founder-decision-fork** `wayfinder` surfaces and stops
+on — never auto-resolves.
 
 ### Field notes
 
