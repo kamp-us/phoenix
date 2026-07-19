@@ -10,9 +10,18 @@ import {execFileSync} from "node:child_process";
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Exit} from "effect";
+import {Effect, Exit, type FileSystem, type Path} from "effect";
 import {type CheckFailed, checkPointers, scanStalePointers} from "./gate.ts";
+
+// The gate Effects require the `FileSystem | Path` seam (v4 platform migration, #3469);
+// provide the live Node layer — the same NodeServices.layer run.ts gives the bin — so these
+// real-git-repo IO tests exercise the actual disk path they assert over.
+const runP = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
+	Effect.runPromise(Effect.provide(effect, NodeServices.layer));
+const runExit = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
+	Effect.runPromiseExit(Effect.provide(effect, NodeServices.layer));
 
 /** A throwaway git repo so `git ls-files` has something to enumerate. */
 const makeRepo = (files: Record<string, string>): string => {
@@ -38,7 +47,7 @@ describe("scanStalePointers", () => {
 			"apps/web/real.ts": "ok",
 		});
 		try {
-			const stale = await Effect.runPromise(scanStalePointers(dir));
+			const stale = await runP(scanStalePointers(dir));
 			assert.deepStrictEqual(
 				stale.map((s) => ({file: s.file, path: s.path})),
 				[{file: "CLAUDE.md", path: "apps/web/gone.ts"}],
@@ -55,7 +64,7 @@ describe("scanStalePointers", () => {
 			"apps/web/CLAUDE.md": "nested dead: `apps/web/missing.ts`",
 		});
 		try {
-			const stale = await Effect.runPromise(scanStalePointers(dir));
+			const stale = await runP(scanStalePointers(dir));
 			assert.deepStrictEqual(
 				stale.map((s) => s.path),
 				["apps/web/missing.ts"],
@@ -72,7 +81,7 @@ describe("scanStalePointers", () => {
 			"CLAUDE.md": "create `apps/web/secret.env` from the example",
 		});
 		try {
-			const stale = await Effect.runPromise(scanStalePointers(dir));
+			const stale = await runP(scanStalePointers(dir));
 			assert.deepStrictEqual(stale, []);
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
@@ -83,7 +92,7 @@ describe("scanStalePointers", () => {
 		const dir = makeRepo({"CLAUDE.md": "ok `apps/web/real.ts`", "apps/web/real.ts": "ok"});
 		try {
 			writeFileSync(join(dir, "apps", "web", "CLAUDE.md"), "dead `apps/web/nope.ts`", "utf8");
-			const stale = await Effect.runPromise(scanStalePointers(dir));
+			const stale = await runP(scanStalePointers(dir));
 			assert.deepStrictEqual(stale, []);
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
@@ -95,7 +104,7 @@ describe("checkPointers", () => {
 	it("succeeds (no failure) on a clean repo", async () => {
 		const dir = makeRepo({"CLAUDE.md": "`apps/web/real.ts`", "apps/web/real.ts": "ok"});
 		try {
-			const exit = await Effect.runPromiseExit(checkPointers(dir));
+			const exit = await runExit(checkPointers(dir));
 			assert.isTrue(Exit.isSuccess(exit));
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
@@ -105,7 +114,7 @@ describe("checkPointers", () => {
 	it("fails CheckFailed with a report on a stale pointer", async () => {
 		const dir = makeRepo({"CLAUDE.md": "dead `apps/web/gone.ts`"});
 		try {
-			const reason = await Effect.runPromise(
+			const reason = await runP(
 				checkPointers(dir).pipe(
 					Effect.catchTag("CheckFailed", (e: CheckFailed) => Effect.succeed(e.reason)),
 				),
@@ -120,7 +129,7 @@ describe("checkPointers", () => {
 	it("fails CheckFailed (fail-closed, ADR 0092) when zero CLAUDE.md are in scope", async () => {
 		const dir = makeRepo({"README.md": "no CLAUDE.md here `apps/web/gone.ts`"});
 		try {
-			const exit = await Effect.runPromiseExit(checkPointers(dir));
+			const exit = await runExit(checkPointers(dir));
 			assert.isTrue(Exit.isFailure(exit));
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
