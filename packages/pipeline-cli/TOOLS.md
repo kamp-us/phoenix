@@ -366,7 +366,7 @@ node packages/pipeline-cli/src/bin.ts ship-digest derive --entries <file> --sinc
 Reconstructs a pipeline stage's billed token spend from its sub-agent transcript
 (`<session>/subagents/agent-<id>.jsonl`) and prints the `formatSessionCost` headline over
 the four-component breakdown — the one-command replacement for the hand-run `jq` in
-[`.patterns/token-economics-measurement.md`](../../.patterns/token-economics-measurement.md)
+[`reports/token-economics-measurement.md`](../../reports/token-economics-measurement.md)
 §2. Claude Code does not persist its `cost.total_tokens` into the transcript, so the total
 is summed from the per-message `usage` components over assistant messages
 (`input + cache_creation + cache_read + output`); `cache_read` is kept on its own line as

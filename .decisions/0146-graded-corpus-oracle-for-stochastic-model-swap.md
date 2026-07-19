@@ -101,7 +101,7 @@ verdict live on whatever decision cites them — the tiering call #1576 named wa
 - **The apparatus is recorded where the next agent finds it.** The runnable entry point (the
   committed corpus + the `eval-harness check` validator today; the `eval-harness report`
   two-axis scorecard once #1853 lands) and the *how* live in
-  [`.patterns/token-economics-measurement.md`](../.patterns/token-economics-measurement.md) §8,
+  [`reports/token-economics-measurement.md`](../reports/token-economics-measurement.md) §8,
   cross-linked from this ADR — the same division of surfaces 0112 established (this ADR owns
   the *why*, the pattern owns the *how* + the numbers).
 - **This ADR decides nothing about tiering.** Whether any stage runs on a cheaper model is a

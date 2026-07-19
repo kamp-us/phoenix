@@ -2,8 +2,8 @@
 
 **Verdict: reject (on current evidence).** Evaluated as a candidate token-saving lever for
 the token-economics epic ([#1356](https://github.com/kamp-us/phoenix/issues/1356)), against the
-baseline [measurement apparatus](./token-economics-measurement.md) and its sibling
-[audit](./token-economics-audit.md). The reject rests on a **fit argument grounded in our own
+baseline [measurement apparatus](../reports/token-economics-measurement.md) and its sibling
+[audit](../reports/token-economics-audit.md). The reject rests on a **fit argument grounded in our own
 measured spend profile**, plus an honest statement that the apparatus's **measured
 before/after could not be produced in this evaluation lane** — and a deliberate refusal to
 fabricate one. See [What would flip this verdict](#what-would-flip-this-verdict) for the exact
@@ -55,7 +55,7 @@ the toolset. But four fit frictions, the first decisive, argue against adopting 
 ### 1. Cost-axis mismatch — it optimizes a surface that is not our dominant bloat (decisive)
 
 This is the core of the reject, and it is grounded in our own measured numbers, not intuition. The
-[audit](./token-economics-audit.md) reconstructed, from the actual `claude-opus-4-8` frozen-set
+[audit](../reports/token-economics-audit.md) reconstructed, from the actual `claude-opus-4-8` frozen-set
 sub-agent transcripts, *where* our pipeline tokens go:
 
 | Stage | billed | cache_read % | scaffolding cache_read (% of billed) | task-tail cache_read |
@@ -171,8 +171,8 @@ measured dominant cost.
 - context-mode claims grounded in [`mksglu/context-mode`](https://github.com/mksglu/context-mode)
   README + repo metadata (read 2026-06-27, `main` head): the Install/Claude Code section (hooks +
   11 MCP tools), the "How Context Mode Solves It" four-pillar section, the ELv2 license badge.
-- our-side claims grounded in [`token-economics-measurement.md`](./token-economics-measurement.md)
-  (apparatus §1–§3) and [`token-economics-audit.md`](./token-economics-audit.md) (the measured
+- our-side claims grounded in [`token-economics-measurement.md`](../reports/token-economics-measurement.md)
+  (apparatus §1–§3) and [`token-economics-audit.md`](../reports/token-economics-audit.md) (the measured
   scaffolding-vs-task-tail breakdown, Rank 1 / Rank 4), and ADR
   [0062](../.decisions/0062-repo-as-config-plugin.md) (repo-as-config).
 - part of epic [#1356](https://github.com/kamp-us/phoenix/issues/1356); uses the

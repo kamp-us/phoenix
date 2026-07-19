@@ -37,7 +37,7 @@ import {classify} from "./trivial-diff.ts";
 
 /**
  * The default single-file line bound `N`. Justified against the frozen task set
- * (`.patterns/token-economics-measurement.md`): the §1 write-code frozen input
+ * (`reports/token-economics-measurement.md`): the §1 write-code frozen input
  * (PR #1224, a `biome.jsonc` lint fix) is 5 changed lines in one file, and the
  * trivial-path motivating case (#1399, a one-line `CLAUDE.md` doc fix) is a single
  * line — both well within. 20 covers the measured single-file trivial class (one-line

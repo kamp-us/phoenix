@@ -23,11 +23,11 @@ That epic established a *method* for cost-reduction work and then proved it agai
 pipeline surfaces. Two worked instances now live on `main`:
 
 - the **measurement apparatus** —
-  [`.patterns/token-economics-measurement.md`](../.patterns/token-economics-measurement.md)
+  [`reports/token-economics-measurement.md`](../reports/token-economics-measurement.md)
   (the #1370 baseline: the frozen task set, the `spawn-guard`-grounded token procedure,
   the output-quality rubric, plus the recorded "before" numbers);
 - the **ranked audit map** —
-  [`.patterns/token-economics-audit.md`](../.patterns/token-economics-audit.md) (the #1371
+  [`reports/token-economics-audit.md`](../reports/token-economics-audit.md) (the #1371
   attributed breakdown of where a stage's tokens actually go, built on the apparatus).
 
 Without recording the method itself, the next cost effort would re-derive the apparatus
@@ -52,7 +52,7 @@ is the standing rule that gates every lever:
    comparable when both runs consume the **same** input, so the set is pinned by identifier,
    not "a recent issue"; when a frozen input later mutates, the comparison pins to the
    recorded state, not the live one. The canonical set lives in
-   [`.patterns/token-economics-measurement.md` §1](../.patterns/token-economics-measurement.md).
+   [`reports/token-economics-measurement.md` §1](../reports/token-economics-measurement.md).
 
 2. **Reproducible token-measurement procedure — grounded in `spawn-guard`, not intuition.**
    The authoritative per-run figure is Claude Code's own `cost.total_tokens` /
@@ -67,9 +67,9 @@ is the standing rule that gates every lever:
    Keep the four-way breakdown visible (`cache_read` is re-charged every turn and dominates
    the headline; the `ex-cache-read` figure is the better cross-run comparator). The full
    procedure, the `jq` one-liner, and the recorded baseline are in
-   [`.patterns/token-economics-measurement.md` §2](../.patterns/token-economics-measurement.md);
+   [`reports/token-economics-measurement.md` §2](../reports/token-economics-measurement.md);
    the attribution layer over it is
-   [`.patterns/token-economics-audit.md`](../.patterns/token-economics-audit.md).
+   [`reports/token-economics-audit.md`](../reports/token-economics-audit.md).
 
 3. **Output-quality rubric — the no-compromise constraint made checkable.** Each frozen
    input carries a per-stage quality oracle: a reproducible pass/fail that asserts the
@@ -77,7 +77,7 @@ is the standing rule that gates every lever:
    classification, same `Fixes #N` + green CI + independent `review-code: PASS` for
    write-code, same verdict + same AC findings for review-code). The rubric is what turns
    "quality preserved" from an assertion into a check. It is defined in
-   [`.patterns/token-economics-measurement.md` §3](../.patterns/token-economics-measurement.md).
+   [`reports/token-economics-measurement.md` §3](../reports/token-economics-measurement.md).
 
 4. **The standing rule — a token reduction that degrades quality is a fail, not a win.**
    Every lever is judged on **two axes simultaneously, and both must hold**: a real measured

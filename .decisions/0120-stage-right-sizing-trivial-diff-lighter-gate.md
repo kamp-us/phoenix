@@ -125,7 +125,7 @@ when the boundary can't be read).
 
 The lighter path is **not** flipped on by recording this decision. Adoption is gated, per
 ADR 0112, on a measurement on the frozen task set
-([`.patterns/token-economics-measurement.md`](../.patterns/token-economics-measurement.md)),
+([`reports/token-economics-measurement.md`](../reports/token-economics-measurement.md)),
 **both axes holding simultaneously**:
 
 - **Token axis** — a real, measured token-per-PR reduction for the trivial path vs the full

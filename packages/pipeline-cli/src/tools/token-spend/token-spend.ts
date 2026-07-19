@@ -12,7 +12,7 @@
  *             + cache_read_input_tokens + output_tokens)
  *
  * This is the exact `jq` reconstruction documented in
- * `.patterns/token-economics-measurement.md` §2, turned into a pure, total core so a
+ * `reports/token-economics-measurement.md` §2, turned into a pure, total core so a
  * one-command reporter replaces the hand-run `jq`. The headline figure renders through
  * `spawn-guard`'s existing `formatSessionCost` (the same per-session shape the statusline
  * draws) — reused read-only here, not re-minted.
