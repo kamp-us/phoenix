@@ -12,6 +12,7 @@
  */
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
+import {adoptionLintCommand} from "./tools/adoption-lint/command.ts";
 import {campaignCommand} from "./tools/campaign/command.ts";
 import {catalogGuardCommand} from "./tools/catalog-guard/command.ts";
 import {changelogDeriveCommand} from "./tools/changelog-derive/command.ts";
@@ -147,4 +148,8 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// reds a PR when a substantive unresolved review thread is unaccounted-for in the
 	// review-code verdict, covering the §CP manual-merge path ship-it Step 3.6 never sees.
 	unresolvedThreadsGuardCommand,
+	// The #3254 adoption corpus-lint (epic #3258, governing AC): reds a corpus file that
+	// inline-re-derives a tool-owned decision without citing the owning verb, so the verb
+	// sweep can't grow the unreferenced-tool pile. Fail-closed on zero scope (ADR 0092).
+	adoptionLintCommand,
 ];

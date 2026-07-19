@@ -1,0 +1,56 @@
+name: adoption-lint
+
+# The #3254 adoption corpus-lint (epic #3258, governing AC): reds a crew-corpus file
+# that inline-re-derives a tool-owned decision — the hand-copied ~50-line procedure that
+# duplicates a shipped `pipeline-cli` verb's logic — instead of citing the owning verb.
+# It lands FIRST so the verb-extraction sweep cannot grow the unreferenced-tool pile
+# (the `verdict read` divergent-copy class, #3254 / #2102). The match logic + the declared
+# decisions/exemptions live once in the tool (adoption-lint.ts / manifest.ts), never
+# re-grepped here.
+#
+# Scans the FULL corpus (not just changed files) so a re-derivation anywhere is caught
+# regardless of which PR introduced it, and FAILS CLOSED on zero scope per ADR 0092: a
+# lint that scanned nothing, or a manifest with no decision, is a broken lint (exit 3).
+# The corpus is the plugin's skills/** + agents/** (all .md/.sh) PLUS the orchestrator
+# runtime surface .claude/workflows/drive-issue.js — the sole declared mirror, in scope so
+# its exemption is itself linted (it must exist, not a blanket skip).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint crew corpus for inline re-derivations of tool-owned decisions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Hand the CLI the whole corpus: every .md/.sh under the plugin dir plus the
+      # orchestrator's drive-issue.js (the declared mirror, in scope so its exemption is
+      # linted). The tool self-scopes against the manifest and fails closed (exit 3) on an
+      # empty corpus or an empty decision set (ADR 0092).
+      - name: Lint crew corpus for un-cited re-derivations
+        run: |
+          set -euo pipefail
+          {
+            find claude-plugins/kampus-pipeline -type f \( -name '*.md' -o -name '*.sh' \)
+            [ -f .claude/workflows/drive-issue.js ] && echo .claude/workflows/drive-issue.js
+          } | sort -u \
+            | xargs node packages/pipeline-cli/src/bin.ts adoption-lint check
