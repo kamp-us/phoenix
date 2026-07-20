@@ -216,10 +216,12 @@ are the contract, #2102). So `heal-ci` reads each namespace **through the verb**
 re-deriving the resolver write-code once hand-copied, and keeps only the two things the verb does
 **not** do — genuinely more than a single (PR, gate) resolution, so they stay here:
 
-- **The native `CHANGES_REQUESTED` review that folds into the code namespace.** The verb reads
-  marker comments; a native review is a *different* record type. GitHub author-attributes reviews,
-  so this path needs **no** ACL gate — `commit_id` IS its bound SHA, and a decisive review whose
-  `commit_id` prefix-matches the current head is a code FAIL exactly as a marker one is.
+- **The native decisive review that folds into the code namespace.** The verb reads marker comments;
+  a native review is a *different* record type. GitHub author-attributes reviews, so this path needs
+  **no** ACL gate — `commit_id` IS its bound SHA. The fold is **newest-wins by timestamp** (as in
+  `ship-it` Step 2 / write-code R1): the code verdict is the newest of {latest decisive review,
+  latest `review-code` marker}, so a current-head `CHANGES_REQUESTED` is a code FAIL *unless* a newer
+  current-head marker already PASS'd.
 - **The N=3 FAIL-round count.** `verdict read` resolves the latest verdict; it does not count
   rounds. A PR already at 3 FAIL rounds is escalated to a human, **not** an active repair, so the
   guard counts the rounds itself (author-gated to write+ collaborators, clustered by >120s gap —
@@ -239,17 +241,36 @@ fi
 # a namespace is an active-repair FAIL iff its latest authorized verdict is FAIL bound to the current
 # head — exit 0 from `verdict read … --expect FAIL`. A stale / SHA-less / PASS / none verdict exits
 # non-zero, so it is correctly NOT an active repair, matching write-code's no-op on it.
-$VERDICT read --pr "$PR" --gate code --expect FAIL >/dev/null 2>&1 && CODE_FAIL=1 || CODE_FAIL=0
-$VERDICT read --pr "$PR" --gate doc  --expect FAIL >/dev/null 2>&1 && DOC_FAIL=1  || DOC_FAIL=0
+CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code --expect FAIL 2>/dev/null)" && CODE_FAIL=1 || CODE_FAIL=0
+DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc  --expect FAIL 2>/dev/null)" && DOC_FAIL=1  || DOC_FAIL=0
 
-# the native CHANGES_REQUESTED review folds into the code namespace (the verb reads only marker
-# comments): a decisive review whose commit_id prefix-matches the current head is a code FAIL too.
+# UNRESOLVED ≠ "no FAIL". The verb prints its outcome JSON on BOTH exit paths, so absent JSON means the
+# namespace never resolved (a transport/5xx failure). Reading that as "no repair in flight" would file
+# a twin defect against a live repair — so treat it as UNKNOWN and defer this invocation.
+VERDICT_UNKNOWN=0
+for J in "$CODE_FAIL_JSON" "$DOC_FAIL_JSON"; do jq -e . >/dev/null 2>&1 <<<"$J" || VERDICT_UNKNOWN=1; done
+
+# the native decisive review folds into the code namespace (the verb reads only marker comments), by
+# NEWEST-WINS timestamp — the same fold ship-it Step 2 / write-code R1 run. `at: .submitted_at` is what
+# the compare reads; a bare "CHANGES_REQUESTED ⇒ CODE_FAIL=1" would report a repair in flight on a PR
+# whose newer marker already PASS'd at the same head, suppressing a defect that should be filed.
 CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id}')
+        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
 RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
-[ -n "$RSHA" ] && [ "$RSTATE" = "CHANGES_REQUESTED" ] && case "$CURRENT_HEAD" in "$RSHA"*) CODE_FAIL=1 ;; esac
+RAT=$(jq -r '.at // ""' <<<"$REVIEW")
+# `_tag == "current"` is exactly "a current-head marker verdict stands"; its comment id yields the
+# created_at the compare needs (the verb's outcome carries no timestamp).
+MARKER_AT=""
+[ "$(jq -r '._tag // ""' <<<"$CODE_FAIL_JSON" 2>/dev/null)" = "current" ] &&
+  MARKER_AT=$(gh api "repos/$REPO/issues/comments/$(jq -r .commentId <<<"$CODE_FAIL_JSON")" --jq .created_at 2>/dev/null)
+if [ -n "$RSHA" ] && [ -n "$RAT" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
+  # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare.
+  if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
+    [ "$RSTATE" = "CHANGES_REQUESTED" ] && CODE_FAIL=1 || CODE_FAIL=0
+  fi
+;; esac; fi
 
 # the N=3 repair cap `verdict read` does NOT count: a PR already at 3 FAIL rounds is escalated to a
 # human, NOT an active repair. Author-gate the FAIL markers to write+ collaborators (ADR 0055) and
@@ -277,6 +298,10 @@ ROUNDS=$(jq --argjson authorized "$authorized" \
        then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
    | .n' "$comments_file")
 ```
+
+If `VERDICT_UNKNOWN=1` the verdict never resolved (a GitHub read failure, not a verdict) — **defer
+this invocation** rather than assume no repair is in flight; filing a twin against a live repair is
+the exact harm this check guards.
 
 An active repair is in flight **iff** `ROUNDS < 3` **and** a namespace is a current-head FAIL —
 `CODE_FAIL=1` (the latest `review-code` marker is a current-head FAIL per `verdict read`, or the

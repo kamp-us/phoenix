@@ -1695,9 +1695,12 @@ verdict** in each — the exact resolution `ship-it` Step 2 reads. That resoluti
 write+ author-gate so a self-authored or forged `review-(code|doc|skill): FAIL` is invisible, the
 latest-wins pick, and the ADR-0058 SHA-staleness refusal) is owned by `pipeline-cli verdict read`,
 so R1 delegates to the verb rather than re-deriving it (#2102) — its unit tests are the contract.
-The native `CHANGES_REQUESTED` review that folds into the code namespace is the one thing the verb
-does not resolve (it reads only marker comments); it needs no ACL gate — GitHub author-attributes
-reviews, so that path is unforgeable — so R1 keeps just that fold inline.
+The native decisive review that folds into the code namespace is the one thing the verb does not
+resolve (it reads only marker comments); it needs no ACL gate — GitHub author-attributes reviews, so
+that path is unforgeable — so R1 keeps just that fold inline. The fold is **newest-wins by
+timestamp**, matching `ship-it` Step 2: the code verdict is the newest of {latest decisive review,
+latest `review-code` marker}, so a newer `APPROVED` clears an older FAIL rather than the FAIL
+standing forever.
 
 ```bash
 PR=<the PR number you were handed>
@@ -1736,16 +1739,49 @@ CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code  --expect FAIL 2>/dev/nul
 DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc   --expect FAIL 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
 SKILL_FAIL_JSON="$($VERDICT read --pr "$PR" --gate skill --expect FAIL 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
 
-# the native CHANGES_REQUESTED review folds into the code namespace (the verb reads only marker
-# comments): GitHub author-attributes reviews, so this path needs no ACL gate — commit_id IS its bound
-# SHA, and a decisive review that is CHANGES_REQUESTED and prefix-matches the current head is a code FAIL too.
+# UNRESOLVED ≠ "no FAIL". `verdict read` prints its outcome JSON on BOTH exit paths, so absent JSON
+# means the namespace never resolved at all (a transport/5xx error, not a verdict). Under a flaky
+# GitHub that silently reads as "nothing to repair" and SKIPS a real repair — so treat it as UNKNOWN
+# and defer the run instead (a deferred repair is retried; a skipped one is lost).
+VERDICT_UNKNOWN=0
+for J in "$CODE_FAIL_JSON" "$DOC_FAIL_JSON" "$SKILL_FAIL_JSON"; do
+  jq -e . >/dev/null 2>&1 <<<"$J" || VERDICT_UNKNOWN=1
+done
+
+# the native decisive review folds into the code namespace (the verb reads only marker comments):
+# GitHub author-attributes reviews, so this path needs no ACL gate — commit_id IS its bound SHA, and
+# only a review prefix-matching the current head participates (ADR 0058).
+#
+# The fold is NEWEST-WINS by timestamp — the resolution ship-it Step 2 states and this step mirrors.
+# `at: .submitted_at` is load-bearing, not decoration: it is what the compare reads. A bare
+# "CHANGES_REQUESTED ⇒ CODE_FAIL=1" would be FAIL-precedence, re-entering repair on a PR whose newer
+# marker already PASS'd at the same head — a spurious repair loop, not a safe default.
 CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id}')
+        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
 RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
-[ -n "$RSHA" ] && [ "$RSTATE" = "CHANGES_REQUESTED" ] && case "$CURRENT_HEAD" in "$RSHA"*) CODE_FAIL=1 ;; esac
+RAT=$(jq -r '.at // ""' <<<"$REVIEW")
+# marker side: `_tag == "current"` is exactly "a current-head marker verdict stands" (a none/sha-less/
+# stale one does not participate); its comment id yields the created_at newest-wins compares against.
+MARKER_AT=""
+[ "$(jq -r '._tag // ""' <<<"$CODE_FAIL_JSON" 2>/dev/null)" = "current" ] &&
+  MARKER_AT=$(gh api "repos/$REPO/issues/comments/$(jq -r .commentId <<<"$CODE_FAIL_JSON")" --jq .created_at 2>/dev/null)
+if [ -n "$RSHA" ] && [ -n "$RAT" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
+  # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare. Empty MARKER_AT ⇒ the review is
+  # the only current-head event ⇒ it decides alone. A newer APPROVED clears an older FAIL — that is the
+  # point: without it a repaired-and-re-approved PR would re-enter repair forever.
+  if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
+    [ "$RSTATE" = "CHANGES_REQUESTED" ] && CODE_FAIL=1 || CODE_FAIL=0
+  fi
+;; esac; fi
 ```
+
+**A namespace that did not resolve at all is UNKNOWN, not "no FAIL" — defer, don't skip.** If
+`VERDICT_UNKNOWN=1` (a `verdict read` that printed no outcome JSON — a transport/5xx failure rather
+than a verdict), stop and report `verdict unresolved (GitHub read failed) — deferring, not skipping`.
+Reading an unresolvable namespace as "nothing to repair" would silently drop a real repair; a
+deferred run is retried, a skipped one is lost.
 
 **Act only when a namespace's latest verdict is FAIL *bound to the current head*** — i.e. `CODE_FAIL=1`
 (a current-head `review-code: FAIL` marker per `verdict read`, or a current-head `CHANGES_REQUESTED`

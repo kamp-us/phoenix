@@ -742,9 +742,11 @@ CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — the review-code path only.
 # GitHub author-attributes reviews, so this path is unforgeable and needs no ACL check. commit_id IS
 # the SHA the reviewer approved, so the same staleness test applies to it as to a marker's @ <sha>.
+# `at: .submitted_at` is load-bearing, not decoration: it is the timestamp the newest-wins fold below
+# compares against the marker's created_at. Drop it and the fold degenerates to a precedence rule.
 REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id}')
+        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
 
 # resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
 if [ -f packages/pipeline-cli/src/bin.ts ]; then
@@ -759,7 +761,9 @@ fi
 # — Step 2b's `unverified (verdict not bound to current head)` refusal, now owned by the verb. (A §CP
 # advisory namespace is SHA-less by design and resolves `none` here — Step 2.§CP handles it from the
 # body's Reviewed-head instead.)
-$VERDICT read --pr "$PR" --gate code   --expect PASS >/dev/null 2>&1 && CODE_PASS=1   || CODE_PASS=0
+# the code namespace keeps the verb's stdout JSON: it names the RESOLVING comment id, which the
+# newest-wins fold below turns into the marker's created_at (the verb's outcome carries no timestamp).
+CODE_JSON="$($VERDICT read --pr "$PR" --gate code --expect PASS 2>/dev/null)" && CODE_PASS=1 || CODE_PASS=0
 $VERDICT read --pr "$PR" --gate code   --expect FAIL >/dev/null 2>&1 && CODE_FAIL=1   || CODE_FAIL=0
 $VERDICT read --pr "$PR" --gate doc    --expect PASS >/dev/null 2>&1 && DOC_PASS=1    || DOC_PASS=0
 $VERDICT read --pr "$PR" --gate doc    --expect FAIL >/dev/null 2>&1 && DOC_FAIL=1    || DOC_FAIL=0
@@ -769,12 +773,29 @@ $VERDICT read --pr "$PR" --gate design --expect PASS >/dev/null 2>&1 && DESIGN_P
 $VERDICT read --pr "$PR" --gate design --expect FAIL >/dev/null 2>&1 && DESIGN_FAIL=1 || DESIGN_FAIL=0
 
 # fold the native decisive review into the code namespace (the verb reads only marker comments). Only
-# a review bound to the current head counts (same ADR-0058 staleness as a marker's @ <sha>). A
-# current-head CHANGES_REQUESTED is a code FAIL (veto); a current-head APPROVED is a code PASS-equiv.
+# a review bound to the current head counts (same ADR-0058 staleness as a marker's @ <sha>).
+#
+# The fold is NEWEST-WINS by timestamp, never FAIL-precedence — the resolution the prose below states.
+# FAIL-precedence would be a live wedge, not a conservative default: a PR FAIL'd, repaired, and
+# re-PASSed at the SAME head would stay permanently blocked by the superseded FAIL, breaking the
+# repair → re-review → ship loop write-code drives.
 RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
+RAT=$(jq -r '.at // ""' <<<"$REVIEW")
 if [ -n "$RSHA" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
-  [ "$RSTATE" = "CHANGES_REQUESTED" ] && { CODE_FAIL=1; CODE_PASS=0; }
-  [ "$RSTATE" = "APPROVED" ] && [ "$CODE_FAIL" = 0 ] && CODE_PASS=1
+  # the marker's created_at: the verb's outcome carries no timestamp, so resolve it from the comment
+  # id its JSON names. An empty MARKER_AT means no current-head marker verdict stands (`verdict read`
+  # already dropped a none/sha-less/stale one) ⇒ the review is the only event ⇒ it decides alone.
+  MARKER_AT=""
+  MARKER_ID=$(jq -r '.commentId // empty' <<<"$CODE_JSON" 2>/dev/null)
+  [ -n "$MARKER_ID" ] && [ "$((CODE_PASS + CODE_FAIL))" -gt 0 ] &&
+    MARKER_AT=$(gh api "repos/$REPO/issues/comments/$MARKER_ID" --jq .created_at 2>/dev/null)
+  # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare.
+  if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
+    case "$RSTATE" in
+      CHANGES_REQUESTED) CODE_FAIL=1; CODE_PASS=0 ;;
+      APPROVED)          CODE_PASS=1; CODE_FAIL=0 ;;
+    esac
+  fi   # else the marker is newer and already stands — leave CODE_PASS/CODE_FAIL as the verb resolved them
 ;; esac; fi
 ```
 
