@@ -1,22 +1,21 @@
-import {expect, test} from "@playwright/test";
+import {expect, type Page, test} from "@playwright/test";
 
 /**
  * The first-paint contract for the edge-resolved shell (ADR 0179, epic #2926). Its containment
  * flag retired with #3672, so this is no longer a `@journey:`-registered reachability spec — it
  * stays as the in-browser regression proof for the now-permanent worker-first render.
  *
- * It proves the CLIENT half of the `window.__BOOT__` contract deterministically, without a live
- * worker: `page.addInitScript` seeds `window.__BOOT__` exactly as the edge injects it (into
- * `<head>`, before the app module runs — ADR 0179 §2), then a hard reload measures whether the
- * shell paints its final geometry immediately with zero layout shift. Seeding the payload is the
- * faithful stand-in for the worker render — `useFlag` resolves a shell-key-manifest member
- * synchronously off `__BOOT__` with no fetch (ADR 0179 §3), so the seeded values reproduce the
- * first paint the worker produces. This mirrors the split `28-reaction-bar-darkship` uses: the
- * unit tests own the pure resolution logic, this e2e owns the in-browser first-paint proof.
+ * It proves the CLIENT half of the `window.__BOOT__` contract deterministically, by forcing the
+ * payload at the NETWORK seam ({@link routeBoot}) rather than seeding it client-side. That is a
+ * hard requirement since #3672: the worker now injects `__BOOT__` into `<head>` on every HTML
+ * `GET`, and that inline script runs AFTER `page.addInitScript`, so an init-script seed is
+ * overwritten before the app reads it. Rewriting the document response instead puts the payload
+ * under test on the exact wire the edge uses, and is the only way the absent-`__BOOT__` half is
+ * reachable at all.
  *
- * The absent-`__BOOT__` half stays covered: when the never-hang guard (ADR 0179 §4) degrades to
- * an untransformed asset, the shell must still render through the client fetch path — proven by
- * the fallback test below.
+ * That absent half is not optional: when the never-hang guard (ADR 0179 §4) degrades to an
+ * untransformed asset there is no `__BOOT__`, and the shell must still render through the client
+ * fetch path. The fallback test below is that proof.
  */
 
 declare global {
@@ -34,8 +33,8 @@ interface LayoutShiftEntry extends PerformanceEntry {
 }
 
 // The `__BOOT__` boolean members are the shell flag-key STRINGS (shell-keys.ts); `user` is the
-// edge-resolved identity (ADR 0185). Seeded via addInitScript, so a plain shape, not typed here
-// against BootPayload (the worker owns that type).
+// edge-resolved identity (ADR 0185). Serialized into the document from the test process, so a
+// plain shape, not typed here against BootPayload (the worker owns that type).
 type SeedBoot = Record<string, unknown>;
 
 // On-path: the two mecmua nav flags on, signed out — the nav shows mecmua in its final
@@ -64,9 +63,51 @@ const BOOT_SIGNED_IN: SeedBoot = {
 	},
 };
 
-/** Seed `window.__BOOT__` before any page script — the addInitScript stand-in for edge injection. */
-function seedBoot(boot: SeedBoot): void {
-	window.__BOOT__ = boot as typeof window.__BOOT__;
+/**
+ * The worker's injected boot tag, as `bootScriptTag` emits it (`shell-boot.ts`). `JSON.stringify`
+ * output is `<`-escaped there, so no payload value can contain a literal `</script>` — the lazy
+ * match cannot terminate early on user content.
+ */
+const WORKER_BOOT_SCRIPT = /<script>\s*window\.__BOOT__\s*=[\s\S]*?<\/script>/gi;
+
+/** Serialize a payload into the same inline tag the edge injects (mirrors `bootScriptTag`). */
+const bootTag = (boot: SeedBoot): string =>
+	`<script>window.__BOOT__=${JSON.stringify(boot).replace(/</g, "\\u003c")}</script>`;
+
+/**
+ * Force the exact `window.__BOOT__` a navigation boots with, at the network seam — rewriting the
+ * document response the way the edge does, instead of racing it from a page script.
+ *
+ * Pass a payload to substitute one; pass `null` to serve the shell with NO boot script, which is
+ * the never-hang fallback's wire shape (ADR 0179 §4) and unreachable any other way now that the
+ * worker injects unconditionally (#3672). Returns the count of documents actually rewritten, so a
+ * test can assert the seam ran rather than pass vacuously if interception silently no-ops.
+ *
+ * The matcher is scoped to the shell navigation (`/`) rather than `**\/*` deliberately: routing
+ * every request proxies the web fonts through the test process too, which delays the font swap
+ * past first paint and manufactures a nav reflow the zero-CLS test would then blame on the shell.
+ */
+async function routeBoot(page: Page, boot: SeedBoot | null): Promise<() => number> {
+	let rewritten = 0;
+	await page.route(
+		(url) => url.pathname === "/",
+		async (route) => {
+			if (route.request().resourceType() !== "document") return route.continue();
+			const response = await route.fetch();
+			const headers = {...response.headers()};
+			if (!(headers["content-type"] ?? "").includes("text/html")) return route.fulfill({response});
+			// The fetched body is already decoded and re-length'd by the fulfill, so the upstream
+			// framing headers would contradict it.
+			delete headers["content-length"];
+			delete headers["content-encoding"];
+			const stripped = (await response.text()).replace(WORKER_BOOT_SCRIPT, "");
+			const body =
+				boot === null ? stripped : stripped.replace(/<\/head>/i, `${bootTag(boot)}</head>`);
+			rewritten += 1;
+			await route.fulfill({status: response.status(), headers, body});
+		},
+	);
+	return () => rewritten;
 }
 
 /**
@@ -101,7 +142,7 @@ test.describe("edge-resolved shell boot", () => {
 		page,
 	}) => {
 		await page.addInitScript(installShellClsObserver);
-		await page.addInitScript(seedBoot, BOOT_NAV_ON);
+		await routeBoot(page, BOOT_NAV_ON);
 		await page.goto("/");
 
 		const topbar = page.locator(".kp-topbar");
@@ -119,25 +160,39 @@ test.describe("edge-resolved shell boot", () => {
 			"true",
 		);
 
-		// Capture the shell geometry, let the page hydrate + settle, and assert nothing moved.
+		// The nav's SLOT SET at first paint — captured before anything async can have resolved.
+		// This is the pop-in proof proper, and it is font-independent: a flag resolved late would
+		// add or drop an entry here, whichever way the webfont swap moves the pixels.
+		const navEntries = () => page.locator(".kp-topbar__nav a").allInnerTexts();
+		const entriesAtFirstPaint = await navEntries();
+
+		// Geometry is captured only once the webfont has swapped. Font-metric reflow moves every
+		// nav link a few px and has nothing to do with the __BOOT__ contract — it is the residual
+		// the CLS epsilon below is scaled for. Anchoring the strict box comparison after
+		// `fonts.ready` keeps that confounder out of the assertion this test is actually making:
+		// that hydration and the session/flag settle move nothing.
+		await page.evaluate(() => document.fonts.ready);
 		const topbarBefore = await topbar.boundingBox();
 		const mecmuaBefore = await mecmua.boundingBox();
+
 		await page.waitForLoadState("networkidle").catch(() => {});
 		await page.waitForTimeout(1_500);
+
+		expect(await navEntries()).toEqual(entriesAtFirstPaint);
 		expect(await topbar.boundingBox()).toEqual(topbarBefore);
 		expect(await mecmua.boundingBox()).toEqual(mecmuaBefore);
 
 		// And the shell's cumulative layout shift stays effectively zero across first-paint →
-		// hydrate → settle. The bounding-box equality above is the strict geometry proof (the nav
-		// slots do not move); this bounds any residual sub-pixel font-metric reflow well under the
-		// CLS "good" threshold (0.1, web.dev/cls) — orders of magnitude below a perceptible shift.
+		// hydrate → settle. This is the one assertion that spans the font swap too, so the epsilon
+		// bounds it: a real browser produces a few px of font-metric reflow here, still far under
+		// the CLS "good" threshold (0.1, web.dev/cls) and below perceptibility.
 		expect(await page.evaluate(() => window.__shellCLS ?? 0)).toBeLessThan(0.01);
 	});
 
 	test("edge-resolved __BOOT__.user suppresses the giriş-yap flash at first paint", async ({
 		page,
 	}) => {
-		await page.addInitScript(seedBoot, BOOT_SIGNED_IN);
+		await routeBoot(page, BOOT_SIGNED_IN);
 		await page.goto("/");
 
 		await expect(page.locator(".kp-topbar")).toBeVisible({timeout: 10_000});
@@ -152,11 +207,12 @@ test.describe("edge-resolved shell boot", () => {
 	test("without __BOOT__ the shell degrades gracefully — the never-hang fallback path", async ({
 		page,
 	}) => {
-		await page.addInitScript(() => {
-			window.__BOOT__ = undefined;
-		});
+		const rewritten = await routeBoot(page, null);
 		await page.goto("/");
 
+		// The seam ran: without this the worker's own injection would sail through and the
+		// absent-payload assertions below would be testing the wrong world.
+		expect(rewritten()).toBeGreaterThan(0);
 		await expect(page.locator(".kp-topbar")).toBeVisible({timeout: 10_000});
 		// The base product nav still renders — the untransformed shell is byte-identical to today.
 		await expect(page.locator(".kp-topbar__nav a", {hasText: /^sözlük$/i})).toBeVisible();
