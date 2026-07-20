@@ -59,7 +59,7 @@ export const describeKind = (kind: string): Effect.Effect<KindContract | undefin
 		}
 		return Effect.try({
 			try: () => Schema.toJsonSchemaDocument(schema),
-			catch: (cause) => cause,
+			catch: (cause) => String(cause),
 		}).pipe(
 			Effect.map(
 				(payload): KindContract => ({kind, awaitsReply: awaitsReplyForKind(kind), payload}),
