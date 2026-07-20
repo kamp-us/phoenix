@@ -539,53 +539,26 @@ is the **only** sanctioned path to a mutation that names `<N>`, no bypass:
 ```bash
 # claim_is_mine <N>: resolve the EARLIEST AUTHORIZED claim marker on #N (issue or PR) and assert
 # its embedded session id == MY_CLAIM. Returns 0 only on a proven-own claim; non-zero (REFUSE) on
-# an absent OR a foreign claim. Reuses the ADR 0115 §1/§2 marker read — no second claim mechanism.
+# an absent OR a foreign claim. The ADR-0115 §2 resolution — CLAIM_RE + the write+ ACL trust root
+# (ADR 0055) + the earliest-(created_at, comment id) tiebreak — is owned once by the shared verb
+# `pipeline-cli claim is-mine`; CITE it, never hand-roll the jq (#3687, the same envelope
+# extraction the shipped review-verdict and tracker verbs underwent). The verb is default-deny: an absent claim, an
+# unauthorized-only claim, a foreign owner, and a missing session all resolve NOT-mine (exit
+# non-zero) — exactly this guard's fail-closed refusal, so the exit-status contract is preserved.
 claim_is_mine() {
-  local N="$1" cf am authorized winner perm a
-  cf=$(mktemp)
-  gh api "repos/$REPO/issues/$N/comments?per_page=100" > "$cf"   # PR comments share the issues endpoint
-  # claim grammar + matcher are SINGLE-SOURCED from gh-issue-intake-formats.md §7 (ADR 0115 §1/§2):
-  # the canonical marker `claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>` and the ONE `CLAIM_RE`
-  # every consumer shares — cited verbatim here, NEVER re-derived (don't reintroduce a broader
-  # inline grammar; the §7 matcher is the single source the Step-3 write and §7 resolver also use).
-  CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'   # the §7 single source — cited, not re-derived
-  # AUTHORIZED authors only — write+ collaborators (ADR 0055 trust root, same set ship-it Step 2 /
-  # the repair scan build). A forged claim from a non-collaborator is ignored; an EMPTY authorized
-  # set resolves NO claim ⇒ the guard refuses — fail-closed, never a false win.
-  am=$(jq -r --arg re "$CLAIM_RE" '[.[] | select(.body | test($re)) | .user.login] | unique | .[]' "$cf")
-  authorized='[]'
-  while IFS= read -r a; do
-    [ -z "$a" ] && continue
-    perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
-    case "$perm" in admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;; esac
-  done <<<"$am"
-  # WINNER = the EARLIEST authorized claim — min (created_at, comment id), the server-assigned
-  # ordering (ADR 0115 §2), NOT lexicographic-min(session). Extract its embedded session id with
-  # §7's paired capture form (group `s`) — the same single source, no second grammar.
-  winner=$(jq -r --argjson authorized "$authorized" --arg re "$CLAIM_RE" \
-    '[.[] | select(.user.login | IN($authorized[])) | select(.body | test($re))]
-     | sort_by([.created_at, .id]) | first
-     | (.body // "" | (capture("(?i)^\\s*\\**\\s*claim:\\s*(?<s>[0-9a-f-]{36})") // {s:null}).s) // ""' "$cf")
-  if [ -z "$winner" ]; then
-    echo "mis-attribution guard FAILED (fail-closed): #$N carries no authorized claim marker — refusing to mutate (ADR 0115 §1/§2: absent ⇒ no owner, never a false win)." >&2
-    return 1
-  fi
-  if [ "$winner" != "$MY_CLAIM" ]; then
-    echo "mis-attribution guard FAILED (fail-closed): #$N is claimed by ANOTHER agent (earliest authorized claim session=$winner ≠ mine=$MY_CLAIM) — refusing to push/comment/close work I did not claim (ADR 0115 §4 / #1456; the #1404 near-miss)." >&2
-    return 1
-  fi
-  echo "mis-attribution guard: #$N earliest authorized claim == mine ($MY_CLAIM) — proceeding."
+  pipeline-cli claim is-mine --issue "$1" --session "$MY_CLAIM"   # exit 0 = mine; non-zero = REFUSE (default-deny)
 }
 
 claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="…"   # the guard gates the mutation; never run it ungated
 ```
 
-The guard is **fail-closed by construction** — it proceeds **only** on positive evidence of an
-authorized claim whose session is `MY_CLAIM`; an absent claim, an unauthorized-only claim, and a
-foreign claim all **refuse**. It is **observable** (it prints the resolved owner vs `MY_CLAIM`) and
-**idempotent** (a read-only GET). **Never** route around it by widening the comparison or treating
-the bare assignee as the owner — the assignee is a coarse availability gate only (ADR 0115 §1), and
-a login-keyed ownership check is the degeneracy this guard exists to remove.
+The guard is **fail-closed by construction** — the verb proceeds (exit 0) **only** on positive
+evidence of an authorized claim whose session is `MY_CLAIM`; an absent claim, an unauthorized-only
+claim, and a foreign claim all resolve not-mine and **refuse** (exit non-zero). It is **observable**
+(the verb prints the resolved owner vs `MY_CLAIM` and the outcome reason) and **idempotent** (a
+read-only GET). **Never** route around it by widening the comparison or treating the bare assignee
+as the owner — the assignee is a coarse availability gate only (ADR 0115 §1), and a login-keyed
+ownership check is the degeneracy this guard exists to remove.
 
 > **Which `<N>` to guard at each site.** The guarded number is the **work-target whose mutation
 > could clobber another agent**: Step 5 guards the **issue** you open the PR against; Step 6 the
