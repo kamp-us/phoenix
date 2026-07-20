@@ -56,18 +56,57 @@ jobs:
     name: detect deploy relevance
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: read # dorny/paths-filter reads the PR's changed files via the API
+      # A job-level block REPLACES the workflow default, so `contents: read` must be
+      # restated here for the checkout the merge-base step needs. `pull-requests` is no
+      # longer read by dorny (it runs API-free now) but stays for the paths-filter action's
+      # own event-payload access.
+      contents: read
+      pull-requests: read
     outputs:
       deploy: ${{ steps.decide.outputs.deploy }}
     steps:
-      # dorny/paths-filter resolves the PR's changed files from the API (no checkout
-      # needed on a `pull_request` event). Run it only for a PR — `push` (prod) never
-      # consults it; the `decide` step below forces `deploy=true` for every non-PR
-      # event so prod always deploys.
+      # Full history so the merge-base below resolves; the default shallow checkout has no
+      # common ancestor to compute against.
+      - uses: actions/checkout@v4.2.2
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+
+      # IDENTICAL CHANGE DETECTION TO ci.yml — same `token`, same `base`, same globs (#3722).
+      # This job and ci.yml's `changes` job must classify a PR's diff the SAME way or the
+      # deploy⊇e2e invariant is unenforceable in practice: equal glob lists over DIFFERENT
+      # changed-file sets still disagree. Two separate defects made them disagree, and both
+      # are fixed by pinning the pair here and in ci.yml:
+      #   1. MODE. This step defaulted `token` to `${{ github.token }}` → dorny's API read
+      #      (`pulls.listFiles`, GitHub's three-dot merge-base diff), while ci.yml pins
+      #      `token: ''` → a local `git diff`. Two different readers of "what changed".
+      #      `token: ''` also removes the transient GitHub-API-HTML blip that hard-failed the
+      #      equivalent ci.yml step and redded a defect-free PR (#3244/#3245).
+      #   2. BASIS. In git mode dorny diffs TWO-DOT from `pull_request.base.sha` — the base
+      #      BRANCH TIP at event time, not the common ancestor — so once main advances past
+      #      the PR's merge ref, main's own drift is reported as this PR's changes.
+      # Together those wedged PR #3713 (#3722): ci.yml saw 22 phantom `e2e:` hits from main's
+      # drift → `e2e_required=true`, this job saw the real 4 files → `deploy=false`, and e2e
+      # polled 10 min for a preview that structurally could never arrive.
+      - id: mergebase
+        if: github.event_name == 'pull_request'
+        run: |
+          set -uo pipefail
+          if sha=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null); then
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "::notice::deploy-relevance diff basis = merge base $sha (base.sha ${{ github.event.pull_request.base.sha }})"
+          else
+            echo "::warning::could not resolve a merge base — falling back to dorny's base.sha basis (detection stays wide, so this fails TOWARD deploying)"
+          fi
+
+      # Run it only for a PR — `push` (prod) never consults it; the `decide` step below
+      # forces `deploy=true` for every non-PR event so prod always deploys.
       - uses: dorny/paths-filter@v3.0.2
         id: filter
         if: github.event_name == 'pull_request'
         with:
+          token: ''
+          base: ${{ steps.mergebase.outputs.sha }}
           filters: |
             # Deploy-relevant paths = ci.yml's `changes.e2e` filter, EXACTLY (issue #2366).
             # Keep this list byte-for-byte in sync with the `e2e:` block in
@@ -76,6 +115,8 @@ jobs:
             # ENFORCED MECHANICALLY (issue #2372) by `pipeline-cli path-filter-guard check`
             # (the path-filter-guard.yml job): it fails the build if this `deploy:` set and
             # ci.yml's `e2e:` set drift apart — this comment documents it, the guard defends it.
+            # The guard also compares the two steps' `token`/`base` inputs, because equal
+            # globs read against different changed-file sets still disagree (#3722).
             deploy:
               - 'apps/**/src/**'
               - 'apps/**/index.html'
@@ -107,6 +148,57 @@ jobs:
             echo "deploy=false" >> "$GITHUB_OUTPUT"
             echo "::notice::no deploy-relevant paths changed → SKIP preview deploy (docs/canon/pipeline-only PR). e2e also skips (identical filter); PR-close teardown is a separate workflow (pr-cleanup.yml) and is unaffected."
           fi
+
+  # Publish the NEGATIVE preview verdict as a first-class artifact (#3722).
+  #
+  # ci.yml's `e2e` job cannot `needs:` a job in this workflow, so it synchronizes on the
+  # sticky `<!-- preview-deploy -->` comment. That seam only ever carried the POSITIVE
+  # answer, so "no preview is coming" was indistinguishable from "the preview hasn't been
+  # posted yet" — e2e could only wait out its 10-minute deadline and then red the PR. The
+  # `changes`/`e2e_required` fix above stops the two workflows from disagreeing in the
+  # first place; this job makes the failure mode UNREACHABLE rather than merely unlikely,
+  # by giving the poll a definitive negative to read.
+  #
+  # SHA-bound (ADR 0058's stance, applied to a deploy verdict): the marker names the PR head
+  # it was computed for, so e2e honors it only for the head it is actually running against —
+  # a stale verdict from an earlier push can never green a later head. The body is REPLACED,
+  # not upserted, so a previous head's live preview URL is cleared rather than left for e2e
+  # to probe. This job and the `deploy` matrix are mutually exclusive by construction (their
+  # `if:`s read the same `needs.changes.outputs.deploy`), so they never race on the comment.
+  no-preview:
+    name: report no preview deploy
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action != 'closed' &&
+      needs.changes.outputs.deploy != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v7.0.1
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const marker = "<!-- preview-deploy -->";
+            const headSha = process.env.HEAD_SHA;
+            const body = `${marker}\n### No preview deploy\n`
+              + `<!-- preview-deploy:none head:${headSha} -->\n`
+              + `- No preview deploy for this PR — its diff touches no deploy-relevant path, `
+              + `so no preview stack was minted and \`e2e\` is not applicable. `
+              + `<sub>(${headSha.slice(0, 7)})</sub>`;
+
+            const {data: comments} = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({...context.repo, comment_id: existing.id, body});
+            } else {
+              await github.rest.issues.createComment({...context.repo, issue_number: context.issue.number, body});
+            }
+            core.info(`published no-preview verdict for head ${headSha}`);
 
   # Single source of the per-app roster (ADR 0057, #1434), declared ONCE in
   # .github/app-roster.json and consumed via `fromJSON(needs.app-roster.outputs.matrix)`
