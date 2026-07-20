@@ -55,7 +55,6 @@ import {
 	navIaFlag,
 	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
-	optimisticEditsFlag,
 	panoDraftSaveFlag,
 	panoStampWaveFlag,
 	profileCanvasFlag,
@@ -87,10 +86,6 @@ export default Alchemy.Stack(
 		// The mecmua write-path dark-ship flag, default-off (#2497, epic #2467) — the
 		// single seam mecmua.publish + mecmua.saveDraft gate behind until a human release.
 		yield* mecmuaWriteFlag(flagship.appId);
-		// The optimistic in-place content-edit dark-ship flag, default-off (#1675,
-		// epic #1637) — post/comment/definition edits pass an optimistic payload only
-		// behind this key until a human release.
-		yield* optimisticEditsFlag(flagship.appId);
 		// The optimistic definition.add dark-ship flag, default-off (#1679, epic #1637)
 		// — gates the nested-connection client-append (ADR 0125) until a human release.
 		yield* optimisticDefinitionAddFlag(flagship.appId);

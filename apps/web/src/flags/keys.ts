@@ -78,16 +78,6 @@ export const MECMUA_FEED = "mecmua-feed";
 export const PHOENIX_BILDIRIM = "phoenix-bildirim";
 
 /**
- * Optimistic in-place content-edit dark-ship flag (#1675, epic #1637). Gates the
- * three Class-A content edits (`post.edit`, `comment.edit`, `definition.edit`)
- * that render the edited body/title instantly by passing an `optimistic` payload
- * (the seam votes already use); default-off so the edits reach production dark
- * (waiting for the round-trip, exactly as today) until a human flips it at release
- * (ADR 0083). The add/delete slices of the epic ship behind their own gates.
- */
-export const PHOENIX_OPTIMISTIC_EDITS = "phoenix-optimistic-edits";
-
-/**
  * Optimistic `definition.add` (instant term-page insert) dark-ship flag (#1679,
  * epic #1637). Gates the A1 client-append into the *nested* `Term.definitions`
  * connection (ADR 0125): with it off, a new definition appears only when the live
@@ -285,7 +275,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: MECMUA_PUBLIC_READ, defaultValue: false},
 	{key: MECMUA_FEED, defaultValue: false},
 	{key: PHOENIX_BILDIRIM, defaultValue: false},
-	{key: PHOENIX_OPTIMISTIC_EDITS, defaultValue: false},
 	{key: PHOENIX_OPTIMISTIC_DEFINITION_ADD, defaultValue: false},
 	{key: PHOENIX_OPTIMISTIC_DEFINITION_DELETE, defaultValue: false},
 	{key: PHOENIX_REACTIONS, defaultValue: false},

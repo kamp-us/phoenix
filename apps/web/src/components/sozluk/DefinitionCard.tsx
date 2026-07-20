@@ -11,7 +11,7 @@ import {bodyEditOptimistic} from "../../fate/optimisticEdit";
 import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
-import {PHOENIX_OPTIMISTIC_DEFINITION_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../../flags/keys";
+import {PHOENIX_OPTIMISTIC_DEFINITION_DELETE} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
@@ -83,9 +83,6 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
-	// Dark-ship gate (#1675): with the flag off the edit passes no optimistic
-	// payload and waits for the round-trip, exactly as before.
-	const {value: optimisticEdits} = useFlag(PHOENIX_OPTIMISTIC_EDITS, false);
 	// Dark-ship gate (#1681, ADR 0125 D1): off ⇒ the card drops only when the live
 	// `deleteEdge` push / read-back lands, exactly as today.
 	const {value: optimisticDelete} = useFlag(PHOENIX_OPTIMISTIC_DEFINITION_DELETE, false);
@@ -152,12 +149,11 @@ export function DefinitionCard(props: DefinitionCardProps) {
 			setEditError(messageForCode("BODY_TOO_LONG", DEFINITION_OVERRIDES));
 			return;
 		}
-		const optimistic = bodyEditOptimistic(optimisticEdits, editBody);
 		await runEdit(
 			() =>
 				fate.mutations.definition.edit({
 					input: {id: definition.id, body: editBody},
-					...(optimistic ? {optimistic} : {}),
+					optimistic: bodyEditOptimistic(editBody),
 					view: DefinitionView,
 				}),
 			"tanım güncellenemedi",
