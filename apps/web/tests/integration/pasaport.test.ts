@@ -209,7 +209,9 @@ describe("pasaport — profile reads", () => {
 	let userId = "";
 
 	beforeAll(async () => {
-		const user = await h.signUp(`${NS}-profile@test.local`, "hunter2hunter2", "Fate Profile");
+		// An established member: the counters/feed below are read ANONYMOUSLY, and a
+		// çaylak's contributions are sandbox-masked from every reader but the author/mod.
+		const user = await h.signUpYazar(`${NS}-profile@test.local`, "hunter2hunter2", "Fate Profile");
 		userId = user.userId;
 		await setUsername(user.cookie, username);
 

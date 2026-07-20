@@ -130,7 +130,9 @@ async function commentCount(postId: string): Promise<number> {
 
 beforeAll(async () => {
 	author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
-	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", "davetsiz");
+	// `intruder` is a non-author MEMBER, not a newcomer: it authors the surviving reply
+	// below, and a çaylak's content is sandbox-masked from every other reader.
+	intruder = await h.signUpYazar(`${NS}-intruder@test.local`, "hunter2hunter2", "davetsiz");
 	voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "oycu");
 	// `voter` casts real comment votes below. Since #1810's "earn to vote" gate a fresh
 	// çaylak is rejected at cast, so promote the voter to yazar.

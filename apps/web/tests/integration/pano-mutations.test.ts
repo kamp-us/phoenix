@@ -105,10 +105,12 @@ beforeAll(async () => {
 	// Votes must come from a non-author since #2216 blocks self-voting on both posts and
 	// comments — `voter` casts those. A fresh account is a çaylak and, since #1810's "earn
 	// to vote" gate, is rejected at cast, so promote both `author` (it votes on others'
-	// content elsewhere) and `voter` to yazar. `intruder` never votes (unauthorized-mutation
-	// cases), so it stays a çaylak.
+	// content elsewhere) and `voter` to yazar. `intruder` is promoted too: besides the
+	// unauthorized-mutation cases it authors the nested reply a public read must SEE, and
+	// a çaylak's content is sandbox-masked from every other reader.
 	await h.promoteToYazar(author.userId);
 	await h.promoteToYazar(voter.userId);
+	await h.promoteToYazar(intruder.userId);
 });
 
 describe("pano mutations — post.submit", () => {
