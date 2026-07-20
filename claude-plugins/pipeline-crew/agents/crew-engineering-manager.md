@@ -209,6 +209,30 @@ it adds no engine→engine and no human-facing edge.
   green. The §CP unblock logic lives once — in ship-it / `cp-cardinality` — and both the watcher and
   the shipper read that single source, so the trigger fires exactly when the enqueue would discharge
   and no second copy of the §CP discharge forks into this def.
+- **An unreadable review query resolves to UNKNOWN — never to an approval (fail closed).** The poll
+  reads live GitHub, so it must assume the response may not be review data at all. **Validate the
+  payload's shape before interpreting it**, and treat every non-conforming response — a 503/error
+  body, a non-array payload, a parse failure, a non-zero `gh` exit — as **UNKNOWN → do not fire,
+  re-arm**, never as a definite answer. A bare non-empty test on the response is the defect: during a
+  live GitHub partial outage an error body read as an approver's login and declared two unapproved §CP
+  PRs approved (#3715). Three rules make the positive branch fail closed:
+
+  ```bash
+  # 1. SHAPE FIRST: interpret nothing until the payload is proven to be the expected JSON array.
+  #    `jq -e 'type=="array"'` is the assertion — a 503 body is an object, so it exits non-zero.
+  REVIEWS="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" 2>/dev/null)" \
+    && printf '%s' "$REVIEWS" | jq -e 'type == "array"' >/dev/null 2>&1 \
+    || { echo "approval-watcher #$PR: reviews READ FAILED (unreadable payload) — UNKNOWN, re-arming; NOT 'no approval'"; return 0; }
+  # 2. EXACT MEMBERSHIP: an approver counts only if their login matches an actual control-plane
+  #    team member exactly (`--jq '.state'` == active), never a substring or non-empty test.
+  # 3. VERIFIED HEAD: require `.commit_id == $HEAD` on this proven-array read (ADR 0058).
+  ```
+
+  **Log "read failed" distinctly from "no approval."** They are different facts with the same
+  non-firing outcome, and collapsing them makes a GitHub outage look like a human who simply hasn't
+  approved yet — a silent stall nobody can see. The watcher's non-firing line must name which one it
+  was. The durable authority is still `cp-cardinality` and the shipper's own re-check at enqueue; this
+  rule is defense in depth on the trigger, so a hiccup can never *start* a §CP enqueue.
 - **Approved at the current head + green → wake and spawn the shipper.** When the predicate discharges
   — a non-author control-plane approval bound to the PR's *current* head, machine gates green — the
   watcher wakes you to spawn the approval-aware `shipper` on that head. The shipper re-runs the same
