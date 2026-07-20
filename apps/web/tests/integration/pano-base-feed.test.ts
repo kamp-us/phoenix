@@ -8,15 +8,12 @@
  *      request and a signed-in one — the whole point of a viewer-invariant, cacheable
  *      base. An anon GET succeeds with no session (and the response sets no cookie), so
  *      it does no session validation.
- *   2. With the leg-B flag OFF (the default), the GET route 404s — the surface ships
- *      dark. The existing per-viewer `posts` feed on `POST /fate` still stamps the
- *      signed-in viewer's `myVote`/`isSaved` (the split changed nothing there).
+ *   2. The base feed and the per-viewer `posts` feed on `POST /fate` are separate
+ *      surfaces: the `posts` feed still stamps the signed-in viewer's `myVote`/`isSaved`
+ *      (the split changed nothing there).
  *
- * The base feed is dark behind `pano-base-feed` (default-off). Integration deploys run
- * `ENVIRONMENT=development` (`_integration.ts` → `ensureIntegrationEnv`), so the dev-only
- * override wrapper (`FlagsDevOverrideLive`, #622) is installed — this test flips the flag
- * on for a single request by sending the `phoenix_flag_overrides` cookie. The default-off
- * gate is the shipped state; the cookie only unlocks the flag-ON path for this test.
+ * The base feed serves unconditionally — its leg-B dark-ship flag graduated to on@100%
+ * and was retired (ADR 0136), so the split is now the source of truth.
  *
  * Shared-stage NS isolation (ADR 0104): every seeded title/host carries the `${NS}-`
  * prefix and the base feed is HOST-scoped to this file's `${NS}.example.com`, so the read
@@ -30,13 +27,6 @@ const h = sharedStack();
 
 const NS = nsToken(import.meta.url);
 const FEED_HOST = `${NS}.example.com`;
-
-// The dev-override cookie that forces `pano-base-feed` on for a single request (#622 —
-// `phoenix_flag_overrides`, a URL-encoded JSON `{key: boolean}` map). Only takes effect
-// because integration deploys run with `ENVIRONMENT=development`.
-const BASE_FEED_ON_COOKIE = `phoenix_flag_overrides=${encodeURIComponent(
-	JSON.stringify({"pano-base-feed": true}),
-)}`;
 
 interface BaseNode {
 	__typename: string;
@@ -89,13 +79,8 @@ beforeAll(async () => {
 
 describe("pano base feed — GET surface + viewer-invariant base (#2322)", () => {
 	it("serves the base feed over GET with sort/host in the URL, no viewer-scoped field", async () => {
-		const res = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=50`, BASE_FEED_ON_COOKIE);
-		// Name the flag in the failure so an ineffective override fails HERE with a clear
-		// cause, not as a confusing shape mismatch downstream.
-		expect(
-			res.status,
-			`GET base feed expected 200 with the flag ON, got ${res.status} — pano-base-feed override did not take effect`,
-		).toBe(200);
+		const res = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=50`);
+		expect(res.status).toBe(200);
 		const conn = (await res.json()) as Connection<BaseNode>;
 		const titles = conn.items.map((e) => e.node.title).sort();
 		expect(titles).toEqual([`${NS}-alpha`, `${NS}-bravo`, `${NS}-charlie`]);
@@ -107,7 +92,7 @@ describe("pano base feed — GET surface + viewer-invariant base (#2322)", () =>
 	});
 
 	it("paginates via the URL cursor (first + nextCursor)", async () => {
-		const first = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=2`, BASE_FEED_ON_COOKIE);
+		const first = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=2`);
 		expect(first.status).toBe(200);
 		const page1 = (await first.json()) as Connection<BaseNode>;
 		expect(page1.items).toHaveLength(2);
@@ -117,7 +102,6 @@ describe("pano base feed — GET surface + viewer-invariant base (#2322)", () =>
 
 		const second = await getBaseFeed(
 			`sort=new&host=${FEED_HOST}&first=2&after=${encodeURIComponent(cursor!)}`,
-			BASE_FEED_ON_COOKIE,
 		);
 		expect(second.status).toBe(200);
 		const page2 = (await second.json()) as Connection<BaseNode>;
@@ -129,8 +113,8 @@ describe("pano base feed — GET surface + viewer-invariant base (#2322)", () =>
 
 	it("is byte-identical for an anonymous request and a signed-in one, and sets no cookie", async () => {
 		const query = `sort=new&host=${FEED_HOST}&first=50`;
-		const anon = await getBaseFeed(query, BASE_FEED_ON_COOKIE);
-		const authed = await getBaseFeed(query, `${viewer.cookie}; ${BASE_FEED_ON_COOKIE}`);
+		const anon = await getBaseFeed(query);
+		const authed = await getBaseFeed(query, viewer.cookie);
 		expect(anon.status).toBe(200);
 		expect(authed.status).toBe(200);
 		// No session validation: the base sets no cookie for either caller.
@@ -141,16 +125,11 @@ describe("pano base feed — GET surface + viewer-invariant base (#2322)", () =>
 	});
 });
 
-describe("pano base feed — dark behind the leg-B flag (#2322)", () => {
-	it("404s the GET route when the flag is off (default dark state)", async () => {
-		const res = await getBaseFeed(`sort=new&host=${FEED_HOST}`);
-		expect(res.status).toBe(404);
-	});
-
-	it("leaves the existing POST /fate posts feed unchanged (still stamps myVote when off)", async () => {
-		// Vote a seeded post as the viewer, then read the existing `posts` feed WITHOUT any
-		// flag override: the per-viewer stamp is untouched by the split — myVote rides as
-		// before. (The author never self-votes; the viewer votes the author's post.)
+describe("pano base feed — the per-viewer posts feed is a separate surface (#2322)", () => {
+	it("leaves the existing POST /fate posts feed stamping myVote", async () => {
+		// Vote a seeded post as the viewer, then read the per-viewer `posts` feed on
+		// `POST /fate`: the split left that stamp untouched — myVote rides as before. (The
+		// author never self-votes; the viewer votes the author's post.)
 		const target = seeded[0]!;
 		const voted = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id: target}, select: ["id"]},
@@ -180,7 +159,7 @@ describe("pano base feed — dark behind the leg-B flag (#2322)", () => {
 
 describe("pano base feed — edge-cache headers (#2324, ADR 0170)", () => {
 	it("stamps Cache-Control + Cache-Tag: pano-feed on the served base feed", async () => {
-		const res = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=50`, BASE_FEED_ON_COOKIE);
+		const res = await getBaseFeed(`sort=new&host=${FEED_HOST}&first=50`);
 		expect(res.status).toBe(200);
 		// The TTL backstop + the purge tag the fanned-mutation seam targets (AC#1).
 		expect(res.headers.get("cache-control")).toContain("s-maxage=");

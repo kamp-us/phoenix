@@ -23,7 +23,7 @@ import {useSetPanoSubnavContent} from "../components/pano/PanoSubnavLayout";
 import {Screen} from "../fate/Screen";
 import {FEED_SNAPSHOT_ENABLED} from "../fate/snapshot";
 import {LoadMoreButton} from "../fate/wire";
-import {MEMBER_MUTE, PANO_BASE_FEED, PHOENIX_NAV_IA} from "../flags/keys";
+import {MEMBER_MUTE, PHOENIX_NAV_IA} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {markFeedPaintOnce} from "../lib/feedPerf";
 import {
@@ -138,13 +138,6 @@ function FeedContent({
 	pending: boolean;
 	chrome: Chrome;
 }) {
-	// Base + overlay composition (#2323, leg B), dark behind `pano-base-feed`. On ⇒ the
-	// rows compose the viewer scalars through the identity guard (`PanoPostCard compose`):
-	// base content paints de-gated from the session, `myVote`/`isSaved` stay neutral until
-	// the overlay lands under the confirmed identity. Off (default) ⇒ scalars read straight
-	// off the post, byte-identical to today. Sort feed only — `?sort=saved` is inherently
-	// per-viewer and stays on the authed path (`SavedContent`), out of the base/overlay split.
-	const {value: composeOverlay} = useFlag(PANO_BASE_FEED, false);
 	// Member-mute (#3117), dark behind `member-mute`. Read once here and threaded to every row
 	// so a card can hide a muted member's post + offer the "sustur" action without each card
 	// re-evaluating the flag. Off (default) ⇒ no mute surface, byte-identical to today.
@@ -169,7 +162,6 @@ function FeedContent({
 			host={host}
 			pending={pending}
 			chrome={chrome}
-			compose={composeOverlay}
 			muteEnabled={muteEnabled}
 		/>
 	);
@@ -184,14 +176,12 @@ function FeedRows({
 	host,
 	pending,
 	chrome,
-	compose,
 	muteEnabled,
 }: {
 	connection: PostConnection;
 	host?: string;
 	pending: boolean;
 	chrome: Chrome;
-	compose: boolean;
 	muteEnabled: boolean;
 }) {
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
@@ -222,13 +212,7 @@ function FeedRows({
 				}
 			>
 				{items.map(({node}, i) => (
-					<PanoPostCard
-						key={node.id}
-						post={node}
-						rank={i + 1}
-						compose={compose}
-						muteEnabled={muteEnabled}
-					/>
+					<PanoPostCard key={node.id} post={node} rank={i + 1} compose muteEnabled={muteEnabled} />
 				))}
 			</div>
 			{loadNext ? (

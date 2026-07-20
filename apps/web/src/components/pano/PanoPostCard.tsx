@@ -76,13 +76,13 @@ export function PanoPostCard({
 	rank?: number;
 	onHide?: (id: string) => void;
 	/**
-	 * Base + overlay composition (#2323, leg B, dark behind `pano-base-feed`). When set,
-	 * the viewer scalars (`myVote`/`isSaved`) render through the identity guard
+	 * Base + overlay composition (#2323, leg B). Set on the viewer-invariant base feed
+	 * rows: the viewer scalars (`myVote`/`isSaved`) render through the identity guard
 	 * (`panoFeedOverlay`): neutral while the session is still resolving (base painted,
 	 * overlay pending), then the viewer's own scalars once the session lands under a
 	 * matching identity — so a stale/foreign overlay (e.g. a snapshot's prior-identity
-	 * scalars) never paints. Off (the default / flag-off) ⇒ scalars read straight off the
-	 * post, byte-identical to today.
+	 * scalars) never paints. Unset (the default) ⇒ scalars read straight off the post,
+	 * the authed path (`?sort=saved` / detail) whose read already stamps the viewer.
 	 */
 	compose?: boolean;
 	/**
