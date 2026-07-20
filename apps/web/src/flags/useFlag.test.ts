@@ -71,7 +71,7 @@ describe("resolveBootFlag — the synchronous __BOOT__ member resolution", () =>
 
 	it("returns undefined for a non-member key regardless of __BOOT__ (always the fetch path)", () => {
 		// A non-member key never resolves synchronously even if __BOOT__ happens to carry it.
-		expect(resolveBootFlag({"pano-draft-save": true} as never, "pano-draft-save")).toBeUndefined();
-		expect(resolveBootFlag(undefined, "pano-draft-save")).toBeUndefined();
+		expect(resolveBootFlag({"mecmua-write": true} as never, "mecmua-write")).toBeUndefined();
+		expect(resolveBootFlag(undefined, "mecmua-write")).toBeUndefined();
 	});
 });

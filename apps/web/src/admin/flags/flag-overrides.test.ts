@@ -29,11 +29,11 @@ describe("parseOverridesFromCookie", () => {
 
 	it("decodes the URL-encoded JSON map, picking the cookie out of a multi-cookie string", () => {
 		const value = encodeURIComponent(
-			JSON.stringify({"pano-draft-save": true, "phoenix-reactions": false}),
+			JSON.stringify({"mecmua-write": true, "phoenix-reactions": false}),
 		);
 		const cookie = `session=abc; ${FLAG_OVERRIDE_COOKIE}=${value}; theme=dark`;
 		expect(parseOverridesFromCookie(cookie)).toEqual({
-			"pano-draft-save": true,
+			"mecmua-write": true,
 			"phoenix-reactions": false,
 		});
 	});
@@ -86,7 +86,7 @@ describe("overrideStateOf / effectiveValue", () => {
 
 describe("serializeOverrideCookie — the write side", () => {
 	it("writes a path-scoped, SameSite=Lax cookie whose value round-trips back through the parser", () => {
-		const map = {"pano-draft-save": true, "phoenix-user-ban": false};
+		const map = {"mecmua-write": true, "phoenix-user-ban": false};
 		const cookie = serializeOverrideCookie(map);
 		expect(cookie).toContain(`${FLAG_OVERRIDE_COOKIE}=`);
 		expect(cookie).toContain("path=/");
@@ -122,15 +122,13 @@ describe("render decisions — lowercase Turkish, text-only", () => {
 	});
 
 	it("confirms each toggle outcome and names the control", () => {
-		expect(overrideOutcomeMessage({key: "pano-draft-save", state: "on"})).toContain(
+		expect(overrideOutcomeMessage({key: "mecmua-write", state: "on"})).toContain(
 			"açık olarak geçersiz",
 		);
-		expect(overrideOutcomeMessage({key: "pano-draft-save", state: "off"})).toContain(
+		expect(overrideOutcomeMessage({key: "mecmua-write", state: "off"})).toContain(
 			"kapalı olarak geçersiz",
 		);
-		expect(overrideOutcomeMessage({key: "pano-draft-save", state: "clear"})).toContain(
-			"temizlendi",
-		);
+		expect(overrideOutcomeMessage({key: "mecmua-write", state: "clear"})).toContain("temizlendi");
 		expect(actionButtonLabel("on")).toBe("aç");
 		expect(actionButtonLabel("off")).toBe("kapat");
 		expect(actionButtonLabel("clear")).toBe("temizle");

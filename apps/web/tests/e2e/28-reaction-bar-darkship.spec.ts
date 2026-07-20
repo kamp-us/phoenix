@@ -15,8 +15,7 @@ import {expect, test} from "@playwright/test";
  * the optimistic-then-reconcile loop) is covered by the unit tests
  * `src/components/reaction/reactionModel.test.ts` +
  * `reactionDispatch.test.ts` (the flag-on path needs release plumbing / a
- * seeded reaction, landing at release), so this e2e stays on the off-path — the
- * same split as `26-pano-draft-save.spec.ts`.
+ * seeded reaction, landing at release), so this e2e stays on the off-path.
  */
 // @journey:phoenix-reactions — the registered reachability journey for the reactions
 // vertical (ADR 0173 §2). reachability-guard asserts this tag exists; the e2e job runs it.

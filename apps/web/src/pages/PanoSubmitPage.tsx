@@ -9,8 +9,6 @@ import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import type {WireMessageOverrides} from "../fate/wireMessages";
-import {FlagGate} from "../flags/FlagGate";
-import {PANO_DRAFT_SAVE} from "../flags/keys";
 import {panoSubmitGate} from "../lib/panoSubmitGate";
 import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
@@ -74,7 +72,6 @@ const PANO_SUBMIT_OVERRIDES: WireMessageOverrides = {
 	TAG_INVALID: "geçersiz etiket",
 	URL_INVALID: "geçersiz bağlantı",
 	TOO_SHORT: `başlık en az ${TITLE_MIN} karakter olmalı`,
-	DRAFTS_DISABLED: "taslaklar şu an devre dışı",
 	VALIDATION_ERROR: "girdiğin bilgiler geçersiz",
 	USER_NOT_FOUND: "kullanıcı bulunamadı",
 	BAD_REQUEST: "geçersiz istek",
@@ -416,17 +413,15 @@ export function PanoSubmitPage() {
 						) : null}
 
 						<div className="kp-pano-submit__form-actions">
-							<FlagGate flag={PANO_DRAFT_SAVE}>
-								<Button
-									type="button"
-									variant="tertiary"
-									data-testid="pano-submit-draft"
-									disabled={isInFlight}
-									onClick={onSaveDraft}
-								>
-									taslak
-								</Button>
-							</FlagGate>
+							<Button
+								type="button"
+								variant="tertiary"
+								data-testid="pano-submit-draft"
+								disabled={isInFlight}
+								onClick={onSaveDraft}
+							>
+								taslak
+							</Button>
 							<Button
 								type="submit"
 								variant="primary"

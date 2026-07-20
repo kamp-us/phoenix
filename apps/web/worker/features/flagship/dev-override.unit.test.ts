@@ -31,9 +31,9 @@ describe("parseOverrideCookie", () => {
 	});
 
 	it("parses a well-formed boolean override map", () => {
-		const value = encodeOverrideCookieValue({"pano-draft-save": true, "demo-flag": false});
+		const value = encodeOverrideCookieValue({"mecmua-write": true, "demo-flag": false});
 		expect(parseOverrideCookie(cookie(value))).toEqual({
-			"pano-draft-save": true,
+			"mecmua-write": true,
 			"demo-flag": false,
 		});
 	});
@@ -107,7 +107,7 @@ describe("parseOverrideAction", () => {
 
 describe("override cookie round-trip", () => {
 	it("encode → parse is identity for a boolean map", () => {
-		const map = {"pano-draft-save": true, "phoenix-flags-probe": false};
+		const map = {"mecmua-write": true, "phoenix-flags-probe": false};
 		expect(parseOverrideCookie(cookie(encodeOverrideCookieValue(map)))).toEqual(map);
 	});
 });

@@ -42,7 +42,6 @@ import {
 	CommentBodyRequired,
 	CommentBodyTooLong,
 	CommentNotFound,
-	DraftsDisabled,
 	ParentCommentNotFound,
 	PostBodyTooLong,
 	PostDeleteFailed,
@@ -100,7 +99,6 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	[CommentNotFound, "COMMENT_NOT_FOUND"],
 	[UnauthorizedPostMutation, "UNAUTHORIZED"],
 	[UnauthorizedCommentMutation, "UNAUTHORIZED"],
-	[DraftsDisabled, "DRAFTS_DISABLED"],
 	// mecmua write path (#2497) — reachable from fateConfig via `mecmua.publish` /
 	// `mecmua.saveDraft`. All message-only, so also round-trip representatives below;
 	// `MecmuaTitleRequired` shares the `TITLE_REQUIRED` code with pano's `TitleRequired`.
@@ -178,7 +176,6 @@ const ROUND_TRIP_CLASSES = [
 	CommentBodyTooLong,
 	ParentCommentNotFound,
 	PostDeleteFailed,
-	DraftsDisabled,
 	MecmuaDisabled,
 	MecmuaPostNotFound,
 	BodyRequired,

@@ -248,8 +248,8 @@ export default Phoenix.make(
 		const telemetryLayer = Layer.succeed(TelemetryClient)(telemetryClient);
 
 		// The worker's ambient `RuntimeContext`, resolved once. The fate runtime needs
-		// it because the pano draft-save gate (#746) reads `Flags` (a `RuntimeContext`
-		// per-call requirement); `makeAppLive` reuses it for the `/api/auth/*` route.
+		// it because every flag gate reads `Flags` (a `RuntimeContext` per-call
+		// requirement); `makeAppLive` reuses it for the `/api/auth/*` route.
 		const runtimeContext = yield* RuntimeContext;
 
 		// The one worker-level runtime (ADR 0041/0043 — init-only wiring): exactly
