@@ -35,8 +35,6 @@ import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {LoadMoreButton} from "../fate/wire";
 import type {WireMessageOverrides} from "../fate/wireMessages";
-import {PHOENIX_OPTIMISTIC_DEFINITION_ADD} from "../flags/keys";
-import {useFlag} from "../flags/useFlag";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
@@ -342,17 +340,15 @@ function DefinitionSignInPrompt({slug}: {slug: string}) {
  * Definition composer wired to `fate.mutations.definition.add`. Membership in the
  * *nested* `Term.definitions` connection is server-driven (fate's declarative
  * `insert` only targets registered root lists), so an optimistic node is injected
- * by a phoenix client helper rather than `insert` — behind the default-off
- * `phoenix-optimistic-definition-add` flag (ADR 0125, #1679): on, the new definition
- * shows instantly, temp-node reconciled to the server id (dedup by canonical id vs
- * the live append); off, it appears only when the live `appendNode` / read-back
- * lands, exactly as before. `onTermCreated` is passed only on the fresh-slug branch,
- * where there's no list yet to append to (so the optimistic append is skipped
+ * by a phoenix client helper rather than `insert` (ADR 0125, #1679): the new
+ * definition shows instantly, temp-node reconciled to the server id (dedup by
+ * canonical id vs the live append). `onTermCreated` is passed only on the fresh-slug
+ * branch, where there's no list yet to append to (so the optimistic append is skipped
  * there); it force-refetches `term(slug)` then carries the new definition's id across
  * the remount so the list branch arms its read-back on it. On the list branch
  * `onConfirm` hands the new id to the same deterministic read-back — narrowed to the
- * append-loss healer when optimistic is on (the node is already present) — so a lost
- * live `appendNode` self-heals (see {@link useReadbackRefetch}).
+ * append-loss healer, since the optimistic node is already present — so a lost live
+ * `appendNode` self-heals (see {@link useReadbackRefetch}).
  */
 function Composer({
 	slug,
@@ -366,9 +362,6 @@ function Composer({
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
-	// Dark-ship gate (#1679, ADR 0125): off ⇒ no optimistic node, wait for the
-	// append/read-back exactly as today.
-	const {value: optimisticAdd} = useFlag(PHOENIX_OPTIMISTIC_DEFINITION_ADD, false);
 	const [body, setBody] = React.useState("");
 	const {
 		error,
@@ -408,7 +401,7 @@ function Composer({
 		// Optimistic nested-append (ADR 0125) only on the existing-term branch: the
 		// fresh-slug branch (onTermCreated) has no loaded definitions list to append
 		// to and drives its own force-refetch + remount, left untouched.
-		const optimistic = buildOptimisticDefinition(optimisticAdd && !onTermCreated, {
+		const optimistic = buildOptimisticDefinition(!onTermCreated, {
 			body,
 			// Route through the shared actor-label rule (#2126): display name, falling
 			// back to a fixed noun, NEVER the email — the old `?? user.email` could

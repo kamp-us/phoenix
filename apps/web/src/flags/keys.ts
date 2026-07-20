@@ -78,18 +78,6 @@ export const MECMUA_FEED = "mecmua-feed";
 export const PHOENIX_BILDIRIM = "phoenix-bildirim";
 
 /**
- * Optimistic `definition.add` (instant term-page insert) dark-ship flag (#1679,
- * epic #1637). Gates the A1 client-append into the *nested* `Term.definitions`
- * connection (ADR 0125): with it off, a new definition appears only when the live
- * `appendNode` push (or the read-back refetch) lands, exactly as today; flipping it
- * on injects the optimistic temp-node that fate reconciles to the server id.
- * Default-off so it reaches production dark until a human flips it at release (ADR
- * 0083). Its OWN key, not the epic's shared seam — each nested-mutation optimistic
- * slice has an independent lifecycle (the sibling `comment.add` slice is separate).
- */
-export const PHOENIX_OPTIMISTIC_DEFINITION_ADD = "phoenix-optimistic-definition-add";
-
-/**
  * Optimistic `definition.delete` (instant term-page drop) dark-ship flag (#1681,
  * epic #1637). Gates the D1 edge-drop from the *nested* `Term.definitions`
  * connection (ADR 0125): with it off, a deleted definition leaves the term page
@@ -275,7 +263,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: MECMUA_PUBLIC_READ, defaultValue: false},
 	{key: MECMUA_FEED, defaultValue: false},
 	{key: PHOENIX_BILDIRIM, defaultValue: false},
-	{key: PHOENIX_OPTIMISTIC_DEFINITION_ADD, defaultValue: false},
 	{key: PHOENIX_OPTIMISTIC_DEFINITION_DELETE, defaultValue: false},
 	{key: PHOENIX_REACTIONS, defaultValue: false},
 	{key: PHOENIX_KARMA_GATES, defaultValue: false},

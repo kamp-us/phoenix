@@ -8,12 +8,12 @@
  * optimistic node is instead injected by this phoenix client helper, which drives
  * the same list state `insertConnectionEdge` mutates from the SSE `appendNode`.
  *
- * Two pieces, both hook-free so the flag gate + the temp-node shape are
+ * Two pieces, both hook-free so the branch predicate + the temp-node shape are
  * unit-testable apart from fate/React (the pure-core idiom of `postSubmitMembership`
  * / `bodyEditOptimistic`):
  *
  * - {@link buildOptimisticDefinition} builds the temp-id optimistic record (or
- *   `undefined` when the dark-ship flag is off), mirroring the server's fresh-write
+ *   `undefined` on the fresh-slug branch), mirroring the server's fresh-write
  *   initial state (`score: 0`, `myVote: null`, `updatedAt === createdAt`) so the
  *   reconciled server node can't diverge from the optimistic one (no phantom
  *   self-upvote, no false "düzenlendi").
@@ -60,11 +60,11 @@ export interface OptimisticDefinition {
 }
 
 /**
- * The optimistic definition record, or `undefined` when the dark-ship flag is off
- * — the pre-flag behavior: no `optimistic` payload, the composer waits for the
- * round-trip (and leans on the live `appendNode` / read-back to surface the node).
- * `undefined` lets the call site spread it away under `exactOptionalPropertyTypes`
- * (`...(optimistic ? {optimistic} : {})`), mirroring {@link bodyEditOptimistic}.
+ * The optimistic definition record, or `undefined` when `enabled` is false — the
+ * fresh-slug branch, which has no loaded definitions list to append to and drives
+ * its own force-refetch + remount instead. `undefined` lets the call site spread it
+ * away under `exactOptionalPropertyTypes` (`...(optimistic ? {optimistic} : {})`),
+ * mirroring {@link bodyEditOptimistic}.
  *
  * Mirrors the server's fresh write (`definition.add` shapes `score` from a 0-vote
  * insert with `myVote: null`) so the optimistic node and the reconciled server node

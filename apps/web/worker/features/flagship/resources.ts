@@ -23,7 +23,6 @@ import {
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
 	PHOENIX_KARMA_GATES,
 	PHOENIX_NAV_IA,
-	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
 	PHOENIX_PANO_STAMP_WAVE,
 	PHOENIX_REACTIONS,
@@ -90,7 +89,7 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 		],
 	});
 
-export {PANO_DRAFT_SAVE, PHOENIX_BILDIRIM, PHOENIX_KARMA_GATES, PHOENIX_OPTIMISTIC_DEFINITION_ADD};
+export {PANO_DRAFT_SAVE, PHOENIX_BILDIRIM, PHOENIX_KARMA_GATES};
 
 /**
  * The pano `taslak` (draft-save) dark-ship flag config (#746) — the feature-flag
@@ -223,43 +222,6 @@ export const bildirimFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_bildirim", {appId, ...BILDIRIM_FLAG});
 
 /**
- * The optimistic `definition.add` (instant term-page insert) dark-ship flag config
- * (#1679, epic #1637). The A1 client-append into the nested `Term.definitions`
- * connection (ADR 0125) runs only behind this key. Default-OFF so it reaches
- * production dark — with it off a new definition appears only when the live
- * `appendNode` push / read-back lands, exactly as today; flipping it on is the human
- * release act (ADR 0083).
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_DRAFT_SAVE_FLAG`, #746).
- *
- * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
- * asks for):
- *   - owner:           sozluk (the term-page definition composer)
- *   - originating:     #1679 (epic: optimistic content mutations, #1637)
- *   - removal trigger: once optimistic definition-add graduates to on at 100% and
- *                      stable for one release, retire the flag and inline the path.
- */
-export const OPTIMISTIC_DEFINITION_ADD_FLAG = {
-	key: PHOENIX_OPTIMISTIC_DEFINITION_ADD,
-	description:
-		"optimistic definition.add nested-connection insert dark-ship (#1679, epic #1637). owner: sozluk. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const optimisticDefinitionAddFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("phoenix_optimistic_definition_add", {
-		appId,
-		...OPTIMISTIC_DEFINITION_ADD_FLAG,
-	});
-
-/**
  * The optimistic `definition.delete` (instant term-page drop) dark-ship flag config
  * (#1681, epic #1637). The D1 edge-drop from the nested `Term.definitions`
  * connection (ADR 0125 — `definition.delete` has no reply tree, so D1 collapses to a
@@ -270,7 +232,7 @@ export const optimisticDefinitionAddFlag = (appId: Input<string>) =>
  *
  * Exported as a plain object so the default-=-safe-state invariant is
  * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `OPTIMISTIC_DEFINITION_ADD_FLAG`, #1679).
+ * `MEMBER_MUTE_FLAG`, #3112).
  *
  * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
  * asks for):
