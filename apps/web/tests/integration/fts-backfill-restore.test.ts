@@ -75,7 +75,7 @@ const searchPostIds = async (query: string): Promise<string[]> => {
 };
 
 beforeAll(async () => {
-	author = await h.signUp(`${TERM_SLUG}-author@test.local`, "hunter2hunter2", "anka");
+	author = await h.signUpYazar(`${TERM_SLUG}-author@test.local`, "hunter2hunter2", "anka");
 	// Seed both a term and a post through the PUBLIC dual-write, so each base row
 	// lands with its FTS row — the exact state a healthy DB is in before a restore.
 	await h.seedTerm({

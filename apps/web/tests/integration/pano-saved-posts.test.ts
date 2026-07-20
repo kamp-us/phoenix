@@ -87,7 +87,7 @@ async function savedPage(
 }
 
 beforeAll(async () => {
-	saver = await h.signUp(`${NS}-saver@test.local`, "hunter2hunter2", "kaydeden");
+	saver = await h.signUpYazar(`${NS}-saver@test.local`, "hunter2hunter2", "kaydeden");
 	other = await h.signUp(`${NS}-other@test.local`, "hunter2hunter2", "öteki");
 });
 

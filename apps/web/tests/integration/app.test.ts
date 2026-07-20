@@ -43,7 +43,7 @@ describe("RSS feed — /rss.xml over the deployed worker", () => {
 	});
 
 	it("lists a submitted post with an absolute /pano link + pubDate", async () => {
-		const author = await h.signUp(`${NS}-rss@test.local`, "hunter2hunter2", "rss");
+		const author = await h.signUpYazar(`${NS}-rss@test.local`, "hunter2hunter2", "rss");
 		const title = `${NS} rss feed test post`;
 		const submit = await h.fate(
 			{

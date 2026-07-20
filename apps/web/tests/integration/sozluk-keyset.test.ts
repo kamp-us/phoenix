@@ -340,7 +340,7 @@ describe("sözlük write→read re-resolve — real D1", () => {
 		// `-w` keeps this slug disjoint from the `-p`/`-r`/`-defs` fixture prefixes, so it
 		// can never satisfy a `.startsWith` filter and leak into a keyset-order assertion.
 		const slug = `${NS}-wrt`;
-		const author = await h.signUp(`${NS}-wrt@seed.local`, "seedpass-seedpass", "writer");
+		const author = await h.signUpYazar(`${NS}-wrt@seed.local`, "seedpass-seedpass", "writer");
 
 		// `definition.add` is identity-bearing and not auto-retried; it runs under
 		// the author's session cookie.

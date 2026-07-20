@@ -58,7 +58,7 @@ async function landingStats(): Promise<LandingStats> {
 let author: {userId: string; cookie: string};
 
 beforeAll(async () => {
-	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "Stats Author");
+	author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "Stats Author");
 });
 
 describe("landing stats — /fate", () => {

@@ -51,7 +51,7 @@ beforeAll(() => {
 describe("removal substrate — definition remove → restore, karma kept", () => {
 	it("a removed definition leaves the term and restores; the author's karma is unchanged", async () => {
 		const authorUsername = uname("def");
-		const author = await h.signUp(`${NS}-def@test.local`, "hunter2hunter2", "Def Author");
+		const author = await h.signUpYazar(`${NS}-def@test.local`, "hunter2hunter2", "Def Author");
 		await setUsername(author.cookie, authorUsername);
 
 		const termSlug = `${NS}-def-term`;
@@ -150,7 +150,7 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 describe("removal substrate — post remove → restore, karma kept", () => {
 	it("a removed post disappears and restores; the author's karma is unchanged", async () => {
 		const authorUsername = uname("post");
-		const author = await h.signUp(`${NS}-post@test.local`, "hunter2hunter2", "Post Author");
+		const author = await h.signUpYazar(`${NS}-post@test.local`, "hunter2hunter2", "Post Author");
 		await setUsername(author.cookie, authorUsername);
 
 		const submitted = await h.fate(
@@ -236,7 +236,7 @@ describe("removal substrate — post remove → restore, karma kept", () => {
 describe("removal substrate — comment remove → restore, karma kept", () => {
 	it("a removed comment tombstones and restores; the author's karma is unchanged", async () => {
 		const authorUsername = uname("cmt");
-		const author = await h.signUp(`${NS}-cmt@test.local`, "hunter2hunter2", "Cmt Author");
+		const author = await h.signUpYazar(`${NS}-cmt@test.local`, "hunter2hunter2", "Cmt Author");
 		await setUsername(author.cookie, authorUsername);
 
 		// A post to hang the comment on.

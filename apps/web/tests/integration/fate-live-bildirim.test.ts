@@ -44,8 +44,8 @@ let author: {userId: string; cookie: string};
 let commenter: {userId: string; cookie: string};
 
 beforeAll(async () => {
-	author = await h.signUp(`${NS}-author-${Date.now()}@test.local`, "hunter2hunter2", "yazar");
-	commenter = await h.signUp(
+	author = await h.signUpYazar(`${NS}-author-${Date.now()}@test.local`, "hunter2hunter2", "yazar");
+	commenter = await h.signUpYazar(
 		`${NS}-commenter-${Date.now()}@test.local`,
 		"hunter2hunter2",
 		"yorumcu",

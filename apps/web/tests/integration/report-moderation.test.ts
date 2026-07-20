@@ -109,7 +109,7 @@ beforeAll(async () => {
 	moderator = await h.signUp(`${NS}-mod@test.local`, "hunter2hunter2", "mod");
 	reporterA = await h.signUp(`${NS}-ra@test.local`, "hunter2hunter2", "ra");
 	reporterB = await h.signUp(`${NS}-rb@test.local`, "hunter2hunter2", "rb");
-	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "anka");
+	author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "anka");
 
 	// The grant path: mint the moderator's `moderates` tuple directly in D1 (the
 	// offline mint, no runtime endpoint), keyed by canonical `key(platform)`.

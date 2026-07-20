@@ -129,7 +129,7 @@ async function commentCount(postId: string): Promise<number> {
 }
 
 beforeAll(async () => {
-	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
+	author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
 	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", "davetsiz");
 	voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "oycu");
 	// `voter` casts real comment votes below. Since #1810's "earn to vote" gate a fresh

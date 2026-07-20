@@ -62,7 +62,7 @@ describe("user.setDisplayName — a rename reaches the stamped author byline (#2
 	it("byline reflects the NEW display name after a görünen-ad change", async () => {
 		const authorUsername = uname("author");
 		// Sign-up name is the setUsername-time snapshot the OLD one-shot sync would freeze.
-		const author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "Eski Ad");
+		const author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "Eski Ad");
 		await h
 			.fate(
 				{
@@ -117,7 +117,7 @@ describe("user.setDisplayName — a rename reaches the stamped author byline (#2
 
 	it("an empty display name is rejected (DISPLAY_NAME_EMPTY), byline unchanged", async () => {
 		const authorUsername = uname("blank");
-		const author = await h.signUp(`${NS}-blank@test.local`, "hunter2hunter2", "Sabit Ad");
+		const author = await h.signUpYazar(`${NS}-blank@test.local`, "hunter2hunter2", "Sabit Ad");
 		await h
 			.fate(
 				{

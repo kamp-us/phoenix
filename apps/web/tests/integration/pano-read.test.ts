@@ -83,9 +83,11 @@ let postId = "";
 const commentIds: string[] = [];
 
 beforeAll(async () => {
-	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "anka");
+	author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "anka");
 	for (let i = 0; i < 5; i++) {
-		commenters.push(await h.signUp(`${NS}-c${i}@test.local`, "hunter2hunter2", `commenter ${i}`));
+		commenters.push(
+			await h.signUpYazar(`${NS}-c${i}@test.local`, "hunter2hunter2", `commenter ${i}`),
+		);
 	}
 
 	const submitted = await h.fate(

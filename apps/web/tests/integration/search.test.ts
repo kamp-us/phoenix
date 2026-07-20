@@ -90,7 +90,7 @@ async function searchPosts(
 let author: {userId: string; cookie: string};
 
 beforeAll(async () => {
-	author = await h.signUp(`${NS}-${STAMP}-author@test.local`, "hunter2hunter2", "anka");
+	author = await h.signUpYazar(`${NS}-${STAMP}-author@test.local`, "hunter2hunter2", "anka");
 });
 
 /** Submit a post under the author cookie; assert success; return its id. */
