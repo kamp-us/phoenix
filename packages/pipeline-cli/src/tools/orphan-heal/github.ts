@@ -13,7 +13,12 @@
 import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
-import {type CiConclusion, extractHealTargets, parseClosingRefs} from "./orphan-heal.ts";
+import {
+	type CiConclusion,
+	extractHealTargets,
+	type LaneState,
+	parseClosingRefs,
+} from "./orphan-heal.ts";
 
 /** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
 export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
@@ -217,30 +222,53 @@ const headCi = Effect.fn("Github.headCi")(function* (repo: string, sha: string) 
 	} satisfies HeadCi;
 });
 
+/** One closing ref's lane reading. `unknown` ⇒ the read could not execute, so it decides nothing. */
+type LaneProbe = "triaged" | "laneless" | "unknown";
+
+/**
+ * Did this `gh` failure prove the issue is not there (a definite answer), or merely prevent the
+ * read (no answer)? Only a 404 proves absence — a nonexistent or other-repo closing ref. A 5xx,
+ * an auth/rate-limit rejection, or a transport failure (`exitCode: -1`) all mean the probe never
+ * executed, which is `unknown`, never a negative that drives a file (#3701).
+ */
+const provesAbsent = (error: GhCommandError): boolean => /HTTP 404|not found/i.test(error.stderr);
+
 const issueIsTriaged = Effect.fn("Github.issueIsTriaged")(function* (repo: string, n: number) {
 	const args = ["api", `repos/${repo}/issues/${n}`];
-	// A closing ref may point at a nonexistent / other-repo number — treat any failed read (404,
-	// parse, decode) as "not a triaged lane" rather than aborting the whole sweep on one bad ref.
 	const read = Effect.gen(function* () {
 		const {labels} = yield* decodeIssueLabels(yield* json(args));
-		return labels.some((l) => l.name === "status:triaged");
+		return (labels.some((l) => l.name === "status:triaged") ? "triaged" : "laneless") as LaneProbe;
 	});
-	return yield* read.pipe(Effect.orElseSucceed(() => false));
+	return yield* read.pipe(
+		Effect.catchTag(
+			"@kampus/orphan-heal/GhCommandError",
+			(error): Effect.Effect<LaneProbe> =>
+				Effect.succeed(provesAbsent(error) ? "laneless" : "unknown"),
+		),
+		// A payload that won't parse/decode is a bad ref, not an outage — laneless, and the sweep
+		// carries on rather than aborting on one ref (the #3532 non-aborting behavior).
+		Effect.orElseSucceed((): LaneProbe => "laneless"),
+	);
 });
 
 /**
  * Is the PR in an engine lane? Derived from EXISTING state: it closes at least one
  * `status:triaged` issue (engine-opened-from-a-triaged-issue). A PR that closes no triaged
  * issue — a hand-/conversation-authored ADR/ROADMAP PR — is laneless (the orphan shape, #3532).
+ *
+ * Tri-state, and the precedence is what keeps it fail-closed: one confirmed triaged ref proves
+ * `laned` outright, but concluding `laneless` requires every ref to have actually been read — a
+ * single `unknown` among them means the evidence is incomplete, so the whole PR defers (#3701).
  */
 const inEngineLane = Effect.fn("Github.inEngineLane")(function* (repo: string, body: string) {
 	const refs = parseClosingRefs(body);
-	if (refs.length === 0) return false;
-	const triagedFlags = yield* Effect.all(
+	if (refs.length === 0) return "laneless" as LaneState;
+	const probes = yield* Effect.all(
 		refs.map((n) => issueIsTriaged(repo, n)),
 		{concurrency: "unbounded"},
 	);
-	return triagedFlags.some((t) => t);
+	if (probes.some((p) => p === "triaged")) return "laned" as LaneState;
+	return (probes.some((p) => p === "unknown") ? "unknown" : "laneless") as LaneState;
 });
 
 const existingHealTargets = Effect.fn("Github.existingHealTargets")(function* (repo: string) {
@@ -287,7 +315,7 @@ export class Github extends Context.Service<
 		readonly repoName: () => Effect.Effect<string, GhError>;
 		readonly listOpenPrs: () => Effect.Effect<ReadonlyArray<OpenPr>, GhError>;
 		readonly headCi: (sha: string) => Effect.Effect<HeadCi, GhError>;
-		readonly inEngineLane: (body: string) => Effect.Effect<boolean, GhError>;
+		readonly inEngineLane: (body: string) => Effect.Effect<LaneState, GhError>;
 		readonly existingHealTargets: () => Effect.Effect<ReadonlySet<number>, GhError>;
 		readonly createHealItem: (input: {
 			readonly title: string;
