@@ -75,6 +75,8 @@ pnpm --filter @kampus/pipeline-crew-mcp test       # @effect/vitest suite
 ```
 
 The `--role` is one of the four standing `CREW_ROLES` (`chief-of-staff`, `cartographer`,
-`intake-desk`, `engineering-manager`); the session joins the per-project tracker under
-`--project-root` (default: cwd) and runs until interrupted. See the [Tutorial](./docs/tutorial.md)
+`intake-desk`, `engineering-manager`); the session joins its repo's tracker at the canonical
+rendezvous (ADR 0197 — keyed on the repo's shared git dir, so the repo root, a nested subdir, and any
+linked worktree all meet at one registry). `--project-root` (default: cwd) only seeds git's repo
+discovery; it is never the rendezvous key. The session runs until interrupted. See the [Tutorial](./docs/tutorial.md)
 for the first-run walkthrough and the [Reference](./docs/reference.md) for the full CLI surface.

@@ -1,10 +1,10 @@
 /**
- * standup/ensure-tracker — the launcher's ensure-tracker-running step: guarantee the per-project
- * tracker is up as a standing process before any crew session is stood up.
+ * standup/ensure-tracker — the launcher's ensure-tracker-running step: guarantee the repo's tracker is
+ * up as a standing process, at the canonical rendezvous (ADR 0197), before any crew session is stood up.
  *
  * The one non-obvious thing is first-peer-spawn (see `../tracker/server.ts`): a successful bind on
- * the per-project socket means WE started the tracker; an `EADDRINUSE` means one is already serving
- * this project and we reuse it. `tryBecomeTracker` classifies that bind outcome (the unit-tested
+ * the rendezvous socket means WE started the tracker; an `EADDRINUSE` means one is already serving
+ * this repo and we reuse it. `tryBecomeTracker` classifies that bind outcome (the unit-tested
  * core); `ensureTrackerRunning` detaches the tracker into its own OS process so it outlives the
  * launcher and every session the launcher spawns — the open-peer-surface reason a non-Claude peer
  * can announce when no crew session is up. This module wraps `../tracker/`'s primitives read-only;
@@ -17,7 +17,11 @@ import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Effect, type FileSystem, Layer, type Scope} from "effect";
 import * as Schema from "effect/Schema";
 import type {SocketServerError} from "effect/unstable/socket/SocketServer";
-import {socketPathFor, trackerServerLayer} from "../tracker/index.ts";
+import {
+	type RendezvousResolutionError,
+	rendezvousSocketPath,
+	trackerServerLayer,
+} from "../tracker/index.ts";
 
 /** Which side of the first-peer-spawn race a stand-up landed on. */
 export type TrackerBindOutcome = "started" | "already-serving";
@@ -71,9 +75,14 @@ export const tryBecomeTracker = (
  */
 export const runStandingTracker = (
 	projectRoot: string,
-): Effect.Effect<TrackerBindOutcome, SocketServerError, FileSystem.FileSystem> =>
+): Effect.Effect<
+	TrackerBindOutcome,
+	SocketServerError | RendezvousResolutionError,
+	FileSystem.FileSystem
+> =>
 	Effect.scoped(
-		tryBecomeTracker(socketPathFor(projectRoot)).pipe(
+		rendezvousSocketPath(projectRoot).pipe(
+			Effect.flatMap(tryBecomeTracker),
 			Effect.tap((outcome) => (outcome === "started" ? Effect.never : Effect.void)),
 		),
 	);
@@ -112,17 +121,17 @@ const awaitSocketServing = (
 const SELF_PATH = fileURLToPath(import.meta.url);
 
 /**
- * Ensure a standing tracker for `projectRoot` before stand-up. Spawns the standing tracker as a
+ * Ensure a standing tracker for `projectRoot`'s repo before stand-up. Spawns the standing tracker as a
  * detached child (`detached` + `unref` + ignored stdio) so it outlives this launcher process and
- * every session it spawns, then waits until the per-project socket is confirmed serving — whether by
+ * every session it spawns, then waits until the rendezvous socket is confirmed serving — whether by
  * the child we just spawned (start-if-absent) or one that was already up (reuse-if-present, the child
  * exits on `EADDRINUSE`). Returns the child pid and the socket path peers dial.
  */
 export const ensureTrackerRunning = (
 	projectRoot: string,
-): Effect.Effect<TrackerHandle, TrackerNotServingError> =>
+): Effect.Effect<TrackerHandle, TrackerNotServingError | RendezvousResolutionError> =>
 	Effect.gen(function* () {
-		const socketPath = socketPathFor(projectRoot);
+		const socketPath = yield* rendezvousSocketPath(projectRoot);
 		const child = spawn(process.execPath, [SELF_PATH, projectRoot], {
 			detached: true,
 			stdio: "ignore",

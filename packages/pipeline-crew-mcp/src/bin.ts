@@ -69,7 +69,9 @@ const roleFlag = Flag.choice("role", CREW_ROLES).pipe(
 );
 const projectRootFlag = Flag.string("project-root").pipe(
 	Flag.withDefault(process.cwd()),
-	Flag.withDescription("the project root whose per-project tracker socket this session joins"),
+	Flag.withDescription(
+		"a directory inside the repo whose tracker this session joins; seeds git repo discovery only — the rendezvous is the repo's canonical one (ADR 0197)",
+	),
 );
 // The launcher-assigned per-instance identity standup/bind.ts bakes into an engine's argv
 // (`CREW_SESSION_INSTANCE_FLAG`, #3297/#3354 seam 3). Optional: only engine roles carry it — a
