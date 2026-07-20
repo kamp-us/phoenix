@@ -39,10 +39,9 @@ interface LayoutShiftEntry extends PerformanceEntry {
 // against BootPayload (the worker owns that type).
 type SeedBoot = Record<string, unknown>;
 
-// On-path: the two mecmua nav flags on, nav-IA off, signed out — the nav shows mecmua + akış in
-// their final geometry from the first frame.
+// On-path: the two mecmua nav flags on, signed out — the nav shows mecmua in its final
+// geometry from the first frame.
 const BOOT_NAV_ON: SeedBoot = {
-	"phoenix-nav-ia": false,
 	"mecmua-public-read": true,
 	"mecmua-feed": true,
 	user: null,
@@ -52,7 +51,6 @@ const BOOT_NAV_ON: SeedBoot = {
 // CTA is suppressed from frame one). Field shape mirrors BootUser (shell-keys.ts); values are inert
 // for the CTA assertion (they only late-fill the chips).
 const BOOT_SIGNED_IN: SeedBoot = {
-	"phoenix-nav-ia": false,
 	"mecmua-public-read": false,
 	"mecmua-feed": false,
 	user: {
@@ -110,12 +108,11 @@ test.describe("edge-resolved shell boot @journey:phoenix-edge-shell-boot", () =>
 		const topbar = page.locator(".kp-topbar");
 		await expect(topbar).toBeVisible({timeout: 10_000});
 
-		// The nav is in its final geometry at first paint: the mecmua + akış entries are present
-		// immediately, resolved synchronously off __BOOT__ by useFlag (no fetch, no pop-in).
+		// The nav is in its final geometry at first paint: the mecmua entry is present immediately,
+		// resolved synchronously off __BOOT__ by useFlag (no fetch, no pop-in). akış is not a
+		// topbar entry — it is a mecmua SUB-destination in the mecmua Subnav zone (#2603).
 		const mecmua = page.locator(".kp-topbar__nav a", {hasText: /^mecmua$/i});
-		const akis = page.locator(".kp-topbar__nav a", {hasText: /^akış$/i});
 		await expect(mecmua).toBeVisible();
-		await expect(akis).toBeVisible();
 
 		// The consuming UI observed the edge-boot mode (the reachability-guard tie-in, ADR 0173 §1a).
 		await expect(page.locator('[data-testid="edge-shell-boot"]')).toHaveAttribute(
@@ -146,9 +143,11 @@ test.describe("edge-resolved shell boot @journey:phoenix-edge-shell-boot", () =>
 
 		await expect(page.locator(".kp-topbar")).toBeVisible({timeout: 10_000});
 		// __BOOT__.user drives signed-in-at-first-paint (ADR 0185, #2933): the giriş-yap CTA never
-		// renders and the signed-in + gönderi action does — no CTA flash-then-swap.
+		// renders and the signed-in affordance does — no CTA flash-then-swap. At `/` that
+		// affordance is the topbar user pill (the pano `+ gönderi` action now lives in pano's
+		// own Subnav zone), so it carries the positive half of the guarantee.
 		await expect(page.getByRole("button", {name: /giriş yap/i})).toHaveCount(0);
-		await expect(page.getByRole("button", {name: /\+ gönderi/i})).toBeVisible();
+		await expect(page.locator(".kp-topbar__user")).toBeVisible();
 	});
 
 	test("without __BOOT__ the shell degrades gracefully — dark-ship compatible", async ({page}) => {

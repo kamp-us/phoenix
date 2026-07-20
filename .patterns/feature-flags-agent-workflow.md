@@ -45,7 +45,7 @@ Two traps travel with this read — both are correctness footguns, not cosmetics
 - **The prod env is named `prod`, not `production`.** `--env production` errors with
   `FlagEnvNotFound`.
 
-Worked example (live read, 2026-07-12): `phoenix-nav-ia` reads `enabled: on` but `serves: off
+Worked example: a dark-shipped flag such as `member-mute` reads `enabled: on` but `serves: off
 (default)` — registered, but dark in prod. This is the read behind the "verify flag state, not
 crew framing" discipline: check `serves:` before asserting a feature is live.
 

@@ -10,8 +10,9 @@ test.describe("SozlukHome (/sozluk)", () => {
 
 	test("masthead title + create CTA + alphabet visible", async ({page}) => {
 		await expect(page.locator(".kp-sozluk-home__title")).toContainText("sözlük");
-		// The local go-to search box is gone — folded into the global ⌘K `ara` (#2995).
-		// The masthead now carries the `+ yeni tanım` create CTA in its place.
+		// The local go-to search box is gone — folded into the global ⌘K `ara` (#2995). The
+		// `+ yeni tanım` create CTA and the alphabet both live in sözlük's persistent Subnav
+		// zone (#2602), not the masthead — the page paints neither a second time.
 		await expect(page.getByRole("button", {name: /yeni tanım/i})).toBeVisible();
 		await expect(page.locator(".kp-sozluk-alphabet")).toBeVisible();
 		// Each non-empty letter is a navigable link to `/sozluk?harf=<letter>` (#693):

@@ -9,7 +9,7 @@
 import {afterEach, describe, expect, it} from "vitest";
 import type {BootPayload} from "./boot.ts";
 import {readBoot, readBootMember, readBootUser} from "./boot.ts";
-import {MECMUA_FEED, MECMUA_PUBLIC_READ, PHOENIX_NAV_IA} from "./keys.ts";
+import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "./keys.ts";
 import type {BootUser} from "./shell-keys.ts";
 
 const withBoot = (boot: unknown) => {
@@ -58,7 +58,7 @@ describe("readBootMember — a member key falls back to the fetch path unless tr
 
 	it("returns undefined for a key absent from an otherwise-present payload", () => {
 		withBoot({[MECMUA_PUBLIC_READ]: true});
-		expect(readBootMember(PHOENIX_NAV_IA)).toBeUndefined();
+		expect(readBootMember(MECMUA_FEED)).toBeUndefined();
 	});
 
 	it("returns undefined for a non-boolean value rather than fabricating a gate", () => {

@@ -82,7 +82,7 @@
    data-testid for headless targeting; `display: contents` keeps its children in the
    topbar's flex row, so the reclass adds zones without disturbing spacing. The
    primary-action zone stays empty/reserved in the global bar — #2600 moved the promoted
-   verb to the pano Subnav CTA. Present only under the flag; off ⇒ no zone markup. */
+   verb to the pano Subnav CTA. */
 .kp-topbar__zone {
 	display: contents;
 }
@@ -184,19 +184,6 @@
 	align-self: center;
 }
 
-/* The quiet unread bildirim chip on the user-menu trigger (#1694) — count is
-   text in a subtle outline, never color-only state. Flag-off shape (nav-IA on relocates
-   the signal to the status-zone bell below). */
-.kp-topbar__bildirim-badge {
-	font: var(--t-meta);
-	color: var(--text-primary);
-	border: 1px solid var(--border-subtle);
-	border-radius: 999px;
-	padding: 0 var(--s-1);
-	min-width: 1.25em;
-	text-align: center;
-}
-
 /* The status-zone unread bildirim signal (#2613) — the Bell glyph (ADR 0166) + count read
    as "unread notifications" at a glance. A read-only signal: neutral role tokens, no accent,
    no button/link chrome; the icon inherits the signal's color. */
@@ -220,9 +207,8 @@
    §Nav IA law — the `+` create menu is the sole accent-filled element, and it does not live
    here). These overrides strip the two drift treatments the epic supersedes down to neutral
    role tokens — the active-page accent pill (the #2543 verb-among-nouns class) and the tema
-   accent hover (the #2582 misclick class). Scoped under the zone wrappers, which exist only
-   when the flag is on, so the flag-off topbar stays byte-identical to today. Placed after
-   the base rules so each override follows the declaration it supersedes (ascending cascade). */
+   accent hover (the #2582 misclick class). Placed after the base rules so each override
+   follows the declaration it supersedes (ascending cascade). */
 .kp-topbar__zone--destination .kp-topbar__nav a[aria-current="page"],
 .kp-topbar__zone--status-signal .kp-topbar__signal-link[aria-current="page"] {
 	color: var(--text-primary);

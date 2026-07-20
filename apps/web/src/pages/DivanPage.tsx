@@ -25,12 +25,10 @@ import {Raporlar} from "../components/divan/Raporlar";
 import {TriageLoop} from "../components/divan/TriageLoop";
 import type {SubnavFilter} from "../components/layout/Subnav";
 import {Screen} from "../fate/Screen";
-import {PHOENIX_NAV_IA} from "../flags/keys";
-import {useFlag} from "../flags/useFlag";
 import "../components/divan/Divan.css";
 
-// The çaylaklar ↔ raporlar section switch as Subnav filters (#2604): when the nav-IA zone is
-// mounted, the switch is published up to the persistent divan Subnav rather than painted in-page.
+// The çaylaklar ↔ raporlar section switch as Subnav filters (#2604): when the divan Subnav zone
+// is mounted, the switch is published up to it rather than painted in-page.
 const DIVAN_SECTION_FILTERS: SubnavFilter[] = [
 	{id: "caylaklar", label: "çaylaklar"},
 	{id: "raporlar", label: "raporlar"},
@@ -55,14 +53,13 @@ function DivanWorkspace() {
 	// de-escalates to the grid without leaving the section.
 	const [raporlarMode, setRaporlarMode] = useState<"loop" | "grid">("loop");
 
-	// nav-IA (#2604, epic #2596): with the flag on, the section switch lives in divan's persistent
-	// Subnav zone. The page owns the switch state (roster vs raporlar pane below), so it publishes
-	// the switchers UP to the zone (the pano publish-up shape) and drops its own in-page nav. Only a
-	// moderator has a second section, so a non-mod viewer publishes null (a bare Subnav bar). Off ⇒
-	// no zone ancestor ⇒ setter null ⇒ the in-page nav renders exactly as today.
-	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
+	// The section switch lives in divan's persistent Subnav zone (#2604, epic #2596). The page owns
+	// the switch state (roster vs raporlar pane below), so it publishes the switchers UP to the zone
+	// (the pano publish-up shape) and drops its own in-page nav. Only a moderator has a second
+	// section, so a non-mod viewer publishes null (a bare Subnav bar). No zone ancestor ⇒ setter
+	// null ⇒ the in-page nav renders instead.
 	const setDivanSubnav = useSetDivanSubnavContent();
-	const inZone = navIaOn && setDivanSubnav != null;
+	const inZone = setDivanSubnav != null;
 
 	useEffect(() => {
 		if (!inZone || !setDivanSubnav) return;

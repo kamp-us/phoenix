@@ -167,19 +167,6 @@ export const PHOENIX_EMAIL_DELIVERY_ADMIN = "phoenix-email-delivery-admin";
 export const PHOENIX_EMAIL_DELIVERY_NOTICE = "phoenix-email-delivery-notice";
 
 /**
- * Nav-IA (per-product Subnav zones) dark-ship flag (#2598, epic #2596). The SINGLE
- * cross-cutting seam the whole nav-IA surface gates behind — the per-product nested
- * layout routes + Subnav CTA slot substrate (#2598) and every per-product delta
- * (#2600–#2604) reuse this one key rather than minting per-child flags, so one human
- * flip releases the new product zones as a unit. Default-off so the surface ships dark
- * until a human flips it at release (ADR 0083): with it off the router is exactly as
- * today (flat product routes, no product Subnav zone). Its own cross-cutting (`phoenix`)
- * key — the placement law spans all four products (sözlük/pano/mecmua/divan), the
- * `phoenix-reactions` shared-seam precedent.
- */
-export const PHOENIX_NAV_IA = "phoenix-nav-ia";
-
-/**
  * Kullanıcılar (user-roster) admin-console module dark-ship flag (#3200, admin epic).
  * The SINGLE seam the gated user-list read view gates behind — the `userAdmin.list`
  * admin fate resolver AND the `kullanıcılar` console panel both key off this one string.
@@ -256,7 +243,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_USER_ROLE_ASSIGN, defaultValue: false},
 	{key: PHOENIX_EMAIL_DELIVERY_ADMIN, defaultValue: false},
 	{key: PHOENIX_EMAIL_DELIVERY_NOTICE, defaultValue: false},
-	{key: PHOENIX_NAV_IA, defaultValue: false},
 	{key: PHOENIX_USER_ADMIN, defaultValue: false},
 	{key: PHOENIX_EDGE_SHELL_BOOT, defaultValue: false},
 	{key: PROFILE_CANVAS, defaultValue: false},

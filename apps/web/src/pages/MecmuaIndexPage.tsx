@@ -13,18 +13,13 @@
 import {BookOpenText} from "lucide-react";
 import {useEffect, useState} from "react";
 import {Link} from "react-router";
-import {useSession} from "../auth/client";
-import {useMe} from "../auth/useMe";
 import {Icon} from "../components/Icon";
 import {Card} from "../components/ui/Card";
 import {EmptyState} from "../components/ui/EmptyState";
 import {MetaRow} from "../components/ui/MetaRow";
-import {MECMUA_PUBLIC_READ, MECMUA_WRITE, PHOENIX_NAV_IA} from "../flags/keys";
+import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {formatDateTR} from "../lib/datetime";
-// The gate helper lives composer-free (#2523) so this public index never pulls the tiptap
-// editor payload into the entry chunk just to decide whether to show the "yeni yazı" CTA.
-import {shouldShowMecmuaWriteCta} from "./mecmua-write-gate";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaIndexPage.css";
 
@@ -62,26 +57,8 @@ export function MecmuaIndexPage() {
 	return <MecmuaIndex />;
 }
 
-/** The "yeni yazı" entry-point link to the editor, styled as the primary CTA button. */
-function MecmuaWriteCta() {
-	return (
-		<Link to="/mecmua/yaz" className="kp-btn kp-btn--primary" data-testid="mecmua-write-cta">
-			yeni yazı
-		</Link>
-	);
-}
-
 function MecmuaIndex() {
 	const [state, setState] = useState<FetchState>({kind: "loading"});
-	const session = useSession();
-	const {me} = useMe();
-	// The write CTA shares the editor's own publish gate (yazar tier + MECMUA_WRITE live),
-	// so it never dead-ends a çaylak/visitor into a page they can't publish from (#2532).
-	const {value: writeFlagOn} = useFlag(MECMUA_WRITE, false);
-	// Under nav-IA the write CTA lives once in the mecmua Subnav's primary-action slot, so
-	// the in-page copy is suppressed to leave exactly one mecmua write CTA (#2603 de-dup).
-	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
-	const showWriteCta = !navIaOn && shouldShowMecmuaWriteCta(writeFlagOn, !!session.data, me?.tier);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -107,17 +84,16 @@ function MecmuaIndex() {
 				<header className="kp-mecmua-index__head">
 					<div className="kp-mecmua-index__head-row">
 						<h1 className="kp-mecmua-index__title">mecmua</h1>
-						{showWriteCta ? <MecmuaWriteCta /> : null}
 					</div>
 					<p className="kp-mecmua-index__lede">topluluğun uzun yazıları</p>
 				</header>
-				<MecmuaIndexBody state={state} showWriteCta={showWriteCta} />
+				<MecmuaIndexBody state={state} />
 			</div>
 		</div>
 	);
 }
 
-function MecmuaIndexBody({state, showWriteCta}: {state: FetchState; showWriteCta: boolean}) {
+function MecmuaIndexBody({state}: {state: FetchState}) {
 	if (state.kind === "loading") {
 		return <p className="kp-mecmua-index__status">yükleniyor…</p>;
 	}
@@ -136,7 +112,6 @@ function MecmuaIndexBody({state, showWriteCta}: {state: FetchState; showWriteCta
 				icon={<Icon icon={BookOpenText} size={24} />}
 				title="henüz yazı yok"
 				description="ilk mecmua yazısı yayımlandığında burada görünecek."
-				action={showWriteCta ? <MecmuaWriteCta /> : undefined}
 			/>
 		);
 	}

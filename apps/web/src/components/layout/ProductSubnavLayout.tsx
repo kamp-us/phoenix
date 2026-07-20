@@ -10,7 +10,6 @@ import {SubnavShell} from "./SubnavShell";
  * rather than wiring `<Subnav>` directly, so any product on this generic frame inherits the
  * shell's flat element-props and the orphan-as-type-error guarantee. The substrate's `cta`
  * is the shell's `primaryAction` zone (the one promoted verb) — the pano delta #2600 fills it.
- * Mounted only behind the `phoenix-nav-ia` flag (App.tsx) — off ⇒ the router is flat, as today.
  */
 export function ProductSubnavLayout({cta}: {cta?: React.ReactNode}) {
 	return (

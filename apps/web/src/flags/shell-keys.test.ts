@@ -5,7 +5,7 @@
  * `pipeline-cli` CI guard, so this slice stays NON-§CP (#2928).
  */
 import {describe, expect, it} from "vitest";
-import {MECMUA_FEED, MECMUA_PUBLIC_READ, PHOENIX_NAV_IA} from "./keys";
+import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "./keys";
 import {
 	assertShellBootKeysSingleSourced,
 	BOOT_MEMBER_KEYS,
@@ -14,9 +14,9 @@ import {
 } from "./shell-keys";
 
 describe("shell-key manifest — the geometry-law member set", () => {
-	it("names exactly the three shell-critical flag keys", () => {
-		expect([...SHELL_FLAG_KEYS]).toEqual([PHOENIX_NAV_IA, MECMUA_PUBLIC_READ, MECMUA_FEED]);
-		expect([...SHELL_FLAG_KEYS]).toEqual(["phoenix-nav-ia", "mecmua-public-read", "mecmua-feed"]);
+	it("names exactly the shell-critical flag keys", () => {
+		expect([...SHELL_FLAG_KEYS]).toEqual([MECMUA_PUBLIC_READ, MECMUA_FEED]);
+		expect([...SHELL_FLAG_KEYS]).toEqual(["mecmua-public-read", "mecmua-feed"]);
 	});
 
 	it("the __BOOT__ boolean-member keys are exactly the flag keys — the user is not a member key", () => {
@@ -67,7 +67,7 @@ describe("assertShellBootKeysSingleSourced — fail-closed single-source guard",
 	it("names the drifting side and the missing/extra keys in the error", () => {
 		try {
 			assertShellBootKeysSingleSourced(
-				canonical.filter((k) => k !== PHOENIX_NAV_IA),
+				canonical.filter((k) => k !== MECMUA_PUBLIC_READ),
 				canonical,
 			);
 			expect.unreachable("expected a ShellKeyDriftError");
@@ -75,7 +75,7 @@ describe("assertShellBootKeysSingleSourced — fail-closed single-source guard",
 			expect(err).toBeInstanceOf(ShellKeyDriftError);
 			const drift = err as ShellKeyDriftError;
 			expect(drift.side).toContain("worker");
-			expect(drift.missing).toContain(PHOENIX_NAV_IA);
+			expect(drift.missing).toContain(MECMUA_PUBLIC_READ);
 			expect(drift.extra).toEqual([]);
 		}
 	});

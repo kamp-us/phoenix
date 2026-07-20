@@ -5,7 +5,7 @@
  * is a workerd global, exercised in the integration tier — not here.
  */
 import {describe, expect, it} from "vitest";
-import {MECMUA_FEED, MECMUA_PUBLIC_READ, PHOENIX_NAV_IA} from "../../../src/flags/keys.ts";
+import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "../../../src/flags/keys.ts";
 import {
 	assertShellBootKeysSingleSourced,
 	BOOT_MEMBER_KEYS,
@@ -15,7 +15,6 @@ import {
 import {bootScriptTag, buildBootPayload} from "./shell-boot.ts";
 
 const shellFlags = {
-	[PHOENIX_NAV_IA]: true,
 	[MECMUA_PUBLIC_READ]: false,
 	[MECMUA_FEED]: true,
 } as const;
@@ -36,7 +35,6 @@ const bootUser: BootUser = {
 describe("buildBootPayload", () => {
 	it("carries every shell flag value plus the edge-resolved user object", () => {
 		const payload = buildBootPayload(bootUser, shellFlags);
-		expect(payload[PHOENIX_NAV_IA]).toBe(true);
 		expect(payload[MECMUA_PUBLIC_READ]).toBe(false);
 		expect(payload[MECMUA_FEED]).toBe(true);
 		expect(payload.user).toEqual(bootUser);

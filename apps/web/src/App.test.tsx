@@ -157,21 +157,14 @@ vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: ()
 const flags = vi.hoisted(() => ({
 	mecmua: false,
 	mecmuaFeed: false,
-	navIa: false,
 	signedIn: false,
 }));
 vi.mock("./flags/useFlag", async () => {
-	const {MECMUA_PUBLIC_READ, MECMUA_FEED, PHOENIX_NAV_IA} = await import("./flags/keys");
+	const {MECMUA_PUBLIC_READ, MECMUA_FEED} = await import("./flags/keys");
 	return {
 		useFlag: (key: string) => ({
 			value:
-				key === MECMUA_PUBLIC_READ
-					? flags.mecmua
-					: key === MECMUA_FEED
-						? flags.mecmuaFeed
-						: key === PHOENIX_NAV_IA
-							? flags.navIa
-							: false,
+				key === MECMUA_PUBLIC_READ ? flags.mecmua : key === MECMUA_FEED ? flags.mecmuaFeed : false,
 			loading: false,
 		}),
 	};
@@ -395,6 +388,8 @@ describe("mecmua nav entry (#2828) — resolves at first paint from __BOOT__, no
 // The mecmua feed (akış) nav entry (#2547) gates on the SAME `mecmua-feed` seam the
 // `/mecmua/akis` route self-gates on — so the link never points at a dark 404. These
 // pin that gating: absent when the flag is off, present (→ /mecmua/akis) when it flips.
+// Rendered at `/mecmua`, where the entry now lives (the mecmua Subnav zone) — the
+// gating guarantee is unchanged, only its host zone moved.
 describe("mecmua feed nav entry (#2547) — gated on mecmua-feed, never a dead link", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
@@ -407,45 +402,39 @@ describe("mecmua feed nav entry (#2547) — gated on mecmua-feed, never a dead l
 	});
 
 	it("off: the flag dark ⇒ no akış nav link (subscribe's destination stays hidden with its route)", () => {
-		renderApp();
+		renderApp("/mecmua");
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
 		expect(screen.queryByRole("link", {name: "akış"})).toBeNull();
 	});
 
 	it("on: the flag flipped ⇒ the akış nav link paints and points at /mecmua/akis", () => {
 		flags.mecmuaFeed = true;
-		renderApp();
+		renderApp("/mecmua");
+		act(() => {
+			setSession({data: null, isPending: false});
+		});
 		const link = screen.getByRole("link", {name: "akış"});
 		expect(link.getAttribute("href")).toBe("/mecmua/akis");
 	});
 });
 
-// The nav-IA substrate (#2598, epic #2596): each product mounts under a nested layout
-// route rendering a persistent product Subnav zone, gated on the default-off
-// `phoenix-nav-ia` seam. Off ⇒ the router is flat, exactly as today (no product zone);
-// on ⇒ the product route resolves under `ProductSubnavLayout`, which paints a `.kp-subnav`
-// zone above the routed page. The routed page (mocked PanoFeed) mounts below the gate, so
-// these settle the session (signed-out) to commit the routed Outlet.
+// The nav-IA substrate (#2598, epic #2596): each product mounts under a nested layout route
+// rendering a persistent product Subnav zone — the product route resolves under
+// `ProductSubnavLayout`, which paints a `.kp-subnav` zone above the routed page. The routed
+// page (mocked PanoFeed) mounts below the session gate, so these settle the session
+// (signed-out) to commit the routed Outlet.
 describe("nav-IA per-product Subnav zone substrate (#2598)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
 		sessionState = {data: null, isPending: true};
-		flags.navIa = false;
 	});
 	afterEach(() => {
-		flags.navIa = false;
 		vi.clearAllMocks();
 	});
 
-	it("flag off: the /pano route is flat — no product Subnav zone (the surface is exactly as before)", () => {
-		const {container} = renderApp("/pano");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		expect(container.querySelector(".kp-subnav")).toBeNull();
-	});
-
-	it("flag on: the /pano route mounts under the product layout — a persistent Subnav zone paints above the page", () => {
-		flags.navIa = true;
+	it("the /pano route mounts under the product layout — a persistent Subnav zone paints above the page", () => {
 		const {container} = renderApp("/pano");
 		act(() => {
 			setSession({data: null, isPending: false});
@@ -453,8 +442,7 @@ describe("nav-IA per-product Subnav zone substrate (#2598)", () => {
 		expect(container.querySelector(".kp-subnav")).toBeTruthy();
 	});
 
-	it("flag on: a non-product route (/search) mounts NO product Subnav zone", () => {
-		flags.navIa = true;
+	it("a non-product route (/search) mounts NO product Subnav zone", () => {
 		const {container} = renderApp("/search");
 		act(() => {
 			setSession({data: null, isPending: false});
@@ -463,34 +451,20 @@ describe("nav-IA per-product Subnav zone substrate (#2598)", () => {
 	});
 });
 
-// The atomic coupling (#2600, epic #2596): pano/yeni moves into the pano Subnav CTA slot
-// AND the topbar `+ gönderi` button is evicted — both gated on the SAME `phoenix-nav-ia`
-// seam so they release as one unit. Off ⇒ today's surface (topbar `+ gönderi`, no CTA);
-// on ⇒ the CTA lives in pano's product zone and the topbar no longer carries it. The
-// signed-out `giriş yap` affordance is untouched in either flag state.
+// The atomic coupling (#2600, epic #2596): pano/yeni lives in the pano Subnav CTA slot and the
+// topbar carries no `+ gönderi` — the CTA sits in pano's product zone, not the global bar. The
+// signed-out `giriş yap` affordance is untouched.
 const SIGNED_IN = {data: {user: {id: "u1", name: "Elif", email: "elif@kamp.us"}}, isPending: false};
 describe("nav-IA coupling: pano/yeni Subnav CTA ↔ topbar + gönderi eviction (#2600)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
 		sessionState = {data: null, isPending: true};
-		flags.navIa = false;
 	});
 	afterEach(() => {
-		flags.navIa = false;
 		vi.clearAllMocks();
 	});
 
-	it("flag off, signed in: the topbar carries + gönderi and there is no Subnav CTA (today's surface)", () => {
-		renderApp("/pano");
-		act(() => {
-			setSession(SIGNED_IN);
-		});
-		expect(screen.getByRole("button", {name: "+ gönderi"})).toBeTruthy();
-		expect(screen.queryByRole("button", {name: "yeni gönderi"})).toBeNull();
-	});
-
-	it("flag on, signed in: the topbar + gönderi is evicted and the CTA lives in the pano Subnav zone", () => {
-		flags.navIa = true;
+	it("signed in: the topbar + gönderi is evicted and the CTA lives in the pano Subnav zone", () => {
 		const {container} = renderApp("/pano");
 		act(() => {
 			setSession(SIGNED_IN);
@@ -504,8 +478,7 @@ describe("nav-IA coupling: pano/yeni Subnav CTA ↔ topbar + gönderi eviction (
 		expect(container.querySelector(".kp-topbar")?.contains(cta)).toBe(false);
 	});
 
-	it("flag on, signed out: the topbar giriş yap is unchanged and no CTA appears (signed-in only)", () => {
-		flags.navIa = true;
+	it("signed out: the topbar giriş yap is unchanged and no CTA appears (signed-in only)", () => {
 		const {container} = renderApp("/pano");
 		act(() => {
 			setSession({data: null, isPending: false});
@@ -517,35 +490,21 @@ describe("nav-IA coupling: pano/yeni Subnav CTA ↔ topbar + gönderi eviction (
 	});
 });
 
-// The mecmua nav-IA delta (#2603, epic #2596): the akış sub-destination is pulled OUT of the
-// global topbar product-noun row and into the mecmua Subnav zone. Off ⇒ today's surface (akış
-// in the topbar, gated on mecmua-feed); on ⇒ akış leaves the topbar and lives in the mecmua
-// product zone, still gated on the same mecmua-feed seam (never a dead link).
+// The mecmua nav-IA delta (#2603, epic #2596): the akış sub-destination lives in the mecmua
+// Subnav zone, not the global topbar product-noun row — still gated on the mecmua-feed seam
+// (never a dead link).
 describe("nav-IA mecmua delta: akış moves from topbar into the mecmua Subnav zone (#2603)", () => {
 	beforeEach(() => {
 		fateMounts.length = 0;
 		sessionState = {data: null, isPending: true};
-		flags.navIa = false;
 		flags.mecmuaFeed = false;
 	});
 	afterEach(() => {
-		flags.navIa = false;
 		flags.mecmuaFeed = false;
 		vi.clearAllMocks();
 	});
 
-	it("flag off: akış stays in the topbar (today's surface, gated on mecmua-feed)", () => {
-		flags.mecmuaFeed = true;
-		const {container} = renderApp("/mecmua");
-		act(() => {
-			setSession({data: null, isPending: false});
-		});
-		const akis = screen.getByRole("link", {name: "akış"});
-		expect(container.querySelector(".kp-topbar")?.contains(akis)).toBe(true);
-	});
-
-	it("flag on: akış is evicted from the topbar and lives in the mecmua Subnav zone", () => {
-		flags.navIa = true;
+	it("akış is evicted from the topbar and lives in the mecmua Subnav zone", () => {
 		flags.mecmuaFeed = true;
 		const {container} = renderApp("/mecmua");
 		act(() => {
@@ -558,8 +517,7 @@ describe("nav-IA mecmua delta: akış moves from topbar into the mecmua Subnav z
 		expect(container.querySelector(".kp-subnav")?.contains(akis)).toBe(true);
 	});
 
-	it("flag on, mecmua-feed off: no akış link anywhere (still gated on its own seam)", () => {
-		flags.navIa = true;
+	it("mecmua-feed off: no akış link anywhere (still gated on its own seam)", () => {
 		renderApp("/mecmua");
 		act(() => {
 			setSession({data: null, isPending: false});

@@ -11,9 +11,7 @@ import {SozlukSubnavCta} from "./SozlukSubnavCta";
  * zone so it renders INSIDE the bar's filters row; the `+ yeni tanım` create CTA fills the
  * `primaryAction` zone. There is no `utility`/search slot — sözlük's old go-to-or-create box is
  * gone, its "go to a term" search folded into the global ⌘K `ara` (#2995, the #2412 single-search
- * contract), which is why `SubnavShell` omits a `utility` prop (ADR 0182, YAGNI). Mounted only
- * behind the `phoenix-nav-ia` flag (App.tsx); off ⇒ the router is flat and SozlukHome renders its
- * own masthead create CTA + alphabet as today.
+ * contract), which is why `SubnavShell` omits a `utility` prop (ADR 0182, YAGNI).
  */
 export function SozlukSubnavLayout() {
 	const [params] = useSearchParams();
