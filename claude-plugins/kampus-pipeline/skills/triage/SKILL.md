@@ -386,8 +386,13 @@ in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §SP. An iss
 body**, so triage would silently preserve the wrong original inside `<details>` (#3718):
 
 ```bash
-# §SP: the per-run scratch namespace — fail-closed, never a shared fallback
-RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || {
+# §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
+# Keyed on the session id (not a bare `mktemp -d`) because the PATCH block below runs in a LATER
+# Bash call, where every shell variable is gone: it re-derives this same path to read body.md back.
+[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
+  echo "triage: §SP — CLAUDE_CODE_SESSION_ID unset; refusing to write issue bodies to a shared path (#3718)." >&2; exit 1; }
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/triage-<N>"
+rm -rf "$RUN_SCRATCH" && mkdir -p "$RUN_SCRATCH" || {
   echo "triage: §SP could not create a per-run scratch dir — refusing to write issue bodies to a shared path (#3718)." >&2; exit 1; }
 
 gh api "repos/$REPO/issues/<N>" --jq '.body' > "$RUN_SCRATCH/original.md"
@@ -401,6 +406,9 @@ Assemble the new body in a temp file — under `$RUN_SCRATCH` for the same reaso
 into `$BODY` so multi-line markdown, backticks, and the nested fences survive the shell:
 
 ```bash
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/triage-<N>"   # §SP re-derive — same recipe as the block above, NO reset
+[ -s "$RUN_SCRATCH/body.md" ] || {
+  echo "triage: §SP — $RUN_SCRATCH/body.md is missing/empty; refusing to PATCH the issue with an empty body." >&2; exit 1; }
 BODY="$(cat "$RUN_SCRATCH/body.md")"
 gh api -X PATCH "repos/$REPO/issues/<N>" -f body="$BODY"
 ```

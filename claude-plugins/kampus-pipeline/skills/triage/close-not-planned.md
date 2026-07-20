@@ -31,8 +31,10 @@ Every kill is auditable and reversible. Always:
 ```bash
 # step 1 only when closing as a duplicate of #M. Temps live under the §SP per-run scratch
 # namespace (gh-issue-intake-formats.md) — an issue number is NOT unique, and a clobbered file
-# reads back cleanly as another run's body, preserving the WRONG original (#3718):
-RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || { echo "§SP: no per-run scratch dir — refusing a shared path (#3718)." >&2; exit 1; }
+# reads back cleanly as another run's body, preserving the WRONG original (#3718). Keyed on the
+# session id so composing dup-comment.md in a later Bash call still resolves this same directory:
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset — refusing a shared path (#3718)}/triage-close-<N>"
+mkdir -p "$RUN_SCRATCH" || { echo "§SP: no per-run scratch dir — refusing a shared path (#3718)." >&2; exit 1; }
 gh api "repos/$REPO/issues/<N>" --jq '.body' > "$RUN_SCRATCH/dup.md"   # then wrap in <details> and:
 gh api "repos/$REPO/issues/<M>/comments" -f body="$(cat "$RUN_SCRATCH/dup-comment.md")"
 # steps 2-4, every kill:

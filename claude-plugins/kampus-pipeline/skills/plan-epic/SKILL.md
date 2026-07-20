@@ -225,18 +225,27 @@ stop to ask.)
 Every intermediate file below lives under `$RUN_SCRATCH`, the per-run scratch namespace defined
 once in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §SP — never a fixed or
 epic-keyed `/tmp` path. An epic number is **not** unique (a re-plan of the same epic is a second
-run over it), so re-rooting the whole family under one `mktemp -d` is what makes a cross-run
-clobber unrepresentable rather than merely unlikely (#3718). Open the run by allocating it, and
-re-derive it inside any later Bash call — shell state doesn't survive between calls, and §SP
-rule 3 forbids parking the path in another file to carry it across:
+run over it), so re-rooting the whole family under one per-run directory is what makes a
+cross-run clobber unrepresentable rather than merely unlikely (#3718).
+
+Step 1 writes this state and **Step 5 reads it back from a different Bash call**, so the path
+must be *deterministic*, not randomly allocated: shell state doesn't survive between calls, and
+a re-run of `mktemp -d` would hand Step 5 a new empty directory instead of Step 1's files. §SP
+keys the namespace on `$CLAUDE_CODE_SESSION_ID` exactly so any later call can recompute it —
+**open** the run once here (the `rm -rf` clears a previous run of this same epic in this same
+session), then **re-derive** it with the same one-liner in every later block, per §SP rule 3:
 
 ```bash
-# §SP: the per-run scratch namespace — fail-closed, never a shared fallback
-RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || {
+# §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
+[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
+  echo "plan-epic: §SP — CLAUDE_CODE_SESSION_ID unset; refusing to write plan state to a shared path (#3718)." >&2; exit 1; }
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/plan-epic-<EPIC>"
+rm -rf "$RUN_SCRATCH" && mkdir -p "$RUN_SCRATCH" || {
   echo "plan-epic: §SP could not create a per-run scratch dir — refusing to write plan state to a shared path (#3718)." >&2; exit 1; }
 ```
 
 ```bash
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
 # the epic, its current body, its labels, and any children it already has
 gh api repos/$REPO/issues/<EPIC> --jq '{number,title,labels:[.labels[].name],sub_issues_summary}'
 # capture the body AND its revision marker from ONE GET — reading them in two calls lets a writer
@@ -449,6 +458,7 @@ later; #1968 and #2099 the same verdict-resolver work in two places).
 **Read both sets once, before the create loop:**
 
 ```bash
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
 # 1. Already-emitted OPEN children of THIS epic — the re-dispatch idempotency set. A re-run must
 #    SKIP any proposed child that matches one of these (reconcile, don't re-create). The sub-issue
 #    list is the source of truth for what the epic already spawned; on a mixed open/closed epic
@@ -500,6 +510,8 @@ caught only by `review-plan`'s non-blocking advisor (#754, the same silent-clobb
 even within a single run:
 
 ```bash
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
+mkdir -p "$RUN_SCRATCH" || exit 1
 # write this child's spec into a per-run temp file, never a shared fixed path (#754)
 CHILD_SPEC_FILE="$(mktemp "$RUN_SCRATCH/child.XXXXXX")"
 cat > "$CHILD_SPEC_FILE" <<'EOF'
@@ -793,6 +805,22 @@ loudly** if `deps.md` was not regenerated since the base it splices onto was rea
 "re-derive" from a comment you might skip into a precondition the script enforces.
 
 ```bash
+# §SP: re-derive the per-run scratch namespace — this is a LATER Bash call, so Step 1's
+# $RUN_SCRATCH variable is gone. Same recipe ⇒ same directory ⇒ Step 1's files are still there.
+# NO `rm -rf` here (that is the OPEN step's job only): clearing it would delete exactly the
+# snapshot this step reads back, which is the whole failure §SP rule 3 exists to prevent.
+[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
+  echo "plan-epic: §SP — CLAUDE_CODE_SESSION_ID unset; cannot re-derive the Step 1 scratch namespace (#3718)." >&2; exit 1; }
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/plan-epic-<EPIC>"
+# Fail closed if Step 1's state isn't there: the freshness guard below compares file mtimes, and
+# `[ existing -nt missing ]` is TRUE in bash — so a missing base would let a STALE block splice
+# through silently. Assert presence first; never let the guard decide on absent files (#3718).
+for f in current.md updated-at.txt; do
+  [ -s "$RUN_SCRATCH/$f" ] || {
+    echo "plan-epic: §SP — $RUN_SCRATCH/$f is missing/empty; Step 1's snapshot did not survive." >&2
+    echo "  Re-run Step 1 in THIS session before splicing. Refusing to evaluate the freshness guard against absent state." >&2; exit 1; }
+done
+
 # "$RUN_SCRATCH/deps.md" = the new `## Dependencies` block. On a RE-PLAN, also
 #   "$RUN_SCRATCH/plan.md" = the new `## Plan (plan-epic)` block (set REPLAN=1).
 #   Give each block a trailing blank line so the next spliced heading stays separated.
@@ -843,8 +871,13 @@ for attempt in 1 2 3; do
   #      re-derive precondition is unmet (you re-invoked without regenerating the block off the fresh
   #      base): a stale block that references the wrong child set. Abort loudly, don't write — this is
   #      what stops the `continue`-era footgun of re-splicing the originally-derived block (issue #261).
-  if ! [ "$RUN_SCRATCH/deps.md" -nt "$RUN_SCRATCH/current.md" ] \
-     || { [ "${REPLAN:-0}" = 1 ] && ! [ "$RUN_SCRATCH/plan.md" -nt "$RUN_SCRATCH/current.md" ]; }; then
+  #      `-nt` alone CANNOT carry this check: `[ existing -nt missing ]` is TRUE in bash, so if the
+  #      derived block is absent the negation is false and the guard PASSES SILENTLY — a stale/no
+  #      block splices through. Assert the file exists and is non-empty FIRST, then compare mtimes.
+  if [ ! -s "$RUN_SCRATCH/deps.md" ] \
+     || ! [ "$RUN_SCRATCH/deps.md" -nt "$RUN_SCRATCH/current.md" ] \
+     || { [ "${REPLAN:-0}" = 1 ] && { [ ! -s "$RUN_SCRATCH/plan.md" ] \
+          || ! [ "$RUN_SCRATCH/plan.md" -nt "$RUN_SCRATCH/current.md" ]; }; }; then
     echo "ABORT: deps.md (or plan.md on a re-plan) is NOT newer than the base it splices onto (-current.md) —"
     echo "       you re-invoked without re-deriving. Re-run Step 2's split + Step 5's section derivation"
     echo "       against "$RUN_SCRATCH/current.md", then re-invoke this block. Refusing to splice a stale block."
@@ -967,6 +1000,8 @@ Scan the **brief** (the top section you read in Step 1) for the graduation-prove
 close each source it names — but only a genuine `type:investigation` source, idempotently:
 
 ```bash
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
+[ -s "$RUN_SCRATCH/current.md" ] || { echo "plan-epic: §SP — Step 1's current.md did not survive; re-run Step 1 in THIS session." >&2; exit 1; }
 # Extract every source the brief graduated from — tolerant of phrasing ("Emitted from resolved
 # investigation #N", "from resolved investigation #N"). The `resolved investigation` anchor is what
 # distinguishes a graduation provenance from an incidental `#N` cross-reference in the brief.

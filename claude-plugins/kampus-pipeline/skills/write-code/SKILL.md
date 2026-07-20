@@ -1572,10 +1572,15 @@ error**, posting another issue's ledger onto yours (#3718, the same silent-clobb
 #2038's `branch.txt`):
 
 ```bash
-# §SP: the per-run scratch namespace — fail-closed, never a shared fallback
-RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || {
+# §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
+# Keyed on the session id, so if you compose progress.md in one Bash call and post it in the
+# next, this same line re-derives the SAME directory (a bare `mktemp -d` would hand the second
+# call a new EMPTY dir and post an empty body).
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-<N>"
+mkdir -p "$RUN_SCRATCH" || {
   echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a comment through a shared path (#3718)." >&2; exit 1; }
 # …write the four-section comment to "$RUN_SCRATCH/progress.md", then:
+[ -s "$RUN_SCRATCH/progress.md" ] || { echo "write-code: progress.md is missing/empty — refusing to post an empty comment." >&2; exit 1; }
 BODY="$(cat "$RUN_SCRATCH/progress.md")"   # the four-section comment
 # gate the comment on the mis-attribution guard (Step 3.5) — only comment on an issue whose claim is mine
 claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
@@ -1637,9 +1642,14 @@ silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
 # compose under the per-run scratch namespace (§SP), never a fixed /tmp leaf — a concurrent
-# coder lane would clobber it and this posts ITS handoff onto your epic, silently (#3718)
-RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || {
+# coder lane would clobber it and this posts ITS handoff onto your epic, silently (#3718).
+# Deterministic (session-keyed), so writing handoff.md in one Bash call and posting it here in
+# the next resolves the SAME directory — re-running `mktemp -d` would yield an empty one.
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-<N>"
+mkdir -p "$RUN_SCRATCH" || {
   echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a handoff through a shared path (#3718)." >&2; exit 1; }
+# …write the handoff to "$RUN_SCRATCH/handoff.md" first, then:
+[ -s "$RUN_SCRATCH/handoff.md" ] || { echo "write-code: handoff.md is missing/empty — refusing to post an empty handoff." >&2; exit 1; }
 BODY="$(cat "$RUN_SCRATCH/handoff.md")"   # ### Handoff: #N — <title> + the three fields
 # the handoff to the parent epic is predicated on OWNING THE CHILD — gate on claim_is_mine <child>
 # (Step 3.5), not the epic (which you never claim): only hand off about work whose claim is mine.
@@ -1977,8 +1987,12 @@ makes the **stateless** gate re-run — you do **not** re-trigger or self-approv
 claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue #$N not my claim (Step 3.5)"; exit 1; }
 wt_preflight && git push --force-with-lease origin HEAD   # gate the push ([per-mutation preflight]); --force-with-lease because the R2 rebase onto origin/main moved the head
 # compose the repair note under the §SP per-run scratch namespace, never a fixed /tmp leaf:
-# concurrent repair lanes clobber a shared name and this posts THEIR note onto your issue (#3718)
-RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || { echo "write-code: §SP could not create a per-run scratch dir (#3718)." >&2; exit 1; }
+# concurrent repair lanes clobber a shared name and this posts THEIR note onto your issue (#3718).
+# Session-keyed and deterministic, so the note you wrote in an earlier Bash call is still here.
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-$N"
+mkdir -p "$RUN_SCRATCH" || { echo "write-code: §SP could not create a per-run scratch dir (#3718)." >&2; exit 1; }
+# …write the format-3 repair note to "$RUN_SCRATCH/repair-progress.md" first, then:
+[ -s "$RUN_SCRATCH/repair-progress.md" ] || { echo "write-code: repair-progress.md is missing/empty — refusing to post an empty comment." >&2; exit 1; }
 gh api repos/$REPO/issues/$N/comments -f body="$(cat "$RUN_SCRATCH/repair-progress.md")"
 ```
 

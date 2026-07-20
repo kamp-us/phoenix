@@ -1386,7 +1386,7 @@ clear — proceed to Step 4. Like Step 2's FAIL and Step 3's red, a bundle refus
 # against each (commit-mismatch and missing-bundle are the same passing manifest mutated):
 cd packages/pipeline-cli/src/tools/crabbox-manifest
 HEAD_SHA=deadbeef
-RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || exit 1   # §SP, even in a rehearsal
+RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/ship-it-rehearsal.XXXXXX")" || exit 1   # §SP rule 4: allocated + consumed in THIS block
 node ../../bin.ts crabbox-manifest --run-summary <(node -e 'console.log(JSON.stringify(require("./fixtures.ts").passingRunSummary()))') \
   --commit "$HEAD_SHA" --environment test --output "$RUN_SCRATCH/pass.json"   # all checks pass → clears
 node ../../bin.ts crabbox-manifest --run-summary <(node -e 'console.log(JSON.stringify(require("./fixtures.ts").failingRunSummary()))') \
@@ -1810,8 +1810,10 @@ if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md"
   # it lands under a per-run mktemp, never a shared /tmp leaf (§SP of gh-issue-intake-formats.md).
   # `$$` alone is NOT the guarantee — an agent's Bash calls can share a shell, so two ship-it runs
   # can carry the same PID-derived name, and a clobbered list reads back cleanly as another run's
-  # flag keys, silently mis-deciding the dark-ship branch (#3718).
-  CONSTS_FILE="$(mktemp "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || {
+  # flag keys, silently mis-deciding the dark-ship branch (#3718). This is §SP's rule-4 carve-out:
+  # allocated and consumed inside THIS one Bash call, so the kernel's uniqueness is the whole
+  # guarantee and no deterministic path is needed (it never has to survive into a later call).
+  CONSTS_FILE="$(mktemp "${TMPDIR:-/tmp}/ship-it-flag-consts.XXXXXX")" || {
     echo "ship-it: §SP could not allocate a per-run temp — refusing to read flag consts through a shared path (#3718)." >&2; exit 1; }
   DECLARED_KEYS=$(
     gh api "repos/$REPO/contents/apps/web/worker/features/flagship/resources.ts?ref=main" \
