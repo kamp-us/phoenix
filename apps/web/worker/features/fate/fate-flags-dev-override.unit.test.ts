@@ -7,7 +7,7 @@
  *
  * As of #2741 the wrapper is installed UNCONDITIONALLY (not env-selected): whether an
  * override is HONORED is decided upstream, per request, by `overridesAuthorized` (dev,
- * or an admin with `phoenix-admin-console` on) which populates `FlagsContext.overrides`.
+ * or an admin) which populates `FlagsContext.overrides`.
  * That gate — including the prod fail-closed "a non-admin's cookie is inert" invariant —
  * is proven in `flagship/override-authz.unit.test.ts`. This test proves only the
  * mechanism it feeds: given an override in context, the fate layer honors it.

@@ -4,8 +4,8 @@ import {adminProbeDataView} from "./probe-view.ts";
 import {queries} from "./queries.ts";
 
 const roots: FateRootsRecord = {
-	// The admin-console open-gate probe (#2740, epic #2711) — `requireAdmin`-gated +
-	// behind `phoenix-admin-console`; the `admin.probe` resolver owns both gates.
+	// The admin-console open-gate probe (#2740, epic #2711) — `requireAdmin`-gated; the
+	// `admin.probe` resolver owns the gate.
 	"admin.probe": adminProbeDataView,
 };
 

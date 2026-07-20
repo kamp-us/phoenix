@@ -154,7 +154,7 @@ const VoterStandingFromKunye = Layer.effect(VoterStanding)(
  * (`FlagsDevOverrideLive`) installed UNCONDITIONALLY (#2741, epic #2711). The wrapper
  * is a no-op unless the per-request `FlagsContext.overrides` is populated, and that
  * population is now the load-bearing gate — resolved per request by
- * `overridesAuthorized` (dev, or an admin with `phoenix-admin-console` on) and threaded
+ * `overridesAuthorized` (dev, or an admin) and threaded
  * through `provideRequestFlags`. So a non-admin request on a deployed stage carries no
  * `overrides` and reads exactly as the plain `FlagsLive` did (#1868 kept intact: the
  * decorator is on the fate mutation path so a flag-gated resolver honors an authorized

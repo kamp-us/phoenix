@@ -5,7 +5,7 @@
  * `React.lazy`, never evaluated here). It proves the console module contract (#2740) end-to-end.
  */
 import {describe, expect, it} from "vitest";
-import {DECLARED_FLAGS} from "../../flags/keys";
+import {DECLARED_FLAGS, MEMBER_MUTE} from "../../flags/keys";
 import {consoleRegistry} from "../app-modules";
 import {selectActiveModule} from "../module-registry";
 
@@ -20,9 +20,9 @@ describe("flags module registration", () => {
 		expect(selectActiveModule(consoleRegistry.list(), "bayraklar")?.id).toBe("bayraklar");
 	});
 
-	it("enumerates the admin-console flag and every declared key exactly once", () => {
+	it("enumerates every declared key exactly once", () => {
 		const keys = DECLARED_FLAGS.map((f) => f.key);
-		expect(keys).toContain("phoenix-admin-console");
+		expect(keys).toContain(MEMBER_MUTE);
 		expect(new Set(keys).size).toBe(keys.length);
 	});
 });

@@ -2,7 +2,7 @@
  * The dark-ship default-=-safe-state invariant for the kullanıcılar (user-roster) read view
  * (#3200). Inspected off the exported `USER_ADMIN_FLAG` record (the same object the factory
  * spreads into `FlagshipFlag`), so no alchemy resource is constructed — mirrors
- * `admin-console.invariant.test.ts`.
+ * `member-mute.invariant.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_USER_ADMIN} from "../../../src/flags/keys.ts";

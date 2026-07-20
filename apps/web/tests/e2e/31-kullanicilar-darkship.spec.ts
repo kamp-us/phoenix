@@ -4,14 +4,15 @@ import {expect, test} from "@playwright/test";
  * Kullanıcılar (user-roster) read-view dark-ship invariant — the off-path proven in-browser
  * (#3200).
  *
- * The `phoenix-user-admin` flag (and the `phoenix-admin-console` shell flag) default OFF in
- * the local/CI env, so the roster ships dark: the `/admin` route resolves to the ordinary
- * not-found page (the console shell never mounts) and no `kullanicilar-*` element renders
- * anywhere. This is the dark-ship invariant (ADR 0083) — it does NOT depend on a signed-in
- * admin session, so it's stable to run on the default-off flag.
+ * The `phoenix-user-admin` flag defaults OFF in the local/CI env, so the roster ships dark:
+ * no `kullanicilar-*` element renders anywhere. The `/admin` route resolves to the ordinary
+ * not-found page for a different reason — the console shell's own flag was retired (#3671),
+ * so the shell now gates solely on the server `requireAdmin` probe, which denies an
+ * anonymous visitor. This spec runs anonymous, so BOTH assertions hold without a session;
+ * that's what keeps the dark-ship invariant (ADR 0083) stable here.
  *
  * The on-path (an admin opens the roster → the gated `userAdmin.list` returns rows → the
- * table renders) needs release plumbing (both flags on + a discharged `Admin` grant), so it
+ * table renders) needs release plumbing (the flag on + a discharged `Admin` grant), so it
  * is covered by the unit tests (`worker/features/user-admin/lists.unit.test.ts` proves the
  * requireAdmin gate + shaping; the module + panel-logic tests prove the SPA wiring) — the
  * same off-path/on-path split as `28-reaction-bar-darkship.spec.ts`.
@@ -23,7 +24,7 @@ test.describe("Kullanıcılar roster (dark-ship, phoenix-user-admin default off)
 		page,
 	}) => {
 		await page.goto("/admin");
-		// The admin console shell never mounts (its own flag is off too)…
+		// The admin console shell never mounts (the probe denies an anonymous visitor)…
 		await expect(page.locator('[data-testid="admin-console"]')).toHaveCount(0);
 		// …and the kullanıcılar panel / roster is definitively absent.
 		await expect(page.locator('[data-testid="kullanicilar-panel"]')).toHaveCount(0);

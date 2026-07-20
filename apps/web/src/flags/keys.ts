@@ -192,29 +192,15 @@ export const PHOENIX_EMAIL_DELIVERY_NOTICE = "phoenix-email-delivery-notice";
 export const PHOENIX_NAV_IA = "phoenix-nav-ia";
 
 /**
- * Admin-console shell dark-ship flag (#2740, epic #2711). The SINGLE seam the whole
- * in-product admin console gates behind — the `/admin` route, the client `admin.probe`
- * signal that decides whether to mount+fetch the lazy console bundle, AND the worker
- * `admin.probe` gated read all key off this one string. Default-off so the console
- * reaches production dark until a human flips it at release (ADR 0083): with it off the
- * probe short-circuits (client) / fails the invisible `Denied` (server) for everyone, so
- * the route resolves inert (the ordinary not-found state) and no console chunk is ever
- * fetched. Its OWN cross-cutting (`phoenix`) key — the console is a host for future
- * admin modules (flags is module #1, #2742), each of which keeps its own capability
- * lifecycle behind its own flag (the `phoenix-user-ban` admin-surface precedent).
- */
-export const PHOENIX_ADMIN_CONSOLE = "phoenix-admin-console";
-
-/**
  * Kullanıcılar (user-roster) admin-console module dark-ship flag (#3200, admin epic).
  * The SINGLE seam the gated user-list read view gates behind — the `userAdmin.list`
  * admin fate resolver AND the `kullanıcılar` console panel both key off this one string.
  * Default-off so the whole roster surface reaches production dark until a human flips it
  * at release (ADR 0083): with it off the server read fails the invisible `Denied` (like a
  * non-admin call) and the panel renders nothing, so the roster never leaks before release.
- * Its OWN key, not the `phoenix-admin-console` shell seam — the roster is a distinct admin
- * capability (read the user list) with its own lifecycle, hosted BY the shipped console
- * shell (the `phoenix-user-ban` / `phoenix-email-delivery-admin` admin-surface precedent).
+ * Its OWN key — the roster is a distinct admin capability (read the user list) with its own
+ * lifecycle, hosted BY the shipped console shell (the `phoenix-user-ban` /
+ * `phoenix-email-delivery-admin` admin-surface precedent).
  * The per-user actions (role-assign, ban/unban) wire into this roster behind their own
  * seams later — this key gates the read view only.
  */
@@ -284,7 +270,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_EMAIL_DELIVERY_ADMIN, defaultValue: false},
 	{key: PHOENIX_EMAIL_DELIVERY_NOTICE, defaultValue: false},
 	{key: PHOENIX_NAV_IA, defaultValue: false},
-	{key: PHOENIX_ADMIN_CONSOLE, defaultValue: false},
 	{key: PHOENIX_USER_ADMIN, defaultValue: false},
 	{key: PHOENIX_EDGE_SHELL_BOOT, defaultValue: false},
 	{key: PROFILE_CANVAS, defaultValue: false},

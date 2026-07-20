@@ -7,7 +7,7 @@
  *
  * Carries ONLY the fact that the gate passed — no identity, no capability list, no admin
  * roster. Producing this row at all is the signal; it is only ever reached past the
- * `requireAdmin` gate + the `phoenix-admin-console` flag (`queries.ts`), so a non-admin
+ * `requireAdmin` gate (`queries.ts`), so a non-admin
  * gets the invisible `Denied` (indistinguishable from not-signed-in, ADR 0107 / ADR 0098
  * §2) rather than a row that leaks admin-ness.
  */

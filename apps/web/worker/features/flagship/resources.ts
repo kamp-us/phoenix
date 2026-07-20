@@ -16,7 +16,6 @@ import {
 	MECMUA_WRITE,
 	MEMBER_MUTE,
 	PANO_DRAFT_SAVE,
-	PHOENIX_ADMIN_CONSOLE,
 	PHOENIX_BILDIRIM,
 	PHOENIX_EDGE_SHELL_BOOT,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
@@ -628,38 +627,6 @@ export const panoStampWaveFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_pano_stamp_wave", {appId, ...PANO_STAMP_WAVE_FLAG});
 
 /**
- * The admin-console shell dark-ship flag config (#2740, epic #2711). Default-OFF so the
- * whole in-product admin console reaches production dark: with it off the `/admin` route
- * resolves inert (the ordinary not-found state), the client probe short-circuits, and the
- * worker `admin.probe` read fails the invisible `Denied` (like a non-admin call) — so no
- * console chunk is ever fetched and no admin surface leaks. Flipping it on is the human
- * release act (ADR 0083).
- *
- * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `NAV_IA_FLAG`).
- *
- * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
- *   - owner:           admin-console (the extensible console host, epic #2711)
- *   - originating:     #2740 (epic: admin-console shell, #2711)
- *   - removal trigger: once the admin console graduates to on at 100% and stable for one
- *                      release, retire the flag and inline the route + probe.
- */
-export const ADMIN_CONSOLE_FLAG = {
-	key: PHOENIX_ADMIN_CONSOLE,
-	description:
-		"admin-console shell dark-ship (#2740, epic #2711). owner: admin-console. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const adminConsoleFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("phoenix_admin_console", {appId, ...ADMIN_CONSOLE_FLAG});
-
-/**
  * The kullanıcılar (user-roster) admin-console module dark-ship flag config (#3200, admin
  * epic). The SINGLE seam the gated user-list read view gates behind — the `userAdmin.list`
  * admin fate resolver AND the `kullanıcılar` console panel. Default-OFF so the whole roster
@@ -668,7 +635,7 @@ export const adminConsoleFlag = (appId: Input<string>) =>
  * act (ADR 0083).
  *
  * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `ADMIN_CONSOLE_FLAG`).
+ * WITHOUT constructing the alchemy resource (mirrors `NAV_IA_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           user-admin (the gated user-roster surface, hosted by the console shell)
