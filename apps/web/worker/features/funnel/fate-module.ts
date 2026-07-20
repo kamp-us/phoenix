@@ -4,8 +4,8 @@ import {queries} from "./queries.ts";
 import {funnelSummaryDataView} from "./views.ts";
 
 const roots: FateRootsRecord = {
-	// The conversion-funnel readout (#1589) — founder/mod-gated, behind the
-	// `phoenix-funnel-readout` flag; the `funnel.summary` resolver owns the gate.
+	// The conversion-funnel readout (#1589) — founder/mod-gated; the
+	// `funnel.summary` resolver owns the capability gate.
 	"funnel.summary": funnelSummaryDataView,
 };
 
