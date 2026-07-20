@@ -179,18 +179,6 @@ export const PHOENIX_EMAIL_DELIVERY_NOTICE = "phoenix-email-delivery-notice";
 export const PHOENIX_USER_ADMIN = "phoenix-user-admin";
 
 /**
- * Edge-resolved shell-boot containment flag (#2928, epic #2926, ADR 0179). The SINGLE seam
- * the whole worker-first shell render ships behind — with it OFF the SPA HTML stays
- * edge-direct byte-identical to today (the `assets` binding serves it, the worker never
- * touches it); with it ON the worker renders the shell per request and injects
- * `window.__BOOT__` (the shell-key manifest flags under full-session userId context +
- * `signedIn`). Default-off so the whole edge-render path reaches production dark until a
- * human flips it at release (ADR 0083). Its own cross-cutting (`phoenix`) key — the render
- * path spans every product's shell geometry.
- */
-export const PHOENIX_EDGE_SHELL_BOOT = "phoenix-edge-shell-boot";
-
-/**
  * Profile free-paint canvas (duvar) dark-ship flag (#3103, epic #2035). The SINGLE seam
  * the whole profile-canvas feature gates behind — the fate read view + visitor render
  * (#3105), the owner enable/toggle mutation (#3108), and the paint/save surface (#3109)
@@ -240,7 +228,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_EMAIL_DELIVERY_ADMIN, defaultValue: false},
 	{key: PHOENIX_EMAIL_DELIVERY_NOTICE, defaultValue: false},
 	{key: PHOENIX_USER_ADMIN, defaultValue: false},
-	{key: PHOENIX_EDGE_SHELL_BOOT, defaultValue: false},
 	{key: PROFILE_CANVAS, defaultValue: false},
 	{key: MEMBER_MUTE, defaultValue: false},
 ];

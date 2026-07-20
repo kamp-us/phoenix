@@ -1,23 +1,22 @@
 import {expect, test} from "@playwright/test";
 
 /**
- * The reachability journey for the edge-resolved shell-boot vertical (ADR 0173 §2, ADR 0179,
- * epic #2926). `reachability-guard` asserts the `@journey:phoenix-edge-shell-boot` tag exists;
- * the e2e job runs the spec.
+ * The first-paint contract for the edge-resolved shell (ADR 0179, epic #2926). Its containment
+ * flag retired with #3672, so this is no longer a `@journey:`-registered reachability spec — it
+ * stays as the in-browser regression proof for the now-permanent worker-first render.
  *
- * It proves the CLIENT half of the `window.__BOOT__` contract deterministically, independent of a
- * live Flagship flip: `page.addInitScript` seeds `window.__BOOT__` exactly as the edge injects it
- * (into `<head>`, before the app module runs — ADR 0179 §2), then a hard reload measures whether
- * the shell paints its final geometry immediately with zero layout shift. Seeding the payload is
- * the faithful stand-in for the worker render — `useFlag` resolves a shell-key-manifest member
+ * It proves the CLIENT half of the `window.__BOOT__` contract deterministically, without a live
+ * worker: `page.addInitScript` seeds `window.__BOOT__` exactly as the edge injects it (into
+ * `<head>`, before the app module runs — ADR 0179 §2), then a hard reload measures whether the
+ * shell paints its final geometry immediately with zero layout shift. Seeding the payload is the
+ * faithful stand-in for the worker render — `useFlag` resolves a shell-key-manifest member
  * synchronously off `__BOOT__` with no fetch (ADR 0179 §3), so the seeded values reproduce the
- * on-path first paint the worker produces when `PHOENIX_EDGE_SHELL_BOOT` is on. This mirrors the
- * split `28-reaction-bar-darkship` uses: the unit tests own the pure resolution logic, this e2e
- * owns the in-browser first-paint proof.
+ * first paint the worker produces. This mirrors the split `28-reaction-bar-darkship` uses: the
+ * unit tests own the pure resolution logic, this e2e owns the in-browser first-paint proof.
  *
- * Dark-ship compatible (AC4): with no `__BOOT__` (the flag-off / never-hang fallback, the default
- * in local/CI where Flagship resolves the containment flag to its safe default) the shell degrades
- * to today's edge-direct, client-fetched render — proven by the dark-path test below.
+ * The absent-`__BOOT__` half stays covered: when the never-hang guard (ADR 0179 §4) degrades to
+ * an untransformed asset, the shell must still render through the client fetch path — proven by
+ * the fallback test below.
  */
 
 declare global {
@@ -97,7 +96,7 @@ function installShellClsObserver(): void {
 	}
 }
 
-test.describe("edge-resolved shell boot @journey:phoenix-edge-shell-boot", () => {
+test.describe("edge-resolved shell boot", () => {
 	test("edge-resolved __BOOT__ paints the topnav in final geometry with zero shell layout shift", async ({
 		page,
 	}) => {
@@ -114,7 +113,7 @@ test.describe("edge-resolved shell boot @journey:phoenix-edge-shell-boot", () =>
 		const mecmua = page.locator(".kp-topbar__nav a", {hasText: /^mecmua$/i});
 		await expect(mecmua).toBeVisible();
 
-		// The consuming UI observed the edge-boot mode (the reachability-guard tie-in, ADR 0173 §1a).
+		// The marker observed the edge-boot mode — `__BOOT__` was injected for this render.
 		await expect(page.locator('[data-testid="edge-shell-boot"]')).toHaveAttribute(
 			"data-active",
 			"true",
@@ -150,19 +149,21 @@ test.describe("edge-resolved shell boot @journey:phoenix-edge-shell-boot", () =>
 		await expect(page.locator(".kp-topbar__user")).toBeVisible();
 	});
 
-	test("without __BOOT__ the shell degrades gracefully — dark-ship compatible", async ({page}) => {
+	test("without __BOOT__ the shell degrades gracefully — the never-hang fallback path", async ({
+		page,
+	}) => {
 		await page.addInitScript(() => {
 			window.__BOOT__ = undefined;
 		});
 		await page.goto("/");
 
 		await expect(page.locator(".kp-topbar")).toBeVisible({timeout: 10_000});
-		// The base product nav still renders — the dark shell is byte-identical to today.
+		// The base product nav still renders — the untransformed shell is byte-identical to today.
 		await expect(page.locator(".kp-topbar__nav a", {hasText: /^sözlük$/i})).toBeVisible();
 		await expect(page.locator(".kp-topbar__nav a", {hasText: /^pano$/i})).toBeVisible();
 		// __BOOT__ absent ⇒ the client resolves through its fetch fallback, never assuming injection.
 		expect(await page.evaluate(() => window.__BOOT__)).toBeUndefined();
-		// The consuming marker reports the inactive mode (flag off in this env, no injection).
+		// The marker reports the inactive mode — no injection reached this render.
 		await expect(page.locator('[data-testid="edge-shell-boot"]')).toHaveAttribute(
 			"data-active",
 			"false",

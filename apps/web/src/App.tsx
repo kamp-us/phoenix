@@ -177,7 +177,7 @@ function Layout() {
 		<TooltipProvider>
 			<ToastProvider>
 				<AppShell>
-					{/* reachability tie-in for the edge-shell-boot vertical (ADR 0173 §1a) — geometry-inert */}
+					{/* boot-mode observer for the edge-resolved shell (ADR 0179) — geometry-inert */}
 					<EdgeShellBootMarker />
 					<Topbar
 						brandName="kamp.us"

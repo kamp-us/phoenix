@@ -7,9 +7,11 @@ Every user-facing dark-ship flag needs a **journey e2e** before it can graduate 
 write one that actually exercises the on-path — not an empty-bodied stub that only satisfies
 the static check.
 
-The worked reference is `apps/web/tests/e2e/29-edge-shell-boot-journey.spec.ts`
-(`@journey:phoenix-edge-shell-boot`), which proves the zero-CLS correct-first-paint contract
-of the edge-resolved shell (ADR [0179](../.decisions/0179-edge-resolved-shell-state-boot-contract.md)).
+The worked reference is `apps/web/tests/e2e/29-edge-shell-boot-journey.spec.ts`, which proves the
+zero-CLS correct-first-paint contract of the edge-resolved shell (ADR
+[0179](../.decisions/0179-edge-resolved-shell-state-boot-contract.md)). Its own flag has since
+retired (#3672), so it no longer carries a `@journey:` tag — the technique below is what to copy,
+and `30-member-mute-journey.spec.ts` is a live tagged example.
 
 ## Seed the edge payload client-side, don't wait on a live flag flip
 

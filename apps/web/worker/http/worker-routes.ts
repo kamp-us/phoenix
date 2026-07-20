@@ -93,8 +93,8 @@ export const rawWorkerRoutes: readonly [WorkerRoute, ...WorkerRoute[]] = [
 	{path: "/api/pano/link-metadata", glob: "/api/*", route: linkMetadataRoute},
 	{path: "/rss.xml", glob: "/rss.xml", route: rssRoute},
 	// The edge-render shell catch-all (#2929, ADR 0179): mounted `* /*` so it serves the
-	// SPA shell through the worker and injects `window.__BOOT__`, dark behind
-	// `PHOENIX_EDGE_SHELL_BOOT`. The `/*` glob pulls every non-asset path worker-first; the
+	// SPA shell through the worker and injects `window.__BOOT__`.
+	// The `/*` glob pulls every non-asset path worker-first; the
 	// `!/assets/*` exception ({@link assetExceptionGlobs}) keeps the built bundles edge-direct.
 	// Specific routes above win by find-my-way precedence, so this catches only what they don't.
 	{path: "/*", glob: "/*", route: shellBootRoute},
