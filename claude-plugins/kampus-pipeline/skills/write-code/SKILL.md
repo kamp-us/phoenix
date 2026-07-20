@@ -162,19 +162,26 @@ namespaces) is an unaddressed FAIL:
 
 ```bash
 ME=$(gh api user --jq '.login')
+# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994).
+# Each per-(PR, gate) FAIL-bound-to-head resolution below delegates to `pipeline-cli verdict read`
+# (ACL author-gate + latest-wins + SHA-staleness, ADR 0055/0058; its unit tests are the contract).
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
+else
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
+fi
 # open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
 # UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
 gh api "repos/$REPO/pulls?state=open&per_page=100" \
   --jq ".[] | select(.user.login==\"$ME\") | .number" | while read PR; do
-  # whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2
-  # uses (ADR 0055, supersedes 0051): build THIS PR's authorized set from its marker authors
-  # holding write+ on the repo, so a forged review-(code|doc|skill): FAIL from a non-reviewer can't
-  # trigger spurious repair. Empty set ⇒ IN($authorized[]) matches nothing ⇒ no verdict
-  # resolves ⇒ the scan safely finds nothing — fail-closed.
+  # The N=3 FAIL-round count is the one thing `verdict read` does NOT do (it resolves the latest
+  # verdict, it does not count rounds) — genuinely more than a single (PR, gate) resolution, so it
+  # stays inline. Author-gate the FAIL markers to write+ collaborators (ADR 0055, supersedes 0051)
+  # so a forged review-(code|doc|skill): FAIL can't inflate the count; an empty authorized set counts
+  # zero rounds — fail-closed. Cluster by timestamp gap (>120s = new round), per fix-round not per
+  # marker (a both-namespace round counts once), the same identity the Bounding count uses.
   comments_file=$(mktemp)
   gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
-  # every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
-  # per gh-issue-intake-formats.md §5 — the canonical matcher contract
   markerAuthors=$(jq -r '[.[]
       | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
       | .user.login] | unique | .[]' "$comments_file")
@@ -186,8 +193,6 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
       admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
     esac
   done <<<"$markerAuthors"
-  # FAIL rounds already accrued — per fix-round, not per marker (a both-namespace round counts once);
-  # cluster by timestamp gap (>120s = new round), same identity as the Bounding count, never a minute bucket
   ROUNDS=$(jq --argjson authorized "$authorized" \
     '[.[] | select(.user.login | IN($authorized[]))
           | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*FAIL"; "i"))
@@ -198,31 +203,21 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
          then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
      | .n' "$comments_file")
   [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
-  CODE=$(jq --argjson authorized "$authorized" \
-    '[.[] | select(.user.login | IN($authorized[]))
-          | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
-     | sort_by(.created_at) | last | .body // ""' "$comments_file")
-  DOC=$(jq --argjson authorized "$authorized" \
-    '[.[] | select(.user.login | IN($authorized[]))
-          | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
-     | sort_by(.created_at) | last | .body // ""' "$comments_file")
-  SKILL=$(jq --argjson authorized "$authorized" \
-    '[.[] | select(.user.login | IN($authorized[]))
-          | select(.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))]
-     | sort_by(.created_at) | last | .body // ""' "$comments_file")
-  echo "$CODE"  | grep -qiE '^\s*\**\s*review-code:\s*FAIL'  && echo "#$PR review-code FAIL"
-  echo "$DOC"   | grep -qiE '^\s*\**\s*review-doc:\s*FAIL'   && echo "#$PR review-doc FAIL"
-  echo "$SKILL" | grep -qiE '^\s*\**\s*review-skill:\s*FAIL' && echo "#$PR review-skill FAIL"
+  # resolve each namespace's latest current-head verdict through the shared verb — exit 0 iff HEAD
+  # carries a current FAIL in that gate (a stale / SHA-less / PASS / none verdict exits non-zero).
+  $VERDICT read --pr "$PR" --gate code  --expect FAIL >/dev/null 2>&1 && echo "#$PR review-code FAIL"
+  $VERDICT read --pr "$PR" --gate doc   --expect FAIL >/dev/null 2>&1 && echo "#$PR review-doc FAIL"
+  $VERDICT read --pr "$PR" --gate skill --expect FAIL >/dev/null 2>&1 && echo "#$PR review-skill FAIL"
 done
 ```
 
 If such a PR exists, **repair it instead of picking new work** — go to
 [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit) with that PR
 number. Only once you have **no** PR with an unaddressed latest FAIL do you fall through to
-the normal pick below. (This scan is a coarse *signal* that deliberately matches the SHA-less
-prefix; repair mode Step R1 re-resolves the verdict authoritatively per namespace **and
-applies the SHA-staleness test** (ADR 0058) before acting, so a PR that flipped to PASS, or
-whose FAIL is bound to a now-stale head, between the scan and the repair is a clean no-op.)
+the normal pick below. (This scan resolves each (PR, gate) verdict through the **same
+authoritative SHA-bound `pipeline-cli verdict read`** repair mode Step R1 uses; R1 still
+re-resolves at repair time because the head may move between this scan and the repair — a PR
+that flipped to PASS, or whose FAIL went stale in that window, is then a clean no-op.)
 
 Two properties make this scan terminate rather than starve:
 
@@ -1695,22 +1690,32 @@ fixing its own PR and an independent gate re-judging it is the firewall, intact.
 ### Step R1 — Resolve the latest verdict per namespace (mirror `ship-it` Step 2)
 
 Do **not** act on the presence of any FAIL that ever existed. Resolve `review-code`,
-`review-doc`, and `review-skill` in **separate namespaces** — three anchored regexes that never
-cross-match — and take the **latest by timestamp** in each. This mirrors `ship-it` Step 2's
-resolution exactly (the reading side of the same contract), **including its ACL author-gate**:
-a marker comment counts as a verdict only from a `write+` repo collaborator, so a
-self-authored or forged `review-(code|doc|skill): FAIL` is invisible (ADR
-[0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)). The native-review path needs
-no ACL gate — GitHub author-attributes reviews, so it is unforgeable.
+`review-doc`, and `review-skill` in **separate namespaces** and take the **latest current-head
+verdict** in each — the exact resolution `ship-it` Step 2 reads. That resolution (the ADR-0055
+write+ author-gate so a self-authored or forged `review-(code|doc|skill): FAIL` is invisible, the
+latest-wins pick, and the ADR-0058 SHA-staleness refusal) is owned by `pipeline-cli verdict read`,
+so R1 delegates to the verb rather than re-deriving it (#2102) — its unit tests are the contract.
+The native `CHANGES_REQUESTED` review that folds into the code namespace is the one thing the verb
+does not resolve (it reads only marker comments); it needs no ACL gate — GitHub author-attributes
+reviews, so that path is unforgeable — so R1 keeps just that fold inline.
 
 ```bash
 PR=<the PR number you were handed>
-# whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2 uses
-# (ADR 0055): build the authorized set from THIS PR's marker authors holding write+ on the repo.
+# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994).
+# The per-(PR, gate) FAIL-bound-to-head resolution delegates to `pipeline-cli verdict read`: the
+# ADR-0055 write+ author-gate, the latest-wins pick, and the ADR-0058 SHA-staleness test folded into
+# one exit code (its unit tests are the contract, #2102) — the same resolution ship-it Step 2 reads.
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
+else
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
+fi
+
+# The write+ author-set (ADR 0055) — `verdict read` computes it internally for the marker resolution,
+# but two DOWNSTREAM steps that are genuinely more than a single (PR, gate) resolution reuse it: the
+# inline-review-comment gate (Step R2) and the repair-mode N=3 FAIL-round count. Build it once here.
 comments_file=$(mktemp)
 gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
-# every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
-# per gh-issue-intake-formats.md §5 — the canonical matcher contract
 markerAuthors=$(jq -r '[.[]
     | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
     | .user.login] | unique | .[]' "$comments_file")
@@ -1723,65 +1728,36 @@ while IFS= read -r a; do
   esac
 done <<<"$markerAuthors"
 
-# the PR's CURRENT head SHA — the head every verdict must be bound to (ADR 0058)
+# a namespace is a repairable FAIL iff its latest authorized verdict is FAIL bound to the current head
+# — exit 0 from `verdict read … --expect FAIL`. The verb's JSON (stdout) carries the resolving comment
+# id, which Step R2 uses to read the FAIL body. A stale / SHA-less / PASS / none verdict exits non-zero,
+# so it is correctly NOT repaired (idempotent no-op), needing no separate staleness test here.
+CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code  --expect FAIL 2>/dev/null)"  && CODE_FAIL=1  || CODE_FAIL=0
+DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc   --expect FAIL 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
+SKILL_FAIL_JSON="$($VERDICT read --pr "$PR" --gate skill --expect FAIL 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
+
+# the native CHANGES_REQUESTED review folds into the code namespace (the verb reads only marker
+# comments): GitHub author-attributes reviews, so this path needs no ACL gate — commit_id IS its bound
+# SHA, and a decisive review that is CHANGES_REQUESTED and prefix-matches the current head is a code FAIL too.
 CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
-
-# latest review-code marker (code namespace) — author-gated, anchored, never matches review-doc.
-# Capture the bound head SHA from the @ <sha> tail (sha=null for a pre-0058 SHA-less marker).
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last
-    | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
-
-# latest decisive native review (APPROVED / CHANGES_REQUESTED) — folds into the code namespace
-# (no ACL gate: GitHub author-attributes reviews, so this path is unforgeable). commit_id IS its bound SHA.
-gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
+REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}'
-
-# latest review-doc marker (doc namespace) — author-gated, anchored, never matches review-code/review-skill
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last
-    | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
-
-# latest review-skill marker (skill namespace) — author-gated, anchored, never matches review-code/review-doc
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last
-    | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
+        | sort_by(.submitted_at) | last | {state, sha: .commit_id}')
+RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
+[ -n "$RSHA" ] && [ "$RSTATE" = "CHANGES_REQUESTED" ] && case "$CURRENT_HEAD" in "$RSHA"*) CODE_FAIL=1 ;; esac
 ```
 
-Resolve per namespace, latest-wins by timestamp, **then apply the SHA-staleness test** (ADR
-[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), mirroring `ship-it` Step 2b):
-
-- **review-code namespace** — the verdict is the **newest of {latest decisive review,
-  latest review-code marker}**; its bound SHA is the marker's `@ <sha>` (or the review's
-  `commit_id`). `CHANGES_REQUESTED` or `review-code: FAIL` is FAIL; `APPROVED` or
-  `review-code: PASS` is PASS.
-- **review-doc namespace** — the verdict is the **latest `review-doc` marker** by
-  `created_at` (review-doc is comment-only — no native review). `review-doc: FAIL` is FAIL.
-- **review-skill namespace** — the verdict is the **latest `review-skill` marker** by
-  `created_at` (review-skill is comment-only — no native review). `review-skill: FAIL` is FAIL.
-  A `review-skill: advisory` line (a blocking-set skill PR) carries no `@ <sha>` and is **not**
-  a FAIL — it judges nothing to repair, so it's a clean no-op like a PASS.
-
-**Act only when a namespace's latest verdict is FAIL *bound to the current head*.** A newer
-FAIL is acted on even if an older PASS exists — but a FAIL whose `@ <sha>` is **not** the PR's
-current head (`$CURRENT_HEAD`, by prefix-match either way), or that carries **no** `@ <sha>`
-(a pre-0058 legacy marker), is **stale**: it judges code that has since changed, so do **not**
-repair on it — report `nothing to repair (latest FAIL not bound to current head)` and stop.
-A PR whose latest current-head verdict is PASS — or that has no current-head FAIL at all — is
-**not repaired**. This keeps repair mode **idempotent**: re-running it on an already-fixed/PASS
-PR, a no-FAIL PR, or a stale-FAIL PR is a clean no-op. If **more than one** namespace's latest
-current-head verdict is FAIL (a mixed PR — e.g. code+doc, or skill+code), address **all** of
-them in this round.
+**Act only when a namespace's latest verdict is FAIL *bound to the current head*** — i.e. `CODE_FAIL=1`
+(a current-head `review-code: FAIL` marker per `verdict read`, or a current-head `CHANGES_REQUESTED`
+review), `DOC_FAIL=1`, or `SKILL_FAIL=1`. `verdict read` already encapsulates latest-wins **and** the
+SHA-staleness refusal: a newer FAIL is acted on even if an older PASS exists, but a FAIL whose `@ <sha>`
+is not the current head (or carries no `@ <sha>` — a pre-0058 legacy marker) resolves `stale`/`sha-less`,
+exits non-zero, and is **not** repaired — report `nothing to repair (latest FAIL not bound to current
+head)` and stop. A `review-skill: advisory` line (a blocking-set skill PR) is not a FAIL — `verdict read`
+resolves it `none` (no PASS/FAIL polarity), a clean no-op like a PASS. This keeps repair mode
+**idempotent**: re-running it on an already-fixed/PASS PR, a no-FAIL PR, or a stale-FAIL PR is a clean
+no-op. If **more than one** namespace resolves FAIL (a mixed PR — e.g. code+doc, or skill+code), address
+**all** of them in this round.
 
 R1 resolves the **AC gate** — the marker (and the decisive native review folded into the
 code namespace) is what decides whether there's anything to repair, and its `[FAIL]` table
@@ -1800,13 +1776,14 @@ enumerated findings as the AC work list** — fix exactly what they name (the in
 below are additive to this list, not a substitute for it):
 
 ```bash
-# the full body of the latest FAILing review-code marker (swap review-code→review-doc/review-skill per namespace)
-# author-gated against the ACL-derived $authorized set R1 already built — only a real reviewer's findings are your work list
-# marker test stays emphasis-tolerant (leading \** absorbs review-code's bolding) per gh-issue-intake-formats.md §5
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-code:\\s*FAIL"; "i"))]
-    | sort_by(.created_at) | last | .body' "$comments_file"
+# the full body of the resolving FAIL marker — its comment id came from R1's `verdict read` JSON
+# (swap CODE_FAIL_JSON→DOC_FAIL_JSON/SKILL_FAIL_JSON per namespace). `verdict read` already
+# author-gated and latest-wins-resolved that exact comment, so this is a plain body fetch of it —
+# no re-derivation of the resolver. (When the code namespace was resolved via a native
+# CHANGES_REQUESTED review rather than a marker, read the review body from
+# `repos/$REPO/pulls/$PR/reviews` instead — a native review carries no issue-comment id.)
+CID=$(jq -r '.commentId // empty' <<<"$CODE_FAIL_JSON")
+[ -n "$CID" ] && gh api "repos/$REPO/issues/comments/$CID" --jq '.body'
 ```
 
 #### A review-appended AC is an ordinary `[FAIL]` row — no special parser (ADR 0079)

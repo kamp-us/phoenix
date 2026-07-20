@@ -188,11 +188,13 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
  *
  * `drive-issue.js` is the sole legitimate mirror: the orchestrator is a runtime
  * `.js` surface that cannot import the TS verb core, so it must inline what a
- * skill would cite. `heal-ci` and `write-code` are the two current `verdict read`
- * re-derivers named in #3254 — their conversion is a non-drop-in rewrite (both scans
- * do more than a single (PR, gate) resolution: write-code also counts FAIL rounds for
- * the N=3 repair cap), so #3265 deferred it to its own reviewable PR, tracked by #3619;
- * they stay grandfathered here until that migration lands and draws them down.
+ * skill would cite. The `heal-ci` / `write-code` `verdict read` grandfathers named
+ * in #3254 are gone: #3686 migrated ship-it / write-code / heal-ci to cite
+ * `pipeline-cli verdict read` same-commit (each scan keeps only the residue that is
+ * genuinely more than a single (PR, gate) resolution — write-code's N=3 FAIL-round
+ * count, the multi-PR pre-pick scan, ship-it's native-review fold + §CP advisory),
+ * drawing the `verdict read` grandfather pile to zero. The lint now forbids re-growing
+ * it. The mirror is the only surviving exemption.
  */
 export const EXEMPTIONS: ReadonlyArray<Exemption> = [
 	{
@@ -200,19 +202,5 @@ export const EXEMPTIONS: ReadonlyArray<Exemption> = [
 		path: ".claude/workflows/drive-issue.js",
 		reason:
 			"the orchestrator is a runtime .js surface that cannot import the TS verb core — it mirrors by necessity (#3254; the sole legitimate mirror)",
-	},
-	{
-		kind: "grandfathered",
-		path: "skills/heal-ci/SKILL.md",
-		verb: "verdict read",
-		reason:
-			"existing `verdict read` re-derivation — migrate to `pipeline-cli verdict read` (deferred by #3265 to its own PR, #3619)",
-	},
-	{
-		kind: "grandfathered",
-		path: "skills/write-code/SKILL.md",
-		verb: "verdict read",
-		reason:
-			"existing `verdict read` re-derivation — migrate to `pipeline-cli verdict read` (deferred by #3265 to its own PR, #3619)",
 	},
 ];
