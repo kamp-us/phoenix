@@ -39,8 +39,6 @@ import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
-import {PHOENIX_OPTIMISTIC_EDITS} from "../flags/keys";
-import {useFlag} from "../flags/useFlag";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
@@ -229,9 +227,6 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	const navigate = useNavigate();
 	const location = useLocation();
 	const report = useReportHandler();
-	// Dark-ship gate (#1675): with the flag off the edit passes no optimistic
-	// payload and waits for the round-trip, exactly as before.
-	const {value: optimisticEdits} = useFlag(PHOENIX_OPTIMISTIC_EDITS, false);
 
 	const [editing, setEditing] = React.useState(false);
 	const [editTitle, setEditTitle] = React.useState("");
@@ -279,12 +274,11 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 			setEditError(validationError);
 			return;
 		}
-		const optimistic = postEditOptimistic(optimisticEdits, {title: trimmedTitle, body: editBody});
 		await runEdit(
 			() =>
 				fate.mutations.post.edit({
 					input: {id: data.id, title: trimmedTitle, body: editBody},
-					...(optimistic ? {optimistic} : {}),
+					optimistic: postEditOptimistic({title: trimmedTitle, body: editBody}),
 					view: PanoPostHeaderView,
 				}),
 			"başlık güncellenemedi",
@@ -941,8 +935,8 @@ function CommentComposer({
 /**
  * Inline comment edit composer — fate. `comment.edit` writes the new body back
  * through `CommentTreeNodeView` (the view the node reads), so it re-renders in
- * place; behind the `phoenix-optimistic-edits` flag it also passes an optimistic
- * `{body, updatedAt}` so the edit renders before the round-trip (#1675).
+ * place; it also passes an optimistic `{body, updatedAt}` so the edit renders
+ * before the round-trip (#1675).
  */
 function CommentEditComposer({
 	commentId,
@@ -959,21 +953,17 @@ function CommentEditComposer({
 }) {
 	const fate = useFateClient();
 	const localId = commentId;
-	// Dark-ship gate (#1675): flag off ⇒ no optimistic payload (round-trip wait).
-	const {value: optimisticEdits} = useFlag(PHOENIX_OPTIMISTIC_EDITS, false);
 
 	const {body, setBody, error, inFlight, submit} = useDraft({
 		initialBody,
 		validate: validateCommentBody,
 		redirectPath: currentLocationPath,
-		run: (value) => {
-			const optimistic = bodyEditOptimistic(optimisticEdits, value);
-			return fate.mutations.comment.edit({
+		run: (value) =>
+			fate.mutations.comment.edit({
 				input: {id: commentId, body: value},
-				...(optimistic ? {optimistic} : {}),
+				optimistic: bodyEditOptimistic(value),
 				view: CommentTreeNodeView,
-			});
-		},
+			}),
 		overrides: COMMENT_OVERRIDES,
 		failureFallback: "yorum güncellenemedi",
 		onSuccess: onEdited,
