@@ -84,7 +84,7 @@ describe("crew/session — forked-stdio live-wake round-trip (session.ts:34 seam
 							messageId: "m-stdio-1",
 							from: "inbox://engineering-manager/1",
 							kind: "IntakePing",
-							body: {issue: "3489", from: "engineering-manager", at: new Date().toISOString()},
+							body: {issue: 3489, from: "engineering-manager", at: new Date().toISOString()},
 							at: new Date().toISOString(),
 						})
 						.pipe(Effect.timeout("6 seconds"));

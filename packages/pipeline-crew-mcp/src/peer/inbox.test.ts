@@ -13,7 +13,7 @@ const envelope = (over?: Partial<InboxEnvelope>): InboxEnvelope => ({
 	messageId: "msg-1",
 	from: "peer-a",
 	kind: "IntakePing",
-	body: {issue: "3056"},
+	body: {issue: 3056},
 	at: "2026-07-16T10:00:00Z",
 	...over,
 });

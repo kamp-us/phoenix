@@ -21,6 +21,30 @@ export const MessageId = Schema.NonEmptyString;
 /** An ISO-8601 UTC instant, kept as a string so the wire format stays transport-agnostic + JSON-safe. */
 export const Timestamp = Schema.String;
 
+/**
+ * A GitHub issue number — a positive integer, branded so it can't be confused with a bare count
+ * or an unrelated string. Modelled as a NUMBER, not a string: a number modelled as a bare string
+ * is a discoverability footgun — the natural payload `{"issue": 3621}` was rejected `Expected
+ * string, got 3621` with nothing surfacing the shape ahead of the send (#3622). `PrNumber` is the
+ * sibling for a pull-request number; both are positive-int-branded so an issue number and a PR
+ * number are nominally distinct (the union that carries them still keys pr-vs-issue, but the values
+ * no longer interchange).
+ */
+export const IssueNumber = Schema.Int.check(
+	Schema.isGreaterThanOrEqualTo(1, {
+		title: "IssueNumber",
+		description: "a GitHub issue number (a positive integer)",
+	}),
+).pipe(Schema.brand("IssueNumber"));
+
+/** A GitHub pull-request number — a positive integer, branded distinctly from an issue number (see `IssueNumber`, #3622). */
+export const PrNumber = Schema.Int.check(
+	Schema.isGreaterThanOrEqualTo(1, {
+		title: "PrNumber",
+		description: "a GitHub pull-request number (a positive integer)",
+	}),
+).pipe(Schema.brand("PrNumber"));
+
 // Kind 1 — synchronous claim / collision-check (request → typed reply).
 
 /** A sender's request to claim a resource; answered by a `ClaimReply` (not fire-and-forget). */
@@ -65,7 +89,7 @@ export const DrainProgressTally = Schema.Struct({
 // Kind 3 — intake ping.
 
 export const IntakePing = Schema.Struct({
-	issue: Schema.NonEmptyString,
+	issue: IssueNumber,
 	from: RoleId,
 	note: Schema.optionalKey(Schema.String),
 	at: Timestamp,
@@ -78,8 +102,8 @@ export const IntakePing = Schema.Struct({
  * shape modelled as a union so an ill-formed nudge that names both, or neither, is unrepresentable.
  */
 export const NudgeTarget = Schema.Union([
-	Schema.Struct({pr: Schema.NonEmptyString}),
-	Schema.Struct({issue: Schema.NonEmptyString}),
+	Schema.Struct({pr: PrNumber}),
+	Schema.Struct({issue: IssueNumber}),
 ]);
 
 /**

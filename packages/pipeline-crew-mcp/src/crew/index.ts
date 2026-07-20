@@ -21,6 +21,14 @@ export {
 	inboxSocketPathFor,
 	makeCrewChannel,
 } from "./channel-server.ts";
+export {
+	type ChannelContract,
+	type RoleContract,
+	resolveChannelContract,
+	roleContract,
+	roleContracts,
+	type SeamContract,
+} from "./contract.ts";
 export {RoleUniquenessError} from "./errors.ts";
 export {
 	type CardinalityOf,

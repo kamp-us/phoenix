@@ -79,7 +79,7 @@ describe("peer/peer — direct peer-to-peer send", () => {
 					const tracker = yield* Tracker;
 					yield* tracker.announce({role: "reviewer", peer: "peer-b", address: "addr-b"});
 					const a = yield* Peer.make({self: "peer-a", role: "builder", address: "addr-a"});
-					const ack = yield* a.send("reviewer", "IntakePing", {issue: "3056"});
+					const ack = yield* a.send("reviewer", "IntakePing", {issue: 3056});
 					// acked BY peer-b's inbox ⇒ it went straight to B, not through the tracker.
 					assert.strictEqual(ack.by, "peer-b");
 				}).pipe(

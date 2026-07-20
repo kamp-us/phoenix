@@ -99,7 +99,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 				arguments: {
 					targetRole: "reviewer",
 					kind: "IntakePing",
-					body: {issue: "3057", from: "intake", at: "2026-07-16T10:00:00Z"},
+					body: {issue: 3057, from: "intake", at: "2026-07-16T10:00:00Z"},
 				},
 			});
 			assert.isFalse(result.isError);
@@ -117,7 +117,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 				arguments: {
 					targetRole: "ghost",
 					kind: "IntakePing",
-					body: {issue: "3057", from: "intake", at: "2026-07-16T10:00:00Z"},
+					body: {issue: 3057, from: "intake", at: "2026-07-16T10:00:00Z"},
 				},
 			});
 			assert.isTrue(result.isError);
@@ -140,7 +140,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 						targetRole: "ghost",
 						kind: "EngineNudge",
 						body: {
-							target: {pr: "pr:3649"},
+							target: {pr: 3649},
 							from: "chief-of-staff",
 							at: "2026-07-19T10:00:00Z",
 						},
@@ -163,7 +163,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 						targetRole: "reviewer",
 						kind: "EngineNudge",
 						body: {
-							target: {issue: "issue:3100"},
+							target: {issue: 3100},
 							from: "chief-of-staff",
 							note: "worth a pass",
 							at: "2026-07-19T10:00:00Z",
@@ -185,7 +185,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 			const result = yield* client["tools/call"]({
 				name: "channel_send",
 				// a typo'd kind (`IntakePng`) that the catalog does not carry
-				arguments: {targetRole: "reviewer", kind: "IntakePng", body: {issue: "3057"}},
+				arguments: {targetRole: "reviewer", kind: "IntakePng", body: {issue: 3057}},
 			});
 			assert.isTrue(result.isError);
 		}),
@@ -197,7 +197,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 			const result = yield* client["tools/call"]({
 				name: "channel_send",
 				// a known kind, but the body is missing IntakePing's required `from`/`at`
-				arguments: {targetRole: "reviewer", kind: "IntakePing", body: {issue: "3057"}},
+				arguments: {targetRole: "reviewer", kind: "IntakePing", body: {issue: 3057}},
 			});
 			assert.isTrue(result.isError);
 		}),
@@ -217,7 +217,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 						targetRole: "reviewer",
 						kind: "IntakePing",
 						// the body as the MCP client sends it for an unconstrained param: a JSON string
-						body: JSON.stringify({issue: "3057", from: "intake", at: "2026-07-16T10:00:00Z"}),
+						body: JSON.stringify({issue: 3057, from: "intake", at: "2026-07-16T10:00:00Z"}),
 					},
 				});
 				assert.isFalse(result.isError);
@@ -236,7 +236,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 			const result = yield* client["tools/call"]({
 				name: "channel_send",
 				// missing IntakePing's required `from`/`at`, and not a JSON string either
-				arguments: {targetRole: "reviewer", kind: "IntakePing", body: {issue: "3057"}},
+				arguments: {targetRole: "reviewer", kind: "IntakePing", body: {issue: 3057}},
 			});
 			assert.isTrue(result.isError);
 			const rendered = (result.content as ReadonlyArray<{text?: string}>)

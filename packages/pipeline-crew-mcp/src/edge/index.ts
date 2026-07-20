@@ -20,6 +20,13 @@ export {
 	claimToolHandlers,
 } from "./claim-tool.ts";
 export {
+	ChannelContractView,
+	ChannelDescribe,
+	DescribeChannelKinds,
+	KindsToolkit,
+	kindsToolHandlers,
+} from "./kinds-tool.ts";
+export {
 	CHANNEL_CAPABILITY,
 	CHANNEL_NOTIFICATION_METHOD,
 	type ChannelNotificationPayload,

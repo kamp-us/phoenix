@@ -78,7 +78,7 @@ describe("crew/channel-server — REAL unix-socket inbox transport", () => {
 						messageId: "m-roundtrip-1",
 						from: "inbox://engineering-manager/1",
 						kind: "IntakePing",
-						body: {issue: "3489", from: "engineering-manager", at: new Date().toISOString()},
+						body: {issue: 3489, from: "engineering-manager", at: new Date().toISOString()},
 						at: new Date().toISOString(),
 					};
 					const dialer = yield* Dialer;
