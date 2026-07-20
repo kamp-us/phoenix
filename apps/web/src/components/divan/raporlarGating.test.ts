@@ -1,37 +1,18 @@
 /**
  * The raporlar (moderation-queue) gating contract (#1701) — the pure render
- * decisions asserted without a DOM, per the `divanGating.test.ts` precedent.
- * The AC the surface lives or dies on: flag-off ⇒ no entry (page as today);
- * non-moderator ⇒ no entry even with the flag on; the entry keys on the trusted
- * `isModerator` signal, never `tier`.
+ * decisions asserted without a DOM, per the `divanGating.test.ts` precedent. The
+ * moderator-only entry keys on the trusted `isModerator` signal, never `tier`
+ * (asserted at the DivanPage call site, since the visibility check is now a plain
+ * `isModerator` read).
  */
 import {describe, expect, it} from "vitest";
 import {
 	reasonLabel,
 	reportAgeLabel,
-	shouldShowRaporlar,
 	targetAuthorLabel,
 	targetExcerptLabel,
 	targetHref,
 } from "./raporlarGating";
-
-describe("shouldShowRaporlar — the moderator-only, flag-gated entry", () => {
-	it("shows the entry when the flag is on AND the viewer is a moderator", () => {
-		expect(shouldShowRaporlar(true, true)).toBe(true);
-	});
-
-	it("hides the entry when the flag is off, even for a moderator (dark ship)", () => {
-		expect(shouldShowRaporlar(false, true)).toBe(false);
-	});
-
-	it("hides the entry for a non-moderator even with the flag on (a yazar with divan access included)", () => {
-		expect(shouldShowRaporlar(true, false)).toBe(false);
-	});
-
-	it("hides the entry when both are false", () => {
-		expect(shouldShowRaporlar(false, false)).toBe(false);
-	});
-});
 
 describe("reportAgeLabel — the first-reported age, lowercase Turkish", () => {
 	const now = Date.parse("2026-07-02T12:00:00Z");

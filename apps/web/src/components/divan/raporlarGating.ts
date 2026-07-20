@@ -1,26 +1,14 @@
 /**
  * The raporlar (moderation-queue) surface's render decisions (#1701), factored
  * DOM-free in the `divanGating.ts` idiom so each gate is unit-testable without a
- * React runtime. The queue is a moderator-only view inside `/divan`, shipped dark
- * behind the `phoenix-mod-queue` flag.
- *
- * Visibility keys on the trusted server-side `isModerator` signal (`useMe`,
- * #1320) — never on `tier`, so a dual-role yazar+moderator still sees the entry.
- * The client gate is a courtesy only: the `report.listOpen` read stays
- * `Moderate`-gated server-side, so a forced read by a non-moderator denies the
- * invisible `UNAUTHORIZED` (rendered as the divan's "yetkin yok" state).
+ * React runtime. The queue is a moderator-only view inside `/divan`: visibility
+ * keys on the trusted server-side `isModerator` signal (`useMe`, #1320) — never on
+ * `tier`, so a dual-role yazar+moderator still sees the entry. The client gate is a
+ * courtesy only: the `report.listOpen` read stays `Moderate`-gated server-side, so a
+ * forced read by a non-moderator denies the invisible `UNAUTHORIZED` (rendered as the
+ * divan's "yetkin yok" state).
  */
 import type {TargetKind} from "../../../worker/db/target-kind";
-
-/**
- * Show the raporlar entry iff the mod-queue flag is on AND the viewer carries the
- * trusted `isModerator` signal. Flag failure modes (loading/error/undeclared)
- * resolve to `false` upstream; a not-yet-loaded `me` reads as not-moderator —
- * both hide the entry, leaking nothing about the queue's existence.
- */
-export function shouldShowRaporlar(flagOn: boolean, isModerator: boolean): boolean {
-	return flagOn && isModerator;
-}
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;

@@ -15,8 +15,8 @@
  * backlog) — never the inline `{mod, author}` filter — so çaylak work stays
  * one-way glass, visible only inside the divan.
  *
- * The moderator-only raporlar section (#1701) sits inside this workspace behind
- * its own `phoenix-mod-queue` flag — see `raporlarGating.ts` / `Raporlar.tsx`.
+ * The moderator-only raporlar section (#1701) sits inside this workspace, shown
+ * only for the trusted server-side `isModerator` signal — see `Raporlar.tsx`.
  */
 import {useEffect, useState} from "react";
 import {useMe} from "../auth/useMe";
@@ -26,11 +26,10 @@ import {DivanRoster} from "../components/divan/DivanRoster";
 import {useSetDivanSubnavContent} from "../components/divan/DivanSubnavLayout";
 import {shouldRenderDivanPage} from "../components/divan/divanGating";
 import {Raporlar} from "../components/divan/Raporlar";
-import {shouldShowRaporlar} from "../components/divan/raporlarGating";
 import {TriageLoop} from "../components/divan/TriageLoop";
 import type {SubnavFilter} from "../components/layout/Subnav";
 import {Screen} from "../fate/Screen";
-import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_MOD_QUEUE, PHOENIX_NAV_IA} from "../flags/keys";
+import {PHOENIX_AUTHORSHIP_LOOP, PHOENIX_NAV_IA} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {NotFoundPage} from "./NotFoundPage";
 import "../components/divan/Divan.css";
@@ -64,13 +63,11 @@ export function DivanPage() {
 function DivanWorkspace() {
 	const {me} = useMe();
 	const [selectedId, setSelectedId] = useState<string | null>(null);
-	// The raporlar (moderation-queue) entry, dark behind its own phoenix-mod-queue
-	// key (#1701): rendered only for the trusted server-side isModerator signal —
-	// never tier — with the flag off (or a non-mod viewer) /divan is exactly today's
-	// çaylak workspace. The server stays authoritative: report.listOpen denies a
-	// forced non-mod read the invisible UNAUTHORIZED, caught by <Screen> below.
-	const {value: modQueueOn} = useFlag(PHOENIX_MOD_QUEUE, false);
-	const raporlarVisible = shouldShowRaporlar(modQueueOn, me?.isModerator ?? false);
+	// The raporlar (moderation-queue) entry (#1701): rendered only for the trusted
+	// server-side isModerator signal — never tier — so for a non-mod viewer /divan is
+	// exactly the çaylak workspace. The server stays authoritative: report.listOpen
+	// denies a forced non-mod read the invisible UNAUTHORIZED, caught by <Screen> below.
+	const raporlarVisible = me?.isModerator ?? false;
 	const [section, setSection] = useState<"caylaklar" | "raporlar">("caylaklar");
 	const showRaporlarPane = raporlarVisible && section === "raporlar";
 	// The triage loop is the product; the grid is its Esc fallback (#1703, ADR 0138).

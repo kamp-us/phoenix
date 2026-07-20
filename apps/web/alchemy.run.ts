@@ -54,7 +54,6 @@ import {
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
 	memberMuteFlag,
-	modQueueFlag,
 	navIaFlag,
 	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
@@ -115,9 +114,6 @@ export default Alchemy.Stack(
 		// #1637) — gates the nested-connection edge-drop (ADR 0125 D1) until a human
 		// release.
 		yield* optimisticDefinitionDeleteFlag(flagship.appId);
-		// The moderation-queue raporlar surface dark-ship flag, default-off (#1701) —
-		// the moderator-only queue view inside /divan gates behind this key.
-		yield* modQueueFlag(flagship.appId);
 		// The reactions (emoji tepki) dark-ship flag, default-off (#1863, epic #1840) —
 		// the single seam the whole reaction feature gates behind until a human release.
 		yield* reactionsFlag(flagship.appId);

@@ -152,7 +152,7 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	const focusedData = useView(OpenReportLoopView, focused?.node ?? null);
 	// remove-the-wave (#1855): `Shift-X` opens the same-author batch manifest over the
 	// SAME queue read; the manifest owns the keyboard while open (the loop's own handler
-	// yields to it). Dark behind `phoenix-mod-queue` with the rest of `/divan`.
+	// yields to it).
 	const [waveOpen, setWaveOpen] = useState(false);
 
 	const resolve = useCallback(

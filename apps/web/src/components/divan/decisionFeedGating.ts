@@ -1,9 +1,9 @@
 /**
  * The decision-feed's render decisions (#1704, the two-person team-ledger), factored
  * DOM-free in the `raporlarGating.ts` idiom so each gate is unit-testable without a
- * React runtime. The feed is a moderator-only view inside `/divan`, dark behind the
- * same `phoenix-mod-queue` flag as the queue (`report.listResolved` is `Moderate`-gated
- * server-side, so a forced non-mod read denies the invisible `UNAUTHORIZED`).
+ * React runtime. The feed is a moderator-only view inside `/divan`, alongside the
+ * queue (`report.listResolved` is `Moderate`-gated server-side, so a forced non-mod
+ * read denies the invisible `UNAUTHORIZED`).
  *
  * The feed makes moderation legible BETWEEN two humans: who decided what, when — so the
  * decision and the resolver are first-class copy, never a footnote. A `removed` decision

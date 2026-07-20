@@ -25,7 +25,6 @@ import {
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
 	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_KARMA_GATES,
-	PHOENIX_MOD_QUEUE,
 	PHOENIX_NAV_IA,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
@@ -103,7 +102,6 @@ export {
 	PHOENIX_BILDIRIM,
 	PHOENIX_FUNNEL_READOUT,
 	PHOENIX_KARMA_GATES,
-	PHOENIX_MOD_QUEUE,
 	PHOENIX_OPTIMISTIC_DEFINITION_ADD,
 	PHOENIX_OPTIMISTIC_EDITS,
 };
@@ -346,39 +344,6 @@ export const funnelReadoutFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_funnel_readout", {appId, ...FUNNEL_READOUT_FLAG});
 
 /**
- * The moderation-queue surface dark-ship flag config (#1701) — the moderator-only
- * raporlar view inside `/divan` gates behind this key. Default-OFF so the surface
- * reaches production dark; flipping it on is the human release act (ADR 0083).
- * Its own key (not `phoenix-authorship-loop`) so the moderation queue has an
- * independent lifecycle, mirroring `FUNNEL_READOUT_FLAG`.
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_DRAFT_SAVE_FLAG`, #746).
- *
- * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
- * asks for):
- *   - owner:           report (the moderation queue, ADR 0098)
- *   - originating:     #1701 (the divan raporlar surface)
- *   - removal trigger: once the moderation queue graduates to on at 100% and
- *                      stable for one release, retire the flag and inline the surface.
- */
-export const MOD_QUEUE_FLAG = {
-	key: PHOENIX_MOD_QUEUE,
-	description:
-		"moderation-queue raporlar surface dark-ship (#1701). owner: report. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const modQueueFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("phoenix_mod_queue", {appId, ...MOD_QUEUE_FLAG});
-
-/**
  * The optimistic in-place content-edit dark-ship flag config (#1675, epic #1637).
  * The three Class-A content edits (`post.edit`/`comment.edit`/`definition.edit`)
  * pass an `optimistic` payload only behind this key. Default-OFF so the edits
@@ -603,7 +568,7 @@ export const karmaGatesFlag = (appId: Input<string>) =>
  * the human release act (ADR 0083).
  *
  * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors `MOD_QUEUE_FLAG`).
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors `FUNNEL_READOUT_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           pasaport (the identity + session-boundary surface)
