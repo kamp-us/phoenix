@@ -1,7 +1,7 @@
 /**
  * The pure cores of the optimistic `definition.add` slice (#1679, epic #1637, ADR
  * 0125), tested without fate/React — the pure-core idiom of `panoSubmitArgs.unit`.
- * Covers the dark-ship flag gate + the temp-node's server-mirroring shape
+ * Covers the branch predicate + the temp-node's server-mirroring shape
  * ({@link buildOptimisticDefinition}) and the nested-list edge injection + rollback
  * ({@link appendOptimisticDefinitionEdge}) against a fake store.
  */
@@ -17,15 +17,15 @@ import {
 const NOW = new Date("2026-07-02T00:00:00.000Z");
 const now = () => NOW;
 
-describe("buildOptimisticDefinition — flag-gated optimistic nested node", () => {
-	it("flag off ⇒ undefined (no optimistic payload, wait for the round-trip)", () => {
+describe("buildOptimisticDefinition — the optimistic nested node", () => {
+	it("disabled ⇒ undefined (the fresh-slug branch, which refetches + remounts instead)", () => {
 		assert.strictEqual(
 			buildOptimisticDefinition(false, {body: "b", author: "umut", authorId: "u1"}, now),
 			undefined,
 		);
 	});
 
-	it("flag on ⇒ a temp-id node fate reconciles to the server id", () => {
+	it("enabled ⇒ a temp-id node fate reconciles to the server id", () => {
 		const o = buildOptimisticDefinition(
 			true,
 			{body: "bir tanım", author: "umut", authorId: "u1"},

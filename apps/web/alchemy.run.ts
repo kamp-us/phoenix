@@ -53,7 +53,6 @@ import {
 	mecmuaWriteFlag,
 	memberMuteFlag,
 	navIaFlag,
-	optimisticDefinitionAddFlag,
 	optimisticDefinitionDeleteFlag,
 	panoDraftSaveFlag,
 	panoStampWaveFlag,
@@ -86,9 +85,6 @@ export default Alchemy.Stack(
 		// The mecmua write-path dark-ship flag, default-off (#2497, epic #2467) — the
 		// single seam mecmua.publish + mecmua.saveDraft gate behind until a human release.
 		yield* mecmuaWriteFlag(flagship.appId);
-		// The optimistic definition.add dark-ship flag, default-off (#1679, epic #1637)
-		// — gates the nested-connection client-append (ADR 0125) until a human release.
-		yield* optimisticDefinitionAddFlag(flagship.appId);
 		// The bildirim (notification system) dark-ship flag, default-off (#1694, epic
 		// #1666) — the single seam the whole notification surface gates behind.
 		yield* bildirimFlag(flagship.appId);

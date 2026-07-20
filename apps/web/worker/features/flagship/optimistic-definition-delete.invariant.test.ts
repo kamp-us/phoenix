@@ -3,7 +3,7 @@
  * flag (#1681, epic #1637, ADR 0125 D1). Inspected off the exported
  * `OPTIMISTIC_DEFINITION_DELETE_FLAG` record (the same object the factory spreads into
  * `FlagshipFlag`), so no alchemy resource is constructed — mirrors
- * `optimistic-definition-add.invariant.test.ts` (#1679).
+ * `member-mute.invariant.test.ts` (#3112).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_OPTIMISTIC_DEFINITION_DELETE} from "../../../src/flags/keys.ts";
