@@ -5,7 +5,7 @@ import {Link, NavLink, useNavigate} from "react-router";
 import {isSearchShortcut} from "../../lib/searchShortcut";
 import type {ThemeChoice} from "../../lib/theme";
 import {BildirimPopover} from "../bildirim/BildirimPopover";
-import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
+import {showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
 import {Avatar} from "../ui/Avatar";
@@ -26,11 +26,9 @@ export function Topbar({
 	actions,
 	searchQuery = "",
 	onSearchSubmit,
-	onToggleTheme,
 	themeChoice,
 	onThemeChange,
 	onLogout,
-	navIa = false,
 	reserveSignedInSlots = false,
 }: {
 	brandName?: string;
@@ -54,8 +52,7 @@ export function Topbar({
 	 * The bildirim entry (#1694). Rendered only when set — the Layout passes it
 	 * solely when the `phoenix-bildirim` flag is on AND the viewer is signed in,
 	 * so with the flag off (the dark default) the topbar is exactly as before.
-	 * The unread signal renders only when `unread > 0`: the bare chip on the
-	 * user-menu trigger with nav-IA off, the status-zone bell with it on (#2613).
+	 * The unread signal renders only when `unread > 0`, as the status-zone bell (#2613).
 	 */
 	bildirim?: {to: string; unread: number};
 	actions?: React.ReactNode;
@@ -68,33 +65,14 @@ export function Topbar({
 	searchQuery?: string;
 	onSearchSubmit?: (query: string) => void;
 	/**
-	 * The legacy light↔dark tema toggle (#2612). Wired by the Layout only when the
-	 * nav-IA flag is OFF — on, the three-way theme picker (below) is the sole control,
-	 * so no `tema` button renders and this stays unwired. Kept so the flag-off topbar
-	 * behaves exactly as today.
-	 */
-	onToggleTheme?: () => void;
-	/**
 	 * The current theme selection + its setter, driving the three-way theme picker
-	 * (light/dark/auto) that replaces the tema toggle under nav-IA (#2612). The picker
-	 * renders only when the flag is on: in the user menu for a signed-in visitor, and in
-	 * the utility zone for a signed-out one — so every visitor keeps one theme control.
+	 * (light/dark/auto) — the sole theme control (#2612). The picker renders in the user
+	 * menu for a signed-in visitor and in the utility zone for a signed-out one, so every
+	 * visitor keeps exactly one theme control.
 	 */
 	themeChoice?: ThemeChoice;
 	onThemeChange?: (choice: ThemeChoice) => void;
 	onLogout?: () => void;
-	/**
-	 * The nav-IA restructure seam (#2611, epic #2595) — the shared default-off
-	 * `phoenix-nav-ia` flag #2600 rides. Off (the default) ⇒ the topbar renders its
-	 * pre-restructure shape, byte-identical to today. On ⇒ every surviving element is
-	 * classed by the #2586 taxonomy (destination / utility / status-signal /
-	 * primary-action) and rendered inside its one lawful zone (the #2587 Model-2 zone
-	 * grammar). The two states are total — the flag either fully reclasses or leaves the
-	 * topbar untouched, never a half-migrated mix. This child establishes the zones +
-	 * classes + flag substrate the tema/status/accent-scarcity children (#2612–#2614)
-	 * build on; it does no status-affordance rework of its own.
-	 */
-	navIa?: boolean;
 	/**
 	 * Reserve the signed-in account cluster's geometry at first paint (#2933, ADR 0179 §1).
 	 * Driven by `__BOOT__.user != null` (`readBootUser`, ADR 0185) in the shell frame: when the
@@ -125,9 +103,8 @@ export function Topbar({
 	const before = dotAt >= 0 ? brandName.slice(0, dotAt) : brandName;
 	const after = dotAt >= 0 ? brandName.slice(dotAt + 1) : "";
 
-	// The topbar's leaf elements, built once and arranged by the flag branch below. The
-	// off/on renders share these exact nodes, so `navIa` decides only *which zone* each
-	// sits in — never a second, drifting copy of the search form or user menu.
+	// The topbar's leaf elements, built once and placed into their zones below — one node
+	// each, never a second drifting copy of the search form or user menu.
 	const brand = (
 		<Link className="kp-topbar__brand" to={brandTo}>
 			{before}
@@ -142,20 +119,20 @@ export function Topbar({
 		</NavLink>
 	));
 	// Under the zone grammar divan is a status/signal glyph (#2613): a gated signal, not a
-	// peer product noun, so it leaves `.kp-topbar__nav` for the status zone and reads as the
-	// canonical Gavel icon (ADR 0166) with an accessible "divan" name, keeping the
-	// `kp-topbar__signal-link` treatment (grouped in the CSS). Off, it stays the plain text
-	// nav entry with no class — keeping the flag-off DOM byte-identical to today.
+	// peer product noun, so it sits in the status zone rather than `.kp-topbar__nav` and reads
+	// as the canonical Gavel icon (ADR 0166) under an accessible "divan" name, carrying the
+	// `kp-topbar__signal-link` treatment (grouped in the CSS). Null when the caller passes no
+	// `divanTo` — the access probe (#1290) withholds it from a viewer without divan access.
 	const divanLink = divanTo ? (
 		<NavLink
 			key={divanTo}
 			to={divanTo}
 			data-testid="topbar-divan-link"
-			className={navIa ? "kp-topbar__signal-link" : undefined}
-			aria-label={navIa ? "divan" : undefined}
-			title={navIa ? "divan" : undefined}
+			className="kp-topbar__signal-link"
+			aria-label="divan"
+			title="divan"
 		>
-			{navIa ? <Icon icon={Gavel} size={16} /> : "divan"}
+			<Icon icon={Gavel} size={16} />
 		</NavLink>
 	) : null;
 	const searchForm = (
@@ -192,17 +169,11 @@ export function Topbar({
 			<kbd>⌘K</kbd>
 		</form>
 	);
-	const themeButton = onToggleTheme ? (
-		<button type="button" className="kp-topbar__btn" onClick={onToggleTheme}>
-			tema
-		</button>
-	) : null;
-	// The three-way theme picker (#2612), present only under the zone grammar. Null when
-	// the flag is off, so it renders nothing in the flag-off topbar (byte-identical to
-	// today) and inside the user menu below. Signed-in ⇒ it lives in the menu next to
-	// `ayarlar`; signed-out ⇒ in the utility zone (both wired in the navIa branch).
+	// The three-way theme picker (#2612) — the sole theme control. Signed-in ⇒ it lives in
+	// the user menu next to `ayarlar`; signed-out ⇒ in the utility zone, so exactly one
+	// renders either way. Null unless the caller wires both halves of the controlled pair.
 	const themePicker =
-		navIa && themeChoice && onThemeChange ? (
+		themeChoice && onThemeChange ? (
 			<ThemeChoicePicker
 				choice={themeChoice}
 				onChange={onThemeChange}
@@ -217,11 +188,10 @@ export function Topbar({
 	// opens an in-place popover of recent bildirimler (#2787) — the near-universal
 	// bell→dropdown pattern, with the full `/bildirimler` page kept as the "tümünü gör"
 	// destination. The count is still the trigger's accessible name (ADR 0166). Same render
-	// rule as the flag-off badge — only when the `phoenix-bildirim` flag put a `bildirim`
-	// here AND unread > 0. Off, the count stays the bare chip on the user-menu trigger below
-	// (byte-identical to today).
+	// rule as before — only when the `phoenix-bildirim` flag put a `bildirim` here AND
+	// unread > 0.
 	const bildirimSignal =
-		navIa && bildirim && showUnreadBadge(bildirim.unread) ? (
+		bildirim && showUnreadBadge(bildirim.unread) ? (
 			<BildirimPopover to={bildirim.to} unread={bildirim.unread} />
 		) : null;
 	const userMenu = user ? (
@@ -229,19 +199,8 @@ export function Topbar({
 			<Menu.Trigger className="kp-topbar__user">
 				<Avatar name={user.name} src={user.src} />
 				<span>{user.name}</span>
-				{/* Flag off, the unread count is the bare chip on the trigger (today's shape); on,
-				    it moves to the status-zone bell (`bildirimSignal`) so the signal sits in its
-				    lawful zone (#2613) and the trigger stays unbadged. */}
-				{!navIa && bildirim && showUnreadBadge(bildirim.unread) ? (
-					<span
-						className="kp-topbar__bildirim-badge"
-						data-testid="topbar-bildirim-badge"
-						role="status"
-						aria-label={`${bildirim.unread} okunmamış bildirim`}
-					>
-						{formatUnreadBadge(bildirim.unread)}
-					</span>
-				) : null}
+				{/* No unread badge on the trigger: the count lives on the status-zone bell
+				    (`bildirimSignal`), its one lawful zone (#2613). */}
 			</Menu.Trigger>
 			<Menu.Popup align="end">
 				<Menu.Item
@@ -294,60 +253,37 @@ export function Topbar({
 	// re-add one). The status-signal zone carries the read-only signals reworked in #2613:
 	// the divan glyph, the karma glyph, and the bildirim bell — each a legible affordance in
 	// its lawful zone, none a control or accent.
-	if (navIa) {
-		return (
-			<header className="kp-topbar">
-				{brand}
-				<span className="kp-topbar__sep" />
-				<div
-					className="kp-topbar__zone kp-topbar__zone--destination"
-					data-testid="topbar-zone-destination"
-				>
-					<nav className="kp-topbar__nav">{destinationLinks}</nav>
-				</div>
-				<span
-					className="kp-topbar__zone kp-topbar__zone--primary-action"
-					data-testid="topbar-zone-primary-action"
-					aria-hidden="true"
-				/>
-				<span className="kp-topbar__spacer" />
-				<div className="kp-topbar__zone kp-topbar__zone--utility" data-testid="topbar-zone-utility">
-					{searchForm}
-					{/* No `tema` toggle under the flag (#2612) — the theme picker is the sole
-					    control. Signed-out visitors reach it here; signed-in ones in the user
-					    menu (above), so exactly one theme control renders either way. */}
-					{!user ? themePicker : null}
-				</div>
-				<div
-					className="kp-topbar__zone kp-topbar__zone--status-signal"
-					data-testid="topbar-zone-status-signal"
-				>
-					{divanLink}
-					{karmaChip}
-					{bildirimSignal}
-				</div>
-				{actions}
-				{accountSlot}
-			</header>
-		);
-	}
-
-	// Flag off — the pre-restructure topbar, byte-identical to today. divan renders back
-	// inside the destination nav (its `kp-topbar__signal-link` class only takes effect
-	// under the zone grammar, where the nav-link treatment is grouped onto it).
 	return (
 		<header className="kp-topbar">
 			{brand}
 			<span className="kp-topbar__sep" />
-			<nav className="kp-topbar__nav">
-				{destinationLinks}
-				{divanLink}
-			</nav>
+			<div
+				className="kp-topbar__zone kp-topbar__zone--destination"
+				data-testid="topbar-zone-destination"
+			>
+				<nav className="kp-topbar__nav">{destinationLinks}</nav>
+			</div>
+			<span
+				className="kp-topbar__zone kp-topbar__zone--primary-action"
+				data-testid="topbar-zone-primary-action"
+				aria-hidden="true"
+			/>
 			<span className="kp-topbar__spacer" />
-			{searchForm}
-			{themeButton}
+			<div className="kp-topbar__zone kp-topbar__zone--utility" data-testid="topbar-zone-utility">
+				{searchForm}
+				{/* Signed-out visitors reach the theme picker here; signed-in ones in the user
+				    menu (above), so exactly one theme control renders either way (#2612). */}
+				{!user ? themePicker : null}
+			</div>
+			<div
+				className="kp-topbar__zone kp-topbar__zone--status-signal"
+				data-testid="topbar-zone-status-signal"
+			>
+				{divanLink}
+				{karmaChip}
+				{bildirimSignal}
+			</div>
 			{actions}
-			{karmaChip}
 			{accountSlot}
 		</header>
 	);

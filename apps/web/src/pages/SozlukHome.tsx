@@ -11,12 +11,8 @@
 import * as React from "react";
 import {useListView, useRequest, useView, type ViewRef} from "react-fate";
 import {useSearchParams} from "react-router";
-import {SozlukAlphabet} from "../components/sozluk/index";
-import {SozlukSubnavCta} from "../components/sozluk/SozlukSubnavCta";
 import {TermRow, TermRowView} from "../components/sozluk/TermRow";
 import {Screen} from "../fate/Screen";
-import {PHOENIX_NAV_IA} from "../flags/keys";
-import {useFlag} from "../flags/useFlag";
 import {sozlukPageEmptyLabel} from "../lib/sozlukPageEmptyLabel";
 import "./SozlukHome.css";
 
@@ -38,33 +34,19 @@ type TermConnection = ReturnType<typeof useRequest<typeof homeRequest>>["recentT
 export function SozlukHome() {
 	const [params] = useSearchParams();
 	const letter = params.get("harf") ?? undefined;
-	// When `phoenix-nav-ia` is on, the persistent Subnav zone (App.tsx) owns the alphabet +
-	// the `+ yeni tanım` CTA, so the masthead must not paint a second copy of either. Off ⇒
-	// no zone, so the masthead hosts them itself. Same flag read the router gates the zone on;
-	// `useFlag` is fate-free, safe here.
-	const {value: inZone} = useFlag(PHOENIX_NAV_IA, false);
 
 	return (
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<Screen
-					fallback={
-						<SozlukHomeChrome letter={letter} inZone={inZone} status="loading">
-							{null}
-						</SozlukHomeChrome>
-					}
+					fallback={<SozlukHomeChrome status="loading">{null}</SozlukHomeChrome>}
 					error={({code}) => (
-						<SozlukHomeChrome
-							letter={letter}
-							inZone={inZone}
-							status="error"
-							errorMessage={code.toLowerCase()}
-						>
+						<SozlukHomeChrome status="error" errorMessage={code.toLowerCase()}>
 							{null}
 						</SozlukHomeChrome>
 					)}
 				>
-					<SozlukHomeContent letter={letter} inZone={inZone} />
+					<SozlukHomeContent letter={letter} />
 				</Screen>
 			</div>
 		</div>
@@ -73,29 +55,26 @@ export function SozlukHome() {
 
 interface ContentProps {
 	letter: string | undefined;
-	// True when the persistent Subnav zone owns the alphabet + create CTA (#2602),
-	// so this page must not paint a second copy of either.
-	inZone: boolean;
 }
 
-function SozlukHomeContent({letter, inZone}: ContentProps) {
+function SozlukHomeContent({letter}: ContentProps) {
 	const {recentTerms, popularTerms} = useRequest(homeRequest);
 
 	return (
-		<SozlukHomeChrome letter={letter} inZone={inZone} status="ok">
+		<SozlukHomeChrome status="ok">
 			<RecentColumn connection={recentTerms} letter={letter} />
 			<PopularColumn connection={popularTerms} letter={letter} />
 		</SozlukHomeChrome>
 	);
 }
 
-interface ChromeProps extends ContentProps {
+interface ChromeProps {
 	status: "loading" | "ok" | "error";
 	errorMessage?: string;
 	children: React.ReactNode;
 }
 
-function SozlukHomeChrome({letter, inZone, status, errorMessage, children}: ChromeProps) {
+function SozlukHomeChrome({status, errorMessage, children}: ChromeProps) {
 	const totalsLine = status === "ok" ? "" : status === "loading" ? "yükleniyor…" : "yüklenemedi";
 
 	return (
@@ -106,12 +85,9 @@ function SozlukHomeChrome({letter, inZone, status, errorMessage, children}: Chro
 						sözlük {totalsLine ? <small>{totalsLine}</small> : null}
 					</h1>
 				</div>
-				{/* Flag on: the alphabet + create CTA live in the persistent Subnav zone (#2602),
-				    so the masthead drops the CTA here to avoid a duplicate. Off ⇒ render it. */}
-				{inZone ? null : <SozlukSubnavCta />}
+				{/* The alphabet + create CTA live in the persistent Subnav zone (#2602), so the
+				    masthead paints neither — no duplicate. */}
 			</header>
-
-			{inZone ? null : <SozlukAlphabet value={letter} />}
 
 			{status === "error" ? (
 				<p style={{font: "var(--t-meta)", color: "var(--danger)", padding: "var(--s-3) 0"}}>

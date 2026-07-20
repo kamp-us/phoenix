@@ -26,9 +26,9 @@ const SetPanoSubnavContent = createContext<((content: PanoSubnavContent | null) 
 
 /**
  * The routed pano feed calls this to push its Subnav content up to the persistent zone (null
- * when it unmounts). Returns null when no zone ancestor provides it — flag off, or the eager
- * public paint above the router (App.tsx) — the signal PanoFeed uses to fall back to rendering
- * its own Subnav exactly as today.
+ * when it unmounts). Returns null when no zone ancestor provides it — the eager public paint
+ * above the router (App.tsx) — the signal PanoFeed uses to fall back to rendering its own
+ * Subnav.
  */
 export function useSetPanoSubnavContent() {
 	return useContext(SetPanoSubnavContent);
@@ -89,8 +89,7 @@ function PanoSubnavCrumb({crumb}: {crumb: {label: ReactNode; onClear: () => void
  * the count into `signal`. The routed feed publishes that content UP via
  * {@link useSetPanoSubnavContent} (the same chip-bridge shape App.tsx uses for the topbar) and this
  * frame owns the state — keeping all feed logic (sort / startTransition / saved variant) in
- * PanoFeed rather than duplicating it here. Mounted only behind the `phoenix-nav-ia` flag
- * (App.tsx); off ⇒ the router is flat and PanoFeed renders its own Subnav as today.
+ * PanoFeed rather than duplicating it here.
  */
 export function PanoSubnavLayout() {
 	const [content, setContent] = useState<PanoSubnavContent | null>(null);

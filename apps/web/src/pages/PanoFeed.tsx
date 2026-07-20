@@ -23,7 +23,7 @@ import {useSetPanoSubnavContent} from "../components/pano/PanoSubnavLayout";
 import {Screen} from "../fate/Screen";
 import {FEED_SNAPSHOT_ENABLED} from "../fate/snapshot";
 import {LoadMoreButton} from "../fate/wire";
-import {MEMBER_MUTE, PHOENIX_NAV_IA} from "../flags/keys";
+import {MEMBER_MUTE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {markFeedPaintOnce} from "../lib/feedPerf";
 import {
@@ -370,17 +370,15 @@ function FeedChrome({host, filterId, setFilterId, signedIn, meta, children}: Chr
 				: PANO_FILTERS,
 		[signedIn],
 	);
-	// Under nav-IA (#2601), pano's Subnav lives in the persistent product zone
+	// Per the nav-IA placement law (#2601), pano's Subnav lives in the persistent product zone
 	// (`PanoSubnavLayout`), not per-page here: publish this feed's filters/meta/crumb UP into
 	// that zone rather than painting a second Subnav, and fold the active site-filter into the
 	// zone's crumb slot as transient state paint — so the resting-chrome PanoCrumb strip is
-	// gone. `inZone` also requires the zone ancestor's setter, so the eager public paint above
-	// the router (App.tsx, no ancestor) and the flag-off path both keep today's own Subnav +
-	// PanoCrumb strip exactly.
-	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
+	// gone. `inZone` requires the zone ancestor's setter, so the eager public paint above the
+	// router (App.tsx, no ancestor) keeps its own Subnav + PanoCrumb strip.
 	const setPanoSubnav = useSetPanoSubnavContent();
 	const navigate = useNavigate();
-	const inZone = navIaOn && setPanoSubnav != null;
+	const inZone = setPanoSubnav != null;
 
 	React.useEffect(() => {
 		if (!inZone || !setPanoSubnav) return;

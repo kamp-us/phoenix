@@ -2,7 +2,7 @@
  * The dark-ship default-=-safe-state invariant for the edge-resolved shell-boot flag (#2928,
  * epic #2926, ADR 0179). Inspected off the exported `EDGE_SHELL_BOOT_FLAG` record (the same
  * object the factory spreads into `FlagshipFlag`), so no alchemy resource is constructed —
- * mirrors `nav-ia.invariant.test.ts` (#2598). Off ⇒ the SPA HTML stays edge-direct today.
+ * mirrors `member-mute.invariant.test.ts` (#3112). Off ⇒ the SPA HTML stays edge-direct today.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_EDGE_SHELL_BOOT} from "../../../src/flags/keys.ts";

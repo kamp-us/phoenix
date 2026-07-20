@@ -1,10 +1,8 @@
 /**
- * Nav-IA topbar zone grammar + taxonomy classing (#2611, epic #2595). Pins the
- * structural spine the tema/status/accent-scarcity children (#2612–#2614) build on:
- * with the shared `phoenix-nav-ia` flag OFF the topbar is byte-identical to today; ON,
- * every surviving element sits in its one lawful taxonomy zone (destination / utility /
- * status-signal / primary-action, #2586/#2587), each zone stably classed + testid'd. The
- * two states are total — never a half-migrated mix.
+ * Nav-IA topbar zone grammar + taxonomy classing (#2611, epic #2595). Pins the structural
+ * spine the tema/status/accent-scarcity children (#2612–#2614) build on: every element sits
+ * in its one lawful taxonomy zone (destination / utility / status-signal / primary-action,
+ * #2586/#2587), each zone stably classed + testid'd.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -18,46 +16,17 @@ const NAV = [
 	{to: "/pano", label: "pano"},
 ];
 
-function renderTopbar(navIa: boolean) {
+function renderTopbar() {
 	return render(
 		<MemoryRouter>
-			<Topbar
-				navIa={navIa}
-				nav={NAV}
-				divanTo="/divan"
-				karma={42}
-				user={{name: "Elif", username: "elif"}}
-			/>
+			<Topbar nav={NAV} divanTo="/divan" karma={42} user={{name: "Elif", username: "elif"}} />
 		</MemoryRouter>,
 	);
 }
 
-const ZONE_TESTIDS = [
-	"topbar-zone-destination",
-	"topbar-zone-utility",
-	"topbar-zone-status-signal",
-	"topbar-zone-primary-action",
-];
-
-// Base UI's Menu trigger mints a per-instance `id="base-ui-…"`, the only non-structural
-// difference between two renders of the same tree — normalize it so the byte-identity
-// comparison measures the topbar structure, not that unstable id.
-const stripMenuId = (html: string) => html.replace(/id="base-ui-[^"]*"/g, 'id="base-ui"');
-
 describe("Topbar nav-IA zone grammar (#2611)", () => {
-	it("flag off: renders today's structure — divan sits in the nav row, no zones exist", () => {
-		const {container} = renderTopbar(false);
-		// No taxonomy zone markup leaks into the flag-off topbar.
-		for (const id of ZONE_TESTIDS) expect(screen.queryByTestId(id)).toBeNull();
-		// divan renders back inside the destination nav (the pre-restructure placement) and
-		// carries no zone class — the same empty NavLink class the product nouns render today.
-		const divan = screen.getByTestId("topbar-divan-link");
-		expect(container.querySelector(".kp-topbar__nav")?.contains(divan)).toBe(true);
-		expect(divan.classList.contains("kp-topbar__signal-link")).toBe(false);
-	});
-
-	it("flag on: each element renders inside a zone carrying its taxonomy class", () => {
-		renderTopbar(true);
+	it("each element renders inside a zone carrying its taxonomy class", () => {
+		renderTopbar();
 		const destination = screen.getByTestId("topbar-zone-destination");
 		const utility = screen.getByTestId("topbar-zone-utility");
 		const statusSignal = screen.getByTestId("topbar-zone-status-signal");
@@ -75,27 +44,21 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		expect(statusSignal.contains(screen.getByTestId("topbar-karma"))).toBe(true);
 	});
 
-	it("flag on: the global bar's primary-action zone is empty/reserved (no occupant)", () => {
-		renderTopbar(true);
+	it("the global bar's primary-action zone is empty/reserved (no occupant)", () => {
+		renderTopbar();
 		const primaryAction = screen.getByTestId("topbar-zone-primary-action");
 		expect(primaryAction.classList.contains("kp-topbar__zone--primary-action")).toBe(true);
 		// #2600 relocated `+ gönderi` to the pano Subnav CTA — no product-scoped verb lands here.
 		expect(primaryAction.childElementCount).toBe(0);
 	});
 
-	it("flag on: the active destination link and divan render inside their zones (the accent-override site)", () => {
+	it("the active destination link and divan render inside their zones (the accent-override site)", () => {
 		// initialEntries=/pano makes the pano NavLink aria-current="page" — the exact
 		// element the containment-law overrides below target. Asserting it sits in the
 		// destination zone ties the CSS-source guard to a real DOM occupant.
 		render(
 			<MemoryRouter initialEntries={["/pano"]}>
-				<Topbar
-					navIa
-					nav={NAV}
-					divanTo="/divan"
-					karma={42}
-					user={{name: "Elif", username: "elif"}}
-				/>
+				<Topbar nav={NAV} divanTo="/divan" karma={42} user={{name: "Elif", username: "elif"}} />
 			</MemoryRouter>,
 		);
 		const activePano = screen.getByRole("link", {name: "pano"});
@@ -104,24 +67,6 @@ describe("Topbar nav-IA zone grammar (#2611)", () => {
 		expect(
 			screen.getByTestId("topbar-divan-link").classList.contains("kp-topbar__signal-link"),
 		).toBe(true);
-	});
-
-	it("no half-migrated state: off is byte-identical to the default, and differs from on", () => {
-		const off = renderTopbar(false);
-		const offHtml = stripMenuId(off.container.querySelector(".kp-topbar")?.outerHTML ?? "");
-		off.unmount();
-		const dflt = render(
-			<MemoryRouter>
-				<Topbar nav={NAV} divanTo="/divan" karma={42} user={{name: "Elif", username: "elif"}} />
-			</MemoryRouter>,
-		);
-		// Omitting `navIa` is the same as passing false — the safe, unchanged default.
-		expect(stripMenuId(dflt.container.querySelector(".kp-topbar")?.outerHTML ?? "")).toBe(offHtml);
-		dflt.unmount();
-		const on = renderTopbar(true);
-		expect(stripMenuId(on.container.querySelector(".kp-topbar")?.outerHTML ?? "")).not.toBe(
-			offHtml,
-		);
 	});
 });
 
@@ -147,9 +92,9 @@ const cssRules = (css: string): Rule[] =>
 describe("Topbar accent-scarcity containment law (#2614)", () => {
 	const rules = cssRules(TOPBAR_CSS);
 
-	it("single-accent-budget: the only accent fill in the stylesheet is the flag-off active pill", () => {
-		// Exactly one rule paints `background: var(--accent)` — the legacy flag-off active-page
-		// pill (`aria-current`, not zone-scoped). Any *new* accent fill (a tema button, a
+	it("single-accent-budget: the only accent fill in the stylesheet is the base active pill", () => {
+		// Exactly one rule paints `background: var(--accent)` — the legacy base active-page
+		// pill (`aria-current`, un-zoned). Any *new* accent fill (a tema button, a
 		// re-added CTA-styled utility, a zone-scoped fill) grows this set and fails the test —
 		// the #2582 misclick and #2543 verb-pill classes cannot silently return.
 		const accentFills = rules.filter((r) => ACCENT_FILL.test(r.body));
@@ -167,10 +112,10 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		}
 	});
 
-	it("the flag-off active pill is neutralized under the zone grammar (a zero-accent reclassed topbar)", () => {
-		// Both zone-scoped active-link overrides reset the fill to a neutral surface token — so
-		// with the flag on the destination/status active link paints no accent. Deleting an
-		// override would leak the flag-off pill into the reclassed bar and fail here.
+	it("the base active pill is neutralized under the zone grammar (a zero-accent reclassed topbar)", () => {
+		// Both zone-scoped active-link overrides reset the fill to a neutral surface token, so
+		// the destination/status active link paints no accent. Deleting an override would leak
+		// the base pill back into the reclassed bar and fail here.
 		const dest = rules.find(
 			(r) =>
 				/kp-topbar__zone--destination/.test(r.selector) && /aria-current="page"/.test(r.selector),
@@ -211,10 +156,10 @@ describe("Topbar status/signal zone (#2613)", () => {
 		);
 	}
 
-	it("flag on: the unread bildirim renders an INTERACTIVE bell in the status zone, not a bare number (#2787)", () => {
-		const {container} = renderStatus({navIa: true, bildirim: {to: "/bildirimler", unread: 3}});
+	it("the unread bildirim renders an INTERACTIVE bell in the status zone, not a bare number (#2787)", () => {
+		const {container} = renderStatus({bildirim: {to: "/bildirimler", unread: 3}});
 		const signal = screen.getByTestId("topbar-bildirim-badge");
-		// Lives in the status-signal zone, not on the user-menu trigger (its today's home).
+		// Lives in the status-signal zone, not on the user-menu trigger.
 		expect(screen.getByTestId("topbar-zone-status-signal").contains(signal)).toBe(true);
 		expect(container.querySelector(".kp-topbar__user")?.contains(signal)).toBe(false);
 		// A drawn Lucide bell (an <svg>), so the count reads as "unread notifications", not a
@@ -232,22 +177,13 @@ describe("Topbar status/signal zone (#2613)", () => {
 		expect(live.textContent).toBe("3 okunmamış bildirim");
 	});
 
-	it("flag on: no bildirim signal renders when unread is 0", () => {
-		renderStatus({navIa: true, bildirim: {to: "/bildirimler", unread: 0}});
+	it("no bildirim signal renders when unread is 0", () => {
+		renderStatus({bildirim: {to: "/bildirimler", unread: 0}});
 		expect(screen.queryByTestId("topbar-bildirim-badge")).toBeNull();
 	});
 
-	it("flag off: the unread bildirim stays the bare chip on the user-menu trigger (today's shape)", () => {
-		const {container} = renderStatus({navIa: false, bildirim: {to: "/bildirimler", unread: 3}});
-		const badge = screen.getByTestId("topbar-bildirim-badge");
-		expect(container.querySelector(".kp-topbar__user")?.contains(badge)).toBe(true);
-		// The flag-off chip is the bare number — no bell glyph.
-		expect(badge.querySelector("svg")).toBeNull();
-		expect(badge.textContent).toBe("3");
-	});
-
-	it("flag on: karma is a read-only status glyph — no button/link/accent affordance", () => {
-		renderStatus({navIa: true});
+	it("karma is a read-only status glyph — no button/link/accent affordance", () => {
+		renderStatus({});
 		const karma = screen.getByTestId("topbar-karma");
 		expect(screen.getByTestId("topbar-zone-status-signal").contains(karma)).toBe(true);
 		// A read-only glyph, never a control: not rendered as (nor wrapped by) a button/link.
@@ -256,8 +192,8 @@ describe("Topbar status/signal zone (#2613)", () => {
 		expect(karma.closest("a")).toBeNull();
 	});
 
-	it("flag on: the divan entry renders as a status glyph (Lucide icon) with an accessible name", () => {
-		renderStatus({navIa: true});
+	it("the divan entry renders as a status glyph (Lucide icon) with an accessible name", () => {
+		renderStatus({});
 		const divan = screen.getByTestId("topbar-divan-link");
 		expect(screen.getByTestId("topbar-zone-status-signal").contains(divan)).toBe(true);
 		expect(divan.classList.contains("kp-topbar__signal-link")).toBe(true);
@@ -266,51 +202,14 @@ describe("Topbar status/signal zone (#2613)", () => {
 		expect(divan.querySelector("svg")).not.toBeNull();
 		expect(screen.getByRole("link", {name: "divan"})).toBe(divan);
 	});
-
-	it("flag off: divan stays a plain-text entry in the nav row (byte-identical to today)", () => {
-		const {container} = renderStatus({navIa: false});
-		const divan = screen.getByTestId("topbar-divan-link");
-		expect(container.querySelector(".kp-topbar__nav")?.contains(divan)).toBe(true);
-		expect(divan.querySelector("svg")).toBeNull();
-		expect(divan.textContent).toBe("divan");
-	});
-
-	it("flag off: karma / bildirim / divan render exactly as today (the AC-4 no-op)", () => {
-		// Same three signals passed, flag off ⇒ no bell, no glyph, no zones — the pre-#2613 shape.
-		const {container} = renderStatus({navIa: false, bildirim: {to: "/bildirimler", unread: 3}});
-		for (const id of ZONE_TESTIDS) expect(screen.queryByTestId(id)).toBeNull();
-		expect(container.querySelector(".kp-topbar__bildirim-signal")).toBeNull();
-		expect(screen.getByTestId("topbar-divan-link").querySelector("svg")).toBeNull();
-	});
 });
 
 describe("Topbar tema toggle → theme picker (#2612)", () => {
-	it("flag off: the tema toggle still renders and behaves exactly as today", () => {
-		const onToggleTheme = vi.fn();
-		render(
-			<MemoryRouter>
-				<Topbar
-					nav={NAV}
-					onToggleTheme={onToggleTheme}
-					themeChoice="dark"
-					onThemeChange={() => {}}
-				/>
-			</MemoryRouter>,
-		);
-		const tema = screen.getByRole("button", {name: "tema"});
-		fireEvent.click(tema);
-		expect(onToggleTheme).toHaveBeenCalledOnce();
-		// The three-way picker is dark behind the flag — no picker surface renders.
-		expect(screen.queryByTestId("topbar-theme-picker")).toBeNull();
-	});
-
-	it("flag on: no tema toggle renders, in either auth state", () => {
+	it("no tema toggle renders, in either auth state", () => {
 		const {rerender} = render(
 			<MemoryRouter>
 				<Topbar
-					navIa
 					nav={NAV}
-					onToggleTheme={vi.fn()}
 					themeChoice="auto"
 					onThemeChange={() => {}}
 					user={{name: "Elif", username: "elif"}}
@@ -320,24 +219,17 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
 		rerender(
 			<MemoryRouter>
-				<Topbar
-					navIa
-					nav={NAV}
-					onToggleTheme={vi.fn()}
-					themeChoice="auto"
-					onThemeChange={() => {}}
-				/>
+				<Topbar nav={NAV} themeChoice="auto" onThemeChange={() => {}} />
 			</MemoryRouter>,
 		);
 		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
 	});
 
-	it("flag on, signed in: the theme picker lives in the user menu next to ayarlar", () => {
+	it("signed in: the theme picker lives in the user menu next to ayarlar", () => {
 		const onThemeChange = vi.fn();
 		render(
 			<MemoryRouter>
 				<Topbar
-					navIa
 					nav={NAV}
 					themeChoice="dark"
 					onThemeChange={onThemeChange}
@@ -360,11 +252,11 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		expect(onThemeChange).toHaveBeenLastCalledWith("auto");
 	});
 
-	it("flag on, signed out: the same light/dark/auto picker is reachable in the topbar utility zone", () => {
+	it("signed out: the same light/dark/auto picker is reachable in the topbar utility zone", () => {
 		const onThemeChange = vi.fn();
 		render(
 			<MemoryRouter>
-				<Topbar navIa nav={NAV} themeChoice="light" onThemeChange={onThemeChange} />
+				<Topbar nav={NAV} themeChoice="light" onThemeChange={onThemeChange} />
 			</MemoryRouter>,
 		);
 		const utility = screen.getByTestId("topbar-zone-utility");

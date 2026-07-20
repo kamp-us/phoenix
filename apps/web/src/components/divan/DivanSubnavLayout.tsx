@@ -23,7 +23,7 @@ const SetDivanSubnavContent = createContext<((content: DivanSubnavContent | null
 /**
  * The routed divan page calls this to push its section switchers up to the persistent zone
  * (null when it has no switcher, or on unmount). Returns null when no zone ancestor provides it
- * — flag off — the signal DivanWorkspace uses to render its own in-page section nav as today.
+ * — the signal DivanWorkspace uses to render its own in-page section nav instead.
  */
 export function useSetDivanSubnavContent() {
 	return useContext(SetDivanSubnavContent);
@@ -58,8 +58,7 @@ function DivanSectionSwitcher({filters, activeFilter, onFilterChange}: DivanSubn
  * inside the bar, and divan has no promoted verb, so `primaryAction` is absent by design.
  * divan's section switch is page-local state, so the routed page publishes its switchers UP via
  * {@link useSetDivanSubnavContent} (the same publish-up shape pano uses) and this frame holds
- * the state. Mounted only behind the `phoenix-nav-ia` flag (App.tsx); off ⇒ the router is flat
- * and DivanWorkspace renders its own in-page section nav as today.
+ * the state.
  */
 export function DivanSubnavLayout() {
 	const [content, setContent] = useState<DivanSubnavContent | null>(null);

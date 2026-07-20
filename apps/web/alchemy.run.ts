@@ -51,7 +51,6 @@ import {
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
 	memberMuteFlag,
-	navIaFlag,
 	optimisticDefinitionDeleteFlag,
 	panoStampWaveFlag,
 	profileCanvasFlag,
@@ -117,10 +116,6 @@ export default Alchemy.Stack(
 		// the single seam the mecmuaFeed root + subscribe/unsubscribe + feed page gate behind
 		// until a human release.
 		yield* mecmuaFeedFlag(flagship.appId);
-		// The nav-IA per-product Subnav zones dark-ship flag, default-off (#2598, epic
-		// #2596) — the single cross-cutting seam the nested layout routes + Subnav CTA slot
-		// substrate + every per-product delta gate behind until a human release.
-		yield* navIaFlag(flagship.appId);
 		// The sözlük parallel-stamp-wave read-collapse dark-ship flag, default-off (#2709,
 		// epic #2567) — the concurrency knob the definition reads' stamp wave passes: off ⇒
 		// serial (today), on ⇒ one concurrent wave, until a human release.

@@ -41,10 +41,9 @@ Two properties make the nesting safe to layer over the flat tree:
   path specificity, not source order, so grouping a product's routes under a layout route
   changes only *what renders above them*, never *which* route matches. The existing
   ordering notes (static `/mecmua/yaz` out-ranking `/mecmua/:slug`) still hold unchanged.
-- **The whole surface rides the default-off `phoenix-nav-ia` seam.** `App.tsx` reads
-  `useFlag(PHOENIX_NAV_IA, false)` and wraps each product's routes under
-  `ProductSubnavLayout` only when on; off ⇒ the router is flat, exactly as before (the
-  agents-deploy / humans-release contract, ADR 0083). The per-product delta children
+- **The nesting is unconditional.** `App.tsx` wraps each product's routes under its
+  `*SubnavLayout` directly — no flag read. (It shipped behind the default-off
+  `phoenix-nav-ia` seam, retired at on@100% per ADR 0136.) The per-product delta children
   (#2600–#2604) fill each zone's destinations / filters / CTA.
 
 ## `/lab/*` — the standing prototype space

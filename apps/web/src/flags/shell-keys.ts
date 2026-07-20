@@ -20,14 +20,16 @@
  * `useFlag`): this module introduces no runtime behavior on its own.
  */
 import type {User} from "../../worker/features/fate/views.ts";
-import {MECMUA_FEED, MECMUA_PUBLIC_READ, PHOENIX_NAV_IA} from "./keys.ts";
+import {MECMUA_FEED, MECMUA_PUBLIC_READ} from "./keys.ts";
 
 /**
  * The shell-critical flag keys — the `__BOOT__`-member flags whose wrong value moves
- * geometry at first paint (ADR 0179 §1, the geometry law). Exactly the three nav-shaping
- * flags and nothing else; below-fold flags stay on the client fetch path.
+ * geometry at first paint (ADR 0179 §1, the geometry law). Exactly the mecmua
+ * nav-shaping flags and nothing else; below-fold flags stay on the client fetch path.
+ * The per-product Subnav zones no longer appear here — their seam graduated at on@100%
+ * and was retired (ADR 0136), so the zones are unconditional and no flag shapes them.
  */
-export const SHELL_FLAG_KEYS = [PHOENIX_NAV_IA, MECMUA_PUBLIC_READ, MECMUA_FEED] as const;
+export const SHELL_FLAG_KEYS = [MECMUA_PUBLIC_READ, MECMUA_FEED] as const;
 
 export type ShellFlagKey = (typeof SHELL_FLAG_KEYS)[number];
 

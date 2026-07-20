@@ -30,7 +30,7 @@ import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
 import {readBootUser} from "./flags/boot";
 import {EdgeShellBootMarker} from "./flags/EdgeShellBoot";
-import {MECMUA_FEED, MECMUA_PUBLIC_READ, PHOENIX_BILDIRIM, PHOENIX_NAV_IA} from "./flags/keys";
+import {MECMUA_PUBLIC_READ, PHOENIX_BILDIRIM} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {AtolyeExhibitPage} from "./lab/atolye/AtolyeExhibitPage";
 import {AtolyeIndexPage} from "./lab/atolye/AtolyeIndexPage";
@@ -97,26 +97,15 @@ function Layout() {
 	const session = useSession();
 	const navigate = useNavigate();
 	const location = useLocation();
-	const {toggle: toggleTheme, choice: themeChoice, setChoice: setThemeChoice} = useTheme();
+	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [chips, setChips] = useState<TopbarChips | null>(null);
-	// The three nav-shaping flags (mecmua-public-read, mecmua-feed, nav-IA) are shell-key-manifest
-	// members, so the unified `useFlag` resolves them SYNCHRONOUSLY from `window.__BOOT__` on the
-	// first render (loading:false, no fetch, no repaint): the nav paints its final geometry at first
-	// paint, killing the false→true pop-in these gates used to cost every load (#2828). Absent
-	// `__BOOT__` (flag off / the #2931 never-hang fallback) ⇒ the fetch fallback, exactly today's
-	// behavior. See ADR 0179.
-	//
-	// mecmua-public-read (#2512): the same seam the reader/index gate on; off ⇒ mecmua absent.
+	// mecmua-public-read (#2512) — the same seam the reader/index gate on; off ⇒ mecmua absent.
+	// As a shell-key-manifest member the unified `useFlag` resolves it SYNCHRONOUSLY from
+	// `window.__BOOT__` on the first render (loading:false, no fetch, no repaint), so the nav
+	// paints its final geometry at first paint, killing the false→true pop-in this gate used to
+	// cost every load (#2828). Absent `__BOOT__` (flag off / the #2931 never-hang fallback) ⇒ the
+	// fetch fallback, exactly today's behavior. See ADR 0179.
 	const {value: mecmuaOn} = useFlag(MECMUA_PUBLIC_READ, false);
-	// mecmua-feed (akış, #2547): the SAME flag the `/mecmua/akis` route self-gates on (self-404 when
-	// off), so the link never points at a dark 404 — subscribing (also `mecmua-feed`) and its feed
-	// destination appear together. Under nav-IA akış is a mecmua SUB-destination, moving out of this
-	// topbar product-noun row into the mecmua Subnav zone (#2603) — hence gated off here when navIaOn.
-	const {value: feedOn} = useFlag(MECMUA_FEED, false);
-	// nav-IA (#2600, epic #2596): with it on, pano's `+ gönderi` primary action lives in the pano
-	// Subnav CTA zone (placement law #2587), so the topbar drops it — the eviction half of the atomic
-	// move. Off ⇒ the topbar is exactly as today. Same read as `App`'s zone-wrapping gate below.
-	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
 
 	// The two-tier fate provider's public first paint (ADR 0167). While `get-session`
 	// is still in flight the authed `FateProvider` gate below returns null, so the
@@ -192,16 +181,14 @@ function Layout() {
 					<EdgeShellBootMarker />
 					<Topbar
 						brandName="kamp.us"
-						navIa={navIaOn}
 						reserveSignedInSlots={reserveSignedInSlots}
+						// akış is a mecmua SUB-destination living in the mecmua Subnav zone (#2603),
+						// so the topbar carries just the `mecmua` product noun — a cross-product
+						// destination, per placement law #2587.
 						nav={[
 							{to: "/sozluk", label: "sözlük"},
 							{to: "/pano", label: "pano"},
 							...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
-							// akış stays a topbar entry only while nav-IA is off; on, it lives in
-							// the mecmua Subnav zone (#2603) — the topbar keeps just the `mecmua`
-							// product noun (a cross-product destination, per placement law #2587).
-							...(feedOn && !navIaOn ? [{to: "/mecmua/akis", label: "akış"}] : []),
 						]}
 						divanTo={chips?.divanTo}
 						{...(chips?.userProps ?? bootUserProps)}
@@ -212,10 +199,8 @@ function Layout() {
 							const target = searchTarget(query);
 							if (target) navigate(target);
 						}}
-						// The tema toggle is wired only with nav-IA off; on, the three-way
-						// theme picker is the sole control (#2612), so onToggleTheme stays
-						// unwired and no tema button renders.
-						onToggleTheme={navIaOn ? undefined : toggleTheme}
+						// No `onToggleTheme`: the three-way theme picker is the sole theme control
+						// (#2612), so no tema button renders.
 						themeChoice={themeChoice}
 						onThemeChange={setThemeChoice}
 						onLogout={onSignOut}
@@ -228,15 +213,9 @@ function Layout() {
 								<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
 									giriş yap
 								</button>
-							) : navIaOn ? null : (
-								<button
-									type="button"
-									className="kp-topbar__btn"
-									onClick={() => navigate("/pano/yeni")}
-								>
-									+ gönderi
-								</button>
-							)
+							) : null
+							// Signed in ⇒ no topbar action: pano's `+ gönderi` primary action lives in
+							// the pano Subnav CTA zone (placement law #2587), not the topbar.
 						}
 					/>
 					<Main>
@@ -384,13 +363,8 @@ function ComposerRouteFallback() {
 }
 
 export function App() {
-	// The per-product Subnav zones ride the shared nav-IA seam (#2598, epic #2596),
-	// default-off. With it off the router is flat (today's structure); with it on each
-	// product's routes mount under a pathless layout route rendering its persistent Subnav
-	// zone. As a shell-key-manifest member nav-IA resolves synchronously from `window.__BOOT__`
-	// (unified `useFlag`, ADR 0179), so the router shape is final at first paint — no restructure
-	// flip. Absent `__BOOT__` ⇒ the fetch fallback, exactly today's behavior.
-	const {value: navIaOn} = useFlag(PHOENIX_NAV_IA, false);
+	// Each product's routes mount under a pathless layout route rendering its persistent
+	// Subnav zone (#2598, epic #2596).
 	const panoRoutes = [
 		<Route key="pano" path="/pano" element={<PanoFeed />} />,
 		<Route key="pano-yeni" path="/pano/yeni" element={<PanoSubmitPage />} />,
@@ -449,46 +423,28 @@ export function App() {
 						{/* pano's zone hosts feed-scoped filters/meta + the site-filter crumb
 						    (published up from the routed feed) and its primary-action CTA, so it
 						    wraps under its own `PanoSubnavLayout` rather than the generic empty/
-						    cta-only frame (#2601). Off ⇒ flat, as today. */}
-						{navIaOn ? (
-							<Route key="pano-zone" element={<PanoSubnavLayout />}>
-								{panoRoutes}
-							</Route>
-						) : (
-							panoRoutes
-						)}
+						    cta-only frame (#2601). */}
+						<Route key="pano-zone" element={<PanoSubnavLayout />}>
+							{panoRoutes}
+						</Route>
 						{/* mecmua's zone hosts flag-composed destinations + a primary-action CTA,
 						    so it wraps under its own `MecmuaSubnavLayout` (which composes both)
-						    rather than the generic empty/cta-only frame (#2603). Off ⇒ flat, as today. */}
-						{navIaOn ? (
-							<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
-								{mecmuaRoutes}
-							</Route>
-						) : (
-							mecmuaRoutes
-						)}
+						    rather than the generic empty/cta-only frame (#2603). */}
+						<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
+							{mecmuaRoutes}
+						</Route>
 						{/* sözlük's zone hosts its persistent go-to-or-create box (the Subnav input
 						    slot) + the URL-driven alphabet filter row, so it wraps under its own
-						    `SozlukSubnavLayout` rather than the generic empty/cta-only frame (#2602).
-						    Off ⇒ flat, and SozlukHome renders its own masthead box + alphabet as today. */}
-						{navIaOn ? (
-							<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
-								{sozlukRoutes}
-							</Route>
-						) : (
-							sozlukRoutes
-						)}
+						    `SozlukSubnavLayout` rather than the generic empty/cta-only frame (#2602). */}
+						<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
+							{sozlukRoutes}
+						</Route>
 						{/* divan's zone hosts the çaylaklar ↔ raporlar section switch, published up from
 						    the routed page as Subnav filters, so it wraps under its own `DivanSubnavLayout`
-						    rather than the generic empty/cta-only frame (#2604). Off ⇒ flat, and
-						    DivanWorkspace renders its own in-page section nav as today. */}
-						{navIaOn ? (
-							<Route key="divan-zone" element={<DivanSubnavLayout />}>
-								{divanRoutes}
-							</Route>
-						) : (
-							divanRoutes
-						)}
+						    rather than the generic empty/cta-only frame (#2604). */}
+						<Route key="divan-zone" element={<DivanSubnavLayout />}>
+							{divanRoutes}
+						</Route>
 						<Route path="/search" element={<SearchPage />} />
 						<Route path="/auth" element={<AuthPage />} />
 						{/* The founder/mod conversion readout (#1589) — access is server-authoritative

@@ -11,10 +11,9 @@ import {MecmuaSubnavCta} from "./MecmuaSubnavCta";
 /**
  * mecmua's persistent product Subnav zone (placement law #2587, epic #2596) — the pathless
  * layout-route element that hosts mecmua's product destinations + its primary action, so
- * they live in the product zone instead of leaking into the global topbar (#2603). Mounted
- * only behind the `phoenix-nav-ia` flag (App.tsx); off ⇒ the router is flat, exactly as
- * today. Composes through `SubnavShell` (ADR 0182): the destination links fill the one
- * `destinations` zone, the CTA the `primaryAction` zone.
+ * they live in the product zone instead of leaking into the global topbar (#2603). Composes
+ * through `SubnavShell` (ADR 0182): the destination links fill the one `destinations` zone,
+ * the CTA the `primaryAction` zone.
  *
  * Each destination is composed on the SAME flag its route/page self-gates on, so a link
  * never points at a dark 404 (the #2547 "never a dead link" rule): keşfet (the public index)

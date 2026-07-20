@@ -28,17 +28,18 @@ test.describe("Topbar (signed out)", () => {
 		);
 	});
 
-	test("tema button toggles <html data-theme>", async ({page}) => {
+	// The three-way picker is the sole theme control (#2612) — a signed-out visitor reaches
+	// it in the topbar's utility zone (a signed-in one gets it in the user menu instead).
+	test("theme picker sets <html data-theme>", async ({page}) => {
 		const html = page.locator("html");
-		const initial = await html.getAttribute("data-theme");
-		expect(initial).toMatch(/^(dark|light)$/);
+		const picker = page.getByTestId("topbar-theme-picker");
+		await expect(picker).toBeVisible();
 
-		await page.getByRole("button", {name: /^tema$/i}).click();
-		const next = initial === "dark" ? "light" : "dark";
-		await expect(html).toHaveAttribute("data-theme", next);
+		await picker.getByRole("button", {name: /^koyu$/i}).click();
+		await expect(html).toHaveAttribute("data-theme", "dark");
 
-		await page.getByRole("button", {name: /^tema$/i}).click();
-		await expect(html).toHaveAttribute("data-theme", initial ?? "dark");
+		await picker.getByRole("button", {name: /^açık$/i}).click();
+		await expect(html).toHaveAttribute("data-theme", "light");
 	});
 
 	test("search box focuses + has ⌘K hint + submitting does not error", async ({page}) => {
@@ -64,9 +65,10 @@ test.describe("Topbar (signed out)", () => {
 });
 
 test.describe("Topbar (signed in)", () => {
-	test("+ gönderi button + user pill visible after sign-up", async ({page}) => {
+	// `+ gönderi` is NOT a topbar affordance: it is pano's promoted verb, so it lives in the
+	// pano Subnav's primary-action zone (placement law #2587), reachable only under `/pano/*`.
+	test("user pill visible after sign-up", async ({page}) => {
 		const creds = await signUp(page);
-		await expect(page.getByRole("button", {name: /\+ gönderi/i})).toBeVisible();
 		const pill = page.locator(".kp-topbar__user");
 		await expect(pill).toBeVisible();
 		await expect(pill).toContainText(creds.name);
