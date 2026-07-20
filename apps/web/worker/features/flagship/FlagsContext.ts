@@ -43,7 +43,7 @@ export interface FlagsContextValue {
 	 * Per-browser local flag overrides (#622), read from the request's
 	 * `phoenix_flag_overrides` cookie. Populated by the request path ONLY when the
 	 * request may honor overrides — `environment === "development"`, OR an admin
-	 * request with the `phoenix-admin-console` flag on (#2741, `overridesAuthorized`);
+	 * request (#2741, `overridesAuthorized`);
 	 * every other request leaves it `undefined` (fail-closed), so an attacker-supplied
 	 * cookie is a no-op for a non-admin on a deployed stage. Carried here — not mapped
 	 * into the provider wire shape (`toEvaluationContext` ignores it) — because it is a
@@ -68,7 +68,7 @@ export class FlagsContext extends Context.Service<FlagsContext, FlagsContextValu
  * `cookieHeader` is `null` when the request carries no `Cookie` header.
  * `overridesAllowed` is the per-request authorization verdict (#2741) resolved once
  * at the `/fate` route edge by {@link overridesAuthorized} — `true` under
- * `development` or for an admin request with `phoenix-admin-console` on. The service
+ * `development` or for an admin request. The service
  * grants no capability of its own: it merely transports the header + the verdict, and
  * {@link makeRequestFlagsContext} is the single site that decides (from both) whether
  * to parse the cookie.

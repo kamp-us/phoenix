@@ -10,39 +10,33 @@
  * `useMe`/`useDivanAccess`: the probe drives a route element that must resolve to a safe
  * default rather than suspend.
  *
- * Two guards keep it dark and fail-closed:
- *   - It only probes when the `phoenix-admin-console` flag is on AND the viewer is signed
- *     in. With the flag off the server read fails `Denied` for everyone anyway, but gating
- *     the wire on the flag keeps the console fully inert (no request) by default.
- *   - Any error (the `Denied` denial, or a transport failure) ⇒ not granted, and the
- *     returned `granted` ANDs the flag back in, so a stale grant can never outlive the flag.
+ * Fail-closed by construction: it only probes for a signed-in viewer (an anonymous visitor
+ * never hits the wire), and any error — the `Denied` denial, or a transport failure —
+ * reports not-granted. The grant is the SERVER's `requireAdmin` verdict and nothing else;
+ * this hook cannot widen it.
  */
 
 import {view} from "react-fate";
 import type {AdminProbe} from "../../worker/features/admin-console/probe-view";
 import {useSession} from "../auth/client";
 import {useImperativeView} from "../fate/useImperativeView";
-import {PHOENIX_ADMIN_CONSOLE} from "../flags/keys";
-import {useFlag} from "../flags/useFlag";
 
 const AdminProbeView = view<AdminProbe>()({id: true, admin: true});
 
 export interface AdminAccess {
-	/** `true` iff the server probe resolved AND the flag is on — the mount-the-console gate. */
+	/** `true` iff the server probe resolved — the mount-the-console gate. */
 	readonly granted: boolean;
 	/** `true` while the probe is in flight (access not yet decided) — render nothing, don't 404-flash. */
 	readonly loading: boolean;
 }
 
 export function useAdminProbe(): AdminAccess {
-	const {value: flagOn} = useFlag(PHOENIX_ADMIN_CONSOLE, false);
 	const session = useSession();
 	const signedIn = !!session.data;
 	const {state} = useImperativeView("admin.probe", AdminProbeView, {
-		enabled: flagOn && signedIn,
+		enabled: signedIn,
 		deps: [signedIn],
 	});
-	// AND the flag back in so a grant can never outlive the flag flipping off.
-	const granted = flagOn && state.status === "ok" && !!state.data;
+	const granted = state.status === "ok" && !!state.data;
 	return {granted, loading: state.status === "loading"};
 }

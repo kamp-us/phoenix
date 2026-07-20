@@ -60,11 +60,9 @@ export const handleFate = Effect.gen(function* () {
 	});
 
 	// May this request honor its `phoenix_flag_overrides` cookie (#2741)? Resolved ONCE
-	// at the edge (dev, or an admin with `phoenix-admin-console` on) over the request's
-	// actor, then threaded on `RequestFlagOverrides` so `provideRequestFlags` gates every
-	// resolver's flag read off it — the admin verdict can't be recomputed per resolver.
-	// The gate flag reads against the anonymous `flagsContext` (no cookie), so a cookie
-	// can never self-authorize the gate.
+	// at the edge (dev, or an admin) over the request's actor, then threaded on
+	// `RequestFlagOverrides` so `provideRequestFlags` gates every resolver's flag read off
+	// it — the admin verdict can't be recomputed per resolver.
 	const overridesAllowed = yield* overridesAuthorized(flagsContext).pipe(
 		Effect.provide(currentActorContext(session?.user)),
 	);

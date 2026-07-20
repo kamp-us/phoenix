@@ -8,8 +8,7 @@
  * admin renders the ORDINARY not-found page — indistinguishable from "this route doesn't
  * exist" — never a 403 or an "you are not an admin" surface. The lazy `AdminConsole`
  * import is reached ONLY in the granted branch, so a non-admin/anonymous visitor's browser
- * never fetches the console chunk. With the `phoenix-admin-console` flag off the probe is
- * never granted, so the route is inert for everyone (ship-dark, ADR 0083).
+ * never fetches the console chunk.
  */
 import {lazy, Suspense} from "react";
 import {NotFoundPage} from "../pages/NotFoundPage";

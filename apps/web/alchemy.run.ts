@@ -40,7 +40,6 @@ import {PhoenixDb} from "./worker/db/resources.ts";
 import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
 import {
-	adminConsoleFlag,
 	bildirimFlag,
 	demoTargetingFlag,
 	edgeShellBootFlag,
@@ -134,10 +133,6 @@ export default Alchemy.Stack(
 		// thread/comment reads' stamp wave passes: off ⇒ serial (today), on ⇒ one concurrent
 		// wave, until a human release.
 		yield* panoStampWaveFlag(flagship.appId);
-		// The admin-console shell dark-ship flag, default-off (#2740, epic #2711) — the
-		// single seam the /admin route + client probe + worker `admin.probe` read gate
-		// behind until a human release, so the console ships dark (no chunk fetched).
-		yield* adminConsoleFlag(flagship.appId);
 		// The kullanıcılar (user-roster) read-view dark-ship flag, default-off (#3200, admin
 		// epic) — the single seam the `userAdmin.list` admin read + the `kullanıcılar` console
 		// panel gate behind until a human release, so the roster ships dark (invisible `Denied`).

@@ -520,10 +520,9 @@ export function App() {
 						<Route path="/susturduklarim" element={<MutesPage />} />
 						<Route path="/u/:username" element={<UserProfilePage />} />
 						{/* The admin console (#2740, epic #2711) — the route element self-gates on
-						    the admin probe + the phoenix-admin-console flag (denied ⇒ the ordinary
-						    not-found page, invisible-denial), and the console chunk is lazy-imported
-						    only past the gate, so the route is dark by default and ships no console
-						    code to a non-admin. */}
+						    the server-authoritative admin probe (denied ⇒ the ordinary not-found
+						    page, invisible-denial), and the console chunk is lazy-imported only past
+						    the gate, so the route ships no console code to a non-admin. */}
 						<Route path="/admin" element={<AdminConsoleRoute />} />
 						<Route path="*" element={<NotFoundPage />} />
 					</Route>
