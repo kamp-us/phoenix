@@ -11,8 +11,6 @@ import {bodyEditOptimistic} from "../../fate/optimisticEdit";
 import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
-import {PHOENIX_OPTIMISTIC_DEFINITION_DELETE} from "../../flags/keys";
-import {useFlag} from "../../flags/useFlag";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
@@ -83,10 +81,6 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
-	// Dark-ship gate (#1681, ADR 0125 D1): off ⇒ the card drops only when the live
-	// `deleteEdge` push / read-back lands, exactly as today.
-	const {value: optimisticDelete} = useFlag(PHOENIX_OPTIMISTIC_DEFINITION_DELETE, false);
-
 	const [editing, setEditing] = React.useState(false);
 	const [editBody, setEditBody] = React.useState(definition.body);
 	const [confirmDelete, setConfirmDelete] = React.useState(false);
@@ -173,24 +167,22 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		await runDelete(
 			() => {
 				const promise = fate.mutations.definition.delete({input: {id: definition.id}});
-				if (optimisticDelete) {
-					// Optimistic edge-drop (ADR 0125 D1): remove the edge from the nested list
-					// state now so the card disappears instantly. The definition id is already
-					// canonical, so the server `deleteEdge` frame removes an id already gone —
-					// a no-op by canonical id, no reappear. Roll the drop back on any failure
-					// (fate has no record write to restore for this Term-returning mutation).
-					const rollback = dropOptimisticDefinitionEdge(
-						fate.store,
-						toEntityId("Term", props.slug),
-						toEntityId("Definition", definition.id),
-					);
-					promise.then(
-						(res) => {
-							if (res.error) rollback();
-						},
-						() => rollback(),
-					);
-				}
+				// Optimistic edge-drop (ADR 0125 D1): remove the edge from the nested list
+				// state now so the card disappears instantly. The definition id is already
+				// canonical, so the server `deleteEdge` frame removes an id already gone —
+				// a no-op by canonical id, no reappear. Roll the drop back on any failure
+				// (fate has no record write to restore for this Term-returning mutation).
+				const rollback = dropOptimisticDefinitionEdge(
+					fate.store,
+					toEntityId("Term", props.slug),
+					toEntityId("Definition", definition.id),
+				);
+				promise.then(
+					(res) => {
+						if (res.error) rollback();
+					},
+					() => rollback(),
+				);
 				return promise;
 			},
 			"tanım silinemedi",
