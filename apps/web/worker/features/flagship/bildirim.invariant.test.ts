@@ -2,7 +2,7 @@
  * The dark-ship default-=-safe-state invariant for the bildirim (notification
  * system) flag (#1694, epic #1666). Inspected off the exported `BILDIRIM_FLAG`
  * record (the same object the factory spreads into `FlagshipFlag`), so no alchemy
- * resource is constructed — mirrors `authorship-loop.invariant.test.ts`.
+ * resource is constructed — mirrors `member-mute.invariant.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_BILDIRIM} from "../../../src/flags/keys.ts";

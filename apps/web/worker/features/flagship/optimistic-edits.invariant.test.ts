@@ -3,7 +3,7 @@
  * content-edit flag (#1675, epic #1637). Inspected off the exported
  * `OPTIMISTIC_EDITS_FLAG` record (the same object the factory spreads into
  * `FlagshipFlag`), so no alchemy resource is constructed — mirrors
- * `authorship-loop.invariant.test.ts` (#1204).
+ * `member-mute.invariant.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {PHOENIX_OPTIMISTIC_EDITS} from "../../../src/flags/keys.ts";
