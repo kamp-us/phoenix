@@ -10,13 +10,11 @@
  * surface selects only the four aggregate scalars ({@link STANDING_FIELDS}), so a
  * leak is unrepresentable at the API boundary AND here — never merely unrendered.
  *
- * Three gates, all required ({@link shouldShowCaylakStatus}): the
- * `phoenix-authorship-loop` flag (default-off, dark-ship — #1204/ADR 0083), the
- * trusted tier read off `useMe().me.tier` (#1297) being `çaylak`, AND the viewer
- * looking at their OWN profile (`me.id === profileUserId`). A yazar/mod, a visitor,
- * another user's profile, or a flag-off render is a clean no-op. The server also
- * returns `null` for `myAuthorshipStanding` when the flag is off (belt-and-suspenders),
- * and a null standing renders nothing — so the block never queries off the safe path.
+ * Two gates, both required ({@link shouldShowCaylakStatus}): the trusted tier read
+ * off `useMe().me.tier` (#1297) being `çaylak`, AND the viewer looking at their OWN
+ * profile (`me.id === profileUserId`). A yazar/mod, a visitor, or another user's
+ * profile is a clean no-op. A null standing renders nothing — so the block never
+ * queries off the safe path.
  *
  * Honest promotion-path framing ({@link caylakPromotionPath}, #1323): an UNVOUCHED
  * çaylak does NOT see a karma progress bar — the unassisted bar is 100 but no amount
@@ -42,24 +40,18 @@ import type {AuthorshipStanding} from "../../../worker/features/fate/views";
 import type {Tier} from "../../../worker/features/kunye/standing";
 import {useMe} from "../../auth/useMe";
 import {useImperativeView} from "../../fate/useImperativeView";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../../flags/keys";
-import {useFlag} from "../../flags/useFlag";
 import {Karma} from "../karma/Karma";
 import "./CaylakStatusBlock.css";
 
 /**
  * The block's gating decision, factored DOM-free so the contract — show iff the
- * authorship flag is on AND the viewer is a çaylak AND they are looking at their
- * OWN profile — is unit-testable without a DOM (the pure-extraction idiom of
- * `flagGateChild` / `shouldShowOnramp`). Reused to gate the per-item "incelemede"
- * badge in the contributions feed, so the badge and the block share one gate.
+ * viewer is a çaylak AND they are looking at their OWN profile — is unit-testable
+ * without a DOM (the pure-extraction idiom of `flagGateChild` / `shouldShowOnramp`).
+ * Reused to gate the per-item "incelemede" badge in the contributions feed, so the
+ * badge and the block share one gate.
  */
-export function shouldShowCaylakStatus(
-	flagOn: boolean,
-	tier: Tier | undefined,
-	isOwnProfile: boolean,
-): boolean {
-	return flagOn && tier === "çaylak" && isOwnProfile;
+export function shouldShowCaylakStatus(tier: Tier | undefined, isOwnProfile: boolean): boolean {
+	return tier === "çaylak" && isOwnProfile;
 }
 
 /** The vouch-exists readout — a bare yes/no, NEVER who vouched (one-way glass). */
@@ -147,12 +139,9 @@ export interface CaylakStatusBlockProps {
 }
 
 export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
-	// Fail-closed default `false`: every flag failure mode (loading/error/undeclared)
-	// degrades to today's behavior.
-	const {value: flagOn} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	const {me} = useMe();
 	const headingId = useId();
-	const show = shouldShowCaylakStatus(flagOn, me?.tier, me?.id === profileUserId);
+	const show = shouldShowCaylakStatus(me?.tier, me?.id === profileUserId);
 	const standing = useAuthorshipStanding(show);
 
 	if (!show || !standing) return null;

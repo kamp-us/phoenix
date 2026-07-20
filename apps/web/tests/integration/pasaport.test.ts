@@ -209,7 +209,9 @@ describe("pasaport — profile reads", () => {
 	let userId = "";
 
 	beforeAll(async () => {
-		const user = await h.signUp(`${NS}-profile@test.local`, "hunter2hunter2", "Fate Profile");
+		// An established member: the counters/feed below are read ANONYMOUSLY, and a
+		// çaylak's contributions are sandbox-masked from every reader but the author/mod.
+		const user = await h.signUpYazar(`${NS}-profile@test.local`, "hunter2hunter2", "Fate Profile");
 		userId = user.userId;
 		await setUsername(user.cookie, username);
 
@@ -323,7 +325,7 @@ describe("pasaport — profile reads", () => {
 		// property in `db/Drizzle.test.ts`, tracked for real-D1 migration under #582
 		// (see #614; #581 AC3).
 		const authorUsername = uname("karma");
-		const author = await h.signUp(`${NS}-karma@test.local`, "hunter2hunter2", "Karma Author");
+		const author = await h.signUpYazar(`${NS}-karma@test.local`, "hunter2hunter2", "Karma Author");
 		await setUsername(author.cookie, authorUsername);
 
 		// The author writes a definition; a distinct voter will up-vote it.
@@ -396,7 +398,7 @@ describe("pasaport — profile reads", () => {
 		// is invariant under the fix whether or not the probes actually raced, and was `2` (flaky)
 		// before it. The retract direction is symmetric (a single net -1, never -2).
 		const authorUsername = uname("race");
-		const author = await h.signUp(`${NS}-race@test.local`, "hunter2hunter2", "Race Author");
+		const author = await h.signUpYazar(`${NS}-race@test.local`, "hunter2hunter2", "Race Author");
 		await setUsername(author.cookie, authorUsername);
 
 		const added = await h.fate(

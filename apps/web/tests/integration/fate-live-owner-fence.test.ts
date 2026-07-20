@@ -28,8 +28,8 @@ let mallory: {userId: string; cookie: string};
 
 beforeAll(async () => {
 	const stamp = Date.now();
-	alice = await h.signUp(`${NS}-alice-${stamp}@test.local`, "hunter2hunter2", "alice");
-	mallory = await h.signUp(`${NS}-mallory-${stamp}@test.local`, "hunter2hunter2", "mallory");
+	alice = await h.signUpYazar(`${NS}-alice-${stamp}@test.local`, "hunter2hunter2", "alice");
+	mallory = await h.signUpYazar(`${NS}-mallory-${stamp}@test.local`, "hunter2hunter2", "mallory");
 });
 
 describe("live views — /fate/live owner-isolation fence (#2563)", () => {

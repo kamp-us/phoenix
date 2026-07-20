@@ -59,7 +59,7 @@ beforeAll(() => {
 describe("account.delete — anonymize-to-@[silinen]", () => {
 	it("re-attributes content to @[silinen] (kept Live, karma kept) and tears down the session", async () => {
 		const authorUsername = uname("author");
-		const author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "Author");
+		const author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "Author");
 		await setUsername(author.cookie, authorUsername);
 
 		// The author writes a definition; a distinct voter up-votes it (author karma → 1).

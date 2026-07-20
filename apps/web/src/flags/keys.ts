@@ -69,14 +69,6 @@ export const MECMUA_PUBLIC_READ = "mecmua-public-read";
 export const MECMUA_FEED = "mecmua-feed";
 
 /**
- * Earned-authorship loop (çaylak→yazar) dark-ship flag (#1204, epic #1202). The
- * single seam every authorship-loop surface gates behind: cross-cutting
- * (`phoenix`) because the loop touches sözlük/pano/pasaport, default-off so the
- * loop ships dark until a human flips it at release (ADR 0083).
- */
-export const PHOENIX_AUTHORSHIP_LOOP = "phoenix-authorship-loop";
-
-/**
  * Bildirim (notification system) dark-ship flag (#1694, epic #1666). The SINGLE
  * seam the whole notification surface gates behind — the spine's unread badge +
  * `/bildirimler` center page and every sibling emitter's surface reuse this one
@@ -130,7 +122,7 @@ export const PHOENIX_OPTIMISTIC_DEFINITION_DELETE = "phoenix-optimistic-definiti
  * releases the whole ungated social-signal affordance. Default-off so the feature
  * reaches production dark until a human flips it at release (ADR 0083). Its OWN
  * cross-cutting (`phoenix`) key — the template spans both products, mirroring the
- * `phoenix-authorship-loop` / `phoenix-bildirim` shared-seam precedent.
+ * `phoenix-bildirim` shared-seam precedent.
  */
 export const PHOENIX_REACTIONS = "phoenix-reactions";
 
@@ -142,7 +134,7 @@ export const PHOENIX_REACTIONS = "phoenix-reactions";
  * as today, so the gates reach production dark until a human flips the flag at
  * release (ADR 0083). Default-off, its own cross-cutting (`phoenix`) key — the
  * gates span both products (pano/sözlük creation) and the moderation surface, the
- * `phoenix-authorship-loop` / `phoenix-reactions` shared-seam precedent.
+ * `phoenix-reactions` shared-seam precedent.
  *
  * Deliberately distinct from the çaylak→yazar *tier* gates (authorship level) and
  * the ADR 0098 moderation surface: these are karma-VALUE floors (anti-abuse), not
@@ -205,7 +197,7 @@ export const PHOENIX_EMAIL_DELIVERY_NOTICE = "phoenix-email-delivery-notice";
  * until a human flips it at release (ADR 0083): with it off the router is exactly as
  * today (flat product routes, no product Subnav zone). Its own cross-cutting (`phoenix`)
  * key — the placement law spans all four products (sözlük/pano/mecmua/divan), the
- * `phoenix-authorship-loop` / `phoenix-reactions` shared-seam precedent.
+ * `phoenix-reactions` shared-seam precedent.
  */
 export const PHOENIX_NAV_IA = "phoenix-nav-ia";
 
@@ -292,7 +284,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: MECMUA_WRITE, defaultValue: false},
 	{key: MECMUA_PUBLIC_READ, defaultValue: false},
 	{key: MECMUA_FEED, defaultValue: false},
-	{key: PHOENIX_AUTHORSHIP_LOOP, defaultValue: false},
 	{key: PHOENIX_BILDIRIM, defaultValue: false},
 	{key: PHOENIX_OPTIMISTIC_EDITS, defaultValue: false},
 	{key: PHOENIX_OPTIMISTIC_DEFINITION_ADD, defaultValue: false},

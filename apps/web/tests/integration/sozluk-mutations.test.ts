@@ -71,9 +71,12 @@ beforeAll(async () => {
 	voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "oycu");
 	// `voter` casts every real definition vote below — self-voting is blocked since #2216, so
 	// the caster is never the definition's author. Since #1810's "earn to vote" gate a fresh
-	// çaylak is rejected at cast, so promote both. `intruder` never votes.
+	// çaylak is rejected at cast, so promote both. `intruder` never votes, but it authors
+	// the second definition an anonymous `term.count` must SEE — a çaylak's content is
+	// sandbox-masked from every reader but the author/mod — so it is promoted too.
 	await h.promoteToYazar(author.userId);
 	await h.promoteToYazar(voter.userId);
+	await h.promoteToYazar(intruder.userId);
 });
 
 describe("sozluk mutations — definition.add", () => {

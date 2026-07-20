@@ -14,7 +14,6 @@ import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {useMe} from "./auth/useMe";
 import {useBildirimUnread} from "./components/bildirim/useBildirimUnread";
 import {DivanSubnavLayout} from "./components/divan/DivanSubnavLayout";
-import {shouldShowDivanEntry} from "./components/divan/divanGating";
 import {useDivanAccess} from "./components/divan/useDivanAccess";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
@@ -31,13 +30,7 @@ import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
 import {readBootUser} from "./flags/boot";
 import {EdgeShellBootMarker} from "./flags/EdgeShellBoot";
-import {
-	MECMUA_FEED,
-	MECMUA_PUBLIC_READ,
-	PHOENIX_AUTHORSHIP_LOOP,
-	PHOENIX_BILDIRIM,
-	PHOENIX_NAV_IA,
-} from "./flags/keys";
+import {MECMUA_FEED, MECMUA_PUBLIC_READ, PHOENIX_BILDIRIM, PHOENIX_NAV_IA} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {AtolyeExhibitPage} from "./lab/atolye/AtolyeExhibitPage";
 import {AtolyeIndexPage} from "./lab/atolye/AtolyeIndexPage";
@@ -286,19 +279,15 @@ function LayoutContent() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const setChips = useContext(SetTopbarChipsContext);
-	// Ambient self-karma in the topbar, dark behind the authorship-loop flag (#1208).
-	// Gating the fetch on the flag keeps the flag-off path exactly as today: no flag →
-	// null username → the read short-circuits off the wire (useProfileStats).
-	const {value: authorshipLoop} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
-	const karmaState = useProfileStats(authorshipLoop ? me?.username : null);
+	// Ambient self-karma in the topbar (#1208).
+	const karmaState = useProfileStats(me?.username ?? null);
 	const selfKarma = karmaState.status === "ok" ? karmaState.stats.totalKarma : undefined;
-	// The yazar/mod-only divan entry (#1290), dark behind the same authorship-loop
-	// flag. `useDivanAccess` probes the server's gated read (yazar OR mod), so the
-	// entry is server-authoritative — invisible to çaylak/visitor, absent when off.
-	// `me` feeds the #2209 client short-circuit: a provably-denied çaylak/non-mod
-	// skips the guaranteed-`UNAUTHORIZED` probe; the ambiguous case still probes.
-	const divanAccess = useDivanAccess(me);
-	const showDivan = shouldShowDivanEntry(authorshipLoop, divanAccess);
+	// The yazar/mod-only divan entry (#1290). `useDivanAccess` probes the server's
+	// gated read (yazar OR mod), so the entry is server-authoritative — invisible to
+	// çaylak/visitor. `me` feeds the #2209 client short-circuit: a provably-denied
+	// çaylak/non-mod skips the guaranteed-`UNAUTHORIZED` probe; the ambiguous case
+	// still probes.
+	const showDivan = useDivanAccess(me);
 	// The bildirim entry + unread chip (#1694), dark behind the `phoenix-bildirim`
 	// flag. Gating the fetch on flag+session keeps the flag-off path exactly as
 	// today: disabled ⇒ the read never touches the wire and reports 0.
@@ -448,8 +437,8 @@ export function App() {
 		<Route key="sozluk" path="/sozluk" element={<SozlukHome />} />,
 		<Route key="sozluk-slug" path="/sozluk/:slug" element={<SozlukTermPage />} />,
 	];
-	// The divan reviewer workspace (#1290) — the page self-gates on the authorship-loop
-	// flag (off ⇒ 404), so the route is dark by default.
+	// The divan reviewer workspace (#1290) — access is server-authoritative (the gated
+	// `divan.roster` read denies a çaylak/visitor the invisible `UNAUTHORIZED`).
 	const divanRoutes = [<Route key="divan" path="/divan" element={<DivanPage />} />];
 	return (
 		<ThemeProvider>

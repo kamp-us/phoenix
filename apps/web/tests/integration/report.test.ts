@@ -53,7 +53,7 @@ async function submitReport(
 
 beforeAll(async () => {
 	reporter = await h.signUp(`${NS}-reporter@test.local`, "hunter2hunter2", "muhbir");
-	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "anka");
+	author = await h.signUpYazar(`${NS}-author@test.local`, "hunter2hunter2", "anka");
 
 	const post = await h.fate(
 		{

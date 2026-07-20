@@ -5,12 +5,10 @@
  * sandbox (#1205) pending promotion to yazar (#1206), so the copy says exactly
  * that — it never promises instant publication.
  *
- * Two gates, both required (see {@link shouldShowOnramp}): the
- * `phoenix-authorship-loop` flag (#1204, default-off via `useFlag(..., false)`)
- * AND the trusted account tier read off `useMe().me.tier` (#1297) being `çaylak`.
- * A yazar (whose entries aren't sandboxed), a visitor, or a flag-off render is a
- * clean no-op — exactly today's behavior. The tier is read from the fate `me`
- * view, never the untrusted better-auth session field.
+ * The gate (see {@link shouldShowOnramp}): the trusted account tier read off
+ * `useMe().me.tier` (#1297) being `çaylak`. A yazar (whose entries aren't sandboxed)
+ * or a visitor is a clean no-op. The tier is read from the fate `me` view, never the
+ * untrusted better-auth session field.
  *
  * It does NOT touch the surface's draft autosave (#1214) — the on-ramp only
  * frames the composer sitting right below it, so in-progress writing survives the
@@ -27,8 +25,6 @@
 import {useId} from "react";
 import type {Tier} from "../../../worker/features/kunye/standing";
 import {useMe} from "../../auth/useMe";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../../flags/keys";
-import {useFlag} from "../../flags/useFlag";
 import "./FirstContributionOnramp.css";
 
 /** The write surface the on-ramp sits on — selects the per-surface copy noun. */
@@ -36,13 +32,12 @@ export type OnrampSurface = "sozluk" | "pano";
 
 /**
  * The on-ramp's gating decision, factored DOM-free so the contract — show iff the
- * authorship flag is on AND the viewer is a çaylak — is unit-testable without a
- * DOM (the pure-extraction idiom of `flagGateChild`). Only a çaylak's first entry
- * is sandboxed, so the honest-framing copy is truthful for a çaylak alone; a
- * yazar/visitor or a flag-off read is `false`.
+ * viewer is a çaylak — is unit-testable without a DOM (the pure-extraction idiom of
+ * `flagGateChild`). Only a çaylak's first entry is sandboxed, so the honest-framing
+ * copy is truthful for a çaylak alone; a yazar/visitor read is `false`.
  */
-export function shouldShowOnramp(flagOn: boolean, tier: Tier | undefined): boolean {
-	return flagOn && tier === "çaylak";
+export function shouldShowOnramp(tier: Tier | undefined): boolean {
+	return tier === "çaylak";
 }
 
 /** Per-surface lowercase-Turkish heading. The body copy is shared. */
@@ -58,13 +53,10 @@ export interface FirstContributionOnrampProps {
 }
 
 export function FirstContributionOnramp({surface}: FirstContributionOnrampProps) {
-	// Fail-closed default `false`: every flag failure mode (loading/error/undeclared)
-	// degrades to today's behavior.
-	const {value: flagOn} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	const {me} = useMe();
 	const headingId = useId();
 
-	if (!shouldShowOnramp(flagOn, me?.tier)) return null;
+	if (!shouldShowOnramp(me?.tier)) return null;
 
 	const copy = onrampCopy(surface);
 	return (

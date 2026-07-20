@@ -38,18 +38,16 @@ export function Topbar({
 	nav?: NavItem[];
 	/**
 	 * The yazar/mod-only divan entry's href (#1290). Rendered only when set — the
-	 * Layout passes it solely when the authorship-loop flag is on AND the server
-	 * granted divan access (yazar OR mod), so it is invisible to çaylak/visitor and
-	 * absent when the flag is off. Kept distinct from `nav` so the gated entry never
-	 * leaks into the always-on nav list.
+	 * Layout passes it solely when the server granted divan access (yazar OR mod), so
+	 * it is invisible to çaylak/visitor. Kept distinct from `nav` so the gated entry
+	 * never leaks into the always-on nav list.
 	 */
 	divanTo?: string;
 	/** `username` drives the @username link; null means the bootstrap CTA. */
 	user?: {name: string; src?: string; username?: string | null};
 	/**
 	 * The signed-in user's ambient self-karma (#1208). Rendered only when present —
-	 * the Layout passes it solely behind the authorship-loop flag, so when the flag
-	 * is off it is `undefined` and the topbar is exactly as before.
+	 * `undefined` for a signed-out viewer, whose topbar carries no karma.
 	 */
 	karma?: number;
 	/**

@@ -34,7 +34,7 @@
 	margin-top: var(--s-2);
 }
 
-/* The çaylak→yazar promotion surface (#1206), dark behind the #1204 flag. */
+/* The çaylak→yazar promotion surface (#1206). */
 .kp-promotion {
 	display: flex;
 	flex-direction: column;

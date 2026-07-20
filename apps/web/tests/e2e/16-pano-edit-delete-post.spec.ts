@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signOut, signUp} from "./_helpers/auth";
+import {promoteToYazar} from "./_helpers/promote";
 import {randomSuffix} from "./_helpers/rand";
 
 /**
@@ -90,7 +91,11 @@ test.describe("Pano editPost / deletePost", () => {
 	test("non-author does not see edit/delete buttons on someone else's post", async ({page}) => {
 		// User A signs up, bootstraps, submits a post.
 		const aSuffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
-		await signUp(page, {email: `aa${aSuffix}@kamp.us`});
+		const emailA = `aa${aSuffix}@kamp.us`;
+		await signUp(page, {email: emailA});
+		// A's content must be readable by B below, and a çaylak's content lands sandboxed
+		// (read-masked from everyone but its author and a mod) — so A authors as a yazar.
+		await promoteToYazar(emailA);
 		await page.locator("input#bootstrap-username").fill(`a-${aSuffix}`);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {

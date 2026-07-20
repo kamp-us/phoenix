@@ -16,8 +16,7 @@
  * acceptance paths pin). The resolver holds **no authority of its own** — it is not a
  * capability; its only promotion trigger is the completed-tandem invariant it checks
  * here, exactly the "the yazar never holds a promote capability" rule (`.glossary/TERMS.md`:
- * the çaylak→yazar `Level` flip is not a yazar-held right). Callers gate reachability
- * behind the `PHOENIX_AUTHORSHIP_LOOP` dark-ship flag; the resolver itself is
+ * the çaylak→yazar `Level` flip is not a yazar-held right). The resolver itself is
  * unconditional, like the service reads it composes.
  */
 import {Effect} from "effect";

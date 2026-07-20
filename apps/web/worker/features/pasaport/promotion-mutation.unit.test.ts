@@ -8,8 +8,7 @@
  * Covers the acceptance matrix: direct mod promotion (server-enforced), vouch above
  * the reduced bar (promoted) vs below (recorded, NOT promoted) — the tandem, and that
  * an unprivileged actor cannot self-promote (a non-mod → invisible `UNAUTHORIZED`; a
- * çaylak vouching → public `FORBIDDEN`). Plus the #1204 dark-ship: flag OFF ⇒ the path
- * is inert (no authority check, no write). The atomic backlog sweep itself is
+ * çaylak vouching → public `FORBIDDEN`). The atomic backlog sweep itself is
  * `promotion-sweep.unit.test.ts`; real-D1 fidelity is the integration tier.
  */
 import {assert, describe, it} from "@effect/vitest";
@@ -55,17 +54,18 @@ const runtimeContextStub: BaseRuntimeContext = {
 	set: (id) => Effect.succeed(id),
 };
 
-const flagsStub = (on: boolean): Layer.Layer<Flags> =>
-	Layer.succeed(
-		Flags,
-		// biome-ignore lint/plugin: a Flags test double — only getBoolean is exercised on this path; structurally building the full provider-agnostic interface (the typed variations) adds nothing.
-		{
-			getBoolean: () => Effect.succeed(on),
-			getString: () => Effect.die(new Error("unused")),
-			getNumber: () => Effect.die(new Error("unused")),
-			getObject: () => Effect.die(new Error("unused")),
-		} as unknown as typeof Flags.Service,
-	);
+// The kefil/terfi emitters (notifyKefil / notifyPromotion) read the `phoenix-bildirim`
+// flag, so every case still provides a Flags service — on, so the deliver path runs.
+const flagsOn: Layer.Layer<Flags> = Layer.succeed(
+	Flags,
+	// biome-ignore lint/plugin: a Flags test double — only getBoolean is exercised here.
+	{
+		getBoolean: () => Effect.succeed(true),
+		getString: () => Effect.die(new Error("unused")),
+		getNumber: () => Effect.die(new Error("unused")),
+		getObject: () => Effect.die(new Error("unused")),
+	} as unknown as typeof Flags.Service,
+);
 
 const agentAuthorityStub = Layer.succeed(AgentAuthority, {admits: () => Effect.succeed(false)});
 
@@ -104,8 +104,8 @@ const noMutes = Layer.succeed(Mute, {
 	readMutedIds: () => Effect.succeed(new Set<string>()),
 });
 
-const requestContext = (actor: Actor, on: boolean) =>
-	Layer.mergeAll(flagsStub(on), noopLive, noMutes).pipe(
+const requestContext = (actor: Actor) =>
+	Layer.mergeAll(flagsOn, noopLive, noMutes).pipe(
 		Layer.provideMerge(Layer.succeed(CurrentUser, {user: undefined})),
 		Layer.provideMerge(Layer.succeed(CurrentActor, {actor})),
 		Layer.provideMerge(Layer.succeed(RuntimeContext, runtimeContextStub)),
@@ -150,7 +150,7 @@ describe("user.promote — direct moderator promotion", () => {
 					relationStoreOf(["u-mod"]),
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(human("u-mod"), true),
+					requestContext(human("u-mod")),
 					noopLive,
 				),
 			),
@@ -170,29 +170,7 @@ describe("user.promote — direct moderator promotion", () => {
 					relationStoreOf(["someone-else"]),
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(human("u-rando"), true),
-				),
-			),
-		),
-	);
-
-	it.effect("with the #1204 flag OFF the path is inert — no authority check, no write", () =>
-		Effect.gen(function* () {
-			const receipt = yield* promote("u-target");
-			assert.strictEqual((receipt as {promoted: boolean}).promoted, false);
-		}).pipe(
-			// Both the write seam and the authority seam fail-on-contact: neither is reached.
-			Effect.provide(
-				Layer.mergeAll(
-					makePasaportStub(),
-					Layer.succeed(RelationStore, {
-						has: () => Effect.die(new Error("flag OFF must not check authority")),
-						hasSubjects: () => Effect.die(new Error("flag OFF must not check authority")),
-						subjectsOf: () => Effect.die(new Error("flag OFF must not check authority")),
-					}),
-					agentAuthorityStub,
-					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(human("u-rando"), false),
+					requestContext(human("u-rando")),
 				),
 			),
 		),
@@ -226,7 +204,7 @@ describe("user.vouch — author-vouch tandem", () => {
 						kunyeOf(yazarVoucher.tier, {"u-caylak": 25}), // above VOUCH_PROMOTION_KARMA_BAR
 						agentAuthorityStub,
 						makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-						requestContext(human("u-yazar"), true),
+						requestContext(human("u-yazar")),
 						noopLive,
 					),
 				),
@@ -251,7 +229,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					kunyeOf(yazarVoucher.tier, {"u-caylak": 1}), // below the bar
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(human("u-yazar"), true),
+					requestContext(human("u-yazar")),
 				),
 			),
 		),
@@ -278,7 +256,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					kunyeOf(yazarVoucher.tier, {}),
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(human("u-yazar"), true),
+					requestContext(human("u-yazar")),
 				),
 			),
 		),
@@ -304,7 +282,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					kunyeOf(yazarVoucher.tier, {"u-existing": 1}), // below the bar ⇒ no promote
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(human("u-yazar"), true),
+					requestContext(human("u-yazar")),
 				),
 			),
 		),
@@ -326,7 +304,7 @@ describe("user.vouch — author-vouch tandem", () => {
 						kunyeOf({"u-caylak-actor": "çaylak"}, {}),
 						agentAuthorityStub,
 						makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-						requestContext(human("u-caylak-actor"), true),
+						requestContext(human("u-caylak-actor")),
 					),
 				),
 			),
@@ -346,7 +324,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					kunyeOf({}, {}),
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(unauthenticated, true),
+					requestContext(unauthenticated),
 				),
 			),
 		),
@@ -371,7 +349,7 @@ describe("user.withdrawVouch — releasing the slot", () => {
 					kunyeOf(yazarVoucher.tier, {}),
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(human("u-yazar"), true),
+					requestContext(human("u-yazar")),
 				),
 			),
 		),
@@ -391,27 +369,7 @@ describe("user.withdrawVouch — releasing the slot", () => {
 					kunyeOf({"u-caylak-actor": "çaylak"}, {}),
 					agentAuthorityStub,
 					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(human("u-caylak-actor"), true),
-				),
-			),
-		),
-	);
-
-	it.effect("with the #1204 flag OFF withdraw is inert — no authority check, no write", () =>
-		Effect.gen(function* () {
-			const receipt = yield* withdrawVouch("u-caylak");
-			assert.strictEqual((receipt as {promoted: boolean}).promoted, false);
-		}).pipe(
-			// Both seams fail-on-contact: neither the ledger nor the standing read is reached.
-			Effect.provide(
-				Layer.mergeAll(
-					relationStoreNoModerators,
-					makePasaportStub(),
-					makeVouchLedgerStub(),
-					kunyeOf({}, {}),
-					agentAuthorityStub,
-					makeNotificationStub({record: () => Effect.succeed({id: "n-test"})}),
-					requestContext(human("u-rando"), false),
+					requestContext(human("u-caylak-actor")),
 				),
 			),
 		),
@@ -449,7 +407,7 @@ describe("user.vouch — kefil bildirimi (#1695)", () => {
 			kunyeOf(yazarVoucher.tier, {"u-caylak": 1}), // below the bar ⇒ no promote arm
 			agentAuthorityStub,
 			notification,
-			requestContext(human("u-yazar"), true),
+			requestContext(human("u-yazar")),
 		);
 
 	it.effect("a recorded vouch emits ONE kefil notification for the vouched çaylak", () => {
@@ -513,7 +471,7 @@ describe("user.promote — terfi bildirimi (#1696)", () => {
 			relationStoreOf(["u-mod"]),
 			agentAuthorityStub,
 			notification,
-			requestContext(human("u-mod"), true),
+			requestContext(human("u-mod")),
 			noopLive,
 		);
 

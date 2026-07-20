@@ -75,6 +75,21 @@ export interface Harness {
 	/** Sign up a user through better-auth; return `{userId, cookie}`. */
 	signUp(email: string, password: string, name: string): Promise<{userId: string; cookie: string}>;
 	/**
+	 * {@link signUp} + {@link promoteToYazar} — the fixture factory for an ESTABLISHED
+	 * member, and the one a test needs whenever its author's content must be publicly
+	 * visible. A freshly signed-up account is a `çaylak` (the `user.tier` column default),
+	 * and the earned-authorship loop lands a çaylak's post/comment/definition SANDBOXED
+	 * (`sandboxedAtForAuthor`, `kunye/sandbox.ts`) — read-masked from everyone but its
+	 * author and a mod, so a feed/read/live assertion over it sees nothing. Only a yazar
+	 * authors live content. Setup-only, never an assertion; use bare `signUp` when the
+	 * test means a newcomer.
+	 */
+	signUpYazar(
+		email: string,
+		password: string,
+		name: string,
+	): Promise<{userId: string; cookie: string}>;
+	/**
 	 * Seed a sözlük term with definitions through the PUBLIC fate protocol — the
 	 * same `definition.add` mutation the app uses (the dev-only admin route is
 	 * gone). Each definition is added under a real session for its `authorName`
@@ -517,6 +532,12 @@ export function harness(
 		throw new Error(`sign-up failed: ${res.status} ${body}`);
 	};
 
+	const signUpYazar: Harness["signUpYazar"] = async (email, password, name) => {
+		const session = await signUp(email, password, name);
+		await promoteToYazar(session.userId);
+		return session;
+	};
+
 	// Per-harness seeding state. A `definition.add` write is identity-bearing
 	// (author = session user) and scores are vote-derived, so seeding drives the
 	// same public surface the app does: one cached session per distinct
@@ -534,29 +555,34 @@ export function harness(
 	// never the requested base literal, since the two now differ.
 	const runAuthorName = (base: string): string => `${base}-${STAMP_SEED}`;
 	const authorCookies = new Map<string, string>();
+	// A seeded author is a YAZAR: seeding exists to put PUBLICLY READABLE definitions on
+	// the stage, and a çaylak's definition lands sandboxed (see `signUpYazar`), which
+	// would read-mask the whole seeded corpus from every reader the tests assert as.
 	const authorCookie = async (base: string): Promise<{cookie: string; authorName: string}> => {
 		const authorName = runAuthorName(base);
 		const existing = authorCookies.get(authorName);
 		if (existing) return {cookie: existing, authorName};
-		const {cookie} = await signUp(`${nextSeedId()}@seed.local`, "seedpass-seedpass", authorName);
+		const {cookie} = await signUpYazar(
+			`${nextSeedId()}@seed.local`,
+			"seedpass-seedpass",
+			authorName,
+		);
 		authorCookies.set(authorName, cookie);
 		return {cookie, authorName};
 	};
 
 	// Grow-only pool of voter cookies, sized on demand. Each voter is a distinct
 	// session, so `voterPool[0..n)` are n distinct up-votes for a single target.
-	// Each is PROMOTED to yazar right after signup: a fresh account is a çaylak and,
-	// since #1810's "earn to vote" gate, would be rejected at cast — a seed voter exists
-	// solely to realize a score, so it must be above the newcomer floor.
+	// Each is a yazar: since #1810's "earn to vote" gate a çaylak is rejected at cast, and
+	// a seed voter exists solely to realize a score, so it must be above the newcomer floor.
 	const voterPool: string[] = [];
 	const voters = async (n: number): Promise<string[]> => {
 		while (voterPool.length < n) {
-			const {cookie, userId} = await signUp(
+			const {cookie} = await signUpYazar(
 				`${nextSeedId()}@vote.local`,
 				"voterpass-voterpass",
 				"voter",
 			);
-			await promoteToYazar(userId);
 			voterPool.push(cookie);
 		}
 		return voterPool.slice(0, n);
@@ -774,6 +800,7 @@ export function harness(
 		fate,
 		fateBatch,
 		signUp,
+		signUpYazar,
 		seedTerm,
 		touchTerm,
 		setLastActivityAt,

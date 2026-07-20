@@ -32,7 +32,7 @@ const h = integrationStack(import.meta.url);
 let user: {userId: string; cookie: string};
 
 beforeAll(async () => {
-	user = await h.signUp(`live-${Date.now()}@test.local`, "hunter2hunter2", "canlı");
+	user = await h.signUpYazar(`live-${Date.now()}@test.local`, "hunter2hunter2", "canlı");
 });
 
 describe("live views — /fate/live (global topic:posts)", () => {

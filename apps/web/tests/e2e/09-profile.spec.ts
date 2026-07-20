@@ -36,13 +36,20 @@ test.describe("ProfilePage (/profile)", () => {
 		// email row should show the credential email
 		await expect(page.locator(".kp-profile__row.readonly .value")).toContainText(creds.email);
 
-		// Section headings: hesap / görünüm / oturum / tehlikeli alan
+		// Section headings: katkıların / hesap / görünüm / oturum / tehlikeli alan.
+		// `katkıların` (the #1209 contribution signal) leads: it used to be gated on the
+		// authorship-loop flag retired by #3664, and this count encoded that flag's OFF
+		// world even though production served it on@100% — so the 4 was the stale
+		// expectation, not the render. The section is unconditional now, and its
+		// `SignalShell` renders in every state (loading / empty / list), so the count is
+		// stable for a fresh signup with no contributions yet.
 		const headings = page.locator(".kp-profile__section h3");
-		await expect(headings).toHaveCount(4);
-		await expect(headings.nth(0)).toHaveText("hesap");
-		await expect(headings.nth(1)).toHaveText("görünüm");
-		await expect(headings.nth(2)).toHaveText("oturum");
-		await expect(headings.nth(3)).toContainText("tehlikeli");
+		await expect(headings).toHaveCount(5);
+		await expect(headings.nth(0)).toHaveText("katkıların");
+		await expect(headings.nth(1)).toHaveText("hesap");
+		await expect(headings.nth(2)).toHaveText("görünüm");
+		await expect(headings.nth(3)).toHaveText("oturum");
+		await expect(headings.nth(4)).toContainText("tehlikeli");
 	});
 
 	// #75 interim: the change-email flow needs email-verification infra the worker

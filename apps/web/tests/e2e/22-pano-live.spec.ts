@@ -307,8 +307,14 @@ test.describe("Pano live (two clients)", () => {
 		const pageB = await ctxB.newPage();
 
 		try {
-			await signUpAndBootstrap(pageA);
+			const {email: emailA} = await signUpAndBootstrap(pageA);
 			await signUpAndBootstrap(pageB);
+			// A authors the post B must SEE, so A has to be live: a çaylak's post is
+			// stamped `sandboxed_at` and read-masked from every viewer but its author, so
+			// the row would never reach B's feed and the live fan-out under test could not
+			// be observed. Only A is promoted — B stays a fresh çaylak, keeping the
+			// newcomer-as-reader path covered (ADR 0137).
+			await promoteToYazar(emailA);
 
 			// Client B opens the default feed (`sıcak`/hot) and waits for it to
 			// settle so the live `posts` connection is subscribed. A `post.submit`

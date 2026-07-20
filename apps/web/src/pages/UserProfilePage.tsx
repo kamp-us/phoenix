@@ -19,9 +19,6 @@ import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/Us
 import {EmptyState} from "../components/ui/EmptyState";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
-import {FlagGate} from "../flags/FlagGate";
-import {PHOENIX_AUTHORSHIP_LOOP} from "../flags/keys";
-import {useFlag} from "../flags/useFlag";
 import {NotFoundPage} from "./NotFoundPage";
 import "./UserProfilePage.css";
 
@@ -76,11 +73,8 @@ function UserProfileContent({username}: {username: string}) {
 		<div className="kp-user-profile" data-testid="user-profile-page">
 			<div className="kp-user-profile__inner">
 				<UserProfileHeader profile={profile} fallbackHandle={username} />
-				{/* The çaylak→yazar promotion surface (#1206), dark behind the #1204
-				    authorship-loop flag; the server is the sole authority. */}
-				<FlagGate flag={PHOENIX_AUTHORSHIP_LOOP}>
-					<ProfilePromotion profile={profile} />
-				</FlagGate>
+				{/* The çaylak→yazar promotion surface (#1206); the server is the sole authority. */}
+				<ProfilePromotion profile={profile} />
 				<ContributionsList profile={profile} />
 			</div>
 		</div>
@@ -99,12 +93,11 @@ function ProfilePromotion({profile}: {profile: ViewRef<"Profile">}) {
 function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 	const data = useView(UserProfileView, profile);
 	const {userId} = useView(UserProfileHeaderView, profile);
-	const {value: flagOn} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	const {me} = useMe();
-	// Same three-gate as the status block: the "incelemede" badge shows only for a
-	// çaylak viewing their own profile behind the flag. A non-owner never receives a
-	// sandboxed row from the server, so this also keeps the badge off others' feeds.
-	const sandboxBadge = shouldShowCaylakStatus(flagOn, me?.tier, me?.id === userId);
+	// Same gate as the status block: the "incelemede" badge shows only for a çaylak
+	// viewing their own profile. A non-owner never receives a sandboxed row from the
+	// server, so this also keeps the badge off others' feeds.
+	const sandboxBadge = shouldShowCaylakStatus(me?.tier, me?.id === userId);
 	const [items, loadNext] = useListView(ContributionsConnectionView, data.contributions);
 
 	return (

@@ -31,7 +31,7 @@ const NS = nsToken(import.meta.url);
 let user: {userId: string; cookie: string};
 
 beforeAll(async () => {
-	user = await h.signUp(`${NS}-${Date.now()}@test.local`, "hunter2hunter2", "canlı");
+	user = await h.signUpYazar(`${NS}-${Date.now()}@test.local`, "hunter2hunter2", "canlı");
 });
 
 describe("live views — /fate/live (args-scoped)", () => {

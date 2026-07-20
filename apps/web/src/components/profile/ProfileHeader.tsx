@@ -9,8 +9,8 @@
  * fate `Profile` view on `/u/`) into these plain props.
  *
  * The activity-tile order is the single source `profileStatTiles`; `karma` is the
- * optional flag-gated tile (`showKarma`, the `PHOENIX_AUTHORSHIP_LOOP` seam),
- * rendered via the shared `Karma` atom and kept structurally last. `standingLabel`
+ * optional owner-only tile (`showKarma`), rendered via the shared `Karma` atom and
+ * kept structurally last. `standingLabel`
  * is likewise optional (owner-only — the public view has no viewed-user tier), so a
  * `null` renders handle-only, exactly as before.
  */
@@ -45,7 +45,7 @@ export interface ProfileHeaderProps {
 	readonly stats: ProfileHeaderStats | null;
 	/** A failed stats read — renders the error strip, never a misleading `0` (#448). */
 	readonly statsError?: boolean;
-	/** Emit the karma tile — gated by `PHOENIX_AUTHORSHIP_LOOP` on `/profile`. */
+	/** Emit the karma tile — owner-only, shown on `/profile`. */
 	readonly showKarma?: boolean;
 }
 
