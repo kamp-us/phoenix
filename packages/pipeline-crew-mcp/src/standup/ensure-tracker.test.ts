@@ -4,15 +4,16 @@
  * `ensureTrackerRunning` spawns the standing tracker as a detached process that serves the socket and
  * survives a second stand-up (which reuses it via EADDRINUSE rather than double-binding).
  */
+import {execFileSync} from "node:child_process";
 import {randomUUID} from "node:crypto";
-import {mkdtempSync, rmSync} from "node:fs";
+import {mkdtempSync, realpathSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeFileSystem, NodeSocket} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
-import {socketPathFor, TrackerRegistry, trackerServerLayer} from "../tracker/index.ts";
+import {rendezvousSocketPathFor, TrackerRegistry, trackerServerLayer} from "../tracker/index.ts";
 import {ensureTrackerRunning, tryBecomeTracker} from "./ensure-tracker.ts";
 
 const freshSocketPath = () => join(tmpdir(), `ensure-tracker-${randomUUID().slice(0, 8)}.sock`);
@@ -74,8 +75,11 @@ describe("ensureTrackerRunning — the detached standing process", () => {
 	it.live(
 		"starts a detached tracker that serves the socket and reuses it on a second stand-up",
 		() => {
+			// A real git repo, because the rendezvous is keyed on the repo's shared git dir (ADR 0197) —
+			// a non-repo dir has no canonical rendezvous and resolution correctly errors instead.
 			const projectDir = mkdtempSync(join(tmpdir(), "ensure-tracker-proj-"));
-			const socketPath = socketPathFor(projectDir);
+			execFileSync("git", ["init", "-q", projectDir]);
+			const socketPath = rendezvousSocketPathFor(realpathSync(join(projectDir, ".git")));
 			return Effect.gen(function* () {
 				// First stand-up: no tracker running -> a detached child is spawned and serves the socket.
 				const started = yield* ensureTrackerRunning(projectDir);

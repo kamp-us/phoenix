@@ -51,7 +51,7 @@ import {
 	kindsToolHandlers,
 } from "../edge/index.ts";
 import {type Dialer, Inbox, type Tracker} from "../peer/index.ts";
-import {socketPathFor} from "../tracker/index.ts";
+import {resolveRendezvous} from "../tracker/index.ts";
 import {VERSION} from "../version.ts";
 import {
 	crewSocketDialerLayer,
@@ -70,7 +70,7 @@ export const SESSION_SERVER_NAME = "@kampus/pipeline-crew-mcp" as const;
 
 export interface CrewSessionConfig {
 	readonly role: CrewRole;
-	/** The project root whose per-project tracker socket this session rendezvous on. */
+	/** Seeds git repo discovery; the session meets at that repo's canonical rendezvous (ADR 0197). */
 	readonly projectRoot: string;
 	/** The MCP server name advertised over stdio (defaults to the package name). */
 	readonly name?: string;
@@ -126,7 +126,11 @@ export const peerSocketSubstrate = (
 	config: CrewSessionConfig,
 	address: string,
 ): Layer.Layer<CrewTracker | Tracker | Inbox | Dialer, unknown, FileSystem.FileSystem> => {
-	const crewTracker = crewTrackerHostOrDialLayer(socketPathFor(config.projectRoot));
+	const crewTracker = Layer.unwrap(
+		resolveRendezvous(config.projectRoot).pipe(
+			Effect.map((rendezvous) => crewTrackerHostOrDialLayer(rendezvous.socketPath)),
+		),
+	);
 	return Layer.mergeAll(
 		peerTrackerLayer.pipe(Layer.provideMerge(crewTracker)),
 		Inbox.layer(address),

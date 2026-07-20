@@ -14,20 +14,24 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
 import {TrackerRegistry} from "./group.ts";
-import {isTrackerAddressInUse, socketPathFor, trackerServerLayer} from "./server.ts";
+import {rendezvousSocketPathFor} from "./rendezvous.ts";
+import {isTrackerAddressInUse, trackerServerLayer} from "./server.ts";
 
 // trackerServerLayer's stale-socket reclaim now reaches disk through the FileSystem seam, so provide
 // the real Node FileSystem — the layer builds in-test exactly as under the bin's NodeServices.layer.
 const hostedTracker = (socketPath: string) =>
 	trackerServerLayer(socketPath).pipe(Layer.provide(NodeFileSystem.layer));
 
-describe("tracker socket path — per-project derivation", () => {
-	it("is deterministic and normalizes the root", () => {
-		assert.strictEqual(socketPathFor("/some/project"), socketPathFor("/some/project/"));
+describe("tracker socket path — derived from the canonical repo key", () => {
+	it("is deterministic in the repo key", () => {
+		assert.strictEqual(
+			rendezvousSocketPathFor("/repo/.git"),
+			rendezvousSocketPathFor("/repo/.git"),
+		);
 	});
-	it("differs across projects and is a well-formed .sock path", () => {
-		assert.notStrictEqual(socketPathFor("/project/a"), socketPathFor("/project/b"));
-		assert.match(socketPathFor("/project/a"), /kampus-crew-[0-9a-f]{16}\.sock$/);
+	it("differs across repos and is a well-formed .sock path", () => {
+		assert.notStrictEqual(rendezvousSocketPathFor("/a/.git"), rendezvousSocketPathFor("/b/.git"));
+		assert.match(rendezvousSocketPathFor("/a/.git"), /kampus-crew-[0-9a-f]{16}\.sock$/);
 	});
 });
 

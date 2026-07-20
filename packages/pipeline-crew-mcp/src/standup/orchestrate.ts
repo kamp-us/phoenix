@@ -23,6 +23,7 @@ import {spawn} from "node:child_process";
 import {randomUUID} from "node:crypto";
 import {Effect, type FileSystem, type Path, Schema} from "effect";
 import {SESSION_SERVER_NAME} from "../crew/index.ts";
+import type {RendezvousResolutionError} from "../tracker/index.ts";
 import {
 	buildSessionBind,
 	type ChannelPluginNotAllowedError,
@@ -158,6 +159,7 @@ export type StandUpError =
 	| LaunchConfigError
 	| CliVersionAssertError
 	| TrackerNotServingError
+	| RendezvousResolutionError
 	| CrewSessionBinUnresolvableError
 	| CrewServerNotRegisteredError
 	| ChannelPluginNotAllowedError
@@ -243,10 +245,10 @@ export interface StandUpInput {
 	readonly config?: Effect.Effect<LaunchConfig, LaunchConfigError>;
 	/** The installed-CLI-version reader the pin is asserted against. Default: the real `claude --version`. */
 	readonly readVersionOutput?: Effect.Effect<string, unknown>;
-	/** Start-or-reuse the per-project tracker. Default: `ensureTrackerRunning` (detached standing process). */
+	/** Start-or-reuse the repo's tracker at its canonical rendezvous. Default: `ensureTrackerRunning` (detached standing process). */
 	readonly ensureTracker?: (
 		projectRoot: string,
-	) => Effect.Effect<TrackerHandle, TrackerNotServingError>;
+	) => Effect.Effect<TrackerHandle, TrackerNotServingError | RendezvousResolutionError>;
 	/** Mints each engine instance's distinct id. Default: `randomUUID` (the generator sessions use at runtime). */
 	readonly instanceId?: () => string;
 	/** Resolve the tmux session windows open into — the caller's current session, else a created fallback.

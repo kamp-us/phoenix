@@ -56,20 +56,21 @@ import {
 } from "./src/crew/channel-server.ts";
 import {crewTrackerHostOrDialLayer, peerTrackerLayer} from "./src/crew/tracker.ts";
 import {Inbox} from "./src/peer/index.ts";
-import {socketPathFor} from "./src/tracker/index.ts";
-
-// A throwaway project root: its per-project tracker socket is the rendezvous both peers meet on.
-const PROJECT = "/tmp/kampus-crew-tutorial";
+import {resolveRendezvous} from "./src/tracker/index.ts";
 
 // Peer B is an engineering-manager engine instance; peer A is the intake-desk bridge.
 const B = "inbox://engineering-manager/tutorial";
 const A = "inbox://intake-desk";
 
-// One shared tracker for the project: the first peer to build this hosts the registry socket, a
-// racing peer catches EADDRINUSE and dials the existing one. Both peers reach the SAME registry.
-const tracker = crewTrackerHostOrDialLayer(socketPathFor(PROJECT)).pipe(
-	Layer.provide(NodeFileSystem.layer),
-);
+// One shared tracker for this repo, at its canonical rendezvous (ADR 0197) — keyed on the shared git
+// dir, so you get the same registry whether you run this from the repo root or a nested package dir.
+// The first peer to build this hosts the registry socket; a racing peer catches EADDRINUSE and dials
+// the existing one. Both peers reach the SAME registry.
+const tracker = Layer.unwrap(
+	resolveRendezvous(process.cwd()).pipe(
+		Effect.map((rendezvous) => crewTrackerHostOrDialLayer(rendezvous.socketPath)),
+	),
+).pipe(Layer.provide(NodeFileSystem.layer));
 
 // A peer's substrate: the tracker port (announce/lookup), its own inbox log, and the socket dialer.
 const substrate = (address: string) =>

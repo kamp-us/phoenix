@@ -3,9 +3,9 @@
  * `trackerServerLayer` bind (with stale-socket reclamation), the standalone `launchTracker` entry,
  * and the `EADDRINUSE` detector (`isTrackerAddressInUse`) the first-peer-spawn dial fallback keys on.
  *
- * The socket path is derived deterministically from the project root (`socketPathFor`), so every
- * peer of one project rendezvous on the same socket while different projects stay isolated — the
- * "per-project socket". The tracker is brought up by whichever peer needs it first (first-peer-
+ * The socket path is the canonical per-repo rendezvous (`./rendezvous.ts`, ADR 0197), so every peer of
+ * one repo — main checkout, nested subdir, or linked worktree — meets on the same socket while
+ * different repos stay isolated. The tracker is brought up by whichever peer needs it first (first-peer-
  * spawn): the first bind wins the socket; a later peer's bind gets `EADDRINUSE`, the signal that a
  * tracker is already serving this project, and it connects as a client instead. That host-or-dial
  * wiring — which combines this server layer with the crew's registry client — lives in
@@ -23,10 +23,7 @@
  * The served surface is `TrackerRegistry` — registry kinds only (see `./group.ts`); the tracker
  * has no handler for any message-relay kind, so it structurally cannot relay a message.
  */
-import {createHash} from "node:crypto";
 import {connect} from "node:net";
-import {tmpdir} from "node:os";
-import {join, resolve} from "node:path";
 import {NodeSocketServer} from "@effect/platform-node";
 import {Cause, Effect, FileSystem, Layer, Option} from "effect";
 import {RpcSerialization, RpcServer} from "effect/unstable/rpc";
@@ -34,23 +31,7 @@ import {SocketServerError} from "effect/unstable/socket/SocketServer";
 import {TrackerRegistry} from "./group.ts";
 import {TrackerHandlers} from "./handlers.ts";
 import {RegistryLive} from "./registry.ts";
-
-/**
- * The per-project unix socket path for `projectRoot`. Deterministic (same project ⇒ same socket)
- * yet collision-free across projects, and short enough to stay under the ~104-char unix socket
- * path limit by hashing the root rather than embedding it. Honors `XDG_RUNTIME_DIR` when set,
- * falling back to the OS temp dir.
- *
- * A pure synchronous boundary derivation, so its `node:os`/`node:path`/`node:crypto` calls stay raw
- * per the platform-access bright line (.patterns/effect-platform-access.md): `tmpdir()` is a temp-*path*
- * boundary read (never a created temp dir), and `createHash`/`join`/`resolve` operate on plain strings
- * here — none is woven through an Effect service method, so there is nothing to substitute.
- */
-export const socketPathFor = (projectRoot: string): string => {
-	const digest = createHash("sha256").update(resolve(projectRoot)).digest("hex").slice(0, 16);
-	const base = process.env.XDG_RUNTIME_DIR ?? tmpdir();
-	return join(base, `kampus-crew-${digest}.sock`);
-};
+import {resolveRendezvous} from "./rendezvous.ts";
 
 /**
  * Reclaim a *stale* unix socket at `socketPath` before a bind: unlink the file iff a connect to it
@@ -125,12 +106,13 @@ const boundTrackerServerLayer = (socketPath: string) =>
 	);
 
 /**
- * Standalone tracker entry: launch a dedicated tracker for `projectRoot` and keep it running until
- * interrupted (`Layer.launch` builds the server layer and blocks, closing it on teardown). Drives
- * the bin's `tracker` subcommand — the explicit way to stand a project's tracker up decoupled from
- * any role session. It fails fast with a `SocketServerError` when the socket is already bound
- * (`isTrackerAddressInUse`), the signal that a tracker is already up for this project; the caller
- * decides whether that is a clean no-op (the subcommand treats it as "already serving").
+ * Standalone tracker entry: launch a dedicated tracker at the canonical rendezvous for the repo
+ * containing `projectRoot` and keep it running until interrupted (`Layer.launch` builds the server
+ * layer and blocks, closing it on teardown). Drives the bin's `tracker` subcommand — the explicit way
+ * to stand a repo's tracker up decoupled from any role session. It fails fast with a
+ * `SocketServerError` when the socket is already bound (`isTrackerAddressInUse`), the signal that a
+ * tracker is already up for this repo; the caller decides whether that is a clean no-op (the
+ * subcommand treats it as "already serving").
  *
  * A live crew session does NOT use this blocking entry — it hosts the tracker as a scoped layer via
  * `crewTrackerHostOrDialLayer` (first-peer-spawn), so the server runs alongside the session rather
@@ -139,7 +121,9 @@ const boundTrackerServerLayer = (socketPath: string) =>
 export const launchTracker = (
 	projectRoot: string,
 ): Effect.Effect<never, unknown, FileSystem.FileSystem> =>
-	Layer.launch(trackerServerLayer(socketPathFor(projectRoot)));
+	resolveRendezvous(projectRoot).pipe(
+		Effect.flatMap((rendezvous) => Layer.launch(trackerServerLayer(rendezvous.socketPath))),
+	);
 
 /**
  * Is this cause a tracker-socket bind that lost the race — an `EADDRINUSE` raised while opening the

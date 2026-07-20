@@ -28,6 +28,7 @@ import {randomUUID} from "node:crypto";
 import {existsSync, readdirSync, rmSync} from "node:fs";
 import {Effect, type FileSystem, type Path, Schema} from "effect";
 import {type CrewRole, inboxSocketFor, kindOf, SESSION_SERVER_NAME} from "../crew/index.ts";
+import type {RendezvousResolutionError} from "../tracker/index.ts";
 import type {
 	ChannelPluginNotAllowedError,
 	CrewServerNotRegisteredError,
@@ -88,6 +89,7 @@ export type SpawnRoleError =
 	| LaunchConfigError
 	| CliVersionAssertError
 	| TrackerNotServingError
+	| RendezvousResolutionError
 	| CrewSessionBinUnresolvableError
 	| CrewServerNotRegisteredError
 	| ChannelPluginNotAllowedError
@@ -112,10 +114,10 @@ export interface SpawnRoleInput {
 	readonly config?: Effect.Effect<LaunchConfig, LaunchConfigError>;
 	/** The installed-CLI-version reader the pin is asserted against. Default: the real `claude --version`. */
 	readonly readVersionOutput?: Effect.Effect<string, unknown>;
-	/** Start-or-reuse the per-project tracker (idempotent — dials the running one). Default: `ensureTrackerRunning`. */
+	/** Start-or-reuse the repo's tracker at its canonical rendezvous (idempotent — dials the running one). Default: `ensureTrackerRunning`. */
 	readonly ensureTracker?: (
 		projectRoot: string,
-	) => Effect.Effect<TrackerHandle, TrackerNotServingError>;
+	) => Effect.Effect<TrackerHandle, TrackerNotServingError | RendezvousResolutionError>;
 	/** Mints the engine instance's distinct id. Default: `randomUUID`. */
 	readonly instanceId?: () => string;
 	/** Resolve the tmux session whose crew window the pane splits into. Default: the caller's current session, else the fallback. */
