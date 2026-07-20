@@ -15,7 +15,6 @@ import {
 	MECMUA_PUBLIC_READ,
 	MECMUA_WRITE,
 	MEMBER_MUTE,
-	PANO_DRAFT_SAVE,
 	PHOENIX_BILDIRIM,
 	PHOENIX_EDGE_SHELL_BOOT,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
@@ -88,39 +87,7 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 		],
 	});
 
-export {PANO_DRAFT_SAVE, PHOENIX_BILDIRIM, PHOENIX_KARMA_GATES};
-
-/**
- * The pano `taslak` (draft-save) dark-ship flag config (#746) — the feature-flag
- * substrate's first real consumer (ADR 0091/0093). Default-OFF so it reaches
- * production dark; flipping it on is the human release act (ADR 0083).
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (#746): the factory
- * spreads it into `FlagshipFlag`; the test asserts `defaultVariation`/
- * `variations.off` here, the same record the deploy ships.
- *
- * Per-flag metadata (the IaC ownership record `feature-flags-agent-workflow.md`
- * asks for):
- *   - owner:           pano
- *   - originating:     #746 (epic: feature-flag substrate, #488)
- *   - removal trigger: once draft-save graduates to 100% on, retire the flag and
- *                      delete its gate (the dark-ship is over).
- */
-export const PANO_DRAFT_SAVE_FLAG = {
-	key: PANO_DRAFT_SAVE,
-	description:
-		"pano taslak (draft-save) dark-ship (#746). owner: pano. removal: retire once on at 100%.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * No targeting rules — a plain boolean kill-switch. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const panoDraftSaveFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("pano_draft_save", {appId, ...PANO_DRAFT_SAVE_FLAG});
+export {PHOENIX_BILDIRIM, PHOENIX_KARMA_GATES};
 
 /**
  * The mecmua write-path dark-ship flag config (#2497, epic #2467). The SINGLE seam
@@ -129,9 +96,9 @@ export const panoDraftSaveFlag = (appId: Input<string>) =>
  * it on is the human release act (ADR 0083).
  *
  * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`, #746): the
- * factory spreads it into `FlagshipFlag`; the test asserts `defaultVariation`/
- * `variations.off` on this same record.
+ * WITHOUT constructing the alchemy resource: the factory spreads it into `FlagshipFlag`;
+ * the test asserts `defaultVariation`/`variations.off` on this same record. Every flag
+ * config below is exported the same way for the same reason.
  *
  * Per-flag metadata (`.patterns/feature-flags-schema-lifecycle.md`):
  *   - owner:           mecmua
@@ -148,8 +115,7 @@ export const MECMUA_WRITE_FLAG = {
 } as const;
 
 /**
- * No targeting rules — a plain boolean kill-switch (`panoDraftSaveFlag` shape). `appId`
- * is resolved at deploy.
+ * No targeting rules — a plain boolean kill-switch. `appId` is resolved at deploy.
  */
 export const mecmuaWriteFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("mecmua_write", {appId, ...MECMUA_WRITE_FLAG});
@@ -196,7 +162,7 @@ export const mecmuaFeedFlag = (appId: Input<string>) =>
  *
  * Exported as a plain object so the default-=-safe-state invariant is
  * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_DRAFT_SAVE_FLAG`, #746).
+ * `MECMUA_WRITE_FLAG`).
  *
  * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
  * asks for):
@@ -269,7 +235,7 @@ export const optimisticDefinitionDeleteFlag = (appId: Input<string>) =>
  *
  * Exported as a plain object so the default-=-safe-state invariant is
  * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_DRAFT_SAVE_FLAG`, #746).
+ * `MECMUA_WRITE_FLAG`).
  *
  * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
  * asks for):
@@ -340,7 +306,7 @@ export const karmaGatesFlag = (appId: Input<string>) =>
  * the human release act (ADR 0083).
  *
  * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`).
+ * unit-inspectable WITHOUT constructing the alchemy resource (mirrors `MECMUA_WRITE_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           pasaport (the identity + session-boundary surface)
@@ -467,7 +433,7 @@ export const emailDeliveryNoticeFlag = (appId: Input<string>) =>
  * the authoring/publish path (#2497) ships behind its own seam.
  *
  * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`).
+ * WITHOUT constructing the alchemy resource (mirrors `MECMUA_WRITE_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           mecmua (the long-form read surface)
@@ -531,7 +497,7 @@ export const navIaFlag = (appId: Input<string>) =>
  * Flipping it on is the human release act (ADR 0083).
  *
  * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`).
+ * WITHOUT constructing the alchemy resource (mirrors `MECMUA_WRITE_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           sözlük (the definition read path)
@@ -565,7 +531,7 @@ export const sozlukStampWaveFlag = (appId: Input<string>) =>
  * not the pano feed (the #2322 base/overlay split).
  *
  * Exported as a plain object so the default-=-safe-state invariant is unit-inspectable
- * WITHOUT constructing the alchemy resource (mirrors `PANO_DRAFT_SAVE_FLAG`).
+ * WITHOUT constructing the alchemy resource (mirrors `MECMUA_WRITE_FLAG`).
  *
  * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
  *   - owner:           pano (the thread/comment read path)

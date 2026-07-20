@@ -20,7 +20,6 @@
  * never reaches Flagship or another request's state.
  */
 
-import {PANO_DRAFT_SAVE} from "../../../src/flags/keys.ts";
 import {DEMO_TARGETING_FLAG_KEY} from "./resources.ts";
 
 /** The cookie the dev override map travels in. Dev-only; never set in any deployed stage. */
@@ -40,7 +39,6 @@ export const emptyOverrides: FlagOverrides = {};
  * (the wrapper short-circuits any key), the list only seeds the UI.
  */
 export const DEV_OVERRIDABLE_FLAGS: readonly string[] = [
-	PANO_DRAFT_SAVE,
 	DEMO_TARGETING_FLAG_KEY,
 	"phoenix-flags-probe",
 ];

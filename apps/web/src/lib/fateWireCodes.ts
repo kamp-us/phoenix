@@ -67,9 +67,6 @@ export const FATE_WIRE_CODES = [
 	"URL_INVALID",
 	"TAGS_REQUIRED",
 	"TAG_INVALID",
-	// Pano taslak (draft-save) is gated on the `pano-draft-save` flag; the server
-	// raises this when a draft mutation runs with the flag off (#746).
-	"DRAFTS_DISABLED",
 	"PARENT_NOT_FOUND",
 	"INVALID_FORMAT",
 	"TOO_SHORT",

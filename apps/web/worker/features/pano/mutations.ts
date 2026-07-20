@@ -24,7 +24,6 @@ import {notifyContentVote} from "../bildirim/vote-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
-import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
 import {InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
@@ -34,7 +33,6 @@ import {Bookmark} from "./Bookmark.ts";
 import {
 	CommentNotFound,
 	CommentValidationErrors,
-	DraftsDisabled,
 	PostDeleteFailed,
 	PostNotFound,
 	PostValidationErrors,
@@ -228,24 +226,14 @@ export const mutations = {
 			return yield* gateContentOnKarma(submit());
 		}),
 	),
-	// `post.saveDraft` / `post.discardDraft` are the dark-shipped taslak path (#746),
-	// gated server-side on `pano-draft-save` (default-off). The gate is load-bearing:
-	// with the flag off both fail `DraftsDisabled` so the path is unreachable even if a
-	// client bypasses the UI. The flag context is derived from the signed-in user (the
-	// `CurrentUser.required` identity), so a flip can target by user/percentage later.
 	"post.saveDraft": Fate.mutation(
 		{
 			input: SaveDraftInput,
 			type: PostView,
-			error: Schema.Union([Unauthorized, DraftsDisabled, ...PostValidationErrors]),
+			error: Schema.Union([Unauthorized, ...PostValidationErrors]),
 		},
 		Effect.fn("post.saveDraft")(function* ({input}) {
 			const user = yield* CurrentUser.required;
-			const flags = yield* Flags;
-			const on = yield* flags.getBoolean(PANO_DRAFT_SAVE, false).pipe(provideRequestFlags);
-			if (!on) {
-				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
-			}
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.saveDraft({
@@ -270,15 +258,10 @@ export const mutations = {
 		{
 			input: DiscardDraftInput,
 			type: PostView,
-			error: Schema.Union([Unauthorized, DraftsDisabled]),
+			error: Unauthorized,
 		},
 		Effect.fn("post.discardDraft")(function* () {
 			const user = yield* CurrentUser.required;
-			const flags = yield* Flags;
-			const on = yield* flags.getBoolean(PANO_DRAFT_SAVE, false).pipe(provideRequestFlags);
-			if (!on) {
-				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
-			}
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.discardDraft({authorId: UserId.make(user.id)});

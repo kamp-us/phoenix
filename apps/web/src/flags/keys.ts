@@ -8,9 +8,6 @@
  * strings.
  */
 
-/** Pano taslak (draft-save) dark-ship flag (#746). */
-export const PANO_DRAFT_SAVE = "pano-draft-save";
-
 /**
  * Sözlük parallel-stamp-wave containment flag (#2709, epic #2567). Default-off. The
  * sözlük definition reads (`getDefinitionsByIds` / `listDefinitionsKeyset`) always
@@ -242,7 +239,6 @@ export interface FlagDeclaration {
  * docblock above; the server default lives in `worker/features/flagship/resources.ts`).
  */
 export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
-	{key: PANO_DRAFT_SAVE, defaultValue: false},
 	{key: PHOENIX_SOZLUK_STAMP_WAVE, defaultValue: false},
 	{key: PHOENIX_PANO_STAMP_WAVE, defaultValue: false},
 	{key: MECMUA_WRITE, defaultValue: false},

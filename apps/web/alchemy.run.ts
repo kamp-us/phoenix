@@ -53,7 +53,6 @@ import {
 	memberMuteFlag,
 	navIaFlag,
 	optimisticDefinitionDeleteFlag,
-	panoDraftSaveFlag,
 	panoStampWaveFlag,
 	profileCanvasFlag,
 	reactionsFlag,
@@ -79,8 +78,6 @@ export default Alchemy.Stack(
 		// Yielding the same app resource the worker `bind()`s is idempotent.
 		const flagship = yield* Flagship;
 		yield* demoTargetingFlag(flagship.appId);
-		// The pano taslak (draft-save) dark-ship flag, default-off (#746).
-		yield* panoDraftSaveFlag(flagship.appId);
 		// The mecmua write-path dark-ship flag, default-off (#2497, epic #2467) — the
 		// single seam mecmua.publish + mecmua.saveDraft gate behind until a human release.
 		yield* mecmuaWriteFlag(flagship.appId);
