@@ -222,15 +222,29 @@ stop to ask.)
 > hand-substitute with concrete issue numbers; `$VARS` (e.g. `$CHILD_ID`, `$BODY`)
 > are live shell variables the commands set and read.
 
+Every intermediate file below lives under `$RUN_SCRATCH`, the per-run scratch namespace defined
+once in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §SP — never a fixed or
+epic-keyed `/tmp` path. An epic number is **not** unique (a re-plan of the same epic is a second
+run over it), so re-rooting the whole family under one `mktemp -d` is what makes a cross-run
+clobber unrepresentable rather than merely unlikely (#3718). Open the run by allocating it, and
+re-derive it inside any later Bash call — shell state doesn't survive between calls, and §SP
+rule 3 forbids parking the path in another file to carry it across:
+
+```bash
+# §SP: the per-run scratch namespace — fail-closed, never a shared fallback
+RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || {
+  echo "plan-epic: §SP could not create a per-run scratch dir — refusing to write plan state to a shared path (#3718)." >&2; exit 1; }
+```
+
 ```bash
 # the epic, its current body, its labels, and any children it already has
 gh api repos/$REPO/issues/<EPIC> --jq '{number,title,labels:[.labels[].name],sub_issues_summary}'
 # capture the body AND its revision marker from ONE GET — reading them in two calls lets a writer
 # land between them, yielding an updated_at newer than the captured body (TOCTOU skew); the Step 5
 # recheck would then either spuriously retry or trust a marker that doesn't match the captured body.
-gh api repos/$REPO/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-snap.json
-jq -r '.body'       /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-current.md
-jq -r '.updated_at' /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-updated-at.txt
+gh api repos/$REPO/issues/<EPIC> --jq '{body,updated_at}' > "$RUN_SCRATCH/snap.json"
+jq -r '.body'       "$RUN_SCRATCH/snap.json" > "$RUN_SCRATCH/current.md"
+jq -r '.updated_at' "$RUN_SCRATCH/snap.json" > "$RUN_SCRATCH/updated-at.txt"
 gh api 'repos/$REPO/issues/<EPIC>/sub_issues?per_page=100' \
   --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
 ```
@@ -440,13 +454,13 @@ later; #1968 and #2099 the same verdict-resolver work in two places).
 #    list is the source of truth for what the epic already spawned; on a mixed open/closed epic
 #    prefer it over sub_issues_summary (which undercounts).
 gh api "repos/$REPO/issues/<EPIC>/sub_issues?per_page=100" \
-  --jq '.[] | select(.state=="open") | .title' > /tmp/plan-epic-<EPIC>-existing-children.txt
+  --jq '.[] | select(.state=="open") | .title' > "$RUN_SCRATCH/existing-children.txt"
 
 # 2. The open backlog — the cross-backlog overlap set. A decomposition can re-mint work that
 #    already exists as an open standalone issue or another epic's child, so a proposed child that
 #    overlaps an open issue is surfaced/skipped, not minted. (REST issue list, not GraphQL.)
 gh api "repos/$REPO/issues?state=open&per_page=100" \
-  --jq '.[] | select(.pull_request | not) | "#\(.number)\t\(.title)"' > /tmp/plan-epic-<EPIC>-open-backlog.txt
+  --jq '.[] | select(.pull_request | not) | "#\(.number)\t\(.title)"' > "$RUN_SCRATCH/open-backlog.txt"
 ```
 
 **Then classify each proposed child before you create it:**
@@ -476,17 +490,18 @@ stdout, so multi-line markdown and backticks survive the shell without a `<<EOF`
 enforces the format-2 invariants (the ≥ 1-acceptance-criterion hard floor) and owns the
 leak-safe handoff — a stdout-only verb has no scratchpad file to `@`-reference, so the
 `gh api -f body=@<path>` machine-local-path leak (#2002 / #754 / PR #1567) is unreachable.
-Allocate the **spec** file with `mktemp` (every temp this skill uses is already epic-scoped —
-`/tmp/plan-epic-<EPIC>-*`), not a fixed `/tmp/plan-epic-child.json`: concurrent `plan-epic`
-runs on sibling epics share `/tmp`, so a fixed path lets one run's spec clobber another's
-before it is composed, filing a child under the right title but with a **sibling epic's
-`### What to build` + acceptance criteria** — a cross-epic body bleed the structural floor
-can't see (it checks markers, never body fidelity), caught only by `review-plan`'s
-non-blocking advisor (#754, same `/tmp` collision class as `report`'s per-run `mktemp`):
+Allocate the **spec** file with `mktemp` *inside* `$RUN_SCRATCH` (§SP), not a fixed
+`/tmp/plan-epic-child.json`: concurrent `plan-epic` runs on sibling epics share `/tmp`, so a
+fixed path lets one run's spec clobber another's before it is composed, filing a child under the
+right title but with a **sibling epic's `### What to build` + acceptance criteria** — a
+cross-epic body bleed the structural floor can't see (it checks markers, never body fidelity),
+caught only by `review-plan`'s non-blocking advisor (#754, the same silent-clobber class as
+#3718's `prref.txt`). The loop writes one spec per child, so the `mktemp` template matters here
+even within a single run:
 
 ```bash
 # write this child's spec into a per-run temp file, never a shared fixed path (#754)
-CHILD_SPEC_FILE="$(mktemp /tmp/plan-epic-<EPIC>-child.XXXXXX)"
+CHILD_SPEC_FILE="$(mktemp "$RUN_SCRATCH/child.XXXXXX")"
 cat > "$CHILD_SPEC_FILE" <<'EOF'
 {
   "stories": "<bare numbers, e.g. `1` or `1, 3` — no `S` prefix; or `none (pure infra — see What to build)`>",
@@ -769,7 +784,7 @@ The re-derive is the part that makes this honest, and it is **your action, not t
 The block below is a **skeleton you re-run per attempt, not a one-shot you launch once**: a
 `## Dependencies` block names concrete child numbers and phase topology, so when the recheck
 fires (a racer added/closed a child between your reads) you must **regenerate
-`/tmp/plan-epic-<EPIC>-deps.md` — and on a re-plan `/tmp/plan-epic-<EPIC>-plan.md` — against the
+`$RUN_SCRATCH/deps.md` — and on a re-plan `$RUN_SCRATCH/plan.md` — against the
 freshly-read body** (re-run Step 2's split + Step 5's section derivation) *before* you re-enter
 the loop. The script cannot do this for you inside one bash invocation; it can only **refuse to
 proceed** until you have. So the recheck branch stamps the fresh base and **breaks out** (it does
@@ -778,8 +793,8 @@ loudly** if `deps.md` was not regenerated since the base it splices onto was rea
 "re-derive" from a comment you might skip into a precondition the script enforces.
 
 ```bash
-# /tmp/plan-epic-<EPIC>-deps.md = the new `## Dependencies` block. On a RE-PLAN, also
-#   /tmp/plan-epic-<EPIC>-plan.md = the new `## Plan (plan-epic)` block (set REPLAN=1).
+# "$RUN_SCRATCH/deps.md" = the new `## Dependencies` block. On a RE-PLAN, also
+#   "$RUN_SCRATCH/plan.md" = the new `## Plan (plan-epic)` block (set REPLAN=1).
 #   Give each block a trailing blank line so the next spliced heading stays separated.
 # Landing is confirmed against the WHOLE `## Dependencies` block round-tripping byte-for-byte,
 # NOT a single line: two concurrent runs on the SAME epic likely both emit a given `- #<child>`
@@ -793,7 +808,7 @@ loudly** if `deps.md` was not regenerated since the base it splices onto was rea
 #
 # This block is a SKELETON you re-run per attempt, not a one-shot. When the recheck (step 2) fires
 # it stamps the fresh base, BREAKS, and hands back to you to re-derive `deps.md` (+ `plan.md` on a
-# re-plan) against `/tmp/plan-epic-<EPIC>-current.md` — then you re-invoke the block. The freshness
+# re-plan) against `$RUN_SCRATCH/current.md` — then you re-invoke the block. The freshness
 # guard (step 2.5) refuses to splice a `deps.md` older than the base it would splice onto, so a
 # stale block can never re-clobber a racer's legitimate topology.
 # Per attempt: re-read → recheck (verify unchanged) → freshness guard → epic-splice apply (guards + splice) → PATCH
@@ -804,10 +819,10 @@ loudly** if `deps.md` was not regenerated since the base it splices onto was rea
 landed=0; patched=0
 for attempt in 1 2 3; do
   # 1. re-read the LIVE body + its revision marker from ONE GET (coherent — no TOCTOU skew)
-  gh api repos/$REPO/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-live.json
-  jq -r '.body'       /tmp/plan-epic-<EPIC>-live.json > /tmp/plan-epic-<EPIC>-live.md
-  NOW=$(jq -r '.updated_at' /tmp/plan-epic-<EPIC>-live.json)
-  WAS=$(cat /tmp/plan-epic-<EPIC>-updated-at.txt)
+  gh api repos/$REPO/issues/<EPIC> --jq '{body,updated_at}' > "$RUN_SCRATCH/live.json"
+  jq -r '.body'       "$RUN_SCRATCH/live.json" > "$RUN_SCRATCH/live.md"
+  NOW=$(jq -r '.updated_at' "$RUN_SCRATCH/live.json")
+  WAS=$(cat "$RUN_SCRATCH/updated-at.txt")
 
   # 2. optimistic recheck — if the body moved since we last read it, stamp the fresh base and BREAK.
   #    Re-deriving the section is YOUR action (the script can't regenerate deps.md/plan.md inside one
@@ -816,8 +831,8 @@ for attempt in 1 2 3; do
   if [ "$NOW" != "$WAS" ]; then
     echo "epic body changed since read ($WAS -> $NOW) — RE-DERIVE deps.md (+ plan.md on a re-plan)"
     echo "  against the fresh base, then re-invoke this block. (Not auto-retried: the re-derive is an agent step.)"
-    cp /tmp/plan-epic-<EPIC>-live.md /tmp/plan-epic-<EPIC>-current.md   # fresh base to re-derive against
-    echo "$NOW" > /tmp/plan-epic-<EPIC>-updated-at.txt
+    cp "$RUN_SCRATCH/live.md" "$RUN_SCRATCH/current.md"   # fresh base to re-derive against
+    echo "$NOW" > "$RUN_SCRATCH/updated-at.txt"
     break
   fi
 
@@ -828,11 +843,11 @@ for attempt in 1 2 3; do
   #      re-derive precondition is unmet (you re-invoked without regenerating the block off the fresh
   #      base): a stale block that references the wrong child set. Abort loudly, don't write — this is
   #      what stops the `continue`-era footgun of re-splicing the originally-derived block (issue #261).
-  if ! [ /tmp/plan-epic-<EPIC>-deps.md -nt /tmp/plan-epic-<EPIC>-current.md ] \
-     || { [ "${REPLAN:-0}" = 1 ] && ! [ /tmp/plan-epic-<EPIC>-plan.md -nt /tmp/plan-epic-<EPIC>-current.md ]; }; then
+  if ! [ "$RUN_SCRATCH/deps.md" -nt "$RUN_SCRATCH/current.md" ] \
+     || { [ "${REPLAN:-0}" = 1 ] && ! [ "$RUN_SCRATCH/plan.md" -nt "$RUN_SCRATCH/current.md" ]; }; then
     echo "ABORT: deps.md (or plan.md on a re-plan) is NOT newer than the base it splices onto (-current.md) —"
     echo "       you re-invoked without re-deriving. Re-run Step 2's split + Step 5's section derivation"
-    echo "       against /tmp/plan-epic-<EPIC>-current.md, then re-invoke this block. Refusing to splice a stale block."
+    echo "       against "$RUN_SCRATCH/current.md", then re-invoke this block. Refusing to splice a stale block."
     break
   fi
 
@@ -846,21 +861,21 @@ for attempt in 1 2 3; do
   #    A corrupt/duplicated/drifted heading makes the verb exit non-zero — break loudly and inspect
   #    by hand rather than blind-write. The recheck/freshness/round-trip orchestration around it
   #    stays here (it is live-issue IO, not a text transform).
-  PLAN_ARG=(); [ "${REPLAN:-0}" = 1 ] && PLAN_ARG=(--plan-file /tmp/plan-epic-<EPIC>-plan.md)
+  PLAN_ARG=(); [ "${REPLAN:-0}" = 1 ] && PLAN_ARG=(--plan-file "$RUN_SCRATCH/plan.md")
   if ! node packages/pipeline-cli/src/bin.ts epic-splice apply \
-        --body-file /tmp/plan-epic-<EPIC>-live.md \
-        --deps-file /tmp/plan-epic-<EPIC>-deps.md \
-        "${PLAN_ARG[@]}" > /tmp/plan-epic-<EPIC>-body.md; then
+        --body-file "$RUN_SCRATCH/live.md" \
+        --deps-file "$RUN_SCRATCH/deps.md" \
+        "${PLAN_ARG[@]}" > "$RUN_SCRATCH/body.md"; then
     echo "ABORT: epic-splice refused (corrupt/duplicated/drifted heading — see its stderr) — refusing to splice; inspect by hand"
     break
   fi
-  BODY="$(cat /tmp/plan-epic-<EPIC>-body.md)"
+  BODY="$(cat "$RUN_SCRATCH/body.md")"
 
   # 5. extract THIS run's whole `## Dependencies` block (heading → EOF) from the body we're about
   #    to write — that exact multi-line block is what we'll confirm round-tripped, so a racer who
   #    happens to share a child number can't satisfy the check with one matching `- #` line.
-  awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' /tmp/plan-epic-<EPIC>-body.md \
-    > /tmp/plan-epic-<EPIC>-deps-expected.md
+  awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' "$RUN_SCRATCH/body.md" \
+    > "$RUN_SCRATCH/deps-expected.md"
 
   # 6. write, then re-confirm OUR WHOLE BLOCK landed — extract `## Dependencies`→EOF from the live
   #    post-write body and diff it against the block we just wrote. A racer's clobber differs
@@ -870,8 +885,8 @@ for attempt in 1 2 3; do
   #    that retries the loser.
   gh api -X PATCH repos/$REPO/issues/<EPIC> -f body="$BODY" >/dev/null; patched=1
   gh api repos/$REPO/issues/<EPIC> --jq '.body' \
-    | awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' > /tmp/plan-epic-<EPIC>-deps-live.md
-  if diff -q /tmp/plan-epic-<EPIC>-deps-expected.md /tmp/plan-epic-<EPIC>-deps-live.md >/dev/null; then
+    | awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' > "$RUN_SCRATCH/deps-live.md"
+  if diff -q "$RUN_SCRATCH/deps-expected.md" "$RUN_SCRATCH/deps-live.md" >/dev/null; then
     echo "epic body updated, our whole ## Dependencies block round-tripped"; landed=1; break
   else
     # A racer clobbered our write. Do NOT auto-re-splice the stale deps.md — that would
@@ -882,10 +897,10 @@ for attempt in 1 2 3; do
     # so a stale block can never re-clobber.
     echo "our ## Dependencies block is NOT the one in the post-write body — a racer clobbered it."
     echo "       Re-derive deps.md (and plan.md on a re-plan) against the refreshed"
-    echo "       /tmp/plan-epic-<EPIC>-current.md, then re-invoke this block. Refusing to re-splice the stale block."
-    gh api repos/$REPO/issues/<EPIC> > /tmp/plan-epic-<EPIC>-snap.json   # one snapshot, no TOCTOU between body+updated_at
-    jq -r '.body'       /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-current.md      # fresh base to re-derive against
-    jq -r '.updated_at' /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-updated-at.txt
+    echo "       "$RUN_SCRATCH/current.md", then re-invoke this block. Refusing to re-splice the stale block."
+    gh api repos/$REPO/issues/<EPIC> > "$RUN_SCRATCH/snap.json"   # one snapshot, no TOCTOU between body+updated_at
+    jq -r '.body'       "$RUN_SCRATCH/snap.json" > "$RUN_SCRATCH/current.md"      # fresh base to re-derive against
+    jq -r '.updated_at' "$RUN_SCRATCH/snap.json" > "$RUN_SCRATCH/updated-at.txt"
     break
   fi
 done
@@ -955,7 +970,7 @@ close each source it names — but only a genuine `type:investigation` source, i
 # Extract every source the brief graduated from — tolerant of phrasing ("Emitted from resolved
 # investigation #N", "from resolved investigation #N"). The `resolved investigation` anchor is what
 # distinguishes a graduation provenance from an incidental `#N` cross-reference in the brief.
-SOURCES=$(grep -oiE 'resolved investigation #[0-9]+' /tmp/plan-epic-<EPIC>-current.md \
+SOURCES=$(grep -oiE 'resolved investigation #[0-9]+' "$RUN_SCRATCH/current.md" \
   | grep -oE '[0-9]+' | sort -u)
 for SRC in $SOURCES; do
   # Guard, fail-safe: close ONLY an open type:investigation — never a referenced epic/decision/bug,
@@ -1042,8 +1057,8 @@ Step 5** — surgical section splice + optimistic `updated_at` recheck, never a 
 whole-body `PATCH`. Re-plan is exactly the concurrency hot-spot the guard exists for: a
 re-plan loop racing a fresh `plan-epic` run or a `review-plan` child-flip is the
 lost-update case in issue #261. Write the fresh `## Plan (plan-epic)` block to
-`/tmp/plan-epic-<EPIC>-plan.md`, the fresh `## Dependencies` block to
-`/tmp/plan-epic-<EPIC>-deps.md`, and run the Step 5 loop with `REPLAN=1` so it splices
+`$RUN_SCRATCH/plan.md`, the fresh `## Dependencies` block to
+`$RUN_SCRATCH/deps.md`, and run the Step 5 loop with `REPLAN=1` so it splices
 **both** sections into the freshly-read live body in place (the live body already has exactly one
 `## Dependencies` heading and exactly one `## Plan (plan-epic)` heading to splice against — the
 loop's anchor guards abort if either drifted). When `updated_at` moved since your read, the loop

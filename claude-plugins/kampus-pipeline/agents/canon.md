@@ -77,6 +77,15 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   row, and your return summary cite repo-relative paths only (`.patterns/<name>.md`,
   `apps/web/worker/…`) — never a `~/`, `/Users/…`, vault, or sibling-clone path, and no Obsidian
   `[[wikilinks]]`.
+- **Every intermediate file you write lives under a per-run scratch namespace (§SP).** Never
+  stash state in a fixed or work-item-keyed scratchpad path (`prref.txt`,
+  `/tmp/verdict-$PR.md`) — the pipeline runs several agents concurrently by design, so a
+  shared filename gets clobbered mid-run and reads back **another run's content with no
+  error**: silent, and it routed a reviewer's `git diff` to the wrong PR's files (#3718).
+  Prefer passing the value in-process and writing no file at all; when a file is genuinely
+  needed, allocate `RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")"` and name
+  every leaf under it. The rule, its fail-closed allocation, and the never-leak-the-path
+  corollary are single-sourced in the skills' `gh-issue-intake-formats.md` §SP.
 - **Work from the repo root**, not a nested app directory. Resolve it with
   `git rev-parse --show-toplevel` and operate on `<root>/.patterns/`.
 

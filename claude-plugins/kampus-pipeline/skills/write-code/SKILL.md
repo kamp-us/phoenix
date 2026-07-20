@@ -843,11 +843,14 @@ freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back
 >
 > This is exactly the recovery the reported incident used to self-heal, promoted to the
 > standing rule. **Do NOT** persist the branch name to a scratchpad/`/tmp` file to carry it
-> across calls. If — and only if — a per-run cache is genuinely unavoidable, its filename
-> **MUST** be namespaced by the per-agent token (`$CLAUDE_CODE_SESSION_ID`) so two lanes
-> cannot collide (`branch-$CLAUDE_CODE_SESSION_ID.txt`, never a bare `branch.txt`) — but the
-> live `git -C "$WT" branch --show-current` re-derivation above is the preferred, simpler
-> fix and needs no file at all.
+> across calls. This is the local instance of the **per-run scratchpad namespace**, §SP of
+> [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) — and it is §SP's *first*
+> rule, "prefer no file at all," which the live re-derivation above satisfies outright. If — and
+> only if — a per-run cache is genuinely unavoidable, allocate it under `$RUN_SCRATCH` per §SP
+> (never a bare `branch.txt`, and never a path keyed only on the issue number). The reason this
+> matters beyond a mis-push: a clobbered scratchpad file **reads back successfully** with the
+> sibling lane's content, so nothing errors and the wrong ref looks right (#2038, and the #3718
+> reviewer that diffed the wrong PR).
 
 The prefix is **derived** from this checkout's `git config user.name`, not a copied literal —
 so the branch lands under *your* handle (`<your-handle>/…`), whoever runs the skill, instead
@@ -1561,8 +1564,19 @@ Next — see [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §
 is the per-issue ledger for the next agent (a successor write-code run, or
 `review-code`): what moved, what you decided and why, what bit, what's still open.
 
+Compose the comment into a file under `$RUN_SCRATCH` — the per-run scratchpad namespace
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §SP) — never a fixed
+`/tmp/write-code-progress.md`. Several coder lanes drain concurrently by design, so a fixed
+leaf gets clobbered mid-run and reads back **the sibling lane's progress comment with no
+error**, posting another issue's ledger onto yours (#3718, the same silent-clobber class as
+#2038's `branch.txt`):
+
 ```bash
-BODY="$(cat /tmp/write-code-progress.md)"   # the four-section comment
+# §SP: the per-run scratch namespace — fail-closed, never a shared fallback
+RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || {
+  echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a comment through a shared path (#3718)." >&2; exit 1; }
+# …write the four-section comment to "$RUN_SCRATCH/progress.md", then:
+BODY="$(cat "$RUN_SCRATCH/progress.md")"   # the four-section comment
 # gate the comment on the mis-attribution guard (Step 3.5) — only comment on an issue whose claim is mine
 claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
 ```
@@ -1622,7 +1636,11 @@ so the spawner re-dispatches with the clause, rather than dropping the cross-tas
 silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
-BODY="$(cat /tmp/write-code-handoff.md)"   # ### Handoff: #N — <title> + the three fields
+# compose under the per-run scratch namespace (§SP), never a fixed /tmp leaf — a concurrent
+# coder lane would clobber it and this posts ITS handoff onto your epic, silently (#3718)
+RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || {
+  echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a handoff through a shared path (#3718)." >&2; exit 1; }
+BODY="$(cat "$RUN_SCRATCH/handoff.md")"   # ### Handoff: #N — <title> + the three fields
 # the handoff to the parent epic is predicated on OWNING THE CHILD — gate on claim_is_mine <child>
 # (Step 3.5), not the epic (which you never claim): only hand off about work whose claim is mine.
 claim_is_mine "<N>" && gh api repos/$REPO/issues/<EPIC>/comments -f body="$BODY"
@@ -1958,7 +1976,10 @@ makes the **stateless** gate re-run — you do **not** re-trigger or self-approv
 # exactly as wt_preflight is before every git op; gate both the push and the progress comment.
 claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue #$N not my claim (Step 3.5)"; exit 1; }
 wt_preflight && git push --force-with-lease origin HEAD   # gate the push ([per-mutation preflight]); --force-with-lease because the R2 rebase onto origin/main moved the head
-gh api repos/$REPO/issues/$N/comments -f body="$(cat /tmp/write-code-repair-progress.md)"
+# compose the repair note under the §SP per-run scratch namespace, never a fixed /tmp leaf:
+# concurrent repair lanes clobber a shared name and this posts THEIR note onto your issue (#3718)
+RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/kampus-run.XXXXXX")" || { echo "write-code: §SP could not create a per-run scratch dir (#3718)." >&2; exit 1; }
+gh api repos/$REPO/issues/$N/comments -f body="$(cat "$RUN_SCRATCH/repair-progress.md")"
 ```
 
 **Acknowledge the inline threads you addressed** so the loop is visible to the reviewer who

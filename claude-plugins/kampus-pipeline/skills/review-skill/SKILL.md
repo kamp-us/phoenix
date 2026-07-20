@@ -81,8 +81,10 @@ git fetch origin "$BASE_REF"
 # to a per-run mktemp handle so they survive the harness cwd/shell reset between Bash calls (a shell
 # var is lost across calls); re-source them with `. "$WT_FILE"` at each later step — NEVER re-derive
 # from a shared leaf name (a `git worktree list` re-derivation matches a SIBLING reviewer's tree and
-# reads the wrong head's skill text — the #1807 collision). Mirror the VERDICT_FILE (#1465) / report
-# BODY_FILE mktemp discipline; WT_FILE itself is `$(mktemp)`, never a fixed/PR-only path.
+# reads the wrong head's skill text — the #1807 collision). This is the §SP per-run scratchpad
+# namespace (gh-issue-intake-formats.md), the same rule VERDICT_FILE (#1465) / report BODY_FILE
+# follow: WT_FILE itself is `$(mktemp)`, never a fixed or PR-keyed path — a PR number is not
+# unique, and a clobbered file reads back cleanly with the other run's content (#3718).
 WT_FILE="$(mktemp /tmp/review-skill-wt.XXXXXX)"
 pipeline-cli review-head materialize --pr "$PR" --worktree \
   | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
@@ -519,9 +521,12 @@ rigor check must PASS. One miss anywhere → FAIL.
 
 **Resolve the head SHA you reviewed** and write the verdict to a per-run temp file
 (`VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"`) so multi-line markdown +
-backticks survive the shell, then post it. Allocate it with `mktemp`, not a fixed
-`/tmp/review-skill-verdict-${PR}.md`: the PR number alone isn't unique — two reviews of the
-same PR running concurrently would collide. The SHA goes into the marker's first line
+backticks survive the shell, then post it. Allocate it with `mktemp`, never a fixed or
+`${PR}`-keyed path — the per-run scratchpad namespace, §SP of
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). The PR number alone isn't
+unique (two reviews of the same PR running concurrently collide), and a clobbered temp reads
+back **successfully with the other run's content**, so there is no error to catch (#3718).
+The SHA goes into the marker's first line
 (`review-skill: PASS @ <sha> — merge-ready`) and is **load-bearing**: `ship-it` refuses any
 verdict not bound to the PR's current head (ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
