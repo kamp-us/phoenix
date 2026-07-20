@@ -16,8 +16,8 @@ describe("flagTag — the shared flag.<key>:on/off contract", () => {
 	});
 
 	it("maps a resolved-off flag to flag.<key> = off", () => {
-		expect(flagTag("pano-optimistic-post-delete", false)).toEqual({
-			tagKey: "flag.pano-optimistic-post-delete",
+		expect(flagTag("member-mute", false)).toEqual({
+			tagKey: "flag.member-mute",
 			tagValue: "off",
 		});
 	});

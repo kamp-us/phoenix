@@ -17,7 +17,6 @@ import {
 	MEMBER_MUTE,
 	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
-	PANO_OPTIMISTIC_POST_DELETE,
 	PHOENIX_ADMIN_CONSOLE,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
@@ -100,7 +99,6 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 export {
 	PANO_BASE_FEED,
 	PANO_DRAFT_SAVE,
-	PANO_OPTIMISTIC_POST_DELETE,
 	PHOENIX_AUTHORSHIP_LOOP,
 	PHOENIX_BILDIRIM,
 	PHOENIX_FUNNEL_READOUT,
@@ -412,41 +410,6 @@ export const OPTIMISTIC_EDITS_FLAG = {
  */
 export const optimisticEditsFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_optimistic_edits", {appId, ...OPTIMISTIC_EDITS_FLAG});
-
-/**
- * The optimistic `post.delete` (instant feed removal on confirm) dark-ship flag
- * config (#1677, epic #1637 Class B). Default-OFF so it reaches production dark;
- * with it off, `post.delete` keeps today's wait-for-round-trip behavior. Flipping it
- * on is the human release act (ADR 0083).
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `PANO_DRAFT_SAVE_FLAG`, #746).
- *
- * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
- * asks for):
- *   - owner:           pano
- *   - originating:     #1677 (epic: optimistic content mutations, #1637)
- *   - removal trigger: once optimistic post-delete graduates to on at 100% and
- *                      stable for one release, retire the flag and inline the path.
- */
-export const PANO_OPTIMISTIC_POST_DELETE_FLAG = {
-	key: PANO_OPTIMISTIC_POST_DELETE,
-	description:
-		"optimistic post.delete (instant feed removal) dark-ship (#1677, epic #1637). owner: pano. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const panoOptimisticPostDeleteFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("pano_optimistic_post_delete", {
-		appId,
-		...PANO_OPTIMISTIC_POST_DELETE_FLAG,
-	});
 
 /**
  * The bildirim (notification system) dark-ship flag config (#1694, epic #1666).

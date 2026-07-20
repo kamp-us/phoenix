@@ -39,7 +39,7 @@ import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
-import {PANO_OPTIMISTIC_POST_DELETE, PHOENIX_OPTIMISTIC_EDITS} from "../flags/keys";
+import {PHOENIX_OPTIMISTIC_EDITS} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
@@ -232,7 +232,6 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	// Dark-ship gate (#1675): with the flag off the edit passes no optimistic
 	// payload and waits for the round-trip, exactly as before.
 	const {value: optimisticEdits} = useFlag(PHOENIX_OPTIMISTIC_EDITS, false);
-	const {value: optimisticDelete} = useFlag(PANO_OPTIMISTIC_POST_DELETE, false);
 
 	const [editing, setEditing] = React.useState(false);
 	const [editTitle, setEditTitle] = React.useState("");
@@ -246,12 +245,10 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 		inFlight: editInFlight,
 		run: runEdit,
 	} = useDraftSubmit({overrides: POST_OVERRIDES, redirectPath: postRedirectPath});
-	const {
-		error: deleteError,
-		setError: setDeleteError,
-		inFlight: deleteInFlight,
-		run: runDelete,
-	} = useDraftSubmit({overrides: POST_OVERRIDES, redirectPath: postRedirectPath});
+	const {error: deleteError, setError: setDeleteError} = useDraftSubmit({
+		overrides: POST_OVERRIDES,
+		redirectPath: postRedirectPath,
+	});
 
 	// Optimistic delete navigates to /pano at once, so a rejection's inline error
 	// can't stay on the unmounted dialog — the rollback returns here carrying the
@@ -299,23 +296,11 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 		// `delete: true` evicts the post by id across all connections (incl. the feed
 		// root list) — declarative, no imperative updater. fate applies the eviction
 		// SYNCHRONOUSLY, before the round-trip, and rolls it back before a boundary
-		// throw (see `.patterns/fate-mutations-client.md`).
-		if (!optimisticDelete) {
-			await runDelete(
-				() => fate.mutations.post.delete({input: {id: data.id}, delete: true}),
-				"başlık silinemedi",
-				() => {
-					setConfirmDelete(false);
-					navigate("/pano");
-				},
-			);
-			return;
-		}
-		// Optimistic: the sync eviction already dropped the row, so navigate to /pano
-		// at once — the removal is perceived instantly and the server `feed.deleteEdge`
-		// frame reconciles it away for good (no reappear). Reconcile the outcome in the
-		// background; on rejection fate has restored the post, so return to it with the
-		// existing inline error.
+		// throw (see `.patterns/fate-mutations-client.md`). The sync eviction already
+		// dropped the row, so navigate to /pano at once — the removal is perceived
+		// instantly and the server `feed.deleteEdge` frame reconciles it away for good
+		// (no reappear). Reconcile the outcome in the background; on rejection fate has
+		// restored the post, so return to it with the inline error.
 		setConfirmDelete(false);
 		const promise = fate.mutations.post.delete({input: {id: data.id}, delete: true});
 		const path = postRedirectPath();
@@ -424,11 +409,10 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 							<Button
 								variant="primary"
 								type="button"
-								disabled={deleteInFlight}
 								data-testid="post-delete-confirm"
 								onClick={onDeleteConfirm}
 							>
-								{deleteInFlight ? "siliniyor…" : "sil"}
+								sil
 							</Button>
 						</Dialog.Foot>
 					</Dialog.Popup>
