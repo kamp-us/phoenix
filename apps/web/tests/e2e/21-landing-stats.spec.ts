@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {promoteToYazar} from "./_helpers/promote";
 import {randomSuffix} from "./_helpers/rand";
 
 /**
@@ -28,13 +29,20 @@ test.describe("Landing stats", () => {
 
 	test("submitting a post bumps totalPosts on /", async ({page}) => {
 		const suffix = `${Date.now().toString(36)}${randomSuffix(4)}`;
-		await signUp(page, {email: `ls${suffix}@kamp.us`});
+		const email = `ls${suffix}@kamp.us`;
+		await signUp(page, {email});
 		const handle = `ls-${suffix}`;
 		await page.locator("input#bootstrap-username").fill(handle);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
 			timeout: 10_000,
 		});
+		// `totalPosts` is the PUBLIC live count (`makePersistPanoStats` folds it behind
+		// the anonymous viewer's `publicLivePostWhere`), so a çaylak's sandboxed first
+		// post correctly moves nothing. This spec is about the counter, not the sandbox:
+		// promote the author so the submit below is publicly live and the count can rise
+		// (ADR 0137). Sandbox coverage lives in the kunye/sandbox suites, untouched.
+		await promoteToYazar(email);
 
 		// Capture totalPosts BEFORE we submit.
 		await page.goto("/");

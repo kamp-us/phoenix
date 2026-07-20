@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+import {promoteToYazar} from "./_helpers/promote";
 import {randomSuffix} from "./_helpers/rand";
 
 /**
@@ -17,13 +18,21 @@ test.describe("T17 auth-redirect with returnTo", () => {
 	}) => {
 		// --- seed: sign up author A, drop a definition, sign out -------------
 		const slug = `t17-${Date.now().toString(36)}${randomSuffix(4)}`;
-		await signUp(page, {email: `author-${slug}@kamp.us`});
+		const emailA = `author-${slug}@kamp.us`;
+		await signUp(page, {email: emailA});
 		const handleA = `a-${slug}`;
 		await page.locator("input#bootstrap-username").fill(handleA);
 		await page.getByRole("button", {name: /devam et/i}).click();
 		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
 			timeout: 10_000,
 		});
+		// The seed author is scaffolding: the coverage below is the signed-OUT vote →
+		// `returnTo` → sign-up → return flow, which needs a PUBLICLY readable definition
+		// to click. `sandboxed_at` is stamped at insert from the author's tier, so the
+		// promotion must land BEFORE the add — a çaylak's definition is masked from the
+		// signed-out viewer and there is no vote button to click (ADR 0137). Voter B
+		// below stays a fresh çaylak: the newcomer half of the flow is the point.
+		await promoteToYazar(emailA);
 
 		await page.goto(`/sozluk/${slug}`);
 		const composerBody = page.locator('[data-testid="sozluk-composer-body"]');
