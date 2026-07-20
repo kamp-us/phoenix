@@ -11,7 +11,8 @@
  *
  * Seeded with the canonical #3254 example — `verdict read`, whose ADR-0058
  * SHA-bound marker-resolution three skills hand-copy (#2102). `tracker apply-triage`
- * (#3263), `tracker post-verdict` (#3265), and `tracker graduate` (#3266) have since
+ * (#3263), `tracker post-verdict` (#3265), `tracker graduate` (#3266), and
+ * `review-head materialize` (#3690, the §HEAD PR-head-checkout of #793 / #1807) have since
  * landed with their consumer migrations; the remaining envelope decision (claim) arrives
  * with its sibling child.
  */
@@ -141,6 +142,22 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		citation: /pipeline-cli\s+intake-compose\b/,
 		reason:
 			"re-derives the format-2 sub-issue body that `pipeline-cli intake-compose sub-issue` owns (the gh-issue-intake-formats.md prose contract §2), instead of citing the verb (#3688 / #3254)",
+	},
+	{
+		// `review-head materialize` owns the §HEAD PR-head-checkout the review-code / review-doc /
+		// review-skill gates each hand-copied (#793 / #1807): fetch `pull/<pr>/head` into a per-run
+		// `refs/pr/` ref (never the launched tree) and check it out DETACHED for review. The fingerprint
+		// is the co-occurrence of both tells — the `pull/<pr>/head:` fetch refspec AND the per-run
+		// `refs/pr/` ref — so an incidental mention of a head SHA (review-design resolves `.head.sha`
+		// only, no checkout) is not a false finding. A file that cites `pipeline-cli review-head` is compliant.
+		verb: "review-head materialize",
+		signature: [
+			/pull\/\$\{?PR\}?\/head:/, // the head-fetch refspec into a per-run ref
+			/refs\/pr\//, // the per-run ref namespace the head lands in
+		],
+		citation: /pipeline-cli\s+review-head\b/,
+		reason:
+			"re-derives the §HEAD PR-head-checkout that `pipeline-cli review-head materialize` owns (fetch pull/<pr>/head into a per-run ref, check it out detached), instead of citing the verb (#3690 / #793 / #1807 / #3254)",
 	},
 ];
 

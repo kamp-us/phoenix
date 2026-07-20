@@ -314,7 +314,10 @@ CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page
 ```bash
 gh api repos/$REPO/pulls/$PR \
   --jq '{number, state, draft, merged, head: .head.ref, base: .base.ref, body}'
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head your verdict binds to (ADR 0058)
+# Resolve the current head SHA the verdict binds to (ADR 0058) via the shared
+# `pipeline-cli review-head` verb (#3690 / #793 / #1807) — `resolve` is REST-only (this gate
+# reviews the preview URL, not a checked-out tree), fail-safe on a missing/closed/partial head:
+HEAD_SHA="$(pipeline-cli review-head resolve --pr "$PR" | jq -r .headSha)"
 ```
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam `write-code` writes) —
