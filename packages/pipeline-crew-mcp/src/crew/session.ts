@@ -38,6 +38,7 @@ import {NodeStdio} from "@effect/platform-node";
 import {Effect, type FileSystem, Layer} from "effect";
 import {type McpSchema, McpServer} from "effect/unstable/ai";
 import {
+	assertToolSchemas,
 	ChannelClaim,
 	ChannelDescribe,
 	ChannelSend,
@@ -207,6 +208,10 @@ export const assembleCrewSession = <RIn, RSub = never>(
 	// BEFORE the run-loop-forking transport is built, so ChannelSend below is a zero-async binding.
 	Layer.unwrap(
 		Effect.gen(function* () {
+			// Startup invariant (#3753): every tool this session will register must generate a spec-valid
+			// top-level `{"type":"object"}` inputSchema. A client rejects the WHOLE tools/list response on
+			// one bad schema, so the failure mode without this fence is a silently tool-less session.
+			yield* assertToolSchemas([ChannelToolkit, ClaimToolkit, KindsToolkit]);
 			const channel = yield* makeCrewChannel({role: config.role, address});
 			// Startup invariant (#3622): resolve the full discoverable channel contract BEFORE serving.
 			// A shared kind set that can't be fully resolved to a shape fails the build HERE (on the boot

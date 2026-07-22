@@ -13,10 +13,15 @@ import {Layer} from "effect";
 import {McpServer} from "effect/unstable/ai";
 import {channelExperimentalCapability} from "./mcp-channel.ts";
 import {ChannelToolkit, channelToolHandlers} from "./send-tool.ts";
+import {assertToolSchemas} from "./tool-schema-guard.ts";
 
 export const channelServerLayer = (options: {readonly name: string; readonly version: string}) =>
-	McpServer.toolkit(ChannelToolkit).pipe(
-		Layer.provide(channelToolHandlers),
+	Layer.mergeAll(
+		// Boot fence (#3753): a spec-invalid inputSchema makes the client discard the whole toolset, so
+		// assert the shape before the transport forks its serve loop rather than serve a dead toolset.
+		Layer.effectDiscard(assertToolSchemas([ChannelToolkit])),
+		McpServer.toolkit(ChannelToolkit).pipe(Layer.provide(channelToolHandlers)),
+	).pipe(
 		Layer.provide(
 			McpServer.layerStdio({
 				name: options.name,

@@ -96,6 +96,17 @@ describe("edge/kinds-tool — the channel_kinds discovery tool (#3622)", () => {
 		}),
 	);
 
+	// #3753: the SERVED inputSchema, read off the wire — a non-object top level makes a client discard
+	// the whole tools/list response, taking channel_send and channel_claim with it.
+	it.effect("serves channel_kinds with a spec-valid top-level object inputSchema", () =>
+		Effect.gen(function* () {
+			const {client} = yield* makeInitializedClient;
+			const tools = yield* client["tools/list"]({});
+			const kinds = tools.tools.find((t) => t.name === "channel_kinds");
+			assert.deepStrictEqual(kinds?.inputSchema, {type: "object", additionalProperties: false});
+		}),
+	);
+
 	it.effect("channel_kinds returns the resolvable contract (kind shapes + role seams)", () =>
 		Effect.gen(function* () {
 			const {client} = yield* makeInitializedClient;

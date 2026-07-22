@@ -40,3 +40,9 @@ export {
 	SendChannelMessage,
 } from "./send-tool.ts";
 export {channelServerLayer} from "./server.ts";
+export {
+	assertToolSchemas,
+	findInvalidToolSchemas,
+	InvalidToolSchemaError,
+	type ToolSchema,
+} from "./tool-schema-guard.ts";

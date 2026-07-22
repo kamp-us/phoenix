@@ -39,7 +39,10 @@ A small, layered substrate split into a **generic core** and one **crew-coupled*
   and the two-keyspace claim/lease store (presence leases keyed by peer, resource claims keyed
   by resource — ADR 0191).
 - **`src/peer/`** — a p2p participant: dials, holds connections, relays messages over the protocol.
-- **`src/edge/`** — the MCP channel edge: exposes the substrate to an MCP client as channels.
+- **`src/edge/`** — the MCP channel edge: exposes the substrate to an MCP client as channels, and
+  fences at boot that every tool it registers generates a spec-valid top-level `{"type":"object"}`
+  `inputSchema` — a client rejects the *whole* `tools/list` response on one bad schema, so without
+  the fence a single malformed tool silently zeroes every seat's channel tools (#3753).
 - **`src/crew/`** — the only crew-coupled module and the composition root: the Role enum (the
   four-role flat topology), the seam catalog (each role's crew interactions mapped over
   `protocol/`), the wiring that composes tracker + peer + edge into a per-role channel server
