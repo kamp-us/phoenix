@@ -16,6 +16,11 @@
  * `/.claude/worktrees/` segment. A `$WORKTREE_ROOT` NOT under that layout (a
  * bespoke worktree dir) yields no derivable main prefix, so the rewrite is a
  * no-op — fail-open, never invent a target.
+ *
+ * That fail-open is currently unconditional in practice: `$WORKTREE_ROOT` is never written by
+ * provisioning, so an EMPTY root reaches this core on every real spawn and every path allows.
+ * Both halves — the phantom root and whether an empty root should still fail open — are tracked
+ * at #3682 and deliberately NOT resolved here (#3742 re-armed only which build runs).
  */
 
 export type PathDecision =
