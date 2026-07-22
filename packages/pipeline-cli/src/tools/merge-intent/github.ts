@@ -140,12 +140,27 @@ const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
 
 // REST-only arg builders — never GraphQL.
 
-/** The PR resource: `merged` and whether an auto-merge request is armed (`auto_merge != null`). */
+/**
+ * The PR resource: `merged`, whether an auto-merge request is armed (`auto_merge != null`), and the
+ * base branch — the branch whose queue regime rule 4's exemption is about.
+ */
 const prArgs = (repo: string, pr: number): ReadonlyArray<string> => [
 	"api",
 	`repos/${repo}/pulls/${pr}`,
 	"--jq",
-	"{merged: (.merged == true), armed: (.auto_merge != null)}",
+	"{merged: (.merged == true), armed: (.auto_merge != null), base: .base.ref}",
+];
+
+/**
+ * The rules that apply to a branch, across every active ruleset. A `merge_queue` rule in the
+ * response is the authoritative "this branch is queue-governed" signal — the repo/branch-level
+ * property rule 4 keys on. (Classic branch protection carries no merge-queue field, and on a
+ * ruleset-governed repo `branches/<b>/protection` 404s, so this is the endpoint that answers it;
+ * verified live against `kamp-us/phoenix` `main`, which returns a `merge_queue` rule.)
+ */
+const branchRulesArgs = (repo: string, branch: string): ReadonlyArray<string> => [
+	"api",
+	`repos/${repo}/rules/branches/${encodeURIComponent(branch)}`,
 ];
 
 /** The REST issue-timeline endpoint — the authoritative merge-queue-membership signal. */
@@ -168,8 +183,12 @@ const disableArgs = (repo: string, pr: number): ReadonlyArray<string> => [
 const RawPr = Schema.Struct({
 	merged: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
 	armed: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+	base: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 const decodePr = Schema.decodeUnknownEffect(RawPr);
+
+const RawRule = Schema.Struct({type: Schema.optionalKey(Schema.NullOr(Schema.String))});
+const decodeRules = Schema.decodeUnknownEffect(Schema.Array(RawRule));
 
 const RawTimelineEntry = Schema.Struct({
 	event: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -177,34 +196,39 @@ const RawTimelineEntry = Schema.Struct({
 });
 const decodeTimeline = Schema.decodeUnknownEffect(Schema.Array(RawTimelineEntry));
 
-/** The `merged` + `armed` half of the state, recovered to the fail-closed unknown on any fault. */
+/**
+ * The `merged` + `armed` + base-branch half of the state, recovered to the fail-closed unknown on
+ * any fault (a `null` base then denies the regime probe its input — see `readQueueGoverned`).
+ */
 const readPr = Effect.fn("Github.readPr")(
 	function* (repo: string, pr: number) {
 		const args = prArgs(repo, pr);
 		const raw = yield* decodePr(yield* parseJson(args, yield* runGh(args)));
-		return {merged: raw.merged === true, armed: (raw.armed ?? false) as boolean | "unknown"};
+		return {
+			merged: raw.merged === true,
+			armed: (raw.armed ?? false) as boolean | "unknown",
+			base: raw.base ?? null,
+		};
 	},
 	(effect) =>
 		effect.pipe(
 			Effect.catchTags({
 				"@kampus/merge-intent/GhCommandError": () =>
-					Effect.succeed({merged: false, armed: "unknown" as const}),
+					Effect.succeed({merged: false, armed: "unknown" as const, base: null}),
 				"@kampus/merge-intent/GhParseError": () =>
-					Effect.succeed({merged: false, armed: "unknown" as const}),
-				SchemaError: () => Effect.succeed({merged: false, armed: "unknown" as const}),
+					Effect.succeed({merged: false, armed: "unknown" as const, base: null}),
+				SchemaError: () => Effect.succeed({merged: false, armed: "unknown" as const, base: null}),
 			}),
 		),
 );
 
 /**
- * The two merge-queue facts: is the PR queued *now* (last event wins — the resolution
- * `merge-queue-classify` owns, imported rather than re-derived), and has the queue *ever*
- * governed it (any `added_to_merge_queue`), which is what separates a parked intent from the
- * pre-queue auto-merge regime. An unreadable timeline recovers to "no queue history": the
- * decision then rests on `armed` alone, which already reads `null` — i.e. `keep` — for a PR
- * sitting in the queue, so a timeline fault cannot dequeue a live entry.
+ * Is the PR queued *now*? Last event wins — the resolution `merge-queue-classify` owns, imported
+ * rather than re-derived. An unreadable timeline recovers to "not queued": the decision then rests
+ * on `armed`, which already reads `null` — i.e. `keep` at rule 3 — for a PR sitting in the queue,
+ * so a timeline fault cannot dequeue a live entry.
  */
-const readQueue = Effect.fn("Github.readQueue")(
+const readQueued = Effect.fn("Github.readQueued")(
 	function* (repo: string, pr: number) {
 		const args = timelineArgs(repo, pr);
 		// `--paginate` concatenates JSON arrays; normalize `][` joins into one array before parsing.
@@ -216,27 +240,50 @@ const readQueue = Effect.fn("Github.readQueue")(
 			if (e.created_at != null) entry.created_at = e.created_at;
 			return entry;
 		});
-		return {
-			queued: lastMergeQueueEvent(projected) === "added_to_merge_queue",
-			everQueued: projected.some((e) => e.event === "added_to_merge_queue"),
-		};
+		return lastMergeQueueEvent(projected) === "added_to_merge_queue";
 	},
 	(effect) =>
 		effect.pipe(
 			Effect.catchTags({
-				"@kampus/merge-intent/GhCommandError": () =>
-					Effect.succeed({queued: false, everQueued: false}),
-				"@kampus/merge-intent/GhParseError": () =>
-					Effect.succeed({queued: false, everQueued: false}),
-				SchemaError: () => Effect.succeed({queued: false, everQueued: false}),
+				"@kampus/merge-intent/GhCommandError": () => Effect.succeed(false),
+				"@kampus/merge-intent/GhParseError": () => Effect.succeed(false),
+				SchemaError: () => Effect.succeed(false),
+			}),
+		),
+);
+
+/**
+ * Is the base branch governed by a merge queue? Every fault — an unknown base, a `gh` failure, an
+ * undecodable body — resolves **`true`**, because `false` is the sole trigger of rule 4's keep: a
+ * read this run could not make must never be the thing that lets an intent stay parked.
+ */
+const readQueueGoverned = Effect.fn("Github.readQueueGoverned")(
+	function* (repo: string, base: string | null) {
+		if (base === null || base.trim() === "") return true;
+		const args = branchRulesArgs(repo, base.trim());
+		const rules = yield* decodeRules(yield* parseJson(args, yield* runGh(args)));
+		return rules.some((r) => r.type === "merge_queue");
+	},
+	(effect) =>
+		effect.pipe(
+			Effect.catchTags({
+				"@kampus/merge-intent/GhCommandError": () => Effect.succeed(true),
+				"@kampus/merge-intent/GhParseError": () => Effect.succeed(true),
+				SchemaError: () => Effect.succeed(true),
 			}),
 		),
 );
 
 const readState = Effect.fn("Github.state")(function* (repo: string, pr: number) {
 	const pull = yield* readPr(repo, pr);
-	const queue = yield* readQueue(repo, pr);
-	return {...pull, ...queue} satisfies MergeIntentState;
+	const queued = yield* readQueued(repo, pr);
+	const queueGoverned = yield* readQueueGoverned(repo, pull.base);
+	return {
+		merged: pull.merged,
+		armed: pull.armed,
+		queued,
+		queueGoverned,
+	} satisfies MergeIntentState;
 });
 
 /** The verified outcome of a disarm attempt. */

@@ -1,20 +1,10 @@
 /**
- * `merge-intent` pure core — the decision behind ship-it's no-parked-merge-intent invariant
- * (ADR 0198, issue #3723).
+ * `merge-intent` pure core: may an armed `gh pr merge --auto` request survive at this point in
+ * ship-it's lifecycle? The branch lives here — a pure function of the PR's live merge state — so
+ * the answer cannot drift across shippers; the `gh` IO is in `github.ts` (the `cp-cardinality` /
+ * `merge-queue-classify` split).
  *
- * ship-it enqueues with `gh pr merge --auto`. When that request does not take effect at the
- * head it was made against, GitHub keeps it **armed**, and it fires the moment the missing
- * requirement lands — on a §CP PR, the instant a fresh control-plane approval arrives. That is
- * an enqueue with **no ship-it run in between**, so the assertions ship-it makes *at* enqueue
- * time (current-head verdicts, the run-evidence bundle, the leak scan, unresolved threads) are
- * skipped at the decisive instant (observed on PR #3700, where `added_to_merge_queue` fired one
- * second after the approving review).
- *
- * The fix is a lifecycle rule, not a new enqueue primitive: an armed merge intent is a
- * transient artifact of a completed gate pass, never a durable state. This core answers the one
- * question each lifecycle site asks — *may an armed intent survive here?* — as a pure function
- * of the PR's live merge state, so the answer cannot drift across shippers (the `cp-cardinality`
- * / `merge-queue-classify` split: the `gh` IO in the service, the branch in a tested core).
+ * See ADR 0198 (#3723) for why a surviving intent is a defect.
  */
 
 /**
@@ -36,8 +26,12 @@ export interface MergeIntentState {
 	readonly merged: boolean;
 	/** Currently in the merge queue (the last merge-queue timeline event is `added_to_merge_queue`). */
 	readonly queued: boolean;
-	/** The merge queue has governed this PR at least once (any `added_to_merge_queue` event). */
-	readonly everQueued: boolean;
+	/**
+	 * A merge queue governs the PR's **base branch** — a branch-level regime, never a per-PR fact
+	 * (rule 4 below has the why). `true` when the read failed, so an unread regime can't be the
+	 * thing that grants the exemption.
+	 */
+	readonly queueGoverned: boolean;
 }
 
 export type IntentAction = "disarm" | "keep";
@@ -56,7 +50,7 @@ const DISARM_REASON: Record<IntentSite, string> = {
 	refuse:
 		"this run refused to enqueue — an intent left armed would enqueue on the next bare approval, with no ship-it run asserting the machine gates in between",
 	"post-enqueue":
-		"the merge queue governs this PR but it is not queued — the enqueue did not take effect at this head, so what remains is a parked intent, not a queue entry",
+		"a merge queue governs this base branch but the PR is not queued — the enqueue did not take effect at this head, so what remains is a parked intent, not a queue entry",
 	ejected:
 		"the queue dropped the PR — it must re-enter through a fresh ship-it gate pass, never by a surviving intent firing on the re-approval",
 };
@@ -70,14 +64,17 @@ const DISARM_REASON: Record<IntentSite, string> = {
  *      authorized. ship-it never dequeues it: fighting the queue is a different decision, and
  *      the async merge is the queue's to finish (ADR 0132).
  *   3. `armed === false` — nothing armed, so nothing to clear.
- *   4. `post-enqueue` on a PR the queue has NEVER governed — the pre-queue auto-merge regime
- *      (ADR 0132 transition safety, and any foreign repo with no queue), where the armed
- *      request *is* the sanctioned enqueue mechanism. Only this site gets the exemption:
- *      at `preflight` the same arm is stale by construction, whatever the regime.
+ *   4. `post-enqueue` on a base branch **no merge queue governs** — the pre-queue auto-merge
+ *      regime (ADR 0132 transition safety, and any foreign repo with no queue), where the armed
+ *      request *is* the sanctioned enqueue mechanism. The predicate is the branch's regime, never
+ *      the PR's own queue history: under a queue, a first-attempt PR has no history either, so a
+ *      per-PR proxy would exempt exactly the parked intent this guard exists to clear. And only
+ *      this site gets the exemption — at `preflight` the same arm is stale in either regime.
  *   5. Otherwise — disarm.
  *
- * Fail-closed by construction: an unreadable `armed` (`"unknown"`) falls through to disarm. The
- * asymmetry is deliberate — a needless disarm costs one idempotent re-ship, a surviving parked
+ * Fail-closed by construction: an unreadable `armed` (`"unknown"`) falls through to disarm, and an
+ * unreadable regime resolves `queueGoverned: true` so a failed read can never reach rule 4's keep.
+ * The asymmetry is deliberate — a needless disarm costs one idempotent re-ship, a surviving parked
  * intent costs an ungated enqueue.
  */
 export const decideMergeIntent = (site: IntentSite, state: MergeIntentState): IntentDecision => {
@@ -93,10 +90,10 @@ export const decideMergeIntent = (site: IntentSite, state: MergeIntentState): In
 	if (state.armed === false) {
 		return at("keep", "no armed auto-merge request on the PR — nothing is parked");
 	}
-	if (site === "post-enqueue" && !state.everQueued) {
+	if (site === "post-enqueue" && !state.queueGoverned) {
 		return at(
 			"keep",
-			"no merge-queue event has ever governed this PR ⇒ the pre-queue auto-merge regime, where the armed request IS the sanctioned enqueue mechanism (ADR 0132 transition safety)",
+			"no merge queue governs the base branch ⇒ the pre-queue auto-merge regime, where the armed request IS the sanctioned enqueue mechanism (ADR 0132 transition safety)",
 		);
 	}
 	const unknown = state.armed === "unknown" ? " (arm state unreadable — treated as armed)" : "";

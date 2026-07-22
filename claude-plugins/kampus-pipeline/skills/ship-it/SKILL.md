@@ -152,12 +152,13 @@ rule with **four mandated sites** — run start, every stop/refusal, an ejection
 bounded reconcile:
 
 ```bash
-# `merge-intent` owns the branch (ADR 0198): a live merge-queue entry is NEVER disturbed, the
-# pre-queue auto-merge regime is exempt at `post-enqueue` only, and an unreadable arm state
-# fail-closes to a clear. It verifies by re-reading `auto_merge` — never trust
+# `merge-intent` owns the branch (ADR 0198): a live merge-queue entry is NEVER disturbed; the
+# pre-queue regime — read off the BASE BRANCH's ruleset, not this PR's queue history — is exempt at
+# `post-enqueue` only; and both reads fail closed toward a clear. It verifies by re-reading
+# `auto_merge` — never trust
 # `--disable-auto`'s exit code, which is non-zero both when the disable failed and when nothing
 # was armed. Exit 1 = the intent may STILL be armed: surface it, never report a clean stop over it.
-INTENT_UNCLEARED=0   # set by any failed disarm; the run's outcome line MUST carry it (see Reporting)
+INTENT_UNCLEARED=0   # set by any failed disarm; the run's outcome line MUST carry it (see Running it)
 disarm_intent() {   # $1 = preflight | refuse | post-enqueue | ejected
   pipeline-cli merge-intent disarm --pr "$PR" --repo "$REPO" --site "$1" || {
     echo "ship-it: FAILED to clear the merge intent on #$PR (site $1) — a later approval could enqueue it ungated (ADR 0198). Disable auto-merge by hand before this PR is approved again." >&2
@@ -165,20 +166,27 @@ disarm_intent() {   # $1 = preflight | refuse | post-enqueue | ejected
   }
 }
 
-# Site 1 — run start: the moment $PR and $REPO are resolved (Step 0's first lines) and BEFORE any
-# gate branches. An intent armed by an earlier or interrupted run is backed by no gate pass at this
-# head; this is the site that catches the INTERRUPTED run (#3700's mechanism), which by definition
-# reaches no exit path of its own. Abort the run if it cannot be cleared — a ship that cannot
-# establish the intent state cannot honor the invariant at any later site.
-disarm_intent preflight || exit 1
+# Site 1 — run start. This function is DEFINED here; the call itself is WIRED at Step 0, on the
+# line after `PR=` — the first point at which both $PR and $REPO exist (see "Step 0 — Classify the
+# diff"). Do not call it here: this block is preamble and runs before Step 0 resolves $PR.
 ```
 
-**Site 2 is every path that stops or refuses** — Step 0's `awaiting control-plane approval`, Step
+**Site 1 is Step 0's `disarm_intent preflight || exit 1`, and it is the one that catches the
+interrupted run** — #3700's actual mechanism, which by definition reaches no exit path of its own,
+so no `refuse` site can ever fire for it. An intent armed by an earlier or interrupted run is
+backed by no gate pass at this head. Abort the run if it cannot be cleared: a ship that cannot
+establish the intent state cannot honor the invariant at any later site.
+
+**Site 2 is every path that stops or refuses**, without exception — each runs `disarm_intent
+refuse` **before it reports**. A run that declines to enqueue must not leave behind the means to
+enqueue without it. The refusal strings enumerated in [Running it](#running-it) are that set; in
+step order they are Step 0's `awaiting control-plane approval`, Step 1's `draft` /
+`closed (unmerged)` / `no linked issue`, Step 2 guard 1's `latest verdict is FAIL (<gate>)`, Step
 2/2b's `unverified …`, Step 3's gating red, the CI-settle refusals, Step 3z's dropped-trigger
-nudge, Step 3.5's run-evidence refusals, Step 3.6's substantive thread, Step 3.7's leak: each runs
-`disarm_intent refuse` **before it reports**. A run that declines to enqueue must not leave behind
-the means to enqueue without it. Sites 3 and 4 (`ejected`, `post-enqueue`) live in Step 5.5, where
-the terminal state is known.
+nudge, Step 3.5's run-evidence refusals, Step 3.6's substantive thread, and Step 3.7's leak. Read
+the rule, not the list: a stop path this list forgot is still a Site-2 path, and Site 1 is the
+backstop that clears whatever any exit missed on the *next* run. Sites 3 and 4 (`ejected`,
+`post-enqueue`) live in Step 5.5, where the terminal state is known.
 
 A failed disarm **never rewrites a stop path's own control flow** — each site records
 `INTENT_UNCLEARED=1` and continues to its existing disposition (so the durable PR-visible outcome
@@ -264,6 +272,15 @@ PR=<pr number>
 # has NO surface in ship-it — it stages/commits nothing — so it is enforced upstream in the pre-bash
 # hook + write-code/review-code, not duplicated here.
 iso_preflight ship-it || exit 1   # ../gh-issue-intake-formats.md §RO-iso — define it there, cite here
+
+# Guard 6, SITE 1 (ADR 0198) — the first thing after $PR is known and BEFORE any gate branch, so a
+# `--auto` armed by an earlier or INTERRUPTED run (#3700's mechanism — the run that reaches no exit
+# path of its own, so no `refuse` site ever fires for it) cannot enqueue behind this run's back.
+# $REPO was resolved at the top of the skill; $PR one line up. `disarm_intent` is defined in
+# "The no-parked-merge-intent invariant" above. Abort on failure: a run that cannot establish the
+# intent state cannot honor the invariant at any later site.
+disarm_intent preflight || exit 1
+
 gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
 ```
 
@@ -432,9 +449,10 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
     enter the ADR 0132 queue too). §CP carries **one extra** gate — the team approval — layered on
     the same machine gates every PR clears.
   - **stop** (the cardinality branch's required current-head signal is absent, or the team is
-    empty) → **STOP.** Run `disarm_intent refuse` (guard 6 — this is *the* stop the parked-intent
-    defect fires on: the approval this PR is waiting for would otherwise enqueue it the instant it
-    lands), then report `awaiting control-plane approval` and stop; do **not** enqueue. This
+    empty) → **STOP.** Run `disarm_intent refuse || INTENT_UNCLEARED=1` (guard 6 — this is *the*
+    stop the parked-intent defect fires on: the approval this PR is waiting for would otherwise
+    enqueue it the instant it lands), then report `awaiting control-plane approval` and stop; do
+    **not** enqueue. This
     **replaces** the old blanket refuse.
 
   This holds even if the rest of the diff is clean code/docs/skills — a mixed PR that touches the
@@ -637,7 +655,8 @@ gh api repos/$REPO/pulls/$PR \
 ```
 
 If the PR is already `merged` → nothing to do, report it shipped and stop (idempotent).
-If it's `draft` or `state=closed` (unmerged) → stop, report why.
+If it's `draft` or `state=closed` (unmerged) → run `disarm_intent refuse || INTENT_UNCLEARED=1`
+(guard 6 — a Site-2 stop like any other), then stop and report why.
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam `write-code`
 writes and `review-code` relies on) and pin it as a shell var Step 5 reads back:
@@ -694,7 +713,8 @@ no `claude-plugins/**` skills source).
 - **A real code or skills class is present** — a changed path under `apps/**`, `packages/**`,
   `infra/**`, or `claude-plugins/**` (skills source), i.e. the PR is **not**
   doc/vocab-surface-only — **with no issue reference at all** — neither a closing keyword **nor**
-  the explicit `Part of #N` partial-split marker above → stop and report `no linked issue`. In
+  the explicit `Part of #N` partial-split marker above → run `disarm_intent refuse ||
+  INTENT_UNCLEARED=1` (guard 6), then stop and report `no linked issue`. In
   this pipeline `write-code` always writes `Fixes #N` (or, for a deliberate partial split,
   `Part of #N`), so a code PR that names **no** issue at all is a broken seam, not a normal
   state — it has nothing to auto-close on merge and would leave dangling work. (Distinct from the
@@ -1029,7 +1049,9 @@ Then gate the merge on the classes present (Step 0):
      needs a current-head `review-design` PASS alongside those (e.g. a UI code PR needs
      `review-code` **and** `review-design`).
 2. If **any** required namespace's current-head verdict is **FAIL** → **do not merge.** The PR
-   has unaddressed failures as its *current* state, even if an older PASS exists. Report
+   has unaddressed failures as its *current* state, even if an older PASS exists. Run
+   `disarm_intent refuse || INTENT_UNCLEARED=1` (guard 6 — a FAIL'd PR that still carries an arm
+   would enqueue on the next approval with its failures unaddressed), report
    `latest verdict is FAIL (<which gate>)` and stop; the fix round-trip is `write-code`'s
    (code) / the doc author's job, not yours.
 3. If **every** required namespace's current-head verdict is PASS → guard 1 cleared, proceed to
@@ -1140,7 +1162,8 @@ Classify in this order (`skipping`/`cancel` are non-blocking — neither a failu
 in-flight wait):
 
 1. **Any *gating* check red** (a `fail` whose name is not known-informational) → do **not**
-   merge. Run `disarm_intent refuse` (guard 6), then route it to the self-heal lane: invoke
+   merge. Run `disarm_intent refuse || INTENT_UNCLEARED=1` (guard 6), then route it to the
+   self-heal lane: invoke
    [`/heal-ci`](../heal-ci/SKILL.md) with this
    PR/run, then report the result (e.g. `routed to heal-ci`). `heal-ci` decides
    flake-vs-defect; you only refuse on a gating red and hand off — you still do not merge.
@@ -1562,7 +1585,7 @@ For **each** unresolved thread the query returns:
 - **Substantive** — a real objection: a requested change ("fix this", "handle this case", "this
   is wrong", "don't do X"), a bot finding that names a real defect (an unused import, a missing
   guard), or anything you cannot confidently call trivial. → **REFUSE to enqueue.** Run
-  `disarm_intent refuse` (guard 6), then report
+  `disarm_intent refuse || INTENT_UNCLEARED=1` (guard 6), then report
   `unresolved substantive review thread (<path>:<line>, @<author>)` and stop — this is a FAIL-class
   refusal, routed back to `write-code` to address the thread on the branch. Do **not** resolve it.
 - **Genuine nit** — a trivial, already-satisfied, or obsolete note (a style preference already
@@ -1770,9 +1793,10 @@ done
 # Guard 6 (ADR 0198) — the reconcile's terminal read is the LAST place this run can leave an arm
 # behind, so it is also sites 3 and 4. `merged` and `queued` keep the intent (a live queue entry is
 # never disturbed); an `ejected` PR is cleared so a re-approval after its rebase cannot re-enqueue
-# it ahead of a fresh gate pass; and a PR the queue governs but never took is a PARKED intent, not
-# a queue entry — `merge-intent` distinguishes the two, so a pre-queue repo's legitimate armed
-# auto-merge is untouched.
+# it ahead of a fresh gate pass; and an arm that never became a queue entry on a QUEUE-GOVERNED
+# base branch is a PARKED intent — `merge-intent` reads the base branch's ruleset to tell the two
+# regimes apart, so a repo whose base branch has no merge queue keeps its legitimate armed
+# auto-merge while this repo's every unqueued arm is cleared.
 if [ "$MERGE_OUTCOME" = ejected ]; then
   disarm_intent ejected || INTENT_UNCLEARED=1
 else
@@ -1794,11 +1818,14 @@ merge disposition:
   (ADR 0132: the actor does not block to the final merge). Report `enqueued: yes (→ auto-merges on
   green)` exactly as before — the reconcile confirmed it was **still in-flight, never ejected**,
   within the window. A `pending` PR at the budget's end is reported this way too — the settle window
-  is **never** an ejection (#1921). **One carve-out** (guard 6): a `pending` PR that the merge queue
-  has *already governed* never entered the queue this time, so what it carries is a parked intent,
-  not an in-flight enqueue — the guard-6 block above clears it and the run reports
-  `refused — the enqueue did not take effect at this head` instead. A PR the queue has **never**
-  governed keeps its arm (the pre-queue regime) and is reported as the well-formed pending above.
+  is **never** an ejection (#1921). **One carve-out** (guard 6): on a base branch a **merge queue
+  governs** — every PR in this repo — a `pending` PR never entered the queue at all, so what it
+  carries is a parked intent, not an in-flight enqueue; the guard-6 block above clears it and the
+  run reports `refused — the enqueue did not take effect at this head` instead. Only where the base
+  branch has **no** merge queue does the arm stay (the pre-queue regime, where `--auto` *is* the
+  enqueue mechanism) and get reported as the well-formed pending above. The predicate is the
+  branch's regime, never this PR's own queue history: a first-attempt PR under a queue has no
+  history either, so keying on history would leave exactly the #3700 arm parked.
 - **`ejected`** — the queue **dropped** the PR (still open, no longer queued, not merged) — keyed on
   the authoritative `removed_from_merge_queue` timeline event, not on a momentary state. This is
   the silent stall this step exists to catch. Do **not** report shipped. **Route it back to

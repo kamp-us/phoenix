@@ -34,14 +34,16 @@ const normalize = (response: Response): Canned =>
 	typeof response === "string" ? {stdout: response} : response;
 
 /**
- * A `ChildProcessSpawner` answering the three calls the service makes: the `gh api …/pulls/<n>`
- * read, the `gh api …/timeline` read, and the `gh pr merge --disable-auto` write. `pull` may be a
- * list, consumed one per call, so a test can model the state BEFORE and AFTER the disable — the
- * read-back verify's whole point. An unprovided call exits 1 (the read-failure path).
+ * A `ChildProcessSpawner` answering the four calls the service makes: the `gh api …/pulls/<n>`
+ * read, the `gh api …/timeline` read, the `gh api …/rules/branches/<b>` regime probe, and the
+ * `gh pr merge --disable-auto` write. `pull` may be a list, consumed one per call, so a test can
+ * model the state BEFORE and AFTER the disable — the read-back verify's whole point. An unprovided
+ * call exits 1 (the read-failure path).
  */
 const mockSpawner = (fixture: {
 	readonly pull?: Response | ReadonlyArray<Response>;
 	readonly timeline?: Response;
+	readonly rules?: Response;
 	readonly disable?: Response;
 	readonly repoView?: Response;
 }): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> => {
@@ -59,6 +61,7 @@ const mockSpawner = (fixture: {
 				const isRepoView = args[0] === "repo" && args[1] === "view";
 				const isDisable = args.includes("--disable-auto");
 				const isTimeline = args.some((a) => a.includes("/timeline"));
+				const isRules = args.some((a) => a.includes("/rules/branches/"));
 				const isPull = args.some((a) => a.includes("/pulls/"));
 				const pick = (): Response | undefined =>
 					isRepoView
@@ -67,9 +70,11 @@ const mockSpawner = (fixture: {
 							? fixture.disable
 							: isTimeline
 								? fixture.timeline
-								: isPull
-									? (pulls.shift() ?? pulls.at(-1))
-									: undefined;
+								: isRules
+									? fixture.rules
+									: isPull
+										? (pulls.shift() ?? pulls.at(-1))
+										: undefined;
 				const found = pick();
 				// `!== undefined`, not truthiness: an empty stdout is a legitimate canned success
 				// (`gh pr merge --disable-auto` prints nothing), not an unprovided call.
@@ -100,36 +105,88 @@ const provide = <A, E>(
 	effect.pipe(Effect.provide(GithubLive.pipe(Layer.provide(mockSpawner(fixture)))));
 
 /** The `--jq`-projected PR read the service issues. */
-const pull = (merged: boolean, armed: boolean): string => JSON.stringify({merged, armed});
+const pull = (merged: boolean, armed: boolean, base = "main"): string =>
+	JSON.stringify({merged, armed, base});
 
 const timelineEvents = (...events: ReadonlyArray<string>): string =>
 	JSON.stringify(events.map((event, i) => ({event, created_at: `2026-01-01T00:0${i}:00Z`})));
 
+/** `GET /repos/{repo}/rules/branches/{branch}` — the branch's rules across every active ruleset. */
+const branchRules = (...types: ReadonlyArray<string>): string =>
+	JSON.stringify(types.map((type) => ({type, ruleset_id: 1})));
+
 const REPO = "kamp-us/phoenix";
 
 describe("Github.state — the live merge state the ADR-0198 branch reads", () => {
-	it.effect("reports an armed, never-queued PR", () =>
+	it.effect("reports an armed PR on a queue-governed base branch", () =>
 		Effect.gen(function* () {
 			const state = yield* (yield* Github).state(3700, REPO);
 			assert.deepStrictEqual(state, {
 				merged: false,
 				armed: true,
 				queued: false,
-				everQueued: false,
+				queueGoverned: true,
 			});
-		}).pipe((effect) => provide(effect, {pull: pull(false, true), timeline: "[]"})),
+		}).pipe((effect) =>
+			provide(effect, {
+				pull: pull(false, true),
+				timeline: "[]",
+				rules: branchRules("pull_request", "merge_queue"),
+			}),
+		),
 	);
 
-	it.effect("reports a PR the queue governs but has dropped — the parked-intent shape", () =>
+	it.effect(
+		"the first-enqueue-attempt PR under a merge queue is a parked intent, not the pre-queue regime",
+		() =>
+			// The #3774 review's FAIL 1: keyed on the PR's own history this state reads "never queued"
+			// and would take the exemption — but the base branch carries a `merge_queue` rule, so the
+			// arm that never took is parked.
+			Effect.gen(function* () {
+				const state = yield* (yield* Github).state(3700, REPO);
+				assert.strictEqual(state.queued, false);
+				assert.strictEqual(state.queueGoverned, true);
+				assert.strictEqual(decideMergeIntent("post-enqueue", state).action, "disarm");
+			}).pipe((effect) =>
+				provide(effect, {
+					pull: pull(false, true),
+					timeline: "[]",
+					rules: branchRules("merge_queue"),
+				}),
+			),
+	);
+
+	it.effect("a base branch with no merge-queue rule keeps its legitimate armed auto-merge", () =>
+		Effect.gen(function* () {
+			const state = yield* (yield* Github).state(3700, REPO);
+			assert.strictEqual(state.queueGoverned, false);
+			assert.strictEqual(decideMergeIntent("post-enqueue", state).action, "keep");
+		}).pipe((effect) =>
+			provide(effect, {
+				pull: pull(false, true),
+				timeline: "[]",
+				rules: branchRules("pull_request", "non_fast_forward"),
+			}),
+		),
+	);
+
+	it.effect("a repo with no rulesets at all reads as the pre-queue regime", () =>
+		Effect.gen(function* () {
+			const state = yield* (yield* Github).state(3700, REPO);
+			assert.strictEqual(state.queueGoverned, false);
+		}).pipe((effect) => provide(effect, {pull: pull(false, true), timeline: "[]", rules: "[]"})),
+	);
+
+	it.effect("reports a PR the queue has dropped — the parked-intent shape", () =>
 		Effect.gen(function* () {
 			const state = yield* (yield* Github).state(3700, REPO);
 			assert.strictEqual(state.queued, false);
-			assert.strictEqual(state.everQueued, true);
 			assert.strictEqual(decideMergeIntent("post-enqueue", state).action, "disarm");
 		}).pipe((effect) =>
 			provide(effect, {
 				pull: pull(false, true),
 				timeline: timelineEvents("added_to_merge_queue", "removed_from_merge_queue"),
+				rules: branchRules("merge_queue"),
 			}),
 		),
 	);
@@ -140,7 +197,11 @@ describe("Github.state — the live merge state the ADR-0198 branch reads", () =
 			assert.strictEqual(state.queued, true);
 			assert.strictEqual(decideMergeIntent("preflight", state).action, "keep");
 		}).pipe((effect) =>
-			provide(effect, {pull: pull(false, true), timeline: timelineEvents("added_to_merge_queue")}),
+			provide(effect, {
+				pull: pull(false, true),
+				timeline: timelineEvents("added_to_merge_queue"),
+				rules: branchRules("merge_queue"),
+			}),
 		),
 	);
 
@@ -149,7 +210,30 @@ describe("Github.state — the live merge state the ADR-0198 branch reads", () =
 			const state = yield* (yield* Github).state(3700, REPO);
 			assert.strictEqual(state.armed, "unknown");
 			assert.strictEqual(decideMergeIntent("refuse", state).action, "disarm");
-		}).pipe((effect) => provide(effect, {timeline: "[]"})),
+		}).pipe((effect) => provide(effect, {timeline: "[]", rules: branchRules("merge_queue")})),
+	);
+
+	it.effect("fail-closed: an unreadable rules probe resolves queue-governed ⇒ no exemption", () =>
+		Effect.gen(function* () {
+			// The #3774 review's FAIL 2: the regime read must never fail OPEN, because `false` is the
+			// sole trigger of `post-enqueue`'s keep.
+			const state = yield* (yield* Github).state(3700, REPO);
+			assert.strictEqual(state.queueGoverned, true);
+			assert.strictEqual(decideMergeIntent("post-enqueue", state).action, "disarm");
+		}).pipe((effect) => provide(effect, {pull: pull(false, true), timeline: "[]"})),
+	);
+
+	it.effect("fail-closed: an unknown base branch resolves queue-governed without probing", () =>
+		Effect.gen(function* () {
+			const state = yield* (yield* Github).state(3700, REPO);
+			assert.strictEqual(state.queueGoverned, true);
+		}).pipe((effect) =>
+			provide(effect, {
+				pull: JSON.stringify({merged: false, armed: true, base: null}),
+				timeline: "[]",
+				rules: "[]",
+			}),
+		),
 	);
 
 	it.effect("no --repo override and an unresolvable repo fails RepoResolutionError", () =>

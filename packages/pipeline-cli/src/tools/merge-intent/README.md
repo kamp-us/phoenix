@@ -27,11 +27,17 @@ of a completed gate pass, never a durable state.
 | the merge already landed | **keep** — nothing left to park |
 | the PR is in the merge queue | **keep** — a live entry is a gated in-flight merge; ship-it never dequeues what a completed gate pass enqueued (ADR 0132) |
 | nothing armed | **keep** |
-| `post-enqueue` on a PR the queue has never governed | **keep** — the pre-queue auto-merge regime, where the armed request *is* the sanctioned enqueue mechanism |
+| `post-enqueue` on a base branch **no merge queue governs** | **keep** — the pre-queue auto-merge regime, where the armed request *is* the sanctioned enqueue mechanism |
 | `preflight` / `refuse` / `ejected` / a parked `post-enqueue` | **disarm** |
 
-An unreadable arm state (`unknown`) resolves to **disarm**: a needless disarm costs one
-idempotent re-ship, a surviving parked intent costs an ungated enqueue.
+The exemption keys on the **base branch's regime** (a `merge_queue` rule on
+`GET /repos/{repo}/rules/branches/{branch}`), never on the PR's own queue history: under a merge
+queue a PR on its *first* enqueue attempt has no history either, so a per-PR proxy would exempt
+exactly the parked intent this tool exists to clear.
+
+Both reads fail **closed**: an unreadable arm state (`unknown`) resolves to *disarm*, and an
+unreadable regime resolves *queue-governed* so it can never reach the keep above. A needless
+disarm costs one idempotent re-ship; a surviving parked intent costs an ungated enqueue.
 
 ## Split of concerns
 

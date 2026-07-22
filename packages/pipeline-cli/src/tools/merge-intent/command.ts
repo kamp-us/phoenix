@@ -1,20 +1,17 @@
 /**
- * The `merge-intent` tool — `pipeline-cli merge-intent disarm [flags]` (issue #3723, ADR 0198).
+ * The `merge-intent` tool — the enforcement half of ship-it's no-parked-merge-intent invariant.
  *
  *   pipeline-cli merge-intent disarm --pr 3700 --site refuse
  *   pipeline-cli merge-intent disarm --pr 3700 --site ejected --repo owner/r
  *
- * The enforcement half of ship-it's no-parked-merge-intent invariant: at each lifecycle site
- * where a run could leave a `gh pr merge --auto` request armed, this verb reads the live merge
- * state, applies the pure `decideMergeIntent` branch, and — when the branch says so — clears the
- * request and **verifies the clear by re-reading `auto_merge`**.
+ * The interface a ship-it stop path codes against: the outcome word (`kept` / `disarmed` /
+ * `failed`) goes to **stdout**, the deciding reason to **stderr**, and the exit is **0 on
+ * `kept`/`disarmed`, 1 on `failed`** — so `pipeline-cli merge-intent disarm … || <surface it>`
+ * never reports a clean STOP over an intent this run could not prove clear. Every unproven
+ * outcome is `failed`: an unresolvable repo, an unknown site, a disarm the read-back cannot
+ * confirm.
  *
- * Prints the outcome word (`kept` / `disarmed` / `failed`) to **stdout** and the deciding reason
- * to **stderr**. Exit is **0 on `kept`/`disarmed`, 1 on `failed`** — so a ship-it stop path reads
- * `pipeline-cli merge-intent disarm … || <surface the failure>` and never reports a clean STOP
- * while an intent is still armed. Failing loud is the whole contract: an unresolvable repo, an
- * unknown site, or a disarm the read-back cannot confirm are all `failed`, because each leaves
- * the invariant unproven.
+ * See ADR 0198 (#3723).
  */
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
@@ -66,7 +63,7 @@ const disarmCmd = Command.make(
 
 		const decision = decideMergeIntent(site as IntentSite, state);
 		yield* say(
-			`#${pr} site=${site} armed=${state.armed} merged=${state.merged} queued=${state.queued} ever-queued=${state.everQueued} → ${decision.action}: ${decision.reason}`,
+			`#${pr} site=${site} armed=${state.armed} merged=${state.merged} queued=${state.queued} queue-governed=${state.queueGoverned} → ${decision.action}: ${decision.reason}`,
 		);
 		if (decision.action === "keep") {
 			return yield* Console.log("kept");
