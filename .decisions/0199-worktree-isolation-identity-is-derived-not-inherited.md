@@ -1,12 +1,12 @@
 ---
-id: 0198
+id: 0199
 title: Worktree-isolation identity is DERIVED from the harness sidecar and git plumbing, never inherited from the process env
 status: accepted
 date: 2026-07-22
 tags: [pipeline, pipeline-hardening, worktree, guards, isolation]
 ---
 
-# 0198 — Worktree-isolation identity is derived, never inherited
+# 0199 — Worktree-isolation identity is derived, never inherited
 
 **What this decides:** the two facts every worktree-isolation consumer needs — *which worktree do I own* and *what agent-type am I* — are **derived** from the harness's per-subagent sidecar (corroborated by git plumbing), and the process env (`$WORKTREE_ROOT`, `$CLAUDE_CODE_AGENT`) is demoted to a last-resort fallback. Keying on the env is the defect, not a limitation to design around.
 

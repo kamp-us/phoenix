@@ -26,7 +26,7 @@
  *
  * `$WORKTREE_ROOT` is NOT injected by the harness and is written by nothing in this repo, so for a
  * subagent it reads empty even inside a correctly-provisioned worktree — which is what disarms the
- * root-keyed branches above (ADR 0198, #3682). `isolation-identity.ts` resolves the root and the
+ * root-keyed branches above (ADR 0199, #3682). `isolation-identity.ts` resolves the root and the
  * agent-type from the harness's per-subagent sidecar instead; it is wired into the record-only
  * attribution path here, and deliberately NOT into any permission decision — re-keying what the
  * hooks REFUSE is gated on the open fail-open-vs-fail-closed ruling (#3743).
@@ -136,7 +136,7 @@ const readSidecar = (input: unknown): AgentSidecar | null => {
  * The recorded `agentType`/`worktreeRoot` come from {@link resolveIsolationIdentity}, not the raw
  * env: this log exists to attribute cross-lane contamination to a lane, and the env misnames the
  * lane in exactly the incidents it is meant to explain — an inherited `$CLAUDE_CODE_AGENT` and an
- * unset `$WORKTREE_ROOT` recorded every isolated coder as its parent, rootless (ADR 0198, #3682).
+ * unset `$WORKTREE_ROOT` recorded every isolated coder as its parent, rootless (ADR 0199, #3682).
  * This is the record-only path on purpose; it emits no permission decision, so the resolved
  * identity cannot change what any hook allows or refuses.
  */

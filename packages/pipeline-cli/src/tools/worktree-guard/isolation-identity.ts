@@ -8,7 +8,7 @@
  * correctly-provisioned worktree; `$CLAUDE_CODE_AGENT` is inherited, so a coder nested under the
  * crew reports its parent's `engineering-manager`. Both were observed misreporting *simultaneously*
  * in a live coder whose worktree was provisioned correctly — the guard layer was disarmed by the
- * key, not by a provisioning failure. See ADR 0198.
+ * key, not by a provisioning failure. See ADR 0199.
  *
  * The authoritative source is the per-subagent sidecar the harness writes next to the transcript
  * (`<transcript-dir>/<session>/subagents/agent-<agentId>.meta.json`), carrying the agent's OWN
