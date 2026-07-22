@@ -15,12 +15,12 @@
 
 set -u
 
-# The one version pin (single source: also read by guard.sh's data dir; the
-# skills' published-fallback pins must match). Bump to reinstall on next SessionStart.
-PIN="0.2.0"
-PKG="@kampus/pipeline-cli"
+HOOKS_DIR="$(dirname "${BASH_SOURCE[0]}")"
+. "$HOOKS_DIR/resolve-data-dir.sh"
+. "$HOOKS_DIR/pin.sh"   # KAMPUS_PIPELINE_CLI_PIN / _PKG — the one pin, shared with guard.sh
+PIN="$KAMPUS_PIPELINE_CLI_PIN"
+PKG="$KAMPUS_PIPELINE_CLI_PKG"
 
-. "$(dirname "${BASH_SOURCE[0]}")/resolve-data-dir.sh"
 DATA="$(resolve_pipeline_data_dir)" || {
 	echo "kampus-pipeline: no resolvable data dir (env value unexpanded and CLAUDE_PROJECT_DIR unset); skipping install" >&2
 	exit 0
@@ -28,6 +28,11 @@ DATA="$(resolve_pipeline_data_dir)" || {
 
 MARKER="$DATA/.pipeline-cli.version"
 BIN="$DATA/node_modules/.bin/pipeline-cli"
+
+# Re-arm guard.sh's once-per-session stale warning: it prints its refusal once per drift
+# state and stamps this file, so clearing it here is what makes the warning fire again on
+# the first guarded tool call of every session rather than exactly once, ever (#3742).
+rm -f "$DATA/.pipeline-cli.stale-warned" 2>/dev/null
 
 # Version-aware idempotency: the marker holds the version last installed here.
 # Reinstall only when the marker is missing, mismatched, or the bin vanished.

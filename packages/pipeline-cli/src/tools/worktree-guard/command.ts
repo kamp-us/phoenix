@@ -56,6 +56,9 @@ import {decideReap} from "./reap.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;
 
+// KNOWN PHANTOM, tracked at #3682: nothing in provisioning ever writes $WORKTREE_ROOT (the
+// WorktreeCreate hook's only success channel is stdout=path, ADR 0180), so every reader of this
+// constant is reading "" on a real spawn. Not fixed here — #3742 only re-armed which BUILD runs.
 const WORKTREE_ROOT = process.env.WORKTREE_ROOT ?? "";
 
 // Is this run sitting on the PRIMARY checkout? Env-independent signal (see ADR 0172 amendment,
