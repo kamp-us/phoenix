@@ -5,6 +5,8 @@
  *  - **report-filed** — a freshly-filed content report notifies EVERY moderator, so
  *    the two-person team learns of a new item in the queue without polling it. The
  *    target is the reported content, so the row links a moderator straight to it.
+ *    Pages are COALESCED per reporter per window ({@link REPORT_PAGE_WINDOW}) — the
+ *    abuse control that bounds how hard one account can page the team (#3641).
  *  - **caylak-pending** — a new çaylak entering the divan review queue notifies every
  *    moderator. Fired by the content-create path only on the çaylak's FIRST currently
  *    pending item (the 0→1 transition — see the divan-side gate), so it is the
@@ -17,8 +19,9 @@
  * is never paged about their own action (story 12). Fan-out is a simple per-recipient
  * loop for the two-person team — no subscription system (the brief).
  *
- * Each moment is discrete, so both use {@link Notification.record} (one row per
- * recipient) — NOT the vote path's aggregate-upsert.
+ * The çaylak moment is discrete, so it uses {@link Notification.record} (one row per
+ * recipient); the report page is windowed-coalesced (`recordDigest`) — neither is the
+ * vote path's per-target aggregate-upsert.
  *
  * The emits ride AFTER the committed report/create mutation and can never fail it: the
  * whole effect — flag read AND the moderator enumeration included — is swallowed-with-log
@@ -26,7 +29,7 @@
  * also absorbs the `orDieAccess` DEFECTS a D1 hiccup raises, not just typed errors.
  * Writes are gated on the spine's `phoenix-bildirim` flag (dark by default).
  */
-import {Effect} from "effect";
+import {Duration, Effect} from "effect";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {Divan} from "../divan/Divan.ts";
 import {allModerators} from "../kunye/moderate.ts";
@@ -52,10 +55,27 @@ const swallow = (label: string) =>
 	Effect.catchCause((cause) => Effect.logWarning(`bildirim: ${label} emit swallowed`, cause));
 
 /**
- * Notify every moderator that a content report was filed. The target is the reported
- * content (so the row links to it); the actor is the reporter, who is self-suppressed
- * if they are themselves a moderator. `targetKind` is a report {@link TargetKind}
+ * How long one reporter's mod pages coalesce (#3641, founder ruling on #2562). Every
+ * report the SAME reporter files inside this window bumps one open page per moderator
+ * instead of minting another row, so the pages a single account can aim at the team is
+ * bounded by elapsed time, not by how many targets it reports. Wide enough that a
+ * report spree is one page, short enough that a genuinely new burst hours later pages
+ * again. This aggregation is a release gate on `phoenix-bildirim` — see `gate.ts`.
+ */
+export const REPORT_PAGE_WINDOW = Duration.minutes(30);
+
+/**
+ * Notify every moderator that a content report was filed, coalesced per reporter per
+ * {@link REPORT_PAGE_WINDOW}: the window's first report mints the page (its target is
+ * the reported content, so the row links a moderator straight to it) and every later
+ * report by that reporter bumps its count — "N yeni içerik bildirildi", with the queue
+ * itself carrying the rest. The actor is the reporter, self-suppressed if they are
+ * themselves a moderator. `targetKind` is a report {@link TargetKind}
  * (`definition`/`post`/`comment`), a subset of the notification target taxonomy.
+ *
+ * Idempotency is unchanged and stays at the call site: `report.submit` emits only on a
+ * genuinely `created` report, so a re-report of the same target never reaches here —
+ * the window bounds DISTINCT reports, it is not a substitute for that guard.
  */
 export const notifyReportFiled = (input: {
 	reporterId: string;
@@ -68,13 +88,16 @@ export const notifyReportFiled = (input: {
 		if (recipients.length === 0) return;
 		const bildirim = yield* Notification;
 		for (const recipientId of recipients) {
-			yield* bildirim.record({
-				recipientId,
-				kind: REPORT_FILED_KIND,
-				targetKind: input.targetKind,
-				targetId: input.targetId,
-				actorId: input.reporterId,
-			});
+			yield* bildirim.recordDigest(
+				{
+					recipientId,
+					kind: REPORT_FILED_KIND,
+					targetKind: input.targetKind,
+					targetId: input.targetId,
+					actorId: input.reporterId,
+				},
+				REPORT_PAGE_WINDOW,
+			);
 		}
 	}).pipe(swallow(REPORT_FILED_KIND));
 

@@ -11,7 +11,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {RelationStore} from "@kampus/authz";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
-import {Effect, Layer} from "effect";
+import {Duration, Effect, Layer} from "effect";
 import {Divan} from "../divan/Divan.ts";
 import {noRequestFlagOverrides} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
@@ -21,9 +21,14 @@ import {
 	notifyCaylakEntersDivan,
 	notifyReportFiled,
 	REPORT_FILED_KIND,
+	REPORT_PAGE_WINDOW,
 } from "./mod-emitters.ts";
 import {makeNotificationStub} from "./Notification.testing.ts";
-import type {NotificationRecordInput} from "./Notification.ts";
+import type {
+	Notification,
+	NotificationDigestInput,
+	NotificationRecordInput,
+} from "./Notification.ts";
 
 const runtimeContextStub: BaseRuntimeContext = {
 	Type: "mod-emitters-test",
@@ -104,39 +109,88 @@ describe("modRecipients — moderator resolution + actor self-suppression, pure"
 	});
 });
 
+// A `Notification` whose `recordDigest` captures the digest calls (input + window).
+const capturingDigest = () => {
+	const calls: Array<{input: NotificationDigestInput; window: Duration.Duration}> = [];
+	const layer = makeNotificationStub({
+		recordDigest: (input, window) =>
+			Effect.sync(() => {
+				calls.push({input, window});
+				return {digested: false};
+			}),
+	});
+	return {calls, layer};
+};
+
+/**
+ * An in-memory `Notification` whose `recordDigest` mirrors the SQL key (#3641): bump the
+ * recipient's page for `(kind, actor)` when one was minted inside the window, else mint a
+ * fresh one. The clock is scripted, so the window boundary is decidable with no engine
+ * (ADR 0082 T1/T2) — this is what makes "many reports → bounded pages" observable here.
+ */
+const digestingNotification = (clock: {now: Date}) => {
+	const pages: Array<{
+		recipientId: string;
+		kind: string;
+		actorId: string;
+		targetId: string;
+		count: number;
+		mintedAt: Date;
+	}> = [];
+	const layer = makeNotificationStub({
+		recordDigest: (input, window) =>
+			Effect.sync(() => {
+				const since = clock.now.getTime() - Duration.toMillis(window);
+				const open = pages.find(
+					(page) =>
+						page.recipientId === input.recipientId &&
+						page.kind === input.kind &&
+						page.actorId === input.actorId &&
+						page.mintedAt.getTime() >= since,
+				);
+				if (open) {
+					open.count += 1;
+					return {digested: true};
+				}
+				pages.push({
+					recipientId: input.recipientId,
+					kind: input.kind,
+					actorId: input.actorId,
+					targetId: input.targetId,
+					count: 1,
+					mintedAt: clock.now,
+				});
+				return {digested: false};
+			}),
+	});
+	return {pages, layer};
+};
+
 describe("notifyReportFiled — the report-filed mod page", () => {
 	it.effect(
-		"records one report-filed notification per moderator, targeting the reported content",
+		"pages every moderator through the reporter-keyed digest, targeting the reported content",
 		() =>
 			Effect.gen(function* () {
-				const calls: NotificationRecordInput[] = [];
+				const {calls, layer} = capturingDigest();
 				yield* notifyReportFiled({
 					reporterId: "u-reporter",
 					targetKind: "post",
 					targetId: "p1",
 				}).pipe(
 					Effect.provide(
-						Layer.mergeAll(
-							makeNotificationStub({
-								record: (input) => {
-									calls.push(input);
-									return Effect.succeed({id: "n1"});
-								},
-							}),
-							relationStoreOf(["u-mod-a", "u-mod-b"]),
-							requestContext(true),
-						),
+						Layer.mergeAll(layer, relationStoreOf(["u-mod-a", "u-mod-b"]), requestContext(true)),
 					),
 				);
 				assert.strictEqual(calls.length, 2);
-				assert.deepStrictEqual(calls[0], {
+				assert.deepStrictEqual(calls[0]?.input, {
 					recipientId: "u-mod-a",
 					kind: REPORT_FILED_KIND,
 					targetKind: "post",
 					targetId: "p1",
 					actorId: "u-reporter",
 				});
-				assert.deepStrictEqual(calls[1]?.recipientId, "u-mod-b");
+				assert.deepStrictEqual(calls[0]?.window, REPORT_PAGE_WINDOW);
+				assert.deepStrictEqual(calls[1]?.input.recipientId, "u-mod-b");
 			}),
 	);
 
@@ -144,27 +198,18 @@ describe("notifyReportFiled — the report-filed mod page", () => {
 		"a moderator who files a report is NOT paged about their own report (self-suppression)",
 		() =>
 			Effect.gen(function* () {
-				const calls: NotificationRecordInput[] = [];
+				const {calls, layer} = capturingDigest();
 				yield* notifyReportFiled({
 					reporterId: "u-mod-a",
 					targetKind: "comment",
 					targetId: "c1",
 				}).pipe(
 					Effect.provide(
-						Layer.mergeAll(
-							makeNotificationStub({
-								record: (input) => {
-									calls.push(input);
-									return Effect.succeed({id: "n1"});
-								},
-							}),
-							relationStoreOf(["u-mod-a", "u-mod-b"]),
-							requestContext(true),
-						),
+						Layer.mergeAll(layer, relationStoreOf(["u-mod-a", "u-mod-b"]), requestContext(true)),
 					),
 				);
 				assert.deepStrictEqual(
-					calls.map((c) => c.recipientId),
+					calls.map((c) => c.input.recipientId),
 					["u-mod-b"],
 				);
 			}),
@@ -215,6 +260,82 @@ describe("notifyReportFiled — the report-filed mod page", () => {
 				);
 				assert.strictEqual(exit._tag, "Success");
 			}),
+	);
+});
+
+describe("notifyReportFiled — per-reporter/window coalescing (the mod-pager fan-out bound)", () => {
+	const fileReport = (
+		reporterId: string,
+		targetId: string,
+		notifications: Layer.Layer<Notification>,
+	) =>
+		notifyReportFiled({reporterId, targetKind: "post", targetId}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					notifications,
+					relationStoreOf(["u-mod-a", "u-mod-b"]),
+					requestContext(true),
+				),
+			),
+		);
+
+	it.effect("a report spree by ONE reporter inside the window is ONE page per moderator", () =>
+		Effect.gen(function* () {
+			const clock = {now: new Date("2026-07-22T10:00:00Z")};
+			const {pages, layer} = digestingNotification(clock);
+			// Eight reports, a minute apart, across eight DISTINCT targets — the
+			// amplification shape: un-coalesced this is 16 rows on a two-person team.
+			for (let i = 0; i < 8; i++) {
+				clock.now = new Date(clock.now.getTime() + 60_000);
+				yield* fileReport("u-spammer", `p${i}`, layer);
+			}
+			assert.deepStrictEqual(
+				pages.map((page) => page.recipientId),
+				["u-mod-a", "u-mod-b"],
+			);
+			assert.deepStrictEqual(
+				pages.map((page) => page.count),
+				[8, 8],
+			);
+			// Each page still links to the window's FIRST reported target.
+			assert.deepStrictEqual(
+				pages.map((page) => page.targetId),
+				["p0", "p0"],
+			);
+		}),
+	);
+
+	it.effect("the window is per REPORTER — a second reporter opens their own page", () =>
+		Effect.gen(function* () {
+			const clock = {now: new Date("2026-07-22T10:00:00Z")};
+			const {pages, layer} = digestingNotification(clock);
+			yield* fileReport("u-reporter-a", "p1", layer);
+			yield* fileReport("u-reporter-b", "p2", layer);
+			assert.deepStrictEqual(
+				pages.map((page) => `${page.recipientId}/${page.actorId}`),
+				[
+					"u-mod-a/u-reporter-a",
+					"u-mod-b/u-reporter-a",
+					"u-mod-a/u-reporter-b",
+					"u-mod-b/u-reporter-b",
+				],
+			);
+		}),
+	);
+
+	it.effect("once the window elapses the next report mints a FRESH page (never silence)", () =>
+		Effect.gen(function* () {
+			const clock = {now: new Date("2026-07-22T10:00:00Z")};
+			const {pages, layer} = digestingNotification(clock);
+			yield* fileReport("u-reporter", "p1", layer);
+			clock.now = new Date(clock.now.getTime() + Duration.toMillis(REPORT_PAGE_WINDOW) + 60_000);
+			yield* fileReport("u-reporter", "p2", layer);
+			assert.strictEqual(pages.length, 4);
+			assert.deepStrictEqual(
+				pages.map((page) => page.count),
+				[1, 1, 1, 1],
+			);
+		}),
 	);
 });
 

@@ -12,8 +12,8 @@
  * die on infra errors (`orDieAccess`), so public signatures carry no error.
  */
 import {LivePublisher} from "@kampus/fate-effect";
-import {and, count, desc, eq, inArray, isNull, sql} from "drizzle-orm";
-import {Context, Effect, Layer} from "effect";
+import {and, count, desc, eq, gte, inArray, isNull, sql} from "drizzle-orm";
+import {Context, Duration, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {
@@ -47,6 +47,16 @@ export interface NotificationRecordInput {
 
 /** The aggregate-upsert input (#1695): one UNREAD row per `(recipient, kind, target)`. */
 export type NotificationAggregateInput = Omit<NotificationRecordInput, "count">;
+
+/**
+ * The windowed-digest input (#3641): the coalescing key is the ACTOR, not the target —
+ * one page per `(recipient, kind, actor)` per window, however many targets the actor
+ * acted on. `actorId` is therefore required and non-null; a system moment with no actor
+ * has no key to coalesce on, so it is unrepresentable here.
+ */
+export type NotificationDigestInput = Omit<NotificationRecordInput, "count" | "actorId"> & {
+	actorId: string;
+};
 
 export interface NotificationRow {
 	id: string;
@@ -138,6 +148,57 @@ export const insertUnlessUnreadStatement = (
 		);
 };
 
+/**
+ * The open-digest key's WHERE (#3641) — recipient-scoped and unread-only like the
+ * aggregate, but keyed on `actor_id` and floored at the window start. A page older
+ * than the window (or already read) matches nothing, so the next event mints a fresh
+ * page instead of bumping a stale one forever.
+ */
+const openDigestWhere = (input: NotificationDigestInput, since: Date) =>
+	and(
+		eq(schema.notification.recipientId, input.recipientId),
+		eq(schema.notification.kind, input.kind),
+		eq(schema.notification.actorId, input.actorId),
+		isNull(schema.notification.readAt),
+		gte(schema.notification.createdAt, since),
+	);
+
+/** Bump the recipient's open digest page for this actor/window (`count + 1`). */
+export const bumpOpenDigestStatement = (
+	db: DrizzleDb,
+	input: NotificationDigestInput,
+	since: Date,
+	now: Date,
+) =>
+	db
+		.update(schema.notification)
+		.set({count: sql`${schema.notification.count} + 1`, updatedAt: now})
+		.where(openDigestWhere(input, since));
+
+/**
+ * Mint the window's page ONLY if the actor has no open one — the guarded-insert half
+ * of {@link insertUnlessUnreadStatement}, keyed on the actor/window instead. The row
+ * carries the window's FIRST target, so the page still links a recipient straight to
+ * content; the later coalesced events live behind it (their count is the digest).
+ */
+export const insertUnlessOpenDigestStatement = (
+	db: DrizzleDb,
+	input: NotificationDigestInput & {id: string},
+	since: Date,
+	now: Date,
+) => {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const digestExists = db
+		.select({one: sql`1`})
+		.from(schema.notification)
+		.where(openDigestWhere(input, since));
+	return db
+		.insert(schema.notification)
+		.select(
+			sql`select ${input.id}, ${input.recipientId}, ${input.kind}, ${input.targetKind}, ${input.targetId}, ${input.actorId}, 1, NULL, ${nowSeconds}, ${nowSeconds} where not exists (${digestExists})`,
+		);
+};
+
 /** Flip EVERY unread notification of the recipient read. */
 export const markAllReadStatement = (db: DrizzleDb, recipientId: string, now: Date) =>
 	db
@@ -175,6 +236,20 @@ export class Notification extends Context.Service<
 		readonly recordAggregate: (
 			input: NotificationAggregateInput,
 		) => Effect.Effect<{aggregated: boolean}, never, LivePublisher>;
+
+		/**
+		 * Windowed digest-upsert (#3641): coalesce every event ONE actor causes inside
+		 * `window` into a single unread page per recipient — bump the open page's count,
+		 * or mint one carrying this event's target when the actor has none. Unlike
+		 * {@link recordAggregate} the target is NOT part of the key, so an actor spraying
+		 * N distinct targets still costs one row per recipient per window: this is the
+		 * fan-out BOUND, not a display roll-up. `digested: true` ⇔ an open page was
+		 * bumped. Same live-publish seam as {@link record}.
+		 */
+		readonly recordDigest: (
+			input: NotificationDigestInput,
+			window: Duration.Duration,
+		) => Effect.Effect<{digested: boolean}, never, LivePublisher>;
 
 		/**
 		 * The recipient's notifications, newest-first, forward keyset pagination
@@ -408,6 +483,25 @@ export const NotificationLive = Layer.effect(Notification)(
 				);
 				yield* publishChannel(input.recipientId);
 				return {aggregated: bumped.meta.changes > 0};
+			}),
+			// The actor/window-keyed twin of `recordAggregate` — same one-batch
+			// bump-then-guarded-insert, so two concurrent emits can't mint two pages.
+			recordDigest: Effect.fn("Notification.recordDigest")(function* (
+				input: NotificationDigestInput,
+				window: Duration.Duration,
+			) {
+				const id = crypto.randomUUID();
+				const now = new Date();
+				const since = new Date(now.getTime() - Duration.toMillis(window));
+				const [bumped] = yield* batch(
+					(db) =>
+						[
+							bumpOpenDigestStatement(db, input, since, now),
+							insertUnlessOpenDigestStatement(db, {...input, id}, since, now),
+						] as const,
+				);
+				yield* publishChannel(input.recipientId);
+				return {digested: bumped.meta.changes > 0};
 			}),
 			unreadCount: Effect.fn("Notification.unreadCount")(function* (recipientId: string) {
 				const rows = yield* run((db) => unreadCountQuery(db, recipientId));
