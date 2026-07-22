@@ -1,15 +1,15 @@
 /**
- * The `crew-fanout-guard` filesystem gate — the IO seam behind #3606's "every crew bridge
- * denies every non-allowlisted mutating roster agent-type" check, split from `command.ts`
+ * The `crew-fanout-guard` filesystem gate — the IO seam behind #3606's "every mutating
+ * roster agent-type is classified for every crew bridge" check, split from `command.ts`
  * so it is crossable in unit tests over a fake repo dir rather than only by spawning the
  * bin (the core-in-its-own-file idiom).
  *
  * `checkCrewFanout` enumerates the two agent-def dirs (the kampus-pipeline roster + the
- * pipeline-crew roster), parses each def's `name`/`disallowedTools`, resolves the three
- * bridge defs, and delegates the verdict to the pure core (`crew-fanout-guard.ts`). It
- * fails `CheckFailed` (exit non-zero) on any non-passing verdict — an uncovered agent-type,
- * a missing bridge, a stale allowlist, or zero scope (fail-closed, ADR 0092). A directory/
- * file IO failure is an `IoError` (also non-zero — both failures, undistinguished).
+ * pipeline-crew roster), parses each def's `name`, resolves the three bridge defs, and
+ * delegates the verdict to the pure core (`crew-fanout-guard.ts`). It fails `CheckFailed`
+ * (exit non-zero) on any non-passing verdict — an unclassified agent-type, a missing bridge,
+ * a stale classification, or zero scope (fail-closed, ADR 0092). A directory/file IO failure
+ * is an `IoError` (also non-zero — both failures, undistinguished).
  */
 import {existsSync, readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";

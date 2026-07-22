@@ -8,6 +8,7 @@ export {
 	ALLOWLIST_CHANNEL_FLAG,
 	buildSessionBind,
 	ChannelPluginNotAllowedError,
+	CREW_PLUGIN_SUBDIR,
 	CREW_SESSION_BIN_PATH,
 	CREW_SESSION_COMMAND,
 	CREW_SESSION_INSTANCE_FLAG,
@@ -134,6 +135,22 @@ export {
 	type RosterSession,
 	TmuxPaneCollisionError,
 } from "./tmux-placement.ts";
+export {
+	assertCrewSeatToolsets,
+	assertSeatToolset,
+	baseToolName,
+	CrewSeatDefUnreadableError,
+	CrewSeatToolsetMismatchError,
+	type DeclaredToolset,
+	GRANTABLE_SESSION_TOOLS,
+	isMcpToolToken,
+	parseDeclaredToolset,
+	readSeatToolsetFromDef,
+	resolveDeclaredToolset,
+	type SeatToolsetReader,
+	seatDefRelativePath,
+	type ToolsetResolution,
+} from "./toolset-assert.ts";
 export {
 	assertPinnedCliVersion,
 	CliVersionAssertError,
