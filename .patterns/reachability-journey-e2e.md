@@ -35,6 +35,7 @@ proxies the webfonts through the test process too, which delays the font swap pa
 and manufactures a nav reflow the zero-CLS assertion below would then misattribute to the shell.
 
 ```ts
+let rewritten = 0;
 await page.route(
   (url) => url.pathname === "/",
   async (route) => {
@@ -47,6 +48,7 @@ await page.route(
     const stripped = (await response.text()).replace(WORKER_BOOT_SCRIPT, "");
     // `boot === null` serves the shell with NO payload — see the fallback half below.
     const body = boot === null ? stripped : stripped.replace(/<\/head>/i, `${bootTag(boot)}</head>`);
+    rewritten += 1;   // the seam-ran counter the absence assertions below require
     await route.fulfill({status: response.status(), headers, body});
   },
 );
