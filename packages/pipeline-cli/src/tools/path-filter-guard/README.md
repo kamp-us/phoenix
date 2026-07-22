@@ -26,6 +26,29 @@ The core (`path-filter-guard.ts`) parses each workflow YAML, finds the `changes`
 the inline `#` comments are inert), reads the `e2e:` / `deploy:` key, and diffs the two
 as sets (order-independent).
 
+## Equal globs are only half the invariant — the diff basis must match too
+
+A glob list decides which paths matter. dorny's **`token`** and **`base`** inputs decide
+which *changed-file set* those globs are applied to, and the guard compares that pair as
+well (issue [#3722](https://github.com/kamp-us/phoenix/issues/3722)):
+
+- **`token`** picks the reader. Absent (it defaults to `${{ github.token }}`) or non-empty
+  ⇒ dorny calls `pulls.listFiles`, i.e. GitHub's three-dot **merge-base** diff. Empty ⇒ a
+  local `git diff`. (dorny v3.0.2 `src/main.ts`, the PR-event branch of `getChangedFiles`.)
+- **`base`** picks what that local diff is taken *from*. Absent ⇒ a **two-dot** diff from
+  `pull_request.base.sha`, the base *branch tip* at event time rather than the common
+  ancestor — so once `main` advances past the PR's merge ref, `main`'s own drift is
+  reported as this PR's changes.
+
+Those two inputs drifted while the glob lists stayed byte-identical, and this guard
+**passed** the resulting wedge. On PR
+[#3713](https://github.com/kamp-us/phoenix/pull/3713) `ci.yml` (git mode, no `base`) saw 22
+phantom `e2e:` hits from `main`'s post-branch drift while `deploy.yml` (API mode) saw only
+the PR's real four files: `e2e_required` went true, `deploy` correctly skipped, and the e2e
+poll waited out its deadline for a preview that could never arrive — reddening
+`ci-required` on a PR with no defect in it. Both steps now pin `token: ''` plus a
+merge-base `base:`, and a `basis-drift` verdict fires if that pairing ever diverges again.
+
 Fail-closed on zero scope (ADR
 [0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)): a missing
 file, missing `changes` job or paths-filter step, a missing `e2e:`/`deploy:` key, or an

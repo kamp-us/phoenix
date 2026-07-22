@@ -149,6 +149,34 @@ jobs:
         with:
           fetch-depth: 0
 
+      # MERGE-BASE DIFF BASIS (issue #3722) — the second half of the change-detection
+      # contract, as load-bearing as the `token: ''` mode below. In git mode dorny diffs
+      # TWO-DOT from `pull_request.base.sha` to the checked-out ref (v3.0.2 `src/main.ts`:
+      # `git.getChanges(base || baseSha || defaultBranch, currentRef)`; `src/git.ts`
+      # `getChanges` runs `git diff --name-status <base>..<head>`). `base.sha` is the base
+      # BRANCH TIP at event time, while the checked-out `refs/pull/N/merge` is built on the
+      # tip as of when GitHub last regenerated it — so the moment main advances past a PR's
+      # merge ref, every file main changed in between is reported as changed HERE, in
+      # reverse. deploy.yml's filter reads the same globs off the same diff basis, so both
+      # must be anchored to the true common ancestor or they classify the same PR differently.
+      # That divergence wedged PR #3713: 22 phantom `e2e:` hits (apps/web/src, worker, …)
+      # from main's drift set `e2e_required=true` while deploy correctly skipped, so e2e
+      # polled 10 min for a preview comment that could never arrive and permanently redded a
+      # 4-file skills/pipeline-cli PR. Passing the true merge base as `base` makes the
+      # two-dot diff equal the PR's own three-dot diff. Fail-safe: on any failure the output
+      # is empty, dorny falls back to today's `base.sha` basis, and detection stays wide (it
+      # over-reports, never under-reports) — a doubt always RUNS a gate, never skips one.
+      - id: mergebase
+        if: github.event_name == 'pull_request'
+        run: |
+          set -uo pipefail
+          if sha=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null); then
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "::notice::change-detection diff basis = merge base $sha (base.sha ${{ github.event.pull_request.base.sha }})"
+          else
+            echo "::warning::could not resolve a merge base — falling back to dorny's base.sha basis (detection stays wide, never narrower)"
+          fi
+
       # API-free git-mode change detection (#3245). dorny/paths-filter reads the changed
       # file set two ways: on a `pull_request` event it calls the GitHub REST API
       # (`pulls.listFiles`) WHEN a `token` is set, and ONLY when the token is empty does it
@@ -171,6 +199,10 @@ jobs:
         id: filter
         with:
           token: ''
+          # Empty on non-PR events, where dorny already merge-bases against the default
+          # branch itself — so `merge_group`/`push` behavior is untouched. `path-filter-guard`
+          # fails closed if this `token`/`base` pairing ever drifts from deploy.yml's.
+          base: ${{ steps.mergebase.outputs.sha }}
           filters: |
             # apps/**/… (not apps/web/…) so any app under apps/ is covered with no
             # filter edit — the discovery posture the package paths already have (ADR
@@ -207,6 +239,10 @@ jobs:
             # #2372) by `pipeline-cli path-filter-guard check` (the path-filter-guard.yml
             # job), which fails the build if this `e2e:` set and deploy.yml's `deploy:`
             # set drift apart — this comment documents the invariant; the guard defends it.
+            #
+            # Equal lists are only HALF the invariant (#3722): the two steps must also read
+            # the same changed-file set, which their `token`/`base` inputs decide. The guard
+            # now compares that pair too — see the `base:` input above.
             e2e:
               - 'apps/**/src/**'
               - 'apps/**/index.html'
@@ -760,6 +796,8 @@ jobs:
       - name: Await preview URL + D1 id + live /api from deploy.yml
         id: preview
         uses: actions/github-script@v7.0.1
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         with:
           script: |
             const marker = "<!-- preview-deploy -->";
@@ -772,6 +810,10 @@ jobs:
             // key set deploy.yml emits (issue #2951). Absent when no `preview-flag:<key>`
             // label forced anything, so it never gates the poll — only enriches the run env.
             const flagsRe = /<!-- preview-flags:([^>]*?) -->/;
+            // deploy.yml's NEGATIVE verdict (#3722): no preview stack was minted for this
+            // head, so there is nothing for e2e to run against. Bound to the head sha so a
+            // stale verdict from an earlier push can never satisfy a later head.
+            const noneRe = new RegExp(`<!-- preview-deploy:none head:${process.env.HEAD_SHA} -->`);
             const sleep = () => new Promise((r) => setTimeout(r, interval));
 
             // Phase 1 — discover the preview URL + D1 id from the sticky comment.
@@ -781,6 +823,25 @@ jobs:
                 ...context.repo, issue_number: context.issue.number, per_page: 100,
               });
               const c = comments.find((x) => x.body?.includes(marker));
+              // Read the negative verdict BEFORE the positive one: waiting out the deadline
+              // for a preview deploy.yml has already declined to mint can only end in a red
+              // `ci-required` on a PR with no defect in it (#3722, PR #3713). Exiting green
+              // here is the same legitimate not-applicable PASS the job gets when
+              // `e2e_required` is false — the only difference is that this PR reached the
+              // job before the two workflows agreed. That disagreement is a CI-config
+              // defect, so say so LOUDLY: this backstop must stay visible, never quietly
+              // absorb the drift it exists to survive.
+              if (c && noneRe.test(c.body)) {
+                core.warning(
+                  "deploy.yml published a NO-PREVIEW verdict for this head, yet e2e was required — " +
+                  "ci.yml's `e2e` filter and deploy.yml's `deploy` filter disagreed about this diff. " +
+                  "e2e is structurally not applicable (no preview URL will ever be posted), so this run " +
+                  "exits as a not-applicable PASS instead of timing out. The disagreement itself is a CI " +
+                  "config defect — fix the two `changes` jobs' filters/diff basis (#3722), don't rely on this exit.",
+                );
+                core.setOutput("skipped", "true");
+                return;
+              }
               const m = c && c.body.match(webRe);
               if (m) {
                 url = m[1];
@@ -829,7 +890,10 @@ jobs:
       # read specs assert on and the write/flow specs navigate from — e.g. the
       # `flows` specs that open "the first post/term" (#521). Idempotent upsert, so
       # a re-run is safe.
+      # `skipped` means the step above read deploy.yml's no-preview verdict, so there is no
+      # preview stack to seed or test — the remaining steps have no target (#3722).
       - name: Seed preview D1
+        if: steps.preview.outputs.skipped != 'true'
         run: node packages/preview-seed/src/bin.ts run --database-id "${{ steps.preview.outputs.db }}"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -843,6 +907,7 @@ jobs:
       # `--reporter=html,list` leaves a browsable report for the artifact below
       # (traces from the config's `trace: on-first-retry` + CI retry).
       - name: Run e2e specs (blocking — unauth + authed + flows)
+        if: steps.preview.outputs.skipped != 'true'
         run: >-
           pnpm --filter './apps/**' exec playwright test
           --reporter=html,list
