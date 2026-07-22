@@ -2,15 +2,14 @@ import {expect, test} from "@playwright/test";
 
 /**
  * The term page's render contract, reached by a real click-through as an
- * unauthenticated visitor.
+ * unauthenticated visitor — from BOTH public entry points into a term.
  *
- * Entry is the LANDING "son eklenenler" column, not /sozluk's: only `landingTerms`
- * masks its ranking on live definitions (`Sozluk.getLandingTerms` — #1205/#1424), so
- * every term it links to is guaranteed to have at least one definition this viewer can
- * read. /sozluk's own `recentTerms` selects `term_record` unmasked, so its first row can
- * be a term whose only definitions are a newcomer's sandboxed ones — a public page that
- * renders empty. That is a live product defect, filed as #3724, NOT something this spec
- * should absorb; /sozluk's list rendering stays covered by 06-sozluk-home.
+ * The second test is the direct assertion of the sandbox-containment invariant #3724
+ * restored: every public term list now masks `term_record` on definitions the viewer can
+ * actually read (`landingTerms` via `getLandingTerms`, `recentTerms`/`popularTerms` via
+ * `termHasVisibleDefinitionWhere` — #1205/#1424), so the first /sozluk row can no longer
+ * be a newcomer's sandbox-only term that renders a dead-end page. /sozluk's list
+ * rendering itself stays covered by 06-sozluk-home.
  */
 test.describe("SozlukTermPage", () => {
 	test("from / → click first term → /sozluk/<slug>", async ({page}) => {
@@ -40,5 +39,21 @@ test.describe("SozlukTermPage", () => {
 
 		// Top definition has the --top modifier
 		await expect(page.locator(".kp-sozluk-definition--top")).toBeVisible();
+	});
+
+	test("from /sozluk → click first row → a term page with at least one definition", async ({
+		page,
+	}) => {
+		await page.goto("/sozluk");
+		const firstRow = page.locator("a.kp-sozluk-term-row").first();
+		await expect(firstRow).toBeVisible({timeout: 10_000});
+		const href = await firstRow.getAttribute("href");
+		expect(href).toMatch(/^\/sozluk\/.+/);
+		await firstRow.click();
+		await expect(page).toHaveURL(href ?? "");
+
+		// The invariant: the first row of the public /sozluk list always leads to a term
+		// page carrying at least one definition an anonymous viewer can read.
+		await expect(page.locator(".kp-sozluk-definition").first()).toBeVisible();
 	});
 });
