@@ -42,6 +42,7 @@ import {intakeComposeCommand} from "./tools/intake-compose/command.ts";
 import {intakeDedupCommand} from "./tools/intake-dedup/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {mainSyncCommand} from "./tools/main-sync/command.ts";
+import {mergeIntentCommand} from "./tools/merge-intent/command.ts";
 import {mergeQueueClassifyCommand} from "./tools/merge-queue-classify/command.ts";
 import {orphanHealCommand} from "./tools/orphan-heal/command.ts";
 import {patchGuardCommand} from "./tools/patch-guard/command.ts";
@@ -117,6 +118,10 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	spawnGuardCommand,
 	leakGuardCommand,
 	mergeQueueClassifyCommand,
+	// #3723 — ship-it's no-parked-merge-intent enforcement (ADR 0198): clears a `gh pr merge
+	// --auto` request left armed by a run that did NOT enqueue, so a later bare approval can't
+	// enqueue a §CP PR ahead of the gate assertions. Verified by an `auto_merge` read-back.
+	mergeIntentCommand,
 	pathFilterGuardCommand,
 	pointerGuardCommand,
 	ciRequiredCommand,

@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green plus the SHA-bound run-evidence bundle, then enqueue for a squash merge with `gh pr merge --auto` (no method flag — the queue owns the SQUASH method) — the merge queue owns the final, async merge, so success is "enqueued + green" (QUEUED → auto-merges on green) and the linked issue auto-closes async when the merge lands (ADR 0132) — then a bounded post-enqueue reconcile watches a batch window to catch a merge-queue ejection (a dropped PR — still open, no longer queued, not merged), routing an ejected PR back to repair/re-queue instead of reporting a silent false success. When the ship was a dark feature ship it surfaces a release queue for the humans (deploy is the agent's boundary, release is human; ADR 0083). For a control-plane PR (.claude/.github + the gate-critical skills) it is APPROVAL-AWARE (ADR 0135, amending 0053) — it enqueues the §CP PR only once a @kamp-us/control-plane team member has APPROVED it at the current head (all machine gates still green), else STOPS at "awaiting control-plane approval" — human judgment via the approval, pipeline mechanics via the enqueue. Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
+description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green plus the SHA-bound run-evidence bundle, then enqueue for a squash merge with `gh pr merge --auto` (no method flag — the queue owns the SQUASH method) — the merge queue owns the final, async merge, so success is "enqueued + green" (QUEUED → auto-merges on green) and the linked issue auto-closes async when the merge lands (ADR 0132) — then a bounded post-enqueue reconcile watches a batch window to catch a merge-queue ejection (a dropped PR — still open, no longer queued, not merged), routing an ejected PR back to repair/re-queue instead of reporting a silent false success. When the ship was a dark feature ship it surfaces a release queue for the humans (deploy is the agent's boundary, release is human; ADR 0083). For a control-plane PR (.claude/.github + the gate-critical skills) it is APPROVAL-AWARE (ADR 0135, amending 0053) — it enqueues the §CP PR only once a @kamp-us/control-plane team member has APPROVED it at the current head (all machine gates still green), else STOPS at "awaiting control-plane approval" — human judgment via the approval, pipeline mechanics via the enqueue. Every path that does NOT enqueue clears the `--auto` merge intent (`pipeline-cli merge-intent disarm`, ADR 0198) so a later bare approval can never enqueue ahead of these gates. Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
 ---
 
 # ship-it
@@ -126,6 +126,65 @@ pointless.
    [0158](https://github.com/kamp-us/phoenix/blob/main/.decisions/0158-unresolved-review-thread-is-a-merge-gate.md)).
    A shipper that "resolves" a real objection just re-creates the throw-away one layer down —
    never blanket-resolve threads to clear the gate.
+6. **You never leave a merge intent armed.** `gh pr merge --auto` is a durable *request*: an arm
+   that outlives the run that made it enqueues the PR the moment the last requirement lands — on a
+   §CP PR, the instant a human approval arrives — with no ship-it run asserting guards 1–5 in
+   between. So an armed intent may exist **only** between a fully-gated Step-4 enqueue and the
+   queue accepting the PR; every other path clears it (see
+   [the no-parked-merge-intent invariant](#no-parked-merge-intent) below, ADR
+   [0198](https://github.com/kamp-us/phoenix/blob/main/.decisions/0198-no-parked-merge-intent.md)).
+
+<a id="no-parked-merge-intent"></a>
+## The no-parked-merge-intent invariant — `--auto` never outlives its run (guard 6)
+
+When `--auto` does not take effect at the head it was made against — a requirement unmet, or the
+run interrupted mid-ship — GitHub keeps the request **armed** and fires it later, unattended. On
+PR #3700 that armed leftover enqueued the PR **one second after** the approving review, before the
+ship-it run that was supposed to gate the enqueue had started; the run then found it `already
+queued to merge` and merely confirmed the guards after the fact ([#3723](https://github.com/kamp-us/phoenix/issues/3723)).
+The approval requirement held throughout — the defect is purely one of **ordering**: the
+assertions this skill makes *at* enqueue time can be skipped at the decisive instant. The bad case
+the arm permits is concrete: a §CP PR enqueued → ejected → rebased → re-approved **re-enqueues on
+the re-approval alone**, even with a missing run-evidence bundle at the new head.
+
+The enqueue primitive is unchanged (`gh pr merge --auto`, Step 4). What is added is a lifecycle
+rule with **four mandated sites** — run start, every stop/refusal, an ejection, and after the
+bounded reconcile:
+
+```bash
+# `merge-intent` owns the branch (ADR 0198): a live merge-queue entry is NEVER disturbed, the
+# pre-queue auto-merge regime is exempt at `post-enqueue` only, and an unreadable arm state
+# fail-closes to a clear. It verifies by re-reading `auto_merge` — never trust
+# `--disable-auto`'s exit code, which is non-zero both when the disable failed and when nothing
+# was armed. Exit 1 = the intent may STILL be armed: surface it, never report a clean stop over it.
+INTENT_UNCLEARED=0   # set by any failed disarm; the run's outcome line MUST carry it (see Reporting)
+disarm_intent() {   # $1 = preflight | refuse | post-enqueue | ejected
+  pipeline-cli merge-intent disarm --pr "$PR" --repo "$REPO" --site "$1" || {
+    echo "ship-it: FAILED to clear the merge intent on #$PR (site $1) — a later approval could enqueue it ungated (ADR 0198). Disable auto-merge by hand before this PR is approved again." >&2
+    return 1
+  }
+}
+
+# Site 1 — run start: the moment $PR and $REPO are resolved (Step 0's first lines) and BEFORE any
+# gate branches. An intent armed by an earlier or interrupted run is backed by no gate pass at this
+# head; this is the site that catches the INTERRUPTED run (#3700's mechanism), which by definition
+# reaches no exit path of its own. Abort the run if it cannot be cleared — a ship that cannot
+# establish the intent state cannot honor the invariant at any later site.
+disarm_intent preflight || exit 1
+```
+
+**Site 2 is every path that stops or refuses** — Step 0's `awaiting control-plane approval`, Step
+2/2b's `unverified …`, Step 3's gating red, the CI-settle refusals, Step 3z's dropped-trigger
+nudge, Step 3.5's run-evidence refusals, Step 3.6's substantive thread, Step 3.7's leak: each runs
+`disarm_intent refuse` **before it reports**. A run that declines to enqueue must not leave behind
+the means to enqueue without it. Sites 3 and 4 (`ejected`, `post-enqueue`) live in Step 5.5, where
+the terminal state is known.
+
+A failed disarm **never rewrites a stop path's own control flow** — each site records
+`INTENT_UNCLEARED=1` and continues to its existing disposition (so the durable PR-visible outcome
+of #1928 and the `heal-ci` routing are untouched) — but it **does** change what the run reports:
+an outcome line for a run with `INTENT_UNCLEARED=1` must name it, because "ship-it declined" and
+"ship-it declined and left the merge armed" are different facts.
 
 ## The merge-ready signals
 
@@ -373,7 +432,9 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
     enter the ADR 0132 queue too). §CP carries **one extra** gate — the team approval — layered on
     the same machine gates every PR clears.
   - **stop** (the cardinality branch's required current-head signal is absent, or the team is
-    empty) → **STOP.** Report `awaiting control-plane approval` and stop; do **not** enqueue. This
+    empty) → **STOP.** Run `disarm_intent refuse` (guard 6 — this is *the* stop the parked-intent
+    defect fires on: the approval this PR is waiting for would otherwise enqueue it the instant it
+    lands), then report `awaiting control-plane approval` and stop; do **not** enqueue. This
     **replaces** the old blanket refuse.
 
   This holds even if the rest of the diff is clean code/docs/skills — a mixed PR that touches the
@@ -872,6 +933,11 @@ verb exits non-zero on **both** `--expect PASS` and `--expect FAIL` — leaving 
 `<g>_FAIL=0`, which is exactly `unverified (verdict not bound to current head)` → refuse. There is
 no separate marker staleness test to run here, and none to keep in sync (#2102).
 
+Every `unverified …` here is a stop path, so it runs `disarm_intent refuse` before reporting
+(guard 6): the head that moved out from under the verdict is the same head an armed intent would
+enqueue behind your back — ADR 0058's staleness rule and ADR 0198's are one rule applied to two
+artifacts.
+
 Two signals `verdict read` does **not** resolve still need the test applied explicitly, so the
 helper stays: the **native review**'s `commit_id` (folded into the code namespace in Step 2) and the
 **§CP advisory**'s body `Reviewed-head` SHA (Step 2.§CP).
@@ -1074,7 +1140,8 @@ Classify in this order (`skipping`/`cancel` are non-blocking — neither a failu
 in-flight wait):
 
 1. **Any *gating* check red** (a `fail` whose name is not known-informational) → do **not**
-   merge. Route it to the self-heal lane: invoke [`/heal-ci`](../heal-ci/SKILL.md) with this
+   merge. Run `disarm_intent refuse` (guard 6), then route it to the self-heal lane: invoke
+   [`/heal-ci`](../heal-ci/SKILL.md) with this
    PR/run, then report the result (e.g. `routed to heal-ci`). `heal-ci` decides
    flake-vs-defect; you only refuse on a gating red and hand off — you still do not merge.
 2. **Else, any check pending** (no gating red, some unfinished) → **enter the bounded CI-settle
@@ -1145,6 +1212,7 @@ ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused (budget-ex
       esac
     done < <(gh pr checks "$PR" --json name,state,bucket --jq '.[] | "\(.bucket)\t\(.name)"')
     if [ -n "$red" ]; then
+      disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: this wait ends without an enqueue — park nothing
       echo "gating check went red during settle-wait ($red) — routing to heal-ci"; return 2
     fi
     if [ -z "$pending" ]; then
@@ -1156,12 +1224,14 @@ ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused (budget-ex
       # durable-comment/stop disposition as budget-exhaustion) so a re-dispatch re-runs Step 2b on the moved head.
       headnow="$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')"
       if [ -n "$headnow" ] && [ "$headnow" != "$CURRENT_HEAD" ]; then
+        disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: a moved head invalidates the intent exactly as it does the verdict (ADR 0198/0058)
         gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — head moved during CI-settle (verified ${CURRENT_HEAD}, now ${headnow}) — **not enqueued**. The SHA-bound verdict and run-evidence (Step 2/2b) predate this head; re-dispatch ship-it to re-verify the moved head — idempotent, a re-ship on a re-verified head enqueues cleanly (#1928)." >/dev/null
         echo "refused — head moved during settle-wait (${CURRENT_HEAD} → ${headnow}); Step 2b must re-run — not enqueued"; return 1
       fi
       echo "gating checks settled green after ${waited}s — proceeding to Step 3.5 → enqueue"; return 0
     fi
     if [ "$waited" -ge "$SETTLE_BUDGET_SECS" ]; then
+      disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: the budget ran out without an enqueue — park nothing
       # Budget exhausted, still pending → the ONE required durable signal: an explicit PR-visible refusal.
       # A plain outcome note, NOT a review-* verdict marker — so it never blocks a later idempotent re-ship.
       gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — CI still pending after ${SETTLE_BUDGET_SECS}s (gating checks unfinished:${pending}) — **not enqueued**. This head is not yet merge-ready; re-dispatch ship-it once CI settles — idempotent, a re-ship on the now-green head enqueues cleanly (#1928)." >/dev/null
@@ -1241,6 +1311,8 @@ loop:
 HEAD_PUSHED=$(gh api "repos/$REPO/commits/$HEAD_SHA" --jq '.commit.committer.date')
 NUDGES=$(gh api "repos/$REPO/issues/$PR/events?per_page=100" \
   --jq "[.[] | select(.event==\"reopened\") | .created_at | select(. > \"$HEAD_PUSHED\")] | length")
+
+disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: BOTH exits below stop without enqueuing — park nothing (ADR 0198)
 
 if [ "${NUDGES:-0}" -ge 1 ]; then
   # Nudge exhausted → refuse and hand to a human, but leave a durable PR-visible signal (#1928):
@@ -1349,10 +1421,14 @@ schema, a stale commit, or any failed check refuses the merge with a *distinct* 
 string; never a silent pass:
 
 ```bash
+# Each of the four refusals below is a stop path, so each clears the merge intent before it
+# reports (guard 6 / ADR 0198) — one wrapper, not four hand-copied disarms.
+refuse_ship() { disarm_intent refuse || INTENT_UNCLEARED=1; echo "$1"; exit 0; }
+
 # 1. The bundle must exist. No head-SHA run, no run-evidence artifact, or no manifest in it
 #    → there is no proof this commit was run → refuse (ADR 0056: the artifact is the storage).
 if [ -z "$RUN_ID" ] || [ -z "$ART_ID" ] || [ ! -s "$MANIFEST" ]; then
-  echo "unverified (no run-evidence bundle)"; exit 0   # refuse — see Running it
+  refuse_ship "unverified (no run-evidence bundle)"   # refuse — see Running it
 fi
 
 # 2. schemaVersion the gate understands. Fail closed on an unrecognized MAJOR rather than
@@ -1362,18 +1438,18 @@ fi
 #    is only the human-readable echo for the refusal message.
 SCHEMA=$(jq -r '.schemaVersion // empty' "$MANIFEST")
 jq -e '.schemaVersion == 1' "$MANIFEST" >/dev/null \
-  || { echo "unverified (unsupported bundle schemaVersion: ${SCHEMA:-none})"; exit 0; }
+  || refuse_ship "unverified (unsupported bundle schemaVersion: ${SCHEMA:-none})"
 
 # 3. bundle.commit MUST equal the PR head SHA — evidence not for THIS commit is no evidence
 #    (ADR 0054 §1). A green run from an earlier push is stale → refuse.
 BUNDLE_COMMIT=$(jq -r '.commit // empty' "$MANIFEST")
-[ "$BUNDLE_COMMIT" = "$HEAD_SHA" ] || { echo "unverified (stale run-evidence bundle: commit $BUNDLE_COMMIT != head $HEAD_SHA)"; exit 0; }
+[ "$BUNDLE_COMMIT" = "$HEAD_SHA" ] || refuse_ship "unverified (stale run-evidence bundle: commit $BUNDLE_COMMIT != head $HEAD_SHA)"
 
 # 4. EVERY checks[] entry must be `pass`. Any `fail` (or an empty checks[]) → refuse.
 FAILED=$(jq -r '[.checks[]? | select(.status != "pass") | .name] | join(", ")' "$MANIFEST")
 NCHECKS=$(jq -r '.checks | length' "$MANIFEST")
 if [ "$NCHECKS" -eq 0 ] || [ -n "$FAILED" ]; then
-  echo "run-evidence checks failed (${FAILED:-no checks present})"; exit 0   # refuse
+  refuse_ship "run-evidence checks failed (${FAILED:-no checks present})"   # refuse
 fi
 ```
 
@@ -1485,7 +1561,8 @@ For **each** unresolved thread the query returns:
 
 - **Substantive** — a real objection: a requested change ("fix this", "handle this case", "this
   is wrong", "don't do X"), a bot finding that names a real defect (an unused import, a missing
-  guard), or anything you cannot confidently call trivial. → **REFUSE to enqueue.** Report
+  guard), or anything you cannot confidently call trivial. → **REFUSE to enqueue.** Run
+  `disarm_intent refuse` (guard 6), then report
   `unresolved substantive review thread (<path>:<line>, @<author>)` and stop — this is a FAIL-class
   refusal, routed back to `write-code` to address the thread on the branch. Do **not** resolve it.
 - **Genuine nit** — a trivial, already-satisfied, or obsolete note (a style preference already
@@ -1531,6 +1608,7 @@ matcher `redact-leaks` and `verdict post` already consume — one detector, not 
 ```bash
 # guard 4 — refuse the enqueue on ANY live leak in a landed comment (exit 2 = a leak; ADR 0092 fail-closed)
 pipeline-cli leak-guard scan-pr "$PR" || {
+  disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: a refusal parks nothing (ADR 0198)
   echo "ship-it: REFUSING to enqueue #$PR — a landed comment carries a machine-local path (issue #3019)." >&2
   echo "  Remediate, then re-run ship-it:" >&2
   echo "  1. redact each flagged comment body — pipeline-cli redact-leaks (the merged #3021 tool) preserves evidential shape;" >&2
@@ -1563,6 +1641,10 @@ base before it lands (ADR
 ```bash
 gh pr merge $PR --auto
 ```
+
+This is the **only** place a merge intent is ever armed (guard 6 / ADR 0198) — reaching it means
+every guard above cleared at *this* head, which is exactly what makes the arm legitimate. It stays
+armed only until the queue takes the PR; Step 5.5 clears it if the queue never does.
 
 Pass **no** merge-method flag: the merge queue owns the method (SQUASH, set in the ruleset),
 so a `--squash` here **conflicts** with the queue and silently no-ops the enqueue (exits 0 but
@@ -1684,6 +1766,20 @@ for i in $(seq 1 "$RECONCILE_TRIES"); do
 done
 # At the budget's end a still-`pending` PR (never a merge-queue event) is reported as a well-formed
 # pending, NOT ejected — the settle window is not an ejection (#1921).
+
+# Guard 6 (ADR 0198) — the reconcile's terminal read is the LAST place this run can leave an arm
+# behind, so it is also sites 3 and 4. `merged` and `queued` keep the intent (a live queue entry is
+# never disturbed); an `ejected` PR is cleared so a re-approval after its rebase cannot re-enqueue
+# it ahead of a fresh gate pass; and a PR the queue governs but never took is a PARKED intent, not
+# a queue entry — `merge-intent` distinguishes the two, so a pre-queue repo's legitimate armed
+# auto-merge is untouched.
+if [ "$MERGE_OUTCOME" = ejected ]; then
+  disarm_intent ejected || INTENT_UNCLEARED=1
+else
+  INTENT_ACTION=$(pipeline-cli merge-intent disarm --pr "$PR" --repo "$REPO" --site post-enqueue) || INTENT_UNCLEARED=1
+  [ "$INTENT_ACTION" = disarmed ] && \
+    echo "refused — the enqueue did not take effect at this head; the parked intent was cleared. Re-dispatch ship-it to re-assert the gates and enqueue (idempotent)."
+fi
 ```
 
 Then act on `MERGE_OUTCOME`, and only here — **never at Step 4's enqueue** — decide the run's
@@ -1698,7 +1794,11 @@ merge disposition:
   (ADR 0132: the actor does not block to the final merge). Report `enqueued: yes (→ auto-merges on
   green)` exactly as before — the reconcile confirmed it was **still in-flight, never ejected**,
   within the window. A `pending` PR at the budget's end is reported this way too — the settle window
-  is **never** an ejection (#1921).
+  is **never** an ejection (#1921). **One carve-out** (guard 6): a `pending` PR that the merge queue
+  has *already governed* never entered the queue this time, so what it carries is a parked intent,
+  not an in-flight enqueue — the guard-6 block above clears it and the run reports
+  `refused — the enqueue did not take effect at this head` instead. A PR the queue has **never**
+  governed keeps its arm (the pre-queue regime) and is reported as the well-formed pending above.
 - **`ejected`** — the queue **dropped** the PR (still open, no longer queued, not merged) — keyed on
   the authoritative `removed_from_merge_queue` timeline event, not on a momentary state. This is
   the silent stall this step exists to catch. Do **not** report shipped. **Route it back to
@@ -1714,7 +1814,10 @@ merge disposition:
   ```
 
   ship-it does **not** itself re-enqueue an ejected PR in the same run (a bare re-enqueue would
-  loop on the same unmerged batch conflict); the ejection is surfaced and handed to the repair /
+  loop on the same unmerged batch conflict) — **and, under guard 6, it leaves no arm that could
+  re-enqueue it either**: the ejected PR's intent is cleared above, so the eject → rebase →
+  re-review → re-approve cycle re-enters the queue only through a fresh ship-it gate pass, never on
+  the re-approval alone (ADR 0198). The ejection is surfaced and handed to the repair /
   re-queue lane (the `drive-issue.js` shipper stage consumes `ejected` and re-drives), the same
   fail → fix → re-request boundary write-code owns. The **success/watch distinction is now
   observable** — `QUEUED` never masks a stall, because the reconcile separated `merged` from
@@ -1972,6 +2075,12 @@ durable PR outcome comment), `no linked issue`, or a run-evidence refusal (Step 
 `unverified (no run-evidence bundle)`, `unverified (unsupported bundle schemaVersion: <v>)`,
 `unverified (stale run-evidence bundle: …)`, or `run-evidence checks failed (<names>)`. A
 refusal is a successful run — shipping the wrong PR is the only failure mode that matters.
+
+**A refusal carries one more fact: the merge intent is clear.** Every reason above is reported by a
+path that ran `disarm_intent refuse` (guard 6), so a refused PR cannot enqueue on the next approval
+without a fresh ship-it run. If a disarm ever failed (`INTENT_UNCLEARED=1`), append
+`merge intent: NOT cleared — auto-merge may still be armed, disable it by hand` to the ledger —
+never report a clean stop over an armed intent (ADR 0198).
 
 ## Conventions
 
