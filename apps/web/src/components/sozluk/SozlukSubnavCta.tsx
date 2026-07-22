@@ -24,8 +24,14 @@ export function SozlukSubnavCta() {
 		e.preventDefault();
 		const term = String(new FormData(e.currentTarget).get("term") ?? "");
 		const slug = slugifyTerm(term);
+		// Dismiss ONLY once the submit has somewhere to go. `required` does not keep an
+		// unusable term out of here — base-ui's `Form` renders `noValidate` and gates on
+		// its own field validity, which a non-empty term of pure punctuation passes even
+		// though it slugifies to nothing. Closing before this guard swallowed the create
+		// silently: the dialog vanished, nothing navigated, nothing was said (#3746).
+		if (!slug) return;
 		setOpen(false);
-		if (slug) navigate(`/sozluk/${slug}`);
+		navigate(`/sozluk/${slug}`);
 	}
 	return (
 		<Dialog.Root open={open} onOpenChange={setOpen}>
