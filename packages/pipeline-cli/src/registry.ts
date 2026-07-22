@@ -17,6 +17,7 @@ import {campaignCommand} from "./tools/campaign/command.ts";
 import {catalogGuardCommand} from "./tools/catalog-guard/command.ts";
 import {changeDetectGuardCommand} from "./tools/change-detect-guard/command.ts";
 import {changelogDeriveCommand} from "./tools/changelog-derive/command.ts";
+import {checksCommand} from "./tools/checks/command.ts";
 import {ciRequiredCommand} from "./tools/ci-required/command.ts";
 import {claimCommand} from "./tools/claim/command.ts";
 import {classProbeCommand} from "./tools/class-probe/command.ts";
@@ -187,4 +188,9 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// 1–2): convert an open, CI-red, laneless PR into one idempotent triaged "heal red CI on
 	// PR #N" item so an engine adopts the lane, rather than free-scanning arbitrary red PRs.
 	orphanHealCommand,
+	// #3762 — the shared head-CI read: roll a SHA's check-runs up LATEST-PER-CONTEXT, so a
+	// superseded run can't red a green head (the false RED that opened a needless repair lane
+	// on PR #3733). The one tested reader every CI-state consumer cites instead of re-rolling
+	// the query, the single-source shape of `verdict read` (#3686).
+	checksCommand,
 ];

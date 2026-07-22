@@ -79,6 +79,98 @@ const laneOf = (body: string, responses: Record<string, Response>) =>
 		responses,
 	);
 
+const SHA = "bb21a70f0000000000000000000000000000dead";
+const checkRunsPath = `repos/${PINNED_REPO}/commits/${SHA}/check-runs`;
+const statusPath = `repos/${PINNED_REPO}/commits/${SHA}/status`;
+const noStatuses = JSON.stringify({state: "pending", total_count: 0});
+
+const checkRun = (over: {
+	readonly name: string;
+	readonly conclusion: string | null;
+	readonly started_at: string;
+	readonly id: number;
+}) => ({completed_at: over.started_at, ...over});
+
+/** `gh api --paginate --slurp` hands back one envelope per page — the shape the shell decodes. */
+const pages = (...perPage: ReadonlyArray<ReadonlyArray<unknown>>) =>
+	JSON.stringify(perPage.map((check_runs) => ({total_count: 0, check_runs})));
+
+const headCiOf = (responses: Record<string, Response>) =>
+	provide(
+		Effect.flatMap(Github, (gh) => gh.headCi(SHA)),
+		responses,
+	);
+
+describe("Github.headCi — the head read is latest-per-context (#3762)", () => {
+	// The live reproduction: PR #3733's head carried three `ci-required` runs — the latest
+	// green, two superseded reds — and the naive filter opened a repair lane on a green PR.
+	it.effect("a superseded red whose context has since gone green reads green", () =>
+		Effect.gen(function* () {
+			const ci = yield* headCiOf({
+				[checkRunsPath]: pages([
+					checkRun({
+						name: "ci-required",
+						conclusion: "failure",
+						started_at: "2026-07-22T05:50:04Z",
+						id: 1,
+					}),
+					checkRun({
+						name: "ci-required",
+						conclusion: "failure",
+						started_at: "2026-07-22T06:09:51Z",
+						id: 2,
+					}),
+					checkRun({
+						name: "ci-required",
+						conclusion: "success",
+						started_at: "2026-07-22T06:21:26Z",
+						id: 3,
+					}),
+				]),
+				[statusPath]: noStatuses,
+			});
+			assert.strictEqual(ci.conclusion, "green");
+		}),
+	);
+
+	it.effect("a context whose latest run failed is still red, with its name and red-since", () =>
+		Effect.gen(function* () {
+			const ci = yield* headCiOf({
+				[checkRunsPath]: pages([
+					checkRun({
+						name: "ci-required",
+						conclusion: "success",
+						started_at: "2026-07-22T05:50:04Z",
+						id: 1,
+					}),
+					checkRun({
+						name: "ci-required",
+						conclusion: "failure",
+						started_at: "2026-07-22T06:21:26Z",
+						id: 2,
+					}),
+				]),
+				[statusPath]: noStatuses,
+			});
+			assert.strictEqual(ci.conclusion, "red");
+			assert.strictEqual(ci.failingCheck, "ci-required");
+			assert.strictEqual(ci.redSince, "2026-07-22T06:21:26Z");
+		}),
+	);
+
+	it.effect("an unconcluded latest run is pending", () =>
+		Effect.gen(function* () {
+			const ci = yield* headCiOf({
+				[checkRunsPath]: pages([
+					checkRun({name: "e2e", conclusion: null, started_at: "2026-07-22T06:21:26Z", id: 1}),
+				]),
+				[statusPath]: noStatuses,
+			});
+			assert.strictEqual(ci.conclusion, "pending");
+		}),
+	);
+});
+
 describe("Github.inEngineLane — a read that could not execute is `unknown`, never `laneless` (#3701)", () => {
 	it.effect("a transient 5xx on the only closing ref defers instead of reading laneless", () =>
 		Effect.gen(function* () {

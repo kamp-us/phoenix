@@ -13,6 +13,7 @@
 import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
+import {rollupChecks} from "../checks/checks.ts";
 import {
 	type CiConclusion,
 	extractHealTargets,
@@ -115,15 +116,6 @@ const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
 	});
 });
 
-// The failing check-run conclusions that make a head CI-red (GitHub's check-run vocabulary).
-const RED_CONCLUSIONS = new Set([
-	"failure",
-	"timed_out",
-	"cancelled",
-	"action_required",
-	"startup_failure",
-]);
-
 /** An open PR row from the pulls endpoint (draft flag + head sha + body carry the gate inputs). */
 const RawPr = Schema.Struct({
 	number: Schema.Number,
@@ -133,17 +125,23 @@ const RawPr = Schema.Struct({
 });
 const decodePrs = Schema.decodeUnknownEffect(Schema.Array(RawPr));
 
-/** A single head check-run (name + conclusion + when it completed — the red-since anchor). */
+/**
+ * A single head check-run. `id` + `started_at` are the recency keys the shared rollup dedupes
+ * on; `completed_at` is this tool's red-since anchor.
+ */
 const CheckRun = Schema.Struct({
+	id: Schema.Number,
 	name: Schema.String,
 	conclusion: Schema.NullOr(Schema.String),
+	started_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	completed_at: Schema.NullOr(Schema.String),
 });
-const CheckRuns = Schema.Struct({check_runs: Schema.Array(CheckRun)});
-const decodeCheckRuns = Schema.decodeUnknownEffect(CheckRuns);
+/** One `--slurp`ed page per element — see the `--slurp` note on the fetch below. */
+const CheckRunPages = Schema.Array(Schema.Struct({check_runs: Schema.Array(CheckRun)}));
+const decodeCheckRunPages = Schema.decodeUnknownEffect(CheckRunPages);
 
 /** The legacy combined-status envelope — covers commit statuses that aren't check-runs. */
-const CombinedStatus = Schema.Struct({state: Schema.String});
+const CombinedStatus = Schema.Struct({state: Schema.String, total_count: Schema.Number});
 const decodeCombinedStatus = Schema.decodeUnknownEffect(CombinedStatus);
 
 const IssueLabels = Schema.Struct({labels: Schema.Array(Schema.Struct({name: Schema.String}))});
@@ -188,28 +186,47 @@ const listOpenPrs = Effect.fn("Github.listOpenPrs")(function* (repo: string) {
 	);
 });
 
+/**
+ * The head's rolled-up CI conclusion, plus this tool's red-since anchor.
+ *
+ * The red/pending/green decision is `pipeline-cli checks read`'s — `rollupChecks` reduces the
+ * SHA's runs LATEST-PER-CONTEXT before reading any conclusion, so a superseded red can't flag
+ * a green PR into a heal lane it doesn't need (#3762). This tool adds only what the shared
+ * rollup deliberately doesn't own: the grace-window anchor.
+ */
 const headCi = Effect.fn("Github.headCi")(function* (repo: string, sha: string) {
-	const checkArgs = ["api", "--paginate", `repos/${repo}/commits/${sha}/check-runs?per_page=100`];
-	const {check_runs} = yield* decodeCheckRuns(yield* json(checkArgs));
+	// `--slurp` because the check-runs endpoint returns an OBJECT: under bare `--paginate` a
+	// multi-page head emits one concatenated object per page and the parse throws (#3762).
+	const checkArgs = [
+		"api",
+		"--paginate",
+		"--slurp",
+		`repos/${repo}/commits/${sha}/check-runs?per_page=100`,
+	];
+	const pages = yield* decodeCheckRunPages(yield* json(checkArgs));
 	const statusArgs = ["api", `repos/${repo}/commits/${sha}/status`];
-	const {state} = yield* decodeCombinedStatus(yield* json(statusArgs));
+	const status = yield* decodeCombinedStatus(yield* json(statusArgs));
 
-	const failing = check_runs.filter(
-		(c) => c.conclusion !== null && RED_CONCLUSIONS.has(c.conclusion),
-	);
-	const isRed = failing.length > 0 || state === "failure";
-	if (!isRed) {
-		// pending ⇒ some check still running or the combined status is pending; else green.
-		const anyPending = state === "pending" || check_runs.some((c) => c.conclusion === null);
-		const conclusion: CiConclusion =
-			check_runs.length === 0 && state === "pending" ? "pending" : anyPending ? "pending" : "green";
-		return {conclusion} satisfies HeadCi;
+	const rollup = rollupChecks({
+		checkRuns: pages
+			.flatMap((page) => page.check_runs)
+			.map((c) => ({
+				id: c.id,
+				name: c.name,
+				conclusion: c.conclusion,
+				startedAt: c.started_at ?? null,
+				completedAt: c.completed_at,
+			})),
+		combinedStatus: {state: status.state, totalCount: status.total_count},
+	});
+	if (rollup.conclusion !== "red") {
+		return {conclusion: rollup.conclusion satisfies CiConclusion} satisfies HeadCi;
 	}
 
 	// red-since: the LATEST failing completion — conservative, so a just-failed head waits the
 	// full grace window rather than being flagged the instant CI finishes red.
-	const completions = failing
-		.map((c) => c.completed_at)
+	const completions = rollup.failing
+		.map((c) => c.completedAt)
 		.filter((t): t is string => typeof t === "string");
 	const redSince =
 		completions.length > 0
@@ -218,7 +235,7 @@ const headCi = Effect.fn("Github.headCi")(function* (repo: string, sha: string) 
 	return {
 		conclusion: "red",
 		redSince,
-		failingCheck: failing[0]?.name,
+		failingCheck: rollup.failing[0]?.name,
 	} satisfies HeadCi;
 });
 
