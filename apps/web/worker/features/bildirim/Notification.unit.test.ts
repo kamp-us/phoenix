@@ -19,10 +19,12 @@
 import {assert, describe, it} from "@effect/vitest";
 import {LivePublisher} from "@kampus/fate-effect";
 import {drizzle} from "drizzle-orm/d1";
-import {Effect, Layer} from "effect";
+import {Duration, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, relations} from "../../db/Drizzle.ts";
 import {
+	bumpOpenDigestStatement,
 	bumpUnreadAggregateStatement,
+	insertUnlessOpenDigestStatement,
 	insertUnlessUnreadStatement,
 	markAllReadStatement,
 	markReadStatement,
@@ -278,6 +280,88 @@ describe("Notification.recordAggregate — bump-or-insert in one batch", () => {
 		}).pipe(
 			Effect.provide(
 				notificationLayer(aggregateAccess([{meta: {changes: 0}}, {meta: {changes: 1}}], [])).pipe(
+					Layer.merge(recordingPublisher().layer),
+				),
+			),
+		),
+	);
+});
+
+const digestInput = {
+	recipientId: "u-mod",
+	kind: "report-filed" as const,
+	targetKind: "post" as const,
+	targetId: "p1",
+	actorId: "u-reporter",
+};
+
+describe("recordDigest builders — actor-keyed, window-floored (the fan-out bound, #3641)", () => {
+	it("the bump keys on (recipient_id, kind, actor_id, unread, created_at >= window) — NOT the target", () => {
+		const {sql, params} = bumpOpenDigestStatement(
+			renderDb,
+			digestInput,
+			new Date(60_000),
+			new Date(120_000),
+		).toSQL();
+		assert.include(sql, '"recipient_id" = ?');
+		assert.include(sql, '"kind" = ?');
+		assert.include(sql, '"actor_id" = ?');
+		assert.include(sql, '"read_at" is null');
+		assert.include(sql, '"created_at" >= ?');
+		assert.include(sql, '"count" + 1');
+		// The target is deliberately absent from the key: one page bounds an actor's
+		// spray across MANY targets, which is exactly the amplification being cut.
+		assert.notInclude(sql, '"target_id"');
+		assert.include(params, "u-reporter");
+		// The window floor binds as the epoch SECONDS the column stores.
+		assert.include(params, 60);
+	});
+
+	it("the insert fires only when the actor has NO open page inside the window", () => {
+		const {sql, params} = insertUnlessOpenDigestStatement(
+			renderDb,
+			{...digestInput, id: "n-new"},
+			new Date(60_000),
+			new Date(120_000),
+		).toSQL();
+		assert.include(sql.toLowerCase(), "not exists");
+		assert.include(sql, '"actor_id" = ?');
+		assert.include(sql, '"created_at" >= ?');
+		// The minted row still carries THIS report's target, so the page links to content.
+		assert.include(params, "p1");
+		assert.include(params, "n-new");
+		assert.include(params, 60);
+	});
+});
+
+describe("Notification.recordDigest — bump-or-insert in one batch", () => {
+	const digestAccess = (batchResults: ReadonlyArray<unknown>): DrizzleAccess => ({
+		run: <A>(_fn: (db: never) => Promise<A>) => Effect.succeed([{count: 1}] as A),
+		batch: () => Effect.succeed(batchResults as never),
+	});
+
+	it.effect("an open page inside the window is bumped — digested, never a second row", () =>
+		Effect.gen(function* () {
+			const svc = yield* Notification;
+			const {digested} = yield* svc.recordDigest(digestInput, Duration.minutes(30));
+			assert.isTrue(digested);
+		}).pipe(
+			Effect.provide(
+				notificationLayer(digestAccess([{meta: {changes: 1}}, {meta: {changes: 0}}])).pipe(
+					Layer.merge(recordingPublisher().layer),
+				),
+			),
+		),
+	);
+
+	it.effect("no open page (first report, or the window elapsed) mints a fresh one", () =>
+		Effect.gen(function* () {
+			const svc = yield* Notification;
+			const {digested} = yield* svc.recordDigest(digestInput, Duration.minutes(30));
+			assert.isFalse(digested);
+		}).pipe(
+			Effect.provide(
+				notificationLayer(digestAccess([{meta: {changes: 0}}, {meta: {changes: 1}}])).pipe(
 					Layer.merge(recordingPublisher().layer),
 				),
 			),
