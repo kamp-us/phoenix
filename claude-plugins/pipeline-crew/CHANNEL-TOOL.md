@@ -64,3 +64,10 @@ with no intervention (steady state: an idle role's channel is long up before wor
 The flailing — reading `channel-server.ts`, running the session binary by hand — is exactly the
 ~44k-token burn this guard exists to prevent (#3482). Give the connect a moment, look again,
 then proceed.
+
+**The wait is bounded, and a still-empty toolset is a REPORT, not a longer wait.** A permanent
+failure looks identical to the boot window from a seat, so waiting patiently on one burns a whole
+session silently — that is exactly what #3753 did (one spec-invalid tool `inputSchema` made the
+CLI discard the server's entire `tools/list`, so no seat ever saw any channel tool). If the tools
+are still absent after a re-check or two, stop waiting and **file it** (the `report` skill) —
+still without diagnosing infra yourself.

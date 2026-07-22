@@ -46,13 +46,23 @@ export class ChannelDescribe extends Context.Service<
 	}
 >()("@kampus/pipeline-crew-mcp/edge/ChannelDescribe") {}
 
-/** The one describe tool: no arguments in, the full discoverable channel contract out. */
+/**
+ * The one describe tool: no arguments in, the full discoverable channel contract out.
+ *
+ * `parameters` is effect-smol's `Tool.EmptyParams`, NOT `Schema.Struct({})`: the emitter renders an
+ * object representation with zero property AND zero index signatures as
+ * `{"anyOf":[{"type":"object"},{"type":"array"}]}` (`effect/src/internal/schema/representation.ts`,
+ * the `Objects` case), which is not the top-level `{"type":"object"}` the MCP spec requires — and the
+ * CLI rejects the WHOLE `ListToolsResult` on it, zeroing `channel_send`/`channel_claim` too (#3753).
+ * `Tool.EmptyParams` is the documented no-parameter schema (`effect/src/unstable/ai/Tool.ts`), a
+ * `Record(String, Never)` whose index signature emits `{"type":"object","additionalProperties":false}`.
+ */
 export const DescribeChannelKinds = Tool.make("channel_kinds", {
 	description:
 		"Resolve the crew channel contract BEFORE sending: every message kind's payload shape (JSON " +
 		"Schema) and each role's sanctioned send/receive kinds. Read this to build a valid `channel_send` " +
 		"body instead of discovering the shape from a send-time reject.",
-	parameters: Schema.Struct({}),
+	parameters: Tool.EmptyParams,
 	success: ChannelContractView,
 });
 
