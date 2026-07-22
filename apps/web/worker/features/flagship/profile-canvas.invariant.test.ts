@@ -2,7 +2,7 @@
  * The dark-ship default-=-safe-state invariant for the profile free-paint canvas (duvar)
  * flag (#3103, epic #2035). Inspected off the exported `PROFILE_CANVAS_FLAG` record (the
  * same object the factory spreads into `FlagshipFlag`), so no alchemy resource is
- * constructed — mirrors `edge-shell-boot.invariant.test.ts` (#2928). Off ⇒ the profile is
+ * constructed — mirrors `member-mute.invariant.test.ts` (#3112). Off ⇒ the profile is
  * exactly as today (no canvas surface, owner-only mutations denied).
  */
 import {assert, describe, it} from "@effect/vitest";

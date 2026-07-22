@@ -42,7 +42,6 @@ import {isProductionDeploy} from "./worker/environment.ts";
 import {
 	bildirimFlag,
 	demoTargetingFlag,
-	edgeShellBootFlag,
 	emailDeliveryAdminFlag,
 	emailDeliveryNoticeFlag,
 	Flagship,
@@ -124,11 +123,6 @@ export default Alchemy.Stack(
 		// epic) — the single seam the `userAdmin.list` admin read + the `kullanıcılar` console
 		// panel gate behind until a human release, so the roster ships dark (invisible `Denied`).
 		yield* userAdminFlag(flagship.appId);
-		// The edge-resolved shell-boot dark-ship flag, default-off (#2928, epic #2926, ADR
-		// 0179) — the single seam the `window.__BOOT__` INJECTION ships behind (worker-first
-		// routing is unconditional): off ⇒ the worker returns the untransformed ASSETS bytes,
-		// byte-identical to today; on ⇒ `__BOOT__` injected, until a human release.
-		yield* edgeShellBootFlag(flagship.appId);
 		// The profile free-paint canvas (duvar) dark-ship flag, default-off (#3103, epic
 		// #2035) — the single seam the fate read view + visitor render, owner enable/toggle
 		// mutation, and paint/save surface gate behind until a human release, so the whole
