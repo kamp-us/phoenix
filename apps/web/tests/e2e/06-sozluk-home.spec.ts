@@ -84,20 +84,27 @@ test.describe("SozlukHome create-flow (+ yeni tanım → composer)", () => {
 
 		await page.getByRole("button", {name: /yeni tanım/i}).click();
 
-		// The Base UI dialog portal re-renders shortly after open (a transition-status flip
-		// that detaches the popup subtree — the #3517 race), so a single fill→submit loses its
-		// target: the `oluştur` button detaches faster than Playwright's per-action auto-retry
-		// can outlast (#3585 only moved the failure here from the cancelled-animation
-		// AbortError), and a remount clears the uncontrolled `Terim` input. Retry the whole
-		// fill→submit→navigate as one unit until it sticks — each poll re-fills (idempotent)
-		// and re-clicks, and the block passes only once the submit's navigation actually lands,
-		// so a mid-interaction detach is absorbed instead of failing the test. The app-side
-		// portal re-render is tracked as a follow-up off #3583.
+		// The dialog can be gone by the time a poll runs — the #3746 failure artifact caught
+		// the popup absent from the DOM entirely, on an idle `/sozluk`, not detached
+		// mid-interaction as #3583 assumed. That is why #3583's retry did not hold: a block
+		// that starts inside the open dialog and never reopens it cannot recover from a closed
+		// one, so every remaining poll burns its budget on a `Terim` that can never resolve.
+		// Reopening is what makes the retried unit self-sufficient. What closes the dialog is
+		// not yet pinned and is tracked on #3600; the app-side half of #3746 removed the one
+		// closer that was provable (a submit that slugified to nothing dismissed and navigated
+		// nowhere), which this spec cannot observe.
 		const dialog = page.locator(".kp-dialog__popup");
 		await expect(dialog).toBeVisible();
 		await expect(async () => {
-			// The dialog collects the term name (the composer is slug-addressed).
-			await page.getByLabel("Terim").fill(term);
+			if (!(await dialog.isVisible())) {
+				await page.getByRole("button", {name: /yeni tanım/i}).click({timeout: 2_000});
+				await expect(dialog).toBeVisible({timeout: 2_000});
+			}
+			// The dialog collects the term name (the composer is slug-addressed). Bounded like
+			// the click below so one bad poll can't eat the whole `toPass` budget and starve
+			// the retry of a second attempt — the shape that turned #3583's loop into a
+			// single-shot.
+			await page.getByLabel("Terim").fill(term, {timeout: 2_000});
 			await page.getByRole("button", {name: /^oluştur$/i}).click({timeout: 2_000});
 			// The dialog slugifies + navigates to the fresh-slug composer route.
 			await expect(page).toHaveURL(new RegExp(`/sozluk/${slug}$`), {timeout: 2_000});

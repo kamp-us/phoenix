@@ -91,6 +91,40 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:yeni-terim");
 	});
 
+	/**
+	 * #3746: a submit the create flow cannot act on must not dismiss the dialog. `required`
+	 * is no defence — base-ui's `Form` renders `noValidate` and gates on its own field
+	 * validity, which a non-empty punctuation term passes on its way to slugifying into
+	 * nothing. That used to close the dialog while navigating nowhere.
+	 */
+	it("keeps the create dialog open when the term slugifies to nothing — never a silent dismiss", async () => {
+		renderZone("/sozluk/mevcut-terim");
+		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
+		const field = await screen.findByLabelText("Terim");
+		fireEvent.change(field, {target: {value: "!!!"}});
+		const form = field.closest("form");
+		if (!form) throw new Error("the create field is not inside a form");
+		fireEvent.submit(form);
+		expect(screen.getByLabelText("Terim")).toBeTruthy();
+		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
+	});
+
+	it("keeps the create dialog open when the typed term is lost before submit", async () => {
+		renderZone("/sozluk/mevcut-terim");
+		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
+		const field = (await screen.findByLabelText("Terim")) as HTMLInputElement;
+		fireEvent.change(field, {target: {value: "gecerli terim"}});
+		// Drop the control's value with no change event, the way a remount of the
+		// uncontrolled input drops it (#3600). Which layer refuses the resulting empty
+		// submit is base-ui's business; that the dialog survives it is ours.
+		field.value = "";
+		const form = field.closest("form");
+		if (!form) throw new Error("the create field is not inside a form");
+		fireEvent.submit(form);
+		expect(screen.getByLabelText("Terim")).toBeTruthy();
+		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
+	});
+
 	it("keeps the Subnav zone mounted across a within-sozluk navigation — no remount", () => {
 		const {container} = renderZone("/sozluk/mevcut-terim");
 		const before = container.querySelector(".kp-subnav");
