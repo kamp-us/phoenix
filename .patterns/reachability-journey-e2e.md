@@ -29,21 +29,27 @@ injected unconditionally the seed was silently clobbered and the spec went red. 
 > Seed with `addInitScript` only for state **nothing on the server writes** (an observer, a
 > stub, a clock). For state the server injects, **rewrite the document response.**
 
-Intercept the navigation, strip the server's tag, and re-inject the payload under test:
+Intercept the navigation, strip the server's tag, and re-inject the payload under test.
+**Scope the matcher to the shell navigation**, never a catch-all `**/*` — routing every request
+proxies the webfonts through the test process too, which delays the font swap past first paint
+and manufactures a nav reflow the zero-CLS assertion below would then misattribute to the shell.
 
 ```ts
-await page.route("**/*", async (route) => {
-  if (route.request().resourceType() !== "document") return route.continue();
-  const response = await route.fetch();
-  const headers = {...response.headers()};
-  if (!(headers["content-type"] ?? "").includes("text/html")) return route.fulfill({response});
-  delete headers["content-length"];   // the body below is decoded and re-length'd
-  delete headers["content-encoding"];
-  const stripped = (await response.text()).replace(WORKER_BOOT_SCRIPT, "");
-  // `boot === null` serves the shell with NO payload — see the fallback half below.
-  const body = boot === null ? stripped : stripped.replace(/<\/head>/i, `${bootTag(boot)}</head>`);
-  await route.fulfill({status: response.status(), headers, body});
-});
+await page.route(
+  (url) => url.pathname === "/",
+  async (route) => {
+    if (route.request().resourceType() !== "document") return route.continue();
+    const response = await route.fetch();
+    const headers = {...response.headers()};
+    if (!(headers["content-type"] ?? "").includes("text/html")) return route.fulfill({response});
+    delete headers["content-length"];   // the body below is decoded and re-length'd
+    delete headers["content-encoding"];
+    const stripped = (await response.text()).replace(WORKER_BOOT_SCRIPT, "");
+    // `boot === null` serves the shell with NO payload — see the fallback half below.
+    const body = boot === null ? stripped : stripped.replace(/<\/head>/i, `${bootTag(boot)}</head>`);
+    await route.fulfill({status: response.status(), headers, body});
+  },
+);
 await page.goto("/");
 ```
 
