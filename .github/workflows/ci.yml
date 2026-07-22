@@ -801,6 +801,18 @@ jobs:
         with:
           script: |
             const marker = "<!-- preview-deploy -->";
+            // phoenix is PUBLIC, so anyone can comment on a PR — but every lookup below reads
+            // a TRUSTED CI artifact (deploy.yml's sticky comment): the preview URL + D1 token
+            // e2e is pointed at, and the `:none` verdict that exits e2e as a not-applicable
+            // PASS. Matching on body alone let a third party pre-post a forged marker — `find`
+            // takes the FIRST match and deploy.yml posts ~43s in — and so steer e2e at an
+            // attacker-controlled URL or skip the gate outright (#3740). The author is
+            // verified against the live artifact, not assumed: deploy.yml comments through
+            // github-script's default GITHUB_TOKEN, i.e. `github-actions[bot]` (user.type
+            // `Bot`, id 41898282). GitHub rejects `[`/`]` in usernames, so no human account
+            // can hold that login.
+            const CI_COMMENT_AUTHOR = "github-actions[bot]";
+            const isTrustedCi = (x) => x.user?.login === CI_COMMENT_AUTHOR && x.user?.type === "Bot";
             const deadline = Date.now() + 10 * 60 * 1000;
             const interval = 15000;
             // Match the web app's block in the sticky comment, capturing the URL
@@ -818,11 +830,23 @@ jobs:
 
             // Phase 1 — discover the preview URL + D1 id from the sticky comment.
             let url, db, flags = "";
+            let sawUntrusted = false;
             while (Date.now() < deadline) {
               const {data: comments} = await github.rest.issues.listComments({
                 ...context.repo, issue_number: context.issue.number, per_page: 100,
               });
-              const c = comments.find((x) => x.body?.includes(marker));
+              const c = comments.find((x) => isTrustedCi(x) && x.body?.includes(marker));
+              // A marker-bearing comment we IGNORED is either a forgery attempt or drift in
+              // deploy.yml's posting identity. Either way the poll would otherwise just time
+              // out with an unexplained "no preview was posted" — say which it is, once.
+              if (!c && !sawUntrusted && comments.some((x) => x.body?.includes(marker))) {
+                sawUntrusted = true;
+                core.warning(
+                  `ignoring a \`${marker}\` comment not authored by ${CI_COMMENT_AUTHOR}: the e2e ` +
+                  "gate reads only the trusted CI identity's sticky comment (#3740). If deploy.yml " +
+                  "now posts under a different identity, update CI_COMMENT_AUTHOR in this step.",
+                );
+              }
               // Read the negative verdict BEFORE the positive one: waiting out the deadline
               // for a preview deploy.yml has already declined to mint can only end in a red
               // `ci-required` on a PR with no defect in it (#3722, PR #3713). Exiting green
@@ -855,7 +879,12 @@ jobs:
               await sleep();
             }
             if (!url) {
-              core.setFailed("timed out waiting for the preview deploy (URL + D1 id) from deploy.yml");
+              core.setFailed(
+                "timed out waiting for the preview deploy (URL + D1 id) from deploy.yml" +
+                (sawUntrusted
+                  ? ` — note: a \`${marker}\` comment WAS present but was ignored because ${CI_COMMENT_AUTHOR} did not author it (#3740)`
+                  : ""),
+              );
               return;
             }
 

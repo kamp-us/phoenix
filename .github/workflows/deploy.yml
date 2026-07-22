@@ -189,10 +189,15 @@ jobs:
               + `so no preview stack was minted and \`e2e\` is not applicable. `
               + `<sub>(${headSha.slice(0, 7)})</sub>`;
 
+            // Upsert only OUR OWN sticky comment — see ci.yml's `Await preview URL` step for
+            // why every lookup on this seam is author-constrained (#3740). Without it a third
+            // party's forged marker is the comment this job edits, so the verdict e2e reads
+            // sits in an attacker-authored comment they can keep rewriting.
+            const isTrustedCi = (c) => c.user?.login === "github-actions[bot]" && c.user?.type === "Bot";
             const {data: comments} = await github.rest.issues.listComments({
               ...context.repo, issue_number: context.issue.number, per_page: 100,
             });
-            const existing = comments.find((c) => c.body?.includes(marker));
+            const existing = comments.find((c) => isTrustedCi(c) && c.body?.includes(marker));
             if (existing) {
               await github.rest.issues.updateComment({...context.repo, comment_id: existing.id, body});
             } else {
@@ -626,6 +631,9 @@ jobs:
 
             // Replace this app's block in the body (or append it), preserving any
             // other app's block another matrix job may have already written.
+            // Author-constrained like every other lookup on this seam (#3740).
+            const isTrustedCi = (c) => c.user?.login === "github-actions[bot]" && c.user?.type === "Bot";
+
             const upsert = (body) => {
               const header = `${marker}\n### 🚀 Preview deployed`;
               let b = body && body.includes(marker) ? body : header;
@@ -645,7 +653,7 @@ jobs:
                 const {data: comments} = await github.rest.issues.listComments({
                   ...context.repo, issue_number: context.issue.number, per_page: 100,
                 });
-                const existing = comments.find((c) => c.body?.includes(marker));
+                const existing = comments.find((c) => isTrustedCi(c) && c.body?.includes(marker));
                 if (existing) {
                   await github.rest.issues.updateComment({
                     ...context.repo, comment_id: existing.id, body: upsert(existing.body),
