@@ -5,8 +5,8 @@
  * #741), moved into the pipeline-cli registry (epic #994, Phase 2 / #998). The four
  * hook subcommands each read the hook's stdin JSON envelope, run a pure core, and
  * emit the matching hook output; a fifth (`assert-clean`, #2666) is an operator/skill
- * invocation — not a hook — that fails closed on a dirty worktree. All read `$WORKTREE_ROOT` from the process
- * env (injected at spawn for an `isolation:worktree` subagent); an UNSET root makes
+ * invocation — not a hook — that fails closed on a dirty worktree. All read `$WORKTREE_ROOT` from
+ * the process env; an UNSET root makes
  * every subcommand a clean allow/skip no-op, so a non-worktree session is never
  * affected — with ONE exception (ADR 0172): `pre-bash` still refuses a head-moving git
  * op when isolation was EXPECTED (a direct coder/reviewer/shipper agent-type, or a nested
@@ -23,6 +23,13 @@
  *                                           stopping agent OWNS $WORKTREE_ROOT (the #2798 owner gate)
  *   Skill/operator invocation (not a hook):
  *     assert-clean [--path <d>]           — fail closed LOUD if the tree is dirty (#2666)
+ *
+ * `$WORKTREE_ROOT` is NOT injected by the harness and is written by nothing in this repo, so for a
+ * subagent it reads empty even inside a correctly-provisioned worktree — which is what disarms the
+ * root-keyed branches above (ADR 0198, #3682). `isolation-identity.ts` resolves the root and the
+ * agent-type from the harness's per-subagent sidecar instead; it is wired into the record-only
+ * attribution path here, and deliberately NOT into any permission decision — re-keying what the
+ * hooks REFUSE is gated on the open fail-open-vs-fail-closed ruling (#3743).
  *
  * The handlers are byte-identical to the former package's `bin.run.ts`. Its thin
  * `bin.ts` #777 stale-tree shim (a dynamic import gated on a dep-resolution probe)
@@ -51,6 +58,7 @@ import {Command, Flag} from "effect/unstable/cli";
 import {isIsolationExpected, pinBash} from "./bash-pin.ts";
 import {decideCleanTree} from "./clean-tree.ts";
 import {guardEnterWorktree} from "./enter-guard.ts";
+import {type AgentSidecar, resolveIsolationIdentity, sidecarPathFor} from "./isolation-identity.ts";
 import {mainCheckoutPrefix, resolvePath} from "./path-resolve.ts";
 import {decideReap} from "./reap.ts";
 
@@ -58,16 +66,24 @@ const GATE_FAIL_EXIT_CODE = 1;
 
 const WORKTREE_ROOT = process.env.WORKTREE_ROOT ?? "";
 
-// Is this run sitting on the PRIMARY checkout? Env-independent signal (see ADR 0172 amendment,
-// #2462): `git rev-parse --absolute-git-dir` equals the (cwd-resolved) `--git-common-dir` on the
-// primary checkout, but differs in a linked worktree (whose per-tree git dir is
-// `.git/worktrees/<id>`) — the same signal write-code Step-4 uses. This corroborates the isolation
-// gate for a NESTED crew spawn whose inherited $CLAUDE_CODE_AGENT (engineering-manager) masks the
-// direct agent-type regex. Resolved against the hook's reported cwd; unknowable ⇒ false (degrade to
-// today's allow, never a spurious refusal).
-const onPrimaryCheckout = (cwd: string): boolean => {
+/**
+ * Which tree is this run sitting in? Env-independent signal (see ADR 0172 amendment, #2462):
+ * `git rev-parse --absolute-git-dir` equals the (cwd-resolved) `--git-common-dir` on the primary
+ * checkout, but differs in a linked worktree (whose per-tree git dir is `.git/worktrees/<id>`) —
+ * the same signal write-code Step-4 uses. This corroborates the isolation gate for a NESTED crew
+ * spawn whose inherited $CLAUDE_CODE_AGENT (engineering-manager) masks the direct agent-type regex.
+ *
+ * Tri-state on purpose: "unknown" (the probe could not run) is NOT "linked" and NOT "primary", so
+ * neither consumer below can read a failed probe as positive evidence in its own direction.
+ */
+type TreeKind =
+	| {readonly kind: "primary"}
+	| {readonly kind: "linked"; readonly toplevel: string}
+	| {readonly kind: "unknown"};
+
+const probeTree = (cwd: string): TreeKind => {
 	const base = cwd || process.cwd();
-	// biome-ignore lint/plugin: best-effort probe — an unknowable git dir degrades to false (not primary), never E (see file header).
+	// biome-ignore lint/plugin: best-effort probe — an unknowable git dir degrades to "unknown", never E (see file header).
 	try {
 		const opts = {cwd: base, encoding: "utf8" as const};
 		const gitDir = resolve(
@@ -78,9 +94,35 @@ const onPrimaryCheckout = (cwd: string): boolean => {
 			base,
 			execFileSync("git", ["rev-parse", "--git-common-dir"], opts).trim(),
 		);
-		return gitDir === commonDir;
+		if (gitDir === commonDir) return {kind: "primary"};
+		return {
+			kind: "linked",
+			toplevel: execFileSync("git", ["rev-parse", "--show-toplevel"], opts).trim(),
+		};
 	} catch {
-		return false;
+		return {kind: "unknown"};
+	}
+};
+
+// Unknowable ⇒ false (degrade to today's allow, never a spurious refusal).
+const onPrimaryCheckout = (cwd: string): boolean => probeTree(cwd).kind === "primary";
+
+/** The agent's OWN worktree + agent-type, from the harness sidecar named by the hook payload. */
+const readSidecar = (input: unknown): AgentSidecar | null => {
+	const path = sidecarPathFor({
+		transcriptPath: str(field(input, "transcript_path")),
+		agentId: str(field(input, "agent_id")),
+	});
+	if (path === null || !existsSync(path)) return null;
+	// biome-ignore lint/plugin: best-effort read — an unreadable/malformed sidecar degrades to null (fall down the evidence chain), never E (see file header).
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+		return {
+			worktreePath: str(field(parsed, "worktreePath")),
+			agentType: str(field(parsed, "agentType")),
+		};
+	} catch {
+		return null;
 	}
 };
 
@@ -90,17 +132,33 @@ const onPrimaryCheckout = (cwd: string): boolean => {
  * pre-commit tripwire sees only post-hoc index state). Best-effort and total: any failure is
  * swallowed so it can NEVER perturb the pin decision this hook actually emits. Writes through the
  * same out-of-repo log the read-only `primary-index-tripwire record` bin uses (no second surface).
+ *
+ * The recorded `agentType`/`worktreeRoot` come from {@link resolveIsolationIdentity}, not the raw
+ * env: this log exists to attribute cross-lane contamination to a lane, and the env misnames the
+ * lane in exactly the incidents it is meant to explain — an inherited `$CLAUDE_CODE_AGENT` and an
+ * unset `$WORKTREE_ROOT` recorded every isolated coder as its parent, rootless (ADR 0198, #3682).
+ * This is the record-only path on purpose; it emits no permission decision, so the resolved
+ * identity cannot change what any hook allows or refuses.
  */
-const recordBashStaging = (command: string, cwd: string): void => {
+const recordBashStaging = (command: string, cwd: string, input: unknown): void => {
 	// biome-ignore lint/plugin: best-effort attribution — any recording failure is swallowed so it can never perturb the pin decision, never E (see file header).
 	try {
+		const tree = probeTree(cwd);
+		const identity = resolveIsolationIdentity({
+			sidecar: readSidecar(input),
+			payloadAgentType: str(field(input, "agent_type")),
+			envWorktreeRoot: WORKTREE_ROOT,
+			envAgentType: process.env.CLAUDE_CODE_AGENT ?? "",
+			gitToplevel: tree.kind === "linked" ? tree.toplevel : "",
+			isLinkedWorktree: tree.kind === "linked",
+		});
 		const decision = decideBashStagingAttribution({
 			command,
 			cwd,
-			onPrimaryCheckout: onPrimaryCheckout(cwd),
-			agentType: process.env.CLAUDE_CODE_AGENT ?? "",
+			onPrimaryCheckout: tree.kind === "primary",
+			agentType: identity.agentType,
 			sessionId: process.env.CLAUDE_CODE_SESSION_ID ?? "",
-			worktreeRoot: WORKTREE_ROOT,
+			worktreeRoot: identity.worktreeRoot,
 			at: new Date().toISOString(),
 		});
 		if (decision.kind !== "record") return;
@@ -219,7 +277,7 @@ const preBash = Command.make(
 		const cwd = str(field(input, "cwd"));
 		// Run-time #2778 attribution (#2784): record a bulk-staging op before deciding the pin. Purely
 		// additive and best-effort — it never changes the pin decision emitted below.
-		recordBashStaging(command, cwd);
+		recordBashStaging(command, cwd, input);
 		const decision = pinBash({
 			worktreeRoot: WORKTREE_ROOT,
 			command,
