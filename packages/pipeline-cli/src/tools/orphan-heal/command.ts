@@ -54,15 +54,16 @@ const scan = Command.make(
 		const snapshots = yield* Effect.all(
 			prs.map((pr) =>
 				Effect.gen(function* () {
-					const [ci, laned] = yield* Effect.all([gh.headCi(pr.headSha), gh.inEngineLane(pr.body)], {
-						concurrency: "unbounded",
-					});
+					const [ci, laneState] = yield* Effect.all(
+						[gh.headCi(pr.headSha), gh.inEngineLane(pr.body)],
+						{concurrency: "unbounded"},
+					);
 					return {
 						number: pr.number,
 						isDraft: pr.isDraft,
 						ci: ci.conclusion,
 						redSince: ci.redSince,
-						inEngineLane: laned,
+						laneState,
 						failingCheck: ci.failingCheck,
 					} satisfies PrSnapshot;
 				}),

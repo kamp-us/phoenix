@@ -24,6 +24,14 @@
 /** The rolled-up head-CI conclusion. `unknown` is a real state (no checks reported) — default-deny treats it as not-red. */
 export type CiConclusion = "red" | "green" | "pending" | "unknown";
 
+/**
+ * Whether a PR sits in an engine lane. `unknown` is a first-class outcome, not a shade of
+ * `laneless`: it means the lane probe COULD NOT EXECUTE (a transient GitHub 5xx / transport
+ * failure), which says nothing about lane state. Folding that into `laneless` would let a blip
+ * read a healthy laned PR as an orphan and over-file against it (#3701).
+ */
+export type LaneState = "laned" | "laneless" | "unknown";
+
 /** A snapshot of one open PR — the gate inputs the plan decides over, all read from existing state. */
 export interface PrSnapshot {
 	readonly number: number;
@@ -31,8 +39,8 @@ export interface PrSnapshot {
 	readonly ci: CiConclusion;
 	/** ISO-8601 timestamp the head CI first/last went red — the grace-window anchor. Absent ⇒ grace unmeasurable ⇒ not flagged. */
 	readonly redSince?: string | undefined;
-	/** True iff the PR is in an engine lane: it closes a triaged issue / that issue carries an active claim. */
-	readonly inEngineLane: boolean;
+	/** Engine-lane membership, tri-state: only a confirmed `laneless` is flaggable (`unknown` defers). */
+	readonly laneState: LaneState;
 	/** A failing check name carried into the heal-item for the engine to start from (diagnostic only, never decisive). */
 	readonly failingCheck?: string | undefined;
 }
@@ -51,6 +59,7 @@ export type SkipReason =
 	| "draft"
 	| "ci-not-red"
 	| "in-engine-lane"
+	| "lane-state-unknown"
 	| "no-red-since"
 	| "within-grace"
 	| "heal-item-exists";
@@ -105,12 +114,22 @@ export const planHealItems = (prs: ReadonlyArray<PrSnapshot>, opts: HealPlanOpti
 			skip.push({number: pr.number, reason: "ci-not-red", detail: `head CI is ${pr.ci}, not red`});
 			continue;
 		}
-		if (pr.inEngineLane) {
+		if (pr.laneState === "laned") {
 			skip.push({
 				number: pr.number,
 				reason: "in-engine-lane",
 				detail:
 					"PR is in an engine lane (closes a triaged issue / active claim) — the engine heals it",
+			});
+			continue;
+		}
+		// The lane probe could not execute (transient GitHub failure). Defer to the next cadence
+		// pass rather than treat un-read as laneless and file against a possibly-healthy lane (#3701).
+		if (pr.laneState === "unknown") {
+			skip.push({
+				number: pr.number,
+				reason: "lane-state-unknown",
+				detail: "lane state unreadable (transient GitHub failure) — deferring to the next pass",
 			});
 			continue;
 		}

@@ -20,7 +20,7 @@ const pr = (over: Partial<PrSnapshot> = {}): PrSnapshot => ({
 	ci: over.ci ?? "red",
 	// default: red 8h ago (past a 6h grace)
 	redSince: "redSince" in over ? over.redSince : "2026-07-19T04:00:00Z",
-	inEngineLane: over.inEngineLane ?? false,
+	laneState: over.laneState ?? "laneless",
 	failingCheck: over.failingCheck,
 });
 
@@ -58,9 +58,15 @@ describe("planHealItems — each gate skips with the FIRST failing reason", () =
 	});
 
 	it("skips a PR that is in an engine lane (the boundary — engines heal owned lanes)", () => {
-		const {emit, skip} = plan([pr({inEngineLane: true})]);
+		const {emit, skip} = plan([pr({laneState: "laned"})]);
 		expect(emit).toHaveLength(0);
 		expect(skip[0]?.reason).toBe("in-engine-lane");
+	});
+
+	it("defers a PR whose lane state could not be read, rather than filing against it", () => {
+		const {emit, skip} = plan([pr({laneState: "unknown"})]);
+		expect(emit).toHaveLength(0);
+		expect(skip[0]?.reason).toBe("lane-state-unknown");
 	});
 
 	it("default-denies a red PR with no red-since anchor (grace unmeasurable)", () => {
