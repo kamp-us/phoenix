@@ -64,3 +64,26 @@ triage by the #1705 investigation:
 
 When adding a new çaylak-reachable write path, place it in the table above: contained via
 the sandbox seam, inert (private / own-content / no public topic), or a new gap to file.
+
+## The read side's blind spot — derived summary rows
+
+`sandboxVisibleWhere` / `publicLiveWhere` mask a **content** table, keyed off the
+`sandboxed_at` / `removed_at` / `author_id` columns the row itself carries. A **derived
+summary** row has none of them: `term_record` is a recomputable aggregate of a term's
+definitions (ADR 0011), so nothing on it says "this term is sandboxed" — yet the row is
+created, and its user-authored `title` becomes readable, the moment a çaylak writes their
+first definition. A list that selects the summary table directly is therefore **unmasked by
+construction**, even in a codebase where every content read is masked (#3724: a newcomer's
+term reached the top of the anonymous /sozluk list and its page rendered zero definitions —
+a dead-end public page *and* a title-level containment leak).
+
+The rule: **a read over a derived summary table derives its visibility from the content it
+summarizes, viewer-aware** — an `EXISTS` over the content table carrying `publicLiveWhere`
+for the requesting viewer, applied to the page query **and** any `count(*)` beside it, so an
+author still finds their own not-yet-public row. Both sözlük term lists take this shape:
+`termHasVisibleDefinitionWhere` (`apps/web/worker/features/sozluk/TermVisibility.ts`) for
+the paginated lists, and the live-definition ranking inside `Sozluk.getLandingTerms` for the
+landing column.
+
+When adding a read over any table whose rows are *derived* rather than authored, ask which
+content table owns its lifecycle, and mask through that.

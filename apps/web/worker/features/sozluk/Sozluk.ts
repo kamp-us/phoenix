@@ -52,6 +52,7 @@ import {
 	UnauthorizedDefinitionMutation,
 } from "./errors.ts";
 import {DEFINITION_ORDERING, TERM_SUMMARY_ORDERING, type TermSummarySort} from "./ordering.ts";
+import {termHasVisibleDefinitionWhere} from "./TermVisibility.ts";
 import {
 	type TermConnectionPage,
 	type TermSummaryRow,
@@ -400,10 +401,19 @@ export class Sozluk extends Context.Service<
 			limit?: number;
 		}) => Effect.Effect<TermSummaryRow[]>;
 
+		/**
+		 * The paginated term lists behind `terms` / `recentTerms` / `popularTerms`.
+		 * Viewer-masked: a term surfaces only when the viewer can read at least one of
+		 * its definitions (`termHasVisibleDefinitionWhere`, #3724) — the same live-content
+		 * gate `getLandingTerms` carries, so a çaylak's sandbox-only term never reaches
+		 * the public /sozluk front door as a dead-end page.
+		 */
 		readonly listTermSummariesConnection: (opts?: {
 			sort?: ListSort;
 			first?: number;
 			after?: string | null;
+			viewerId?: string | null | undefined;
+			sandboxViewer?: SandboxViewer | undefined;
 		}) => Effect.Effect<TermConnectionPage>;
 
 		/**
@@ -955,21 +965,35 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		});
 
 		const listTermSummariesConnection = Effect.fn("Sozluk.listTermSummariesConnection")(function* (
-			opts: {sort?: ListSort; first?: number; after?: string | null} = {},
+			opts: {
+				sort?: ListSort;
+				first?: number;
+				after?: string | null;
+				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
+			} = {},
 		) {
 			const sort = opts.sort ?? "recent";
 			const first = Math.max(1, Math.min(opts.first ?? 20, 100));
 			const after = opts.after ?? null;
+			const viewer = resolveSandboxViewer(opts);
 
+			// The count carries the SAME mask as the page below: an unmasked `count(*)`
+			// would report terms the page can never yield, so the connection would claim
+			// pages that don't exist.
 			const totalCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`count(*)`})
 					.from(schema.termRecord)
+					.where(termHasVisibleDefinitionWhere(db, viewer))
 					.get()
 					.then((r) => r?.n ?? 0),
 			);
 
 			type CursorRow = {slug: string; totalScore: number; lastActivityAt: Date | null};
+			// Deliberately UNMASKED: this read only recovers the cursor's keyset position,
+			// it never yields a row. Masking it would turn a cursor whose term went
+			// sandboxed mid-scroll into a cursor miss and truncate the rest of the list.
 			const resolvedRow = after
 				? ((yield* run((db) =>
 						db
@@ -1004,7 +1028,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				db
 					.select(termSummaryColumns)
 					.from(schema.termRecord)
-					.where(cursorPredicate)
+					.where(and(cursorPredicate, termHasVisibleDefinitionWhere(db, viewer)))
 					.orderBy(...orderByColumns(ordering))
 					.limit(first + 1),
 			);

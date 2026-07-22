@@ -14,6 +14,7 @@ import {Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {type KeysetPage, toConnection} from "../fate/connection.ts";
+import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {type ListSort, Sozluk} from "./Sozluk.ts";
 import {toTerm} from "./shapers.ts";
 import type {TermSummaryRow} from "./term-fields.ts";
@@ -42,8 +43,12 @@ const listTerms = (
 ) =>
 	Effect.gen(function* () {
 		const sozluk = yield* Sozluk;
+		// Resolve the sandbox viewer (identity + moderator probe) so the list hides terms
+		// whose only definitions this viewer can't read (#3724).
+		const sandboxViewer = yield* currentSandboxViewer;
 		const page = yield* sozluk.listTermSummariesConnection({
 			sort,
+			sandboxViewer,
 			...(args.first !== undefined ? {first: args.first} : {}),
 			...(args.after !== undefined ? {after: args.after} : {}),
 		});
