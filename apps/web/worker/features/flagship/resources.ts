@@ -20,7 +20,6 @@ import {
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
 	PHOENIX_KARMA_GATES,
-	PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
 	PHOENIX_PANO_STAMP_WAVE,
 	PHOENIX_REACTIONS,
 	PHOENIX_SOZLUK_STAMP_WAVE,
@@ -184,44 +183,6 @@ export const BILDIRIM_FLAG = {
  */
 export const bildirimFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_bildirim", {appId, ...BILDIRIM_FLAG});
-
-/**
- * The optimistic `definition.delete` (instant term-page drop) dark-ship flag config
- * (#1681, epic #1637). The D1 edge-drop from the nested `Term.definitions`
- * connection (ADR 0125 — `definition.delete` has no reply tree, so D1 collapses to a
- * plain edge-drop) runs only behind this key. Default-OFF so it reaches production
- * dark — with it off a deleted definition leaves the page only when the live
- * `deleteEdge` push / read-back lands, exactly as today; flipping it on is the human
- * release act (ADR 0083).
- *
- * Exported as a plain object so the default-=-safe-state invariant is
- * unit-inspectable WITHOUT constructing the alchemy resource (mirrors
- * `MEMBER_MUTE_FLAG`, #3112).
- *
- * Per-flag metadata (the IaC ownership record `feature-flags-schema-lifecycle.md`
- * asks for):
- *   - owner:           sozluk (the term-page definition card)
- *   - originating:     #1681 (epic: optimistic content mutations, #1637)
- *   - removal trigger: once optimistic definition-delete graduates to on at 100% and
- *                      stable for one release, retire the flag and inline the path.
- */
-export const OPTIMISTIC_DEFINITION_DELETE_FLAG = {
-	key: PHOENIX_OPTIMISTIC_DEFINITION_DELETE,
-	description:
-		"optimistic definition.delete nested-connection edge-drop dark-ship (#1681, epic #1637). owner: sozluk. removal: retire once on at 100% and stable.",
-	defaultVariation: "off",
-	variations: {off: false, on: true},
-} as const;
-
-/**
- * A plain boolean kill-switch, no targeting rules. `appId` is resolved at deploy
- * (see `demoTargetingFlag` for why it's a factory, not a module constant).
- */
-export const optimisticDefinitionDeleteFlag = (appId: Input<string>) =>
-	Cloudflare.Flagship.Flag("phoenix_optimistic_definition_delete", {
-		appId,
-		...OPTIMISTIC_DEFINITION_DELETE_FLAG,
-	});
 
 /**
  * The reactions (emoji tepki) dark-ship flag config (#1863, epic #1840). The

@@ -51,7 +51,6 @@ import {
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
 	memberMuteFlag,
-	optimisticDefinitionDeleteFlag,
 	panoStampWaveFlag,
 	profileCanvasFlag,
 	reactionsFlag,
@@ -83,10 +82,6 @@ export default Alchemy.Stack(
 		// The bildirim (notification system) dark-ship flag, default-off (#1694, epic
 		// #1666) — the single seam the whole notification surface gates behind.
 		yield* bildirimFlag(flagship.appId);
-		// The optimistic definition.delete dark-ship flag, default-off (#1681, epic
-		// #1637) — gates the nested-connection edge-drop (ADR 0125 D1) until a human
-		// release.
-		yield* optimisticDefinitionDeleteFlag(flagship.appId);
 		// The reactions (emoji tepki) dark-ship flag, default-off (#1863, epic #1840) —
 		// the single seam the whole reaction feature gates behind until a human release.
 		yield* reactionsFlag(flagship.appId);
