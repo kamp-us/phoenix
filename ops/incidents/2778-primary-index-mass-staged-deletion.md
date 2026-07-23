@@ -159,8 +159,8 @@ between it and origin.
 
 ## The read-only instrumentation (this unit)
 
-`@kampus/primary-index-tripwire`
-([`packages/primary-index-tripwire/`](../../packages/primary-index-tripwire/)) — a pure, unit-tested
+the `primary-index-guard` tool
+([`packages/pipeline-cli/src/tools/primary-index-guard/`](../../packages/pipeline-cli/src/tools/primary-index-guard/)) — a pure, unit-tested
 detection core plus a thin Effect CLI that, at commit time, records (never blocks) an **attribution
 event** when the staged index carries the #2778 signature (a mass control-plane staged deletion),
 capturing `CLAUDE_CODE_AGENT` / `CLAUDE_CODE_SESSION_ID` / cwd / primary-vs-worktree. It is wired as a
