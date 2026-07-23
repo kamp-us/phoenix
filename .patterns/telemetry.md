@@ -182,14 +182,13 @@ yield* telemetry.emit({
 ```
 
 > **The seam uses `ignoreCause` so callers don't have to.** The `ignore` vs `ignoreCause`
-> distinction still matters — it's just resolved **once, at the seam**, not at every call-site.
-> `Effect.ignore` discards only the **error (`E`) channel**, so a *defect* (a `die`, a thrown
-> bug in the emit path) would propagate and unwind the mutation; `Effect.ignoreCause` discards
-> the **whole `Cause`** — error **and** defect — so even a broken emit can never fail or slow the
-> mutation. `TelemetryLive` uses `Effect.ignoreCause` internally (see [The one invariant](#the-one-invariant-telemetry-can-never-fail-the-mutation-it-observes-s4)),
-> which makes `emit: Effect<void>` genuinely unfailable-and-undyable for **every** instrument by
-> construction — so a per-call-site wrap is redundant and instruments emit bare (#2085). Don't
-> re-add a call-site `ignoreCause`: it duplicates a guarantee the seam already gives.
+> distinction still matters — it's just resolved **once, at the seam**, not at every call-site (why
+> the whole-`Cause` discard, defects included, is the load-bearing choice is
+> [The one invariant](#the-one-invariant-telemetry-can-never-fail-the-mutation-it-observes-s4)).
+> Because `TelemetryLive` discharges it internally, `emit: Effect<void>` is genuinely
+> unfailable-and-undyable for **every** instrument by construction — so a per-call-site wrap is
+> redundant and instruments emit bare (#2085). Don't re-add a call-site `ignoreCause`: it
+> duplicates a guarantee the seam already gives.
 
 **5. Discharge the `Telemetry` layer requirement at `makeFateLayer`.** Emitting gives the
 feature's `*Live` a build-time `Telemetry` requirement. Discharge it with `Layer.provide` at the

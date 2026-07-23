@@ -86,7 +86,7 @@ type to the flag's job:
 - **One flag, one decision.** A flag answers a single yes/no or single-variant question. If you're
   tempted to pack two unrelated toggles into one flag, that's two flags.
 
-## The default-=-safe-state invariant (load-bearing)
+## The default-=-safe-state invariant (load-bearing) {#default-safe-invariant}
 
 **Every flag's default is the off / old / safe path.** This is the contract that makes the whole
 system safe to operate, and it is enforced in two places that must agree:

@@ -111,13 +111,13 @@ export const sozlukSearchDiscoveryFlag = (appId: Input<string>) =>
 	});
 ```
 
-Then yield it in `apps/web/alchemy.run.ts` with the resolved `appId`. The **default-=-safe-state
-invariant is load-bearing**: `defaultVariation: "off"` (IaC) and the safe read default (code, below)
-must agree, so a not-yet-flipped flag, a typo'd key, or a Flagship outage all degrade to the *old*
-path — never a half-shipped new one. Never invert this (a default-on flag defeats dark-ship — the
-feature is live the instant it merges). See
-[feature-flags-schema-lifecycle.md](./feature-flags-schema-lifecycle.md) for the full naming,
-type-discipline, and metadata rules.
+Then yield it in `apps/web/alchemy.run.ts` with the resolved `appId`. The
+**default-=-safe-state invariant** applies here: `defaultVariation: "off"` (IaC) and the safe read
+default (code, below) must agree, so the flag ships dark. Why that's load-bearing — how a
+not-yet-flipped flag, a typo'd key, or a Flagship outage all degrade to the *old* path, and why you
+never invert it — is owned by
+[feature-flags-schema-lifecycle.md](./feature-flags-schema-lifecycle.md#default-safe-invariant),
+alongside the full naming, type-discipline, and metadata rules.
 
 ### Step 2 — Gate the new code path behind the flag
 
