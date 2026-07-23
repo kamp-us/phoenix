@@ -39,6 +39,7 @@ import {isTransientDeployError} from "./_deploy-transient.ts";
 import {
 	awaitEdgeReady,
 	DEPLOY_HEALTH_DEADLINE_MS,
+	EDGE_READY_DEADLINE_MS,
 	edgeFetch,
 	HOOK_TIMEOUT_MS,
 	PER_FILE_HEALTH_DEADLINE_MS,
@@ -105,6 +106,33 @@ class ProbeError extends Schema.TaggedErrorClass<ProbeError>()(
 		cause: Schema.Defect(),
 	},
 ) {}
+
+/**
+ * A warm probe's readiness budget lapsed without the probe ever going ready.
+ *
+ * `awaitEdgeReady` only THROWS when its deadline lapses while still on the placeholder-404; when
+ * it lapses on a not-ready RESPONSE it RETURNS that response (the #1060 no-early-stop guarantee).
+ * So a warm that merely awaited it could not tell "warmed" from "gave up", and an exhausted budget
+ * emitted NOTHING — no throw, no `catchCause` warning below, nothing. The first asserting test then
+ * failed a further budget later on a bare `expected 503 to be 200`, several layers from the cause,
+ * with the 503's body already released — so the run's own artifact could not say whether the warm
+ * had been exhausted (#3778). Thrown here so an exhausted warm rides the SAME non-fatal warning the
+ * thrown placeholder-404 already does, naming the budget and the last response's shape. Deliberately
+ * NON-fatal, unlike `awaitWorkerReady`'s `WorkerNotReadyError`: every dedicated stage runs these
+ * warms, including the many files that never touch `/fate/live`, so a warm names itself — it does
+ * not red a stage whose own assertions may well pass.
+ */
+export class WarmNotSettledError extends Error {
+	readonly _tag = "WarmNotSettled";
+	constructor(probe: string, res: Response, budgetMs: number) {
+		super(
+			`${probe} never went ready within its ${budgetMs}ms readiness budget — last response was ` +
+				`${res.status} (content-type: ${res.headers.get("content-type") ?? "none"}). The first ` +
+				`asserting test on this stage is likely to fail on that same status.`,
+		);
+		this.name = "WarmNotSettledError";
+	}
+}
 
 // The deploy gates' `catch`: keep the already-tagged `WorkerNotReadyError` unwrapped so `orDie`
 // dies with the SAME greppable diagnostic the retired `Effect.promise` produced (#3146); wrap any
@@ -255,9 +283,14 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 						headers: {accept: "text/event-stream", cookie},
 					}),
 				liveWarmReady,
-				{pollMs: WARM_POLL_MS},
+				// The budget is named at the call site (not left to the default) so the exhaustion
+				// diagnostic below cites the number actually spent, never a drifted copy.
+				{pollMs: WARM_POLL_MS, deadlineMs: EDGE_READY_DEADLINE_MS},
 			);
 			await res.body?.cancel().catch(() => {});
+			if (!liveWarmReady(res)) {
+				throw new WarmNotSettledError("/fate/live warm", res, EDGE_READY_DEADLINE_MS);
+			}
 		},
 		catch: (cause) => new ProbeError({cause}),
 	}).pipe(
@@ -292,7 +325,7 @@ export const warmFateRead = (url: string): Effect.Effect<void, never, never> =>
 		try: async () => {
 			// A 200 means the route + D1 read served; a cold PoP placeholder-404 (the thrown edge
 			// transient) / a non-200 that hasn't ripened rides the shared readiness budget → retry.
-			await awaitEdgeReady(
+			const res = await awaitEdgeReady(
 				() =>
 					edgeFetch(`${url}/fate`, {
 						method: "POST",
@@ -303,8 +336,11 @@ export const warmFateRead = (url: string): Effect.Effect<void, never, never> =>
 						}),
 					}),
 				fateReadReady,
-				{pollMs: WARM_POLL_MS},
+				{pollMs: WARM_POLL_MS, deadlineMs: EDGE_READY_DEADLINE_MS},
 			);
+			if (!fateReadReady(res)) {
+				throw new WarmNotSettledError("POST /fate warm", res, EDGE_READY_DEADLINE_MS);
+			}
 		},
 		catch: (cause) => new ProbeError({cause}),
 	}).pipe(

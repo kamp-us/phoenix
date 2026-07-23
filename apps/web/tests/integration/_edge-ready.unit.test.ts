@@ -28,7 +28,7 @@ import {
 } from "./_edge-ready.ts";
 import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
 import {harness} from "./_harness.ts";
-import {awaitAuthRouteReady, awaitWorkerReady} from "./_integration.ts";
+import {awaitAuthRouteReady, awaitWorkerReady, WarmNotSettledError} from "./_integration.ts";
 
 // A tiny budget so the tests drive the readiness logic in milliseconds, not the real 60s.
 const BUDGET = {deadlineMs: 120, pollMs: 5} as const;
@@ -219,6 +219,27 @@ describe("awaitWorkerReady — typed readiness diagnostic (#3146)", () => {
 		await expect(
 			Effect.runPromise(awaitWorkerReady("https://stage.example.workers.dev", 40)),
 		).rejects.toThrow(/worker never served a healthy \/api\/health within the readiness window/);
+	});
+});
+
+// The DEPLOY-time WARM probes (`warmLiveDO` / `warmFateRead`) stay non-fatal, but an exhausted
+// budget must no longer be SILENT: `awaitEdgeReady` returns the last not-ready response rather than
+// throwing (pinned above), so a warm that merely awaited it emitted nothing at all and the failure
+// surfaced later as a bare `expected 503 to be 200` inside the first asserting test (#3778).
+describe("WarmNotSettledError — the exhausted-warm diagnostic (#3778)", () => {
+	it("names the probe, the budget, and the last response's shape in a greppable message", () => {
+		const e = new WarmNotSettledError(
+			"/fate/live warm",
+			new Response("", {status: 503, headers: {"content-type": "application/json"}}),
+			60_000,
+		);
+		expect(e).toBeInstanceOf(Error);
+		expect(e.name).toBe("WarmNotSettledError");
+		expect(e._tag).toBe("WarmNotSettled");
+		expect(e.message).toContain("/fate/live warm");
+		expect(e.message).toContain("60000ms");
+		expect(e.message).toContain("503");
+		expect(e.message).toContain("application/json");
 	});
 });
 
