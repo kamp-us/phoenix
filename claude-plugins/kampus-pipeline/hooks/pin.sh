@@ -17,4 +17,4 @@
 # in the skills still carry their own copy of this string — that rewrite is #3653 (per #3457).
 
 KAMPUS_PIPELINE_CLI_PKG="@kampus/pipeline-cli"
-KAMPUS_PIPELINE_CLI_PIN="0.2.0"
+KAMPUS_PIPELINE_CLI_PIN="0.2.1"

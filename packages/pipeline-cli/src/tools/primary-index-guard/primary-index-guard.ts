@@ -25,7 +25,7 @@ import {
 	MASS_DELETION_BLOCK_THRESHOLD,
 	renderWarning,
 	type StagedEntry,
-} from "@kampus/primary-index-tripwire";
+} from "./index.ts";
 
 export {MASS_DELETION_BLOCK_THRESHOLD};
 

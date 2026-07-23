@@ -16,4 +16,4 @@ while [ -L "$SELF" ]; do
 	esac
 done
 SHIM_DIR=$(cd "$(dirname "$SELF")" && pwd)
-exec node "$SHIM_DIR/../src/bin.ts" "$@"
+exec node "$SHIM_DIR/../bin.ts" "$@"

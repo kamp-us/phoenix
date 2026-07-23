@@ -12,14 +12,17 @@
  * exactly as the former `node packages/ci-required/src/bin.ts` (a bare bin) read
  * it. The print sequence and exit-code contract (0 = PASS / 1 = FAIL) are
  * preserved byte-for-byte; only the IO shell moves from a plain-Node bin to this
- * Effect `Command`. The pure core (`inputFromEnv` + `judge`) is imported from the
- * standalone `@kampus/ci-required` — the single source of truth the CI gate bin
- * (`node packages/ci-required/src/bin.ts`) also runs, so this CLI and CI can never
- * diverge (#2442). `command.ts` is the IO shell: read env, print, exit.
+ * Effect `Command`. The pure core (`inputFromEnv` + `judge`) lives beside this file
+ * in `./ci-required.ts` — the single source of truth the CI gate bin
+ * (`node packages/pipeline-cli/src/tools/ci-required/bin.ts`) also runs, so this CLI
+ * and CI can never diverge. `command.ts` is the IO shell: read env, print, exit.
+ * The former standalone `@kampus/ci-required` package was inlined here (#3802) so
+ * `@kampus/pipeline-cli` publishes with no unpublished `workspace:*` deps.
  */
-import {inputFromEnv, judge} from "@kampus/ci-required";
+
 import {Console, Effect} from "effect";
 import {Command} from "effect/unstable/cli";
+import {inputFromEnv, judge} from "./ci-required.ts";
 
 export const ciRequiredCommand = Command.make(
 	"ci-required",

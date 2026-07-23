@@ -21,9 +21,9 @@
  * clean allow.
  */
 import {execFileSync} from "node:child_process";
-import {appendRecord, defaultLogPath, parseNameStatus} from "@kampus/primary-index-tripwire";
 import {Console, Effect, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {appendRecord, defaultLogPath, parseNameStatus} from "./index.ts";
 import {decidePrimaryIndexCommit, MASS_DELETION_BLOCK_THRESHOLD} from "./primary-index-guard.ts";
 
 /** The dedicated refuse exit code — see `ref-guard`'s `REFUSE_EXIT_CODE`; the lefthook wrapper aborts only on this. */

@@ -39,9 +39,9 @@
 import {execFileSync} from "node:child_process";
 import {readFileSync} from "node:fs";
 import {join} from "node:path";
-import {isControlPlaneDeletion, parseNameStatus} from "@kampus/primary-index-tripwire";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {isControlPlaneDeletion, parseNameStatus} from "../primary-index-guard/index.ts";
 import {
 	changedPathsForceDepRefresh,
 	decidePnpmVersionGuard,

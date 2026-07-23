@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/pipeline-cli",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "pipeline-cli — the single subcommand-router home all pipeline tooling folds into; `pipeline-cli <tool> …` dispatches to a registered tool (epic #994)",
 	"license": "MIT",
 	"repository": {
@@ -36,9 +36,6 @@
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
-		"@kampus/ci-required": "workspace:*",
-		"@kampus/gh-phoenix": "workspace:*",
-		"@kampus/primary-index-tripwire": "workspace:*",
 		"effect": "catalog:",
 		"fast-xml-parser": "catalog:",
 		"yaml": "catalog:"

@@ -18,20 +18,20 @@
  * survives the fold into the shared `pipeline-cli` bin (which provides only
  * `NodeServices.layer`, no per-tool catch — mirrors `decisions-index`).
  *
- * The lint core (`lintCorpus`/`isZeroScope`) is imported from the standalone
- * `@kampus/gh-phoenix` — the single source of truth (#2442). That package also serves
- * the tool's OTHER role — the `gh` REST shim (`router`/`resolve`), which shadows `gh`
- * on the subagent PATH via the `shim/gh` wrapper on `.claude/settings.json` `env.PATH`
- * (execing `packages/gh-phoenix/src/bin.ts`) until Phase 4 (#1003) rewires that PATH.
- * The shim is NOT a pipeline-cli subcommand: it intercepts arbitrary `gh` verbs in a
- * pre-runtime argv dispatch before any subcommand router runs. Here only `lint-skills`
- * is exposed as a verb, over the shared `@kampus/gh-phoenix` lint core.
+ * The lint core (`lintCorpus`/`isZeroScope`) lives beside this file in `./lint.ts` —
+ * the single source of truth. The former standalone `@kampus/gh-phoenix` package was
+ * inlined into this tool dir (#3802) so `@kampus/pipeline-cli` publishes with no
+ * unpublished `workspace:*` deps. The tool's OTHER role — the `gh` REST shim
+ * (`router`/`resolve`/`bin.ts` + `shim/gh`) — also lives here: `shim/gh` execs this
+ * dir's `bin.ts` to shadow `gh` on the subagent PATH. The shim is NOT a pipeline-cli
+ * subcommand: it intercepts arbitrary `gh` verbs in a pre-runtime argv dispatch before
+ * any subcommand router runs. Here only `lint-skills` is exposed as a verb.
  */
 import {readFileSync} from "node:fs";
-import {isZeroScope, type LintResult, lintCorpus, type ScanFile} from "@kampus/gh-phoenix";
 import {Console, Effect, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command} from "effect/unstable/cli";
+import {isZeroScope, type LintResult, lintCorpus, type ScanFile} from "./lint.ts";
 
 const FINDING_EXIT_CODE = 2;
 const ZERO_SCOPE_EXIT_CODE = 3;

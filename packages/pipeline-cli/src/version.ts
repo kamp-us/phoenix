@@ -11,7 +11,7 @@ import {Console, Effect} from "effect";
 import {Command} from "effect/unstable/cli";
 
 /** The pipeline-cli version string, surfaced both at the root `--version` and here. */
-export const VERSION = "0.2.0";
+export const VERSION = "0.2.1";
 
 export const versionCommand = Command.make(
 	"version",

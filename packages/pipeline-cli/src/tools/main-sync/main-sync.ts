@@ -47,9 +47,9 @@ export const MAIN_BRANCH = "main";
 
 // Re-exported single source: main-sync refuses at the SAME threshold §CP
 // `primary-index-guard` blocks at, so sync-path refusal and pre-commit block agree.
-export {MASS_DELETION_BLOCK_THRESHOLD} from "@kampus/primary-index-tripwire";
+export {MASS_DELETION_BLOCK_THRESHOLD} from "../primary-index-guard/index.ts";
 
-import {MASS_DELETION_BLOCK_THRESHOLD} from "@kampus/primary-index-tripwire";
+import {MASS_DELETION_BLOCK_THRESHOLD} from "../primary-index-guard/index.ts";
 
 /** True when the primary index carries a #2778 mass control-plane staged deletion (at/above the block threshold). */
 export const isMassControlPlaneDeletion = (head: HeadState): boolean =>

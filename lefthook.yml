@@ -102,7 +102,7 @@ pre-commit:
           echo "primary-index-tripwire: no node on PATH (stripped-PATH/lean worktree); skipping #2778 attribution — read-only, non-blocking anyway" >&2
           exit 0
         }
-        node packages/primary-index-tripwire/src/bin.ts record || true
+        node packages/pipeline-cli/src/tools/primary-index-guard/bin.ts record || true
         exit 0
 
     # The BLOCKING §CP containment for the #2778 corruption (#2784) — the prevention half the
