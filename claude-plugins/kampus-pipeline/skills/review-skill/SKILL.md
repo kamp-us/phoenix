@@ -81,9 +81,16 @@ git fetch origin "$BASE_REF"
 # to a per-run mktemp handle so they survive the harness cwd/shell reset between Bash calls (a shell
 # var is lost across calls); re-source them with `. "$WT_FILE"` at each later step — NEVER re-derive
 # from a shared leaf name (a `git worktree list` re-derivation matches a SIBLING reviewer's tree and
-# reads the wrong head's skill text — the #1807 collision). Mirror the VERDICT_FILE (#1465) / report
-# BODY_FILE mktemp discipline; WT_FILE itself is `$(mktemp)`, never a fixed/PR-only path.
-WT_FILE="$(mktemp /tmp/review-skill-wt.XXXXXX)"
+# reads the wrong head's skill text — the #1807 collision). This is the §SP per-run scratchpad
+# namespace (gh-issue-intake-formats.md): a PR number is not unique, and a clobbered file reads
+# back cleanly with the other run's content (#3718). WT_FILE is a CROSS-CALL carrier — a later
+# step re-sources it — so §SP rules 2+3 apply, NOT the rule-4 single-file `mktemp` carve-out
+# (that one is for allocate-and-consume inside one call, like VERDICT_FILE below): the path is
+# derived deterministically from the session id, so each later step recomputes this same line
+# rather than inheriting a lost `$WT_FILE` variable.
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/review-skill-$PR"
+mkdir -p "$RUN_SCRATCH" || { echo "review-skill: §SP could not create a per-run scratch dir (#3718)." >&2; exit 1; }
+WT_FILE="$RUN_SCRATCH/wt.env"
 pipeline-cli review-head materialize --pr "$PR" --worktree \
   | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
 . "$WT_FILE"
@@ -320,9 +327,17 @@ For checks that need the file in context (a trigger phrase, a cross-skill refere
 shape of a step you're judging), read the changed skill at the PR head **from the isolated
 review worktree** (`$REVIEW_WT/skills/...`) the config-pin step set up — never by checking the
 head out into your session tree. Because the harness resets the shell between Bash calls,
-re-source the run-unique handle at the start of any later step that references `$REVIEW_WT`
-(`. "$WT_FILE"`), never re-deriving it from the shared `review-skill-head-${PR}` leaf — under a
-parallel fan-out that leaf name also matches a sibling's worktree (#1807).
+re-source the run-unique handle at the start of any later step that references `$REVIEW_WT`,
+never re-deriving it from the shared `review-skill-head-${PR}` leaf — under a parallel fan-out
+that leaf name also matches a sibling's worktree (#1807). `$WT_FILE` is itself a lost shell
+variable by then, so recompute its path from the same §SP recipe first — that is exactly why
+the namespace is session-derived rather than `mktemp`-allocated:
+
+```bash
+WT_FILE="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/review-skill-$PR/wt.env"
+[ -s "$WT_FILE" ] || { echo "review-skill: §SP — $WT_FILE missing; re-run the head-materialization step in THIS session." >&2; exit 1; }
+. "$WT_FILE"
+```
 
 ### Fetch the base fresh before any "is-it-shipped on main" check
 
@@ -519,9 +534,12 @@ rigor check must PASS. One miss anywhere → FAIL.
 
 **Resolve the head SHA you reviewed** and write the verdict to a per-run temp file
 (`VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"`) so multi-line markdown +
-backticks survive the shell, then post it. Allocate it with `mktemp`, not a fixed
-`/tmp/review-skill-verdict-${PR}.md`: the PR number alone isn't unique — two reviews of the
-same PR running concurrently would collide. The SHA goes into the marker's first line
+backticks survive the shell, then post it. Allocate it with `mktemp`, never a fixed or
+`${PR}`-keyed path — the per-run scratchpad namespace, §SP of
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). The PR number alone isn't
+unique (two reviews of the same PR running concurrently collide), and a clobbered temp reads
+back **successfully with the other run's content**, so there is no error to catch (#3718).
+The SHA goes into the marker's first line
 (`review-skill: PASS @ <sha> — merge-ready`) and is **load-bearing**: `ship-it` refuses any
 verdict not bound to the PR's current head (ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).

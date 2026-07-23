@@ -152,7 +152,10 @@ EOF
 } | pipeline-cli tracker create-issue --title "<title>"
 ```
 
-The body never lands on disk under a shared name and never round-trips through a variable, so the two named failure paths this hardening closes — "simplify" to a fixed `/tmp/report-body.md`, or reuse one `$BODY_FILE` across two creates — have no surface to occur on: there is no file path to fix and no variable to reuse.
+The body never lands on disk under a shared name and never round-trips through a variable, so the two named failure paths this hardening closes — "simplify" to a fixed `/tmp/report-body.md`, or reuse one `$BODY_FILE` across two creates — have no surface to occur on: there is no file path to fix and no variable to reuse. This is the
+first and strongest rule of the per-run scratchpad namespace — §SP of
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), *prefer no file at all* — and
+`report` is the idiom the rest of the pipeline is measured against (#2002, generalized in #3718).
 
 5. Report back to the user in one line: the issue number and URL (`create-issue` prints them as `tracker: created #<n> — <url>`). Then return to your original task — don't expand into triaging or fixing what you just filed.
 

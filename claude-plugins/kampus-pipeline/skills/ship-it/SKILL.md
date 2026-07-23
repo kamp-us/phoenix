@@ -1334,9 +1334,10 @@ RUN_ID=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
 # the run-evidence artifact id, then the manifest bytes
 ART_ID=$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
   --jq '.artifacts[] | select(.name=="run-evidence") | .id' 2>/dev/null)
-# per-run bundle dir (mktemp -d), NOT a fixed /tmp/ship-it-bundle: concurrent §CP shippers
-# fan out, and a shared path lets two racing runs read each other's bundle — merge-safety must
-# not rest on Step 3.5's commit==head assertion catching the swap after the fact (#2281).
+# per-run bundle dir (mktemp -d), NOT a fixed /tmp/ship-it-bundle — the §SP per-run scratchpad
+# namespace (gh-issue-intake-formats.md): concurrent §CP shippers fan out, and a shared path lets
+# two racing runs read each other's bundle — merge-safety must not rest on Step 3.5's
+# commit==head assertion catching the swap after the fact (#2281; the #3718 silent-clobber class).
 BUNDLE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ship-it-bundle.XXXXXX")
 gh api "repos/$REPO/actions/artifacts/$ART_ID/zip" > "$BUNDLE_DIR/run-evidence.zip" 2>/dev/null \
   && unzip -oq "$BUNDLE_DIR/run-evidence.zip" -d "$BUNDLE_DIR"
@@ -1414,11 +1415,12 @@ clear — proceed to Step 4. Like Step 2's FAIL and Step 3's red, a bundle refus
 # against each (commit-mismatch and missing-bundle are the same passing manifest mutated):
 cd packages/pipeline-cli/src/tools/crabbox-manifest
 HEAD_SHA=deadbeef
+RUN_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/ship-it-rehearsal.XXXXXX")" || exit 1   # §SP rule 4: allocated + consumed in THIS block
 node ../../bin.ts crabbox-manifest --run-summary <(node -e 'console.log(JSON.stringify(require("./fixtures.ts").passingRunSummary()))') \
-  --commit "$HEAD_SHA" --environment test --output /tmp/pass.json   # all checks pass → clears
+  --commit "$HEAD_SHA" --environment test --output "$RUN_SCRATCH/pass.json"   # all checks pass → clears
 node ../../bin.ts crabbox-manifest --run-summary <(node -e 'console.log(JSON.stringify(require("./fixtures.ts").failingRunSummary()))') \
-  --commit "$HEAD_SHA" --environment test --output /tmp/fail.json   # test exit 1 → assertion 4 refuses
-# /tmp/pass.json with commit != $HEAD_SHA → assertion 3 (stale); rm /tmp/pass.json → assertion 1
+  --commit "$HEAD_SHA" --environment test --output "$RUN_SCRATCH/fail.json"   # test exit 1 → assertion 4 refuses
+# pass.json with commit != $HEAD_SHA → assertion 3 (stale); rm it → assertion 1
 ```
 
 ---
@@ -1833,16 +1835,25 @@ if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md"
   #     (1) the key is a REAL declared default-off flag — read the `key: <CONST>` list from the flag-IaC
   #     surface (resources.ts) on `main`, resolved to literals via apps/web/src/flags/keys.ts; AND (2) it
   #     appears in GATING context, not documentation/example prose (the FLAG_IN_PROSE scoping below).
+  # the const list round-trips through a file only because the two greps are separate streams;
+  # it lands under a per-run mktemp, never a shared /tmp leaf (§SP of gh-issue-intake-formats.md).
+  # `$$` alone is NOT the guarantee — an agent's Bash calls can share a shell, so two ship-it runs
+  # can carry the same PID-derived name, and a clobbered list reads back cleanly as another run's
+  # flag keys, silently mis-deciding the dark-ship branch (#3718). This is §SP's rule-4 carve-out:
+  # allocated and consumed inside THIS one Bash call, so the kernel's uniqueness is the whole
+  # guarantee and no deterministic path is needed (it never has to survive into a later call).
+  CONSTS_FILE="$(mktemp "${TMPDIR:-/tmp}/ship-it-flag-consts.XXXXXX")" || {
+    echo "ship-it: §SP could not allocate a per-run temp — refusing to read flag consts through a shared path (#3718)." >&2; exit 1; }
   DECLARED_KEYS=$(
     gh api "repos/$REPO/contents/apps/web/worker/features/flagship/resources.ts?ref=main" \
         --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
-      | grep -oE 'key:[[:space:]]*[A-Z0-9_]+' | grep -oE '[A-Z0-9_]+$' | sort -u > /tmp/shipit-flag-consts.$$ || true
+      | grep -oE 'key:[[:space:]]*[A-Z0-9_]+' | grep -oE '[A-Z0-9_]+$' | sort -u > "$CONSTS_FILE" || true
     gh api "repos/$REPO/contents/apps/web/src/flags/keys.ts?ref=main" \
         --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
       | grep -oE '^export const [A-Z0-9_]+[[:space:]]*=[[:space:]]*"[a-z0-9]+(-[a-z0-9]+)+"' \
       | sed -E 's/^export const ([A-Z0-9_]+)[[:space:]]*=[[:space:]]*"([a-z0-9-]+)"/\1 \2/' \
-      | while read -r CONST LIT; do grep -qx "$CONST" /tmp/shipit-flag-consts.$$ 2>/dev/null && echo "$LIT"; done
-    rm -f /tmp/shipit-flag-consts.$$
+      | while read -r CONST LIT; do grep -qx "$CONST" "$CONSTS_FILE" 2>/dev/null && echo "$LIT"; done
+    rm -f "$CONSTS_FILE"
   )
   FLAG_IN_PROSE=no
   if [ -n "$DECLARED_KEYS" ]; then

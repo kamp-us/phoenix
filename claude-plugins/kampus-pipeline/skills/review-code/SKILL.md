@@ -1300,10 +1300,12 @@ merge. Two forms, either is valid — both must carry the per-criterion table as
 First, **resolve the head SHA you actually reviewed** and **write the verdict to a per-run
 temp file** (`VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"`) so multi-line markdown +
 backticks survive the shell — both forms below read it back via `cat`. Allocate it with
-`mktemp`, not a fixed `/tmp/review-code-verdict-${PR}.md`: the PR number alone isn't unique —
-two reviews of the *same* PR running concurrently (the operator fans review-* out in
-parallel) would collide on it, one run's unread verdict stalling the write or leaking into
-the other (#1465). The SHA goes into the marker's first
+`mktemp`, never a fixed or `${PR}`-keyed path — the per-run scratchpad namespace, §SP of
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). The PR number alone isn't
+unique (two reviews of the *same* PR running concurrently — the operator fans review-* out in
+parallel — collide on it, one run's unread verdict stalling the write or leaking into the
+other, #1465), and a clobbered temp reads back **successfully with the other run's content**,
+so there is no error to catch (#3718). The SHA goes into the marker's first
 line (`review-code: PASS @ <sha> — merge-ready`) — it is **load-bearing**: `ship-it` refuses
 any verdict not bound to the PR's current head (ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258). See the

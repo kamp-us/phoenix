@@ -1849,6 +1849,114 @@ documented specialization of this same contract, not a fourth drifting copy.
 
 ---
 
+## SP. The per-run scratchpad namespace — one canonical definition (#3718)
+
+The pipeline runs several agents concurrently by design (the WIP cap is the whole point), and
+they share one `/tmp`. So an intermediate file written under a **fixed or work-item-keyed**
+name is a shared mutable surface: a second run clobbers it mid-flight and the first run reads
+back **the other run's content with no error**. In the live 2026-07-20 incident the file was
+`prref.txt` — one reviewer overwrote it while another was mid-run, and the victim's `git diff`
+silently returned the *wrong PR's* file list. Verdicts are the pipeline's routing gate, so that
+is a false PASS on unreviewed code.
+
+The class is **silent by construction**: a clobbered file reads back *successfully*, so there
+is no error to catch and no defensive "re-check after read" that reliably covers it. The only
+fix is structural — remove the shared namespace. This section states the rule **once** so every
+skill and agent cites *one* definition instead of re-deriving it (the §CP/§DOC/§ZS/§RO
+single-sourcing discipline, applied to scratch state).
+
+**A work-item id is not a run id.** Keying on `$PR` / `<EPIC>` / `#N` does *not* make a path
+unique: a re-review, a repair round, and a re-plan are all second runs over the same number,
+and the operator fans gates out in parallel over one PR routinely.
+
+### The namespace — deterministic *and* per-run
+
+Two requirements are both real, and a namespace that satisfies only one is broken:
+
+- **Per-run uniqueness** — concurrent runs must not be able to name each other's files.
+- **Deterministic re-derivability across Bash calls** — an agent's shell state does **not**
+  survive between Bash calls (`$$` differs call to call; every variable is gone), so a later
+  call must be able to recompute the same path *from scratch*. A namespace allocated by a bare
+  `mktemp -d` gives uniqueness and destroys this: re-running `mktemp -d` in a later call yields
+  a **new empty directory** and recovers nothing.
+
+`$CLAUDE_CODE_SESSION_ID` delivers both. It is the per-agent-run UUID the environment already
+exports — the same token ADR 0115's claim protocol stamps — and it is **stable across Bash
+calls** while **distinct per agent run** (sibling subagents of one pane each get their own).
+So it is a run identity any later call can recompute without carrying anything:
+
+The recipe is **one line, inlined at each site** — deliberately not a shell helper, because a
+helper is itself shell state that doesn't survive between Bash calls, so a later call could not
+call it. `<slug>` names the caller: the skill, plus the work item when one skill runs over
+several (`plan-epic-<EPIC>`, `write-code-<N>`, `review-skill-$PR`).
+
+**Open the run once, re-derive freely afterwards.** The distinction is load-bearing — getting
+it backwards re-creates the empty-directory bug it exists to prevent:
+
+```bash
+# OPEN — the skill's first step that writes state. Fail closed on a missing session id: never
+# fall back to a shared path, since a fallback resurrects the exact clobber (ADR 0092). The
+# `rm -rf` clears leftovers from an EARLIER run of this same slug in this same session, so a
+# re-run never reads its predecessor's files.
+[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
+  echo "§SP: CLAUDE_CODE_SESSION_ID unset — refusing to write run state to a shared scratch path (#3718)." >&2; exit 1; }
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/<slug>"
+rm -rf "$RUN_SCRATCH" && mkdir -p "$RUN_SCRATCH" || {
+  echo "§SP: could not create the per-run scratch dir $RUN_SCRATCH." >&2; exit 1; }
+
+# RE-DERIVE — every LATER Bash call. Same recipe ⇒ same directory ⇒ the files are still there.
+# NO `rm -rf` here: that is the open step's job, and repeating it would delete the very state
+# this call came to read. Assert what you expect to find, rather than reading a silent absence.
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/<slug>"
+[ -s "$RUN_SCRATCH/<file>" ] || { echo "§SP: $RUN_SCRATCH/<file> did not survive — re-run the opening step in THIS session." >&2; exit 1; }
+```
+
+**Assert presence, never let a test decide on an absent file.** A missing scratch file is not
+a neutral input: `[ existing -nt missing ]` is **true** in bash, so a freshness/staleness guard
+written as `if ! [ "$a" -nt "$b" ]` **passes silently** when `$b` is gone — the guard reads
+green precisely when its precondition is most broken. Check `-s` first (`plan-epic`'s Step-5
+splice guard is the live instance), so absence fails loud instead of waving work through.
+
+### The rules, in preference order
+
+1. **Prefer no file at all.** Pass the value in-process. `report` streams the issue body over
+   stdin rather than round-tripping a temp path (#2002), and `write-code` re-derives the branch
+   live from the worktree instead of caching it (#2038) — both satisfy §SP outright, with no
+   path to collide on and nothing to leak.
+2. **When a file is genuinely needed, derive its path from `$RUN_SCRATCH`.** Allocate it
+   fail-closed per the recipe above — never a bare `/tmp/<name>`, and never a path keyed only
+   on a work-item id. Leaf names then stay plain and readable (`deps.md`, not
+   `deps-$PR-$RANDOM.md`) because uniqueness lives in the **directory**, so a scratch write
+   added later *inherits* the guarantee instead of reintroducing the bug.
+3. **Never park a `$RUN_SCRATCH` path in another file to carry it across Bash calls** — that
+   just relocates the collision onto *that* file. You don't need to: **recompute it** from the
+   same `run_scratch` recipe, which is deterministic precisely so this rule costs nothing.
+4. **Carve-out — a raw `$(mktemp "${TMPDIR:-/tmp}/<name>.XXXXXX")` (or a throwaway
+   `$(mktemp -d)`) is §SP-compliant when it is allocated *and* consumed inside one Bash
+   call.** The kernel supplies the uniqueness, so there is no shared name to clobber, and a
+   path that never crosses a call needs no deterministic recipe. This is the right shape for a
+   verdict file written and immediately `cat`-ed into a `gh api` post (`review-code` /
+   `review-doc` / `review-skill` `VERDICT_FILE`, `ship-it`'s flag-const list), and for §RO's
+   throwaway head worktree (`git worktree add "$(mktemp -d)/…"`). It is a **deliberate second
+   form, not a tolerated exception** — stated here so it isn't re-bred as a competing
+   convention, and so a reader who meets both forms knows which one they are looking at.
+
+   The line between rule 4 and rules 2+3 is **lifetime, not file count**: the moment a path
+   has to survive into a *later* Bash call, the carve-out no longer applies and it belongs
+   under a session-derived `$RUN_SCRATCH`. Give a rule-4 temp a name that says what it holds
+   (`review-code-verdict.XXXXXX`), never the `kampus-run` prefix the rule-2 namespace uses —
+   the two forms should stay tellable apart at a glance.
+
+### Corollary — a scratch path is a local absolute path, so it never lands in a public artifact
+
+`$RUN_SCRATCH` expands to a machine-local absolute path. Quoting one into an issue body, PR
+body, comment, or commit message leaks the operator's filesystem layout — the leak `leak-guard`
+enforces against (#2683), and the reason a body is posted **by value** (`-f body="$(cat …)"`)
+rather than by `gh api -f body=@<path>` (#2002 / #754). Compose *through* the scratch file;
+never mention it in what you post.
+
+---
+
 ## HEAD. Review the PR head, never the launched checkout's working copy (#793)
 
 A review gate is frequently spawned with `isolation:worktree`, which lands it in a **fresh

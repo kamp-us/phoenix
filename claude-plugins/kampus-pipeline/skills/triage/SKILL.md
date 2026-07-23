@@ -379,19 +379,37 @@ original is passed through byte-for-byte unchanged, exactly as before.
 
 To get the original and redact any leak before preserving it:
 
+Every temp file below lives under `$RUN_SCRATCH`, the per-run scratchpad namespace defined once
+in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §SP. An issue number is
+**not** a unique key — two triage runs over the same issue (a sweep plus a re-triage) collide on
+`/tmp/triage-original-<N>.md`, and a clobbered file **reads back cleanly with the other run's
+body**, so triage would silently preserve the wrong original inside `<details>` (#3718):
+
 ```bash
-gh api "repos/$REPO/issues/<N>" --jq '.body' > /tmp/triage-original-<N>.md
+# §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
+# Keyed on the session id (not a bare `mktemp -d`) because the PATCH block below runs in a LATER
+# Bash call, where every shell variable is gone: it re-derives this same path to read body.md back.
+[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
+  echo "triage: §SP — CLAUDE_CODE_SESSION_ID unset; refusing to write issue bodies to a shared path (#3718)." >&2; exit 1; }
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/triage-<N>"
+rm -rf "$RUN_SCRATCH" && mkdir -p "$RUN_SCRATCH" || {
+  echo "triage: §SP could not create a per-run scratch dir — refusing to write issue bodies to a shared path (#3718)." >&2; exit 1; }
+
+gh api "repos/$REPO/issues/<N>" --jq '.body' > "$RUN_SCRATCH/original.md"
 # redact any machine-local path leak in the ORIGINAL before it goes into <details>; leak-free
 # originals pass through byte-for-byte. Reuses the shared leak matcher — no divergent patterns.
-pipeline-cli redact-leaks --body-file /tmp/triage-original-<N>.md > /tmp/triage-original-<N>.redacted.md
+pipeline-cli redact-leaks --body-file "$RUN_SCRATCH/original.md" > "$RUN_SCRATCH/original.redacted.md"
 # assemble the <details> block from the REDACTED original, never the raw one
 ```
 
-Assemble the new body in a temp file and read it into `$BODY` so multi-line markdown,
-backticks, and the nested fences survive the shell:
+Assemble the new body in a temp file — under `$RUN_SCRATCH` for the same reason — and read it
+into `$BODY` so multi-line markdown, backticks, and the nested fences survive the shell:
 
 ```bash
-BODY="$(cat /tmp/triage-body-<N>.md)"
+RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/triage-<N>"   # §SP re-derive — same recipe as the block above, NO reset
+[ -s "$RUN_SCRATCH/body.md" ] || {
+  echo "triage: §SP — $RUN_SCRATCH/body.md is missing/empty; refusing to PATCH the issue with an empty body." >&2; exit 1; }
+BODY="$(cat "$RUN_SCRATCH/body.md")"
 gh api -X PATCH "repos/$REPO/issues/<N>" -f body="$BODY"
 ```
 

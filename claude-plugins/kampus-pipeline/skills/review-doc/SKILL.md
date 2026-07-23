@@ -642,10 +642,12 @@ reference from the summary line (there is no issue to auto-close on merge).
 
 **Resolve the head SHA you reviewed** and write the verdict to a per-run temp file
 (`VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"`) so multi-line markdown + backticks
-survive the shell, then post it. Allocate it with `mktemp`, not a fixed
-`/tmp/review-doc-verdict-${PR}.md`: the PR number alone isn't unique — two reviews of the *same*
-PR running concurrently would collide on it, one run's unread verdict stalling the write or
-leaking into the other. The SHA goes into the marker's first line
+survive the shell, then post it. Allocate it with `mktemp`, never a fixed or `${PR}`-keyed
+path — the per-run scratchpad namespace, §SP of
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). The PR number alone isn't
+unique (two reviews of the *same* PR running concurrently collide on it), and a clobbered temp
+reads back **successfully with the other run's content**, so there is no error to catch
+(#3718). The SHA goes into the marker's first line
 (`review-doc: PASS @ <sha> — merge-ready`) and is **load-bearing**: `ship-it` refuses any
 verdict not bound to the PR's current head (ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
