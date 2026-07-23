@@ -695,12 +695,18 @@ author cannot widen it via a file in their own diff. The solo operator `usirin` 
 ADR 0048) holds `admin` and passes; any future operator or review-bot earns standing by being
 a `write+` collaborator, with no edit to this skill.
 
+For the **marker namespaces** that author-gate is applied *inside* `pipeline-cli verdict read`
+(Step 2) — it is the verb's own ADR-0055 trust root, not re-derived here. The set below is still
+resolved explicitly because the **§CP advisory** resolution (Step 2.§CP) needs it: an advisory is
+SHA-less in its first line by design (ADR 0111), so `verdict read` resolves that namespace to
+`none` and cannot author-gate it — the advisory's own latest-wins/author-gated pick is ship-it's.
+
 Resolve the authorized-author set from the ACL — every distinct marker author whose repo
 permission is `write` / `maintain` / `admin`. This fails closed: a lookup error or a
 `read`/`triage` author never enters the set, so their marker is ignored exactly as an
 off-list author was under 0051. When *no* author clears the bar, `authorized` stays `[]`
-and `IN($authorized[])` below matches nothing — every namespace resolves to `null`, i.e.
-`unverified` → refuse — so the empty set is the safe terminal state, not an open door.
+and no advisory resolves — `unverified` → refuse — so the empty set is the safe terminal
+state, not an open door (the same fail-closed terminal `verdict read` applies to markers).
 
 ```bash
 comments_file=$(mktemp)
@@ -722,58 +728,79 @@ while IFS= read -r a; do
 done <<<"$markerAuthors"
 ```
 
-Read the latest of each form (sorted by timestamp, newest last — don't lean on the API's
-return order for a merge decision). The author gate (`IN($authorized[])`) runs *before*
-`sort_by | last`, so a forged newer marker from an unauthorized author can't shadow a real
-older verdict:
+Resolve the latest current-head marker verdict per namespace **through `pipeline-cli verdict read`**:
+the verb folds the ADR-0055 write+ author-gate (a forged newer marker from an unauthorized author
+can't shadow a real verdict), the latest-wins pick, and the ADR-0058 SHA-staleness refusal (Step 2b)
+into one exit code — its unit tests are the contract (#2102), the same resolution `write-code` reads.
+The native decisive review folds into the code namespace separately (the verb reads marker comments,
+not reviews); Step 2b keeps `is_current` for it and for the §CP advisory body-SHA:
 
 ```bash
 # the PR's CURRENT head SHA — the head every verdict must be bound to (ADR 0058)
 CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — the review-code path only.
-# GitHub author-attributes reviews, so this path is unforgeable and needs no ACL check.
-# Carry .commit_id: it IS the SHA the reviewer approved, so Step 2b applies the same staleness
-# test to a native review as to a marker's @ <sha>.
-gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
+# GitHub author-attributes reviews, so this path is unforgeable and needs no ACL check. commit_id IS
+# the SHA the reviewer approved, so the same staleness test applies to it as to a marker's @ <sha>.
+# `at: .submitted_at` is load-bearing, not decoration: it is the timestamp the newest-wins fold below
+# compares against the marker's created_at. Drop it and the fold degenerates to a precedence rule.
+REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}'
+        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
 
-# latest review-code marker comment (code namespace) — author-gated, anchored, never matches review-doc.
-# Capture the bound head SHA from the @ <sha> tail; a SHA-less legacy marker yields sha=null → Step 2b refuses.
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last
-    | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
+# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
+else
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
+fi
 
-# latest review-doc marker comment (doc namespace) — author-gated, anchored, never matches review-code/review-skill
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last
-    | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
+# per present namespace (Step 0), resolve the marker verdict against the current head via the verb:
+# <g>_PASS=1 iff a current-head PASS marker in that gate; <g>_FAIL=1 iff a current-head FAIL (the
+# veto). A stale / SHA-less / none verdict exits non-zero on BOTH, so it is neither a PASS nor a FAIL
+# — Step 2b's `unverified (verdict not bound to current head)` refusal, now owned by the verb. (A §CP
+# advisory namespace is SHA-less by design and resolves `none` here — Step 2.§CP handles it from the
+# body's Reviewed-head instead.)
+# the code namespace keeps the verb's stdout JSON: it names the RESOLVING comment id, which the
+# newest-wins fold below turns into the marker's created_at (the verb's outcome carries no timestamp).
+CODE_JSON="$($VERDICT read --pr "$PR" --gate code --expect PASS 2>/dev/null)" && CODE_PASS=1 || CODE_PASS=0
+$VERDICT read --pr "$PR" --gate code   --expect FAIL >/dev/null 2>&1 && CODE_FAIL=1   || CODE_FAIL=0
+$VERDICT read --pr "$PR" --gate doc    --expect PASS >/dev/null 2>&1 && DOC_PASS=1    || DOC_PASS=0
+$VERDICT read --pr "$PR" --gate doc    --expect FAIL >/dev/null 2>&1 && DOC_FAIL=1    || DOC_FAIL=0
+$VERDICT read --pr "$PR" --gate skill  --expect PASS >/dev/null 2>&1 && SKILL_PASS=1  || SKILL_PASS=0
+$VERDICT read --pr "$PR" --gate skill  --expect FAIL >/dev/null 2>&1 && SKILL_FAIL=1  || SKILL_FAIL=0
+$VERDICT read --pr "$PR" --gate design --expect PASS >/dev/null 2>&1 && DESIGN_PASS=1 || DESIGN_PASS=0
+$VERDICT read --pr "$PR" --gate design --expect FAIL >/dev/null 2>&1 && DESIGN_FAIL=1 || DESIGN_FAIL=0
 
-# latest review-skill marker comment (skill namespace) — author-gated, anchored, never matches review-code/review-doc
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last
-    | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
-
-# latest review-design marker comment (design namespace) — author-gated, anchored, never matches review-code/review-doc/review-skill
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-design:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last
-    | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-design:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
+# fold the native decisive review into the code namespace (the verb reads only marker comments). Only
+# a review bound to the current head counts (same ADR-0058 staleness as a marker's @ <sha>).
+#
+# The fold is NEWEST-WINS by timestamp, never FAIL-precedence — the resolution the prose below states.
+# FAIL-precedence would be a live wedge, not a conservative default: a PR FAIL'd, repaired, and
+# re-PASSed at the SAME head would stay permanently blocked by the superseded FAIL, breaking the
+# repair → re-review → ship loop write-code drives.
+RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
+RAT=$(jq -r '.at // ""' <<<"$REVIEW")
+if [ -n "$RSHA" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
+  # the marker's created_at: the verb's outcome carries no timestamp, so resolve it from the comment
+  # id its JSON names. An empty MARKER_AT means no current-head marker verdict stands (`verdict read`
+  # already dropped a none/sha-less/stale one) ⇒ the review is the only event ⇒ it decides alone.
+  MARKER_AT=""
+  MARKER_ID=$(jq -r '.commentId // empty' <<<"$CODE_JSON" 2>/dev/null)
+  [ -n "$MARKER_ID" ] && [ "$((CODE_PASS + CODE_FAIL))" -gt 0 ] &&
+    MARKER_AT=$(gh api "repos/$REPO/issues/comments/$MARKER_ID" --jq .created_at 2>/dev/null)
+  # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare.
+  if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
+    case "$RSTATE" in
+      CHANGES_REQUESTED) CODE_FAIL=1; CODE_PASS=0 ;;
+      APPROVED)          CODE_PASS=1; CODE_FAIL=0 ;;
+    esac
+  fi   # else the marker is newer and already stands — leave CODE_PASS/CODE_FAIL as the verb resolved them
+;; esac; fi
 ```
 
-Now resolve **per namespace**, latest-wins by timestamp:
+Now resolve **per namespace** (the marker verdict from the verb above, the native review + §CP
+advisory folded in):
 
 - **review-code namespace** — the verdict is the **newest of {latest decisive review, latest
   review-code marker comment}** by timestamp (review `submitted_at` vs comment `created_at`).
@@ -829,31 +856,33 @@ Now resolve **per namespace**, latest-wins by timestamp:
 Each resolved verdict carries a bound SHA. A verdict authorizes a merge **only if it is bound
 to the PR's current head** — this is what closes the masking race (a slower PASS bound to an
 older head can never outrank a real FAIL on the live head) and the head-moved race (a PASS
-bound to `X1` can never be consumed against `X2`). For each namespace's resolved verdict:
+bound to `X1` can never be consumed against `X2`). The rule, per namespace:
 
-- **No bound SHA** (`sha == null` — a pre-0058 SHA-less marker) → `unverified (verdict not
-  bound to current head)` → refuse.
+- **No bound SHA** (a pre-0058 SHA-less marker) → `unverified (verdict not bound to current
+  head)` → refuse.
 - **Bound SHA ≠ current head** (neither is a prefix of the other — either may be abbreviated,
   so compare by prefix-match against `$CURRENT_HEAD`) → `unverified (verdict not bound to
   current head)` → refuse.
 - **Bound SHA prefix-matches `$CURRENT_HEAD`** → the verdict is current; its polarity decides
   in the guard below.
 
-```bash
-# is verdict SHA $vsha bound to the current head? (prefix-match, either side may be abbreviated)
-# Empty/absent $vsha MUST short-circuit to refuse FIRST: a jq `sha: null` reaches the shell as
-# an empty string, and an unguarded `case "$CURRENT_HEAD" in ""*)` reduces to the glob `*` — which
-# matches any head and would falsely report a legacy SHA-less marker as current (ADR 0058 rule 3).
-is_current () { [ -n "$1" ] || return 1; case "$CURRENT_HEAD" in "$1"*) return 0;; esac; case "$1" in "$CURRENT_HEAD"*) return 0;; esac; return 1; }
+**For the marker namespaces this refusal is now enforced *inside* `pipeline-cli verdict read`**
+(Step 2): a marker that is SHA-less or bound to an older head resolves `sha-less`/`stale`, so the
+verb exits non-zero on **both** `--expect PASS` and `--expect FAIL` — leaving `<g>_PASS=0` **and**
+`<g>_FAIL=0`, which is exactly `unverified (verdict not bound to current head)` → refuse. There is
+no separate marker staleness test to run here, and none to keep in sync (#2102).
 
-# Extract each resolved verdict's bound SHA into a shell var — the load-bearing normalization:
-# `// empty` renders a jq `sha: null` (a pre-0058 SHA-less / absent marker) as "" (NOT the literal
-# "null"), so is_current's `[ -n "$1" ] || return 1` short-circuits to refuse exactly as designed.
-# $verdict is the per-namespace resolved object emitted above ({state|body, at, sha}).
-vsha="$(jq -r '.sha // empty' <<<"$verdict")"
-is_current "$vsha" || echo "unverified (verdict not bound to current head) → refuse"
-# null/empty $vsha → not current (legacy marker) → refuse. A jq `sha: null` must reach this helper
-# as an empty string (or be short-circuited to refuse before the call) — never as the literal "null".
+Two signals `verdict read` does **not** resolve still need the test applied explicitly, so the
+helper stays: the **native review**'s `commit_id` (folded into the code namespace in Step 2) and the
+**§CP advisory**'s body `Reviewed-head` SHA (Step 2.§CP).
+
+```bash
+# is a bound SHA $1 the current head? (prefix-match, either side may be abbreviated) — applied to the
+# native review's commit_id and the §CP advisory's body Reviewed-head SHA; the marker namespaces are
+# already head-bound by `verdict read`. Empty/absent $1 MUST short-circuit to refuse FIRST: an
+# unguarded `case "$CURRENT_HEAD" in ""*)` reduces to the glob `*` — which matches any head and would
+# falsely report a SHA-less marker as current (ADR 0058 rule 3).
+is_current () { [ -n "$1" ] || return 1; case "$CURRENT_HEAD" in "$1"*) return 0;; esac; case "$1" in "$CURRENT_HEAD"*) return 0;; esac; return 1; }
 ```
 
 <a id="step-2cp--cp-advisory-namespace-resolution-adr-01350151"></a>

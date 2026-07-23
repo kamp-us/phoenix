@@ -207,28 +207,74 @@ Step R1). That contract is the floor here: the guard may suppress the twin **onl
 write-code does, or it would skip the defect on a FAIL write-code will no-op, dropping the
 failure on the floor. An active repair is an **open PR** whose **latest** gate verdict in
 *either* namespace is a **FAIL bound to the PR's current head** (`review-code: FAIL @ <sha>` /
-`review-doc: FAIL @ <sha>`, latest-wins per namespace), still within the N=3 repair cap. Three
-parts, each lifted from write-code's scan:
+`review-doc: FAIL @ <sha>`, latest-wins per namespace), still within the N=3 repair cap.
 
-- **Author-gated against the repo ACL** — a marker counts as a verdict only from a `write+`
-  collaborator, so a forged `review-(code|doc): FAIL` can't be read as an active repair (ADR
-  [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md), the same trust root `ship-it`
-  Step 2 and `write-code`'s scan use). A native `CHANGES_REQUESTED` review folds into the code
-  namespace and needs **no** ACL gate — GitHub author-attributes reviews, so that path is
-  unforgeable.
-- **SHA-bound staleness test** (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md),
-  issue #258) — a FAIL whose `@ <sha>` is **not** the PR's current head, or that carries **no**
-  `@ <sha>` (a pre-0058 legacy marker), is **stale**: it judges code that has since changed, so
-  `write-code` no-ops on it — therefore it is **not** an active repair here either, and the
-  defect must fall through and file. This is the load-bearing reconciliation: without the
-  staleness test the guard would suppress a twin for a FAIL nobody is fixing.
-- **Emphasis-tolerant + SHA-capturing matcher** — the canonical shape both sides cite (leading
-  `\**` absorbs review-code's bolding; the `@\s*([0-9a-f]{7,40})` tail captures the bound head),
-  per [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5.
+That per-(PR, gate) FAIL-bound-to-head resolution is exactly what
+`pipeline-cli verdict read --gate <g> --expect FAIL` owns — the ADR-0055 write+ author-gate, the
+latest-wins pick, and the ADR-0058 SHA-staleness test folded into one exit code (its unit tests
+are the contract, #2102). So `heal-ci` reads each namespace **through the verb** rather than
+re-deriving the resolver write-code once hand-copied, and keeps only the two things the verb does
+**not** do — genuinely more than a single (PR, gate) resolution, so they stay here:
+
+- **The native decisive review that folds into the code namespace.** The verb reads marker comments;
+  a native review is a *different* record type. GitHub author-attributes reviews, so this path needs
+  **no** ACL gate — `commit_id` IS its bound SHA. The fold is **newest-wins by timestamp** (as in
+  `ship-it` Step 2 / write-code R1): the code verdict is the newest of {latest decisive review,
+  latest `review-code` marker}, so a current-head `CHANGES_REQUESTED` is a code FAIL *unless* a newer
+  current-head marker already PASS'd.
+- **The N=3 FAIL-round count.** `verdict read` resolves the latest verdict; it does not count
+  rounds. A PR already at 3 FAIL rounds is escalated to a human, **not** an active repair, so the
+  guard counts the rounds itself (author-gated to write+ collaborators, clustered by >120s gap —
+  the same round identity write-code uses) and treats a capped PR as fall-through-and-file.
 
 ```bash
-# is a write-code repair already in flight on this PR? (PR runs only) — mirror write-code Step R1
-# build THIS PR's authorized set from its marker authors holding write+ on the repo (ADR 0055)
+# is a write-code repair already in flight on this PR? (PR runs only) — resolve the verdict the
+# EXACT way write-code Step R1 does, by delegating each (PR, gate) FAIL-bound-to-head resolution to
+# `pipeline-cli verdict read` (ACL author-gate + latest-wins + SHA-staleness, ADR 0055/0058). Resolve
+# the CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994).
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
+else
+  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
+fi
+
+# a namespace is an active-repair FAIL iff its latest authorized verdict is FAIL bound to the current
+# head — exit 0 from `verdict read … --expect FAIL`. A stale / SHA-less / PASS / none verdict exits
+# non-zero, so it is correctly NOT an active repair, matching write-code's no-op on it.
+CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code --expect FAIL 2>/dev/null)" && CODE_FAIL=1 || CODE_FAIL=0
+DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc  --expect FAIL 2>/dev/null)" && DOC_FAIL=1  || DOC_FAIL=0
+
+# UNRESOLVED ≠ "no FAIL". The verb prints its outcome JSON on BOTH exit paths, so absent JSON means the
+# namespace never resolved (a transport/5xx failure). Reading that as "no repair in flight" would file
+# a twin defect against a live repair — so treat it as UNKNOWN and defer this invocation.
+VERDICT_UNKNOWN=0
+for J in "$CODE_FAIL_JSON" "$DOC_FAIL_JSON"; do jq -e . >/dev/null 2>&1 <<<"$J" || VERDICT_UNKNOWN=1; done
+
+# the native decisive review folds into the code namespace (the verb reads only marker comments), by
+# NEWEST-WINS timestamp — the same fold ship-it Step 2 / write-code R1 run. `at: .submitted_at` is what
+# the compare reads; a bare "CHANGES_REQUESTED ⇒ CODE_FAIL=1" would report a repair in flight on a PR
+# whose newer marker already PASS'd at the same head, suppressing a defect that should be filed.
+CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
+REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
+  --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
+        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
+RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
+RAT=$(jq -r '.at // ""' <<<"$REVIEW")
+# `_tag == "current"` is exactly "a current-head marker verdict stands"; its comment id yields the
+# created_at the compare needs (the verb's outcome carries no timestamp).
+MARKER_AT=""
+[ "$(jq -r '._tag // ""' <<<"$CODE_FAIL_JSON" 2>/dev/null)" = "current" ] &&
+  MARKER_AT=$(gh api "repos/$REPO/issues/comments/$(jq -r .commentId <<<"$CODE_FAIL_JSON")" --jq .created_at 2>/dev/null)
+if [ -n "$RSHA" ] && [ -n "$RAT" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
+  # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare.
+  if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
+    [ "$RSTATE" = "CHANGES_REQUESTED" ] && CODE_FAIL=1 || CODE_FAIL=0
+  fi
+;; esac; fi
+
+# the N=3 repair cap `verdict read` does NOT count: a PR already at 3 FAIL rounds is escalated to a
+# human, NOT an active repair. Author-gate the FAIL markers to write+ collaborators (ADR 0055) and
+# cluster by >120s gap — the same round identity write-code uses.
 comments_file=$(mktemp)
 gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
 markerAuthors=$(jq -r '[.[]
@@ -242,27 +288,6 @@ while IFS= read -r a; do
     admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
   esac
 done <<<"$markerAuthors"
-# the head every verdict must be bound to (ADR 0058) — a FAIL not bound to this is stale
-CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
-# latest verdict per namespace, capturing the bound @ <sha> (sha=null for a SHA-less legacy marker)
-CODE=$(jq -c --argjson authorized "$authorized" \
-  '[.[] | select(.user.login | IN($authorized[]))
-        | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
-   | sort_by(.created_at) | last
-   | {body: (.body // ""),
-      sha: ((.body // "") | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file")
-DOC=$(jq -c --argjson authorized "$authorized" \
-  '[.[] | select(.user.login | IN($authorized[]))
-        | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
-   | sort_by(.created_at) | last
-   | {body: (.body // ""),
-      sha: ((.body // "") | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file")
-# latest decisive native review folds into the code namespace (commit_id IS its bound SHA, no ACL gate)
-REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-  --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
-# repair cap: a PR already at N=3 FAIL rounds is escalated to a human, NOT an active repair —
-# route it to report like any defect (cluster FAILs by >120s gap, same identity write-code uses)
 ROUNDS=$(jq --argjson authorized "$authorized" \
   '[.[] | select(.user.login | IN($authorized[]))
         | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*FAIL"; "i"))
@@ -274,14 +299,16 @@ ROUNDS=$(jq --argjson authorized "$authorized" \
    | .n' "$comments_file")
 ```
 
-An active repair is in flight **iff** `ROUNDS < 3` **and** a namespace's latest verdict is a
-**FAIL bound to `$CURRENT_HEAD`** — exactly what write-code Step R1 acts on (latest-wins per
-namespace; a newer FAIL wins over an older PASS, but its `@ <sha>` must prefix-match the current
-head). Concretely: the latest `review-code` marker is FAIL **and** its captured `sha` is a
-non-empty prefix of `$CURRENT_HEAD` (or the latest native review is `CHANGES_REQUESTED` with a
-`commit_id` that prefix-matches); **or** likewise for the latest `review-doc` marker. A FAIL
-whose `sha` is empty/null (legacy, SHA-less) or does not match the current head is **stale** —
-write-code no-ops on it, so it is **not** an active repair. When an active repair is in flight,
+If `VERDICT_UNKNOWN=1` the verdict never resolved (a GitHub read failure, not a verdict) — **defer
+this invocation** rather than assume no repair is in flight; filing a twin against a live repair is
+the exact harm this check guards.
+
+An active repair is in flight **iff** `ROUNDS < 3` **and** a namespace is a current-head FAIL —
+`CODE_FAIL=1` (the latest `review-code` marker is a current-head FAIL per `verdict read`, or the
+latest native review is `CHANGES_REQUESTED` at the current head) **or** `DOC_FAIL=1` — exactly
+what write-code Step R1 acts on. A FAIL that is **stale** (SHA-less, or bound to an old head)
+exits `verdict read` non-zero, so it is correctly **not** an active repair — write-code no-ops on
+it, so the defect falls through and files. When an active repair is in flight,
 **do not file a defect.** Drop a one-line comment on the PR pointing at the red run — consistent
 with the `Filed #N` comment the no-repair path posts, but routed to the in-flight repair instead
 of a fresh issue — and stop. That comment *is* your one routed action for this invocation:
