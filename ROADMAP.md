@@ -45,7 +45,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | pipeline-cli @effect/platform migration | #32 | active |
 | Agentic design-system coverage | #33 | done |
 | Flag Retirement (ADR 0136) | #34 | active |
-| Writing-Craft Import | #30 | active |
+| Writing-Craft Import | #30 | done |
 
 **The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
 
