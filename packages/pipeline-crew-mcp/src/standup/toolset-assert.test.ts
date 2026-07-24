@@ -217,4 +217,25 @@ describe("standup/toolset-assert — assertCrewSeatToolsets", () => {
 			Effect.provide(NodeServices.layer),
 		),
 	);
+
+	// #3761: the discovery tool `channel_kinds` must be CALLABLE from every sending seat, not just
+	// served — the def's `tools:` allowlist is the hard gate, so its token must be present (MCP tokens
+	// are exempt from the grantable check, so a listed token lands in `granted`). Reads the real defs:
+	// a seat that drops the token — the exact defect that left channel_kinds present-but-uncallable in
+	// every seat — reds here rather than at a live stand-up.
+	it.effect(
+		"every shipped crew seat can call channel_kinds (its token is in the granted set)",
+		() =>
+			Effect.gen(function* () {
+				for (const role of CREW_ROLES) {
+					const declared = yield* readSeatToolsetFromDef(REPO_ROOT, role);
+					const {granted} = resolveDeclaredToolset(declared);
+					assert.include(
+						granted,
+						"mcp___kampus_pipeline-crew-mcp__channel_kinds",
+						`crew-${role} must list the channel_kinds allowlist token so the discovery tool is callable`,
+					);
+				}
+			}).pipe(Effect.provide(NodeServices.layer)),
+	);
 });
