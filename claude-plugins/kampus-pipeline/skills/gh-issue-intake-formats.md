@@ -1843,8 +1843,16 @@ iso_preflight() {
   # NOT key on $WORKTREE_ROOT being set — so the #2440 no-op (isolation requested, $WORKTREE_ROOT
   # unset, which also disarms the $WORKTREE_ROOT-keyed worktree-guard) still trips this preflight;
   # it is then the sole surviving layer, exactly as in write-code (ADR 0172).
-  case "$CLAUDE_CODE_AGENT" in coder|*coder*|reviewer|*reviewer*|shipper|*shipper*) iso=1 ;; esac
+  # The THIRD clause is the env-independent corroboration — parity with the repo-side guard's
+  # `isIsolationExpected` (bash-pin.ts) and write-code's Step-4 detector (#3406): a NESTED/renamed
+  # spawn inherits the PARENT's agent-type string (e.g. `crew-engineering-manager`, ADR 0189), so the
+  # NAME match goes inert for it — but any agent-context run ($CLAUDE_CODE_AGENT non-empty) sitting on
+  # the PRIMARY checkout (gitdir == common) is a broken/absent worktree whatever its inherited name,
+  # and this clause arms regardless of the string. Do NOT hard-code an agent-type name to patch a
+  # rename — the corroboration removes the coupling rather than relocating it (#3406, #2462).
+  case "$CLAUDE_CODE_AGENT" in *coder*|*reviewer*|*shipper*) iso=1 ;; esac
   [ -n "$WORKTREE_ROOT" ] && iso=1
+  [ -n "$CLAUDE_CODE_AGENT" ] && [ "$gitdir" = "$common" ] && iso=1
   echo "$surface iso_preflight: git-dir=$gitdir common-dir=$common cwd=$(pwd) isolation-expected=$iso (agent=${CLAUDE_CODE_AGENT:-unset} worktree-root=${WORKTREE_ROOT:+set})"
   if [ "$gitdir" = "$common" ]; then
     if [ "$iso" = 1 ]; then
