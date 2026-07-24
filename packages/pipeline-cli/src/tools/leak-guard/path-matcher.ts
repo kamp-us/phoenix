@@ -70,6 +70,24 @@ export const MACHINE_LOCAL_PATH_PATTERNS: ReadonlyArray<PathPattern> = [
 		reason: "home-dir sibling-repo clone (~/code/...)",
 	},
 	{
+		// The GENERIC home-relative sibling-repo clone: `~/<root>/<host.tld>/<user>/<repo>` under
+		// ANY clone root, not just the named `~/code/` above (#3401). The structural signal is a
+		// forge-host segment — a `<name>.<tld>` domain component — sitting between a single home
+		// clone-root segment and a `<user>/<repo>` tail; that shape is a checked-out clone
+		// regardless of where the author roots their clones (`~/dev/…`, `~/projects/…`, `~/src/…`,
+		// `~/work/…`), the shapes the `~/code/`-only arm misses. It stays a GENERIC pattern, never a
+		// named root/host/user deny-list (#2393): the middle segment is matched by *shape* (has a
+		// dot ⇒ a hostname) and the `<user>/<repo>` tail is required, so a benign single-purpose home
+		// subdir (`~/Documents/report.pdf`, `~/.config/kampus/creds`, a `~/Library/...` bundle path)
+		// — none of which is `<root>/<dotted-host>/<user>/<repo>` — does not trip. Deliberately a
+		// single clone-root segment: allowing multi-segment roots would match a `~/Library/.../com.x.y/…`
+		// reverse-DNS bundle path and false-positive, so the legacy `~/go/src/github.com/…` two-level
+		// layout is intentionally out of scope for this arm.
+		pattern:
+			/(?<![\w.])~\/[A-Za-z0-9._-]+\/[A-Za-z0-9-]+\.[A-Za-z]{2,}\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+/g,
+		reason: "home-dir sibling-repo clone (~/<root>/<host>/<user>/<repo>)",
+	},
+	{
 		pattern: /(?<![\w/])\/vault\//g,
 		reason: "vault path (/vault/...)",
 	},

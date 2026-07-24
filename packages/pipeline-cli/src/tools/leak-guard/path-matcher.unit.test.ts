@@ -49,6 +49,28 @@ describe("MACHINE_LOCAL_PATH_PATTERNS — home/absolute arm", () => {
 			assert.isFalse(hitsHome("saved to ~/Documents/report.pdf"));
 		});
 	});
+
+	// The generic `~/<root>/<host>/<user>/<repo>` sibling-clone arm (#3401): the `~/code/`-only arm
+	// missed clones rooted anywhere else. Keyed on the forge-host segment SHAPE, not a named root/host
+	// deny-list (#2393), and the `<user>/<repo>` tail keeps benign single-purpose home subdirs safe.
+	describe("generic home-relative sibling-repo clone arm (#3401)", () => {
+		it("flags the incident shape and clones rooted anywhere, on any forge host", () => {
+			// The literal PR #3360 review-thread reply leak.
+			assert.isTrue(hitsHome("grounded in ~/code/github.com/usirin/effect-smol"));
+			// The gap the `~/code/`-only arm missed: clones under other roots.
+			assert.isTrue(hitsHome("cloned at ~/dev/github.com/usirin/alchemy-effect"));
+			assert.isTrue(hitsHome("see ~/projects/github.com/kamp-us/phoenix/README.md"));
+			assert.isTrue(hitsHome("under ~/src/github.com/effect-ts/effect"));
+			assert.isTrue(hitsHome("in ~/work/gitlab.com/team/service"));
+			assert.isTrue(hitsHome("~/repos/bitbucket.org/acme/widget"));
+		});
+		it("does NOT flag benign home subdirs with no <host>/<user>/<repo> clone shape", () => {
+			assert.isFalse(hitsHome("saved to ~/Documents/report.pdf"));
+			assert.isFalse(hitsHome("state under ~/.config/kampus/creds"));
+			// A ~/Library reverse-DNS bundle path — why the arm is single-root, not multi-segment.
+			assert.isFalse(hitsHome("cache at ~/Library/Caches/com.apple.Safari/data"));
+		});
+	});
 });
 
 describe("TEMP_PATH_PATTERNS — fail-close on ANY bare /tmp (no carve-out, #3492 Option 1)", () => {
