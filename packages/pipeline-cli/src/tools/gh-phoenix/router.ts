@@ -1,5 +1,5 @@
 /**
- * `@kampus/gh-phoenix` router core — the pure, IO-free decision over a `gh`
+ * `gh-phoenix` router core — the pure, IO-free decision over a `gh`
  * argument vector. It is the shim that keeps a reflexive `gh pr edit` / `gh
  * project` from eating a Projects-classic GraphQL error on the kamp-us org
  * (issue #743): those verbs route to REST, classic-projects GraphQL fields are

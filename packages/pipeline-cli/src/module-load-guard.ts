@@ -149,8 +149,9 @@ export interface SelfHealOptions {
  * Bounded, idempotent self-heal for the unlinked-workspace-dep condition (#2459).
  *
  * `main-sync` (and every pipeline-cli tool) runs from source as `node src/bin.ts …`, so a
- * `pipeline-cli` workspace-dep-graph change (PR #2447 switched `@kampus/ci-required` to a
- * `workspace:*` import) leaves the primary checkout's `node_modules` stale and the dynamic
+ * `pipeline-cli` workspace-dep-graph change (e.g. PR #2447, which switched the then-standalone
+ * `ci-required` package to a `workspace:*` import before it was inlined into pipeline-cli, #3802)
+ * leaves the primary checkout's `node_modules` stale and the dynamic
  * `import("./run.ts")` throws the unlinked-dep `ERR_MODULE_NOT_FOUND` `isUnlinkedDependencyError`
  * classifies. Rather than dead-ending at the legible remediation, we first try to heal the exact
  * condition: run one workspace install, then retry the load. The install runs **at most once** per

@@ -108,7 +108,7 @@ const treeHasTrackedModifications = (): boolean => {
 
 /**
  * The count of staged deletions under the instruction-trust prefixes — the #2778 signature (#2784),
- * classified with `@kampus/primary-index-tripwire`'s detection so main-sync's guaranteed refusal and
+ * classified with `primary-index-guard`'s tripwire detection so main-sync's guaranteed refusal and
  * the §CP `primary-index-guard` block share one definition. Indeterminate probe (command failed) ⇒ 0:
  * this count only ever TIGHTENS the guard (a positive count refuses), so a 0 fallback never
  * false-refuses; the incidental dirty checks still stand behind it.

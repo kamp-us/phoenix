@@ -12,7 +12,7 @@ import {type EnvEntry, findLiteralExpansions, judge, renderReport} from "./setti
 // ${...} token, so spelled-out fixtures would trip the rule on nearly every line.
 const brace = (name: string): string => `$\{${name}}`;
 const DATA_VALUE = `${brace("CLAUDE_PROJECT_DIR")}/.claude/.pipeline-cli-data`;
-const PATH_VALUE = `${brace("CLAUDE_PROJECT_DIR")}/packages/gh-phoenix/shim:/usr/bin:${brace("PATH")}`;
+const PATH_VALUE = `${brace("CLAUDE_PROJECT_DIR")}/packages/pipeline-cli/src/tools/gh-phoenix/shim:/usr/bin:${brace("PATH")}`;
 
 const entry = (key: string, value: string): EnvEntry => ({key, value});
 

@@ -1,5 +1,5 @@
 /**
- * `@kampus/gh-phoenix` lint core — the pure, IO-free matchers that gate the skill
+ * `gh-phoenix` lint core — the pure, IO-free matchers that gate the skill
  * corpus. Two independent checks, both fail-closed on zero scope (ADR 0092):
  *
  *  1. GraphQL-path `gh` invocations (issue #743) — flags a reflexive `gh project`
@@ -97,7 +97,7 @@ const SELF_EXEMPT_SUFFIXES = [
 	"/skills/review-code/SKILL.md",
 	"/skills/ship-it/SKILL.md",
 	"/skills/gh-issue-intake-formats.md",
-	"/packages/gh-phoenix/README.md",
+	"/packages/pipeline-cli/src/tools/gh-phoenix/README.md",
 ] as const;
 
 const normalize = (path: string): string => `/${path.replace(/\\/g, "/").replace(/^\/+/, "")}`;

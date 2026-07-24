@@ -1,5 +1,5 @@
 /**
- * `@kampus/ci-required` core — the pure, IO-free verdict for the `ci-required`
+ * `ci-required` core — the pure, IO-free verdict for the `ci-required`
  * aggregator (issue #786, ADR 0092).
  *
  * `ci-required` is the single always-on status context the `main` ruleset
