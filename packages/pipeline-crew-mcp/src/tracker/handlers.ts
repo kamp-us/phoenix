@@ -39,12 +39,19 @@ export const TrackerHandlers = TrackerRegistry.toLayer(
 					),
 			Release: (payload) =>
 				registry.releaseClaim({resource: payload.resource, claimant: payload.claimant}),
-			AnnouncePresence: (payload) =>
-				registry.announce({
+			// `attached` routes the two presence phases (#3628): attached (or absent, the
+			// back-compatible default) publishes a discoverable serving presence; `false` reserves a
+			// bare role slot that backs the cardinality claim but stays out of `LookupRole`.
+			AnnouncePresence: (payload) => {
+				const presence = {
 					role: payload.role,
 					peer: payload.peer,
 					ttlSeconds: DEFAULT_TTL_SECONDS,
-				}),
+				};
+				return (payload.attached ?? true)
+					? registry.announce(presence)
+					: registry.reserve(presence);
+			},
 			LookupRole: (payload) =>
 				registry.lookup(payload.role).pipe(
 					Effect.map((records) => ({

@@ -36,6 +36,80 @@ describe("registry-core — announce / lookup", () => {
 	});
 });
 
+describe("registry-core — two presence phases: bare reservation vs attached (#3628)", () => {
+	it("a bare reservation holds a slot but is NOT discoverable; announcing attaches it", () => {
+		// reserve = the up-but-deaf case: a role slot held, but the inbox not yet serving.
+		const reserved = Core.reserve(Core.empty(), {
+			role: "intake-desk",
+			peer: "inbox://intake-desk",
+			ttlSeconds: 30,
+			nowMillis: T0,
+		});
+		assert.deepStrictEqual(
+			Core.lookup(reserved, "intake-desk", T0),
+			[],
+			"a bare reservation is not a live peer — presence must reflect a live channel half",
+		);
+		// once the inbox attaches, the session announces and becomes discoverable
+		const attached = Core.announce(reserved, {
+			role: "intake-desk",
+			peer: "inbox://intake-desk",
+			ttlSeconds: 30,
+			nowMillis: T0 + secs(1),
+		});
+		assert.deepStrictEqual(Core.lookup(attached, "intake-desk", T0 + secs(1)), [
+			{peer: "inbox://intake-desk", role: "intake-desk", lastSeenMillis: T0 + secs(1)},
+		]);
+	});
+
+	it("a bare reservation still backs the cardinality claim's liveness (the slot holds pre-attach)", () => {
+		// The role-uniqueness lease must hold from construction, before the inbox attaches — so a
+		// reserved (not-yet-discoverable) holder still makes a competing claim COLLIDE.
+		let state = Core.reserve(Core.empty(), {
+			role: "chief-of-staff",
+			peer: "inbox://chief-of-staff-1",
+			ttlSeconds: 30,
+			nowMillis: T0,
+		});
+		state = Core.claimResource(state, {
+			resource: "chief-of-staff",
+			holder: "inbox://chief-of-staff-1",
+			claimantRole: "chief-of-staff",
+			nowMillis: T0,
+		}).state;
+		const collided = Core.claimResource(state, {
+			resource: "chief-of-staff",
+			holder: "inbox://chief-of-staff-2",
+			claimantRole: "chief-of-staff",
+			nowMillis: T0 + secs(1),
+		});
+		assert.strictEqual(
+			collided.outcome._tag,
+			"Collision",
+			"a bare reservation keeps the role slot uniqueness-guarded before its inbox attaches",
+		);
+	});
+
+	it("a heartbeat preserves the attached phase — a beat never downgrades a serving peer", () => {
+		const attached = Core.announce(Core.empty(), {
+			role: "intake-desk",
+			peer: "inbox://intake-desk",
+			ttlSeconds: 30,
+			nowMillis: T0,
+		});
+		const beat = Core.heartbeat(attached, {
+			peer: "inbox://intake-desk",
+			ttlSeconds: 30,
+			nowMillis: T0 + secs(20),
+		});
+		assert.lengthOf(
+			Core.lookup(beat, "intake-desk", T0 + secs(40)),
+			1,
+			"the beat kept it discoverable — attached survived the refresh",
+		);
+	});
+});
+
 describe("registry-core — heartbeat TTL aging", () => {
 	it("a peer that stops heart-beating ages out of lookups past its TTL", () => {
 		const state = Core.announce(Core.empty(), {
@@ -46,6 +120,18 @@ describe("registry-core — heartbeat TTL aging", () => {
 		});
 		assert.lengthOf(Core.lookup(state, "builder", T0 + secs(29)), 1, "still live before TTL");
 		assert.lengthOf(Core.lookup(state, "builder", T0 + secs(31)), 0, "aged out after TTL");
+	});
+
+	it("a heartbeat NEVER manufactures presence — a beat for a peer that never announced is a no-op (#3628 AC2)", () => {
+		// A channel-deaf session's keepalive must not conjure a live lease: presence is created only by
+		// `announce` (gated on the inbox attaching), so beating an unannounced peer leaves it undiscoverable.
+		const beaten = Core.heartbeat(Core.empty(), {
+			peer: "inbox://intake-desk",
+			ttlSeconds: 30,
+			nowMillis: T0,
+		});
+		assert.deepStrictEqual(beaten, Core.empty(), "the beat changed nothing — no lease to refresh");
+		assert.deepStrictEqual(Core.lookup(beaten, "intake-desk", T0), [], "still not a live peer");
 	});
 
 	it("a heartbeat refreshes the window, keeping the peer discoverable", () => {

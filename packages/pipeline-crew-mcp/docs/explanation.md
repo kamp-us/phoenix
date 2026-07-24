@@ -82,6 +82,18 @@ the shape it produces:
 The result is a claim that cannot age out mid-build and cannot outlive its holder — the two
 failures a wall-clock TTL forced you to choose between.
 
+## Presence has two phases: reserved vs attached
+
+Presence itself is split so that being *registered* means an inbox is actually serving, not merely
+that a process claimed a slot (#3628). A session **reserves** a bare lease at construction — enough
+to hold its role slot and back the cardinality claim's liveness clock above — but that bare lease is
+**not discoverable**: `lookup` (and so every `channel_send`) skips it. The session only **announces**
+an attached lease once its inbox socket is bound and serving, and only then does it appear as a live
+peer. The failure this designs out is the *channel-deaf* pane: a role that looks up in tmux but never
+attached its inbox half, so it used to register as live while every send to it dead-lettered. Under
+the two phases a channel-deaf session never becomes discoverable, and a send to a present-but-unserved
+inbox fails fast with a distinguishable `ChannelDeafError` rather than a generic timeout.
+
 ## The two-keyspace design
 
 `RegistryState` holds **two maps that never share** — presence leases keyed by `peer`, resource

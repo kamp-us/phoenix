@@ -127,10 +127,16 @@ export const PresenceEntry = Schema.Struct({
 	lastSeen: Timestamp,
 });
 
-/** A peer announcing that it serves a role (fire-and-forget). */
+/**
+ * A peer announcing its presence for a role (fire-and-forget). `attached` is the live-channel-half
+ * bit (#3628): `true` (or absent, the back-compatible default) publishes a discoverable, serving
+ * presence; `false` reserves a bare role slot that holds the crew cardinality claim but is NOT
+ * returned by a lookup until the peer's inbox attaches and it re-announces attached.
+ */
 export const PresenceAnnouncement = Schema.Struct({
 	peer: PeerId,
 	role: RoleId,
+	attached: Schema.optional(Schema.Boolean),
 	at: Timestamp,
 });
 

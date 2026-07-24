@@ -69,8 +69,17 @@ export class CrewTracker extends Context.Service<
 			readonly resource: string;
 			readonly claimant: string;
 		}) => Effect.Effect<void>;
-		/** Soft presence announce, held for the enclosing scope (connection-is-lease). */
+		/**
+		 * Soft presence announce as ATTACHED (the inbox is serving) — the discoverable phase (#3628),
+		 * held for the enclosing scope (connection-is-lease). Call this only once the inbox has attached.
+		 */
 		readonly announce: (presence: RolePresence) => Effect.Effect<void, never, Scope.Scope>;
+		/**
+		 * Reserve this session's role slot as a BARE lease, held for the enclosing scope: it backs the
+		 * crew cardinality claim + connection-is-lease but is NOT discoverable via `lookup` until the
+		 * peer attaches its inbox and `announce`s (#3628). The construction-time half of the two phases.
+		 */
+		readonly reserve: (presence: RolePresence) => Effect.Effect<void, never, Scope.Scope>;
 		/**
 		 * Refresh this session's presence + role lease before it ages out. Presence-only: the sender
 		 * sends one `Heartbeat {peer, ttlSeconds}` and never touches a resource claim (#3228). Driven
@@ -108,13 +117,33 @@ export class CrewTracker extends Context.Service<
 			announce: (presence) =>
 				Effect.acquireRelease(
 					// peer-id ≡ inbox-address: announce the dialable address so a lookup can dial it back.
+					// attached: true ⇒ the discoverable phase — the inbox is serving (#3628).
 					client
-						.AnnouncePresence({peer: presence.address, role: presence.role, at: now()})
+						.AnnouncePresence({
+							peer: presence.address,
+							role: presence.role,
+							attached: true,
+							at: now(),
+						})
 						.pipe(Effect.orDie),
 					// No wire release kind exists, so scope close is a client-side no-op. A live session
 					// keeps its lease via the heartbeat loop (crew/heartbeat.ts) refreshing it under
 					// DEFAULT_TTL_SECONDS; a dropped session's lease frees by TTL-aging once the beats
 					// stop — the tracker has no disconnect hook.
+					() => Effect.void,
+				),
+			reserve: (presence) =>
+				Effect.acquireRelease(
+					// attached: false ⇒ a bare role-slot reservation, not discoverable until the peer
+					// attaches its inbox and re-announces (#3628). Same scope/keepalive story as announce.
+					client
+						.AnnouncePresence({
+							peer: presence.address,
+							role: presence.role,
+							attached: false,
+							at: now(),
+						})
+						.pipe(Effect.orDie),
 					() => Effect.void,
 				),
 			heartbeat: ({peer, ttlSeconds}) =>
@@ -145,6 +174,7 @@ export const peerTrackerLayer: Layer.Layer<Tracker, never, CrewTracker> = Layer.
 		const tracker = yield* CrewTracker;
 		return {
 			announce: tracker.announce,
+			reserve: tracker.reserve,
 			lookup: (role) => tracker.lookup(role).pipe(Effect.map(Arr.head)),
 		};
 	}),

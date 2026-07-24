@@ -99,4 +99,53 @@ describe("crew/session — forked-stdio live-wake round-trip (session.ts:34 seam
 			}).pipe(Effect.scoped),
 		{timeout: 20000},
 	);
+
+	it.live(
+		"the live assembly publishes presence only AFTER its inbox socket binds — LookupRole returns the session (#3628 AC1/AC2)",
+		() =>
+			Effect.gen(function* () {
+				// A shared registry client, so the test can both back the session's substrate AND read
+				// LookupRole against the very registry the session announces on.
+				const client = yield* RpcTest.makeClient(TrackerRegistry);
+				const trackerLayer = CrewTracker.fromClient(client);
+				const address = `inbox://intake-desk-presence-${randomUUID().slice(0, 8)}`;
+				const substrate = Layer.mergeAll(
+					trackerLayer,
+					peerTrackerLayer.pipe(Layer.provide(trackerLayer)),
+					Inbox.layer(address),
+					Dialer.layerFromConnect((addr) =>
+						Effect.fail(
+							new PeerUnreachableError({target: addr, reason: "presence-test stub dialer"}),
+						),
+					),
+				);
+				const transport = McpServer.layerStdio({
+					name: "CrewPresenceTestServer",
+					version: "0.0.0",
+					experimental: channelExperimentalCapability,
+				}).pipe(Layer.provide(Stdio.layerTest({stdin: Stream.never})));
+				const serverLayer = assembleCrewSession(
+					{role: "intake-desk", projectRoot: "/x"},
+					address,
+					substrate,
+					transport,
+				).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie);
+
+				// Before boot: the role is not a live peer — construction/claim alone never publishes it.
+				const before = yield* client.LookupRole({role: "intake-desk"});
+				assert.lengthOf(before.peers, 0, "no presence before the inbox serves");
+
+				yield* Effect.forkScoped(Layer.launch(serverLayer));
+				yield* Effect.sleep("1500 millis"); // window for the socket bind + the gated announce
+
+				const after = yield* client.LookupRole({role: "intake-desk"});
+				assert.lengthOf(after.peers, 1, "presence is published once the inbox socket is serving");
+				assert.strictEqual(
+					after.peers[0]?.peer,
+					address,
+					"the announced peer is this session's inbox address",
+				);
+			}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
+		{timeout: 20000},
+	);
 });

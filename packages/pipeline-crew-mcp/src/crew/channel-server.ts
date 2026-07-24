@@ -19,7 +19,7 @@
  */
 import {createHash} from "node:crypto";
 import {NodeSocket, NodeSocketServer} from "@effect/platform-node";
-import {Effect, type FileSystem, Layer} from "effect";
+import {Effect, type FileSystem, Layer, type Scope} from "effect";
 import {RpcClient, RpcSerialization, RpcServer} from "effect/unstable/rpc";
 import {type ChannelSink, channelInboxLayer} from "../edge/index.ts";
 import {
@@ -66,6 +66,12 @@ export interface CrewChannel {
 	/** The composed peer: its inbox (`received`) + its direct peer-to-peer `send`. */
 	readonly peer: Peer;
 	/**
+	 * Publish this channel's presence, held for the enclosing scope. Split out of `makeCrewChannel`
+	 * (the peer no longer announces on construction) so presence reflects a live channel half, not the
+	 * mere claim of a role slot (#3628): the session announces ONLY after its inbox socket server binds.
+	 */
+	readonly announce: Effect.Effect<void, never, Scope.Scope>;
+	/**
 	 * Role discovery: the live holders of `role` across the flat topology (`[]` ⇒ none). A bridge
 	 * resolves to its single holder; an engine to its whole live pool, so a caller can address one
 	 * chosen instance (dial its `address`) or fan across the set.
@@ -83,8 +89,10 @@ export interface CrewChannel {
 
 /**
  * Stand up a crew channel for one role: acquire its per-kind cardinality lease, then compose the
- * peer (which announces its presence for the connection lifetime). Requires the substrate seams —
- * `CrewTracker`, the peer `Tracker`/`Inbox`/`Dialer` ports — in context.
+ * peer. Constructing the channel does NOT announce presence — the caller runs `channel.announce`
+ * once its inbox is attached and serving (#3628), so a live lease is never published for a
+ * channel-deaf session. Requires the substrate seams — `CrewTracker`, the peer
+ * `Tracker`/`Inbox`/`Dialer` ports — in context.
  *
  * The lease is keyed by `cardinalityLeaseKey` (see above): a bridge collides on its shared role
  * key (a second live holder is REJECTED with `RoleUniquenessError`), an engine gets a per-instance
@@ -112,6 +120,7 @@ export const makeCrewChannel = Effect.fn("crew.makeCrewChannel")(function* (
 		role: config.role,
 		address: config.address,
 		peer,
+		announce: peer.announce,
 		discover: (role: CrewRole) => tracker.lookup(role),
 		claim: (resource: string) =>
 			tracker.claim({resource, claimant: config.address, role: config.role}),
