@@ -381,6 +381,16 @@ describe("h.signUp — cold-edge readiness over the shared primitive (invariants
 			status: 422,
 			headers: {"content-type": "application/json"},
 		});
+	// better-auth's wrapper for a TRANSIENT user-creation D1 write failure — a 422 the harness
+	// now replays (distinct from the semantic `USER_ALREADY_EXISTS` above; #3799).
+	const failedToCreate422 = (): Response =>
+		new Response(
+			JSON.stringify({message: "Failed to create user", code: "FAILED_TO_CREATE_USER"}),
+			{
+				status: 422,
+				headers: {"content-type": "application/json"},
+			},
+		);
 	const badRequest400 = (): Response =>
 		new Response(JSON.stringify({code: "INVALID_EMAIL"}), {
 			status: 400,
@@ -418,9 +428,23 @@ describe("h.signUp — cold-edge readiness over the shared primitive (invariants
 		const session = await h.signUp("dup@test.local", "password-password", "dup");
 
 		expect(session.userId).toBe("u_existing");
-		// Exactly two calls: the 422 sign-up + the sign-in fallback — the 422 was NOT retried
-		// into the readiness budget (a real worker answer returns immediately under `() => true`).
-		expect(fetchMock).toHaveBeenCalledTimes(2);
+		// Three calls: the 422 sign-up + the sign-in fallback + the `get-session` readiness probe
+		// (#3799) — the 422 was NOT retried into the readiness budget (a real worker answer returns
+		// immediately under `() => true`); the third call is the post-fallback session gate.
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
+	it("replays a transient 422 FAILED_TO_CREATE_USER, then resolves the created session (#3799)", async () => {
+		// Cold-D1 first-write throws once → better-auth 422 FAILED_TO_CREATE_USER; the replay creates
+		// the user, and the `get-session` gate confirms the session before it is handed back.
+		const fetchMock = stubFetch([failedToCreate422, () => authOk("u_created")]);
+		const h = buildHarness();
+
+		const session = await h.signUp("cold@test.local", "password-password", "cold");
+
+		expect(session.userId).toBe("u_created");
+		// sign-up (422 transient) + sign-up (retry → created) + get-session (readiness gate).
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 
 	it("fails fast on a genuine 4xx — never retried into the readiness budget (invariant 2)", async () => {
