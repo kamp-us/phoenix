@@ -1,6 +1,7 @@
-# roadmap — the read-only roadmap view
+# roadmap — the read-only roadmap view + diagram generator
 
 `pipeline-cli roadmap view [--root <dir>]`
+`pipeline-cli roadmap diagram [--root <dir>]`
 
 The **observability surface** of the steering seam (roadmap map #2620; part 3 of the three-part
 seam settled in #2639 — parts 1–2 are the active-milestone grounding + the arc-flip re-triage
@@ -48,6 +49,28 @@ The one flagged drift is **stale p1s** — open `p1` issues sitting *outside* th
 milestone. These are the issues a puller would keep draining after an arc flip if the lever were
 decorative; surfacing them is the point of the view (#2639). With no single resolvable active arc,
 every open p1 is flagged (fail-loud).
+
+## `roadmap diagram` — the generated mermaid dependency diagram (#3870)
+
+`roadmap diagram` emits the GitHub-native mermaid block that opens `ROADMAP.md`, generated purely
+from the file's own `## Arcs` / `## Campaigns` tables plus the `## Dependencies` declaration — **no
+`gh api`, no live state**. Every arc and campaign becomes a node styled by its lifecycle state
+(active / queued / done); every `## Dependencies` row (`Blocker | Blocks | Why`) becomes one directed
+`blocker --> blocks` edge. An endpoint that names an arc/campaign binds to that node; anything else
+— an issue `#N`, an `ADR NNNN`, or a not-yet-tabled arc — renders as a dashed `external` node.
+
+It is **deterministic**: same tables in ⇒ byte-identical block out (node order is arcs, then
+campaigns, then externals in first-appearance order; edges in table order). That is the load-bearing
+property — the committed block in `ROADMAP.md` is this command's stdout, so the follow-up
+roadmap-guard drift check can regenerate and compare. Regenerate after editing any table:
+
+```
+pipeline-cli roadmap diagram > /tmp/block && # splice the block above ## Arcs in ROADMAP.md
+```
+
+The `## Dependencies` declaration is a **separate section**, deliberately not a new Campaigns-table
+column, so the pinned `Campaign | Milestone | State` grammar the campaign skill + lifecycle guard
+bind to stays untouched. The pure generator core is `diagram.ts` (unit-tested in `diagram.unit.test.ts`).
 
 ## Read-only
 
