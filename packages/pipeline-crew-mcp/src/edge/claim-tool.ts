@@ -17,6 +17,15 @@
  * error is `orDie`'d at the `CrewTracker` seam), so the tool carries no failure channel. The caller
  * reads `granted`/`collision`: granted ⇒ you own the lane, collision ⇒ another engine holds it and
  * `owner` names it — back off before opening a PR.
+ *
+ * Keyspace caveat — one lane has TWO keys (#3796 facet 1). A build lane is named by BOTH its issue
+ * number AND, later, the PR number that comes out of it, but the tracker keys claims on an opaque
+ * exact-match `resource`, so it cannot know `3686` (the issue) and `3713` (its PR) denote one lane —
+ * claiming one does NOT reserve the other, and two engines that claim different keys for the same
+ * lane both get `granted`. Until a canonical lane identity lands (the structural fix belongs to epic
+ * #3766's planning), the interim convention — stated on the tool below so an engine reads it at claim
+ * time — is: claim BOTH keys, the issue at dispatch and the PR the moment it opens. With both keys
+ * held by the first engine, the second claimant of EITHER key gets `collision: true`.
  */
 import {Context, Effect, Schema} from "effect";
 import {Tool, Toolkit} from "effect/unstable/ai";
@@ -41,9 +50,12 @@ export class ChannelClaim extends Context.Service<
 /** The one claim tool: `{resource}` in, the tracker's typed granted/collision reply out. */
 export const ClaimResource = Tool.make("channel_claim", {
 	description:
-		"Claim a resource (an issue id) against the tracker before opening a build lane; returns the " +
-		"typed reply. `granted: true` ⇒ you now hold the lane; `collision: true` ⇒ another engine " +
-		"already holds it (`owner` names the holder) — back off, do NOT open a duplicate lane.",
+		"Claim a resource (an issue or PR id) against the tracker before opening a build lane; returns " +
+		"the typed reply. `granted: true` ⇒ you now hold the lane; `collision: true` ⇒ another engine " +
+		"already holds it (`owner` names the holder) — back off, do NOT open a duplicate lane. One lane " +
+		"has TWO keys the tracker cannot link (the issue AND its PR number), so claim BOTH: the issue " +
+		"at dispatch, and the PR the moment it opens — else another engine can claim the other key for " +
+		"the same lane and also get granted. Release a key you no longer need with channel_release.",
 	parameters: Schema.Struct({resource: Schema.NonEmptyString}),
 	success: Messages.ClaimReply,
 });

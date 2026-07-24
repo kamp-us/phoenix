@@ -89,6 +89,35 @@ describe("crew/channel-server — announce, discover, claim/collision-check (AC 
 		}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
 	);
 
+	it.effect(
+		"a channel can release its own claim, freeing the resource for another (#3796 facet 2)",
+		() =>
+			Effect.gen(function* () {
+				const client = yield* RpcTest.makeClient(TrackerRegistry);
+				const tracker = CrewTracker.fromClient(client);
+				const [roleA, roleB] = [CREW_ROLES[0], CREW_ROLES[1]];
+
+				const a = yield* makeCrewChannel({role: roleA, address: "inbox://a"}).pipe(
+					Effect.provide(channelLayers(tracker, "inbox://a", alwaysUnreachable)),
+				);
+				const b = yield* makeCrewChannel({role: roleB, address: "inbox://b"}).pipe(
+					Effect.provide(channelLayers(tracker, "inbox://b", alwaysUnreachable)),
+				);
+
+				// A claims, so B collides while A holds it
+				assert.isTrue((yield* a.claim("issue-3059")).granted);
+				assert.isTrue((yield* b.claim("issue-3059")).collision, "B blocked while A holds it");
+
+				// A releases through the channel — the release verb is now reachable at the channel edge
+				yield* a.release("issue-3059");
+
+				// B can now claim the freed resource
+				const bAfter = yield* b.claim("issue-3059");
+				assert.isTrue(bAfter.granted, "the released resource is claimable by the next channel");
+				assert.strictEqual(bAfter.owner, "inbox://b");
+			}).pipe(Effect.scoped, Effect.provide(registryHandlers)),
+	);
+
 	it.effect("an intake ping reaches the receiver's edge channel + returns its inbox-ack", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);

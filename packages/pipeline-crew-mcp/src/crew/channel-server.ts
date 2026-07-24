@@ -73,6 +73,12 @@ export interface CrewChannel {
 	readonly discover: (role: CrewRole) => Effect.Effect<ReadonlyArray<RolePresence>>;
 	/** A claim/collision-check on a resource (e.g. an issue) — the typed granted/collision reply. */
 	readonly claim: (resource: string) => Effect.Effect<ClaimReply>;
+	/**
+	 * Free a resource claim this session holds — the claim's counterpart (ADR 0191 facet 3). Carried
+	 * here so the release verb reaches the engine toolset (#3796 facet 2): holder-guarded + idempotent
+	 * at the tracker, so releasing a claim you don't hold is a safe no-op.
+	 */
+	readonly release: (resource: string) => Effect.Effect<void>;
 }
 
 /**
@@ -109,6 +115,7 @@ export const makeCrewChannel = Effect.fn("crew.makeCrewChannel")(function* (
 		discover: (role: CrewRole) => tracker.lookup(role),
 		claim: (resource: string) =>
 			tracker.claim({resource, claimant: config.address, role: config.role}),
+		release: (resource: string) => tracker.release({resource, claimant: config.address}),
 	} satisfies CrewChannel;
 });
 

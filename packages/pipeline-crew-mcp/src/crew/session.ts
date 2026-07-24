@@ -41,6 +41,7 @@ import {
 	assertToolSchemas,
 	ChannelClaim,
 	ChannelDescribe,
+	ChannelRelease,
 	ChannelSend,
 	ChannelSink,
 	ChannelToolkit,
@@ -50,6 +51,8 @@ import {
 	claimToolHandlers,
 	KindsToolkit,
 	kindsToolHandlers,
+	ReleaseToolkit,
+	releaseToolHandlers,
 } from "../edge/index.ts";
 import {type Dialer, Inbox, type Tracker} from "../peer/index.ts";
 import {resolveRendezvous} from "../tracker/index.ts";
@@ -211,7 +214,7 @@ export const assembleCrewSession = <RIn, RSub = never>(
 			// Startup invariant (#3753): every tool this session will register must generate a spec-valid
 			// top-level `{"type":"object"}` inputSchema. A client rejects the WHOLE tools/list response on
 			// one bad schema, so the failure mode without this fence is a silently tool-less session.
-			yield* assertToolSchemas([ChannelToolkit, ClaimToolkit, KindsToolkit]);
+			yield* assertToolSchemas([ChannelToolkit, ClaimToolkit, ReleaseToolkit, KindsToolkit]);
 			const channel = yield* makeCrewChannel({role: config.role, address});
 			// Startup invariant (#3622): resolve the full discoverable channel contract BEFORE serving.
 			// A shared kind set that can't be fully resolved to a shape fails the build HERE (on the boot
@@ -229,6 +232,12 @@ export const assembleCrewSession = <RIn, RSub = never>(
 				Layer.provide(claimToolHandlers),
 				Layer.provide(Layer.succeed(ChannelClaim, {claim: channel.claim})),
 			);
+			// release: the channel_release toolkit (#3796 facet 2), the claim's counterpart — its
+			// ChannelRelease an INSTANT bind to the already-resolved channel's tracker release (Race 2).
+			const release = McpServer.toolkit(ReleaseToolkit).pipe(
+				Layer.provide(releaseToolHandlers),
+				Layer.provide(Layer.succeed(ChannelRelease, {release: channel.release})),
+			);
 			// discovery: the channel_kinds toolkit (#3622), its ChannelDescribe an INSTANT bind to the
 			// contract resolved just above — a static value, so it never re-derives the catalog nor awaits.
 			const kinds = McpServer.toolkit(KindsToolkit).pipe(
@@ -240,15 +249,17 @@ export const assembleCrewSession = <RIn, RSub = never>(
 				Layer.provide(ChannelSink.layerFromMcpServer),
 			);
 			// Provide the transport ONCE to the MERGED registrations — the single-instance memo (Race 1).
-			return Layer.mergeAll(outbound, claim, kinds, inbound).pipe(Layer.provide(transport));
+			return Layer.mergeAll(outbound, claim, release, kinds, inbound).pipe(
+				Layer.provide(transport),
+			);
 		}),
 	).pipe(Layer.provide(substrate));
 
 /**
  * The full runnable session layer: launch it (`Layer.launch`) to run one live crew session. The one
  * stdio `McpServer` is provided to the merged registrations exactly once (`assembleCrewSession`), so
- * the served server advertises the `channel_send` + `channel_claim` + `channel_kinds` tools + the
- * `claude/channel` capability; the heartbeat rides the same `substrate` the outbound binding announces on.
+ * the served server advertises the `channel_send` + `channel_claim` + `channel_release` + `channel_kinds`
+ * tools + the `claude/channel` capability; the heartbeat rides the same `substrate` the outbound binding announces on.
  */
 export const crewSessionLayer = (config: CrewSessionConfig) => {
 	// One per-session instance id, resolved once here and threaded to every address derivation, so an
