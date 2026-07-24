@@ -31,6 +31,27 @@ export {
 } from "./contract.ts";
 export {RoleUniquenessError} from "./errors.ts";
 export {
+	type CrewSessionProc,
+	collectLiveRegisteredAddresses,
+	INIT_PID,
+	isOrphanedCrewServer,
+	type OrphanDiscriminationInput,
+	type ProcessEntry,
+	type ProcessReaper,
+	type ProcessSnapshot,
+	ProcessSnapshotError,
+	parseCrewSessionProc,
+	parseProcessTable,
+	productionProcessReaper,
+	productionProcessSnapshot,
+	REAP_SIGNAL,
+	type ReapOrphansInput,
+	type ReapOutcome,
+	type ReapReport,
+	type ReapSignalOutcome,
+	reapOrphanedCrewServers,
+} from "./reaper.ts";
+export {
 	type CardinalityOf,
 	CREW_DRIVE,
 	CREW_ROLES,
