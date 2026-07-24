@@ -71,6 +71,7 @@ import {verdictCommand} from "./tools/verdict/command.ts";
 import {wayfinderMapCommand} from "./tools/wayfinder-map/command.ts";
 import {workflowContractCommand} from "./tools/workflow-contract/command.ts";
 import {worktreeGuardCommand} from "./tools/worktree-guard/command.ts";
+import {worktreeReapCommand} from "./tools/worktree-reap/command.ts";
 import {worktreeSweepCommand} from "./tools/worktree-sweep/command.ts";
 import {versionCommand} from "./version.ts";
 
@@ -132,6 +133,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	structuredOutputGuardCommand,
 	workflowContractCommand,
 	worktreeSweepCommand,
+	worktreeReapCommand,
 	codeownersCpCommand,
 	controlPlanePathsCommand,
 	cpCardinalityCommand,
