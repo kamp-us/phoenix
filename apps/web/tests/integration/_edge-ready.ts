@@ -81,21 +81,29 @@ export const HOOK_TIMEOUT_MS = 300_000;
 // keeps its generous single budget (#3080). The per-file, hook-bound path uses the smaller budget below.
 export const DEPLOY_HEALTH_DEADLINE_MS = 120_000;
 
-// The per-file readiness budget for the hook-bound `integrationStack` deploy `beforeAll` (#3146).
-// Sized STRICTLY BELOW `HOOK_TIMEOUT_MS` with headroom for the deploy-before (~40-60s under
-// concurrent-stage batch load, more with the widened `deployTransientRetry`) + the trailing non-fatal
-// warms, so the poll GRACEFULLY bounded-returns a typed `WorkerNotReadyError`/re-thrown
-// `CloudflarePlaceholder404Error` diagnostic WELL before the vitest hook fires — a deterministic,
-// named failure instead of the opaque "Hook timed out" guillotine that evicted clean product PRs from
-// the merge queue: deploy(≤90) + readiness(180) = 270 < 300, so the typed throw wins the race.
-//
-// Raised 100s→180s for #3409: under merge_group BATCH load (~24 fresh `*.workers.dev` hostnames
-// propagating across the CF edge at once), `/api/health` edge propagation exceeded the prior 100s
-// budget, so `awaitEdgeReady` re-threw the edge-not-propagated `CloudflarePlaceholder404Error` and the
-// documented transient hard-failed the beforeAll instead of riding out as a WAIT — ejecting an
-// innocent co-batched PR (run 29561658100, fts-backfill). 180s gives the propagation transient enough
-// headroom while staying bounded: a worker that genuinely never serves still fails after the budget.
-export const PER_FILE_HEALTH_DEADLINE_MS = 180_000;
+// Headroom reserved between the per-file readiness chain's shared deadline and the vitest hook
+// guillotine at `HOOK_TIMEOUT_MS`, so the typed `WorkerNotReadyError`/`WarmNotSettledError` throw
+// always fires BEFORE the opaque "Hook timed out" (the #3146 invariant). Grounded in the poll
+// mechanics, not in propagation timing: `awaitEdgeReady` only checks the deadline BETWEEN polls, so
+// the last iteration can overshoot by one `WARM_POLL_MS` (~2s) plus a final fetch before the throw
+// propagates — 15s covers that with slack, and is not a number to "measure" against the edge.
+export const READINESS_HOOK_MARGIN_MS = 15_000;
+
+// The per-file readiness chain's ONE shared wall-clock deadline (epoch ms), anchored at the deploy
+// `beforeAll`'s start (`hookStartedAt`, captured before `deploy`) and derived from the hook ceiling.
+// `awaitWorkerReady` + `warmLiveDO` + `warmFateRead` all draw from this SINGLE deadline — each
+// consuming `deadline - now()` — so their budgets TOGETHER can never push the hook past
+// `HOOK_TIMEOUT_MS`. That makes the >300s worst case UNREPRESENTABLE by construction rather than
+// reasoned about in a sizing comment that had to keep summing every chain member (and silently
+// stopped: the retired per-probe budgets were health 180 + live 60 + fate 60 = 300 ON TOP of the
+// deploy — already over ceiling, the latent #3146 hole this closes). Two consequences fall out for
+// free: the later-propagating `/fate/live`/`POST /fate` warms are no longer capped at a fixed 60s
+// SMALLER than health's budget (#1058) — they use whatever health did not need, typically the bulk
+// of the window; and a probe reached after the window is already spent gets a floored-at-zero budget
+// and fails as its own named diagnostic, never the guillotine. Pure in its anchor + `Date.now()`,
+// so the bound is unit-pinned in `_edge-ready.unit.test.ts` (#3788).
+export const perFileReadinessDeadline = (hookStartedAt: number): number =>
+	hookStartedAt + HOOK_TIMEOUT_MS - READINESS_HOOK_MARGIN_MS;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
