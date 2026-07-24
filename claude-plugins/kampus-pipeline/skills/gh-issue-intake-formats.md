@@ -1388,6 +1388,24 @@ closing the #375 drift class).
   [0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
   #2003; same ADR 0065 rationale that makes the gate-critical skills blocking). Agent defs are
   behavioral artifacts like skills → **`review-skill`-routed for the verdict**, **blocking for merge**.
+
+  **Deliberately OUT of §CP — the crew engine defs** (`claude-plugins/pipeline-crew/agents/**`, the
+  sibling `pipeline-crew` plugin, `crew-engineering-manager.md` et al.): scoped **only** to the
+  `kampus-pipeline` plugin above, the crew defs class **has-skills** (they ride a `review-skill` gate,
+  #2387) but are **NOT** §CP — they auto-ship on a `review-skill` PASS. This exclusion is a **live
+  founder ruling, re-affirmed 2026-07-24** (recorded on #3765), re-affirming #2342 ("extras don't
+  block") for the crew defs on a **stated containment basis, threat-modeled** for the one path that
+  matters: a weakened crew engine def cannot produce an **un-approved merge** through any path *other
+  than the shipper*, because the actual merge authority lives in the `ship-it` skill and `shipper.md`
+  — both §CP, both re-verifying the §CP approval **independently** of whatever a crew engine def
+  believes. The crew defs orchestrate (claim, spawn, bank, watch); they never gate a verdict nor
+  perform the merge. So the worst a weakened crew def can do is **fail to bank** — which surfaces as a
+  visible unshipped §CP PR a human notices — never drive a merge past the approval §CP requires. The
+  self-modification-of-guardrails risk that pulls `kampus-pipeline/agents/**` into §CP (ADR 0150) is
+  therefore contained short of the crew corpus. Do **not** add `pipeline-crew/agents/**` to
+  `CONTROL_PLANE_RE` on this ruling — it narrows nothing and widens nothing (#3765). Re-examine if a
+  crew def ever gains independent merge/gate authority, or per the #3766 direction of travel (moving
+  N-engine lane exclusion into the tracker/tool layer makes this exclusion even less load-bearing).
 - the **plugin hook surface** — `claude-plugins/kampus-pipeline/hooks/**` (the `install.sh`
   that drops the installed `pipeline-cli` and the `guard.sh` fail-open dispatch wrapper) plus
   `claude-plugins/kampus-pipeline/hooks.json` (the foreign-repo hook manifest). These are
@@ -1661,7 +1679,9 @@ manifest surface *declares* the plugin's skill/agent artifacts (and is the drift
 as the artifacts it manifests — no new class or gate is invented. This is **only** the review-class
 axis: `CONTROL_PLANE_RE` (§CP, who-merges) is a **separate** regex and is **untouched**, so a crew
 plugin's `agents/**` gains a `review-skill` gate yet still **auto-ships** on PASS (the founder #2342
-ruling — extras don't block — is preserved; the class fix and the §CP ruling compose).
+ruling — extras don't block — **re-affirmed 2026-07-24 on #3765** on the threat-modeled containment
+basis recorded in the §CP "Deliberately OUT — the crew engine defs" note above; the class fix and the
+§CP ruling compose).
 
 **Both consumers re-resolve these lines from `origin/main` at run time** (REST raw, `?ref=main`
 — the #981 idiom, generalized from `CONTROL_PLANE_RE`/`UI_RE` to the class probes), never trusting
