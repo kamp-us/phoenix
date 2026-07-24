@@ -1,12 +1,12 @@
 ---
 id: 0202
-title: Forward-motion doctrine — p0 freely minted for arc-homed ship-work; CompanyOps state
+title: Forward-motion doctrine — p0 freely minted for arc-homed ship-work; CrewOps state
 status: accepted
 date: 2026-07-24
 tags: [process, prioritization, pipeline]
 ---
 
-# 0202 — Forward-motion doctrine — p0 freely minted for arc-homed ship-work; CompanyOps state
+# 0202 — Forward-motion doctrine — p0 freely minted for arc-homed ship-work; CrewOps state
 
 **What this decides:** Every unit of work is priced against "is this moving us forward?" — p0 is freely given to work that ships value or raises ship-rate, but only inside the documented active arc, and the documented ROADMAP/board/ADR chain is the single company state agents reconcile toward.
 
@@ -18,18 +18,20 @@ Founder ruling, 2026-07-24, in conversation — recorded on the ADR-0075 convers
 
 > "p0s also should be part of the active arc everything should be documented. remember the gitops, this is companyops for agents type of thing. the things you coordinated today is ok, we are trying to drain the backlog, that's important before we have clarity so we can have focus."
 
+The founder subsequently named the doctrine **CrewOps** — "GitOps for code, CrewOps for the crew" (#3852 naming ruling, 2026-07-24) — superseding the in-conversation working name CompanyOps; the verbatim quotes above predate the rename and stay as spoken.
+
 This sits on top of ADR [0078](0078-product-driven-decisions-by-default.md) (decisions are product-driven by default), ADR [0072](0072-milestones-encode-strategic-sequencing.md) (milestones encode strategic sequencing — the documented structure priorities must live in), and ADR [0201](0201-pipeline-tenant-phoenix-first.md) (the pipeline is a first-class product on the phoenix tenant).
 
 ## Decision
 
-**Forward motion is the pricing question for all work: p0 is freely minted for moves-us-forward work, every p0 lives in the active arc's documented structure, and the documented ROADMAP/board/ADR chain — CompanyOps — is the single declarative company state agents reconcile toward.**
+**Forward motion is the pricing question for all work: p0 is freely minted for moves-us-forward work, every p0 lives in the active arc's documented structure, and the documented ROADMAP/board/ADR chain — CrewOps — is the single declarative company state agents reconcile toward.**
 
 The doctrine, in five points:
 
 1. **p0 semantics.** p0 is freely minted for moves-us-forward work — shipped user/revenue value, or work that directly raises ship-rate. Engines fill p0 first.
 2. **p0 is never homeless.** Every p0 belongs to the active arc's documented structure (arc → campaign/epic). No orphan priorities.
 3. **Triage asks the question.** The triage rubric prices every issue against "what does this move forward?" — and kill/close is a valid triage verdict for improvement-for-improvement's-sake.
-4. **CompanyOps.** The ROADMAP/board/ADR chain is the single declarative company state; agents reconcile toward it; direction that isn't documented doesn't exist. This is GitOps applied to the company: the documented artifact chain is the desired state, agent work is the reconciliation loop. The pipeline remains a first-class product per ADR [0201](0201-pipeline-tenant-phoenix-first.md) — this doctrine governs prioritization, not the tenant model.
+4. **CrewOps.** The ROADMAP/board/ADR chain is the single declarative company state; agents reconcile toward it; direction that isn't documented doesn't exist. This is GitOps applied to the company: the documented artifact chain is the desired state, agent work is the reconciliation loop. The pipeline remains a first-class product per ADR [0201](0201-pipeline-tenant-phoenix-first.md) — this doctrine governs prioritization, not the tenant model.
 5. **Backlog-drain clarification.** The 2026-07-24 campaign batch (#3827, #3843–#3847) is founder-blessed as the clarity-before-focus drain, not a doctrine violation.
 
 **Binding constraints.**
@@ -54,4 +56,4 @@ The doctrine, in five points:
 ## Records
 
 - References #3852 (also tracks the triage-rubric change — intentionally not auto-closed by this PR).
-- Vocabulary impact: coins **forward-motion doctrine** (the pricing question for all work) and **CompanyOps** (the documented ROADMAP/board/ADR chain as declarative company state, GitOps-for-the-company); both routed to `.glossary/TERMS.md` via a `report` issue for the glossary skill to pick up.
+- Vocabulary impact: coins **forward-motion doctrine** (the pricing question for all work) and **CrewOps** (the documented ROADMAP/board/ADR chain as declarative company state, GitOps-for-the-company — founder-named on #3852, superseding the working name CompanyOps); both routed to `.glossary/TERMS.md` via a `report` issue for the glossary skill to pick up.
