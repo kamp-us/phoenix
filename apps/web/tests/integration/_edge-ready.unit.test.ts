@@ -22,8 +22,11 @@ import {
 	awaitEdgeReady,
 	CloudflarePlaceholder404Error,
 	edgeFetch,
+	HOOK_TIMEOUT_MS,
 	isCloudflarePlaceholder404,
 	isCloudflarePlaceholder404Error,
+	perFileReadinessDeadline,
+	READINESS_HOOK_MARGIN_MS,
 	WorkerNotReadyError,
 } from "./_edge-ready.ts";
 import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
@@ -193,9 +196,10 @@ describe("awaitAuthRouteReady — the bootstrap auth-route propagation gate (#24
 });
 
 // The DEPLOY-time worker-health gate turns a worker that never serves healthy JSON within its
-// readiness budget into a TYPED, greppable `WorkerNotReadyError` — and, sized below the hook ceiling
-// (`PER_FILE_HEALTH_DEADLINE_MS`), that throw fires before the vitest `beforeAll` guillotine so the
-// eviction cause is a named diagnostic, not the opaque "Hook timed out in 120000ms" (#3146).
+// readiness budget into a TYPED, greppable `WorkerNotReadyError` — and, given a budget bounded by the
+// shared readiness deadline that sits below the hook ceiling, that throw fires before the vitest
+// `beforeAll` guillotine so the eviction cause is a named diagnostic, not the opaque "Hook timed out
+// in 120000ms" (#3146).
 describe("awaitWorkerReady — typed readiness diagnostic (#3146)", () => {
 	afterEach(() => vi.unstubAllGlobals());
 
@@ -240,6 +244,41 @@ describe("WarmNotSettledError — the exhausted-warm diagnostic (#3778)", () => 
 		expect(e.message).toContain("60000ms");
 		expect(e.message).toContain("503");
 		expect(e.message).toContain("application/json");
+	});
+});
+
+// The per-file readiness chain (health + both warms) shares ONE wall-clock deadline anchored at the
+// hook's start and derived from the hook ceiling, so the three probes' budgets TOGETHER can never
+// push the `beforeAll` past `HOOK_TIMEOUT_MS` — the >300s worst case the retired fixed-per-probe
+// budgets (health 180 + live 60 + fate 60 = 300, atop deploy) summed into is unrepresentable by
+// construction (#3788). Pin the arithmetic that makes that bound hold.
+describe("perFileReadinessDeadline — the readiness chain is bounded by the hook ceiling (#3788)", () => {
+	const startedAt = 1_000_000;
+
+	it("keeps the whole readiness chain strictly below HOOK_TIMEOUT_MS from the hook start", () => {
+		const deadline = perFileReadinessDeadline(startedAt);
+		// Measured from the hook start, the chain can run at most until `deadline` — which is
+		// READINESS_HOOK_MARGIN_MS short of the ceiling, the headroom the typed throw needs to beat
+		// the vitest guillotine.
+		expect(deadline - startedAt).toBe(HOOK_TIMEOUT_MS - READINESS_HOOK_MARGIN_MS);
+		expect(deadline - startedAt).toBeLessThan(HOOK_TIMEOUT_MS);
+		expect(READINESS_HOOK_MARGIN_MS).toBeGreaterThan(0);
+	});
+
+	it("a probe reached after earlier probes spent part of the window gets only what remains (each consumes deadline - now)", () => {
+		const deadline = perFileReadinessDeadline(startedAt);
+		// health consumed 200s of the shared window; the live warm, reached now, sees only the remainder
+		// — strictly less than health got, and the sum can never exceed the window.
+		const nowAfterHealth = startedAt + 200_000;
+		const liveBudget = Math.max(0, deadline - nowAfterHealth);
+		expect(liveBudget).toBe(HOOK_TIMEOUT_MS - READINESS_HOOK_MARGIN_MS - 200_000);
+		expect(liveBudget).toBeLessThan(deadline - startedAt);
+	});
+
+	it("floors a probe's budget at 0 once the window is spent — an immediate typed throw, never a negative budget", () => {
+		const deadline = perFileReadinessDeadline(startedAt);
+		const nowAfterExhaustion = deadline + 5_000;
+		expect(Math.max(0, deadline - nowAfterExhaustion)).toBe(0);
 	});
 });
 

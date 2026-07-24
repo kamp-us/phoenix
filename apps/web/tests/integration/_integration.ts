@@ -42,7 +42,7 @@ import {
 	EDGE_READY_DEADLINE_MS,
 	edgeFetch,
 	HOOK_TIMEOUT_MS,
-	PER_FILE_HEALTH_DEADLINE_MS,
+	perFileReadinessDeadline,
 	WorkerNotReadyError,
 } from "./_edge-ready.ts";
 import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
@@ -238,7 +238,10 @@ const stageFor = (metaUrl: string): string => {
  * GET-open `/fate/live` and retry while it 503s — so the cold-start cost is paid by
  * the gate, not by `fate-live.test.ts`'s first subscribe (#1018).
  */
-export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
+export const warmLiveDO = (
+	url: string,
+	deadlineMs: number = EDGE_READY_DEADLINE_MS,
+): Effect.Effect<void, never, never> =>
 	Effect.tryPromise({
 		try: async () => {
 			const signUp = await fetch(`${url}/api/auth/sign-up/email`, {
@@ -283,13 +286,14 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 						headers: {accept: "text/event-stream", cookie},
 					}),
 				liveWarmReady,
-				// The budget is named at the call site (not left to the default) so the exhaustion
-				// diagnostic below cites the number actually spent, never a drifted copy.
-				{pollMs: WARM_POLL_MS, deadlineMs: EDGE_READY_DEADLINE_MS},
+				// The caller's budget (the per-file path passes what the shared readiness deadline has
+				// left; the shared-stage path takes the default) — threaded so the exhaustion diagnostic
+				// below cites the number actually spent, never a drifted copy.
+				{pollMs: WARM_POLL_MS, deadlineMs},
 			);
 			await res.body?.cancel().catch(() => {});
 			if (!liveWarmReady(res)) {
-				throw new WarmNotSettledError("/fate/live warm", res, EDGE_READY_DEADLINE_MS);
+				throw new WarmNotSettledError("/fate/live warm", res, deadlineMs);
 			}
 		},
 		catch: (cause) => new ProbeError({cause}),
@@ -320,7 +324,10 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
  * The anonymous `health` query (`Stats.getLandingStats` reads D1) needs no auth; the wire
  * envelope (`{version, operations}`) mirrors the harness `fateBatch`.
  */
-export const warmFateRead = (url: string): Effect.Effect<void, never, never> =>
+export const warmFateRead = (
+	url: string,
+	deadlineMs: number = EDGE_READY_DEADLINE_MS,
+): Effect.Effect<void, never, never> =>
 	Effect.tryPromise({
 		try: async () => {
 			// A 200 means the route + D1 read served; a cold PoP placeholder-404 (the thrown edge
@@ -336,10 +343,10 @@ export const warmFateRead = (url: string): Effect.Effect<void, never, never> =>
 						}),
 					}),
 				fateReadReady,
-				{pollMs: WARM_POLL_MS, deadlineMs: EDGE_READY_DEADLINE_MS},
+				{pollMs: WARM_POLL_MS, deadlineMs},
 			);
 			if (!fateReadReady(res)) {
-				throw new WarmNotSettledError("POST /fate warm", res, EDGE_READY_DEADLINE_MS);
+				throw new WarmNotSettledError("POST /fate warm", res, deadlineMs);
 			}
 		},
 		catch: (cause) => new ProbeError({cause}),
@@ -384,12 +391,13 @@ export const deployTransientRetry = Effect.retry({
  * workers.dev route 404s (the CF edge placeholder) for a few seconds while it propagates, so it
  * rides the shared readiness budget (`awaitEdgeReady` + `edgeFetch`, ADR 0127): the thrown
  * placeholder-404 AND any non-ready response retry until healthy. A worker that never serves
- * healthy JSON within the bound (60 × 2s) DIES with a clear message rather than hanging —
- * `Effect.promise` turns the thrown exhaustion error into a defect, the same hard failure the
- * retired `Effect.die` produced. ONE copy for both deploy paths (the per-file `integrationStack`
- * and the shared-stage `_global-setup.ts`), each passing its OWN readiness budget: the shared path
- * takes the default `DEPLOY_HEALTH_DEADLINE_MS`, the hook-bound per-file path passes the smaller
- * `PER_FILE_HEALTH_DEADLINE_MS` so the typed throw beats the vitest hook ceiling (#3146; #3080).
+ * healthy JSON within `deadlineMs` DIES with a clear message rather than hanging — `Effect.promise`
+ * turns the thrown exhaustion error into a defect, the same hard failure the retired `Effect.die`
+ * produced. ONE copy for both deploy paths (the per-file `integrationStack` and the shared-stage
+ * `_global-setup.ts`), each passing its OWN readiness budget: the shared, non-hook-bound path takes
+ * the default `DEPLOY_HEALTH_DEADLINE_MS`, while the hook-bound per-file path passes what its shared
+ * readiness deadline has left (`perFileReadinessDeadline`), so the whole probe chain stays under the
+ * vitest hook ceiling and the typed throw beats it (#3146; #3080; #3788).
  */
 export const awaitWorkerReady = (
 	url: string,
@@ -477,37 +485,52 @@ export function integrationStack(metaUrl: string): Harness {
 	let d1Target: {accountId: string; databaseId: string} | undefined;
 
 	const stack = beforeAll(
-		deploy(Stack, {stage}).pipe(
-			deployTransientRetry,
-			Effect.tap((out: Input.Resolve<StackOutput>) =>
-				Effect.gen(function* () {
-					// The deploy publishes the worker URL with a trailing slash; the harness
-					// appends leading-slash paths, so strip it once here at the publish point
-					// to avoid `//api/...` (which workerd parses as a protocol-relative URL).
-					const resolved = out as {url: string; accountId: string; databaseId: string};
-					const url = resolved.url.replace(/\/+$/, "");
-					if (!url) return yield* Effect.die(new Error("deploy returned no worker url"));
-					workerUrl = url;
-					// The D1 uuid + account this stage deployed, read straight off the
-					// compiled Stack output (alchemy `Cloudflare.D1Database`) — the harness's
-					// setup-only D1 REST path reads the id the deploy knows, never a
-					// reconstructed physical name (#692).
-					if (!resolved.databaseId) {
-						return yield* Effect.die(new Error("deploy returned no D1 databaseId"));
-					}
-					d1Target = {accountId: resolved.accountId, databaseId: resolved.databaseId};
-					// Per-file, hook-bound readiness budget (`PER_FILE_HEALTH_DEADLINE_MS`), sized
-					// below the restored hook ceiling so a slow/stuck edge fails as a typed diagnostic
-					// BEFORE the vitest guillotine — never the opaque "Hook timed out" (#3146).
-					yield* awaitWorkerReady(url, PER_FILE_HEALTH_DEADLINE_MS);
-					yield* warmLiveDO(url);
-					yield* warmFateRead(url);
-				}),
-			),
-		),
+		// Capture the hook's start BEFORE `deploy` — `Effect.suspend` defers `Date.now()` to hook-run
+		// time (the accessor is built at module top level, run much later), so the shared readiness
+		// deadline derived from it below anchors on the real hook start, not module eval.
+		Effect.suspend(() => {
+			const hookStartedAt = Date.now();
+			return deploy(Stack, {stage}).pipe(
+				deployTransientRetry,
+				Effect.tap((out: Input.Resolve<StackOutput>) =>
+					Effect.gen(function* () {
+						// The deploy publishes the worker URL with a trailing slash; the harness
+						// appends leading-slash paths, so strip it once here at the publish point
+						// to avoid `//api/...` (which workerd parses as a protocol-relative URL).
+						const resolved = out as {url: string; accountId: string; databaseId: string};
+						const url = resolved.url.replace(/\/+$/, "");
+						if (!url) return yield* Effect.die(new Error("deploy returned no worker url"));
+						workerUrl = url;
+						// The D1 uuid + account this stage deployed, read straight off the
+						// compiled Stack output (alchemy `Cloudflare.D1Database`) — the harness's
+						// setup-only D1 REST path reads the id the deploy knows, never a
+						// reconstructed physical name (#692).
+						if (!resolved.databaseId) {
+							return yield* Effect.die(new Error("deploy returned no D1 databaseId"));
+						}
+						d1Target = {accountId: resolved.accountId, databaseId: resolved.databaseId};
+						// ONE shared wall-clock deadline for the whole readiness chain (health + both
+						// warms), anchored at the hook start and derived from the hook ceiling: each probe
+						// consumes `deadline - now()`, so together they can never push this beforeAll past
+						// HOOK_TIMEOUT_MS — the >300s worst case the retired fixed-per-probe budgets summed
+						// into is unrepresentable by construction. The later-propagating `/fate/live`/`POST
+						// /fate` warms now use whatever health did not need instead of a fixed 60s smaller
+						// than health's (#1058, #3788), and a probe reached after the window is spent gets a
+						// floored-at-0 budget → its own typed diagnostic, never the opaque "Hook timed out"
+						// (the #3146 invariant holds). See `perFileReadinessDeadline`.
+						const readinessDeadline = perFileReadinessDeadline(hookStartedAt);
+						const remaining = () => Math.max(0, readinessDeadline - Date.now());
+						yield* awaitWorkerReady(url, remaining());
+						yield* warmLiveDO(url, remaining());
+						yield* warmFateRead(url, remaining());
+					}),
+				),
+			);
+		}),
 		// Undo alchemy `Test.make`'s silent clamp of the deploy hook to its `DEFAULT_TIMEOUT` (120s):
-		// thread the already-configured `hookTimeout` so the hook honors 180s (see `HOOK_TIMEOUT_MS`).
-		// NOT a raised ceiling — a restored one; the readiness budget above stays well under it (#3146).
+		// thread the already-configured `hookTimeout` so the hook honors the full `HOOK_TIMEOUT_MS`
+		// (300s). NOT a raised ceiling — a restored one; the readiness chain above is bounded strictly
+		// under it by the shared deadline, so the typed throw always beats this guillotine (#3146; #3788).
 		{timeout: HOOK_TIMEOUT_MS},
 	);
 
