@@ -1,6 +1,6 @@
 /**
  * `primary-index-guard` pure core — the BLOCKING §CP promotion of the read-only
- * `@kampus/primary-index-tripwire` (PR #2783). Decides whether a commit carrying the #2778
+ * `primary-index-tripwire` core (PR #2783). Decides whether a commit carrying the #2778
  * mass-staged-deletion signature (a mass control-plane staged deletion) against the PRIMARY
  * checkout is REFUSED. IO-free and total: a deterministic transform over already-gathered git
  * facts; the git boundary (staged-deletion probe, primary-checkout resolution) lives in

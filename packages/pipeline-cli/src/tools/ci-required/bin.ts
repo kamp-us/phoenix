@@ -5,7 +5,7 @@
  * §1 "emit what you scanned"), exit 0 on PASS / 1 on FAIL.
  *
  * ZERO runtime dependencies on purpose: the `ci-required` gate job runs only
- * `actions/checkout` + `node packages/ci-required/src/bin.ts` — no `pnpm install`
+ * `actions/checkout` + `node packages/pipeline-cli/src/tools/ci-required/bin.ts` — no `pnpm install`
  * — so the always-on aggregator stays fast. Plain Node (no Effect import) for the
  * same reason: the Effect-CLI idiom would pull `@effect/platform-node` + `effect`
  * into the gate's install path.

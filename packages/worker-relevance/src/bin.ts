@@ -11,7 +11,7 @@
  * `integration_required`/`e2e_required` expressions can AND it in. Exits 0 always —
  * this is a classifier, not a gate; the workflow decides what to do with the verdict.
  *
- * ZERO runtime dependencies on purpose (the `@kampus/ci-required` idiom): the
+ * ZERO runtime dependencies on purpose (the `ci-required` idiom): the
  * `changes` job runs this with only checkout + setup-node + node — no `pnpm install`
  * — so the always-on changed-area detector stays fast. Plain Node (no Effect import)
  * for the same reason. The pure core (`classify` + `inputFromEnv` + the import

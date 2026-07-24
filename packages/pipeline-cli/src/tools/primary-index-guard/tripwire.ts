@@ -1,5 +1,5 @@
 /**
- * `@kampus/primary-index-tripwire` pure core — decide whether a to-be-committed staged fileset
+ * `primary-index-guard` tripwire core — decide whether a to-be-committed staged fileset
  * carries the #2778 corruption signature (a mass staged-deletion of the instruction-trust set) and
  * build an attribution record naming WHO/WHERE is about to commit it.
  *

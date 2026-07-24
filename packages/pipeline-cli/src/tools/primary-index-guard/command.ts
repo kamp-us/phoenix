@@ -1,7 +1,7 @@
 /**
  * The `primary-index-guard` tool — `pipeline-cli primary-index-guard pre-commit`.
  *
- * The BLOCKING §CP promotion of the read-only `@kampus/primary-index-tripwire` (PR #2783). Wired as
+ * The BLOCKING §CP promotion of the read-only `primary-index-tripwire` core (PR #2783). Wired as
  * git's own `pre-commit` hook (`lefthook.yml`), it fires as a commit carrying the #2778
  * mass-staged-deletion signature is CREATED on the PRIMARY checkout — the one caller-agnostic choke
  * point before a push can fast-forward that control-plane mass deletion onto `origin/main` (the

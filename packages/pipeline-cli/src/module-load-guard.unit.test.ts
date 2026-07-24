@@ -150,7 +150,7 @@ describe("loadWithSelfHeal", () => {
 	it("self-heals the unlinked-dep case: one install, then the retry succeeds", async () => {
 		const load = vi
 			.fn()
-			.mockRejectedValueOnce(unlinkedPkgErr("@kampus/ci-required"))
+			.mockRejectedValueOnce(unlinkedPkgErr("@kampus/example-workspace-dep"))
 			.mockResolvedValueOnce(undefined);
 		const install = vi.fn().mockResolvedValue(undefined);
 		const onHealAttempt = vi.fn();
@@ -158,11 +158,11 @@ describe("loadWithSelfHeal", () => {
 		// bounded: exactly one install, exactly one retry (two loads total) — never a loop
 		expect(install).toHaveBeenCalledTimes(1);
 		expect(load).toHaveBeenCalledTimes(2);
-		expect(onHealAttempt).toHaveBeenCalledWith("@kampus/ci-required");
+		expect(onHealAttempt).toHaveBeenCalledWith("@kampus/example-workspace-dep");
 	});
 
 	it("falls back to the #1798 remediation when the retry still can't link the dep", async () => {
-		const stillUnlinked = unlinkedPkgErr("@kampus/ci-required");
+		const stillUnlinked = unlinkedPkgErr("@kampus/example-workspace-dep");
 		const load = vi.fn().mockRejectedValue(stillUnlinked);
 		const install = vi.fn().mockResolvedValue(undefined);
 		// the second unlinked throw propagates so the bin prints remediation + exit(1)
