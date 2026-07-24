@@ -46,7 +46,13 @@ export const parseGuardAdrRe = (formatsText: string): string =>
 
 /** Why the probe decided as it did — surfaced for the human reason line. */
 export type GuardProbeReason =
+	// A read that FAILED (null/undefined body — a delete/404/unreadable head).
 	| "unreadable-body"
+	// A read that SUCCEEDED but delivered no content (empty/whitespace-only body — an empty or
+	// undelivered stdin). Split from `unreadable-body` (#3786) so the evidence is honest: the
+	// verdict was always the right one (guard-touching, fail-closed) but the old `unreadable-body`
+	// reason mislabeled an empty-input read as if the head were unreadable.
+	| "empty-input"
 	| "guard-vocabulary-match"
 	| "uncompilable-regex"
 	| "no-match";
@@ -60,20 +66,28 @@ export interface GuardProbeResult {
 /**
  * Is an ADR's content guard-touching (§CP by content, ADR 0164)? Pure and total.
  *
- * Fail-closed order, transcribing ship-it Step 0 exactly:
- *   1. body null/empty ⇒ guard-touching (an ADR that couldn't be read at head is never
- *      proven guard-free — the `[ -z "$body" ] → BLOCKING` clause).
- *   2. `guardRe` won't compile ⇒ guard-touching (a broken boundary must never silently
+ * Fail-closed order, transcribing ship-it Step 0 exactly (the `[ -z "$body" ] → BLOCKING`
+ * clause covers both zero-input shapes below — an ADR body that couldn't be read at head is
+ * never proven guard-free):
+ *   1. body null/undefined ⇒ guard-touching, reason `unreadable-body` (a failed read — a
+ *      delete/404/unreadable head).
+ *   2. body empty/whitespace-only ⇒ guard-touching, reason `empty-input` (a read that succeeded
+ *      but delivered nothing — an empty/undelivered stdin; #3786 splits this off so the evidence
+ *      is honest rather than mislabeling it `unreadable-body`).
+ *   3. `guardRe` won't compile ⇒ guard-touching (a broken boundary must never silently
  *      match nothing).
- *   3. body matches `guardRe` (case-insensitive, like `grep -Ei`) ⇒ guard-touching.
- *   4. otherwise ⇒ not guard-touching.
+ *   4. body matches `guardRe` (case-insensitive, like `grep -Ei`) ⇒ guard-touching.
+ *   5. otherwise ⇒ not guard-touching.
  */
 export const probeGuardContent = (
 	body: string | null | undefined,
 	guardRe: string,
 ): GuardProbeResult => {
-	if (body === null || body === undefined || body.trim() === "") {
+	if (body === null || body === undefined) {
 		return {guardTouching: true, reason: "unreadable-body"};
+	}
+	if (body.trim() === "") {
+		return {guardTouching: true, reason: "empty-input"};
 	}
 	let re: RegExp;
 	try {

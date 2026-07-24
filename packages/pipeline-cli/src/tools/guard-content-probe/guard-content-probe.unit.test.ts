@@ -36,15 +36,35 @@ const GUARD_RE = parseGuardAdrRe(FORMATS_SLICE);
 
 describe("probeGuardContent — the ADR-0164 content-shape predicate (#3645)", () => {
 	describe("fail-closed: an unreadable ADR body is guard-touching", () => {
-		it("null body ⇒ guard-touching (delete/404/unreadable head)", () => {
+		it("null body ⇒ guard-touching, reason `unreadable-body` (a FAILED read: delete/404/unreadable head)", () => {
 			const r = probeGuardContent(null, GUARD_RE);
 			expect(r.guardTouching).toBe(true);
 			expect(r.reason).toBe("unreadable-body");
 		});
 
-		it("undefined and whitespace-only bodies ⇒ guard-touching", () => {
-			expect(probeGuardContent(undefined, GUARD_RE).guardTouching).toBe(true);
-			expect(probeGuardContent("   \n\t ", GUARD_RE).guardTouching).toBe(true);
+		it("undefined body ⇒ guard-touching, reason `unreadable-body`", () => {
+			const r = probeGuardContent(undefined, GUARD_RE);
+			expect(r.guardTouching).toBe(true);
+			expect(r.reason).toBe("unreadable-body");
+		});
+	});
+
+	describe("fail-closed: an empty/whitespace-only body reports `empty-input`, not a content hit (#3786)", () => {
+		// AC3: the blank-body verdict was always right (guard-touching, fail-closed) — the bug was
+		// the EVIDENCE. An empty/undelivered stdin read as `unreadable-body`, as if the head were
+		// unreadable. Split it off to `empty-input` (a read that succeeded but delivered nothing) so
+		// the reason is honest; the fail-closed verdict MUST NOT regress.
+		it("empty-string body ⇒ guard-touching, reason `empty-input`", () => {
+			const r = probeGuardContent("", GUARD_RE);
+			expect(r.guardTouching).toBe(true);
+			expect(r.reason).toBe("empty-input");
+		});
+
+		it("whitespace-only body ⇒ guard-touching, reason `empty-input` (not `unreadable-body`)", () => {
+			const r = probeGuardContent("   \n\t ", GUARD_RE);
+			expect(r.guardTouching).toBe(true);
+			expect(r.reason).toBe("empty-input");
+			expect(r.reason).not.toBe("unreadable-body");
 		});
 	});
 

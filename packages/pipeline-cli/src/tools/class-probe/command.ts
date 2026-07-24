@@ -34,6 +34,7 @@ import {
 	classify,
 	DESIGN_NAMESPACE,
 	isUiAffecting,
+	NO_INPUT_FAILCLOSED_CLASSES,
 	parseClassProbes,
 	parseUiExclude,
 	parseUiProbe,
@@ -120,7 +121,14 @@ const classifyCmd = Command.make(
 		const uiRe = parseUiProbe(shipIt ?? "");
 		const uiExclude = parseUiExclude(shipIt ?? "");
 		const files = readFiles(filesFrom);
-		const classes = classify(files, probes);
+		// Fail closed on zero input (#3786): this probe is only ever piped a PR's changed-file
+		// list, which is never legitimately empty — an empty read is a dropped/undelivered stdin,
+		// indistinguishable at the pure core from a gate-free PR. Route it through the same has-code
+		// path an unclassified file rides (NO_INPUT_FAILCLOSED_CLASSES) so a dropped stdin can never
+		// yield an empty required-gate set; a distinct loud stderr line below makes the drop visible
+		// at the point it happens rather than silently reading as "this PR requires no gates".
+		const noInput = files.length === 0;
+		const classes = noInput ? NO_INPUT_FAILCLOSED_CLASSES : classify(files, probes);
 		const uiAffecting = isUiAffecting(files, uiRe, uiExclude);
 
 		if (formats === null) {
@@ -134,6 +142,13 @@ const classifyCmd = Command.make(
 			yield* Effect.sync(() =>
 				process.stderr.write(
 					`class-probe: could not read ${SHIP_IT_PATH} under ${rootDir} — using fail-closed UI_RE (require review-design).\n`,
+				),
+			);
+		}
+		if (noInput) {
+			yield* Effect.sync(() =>
+				process.stderr.write(
+					"class-probe: read 0 files (empty or undelivered stdin/--files-from) — failing closed to has-code (review-code). This probe is only ever piped a PR's changed files, which is never legitimately empty; an empty read is a dropped stdin, not a gate-free PR (#3786).\n",
 				),
 			);
 		}
