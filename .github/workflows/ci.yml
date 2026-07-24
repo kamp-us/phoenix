@@ -444,7 +444,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # `biome check` is lint + format in one pass (tabs/100-col/no-bracket-spacing).
-      - run: pnpm lint
+      # `--reporter=github` (CI-only) emits `::error file=…,line=…::` workflow commands so a
+      # lint/format failure renders as an inline annotation on the PR diff, not just buried log
+      # text a repair agent must dig through (#3872). The flag lives here rather than in the root
+      # `lint` script so local `pnpm lint` keeps the default human-readable reporter; this
+      # mirrors that script's primary-checkout branch (`biome check .`) with the reporter added.
+      - run: pnpm exec biome check --reporter=github .
 
       - run: pnpm typecheck
 
