@@ -1,9 +1,10 @@
-import * as React from "react";
+import type * as React from "react";
 import {useNavigate} from "react-router";
 import {slugifyTerm} from "../../lib/slugifyTerm";
 import {Button} from "../ui/Button";
 import {Dialog} from "../ui/Dialog";
 import {Field, FieldError, Form, Input, Label} from "../ui/Form";
+import {useSozlukCreateDialog} from "./SozlukCreateDialogState";
 
 /**
  * sözlük's contextual create CTA — the `+ yeni tanım` promoted verb in its Subnav
@@ -18,7 +19,10 @@ import {Field, FieldError, Form, Input, Label} from "../ui/Form";
  * branch — the exact target the old box reached, create dead-end handled there (#97).
  */
 export function SozlukSubnavCta() {
-	const [open, setOpen] = React.useState(false);
+	// `open` is hoisted above the FateProvider/needsBootstrap unmounting boundary (#3840) —
+	// see `SozlukCreateDialogState`. A component-local `useState` here is the exact fragility
+	// #3600 pinned: an ancestor unmount would silently reset it, vanishing the dialog.
+	const {open, setOpen} = useSozlukCreateDialog();
 	const navigate = useNavigate();
 	function onSubmit(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();

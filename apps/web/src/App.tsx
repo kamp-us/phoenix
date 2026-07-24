@@ -23,6 +23,7 @@ import {EmailDeliveryNoticeMount} from "./components/membrane/EmailDeliveryNotic
 import {actorLabel} from "./components/moderation/actor-identity";
 import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
+import {SozlukCreateDialogProvider} from "./components/sozluk/SozlukCreateDialogState";
 import {SozlukSubnavLayout} from "./components/sozluk/SozlukSubnavLayout";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
@@ -176,70 +177,80 @@ function Layout() {
 	return (
 		<TooltipProvider>
 			<ToastProvider>
-				<AppShell>
-					{/* boot-mode observer for the edge-resolved shell (ADR 0179) — geometry-inert */}
-					<EdgeShellBootMarker />
-					<Topbar
-						brandName="kamp.us"
-						reserveSignedInSlots={reserveSignedInSlots}
-						// akış is a mecmua SUB-destination living in the mecmua Subnav zone (#2603),
-						// so the topbar carries just the `mecmua` product noun — a cross-product
-						// destination, per placement law #2587.
-						nav={[
-							{to: "/sozluk", label: "sözlük"},
-							{to: "/pano", label: "pano"},
-							...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
-						]}
-						divanTo={chips?.divanTo}
-						{...(chips?.userProps ?? bootUserProps)}
-						karma={chips?.karma}
-						{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
-						searchQuery={searchQuery}
-						onSearchSubmit={(query) => {
-							const target = searchTarget(query);
-							if (target) navigate(target);
-						}}
-						// No `onToggleTheme`: the three-way theme picker is the sole theme control
-						// (#2612), so no tema button renders.
-						themeChoice={themeChoice}
-						onThemeChange={setThemeChoice}
-						onLogout={onSignOut}
-						actions={
-							// giriş-yap rides the first-paint presence bit, not the settling session:
-							// `__BOOT__.user != null` (via signedInAtFirstPaint) suppresses the CTA for a
-							// signed-in user from the first frame, so it never flashes then swaps out
-							// (#2933, ADR 0185). Absent `__BOOT__` ⇒ this reduces to `isSignedIn`, today's split.
-							!signedInAtFirstPaint ? (
-								<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
-									giriş yap
-								</button>
-							) : null
-							// Signed in ⇒ no topbar action: pano's `+ gönderi` primary action lives in
-							// the pano Subnav CTA zone (placement law #2587), not the topbar.
-						}
-					/>
-					<Main>
-						{/* PUBLIC tier (ADR 0167): the anon-capable pano feed paints over the
+				{/* The sözlük create-dialog open-state lives here, above `FateProvider`'s
+				    `key={userId}` re-key and `LayoutContent`'s `needsBootstrap` Outlet swap, so
+				    an ancestor unmount can't silently destroy it — the #3840 hoist. The CTA reads
+				    it through context far below, the same bridge shape as `SetTopbarChipsContext`. */}
+				<SozlukCreateDialogProvider>
+					<AppShell>
+						{/* boot-mode observer for the edge-resolved shell (ADR 0179) — geometry-inert */}
+						<EdgeShellBootMarker />
+						<Topbar
+							brandName="kamp.us"
+							reserveSignedInSlots={reserveSignedInSlots}
+							// akış is a mecmua SUB-destination living in the mecmua Subnav zone (#2603),
+							// so the topbar carries just the `mecmua` product noun — a cross-product
+							// destination, per placement law #2587.
+							nav={[
+								{to: "/sozluk", label: "sözlük"},
+								{to: "/pano", label: "pano"},
+								...(mecmuaOn ? [{to: "/mecmua", label: "mecmua"}] : []),
+							]}
+							divanTo={chips?.divanTo}
+							{...(chips?.userProps ?? bootUserProps)}
+							karma={chips?.karma}
+							{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
+							searchQuery={searchQuery}
+							onSearchSubmit={(query) => {
+								const target = searchTarget(query);
+								if (target) navigate(target);
+							}}
+							// No `onToggleTheme`: the three-way theme picker is the sole theme control
+							// (#2612), so no tema button renders.
+							themeChoice={themeChoice}
+							onThemeChange={setThemeChoice}
+							onLogout={onSignOut}
+							actions={
+								// giriş-yap rides the first-paint presence bit, not the settling session:
+								// `__BOOT__.user != null` (via signedInAtFirstPaint) suppresses the CTA for a
+								// signed-in user from the first frame, so it never flashes then swaps out
+								// (#2933, ADR 0185). Absent `__BOOT__` ⇒ this reduces to `isSignedIn`, today's split.
+								!signedInAtFirstPaint ? (
+									<button
+										type="button"
+										className="kp-topbar__btn"
+										onClick={() => navigate("/auth")}
+									>
+										giriş yap
+									</button>
+								) : null
+								// Signed in ⇒ no topbar action: pano's `+ gönderi` primary action lives in
+								// the pano Subnav CTA zone (placement law #2587), not the topbar.
+							}
+						/>
+						<Main>
+							{/* PUBLIC tier (ADR 0167): the anon-capable pano feed paints over the
 						    always-anonymous public client while `get-session` resolves, then
 						    hands off to the authed feed once the gate below commits. */}
-						{showEagerPanoFeed ? (
-							<PublicFateProvider>
-								<PanoFeed {...(eagerPanoHost ? {host: eagerPanoHost} : {})} />
-							</PublicFateProvider>
-						) : null}
-						{showEagerProfileSkeleton ? <EagerProfileContributionSkeleton /> : null}
-						{/* The routed content + fate-dependent chips live below the session
+							{showEagerPanoFeed ? (
+								<PublicFateProvider>
+									<PanoFeed {...(eagerPanoHost ? {host: eagerPanoHost} : {})} />
+								</PublicFateProvider>
+							) : null}
+							{showEagerProfileSkeleton ? <EagerProfileContributionSkeleton /> : null}
+							{/* The routed content + fate-dependent chips live below the session
 						    gate — FateProvider keeps its #438 remount guard (first & only key
 						    is the resolved identity), while the shell frame above already
 						    painted. */}
-						<FateProvider>
-							<SetTopbarChipsContext.Provider value={setChips}>
-								<LayoutContent />
-							</SetTopbarChipsContext.Provider>
-						</FateProvider>
-					</Main>
-					<Footer />
-				</AppShell>
+							<FateProvider>
+								<SetTopbarChipsContext.Provider value={setChips}>
+									<LayoutContent />
+								</SetTopbarChipsContext.Provider>
+							</FateProvider>
+						</Main>
+						<Footer />
+					</AppShell>
+				</SozlukCreateDialogProvider>
 			</ToastProvider>
 		</TooltipProvider>
 	);
