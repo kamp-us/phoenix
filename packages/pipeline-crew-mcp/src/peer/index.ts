@@ -10,7 +10,7 @@
  */
 
 export {type Connect, Dialer, type InboxRpcClient} from "./dialer.ts";
-export {PeerUnreachableError} from "./errors.ts";
+export {ChannelDeafError, PeerUnreachableError} from "./errors.ts";
 export {
 	Deliver,
 	Inbox,

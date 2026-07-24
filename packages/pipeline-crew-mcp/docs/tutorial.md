@@ -85,8 +85,8 @@ const program = Effect.gen(function* () {
 	const wakes = yield* Ref.make<ReadonlyArray<ChannelNotificationPayload>>([]);
 	const sink = Layer.succeed(ChannelSink, {wake: (p) => Ref.update(wakes, (xs) => [...xs, p])});
 
-	// Bring peer B up: build its channel (announces its presence to the tracker) and start its
-	// inbox socket server so a dial can reach it. Layer.build keeps both alive for the scope.
+	// Bring peer B up: build its channel (claims its role slot + reserves a bare presence) and start
+	// its inbox socket server so a dial can reach it. Layer.build keeps both alive for the scope.
 	const ctxB = yield* Layer.build(substrate(B));
 	const channelB = yield* Effect.provide(
 		makeCrewChannel({role: "engineering-manager", address: B}),
@@ -94,6 +94,9 @@ const program = Effect.gen(function* () {
 	);
 	yield* Layer.build(inboxServerSocketLayer(B).pipe(Layer.provide([sink, NodeFileSystem.layer])));
 	yield* Effect.sleep("400 millis"); // let B's inbox socket finish binding
+	// Only NOW that B's inbox is serving does it announce a discoverable presence — so a lookup returns
+	// B as a live peer, never a channel-deaf bare lease (#3628).
+	yield* channelB.announce;
 
 	// Bring peer A up on the same project tracker.
 	const ctxA = yield* Layer.build(substrate(A));
@@ -125,8 +128,10 @@ Effect.runPromise(program).then(
 Three things are worth pausing on, because they are the substrate's real seams:
 
 - **`makeCrewChannel`** is the composition root ([`../src/crew/channel-server.ts`](../src/crew/channel-server.ts)):
-  it claims the peer's role slot, announces presence, and hands you back a channel with `peer.send`
-  (outbound) and `claim` (deconfliction). It is exactly what a live `session` builds internally.
+  it claims the peer's role slot and reserves a bare presence lease, then hands you back a channel with
+  `peer.send` (outbound), `claim` (deconfliction), and `announce`. Presence becomes **discoverable**
+  only when you run `channel.announce` — which a live `session` does once its inbox socket is serving,
+  so presence reflects a live channel half, not a bare lease (#3628).
 - **`peer.send(role, kind, body)`** addresses a *role*. Under the hood it asks the tracker for a
   live holder, then dials that peer's inbox socket — the tracker is never in the message path.
 - **`channel.claim(resource)`** hits the tracker's claim RPC and returns a typed reply. Its

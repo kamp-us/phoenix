@@ -149,7 +149,7 @@ claims ride it.
 | Name | Definition |
 | --- | --- |
 | `DEFAULT_TTL_SECONDS` | `30` — the presence TTL applied on announce, until the first `heartbeat` sets a real one. |
-| `Lease` | `{ role: string; peer: string; ttlSeconds: number; lastSeenMillis: number }` — one presence lease. |
+| `Lease` | `{ role: string; peer: string; ttlSeconds: number; lastSeenMillis: number; attached: boolean }` — one presence lease. `attached` is the live-channel-half phase (#3628): a bare reservation (`false`) holds the role slot but is not discoverable; an announce (`true`) marks the inbox serving. |
 | `Claim` | `{ resource: string; holder: string; claimantRole: string; claimedAtMillis: number }` — one resource claim (no TTL of its own). |
 | `RegistryState` | `{ leases: ReadonlyMap<string, Lease>; claims: ReadonlyMap<string, Claim> }`. |
 | `PresenceRecord` | `{ peer: string; role: string; lastSeenMillis: number }` — a present peer as the core reports it. |
@@ -165,12 +165,13 @@ All are pure `(state, …) -> state` (or a read); the service (`../tracker/regis
 | Function | Signature | Behavior |
 | --- | --- | --- |
 | `empty` | `() => RegistryState` | A fresh registry, both keyspaces empty. |
-| `announce` | `(state, { role, peer, ttlSeconds, nowMillis }) => RegistryState` | Upsert `peer`'s lease keyed by `peer`, bumping `lastSeen` to now. Never rejects; two peers on one role coexist. |
+| `announce` | `(state, { role, peer, ttlSeconds, nowMillis }) => RegistryState` | Upsert `peer`'s lease keyed by `peer` as **attached** (serving/discoverable), bumping `lastSeen` to now. Never rejects; two peers on one role coexist. |
+| `reserve` | `(state, { role, peer, ttlSeconds, nowMillis }) => RegistryState` | Upsert `peer`'s lease as a **bare** (`attached: false`) reservation — holds the role slot and backs the cardinality claim's liveness, but is not returned by `lookup` until the peer announces attached (#3628). |
 | `claimResource` | `(state, { resource, holder, claimantRole, nowMillis }) => { state; outcome: ClaimOutcome }` | `Granted` when free, held by an aged-out holder, or re-claimed by `holder` itself (re-claim keeps `since`); `Collision` (state untouched) when a **different** holder with live presence holds it. |
 | `releaseClaim` | `(state, { resource, claimant }) => RegistryState` | Free the claim **only if** `claimant` is its holder; releasing a claim you do not hold, or a nonexistent one, is an idempotent no-op. |
 | `claimHolder` | `(state, resource, nowMillis) => string \| undefined` | The live holder of `resource`, or `undefined` when unclaimed or its holder's presence has aged out. |
 | `heartbeat` | `(state, { peer, ttlSeconds, nowMillis }) => RegistryState` | Refresh `peer`'s lease (bump `lastSeen`, adopt the TTL); never touches claims. A beat for a peer with no lease is a no-op. |
-| `lookup` | `(state, role, nowMillis) => ReadonlyArray<PresenceRecord>` | Every live lease serving `role`, or `[]`. Reads the presence keyspace only. |
+| `lookup` | `(state, role, nowMillis) => ReadonlyArray<PresenceRecord>` | Every live **attached** lease serving `role`, or `[]`. A bare reservation (inbox not yet serving) is deliberately invisible here (#3628). Reads the presence keyspace only. |
 | `release` | `(state, peer) => RegistryState` | Free `peer`'s lease and reap every claim it holds — a graceful connection close. |
 | `prune` | `(state, nowMillis) => RegistryState` | Drop every lease aged past its TTL, then reap every claim whose holder no longer has a live lease (leases pruned first). |
 
@@ -186,8 +187,9 @@ from this module (`typeof Schema.ClaimReply.Type`).
 | `claim` | `(input: { resource: string; claimant: string; role: string }) => Effect.Effect<ClaimReply>` |
 | `acquireClaim` | `(input: { resource: string; claimant: string; role: string }) => Effect.Effect<ClaimReply, never, Scope.Scope>` — claim for the enclosing scope; on close frees via `Release` iff it was `granted`. |
 | `release` | `(input: { resource: string; claimant: string }) => Effect.Effect<void>` |
-| `announce` | `(presence: RolePresence) => Effect.Effect<void, never, Scope.Scope>` — soft presence held for the enclosing scope (connection-is-lease). |
-| `heartbeat` | `(input: { peer: string; ttlSeconds: number }) => Effect.Effect<void>` — presence-only refresh; never touches a claim. |
+| `announce` | `(presence: RolePresence) => Effect.Effect<void, never, Scope.Scope>` — attached (serving/discoverable) presence held for the enclosing scope (connection-is-lease); run once the inbox attaches (#3628). |
+| `reserve` | `(presence: RolePresence) => Effect.Effect<void, never, Scope.Scope>` — a bare role-slot reservation held for the enclosing scope; backs the cardinality claim but is not discoverable until `announce` (#3628). |
+| `heartbeat` | `(input: { peer: string; ttlSeconds: number }) => Effect.Effect<void>` — presence-only refresh; preserves the attached phase, never touches a claim. |
 | `lookup` | `(role: string) => Effect.Effect<ReadonlyArray<RolePresence>>` — every live holder (`[]` ⇒ absent/expired). |
 
 Layer constructors: `CrewTracker.fromClient(client)`, `crewTrackerSocketLayer(socketPath)`, and

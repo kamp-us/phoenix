@@ -19,9 +19,10 @@
  * registrations + provide the transport once; claim the peer FIRST so `ChannelSend` is an instant
  * binding when the toolkit registers) and `.patterns/mcp-server-effect.md` for the Effect idiom.
  *
- * The per-kind cardinality lease + presence announce ride the peer's scope (`makeCrewChannel`): a
- * second live session for a held BRIDGE role fails the build with `RoleUniquenessError`, an ENGINE
- * role admits N instances, and presence frees on teardown (connection-is-lease, #3035). A bridge's
+ * The per-kind cardinality lease rides the peer's scope (`makeCrewChannel`): a second live session
+ * for a held BRIDGE role fails the build with `RoleUniquenessError`, an ENGINE role admits N
+ * instances. Presence, by contrast, is announced only AFTER the inbox socket server binds (#3628), so
+ * it reflects a live channel half and frees on teardown (connection-is-lease, #3035). A bridge's
  * address is its role (`inbox://<role>`) — its singleton lease keeps discover→dial deterministic;
  * an engine's is per-instance (`inbox://<role>/<instance>`) so its pool never collapses. See
  * `inboxAddressFor` (ADR 0189).
@@ -248,8 +249,15 @@ export const assembleCrewSession = <RIn, RSub = never>(
 			const inbound = inboxServerSocketLayer(address).pipe(
 				Layer.provide(ChannelSink.layerFromMcpServer),
 			);
+			// presence reflects a live channel half (#3628): announce THIS session ONLY after its inbox
+			// socket server has bound and is serving. Sequencing the announce AFTER `inbound` (`inbound` is
+			// referenced twice but memoized, so the socket binds once — the Race-1 memo the whole assembly
+			// leans on) is what makes "announced but channel-deaf" unrepresentable: a session whose inbox
+			// never attaches never publishes presence, so LookupRole never returns a deaf peer. The claim
+			// (role slot) still happens early above — only the presence announce waits on the inbox.
+			const presence = Layer.effectDiscard(channel.announce).pipe(Layer.provide(inbound));
 			// Provide the transport ONCE to the MERGED registrations — the single-instance memo (Race 1).
-			return Layer.mergeAll(outbound, claim, release, kinds, inbound).pipe(
+			return Layer.mergeAll(outbound, claim, release, kinds, inbound, presence).pipe(
 				Layer.provide(transport),
 			);
 		}),
@@ -259,7 +267,8 @@ export const assembleCrewSession = <RIn, RSub = never>(
  * The full runnable session layer: launch it (`Layer.launch`) to run one live crew session. The one
  * stdio `McpServer` is provided to the merged registrations exactly once (`assembleCrewSession`), so
  * the served server advertises the `channel_send` + `channel_claim` + `channel_release` + `channel_kinds`
- * tools + the `claude/channel` capability; the heartbeat rides the same `substrate` the outbound binding announces on.
+ * tools + the `claude/channel` capability; the heartbeat rides the same `substrate` the inbox-gated
+ * presence announce publishes on, so its beats refresh the lease that announce created (#3628).
  */
 export const crewSessionLayer = (config: CrewSessionConfig) => {
 	// One per-session instance id, resolved once here and threaded to every address derivation, so an

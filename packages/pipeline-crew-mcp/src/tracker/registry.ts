@@ -26,8 +26,10 @@ export interface ClaimInput {
 export class Registry extends Context.Service<
 	Registry,
 	{
-		/** Register `peer`'s presence for `role` — keyed by peer, so a role's engine pool coexists. */
+		/** Register `peer`'s presence for `role` as ATTACHED (serving) — the discoverable phase (#3628). */
 		readonly announce: (input: AnnounceInput) => Effect.Effect<void>;
+		/** Reserve `peer`'s role slot as a BARE lease — holds the slot + backs the claim, not discoverable. */
+		readonly reserve: (input: AnnounceInput) => Effect.Effect<void>;
 		/** Claim `resource` for `claimant`, returning granted or a collision with a live-presence holder. */
 		readonly claim: (input: ClaimInput) => Effect.Effect<Core.ClaimOutcome>;
 		/** Free `resource`'s claim iff `claimant` holds it — steal-release is a no-op (ADR 0191 facet 3). */
@@ -68,6 +70,12 @@ export const RegistryLive: Layer.Layer<Registry> = Layer.effect(Registry)(
 				Clock.currentTimeMillis.pipe(
 					Effect.flatMap((nowMillis) =>
 						Ref.update(ref, (state) => Core.announce(state, {...input, nowMillis})),
+					),
+				),
+			reserve: (input) =>
+				Clock.currentTimeMillis.pipe(
+					Effect.flatMap((nowMillis) =>
+						Ref.update(ref, (state) => Core.reserve(state, {...input, nowMillis})),
 					),
 				),
 			claim,

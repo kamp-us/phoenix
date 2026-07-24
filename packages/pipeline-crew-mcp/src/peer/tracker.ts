@@ -23,7 +23,13 @@ export type RolePresence = typeof RolePresence.Type;
 export class Tracker extends Context.Service<
 	Tracker,
 	{
+		/** Announce this peer as ATTACHED (its inbox is serving) — the discoverable phase (#3628). */
 		readonly announce: (presence: RolePresence) => Effect.Effect<void, never, Scope.Scope>;
+		/**
+		 * Reserve this peer's role slot as a BARE lease — holds the slot + backs the crew cardinality
+		 * claim, but is NOT discoverable via `lookup` until the peer attaches its inbox and announces.
+		 */
+		readonly reserve: (presence: RolePresence) => Effect.Effect<void, never, Scope.Scope>;
 		readonly lookup: (role: string) => Effect.Effect<Option.Option<RolePresence>>;
 	}
 >()("@kampus/pipeline-crew-mcp/peer/Tracker") {}

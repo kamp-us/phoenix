@@ -4,13 +4,14 @@
  * inbox-ack). Generic (crew-agnostic); see the boundary note in `../index.ts`.
  *
  * The tool wraps the `ChannelSend` port — the peer's `send` capability (`../peer`) — so the
- * edge never constructs a peer (the crew composition root does, #3059). A send to an
- * offline role surfaces as `PeerUnreachableError`, which the tool returns as an error result
- * to the caller — never a silent drop (#3035).
+ * edge never constructs a peer (the crew composition root does, #3059). A send to a role with
+ * no live peer surfaces as `PeerUnreachableError`; a send to a role that is present but whose
+ * inbox will not answer surfaces as `ChannelDeafError` (#3628) — both returned as an error result
+ * to the caller, never a silent drop (#3035).
  */
 import {Context, Effect, Schema} from "effect";
 import {Tool, Toolkit} from "effect/unstable/ai";
-import {InboxAck, PeerUnreachableError} from "../peer/index.ts";
+import {ChannelDeafError, InboxAck, PeerUnreachableError} from "../peer/index.ts";
 import {crewMessageKinds, payloadSchemaForKind} from "../protocol/index.ts";
 
 /**
@@ -43,7 +44,7 @@ export class ChannelSend extends Context.Service<
 			targetRole: string,
 			kind: string,
 			body: unknown,
-		) => Effect.Effect<InboxAck, PeerUnreachableError>;
+		) => Effect.Effect<InboxAck, PeerUnreachableError | ChannelDeafError>;
 	}
 >()("@kampus/pipeline-crew-mcp/edge/ChannelSend") {}
 
@@ -99,7 +100,7 @@ export const SendChannelMessage = Tool.make("channel_send", {
 		body: Schema.Unknown,
 	}),
 	success: InboxAck,
-	failure: Schema.Union([PeerUnreachableError, InvalidMessageError]),
+	failure: Schema.Union([PeerUnreachableError, ChannelDeafError, InvalidMessageError]),
 });
 
 export const ChannelToolkit = Toolkit.make(SendChannelMessage);

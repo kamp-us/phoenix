@@ -10,6 +10,16 @@
  * lifecycles — keeping them in distinct typed maps makes "a `lookup` returns a claim holder"
  * unrepresentable rather than checked after the fact.
  *
+ * A lease is one of two phases — `reserve`d (bare) or `announce`d (attached) — so presence
+ * reflects a live channel half, not a socket file or a bare lease (#3628):
+ *   - A **bare** lease (`reserve`) holds the role slot and backs the crew cardinality claim
+ *     (its liveness clock, ADR 0191 facet 2) + connection-is-lease — but is NOT discoverable.
+ *   - An **attached** lease (`announce`) is a bare lease whose peer inbox is confirmed serving;
+ *     only attached leases are returned by `lookup`. A session that reserves its slot but never
+ *     attaches its inbox (channel-deaf) therefore never appears as a live peer.
+ * `holderHasLivePresence` (claim liveness) counts a live lease of EITHER phase — the slot holds
+ * from the reservation; `lookup` (discovery) counts only attached ones.
+ *
  * The three non-obvious model choices:
  *   - Presence is keyed by `peer` (the connection identity), NOT by role — so N distinct peers
  *     serving one role coexist as N distinct leases (a role's engine pool), and `lookup(role)`
@@ -30,12 +40,18 @@
 /** The default presence TTL applied on announce, until the first `heartbeat` sets a real one. */
 export const DEFAULT_TTL_SECONDS = 30;
 
-/** One presence lease: a peer, the role it serves, and its soft-state liveness window. */
+/**
+ * One presence lease: a peer, the role it serves, its soft-state liveness window, and whether its
+ * inbox is attached and serving. `attached` is the live-channel-half bit (#3628): a bare reservation
+ * holds the role slot (`attached: false`), an announce flips it on once the inbox serves. `lookup`
+ * returns only attached leases; the cardinality claim's liveness clock counts either phase.
+ */
 export interface Lease {
 	readonly role: string;
 	readonly peer: string;
 	readonly ttlSeconds: number;
 	readonly lastSeenMillis: number;
+	readonly attached: boolean;
 }
 
 /**
@@ -78,7 +94,11 @@ export const empty = (): RegistryState => ({leases: new Map(), claims: new Map()
 const isLive = (lease: Lease, nowMillis: number): boolean =>
 	nowMillis <= lease.lastSeenMillis + lease.ttlSeconds * 1000;
 
-/** True iff `holder` holds a live presence lease — the claim-liveness clock (ADR 0191 facet 2). */
+/**
+ * True iff `holder` holds a live presence lease of EITHER phase — the claim-liveness clock (ADR 0191
+ * facet 2). Attachment is deliberately not required: the cardinality claim's slot holds from the
+ * bare reservation on, so a role stays uniqueness-guarded before its inbox finishes attaching (#3628).
+ */
 const holderHasLivePresence = (
 	leases: ReadonlyMap<string, Lease>,
 	holder: string,
@@ -88,27 +108,42 @@ const holderHasLivePresence = (
 	return lease !== undefined && isLive(lease, nowMillis);
 };
 
-/**
- * Register `peer`'s presence for `role`: upsert its lease, bumping `lastSeen` to now. Keyed by
- * `peer`, so a re-announce refreshes the same lease and two distinct peers on one role coexist —
- * presence never rejects (role uniqueness is the crew cardinality claim's job, ADR 0189), it only
- * records who is live where.
- */
-export const announce = (
-	state: RegistryState,
-	input: {
-		readonly role: string;
-		readonly peer: string;
-		readonly ttlSeconds: number;
-		readonly nowMillis: number;
-	},
-): RegistryState => {
+type PresenceInput = {
+	readonly role: string;
+	readonly peer: string;
+	readonly ttlSeconds: number;
+	readonly nowMillis: number;
+};
+
+const putLease = (state: RegistryState, input: PresenceInput, attached: boolean): RegistryState => {
 	const {role, peer, ttlSeconds, nowMillis} = input;
-	const lease: Lease = {role, peer, ttlSeconds, lastSeenMillis: nowMillis};
+	const lease: Lease = {role, peer, ttlSeconds, lastSeenMillis: nowMillis, attached};
 	const leases = new Map(state.leases);
 	leases.set(peer, lease);
 	return {...state, leases};
 };
+
+/**
+ * Register `peer`'s presence for `role` as ATTACHED (its inbox is serving) — the discoverable phase:
+ * upsert the lease with `attached: true`, bumping `lastSeen` to now. Keyed by `peer`, so a
+ * re-announce refreshes the same lease and two distinct peers on one role coexist — presence never
+ * rejects (role uniqueness is the crew cardinality claim's job, ADR 0189), it only records who is
+ * live and serving. Callers announce ONLY once the inbox is attached, so a live channel half — not a
+ * bare lease — is what `lookup` surfaces (#3628).
+ */
+export const announce = (state: RegistryState, input: PresenceInput): RegistryState =>
+	putLease(state, input, true);
+
+/**
+ * Reserve `peer`'s role slot as a BARE lease (`attached: false`) — the not-yet-serving phase: it
+ * holds the slot and backs the crew cardinality claim's liveness clock (ADR 0191 facet 2) +
+ * connection-is-lease, but is NOT returned by `lookup`. This is the "presence reflects a socket file
+ * or a bare lease" case the fix makes non-discoverable (#3628): a session reserves on construction,
+ * then `announce`s only once its inbox attaches. A `reserve` over an already-attached lease would
+ * downgrade it, so the flow only ever goes reserve → announce, never back.
+ */
+export const reserve = (state: RegistryState, input: PresenceInput): RegistryState =>
+	putLease(state, input, false);
 
 /**
  * Claim `resource` on behalf of `holder`. Granted when the resource is free, held by a holder
@@ -180,9 +215,11 @@ export const claimHolder = (
 };
 
 /**
- * Refresh `peer`'s presence lease: bump `lastSeen` to now and adopt the heartbeat's TTL. Resource
+ * Refresh `peer`'s presence lease: bump `lastSeen` to now and adopt the heartbeat's TTL, PRESERVING
+ * its attached phase (a beat keeps a serving peer discoverable, never downgrades it). Resource
  * claims are never touched — they have no TTL to bump, and their liveness rides presence (ADR 0191
- * facet 4). A beat for a peer with no lease is a no-op (nothing to refresh).
+ * facet 4). A beat for a peer with no lease is a no-op (nothing to refresh) — so a beat can never
+ * manufacture presence for a session that never reserved/announced (#3628).
  */
 export const heartbeat = (
 	state: RegistryState,
@@ -197,11 +234,13 @@ export const heartbeat = (
 };
 
 /**
- * The present holders of `role` — every live lease whose peer serves `role`, or `[]` when none is
- * present. For a bridge the crew cardinality claim guarantees at most one live session, so the set
- * has one entry; for an engine the set carries every live instance in the pool (ADR 0189). An empty
- * array is the explicit not-present result (never a silent drop). Reads the presence keyspace only,
- * so it can never surface a resource-claim holder (ADR 0191).
+ * The present holders of `role` — every live, ATTACHED lease whose peer serves `role`, or `[]` when
+ * none is. Only attached leases surface: a bare reservation (a slot held but the inbox not yet
+ * serving) is deliberately invisible here, so a channel-deaf session is never returned as a live
+ * peer (#3628). For a bridge the crew cardinality claim guarantees at most one live session, so the
+ * set has one entry; for an engine the set carries every live instance in the pool (ADR 0189). An
+ * empty array is the explicit not-present result (never a silent drop). Reads the presence keyspace
+ * only, so it can never surface a resource-claim holder (ADR 0191).
  */
 export const lookup = (
 	state: RegistryState,
@@ -210,7 +249,7 @@ export const lookup = (
 ): ReadonlyArray<PresenceRecord> => {
 	const present: Array<PresenceRecord> = [];
 	for (const lease of state.leases.values()) {
-		if (lease.role === role && isLive(lease, nowMillis)) {
+		if (lease.role === role && lease.attached && isLive(lease, nowMillis)) {
 			present.push({peer: lease.peer, role: lease.role, lastSeenMillis: lease.lastSeenMillis});
 		}
 	}

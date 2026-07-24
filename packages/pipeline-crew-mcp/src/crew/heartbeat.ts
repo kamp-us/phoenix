@@ -3,6 +3,11 @@
  * on an interval safely under `DEFAULT_TTL_SECONDS`, so a live session's presence + role lease
  * never ages out. Without it the substrate only functions for the first ~30s window (#3218).
  *
+ * The beat only ever REFRESHES an existing lease — it cannot manufacture presence (a beat for a peer
+ * with no lease is a registry-core no-op). Presence is created solely by the inbox-gated announce
+ * (`crew/session.ts`, #3628), so a channel-deaf session — one whose inbox never attached, so it never
+ * announced — holds no live presence no matter how its keepalive beats.
+ *
  * Presence-only by construction: each tick sends exactly one `Heartbeat {peer, ttlSeconds}` and
  * nothing else — it never refreshes or iterates a resource claim. A finished claim is freed by
  * `Release`; a crashed holder's claims are reaped when its presence ages out. Keeping the sender

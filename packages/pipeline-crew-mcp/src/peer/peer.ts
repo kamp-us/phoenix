@@ -3,19 +3,30 @@
  * announces to the tracker and sends peer-to-peer. Generic (crew-agnostic); see the
  * boundary note in `../index.ts`.
  *
- * `make` is scoped: on start it announces its role + inbox address to the tracker and
- * holds the presence for its scope's lifetime — connection-is-lease (#3035); scope close
- * frees the role. `send` looks the target role up via the tracker (the tracker never
- * relays) and dials that peer's inbox directly. Both offline paths — no live peer for the
- * role, and a dial that fails — surface as `PeerUnreachableError`, never a silent drop.
+ * `make` reserves this peer's role slot as a BARE lease (holds the slot + backs the crew
+ * cardinality claim + connection-is-lease, #3035) but does NOT make it discoverable. Becoming a
+ * live peer is a separate `announce` step the caller runs once its inbox is attached and serving,
+ * so presence reflects a live channel half, not mere construction (#3628). `send` looks the target role up via the
+ * tracker (the tracker never relays) and dials that peer's inbox directly. A send to a role
+ * with NO live peer surfaces as `PeerUnreachableError`; a send to a role that IS present but
+ * whose inbox will not answer surfaces as a distinguishable `ChannelDeafError`, fast — never a
+ * silent drop, never a hang.
  */
 
 import {randomUUID} from "node:crypto";
-import {Effect, Option} from "effect";
+import {Duration, Effect, Option, type Scope} from "effect";
 import {Dialer} from "./dialer.ts";
-import {PeerUnreachableError} from "./errors.ts";
+import {ChannelDeafError, PeerUnreachableError} from "./errors.ts";
 import {Inbox, type InboxAck, type InboxEnvelope} from "./inbox.ts";
 import {Tracker} from "./tracker.ts";
+
+/**
+ * The bounded dial window: a present peer whose inbox does not answer within it fails fast as
+ * channel-deaf rather than hanging (#3628 AC3). It sits well above a healthy socket round-trip, so it
+ * only ever bounds a genuinely-stuck dial — a dead or orphaned unix socket refuses far sooner
+ * (`ECONNREFUSED`), which is already mapped to channel-deaf below.
+ */
+const DIAL_TIMEOUT = Duration.seconds(5);
 
 export interface PeerConfig {
 	/** This peer's opaque id. */
@@ -32,12 +43,22 @@ export interface Peer {
 	readonly address: string;
 	/** What this peer's inbox has received. */
 	readonly received: Effect.Effect<ReadonlyArray<InboxEnvelope>>;
-	/** Send a typed message to whichever live peer serves `targetRole`; resolves to its inbox-ack. */
+	/**
+	 * Flip this peer to a discoverable, ATTACHED presence, held for the enclosing scope. `make` already
+	 * reserved the bare role slot; the caller runs THIS only once its inbox is attached and serving, so
+	 * a session whose inbox never attaches never becomes discoverable via `LookupRole` (#3628).
+	 */
+	readonly announce: Effect.Effect<void, never, Scope.Scope>;
+	/**
+	 * Send a typed message to whichever live peer serves `targetRole`; resolves to its inbox-ack. A
+	 * role with no live peer fails with `PeerUnreachableError`; a role that is present but whose inbox
+	 * will not answer fails with a distinguishable `ChannelDeafError`, fast.
+	 */
 	readonly send: (
 		targetRole: string,
 		kind: string,
 		body: unknown,
-	) => Effect.Effect<InboxAck, PeerUnreachableError>;
+	) => Effect.Effect<InboxAck, PeerUnreachableError | ChannelDeafError>;
 }
 
 export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
@@ -45,8 +66,13 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 	const tracker = yield* Tracker;
 	const dialer = yield* Dialer;
 
-	// Announce holds the role lease for this scope's lifetime — connection-is-lease (#3035).
-	yield* tracker.announce({role: config.role, peer: config.self, address: config.address});
+	const presence = {role: config.role, peer: config.self, address: config.address};
+	// Reserve the bare role slot on construction — it holds the crew cardinality claim + the
+	// connection-is-lease slot for this scope, but is NOT discoverable until `announce` attaches it (#3628).
+	yield* tracker.reserve(presence);
+	// The attach flip: publish a discoverable, serving presence. Exposed for the caller to run once its
+	// inbox socket server is bound and serving, so a channel-deaf session never becomes a live peer.
+	const announce = tracker.announce(presence);
 
 	const send: Peer["send"] = (targetRole, kind, body) =>
 		Effect.gen(function* () {
@@ -57,6 +83,7 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 					reason: `no live peer for role "${targetRole}"`,
 				});
 			}
+			const address = present.value.address;
 			const envelope: InboxEnvelope = {
 				messageId: randomUUID(),
 				from: config.self,
@@ -64,7 +91,26 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 				body,
 				at: new Date().toISOString(),
 			};
-			return yield* dialer.send(present.value.address, envelope);
+			// The tracker returned a live lease, so a dial that won't complete is channel-deaf — presence
+			// reflected a stale socket file, not a live inbox (#3628). Fold BOTH a fast dial refusal (a
+			// dead/orphaned socket → PeerUnreachableError) and a genuine hang (the bounded timeout) into one
+			// distinguishable ChannelDeafError, so the caller tells "registered but deaf" from "nobody there".
+			return yield* dialer.send(address, envelope).pipe(
+				Effect.timeoutOrElse({
+					duration: DIAL_TIMEOUT,
+					orElse: () =>
+						Effect.fail(
+							new ChannelDeafError({
+								target: targetRole,
+								address,
+								reason: "the inbox did not answer within the dial timeout",
+							}),
+						),
+				}),
+				Effect.catchTag("@kampus/pipeline-crew-mcp/PeerUnreachableError", (cause) =>
+					Effect.fail(new ChannelDeafError({target: targetRole, address, reason: cause.reason})),
+				),
+			);
 		});
 
 	return {
@@ -72,6 +118,7 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 		role: config.role,
 		address: config.address,
 		received: inbox.received,
+		announce,
 		send,
 	};
 });

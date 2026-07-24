@@ -67,6 +67,10 @@ describe("crew/channel-server — announce, discover, claim/collision-check (AC 
 			const b = yield* makeCrewChannel({role: roleB, address: "inbox://b"}).pipe(
 				Effect.provide(channelLayers(tracker, "inbox://b", alwaysUnreachable)),
 			);
+			// presence is announced explicitly now (the peer no longer announces on construction, #3628):
+			// each channel publishes its presence — standing in for "its inbox is attached and serving".
+			yield* a.announce;
+			yield* b.announce;
 
 			// discover each other across the flat topology (each a singleton set here)
 			const aFindsB = yield* a.discover(roleB);
@@ -256,6 +260,8 @@ describe("crew/channel-server — per-kind cardinality lease (AC 3)", () => {
 					Effect.provide(channelLayers(tracker, `inbox://${role}`, alwaysUnreachable)),
 				);
 				assert.strictEqual(channel.role, role);
+				// presence is published by the explicit announce now, not construction (#3628)
+				yield* channel.announce;
 			}
 			// every role is independently discoverable — five distinct leases coexist
 			for (const role of CREW_ROLES) {
