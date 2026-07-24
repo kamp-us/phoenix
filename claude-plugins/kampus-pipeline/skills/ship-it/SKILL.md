@@ -1421,35 +1421,118 @@ helper later if a third consumer appears.
 ```bash
 HEAD_SHA=$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')
 
-# the run-evidence workflow run for THIS exact head SHA (not a stale earlier push)
-RUN_ID=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
-  --jq '[.workflow_runs[] | select(.name=="run-evidence")]
-        | sort_by(.created_at) | last | .id // empty')
+# --- transient-aware bundle fetch (the #3716 fix) -----------------------------------------------
+# A GitHub 5xx during the bundle fetch is UPSTREAM-UNAVAILABLE (a transport failure) — NOT a
+# producer that yielded nothing. Collapsing the two is the exact defect this guard's own note calls
+# out as load-bearing: on PR #3693 an outage wrote a 169-byte JSON 503 body into run-evidence.zip,
+# `unzip` failed, no manifest landed, and the gate reported "no run-evidence bundle" for a bundle
+# that was present the whole time. So every read below RETRIES a transient failure with backoff,
+# CAPTURES its stderr cause (never `2>/dev/null` — that swallowed the 503 that would have named the
+# outage), and — for the zip — verifies the bytes are a real archive by magic number before trusting
+# them. A failure that survives the retries is classified UNKNOWN (unverified-transient), never read
+# as an absent bundle (probe convention: an unrunnable probe is "unknown", never "down").
+ART_FETCH_ERR=""   # last captured transient cause, surfaced verbatim in the transient refusal reason
 
-# the run-evidence artifact id, then the manifest bytes
-ART_ID=$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
-  --jq '.artifacts[] | select(.name=="run-evidence") | .id' 2>/dev/null)
+gh_read_retry() {   # $1=api-path $2=jq-filter → echoes the jq result; exit 0 = read ok (INCLUDING a
+                    # valid response with no match — legit-empty, NOT transient), 1 = transient after retries.
+  local path="$1" jqf="$2" attempt=0 rc out errfile
+  errfile=$(mktemp "${TMPDIR:-/tmp}/ship-it-ghread.XXXXXX")
+  while [ "$attempt" -lt 4 ]; do
+    [ "$attempt" -gt 0 ] && sleep $(( 1 << (attempt - 1) ))   # 1s, 2s, 4s backoff before retries 2–4
+    attempt=$((attempt + 1))
+    out=$(gh api "$path" --jq "$jqf" 2>"$errfile"); rc=$?
+    if [ "$rc" -eq 0 ]; then rm -f "$errfile"; printf '%s' "$out"; return 0; fi
+    ART_FETCH_ERR="attempt $attempt reading ${path##*/}: gh exited $rc — $(tr -d '\n' <"$errfile" | head -c 160)"
+  done
+  rm -f "$errfile"; return 1
+}
+
+is_zip() {   # 0 iff $1 opens with the ZIP local-file-header magic PK\x03\x04 — a real archive, not a
+             # JSON error body (the incident: a 169-byte 503 payload written where a zip was expected).
+  [ -s "$1" ] || return 1
+  [ "$(dd if="$1" bs=4 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')" = "504b0304" ]
+}
+
+fetch_artifact_zip() {   # $1=ART_ID $2=dest ; 0 = a VALID zip landed, 1 = transient failure after retries
+  local art_id="$1" dest="$2" attempt=0 rc errfile
+  errfile=$(mktemp "${TMPDIR:-/tmp}/ship-it-artfetch.XXXXXX")
+  while [ "$attempt" -lt 4 ]; do
+    [ "$attempt" -gt 0 ] && sleep $(( 1 << (attempt - 1) ))
+    attempt=$((attempt + 1))
+    gh api "repos/$REPO/actions/artifacts/$art_id/zip" > "$dest" 2>"$errfile"; rc=$?
+    if [ "$rc" -eq 0 ] && is_zip "$dest"; then rm -f "$errfile"; return 0; fi
+    if [ "$rc" -ne 0 ]; then
+      ART_FETCH_ERR="attempt $attempt downloading artifact $art_id: gh exited $rc — $(tr -d '\n' <"$errfile" | head -c 160)"
+    else
+      ART_FETCH_ERR="attempt $attempt downloading artifact $art_id: $(wc -c <"$dest" | tr -d ' ')-byte non-zip payload (magic mismatch — an error body, not an archive)"
+    fi
+  done
+  rm -f "$errfile"; return 1
+}
+# ------------------------------------------------------------------------------------------------
+
+# ART_FETCH_STATUS ∈ {absent, ok, transient} — the #3716 distinction, decided HERE during the fetch,
+# NOT inferred from an empty manifest downstream. `absent` = a read succeeded but the producer yielded
+# nothing; `transient` = a read/download 5xx'd or returned a non-zip body after retries (UNKNOWN).
+ART_FETCH_STATUS=absent
+
+# the run-evidence workflow run for THIS exact head SHA (not a stale earlier push)
+RUN_ID=$(gh_read_retry "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+  '[.workflow_runs[] | select(.name=="run-evidence")] | sort_by(.created_at) | last | .id // empty')
+[ $? -ne 0 ] && ART_FETCH_STATUS=transient
+
+# the run-evidence artifact id (retry-aware — a 5xx here is UNKNOWN, not an absent artifact)
+ART_ID=""
+if [ "$ART_FETCH_STATUS" != transient ] && [ -n "$RUN_ID" ]; then
+  ART_ID=$(gh_read_retry "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+    '.artifacts[] | select(.name=="run-evidence") | .id')
+  [ $? -ne 0 ] && ART_FETCH_STATUS=transient
+fi
+
 # per-run bundle dir (mktemp -d), NOT a fixed /tmp/ship-it-bundle — the §SP per-run scratchpad
 # namespace (gh-issue-intake-formats.md): concurrent §CP shippers fan out, and a shared path lets
 # two racing runs read each other's bundle — merge-safety must not rest on Step 3.5's
 # commit==head assertion catching the swap after the fact (#2281; the #3718 silent-clobber class).
 BUNDLE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ship-it-bundle.XXXXXX")
-gh api "repos/$REPO/actions/artifacts/$ART_ID/zip" > "$BUNDLE_DIR/run-evidence.zip" 2>/dev/null \
-  && unzip -oq "$BUNDLE_DIR/run-evidence.zip" -d "$BUNDLE_DIR"
 MANIFEST="$BUNDLE_DIR/manifest.json"
+
+# Download + unzip ONLY when a producer run + artifact both resolved. An empty RUN_ID/ART_ID is
+# genuine absence (assertion 1b); a LISTED artifact we cannot fetch as a valid zip is TRANSIENT.
+if [ "$ART_FETCH_STATUS" != transient ] && [ -n "$RUN_ID" ] && [ -n "$ART_ID" ]; then
+  if fetch_artifact_zip "$ART_ID" "$BUNDLE_DIR/run-evidence.zip"; then
+    unzip -oq "$BUNDLE_DIR/run-evidence.zip" -d "$BUNDLE_DIR" \
+      && ART_FETCH_STATUS=ok \
+      || ART_FETCH_STATUS=transient   # valid magic but unreadable ⇒ a corrupt/truncated transfer, still transient
+  else
+    ART_FETCH_STATUS=transient        # a listed artifact that will not download as a valid zip = UNKNOWN
+  fi
+fi
 ```
 
-Now assert the four things, **failing closed** on each — a missing bundle, an unreadable
-schema, a stale commit, or any failed check refuses the merge with a *distinct* reason
-string; never a silent pass:
+Now assert the bundle, **failing closed** on each check — an unreachable upstream, a missing
+bundle, an unreadable schema, a stale commit, or any failed check refuses the merge with a
+*distinct* reason string; never a silent pass. Assertion 1 forks first: a transient fetch
+failure (assertion 1a) is reported as unverified-transient and **must be checked before** the
+genuine-absence case (1b), since a transport failure leaves the bundle fields empty:
 
 ```bash
-# Each of the four refusals below is a stop path, so each clears the merge intent before it
-# reports (guard 6 / ADR 0198) — one wrapper, not four hand-copied disarms.
+# Each refusal below (transient, absent, schema, stale, checks-failed) is a stop path, so each
+# clears the merge intent before it reports (guard 6 / ADR 0198) — one wrapper, not N hand-copied disarms.
 refuse_ship() { disarm_intent refuse || INTENT_UNCLEARED=1; echo "$1"; exit 0; }
 
-# 1. The bundle must exist. No head-SHA run, no run-evidence artifact, or no manifest in it
-#    → there is no proof this commit was run → refuse (ADR 0056: the artifact is the storage).
+# 1a. TRANSIENT / upstream-unavailable (the #3716 fix — this MUST precede 1b). A read 5xx'd, or the
+#     listed artifact would not download as a valid zip after retry+backoff — a TRANSPORT failure,
+#     UNKNOWN, NOT an absent bundle. Report unverified-transient with the captured cause (probe
+#     convention: an unrunnable probe is "unknown", never "down"), so a re-dispatch after the outage
+#     clears it. Fail-closed: still declines to merge. Ordered first because on a transient failure
+#     RUN_ID/ART_ID/MANIFEST may be empty and would otherwise mis-trip 1b's "no bundle".
+if [ "$ART_FETCH_STATUS" = transient ]; then
+  refuse_ship "unverified (run-evidence artifact unreachable — transient upstream error, retried: ${ART_FETCH_ERR:-cause unavailable})"
+fi
+
+# 1b. GENUINE absence. Reads succeeded but there is no head-SHA run, no run-evidence artifact, or no
+#     manifest in it → the PRODUCER yielded nothing, so there is no proof this commit was run →
+#     refuse (ADR 0056: the artifact is the storage).
 if [ -z "$RUN_ID" ] || [ -z "$ART_ID" ] || [ ! -s "$MANIFEST" ]; then
   refuse_ship "unverified (no run-evidence bundle)"   # refuse — see Running it
 fi
@@ -1476,20 +1559,26 @@ if [ "$NCHECKS" -eq 0 ] || [ -n "$FAILED" ]; then
 fi
 ```
 
-The four refusal reasons are **distinct and load-bearing** — each names *why* the bundle
-didn't clear, so the report (and a human reading it) knows whether it's a missing producer
-run, a producer/consumer schema skew, a stale push, or a real failing check:
+The five refusal reasons are **distinct and load-bearing** — each names *why* the bundle
+didn't clear, so the report (and a human reading it) knows whether it's an upstream outage, a
+missing producer run, a producer/consumer schema skew, a stale push, or a real failing check:
 
-- `unverified (no run-evidence bundle)` — runs fired for this head, but the run-evidence
-  producer yielded no artifact / an empty manifest. (The *zero-runs* case — the head SHA had
-  **no** workflow runs at all — is caught earlier in [Step 3z](#step-3z--the-dropped-trigger-state-zero-workflow-runs--bounded-nudge)
+- `unverified (run-evidence artifact unreachable — transient upstream error, retried: <cause>)`
+  — a GitHub 5xx / non-zip error body while fetching the run metadata or the artifact zip, still
+  failing after retry+backoff (the #3716 fix). This is **UNKNOWN, not absent** — the bundle may be
+  present; the transport failed. Distinct from "no bundle" precisely so a shipper (or a human) does
+  not investigate a non-existent CI gap during an outage; a re-dispatch once GitHub recovers clears
+  it. The `<cause>` is the last captured stderr / non-zip-payload detail, never `2>/dev/null`'d away.
+- `unverified (no run-evidence bundle)` — reads **succeeded** but runs fired for this head with the
+  run-evidence producer yielding no artifact / an empty manifest. (The *zero-runs* case — the head
+  SHA had **no** workflow runs at all — is caught earlier in [Step 3z](#step-3z--the-dropped-trigger-state-zero-workflow-runs--bounded-nudge)
   with its own `no runs fired (dropped trigger)` reason + nudge, so it never reaches here as a
   misleading "no bundle.")
 - `unverified (unsupported bundle schemaVersion: <v>)` — a schema major the gate can't read.
 - `unverified (stale run-evidence bundle: commit <c> != head <h>)` — bundle isn't for this commit.
 - `run-evidence checks failed (<names>)` — at least one `checks[]` entry is `fail` (or none present).
 
-These four apply only when the repo **has** a run-evidence producer. When it does not, guard 2
+These five apply only when the repo **has** a run-evidence producer. When it does not, guard 2
 is reported `guard 2 N/A (no run-evidence producer in this repo) — gated on checks (Step 3)`
 and clears by degradation (ADR 0086) — a distinct, non-refusing outcome, not one of the four.
 
@@ -1506,8 +1595,25 @@ clear — proceed to Step 4. Like Step 2's FAIL and Step 3's red, a bundle refus
 > run the assertions: a passing manifest stamped with `commit` == the PR head SHA clears all
 > four; the failing one trips assertion 4 (`run-evidence checks failed (test)`); the same
 > passing manifest stamped with a different `commit` trips assertion 3 (`stale`); a
-> deleted/empty `manifest.json` trips assertion 1 (`no run-evidence bundle`); a manifest with
-> `schemaVersion: 2` trips assertion 2. Each refusal is distinct — no silent pass.
+> deleted/empty `manifest.json` (reads succeeded, producer yielded nothing) trips assertion 1b
+> (`no run-evidence bundle`); a manifest with `schemaVersion: 2` trips assertion 2. Each refusal
+> is distinct — no silent pass.
+>
+> **The 503-vs-absent distinction (AC #1, the #3716 reproduction).** The transient path is
+> covered separately from the manifest assertions because it fires *before* a manifest exists.
+> Reproduce the incident: write a 169-byte JSON 503 body where the zip is expected and confirm
+> `is_zip` rejects it (magic `504b0304` mismatch) so `fetch_artifact_zip` returns transient — the
+> gate reports `unverified (run-evidence artifact unreachable — transient upstream error, …)`, NOT
+> `no run-evidence bundle`. The two live on opposite sides of the `ART_FETCH_STATUS` fork: a
+> **listed** artifact (`ART_ID` non-empty) that will not download as a valid zip is `transient`
+> (assertion 1a); an artifact the producer never emitted (`ART_ID` empty after a *successful* read)
+> is `absent` (assertion 1b). `is_zip` on the passing bundle's real zip returns 0 — the positive
+> case still clears.
+>
+> ```bash
+> printf '{"message":"Server Error","documentation_url":"…"}' > "$RUN_SCRATCH/run-evidence.zip"
+> is_zip "$RUN_SCRATCH/run-evidence.zip" && echo "BUG: JSON accepted as zip" || echo "OK: 503 body rejected → transient, not absent"
+> ```
 
 ```bash
 # build a passing + failing manifest from the tool fixtures, then run the four assertions
@@ -2099,6 +2205,7 @@ runs; ship-it close→reopened it once to re-emit the trigger, posted a durable 
 and stopped — re-dispatch after CI settles) or `unverified (no runs fired — nudge exhausted,
 producer may be stuck)` (already nudged once and still zero runs → handed to a human, with a
 durable PR outcome comment), `no linked issue`, or a run-evidence refusal (Step 3.5):
+`unverified (run-evidence artifact unreachable — transient upstream error, …)`,
 `unverified (no run-evidence bundle)`, `unverified (unsupported bundle schemaVersion: <v>)`,
 `unverified (stale run-evidence bundle: …)`, or `run-evidence checks failed (<names>)`. A
 refusal is a successful run — shipping the wrong PR is the only failure mode that matters.
