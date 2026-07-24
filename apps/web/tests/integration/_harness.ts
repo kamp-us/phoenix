@@ -331,6 +331,31 @@ export function frameData<T = unknown>(frame: string): T {
 }
 
 /**
+ * How to treat a NON-`ok` better-auth sign-up response (from its status + body text).
+ * The three dispositions make the two 422 shapes distinguishable at the one site that must
+ * tell them apart:
+ *
+ *   - `exists`    — 422 `USER_ALREADY_EXISTS`: the semantic duplicate a `NO_DESTROY` re-run
+ *                   (or a prior partial create) leaves behind → fall back to sign-in.
+ *   - `transient` — 422 `FAILED_TO_CREATE_USER`: better-auth's wrapper for a user-creation D1
+ *                   write that THREW. On a freshly-deployed stage's cold D1 the first
+ *                   user-creation write can fail this way (the same cold-first-write flake
+ *                   `postIdempotent` already replays for a 5xx, #32) — so a fresh sign-up
+ *                   replay resolves it, distinct from the semantic duplicate above (#3799).
+ *   - `terminal`  — any other response: a real client/validation error → surface at once.
+ *
+ * Pure over `(status, body)` so the two-422-code discrimination is unit-assertable, never
+ * buried in `signUp`'s control flow.
+ */
+export type SignUpDisposition = "exists" | "transient" | "terminal";
+export const signUpDisposition = (status: number, body: string): SignUpDisposition =>
+	status === 422 && body.includes("USER_ALREADY_EXISTS")
+		? "exists"
+		: status === 422 && body.includes("FAILED_TO_CREATE_USER")
+			? "transient"
+			: "terminal";
+
+/**
  * Build the HTTP harness over a deployed-worker URL accessor. The harness does NOT
  * deploy — `integrationStack()` (`_integration.ts`) owns the per-file `Test.make`
  * lifecycle and supplies `getUrl`, which resolves to this file's stage's worker URL
@@ -512,24 +537,70 @@ export function harness(
 		return {userId: data.user.id, cookie};
 	};
 
-	const signUp: Harness["signUp"] = async (email, password, name) => {
-		const res = await postAuthReady("/api/auth/sign-up/email", {email, password, name});
-		if (res.ok) return sessionFrom(res, "sign-up");
-		// Idempotent against the real remote D1 this file's stage deploys: a
-		// `NO_DESTROY` re-run reuses the same D1, so a seed user left by a prior run
-		// makes sign-up 422 USER_ALREADY_EXISTS. Fall back to sign-in so re-seeding a
-		// fixture is a no-op, not a hard fail.
-		const body = await res.text();
-		if (res.status === 422 && body.includes("USER_ALREADY_EXISTS")) {
-			const signIn = await postAuthReady("/api/auth/sign-in/email", {email, password});
-			if (!signIn.ok) {
-				throw new Error(
-					`sign-in (existing seed user) failed: ${signIn.status} ${await signIn.text()}`,
-				);
+	// A returned session cookie is only USABLE once its session row is consistently readable
+	// by the NEXT authenticated request. better-auth runs with no `cookieCache` (see
+	// `better-auth-live.ts`), so every session read hits D1 — and on a freshly-deployed
+	// stage's cold D1 the just-written session can lag the read replica the following
+	// vote/`definition.add` draws, surfacing as `UNAUTHORIZED` before the write propagates
+	// (#3799). Gate the returned session on `GET /api/auth/get-session` resolving its user, so
+	// `signUp` hands back a proven-live session, not a racing one. Fail-OPEN, like the warmups:
+	// a readiness probe must never RED a green stage, so an exhausted budget returns the session
+	// anyway (the caller's own idempotent op still retries) — this only front-loads the
+	// propagation wait off the first authenticated use.
+	const SESSION_READY_ATTEMPTS = 6;
+	const sessionReady = async (session: {
+		userId: string;
+		cookie: string;
+	}): Promise<{userId: string; cookie: string}> => {
+		for (let i = 0; i < SESSION_READY_ATTEMPTS; i++) {
+			const res = await req(
+				"/api/auth/get-session",
+				{headers: {cookie: session.cookie, origin: "http://localhost:3000"}},
+				{timeoutMs: REQUEST_TIMEOUT_MS},
+			);
+			if (res.ok) {
+				const data = (await res.json().catch(() => null)) as {user?: {id: string}} | null;
+				if (data?.user?.id) return session;
 			}
-			return sessionFrom(signIn, "sign-in");
+			await sleep(300 * (i + 1));
 		}
-		throw new Error(`sign-up failed: ${res.status} ${body}`);
+		return session;
+	};
+
+	// Replay a TRANSIENT cold-D1 user-creation failure (`FAILED_TO_CREATE_USER`, classified by
+	// `signUpDisposition`) — a fresh sign-up succeeds once the cold D1 accepts the write, and a
+	// partial create that DID commit converges on the next attempt's `USER_ALREADY_EXISTS`
+	// sign-in fallback. Bounded — a persistent failure still surfaces the last body.
+	const SIGNUP_CREATE_ATTEMPTS = 4;
+	const signUp: Harness["signUp"] = async (email, password, name) => {
+		let lastBody = "";
+		for (let i = 0; i < SIGNUP_CREATE_ATTEMPTS; i++) {
+			const res = await postAuthReady("/api/auth/sign-up/email", {email, password, name});
+			if (res.ok) return sessionReady(await sessionFrom(res, "sign-up"));
+			lastBody = await res.text();
+			switch (signUpDisposition(res.status, lastBody)) {
+				case "exists": {
+					// A `NO_DESTROY` re-run reuses the same D1, so a seed user left by a prior run
+					// makes sign-up 422 USER_ALREADY_EXISTS — sign in so re-seeding a fixture is a
+					// no-op, not a hard fail.
+					const signIn = await postAuthReady("/api/auth/sign-in/email", {email, password});
+					if (!signIn.ok) {
+						throw new Error(
+							`sign-in (existing seed user) failed: ${signIn.status} ${await signIn.text()}`,
+						);
+					}
+					return sessionReady(await sessionFrom(signIn, "sign-in"));
+				}
+				case "transient":
+					await sleep(400 * (i + 1));
+					continue;
+				case "terminal":
+					throw new Error(`sign-up failed: ${res.status} ${lastBody}`);
+			}
+		}
+		throw new Error(
+			`sign-up failed after ${SIGNUP_CREATE_ATTEMPTS} attempts (transient FAILED_TO_CREATE_USER): ${lastBody}`,
+		);
 	};
 
 	const signUpYazar: Harness["signUpYazar"] = async (email, password, name) => {
