@@ -93,9 +93,12 @@ jobs:
       # (#3514/#690/#813; PR #3512, run 29659047210). Fix: gate the merge_group branch on the
       # SAME `backend` path filter the PR head uses, so the skip decision is consistent across
       # PR head and merge_group. `steps.filter.outputs.backend` IS computed on merge_group —
-      # `dorny/paths-filter` diffs the merge_group ref against the default branch (`main...ref`
-      # merge-base), i.e. the batch's cumulative diff — so a docs-only batch has
-      # `backend == false` in BOTH contexts. The worker-relevance AND is retained: a
+      # dorny diffs the batch's two-dot `base_sha..head` (the `mergebase` step above pins its
+      # `base` to `merge_group.base_sha`; #3797), i.e. the batch's cumulative diff on a STABLE
+      # basis — so a docs-only batch has `backend == false` deterministically in every batch,
+      # matching the PR head. (Before #3797 an empty `base` sent dorny to a merge-base search
+      # against a moving `main`, so the SAME docs-only PR #3747 flapped in-scope/out-of-scope
+      # across batches and a clean PR got ejected.) The worker-relevance AND is retained: a
       # lockfile-triggered-but-worker-irrelevant batch (`backend == true`, `worker_relevant ==
       # false`) still skips, mirroring the PR head. FAIL-SAFE TO RUNNING is preserved end to
       # end — `|| 'true'` defaults an absent/empty worker_relevant to running, the classify
@@ -149,28 +152,49 @@ jobs:
         with:
           fetch-depth: 0
 
-      # MERGE-BASE DIFF BASIS (issue #3722) — the second half of the change-detection
-      # contract, as load-bearing as the `token: ''` mode below. In git mode dorny diffs
-      # TWO-DOT from `pull_request.base.sha` to the checked-out ref (v3.0.2 `src/main.ts`:
-      # `git.getChanges(base || baseSha || defaultBranch, currentRef)`; `src/git.ts`
-      # `getChanges` runs `git diff --name-status <base>..<head>`). `base.sha` is the base
-      # BRANCH TIP at event time, while the checked-out `refs/pull/N/merge` is built on the
-      # tip as of when GitHub last regenerated it — so the moment main advances past a PR's
-      # merge ref, every file main changed in between is reported as changed HERE, in
-      # reverse. deploy.yml's filter reads the same globs off the same diff basis, so both
-      # must be anchored to the true common ancestor or they classify the same PR differently.
-      # That divergence wedged PR #3713: 22 phantom `e2e:` hits (apps/web/src, worker, …)
-      # from main's drift set `e2e_required=true` while deploy correctly skipped, so e2e
-      # polled 10 min for a preview comment that could never arrive and permanently redded a
-      # 4-file skills/pipeline-cli PR. Passing the true merge base as `base` makes the
-      # two-dot diff equal the PR's own three-dot diff. Fail-safe: on any failure the output
-      # is empty, dorny falls back to today's `base.sha` basis, and detection stays wide (it
-      # over-reports, never under-reports) — a doubt always RUNS a gate, never skips one.
+      # DIFF BASIS — the single source of "what change-detection diffs against" for BOTH
+      # cost-gated contexts (issue #3722 for `pull_request`, #3797 for `merge_group`), as
+      # load-bearing as the `token: ''` mode below. dorny's `base` input decides it, and an
+      # EXPLICIT COMMIT SHA is the only STABLE choice: dorny takes its deterministic two-dot
+      # `git diff <base>..<head>` path ONLY when `base` is a SHA (grounded in v3.0.2
+      # `src/main.ts` `getChangedFilesFromGit`: `isBaseSha` ⇒ `git.getChanges(baseSha, head)`;
+      # `src/git.ts` `getChanges` runs `git diff --name-status <base>..<head>`). A NON-SHA base
+      # — or an EMPTY one — instead routes to `getChangesSinceMergeBase`, a THREE-DOT merge-base
+      # search with depth-limited incremental fetching against a MOVING `main`, whose result
+      # drifts run to run. So this step emits a SHA per event:
+      #   - pull_request: the true merge base of `base.sha..HEAD`, so dorny's two-dot diff
+      #     equals the PR's own three-dot diff. `base.sha` is the base BRANCH TIP at event time
+      #     while the checked-out `refs/pull/N/merge` is built on an older tip, so diffing raw
+      #     `base.sha` reports every file main changed since, in reverse — the 22 phantom `e2e:`
+      #     hits that wedged PR #3713 (10-min preview poll on a deploy that correctly skipped).
+      #   - merge_group: the batch's own `base_sha`. An empty `base` here defaulted dorny to
+      #     `base = defaultBranch` ('main', a BRANCH NAME — not a SHA) ⇒ the unstable
+      #     merge-base-against-moving-main path, so the IDENTICAL docs-only PR #3747 got
+      #     "integration in scope" in one batch (flaked → ejected) and "out" in the next (#3797).
+      #     Pinning `base` to `merge_group.base_sha` makes dorny diff two-dot `base_sha..head_sha`
+      #     — the batch's cumulative diff on a stable basis, byte-for-byte the SAME basis the
+      #     worker-relevance classifier already uses (its `range=` below), so the two ANDed
+      #     integration signals read ONE basis and identical batch content yields an identical
+      #     scope decision every batch.
+      # deploy.yml's filter reads the same globs off this same `base:` input, so both stay
+      # anchored to one basis or they classify the same PR differently (`path-filter-guard`
+      # fails closed on that drift). Fail-safe: on any failure the output is empty, dorny falls
+      # back to its default-branch merge-base basis, and detection stays WIDE (it over-reports,
+      # never under-reports) — a doubt always RUNS a gate, never skips one.
       - id: mergebase
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -uo pipefail
-          if sha=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null); then
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+            if [ -n "$MERGE_GROUP_BASE_SHA" ]; then
+              echo "sha=$MERGE_GROUP_BASE_SHA" >> "$GITHUB_OUTPUT"
+              echo "::notice::change-detection diff basis = merge_group base_sha $MERGE_GROUP_BASE_SHA (stable two-dot batch diff base_sha..head)"
+            else
+              echo "::warning::merge_group base_sha empty — falling back to dorny's default-branch merge-base basis (detection stays wide, never narrower)"
+            fi
+          elif sha=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD 2>/dev/null); then
             echo "sha=$sha" >> "$GITHUB_OUTPUT"
             echo "::notice::change-detection diff basis = merge base $sha (base.sha ${{ github.event.pull_request.base.sha }})"
           else
@@ -199,8 +223,9 @@ jobs:
         id: filter
         with:
           token: ''
-          # Empty on non-PR events, where dorny already merge-bases against the default
-          # branch itself — so `merge_group`/`push` behavior is untouched. `path-filter-guard`
+          # The explicit diff basis the `mergebase` step above pins: the PR merge base on
+          # `pull_request`, the batch `base_sha` on `merge_group` (#3797), and empty on `push`
+          # (dorny keeps its default-branch merge-base backstop there). `path-filter-guard`
           # fails closed if this `token`/`base` pairing ever drifts from deploy.yml's.
           base: ${{ steps.mergebase.outputs.sha }}
           filters: |
