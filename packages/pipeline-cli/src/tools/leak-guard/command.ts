@@ -31,7 +31,7 @@ import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, CREW_DIR, sweepCrew} from "./crew-gate.ts";
-import {PrComments, PrCommentsLive} from "./github.ts";
+import {PrComments, PrCommentsLive, type UpstreamUnavailableError} from "./github.ts";
 import {findCommentLeaks, findLeaks, type Leak} from "./leak-guard.ts";
 import {scanPrComments} from "./scan-pr.ts";
 
@@ -39,6 +39,13 @@ import {scanPrComments} from "./scan-pr.ts";
 // could not complete, which the pre-commit hook treats as warn-and-allow while
 // CI treats as failure (issue #332).
 const LEAK_EXIT_CODE = 2;
+
+// 3 = the scan could not VERIFY — GitHub was transiently unavailable past the retry budget
+// (`scan-pr` only). Distinct from a leak (2) and a clean pass (0): it is one of the "any OTHER
+// non-zero = could not complete" codes, so the ship-it Step 3.7 gate still BLOCKS (fail-safe) —
+// a leak gate must never pass what it could not read — but legibly, never as an opaque stack
+// trace posing as a finding (issue #3710).
+const UPSTREAM_UNAVAILABLE_EXIT_CODE = 3;
 
 interface FileLeaks {
 	readonly file: string;
@@ -218,6 +225,18 @@ const prArg = Argument.integer("pr").pipe(
 	Argument.withDescription("the pull request number whose landed comments to scan for leaks"),
 );
 
+// The unknown outcome (#3710): GitHub stayed 5xx/unreachable past the retry budget, so the scan
+// could not READ the comments — NOT a leak finding. Print the fail-safe block reason legibly and
+// exit 3, distinct from a leak (2). Caught in-handler like LeakFound so no stack trace escapes.
+const onUpstreamUnavailable = (e: UpstreamUnavailableError) =>
+	Effect.sync(() => {
+		process.stderr.write(
+			`leak-guard: could not verify — GitHub upstream unavailable on PR #${e.pr} after ${e.attempts} attempts (${e.detail || `exit ${e.lastExitCode}`}).\n` +
+				"This is NOT a leak finding: the scan could not read the PR's comments. The merge is BLOCKED (fail-safe) until leaks can be verified — retry shortly.\n",
+		);
+		process.exit(UPSTREAM_UNAVAILABLE_EXIT_CODE);
+	});
+
 const scanPr = Command.make(
 	"scan-pr",
 	{pr: prArg},
@@ -242,7 +261,10 @@ const scanPr = Command.make(
 			);
 			return yield* Effect.fail(new LeakFound({count: leaks.length}));
 		});
-		yield* run.pipe(Effect.catchTag("LeakFound", onLeakFound));
+		yield* run.pipe(
+			Effect.catchTag("LeakFound", onLeakFound),
+			Effect.catchTag("@kampus/leak-guard/UpstreamUnavailableError", onUpstreamUnavailable),
+		);
 	}),
 ).pipe(
 	Command.withDescription(
