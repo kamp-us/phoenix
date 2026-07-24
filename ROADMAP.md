@@ -37,6 +37,11 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Crew-MCP Finish — replace the tmux relay with crew-mcp | #28 | done |
 | Deterministic Crew Mechanics | #29 | active |
 | Diátaxis docs — pipeline-crew & -mcp | #31 | done |
+| Merge-Gate Reliability | #36 | active |
+| Worktree-Isolation Integrity | #37 | active |
+| §CP Verdict Integrity | #38 | active |
+| Flag Graduation | #39 | active |
+| pipeline-cli Glue Consolidation | #40 | active |
 | pipeline-cli @effect/platform migration | #32 | active |
 | Agentic design-system coverage | #33 | done |
 | Flag Retirement (ADR 0136) | #34 | active |
