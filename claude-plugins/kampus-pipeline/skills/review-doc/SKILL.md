@@ -691,12 +691,10 @@ Resolve the tool once — in-repo first, published fallback (ADR 0062/0064; epic
 your composed verdict body by file:
 
 ```bash
-# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
-else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
-fi
+# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
+# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here
+# (#3653; ADR 0062/0064; epic #994)
+VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
 # write your composed PASS verdict into "$VERDICT_FILE" (first line: review-doc: PASS @ <HEAD_SHA> — merge-ready)

@@ -140,12 +140,9 @@ re-implementing ~50 lines of `jq` inline. Resolve the tool in-repo first, publis
 (ADR 0064), then branch on its exit status:
 
 ```bash
-# Resolve the epic-lock CLI once — in-repo first, published fallback (ADR 0064; epic #994).
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  LOCK="node packages/pipeline-cli/src/bin.ts epic-lock"   # phoenix-local: the in-repo consolidated bin
-else
-  LOCK="pnpm dlx @kampus/pipeline-cli@0.2.0 epic-lock"     # foreign install: the published CLI
-fi
+# The `bin/pipeline-cli` shim resolves the CLI (in-repo bin, else the installed bin, else the
+# pinned `pnpm dlx` fallback reading hooks/pin.sh) — no version pinned here (#3653; ADR 0064).
+LOCK="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli epic-lock"
 
 # Acquire the two-layer lock. `epic-lock acquire` runs the WHOLE ADR-0115 protocol over $CLAUDE_CODE_SESSION_ID
 # and exits 0 ONLY when the lock is ours; every fail-closed back-off — a held label, a 422 missing label, a
