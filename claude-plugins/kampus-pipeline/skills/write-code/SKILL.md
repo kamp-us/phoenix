@@ -632,15 +632,29 @@ COMMON="$(cd "$COMMON" && pwd)"
 
 # Was worktree isolation EXPECTED for this run? The coder agent-type (agents/coder.md) asserts
 # isolation UNCONDITIONALLY, so any run under it expects the harness to have provisioned a linked
-# worktree + set $WORKTREE_ROOT. The signal is machine-checkable and harness-set — the agent-type
-# env var $CLAUDE_CODE_AGENT (stable across an agent's Bash calls, unlike a shell `export`),
-# corroborated by a set $WORKTREE_ROOT — NOT a per-run guess. A genuine standalone human run (a
-# direct `/write-code`) matches NEITHER. This is what lets the fail-closed branch below distinguish
-# "isolation expected but the harness no-op'd provisioning" (#2440) from a legitimate standalone
-# run, so it fires LOUD in the first case without regressing the second. See ADR 0172.
+# worktree + set $WORKTREE_ROOT. Three machine-checkable, harness-set signals arm it — NOT a per-run
+# guess — mirroring the repo-side guard's `isIsolationExpected` (bash-pin.ts) exactly (#3406):
+#   1. a direct isolation-asserting agent-type name ($CLAUDE_CODE_AGENT matching coder/reviewer/shipper);
+#   2. a set $WORKTREE_ROOT (the harness signalled a provisioned root);
+#   3. the ENV-INDEPENDENT corroboration — any agent-context run ($CLAUDE_CODE_AGENT non-empty) sitting
+#      on the PRIMARY checkout (git-dir == common-dir). A NESTED/renamed coder spawn inherits the
+#      PARENT's agent-type string (e.g. `crew-engineering-manager` / `junior-engineer`, ADR 0189), so the
+#      NAME match alone goes inert for it — but such a spawn on the primary checkout is a broken/absent
+#      worktree whatever its inherited name, and clause 3 catches it regardless of the string. Keying on
+#      the agent-type LITERAL alone was the #3406 defect: a renamed coder computed isolation-expected=0
+#      and silently self-provisioned. Do NOT hard-code any agent-type name (junior-engineer or otherwise)
+#      to "fix" it — that just relocates the coupling to the next rename; the corroboration removes it.
+# A genuine standalone human run (a direct `/write-code`, $CLAUDE_CODE_AGENT unset) matches NONE of the
+# three, so it never over-refuses and still reaches the Non-isolated fallback. This is what lets the
+# fail-closed branch below distinguish "isolation expected but the harness no-op'd provisioning" (#2440)
+# from a legitimate standalone run, firing LOUD in the first case without regressing the second. See
+# ADR 0172, #2462 (the guard's parallel re-keying), and #3406.
 ISOLATION_EXPECTED=0
-case "$CLAUDE_CODE_AGENT" in coder|*coder*) ISOLATION_EXPECTED=1 ;; esac   # ran AS the coder agent-type
+case "$CLAUDE_CODE_AGENT" in *coder*|*reviewer*|*shipper*) ISOLATION_EXPECTED=1 ;; esac   # direct isolation-asserting agent-type name
 [ -n "$WORKTREE_ROOT" ] && ISOLATION_EXPECTED=1                            # harness signalled a provisioned root
+# env-independent corroboration: a non-empty agent-type on the PRIMARY checkout (git-dir == common-dir) —
+# catches a nested/renamed coder whose inherited agent-type string doesn't name a role (#3406).
+[ -n "$CLAUDE_CODE_AGENT" ] && [ "$GITDIR" = "$COMMON" ] && ISOLATION_EXPECTED=1
 echo "write-code preflight: git-dir=$GITDIR common-dir=$COMMON cwd=$(pwd) isolation-expected=$ISOLATION_EXPECTED (agent=${CLAUDE_CODE_AGENT:-unset} worktree-root=${WORKTREE_ROOT:+set})"   # emit scanned scope (ADR 0092 §1)
 if [ "$GITDIR" = "$COMMON" ]; then
   if [ "$ISOLATION_EXPECTED" = 1 ]; then
