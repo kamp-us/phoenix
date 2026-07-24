@@ -1,15 +1,15 @@
 /**
- * Pure-core tests for `crew-fanout-guard` (#3606): the frontmatter/disallowedTools parse,
- * the enforced-allowlist coverage decision, the future-agent fail-closed hole, and the
- * zero-scope / missing-bridge / stale-allowlist fail-closed verdicts (ADR 0092). No IO —
+ * Pure-core tests for `crew-fanout-guard` (#3606): the frontmatter parse, the
+ * every-agent-type-is-classified decision, the future-agent fail-closed hole, and the
+ * zero-scope / missing-bridge / stale-classification fail-closed verdicts (ADR 0092). No IO —
  * the filesystem seam is crossed in `gate.ts`.
  */
 import {describe, expect, it} from "@effect/vitest";
 import {
 	type AgentDef,
 	BRIDGE_ALLOWLIST,
+	BRIDGE_OUT_OF_SCOPE,
 	type CrewFanoutInput,
-	disallowedTaskTypes,
 	judge,
 	parseAgentDef,
 	parseFrontmatter,
@@ -37,44 +37,13 @@ const CREW_AGENTS = [
 ];
 const FULL_ROSTER = [...PIPELINE_AGENTS, ...CREW_AGENTS];
 
-const bridge = (name: string, disallowedTaskTypes: ReadonlyArray<string>): AgentDef => ({
-	name,
-	disallowedTaskTypes,
-});
+const bridge = (name: string): AgentDef => ({name});
 
-// The three bridge defs, scoped to exactly cover their non-allowlisted mutating roster —
-// i.e. the live #3605 disallowedTools, expressed as agent-type names.
-const CARTOGRAPHER = bridge("crew-cartographer", [
-	"reviewer",
-	"shipper",
-	"crew-engineering-manager",
-	"crew-chief-of-staff",
-	"crew-intake-desk",
-	"crew-cartographer",
-]);
-const CHIEF = bridge("crew-chief-of-staff", [
-	"coder",
-	"reviewer",
-	"shipper",
-	"planner",
-	"canon",
-	"adr",
-	"triager",
-	"reporter",
-	"crew-engineering-manager",
-	"crew-cartographer",
-	"crew-intake-desk",
-	"crew-chief-of-staff",
-]);
-const INTAKE = bridge("crew-intake-desk", [
-	"coder",
-	"reviewer",
-	"shipper",
-	"crew-engineering-manager",
-	"crew-cartographer",
-	"crew-chief-of-staff",
-	"crew-intake-desk",
-]);
+// A bridge def contributes only its identity now — the spawn classification lives in the
+// guard's own two tables, not in the def (see the module docblock / #3764).
+const CARTOGRAPHER = bridge("crew-cartographer");
+const CHIEF = bridge("crew-chief-of-staff");
+const INTAKE = bridge("crew-intake-desk");
 
 const currentInput = (): CrewFanoutInput => ({
 	rosterAgents: FULL_ROSTER,
@@ -82,21 +51,17 @@ const currentInput = (): CrewFanoutInput => ({
 });
 
 describe("parseFrontmatter / parseAgentDef", () => {
-	it("extracts name + disallowedTools from a real bridge def's frontmatter", () => {
+	it("extracts the name from a real bridge def's frontmatter", () => {
 		const md = [
 			"---",
 			"name: crew-cartographer",
 			"model: inherit",
 			'tools: ["Read", "Task"]',
-			'disallowedTools: ["Task(reviewer)", "Task(shipper)"]',
 			"---",
 			"",
 			"body text",
 		].join("\n");
-		expect(parseAgentDef(md)).toEqual({
-			name: "crew-cartographer",
-			disallowedTaskTypes: ["reviewer", "shipper"],
-		});
+		expect(parseAgentDef(md)).toEqual({name: "crew-cartographer"});
 	});
 
 	it("returns null for a def with no frontmatter or no name", () => {
@@ -104,30 +69,12 @@ describe("parseFrontmatter / parseAgentDef", () => {
 		expect(parseAgentDef("---\nmodel: inherit\n---\nbody")).toBeNull();
 	});
 
-	it("parses a def with no disallowedTools as an empty deny list", () => {
-		const md = '---\nname: crew-engineering-manager\ntools: ["Task"]\n---\nbody';
-		expect(parseAgentDef(md)).toEqual({name: "crew-engineering-manager", disallowedTaskTypes: []});
-	});
-
 	it("parseFrontmatter tolerates CRLF fences", () => {
 		expect(parseFrontmatter("---\r\nname: x\r\n---\r\nbody")).toEqual({name: "x"});
 	});
 });
 
-describe("disallowedTaskTypes — extract agent-types from Task(...) denies only", () => {
-	it("keeps Task(x) entries, drops non-Task and malformed tokens", () => {
-		expect(
-			disallowedTaskTypes(["Task(reviewer)", "Task( shipper )", "Bash", "Task()", "Edit"]),
-		).toEqual(["reviewer", "shipper"]);
-	});
-
-	it("returns empty for a non-array", () => {
-		expect(disallowedTaskTypes(undefined)).toEqual([]);
-		expect(disallowedTaskTypes("Task(reviewer)")).toEqual([]);
-	});
-});
-
-describe("judge — the enforced-allowlist coverage decision", () => {
+describe("judge — the every-agent-type-is-classified decision", () => {
 	it("PASSES on the current, fully-scoped crew roster", () => {
 		const v = judge(currentInput());
 		expect(v.pass).toBe(true);
@@ -139,7 +86,7 @@ describe("judge — the enforced-allowlist coverage decision", () => {
 		}
 	});
 
-	it("FAILS CLOSED on a FUTURE mutating agent-type no bridge allowlists or denies (the #3606 hole)", () => {
+	it("FAILS CLOSED on a FUTURE mutating agent-type no bridge classifies (the #3606 hole)", () => {
 		const input: CrewFanoutInput = {
 			rosterAgents: [...FULL_ROSTER, "crew-auditor"],
 			bridges: [CARTOGRAPHER, CHIEF, INTAKE],
@@ -147,7 +94,7 @@ describe("judge — the enforced-allowlist coverage decision", () => {
 		const v = judge(input);
 		expect(v.pass).toBe(false);
 		if (!v.pass && v.reason === "uncovered") {
-			// every bridge is missing a deny for the new type, and none allowlists it
+			// no bridge allowlists or scopes out the new type
 			expect(v.gaps.map((g) => g.bridge).sort()).toEqual([
 				"crew-cartographer",
 				"crew-chief-of-staff",
@@ -159,26 +106,15 @@ describe("judge — the enforced-allowlist coverage decision", () => {
 		}
 	});
 
-	it("FAILS CLOSED when a bridge silently drops a Task(x) deny for a non-allowlisted type", () => {
-		// reviewer is NOT on the cartographer allowlist; removing its deny must red.
-		const weakened = bridge(
-			"crew-cartographer",
-			CARTOGRAPHER.disallowedTaskTypes.filter((t) => t !== "reviewer"),
-		);
-		const v = judge({rosterAgents: FULL_ROSTER, bridges: [weakened, CHIEF, INTAKE]});
-		expect(v.pass).toBe(false);
-		if (!v.pass && v.reason === "uncovered") {
-			expect(v.gaps).toContainEqual({bridge: "crew-cartographer", agent: "reviewer"});
-		} else {
-			throw new Error("expected an uncovered verdict");
+	it("keeps the two classification tables disjoint and jointly total over the mutating roster", () => {
+		// The pass above is the coverage proof; this pins the shape that makes it non-vacuous —
+		// an agent-type on BOTH tables would let a table edit go unnoticed.
+		for (const name of ["crew-cartographer", "crew-chief-of-staff", "crew-intake-desk"] as const) {
+			const allow = new Set(BRIDGE_ALLOWLIST[name]);
+			expect(BRIDGE_OUT_OF_SCOPE[name].filter((a) => allow.has(a))).toEqual([]);
 		}
-	});
-
-	it("does NOT require a bridge to deny an agent-type on its own allowlist", () => {
-		// intake-desk allowlists planner/canon/adr — dropping those denies stays green.
-		const v = judge({rosterAgents: FULL_ROSTER, bridges: [CARTOGRAPHER, CHIEF, INTAKE]});
-		expect(v.pass).toBe(true);
 		expect(BRIDGE_ALLOWLIST["crew-intake-desk"]).toContain("planner");
+		expect(BRIDGE_OUT_OF_SCOPE["crew-intake-desk"]).toContain("coder");
 	});
 
 	it("fails closed on zero roster and on zero bridges (ADR 0092)", () => {
@@ -202,7 +138,7 @@ describe("judge — the enforced-allowlist coverage decision", () => {
 		}
 	});
 
-	it("fails closed on a stale allowlist entry (allowlists an agent not in the roster)", () => {
+	it("fails closed on a stale classification entry (names an agent not in the roster)", () => {
 		// drop `reporter` from the roster while an allowlist still names it.
 		const roster = FULL_ROSTER.filter((a) => a !== "reporter");
 		const v = judge({rosterAgents: roster, bridges: [CARTOGRAPHER, CHIEF, INTAKE]});
@@ -222,13 +158,13 @@ describe("renderReport", () => {
 		expect(report).toContain("mutating roster");
 	});
 
-	it("names the offending bridge×agent pair on an uncovered fail", () => {
+	it("names the offending bridge×agent pair on an unclassified fail", () => {
 		const v = judge({
 			rosterAgents: [...FULL_ROSTER, "crew-auditor"],
 			bridges: [CARTOGRAPHER, CHIEF, INTAKE],
 		});
 		const report = renderReport(v);
 		expect(report).toContain("crew-auditor");
-		expect(report).toContain("neither allowlists nor denies");
+		expect(report).toContain("neither allowlists nor scopes out");
 	});
 });

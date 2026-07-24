@@ -60,6 +60,13 @@ import {crewRunRoot, ProjectScopeWriteError} from "./register-project-scope.ts";
 import {deriveOneSession} from "./session-set.ts";
 import {computeTmuxPlacement, type TmuxPaneCollisionError} from "./tmux-placement.ts";
 import {
+	assertCrewSeatToolsets,
+	type CrewSeatDefUnreadableError,
+	type CrewSeatToolsetMismatchError,
+	readSeatToolsetFromDef,
+	type SeatToolsetReader,
+} from "./toolset-assert.ts";
+import {
 	assertPinnedCliVersion,
 	type CliVersionAssertError,
 	readInstalledCliVersionOutput,
@@ -88,6 +95,8 @@ export class CrewWindowNotRunningError extends Schema.TaggedErrorClass<CrewWindo
 export type SpawnRoleError =
 	| LaunchConfigError
 	| CliVersionAssertError
+	| CrewSeatToolsetMismatchError
+	| CrewSeatDefUnreadableError
 	| TrackerNotServingError
 	| RendezvousResolutionError
 	| CrewSessionBinUnresolvableError
@@ -114,6 +123,8 @@ export interface SpawnRoleInput {
 	readonly config?: Effect.Effect<LaunchConfig, LaunchConfigError>;
 	/** The installed-CLI-version reader the pin is asserted against. Default: the real `claude --version`. */
 	readonly readVersionOutput?: Effect.Effect<string, unknown>;
+	/** Reads the seat's declared toolset for the declared-vs-actual assert (#3764). Default: the real agent def under `projectRoot`. */
+	readonly readSeatToolset?: SeatToolsetReader;
 	/** Start-or-reuse the repo's tracker at its canonical rendezvous (idempotent — dials the running one). Default: `ensureTrackerRunning`. */
 	readonly ensureTracker?: (
 		projectRoot: string,
@@ -218,6 +229,13 @@ export const spawnRole = (
 		// Same fail-fast the whole-crew boot does: channels vary across CLI versions, so a drifted pin is
 		// a spawn to refuse before touching the tracker or launching (version-assert.ts / #3295).
 		yield* assertPinnedCliVersion(config, input.readVersionOutput ?? readInstalledCliVersionOutput);
+		// And the same seat-toolset refusal (#3764): an on-demand spawn must not put a silently degraded
+		// seat on screen either — the CLI drops an ungrantable or self-denied tool with no error.
+		yield* assertCrewSeatToolsets(
+			projectRoot,
+			[role],
+			input.readSeatToolset ?? readSeatToolsetFromDef,
+		);
 		const tracker = yield* ensureTracker(projectRoot);
 
 		const session = deriveOneSession({role, instanceId});

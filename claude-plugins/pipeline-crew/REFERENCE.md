@@ -23,7 +23,7 @@ carries the **same five frontmatter keys**; all are present in all four defs.
 | `description` | string (quoted) | The routing prose: what the agent is for, its typical triggers, and an explicit "Do NOT use it to…" negative. Single-quoted YAML; inner apostrophes are doubled (`''`). |
 | `model` | string | Always `inherit` — a spawned session runs on the tier of the session that launched it (the tier is set at launch via the config's `roles.<role>.tier`, not hardcoded in the def). |
 | `color` | string | The session's display color — one per role (see the roster below). |
-| `tools` | string[] | The hard allowlist of callable tools. A tool absent here is uncallable even if its MCP server is connected. Every def lists the channel tool by its full MCP token (below). |
+| `tools` | string[] | The hard allowlist of callable tools. A tool absent here is uncallable even if its MCP server is connected. Every def lists the channel tool by its full MCP token (below). A name the CLI cannot grant is dropped **silently**, so what may appear here is fenced — see [`SPAWN-SCOPE.md`](SPAWN-SCOPE.md). |
 
 ### The channel tool token — mandatory in every `tools:` allowlist
 
@@ -42,8 +42,8 @@ The **engineering-manager** (the one engine) carries a **second** channel token 
 `channel_send` — `mcp___kampus_pipeline-crew-mcp__channel_claim` — which claims a tracker
 resource before it opens a lane (cross-engine deconfliction, a real lock rather than a relayed
 message). Only the engine lists it; the three bridges list `channel_send` alone. So when
-reconstructing the engine def from the roster table below, note its `tools:` array is seven
-entries, not six. Why it needs its own tool: [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md).
+reconstructing the engine def from the roster table below, note its `tools:` array is five
+entries, not four. Why it needs its own tool: [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md).
 
 ### Per-def frontmatter values
 
@@ -51,10 +51,10 @@ The exact shipped values, matching each def head:
 
 | Def file | `name` | `color` | `tools` |
 |---|---|---|---|
-| [`agents/crew-cartographer.md`](agents/crew-cartographer.md) | `crew-cartographer` | `green` | `Read`, `Bash`, `Grep`, `Glob`, `Task`, `channel_send` |
-| [`agents/crew-intake-desk.md`](agents/crew-intake-desk.md) | `crew-intake-desk` | `yellow` | `Read`, `Bash`, `Grep`, `Glob`, `Task`, `channel_send` |
-| [`agents/crew-engineering-manager.md`](agents/crew-engineering-manager.md) | `crew-engineering-manager` | `cyan` | `Task`, `Bash`, `Read`, `Grep`, `Glob`, `channel_send`, `channel_claim` |
-| [`agents/crew-chief-of-staff.md`](agents/crew-chief-of-staff.md) | `crew-chief-of-staff` | `magenta` | `Read`, `Bash`, `Grep`, `Glob`, `channel_send` |
+| [`agents/crew-cartographer.md`](agents/crew-cartographer.md) | `crew-cartographer` | `green` | `Read`, `Bash`, `Task`, `channel_send` |
+| [`agents/crew-intake-desk.md`](agents/crew-intake-desk.md) | `crew-intake-desk` | `yellow` | `Read`, `Bash`, `Task`, `channel_send` |
+| [`agents/crew-engineering-manager.md`](agents/crew-engineering-manager.md) | `crew-engineering-manager` | `cyan` | `Task`, `Bash`, `Read`, `channel_send`, `channel_claim` |
+| [`agents/crew-chief-of-staff.md`](agents/crew-chief-of-staff.md) | `crew-chief-of-staff` | `magenta` | `Read`, `Bash`, `Task`, `channel_send` |
 
 `channel_send` above is the full `mcp___kampus_pipeline-crew-mcp__channel_send` token,
 abbreviated in this table for width; `channel_claim` on the engineering-manager row is

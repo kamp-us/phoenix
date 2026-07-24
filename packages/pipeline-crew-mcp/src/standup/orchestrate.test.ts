@@ -37,6 +37,7 @@ import {
 	resolveTargetTmuxSession,
 	runStandDown,
 	runStandUp,
+	type SeatToolsetReader,
 	type StandUpInput,
 	StandUpLaunchError,
 	type TmuxRun,
@@ -46,6 +47,14 @@ import {
 
 const PINNED = "2.1.212";
 const SERVER = "@kampus/pipeline-crew-mcp";
+
+/**
+ * The seat-toolset reader stubbed to a declaration that resolves intact (#3764), so these tests
+ * stay about the composition rather than about the crew defs on disk — `projectRoot` here is a
+ * fake path with no `claude-plugins/` under it.
+ */
+const WELL_DECLARED_SEAT: SeatToolsetReader = () =>
+	Effect.succeed({_tag: "allowlist", tools: ["Read", "Bash", "Task"], disallowedTools: []});
 
 // The per-session bind reaches the platform through the FileSystem/Path seam; provide the real Node
 // platform (the bin's NodeServices.layer) so runStandUp discharges it in-test. These tests inject
@@ -231,6 +240,7 @@ const baseInput = (
 			projectRoot: "/repo",
 			config: configAt(PINNED, engineCount ?? 2),
 			readVersionOutput: Effect.succeed(`${PINNED} (Claude Code)`),
+			readSeatToolset: WELL_DECLARED_SEAT,
 			instanceId: counter(),
 			runId: () => RUN_ID,
 			localScope: registrar,

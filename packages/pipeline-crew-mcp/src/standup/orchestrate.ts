@@ -6,10 +6,12 @@
  * (#3297), bind (#3296), tmux-placement (#3298).
  *
  * The one non-obvious thing: the orchestration is FAIL-LOUD with NO PARTIAL CREW. The steps run in
- * the mandated order — read config → assert the pinned CLI version → ensure the tracker → derive the
- * roster session set → build EVERY per-session bind + compute ALL tmux placements → launch. Every
+ * the mandated order — read config → assert the pinned CLI version → derive the roster session set →
+ * assert every seat's declared toolset resolves → ensure the tracker → build EVERY per-session bind +
+ * compute ALL tmux placements → launch. Every
  * bind and every placement is resolved (and validated) BEFORE the first session launches, so any
- * precondition failure — a drifted CLI pin, a missing config dimension, an inert channel, a colliding
+ * precondition failure — a drifted CLI pin, a seat that would boot without a tool its def declares
+ * (#3764), a missing config dimension, an inert channel, a colliding
  * pane label — aborts with a named error while zero sessions are up, never a half-launched
  * crew. No session is hand-launched: the launch of each `claude` session, bound to its role lease, is
  * the injected `launch` step the orchestration drives for the whole derived set (all panes of one
@@ -52,6 +54,13 @@ import {
 	type RosterSession,
 	type TmuxPaneCollisionError,
 } from "./tmux-placement.ts";
+import {
+	assertCrewSeatToolsets,
+	type CrewSeatDefUnreadableError,
+	type CrewSeatToolsetMismatchError,
+	readSeatToolsetFromDef,
+	type SeatToolsetReader,
+} from "./toolset-assert.ts";
 import {
 	assertPinnedCliVersion,
 	type CliVersionAssertError,
@@ -158,6 +167,8 @@ export interface LaunchedSession {
 export type StandUpError =
 	| LaunchConfigError
 	| CliVersionAssertError
+	| CrewSeatToolsetMismatchError
+	| CrewSeatDefUnreadableError
 	| TrackerNotServingError
 	| RendezvousResolutionError
 	| CrewSessionBinUnresolvableError
@@ -245,6 +256,8 @@ export interface StandUpInput {
 	readonly config?: Effect.Effect<LaunchConfig, LaunchConfigError>;
 	/** The installed-CLI-version reader the pin is asserted against. Default: the real `claude --version`. */
 	readonly readVersionOutput?: Effect.Effect<string, unknown>;
+	/** Reads a seat's declared toolset for the declared-vs-actual assert (#3764). Default: the real agent def under `projectRoot`. */
+	readonly readSeatToolset?: SeatToolsetReader;
 	/** Start-or-reuse the repo's tracker at its canonical rendezvous. Default: `ensureTrackerRunning` (detached standing process). */
 	readonly ensureTracker?: (
 		projectRoot: string,
@@ -525,13 +538,24 @@ export const runStandUp = (
 		// Fail fast on a version drift before starting the tracker or any session — channels vary
 		// across CLI versions, so a mismatch is a stand-up to refuse (version-assert.ts / #3295).
 		yield* assertPinnedCliVersion(config, input.readVersionOutput ?? readInstalledCliVersionOutput);
+
+		// The roster set is derived here — ahead of the tracker — only so the next assert can name the
+		// exact seats this stand-up launches. `deriveSessionSet` is pure; nothing observable moved.
+		const sessions = deriveSessionSet({engineCount: config.engineCount, instanceId});
+		// Refuse a seat whose def declares a toolset the CLI would not grant intact (#3764): an ungrantable
+		// or self-denied tool is dropped SILENTLY, so without this a bridge boots without the `Task` its
+		// charter conducts through and nothing surfaces it (toolset-assert.ts).
+		yield* assertCrewSeatToolsets(
+			projectRoot,
+			[...new Set(sessions.map((session) => session.role))],
+			input.readSeatToolset ?? readSeatToolsetFromDef,
+		);
+
 		const tracker = yield* ensureTracker(projectRoot);
 
 		// Start-of-stand-up reaper (crash-safety, #3444): clear any prior run's crew-run dirs + the server
 		// approval — a launcher that died mid-run leaves leftovers this run clears here, before it re-mints.
 		yield* localScope.reap(projectRoot, serverName);
-
-		const sessions = deriveSessionSet({engineCount: config.engineCount, instanceId});
 
 		// Resolve EVERY bind + placement + cwd before launching anything — this is the no-partial-crew
 		// line: an inert channel or a colliding window fails here, while zero sessions are up.

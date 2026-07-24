@@ -1,20 +1,21 @@
 /**
  * The `crew-fanout-guard` tool — `pipeline-cli crew-fanout-guard check [--root <d>]`.
  *
- * The CI surface for #3606: invert the crew read-only-fanout per-bridge spawn DENYLIST into
- * an ENFORCED ALLOWLIST. For every crew bridge def (chief-of-staff / cartographer /
- * intake-desk under `claude-plugins/pipeline-crew/agents/`), assert its `disallowedTools`
- * denies every mutating roster agent-type NOT on that bridge's sanctioned allowlist — so a
- * FUTURE mutating agent-type added to the roster (or a `Task(x)` deny silently removed) reds
- * the build, closing the "a future reader silently reopens the deleted edge" hole ADR 0196
- * warns about (roster-law boundary, ADR 0189/0196):
+ * The CI surface for #3606: assert every mutating roster agent-type is EXPLICITLY CLASSIFIED
+ * — allowlisted or out-of-scope — for each of the three crew bridges (chief-of-staff /
+ * cartographer / intake-desk under `claude-plugins/pipeline-crew/agents/`), so a FUTURE
+ * mutating agent-type added to the roster reds the build, closing the "a future reader
+ * silently reopens the deleted edge" hole ADR 0196 warns about (roster-law boundary, ADR
+ * 0189/0196). The classification lives in the pure core's own tables, not in the defs — see
+ * `crew-fanout-guard.ts` for why the old def-`disallowedTools` reading was a non-mechanism
+ * (#3764):
  *
- *   pipeline-cli crew-fanout-guard check            # CI gate: exit non-zero on an uncovered agent-type
+ *   pipeline-cli crew-fanout-guard check            # CI gate: exit non-zero on an unclassified agent-type
  *   pipeline-cli crew-fanout-guard check --root <d> # point at a specific repo root (else: walk up for one)
  *
- * Fail-closed on zero scope, a missing bridge def, a stale allowlist, or any uncovered
- * bridge×agent-type pair (ADR 0092). The scan/IO lives in `gate.ts`; this file wires it to
- * the CLI (the thin-CLI-over-`gate.ts` idiom shared across the guards).
+ * Fail-closed on zero scope, a missing bridge def, a stale classification, or any
+ * unclassified bridge×agent-type pair (ADR 0092). The scan/IO lives in `gate.ts`; this file
+ * wires it to the CLI (the thin-CLI-over-`gate.ts` idiom shared across the guards).
  *
  * Exit-code contract: 0 = clean, any non-zero = failure — both a gate failure (report on
  * stderr) and an IO failure (fs unreadable) exit non-zero, undistinguished. `CheckFailed`

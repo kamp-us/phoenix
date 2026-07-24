@@ -96,7 +96,7 @@ export const AGENT_FLAG = "--agent";
 export const BOOT_PROMPT =
 	"Begin now. Run your role's on-boot cold-start behavior as defined by your agent instructions: announce your presence on the channel, then start your standing work loop under your own power. Do not wait to be pinged, relayed to, or told to start.";
 /** The pipeline-crew plugin root segment `--plugin-dir` joins onto a project root to load agent-defs from. */
-const CREW_PLUGIN_SUBDIR = "claude-plugins/pipeline-crew";
+export const CREW_PLUGIN_SUBDIR = "claude-plugins/pipeline-crew";
 /** Allowlist mode: only servers named here load, gated by `allowedChannelPlugins` for plugin refs. */
 export const ALLOWLIST_CHANNEL_FLAG = "--channels";
 /** Dev mode: load channel servers not on the approved allowlist — local development only. */

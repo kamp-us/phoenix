@@ -34,6 +34,7 @@ import {
 	RetireRoleArgError,
 	resolveCrewWindowId,
 	retireRole,
+	type SeatToolsetReader,
 	type SpawnRoleInput,
 	spawnRole,
 	type TmuxRun,
@@ -165,6 +166,14 @@ const baseSpawn = (
 			role,
 			config: configAt(PINNED),
 			readVersionOutput: Effect.succeed(`${PINNED} (Claude Code)`),
+			// The seat-toolset assert (#3764) stubbed to a declaration that resolves intact — `/repo` is a
+			// fake root with no crew defs under it, and these tests are about the membership op.
+			readSeatToolset: (() =>
+				Effect.succeed({
+					_tag: "allowlist" as const,
+					tools: ["Read", "Bash", "Task"],
+					disallowedTools: [],
+				})) satisfies SeatToolsetReader,
 			instanceId: (() => {
 				let n = 0;
 				return () => `e${n++}`;
