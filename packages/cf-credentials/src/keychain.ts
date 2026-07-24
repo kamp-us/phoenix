@@ -11,7 +11,9 @@ import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, type ChildProcessSpawner} from "effect/unstable/process";
 
-/** The generic-password `-s` service every cf-utils credential is stored under. */
+// The generic-password `-s` service every operator credential is stored under. The id retains
+// the historical `kampus-cf-utils` name for continuity with already-stored credentials — renaming
+// it would strand every credential a human already saved via `auth login`, so it is load-bearing.
 export const KEYCHAIN_SERVICE = "kampus-cf-utils";
 /** The generic-password `-a` accounts: one per stored credential. */
 export const API_TOKEN_ACCOUNT = "cloudflare-api-token";

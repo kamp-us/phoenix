@@ -1,5 +1,6 @@
 /**
- * The Flagship read client — the load-bearing seam every later `cf-utils` slice reuses. A
+ * The Flagship read/write clients — the load-bearing seam the anka-ops `flag` verb group runs
+ * on (relocated from the retired `@kampus/cf-utils` package, ruling #3326). A
  * typed Effect service wrapping `@distilled.cloud/cloudflare`'s canonical flagship read
  * operations (`listApps`, `listAppFlags`, `getAppFlag`) — the SAME transport
  * `@kampus/d1-rest` runs D1 over (already in the tree via alchemy), so this rolls NO new
@@ -28,7 +29,7 @@ import {
 	planNextState,
 	type RawFlag,
 	type ServeTarget,
-} from "./flag.ts";
+} from "./flagship-core.ts";
 
 export {FlagshipAppNotFound, FlagshipFlagNotFound} from "@distilled.cloud/cloudflare/flagship";
 
@@ -87,7 +88,7 @@ export class FlagshipRead extends Context.Service<
 		) => Effect.Effect<RawFlag, FlagshipReadError>;
 		readonly listFlagStates: () => Effect.Effect<ReadonlyArray<FlagState>, FlagshipReadError>;
 	}
->()("@kampus/cf-utils/FlagshipRead") {}
+>()("@kampus/anka-ops/FlagshipRead") {}
 
 const accountId = Config.string("CLOUDFLARE_ACCOUNT_ID");
 
@@ -102,7 +103,7 @@ export type FlagshipWriteError =
 	| Config.ConfigError;
 
 /**
- * `FlagshipWrite` — the injectable release seam. `setServing` is the ONE mutation `cf-utils`
+ * `FlagshipWrite` — the injectable release seam. `setServing` is the ONE mutation the `flag`
  * performs: it reads the flag's current full envelope (so an unknown key fails
  * `FlagshipFlagNotFound` BEFORE any write), computes the next serving state with the pure
  * core (`planNextState` — the no-match split is the release lever, #1726), and re-writes the
@@ -120,7 +121,7 @@ export class FlagshipWrite extends Context.Service<
 			readonly target: ServeTarget;
 		}) => Effect.Effect<RawFlag, FlagshipWriteError>;
 	}
->()("@kampus/cf-utils/FlagshipWrite") {}
+>()("@kampus/anka-ops/FlagshipWrite") {}
 
 export const FlagshipWriteLive: Layer.Layer<FlagshipWrite, never, Credentials | HttpClient> =
 	Layer.effect(FlagshipWrite)(

@@ -1,13 +1,12 @@
 /**
- * The `flag` verb group's pure adapter — the operator-verb → cf-utils-lever mapping (#3133). The
- * load-bearing contract: `open`/`close` map onto the EXACT cf-utils `ServeTarget` levers (100%
+ * The `flag` verb group's pure adapter — the operator-verb → serving-lever mapping (#3133). The
+ * load-bearing contract: `open`/`close` map onto the EXACT `ServeTarget` levers (100%
  * no-match split / kill) so no serving-plan math is duplicated, and `graduate` only greenlights a
  * flag fully open in prod. No IO: the mapping is a pure value, the graduate decision a pure fold
  * over already-listed `FlagState` rows.
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import type {EffectiveServing, FlagState} from "@kampus/cf-utils";
 import {
 	decideGraduate,
 	GRADUATE_ENV,
@@ -15,6 +14,7 @@ import {
 	releaseVerbToTarget,
 	renderRetirementChore,
 } from "./flag.ts";
+import type {EffectiveServing, FlagState} from "./flagship-core.ts";
 
 const split = (percentage: number): EffectiveServing => ({
 	_tag: "Split",
@@ -37,8 +37,8 @@ const state = (env: string, serving: EffectiveServing): FlagState => ({
 	serving,
 });
 
-describe("releaseVerbToTarget — verb → cf-utils lever", () => {
-	it("open maps onto the 100% no-match split (≡ cf-utils set on)", () => {
+describe("releaseVerbToTarget — verb → serving lever", () => {
+	it("open maps onto the 100% no-match split", () => {
 		assert.deepStrictEqual(releaseVerbToTarget("open"), {_tag: "Percent", percentage: 100});
 	});
 
@@ -52,7 +52,7 @@ describe("releaseVerbToTarget — verb → cf-utils lever", () => {
 	});
 
 	for (const verb of ["open", "close"] as const satisfies ReadonlyArray<ReleaseVerb>) {
-		it(`${verb} yields a total ServeTarget the cf-utils core consumes`, () => {
+		it(`${verb} yields a total ServeTarget the Flagship core consumes`, () => {
 			const target = releaseVerbToTarget(verb);
 			assert.oneOf(target._tag, ["Percent", "Kill"]);
 		});

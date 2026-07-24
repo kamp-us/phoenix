@@ -27,7 +27,7 @@ import {
 	renderFlagTable,
 	renderServingPlan,
 	selectStatesForKey,
-} from "./flag.ts";
+} from "./flagship-core.ts";
 
 describe("decodeEnv — Flagship app physical name → env", () => {
 	it("decodes the prod app", () => {

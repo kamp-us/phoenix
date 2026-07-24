@@ -1,7 +1,7 @@
 ---
 name: release
 description: >-
-  The human release act made one guarded command — release a dark-shipped feature end to end without ever touching the Cloudflare dashboard. Given a flag key, run the guarded release ritual: pre-flight the flag's effective serving via cf-utils and confirm it is currently dark, refuse the flip when the flag's user-facing slice is unreachable via pipeline-cli reachability-guard (no consuming UI / no registered journey e2e, ADR 0173), flip it live through cf-utils' 100%-no-match-split lever (dry-run → --execute), post-flight verify the flip took (dark → live), clear status:awaiting-release on the linked issue, and emit a human-readable release note. Supports `/release <flag-key> --percent <n>` for a ramped release. HUMAN-ONLY — an autonomous agent invoking it is hard-refused, the same enforcement shape as ship-it refusing to self-merge a control-plane PR (ADR 0053). Trigger on "release <flag-key>", "flip <flag-key> live", "release the dark feature", "/release". This is the human half of the agents-deploy / humans-release boundary (ADR 0083); the deploy is the agent's autonomous merge, the flip is yours.
+  The human release act made one guarded command — release a dark-shipped feature end to end without ever touching the Cloudflare dashboard. Given a flag key, run the guarded release ritual: pre-flight the flag's effective serving via anka-ops and confirm it is currently dark, refuse the flip when the flag's user-facing slice is unreachable via pipeline-cli reachability-guard (no consuming UI / no registered journey e2e, ADR 0173), flip it live through anka-ops' 100%-no-match-split lever (dry-run → --execute), post-flight verify the flip took (dark → live), clear status:awaiting-release on the linked issue, and emit a human-readable release note. Supports `/release <flag-key> --percent <n>` for a ramped release. HUMAN-ONLY — an autonomous agent invoking it is hard-refused, the same enforcement shape as ship-it refusing to self-merge a control-plane PR (ADR 0053). Trigger on "release <flag-key>", "flip <flag-key> live", "release the dark feature", "/release". This is the human half of the agents-deploy / humans-release boundary (ADR 0083); the deploy is the agent's autonomous merge, the flip is yours.
 ---
 
 # release
@@ -16,12 +16,12 @@ dashboard. You run the steps below end to end — pre-flight, the reachability g
 if the flag's user-facing slice is unbuilt, ADR 0173), flip, post-flight verify, clear the queue
 label, emit the release note — and you never open the dashboard.
 
-The tool under every read and write here is **`@kampus/cf-utils`** — the human-operated Flagship
-CLI (`packages/cf-utils`, ADR
+The tool under every read and write here is **`@kampus/anka-ops`** — the operator CLI whose `flag`
+verb group is the human-operated Flagship read/flip surface (`packages/anka-ops`, ADR
 [0081](https://github.com/kamp-us/phoenix/blob/main/.decisions/0081-feature-flag-substrate-cloudflare-flagship.md)).
 It models the release the way it is actually performed: as a **no-match percentage split** (a
 conditions-empty rule serving `on` to N% of traffic), **never** a `defaultVariation` flip. Read
-its [README](https://github.com/kamp-us/phoenix/blob/main/packages/cf-utils/README.md) for the
+its [README](https://github.com/kamp-us/phoenix/blob/main/packages/anka-ops/README.md) for the
 full command surface; this skill is the *release ritual* that composes those commands, not a
 second copy of them.
 
@@ -63,14 +63,14 @@ boundary the whole dark-ship discipline rests on.
 
 You need two things before the ritual:
 
-1. **Cloudflare credentials resolvable by cf-utils.** `cf-utils` reads `$CLOUDFLARE_API_TOKEN` +
+1. **Cloudflare credentials resolvable by anka-ops.** `anka-ops` reads `$CLOUDFLARE_API_TOKEN` +
    `$CLOUDFLARE_ACCOUNT_ID` from the environment, or the macOS Keychain once you've run
-   `cf-utils auth login` (#1730 — the keychain-backed credential store, so the ritual never opens
+   `anka-ops auth login` (#1730 — the keychain-backed credential store, so the ritual never opens
    with "export your API token"). Confirm they resolve and actually authenticate before you
    touch a flag:
 
    ```bash
-   cd packages/cf-utils
+   cd packages/anka-ops
    node src/bin.ts auth status   # reports where each credential resolves from and whether it authenticates
    ```
 
@@ -108,7 +108,7 @@ anything. `flag get` reports it in the canonical form (`off (default)` for an un
 `on@100% (split)` for a released one, `on@N% (ramping)` for a partial):
 
 ```bash
-cd packages/cf-utils
+cd packages/anka-ops
 node src/bin.ts flag get "$FLAG_KEY" --env "$ENV"
 ```
 
@@ -121,7 +121,7 @@ node src/bin.ts flag get "$FLAG_KEY" --env "$ENV"
   a first release; continue to Step 2 with the higher `--percent` (the ramp form below). Flipping
   to a lower or equal percent is a no-op — stop and report.
 - **`FlagEnvNotFound` / not-found →** the key or env is wrong; fix the input and re-read. Do not
-  proceed against a flag cf-utils can't resolve.
+  proceed against a flag anka-ops can't resolve.
 
 Also resolve the **linked issue** now — you'll need it for Steps 4 and 5, and confirming it
 exists up front means the ritual never flips a flag it can't then dequeue. The dark ship was
@@ -216,37 +216,37 @@ makes the zero-UI graduation unrepresentable, not the shallow-UI one.
 
 ## Step 2 — Flip: the 100%-no-match-split lever, dry-run then `--execute`
 
-The flip is a `cf-utils flag set` write on the **canonical 100%-no-match-split form** (`on` ≡
-`--percent 100`) — the *same* lever the release is actually performed with, **never** a
-`defaultVariation` write (`defaultVariation` stays at its create-time safe value forever; only
-the `off` kill switch touches it, and this skill never issues `off`).
+The flip is an `anka-ops flag open` write on the **canonical 100%-no-match-split form** (a bare
+`flag open` ≡ `--percent 100`) — the *same* lever the release is actually performed with,
+**never** a `defaultVariation` write (`defaultVariation` stays at its create-time safe value
+forever; only the `flag close` kill switch touches it, and this skill never issues `close`).
 
-**Always dry-run first.** `flag set` is **dry-run by default**: it reads current state, prints
+**Always dry-run first.** `flag open` is **dry-run by default**: it reads current state, prints
 the `current → target` diff, and writes **nothing** unless you add `--execute`. Read the diff and
 confirm it flips *this* flag in *this* env from the dark state you saw in Step 1 to the intended
 live state:
 
 ```bash
-cd packages/cf-utils
+cd packages/anka-ops
 # Full release (100% — the default release act):
-node src/bin.ts flag set "$FLAG_KEY" on --env "$ENV"                 # DRY-RUN: prints current → target, writes nothing
+node src/bin.ts flag open "$FLAG_KEY" --env "$ENV"                   # DRY-RUN: prints current → target, writes nothing
 
 # Ramped release (--percent N — serve `on` to N% of traffic; the remainder falls to the safe default):
-node src/bin.ts flag set "$FLAG_KEY" --percent "$N" --env "$ENV"     # DRY-RUN
+node src/bin.ts flag open "$FLAG_KEY" --percent "$N" --env "$ENV"    # DRY-RUN
 ```
 
 Once the dry-run diff is exactly the release you intend, **execute it** by re-running the same
 command with `--execute`:
 
 ```bash
-node src/bin.ts flag set "$FLAG_KEY" on --env "$ENV" --execute            # APPLY the full release
+node src/bin.ts flag open "$FLAG_KEY" --env "$ENV" --execute              # APPLY the full release
 # or, for a ramp:
-node src/bin.ts flag set "$FLAG_KEY" --percent "$N" --env "$ENV" --execute
+node src/bin.ts flag open "$FLAG_KEY" --percent "$N" --env "$ENV" --execute
 ```
 
 **`--percent <n>` — the ramped-release form.** `/release <flag-key> --percent 50` runs the
 identical ritual but flips to a **no-match split serving `on` to N%** of traffic instead of 100%,
-using cf-utils' ramp lever (#1726). Everything else is unchanged: pre-flight read, dry-run →
+using anka-ops' `flag open --percent` ramp lever (#1726). Everything else is unchanged: pre-flight read, dry-run →
 `--execute`, post-flight verify, clear the label, release note. A ramp is still a release — the
 feature becomes visible to N% of users — so it clears the queue label and emits a release note
 the same as a full flip, with the percent recorded in the note. (A later ramp-up to a higher
@@ -265,7 +265,7 @@ A flip you didn't verify is a flip you can't trust. Re-read the **effective serv
 it now reports the live state — the dark → live transition actually landed:
 
 ```bash
-cd packages/cf-utils
+cd packages/anka-ops
 node src/bin.ts flag get "$FLAG_KEY" --env "$ENV"   # expect: on@100% (split)  — or  on@N% (ramping) for a ramp
 ```
 
@@ -279,7 +279,7 @@ do **not** clear the queue label or emit a "released" note. Surface the discrepa
 expected vs. what `flag get` reports), and stop so a human can investigate; a half-applied flip
 left recorded as released is worse than an obvious failure. Optionally cross-check by hitting the
 flag's evaluate path if one is available, but the effective-serving re-read is the authoritative
-confirmation cf-utils gives you.
+confirmation anka-ops gives you.
 
 Only once the post-flight read confirms **dark → live** do you proceed to Steps 4 and 5.
 

@@ -1,6 +1,6 @@
 /**
  * The `depo` CLI run boundary — wires the root command and runs it over the Node
- * platform (mirrors `@kampus/cf-utils` / the `epic-ledger` idiom):
+ * platform (mirrors `@kampus/anka-ops` / the `epic-ledger` idiom):
  * `effect/unstable/cli` for the typed subcommands, the Node platform, run via
  * `NodeRuntime.runMain`. The `DoormanClient` seam is discharged here with
  * `DoormanClientLive` over `FetchHttpClient.layer` — the one place the real

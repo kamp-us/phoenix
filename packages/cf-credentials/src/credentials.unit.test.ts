@@ -57,12 +57,12 @@ describe("CredentialsKeychainFirst", () => {
 		}),
 	);
 
-	it.effect("a double miss fails with a ConfigError pointing at `cf-utils auth login`", () =>
+	it.effect("a double miss fails with a ConfigError pointing at `anka-ops auth login`", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(resolveWith({}, {}));
 			assert.isTrue(exit._tag === "Failure");
 			const message = exit._tag === "Failure" ? String(exit.cause) : "";
-			assert.include(message, "cf-utils auth login");
+			assert.include(message, "anka-ops auth login");
 		}),
 	);
 });

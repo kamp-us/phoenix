@@ -19,12 +19,12 @@ import {
 	CredentialsKeychainFirst,
 	KeychainLive,
 } from "@kampus/cf-credentials";
-import {FlagshipReadLive, FlagshipWriteLive} from "@kampus/cf-utils";
 import {Layer} from "effect";
 import {Command} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {AnalyticsReadLive} from "./analytics.ts";
 import {flag} from "./flag-command.ts";
+import {FlagshipReadLive, FlagshipWriteLive} from "./flagship.ts";
 import {makeReportCatalog} from "./report.ts";
 import {REPORT_CATALOG} from "./report-catalog.ts";
 import {report} from "./report-command.ts";
@@ -37,7 +37,7 @@ export interface VerbGroup {
 
 /**
  * The registry of shipped verb groups — the single place a child extends the ops language.
- * `flag` folds the cf-utils Flagship core (#3133); `report` folds the generic AE-read runner over
+ * `flag` runs on the local Flagship core (#3133); `report` folds the generic AE-read runner over
  * an injected report catalog (#3134). A new group touches both this registry and `withSubcommands`.
  */
 export const VERB_GROUPS: ReadonlyArray<VerbGroup> = [
@@ -47,7 +47,8 @@ export const VERB_GROUPS: ReadonlyArray<VerbGroup> = [
 	},
 	{
 		name: "flag",
-		summary: "Read and release Flagship flags — get/open/close/graduate over the cf-utils core",
+		summary:
+			"Read and release Flagship flags — list/get/open/close/graduate over the Flagship core",
 	},
 	{
 		name: "report",
@@ -65,13 +66,13 @@ export const ankaOps = Command.make("anka-ops").pipe(
 
 // The keychain-first credential seam + its account-id ConfigProvider twin, with `KeychainLive`
 // underneath and a Node ChildProcessSpawner (for `security`) + Fetch HTTP client (for the
-// validating read) below — the SAME wiring shape cf-utils uses (ADR 0045: one shared credential).
+// validating read) below (ADR 0045: one shared credential seam across every operator CLI).
 const CredentialLayer = Layer.mergeAll(CredentialsKeychainFirst, AccountIdKeychainConfig).pipe(
 	Layer.provideMerge(KeychainLive),
 );
 
 // The per-verb-group clients, all provided ON TOP of the shared credential seam (ADR 0045: one
-// credential): cf-utils' Flagship read/write for `flag`, the AE read client for `report`, and the
+// credential): the Flagship read/write clients for `flag`, the AE read client for `report`, and the
 // injected report catalog (EMPTY in the core — product content is wired via REPORT_CATALOG, ADR 0153).
 const VerbGroupClients = Layer.mergeAll(
 	FlagshipReadLive,
