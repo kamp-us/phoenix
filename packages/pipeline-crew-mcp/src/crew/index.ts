@@ -29,6 +29,22 @@ export {
 	roleContracts,
 	type SeamContract,
 } from "./contract.ts";
+export {
+	type ChannelHealthStatus,
+	type CrewChannelDoctorInput,
+	type CrewChannelDoctorResult,
+	type CrewChannelHealthInput,
+	type CrewChannelHealthReport,
+	classifyCrewChannelHealth,
+	collectLiveRegisteredForProject,
+	crewProcInboxAddress,
+	type DeafProc,
+	type OrphanedProc,
+	type RoleChannelHealth,
+	renderCrewChannelHealth,
+	roleOfInboxAddress,
+	runCrewChannelDoctor,
+} from "./doctor.ts";
 export {RoleUniquenessError} from "./errors.ts";
 export {
 	type CrewSessionProc,
