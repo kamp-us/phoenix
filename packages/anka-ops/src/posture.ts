@@ -4,7 +4,8 @@
  * trail, not as a structural TTY refuse. A non-interactive caller (agent/CI, no TTY) PROCEEDS
  * without a prompt (the action is logged for the audit record); an interactive human is asked
  * to confirm and only an affirmative answer proceeds. Keeping the decision IO-free is what
- * lets it be exhaustively unit-tested without a real terminal (mirrors cf-utils' decideLeverGuard).
+ * lets it be exhaustively unit-tested without a real terminal (mirrors the flag lever's
+ * `decideLeverGuard` in `flagship-core.ts`).
  */
 
 export interface ConfirmInput {

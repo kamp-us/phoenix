@@ -1,11 +1,12 @@
 /**
- * The `flag` verb group's `effect/unstable/cli` wiring — the thin IO shell folding the
- * `@kampus/cf-utils` Flagship core (`flag.ts` pure math + renderers, `flagship.ts` read/write
- * clients) into anka-ops operator verbs (#3133). No serving-plan math is re-implemented here: the
- * operator-verb → lever mapping is the only new logic and lives in the pure `./flag.ts` adapter.
+ * The `flag` verb group's `effect/unstable/cli` wiring — the thin IO shell over the local Flagship
+ * core (`flagship-core.ts` pure math + renderers, `flagship.ts` read/write clients, #1726). No
+ * serving-plan math is re-implemented here: the operator-verb → lever mapping is the only new logic
+ * and lives in the pure `./flag.ts` adapter.
  *
- *   anka-ops flag get <key> [--env <env>]        read a flag's live serving state
- *   anka-ops flag open <key> --env <env>          release on (≡ cf-utils set on: 100% no-match split)
+ *   anka-ops flag list                            enumerate every flag × env and its serving state
+ *   anka-ops flag get <key> [--env <env>]         read a flag's live serving state
+ *   anka-ops flag open <key> --env <env>          release on (100% no-match split; --percent N to ramp)
  *   anka-ops flag close <key> --env <env>         kill (clear the split + default off)
  *   anka-ops flag graduate <key>                  verify fully open in prod, file the retirement chore
  *
@@ -15,6 +16,17 @@
  */
 
 import {execFileSync} from "node:child_process";
+import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
+import {Argument, Command, Flag, Prompt} from "effect/unstable/cli";
+import {
+	decideGraduate,
+	FlagNotGraduable,
+	GRADUATE_ENV,
+	releaseVerbToTarget,
+	renderRetirementChore,
+} from "./flag.ts";
+import {FlagshipRead, FlagshipWrite} from "./flagship.ts";
 import {
 	computeEffectiveServing,
 	computeServingPlan,
@@ -23,8 +35,7 @@ import {
 	ENV_HELP,
 	FlagEnvNotFound,
 	FlagKeyNotFound,
-	FlagshipRead,
-	FlagshipWrite,
+	FlagSetTargetInvalid,
 	findAppForEnv,
 	renderEffectiveServing,
 	renderFlagDetail,
@@ -32,18 +43,7 @@ import {
 	renderServingPlan,
 	type ServeTarget,
 	selectStatesForKey,
-} from "@kampus/cf-utils";
-import {Console, Effect} from "effect";
-import * as Schema from "effect/Schema";
-import {Argument, Command, Flag, Prompt} from "effect/unstable/cli";
-import {
-	decideGraduate,
-	FlagNotGraduable,
-	GRADUATE_ENV,
-	type ReleaseVerb,
-	releaseVerbToTarget,
-	renderRetirementChore,
-} from "./flag.ts";
+} from "./flagship-core.ts";
 import {decideConfirm} from "./posture.ts";
 
 const keyArg = Argument.string("key").pipe(
@@ -53,6 +53,10 @@ const envFlag = Flag.string("env").pipe(Flag.withDescription(ENV_HELP));
 const getEnvFlag = Flag.string("env").pipe(
 	Flag.optional,
 	Flag.withDescription(`${ENV_HELP}; omit to read across every env`),
+);
+const percentFlag = Flag.integer("percent").pipe(
+	Flag.optional,
+	Flag.withDescription("release to N% (0–100) via the no-match split; omit for a full 100% open"),
 );
 const executeFlag = Flag.boolean("execute").pipe(
 	Flag.withDescription(
@@ -74,6 +78,18 @@ const resolveEnvApp = (env: string) =>
 		}
 		return app;
 	});
+
+const list = Command.make(
+	"list",
+	{},
+	Effect.fn(function* () {
+		const read = yield* FlagshipRead;
+		const rows = yield* read.listFlagStates();
+		yield* Console.log(renderFlagTable(rows));
+	}),
+).pipe(
+	Command.withDescription("List every Flagship flag × env (key, env, enabled, effective serving)"),
+);
 
 const get = Command.make(
 	"get",
@@ -127,44 +143,68 @@ const confirmFlip = (key: string, env: string) =>
 	});
 
 /**
- * Build the `open`/`close` release verb. The mapping (verb → cf-utils `ServeTarget` lever) is the
- * pure adapter; the plan diff, the write, and the confirm are all reused cf-utils/posture pieces.
+ * The shared open/close release body: read-before-plan, render the `current → target` diff, and
+ * (only under `--execute` on a changed plan, after the confirm) apply the resolved `ServeTarget`.
+ * `open` and `close` differ only in the target they resolve — the plan/write/confirm are identical.
  */
-const makeReleaseVerb = (verb: ReleaseVerb) =>
-	Command.make(
-		verb,
-		{key: keyArg, env: envFlag, execute: executeFlag},
-		Effect.fn(function* ({key, env, execute}) {
-			const target: ServeTarget = releaseVerbToTarget(verb);
-			const app = yield* resolveEnvApp(env);
-			const read = yield* FlagshipRead;
-			// Read-before-plan: an unknown key fails FlagshipFlagNotFound here, before any write.
-			const current = yield* read.getAppFlag(app.id, key);
-			const plan = computeServingPlan({key, env, flag: current, target});
-			yield* Console.log(renderServingPlan(plan));
+const applyServing = (key: string, env: string, target: ServeTarget, execute: boolean) =>
+	Effect.gen(function* () {
+		const app = yield* resolveEnvApp(env);
+		const read = yield* FlagshipRead;
+		// Read-before-plan: an unknown key fails FlagshipFlagNotFound here, before any write.
+		const current = yield* read.getAppFlag(app.id, key);
+		const plan = computeServingPlan({key, env, flag: current, target});
+		yield* Console.log(renderServingPlan(plan));
 
-			if (!execute) {
-				yield* Console.log("  (dry-run — pass --execute to apply; the flag is unchanged)");
-				return;
-			}
-			if (!plan.changed) {
-				yield* Console.log("  (already at target — nothing to write)");
-				return;
-			}
-			yield* confirmFlip(key, env);
-			const write = yield* FlagshipWrite;
-			const updated = yield* write.setServing({appId: app.id, flagKey: key, target});
-			yield* Console.log(
-				`  applied — ${key} @ ${env} now serves ${renderEffectiveServing(computeEffectiveServing(updated))}`,
-			);
-		}),
-	).pipe(
-		Command.withDescription(
-			verb === "open"
-				? "Release a flag on via the 100% no-match split (≡ cf-utils set on; dry-run by default)"
-				: "Kill a flag — clear the no-match split and set the default off (dry-run by default)",
-		),
-	);
+		if (!execute) {
+			yield* Console.log("  (dry-run — pass --execute to apply; the flag is unchanged)");
+			return;
+		}
+		if (!plan.changed) {
+			yield* Console.log("  (already at target — nothing to write)");
+			return;
+		}
+		yield* confirmFlip(key, env);
+		const write = yield* FlagshipWrite;
+		const updated = yield* write.setServing({appId: app.id, flagKey: key, target});
+		yield* Console.log(
+			`  applied — ${key} @ ${env} now serves ${renderEffectiveServing(computeEffectiveServing(updated))}`,
+		);
+	});
+
+const open = Command.make(
+	"open",
+	{key: keyArg, env: envFlag, percent: percentFlag, execute: executeFlag},
+	Effect.fn(function* ({key, env, percent, execute}) {
+		// Full 100% open by default (the adapter's `open` lever); `--percent N` ramps the split.
+		if (percent._tag === "Some" && (percent.value < 0 || percent.value > 100)) {
+			return yield* new FlagSetTargetInvalid({
+				reason: `--percent ${percent.value} is outside 0–100`,
+			});
+		}
+		const target: ServeTarget =
+			percent._tag === "Some"
+				? {_tag: "Percent", percentage: percent.value}
+				: releaseVerbToTarget("open");
+		yield* applyServing(key, env, target, execute);
+	}),
+).pipe(
+	Command.withDescription(
+		"Release a flag on via the no-match split (full 100% by default, --percent N to ramp; dry-run by default)",
+	),
+);
+
+const close = Command.make(
+	"close",
+	{key: keyArg, env: envFlag, execute: executeFlag},
+	Effect.fn(function* ({key, env, execute}) {
+		yield* applyServing(key, env, releaseVerbToTarget("close"), execute);
+	}),
+).pipe(
+	Command.withDescription(
+		"Kill a flag — clear the no-match split and set the default off (dry-run by default)",
+	),
+);
 
 /** File the retirement chore via the `report` skill's intake path (`gh`, `status:needs-triage`). */
 const fileRetirementChore = (title: string, body: string) =>
@@ -225,8 +265,6 @@ const graduate = Command.make(
 );
 
 export const flag = Command.make("flag").pipe(
-	Command.withSubcommands([get, makeReleaseVerb("open"), makeReleaseVerb("close"), graduate]),
-	Command.withDescription(
-		"Read and release Flagship flags — the domain-language surface over cf-utils",
-	),
+	Command.withSubcommands([list, get, open, close, graduate]),
+	Command.withDescription("Read and release Flagship flags — the anka-ops operator surface"),
 );

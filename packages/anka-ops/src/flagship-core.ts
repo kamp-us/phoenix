@@ -1,8 +1,10 @@
 /**
- * `@kampus/cf-utils` pure core — IO-free, total transforms over already-listed Flagship
- * data. The decodes, the effective-serving computation, the serving-plan model `flag set`
- * dry-runs/applies, and the renderers — so the read/write clients (`flagship.ts`) and bin
- * (`bin.ts`) stay thin and every branch here is unit-testable off-network.
+ * `@kampus/anka-ops` Flagship pure core — IO-free, total transforms over already-listed
+ * Flagship data. The decodes, the effective-serving computation, the serving-plan model the
+ * `flag` release verbs dry-run/apply, and the renderers — so the read/write clients
+ * (`flagship.ts`) and the `flag` command wiring (`flag-command.ts`) stay thin and every branch
+ * here is unit-testable off-network. Relocated from the retired `@kampus/cf-utils` package when
+ * the flag surface's single home moved to anka-ops (ruling #3326).
  *
  * The release lever is the **no-match split**, not `defaultVariation` (#1726): real releases
  * are performed as a conditions-empty rule carrying a `rollout: {percentage}` — the wire
@@ -179,7 +181,7 @@ export const ENV_HELP =
  * envs that DO resolve, so the message points the operator at a valid one.
  */
 export class FlagEnvNotFound extends Schema.TaggedErrorClass<FlagEnvNotFound>()(
-	"@kampus/cf-utils/FlagEnvNotFound",
+	"@kampus/anka-ops/FlagEnvNotFound",
 	{
 		env: Schema.String,
 		knownEnvs: Schema.Array(Schema.String),
@@ -199,7 +201,7 @@ export class FlagEnvNotFound extends Schema.TaggedErrorClass<FlagEnvNotFound>()(
  * with the SDK's `FlagshipFlagNotFound` straight off the single-flag read.
  */
 export class FlagKeyNotFound extends Schema.TaggedErrorClass<FlagKeyNotFound>()(
-	"@kampus/cf-utils/FlagKeyNotFound",
+	"@kampus/anka-ops/FlagKeyNotFound",
 	{
 		key: Schema.String,
 		knownKeys: Schema.Array(Schema.String),
@@ -217,7 +219,7 @@ export class FlagKeyNotFound extends Schema.TaggedErrorClass<FlagKeyNotFound>()(
  * than a silent default.
  */
 export class FlagSetTargetInvalid extends Schema.TaggedErrorClass<FlagSetTargetInvalid>()(
-	"@kampus/cf-utils/FlagSetTargetInvalid",
+	"@kampus/anka-ops/FlagSetTargetInvalid",
 	{
 		reason: Schema.String,
 	},
@@ -233,7 +235,7 @@ export class FlagSetTargetInvalid extends Schema.TaggedErrorClass<FlagSetTargetI
  * ADR 0134); a non-TTY agent/CI caller is never refused. The message names the recoverable fix.
  */
 export class LeverGuardRefused extends Schema.TaggedErrorClass<LeverGuardRefused>()(
-	"@kampus/cf-utils/LeverGuardRefused",
+	"@kampus/anka-ops/LeverGuardRefused",
 	{
 		reason: Schema.String,
 	},

@@ -1,8 +1,8 @@
 /**
  * The ADR 0134 non-TTY posture, as a pure decision — no real terminal. Load-bearing contract:
  * a non-interactive caller (agent/CI) ALWAYS proceeds without a prompt (the action is logged),
- * and an interactive human proceeds only on an affirmative answer. Mirrors cf-utils'
- * decideLeverGuard unit tests.
+ * and an interactive human proceeds only on an affirmative answer. Mirrors the flag lever's
+ * `decideLeverGuard` unit tests (`flagship-core.ts`).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {decideConfirm} from "./posture.ts";

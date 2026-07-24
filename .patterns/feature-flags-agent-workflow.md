@@ -27,10 +27,10 @@ Substrate decision: ADR
 ## Checking a flag's live prod serving state
 
 To answer "is this feature actually live in production right now?" read the flag's **effective
-serving state** with the `cf-utils` CLI ([`../packages/cf-utils/README.md`](../packages/cf-utils/README.md)):
+serving state** with the `anka-ops` CLI ([`../packages/anka-ops/README.md`](../packages/anka-ops/README.md)):
 
 ```bash
-node packages/cf-utils/src/bin.ts flag get <key> --env prod
+node packages/anka-ops/src/bin.ts flag get <key> --env prod
 ```
 
 Two traps travel with this read — both are correctness footguns, not cosmetics:
@@ -40,8 +40,8 @@ Two traps travel with this read — both are correctness footguns, not cosmetics
   yet `serves: off (default)` — registered but dark, because no rule/no-match split serves it. Read
   `enabled` as "is it live?" and you get the wrong answer; the `serves:` line is the truth. (The
   serves-vs-enabled computation is `computeEffectiveServing` / `renderEffectiveServing` in
-  [`../packages/cf-utils/src/flag.ts`](../packages/cf-utils/src/flag.ts), so a flag can't lie about
-  its `defaultVariation`.)
+  [`../packages/anka-ops/src/flagship-core.ts`](../packages/anka-ops/src/flagship-core.ts), so a
+  flag can't lie about its `defaultVariation`.)
 - **The prod env is named `prod`, not `production`.** `--env production` errors with
   `FlagEnvNotFound`.
 

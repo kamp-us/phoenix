@@ -1,6 +1,6 @@
 ---
 name: what-shipped
-description: The founder's on-demand "what did we ship" readout. Gather the merged work over a window (git log + `gh` REST, never GraphQL), join each PR to its issue → milestone/type, tag the product/infra section from the PR `area:*` label, resolve each item's live-vs-dark release state from authoritative Cloudflare Flagship values (via `cf-utils`), then invoke `pipeline-cli ship-digest derive` and present the grouped digest — what merged AND what is actually live to users, in one glanceable pull. Trigger on "what shipped", "what did we ship", "ship digest", "what's live", "what's still dark", "/what-shipped".
+description: The founder's on-demand "what did we ship" readout. Gather the merged work over a window (git log + `gh` REST, never GraphQL), join each PR to its issue → milestone/type, tag the product/infra section from the PR `area:*` label, resolve each item's live-vs-dark release state from authoritative Cloudflare Flagship values (via `anka-ops`), then invoke `pipeline-cli ship-digest derive` and present the grouped digest — what merged AND what is actually live to users, in one glanceable pull. Trigger on "what shipped", "what did we ship", "ship digest", "what's live", "what's still dark", "/what-shipped".
 ---
 
 # what-shipped
@@ -136,11 +136,11 @@ the core surfaces it under `Product` / `Uncategorized`, flagged, never dropped.
 This is the axis that answers **"what is actually LIVE to users,"** not just what merged. Per ADR
 [0123](https://github.com/kamp-us/phoenix/blob/main/.decisions/0123-ship-digest-live-axis-from-authoritative-flagship-state.md)
 the state is sourced from **authoritative Cloudflare Flagship values** (the ADR-0081 substrate),
-read via `cf-utils` — **not** from repo-declared flag defaults and **not** from the
+read via `anka-ops` — **not** from repo-declared flag defaults and **not** from the
 `status:awaiting-release` label, because only the authoritative read reflects the human's
 out-of-band release flip (ADR 0083), which leaves no in-repo trace.
 
-Read the live flag × env matrix once via `cf-utils flag list` (its `FlagshipRead` client reads each
+Read the live flag × env matrix once via `anka-ops flag list` (its `FlagshipRead` client reads each
 flag's **effective serving** per env — rules → no-match split → default, the `SERVES` column;
 credentials come from the ambient environment, never source). Real releases are performed as a
 **no-match percentage split**, never a `defaultVariation` flip (#1726), so only the effective
@@ -149,10 +149,10 @@ serving is truthful — a split-released flag's `defaultVariation` stays `off` f
 ```bash
 # authoritative Flagship state — every flag × env with its enabled/default value (ADR 0081/0123).
 # in-repo-first, published-fallback, same idiom as $DIGEST above.
-if [ -f packages/cf-utils/src/bin.ts ]; then
-  node packages/cf-utils/src/bin.ts flag list
+if [ -f packages/anka-ops/src/bin.ts ]; then
+  node packages/anka-ops/src/bin.ts flag list
 else
-  pnpm dlx @kampus/cf-utils@0.1.0 flag list
+  pnpm dlx @kampus/anka-ops@0.1.0 flag list
 fi
 ```
 
@@ -233,7 +233,7 @@ Show the rendered markdown digest directly. It already carries both axes in one 
 
 Add a one-line lead-in naming the window (`Since <SINCE>: N merged, M live, K still dark`) so the
 readout is glanceable at the top, then the digest. If the dark section is populated, call it out —
-that is the founder's cue to flip flags (`cf-utils flag set … --execute`, the human release act).
+that is the founder's cue to flip flags (`anka-ops flag open … --execute`, the human release act).
 
 Do **not** commit anything, open a PR, or post a Discussion — this is a read-only pull surface. The
 only writes this skill makes are to the scratch entries file; clean it up when done (`rm -f "$ENTRIES"`).

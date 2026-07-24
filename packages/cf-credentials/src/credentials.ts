@@ -3,7 +3,7 @@
  * SAME ambient `Credentials` requirement `CredentialsFromEnv` does (the seam
  * `FlagshipReadLive`/`FlagshipWriteLive` depend on), but resolves the API token from the
  * macOS Keychain first, falling back to `resolveFromEnv` (`$CLOUDFLARE_API_TOKEN`) when the
- * keychain has nothing — so `cf-utils auth login` works once for a human while CI's
+ * keychain has nothing — so `anka-ops auth login` works once for a human while CI's
  * env-var path is byte-for-byte unchanged. `AccountIdKeychainConfig` is the account-id
  * half: a `ConfigProvider` answering only `CLOUDFLARE_ACCOUNT_ID` keychain-first, so the
  * per-call `Config.string("CLOUDFLARE_ACCOUNT_ID")` reads inside `flagship.ts` pick it up
@@ -24,7 +24,7 @@ import type {HttpClient} from "effect/unstable/http/HttpClient";
 import {ACCOUNT_ID_ACCOUNT, API_TOKEN_ACCOUNT, Keychain} from "./keychain.ts";
 
 const LOGIN_HINT =
-	"run `cf-utils auth login` to store credentials in the keychain, or export $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID";
+	"run `anka-ops auth login` to store credentials in the keychain, or export $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID";
 
 const resolveKeychainFirst: Effect.Effect<ResolvedCredentials, CredentialsError, Keychain> =
 	Effect.gen(function* () {
@@ -146,7 +146,7 @@ export const validateCredentials = (
  * against `accountId`. A green result proves the effective credentials authenticate — the
  * check `auth status` prints as `validation: ok`. Failure surfaces `CredentialValidationFailed`
  * (rendered `validation: FAILED`). Requires the same ambient `Keychain | HttpClient` the rest
- * of the seam does, so `auth status` needs no cf-utils flag-domain service.
+ * of the seam does, so `auth status` needs no flag-domain service.
  */
 export const validateAmbient = (
 	accountId: string,

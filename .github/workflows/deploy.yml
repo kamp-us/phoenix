@@ -524,7 +524,7 @@ jobs:
       # so the release-blocking flag-ON journey e2e (epic #2926) and a human clicking the
       # preview link both see flag-gated UI in its ON state — previews are otherwise
       # flag-dark (each stage's Flagship app mints at IaC defaults, all off). The write is
-      # CI-credentialed and direct-to-store via cf-utils' `setServing` seam (ADR 0134),
+      # CI-credentialed and direct-to-store via anka-ops' `setServing` seam (ADR 0134),
       # with ZERO runtime surface in the worker bundle — the preview-seed idiom, the
       # deliberate counter-shape of the deleted fail-open seeder (CLAUDE.md "Sözlük seed").
       #
@@ -539,7 +539,7 @@ jobs:
       # refusal aborts the step, never downgrades to a silent no-op.
       #
       # web-only: the Flagship app (`phoenix_flags`) lives in the web stack
-      # (apps/web/worker/features/flagship/resources.ts). Idempotent: cf-utils `flag set` is
+      # (apps/web/worker/features/flagship/resources.ts). Idempotent: anka-ops `flag open` is
       # a converging upsert — a re-run on a later push writes nothing when already ON.
       - name: Force preview flags ON from PR labels (${{ matrix.app }})
         id: force-flags
@@ -578,16 +578,16 @@ jobs:
             exit 0
           fi
 
-          # Force each labeled key ON in THIS stage's Flagship app. `flag set <key> on
+          # Force each labeled key ON in THIS stage's Flagship app. `flag open <key>
           # --env <stage> --execute` resolves the app whose decoded stage == $STAGE
-          # (cf-utils decodeEnv/findAppForEnv) and serves on@100% via the no-match split.
-          # A `flag set` failure (unknown key, no app for the stage) aborts under `set -e`
+          # (anka-ops decodeEnv/findAppForEnv) and serves on@100% via the no-match split.
+          # A `flag open` failure (unknown key, no app for the stage) aborts under `set -e`
           # — fail-loud, never a silently-skipped force.
           forced=""
           while IFS= read -r key; do
             [ -z "$key" ] && continue
             echo "forcing flag '$key' ON in Flagship env '$STAGE'"
-            node packages/cf-utils/src/bin.ts flag set "$key" on --env "$STAGE" --execute
+            node packages/anka-ops/src/bin.ts flag open "$key" --env "$STAGE" --execute
             forced="${forced:+$forced,}$key"
           done <<< "$keys"
           echo "forced=$forced" >> "$GITHUB_OUTPUT"

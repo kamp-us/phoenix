@@ -26,11 +26,12 @@ acquired, validated, stored, and resolved:
 
 ## Why it exists
 
-The seam previously lived inside `@kampus/cf-utils`. It has more than one consumer today
-(`cf-utils` itself and `@kampus/orphan-sweep`, which needs to resolve the founder token
-locally) and a future one (`anka-ops`, #2089). Collapsing every CF operator tool into
-`cf-utils` to borrow its auth is the megapackage trap: a shared capability with multiple
-consumers is extracted into a package they all depend on, not merged. Two concrete consumers
+The seam was originally extracted from the (now retired) `@kampus/cf-utils` package. It has
+more than one consumer today — `@kampus/anka-ops` (the operator CLI that absorbed the flag
+surface) and `@kampus/orphan-sweep` (which needs to resolve the founder token locally).
+Collapsing every CF operator tool into one package to borrow its auth is the megapackage trap:
+a shared capability with multiple consumers is extracted into a package they all depend on,
+not merged. Two concrete consumers
 is the repo's "promote at the 2nd usage" trigger (cf. [ADR 0068](../../.decisions/0068-adopt-lefthook-at-second-git-hook.md)).
 The credential model itself is [ADR 0045](../../.decisions/0045-kampus-client-cli.md) (the
 one-authenticated-surface auth) and #1730 (the paste-token login).
@@ -49,7 +50,7 @@ import {
 } from "@kampus/cf-credentials";
 ```
 
-Wire the layers the way `cf-utils` does — `KeychainLive` under the credential layers, with a
+Wire the layers the way `anka-ops` does — `KeychainLive` under the credential layers, with a
 Node `ChildProcessSpawner` and an HTTP client below:
 
 ```ts
@@ -59,7 +60,7 @@ const CredentialLayer = Layer.mergeAll(CredentialsKeychainFirst, AccountIdKeycha
 );
 ```
 
-Credentials resolve **keychain-first** (after `cf-utils auth login`), falling back to
+Credentials resolve **keychain-first** (after `anka-ops auth login`), falling back to
 `$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID` — the env-var path CI keeps using
 unchanged.
 

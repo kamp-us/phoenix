@@ -2,7 +2,7 @@
 	"name": "@kampus/cf-credentials",
 	"version": "0.0.0",
 	"private": true,
-	"description": "The shared macOS-Keychain Cloudflare-credential seam — paste-token → validate-before-persist → Keychain, keychain-first with $CLOUDFLARE_* env fallback (#1730, ADR 0045). Extracted from cf-utils so every CF operator CLI (cf-utils, orphan-sweep, anka-ops) depends on one auth package instead of relocating into cf-utils.",
+	"description": "The shared macOS-Keychain Cloudflare-credential seam — paste-token → validate-before-persist → Keychain, keychain-first with $CLOUDFLARE_* env fallback (#1730, ADR 0045). Originally extracted from the retired cf-utils package so every CF operator CLI (anka-ops, orphan-sweep) depends on one auth package instead of each rolling its own.",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"

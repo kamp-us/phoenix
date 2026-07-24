@@ -2,7 +2,7 @@
  * The Analytics Engine read seam — the IO shell the `report` runner resolves its AE query through.
  * ADR 0153 mandates reads go through the external AE SQL API (never from the worker); this is the
  * operator-side client for exactly that. It rides the SAME ambient `Credentials | HttpClient` the
- * cf-utils Flagship clients do (ADR 0045: one shared scoped operator credential), so `report`
+ * Flagship clients do (ADR 0045: one shared scoped operator credential), so `report`
  * inherits the keychain-first least-privilege credential seam and rolls no second token store.
  *
  * The transport is the CF AE SQL endpoint `POST {apiBaseUrl}/accounts/{id}/analytics_engine/sql`

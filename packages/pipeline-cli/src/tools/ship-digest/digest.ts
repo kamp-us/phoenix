@@ -21,7 +21,7 @@
  * `unknown` — and the render adds (a) an inline live/dark annotation per entry and (b) a
  * distinct "currently dark — awaiting your release" callout listing the not-yet-live work.
  * Per ADR 0123 the *sourcing* of that state is the `/what-shipped` gather's IO job (it reads
- * authoritative Cloudflare Flagship values via `cf-utils` for flag-gated work, merged-equals-
+ * authoritative Cloudflare Flagship values via `anka-ops` for flag-gated work, merged-equals-
  * live for non-flag-gated work); this core stays pure and consumes the state as passed-in
  * input. A merged item with no resolvable state is surfaced as `unknown`, never silently
  * treated as live (the `resolveReleaseState` default).

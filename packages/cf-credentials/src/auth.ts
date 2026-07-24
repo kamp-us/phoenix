@@ -1,5 +1,6 @@
 /**
- * The `cf-utils auth` surface: `login` acquires Cloudflare credentials by pasting an API
+ * The `auth` verb surface (wired into `anka-ops` / `orphan-sweep`): `login` acquires Cloudflare
+ * credentials by pasting an API
  * token (#1730), validating it with an authenticated read BEFORE persisting and storing it
  * through the macOS Keychain seam. `status` reports where each credential resolves from and
  * whether the effective resolution authenticates; `logout` deletes every stored item.
@@ -38,7 +39,7 @@ const tokenPasteLogin = Effect.fn(function* () {
 	yield* keychain.set(API_TOKEN_ACCOUNT, Redacted.value(token));
 	yield* keychain.set(ACCOUNT_ID_ACCOUNT, accountId);
 	yield* Console.log(
-		`stored in the macOS Keychain (service "${KEYCHAIN_SERVICE}") — every cf-utils command now resolves credentials automatically`,
+		`stored in the macOS Keychain (service "${KEYCHAIN_SERVICE}") — every operator command now resolves credentials automatically`,
 	);
 });
 
@@ -68,7 +69,7 @@ const status = Command.make(
 
 		if (sources.apiToken === "missing" || sources.accountId.value === undefined) {
 			yield* Console.log(
-				"validation: skipped — run `cf-utils auth login` (or export $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID)",
+				"validation: skipped — run `anka-ops auth login` (or export $CLOUDFLARE_API_TOKEN / $CLOUDFLARE_ACCOUNT_ID)",
 			);
 			return;
 		}
@@ -103,7 +104,7 @@ const logout = Command.make(
 		yield* Console.log(
 			removed.some((wasRemoved) => wasRemoved)
 				? "removed stored Cloudflare credentials from the macOS Keychain"
-				: "nothing stored — the keychain had no cf-utils credentials",
+				: "nothing stored — the keychain had no operator credentials",
 		);
 	}),
 ).pipe(Command.withDescription("Remove the stored Cloudflare credentials from the macOS Keychain"));

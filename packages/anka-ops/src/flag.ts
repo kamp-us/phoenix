@@ -1,13 +1,13 @@
 /**
- * The `flag` verb group's pure adapter core — the operator-verb → cf-utils-lever mapping, and
+ * The `flag` verb group's pure adapter core — the operator-verb → serving-lever mapping, and
  * nothing else. The serving-plan math, the renderers, the read/write clients, and the typed
- * not-found errors all live in `@kampus/cf-utils` (`flag.ts`/`flagship.ts`, #1726); this module
- * only names the operator language over them (`open`/`close`/`graduate`) so the mapping is the
- * one new, fully-unit-tested piece. It re-derives no split percentages.
+ * not-found errors all live in the local Flagship core (`flagship-core.ts` / `flagship.ts`,
+ * #1726); this module only names the operator language over them (`open`/`close`/`graduate`) so
+ * the mapping is the one new, fully-unit-tested piece. It re-derives no split percentages.
  */
 
-import type {FlagState, ServeTarget} from "@kampus/cf-utils";
 import * as Schema from "effect/Schema";
+import type {FlagState, ServeTarget} from "./flagship-core.ts";
 
 /**
  * The env graduation is evaluated against. Retirement is a prod fact — the cycle's trigger
@@ -17,9 +17,9 @@ import * as Schema from "effect/Schema";
 export const GRADUATE_ENV = "prod";
 
 /**
- * The two live-flip operator verbs and their cf-utils lever. `open` releases the flag on via the
- * no-match 100% split (≡ cf-utils `set on`, never a `defaultVariation` flip — #1726); `close`
- * kills it (clears the split AND sets the default off — the true kill switch, cf-utils `set off`).
+ * The two live-flip operator verbs and their serving lever. `open` releases the flag on via the
+ * no-match 100% split (never a `defaultVariation` flip — #1726); `close` kills it (clears the
+ * split AND sets the default off — the true kill switch).
  */
 export type ReleaseVerb = "open" | "close";
 
@@ -97,7 +97,7 @@ export const renderRetirementChore = (
 /**
  * No Flagship serving state graduation could evaluate — `graduate` refuses fully-open verification.
  * A typed `E`-channel fault so an ineligible flag exits loud with the reason, never silently files
- * a chore or flips anything. (The unknown-key case reuses cf-utils' `FlagKeyNotFound` upstream.)
+ * a chore or flips anything. (The unknown-key case reuses the core's `FlagKeyNotFound` upstream.)
  */
 export class FlagNotGraduable extends Schema.TaggedErrorClass<FlagNotGraduable>()(
 	"@kampus/anka-ops/FlagNotGraduable",

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * `anka-ops` — the operator CLI for anka-built apps (`effect/unstable/cli`, the same shell shape
- * as `@kampus/cf-utils` / `@kampus/orphan-sweep`). The framework-tier skeleton (epic #2089,
- * ADR 0045): only the `auth` verb group ships here.
+ * as `@kampus/orphan-sweep`). The framework-tier skeleton (epic #2089, ADR 0045) grown into the
+ * `auth`, `flag`, and `report` verb groups.
  *
  *   node src/bin.ts auth login              paste a scoped operator token → OS keychain
  *   node src/bin.ts auth status             report where credentials resolve from + whether they authenticate
