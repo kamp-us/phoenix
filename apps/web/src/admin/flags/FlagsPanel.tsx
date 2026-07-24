@@ -9,9 +9,10 @@
  * natively on the next read. The effect is per-browser only. Render decisions live DOM-free in
  * `flag-overrides.ts` (unit-tested); this is the thin shell. Lowercase-Turkish copy per the design law.
  *
- * a11y: a labelled region; each flag is a `role="group"`; the toggles are shared `Button`s (36px hit
- * area, focus ring, role tokens) with `aria-pressed` marking the active state; the outcome is text in
- * a `role="status"` live region, never color.
+ * a11y: a labelled region; each flag is a `role="group"`; the toggles are shared `Button`s — the
+ * 36px hit-area floor + focus ring come from the shared `.kp-btn` styles (`min-height`/`min-width:
+ * var(--tap-min)`, #3791), with `aria-pressed` marking the active state; the outcome is text in a
+ * `role="status"` live region, never color.
  */
 import {useState} from "react";
 import {Button} from "../../components/ui/Button";
@@ -79,7 +80,6 @@ export default function FlagsPanel() {
 									{TOGGLE_STATES.map((state) => (
 										<Button
 											key={state}
-											className="kp-flags__btn"
 											size="sm"
 											pressed={current === state}
 											onClick={() => toggle(flag.key, state)}
