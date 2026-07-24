@@ -46,15 +46,15 @@
 import {execFileSync} from "node:child_process";
 import {existsSync, readFileSync, statSync} from "node:fs";
 import {resolve} from "node:path";
+import {Console, Effect, Option} from "effect";
+import * as Schema from "effect/Schema";
+import {Command, Flag} from "effect/unstable/cli";
 import {
 	appendRecord,
 	decideBashStagingAttribution,
 	defaultLogPath,
 	renderBashStagingNote,
-} from "@kampus/primary-index-tripwire";
-import {Console, Effect, Option} from "effect";
-import * as Schema from "effect/Schema";
-import {Command, Flag} from "effect/unstable/cli";
+} from "../primary-index-guard/index.ts";
 import {isIsolationExpected, pinBash} from "./bash-pin.ts";
 import {decideCleanTree} from "./clean-tree.ts";
 import {guardEnterWorktree} from "./enter-guard.ts";

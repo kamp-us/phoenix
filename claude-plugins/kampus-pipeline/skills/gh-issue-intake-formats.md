@@ -1399,8 +1399,12 @@ closing the #375 drift class).
   [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)),
   even though they live under `packages/` rather than `.claude`/skills (ADR
   [0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md)):
-  - `packages/ci-required/**` — the zero-dep aggregator of the gating CI checks; the ADR-0092
-    special-case kept as its own package (its CI job still runs `node packages/ci-required/src/bin.ts`).
+  - `packages/ci-required/**` — the zero-dep aggregator of the gating CI checks. Its sources were
+    inlined into pipeline-cli at `packages/pipeline-cli/src/tools/ci-required/` (#3802), and its CI
+    job now runs `node packages/pipeline-cli/src/tools/ci-required/bin.ts`; the aggregator's
+    CP coverage now flows through the `^packages/pipeline-cli/` clause. The `^packages/ci-required/`
+    clause below is retained deliberately (ADR 0100) as defense-in-depth against a re-created package
+    at that path, even though it no longer carries tracked sources.
   - `packages/pipeline-cli/**` — the consolidated guard machinery (ADR
     [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)),
     now the single home for every guard the standalone `*-guard` packages used to carry

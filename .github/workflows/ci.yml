@@ -992,9 +992,9 @@ jobs:
   # per job is EMITTED to the log (ADR 0092 §1 "emit what you scanned"), so a quietly
   # -skipped required job is visible in the run, not only in the exit code.
   #
-  # The verdict logic is the PURE, UNIT-TESTED `@kampus/ci-required` core
-  # (packages/ci-required) — `node packages/ci-required/src/bin.ts` reads the
-  # `needs.*` env below and exits 0/1. It is a ZERO-RUNTIME-DEPENDENCY plain-Node
+  # The verdict logic is the PURE, UNIT-TESTED `ci-required` core, inlined into
+  # pipeline-cli (#3802) — `node packages/pipeline-cli/src/tools/ci-required/bin.ts`
+  # reads the `needs.*` env below and exits 0/1. It is a ZERO-RUNTIME-DEPENDENCY plain-Node
   # module (node strips the TS types natively), so this gate job runs only
   # checkout + setup-node + node — NO `pnpm install` — keeping the always-on
   # aggregator fast. Its full matrix (the 4 integration scenarios, the packages-tests
@@ -1030,4 +1030,4 @@ jobs:
           ACTIONLINT_RESULT: ${{ needs.actionlint.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
-        run: node packages/ci-required/src/bin.ts
+        run: node packages/pipeline-cli/src/tools/ci-required/bin.ts

@@ -1,5 +1,5 @@
 import {assert, describe, it} from "@effect/vitest";
-import type {StagedEntry} from "@kampus/primary-index-tripwire";
+import type {StagedEntry} from "./index.ts";
 import {
 	decidePrimaryIndexCommit,
 	MASS_DELETION_BLOCK_THRESHOLD,
