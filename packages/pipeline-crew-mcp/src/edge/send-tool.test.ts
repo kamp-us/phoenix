@@ -245,4 +245,27 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 			assert.include(rendered, `body does not match the "IntakePing" schema`);
 		}),
 	);
+
+	// #3761: the schema-mismatch reject must be self-healing like the unknown-kind branch — it carries
+	// the expected payload SHAPE (rendered as a JSON Schema) and names `channel_kinds` as the up-front
+	// resolution path, so a seat with no inbound example recovers instead of blind-guessing the body.
+	it.effect("a schema-mismatch reject carries the expected shape + a channel_kinds pointer", () =>
+		Effect.gen(function* () {
+			const {client} = yield* makeInitializedClient;
+			const result = yield* client["tools/call"]({
+				name: "channel_send",
+				// a known kind, but the body is missing IntakePing's required `from`/`at`
+				arguments: {targetRole: "reviewer", kind: "IntakePing", body: {issue: 3057}},
+			});
+			assert.isTrue(result.isError);
+			const rendered = (result.content as ReadonlyArray<{text?: string}>)
+				.map((c) => c.text ?? "")
+				.join("\n");
+			// the expected shape is rendered as a JSON Schema document (IntakePing requires `from`)…
+			assert.include(rendered, "expected shape (JSON Schema)");
+			assert.include(rendered, "from");
+			// …and the discovery tool is named as the resolve-first path out of the reject.
+			assert.include(rendered, "channel_kinds");
+		}),
+	);
 });

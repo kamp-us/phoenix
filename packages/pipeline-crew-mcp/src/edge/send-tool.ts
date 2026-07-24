@@ -49,6 +49,26 @@ export class ChannelSend extends Context.Service<
 >()("@kampus/pipeline-crew-mcp/edge/ChannelSend") {}
 
 /**
+ * The self-healing hint appended to a schema-mismatch reject: the kind's expected payload rendered
+ * as a JSON Schema document, so the reject SHOWS the shape to match rather than leaving the sender to
+ * guess it one failed send at a time. This is the same one-step recovery the unknown-kind branch
+ * already gives by enumerating the catalog kinds — the schema branch lacked its equivalent, so a
+ * seat that booted with no inbound example to copy blind-guessed the body shape (#3761). The value is
+ * already resolved beside us: `toJsonSchemaDocument` renders the very shape `channel_kinds` serves.
+ * The render is the one fallible step (it throws on an unrepresentable schema — the same step
+ * `protocol/describe` guards), folded here to the `channel_kinds` pointer rather than a native throw.
+ */
+const expectedShapeHint = (kind: string, schema: Schema.Codec<unknown>): Effect.Effect<string> =>
+	Effect.try(
+		() =>
+			`expected shape (JSON Schema): ${JSON.stringify(Schema.toJsonSchemaDocument(schema))} — or call the \`channel_kinds\` tool to resolve every kind's shape before sending`,
+	).pipe(
+		Effect.orElseSucceed(
+			() => `call the \`channel_kinds\` tool to resolve the "${kind}" payload shape before sending`,
+		),
+	);
+
+/**
  * Decode `body` against the catalog schema for `kind` and RETURN the decoded struct — the single
  * boundary normalization for the send path. An unknown kind or a body that fails its kind's schema
  * short-circuits with an `InvalidMessageError`, so the send never reaches `ChannelSend.send` and the
@@ -80,12 +100,17 @@ const validateOutbound = (
 	// the tolerance is one decode step, not a hand-rolled `typeof body === "string"` JSON.parse.
 	const tolerant = Schema.Union([schema, Schema.fromJsonString(schema)]);
 	return Schema.decodeUnknownEffect(tolerant)(body).pipe(
-		Effect.mapError(
-			(error) =>
-				new InvalidMessageError({
-					kind,
-					reason: `body does not match the "${kind}" schema: ${error}`,
-				}),
+		Effect.catch((error) =>
+			expectedShapeHint(kind, schema).pipe(
+				Effect.flatMap((hint) =>
+					Effect.fail(
+						new InvalidMessageError({
+							kind,
+							reason: `body does not match the "${kind}" schema: ${error} — ${hint}`,
+						}),
+					),
+				),
+			),
 		),
 	);
 };
