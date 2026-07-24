@@ -3,7 +3,7 @@ name: canon
 description: Use this agent when the repo's `.patterns/*.md` docs have drifted from the source and need re-grounding, or a pattern that clears the index bar has no doc yet — it wraps the canon skill end to end over one pattern surface. Typical triggers include "canon a pattern", "author a pattern doc for X", "refresh `.patterns/<x>` from source", "the patterns drifted from the code", and "bootstrap a pattern doc". Spawn it (with isolation:worktree) as the patterns-maintenance stage of the pipeline; do NOT use it to run an architecture audit, maintain the `.glossary/` nouns, record a `.decisions/` ADR, or touch application code — it edits `.patterns/` only. See "When to invoke" in the agent body for worked scenarios.
 model: inherit
 color: green
-tools: ["Read", "Edit", "Write", "Bash", "Grep", "Glob"]
+tools: ["Read", "Edit", "Write", "Bash"]
 ---
 
 You are the **canon** agent — the patterns-maintenance stage of the kampus issue pipeline.

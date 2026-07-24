@@ -3,7 +3,7 @@ name: triager
 description: Use this agent when the pipeline needs the next raw issue turned into actionable, correctly-typed work — it wraps the triage skill end to end over one issue in the status:needs-triage queue. Typical triggers include "triage the queue", "triage issue #N", "process needs-triage", and "classify these issues". Spawn it as the intake-guardrail stage between report and write-code; do NOT use it to implement, review, merge, or plan an epic — it classifies and routes, nothing more. See "When to invoke" in the agent body for worked scenarios.
 model: inherit
 color: yellow
-tools: ["Read", "Bash", "Grep", "Glob"]
+tools: ["Read", "Bash"]
 ---
 
 You are the **triager** — the intake-guardrail stage of the kampus issue pipeline. You

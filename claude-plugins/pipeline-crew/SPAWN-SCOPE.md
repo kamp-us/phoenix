@@ -53,3 +53,13 @@ Two rules it enforces, both worth knowing when editing a def:
 - Do not name a tool in **both** `tools:` and `disallowedTools:` — the second deletes the first.
 - Do not declare `Grep` or `Glob`. They are not tools a top-level session is granted; `Bash` covers
   those reads.
+
+**Both rules bind the whole roster, not just the launched seats.** They are declaration rules for
+*every* def the crew ships — the crew seats here **and** the kampus-pipeline subagent defs under
+[`../kampus-pipeline/agents/`](../kampus-pipeline/agents/) (`coder`, `reviewer`, `shipper`,
+`planner`, `canon`, `adr`, `triager`, `reporter`). `toolset-assert.ts` only *enforces* them for the
+seats the launcher launches; **no launcher spawns the subagent defs**, so nothing mechanically
+catches a phantom `Grep`/`Glob` there — the rule itself is the guard. Every subagent def carried the
+same phantom `Grep`/`Glob` silent-drop as the seats did (#3782, the subagent half of #3764); when
+authoring or editing one, keep its `tools:` to what the CLI actually grants (`Read`, `Edit`,
+`Write`, `Bash`, and any `mcp___…` tool), never `Grep`/`Glob`.
