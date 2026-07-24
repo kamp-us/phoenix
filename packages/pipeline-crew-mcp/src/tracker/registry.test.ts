@@ -114,6 +114,39 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 		}).pipe(Effect.scoped, Effect.provide(handlers)),
 	);
 
+	it.effect(
+		"LookupClaim returns the live holder of a claimed resource (the claim-aware routing read, #3886)",
+		() =>
+			Effect.gen(function* () {
+				const client = yield* RpcTest.makeClient(TrackerRegistry);
+				yield* client.AnnouncePresence({peer: "inbox://em-owner", role: "em", at});
+				yield* client.Claim({resource: "issue-3886", claimant: "inbox://em-owner", role: "em", at});
+				const held = yield* client.LookupClaim({resource: "issue-3886"});
+				assert.deepStrictEqual(held, {resource: "issue-3886", holder: "inbox://em-owner"});
+			}).pipe(Effect.scoped, Effect.provide(handlers)),
+	);
+
+	it.effect(
+		"LookupClaim omits the holder for an unclaimed resource (an absent key, never a sentinel)",
+		() =>
+			Effect.gen(function* () {
+				const client = yield* RpcTest.makeClient(TrackerRegistry);
+				const unclaimed = yield* client.LookupClaim({resource: "issue-9999"});
+				assert.deepStrictEqual(unclaimed, {resource: "issue-9999"});
+			}).pipe(Effect.scoped, Effect.provide(handlers)),
+	);
+
+	it.effect("LookupClaim omits the holder once a released claim frees the resource", () =>
+		Effect.gen(function* () {
+			const client = yield* RpcTest.makeClient(TrackerRegistry);
+			yield* client.AnnouncePresence({peer: "inbox://em-owner", role: "em", at});
+			yield* client.Claim({resource: "issue-3886", claimant: "inbox://em-owner", role: "em", at});
+			yield* client.Release({resource: "issue-3886", claimant: "inbox://em-owner", at});
+			const freed = yield* client.LookupClaim({resource: "issue-3886"});
+			assert.deepStrictEqual(freed, {resource: "issue-3886"}, "the freed resource has no holder");
+		}).pipe(Effect.scoped, Effect.provide(handlers)),
+	);
+
 	it.effect("a heartbeat is accepted for a live peer", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);

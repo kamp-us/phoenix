@@ -7,10 +7,12 @@
  * cardinality claim + connection-is-lease, #3035) but does NOT make it discoverable. Becoming a
  * live peer is a separate `announce` step the caller runs once its inbox is attached and serving,
  * so presence reflects a live channel half, not mere construction (#3628). `send` looks the target
- * role up via the tracker (the tracker never relays) and FANS the message to every live holder's
- * inbox directly — one holder for a singleton bridge, every seat for an engine pool, so a per-item
- * advisory reaches the seat that owns the item rather than only the head (#3770). A send to a role
- * with NO live peer surfaces as `PeerUnreachableError`; a send whose holders are all present but
+ * role up via the tracker (the tracker never relays) and delivers to live holders' inboxes directly —
+ * one holder for a singleton bridge, every seat for an engine pool, so a per-item advisory reaches the
+ * seat that owns the item rather than only the head (#3770). Delivery is claim-aware: a send that names
+ * a claimed resource (`options.claimResource`) routes to the CLAIM HOLDER's seat only, sparing the
+ * non-owning seats (#3886); an unclaimed/unresolvable target keeps the broadcast fan across all holders.
+ * A send to a role with NO live peer surfaces as `PeerUnreachableError`; a send whose recipients are all present but
  * deaf surfaces as a distinguishable `ChannelDeafError`, fast — never a silent drop, never a hang.
  */
 
@@ -20,7 +22,29 @@ import * as Arr from "effect/Array";
 import {Dialer} from "./dialer.ts";
 import {ChannelDeafError, PeerUnreachableError} from "./errors.ts";
 import {Inbox, type InboxAck, type InboxEnvelope} from "./inbox.ts";
-import {Tracker} from "./tracker.ts";
+import {type RolePresence, Tracker} from "./tracker.ts";
+
+/**
+ * Narrow a role's live holder set to the delivery target(s) for one send. With no claim owner
+ * (`None` ⇒ the resource is unclaimed, its holder's presence lapsed, or the message named no
+ * claimable resource), the whole live pool receives the message — the pre-claim-aware broadcast
+ * fan (#3770). With a claim owner that IS a live holder of the role, delivery narrows to that ONE
+ * seat — the claim-aware route (#3886). A claim owner that is NOT among the live holders (a rare
+ * presence/attachment skew) falls back to the full fan rather than dialing a seat the role lookup
+ * did not surface. The result is therefore always a NON-EMPTY subset of `holders`: claim-aware
+ * routing only ever narrows the fan, never widens it or empties it.
+ */
+export const selectDeliveryTargets = (
+	holders: Arr.NonEmptyReadonlyArray<RolePresence>,
+	claimOwnerAddress: Option.Option<string>,
+): Arr.NonEmptyReadonlyArray<RolePresence> =>
+	Option.match(claimOwnerAddress, {
+		onNone: () => holders,
+		onSome: (address) => {
+			const owned = Arr.filter(holders, (h) => h.address === address);
+			return Arr.isReadonlyArrayNonEmpty(owned) ? owned : holders;
+		},
+	});
 
 /**
  * The bounded dial window: a present peer whose inbox does not answer within it fails fast as
@@ -52,16 +76,32 @@ export interface Peer {
 	 */
 	readonly announce: Effect.Effect<void, never, Scope.Scope>;
 	/**
-	 * Send a typed message to `targetRole`, fanned to EVERY live holder of the role; resolves to a
-	 * delivery-receipt inbox-ack (delivered iff at least one holder acked). A role with no live peer
-	 * fails with `PeerUnreachableError`; a role whose holders are all present but deaf fails with a
+	 * Send a typed message to `targetRole`; resolves to a delivery-receipt inbox-ack (delivered iff
+	 * at least one recipient acked). Delivery is claim-aware: pass `options.claimResource` (an OPAQUE
+	 * tracker resource key — the crew maps a `NudgeTarget` to `pr-N`/`issue-N`) and, when that
+	 * resource has a live claim whose holder is a live holder of the role, the message routes to that
+	 * ONE seat (#3886); otherwise — no key, unclaimed, lapsed, or holder-not-present — it fans to
+	 * EVERY live holder (the broadcast, #3770). A role with no live peer fails with
+	 * `PeerUnreachableError`; a role whose recipients are all present but deaf fails with a
 	 * distinguishable `ChannelDeafError`, fast.
 	 */
 	readonly send: (
 		targetRole: string,
 		kind: string,
 		body: unknown,
+		options?: SendOptions,
 	) => Effect.Effect<InboxAck, PeerUnreachableError | ChannelDeafError>;
+}
+
+/** Per-send delivery options. `claimResource` opts one send into claim-aware routing (see `send`). */
+export interface SendOptions {
+	/**
+	 * The OPAQUE tracker resource key this message routes by. When set and the resource carries a
+	 * live claim held by a live holder of the target role, delivery narrows to that holder's seat;
+	 * absent or unresolvable ⇒ the broadcast fan. The peer never derives this key (it holds no
+	 * message semantics) — the caller supplies it (the crew's `Protocol.claimResourceKey`).
+	 */
+	readonly claimResource?: string;
 }
 
 export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
@@ -100,7 +140,7 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 			),
 		);
 
-	const send: Peer["send"] = (targetRole, kind, body) =>
+	const send: Peer["send"] = (targetRole, kind, body, options) =>
 		Effect.gen(function* () {
 			const holders = yield* tracker.lookup(targetRole);
 			// No live holder of the role at all ⇒ nobody to dial (distinct from a present-but-deaf inbox).
@@ -110,12 +150,20 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 					reason: `no live peer for role "${targetRole}"`,
 				});
 			}
-			// One logical message, FANNED to every live holder of the role — not routed to a single seat
-			// (#3770). A bridge has one holder, so this is an ordinary point-to-point send; an engine pool
-			// has N, so a per-item advisory (`EngineNudge`) reaches the seat that OWNS the item regardless
-			// of which seat that is. This replaces an `Arr.head` collapse that could only ever dial the
-			// head, so a non-head owner never heard the nudge. Fanning is safe because the nudge is
-			// advisory/non-routing: a seat that does not own the item ignores it (ADR 0189).
+			// Claim-aware routing (#3886): a message that names a claimed resource (`options.claimResource`,
+			// e.g. an `EngineNudge` about a PR an engine already holds) delivers to the CLAIM HOLDER's seat
+			// only, so N-1 non-owning seats are spared a wake + a one-line read they discard. Everything
+			// else — no key, unclaimed, a lapsed claim, or a holder not in the live set — keeps the #3770
+			// broadcast fan. `selectDeliveryTargets` guarantees a non-empty subset, so this only narrows.
+			const claimOwner = options?.claimResource
+				? yield* tracker.claimHolder(options.claimResource)
+				: Option.none<string>();
+			const targets = selectDeliveryTargets(holders, claimOwner);
+			// One logical message, delivered to the selected target(s). A bridge has one holder (an ordinary
+			// point-to-point send); an engine pool has N, across which a per-item advisory reaches the seat
+			// that OWNS the item — routed straight to it when the claim resolves, else fanned to all. This
+			// replaced an `Arr.head` collapse that could only ever dial the head (#3770). Fanning stays safe
+			// because the nudge is advisory/non-routing: a seat that does not own the item ignores it (ADR 0189).
 			const envelope: InboxEnvelope = {
 				messageId: randomUUID(),
 				from: config.self,
@@ -123,10 +171,10 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 				body,
 				at: new Date().toISOString(),
 			};
-			// Deliver to the WHOLE pool before deciding the result — a fan must not fail-fast on one deaf
-			// seat and skip the rest, so each dial is reified into a Result and every holder is dialed.
+			// Deliver to the WHOLE selected set before deciding the result — a fan must not fail-fast on one
+			// deaf seat and skip the rest, so each dial is reified into a Result and every target is dialed.
 			const results = yield* Effect.forEach(
-				holders,
+				targets,
 				(holder) => Effect.result(dialHolder(targetRole, holder.address, envelope)),
 				{concurrency: "unbounded"},
 			);
@@ -137,9 +185,9 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 			if (Option.isSome(ack)) {
 				return ack.value.success;
 			}
-			// No holder acked ⇒ the entire live pool was deaf. Surface a ChannelDeafError — for a singleton
-			// bridge this is exactly the one holder's own deaf error, so behavior is identical to before the
-			// fan. `results` is non-empty (holders is) and here every entry is a failure, so one is present.
+			// No target acked ⇒ every selected recipient was deaf. Surface a ChannelDeafError — for a
+			// singleton bridge this is exactly the one holder's own deaf error, so behavior is identical to
+			// before the fan. `results` is non-empty (`targets` is) and here every entry is a failure, so one is present.
 			const deaf = Arr.findFirst(results, Result.isFailure);
 			return yield* Option.match(deaf, {
 				onSome: (failure) => Effect.fail(failure.failure),

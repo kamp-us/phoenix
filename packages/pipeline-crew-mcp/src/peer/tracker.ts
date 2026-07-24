@@ -9,7 +9,7 @@
  * wired at the crew composition root (#3059). `announce` is scoped: the presence is held
  * for the peer's lifetime and released when its scope closes — connection-is-lease (#3035).
  */
-import {Context, type Effect, Schema, type Scope} from "effect";
+import {Context, type Effect, type Option, Schema, type Scope} from "effect";
 import {Messages} from "../protocol/index.ts";
 
 /** One presence record: the peer, the role it serves, and where its inbox is dialable. */
@@ -38,5 +38,14 @@ export class Tracker extends Context.Service<
 		 * what makes "silently drop every non-head holder" unrepresentable at the port.
 		 */
 		readonly lookup: (role: string) => Effect.Effect<ReadonlyArray<RolePresence>>;
+		/**
+		 * The live holder's dialable address for a claimed `resource`, or `None` when it is unclaimed
+		 * or its holder's presence has lapsed (ADR 0191 facet 2). `resource` is an OPAQUE key — the
+		 * port has no message semantics; the caller supplies the key (the crew maps a `NudgeTarget`
+		 * to `pr-N`/`issue-N`). `send` consults this to route a claimed target to its holder's seat,
+		 * falling back to the broadcast fan on `None` — so claim-aware delivery stays a strict subset
+		 * of the role fan, and a lapsed claim degrades to today's behavior.
+		 */
+		readonly claimHolder: (resource: string) => Effect.Effect<Option.Option<string>>;
 	}
 >()("@kampus/pipeline-crew-mcp/peer/Tracker") {}

@@ -13,7 +13,7 @@
  *     that address back out (matching the `inbox://…` convention the tracker socket test uses).
  */
 import {NodeSocket} from "@effect/platform-node";
-import {Context, Effect, type FileSystem, Layer, type Scope} from "effect";
+import {Context, Effect, type FileSystem, Layer, Option, type Scope} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
 import {type RolePresence, Tracker} from "../peer/index.ts";
 import type * as Schema from "../protocol/schema.ts";
@@ -27,9 +27,11 @@ type PresenceAnnouncement = typeof Schema.PresenceAnnouncement.Type;
 type RoleLookupQuery = typeof Schema.RoleLookupQuery.Type;
 type RoleLookupResult = typeof Schema.RoleLookupResult.Type;
 type HeartbeatMessage = typeof Schema.Heartbeat.Type;
+type LookupClaimQuery = typeof Schema.LookupClaimQuery.Type;
+type LookupClaimResult = typeof Schema.LookupClaimResult.Type;
 
 /**
- * The structural shape of the registry client the crew depends on — the five registry
+ * The structural shape of the registry client the crew depends on — the six registry
  * kinds it drives. Any `RpcClient(TrackerRegistry)` satisfies it (the real socket client,
  * or an in-memory `RpcTest` client in tests); the error channel is `unknown` because it is
  * `orDie`'d at the seam.
@@ -39,6 +41,7 @@ export interface TrackerRegistryClient {
 	readonly Release: (payload: ReleaseClaim) => Effect.Effect<void, unknown>;
 	readonly AnnouncePresence: (payload: PresenceAnnouncement) => Effect.Effect<void, unknown>;
 	readonly LookupRole: (payload: RoleLookupQuery) => Effect.Effect<RoleLookupResult, unknown>;
+	readonly LookupClaim: (payload: LookupClaimQuery) => Effect.Effect<LookupClaimResult, unknown>;
 	readonly Heartbeat: (payload: HeartbeatMessage) => Effect.Effect<void, unknown>;
 }
 
@@ -95,6 +98,12 @@ export class CrewTracker extends Context.Service<
 		 * chosen instance or fan across all of them (the wire's `RoleLookupResult.peers` is an array).
 		 */
 		readonly lookup: (role: string) => Effect.Effect<ReadonlyArray<RolePresence>>;
+		/**
+		 * The live holder of `resource` (its peer-id ≡ inbox-address), or `None` when it is unclaimed
+		 * or its holder's presence has lapsed (ADR 0191 facet 2). The claim-keyspace read the
+		 * claim-aware send path consults to route a nudge about a claimed target to its owning seat.
+		 */
+		readonly claimHolder: (resource: string) => Effect.Effect<Option.Option<string>>;
 	}
 >()("@kampus/pipeline-crew-mcp/crew/CrewTracker") {
 	/** Build the service from a live registry client (real socket or in-memory `RpcTest`). */
@@ -159,6 +168,13 @@ export class CrewTracker extends Context.Service<
 						),
 					),
 				),
+			// peer-id ≡ inbox-address: the resolved holder IS its own dialable address, so the send
+			// path can match it against the live holder set. Absent `holder` ⇒ unclaimed/lapsed ⇒ `None`.
+			claimHolder: (resource) =>
+				client.LookupClaim({resource}).pipe(
+					Effect.orDie,
+					Effect.map((result) => Option.fromNullishOr(result.holder)),
+				),
 		});
 }
 
@@ -178,6 +194,7 @@ export const peerTrackerLayer: Layer.Layer<Tracker, never, CrewTracker> = Layer.
 			announce: tracker.announce,
 			reserve: tracker.reserve,
 			lookup: tracker.lookup,
+			claimHolder: tracker.claimHolder,
 		};
 	}),
 );

@@ -314,6 +314,7 @@ const gatedRaceSubstrate = (
 					Release: (payload) => client.Release(payload),
 					AnnouncePresence: (payload) => client.AnnouncePresence(payload),
 					LookupRole: (payload) => client.LookupRole(payload),
+					LookupClaim: (payload) => client.LookupClaim(payload),
 					Heartbeat: (payload) => client.Heartbeat(payload),
 				};
 				return CrewTracker.fromClient(gatedClient);

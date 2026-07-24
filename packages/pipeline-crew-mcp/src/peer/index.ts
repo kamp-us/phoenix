@@ -20,5 +20,5 @@ export {
 	PeerAddress,
 	PeerInbox,
 } from "./inbox.ts";
-export {make, type Peer, type PeerConfig} from "./peer.ts";
+export {make, type Peer, type PeerConfig, type SendOptions, selectDeliveryTargets} from "./peer.ts";
 export {RolePresence, Tracker} from "./tracker.ts";

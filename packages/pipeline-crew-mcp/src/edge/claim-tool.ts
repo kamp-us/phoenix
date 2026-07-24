@@ -52,10 +52,13 @@ export const ClaimResource = Tool.make("channel_claim", {
 	description:
 		"Claim a resource (an issue or PR id) against the tracker before opening a build lane; returns " +
 		"the typed reply. `granted: true` ⇒ you now hold the lane; `collision: true` ⇒ another engine " +
-		"already holds it (`owner` names the holder) — back off, do NOT open a duplicate lane. One lane " +
-		"has TWO keys the tracker cannot link (the issue AND its PR number), so claim BOTH: the issue " +
-		"at dispatch, and the PR the moment it opens — else another engine can claim the other key for " +
-		"the same lane and also get granted. Release a key you no longer need with channel_release.",
+		"already holds it (`owner` names the holder) — back off, do NOT open a duplicate lane. Key the " +
+		"resource by the canonical convention `issue-<N>` / `pr-<N>` (e.g. `issue-3886`, `pr-3877`) — the " +
+		"SAME key the claim-aware nudge router computes from a nudge target, so a nudge about a claimed " +
+		"item routes to you rather than broadcasting (#3886). One lane has TWO keys the tracker cannot " +
+		"link (the issue AND its PR number), so claim BOTH: `issue-<N>` at dispatch, and `pr-<N>` the " +
+		"moment it opens — else another engine can claim the other key for the same lane and also get " +
+		"granted. Release a key you no longer need with channel_release.",
 	parameters: Schema.Struct({resource: Schema.NonEmptyString}),
 	success: Messages.ClaimReply,
 });

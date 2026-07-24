@@ -63,6 +63,18 @@ export const TrackerHandlers = TrackerRegistry.toLayer(
 						})),
 					})),
 				),
+			// Resolve the resource's live claim holder (ADR 0191 read side). `holder` is an EXACT-optional
+			// key, so an unclaimed/lapsed resource omits it — never a sentinel the caller must decode.
+			LookupClaim: (payload) =>
+				registry
+					.claimHolder(payload.resource)
+					.pipe(
+						Effect.map((holder) =>
+							holder === undefined
+								? {resource: payload.resource}
+								: {resource: payload.resource, holder},
+						),
+					),
 			Heartbeat: (payload) =>
 				registry.heartbeat({peer: payload.peer, ttlSeconds: payload.ttlSeconds}),
 		};

@@ -1,5 +1,5 @@
 /**
- * The catalog-shape guarantees: the `RpcGroup` covers all 7 kinds (acceptance criterion
+ * The catalog-shape guarantees: the `RpcGroup` covers all 8 kinds (acceptance criterion
  * 1), the claim/collision-check kind is a request-response RPC with a typed reply rather
  * than fire-and-forget (criterion 4), and the whole `protocol/` module imports nothing
  * from `crew/` — the generic boundary holds (criterion 3).
@@ -13,6 +13,7 @@ import {
 	AnnouncePresence,
 	Claim,
 	CrewProtocol,
+	claimResourceKey,
 	crewMessageKinds,
 	payloadSchemaForKind,
 	Release,
@@ -20,7 +21,7 @@ import {
 import * as Messages from "./schema.ts";
 
 describe("protocol/group catalog", () => {
-	it("covers all 7 message kinds (8 rpcs — presence is announce + lookup, claim is claim + release)", () => {
+	it("covers all 8 message kinds (9 rpcs — presence is announce + lookup, claim is claim + release + holder-lookup)", () => {
 		assert.deepStrictEqual([...CrewProtocol.requests.keys()].sort(), [
 			"AnnouncePresence",
 			"Claim",
@@ -28,6 +29,7 @@ describe("protocol/group catalog", () => {
 			"EngineNudge",
 			"Heartbeat",
 			"IntakePing",
+			"LookupClaim",
 			"LookupRole",
 			"Release",
 		]);
@@ -77,6 +79,42 @@ describe("protocol/group catalog", () => {
 
 	it("crewMessageKinds is exactly the catalog's kind names", () => {
 		assert.deepStrictEqual([...crewMessageKinds].sort(), [...CrewProtocol.requests.keys()].sort());
+	});
+
+	it("nudgeTargetResourceKey maps a NudgeTarget to the canonical pr-N / issue-N key (#3886)", () => {
+		assert.strictEqual(
+			Messages.nudgeTargetResourceKey(Schema.decodeUnknownSync(Messages.NudgeTarget)({pr: 3877})),
+			"pr-3877",
+		);
+		assert.strictEqual(
+			Messages.nudgeTargetResourceKey(
+				Schema.decodeUnknownSync(Messages.NudgeTarget)({issue: 3886}),
+			),
+			"issue-3886",
+		);
+	});
+
+	it("claimResourceKey resolves an EngineNudge's claim key and yields undefined for everything else (#3886)", () => {
+		assert.strictEqual(
+			claimResourceKey("EngineNudge", {
+				target: {issue: 3886},
+				from: "cos",
+				at: "2026-07-24T00:00:00Z",
+			}),
+			"issue-3886",
+		);
+		assert.strictEqual(
+			claimResourceKey("EngineNudge", {
+				target: {pr: 3877},
+				from: "cos",
+				at: "2026-07-24T00:00:00Z",
+			}),
+			"pr-3877",
+		);
+		// a non-nudge kind carries no claimable target
+		assert.strictEqual(claimResourceKey("IntakePing", {issue: 3886}), undefined);
+		// a malformed nudge body does not decode ⇒ no key ⇒ the send broadcasts (never throws)
+		assert.strictEqual(claimResourceKey("EngineNudge", {not: "a nudge"}), undefined);
 	});
 
 	it("no protocol source file imports from crew/ (the generic boundary holds)", () => {

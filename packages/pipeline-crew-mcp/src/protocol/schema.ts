@@ -118,6 +118,17 @@ export const EngineNudge = Schema.Struct({
 	at: Timestamp,
 });
 
+/**
+ * The canonical tracker resource-key for a nudge target — the SINGLE definition of the
+ * `NudgeTarget → claim-resource` convention (`pr-N` / `issue-N`). A claim writer (an engine
+ * reserving its lane via `channel_claim`) and the claim-aware send path must key on the SAME
+ * string for a claimed PR/issue to route to its holder, so this mapping has exactly one home
+ * (the resource-key gap #3886 names). The `pr-`/`issue-` prefix keeps a PR and an issue of the
+ * same number distinct in the shared claim keyspace, matching the branded `NudgeTarget` union.
+ */
+export const nudgeTargetResourceKey = (target: typeof NudgeTarget.Type): string =>
+	"pr" in target ? `pr-${target.pr}` : `issue-${target.issue}`;
+
 // Kind 4 — role discovery / presence (announce + lookup).
 
 /** One presence record: a peer, the role it serves, and when it was last seen. */
@@ -157,4 +168,22 @@ export const Heartbeat = Schema.Struct({
 	peer: PeerId,
 	ttlSeconds: Schema.Int,
 	at: Timestamp,
+});
+
+// Kind 7 — claim-holder lookup (the read side of the resource-claim keyspace, ADR 0191).
+
+/** A lookup of the live holder of a resource claim; answered by a `LookupClaimResult`. */
+export const LookupClaimQuery = Schema.Struct({
+	resource: Schema.NonEmptyString,
+});
+
+/**
+ * The typed answer to a `LookupClaimQuery`: the resource and — only when it carries a LIVE claim
+ * (its holder's presence has not lapsed, ADR 0191 facet 2) — the holder's peer id. `holder` is an
+ * EXACT-optional key: absent ⇒ unclaimed OR the holder's presence aged out. The claim-aware send
+ * path collapses both absent cases to broadcast — there is no owning seat to route to.
+ */
+export const LookupClaimResult = Schema.Struct({
+	resource: Schema.NonEmptyString,
+	holder: Schema.optionalKey(PeerId),
 });
