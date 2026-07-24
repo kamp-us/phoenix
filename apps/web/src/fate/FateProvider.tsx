@@ -63,6 +63,26 @@ export function FateProvider({children}: {children: React.ReactNode}) {
 		return () => controller?.cancel();
 	}, [userId]);
 
+	// Re-arm the exhausted budget when the browser signals the live plane may be reachable
+	// again — a regained network (`online`) or a foregrounded tab (`visibilitychange`, the
+	// laptop sleep/wake case). Without this the budget is terminal for the session once its
+	// ~7.75s back-off span is spent, leaving the tab silently non-live until reload (#3790).
+	// `rearm` no-ops unless the budget is actually spent, so firing it on every visibility
+	// flip is cheap. Authenticated only — the pin never opens for an anon client.
+	useEffect(() => {
+		if (userId == null) return;
+		const rearm = () => controllerRef.current?.rearm(() => setRetryTick((tick) => tick + 1));
+		const onVisible = () => {
+			if (document.visibilityState === "visible") rearm();
+		};
+		window.addEventListener("online", rearm);
+		document.addEventListener("visibilitychange", onVisible);
+		return () => {
+			window.removeEventListener("online", rearm);
+			document.removeEventListener("visibilitychange", onVisible);
+		};
+	}, [userId]);
+
 	// Identity-change teardown (#2321): when the resolved identity changes — a switch A→B
 	// or a sign-out/account-deletion A→anon (all reduce to the same transition) — drop the
 	// PREVIOUS identity's persisted snapshot, so its private myVote/isSaved overlay never
