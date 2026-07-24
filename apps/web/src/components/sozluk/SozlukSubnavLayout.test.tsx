@@ -109,6 +109,24 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
 	});
 
+	/**
+	 * #3789: an unslugifiable term is no longer a silent no-op — it surfaces a Turkish field
+	 * error through the existing Field/FieldError affordance, so the user learns why `oluştur`
+	 * did nothing instead of only being able to `vazgeç`.
+	 */
+	it("surfaces a Turkish field error when the term slugifies to nothing — not a silent no-op", async () => {
+		renderZone("/sozluk/mevcut-terim");
+		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
+		const field = await screen.findByLabelText("Terim");
+		fireEvent.change(field, {target: {value: "!!!"}});
+		const form = field.closest("form");
+		if (!form) throw new Error("the create field is not inside a form");
+		fireEvent.submit(form);
+		expect(await screen.findByText("Terim en az bir harf ya da rakam içermeli.")).toBeTruthy();
+		// still no navigation — the dialog stays put on the unusable term
+		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
+	});
+
 	it("keeps the create dialog open when the typed term is lost before submit", async () => {
 		renderZone("/sozluk/mevcut-terim");
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));

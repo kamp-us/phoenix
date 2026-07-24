@@ -3,7 +3,7 @@ import {useNavigate} from "react-router";
 import {slugifyTerm} from "../../lib/slugifyTerm";
 import {Button} from "../ui/Button";
 import {Dialog} from "../ui/Dialog";
-import {Field, Form, Input, Label} from "../ui/Form";
+import {Field, FieldError, Form, Input, Label} from "../ui/Form";
 
 /**
  * sözlük's contextual create CTA — the `+ yeni tanım` promoted verb in its Subnav
@@ -22,13 +22,10 @@ export function SozlukSubnavCta() {
 	const navigate = useNavigate();
 	function onSubmit(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
-		const term = String(new FormData(e.currentTarget).get("term") ?? "");
-		const slug = slugifyTerm(term);
-		// Dismiss ONLY once the submit has somewhere to go. `required` does not keep an
-		// unusable term out of here — base-ui's `Form` renders `noValidate` and gates on
-		// its own field validity, which a non-empty term of pure punctuation passes even
-		// though it slugifies to nothing. Closing before this guard swallowed the create
-		// silently: the dialog vanished, nothing navigated, nothing was said (#3746).
+		// `validateTerm` (below) blocks the base-ui submit while the term is unslugifiable,
+		// so a term that reaches here always yields a slug; the guard is the last-resort no-op
+		// that never navigates to an empty slug (#3746 dismiss, #3789 no-op).
+		const slug = slugifyTerm(String(new FormData(e.currentTarget).get("term") ?? ""));
 		if (!slug) return;
 		setOpen(false);
 		navigate(`/sozluk/${slug}`);
@@ -46,9 +43,10 @@ export function SozlukSubnavCta() {
 				<Dialog.Head title="Yeni tanım" description="oluşturmak istediğin terimi yaz." />
 				<Dialog.Body>
 					<Form onSubmit={onSubmit}>
-						<Field name="term">
+						<Field name="term" validate={validateTerm}>
 							<Label>Terim</Label>
 							<Input name="term" required autoFocus placeholder="terim…" />
+							<FieldError match="customError">{UNSLUGIFIABLE_TERM_MESSAGE}</FieldError>
 						</Field>
 						<Dialog.Foot>
 							<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
@@ -61,6 +59,20 @@ export function SozlukSubnavCta() {
 			</Dialog.Popup>
 		</Dialog.Root>
 	);
+}
+
+// A punctuation-only term (e.g. "!!!") is a non-empty value `required` accepts but that
+// `slugifyTerm` reduces to "" — the composer is slug-addressed, so it has nowhere to go.
+// Surfacing it as a field error (base-ui blocks the submit + flags `customError`) replaces the
+// silent no-op the bare `if (!slug) return` guard left behind (#3789). Empty is left to
+// `required`; only the non-empty-but-unslugifiable term errors here. Turkish copy, per the
+// user-facing sözlük surface (.glossary/LANGUAGE.md).
+const UNSLUGIFIABLE_TERM_MESSAGE = "Terim en az bir harf ya da rakam içermeli.";
+
+function validateTerm(value: unknown): string | null {
+	const term = String(value ?? "");
+	if (!term.trim()) return null;
+	return slugifyTerm(term) ? null : UNSLUGIFIABLE_TERM_MESSAGE;
 }
 
 function PlusGlyph() {
