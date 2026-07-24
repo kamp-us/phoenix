@@ -9,6 +9,7 @@
  *   node src/bin.ts stand-down                        # tear down the crew's project-scope .mcp.json + server approval
  *   node src/bin.ts spawn-role <role>                 # add ONE member to the running crew (no whole-crew re-boot)
  *   node src/bin.ts retire-role <role> [--instance]   # retire ONE member (kill its pane + reclaim its artifacts)
+ *   node src/bin.ts doctor [--reap]                   # report crew channel health (registered/channel-deaf/orphaned) + reap
  *
  * The `spawn-role` / `retire-role` subcommands are the single-member membership ops (#3519): dynamic
  * add/remove/respawn of ONE crew member without the whole-crew re-boot `stand-up`/`stand-down` force.
@@ -51,7 +52,14 @@ import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Cause, Console, Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 
-import {CREW_ROLES, RoleUniquenessError, runCrewSession} from "./crew/index.ts";
+import {
+	CREW_ROLES,
+	collectLiveRegisteredForProject,
+	RoleUniquenessError,
+	renderCrewChannelHealth,
+	runCrewChannelDoctor,
+	runCrewSession,
+} from "./crew/index.ts";
 import {
 	CREW_WINDOW,
 	renderStandUpError,
@@ -263,6 +271,38 @@ const retireRoleCmd = Command.make(
 	),
 );
 
+const reapFlag = Flag.boolean("reap").pipe(
+	Flag.withDescription(
+		"also reap the orphaned crew server procs the report names (drives the #C4 reaper)",
+	),
+);
+
+const doctorCmd = Command.make(
+	"doctor",
+	{projectRoot: projectRootFlag, reap: reapFlag},
+	Effect.fn(function* ({projectRoot, reap}) {
+		yield* Console.error(
+			`pipeline-crew-mcp ${VERSION} — crew channel doctor over the canonical rendezvous (project ${projectRoot})`,
+		);
+		// Dial the rendezvous for the live-registered (attached) set, then classify every roster role's
+		// channel health and — with --reap — reap the orphans. The report goes to STDOUT (this is a plain
+		// operator report, not an MCP stdio server), the one startup line to STDERR.
+		const liveRegisteredAddresses = yield* collectLiveRegisteredForProject(projectRoot);
+		return yield* runCrewChannelDoctor({liveRegisteredAddresses, reap}).pipe(
+			Effect.flatMap((result) => Console.log(renderCrewChannelHealth(result))),
+			Effect.catch((error: unknown) =>
+				Console.error(`crew doctor failed: ${String(error)}`).pipe(
+					Effect.andThen(Effect.sync(() => process.exit(1))),
+				),
+			),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Report crew channel health (registered / channel-deaf / orphaned) over the rendezvous, and --reap the orphans",
+	),
+);
+
 const cli = Command.make(
 	"pipeline-crew-mcp",
 	{},
@@ -273,7 +313,15 @@ const cli = Command.make(
 	}),
 ).pipe(
 	Command.withDescription("The crew's channels-backed messaging substrate (epic #3045)"),
-	Command.withSubcommands([session, tracker, standUp, standDown, spawnRoleCmd, retireRoleCmd]),
+	Command.withSubcommands([
+		session,
+		tracker,
+		standUp,
+		standDown,
+		spawnRoleCmd,
+		retireRoleCmd,
+		doctorCmd,
+	]),
 );
 
 cli.pipe(Command.run({version: VERSION}), Effect.provide(NodeServices.layer), NodeRuntime.runMain);
