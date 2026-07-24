@@ -77,14 +77,21 @@ export const MACHINE_LOCAL_PATH_PATTERNS: ReadonlyArray<PathPattern> = [
 		// regardless of where the author roots their clones (`~/dev/…`, `~/projects/…`, `~/src/…`,
 		// `~/work/…`), the shapes the `~/code/`-only arm misses. It stays a GENERIC pattern, never a
 		// named root/host/user deny-list (#2393): the middle segment is matched by *shape* (has a
-		// dot ⇒ a hostname) and the `<user>/<repo>` tail is required, so a benign single-purpose home
-		// subdir (`~/Documents/report.pdf`, `~/.config/kampus/creds`, a `~/Library/...` bundle path)
-		// — none of which is `<root>/<dotted-host>/<user>/<repo>` — does not trip. Deliberately a
+		// dot ⇒ a hostname) and the `<host>/<user>/<repo>` tail is required, so a benign single-purpose
+		// home subdir (`~/Documents/report.pdf`, `~/.config/kampus/creds`, a `~/Library/...` bundle
+		// path) — none of which is `<root>/<dotted-host>/<user>/<repo>` — does not trip. Deliberately a
 		// single clone-root segment: allowing multi-segment roots would match a `~/Library/.../com.x.y/…`
 		// reverse-DNS bundle path and false-positive, so the legacy `~/go/src/github.com/…` two-level
 		// layout is intentionally out of scope for this arm.
+		//
+		// The `<host>/<user>/<repo>` tail is a LOOKAHEAD (asserted, not consumed): the match SPAN is
+		// only the `~/<root>/` prefix, mirroring the `~/code/` arm's prefix-only span. That keeps the
+		// redact-leaks consumer (redact-leaks.ts) evidential — it masks each matched span down to its
+		// class-root and processes longest-match-first, so a prefix-only span redacts to
+		// `~/<redacted>/github.com/…` (home root masked, forge tail preserved). Consuming the whole
+		// path instead made the redactor wipe that tail to a bare `~/<redacted>` (#3401 CI regression).
 		pattern:
-			/(?<![\w.])~\/[A-Za-z0-9._-]+\/[A-Za-z0-9-]+\.[A-Za-z]{2,}\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+/g,
+			/(?<![\w.])~\/[A-Za-z0-9._-]+\/(?=[A-Za-z0-9-]+\.[A-Za-z]{2,}\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)/g,
 		reason: "home-dir sibling-repo clone (~/<root>/<host>/<user>/<repo>)",
 	},
 	{
