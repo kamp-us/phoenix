@@ -50,6 +50,7 @@ import {patchGuardCommand} from "./tools/patch-guard/command.ts";
 import {pathFilterGuardCommand} from "./tools/path-filter-guard/command.ts";
 import {pointerGuardCommand} from "./tools/pointer-guard/command.ts";
 import {primaryIndexGuardCommand} from "./tools/primary-index-guard/command.ts";
+import {publishIsolationGuardCommand} from "./tools/publish-isolation-guard/command.ts";
 import {reachabilityGuardCommand} from "./tools/reachability-guard/command.ts";
 import {readmeGuardCommand} from "./tools/readme-guard/command.ts";
 import {redactLeaksCommand} from "./tools/redact-leaks/command.ts";
@@ -198,4 +199,9 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// on PR #3733). The one tested reader every CI-state consumer cites instead of re-rolling
 	// the query, the single-source shape of `verdict read` (#3686).
 	checksCommand,
+	// #3833 — ADR 0201 §3's isolated-publishing invariant: reds when a package the
+	// release pipeline (publish.yml) ships links a private/unpublished @kampus dep or a
+	// workspace: specifier, making the #3802 uninstallable-publish class unrepresentable.
+	// Scope derived from publish.yml's tag grammar; fail-closed on zero scope (ADR 0092).
+	publishIsolationGuardCommand,
 ];
