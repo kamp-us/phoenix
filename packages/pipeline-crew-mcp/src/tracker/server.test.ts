@@ -36,15 +36,16 @@ describe("tracker socket path — derived from the canonical repo key", () => {
 });
 
 describe("tracker served surface — control-plane only", () => {
-	it("serves exactly the five registry kinds and no message-relay kind", () => {
+	it("serves exactly the six registry kinds and no message-relay kind", () => {
 		assert.deepStrictEqual([...TrackerRegistry.requests.keys()].sort(), [
 			"AnnouncePresence",
 			"Claim",
 			"Heartbeat",
+			"LookupClaim",
 			"LookupRole",
 			"Release",
 		]);
-		for (const relay of ["DrainProgress", "IntakePing"]) {
+		for (const relay of ["DrainProgress", "IntakePing", "EngineNudge"]) {
 			assert.isFalse(
 				TrackerRegistry.requests.has(relay),
 				`tracker must not serve relay kind ${relay}`,

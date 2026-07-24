@@ -11,7 +11,7 @@
  * open, gone once it closes (connection-is-lease, #3035).
  */
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Ref, Result} from "effect";
+import {Context, Effect, Layer, Option, Ref, Result} from "effect";
 import * as Arr from "effect/Array";
 import {RpcTest} from "effect/unstable/rpc";
 import {type Connect, Dialer} from "./dialer.ts";
@@ -26,33 +26,53 @@ const CHANNEL_DEAF = "@kampus/pipeline-crew-mcp/ChannelDeafError";
 // A scoped in-memory tracker modelling the two presence phases (#3628): `reserve` holds a bare
 // (undiscoverable) slot, `announce` flips it attached; both free on scope close, and `lookup`
 // returns EVERY attached holder of a role (in announce order) — one for a bridge, N for an engine
-// pool — the same live-set semantics as the real registry-core (#3770).
-const FakeTracker = Layer.effect(
-	Tracker,
-	Effect.gen(function* () {
-		const reg = yield* Ref.make<ReadonlyArray<{presence: RolePresence; attached: boolean}>>([]);
-		const put = (presence: RolePresence, attached: boolean) =>
-			Effect.acquireRelease(
-				Ref.update(reg, (xs) => [
-					...xs.filter((x) => x.presence.peer !== presence.peer),
-					{presence, attached},
-				]),
-				() => Ref.update(reg, (xs) => xs.filter((x) => x.presence.peer !== presence.peer)),
-			);
-		return {
-			reserve: (presence) => put(presence, false),
-			announce: (presence) => put(presence, true),
-			lookup: (role) =>
-				Ref.get(reg).pipe(
-					Effect.map((xs) =>
-						Arr.filterMap(xs, (x) =>
-							x.attached && x.presence.role === role ? Result.succeed(x.presence) : Result.failVoid,
+// pool — the same live-set semantics as the real registry-core (#3770). `claims` seeds the
+// resource-claim keyspace (resource-key → holder address); `claimHolder` resolves a claim only when
+// its holder is CURRENTLY attached, mirroring registry-core's presence-derived claim liveness
+// (a claim whose holder lapsed reads as unclaimed, ADR 0191 facet 2).
+const makeFakeTracker = (claims: ReadonlyMap<string, string> = new Map()) =>
+	Layer.effect(
+		Tracker,
+		Effect.gen(function* () {
+			const reg = yield* Ref.make<ReadonlyArray<{presence: RolePresence; attached: boolean}>>([]);
+			const put = (presence: RolePresence, attached: boolean) =>
+				Effect.acquireRelease(
+					Ref.update(reg, (xs) => [
+						...xs.filter((x) => x.presence.peer !== presence.peer),
+						{presence, attached},
+					]),
+					() => Ref.update(reg, (xs) => xs.filter((x) => x.presence.peer !== presence.peer)),
+				);
+			return {
+				reserve: (presence) => put(presence, false),
+				announce: (presence) => put(presence, true),
+				lookup: (role) =>
+					Ref.get(reg).pipe(
+						Effect.map((xs) =>
+							Arr.filterMap(xs, (x) =>
+								x.attached && x.presence.role === role
+									? Result.succeed(x.presence)
+									: Result.failVoid,
+							),
 						),
 					),
-				),
-		};
-	}),
-);
+				claimHolder: (resource) => {
+					const holder = claims.get(resource);
+					if (holder === undefined) return Effect.succeed(Option.none<string>());
+					return Ref.get(reg).pipe(
+						Effect.map((xs) =>
+							xs.some((x) => x.attached && x.presence.address === holder)
+								? Option.some(holder)
+								: Option.none<string>(),
+						),
+					);
+				},
+			};
+		}),
+	);
+
+// The default fake with an empty claim keyspace — the pre-claim-aware behavior the existing tests assert.
+const FakeTracker = makeFakeTracker();
 
 // A dialer that always fails — for tests where the dial must never be the thing under test.
 const alwaysUnreachable = Dialer.layerFromConnect((address) =>
@@ -229,6 +249,162 @@ describe("peer/peer — fan a role send across an engine pool (count>1, #3770)",
 	);
 
 	it.effect(
+		"an EngineNudge about a CLAIMED resource routes to the claim HOLDER's seat only, sparing the non-owning seat (#3886)",
+		() =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const ownerSeat = yield* buildInbox("em-owner");
+					const otherSeat = yield* buildInbox("em-other");
+					const connect: Connect = (address) =>
+						address === "addr-owner"
+							? Effect.succeed({Deliver: ownerSeat.deliver})
+							: address === "addr-other"
+								? Effect.succeed({Deliver: otherSeat.deliver})
+								: Effect.fail(new PeerUnreachableError({target: address, reason: "no route"}));
+
+					yield* Effect.gen(function* () {
+						const tracker = yield* Tracker;
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-owner",
+							address: "addr-owner",
+						});
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-other",
+							address: "addr-other",
+						});
+						const cos = yield* Peer.make({
+							self: "cos",
+							role: "chief-of-staff",
+							address: "addr-cos",
+						});
+						// addr-owner holds the claim on `issue-3886` (the canonical NudgeTarget key), so the send
+						// naming that key delivers to that seat ONLY — addr-other is not dialed.
+						const ack = yield* cos.send(
+							"engineering-manager",
+							"EngineNudge",
+							{target: {issue: 3886}},
+							{claimResource: "issue-3886"},
+						);
+						assert.strictEqual(ack.by, "em-owner", "acked by the claim holder's seat");
+						assert.lengthOf(yield* ownerSeat.received, 1, "the claim holder received the nudge");
+						assert.lengthOf(
+							yield* otherSeat.received,
+							0,
+							"the NON-owning seat was spared — claim-aware routing narrowed the fan (#3886)",
+						);
+					}).pipe(
+						Effect.provide([
+							makeFakeTracker(new Map([["issue-3886", "addr-owner"]])),
+							Inbox.layer("cos"),
+							Dialer.layerFromConnect(connect),
+						]),
+					);
+				}),
+			),
+	);
+
+	it.effect(
+		"an EngineNudge whose target is UNCLAIMED still fans to every seat (claim-aware routing only narrows a resolved claim, #3886)",
+		() =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const headSeat = yield* buildInbox("em-head");
+					const ownerSeat = yield* buildInbox("em-owner");
+					const connect: Connect = (address) =>
+						address === "addr-head"
+							? Effect.succeed({Deliver: headSeat.deliver})
+							: address === "addr-owner"
+								? Effect.succeed({Deliver: ownerSeat.deliver})
+								: Effect.fail(new PeerUnreachableError({target: address, reason: "no route"}));
+
+					yield* Effect.gen(function* () {
+						const tracker = yield* Tracker;
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-head",
+							address: "addr-head",
+						});
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-owner",
+							address: "addr-owner",
+						});
+						const cos = yield* Peer.make({
+							self: "cos",
+							role: "chief-of-staff",
+							address: "addr-cos",
+						});
+						// The key is supplied but NO claim exists for it — claimHolder resolves None, so the send fans.
+						yield* cos.send(
+							"engineering-manager",
+							"EngineNudge",
+							{target: {issue: 3886}},
+							{claimResource: "issue-3886"},
+						);
+						assert.lengthOf(yield* headSeat.received, 1, "head seat received the broadcast");
+						assert.lengthOf(yield* ownerSeat.received, 1, "owner seat received the broadcast");
+					}).pipe(
+						Effect.provide([FakeTracker, Inbox.layer("cos"), Dialer.layerFromConnect(connect)]),
+					);
+				}),
+			),
+	);
+
+	it.effect(
+		"a claim whose holder's presence has LAPSED is treated as unclaimed, so the nudge fans (claims ride presence, ADR 0191 facet 2)",
+		() =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const headSeat = yield* buildInbox("em-head");
+					const ownerSeat = yield* buildInbox("em-owner");
+					const connect: Connect = (address) =>
+						address === "addr-head"
+							? Effect.succeed({Deliver: headSeat.deliver})
+							: address === "addr-owner"
+								? Effect.succeed({Deliver: ownerSeat.deliver})
+								: Effect.fail(new PeerUnreachableError({target: address, reason: "no route"}));
+
+					yield* Effect.gen(function* () {
+						const tracker = yield* Tracker;
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-head",
+							address: "addr-head",
+						});
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-owner",
+							address: "addr-owner",
+						});
+						const cos = yield* Peer.make({
+							self: "cos",
+							role: "chief-of-staff",
+							address: "addr-cos",
+						});
+						// The claim points at addr-ghost, which never announced (no live presence), so claimHolder
+						// resolves None — the lapsed-claim-reads-as-unclaimed path — and the send fans to all seats.
+						yield* cos.send(
+							"engineering-manager",
+							"EngineNudge",
+							{target: {issue: 3886}},
+							{claimResource: "issue-3886"},
+						);
+						assert.lengthOf(yield* headSeat.received, 1, "head seat received the broadcast");
+						assert.lengthOf(yield* ownerSeat.received, 1, "owner seat received the broadcast");
+					}).pipe(
+						Effect.provide([
+							makeFakeTracker(new Map([["issue-3886", "addr-ghost"]])),
+							Inbox.layer("cos"),
+							Dialer.layerFromConnect(connect),
+						]),
+					);
+				}),
+			),
+	);
+
+	it.effect(
 		"a fan tolerates a deaf seat in the pool — one holder deaf, another live still delivers (ack from the live seat)",
 		() =>
 			Effect.scoped(
@@ -273,4 +449,27 @@ describe("peer/peer — fan a role send across an engine pool (count>1, #3770)",
 				}),
 			),
 	);
+});
+
+describe("peer/peer — selectDeliveryTargets (the pure claim-aware selection, #3886)", () => {
+	const holder = (peer: string, address: string): RolePresence => ({
+		role: "engineering-manager",
+		peer,
+		address,
+	});
+	const pool = [holder("a", "addr-a"), holder("b", "addr-b")] as const;
+
+	it("no claim owner falls back to the whole live pool (the broadcast fan)", () => {
+		assert.deepStrictEqual(Peer.selectDeliveryTargets(pool, Option.none()), pool);
+	});
+
+	it("a claim owner that is a live holder narrows to that one seat", () => {
+		assert.deepStrictEqual(Peer.selectDeliveryTargets(pool, Option.some("addr-b")), [
+			holder("b", "addr-b"),
+		]);
+	});
+
+	it("a claim owner not among the live holders falls back to the full fan (never an empty set)", () => {
+		assert.deepStrictEqual(Peer.selectDeliveryTargets(pool, Option.some("addr-ghost")), pool);
+	});
 });

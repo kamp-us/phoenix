@@ -46,6 +46,7 @@ describe("crew/catalog — roles mapped to seams over protocol/", () => {
 			"EngineNudge",
 			"Heartbeat",
 			"IntakePing",
+			"LookupClaim",
 			"LookupRole",
 			"Release",
 		]);

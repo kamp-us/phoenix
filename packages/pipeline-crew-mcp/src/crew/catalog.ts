@@ -17,6 +17,7 @@ import {
 	EngineNudge,
 	Heartbeat,
 	IntakePing,
+	LookupClaim,
 	LookupRole,
 	Release,
 } from "../protocol/index.ts";
@@ -37,6 +38,8 @@ export const CrewSeams = {
 	engineNudge: EngineNudge,
 	announcePresence: AnnouncePresence,
 	lookupRole: LookupRole,
+	// the resource-claim-holder read (ADR 0191), the claim-keyspace peer of lookupRole (#3886).
+	lookupClaim: LookupClaim,
 	heartbeat: Heartbeat,
 } as const;
 

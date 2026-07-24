@@ -1,5 +1,5 @@
 /**
- * protocol/group — the 7 crew message kinds as one Effect `RpcGroup`.
+ * protocol/group — the 8 crew message kinds as one Effect `RpcGroup`.
  *
  * Generic (crew-agnostic); see the boundary note in `../index.ts`. Each kind is an
  * `Rpc` carrying a Schema payload from `./schema.ts`. Kinds that expect an answer
@@ -9,7 +9,7 @@
  * That success/void split is exactly what distinguishes a request-response kind from a
  * fire-and-forget one on the wire.
  */
-import type {Schema} from "effect";
+import {Option, Schema} from "effect";
 import {Rpc, RpcGroup} from "effect/unstable/rpc";
 import * as Messages from "./schema.ts";
 
@@ -59,7 +59,19 @@ export const Heartbeat = Rpc.make("Heartbeat", {
 	payload: Messages.Heartbeat,
 });
 
-/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 7 kinds. */
+/**
+ * Kind 7 — claim-holder lookup, awaiting a typed `LookupClaimResult`. The read side of the
+ * resource-claim keyspace (ADR 0191), symmetric to `LookupRole` over the presence keyspace: it
+ * resolves the live holder of a resource so the claim-aware send path can route a nudge about a
+ * claimed target to its owning seat (#3886). Control-plane only — like `LookupRole`, it is served
+ * by the tracker registry, never relayed peer-to-peer.
+ */
+export const LookupClaim = Rpc.make("LookupClaim", {
+	payload: Messages.LookupClaimQuery,
+	success: Messages.LookupClaimResult,
+});
+
+/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 8 kinds. */
 export const CrewProtocol = RpcGroup.make(
 	Claim,
 	Release,
@@ -69,6 +81,7 @@ export const CrewProtocol = RpcGroup.make(
 	AnnouncePresence,
 	LookupRole,
 	Heartbeat,
+	LookupClaim,
 );
 
 /** The catalog's wire `kind` names — the `_tag` of every rpc, the set a `channel_send` may name. */
@@ -77,7 +90,7 @@ export const crewMessageKinds: ReadonlyArray<string> = [...CrewProtocol.requests
 /**
  * Resolve a wire `kind` name to the Schema payload the catalog types it as — the seam that lets
  * a boundary decode a message's `body` against its kind instead of trusting `Schema.Unknown`,
- * so the 7-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
+ * so the 8-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
  * from `CrewProtocol.requests` so it can never drift from the catalog above — the catalog *is*
  * the map. A kind outside the catalog resolves to `undefined`; the caller rejects it.
  *
@@ -88,3 +101,21 @@ export const crewMessageKinds: ReadonlyArray<string> = [...CrewProtocol.requests
  */
 export const payloadSchemaForKind = (kind: string): Schema.Codec<unknown> | undefined =>
 	CrewProtocol.requests.get(kind)?.payloadSchema as Schema.Codec<unknown> | undefined;
+
+/**
+ * The claim-resource key a message routes by, or `undefined` when it names none — what the
+ * claim-aware send path consults to decide single-seat vs broadcast delivery (#3886). Only
+ * `EngineNudge` carries a claimable target today, mapped to the canonical `pr-N`/`issue-N` key
+ * (`Messages.nudgeTargetResourceKey`, the single-source convention). Any other kind, or a body
+ * that does not decode as an `EngineNudge`, yields `undefined` ⇒ the send broadcasts, so a
+ * malformed or non-nudge message degrades to the pre-claim-aware fan-out rather than throwing.
+ * This is the one place the catalog declares "this kind routes by claim, on this key."
+ */
+export const claimResourceKey = (kind: string, body: unknown): string | undefined => {
+	if (kind !== EngineNudge._tag) return undefined;
+	return Option.getOrUndefined(
+		Option.map(Schema.decodeUnknownOption(Messages.EngineNudge)(body), (nudge) =>
+			Messages.nudgeTargetResourceKey(nudge.target),
+		),
+	);
+};

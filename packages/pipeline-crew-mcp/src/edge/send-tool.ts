@@ -11,8 +11,8 @@
  */
 import {Context, Effect, Schema} from "effect";
 import {Tool, Toolkit} from "effect/unstable/ai";
-import {ChannelDeafError, InboxAck, PeerUnreachableError} from "../peer/index.ts";
-import {crewMessageKinds, payloadSchemaForKind} from "../protocol/index.ts";
+import {ChannelDeafError, InboxAck, PeerUnreachableError, type SendOptions} from "../peer/index.ts";
+import {claimResourceKey, crewMessageKinds, payloadSchemaForKind} from "../protocol/index.ts";
 
 /**
  * A message rejected at the wire because its shape doesn't match the catalog: an unknown
@@ -44,6 +44,7 @@ export class ChannelSend extends Context.Service<
 			targetRole: string,
 			kind: string,
 			body: unknown,
+			options?: SendOptions,
 		) => Effect.Effect<InboxAck, PeerUnreachableError | ChannelDeafError>;
 	}
 >()("@kampus/pipeline-crew-mcp/edge/ChannelSend") {}
@@ -135,9 +136,21 @@ export const channelToolHandlers = ChannelToolkit.toLayer(
 	Effect.gen(function* () {
 		const sender = yield* ChannelSend;
 		return {
+			// Resolve the message's claim-resource key from the DECODED body (the single-source
+			// `Protocol.claimResourceKey` — only an `EngineNudge` carries one today, keyed `pr-N`/`issue-N`)
+			// and thread it as the send's claim-route hint (#3886). The edge is the protocol-aware boundary
+			// that already decodes the body, so the peer stays generic — it routes on an opaque key it is handed.
 			channel_send: ({body, kind, targetRole}) =>
 				validateOutbound(kind, body).pipe(
-					Effect.flatMap((decoded) => sender.send(targetRole, kind, decoded)),
+					Effect.flatMap((decoded) => {
+						const claimResource = claimResourceKey(kind, decoded);
+						return sender.send(
+							targetRole,
+							kind,
+							decoded,
+							claimResource ? {claimResource} : undefined,
+						);
+					}),
 				),
 		};
 	}),

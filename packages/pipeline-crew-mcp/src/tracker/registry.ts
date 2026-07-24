@@ -44,6 +44,11 @@ export class Registry extends Context.Service<
 		}) => Effect.Effect<void>;
 		/** The present holders of `role` (empty ⇒ absent/expired — the explicit not-present result). */
 		readonly lookup: (role: string) => Effect.Effect<ReadonlyArray<Core.PresenceRecord>>;
+		/**
+		 * The live holder of `resource`, or `undefined` when it is unclaimed OR its holder's presence
+		 * has aged out — a stale claim reads as free (ADR 0191 facet 2). The read side of `claim`.
+		 */
+		readonly claimHolder: (resource: string) => Effect.Effect<string | undefined>;
 		/** Free every lease `peer` holds and reap its claims — a connection close (connection-is-lease). */
 		readonly release: (peer: string) => Effect.Effect<void>;
 	}
@@ -91,6 +96,12 @@ export const RegistryLive: Layer.Layer<Registry> = Layer.effect(Registry)(
 					const nowMillis = yield* Clock.currentTimeMillis;
 					const state = yield* Ref.get(ref);
 					return Core.lookup(state, role, nowMillis);
+				}),
+			claimHolder: (resource) =>
+				Effect.gen(function* () {
+					const nowMillis = yield* Clock.currentTimeMillis;
+					const state = yield* Ref.get(ref);
+					return Core.claimHolder(state, resource, nowMillis);
 				}),
 			release: (peer) => Ref.update(ref, (state) => Core.release(state, peer)),
 		};
