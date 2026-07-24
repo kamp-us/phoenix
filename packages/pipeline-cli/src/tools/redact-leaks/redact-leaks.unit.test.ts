@@ -47,6 +47,15 @@ describe("redactLeaks — REDACT matched leaks, preserving evidential shape (#30
 		assert.isTrue(isClean(out));
 	});
 
+	it("redacts a generic (non-~/code) home-root sibling clone, keeping ~ and the forge tail (#3401)", () => {
+		// The #3401 matcher flags clones under ANY home root; the generic arm consumes only the
+		// `~/<root>/` prefix (lookahead tail), so the redactor masks just the home root and preserves
+		// the `<host>/<user>/<repo>` evidential shape — same as the `~/code/` case above.
+		const out = redactLeaks("grounded in ~/dev/github.com/usirin/effect-smol");
+		assert.strictEqual(out, "grounded in ~/<redacted>/github.com/usirin/effect-smol");
+		assert.isTrue(isClean(out));
+	});
+
 	it("redacts a /vault path", () => {
 		const out = redactLeaks("stored under /vault/secrets/key");
 		assert.strictEqual(out, "stored under /<redacted>/secrets/key");

@@ -23,7 +23,11 @@ const REDACTED = "<redacted>";
 // string, so this is post-classification of findCommentLeaks output — NOT a second
 // leak-pattern definition (detection stays single-sourced in leak-guard). A `~/.claude`
 // tool dir and a `/vault/` mount are themselves identifying, so their kept root drops to
-// `~` / `` (bare slash) — the shape survives, the identity does not.
+// `~` / `` (bare slash) — the shape survives, the identity does not. The trailing `["~", "~"]`
+// is the generic home-clone fallback: the #3401 matcher now flags a sibling clone under ANY
+// home root (`~/dev/…`, `~/projects/…`, not just `~/code/`), and every such match must still
+// redact to the `~` home-class marker rather than lose it to the empty default — first-match
+// order keeps the specific `~/.claude`/`~/code` prefixes ahead of it (all keep `~` regardless).
 const REDACTION_ROOTS: ReadonlyArray<readonly [prefix: string, keep: string]> = [
 	["/var/folders", "/var/folders"],
 	["/private/tmp", "/private/tmp"],
@@ -34,6 +38,7 @@ const REDACTION_ROOTS: ReadonlyArray<readonly [prefix: string, keep: string]> = 
 	["~/.usirin", "~"],
 	["~/.agent", "~"],
 	["~/code", "~"],
+	["~", "~"],
 	["/vault", ""],
 ];
 
