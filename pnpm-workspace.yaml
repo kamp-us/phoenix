@@ -75,7 +75,7 @@ catalog:
   react-router: ^7.15.0
   turbo: ^2.9.14
   typescript: ^6.0.3
-  vite: ^8.0.11
+  vite: ^8.0.16
   vitest: ^4.1.5
   yaml: 2.9.0
   zod: 4.4.3
