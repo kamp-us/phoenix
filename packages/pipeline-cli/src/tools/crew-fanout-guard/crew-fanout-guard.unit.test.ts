@@ -117,6 +117,20 @@ describe("judge — the every-agent-type-is-classified decision", () => {
 		expect(BRIDGE_OUT_OF_SCOPE["crew-intake-desk"]).toContain("coder");
 	});
 
+	it("classifies the chief-of-staff's reporter fanout as allowed, not out of scope (#3888)", () => {
+		// The CoS delegates capture to `reporter` (write-scoped to issue creation), so it must be on
+		// the allowlist and OFF the out-of-scope table — the highest-observation seat's context-hygiene
+		// fanout, not an execution edge (ADR 0196). The bridge/engine line (ADR 0189) stays intact.
+		expect(BRIDGE_ALLOWLIST["crew-chief-of-staff"]).toContain("reporter");
+		expect(BRIDGE_OUT_OF_SCOPE["crew-chief-of-staff"]).not.toContain("reporter");
+		// the execution engines stay explicitly out of scope — no pipeline path opens
+		for (const engine of ["coder", "reviewer", "shipper", "planner", "canon", "adr", "triager"]) {
+			expect(BRIDGE_OUT_OF_SCOPE["crew-chief-of-staff"]).toContain(engine);
+		}
+		// classification stays total: the roster still passes with reporter now allowlisted for the CoS
+		expect(judge(currentInput()).pass).toBe(true);
+	});
+
 	it("fails closed on zero roster and on zero bridges (ADR 0092)", () => {
 		expect(judge({rosterAgents: [], bridges: [CARTOGRAPHER, CHIEF, INTAKE]})).toMatchObject({
 			pass: false,
