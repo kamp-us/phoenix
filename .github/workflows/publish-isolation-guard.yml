@@ -1,0 +1,47 @@
+name: publish-isolation-guard
+
+# CI gate for ADR 0201 §3 (isolated publishing = decoupled dependency graph): every
+# package the release pipeline (`publish.yml`) ships must be installable from a clean
+# registry state — zero phoenix-private `@kampus/*` deps, no `workspace:*` links. The
+# forcing incident: `pipeline-cli@0.2.0` published green yet was uninstallable because
+# it declared three phoenix-private `workspace:*` packages as registry deps (#3802,
+# inlined in #3805). This job derives the published-package set from publish.yml's
+# release-tag grammar, walks each published package's runtime deps, and fails closed on
+# any private/workspace link, on a tag prefix that maps to no member (drift), or on
+# zero published packages (ADR 0092). It reuses pipeline-cli's
+# `publish-isolation-guard check` mode — the scan lives once in the tool.
+on:
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs the
+# guard, which fails via exit code — it posts no check-run/status/PR comment — so
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: "check every published pipeline package is installable in isolation"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when a published pipeline package links a private/unpublished @kampus dep
+      # or a workspace: specifier (report on stderr), when a publish.yml tag prefix maps
+      # to no member (drift), or when zero published packages are in scope (fail-closed).
+      # See ADR 0201 §3 and #3802.
+      - name: "Check every published pipeline package links no private @kampus deps"
+        run: node packages/pipeline-cli/src/bin.ts publish-isolation-guard check
