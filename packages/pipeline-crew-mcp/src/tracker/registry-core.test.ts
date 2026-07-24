@@ -227,6 +227,85 @@ describe("registry-core — presence-derived claim liveness (ADR 0191 facet 2)",
 	});
 });
 
+// One build lane is named by TWO keys — its issue number AND the PR number that comes out of it —
+// but the tracker keys claims on an opaque exact-match `resource`, so it cannot know `3686` (issue)
+// and `3713` (its PR) denote one lane: claiming one does NOT reserve the other. That is the observed
+// #3796 facet 1 near-miss (one lane granted to two engines two seconds apart). The structural fix (a
+// canonical lane identity) belongs to epic #3766's planning; the interim convention — documented on
+// the channel_claim tool where engines read it — is that the first engine claims BOTH keys, and these
+// tests pin its two halves: unclaimed cross-key keys are independently grantable (the defect), and
+// once BOTH are held the second claimant of EITHER key collides (the mitigation).
+describe("registry-core — the two-key lane keyspace (#3796 facet 1)", () => {
+	it("the raw defect: an issue key and its PR key are independent claims — both grant to different holders", () => {
+		let state = withPresence(Core.empty(), "engine-a", "engineering-manager", T0);
+		state = withPresence(state, "engine-b", "engineering-manager", T0);
+		// engine A claims the PR key #3713
+		const aOnPr = Core.claimResource(state, {
+			resource: "3713",
+			holder: "engine-a",
+			claimantRole: "engineering-manager",
+			nowMillis: T0,
+		});
+		assert.strictEqual(aOnPr.outcome._tag, "Granted");
+		// engine B claims the ISSUE key #3686 for the SAME lane — granted, because the keys don't link
+		const bOnIssue = Core.claimResource(aOnPr.state, {
+			resource: "3686",
+			holder: "engine-b",
+			claimantRole: "engineering-manager",
+			nowMillis: T0 + secs(2),
+		});
+		assert.strictEqual(
+			bOnIssue.outcome._tag,
+			"Granted",
+			"the tracker cannot know 3686 and 3713 are one lane — the double-grant",
+		);
+	});
+
+	it("the interim mitigation: with the first engine holding BOTH keys, the second collides on EITHER", () => {
+		let state = withPresence(Core.empty(), "engine-a", "engineering-manager", T0);
+		state = withPresence(state, "engine-b", "engineering-manager", T0);
+		// engine A follows the convention — it claims BOTH the issue and the PR for its lane
+		state = Core.claimResource(state, {
+			resource: "3686",
+			holder: "engine-a",
+			claimantRole: "engineering-manager",
+			nowMillis: T0,
+		}).state;
+		state = Core.claimResource(state, {
+			resource: "3713",
+			holder: "engine-a",
+			claimantRole: "engineering-manager",
+			nowMillis: T0 + secs(1),
+		}).state;
+
+		// engine B claims the issue key — collision (A holds it)
+		const bIssue = Core.claimResource(state, {
+			resource: "3686",
+			holder: "engine-b",
+			claimantRole: "engineering-manager",
+			nowMillis: T0 + secs(2),
+		});
+		assert.deepStrictEqual(bIssue.outcome, {
+			_tag: "Collision",
+			holder: "engine-a",
+			sinceMillis: T0,
+		});
+
+		// engine B claims the PR key — collision too (A holds both halves of the lane)
+		const bPr = Core.claimResource(state, {
+			resource: "3713",
+			holder: "engine-b",
+			claimantRole: "engineering-manager",
+			nowMillis: T0 + secs(2),
+		});
+		assert.deepStrictEqual(bPr.outcome, {
+			_tag: "Collision",
+			holder: "engine-a",
+			sinceMillis: T0 + secs(1),
+		});
+	});
+});
+
 describe("registry-core — Release + reaping (ADR 0191 facets 2 + 3)", () => {
 	it("releaseClaim frees only the caller's own claim — steal-release is a no-op", () => {
 		let state = withPresence(Core.empty(), "peer-a", "builder", T0);

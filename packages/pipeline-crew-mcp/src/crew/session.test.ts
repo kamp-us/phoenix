@@ -443,6 +443,12 @@ describe("crew/session — the session-mode server advertises the channel edge (
 				const listed = yield* client["tools/list"]({});
 				const names = listed.tools.map((tool) => tool.name);
 				assert.include(names, "channel_send", "the model must be able to call channel_send");
+				assert.include(names, "channel_claim", "the model must be able to claim a lane");
+				assert.include(
+					names,
+					"channel_release",
+					"the model must be able to release a claim it holds (#3796 facet 2)",
+				);
 			}).pipe(Effect.scoped),
 	);
 });

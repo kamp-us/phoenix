@@ -7,8 +7,9 @@
  *   - inbound  — `channelInboxLayer` is the peer's `Inbox`; each delivery `wake`s the
  *     session via the `ChannelSink` as a structured `<channel>` tag,
  *   - outbound — `channelServerLayer` serves the MCP server (capability + the `channel_send`
- *     relay tool + the `channel_claim` deconfliction tool), routing sends through the
- *     `ChannelSend` port and resource claims through the `ChannelClaim` port.
+ *     relay tool + the `channel_claim` / `channel_release` deconfliction tools), routing sends
+ *     through the `ChannelSend` port and resource claims/releases through the `ChannelClaim` /
+ *     `ChannelRelease` ports.
  */
 export {channelInboxLayer, formatChannelTag} from "./bridge.ts";
 export {ChannelSink} from "./channel-sink.ts";
@@ -32,6 +33,13 @@ export {
 	type ChannelNotificationPayload,
 	channelExperimentalCapability,
 } from "./mcp-channel.ts";
+export {
+	ChannelRelease,
+	ReleaseAck,
+	ReleaseResource,
+	ReleaseToolkit,
+	releaseToolHandlers,
+} from "./release-tool.ts";
 export {
 	ChannelSend,
 	ChannelToolkit,
