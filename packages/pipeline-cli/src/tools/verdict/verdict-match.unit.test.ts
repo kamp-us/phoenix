@@ -1,6 +1,8 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	boundHeadShas,
 	emissionDefect,
+	headBindingDefect,
 	isBoundToHead,
 	isNamespaceMarker,
 	isReviewed,
@@ -406,4 +408,74 @@ describe("emissionDefect — the one gate `post` and `validate` share (#2683/#27
 		assert.isNotNull(
 			emissionDefect(`review-code: PASS @ ${SHA40}\n\nsee /Users/foo/scratch/notes`, "code"),
 		));
+});
+
+// The #3801 post-time head cross-check core: which head SHAs a body binds, and whether they match a
+// given live head. This is the pure decision `Github.post` drives at the boundary — the cross-PR
+// contamination guard tested end-to-end over the mock spawner in github-service.unit.test.ts.
+describe("boundHeadShas — the head SHAs a verdict body binds itself to", () => {
+	const HEAD = "c6192dee".repeat(5); // 40 hex
+	const OTHER = "80f6b847".repeat(5); // 40 hex
+
+	it("collects the first-line PASS/FAIL marker's @ <sha>", () =>
+		assert.deepStrictEqual(boundHeadShas(`review-code: PASS @ ${HEAD} — merge-ready`, "code"), [
+			HEAD,
+		]));
+
+	it("collects the §CP advisory's Reviewed-head: anchor SHA", () =>
+		assert.deepStrictEqual(
+			boundHeadShas(`review-code: advisory — see thread\n\nReviewed-head: @ ${HEAD}`, "code"),
+			[HEAD],
+		));
+
+	it("collects BOTH the marker @ <sha> and the Reviewed-head: anchor", () =>
+		assert.deepStrictEqual(
+			boundHeadShas(
+				`review-code: PASS @ ${HEAD} — merge-ready\n\nReviewed-head: @ ${OTHER}`,
+				"code",
+			),
+			[HEAD, OTHER],
+		));
+
+	it("a SHA-less advisory binds nothing (empty array)", () =>
+		assert.deepStrictEqual(boundHeadShas("review-code: advisory — see thread", "code"), []));
+
+	it("another gate's marker is not read as this gate's binding", () =>
+		assert.deepStrictEqual(boundHeadShas(`review-doc: PASS @ ${HEAD}`, "code"), []));
+});
+
+describe("headBindingDefect — refuse a body bound to a head other than the target PR's (#3801)", () => {
+	const HEAD = "c6192dee".repeat(5); // the target PR's live head, 40 hex
+	const FOREIGN = "80f6b847".repeat(5); // a DIFFERENT PR's head — a clobbered cross-PR body
+
+	it("a marker bound to a FOREIGN head → defect (the cross-PR contamination case)", () =>
+		assert.isNotNull(
+			headBindingDefect(`review-code: PASS @ ${FOREIGN} — merge-ready`, "code", HEAD),
+		));
+
+	it("a Reviewed-head: anchor bound to a FOREIGN head → defect", () =>
+		assert.isNotNull(
+			headBindingDefect(
+				`review-code: advisory — see thread\n\nReviewed-head: @ ${FOREIGN}`,
+				"code",
+				HEAD,
+			),
+		));
+
+	it("a marker bound to the target PR's own head → null (postable)", () =>
+		assert.isNull(headBindingDefect(`review-code: PASS @ ${HEAD} — merge-ready`, "code", HEAD)));
+
+	it("a SHA-less advisory binds nothing → null (nothing to cross-check)", () =>
+		assert.isNull(headBindingDefect("review-code: advisory — see thread", "code", HEAD)));
+
+	it("an abbreviated bound SHA that prefixes the live head → null (ADR 0058 rule 3)", () =>
+		assert.isNull(
+			headBindingDefect(`review-code: PASS @ ${HEAD.slice(0, 12)} — merge-ready`, "code", HEAD),
+		));
+
+	it("fail-closed: an empty/unresolvable head refuses any body that binds a SHA", () =>
+		assert.isNotNull(headBindingDefect(`review-code: PASS @ ${HEAD} — merge-ready`, "code", "")));
+
+	it("fail-closed exemption: an empty head still passes a bind-nothing advisory", () =>
+		assert.isNull(headBindingDefect("review-code: advisory — see thread", "code", "")));
 });

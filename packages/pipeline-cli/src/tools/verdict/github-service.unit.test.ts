@@ -5,6 +5,7 @@ import {
 	Github,
 	GithubLive,
 	type RepoResolutionError,
+	VerdictHeadMismatchError,
 	VerdictInputError,
 	VerdictVerifyError,
 } from "./github.ts";
@@ -184,6 +185,8 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
 					comment({id: 1, login: "someone", body: "just chatter"}),
 				]),
+				[`GET ${P}/pulls/${PR}`]:
+					HEAD40 /* #3801 head cross-check reads live head; BODY binds HEAD40 */,
 				[`POST ${P}/issues/${PR}/comments`]: "999",
 				// the #3019 read-back: post re-fetches the landed comment and re-runs emissionDefect
 				[`GET ${P}/issues/comments/999`]: BODY,
@@ -201,6 +204,7 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
 					comment({id: 42, login: "usirin", body: `review-doc: FAIL @ ${OLD} — changes-requested`}),
 				]),
+				[`GET ${P}/pulls/${PR}`]: HEAD40 /* #3801: BODY binds HEAD40 */,
 				[`PATCH ${P}/issues/comments/42`]: "42",
 				[`GET ${P}/issues/comments/42`]: BODY,
 			}),
@@ -217,6 +221,7 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
 					comment({id: 7, login: "cansirin", body: `review-doc: PASS @ ${OLD} — merge-ready`}),
 				]),
+				[`GET ${P}/pulls/${PR}`]: HEAD40 /* #3801: BODY binds HEAD40 */,
 				[`POST ${P}/issues/${PR}/comments`]: "1000",
 				[`GET ${P}/issues/comments/1000`]: BODY,
 			}),
@@ -275,6 +280,7 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 			provide(effect, {
 				"GET user": "usirin",
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`GET ${P}/pulls/${PR}`]: "a".repeat(40) /* #3801: body binds a*40 */,
 				[`POST ${P}/issues/${PR}/comments`]: "777",
 				[`GET ${P}/issues/comments/777`]: `review-doc: PASS @ ${"a".repeat(40)}`,
 			}),
@@ -352,8 +358,83 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 			provide(effect, {
 				"GET user": "usirin",
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`GET ${P}/pulls/${PR}`]: HEAD40 /* #3801: advisory binds HEAD40 via Reviewed-head */,
 				[`POST ${P}/issues/${PR}/comments`]: "890",
 				[`GET ${P}/issues/comments/890`]: `review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${HEAD40}`,
+			}),
+		),
+	);
+});
+
+// The #3801 post-time head cross-check: `post` refuses a well-formed body whose bound `@ <sha>` /
+// `Reviewed-head:` SHA is not the target PR's current head. This is the cross-PR verdict-integrity
+// hole — a body composed for PR B (bound to B's head) that gets POSTed to PR A. `emissionDefect`
+// passes it (it's well-formed), but A's live head is not B's SHA, so the head cross-check refuses it
+// before any write. No POST/PATCH fixture is supplied on the refusal cases: a write would 404.
+describe("Github.post — the post-time head cross-check (#3801, no cross-PR contamination)", () => {
+	// A's live head. FOREIGN is a DIFFERENT PR's head SHA — the value a clobbered shared-scratch body
+	// would carry. Both are full 40-hex (the emission shape), and they share no common prefix.
+	const A_HEAD = `${"c6192dee".repeat(5)}`; // 8*5 = 40 hex — PR #3787's real head shape
+	const FOREIGN = `${"80f6b847".repeat(5)}`; // 8*5 = 40 hex — the victim's clobbering PR head
+
+	it.effect("a PASS body bound to ANOTHER PR's head → VerdictHeadMismatchError, no write", () =>
+		Effect.gen(function* () {
+			const wrongPrBody = `review-code: PASS @ ${FOREIGN} — merge-ready`;
+			const error = yield* Effect.flip((yield* Github).post(PR, "code", wrongPrBody));
+			assert.isTrue(error instanceof VerdictHeadMismatchError);
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/pulls/${PR}`]: A_HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+			}),
+		),
+	);
+
+	it.effect(
+		"a §CP advisory whose `Reviewed-head:` names ANOTHER PR's head → VerdictHeadMismatchError",
+		() =>
+			Effect.gen(function* () {
+				// first line is a SHA-less advisory (passes emissionDefect), but the head anchor is foreign
+				const advisory = `review-code: advisory — see thread\n\nReviewed-head: @ ${FOREIGN}`;
+				const error = yield* Effect.flip((yield* Github).post(PR, "code", advisory));
+				assert.isTrue(error instanceof VerdictHeadMismatchError);
+			}).pipe((effect) =>
+				provide(effect, {
+					"GET user": "usirin",
+					[`GET ${P}/pulls/${PR}`]: A_HEAD,
+					[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				}),
+			),
+	);
+
+	it.effect("a PASS body bound to THIS PR's current head → POSTed (the check passes it)", () =>
+		Effect.gen(function* () {
+			const rightBody = `review-code: PASS @ ${A_HEAD} — merge-ready`;
+			const result = yield* (yield* Github).post(PR, "code", rightBody);
+			assert.deepStrictEqual(result, {_tag: "posted", commentId: 4242});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/pulls/${PR}`]: A_HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`POST ${P}/issues/${PR}/comments`]: "4242",
+				[`GET ${P}/issues/comments/4242`]: `review-code: PASS @ ${A_HEAD} — merge-ready`,
+			}),
+		),
+	);
+
+	it.effect("a SHA-less advisory (binds no head) posts without any live-head lookup", () =>
+		Effect.gen(function* () {
+			// no `GET pulls` fixture — a bind-nothing advisory must not trigger the live-head read at all
+			const result = yield* (yield* Github).post(PR, "code", "review-code: advisory — see thread");
+			assert.deepStrictEqual(result, {_tag: "posted", commentId: 4343});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`POST ${P}/issues/${PR}/comments`]: "4343",
+				[`GET ${P}/issues/comments/4343`]: "review-code: advisory — see thread",
 			}),
 		),
 	);
@@ -374,6 +455,7 @@ describe("Github.post — the folded-in landed-comment self-verify (#3019)", () 
 			provide(effect, {
 				"GET user": "usirin",
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`GET ${P}/pulls/${PR}`]: "a".repeat(40) /* #3801: CLEAN_INPUT binds a*40 */,
 				[`POST ${P}/issues/${PR}/comments`]: "555",
 				[`GET ${P}/issues/comments/555`]: `review-doc: PASS @ ${"a".repeat(40)}\n\nsee /private/tmp/review-verdict.E2CYtu`,
 			}),
@@ -390,6 +472,7 @@ describe("Github.post — the folded-in landed-comment self-verify (#3019)", () 
 				provide(effect, {
 					"GET user": "usirin",
 					[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+					[`GET ${P}/pulls/${PR}`]: "a".repeat(40) /* #3801: CLEAN_INPUT binds a*40 */,
 					[`POST ${P}/issues/${PR}/comments`]: "556",
 					[`GET ${P}/issues/comments/556`]: "@/tmp/review-doc-verdict.E2CYtu",
 				}),
@@ -406,6 +489,7 @@ describe("Github.post — the folded-in landed-comment self-verify (#3019)", () 
 				provide(effect, {
 					"GET user": "usirin",
 					[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+					[`GET ${P}/pulls/${PR}`]: "a".repeat(40) /* #3801: CLEAN_INPUT binds a*40 */,
 					[`POST ${P}/issues/${PR}/comments`]: "557",
 					[`GET ${P}/issues/comments/557`]: {
 						stdout: "",
@@ -424,6 +508,7 @@ describe("Github.post — the folded-in landed-comment self-verify (#3019)", () 
 			provide(effect, {
 				"GET user": "usirin",
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+				[`GET ${P}/pulls/${PR}`]: "a".repeat(40) /* #3801: CLEAN_INPUT binds a*40 */,
 				[`POST ${P}/issues/${PR}/comments`]: "558",
 				[`GET ${P}/issues/comments/558`]: CLEAN_INPUT,
 			}),

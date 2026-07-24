@@ -40,7 +40,9 @@ import {
 	whoAmIArgs,
 } from "../tracker/gh-io.ts";
 import {
+	boundHeadShas,
 	emissionDefect,
+	headBindingDefect,
 	namespaceRe,
 	type Polarity,
 	resolveVerdict,
@@ -56,6 +58,21 @@ export {GhCommandError, GhParseError, RepoResolutionError} from "../tracker/gh-i
 /** A malformed request the caller must fix — e.g. a `post` body whose first line is the wrong gate's marker. */
 export class VerdictInputError extends Schema.TaggedErrorClass<VerdictInputError>()(
 	"@kampus/verdict/VerdictInputError",
+	{
+		message: Schema.String,
+	},
+) {}
+
+/**
+ * The verdict body binds a head SHA that is not the target PR's current head — the post-time
+ * cross-check (#3801). A body composed for PR B (bound to B's head) that is POSTed to PR A carries
+ * B's SHA, which does not match A's live head, so the post is refused rather than publishing a
+ * well-formed marker bound to the WRONG PR (the cross-PR scratchpad-clobber verdict-integrity hole).
+ * The caller re-reviews the current head and re-composes. Distinct from `VerdictInputError` (a
+ * malformed body) — the body is well-formed, its binding is just stale/foreign.
+ */
+export class VerdictHeadMismatchError extends Schema.TaggedErrorClass<VerdictHeadMismatchError>()(
+	"@kampus/verdict/VerdictHeadMismatchError",
 	{
 		message: Schema.String,
 	},
@@ -184,7 +201,11 @@ const read = Effect.fn("Github.read")(function* (
  * empty-SHA `@-` marker the read side refuses, #2646); and every SHA field it carries — the
  * first-line `@ <sha>` and the §CP advisory `Reviewed-head:` anchor — must be a clean full 40-hex,
  * not a partial/non-hex/path-glued value (rejects the `mktemp`-path leak of #2683). An advisory
- * SHA-less first line stays postable. Then scan our OWN prior marker in the namespace (newest by
+ * SHA-less first line stays postable. Then, when the body binds any head SHA, the post-time
+ * cross-check (#3801) fetches the target PR's live head and refuses if a bound SHA does not match it
+ * — closing the verdict-integrity hole where a body composed for another PR (bound to a different
+ * PR's SHA, e.g. via a clobbered shared scratch file) was postable and caught only on read-back.
+ * Then scan our OWN prior marker in the namespace (newest by
  * `(created_at, id)`) and PATCH it if present else POST a fresh one. The own-authored scope means
  * two reviewers never stomp each other's records. Finally, `verifyLanded` re-fetches the upserted
  * comment and re-runs `emissionDefect` on its LANDED body — the defense-in-depth self-verify (#3019)
@@ -199,6 +220,16 @@ const post = Effect.fn("Github.post")(function* (
 	const defect = emissionDefect(body, gate);
 	if (defect !== null) {
 		return yield* new VerdictInputError({message: `refusing to post: ${defect}`});
+	}
+	// Post-time head cross-check (#3801): only when the body actually binds a SHA — a SHA-less
+	// advisory binds nothing, so it needs no live-head lookup and stays postable. When it does bind,
+	// the marker's SHA must be THIS PR's current head, not another PR's (the cross-PR clobber).
+	if (boundHeadShas(body, gate).length > 0) {
+		const head = yield* currentHead(repo, pr);
+		const mismatch = headBindingDefect(body, gate, head);
+		if (mismatch !== null) {
+			return yield* new VerdictHeadMismatchError({message: `refusing to post: ${mismatch}`});
+		}
 	}
 	const me = (yield* runGh(whoAmIArgs)).trim();
 	const comments = yield* listComments(repo, pr);
@@ -255,6 +286,7 @@ export class Github extends Context.Service<
 			| GhCommandError
 			| GhParseError
 			| VerdictInputError
+			| VerdictHeadMismatchError
 			| VerdictVerifyError
 			| Schema.SchemaError
 		>;
