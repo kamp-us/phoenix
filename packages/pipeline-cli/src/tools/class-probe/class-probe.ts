@@ -133,6 +133,21 @@ export const classify = (
 	return CLASS_ORDER.filter((c) => present.has(c));
 };
 
+/**
+ * The fail-closed class set for a class-probe INVOCATION that read ZERO input (#3786).
+ * Deliberately distinct from `classify([])` — which is correctly empty ("an empty diff spans no
+ * class, nothing to gate") — because the bin cannot tell a legitimately empty diff from a
+ * dropped/undelivered stdin, and this probe is only ever piped a PR's changed-file list (`git
+ * diff --name-only` / `gh api pulls/$PR/files`), which is never legitimately empty. So a
+ * zero-length READ is a dropped stdin, not a gate-free PR, and must route through the same
+ * has-code path an unclassified file rides (§CLASS no-class fail-closed, #2765) rather than emit
+ * an empty required-gate set: an empty set makes ship-it Step 1's conjunction vacuously true
+ * (zero gates required → un-gated merge) and makes the reviewer fan dispatch nothing. The bin
+ * (`command.ts`) owns detecting zero-input at the IO boundary and warns loudly there; `classify`
+ * stays pure.
+ */
+export const NO_INPUT_FAILCLOSED_CLASSES: ReadonlyArray<ArtifactClass> = ["has-code"];
+
 /** The `review-*` namespaces a diff requires — one per present class, in canonical order. */
 export const requiredNamespaces = (
 	classes: ReadonlyArray<ArtifactClass>,

@@ -8,6 +8,7 @@ import {
 	FAILCLOSED_UI_EXCLUDE_RE,
 	FAILCLOSED_UI_RE,
 	isUiAffecting,
+	NO_INPUT_FAILCLOSED_CLASSES,
 	parseClassProbes,
 	parseUiExclude,
 	parseUiProbe,
@@ -151,6 +152,24 @@ describe("classify — the no-class fail-open is closed: root tooling requires a
 	});
 
 	it("an empty diff is still un-gated — the fail-closed default fires only on a real file", () => {
+		expect(classify([], LIVE_PROBES)).toEqual([]);
+	});
+});
+
+describe("zero-input fail-closed — a dropped stdin can't yield an empty required-gate set (#3786)", () => {
+	// The #3786 fail-open: `classify([])` is correctly empty ("an empty diff spans no class"),
+	// but the BIN cannot tell a legitimately empty diff from a dropped/undelivered stdin, and the
+	// probe is only ever piped a PR's changed files. So a zero-length READ must route through the
+	// has-code fail-closed path (NO_INPUT_FAILCLOSED_CLASSES), never an empty set — an empty set
+	// makes ship-it Step 1's conjunction vacuously true (zero gates → un-gated merge). The bin owns
+	// the zero-input decision; the pure `classify([])` stays empty (asserted just below).
+	it("NO_INPUT_FAILCLOSED_CLASSES is has-code → review-code (a gate always runs)", () => {
+		expect(NO_INPUT_FAILCLOSED_CLASSES).toEqual(["has-code"]);
+		expect(requiredNamespaces(NO_INPUT_FAILCLOSED_CLASSES)).toEqual(["review-code"]);
+		expect(requiredNamespaces(NO_INPUT_FAILCLOSED_CLASSES).length).toBeGreaterThan(0);
+	});
+
+	it("keeps `classify([])` pure — empty diff still spans no class (the bin, not the core, fails closed)", () => {
 		expect(classify([], LIVE_PROBES)).toEqual([]);
 	});
 });
