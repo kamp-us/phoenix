@@ -42,12 +42,6 @@
 	resize: vertical;
 }
 
-/* Design law pillar 4: the 36px minimum hit area, from the --tap-min floor token. */
-.kp-email-delivery__btn {
-	min-height: var(--tap-min);
-	min-width: var(--tap-min);
-}
-
 .kp-email-delivery__table {
 	width: 100%;
 	border-collapse: collapse;

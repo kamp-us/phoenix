@@ -151,7 +151,6 @@ function MarkForm({
 				size="sm"
 				type="submit"
 				disabled={busy}
-				className="kp-email-delivery__btn"
 				data-testid="email-delivery-mark-button"
 			>
 				{busy ? "işaretleniyor…" : "işaretle"}
@@ -240,7 +239,6 @@ function FailingRow({
 						size="sm"
 						onClick={onClear}
 						disabled={busy}
-						className="kp-email-delivery__btn"
 						data-testid={`email-delivery-clear-${data.id}`}
 					>
 						{busy ? "temizleniyor…" : "temizle"}

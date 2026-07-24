@@ -85,7 +85,6 @@ function KullanicilarRoster() {
 					variant="secondary"
 					size="sm"
 					type="submit"
-					className="kp-kullanicilar__btn"
 					data-testid="kullanicilar-search-button"
 				>
 					ara

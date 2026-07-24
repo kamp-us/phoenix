@@ -15,7 +15,8 @@
  * re-joined server-side; a `RoleState` write does not update the `UserAdmin` entity in the
  * client store). Render decisions are DOM-free in `role-controls.ts` (unit-tested).
  *
- * a11y: the `Button` primitive (focus ring + 36px hit area from the shared styles); the
+ * a11y: the `Button` primitive carries the focus ring + the 36px hit-area floor from the
+ * shared styles (`.kp-btn` now floors `min-height`/`min-width` at `--tap-min`, #3791); the
  * outcome is a `role="status" aria-live="polite"` text region (state as words, never
  * color); copy is lowercase Turkish.
  */
@@ -70,7 +71,6 @@ export function RoleControls({userId, platformRole, onRoleChanged}: RoleControls
 			<Button
 				variant="secondary"
 				size="sm"
-				className="kp-role__btn"
 				onClick={onToggle}
 				disabled={busy}
 				data-testid={`role-toggle-${userId}`}

@@ -6,6 +6,13 @@
 	align-items: center;
 	justify-content: center;
 	gap: 6px;
+	/* Tap-target floor (ADR 0162 pillar 4): the primitive owns the ≥36px hit area in
+	   both axes, so every consumer clears it without opting in — call sites no longer
+	   re-declare a per-instance --tap-min floor. min-height decouples the hit area from
+	   the glyph: the smaller --sm font shrinks the type, not the target, and the
+	   flex-centering above fills the box. This is the single floor. */
+	min-height: var(--tap-min);
+	min-width: var(--tap-min);
 	padding: 5px var(--s-3);
 	font: var(--t-body-sm);
 	font-weight: 500;

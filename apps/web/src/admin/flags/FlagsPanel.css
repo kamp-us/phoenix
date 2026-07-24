@@ -67,12 +67,6 @@
 	gap: var(--s-1);
 }
 
-/* Design law pillar 4: the 36px minimum hit area, from the --tap-min floor token. */
-.kp-flags__btn {
-	min-height: var(--tap-min);
-	min-width: var(--tap-min);
-}
-
 .kp-flags__message {
 	color: var(--text-primary);
 	font: var(--t-body-sm);

@@ -37,12 +37,6 @@
 	font: var(--t-body-sm);
 }
 
-/* Design law pillar 4: the 36px minimum hit area, from the --tap-min floor token. */
-.kp-kullanicilar__btn {
-	min-height: var(--tap-min);
-	min-width: var(--tap-min);
-}
-
 .kp-kullanicilar__table {
 	width: 100%;
 	border-collapse: collapse;
@@ -82,17 +76,13 @@
 }
 
 /* Per-row role-assign affordance (#3523). Text-only status (design law pillar 4: state as
-   words, never color); the Button primitive carries the 36px hit-area + focus ring. */
+   words, never color); the Button primitive carries the 36px hit-area floor + focus ring
+   from the shared styles (Button.css `.kp-btn` min-height/min-width: var(--tap-min), #3791). */
 .kp-role {
 	display: flex;
 	flex-direction: column;
 	gap: var(--s-1);
 	align-items: flex-start;
-}
-
-.kp-role__btn {
-	min-height: var(--tap-min);
-	min-width: var(--tap-min);
 }
 
 .kp-role__message {
