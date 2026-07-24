@@ -42,6 +42,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | §CP Verdict Integrity | #38 | active |
 | Flag Graduation | #39 | active |
 | pipeline-cli Glue Consolidation | #40 | active |
+| Pipeline Anywhere | #35 | active |
 | pipeline-cli @effect/platform migration | #32 | active |
 | Agentic design-system coverage | #33 | done |
 | Flag Retirement (ADR 0136) | #34 | active |
