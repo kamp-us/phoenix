@@ -11,7 +11,7 @@
  * open, gone once it closes (connection-is-lease, #3035).
  */
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Option, Ref} from "effect";
+import {Context, Effect, Layer, Ref, Result} from "effect";
 import * as Arr from "effect/Array";
 import {RpcTest} from "effect/unstable/rpc";
 import {type Connect, Dialer} from "./dialer.ts";
@@ -25,7 +25,8 @@ const CHANNEL_DEAF = "@kampus/pipeline-crew-mcp/ChannelDeafError";
 
 // A scoped in-memory tracker modelling the two presence phases (#3628): `reserve` holds a bare
 // (undiscoverable) slot, `announce` flips it attached; both free on scope close, and `lookup`
-// returns only attached entries — the same live-channel-half semantics as the real registry-core.
+// returns EVERY attached holder of a role (in announce order) — one for a bridge, N for an engine
+// pool — the same live-set semantics as the real registry-core (#3770).
 const FakeTracker = Layer.effect(
 	Tracker,
 	Effect.gen(function* () {
@@ -44,8 +45,8 @@ const FakeTracker = Layer.effect(
 			lookup: (role) =>
 				Ref.get(reg).pipe(
 					Effect.map((xs) =>
-						Arr.findFirst(xs, (x) => x.attached && x.presence.role === role).pipe(
-							Option.map((x) => x.presence),
+						Arr.filterMap(xs, (x) =>
+							x.attached && x.presence.role === role ? Result.succeed(x.presence) : Result.failVoid,
 						),
 					),
 				),
@@ -69,12 +70,12 @@ describe("peer/peer — announce + role lease", () => {
 						const peer = yield* Peer.make({self: "peer-a", role: "builder", address: "addr-a"});
 						yield* peer.announce;
 						const present = yield* tracker.lookup("builder");
-						assert.isTrue(Option.isSome(present));
+						assert.lengthOf(present, 1);
 					}),
 				);
 				// scope closed ⇒ connection dropped ⇒ lease freed
 				const after = yield* tracker.lookup("builder");
-				assert.isTrue(Option.isNone(after));
+				assert.lengthOf(after, 0);
 			}).pipe(Effect.provide([FakeTracker, Inbox.layer("peer-a"), alwaysUnreachable])),
 	);
 
@@ -89,7 +90,7 @@ describe("peer/peer — announce + role lease", () => {
 						// must not appear as a live peer — "up in tmux" must not read as "registered with a live inbox".
 						yield* Peer.make({self: "peer-a", role: "builder", address: "addr-a"});
 						const before = yield* tracker.lookup("builder");
-						assert.isTrue(Option.isNone(before), "unannounced ⇒ never a live peer");
+						assert.lengthOf(before, 0, "unannounced ⇒ never a live peer");
 					}),
 				);
 			}).pipe(Effect.provide([FakeTracker, Inbox.layer("peer-a"), alwaysUnreachable])),
@@ -159,5 +160,117 @@ describe("peer/peer — offline behavior (never a silent drop)", () => {
 					);
 				}),
 			).pipe(Effect.provide([FakeTracker, Inbox.layer("peer-a"), alwaysUnreachable])),
+	);
+});
+
+describe("peer/peer — fan a role send across an engine pool (count>1, #3770)", () => {
+	// A standalone in-memory inbox whose Deliver IS its own deliver, so the test can both DIAL it
+	// (via the connect) and READ what it received — the two halves the fan assertion needs.
+	const buildInbox = (id: string) =>
+		Layer.build(Inbox.layer(id)).pipe(Effect.map((ctx) => Context.get(ctx, Inbox)));
+
+	it.effect(
+		"an EngineNudge to a role with TWO live holders reaches BOTH seats — the head AND the non-head owner",
+		() =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const headSeat = yield* buildInbox("em-head");
+					const ownerSeat = yield* buildInbox("em-owner");
+					// route each announced address to its inbox; anything else is off the network
+					const connect: Connect = (address) =>
+						address === "addr-head"
+							? Effect.succeed({Deliver: headSeat.deliver})
+							: address === "addr-owner"
+								? Effect.succeed({Deliver: ownerSeat.deliver})
+								: Effect.fail(new PeerUnreachableError({target: address, reason: "no route"}));
+
+					yield* Effect.gen(function* () {
+						const tracker = yield* Tracker;
+						// two engine seats under ONE role — announce order makes em-head the head the old
+						// `Arr.head` resolver would have picked; em-owner is the seat it could never reach.
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-head",
+							address: "addr-head",
+						});
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-owner",
+							address: "addr-owner",
+						});
+						const cos = yield* Peer.make({
+							self: "cos",
+							role: "chief-of-staff",
+							address: "addr-cos",
+						});
+						yield* cos.send("engineering-manager", "EngineNudge", {target: {pr: 3838}});
+
+						const gotHead = yield* headSeat.received;
+						const gotOwner = yield* ownerSeat.received;
+						assert.lengthOf(gotHead, 1, "the head seat received the nudge");
+						assert.lengthOf(
+							gotOwner,
+							1,
+							"the NON-head seat received the nudge too — the count>1 fix (#3770)",
+						);
+						assert.strictEqual(gotHead[0]?.kind, "EngineNudge");
+						assert.strictEqual(gotOwner[0]?.kind, "EngineNudge");
+						// one logical message fanned to both seats, not two distinct sends
+						assert.strictEqual(
+							gotHead[0]?.messageId,
+							gotOwner[0]?.messageId,
+							"the same envelope reached both seats",
+						);
+					}).pipe(
+						Effect.provide([FakeTracker, Inbox.layer("cos"), Dialer.layerFromConnect(connect)]),
+					);
+				}),
+			),
+	);
+
+	it.effect(
+		"a fan tolerates a deaf seat in the pool — one holder deaf, another live still delivers (ack from the live seat)",
+		() =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const liveSeat = yield* buildInbox("em-live");
+					// addr-live answers; addr-deaf is announced but unreachable (a stale-socket seat)
+					const connect: Connect = (address) =>
+						address === "addr-live"
+							? Effect.succeed({Deliver: liveSeat.deliver})
+							: Effect.fail(new PeerUnreachableError({target: address, reason: "no route"}));
+
+					yield* Effect.gen(function* () {
+						const tracker = yield* Tracker;
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-deaf",
+							address: "addr-deaf",
+						});
+						yield* tracker.announce({
+							role: "engineering-manager",
+							peer: "em-live",
+							address: "addr-live",
+						});
+						const cos = yield* Peer.make({
+							self: "cos",
+							role: "chief-of-staff",
+							address: "addr-cos",
+						});
+						const ack = yield* cos.send("engineering-manager", "EngineNudge", {
+							target: {issue: 3641},
+						});
+						assert.strictEqual(
+							ack.by,
+							"em-live",
+							"delivered — the live seat acked despite a deaf pool-mate",
+						);
+						const gotLive = yield* liveSeat.received;
+						assert.lengthOf(gotLive, 1, "the live seat received the nudge");
+					}).pipe(
+						Effect.provide([FakeTracker, Inbox.layer("cos"), Dialer.layerFromConnect(connect)]),
+					);
+				}),
+			),
 	);
 });

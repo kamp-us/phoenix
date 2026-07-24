@@ -13,7 +13,7 @@
  *     that address back out (matching the `inbox://…` convention the tracker socket test uses).
  */
 import {NodeSocket} from "@effect/platform-node";
-import {Array as Arr, Context, Effect, type FileSystem, Layer, type Scope} from "effect";
+import {Context, Effect, type FileSystem, Layer, type Scope} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
 import {type RolePresence, Tracker} from "../peer/index.ts";
 import type * as Schema from "../protocol/schema.ts";
@@ -164,9 +164,11 @@ export class CrewTracker extends Context.Service<
 
 /**
  * The generic `peer/Tracker` port, derived from `CrewTracker` — what `Peer.make` consumes. The
- * peer port resolves ONE live holder to dial (`peer.send` addresses a role, not an instance), so
- * it takes the head of `CrewTracker`'s live set: a bridge's single holder, or any one instance of
- * an engine pool. Fanning across the pool is the crew-facing `discover`'s job, not this port's.
+ * port passes `CrewTracker`'s full live set straight through: a bridge's single holder, or an
+ * engine pool's every seat. `peer.send` then FANS a message across that whole set (#3770), so a
+ * per-item advisory (`EngineNudge`) reaches the seat that owns the item — not just the head. This
+ * used to collapse the set to `Arr.head`, which could only ever dial the head seat, so a non-head
+ * owner never heard the nudge (the count>1 defect); the crew-facing `discover` exposes the same set.
  */
 export const peerTrackerLayer: Layer.Layer<Tracker, never, CrewTracker> = Layer.effect(
 	Tracker,
@@ -175,7 +177,7 @@ export const peerTrackerLayer: Layer.Layer<Tracker, never, CrewTracker> = Layer.
 		return {
 			announce: tracker.announce,
 			reserve: tracker.reserve,
-			lookup: (role) => tracker.lookup(role).pipe(Effect.map(Arr.head)),
+			lookup: tracker.lookup,
 		};
 	}),
 );
