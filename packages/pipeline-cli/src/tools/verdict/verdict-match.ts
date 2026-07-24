@@ -267,6 +267,65 @@ export const malformedEmittedSha = (body: string, gate: VerdictGate): string | n
 };
 
 /**
+ * The `Reviewed-head:` anchor SHA (ADR 0151) — the §CP advisory's explicit head binding. Read-side
+ * shape ({7,40} hex, `@`-optional) so the post-time cross-check can prefix-match an abbreviated
+ * anchor against the live head; the stricter full-40-hex EMISSION shape is enforced separately by
+ * `malformedEmittedSha`. Capture group 1 is the bound SHA.
+ */
+const reviewedHeadShaRe = /^\s*Reviewed-head:\s*@?\s*([0-9a-f]{7,40})/im;
+
+/**
+ * Every head SHA a verdict body binds itself to: the first-line `PASS|FAIL @ <sha>` marker and the
+ * §CP advisory's `Reviewed-head:` anchor. A SHA-less advisory binds nothing (empty array). These are
+ * the fields the post-time cross-check (`headBindingDefect`) matches against the PR's live head.
+ */
+export const boundHeadShas = (body: string, gate: VerdictGate): ReadonlyArray<string> => {
+	const shas: string[] = [];
+	const parsed = parseVerdict(body, gate);
+	if (parsed?.sha) shas.push(parsed.sha);
+	const anchor = reviewedHeadShaRe.exec(body);
+	if (anchor?.[1]) shas.push(anchor[1].toLowerCase());
+	return shas;
+};
+
+/**
+ * The post-time head cross-check (#3801) — the verdict-integrity hole this closes: a body composed
+ * for PR B (bound to B's head SHA) that gets POSTed to PR A must be refused, because A's live head is
+ * not B's. `emissionDefect` validates only marker *well-formedness*; the head-vs-target-PR binding
+ * (`isBoundToHead`, ADR 0058 rule 3) was evaluated ONLY at read time, so a well-formed marker bound
+ * to the WRONG PR's SHA was freely postable and caught only on read-back (and never at all if the
+ * clobbering body happened to carry the victim's own head). This asserts, at post time, that every
+ * SHA the body binds prefix-matches the target PR's current `head`. Returns the first mismatch as a
+ * human-readable defect, or null when the body binds no SHA (a SHA-less advisory) or every bound SHA
+ * matches the head. Fail-closed on an empty/unresolvable head: any bound SHA then mismatches (an
+ * empty head is never `isBoundToHead`), so a body that binds a SHA is refused rather than posted
+ * unverified — a SHA-less body still passes (nothing to verify).
+ *
+ * The two false-refusal cases the §CP guard-strengthening was weighed against (design note, per the
+ * issue's AC1 — recorded here at the enforcement site rather than left a silent predicate):
+ *
+ *  1. A legit re-post racing a just-pushed head. A reviewer binds to head X, then someone force-pushes
+ *     head Y before the `post` lands. This guard refuses the X-bound post. That refusal is CORRECT, not
+ *     a false positive: a rebase/force-push staleness-invalidates the prior review (ADR 0058), so a
+ *     verdict bound to X is genuinely un-attested for Y and must not be published against it — the same
+ *     "rebase → re-review → ship is atomic" invariant, enforced one step earlier (at emit, not just at
+ *     read). The reviewer re-resolves the head and re-reviews Y; nothing is lost.
+ *  2. A deliberately stale-bound FAIL. Is posting a FAIL bound to an old head ever valid? No consumer
+ *     honors it: `write-code`-repair reads `--expect FAIL` and acts ONLY on a `current`-head verdict, so
+ *     a `stale` FAIL never drives repair anyway (it resolves `stale`, not satisfied). Refusing to POST a
+ *     stale-bound FAIL removes nothing a reader would have used, and it keeps the namespace honest — a
+ *     marker's `@ <sha>` always names the head it actually attests.
+ */
+export const headBindingDefect = (body: string, gate: VerdictGate, head: string): string | null => {
+	for (const sha of boundHeadShas(body, gate)) {
+		if (!isBoundToHead(sha, head)) {
+			return `the verdict body binds head ${sha} but PR ${GATE_KEYWORD[gate]}'s current head is ${head || "<unresolved>"} — refusing to post a verdict bound to a DIFFERENT head (a cross-PR scratchpad clobber or a stale/rebased binding); re-review the current head and re-compose (ADR 0058 rule 3, #3801)`;
+		}
+	}
+	return null;
+};
+
+/**
  * The single fail-closed gate every verdict EMISSION passes before it can reach GitHub — the one
  * source `Github.post` and `verdict validate` both consume so a raw-`gh api` skill and the tool
  * enforce identical rules. Returns the first structural defect (as a human-readable reason), or

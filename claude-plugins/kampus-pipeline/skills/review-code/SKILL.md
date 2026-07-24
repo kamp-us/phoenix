@@ -1297,15 +1297,28 @@ For a **non-blocking** PR (every other class), land an **explicit, recognizable 
 signal** so the next actor (human or authorized downstream step) knows it's verified and can
 merge. Two forms, either is valid — both must carry the per-criterion table as evidence.
 
-First, **resolve the head SHA you actually reviewed** and **write the verdict to a per-run
-temp file** (`VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"`) so multi-line markdown +
-backticks survive the shell — both forms below read it back via `cat`. Allocate it with
-`mktemp`, never a fixed or `${PR}`-keyed path — the per-run scratchpad namespace, §SP of
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). The PR number alone isn't
-unique (two reviews of the *same* PR running concurrently — the operator fans review-* out in
-parallel — collide on it, one run's unread verdict stalling the write or leaking into the
-other, #1465), and a clobbered temp reads back **successfully with the other run's content**,
-so there is no error to catch (#3718). The SHA goes into the marker's first
+First, **resolve the head SHA you actually reviewed**, then **compose the verdict body so no other
+run can clobber it before `verdict post` reads it.** Two collision-proof forms, in preference order:
+
+1. **Straight stdin (preferred — no scratch file at all).** Compose the body into a shell variable
+   (a heredoc preserves multi-line markdown + backticks) and pipe it directly into the tool:
+   `printf '%s' "$BODY" | $VERDICT post --pr "$PR" --gate code`. With no file on disk there is
+   nothing for a concurrent run to overwrite — the collision surface is gone by construction.
+2. **A §SP per-run scratch path**, when a file is genuinely needed (e.g. to hand the same body to
+   both `verdict validate` and the native `APPROVE`). Derive it from the per-run `$RUN_SCRATCH`
+   namespace keyed on `$CLAUDE_CODE_SESSION_ID` (§SP of
+   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)), or allocate with `mktemp` —
+   **never a fixed name** (`verdict.md`) and **never a `${PR}`-keyed path.**
+
+Both the fixed-name and the `${PR}`-keyed path are unsafe: the PR number alone isn't unique (two
+reviews of the *same* PR run concurrently — the operator fans review-* out in parallel — and collide
+on it, #1465), and a clobbered file reads back **successfully with the other run's content**, so
+there is no error to catch (#3718). Worse, that clobber can publish a well-formed §CP verdict marker
+bound to the **wrong PR's SHA** (#3801). The post-time head cross-check in `verdict post` now refuses
+a body whose bound `@ <sha>` / `Reviewed-head:` SHA is not the target PR's current head, so a cross-PR
+clobber is caught at emission — but that guard is the backstop, not a licence to hand-compose into a
+shared name; keep the compose collision-free at the source (this is the #1465 `mktemp` mandate extended
+to the hand-compose step). The SHA goes into the marker's first
 line (`review-code: PASS @ <sha> — merge-ready`) — it is **load-bearing**: `ship-it` refuses
 any verdict not bound to the PR's current head (ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258). See the
@@ -1353,12 +1366,18 @@ else
   VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
 fi
 
-VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"
-# write your composed PASS verdict into "$VERDICT_FILE" (first line: review-code: PASS @ <HEAD_SHA> — merge-ready)
-BODY="$(cat "$VERDICT_FILE")"
-# Read-back assertion BEFORE the native APPROVE: the same gate `verdict post` enforces, so a
-# malformed `@ <sha>` (e.g. an mktemp scratch path, #2683) fails loud here, never in a review body.
-$VERDICT validate --gate code --body-file "$VERDICT_FILE" || {
+# Compose the PASS verdict straight into a shell variable (heredoc → multi-line markdown + backticks
+# survive) — NO scratch file, so no concurrent run can clobber it (#1465/#3718/#3801). First line:
+# review-code: PASS @ <HEAD_SHA> — merge-ready
+BODY="$(cat <<EOF
+review-code: PASS @ ${HEAD_SHA} — merge-ready
+… your per-criterion evidence table …
+EOF
+)"
+# Read-back assertion BEFORE the native APPROVE: the same gate `verdict post` enforces, piped on
+# stdin, so a malformed `@ <sha>` (e.g. an mktemp scratch path, #2683) fails loud here, never in a
+# review body.
+printf '%s' "$BODY" | $VERDICT validate --gate code || {
   echo "FATAL: composed review-code marker is malformed — refusing to post (fix the @ <sha> field; #2683)" >&2
   exit 1
 }
@@ -1368,10 +1387,11 @@ if gh api -X POST repos/$REPO/pulls/$PR/reviews \
     #  ship-it reads that commit_id for the same staleness test the marker's @ <sha> drives)
 else
   # APPROVE failed (e.g. 422 on your own PR) — upsert the structured pass comment instead, through
-  # the guarded tool: it PATCHes your newest own review-code marker (namespace-anchored, so it also
-  # upserts a prior advisory across a non-blocking↔blocking flip) else POSTs the first, and it
-  # fail-closes on a malformed/cross-namespace body so a broken marker never reaches GitHub.
-  $VERDICT post --pr "$PR" --gate code --body-file "$VERDICT_FILE"
+  # the guarded tool on stdin: it PATCHes your newest own review-code marker (namespace-anchored, so
+  # it also upserts a prior advisory across a non-blocking↔blocking flip) else POSTs the first, and
+  # it fail-closes on a malformed/cross-namespace body AND on a body bound to another PR's head
+  # (the #3801 post-time cross-check) so a broken/mis-bound marker never reaches GitHub.
+  printf '%s' "$BODY" | $VERDICT post --pr "$PR" --gate code
 fi
 ```
 
@@ -1548,13 +1568,19 @@ if [ -f packages/pipeline-cli/src/bin.ts ]; then
 else
   VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"
 fi
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # resolve ONCE, before authoring the verdict file (mirror the PASS path)
-VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"   # per-run temp, not a fixed/PR-namespaced path (#1465)
-# … author "$VERDICT_FILE" now, embedding `review-code: FAIL @ $HEAD_SHA — not merge-ready` as its first line …
+HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # resolve ONCE, before composing (mirror the PASS path)
+# Compose straight into a shell variable and pipe on stdin — NO scratch file, so no fixed/PR-keyed
+# name a concurrent run can clobber (#1465/#3718/#3801). First line: review-code: FAIL @ $HEAD_SHA — not merge-ready
+BODY="$(cat <<EOF
+review-code: FAIL @ ${HEAD_SHA} — not merge-ready
+… your per-criterion evidence table …
+EOF
+)"
 # Upsert through the guarded tool (resolved above), exactly as the PASS path: it upserts the one
 # review-code marker (namespace-anchored, advisory included) and fail-closes on a malformed/
-# cross-namespace body, so the mktemp-path `@ <sha>` leak (#2683) can never reach GitHub.
-$VERDICT post --pr "$PR" --gate code --body-file "$VERDICT_FILE"
+# cross-namespace body (so the mktemp-path `@ <sha>` leak #2683 can't land) AND on a body bound to
+# another PR's head (the #3801 post-time cross-check).
+printf '%s' "$BODY" | $VERDICT post --pr "$PR" --gate code
 ```
 
 You *may* additionally request changes via a formal review

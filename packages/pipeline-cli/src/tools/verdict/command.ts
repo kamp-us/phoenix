@@ -128,6 +128,9 @@ const post = Command.make(
 		}
 		const result = yield* (yield* Github).post(pr, g, body).pipe(
 			Effect.catchTag("@kampus/verdict/VerdictInputError", (error) => fail(error.message)),
+			// The post-time head cross-check (#3801): a well-formed body bound to a DIFFERENT PR's head
+			// (a cross-PR scratchpad clobber, or a stale/rebased binding) is refused before it lands.
+			Effect.catchTag("@kampus/verdict/VerdictHeadMismatchError", (error) => fail(error.message)),
 			// The landed-comment self-verify (#3019): a body that passed the input gate but did not
 			// land as a clean in-namespace, leak-free marker fails the post — never a false success.
 			Effect.catchTag("@kampus/verdict/VerdictVerifyError", (error) => fail(error.message)),
