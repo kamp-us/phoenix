@@ -40,13 +40,9 @@ no network, no published-artifact dependency); otherwise invoke the **published*
 `@kampus/pipeline-cli` CLI via `pnpm dlx` (ADR 0064; epic #994). Build it once:
 
 ```bash
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  DIGEST="node packages/pipeline-cli/src/bin.ts ship-digest"   # phoenix-local: the in-repo consolidated bin
-else
-  # foreign install: the PUBLISHED consolidated CLI; the pin is the single source-of-truth version
-  # shared with the other skills' published-fallback (epic #994) — bump in lockstep on release.
-  DIGEST="pnpm dlx @kampus/pipeline-cli@0.2.0 ship-digest"
-fi
+# the `bin/pipeline-cli` shim resolves in-repo bin, else the installed bin, else the pinned
+# `pnpm dlx` fallback reading the ONE pin (hooks/pin.sh) — no version pinned here (#3653).
+DIGEST="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli ship-digest"
 ```
 
 ---

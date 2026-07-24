@@ -569,11 +569,9 @@ the post. This is the single-source rule in
 [gh-issue-intake-formats.md](../gh-issue-intake-formats.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
 
 ```bash
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
-else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
-fi
+# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
+# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here (#3653).
+VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 ```
 
 ### Pass path — non-blocking PR (the binding signal)
