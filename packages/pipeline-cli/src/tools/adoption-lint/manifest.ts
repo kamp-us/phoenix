@@ -178,6 +178,21 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		reason:
 			"re-derives the ADR-0115 earliest-authorized-claim resolution that `pipeline-cli claim is-mine` owns (resolve one owner by earliest authorized claim, default-deny), instead of citing the verb (#3687 / #3254)",
 	},
+	{
+		// `checks read` owns the head-CI rollup (#3762): read a SHA's check runs LATEST-PER-CONTEXT
+		// before evaluating conclusions. The fingerprint is the co-occurrence of both tells — the
+		// `/check-runs` endpoint path AND a read of a run's `conclusion` — so prose that merely
+		// mentions check-runs (doctor's comment) is not a false finding, while a file that actually
+		// rolls the endpoint up by hand is. A file that cites `pipeline-cli checks` is compliant.
+		verb: "checks read",
+		signature: [
+			/\/check-runs/, // the check-runs endpoint path
+			/conclusion/, // reads the runs' conclusions
+		],
+		citation: /pipeline-cli\s+checks\b/,
+		reason:
+			"re-derives the head-CI rollup that `pipeline-cli checks read` owns (latest-per-context, so a superseded run can't red a green head), instead of citing the verb (#3762 / #3254)",
+	},
 ];
 
 /**
