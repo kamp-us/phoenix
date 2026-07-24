@@ -149,6 +149,53 @@ describe("createLiveRetryController", () => {
 		expect(fire).not.toHaveBeenCalled();
 	});
 
+	it("rearm() restores a spent budget and reconnects immediately (regained connectivity/foreground)", () => {
+		const controller = createLiveRetryController();
+		const fire = vi.fn();
+
+		// Spend the whole budget — the exhausted, once-terminal state (#3790).
+		for (let round = 0; round < LIVE_RETRY_MAX_ATTEMPTS; round++) {
+			controller.schedule(fire);
+			vi.advanceTimersByTime(nextLiveRetryDelayMs(round));
+		}
+		controller.schedule(fire); // spent → no-op
+		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS);
+		expect(vi.getTimerCount()).toBe(0);
+
+		// An `online`/`visibilitychange` re-arm: the reconnect fires NOW on a fresh budget.
+		controller.rearm(fire);
+		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS + 1);
+
+		// The fresh budget is full again — LIVE_RETRY_MAX_ATTEMPTS more back-off attempts.
+		for (let round = 0; round < LIVE_RETRY_MAX_ATTEMPTS; round++) {
+			controller.schedule(fire);
+			vi.advanceTimersByTime(nextLiveRetryDelayMs(round));
+		}
+		expect(fire).toHaveBeenCalledTimes(LIVE_RETRY_MAX_ATTEMPTS + 1 + LIVE_RETRY_MAX_ATTEMPTS);
+	});
+
+	it("rearm() is a no-op while attempts remain (in-flight back-off owns recovery)", () => {
+		const controller = createLiveRetryController();
+		const fire = vi.fn();
+
+		controller.schedule(fire); // attempt 0 armed, a pending timer
+		expect(vi.getTimerCount()).toBe(1);
+		controller.rearm(fire); // budget not spent → no-op, does not disturb the back-off
+		expect(fire).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(nextLiveRetryDelayMs(0));
+		expect(fire).toHaveBeenCalledTimes(1);
+	});
+
+	it("rearm() on a fresh controller (nothing failed) is a no-op", () => {
+		const controller = createLiveRetryController();
+		const fire = vi.fn();
+
+		controller.rearm(fire);
+		expect(fire).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it("cancel() drops a pending retry without firing it (unmount)", () => {
 		const controller = createLiveRetryController();
 		const fire = vi.fn();

@@ -74,9 +74,13 @@ instance was cold or briefly unreachable and the bounded cold-start retry (~1.5s
 was exhausted, so the route returned the graceful 503
 ([`cold-start-retry.ts`](../apps/web/worker/features/fate-live/cold-start-retry.ts)). A
 *transient* burst around a deploy or an idle-eviction warm-up is **expected** and self-heals —
-the live pin re-opens on the next mount. Escalate only when 503s are **sustained** (not
-clearing as clients remount) or you see raw **500s** from `/fate/live` (an unhandled defect,
-outside the graceful path).
+the client's bounded reconnect budget (~7.75s of back-off) re-opens the stream on the next
+mount. An outage **longer** than that budget spends it, but no longer terminally: the client
+re-arms the budget and reconnects on regained connectivity (`online`) or a foregrounded tab
+(`visibilitychange` — the laptop sleep/wake case), so a spent-budget client recovers without a
+reload once the plane is reachable again ([`liveRetry.ts`](../apps/web/src/fate/liveRetry.ts),
+#3790). Escalate only when 503s are **sustained** (not clearing as clients remount/re-arm) or
+you see raw **500s** from `/fate/live` (an unhandled defect, outside the graceful path).
 
 **Stale views without 503s** is the fan-out channel — the stream is up but a publish never
 reached it. Rank the candidates:
@@ -129,9 +133,13 @@ runbook lie:
   the running worker, which recreates the isolate and its `LiveDO` bindings and clears any
   wedged warm state. This is the one blunt operational lever for a genuinely stuck transport
   channel (sustained 503s not clearing on remount).
-- **Let the live pin re-open.** By design the client re-opens the whole connect on the next
-  session mount, so a **client refresh** re-establishes a stream that hit a transient 503. For
-  a transient warm-up burst this is the *only* action needed — no operator lever at all.
+- **Let the live pin re-open / re-arm.** By design the client re-opens the whole connect on
+  the next session mount, so a **client refresh** re-establishes a stream that hit a transient
+  503. For an outage that outlasts the client's ~7.75s reconnect budget, the client re-arms and
+  reconnects on its own when connectivity returns (`online`) or the tab is foregrounded
+  (`visibilitychange`) — so a **redeploy does help spent-budget clients**: they re-arm as the
+  plane comes back, rather than staying dark until reload ([`liveRetry.ts`](../apps/web/src/fate/liveRetry.ts),
+  #3790). For a transient warm-up burst no operator lever is needed at all.
 
 **Levers that do not exist yet — state this plainly, do not improvise.** There is **no**
 per-`LiveDO`-instance restart, **no** live-plane feature flag or kill-switch, **no** fan-out
