@@ -170,7 +170,10 @@ export const productionProcessReaper: ProcessReaper = {
 				process.kill(pid, REAP_SIGNAL);
 				return "signalled";
 			},
-			catch: (cause) => cause,
+			// Type the error channel (the effect `unknownInEffectCatch` lint) — the value is unused, it
+			// is immediately folded to `already-gone` below, so any typed rendering serves; `String`
+			// matches the package's `Effect.try` catch idiom.
+			catch: (cause) => String(cause),
 		}).pipe(Effect.orElseSucceed((): ReapSignalOutcome => "already-gone")),
 };
 

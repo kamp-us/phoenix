@@ -212,6 +212,7 @@ const baseInput = (
 	resolveCalls: {n: number};
 	trackerCalls: () => number;
 	reaped: {readonly projectRoot: string; readonly serverName: string}[];
+	reapedProcesses: TrackerHandle[];
 	registered: CrewMcpEntry[][];
 	registeredCtx: {
 		readonly projectRoot: string;
@@ -224,6 +225,15 @@ const baseInput = (
 		recordingLauncher();
 	const {ensureTracker, calls} = recordingTracker();
 	const {registrar, reaped, registered, registeredCtx, cwdCalls} = recordingProjectScope(order);
+	// Recording process-reap seam: records the tracker it was handed and logs into the shared order so a
+	// test can prove the process-reap runs at the crash-reclaim seam (alongside the dir/socket reap) with
+	// no real tracker dial, `ps`, or signal. Also keeps every other test off the real process table.
+	const reapedProcesses: TrackerHandle[] = [];
+	const reapOrphanProcesses = (tracker: TrackerHandle) =>
+		Effect.sync(() => {
+			order.push("reap-processes");
+			reapedProcesses.push(tracker);
+		});
 	const {engineCount, ...rest} = overrides;
 	return {
 		launched: plans,
@@ -233,6 +243,7 @@ const baseInput = (
 		resolveCalls,
 		trackerCalls: calls,
 		reaped,
+		reapedProcesses,
 		registered,
 		registeredCtx,
 		cwdCalls,
@@ -247,6 +258,7 @@ const baseInput = (
 			ensureTracker,
 			resolveTargetSession,
 			launch,
+			reapOrphanProcesses,
 			...rest,
 		},
 	};
@@ -432,7 +444,16 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 		() =>
 			Effect.gen(function* () {
 				const N = 2;
-				const {input, launched, order, reaped, registered, registeredCtx, cwdCalls} = baseInput({
+				const {
+					input,
+					launched,
+					order,
+					reaped,
+					reapedProcesses,
+					registered,
+					registeredCtx,
+					cwdCalls,
+				} = baseInput({
 					engineCount: N,
 				});
 				yield* standUp(input);
@@ -441,11 +462,19 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				assert.strictEqual(reaped.length, 1);
 				assert.deepStrictEqual(reaped[0], {projectRoot: "/repo", serverName: SERVER});
 
-				// Ordering: reap runs before register, and register runs before any pane is launched.
+				// The process-table half of crash-reclaim swept once too (#3629), handed the ensured tracker so
+				// it can key its engine-spare guard off the live-registered set.
+				assert.strictEqual(reapedProcesses.length, 1);
+				assert.deepStrictEqual(reapedProcesses[0], trackerHandle);
+
+				// Ordering: both reclaim halves run before register, and register runs before any pane is
+				// launched; the process-reap runs at the same crash-reclaim seam (after the dir/socket reap).
 				const reapAt = order.indexOf("reap");
+				const reapProcAt = order.indexOf("reap-processes");
 				const registerAt = order.indexOf("register");
 				const firstLaunchAt = order.findIndex((e) => e.startsWith("launch:"));
-				assert.isBelow(reapAt, registerAt);
+				assert.isBelow(reapAt, reapProcAt);
+				assert.isBelow(reapProcAt, registerAt);
 				assert.isBelow(registerAt, firstLaunchAt);
 
 				// One register batch, carrying the run context the boot-gate seeds need.

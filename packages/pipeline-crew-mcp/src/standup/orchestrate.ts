@@ -24,7 +24,13 @@
 import {spawn} from "node:child_process";
 import {randomUUID} from "node:crypto";
 import {Effect, type FileSystem, type Path, Schema} from "effect";
-import {SESSION_SERVER_NAME} from "../crew/index.ts";
+import {
+	CrewTracker,
+	collectLiveRegisteredAddresses,
+	crewTrackerSocketLayer,
+	reapOrphanedCrewServers,
+	SESSION_SERVER_NAME,
+} from "../crew/index.ts";
 import type {RendezvousResolutionError} from "../tracker/index.ts";
 import {
 	buildSessionBind,
@@ -275,6 +281,11 @@ export interface StandUpInput {
 		targetSession: string,
 		intoWindow: string | undefined,
 	) => Effect.Effect<LaunchedSession, StandUpLaunchError>;
+	/** The process-table half of crash-reclaim (#3629): sweep orphaned crew server procs a prior run left
+	 * reparented to init, keyed off the live-registered set so a still-serving instance is spared. Runs
+	 * alongside `localScope.reap` (which reclaims crew-run dirs + the server approval). Default:
+	 * `productionReapOrphanProcesses` (dials the just-ensured tracker, then `ps`-sweeps + `SIGTERM`s). */
+	readonly reapOrphanProcesses?: (tracker: TrackerHandle) => Effect.Effect<void>;
 }
 
 /** What a completed stand-up returns: the tracker it ensured and every session it launched, in roster order. */
@@ -515,6 +526,23 @@ export const launchSessionInTmux = (
 	});
 
 /**
+ * Production process-reap (#3629): dial the just-ensured tracker for the live-registered address set,
+ * then sweep the process table for orphaned crew `session --role` servers a prior run left reparented
+ * to init and terminate them — the process-table complement to `localScope.reap`'s crew-run-dir/socket
+ * reclaim. Best-effort crash-hygiene: a `ps` snapshot or tracker-dial failure is swallowed, never
+ * aborting stand-up — these orphans are prior-run leftovers with distinct pids, not a precondition of
+ * the new crew (unlike the dir/approval reclaim, which clears about-to-collide state and stays loud).
+ */
+export const productionReapOrphanProcesses = (tracker: TrackerHandle): Effect.Effect<void> =>
+	Effect.gen(function* () {
+		const crewTracker = yield* CrewTracker;
+		const liveRegisteredAddresses = yield* collectLiveRegisteredAddresses((role) =>
+			crewTracker.lookup(role),
+		);
+		yield* reapOrphanedCrewServers({liveRegisteredAddresses});
+	}).pipe(Effect.scoped, Effect.provide(crewTrackerSocketLayer(tracker.socketPath)), Effect.ignore);
+
+/**
  * Stand up the whole crew from the operator config, in the mandated order and fail-loud with no
  * partial crew (issue #3299): read config → assert the pinned CLI version → ensure the tracker →
  * derive the roster session set → build every per-session bind + compute all tmux placements →
@@ -533,6 +561,7 @@ export const runStandUp = (
 		const ensureTracker = input.ensureTracker ?? ensureTrackerRunning;
 		const resolveTargetSession = input.resolveTargetSession ?? resolveTargetSessionDefault;
 		const launch = input.launch ?? launchSessionInTmux;
+		const reapOrphanProcesses = input.reapOrphanProcesses ?? productionReapOrphanProcesses;
 
 		const config = yield* input.config ?? readLaunchConfig();
 		// Fail fast on a version drift before starting the tracker or any session — channels vary
@@ -556,6 +585,11 @@ export const runStandUp = (
 		// Start-of-stand-up reaper (crash-safety, #3444): clear any prior run's crew-run dirs + the server
 		// approval — a launcher that died mid-run leaves leftovers this run clears here, before it re-mints.
 		yield* localScope.reap(projectRoot, serverName);
+		// The process-table half of the same crash-reclaim (#3629): a launcher/pane that died left its
+		// `session --role` server reparented to init and still running. Sweep those orphans now, keyed off
+		// the just-ensured tracker's live-registered set so a still-serving instance is spared. Best-effort
+		// (the seam swallows its own failures) so crash-hygiene never blocks the new crew from standing up.
+		yield* reapOrphanProcesses(tracker);
 
 		// Resolve EVERY bind + placement + cwd before launching anything — this is the no-partial-crew
 		// line: an inert channel or a colliding window fails here, while zero sessions are up.
