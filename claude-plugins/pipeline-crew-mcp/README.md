@@ -41,10 +41,52 @@ Once installed, the crew binds via:
 ```
 
 The stand-up launcher emits exactly that under `channels.mode: "allowlist"`, and **auto-allowlists this
-plugin** — the launcher is the thing emitting the ref, so the operator's `allowedChannelPlugins` only
-needs to list *third-party* plugins. What the operator does still owe is the **install**: the CLI
-compares the installed plugin's marketplace against the ref's `@kampus` before loading the channel, so
-`plugin install pipeline-crew-mcp@kampus` is a stand-up prerequisite in allowlist mode.
+plugin** in the *crew config's* own `allowedChannelPlugins` — the launcher is the thing emitting the ref,
+so that field only ever needs to list *third-party* plugins. That is the **launcher's** gate, and it is
+the only one the launcher can satisfy by itself.
+
+### The operator's remaining obligations — both of them, in order
+
+The CLI's channel gate (`gateChannelServer`, read from the installed CLI bundle at **2.1.220**) applies
+**two independent checks** to a `plugin:` ref under `--channels`. A self-published
+`pipeline-crew-mcp@kampus` clears **neither** by default, so both are stand-up prerequisites in
+allowlist mode:
+
+1. **Install the plugin from the `kampus` marketplace.** The gate compares the installed plugin's
+   marketplace against the ref's `@kampus` — `if (i !== o.marketplace) → {action: "skip", kind:
+   "marketplace"}` — so `plugin install pipeline-crew-mcp@kampus` is required.
+2. **Get the plugin onto the CLI's *effective channel allowlist*.** After the marketplace check, and
+   only for a non-dev channel (`if (!o.dev)`), the gate resolves
+   `getEffectiveChannelAllowlist(policySettings?.allowedChannelPlugins)` and requires an entry matching
+   **both** fields: `entries.some(l => l.plugin === o.name && l.marketplace === o.marketplace)`. That
+   list has exactly two possible sources — the **org's managed settings** `allowedChannelPlugins` when
+   set (`source: "org"`), otherwise the vendor-controlled `tengu_harbor_ledger` remote-config value
+   (`source: "ledger"`, schema `{marketplace, plugin}[]`, default `[]`). A self-published plugin is not
+   in that vendor ledger, so the **only** route is an org managed-settings entry:
+
+   ```json
+   { "allowedChannelPlugins": [{ "marketplace": "kampus", "plugin": "pipeline-crew-mcp" }] }
+   ```
+
+Check (2) is precisely what dev mode bypasses (the `!o.dev` guard), so "it works in dev" says nothing
+about whether allowlist mode will bind.
+
+#### The symptom when (2) is unmet — recognize it, don't debug the launcher
+
+An unmet allowlist is **not an error**. The gate returns `{action: "skip", kind: "allowlist"}`, the
+session **launches successfully**, and every launcher-side guard stays green — the crew simply comes up
+with a **dead channel**: no `channel_send`, no tracker traffic, no failure anywhere. The CLI's only
+signal is a debug log line plus one 12-second warning toast in the affected pane
+(`channels-blocked-allowlist`, shown once per skip-kind per session), which is trivially missed and gone
+before anyone looks. Its text is the gate's own reason string, and it names which source was consulted:
+
+- managed settings set but missing this entry → `plugin pipeline-crew-mcp@kampus is not on your org's
+  approved channels list (set allowedChannelPlugins in managed settings)`
+- managed settings unset, so the vendor ledger was consulted → `plugin pipeline-crew-mcp@kampus is not
+  on the approved channels allowlist (use --dangerously-load-development-channels for local dev)`
+
+**So: a stand-up that reports success but whose panes never talk to each other is this check, not the
+launcher.** Verify (2) before spending any time on launcher-side diagnosis.
 
 ### Per-session role comes from the environment
 
