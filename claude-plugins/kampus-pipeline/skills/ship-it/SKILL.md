@@ -1180,13 +1180,50 @@ hole of [#1928](https://github.com/kamp-us/phoenix/issues/1928) (a shipper that 
 and died left the PR green-but-not-enqueued with **no** FAIL and **no** outcome comment). You run a
 **bounded, in-process CI-settle poll** ([§The bounded CI-settle poll](#the-bounded-ci-settle-poll--never-a-silent-park-1928))
 that always terminates in one of two PR-visible outcomes — the enqueue, or an explicit refusal
-comment — never a silent park. The human table and exit code can't cleanly separate red from
-pending, and neither tells a *gating* check from an *informational* one — so read the per-check
-**names and states** and classify by name, not by a bare bucket count:
+comment — never a silent park. A bare exit code can't cleanly separate red from pending, and no
+aggregate tells a *gating* check from an *informational* one — so read the per-check **names and
+states** and classify by name, never by a rollup colour alone.
+
+The read is **`pipeline-cli checks read`** — REST check-runs for the PR head, rolled up
+latest-per-context. **Never `gh pr checks`.** That read is GraphQL-backed, and on PR #3988 it
+reported 29 of 33 checks `IN_PROGRESS` across three consecutive reads while REST showed the same
+checks `completed`/`success` 15+ minutes earlier — so a shipper following it literally burns the
+full settle budget and then refuses a fully green PR
+([#3999](https://github.com/kamp-us/phoenix/issues/3999)). That is the transport class this
+suite's REST-only rule exists to avoid; the merge gate is the last place to reach past it. The
+verb also owns the running/wedged split and the latest-per-context reduction — cite it, don't
+re-derive the query (#3762).
 
 ```bash
-gh pr checks $PR --json name,state,bucket --jq '.[] | "\(.bucket)\t\(.name)"'
-# bucket ∈ pass | fail | pending | skipping | cancel
+CHECKS="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli checks"
+
+# Echo the rollup JSON; return 0 readable · 2 UNKNOWN (refuse — never a colour, never green).
+read_head_ci() {
+  local out rc conclusion
+  out="$($CHECKS read --pr "$PR" --expect green 2>/dev/null)"; rc=$?
+  # SHAPE-CHECK BEFORE INTERPRETING: an error body / truncated capture is not data. Exit 2 is the
+  # verb's own typed unknown; a body with no readable `conclusion` is treated identically.
+  conclusion="$(printf '%s' "$out" | jq -r '.conclusion? // empty' 2>/dev/null)"
+  case "$rc:$conclusion" in
+    0:green|1:red|1:pending) printf '%s' "$out"; return 0 ;;
+    *) return 2 ;;
+  esac
+}
+
+CI_JSON="$(read_head_ci)" || {
+  disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: this stop does not enqueue — park nothing
+  gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — head CI **unreadable** (the check-runs read returned no interpretable state) — **not enqueued**. An unreadable head is not a green head; re-dispatch ship-it once the API is answering — idempotent (#3999)." >/dev/null
+  echo "refused — head CI unreadable (typed unknown) — not enqueued"; exit 0
+}
+
+# The aggregate `.conclusion` is deliberately NOT bound here: it is a colour in which red wins over
+# pending, so classifying off it lets an informational red mask an unfinished check (see below).
+CONTEXTS=$(jq -r '.contexts'    <<<"$CI_JSON")   # how many contexts the rollup covered
+RUNNING=$(jq -r  '.running | join(", ")' <<<"$CI_JSON")   # genuinely in flight — these settle
+WEDGED=$(jq -r   '.wedged  | join(", ")' <<<"$CI_JSON")   # queued, never started — these do NOT
+# The known-informational carve-out, applied to the failing set (names below).
+GATING_RED=$(jq -r '[.failing[]
+  | select(. != "deploy (web)" and (startswith("cleanup (web,") | not))] | join(", ")' <<<"$CI_JSON")
 ```
 
 Not every red check blocks a merge. **`main` carries no required-status-check branch
@@ -1206,8 +1243,22 @@ preview-deploy/teardown checks are informational; every other red, including any
 run-evidence (lint/format/typecheck, unit/integration/e2e) check, stays gating — see ADR
 [0061](https://github.com/kamp-us/phoenix/blob/main/.decisions/0061-ship-it-gating-check-set.md).
 
-An **empty** check set is ambiguous and must not be read as green on its face: it is either
-"CI ran and every check passed" or "no run ever fired for this head." Disambiguate it against
+**An unfinished check is one of two different facts, and the read tells them apart.** `$RUNNING`
+is genuinely in flight — it settles on its own, which is exactly what the settle poll waits for.
+`$WEDGED` is **stranded in the queue**: `status: queued` with a `null` `started_at`, a run that
+never starts without an operator lever. A `fanout-guard` job sat wedged for ~2.5h and blocked a
+fully-green PR while every surface an agent reads said only "pending" (#3999). Both are pending
+to the gate — a wedge is **never** green, and the classification below is unchanged in that
+direction — but they get **different outcomes**: running is waited out, wedged is *reported*.
+
+**Zero-run check suites are not pending.** The inert third-party suites (vercel, sentry,
+cloudflare-workers-and-pages) sit `queued` with **no attached check runs** on every head. A suite
+with no runs has no state to contribute, so it contributes none: the rollup names them in
+`inertSuites` for the ledger and counts none of them toward pending. This is what makes PR
+#3988's shape — 43 completed check-runs, three zero-run `queued` suites — classify **green**.
+
+An **empty** check set (`$CONTEXTS == 0`) is ambiguous and must not be read as green on its face:
+it is either "CI ran and every check passed" or "no run ever fired for this head." Disambiguate it against
 the workflow runs GitHub actually recorded for the head SHA — **both reads fail safe toward
 "do *not* nudge"** (the Step-3z remedy close→reopens a live PR; never do that on a guessed
 absence):
@@ -1227,16 +1278,22 @@ NRUNS=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
 [ -z "$NWF" ]   && NWF=0
 ```
 
-Classify in this order (`skipping`/`cancel` are non-blocking — neither a failure nor an
-in-flight wait):
+Classify in this order (a `skipped` / `cancelled` conclusion is non-blocking — neither a failure
+nor an in-flight wait — and the rollup already resolves each context to its **latest** run, so a
+superseded red can't red a green head, #3762):
 
-1. **Any *gating* check red** (a `fail` whose name is not known-informational) → do **not**
+1. **Any *gating* check red** (`$GATING_RED` non-empty) → do **not**
    merge. Run `disarm_intent refuse || INTENT_UNCLEARED=1` (guard 6), then route it to the
    self-heal lane: invoke
    [`/heal-ci`](../heal-ci/SKILL.md) with this
    PR/run, then report the result (e.g. `routed to heal-ci`). `heal-ci` decides
    flake-vs-defect; you only refuse on a gating red and hand off — you still do not merge.
-2. **Else, any check pending** (no gating red, some unfinished) → **enter the bounded CI-settle
+1b. **Else, the head reported no contexts at all (`$CONTEXTS == 0`)** → skip the poll and go
+   straight to the empty-set disambiguation (branch 3 below). Waiting is pointless when nothing
+   has reported: with zero contexts there is no check to settle, so a settle poll would burn the
+   full budget and refuse with the wrong reason instead of surfacing the dropped trigger.
+2. **Else, something is still unfinished — the pending *sets*, never the rollup colour**
+   (`[ -n "$RUNNING$WEDGED" ]`) → **enter the bounded CI-settle
    poll** ([§below](#the-bounded-ci-settle-poll--never-a-silent-park-1928)). Do **not** report
    `checks pending` and park: that stop-path delegated resumption to a caller that may never fire,
    and because a decline is a *successful* outcome it left the PR green-but-unenqueued with **no**
@@ -1244,7 +1301,9 @@ in-flight wait):
    on a fixed budget and **always** terminates in exactly one of two PR-visible outcomes: it reaches
    the enqueue (fall through to Step 3.5 → Step 4) the moment the gating suite goes green, or — if
    the budget is exhausted with a gating check still pending — it posts an explicit
-   `refused — CI still pending after <budget>` outcome comment on the PR and stops.
+   `refused — CI still pending after <budget>` outcome comment on the PR and stops. When what is
+   unfinished is **wedged** rather than running, the poll refuses early with the distinct
+   stranded-in-queue reason instead of waiting out a run that cannot start (§below).
 3. **Else, the repo runs Actions (`NWF ≥ 1`) but the head SHA has zero workflow runs
    (`NRUNS == 0`)** → the **dropped-trigger state** (Step 3z). This is **not** green: an empty
    check set with *no runs behind it* is "CI never fired," not "CI ran and passed." Do **not**
@@ -1255,6 +1314,20 @@ in-flight wait):
    (web)) — not gating`, or `informational check red (cleanup (web, …)) — not gating`) and
    continue. Step 3.5 remains the SHA-bound backstop that the gating suite actually passed
    for this commit.
+
+**Branch 2 tests the pending sets, never the rollup's `.conclusion` — an informational red would
+otherwise mask an unfinished gating check.** `.conclusion` is an *aggregate colour*, in which **red
+wins over pending**, and `.failing` still carries the informational checks that the `$GATING_RED`
+carve-out strips only afterwards. So a red `deploy (web)` / `cleanup (web, …)` next to an unfinished
+gating check makes the head read `red`: branch 1 does not fire (no gating red), a colour-based
+branch 2 would not fire either, and the head falls through to branch 4 — **enqueued with CI
+unfinished**.
+The sharp case is this step's own motivating state: a wedged `fanout-guard` plus a red `cleanup
+(web, …)` would enqueue silently instead of producing the stranded-in-queue refusal — and Step 3z's
+close→reopen nudge is documented below as a cause of exactly those `cleanup` reds, so the shipper
+can manufacture the masking condition itself. `ci_settle_wait` already reads the sets (`.running` /
+`.wedged`) and never the colour; the entry test must answer "is anything unfinished?" the same way
+the poll does, or the two diverge and the gate fails open.
 
 The gating set is, by construction, the suite the run-evidence bundle attests SHA-bound in
 Step 3.5 (lint / format / typecheck, unit tests, validate skill frontmatter, integration
@@ -1292,17 +1365,22 @@ false-green Step 3z guards (that state is branch 3, never reached from here):
 ```bash
 SETTLE_BUDGET_SECS="${SHIP_IT_SETTLE_BUDGET_SECS:-600}"    # total in-process wait ceiling — BOUNDED, never unbounded
 SETTLE_INTERVAL_SECS="${SHIP_IT_SETTLE_INTERVAL_SECS:-30}" # cadence; each pass emits progress so a no-progress watchdog never fires
-ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused (budget-exhausted OR head moved mid-settle; comment posted) · 2=gating red mid-wait→heal-ci
-  local waited=0 bucket name red pending headnow
+WEDGE_DWELL_SECS="${SHIP_IT_WEDGE_DWELL_SECS:-120}"        # how long an all-wedged pending set must persist before it is called wedged
+ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused (budget-exhausted, wedged, OR head moved mid-settle; comment posted) · 2=gating red mid-wait→heal-ci
+  local waited=0 wedged_for=0 json red pending wedged running headnow
   while :; do
-    red=""; pending=""
-    while IFS=$'\t' read -r bucket name; do
-      case "$bucket" in
-        # same known-informational carve-out as Step 3: a red preview-deploy/teardown check never gates
-        fail)    case "$name" in "deploy (web)"|"cleanup (web,"*) ;; *) red="$red $name" ;; esac ;;
-        pending) pending="$pending $name" ;;
-      esac
-    done < <(gh pr checks "$PR" --json name,state,bucket --jq '.[] | "\(.bucket)\t\(.name)"')
+    # The SAME read as Step 3 — REST check-runs through `pipeline-cli checks read`, never
+    # `gh pr checks` (#3999). An unreadable head refuses here exactly as it does at Step 3.
+    json="$(read_head_ci)" || {
+      disarm_intent refuse || INTENT_UNCLEARED=1
+      gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — head CI became **unreadable** during the CI-settle wait — **not enqueued**. An unreadable head is not a green head; re-dispatch ship-it — idempotent (#3999)." >/dev/null
+      echo "refused — head CI unreadable mid-settle — not enqueued"; return 1
+    }
+    # same known-informational carve-out as Step 3: a red preview-deploy/teardown check never gates
+    red="$(jq -r '[.failing[] | select(. != "deploy (web)" and (startswith("cleanup (web,") | not))] | join(" ")' <<<"$json")"
+    running="$(jq -r '.running | join(" ")' <<<"$json")"
+    wedged="$(jq -r  '.wedged  | join(" ")' <<<"$json")"
+    pending="$(jq -r '(.running + .wedged) | join(" ")' <<<"$json")"
     if [ -n "$red" ]; then
       disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: this wait ends without an enqueue — park nothing
       echo "gating check went red during settle-wait ($red) — routing to heal-ci"; return 2
@@ -1322,14 +1400,32 @@ ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused (budget-ex
       fi
       echo "gating checks settled green after ${waited}s — proceeding to Step 3.5 → enqueue"; return 0
     fi
+    # WEDGED: everything unfinished is queued-and-never-started. Such a run does not start on its
+    # own, so the remaining budget cannot clear it — refuse once the state has held for the dwell
+    # (a check queued seconds ago is normal; one queued with no start time for minutes is stuck).
+    if [ -n "$wedged" ] && [ -z "$running" ]; then
+      wedged_for=$((wedged_for + SETTLE_INTERVAL_SECS))
+    else
+      wedged_for=0
+    fi
+    if [ "$wedged_for" -ge "$WEDGE_DWELL_SECS" ]; then
+      disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: this wait ends without an enqueue — park nothing
+      gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — CI **wedged (stranded in queue)** for ${wedged_for}s — **not enqueued**. These gating checks are \`queued\` with no start time and are not running: ${wedged}. A wedged run does not start on its own, so waiting the ${SETTLE_BUDGET_SECS}s settle budget out cannot clear it — this is reported as its own state rather than waited out (#3999). Operator lever (deliberately NOT automated — see the skill): cancel the stuck workflow run, then re-run it (a plain rerun on a still-queued run returns 403):
+\`\`\`
+RUN=\$(gh api \"repos/$REPO/actions/runs?head_sha=$CURRENT_HEAD&per_page=100\" --jq '.workflow_runs[] | select(.status==\"queued\") | .id')
+gh api -X POST \"repos/$REPO/actions/runs/\$RUN/cancel\" && gh api -X POST \"repos/$REPO/actions/runs/\$RUN/rerun\"
+\`\`\`
+Re-dispatch ship-it once the re-run settles — idempotent, a re-ship on the now-green head enqueues cleanly." >/dev/null
+      echo "refused — CI wedged (stranded in queue: ${wedged}) after ${wedged_for}s — not enqueued"; return 1
+    fi
     if [ "$waited" -ge "$SETTLE_BUDGET_SECS" ]; then
       disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: the budget ran out without an enqueue — park nothing
       # Budget exhausted, still pending → the ONE required durable signal: an explicit PR-visible refusal.
       # A plain outcome note, NOT a review-* verdict marker — so it never blocks a later idempotent re-ship.
-      gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — CI still pending after ${SETTLE_BUDGET_SECS}s (gating checks unfinished:${pending}) — **not enqueued**. This head is not yet merge-ready; re-dispatch ship-it once CI settles — idempotent, a re-ship on the now-green head enqueues cleanly (#1928)." >/dev/null
+      gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — CI still pending after ${SETTLE_BUDGET_SECS}s (still running: ${running:-none}; wedged in queue: ${wedged:-none}) — **not enqueued**. This head is not yet merge-ready; re-dispatch ship-it once CI settles — idempotent, a re-ship on the now-green head enqueues cleanly (#1928)." >/dev/null
       echo "refused — CI still pending after ${SETTLE_BUDGET_SECS}s (PR outcome comment posted) — not enqueued"; return 1
     fi
-    echo "checks still pending after ${waited}s (${pending# }) — re-reading in ${SETTLE_INTERVAL_SECS}s (budget ${SETTLE_BUDGET_SECS}s)"
+    echo "checks still pending after ${waited}s (running: ${running:-none}; wedged: ${wedged:-none}) — re-reading in ${SETTLE_INTERVAL_SECS}s (budget ${SETTLE_BUDGET_SECS}s)"
     sleep "$SETTLE_INTERVAL_SECS"; waited=$((waited + SETTLE_INTERVAL_SECS))
   done
 }
@@ -1343,7 +1439,7 @@ case "$SETTLE_RC" in
      # /heal-ci for this PR (the same agent action Step 3 branch 1 takes), then exit — falling through here
      # would enqueue a red PR, the exact merge-safety hole this arm exists to close (#1928).
      echo "routed to heal-ci — gating check went red mid-settle for PR #$PR; not enqueued"; exit 0 ;;
-  1) exit 0 ;;    # refused (budget-exhausted, or head moved mid-settle) — durable outcome comment posted; a successful decline, no longer silent (#1928)
+  1) exit 0 ;;    # refused (budget-exhausted, wedged in queue, head moved mid-settle, or unreadable) — durable outcome comment posted; a successful decline, no longer silent (#1928)
 esac
 ```
 
@@ -1353,6 +1449,27 @@ Step 4 — and `1` posts the durable refusal and stops. Both non-zero returns `e
 `0` proceeds to enqueue. There is **no fourth path** where the shipper leaves the pending-wait without
 either enqueuing or landing a PR-visible outcome — the silent park of #1928 is structurally
 unreachable, and a mid-wait gating-red can never slip through to the merge queue.
+
+### Wedged is a diagnosis, not a wait — and the remedy stays the operator's lever
+
+The poll's refusals are deliberately **three different facts, named differently**: the budget ran
+out while checks were genuinely running; the head moved; or the remaining checks are **wedged** —
+`queued` with no start time, stranded. Before #3999 all three read as "CI still pending," which is
+what let a `fanout-guard` job sit wedged for ~2.5h behind a comment that told the next agent to
+just wait longer. Naming the state is the fix: "stranded in queue" and "still running" are
+different facts and must be distinguishable through the surfaces an agent reads.
+
+**ship-it reports the wedge; it does not clear it.** The remedy — `POST
+/actions/runs/<id>/cancel` then `POST /actions/runs/<id>/rerun` (a plain `rerun` on a still-queued
+run returns 403) — is spelled out in the refusal comment, but ship-it does not run it, for two
+reasons. First, **authority**: ship-it holds the single *merge* authority (ADR 0048), not a
+CI-mutation authority; cancelling and re-running another workflow's runs is a different power, and
+a merge gate that silently reruns CI to make itself pass is a gate that can launder a stuck
+producer into a green. Second, **termination**: a wedge whose cause is a genuinely broken producer
+would be cancel/rerun-looped forever by an automatic remedy, which is the same unbounded-retry
+shape the Step-3z nudge is explicitly bounded against. So the wedge exits the same way every other
+non-enqueue does — a durable, PR-visible outcome naming the state and the lever — and a human or
+`heal-ci` pulls it.
 
 **Idempotency is preserved.** The refusal comment is a plain outcome note, not a `review-*` verdict
 marker and not a merge blocker, so a later re-dispatch on the now-green head clears every guard and
@@ -2268,7 +2385,12 @@ not bound to current head)` (a SHA-less or stale-head verdict — Step 2b, ADR 0
 verdict is FAIL (<gate>)`, `routed to heal-ci` (a gating red check, handed to the self-heal lane),
 `refused — CI still pending after <budget>` (the bounded CI-settle poll ran to its budget with a
 gating check still unfinished — Step 3, #1928; a durable PR outcome comment is posted, and a
-re-dispatch on the now-green head enqueues cleanly), the dropped-trigger outcomes (Step 3z):
+re-dispatch on the now-green head enqueues cleanly), `refused — CI wedged (stranded in queue:
+<names>)` (the unfinished checks are `queued` with no start time and will not start on their own,
+so the poll refuses with the distinct diagnosis and the cancel-then-rerun lever rather than
+waiting the budget out — Step 3, #3999), `refused — head CI unreadable (typed unknown)` (the
+check-runs read returned nothing interpretable; an unreadable head is never a green head — #3999),
+the dropped-trigger outcomes (Step 3z):
 `nudged (close→reopen) — CI re-triggered, not yet merge-ready` (the head SHA had zero workflow
 runs; ship-it close→reopened it once to re-emit the trigger, posted a durable PR outcome comment,
 and stopped — re-dispatch after CI settles) or `unverified (no runs fired — nudge exhausted,

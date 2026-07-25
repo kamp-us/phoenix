@@ -15,6 +15,11 @@
  * on stdout for a caller that wants the failing context names. `GithubLive` is baked in with
  * `Command.provide(...)` so the registered command's residual requirement is the Node platform
  * union (the registry seam, epic #994).
+ *
+ * Exit 2 is its own answer: the head was UNREADABLE (transport fault, or a body that is not the
+ * check-runs envelope). It is deliberately not exit 1 — "I could not read this head" must be
+ * distinguishable from "I read it and it isn't what you expected", and neither may be mistaken
+ * for green (#3999).
  */
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
@@ -22,6 +27,7 @@ import type {ChecksConclusion} from "./checks.ts";
 import {Github, GithubLive} from "./github.ts";
 
 const FAIL_EXIT_CODE = 1;
+const UNKNOWN_EXIT_CODE = 2;
 
 const CONCLUSIONS: ReadonlyArray<ChecksConclusion> = ["green", "red", "pending"];
 
@@ -47,6 +53,30 @@ const fail = (reason: string): Effect.Effect<never> =>
 		process.exit(FAIL_EXIT_CODE);
 	});
 
+/**
+ * The typed unknown: emit an `unknown` rollup on stdout and exit 2. A caller that shape-checks
+ * stdout gets a `conclusion` it can branch on rather than an empty capture, and the distinct
+ * exit code means a swallowed stderr can still never be read as green.
+ */
+const unknown = (sha: string, reason: string): Effect.Effect<never> =>
+	Effect.sync(() => {
+		process.stdout.write(`${JSON.stringify({conclusion: "unknown", sha, reason})}\n`);
+		process.stderr.write(`checks: unknown — could not read ${sha || "the head"}: ${reason}\n`);
+		process.exit(UNKNOWN_EXIT_CODE);
+	});
+
+/** The `{sha, reason}` a `HeadCiUnreadable` carries — the actionable form of an unknown. */
+const asUnreadable = (cause: unknown): {sha: string; reason: string} | undefined =>
+	typeof cause === "object" &&
+	cause !== null &&
+	(cause as {_tag?: unknown})._tag === "@kampus/checks/HeadCiUnreadable"
+		? (cause as {sha: string; reason: string})
+		: undefined;
+
+const describeCause = (cause: unknown): string =>
+	asUnreadable(cause)?.reason ??
+	(cause instanceof Error && cause.message !== "" ? cause.message : String(cause));
+
 const parseExpect = (raw: Option.Option<string>): Effect.Effect<ChecksConclusion, never> => {
 	const value = Option.getOrElse(raw, () => "green")
 		.trim()
@@ -67,8 +97,15 @@ const read = Command.make(
 		if ((pinned === undefined) === (prNumber === undefined)) {
 			return yield* fail("pass exactly one of --pr <n> or --sha <sha>");
 		}
-		const head = pinned ?? (yield* gh.headSha(prNumber as number));
-		const rollup = yield* gh.read(head);
+		const resolved = yield* Effect.gen(function* () {
+			const head = pinned ?? (yield* gh.headSha(prNumber as number));
+			return {head, rollup: yield* gh.read(head)};
+		}).pipe(
+			Effect.catch((cause: unknown) =>
+				unknown(asUnreadable(cause)?.sha ?? pinned ?? "", describeCause(cause)),
+			),
+		);
+		const {head, rollup} = resolved;
 		yield* Console.log(
 			JSON.stringify({
 				conclusion: rollup.conclusion,
@@ -76,13 +113,23 @@ const read = Command.make(
 				contexts: rollup.latest.length,
 				failing: rollup.failing.map((c) => c.name),
 				running: rollup.running.map((c) => c.name),
+				wedged: rollup.wedged.map((c) => c.name),
+				inertSuites: rollup.inertSuites.map((s) => s.appSlug ?? String(s.id)),
 			}),
 		);
+		const pendingDetail = [
+			rollup.running.length > 0 ? `running: ${rollup.running.map((c) => c.name).join(", ")}` : "",
+			rollup.wedged.length > 0
+				? `wedged (queued, never started): ${rollup.wedged.map((c) => c.name).join(", ")}`
+				: "",
+		]
+			.filter((part) => part !== "")
+			.join("; ");
 		const detail =
 			rollup.conclusion === "red"
 				? ` (failing: ${rollup.failing.map((c) => c.name).join(", ")})`
 				: rollup.conclusion === "pending"
-					? ` (running: ${rollup.running.map((c) => c.name).join(", ") || "nothing has reported yet"})`
+					? ` (${pendingDetail || "nothing has reported yet"})`
 					: "";
 		if (rollup.conclusion === expected) {
 			process.stderr.write(

@@ -10,7 +10,7 @@
 import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
-import {type ChecksRollup, rollupChecks} from "./checks.ts";
+import {type CheckSuite, type ChecksRollup, rollupChecks} from "./checks.ts";
 
 /** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
 export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
@@ -29,6 +29,18 @@ export class GhParseError extends Schema.TaggedErrorClass<GhParseError>()(
 		args: Schema.Array(Schema.String),
 		message: Schema.String,
 	},
+) {}
+
+/**
+ * The head's CI state could not be read as data — the transport failed, or the body decoded to
+ * something that is not the check-runs envelope (a `{"message": "Not Found"}` error object, a
+ * truncated page, a non-array). It is the typed "unknown" the gate refuses on: a caller must be
+ * able to tell "I could not read this head" from any colour, and never resolve it to green
+ * (#3999).
+ */
+export class HeadCiUnreadable extends Schema.TaggedErrorClass<HeadCiUnreadable>()(
+	"@kampus/checks/HeadCiUnreadable",
+	{sha: Schema.String, reason: Schema.String},
 ) {}
 
 /** No `owner/name` target repo could be resolved (no env override, no current repo). */
@@ -111,6 +123,7 @@ const RawCheckRun = Schema.Struct({
 	id: Schema.Number,
 	name: Schema.String,
 	conclusion: Schema.NullOr(Schema.String),
+	status: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	started_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	completed_at: Schema.NullOr(Schema.String),
 });
@@ -126,8 +139,33 @@ const decodeCheckRunPages = Schema.decodeUnknownEffect(RawCheckRunPages);
 const RawCombinedStatus = Schema.Struct({state: Schema.String, total_count: Schema.Number});
 const decodeCombinedStatus = Schema.decodeUnknownEffect(RawCombinedStatus);
 
+const RawCheckSuite = Schema.Struct({
+	id: Schema.Number,
+	status: Schema.NullOr(Schema.String),
+	latest_check_runs_count: Schema.Number,
+	app: Schema.optionalKey(Schema.NullOr(Schema.Struct({slug: Schema.NullOr(Schema.String)}))),
+});
+const RawCheckSuitePages = Schema.Array(Schema.Struct({check_suites: Schema.Array(RawCheckSuite)}));
+const decodeCheckSuitePages = Schema.decodeUnknownEffect(RawCheckSuitePages);
+
 const RawPr = Schema.Struct({head: Schema.Struct({sha: Schema.String})});
 const decodePr = Schema.decodeUnknownEffect(RawPr);
+
+/**
+ * A one-line, operator-readable cause. The tagged errors carry their detail in FIELDS, not in
+ * `message`, so a bare `.message` renders empty — and an unknown that can't say why it's unknown
+ * is not actionable.
+ */
+const describeFault = (cause: GhCommandError | GhParseError | Schema.SchemaError): string => {
+	switch (cause._tag) {
+		case "@kampus/checks/GhCommandError":
+			return `gh exited ${cause.exitCode}: ${cause.stderr.trim() || "(no stderr)"}`;
+		case "@kampus/checks/GhParseError":
+			return `gh output was not JSON: ${cause.message}`;
+		default:
+			return `response did not match the expected shape: ${cause.message}`;
+	}
+};
 
 const headSha = Effect.fn("Checks.headSha")(function* (repo: string, pr: number) {
 	const args = ["api", `repos/${repo}/pulls/${pr}`];
@@ -147,13 +185,42 @@ const read = Effect.fn("Checks.read")(function* (repo: string, sha: string) {
 		`repos/${repo}/commits/${sha}/check-runs?per_page=100`,
 	];
 	const statusArgs = ["api", `repos/${repo}/commits/${sha}/status`];
-	const [pages, status] = yield* Effect.all(
+	const suiteArgs = [
+		"api",
+		"--paginate",
+		"--slurp",
+		`repos/${repo}/commits/${sha}/check-suites?per_page=100`,
+	];
+	// The two GATING reads: their shape is decoded BEFORE any conclusion is read, and a fault in
+	// either resolves to the typed `HeadCiUnreadable` — never to a colour.
+	const gating = Effect.all(
 		[
-			decodeCheckRunPages(yield* json(checkArgs)),
-			decodeCombinedStatus(yield* json(statusArgs)),
+			Effect.flatMap(json(checkArgs), decodeCheckRunPages),
+			Effect.flatMap(json(statusArgs), decodeCombinedStatus),
 		] as const,
 		{concurrency: "unbounded"},
+	).pipe(Effect.catch((cause) => new HeadCiUnreadable({sha, reason: describeFault(cause)})));
+	// The suites read is DIAGNOSTIC, so it degrades instead of blocking: suites cannot move the
+	// conclusion (see `RollupInput.suites`), and letting a flaky side read refuse a merge would
+	// re-introduce the false-negative block this whole change removes.
+	const suites = Effect.flatMap(json(suiteArgs), decodeCheckSuitePages).pipe(
+		Effect.map((suitePages) =>
+			suitePages
+				.flatMap((page) => page.check_suites)
+				.map(
+					(s): CheckSuite => ({
+						id: s.id,
+						status: s.status,
+						latestCheckRunsCount: s.latest_check_runs_count,
+						appSlug: s.app?.slug ?? null,
+					}),
+				),
+		),
+		Effect.orElseSucceed((): ReadonlyArray<CheckSuite> => []),
 	);
+	const [[pages, status], checkSuites] = yield* Effect.all([gating, suites] as const, {
+		concurrency: "unbounded",
+	});
 	return rollupChecks({
 		checkRuns: pages
 			.flatMap((page) => page.check_runs)
@@ -161,14 +228,19 @@ const read = Effect.fn("Checks.read")(function* (repo: string, sha: string) {
 				id: r.id,
 				name: r.name,
 				conclusion: r.conclusion,
+				status: r.status ?? null,
 				startedAt: r.started_at ?? null,
 				completedAt: r.completed_at,
 			})),
 		combinedStatus: {state: status.state, totalCount: status.total_count},
+		suites: checkSuites,
 	});
 });
 
 type GhError = RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError;
+
+/** `read`'s error channel: every fault on the gating reads arrives as the one typed unknown. */
+type ReadError = RepoResolutionError | HeadCiUnreadable;
 
 /**
  * `Github` — the IO shell over `gh api` REST for the head-CI reads. Built by `GithubLive`,
@@ -180,7 +252,7 @@ export class Github extends Context.Service<
 	{
 		readonly repoName: () => Effect.Effect<string, GhError>;
 		readonly headSha: (pr: number) => Effect.Effect<string, GhError>;
-		readonly read: (sha: string) => Effect.Effect<ChecksRollup, GhError>;
+		readonly read: (sha: string) => Effect.Effect<ChecksRollup, ReadError>;
 	}
 >()("@kampus/checks/Github") {}
 
