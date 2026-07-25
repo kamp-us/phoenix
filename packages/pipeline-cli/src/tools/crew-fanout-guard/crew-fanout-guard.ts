@@ -46,13 +46,15 @@ export type BridgeName = (typeof BRIDGE_NAMES)[number];
 
 /**
  * Each bridge's SANCTIONED spawn allowlist, tracking its charter: the cartographer keeps its
- * Prototype-spike `coder` and ideation-legwork agents; the chief-of-staff spawns nothing (pure
- * verify-and-carry); the intake-desk owns the planning/canon seam (planner/canon/adr) plus its
+ * Prototype-spike `coder` and ideation-legwork agents; the chief-of-staff — the highest-observation
+ * seat, carrying the file-follow-ups-in-the-moment obligation — delegates capture to `reporter`
+ * (write-scoped to issue creation only, so it is context-hygiene fanout, not an execution edge —
+ * ADR 0196, #3888); the intake-desk owns the planning/canon seam (planner/canon/adr) plus its
  * report→triage loop (triager/reporter). See `claude-plugins/pipeline-crew/agents/`.
  */
 export const BRIDGE_ALLOWLIST: Record<BridgeName, ReadonlyArray<string>> = {
 	"crew-cartographer": ["coder", "planner", "canon", "adr", "triager", "reporter"],
-	"crew-chief-of-staff": [],
+	"crew-chief-of-staff": ["reporter"],
 	"crew-intake-desk": ["planner", "canon", "adr", "triager", "reporter"],
 };
 
@@ -80,7 +82,6 @@ export const BRIDGE_OUT_OF_SCOPE: Record<BridgeName, ReadonlyArray<string>> = {
 		"canon",
 		"adr",
 		"triager",
-		"reporter",
 		"crew-cartographer",
 		"crew-chief-of-staff",
 		"crew-engineering-manager",
