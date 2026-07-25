@@ -24,9 +24,9 @@
  * unreadable §CLASS falls back to the fail-closed probes (`FAILCLOSED_PROBES`), which
  * over-dispatch every gate rather than skip one.
  */
-import {readFileSync} from "node:fs";
 import {Console, Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
 import {
 	classify,
@@ -91,17 +91,9 @@ const readFiles = (
 				Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path, "utf8")).pipe(
 					Effect.orElseSucceed(() => ""),
 				),
-			// stdin (fd 0): a node-only boundary — FileSystem exposes no stdin reader, so kept raw. A
-			// failed/empty read is absorbed into no files (""), never the E channel; a total helper.
-			onNone: () =>
-				Effect.sync(() => {
-					// biome-ignore lint/plugin: fd-0 boundary read (closed/empty stdin), absorbed to "" — not Effect-cosplay.
-					try {
-						return readFileSync(0, "utf8");
-					} catch {
-						return "";
-					}
-				}),
+			// stdin: a failed read exits non-zero through the shared reader — probing "no files
+			// changed" over a pipe that was never read is the defect (#3924).
+			onNone: () => readStdinTextOrExit(),
 		});
 		return raw
 			.split("\n")

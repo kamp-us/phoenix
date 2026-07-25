@@ -74,9 +74,10 @@ const readMembers = (root: string): ReadonlyArray<WorkspaceMember> => {
  * Stream stdin through to stdout as it arrives (the CI log stays live, not withheld until
  * the typecheck ends) while accumulating it for the annotation pass.
  *
- * Deliberately NOT `readFileSync(0)`: on a non-blocking pipe that throws EAGAIN, and this
- * filter sits on the whole typecheck log — a swallowed EAGAIN silently deletes every line
- * of it. Observed live while rehearsing this step, not theorised.
+ * This is the one stdin reader that does NOT go through the shared `readStdinTextOrExit`
+ * (#3924): that one buffers to EOF before returning, which would withhold the whole CI log
+ * until the typecheck ends. Both refuse to swallow an EAGAIN into an empty read — the failure
+ * that deleted every line of a piped typecheck log, observed live, not theorised.
  */
 const passThroughStdin = Effect.callback<string>((resume) => {
 	const chunks: Array<Buffer> = [];

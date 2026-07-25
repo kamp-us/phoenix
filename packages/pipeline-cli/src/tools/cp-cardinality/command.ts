@@ -16,9 +16,9 @@
  * unit-tested core). ship-it owns the `gh api` REST resolution of the members roster, the PR
  * author/head, and the two SHA-bound signals — the integration half this tool never touches.
  */
-import {readFileSync} from "node:fs";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {type CpCardinalityInput, decideCpCardinality} from "./cp-cardinality.ts";
 
 const authorFlag = Flag.string("author").pipe(
@@ -38,25 +38,19 @@ const selfApprovalFlag = Flag.boolean("self-approval-at-head").pipe(
 );
 
 /**
- * Read the control-plane member logins from stdin; empty/failed read ⇒ N==0 (fail closed).
+ * Read the control-plane member logins from stdin. An empty roster ⇒ N==0 (fail closed); a
+ * roster that could not be *read* exits non-zero through the shared reader instead.
  *
- * The fd-0 read stays raw `node:fs`: the Effect `FileSystem` seam is path-keyed and exposes no
- * stdin reader, and `Stdio.stdin` is a Stream that blocks on a TTY with no pipe — so this is the
- * platform doc's node-only boundary case (.patterns/effect-platform-access.md), not a miss.
+ * The two used to be the same answer, and that was the bug: N==0 is a decision ship-it acts on,
+ * so an unread pipe rendered as "no members" is an outage wearing a verdict's clothes (#3924).
  */
-const readMembers = (): ReadonlyArray<string> => {
-	let raw: string;
-	// biome-ignore lint/plugin: best-effort read — an empty/failed stdin is absorbed into [] (⇒ N==0, fail closed), never the E channel; a total helper, not Effect-cosplay.
-	try {
-		raw = readFileSync(0, "utf8");
-	} catch {
-		return [];
-	}
-	return raw
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0);
-};
+const readMembers = (): Effect.Effect<ReadonlyArray<string>> =>
+	Effect.map(readStdinTextOrExit(), (raw) =>
+		raw
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0),
+	);
 
 const decideCmd = Command.make(
 	"decide",
@@ -67,7 +61,7 @@ const decideCmd = Command.make(
 	},
 	Effect.fn(function* ({author, nonAuthorApproval, selfApproval}) {
 		const input: CpCardinalityInput = {
-			members: readMembers(),
+			members: yield* readMembers(),
 			author,
 			nonAuthorApprovalAtHead: nonAuthorApproval,
 			selfApprovalAtHead: selfApproval,

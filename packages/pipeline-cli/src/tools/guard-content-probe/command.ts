@@ -28,6 +28,7 @@ import {dirname, join, resolve} from "node:path";
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "../../find-root-dir.ts";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
 import {
 	FAILCLOSED_GUARD_ADR_RE,
@@ -63,20 +64,18 @@ const rootFlag = Flag.string("root").pipe(
 );
 
 /**
- * Read the ADR body from `--body-file` or stdin. A failed read returns null, which the core
- * classifies guard-touching (fail-closed) — the same posture as an unreadable ADR at head.
+ * Read the ADR body from `--body-file` or stdin. An unreadable *file* returns null, which the
+ * core classifies guard-touching (fail-closed) — the same posture as an unreadable ADR at head;
+ * an unreadable *stdin* exits non-zero through the shared reader (#3924).
  */
-const readBody = (bodyFile: Option.Option<string>): string | null => {
-	// biome-ignore lint/plugin: best-effort read — a failed read is absorbed into null (⇒ guard-touching, fail-closed), never the E channel; a total helper, not Effect-cosplay.
-	try {
-		return Option.match(bodyFile, {
-			onSome: (path) => readFileSync(path, "utf8"),
-			onNone: () => readFileSync(0, "utf8"),
-		});
-	} catch {
-		return null;
-	}
-};
+const readBody = (bodyFile: Option.Option<string>): Effect.Effect<string | null> =>
+	Option.match(bodyFile, {
+		onSome: (path) =>
+			Effect.try(() => readFileSync(path, "utf8")).pipe(
+				Effect.orElseSucceed((): string | null => null),
+			),
+		onNone: () => readStdinTextOrExit(),
+	});
 
 /** Read local §CP text; null (⇒ fail-closed `GUARD_ADR_RE`) if the file is unreadable. */
 const readFormats = (root: string): string | null => {
@@ -95,7 +94,7 @@ const classifyCmd = Command.make(
 		const rootDir = Option.getOrElse(root, () => defaultRoot());
 		const formats = readFormats(rootDir);
 		const guardRe = formats === null ? FAILCLOSED_GUARD_ADR_RE : parseGuardAdrRe(formats);
-		const body = readBody(bodyFile);
+		const body = yield* readBody(bodyFile);
 		const result = probeGuardContent(body, guardRe);
 		const label = Option.getOrElse(path, () => "(stdin ADR)");
 

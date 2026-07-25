@@ -20,9 +20,9 @@
  * "resume up to K then surface" is decided by pure, unit-tested code, and this bin only
  * marshals flags/stdin into it.
  */
-import {readFileSync} from "node:fs";
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import type {CrashSignal} from "../failure-classifier/failure-classifier.ts";
 import {decideResume, type ResumeLedger} from "./resume-policy.ts";
 
@@ -71,20 +71,12 @@ interface StdinPayload {
 /**
  * Read a crash signal + resume ledger from a stdin JSON object. The orchestrator can pipe
  * the whole crash payload in one shot; a non-JSON or empty stdin yields empties (the flags
- * then fill in, or the core default-denies), so this never throws.
- *
- * The fd-0 read stays raw `node:fs` — the Effect `FileSystem` seam is path-keyed with no stdin
- * reader, and `Stdio.stdin` is a Stream that blocks on a TTY with no pipe: the platform doc's
- * node-only boundary case (.patterns/effect-platform-access.md).
+ * then fill in, or the core default-denies). A *failed* read exits non-zero through the shared
+ * reader — the resume decision must not default-deny over a payload it never read (#3924).
  */
-const readStdin = (): StdinPayload => {
-	let raw = "";
-	// biome-ignore lint/plugin: best-effort read — an unreadable stdin is absorbed into empties (the flags fill in, or the core default-denies), never the E channel; a total helper, not Effect-cosplay.
-	try {
-		raw = readFileSync(0, "utf8");
-	} catch {
-		return {signal: {}, ledger: {}};
-	}
+const readStdin = (): Effect.Effect<StdinPayload> => Effect.map(readStdinTextOrExit(), parseStdin);
+
+const parseStdin = (raw: string): StdinPayload => {
 	if (raw.trim() === "") return {signal: {}, ledger: {}};
 	// biome-ignore lint/plugin: best-effort parse — a non-JSON stdin is absorbed into empties (the core default-denies), never the E channel; a total helper, not Effect-cosplay.
 	try {
@@ -117,7 +109,7 @@ const decideCmd = Command.make(
 		priorResumes: priorResumesFlag,
 	},
 	Effect.fn(function* ({reason, errorKind, stage, runId, scriptPath, priorResumes}) {
-		const base = readStdin();
+		const base = yield* readStdin();
 		const signal: CrashSignal = {
 			reason: Option.getOrUndefined(reason) ?? base.signal.reason,
 			errorKind: Option.getOrUndefined(errorKind) ?? base.signal.errorKind,

@@ -20,9 +20,9 @@
  * from the former package's `bin.ts`; only the `Command.run`/`Effect.provide`/`runMain`
  * wiring is dropped — the shared `pipeline-cli` bin owns the run boundary (`NodeServices`).
  */
-import {readFileSync} from "node:fs";
 import {Console, Effect} from "effect";
 import {Command} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {
 	type Decision,
 	decide,
@@ -33,15 +33,6 @@ import {
 const EXIT_ACCEPT = 0;
 const EXIT_FAIL = 1;
 const EXIT_RETRY = 2;
-
-const readStdin = (): string => {
-	// biome-ignore lint/plugin: best-effort read — an unreadable stdin is absorbed into "" (no input), never the E channel; a total helper, not Effect-cosplay.
-	try {
-		return readFileSync(0, "utf8");
-	} catch {
-		return "";
-	}
-};
 
 interface PromptInput {
 	readonly schema: OutputSchema;
@@ -60,7 +51,7 @@ const promptCmd = Command.make(
 	"prompt",
 	{},
 	Effect.fn(function* () {
-		const input = JSON.parse(readStdin()) as PromptInput;
+		const input = JSON.parse(yield* readStdinTextOrExit()) as PromptInput;
 		yield* Console.log(renderSchemaSection(input.schema, input.example));
 	}),
 ).pipe(
@@ -76,7 +67,7 @@ const decideCmd = Command.make(
 	"decide",
 	{},
 	Effect.fn(function* () {
-		const input = JSON.parse(readStdin()) as DecideInput;
+		const input = JSON.parse(yield* readStdinTextOrExit()) as DecideInput;
 		const options: {cap?: number; example?: Record<string, unknown>} = {};
 		if (input.cap !== undefined) options.cap = input.cap;
 		if (input.example !== undefined) options.example = input.example;
