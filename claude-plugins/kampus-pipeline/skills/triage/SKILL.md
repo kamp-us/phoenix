@@ -594,34 +594,14 @@ gets `p0` on purpose, so it stops competing on equal footing with self-healing w
 Under-calling it is the failure mode there, not over-calling it. The homing bound is what
 keeps the bucket honest — `p0` is cheap to *mint* and impossible to leave *homeless*.
 
-### Apply the labels (triaged path)
-
-The canonical `type:*` / `p*` / `status:*` label set is defined by the label
-bootstrap / formats contract ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)) —
-triage *applies* labels from that existing set, and must never silently auto-mint an
-off-spec label via `POST .../labels`.
-
-A triaged issue carries the one `type:*`, one `p*`, and `status:triaged`, and leaves the
-queue (its `status:needs-triage` removed). Apply the whole transition with the `Tracker`
-verb — the classification is the parameter, the label plumbing is the verb's:
-
-```bash
-pipeline-cli tracker apply-triage <N> --type <type> --p <priority>
-```
-
-The verb adds the `type:` / priority / `status:triaged` labels and drops the queue label
-in one envelope (ADR 0190; `packages/pipeline-cli/src/tools/tracker/`). Dropping the queue
-label is idempotent: a `404 "Label does not exist"` when the issue never carried
-`status:needs-triage` (a pre-bootstrap issue predating the label) is tolerated, since the
-goal — issue out of the queue — is met either way. Pass `--status <stage>` to target a
-different lifecycle stage (e.g. `needs-info`); it defaults to `triaged`. Don't hand-roll
-the REST label calls — that inline envelope is exactly what the adoption lint (#3254) flags.
-
-`status:triaged` is an explicit signature only *you* apply — it tells write-code the
-issue was actually reviewed. Never let a type label alone stand in for it; a
-hand-slapped `type:*` with no triaged status must not look pickable.
-
 ### Assign a home — milestone, standing lane, or kill (required)
+
+**Home the issue BEFORE you stamp `status:triaged`** ([Apply the labels](#apply-the-labels-triaged-path)
+comes next, deliberately). The `homing-guard` workflow fires on the `issues` **label** event, so
+stamping first opens a real window in which the issue is triaged-but-un-homed and the guard reds
+on the *happy path* — and a guard that reds on correct triage is one people learn to ignore.
+Assigning the home first closes that window: by the time `status:triaged` lands, the home is
+already there.
 
 **Every issue you mark `status:triaged` leaves with a home.** This is no longer the optional
 "assign a milestone on a clear match" step: under ADR
@@ -688,19 +668,47 @@ it reads as un-triaged. The *signal* isn't retired, it just became greppable: th
 standing-lane labels **are** freeze-by-absence made legible. Untouched: 0072 §1–§3 (what a
 milestone encodes, the two kinds, never create one).
 
+This step is still **out of scope** for: creating milestones, the inherit logic (that is
+`plan-epic`'s job for an epic's children), and pick-order (`write-code` consumes milestone,
+it doesn't assign it).
+
+### Apply the labels (triaged path)
+
+The canonical `type:*` / `p*` / `status:*` label set is defined by the label
+bootstrap / formats contract ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)) —
+triage *applies* labels from that existing set, and must never silently auto-mint an
+off-spec label via `POST .../labels`.
+
+A triaged issue carries the one `type:*`, one `p*`, and `status:triaged`, and leaves the
+queue (its `status:needs-triage` removed). Apply the whole transition with the `Tracker`
+verb — the classification is the parameter, the label plumbing is the verb's:
+
+```bash
+pipeline-cli tracker apply-triage <N> --type <type> --p <priority>
+```
+
+The verb adds the `type:` / priority / `status:triaged` labels and drops the queue label
+in one envelope (ADR 0190; `packages/pipeline-cli/src/tools/tracker/`). Dropping the queue
+label is idempotent: a `404 "Label does not exist"` when the issue never carried
+`status:needs-triage` (a pre-bootstrap issue predating the label) is tolerated, since the
+goal — issue out of the queue — is met either way. Pass `--status <stage>` to target a
+different lifecycle stage (e.g. `needs-info`); it defaults to `triaged`. Don't hand-roll
+the REST label calls — that inline envelope is exactly what the adoption lint (#3254) flags.
+
+`status:triaged` is an explicit signature only *you* apply — it tells write-code the
+issue was actually reviewed. Never let a type label alone stand in for it; a
+hand-slapped `type:*` with no triaged status must not look pickable.
+
 **The guard, not vigilance.** `pipeline-cli homing-guard check` reds on any open
 `status:triaged` issue carrying neither a milestone nor a standing-lane label, and fails
-closed on zero scope (ADR 0092). Run it on the issue you just triaged to confirm the outcome
-landed — the invariant is enforced at this seam, not re-swept by hand later:
+closed on zero scope (ADR 0092). Run it *after* the stamp — the home is already assigned, so
+this confirms the pair landed rather than racing it; the invariant is enforced at this seam,
+not re-swept by hand later:
 
 ```bash
 pipeline-cli homing-guard check --issue <N>   # the issue you just triaged
 pipeline-cli homing-guard check               # the whole open triaged backlog
 ```
-
-This step is still **out of scope** for: creating milestones, the inherit logic (that is
-`plan-epic`'s job for an epic's children), and pick-order (`write-code` consumes milestone,
-it doesn't assign it).
 
 ### Close not-planned (kill, agent issues only)
 

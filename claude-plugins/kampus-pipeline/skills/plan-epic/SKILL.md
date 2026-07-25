@@ -574,10 +574,10 @@ but unlike `type:*`/`p*`/`status:planned` it is **conditional and inherited, not
 as planner**. A child **inherits the parent epic's milestone when the epic has one**, so a
 campaign milestone's burndown is **complete by construction**: if a "Search" epic is in the
 "Search" milestone, every child it spawns belongs to "Search" too, and the milestone can
-actually reach 100%. The milestone is the **one optional intake dimension** — read its
+actually reach 100%. The milestone is the **fourth intake dimension** — read its
 definition and the REST surface from the formats contract's milestone section
-([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), *Milestone — the one
-optional intake dimension*); this is the inherit-logic that section says lives here and cites it.
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), *Milestone — the fourth
+intake dimension*); this is the inherit-logic that section says lives here and cites it.
 
 Read the epic's milestone once, and **only if it has one** PATCH each created child onto it:
 

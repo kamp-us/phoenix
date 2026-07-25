@@ -71,6 +71,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The printf format must stay single-quoted: its backticks are the markdown fence of the
+          # filed issue body, not command substitution — nothing in it may expand.
+          # shellcheck disable=SC2016
           gh issue create --repo "$GITHUB_REPOSITORY" \
             --title "homing-guard: triaged issues left without a home" \
             --label "status:needs-triage" \
