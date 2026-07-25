@@ -19,9 +19,8 @@
  */
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {type CheckFailed, checkCodeownersCp, defaultRoot} from "./gate.ts";
-
-const GATE_FAIL_EXIT_CODE = 1;
+import {onCheckFailed} from "../../gate-fail.ts";
+import {checkCodeownersCp, defaultRoot} from "./gate.ts";
 
 const rootFlag = Flag.string("root").pipe(
 	Flag.optional,
@@ -34,12 +33,6 @@ const resolveRoot = (
 	root: Option.Option<string>,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
 	Option.match(root, {onNone: () => defaultRoot(), onSome: Effect.succeed});
-
-const onCheckFailed = (e: CheckFailed) =>
-	Effect.sync(() => {
-		process.stderr.write(`codeowners-cp: ${e.reason}\n`);
-		process.exit(GATE_FAIL_EXIT_CODE);
-	});
 
 const check = Command.make(
 	"check",

@@ -49,6 +49,20 @@ tool registry, so it never drifts.
 For a fuller per-tool reference — what each tool does and the flags it takes — see
 [TOOLS.md](./TOOLS.md).
 
+## How a guard fails
+
+Every guard's `check` routes its `CheckFailed` through the shared handler in
+[`src/gate-fail.ts`](./src/gate-fail.ts): the human report goes to stderr, the process
+exits 1, and — only when `GITHUB_ACTIONS` is set — GitHub `::error` workflow commands go
+to stdout so the failure renders as an inline PR annotation instead of a log dig. Local
+runs are byte-identical to before.
+
+A guard that knows where its failure lives attaches `annotations` to its `CheckFailed`
+(see `catalog-guard` and `readme-guard`, which point at the offending manifest and line);
+one that doesn't gets a single bare `::error` carrying the report head. Build annotations
+with the constructors in [`src/annotate.ts`](./src/annotate.ts) — `unlocated`, `atFile`,
+`atLine` — never by hand-formatting the command string.
+
 ## Development
 
 The source lives in the phoenix monorepo under

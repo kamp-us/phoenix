@@ -28,7 +28,8 @@ import {readFileSync} from "node:fs";
 import {Console, Effect, FileSystem, Option, Path, type PlatformError} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {type CheckFailed, CREW_DIR, sweepCrew} from "./crew-gate.ts";
+import {onCheckFailed} from "../../gate-fail.ts";
+import {CREW_DIR, sweepCrew} from "./crew-gate.ts";
 import {PrComments, PrCommentsLive, type UpstreamUnavailableError} from "./github.ts";
 import {findCommentLeaks, findLeaks, type Leak} from "./leak-guard.ts";
 import {scanPrComments} from "./scan-pr.ts";
@@ -111,12 +112,6 @@ const scan = Command.make(
 	}),
 ).pipe(Command.withDescription("Scan files for user-local paths leaking into shared doc surfaces"));
 
-// The repeatable pipeline-crew sanitization sweep (#2357). Where `scan` takes explicit
-// changed files and checks only the no-local-paths rule on doc surfaces, `sweep` walks
-// a whole directory and checks EVERY personal-data class the crew's "zero real operator
-// data" contract bans — fail-closed on any hit and on a zero-file scope (ADR 0092),
-// mirroring the readme-guard/fanout-guard directory-check idiom.
-const GATE_FAIL_EXIT_CODE = 1;
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 
 // Walk up from cwd for the first ancestor bearing a repo-root marker, probing each marker
@@ -148,15 +143,6 @@ const dirFlag = Flag.string("dir").pipe(
 	Flag.optional,
 	Flag.withDescription(`the crew directory to sweep, root-relative (default: ${CREW_DIR})`),
 );
-
-// CheckFailed carries the expected gate-fail signal — its report is already built; print
-// it on stderr and exit non-zero without a stack trace. Caught inside the handler (not at
-// the bin's run boundary) so the contract survives the fold into the shared pipeline-cli bin.
-const onCheckFailed = (e: CheckFailed) =>
-	Effect.sync(() => {
-		process.stderr.write(`${e.reason}\n`);
-		process.exit(GATE_FAIL_EXIT_CODE);
-	});
 
 const sweep = Command.make(
 	"sweep",

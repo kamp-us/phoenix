@@ -9,6 +9,7 @@ import {
 	type PackageDirCandidate,
 	parseWorkspacePackageGlobs,
 	renderReport,
+	verdictAnnotations,
 } from "./readme-guard.ts";
 
 const candidate = (
@@ -106,5 +107,32 @@ describe("parseWorkspacePackageGlobs", () => {
 
 	it("returns [] when there is no packages: block", () => {
 		expect(parseWorkspacePackageGlobs("catalog:\n  effect: 1\n")).toEqual([]);
+	});
+});
+
+describe("verdictAnnotations", () => {
+	const candidate = (dir: string, hasReadme: boolean): PackageDirCandidate => ({
+		dir,
+		hasPackageJson: true,
+		hasReadme,
+	});
+
+	it("annotates a pass with nothing", () => {
+		expect(verdictAnnotations(judge([candidate("packages/a", true)]))).toEqual([]);
+	});
+
+	it("annotates zero-scope bare — there is no file to point at", () => {
+		expect(verdictAnnotations(judge([]))[0]?.location).toEqual({_tag: "Unlocated"});
+	});
+
+	it("anchors a missing README on the member's package.json, which exists in the diff", () => {
+		const annotations = verdictAnnotations(
+			judge([candidate("packages/a", false), candidate("packages/b", true)]),
+		);
+		expect(annotations).toHaveLength(1);
+		expect(annotations[0]?.location).toEqual({
+			_tag: "File",
+			file: "packages/a/package.json",
+		});
 	});
 });

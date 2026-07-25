@@ -19,11 +19,13 @@
  */
 import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
+import {Annotation} from "../../annotate.ts";
 import {
 	judge,
 	type PackageDirCandidate,
 	parseWorkspacePackageGlobs,
 	renderReport,
+	verdictAnnotations,
 } from "./readme-guard.ts";
 
 /** A directory/file IO failure: the run couldn't complete. */
@@ -32,9 +34,14 @@ export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
 	cause: Schema.Unknown,
 }) {}
 
-/** Carries the non-zero gate-fail exit (the report is already on stderr). */
+/**
+ * Carries the non-zero gate-fail exit (the report is already on stderr). `annotations`
+ * is optional so the ~18 guards that construct a bare `{reason}` keep compiling; the
+ * shared handler falls back to one unlocated `::error` when it's absent (#3868).
+ */
 export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFailed", {
 	reason: Schema.String,
+	annotations: Schema.optionalKey(Schema.Array(Annotation)),
 }) {}
 
 /** The workspace glob that scopes this guard — the convention is about `packages/*` specifically. */
@@ -109,5 +116,10 @@ export const checkReadmes = (
 			yield* Console.log(renderReport(verdict));
 			return;
 		}
-		return yield* Effect.fail(new CheckFailed({reason: renderReport(verdict)}));
+		return yield* Effect.fail(
+			new CheckFailed({
+				reason: renderReport(verdict),
+				annotations: verdictAnnotations(verdict),
+			}),
+		);
 	});

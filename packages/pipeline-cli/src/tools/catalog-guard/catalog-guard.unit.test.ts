@@ -7,10 +7,12 @@
 import {describe, expect, it} from "@effect/vitest";
 import {
 	type AllowlistEntry,
+	findDepLine,
 	judge,
 	manifestDeps,
 	type PackageManifest,
 	parseWorkspacePackageGlobs,
+	verdictAnnotations,
 } from "./catalog-guard.ts";
 
 const manifest = (path: string, deps: PackageManifest["deps"]): PackageManifest => ({path, deps});
@@ -115,5 +117,55 @@ describe("parseWorkspacePackageGlobs", () => {
 			"packages:\n  - packages/*\n  - apps/*\n  - infra/*\n\ncatalog:\n  react: 19.0.0\n",
 		);
 		expect(globs).toEqual(["packages/*", "apps/*", "infra/*"]);
+	});
+});
+
+describe("findDepLine", () => {
+	const text = [
+		"{",
+		'\t"name": "x",',
+		'\t"dependencies": {',
+		'\t\t"a": "catalog:",',
+		'\t\t"b": "^1.0.0"',
+		"\t}",
+		"}",
+	].join("\n");
+
+	it("finds the 1-based line of a dep inside its field block", () => {
+		expect(findDepLine(text, "dependencies", "b")).toBe(5);
+	});
+
+	it("returns null for a dep that is not in that field block", () => {
+		expect(findDepLine(text, "devDependencies", "b")).toBeNull();
+		expect(findDepLine(text, "dependencies", "name")).toBeNull();
+	});
+});
+
+describe("verdictAnnotations", () => {
+	const violating = [
+		manifest("packages/a/package.json", [{field: "dependencies", name: "foo", value: "^1.0.0"}]),
+	];
+
+	it("annotates a pass with nothing", () => {
+		expect(verdictAnnotations(judge([manifest("package.json", [])]))).toEqual([]);
+	});
+
+	it("annotates zero-scope bare — there is no file to point at", () => {
+		expect(verdictAnnotations(judge([]))[0]?.location).toEqual({_tag: "Unlocated"});
+	});
+
+	it("annotates a violation on the manifest line when the resolver finds one", () => {
+		expect(verdictAnnotations(judge(violating), () => 7)[0]?.location).toEqual({
+			_tag: "Line",
+			file: "packages/a/package.json",
+			line: 7,
+		});
+	});
+
+	it("falls back to a file-level annotation when the line is unknown", () => {
+		expect(verdictAnnotations(judge(violating))[0]?.location).toEqual({
+			_tag: "File",
+			file: "packages/a/package.json",
+		});
 	});
 });

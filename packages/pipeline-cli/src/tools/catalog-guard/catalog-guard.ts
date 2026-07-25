@@ -17,6 +17,7 @@
  * misconfiguration (wrong root, a workspace reshape), NOT a silent pass — the
  * verdict is a failure, never a vacuous green.
  */
+import {type Annotation, atFile, atLine, unlocated} from "../../annotate.ts";
 
 /** One dependency entry from a manifest, reduced to the facts the decision needs. */
 export interface DepEntry {
@@ -140,6 +141,46 @@ export const renderReport = (verdict: CatalogGuardVerdict): string => {
 		`catalog-guard: ${verdict.violations.length} dependenc${verdict.violations.length === 1 ? "y" : "ies"} ` +
 		`pin a hardcoded version instead of catalog: (of ${verdict.scanned.length} manifests scanned):\n${lines.join("\n")}`
 	);
+};
+
+/**
+ * The 1-based line of `"<name>"` inside the `"<field>"` block of a `package.json`'s
+ * text, or `null` when it isn't there. Pure over the raw text because the parsed
+ * manifest has no positions, and a line is what puts a CI annotation on the offending
+ * diff line rather than at the top of the file (#3868).
+ */
+export const findDepLine = (text: string, field: string, name: string): number | null => {
+	const lines = text.split("\n");
+	let inField = false;
+	for (const [i, line] of lines.entries()) {
+		if (!inField) {
+			if (new RegExp(`^\\s*"${field}"\\s*:\\s*\\{`).test(line)) inField = true;
+			continue;
+		}
+		if (/^\s*\}/.test(line)) return null;
+		if (new RegExp(`^\\s*"${name}"\\s*:`).test(line)) return i + 1;
+	}
+	return null;
+};
+
+/**
+ * The CI annotations for a verdict — one per violation, on the manifest line that pins
+ * the version when `lineOf` can find it. A zero-scope failure has no file to point at,
+ * so it annotates bare.
+ */
+export const verdictAnnotations = (
+	verdict: CatalogGuardVerdict,
+	lineOf: (violation: CatalogViolation) => number | null = () => null,
+): ReadonlyArray<Annotation> => {
+	if (verdict.pass) return [];
+	if (verdict.reason === "zero-scope") return [unlocated("error", renderReport(verdict))];
+	return verdict.violations.map((v) => {
+		const message = `${v.field} \`${v.name}\` pins \`${v.value}\` instead of \`catalog:\` — a second version of a dep breaks frozen-lockfile CI (#535).`;
+		const line = lineOf(v);
+		return line === null
+			? atFile("error", v.path, message)
+			: atLine("error", v.path, line, message);
+	});
 };
 
 /**
