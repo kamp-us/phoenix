@@ -35,17 +35,24 @@ Per the repo's mechanical-tooling idiom (`decisions-index` / `epic-ledger` /
 `leak-guard`): a pure, unit-tested core + a thin Effect CLI bin.
 
 - `src/registry.ts` — **the extension seam.** `registeredTools` is the array of
-  `effect/unstable/cli` `Command`s the router exposes. A Phase-2 child folds its
-  tool in by appending one `Command` here — and nothing else. The router and bin
-  consume this array opaquely.
+  **lazy registrations** the router exposes: each row carries a tool's selector name
+  eagerly and its module import as a thunk. A child folds its tool in by appending one
+  row here — and nothing else. The router and bin consume this array opaquely.
+- `src/tool-registration.ts` — the registration type and its loader. `loadRegistration`
+  resolves one row (asserting the registered name matches the module's
+  `Command.make("<name>")` name) and turns a load fault into an attributable
+  `ToolLoadError`; `loadRegistry` resolves a whole registry, keeping the rows that
+  resolve and collecting the ones that don't.
 - `src/router.ts` — the **pure router core.** `dispatch(registry, argv)` resolves
   the first argv token to a registered tool (`Ok({ tool, rest })`), or fails with
   a clear `UnknownToolError` (unknown token) / `NoToolError` (no token). It owns
   no Effect runtime, so the dispatch contract is unit-testable directly (ADR 0040
-  T0/T1) — the mirror of the runtime dispatch `Command.withSubcommands` does.
+  T0/T1). It resolves on `name` alone, so `run.ts` uses it to pick the row to load
+  *before* any module is linked.
 - `src/version.ts` — the `version` tracer tool, a normal registered tool.
-- `src/bin.ts` — the `effect/unstable/cli` bin: `Command.withSubcommands(registeredTools)`,
-  run via `NodeRuntime.runMain`.
+- `src/bin.ts` — the bootstrap; `src/run.ts` builds the
+  `effect/unstable/cli` root from this invocation's subcommands and runs it via
+  `NodeRuntime.runMain`.
 
 ## The extension seam
 
@@ -53,13 +60,39 @@ A later child registers its moved tool **without touching the router core**:
 
 ```ts
 // src/registry.ts
-import {myToolCommand} from "./my-tool.ts";
-export const registeredTools: ReadonlyArray<RegisteredTool> = [versionCommand, myToolCommand];
+export const registeredTools: ReadonlyArray<ToolRegistration> = [
+	tool("version", () => import("./version.ts").then((m) => m.versionCommand)),
+	tool("my-tool", () => import("./tools/my-tool/command.ts").then((m) => m.myToolCommand)),
+];
 ```
 
 That single append is the entire registration step. `router.ts` and `bin.ts`
 never change — the router is closed for modification, the registry is open for
 extension.
+
+Two constraints on the row (both mechanically enforced): the `import()` specifier must be
+a **string literal**, because `rewriteRelativeImportExtensions` rewrites literal
+`.ts` specifiers on build and cannot rewrite a computed one; and the registered name must
+equal the module's `Command.make("<name>")` name, which `loadRegistration` asserts.
+
+## Loading is lazy — one lane's half-written tool doesn't break the others
+
+`registry.ts` used to `import` every tool's `command.ts` statically, which coupled every
+invocation to every registration. Pipeline agents get per-lane git worktrees but execute
+`pipeline-cli` out of one shared checkout, so a tool that was registered before its
+`command.ts` was written took down *every* concurrent lane's gate tooling with an
+`ERR_MODULE_NOT_FOUND` naming a tool the caller never invoked — unattributable at the
+point of use (#4008).
+
+Dispatching a verb now links that verb's module and nothing else, and a row that won't
+resolve fails only the verb that asked for it, with a `ToolLoadError` naming the
+registration. `--help` and `commands compact` do resolve the whole registry — they are
+about every tool — but a broken row is reported and omitted there rather than fatal
+(`commands check`, being a gate, still reds on it: ADR 0092).
+
+An **unlinked dependency** miss is deliberately rethrown untouched rather than wrapped, so
+`bin.ts`'s one-shot `pnpm install` self-heal (#2459) and its install remediation (#1798)
+still classify it.
 
 ## Usage
 
