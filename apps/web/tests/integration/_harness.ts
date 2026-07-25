@@ -42,6 +42,13 @@ import {
 	CloudflarePlaceholder404Error,
 	isCloudflarePlaceholder404,
 } from "./_edge-ready.ts";
+import {
+	convergeAfterStall,
+	isSafeMethod,
+	isStall,
+	RequestStallError,
+	SAFE_STALL_REPLAYS,
+} from "./_request-stall.ts";
 
 /** A fate wire result for a single operation. */
 export type FateResult =
@@ -50,6 +57,27 @@ export type FateResult =
 
 /** A single fate operation (the `version`/`operations` envelope is added for you). */
 export type FateOp = Record<string, unknown> & {id?: string};
+
+/**
+ * How one `fate` call recovers a stalled round-trip — the two modes are mutually exclusive,
+ * and the union makes passing both UNREPRESENTABLE rather than a silently-resolved conflict.
+ * Reads recover on their own (a query/list is always replayable); this is the mutation
+ * caller's declaration:
+ *
+ *   - `retry: true` — the op is IDEMPOTENT, so a blind replay is safe (`definition.vote`
+ *     re-cast is a no-op, `user.setDisplayName` is last-write-wins).
+ *   - `converge` — the op is NOT idempotent, so a replay could double-write. Supply the probe
+ *     that answers "did it land?"; a landed write is adopted, an absent one is re-sent
+ *     (#3942). This is the mode `user.setUsername` and `definition.add` need — the first
+ *     rejects a re-set with `USERNAME_ALREADY_SET` (`Pasaport.setUsername` refuses once
+ *     `user.username` is non-null), the second mints a new id per call.
+ *
+ * Declaring NEITHER means a stall surfaces — correct for an assertion the test wants to see,
+ * and the pre-existing default.
+ */
+export type FateOpts =
+	| {cookie?: string; retry?: boolean; converge?: never}
+	| {cookie?: string; retry?: never; converge: () => Promise<FateResult | undefined>};
 
 export interface Harness {
 	/** The deployed worker URL (published by the global setup). */
@@ -65,11 +93,11 @@ export interface Harness {
 	json(path: string, body: unknown, cookie?: string): Promise<Response>;
 	/**
 	 * POST one fate operation; return its single result. Reads (`kind: "query"`
-	 * / `"list"`) auto-retry on a transient stall/error; mutations retry only when
-	 * `retry: true` is passed (the caller asserting the op is idempotent, e.g.
-	 * `definition.vote`).
+	 * / `"list"`) auto-retry on a transient stall/error; a mutation declares its
+	 * stall recovery, and the two modes are mutually exclusive by construction
+	 * ({@link FateOpts}).
 	 */
-	fate(op: FateOp, opts?: {cookie?: string; retry?: boolean}): Promise<FateResult>;
+	fate(op: FateOp, opts?: FateOpts): Promise<FateResult>;
 	/** POST several fate operations; return all results in order. */
 	fateBatch(ops: FateOp[], opts?: {cookie?: string}): Promise<FateResult[]>;
 	/** Sign up a user through better-auth; return `{userId, cookie}`. */
@@ -185,23 +213,21 @@ export interface Harness {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+// A `definition.add` the worker REJECTED while seeding — carried as a distinct type so
+// `addDefinition`'s converge loop can widen its recovery to it without also swallowing a
+// transport failure (`convergeAfterStall` defaults to stalls only).
+class SeedAddRejected extends Error {}
+
 // The Cloudflare edge-placeholder-404 detector + its typed carrier now live in the shared
 // readiness primitive (`_edge-ready.ts`, ADR 0127) — `req` below imports them so its inline
 // placeholder detection and `awaitEdgeReady`'s scoped tolerance share ONE definition.
 
-// A per-request timeout fires an `AbortSignal.timeout` → the fetch rejects with a
-// `TimeoutError`/`AbortError`. We treat that as "the request STALLED" (distinct
-// from a connection error, which means it never reached the worker). A stall may
-// have partially applied a write, so only *idempotent* callers retry on it.
-const isAbort = (e: unknown): boolean =>
-	e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
-
-// One HTTP request that stalls past this is aborted and (for idempotent ops)
-// retried against a fresh connection. The worker talks to real remote Cloudflare
-// D1; a request can occasionally hang outright — without this bound the whole test
-// waits out the Vitest timeout and dies with "All fibers interrupted". 30s is high
-// enough not to chop a legitimately slow round-trip to remote D1, while still
-// catching a true hang and leaving room to retry inside the 120s test budget.
+// One HTTP request that stalls past this is aborted and retried against a fresh connection
+// where that is sound (see `_request-stall.ts` for the stall classification + recovery, and
+// for the measurement showing 30s is ~11x a healthy round-trip — a bound to REPLAY through,
+// never to widen). The worker talks to real remote Cloudflare D1; a request can occasionally
+// hang outright — without this bound the whole test waits out the Vitest timeout and dies
+// with "All fibers interrupted".
 const REQUEST_TIMEOUT_MS = 30_000;
 
 // A `/fate/live` response is READY only when the edge served the worker's real held
@@ -386,6 +412,7 @@ export function harness(
 	const req: Harness["req"] = async (path, init, opts) => {
 		const timeoutMs = opts?.timeoutMs ?? 0;
 		let lastErr: unknown;
+		let stalls = 0;
 		for (let i = 0; i < 20; i++) {
 			try {
 				const signal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : init?.signal;
@@ -408,12 +435,24 @@ export function harness(
 				}
 				return res;
 			} catch (err) {
-				// A stall (abort/timeout) may have partially applied a write, so it is
-				// NOT safe to silently retry here — surface it and let the idempotency-
-				// aware caller (`fate`, `signUp`) decide. A connection error never
-				// reached the worker, so retry it (covers worker-not-up-yet at startup).
-				if (isAbort(err)) throw err;
-				lastErr = err;
+				// A connection error never reached the worker, so retry it (covers
+				// worker-not-up-yet at startup).
+				if (!isStall(err)) {
+					lastErr = err;
+					await sleep(250);
+					continue;
+				}
+				// A stall is re-thrown ATTRIBUTED, so CI names the round-trip instead of
+				// printing a bare DOMException (#3942).
+				stalls++;
+				const stall = new RequestStallError(init?.method ?? "GET", path, timeoutMs, stalls);
+				// A stalled SAFE request applied no state change (RFC 9110 §9.2.1/§9.2.2), so a
+				// bounded replay on a fresh connection is sound with no caller assertion — the
+				// recovery an idempotent read was always entitled to and never got. An unsafe
+				// method may have committed before the response was lost, so it still surfaces
+				// for the idempotency-aware caller (`fate`, `signUp`) to decide.
+				if (!isSafeMethod(init?.method) || stalls > SAFE_STALL_REPLAYS) throw stall;
+				lastErr = stall;
 				await sleep(250);
 			}
 		}
@@ -446,13 +485,18 @@ export function harness(
 	};
 
 	// Reads are always safe to replay; a mutation only when the caller flags it
-	// idempotent (`definition.vote` re-cast is a no-op — `Vote.ts`). `definition.add`
-	// is NOT idempotent (new id per call), so it is never auto-retried here — its
-	// caller (`addDefinition`) adopts the landed row by body instead.
+	// idempotent (`definition.vote` re-cast is a no-op — `Vote.ts`).
 	const idempotentOp = (op: FateOp, opts?: {retry?: boolean}): boolean =>
 		op.kind === "query" || op.kind === "list" || opts?.retry === true;
 
 	const fate: Harness["fate"] = async (op, opts) => {
+		// A non-idempotent mutation that supplied a landed-probe converges instead of
+		// hard-failing on a stall (see `FateOpts`); the union rules out combining this
+		// with the blind-replay mode below.
+		if (opts?.converge) {
+			const probe = opts.converge;
+			return convergeAfterStall(() => fateBatch([op], opts).then(([r]) => r!), probe);
+		}
 		const attempts = idempotentOp(op, opts) ? 3 : 1;
 		let lastResult: FateResult | undefined;
 		let lastErr: unknown;
@@ -467,7 +511,7 @@ export function harness(
 			} catch (err) {
 				lastErr = err;
 				// Only a stall is retryable; a real error (or a non-retryable op) surfaces.
-				if (attempts === 1 || !isAbort(err)) throw err;
+				if (attempts === 1 || !isStall(err)) throw err;
 			}
 			if (i < attempts - 1) await sleep(300 * (i + 1));
 		}
@@ -495,7 +539,7 @@ export function harness(
 				await sleep(300 * (i + 1));
 			} catch (err) {
 				lastErr = err;
-				if (!isAbort(err)) throw err;
+				if (!isStall(err)) throw err;
 				await sleep(300 * (i + 1));
 			}
 		}
@@ -553,14 +597,24 @@ export function harness(
 		cookie: string;
 	}): Promise<{userId: string; cookie: string}> => {
 		for (let i = 0; i < SESSION_READY_ATTEMPTS; i++) {
-			const res = await req(
-				"/api/auth/get-session",
-				{headers: {cookie: session.cookie, origin: "http://localhost:3000"}},
-				{timeoutMs: REQUEST_TIMEOUT_MS},
-			);
-			if (res.ok) {
-				const data = (await res.json().catch(() => null)) as {user?: {id: string}} | null;
-				if (data?.user?.id) return session;
+			try {
+				const res = await req(
+					"/api/auth/get-session",
+					{headers: {cookie: session.cookie, origin: "http://localhost:3000"}},
+					{timeoutMs: REQUEST_TIMEOUT_MS},
+				);
+				if (res.ok) {
+					const data = (await res.json().catch(() => null)) as {user?: {id: string}} | null;
+					if (data?.user?.id) return session;
+				}
+			} catch (err) {
+				// The fail-OPEN above is the whole contract of this probe, and a stall used to
+				// break it: `req` re-throws an aborted round-trip, so a single stalled
+				// get-session propagated out of `signUp` and RED a green stage — the failure
+				// mode this probe exists to prevent, from the probe itself (#3942). It runs on
+				// every signUp, so it is the suite's most-exercised request. Swallow only a
+				// stall (`req` already replays it once); any real error still surfaces.
+				if (!isStall(err)) throw err;
 			}
 			await sleep(300 * (i + 1));
 		}
@@ -690,18 +744,18 @@ export function harness(
 		return hit ? {id: hit.node.id, authorId: hit.node.authorId} : undefined;
 	};
 
-	// `definition.add` is not idempotent, so we can't blind-retry it. On a stall
-	// (the add may or may not have committed) we look the body up: if it landed,
-	// adopt it; otherwise add again. A `!ok` result is also treated this way.
-	const addDefinition = async (
+	// `definition.add` is not idempotent, so we can't blind-retry it — this is the
+	// converge-then-adopt shape (`convergeAfterStall`), with SEEDING's wider recovery: a
+	// domain-level rejection is probed-and-retried here too, not just a stall, because a
+	// half-applied seed is worth reconciling before the fixture is declared broken.
+	const addDefinition = (
 		cookie: string,
 		slug: string,
 		title: string,
 		body: string,
-	): Promise<{id: string; authorId: string}> => {
-		let lastErr: unknown;
-		for (let i = 0; i < 3; i++) {
-			try {
+	): Promise<{id: string; authorId: string}> =>
+		convergeAfterStall<{id: string; authorId: string}>(
+			async () => {
 				const added = await fate(
 					{
 						kind: "mutation",
@@ -711,18 +765,12 @@ export function harness(
 					},
 					{cookie},
 				);
-				if (added.ok) return added.data as {id: string; authorId: string};
-				lastErr = new Error(`definition.add (${slug}): ${added.error.code}`);
-			} catch (err) {
-				if (!isAbort(err)) throw err;
-				lastErr = err;
-			}
-			const adopted = await findDefByBody(cookie, slug, body);
-			if (adopted) return adopted;
-			await sleep(400 * (i + 1));
-		}
-		throw new Error(`seedTerm add failed (${slug}) after retries: ${String(lastErr)}`);
-	};
+				if (!added.ok) throw new SeedAddRejected(`definition.add (${slug}): ${added.error.code}`);
+				return added.data as {id: string; authorId: string};
+			},
+			() => findDefByBody(cookie, slug, body),
+			{recoverable: (e) => isStall(e) || e instanceof SeedAddRejected},
+		);
 
 	const seedTerm: Harness["seedTerm"] = async (input) => {
 		const created = !seededSlugs.has(input.slug);
