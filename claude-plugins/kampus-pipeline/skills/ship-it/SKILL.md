@@ -1145,7 +1145,8 @@ CI_JSON="$(read_head_ci)" || {
   echo "refused — head CI unreadable (typed unknown) — not enqueued"; exit 0
 }
 
-CI_STATE=$(jq -r '.conclusion'  <<<"$CI_JSON")   # green | red | pending
+# The aggregate `.conclusion` is deliberately NOT bound here: it is a colour in which red wins over
+# pending, so classifying off it lets an informational red mask an unfinished check (see below).
 CONTEXTS=$(jq -r '.contexts'    <<<"$CI_JSON")   # how many contexts the rollup covered
 RUNNING=$(jq -r  '.running | join(", ")' <<<"$CI_JSON")   # genuinely in flight — these settle
 WEDGED=$(jq -r   '.wedged  | join(", ")' <<<"$CI_JSON")   # queued, never started — these do NOT
@@ -1220,7 +1221,8 @@ superseded red can't red a green head, #3762):
    straight to the empty-set disambiguation (branch 3 below). Waiting is pointless when nothing
    has reported: with zero contexts there is no check to settle, so a settle poll would burn the
    full budget and refuse with the wrong reason instead of surfacing the dropped trigger.
-2. **Else, `$CI_STATE` is pending** (no gating red, some unfinished) → **enter the bounded CI-settle
+2. **Else, something is still unfinished — the pending *sets*, never the rollup colour**
+   (`[ -n "$RUNNING$WEDGED" ]`) → **enter the bounded CI-settle
    poll** ([§below](#the-bounded-ci-settle-poll--never-a-silent-park-1928)). Do **not** report
    `checks pending` and park: that stop-path delegated resumption to a caller that may never fire,
    and because a decline is a *successful* outcome it left the PR green-but-unenqueued with **no**
@@ -1241,6 +1243,20 @@ superseded red can't red a green head, #3762):
    (web)) — not gating`, or `informational check red (cleanup (web, …)) — not gating`) and
    continue. Step 3.5 remains the SHA-bound backstop that the gating suite actually passed
    for this commit.
+
+**Branch 2 tests the pending sets, never the rollup's `.conclusion` — an informational red would
+otherwise mask an unfinished gating check.** `.conclusion` is an *aggregate colour*, in which **red
+wins over pending**, and `.failing` still carries the informational checks that the `$GATING_RED`
+carve-out strips only afterwards. So a red `deploy (web)` / `cleanup (web, …)` next to an unfinished
+gating check makes the head read `red`: branch 1 does not fire (no gating red), a colour-based
+branch 2 would not fire either, and the head falls through to branch 4 — **enqueued with CI
+unfinished**.
+The sharp case is this step's own motivating state: a wedged `fanout-guard` plus a red `cleanup
+(web, …)` would enqueue silently instead of producing the stranded-in-queue refusal — and Step 3z's
+close→reopen nudge is documented below as a cause of exactly those `cleanup` reds, so the shipper
+can manufacture the masking condition itself. `ci_settle_wait` already reads the sets (`.running` /
+`.wedged`) and never the colour; the entry test must answer "is anything unfinished?" the same way
+the poll does, or the two diverge and the gate fails open.
 
 The gating set is, by construction, the suite the run-evidence bundle attests SHA-bound in
 Step 3.5 (lint / format / typecheck, unit tests, validate skill frontmatter, integration

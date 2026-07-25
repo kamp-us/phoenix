@@ -325,3 +325,75 @@ describe("rollupChecks — a check suite with zero attached runs is not pending"
 		assert.strictEqual(rollupChecks({checkRuns, combinedStatus: noStatuses}).conclusion, "green");
 	});
 });
+
+/**
+ * A test-local mirror of ship-it Step 3's classification order, so the branch the shipper takes on
+ * a given rollup is executable rather than only prose. Keep it in step with the skill's branch list
+ * (`claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md`, Step 3).
+ */
+type Step3Branch = "heal-ci" | "empty-set" | "settle-poll" | "proceed";
+
+const isInformational = (name: string): boolean =>
+	name === "deploy (web)" || name.startsWith("cleanup (web,");
+
+const step3Branch = (rollup: ReturnType<typeof rollupChecks>): Step3Branch => {
+	if (rollup.failing.some((c) => !isInformational(c.name))) return "heal-ci"; // 1: gating red
+	if (rollup.latest.length === 0) return "empty-set"; // 1b: zero contexts
+	// 2: the pending SETS. Reading `rollup.conclusion` here instead is the #3999 fail-open — red
+	// wins over pending in the colour, so an informational red hides an unfinished gating check.
+	if (rollup.running.length > 0 || rollup.wedged.length > 0) return "settle-poll";
+	return "proceed"; // 4: every gating check is green
+};
+
+describe("ship-it Step 3 branch 2 — an informational red never masks an unfinished check", () => {
+	const informationalRedPlus = (unfinished: CheckRun, informationalRed: string) =>
+		rollupChecks({
+			checkRuns: [
+				run({name: informationalRed, conclusion: "failure"}),
+				run({name: "lint"}),
+				unfinished,
+			],
+			combinedStatus: noStatuses,
+		});
+
+	it("informational red + running: the colour is red, yet the head must still settle-poll", () => {
+		const rollup = informationalRedPlus(
+			run({name: "e2e", conclusion: null, completedAt: null, status: "in_progress"}),
+			"deploy (web)",
+		);
+		assert.strictEqual(rollup.conclusion, "red"); // the trap: red wins over pending in the colour
+		assert.deepStrictEqual(
+			rollup.running.map((c) => c.name),
+			["e2e"],
+		);
+		assert.strictEqual(step3Branch(rollup), "settle-poll");
+	});
+
+	it("informational red + wedged: the #3999 state refuses, it does not enqueue", () => {
+		const rollup = informationalRedPlus(
+			unconcluded({name: "fanout-guard", status: "queued"}),
+			"cleanup (web, pr-1)",
+		);
+		assert.strictEqual(rollup.conclusion, "red");
+		assert.deepStrictEqual(
+			rollup.wedged.map((c) => c.name),
+			["fanout-guard"],
+		);
+		assert.strictEqual(step3Branch(rollup), "settle-poll");
+	});
+
+	it("the branch mirror is not vacuous: a gating red heals, an all-green head proceeds", () => {
+		const gatingRed = rollupChecks({
+			checkRuns: [run({name: "ci-required", conclusion: "failure"})],
+			combinedStatus: noStatuses,
+		});
+		assert.strictEqual(step3Branch(gatingRed), "heal-ci");
+
+		const informationalRedOnly = rollupChecks({
+			checkRuns: [run({name: "deploy (web)", conclusion: "failure"}), run({name: "lint"})],
+			combinedStatus: noStatuses,
+		});
+		assert.strictEqual(informationalRedOnly.conclusion, "red");
+		assert.strictEqual(step3Branch(informationalRedOnly), "proceed");
+	});
+});
