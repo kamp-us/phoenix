@@ -1609,6 +1609,35 @@ Do **not** touch the issue's labels, assignee, or state on a fail. The pipeline'
 invariant is that a failed gate is a *no-op on the work state* plus a comment — the
 issue is still claimed, still open, still in-progress; only the verdict changed.
 
+<a id="prescribing-a-linkage-remedy"></a>
+### Prescribing a linkage remedy — `Part of #N` is the only non-closing form you may name
+
+Some findings land on the PR body's issue reference itself: the body carries `Fixes #N` but `#N`
+must **not** auto-close on merge — the diff delivers only part of the issue, or `#N` carries an
+explicit do-not-auto-close instruction. When you prescribe that remedy, name **`Part of #N`**.
+It is the one non-closing linkage form the pipeline accepts: GitHub populates no
+`closingIssuesReferences` from it, and `ship-it` Step 1 recognizes it as a valid
+linked-but-non-closing reference and merges without closing `#N`. The marker is defined once in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §9 (its `Part of #N`
+subsection) — cite it, don't re-derive it.
+
+**Never prescribe `Refs #N`, `Re: #N`, `See #N`, or a bare `#N`.** They *look* like reasonable
+non-closing linkage — the convention is common in other repos — but they arm **no** seam here: a
+code/skills-class PR carrying neither a closing keyword nor `Part of #N` hits `ship-it` Step 1's
+`no linked issue` refusal, which disarms the merge intent. The author complies with the verdict
+and the lane becomes unmergeable, silently, because nothing surfaces the refusal until merge time
+(#647, where PR #573 shipped `Refs #569` and jammed; #4047, where a `review-code` verdict
+prescribed `Refs #3943` on PR #3988 and the gate's own advice bricked the lane it was gating).
+
+Two operational corollaries:
+
+- **The remedy is a swap of the reference, not an added line.** A body carrying both `Fixes #N`
+  and `Part of #N` still auto-closes `#N` on the closing keyword, so say "replace `Fixes #N` with
+  `Part of #N`" — never "add a `Part of #N`".
+- **The fix always lands on the advice, never on the gate.** `ship-it` Step 1's linkage grammar
+  is correct as written; a verdict that reached for an unsupported token is the defect. Never
+  prescribe loosening Step 1 to accept the form you wanted.
+
 ---
 
 ## Step 4c — Confirm the verdict landed (verdict-posting is itself a gate — ADR 0092 / §ZS)

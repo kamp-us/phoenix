@@ -169,6 +169,13 @@ seam is missing) — note it and stop; there's nothing to gate against without t
 deliberately issue-less doc PR — ADR 0075 — is a full-`review-doc` case, not a trivial-gate one;
 route it to the full path.)
 
+When your verdict prescribes a **linkage** change — restoring the missing seam, or making a PR stop
+auto-closing its target — the only two forms you may name are `Fixes #N` (closes on merge) and
+`Part of #N` (links without closing). Never prescribe `Refs #N` / `Re: #N` / `See #N` / a bare
+`#N` — they arm no seam, jam `ship-it` Step 1, and brick the lane the verdict was gating (#4047).
+Rule and rationale: [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §9
+(`Part of #N`).
+
 ---
 
 ## Step 2 — The scoped checklist (the reduced fan-out)
