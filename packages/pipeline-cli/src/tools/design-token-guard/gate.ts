@@ -20,7 +20,7 @@
  * rather than welding to `node:fs` — see `.patterns/effect-platform-access.md`. A fs
  * fault folds `PlatformError` → the `IoError` this gate already carries.
  */
-import {Console, Effect, FileSystem, Path} from "effect";
+import {Console, Effect, FileSystem, Option, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {
 	type CssFileFacts,
@@ -58,6 +58,16 @@ const toRel = (path: Path.Path, root: string, abs: string): string =>
  * tree through the `fs`/`path` seam. Iterative (an explicit stack) rather than
  * recursive; discovery order is irrelevant — the core sorts every reported list and
  * counts the rest, so the verdict is order-independent.
+ *
+ * Symlink semantics are load-bearing and deliberately match the pre-migration
+ * `readdirSync(…, {withFileTypes: true})` walk, whose `Dirent.isDirectory()` was
+ * **lstat**-based: a symlinked directory was never a directory and was never recursed
+ * into. v4's `FileSystem.stat` is `fs.stat` (it FOLLOWS symlinks) and v4 exposes no
+ * `lstat`, so the two arms below reconstruct the old semantics explicitly. Widening the
+ * walk through a symlinked dir is fail-OPEN, not merely noisier: `judge` builds
+ * `declaredUniverse` corpus-wide, so declarations behind a link can SILENCE a real
+ * `undefinedRefs` red on a fail-closed CI gate (ADR 0092). Not following links also
+ * keeps a symlink cycle unreachable — there is no visited-set or depth cap here.
  */
 const walkCss = (fs: FileSystem.FileSystem, path: Path.Path, base: string) =>
 	Effect.gen(function* () {
@@ -68,10 +78,18 @@ const walkCss = (fs: FileSystem.FileSystem, path: Path.Path, base: string) =>
 			if (dir === undefined) break;
 			for (const name of yield* fs.readDirectory(dir)) {
 				const abs = path.join(dir, name);
-				if ((yield* fs.stat(abs)).type === "Directory") {
+				// A failing stat is a broken symlink (or an entry racing an unlink) — skip it, as
+				// the dirent walk silently did; surfacing it as `IoError` would let one dangling
+				// link anywhere under the root red the whole gate.
+				const stat = yield* Effect.option(fs.stat(abs));
+				if (Option.isNone(stat)) continue;
+				if (stat.value.type === "Directory") {
 					if (name === "node_modules" || name === "dist") continue;
+					// `readLink` succeeds only on a symlink, so success here means "symlinked dir".
+					if (yield* Effect.isSuccess(fs.readLink(abs))) continue;
 					stack.push(abs);
 				} else if (name.endsWith(".css")) {
+					// A symlinked .css FILE is still in scope (the dirent walk pushed it too).
 					found.push(abs);
 				}
 			}
