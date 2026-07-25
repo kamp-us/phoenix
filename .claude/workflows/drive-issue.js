@@ -232,15 +232,14 @@ async function drive() {
 			`\${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}. Procedure: ` +
 			`(1) read your own claim token TOKEN="$CLAUDE_CODE_SESSION_ID" — if it is empty, ABORT (fail-closed, ADR 0115 §"Trust + fail-closed") ` +
 			`and return { won: false, token: "", reason: "no CLAUDE_CODE_SESSION_ID — cannot post an agent-distinguishable claim" }; ` +
-			`(2) Rule-0 defer: read the issue's assignees and its existing claim comments — if an authorized claim ` +
-			`(\`claim: <session> · <ts>\` from an account with write+ on the repo, ADR 0055 trust root) from a DIFFERENT session already owns it, ` +
-			`back off WITHOUT posting and return { won: false, token: "", reason: "already claimed by another agent" }; ` +
-			`(3) self-assign (the coarse availability gate) then post the claim comment \`claim: <TOKEN> · <ISO-8601-UTC>\` via ` +
-			`\`gh api repos/$REPO/issues/${issue}/comments\`; (4) detect-and-tiebreak: the winner is the EARLIEST authorized claim ` +
-			`(min created_at, then min comment id) — empty authorized set ⇒ no winner (fail-closed); recognize ownership by comparing that ` +
-			`winning claim's embedded session id to your TOKEN; (5) if the winner is NOT you, RETRACT your own claim comment, self-unassign, ` +
-			`and return { won: false, token: "", reason: "lost the claim tiebreak to an earlier authorized claim" }. ` +
-			`On a confirmed win return { won: true, token: "<TOKEN>", reason: "" }.`,
+			`(2) self-assign (the coarse availability gate, §7 layer one) via ` +
+			`\`gh api -X POST repos/$REPO/issues/${issue}/assignees\`; ` +
+			`(3) claim through the SHARED VERB — run \`pipeline-cli tracker claim ${issue}\`, which owns the whole write: ` +
+			`Rule-0 defer to a pre-existing authorized owner without posting, the comment POST with the ADR-0191 PRESENCE STAMP ` +
+			`(hand-rolling a \`claim:\` body skips the stamp and leaves the lane's claim unprobeable forever — #3987), the ` +
+			`checkpoint-GET earliest-authorized-claim tiebreak, and retract-our-own-claim-on-loss. Exit 0 = the claim is ours; ` +
+			`(4) on a NON-ZERO exit, self-unassign and return { won: false, token: "", reason: "<the verb's stderr back-off reason>" }. ` +
+			`Do NOT hand-roll the claim POST or re-derive the tiebreak jq. On a confirmed win (exit 0) return { won: true, token: "<TOKEN>", reason: "" }.`,
 		{
 			schema: {
 				type: "object",

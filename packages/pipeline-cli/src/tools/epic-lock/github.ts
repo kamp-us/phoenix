@@ -41,7 +41,9 @@ import {
 	resolveRepo,
 	runGh,
 } from "../tracker/gh-io.ts";
+import type {ClaimPresence} from "./claim-presence.ts";
 import {type ClaimComment, ownClaimCommentIds, resolveWinner} from "./claim-resolution.ts";
+import {stampedClaimBody} from "./claim-writer.ts";
 
 // Re-export the shared IO seam's typed failures so callers/tests keep importing them from this
 // module — the single-source classes now live in `../tracker/gh-io.ts` (#3262 AC 5).
@@ -143,6 +145,7 @@ const acquire = Effect.fn("Github.acquire")(function* (
 	repo: string,
 	epic: number,
 	sessionId: string,
+	presence?: ClaimPresence | null,
 ) {
 	if (yield* labelHeld(repo, epic)) {
 		return {_tag: "held-by-other"} satisfies AcquireResult;
@@ -157,7 +160,12 @@ const acquire = Effect.fn("Github.acquire")(function* (
 	if (labelResult !== "ok") return labelResult;
 
 	const now = new Date().toISOString();
-	const claimResult = yield* json(postCommentArgs(repo, epic, `claim: ${sessionId} · ${now}`)).pipe(
+	// Presence-stamped through the single producer, like every other claim writer (#3987): an
+	// unstamped marker would leave this lock's claimant unprobeable, so an abandoned planning
+	// lock could never be superseded on proven death.
+	const claimResult = yield* json(
+		postCommentArgs(repo, epic, stampedClaimBody(sessionId, now, presence)),
+	).pipe(
 		Effect.map((v): number | AcquireResult =>
 			typeof v === "number"
 				? v
@@ -227,6 +235,8 @@ export class Github extends Context.Service<
 		readonly acquire: (
 			epic: number,
 			sessionId: string,
+			/** The marker's presence stamp; omitted, this run's session presence is read (#3987). */
+			presence?: ClaimPresence | null,
 		) => Effect.Effect<
 			AcquireResult,
 			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
@@ -257,8 +267,8 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 			) => effect.pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
 			const repo = yield* Effect.cached(withSpawner(resolveRepo()));
 			return {
-				acquire: (epic: number, sessionId: string) =>
-					repo.pipe(Effect.flatMap((r) => withSpawner(acquire(r, epic, sessionId)))),
+				acquire: (epic: number, sessionId: string, presence?: ClaimPresence | null) =>
+					repo.pipe(Effect.flatMap((r) => withSpawner(acquire(r, epic, sessionId, presence)))),
 				release: (epic: number, sessionId: string) =>
 					repo.pipe(Effect.flatMap((r) => withSpawner(release(r, epic, sessionId)))),
 			};

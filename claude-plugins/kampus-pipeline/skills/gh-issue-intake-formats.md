@@ -2623,14 +2623,23 @@ claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC> · presence <machine-fingerpri
   is not unique to one machine, and no machine identity belongs in a public timeline. It exists so
   a later reader can *probe* this claimant's liveness instead of guessing — see
   [Dead-claimant supersession](#dead-claimant-supersession-proven-death-only-adr-0191). It is
-  written by `pipeline-cli tracker claim` and is **optional**: an unresolvable session — or an
-  unresolvable machine identity — stamps nothing, and an unstamped marker reads as indeterminate
-  (⇒ still a valid owner), so legacy markers keep their exact old meaning.
+  **optional**: an unresolvable session — or an unresolvable machine identity — stamps nothing,
+  and an unstamped marker reads as indeterminate (⇒ still a valid owner), so legacy markers keep
+  their exact old meaning. Optional-per-marker is **not** optional-per-writer, though: a writer
+  that never stamps makes every claim it posts permanently indeterminate, which silently switches
+  supersession off for that whole lane while the mechanism looks fixed (#3987). So the stamp is
+  emitted by **one producer** and every writer routes through it — the write surface below.
 - **Token source:** the claiming process's `CLAUDE_CODE_SESSION_ID` environment variable
   (the orchestrator's when it claims pre-spawn; the coder's when `write-code` is invoked
   directly — see §The pre-spawn claim protocol).
-- **Write surface:** an issue comment, posted via `gh api repos/$REPO/issues/{N}/comments`
-  (REST, never GraphQL): `gh api repos/$REPO/issues/<N>/comments -f "body=claim: $CLAUDE_CODE_SESSION_ID · $(date -u +%Y-%m-%dT%H:%M:%SZ)"`.
+- **Write surface — the shared verb, never a hand-rolled `gh api`.** Post the claim with
+  `pipeline-cli tracker claim <N>` (`--session <token>` to claim under a threaded/delegated
+  token). The verb owns the whole write: Rule-0 defer to a pre-existing authorized owner, the
+  comment POST with the presence stamp composed by the single producer, the checkpoint-GET
+  tiebreak, and retract-our-own-claim-on-loss. **Exit 0 = the claim is ours, non-zero = backed
+  off, do not mutate.** Never compose a `claim:` body by hand — a hand-rolled marker skips the
+  stamp (see the bullet above), and `pipeline-cli adoption-lint check` reds a corpus file that
+  re-derives this write instead of citing the verb.
 - **Read surface — the canonical `CLAIM_RE`.** A claim comment is matched by this **one**
   anchored, case-insensitive, emphasis-tolerant regex; every consumer cites it and **none
   re-hard-codes the grammar** (it pairs with §5/§6's marker-matcher discipline):
@@ -2732,8 +2741,9 @@ so closing it means claiming before any branch, build, or spawn:
 
 - **Orchestrated path (the common case).** `.claude/workflows/drive-issue.js` acquires the
   claim in a pre-step **before** the `agent(coder, …)` dispatch (delegated to a thin
-  claim-only agent that runs this §7 primitive verbatim): self-assign, post the claim
-  comment, run the tiebreak, and **only on a win spawn the coder**, threading the winning
+  claim-only agent that runs this §7 primitive verbatim): self-assign, then
+  `pipeline-cli tracker claim <N>` (the write surface above — defer, post the stamped marker,
+  tiebreak, retract on loss), and **only on a win spawn the coder**, threading the winning
   claim **token** into the coder's prompt. On a lost claim it aborts the dispatch — no coder
   spawns.
 - **Delegated ownership.** The orchestrator and the coder are distinct sessions (the spawned
@@ -2776,6 +2786,15 @@ against a *resolved* local machine fingerprint, and a pid the probe proves gone.
 is **indeterminate and counts as a live claim**: an unstamped/legacy marker, a claim stamped on
 another machine, a machine identity this reader cannot resolve, a pid that still resolves, and a
 reused pid all leave the claim standing, so the reader refuses. Doubt refuses; it never evicts.
+
+**Liveness is same-host by construction — the honest limit.** The probe is a local pid probe, so
+a claim stamped on another machine is unprobeable and stays indeterminate ⇒ it stands and the
+reader refuses. That is the correct fail-closed direction, but it means a multi-host crew gets no
+supersession at all: every claim it reads was stamped elsewhere. Closing *that* needs a
+host-independent liveness source — the crew tracker's own presence keyspace (ADR 0191 proper,
+#3938 / epic #3766), whose cross-keyspace reconciliation is where it belongs. Explicitly **out of
+scope** for this GitHub-claim keyspace: do not "fix" the multi-host case by treating an
+unprobeable claim as dead, which trades a stuck lane for live-claim eviction.
 
 Both the resolution and the probe live in the shared verb — `pipeline-cli claim is-mine`
 (default-deny) and `pipeline-cli tracker claim` (which also stops deferring to a dead claimant,

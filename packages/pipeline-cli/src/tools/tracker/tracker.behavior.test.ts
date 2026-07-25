@@ -1,6 +1,8 @@
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
 import {Effect, Layer, Sink, Stream} from "effect";
 import {ChildProcessSpawner} from "effect/unstable/process";
+import {parseClaimPresence} from "../epic-lock/claim-presence.ts";
+import {CLAIM_RE} from "../epic-lock/claim-resolution.ts";
 import {
 	GhCommandError,
 	GithubTrackerLive,
@@ -49,6 +51,9 @@ const methodOf = (args: ReadonlyArray<string>): string => {
 const mockSpawner = (
 	responses: Record<string, Response>,
 	calls?: Array<string>,
+	// Every `-f body=…` the verb sent, in order — what proves WHAT a writer posted, not just that
+	// it posted (the #3987 regression: an unstamped claim marker is indistinguishable by key alone).
+	bodies?: Array<string>,
 ): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> => {
 	const seen = new Map<string, number>();
 	return Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
@@ -64,6 +69,9 @@ const mockSpawner = (
 				const path = rawPath.replace(/\?.*$/, "");
 				const key = `${methodOf(args)} ${path}`;
 				calls?.push(key);
+				for (const arg of args) {
+					if (arg.startsWith("body=")) bodies?.push(arg.slice("body=".length));
+				}
 				const nth = seen.get(key) ?? 0;
 				seen.set(key, nth + 1);
 				const fixture = responses[key];
@@ -97,8 +105,11 @@ const provide = <A, E>(
 	effect: Effect.Effect<A, E, Tracker>,
 	responses: Record<string, Response>,
 	calls?: Array<string>,
+	bodies?: Array<string>,
 ): Effect.Effect<A, E | RepoResolutionError> =>
-	effect.pipe(Effect.provide(GithubTrackerLive.pipe(Layer.provide(mockSpawner(responses, calls)))));
+	effect.pipe(
+		Effect.provide(GithubTrackerLive.pipe(Layer.provide(mockSpawner(responses, calls, bodies)))),
+	);
 
 const TARGET = 900;
 const P = `repos/kamp-us/phoenix`;
@@ -277,6 +288,52 @@ describe("Tracker.claim — the ADR-0115 claim over a mock gh spawner", () => {
 				},
 			}),
 		),
+	);
+});
+
+// #3987: the claim WRITE is what makes liveness evaluable later. Assert the posted BODY, not just
+// that a POST happened — an unstamped marker is a well-formed claim that no reader can ever probe.
+describe("Tracker.claim — the posted marker carries the presence stamp (#3987)", () => {
+	// pre-check GET sees no claim (so we actually POST), then the checkpoint GET sees ours land.
+	const cleanWin: Record<string, Response> = {
+		[`GET ${P}/issues/${TARGET}/comments`]: [
+			JSON.stringify([]),
+			JSON.stringify([claimComment({id: 700, login: "usirin", session: SID_MINE})]),
+		],
+		[`POST ${P}/issues/${TARGET}/comments`]: "700",
+		[`GET ${P}/collaborators/usirin/permission`]: "write",
+	};
+
+	it.effect("stamps the injected session presence onto the marker it posts", () =>
+		Effect.gen(function* () {
+			const bodies: string[] = [];
+			yield* Effect.provide(
+				Effect.flatMap(Tracker, (tracker) =>
+					tracker.claim(TARGET, {session: SID_MINE, presence: {host: "box-1", pid: 4242}}),
+				),
+				GithubTrackerLive.pipe(Layer.provide(mockSpawner(cleanWin, undefined, bodies))),
+			);
+			const posted = bodies.at(0) ?? "";
+			assert.match(posted, CLAIM_RE, "the posted body must be a canonical claim marker");
+			assert.deepStrictEqual(parseClaimPresence(posted), {host: "box-1", pid: 4242});
+		}),
+	);
+
+	it.effect(
+		"an unresolvable session presence posts a legacy unstamped marker (no wrong stamp)",
+		() =>
+			Effect.gen(function* () {
+				const bodies: string[] = [];
+				yield* Effect.provide(
+					Effect.flatMap(Tracker, (tracker) =>
+						tracker.claim(TARGET, {session: SID_MINE, presence: null}),
+					),
+					GithubTrackerLive.pipe(Layer.provide(mockSpawner(cleanWin, undefined, bodies))),
+				);
+				const posted = bodies.at(0) ?? "";
+				assert.match(posted, CLAIM_RE);
+				assert.strictEqual(parseClaimPresence(posted), null);
+			}),
 	);
 });
 

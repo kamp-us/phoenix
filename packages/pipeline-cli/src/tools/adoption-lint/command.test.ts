@@ -4,6 +4,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -97,6 +98,31 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", () => {
 		assert.strictEqual(code, 0, `adoption-lint red on the live corpus:\n${stdout}\n${stderr}`);
 		assert.include(stdout, "clean");
 	}, 60_000);
+
+	// #3987: the corpus-side half of "every claim writer stamps presence". A writer that composes a
+	// `claim:` body by hand skips the ADR-0191 stamp, and an unstamped marker is indeterminate
+	// forever ⇒ supersession goes inert on that lane while the mechanism looks fixed. The declared
+	// `tracker claim` decision reds a NEW such writer; this pins the three that already exist.
+	it("every claim-marker writer cites `pipeline-cli tracker claim` and hand-composes no body", () => {
+		const writers = [
+			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
+			"claude-plugins/kampus-pipeline/skills/write-code/SKILL.md",
+			".claude/workflows/drive-issue.js",
+		];
+		for (const rel of writers) {
+			const content = readFileSync(join(REPO_ROOT, rel), "utf8");
+			assert.match(
+				content,
+				/pipeline-cli\s+tracker\s+claim\b/,
+				`${rel} must cite the claim-write verb`,
+			);
+			assert.notMatch(
+				content,
+				/body=["'`]?claim:/,
+				`${rel} must not hand-compose a claim-marker body (it would skip the presence stamp)`,
+			);
+		}
+	});
 
 	it("exits 3 (zero-scope FAIL) when every handed file is unreadable/missing", async () => {
 		const {code, stderr} = await run(["check", join(dir, "does-not-exist.md")]);
