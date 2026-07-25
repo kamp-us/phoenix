@@ -11,19 +11,25 @@ single, actionable, correctly-typed, prioritized unit that a `write-code` agent 
 pick up cold and trust — or to close it with an audit trail if it can't be salvaged.
 
 You have **full rewrite authority**. Severity and priority are *your* call, not the
-reporter's. Splitting a bundle is in your mandate. But you are **salvage-first,
-kill-last**: enrich before you close, and never close a human's issue at all.
+reporter's. Splitting a bundle is in your mandate. But you are **salvage-first**: enrich
+an unclear issue before you judge it, and never close a human's issue at all.
+
+You are also where the **forward-motion question** binds. Every issue is priced against
+"what does this move forward?", and every triaged issue leaves with a **home** — an
+arc/campaign milestone, or a standing lane, or a kill (ADR 0202, Step 6). That is the
+doctrine's enforcement seam: teeth at intake, not in a later hand-run sweep.
 
 ## The mandate, per issue
 
 For each `status:needs-triage` issue, you produce exactly one of three outcomes:
 
-1. **Triaged** — classified, enriched, prioritized, labeled `status:triaged`. The
-   normal path. (A bundle is split first; each resulting unit is triaged.)
+1. **Triaged** — classified, enriched, prioritized, **homed**, labeled `status:triaged`.
+   The normal path. (A bundle is split first; each resulting unit is triaged.)
 2. **Needs-info** — a human-filed issue you can't act on as-is. Labeled
    `status:needs-info` with a comment asking specific questions. **Never closed.**
-3. **Closed not-planned** — an unsalvageable *agent*-filed issue. Closed with a
-   reason comment and `closed-by-triage`. Last resort, never for human issues.
+3. **Closed not-planned** — an *agent*-filed issue that is unsalvageable, **or that
+   doesn't move anything forward** (ADR 0202 — improvement-for-improvement's-sake). Closed
+   with a reason comment and `closed-by-triage`. **Never for human-filed issues.**
 
 ## All GitHub ops via `gh api` REST — never GraphQL
 
@@ -527,7 +533,32 @@ comment there rather than file anew.
 
 ---
 
-## Step 6 — Prioritize, label, and close out
+## Step 6 — Price it, prioritize, home it, and close out
+
+### Ask the forward-motion question first
+
+Before you price or home anything, ask what ADR
+[0202](https://github.com/kamp-us/phoenix/blob/main/.decisions/0202-forward-motion-doctrine-crewops.md)
+makes the pricing question for all work: **what does this move forward?** The founder's
+litmus test, verbatim:
+
+> if the founder never learned this ticket existed, would anything visibly change? If no, it does not get a home by default.
+
+Apply it as written — it is a *default*, not a kill switch: a "no" means the issue does not
+get a milestone home for free, so it must then earn one of the other two outcomes below.
+Answer the question honestly rather than looking for a reason to keep the issue: shipped
+user value and work that raises ship-rate move us forward; speculative hardening, a
+no-behavior-change refactor, prose polish, and decision-meta about hypotheticals usually
+don't.
+
+The answer routes to exactly one of three outcomes, and **every triaged issue leaves with
+one of them** — home, exempt, or kill:
+
+| Answer | Outcome | Where |
+|---|---|---|
+| It moves an active arc/campaign forward | **Home** it in that milestone | [Assign a home](#assign-a-home--milestone-standing-lane-or-kill-required) |
+| It's a standing lane — fog, or pipeline hardening | **Exempt** it with the lane's label | same section |
+| Nothing visibly changes if it never existed | **Kill** it (agent-filed only) | [Close not-planned](#close-not-planned-kill-agent-issues-only) |
 
 ### Assign a priority
 
@@ -549,14 +580,97 @@ apply.
 
 | Priority | Use when… |
 |---|---|
-| **`p0`** | **Fire only.** Drop-everything: actively breaking something people rely on, blocking other work, a data-loss or security risk, or a release gate. If it's not a genuine emergency, it's not p0 — reserve it so the bucket stays meaningful. |
+| **`p0`** | **Ship-work and fires — and it is never homeless.** Mint `p0` **freely** for work that moves us forward: shipped user/revenue value, or work that directly raises ship-rate (ADR 0202 §1). Fires still qualify — actively breaking something people rely on, a data-loss or security risk, a release gate. The one hard bound is homing: **a `p0` belongs to the active arc's documented structure, so an orphan (un-homed) `p0` is invalid** (ADR 0202 §2). If you can't home it below, it isn't `p0`. |
 | **`p1`** | **Serves the active milestone** — the arc pinned by `ROADMAP.md`'s single `active` `## Arcs` row (defined just above). Real, actionable work that belongs to that active arc — you'd pull it next. Milestone-bounded on purpose: p1 is *not* a general "worth doing soon" tier, so a solid issue outside the active arc is **not** p1. If no `## Arcs` row is marked `active`, keep p1 for the small set of things you'd genuinely pick up next; everything else is p2. |
 | **`p2`** | **The default.** Real, actionable work that isn't the current focus — most of the backlog. Also nice-to-have, cleanup, "don't forget to reconsider" trackers, low-impact refactors, deferred investigations. Real work, no time pressure to pull it ahead of the active arc. |
 
 Most of a healthy backlog is `p2`, with a bounded `p1` set tracking the active
-milestone. When unsure between two buckets, pick the lower one — over-escalation erodes
+milestone. When unsure between `p1` and `p2`, pick the lower one — over-escalation erodes
 the signal faster than under-escalation, and an inflated `p1` is exactly what makes the
 backlog unsequenceable.
+
+**`p0` is the deliberate exception to that lean-lower rule** (ADR 0202 §1): homed ship-work
+gets `p0` on purpose, so it stops competing on equal footing with self-healing work.
+Under-calling it is the failure mode there, not over-calling it. The homing bound is what
+keeps the bucket honest — `p0` is cheap to *mint* and impossible to leave *homeless*.
+
+### Assign a home — milestone, standing lane, or kill (required)
+
+**Home the issue BEFORE you stamp `status:triaged`** ([Apply the labels](#apply-the-labels-triaged-path)
+comes next, deliberately). The `homing-guard` workflow fires on the `issues` **label** event, so
+stamping first opens a real window in which the issue is triaged-but-un-homed and the guard reds
+on the *happy path* — and a guard that reds on correct triage is one people learn to ignore.
+Assigning the home first closes that window: by the time `status:triaged` lands, the home is
+already there.
+
+**Every issue you mark `status:triaged` leaves with a home.** This is no longer the optional
+"assign a milestone on a clear match" step: under ADR
+[0202](https://github.com/kamp-us/phoenix/blob/main/.decisions/0202-forward-motion-doctrine-crewops.md)
+and ADR
+[0208](https://github.com/kamp-us/phoenix/blob/main/.decisions/0208-standing-lane-exemption-from-full-homing.md)
+the open backlog is *milestone counts + the two standing lanes, and nothing outside both* —
+so an un-homed triaged issue is a floater, and floaters are what make the milestone counts
+lie. Take exactly one of the three outcomes below.
+
+**1. Home it in an existing open arc/campaign milestone.** The home candidates are the rows
+of [`ROADMAP.md`](../../../../ROADMAP.md)'s `## Arcs` and `## Campaigns` tables — the
+founder-voice roadmap that projects each arc/campaign onto a GitHub milestone by number
+(ADR 0072/0078). Read the tables for *what* each home means, and the open-milestone list for
+the numbers you may assign to:
+
+```bash
+# the home candidates: the arc/campaign rows and the open milestones they pin to
+gh api "repos/$REPO/milestones?state=open" --jq '.[] | "#\(.number)\t\(.title)"'
+# assign — one single-field, last-write-wins PATCH (benign, #91); by NUMBER, never title
+gh api -X PATCH "repos/$REPO/issues/<N>" -f milestone=<n>
+```
+
+- **Existing open milestones only — triage NEVER creates one.** Match against the set that
+  already exists; creating or curating it is a roadmap (human) act, deliberately not
+  autonomous (ADR 0072 §3). Do **not** `POST` a new milestone, ever. If nothing fits, the
+  answer is one of the other two outcomes below — never a new milestone, and never a
+  force-fit into a wrong one (a wrong home pollutes that burndown worse than the issue's
+  absence from it).
+- **Surface vs strategic — how hard the match is.** *Surface* homes (Search / Bookmarks /
+  Account / Report) are **mechanical**: key off the product surface you already determined in
+  Step 1 — a sözlük bug → the sözlük surface milestone. *Strategic* homes (a campaign like
+  Merge-Gate Reliability) need **judgment**: assign one only when the issue plainly belongs
+  to that campaign.
+
+**2. Exempt it with a standing-lane label — exactly two, no third.** A **standing lane** is a
+workstream that is milestone-less *by design, not by neglect* (ADR 0208). There are exactly
+two labels, and nothing else inherits the exemption without a founder ruling:
+
+| Label | What it means |
+|---|---|
+| `wayfinder:backlog` | **Fog** — uncharted work upstream of any arc. It gets homed when it gets charted, not before (ADR [0203](https://github.com/kamp-us/phoenix/blob/main/.decisions/0203-fog-reports-route-to-wayfinder-backlog.md)). |
+| `axis:pipeline-hardening` | The permanent **pipeline & reliability hardening** lane — the factory maintaining itself. It never completes into a milestone. |
+
+Do **not** invent a third exempt class, and do **not** put a milestone *on* an exempt issue —
+that is the same lie in the other direction (ADR 0208, Banned).
+
+> **Parking is bounded to fog — it is not a general escape hatch.** Founder ruling,
+> 2026-07-25 (recorded on PR #3955): *"Parking is only for fog (`wayfinder:backlog`). Kill
+> stays a valid triage verdict everywhere else."* So `wayfinder:backlog` is not a place to
+> file work you'd rather not decide about; if the issue isn't genuinely uncharted fog and
+> isn't the hardening lane, it homes or it dies.
+
+**3. Kill it.** Close-not-planned is a **sanctioned forward-motion verdict**, not a
+last resort (ADR 0202 §3): improvement-for-improvement's-sake that survives triage un-homed
+is exactly what the doctrine bans. Route it to
+[Close not-planned](#close-not-planned-kill-agent-issues-only) below — **agent-filed issues
+only; a human-filed issue is never auto-closed** (Step 5, unchanged).
+
+**Freeze-by-absence moved from an absence to a label.** ADR 0072 §4/§5 — milestone is
+optional, and a deliberately-unmilestoned cluster reads as "parked" — is **amended in part**
+by ADR 0208 for every issue outside the two labels: a bare absence no longer reads as parked,
+it reads as un-triaged. The *signal* isn't retired, it just became greppable: the two
+standing-lane labels **are** freeze-by-absence made legible. Untouched: 0072 §1–§3 (what a
+milestone encodes, the two kinds, never create one).
+
+This step is still **out of scope** for: creating milestones, the inherit logic (that is
+`plan-epic`'s job for an epic's children), and pick-order (`write-code` consumes milestone,
+it doesn't assign it).
 
 ### Apply the labels (triaged path)
 
@@ -585,67 +699,29 @@ the REST label calls — that inline envelope is exactly what the adoption lint 
 issue was actually reviewed. Never let a type label alone stand in for it; a
 hand-slapped `type:*` with no triaged status must not look pickable.
 
-### Assign a milestone (optional — only on a clear match)
-
-Milestone is the **one optional intake dimension** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md),
-§Milestone). Unlike the three mandatory labels above, **most triaged issues carry no
-milestone, and that is the well-formed default** — absence is the norm, not a defect. So
-this is an *additive* step: it never blocks, re-routes, or re-prioritizes an issue. You
-either find a clear home for it among the existing open milestones, or you leave it
-unmilestoned and move on.
-
-**The rules (the contract section is the dimension definition — these are triage's behavior):**
-
-- **Assign only on a clear surface-match; default = unmilestoned.** When in doubt, assign
-  nothing. A *wrong* milestone pollutes a burndown worse than a missing one does — an issue
-  filed in the wrong campaign is harder to spot than one that's simply absent. **Never
-  force-fit.**
-- **Existing open milestones only — triage NEVER creates a milestone.** Read the repo's open
-  milestones and match against *that* set; if nothing clearly fits, assign nothing. Creating
-  or curating the milestone set is a roadmap (human) act, deliberately not autonomous (ADR
-  [0072](https://github.com/kamp-us/phoenix/blob/main/.decisions/0072-milestones-encode-strategic-sequencing.md)
-  §3). Do **not** `POST` a new milestone, ever.
-- **Preserve freeze-by-absence.** A deliberately-unmilestoned surface — a frozen new-product
-  cluster (e.g. kampus-CLI / künye) — stays unmilestoned. A missing milestone there is
-  a *signal* that the work is parked, never data to backfill; do not auto-fill it to make the
-  issue "complete" (contract §Milestone, ADR 0072 §4).
-
-**Surface vs strategic — how hard the match is.** The contract names two milestone kinds, and
-they differ in how much judgment the match takes:
-
-- **Surface milestones** (e.g. Search / Bookmarks / Account / Report) are **mechanical**: key
-  off the **product surface you already determined** reading the issue in Step 1 — a sözlük
-  bug → the sözlük surface milestone. If a surface milestone exists and open for the issue's
-  surface, the match is near-rote.
-- **Strategic milestones** (e.g. Broken core loops / Pipeline hardening / Test & CI) need
-  **judgment** — "is this broken-vs-missing? pipeline-critical?". Attempt these
-  **conservatively**: assign one only when the issue plainly belongs to that campaign, and
-  default to none on any doubt.
-
-Read the open milestones, then assign **only on a clear match**:
+**The guard, not vigilance.** `pipeline-cli homing-guard check` reds on any open
+`status:triaged` issue carrying neither a milestone nor a standing-lane label, and fails
+closed on zero scope (ADR 0092). Run it *after* the stamp — the home is already assigned, so
+this confirms the pair landed rather than racing it; the invariant is enforced at this seam,
+not re-swept by hand later:
 
 ```bash
-# the existing open milestones — the ONLY legal assignment targets (never create one)
-gh api "repos/$REPO/milestones?state=open" --jq '.[] | "#\(.number)\t\(.title)"'
-# on a clear match only — one single-field, last-write-wins PATCH (benign, #91)
-gh api -X PATCH "repos/$REPO/issues/<N>" -f milestone=<n>
-# no clear match → assign nothing; an unmilestoned issue is well-formed (do NOT clear-then-set)
+pipeline-cli homing-guard check --issue <N>   # the issue you just triaged
+pipeline-cli homing-guard check               # the whole open triaged backlog
 ```
 
-This step is **out of scope** for: creating milestones, the inherit logic (that is
-`plan-epic`'s job for an epic's children), and the pick-order (`write-code` consumes
-milestone, it doesn't assign it).
+### Close not-planned (kill, agent issues only)
 
-### Close not-planned (kill, last resort, agent issues only)
-
-The third outcome is **rare** — close an issue **only** when it's an *agent-filed* issue
-that is genuinely unsalvageable (a duplicate, an observation the code moved past, a
-non-actionable note, or noise), and **salvage first**. Because it's off the common
-triaged / needs-info path, its full protocol — the duplicate-content-preservation step,
-the auditable reason-comment + `closed-by-triage` + `not_planned` close, and the kill-audit
-query — lives in a contract you `Read` only once you've decided to close:
-[`close-not-planned.md`](./close-not-planned.md). Open it and follow it for any kill (and
-for a Step 3 empty-husk close). **Never close a human-filed issue** (Step 5).
+Close an issue when it's an *agent-filed* issue that is genuinely unsalvageable (a duplicate,
+an observation the code moved past, a non-actionable note, or noise) — **or** when the
+forward-motion question came back "nothing would visibly change" and it has no home (ADR
+0202 §3). Salvage first: enrich an issue that is merely unclear before you judge it. Because
+a kill is off the common triaged / needs-info path, its full protocol — the
+duplicate-content-preservation step, the auditable reason-comment + `closed-by-triage` +
+`not_planned` close, and the kill-audit query — lives in a contract you `Read` only once
+you've decided to close: [`close-not-planned.md`](./close-not-planned.md). Open it and follow
+it for any kill (and for a Step 3 empty-husk close). **Never close a human-filed issue**
+(Step 5) — an un-homeable human issue gets `status:needs-info` and a question, not a kill.
 
 ### Release the claim (every outcome)
 
@@ -687,9 +763,9 @@ sweeping:
    it until that sweep releases. Loop until the listing has no issue you can claim — every
    *completed* outcome (triaged / needs-info / closed) removes `status:needs-triage`, so
    that is the termination test.
-5. Report a short ledger back: per issue, the outcome (type+priority+triaged, plus the
-   milestone if one was a clear match / needs-info / closed) in one line each. Don't
-   narrate every REST call — the labels, milestone, and comments on the issues are the
+5. Report a short ledger back: per issue, the outcome (type+priority+triaged **plus its
+   home** — the milestone or the standing-lane label / needs-info / killed) in one line
+   each. Don't narrate every REST call — the labels, milestone, and comments on the issues are the
    durable record. **The ledger you hand back is a shared artifact — hold it to the same
    privacy rule as issue bodies and comments** (the "Repo-relative paths only — never
    machine-local paths" rule in Step 4): cite **repo-relative paths only** and no PII —

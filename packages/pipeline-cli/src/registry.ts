@@ -39,6 +39,7 @@ import {fanoutGuardCommand} from "./tools/fanout-guard/command.ts";
 import {ghPhoenixCommand} from "./tools/gh-phoenix/command.ts";
 import {glossaryDriftCommand} from "./tools/glossary-drift/command.ts";
 import {guardContentProbeCommand} from "./tools/guard-content-probe/command.ts";
+import {homingGuardCommand} from "./tools/homing-guard/command.ts";
 import {intakeComposeCommand} from "./tools/intake-compose/command.ts";
 import {intakeDedupCommand} from "./tools/intake-dedup/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
@@ -216,4 +217,9 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// (schemaVersion, commit == head) before interpreting either, and carries the lookup evidence
 	// (queried SHA, run id, artifact id) so the claim is falsifiable from the verdict comment alone.
 	runEvidenceCommand,
+	// #3939 — the teeth behind the triage rubric's home-or-exempt-or-kill outcome (ADR 0202
+	// forward-motion doctrine, ADR 0208 standing-lane exemption): reds when an issue leaves
+	// triage with neither an arc/campaign milestone nor one of the two standing-lane labels,
+	// so floaters can't regrow at the seam. Fail-closed on zero scope (ADR 0092).
+	homingGuardCommand,
 ];

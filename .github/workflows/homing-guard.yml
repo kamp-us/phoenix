@@ -1,0 +1,88 @@
+name: homing-guard
+
+# CI gate for #3939 (ADR 0202 forward-motion doctrine + ADR 0208 standing-lane exemption):
+# every issue that leaves triage carries an arc/campaign milestone, or one of exactly two
+# standing-lane labels (`wayfinder:backlog`, `axis:pipeline-hardening`), or it was killed.
+# The check lives once in pipeline-cli (`homing-guard check`); this workflow wires it to the
+# two surfaces where the invariant can break.
+#
+# There is deliberately NO `pull_request` trigger: homing is a property of the BACKLOG, not
+# of a diff, so a PR gate here would block every unrelated PR on a floater it did not create.
+# The teeth land where the state moves instead — at the labelling seam, and on a schedule.
+on:
+  # The seam: the moment an issue is stamped `status:triaged` (or its milestone moves), check
+  # THAT issue. A red run names the issue that just lost its home, not the whole backlog.
+  issues:
+    types: [labeled, unlabeled, milestoned, demilestoned]
+  # Weekly backstop for drift no single issue event covers (a milestone closed out of band,
+  # a pre-existing floater). On red, file a status:needs-triage issue — the sweep's signal.
+  schedule:
+    # Monday 06:17 UTC — off-hours, off the top of the hour (the scheduler congests on-the-hour
+    # crons), and offset from roadmap-guard's 05:23 so the two don't file in the same minute.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read # checkout
+  issues: write # file the drift issue on a scheduled red
+
+jobs:
+  check:
+    name: check every triaged issue is homed or standing-lane exempt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # An `issues` event scopes the scan to that one issue; schedule/dispatch scan the whole
+      # open triaged backlog. `continue-on-error` lets a red proceed to the issue-filing step;
+      # the final step re-fails the job for the non-schedule triggers.
+      - name: homing-guard check
+        id: guard
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -o pipefail
+          if [ -n "$ISSUE" ]; then
+            node packages/pipeline-cli/src/bin.ts homing-guard check --issue "$ISSUE" 2>&1 | tee guard-output.txt
+          else
+            node packages/pipeline-cli/src/bin.ts homing-guard check 2>&1 | tee guard-output.txt
+          fi
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      # Scheduled red → file a status:needs-triage issue. No issue event and no PR to block on
+      # a schedule run, so the filed issue IS the signal.
+      - name: File a status:needs-triage issue on scheduled drift
+        if: ${{ github.event_name == 'schedule' && steps.guard.outputs.code != '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The printf format must stay single-quoted: its backticks are the markdown fence of the
+          # filed issue body, not command substitution — nothing in it may expand.
+          # shellcheck disable=SC2016
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "homing-guard: triaged issues left without a home" \
+            --label "status:needs-triage" \
+            --body "$(printf 'The weekly homing-guard sweep found triaged issues carrying neither a milestone nor a standing-lane label. Home, exempt, or kill each one per the triage rubric (ADR 0202/0208).\n\nGuard output:\n\n```\n%s\n```\n' "$(cat guard-output.txt)")"
+
+      # Red the run for the blocking triggers (an issue event, a manual dispatch). On a
+      # schedule run the drift was already reported as an issue above.
+      - name: Fail the job on an un-homed issue (blocking triggers)
+        if: ${{ github.event_name != 'schedule' && steps.guard.outputs.code != '0' }}
+        run: |
+          echo "homing-guard: a triaged issue has no home — see the check step output above." >&2
+          exit 1

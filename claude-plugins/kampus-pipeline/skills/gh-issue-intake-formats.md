@@ -145,8 +145,9 @@ text reads as phoenix-only) is also de-pinned: the trigger describes the *capabi
 Every issue carries one `type:*`, one `p*`, and one `status:*` (plus, transiently, the
 `status:planning` epic-lock on a locked epic — a second `status:*` that sits *alongside* the
 real one, never replacing it; see below). These three are the **mandatory** dimensions triage
-always sets. There is a fourth, **optional** dimension — `milestone` — that is *not* a label
-and not always present; it lives on its own GitHub surface and is documented in §Milestone. The
+always sets. There is a fourth dimension — `milestone` — that is *not* a label; it lives on its
+own GitHub surface, and triage homes every issue in one unless a standing-lane label or a kill
+applies (ADR 0202/0208). It is documented in §Milestone. The
 `status:*` labels are the **pipeline state** an issue sits in — the spine the intake skills key
 on. The canonical set:
 
@@ -284,13 +285,21 @@ See ADR [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic
 (the lock) and ADR [0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md)
 (the agent-distinguishable claim, #1452).
 
-## Milestone — the one *optional* intake dimension
+## Milestone — the fourth intake dimension
 
 `type:*`, `p*`, and `status:*` are **mandatory** dimensions: every issue carries exactly one of
-each, and an issue missing any of them is malformed. **Milestone is the exception** — it is an
-**optional** fourth intake dimension that sits alongside the three labels, and **most issues
-carry none**. An issue with no milestone is **well-formed by default**; absence is the norm, not
-a defect (contrast the `status:*` spine, where a missing label is a triage bug).
+each, and an issue missing any of them is malformed. **Milestone is the fourth**, and it lives on
+the issue's native `milestone` field rather than a label.
+
+**Optionality is bounded by the standing-lane rule (ADR 0202/0208, #3939).** Milestone used to be
+the *optional* dimension — most issues carried none and absence was the norm. That no longer holds
+at the **triage** seam: an issue that leaves triage is **homed** in an arc/campaign milestone,
+**or** carries one of exactly two standing-lane labels (`wayfinder:backlog`,
+`axis:pipeline-hardening`), **or** is killed — ADR
+[0208](https://github.com/kamp-us/phoenix/blob/main/.decisions/0208-standing-lane-exemption-from-full-homing.md)
+amends ADR 0072 §4/§5 in part, and `triage`'s "Assign a home" step owns the behavior. Everything
+below — what a milestone encodes, the two kinds, the never-create rule, the REST surface, the read
+side — is unchanged.
 
 This section is the **single source of truth** the three behavioral skills cite for milestone —
 `triage` (assigns it), `plan-epic` (children inherit it), and `write-code` (consumes it for
@@ -323,13 +332,13 @@ autonomous — fragmenting the set would destroy its single-source-of-truth valu
 autonomous "create-milestones" skill (ADR 0072 §3). A skill that finds no clear match to an
 existing open milestone leaves the issue **unmilestoned**; it does not invent a home.
 
-**Freeze-by-absence — deliberate absence is a signal, never missing data.** A deliberately
-**unmilestoned** cluster (e.g. a frozen new-product surface — kampus-CLI / künye) is itself
-the signal that the work is **parked / deferred** (ADR 0072 §4). So a missing milestone is
-**never** "data to be backfilled": a skill must not auto-fill an empty milestone to make an issue
-"complete." Absence carries information — treat it as a value, not a gap. This is the inverse of
-the mandatory labels: for `status:*` a missing value *is* a defect to fix; for milestone a missing
-value is often the intended state.
+**Freeze-by-absence moved from an absence to a label (ADR 0208).** The signal ADR 0072 §4 carried
+— *this work is parked by design; don't force-fit it* — is not retired, but it no longer rides on
+a bare absence. It rides on the two standing-lane labels: `wayfinder:backlog` (fog, homed when
+charted — ADR 0203) and `axis:pipeline-hardening` (the permanent hardening lane). For an issue
+outside those two, an empty milestone after triage reads as **un-homed**, not parked. Unchanged:
+a skill still never force-fits or invents a home to make an issue look "complete" — the honest
+outcomes are a real home, a standing-lane label, or a kill.
 
 **Orthogonal to verification and merge.** Milestone is a **backlog/planning** dimension only.
 The gates (`review-code` / `review-doc` / `review-skill` / `review-plan`), `ship-it`, and the
@@ -346,12 +355,12 @@ each skill.
 
 **Write side:**
 
-- **`triage`** assigns a milestone on a **clear surface-match** — keying off the surface it
-  already reads to classify — and only then. The guardrails (this section is their source;
-  `triage` cites it): assign **only on a clear match**, default to **unmilestoned**, and **never
-  force-fit** — a wrong milestone pollutes that milestone's burndown worse than no milestone
-  does. Assign to an **existing open** milestone only; **never create** one. Preserve the
-  freeze-by-absence signal: a deliberately-unmilestoned surface stays unmilestoned.
+- **`triage`** **homes** every issue it triages: an **existing open** arc/campaign milestone, or
+  one of the two standing-lane labels, or a kill (ADR 0202/0208 — `triage`'s "Assign a home" step
+  owns the procedure and cites this section). The guardrails are unchanged in kind: keep the match
+  honest (a wrong milestone pollutes that burndown worse than the issue's absence from it), assign
+  to an **existing open** milestone only, and **never create** one. What changed is the fallback —
+  "leave it unmilestoned" is no longer an outcome; a standing-lane label or a kill is.
 - **`plan-epic`** **inherits the parent epic's milestone** onto each child it creates (if the
   epic has one). This is mechanical and high-value — it keeps a campaign's burndown complete by
   construction, since a campaign milestone on an epic can only be "done" when its children carry
@@ -452,8 +461,8 @@ the same probe against the same well-known path, and both must treat **absent �
 
 The probe is the **only** gate on every cycle-step: a step never assumes the doc exists, never
 hard-codes phoenix's policy, and never fails because the doc is missing. Absence is a
-first-class, correct state (exactly as a missing `milestone` is in §Milestone), not a defect to
-repair.
+first-class, correct state — a repo with no cycle is a repo the cycle steps no-op on — not a
+defect to repair.
 
 ### 2. The per-child `**Containment:**` marker
 
