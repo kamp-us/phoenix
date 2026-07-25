@@ -53,7 +53,7 @@ describe("crew/heartbeat — a live session outlives the TTL with the loop, ages
 	it.effect("with the heartbeat loop, presence survives past DEFAULT_TTL_SECONDS", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
-			yield* client.AnnouncePresence({peer, role, at: new Date().toISOString()});
+			yield* client.AnnouncePresence({peer, role});
 			// Fork the keepalive loop into this scope; it refreshes the lease every interval.
 			yield* Layer.build(
 				crewHeartbeatLayer(peer).pipe(Layer.provide(CrewTracker.fromClient(client))),
@@ -70,7 +70,7 @@ describe("crew/heartbeat — a live session outlives the TTL with the loop, ages
 		() =>
 			Effect.gen(function* () {
 				const client = yield* RpcTest.makeClient(TrackerRegistry);
-				yield* client.AnnouncePresence({peer, role, at: new Date().toISOString()});
+				yield* client.AnnouncePresence({peer, role});
 				yield* TestClock.adjust(pastTtl);
 				const present = yield* client.LookupRole({role});
 				assert.lengthOf(present.peers, 0, "with no keepalive the one-shot announce ages out");

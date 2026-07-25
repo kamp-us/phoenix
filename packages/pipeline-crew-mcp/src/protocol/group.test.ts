@@ -18,6 +18,7 @@ import {
 	payloadSchemaForKind,
 	Release,
 } from "./group.ts";
+import {stampFromMillis} from "./instant.ts";
 import * as Messages from "./schema.ts";
 
 describe("protocol/group catalog", () => {
@@ -49,7 +50,7 @@ describe("protocol/group catalog", () => {
 			granted: true,
 			collision: false,
 			owner: "peer-a",
-			since: "2026-07-16T10:00:00Z",
+			since: stampFromMillis(Date.parse("2026-07-16T10:00:00Z")),
 		};
 		assert.deepStrictEqual(Schema.decodeUnknownSync(Claim.successSchema)(reply), reply);
 	});
@@ -65,7 +66,7 @@ describe("protocol/group catalog", () => {
 	it("payloadSchemaForKind resolves a catalog kind to its payload schema (#3229)", () => {
 		// the resolver is derived from the catalog, so every kind resolves and a valid payload decodes
 		assert.strictEqual(payloadSchemaForKind("IntakePing"), Messages.IntakePing);
-		const ping = {issue: 3057, from: "intake", at: "2026-07-16T10:00:00Z"};
+		const ping = {issue: 3057, from: "intake"};
 		assert.deepStrictEqual(
 			Schema.decodeUnknownSync(payloadSchemaForKind("IntakePing")!)(ping),
 			ping,
@@ -99,7 +100,6 @@ describe("protocol/group catalog", () => {
 			claimResourceKey("EngineNudge", {
 				target: {issue: 3886},
 				from: "cos",
-				at: "2026-07-24T00:00:00Z",
 			}),
 			"issue-3886",
 		);
@@ -107,7 +107,6 @@ describe("protocol/group catalog", () => {
 			claimResourceKey("EngineNudge", {
 				target: {pr: 3877},
 				from: "cos",
-				at: "2026-07-24T00:00:00Z",
 			}),
 			"pr-3877",
 		);

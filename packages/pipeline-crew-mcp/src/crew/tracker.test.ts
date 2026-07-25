@@ -25,7 +25,6 @@ const registryHandlers = TrackerHandlers.pipe(Layer.provide(RegistryLive));
 // Node FileSystem so the host-or-dial layer builds in-test as under the bin's NodeServices.layer.
 const hostOrDial = (socketPath: string) =>
 	crewTrackerHostOrDialLayer(socketPath).pipe(Layer.provide(NodeFileSystem.layer));
-const nowIso = () => new Date().toISOString();
 
 const errWithCode = (code: string): Error => Object.assign(new Error(code), {code});
 
@@ -74,8 +73,8 @@ describe("crew/tracker — acquireClaim + release (the claim lifecycle client, A
 			const ctx = yield* Layer.build(CrewTracker.fromClient(client));
 			const tracker = Context.get(ctx, CrewTracker);
 			// both holders need live presence for their claims to be live (presence-derived liveness)
-			yield* client.AnnouncePresence({peer: "inbox://a", role: "builder", at: nowIso()});
-			yield* client.AnnouncePresence({peer: "inbox://b", role: "reviewer", at: nowIso()});
+			yield* client.AnnouncePresence({peer: "inbox://a", role: "builder"});
+			yield* client.AnnouncePresence({peer: "inbox://b", role: "reviewer"});
 
 			// hold the claim for an inner scope; while held, a foreign claim collides
 			yield* Effect.scoped(
@@ -110,8 +109,8 @@ describe("crew/tracker — acquireClaim + release (the claim lifecycle client, A
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
 			const ctx = yield* Layer.build(CrewTracker.fromClient(client));
 			const tracker = Context.get(ctx, CrewTracker);
-			yield* client.AnnouncePresence({peer: "inbox://a", role: "builder", at: nowIso()});
-			yield* client.AnnouncePresence({peer: "inbox://b", role: "reviewer", at: nowIso()});
+			yield* client.AnnouncePresence({peer: "inbox://a", role: "builder"});
+			yield* client.AnnouncePresence({peer: "inbox://b", role: "reviewer"});
 			yield* tracker.claim({resource: "issue-1", claimant: "inbox://a", role: "builder"});
 			yield* tracker.release({resource: "issue-1", claimant: "inbox://a"});
 			const reclaim = yield* tracker.claim({

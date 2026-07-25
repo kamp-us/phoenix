@@ -66,11 +66,11 @@ and the one-liveness-clock rule, or it reintroduces a failure those choices desi
    transition must not mutate `claims`, and a claim transition must not fabricate a lease.
 2. **Expose it on the service** in [`src/tracker/registry.ts`](../src/tracker/registry.ts): add a
    method to the `Registry` `Context.Service` and implement it in `RegistryLive`, drawing "now"
-   from `Clock.currentTimeMillis` — **never** a client-supplied `at`, so a peer cannot extend its
-   own liveness by lying about the time.
+   from `Clock.currentTimeMillis` — **never** a client-supplied time, so a peer cannot extend its
+   own liveness by lying about the clock (no payload carries one; ADR 0210).
 3. **Map the RPC** in [`src/tracker/handlers.ts`](../src/tracker/handlers.ts): wire the registry
-   kind onto the new `Registry` method, converting `Timestamp` strings ↔ epoch millis at the
-   boundary. If the semantic is a new *wire* kind, it must also be in the protocol catalog (see
+   kind onto the new `Registry` method, converting epoch millis to a `StampedInstant` through
+   `stampFromMillis` at the boundary, so an unusable reading crosses as a typed unknown. If the semantic is a new *wire* kind, it must also be in the protocol catalog (see
    [Add a message kind](#add-a-message-kind)) and in the `TrackerRegistry` subset
    ([`src/tracker/group.ts`](../src/tracker/group.ts)).
 4. **Surface the crew seam** in [`src/crew/tracker.ts`](../src/crew/tracker.ts): add the method to

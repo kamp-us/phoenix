@@ -47,8 +47,6 @@ export interface TrackerRegistryClient {
 	readonly Heartbeat: (payload: HeartbeatMessage) => Effect.Effect<void, unknown>;
 }
 
-const now = (): string => new Date().toISOString();
-
 export class CrewTracker extends Context.Service<
 	CrewTracker,
 	{
@@ -113,19 +111,16 @@ export class CrewTracker extends Context.Service<
 	static readonly fromClient = (client: TrackerRegistryClient): Layer.Layer<CrewTracker> =>
 		Layer.succeed(CrewTracker, {
 			claim: ({resource, claimant, role}) =>
-				client.Claim({resource, claimant, role, at: now()}).pipe(Effect.orDie),
+				client.Claim({resource, claimant, role}).pipe(Effect.orDie),
 			acquireClaim: ({resource, claimant, role}) =>
 				Effect.acquireRelease(
-					client.Claim({resource, claimant, role, at: now()}).pipe(Effect.orDie),
+					client.Claim({resource, claimant, role}).pipe(Effect.orDie),
 					// Free on scope close, but only a claim we actually won — release is holder-guarded, so
 					// releasing a collided (un-held) claim would no-op anyway; gating on `granted` keeps intent clear.
 					(reply) =>
-						reply.granted
-							? client.Release({resource, claimant, at: now()}).pipe(Effect.orDie)
-							: Effect.void,
+						reply.granted ? client.Release({resource, claimant}).pipe(Effect.orDie) : Effect.void,
 				),
-			release: ({resource, claimant}) =>
-				client.Release({resource, claimant, at: now()}).pipe(Effect.orDie),
+			release: ({resource, claimant}) => client.Release({resource, claimant}).pipe(Effect.orDie),
 			announce: (presence) =>
 				Effect.acquireRelease(
 					// peer-id ≡ inbox-address: announce the dialable address so a lookup can dial it back.
@@ -135,7 +130,6 @@ export class CrewTracker extends Context.Service<
 							peer: presence.address,
 							role: presence.role,
 							attached: true,
-							at: now(),
 						})
 						.pipe(Effect.orDie),
 					// No wire release kind exists, so scope close is a client-side no-op. A live session
@@ -153,13 +147,11 @@ export class CrewTracker extends Context.Service<
 							peer: presence.address,
 							role: presence.role,
 							attached: false,
-							at: now(),
 						})
 						.pipe(Effect.orDie),
 					() => Effect.void,
 				),
-			heartbeat: ({peer, ttlSeconds}) =>
-				client.Heartbeat({peer, ttlSeconds, at: now()}).pipe(Effect.orDie),
+			heartbeat: ({peer, ttlSeconds}) => client.Heartbeat({peer, ttlSeconds}).pipe(Effect.orDie),
 			// peer-id ≡ inbox-address: each present peer IS its own dialable address, so a lookup
 			// recovers the full live set of addresses (one per bridge, N across an engine pool).
 			lookup: (role) =>

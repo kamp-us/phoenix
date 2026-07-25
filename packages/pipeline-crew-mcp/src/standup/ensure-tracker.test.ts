@@ -47,7 +47,6 @@ describe("tryBecomeTracker — the bind-outcome core", () => {
 			yield* client.AnnouncePresence({
 				peer: "inbox://peer-a",
 				role: "builder",
-				at: "2026-07-16T10:00:00Z",
 			});
 			const result = yield* client.LookupRole({role: "builder"});
 			assert.strictEqual(result.peers[0]?.peer, "inbox://peer-a");
@@ -92,7 +91,6 @@ describe("ensureTrackerRunning — the detached standing process", () => {
 					yield* client.AnnouncePresence({
 						peer: "inbox://peer-a",
 						role: "builder",
-						at: "2026-07-16T10:00:00Z",
 					});
 					const result = yield* client.LookupRole({role: "builder"});
 					assert.strictEqual(result.peers[0]?.peer, "inbox://peer-a");

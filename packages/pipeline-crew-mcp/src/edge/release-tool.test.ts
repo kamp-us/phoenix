@@ -137,10 +137,9 @@ describe("edge/release-tool — the channel_release counterpart (#3796 facet 2)"
 			const addrA = "inbox://engineering-manager/a";
 			const addrB = "inbox://engineering-manager/b";
 			const addrC = "inbox://engineering-manager/c";
-			const at = new Date().toISOString();
 			// A and C are live; the claim's liveness rides presence (ADR 0191 facet 2)
-			yield* client.AnnouncePresence({peer: addrA, role: "engineering-manager", at});
-			yield* client.AnnouncePresence({peer: addrC, role: "engineering-manager", at});
+			yield* client.AnnouncePresence({peer: addrA, role: "engineering-manager"});
+			yield* client.AnnouncePresence({peer: addrC, role: "engineering-manager"});
 
 			// A claims #3686 (one call)
 			const claimA = yield* makeSession(sessionPorts(client, addrA));
@@ -185,8 +184,7 @@ describe("edge/release-tool — the channel_release counterpart (#3796 facet 2)"
 				const addrA = "inbox://engineering-manager/a";
 				const addrB = "inbox://engineering-manager/b";
 				const addrC = "inbox://engineering-manager/c";
-				const at = new Date().toISOString();
-				yield* client.AnnouncePresence({peer: addrA, role: "engineering-manager", at});
+				yield* client.AnnouncePresence({peer: addrA, role: "engineering-manager"});
 
 				// A holds #3686 (one call)
 				const claimA = yield* makeSession(sessionPorts(client, addrA));
@@ -221,7 +219,6 @@ describe("edge/release-tool — the channel_release counterpart (#3796 facet 2)"
 			yield* client.AnnouncePresence({
 				peer: addrA,
 				role: "engineering-manager",
-				at: new Date().toISOString(),
 			});
 			const a = yield* makeSession(sessionPorts(client, addrA));
 

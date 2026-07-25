@@ -13,13 +13,12 @@ import {TrackerHandlers} from "./handlers.ts";
 import {RegistryLive} from "./registry.ts";
 
 const handlers = TrackerHandlers.pipe(Layer.provide(RegistryLive));
-const at = "2026-07-16T10:00:00Z";
 
 describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 	it.effect("announce then lookup round-trips a peer's role + inbox address", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
-			yield* client.AnnouncePresence({peer: "inbox://peer-a", role: "builder", at});
+			yield* client.AnnouncePresence({peer: "inbox://peer-a", role: "builder"});
 			const result = yield* client.LookupRole({role: "builder"});
 			assert.strictEqual(result.role, "builder");
 			assert.lengthOf(result.peers, 1);
@@ -40,8 +39,8 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
 			// two engine instances of the same role, distinct per-instance inbox addresses
-			yield* client.AnnouncePresence({peer: "inbox://em/one", role: "em", at});
-			yield* client.AnnouncePresence({peer: "inbox://em/two", role: "em", at});
+			yield* client.AnnouncePresence({peer: "inbox://em/one", role: "em"});
+			yield* client.AnnouncePresence({peer: "inbox://em/two", role: "em"});
 			const result = yield* client.LookupRole({role: "em"});
 			assert.lengthOf(result.peers, 2, "the second announce did not overwrite the first");
 			assert.deepStrictEqual(result.peers.map((p) => p.peer).sort(), [
@@ -55,12 +54,11 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
 			// The incumbent's claim is live only while its presence is — announce it first (ADR 0191).
-			yield* client.AnnouncePresence({peer: "peer-a", role: "builder", at});
+			yield* client.AnnouncePresence({peer: "peer-a", role: "builder"});
 			const first = yield* client.Claim({
 				resource: "issue-3054",
 				claimant: "peer-a",
 				role: "builder",
-				at,
 			});
 			assert.isTrue(first.granted);
 			assert.isFalse(first.collision);
@@ -70,7 +68,6 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 				resource: "issue-3054",
 				claimant: "peer-b",
 				role: "builder",
-				at,
 			});
 			assert.isFalse(second.granted);
 			assert.isTrue(second.collision);
@@ -81,15 +78,14 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 	it.effect("Release frees a held claim so another peer can then claim the resource", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
-			yield* client.AnnouncePresence({peer: "peer-a", role: "builder", at});
-			yield* client.AnnouncePresence({peer: "peer-b", role: "reviewer", at});
-			yield* client.Claim({resource: "issue-3054", claimant: "peer-a", role: "builder", at});
-			yield* client.Release({resource: "issue-3054", claimant: "peer-a", at});
+			yield* client.AnnouncePresence({peer: "peer-a", role: "builder"});
+			yield* client.AnnouncePresence({peer: "peer-b", role: "reviewer"});
+			yield* client.Claim({resource: "issue-3054", claimant: "peer-a", role: "builder"});
+			yield* client.Release({resource: "issue-3054", claimant: "peer-a"});
 			const reclaim = yield* client.Claim({
 				resource: "issue-3054",
 				claimant: "peer-b",
 				role: "reviewer",
-				at,
 			});
 			assert.isTrue(reclaim.granted, "the released resource is free for a new claimant");
 			assert.strictEqual(reclaim.owner, "peer-b");
@@ -99,15 +95,14 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 	it.effect("Release by a non-holder is a no-op — a peer cannot steal-release (ADR 0191)", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
-			yield* client.AnnouncePresence({peer: "peer-a", role: "builder", at});
-			yield* client.Claim({resource: "issue-3054", claimant: "peer-a", role: "builder", at});
+			yield* client.AnnouncePresence({peer: "peer-a", role: "builder"});
+			yield* client.Claim({resource: "issue-3054", claimant: "peer-a", role: "builder"});
 			// peer-b does not hold the claim: its release must not free peer-a's hold.
-			yield* client.Release({resource: "issue-3054", claimant: "peer-b", at});
+			yield* client.Release({resource: "issue-3054", claimant: "peer-b"});
 			const stillHeld = yield* client.Claim({
 				resource: "issue-3054",
 				claimant: "peer-c",
 				role: "builder",
-				at,
 			});
 			assert.isTrue(stillHeld.collision, "peer-a still holds it — the foreign release was ignored");
 			assert.strictEqual(stillHeld.owner, "peer-a");
@@ -119,8 +114,8 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 		() =>
 			Effect.gen(function* () {
 				const client = yield* RpcTest.makeClient(TrackerRegistry);
-				yield* client.AnnouncePresence({peer: "inbox://em-owner", role: "em", at});
-				yield* client.Claim({resource: "issue-3886", claimant: "inbox://em-owner", role: "em", at});
+				yield* client.AnnouncePresence({peer: "inbox://em-owner", role: "em"});
+				yield* client.Claim({resource: "issue-3886", claimant: "inbox://em-owner", role: "em"});
 				const held = yield* client.LookupClaim({resource: "issue-3886"});
 				assert.deepStrictEqual(held, {resource: "issue-3886", holder: "inbox://em-owner"});
 			}).pipe(Effect.scoped, Effect.provide(handlers)),
@@ -139,9 +134,9 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 	it.effect("LookupClaim omits the holder once a released claim frees the resource", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
-			yield* client.AnnouncePresence({peer: "inbox://em-owner", role: "em", at});
-			yield* client.Claim({resource: "issue-3886", claimant: "inbox://em-owner", role: "em", at});
-			yield* client.Release({resource: "issue-3886", claimant: "inbox://em-owner", at});
+			yield* client.AnnouncePresence({peer: "inbox://em-owner", role: "em"});
+			yield* client.Claim({resource: "issue-3886", claimant: "inbox://em-owner", role: "em"});
+			yield* client.Release({resource: "issue-3886", claimant: "inbox://em-owner"});
 			const freed = yield* client.LookupClaim({resource: "issue-3886"});
 			assert.deepStrictEqual(freed, {resource: "issue-3886"}, "the freed resource has no holder");
 		}).pipe(Effect.scoped, Effect.provide(handlers)),
@@ -150,8 +145,8 @@ describe("tracker registry — wire round-trips (RpcTest in-memory)", () => {
 	it.effect("a heartbeat is accepted for a live peer", () =>
 		Effect.gen(function* () {
 			const client = yield* RpcTest.makeClient(TrackerRegistry);
-			yield* client.AnnouncePresence({peer: "inbox://peer-a", role: "builder", at});
-			yield* client.Heartbeat({peer: "inbox://peer-a", ttlSeconds: 60, at});
+			yield* client.AnnouncePresence({peer: "inbox://peer-a", role: "builder"});
+			yield* client.Heartbeat({peer: "inbox://peer-a", ttlSeconds: 60});
 			const result = yield* client.LookupRole({role: "builder"});
 			assert.lengthOf(result.peers, 1);
 		}).pipe(Effect.scoped, Effect.provide(handlers)),

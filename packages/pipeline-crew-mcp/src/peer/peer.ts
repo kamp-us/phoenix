@@ -19,6 +19,7 @@
 import {randomUUID} from "node:crypto";
 import {Duration, Effect, Option, Result, type Scope} from "effect";
 import * as Arr from "effect/Array";
+import {stampNow} from "../protocol/index.ts";
 import {Dialer} from "./dialer.ts";
 import {ChannelDeafError, PeerUnreachableError} from "./errors.ts";
 import {Inbox, type InboxAck, type InboxEnvelope} from "./inbox.ts";
@@ -159,6 +160,9 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 				? yield* tracker.claimHolder(options.claimResource)
 				: Option.none<string>();
 			const targets = selectDeliveryTargets(holders, claimOwner);
+			// The envelope's `at` is read off THIS transport's clock, here — the message body carries no
+			// time at all, because a sender-composed one is authored prose, not a reading (see ADR 0210).
+			const at = yield* stampNow;
 			// One logical message, delivered to the selected target(s). A bridge has one holder (an ordinary
 			// point-to-point send); an engine pool has N, across which a per-item advisory reaches the seat
 			// that OWNS the item — routed straight to it when the claim resolves, else fanned to all. This
@@ -169,7 +173,7 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 				from: config.self,
 				kind,
 				body,
-				at: new Date().toISOString(),
+				at,
 			};
 			// Deliver to the WHOLE selected set before deciding the result — a fan must not fail-fast on one
 			// deaf seat and skip the rest, so each dial is reified into a Result and every target is dialed.

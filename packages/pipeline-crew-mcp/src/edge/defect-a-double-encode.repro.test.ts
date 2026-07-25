@@ -17,6 +17,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {RpcSerialization} from "effect/unstable/rpc";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type {InboxAck, InboxEnvelope} from "../peer/index.ts";
+import {stampFromMillis} from "../protocol/index.ts";
 import {formatChannelTag} from "./bridge.ts";
 import {channelExperimentalCapability} from "./mcp-channel.ts";
 import {ChannelSend, ChannelToolkit, channelToolHandlers} from "./send-tool.ts";
@@ -31,7 +32,7 @@ const baseEnvelope = (body: unknown): InboxEnvelope => ({
 	from: "inbox://engineering-manager/1",
 	kind: "IntakePing",
 	body,
-	at: "2026-07-18T00:00:00Z",
+	at: stampFromMillis(Date.parse("2026-07-18T00:00:00Z")),
 });
 
 // A ChannelSend that records the exact `body` the handler forwards, so the test can assert the
@@ -41,7 +42,11 @@ const makeCapturingClient = Effect.gen(function* () {
 	const capturingSend = Layer.succeed(ChannelSend, {
 		send: (_targetRole, _kind, body) =>
 			Ref.set(captured, body).pipe(
-				Effect.as<InboxAck>({messageId: "m-9", by: "peer-b", at: "2026-07-18T00:00:00Z"}),
+				Effect.as<InboxAck>({
+					messageId: "m-9",
+					by: "peer-b",
+					at: stampFromMillis(Date.parse("2026-07-18T00:00:00Z")),
+				}),
 			),
 	});
 
@@ -107,7 +112,6 @@ describe("defect(a): channel_send normalizes body to a struct at the boundary (#
 					body: JSON.stringify({
 						issue: 3486,
 						from: "engineering-manager",
-						at: "2026-07-18T00:00:00Z",
 					}),
 				},
 			});
@@ -129,10 +133,7 @@ describe("defect(a): channel_send normalizes body to a struct at the boundary (#
 				/^"/,
 				"single-encoded body must not start with a quote (that is the double-encode symptom)",
 			);
-			assert.strictEqual(
-				inner,
-				'{"issue":3486,"from":"engineering-manager","at":"2026-07-18T00:00:00Z"}',
-			);
+			assert.strictEqual(inner, '{"issue":3486,"from":"engineering-manager"}');
 		}),
 	);
 });

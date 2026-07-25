@@ -14,6 +14,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {RpcSerialization} from "effect/unstable/rpc";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import {type InboxAck, PeerUnreachableError} from "../peer/index.ts";
+import {stampFromMillis} from "../protocol/index.ts";
 import {CHANNEL_CAPABILITY, channelExperimentalCapability} from "./mcp-channel.ts";
 import {ChannelSend, ChannelToolkit, channelToolHandlers} from "./send-tool.ts";
 
@@ -27,7 +28,11 @@ class DisposeError extends Schema.TaggedErrorClass<DisposeError>()(
 const FakeSend = Layer.succeed(ChannelSend, {
 	send: (targetRole, _kind, _body) =>
 		targetRole === "reviewer"
-			? Effect.succeed<InboxAck>({messageId: "m-9", by: "peer-b", at: "2026-07-16T10:00:00Z"})
+			? Effect.succeed<InboxAck>({
+					messageId: "m-9",
+					by: "peer-b",
+					at: stampFromMillis(Date.parse("2026-07-16T10:00:00Z")),
+				})
 			: Effect.fail(
 					new PeerUnreachableError({
 						target: targetRole,
@@ -99,7 +104,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 				arguments: {
 					targetRole: "reviewer",
 					kind: "IntakePing",
-					body: {issue: 3057, from: "intake", at: "2026-07-16T10:00:00Z"},
+					body: {issue: 3057, from: "intake"},
 				},
 			});
 			assert.isFalse(result.isError);
@@ -117,7 +122,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 				arguments: {
 					targetRole: "ghost",
 					kind: "IntakePing",
-					body: {issue: 3057, from: "intake", at: "2026-07-16T10:00:00Z"},
+					body: {issue: 3057, from: "intake"},
 				},
 			});
 			assert.isTrue(result.isError);
@@ -142,7 +147,6 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 						body: {
 							target: {pr: 3649},
 							from: "chief-of-staff",
-							at: "2026-07-19T10:00:00Z",
 						},
 					},
 				});
@@ -166,7 +170,6 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 							target: {issue: 3100},
 							from: "chief-of-staff",
 							note: "worth a pass",
-							at: "2026-07-19T10:00:00Z",
 						},
 					},
 				});
@@ -196,8 +199,41 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 			const {client} = yield* makeInitializedClient;
 			const result = yield* client["tools/call"]({
 				name: "channel_send",
-				// a known kind, but the body is missing IntakePing's required `from`/`at`
+				// a known kind, but the body is missing IntakePing's required `from`
 				arguments: {targetRole: "reviewer", kind: "IntakePing", body: {issue: 3057}},
+			});
+			assert.isTrue(result.isError);
+		}),
+	);
+
+	// #3895: a sender-composed `at` is authored prose, not a reading. A `Schema.Struct` decode would
+	// silently STRIP the excess key, leaving the sender believing it sent a time — so the send path
+	// rejects it loudly instead, and the message names where the real instant comes from.
+	it.effect("channel_send rejects a body carrying a sender-composed `at`", () =>
+		Effect.gen(function* () {
+			const {client} = yield* makeInitializedClient;
+			const result = yield* client["tools/call"]({
+				name: "channel_send",
+				arguments: {
+					targetRole: "reviewer",
+					kind: "IntakePing",
+					body: {issue: 3057, from: "intake", at: "2026-07-24T00:00:00Z"},
+				},
+			});
+			assert.isTrue(result.isError);
+		}),
+	);
+
+	it.effect("channel_send rejects a STRINGIFIED body carrying a sender-composed `at`", () =>
+		Effect.gen(function* () {
+			const {client} = yield* makeInitializedClient;
+			const result = yield* client["tools/call"]({
+				name: "channel_send",
+				arguments: {
+					targetRole: "reviewer",
+					kind: "IntakePing",
+					body: JSON.stringify({issue: 3057, from: "intake", at: "2026-07-24T00:00:00Z"}),
+				},
 			});
 			assert.isTrue(result.isError);
 		}),
@@ -217,7 +253,7 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 						targetRole: "reviewer",
 						kind: "IntakePing",
 						// the body as the MCP client sends it for an unconstrained param: a JSON string
-						body: JSON.stringify({issue: 3057, from: "intake", at: "2026-07-16T10:00:00Z"}),
+						body: JSON.stringify({issue: 3057, from: "intake"}),
 					},
 				});
 				assert.isFalse(result.isError);

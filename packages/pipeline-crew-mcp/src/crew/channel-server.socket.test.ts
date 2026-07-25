@@ -20,6 +20,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer, Ref} from "effect";
 import {type ChannelNotificationPayload, ChannelSink} from "../edge/index.ts";
 import {Dialer, type InboxEnvelope} from "../peer/index.ts";
+import {stampFromMillis} from "../protocol/index.ts";
 import {
 	crewSocketDialerLayer,
 	inboxServerSocketLayer,
@@ -79,7 +80,7 @@ describe("crew/channel-server — REAL unix-socket inbox transport", () => {
 						from: "inbox://engineering-manager/1",
 						kind: "IntakePing",
 						body: {issue: 3489, from: "engineering-manager", at: new Date().toISOString()},
-						at: new Date().toISOString(),
+						at: stampFromMillis(Date.now()),
 					};
 					const dialer = yield* Dialer;
 					const ack = yield* dialer.send(address, envelope).pipe(Effect.timeout("6 seconds"));

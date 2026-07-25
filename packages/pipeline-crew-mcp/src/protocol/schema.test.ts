@@ -6,6 +6,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Schema} from "effect";
+import {stampFromMillis} from "./instant.ts";
 import * as Messages from "./schema.ts";
 
 const roundTrips = <S extends Schema.Codec<any, any>>(schema: S, value: S["Type"]): void => {
@@ -25,14 +26,13 @@ describe("protocol/schema round-trips", () => {
 			resource: "issue:3054",
 			claimant: "peer-a",
 			role: "builder",
-			at: "2026-07-16T10:00:00Z",
 		});
 		roundTrips(Messages.ClaimReply, {
 			resource: "issue:3054",
 			granted: false,
 			collision: true,
 			owner: "peer-b",
-			since: "2026-07-16T09:59:00Z",
+			since: stampFromMillis(Date.parse("2026-07-16T09:59:00Z")),
 		});
 	});
 
@@ -40,7 +40,6 @@ describe("protocol/schema round-trips", () => {
 		roundTrips(Messages.ReleaseClaim, {
 			resource: "issue:3054",
 			claimant: "peer-a",
-			at: "2026-07-16T10:05:00Z",
 		});
 	});
 
@@ -51,7 +50,6 @@ describe("protocol/schema round-trips", () => {
 			inFlight: 2,
 			total: 9,
 			reporter: "peer-em",
-			at: "2026-07-16T10:02:00Z",
 		});
 	});
 
@@ -60,12 +58,10 @@ describe("protocol/schema round-trips", () => {
 			issue: asIssue(3100),
 			from: "triage",
 			note: "needs a second look",
-			at: "2026-07-16T10:03:00Z",
 		});
 		roundTrips(Messages.IntakePing, {
 			issue: asIssue(3100),
 			from: "triage",
-			at: "2026-07-16T10:03:00Z",
 		});
 	});
 
@@ -74,12 +70,10 @@ describe("protocol/schema round-trips", () => {
 			target: {pr: asPr(3649)},
 			from: "chief-of-staff",
 			note: "reviewed + banked, worth a look",
-			at: "2026-07-19T10:03:00Z",
 		});
 		roundTrips(Messages.EngineNudge, {
 			target: {issue: asIssue(3100)},
 			from: "chief-of-staff",
-			at: "2026-07-19T10:03:00Z",
 		});
 	});
 
@@ -87,14 +81,21 @@ describe("protocol/schema round-trips", () => {
 		roundTrips(Messages.PresenceAnnouncement, {
 			peer: "peer-a",
 			role: "builder",
-			at: "2026-07-16T10:04:00Z",
 		});
 		roundTrips(Messages.RoleLookupQuery, {role: "builder"});
 		roundTrips(Messages.RoleLookupResult, {
 			role: "builder",
 			peers: [
-				{peer: "peer-a", role: "builder", lastSeen: "2026-07-16T10:04:00Z"},
-				{peer: "peer-b", role: "builder", lastSeen: "2026-07-16T10:04:30Z"},
+				{
+					peer: "peer-a",
+					role: "builder",
+					lastSeen: stampFromMillis(Date.parse("2026-07-16T10:04:00Z")),
+				},
+				{
+					peer: "peer-b",
+					role: "builder",
+					lastSeen: stampFromMillis(Date.parse("2026-07-16T10:04:30Z")),
+				},
 			],
 		});
 		roundTrips(Messages.RoleLookupResult, {role: "builder", peers: []});
@@ -104,7 +105,6 @@ describe("protocol/schema round-trips", () => {
 		roundTrips(Messages.Heartbeat, {
 			peer: "peer-a",
 			ttlSeconds: 30,
-			at: "2026-07-16T10:05:00Z",
 		});
 	});
 });

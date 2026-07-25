@@ -75,7 +75,7 @@ session; the substrate resolves the target role's inbox for you:
 - **`channel_send {targetRole, kind, body}`** is the whole idiom. Discovery is implicit inside
   the send (the library resolves the role's inbox); you never call a separate discover/claim.
   Success returns an `InboxAck`; an unreachable peer returns a `PeerUnreachableError {target,
-  reason}`. Inbound arrives to you as a `<channel from="inbox://<role>" kind="…">…</channel>`
+  reason}`. Inbound arrives to you as a `<channel from="inbox://<role>" kind="…" at="…">…</channel>`
   wake tag.
 - **Resolve a kind's payload SHAPE with `channel_kinds` before its first send.** `channel_kinds`
   (no args) returns every kind's payload as a JSON Schema; read the shape, then build a valid

@@ -26,4 +26,16 @@ export {
 	payloadSchemaForKind,
 	Release,
 } from "./group.ts";
+export {
+	Iso8601Utc,
+	isObserved,
+	MAX_PLAUSIBLE_EPOCH_MILLIS,
+	MIN_PLAUSIBLE_EPOCH_MILLIS,
+	ObservedInstant,
+	renderInstant,
+	StampedInstant,
+	stampFromMillis,
+	stampNow,
+	UnknownInstant,
+} from "./instant.ts";
 export * as Messages from "./schema.ts";

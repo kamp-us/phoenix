@@ -144,8 +144,13 @@ session via `--channels server:@kampus/pipeline-crew-mcp`).
   substrate resolves the target role's inbox; there is no separate discover/claim tool.
 - **Results** — success returns an `InboxAck` (delivered-to-inbox + wake enqueued, **never**
   seen-by-model); an unreachable peer returns a `PeerUnreachableError {target, reason}`.
+- **Never write a time into `body`** — no kind's payload has one, and a body carrying an `at` is
+  rejected. You are a model composing JSON, so a time you write is prose that looks like a reading,
+  not a reading. The instant is stamped for you: the transport stamps the wake tag's `at`, the
+  receiver stamps the ack's. Read those; don't author one (ADR 0210).
 - **Inbound** — arrives to the recipient as a wake tag
-  `<channel from="inbox://<role>" kind="…">…JSON…</channel>`.
+  `<channel from="inbox://<role>" kind="…" at="…">…JSON…</channel>`. The `at` is the
+  transport-stamped instant, or the literal `unknown (…)` when the clock could not be read.
 - **Offline behavior** — log and continue. A `PeerUnreachableError` is logged and dropped; no
   retry, no escalation, no ack-required kinds (every edge is a latency optimization over the
   board, so a failed send costs latency, not correctness).

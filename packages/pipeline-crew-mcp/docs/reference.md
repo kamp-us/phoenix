@@ -44,11 +44,17 @@ fire-and-forget kind leaves `success` unset, so it defaults to `Schema.Void`.
 | `RoleId` | `Schema.NonEmptyString` — an opaque role identifier (a parameter, never a concrete crew-role noun). |
 | `PeerId` | `Schema.NonEmptyString` — an opaque participant (a peer / session) identifier. |
 | `MessageId` | `Schema.NonEmptyString` — an opaque message id, correlates an ack to its delivery. |
-| `Timestamp` | `Schema.String` — an ISO-8601 UTC instant, kept a string so the wire stays transport-agnostic. |
+| `StampedInstant` | A tagged union — `{_tag: "ObservedInstant", iso}` (a real clock reading, ISO-8601 UTC) or `{_tag: "UnknownInstant", reason}`. Produced only by `stampFromMillis`/`stampNow`, never composed by a sender (ADR 0210). |
 
 ### Payload shapes
 
 Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (absent, not nullable).
+
+**No payload carries a sender-composed time.** The sender on this substrate is a language model
+composing JSON, so a time it supplies is authored prose rather than a reading — `channel_send`
+rejects a body carrying an `at`. The authoritative instants are the envelope's (stamped by the
+transport at send), the ack's (stamped by the receiver at delivery), and `since` / `lastSeen`
+(stamped by the tracker). See ADR 0210.
 
 **`ClaimRequest`** — a sender's request to claim a resource (answered by `ClaimReply`):
 
@@ -57,7 +63,6 @@ Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (ab
 | `resource` | `Schema.NonEmptyString` |
 | `claimant` | `PeerId` |
 | `role` | `RoleId` |
-| `at` | `Timestamp` |
 
 **`ClaimReply`** — the typed answer to a `ClaimRequest`:
 
@@ -67,7 +72,7 @@ Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (ab
 | `granted` | `Schema.Boolean` |
 | `collision` | `Schema.Boolean` |
 | `owner` | `PeerId` |
-| `since` | `Timestamp` |
+| `since` | `StampedInstant` — tracker-stamped |
 
 **`ReleaseClaim`** — a holder freeing its own claim (fire-and-forget; `claimant` must be the holder):
 
@@ -75,7 +80,6 @@ Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (ab
 | --- | --- |
 | `resource` | `Schema.NonEmptyString` |
 | `claimant` | `PeerId` |
-| `at` | `Timestamp` |
 
 **`DrainProgressTally`** — a drain-progress report:
 
@@ -86,7 +90,6 @@ Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (ab
 | `inFlight` | `Schema.Int` |
 | `total` | `Schema.Int` |
 | `reporter` | `PeerId` |
-| `at` | `Timestamp` |
 
 **`IntakePing`** — an intake ping:
 
@@ -95,7 +98,6 @@ Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (ab
 | `issue` | `Schema.NonEmptyString` |
 | `from` | `RoleId` |
 | `note` | `Schema.String` *(optional)* |
-| `at` | `Timestamp` |
 
 **`PresenceAnnouncement`** — a peer announcing it serves a role (fire-and-forget):
 
@@ -103,7 +105,6 @@ Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (ab
 | --- | --- |
 | `peer` | `PeerId` |
 | `role` | `RoleId` |
-| `at` | `Timestamp` |
 
 **`RoleLookupQuery`** — a lookup query for peers serving a role (answered by `RoleLookupResult`):
 
@@ -124,7 +125,7 @@ Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (ab
 | --- | --- |
 | `peer` | `PeerId` |
 | `role` | `RoleId` |
-| `lastSeen` | `Timestamp` |
+| `lastSeen` | `StampedInstant` — tracker-stamped |
 
 **`Heartbeat`** — a presence-TTL keepalive:
 
@@ -132,7 +133,6 @@ Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (ab
 | --- | --- |
 | `peer` | `PeerId` |
 | `ttlSeconds` | `Schema.Int` |
-| `at` | `Timestamp` |
 
 ## Tracker claim/lease semantics
 
