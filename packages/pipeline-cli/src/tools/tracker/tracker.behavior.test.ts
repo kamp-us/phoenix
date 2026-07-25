@@ -479,6 +479,43 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 		}),
 	);
 
+	// The status facet owns the pickability spine, not the whole `status:` namespace: an issue
+	// dark-shipped behind a flag carries `status:awaiting-release` alongside `status:triaged`, and
+	// that marker IS the human release queue's membership. A re-prioritize that removed it would
+	// silently orphan the pending flag flip.
+	it.effect("a re-prioritize retains an orthogonal `status:awaiting-release`", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = [];
+			const result = yield* Effect.gen(function* () {
+				return yield* (yield* Tracker).applyTriage(TARGET, {type: "bug", priority: "p1"});
+			}).pipe((effect) =>
+				provide(
+					effect,
+					{
+						[`POST ${L}`]: labelSet("type:bug", "p1"),
+						[`DELETE ${P}/issues/${TARGET}/labels/p2`]: "",
+						[`GET ${L}`]: [
+							labelSet("type:bug", "status:triaged", "p2", "status:awaiting-release"),
+							labelSet("type:bug", "status:triaged", "p1", "status:awaiting-release"),
+						],
+					},
+					calls,
+				),
+			);
+			assert.deepStrictEqual(result, {
+				_tag: "triaged",
+				type: "bug",
+				priority: "p1",
+				status: "triaged",
+			});
+			// only the superseded priority is removed — the release-queue marker survives.
+			assert.deepStrictEqual(
+				calls.filter((call) => call.startsWith("DELETE")),
+				[`DELETE ${P}/issues/${TARGET}/labels/p2`],
+			);
+		}),
+	);
+
 	it.effect("a non-zero gh label exit → GhCommandError in the E channel", () =>
 		Effect.gen(function* () {
 			const tracker = yield* Tracker;
@@ -490,6 +527,19 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 			// no fixtures → the label read exits 1 → GhCommandError, never a throw. Only the
 			// per-label REMOVE is 404-tolerant; a failed read or add still fails the verb.
 			provide(effect, {}),
+		),
+	);
+
+	it.effect("a non-zero exit on the ADD → GhCommandError (only the remove is tolerant)", () =>
+		Effect.gen(function* () {
+			const tracker = yield* Tracker;
+			const error = yield* Effect.flip(
+				tracker.applyTriage(TARGET, {type: "feature", priority: "p2"}),
+			);
+			assert.isTrue(error instanceof GhCommandError);
+		}).pipe((effect) =>
+			// the pre-read succeeds, so the add is what fails: no `POST` fixture → exit 1.
+			provide(effect, {[`GET ${L}`]: labelSet("status:needs-triage")}),
 		),
 	);
 });

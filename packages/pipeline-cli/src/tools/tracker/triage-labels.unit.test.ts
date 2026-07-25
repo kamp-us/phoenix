@@ -46,6 +46,27 @@ describe("supersededLabels", () => {
 		]);
 	});
 
+	// The status facet owns the pickability SPINE, not the whole `status:` namespace.
+	// `status:awaiting-release` is the release queue's membership marker: superseding it on a
+	// re-prioritize would silently drop a dark-shipped issue out of the human release queue.
+	it("never supersedes `status:awaiting-release` — it is orthogonal to the pickability spine", () => {
+		assert.deepStrictEqual(
+			supersededLabels(["type:bug", "status:triaged", "p2", "status:awaiting-release"], {
+				type: "bug",
+				priority: "p1",
+				status: "triaged",
+			}),
+			["p2"],
+		);
+	});
+
+	it("never supersedes the `status:planning` epic-lock — it sits alongside the real status", () => {
+		assert.deepStrictEqual(
+			supersededLabels(["type:epic", "status:needs-triage", "status:planning"], TRIAGED),
+			["type:epic", "status:needs-triage"],
+		);
+	});
+
 	it("supersedes every facet at once on a full re-triage", () => {
 		assert.deepStrictEqual(
 			[...supersededLabels(["type:chore", "p0", "status:needs-triage"], TRIAGED)].sort(),
