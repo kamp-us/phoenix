@@ -23,9 +23,8 @@
  * before the Effect CLI runtime.
  */
 import {spawnSync} from "node:child_process";
-import {readFileSync} from "node:fs";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command} from "effect/unstable/cli";
 import {isZeroScope, lintCorpus, type ScanFile} from "./lint.ts";
@@ -77,8 +76,16 @@ class FindingsFound extends Schema.TaggedErrorClass<FindingsFound>()(
 ) {}
 class ZeroScope extends Schema.TaggedErrorClass<ZeroScope>()("@kampus/gh-phoenix/ZeroScope", {}) {}
 
-const readFileOrSkip = (file: string): Effect.Effect<string | null> =>
-	Effect.try(() => readFileSync(file, "utf8")).pipe(Effect.orElseSucceed(() => null));
+/**
+ * Read one corpus file through the Effect `FileSystem` seam (over this bin's
+ * `NodeServices.layer`, .patterns/effect-platform-access.md) — an unreadable file still
+ * degrades to `null`, which the caller skips, so it never enters the scanned scope and the
+ * zero-scope fail-closed stays the only refusal. Mirrors `command.ts`'s `readFileOrSkip`.
+ */
+const readFileOrSkip = (file: string): Effect.Effect<string | null, never, FileSystem.FileSystem> =>
+	Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(file, "utf8")).pipe(
+		Effect.orElseSucceed((): string | null => null),
+	);
 
 const fileArg = Argument.string("file").pipe(
 	Argument.atLeast(1),

@@ -10,6 +10,17 @@
  * injectable (default `selfPath`) so the self-skip is testable independent of the
  * runtime's `argv[1]`. `resolveRepo` resolves the repo the REST rewrites target:
  * `$CLAUDE_PIPELINE_REPO`, else `gh repo view`, else the phoenix default.
+ *
+ * **Exempt from the epic #3462 `@effect/platform` sweep, adjudicated in #3934.** The raw
+ * `node:fs` / `node:path` here is the bin-boundary case of
+ * .patterns/effect-platform-access.md § "The bright line": every consumer is `bin.ts`'s
+ * `runShim`, a *pre-Effect-runtime* argv dispatch that short-circuits before
+ * `NodeRuntime.runMain`, so there is no runtime and no `NodeServices.layer` in scope to
+ * `yield*` a service from. It is also synchronous by contract — `fileExists` is injected
+ * into the sync `route` core as `bodyFileExists`, and `selfPath` is computed at module load
+ * — so an effectful `FileSystem`/`Path` would have to make the router seam effectful to
+ * reach it. The raw calls stay at this boundary and are never woven through a service
+ * method, which is exactly what the bright line permits.
  */
 import {execFileSync} from "node:child_process";
 import {accessSync, constants, realpathSync} from "node:fs";
