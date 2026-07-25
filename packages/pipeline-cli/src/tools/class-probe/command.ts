@@ -24,11 +24,9 @@
  * unreadable §CLASS falls back to the fail-closed probes (`FAILCLOSED_PROBES`), which
  * over-dispatch every gate rather than skip one.
  */
-import {existsSync, readFileSync} from "node:fs";
-import {dirname, join, resolve} from "node:path";
-import {Console, Effect, Option} from "effect";
+import {readFileSync} from "node:fs";
+import {Console, Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../../find-root-dir.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
 import {
 	classify,
@@ -46,15 +44,26 @@ const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 /** The single source for the additive `UI_RE` (has-ui → review-design), read locally like §CLASS. */
 const SHIP_IT_PATH = "claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md";
 
-const defaultRoot = (from: string = process.cwd()): string => {
-	const start = resolve(from);
-	const root = findRootDir(
-		start,
-		(dir) => ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
-		dirname,
-	);
-	return root ?? start;
-};
+// Walk up from cwd for the first ancestor bearing a repo-root marker, probing each marker
+// through the `FileSystem`/`Path` seam so the resolver is testable off real disk
+// (.patterns/effect-platform-access.md). Mirrors `findRootDir`'s pure upward walk (dirname to
+// the fixpoint, then fall back to the start), but the marker check is the fs seam — `fs.exists`
+// yields an Effect. Marker-existence faults fall through as false, matching `existsSync`.
+const defaultRoot = Effect.fn(function* (from: string = process.cwd()) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const start = path.resolve(from);
+	let dir = start;
+	for (;;) {
+		for (const marker of ROOT_MARKERS) {
+			if (yield* fs.exists(path.join(dir, marker)).pipe(Effect.orElseSucceed(() => false)))
+				return dir;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) return start;
+		dir = parent;
+	}
+});
 
 const filesFromFlag = Flag.string("files-from").pipe(
 	Flag.optional,
@@ -73,54 +82,71 @@ const namespacesFlag = Flag.boolean("namespaces").pipe(
 );
 
 /** Read the changed-file list from `--files-from` or stdin; empty/failed read ⇒ no files. */
-const readFiles = (filesFrom: Option.Option<string>): ReadonlyArray<string> => {
-	let raw: string;
-	// biome-ignore lint/plugin: best-effort read — an empty/failed read is absorbed into no files ([]), never the E channel; a total helper, not Effect-cosplay.
-	try {
-		raw = Option.match(filesFrom, {
-			onSome: (path) => readFileSync(path, "utf8"),
-			onNone: () => readFileSync(0, "utf8"),
+const readFiles = (
+	filesFrom: Option.Option<string>,
+): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const raw = yield* Option.match(filesFrom, {
+			onSome: (path) =>
+				Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path, "utf8")).pipe(
+					Effect.orElseSucceed(() => ""),
+				),
+			// stdin (fd 0): a node-only boundary — FileSystem exposes no stdin reader, so kept raw. A
+			// failed/empty read is absorbed into no files (""), never the E channel; a total helper.
+			onNone: () =>
+				Effect.sync(() => {
+					// biome-ignore lint/plugin: fd-0 boundary read (closed/empty stdin), absorbed to "" — not Effect-cosplay.
+					try {
+						return readFileSync(0, "utf8");
+					} catch {
+						return "";
+					}
+				}),
 		});
-	} catch {
-		return [];
-	}
-	return raw
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0);
-};
+		return raw
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0);
+	});
 
 /** Read local §CLASS text; null (⇒ fail-closed probes) if the file is unreadable. */
-const readFormats = (root: string): string | null => {
-	// biome-ignore lint/plugin: best-effort read — an unreadable file is absorbed into null (⇒ fail-closed probes), never the E channel; a total helper, not Effect-cosplay.
-	try {
-		return readFileSync(join(root, FORMATS_PATH), "utf8");
-	} catch {
-		return null;
-	}
-};
+const readFormats = (
+	root: string,
+): Effect.Effect<string | null, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		return yield* fs
+			.readFileString(path.join(root, FORMATS_PATH), "utf8")
+			.pipe(Effect.orElseSucceed(() => null));
+	});
 
 /** Read local ship-it/SKILL.md text; null (⇒ fail-closed `UI_RE`) if the file is unreadable. */
-const readShipIt = (root: string): string | null => {
-	// biome-ignore lint/plugin: best-effort read — an unreadable file is absorbed into null (⇒ fail-closed UI_RE), never the E channel; a total helper, not Effect-cosplay.
-	try {
-		return readFileSync(join(root, SHIP_IT_PATH), "utf8");
-	} catch {
-		return null;
-	}
-};
+const readShipIt = (
+	root: string,
+): Effect.Effect<string | null, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		return yield* fs
+			.readFileString(path.join(root, SHIP_IT_PATH), "utf8")
+			.pipe(Effect.orElseSucceed(() => null));
+	});
 
 const classifyCmd = Command.make(
 	"classify",
 	{filesFrom: filesFromFlag, root: rootFlag, namespaces: namespacesFlag},
 	Effect.fn(function* ({filesFrom, root, namespaces}) {
-		const rootDir = Option.getOrElse(root, () => defaultRoot());
-		const formats = readFormats(rootDir);
+		const rootDir = yield* Option.match(root, {
+			onNone: () => defaultRoot(),
+			onSome: Effect.succeed,
+		});
+		const formats = yield* readFormats(rootDir);
 		const probes = parseClassProbes(formats ?? "");
-		const shipIt = readShipIt(rootDir);
+		const shipIt = yield* readShipIt(rootDir);
 		const uiRe = parseUiProbe(shipIt ?? "");
 		const uiExclude = parseUiExclude(shipIt ?? "");
-		const files = readFiles(filesFrom);
+		const files = yield* readFiles(filesFrom);
 		// Fail closed on zero input (#3786): this probe is only ever piped a PR's changed-file
 		// list, which is never legitimately empty — an empty read is a dropped/undelivered stdin,
 		// indistinguishable at the pure core from a gate-free PR. Route it through the same has-code

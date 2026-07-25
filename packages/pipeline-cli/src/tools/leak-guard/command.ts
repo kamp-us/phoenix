@@ -24,12 +24,10 @@
  * is dropped: the `pipeline-cli` bin imports `@effect/platform-node` statically,
  * so by the time this command runs the runtime dep is always resolved.
  */
-import {existsSync, readFileSync} from "node:fs";
-import {dirname, join, resolve} from "node:path";
-import {Console, Effect, Option} from "effect";
+import {readFileSync} from "node:fs";
+import {Console, Effect, FileSystem, Option, Path, type PlatformError} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, CREW_DIR, sweepCrew} from "./crew-gate.ts";
 import {PrComments, PrCommentsLive, type UpstreamUnavailableError} from "./github.ts";
 import {findCommentLeaks, findLeaks, type Leak} from "./leak-guard.ts";
@@ -58,13 +56,12 @@ class LeakFound extends Schema.TaggedErrorClass<LeakFound>()("LeakFound", {
 }) {}
 
 /** Read a file as UTF-8, or `null` when it is missing/unreadable (skip, never crash). */
-const readFileOrSkip = (file: string): Effect.Effect<string | null> =>
-	Effect.try({
-		try: () => readFileSync(file, "utf8"),
-		catch: () => null,
-	}).pipe(Effect.orElseSucceed(() => null));
+const readFileOrSkip = (file: string): Effect.Effect<string | null, never, FileSystem.FileSystem> =>
+	Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(file, "utf8")).pipe(
+		Effect.orElseSucceed(() => null),
+	);
 
-const scanFile = (file: string): Effect.Effect<FileLeaks> =>
+const scanFile = (file: string): Effect.Effect<FileLeaks, never, FileSystem.FileSystem> =>
 	readFileOrSkip(file).pipe(
 		Effect.map((content) => ({
 			file,
@@ -122,15 +119,26 @@ const scan = Command.make(
 const GATE_FAIL_EXIT_CODE = 1;
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 
-const defaultRoot = (from: string = process.cwd()): string => {
-	const start = resolve(from);
-	const root = findRootDir(
-		start,
-		(dir) => ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
-		dirname,
-	);
-	return root ?? start;
-};
+// Walk up from cwd for the first ancestor bearing a repo-root marker, probing each marker
+// through the `FileSystem`/`Path` seam so the resolver is testable off real disk
+// (.patterns/effect-platform-access.md). Mirrors `findRootDir`'s pure upward walk (dirname to
+// the fixpoint, then fall back to the start), but the marker check is the fs seam — `fs.exists`
+// yields an Effect. Marker-existence faults fall through as false, matching `existsSync`.
+const defaultRoot = Effect.fn(function* (from: string = process.cwd()) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const start = path.resolve(from);
+	let dir = start;
+	for (;;) {
+		for (const marker of ROOT_MARKERS) {
+			if (yield* fs.exists(path.join(dir, marker)).pipe(Effect.orElseSucceed(() => false)))
+				return dir;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) return start;
+		dir = parent;
+	}
+});
 
 const rootFlag = Flag.string("root").pipe(
 	Flag.optional,
@@ -154,7 +162,7 @@ const sweep = Command.make(
 	"sweep",
 	{root: rootFlag, dir: dirFlag},
 	Effect.fn(function* ({root, dir}) {
-		const base = Option.getOrElse(root, () => defaultRoot());
+		const base = yield* Option.match(root, {onNone: () => defaultRoot(), onSome: Effect.succeed});
 		yield* sweepCrew(
 			base,
 			Option.getOrElse(dir, () => CREW_DIR),
@@ -177,13 +185,16 @@ const commentBodyFlag = Flag.string("body-file").pipe(
 	Flag.withDescription("path to the comment body to scan (default: read the body from stdin)"),
 );
 
-const readCommentBody = (bodyFile: Option.Option<string>): Effect.Effect<string> =>
-	Effect.sync(() =>
-		Option.match(bodyFile, {
-			onNone: () => readFileSync(0, "utf8"),
-			onSome: (path) => readFileSync(path, "utf8"),
-		}),
-	);
+const readCommentBody = (
+	bodyFile: Option.Option<string>,
+): Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem> =>
+	Option.match(bodyFile, {
+		// stdin (fd 0): a node-only boundary — FileSystem exposes no stdin reader, so kept raw
+		// (.patterns/effect-platform-access.md bright line). A `--body-file` path routes the fs seam.
+		onNone: () => Effect.sync(() => readFileSync(0, "utf8")),
+		onSome: (path) =>
+			Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path, "utf8")),
+	});
 
 const scanComment = Command.make(
 	"scan-comment",

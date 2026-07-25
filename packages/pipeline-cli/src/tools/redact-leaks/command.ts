@@ -12,7 +12,7 @@
  * (not `Console.log`) so a leak-free body is emitted byte-for-byte, no appended newline (#3021 AC5).
  */
 import {readFileSync} from "node:fs";
-import {Console, Effect, Option} from "effect";
+import {Console, Effect, FileSystem, Option, type PlatformError} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {findCommentLeaks} from "../leak-guard/leak-guard.ts";
 import {redactLeaks} from "./redact-leaks.ts";
@@ -22,13 +22,16 @@ const bodyFileFlag = Flag.string("body-file").pipe(
 	Flag.withDescription("path to the body to redact (default: read the body from stdin)"),
 );
 
-const readBody = (bodyFile: Option.Option<string>): Effect.Effect<string> =>
-	Effect.sync(() =>
-		Option.match(bodyFile, {
-			onNone: () => readFileSync(0, "utf8"),
-			onSome: (path) => readFileSync(path, "utf8"),
-		}),
-	);
+const readBody = (
+	bodyFile: Option.Option<string>,
+): Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem> =>
+	Option.match(bodyFile, {
+		// stdin (fd 0): a node-only boundary — FileSystem exposes no stdin reader, so kept raw
+		// (.patterns/effect-platform-access.md bright line). A `--body-file` path routes the fs seam.
+		onNone: () => Effect.sync(() => readFileSync(0, "utf8")),
+		onSome: (path) =>
+			Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path, "utf8")),
+	});
 
 export const redactLeaksCommand = Command.make(
 	"redact-leaks",

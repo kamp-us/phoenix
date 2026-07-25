@@ -11,10 +11,13 @@
  * on a patched dep with no pin, a stale pin marker, or zero patchedDependencies in
  * scope (fail-closed, ADR 0092). A directory/file IO failure is an `IoError` (also
  * non-zero — both failures, undistinguished, per the bin's contract).
+ *
+ * All directory/path IO goes through the Effect `FileSystem`/`Path` seam (over the bin's
+ * `NodeServices.layer`), so a gate `unit` test substitutes an in-memory fs for real disk
+ * (.patterns/effect-platform-access.md); a fs fault folds `PlatformError` → the `IoError`
+ * this gate already carries.
  */
-import {readdirSync, readFileSync, statSync} from "node:fs";
-import {join, relative, sep} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path, type PlatformError} from "effect";
 import * as Schema from "effect/Schema";
 import {
 	judge,
@@ -54,10 +57,20 @@ const IGNORE_DIRS = new Set([
 /** The behavior pin lives on a test — scope the marker scan to test files (any tier). */
 const isTestFile = (name: string): boolean => /\.test\.(ts|tsx)$/.test(name);
 
-const readWorkspacePatches = (root: string): Effect.Effect<ReadonlyArray<PatchedDep>, IoError> =>
-	Effect.try({
-		try: () => parsePatchedDependencies(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8")),
-		catch: (cause) => new IoError({path: join(root, "pnpm-workspace.yaml"), cause}),
+const readWorkspacePatches = (
+	root: string,
+): Effect.Effect<ReadonlyArray<PatchedDep>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const target = path.join(root, "pnpm-workspace.yaml");
+		const text = yield* fs
+			.readFileString(target, "utf8")
+			.pipe(Effect.mapError((cause) => new IoError({path: target, cause})));
+		return yield* Effect.try({
+			try: () => parsePatchedDependencies(text),
+			catch: (cause) => new IoError({path: target, cause}),
+		});
 	});
 
 /**
@@ -66,34 +79,51 @@ const readWorkspacePatches = (root: string): Effect.Effect<ReadonlyArray<Patched
  * markers with a repo-relative (POSIX-normalized) path so the report is stable across
  * platforms and carries no absolute path.
  */
-const gatherMarkers = (root: string): Effect.Effect<ReadonlyArray<PinMarker>, IoError> =>
-	Effect.try({
-		try: () => {
-			const markers: Array<PinMarker> = [];
-			const walk = (dir: string): void => {
-				for (const entry of readdirSync(dir, {withFileTypes: true})) {
-					const abs = join(dir, entry.name);
-					if (entry.isDirectory()) {
-						if (!IGNORE_DIRS.has(entry.name)) walk(abs);
+const gatherMarkers = (
+	root: string,
+): Effect.Effect<ReadonlyArray<PinMarker>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const markers: Array<PinMarker> = [];
+		const walk = (dir: string): Effect.Effect<void, PlatformError.PlatformError> =>
+			Effect.gen(function* () {
+				for (const name of yield* fs.readDirectory(dir)) {
+					const abs = path.join(dir, name);
+					const stat = yield* fs.stat(abs);
+					if (stat.type === "Directory") {
+						// A symlinked dir is NEVER recursed: `fs.stat` follows links, but the
+						// pre-migration `Dirent.isDirectory()` was lstat-based, so a link-to-dir
+						// fell through and was skipped. v4's FileSystem exposes no `lstat`, and
+						// `readDirectory` takes no `withFileTypes` — but `readLink` succeeds only
+						// on a link, which is the equivalent test. Recursing one would both widen
+						// the pin scan (a guard failing OPEN) and admit a symlink cycle, since
+						// IGNORE_DIRS screens by name, not link-ness. Symlinked FILES stay in
+						// scope, as at base — hence the guard sits on this arm only.
+						const isSymlink = yield* fs.readLink(abs).pipe(
+							Effect.as(true),
+							Effect.orElseSucceed(() => false),
+						);
+						if (!isSymlink && !IGNORE_DIRS.has(name)) yield* walk(abs);
 						continue;
 					}
-					if (!statSync(abs).isFile() || !isTestFile(entry.name)) continue;
-					const relPath = relative(root, abs).split(sep).join("/");
-					markers.push(...parsePinMarkers(readFileSync(abs, "utf8"), relPath));
+					if (stat.type !== "File" || !isTestFile(name)) continue;
+					const relPath = path.relative(root, abs).split(path.sep).join("/");
+					markers.push(...parsePinMarkers(yield* fs.readFileString(abs, "utf8"), relPath));
 				}
-			};
-			walk(root);
-			return markers;
-		},
-		catch: (cause) => new IoError({path: root, cause}),
-	});
+			});
+		yield* walk(root);
+		return markers;
+	}).pipe(Effect.mapError((cause) => new IoError({path: root, cause})));
 
 /**
  * The CI gate: succeed when every maintained patch carries ≥1 matching `@patch-pin:`
  * marker and no marker is stale, else `CheckFailed`. Fails closed on zero
  * patchedDependencies in scope (ADR 0092).
  */
-export const checkPatchGuard = (root: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const checkPatchGuard = (
+	root: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const patched = yield* readWorkspacePatches(root);
 		const markers = yield* gatherMarkers(root);
