@@ -69,6 +69,9 @@ import {
 	runGh,
 	whoAmIArgs,
 } from "./gh-io.ts";
+// The one-label-per-facet triage contract lives in its own IO-free core, tested directly —
+// `applyTriage` is the shell that applies its decision (#3771).
+import {desiredLabels, supersededLabels} from "./triage-labels.ts";
 
 // Re-export the shared IO seam's typed failures so callers/tests keep importing them from this
 // service module — the single-source classes now live in `gh-io.ts` (#3262 AC 5).
@@ -418,12 +421,15 @@ const readBack = Effect.fn("Tracker.readBack")(function* (repo: string, target: 
 
 /**
  * Apply a triage classification to `target` (ADR 0190) — the label-transition envelope
- * the triage skill hand-rolled, now one verb with the judgment as a parameter. Adds the
- * `type:` / priority / `status:<stage>` labels, then removes the `status:needs-triage`
- * queue label so the entity leaves the queue. The removal is idempotent: a `gh` 404 (the
- * entity never carried the queue label — a pre-bootstrap issue) is not a failure of the
- * transition, since the triaged end-state is reached either way. Reads the labels back and
- * Schema-decodes them at the boundary, reporting the `status` stage that actually landed.
+ * the triage skill hand-rolled, now one verb with the judgment as a parameter. The
+ * transition is **convergent, not additive**: it reads the entity's current labels, adds
+ * the desired `type:` / priority / `status:<stage>` set, and removes every label the
+ * classification supersedes — the old priority on a re-prioritize, the old type on a
+ * re-type, and the `status:needs-triage` queue label, which is simply the status facet's
+ * instance of that one rule (#3771). Each removal tolerates a `gh` 404 (the entity no
+ * longer carries the label — a concurrent edit): the triaged end-state is reached either
+ * way. Reads the labels back and Schema-decodes them at the boundary, reporting the
+ * `status` stage that actually landed.
  */
 const applyTriage = Effect.fn("Tracker.applyTriage")(function* (
 	repo: string,
@@ -431,10 +437,21 @@ const applyTriage = Effect.fn("Tracker.applyTriage")(function* (
 	judgment: TriageJudgment,
 ) {
 	const status = judgment.status ?? "triaged";
-	const add = [`type:${judgment.type}`, judgment.priority, `${LABEL_STATUS_PREFIX}${status}`];
-	yield* runGh(addLabelsArgs(repo, target, add));
-	yield* runGh(removeLabelArgs(repo, target, `${LABEL_STATUS_PREFIX}${QUEUE_STATUS}`)).pipe(
-		Effect.catchTag("@kampus/gh-io/GhCommandError", () => Effect.succeed("")),
+	const classification = {type: judgment.type, priority: judgment.priority, status};
+	const before = yield* decodeLabels(yield* json(listLabelsArgs(repo, target)));
+	yield* runGh(addLabelsArgs(repo, target, desiredLabels(classification)));
+	yield* Effect.forEach(
+		supersededLabels(
+			before.map((label) => label.name),
+			classification,
+		),
+		(label) =>
+			runGh(removeLabelArgs(repo, target, label)).pipe(
+				Effect.catchTag("@kampus/gh-io/GhCommandError", () => Effect.succeed("")),
+			),
+		// serial on purpose: at most three removals, all mutating the SAME issue's label set — a
+		// fanned-out DELETE would race GitHub's read-modify-write of that one collection.
+		{concurrency: 1},
 	);
 	const labels = yield* decodeLabels(yield* json(listLabelsArgs(repo, target)));
 	const landedStatus = labels

@@ -28,10 +28,12 @@ interface Canned {
 	readonly exitCode?: number;
 	readonly stderr?: string;
 }
-type Response = string | Canned;
+// An array fixture answers successive calls on the same key, the last entry repeating — the only
+// way to express a read-modify-read verb (`applyTriage` reads labels before and after its writes).
+type Response = string | Canned | ReadonlyArray<string | Canned>;
 
 const enc = new TextEncoder();
-const normalize = (response: Response): Canned =>
+const normalize = (response: string | Canned): Canned =>
 	typeof response === "string" ? {stdout: response} : response;
 
 const methodOf = (args: ReadonlyArray<string>): string => {
@@ -46,8 +48,10 @@ const methodOf = (args: ReadonlyArray<string>): string => {
  */
 const mockSpawner = (
 	responses: Record<string, Response>,
-): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>
-	Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
+	calls?: Array<string>,
+): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> => {
+	const seen = new Map<string, number>();
+	return Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
 		ChildProcessSpawner.make(
 			Effect.fnUntraced(function* (command) {
 				let cmd = command;
@@ -59,10 +63,18 @@ const mockSpawner = (
 					(args[0] === "api" ? (args[1] ?? "") : args.slice(0, 2).join(" "));
 				const path = rawPath.replace(/\?.*$/, "");
 				const key = `${methodOf(args)} ${path}`;
+				calls?.push(key);
+				const nth = seen.get(key) ?? 0;
+				seen.set(key, nth + 1);
+				const fixture = responses[key];
 				const canned =
-					key in responses
-						? normalize(responses[key]!)
-						: {stdout: "", exitCode: 1, stderr: `not found: ${key}`};
+					fixture === undefined
+						? {stdout: "", exitCode: 1, stderr: `not found: ${key}`}
+						: normalize(
+								Array.isArray(fixture)
+									? (fixture[Math.min(nth, fixture.length - 1)] ?? "")
+									: (fixture as string | Canned),
+							);
 				return ChildProcessSpawner.makeHandle({
 					pid: ChildProcessSpawner.ProcessId(1),
 					stdin: Sink.drain,
@@ -79,12 +91,14 @@ const mockSpawner = (
 			}),
 		),
 	);
+};
 
 const provide = <A, E>(
 	effect: Effect.Effect<A, E, Tracker>,
 	responses: Record<string, Response>,
+	calls?: Array<string>,
 ): Effect.Effect<A, E | RepoResolutionError> =>
-	effect.pipe(Effect.provide(GithubTrackerLive.pipe(Layer.provide(mockSpawner(responses)))));
+	effect.pipe(Effect.provide(GithubTrackerLive.pipe(Layer.provide(mockSpawner(responses, calls)))));
 
 const TARGET = 900;
 const P = `repos/kamp-us/phoenix`;
@@ -318,6 +332,9 @@ describe("Tracker.readBack — resolve the current owner", () => {
 describe("Tracker.applyTriage — the label-transition envelope over a mock gh spawner", () => {
 	const L = `${P}/issues/${TARGET}/labels`;
 
+	const labelSet = (...names: ReadonlyArray<string>) =>
+		JSON.stringify(names.map((name) => ({name})));
+
 	it.effect("adds type/priority/status, removes needs-triage, reads back → triaged", () =>
 		Effect.gen(function* () {
 			const tracker = yield* Tracker;
@@ -330,14 +347,13 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 			});
 		}).pipe((effect) =>
 			provide(effect, {
-				[`POST ${L}`]: JSON.stringify([{name: "type:feature"}, {name: "p2"}]),
+				[`POST ${L}`]: labelSet("type:feature", "p2"),
 				[`DELETE ${P}/issues/${TARGET}/labels/status:needs-triage`]: "",
-				// read-back reflects the post-transition state: the queue label is gone.
-				[`GET ${L}`]: JSON.stringify([
-					{name: "type:feature"},
-					{name: "p2"},
-					{name: "status:triaged"},
-				]),
+				// pre-read: still queued; read-back reflects the post-transition state.
+				[`GET ${L}`]: [
+					labelSet("status:needs-triage"),
+					labelSet("type:feature", "p2", "status:triaged"),
+				],
 			}),
 		),
 	);
@@ -358,18 +374,47 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 			});
 		}).pipe((effect) =>
 			provide(effect, {
-				[`POST ${L}`]: JSON.stringify([{name: "type:bug"}]),
+				[`POST ${L}`]: labelSet("type:bug"),
 				[`DELETE ${P}/issues/${TARGET}/labels/status:needs-triage`]: "",
-				[`GET ${L}`]: JSON.stringify([
-					{name: "type:bug"},
-					{name: "p1"},
-					{name: "status:needs-info"},
-				]),
+				[`GET ${L}`]: [
+					labelSet("status:needs-triage"),
+					labelSet("type:bug", "p1", "status:needs-info"),
+				],
 			}),
 		),
 	);
 
-	it.effect("the queue label already absent (404 on remove) → still triaged (idempotent)", () =>
+	it.effect("the queue label already absent → no remove is attempted (idempotent)", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = [];
+			const result = yield* Effect.gen(function* () {
+				return yield* (yield* Tracker).applyTriage(TARGET, {type: "chore", priority: "p2"});
+			}).pipe((effect) =>
+				provide(
+					effect,
+					{
+						[`POST ${L}`]: labelSet("type:chore"),
+						// a pre-bootstrap issue never carried the queue label; nothing is superseded.
+						[`GET ${L}`]: labelSet("type:chore", "p2", "status:triaged"),
+					},
+					calls,
+				),
+			);
+			assert.deepStrictEqual(result, {
+				_tag: "triaged",
+				type: "chore",
+				priority: "p2",
+				status: "triaged",
+			});
+			// no DELETE fixture exists — an attempted removal would have exited 1 and failed the verb.
+			assert.deepStrictEqual(
+				calls.filter((call) => call.startsWith("DELETE")),
+				[],
+			);
+		}),
+	);
+
+	it.effect("a concurrent removal (404 on remove) is tolerated → still triaged", () =>
 		Effect.gen(function* () {
 			const tracker = yield* Tracker;
 			const result = yield* tracker.applyTriage(TARGET, {type: "chore", priority: "p2"});
@@ -381,23 +426,60 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 			});
 		}).pipe((effect) =>
 			provide(effect, {
-				[`POST ${L}`]: JSON.stringify([{name: "type:chore"}]),
-				// a pre-bootstrap issue never carried the queue label → the remove 404s, tolerated.
+				[`POST ${L}`]: labelSet("type:chore"),
+				// the queue label vanished between the pre-read and the remove → 404, tolerated.
 				[`DELETE ${P}/issues/${TARGET}/labels/status:needs-triage`]: {
 					stdout: "",
 					exitCode: 1,
 					stderr: "HTTP 404: Label does not exist",
 				},
-				[`GET ${L}`]: JSON.stringify([
-					{name: "type:chore"},
-					{name: "p2"},
-					{name: "status:triaged"},
-				]),
+				[`GET ${L}`]: [
+					labelSet("status:needs-triage"),
+					labelSet("type:chore", "p2", "status:triaged"),
+				],
 			}),
 		),
 	);
 
-	it.effect("a non-zero gh add-labels exit → GhCommandError in the E channel", () =>
+	// The #3771 defect: re-prioritizing an already-triaged issue was ADDITIVE, so the old `p2`
+	// survived alongside the new `p1` and the queue's pick order went ambiguous. Same for a re-type.
+	it.effect("re-triage of an already-triaged issue removes the superseded type AND priority", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = [];
+			const result = yield* Effect.gen(function* () {
+				return yield* (yield* Tracker).applyTriage(TARGET, {type: "decision", priority: "p1"});
+			}).pipe((effect) =>
+				provide(
+					effect,
+					{
+						[`POST ${L}`]: labelSet("type:decision", "p1"),
+						[`DELETE ${P}/issues/${TARGET}/labels/type:bug`]: "",
+						[`DELETE ${P}/issues/${TARGET}/labels/p2`]: "",
+						[`GET ${L}`]: [
+							// already triaged: type:bug / p2 / status:triaged, plus an unrelated label.
+							labelSet("type:bug", "status:triaged", "p2", "epic"),
+							labelSet("type:decision", "status:triaged", "p1", "epic"),
+						],
+					},
+					calls,
+				),
+			);
+			assert.deepStrictEqual(result, {
+				_tag: "triaged",
+				type: "decision",
+				priority: "p1",
+				status: "triaged",
+			});
+			// exactly the two superseded facet members are removed — `status:triaged` is already
+			// the desired member, and `epic` is outside the contract, so neither is touched.
+			assert.deepStrictEqual(calls.filter((call) => call.startsWith("DELETE")).sort(), [
+				`DELETE ${P}/issues/${TARGET}/labels/p2`,
+				`DELETE ${P}/issues/${TARGET}/labels/type:bug`,
+			]);
+		}),
+	);
+
+	it.effect("a non-zero gh label exit → GhCommandError in the E channel", () =>
 		Effect.gen(function* () {
 			const tracker = yield* Tracker;
 			const error = yield* Effect.flip(
@@ -405,7 +487,8 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 			);
 			assert.isTrue(error instanceof GhCommandError);
 		}).pipe((effect) =>
-			// no POST fixture → the add-labels call exits 1 → GhCommandError, never a throw.
+			// no fixtures → the label read exits 1 → GhCommandError, never a throw. Only the
+			// per-label REMOVE is 404-tolerant; a failed read or add still fails the verb.
 			provide(effect, {}),
 		),
 	);
