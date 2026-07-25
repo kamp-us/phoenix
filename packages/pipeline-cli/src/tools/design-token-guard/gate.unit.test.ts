@@ -10,7 +10,7 @@ import {dirname, join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
 import {afterEach, beforeEach, describe, expect, it} from "@effect/vitest";
 import {Cause, Effect, Exit, type FileSystem, type Path} from "effect";
-import {CheckFailed, checkDesignTokens, writeBaseline} from "./gate.ts";
+import {CheckFailed, checkDesignTokens, IoError, writeBaseline} from "./gate.ts";
 
 let root: string;
 beforeEach(() => {
@@ -54,6 +54,8 @@ const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path
 	Effect.runPromiseExit(Effect.provide(effect, NodeServices.layer));
 const isCheckFailed = (exit: Exit.Exit<unknown, unknown>): boolean =>
 	Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof CheckFailed;
+const isIoError = (exit: Exit.Exit<unknown, unknown>): boolean =>
+	Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof IoError;
 
 describe("checkDesignTokens — the CI exit-code gate over a fake tree", () => {
 	it("SUCCEEDS on a clean tree (role tokens only)", async () => {
@@ -130,13 +132,23 @@ describe("walkCss symlink semantics", () => {
 		expect(isCheckFailed(await run(checkDesignTokens(root)))).toBe(true);
 	});
 
-	it("tolerates a broken symlink under the root (skipped, not an IoError)", async () => {
+	it("ignores a dangling NON-.css symlink under the root (matches the dirent walk)", async () => {
+		writeConfig();
+		write(join(CSS_DIR, "tokens.css"), `:root{ --accent: #e54d2e; }`);
+		write(join(CSS_DIR, "a.css"), `.a{ color: var(--accent); }`);
+		link(join(CSS_DIR, "dangling-dir"), "gone-dir");
+		expect(Exit.isSuccess(await run(checkDesignTokens(root)))).toBe(true);
+	});
+
+	// The dirent walk pushed any non-directory entry named `*.css` and then `readFileSync`'d it,
+	// so a dangling one raised ENOENT and red'd the gate. That is a tree-corruption alarm: a real
+	// CSS file replaced by a dangling link must not silently leave scope.
+	it("HARD-FAILS (IoError) on a dangling .css symlink under the root", async () => {
 		writeConfig();
 		write(join(CSS_DIR, "tokens.css"), `:root{ --accent: #e54d2e; }`);
 		write(join(CSS_DIR, "a.css"), `.a{ color: var(--accent); }`);
 		link(join(CSS_DIR, "dangling.css"), join("outside", "gone.css"));
-		link(join(CSS_DIR, "dangling-dir"), "gone-dir");
-		expect(Exit.isSuccess(await run(checkDesignTokens(root)))).toBe(true);
+		expect(isIoError(await run(checkDesignTokens(root)))).toBe(true);
 	});
 
 	it("terminates on a symlink cycle under the root", async () => {

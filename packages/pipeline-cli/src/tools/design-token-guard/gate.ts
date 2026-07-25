@@ -78,11 +78,18 @@ const walkCss = (fs: FileSystem.FileSystem, path: Path.Path, base: string) =>
 			if (dir === undefined) break;
 			for (const name of yield* fs.readDirectory(dir)) {
 				const abs = path.join(dir, name);
-				// A failing stat is a broken symlink (or an entry racing an unlink) — skip it, as
-				// the dirent walk silently did; surfacing it as `IoError` would let one dangling
-				// link anywhere under the root red the whole gate.
+				// A failing stat is a dangling symlink (or an entry racing an unlink). The dirent
+				// walk classified it by NAME alone, and the two halves differ: a `*.css` one was
+				// pushed and then hard-failed at `readFileSync` (`IoError`, exit 1 — the
+				// tree-corruption alarm), while a non-`.css` one matched neither arm and was
+				// silently ignored. Push it here to reproduce that alarm at the read; skipping it
+				// would turn a CSS file replaced by a dangling link from "gate reds" into
+				// "file silently leaves scope".
 				const stat = yield* Effect.option(fs.stat(abs));
-				if (Option.isNone(stat)) continue;
+				if (Option.isNone(stat)) {
+					if (name.endsWith(".css")) found.push(abs);
+					continue;
+				}
 				if (stat.value.type === "Directory") {
 					if (name === "node_modules" || name === "dist") continue;
 					// `readLink` succeeds only on a symlink, so success here means "symlinked dir".
