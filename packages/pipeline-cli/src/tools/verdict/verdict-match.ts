@@ -146,6 +146,27 @@ export interface ResolveVerdictInput {
 }
 
 /**
+ * The latest-wins pick, shared by `resolveVerdict` and the §CP advisory resolution: among the
+ * comments an authorized (write+, ADR 0055) author posted whose body matches `re`, the newest by
+ * `(createdAt, id)`. `undefined` when the authorized candidate set is empty — the fail-closed
+ * "nothing to consume in this namespace", never a false win.
+ */
+export const pickLatestAuthorized = (
+	comments: ReadonlyArray<VerdictComment>,
+	authorizedAuthors: ReadonlyArray<string>,
+	re: RegExp,
+): VerdictComment | undefined => {
+	const authorized = new Set(authorizedAuthors);
+	const candidates = comments.filter(
+		(comment) => authorized.has(comment.author) && re.test(comment.body),
+	);
+	candidates.sort((a, b) =>
+		a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id,
+	);
+	return candidates[candidates.length - 1];
+};
+
+/**
  * Resolve the (PR, gate) verdict against the current head, re-encoding ADR 0058 rule 3
  * exactly: author-gate to write+ collaborators (a forged marker is invisible), keep only
  * PASS/FAIL markers in this namespace, take the **newest** by `(createdAt, id)` (latest-wins,
@@ -155,15 +176,11 @@ export interface ResolveVerdictInput {
  * set is empty. Fail-closed everywhere: an empty authorized set is `none`, never a false win.
  */
 export const resolveVerdict = (input: ResolveVerdictInput): VerdictOutcome => {
-	const authorized = new Set(input.authorizedAuthors);
-	const re = polarityRe(input.gate);
-	const candidates = input.comments.filter(
-		(comment) => authorized.has(comment.author) && re.test(comment.body),
+	const latest = pickLatestAuthorized(
+		input.comments,
+		input.authorizedAuthors,
+		polarityRe(input.gate),
 	);
-	candidates.sort((a, b) =>
-		a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id,
-	);
-	const latest = candidates[candidates.length - 1];
 	// `latest` is absent only for an empty candidate set, and `parseVerdict` is null only for a
 	// non-PASS/FAIL body — but polarityRe already filtered candidates to PASS/FAIL markers, so both
 	// guards collapse to the same fail-closed `none` (no consumable verdict in this namespace).
@@ -273,6 +290,15 @@ export const malformedEmittedSha = (body: string, gate: VerdictGate): string | n
  * `malformedEmittedSha`. Capture group 1 is the bound SHA.
  */
 const reviewedHeadShaRe = /^\s*Reviewed-head:\s*@?\s*([0-9a-f]{7,40})/im;
+
+/**
+ * The head a §CP advisory binds itself to — its body's `Reviewed-head: @ <sha>` anchor (ADR 0151),
+ * lowercased, or `null` when the body carries no well-formed anchor. A §CP advisory is SHA-less in
+ * its FIRST line by design (ADR 0111), so this body anchor is the only head binding it has, and the
+ * only thing that can make it a current-head verdict.
+ */
+export const reviewedHeadSha = (body: string): string | null =>
+	reviewedHeadShaRe.exec(body)?.[1]?.toLowerCase() ?? null;
 
 /**
  * Every head SHA a verdict body binds itself to: the first-line `PASS|FAIL @ <sha>` marker and the
