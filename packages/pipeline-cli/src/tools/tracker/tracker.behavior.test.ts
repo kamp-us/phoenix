@@ -54,6 +54,9 @@ const mockSpawner = (
 	// Every `-f body=…` the verb sent, in order — what proves WHAT a writer posted, not just that
 	// it posted (the #3987 regression: an unstamped claim marker is indistinguishable by key alone).
 	bodies?: Array<string>,
+	// Every `-f labels[]=…` the verb ADDED, for the same reason: the park's contract is about which
+	// labels were applied, and a POST key alone can't tell a bare status from a minted classification.
+	added?: Array<string>,
 ): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> => {
 	const seen = new Map<string, number>();
 	return Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
@@ -71,6 +74,7 @@ const mockSpawner = (
 				calls?.push(key);
 				for (const arg of args) {
 					if (arg.startsWith("body=")) bodies?.push(arg.slice("body=".length));
+					if (arg.startsWith("labels[]=")) added?.push(arg.slice("labels[]=".length));
 				}
 				const nth = seen.get(key) ?? 0;
 				seen.set(key, nth + 1);
@@ -106,9 +110,12 @@ const provide = <A, E>(
 	responses: Record<string, Response>,
 	calls?: Array<string>,
 	bodies?: Array<string>,
+	added?: Array<string>,
 ): Effect.Effect<A, E | RepoResolutionError> =>
 	effect.pipe(
-		Effect.provide(GithubTrackerLive.pipe(Layer.provide(mockSpawner(responses, calls, bodies)))),
+		Effect.provide(
+			GithubTrackerLive.pipe(Layer.provide(mockSpawner(responses, calls, bodies, added))),
+		),
 	);
 
 const TARGET = 900;
@@ -421,13 +428,13 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 			const result = yield* tracker.applyTriage(TARGET, {
 				type: "bug",
 				priority: "p1",
-				status: "needs-info",
+				status: "planned",
 			});
 			assert.deepStrictEqual(result, {
 				_tag: "triaged",
 				type: "bug",
 				priority: "p1",
-				status: "needs-info",
+				status: "planned",
 			});
 		}).pipe((effect) =>
 			provide(effect, {
@@ -435,10 +442,108 @@ describe("Tracker.applyTriage — the label-transition envelope over a mock gh s
 				[`DELETE ${P}/issues/${TARGET}/labels/status:needs-triage`]: "",
 				[`GET ${L}`]: [
 					labelSet("status:needs-triage"),
-					labelSet("type:bug", "p1", "status:needs-info"),
+					labelSet("type:bug", "p1", "status:planned"),
 				],
 			}),
 		),
+	);
+
+	// #4042: the needs-info park is the triage skill's Step-5 outcome — "not a type, not a
+	// priority, not triaged". It was inexpressible through the verb, so every park either
+	// hand-rolled the REST label calls or minted a filler classification (observed on #4067).
+	it.effect("parks to needs-info with the status alone — no type, no priority applied", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = [];
+			const added: Array<string> = [];
+			const result = yield* Effect.gen(function* () {
+				return yield* (yield* Tracker).applyTriage(TARGET, {status: "needs-info"});
+			}).pipe((effect) =>
+				provide(
+					effect,
+					{
+						[`POST ${L}`]: labelSet("status:needs-info"),
+						[`DELETE ${P}/issues/${TARGET}/labels/status:needs-triage`]: "",
+						[`GET ${L}`]: [labelSet("status:needs-triage"), labelSet("status:needs-info")],
+					},
+					calls,
+					undefined,
+					added,
+				),
+			);
+			assert.deepStrictEqual(result, {_tag: "parked", status: "needs-info"});
+			// the whole point: the ONLY label added is the stage — no fabricated classification.
+			assert.deepStrictEqual(added, ["status:needs-info"]);
+			// and the park still leaves the queue (the status facet's one rule).
+			assert.deepStrictEqual(
+				calls.filter((call) => call.startsWith("DELETE")),
+				[`DELETE ${P}/issues/${TARGET}/labels/status:needs-triage`],
+			);
+		}),
+	);
+
+	it.effect("bouncing an already-typed issue back to needs-info strips its type and priority", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = [];
+			const result = yield* Effect.gen(function* () {
+				return yield* (yield* Tracker).applyTriage(TARGET, {status: "needs-info"});
+			}).pipe((effect) =>
+				provide(
+					effect,
+					{
+						[`POST ${L}`]: labelSet("status:needs-info"),
+						[`DELETE ${P}/issues/${TARGET}/labels/type:bug`]: "",
+						[`DELETE ${P}/issues/${TARGET}/labels/p2`]: "",
+						[`DELETE ${P}/issues/${TARGET}/labels/status:triaged`]: "",
+						[`GET ${L}`]: [
+							labelSet("type:bug", "p2", "status:triaged", "epic"),
+							labelSet("status:needs-info", "epic"),
+						],
+					},
+					calls,
+				),
+			);
+			assert.deepStrictEqual(result, {_tag: "parked", status: "needs-info"});
+			// a parked entity carries no classification, so all three superseded facets go —
+			// `epic` is outside the contract and survives.
+			assert.deepStrictEqual(calls.filter((call) => call.startsWith("DELETE")).sort(), [
+				`DELETE ${P}/issues/${TARGET}/labels/p2`,
+				`DELETE ${P}/issues/${TARGET}/labels/status:triaged`,
+				`DELETE ${P}/issues/${TARGET}/labels/type:bug`,
+			]);
+		}),
+	);
+
+	// The minting path, closed: a caller that satisfies the parser with filler facets on a stage
+	// DEFINED as un-classified is refused outright — and refused before any write, so a rejected
+	// judgment can never leave the entity half-transitioned.
+	it.effect("refuses a needs-info judgment carrying a type/priority — before any gh call", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = [];
+			const error = yield* Effect.gen(function* () {
+				return yield* Effect.flip(
+					(yield* Tracker).applyTriage(TARGET, {
+						type: "bug",
+						priority: "p2",
+						status: "needs-info",
+					}),
+				);
+			}).pipe((effect) => provide(effect, {}, calls));
+			assert.isTrue(error instanceof TrackerInputError);
+			assert.deepStrictEqual(calls, []);
+		}),
+	);
+
+	it.effect(
+		"refuses a classified stage that omits a facet — the triaged path still needs both",
+		() =>
+			Effect.gen(function* () {
+				const calls: Array<string> = [];
+				const error = yield* Effect.gen(function* () {
+					return yield* Effect.flip((yield* Tracker).applyTriage(TARGET, {type: "bug"}));
+				}).pipe((effect) => provide(effect, {}, calls));
+				assert.isTrue(error instanceof TrackerInputError);
+				assert.deepStrictEqual(calls, []);
+			}),
 	);
 
 	it.effect("the queue label already absent → no remove is attempted (idempotent)", () =>

@@ -74,7 +74,7 @@ import {
 } from "./gh-io.ts";
 // The one-label-per-facet triage contract lives in its own IO-free core, tested directly —
 // `applyTriage` is the shell that applies its decision (#3771).
-import {desiredLabels, supersededLabels} from "./triage-labels.ts";
+import {classify, desiredLabels, supersededLabels} from "./triage-labels.ts";
 
 // Re-export the shared IO seam's typed failures so callers/tests keep importing them from this
 // service module — the single-source classes now live in `gh-io.ts` (#3262 AC 5).
@@ -153,24 +153,31 @@ export type ReadBackResult =
  * default `triaged`). Domain vocabulary only — `type`/`priority`/`status` are the crew's
  * own terms; `GithubTrackerLive` maps them to `type:` / `status:` label strings at the
  * boundary, so no GitHub label string leaks into the signature (ADR 0190).
+ *
+ * `type`/`priority` are optional at the *judgment* boundary because the un-classified park
+ * (`status: "needs-info"`) has neither; which combinations are well-formed is `classify`'s
+ * call, and a violation is a `TrackerInputError` raised before any write (#4042).
  */
 export interface TriageJudgment {
-	readonly type: string;
-	readonly priority: string;
-	readonly status?: string;
+	readonly type?: string | undefined;
+	readonly priority?: string | undefined;
+	readonly status?: string | undefined;
 }
 
 /**
  * The `applyTriage` verdict — the entity now carries the classification, with `status`
  * read back from the entity (so the caller sees the stage that actually landed, not just
- * the one requested). A domain owner, never a raw REST label payload.
+ * the one requested). A domain owner, never a raw REST label payload. The two arms mirror
+ * the classification's: `parked` reports no type and no priority because it applied none.
  */
-export type TriageResult = {
-	readonly _tag: "triaged";
-	readonly type: string;
-	readonly priority: string;
-	readonly status: string;
-};
+export type TriageResult =
+	| {
+			readonly _tag: "triaged";
+			readonly type: string;
+			readonly priority: string;
+			readonly status: string;
+	  }
+	| {readonly _tag: "parked"; readonly status: string};
 
 /**
  * A create-issue judgment (#3264): the `title` + `body` of the new entity, and the
@@ -448,6 +455,11 @@ const readBack = Effect.fn("Tracker.readBack")(function* (repo: string, target: 
  * longer carries the label — a concurrent edit): the triaged end-state is reached either
  * way. Reads the labels back and Schema-decodes them at the boundary, reporting the
  * `status` stage that actually landed.
+ *
+ * The judgment is routed through `classify` first, so the un-classified `needs-info` park is a
+ * first-class transition — status only, with any stale `type:*`/`p*` superseded away — and an
+ * ill-formed judgment fails with a `TrackerInputError` before any write reaches the tracker
+ * (#4042).
  */
 const applyTriage = Effect.fn("Tracker.applyTriage")(function* (
 	repo: string,
@@ -455,7 +467,10 @@ const applyTriage = Effect.fn("Tracker.applyTriage")(function* (
 	judgment: TriageJudgment,
 ) {
 	const status = judgment.status ?? "triaged";
-	const classification = {type: judgment.type, priority: judgment.priority, status};
+	const classification = classify({type: judgment.type, priority: judgment.priority, status});
+	if (classification._tag === "invalid") {
+		return yield* new TrackerInputError({message: classification.reason});
+	}
 	const before = yield* decodeLabels(yield* json(listLabelsArgs(repo, target)));
 	yield* runGh(addLabelsArgs(repo, target, desiredLabels(classification)));
 	yield* Effect.forEach(
@@ -477,12 +492,17 @@ const applyTriage = Effect.fn("Tracker.applyTriage")(function* (
 		.filter((name) => name.startsWith(LABEL_STATUS_PREFIX))
 		.map((name) => name.slice(LABEL_STATUS_PREFIX.length))
 		.find((stage) => stage !== QUEUE_STATUS);
-	return {
-		_tag: "triaged",
-		type: judgment.type,
-		priority: judgment.priority,
-		status: landedStatus ?? status,
-	} satisfies TriageResult;
+	const landed = landedStatus ?? status;
+	return (
+		classification._tag === "parked"
+			? {_tag: "parked", status: landed}
+			: {
+					_tag: "triaged",
+					type: classification.type,
+					priority: classification.priority,
+					status: landed,
+				}
+	) satisfies TriageResult;
 });
 
 /** Map a domain gate name to the ADR-0058 `VerdictGate`, or `null` if it is not a known gate. */
@@ -674,6 +694,8 @@ const graduate = Effect.fn("Tracker.graduate")(function* (
 
 type TrackerErrors = RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError;
 
+type ApplyTriageErrors = TrackerErrors | TrackerInputError;
+
 type PostVerdictErrors = TrackerErrors | TrackerInputError | TrackerVerifyError;
 
 type GraduateErrors = TrackerErrors | TrackerVerifyError;
@@ -695,7 +717,7 @@ export class Tracker extends Context.Service<
 		readonly applyTriage: (
 			target: TargetId,
 			judgment: TriageJudgment,
-		) => Effect.Effect<TriageResult, TrackerErrors>;
+		) => Effect.Effect<TriageResult, ApplyTriageErrors>;
 		readonly createIssue: (
 			judgment: CreateIssueJudgment,
 		) => Effect.Effect<CreateIssueResult, TrackerErrors>;

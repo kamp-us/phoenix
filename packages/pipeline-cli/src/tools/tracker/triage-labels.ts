@@ -11,14 +11,84 @@
  *
  * The queue-label drop (`status:needs-triage`) is not a special case here — it is just the
  * status facet's instance of the same rule.
+ *
+ * Triage has TWO outcomes, not one: a `classified` issue carries all three facets, and a `parked`
+ * one (`status:needs-info`) carries a status and *deliberately* no type and no priority — the
+ * triage skill's Step 5 contract, "not a type, not a priority, not triaged". Modeling them as one
+ * record with three required facets made the park inexpressible, so the verb minted a filler
+ * `type:`/`p*` for an issue triage had explicitly declined to classify (#4042, observed on #4067).
  */
 
-/** The domain classification a triage decision assigns: one value per single-valued facet. */
-export interface TriageClassification {
-	readonly type: string;
-	readonly priority: string;
-	readonly status: string;
+/**
+ * The domain classification a triage decision assigns. The two arms make the invalid combination
+ * — an un-classified stage carrying a type or a priority — unrepresentable rather than merely
+ * unchecked; `classify` is the only way in, and it is total.
+ */
+export type TriageClassification =
+	| {
+			readonly _tag: "classified";
+			readonly type: string;
+			readonly priority: string;
+			readonly status: string;
+	  }
+	| {readonly _tag: "parked"; readonly status: string};
+
+/** A judgment the contract refuses, carrying the reason a caller must surface. */
+export interface InvalidClassification {
+	readonly _tag: "invalid";
+	readonly reason: string;
 }
+
+/**
+ * The lifecycle stages that are *defined* as un-classified: the entity is parked pending an
+ * answer, so a type or a priority on it would be a fabrication, not a judgment (triage skill
+ * Step 5). Every other stage is a real classification and needs both facets.
+ */
+const UNCLASSIFIED_STAGES: ReadonlySet<string> = new Set(["needs-info"]);
+
+const supplied = (value: string | undefined): string | null => {
+	const trimmed = value?.trim() ?? "";
+	return trimmed === "" ? null : trimmed;
+};
+
+/**
+ * The one way to build a `TriageClassification` from a caller's judgment: it routes on the target
+ * stage and rejects the two ill-formed shapes — a park that supplies facets, and a classification
+ * that omits them.
+ */
+export const classify = (judgment: {
+	readonly type?: string | undefined;
+	readonly priority?: string | undefined;
+	readonly status: string;
+}): TriageClassification | InvalidClassification => {
+	const status = judgment.status.trim();
+	const type = supplied(judgment.type);
+	const priority = supplied(judgment.priority);
+
+	if (UNCLASSIFIED_STAGES.has(status)) {
+		const offered = [type === null ? null : `type ${type}`, priority === null ? null : priority]
+			.filter((facet) => facet !== null)
+			.join(" and ");
+		return offered === ""
+			? {_tag: "parked", status}
+			: {
+					_tag: "invalid",
+					reason: `status:${status} parks an entity with no type and no priority, but this judgment supplies ${offered} — drop them, or target a classified stage`,
+				};
+	}
+
+	if (type === null || priority === null) {
+		const missing = [type === null ? "type" : null, priority === null ? "priority" : null]
+			.filter((facet) => facet !== null)
+			.join(" and ");
+		return {
+			_tag: "invalid",
+			reason: `status:${status} is a classified stage and requires both a type and a priority — missing ${missing}`,
+		};
+	}
+
+	return {_tag: "classified", type, priority, status};
+};
 
 // A priority label is the bare bucket name (`p0`/`p1`/`p2`); `\d+` rather than a closed set so a
 // future bucket is reconciled too instead of silently surviving as a second priority.
@@ -45,14 +115,22 @@ const SPINE_STAGES: ReadonlySet<string> = new Set([
 /**
  * The single-valued label families. `owns` decides membership from the label name alone (so a
  * label the tracker never applied is still reconciled), `desired` names the one member the
- * classification keeps.
+ * classification keeps — or `null` when it desires *no* member of that facet, which the
+ * convergent reconcile reads as "supersede every member": parking to `needs-info` strips a stale
+ * `type:*`/`p*` rather than leaving the entity classified on a stage defined as un-classified.
  */
 const FACETS: ReadonlyArray<{
 	readonly owns: (label: string) => boolean;
-	readonly desired: (classification: TriageClassification) => string;
+	readonly desired: (classification: TriageClassification) => string | null;
 }> = [
-	{owns: (label) => label.startsWith(TYPE_PREFIX), desired: (c) => `${TYPE_PREFIX}${c.type}`},
-	{owns: (label) => PRIORITY_RE.test(label), desired: (c) => c.priority},
+	{
+		owns: (label) => label.startsWith(TYPE_PREFIX),
+		desired: (c) => (c._tag === "classified" ? `${TYPE_PREFIX}${c.type}` : null),
+	},
+	{
+		owns: (label) => PRIORITY_RE.test(label),
+		desired: (c) => (c._tag === "classified" ? c.priority : null),
+	},
 	{
 		owns: (label) =>
 			label.startsWith(STATUS_PREFIX) && SPINE_STAGES.has(label.slice(STATUS_PREFIX.length)),
@@ -60,13 +138,17 @@ const FACETS: ReadonlyArray<{
 	},
 ];
 
-/** The labels a triaged entity must carry — exactly one per facet, in facet order. */
+/** The labels the classification must carry — at most one per facet, in facet order. */
 export const desiredLabels = (classification: TriageClassification): ReadonlyArray<string> =>
-	FACETS.map((facet) => facet.desired(classification));
+	FACETS.map((facet) => facet.desired(classification)).filter(
+		(label): label is string => label !== null,
+	);
 
 /**
  * The labels to remove so `current` converges on `classification`: every currently-carried label
- * that belongs to a facet but isn't that facet's desired member. Labels outside the three facets
+ * that belongs to a facet but isn't that facet's desired member — which, for a facet the
+ * classification desires nothing from (a park's type/priority), is every member it carries.
+ * Labels outside the three facets
  * (`epic`, `good first issue`, an orthogonal `status:awaiting-release`, …) are never touched —
  * this is the narrow triage contract, not a
  * general label reconciler. De-duplicated and idempotent: on an entity already in the contract's

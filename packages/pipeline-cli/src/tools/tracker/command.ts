@@ -118,12 +118,26 @@ const readBack = Command.make(
 
 // Judgment-as-parameter (#3252): the classification is supplied, not decided by the tool.
 // `--status` defaults to the `triaged` lifecycle stage — the common triage transition.
+//
+// `--type`/`--p` are optional AT THE PARSER because whether they are required is a function of the
+// target stage, which the parser cannot see: a classified stage needs both, the `needs-info` park
+// forbids both. That conditional contract is the domain's (`classify`), and it fails closed either
+// way — so an omitted `--type` on a triaged run is still refused, just with a domain message
+// instead of a parser one. Making them unconditionally required is what left the park inexpressible
+// through the verb and pushed triagers to hand-rolled label calls, or to a minted filler
+// classification (#4042).
 const typeFlag = Flag.string("type").pipe(
-	Flag.withDescription("the domain type classification (e.g. feature, bug, chore)"),
+	Flag.optional,
+	Flag.withDescription(
+		"the domain type classification (e.g. feature, bug, chore) — required for a classified stage, forbidden when parking to needs-info",
+	),
 );
 
 const priorityFlag = Flag.string("p").pipe(
-	Flag.withDescription("the domain priority (e.g. p0, p1, p2)"),
+	Flag.optional,
+	Flag.withDescription(
+		"the domain priority (e.g. p0, p1, p2) — required for a classified stage, forbidden when parking to needs-info",
+	),
 );
 
 const statusFlag = Flag.string("status").pipe(
@@ -132,24 +146,32 @@ const statusFlag = Flag.string("status").pipe(
 );
 
 const reportTriage = (target: number, result: TriageResult): Effect.Effect<void> =>
-	Console.log(
-		`tracker: triaged #${target} — type:${result.type} ${result.priority} status:${result.status}.`,
-	);
+	result._tag === "parked"
+		? Console.log(`tracker: parked #${target} — status:${result.status}, no type and no priority.`)
+		: Console.log(
+				`tracker: triaged #${target} — type:${result.type} ${result.priority} status:${result.status}.`,
+			);
 
 const applyTriage = Command.make(
 	"apply-triage",
 	{target: targetArg, type: typeFlag, p: priorityFlag, status: statusFlag},
 	Effect.fn(function* ({target, type, p, status}) {
-		const result = yield* (yield* Tracker).applyTriage(target, {
-			type,
-			priority: p,
-			status: Option.getOrElse(status, () => "triaged"),
-		});
+		const result = yield* (yield* Tracker)
+			.applyTriage(target, {
+				type: Option.getOrUndefined(type),
+				priority: Option.getOrUndefined(p),
+				status: Option.getOrElse(status, () => "triaged"),
+			})
+			.pipe(
+				// A judgment the stage's contract refuses (a park carrying a type/priority, a classified
+				// stage missing one) fails loud before any label write — never a silent misclassification.
+				Effect.catchTag("@kampus/tracker/TrackerInputError", (error) => backOff(error.message)),
+			);
 		yield* reportTriage(target, result);
 	}),
 ).pipe(
 	Command.withDescription(
-		"Apply a triage classification (type / priority / status) to a tracker entity, leaving the needs-triage queue",
+		"Apply a triage classification (type / priority / status) to a tracker entity, leaving the needs-triage queue; omit --type/--p with --status needs-info to park it un-classified",
 	),
 );
 
