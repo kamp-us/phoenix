@@ -26,6 +26,9 @@ const reviewRecord = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	locked: false,
 	recentlyActive: false,
 	hasOpenPr: false,
+	// The fixtures default to a PROVABLY-DEAD owner so each pre-#3943 case still exercises the
+	// branch it was written for. The live/unknown owners are the explicit guard cases below.
+	ownerLiveness: "dead",
 	...over,
 });
 
@@ -39,8 +42,27 @@ const record = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	locked: false,
 	recentlyActive: false,
 	hasOpenPr: false,
+	ownerLiveness: "dead",
 	...over,
 });
+
+/**
+ * The exact state that got two LIVE shipper worktrees removed mid-run (#3943): clean (a shipper
+ * only reads), its PR just squash-merged onto `origin/main`, unlocked (this harness never locks a
+ * provisioned tree), and mtime-idle (a >30min ship touches no file in the tree). Every pre-#3943
+ * signal reads "orphan"; only owner presence tells it apart from one.
+ */
+const shipperShaped = (over: Partial<WorktreeRecord> = {}): WorktreeRecord =>
+	record({
+		branch: "usirin/ship-3913",
+		isDirty: false,
+		reachableFromOriginMain: false,
+		squashMergedToOriginMain: true,
+		locked: false,
+		recentlyActive: false,
+		hasOpenPr: false,
+		...over,
+	});
 
 describe("isManagedWorktree", () => {
 	it("matches a path under .claude/worktrees/", () => {
@@ -185,6 +207,65 @@ describe("classifyWorktree — KEEP branches (the safety cases)", () => {
 	it("dirty wins over a liveness signal (still kept, reported as dirty)", () => {
 		const d = classifyWorktree(record({isDirty: true, locked: true, hasOpenPr: true}));
 		assert.deepStrictEqual(d, {kind: "keep", reason: "dirty"});
+	});
+});
+
+// The defect these pin is OVER-reaping, so these are the load-bearing tests: a dead-owner case
+// only proves the reap still works, while a live or unprovable owner reaching REMOVE is destroyed
+// work. Deleting the `ownerLiveness` gate from `classifyWorktree` turns every case here red.
+describe("classifyWorktree — owner-presence liveness (#3943, ADR 0191)", () => {
+	it("KEEPS a LIVE owner's worktree in the exact shipper-shaped state that was reaped: clean + squash-merged + unlocked + idle", () => {
+		const d = classifyWorktree(shipperShaped({ownerLiveness: "alive"}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "live-session"});
+	});
+
+	it("KEEPS an UNPROVABLE owner's worktree in that same shipper-shaped state — cannot prove dead is not dead", () => {
+		const d = classifyWorktree(shipperShaped({ownerLiveness: "unknown"}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "owner-unknown"});
+	});
+
+	it("KEEPS a LIVE owner's clean, ancestor-merged worktree (presence beats the merge gate)", () => {
+		const d = classifyWorktree(record({reachableFromOriginMain: true, ownerLiveness: "alive"}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "live-session"});
+	});
+
+	it("KEEPS a LIVE reviewer's review-head tree (the same mid-run removal, on the review class)", () => {
+		const d = classifyWorktree(reviewRecord({ownerLiveness: "alive"}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "live-session"});
+	});
+
+	it("KEEPS an unstamped review-head tree whose owner is unprovable (leak the orphan, never the live tree)", () => {
+		const d = classifyWorktree(reviewRecord({ownerLiveness: "unknown"}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "owner-unknown"});
+	});
+
+	it("reports DIRTY ahead of presence — a live owner's dirty tree is still kept, never --force", () => {
+		const d = classifyWorktree(shipperShaped({isDirty: true, ownerLiveness: "alive"}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "dirty"});
+	});
+
+	it("still PRUNES a gone-dir tree regardless of owner liveness (no working surface to pull away)", () => {
+		const d = classifyWorktree(record({prunable: true, ownerLiveness: "alive"}));
+		assert.deepStrictEqual(d, {kind: "remove", reason: "gone-dir"});
+	});
+
+	it("removes the shipper-shaped tree ONLY once its owner is provably dead", () => {
+		const d = classifyWorktree(shipperShaped({ownerLiveness: "dead"}));
+		assert.deepStrictEqual(d, {kind: "remove", reason: "squash-merged-clean"});
+	});
+
+	it("partitions a live and a dead sibling into kept vs removable in one plan", () => {
+		const alive = shipperShaped({path: wtPath("agent-live"), ownerLiveness: "alive"});
+		const dead = shipperShaped({path: wtPath("agent-dead"), ownerLiveness: "dead"});
+		const plan = computeWorktreeSweepPlan([alive, dead]);
+		assert.deepStrictEqual(
+			plan.toRemove.map((r) => r.worktree.path),
+			[dead.path],
+		);
+		assert.deepStrictEqual(
+			plan.kept.map((k) => [k.worktree.path, k.reason]),
+			[[alive.path, "live-session"]],
+		);
 	});
 });
 

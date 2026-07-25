@@ -43,7 +43,17 @@
  * a dirty-work guard, orthogonal to liveness). So a clean+merged tree is removed only
  * when it is also provably NOT in use: unlocked AND idle past a threshold (mtime) AND
  * with no open PR for its branch. Every liveness signal fails safe toward KEEP.
+ *
+ * Session-presence liveness (#3943): the three signals above are all the sweep had, and none of
+ * them is presence — so a live SHIPPER lane read as an orphan (clean, its PR just squash-merged,
+ * unlocked, and mtime-idle because a ship touches no file in the tree) and had its worktree
+ * removed mid-run, twice. Removal now additionally requires the owning session to be **provably
+ * dead**: `ownerLiveness` must be `"dead"`, resolved from holder presence per ADR 0191, never from
+ * age. `"alive"` and `"unknown"` both KEEP — see `owner-liveness.ts` for the resolution and for why
+ * "cannot prove dead" must never collapse into "dead".
  */
+
+import type {OwnerLiveness} from "./owner-liveness.ts";
 
 /** The segment that marks a harness-managed agent worktree: `<main>/.claude/worktrees/<id>`. */
 const MANAGED_SEGMENT = "/.claude/worktrees/";
@@ -109,6 +119,12 @@ export interface WorktreeRecord {
 	readonly locked: boolean;
 	readonly recentlyActive: boolean;
 	readonly hasOpenPr: boolean;
+	/**
+	 * Whether the agent session that OWNS this worktree is still running (#3943), resolved from
+	 * holder presence at the boundary (`owner-liveness.ts`). Only `"dead"` permits a removal:
+	 * `"alive"` is a live lane and `"unknown"` is an owner we could not prove dead — both KEEP.
+	 */
+	readonly ownerLiveness: OwnerLiveness;
 }
 
 /** Why a worktree is KEPT — the audit trail, so the plan is never an opaque list. */
@@ -119,6 +135,10 @@ export type KeepReason =
 	| "dirty"
 	/** `git worktree lock` is set — an operator/agent pinned it as in-use (#2240). */
 	| "locked"
+	/** The owning agent session is still running — a LIVE lane; kept whatever its other facts say (#3943). */
+	| "live-session"
+	/** The owning session could not be proven dead (no stamp, or an untrustworthy registry) — kept (#3943). */
+	| "owner-unknown"
 	/** Touched within the idle threshold — presumed a live lane, never swept (#2240). */
 	| "recently-active"
 	/** The branch has an open PR — an in-flight lane, kept until it merges + goes idle (#2240). */
@@ -183,10 +203,12 @@ export interface WorktreeSweepPlan {
  *      tree with a LIVE directory are never candidates, regardless of their other facts.
  *   2. Dirty → KEEP (`dirty`). Wins over every other signal for BOTH classes: a worktree
  *      with working-tree changes is never removed, even when its branch has merged.
- *   3. Liveness gates (#2240) — locked / recently-active → KEEP, for BOTH classes. A clean
- *      tree may still belong to a LIVE lane (a build tree just committed+pushed; a review
- *      still running against its head). These run BEFORE any remove branch, so each is a
- *      necessary condition on REMOVE.
+ *   3. Liveness gates — locked (#2240) / owner alive-or-unprovable (#3943) / recently-active
+ *      (#2240) → KEEP, for BOTH classes. A clean tree may still belong to a LIVE lane (a build
+ *      tree just committed+pushed; a review still running against its head). These run BEFORE any
+ *      remove branch, so each is a necessary condition on REMOVE. The presence gate subsumes the
+ *      mtime one it sits above — an idle-but-live shipper is exactly what mtime could not see —
+ *      and `recently-active` is retained below it because it can only ever KEEP more.
  *   4. Review-head tree → REMOVE (`review-head-idle`). Past the dirty+locked+recently-active
  *      guards, a detached throwaway review checkout holds no branch and no unpushed work, so
  *      it is a pure leak — no merge/open-PR gate applies (see `review-head-idle`). Returns here
@@ -213,6 +235,12 @@ export const classifyWorktree = (wt: WorktreeRecord): SweepDecision => {
 	}
 	if (wt.locked) {
 		return {kind: "keep", reason: "locked"};
+	}
+	if (wt.ownerLiveness === "alive") {
+		return {kind: "keep", reason: "live-session"};
+	}
+	if (wt.ownerLiveness !== "dead") {
+		return {kind: "keep", reason: "owner-unknown"};
 	}
 	if (wt.recentlyActive) {
 		return {kind: "keep", reason: "recently-active"};

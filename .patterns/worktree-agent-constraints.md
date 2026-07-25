@@ -237,7 +237,25 @@ It sweeps **two leaked classes** (#2785):
   `not-managed` and never reaped, so they were the bulk of the 562-worktree leak.
 
 Both classes share the **#2240 liveness guard**: a **locked**, **recently-active** (mtime
-within the idle threshold), or (build class) **open-PR** tree is **KEPT**. It runs `git worktree
+within the idle threshold), or (build class) **open-PR** tree is **KEPT**.
+
+Above all of those sits the **owner-presence gate** (#3943): a tree is removable only when its
+**owning agent session is provably dead**. None of the #2240 signals is presence, and a live
+*shipper* lane defeats all three at once — it is clean (a shipper only reads), its PR has just
+squash-merged onto `origin/main` (so the merge gate passes and the open-PR gate goes quiet), and its
+mtime never moves (a ship runs `gh api`, not edits). Two live shipper worktrees were removed mid-run
+under exactly that state. Presence rides the owner, per
+[ADR 0191](../.decisions/0191-crew-claim-lifecycle.md): `create-worktree.sh` stamps
+the owning `sessionId` into the tree's git admin dir (`<gitdir>/kampus-owner.json`, invisible to
+`git status`), and the sweep resolves it against the harness's live-session registry
+(`$CLAUDE_CONFIG_DIR`, else the agent tool's default config home → `sessions/<pid>.json`, one file
+per running session).
+**The three-state resolution is the safety property:** `alive` and `unknown` both KEEP, and only
+`dead` permits a removal — so an unstamped tree, an unreadable registry, or a liveness probe that
+could not execute leaks an orphan rather than destroying a live tree. A sweep that removes nothing
+and reports `registry UNRESOLVED` is the gate working, not a no-op.
+
+It runs `git worktree
 remove` **without `--force`**, so git itself refuses any tree it judges unsafe and that refusal is
 reported as kept, never escalated (mirrors the `@kampus/worktree-guard` reaper's rule, MEMORY
 "Safe worktree prune"). Draining the pile is the operator's explicit call; the command never
