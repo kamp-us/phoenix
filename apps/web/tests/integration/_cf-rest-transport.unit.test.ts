@@ -1,7 +1,7 @@
 /**
  * Pins the two properties that make `_cf-rest-transport.ts` the ONE CF REST path (#3548):
- * the composition releases its throttle slot while backing off, and no integration test file
- * can quietly re-introduce a bare, unprotected REST client.
+ * the composition releases its throttle slot while backing off, and no file in the integration
+ * directory can quietly re-introduce a bare, unprotected REST client.
  */
 
 import {readdirSync, readFileSync} from "node:fs";
@@ -44,17 +44,27 @@ describe("retry composes AROUND the throttle (a slot is held per attempt, not pe
 // the bare fetch, no retry, no throttle. `pasaport-ban.test.ts` then red on a raw
 // `TooManyRequests` while its wrapped sibling sailed through the same 429 storm. Converting the
 // files fixes today; this scan is what keeps the next file from re-opening the hole.
-describe("no integration test builds its own unprotected CF REST client", () => {
-	// This file and `_d1-rest-retry.unit.test.ts` exercise the bare primitives on purpose.
-	const EXEMPT = new Set(["_cf-rest-transport.unit.test.ts", "_d1-rest-retry.unit.test.ts"]);
+describe("no integration file builds its own unprotected CF REST client", () => {
+	// `_cf-rest-transport.ts` IS the protected transport (it owns the one legitimate
+	// `FetchHttpClient.layer`); this file and `_d1-rest-retry.unit.test.ts` exercise the bare
+	// primitives on purpose.
+	const EXEMPT = new Set([
+		"_cf-rest-transport.ts",
+		"_cf-rest-transport.unit.test.ts",
+		"_d1-rest-retry.unit.test.ts",
+	]);
 	const BARE = [
 		[/FetchHttpClient\.layer/, "hand-rolled REST layer — use `integrationRestLayer`"],
-		[/makeD1RestFromEnv/, "bare env layer — use `makeIntegrationD1Rest`"],
+		// Call-shaped on purpose: `_harness.ts` names `makeD1RestFromEnv` in prose, and a scan
+		// that reds on a comment is a scan people delete.
+		[/makeD1RestFromEnv\s*\(/, "bare env layer — use `makeIntegrationD1Rest`"],
 	] as const;
 
-	const files = readdirSync(HERE).filter((f) => f.endsWith(".test.ts") && !EXEMPT.has(f));
+	// Every `.ts` in the directory, not just `*.test.ts`: a non-test helper that grew its own
+	// client would reopen the bypass just as wide, and unscanned.
+	const files = readdirSync(HERE).filter((f) => f.endsWith(".ts") && !EXEMPT.has(f));
 
-	it("scans a non-empty set of integration test files (fail closed on zero scope, ADR 0092)", () => {
+	it("scans a non-empty set of integration files (fail closed on zero scope, ADR 0092)", () => {
 		expect(files.length).toBeGreaterThan(0);
 	});
 

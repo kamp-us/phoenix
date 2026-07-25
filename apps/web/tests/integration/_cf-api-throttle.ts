@@ -7,9 +7,11 @@
  * Relationship to the existing per-call retry (`cfFetchWithRateLimitRetry`, `_d1-rest-retry.ts`):
  * that wrapper reacts to a 429 AFTER it fires, replaying one call with backoff. This throttle
  * is the complementary PROACTIVE half — it bounds how many CF calls the harness launches at
- * once and paces their starts, so fewer 429s fire in the first place. It COMPOSES AROUND the
- * per-call retry (`throttle.run(() => cfFetchWithRateLimitRetry(send))`), never replacing it —
- * each logical CF call, retries included, counts as one throttled unit.
+ * once and paces their starts, so fewer 429s fire in the first place. The retry composes AROUND
+ * this throttle (`retry(() => throttle.run(send))`), never replacing it — a slot is held per
+ * ATTEMPT and released while a call sleeps in backoff, so a backing-off call never occupies the
+ * concurrency cap. That order is wired in exactly one place, `_cf-rest-transport.ts`; see its
+ * docblock for why #3081's original one-throttled-unit-per-logical-call order was inverted (#3548).
  *
  * Scope ceiling (deliberate, per #3081's "confined to the integration harness" constraint):
  * the limiter is an in-process singleton, so under `isolate:false` (`vitest.config.ts`) it is
