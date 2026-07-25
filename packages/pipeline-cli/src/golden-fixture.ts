@@ -11,6 +11,10 @@
  * `baseUrl` is the caller's `import.meta.url`; `name` is the fixture path relative to it
  * (by convention `__fixtures__/<handler>.payload.golden.json`), so a handler co-locates its
  * captured payload next to its test. Reusable across every hook/harness handler in the CLI.
+ *
+ * The raw `node:fs`/`node:url` here is deliberate and stays: this is test-only scaffolding whose
+ * whole point is the real committed file on disk, and `fileURLToPath` has no `Path` equivalent —
+ * both sit on the `.patterns/effect-platform-access.md` bright line.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";

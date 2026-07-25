@@ -15,8 +15,7 @@
  * `pipeline-cli` bin owns the run boundary. The git-log/`gh` gather that builds the entries
  * JSON is the `/what-shipped` skill's job, not this tool.
  */
-import {readFileSync, writeFileSync} from "node:fs";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem} from "effect";
 import * as Schema from "effect/Schema";
 import {Command, Flag} from "effect/unstable/cli";
 import {type DigestWindow, deriveShipDigest, type ShipEntry} from "./digest.ts";
@@ -42,16 +41,28 @@ const EntriesSchema = Schema.Array(EntrySchema);
 
 const decodeEntries = Schema.decodeUnknownEffect(EntriesSchema);
 
-/** Read + JSON-parse + decode the entries file, all failures typed. */
-const loadEntries = (file: string): Effect.Effect<ReadonlyArray<ShipEntry>, EntriesReadError> =>
-	Effect.try({
-		try: () => JSON.parse(readFileSync(file, "utf8")) as unknown,
-		catch: (cause) => new EntriesReadError({file, cause}),
-	}).pipe(
-		Effect.flatMap((raw) =>
-			decodeEntries(raw).pipe(Effect.mapError((cause) => new EntriesReadError({file, cause}))),
-		),
-	);
+/**
+ * Read + JSON-parse + decode the entries file, all failures typed. The read crosses the
+ * `FileSystem` seam (`.patterns/effect-platform-access.md`); a `PlatformError` folds into the
+ * same `EntriesReadError` the old `readFileSync` throw did.
+ */
+const loadEntries = (
+	file: string,
+): Effect.Effect<ReadonlyArray<ShipEntry>, EntriesReadError, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const text = yield* Effect.mapError(
+			fs.readFileString(file),
+			(cause) => new EntriesReadError({file, cause}),
+		);
+		const raw = yield* Effect.try({
+			try: () => JSON.parse(text) as unknown,
+			catch: (cause) => new EntriesReadError({file, cause}),
+		});
+		return yield* decodeEntries(raw).pipe(
+			Effect.mapError((cause) => new EntriesReadError({file, cause})),
+		);
+	});
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 
@@ -83,10 +94,11 @@ const derive = Command.make(
 
 		if (out._tag === "Some") {
 			const file = out.value;
-			yield* Effect.try({
-				try: () => writeFileSync(file, markdown),
-				catch: (cause) => new EntriesReadError({file, cause}),
-			});
+			const fs = yield* FileSystem.FileSystem;
+			yield* Effect.mapError(
+				fs.writeFileString(file, markdown),
+				(cause) => new EntriesReadError({file, cause}),
+			);
 			yield* Console.error(`ship-digest: wrote ${loaded.length} entr(y/ies) to ${file}`);
 			return;
 		}

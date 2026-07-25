@@ -16,8 +16,7 @@
  * Thin IO shell over the pure cores (the `token-spend` / `readme-guard` idiom): read the file,
  * decode, render. An unreadable path and a malformed/mismatched input both exit non-zero.
  */
-import {readFileSync} from "node:fs";
-import {Console, Effect, Result} from "effect";
+import {Console, Effect, FileSystem, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {decodeManifest, STAGES} from "./corpus.ts";
@@ -48,10 +47,11 @@ const check = Command.make(
 	{manifest: manifestArg},
 	Effect.fn(function* ({manifest}) {
 		const run = Effect.gen(function* () {
-			const text = yield* Effect.try({
-				try: () => readFileSync(manifest, "utf8"),
-				catch: () => new ManifestUnreadable({path: manifest}),
-			});
+			const fs = yield* FileSystem.FileSystem;
+			const text = yield* Effect.mapError(
+				fs.readFileString(manifest),
+				() => new ManifestUnreadable({path: manifest}),
+			);
 			const result = decodeManifest(text);
 			if (Result.isFailure(result)) {
 				yield* Console.error(
@@ -118,10 +118,11 @@ const report = Command.make(
 	},
 	Effect.fn(function* ({rows, json, baselineStage, baselineModel}) {
 		const run = Effect.gen(function* () {
-			const text = yield* Effect.try({
-				try: () => readFileSync(rows, "utf8"),
-				catch: () => new RowsUnreadable({path: rows}),
-			});
+			const fs = yield* FileSystem.FileSystem;
+			const text = yield* Effect.mapError(
+				fs.readFileString(rows),
+				() => new RowsUnreadable({path: rows}),
+			);
 			const decoded = decodeReportInput(text);
 			if (Result.isFailure(decoded)) {
 				yield* Console.error(
