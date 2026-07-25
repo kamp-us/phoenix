@@ -9,10 +9,13 @@
  * personal-data hit OR when zero files are in scope (fail-closed, ADR 0092 — an empty
  * scan is a misconfiguration, never a vacuous green). A directory/file IO failure is
  * an `IoError` (also non-zero — both failures, undistinguished, per the bin's contract).
+ *
+ * All directory/path IO goes through the Effect `FileSystem`/`Path` seam (over the bin's
+ * `NodeServices.layer`), so a gate `unit` test substitutes an in-memory fs for real disk
+ * (.patterns/effect-platform-access.md); a fs fault folds `PlatformError` → the `IoError`
+ * this gate already carries.
  */
-import {readdirSync, readFileSync, statSync} from "node:fs";
-import {join, relative} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path, type PlatformError} from "effect";
 import * as Schema from "effect/Schema";
 import {type CrewLeak, findCrewLeaks} from "./crew-leak.ts";
 
@@ -35,18 +38,31 @@ interface FileHits {
 	readonly leaks: ReadonlyArray<CrewLeak>;
 }
 
-/** Recursively collect every regular file's absolute path under `dir`. */
-const walkFiles = (dir: string): ReadonlyArray<string> => {
-	const out: Array<string> = [];
-	for (const entry of readdirSync(dir, {withFileTypes: true})) {
-		const abs = join(dir, entry.name);
-		// Resolve symlinks through statSync; recurse dirs, collect files.
-		const st = statSync(abs);
-		if (st.isDirectory()) out.push(...walkFiles(abs));
-		else if (st.isFile()) out.push(abs);
-	}
-	return out;
-};
+/** Recursively collect every regular file's absolute path under `root`. */
+const walkFiles = (
+	root: string,
+): Effect.Effect<
+	ReadonlyArray<string>,
+	PlatformError.PlatformError,
+	FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const walk = (dir: string): Effect.Effect<ReadonlyArray<string>, PlatformError.PlatformError> =>
+			Effect.gen(function* () {
+				const out: Array<string> = [];
+				for (const name of yield* fs.readDirectory(dir)) {
+					const abs = path.join(dir, name);
+					// `fs.stat` resolves symlinks (like the former `statSync`); recurse dirs, collect files.
+					const st = yield* fs.stat(abs);
+					if (st.type === "Directory") out.push(...(yield* walk(abs)));
+					else if (st.type === "File") out.push(abs);
+				}
+				return out;
+			});
+		return yield* walk(root);
+	});
 
 /**
  * The CI gate: succeed when a non-empty crew tree carries zero personal-data hits,
@@ -56,13 +72,14 @@ const walkFiles = (dir: string): ReadonlyArray<string> => {
 export const sweepCrew = (
 	root: string,
 	dir: string = CREW_DIR,
-): Effect.Effect<void, IoError | CheckFailed> =>
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
-		const base = join(root, dir);
-		const files = yield* Effect.try({
-			try: () => walkFiles(base),
-			catch: (cause) => new IoError({path: base, cause}),
-		});
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const base = path.join(root, dir);
+		const files = yield* walkFiles(base).pipe(
+			Effect.mapError((cause) => new IoError({path: base, cause})),
+		);
 
 		if (files.length === 0) {
 			return yield* Effect.fail(
@@ -76,12 +93,11 @@ export const sweepCrew = (
 
 		const results: Array<FileHits> = [];
 		for (const abs of files) {
-			const content = yield* Effect.try({
-				try: () => readFileSync(abs, "utf8"),
-				catch: (cause) => new IoError({path: abs, cause}),
-			});
+			const content = yield* fs
+				.readFileString(abs, "utf8")
+				.pipe(Effect.mapError((cause) => new IoError({path: abs, cause})));
 			const leaks = findCrewLeaks(content);
-			if (leaks.length > 0) results.push({file: relative(root, abs), leaks});
+			if (leaks.length > 0) results.push({file: path.relative(root, abs), leaks});
 		}
 
 		if (results.length === 0) {

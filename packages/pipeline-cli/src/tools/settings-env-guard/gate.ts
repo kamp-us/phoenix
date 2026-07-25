@@ -9,10 +9,13 @@
  * core (`settings-env-guard.ts`). It fails `CheckFailed` (exit non-zero) when any
  * env value carries a `${...}`; a missing/unreadable/unparseable settings.json is
  * an `IoError` (also non-zero) — fail-closed on the file we can't scan (ADR 0092).
+ *
+ * The settings-file read goes through the Effect `FileSystem`/`Path` seam (over the bin's
+ * `NodeServices.layer`), so a gate `unit` test substitutes an in-memory fs for real disk
+ * (.patterns/effect-platform-access.md); a fs fault folds `PlatformError` → the `IoError`
+ * this gate already carries.
  */
-import {readFileSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {type EnvEntry, judge, renderReport} from "./settings-env-guard.ts";
 
@@ -40,10 +43,20 @@ const envEntries = (settings: unknown): ReadonlyArray<EnvEntry> => {
 };
 
 /** Read + JSON-parse `<root>/.claude/settings.json`; an IO/parse failure is fail-closed. */
-const readSettings = (root: string): Effect.Effect<unknown, IoError> =>
-	Effect.try({
-		try: () => JSON.parse(readFileSync(join(root, SETTINGS_PATH), "utf8")) as unknown,
-		catch: (cause) => new IoError({path: join(root, SETTINGS_PATH), cause}),
+const readSettings = (
+	root: string,
+): Effect.Effect<unknown, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const target = path.join(root, SETTINGS_PATH);
+		const text = yield* fs
+			.readFileString(target, "utf8")
+			.pipe(Effect.mapError((cause) => new IoError({path: target, cause})));
+		return yield* Effect.try({
+			try: () => JSON.parse(text) as unknown,
+			catch: (cause) => new IoError({path: target, cause}),
+		});
 	});
 
 /**
@@ -51,7 +64,9 @@ const readSettings = (root: string): Effect.Effect<unknown, IoError> =>
  * unexpanded `${...}`, else `CheckFailed`. Fails closed (`IoError`) on a
  * missing/unreadable/unparseable settings file (ADR 0092).
  */
-export const checkSettingsEnv = (root: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const checkSettingsEnv = (
+	root: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const settings = yield* readSettings(root);
 		const verdict = judge(envEntries(settings));
