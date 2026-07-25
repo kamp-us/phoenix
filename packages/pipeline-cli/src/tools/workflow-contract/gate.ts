@@ -55,6 +55,15 @@ export const listWorkflowScripts = (
 		for (const name of names) {
 			if (!name.endsWith(".js")) continue;
 			const abs = path.join(base, name);
+			// A symlinked `.js` is out of scope, reconstructing the pre-migration `Dirent.isFile()`
+			// (lstat-based, so a link-to-file was excluded). `fs.stat` follows links and v4's
+			// FileSystem exposes no `lstat`, but `readLink` succeeds only on a link — the equivalent
+			// test (same reconstruction as `reachability-guard`'s walk, #3929).
+			const isSymlink = yield* fs.readLink(abs).pipe(
+				Effect.as(true),
+				Effect.orElseSucceed(() => false),
+			);
+			if (isSymlink) continue;
 			const isFile =
 				(yield* fs.stat(abs).pipe(Effect.mapError((cause) => new IoError({path: abs, cause}))))
 					.type === "File";

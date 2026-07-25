@@ -1,4 +1,4 @@
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
+import {mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
@@ -98,6 +98,23 @@ describe("checkWorkflows", () => {
 			assert.isTrue(Exit.isFailure(exit));
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
+		}
+	}, 30_000);
+
+	// Scope semantics are part of the exit-code contract: a symlinked `.js` is EXCLUDED,
+	// matching the pre-migration lstat-based `Dirent.isFile()` filter (see `listWorkflowScripts`).
+	it("excludes a symlinked .js — a non-conformant script reachable only through a link does not red", async () => {
+		const outside = mkdtempSync(join(tmpdir(), "workflow-contract-outside-"));
+		const target = join(outside, "bad.js");
+		writeFileSync(target, "export default async function () {}", "utf8");
+		const dir = makeRepo({"drive-issue.js": CONFORMANT});
+		try {
+			symlinkSync(target, join(dir, ".claude", "workflows", "linked.js"));
+			const exit = await runExit(checkWorkflows(dir));
+			assert.isTrue(Exit.isSuccess(exit));
+		} finally {
+			rmSync(dir, {recursive: true, force: true});
+			rmSync(outside, {recursive: true, force: true});
 		}
 	}, 30_000);
 
