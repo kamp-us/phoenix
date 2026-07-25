@@ -15,9 +15,10 @@
  *
  * Safe by construction (enforcement lines):
  *   1. The pure classifier only marks a worktree removable when it is CLEAN, reachable
- *      from `origin/main`, AND provably not-in-use — unlocked, mtime-idle past a
- *      threshold, and with no open PR (the #2240 liveness guard). Dirty / unmerged /
- *      live trees are KEPT, so a running sibling lane is never swept.
+ *      from `origin/main`, AND provably not-in-use — its owning session provably DEAD
+ *      (#3943), unlocked, mtime-idle past a threshold, and with no open PR (the #2240
+ *      liveness guard). Dirty / unmerged / live / can't-prove-dead trees are KEPT, so a
+ *      running sibling lane is never swept.
  *   2. `git worktree remove` runs WITHOUT `--force` — git itself refuses a tree it
  *      judges unsafe (dirty/locked/current), and that refusal is caught and reported
  *      as KEPT, never escalated. This is a dirty-work guard, orthogonal to liveness
@@ -31,8 +32,17 @@
  * (.patterns/effect-platform-access.md, #3473).
  */
 import {execFileSync} from "node:child_process";
+import {homedir} from "node:os";
 import {Console, Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {
+	liveSessionIds,
+	type OwnerLiveness,
+	parseOwnerStamp,
+	parseSessionRegistryEntry,
+	resolveOwnerLiveness,
+	sessionIdFromPath,
+} from "./owner-liveness.ts";
 import {
 	computeWorktreeSweepPlan,
 	isManagedWorktree,
@@ -153,6 +163,87 @@ const worktreeRecentlyActive = (
 		return Date.now() - newest < IDLE_THRESHOLD_MS;
 	});
 
+/**
+ * The harness's live-session registry directory — one `<pid>.json` per RUNNING session, deleted
+ * when the session exits. `$CLAUDE_CONFIG_DIR` is the harness's own override for the config root;
+ * absent it, the tool's default config home under the user's home dir.
+ */
+const sessionRegistryDir = (path: Path.Path): string =>
+	path.join(process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(homedir(), ".claude"), "sessions");
+
+/**
+ * Is `pid` running? Fails toward TRUE, which is what keeps a tree: `ESRCH` is the only positive
+ * evidence of absence, `EPERM` proves the process EXISTS under another uid, and any other error
+ * means the probe could not execute — never that the process is gone (#3943, and the #787 class
+ * where a stripped exec env made a probe's own failure look like a signal).
+ */
+const pidIsAlive = (pid: number): boolean => {
+	// biome-ignore lint/plugin: signal-0 presence probe — `process.kill` throws to report absence, so the branch IS the result; a total helper, never E.
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (cause) {
+		return (cause as {code?: string}).code !== "ESRCH";
+	}
+};
+
+/**
+ * The set of session ids proven alive, or `null` when the registry can't be trusted — in which
+ * case every worktree's owner resolves `"unknown"` and nothing is removed (`liveSessionIds`).
+ */
+const probeLiveSessions = (): Effect.Effect<
+	ReadonlySet<string> | null,
+	never,
+	FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const pathSvc = yield* Path.Path;
+		const dir = sessionRegistryDir(pathSvc);
+		const names = yield* fs
+			.readDirectory(dir)
+			.pipe(Effect.orElseSucceed((): ReadonlyArray<string> | null => null));
+		if (names === null) return liveSessionIds({readable: false, entries: []});
+		const entries: Array<{sessionId: string; alive: boolean}> = [];
+		for (const name of names) {
+			if (!name.endsWith(".json")) continue;
+			const raw = yield* fs
+				.readFileString(pathSvc.join(dir, name), "utf8")
+				.pipe(Effect.orElseSucceed((): string | null => null));
+			if (raw === null) continue;
+			const entry = parseSessionRegistryEntry(raw);
+			if (entry === null) continue;
+			entries.push({sessionId: entry.sessionId, alive: pidIsAlive(entry.pid)});
+		}
+		return liveSessionIds({readable: true, entries});
+	});
+
+/** The stamp `hooks/create-worktree.sh` writes into `<gitdir>/`; the two names must stay in sync. */
+const OWNER_STAMP_FILE = "kampus-owner.json";
+
+/**
+ * The session that OWNS this worktree: the `WorktreeCreate` stamp in its git admin dir
+ * (`hooks/create-worktree.sh`), else a bare session-UUID segment in its own path — the fallback for
+ * a `$TMPDIR`-rooted review-head tree, which no hook provisions. `null` when neither resolves, so
+ * an unstamped tree is never judged dead.
+ */
+const ownerSessionIdOf = (
+	worktreePath: string,
+): Effect.Effect<string | null, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const gitdir = runGit(["-C", worktreePath, "rev-parse", "--absolute-git-dir"]);
+		if (gitdir.ok) {
+			const fs = yield* FileSystem.FileSystem;
+			const pathSvc = yield* Path.Path;
+			const raw = yield* fs
+				.readFileString(pathSvc.join(gitdir.stdout.trim(), OWNER_STAMP_FILE), "utf8")
+				.pipe(Effect.orElseSucceed((): string | null => null));
+			const stamped = raw === null ? null : parseOwnerStamp(raw);
+			if (stamped !== null) return stamped;
+		}
+		return sessionIdFromPath(worktreePath);
+	});
+
 const runGh = (args: ReadonlyArray<string>): GitResult => {
 	// biome-ignore lint/plugin: best-effort gh shell — a non-zero exit is fully absorbed into a {ok:false} GitResult the caller branches on, never the E channel; a total helper, not Effect-cosplay.
 	try {
@@ -216,6 +307,10 @@ const worktreeSweep = Command.make(
 		}
 
 		const parsed = parseWorktreeList(listed.stdout);
+		// Probed ONCE per run: the registry is a property of the machine, not of a worktree, and a
+		// per-tree re-read could observe a session exit mid-sweep and split one run's verdicts
+		// across two different truths.
+		const live = yield* probeLiveSessions();
 		// Sequential (concurrency 1) on purpose: the liveness probe now crosses the `FileSystem`
 		// seam, and the per-worktree git shell-outs must stay in the same order as before.
 		const records: ReadonlyArray<WorktreeRecord> = yield* Effect.forEach(
@@ -237,6 +332,10 @@ const worktreeSweep = Command.make(
 							locked: p.locked,
 							recentlyActive: false,
 							hasOpenPr: false,
+							// Moot for a gone-dir tree — `prunable` short-circuits the classifier before any
+							// liveness gate, and a prune only clears admin metadata for a tree that is already
+							// gone from disk, so there is no live working surface to pull out from under an owner.
+							ownerLiveness: "unknown" as OwnerLiveness,
 						};
 					}
 					const managed = isManagedWorktree(p.path);
@@ -249,12 +348,25 @@ const worktreeSweep = Command.make(
 					// Only probe the costlier squash signal when ancestry already missed.
 					const squashMerged = reachable ? false : squashMergedToOriginMain(p.head);
 					const recentlyActive = swept ? yield* worktreeRecentlyActive(p.path) : false;
+					// Presence beats recency (#3943): a live shipper lane is mtime-idle, so `recentlyActive`
+					// cannot see it. Probed only for a swept tree — an unswept one is already KEEP.
+					const ownerLiveness: OwnerLiveness = swept
+						? resolveOwnerLiveness({
+								ownerSessionId: yield* ownerSessionIdOf(p.path),
+								liveSessionIds: live,
+							})
+						: "unknown";
 					// The network open-PR probe fires ONLY for a BUILD tree that would otherwise be swept —
 					// managed, clean, unlocked, idle, and content-merged — so SessionStart makes at most
 					// one gh call per reap candidate (usually zero), never one per worktree. A review-head
 					// tree never enters here (no branch, and its classifier branch precedes the open-PR gate).
 					const wouldRemove =
-						managed && !isDirty && !p.locked && !recentlyActive && (reachable || squashMerged);
+						managed &&
+						!isDirty &&
+						!p.locked &&
+						ownerLiveness === "dead" &&
+						!recentlyActive &&
+						(reachable || squashMerged);
 					const hasOpenPr = wouldRemove ? branchHasOpenPr(p.branch) : false;
 					return {
 						path: p.path,
@@ -266,6 +378,7 @@ const worktreeSweep = Command.make(
 						locked: p.locked,
 						recentlyActive,
 						hasOpenPr,
+						ownerLiveness,
 					};
 				}),
 			{concurrency: 1},
@@ -273,7 +386,14 @@ const worktreeSweep = Command.make(
 
 		const plan = computeWorktreeSweepPlan(records);
 
-		// ADR 0092 "emit what you scanned": the full plan is observable before any action.
+		// ADR 0092 "emit what you scanned": the full plan is observable before any action —
+		// including WHICH presence truth the run resolved, so an all-KEEP sweep reads as a
+		// fail-closed registry rather than as a silent no-op.
+		yield* Console.log(
+			live === null
+				? "worktree-sweep: session registry UNRESOLVED — every swept tree KEPT as owner-unknown (fail-closed, #3943)"
+				: `worktree-sweep: ${live.size} live session(s) in the registry — owner presence decides removal (ADR 0191)`,
+		);
 		yield* Console.log(
 			`worktree-sweep: ${records.length} worktree(s) scanned — ${plan.toRemove.length} removable, ${plan.kept.length} kept${execute ? " (EXECUTE)" : " (dry-run)"}`,
 		);

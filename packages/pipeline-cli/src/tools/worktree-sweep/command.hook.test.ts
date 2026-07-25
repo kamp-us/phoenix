@@ -14,7 +14,7 @@
  * the worktree dir + its per-tree `HEAD`/`logs/HEAD` mtimes past the 30-min threshold.
  */
 import {execFile, execFileSync} from "node:child_process";
-import {existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync} from "node:fs";
+import {existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -30,23 +30,47 @@ interface RunResult {
 
 // Run `pipeline-cli worktree-sweep [--execute]` with the process cwd inside `mainRepo`
 // (the sweep enumerates the current repo's worktrees), exactly as the SessionStart hook does.
-const runSweep = (cwd: string, flags: ReadonlyArray<string>): Promise<RunResult> =>
+// `env` overlays the inherited environment — the tests point `$CLAUDE_CONFIG_DIR` at a synthetic
+// session registry so owner presence (#3943) is a fact the test controls, not the live machine's.
+const runSweep = (
+	cwd: string,
+	flags: ReadonlyArray<string>,
+	env: Record<string, string> = {},
+): Promise<RunResult> =>
 	new Promise((resolve) => {
-		execFile("node", [BIN, "worktree-sweep", ...flags], {cwd}, (error, stdout, stderr) => {
-			const code =
-				error && typeof (error as {code?: unknown}).code === "number"
-					? (error as {code: number}).code
-					: 0;
-			resolve({code, stdout, stderr});
-		});
+		execFile(
+			"node",
+			[BIN, "worktree-sweep", ...flags],
+			{cwd, env: {...process.env, ...env}},
+			(error, stdout, stderr) => {
+				const code =
+					error && typeof (error as {code?: unknown}).code === "number"
+						? (error as {code: number}).code
+						: 0;
+				resolve({code, stdout, stderr});
+			},
+		);
 	});
+
+/** A session id the synthetic registry records as RUNNING, and one it does not (⇒ provably dead). */
+const LIVE_SID = "11111111-1111-4111-8111-111111111111";
+const DEAD_SID = "22222222-2222-4222-8222-222222222222";
 
 describe("worktree-sweep --execute — SessionStart cadence against a REAL git repo (#2238/#2240)", () => {
 	let mainRepo: string;
+	/** A `$CLAUDE_CONFIG_DIR` holding a `sessions/` registry with exactly one live entry (#3943). */
+	let configDir: string;
+	let sweepEnv: Record<string, string>;
 	// $TMPDIR-shaped roots for review-head trees (removed in afterAll — any the sweep KEEPS must be cleaned).
 	const reviewRoots: Array<string> = [];
 	const git = (cwd: string, ...args: string[]) =>
 		execFileSync("git", ["-C", cwd, ...args], {encoding: "utf8"});
+
+	/** Stamp an owning session into a worktree's git admin dir, as `create-worktree.sh` does. */
+	const stampOwner = (wtPath: string, sessionId: string) => {
+		const gitdir = git(mainRepo, "-C", wtPath, "rev-parse", "--absolute-git-dir").trim();
+		writeFileSync(join(gitdir, "kampus-owner.json"), JSON.stringify({sessionId}));
+	};
 
 	// Push a managed worktree's dir + per-tree HEAD/logs mtimes ~2h into the past so it reads
 	// idle (well past the 30-min threshold) — simulating an orphaned tree a live lane would not be.
@@ -69,10 +93,22 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		// `origin/main` is the reachability oracle the classifier consults — point it at self.
 		git(mainRepo, "remote", "add", "origin", mainRepo);
 		git(mainRepo, "fetch", "-q", "origin");
+
+		// The presence oracle, made deterministic: one registry entry for LIVE_SID carrying THIS
+		// test process's pid (trivially running), so the sweep's registry-trust gate resolves and
+		// any other stamped session is provably not running.
+		configDir = mkdtempSync(join(tmpdir(), "wts-cfg-"));
+		mkdirSync(join(configDir, "sessions"));
+		writeFileSync(
+			join(configDir, "sessions", `${process.pid}.json`),
+			JSON.stringify({pid: process.pid, sessionId: LIVE_SID}),
+		);
+		sweepEnv = {CLAUDE_CONFIG_DIR: configDir};
 	});
 
 	afterAll(() => {
 		rmSync(mainRepo, {recursive: true, force: true});
+		rmSync(configDir, {recursive: true, force: true});
 		for (const r of reviewRoots) rmSync(r, {recursive: true, force: true});
 	});
 
@@ -80,25 +116,29 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		// Clean + reachable + IDLE (backdated) + unlocked → the only genuinely-orphaned tree → removed.
 		const orphanWt = join(mainRepo, ".claude", "worktrees", "wf_orphan");
 		git(mainRepo, "worktree", "add", "-q", "--detach", orphanWt, "HEAD");
+		stampOwner(orphanWt, DEAD_SID);
 		backdate(orphanWt);
 
 		// Clean + reachable but RECENTLY-ACTIVE (fresh mtime, not backdated) → live lane → KEPT.
 		const liveWt = join(mainRepo, ".claude", "worktrees", "wf_live");
 		git(mainRepo, "worktree", "add", "-q", "--detach", liveWt, "HEAD");
+		stampOwner(liveWt, DEAD_SID);
 
 		// Clean + reachable + idle but LOCKED → pinned in-use → KEPT.
 		const lockedWt = join(mainRepo, ".claude", "worktrees", "wf_locked");
 		git(mainRepo, "worktree", "add", "-q", "--detach", lockedWt, "HEAD");
 		git(mainRepo, "worktree", "lock", lockedWt);
+		stampOwner(lockedWt, DEAD_SID);
 		backdate(lockedWt);
 
 		// Dirty → must be KEPT with its unpushed file intact (proves no --force).
 		const dirtyWt = join(mainRepo, ".claude", "worktrees", "wf_dirty");
 		git(mainRepo, "worktree", "add", "-q", "--detach", dirtyWt, "HEAD");
 		writeFileSync(join(dirtyWt, "uncommitted.txt"), "unpushed work");
+		stampOwner(dirtyWt, DEAD_SID);
 		backdate(dirtyWt);
 
-		const {stdout, code} = await runSweep(mainRepo, ["--execute"]);
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"], sweepEnv);
 		assert.strictEqual(code, 0, stdout);
 		assert.isFalse(existsSync(orphanWt), "clean+idle+unlocked orphan must be removed");
 		assert.isTrue(existsSync(liveWt), "recently-active worktree must be kept (live sibling lane)");
@@ -122,15 +162,17 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		// Clean + idle + unlocked leaked review head → reclaimed (no merge gate for this class).
 		const leakedReviewWt = join(reviewRoot, "review-head-8001");
 		git(mainRepo, "worktree", "add", "-q", "--detach", leakedReviewWt, "HEAD");
+		stampOwner(leakedReviewWt, DEAD_SID);
 		backdate(leakedReviewWt);
 
 		// Dirty review head → KEPT, its scratch file intact (proves the reclaim never --force-nukes).
 		const dirtyReviewWt = join(reviewRoot, "review-doc-head-8002");
 		git(mainRepo, "worktree", "add", "-q", "--detach", dirtyReviewWt, "HEAD");
 		writeFileSync(join(dirtyReviewWt, "scratch.txt"), "mid-review edit");
+		stampOwner(dirtyReviewWt, DEAD_SID);
 		backdate(dirtyReviewWt);
 
-		const {stdout, code} = await runSweep(mainRepo, ["--execute"]);
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"], sweepEnv);
 		assert.strictEqual(code, 0, stdout);
 		assert.isFalse(existsSync(leakedReviewWt), "clean+idle leaked review-head must be reclaimed");
 		assert.isTrue(existsSync(dirtyReviewWt), "dirty review-head must be kept (no --force)");
@@ -143,10 +185,61 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 	it("dry-run (no --execute) touches nothing — even a clean+idle+unlocked orphan", async () => {
 		const keepWt = join(mainRepo, ".claude", "worktrees", "wf_dryrun");
 		git(mainRepo, "worktree", "add", "-q", "--detach", keepWt, "HEAD");
+		stampOwner(keepWt, DEAD_SID);
 		backdate(keepWt);
-		const {code} = await runSweep(mainRepo, []);
+		const {code} = await runSweep(mainRepo, [], sweepEnv);
 		assert.strictEqual(code, 0);
 		assert.isTrue(existsSync(keepWt), "dry-run must never remove a worktree");
+	}, 30_000);
+
+	// The #3943 regression, end to end: the shipper-shaped state that got two LIVE worktrees removed
+	// — clean, content-merged, unlocked, and mtime-idle — must survive purely because its owning
+	// session is registered as running. The unstamped sibling pins the other half: an owner we cannot
+	// prove dead is KEPT, so a fix that reads "unprovable" as "orphan" turns this red.
+	it("KEEPS a live-session-owned tree AND an unstamped tree in the exact clean+merged+idle state that is otherwise reaped (#3943)", async () => {
+		const liveOwnedWt = join(mainRepo, ".claude", "worktrees", "wf_live_session");
+		git(mainRepo, "worktree", "add", "-q", "--detach", liveOwnedWt, "HEAD");
+		stampOwner(liveOwnedWt, LIVE_SID);
+		backdate(liveOwnedWt);
+
+		const unstampedWt = join(mainRepo, ".claude", "worktrees", "wf_unstamped");
+		git(mainRepo, "worktree", "add", "-q", "--detach", unstampedWt, "HEAD");
+		backdate(unstampedWt);
+
+		// A dead-owner control in the identical state — proves the KEEPs above come from presence,
+		// not from the sweep having gone inert.
+		const deadOwnedWt = join(mainRepo, ".claude", "worktrees", "wf_dead_session");
+		git(mainRepo, "worktree", "add", "-q", "--detach", deadOwnedWt, "HEAD");
+		stampOwner(deadOwnedWt, DEAD_SID);
+		backdate(deadOwnedWt);
+
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"], sweepEnv);
+		assert.strictEqual(code, 0, stdout);
+		assert.isTrue(existsSync(liveOwnedWt), "a LIVE session's worktree must never be removed");
+		assert.isTrue(existsSync(unstampedWt), "an owner we cannot prove dead must be KEPT");
+		assert.isFalse(existsSync(deadOwnedWt), "the dead-owner control must still be reclaimed");
+		assert.include(stdout, "live-session");
+		assert.include(stdout, "owner-unknown");
+	}, 30_000);
+
+	// The fail-closed half of the presence gate: with no readable registry there is no way to prove
+	// any owner dead, so the sweep must remove NOTHING — not fall back to the age signal.
+	it("removes nothing when the session registry is unreadable — fail-closed, not age-based (#3943)", async () => {
+		const wt = join(mainRepo, ".claude", "worktrees", "wf_no_registry");
+		git(mainRepo, "worktree", "add", "-q", "--detach", wt, "HEAD");
+		stampOwner(wt, DEAD_SID);
+		backdate(wt);
+
+		const emptyConfig = mkdtempSync(join(tmpdir(), "wts-cfg-none-"));
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"], {
+			CLAUDE_CONFIG_DIR: emptyConfig,
+		});
+		rmSync(emptyConfig, {recursive: true, force: true});
+		assert.strictEqual(code, 0, stdout);
+		assert.isTrue(existsSync(wt), "with no trustworthy registry, nothing may be removed");
+		assert.include(stdout, "registry UNRESOLVED");
+
+		git(mainRepo, "worktree", "remove", wt);
 	}, 30_000);
 
 	// #3654: a tree whose working dir was cleaned out from under it (a dead session's temp root)
@@ -181,7 +274,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		git(liveWt, "commit", "-q", "-m", "unmerged feature");
 		backdate(liveWt);
 
-		const {stdout, code} = await runSweep(mainRepo, ["--execute"]);
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"], sweepEnv);
 		assert.strictEqual(code, 0, stdout);
 		assert.isFalse(listsPath(goneWt), "gone-dir metadata must be pruned from git's worktree list");
 		assert.isTrue(existsSync(liveWt), "a present unmerged tree must be kept");
@@ -194,7 +287,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		const goneWt = join(mainRepo, ".claude", "worktrees", "wf_gone_dry");
 		git(mainRepo, "worktree", "add", "-q", "--detach", goneWt, "HEAD");
 		rmSync(goneWt, {recursive: true, force: true});
-		const {code} = await runSweep(mainRepo, []);
+		const {code} = await runSweep(mainRepo, [], sweepEnv);
 		assert.strictEqual(code, 0);
 		assert.isTrue(listsPath(goneWt), "dry-run must not prune gone-dir metadata");
 		git(mainRepo, "worktree", "prune"); // clean up the fixture's stale metadata

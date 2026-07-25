@@ -19,7 +19,7 @@
  * from cwd+name → the git command it runs → the stdout path contract → the fail-closed exits.
  */
 import {execFileSync} from "node:child_process";
-import {existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync} from "node:fs";
+import {existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -261,6 +261,44 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 
 		rmSync(consumer, {recursive: true, force: true});
 		rmSync(originRepo, {recursive: true, force: true});
+	});
+
+	// The producer half of the #3943 presence gate: the sweep can only ask "is this tree's owner
+	// still running?" if creation recorded WHO owns it. The stamp must land in the git ADMIN dir,
+	// never the working tree — an untracked file there would read as dirty and pin the tree forever.
+	it("stamps the owning session into <gitdir>/kampus-owner.json, leaving the working tree clean (#3943)", () => {
+		const golden = loadGoldenPayload(import.meta.url, GOLDEN);
+		const name = "agent-stamped001";
+		const expected = join(mainRepo, ".claude", "worktrees", name);
+		const {code} = run(mainRepo, goldenPayloadFor(mainRepo, name));
+		assert.strictEqual(code, 0);
+		const gitdir = git(expected, "rev-parse", "--absolute-git-dir").trim();
+		const stamp = JSON.parse(readFileSync(join(gitdir, "kampus-owner.json"), "utf8"));
+		assert.strictEqual(
+			stamp.sessionId,
+			golden.session_id,
+			"the stamp must carry the owning session",
+		);
+		assert.strictEqual(stamp.worktreeName, name);
+		assert.strictEqual(
+			git(expected, "status", "--porcelain").trim(),
+			"",
+			"the stamp must not dirty the working tree (a dirty tree is KEPT forever)",
+		);
+	});
+
+	// Best-effort by design: an unstamped tree resolves owner-unknown, which the sweep KEEPS — so a
+	// missing session_id may leak a tree but must never block a spawn.
+	it("still provisions when the payload carries no session_id (unstamped ⇒ owner-unknown ⇒ never reaped)", () => {
+		const golden = loadGoldenPayload(import.meta.url, GOLDEN);
+		const {session_id: _sid, ...noSession} = golden;
+		const name = "agent-nosession01";
+		const expected = join(mainRepo, ".claude", "worktrees", name);
+		const {code, stdout} = run(mainRepo, JSON.stringify({...noSession, cwd: mainRepo, name}));
+		assert.strictEqual(code, 0, "a missing session_id must not fail-close the spawn");
+		assert.strictEqual(stdout.trim(), expected);
+		const gitdir = git(expected, "rev-parse", "--absolute-git-dir").trim();
+		assert.isFalse(existsSync(join(gitdir, "kampus-owner.json")));
 	});
 
 	// Guard the anti-fabrication invariant directly: the raw fixture bytes fed to the handler

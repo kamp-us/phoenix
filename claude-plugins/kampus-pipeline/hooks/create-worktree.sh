@@ -47,6 +47,7 @@ extract() {
 
 cwd="$(extract cwd)"
 name="$(extract name)"
+session_id="$(extract session_id)"
 
 # cwd + name are both mandatory — the path is CONSTRUCTED from them, so either missing
 # means there is nothing safe to create. Fail-closed (never a silent no-op).
@@ -96,6 +97,24 @@ fi
 if ! git worktree add --detach "$worktree_path" FETCH_HEAD >&2; then
 	echo "create-worktree: git worktree add --detach '$worktree_path' FETCH_HEAD failed — refusing (fail-closed)." >&2
 	exit 1
+fi
+
+# Stamp the OWNING SESSION into the new tree's git admin dir, so a reaper can ask "is this tree's
+# owner still running?" instead of guessing from age (#3943, ADR 0191). Without a stamp the sweep
+# had only mtime, which cannot see a live shipper lane — it removed two mid-run. The stamp lives in
+# `.git/worktrees/<name>/`, NOT the working tree: it must never dirty `git status` (a dirty tree is
+# KEPT forever) and it must vanish with the worktree, which git's own admin dir gives for free.
+# Best-effort by design — a missing stamp reads as owner-unknown, which the sweep KEEPS, so a failure
+# here can only ever leak a tree, never destroy a live one. Never fail the spawn over it.
+if [ -n "$session_id" ]; then
+	if gitdir="$(git -C "$worktree_path" rev-parse --absolute-git-dir 2>/dev/null)"; then
+		printf '{"sessionId":"%s","worktreeName":"%s","stampedAt":"%s"}\n' \
+			"$session_id" "$name" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+			>"$gitdir/kampus-owner.json" 2>/dev/null \
+			|| echo "create-worktree: could not stamp owner session (tree reads owner-unknown → never reaped)." >&2
+	fi
+else
+	echo "create-worktree: payload carried no session_id — tree reads owner-unknown (never reaped, #3943)." >&2
 fi
 
 # Success: emit ONLY the path on stdout (all git/install chatter went to stderr above).
