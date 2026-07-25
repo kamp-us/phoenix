@@ -172,6 +172,11 @@ export default defineConfig({
 						// Pure-core tests of the headless build tooling (the node-core
 						// bundle assertion, #1836) — no deployed worker, runs offline here.
 						"scripts/**/*.unit.test.ts",
+						// Pure-core tests of the e2e harness substrate (the preview-readiness
+						// gate's budget + attribution policy, #3179). Playwright never sees
+						// them and they launch no browser; only the `.spec.ts` files under
+						// `tests/e2e` belong to the Playwright run.
+						"tests/e2e/**/*.unit.test.ts",
 					],
 					exclude: ["node_modules/**", "dist/**"],
 					sequence: {groupOrder: 1},

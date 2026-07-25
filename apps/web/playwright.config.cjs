@@ -102,7 +102,11 @@ module.exports = defineConfig({
 		},
 		{
 			name: "flows",
-			testIgnore: [...UNAUTH_SPECS, AUTHED_SPECS],
+			// `flows` is the catch-all (#525), so it would otherwise sweep in the
+			// harness's own pure-core `*.unit.test.ts` — vitest files that launch no
+			// browser and assert no page (#3179). Ignoring the infix keeps the
+			// catch-all's orphan guard for real specs while excluding the unit tier.
+			testIgnore: [...UNAUTH_SPECS, AUTHED_SPECS, "**/*.unit.test.ts"],
 			// The write-flow specs do a full per-test sign-up + bootstrap + create +
 			// assert chain against the remote preview; the global 15s per-test cap is
 			// for the lean read specs and is too tight for these end-to-end flows late

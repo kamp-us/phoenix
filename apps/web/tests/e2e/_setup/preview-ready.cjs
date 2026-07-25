@@ -21,12 +21,24 @@
 // failure into green — the specs themselves run exactly once, under the
 // config's existing `retries`).
 //
+// The budget arithmetic and the failure attribution live in the pure, offline
+// unit-tested `preview-ready-policy.cjs`; this file is the thin I/O shell that
+// drives a browser and a request context against them (#3179).
+//
 // `.cjs` + `module.exports` (no `export default`, ADR 0001), mirroring
 // `playwright.config.cjs`. Skipped entirely when `E2E_BASE_URL` is unset — the
 // local `pnpm dev` target is already warm, there is no cold-start race, and
 // local runs stay unchanged.
 
 const {chromium, request} = require("@playwright/test");
+const {
+	PROBE_KIND,
+	PreviewNotWarmError,
+	formatAttemptFailure,
+	formatWarm,
+	probeTimeoutMs,
+	sleepAfterAttemptMs,
+} = require("./preview-ready-policy.cjs");
 
 // Auth-router readiness probe: a side-effect-free better-auth GET mounted under
 // the same `/api/auth/*` route as the `sign-up/email` POST that 404'd on the
@@ -55,61 +67,112 @@ const READY_BUDGET_MS = 90_000; // hard cap: a persistent failure reds the gate 
 const ATTEMPT_TIMEOUT_MS = 10_000; // per-attempt page-load / topbar-visible budget
 const POLL_INTERVAL_MS = 3_000;
 
+// The ordered probe list, each one NAMED so a failure identifies itself. The SPA
+// routes come first (they warm the isolate the auth probes then hit).
+const PROBES = [
+	...WARM_ROUTES.map((route) => ({kind: PROBE_KIND.spaRoute, target: route})),
+	{kind: PROBE_KIND.authRead, target: AUTH_READY_PATH},
+	{kind: PROBE_KIND.authWrite, target: AUTH_WRITE_PROBE_PATH},
+];
+
 module.exports = async function waitForPreviewReady() {
 	const baseURL = process.env.E2E_BASE_URL;
 	if (!baseURL) return; // local dev target is already warm — no cold-start race
 
-	const deadline = Date.now() + READY_BUDGET_MS;
+	const start = Date.now();
+	const deadline = start + READY_BUDGET_MS;
 	const browser = await chromium.launch();
 	const api = await request.newContext({baseURL});
 	let lastError = "(no attempt completed)";
+	let lastProbe = null;
+	let attempt = 0;
 	try {
 		const page = await browser.newPage({baseURL});
+
+		// One probe against the live preview. `timeout` is already clamped to the
+		// remaining budget by the caller, so no probe can outlive the hard cap.
+		const runProbe = async (probe, timeout) => {
+			if (probe.kind === PROBE_KIND.spaRoute) {
+				// The topbar is client-side React, so a raw fetch of the static shell
+				// can't see it — this needs a real browser render. Every first-touched
+				// route is warmed, not just `/`: a cold nested route (`/pano/yeni`)
+				// never mounted its topbar and false-redded the smoke spec.
+				await page.goto(probe.target, {waitUntil: "domcontentloaded", timeout});
+				await page.locator(".kp-topbar").waitFor({state: "visible", timeout});
+				return;
+			}
+			// A read being warm does not imply the write route is mounted (the #716
+			// cold-start signature): a `404` HTML fallback means it isn't yet. The
+			// write probe POSTs the exact path+method the setup races, with an empty
+			// body — better-auth rejects it as a validation error (non-404, no user
+			// created), so it stays side-effect-free.
+			const res =
+				probe.kind === PROBE_KIND.authRead
+					? await api.get(probe.target, {timeout})
+					: await api.post(probe.target, {data: {}, timeout});
+			if (res.status() === 404) {
+				throw new Error(`${probe.target} → 404 (auth router not warm yet)`);
+			}
+		};
+
 		while (Date.now() < deadline) {
+			attempt += 1;
+			const attemptStart = Date.now();
+			let probeStart = attemptStart;
 			try {
-				// 1) SPA shell warm — every first-touched route renders the mounted
-				//    topbar. The topbar is client-side React, so a raw fetch of the
-				//    static shell can't see it; this needs a real browser render. Warm
-				//    each route (not just `/`): a cold nested route (`/pano/yeni`) never
-				//    mounted its topbar and false-redded the smoke spec.
-				for (const route of WARM_ROUTES) {
-					await page.goto(route, {waitUntil: "domcontentloaded", timeout: ATTEMPT_TIMEOUT_MS});
-					await page.locator(".kp-topbar").waitFor({state: "visible", timeout: ATTEMPT_TIMEOUT_MS});
-				}
-
-				// 2) Auth read route warm — a non-404 proves `/api/auth/*` is mounted.
-				const readRes = await api.get(AUTH_READY_PATH);
-				if (readRes.status() === 404) {
-					throw new Error(`${AUTH_READY_PATH} → 404 (auth router not warm yet)`);
-				}
-
-				// 3) Auth WRITE route warm — POST the exact `sign-up/email` path+method
-				//    the setup races. A read being warm does not imply this write route
-				//    is mounted (the #716 cold-start signature); a `404` HTML fallback
-				//    here means it isn't yet. Empty body ⇒ validation error (non-404, no
-				//    user created), so this stays side-effect-free.
-				const writeRes = await api.post(AUTH_WRITE_PROBE_PATH, {data: {}});
-				if (writeRes.status() === 404) {
-					throw new Error(`${AUTH_WRITE_PROBE_PATH} POST → 404 (auth write route not warm yet)`);
+				for (const probe of PROBES) {
+					lastProbe = probe;
+					probeStart = Date.now();
+					// Re-checked BEFORE EVERY probe, not just between attempts: with the
+					// old between-attempts-only check an attempt whose probes each ran
+					// their full timeout could overrun the "hard cap" by a whole attempt
+					// (~100s on top of 90s), so the cap was not one.
+					const timeout = probeTimeoutMs({
+						remainingMs: deadline - Date.now(),
+						attemptTimeoutMs: ATTEMPT_TIMEOUT_MS,
+					});
+					if (timeout === null) throw new Error("readiness budget exhausted mid-attempt");
+					await runProbe(probe, timeout);
 				}
 
 				console.log(
-					`[preview-ready] preview warm at ${baseURL} ` +
-						`(${WARM_ROUTES.length} routes rendered, auth read+write routes non-404)`,
+					formatWarm({
+						baseURL,
+						attempts: attempt,
+						elapsedMs: Date.now() - start,
+						probeCount: PROBES.length,
+					}),
 				);
 				return;
 			} catch (err) {
 				lastError = err instanceof Error ? err.message : String(err);
+				const now = Date.now();
+				const sleepMs = sleepAfterAttemptMs({
+					attemptElapsedMs: now - attemptStart,
+					pollIntervalMs: POLL_INTERVAL_MS,
+					remainingMs: deadline - now,
+				});
 				console.log(
-					`[preview-ready] not ready yet: ${lastError} — retrying in ${POLL_INTERVAL_MS}ms…`,
+					formatAttemptFailure({
+						attempt,
+						probe: lastProbe,
+						probeElapsedMs: now - probeStart,
+						remainingMs: Math.max(0, deadline - now),
+						sleepMs,
+						lastError,
+					}),
 				);
-				await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+				if (sleepMs > 0) await new Promise((resolve) => setTimeout(resolve, sleepMs));
 			}
 		}
-		throw new Error(
-			`[preview-ready] preview ${baseURL} not warm within ${READY_BUDGET_MS}ms — last failure: ${lastError}. ` +
-				"This is a bounded readiness gate, not a retry of test assertions: a persistent failure reds the e2e gate.",
-		);
+		throw new PreviewNotWarmError({
+			baseURL,
+			budgetMs: READY_BUDGET_MS,
+			elapsedMs: Date.now() - start,
+			attempts: attempt,
+			probe: lastProbe,
+			lastError,
+		});
 	} finally {
 		await api.dispose();
 		await browser.close();
