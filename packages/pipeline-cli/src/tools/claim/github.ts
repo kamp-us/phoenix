@@ -15,7 +15,9 @@
 import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
+import {livenessByComment} from "../epic-lock/claim-presence.ts";
 import type {ClaimComment} from "../epic-lock/claim-resolution.ts";
+import {localPresence} from "../epic-lock/presence-io.ts";
 import {type ClaimVerdict, claimIsMine} from "./claim-is-mine.ts";
 
 /** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
@@ -208,7 +210,11 @@ const isMine = Effect.fn("Github.isMine")(function* (
 	const comments = yield* listClaimComments(repo, issue);
 	const authors = [...new Set(comments.map((c) => c.author).filter((a) => a.length > 0))];
 	const authorized = yield* authorizedAuthors(repo, authors);
-	return claimIsMine({comments, authorizedAuthors: authorized, sessionId});
+	// ADR 0191 presence liveness (#3751): a claim whose stamped session process is provably gone
+	// on THIS host is superseded, so a legitimate re-claim on an abandoned lane can resolve as
+	// mine. Every indeterminate claimant (unstamped, another host, unprobeable pid) still counts.
+	const liveness = livenessByComment(comments, localPresence());
+	return claimIsMine({comments, authorizedAuthors: authorized, sessionId, liveness});
 });
 
 /**

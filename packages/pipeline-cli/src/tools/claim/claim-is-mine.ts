@@ -18,6 +18,7 @@ import {
 	type ClaimResolutionInput,
 	type ClaimWinner,
 	resolveClaim,
+	supersededClaims,
 } from "../epic-lock/claim-resolution.ts";
 
 /** Why the decision resolved the way it did — the `resolveClaim` outcome tag, surfaced for observability. */
@@ -31,6 +32,11 @@ export interface ClaimVerdict {
 	readonly reason: ClaimReason;
 	/** The resolved earliest authorized claim, when one exists (`won`/`lost`); `null` when none resolved. */
 	readonly winner: ClaimWinner | null;
+	/**
+	 * The authorized claims dropped as superseded because their claimant is provably dead (ADR
+	 * 0191 presence liveness, #3751) — the audit trail for "why is a later claim the owner?".
+	 */
+	readonly superseded: ReadonlyArray<ClaimWinner>;
 }
 
 /**
@@ -42,14 +48,15 @@ export interface ClaimVerdict {
  */
 export const claimIsMine = (input: ClaimResolutionInput): ClaimVerdict => {
 	const outcome = resolveClaim(input);
+	const superseded = supersededClaims(input.comments, input.authorizedAuthors, input.liveness);
 	switch (outcome._tag) {
 		case "won":
-			return {mine: true, reason: "won", winner: outcome.winner};
+			return {mine: true, reason: "won", winner: outcome.winner, superseded};
 		case "lost":
-			return {mine: false, reason: "lost", winner: outcome.winner};
+			return {mine: false, reason: "lost", winner: outcome.winner, superseded};
 		case "no-winner":
-			return {mine: false, reason: "no-winner", winner: null};
+			return {mine: false, reason: "no-winner", winner: null, superseded};
 		case "no-session":
-			return {mine: false, reason: "no-session", winner: null};
+			return {mine: false, reason: "no-session", winner: null, superseded};
 	}
 };

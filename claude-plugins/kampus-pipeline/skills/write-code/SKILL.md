@@ -548,10 +548,24 @@ claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="…"   # 
 The guard is **fail-closed by construction** — the verb proceeds (exit 0) **only** on positive
 evidence of an authorized claim whose session is `MY_CLAIM`; an absent claim, an unauthorized-only
 claim, and a foreign claim all resolve not-mine and **refuse** (exit non-zero). It is **observable**
-(the verb prints the resolved owner vs `MY_CLAIM` and the outcome reason) and **idempotent** (a
-read-only GET). **Never** route around it by widening the comparison or treating the bare assignee
-as the owner — the assignee is a coarse availability gate only (ADR 0115 §1), and a login-keyed
-ownership check is the degeneracy this guard exists to remove.
+(the verb prints the resolved owner vs `MY_CLAIM`, the outcome reason, and any **superseded**
+dead-claimant claims) and **idempotent** (a read-only GET). **Never** route around it by widening
+the comparison or treating the bare assignee as the owner — the assignee is a coarse availability
+gate only (ADR 0115 §1), and a login-keyed ownership check is the degeneracy this guard exists to
+remove. **A refusal is also never overridable by reasoning**: an explicit-looking dispatch brief,
+or independently re-deriving that the PR/branch/issue/verdict all line up, establishes that the
+*dispatch was coherent* — not *who owns the lane*. Proceeding on that corroboration is what made
+the guard advisory in the field (#3751); the only sanctioned response to a refusal is to stop and
+surface it to whoever dispatched you.
+
+**Ownership resolves against the earliest *live* authorized claim (ADR 0191 supersession).** The
+verb drops a claim whose claimant is **provably dead** — its marker's presence stamp names a
+session process this host can probe, and the process is gone — so a dead session's older marker no
+longer shadows a legitimate later claim on an abandoned lane (the orchestrated-repair case, #3751).
+Supersession needs **positive evidence of death**: an unstamped/legacy marker, a claim stamped on
+another host, and an unprobeable pid all stay indeterminate, still count as owners, and still
+refuse. So the guard's fail-closed direction is unchanged — what changed is that the *legitimate*
+case can now resolve, instead of being permanently unprovable.
 
 > **Which `<N>` to guard at each site.** The guarded number is the **work-target whose mutation
 > could clobber another agent**: Step 5 guards the **issue** you open the PR against; Step 6 the
@@ -1727,6 +1741,46 @@ it never writes a PASS marker, never merges, and the gate re-runs and re-judges 
 commits with fresh eyes. So repair mode does **not** spawn a distinct fixer; the author
 fixing its own PR and an independent gate re-judging it is the firewall, intact.
 
+### Step R0 — A repair dispatch MUST carry a claim token (no token ⇒ refuse, never a judgment call)
+
+Repair is the dispatch class the mis-attribution guard was **inert** on. A repair re-drive
+arrives on a lane someone else opened — often a *new* engine session re-driving a lane whose
+original claimant is gone — so the earliest authorized claim on the linked issue is, by default,
+**not this run's session**. With no token threaded, `claim_is_mine` can neither authorize nor
+refuse the repair on evidence, and two coders on the same wave resolved that ambiguity in
+**opposite** directions (one wrote to the issue, one withheld its progress comment — #3751).
+Fail-open ambiguity is the defect; both halves below close it.
+
+**The dispatcher's obligation.** Whatever dispatches a repair — the orchestrator
+(`.claude/workflows/drive-issue.js`, which threads the token it claimed pre-spawn) or a crew
+engine re-driving a stalled lane (which **claims the lane in its own session first**, via
+`pipeline-cli tracker claim <issue>`, and threads *that* token) — **MUST** thread the lane's
+claim token into the repair prompt, exactly as the initial-build dispatch does (ADR 0115 §3
+delegated ownership). There is no repair-specific token mechanism: it is the same
+`THREADED_CLAIM_TOKEN` contract.
+
+**Your obligation, and the one thing you may not do.** Resolve `MY_CLAIM` per
+[Step 3.5](#mis-attribution-guard) and gate the repair on `claim_is_mine "$N"` against the PR's
+linked issue. If it refuses — no token was threaded, or the threaded token is not the earliest
+**live** authorized claim — **STOP and report the refusal.** You may **not** proceed on the
+strength of an explicit-looking dispatch brief, or on independently corroborating
+PR → branch → `Fixes #N` → the FAIL verdict. That corroboration says the *dispatch was
+coherent*; it says nothing about *who owns the lane*, which is the only question the guard asks.
+Talking yourself past the refusal is the exact failure this step removes: the outcome is
+**deterministic — threaded ⇒ proceed, unthreaded ⇒ refuse** — and the refusal is a routed
+blocker for the dispatcher (it must claim and re-dispatch), never yours to override.
+
+**Why a dead claimant no longer blocks a legitimate re-drive.** The old resolution asserted
+against the *earliest* authorized claim, full stop — so a dead session's marker shadowed every
+later legitimate claim forever, and an engine that correctly re-claimed the lane in its own
+session *still* failed the guard. `pipeline-cli claim is-mine` now treats a claim whose claimant
+is **provably dead** as **superseded** (ADR 0191 presence liveness — the claimant's session
+process is stamped on the marker and probed), so the earliest *live-or-indeterminate* claim wins.
+Supersession requires **positive evidence of death**: an unstamped marker, a claim from another
+host, or an unprobeable pid stays indeterminate, still counts, and the guard still refuses — doubt
+never evicts a slow-but-live agent (the hazard `gh-issue-intake-formats.md` §7's deferred-reclaim
+note protects).
+
 ### Step R1 — Resolve the latest verdict per namespace (mirror `ship-it` Step 2)
 
 Do **not** act on the presence of any FAIL that ever existed. Resolve `review-code`,
@@ -2176,9 +2230,11 @@ indistinguishable from "still FAILing after the cap" to the picker, so the same 
   gate history stay intact.
 - **Mis-attribution guard before every push/comment ([Step 3.5](#mis-attribution-guard)).**
   Confirm the PR's linked issue `#N` carries **your own** claim (`claim_is_mine "$N"` — the
-  orchestrator threads the original claim as `MY_CLAIM` for delegated repair, ADR 0115 §3) before
-  the R2 branch switch and the R3 push/comment, so a mis-dispatched repair never clobbers another
-  agent's live PR (the #1404 class). Fail-closed: an absent or foreign claim refuses.
+  dispatcher threads the lane's claim as `MY_CLAIM` for delegated repair, ADR 0115 §3, mandated by
+  [Step R0](#step-r0--a-repair-dispatch-must-carry-a-claim-token-no-token--refuse-never-a-judgment-call))
+  before the R2 branch switch and the R3 push/comment, so a mis-dispatched repair never clobbers
+  another agent's live PR (the #1404 class). Fail-closed: an absent or foreign claim refuses, and
+  the refusal is **not overridable by a corroborated dispatch brief** (#3751).
 - **Idempotent.** Re-running on an already-fixed / PASS PR (one with no latest FAIL, or one
   whose latest FAIL is bound to a now-stale head) is a clean no-op (Step R1).
 - **SHA-bound verdicts (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)).**

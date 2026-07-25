@@ -48,6 +48,17 @@ const resolveSession = (session: Option.Option<string>): string | null => {
 	return raw === "" ? null : raw;
 };
 
+/**
+ * The superseded-claims note appended to the reason line: naming the dead claimants that dropped
+ * out of the tiebreak is what makes "why is a later claim the owner?" answerable from the log.
+ */
+const supersededNote = (verdict: ClaimVerdict): string =>
+	verdict.superseded.length === 0
+		? ""
+		: ` (superseded ${verdict.superseded.length} dead-claimant claim(s): ${verdict.superseded
+				.map((claim) => claim.session)
+				.join(", ")} — ADR 0191 presence liveness)`;
+
 /** The stderr reason line for a resolved verdict — the human-readable "why" a caller logs. */
 const reasonLine = (issue: number, verdict: ClaimVerdict): string => {
 	switch (verdict.reason) {
@@ -71,7 +82,7 @@ const isMine = Command.make(
 		// The resolved detail goes to stdout as JSON (a caller may want the owner / reason);
 		// the human-readable verdict + back-off reason goes to stderr, mirroring verdict/epic-lock.
 		yield* Console.log(JSON.stringify({issue, ...verdict}));
-		process.stderr.write(`claim: ${reasonLine(issue, verdict)}\n`);
+		process.stderr.write(`claim: ${reasonLine(issue, verdict)}${supersededNote(verdict)}\n`);
 		if (!verdict.mine) process.exit(NOT_MINE_EXIT_CODE);
 	}),
 ).pipe(

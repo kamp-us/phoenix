@@ -443,6 +443,15 @@ async function drive() {
 			`Repair PR #${pr}. You are the coder in REPAIR mode — consume the gate's latest FAIL verdict on PR #${pr}, ` +
 				`fix the issues on the existing branch, and re-push so the stateless gate re-runs. Do not write a PASS and ` +
 				`do not merge. ` +
+				// A repair dispatch MUST carry the lane's claim token, or the coder's Step-3.5 mis-attribution
+				// guard resolves the issue's claim to a session that is not its own and can neither authorize
+				// nor refuse the repair — the fail-open judgment call of #3751. This lane was claimed pre-spawn
+				// above, so the same delegated token covers the repair rounds.
+				`NOTE: this lane was claimed pre-spawn per ADR 0115 §3 — your delegated claim token is ` +
+				`"${claim.token}". Use it as MY_CLAIM for the Step-3.5 mis-attribution guard; the claim comment ` +
+				`whose session id equals this token is YOURS, so do NOT re-race or post a second claim. If the ` +
+				`guard still refuses (the token is not the earliest live authorized claim on the linked issue), ` +
+				`STOP and report the refusal — do not repair on a corroborated-brief judgment call. ` +
 				`Return { pr: ${pr}, headSha: "<new head commit sha after the repair push>" }.`,
 			{ agentType: "coder", isolation: "worktree", schema: repairSchema },
 		));

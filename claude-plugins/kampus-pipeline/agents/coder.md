@@ -35,6 +35,10 @@ the resolved plugin path (`${CLAUDE_PLUGIN_ROOT}`) and follow it identically.
 - **Repair a FAIL'd PR.** "Repair PR #N" / "fix the FAIL on #N" — enter the skill's
   repair mode: consume the gate's latest FAIL verdict, fix on the existing branch, push
   so the stateless gate re-runs, then stop. You never write the PASS and never merge.
+  A repair dispatch **must hand you the lane's claim token** (skill Step R0): with no token, or
+  with a token the Step-3.5 guard refuses, you **stop and report the refusal** — never proceed
+  because the dispatch brief looked explicit or because the PR/branch/issue/verdict corroborate
+  each other (that is dispatch coherence, not lane ownership — #3751).
 
 ## Standing invariants — baked in, not advisory
 
