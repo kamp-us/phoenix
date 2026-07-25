@@ -67,6 +67,7 @@ import {structuredOutputGuardCommand} from "./tools/structured-output-guard/comm
 import {tokenSpendCommand} from "./tools/token-spend/command.ts";
 import {trackerCommand} from "./tools/tracker/command.ts";
 import {trivialDiffCommand} from "./tools/trivial-diff/command.ts";
+import {tscAnnotateCommand} from "./tools/tsc-annotate/command.ts";
 import {unresolvedThreadsGuardCommand} from "./tools/unresolved-threads-guard/command.ts";
 import {verdictCommand} from "./tools/verdict/command.ts";
 import {wayfinderMapCommand} from "./tools/wayfinder-map/command.ts";
@@ -141,6 +142,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	tokenSpendCommand,
 	trackerCommand,
 	trivialDiffCommand,
+	tscAnnotateCommand,
 	classProbeCommand,
 	wayfinderMapCommand,
 	shipDigestCommand,
