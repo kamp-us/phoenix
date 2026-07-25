@@ -69,6 +69,20 @@ describe("verifyTrace — PASS only on a present, well-formed, founder-authored,
 		expect(v.pass).toBe(true);
 	});
 
+	it("PASSES when the marker is line one and rationale prose follows below it (#3831)", () => {
+		const v = verifyTrace(
+			input({
+				comments: [
+					comment({
+						body: `campaign-approve: ${WAVE} · 2026-07-10T12:00:00Z\n\nApproving after the audit readout — the three p0 findings are worth a campaign.`,
+					}),
+				],
+			}),
+		);
+		expect(v.pass).toBe(true);
+		expect(v.pass && v.at).toBe("2026-07-10T12:00:00Z");
+	});
+
 	it("records the EARLIEST founder approval when several exist", () => {
 		const v = verifyTrace(
 			input({
@@ -120,9 +134,32 @@ describe("verifyTrace — fails closed on ABSENCE", () => {
 		);
 		expect(v.reason).toBe("absent");
 	});
+
+	it("does not count a marker pushed off line one by a leading blank line", () => {
+		const v = asFail(
+			verifyTrace(
+				input({
+					comments: [comment({body: `\ncampaign-approve: ${WAVE} · 2026-07-10T12:00:00Z`})],
+				}),
+			),
+		);
+		expect(v.reason).toBe("absent");
+	});
 });
 
 describe("verifyTrace — fails closed on MALFORMATION", () => {
+	it("FAILS malformed when line one is a broken marker followed by prose", () => {
+		const v = asFail(
+			verifyTrace(
+				input({
+					comments: [comment({body: `campaign-approve: ${WAVE}\n\nApproving this wave.`})],
+				}),
+			),
+		);
+		expect(v.reason).toBe("malformed");
+		expect(v.detail).toContain("FIRST line");
+	});
+
 	it("FAILS malformed when the separator/timestamp is missing", () => {
 		const v = asFail(
 			verifyTrace(input({comments: [comment({body: `campaign-approve: ${WAVE}`})]})),
