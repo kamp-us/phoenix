@@ -451,7 +451,16 @@ jobs:
       # mirrors that script's primary-checkout branch (`biome check .`) with the reporter added.
       - run: pnpm exec biome check --reporter=github .
 
-      - run: pnpm typecheck
+      # tsc has no `--reporter=github` equivalent, so the same inline-annotation win the biome
+      # step gets above is done by mapping its `path(line,col): error TSxxxx:` diagnostics onto
+      # `::error` workflow commands (#3873). `tsc-annotate map` is a pass-through: it re-prints
+      # stdin verbatim (the log reads exactly as before) and always exits 0, so `pipefail` is
+      # what keeps the step red — the pipeline's status is `pnpm typecheck`'s own exit code.
+      # Local `pnpm typecheck` is untouched; the mapping lives here, like the biome reporter.
+      - name: typecheck
+        run: |
+          set -o pipefail
+          pnpm typecheck | node packages/pipeline-cli/src/bin.ts tsc-annotate map
 
   unit:
     name: unit + client tests
