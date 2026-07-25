@@ -77,6 +77,79 @@ describe("protocol/schema round-trips", () => {
 		});
 	});
 
+	it("kind 8 — nudge ack (both reference arms, with and without the optional note)", () => {
+		roundTrips(Messages.NudgeAck, {
+			inReplyTo: {_tag: "ResolvedNudge", target: {pr: asPr(3897)}},
+			from: "engineering-manager",
+			outcome: "already-done",
+			note: "the enqueue was already in flight",
+		});
+		roundTrips(Messages.NudgeAck, {
+			inReplyTo: {_tag: "UnknownNudge", reason: "the wake tag carried no decodable nudge"},
+			from: "engineering-manager",
+			outcome: "unknown",
+		});
+	});
+
+	describe("kind 8 — NudgeAck is a reply, structurally not a nudge (#3956)", () => {
+		const ack = {
+			inReplyTo: {_tag: "ResolvedNudge", target: {issue: 3956}},
+			from: "engineering-manager",
+			outcome: "declined",
+			note: "declined: the change contradicts a founder ruling",
+		};
+		const nudge = {target: {issue: 3956}, from: "chief-of-staff", note: "worth a look"};
+
+		it("an ack does not decode as an EngineNudge", () => {
+			assert.isTrue(Schema.decodeUnknownOption(Messages.EngineNudge)(ack)._tag === "None");
+		});
+
+		it("a nudge does not decode as a NudgeAck", () => {
+			assert.isTrue(Schema.decodeUnknownOption(Messages.NudgeAck)(nudge)._tag === "None");
+		});
+
+		it("the disposition is a closed set — free-text prose is not an outcome", () => {
+			assert.isTrue(
+				Schema.decodeUnknownOption(Messages.NudgeAck)({...ack, outcome: "declined, here is why"})
+					._tag === "None",
+			);
+			for (const outcome of ["already-done", "dispatched", "declined", "unknown"] as const) {
+				assert.isTrue(
+					Schema.decodeUnknownOption(Messages.NudgeAck)({...ack, outcome})._tag === "Some",
+				);
+			}
+		});
+
+		it("an ack must say what it answers — inReplyTo is required, never defaulted", () => {
+			const {inReplyTo: _omitted, ...withoutReference} = ack;
+			assert.isTrue(
+				Schema.decodeUnknownOption(Messages.NudgeAck)(withoutReference)._tag === "None",
+			);
+		});
+
+		it("the unknown arm carries NO target field to read a fabricated one out of", () => {
+			const unknown = Messages.nudgeReferenceFor({not: "a nudge"});
+			assert.strictEqual(unknown._tag, "UnknownNudge");
+			assert.notProperty(unknown, "target");
+		});
+
+		it("nudgeReferenceFor resolves a real nudge to its own target, and nothing else (fail-closed)", () => {
+			assert.deepStrictEqual(Messages.nudgeReferenceFor(nudge), {
+				_tag: "ResolvedNudge",
+				target: {issue: asIssue(3956)},
+			});
+			assert.deepStrictEqual(Messages.nudgeReferenceFor({target: {pr: 3897}, from: "cos"}), {
+				_tag: "ResolvedNudge",
+				target: {pr: asPr(3897)},
+			});
+			// nothing in hand, a wrong-shaped body, and another kind's body ALL resolve to the typed
+			// unknown — never to a plausible-looking target guessed from context.
+			for (const unresolvable of [undefined, null, {}, "EngineNudge", {issue: 3956, from: "x"}]) {
+				assert.strictEqual(Messages.nudgeReferenceFor(unresolvable)._tag, "UnknownNudge");
+			}
+		});
+	});
+
 	it("kind 4 — presence announce + role lookup query/result", () => {
 		roundTrips(Messages.PresenceAnnouncement, {
 			peer: "peer-a",

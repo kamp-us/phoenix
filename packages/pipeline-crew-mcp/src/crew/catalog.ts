@@ -19,6 +19,7 @@ import {
 	IntakePing,
 	LookupClaim,
 	LookupRole,
+	NudgeAck,
 	Release,
 } from "../protocol/index.ts";
 import {CREW_ROLES, type CrewRole} from "./roles.ts";
@@ -32,10 +33,14 @@ export const CrewSeams = {
 	claimCollisionCheck: Claim,
 	roleUniquenessLease: Claim,
 	releaseClaim: Release,
+	// `scope` names what is tallied, nothing else — an answer to a nudge belongs on `nudgeAck`,
+	// never stuffed into this seam's scope string as prose (#3956).
 	drainTally: DrainProgress,
 	intakePing: IntakePing,
 	// chief-of-staff → engine advisory nudge; scoped like intakePing, never routing (ADR 0189).
 	engineNudge: EngineNudge,
+	// the typed answer back: engine → chief-of-staff, same advisory class as the nudge (#3956).
+	nudgeAck: NudgeAck,
 	announcePresence: AnnouncePresence,
 	lookupRole: LookupRole,
 	// the resource-claim-holder read (ADR 0191), the claim-keyspace peer of lookupRole (#3886).

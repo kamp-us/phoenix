@@ -3,6 +3,7 @@
  * covering the six required crew interactions, with the two `Claim`-based seams named apart.
  */
 import {assert, describe, it} from "@effect/vitest";
+import {NudgeAck} from "../protocol/index.ts";
 import {ALL_SEAMS, CrewCatalogGroup, CrewSeams, crewCatalog} from "./catalog.ts";
 import {CREW_ROLES} from "./roles.ts";
 
@@ -26,6 +27,7 @@ describe("crew/catalog — roles mapped to seams over protocol/", () => {
 			"drainTally",
 			"intakePing",
 			"engineNudge",
+			"nudgeAck",
 			"announcePresence",
 			"lookupRole",
 		] as const) {
@@ -48,7 +50,14 @@ describe("crew/catalog — roles mapped to seams over protocol/", () => {
 			"IntakePing",
 			"LookupClaim",
 			"LookupRole",
+			"NudgeAck",
 			"Release",
 		]);
+	});
+
+	it("the nudge seam has a reply seam — an answer is its own seam, never a nudge sent backwards (#3956)", () => {
+		assert.strictEqual(CrewSeams.nudgeAck, NudgeAck);
+		// distinct wire kinds, not two names for one seam (as `claimCollisionCheck`/`roleUniquenessLease` are)
+		assert.notStrictEqual(CrewSeams.nudgeAck._tag, CrewSeams.engineNudge._tag);
 	});
 });

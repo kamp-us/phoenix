@@ -66,13 +66,21 @@ session; the substrate resolves the target role's inbox for you:
   (no args) returns every kind's payload as a JSON Schema; read the shape, then build a valid
   `body` — don't blind-send and let a schema-mismatch reject teach you the shape one failed send at
   a time ([`../CHANNEL-TOOL.md`](../CHANNEL-TOOL.md)).
-- **Your two live outbound edges:**
+- **Your three live outbound edges:**
   - **engine → intake-desk (`IntakePing`)** — a nudge that the needs-triage queue is worth a pass
     (e.g. you filed a follow-up you want typed).
   - **engine → chief-of-staff (`DrainProgress`, carrying `inFlight`)** — how many lanes you have in
     flight. This is the *one crew fact the board structurally cannot express*: the board shows
     issue/PR states, never your live concurrency, so the chief-of-staff learns the drain's pace only
-    from this edge.
+    from this edge. `scope` names **what** you are tallying and nothing else — it is telemetry, not
+    a place to answer a nudge or park a second unrelated fact.
+  - **engine → chief-of-staff (`NudgeAck`)** — the answer to an inbound `EngineNudge`. **Answer a
+    nudge with a `NudgeAck`, never by sending a nudge back**: a reply carries `inReplyTo` (built
+    with `nudgeReferenceFor` off the nudge you received — an unresolvable one is the typed
+    `UnknownNudge`, never a guessed target) and `outcome` (`already-done` | `dispatched` |
+    `declined` | `unknown`). The disposition lives in `outcome`; `note` is texture beside it, never
+    where a refusal actually lives. Like every edge here it is advisory — sending or dropping one
+    grants and blocks nothing.
 - **Silent by design: engine → engine and engine → cartographer.** Engines **claim from the board,
   never hand off** to each other — a second engine pulls its own work, so there is no engine-to-engine
   edge. And you never send to the cartographer (ideation is upstream of you, not a peer you feed).

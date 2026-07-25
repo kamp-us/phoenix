@@ -36,6 +36,7 @@ fire-and-forget kind leaves `success` unset, so it defaults to `Schema.Void`.
 | 4a — presence announce | `AnnouncePresence` | `PresenceAnnouncement` | *(void)* |
 | 4b — role discovery / lookup | `LookupRole` | `RoleLookupQuery` | `RoleLookupResult` |
 | 5 — heartbeat (TTL keepalive) | `Heartbeat` | `Heartbeat` | *(void)* |
+| 8 — nudge ack (the answer to an `EngineNudge`) | `NudgeAck` | `NudgeAck` | *(void)* |
 
 ### Shared field types
 
@@ -81,7 +82,9 @@ transport at send), the ack's (stamped by the receiver at delivery), and `since`
 | `resource` | `Schema.NonEmptyString` |
 | `claimant` | `PeerId` |
 
-**`DrainProgressTally`** — a drain-progress report:
+**`DrainProgressTally`** — a drain-progress report. `scope` names *what* is being tallied and
+nothing else: answering a nudge inside it packs unrelated facts into one telemetry string and makes
+the field unparseable — send a `NudgeAck` instead.
 
 | Field | Type |
 | --- | --- |
@@ -98,6 +101,32 @@ transport at send), the ack's (stamped by the receiver at delivery), and `since`
 | `issue` | `Schema.NonEmptyString` |
 | `from` | `RoleId` |
 | `note` | `Schema.String` *(optional)* |
+
+**`NudgeAck`** — the typed answer to an advisory `EngineNudge` (fire-and-forget):
+
+| Field | Type |
+| --- | --- |
+| `inReplyTo` | `NudgeReference` |
+| `from` | `RoleId` |
+| `outcome` | `Schema.Literals(["already-done", "dispatched", "declined", "unknown"])` |
+| `note` | `Schema.String` *(optional)* |
+
+**`NudgeReference`** — what a `NudgeAck` is answering, as a tagged union: either
+`{_tag: "ResolvedNudge", target: NudgeTarget}` (the nudge named by the PR/issue it was about) or
+`{_tag: "UnknownNudge", reason: Schema.NonEmptyString}`. Build one only with
+`nudgeReferenceFor(deliveredNudgeBody: unknown): NudgeReference` — a body that decodes as an
+`EngineNudge` yields `ResolvedNudge` carrying *that nudge's own* target; anything else (a malformed
+body, another kind, nothing in hand) yields `UnknownNudge` naming why. The unknown arm has no
+`target` field at all, so an unresolvable reference can never be read as a fabricated or defaulted
+one.
+
+`NudgeAck` is a **reply, structurally not a nudge**: `inReplyTo` and `outcome` are required and
+`target` is absent, so an ack never decodes as an `EngineNudge` and a nudge never decodes as an ack.
+Semantics are the advisory-nudge class's, unchanged (ADR
+[0204](../../../.decisions/0204-advisory-engine-nudge-edge-amends-0189.md)): **not** command
+authority, no peer may block on or be gated by an ack, and a dropped ack is log-and-continue. It is
+deliberately **not** claim-routed — the answering peer is usually the target's claim holder, so
+routing the ack by its target would deliver it back to its own sender.
 
 **`PresenceAnnouncement`** — a peer announcing it serves a role (fire-and-forget):
 

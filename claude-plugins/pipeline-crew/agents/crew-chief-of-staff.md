@@ -93,6 +93,12 @@ session; the substrate resolves the target role's inbox for you:
     authoritative pull-source (an engine pulls its work off the board, never *through* you). A nudge
     is a latency optimization over the board, scoped exactly like `IntakePing`; carrying a nudge is
     coordination, never command authority (ADR 0189).
+- **A nudge may be answered by a `NudgeAck` — read it, never depend on it.** The ack states what it
+  answers (`inReplyTo`) and the engine's disposition (`outcome`: `already-done` | `dispatched` |
+  `declined` | `unknown`) as typed structure, so you never parse prose to learn that a nudge was
+  declined. Same advisory class as the nudge itself: an ack that never arrives means nothing — do
+  not wait on one, gate anything on one, or re-nudge because one is missing. An engine may decline,
+  and a decline is its call to make.
 - **Silent by design otherwise:** the cartographer and intake-desk do not route back through you,
   and you never route execution between peers — the old "route execution to the engineering-manager"
   edge stays deleted (an advisory `EngineNudge` is not that routing spine reborn).

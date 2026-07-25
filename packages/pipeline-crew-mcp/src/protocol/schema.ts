@@ -12,7 +12,7 @@
  * instants are stamped by the transport (`peer/`'s envelope), the receiver (`peer/`'s inbox ack),
  * or the tracker (`since`/`lastSeen` below) as a `StampedInstant`. See ADR 0211.
  */
-import {Schema} from "effect";
+import {Option, Schema} from "effect";
 import {StampedInstant} from "./instant.ts";
 
 /** An opaque role identifier — a parameter, never a concrete crew role noun (see the module note). */
@@ -79,6 +79,13 @@ export const ReleaseClaim = Schema.Struct({
 
 // Kind 2 — drain-progress tally.
 
+/**
+ * A drain-progress report. `scope` names WHAT is being tallied and nothing else — it is telemetry
+ * an aggregation reads, not a free-text side channel. Answering a nudge inside it (the "already
+ * enqueued, no shipper re-fired" prose that shipped in a live `scope`, #3956) packs several
+ * distinct facts into one string and makes the field unparseable; a nudge answer has its own typed
+ * home, `NudgeAck` below.
+ */
 export const DrainProgressTally = Schema.Struct({
 	scope: Schema.NonEmptyString,
 	completed: Schema.Int,
@@ -127,6 +134,80 @@ export const EngineNudge = Schema.Struct({
  */
 export const nudgeTargetResourceKey = (target: typeof NudgeTarget.Type): string =>
 	"pr" in target ? `pr-${target.pr}` : `issue-${target.issue}`;
+
+// Kind 8 — nudge ack (the typed answer to an advisory nudge; engine → chief-of-staff).
+
+/**
+ * The nudge a `NudgeAck` answers. `ResolvedNudge` names the nudge by the PR/issue it was about —
+ * the only identity both ends share, since a nudge IS its target (`nudgeTargetResourceKey` above).
+ * `UnknownNudge` carries a `reason` and NO target field at all, so there is no slot a consumer
+ * could read a fabricated or defaulted reference out of: an ack whose subject could not be
+ * resolved says so in the type rather than guessing a plausible number.
+ */
+export const NudgeReference = Schema.Union([
+	Schema.Struct({_tag: Schema.Literal("ResolvedNudge"), target: NudgeTarget}),
+	Schema.Struct({_tag: Schema.Literal("UnknownNudge"), reason: Schema.NonEmptyString}),
+]);
+export type NudgeReference = typeof NudgeReference.Type;
+
+/**
+ * What the answering peer DID about the nudge, as a closed set. Typed rather than free text
+ * because the disposition is the load-bearing fact — an aggregation must be able to count
+ * declines without parsing prose, which is exactly what a note-only answer prevented (#3956).
+ * `unknown` is the honest fourth state (the peer cannot say), never a default to fall into.
+ */
+export const NudgeAckOutcome = Schema.Literals([
+	"already-done",
+	"dispatched",
+	"declined",
+	"unknown",
+]);
+export type NudgeAckOutcome = typeof NudgeAckOutcome.Type;
+
+/**
+ * The typed answer to an advisory `EngineNudge` — a REPLY, structurally not a nudge: `inReplyTo`
+ * and `outcome` are required and `target` is absent, so a `NudgeAck` never decodes as an
+ * `EngineNudge` and an `EngineNudge` never decodes as a `NudgeAck`. That mutual non-decodability
+ * is the point: the defect this kind fixes is an engine answering a nudge by sending a *nudge*
+ * back with its refusal as prose, leaving the kind saying "nudge" while the content said
+ * "declined" (#3956).
+ *
+ * It joins the advisory-nudge class and inherits its semantics unchanged (ADR 0204): it is NOT
+ * command authority, no peer may block on or gate anything on receiving one, and a dropped ack is
+ * log-and-continue. The board stays the single authority for facts — an ack carries coordination
+ * texture, never a fact a peer would otherwise read off the board.
+ *
+ * `note` is texture beside the typed outcome, never a routing channel and never the place the
+ * disposition actually lives.
+ */
+export const NudgeAck = Schema.Struct({
+	inReplyTo: NudgeReference,
+	from: RoleId,
+	outcome: NudgeAckOutcome,
+	note: Schema.optionalKey(Schema.String),
+});
+
+/**
+ * Resolve the delivered nudge a peer is answering into a `NudgeReference` — the fail-closed
+ * producer, and the only sanctioned way to build one. A body that decodes as an `EngineNudge`
+ * yields `ResolvedNudge` carrying that nudge's own target; ANY other input (a malformed body, a
+ * different kind, nothing in hand) yields `UnknownNudge` naming why. It never falls back to a
+ * caller-supplied or defaulted target, so an ack can misreport its subject only by being
+ * explicitly unknown.
+ */
+export const nudgeReferenceFor = (deliveredNudgeBody: unknown): NudgeReference => {
+	if (deliveredNudgeBody === undefined || deliveredNudgeBody === null) {
+		return {_tag: "UnknownNudge", reason: "no delivered nudge was in hand to answer"};
+	}
+	return Option.match(Schema.decodeUnknownOption(EngineNudge)(deliveredNudgeBody), {
+		onSome: (nudge): NudgeReference => ({_tag: "ResolvedNudge", target: nudge.target}),
+		onNone: (): NudgeReference => ({
+			_tag: "UnknownNudge",
+			reason:
+				"the message in hand does not decode as an EngineNudge, so its target is unresolvable",
+		}),
+	});
+};
 
 // Kind 4 — role discovery / presence (announce + lookup).
 
