@@ -278,6 +278,42 @@ describe("giving up is self-identifying, and never a silent pass", () => {
 		expect(budgetSpentMs(a)).toBe(598);
 	});
 
+	// The other half of deducting `queuedMs`: with queueing uncharged, the CF-facing budget alone
+	// stops bounding wall clock, and 24 attempts of deep queueing outlive vitest's 120s testTimeout
+	// — trading the named 429 back for "Hook timed out". Deep queueing must therefore end the loop
+	// on the ceiling, saying so, rather than on the untouched budget.
+	it("ends on the wall-clock ceiling when queueing (not CF) is what burnt the time", async () => {
+		const seen: RateLimitAttrition[] = [];
+		let clock = 0;
+		await cfFetchWithRateLimitRetry(
+			// Every attempt queues 20s in the harness's own throttle and answers 429 immediately.
+			async (queued) => {
+				queued(20_000);
+				clock += 20_000;
+				return resp(429);
+			},
+			{
+				budgetMs: 45_000,
+				wallClockCeilingMs: 90_000,
+				maxRetries: 24,
+				baseDelayMs: 1,
+				random: () => 0,
+				now: () => clock,
+				sleep: async (ms) => {
+					clock += ms;
+				},
+				onGiveUp: (a) => seen.push(a),
+			},
+		);
+		const a = seen[0] as RateLimitAttrition;
+		expect(a.reason).toBe("wall-clock-ceiling");
+		expect(a.elapsedMs).toBeGreaterThanOrEqual(90_000);
+		// The runaway guard never got near 24, and CF never got its budget — which is exactly the
+		// state the ceiling exists to end: we were queueing, not being rate-limited.
+		expect(a.attempts).toBeLessThan(24);
+		expect(budgetSpentMs(a)).toBeLessThan(45_000);
+	});
+
 	it("does NOT fire when the 429 clears — a recovered call is not reported as rate-limited", async () => {
 		const onGiveUp = vi.fn();
 		const res = await cfFetchWithRateLimitRetry(sequence([429, 200]), {sleep: noSleep, onGiveUp});

@@ -182,36 +182,57 @@ describe("start-pacing does not consume the concurrency cap", () => {
 	});
 });
 
-describe("the concurrency cap holds under contention (the slot is handed over, not re-raced)", () => {
-	it("does not admit a barging caller into a slot a waiter was just handed", async () => {
-		// The old `inFlight--; waiters.shift()?.()` left a window in which a freshly-arriving call
-		// saw a free slot and took it while the woken waiter also incremented — so `inFlight` drifted
-		// past `maxConcurrent` and the cap stopped binding under exactly the load it exists for.
-		const throttle = createCfApiThrottle({maxConcurrent: 1, minSpacingMs: 0});
-		let active = 0;
-		let peak = 0;
-		const gates = [deferred<void>(), deferred<void>(), deferred<void>()];
-		const runs = gates.map((g) =>
-			throttle.run(async () => {
-				active++;
-				peak = Math.max(peak, active);
-				await g.promise;
-				active--;
-			}),
-		);
-		await flush();
-		// Release the holder and, in the SAME tick, start a barging call: it must queue behind the
-		// waiter rather than slip into the released slot.
-		gates[0]?.resolve();
-		const barger = throttle.run(async () => {
+/**
+ * Fill `maxConcurrent: 1`, hold it, then release the holder and let a fresh caller barge in
+ * `offset` microtasks later. Returns the peak number of ops running CONCURRENTLY — asserting on
+ * ops actually executing between the gates, not on the private `inFlight` counter, so the test
+ * pins the property the cap exists for rather than an implementation detail.
+ */
+const peakUnderBargeAtOffset = async (offset: number): Promise<number> => {
+	const throttle = createCfApiThrottle({maxConcurrent: 1, minSpacingMs: 0});
+	let active = 0;
+	let peak = 0;
+	const gates = [deferred<void>(), deferred<void>(), deferred<void>()];
+	const runs = gates.map((g) =>
+		throttle.run(async () => {
 			active++;
 			peak = Math.max(peak, active);
+			await g.promise;
 			active--;
-		});
-		await flush();
-		gates[1]?.resolve();
-		gates[2]?.resolve();
-		await Promise.all([...runs, barger]);
-		expect(peak).toBe(1);
+		}),
+	);
+	await flush();
+	gates[0]?.resolve();
+	for (let i = 0; i < offset; i++) await Promise.resolve();
+	const barger = throttle.run(async () => {
+		active++;
+		peak = Math.max(peak, active);
+		active--;
+	});
+	await flush();
+	gates[1]?.resolve();
+	gates[2]?.resolve();
+	await Promise.all([...runs, barger]);
+	return peak;
+};
+
+describe("the concurrency cap holds under contention (the slot is handed over, not re-raced)", () => {
+	// The old `inFlight--; waiters.shift()?.()` left a window in which a freshly-arriving call saw
+	// a free slot and took it while the woken waiter also incremented — so `inFlight` drifted past
+	// `maxConcurrent` and the cap stopped binding under exactly the load it exists for.
+	//
+	// SWEEP the arrival offset rather than pinning one number. The window is a few microtasks wide
+	// and sits wherever `run`'s prelude happens to put it (against the pre-fix slot discipline it is
+	// offset 1; a single added `await` anywhere in `run` moves it). A test pinned to one offset
+	// silently stops regressing the moment the prelude shifts — and at offset 0 it never regressed
+	// at all, since the barger reaches `acquireSlot` before the release has run and queues under
+	// both implementations. Sweeping asserts the invariant at every arrival instant instead.
+	it("does not admit a barging caller into a slot a waiter was just handed, at ANY arrival offset", async () => {
+		const violations: Array<{offset: number; peak: number}> = [];
+		for (let offset = 0; offset <= 12; offset++) {
+			const peak = await peakUnderBargeAtOffset(offset);
+			if (peak !== 1) violations.push({offset, peak});
+		}
+		expect(violations).toEqual([]);
 	});
 });

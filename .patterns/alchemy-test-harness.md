@@ -159,9 +159,16 @@ This order also start-paces the retries themselves.
 ejection).** Holding a slot per attempt means a logical call re-enters the
 harness's own queue on every retry — and a wall-clock deadline then charges that
 self-imposed queueing to the budget it meant to spend asking Cloudflare. The
-ejecting run gave up after "2 attempts over 45136ms", ~44.6s of it queued rather
-than rate-limited: **the budget was never spent, so raising it would have fixed
-nothing.** Two rules follow, and both are pinned by unit tests:
+ejecting run gave up after "2 attempts over 45136ms", most of it queued rather
+than rate-limited — CF sent no usable `Retry-After` on this path (`retryAfter:
+Millis 0`, run `29665891972`), and on that premise one backoff at attempt 0 is
+capped at 500ms. The premise is load-bearing: a `Retry-After` is a *floor* and is
+not bounded by that ceiling, so a large one also produces "2 attempts over ~45s"
+and the elapsed numbers alone cannot separate the two. Both sinks are fixed and
+the attrition breakdown now records `retryAfterMs`, so the next occurrence is
+read off the log line rather than inferred. Either way the operative conclusion
+holds: **the budget was never spent, so raising it would have fixed nothing.**
+Three rules follow, and each is pinned by a unit test:
 
 - **A sleeping call is not in flight — including one asleep in start-pacing.**
   `pace()` runs *before* the slot is acquired, not inside it. Pacing is a rate
@@ -172,6 +179,16 @@ nothing.** Two rules follow, and both are pinned by unit tests:
   this much time with CF actually answering 429". Giving up reports the split
   (`queuedMs` / `backoffMs` / budget spent) and a `reason`, so a repeat reads off
   the log line instead of being re-derived from the job log.
+- **Deducting queueing costs a bound, so keep the other one.** Once queueing is
+  uncharged, `budgetMs` no longer limits the call in wall clock — only
+  `maxRetries` times however long the throttle queues does, which at 24 attempts
+  can outlive vitest's 120s `testTimeout` and hand back the opaque "Hook timed
+  out" the named 429 exists to replace. So a hard wall-clock ceiling
+  (`D1_REST_WALL_CLOCK_CEILING_MS`) is held alongside the CF-facing budget, and
+  the `reason` names which bound fired (`wall-clock-ceiling` vs
+  `budget-exhausted`) — a give-up is never ambiguous about what ended it. The
+  guarantee is per logical call: a test making several protected CF calls during
+  a sustained plateau can still exceed `testTimeout`.
 
 A `Retry-After` longer than the remaining budget ends the loop **immediately**
 (`retry-after-exceeds-budget`) rather than sleeping out the remainder to buy one
@@ -183,7 +200,7 @@ attempt at the moment it expires — a fast, correctly-named red beats a slow on
 is the BARE fetch with no retry and no throttle. That opt-in-ness is what red
 `pasaport-ban.test.ts` in run `29665891972` while its wrapped sibling survived
 the same 429 storm, so `_cf-rest-transport.unit.test.ts` now fails closed on any
-integration test file that re-introduces one.
+non-exempt file in the integration directory that re-introduces one.
 
 **Ceiling (why this isn't the whole 429 story):** the throttle is an in-process
 singleton — under `isolate:false` it is shared across files in the same fork, but

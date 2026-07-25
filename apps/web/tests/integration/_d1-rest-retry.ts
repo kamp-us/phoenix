@@ -19,14 +19,20 @@
  * the parallel stages), it just no longer decides when to give up.
  *
  * **The deadline measures time CLOUDFLARE kept us waiting, not wall clock (#3548 round 2).** The
- * `merge_group` ejection of PR #4033 gave up "2 attempts over 45136ms of retry budget" — and 2
- * attempts is the tell. One backoff sleep at attempt 0 is capped at `baseDelayMs` (500ms), so
- * ~44.6s of that 45s was spent INSIDE the two sends, i.e. queued in the harness's own throttle,
- * not being rate-limited by Cloudflare. A wall-clock deadline therefore charged the harness's
- * self-imposed pacing to the budget it meant to spend asking CF, and the loop expired having
- * asked twice. So `send` is handed a `queued` sink, the throttle reports what it made the call
- * wait, and that time is deducted: `budgetMs` now means "up to this much time with CF actually
- * answering 429". Raising the number would not have fixed this — the budget was never spent.
+ * `merge_group` ejection of PR #4033 gave up "2 attempts over 45136ms of retry budget" (four such
+ * give-ups, all 2 attempts, 45046–45195ms) — and 2 attempts is the tell. One backoff sleep at
+ * attempt 0 is capped at `baseDelayMs` (500ms) PROVIDED CF sent no `Retry-After`, which is a floor
+ * on the wait and is not bounded by that ceiling. CF sent none on this path (`retryAfter: Millis 0`,
+ * run `29665891972`); on that premise ~44.6s of the 45s was spent INSIDE the two sends, i.e. queued
+ * in the harness's own throttle, not being rate-limited by Cloudflare. The premise is load-bearing
+ * and the give-up line did not record it for the ejecting run: a large `Retry-After` also yields
+ * 2 attempts over ~45s, so the elapsed numbers alone do not separate the two. Both sinks are fixed,
+ * and the attrition breakdown below now records `retryAfterMs` so the next occurrence is read off
+ * the log line instead of re-derived. A wall-clock deadline charged the harness's self-imposed
+ * pacing to the budget it meant to spend asking CF, and the loop expired having asked twice. So
+ * `send` is handed a `queued` sink, the throttle reports what it made the call wait, and that time
+ * is deducted: `budgetMs` now means "up to this much time with CF actually answering 429". Raising
+ * the number would not have fixed this — the budget was never spent.
  *
  * Scoped to 429 ONLY: a real SQL error surfaces as a 200-with-`errors[]` (classified by
  * `runD1Query`), and a genuine API error as a non-429 4xx/5xx — neither is a 429, so neither is
@@ -42,14 +48,31 @@ export const CF_RATE_LIMIT_STATUS = 429;
 
 /**
  * Retry budget per logical CF REST call, counted over time CF spent answering 429 (harness
- * throttle queueing is deducted). Sized against the two live constraints: above the ~8s the old
- * attempt-count budget averaged, and comfortably under `vitest.config.ts`'s 120s `testTimeout` —
- * a budget that outran the test timeout would trade a named 429 for the opaque "Hook timed out"
- * shape (the failure mode `_request-stall.ts` documents). Deliberately NOT raised for #4033's
- * ejection: that run spent 1.2% of this budget on Cloudflare, so the number was never the binding
- * constraint, and no sane CI budget outlasts a ~290s account-wide plateau anyway.
+ * throttle queueing is deducted). Sized above the ~8s the old attempt-count budget averaged.
+ * Because queueing is no longer charged here, this number alone no longer bounds the call in wall
+ * clock — {@link D1_REST_WALL_CLOCK_CEILING_MS} is what keeps it under `vitest.config.ts`'s 120s
+ * `testTimeout`, i.e. what stops a named 429 becoming the opaque "Hook timed out" shape (the
+ * failure mode `_request-stall.ts` documents). Deliberately NOT raised for #4033's ejection: that
+ * run spent 1.2% of this budget on Cloudflare, so the number was never the binding constraint, and
+ * no sane CI budget outlasts a ~290s account-wide plateau anyway.
  */
 export const D1_REST_BUDGET_MS = 45_000;
+/**
+ * Hard wall-clock ceiling on ONE logical call, held alongside the CF-facing budget above.
+ *
+ * Deducting `queuedMs` bought CF its full budget back, but it also removed the wall-clock bound the
+ * sizing rationale leaned on: with queueing uncharged, the loop's only remaining wall-clock limit
+ * was `maxRetries` times however long the throttle queued each attempt — 24 attempts at even 5s of
+ * queueing is 120s, exactly the opaque "Hook timed out" the named 429 exists to replace. So the two
+ * bounds are kept as belt and braces: CF gets {@link D1_REST_BUDGET_MS} of genuine asking, and the
+ * call still cannot outlive `vitest.config.ts`'s 120s `testTimeout`. {@link GiveUpReason} names
+ * which one fired, so a give-up is never ambiguous about the bound that ended it.
+ *
+ * The guarantee is per logical call, not per test: a test making several protected CF calls during
+ * a sustained plateau can still exceed `testTimeout`. That limit predates this ceiling and is
+ * stated in `.patterns/alchemy-test-harness.md` rather than claimed away here.
+ */
+export const D1_REST_WALL_CLOCK_CEILING_MS = 90_000;
 /** Runaway guard only — the deadline above is what normally ends the loop. */
 export const D1_REST_MAX_RETRIES = 24;
 export const D1_REST_BASE_DELAY_MS = 500;
@@ -68,7 +91,9 @@ export type GiveUpReason =
 	/** CF asked for a `Retry-After` longer than the budget left; waiting it out is CI time burnt for nothing. */
 	| "retry-after-exceeds-budget"
 	/** The runaway guard tripped — many cheap attempts, budget still unspent. */
-	| "max-retries";
+	| "max-retries"
+	/** Wall clock ran out while the CF-facing budget was still unspent — i.e. we were queueing, not rate-limited. */
+	| "wall-clock-ceiling";
 
 /** What a call spent before giving up — the payload that makes an exhausted 429 diagnosable. */
 export interface RateLimitAttrition {
@@ -131,8 +156,10 @@ export class CfRateLimitError extends Error {
 export const isCfRateLimit = (e: unknown): e is CfRateLimitError => e instanceof CfRateLimitError;
 
 export interface RateLimitRetryOptions {
-	/** Wall-clock retry budget in ms (default {@link D1_REST_BUDGET_MS}); 0 disables retrying. */
+	/** CF-facing retry budget in ms (default {@link D1_REST_BUDGET_MS}); 0 disables retrying. */
 	budgetMs?: number;
+	/** Hard wall-clock ceiling on the whole call, ms (default {@link D1_REST_WALL_CLOCK_CEILING_MS}). */
+	wallClockCeilingMs?: number;
 	/** Runaway cap on retries AFTER the first attempt (default {@link D1_REST_MAX_RETRIES}). */
 	maxRetries?: number;
 	/** Base of the exponential backoff, in ms (default 500). */
@@ -193,6 +220,7 @@ export const cfFetchWithRateLimitRetry = async (
 	send: CfSend,
 	{
 		budgetMs = D1_REST_BUDGET_MS,
+		wallClockCeilingMs = D1_REST_WALL_CLOCK_CEILING_MS,
 		maxRetries = D1_REST_MAX_RETRIES,
 		baseDelayMs = D1_REST_BASE_DELAY_MS,
 		maxDelayMs = D1_REST_MAX_DELAY_MS,
@@ -216,8 +244,17 @@ export const cfFetchWithRateLimitRetry = async (
 	for (let attempt = 0; res.status === CF_RATE_LIMIT_STATUS; attempt++) {
 		// Harness-imposed queueing is deducted: the budget bounds how long CF is allowed to keep
 		// answering 429, not how long our own throttle made the call wait for a slot (#3548).
-		const remaining = budgetMs - (now() - startedAt - queuedMs);
+		const elapsed = now() - startedAt;
+		const remaining = budgetMs - (elapsed - queuedMs);
 		if (remaining <= 0) break;
+		// The other half of that deduction: with queueing uncharged, only this bounds the call in
+		// wall clock (see {@link D1_REST_WALL_CLOCK_CEILING_MS}). Checked after the CF-facing budget
+		// so a genuine 429 exhaustion keeps reporting `budget-exhausted`.
+		const wallRemaining = wallClockCeilingMs - elapsed;
+		if (wallRemaining <= 0) {
+			reason = "wall-clock-ceiling";
+			break;
+		}
 		if (attempt >= maxRetries) {
 			reason = "max-retries";
 			break;
@@ -234,9 +271,14 @@ export const cfFetchWithRateLimitRetry = async (
 		// Full-jitter backoff: the parallel stages that tripped the shared rate limit must not
 		// re-sync into a thundering herd on a fixed delay, so spread each retry uniformly over
 		// [0, ceil). A CF-supplied `Retry-After` is a floor on that — never wait less than the
-		// origin asked. Both are clamped to what's left of the budget so the deadline is hard.
+		// origin asked. Both are clamped to what's left of EITHER bound, so each deadline is hard
+		// with overshoot bounded by one in-flight send.
 		const ceil = Math.min(baseDelayMs * 2 ** attempt, maxDelayMs);
-		const wait = Math.min(Math.max(Math.floor(random() * ceil), askedNow ?? 0), remaining);
+		const wait = Math.min(
+			Math.max(Math.floor(random() * ceil), askedNow ?? 0),
+			remaining,
+			wallRemaining,
+		);
 		await res.body?.cancel().catch(() => {}); // release the discarded 429 body before re-sending
 		await sleep(wait);
 		backoffMs += wait;
