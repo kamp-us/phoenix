@@ -47,10 +47,11 @@ const record = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 });
 
 /**
- * The exact state that got two LIVE shipper worktrees removed mid-run (#3943): clean (a shipper
- * only reads), its PR just squash-merged onto `origin/main`, unlocked (this harness never locks a
- * provisioned tree), and mtime-idle (a >30min ship touches no file in the tree). Every pre-#3943
- * signal reads "orphan"; only owner presence tells it apart from one.
+ * The shipper-shaped state a live lane presents to the age-based signals (#3943): clean (a shipper
+ * only reads), its PR just squash-merged onto `origin/main`, and mtime-idle (a >30min ship touches no
+ * file in the tree). `locked: false` here is the reapable *fixture* state under test, NOT a claim
+ * that a live tree is never locked — see `owner-liveness.ts` for what the lock gate does and does not
+ * cover. Under these signals only owner presence tells a live lane apart from an orphan.
  */
 const shipperShaped = (over: Partial<WorktreeRecord> = {}): WorktreeRecord =>
 	record({

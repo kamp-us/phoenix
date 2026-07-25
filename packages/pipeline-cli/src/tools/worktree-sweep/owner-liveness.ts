@@ -3,12 +3,24 @@
  * worktree is still running, so the sweep can never remove a live lane's tree (issue #3943).
  *
  * The defect this closes: the sweep's original liveness triple (locked / mtime-idle / open-PR)
- * carries no session-presence signal at all, and a live *shipper* lane is indistinguishable from
- * an orphan under it — clean (a shipper only reads), content-merged (its PR just squashed onto
- * `origin/main`), unlocked (this harness never `git worktree lock`s a provisioned tree), and
- * file-mtime idle (a >30min ship touches nothing in the tree; it only runs `gh api`). Two LIVE
- * shipper worktrees were removed mid-run under exactly that state. ADR 0191 is the rule the sweep
- * was missing: a resource claim's liveness rides its HOLDER's presence, never an age window.
+ * carries no session-presence signal, and a live *shipper* lane is indistinguishable from an orphan
+ * under the age-based half of it — clean (a shipper only reads), content-merged (its PR just squashed
+ * onto `origin/main`), and file-mtime idle (a >30min ship touches nothing in the tree; it only runs
+ * `gh api`). Two LIVE shipper worktrees were removed mid-run.
+ *
+ * `locked` is the exception worth stating precisely, because the fix's justification does NOT rest
+ * on it being absent: the harness DOES `git worktree lock` each agent worktree it provisions, with a
+ * pid-bearing reason (`claude agent <id> (pid <N> start <date>)`) that `worktree-reap` already parses
+ * as a presence signal. So the lock gate is real and does protect some live lanes. What it is not is
+ * *reliable*: coverage is partial (most registered trees carry no lock at a given moment, and a lock
+ * can outlive its session), and the `$TMPDIR`-rooted `review-head-*` class is never locked at all —
+ * `review-head materialize` runs `git worktree add --detach` with no `--lock` — so the
+ * `review-head-idle` removal path had no lock protection for a live reviewer's tree. The root cause
+ * of the two observed agent-tree removals is NOT established; this gate is justified as the missing
+ * *presence* signal, not as a replacement for a defeated lock.
+ *
+ * ADR 0191 is the rule the sweep was missing: a resource claim's liveness rides its HOLDER's
+ * presence, never an age window.
  *
  * The presence chain — both halves grounded in observed on-disk artifacts, not inferred:
  *   1. **owner** — the `sessionId` the `WorktreeCreate` hook stamps into the worktree's own git

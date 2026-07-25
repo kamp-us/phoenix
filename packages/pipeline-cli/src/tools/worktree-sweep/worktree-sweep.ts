@@ -45,9 +45,10 @@
  * with no open PR for its branch. Every liveness signal fails safe toward KEEP.
  *
  * Session-presence liveness (#3943): the three signals above are all the sweep had, and none of
- * them is presence — so a live SHIPPER lane read as an orphan (clean, its PR just squash-merged,
- * unlocked, and mtime-idle because a ship touches no file in the tree) and had its worktree
- * removed mid-run, twice. Removal now additionally requires the owning session to be **provably
+ * them is presence — so a live SHIPPER lane read as an orphan (clean, its PR just squash-merged, and
+ * mtime-idle because a ship touches no file in the tree) and had its worktree removed mid-run, twice.
+ * The `locked` gate is real presence-ish signal but only partially covers the pile (and never covers
+ * `review-head-*`); see `owner-liveness.ts`. Removal now additionally requires the owning session to be **provably
  * dead**: `ownerLiveness` must be `"dead"`, resolved from holder presence per ADR 0191, never from
  * age. `"alive"` and `"unknown"` both KEEP — see `owner-liveness.ts` for the resolution and for why
  * "cannot prove dead" must never collapse into "dead".

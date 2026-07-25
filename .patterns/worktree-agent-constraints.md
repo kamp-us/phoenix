@@ -240,11 +240,20 @@ Both classes share the **#2240 liveness guard**: a **locked**, **recently-active
 within the idle threshold), or (build class) **open-PR** tree is **KEPT**.
 
 Above all of those sits the **owner-presence gate** (#3943): a tree is removable only when its
-**owning agent session is provably dead**. None of the #2240 signals is presence, and a live
-*shipper* lane defeats all three at once — it is clean (a shipper only reads), its PR has just
-squash-merged onto `origin/main` (so the merge gate passes and the open-PR gate goes quiet), and its
-mtime never moves (a ship runs `gh api`, not edits). Two live shipper worktrees were removed mid-run
-under exactly that state. Presence rides the owner, per
+**owning agent session is provably dead**. The reason the #2240 signals were not enough is that
+**none of them is presence** — not that all of them were bypassed. A live *shipper* lane is clean (a
+shipper only reads), its PR has just squash-merged onto `origin/main` (so the merge gate passes and
+the open-PR gate goes quiet), and its mtime never moves (a ship runs `gh api`, not edits). The
+`locked` gate is the one #2240 signal that *does* carry real liveness: the harness locks each
+harness-provisioned agent worktree with a pid-bearing reason (`claude agent <id> (pid <N> start
+<date>)`, surfaced on the porcelain `locked` line), the sweep KEEPs any locked tree, and a non-forced
+`git worktree remove` refuses one anyway. But its **coverage is partial**, so it cannot be relied on
+as the liveness line: only a handful of the registered trees carry a lock at any moment, a lock can
+go stale and outlive its session by weeks, and the `$TMPDIR`-rooted `review-head-*` class is **never
+locked at all** (`review-head materialize` runs `git worktree add --detach`, no `--lock`) — which
+leaves the `review-head-idle` removal path able to take a **live reviewer's** tree with no lock
+protection whatsoever. Two live shipper worktrees were removed mid-run; **which** reaper and which
+signal state produced those two removals is not established. Presence rides the owner, per
 [ADR 0191](../.decisions/0191-crew-claim-lifecycle.md): `create-worktree.sh` stamps
 the owning `sessionId` into the tree's git admin dir (`<gitdir>/kampus-owner.json`, invisible to
 `git status`), and the sweep resolves it against the harness's live-session registry
@@ -254,6 +263,14 @@ per running session).
 `dead` permits a removal — so an unstamped tree, an unreadable registry, or a liveness probe that
 could not execute leaks an orphan rather than destroying a live tree. A sweep that removes nothing
 and reports `registry UNRESOLVED` is the gate working, not a no-op.
+
+**Expect near-silence, and not only from legacy trees.** The stamp carries the **launcher's**
+session id, and a crew pane is long-lived — so every tree that pane provisioned reads `alive` for the
+pane's entire lifetime, not just for as long as the subagent that used it ran. Combined with the
+pre-#3943 pile, which carries no stamp and resolves `owner-unknown`, the sweep goes near-silent
+during any crew run and only the gone-dir `prunable` class still drains. That is the safe direction,
+but it means the worktree pileup (#3887) will not bend from this gate; draining the pile needs a
+separate, liveness-keyed operator-confirmed path (#3892).
 
 It runs `git worktree
 remove` **without `--force`**, so git itself refuses any tree it judges unsafe and that refusal is
