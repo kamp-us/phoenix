@@ -186,12 +186,12 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 				marker({
 					id: 10,
 					createdAt: "2026-07-11T00:00:00Z",
-					body: `review-doc: PASS @ ${HEAD} — merge-ready`,
+					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
 				}),
 				marker({
 					id: 20,
 					createdAt: "2026-07-11T00:00:00Z",
-					body: `review-doc: PASS @ ${HEAD} — merge-ready (round 2)`,
+					body: `review-doc: PASS @ ${HEAD} — merge-ready`,
 				}),
 			],
 			authorized: ["usirin"],

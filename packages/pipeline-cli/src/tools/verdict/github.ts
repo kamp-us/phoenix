@@ -15,7 +15,7 @@
  *  - `read(pr, gate, expect, headOverride)` — resolve the PR's current head (REST), author-gate
  *    marker authors to write+ collaborators (ADR 0055), and run `resolveVerdict` to classify
  *    the namespace against that head. The consumer branches on the returned outcome.
- *  - `post(pr, gate, body, runId)` — the ADR-0058 rule-2 UPSERT, scoped per posting RUN (ADR 0212):
+ *  - `post(pr, gate, body, runId)` — the ADR-0058 rule-2 UPSERT, scoped per posting RUN (ADR 0213):
  *    guard the body's first line is *this* gate's marker (fail-closed on a cross-namespace body),
  *    then PATCH the prior marker THIS RUN posted in the namespace if one exists, else POST a fresh
  *    one — one verdict comment per (PR, gate, run), so a concurrent reviewer sharing our GitHub

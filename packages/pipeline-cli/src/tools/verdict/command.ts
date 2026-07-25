@@ -19,7 +19,7 @@
  * a bindable first-line PASS (ADR 0111/0151).
  *
  * `post --pr N --gate <g> [--body-file <f>] [--run-id <id>]` upserts a SHA-bound verdict comment
- * (ADR 0058 rule 2 as refined by ADR 0212): it reads the composed verdict body from `--body-file`
+ * (ADR 0058 rule 2 as refined by ADR 0213): it reads the composed verdict body from `--body-file`
  * (or stdin), refuses fail-closed
  * on any `emissionDefect` (wrong namespace, unbindable `@ <sha>`, or a non-full-40-hex/path-glued
  * SHA field), then PATCHes the prior marker THIS RUN posted in the namespace if one exists, else
@@ -244,7 +244,7 @@ const post = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Upsert a SHA-bound verdict comment for a PR gate (PATCH this run's own prior marker, else POST — one per (gate, run), ADR 0058 rule 2 + ADR 0212)",
+		"Upsert a SHA-bound verdict comment for a PR gate (PATCH this run's own prior marker, else POST — one per (gate, run), ADR 0058 rule 2 + ADR 0213)",
 	),
 );
 

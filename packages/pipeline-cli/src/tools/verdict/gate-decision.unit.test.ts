@@ -235,7 +235,7 @@ describe("decideGate — the §CP advisory is the pass, and only on a §CP PR (A
 	// across the marker AND advisory candidate sets is what lets the superseding advisory clear it;
 	// any rule that makes a current-head FAIL an unconditional veto re-wedges every such PR (it is
 	// how PR #3988 got unstuck and how #3998 shipped). Pinned here because a veto reinstated in
-	// `decideGate`/`resolveVerdict` would otherwise pass the whole suite green — see ADR 0212
+	// `decideGate`/`resolveVerdict` would otherwise pass the whole suite green — see ADR 0213
 	// §"Rejected: a current-head FAIL veto".
 	it("a NEWER §CP advisory out-ranks an OLDER same-head FAIL (the #4049 body-only-repair exit)", () => {
 		const result = decide({

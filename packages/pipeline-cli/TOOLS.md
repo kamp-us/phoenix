@@ -122,7 +122,7 @@ semantics; it does **not** change what any gate verifies.
   seam), non-zero with a named refusal reason on stderr otherwise — so a caller branches on exit
   status.
 - **`verdict post --pr N --gate <g> [--body-file <f>] [--run-id <id>]`** — the ADR-0058 rule-2
-  **upsert**, keyed on the posting **run** (ADR 0212): read
+  **upsert**, keyed on the posting **run** (ADR 0213): read
   the composed verdict body (from `--body-file` or stdin), refuse fail-closed if its first line is
   not *this* gate's marker (the cross-namespace emission bug), then PATCH the prior marker **this
   run** posted in the namespace if one exists, else POST — one verdict comment per (PR, gate, run).

@@ -1,12 +1,12 @@
 ---
-id: 0212
+id: 0213
 title: The verdict upsert is keyed on the posting run, not the shared author — one comment per (PR, gate, run) (refines 0058 rule 2)
 status: accepted
 date: 2026-07-25
 tags: [pipeline, verdict, review-code, concurrency, security]
 ---
 
-# 0212 — The Verdict Upsert Is Keyed on the Posting Run, Not the Shared Author (refines 0058 rule 2)
+# 0213 — The Verdict Upsert Is Keyed on the Posting Run, Not the Shared Author (refines 0058 rule 2)
 
 **What this decides — and only this:** `verdict post` upserts one comment per **(PR, gate, posting
 run)** instead of per (PR, gate, author), so a concurrent reviewer sharing our GitHub login appends
