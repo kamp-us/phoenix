@@ -35,6 +35,7 @@ flowchart TD
 		camp_flag_graduation["Flag Graduation"]:::active
 		camp_pipeline_cli_glue_consolidation["pipeline-cli Glue Consolidation"]:::active
 		camp_lint_gate_adoption["Lint-Gate Adoption"]:::active
+		camp_taste_skill_library["Taste-Skill Library"]:::active
 		camp_pipeline_anywhere["Pipeline Anywhere"]:::active
 		camp_pipeline_cli_effect_platform_migration["pipeline-cli @effect/platform migration"]:::active
 		camp_agentic_design_system_coverage["Agentic design-system coverage"]:::done
