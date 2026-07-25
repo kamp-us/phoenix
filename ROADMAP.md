@@ -35,6 +35,7 @@ flowchart TD
 		camp_flag_graduation["Flag Graduation"]:::active
 		camp_pipeline_cli_glue_consolidation["pipeline-cli Glue Consolidation"]:::active
 		camp_lint_gate_adoption["Lint-Gate Adoption"]:::active
+		camp_taste_skill_library["Taste-Skill Library"]:::active
 		camp_pipeline_anywhere["Pipeline Anywhere"]:::active
 		camp_pipeline_cli_effect_platform_migration["pipeline-cli @effect/platform migration"]:::active
 		camp_agentic_design_system_coverage["Agentic design-system coverage"]:::done
@@ -87,6 +88,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Flag Graduation | #39 | active |
 | pipeline-cli Glue Consolidation | #40 | active |
 | Lint-Gate Adoption | #41 | active |
+| Taste-Skill Library | #42 | active |
 | Pipeline Anywhere | #35 | active |
 | pipeline-cli @effect/platform migration | #32 | active |
 | Agentic design-system coverage | #33 | done |
