@@ -224,8 +224,18 @@ line before copying anything:
 
 | Pre-migration file arm | Symlinked files were… | The gate goes on |
 |---|---|---|
-| a *negative* `Dirent` test (`if (!entry.isFile()) continue`), a link-**following** `statSync(abs).isFile()`, or **no type test at all** | in scope | the **`Directory`** arm only — the file arm needs nothing |
+| a negated `Dirent` **directory** test whose else-branch is the file arm (`if (entry.isDirectory()) { … } else { /* file arm */ }`), a link-**following** `statSync(abs).isFile()`, or **no type test at all** | in scope | the **`Directory`** arm only — the file arm needs nothing |
 | a *positive* `entry.isFile()` test | **excluded** — `Dirent.isFile()` is `lstat`-based, so a link-to-file is `false` | the **file** arm, **ahead of** the type test |
+
+**The discriminator is admission, not grammatical negation.** `isFile` is `lstat`-based and
+**excludes** links; `isDirectory` is `lstat`-based too and therefore **admits** a link-to-dir into the
+else/file arm. So `if (!entry.isFile()) continue` admits exactly what a positive `entry.isFile()`
+admits — the `!` sits on control flow, not on membership — and belongs in row **two**, not row one.
+Guard whichever arm **newly gains** the link after the swap: an `isFile` base widens the **file** arm
+(`fs.stat` follows the link and reports `"File"`), an `isDirectory()`-else base widens the
+**recursion** (the link stats as `"Directory"` and is recursed). A link-**following** `statSync`
+already followed links before the swap, so it changes nothing on its own arm — it sits in row one
+only because such a walk's *directory* test is still `Dirent`-based (`patch-guard`).
 
 Both polarities ship in this repo, which is why the trail above records each site's base arm: three
 sites guard the `Directory` arm, `workflow-contract` guards the file arm.
