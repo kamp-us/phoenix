@@ -97,10 +97,16 @@ this decision from silently reversing that one.
 - **Two sibling gaps stay open, deliberately, and are not closed here** — closing them by widening
   an anchor without a ruling is the exact anti-pattern #981 guards:
   - `claude-plugins/kampus-pipeline/.claude-plugin/plugin.json` — the pipeline plugin's own
-    manifest, which declares the components it ships. Same shape as this gap, different path; it
-    needs its own ruling because any branch reaching it also reaches `pipeline-crew`'s.
+    manifest, which declares the components it ships. Same shape as this gap, different path. It is
+    deferred for **scope**, not because it is unreachable: a fully-qualified branch
+    (`^claude-plugins/kampus-pipeline/\.claude-plugin/`) would reach that manifest alone and
+    nothing under `pipeline-crew`, so closing the gap is a scoping decision, not a technical
+    problem. #3933 asks exactly one question, and widening past the ruling being sought is the
+    anti-pattern #981 guards. Tracked at #4056.
   - `claude-plugins/<plugin>/**` for any plugin other than `kampus-pipeline` — a whole new plugin
-    directory matches nothing today (raised on #3933).
+    directory matches nothing today (raised on #3933). Unlike the sibling above, this one does
+    re-open the #3765 ruling, since it asks whether a third-party plugin corpus is control plane.
+    Tracked at #4056.
   - The same shape is on the record for `lefthook.yml` hook-wiring config (#3402 / #3643).
 - This ADR governs *who merges*, not *which gate verifies*: routing is a separate axis and is
   untouched.
