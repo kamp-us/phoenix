@@ -8,6 +8,8 @@
  *   - A tracker transport failure is unrecoverable for a session, so the registry client's
  *     transport errors are collapsed with `Effect.orDie` — the service's own error channel
  *     stays clean (only a resource collision, which is a VALUE in `ClaimReply`, crosses it).
+ *     `claimHolder` is the one exception: it is an ADVISORY read, so it degrades instead of
+ *     dying (its note below, #3977).
  *   - The crew binds peer-id ≡ inbox-address: the registry stores one `peer` field per
  *     presence, so the announced `peer` IS the dialable inbox address, and a lookup recovers
  *     that address back out (matching the `inbox://…` convention the tracker socket test uses).
@@ -99,9 +101,10 @@ export class CrewTracker extends Context.Service<
 		 */
 		readonly lookup: (role: string) => Effect.Effect<ReadonlyArray<RolePresence>>;
 		/**
-		 * The live holder of `resource` (its peer-id ≡ inbox-address), or `None` when it is unclaimed
-		 * or its holder's presence has lapsed (ADR 0191 facet 2). The claim-keyspace read the
-		 * claim-aware send path consults to route a nudge about a claimed target to its owning seat.
+		 * The live holder of `resource` (its peer-id ≡ inbox-address), or `None` when it is unclaimed,
+		 * its holder's presence has lapsed (ADR 0191 facet 2), or the lookup itself was unresolvable.
+		 * The claim-keyspace read the claim-aware send path consults to route a nudge about a claimed
+		 * target to its owning seat — advisory, so every `None` collapses to the broadcast fan.
 		 */
 		readonly claimHolder: (resource: string) => Effect.Effect<Option.Option<string>>;
 	}
@@ -170,10 +173,24 @@ export class CrewTracker extends Context.Service<
 				),
 			// peer-id ≡ inbox-address: the resolved holder IS its own dialable address, so the send
 			// path can match it against the live holder set. Absent `holder` ⇒ unclaimed/lapsed ⇒ `None`.
+			//
+			// A FAILED lookup also resolves `None`, so the send degrades to the #3770 broadcast fan
+			// rather than dying — claim-aware routing is an advisory latency optimization, and the
+			// documented intent is that any unresolvable claim keeps the fan. `catchCause`, not the
+			// former `Effect.orDie`, because the failure that actually bit is a DEFECT and `orDie`
+			// could never catch it: a tracker host that outlives a protocol-kind addition has no
+			// handler for the new tag, and `RpcServer` answers with an `Unknown request tag` die, which
+			// turned the whole nudge edge into a deterministic hard failure (#3977). The warn keeps a
+			// skewed host from silently disabling claim-aware routing forever.
 			claimHolder: (resource) =>
 				client.LookupClaim({resource}).pipe(
-					Effect.orDie,
 					Effect.map((result) => Option.fromNullishOr(result.holder)),
+					Effect.catchCause((cause) =>
+						Effect.logWarning(
+							`crew/tracker: LookupClaim for "${resource}" failed — degrading to the broadcast fan`,
+							cause,
+						).pipe(Effect.as(Option.none<string>())),
+					),
 				),
 		});
 }
