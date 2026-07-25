@@ -568,6 +568,107 @@ Build the hygiene findings into the same evidence shape as the AC table:
 
 ---
 
+## Step 4a — The ADR contradiction sweep (ADR diffs only, and independent of the ADR's citations)
+
+**Fires only when the diff adds or edits a `.decisions/NNNN-*.md` file.** Any other doc diff skips
+this step entirely — the same first-class-absence shape as Step 4b.
+
+Every other check on this page follows a thread the document itself hands you: hygiene check 5
+fires only **when the doc claims** to replace a prior decision, and Step 4b's dimensions validate
+the doc's **own** citations. That is exactly the path that misses this defect. An ADR that never
+names the ADR it contradicts gives you no thread to pull, so following its citations passes it —
+which is what happened on PR #3955, where an earlier pass explicitly checked cross-references,
+found the one ADR the document cited, and PASSed an ADR that contradicted a different, uncited,
+same-day-accepted one (#3980).
+
+So this step is **citation-independent by construction**. Never derive its candidate set from the
+new ADR's reference list.
+
+**1. Enumerate what the new ADR decides — as questions it answers, not as a summary.** Read its
+`title`, its `**What this decides:**` line, its `## Decision` (including any `Binding constraints`
+/ `Banned` list) and write down each question it settles: *"may an open issue exist without a
+milestone?"*, *"what happens to work that serves no active arc?"*. A question you cannot phrase is
+a question you cannot sweep for.
+
+**2. Sweep the live `accepted` ADRs for those questions, without consulting the new ADR's
+citations.** The mechanical shortlist is one command — it ranks the live-accepted ADRs whose
+decision domain the new one touches **and which it does not cite**:
+
+```bash
+# Runs on Step 2's DEFAULT ref-only path — no `--worktree`, no materialized tree. `--new` takes
+# "a path to the ADR file" (any real file, anywhere), so a `git show` off $PR_REF is all the
+# "real file on disk" the sweep needs. $PR_REF is bound by Step 2's `review-head materialize`;
+# re-run that in THIS call if it was bound in an earlier one (the between-call shell reset).
+# CORPUS: `--dir` is deliberately unset, so the sweep reads the repo-root `.decisions/` of the
+# checkout you are running in — the BASE (pre-PR) corpus. That is the set you want: it carries
+# every live ADR the new one could contradict, and it excludes the new ADR itself, so the subject
+# can never rank against its own file. Only the subject is read from the PR head.
+# Exit 0 means the mechanical sweep found nothing left to open; non-zero means there is a
+# shortlist to clear, or that the sweep was INDETERMINATE and proved nothing.
+SUBJECT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/review-doc-adr-subject.XXXXXX")"   # §SP rule-4 carve-out: allocated AND consumed in this one call
+git show "$PR_REF:.decisions/NNNN-slug.md" > "$SUBJECT_DIR/NNNN-slug.md"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli" adr-sweep shortlist \
+  --new "$SUBJECT_DIR/NNNN-slug.md"
+SWEEP=$?; rm -rf "$SUBJECT_DIR"   # keep the sweep's status: it, not the cleanup, is the outcome
+```
+
+Two things worth being explicit about, because a reader will otherwise assume them wrong. **The
+swept corpus is the base `.decisions/` of the checkout you run in**, not a PR-head tree — the new
+ADR is the *only* thing read from the head. And that is why this step needs **no** materialized
+worktree: it costs one `git show`, so Step 2's `--worktree` mode stays what Step 2 says it is —
+rare for a doc PR — instead of becoming routine for the most common doc-PR shape in this repo.
+
+`pipeline-cli decisions-index compact` (the one-line `id · title · status` map) is the manual
+fallback when the shortlist is unavailable: scan it for ADRs whose title rules on one of your
+step-1 questions, and open those.
+
+**3. Open every shortlist entry and judge it.** For each: does this ADR rule on a question the new
+one re-decides? A shortlist entry is a *candidate*, never a finding — most are simply adjacent.
+Record the ones that genuinely overlap.
+
+**The verdict rule.** An **uncited, unamended** same-question conflict with a live `accepted` ADR
+(status `accepted` or `amended-in-part by …` — an amended ADR still rules over everything the
+amendment did not touch) is a **FAIL**. Two live ADRs that decide opposite things on one question
+are worse than an open question: each reads as authoritative, and which one an agent obeys depends
+on which file it happened to open.
+
+**The required resolution shape — name it in the FAIL, do not invent a new one.** The house remedy
+already exists: set `status: amended-in-part by [NNNN]` on the **older** ADR's **status line only**
+(its body stays untouched — an accepted ADR's decision text is immutable), and have the new ADR
+name the relationship in its `## Context`. Precedent ADRs carrying that form: `0023`, `0028`,
+`0031`, `0035`. Where the new ADR replaces the old outright, the existing supersession convention
+(hygiene check 5) applies instead.
+
+**What the tool does and does not discharge — read this before you lean on its exit code.** The
+shortlist detects **lexical and tag adjacency on decision-bearing text, minus the subject's own
+citations**. It does **not** detect a semantic contradiction: two ADRs that disagree about what a
+label *means* while sharing no distinctive vocabulary never appear on it — the shape that bit
+#3955's *repair*, whose bounded-parking fix then collided with a third ADR defining that same
+label's exit condition, and was again caught only by reading. So:
+
+- A **`no-overlap`** result (exit 0) means "nothing mechanically adjacent was left to open." It is
+  **not** evidence of no contradiction, and it does **not** discharge moves 1 and 3.
+- An **`indeterminate`** result is a distinct outcome from `no-overlap` and carries **no**
+  information — the sweep could not key on anything, or the corpus was too small for rarity. Treat
+  it as "unswept" and do the read by hand.
+- A **failure to read the ADR corpus** (unreadable file, malformed front-matter, zero live-accepted
+  ADRs in scope) fails closed and reds. Never record a clean sweep over a corpus you could not read
+  (ADR [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+
+Record the outcome in the same evidence shape as the hygiene findings, naming the swept set so the
+verdict says what was covered:
+
+```
+- [PASS] ADR contradiction sweep — 3 questions enumerated; 171 uncited live-accepted ADRs swept;
+         shortlist 0072/0074/0123 opened, none rules on the same question (semantic sweep by hand)
+- [FAIL] ADR contradiction sweep — 0208 decides "every open issue is milestone-homed or killed",
+         contradicting live-accepted 0072 §4 (freeze-by-absence) / §5 (milestone is optional);
+         0208 cites 0072 nowhere and 0072 carries no forward pointer. Remedy: `status:
+         amended-in-part by [0208]` on 0072's status line, plus 0208 naming the relationship.
+```
+
+---
+
 ## Step 4b — Specialist fan-out + route-don't-grade (ADR 0079)
 
 The AC checklist (Step 3) and the hygiene checklist (Step 4) catch what the issue *named*
@@ -628,7 +729,9 @@ changes).
 ## Step 5 — Land the verdict
 
 **Run the specialist fan-out + route step (Step 4b) before composing the verdict** so any
-in-scope appended AC already shows as a fresh `[FAIL]` row in the table below.
+in-scope appended AC already shows as a fresh `[FAIL]` row in the table below. On an ADR diff the
+Step-4a contradiction sweep is part of the same conjunctive verdict — its FAIL fails the gate like
+any hygiene FAIL.
 
 The overall verdict is **conjunctive across both lists**: every acceptance criterion AND
 every hygiene check must PASS. One miss anywhere → FAIL. **For the docs-only no-link PR

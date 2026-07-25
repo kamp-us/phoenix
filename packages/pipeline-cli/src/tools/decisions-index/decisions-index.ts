@@ -103,6 +103,14 @@ const unquote = (value: string): string => {
 };
 
 /**
+ * The raw text between a file's leading `---` fences, or `null` when there is no
+ * front-matter block. Exported so a consumer that needs a field outside this file's
+ * four (`adr-sweep` reads `tags`) shares one notion of where front-matter ends.
+ */
+export const frontmatterBlock = (text: string): string | null =>
+	text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? null;
+
+/**
  * Parse the four index-relevant fields out of a `---`-delimited YAML block.
  * Only the top-level `id`/`title`/`status`/`date` scalars are read; everything
  * else (tags, body) is ignored. Returns the fields present; the caller validates.
@@ -110,9 +118,8 @@ const unquote = (value: string): string => {
 export const parseFrontmatter = (
 	text: string,
 ): Partial<Record<(typeof FRONTMATTER_FIELDS)[number], string>> => {
-	const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-	if (!match || match[1] === undefined) return {};
-	const block = match[1];
+	const block = frontmatterBlock(text);
+	if (block === null) return {};
 	const out: Partial<Record<(typeof FRONTMATTER_FIELDS)[number], string>> = {};
 	for (const line of block.split(/\r?\n/)) {
 		const kv = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s?(.*)$/);
