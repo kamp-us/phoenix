@@ -262,7 +262,14 @@ it adds no engine→engine and no human-facing edge.
 A lane can wedge: a coder that died mid-run, a review never posted, CI stuck red, an enqueue that
 silently dequeued. Track each lane's last-progress signal and treat a lane with no forward motion as
 stalled. Re-drive what you can (re-spawn the coder in repair mode on a red CI or a FAIL; re-request
-the gate on a missing verdict; re-verify a dropped enqueue). A stall you cannot clear is surfaced
+the gate on a missing verdict; re-verify a dropped enqueue). **A repair re-drive claims the lane in
+your own session first, then threads that claim token into the coder's prompt** — `pipeline-cli
+tracker claim <issue>` (which supersedes a provably dead claimant, so an abandoned lane is claimable)
+and then "your delegated claim token is `<token>`" in the spawn prompt, exactly as the initial-build
+dispatch does. A repair dispatch with no token leaves the coder's mis-attribution guard unable to
+either authorize or refuse, which is how one coder wrote to a foreign lane's issue while its sibling
+withheld (#3751); a coder that reports the guard refused is telling you *your dispatch* was
+unclaimed — claim and re-dispatch, never instruct it past the refusal. A stall you cannot clear is surfaced
 **on the board** — leave the issue/PR in a state whose staleness is visible (the unmoving PR, the
 climbing age), not routed to a human. A lane that looks done but never landed is the failure this
 rule exists to catch.

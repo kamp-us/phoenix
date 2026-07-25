@@ -2613,8 +2613,18 @@ markers (§5/§6) are. Its **canonical grammar**:
 
 ```
 claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>
+claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC> · presence <host-fingerprint>/<session-pid>
 ```
 
+- **The optional `presence` stamp** names the claiming **session process** (the long-lived
+  `claude` ancestor of whatever posted the claim) and an opaque **fingerprint** of its host (a
+  truncated hash — liveness only ever asks "is this my host?", and a machine name has no business
+  in a public timeline). It exists so a later
+  reader can *probe* this claimant's liveness instead of guessing — see
+  [Dead-claimant supersession](#dead-claimant-supersession-proven-death-only-adr-0191). It is
+  written by `pipeline-cli tracker claim` and is **optional**: an unresolvable session stamps
+  nothing, and an unstamped marker reads as indeterminate (⇒ still a valid owner), so legacy
+  markers keep their exact old meaning.
 - **Token source:** the claiming process's `CLAUDE_CODE_SESSION_ID` environment variable
   (the orchestrator's when it claims pre-spawn; the coder's when `write-code` is invoked
   directly — see §The pre-spawn claim protocol).
@@ -2738,11 +2748,51 @@ so closing it means claiming before any branch, build, or spawn:
 ### Staleness / reclaim — owner-defer (ADR 0115 §5)
 
 A claim whose agent crashed mid-run is **sticky until a human clears it** (un-assigns the
-issue / removes the claim, re-opening it to the picker). Automatic TTL/hybrid reclaim is an
-**explicitly deferred follow-up** — GitHub exposes no TTL primitive, and an automated
-reclaim risks evicting a slow-but-live agent, re-introducing the exact double-implement this
-design prevents. The marker's `<ISO-8601-UTC>` field (and server `created_at`) is the field
-a future policy would key on, so the marker is forward-compatible without committing now.
+issue / removes the claim, re-opening it to the picker) **unless its claimant is provably
+dead** (the next subsection). Automatic **age/TTL-based** reclaim remains an explicitly
+deferred follow-up — GitHub exposes no TTL primitive, and an age-keyed reclaim risks evicting
+a slow-but-live agent, re-introducing the exact double-implement this design prevents. That
+hazard is about *time*, not *liveness*: a claim superseded on **proven claimant death** cannot
+evict a live agent, which is why supersession is permitted where a TTL is not.
+
+<a id="dead-claimant-supersession-proven-death-only-adr-0191"></a>
+### Dead-claimant supersession — proven death only (ADR 0191 presence liveness)
+
+A claim whose claimant is **provably dead** is **superseded**: it drops out of the
+earliest-authorized-claim tiebreak, so the earliest **live-or-indeterminate** authorized claim
+is the owner. Without this, a dead session's older marker shadows every later legitimate claim
+forever — which made the `write-code` mis-attribution guard *unrunnable* on an orchestrated
+repair of an abandoned lane: even an engine that correctly re-claimed the lane in its own
+session lost to the dead claimant's earlier marker, so the guard could neither authorize nor
+refuse and degraded into a per-agent judgment call (#3751).
+
+Liveness is **presence-derived, never age-derived** (ADR
+[0191](https://github.com/kamp-us/phoenix/blob/main/.decisions/0191-crew-claim-lifecycle.md) — a
+claim's liveness rides its holder's presence; the same identification `worktree-reap` makes):
+the marker's `presence <host-fingerprint>/<session-pid>` stamp names the claimant's session
+process, and a reader on that host probes it. **Dead requires all three** — a stamp, a host match, and a pid
+the probe proves gone. Every other state is **indeterminate and counts as a live claim**: an
+unstamped/legacy marker, a claim stamped on another host, a pid that still resolves, and a
+reused pid all leave the claim standing, so the reader refuses. Doubt refuses; it never evicts.
+
+Both the resolution and the probe live in the shared verb — `pipeline-cli claim is-mine`
+(default-deny) and `pipeline-cli tracker claim` (which also stops deferring to a dead claimant,
+so a legitimate re-claim can land) — never a per-skill re-derivation. The verb prints the
+superseded claims next to the resolved owner, so "why is a later claim the owner?" is answerable
+from the run log.
+
+### Repair dispatches thread the lane's claim token
+
+A **repair** dispatch is the class this contract is easiest to violate on: it lands on a lane
+someone else opened, so the earliest authorized claim is by default *not* the repairing run's
+session. Every repair dispatcher **MUST** thread the lane's claim token into the coder's prompt
+under the same delegated-ownership contract as the initial build (§The pre-spawn claim protocol):
+the orchestrator threads the token it claimed pre-spawn; a crew engine re-driving a stalled lane
+**claims the lane in its own session first** (`pipeline-cli tracker claim <issue>`, which now
+supersedes a dead claimant) and threads *that* token. A repair coder handed no token **refuses**
+— deterministically, and not overridably by a coherent-looking dispatch brief (`write-code`
+Step R0). There is no repair-specific claim mechanism, and an unthreaded repair is a dispatcher
+bug to route back, not an ambiguity for the coder to resolve.
 
 ---
 

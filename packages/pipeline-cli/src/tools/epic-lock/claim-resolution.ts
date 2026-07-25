@@ -22,6 +22,17 @@
  */
 export const CLAIM_RE = /^\s*\**\s*claim:\s*([0-9a-f-]{36})\b/i;
 
+/**
+ * Compose a claim marker body: the canonical `claim: <session> · <ts>` line, plus the optional
+ * `· presence <host>/<pid>` suffix that makes the claimant's liveness machine-checkable
+ * (`claim-presence.ts`). The grammar lives here so no writer hand-concatenates it.
+ */
+export const claimCommentBody = (
+	session: string,
+	at: string,
+	presenceSuffix?: string | null,
+): string => `claim: ${session} · ${at}${presenceSuffix ? ` · ${presenceSuffix}` : ""}`;
+
 /** A claim comment as the issues/comments REST endpoint surfaces it (only these fields matter). */
 export interface ClaimComment {
 	/** Server-assigned, strictly-monotonic, globally-unique comment id (the tiebreak sub-key). */
@@ -40,12 +51,27 @@ export const parseClaimSession = (body: string): string | null => {
 	return session ? session.toLowerCase() : null;
 };
 
+/**
+ * A claimant's presence — the ADR 0191 liveness of the claim, resolved from the marker's
+ * optional presence stamp by the IO shell. `dead` is the ONLY value that supersedes a claim,
+ * and it requires positive evidence (the stamped session process is provably gone on this
+ * host); `unknown` (no stamp, another host, an unprobeable pid) counts as a live claim, so
+ * doubt refuses rather than evicts.
+ */
+export type ClaimLiveness = "live" | "dead" | "unknown";
+
 export interface ClaimResolutionInput {
 	readonly comments: ReadonlyArray<ClaimComment>;
 	/** The write+ collaborator logins — the ADR 0055 trust root (resolved by the IO shell). */
 	readonly authorizedAuthors: ReadonlyArray<string>;
 	/** Our own `CLAUDE_CODE_SESSION_ID`; absent/empty ⇒ fail-closed `no-session`. */
 	readonly sessionId: string | null | undefined;
+	/**
+	 * Per-comment-id claimant liveness (`claim-presence.ts` resolves it). A comment absent
+	 * from the map is `unknown` ⇒ its claim counts, so omitting the map entirely reproduces
+	 * the pre-supersession resolution exactly.
+	 */
+	readonly liveness?: ReadonlyMap<number, ClaimLiveness> | undefined;
 }
 
 /** The resolved lock holder — the earliest authorized claim. */
@@ -61,16 +87,11 @@ export type ClaimOutcome =
 	| {readonly _tag: "won"; readonly winner: ClaimWinner}
 	| {readonly _tag: "lost"; readonly winner: ClaimWinner};
 
-/**
- * The earliest authorized claim — min `(createdAt, id)` — among comments that both
- * match `CLAIM_RE` and are authored by a write+ collaborator. Returns `null` when
- * no such claim exists (empty authorized set, or only forged/non-claim comments):
- * an empty result is the fail-closed "no owner", never a false win.
- */
-export const resolveWinner = (
+/** Every authorized claim on the target, ordered earliest-first by `(createdAt, id)`. */
+const authorizedClaims = (
 	comments: ReadonlyArray<ClaimComment>,
 	authorizedAuthors: ReadonlyArray<string>,
-): ClaimWinner | null => {
+): ReadonlyArray<ClaimWinner> => {
 	const authorized = new Set(authorizedAuthors);
 	const claims: ClaimWinner[] = [];
 	for (const comment of comments) {
@@ -82,8 +103,47 @@ export const resolveWinner = (
 	claims.sort((a, b) =>
 		a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id,
 	);
-	return claims[0] ?? null;
+	return claims;
 };
+
+/**
+ * The earliest **live-or-indeterminate** authorized claim — min `(createdAt, id)` — among
+ * comments that both match `CLAIM_RE` and are authored by a write+ collaborator. Returns
+ * `null` when no such claim exists (empty authorized set, only forged/non-claim comments, or
+ * every authorized claim superseded): an empty result is the fail-closed "no owner", never a
+ * false win.
+ *
+ * A claim whose claimant is **provably dead** (`liveness` says `dead` — ADR 0191 presence
+ * liveness, positive evidence only) is **superseded**: it drops out of the tiebreak so a
+ * later legitimate claim on an abandoned lane can win, which is what makes the mis-attribution
+ * guard runnable under orchestrated repair instead of shadowed forever by a dead session's
+ * older marker (#3751). Every other liveness value counts the claim, so an indeterminate
+ * claimant still wins the tiebreak and the reader still refuses — doubt never evicts a
+ * slow-but-live agent (the hazard ADR 0115 §5's deferral was protecting).
+ */
+export const resolveWinner = (
+	comments: ReadonlyArray<ClaimComment>,
+	authorizedAuthors: ReadonlyArray<string>,
+	liveness?: ReadonlyMap<number, ClaimLiveness> | undefined,
+): ClaimWinner | null =>
+	authorizedClaims(comments, authorizedAuthors).find(
+		(claim) => liveness?.get(claim.id) !== "dead",
+	) ?? null;
+
+/**
+ * The authorized claims **dropped as superseded** by the liveness projection — the audit
+ * trail a caller logs next to the resolved winner ("#N: superseded 1 dead-claimant claim").
+ * Kept as its own read rather than folded into `ClaimOutcome` so the outcome shape (and every
+ * consumer that pattern-matches it) is untouched.
+ */
+export const supersededClaims = (
+	comments: ReadonlyArray<ClaimComment>,
+	authorizedAuthors: ReadonlyArray<string>,
+	liveness?: ReadonlyMap<number, ClaimLiveness> | undefined,
+): ReadonlyArray<ClaimWinner> =>
+	authorizedClaims(comments, authorizedAuthors).filter(
+		(claim) => liveness?.get(claim.id) === "dead",
+	);
 
 /**
  * Decide our win/lose against canonical epic state. Fail-closed twice over: a
@@ -94,7 +154,7 @@ export const resolveWinner = (
  */
 export const resolveClaim = (input: ClaimResolutionInput): ClaimOutcome => {
 	if (!input.sessionId) return {_tag: "no-session"};
-	const winner = resolveWinner(input.comments, input.authorizedAuthors);
+	const winner = resolveWinner(input.comments, input.authorizedAuthors, input.liveness);
 	if (winner === null) return {_tag: "no-winner"};
 	return winner.session === input.sessionId.toLowerCase()
 		? {_tag: "won", winner}

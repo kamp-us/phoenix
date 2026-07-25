@@ -36,7 +36,14 @@
 import {Context, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcessSpawner} from "effect/unstable/process";
-import {type ClaimComment, type ClaimWinner, resolveWinner} from "../epic-lock/claim-resolution.ts";
+import {formatClaimPresence, livenessByComment} from "../epic-lock/claim-presence.ts";
+import {
+	type ClaimComment,
+	type ClaimWinner,
+	claimCommentBody,
+	resolveWinner,
+} from "../epic-lock/claim-resolution.ts";
+import {currentSessionPresence, localPresence} from "../epic-lock/presence-io.ts";
 // The ADR-0058 verdict-marker grammar + emission guard is the SINGLE SOURCE — reused, never
 // re-derived, exactly as the claim decision reuses `epic-lock/claim-resolution.ts`. `postVerdict`
 // composes and self-verifies its comment through this pure core so the tool OWNS the decision the
@@ -375,7 +382,10 @@ const resolveAuthorizedWinner = Effect.fn("Tracker.resolveAuthorizedWinner")(fun
 ) {
 	const authors = [...new Set(comments.map((c) => c.author).filter((a) => a.length > 0))];
 	const authorized = yield* authorizedAuthors(repo, authors);
-	return resolveWinner(comments, authorized);
+	// A provably-dead claimant's marker is superseded (ADR 0191 presence liveness, #3751), so
+	// Rule-0 defer no longer strands an abandoned lane behind a dead session's older claim — the
+	// re-claim this enables is what a repair dispatch threads as its delegated token.
+	return resolveWinner(comments, authorized, livenessByComment(comments, localPresence()));
 });
 
 /**
@@ -399,7 +409,17 @@ const claim = Effect.fn("Tracker.claim")(function* (
 			: ({_tag: "held-by-other", owner: toOwner(before)} satisfies ClaimResult);
 	}
 	const now = new Date().toISOString();
-	const posted = yield* json(postCommentArgs(repo, target, `claim: ${session} · ${now}`));
+	// Stamp our own session's presence on the marker so a LATER reader can probe this claim's
+	// liveness instead of guessing (#3751); an unresolvable session stamps nothing, which reads
+	// indeterminate and preserves the pre-stamp behaviour exactly.
+	const presence = currentSessionPresence();
+	const posted = yield* json(
+		postCommentArgs(
+			repo,
+			target,
+			claimCommentBody(session, now, presence === null ? null : formatClaimPresence(presence)),
+		),
+	);
 	const claimId = typeof posted === "number" ? posted : null;
 	const winner = yield* resolveAuthorizedWinner(repo, yield* listClaimComments(repo, target));
 	if (winner !== null && winner.session === mine) {
