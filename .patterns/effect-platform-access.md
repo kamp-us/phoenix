@@ -184,32 +184,66 @@ stat that *is* a link (`stat.isSymbolicLink()`), which `fs.stat` never returns �
 `type === "SymbolicLink"` is dead code on that path.
 
 Observed instances of the swap, for reviewers of the remaining
-[#3462](https://github.com/kamp-us/phoenix/issues/3462) migration waves — all three are `readLink`-gated
-on `main` today; none is still latent:
-[#3472](https://github.com/kamp-us/phoenix/issues/3472) / PR
-[#3898](https://github.com/kamp-us/phoenix/pull/3898) (`patch-guard`) — **confirmed fail-open**, a
-`@patch-pin:` marker behind a symlinked dir flipped the gate RED→GREEN;
-[#3470](https://github.com/kamp-us/phoenix/issues/3470) / PR
-[#3897](https://github.com/kamp-us/phoenix/pull/3897) (`design-token-guard`) and
-[#3471](https://github.com/kamp-us/phoenix/issues/3471) / PR
-[#3915](https://github.com/kamp-us/phoenix/pull/3915) (`reachability-guard`) — same shape, fixed in
-the migration PR rather than after it.
+[#3462](https://github.com/kamp-us/phoenix/issues/3462) migration waves — all four are `readLink`-gated
+on `main` today; none is still latent. The **pre-migration file arm** is recorded for each, because it
+is what decides which arm the gate belongs on (the base-polarity table below):
 
-### The sanctioned idiom — gate the `Directory` arm on `readLink` failing
+- [#3472](https://github.com/kamp-us/phoenix/issues/3472) / PR
+  [#3898](https://github.com/kamp-us/phoenix/pull/3898) — `patch-guard`, **confirmed fail-open**: a
+  `@patch-pin:` marker behind a symlinked dir flipped the gate RED→GREEN. Base file arm was
+  `if (!statSync(abs).isFile() || !isTestFile(entry.name)) continue;` — a link-*following* `statSync`.
+- [#3470](https://github.com/kamp-us/phoenix/issues/3470) / PR
+  [#3897](https://github.com/kamp-us/phoenix/pull/3897) — `design-token-guard` (`walkCss`), fixed in
+  the migration PR. Base file arm screened by name only (`} else if (entry.name.endsWith(".css")) {`).
+- [#3471](https://github.com/kamp-us/phoenix/issues/3471) / PR
+  [#3915](https://github.com/kamp-us/phoenix/pull/3915) — `reachability-guard`, fixed in the
+  migration PR. Base file arm was the bare `} else if (matches(entry.name)) {` — **no type test at all**.
+- [#3471](https://github.com/kamp-us/phoenix/issues/3471) / PR
+  [#3915](https://github.com/kamp-us/phoenix/pull/3915) — `workflow-contract`, the **counter-example**:
+  its base file arm was a *positive* `.filter((e) => e.isFile() && e.name.endsWith(".js"))`, so
+  symlinked `.js` files were **excluded** at base and its gate sits on the **file** arm — the opposite
+  direction from the other three.
+
+### The sanctioned idiom — reconstruct `lstat` with `readLink`
 
 `readLink` is `effectify(NFS.readlink, …)` (`NodeFileSystem.js:280`) and POSIX `readlink(2)`
 succeeds **only** on a symbolic link (`EINVAL` on anything else) — so "`readLink` succeeded" is the
-`lstat`-free test for link-ness. Keep `stat` for the type, gate the recursion on it. Shipped shape,
-`packages/pipeline-cli/src/tools/patch-guard/gate.ts` (`gatherMarkers`), covered by two
-`gate.unit.test.ts` cases that plant a real symlinked dir and a real symlinked file:
+`lstat`-free test for link-ness. Keep `stat` for the type; put the `readLink` test on whichever arm
+the walk you are replacing already excluded links from.
+
+#### First establish the call site's base polarity — it decides which arm to guard
+
+**Which arm the gate belongs on is a property of the pre-migration line, not a constant.** Read that
+line before copying anything:
+
+| Pre-migration file arm | Symlinked files were… | The gate goes on |
+|---|---|---|
+| a *negative* `Dirent` test (`if (!entry.isFile()) continue`), a link-**following** `statSync(abs).isFile()`, or **no type test at all** | in scope | the **`Directory`** arm only — the file arm needs nothing |
+| a *positive* `entry.isFile()` test | **excluded** — `Dirent.isFile()` is `lstat`-based, so a link-to-file is `false` | the **file** arm, **ahead of** the type test |
+
+Both polarities ship in this repo, which is why the trail above records each site's base arm: three
+sites guard the `Directory` arm, `workflow-contract` guards the file arm.
+
+**Directory-arm shape** (the common case). The `readLink` gate is `patch-guard`'s `gatherMarkers`
+(`packages/pipeline-cli/src/tools/patch-guard/gate.ts`, covered by two `gate.unit.test.ts` cases that
+plant a real symlinked dir and a real symlinked file); the `Effect.option` stat and the
+dangling-entry split are `design-token-guard`'s `walkCss`
+(`packages/pipeline-cli/src/tools/design-token-guard/gate.ts`). Copy **both** — the `readLink` gate
+alone satisfies obligation 1 below but not obligation 2:
 
 ```ts
 const walk = (dir: string): Effect.Effect<void, PlatformError.PlatformError> =>
 	Effect.gen(function* () {
 		for (const name of yield* fs.readDirectory(dir)) {
 			const abs = path.join(dir, name);
-			const stat = yield* fs.stat(abs);
-			if (stat.type === "Directory") {
+			const stat = yield* Effect.option(fs.stat(abs));
+			if (Option.isNone(stat)) {
+				// Dangling link (or an entry racing an unlink): in scope iff the walk's OWN name
+				// predicate matches, per obligation 2 — never a blanket skip.
+				if (isTestFile(name)) found.push(abs);
+				continue;
+			}
+			if (stat.value.type === "Directory") {
 				const isSymlink = yield* fs.readLink(abs).pipe(
 					Effect.as(true),
 					Effect.orElseSucceed(() => false),
@@ -217,15 +251,27 @@ const walk = (dir: string): Effect.Effect<void, PlatformError.PlatformError> =>
 				if (!isSymlink && !IGNORE_DIRS.has(name)) yield* walk(abs);
 				continue;
 			}
-			// … the file arm: a symlinked FILE still stats as "File" and stays in scope,
-			// which matches the Dirent walk — hence the guard sits on the Directory arm only.
+			// No gate on the file arm AT THIS POLARITY: a symlinked file stats as "File" and stays
+			// in scope, which is what a base arm of this polarity admitted (see the table above).
+			if (isTestFile(name)) found.push(abs);
 		}
 	});
 ```
 
-Reach for this **first** when migrating any walk. Following symlinked dirs is a deliberate
-behavior change, not a migration detail — if a tool genuinely wants it, say so and take on the two
-obligations below.
+**File-arm shape**, when the base arm was a positive `Dirent.isFile()` — the gate moves *ahead of*
+the type test so a symlinked entry never reaches it
+(`packages/pipeline-cli/src/tools/workflow-contract/gate.ts`):
+
+```ts
+if (!name.endsWith(".js")) continue;
+const isSymlink = yield* fs.readLink(abs).pipe(Effect.as(true), Effect.orElseSucceed(() => false));
+if (isSymlink) continue; // reconstructs the base `Dirent.isFile()`, which excluded links
+if ((yield* fs.stat(abs)).type === "File") scripts.push(abs);
+```
+
+Reach for the shape matching your call site's polarity **first** when migrating any walk. Following
+symlinked dirs is a deliberate behavior change, not a migration detail — if a tool genuinely wants
+it, say so and take on the two obligations below.
 
 ### Two obligations that ride along with the swap
 
@@ -235,13 +281,25 @@ obligations below.
   unbounded recursion (stack overflow, not a typed failure). A walk that follows links **must**
   carry a visited-set keyed on `fs.realPath(abs)`, or a depth cap. The `readLink` gate above sidesteps
   this entirely, which is the second reason to prefer it.
-- **Broken-symlink tolerance.** `fs.stat` on a dangling link fails (`ENOENT`) — as a
-  `PlatformError` on the `E` channel, so one broken symlink anywhere under the walk root hard-fails
-  the whole gate, where the `Dirent` walk classified the entry and moved on. If the walk stats every
-  entry, make the per-entry stat skippable (`Effect.option` / `Effect.orElseSucceed`) rather than
-  letting a stray dangling link decide a gate's exit code. `reachability-guard`'s walk
-  (`packages/pipeline-cli/src/tools/reachability-guard/gate.ts`) buys this for free by testing
-  `readLink` **before** `stat` — it never `stat`s a link at all.
+- **Broken-symlink tolerance — skippable at the *stat*, then split by the name predicate.**
+  `fs.stat` on a dangling link fails `ENOENT` as a `PlatformError` on the `E` channel, so a walk that
+  stats every entry unconditionally lets one stray link hard-fail the whole gate, where the `Dirent`
+  walk classified the entry by name and moved on. Make the per-entry stat skippable
+  (`Effect.option` / `Effect.orElseSucceed`) — but do **not** then drop every dangling entry, because
+  the base walk did not treat the two halves alike:
+  - name **does not** match the walk's predicate → **skip it**, exactly as the `Dirent` walk did (it
+    matched neither arm);
+  - name **does** match → **keep it in scope** and let the downstream read red the gate. This is
+    `design-token-guard`'s deliberate choice in `walkCss`, settled in PR
+    [#3897](https://github.com/kamp-us/phoenix/pull/3897)'s repair round: a `.css` file replaced by a
+    dangling link must stay "gate reds" rather than become "file silently leaves scope."
+
+  Skippability belongs on the stat, never on the downstream read. `reachability-guard`
+  (`packages/pipeline-cli/src/tools/reachability-guard/gate.ts`) tests `readLink` before `stat`, so it
+  never fails *at the stat* — but that is not blanket tolerance: a dangling `*.tsx` is still pushed by
+  `matches(name)` and then reds at `gatherConsumers`'s unguarded `fs.readFileString` (`ENOENT` →
+  `IoError` → exit 1), while a dangling non-matching entry is silently ignored. Two exit codes, one
+  per side of the split — which is the correct behavior, not an exemption from this obligation.
 
 ## Testing — substitute the `FileSystem` seam
 
