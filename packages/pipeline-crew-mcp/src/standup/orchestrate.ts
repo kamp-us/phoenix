@@ -425,6 +425,16 @@ export const CREW_WINDOW = "crew";
 const shellQuote = (token: string): string => `'${token.replace(/'/g, "'\\''")}'`;
 
 /**
+ * The pane's launch environment as tmux `-e KEY=VAL` pairs (`new-window`/`split-window`, tmux ≥ 3.0).
+ * This is how a plugin-channel session receives its role: the plugin's ONE static `.mcp.json` cannot
+ * carry a per-pane `--role`, so `CREW_ROLE`/`CREW_PROJECT_ROOT`/`CREW_INSTANCE` arrive here and
+ * `crew/session-inputs.ts` resolves them (#3920/#3366). Empty under dev mode, whose server argv already
+ * carries the role — so a dev launch emits the exact same tmux command as before this seam existed.
+ */
+const paneEnvArgs = (env: Readonly<Record<string, string>>): readonly string[] =>
+	Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
+
+/**
  * The pane command tmux runs — `claude` spawned THROUGH an interactive login shell, not as the direct
  * tmux pane process. Grounded on the live #3419 diagnosis against CLI 2.1.214: a recent CLI update added
  * a startup confirmation dialog for `--dangerously-load-development-channels` (the crew channel flag
@@ -494,6 +504,7 @@ export const launchSessionInTmux = (
 				CREW_WINDOW,
 				"-c",
 				cwd,
+				...paneEnvArgs(bind.env),
 				"-P",
 				"-F",
 				"#{window_id}",
@@ -513,6 +524,7 @@ export const launchSessionInTmux = (
 			intoWindow,
 			"-c",
 			cwd,
+			...paneEnvArgs(bind.env),
 			...paneClaudeCommand(bind.argv),
 		]);
 		if (split.spawnError !== undefined || split.code !== 0) {
@@ -617,22 +629,33 @@ export const runStandUp = (
 			{concurrency: 1},
 		);
 
-		// Register every pane's crew server as a project-scope leaf `.mcp.json` + seed the two boot gates
-		// (folder trust + server approval) — one fail-closed step (#3444): the channel resolver reads the
-		// persisted project scope, never the old inline `--mcp-config`. Each `.mcp.json` sits in the pane's
-		// own cwd, on no sibling's ancestor chain, so a pane sees ONLY its own server (no role-lease storm).
-		yield* localScope.register({
-			projectRoot,
-			runId,
-			serverName,
-			entries: plans.map(
-				(plan): CrewMcpEntry => ({
-					cwd: plan.cwd,
-					serverName: plan.bind.serverName,
-					serverConfig: plan.bind.serverConfig,
-				}),
-			),
-		});
+		// Register the DEV-mode panes' crew servers as project-scope leaf `.mcp.json` files + seed the two
+		// boot gates (folder trust + server approval) — one fail-closed step (#3444): under an inline
+		// `server:` ref the channel resolver reads the persisted project scope, never the old inline
+		// `--mcp-config`. Each `.mcp.json` sits in the pane's own cwd, on no sibling's ancestor chain, so a
+		// pane sees ONLY its own server (no role-lease storm).
+		//
+		// On the plugin-channel path this whole step is GATED OFF and there is nothing to isolate: the crew
+		// server is declared once, statically, by the plugin, and that declaration carries NO role. What
+		// #3444 actually isolated was the ROLE baked into each pane's server argv — a pane that could see a
+		// sibling's entry would boot a second server on the sibling's lease. Under the plugin model the role
+		// arrives as pane env (`bind.env`) instead, and tmux pane environments are per-pane by construction
+		// and not visible to a sibling, so the isolation moves from filesystem ancestry to process
+		// environment with no shared-ancestor hazard to guard (#3920).
+		const projectScopeEntries = plans.flatMap((plan): readonly CrewMcpEntry[] =>
+			plan.bind.channelBinding.kind === "project-scope"
+				? [
+						{
+							cwd: plan.cwd,
+							serverName: plan.bind.channelBinding.serverName,
+							serverConfig: plan.bind.channelBinding.serverConfig,
+						},
+					]
+				: [],
+		);
+		if (projectScopeEntries.length > 0) {
+			yield* localScope.register({projectRoot, runId, serverName, entries: projectScopeEntries});
+		}
 
 		// Resolve the target tmux session before placing any pane: the caller's CURRENT session inside
 		// tmux (which always exists — dissolving the fresh-machine "no crew session" failure), else a

@@ -256,15 +256,19 @@ export const spawnRole = (
 
 		// Register just THIS pane's project scope (+ idempotent folder-trust / server-approval boot gates):
 		// adds one leaf `.mcp.json` in the pane's own cwd, on no running member's ancestor chain, so no
-		// sibling's channel isolation is disturbed (#3444).
-		yield* localScope.register({
-			projectRoot,
-			runId,
-			serverName,
-			entries: [
-				{cwd: plan.cwd, serverName: plan.bind.serverName, serverConfig: plan.bind.serverConfig},
-			],
-		});
+		// sibling's channel isolation is disturbed (#3444). Gated off on the plugin-channel path, which has
+		// no per-pane server to persist — the same fork runStandUp takes, for the same reason (#3920).
+		const binding = plan.bind.channelBinding;
+		if (binding.kind === "project-scope") {
+			yield* localScope.register({
+				projectRoot,
+				runId,
+				serverName,
+				entries: [
+					{cwd: plan.cwd, serverName: binding.serverName, serverConfig: binding.serverConfig},
+				],
+			});
+		}
 
 		const targetSession = yield* resolveTargetSession();
 		const crewWindow = yield* resolveCrewWindowId(targetSession, runTmuxCommand);

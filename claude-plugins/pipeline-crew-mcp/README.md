@@ -34,12 +34,59 @@ CLAUDE.md's "ground runtime claims in source"):
    already advertises the `claude/channel` capability at runtime (`CHANNEL_CAPABILITY`), so the CLI
    admits it as a channel.
 
-Once installed and allowlisted, the crew binds via:
+Once installed, the crew binds via:
 
 ```
 --channels plugin:pipeline-crew-mcp@kampus
-# with allowedChannelPlugins including "pipeline-crew-mcp"
 ```
+
+The stand-up launcher emits exactly that under `channels.mode: "allowlist"`, and **auto-allowlists this
+plugin** in the *crew config's* own `allowedChannelPlugins` — the launcher is the thing emitting the ref,
+so that field only ever needs to list *third-party* plugins. That is the **launcher's** gate, and it is
+the only one the launcher can satisfy by itself.
+
+### The operator's remaining obligations — both of them, in order
+
+The CLI's channel gate (`gateChannelServer`, read from the installed CLI bundle at **2.1.220**) applies
+**two independent checks** to a `plugin:` ref under `--channels`. A self-published
+`pipeline-crew-mcp@kampus` clears **neither** by default, so both are stand-up prerequisites in
+allowlist mode:
+
+1. **Install the plugin from the `kampus` marketplace.** The gate compares the installed plugin's
+   marketplace against the ref's `@kampus` — `if (i !== o.marketplace) → {action: "skip", kind:
+   "marketplace"}` — so `plugin install pipeline-crew-mcp@kampus` is required.
+2. **Get the plugin onto the CLI's *effective channel allowlist*.** After the marketplace check, and
+   only for a non-dev channel (`if (!o.dev)`), the gate resolves
+   `getEffectiveChannelAllowlist(policySettings?.allowedChannelPlugins)` and requires an entry matching
+   **both** fields: `entries.some(l => l.plugin === o.name && l.marketplace === o.marketplace)`. That
+   list has exactly two possible sources — the **org's managed settings** `allowedChannelPlugins` when
+   set (`source: "org"`), otherwise the vendor-controlled `tengu_harbor_ledger` remote-config value
+   (`source: "ledger"`, schema `{marketplace, plugin}[]`, default `[]`). A self-published plugin is not
+   in that vendor ledger, so the **only** route is an org managed-settings entry:
+
+   ```json
+   { "allowedChannelPlugins": [{ "marketplace": "kampus", "plugin": "pipeline-crew-mcp" }] }
+   ```
+
+Check (2) is precisely what dev mode bypasses (the `!o.dev` guard), so "it works in dev" says nothing
+about whether allowlist mode will bind.
+
+#### The symptom when (2) is unmet — recognize it, don't debug the launcher
+
+An unmet allowlist is **not an error**. The gate returns `{action: "skip", kind: "allowlist"}`, the
+session **launches successfully**, and every launcher-side guard stays green — the crew simply comes up
+with a **dead channel**: no `channel_send`, no tracker traffic, no failure anywhere. The CLI's only
+signal is a debug log line plus one 12-second warning toast in the affected pane
+(`channels-blocked-allowlist`, shown once per skip-kind per session), which is trivially missed and gone
+before anyone looks. Its text is the gate's own reason string, and it names which source was consulted:
+
+- managed settings set but missing this entry → `plugin pipeline-crew-mcp@kampus is not on your org's
+  approved channels list (set allowedChannelPlugins in managed settings)`
+- managed settings unset, so the vendor ledger was consulted → `plugin pipeline-crew-mcp@kampus is not
+  on the approved channels allowlist (use --dangerously-load-development-channels for local dev)`
+
+**So: a stand-up that reports success but whose panes never talk to each other is this check, not the
+launcher.** Verify (2) before spending any time on launcher-side diagnosis.
 
 ### Per-session role comes from the environment
 
@@ -67,14 +114,24 @@ paths coexist with no behavioral change to dev.
 The plugin carries **no `version`** — it is content-addressed by commit SHA (continuous-ship,
 [ADR 0110](../../.decisions/0110-plugin-carries-no-version-continuous-ship.md)).
 
-## Scope and follow-up
+## How per-pane isolation holds on this path
 
-This plugin is the **packaging + binding primitive**. Wiring the `pipeline-crew` **stand-up launcher**
-to emit the `plugin:pipeline-crew-mcp@kampus` ref (setting each pane's `CREW_ROLE` env and retiring the
-per-pane project-scope `.mcp.json` in favor of the plugin declaration) is a separate launcher change,
-tracked as a follow-up — it replaces the load-bearing per-pane isolation mechanism
-(`standup/register-project-scope.ts`) and is out of scope for this distribution unit. Dev-mode stays the
-supported dogfood path in the meantime.
+Dev mode isolates panes through the filesystem: each pane gets its own leaf `.mcp.json` carrying a
+server whose **argv bakes in that pane's role**, and sibling pane dirs are never on each other's
+ancestor chain, so no pane can see a sibling's server (issue #3444). Retiring that on the plugin path
+does **not** leave the isolation unreplaced — it moves it:
+
+- What #3444 actually protected was the **role baked into each pane's server argv**. A pane that could
+  see a sibling's entry would boot a second server on the sibling's cardinality-1 role lease.
+- The plugin's declaration carries **no role at all** — one static entry serves every pane. The role
+  arrives instead as the pane's `CREW_ROLE` env, set by the launcher at `tmux new-window`/`split-window`
+  time (`-e`), which tmux scopes to that pane and does not share with siblings.
+- So isolation moves from **filesystem ancestry** to **process environment**, and the shared-ancestor
+  hazard the dev path must guard against (`assertNoSharedAncestorMcpJson`) has no analogue here: there is
+  no per-pane file to leak, and the launcher writes nothing.
+
+Because the dev path still needs it, `standup/register-project-scope.ts` is **gated off on the plugin
+path**, not deleted.
 
 ## See also
 

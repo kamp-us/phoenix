@@ -85,9 +85,24 @@
 		// The channel servers each session registers, by ref. Grammar per ref:
 		//   "server:<name>"                — a top-level channel MCP server (development mode only)
 		//   "plugin:<name>@<marketplace>"  — a server contributed by an installed plugin
+		//
+		// In "allowlist" mode this list MUST contain the crew's own channel ref,
+		// "plugin:pipeline-crew-mcp@kampus", or stand-up refuses the launch (the crew channel would
+		// come up inert). That plugin must ALSO clear TWO operator-owned CLI gates — a kampus
+		// marketplace install, AND an org managed-settings channel-allowlist entry — neither of which
+		// this config can satisfy. Miss the second and the launch SUCCEEDS with a dead channel; see
+		// ../pipeline-crew-mcp/README.md, "The operator's remaining obligations".
+		// In "development" mode this list carries the crew's "server:<name>" ref instead.
 		"servers": ["<channel-server-ref>"],
-		// Plugins whose channel servers are allowed to load — the allowlist the "allowlist"
-		// mode enforces; each name matches a "plugin:<name>@<marketplace>" ref used in `servers`.
+		// THE LAUNCHER'S OWN allowlist — NOT the Claude Code CLI's identically-named gate.
+		// This field is a string[] of BARE plugin names (the "<name>" of a "plugin:<name>@<marketplace>"
+		// ref in `servers`, no "@<marketplace>" suffix), checked by the stand-up launcher before it
+		// emits `--channels`. The CLI enforces a SEPARATE `allowedChannelPlugins` living in ORG MANAGED
+		// SETTINGS, which is an array of {"marketplace": "...", "plugin": "..."} OBJECTS. Same name,
+		// different file, different shape, different enforcer: satisfying THIS one does NOT satisfy
+		// that one, and only that one decides whether the channel actually loads.
+		// List only THIRD-PARTY plugins here: the crew's own pipeline-crew-mcp is auto-allowlisted by
+		// the launcher, so it never needs an entry.
 		"allowedChannelPlugins": ["<allowed-channel-plugin>"]
 	}
 }

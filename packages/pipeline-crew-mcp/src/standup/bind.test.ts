@@ -1,12 +1,15 @@
 /**
- * The per-session bind constructor (AC 1–4): for a role + project root it emits the launch inputs
- * each crew session comes up with — the crew server's PERSISTED-scope config value (`serverConfig`,
- * which the launcher writes into `~/.claude.json` local scope, #3444) plus the channel-registration
- * flag naming that same server. The tests pin the exact server config + argv for a sample role in both
- * channel modes (allowlist → `--channels`, development → `--dangerously-load-development-channels`),
- * that the argv NO LONGER carries `--mcp-config` (the resolver never read it, #3444), and the two
- * fail-closed rejections: a crew server absent from the flag (defined-but-inert), and an
- * allowlist-mode plugin channel whose plugin the config's `allowedChannelPlugins` doesn't list.
+ * The per-session bind constructor: for a role + project root it emits the launch inputs each crew
+ * session comes up with — the channel-registration flag, the mode-appropriate `channelBinding` it names,
+ * and the pane env that binding needs. The tests pin both launch paths end to end:
+ *   - allowlist/production (#3920) → `--channels` naming the `plugin:<name>@<marketplace>` crew ref, a
+ *     `plugin-channel` binding that persists NOTHING, and the per-pane `CREW_ROLE`/`CREW_PROJECT_ROOT`/
+ *     `CREW_INSTANCE` env the plugin's one static declaration resolves through;
+ *   - development (#3444, unchanged) → `--dangerously-load-development-channels`, a `project-scope`
+ *     binding carrying the role-baked server config, and an EMPTY pane env.
+ * Plus the fail-closed rejections: an unresolvable bin, a crew channel absent from the flag in either
+ * mode (defined-but-inert — the required ref differs per mode), and a FOREIGN allowlist-mode plugin
+ * channel the config's `allowedChannelPlugins` doesn't list (the crew's own plugin is auto-allowlisted).
  */
 import {existsSync} from "node:fs";
 import {NodePath, NodeServices} from "@effect/platform-node";
@@ -18,6 +21,7 @@ import {
 	BOOT_PROMPT,
 	buildSessionBind,
 	ChannelPluginNotAllowedError,
+	CREW_PLUGIN_CHANNEL_REF,
 	CREW_SESSION_BIN_PATH,
 	CREW_SESSION_COMMAND,
 	CREW_SESSION_INSTANCE_FLAG,
@@ -28,12 +32,25 @@ import {
 	MODEL_FLAG,
 	NAME_FLAG,
 	PLUGIN_DIR_FLAG,
+	type SessionBind,
 } from "./bind.ts";
 import type {ChannelConfig} from "./config.ts";
 
 const ROLE = "engineering-manager";
 const PROJECT_ROOT = "/work/phoenix";
 const SERVER_NAME = "pipeline-crew";
+
+/**
+ * Narrow a bind to its `project-scope` binding, failing the test if it took the plugin path. Only dev
+ * mode persists a server config, so every assertion about one goes through here rather than a cast.
+ */
+const projectScopeOf = (bind: SessionBind) => {
+	const binding = bind.channelBinding;
+	if (binding.kind !== "project-scope") {
+		throw new Error(`expected a project-scope binding, got "${binding.kind}"`);
+	}
+	return binding;
+};
 
 // The bind constructor reaches the platform through the `FileSystem`/`Path` seam
 // (.patterns/effect-platform-access.md), discharged in-test by the same NodeServices.layer the bin
@@ -63,13 +80,13 @@ const EXPECTED_SERVER_CONFIG: CrewServerConfig = {
 
 describe("standup/bind — per-session bind constructor", () => {
 	it.effect(
-		"allowlist mode: persisted-scope serverConfig + --channels naming the crew server, NO inline --mcp-config (AC 1,2,3; #3444)",
+		"allowlist mode: binds the crew PLUGIN channel ref, persists nothing, and carries the per-pane env (#3920)",
 		() =>
 			Effect.gen(function* () {
 				const channels: ChannelConfig = {
 					mode: "allowlist",
-					servers: ["server:pipeline-crew", "plugin:kampus:sozluk"],
-					allowedChannelPlugins: ["kampus"],
+					servers: [CREW_PLUGIN_CHANNEL_REF, "plugin:sozluk@kampus"],
+					allowedChannelPlugins: ["sozluk"],
 				};
 				const bind = yield* build({
 					role: ROLE,
@@ -78,34 +95,90 @@ describe("standup/bind — per-session bind constructor", () => {
 					channels,
 				});
 
-				// AC1: the crew server is exposed as its persisted-scope config value, keyed by the server name.
-				assert.strictEqual(bind.serverName, SERVER_NAME);
-				assert.deepStrictEqual(bind.serverConfig, EXPECTED_SERVER_CONFIG);
+				// The crew channel binds by the plugin's own static declaration — the launcher writes NO
+				// per-pane `.mcp.json` on this path, so there is no server config to persist at all.
+				assert.deepStrictEqual(bind.channelBinding, {
+					kind: "plugin-channel",
+					ref: CREW_PLUGIN_CHANNEL_REF,
+				});
 				assert.strictEqual(CREW_SESSION_COMMAND, "session");
 
-				// AC3: allowlist mode selects --channels over the config's server refs (grammar preserved).
+				// The role the one shared declaration can't carry travels as pane env instead (#3366).
+				assert.deepStrictEqual(bind.env, {
+					CREW_ROLE: ROLE,
+					CREW_PROJECT_ROOT: PROJECT_ROOT,
+				});
+
+				// allowlist mode selects --channels over the config's refs (grammar preserved verbatim).
 				assert.deepStrictEqual(bind.channelArg, [
 					ALLOWLIST_CHANNEL_FLAG,
-					"server:pipeline-crew",
-					"plugin:kampus:sozluk",
+					CREW_PLUGIN_CHANNEL_REF,
+					"plugin:sozluk@kampus",
 				]);
 
-				// AC2: the argv boots the role persona (--plugin-dir + --agent, #3447), registers the channel,
+				// The argv boots the role persona (--plugin-dir + --agent, #3447), registers the channel,
 				// carries the visible name (#3443), closes with the positional boot-turn prompt (#3516), and
-				// carries NO `--mcp-config` — the crew server now registers via the persisted local scope (#3444).
+				// carries neither `--mcp-config` nor a `--role` — role is env on this path.
 				assert.deepStrictEqual(bind.argv, [
 					PLUGIN_DIR_FLAG,
 					EXPECTED_PLUGIN_DIR,
 					AGENT_FLAG,
 					`crew-${ROLE}`,
 					ALLOWLIST_CHANNEL_FLAG,
-					"server:pipeline-crew",
-					"plugin:kampus:sozluk",
+					CREW_PLUGIN_CHANNEL_REF,
+					"plugin:sozluk@kampus",
 					NAME_FLAG,
 					ROLE,
 					BOOT_PROMPT,
 				]);
 				assert.notInclude(bind.argv, "--mcp-config");
+				assert.notInclude(bind.argv, "--role");
+			}),
+	);
+
+	it.effect(
+		"allowlist mode: an engine's instance rides the pane env as CREW_INSTANCE (#3920)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "allowlist",
+					servers: [CREW_PLUGIN_CHANNEL_REF],
+					allowedChannelPlugins: [],
+				};
+				const bind = yield* build({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					instance: "e-1",
+					channels,
+				});
+				assert.deepStrictEqual(bind.env, {
+					CREW_ROLE: ROLE,
+					CREW_PROJECT_ROOT: PROJECT_ROOT,
+					CREW_INSTANCE: "e-1",
+				});
+			}),
+	);
+
+	it.effect(
+		"allowlist mode auto-allowlists the crew's OWN plugin — the operator need not list it (#3920)",
+		() =>
+			Effect.gen(function* () {
+				// `allowedChannelPlugins` is empty, yet the crew's own plugin ref binds: the launcher is the
+				// thing emitting that ref, so requiring the operator to also declare it would only add a way
+				// to mis-configure an otherwise fully determined launch.
+				const channels: ChannelConfig = {
+					mode: "allowlist",
+					servers: [CREW_PLUGIN_CHANNEL_REF],
+					allowedChannelPlugins: [],
+				};
+				const bind = yield* build({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				});
+				assert.strictEqual(bind.channelBinding.kind, "plugin-channel");
 			}),
 	);
 
@@ -117,7 +190,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					mode: "development",
 					// A plugin channel whose plugin is NOT in allowedChannelPlugins — accepted in dev mode,
 					// which is exactly the dev flag's purpose (load channels not on the approved allowlist).
-					servers: ["server:pipeline-crew", "plugin:localdev:scratch"],
+					servers: ["server:pipeline-crew", "plugin:localdev@scratch"],
 					allowedChannelPlugins: [],
 				};
 				const bind = yield* build({
@@ -127,11 +200,18 @@ describe("standup/bind — per-session bind constructor", () => {
 					channels,
 				});
 
-				assert.deepStrictEqual(bind.serverConfig, EXPECTED_SERVER_CONFIG);
+				assert.deepStrictEqual(projectScopeOf(bind), {
+					kind: "project-scope",
+					serverName: SERVER_NAME,
+					serverConfig: EXPECTED_SERVER_CONFIG,
+				});
+				// Dev's server argv already carries the role, so the pane env stays EMPTY — the dev spawn is
+				// byte-identical to before the plugin-channel seam existed.
+				assert.deepStrictEqual(bind.env, {});
 				assert.deepStrictEqual(bind.channelArg, [
 					DEV_CHANNEL_FLAG,
 					"server:pipeline-crew",
-					"plugin:localdev:scratch",
+					"plugin:localdev@scratch",
 				]);
 				assert.deepStrictEqual(bind.argv, [
 					...bind.pluginDirArg,
@@ -201,11 +281,35 @@ describe("standup/bind — per-session bind constructor", () => {
 	);
 
 	it.effect(
-		"fails closed when the crew server is absent from the channel flag (defined-but-inert)",
+		"allowlist mode fails closed when the crew PLUGIN ref is absent from --channels (defined-but-inert)",
+		() =>
+			Effect.gen(function* () {
+				// A bare `server:` ref cannot stand in for it here: the CLI silently skips one under
+				// `--channels`, so the required ref in this mode is the plugin ref and nothing else (#3920).
+				const channels: ChannelConfig = {
+					mode: "allowlist",
+					servers: ["plugin:some-other@kampus"],
+					allowedChannelPlugins: ["some-other"],
+				};
+				const error = yield* build({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				}).pipe(Effect.flip);
+
+				assert.instanceOf(error, CrewServerNotRegisteredError);
+				assert.strictEqual(error.requiredRef, CREW_PLUGIN_CHANNEL_REF);
+				assert.deepStrictEqual([...error.servers], ["plugin:some-other@kampus"]);
+			}),
+	);
+
+	it.effect(
+		"development mode fails closed when the crew server: ref is absent from the dev flag (unchanged)",
 		() =>
 			Effect.gen(function* () {
 				const channels: ChannelConfig = {
-					mode: "allowlist",
+					mode: "development",
 					servers: ["server:some-other"],
 					allowedChannelPlugins: [],
 				};
@@ -217,7 +321,7 @@ describe("standup/bind — per-session bind constructor", () => {
 				}).pipe(Effect.flip);
 
 				assert.instanceOf(error, CrewServerNotRegisteredError);
-				assert.strictEqual(error.serverName, SERVER_NAME);
+				assert.strictEqual(error.requiredRef, `server:${SERVER_NAME}`);
 				assert.deepStrictEqual([...error.servers], ["server:some-other"]);
 			}),
 	);
@@ -241,7 +345,7 @@ describe("standup/bind — per-session bind constructor", () => {
 				});
 
 				// the instance flag + id ride the persisted-scope server command, after --project-root.
-				assert.deepStrictEqual(bind.serverConfig, {
+				assert.deepStrictEqual(projectScopeOf(bind).serverConfig, {
 					command: process.execPath,
 					args: [
 						CREW_SESSION_BIN_PATH,
@@ -272,7 +376,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					serverName: SERVER_NAME,
 					channels,
 				});
-				assert.notInclude([...bind.serverConfig.args], CREW_SESSION_INSTANCE_FLAG);
+				assert.notInclude([...projectScopeOf(bind).serverConfig.args], CREW_SESSION_INSTANCE_FLAG);
 			}),
 	);
 
@@ -292,7 +396,7 @@ describe("standup/bind — per-session bind constructor", () => {
 					channels,
 				});
 
-				const server = bind.serverConfig;
+				const server = projectScopeOf(bind).serverConfig;
 				// Not the old bare, unlinked package bin name — an absolute node + an absolute bin path.
 				assert.strictEqual(server.command, process.execPath);
 				assert.notStrictEqual(server.command, "pipeline-crew-mcp");
@@ -557,24 +661,47 @@ describe("standup/bind — per-session bind constructor", () => {
 			}),
 	);
 
-	it.effect("allowlist mode fails closed on a plugin channel whose plugin is not allowlisted", () =>
-		Effect.gen(function* () {
-			const channels: ChannelConfig = {
-				mode: "allowlist",
-				servers: ["server:pipeline-crew", "plugin:untrusted:evil"],
-				allowedChannelPlugins: ["kampus"],
-			};
-			const error = yield* build({
-				role: ROLE,
-				projectRoot: PROJECT_ROOT,
-				serverName: SERVER_NAME,
-				channels,
-			}).pipe(Effect.flip);
+	it.effect(
+		"allowlist mode fails closed on a FOREIGN plugin channel whose plugin is not allowlisted",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "allowlist",
+					servers: [CREW_PLUGIN_CHANNEL_REF, "plugin:untrusted@elsewhere"],
+					allowedChannelPlugins: ["sozluk"],
+				};
+				const error = yield* build({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				}).pipe(Effect.flip);
 
-			assert.instanceOf(error, ChannelPluginNotAllowedError);
-			assert.strictEqual(error.plugin, "untrusted");
-			assert.strictEqual(error.ref, "plugin:untrusted:evil");
-			assert.deepStrictEqual([...error.allowedChannelPlugins], ["kampus"]);
-		}),
+				assert.instanceOf(error, ChannelPluginNotAllowedError);
+				// The plugin key is the ref's name segment with the `@<marketplace>` suffix STRIPPED — the
+				// key the CLI's allowlist actually matches on (a `<name>@<marketplace>` key never matches).
+				assert.strictEqual(error.plugin, "untrusted");
+				assert.strictEqual(error.ref, "plugin:untrusted@elsewhere");
+				assert.deepStrictEqual([...error.allowedChannelPlugins], ["sozluk"]);
+			}),
+	);
+
+	it.effect(
+		"allowlist mode admits a foreign plugin the operator DID allowlist (by bare name)",
+		() =>
+			Effect.gen(function* () {
+				const channels: ChannelConfig = {
+					mode: "allowlist",
+					servers: [CREW_PLUGIN_CHANNEL_REF, "plugin:sozluk@kampus"],
+					allowedChannelPlugins: ["sozluk"],
+				};
+				const bind = yield* build({
+					role: ROLE,
+					projectRoot: PROJECT_ROOT,
+					serverName: SERVER_NAME,
+					channels,
+				});
+				assert.include(bind.channelArg, "plugin:sozluk@kampus");
+			}),
 	);
 });
