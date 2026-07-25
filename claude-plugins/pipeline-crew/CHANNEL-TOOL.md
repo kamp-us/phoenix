@@ -71,6 +71,25 @@ message to an inbox — which is why the claim needs its own tool (#3509). Only 
 it; the bridges (chief-of-staff, cartographer, intake-desk) claim nothing, so they carry
 `channel_send` + `channel_kinds` but not `channel_claim`.
 
+## What the launcher asserts before a seat boots — and the one gap it cannot close
+
+Stand-up refuses to launch a seat whose def and the crew server disagree
+(`packages/pipeline-crew-mcp/src/standup/toolset-assert.ts`). Post-connect a seat's granted set is
+exactly **declared ∩ served**, and both sides are known before launch, so the runtime outcome is
+settled with zero panes up instead of mid-drain by a rejected send (#4002):
+
+- a token for **this** server naming a tool it does not serve (a typo, a renamed or removed tool) is
+  refused — no connect window can produce a name that will never be on a `tools/list`;
+- a def that **omits** `channel_send` or `channel_kinds` is refused — those two are mandatory for
+  every seat, so the pair can never go silently missing from a def again;
+- a token for **another** MCP server stays exempt: its toolset is unknowable here.
+
+**The gap this does not close, stated plainly.** A live session's grant is fixed at ITS boot, from the
+def as it stood THEN, and a seat has no way to read its own granted toolset back. So editing a def
+under a running crew changes nothing for that crew, and the skew is invisible from inside it — the
+seat sees the new def on disk while holding the old grant. The remedy is a re-stand-up, not a wait:
+that is what re-runs the assert against the defs the seats will actually boot from.
+
 ## The boot window — wait and re-check, never diagnose infra
 
 Even with the token in place, the crew server does not advertise `channel_send` the instant a

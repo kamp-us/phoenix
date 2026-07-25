@@ -583,9 +583,10 @@ export const runStandUp = (
 		// The roster set is derived here — ahead of the tracker — only so the next assert can name the
 		// exact seats this stand-up launches. `deriveSessionSet` is pure; nothing observable moved.
 		const sessions = deriveSessionSet({engineCount: config.engineCount, instanceId});
-		// Refuse a seat whose def declares a toolset the CLI would not grant intact (#3764): an ungrantable
-		// or self-denied tool is dropped SILENTLY, so without this a bridge boots without the `Task` its
-		// charter conducts through and nothing surfaces it (toolset-assert.ts).
+		// Refuse a seat whose def declares a toolset the CLI would not grant intact (#3764/#4002): an
+		// ungrantable, self-denied, or unserved-MCP tool is dropped SILENTLY, so without this a bridge
+		// boots without the `Task` its charter conducts through — or without `channel_kinds` — and nothing
+		// surfaces it (toolset-assert.ts).
 		yield* assertCrewSeatToolsets(
 			projectRoot,
 			[...new Set(sessions.map((session) => session.role))],

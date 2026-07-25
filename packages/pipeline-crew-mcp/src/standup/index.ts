@@ -148,6 +148,7 @@ export {
 	type DeclaredToolset,
 	GRANTABLE_SESSION_TOOLS,
 	isMcpToolToken,
+	missingSeatChannelTools,
 	parseDeclaredToolset,
 	readSeatToolsetFromDef,
 	resolveDeclaredToolset,

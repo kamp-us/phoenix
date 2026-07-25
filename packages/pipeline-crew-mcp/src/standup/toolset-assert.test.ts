@@ -11,18 +11,27 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {CREW_ROLES} from "../crew/index.ts";
 import {
+	CREW_SERVED_TOOL_NAMES,
+	crewMcpToolToken,
+	REQUIRED_SEAT_CHANNEL_TOOLS,
+} from "../crew/served-toolset.ts";
+import {
 	assertCrewSeatToolsets,
 	assertSeatToolset,
 	baseToolName,
 	CrewSeatDefUnreadableError,
 	CrewSeatToolsetMismatchError,
 	type DeclaredToolset,
+	missingSeatChannelTools,
 	parseDeclaredToolset,
 	readSeatToolsetFromDef,
 	resolveDeclaredToolset,
 	type SeatToolsetReader,
 	seatDefRelativePath,
 } from "./toolset-assert.ts";
+
+/** The two tokens every seat must carry — built through the same derivation the assert compares against. */
+const CHANNEL_TOKENS = REQUIRED_SEAT_CHANNEL_TOOLS.map(crewMcpToolToken);
 
 /** The repo root the shipped crew defs live under — resolved from this file, never a machine path. */
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -101,7 +110,52 @@ describe("standup/toolset-assert — resolveDeclaredToolset", () => {
 			granted: [],
 			ungrantable: [],
 			selfDenied: [],
+			unservedMcp: [],
 		});
+	});
+
+	// Rule 3 (#4002): the connect-window exemption now covers a SERVED tool only.
+	it("drops a crew MCP token naming a tool the crew server does not serve", () => {
+		const {granted, unservedMcp} = resolveDeclaredToolset(
+			allowlist([crewMcpToolToken("channel_kind"), crewMcpToolToken("channel_kinds")]),
+		);
+		assert.deepStrictEqual(unservedMcp, [crewMcpToolToken("channel_kind")]);
+		assert.deepStrictEqual(granted, [crewMcpToolToken("channel_kinds")]);
+	});
+
+	it("leaves a FOREIGN server's MCP token exempt — its toolset is unknowable before launch", () => {
+		const {granted, unservedMcp} = resolveDeclaredToolset(
+			allowlist(["mcp__some_other_server__anything"]),
+		);
+		assert.deepStrictEqual(granted, ["mcp__some_other_server__anything"]);
+		assert.deepStrictEqual(unservedMcp, []);
+	});
+});
+
+describe("standup/toolset-assert — missingSeatChannelTools (rule 4)", () => {
+	it("names the channel tools a declaration omits", () => {
+		assert.deepStrictEqual(missingSeatChannelTools(allowlist(["Read", "Bash"])), CHANNEL_TOKENS);
+		assert.deepStrictEqual(
+			missingSeatChannelTools(allowlist(["Read", crewMcpToolToken("channel_send")])),
+			[crewMcpToolToken("channel_kinds")],
+		);
+	});
+
+	it("counts a self-denied channel token as missing — a subtracted tool is not callable", () => {
+		assert.deepStrictEqual(
+			missingSeatChannelTools(allowlist([...CHANNEL_TOKENS], [crewMcpToolToken("channel_kinds")])),
+			[crewMcpToolToken("channel_kinds")],
+		);
+	});
+
+	it("requires nothing of a def that declares no allowlist — it inherits the full toolset", () => {
+		assert.deepStrictEqual(missingSeatChannelTools({_tag: "inherit"}), []);
+	});
+
+	it("requires only the send/discovery pair — claim and release stay role-scoped", () => {
+		assert.deepStrictEqual(missingSeatChannelTools(allowlist([...CHANNEL_TOKENS])), []);
+		assert.isTrue(CREW_SERVED_TOOL_NAMES.has("channel_claim"));
+		assert.isTrue(CREW_SERVED_TOOL_NAMES.has("channel_release"));
 	});
 });
 
@@ -169,8 +223,49 @@ describe("standup/toolset-assert — assertSeatToolset", () => {
 			assertSeatToolset(
 				"intake-desk",
 				"def.md",
-				allowlist(["Read", "Bash", "Task", "mcp___kampus_pipeline-crew-mcp__channel_send"]),
+				allowlist(["Read", "Bash", "Task", ...CHANNEL_TOKENS]),
 			),
+		));
+
+	// #4002: the reported shape — a seat that coordinates over the channel but cannot resolve a kind's
+	// shape, so it rediscovers every payload by rejected send. Silent before rule 4.
+	it("refuses a seat that can send but cannot call channel_kinds", () =>
+		Effect.runSync(
+			Effect.gen(function* () {
+				const err = yield* Effect.flip(
+					assertSeatToolset(
+						"engineering-manager",
+						"def.md",
+						allowlist([
+							"Task",
+							"Bash",
+							"Read",
+							crewMcpToolToken("channel_send"),
+							crewMcpToolToken("channel_claim"),
+						]),
+					),
+				);
+				assert.instanceOf(err, CrewSeatToolsetMismatchError);
+				assert.deepStrictEqual(err.missingChannelTools, [crewMcpToolToken("channel_kinds")]);
+				assert.include(err.reason, "channel_kinds");
+				assert.include(err.reason, "uncallable");
+			}),
+		));
+
+	it("refuses a crew MCP token no connect window can ever resolve", () =>
+		Effect.runSync(
+			Effect.gen(function* () {
+				const err = yield* Effect.flip(
+					assertSeatToolset(
+						"cartographer",
+						"def.md",
+						allowlist([...CHANNEL_TOKENS, crewMcpToolToken("channel_kindz")]),
+					),
+				);
+				assert.instanceOf(err, CrewSeatToolsetMismatchError);
+				assert.deepStrictEqual(err.unservedMcp, [crewMcpToolToken("channel_kindz")]);
+				assert.include(err.reason, "connect window can never resolve");
+			}),
 		));
 });
 
@@ -192,7 +287,7 @@ describe("standup/toolset-assert — assertCrewSeatToolsets", () => {
 			assertCrewSeatToolsets(
 				"/repo",
 				["intake-desk", "engineering-manager"],
-				readerOf(allowlist(["Read", "Bash", "Task"])),
+				readerOf(allowlist(["Read", "Bash", "Task", ...CHANNEL_TOKENS])),
 			),
 		));
 
@@ -211,31 +306,11 @@ describe("standup/toolset-assert — assertCrewSeatToolsets", () => {
 
 	// The regression the whole module exists for: every SHIPPED crew def must boot the seat with the
 	// toolset it declares. This reads the real defs off disk, so a def edit that reintroduces `Grep`,
-	// `Glob`, or a self-denying `disallowedTools` reds here rather than at a live stand-up.
+	// `Glob`, a self-denying `disallowedTools`, a crew tool token the server does not serve, or a
+	// dropped `channel_send`/`channel_kinds` (#3761/#4002) reds here rather than at a live stand-up.
 	it.effect("every shipped crew def declares a toolset that resolves intact", () =>
 		assertCrewSeatToolsets(REPO_ROOT, [...CREW_ROLES], readSeatToolsetFromDef).pipe(
 			Effect.provide(NodeServices.layer),
 		),
-	);
-
-	// #3761: the discovery tool `channel_kinds` must be CALLABLE from every sending seat, not just
-	// served — the def's `tools:` allowlist is the hard gate, so its token must be present (MCP tokens
-	// are exempt from the grantable check, so a listed token lands in `granted`). Reads the real defs:
-	// a seat that drops the token — the exact defect that left channel_kinds present-but-uncallable in
-	// every seat — reds here rather than at a live stand-up.
-	it.effect(
-		"every shipped crew seat can call channel_kinds (its token is in the granted set)",
-		() =>
-			Effect.gen(function* () {
-				for (const role of CREW_ROLES) {
-					const declared = yield* readSeatToolsetFromDef(REPO_ROOT, role);
-					const {granted} = resolveDeclaredToolset(declared);
-					assert.include(
-						granted,
-						"mcp___kampus_pipeline-crew-mcp__channel_kinds",
-						`crew-${role} must list the channel_kinds allowlist token so the discovery tool is callable`,
-					);
-				}
-			}).pipe(Effect.provide(NodeServices.layer)),
 	);
 });
