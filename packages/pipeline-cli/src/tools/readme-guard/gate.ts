@@ -20,6 +20,7 @@
 import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {Annotation} from "../../annotate.ts";
+import {annotationsOrNone} from "../../gate-fail.ts";
 import {
 	judge,
 	type PackageDirCandidate,
@@ -116,10 +117,6 @@ export const checkReadmes = (
 			yield* Console.log(renderReport(verdict));
 			return;
 		}
-		return yield* Effect.fail(
-			new CheckFailed({
-				reason: renderReport(verdict),
-				annotations: verdictAnnotations(verdict),
-			}),
-		);
+		const annotations = yield* annotationsOrNone(() => verdictAnnotations(verdict));
+		return yield* Effect.fail(new CheckFailed({reason: renderReport(verdict), annotations}));
 	});

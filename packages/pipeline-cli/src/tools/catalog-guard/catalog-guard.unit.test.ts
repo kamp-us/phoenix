@@ -139,6 +139,52 @@ describe("findDepLine", () => {
 		expect(findDepLine(text, "devDependencies", "b")).toBeNull();
 		expect(findDepLine(text, "dependencies", "name")).toBeNull();
 	});
+
+	// `.` is legal in an npm name (this repo has `@distilled.cloud/cloudflare`), so an
+	// unescaped name compiled into a RegExp matched a neighbour one line up.
+	it("does not let a `.` in a dep name match a neighbouring dep", () => {
+		const dotted = [
+			"{",
+			'\t"dependencies": {',
+			'\t\t"aXb/pkg": "catalog:",',
+			'\t\t"a.b/pkg": "^1.0.0"',
+			"\t}",
+			"}",
+		].join("\n");
+		expect(findDepLine(dotted, "dependencies", "a.b/pkg")).toBe(4);
+	});
+
+	// A regex-metacharacter key used to throw a SyntaxError out of the annotation build,
+	// which took the whole guard report with it.
+	it("does not throw on a dep name carrying a regex metacharacter", () => {
+		const weird = ["{", '\t"dependencies": {', '\t\t"a(b": "^1.0.0"', "\t}", "}"].join("\n");
+		expect(() => findDepLine(weird, "dependencies", "a(b")).not.toThrow();
+		expect(findDepLine(weird, "dependencies", "a(b")).toBe(3);
+		expect(() => findDepLine(weird, "dependencies*", "zzz")).not.toThrow();
+	});
+
+	it("finds a dep declared on the same line as its field", () => {
+		const compact = [
+			"{",
+			'\t"dependencies": {"x": "1"},',
+			'\t"devDependencies": {',
+			'\t\t"x": "2"',
+			"\t}",
+			"}",
+		].join("\n");
+		expect(findDepLine(compact, "dependencies", "x")).toBe(2);
+		expect(findDepLine(compact, "devDependencies", "x")).toBe(4);
+	});
+
+	it("returns null when a compact field block closes without the dep", () => {
+		const compact = [
+			"{",
+			'\t"dependencies": {"y": "1"},',
+			'\t"devDependencies": {"x": "2"}',
+			"}",
+		].join("\n");
+		expect(findDepLine(compact, "dependencies", "x")).toBeNull();
+	});
 });
 
 describe("verdictAnnotations", () => {

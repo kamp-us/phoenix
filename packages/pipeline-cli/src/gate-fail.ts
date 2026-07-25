@@ -32,14 +32,38 @@ export interface GateFailure {
 export const reportGateFailure = (failure: GateFailure): Effect.Effect<void> =>
 	Effect.sync(() => {
 		process.stderr.write(`${failure.reason}\n`);
-		for (const line of renderAnnotations(
-			gateFailureAnnotations(failure.reason, failure.annotations ?? []),
-			process.env,
-		)) {
-			process.stdout.write(`${line}\n`);
-		}
-		process.exit(GATE_FAIL_EXIT_CODE);
-	});
+	}).pipe(
+		// The report is the load-bearing output and is already out by here; annotations only
+		// decorate it, so a failure to render degrades to "no annotations" rather than taking
+		// the report with it (the same invariant `annotationsOrNone` holds on the build side).
+		Effect.andThen(
+			Effect.try(() => {
+				for (const line of renderAnnotations(
+					gateFailureAnnotations(failure.reason, failure.annotations ?? []),
+					process.env,
+				)) {
+					process.stdout.write(`${line}\n`);
+				}
+			}).pipe(Effect.ignore),
+		),
+		Effect.andThen(
+			Effect.sync(() => {
+				process.exit(GATE_FAIL_EXIT_CODE);
+			}),
+		),
+	);
+
+/**
+ * Build a guard's annotations, degrading to none if the build throws. A guard's
+ * `CheckFailed({reason, annotations})` evaluates its `annotations` argument EAGERLY, so an
+ * unguarded throw while computing them lands *before* the error carrying the report is
+ * constructed — the whole human diagnostic dies exactly when the guard goes red. Every
+ * guard that computes annotations builds them through this.
+ */
+export const annotationsOrNone = (
+	build: () => ReadonlyArray<Annotation>,
+): Effect.Effect<ReadonlyArray<Annotation>> =>
+	Effect.try(build).pipe(Effect.orElseSucceed((): ReadonlyArray<Annotation> => []));
 
 /** The `Effect.catchTag("CheckFailed", …)` handler each guard command wires in. */
 export const onCheckFailed = (e: GateFailure): Effect.Effect<void> => reportGateFailure(e);

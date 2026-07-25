@@ -61,7 +61,8 @@ A guard that knows where its failure lives attaches `annotations` to its `CheckF
 (see `catalog-guard` and `readme-guard`, which point at the offending manifest and line);
 one that doesn't gets a single bare `::error` carrying the report head. Build annotations
 with the constructors in [`src/annotate.ts`](./src/annotate.ts) — `unlocated`, `atFile`,
-`atLine` — never by hand-formatting the command string.
+`atLine` — never by hand-formatting the command string, and wrap the build in
+`annotationsOrNone` so a throw while computing them can never swallow the report.
 
 ## Development
 

@@ -154,13 +154,48 @@ export const findDepLine = (text: string, field: string, name: string): number |
 	let inField = false;
 	for (const [i, line] of lines.entries()) {
 		if (!inField) {
-			if (new RegExp(`^\\s*"${field}"\\s*:\\s*\\{`).test(line)) inField = true;
+			const rest = afterFieldOpen(line, field);
+			if (rest === null) continue;
+			inField = true;
+			// A compact `"dependencies": {"x": "1"},` declares its deps on the SAME line as
+			// the field; without this the scan walks past them into the next field's block.
+			const same = scanInlineKeys(rest, name);
+			if (same !== "open") return same === "found" ? i + 1 : null;
 			continue;
 		}
 		if (/^\s*\}/.test(line)) return null;
-		if (new RegExp(`^\\s*"${name}"\\s*:`).test(line)) return i + 1;
+		if (declaresKey(line, name)) return i + 1;
 	}
 	return null;
+};
+
+/**
+ * Does `segment` open with the JSON key `"<name>":`? Compared literally, never compiled
+ * into a `RegExp` — a name is arbitrary manifest input, and `.` (legal in npm names, e.g.
+ * `@distilled.cloud/cloudflare`) would silently match a neighbour while a regex
+ * metacharacter would throw a `SyntaxError` out of the annotation build.
+ */
+const declaresKey = (segment: string, name: string): boolean => {
+	const quoted = `"${name}"`;
+	const trimmed = segment.trimStart();
+	return trimmed.startsWith(quoted) && /^\s*:/.test(trimmed.slice(quoted.length));
+};
+
+/** The rest of `line` after `"<field>": {`, or `null` when the line doesn't open that field. */
+const afterFieldOpen = (line: string, field: string): string | null => {
+	const quoted = `"${field}"`;
+	const trimmed = line.trimStart();
+	if (!trimmed.startsWith(quoted)) return null;
+	const open = /^\s*:\s*\{/.exec(trimmed.slice(quoted.length));
+	return open === null ? null : trimmed.slice(quoted.length + open[0].length);
+};
+
+/** Whether the keys on the remainder of a field-opening line hold `name`, or close the block. */
+const scanInlineKeys = (rest: string, name: string): "found" | "closed" | "open" => {
+	const close = rest.indexOf("}");
+	const inside = close === -1 ? rest : rest.slice(0, close);
+	if (inside.split(",").some((part) => declaresKey(part, name))) return "found";
+	return close === -1 ? "open" : "closed";
 };
 
 /**

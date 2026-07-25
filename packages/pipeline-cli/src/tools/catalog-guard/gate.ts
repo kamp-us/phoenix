@@ -15,6 +15,7 @@
 import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {Annotation} from "../../annotate.ts";
+import {annotationsOrNone} from "../../gate-fail.ts";
 import {
 	type AllowlistEntry,
 	DEFAULT_ALLOWLIST,
@@ -156,13 +157,11 @@ export const checkCatalog = (
 			return;
 		}
 		const texts = new Map(read.map((r) => [r.manifest.path, r.text]));
-		return yield* Effect.fail(
-			new CheckFailed({
-				reason: renderReport(verdict),
-				annotations: verdictAnnotations(verdict, (v) => {
-					const text = texts.get(v.path);
-					return text === undefined ? null : findDepLine(text, v.field, v.name);
-				}),
+		const annotations = yield* annotationsOrNone(() =>
+			verdictAnnotations(verdict, (v) => {
+				const text = texts.get(v.path);
+				return text === undefined ? null : findDepLine(text, v.field, v.name);
 			}),
 		);
+		return yield* Effect.fail(new CheckFailed({reason: renderReport(verdict), annotations}));
 	});

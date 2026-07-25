@@ -19,8 +19,10 @@
  */
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {onCheckFailed} from "../../gate-fail.ts";
+import {onCheckFailedWithPrefix} from "../../gate-fail.ts";
 import {checkCodeownersCp, defaultRoot} from "./gate.ts";
+
+const onCheckFailed = onCheckFailedWithPrefix("codeowners-cp: ");
 
 const rootFlag = Flag.string("root").pipe(
 	Flag.optional,
