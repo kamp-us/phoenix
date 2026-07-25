@@ -56,6 +56,7 @@ const provide = <A, E>(
 
 const SHA = "bb21a70f0000000000000000000000000000dead";
 const checkRunsPath = `repos/${PINNED_REPO}/commits/${SHA}/check-runs`;
+const checkSuitesPath = `repos/${PINNED_REPO}/commits/${SHA}/check-suites`;
 const statusPath = `repos/${PINNED_REPO}/commits/${SHA}/status`;
 const noStatuses = JSON.stringify({state: "pending", total_count: 0});
 
@@ -133,6 +134,140 @@ describe("Github.read — the fetched head rolls up latest-per-context", () => {
 			);
 			assert.strictEqual(rollup.conclusion, "green");
 		}),
+	);
+});
+
+describe("Github.read — the three CI states survive the decode boundary", () => {
+	it.effect("a queued run with no start time decodes as wedged, not as running", () =>
+		Effect.gen(function* () {
+			const rollup = yield* provide(
+				Effect.flatMap(Github, (gh) => gh.read(SHA)),
+				{
+					[checkRunsPath]: pages([
+						{
+							id: 1,
+							name: "fanout-guard",
+							status: "queued",
+							conclusion: null,
+							started_at: null,
+							completed_at: null,
+						},
+					]),
+					[statusPath]: noStatuses,
+				},
+			);
+			assert.strictEqual(rollup.conclusion, "pending");
+			assert.deepStrictEqual(
+				rollup.wedged.map((c) => c.name),
+				["fanout-guard"],
+			);
+			assert.deepStrictEqual(rollup.running, []);
+		}),
+	);
+
+	it.effect("zero-run check suites are reported inert and leave a completed head green", () =>
+		Effect.gen(function* () {
+			const rollup = yield* provide(
+				Effect.flatMap(Github, (gh) => gh.read(SHA)),
+				{
+					[checkRunsPath]: pages([
+						{
+							id: 1,
+							name: "ci-required",
+							status: "completed",
+							conclusion: "success",
+							started_at: "2026-07-25T05:40:00Z",
+							completed_at: "2026-07-25T05:48:16Z",
+						},
+					]),
+					[checkSuitesPath]: JSON.stringify([
+						{
+							check_suites: [
+								{id: 10, status: "queued", latest_check_runs_count: 0, app: {slug: "vercel"}},
+								{
+									id: 11,
+									status: "completed",
+									latest_check_runs_count: 1,
+									app: {slug: "github-actions"},
+								},
+							],
+						},
+					]),
+					[statusPath]: noStatuses,
+				},
+			);
+			assert.strictEqual(rollup.conclusion, "green");
+			assert.deepStrictEqual(
+				rollup.inertSuites.map((s) => s.appSlug),
+				["vercel"],
+			);
+		}),
+	);
+
+	// Suites are diagnosis only, so an unreadable suites read must not block a merge — the
+	// verdict is unchanged and the inert list is simply empty.
+	it.effect("an unreadable check-suites read degrades instead of refusing", () =>
+		Effect.gen(function* () {
+			const rollup = yield* provide(
+				Effect.flatMap(Github, (gh) => gh.read(SHA)),
+				{
+					[checkRunsPath]: pages([
+						{
+							id: 1,
+							name: "ci-required",
+							status: "completed",
+							conclusion: "success",
+							started_at: "2026-07-25T05:40:00Z",
+							completed_at: "2026-07-25T05:48:16Z",
+						},
+					]),
+					[statusPath]: noStatuses,
+				},
+			);
+			assert.strictEqual(rollup.conclusion, "green");
+			assert.deepStrictEqual(rollup.inertSuites, []);
+		}),
+	);
+});
+
+describe("Github.read — an unreadable head is the typed unknown, never a colour", () => {
+	const expectUnreadable = (responses: Record<string, string>) =>
+		Effect.gen(function* () {
+			const outcome = yield* Effect.result(
+				provide(
+					Effect.flatMap(Github, (gh) => gh.read(SHA)),
+					responses,
+				),
+			);
+			assert.strictEqual(outcome._tag, "Failure");
+			assert.strictEqual(
+				(outcome as {failure: {_tag: string}}).failure._tag,
+				"@kampus/checks/HeadCiUnreadable",
+			);
+		});
+
+	// The body a failed `gh api` prints is an ERROR OBJECT, not a page array. Shape-check first:
+	// interpreting it as data is how an unreadable head becomes a fabricated verdict.
+	it.effect("an error body where the pages array belongs is unreadable", () =>
+		expectUnreadable({
+			[checkRunsPath]: JSON.stringify({message: "Not Found", status: "404"}),
+			[statusPath]: noStatuses,
+		}),
+	);
+
+	it.effect("a page whose check_runs is not an array is unreadable", () =>
+		expectUnreadable({
+			[checkRunsPath]: JSON.stringify([{check_runs: "oops"}]),
+			[statusPath]: noStatuses,
+		}),
+	);
+
+	it.effect("unparseable output is unreadable", () =>
+		expectUnreadable({[checkRunsPath]: "<html>502 Bad Gateway</html>", [statusPath]: noStatuses}),
+	);
+
+	it.effect("a check-runs read that fails outright is unreadable", () =>
+		expectUnreadable({[statusPath]: noStatuses}),
 	);
 });
 
