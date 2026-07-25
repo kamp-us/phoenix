@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // `pipeline-cli leak-guard scan <file>...` is the CI-callable surface.
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
@@ -25,7 +26,9 @@ const runScan = (files: ReadonlyArray<string>): Promise<RunResult> =>
 		});
 	});
 
-describe("leak-guard scan CLI — exit-code contract (#332)", () => {
+describe("leak-guard scan CLI — exit-code contract (#332)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	let dir: string;
 	const write = (name: string, content: string): string => {
 		const p = join(dir, name);
@@ -46,24 +49,24 @@ describe("leak-guard scan CLI — exit-code contract (#332)", () => {
 		assert.strictEqual(code, 2);
 		assert.include(stderr, "/Users/foo");
 		assert.include(stderr, file);
-	}, 30_000);
+	});
 
 	it("exits 0 on a clean .md", async () => {
 		const file = write("clean.md", "ordinary prose, apps/web/worker, .claude/skills");
 		const {code} = await runScan([file]);
 		assert.strictEqual(code, 0);
-	}, 30_000);
+	});
 
 	it("exits 0 on a non-doc .ts containing /Users (out of scope)", async () => {
 		const file = write("fixture.ts", 'const p = "/Users/foo/x"');
 		const {code} = await runScan([file]);
 		assert.strictEqual(code, 0);
-	}, 30_000);
+	});
 
 	it("skips a missing file without crashing (exit 0)", async () => {
 		const {code} = await runScan([join(dir, "does-not-exist.md")]);
 		assert.strictEqual(code, 0);
-	}, 30_000);
+	});
 
 	it("flags the leaking file among several clean ones", async () => {
 		const clean = write("ok.md", "no paths here");
@@ -72,5 +75,5 @@ describe("leak-guard scan CLI — exit-code contract (#332)", () => {
 		assert.strictEqual(code, 2);
 		assert.include(stderr, "~/code/");
 		assert.include(stderr, leaky);
-	}, 30_000);
+	});
 });

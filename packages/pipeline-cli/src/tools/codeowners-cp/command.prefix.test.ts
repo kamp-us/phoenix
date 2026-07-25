@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 import {CONTROL_PLANE_RE} from "../control-plane-paths/control-plane-re.ts";
 import {CODEOWNERS_PATH, FORMATS_PATH} from "./gate.ts";
 
@@ -24,7 +25,9 @@ const makeZeroOwnerRepo = (): string => {
 	return dir;
 };
 
-describe("codeowners-cp check — the report keeps its tool-name prefix", () => {
+describe("codeowners-cp check — the report keeps its tool-name prefix", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("prefixes the stderr report with `codeowners-cp: ` and still exits 1", () => {
 		const dir = makeZeroOwnerRepo();
 		try {
@@ -37,5 +40,5 @@ describe("codeowners-cp check — the report keeps its tool-name prefix", () => 
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
 		}
-	}, 30_000);
+	});
 });

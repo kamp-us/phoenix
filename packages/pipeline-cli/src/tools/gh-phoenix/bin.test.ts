@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {delimiter, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 const BIN = fileURLToPath(new URL("./bin.ts", import.meta.url));
 
@@ -24,7 +25,9 @@ const run = (args: ReadonlyArray<string>, env?: NodeJS.ProcessEnv): Promise<RunR
 		});
 	});
 
-describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
+describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	let dir: string;
 
 	beforeAll(() => {
@@ -42,7 +45,7 @@ describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 		const {code, stderr} = await run(["lint-skills", f]);
 		assert.strictEqual(code, 3);
 		assert.include(stderr, "zero");
-	}, 30_000);
+	});
 
 	// Both the gh-call scan and the #1766 frontmatter check must have non-empty scope, so the
 	// corpus is a real (non-self-exempt) SKILL.md carrying valid frontmatter — a plain .md
@@ -61,7 +64,7 @@ describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 		assert.strictEqual(code, 2);
 		assert.include(stderr, "gh project");
 		assert.include(stdout, "scanned 1 file");
-	}, 30_000);
+	});
 
 	it("exits 0 and emits scope on a clean skill file", async () => {
 		const f = writeSkill("skills/bar/SKILL.md", "use gh api repos/o/r/issues/1");
@@ -69,16 +72,16 @@ describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 		assert.strictEqual(code, 0);
 		assert.include(stdout, "scanned 1 file");
 		assert.include(stdout, "clean");
-	}, 30_000);
+	});
 
 	it("exits 3 (zero-scope FAIL) when every file is unreadable/missing", async () => {
 		const {code, stderr} = await run(["lint-skills", join(dir, "does-not-exist.md")]);
 		assert.strictEqual(code, 3);
 		assert.include(stderr, "zero");
-	}, 30_000);
+	});
 });
 
-describe("gh shim — routes via the real gh stub", () => {
+describe("gh shim — routes via the real gh stub", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	let dir: string;
 
 	beforeAll(() => {
@@ -102,19 +105,19 @@ describe("gh shim — routes via the real gh stub", () => {
 		const {code, stdout} = await run(["api", "repos/kamp-us/phoenix/issues/1"], shimEnv());
 		assert.strictEqual(code, 0);
 		assert.include(stdout, "FAKE_GH api repos/kamp-us/phoenix/issues/1");
-	}, 30_000);
+	});
 
 	it("rewrites `gh pr edit` to a REST PATCH before execing the real gh", async () => {
 		const {code, stdout, stderr} = await run(["pr", "edit", "42", "--body", "hello"], shimEnv());
 		assert.strictEqual(code, 0);
 		assert.include(stdout, "FAKE_GH api -X PATCH repos/kamp-us/phoenix/issues/42");
 		assert.include(stderr, "routed to REST PATCH");
-	}, 30_000);
+	});
 
 	it("blocks `gh project` with a non-zero exit and a REST hint", async () => {
 		const {code, stderr} = await run(["project", "list"], shimEnv());
 		assert.strictEqual(code, 1);
 		assert.include(stderr, "blocked");
 		assert.include(stderr, "REST");
-	}, 30_000);
+	});
 });

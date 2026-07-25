@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // `pipeline-cli ship-digest derive` is the operable surface (#1595).
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
@@ -25,7 +26,7 @@ const run = (args: ReadonlyArray<string>): Promise<RunResult> =>
 		});
 	});
 
-describe("derive CLI", () => {
+describe("derive CLI", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	let dir: string;
 	const write = (name: string, content: string): string => {
 		const p = join(dir, name);
@@ -75,7 +76,7 @@ describe("derive CLI", () => {
 		assert.include(stdout, "- pipeline bump (#4)");
 		assert.include(stdout, "### Uncategorized");
 		assert.include(stdout, "- untyped thing (#5)");
-	}, 30_000);
+	});
 
 	it("writes to --out when given, leaving stdout free of the body", async () => {
 		const entries = write(
@@ -94,7 +95,7 @@ describe("derive CLI", () => {
 		]);
 		assert.strictEqual(code, 0);
 		assert.include(readFileSync(out, "utf8"), "# Ship digest —");
-	}, 30_000);
+	});
 
 	it("exits non-zero on a missing entries file (typed failure)", async () => {
 		const {code} = await run([
@@ -105,5 +106,5 @@ describe("derive CLI", () => {
 			"2026-06-01",
 		]);
 		assert.notStrictEqual(code, 0);
-	}, 30_000);
+	});
 });

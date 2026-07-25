@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // `pipeline-cli worktree-guard <subcommand>` is the hook surface.
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
@@ -35,7 +36,9 @@ const run = (
 		child.stdin?.end(JSON.stringify(stdinJson));
 	});
 
-describe("worktree-guard pre-file — PreToolUse envelope", () => {
+describe("worktree-guard pre-file — PreToolUse envelope", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	const WT = "/Users/dev/code/phoenix/.claude/worktrees/wf_xyz";
 	const MAIN = "/Users/dev/code/phoenix";
 
@@ -49,7 +52,7 @@ describe("worktree-guard pre-file — PreToolUse envelope", () => {
 		const out = JSON.parse(stdout.trim());
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
 		assert.strictEqual(out.hookSpecificOutput.updatedInput.file_path, `${WT}/packages/foo/x.ts`);
-	}, 30_000);
+	});
 
 	it("emits a plain allow with no $WORKTREE_ROOT (non-worktree session no-op)", async () => {
 		const {stdout} = await run(
@@ -60,10 +63,12 @@ describe("worktree-guard pre-file — PreToolUse envelope", () => {
 		const out = JSON.parse(stdout.trim());
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
 		assert.isUndefined(out.hookSpecificOutput.updatedInput);
-	}, 30_000);
+	});
 });
 
-describe("worktree-guard pre-bash — PreToolUse envelope", () => {
+describe("worktree-guard pre-bash — PreToolUse envelope", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	const WT = "/Users/dev/code/phoenix/.claude/worktrees/wf_xyz";
 
 	it("pins a Bash command lacking a cd", async () => {
@@ -74,7 +79,7 @@ describe("worktree-guard pre-bash — PreToolUse envelope", () => {
 		);
 		const out = JSON.parse(stdout.trim());
 		assert.strictEqual(out.hookSpecificOutput.updatedInput.command, `cd "${WT}" && git status`);
-	}, 30_000);
+	});
 
 	it("DENIES a bare HEAD-moving git op that would detach the shared primary (#1571)", async () => {
 		const {stdout} = await run(
@@ -85,7 +90,7 @@ describe("worktree-guard pre-bash — PreToolUse envelope", () => {
 		const out = JSON.parse(stdout.trim());
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "deny");
 		assert.match(out.hookSpecificOutput.permissionDecisionReason, /git -C "\$WT"/);
-	}, 30_000);
+	});
 
 	it("does NOT deny the orchestrator's bare `git checkout main` (no $WORKTREE_ROOT)", async () => {
 		const {stdout} = await run(
@@ -95,10 +100,12 @@ describe("worktree-guard pre-bash — PreToolUse envelope", () => {
 		);
 		const out = JSON.parse(stdout.trim());
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
-	}, 30_000);
+	});
 });
 
-describe("worktree-guard pre-enter — hard-block nested worktree", () => {
+describe("worktree-guard pre-enter — hard-block nested worktree", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("denies EnterWorktree when $WORKTREE_ROOT is set", async () => {
 		const {stdout} = await run(
 			"pre-enter",
@@ -109,16 +116,18 @@ describe("worktree-guard pre-enter — hard-block nested worktree", () => {
 		);
 		const out = JSON.parse(stdout.trim());
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "deny");
-	}, 30_000);
+	});
 
 	it("allows EnterWorktree at top level", async () => {
 		const {stdout} = await run("pre-enter", {tool_name: "EnterWorktree"}, {WORKTREE_ROOT: ""});
 		const out = JSON.parse(stdout.trim());
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
-	}, 30_000);
+	});
 });
 
-describe("worktree-guard reap — SubagentStop reaper against a REAL git worktree", () => {
+describe("worktree-guard reap — SubagentStop reaper against a REAL git worktree", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	let mainRepo: string;
 	let wtRoot: string;
 
@@ -166,7 +175,7 @@ describe("worktree-guard reap — SubagentStop reaper against a REAL git worktre
 		});
 		assert.include(stderr, "reaped clean worktree");
 		assert.isFalse(existsSync(wtRoot));
-	}, 30_000);
+	});
 
 	it("KEEPS a live worktree on a NESTED-DESCENDANT stop (inherited $WORKTREE_ROOT, owns another tree)", async () => {
 		const liveWt = join(mainRepo, ".claude", "worktrees", "wf_live");
@@ -179,7 +188,7 @@ describe("worktree-guard reap — SubagentStop reaper against a REAL git worktre
 		);
 		assert.match(stderr, /does not own|KEEP/);
 		assert.isTrue(existsSync(liveWt), "a live parent's worktree must survive a nested-child stop");
-	}, 30_000);
+	});
 
 	it("REFUSES (keeps) a dirty worktree — never --force (under an owner stop)", async () => {
 		const dirtyWt = join(mainRepo, ".claude", "worktrees", "wf_dirty");
@@ -191,5 +200,5 @@ describe("worktree-guard reap — SubagentStop reaper against a REAL git worktre
 		assert.include(stderr, "KEPT");
 		assert.isTrue(existsSync(dirtyWt), "dirty worktree must be kept");
 		assert.isTrue(existsSync(join(dirtyWt, "uncommitted.txt")), "unpushed file must survive");
-	}, 30_000);
+	});
 });

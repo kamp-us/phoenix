@@ -1,6 +1,7 @@
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // The stdin/exit contract of `pipeline-cli guard-content-probe classify` over the shared bin. Like
 // class-probe (#3786), the empty-stdin exposure is an IO-delivery fact, exercised over the ACTUAL
@@ -32,7 +33,9 @@ const EMPTY_READ_SHAPES: ReadonlyArray<readonly [string, string]> = [
 	["closed stdin <&-", `${INNER} <&-`],
 ];
 
-describe("guard-content-probe classify — empty stdin stays §CP, evidence is honest (#3786)", () => {
+describe("guard-content-probe classify — empty stdin stays §CP, evidence is honest (#3786)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	for (const [name, cmd] of EMPTY_READ_SHAPES) {
 		it(`${name}: guard-touching (fail-closed, exit 0) with reason [empty-input]`, () => {
 			const {code, stdout, stderr} = runSh(cmd);

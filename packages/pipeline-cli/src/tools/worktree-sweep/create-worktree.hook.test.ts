@@ -25,6 +25,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
 import {loadGoldenPayload, readGoldenFixture} from "../../golden-fixture.ts";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 const SCRIPT = fileURLToPath(
 	new URL(
@@ -41,7 +42,9 @@ interface RunResult {
 	readonly stderr: string;
 }
 
-describe("create-worktree.sh — WorktreeCreate hook against the golden real payload (#2936/ADR 0180)", () => {
+describe("create-worktree.sh — WorktreeCreate hook against the golden real payload (#2936/ADR 0180)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	let mainRepo: string;
 	const git = (cwd: string, ...args: string[]) =>
 		execFileSync("git", ["-C", cwd, ...args], {encoding: "utf8"});
