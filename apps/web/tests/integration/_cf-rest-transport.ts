@@ -20,6 +20,12 @@
  * wall-clock budget (#3548) would have made far worse. A sleeping call is by definition not in flight,
  * so the slot is held per ATTEMPT instead: `retry(() => throttle.run(send))`. This also start-paces
  * the retries themselves, which #3081's order left unpaced — the attempts that most need spreading.
+ *
+ * **The cost of that order is paid here: throttle queueing is not retry attrition.** Re-entering the
+ * throttle per attempt means a logical call sits in the harness's own queue repeatedly, which a
+ * wall-clock deadline then charges to the budget it meant to spend asking Cloudflare (`_d1-rest-retry.ts`
+ * has the measured arithmetic). Wiring `run`'s `onQueued` into the retry's `queued` sink is what
+ * keeps the two halves of the composition from cannibalising each other; the unit test pins it.
  */
 
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
@@ -33,15 +39,20 @@ import {
 	rateLimitRetryingFetch,
 } from "./_d1-rest-retry.ts";
 
-/** Send one CF REST request under the shared throttle, retrying a 429 for the whole budget. */
+/**
+ * Send one CF REST request under the shared throttle, retrying a 429 for the whole budget. The
+ * throttle's own queueing is reported into the retry's `queued` sink, so the budget measures time
+ * CLOUDFLARE spent rate-limiting the call rather than time the harness spent pacing it (#3548).
+ */
 export const cfRestSend = (
 	send: () => Promise<Response>,
 	options: RateLimitRetryOptions = {},
-): Promise<Response> => cfFetchWithRateLimitRetry(() => cfApiThrottle.run(send), options);
+): Promise<Response> =>
+	cfFetchWithRateLimitRetry((queued) => cfApiThrottle.run(send, queued), options);
 
 /** The throttled + 429-retrying `fetch` the REST transport is built on. */
-export const cfRestFetch: typeof globalThis.fetch = rateLimitRetryingFetch((input, init) =>
-	cfApiThrottle.run(() => fetch(input, init)),
+export const cfRestFetch: typeof globalThis.fetch = rateLimitRetryingFetch((input, init, queued) =>
+	cfApiThrottle.run(() => fetch(input, init), queued),
 );
 
 /**

@@ -8,7 +8,11 @@ import {readdirSync, readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {createCfApiThrottle} from "./_cf-api-throttle.ts";
-import {cfFetchWithRateLimitRetry} from "./_d1-rest-retry.ts";
+import {
+	budgetSpentMs,
+	cfFetchWithRateLimitRetry,
+	type RateLimitAttrition,
+} from "./_d1-rest-retry.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url).href);
 
@@ -36,6 +40,45 @@ describe("retry composes AROUND the throttle (a slot is held per attempt, not pe
 		const [firstRes, secondRes] = await Promise.all([first, second]);
 		expect(firstRes.status).toBe(429);
 		expect(secondRes.status).toBe(200);
+	});
+
+	// The cost of holding a slot per ATTEMPT: a logical call re-enters the harness's queue on every
+	// retry. PR #4033's merge-queue ejection was that cost billed to the wrong account — "2 attempts
+	// over 45136ms of retry budget", ~44.6s of which was throttle queueing, so the CF-facing budget
+	// expired having asked Cloudflare twice. The throttle's `onQueued` must reach the retry's sink.
+	it("deducts the throttle's own queueing from the CF-facing retry budget", async () => {
+		let clock = 0;
+		const throttle = createCfApiThrottle({
+			maxConcurrent: 10,
+			minSpacingMs: 1000, // each start is paced a full second apart — pure harness-imposed wait
+			sleep: async (ms) => {
+				clock += ms;
+			},
+			now: () => clock,
+			random: () => 0,
+		});
+		const attrition: RateLimitAttrition[] = [];
+		const res = await cfFetchWithRateLimitRetry(
+			(queued) => throttle.run(async () => new Response("429", {status: 429}), queued),
+			{
+				budgetMs: 2000,
+				baseDelayMs: 10,
+				maxRetries: 3,
+				random: () => 0,
+				now: () => clock,
+				sleep: async (ms) => {
+					clock += ms;
+				},
+				onGiveUp: (a) => attrition.push(a),
+			},
+		);
+		expect(res.status).toBe(429);
+		// Without the deduction the 1000ms-per-attempt pacing alone exhausts a 2000ms budget in two
+		// sends; with it, the runaway guard is what stops the loop and the budget is barely touched.
+		expect(attrition[0]?.reason).toBe("max-retries");
+		expect(attrition[0]?.attempts).toBe(4);
+		expect(attrition[0]?.queuedMs).toBeGreaterThanOrEqual(3000);
+		expect(budgetSpentMs(attrition[0] as RateLimitAttrition)).toBeLessThan(2000);
 	});
 });
 

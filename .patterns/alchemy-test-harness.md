@@ -137,13 +137,13 @@ transport, `_cf-rest-transport.ts`**, which composes two halves:
 - **Reactive per-call retry** — `cfFetchWithRateLimitRetry` (`_d1-rest-retry.ts`):
   after a 429 fires, replay the one call with full-jitter exponential backoff
   (429 is a pre-execution reject, so replay is safe; #2915), floored by a
-  CF-supplied `Retry-After`. The budget is a **wall-clock deadline**
-  (`D1_REST_BUDGET_MS`), not an attempt count: with full jitter, "5 retries" is a
-  budget with a near-zero lower bound, which is why the shipped retry burned out
-  against a ~290s 429 plateau and red five bystander suites anyway (#3548). It
-  never masks a real failure — only a 429 is retried, and exhaustion surfaces the
-  final 429 (raised by `cloudflareApi` as `CfRateLimitError`, naming the call, its
-  attempt count and the budget it spent).
+  CF-supplied `Retry-After`. The budget is a **deadline** (`D1_REST_BUDGET_MS`),
+  not an attempt count: with full jitter, "5 retries" is a budget with a
+  near-zero lower bound, which is why the shipped retry burned out against a
+  ~290s 429 plateau and red five bystander suites anyway (#3548). It never masks
+  a real failure — only a 429 is retried, and exhaustion surfaces the final 429
+  (raised by `cloudflareApi` as `CfRateLimitError`, naming the call, why it
+  stopped, and how its elapsed time split).
 - **Proactive shared throttle** — `cfApiThrottle` (`_cf-api-throttle.ts`, #3081):
   a concurrency cap + jittered start-pacing, so fewer 429s fire in the first
   place. Both knobs are env-tunable (`CF_API_MAX_CONCURRENT` /
@@ -154,6 +154,28 @@ inverting #3081's original note. A call sleeping in backoff is not in flight, so
 it must not hold an in-flight slot — under the old order four backing-off calls
 held all four slots and head-of-line-blocked every other CF call in the fork.
 This order also start-paces the retries themselves.
+
+**The two halves must not bill each other (#3548, the PR #4033 merge-queue
+ejection).** Holding a slot per attempt means a logical call re-enters the
+harness's own queue on every retry — and a wall-clock deadline then charges that
+self-imposed queueing to the budget it meant to spend asking Cloudflare. The
+ejecting run gave up after "2 attempts over 45136ms", ~44.6s of it queued rather
+than rate-limited: **the budget was never spent, so raising it would have fixed
+nothing.** Two rules follow, and both are pinned by unit tests:
+
+- **A sleeping call is not in flight — including one asleep in start-pacing.**
+  `pace()` runs *before* the slot is acquired, not inside it. Pacing is a rate
+  limit, the semaphore is a concurrency limit; nesting them makes the rate limit
+  eat the concurrency limit.
+- **Throttle queueing is not retry attrition.** `throttle.run` reports what it
+  made a call wait (`onQueued`); the retry deducts it, so `budgetMs` means "up to
+  this much time with CF actually answering 429". Giving up reports the split
+  (`queuedMs` / `backoffMs` / budget spent) and a `reason`, so a repeat reads off
+  the log line instead of being re-derived from the job log.
+
+A `Retry-After` longer than the remaining budget ends the loop **immediately**
+(`retry-after-exceeds-budget`) rather than sleeping out the remainder to buy one
+attempt at the moment it expires — a fast, correctly-named red beats a slow one.
 
 **Build the client through the transport, never by hand.** Use
 `makeIntegrationD1Rest` / `integrationRestLayer`; a per-file
@@ -172,6 +194,15 @@ alchemy's OWN deploy path, which the harness can't wrap. Those need the
 out-of-harness levers named in #3081 (a CI `concurrency:` group; 429 backoff in
 alchemy's deploy path via `pnpm patch`, ADR 0038). This throttle is the
 run-agnostic backoff on the slice the harness owns.
+
+Read the transport's coverage honestly when diagnosing a 429 run: **stage
+create/destroy is the bulk of the CF traffic and none of it goes through this
+transport.** In the PR #4033 ejection the teardown 429s were
+`DELETE /accounts/{id}/flagship/apps/{appId}/flags/{flagKey}` raised inside
+`alchemy`/`@distilled.cloud`, warned as leaked stages — unthrottled, competing
+for the same account bucket the tests then can't get through. The harness
+throttle governs a minority of the calls; a 429 storm is not evidence that its
+knobs are mis-set.
 
 ## Teardown is best-effort — leaked stages are a known class
 

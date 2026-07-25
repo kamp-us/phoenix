@@ -5,9 +5,10 @@
  * final 429, and the backoff stays within its full-jitter window. `sleep`/`random`/`now` are
  * injected so the whole suite runs offline and instantly.
  *
- * The #3548 additions are pinned at the bottom: the budget is WALL-CLOCK (an attempt-count
- * budget with full jitter could burn out in milliseconds against a minutes-long 429 plateau),
- * a CF-supplied `Retry-After` floors the backoff, and giving up is self-identifying.
+ * The #3548 additions are pinned at the bottom: the budget is a DEADLINE (an attempt-count budget
+ * with full jitter could burn out in milliseconds against a minutes-long 429 plateau) measured
+ * over time CF spent rate-limiting the call rather than wall clock, a CF-supplied `Retry-After`
+ * floors the backoff, and giving up is self-identifying down to where the budget went.
  */
 
 import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
@@ -16,6 +17,7 @@ import {Layer} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {describe, expect, it, vi} from "vitest";
 import {
+	budgetSpentMs,
 	CF_RATE_LIMIT_STATUS,
 	CfRateLimitError,
 	cfFetchWithRateLimitRetry,
@@ -109,7 +111,7 @@ describe("cfFetchWithRateLimitRetry", () => {
 });
 
 // #3548: the budget that actually decides when to give up.
-describe("the retry budget is wall-clock, not an attempt count", () => {
+describe("the retry budget is a deadline, not an attempt count", () => {
 	// A clock the injected sleep advances — the honest model of "waiting spends the budget".
 	const clockedSleep = () => {
 		let clock = 0;
@@ -184,6 +186,28 @@ describe("a CF-supplied Retry-After floors the backoff", () => {
 		expect(delays).toEqual([3000]);
 	});
 
+	// A `Retry-After` past the deadline used to be clamped to `remaining`, so the loop slept out the
+	// entire budget to buy one attempt at the exact moment it expired — CI time spent for near-zero
+	// odds, and a slow red where a fast, correctly-named one was available.
+	it("gives up at once when CF asks for longer than the budget left, instead of sleeping it out", async () => {
+		const seen: RateLimitAttrition[] = [];
+		const sleep = vi.fn(noSleep);
+		const send = vi.fn(
+			async () => new Response("429", {status: 429, headers: {"retry-after": "60"}}),
+		);
+		const res = await cfFetchWithRateLimitRetry(send, {
+			budgetMs: 45_000,
+			sleep,
+			now: () => 0,
+			onGiveUp: (a) => seen.push(a),
+		});
+		expect(res.status).toBe(429);
+		expect(send).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+		expect(seen[0]?.reason).toBe("retry-after-exceeds-budget");
+		expect(seen[0]?.retryAfterMs).toBe(60_000);
+	});
+
 	it("ignores an unparseable Retry-After and falls back to the jittered backoff", async () => {
 		const delays: number[] = [];
 		await cfFetchWithRateLimitRetry(with429({"retry-after": "soon"}), {
@@ -214,6 +238,44 @@ describe("giving up is self-identifying, and never a silent pass", () => {
 		expect(seen[0]?.label).toBe("POST /accounts/a/d1/database/b/query");
 		expect(seen[0]?.attempts).toBe(3);
 		expect(seen[0]?.elapsedMs).toBeGreaterThan(0);
+		expect(seen[0]?.reason).toBe("max-retries");
+	});
+
+	// Round 1 said "2 attempts over 45136ms of retry budget" and left WHERE those 45s went to be
+	// re-derived by hand from the job log. The breakdown is what makes the next occurrence
+	// self-diagnosing — 2 attempts with the budget barely touched reads as a queueing problem, not
+	// a Cloudflare one, without anyone reconstructing the backoff arithmetic.
+	it("breaks the elapsed time down into queued / backoff / CF-facing budget spent", async () => {
+		const seen: RateLimitAttrition[] = [];
+		let clock = 0;
+		await cfFetchWithRateLimitRetry(
+			// Every attempt reports 1000ms of harness queueing and takes 1100ms of wall clock.
+			async (queued) => {
+				queued(1000);
+				clock += 1100;
+				return resp(429);
+			},
+			{
+				budgetMs: 500,
+				baseDelayMs: 100,
+				random: () => 0.999999,
+				now: () => clock,
+				sleep: async (ms) => {
+					clock += ms;
+				},
+				onGiveUp: (a) => seen.push(a),
+			},
+		);
+		const a = seen[0] as RateLimitAttrition;
+		expect(a.reason).toBe("budget-exhausted");
+		expect(a.attempts).toBe(3);
+		expect(a.queuedMs).toBe(3000); // every attempt's throttle wait, deducted from the budget
+		expect(a.backoffMs).toBe(298);
+		expect(a.budgetMs).toBe(500);
+		// Wall clock far outruns the 500ms budget precisely because most of it was ours, not CF's —
+		// the discrepancy the round-1 line could not show.
+		expect(a.elapsedMs).toBe(3598);
+		expect(budgetSpentMs(a)).toBe(598);
 	});
 
 	it("does NOT fire when the 429 clears — a recovered call is not reported as rate-limited", async () => {
@@ -227,7 +289,15 @@ describe("giving up is self-identifying, and never a silent pass", () => {
 		const err = new CfRateLimitError(
 			"POST",
 			"/accounts/a/d1/database/b/query",
-			{label: "POST /accounts/a/d1/database/b/query", attempts: 9, elapsedMs: 44_310},
+			{
+				label: "POST /accounts/a/d1/database/b/query",
+				attempts: 9,
+				elapsedMs: 44_310,
+				queuedMs: 40_000,
+				backoffMs: 3_800,
+				budgetMs: 45_000,
+				reason: "max-retries",
+			},
 			'{"code":971}',
 		);
 		expect(isCfRateLimit(err)).toBe(true);
@@ -235,6 +305,11 @@ describe("giving up is self-identifying, and never a silent pass", () => {
 		expect(err.message).toContain("9 attempts");
 		expect(err.message).toContain("44310ms");
 		expect(err.message).toContain("971");
+		// The round-2 attribution: WHY it stopped, and how the elapsed time split — so a repeat of
+		// PR #4033's ejection reads as "queued in our own throttle" off the log line itself.
+		expect(err.message).toContain("max-retries");
+		expect(err.message).toContain("40000ms queued in the harness's own throttle");
+		expect(err.message).toContain("4310ms of the 45000ms CF-facing retry budget");
 		// A non-429 failure must NEVER be classified as a rate-limit and retried into a fake pass.
 		expect(isCfRateLimit(new Error("D1_ERROR: no such table"))).toBe(false);
 	});

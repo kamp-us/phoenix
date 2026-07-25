@@ -13,6 +13,16 @@
  * concurrency cap. That order is wired in exactly one place, `_cf-rest-transport.ts`; see its
  * docblock for why #3081's original one-throttled-unit-per-logical-call order was inverted (#3548).
  *
+ * **A sleeping call is not in flight — and that binds start-pacing too (#3548).** `pace()` used to
+ * sleep INSIDE the slot, so the start-pacer's own waiting occupied the concurrency cap and the
+ * throttle's throughput collapsed toward one call per `minSpacingMs` per slot. Pacing is a RATE
+ * limit and the semaphore is a CONCURRENCY limit; nesting the two conflates them. `pace()` runs
+ * BEFORE `acquireSlot()`, exactly as backoff sleeps run outside it.
+ *
+ * Both knobs are also honest about their cost: whatever a caller waits here is time the HARNESS
+ * imposed, not time Cloudflare spent rate-limiting it, so `run` reports it through `onQueued` and
+ * the retry deducts it from its CF-facing budget (see `_d1-rest-retry.ts`).
+ *
  * Scope ceiling (deliberate, per #3081's "confined to the integration harness" constraint):
  * the limiter is an in-process singleton, so under `isolate:false` (`vitest.config.ts`) it is
  * shared across every file that runs in the SAME fork and genuinely paces their combined setup
@@ -48,8 +58,13 @@ export interface CfApiThrottleOptions {
 }
 
 export interface CfApiThrottle {
-	/** Run `op` under the concurrency cap + start-pacing; resolves/rejects with `op`'s result. */
-	run<T>(op: () => Promise<T>): Promise<T>;
+	/**
+	 * Run `op` under the start-pacing + concurrency cap; resolves/rejects with `op`'s result.
+	 * `onQueued` is called once, just before `op` starts, with the ms this call spent waiting for
+	 * its paced start and its slot — harness-imposed latency the caller may want to account for
+	 * separately from time Cloudflare kept it waiting.
+	 */
+	run<T>(op: () => Promise<T>, onQueued?: (ms: number) => void): Promise<T>;
 }
 
 /**
@@ -70,13 +85,22 @@ export const createCfApiThrottle = ({
 	// reserves its slot, so staggered runners de-sync instead of firing as one packet.
 	let nextStartFloor = 0;
 
+	// The slot is HANDED OVER on release rather than decremented-then-reacquired: the old
+	// `inFlight--; waiters.shift()?.()` left a window where a fresh caller could synchronously
+	// observe a free slot and take it while the woken waiter also incremented — so `inFlight`
+	// could exceed `maxConcurrent` and the cap silently stopped binding under exactly the
+	// contention it exists for.
 	const acquireSlot = async (): Promise<void> => {
-		if (inFlight >= maxConcurrent) await new Promise<void>((resolve) => waiters.push(resolve));
-		inFlight++;
+		if (inFlight < maxConcurrent) {
+			inFlight++;
+			return;
+		}
+		await new Promise<void>((resolve) => waiters.push(resolve)); // resumed holding the slot
 	};
 	const releaseSlot = (): void => {
-		inFlight--;
-		waiters.shift()?.();
+		const next = waiters.shift();
+		if (next) next();
+		else inFlight--;
 	};
 
 	// Full-jitter start pacing: reserve a start no earlier than `minSpacingMs` past the prior
@@ -93,10 +117,12 @@ export const createCfApiThrottle = ({
 	};
 
 	return {
-		async run<T>(op: () => Promise<T>): Promise<T> {
+		async run<T>(op: () => Promise<T>, onQueued?: (ms: number) => void): Promise<T> {
+			const queuedFrom = now();
+			await pace(); // outside the slot: a call sleeping until its reserved start is not in flight
 			await acquireSlot();
+			onQueued?.(now() - queuedFrom);
 			try {
-				await pace();
 				return await op();
 			} finally {
 				releaseSlot();

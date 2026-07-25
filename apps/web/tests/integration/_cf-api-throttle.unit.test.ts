@@ -123,3 +123,95 @@ describe("createCfApiThrottle", () => {
 		expect(CF_API_MIN_SPACING_MS).toBeGreaterThanOrEqual(0);
 	});
 });
+
+// #3548 round 2 — the defects PR #4033's merge-queue ejection exposed.
+describe("start-pacing does not consume the concurrency cap", () => {
+	it("lets a call whose paced start has arrived run while another is still waiting for its start", async () => {
+		// `pace()` used to sleep INSIDE the slot, so with one slot the first call's start-pacing
+		// blocked every other call for its whole wait — the rate limiter eating the concurrency
+		// limiter. Here the (never-resolving) pacer must not stop the second call from running.
+		let holdPacing = () => {};
+		const paced = new Promise<void>((r) => {
+			holdPacing = r;
+		});
+		let sleeps = 0;
+		const throttle = createCfApiThrottle({
+			maxConcurrent: 1,
+			minSpacingMs: 100,
+			// The first call's pace-sleep hangs; every later one returns immediately.
+			sleep: () => (sleeps++ === 0 ? paced : Promise.resolve()),
+			now: () => 0,
+			random: () => 0.5,
+		});
+
+		const first = throttle.run(async () => "first");
+		let secondRan = false;
+		const second = throttle.run(async () => {
+			secondRan = true;
+			return "second";
+		});
+		await flush();
+		expect(secondRan).toBe(true); // under the old order this is false and `second` never resolves
+		holdPacing();
+		await expect(Promise.all([first, second])).resolves.toEqual(["first", "second"]);
+	});
+
+	it("reports the queueing it imposed through onQueued", async () => {
+		let clock = 0;
+		const throttle = createCfApiThrottle({
+			maxConcurrent: 10,
+			minSpacingMs: 100,
+			sleep: async (ms) => {
+				clock += ms;
+			},
+			now: () => clock,
+			random: () => 0,
+		});
+		const queued: number[] = [];
+		await throttle.run(
+			async () => {},
+			(ms) => queued.push(ms),
+		);
+		await throttle.run(
+			async () => {},
+			(ms) => queued.push(ms),
+		);
+		expect(queued).toHaveLength(2);
+		expect(queued[0]).toBe(0); // first call starts immediately
+		expect(queued[1]).toBe(100); // second waits one spacing — time the HARNESS imposed, not CF
+	});
+});
+
+describe("the concurrency cap holds under contention (the slot is handed over, not re-raced)", () => {
+	it("does not admit a barging caller into a slot a waiter was just handed", async () => {
+		// The old `inFlight--; waiters.shift()?.()` left a window in which a freshly-arriving call
+		// saw a free slot and took it while the woken waiter also incremented — so `inFlight` drifted
+		// past `maxConcurrent` and the cap stopped binding under exactly the load it exists for.
+		const throttle = createCfApiThrottle({maxConcurrent: 1, minSpacingMs: 0});
+		let active = 0;
+		let peak = 0;
+		const gates = [deferred<void>(), deferred<void>(), deferred<void>()];
+		const runs = gates.map((g) =>
+			throttle.run(async () => {
+				active++;
+				peak = Math.max(peak, active);
+				await g.promise;
+				active--;
+			}),
+		);
+		await flush();
+		// Release the holder and, in the SAME tick, start a barging call: it must queue behind the
+		// waiter rather than slip into the released slot.
+		gates[0]?.resolve();
+		const barger = throttle.run(async () => {
+			active++;
+			peak = Math.max(peak, active);
+			active--;
+		});
+		await flush();
+		gates[1]?.resolve();
+		gates[2]?.resolve();
+		await Promise.all([...runs, barger]);
+		expect(peak).toBe(1);
+	});
+});
