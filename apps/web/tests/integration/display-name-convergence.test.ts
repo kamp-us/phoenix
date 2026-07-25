@@ -56,7 +56,7 @@ const readByline = async (termSlug: string, definitionId: string): Promise<DefNo
 
 // The landed-probes for this test's two NON-idempotent setup mutations. A stalled round-trip
 // (real remote worker + D1) leaves it unknown whether the write committed, and neither op
-// tolerates a blind replay — `user.setUsername` rejects a re-set with USERNAME_ALREADY_SET,
+// tolerates a blind replay — `user.setUsername` rejects a re-set with ALREADY_SET,
 // `definition.add` mints a new id per call — so each declares how to tell, and a landed write
 // is adopted instead of hard-failing the whole test (#3942).
 const usernameLanded = async (cookie: string, value: string) => {

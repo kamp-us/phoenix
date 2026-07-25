@@ -69,7 +69,7 @@ export type FateOp = Record<string, unknown> & {id?: string};
  *   - `converge` — the op is NOT idempotent, so a replay could double-write. Supply the probe
  *     that answers "did it land?"; a landed write is adopted, an absent one is re-sent
  *     (#3942). This is the mode `user.setUsername` and `definition.add` need — the first
- *     rejects a re-set with `USERNAME_ALREADY_SET` (`Pasaport.setUsername` refuses once
+ *     rejects a re-set with `ALREADY_SET` (`Pasaport.setUsername` refuses once
  *     `user.username` is non-null), the second mints a new id per call.
  *
  * Declaring NEITHER means a stall surfaces — correct for an assertion the test wants to see,
