@@ -3007,6 +3007,33 @@ so a legitimate re-claim can land) — never a per-skill re-derivation. The verb
 superseded claims next to the resolved owner, so "why is a later claim the owner?" is answerable
 from the run log.
 
+### Pre-stamping markers — the one population supersession cannot reach
+
+Supersession needs a stamp to evaluate, so a marker written **before every writer stamped**
+(#3987, PR #4015) is permanently indeterminate: it wins the tiebreak forever, and re-claiming
+cannot help, because a fresh claim is by definition later than the one shadowing it. Every open
+issue holding such a marker is a lane no agent can repair — silently, until a dispatch hits the
+mis-attribution guard and (correctly) refuses (#4031).
+
+That population is **bounded** (it predates a fixed instant and only shrinks), so it is cleared
+by an audited cleanup, not by a resolution rule — the rules above are untouched, and a **stamped**
+claim is never a candidate whatever its age:
+
+```bash
+pipeline-cli claim audit                 # every open lane held by an unstamped marker, and which are retirable
+pipeline-cli claim audit --issue <N>     # the cheap single-lane read when a stall is already known
+pipeline-cli claim audit --execute       # retire the retirable ones through `claim release`
+```
+
+Retirement runs through **`claim release` under the marker's own token** — the one retraction
+mechanism, never a second — and touches a marker only when it is unstamped, predates the stamping
+cutoff, has aged past a safety margin, and is the only shape its session left on the lane. Every
+other unstamped marker is **reported and held**: an unstamped marker written *after* the cutoff is
+a degraded writer (`presence-io.ts` emits no stamp when it cannot read the process table or this
+machine's identity), not a legacy one, and may belong to a running agent. No margin *proves* a
+claimant is gone, so `--execute` stays an operator act on a report that names each session — never
+an automatic sweep, and never a TTL on the resolver.
+
 ### Repair dispatches thread the lane's claim token
 
 A **repair** dispatch is the class this contract is easiest to violate on: it lands on a lane

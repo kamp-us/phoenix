@@ -20,6 +20,13 @@ import {livenessByComment} from "../epic-lock/claim-presence.ts";
 import type {ClaimComment} from "../epic-lock/claim-resolution.ts";
 import {localPresence} from "../epic-lock/presence-io.ts";
 import {deleteCommentArgs} from "../tracker/gh-io.ts";
+import {
+	type AuditPolicy,
+	type AuditReport,
+	auditReport,
+	type LaneInput,
+	type LockedLane,
+} from "./claim-audit.ts";
 import {type ClaimVerdict, claimIsMine} from "./claim-is-mine.ts";
 import {type ReleasePlan, releasePlan} from "./claim-release.ts";
 import {type ClaimStatus, claimStatus} from "./claim-status.ts";
@@ -266,6 +273,91 @@ const status = Effect.fn("Github.status")(function* (repo: string, issue: number
 	return claimStatus({comments, authorizedAuthors: authorized, liveness});
 });
 
+/** An open-issue row; `pull_request` is how the issues endpoint marks the PRs it also returns. */
+const RawIssue = Schema.Struct({
+	number: Schema.Number,
+	comments: Schema.optionalKey(Schema.Number),
+	pull_request: Schema.optionalKey(Schema.Unknown),
+});
+const decodeIssues = Schema.decodeUnknownEffect(Schema.Array(RawIssue));
+
+const listOpenIssuesArgs = (repo: string): ReadonlyArray<string> => [
+	"api",
+	"--paginate",
+	`repos/${repo}/issues?state=open&per_page=100`,
+];
+
+/**
+ * The open issues that could carry a claim: PRs dropped (a claim lives on the issue), and so are
+ * issues with zero comments — a marker IS a comment, so that filter removes ~60% of the per-issue
+ * comment reads without changing the result.
+ */
+const auditScope = Effect.fn("Github.auditScope")(function* (repo: string) {
+	const rows = yield* decodeIssues(yield* json(listOpenIssuesArgs(repo)));
+	return rows
+		.filter((row) => row.pull_request === undefined && (row.comments ?? 0) > 0)
+		.map((row) => row.number);
+});
+
+/** How many issues' comments are read at once — bounded so a full scan can't burst the API. */
+const AUDIT_CONCURRENCY = 8;
+
+/**
+ * Audit the open lanes for pre-stamping claim holders, and — when `execute` is set — retire the
+ * ones the pure policy proved retirable.
+ *
+ * Two things are deliberate. The write+ author set and this machine's presence are each resolved
+ * **once** for the whole scan rather than per lane: the author probe is one REST call per distinct
+ * login, and `localPresence()` spawns `ioreg`/`ps`, so per-lane resolution would turn a hundred-lane
+ * scan into hundreds of subprocesses. And retirement calls the same `release` the `claim release`
+ * verb calls, under the marker's own token — one retraction mechanism, never a second (#3780).
+ */
+const audit = Effect.fn("Github.audit")(function* (
+	repo: string,
+	options: {
+		readonly issues: ReadonlyArray<number> | null;
+		readonly policy: AuditPolicy;
+		readonly execute: boolean;
+	},
+) {
+	const issues = options.issues ?? (yield* auditScope(repo));
+	const commentsByIssue = yield* Effect.forEach(
+		issues,
+		(issue) => listClaimComments(repo, issue).pipe(Effect.map((comments) => ({issue, comments}))),
+		{concurrency: AUDIT_CONCURRENCY},
+	);
+	const authors = [
+		...new Set(
+			commentsByIssue
+				.flatMap((lane) => lane.comments.map((c) => c.author))
+				.filter((a) => a.length > 0),
+		),
+	];
+	const authorized = yield* authorizedAuthors(repo, authors);
+	const local = localPresence();
+	const inputs = commentsByIssue.map(
+		(lane): LaneInput => ({
+			issue: lane.issue,
+			comments: lane.comments,
+			authorizedAuthors: authorized,
+			liveness: livenessByComment(lane.comments, local),
+		}),
+	);
+	const report = auditReport(inputs, options.policy);
+	if (!options.execute) return {report, retired: [] as ReadonlyArray<LockedLane>};
+	yield* Effect.forEach(report.retirable, (lane) => release(repo, lane.issue, lane.owner.session), {
+		concurrency: AUDIT_CONCURRENCY,
+		discard: true,
+	});
+	return {report, retired: report.retirable};
+});
+
+/** What an audit run produced: the blast-radius report, and the lanes retirement actually took. */
+export interface AuditResult {
+	readonly report: AuditReport;
+	readonly retired: ReadonlyArray<LockedLane>;
+}
+
 /**
  * `Github` — the IO shell over `gh api` REST behind the three `claim` verbs: `isMine`
  * (the default-deny `ClaimVerdict`), `release` (retract our own marker when the run is
@@ -296,6 +388,14 @@ export class Github extends Context.Service<
 			ClaimStatus,
 			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
 		>;
+		readonly audit: (options: {
+			readonly issues: ReadonlyArray<number> | null;
+			readonly policy: AuditPolicy;
+			readonly execute: boolean;
+		}) => Effect.Effect<
+			AuditResult,
+			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
+		>;
 	}
 >()("@kampus/claim/Github") {}
 
@@ -320,6 +420,7 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 				release: (issue: number, sessionId: string) =>
 					repo.pipe(Effect.flatMap((r) => withSpawner(release(r, issue, sessionId)))),
 				status: (issue: number) => repo.pipe(Effect.flatMap((r) => withSpawner(status(r, issue)))),
+				audit: (options) => repo.pipe(Effect.flatMap((r) => withSpawner(audit(r, options)))),
 			};
 		}),
 	);
