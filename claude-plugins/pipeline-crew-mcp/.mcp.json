@@ -1,0 +1,8 @@
+{
+	"mcpServers": {
+		"@kampus/pipeline-crew-mcp": {
+			"command": "node",
+			"args": ["${CLAUDE_PLUGIN_ROOT}/../../packages/pipeline-crew-mcp/src/bin.ts", "session"]
+		}
+	}
+}
