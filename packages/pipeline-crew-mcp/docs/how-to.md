@@ -20,10 +20,13 @@ so a well-placed addition needs no edits at those sites (see the
 [message-kind catalog](./reference.md#message-kind-catalog)).
 
 1. **Define the payload** in [`src/protocol/schema.ts`](../src/protocol/schema.ts) as an
-   `effect/Schema` `Struct`. Reuse the shared field types (`PeerId`, `RoleId`, `Timestamp`) so
+   `effect/Schema` `Struct`. Reuse the shared field types (`PeerId`, `RoleId`, `MessageId`) so
    the wire stays transport-agnostic; keep a role an opaque `RoleId` parameter, never a concrete
    crew-role noun (that boundary is what lets `tracker`/`peer`/`edge` code against the protocol
-   without importing `crew/`).
+   without importing `crew/`). **Give it no time field** — no sender-composed payload carries one
+   and `channel_send` rejects a body that does (ADR 0211). A time on a *reply* schema (step 2) is
+   a `StampedInstant` from [`src/protocol/instant.ts`](../src/protocol/instant.ts), filled by
+   whoever answers via `stampNow` / `stampFromMillis`, never by the caller.
 2. **Register the RPC** in [`src/protocol/group.ts`](../src/protocol/group.ts): add an
    `Rpc.make("<Tag>", { payload: … })`, and add a `success:` schema **only** if the kind expects
    a typed reply (an unset `success` defaults to `Schema.Void` — that split is what makes a kind

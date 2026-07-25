@@ -19,12 +19,17 @@ Every kind in the crew message catalog carried an `at: Timestamp` field, and `Ti
 language model composing JSON, so that field was filled in by *writing a timestamp into the
 payload*. Nothing read it off a clock.
 
-The consequences were exactly what you would predict of generated text in a field consumers read as
+The consequences were exactly what you would predict of generated text sitting where consumers read
 an observation, and #3895 caught all of them in one session:
 
-- **Plausible-but-wrong values.** Ack times drifted minutes, then hours, from wall clock across one
-  session — monotonic, accelerating, and surviving a server respawn. No process clock behaves that
-  way; a narrative being extended one message at a time does.
+- **Plausible-but-wrong values.** Ack times reported across one session drifted minutes, then hours,
+  from wall clock — monotonic, accelerating, and surviving a server respawn. No process clock behaves
+  that way; a narrative extended one message at a time does. This one takes an extra step, because
+  `InboxAck.at` was *not* a sender-composed payload field — the receiving peer stamped it with
+  `new Date().toISOString()`. That is what makes the reading conclusive rather than merely
+  suspicious: a real `new Date()` on a host with a correct clock cannot drift 9.5 hours, so the times
+  #3895 reports were never what the tool returned. They were composed somewhere between the ack and
+  the report — the same defect as the payload field, one layer up.
 - **Placeholders indistinguishable from readings.** A board comment carried `2026-07-24T00:00:00Z` —
   midnight to the second, obviously composed — sitting in a field consumers treat as an instant.
 - **No way to tell them apart.** A confabulated instant, a placeholder, and a real reading were the
