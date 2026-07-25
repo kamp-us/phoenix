@@ -442,61 +442,63 @@ CI logs; that is what makes a criterion's evidence *reproducible* rather than a 
 summary. The bundle is a verdict **input**, never a merge authority: you still verify each
 criterion and you still never merge.
 
-Fetch it the way the storage ADR fixed (inline `gh api` per 0056 — resolve the PR head SHA,
-find the `run-evidence` workflow run for *that exact SHA*, download its `run-evidence`
-artifact, read `manifest.json`). The **head-SHA filter is load-bearing**: a bundle from a
-stale earlier push is not evidence for this commit.
+Fetch it through the **one tested verb — never a hand-rolled `gh api` chain**:
+`pipeline-cli run-evidence read` (#3991) resolves the producer run for *that exact SHA*,
+downloads the artifact, and **validates it before interpreting it** (the ZIP magic bytes prove
+you received an archive and not a 503 error body; `schemaVersion` and
+`manifest.commit == HEAD_SHA` prove the manifest attests *this* head). The **head-SHA filter is
+load-bearing**: a bundle from a stale earlier push is not evidence for this commit.
 
 ```bash
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')"
-# the run-evidence workflow run for THIS exact head SHA (newest wins), never just "latest on branch"
-RUN_ID="$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
-  --jq '[.workflow_runs[] | select(.name=="run-evidence")] | sort_by(.created_at) | last | .id')"
-BUNDLE_DIR="$(mktemp -d)/run-evidence-${PR}"; MANIFEST=""
-if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-  ART_ID="$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
-    --jq '.artifacts[] | select(.name=="run-evidence") | .id' | head -1)"
-  if [ -n "$ART_ID" ]; then
-    mkdir -p "$BUNDLE_DIR"
-    gh api "repos/$REPO/actions/artifacts/$ART_ID/zip" > "$BUNDLE_DIR/run-evidence.zip" \
-      && unzip -o -q "$BUNDLE_DIR/run-evidence.zip" -d "$BUNDLE_DIR" \
-      && [ -f "$BUNDLE_DIR/manifest.json" ] && MANIFEST="$BUNDLE_DIR/manifest.json"
-  fi
-fi
+# Exit 0 means `present` — a validated, head-bound bundle. Every other state comes back on stdout
+# as JSON, so read the state rather than branching on the exit alone.
+BUNDLE="$(pipeline-cli run-evidence read --pr "$PR")" || true
+BUNDLE_STATE="$(jq -r '.state' <<<"$BUNDLE")"     # present | pending | absent | unknown
+BUNDLE_LINE="$(jq -r '.reportLine' <<<"$BUNDLE")" # the verdict line, evidence already in it
 ```
 
-When `$MANIFEST` is present, read its structured results (ADR 0054 §2 fields, `schemaVersion`
-the JSON number `1` — `Schema.Number`, not a string; compare numerically if you assert on it):
-`checks[]` is each gate step (`{name, status: pass|fail, exitCode}`), `tests` is the
-folded JUnit summary (`{total, passed, failed, skipped, failures[]}`, each failure
-`{suite, name, message}`):
+When the state is `present`, `.manifest` carries the structured results (ADR 0054 §2 fields):
+`checks[]` is each gate step (`{name, status: pass|fail}`), `tests` is the folded JUnit summary
+(`{total, passed, failed, skipped, failingSuites[]}`).
 
 ```bash
-[ -n "$MANIFEST" ] && jq '{
-  commit, schemaVersion,
-  checks: [.checks[] | {name, status}],
-  tests: {total: .tests.total, passed: .tests.passed, failed: .tests.failed, skipped: .tests.skipped,
-          failing_suites: [.tests.failures[] | "\(.suite) › \(.name)"]}
-}' "$MANIFEST"
+[ "$BUNDLE_STATE" = present ] && jq '.manifest | {commit, schemaVersion, checks, tests}' <<<"$BUNDLE"
 ```
 
 Cite those numbers as the evidence for any criterion they speak to — "lint/typecheck/unit
 all `pass` per the bundle's `checks[]`", "`tests`: 47 passed / 0 failed (bundle for
 `<short-sha>`)", or on a miss the named failing suites — rather than re-deriving them from a
-log scrape. **Sanity-check `manifest.commit == HEAD_SHA`**; the producer stamps it, but a
-mismatch means the bundle is not for this commit — treat it as absent (below).
+log scrape. The verb has already asserted `manifest.commit == HEAD_SHA` and the schema version, so
+a `present` state *is* the sanity check; don't re-derive it.
 
-**Degrade gracefully — a missing bundle is never an error.** If no `run-evidence` run exists
-for the head SHA, the artifact is absent/expired (GitHub expires run artifacts; 0056), the
-download fails, or `manifest.commit != HEAD_SHA`, then `$MANIFEST` is empty: **note the
-bundle's absence in the verdict and fall back to the current behavior** — verify the criteria
-from the diff, the tests you run in the review worktree above, and the PR's checks the
-ordinary way. Do **not** fail the gate, refuse to review, or block on the bundle: it
-*strengthens* evidence when present; its absence costs only reproducibility, not the review.
+**Degrade gracefully — but report WHICH state you observed. A pending or unreadable bundle is
+not an absent one (#3991).** Three of the four states are non-`present`, they are **different
+facts**, and reporting any of them as "absent" is a false claim about the PR:
+
+- **`pending`** — the producer exists but has published nothing for this head *yet* (no run at the
+  head, or a run still in flight). This says nothing about the PR; calling it absent invents a CI
+  gap (PR #3913: the verdict posted 11 minutes before the producer's only run at that head was
+  even created).
+- **`absent`** — positive evidence the producer yielded nothing: no `run-evidence` workflow in the
+  repo, a run that **completed** and published no artifact, or an expired artifact.
+- **`unknown`** — the lookup could not be read (a 5xx after retries, a non-archive payload, a
+  non-conforming response, a `gh` non-zero exit). A failed read is **not** a missing bundle; the
+  same distinction `ship-it` Step 3.5 draws between `unverified-transient` and `no bundle`.
+
+On any non-`present` state, **paste `$BUNDLE_LINE` verbatim into the verdict** — it already names
+the state, the queried head, the producer run id (or an explicit zero-runs result) and the artifact
+id, so the claim is falsifiable from the comment alone — then fall back to verifying the criteria
+from the diff, the tests you run in the review worktree above, and the PR's checks the ordinary
+way. Do **not** fail the gate, refuse to review, or block on the bundle: it *strengthens* evidence
+when present; its absence costs only reproducibility, not the review. And never write the state as
+free prose: a rationale you did not read off the lookup ("skipped by change-detection" — a
+mechanism `.github/workflows/run-evidence.yml` does not have) is the confabulated-verified-claim
+class ADR [0152](https://github.com/kamp-us/phoenix/blob/main/.decisions/0152-confabulation-guardrail-and-resume-cap.md) forbids.
 
 **But fail closed on the test surface (ADR [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)) — a `PASS` must never be reachable on a strictly-narrower
-test surface than the change's blast radius.** When the bundle degrades and you fall back to
-running tests in the review worktree, the SHA-bound proof of *what CI ran* is gone, so a
+test surface than the change's blast radius.** On any non-`present` state you fall back to
+running tests in the review worktree, and the SHA-bound proof of *what CI ran* is gone, so a
 feature-scoped run (`--project unit <feature-path>`) can miss a **cross-cutting contract
 test** that lives outside the changed feature's cone — e.g. a new server-emittable wire code
 has repo-wide contract blast radius against `apps/web/worker/features/fate/wireCodes.unit.test.ts`
@@ -1419,8 +1421,8 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 - [PASS] <criterion 2> — <evidence>
 - …
 
-Run-evidence bundle: <one of — "cited for `<short-sha>`: checks all pass; tests 47/0/2
-(passed/failed/skipped)" | "absent for this head SHA — verified from diff + worktree run">.
+<$BUNDLE_LINE — the `Run-evidence bundle:` line from `run-evidence read`, pasted verbatim; on a
+non-`present` state append "— verified from diff + worktree run">
 
 Read the PR head (§HEAD): all files under review sourced from `<HEAD_SHA>` via `$REVIEW_WT` /
 `git show "$PR_REF:<path>"`, never the launched checkout's working copy.
@@ -1526,7 +1528,7 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time —
 - [PASS] <criterion 1> — <evidence>
 - [PASS] <criterion 2> — <evidence>
 
-Run-evidence bundle: <cited for `<short-sha>` | absent — verified from diff + worktree run>.
+<$BUNDLE_LINE, pasted verbatim; on a non-`present` state append "— verified from diff + worktree run">
 ```
 
 ---
@@ -1594,8 +1596,9 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 - [FAIL] <criterion 2> — asked <X>, but the PR <does Y / does nothing>; <pointer>
 - [UNVERIFIABLE] <criterion 3> — <why it can't be confirmed; what'd make it checkable>
 
-Run-evidence bundle: <one of — "cited for `<short-sha>`: tests 45/2/0 — failing suites:
-`<suite › name>`, …" | "absent for this head SHA — verified from diff + worktree run">.
+<$BUNDLE_LINE, pasted verbatim — it already names the failing suites on a `present` state; on a
+non-`present` state append "— verified from diff + worktree run">
+
 
 Failing criteria above must be addressed before this PR can merge. The PR stays open
 and unmerged; #<ISSUE> stays open and assigned. Re-request review once the failing
