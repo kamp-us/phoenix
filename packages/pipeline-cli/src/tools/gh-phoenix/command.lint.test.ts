@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // `pipeline-cli gh-phoenix lint-skills` is the CI grep-lint surface (the gh-shim role
 // stays served by the old package's bin until #1003 rewires the PATH shim).
@@ -64,7 +65,9 @@ const SKILL_BROKEN_FRONTMATTER = [
 	"# sample",
 ].join("\n");
 
-describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
+describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	let dir: string;
 	// Write under a `skills/<name>/SKILL.md` path so the frontmatter check scopes it.
 	const writeSkill = (name: string, content: string): string => {
@@ -91,7 +94,7 @@ describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 		const {code, stderr} = await run(["lint-skills", f]);
 		assert.strictEqual(code, 3);
 		assert.include(stderr, "zero");
-	}, 30_000);
+	});
 
 	it("exits 2 and reports the finding on a GraphQL-path gh call", async () => {
 		const f = writeSkill("dirty", SKILL_WITH_GH_CALL);
@@ -99,7 +102,7 @@ describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 		assert.strictEqual(code, 2);
 		assert.include(stderr, "gh project");
 		assert.include(stdout, "scanned 1 file");
-	}, 30_000);
+	});
 
 	it("exits 2 and reports the finding on invalid YAML frontmatter (#1766)", async () => {
 		const f = writeSkill("broken-fm", SKILL_BROKEN_FRONTMATTER);
@@ -107,7 +110,7 @@ describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 		assert.strictEqual(code, 2);
 		assert.include(stderr, "invalid YAML frontmatter");
 		assert.include(stdout, "frontmatter check scanned 1 file");
-	}, 30_000);
+	});
 
 	it("exits 0 and emits both checks' scope on a clean skill file", async () => {
 		const f = writeSkill("clean", VALID_SKILL);
@@ -116,11 +119,11 @@ describe("lint-skills CLI — fail-closed exit contract (ADR 0092)", () => {
 		assert.include(stdout, "gh-call scan scanned 1 file");
 		assert.include(stdout, "frontmatter check scanned 1 file");
 		assert.include(stdout, "clean");
-	}, 30_000);
+	});
 
 	it("exits 3 (zero-scope FAIL) when every file is unreadable/missing", async () => {
 		const {code, stderr} = await run(["lint-skills", join(dir, "does-not-exist.md")]);
 		assert.strictEqual(code, 3);
 		assert.include(stderr, "zero");
-	}, 30_000);
+	});
 });

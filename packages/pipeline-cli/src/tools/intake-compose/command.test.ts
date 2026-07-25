@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // The exit + stdout contract of `pipeline-cli intake-compose sub-issue` over the shared bin.
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
@@ -30,7 +31,9 @@ const validSpec = {
 	acceptanceCriteria: ["A verb emits a format-2 body.", "Consumers cite the verb."],
 };
 
-describe("intake-compose sub-issue — leak-safe stdout handoff (AC3)", () => {
+describe("intake-compose sub-issue — leak-safe stdout handoff (AC3)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	let dir: string;
 	beforeAll(() => {
 		dir = mkdtempSync(join(tmpdir(), "intake-compose-"));
@@ -49,13 +52,13 @@ describe("intake-compose sub-issue — leak-safe stdout handoff (AC3)", () => {
 		assert.include(stdout, "### What to build");
 		assert.include(stdout, "### Acceptance criteria");
 		assert.include(stdout, "- [ ] A verb emits a format-2 body.");
-	}, 30_000);
+	});
 
 	it("reads the spec from stdin when --spec is omitted", () => {
 		const {code, stdout} = run(["sub-issue"], JSON.stringify(validSpec));
 		assert.strictEqual(code, 0);
 		assert.include(stdout, "### Acceptance criteria");
-	}, 30_000);
+	});
 
 	// The whole point: the body is emitted BY VALUE to stdout, so a caller passes it
 	// as `-f body="$BODY"` — no file path is ever handed back to `@`-reference.
@@ -66,7 +69,7 @@ describe("intake-compose sub-issue — leak-safe stdout handoff (AC3)", () => {
 		assert.notMatch(stdout, /(^|\s)@[/~]/);
 		// The spec file path itself must not appear in the emitted body.
 		assert.notInclude(stdout, f);
-	}, 30_000);
+	});
 
 	it("exits 2 on zero acceptance criteria (the format-2 hard floor)", () => {
 		const f = join(dir, "no-ac.json");
@@ -74,7 +77,7 @@ describe("intake-compose sub-issue — leak-safe stdout handoff (AC3)", () => {
 		const {code, stderr} = run(["sub-issue", "--spec", f]);
 		assert.strictEqual(code, 2);
 		assert.include(stderr, "acceptance criterion");
-	}, 30_000);
+	});
 
 	it("exits 2 on malformed JSON", () => {
 		const f = join(dir, "bad.json");
@@ -82,5 +85,5 @@ describe("intake-compose sub-issue — leak-safe stdout handoff (AC3)", () => {
 		const {code, stderr} = run(["sub-issue", "--spec", f]);
 		assert.strictEqual(code, 2);
 		assert.include(stderr, "valid JSON");
-	}, 30_000);
+	});
 });

@@ -26,6 +26,7 @@ import {tmpdir} from "node:os";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterEach, assert, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "./test-budget.ts";
 
 const repoPath = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
 
@@ -100,7 +101,7 @@ const cleanEnv = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => {
 	return env;
 };
 
-describe("bin/pipeline-cli shim resolution (#3653)", () => {
+describe("bin/pipeline-cli shim resolution (#3653)", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	const dirs: string[] = [];
 	const track = <T extends string>(d: T): T => {
 		dirs.push(d);
@@ -159,7 +160,9 @@ describe("bin/pipeline-cli shim resolution (#3653)", () => {
 	});
 });
 
-describe("the single source stays single (#3653, the reshaped #3452 guard)", () => {
+describe("the single source stays single (#3653, the reshaped #3452 guard)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	// Every skill/hook re-fetch of the version must go through the shim; a hardcoded pinned
 	// `@kampus/pipeline-cli@<digits>` anywhere in the plugin tree is the exact duplication #3653
 	// deleted. `@latest` (README install docs) and the shim's own `@<v>`/`@<pin>` prose are not

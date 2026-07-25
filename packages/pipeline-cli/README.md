@@ -75,6 +75,10 @@ pnpm --filter @kampus/pipeline-cli test
 pnpm --filter @kampus/pipeline-cli build
 ```
 
+A test that spawns the real bin, a hook script, or `git` declares
+`{timeout: SUBPROCESS_TEST_TIMEOUT_MS}` on its `describe` — see
+[`src/test-budget.ts`](https://github.com/kamp-us/phoenix/blob/main/packages/pipeline-cli/src/test-budget.ts).
+
 ## License
 
 MIT.

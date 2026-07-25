@@ -13,6 +13,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // The fail-closed exit contract of `pipeline-cli adoption-lint check` over the shared bin.
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
@@ -69,7 +70,9 @@ const corpusFiles = (): string[] => {
 	return out;
 };
 
-describe("adoption-lint check — fail-closed exit contract (ADR 0092)", () => {
+describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	let dir: string;
 	const writeCorpus = (name: string, content: string): string => {
 		const d = join(dir, "skills", name);
@@ -92,7 +95,7 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", () => {
 		assert.strictEqual(code, 2);
 		assert.include(stdout, "scanned 1 corpus file");
 		assert.include(stderr, "inline re-derivation");
-	}, 30_000);
+	});
 
 	// The green-corpus assertion CI depends on: over the FULL live corpus (the exact set
 	// the adoption-lint.yml job hands the tool), the seeded manifest is clean — every
@@ -105,7 +108,7 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", () => {
 		const {code, stdout, stderr} = await run(["check", ...corpus]);
 		assert.strictEqual(code, 0, `adoption-lint red on the live corpus:\n${stdout}\n${stderr}`);
 		assert.include(stdout, "clean");
-	}, 60_000);
+	});
 
 	// #3987: the corpus-side half of "every claim writer stamps presence". A writer that composes a
 	// `claim:` body by hand skips the ADR-0191 stamp, and an unstamped marker is indeterminate
@@ -165,5 +168,5 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", () => {
 		const {code, stderr} = await run(["check", join(dir, "does-not-exist.md")]);
 		assert.strictEqual(code, 3);
 		assert.include(stderr, "zero scope");
-	}, 30_000);
+	});
 });

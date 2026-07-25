@@ -1,6 +1,7 @@
 import {execFile} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // `pipeline-cli spawn-guard <subcommand>` is the harness-event surface.
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
@@ -42,26 +43,28 @@ const envelope = (model: string | null): string =>
 		tool_input: model === null ? {prompt: "x"} : {prompt: "x", model},
 	});
 
-describe("spawn-guard guard CLI — PreToolUse envelope", () => {
+describe("spawn-guard guard CLI — PreToolUse envelope", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("ALLOWS an allowlisted requested model", async () => {
 		const {stdout} = await run(["guard"], envelope("claude-opus-4-8"));
 		const out = JSON.parse(stdout);
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
 		assert.notProperty(out.hookSpecificOutput, "updatedInput");
-	}, 30_000);
+	});
 
 	it("ALLOWS an explicit `opus` harness alias — the model param the caller actually passes (#2565)", async () => {
 		const {stdout} = await run(["guard"], envelope("opus"));
 		const out = JSON.parse(stdout);
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
 		assert.notProperty(out.hookSpecificOutput, "updatedInput");
-	}, 30_000);
+	});
 
 	it("DENIES an off-family alias (`sonnet`) — fail-closed on the caller's vocabulary too (ADR 0092)", async () => {
 		const {stdout} = await run(["guard"], envelope("sonnet"));
 		const out = JSON.parse(stdout);
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "deny");
-	}, 30_000);
+	});
 
 	it("DENIES an off-allowlist model with no pin and emits what it checked (ADR 0092)", async () => {
 		const {stdout} = await run(["guard"], envelope("claude-fable-5"));
@@ -69,7 +72,7 @@ describe("spawn-guard guard CLI — PreToolUse envelope", () => {
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "deny");
 		assert.include(out.hookSpecificOutput.permissionDecisionReason, "allowlist=[");
 		assert.include(out.hookSpecificOutput.permissionDecisionReason, "claude-fable-5");
-	}, 30_000);
+	});
 
 	it("ALLOWS an unset model with NO env pin via the committed default (#943: durable, shell-independent)", async () => {
 		// The runner strips WORKFLOW_MODEL (see `run`), so this exercises the fresh-clone / CI /
@@ -79,21 +82,21 @@ describe("spawn-guard guard CLI — PreToolUse envelope", () => {
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
 		assert.notProperty(out.hookSpecificOutput, "updatedInput");
 		assert.include(out.systemMessage, "committed default pin");
-	}, 30_000);
+	});
 
 	it("ALLOWS an unset model with an allowlisted pin WITHOUT rewriting it (#776: inherit the session model — the Task tool's `model` accepts only short names, so injecting the full pin id failed the schema and blocked every spawn)", async () => {
 		const {stdout} = await run(["guard"], envelope(null), {WORKFLOW_MODEL: "claude-opus-4-8"});
 		const out = JSON.parse(stdout);
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
 		assert.notProperty(out.hookSpecificOutput, "updatedInput");
-	}, 30_000);
+	});
 
 	it("DENIES even with a pin set when the pin itself is off-allowlist", async () => {
 		const {stdout} = await run(["guard"], envelope("claude-fable-5"), {
 			WORKFLOW_MODEL: "claude-sonnet-4-6",
 		});
 		assert.strictEqual(JSON.parse(stdout).hookSpecificOutput.permissionDecision, "deny");
-	}, 30_000);
+	});
 
 	it("DENIES an explicit off-allowlist model even when the pin is allowlisted (#776: the pin can't rewrite it in)", async () => {
 		const {stdout} = await run(["guard"], envelope("claude-fable-5"), {
@@ -106,10 +109,12 @@ describe("spawn-guard guard CLI — PreToolUse envelope", () => {
 			out.hookSpecificOutput.permissionDecisionReason,
 			"explicit model claude-fable-5",
 		);
-	}, 30_000);
+	});
 });
 
-describe("spawn-guard statusline CLI — statusLine payload", () => {
+describe("spawn-guard statusline CLI — statusLine payload", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("renders model · cost · tokens from a Claude Code statusLine payload", async () => {
 		const payload = JSON.stringify({
 			model: {id: "claude-opus-4-8"},
@@ -117,21 +122,23 @@ describe("spawn-guard statusline CLI — statusLine payload", () => {
 		});
 		const {stdout} = await run(["statusline"], payload);
 		assert.strictEqual(stdout.trim(), "claude-opus-4-8 · $0.42 · 31.0K tok");
-	}, 30_000);
+	});
 
 	it("degrades to 'cost n/a' on an empty/garbage frame (never blanks the statusline)", async () => {
 		const {stdout, code} = await run(["statusline"], "not json");
 		assert.strictEqual(code, 0);
 		assert.strictEqual(stdout.trim(), "cost n/a");
-	}, 30_000);
+	});
 });
 
-describe("spawn-guard freshness CLI — SessionStart freshness check (#835)", () => {
+describe("spawn-guard freshness CLI — SessionStart freshness check (#835)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("stays SILENT (exit 0, no output) on a healthy tree where the runtime dep resolves", async () => {
 		// This tree has run pnpm install, so @effect/platform-node resolves → no signal.
 		const {stdout, stderr, code} = await run(["freshness"], "");
 		assert.strictEqual(code, 0);
 		assert.strictEqual(stdout.trim(), "");
 		assert.strictEqual(stderr.trim(), "");
-	}, 30_000);
+	});
 });

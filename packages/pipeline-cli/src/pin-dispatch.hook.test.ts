@@ -21,6 +21,7 @@ import {tmpdir} from "node:os";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterEach, assert, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "./test-budget.ts";
 import {VERSION} from "./version.ts";
 
 const repoPath = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
@@ -67,7 +68,9 @@ const runGuard = (data: string, ...argv: string[]): RunResult => {
 	return {code: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? ""};
 };
 
-describe("guard.sh readiness is a VERSION check, not an executability check (#3742)", () => {
+describe("guard.sh readiness is a VERSION check, not an executability check (#3742)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	const dirs: string[] = [];
 	const dataDir = (marker: string | null) => {
 		const d = dataDirWith({marker});
@@ -139,7 +142,9 @@ describe("guard.sh readiness is a VERSION check, not an executability check (#37
 	});
 });
 
-describe("the dispatched build carries ADR 0172's isolation guard (#3742 AC3)", () => {
+describe("the dispatched build carries ADR 0172's isolation guard (#3742 AC3)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	// Links 1–2 of the chain: the version guard.sh admits is the version this workspace builds
 	// and publishes. Without this a pin bump could point at a version whose source is something
 	// else entirely, and the marker comparison would attest nothing.

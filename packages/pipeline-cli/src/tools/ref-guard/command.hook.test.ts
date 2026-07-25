@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 import {REFUSE_EXIT_CODE} from "./command.ts";
 
 // `pipeline-cli ref-guard reference-transaction <state>` reads git's ref-update lines
@@ -11,13 +12,6 @@ import {REFUSE_EXIT_CODE} from "./command.ts";
 // grounding the guard's behavior in actual git `reference-transaction` semantics, not a
 // modeled stub (CLAUDE.md: ground platform-behavior claims in the real platform).
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
-
-// Every test here spawns `node bin.ts` through a REAL git ref-transaction, and git ≥ 2.45 (CI/prod
-// runs 2.55) fires the `reference-transaction` hook once per state (preparing/prepared/committed) AND
-// again for the AUTO_MERGE ref of a `checkout` — several node cold-starts per git op. On CI that blows
-// vitest's 5000ms default (the #2415 timeouts). A generous suite-level timeout keeps the real-git
-// tripwires green on the deployed git without weakening what they assert.
-const HOOK_TEST_TIMEOUT = 60_000;
 
 interface RunResult {
 	readonly code: number;
@@ -102,7 +96,9 @@ afterAll(() => {
 	if (root) rmSync(root, {recursive: true, force: true});
 });
 
-describe("ref-guard reference-transaction — real git facts", {timeout: HOOK_TEST_TIMEOUT}, () => {
+describe("ref-guard reference-transaction — real git facts", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("REFUSES a diverging refs/heads/main move (non-fast-forward of origin/main) in 'prepared'", async () => {
 		const stdin = `${fx.base} ${fx.divergent} refs/heads/main\n`;
 		const {code, stderr} = await runGuard("prepared", stdin, fx.dir);
@@ -163,7 +159,7 @@ describe("ref-guard reference-transaction — real git facts", {timeout: HOOK_TE
 // incident's `branch: Reset to HEAD` was a checkout-B/reset on the checked-out branch, of
 // which update-ref is the minimal ref-transaction form.
 describe("ref-guard — installed reference-transaction hook fires on a BARE git ref-move (no pipeline command)", {
-	timeout: HOOK_TEST_TIMEOUT,
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
 	// Mirror the lefthook.yml wiring EXACTLY: `|| status=$?` (never a bare call, so an
 	// inherited `set -e` can't abort as a side effect) + abort ONLY on the dedicated refuse

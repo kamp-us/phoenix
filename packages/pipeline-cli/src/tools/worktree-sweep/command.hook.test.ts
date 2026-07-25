@@ -19,6 +19,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
 
@@ -56,7 +57,9 @@ const runSweep = (
 const LIVE_SID = "11111111-1111-4111-8111-111111111111";
 const DEAD_SID = "22222222-2222-4222-8222-222222222222";
 
-describe("worktree-sweep --execute — SessionStart cadence against a REAL git repo (#2238/#2240)", () => {
+describe("worktree-sweep --execute — SessionStart cadence against a REAL git repo (#2238/#2240)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	let mainRepo: string;
 	/** A `$CLAUDE_CONFIG_DIR` holding a `sessions/` registry with exactly one live entry (#3943). */
 	let configDir: string;
@@ -151,7 +154,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 
 		// unlock so afterAll's rmSync can tear the tree down cleanly.
 		git(mainRepo, "worktree", "unlock", lockedWt);
-	}, 30_000);
+	});
 
 	it("reclaims a leaked review-head detached checkout but KEEPS a dirty one (never --force) — #2785", async () => {
 		// The review gates root these under $TMPDIR (outside .claude/worktrees), so mirror that:
@@ -180,7 +183,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 			existsSync(join(dirtyReviewWt, "scratch.txt")),
 			"the dirty review-head's scratch file must survive — remove runs without --force",
 		);
-	}, 30_000);
+	});
 
 	it("dry-run (no --execute) touches nothing — even a clean+idle+unlocked orphan", async () => {
 		const keepWt = join(mainRepo, ".claude", "worktrees", "wf_dryrun");
@@ -190,7 +193,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		const {code} = await runSweep(mainRepo, [], sweepEnv);
 		assert.strictEqual(code, 0);
 		assert.isTrue(existsSync(keepWt), "dry-run must never remove a worktree");
-	}, 30_000);
+	});
 
 	// The #3943 regression, end to end: the shipper-shaped state that got two LIVE worktrees removed
 	// — clean, content-merged, unlocked, and mtime-idle — must survive purely because its owning
@@ -281,7 +284,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		assert.isTrue(listsPath(liveWt), "the present unmerged tree stays registered");
 
 		git(mainRepo, "worktree", "remove", "--force", liveWt);
-	}, 30_000);
+	});
 
 	it("dry-run leaves gone-dir metadata in place (nothing pruned without --execute)", async () => {
 		const goneWt = join(mainRepo, ".claude", "worktrees", "wf_gone_dry");
@@ -291,5 +294,5 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		assert.strictEqual(code, 0);
 		assert.isTrue(listsPath(goneWt), "dry-run must not prune gone-dir metadata");
 		git(mainRepo, "worktree", "prune"); // clean up the fixture's stale metadata
-	}, 30_000);
+	});
 });

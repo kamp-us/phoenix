@@ -1,6 +1,7 @@
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // The stdin/exit contract of `pipeline-cli class-probe classify` over the shared bin. The #3786
 // exposure is an IO/stdin-delivery fact (an empty read must not read as a gate-free PR), so it is
@@ -29,7 +30,9 @@ const EMPTY_SHAPES: ReadonlyArray<readonly [string, string]> = [
 	["closed stdin <&-", `${INNER} <&-`],
 ];
 
-describe("class-probe classify — empty stdin fails closed to review-code, never an empty set (#3786)", () => {
+describe("class-probe classify — empty stdin fails closed to review-code, never an empty set (#3786)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	for (const [name, cmd] of EMPTY_SHAPES) {
 		it(`${name}: emits review-code (has-code), never an empty required-gate set`, () => {
 			const {code, stdout, stderr} = runSh(cmd);

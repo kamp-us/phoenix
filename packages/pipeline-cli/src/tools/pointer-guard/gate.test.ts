@@ -13,6 +13,7 @@ import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, type FileSystem, type Path} from "effect";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 import {type CheckFailed, checkPointers, scanStalePointers} from "./gate.ts";
 
 // The gate Effects require the `FileSystem | Path` seam (v4 platform migration, #3469);
@@ -36,7 +37,7 @@ const makeRepo = (files: Record<string, string>): string => {
 	return dir;
 };
 
-describe("scanStalePointers", () => {
+describe("scanStalePointers", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	it("flags a dead backticked pointer, ignores a live one + non-path tokens", async () => {
 		const dir = makeRepo({
 			"CLAUDE.md": [
@@ -55,7 +56,7 @@ describe("scanStalePointers", () => {
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
 		}
-	}, 30_000);
+	});
 
 	it("scans a nested CLAUDE.md too (consuming-repo per-app file)", async () => {
 		const dir = makeRepo({
@@ -72,7 +73,7 @@ describe("scanStalePointers", () => {
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
 		}
-	}, 30_000);
+	});
 
 	it("treats a gitignored pointer as resolved (a deliberately-absent runtime file)", async () => {
 		const dir = makeRepo({
@@ -86,7 +87,7 @@ describe("scanStalePointers", () => {
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
 		}
-	}, 30_000);
+	});
 
 	it("ignores an UNTRACKED CLAUDE.md (git-tracked boundary)", async () => {
 		const dir = makeRepo({"CLAUDE.md": "ok `apps/web/real.ts`", "apps/web/real.ts": "ok"});
@@ -97,10 +98,10 @@ describe("scanStalePointers", () => {
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
 		}
-	}, 30_000);
+	});
 });
 
-describe("checkPointers", () => {
+describe("checkPointers", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	it("succeeds (no failure) on a clean repo", async () => {
 		const dir = makeRepo({"CLAUDE.md": "`apps/web/real.ts`", "apps/web/real.ts": "ok"});
 		try {
@@ -109,7 +110,7 @@ describe("checkPointers", () => {
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
 		}
-	}, 30_000);
+	});
 
 	it("fails CheckFailed with a report on a stale pointer", async () => {
 		const dir = makeRepo({"CLAUDE.md": "dead `apps/web/gone.ts`"});
@@ -124,7 +125,7 @@ describe("checkPointers", () => {
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
 		}
-	}, 30_000);
+	});
 
 	it("fails CheckFailed (fail-closed, ADR 0092) when zero CLAUDE.md are in scope", async () => {
 		const dir = makeRepo({"README.md": "no CLAUDE.md here `apps/web/gone.ts`"});
@@ -134,5 +135,5 @@ describe("checkPointers", () => {
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
 		}
-	}, 30_000);
+	});
 });

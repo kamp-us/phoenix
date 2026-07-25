@@ -1,6 +1,7 @@
 import {execFile} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // `pipeline-cli structured-output-guard <verb>` is the orchestrator-callable surface.
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
@@ -31,31 +32,31 @@ const SCHEMA = {required: ["issue", "prUrl", "notes"]};
 const OK = {issue: 742, prUrl: "u", notes: "n"};
 const BAD = {issue: 742};
 
-describe("decide CLI — exit-code routing", () => {
+describe("decide CLI — exit-code routing", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	it("exits 0 (accept) on a conforming payload", async () => {
 		const {code} = await run("decide", {payload: OK, schema: SCHEMA, retryCount: 0});
 		assert.strictEqual(code, 0);
-	}, 30_000);
+	});
 
 	it("exits 2 (retry) on a miss with budget remaining, carrying the rich diff", async () => {
 		const {code, stdout} = await run("decide", {payload: BAD, schema: SCHEMA, retryCount: 0});
 		assert.strictEqual(code, 2);
 		assert.include(stdout, "prUrl");
 		assert.include(stdout, "notes");
-	}, 30_000);
+	});
 
 	it("exits 1 (fail) on a miss at the cap", async () => {
 		const {code} = await run("decide", {payload: BAD, schema: SCHEMA, retryCount: 2});
 		assert.strictEqual(code, 1);
-	}, 30_000);
+	});
 });
 
-describe("prompt CLI — schema section", () => {
+describe("prompt CLI — schema section", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	it("renders the schema section with every required field", async () => {
 		const {code, stdout} = await run("prompt", {schema: SCHEMA, example: OK});
 		assert.strictEqual(code, 0);
 		assert.include(stdout, "issue");
 		assert.include(stdout, "prUrl");
 		assert.include(stdout, "StructuredOutput");
-	}, 30_000);
+	});
 });
