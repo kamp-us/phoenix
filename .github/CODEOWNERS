@@ -10,6 +10,11 @@
 # ADR 0135 and ADR 0071 §3).
 /.claude/                       @kamp-us/control-plane
 /.github/                       @kamp-us/control-plane
+# Control-plane: the root marketplace manifest — it declares what the `kampus` marketplace
+# serves and each plugin's `source` tree, so it governs DELIVERY of the control-plane plugin.
+# The §CP `^\.claude-plugin/` branch; root-anchored, so nested plugin.json files are NOT
+# owned here (ADR 0212, #3933).
+/.claude-plugin/                @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/ship-it/                    @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/review-code/                @kamp-us/control-plane
 /claude-plugins/kampus-pipeline/skills/review-doc/                 @kamp-us/control-plane

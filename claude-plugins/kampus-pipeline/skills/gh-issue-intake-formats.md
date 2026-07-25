@@ -1355,6 +1355,21 @@ closing the #375 drift class).
 
 - `.claude/**` — the agent control plane (instructions, tools, hooks).
 - `.github/**` — CI enforcement.
+- `.claude-plugin/**` — the **root marketplace manifest** (`marketplace.json`), which declares
+  what the `kampus` marketplace serves and where each plugin's `source` tree is. It governs
+  **delivery of the control plane itself**: the `kampus-pipeline` entry is how the gate-critical
+  skills and the pipeline agents reach a session, and `validate-gate-path-drift.sh` Invariant 2
+  resolves the `.claude/skills` symlink against this file's `source` field. An unreviewed edit
+  here can redirect which tree the gates are loaded from — a self-weakening surface by ADR 0187's
+  enforcement-surface test, even though nothing under it is itself a guard (ADR
+  [0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md), #3933).
+  It needs its **own** `^\.claude-plugin/` branch: the `^(\.claude|\.github)/` branch requires a
+  literal `/` after `.claude`, and the next character here is a hyphen, so it never matched.
+
+  **Deliberately OUT — every NESTED `.claude-plugin/` dir** (`claude-plugins/*/.claude-plugin/plugin.json`).
+  The branch is root-anchored: an un-anchored form would also sweep in `claude-plugins/pipeline-crew/`,
+  whose corpus a live founder ruling keeps out of §CP (#3765). `kampus-pipeline`'s own `plugin.json`
+  is a genuine sibling gap — file it, don't widen the anchor by hand (ADR 0212 Consequences).
 - the **gate-critical skills** — the verification/merge machinery plus the shared marker
   contract they all depend on:
   - `claude-plugins/kampus-pipeline/skills/ship-it/**`
@@ -1464,7 +1479,11 @@ since a gate/merge agent's own instructions are a self-weakening surface; the **
 were escaping the boundary; the **lint/GritQL governance config** — `biome.jsonc` and
 `biome-plugins/**` — added by ADR
 [0193](https://github.com/kamp-us/phoenix/blob/main/.decisions/0193-lint-governance-config-is-control-plane.md),
-since an ungated path to weaken a lint rule is a guard-relaxing vector). Everything else — `apps/**`,
+since an ungated path to weaken a lint rule is a guard-relaxing vector; the **root marketplace
+manifest** — `.claude-plugin/**` — added by ADR
+[0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md),
+since the file that decides what the control-plane plugin *delivers* is itself control plane).
+Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
 clause below), `.patterns/**`, every prose doc `*.md` (the
 §DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
@@ -1494,7 +1513,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\.jsonc$|^biome-plugins/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\.jsonc$|^biome-plugins/'
 # --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
 # concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
 # API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a

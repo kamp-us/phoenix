@@ -39,6 +39,23 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("biome-plugins/no-type-assertions.grit")).toBe(true);
 	});
 
+	it("classifies the root marketplace manifest as control-plane (ADR 0212, #3933)", () => {
+		// The file declaring what the `kampus` marketplace serves — including kampus-pipeline's
+		// `source` tree, which validate-gate-path-drift.sh resolves .claude/skills against. It gets
+		// its own branch because `^(\.claude|\.github)/` demands a literal `/` after `.claude` and
+		// the character here is a hyphen.
+		expect(isControlPlane(".claude-plugin/marketplace.json")).toBe(true);
+	});
+
+	it("does NOT over-widen: the marketplace branch is ROOT-anchored (ADR 0212)", () => {
+		// A NESTED plugin manifest stays out — an un-anchored form would sweep in pipeline-crew's
+		// own plugin.json, whose corpus a live founder ruling keeps out of §CP (#3765).
+		expect(isControlPlane("claude-plugins/pipeline-crew/.claude-plugin/plugin.json")).toBe(false);
+		expect(isControlPlane("claude-plugins/kampus-pipeline/.claude-plugin/plugin.json")).toBe(false);
+		// and a look-alike sibling of the root dir is not swallowed either
+		expect(isControlPlane(".claude-plugins/marketplace.json")).toBe(false);
+	});
+
 	it("does NOT classify the four deliberately-OUT skill dirs (operational, not gate-critical)", () => {
 		for (const skill of ["heal-ci", "what-shipped", "doctor", "wayfinder"]) {
 			expect(isControlPlane(`claude-plugins/kampus-pipeline/skills/${skill}/SKILL.md`)).toBe(false);
@@ -65,6 +82,15 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("turbo.json")).toBe(false);
 		expect(isControlPlane("pnpm-workspace.yaml")).toBe(false);
 		expect(isControlPlane("biome.jsonc.bak")).toBe(false);
+		// §CP by PATH is a separate axis from §CP by CONTENT: a `.decisions/**` ADR is §CP only
+		// when the guard-content probe (ADR 0164) matches its prose, never by path. These stay
+		// non-§CP by path — asserted so a boundary widening can't silently capture them.
+		expect(isControlPlane(".decisions/0193-lint-governance-config-is-control-plane.md")).toBe(
+			false,
+		);
+		expect(isControlPlane(".patterns/index.md")).toBe(false);
+		expect(isControlPlane(".glossary/LANGUAGE.md")).toBe(false);
+		expect(isControlPlane("ROADMAP.md")).toBe(false);
 	});
 
 	it("still classifies every PRE-EXISTING §CP path (no branch dropped)", () => {

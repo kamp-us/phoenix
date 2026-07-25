@@ -14,6 +14,7 @@ const LIVE_RE = CONTROL_PLANE_RE;
 const FULL_CODEOWNERS = [
 	"/.claude/ @usirin",
 	"/.github/ @usirin",
+	"/.claude-plugin/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/ship-it/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/review-code/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/review-doc/ @usirin",
