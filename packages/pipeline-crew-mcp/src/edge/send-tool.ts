@@ -9,7 +9,7 @@
  * inbox will not answer surfaces as `ChannelDeafError` (#3628) — both returned as an error result
  * to the caller, never a silent drop (#3035).
  */
-import {Context, Effect, Schema} from "effect";
+import {Context, Effect, Option, Schema} from "effect";
 import {Tool, Toolkit} from "effect/unstable/ai";
 import {ChannelDeafError, InboxAck, PeerUnreachableError, type SendOptions} from "../peer/index.ts";
 import {claimResourceKey, crewMessageKinds, payloadSchemaForKind} from "../protocol/index.ts";
@@ -70,6 +70,24 @@ const expectedShapeHint = (kind: string, schema: Schema.Codec<unknown>): Effect.
 	);
 
 /**
+ * Whether `body` carries a sender-composed `at`. No catalog payload has one any more: the sender is
+ * a language model composing JSON, so a time it writes is authored prose that merely looks like a
+ * reading (#3895, ADR 0211). A `Schema.Struct` decode would silently STRIP the excess key, which
+ * leaves the sender believing it sent a time — so the send path rejects it instead, and the reject's
+ * shape hint shows the body to send. `body` may arrive JSON-stringified (the `Schema.Unknown`
+ * impedance mismatch of #3486), so unwrap that form before looking.
+ */
+const senderComposedTimeField = (body: unknown): boolean => {
+	const value =
+		typeof body === "string"
+			? Option.getOrUndefined(
+					Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))(body),
+				)
+			: body;
+	return typeof value === "object" && value !== null && "at" in value;
+};
+
+/**
  * Decode `body` against the catalog schema for `kind` and RETURN the decoded struct — the single
  * boundary normalization for the send path. An unknown kind or a body that fails its kind's schema
  * short-circuits with an `InvalidMessageError`, so the send never reaches `ChannelSend.send` and the
@@ -84,6 +102,15 @@ const validateOutbound = (
 	kind: string,
 	body: unknown,
 ): Effect.Effect<unknown, InvalidMessageError> => {
+	if (senderComposedTimeField(body)) {
+		return Effect.fail(
+			new InvalidMessageError({
+				kind,
+				reason:
+					'body carries an "at" field — a message time is stamped by the transport at send, never composed by the sender, so no catalog payload has one. Drop "at" and resend; the ack and the delivered `<channel>` tag both carry the stamped instant.',
+			}),
+		);
+	}
 	const schema = payloadSchemaForKind(kind);
 	if (schema === undefined) {
 		return Effect.fail(

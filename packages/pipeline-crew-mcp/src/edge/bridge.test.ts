@@ -8,6 +8,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Ref} from "effect";
 import {Inbox, type InboxEnvelope} from "../peer/index.ts";
+import {stampFromMillis} from "../protocol/index.ts";
 import {channelInboxLayer, formatChannelTag} from "./bridge.ts";
 import {ChannelSink} from "./channel-sink.ts";
 import type {ChannelNotificationPayload} from "./mcp-channel.ts";
@@ -17,7 +18,7 @@ const envelope = (over?: Partial<InboxEnvelope>): InboxEnvelope => ({
 	from: "peer-a",
 	kind: "IntakePing",
 	body: {issue: 3057},
-	at: "2026-07-16T10:00:00Z",
+	at: stampFromMillis(Date.parse("2026-07-16T10:00:00Z")),
 	...over,
 });
 
@@ -44,9 +45,17 @@ describe("edge/bridge — inbound peer-inbox message wakes the session (AC2)", (
 		}),
 	);
 
-	it("formatChannelTag renders sender + kind as attributes and the body as content", () => {
+	it("formatChannelTag renders sender + kind + the stamped instant as attributes, body as content", () => {
 		const tag = formatChannelTag(envelope());
-		assert.match(tag, /^<channel from="peer-a" kind="IntakePing">/);
+		assert.match(tag, /^<channel from="peer-a" kind="IntakePing" at="2026-07-16T10:00:00\.000Z">/);
 		assert.include(tag, '{"issue":3057}');
+	});
+
+	// The `at` a session reads is the envelope's transport stamp, and it is the ONLY time on the
+	// surface — a sender-composed one would be authored prose (#3895).
+	it("formatChannelTag renders an unreadable clock as the literal word unknown, never a time", () => {
+		const tag = formatChannelTag(envelope({at: stampFromMillis(Number.NaN)}));
+		assert.include(tag, 'at="unknown (');
+		assert.notMatch(tag, /at="\d{4}-/);
 	});
 });

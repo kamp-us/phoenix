@@ -21,6 +21,7 @@ import {
 	PeerInbox,
 	PeerUnreachableError,
 } from "../peer/index.ts";
+import {stampFromMillis} from "../protocol/index.ts";
 import {TrackerRegistry} from "../tracker/group.ts";
 import {TrackerHandlers} from "../tracker/handlers.ts";
 import {RegistryLive} from "../tracker/registry.ts";
@@ -152,7 +153,6 @@ describe("crew/channel-server — announce, discover, claim/collision-check (AC 
 			yield* client.AnnouncePresence({
 				peer: "inbox://b",
 				role: roleB,
-				at: new Date().toISOString(),
 			});
 			const a = yield* makeCrewChannel({role: roleA, address: "inbox://a"}).pipe(
 				Effect.provide(channelLayers(tracker, "inbox://a", Dialer.layerFromConnect(connect))),
@@ -240,7 +240,6 @@ describe("crew/channel-server — per-kind cardinality lease (AC 3)", () => {
 				yield* client.Release({
 					resource: role,
 					claimant: `inbox://${role}-a`,
-					at: new Date().toISOString(),
 				});
 
 				// a replacement bridge (a fresh peer) boots cleanly onto the freed singleton lease
@@ -285,9 +284,8 @@ describe("crew/channel-server — engine pool discovery + per-instance dial (AC 
 			// two engine instances of one role, distinct per-instance addresses, both live
 			const addr1 = `inbox://${engineRole}/1`;
 			const addr2 = `inbox://${engineRole}/2`;
-			const at = new Date().toISOString();
-			yield* client.AnnouncePresence({peer: addr1, role: engineRole, at});
-			yield* client.AnnouncePresence({peer: addr2, role: engineRole, at});
+			yield* client.AnnouncePresence({peer: addr1, role: engineRole});
+			yield* client.AnnouncePresence({peer: addr2, role: engineRole});
 
 			// a sender channel discovers the WHOLE pool, not a single collapsed holder
 			const senderAddr = `inbox://${senderRole}`;
@@ -339,9 +337,8 @@ describe("crew/channel-server — engine pool discovery + per-instance dial (AC 
 						? Effect.succeed(two.inbox)
 						: Effect.fail(new PeerUnreachableError({target: address, reason: "no route"}));
 
-			const at = new Date().toISOString();
-			yield* client.AnnouncePresence({peer: addr1, role: engineRole, at});
-			yield* client.AnnouncePresence({peer: addr2, role: engineRole, at});
+			yield* client.AnnouncePresence({peer: addr1, role: engineRole});
+			yield* client.AnnouncePresence({peer: addr2, role: engineRole});
 
 			// discover the pool, pick instance #2 specifically, and dial IT by address via the Dialer
 			const senderAddr = `inbox://${senderRole}`;
@@ -356,7 +353,7 @@ describe("crew/channel-server — engine pool discovery + per-instance dial (AC 
 					from: senderAddr,
 					kind: "IntakePing",
 					body: {issue: 3059},
-					at: new Date().toISOString(),
+					at: stampFromMillis(Date.now()),
 				});
 			}).pipe(Effect.provide(channelLayers(tracker, senderAddr, Dialer.layerFromConnect(connect))));
 

@@ -121,10 +121,9 @@ describe("edge/claim-tool — the channel_claim deconfliction tool (#3509)", () 
 				const client = yield* RpcTest.makeClient(TrackerRegistry);
 				const addrA = "inbox://engineering-manager/a";
 				const addrB = "inbox://engineering-manager/b";
-				const at = new Date().toISOString();
 				// both sessions are live (presence backs claim liveness, ADR 0191 facet 2)
-				yield* client.AnnouncePresence({peer: addrA, role: "engineering-manager", at});
-				yield* client.AnnouncePresence({peer: addrB, role: "engineering-manager", at});
+				yield* client.AnnouncePresence({peer: addrA, role: "engineering-manager"});
+				yield* client.AnnouncePresence({peer: addrB, role: "engineering-manager"});
 
 				const a = yield* makeSession(sessionClaim(client, addrA));
 				const b = yield* makeSession(sessionClaim(client, addrB));
@@ -160,9 +159,8 @@ describe("edge/claim-tool — the channel_claim deconfliction tool (#3509)", () 
 				const client = yield* RpcTest.makeClient(TrackerRegistry);
 				const addrA = "inbox://engineering-manager/a";
 				const addrB = "inbox://engineering-manager/b";
-				const at = new Date().toISOString();
-				yield* client.AnnouncePresence({peer: addrA, role: "engineering-manager", at});
-				yield* client.AnnouncePresence({peer: addrB, role: "engineering-manager", at});
+				yield* client.AnnouncePresence({peer: addrA, role: "engineering-manager"});
+				yield* client.AnnouncePresence({peer: addrB, role: "engineering-manager"});
 
 				const a = yield* makeSession(sessionClaim(client, addrA));
 				const b = yield* makeSession(sessionClaim(client, addrB));

@@ -6,8 +6,14 @@
  * crew noun — that is what lets tracker, peer, and edge code against this contract without
  * pulling in `crew/`. Every payload is an `effect/Schema` type so the wire format is
  * decode-checked at the boundary rather than trusted as an untyped bag.
+ *
+ * No payload here carries a sender-composed time. A sender on this substrate is a language model
+ * composing JSON, so a time it supplies is authored prose, not a reading (#3895); the authoritative
+ * instants are stamped by the transport (`peer/`'s envelope), the receiver (`peer/`'s inbox ack),
+ * or the tracker (`since`/`lastSeen` below) as a `StampedInstant`. See ADR 0211.
  */
 import {Schema} from "effect";
+import {StampedInstant} from "./instant.ts";
 
 /** An opaque role identifier — a parameter, never a concrete crew role noun (see the module note). */
 export const RoleId = Schema.NonEmptyString;
@@ -17,9 +23,6 @@ export const PeerId = Schema.NonEmptyString;
 
 /** An opaque message identifier, used to correlate an ack back to its delivery. */
 export const MessageId = Schema.NonEmptyString;
-
-/** An ISO-8601 UTC instant, kept as a string so the wire format stays transport-agnostic + JSON-safe. */
-export const Timestamp = Schema.String;
 
 /**
  * A GitHub issue number — a positive integer, branded so it can't be confused with a bare count
@@ -52,7 +55,6 @@ export const ClaimRequest = Schema.Struct({
 	resource: Schema.NonEmptyString,
 	claimant: PeerId,
 	role: RoleId,
-	at: Timestamp,
 });
 
 /** The typed answer to a `ClaimRequest`: whether it was granted, and who currently owns it. */
@@ -61,7 +63,8 @@ export const ClaimReply = Schema.Struct({
 	granted: Schema.Boolean,
 	collision: Schema.Boolean,
 	owner: PeerId,
-	since: Timestamp,
+	/** Tracker-stamped from the tracker's own clock — never the claimant's word for when it claimed. */
+	since: StampedInstant,
 });
 
 /**
@@ -72,7 +75,6 @@ export const ClaimReply = Schema.Struct({
 export const ReleaseClaim = Schema.Struct({
 	resource: Schema.NonEmptyString,
 	claimant: PeerId,
-	at: Timestamp,
 });
 
 // Kind 2 — drain-progress tally.
@@ -83,7 +85,6 @@ export const DrainProgressTally = Schema.Struct({
 	inFlight: Schema.Int,
 	total: Schema.Int,
 	reporter: PeerId,
-	at: Timestamp,
 });
 
 // Kind 3 — intake ping.
@@ -92,7 +93,6 @@ export const IntakePing = Schema.Struct({
 	issue: IssueNumber,
 	from: RoleId,
 	note: Schema.optionalKey(Schema.String),
-	at: Timestamp,
 });
 
 // Kind 6 — engine nudge (advisory, non-routing; chief-of-staff → engine).
@@ -115,7 +115,6 @@ export const EngineNudge = Schema.Struct({
 	target: NudgeTarget,
 	from: RoleId,
 	note: Schema.optionalKey(Schema.String),
-	at: Timestamp,
 });
 
 /**
@@ -135,7 +134,8 @@ export const nudgeTargetResourceKey = (target: typeof NudgeTarget.Type): string 
 export const PresenceEntry = Schema.Struct({
 	peer: PeerId,
 	role: RoleId,
-	lastSeen: Timestamp,
+	/** Tracker-stamped from the tracker's own clock — never the peer's word for when it was last up. */
+	lastSeen: StampedInstant,
 });
 
 /**
@@ -148,7 +148,6 @@ export const PresenceAnnouncement = Schema.Struct({
 	peer: PeerId,
 	role: RoleId,
 	attached: Schema.optional(Schema.Boolean),
-	at: Timestamp,
 });
 
 /** A lookup query for peers serving a role; answered by a `RoleLookupResult`. */
@@ -167,7 +166,6 @@ export const RoleLookupResult = Schema.Struct({
 export const Heartbeat = Schema.Struct({
 	peer: PeerId,
 	ttlSeconds: Schema.Int,
-	at: Timestamp,
 });
 
 // Kind 7 — claim-holder lookup (the read side of the resource-claim keyspace, ADR 0191).

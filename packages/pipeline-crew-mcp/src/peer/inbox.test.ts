@@ -7,6 +7,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {RpcTest} from "effect/unstable/rpc";
+import {stampFromMillis} from "../protocol/index.ts";
 import {Inbox, type InboxEnvelope, inboxHandlers, PeerInbox} from "./inbox.ts";
 
 const envelope = (over?: Partial<InboxEnvelope>): InboxEnvelope => ({
@@ -14,7 +15,7 @@ const envelope = (over?: Partial<InboxEnvelope>): InboxEnvelope => ({
 	from: "peer-a",
 	kind: "IntakePing",
 	body: {issue: 3056},
-	at: "2026-07-16T10:00:00Z",
+	at: stampFromMillis(Date.parse("2026-07-16T10:00:00Z")),
 	...over,
 });
 

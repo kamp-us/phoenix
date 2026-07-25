@@ -20,6 +20,7 @@ import {McpServer} from "effect/unstable/ai";
 import {RpcTest} from "effect/unstable/rpc";
 import {channelExperimentalCapability} from "../edge/index.ts";
 import {Dialer, Inbox, PeerUnreachableError} from "../peer/index.ts";
+import {stampFromMillis} from "../protocol/index.ts";
 import {TrackerRegistry} from "../tracker/group.ts";
 import {TrackerHandlers} from "../tracker/handlers.ts";
 import {RegistryLive} from "../tracker/registry.ts";
@@ -85,7 +86,7 @@ describe("crew/session — forked-stdio live-wake round-trip (session.ts:34 seam
 							from: "inbox://engineering-manager/1",
 							kind: "IntakePing",
 							body: {issue: 3489, from: "engineering-manager", at: new Date().toISOString()},
-							at: new Date().toISOString(),
+							at: stampFromMillis(Date.now()),
 						})
 						.pipe(Effect.timeout("6 seconds"));
 				}).pipe(Effect.provide(crewSocketDialerLayer), Effect.exit);

@@ -20,10 +20,13 @@ so a well-placed addition needs no edits at those sites (see the
 [message-kind catalog](./reference.md#message-kind-catalog)).
 
 1. **Define the payload** in [`src/protocol/schema.ts`](../src/protocol/schema.ts) as an
-   `effect/Schema` `Struct`. Reuse the shared field types (`PeerId`, `RoleId`, `Timestamp`) so
+   `effect/Schema` `Struct`. Reuse the shared field types (`PeerId`, `RoleId`, `MessageId`) so
    the wire stays transport-agnostic; keep a role an opaque `RoleId` parameter, never a concrete
    crew-role noun (that boundary is what lets `tracker`/`peer`/`edge` code against the protocol
-   without importing `crew/`).
+   without importing `crew/`). **Give it no time field** — no sender-composed payload carries one
+   and `channel_send` rejects a body that does (ADR 0211). A time on a *reply* schema (step 2) is
+   a `StampedInstant` from [`src/protocol/instant.ts`](../src/protocol/instant.ts), filled by
+   whoever answers via `stampNow` / `stampFromMillis`, never by the caller.
 2. **Register the RPC** in [`src/protocol/group.ts`](../src/protocol/group.ts): add an
    `Rpc.make("<Tag>", { payload: … })`, and add a `success:` schema **only** if the kind expects
    a typed reply (an unset `success` defaults to `Schema.Void` — that split is what makes a kind
@@ -66,11 +69,11 @@ and the one-liveness-clock rule, or it reintroduces a failure those choices desi
    transition must not mutate `claims`, and a claim transition must not fabricate a lease.
 2. **Expose it on the service** in [`src/tracker/registry.ts`](../src/tracker/registry.ts): add a
    method to the `Registry` `Context.Service` and implement it in `RegistryLive`, drawing "now"
-   from `Clock.currentTimeMillis` — **never** a client-supplied `at`, so a peer cannot extend its
-   own liveness by lying about the time.
+   from `Clock.currentTimeMillis` — **never** a client-supplied time, so a peer cannot extend its
+   own liveness by lying about the clock (no payload carries one; ADR 0211).
 3. **Map the RPC** in [`src/tracker/handlers.ts`](../src/tracker/handlers.ts): wire the registry
-   kind onto the new `Registry` method, converting `Timestamp` strings ↔ epoch millis at the
-   boundary. If the semantic is a new *wire* kind, it must also be in the protocol catalog (see
+   kind onto the new `Registry` method, converting epoch millis to a `StampedInstant` through
+   `stampFromMillis` at the boundary, so an unusable reading crosses as a typed unknown. If the semantic is a new *wire* kind, it must also be in the protocol catalog (see
    [Add a message kind](#add-a-message-kind)) and in the `TrackerRegistry` subset
    ([`src/tracker/group.ts`](../src/tracker/group.ts)).
 4. **Surface the crew seam** in [`src/crew/tracker.ts`](../src/crew/tracker.ts): add the method to

@@ -118,7 +118,7 @@ the substrate resolves the target role's inbox for you:
 - **`channel_send {targetRole, kind, body}`** — discovery is implicit inside the send (the
   library resolves the role's inbox; there is no separate discover/claim tool). Success returns
   an `InboxAck`; an unreachable peer returns a `PeerUnreachableError {target, reason}`.
-- **Inbound arrives as a wake tag** — `<channel from="inbox://<role>" kind="…">…JSON…</channel>`.
+- **Inbound arrives as a wake tag** — `<channel from="inbox://<role>" kind="…" at="…">…JSON…</channel>`.
 - **An ack means delivered-to-inbox + wake enqueued — never seen-by-model.** The peer reads it
   when it wakes; the ack is not a read receipt and never an answer. (This is the load-bearing
   corollary the chief-of-staff carries: *conversing is not evidence* — coordinate over the

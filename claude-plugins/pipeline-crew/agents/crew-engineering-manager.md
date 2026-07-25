@@ -60,7 +60,7 @@ session; the substrate resolves the target role's inbox for you:
 
 - **`channel_send {targetRole, kind, body}`** is the whole idiom. Discovery is implicit inside the
   send; success returns an `InboxAck`, an unreachable peer a `PeerUnreachableError {target, reason}`.
-  Inbound arrives to you as a `<channel from="inbox://<role>" kind="…">…</channel>` wake tag; an ack
+  Inbound arrives to you as a `<channel from="inbox://<role>" kind="…" at="…">…</channel>` wake tag; an ack
   means delivered-to-inbox + wake enqueued, never seen-by-model.
 - **Resolve a kind's payload SHAPE with `channel_kinds` before its first send.** `channel_kinds`
   (no args) returns every kind's payload as a JSON Schema; read the shape, then build a valid

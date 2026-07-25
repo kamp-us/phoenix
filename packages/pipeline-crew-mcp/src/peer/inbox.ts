@@ -11,7 +11,7 @@
  */
 import {Context, Effect, Layer, Ref, Schema} from "effect";
 import {Rpc, RpcGroup} from "effect/unstable/rpc";
-import {Messages} from "../protocol/index.ts";
+import {Messages, StampedInstant, stampNow} from "../protocol/index.ts";
 
 /** A dialable inbox address — opaque to the peer (a socket path, URL, …), resolved via the tracker. */
 export const PeerAddress = Schema.NonEmptyString;
@@ -27,7 +27,8 @@ export const InboxEnvelope = Schema.Struct({
 	from: Messages.PeerId,
 	kind: Schema.NonEmptyString,
 	body: Schema.Unknown,
-	at: Messages.Timestamp,
+	/** Transport-stamped at send from the sending peer's clock — never a value inside `body` (#3895). */
+	at: StampedInstant,
 });
 export type InboxEnvelope = typeof InboxEnvelope.Type;
 
@@ -39,7 +40,8 @@ export type InboxEnvelope = typeof InboxEnvelope.Type;
 export const InboxAck = Schema.Struct({
 	messageId: Messages.MessageId,
 	by: Messages.PeerId,
-	at: Messages.Timestamp,
+	/** Receiver-stamped from the receiving peer's clock — the one authority on when this landed. */
+	at: StampedInstant,
 });
 export type InboxAck = typeof InboxAck.Type;
 
@@ -55,7 +57,8 @@ export const PeerInbox = RpcGroup.make(Deliver);
 /**
  * A peer's inbox: the delivery handler that acks + the log of what landed. `deliver`
  * stamps the ack with this peer's own id (`by`) and echoes the envelope's `messageId`,
- * so the sender can correlate the ack to its send.
+ * so the sender can correlate the ack to its send. The ack's `at` is read off this
+ * receiver's clock at delivery — see ADR 0211.
  */
 export class Inbox extends Context.Service<
 	Inbox,
@@ -73,11 +76,8 @@ export class Inbox extends Context.Service<
 				return {
 					deliver: (envelope) =>
 						Ref.update(log, (xs) => [...xs, envelope]).pipe(
-							Effect.as({
-								messageId: envelope.messageId,
-								by: self,
-								at: new Date().toISOString(),
-							}),
+							Effect.andThen(stampNow),
+							Effect.map((at) => ({messageId: envelope.messageId, by: self, at})),
 						),
 					received: Ref.get(log),
 				};

@@ -11,15 +11,21 @@
  */
 import {Effect, Layer, Ref} from "effect";
 import {Inbox, type InboxAck, type InboxEnvelope} from "../peer/index.ts";
+import {renderInstant, stampNow} from "../protocol/index.ts";
 import {ChannelSink} from "./channel-sink.ts";
 
 /**
- * Render a delivered envelope as the `<channel>` tag the session reads: `from`/`kind` as
+ * Render a delivered envelope as the `<channel>` tag the session reads: `from`/`kind`/`at` as
  * attributes, the body as content. Identity rides in the tag because the channel carries
  * no addressing (`meta.from` on the notification is the wire-level echo of the same).
+ *
+ * `at` is the envelope's transport-stamped instant, and it is the ONLY time a reading session
+ * sees — the body carries none. That is what makes it trustworthy: it was read off a clock at
+ * send, not composed by the sending model (#3895). An unreadable clock renders the literal word
+ * `unknown`, which no reader can mistake for an instant.
  */
 export const formatChannelTag = (envelope: InboxEnvelope): string =>
-	`<channel from=${JSON.stringify(envelope.from)} kind=${JSON.stringify(envelope.kind)}>${JSON.stringify(envelope.body)}</channel>`;
+	`<channel from=${JSON.stringify(envelope.from)} kind=${JSON.stringify(envelope.kind)} at=${JSON.stringify(renderInstant(envelope.at))}>${JSON.stringify(envelope.body)}</channel>`;
 
 /**
  * A channel-bridging `Inbox`: every delivery wakes the session over the `ChannelSink` and
@@ -36,11 +42,8 @@ export const channelInboxLayer = (self: string): Layer.Layer<Inbox, never, Chann
 				deliver: (envelope) =>
 					sink.wake({content: formatChannelTag(envelope), meta: {from: envelope.from}}).pipe(
 						Effect.andThen(Ref.update(log, (xs) => [...xs, envelope])),
-						Effect.as<InboxAck>({
-							messageId: envelope.messageId,
-							by: self,
-							at: new Date().toISOString(),
-						}),
+						Effect.andThen(stampNow),
+						Effect.map((at): InboxAck => ({messageId: envelope.messageId, by: self, at})),
 					),
 				received: Ref.get(log),
 			};

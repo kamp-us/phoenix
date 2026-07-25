@@ -96,7 +96,6 @@ describe("crew/session — cutover: the ChannelSend-from-peer binding round-trip
 			yield* client.AnnouncePresence({
 				peer: receiverAddress,
 				role: receiverRole,
-				at: new Date().toISOString(),
 			});
 
 			// The sender's real ChannelSend-from-peer binding (the cutover) — the port channel_send uses.

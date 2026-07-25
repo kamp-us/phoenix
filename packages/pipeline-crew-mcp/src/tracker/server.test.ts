@@ -67,7 +67,6 @@ describe("tracker over a unix socket — RpcServer round-trip", () => {
 			yield* client.AnnouncePresence({
 				peer: "inbox://peer-a",
 				role: "builder",
-				at: "2026-07-16T10:00:00Z",
 			});
 			const result = yield* client.LookupRole({role: "builder"});
 			assert.strictEqual(result.role, "builder");
@@ -123,7 +122,6 @@ describe("tracker stale-socket crash recovery (#3280)", () => {
 					yield* client.AnnouncePresence({
 						peer: "inbox://peer-a",
 						role: "builder",
-						at: "2026-07-16T10:00:00Z",
 					});
 					return yield* client.LookupRole({role: "builder"});
 				}).pipe(Effect.provide(socketClientLayer(socketPath)));
@@ -156,7 +154,6 @@ describe("tracker stale-socket crash recovery (#3280)", () => {
 				yield* client.AnnouncePresence({
 					peer: "inbox://peer-a",
 					role: "builder",
-					at: "2026-07-16T10:00:00Z",
 				});
 				const result = yield* client.LookupRole({role: "builder"});
 				assert.strictEqual(result.peers[0]?.peer, "inbox://peer-a");

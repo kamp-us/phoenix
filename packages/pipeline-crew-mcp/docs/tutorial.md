@@ -106,7 +106,6 @@ const program = Effect.gen(function* () {
 	const ack = yield* channelA.peer.send("engineering-manager", "IntakePing", {
 		issue: "3565",
 		from: "intake-desk",
-		at: new Date().toISOString(),
 	});
 	yield* Console.log("ack   :", JSON.stringify(ack));
 	yield* Console.log("B woke:", JSON.stringify((yield* Ref.get(wakes))[0]));
@@ -138,7 +137,7 @@ Three things are worth pausing on, because they are the substrate's real seams:
   `granted` / `collision` / `owner` fields are the contract you will read in Step 3.
 
 `IntakePing` is one of the message kinds in the catalog; its body shape (`issue`, `from`, optional
-`note`, `at`) is defined in [`../src/protocol/schema.ts`](../src/protocol/schema.ts). See the
+`note`) is defined in [`../src/protocol/schema.ts`](../src/protocol/schema.ts). See the
 [reference's message-kind catalog](./reference.md#message-kind-catalog) for the full list of kinds
 you can send.
 
@@ -157,17 +156,17 @@ files are the one thing a hard-killed prior run leaves behind.)
 You will see four lines. This is the guaranteed outcome — walk each one:
 
 ```
-ack   : {"messageId":"…","by":"inbox://engineering-manager/tutorial","at":"…"}
-B woke: {"content":"<channel from=\"inbox://intake-desk\" kind=\"IntakePing\">{\"issue\":\"3565\",\"from\":\"intake-desk\",\"at\":\"…\"}</channel>","meta":{"from":"inbox://intake-desk"}}
-B claim: {"resource":"issue-3565","granted":true,"collision":false,"owner":"inbox://engineering-manager/tutorial","since":"…"}
-A claim: {"resource":"issue-3565","granted":false,"collision":true,"owner":"inbox://engineering-manager/tutorial","since":"…"}
+ack   : {"messageId":"…","by":"inbox://engineering-manager/tutorial","at":{"_tag":"ObservedInstant","iso":"…"}}
+B woke: {"content":"<channel from=\"inbox://intake-desk\" kind=\"IntakePing\" at=\"…\">{\"issue\":\"3565\",\"from\":\"intake-desk\"}</channel>","meta":{"from":"inbox://intake-desk"}}
+B claim: {"resource":"issue-3565","granted":true,"collision":false,"owner":"inbox://engineering-manager/tutorial","since":{"_tag":"ObservedInstant","iso":"…"}}
+A claim: {"resource":"issue-3565","granted":false,"collision":true,"owner":"inbox://engineering-manager/tutorial","since":{"_tag":"ObservedInstant","iso":"…"}}
 ```
 
 - **`ack`** — A's send returned a delivered-to-inbox acknowledgement, stamped `by` peer B's address.
   The message reached B's inbox and B answered. (Had no peer served the role, you'd have gotten a
   `PeerUnreachableError` instead — a send never silently drops.)
 - **`B woke`** — B's inbox rendered the delivery as a `<channel>` tag carrying the sender
-  (`from`), the `kind`, and the JSON body. This is the exact shape a live session surfaces to its
+  (`from`), the `kind`, the transport-stamped `at`, and the JSON body. This is the exact shape a live session surfaces to its
   MCP client when a message arrives.
 - **`B claim`** — B asked to claim `issue-3565` and the tracker returned `granted: true`, recording
   B as `owner`.

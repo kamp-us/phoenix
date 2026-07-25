@@ -5,17 +5,16 @@
  * coexists); `Claim` / `Release` operate on the resource-claim keyspace (keyed by `resource`).
  * `ClaimRequest`'s `role` field is consumed here as the claim's `claimantRole`.
  *
- * `lastSeen`/`since`/`at` cross the wire as ISO-8601 strings (the protocol `Timestamp`), but the
- * registry reasons in epoch millis against its own clock — the conversion happens here at the
- * boundary. `Claim` is the only reply-carrying kind (granted/collision/owner); the rest are
- * fire-and-forget.
+ * `lastSeen`/`since` cross the wire as a `StampedInstant`, but the registry reasons in epoch millis
+ * against its own clock — the conversion happens here at the boundary, through `stampFromMillis`, so
+ * an unusable clock reading crosses as a typed unknown rather than a fabricated time (ADR 0211).
+ * `Claim` is the only reply-carrying kind (granted/collision/owner); the rest are fire-and-forget.
  */
 import {Effect} from "effect";
+import {stampFromMillis} from "../protocol/index.ts";
 import {TrackerRegistry} from "./group.ts";
 import {Registry} from "./registry.ts";
 import {DEFAULT_TTL_SECONDS} from "./registry-core.ts";
-
-const iso = (millis: number): string => new Date(millis).toISOString();
 
 export const TrackerHandlers = TrackerRegistry.toLayer(
 	Effect.gen(function* () {
@@ -34,7 +33,7 @@ export const TrackerHandlers = TrackerRegistry.toLayer(
 							granted: outcome._tag === "Granted",
 							collision: outcome._tag === "Collision",
 							owner: outcome.holder,
-							since: iso(outcome.sinceMillis),
+							since: stampFromMillis(outcome.sinceMillis),
 						})),
 					),
 			Release: (payload) =>
@@ -59,7 +58,7 @@ export const TrackerHandlers = TrackerRegistry.toLayer(
 						peers: records.map((r) => ({
 							peer: r.peer,
 							role: r.role,
-							lastSeen: iso(r.lastSeenMillis),
+							lastSeen: stampFromMillis(r.lastSeenMillis),
 						})),
 					})),
 				),
