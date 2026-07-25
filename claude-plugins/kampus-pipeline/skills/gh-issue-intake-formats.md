@@ -1734,6 +1734,51 @@ HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed:
 HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
 ```
 
+### The doc/vocab-surface predicate — the issueless allowance's axis (`DOC_VOCAB_*_RE`)
+
+The three gates' Step 1 no-linked-issue rules ask a **different question** from the class probes
+above: not *which gate verifies this path* but *is a missing `Fixes #N` legitimate here*. The two
+axes disagree on exactly one surface — `.glossary/**` classes **has-code** (#919, so `review-code`
+Step 3c owns the glossary-freshness contract) yet is a **conversation-authored vocabulary** surface
+whose canonical PR — an ADR co-locating the `.glossary/**` row it coins — is issueless *by design*
+(ADR [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md),
+extended to the code lane by ADR
+[0184](https://github.com/kamp-us/phoenix/blob/main/.decisions/0184-review-code-issueless-carve-out.md)).
+Keying the issueless allowance on the *class* therefore false-refuses that PR — the #3953
+divergence, where `review-doc` Step 1 hard-stopped a shape `ship-it` Step 1 and `review-code`
+Step 1 both bless by name.
+
+So the allowance keys on the **surface**, single-sourced here as its own carve-then-test pair —
+adjacent to the class probes, deliberately **not** one of them:
+
+```bash
+DOC_VOCAB_EXCLUDE_RE='^(apps|packages|infra|claude-plugins)/'
+DOC_VOCAB_SURFACE_RE='^(\.decisions|\.patterns|\.glossary)/|\.md$'
+```
+
+A path is a **doc/vocab surface** iff it does **not** match `DOC_VOCAB_EXCLUDE_RE` (the real code
+roots + skills source) **and** matches `DOC_VOCAB_SURFACE_RE`. A PR is **doc/vocab-surface-only**
+iff its changed-file set is non-empty and **every** path is one. `DOC_VOCAB_EXCLUDE_RE` omits
+`.glossary` where `HAS_DOCS_EXCLUDE_RE` excludes it — that is the surface-vs-class distinction, not
+a drift between the two lines, so the has-code/docs-exclusion lockstep invariant above does **not**
+extend to this pair.
+
+The predicate is **narrow by construction**, which is what keeps it from becoming a general
+"missing issue is fine" escape: a code-root `*.md` (`apps/web/README.md`) is excluded *before* the
+`.md$` test, and an unclassified root file (`biome.jsonc`, `turbo.json`) fails the surface test — so
+a PR that touches code and merely forgot its issue link still refuses. Run it through the shared
+verb rather than hand-rolling the greps — `pipeline-cli class-probe doc-vocab-surface-only` (exit 0
+⇒ doc/vocab-surface-only, non-zero ⇒ not). Re-resolution fails closed **toward refusal**, the
+mirror image of the class probes' over-dispatch: `DOC_VOCAB_EXCLUDE_RE` defaults to `.` (every path
+excluded) and `DOC_VOCAB_SURFACE_RE` to `$^` (no path is a surface), and zero input resolves *not*
+surface-only (ADR 0092) — an unreadable source can never **grant** the allowance.
+
+**Consumers.** `review-doc` Step 1 consumes this line directly. `ship-it` Step 1 and `review-code`
+Step 1 state the same boundary in prose today (each scoped to its own lane); until they are
+converted to cite it, this pair is the definition they must agree with.
+
+---
+
 **No-class fail-closed — a non-empty diff can never require zero gates (#2765).** A changed file
 that matches **none** of the three class probes above — root-level executable build/lint tooling
 outside the code roots (`biome-plugins/**`, `biome.jsonc`, `turbo.json`, `pnpm-workspace.yaml`, a

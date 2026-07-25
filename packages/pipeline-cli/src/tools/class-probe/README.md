@@ -47,7 +47,26 @@ pipeline-cli class-probe classify --files-from changed.txt
 pipeline-cli class-probe classify --root <dir>     # read §CLASS under a specific root (default: walk up)
 ```
 
-Present classes go to **stdout** (one per line); a human summary goes to **stderr**. Exit
-is always 0 — this classifies, it does not gate. `review-design` (the UI-affecting class)
-is resolved separately from ship-it's `UI_RE` (`ui_reresolve`) and is out of this tool's
-scope.
+Present classes go to **stdout** (one per line); a human summary goes to **stderr**.
+`classify` always exits 0 — it classifies, it does not gate. `review-design` (the
+UI-affecting class) is resolved separately from ship-it's `UI_RE` (`ui_reresolve`) and is
+out of this tool's scope.
+
+## `doc-vocab-surface-only` — the issueless allowance's axis (#3953)
+
+```bash
+gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+  | pipeline-cli class-probe doc-vocab-surface-only   # exit 0 = yes, non-zero = no
+```
+
+A **different question** from `classify`: not *which gate verifies this path* but *is a
+missing `Fixes #N` legitimate here* (ADR 0075 / 0184). The two axes disagree on exactly one
+surface — `.glossary/**` is has-code (so `review-code` gates it) **and** a
+conversation-authored vocab surface (so an ADR co-locating the row it coins owes no issue
+link). Keying the allowance on the class is what false-refused that shape at `review-doc`
+Step 1 (#3953), so the gates key it here instead.
+
+The `DOC_VOCAB_EXCLUDE_RE` / `DOC_VOCAB_SURFACE_RE` pair is parsed from the same §CLASS
+single source, and every failure mode resolves **not** surface-only — unreadable §CLASS,
+dropped stdin, uncompilable regex. This probe can only ever *refuse* the allowance, the
+mirror of `classify`'s over-dispatch (ADR 0092).

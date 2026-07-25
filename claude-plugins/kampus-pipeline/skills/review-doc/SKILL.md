@@ -297,25 +297,46 @@ The `issues/$PR/timeline` endpoint accepts the PR number, and the
 `connected`/`cross-referenced` events resolve PR→issue — so `.source.issue.number` is the
 linked *issue*, not a bug. This is the same idiom `review-code` uses. Pin down `ISSUE=<N>`.
 
-If there is **no** linked issue, the rule is **class-aware** — reuse the artifact class Step 0
-already computed (do **not** re-derive it; ADR
-[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)). This
-mirrors `ship-it` Step 1's docs-only carve-out, scoped to the doc lane this gate serves:
+If there is **no** linked issue, the rule is **surface-aware, not class-aware** — and that
+distinction is the whole rule (#3953). Do **not** key the allowance on Step 0's artifact class:
+`.glossary/**` classes **has-code** (#919), so a class-keyed rule false-refuses the canonical
+issueless shape — a conversation-authored ADR co-locating the `.glossary/**` row it coins — which
+`ship-it` Step 1 and `review-code` Step 1 both bless by name. Key it on the **doc/vocab surface**
+instead: the single-sourced `DOC_VOCAB_*_RE` predicate in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CLASS (cite it, don't re-derive
+it — ADR [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md),
+extended to the code lane by ADR
+[0184](https://github.com/kamp-us/phoenix/blob/main/.decisions/0184-review-code-issueless-carve-out.md)).
+Resolve it **mechanically, never by eye**:
 
-- **A code class is present** (the mixed code+doc routing of Step 0) → stop and report `no
-  linked issue`. In this pipeline `write-code` always writes `Fixes #N`, so a missing link on a
-  PR carrying code is a broken seam, not a normal state — there is dangling code work with no AC
-  to verify against. (Skills-only and pure-code PRs never reach here — Step 0 already routed them
-  to `review-skill`/`review-code` and stopped.)
-- **Docs-only** (Step 0 classed the diff as docs with **no** code class present) → a missing
-  `Fixes #N` is a **legitimate state, not a broken seam**. A conversation-authored ADR/doc (the
-  [`/adr`](../adr/SKILL.md) path) records a settled choice that was never tracked work, so there
-  is nothing for a `Fixes #N` to close and **no acceptance criteria to verify against**. Leave
-  `ISSUE` unset, treat the acceptance-criteria half as **N/A** (skip Step 3 — there is no
-  checklist), and **proceed to the doc-hygiene checklist (Step 4) as the sole gate**. Emit **no**
-  no-linked-issue refusal; it is not an anomaly. This relaxes **only** the linked-issue half — the
-  Step 4 hygiene checklist is AC-independent and still applies in full, and the verdict for such a
-  PR rests on it alone (Step 5).
+```bash
+# doc/vocab-surface-only? exit 0 = yes (issueless is legitimate), non-zero = no (hard-stop below).
+# Predicate single-sourced in §CLASS (DOC_VOCAB_EXCLUDE_RE / DOC_VOCAB_SURFACE_RE); fails closed to
+# "no" on an unreadable source or zero input (ADR 0092) — it can only ever REFUSE the allowance.
+gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+  | pipeline-cli class-probe doc-vocab-surface-only
+```
+
+- **Not doc/vocab-surface-only** — any changed path under `apps/**`, `packages/**`, `infra/**`, or
+  `claude-plugins/**` (skills source), or any path off the doc/vocab surfaces → stop and report `no
+  linked issue`. In this pipeline `write-code` always writes `Fixes #N`, so a missing link on a PR
+  carrying code is a broken seam, not a normal state — there is dangling code work with no AC to
+  verify against. The carve-out below **never** widens to behavioral code: a PR that touches code
+  and merely forgot its link still refuses here. (Skills-only and pure-code PRs never reach here —
+  Step 0 already routed them to `review-skill`/`review-code` and stopped.)
+- **Doc/vocab-surface-only** (every changed path is `.decisions/**`, `.patterns/**`, `.glossary/**`,
+  or prose `*.md` — **no** `apps/**`/`packages/**`/`infra/**` code and **no** `claude-plugins/**`
+  skills source) → a missing `Fixes #N` is a **legitimate state, not a broken seam**. A
+  conversation-authored ADR/doc (the [`/adr`](../adr/SKILL.md) path) records a settled choice that
+  was never tracked work, so there is nothing for a `Fixes #N` to close and **no acceptance criteria
+  to verify against**. This holds **even when `.glossary/**` makes a code class present** — that
+  has-code label decides *which gate verifies the glossary*, not whether a glossary touch needs a
+  `Fixes #N`. Leave `ISSUE` unset, treat the acceptance-criteria half as **N/A** (skip Step 3 —
+  there is no checklist), and **proceed to the doc-hygiene checklist (Step 4) as the sole gate**.
+  Emit **no** no-linked-issue refusal; it is not an anomaly. This relaxes **only** the linked-issue
+  half: Step 0's mixed-class routing is untouched, so an ADR + `.glossary/**` PR still needs a
+  current-head PASS in **both** `review-doc` and `review-code`, and the Step 4 hygiene checklist is
+  AC-independent and still applies in full — the verdict for such a PR rests on it alone (Step 5).
 
 When `ISSUE` **is** set, honor it as today: pull the issue and its acceptance criteria:
 

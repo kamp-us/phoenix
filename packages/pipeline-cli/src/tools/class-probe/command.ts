@@ -17,8 +17,12 @@
  * instead, appending `review-design`). Folding has-ui in here is the #2485/#2483 fix: the
  * reviewer fan dispatches review-design deterministically off this output instead of eyeballing
  * a non-visual `apps/web/src/*.ts` away and deadlocking ship-it on an empty review-design
- * namespace. A human summary goes to **stderr**; exit is always 0 — this classifies, it does
- * not gate.
+ * namespace. A human summary goes to **stderr**; `classify` always exits 0 — it classifies, it
+ * does not gate.
+ *
+ * The sibling `doc-vocab-surface-only` subcommand answers a **different** question on the same
+ * file set — is a missing `Fixes #N` legitimate here (ADR 0075/0184, #3953) — and *does* carry
+ * its decision in the exit code, since the gates' Step 1 branches on it.
  *
  * IO here (the thin bin), classification in `class-probe.ts` (the pure core). An
  * unreadable §CLASS falls back to the fail-closed probes (`FAILCLOSED_PROBES`), which
@@ -31,9 +35,11 @@ import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
 import {
 	classify,
 	DESIGN_NAMESPACE,
+	isDocVocabSurfaceOnly,
 	isUiAffecting,
 	NO_INPUT_FAILCLOSED_CLASSES,
 	parseClassProbes,
+	parseDocVocabProbe,
 	parseUiExclude,
 	parseUiProbe,
 	requiredNamespaces,
@@ -188,8 +194,47 @@ const classifyCmd = Command.make(
 	),
 );
 
+// The gates' Step 1 issueless allowance (ADR 0075/0184, #3953) — a SEPARATE axis from `classify`
+// (surface, not class), so it is its own subcommand rather than a flag on the class output. Exit
+// code carries the decision so the gate bash reads it directly; every failure mode (unreadable
+// §CLASS, dropped stdin) resolves NOT surface-only ⇒ the missing-link hard-stop stands.
+const docVocabCmd = Command.make(
+	"doc-vocab-surface-only",
+	{filesFrom: filesFromFlag, root: rootFlag},
+	Effect.fn(function* ({filesFrom, root}) {
+		const rootDir = yield* Option.match(root, {
+			onNone: () => defaultRoot(),
+			onSome: Effect.succeed,
+		});
+		const formats = yield* readFormats(rootDir);
+		const probe = parseDocVocabProbe(formats ?? "");
+		const files = yield* readFiles(filesFrom);
+		const surfaceOnly = isDocVocabSurfaceOnly(files, probe);
+
+		if (formats === null) {
+			yield* Effect.sync(() =>
+				process.stderr.write(
+					`class-probe: could not read ${FORMATS_PATH} under ${rootDir} — using the fail-closed doc/vocab probe (no path is a surface ⇒ NOT surface-only).\n`,
+				),
+			);
+		}
+		const offSurface = files.filter((f) => !isDocVocabSurfaceOnly([f], probe));
+		yield* Effect.sync(() =>
+			process.stderr.write(
+				`class-probe: ${files.length} changed file(s) → ${surfaceOnly ? "doc/vocab-surface-only (issueless Fixes #N is legitimate — ADR 0075/0184)" : `NOT doc/vocab-surface-only${offSurface.length > 0 ? ` (off-surface: ${offSurface.join(", ")})` : " (read 0 files — dropped stdin, failing closed)"}`}\n`,
+			),
+		);
+		yield* Console.log(surfaceOnly ? "doc-vocab-surface-only" : "not-doc-vocab-surface-only");
+		if (!surfaceOnly) return yield* Effect.sync(() => process.exit(1));
+	}),
+).pipe(
+	Command.withDescription(
+		"Is every changed path a doc/vocab surface (⇒ a missing Fixes #N is legitimate)? exit 0 = yes (#3953)",
+	),
+);
+
 export const classProbeCommand = Command.make("class-probe").pipe(
-	Command.withSubcommands([classifyCmd]),
+	Command.withSubcommands([classifyCmd, docVocabCmd]),
 	Command.withDescription(
 		"Deterministic artifact-class probe shared by the reviewer fan and ship-it Step 0 (#2434)",
 	),
