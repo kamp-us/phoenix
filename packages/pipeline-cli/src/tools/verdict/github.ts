@@ -9,7 +9,9 @@
  * `RepoResolutionError`), untrusted REST JSON Schema-decoded at the boundary into the domain
  * `VerdictComment` the core resolves over.
  *
- * Two verbs:
+ * Three verbs:
+ *  - `gate(pr, requiredGates, controlPlane, headOverride)` — the SET-level enqueue decision: fold the
+ *    same resolution over every namespace the diff requires, so an absent namespace refuses (#3982).
  *  - `read(pr, gate, expect, headOverride)` — resolve the PR's current head (REST), author-gate
  *    marker authors to write+ collaborators (ADR 0055), and run `resolveVerdict` to classify
  *    the namespace against that head. The consumer branches on the returned outcome.
@@ -39,6 +41,7 @@ import {
 	runGh,
 	whoAmIArgs,
 } from "../tracker/gh-io.ts";
+import {decideGate, type GateDecision} from "./gate-decision.ts";
 import {
 	boundHeadShas,
 	emissionDefect,
@@ -195,6 +198,45 @@ const read = Effect.fn("Github.read")(function* (
 });
 
 /**
+ * Resolve the ENQUEUE decision for a PR: does every namespace the diff requires carry a pass bound
+ * to the live head? One comment read + one ACL resolution feed the pure `decideGate` — the same
+ * head-binding and author-gate the single-namespace `read` applies, folded over the whole required
+ * set so an ABSENT namespace is a refusal rather than an unnoticed gap (#3982 / PR #3944).
+ *
+ * The author-gate scope is `namespaceRe` (which matches PASS / FAIL / advisory alike) across every
+ * required gate, so a §CP advisory's author is ACL-checked exactly like a marker author — the one
+ * thing single-namespace `read` structurally cannot do for the SHA-less advisory form (ADR 0111).
+ */
+const gate = Effect.fn("Github.gate")(function* (
+	repo: string,
+	pr: number,
+	requiredGates: ReadonlyArray<VerdictGate>,
+	controlPlane: boolean,
+	headOverride: string | undefined,
+) {
+	const headSha = headOverride?.trim() || (yield* currentHead(repo, pr));
+	const comments = yield* listComments(repo, pr);
+	const inAnyNamespace = (body: string): boolean =>
+		requiredGates.some((g) => namespaceRe(g).test(body));
+	const markerAuthors = [
+		...new Set(
+			comments
+				.filter((c) => inAnyNamespace(c.body))
+				.map((c) => c.author)
+				.filter((a) => a.length > 0),
+		),
+	];
+	const authorized = yield* authorizedAuthors(repo, markerAuthors);
+	return decideGate({
+		comments,
+		authorizedAuthors: authorized,
+		requiredGates,
+		headSha,
+		controlPlane,
+	});
+});
+
+/**
  * Upsert this PR's `gate` verdict (ADR 0058 rule 2). Three fail-closed emission guards run first:
  * the body's first line must be *this* gate's marker (rejects a cross-namespace body); a
  * polarity-bearing (PASS/FAIL) body must carry a well-formed `@ <sha>` (rejects the unbindable
@@ -276,6 +318,15 @@ export class Github extends Context.Service<
 			ReadResult,
 			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
 		>;
+		readonly gate: (
+			pr: number,
+			requiredGates: ReadonlyArray<VerdictGate>,
+			controlPlane: boolean,
+			headOverride?: string,
+		) => Effect.Effect<
+			GateDecision,
+			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
+		>;
 		readonly post: (
 			pr: number,
 			gate: VerdictGate,
@@ -310,6 +361,12 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 			return {
 				read: (pr, gate, expect, headOverride) =>
 					repo.pipe(Effect.flatMap((r) => withSpawner(read(r, pr, gate, expect, headOverride)))),
+				gate: (pr, requiredGates, controlPlane, headOverride) =>
+					repo.pipe(
+						Effect.flatMap((r) =>
+							withSpawner(gate(r, pr, requiredGates, controlPlane, headOverride)),
+						),
+					),
 				post: (pr, gate, body) =>
 					repo.pipe(Effect.flatMap((r) => withSpawner(post(r, pr, gate, body)))),
 			};

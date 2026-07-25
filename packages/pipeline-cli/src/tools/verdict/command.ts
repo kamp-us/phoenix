@@ -1,5 +1,5 @@
 /**
- * The `verdict` tool — `pipeline-cli verdict read` / `post` / `validate`.
+ * The `verdict` tool — `pipeline-cli verdict read` / `gate` / `post` / `validate`.
  *
  * The ADR-0058 SHA-bound verdict read/post glue, extracted from the inline `jq` the
  * `review-*` / `ship-it` / `write-code`-repair / `heal-ci` skills each hand-rolled (#2102).
@@ -10,6 +10,13 @@
  * refusal (`none`/`sha-less`/`stale`, or a current verdict of the wrong polarity) prints its
  * reason on stderr and exits non-zero, so a caller branches on exit status. The resolved
  * outcome is printed as JSON on stdout for a caller that wants the detail (comment id, sha).
+ *
+ * `gate --pr N --require <namespaces> [--cp]` is the SET-level counterpart `read` cannot be: it
+ * folds the same resolution over EVERY namespace the diff requires and exits 0 only when each one
+ * carries a current-head pass, so a namespace with no verdict at all is a named refusal instead of
+ * an unnoticed gap (#3982 — PR #3944 enqueued with nothing bound to its live head). On a §CP PR
+ * (`--cp`) the pass is the canonical SHA-less advisory bound by its body `Reviewed-head` line, never
+ * a bindable first-line PASS (ADR 0111/0151).
  *
  * `post --pr N --gate <g> [--body-file <f>]` upserts a SHA-bound verdict comment (ADR 0058
  * rule 2): it reads the composed verdict body from `--body-file` (or stdin), refuses fail-closed
@@ -108,6 +115,85 @@ const read = Command.make(
 );
 
 /**
+ * Deliberately REQUIRED, not stdin-defaulted: the required-namespace set is the load-bearing input,
+ * and a piped set that arrives empty (a dropped/undelivered stdin) is indistinguishable from "this
+ * PR needs no gates" — the #3786 zero-input class. An explicit flag makes the omission a usage
+ * error instead, and an explicitly-empty value still refuses on zero scope below.
+ */
+const requireFlag = Flag.string("require").pipe(
+	Flag.withDescription(
+		"the required review namespaces, comma/space separated (`review-code,review-doc` or `code,doc`) — derive with `pipeline-cli class-probe classify --namespaces`",
+	),
+);
+
+const cpFlag = Flag.boolean("cp").pipe(
+	Flag.withDescription(
+		"this is a §CP (control-plane / blocking-set) PR: accept the canonical SHA-less advisory + body `Reviewed-head` as the pass (ADR 0111/0151)",
+	),
+);
+
+/**
+ * Parse the required-namespace set, tolerating both shapes the producer emits: the
+ * `class-probe classify --namespaces` output (`review-code`) and a bare gate name (`code`). An
+ * unrecognized token is a hard input error, never a silently-dropped requirement — dropping one
+ * would shrink the conjunction, the exact fail-open this verb exists to prevent.
+ */
+const parseRequired = (raw: string): Effect.Effect<ReadonlyArray<VerdictGate>, never> => {
+	const tokens = raw
+		.split(/[\s,]+/)
+		.map((t) => t.trim().toLowerCase())
+		.filter((t) => t.length > 0);
+	const gates: VerdictGate[] = [];
+	for (const token of tokens) {
+		const name = token.startsWith("review-") ? token.slice("review-".length) : token;
+		if (!(GATES as ReadonlyArray<string>).includes(name)) {
+			return fail(
+				`unrecognized required namespace '${token}' — expected review-<gate> or <gate>, one of ${GATES.join(" | ")}. Refusing to drop it from the required set (that would shrink the gate conjunction).`,
+			);
+		}
+		gates.push(name as VerdictGate);
+	}
+	return Effect.succeed(gates);
+};
+
+/**
+ * `gate --pr N --require <namespaces> [--cp] [--head <sha>]` — the merge authority's structural
+ * enqueue check (#3982). Exit 0 **only** when EVERY required namespace carries a verdict that is
+ * affirmatively read, bound to the PR's live head, and a pass; every other state — including "no
+ * verdict found at all", the hole PR #3944 enqueued through — exits non-zero with the named reason.
+ *
+ * This is deliberately not expressible as N × `verdict read`: absence is a property of the required
+ * SET, so it can only be decided where the set is known. `--require` takes the same set
+ * `class-probe classify --namespaces` derives, so a PR spanning an ADR plus a `.glossary/**` row
+ * (which rides has-code) needs BOTH review-doc and review-code, not either.
+ */
+const gate = Command.make(
+	"gate",
+	{pr: prFlag, require: requireFlag, cp: cpFlag, head: headFlag},
+	Effect.fn(function* ({pr, require: required, cp, head}) {
+		const requiredGates = yield* parseRequired(required);
+		const decision = yield* (yield* Github).gate(
+			pr,
+			requiredGates,
+			cp,
+			Option.getOrUndefined(head),
+		);
+		// The full per-namespace decision goes to stdout as JSON (a caller may want to name which
+		// namespace blocked); the single named outcome line goes to stderr, mirroring `read`.
+		yield* Console.log(JSON.stringify(decision));
+		if (decision.enqueueable) {
+			process.stderr.write(`verdict gate: ${decision.reason}\n`);
+			return;
+		}
+		return yield* fail(decision.reason);
+	}),
+).pipe(
+	Command.withDescription(
+		"Assert EVERY required review namespace carries a current-head pass before an enqueue (exit 0 = enqueueable) — the fail-closed absence check (#3982)",
+	),
+);
+
+/**
  * Read the composed verdict body: from `--body-file` over the `FileSystem` seam, else from
  * stdin. Stdin (fd 0) has no `FileSystem` equivalent, so that read stays a raw `node:fs` call
  * at this boundary (`.patterns/effect-platform-access.md` bright line). An unreadable
@@ -176,9 +262,9 @@ const validate = Command.make(
 );
 
 export const verdictCommand = Command.make("verdict").pipe(
-	Command.withSubcommands([read, post, validate]),
+	Command.withSubcommands([read, gate, post, validate]),
 	Command.withDescription(
-		"Read/post ADR-0058 SHA-bound gate verdicts (review-code/doc/skill/design) — the shared verdict-match glue",
+		"Read/post ADR-0058 SHA-bound gate verdicts (review-code/doc/skill/design), and gate an enqueue on a current-head pass in EVERY required namespace",
 	),
 	Command.provide(GithubLive),
 );

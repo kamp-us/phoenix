@@ -515,3 +515,139 @@ describe("Github.post — the folded-in landed-comment self-verify (#3019)", () 
 		),
 	);
 });
+
+describe("Github.gate — the required-namespace enqueue decision over a mock gh spawner (#3982)", () => {
+	it.effect("PR #3944's shape: the only verdict is bound to a SUPERSEDED head → REFUSE", () =>
+		Effect.gen(function* () {
+			const decision = yield* (yield* Github).gate(PR, ["doc"], false);
+			assert.isFalse(decision.enqueueable);
+			assert.strictEqual(decision.decisions[0]?.state, "unverified");
+			assert.include(decision.reason, "not bound to current head");
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({id: 1, login: "usirin", body: `review-doc: FAIL @ ${OLD} — round 1`}),
+				]),
+				[`GET ${P}/collaborators/usirin/permission`]: "admin",
+			}),
+		),
+	);
+
+	it.effect("no verdict at all in a required namespace → REFUSE (the absence hole)", () =>
+		Effect.gen(function* () {
+			const decision = yield* (yield* Github).gate(PR, ["doc"], false);
+			assert.isFalse(decision.enqueueable);
+			assert.strictEqual(decision.decisions[0]?.state, "absent");
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+			}),
+		),
+	);
+
+	it.effect("a mixed doc+code PR with only review-doc PASS → REFUSE on the empty namespace", () =>
+		Effect.gen(function* () {
+			const decision = yield* (yield* Github).gate(PR, ["doc", "code"], false);
+			assert.isFalse(decision.enqueueable);
+			assert.include(decision.reason, "no review-code PASS");
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({id: 1, login: "usirin", body: `review-doc: PASS @ ${HEAD} — merge-ready`}),
+				]),
+				[`GET ${P}/collaborators/usirin/permission`]: "admin",
+			}),
+		),
+	);
+
+	it.effect("both namespaces at the current head → enqueueable", () =>
+		Effect.gen(function* () {
+			const decision = yield* (yield* Github).gate(PR, ["doc", "code"], false);
+			assert.isTrue(decision.enqueueable);
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({id: 1, login: "usirin", body: `review-doc: PASS @ ${HEAD} — merge-ready`}),
+					comment({id: 2, login: "usirin", body: `review-code: PASS @ ${HEAD} — merge-ready`}),
+				]),
+				[`GET ${P}/collaborators/usirin/permission`]: "admin",
+			}),
+		),
+	);
+
+	// A §CP PR's ONLY verdict is the SHA-less advisory (ADR 0111): `read` resolves it `none`, and that
+	// `none` is the EXPECTED shape, not an absent verdict. The advisory author is ACL-checked here via
+	// `namespaceRe` — which `read`'s polarity-only scope structurally cannot do for the advisory form.
+	const CP_ADVISORY = [
+		"review-skill: advisory — blocking-set PR (manual merge)",
+		"",
+		`Reviewed-head: @ ${HEAD}`,
+		"",
+		"- [PASS] the skill gate's own criteria",
+	].join("\n");
+
+	it.effect("a §CP advisory at the current head PASSES (--cp)", () =>
+		Effect.gen(function* () {
+			const decision = yield* (yield* Github).gate(PR, ["skill"], true);
+			assert.isTrue(decision.enqueueable);
+			assert.strictEqual(decision.decisions[0]?.form, "advisory");
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({id: 1, login: "usirin", body: CP_ADVISORY}),
+				]),
+				[`GET ${P}/collaborators/usirin/permission`]: "admin",
+			}),
+		),
+	);
+
+	it.effect("the same advisory on a NON-§CP PR is not a pass → REFUSE", () =>
+		Effect.gen(function* () {
+			const decision = yield* (yield* Github).gate(PR, ["skill"], false);
+			assert.isFalse(decision.enqueueable);
+			assert.strictEqual(decision.decisions[0]?.state, "absent");
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({id: 1, login: "usirin", body: CP_ADVISORY}),
+				]),
+				[`GET ${P}/collaborators/usirin/permission`]: "admin",
+			}),
+		),
+	);
+
+	it.effect("a §CP advisory from a read-only author is ACL-dropped → REFUSE (ADR 0055)", () =>
+		Effect.gen(function* () {
+			const decision = yield* (yield* Github).gate(PR, ["skill"], true);
+			assert.isFalse(decision.enqueueable);
+			assert.strictEqual(decision.decisions[0]?.state, "absent");
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({id: 1, login: "a-stranger", body: CP_ADVISORY}),
+				]),
+				[`GET ${P}/collaborators/a-stranger/permission`]: "read",
+			}),
+		),
+	);
+
+	it.effect("an empty required set REFUSES rather than passing vacuously (ADR 0092)", () =>
+		Effect.gen(function* () {
+			const decision = yield* (yield* Github).gate(PR, [], false);
+			assert.isFalse(decision.enqueueable);
+			assert.include(decision.reason, "zero scope");
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+			}),
+		),
+	);
+});

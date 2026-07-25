@@ -741,6 +741,67 @@ no `claude-plugins/**` skills source).
 
 ## Step 2 — Resolve the *latest current-head* verdict per gate namespace, then branch on polarity (guard 1)
 
+<a id="step-2-gate"></a>
+### Step 2 gate — `verdict gate` is the enqueue precondition: run it FIRST, refuse on non-zero
+
+**Run this before any other Step-2 read, and treat a non-zero exit as a hard stop.** It resolves,
+in one fail-closed decision, the thing the rest of Step 2 describes: does **every** namespace this
+PR's diff requires carry a verdict that was **affirmatively read, bound to the PR's live head, and a
+pass**? A green exit is the **only** sanctioned path past guard 1 — no bypass, and no "I read the
+namespaces and they looked fine."
+
+The required set is **derived, never eyeballed** — the same `class-probe` output the reviewer fan
+dispatches off, so `dispatched-gate == required-gate` holds by construction:
+
+```bash
+# the required namespaces for THIS diff — one per artifact class present, plus review-design when
+# the diff is UI-affecting. `.glossary/**` rides has-code, so an ADR + a glossary row requires BOTH
+# review-doc AND review-code; satisfying one is not enough.
+REQUIRED="$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
+  | pipeline-cli class-probe classify --namespaces | paste -sd, -)"
+# A control-plane PR's pass path is the canonical SHA-less ADVISORY, bound in the body's
+# `Reviewed-head` line (ADR 0111/0151) — pass --cp so that form counts, and ONLY then. Set this from
+# Step 0's own classification (it printed `BLOCKING (…)` for a §CP path/content hit) AND only after
+# Step 0's approval gate discharged; leave it empty for every non-§CP PR.
+CP_FLAG=""   # → "--cp" iff Step 0 classified this PR §CP and its control-plane approval discharged
+pipeline-cli verdict gate --pr "$PR" --require "$REQUIRED" $CP_FLAG || {
+  disarm_intent refuse || INTENT_UNCLEARED=1
+  echo "ship-it: refused at guard 1 — see the named reason above; NOT enqueued."; exit 1; }
+```
+
+**Why a verb and not a careful read.** The rule below was already correct in prose ("docs present
+but the review-doc namespace is empty → `unverified (no review-doc PASS)`"), but nothing *computed*
+it: the shipper resolved each namespace with a separate `verdict read` and then decided **by
+eyeball** whether the union covered every required namespace. That leaves the **absence** branch to
+an agent's attention, and PR #3944 enqueued with **no verdict bound to its live head at all** — the
+one FAIL on it was bound to a *superseded* head, so at enqueue time nothing attested the tree being
+merged (#3982). "No verdict found" must be a **refusal**, not a pass-through, and absence is a
+property of the required **set** — so it can only be decided where the set is known, which is
+exactly what a per-namespace `read` cannot do. The verb makes the invalid state unrepresentable;
+`decideGate`'s unit tests are the contract, including the #3944 stale-head reproduction.
+
+The verb refuses, with the named reason, on **every** non-pass state: a namespace with no verdict at
+all, a verdict bound to a stale head, a SHA-less pre-0058 marker, a §CP advisory whose
+`Reviewed-head` is stale or whose body carries a `[FAIL]` checkbox, a current-head FAIL, an **empty
+required set** (zero required gates would make the conjunction vacuously true — an un-gated merge
+dressed as a pass, ADR 0092), and an unresolvable head.
+
+**`--cp` is load-bearing in both directions.** A §CP PR's only verdict is the SHA-less advisory, so
+`verdict read --gate code` legitimately resolves `_tag: none` on it — that `none` is the **expected**
+§CP shape, not an absent verdict, and a §CP PR must **never** be required to carry (nor be satisfied
+by) a bindable first-line `PASS @ <sha>` (that drops the §CP verdict into the auto-merge namespace,
+the ADR 0111 hazard). Pass `--cp` **only** for a PR Step 0 classified §CP whose control-plane
+approval gate already passed; without it the advisory is correctly not a pass.
+
+**The one signal the verb does not read — apply it on top.** `verdict gate` reads marker/advisory
+*comments*, not GitHub's native reviews. So a green `verdict gate` is **necessary, not sufficient**:
+the native-review fold below still applies to the review-code namespace, and a **newer**
+`CHANGES_REQUESTED` review than the marker still flips that namespace to FAIL and refuses. Run the
+verb first, then the fold; never let a green verb suppress a newer decisive review.
+
+The rest of Step 2 is the **explanation** of what that verb decides, plus the native-review fold it
+cannot see. Read it to understand a refusal — do not re-implement the conjunction by hand.
+
 You do **not** ship on the presence of any PASS that ever existed. Each gate is stateless and
 re-runs, so a PR can go PASS → FAIL or FAIL → PASS. Resolve **`review-code`, `review-doc`, and
 `review-skill` in separate namespaces** — three anchored regexes that never cross-match — and
@@ -972,6 +1033,12 @@ is_current () { [ -n "$1" ] || return 1; case "$CURRENT_HEAD" in "$1"*) return 0
 <a id="step-2cp--cp-advisory-namespace-resolution-adr-01350151"></a>
 ### Step 2.§CP — resolve a §CP advisory namespace from the body's `Reviewed-head` line (ADR 0135/0151)
 
+> **Owned by the verb — the bash below is the reference explanation, not a second implementation.**
+> This resolution now runs inside `pipeline-cli verdict gate --cp` ([Step 2 gate](#step-2-gate)):
+> author-gate the advisory the same way as a marker, take latest-wins across marker *and* advisory,
+> read the head from the body's `Reviewed-head` anchor, and require every body checkbox `[PASS]`. Read
+> this section to understand a §CP refusal; do not hand-roll the resolution beside the verb.
+
 **This step runs only for a PR Step 0 classified §CP whose approval gate passed** (a current-head
 `@kamp-us/control-plane` team approval is present — else Step 0 already STOPPED at `awaiting
 control-plane approval`, and you never reach here). A §CP `review-skill` / `review-doc` PR's *only*
@@ -1027,11 +1094,15 @@ A §CP namespace whose latest verdict is a `review-<code|skill|doc>: FAIL` marke
 reviewer found a miss), refused exactly as a non-§CP FAIL — the §CP advisory path is entered only
 when the latest verdict is an *advisory*, never to mask a FAIL.
 
-Then gate the merge on the classes present (Step 0):
+Then gate the merge on the classes present (Step 0). **This conjunction is what
+[Step 2 gate](#step-2-gate)'s `verdict gate` computes** — the list below names each refusal it emits,
+so a reason printed by the verb maps to a line here; it is not a second place to re-derive the check
+by hand:
 
 1. For **each class present**, its namespace must have a latest verdict, it must be **bound to
    the current head** (Step 2b, or Step 2.§CP for a §CP advisory namespace), and it must be PASS
-   (or, for a §CP advisory namespace, the Step 2.§CP PASS-equivalent).
+   (or, for a §CP advisory namespace, the Step 2.§CP PASS-equivalent). **A namespace with no
+   verdict at all is this same refusal** — absence is never a pass-through (#3982).
    - code present but the review-code namespace is empty → `unverified (no review-code PASS)`.
    - docs present but the review-doc namespace is empty → `unverified (no review-doc PASS)`.
    - skills present but the review-skill namespace is empty → `unverified (no review-skill PASS)`.
