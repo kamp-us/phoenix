@@ -13,9 +13,7 @@
  * failure is an `IoError` (also non-zero — both failures, undistinguished, per the
  * bin's contract).
  */
-import {existsSync, readdirSync, readFileSync, statSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {
 	type DiscoveredMutation,
@@ -44,11 +42,14 @@ export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFa
 	reason: Schema.String,
 }) {}
 
-const FEATURES_DIR = join("apps", "web", "worker", "features");
+// Repo-relative path fragments (POSIX): combined with the absolute `root` at runtime
+// through the `Path.Path` seam, so they stay plain-string literals (the catalog-guard
+// idiom) rather than a module-level `node:path` join with no seam in scope.
+const FEATURES_DIR = "apps/web/worker/features";
 const MUTATIONS_FILE = "mutations.ts";
 const LIVE_FILE = "live.ts";
-const MANIFEST_PATH = join(FEATURES_DIR, "fate-live", "fanned-mutations.ts");
-const PROTOCOL_PATH = join(FEATURES_DIR, "fate-live", "protocol.ts");
+const MANIFEST_PATH = `${FEATURES_DIR}/fate-live/fanned-mutations.ts`;
+const PROTOCOL_PATH = `${FEATURES_DIR}/fate-live/protocol.ts`;
 
 /** The gathered facts across all feature mutation + live files. */
 interface GatheredFeatures {
@@ -64,45 +65,50 @@ interface GatheredFeatures {
  * one-hop delegation, resolved via the `LiveTopic` map). `live.ts` is scanned even for a
  * feature with no `mutations.ts`, so a delegated-through binding (report → pano/sözlük)
  * contributes its targets to the closure.
+ *
+ * All directory/file IO goes through the Effect `FileSystem`/`Path` seam (over the bin's
+ * `NodeServices.layer`), so a gate `unit` test substitutes an in-memory fs for the real
+ * disk (.patterns/effect-platform-access.md); a fs fault folds `PlatformError` → the
+ * `IoError` this gate already carries. This is the one why-note for the file's
+ * platform-seam migration — the other IO helpers below follow the same shape.
  */
 const gatherFeatures = (
 	root: string,
 	liveTopicMap: ReadonlyMap<string, string>,
-): Effect.Effect<GatheredFeatures, IoError> =>
-	Effect.try({
-		try: () => {
-			const base = join(root, FEATURES_DIR);
-			const entries = readdirSync(base, {withFileTypes: true});
-			const discovered: Array<DiscoveredMutation> = [];
-			const featurePublishes = new Map<string, boolean>();
-			const directTargets = new Map<string, ReadonlySet<string>>();
-			const delegations = new Map<string, ReadonlySet<string>>();
-			for (const entry of entries) {
-				const abs = join(base, entry.name);
-				if (!statSync(abs).isDirectory()) continue;
-				const mutationsPath = join(abs, MUTATIONS_FILE);
-				if (existsSync(mutationsPath)) {
-					const source = readFileSync(mutationsPath, "utf8");
-					for (const key of parseMutationKeys(source)) {
-						discovered.push({key, feature: entry.name});
-					}
-					featurePublishes.set(entry.name, referencesPublisher(source));
+): Effect.Effect<GatheredFeatures, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const base = path.join(root, FEATURES_DIR);
+		const entries = yield* fs.readDirectory(base);
+		const discovered: Array<DiscoveredMutation> = [];
+		const featurePublishes = new Map<string, boolean>();
+		const directTargets = new Map<string, ReadonlySet<string>>();
+		const delegations = new Map<string, ReadonlySet<string>>();
+		for (const name of entries) {
+			const abs = path.join(base, name);
+			if ((yield* fs.stat(abs)).type !== "Directory") continue;
+			const mutationsPath = path.join(abs, MUTATIONS_FILE);
+			if (yield* fs.exists(mutationsPath)) {
+				const source = yield* fs.readFileString(mutationsPath, "utf8");
+				for (const key of parseMutationKeys(source)) {
+					discovered.push({key, feature: name});
 				}
-				const livePath = join(abs, LIVE_FILE);
-				if (existsSync(livePath)) {
-					const liveSource = readFileSync(livePath, "utf8");
-					directTargets.set(entry.name, parseFeatureTargets(liveSource, liveTopicMap));
-					delegations.set(entry.name, parseFeatureDelegations(liveSource));
-				}
+				featurePublishes.set(name, referencesPublisher(source));
 			}
-			return {
-				discovered,
-				featurePublishes,
-				featureTargets: resolveReachableTargets(directTargets, delegations),
-			};
-		},
-		catch: (cause) => new IoError({path: join(root, FEATURES_DIR), cause}),
-	});
+			const livePath = path.join(abs, LIVE_FILE);
+			if (yield* fs.exists(livePath)) {
+				const liveSource = yield* fs.readFileString(livePath, "utf8");
+				directTargets.set(name, parseFeatureTargets(liveSource, liveTopicMap));
+				delegations.set(name, parseFeatureDelegations(liveSource));
+			}
+		}
+		return {
+			discovered,
+			featurePublishes,
+			featureTargets: resolveReachableTargets(directTargets, delegations),
+		};
+	}).pipe(Effect.mapError((cause) => new IoError({path: `${root}/${FEATURES_DIR}`, cause})));
 
 /**
  * Read + parse the `LiveTopic` map from `fate-live/protocol.ts` — the source of truth
@@ -111,26 +117,32 @@ const gatherFeatures = (
  * topic check then reports every declared connection topic as unreachable, which
  * fail-closes loudly (a moved protocol file is a real misconfiguration).
  */
-const readLiveTopicMap = (root: string): Effect.Effect<ReadonlyMap<string, string>, IoError> =>
-	Effect.try({
-		try: () => {
-			const protocolPath = join(root, PROTOCOL_PATH);
-			if (!existsSync(protocolPath)) return new Map<string, string>();
-			return parseLiveTopicMap(readFileSync(protocolPath, "utf8"));
-		},
-		catch: (cause) => new IoError({path: join(root, PROTOCOL_PATH), cause}),
-	});
+const readLiveTopicMap = (
+	root: string,
+): Effect.Effect<ReadonlyMap<string, string>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const protocolPath = path.join(root, PROTOCOL_PATH);
+		if (!(yield* fs.exists(protocolPath))) return new Map<string, string>();
+		return parseLiveTopicMap(yield* fs.readFileString(protocolPath, "utf8"));
+	}).pipe(Effect.mapError((cause) => new IoError({path: `${root}/${PROTOCOL_PATH}`, cause})));
 
 /** Read + parse the fanned-mutation manifest; a missing manifest fails closed. */
 const readManifest = (
 	root: string,
-): Effect.Effect<ReadonlyArray<ManifestEntry>, IoError | CheckFailed> =>
+): Effect.Effect<
+	ReadonlyArray<ManifestEntry>,
+	IoError | CheckFailed,
+	FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
-		const manifestPath = join(root, MANIFEST_PATH);
-		const text = yield* Effect.try({
-			try: () => readFileSync(manifestPath, "utf8"),
-			catch: (cause) => new IoError({path: manifestPath, cause}),
-		});
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const manifestPath = path.join(root, MANIFEST_PATH);
+		const text = yield* fs
+			.readFileString(manifestPath, "utf8")
+			.pipe(Effect.mapError((cause) => new IoError({path: manifestPath, cause})));
 		const entries = parseManifestEntries(text);
 		if (entries.length === 0) {
 			// A present-but-empty (or unparseable) manifest is a broken scope assumption,
@@ -151,7 +163,9 @@ const readManifest = (
  * feature publishes a `/fate/live` invalidation, and each publish aims at its declared
  * topic, else `CheckFailed`. Fails closed on zero mutations in scope (ADR 0092).
  */
-export const checkFanout = (root: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const checkFanout = (
+	root: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const manifest = yield* readManifest(root);
 		const liveTopicMap = yield* readLiveTopicMap(root);

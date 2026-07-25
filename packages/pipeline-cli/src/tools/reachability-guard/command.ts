@@ -25,25 +25,32 @@
  * caught inside the handler (not at the bin's run boundary) so the contract survives
  * folding into the shared `pipeline-cli` bin, which provides only `NodeServices.layer`.
  */
-import {existsSync} from "node:fs";
-import {dirname, join, resolve} from "node:path";
-import {Effect, Option} from "effect";
+import {Effect, FileSystem, Option, Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, checkReachability} from "./gate.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 
-const defaultRoot = (from: string = process.cwd()): string => {
-	const start = resolve(from);
-	const root = findRootDir(
-		start,
-		(dir) => ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
-		dirname,
-	);
-	return root ?? start;
-};
+// Walk up from cwd for the first ancestor bearing a repo-root marker, probing each marker
+// through the `FileSystem`/`Path` seam so the resolver is testable off real disk
+// (.patterns/effect-platform-access.md). Marker-existence faults fall through as false,
+// matching the prior `existsSync`.
+const defaultRoot = Effect.fn(function* (from: string = process.cwd()) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const start = path.resolve(from);
+	let dir = start;
+	for (;;) {
+		for (const marker of ROOT_MARKERS) {
+			if (yield* fs.exists(path.join(dir, marker)).pipe(Effect.orElseSucceed(() => false)))
+				return dir;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) return start;
+		dir = parent;
+	}
+});
 
 const flagKeyArg = Argument.string("flag-key").pipe(
 	Argument.withDescription("the Flagship flag key to assert reachable (e.g. phoenix-reactions)"),
@@ -54,8 +61,10 @@ const rootFlag = Flag.string("root").pipe(
 	Flag.withDescription("the repo root to scan flags/UI/e2e under (default: walk up for one)"),
 );
 
-const resolveRoot = (root: Option.Option<string>): string =>
-	Option.getOrElse(root, () => defaultRoot());
+const resolveRoot = (
+	root: Option.Option<string>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+	Option.match(root, {onNone: () => defaultRoot(), onSome: Effect.succeed});
 
 // CheckFailed is the expected gate-fail signal — print its reason on stderr and exit
 // non-zero WITHOUT a stack trace; genuine crashes (IoError, etc.) still get the default
@@ -70,9 +79,8 @@ const check = Command.make(
 	"check",
 	{flagKey: flagKeyArg, root: rootFlag},
 	Effect.fn(function* ({flagKey, root: rootOpt}) {
-		yield* checkReachability(resolveRoot(rootOpt), flagKey).pipe(
-			Effect.catchTag("CheckFailed", onCheckFailed),
-		);
+		const root = yield* resolveRoot(rootOpt);
+		yield* checkReachability(root, flagKey).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
 	}),
 ).pipe(
 	Command.withDescription(
