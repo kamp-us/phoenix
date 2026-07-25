@@ -21,6 +21,16 @@ The founder-directed home-or-kill sweep (#3894) drove the open backlog to 100% a
 
 Forcing milestones onto either class would make the milestone counts lie, defeating the legibility goal the 100%-homed rule exists for.
 
+### Relationship to ADR 0072 — amended in part
+
+The 100%-homed rule collides with a live decision. ADR [0072](0072-milestones-encode-strategic-sequencing.md) §4 (**freeze-by-absence** — "deliberately leaving a cluster unmilestoned … is itself the signal that it is parked / deferred. Absence is meaningful — don't invent homes for frozen work") and §5 (**milestone is an optional pipeline dimension**) both say the opposite of "every open issue is milestone-homed or killed". That relationship is stated here rather than left implicit, and 0072's status line carries the forward pointer to this ADR.
+
+**What this ADR amends in 0072, and how.** For every open issue *outside* the two exempt labels, milestone is no longer optional (§5) and a bare absence no longer reads as "parked by design" (§4) — it reads as un-triaged, and the issue is homed or killed per ADR [0202](0202-forward-motion-doctrine-crewops.md).
+
+**What survives of freeze-by-absence.** The signal it carried — *this work is parked by design; don't force-fit it* — is not retired; it moves from an absence to a label. `wayfinder:backlog` and `axis:pipeline-hardening` are that same signal in explicit, greppable form: the standing-lane exemption **is** freeze-by-absence made legible. This is also why 0072's own Consequence ("if every issue gets a milestone, absence stops meaning anything and the deferral signal is lost") no longer binds — under this ADR the deferral signal does not ride on absence at all, so homing everything else cannot dilute it.
+
+**Untouched in 0072:** §1 (milestones encode strategic sequencing, not feature breakdown), §2 (surface vs strategic kinds), §3 (the set stays small and human-curated), and the p0-stays-sovereign consequence.
+
 ## Decision
 
 **The 100%-homed rule has a standing-lane exemption for exactly two labels — `wayfinder:backlog` and `axis:pipeline-hardening` — and nothing else inherits it without a founder ruling.**
@@ -33,7 +43,7 @@ Consequence for triage and sweeps: a home-or-kill pass treats an issue bearing e
 - Exactly two exempt labels: `wayfinder:backlog` and `axis:pipeline-hardening`.
 - Extending the exemption to any other label/class requires a founder ruling.
 - Home-or-kill sweeps skip exempt-labeled issues; they never force-fit a milestone onto them.
-- Every other open issue is milestone-homed or killed (ADR 0202).
+- Every other open issue is milestone-homed or killed (ADR 0202) — this amends ADR [0072](0072-milestones-encode-strategic-sequencing.md) §4 and §5 in part, per Context above.
 
 **Banned.**
 - A third milestone-less category minted without a founder ruling.
@@ -49,4 +59,5 @@ Consequence for triage and sweeps: a home-or-kill pass treats an issue bearing e
 ## Records
 
 - Ruling source: issue #3894 (the home-or-kill sweep + the recorded founder ruling, 2026-07-24).
+- Amends ADR [0072](0072-milestones-encode-strategic-sequencing.md) §4 / §5 in part; 0072's status line points forward to this ADR.
 - Vocabulary impact: coins **standing lane** — routed to `.glossary/TERMS.md` in this PR.
