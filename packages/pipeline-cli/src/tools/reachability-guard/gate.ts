@@ -71,7 +71,7 @@ const walk = (
 			// reachability tests are NEGATIONS (`!consumingConstants.has` / `!journeyKeys.has`), so
 			// a wider walk can only turn a RED into a GREEN — purely fail-open for a fail-closed
 			// gate (ADR 0092/0173) — and, since the ignore-list screens by NAME with no visited set,
-			// a symlink cycle would be unbounded recursion (#3929). Symlinked FILES stay in scope as
+			// a symlink cycle would be unbounded recursion (#3471). Symlinked FILES stay in scope as
 			// at base, hence the check gates the Directory arm only; a link is also never `stat`ed,
 			// so a broken one is ignored rather than surfacing as an IoError, again as at base.
 			const isSymlink = yield* fs.readLink(abs).pipe(
