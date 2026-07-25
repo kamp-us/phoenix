@@ -13,6 +13,7 @@
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
 import {adoptionLintCommand} from "./tools/adoption-lint/command.ts";
+import {adrSweepCommand} from "./tools/adr-sweep/command.ts";
 import {campaignCommand} from "./tools/campaign/command.ts";
 import {catalogGuardCommand} from "./tools/catalog-guard/command.ts";
 import {changeDetectGuardCommand} from "./tools/change-detect-guard/command.ts";
@@ -222,4 +223,10 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// triage with neither an arc/campaign milestone nor one of the two standing-lane labels,
 	// so floaters can't regrow at the seam. Fail-closed on zero scope (ADR 0092).
 	homingGuardCommand,
+	// #3980 — the mechanical half of the ADR contradiction sweep: rank the live-accepted ADRs a
+	// new ADR touches the decision domain of but never cites, so a same-question conflict with an
+	// unsuperseded ADR (0208-vs-0072, 0210-vs-0202) is a list to clear rather than a memory test.
+	// Fail-closed on an unreadable corpus / zero scope (ADR 0092); `indeterminate` is a distinct
+	// outcome from `no-overlap` by construction.
+	adrSweepCommand,
 ];
