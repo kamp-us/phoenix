@@ -4,12 +4,15 @@ import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {
 	classify,
+	FAILCLOSED_DOC_VOCAB_PROBE,
 	FAILCLOSED_PROBES,
 	FAILCLOSED_UI_EXCLUDE_RE,
 	FAILCLOSED_UI_RE,
+	isDocVocabSurfaceOnly,
 	isUiAffecting,
 	NO_INPUT_FAILCLOSED_CLASSES,
 	parseClassProbes,
+	parseDocVocabProbe,
 	parseUiExclude,
 	parseUiProbe,
 	requiredNamespaces,
@@ -352,6 +355,59 @@ describe("isUiAffecting — a src-colocated *.test.ts[x] / *.spec.* mints NO rev
 		// exempt. `$^` never matches, so the test file falls through to the UI_RE test.
 		expect(isUiAffecting(["apps/web/src/Foo.test.tsx"], LIVE_UI_RE, FAILCLOSED_UI_EXCLUDE_RE)).toBe(
 			true,
+		);
+	});
+});
+
+// The issueless allowance's axis (ADR 0075/0184, #3953). These pin the property that keeps the
+// three gates' Step 1 from drifting again: it is the SURFACE that decides, not the class — so a
+// `.glossary/**` path is simultaneously has-code (needs review-code) and a doc/vocab surface
+// (needs no `Fixes #N`), and the two facts must not be conflated.
+describe("isDocVocabSurfaceOnly — the surface axis, not the class axis", () => {
+	const LIVE_DOC_VOCAB = parseDocVocabProbe(readFileSync(FORMATS_PATH, "utf8"));
+
+	it("extracts the canonical DOC_VOCAB_*_RE pair off the live contract", () => {
+		expect(LIVE_DOC_VOCAB.exclude).toBe("^(apps|packages|infra|claude-plugins)/");
+		expect(LIVE_DOC_VOCAB.surface).toBe("^(\\.decisions|\\.patterns|\\.glossary)/|\\.md$");
+	});
+
+	it("a doc-only PR with no linked issue is surface-only ⇒ Step 1 must not refuse it", () => {
+		expect(isDocVocabSurfaceOnly([".decisions/0200-some-adr.md"], LIVE_DOC_VOCAB)).toBe(true);
+		expect(isDocVocabSurfaceOnly([".patterns/index.md", "README.md"], LIVE_DOC_VOCAB)).toBe(true);
+	});
+
+	it("the canonical ADR + .glossary/** shape is surface-only, YET still requires review-code", () => {
+		// The exact divergence #3953 closes: has-code (so review-code gates it) and issueless
+		// (so no `Fixes #N` is owed) answer different questions — both hold at once.
+		const files = [".decisions/0200-some-adr.md", ".glossary/TERMS.md"];
+		expect(isDocVocabSurfaceOnly(files, LIVE_DOC_VOCAB)).toBe(true);
+		expect(requiredNamespaces(classify(files, LIVE_PROBES))).toEqual(["review-code", "review-doc"]);
+	});
+
+	it("a code-touching PR is NOT surface-only ⇒ the missing-link hard-stop stands", () => {
+		expect(isDocVocabSurfaceOnly(["apps/web/worker/index.ts"], LIVE_DOC_VOCAB)).toBe(false);
+		// a doc companion never launders the code path
+		expect(
+			isDocVocabSurfaceOnly([".decisions/0200-some-adr.md", "packages/x/src/y.ts"], LIVE_DOC_VOCAB),
+		).toBe(false);
+		// a code-root *.md is excluded BEFORE the `\.md$` test — it rides its code artifact
+		expect(isDocVocabSurfaceOnly(["apps/web/README.md"], LIVE_DOC_VOCAB)).toBe(false);
+		// skills source is behavioral, never a doc/vocab surface
+		expect(
+			isDocVocabSurfaceOnly(
+				["claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md"],
+				LIVE_DOC_VOCAB,
+			),
+		).toBe(false);
+		// an unclassified root file fails the surface test rather than sliding through
+		expect(isDocVocabSurfaceOnly(["biome.jsonc"], LIVE_DOC_VOCAB)).toBe(false);
+	});
+
+	it("fails closed toward refusal: empty input and an unreadable §CLASS both resolve NOT surface-only", () => {
+		expect(isDocVocabSurfaceOnly([], LIVE_DOC_VOCAB)).toBe(false);
+		expect(parseDocVocabProbe("")).toEqual(FAILCLOSED_DOC_VOCAB_PROBE);
+		expect(isDocVocabSurfaceOnly([".decisions/0200-some-adr.md"], FAILCLOSED_DOC_VOCAB_PROBE)).toBe(
+			false,
 		);
 	});
 });

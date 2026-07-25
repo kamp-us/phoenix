@@ -148,6 +148,57 @@ export const classify = (
  */
 export const NO_INPUT_FAILCLOSED_CLASSES: ReadonlyArray<ArtifactClass> = ["has-code"];
 
+/**
+ * The §CLASS doc/vocab-surface carve-then-test pair — a **different axis** from the class
+ * probes above: not "which gate verifies this path" but "is a missing `Fixes #N` legitimate
+ * here". The two disagree on `.glossary/**` alone (has-code, yet conversation-authored and
+ * issueless by design), which is why the gates' Step 1 keys on this and not on the class.
+ * See ADR 0075 / 0184 and §CLASS; #3953.
+ */
+export interface DocVocabProbe {
+	readonly exclude: string;
+	readonly surface: string;
+}
+
+/**
+ * Fail-closed defaults, the mirror image of `FAILCLOSED_PROBES`: the class probes over-dispatch
+ * gates, this one refuses the allowance. `exclude: "."` excludes every path and `surface: "$^"`
+ * makes no path a surface, so an unreadable §CLASS resolves NOT surface-only ⇒ the missing-link
+ * hard-stop stands.
+ */
+export const FAILCLOSED_DOC_VOCAB_PROBE: DocVocabProbe = {
+	exclude: ".",
+	surface: "$^",
+};
+
+/** Parse the canonical `DOC_VOCAB_*_RE='…'` lines out of §CLASS (single-quoted assignment only). */
+export const parseDocVocabProbe = (formatsText: string): DocVocabProbe => {
+	const read = (name: string, fallback: string): string =>
+		formatsText.match(new RegExp(`^${name}='([^']*)'`, "m"))?.[1] ?? fallback;
+	return {
+		exclude: read("DOC_VOCAB_EXCLUDE_RE", FAILCLOSED_DOC_VOCAB_PROBE.exclude),
+		surface: read("DOC_VOCAB_SURFACE_RE", FAILCLOSED_DOC_VOCAB_PROBE.surface),
+	};
+};
+
+/**
+ * Is every changed path a doc/vocab surface (⇒ a missing `Fixes #N` is legitimate, ADR 0075/0184)?
+ *
+ * Empty input is **not** surface-only: this probe is only ever piped a PR's changed-file list, so
+ * an empty read is a dropped stdin, and granting an issueless allowance off one would be
+ * fail-open (the same #3786 reasoning `NO_INPUT_FAILCLOSED_CLASSES` encodes for classify).
+ * Uncompilable-regex fallbacks likewise point at refusal, inverting `classify`'s: a broken
+ * exclude matches everything, a broken surface matches nothing.
+ */
+export const isDocVocabSurfaceOnly = (
+	files: ReadonlyArray<string>,
+	probe: DocVocabProbe,
+): boolean => {
+	const isExcluded = matcher(probe.exclude, () => true);
+	const isSurface = matcher(probe.surface, () => false);
+	return files.length > 0 && files.every((f) => !isExcluded(f) && isSurface(f));
+};
+
 /** The `review-*` namespaces a diff requires — one per present class, in canonical order. */
 export const requiredNamespaces = (
 	classes: ReadonlyArray<ArtifactClass>,
