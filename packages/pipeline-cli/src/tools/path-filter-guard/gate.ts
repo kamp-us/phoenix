@@ -10,9 +10,7 @@
  * key or an empty list — fail-closed, ADR 0092). A file that cannot be read is an
  * `IoError` (also non-zero — both failures, undistinguished, per the bin's contract).
  */
-import {readFileSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {CI_E2E_SOURCE, DEPLOY_SOURCE, judge, renderReport} from "./path-filter-guard.ts";
 
@@ -27,10 +25,21 @@ export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFa
 	reason: Schema.String,
 }) {}
 
-const readWorkflow = (root: string, relPath: string): Effect.Effect<string, IoError> =>
-	Effect.try({
-		try: () => readFileSync(join(root, relPath), "utf8"),
-		catch: (cause) => new IoError({path: join(root, relPath), cause}),
+// File IO goes through the Effect `FileSystem`/`Path` seam (over the bin's
+// `NodeServices.layer`), so a gate `unit` test substitutes an in-memory fs for the real
+// disk (.patterns/effect-platform-access.md); a fs fault folds `PlatformError` → the
+// `IoError` this gate already carries.
+const readWorkflow = (
+	root: string,
+	relPath: string,
+): Effect.Effect<string, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const target = path.join(root, relPath);
+		return yield* fs
+			.readFileString(target, "utf8")
+			.pipe(Effect.mapError((cause) => new IoError({path: target, cause})));
 	});
 
 /**
@@ -38,7 +47,9 @@ const readWorkflow = (root: string, relPath: string): Effect.Effect<string, IoEr
  * dorny/paths-filter lists are the same set, else `CheckFailed`. Fails closed on any
  * zero-scope gap (ADR 0092).
  */
-export const checkPathFilters = (root: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const checkPathFilters = (
+	root: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const ciText = yield* readWorkflow(root, CI_E2E_SOURCE.file);
 		const deployText = yield* readWorkflow(root, DEPLOY_SOURCE.file);

@@ -11,9 +11,7 @@
  * flag definitions (fail-closed, ADR 0092). A directory/file IO failure is an `IoError`
  * (also non-zero — both failures, undistinguished, per the bin's contract).
  */
-import {existsSync, readdirSync, readFileSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {
 	consumedConstantsIn,
@@ -35,66 +33,99 @@ export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFa
 	reason: Schema.String,
 }) {}
 
-const KEYS_PATH = join("apps", "web", "src", "flags", "keys.ts");
-const SRC_ROOT = join("apps", "web", "src");
-const E2E_DIR = join("apps", "web", "tests", "e2e");
+// Repo-relative path fragments (POSIX): combined with the absolute `root` at runtime
+// through the `Path.Path` seam, so they stay plain-string literals rather than a
+// module-level `node:path` join with no seam in scope.
+const KEYS_PATH = "apps/web/src/flags/keys.ts";
+const SRC_ROOT = "apps/web/src";
+const E2E_DIR = "apps/web/tests/e2e";
 
-// A missing UI/e2e dir is zero files, NOT an IO failure — the fail-closed scope anchor is
-// the keys.ts read (zero parsed definitions ⇒ zero-scope). An absent .tsx/e2e tree then
-// resolves as "no consumer / no journey", which judge correctly reports as unreachable.
-const walk = (dir: string, matches: (name: string) => boolean, acc: Array<string>): void => {
-	if (!existsSync(dir)) return;
-	for (const entry of readdirSync(dir, {withFileTypes: true})) {
-		const abs = join(dir, entry.name);
-		if (entry.isDirectory()) {
-			if (entry.name === "node_modules" || entry.name === "dist") continue;
-			walk(abs, matches, acc);
-		} else if (matches(entry.name)) {
-			acc.push(abs);
+/**
+ * Recursively collect the files under `dir` matching `matches`, over the Effect
+ * `FileSystem`/`Path` seam (over the bin's `NodeServices.layer`) so a gate `unit` test
+ * substitutes an in-memory fs for the real disk (.patterns/effect-platform-access.md); a
+ * fs fault folds `PlatformError` → the `IoError` this gate already carries. This is the
+ * one why-note for the file's platform-seam migration — the readers below follow suit.
+ *
+ * A missing UI/e2e dir is zero files, NOT an IO failure — the fail-closed scope anchor is
+ * the keys.ts read (zero parsed definitions ⇒ zero-scope). An absent .tsx/e2e tree then
+ * resolves as "no consumer / no journey", which judge correctly reports as unreachable.
+ */
+const walk = (
+	dir: string,
+	matches: (name: string) => boolean,
+): Effect.Effect<ReadonlyArray<string>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		if (!(yield* fs.exists(dir).pipe(Effect.orElseSucceed(() => false)))) return [];
+		const acc: Array<string> = [];
+		for (const name of yield* fs
+			.readDirectory(dir)
+			.pipe(Effect.mapError((cause) => new IoError({path: dir, cause})))) {
+			const abs = path.join(dir, name);
+			const isDir =
+				(yield* fs.stat(abs).pipe(Effect.mapError((cause) => new IoError({path: abs, cause}))))
+					.type === "Directory";
+			if (isDir) {
+				if (name === "node_modules" || name === "dist") continue;
+				acc.push(...(yield* walk(abs, matches)));
+			} else if (matches(name)) {
+				acc.push(abs);
+			}
 		}
-	}
-};
+		return acc;
+	});
 
 /** Read + parse the flag-key module; a missing module fails as IO (not a vacuous pass). */
-const readDefinitions = (root: string): Effect.Effect<ReadonlyArray<FlagDefinition>, IoError> =>
-	Effect.try({
-		try: () => parseFlagDefinitions(readFileSync(join(root, KEYS_PATH), "utf8")),
-		catch: (cause) => new IoError({path: join(root, KEYS_PATH), cause}),
+const readDefinitions = (
+	root: string,
+): Effect.Effect<ReadonlyArray<FlagDefinition>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const keysPath = path.join(root, KEYS_PATH);
+		const text = yield* fs
+			.readFileString(keysPath, "utf8")
+			.pipe(Effect.mapError((cause) => new IoError({path: keysPath, cause})));
+		return parseFlagDefinitions(text);
 	});
 
 /** Collect the constant names referenced by ≥1 `.tsx` under `apps/web/src`. */
 const gatherConsumers = (
 	root: string,
 	candidateNames: ReadonlyArray<string>,
-): Effect.Effect<ReadonlySet<string>, IoError> =>
-	Effect.try({
-		try: () => {
-			const files: Array<string> = [];
-			walk(join(root, SRC_ROOT), (name) => name.endsWith(".tsx"), files);
-			const consumed = new Set<string>();
-			for (const abs of files) {
-				for (const name of consumedConstantsIn(readFileSync(abs, "utf8"), candidateNames)) {
-					consumed.add(name);
-				}
-			}
-			return consumed;
-		},
-		catch: (cause) => new IoError({path: join(root, SRC_ROOT), cause}),
+): Effect.Effect<ReadonlySet<string>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const files = yield* walk(path.join(root, SRC_ROOT), (name) => name.endsWith(".tsx"));
+		const consumed = new Set<string>();
+		for (const abs of files) {
+			const source = yield* fs
+				.readFileString(abs, "utf8")
+				.pipe(Effect.mapError((cause) => new IoError({path: abs, cause})));
+			for (const name of consumedConstantsIn(source, candidateNames)) consumed.add(name);
+		}
+		return consumed;
 	});
 
 /** Collect the flag keys registered via `@journey:<key>` across the e2e specs. */
-const gatherJourneyKeys = (root: string): Effect.Effect<ReadonlySet<string>, IoError> =>
-	Effect.try({
-		try: () => {
-			const files: Array<string> = [];
-			walk(join(root, E2E_DIR), (name) => name.endsWith(".spec.ts"), files);
-			const keys = new Set<string>();
-			for (const abs of files) {
-				for (const key of parseJourneyTags(readFileSync(abs, "utf8"))) keys.add(key);
-			}
-			return keys;
-		},
-		catch: (cause) => new IoError({path: join(root, E2E_DIR), cause}),
+const gatherJourneyKeys = (
+	root: string,
+): Effect.Effect<ReadonlySet<string>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const files = yield* walk(path.join(root, E2E_DIR), (name) => name.endsWith(".spec.ts"));
+		const keys = new Set<string>();
+		for (const abs of files) {
+			const source = yield* fs
+				.readFileString(abs, "utf8")
+				.pipe(Effect.mapError((cause) => new IoError({path: abs, cause})));
+			for (const key of parseJourneyTags(source)) keys.add(key);
+		}
+		return keys;
 	});
 
 /**
@@ -105,7 +136,7 @@ const gatherJourneyKeys = (root: string): Effect.Effect<ReadonlySet<string>, IoE
 export const checkReachability = (
 	root: string,
 	flagKey: string,
-): Effect.Effect<void, IoError | CheckFailed> =>
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const definitions = yield* readDefinitions(root);
 		const consumingConstants = yield* gatherConsumers(

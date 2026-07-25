@@ -13,9 +13,7 @@
  * a clean pass: there is nothing whose load shape could break, so there is nothing to
  * fail. A present-but-unparseable script is the case that must red, and it does.
  */
-import {existsSync, readdirSync, readFileSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {judge, judgeScript, renderReport, type ScriptVerdict} from "./workflow-contract.ts";
 
@@ -30,35 +28,54 @@ export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFa
 	reason: Schema.String,
 }) {}
 
-/** The workflow-script surface this guard owns (ADR 0062 — repo-relative). */
-const WORKFLOWS_DIR = join(".claude", "workflows");
+/** The workflow-script surface this guard owns (ADR 0062 — repo-relative, POSIX). */
+const WORKFLOWS_DIR = ".claude/workflows";
 
-/** List the `*.js` workflow scripts under `<root>/.claude/workflows`, repo-relative. */
-export const listWorkflowScripts = (root: string): Effect.Effect<ReadonlyArray<string>, IoError> =>
-	Effect.try({
-		try: () => {
-			const base = join(root, WORKFLOWS_DIR);
-			if (!existsSync(base)) return [];
-			return readdirSync(base, {withFileTypes: true})
-				.filter((e) => e.isFile() && e.name.endsWith(".js"))
-				.map((e) => join(WORKFLOWS_DIR, e.name))
-				.sort();
-		},
-		catch: (cause) => new IoError({path: join(root, WORKFLOWS_DIR), cause}),
+/**
+ * List the `*.js` workflow scripts under `<root>/.claude/workflows`, repo-relative.
+ *
+ * Directory/file IO goes through the Effect `FileSystem`/`Path` seam (over the bin's
+ * `NodeServices.layer`), so a gate `unit` test substitutes an in-memory fs for the real
+ * disk (.patterns/effect-platform-access.md); a fs fault folds `PlatformError` → the
+ * `IoError` this gate already carries. This is the one why-note for the file's
+ * platform-seam migration — `scanWorkflowScripts` below follows the same shape.
+ */
+export const listWorkflowScripts = (
+	root: string,
+): Effect.Effect<ReadonlyArray<string>, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const base = path.join(root, WORKFLOWS_DIR);
+		if (!(yield* fs.exists(base).pipe(Effect.orElseSucceed(() => false)))) return [];
+		const names = yield* fs
+			.readDirectory(base)
+			.pipe(Effect.mapError((cause) => new IoError({path: base, cause})));
+		const scripts: Array<string> = [];
+		for (const name of names) {
+			if (!name.endsWith(".js")) continue;
+			const abs = path.join(base, name);
+			const isFile =
+				(yield* fs.stat(abs).pipe(Effect.mapError((cause) => new IoError({path: abs, cause}))))
+					.type === "File";
+			if (isFile) scripts.push(`${WORKFLOWS_DIR}/${name}`);
+		}
+		return scripts.sort();
 	});
 
 /** Read + judge every workflow script under `root` into per-script verdicts. */
 export const scanWorkflowScripts = (
 	root: string,
-): Effect.Effect<ReadonlyArray<ScriptVerdict>, IoError> =>
+): Effect.Effect<ReadonlyArray<ScriptVerdict>, IoError, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
 		const files = yield* listWorkflowScripts(root);
 		const verdicts: ScriptVerdict[] = [];
 		for (const file of files) {
-			const text = yield* Effect.try({
-				try: () => readFileSync(join(root, file), "utf8"),
-				catch: (cause) => new IoError({path: file, cause}),
-			});
+			const text = yield* fs
+				.readFileString(path.join(root, file), "utf8")
+				.pipe(Effect.mapError((cause) => new IoError({path: file, cause})));
 			verdicts.push(judgeScript(file, text));
 		}
 		return verdicts;
@@ -69,7 +86,9 @@ export const scanWorkflowScripts = (
  * contract, else `CheckFailed` with the per-violation report. An empty set passes
  * clean; a present-but-violating (or unparseable) script reds — fail-closed (ADR 0092).
  */
-export const checkWorkflows = (root: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const checkWorkflows = (
+	root: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const verdicts = yield* scanWorkflowScripts(root);
 		const verdict = judge(verdicts);
