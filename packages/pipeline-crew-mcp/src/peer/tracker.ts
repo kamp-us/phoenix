@@ -39,8 +39,11 @@ export class Tracker extends Context.Service<
 		 */
 		readonly lookup: (role: string) => Effect.Effect<ReadonlyArray<RolePresence>>;
 		/**
-		 * The live holder's dialable address for a claimed `resource`, or `None` when it is unclaimed
-		 * or its holder's presence has lapsed (ADR 0191 facet 2). `resource` is an OPAQUE key — the
+		 * The live holder's dialable address for a claimed `resource`, or `None` when it is unclaimed,
+		 * its holder's presence has lapsed (ADR 0191 facet 2), or the lookup was unresolvable (a
+		 * skewed or failing registry — the impl degrades rather than dying, see `crew/tracker.ts`'s
+		 * `claimHolder`). The error channel is `never` BY CONTRACT: an advisory read may not fail a
+		 * send. `resource` is an OPAQUE key — the
 		 * port has no message semantics; the caller supplies the key (the crew maps a `NudgeTarget`
 		 * to `pr-N`/`issue-N`). `send` consults this to route a claimed target to its holder's seat,
 		 * falling back to the broadcast fan on `None` — so claim-aware delivery stays a strict subset
