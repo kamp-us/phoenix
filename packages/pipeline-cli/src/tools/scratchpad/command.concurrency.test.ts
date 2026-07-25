@@ -14,6 +14,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterEach, assert, beforeEach, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 const BIN = fileURLToPath(new URL("../../bin.ts", import.meta.url));
 
@@ -53,10 +54,10 @@ const open = (pid: string): Promise<RunResult> =>
 		);
 	});
 
-describe("scratchpad open — concurrent claims on one namespace", () => {
-	it("admits exactly one of eight concurrent opens; every other exits 4 (ForeignNamespace)", {
-		timeout: 60_000,
-	}, async () => {
+describe("scratchpad open — concurrent claims on one namespace", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	it("admits exactly one of eight concurrent opens; every other exits 4 (ForeignNamespace)", async () => {
 		const results = await Promise.all(Array.from({length: RACERS}, (_, i) => open(`pid${i}`)));
 
 		const winners = results.filter((result) => result.code === 0);
