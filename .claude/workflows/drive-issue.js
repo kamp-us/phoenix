@@ -232,13 +232,15 @@ async function drive() {
 			`\${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}. Procedure: ` +
 			`(1) read your own claim token TOKEN="$CLAUDE_CODE_SESSION_ID" — if it is empty, ABORT (fail-closed, ADR 0115 §"Trust + fail-closed") ` +
 			`and return { won: false, token: "", reason: "no CLAUDE_CODE_SESSION_ID — cannot post an agent-distinguishable claim" }; ` +
-			`(2) self-assign (the coarse availability gate, §7 layer one) via ` +
-			`\`gh api -X POST repos/$REPO/issues/${issue}/assignees\`; ` +
-			`(3) claim through the SHARED VERB — run \`pipeline-cli tracker claim ${issue}\`, which owns the whole write: ` +
+			`(2) claim through the SHARED VERB FIRST — run \`pipeline-cli tracker claim ${issue}\`, which owns the whole write: ` +
 			`Rule-0 defer to a pre-existing authorized owner without posting, the comment POST with the ADR-0191 PRESENCE STAMP ` +
 			`(hand-rolling a \`claim:\` body skips the stamp and leaves the lane's claim unprobeable forever — #3987), the ` +
 			`checkpoint-GET earliest-authorized-claim tiebreak, and retract-our-own-claim-on-loss. Exit 0 = the claim is ours; ` +
-			`(4) on a NON-ZERO exit, self-unassign and return { won: false, token: "", reason: "<the verb's stderr back-off reason>" }. ` +
+			`(3) on a NON-ZERO exit, mutate NOTHING — you never assigned, so there is nothing to undo, and you must NEVER unassign ` +
+			`a slot you did not fill: every agent authenticates as the SAME login, so a cleanup unassign here would strip the LIVE ` +
+			`incumbent's assignment (#4015) — return { won: false, token: "", reason: "<the verb's stderr back-off reason>" }; ` +
+			`(4) ONLY on exit 0, self-assign (the coarse availability gate, §7 layer one) via ` +
+			`\`gh api -X POST repos/$REPO/issues/${issue}/assignees\`. ` +
 			`Do NOT hand-roll the claim POST or re-derive the tiebreak jq. On a confirmed win (exit 0) return { won: true, token: "<TOKEN>", reason: "" }.`,
 		{
 			schema: {

@@ -2713,18 +2713,33 @@ old design used. The race-case derivation transfers and is *strengthened* (ADR 0
   straggler-evicts-owner tension the old `min(login)` needed a separate non-revocability
   argument to close — a lower login could belong to a later arrival; a lower comment id
   cannot.
-- **Transient window.** As before, the assignee field may transiently show two assignees and
-  the comments two claims before a loser retracts; the picker skips on **any non-null
-  assignee**, so a transiently double-claimed issue is passed over, never double-picked (safe
-  degradation).
+- **Transient window.** The comments may transiently carry two claims before a loser retracts,
+  and — because the assignment lands only *after* a won claim (below) — a won-but-not-yet-assigned
+  issue is briefly still unassigned. Both degrade safely: the picker skips on **any non-null
+  assignee**, so a transiently double-claimed issue is passed over rather than double-picked, and
+  an agent that picks the still-unassigned issue in the other window runs the claim verb and
+  defers to the earlier claim.
 
 This remains **detect-and-tiebreak, not a kernel mutex** (the epic's honest non-goal): the
 comment/assignee APIs offer no conditional write, so true single-writer exclusion is off the
 table. The guarantee is the one that matters — of any set of co-window racers, exactly one
-proceeds, deterministically, and every loser self-retracts its claim comment (and any
-self-assignee) and re-picks. Don't reintroduce the "it's the lock" framing, and **never fall
-back to the bare assignee login as an ownership signal** — that is the degeneracy ADR 0115
-removes.
+proceeds, deterministically, and every loser self-retracts its claim comment and re-picks.
+Don't reintroduce the "it's the lock" framing, and **never fall back to the bare assignee login
+as an ownership signal** — that is the degeneracy ADR 0115 removes.
+
+<a id="claim-before-you-assign-a-defer-must-not-strip-the-incumbent"></a>
+### Claim before you assign — a defer must not strip the incumbent
+
+The two layers are written in **one order: claim first, assign only on the verb's exit 0.** Every
+pipeline agent authenticates as the **same login**, so the assignee is not a per-agent slot — it is
+**one shared slot**. Assign-then-claim therefore has no safe back-off: the arriving agent's
+self-assign is a no-op on an already-held lane (the slot already shows that login), the verb
+correctly defers to the live incumbent, and the arriving agent's cleanup unassign then removes the
+**incumbent's** assignment while the incumbent is still working — silently clearing the coarse
+availability gate on an issue that is legitimately held (#4015). Claiming first makes that state
+unrepresentable rather than merely handled: a deferring agent never assigned, so it has nothing to
+undo and mutates nothing. The rule for every writer, stated once here: **never unassign a slot you
+did not fill.**
 
 ### Fail-closed on a missing token
 
@@ -2741,11 +2756,11 @@ so closing it means claiming before any branch, build, or spawn:
 
 - **Orchestrated path (the common case).** `.claude/workflows/drive-issue.js` acquires the
   claim in a pre-step **before** the `agent(coder, …)` dispatch (delegated to a thin
-  claim-only agent that runs this §7 primitive verbatim): self-assign, then
-  `pipeline-cli tracker claim <N>` (the write surface above — defer, post the stamped marker,
-  tiebreak, retract on loss), and **only on a win spawn the coder**, threading the winning
+  claim-only agent that runs this §7 primitive verbatim): `pipeline-cli tracker claim <N>`
+  (the write surface above — defer, post the stamped marker, tiebreak, retract on loss), then
+  **self-assign only on a win**, and **only on a win spawn the coder**, threading the winning
   claim **token** into the coder's prompt. On a lost claim it aborts the dispatch — no coder
-  spawns.
+  spawns, and it leaves the assignee untouched (see [Claim before you assign](#claim-before-you-assign-a-defer-must-not-strip-the-incumbent)).
 - **Delegated ownership.** The orchestrator and the coder are distinct sessions (the spawned
   coder carries `CLAUDE_CODE_CHILD_SESSION=1` and its own id), so the claim token is
   **whoever posted the claim** — the orchestrator. The orchestrator threads its token to the
