@@ -13,19 +13,29 @@
  * as a typed `E` the command handles rather than an invisible defect.
  *
  * One verb, `signals(pr)`, resolves the whole `MergeQueueSignals` input: the PR `state` +
- * `mergeStateStatus` from `gh pr view`, and the LAST merge-queue timeline event from
- * `gh api .../timeline`. The fail-closed-away-from-a-false-ship posture is preserved exactly:
- * an unreadable repo or PR state propagates as a typed error the command maps to `pending`, and
- * an unreadable timeline is deliberately recovered to "no event yet" (the settle window) — a
- * classifier miss can only ever keep polling, never report a false `merged`/`ejected`.
+ * `mergeStateStatus` + `baseRefName` from `gh pr view`, the LAST merge-queue timeline event from
+ * `gh api .../timeline`, and — when the PR does not already read merged — whether the base branch
+ * carries the PR's squash, from `gh api .../commits?sha=<base>` (#4057). The
+ * fail-closed-away-from-a-false-ship posture is preserved exactly: an unreadable repo or PR state
+ * propagates as a typed error the command maps to `pending`; an unreadable timeline is deliberately
+ * recovered to "no event yet" (the settle window); an unreadable base branch is recovered to
+ * `unreadable`, which carries no evidence. A read fault can only ever keep polling, never report a
+ * false `merged`/`ejected`.
+ *
+ * The PR field this boundary deliberately does NOT read is `merge_commit_sha`: on an OPEN PR it
+ * holds GitHub's throwaway *test-merge* commit, so it is evidence of nothing. The load-bearing
+ * merge signals are `merged`/`merged_at` (here: `state == MERGED`) and the single-parent squash on
+ * the base branch. Do not "improve" this read by comparing `merge_commit_sha` to the base tip.
  */
 import {Config, Context, Effect, Layer, Option, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {
+	type BaseBranchSquash,
 	type LastMergeQueueEvent,
 	lastMergeQueueEvent,
 	type MergeQueueSignals,
+	squashOnBaseBranch,
 } from "./merge-queue-classify.ts";
 
 /** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
@@ -145,8 +155,9 @@ const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
 // REST-only arg builders — never GraphQL.
 
 /**
- * `gh pr view --json` for the two working fields (the old `merged` field errors
+ * `gh pr view --json` for the three working fields (the old `merged` field errors
  * `Unknown JSON field` on this gh/repo, #1921); `merged` is derived from `state == MERGED`.
+ * `baseRefName` names the branch the squash cross-check scans (#4057).
  */
 const prStateArgs = (repo: string, pr: number): ReadonlyArray<string> => [
 	"pr",
@@ -155,9 +166,9 @@ const prStateArgs = (repo: string, pr: number): ReadonlyArray<string> => [
 	"--repo",
 	repo,
 	"--json",
-	"state,mergeStateStatus",
+	"state,mergeStateStatus,baseRefName",
 	"--jq",
-	"{state: .state, mergeStateStatus: .mergeStateStatus}",
+	"{state: .state, mergeStateStatus: .mergeStateStatus, baseRefName: .baseRefName}",
 ];
 
 /** The REST issue-timeline endpoint (never GraphQL) — the authoritative queue-membership signal. */
@@ -167,10 +178,27 @@ const timelineArgs = (repo: string, pr: number): ReadonlyArray<string> => [
 	"--paginate",
 ];
 
-/** The PR state as `gh pr view` returns it; `state`/`mergeStateStatus` may be absent or null. */
+/**
+ * The scan window of the base-branch squash cross-check: the base branch's most recent commits.
+ * Bounded on purpose — the window only has to span the staleness it corrects (~30–60 min observed,
+ * a few dozen commits at fleet pace), and an unbounded `--paginate` walk would grow with repo age
+ * on every poll. A squash older than the window reads `absent`, which is the no-evidence value.
+ */
+const BASE_BRANCH_SCAN = 100;
+
+/** REST list-commits on the base branch, projected to the two fields the squash predicate reads. */
+const baseCommitsArgs = (repo: string, base: string): ReadonlyArray<string> => [
+	"api",
+	`repos/${repo}/commits?sha=${base}&per_page=${BASE_BRANCH_SCAN}`,
+	"--jq",
+	"[.[] | {message: .commit.message, parents: (.parents | length)}]",
+];
+
+/** The PR state as `gh pr view` returns it; every field may be absent or null. */
 const RawPrState = Schema.Struct({
 	state: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	mergeStateStatus: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	baseRefName: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 const decodePrState = Schema.decodeUnknownEffect(RawPrState);
 
@@ -181,11 +209,19 @@ const RawTimelineEntry = Schema.Struct({
 });
 const decodeTimeline = Schema.decodeUnknownEffect(Schema.Array(RawTimelineEntry));
 
+/** A base-branch commit as the `--jq` projection above emits it. */
+const RawBaseCommit = Schema.Struct({
+	message: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	parents: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+});
+const decodeBaseCommits = Schema.decodeUnknownEffect(Schema.Array(RawBaseCommit));
+
 /** The PR state read the classifier consumes — `merged` derived from `state == MERGED`. */
 interface PrState {
 	readonly merged: boolean;
 	readonly state: string;
 	readonly mergeStateStatus: string | undefined;
+	readonly baseRefName: string;
 }
 
 const toPrState = (raw: (typeof RawPrState)["Type"]): PrState => {
@@ -194,6 +230,7 @@ const toPrState = (raw: (typeof RawPrState)["Type"]): PrState => {
 		merged: state === "MERGED",
 		state,
 		mergeStateStatus: raw.mergeStateStatus ?? undefined,
+		baseRefName: raw.baseRefName ?? "",
 	};
 };
 
@@ -240,14 +277,47 @@ const readLastMergeQueueEvent = Effect.fn("Github.readLastMergeQueueEvent")(
 		),
 );
 
+/**
+ * Whether the base branch carries this PR's squash (#4057). An unreadable base branch recovers to
+ * `unreadable` for the same fail-closed reason the timeline recovers to the settle window: no
+ * evidence never promotes a verdict, so a fault here can only leave the reconcile polling.
+ */
+const readBaseBranchSquash = Effect.fn("Github.readBaseBranchSquash")(
+	function* (repo: string, pr: number, base: string) {
+		if (base === "") return "unreadable" as const;
+		const args = baseCommitsArgs(repo, base);
+		const commits = yield* decodeBaseCommits(yield* parseJson(args, yield* runGh(args)));
+		return squashOnBaseBranch(
+			commits.map((c) => ({message: c.message ?? undefined, parents: c.parents ?? undefined})),
+			pr,
+		);
+	},
+	(effect) =>
+		effect.pipe(
+			Effect.catchTags({
+				"@kampus/merge-queue-classify/GhCommandError": () =>
+					Effect.succeed<BaseBranchSquash>("unreadable"),
+				"@kampus/merge-queue-classify/GhParseError": () =>
+					Effect.succeed<BaseBranchSquash>("unreadable"),
+				SchemaError: () => Effect.succeed<BaseBranchSquash>("unreadable"),
+			}),
+		),
+);
+
 const readSignals = Effect.fn("Github.signals")(function* (repo: string, pr: number) {
 	const prState = yield* readPrState(repo, pr);
 	const lastEvent = yield* readLastMergeQueueEvent(repo, pr);
+	// Not read once the PR itself reads merged: the cross-check exists to correct a stale
+	// not-merged read, so there is nothing left for it to corroborate.
+	const baseBranchSquash = prState.merged
+		? undefined
+		: yield* readBaseBranchSquash(repo, pr, prState.baseRefName);
 	return {
 		merged: prState.merged,
 		state: prState.state,
 		lastMergeQueueEvent: lastEvent,
 		mergeStateStatus: prState.mergeStateStatus,
+		baseBranchSquash,
 	} satisfies MergeQueueSignals;
 });
 
@@ -257,7 +327,8 @@ const readSignals = Effect.fn("Github.signals")(function* (repo: string, pr: num
  * `repoOverride` (the CLI `--repo` flag, ADR 0062 §1's highest precedence) wins over the resolved
  * repo, else the repo is resolved once (`RepoResolutionError`). An unreadable PR state propagates
  * typed (the command maps it to `pending`); an unreadable timeline is recovered to the settle
- * window. Built by `GithubLive`, whose `R` is `ChildProcessSpawner`.
+ * window, and an unreadable base branch to `unreadable`. Built by `GithubLive`, whose `R` is
+ * `ChildProcessSpawner`.
  */
 export class Github extends Context.Service<
 	Github,

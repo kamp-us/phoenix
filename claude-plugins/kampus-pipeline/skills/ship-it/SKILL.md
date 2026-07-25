@@ -2066,9 +2066,10 @@ reconcile shells out to it per poll and branches on the printed outcome word:
 # a PR still QUEUED at the budget's end is a well-formed pending, not a failure.
 # The classifier reads PR state (gh pr view — the sanctioned PR-state read ship-it Step 2 uses,
 # NOT a GraphQL intake query the org's Projects-classic integration breaks) + the last merge-queue
-# timeline event (gh api …/timeline, REST) and prints merged/ejected/queued/pending. It is
-# fail-closed away from a false ship: any unreadable signal ⇒ pending (keep polling), never a
-# false merged/ejected.
+# timeline event (gh api …/timeline, REST), cross-checks a non-merged read against the base branch
+# (gh api …/commits?sha=<base>, the read that stayed fresh while the other two lagged — #4057), and
+# prints merged/ejected/queued/pending. It is fail-closed away from a false ship: any unreadable
+# signal ⇒ pending (keep polling), never a false merged/ejected.
 RECONCILE_TRIES=${SHIP_RECONCILE_TRIES:-10}   # ~10 polls
 RECONCILE_SLEEP=${SHIP_RECONCILE_SLEEP:-30}   # ~30s apart ⇒ ~5 min batch window
 MERGE_OUTCOME=pending
@@ -2098,6 +2099,37 @@ else
 fi
 ```
 
+#### The timeline is authoritative but not timely — the freshness cross-check and the ejection window this reconcile accepts (#4057)
+
+During the #4011 ship the merge landed at `20:06:39Z` and, for the next ~65 minutes, `pulls/4011`
+kept returning `merged:false` / `state:open` while the issue timeline kept ending at
+`added_to_merge_queue`. The classifier read both faithfully and printed `queued` on 15 consecutive
+polls after the PR had already merged. Two consequences follow — one closed, one accepted:
+
+- **Closed — a stale `queued` on an already-merged PR.** The base branch stayed current through
+  that whole window, so the classifier corroborates a non-merged read against it: a **single-parent
+  commit reachable from the base branch whose subject ends with `(#PR)`** is this PR's squash, and
+  it classifies `merged` whatever the PR-state and timeline reads say. The scan window is the base
+  branch's most recent 100 commits. An absent or unreadable base-branch read carries **no**
+  evidence and never moves the verdict, so the fail-closed posture is untouched.
+- **Accepted — a not-yet-surfaced *ejection*.** `removed_from_merge_queue` is the only ejection
+  signal REST exposes, and the base-branch cross-check cannot substitute for it: an ejected PR and
+  a healthy queued one are identical in every REST read (open, not merged, last event
+  `added_to_merge_queue`, no squash on the base). The read that would tell them apart — the queue's
+  own entries — is **GraphQL-only**, which this org bans (top of this skill). So the residual is
+  accepted, with this bound: **while the timeline lags — ~60 minutes observed, unbounded in
+  principle — an ejected PR classifies `queued`.** What contains it is not over-reading that word.
+  A terminal `queued` means *still in-flight as far as the timeline can tell*, never *healthy,
+  never ejected*: it is not reported as shipped, guard 6 leaves an arm only where a live queue
+  entry exists, and the ejection surfaces on any later read once the timeline catches up — a
+  re-dispatched ship-it, or the driving loop's next pass over the PR.
+
+**The adjacent trap, pinned:** on an **open** PR, `merge_commit_sha` holds GitHub's throwaway
+*test-merge* commit and is evidence of nothing — PR #4011 carried `8dd72534…` there for an hour
+while unmerged. The load-bearing merge signals are `merged` / `merged_at`, plus the single-parent
+squash on the base branch. Never read a non-null `merge_commit_sha` as "it merged", and never
+cross-check it against the base tip.
+
 Then act on `MERGE_OUTCOME`, and only here — **never at Step 4's enqueue** — decide the run's
 merge disposition:
 
@@ -2108,8 +2140,9 @@ merge disposition:
   `pending` is the **enqueue-settle window** (OPEN, not merged, no merge-queue event yet — incl.
   OPEN + CLEAN before the CLEAN → QUEUED flip). **Both are a well-formed pending, not a failure**
   (ADR 0132: the actor does not block to the final merge). Report `enqueued: yes (→ auto-merges on
-  green)` exactly as before — the reconcile confirmed it was **still in-flight, never ejected**,
-  within the window. A `pending` PR at the budget's end is reported this way too — the settle window
+  green)` exactly as before — the reconcile confirmed it was **still in-flight as far as the
+  timeline can tell** within the window, which is not the same as "never ejected" (the accepted
+  staleness bound above). A `pending` PR at the budget's end is reported this way too — the settle window
   is **never** an ejection (#1921). **One carve-out** (guard 6): on a base branch a **merge queue
   governs** — every PR in this repo — a `pending` PR never entered the queue at all, so what it
   carries is a parked intent, not an in-flight enqueue; the guard-6 block above clears it and the
@@ -2139,9 +2172,11 @@ merge disposition:
   the re-approval alone (ADR 0198). The ejection is surfaced and handed to the repair /
   re-queue lane (the `drive-issue.js` shipper stage consumes `ejected` and re-drives), the same
   fail → fix → re-request boundary write-code owns. The **success/watch distinction is now
-  observable** — `QUEUED` never masks a stall, because the reconcile separated `merged` from
-  `queued`/`pending` from `ejected` off the authoritative merge-queue timeline event, so an
-  enqueue-settle window no longer masquerades as an ejection (#1921).
+  observable** — a surfaced ejection never masks as a ship, because the reconcile separated `merged`
+  from `queued`/`pending` from `ejected` off the authoritative merge-queue timeline event, so an
+  enqueue-settle window no longer masquerades as an ejection (#1921) and a lagging timeline no
+  longer holds a landed merge at `queued` (#4057). An ejection the timeline has not yet surfaced is
+  the one residual, bounded above.
 
 This reconcile **weakens no existing gate**: Step 0's §CP refusal, Step 2/2b's current-head PASS,
 Step 3's green CI, Step 3.5's run-evidence bundle, and the single-merge-authority contract (ADRs

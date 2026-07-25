@@ -1,5 +1,10 @@
 import {describe, expect, it} from "vitest";
-import {classify, lastMergeQueueEvent, type MergeQueueSignals} from "./merge-queue-classify.ts";
+import {
+	classify,
+	lastMergeQueueEvent,
+	type MergeQueueSignals,
+	squashOnBaseBranch,
+} from "./merge-queue-classify.ts";
 
 const sig = (over: Partial<MergeQueueSignals> = {}): MergeQueueSignals => ({
 	merged: false,
@@ -69,6 +74,96 @@ describe("classify — precedence + edge cases", () => {
 
 	it("no signal at all (OPEN, nothing) ⇒ pending, never ejected", () => {
 		expect(classify(sig()).outcome).toBe("pending");
+	});
+});
+
+describe("classify — the #4057 stale-timeline cases (the base-branch freshness cross-check)", () => {
+	it("the #4011 shape: merge landed, PR still reads OPEN and the timeline still ends at added ⇒ merged", () => {
+		// Every timeline/PR-state signal is the stale pre-merge state the reconcile observed for
+		// ~65 minutes after PR #4011 merged. The base branch carries the squash, so it wins.
+		const c = classify(
+			sig({
+				merged: false,
+				state: "OPEN",
+				lastMergeQueueEvent: "added_to_merge_queue",
+				mergeStateStatus: "QUEUED",
+				baseBranchSquash: "landed",
+			}),
+		);
+		expect(c.outcome).toBe("merged");
+	});
+
+	it("a landed squash outranks a trailing removed_from_merge_queue on a stale not-merged read", () => {
+		// The queue emits the removal AS it merges; with the PR read lagging, the removal alone
+		// would classify `ejected` on a PR that in fact merged.
+		const c = classify(
+			sig({
+				merged: false,
+				state: "OPEN",
+				lastMergeQueueEvent: "removed_from_merge_queue",
+				baseBranchSquash: "landed",
+			}),
+		);
+		expect(c.outcome).toBe("merged");
+		expect(c.outcome).not.toBe("ejected");
+	});
+
+	it("fail-closed: `absent` never promotes — a genuinely queued PR stays queued", () => {
+		const c = classify(
+			sig({lastMergeQueueEvent: "added_to_merge_queue", baseBranchSquash: "absent"}),
+		);
+		expect(c.outcome).toBe("queued");
+	});
+
+	it("fail-closed: `absent` is not an ejection signal — a settling PR stays pending", () => {
+		const c = classify(sig({lastMergeQueueEvent: null, baseBranchSquash: "absent"}));
+		expect(c.outcome).toBe("pending");
+		expect(c.outcome).not.toBe("ejected");
+	});
+
+	it("fail-closed: `unreadable` and an absent field both leave the timeline verdict untouched", () => {
+		expect(
+			classify(
+				sig({lastMergeQueueEvent: "removed_from_merge_queue", baseBranchSquash: "unreadable"}),
+			).outcome,
+		).toBe("ejected");
+		expect(classify(sig({lastMergeQueueEvent: "added_to_merge_queue"})).outcome).toBe("queued");
+	});
+});
+
+describe("squashOnBaseBranch — does the scanned base-branch window carry this PR's squash?", () => {
+	const squash = (message: string) => ({message, parents: 1});
+
+	it("landed: a single-parent commit whose subject ends with (#PR)", () => {
+		expect(
+			squashOnBaseBranch(
+				[squash("feat(ship-it): reconcile freshness (#4057)\n\nbody"), squash("chore: x (#4058)")],
+				4057,
+			),
+		).toBe("landed");
+	});
+
+	it("absent: the window carries no commit for this PR", () => {
+		expect(squashOnBaseBranch([squash("chore: x (#4058)")], 4057)).toBe("absent");
+		expect(squashOnBaseBranch([], 4057)).toBe("absent");
+	});
+
+	it("ending-anchored: a squash citing another issue mid-subject is not that issue's squash", () => {
+		// `fix(x): thing (#3924) (#4010)` is PR #4010's squash, never #3924's — a substring
+		// match would report the cited issue as landed.
+		const commits = [squash("fix(pipeline-cli): fail-closed stdin read (#3924) (#4010)")];
+		expect(squashOnBaseBranch(commits, 4010)).toBe("landed");
+		expect(squashOnBaseBranch(commits, 3924)).toBe("absent");
+	});
+
+	it("single-parent required: a two-parent merge commit mentioning the PR is not a squash", () => {
+		expect(squashOnBaseBranch([{message: "Merge pull request (#4057)", parents: 2}], 4057)).toBe(
+			"absent",
+		);
+	});
+
+	it("tolerates a missing message or parent count", () => {
+		expect(squashOnBaseBranch([{}, {message: "(#4057)"}], 4057)).toBe("absent");
 	});
 });
 
