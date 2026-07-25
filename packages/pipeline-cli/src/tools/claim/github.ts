@@ -211,8 +211,8 @@ const isMine = Effect.fn("Github.isMine")(function* (
 	const authors = [...new Set(comments.map((c) => c.author).filter((a) => a.length > 0))];
 	const authorized = yield* authorizedAuthors(repo, authors);
 	// ADR 0191 presence liveness (#3751): a claim whose stamped session process is provably gone
-	// on THIS host is superseded, so a legitimate re-claim on an abandoned lane can resolve as
-	// mine. Every indeterminate claimant (unstamped, another host, unprobeable pid) still counts.
+	// on THIS machine is superseded, so a legitimate re-claim on an abandoned lane can resolve as
+	// mine. Every indeterminate claimant (unstamped, another machine, unprobeable pid) still counts.
 	const liveness = livenessByComment(comments, localPresence());
 	return claimIsMine({comments, authorizedAuthors: authorized, sessionId, liveness});
 });

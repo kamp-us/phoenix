@@ -4,8 +4,10 @@ import {
 	formatClaimPresence,
 	type LocalPresence,
 	livenessByComment,
+	machineFingerprint,
 	type PidState,
 	parseClaimPresence,
+	parseIOPlatformUuid,
 	parseProcessTable,
 	resolveSessionPid,
 } from "./claim-presence.ts";
@@ -14,7 +16,7 @@ import {type ClaimComment, claimCommentBody} from "./claim-resolution.ts";
 const SID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const SID_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 
-const local = (host: string, states: Record<number, PidState>): LocalPresence => ({
+const local = (host: string | null, states: Record<number, PidState>): LocalPresence => ({
 	host,
 	probePid: (pid) => states[pid] ?? "unprobeable",
 });
@@ -87,6 +89,69 @@ describe("claimLiveness — dead requires positive evidence, everything else is 
 
 	it("no stamp ⇒ unknown", () => {
 		assert.strictEqual(claimLiveness(null, local("box-1", {})), "unknown");
+	});
+
+	// The #3986-review-F3 direction: the fingerprint must identify a MACHINE, and an identity we
+	// cannot resolve must be inconclusive — never a match that licenses a pid probe.
+	it("an UNRESOLVABLE local machine identity ⇒ unknown even for a provably gone pid", () => {
+		assert.strictEqual(
+			claimLiveness({host: "box-1", pid: 4242}, local(null, {4242: "gone"})),
+			"unknown",
+		);
+	});
+
+	it("two machines that SHARE a hostname but not a machine id never match ⇒ unknown, never dead", () => {
+		// Same hostname on both boxes; the stamp fingerprints each machine's own id, so the host
+		// comparison stays inconclusive and the claimant's pid is never probed cross-machine.
+		const stampedOnMachineA = machineFingerprint("6553E4B9-1D64-5AFC-82F5-C0A5B666C380");
+		const readerIsMachineB = machineFingerprint("1FA3D0C7-9E2B-5D11-B4A6-77C1E0F58322");
+		assert.notStrictEqual(stampedOnMachineA, readerIsMachineB);
+		assert.strictEqual(
+			claimLiveness(
+				{host: stampedOnMachineA ?? "", pid: 4242},
+				local(readerIsMachineB, {4242: "gone"}),
+			),
+			"unknown",
+		);
+	});
+});
+
+describe("machineFingerprint — a hashed MACHINE identity, or nothing", () => {
+	it("is stable for one id and distinct across machines (the only two properties asked of it)", () => {
+		const a = machineFingerprint("6553E4B9-1D64-5AFC-82F5-C0A5B666C380");
+		assert.strictEqual(a, machineFingerprint("6553e4b9-1d64-5afc-82f5-c0a5b666c380"));
+		assert.notStrictEqual(a, machineFingerprint("1FA3D0C7-9E2B-5D11-B4A6-77C1E0F58322"));
+	});
+
+	it("never leaks the raw identity into the stamp", () => {
+		const id = "6553E4B9-1D64-5AFC-82F5-C0A5B666C380";
+		const fingerprint = machineFingerprint(id);
+		assert.strictEqual(fingerprint?.length, 12);
+		assert.isFalse((fingerprint ?? "").includes("6553E4B9"));
+	});
+
+	it("an absent or blank machine id ⇒ null (fail toward indeterminate, never a shared bucket)", () => {
+		assert.strictEqual(machineFingerprint(null), null);
+		assert.strictEqual(machineFingerprint(undefined), null);
+		assert.strictEqual(machineFingerprint("   \n"), null);
+	});
+});
+
+describe("parseIOPlatformUuid — the darwin machine identity", () => {
+	it("reads IOPlatformUUID out of ioreg output", () => {
+		assert.strictEqual(
+			parseIOPlatformUuid(
+				[
+					'    "IOPlatformSerialNumber" = "FPKT6TXFY1"',
+					'    "IOPlatformUUID" = "6553E4B9-1D64-5AFC-82F5-C0A5B666C380"',
+				].join("\n"),
+			),
+			"6553E4B9-1D64-5AFC-82F5-C0A5B666C380",
+		);
+	});
+
+	it("no such property ⇒ null (⇒ no fingerprint ⇒ indeterminate)", () => {
+		assert.strictEqual(parseIOPlatformUuid('  "IOPlatformSerialNumber" = "FPKT6TXFY1"'), null);
 	});
 });
 

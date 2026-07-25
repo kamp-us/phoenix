@@ -222,6 +222,9 @@ async function drive() {
 	// and threads the winning token onward. It is the ONE contract's third surface, not a fourth
 	// hand-rolled copy. On a lost claim we abort the dispatch (no coder spawns) and return a
 	// structured `{ skipped }` outcome a caller can tell apart from a successful build.
+	// The marker this posts is UNSTAMPED (no `presence` suffix — only `pipeline-cli tracker claim`
+	// writes one), so a lane claimed here can never be superseded on proven claimant death: see
+	// #3987 for the gap and the fix.
 	log(`Acquiring the pre-spawn claim on issue #${issue} before dispatching the coder`);
 	const claim = stageResult("claim", await agent(
 		`Acquire the kampus pipeline pre-spawn claim on issue #${issue} for the orchestrator, then STOP — ` +

@@ -55,8 +55,8 @@ export const parseClaimSession = (body: string): string | null => {
  * A claimant's presence — the ADR 0191 liveness of the claim, resolved from the marker's
  * optional presence stamp by the IO shell. `dead` is the ONLY value that supersedes a claim,
  * and it requires positive evidence (the stamped session process is provably gone on this
- * host); `unknown` (no stamp, another host, an unprobeable pid) counts as a live claim, so
- * doubt refuses rather than evicts.
+ * machine); `unknown` (no stamp, another machine, an unresolvable local machine identity, an
+ * unprobeable pid) counts as a live claim, so doubt refuses rather than evicts.
  */
 export type ClaimLiveness = "live" | "dead" | "unknown";
 

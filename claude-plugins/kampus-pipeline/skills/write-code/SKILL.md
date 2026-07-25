@@ -441,6 +441,9 @@ CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'   # the §7 single source — 
 [ -n "$WINSID0" ] && [ "$WINSID0" != "$CLAUDE_CODE_SESSION_ID" ] && { echo "#$N already claimed by another agent — back off, re-pick."; exit 0; }
 
 # 2. Self-assign (the coarse availability gate), then POST the claim comment (the fine resolver).
+#    NOTE: this hand-rolled marker carries NO `presence` stamp, so if THIS run dies mid-build its
+#    claim can never be proven dead and will shadow every later claim on the lane until a human
+#    clears it — the coverage gap tracked in #3987 (only `pipeline-cli tracker claim` stamps today).
 ME=$(gh api user --jq '.login')
 gh api -X POST repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null
 MYCLAIM=$(gh api repos/$REPO/issues/<N>/comments \
@@ -560,12 +563,12 @@ surface it to whoever dispatched you.
 
 **Ownership resolves against the earliest *live* authorized claim (ADR 0191 supersession).** The
 verb drops a claim whose claimant is **provably dead** — its marker's presence stamp names a
-session process this host can probe, and the process is gone — so a dead session's older marker no
-longer shadows a legitimate later claim on an abandoned lane (the orchestrated-repair case, #3751).
-Supersession needs **positive evidence of death**: an unstamped/legacy marker, a claim stamped on
-another host, and an unprobeable pid all stay indeterminate, still count as owners, and still
-refuse. So the guard's fail-closed direction is unchanged — what changed is that the *legitimate*
-case can now resolve, instead of being permanently unprovable.
+session process this machine can probe, and the process is gone — so a dead session's older marker
+no longer shadows a legitimate later claim on an abandoned lane (the orchestrated-repair case,
+#3751). Supersession needs **positive evidence of death**: an unstamped/legacy marker, a claim
+stamped on another machine, and an unprobeable pid all stay indeterminate, still count as owners,
+and still refuse. So the guard's fail-closed direction is unchanged — what changed is that the
+*legitimate* case can now resolve, instead of being permanently unprovable.
 
 > **Which `<N>` to guard at each site.** The guarded number is the **work-target whose mutation
 > could clobber another agent**: Step 5 guards the **issue** you open the PR against; Step 6 the
@@ -1777,9 +1780,16 @@ session *still* failed the guard. `pipeline-cli claim is-mine` now treats a clai
 is **provably dead** as **superseded** (ADR 0191 presence liveness — the claimant's session
 process is stamped on the marker and probed), so the earliest *live-or-indeterminate* claim wins.
 Supersession requires **positive evidence of death**: an unstamped marker, a claim from another
-host, or an unprobeable pid stays indeterminate, still counts, and the guard still refuses — doubt
-never evicts a slow-but-live agent (the hazard `gh-issue-intake-formats.md` §7's deferred-reclaim
-note protects).
+machine, or an unprobeable pid stays indeterminate, still counts, and the guard still refuses —
+doubt never evicts a slow-but-live agent (the hazard `gh-issue-intake-formats.md` §7's
+deferred-reclaim note protects).
+
+**Expect the refusal, not the unblock, on a lane whose claim was hand-rolled.** Only
+`pipeline-cli tracker claim` writes a presence stamp today, so on a lane claimed by the Step-3
+snippet or the orchestrator's claim-agent the dead claimant reads *indeterminate* and the guard
+still refuses — deterministically, which is the point, but it is a routed blocker for the
+dispatcher rather than a lane you may repair. Stamping the writer side is
+[#3987](https://github.com/kamp-us/phoenix/issues/3987).
 
 ### Step R1 — Resolve the latest verdict per namespace (mirror `ship-it` Step 2)
 

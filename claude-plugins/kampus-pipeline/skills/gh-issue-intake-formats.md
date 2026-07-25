@@ -2613,23 +2613,31 @@ markers (§5/§6) are. Its **canonical grammar**:
 
 ```
 claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>
-claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC> · presence <host-fingerprint>/<session-pid>
+claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC> · presence <machine-fingerprint>/<session-pid>
 ```
 
 - **The optional `presence` stamp** names the claiming **session process** (the long-lived
-  `claude` ancestor of whatever posted the claim) and an opaque **fingerprint** of its host (a
-  truncated hash — liveness only ever asks "is this my host?", and a machine name has no business
-  in a public timeline). It exists so a later
-  reader can *probe* this claimant's liveness instead of guessing — see
+  `claude` ancestor of whatever posted the claim) and an opaque **fingerprint of the machine** it
+  runs on — a truncated hash of a *machine-scoped* id (macOS `IOPlatformUUID` / Linux
+  `/etc/machine-id`), **never the hostname**: liveness only asks "is this my machine?", a hostname
+  is not unique to one machine, and no machine identity belongs in a public timeline. It exists so
+  a later reader can *probe* this claimant's liveness instead of guessing — see
   [Dead-claimant supersession](#dead-claimant-supersession-proven-death-only-adr-0191). It is
-  written by `pipeline-cli tracker claim` and is **optional**: an unresolvable session stamps
-  nothing, and an unstamped marker reads as indeterminate (⇒ still a valid owner), so legacy
-  markers keep their exact old meaning.
+  written by `pipeline-cli tracker claim` and is **optional**: an unresolvable session — or an
+  unresolvable machine identity — stamps nothing, and an unstamped marker reads as indeterminate
+  (⇒ still a valid owner), so legacy markers keep their exact old meaning.
+- **Only `tracker claim` writes the stamp today** — every hand-rolled write surface below emits an
+  **unstamped** marker, whose claimant can therefore never be proven dead. The gap, its blast
+  radius, and the fix are tracked in
+  [#3987](https://github.com/kamp-us/phoenix/issues/3987); read it before relying on supersession
+  reaching a given lane.
 - **Token source:** the claiming process's `CLAUDE_CODE_SESSION_ID` environment variable
   (the orchestrator's when it claims pre-spawn; the coder's when `write-code` is invoked
   directly — see §The pre-spawn claim protocol).
 - **Write surface:** an issue comment, posted via `gh api repos/$REPO/issues/{N}/comments`
   (REST, never GraphQL): `gh api repos/$REPO/issues/<N>/comments -f "body=claim: $CLAUDE_CODE_SESSION_ID · $(date -u +%Y-%m-%dT%H:%M:%SZ)"`.
+  This hand-rolled form is **unstamped** — a marker written this way is never supersedable
+  ([#3987](https://github.com/kamp-us/phoenix/issues/3987)).
 - **Read surface — the canonical `CLAIM_RE`.** A claim comment is matched by this **one**
   anchored, case-insensitive, emphasis-tolerant regex; every consumer cites it and **none
   re-hard-codes the grammar** (it pairs with §5/§6's marker-matcher discipline):
@@ -2769,10 +2777,11 @@ refuse and degraded into a per-agent judgment call (#3751).
 Liveness is **presence-derived, never age-derived** (ADR
 [0191](https://github.com/kamp-us/phoenix/blob/main/.decisions/0191-crew-claim-lifecycle.md) — a
 claim's liveness rides its holder's presence; the same identification `worktree-reap` makes):
-the marker's `presence <host-fingerprint>/<session-pid>` stamp names the claimant's session
-process, and a reader on that host probes it. **Dead requires all three** — a stamp, a host match, and a pid
-the probe proves gone. Every other state is **indeterminate and counts as a live claim**: an
-unstamped/legacy marker, a claim stamped on another host, a pid that still resolves, and a
+the marker's `presence <machine-fingerprint>/<session-pid>` stamp names the claimant's session
+process, and a reader on that machine probes it. **Dead requires all three** — a stamp, a match
+against a *resolved* local machine fingerprint, and a pid the probe proves gone. Every other state
+is **indeterminate and counts as a live claim**: an unstamped/legacy marker, a claim stamped on
+another machine, a machine identity this reader cannot resolve, a pid that still resolves, and a
 reused pid all leave the claim standing, so the reader refuses. Doubt refuses; it never evicts.
 
 Both the resolution and the probe live in the shared verb — `pipeline-cli claim is-mine`
@@ -2780,6 +2789,13 @@ Both the resolution and the probe live in the shared verb — `pipeline-cli clai
 so a legitimate re-claim can land) — never a per-skill re-derivation. The verb prints the
 superseded claims next to the resolved owner, so "why is a later claim the owner?" is answerable
 from the run log.
+
+**Reach today: only `tracker claim` stamps.** Supersession can act only on a marker that carries a
+stamp, so on a lane whose claim was written by a hand-rolled `gh api … body=claim: …` (the write
+surface above, `write-code` Step 3, the orchestrator's claim-agent prompt) the claim reads
+indeterminate and Rule-0 defer still applies — the outcome is *deterministic*, but it is a refusal,
+not an unblock. Stamping the writer side is [#3987](https://github.com/kamp-us/phoenix/issues/3987);
+until it lands, assume a lane is un-supersedable unless its claim came from `tracker claim`.
 
 ### Repair dispatches thread the lane's claim token
 
