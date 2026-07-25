@@ -36,9 +36,11 @@ import {decideSpawn, formatSessionCost, type SessionCostInput} from "./spawn-gua
 
 /**
  * Read all of stdin as a UTF-8 string (the hook/statusline JSON envelope). The harness
- * pipes the envelope on fd 0; a synchronous read of fd 0 mirrors `leak-guard`'s
- * `readFileSync` IO idiom and avoids a stream that hangs when run on a TTY with no pipe.
- * An empty/unreadable stdin yields `""` (the parser then degrades to `{}`).
+ * pipes the envelope on fd 0; a synchronous read of fd 0 avoids a stream that hangs when run
+ * on a TTY with no pipe. An empty/unreadable stdin yields `""` (the parser then degrades to
+ * `{}`). This is a raw `node:fs` boundary by design: the Effect `FileSystem` seam is path-keyed
+ * with no stdin reader, and `Stdio.stdin` is exactly the blocking Stream this avoids — the
+ * platform doc's node-only case (.patterns/effect-platform-access.md).
  */
 const readStdin = (): Effect.Effect<string> =>
 	Effect.try({

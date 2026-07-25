@@ -72,6 +72,10 @@ interface StdinPayload {
  * Read a crash signal + resume ledger from a stdin JSON object. The orchestrator can pipe
  * the whole crash payload in one shot; a non-JSON or empty stdin yields empties (the flags
  * then fill in, or the core default-denies), so this never throws.
+ *
+ * The fd-0 read stays raw `node:fs` — the Effect `FileSystem` seam is path-keyed with no stdin
+ * reader, and `Stdio.stdin` is a Stream that blocks on a TTY with no pipe: the platform doc's
+ * node-only boundary case (.patterns/effect-platform-access.md).
  */
 const readStdin = (): StdinPayload => {
 	let raw = "";

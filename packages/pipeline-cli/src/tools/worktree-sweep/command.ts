@@ -25,14 +25,13 @@
  *      classifier's liveness gate is what covers the concurrent-sibling case.
  *
  * DRY-RUN by default: with no flag it prints what it WOULD remove and exits 0
- * without touching anything. The git IO uses `execFileSync` directly (mirrors the
- * `worktree-guard` reaper), so the tool's requirement stays at the Node platform
- * ceiling the registry provides.
+ * without touching anything. The git/gh IO uses `execFileSync` directly (mirrors the
+ * `worktree-guard` reaper) — a subprocess boundary the platform services do not cover;
+ * the file/path IO crosses the Effect `FileSystem`/`Path` seam
+ * (.patterns/effect-platform-access.md, #3473).
  */
 import {execFileSync} from "node:child_process";
-import {statSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {
 	computeWorktreeSweepPlan,
@@ -108,20 +107,28 @@ const squashMergedToOriginMain = (head: string | null): boolean => {
 /** A managed worktree untouched this long is presumed orphaned, not a live lane (#2240). */
 const IDLE_THRESHOLD_MS = 30 * 60 * 1000;
 
-/** Newest mtime (ms) among the given paths, or `null` when none can be stat'd. */
-const newestMtimeMs = (paths: ReadonlyArray<string>): number | null => {
-	let newest: number | null = null;
-	for (const p of paths) {
-		// biome-ignore lint/plugin: best-effort probe — an absent/unreadable path is skipped (a wholly unresolvable set falls to the null fail-safe), never the E channel; a total helper, not Effect-cosplay.
-		try {
-			const m = statSync(p).mtimeMs;
-			if (newest === null || m > newest) newest = m;
-		} catch {
-			// path absent/unreadable — skip; a wholly unresolvable set falls to the null fail-safe below.
+/**
+ * Newest mtime (ms) among the given paths, or `null` when none can be stat'd. Each stat goes
+ * through the `FileSystem` seam and degrades to "skipped" on a fault, so an absent/unreadable
+ * path is still passed over and a wholly unresolvable set still falls to the `null` fail-safe.
+ * `Option.none()` mtime (a stat with no timestamp) counts as unresolvable, same as a fault.
+ */
+const newestMtimeMs = (
+	paths: ReadonlyArray<string>,
+): Effect.Effect<number | null, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		let newest: number | null = null;
+		for (const p of paths) {
+			const mtime = yield* fs.stat(p).pipe(
+				Effect.map((info) => info.mtime.pipe(Option.map((d) => d.getTime()))),
+				Effect.orElseSucceed(() => Option.none<number>()),
+			);
+			if (Option.isNone(mtime)) continue;
+			if (newest === null || mtime.value > newest) newest = mtime.value;
 		}
-	}
-	return newest;
-};
+		return newest;
+	});
 
 /**
  * Is a managed worktree still LIVE by recency (#2240)? Probes the worktree dir + its
@@ -130,17 +137,21 @@ const newestMtimeMs = (paths: ReadonlyArray<string>): number | null => {
  * is deliberately NOT probed: `git status` (the dirty check) can rewrite it, which would
  * mask idleness. Any unresolvable mtime ⇒ presumed active (fail-safe KEEP).
  */
-const worktreeRecentlyActive = (path: string): boolean => {
-	const gitdir = runGit(["-C", path, "rev-parse", "--absolute-git-dir"]);
-	const probes = [path];
-	if (gitdir.ok) {
-		const g = gitdir.stdout.trim();
-		probes.push(join(g, "HEAD"), join(g, "logs", "HEAD"));
-	}
-	const newest = newestMtimeMs(probes);
-	if (newest === null) return true;
-	return Date.now() - newest < IDLE_THRESHOLD_MS;
-};
+const worktreeRecentlyActive = (
+	path: string,
+): Effect.Effect<boolean, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const pathSvc = yield* Path.Path;
+		const gitdir = runGit(["-C", path, "rev-parse", "--absolute-git-dir"]);
+		const probes = [path];
+		if (gitdir.ok) {
+			const g = gitdir.stdout.trim();
+			probes.push(pathSvc.join(g, "HEAD"), pathSvc.join(g, "logs", "HEAD"));
+		}
+		const newest = yield* newestMtimeMs(probes);
+		if (newest === null) return true;
+		return Date.now() - newest < IDLE_THRESHOLD_MS;
+	});
 
 const runGh = (args: ReadonlyArray<string>): GitResult => {
 	// biome-ignore lint/plugin: best-effort gh shell — a non-zero exit is fully absorbed into a {ok:false} GitResult the caller branches on, never the E channel; a total helper, not Effect-cosplay.
@@ -205,55 +216,60 @@ const worktreeSweep = Command.make(
 		}
 
 		const parsed = parseWorktreeList(listed.stdout);
-		const records: ReadonlyArray<WorktreeRecord> = parsed
-			.filter((p) => !p.bare)
-			.map((p) => {
-				// A gone-dir tree's working directory is missing, so every probe below is either
-				// meaningless or actively errors (`git -C <gone> status` fails → fail-safe dirty,
-				// which would mis-KEEP it). Short-circuit to the safe-to-prune record: the classifier
-				// checks `prunable` first, so the other facts are never consulted for it (#3654).
-				if (p.prunable) {
+		// Sequential (concurrency 1) on purpose: the liveness probe now crosses the `FileSystem`
+		// seam, and the per-worktree git shell-outs must stay in the same order as before.
+		const records: ReadonlyArray<WorktreeRecord> = yield* Effect.forEach(
+			parsed.filter((p) => !p.bare),
+			(p) =>
+				Effect.gen(function* () {
+					// A gone-dir tree's working directory is missing, so every probe below is either
+					// meaningless or actively errors (`git -C <gone> status` fails → fail-safe dirty,
+					// which would mis-KEEP it). Short-circuit to the safe-to-prune record: the classifier
+					// checks `prunable` first, so the other facts are never consulted for it (#3654).
+					if (p.prunable) {
+						return {
+							path: p.path,
+							branch: p.branch,
+							prunable: true,
+							isDirty: false,
+							reachableFromOriginMain: false,
+							squashMergedToOriginMain: false,
+							locked: p.locked,
+							recentlyActive: false,
+							hasOpenPr: false,
+						};
+					}
+					const managed = isManagedWorktree(p.path);
+					// A review-head tree is a swept candidate too (#2785), so its liveness (idle mtime)
+					// must be probed. Its detached HEAD carries no branch, so the open-PR probe below
+					// (branch-keyed) is N/A for it — the dirty/locked/idle triple carries its liveness.
+					const swept = managed || isReviewHeadWorktree(p.path);
+					const isDirty = worktreeIsDirty(p.path);
+					const reachable = reachableFromOriginMain(p.head);
+					// Only probe the costlier squash signal when ancestry already missed.
+					const squashMerged = reachable ? false : squashMergedToOriginMain(p.head);
+					const recentlyActive = swept ? yield* worktreeRecentlyActive(p.path) : false;
+					// The network open-PR probe fires ONLY for a BUILD tree that would otherwise be swept —
+					// managed, clean, unlocked, idle, and content-merged — so SessionStart makes at most
+					// one gh call per reap candidate (usually zero), never one per worktree. A review-head
+					// tree never enters here (no branch, and its classifier branch precedes the open-PR gate).
+					const wouldRemove =
+						managed && !isDirty && !p.locked && !recentlyActive && (reachable || squashMerged);
+					const hasOpenPr = wouldRemove ? branchHasOpenPr(p.branch) : false;
 					return {
 						path: p.path,
 						branch: p.branch,
-						prunable: true,
-						isDirty: false,
-						reachableFromOriginMain: false,
-						squashMergedToOriginMain: false,
+						prunable: false,
+						isDirty,
+						reachableFromOriginMain: reachable,
+						squashMergedToOriginMain: squashMerged,
 						locked: p.locked,
-						recentlyActive: false,
-						hasOpenPr: false,
+						recentlyActive,
+						hasOpenPr,
 					};
-				}
-				const managed = isManagedWorktree(p.path);
-				// A review-head tree is a swept candidate too (#2785), so its liveness (idle mtime)
-				// must be probed. Its detached HEAD carries no branch, so the open-PR probe below
-				// (branch-keyed) is N/A for it — the dirty/locked/idle triple carries its liveness.
-				const swept = managed || isReviewHeadWorktree(p.path);
-				const isDirty = worktreeIsDirty(p.path);
-				const reachable = reachableFromOriginMain(p.head);
-				// Only probe the costlier squash signal when ancestry already missed.
-				const squashMerged = reachable ? false : squashMergedToOriginMain(p.head);
-				const recentlyActive = swept ? worktreeRecentlyActive(p.path) : false;
-				// The network open-PR probe fires ONLY for a BUILD tree that would otherwise be swept —
-				// managed, clean, unlocked, idle, and content-merged — so SessionStart makes at most
-				// one gh call per reap candidate (usually zero), never one per worktree. A review-head
-				// tree never enters here (no branch, and its classifier branch precedes the open-PR gate).
-				const wouldRemove =
-					managed && !isDirty && !p.locked && !recentlyActive && (reachable || squashMerged);
-				const hasOpenPr = wouldRemove ? branchHasOpenPr(p.branch) : false;
-				return {
-					path: p.path,
-					branch: p.branch,
-					prunable: false,
-					isDirty,
-					reachableFromOriginMain: reachable,
-					squashMergedToOriginMain: squashMerged,
-					locked: p.locked,
-					recentlyActive,
-					hasOpenPr,
-				};
-			});
+				}),
+			{concurrency: 1},
+		);
 
 		const plan = computeWorktreeSweepPlan(records);
 
