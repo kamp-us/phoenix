@@ -354,6 +354,28 @@ export const boundHeadShas = (body: string, gate: VerdictGate): ReadonlyArray<st
 };
 
 /**
+ * The HEAD dimension of the upsert key (#4007): do these two verdict bodies attest the SAME head?
+ *
+ * A verdict is SHA-bound (ADR 0058): a verdict bound to a different head is a **different fact**, not
+ * a revision of the old one, so `post` may only PATCH a prior marker that attests the head the new
+ * body attests. Without this, a re-gate at a new head edited the prior head's verdict in place — the
+ * per-head history became unreconstructible from the PR surface, and a superseded-head marker could
+ * mutate into a current-head one mid-queue (the mechanism behind #3982, where one comment went
+ * FAIL → PASS → FAIL and the PR merged carrying a FAIL).
+ *
+ * The comparison is `isBoundToHead`'s prefix-match in either direction (rule 3), so an abbreviated
+ * legacy binding still matches the full-40-hex head it names. Two bodies that bind NO head (a §CP
+ * advisory with no `Reviewed-head:` anchor) are the same fact by construction and still upsert; a
+ * bound body never matches an unbound one, so neither can overwrite the other.
+ */
+export const bindsSameHead = (a: string, b: string, gate: VerdictGate): boolean => {
+	const headA = boundHeadShas(a, gate)[0] ?? null;
+	const headB = boundHeadShas(b, gate)[0] ?? null;
+	if (headA === null || headB === null) return headA === headB;
+	return isBoundToHead(headA, headB);
+};
+
+/**
  * The post-time head cross-check (#3801) — the verdict-integrity hole this closes: a body composed
  * for PR B (bound to B's head SHA) that gets POSTed to PR A must be refused, because A's live head is
  * not B's. `emissionDefect` validates only marker *well-formedness*; the head-vs-target-PR binding

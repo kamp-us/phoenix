@@ -1,5 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	bindsSameHead,
 	boundHeadShas,
 	emissionDefect,
 	headBindingDefect,
@@ -469,6 +470,54 @@ describe("boundHeadShas — the head SHAs a verdict body binds itself to", () =>
 
 	it("another gate's marker is not read as this gate's binding", () =>
 		assert.deepStrictEqual(boundHeadShas(`review-doc: PASS @ ${HEAD}`, "code"), []));
+});
+
+describe("bindsSameHead — the head dimension of the upsert key (#4007)", () => {
+	const HEAD = "c6192dee".repeat(5); // the head being re-gated, 40 hex
+	const PRIOR = "80f6b847".repeat(5); // the head the prior verdict attested, 40 hex
+	const at = (sha: string) => `review-code: PASS @ ${sha} — merge-ready`;
+
+	it("two bodies bound to the SAME head → same fact (upsert)", () =>
+		assert.isTrue(bindsSameHead(at(HEAD), at(HEAD), "code")));
+
+	it("a PRIOR head's verdict vs a new head's → different fact (append, never edit in place)", () =>
+		assert.isFalse(bindsSameHead(at(PRIOR), at(HEAD), "code")));
+
+	it("an abbreviated binding still matches the full head it names (ADR 0058 rule 3)", () =>
+		assert.isTrue(bindsSameHead(at(HEAD.slice(0, 12)), at(HEAD), "code")));
+
+	it("polarity is not part of the key — a FAIL→PASS correction at one head still upserts", () =>
+		assert.isTrue(
+			bindsSameHead(`review-code: FAIL @ ${HEAD} — not merge-ready`, at(HEAD), "code"),
+		));
+
+	it("two §CP advisories anchored to the same head → same fact (upsert)", () =>
+		assert.isTrue(
+			bindsSameHead(
+				`review-code: advisory — round 1\n\nReviewed-head: @ ${HEAD}`,
+				`review-code: advisory — round 2\n\nReviewed-head: @ ${HEAD}`,
+				"code",
+			),
+		));
+
+	it("a §CP advisory re-anchored to a NEW head → different fact (append)", () =>
+		assert.isFalse(
+			bindsSameHead(
+				`review-code: advisory — round 1\n\nReviewed-head: @ ${PRIOR}`,
+				`review-code: advisory — round 2\n\nReviewed-head: @ ${HEAD}`,
+				"code",
+			),
+		));
+
+	it("two bind-nothing advisories are the same fact by construction (upsert preserved)", () =>
+		assert.isTrue(
+			bindsSameHead("review-code: advisory — see thread", "review-code: advisory — again", "code"),
+		));
+
+	it("a bound body never matches an unbound one (neither can overwrite the other)", () => {
+		assert.isFalse(bindsSameHead("review-code: advisory — see thread", at(HEAD), "code"));
+		assert.isFalse(bindsSameHead(at(HEAD), "review-code: advisory — see thread", "code"));
+	});
 });
 
 describe("headBindingDefect — refuse a body bound to a head other than the target PR's (#3801)", () => {

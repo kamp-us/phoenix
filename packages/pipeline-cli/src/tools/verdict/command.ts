@@ -22,11 +22,15 @@
  * (ADR 0058 rule 2 as refined by ADR 0213): it reads the composed verdict body from `--body-file`
  * (or stdin), refuses fail-closed
  * on any `emissionDefect` (wrong namespace, unbindable `@ <sha>`, or a non-full-40-hex/path-glued
- * SHA field), then PATCHes the prior marker THIS RUN posted in the namespace if one exists, else
- * POSTs — one verdict comment per (PR, gate, run). The run dimension (`--run-id`, defaulting to
- * `$CLAUDE_CODE_SESSION_ID`) is what keeps a concurrent reviewer sharing our GitHub login from
- * overwriting our verdict (#4016); with no run id the post appends rather than upserts. It then
- * re-fetches the landed comment and re-runs
+ * SHA field), then PATCHes the prior marker THIS RUN posted in the namespace AT THIS HEAD if one
+ * exists, else POSTs — one verdict comment per (PR, gate, run, head).
+ *
+ * The upsert-vs-append semantics in one line: **a re-post at the same head upserts (a correction of
+ * the same fact); anything else appends.** So re-gating a PR at a NEW head leaves the prior head's
+ * verdict intact, and no reviewer has to hand-roll a marker to preserve the record (#4007).
+ * The run dimension (`--run-id`, defaulting to `$CLAUDE_CODE_SESSION_ID`) is
+ * what keeps a concurrent reviewer sharing our GitHub login from overwriting our verdict (#4016);
+ * with no run id the post appends rather than upserts. It then re-fetches the landed comment and re-runs
  * `emissionDefect` on its body (the folded-in self-verify, #3019), failing non-zero if the marker
  * didn't land clean rather than reporting a false success. It prints `patched <id>` / `posted <id>`.
  *
@@ -244,7 +248,7 @@ const post = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Upsert a SHA-bound verdict comment for a PR gate (PATCH this run's own prior marker, else POST — one per (gate, run), ADR 0058 rule 2 + ADR 0213)",
+		"Upsert a SHA-bound verdict comment for a PR gate (PATCH this run's own prior marker AT THIS HEAD, else POST — one per (gate, run, head): a re-post at the same head upserts, a re-gate at a new head appends and leaves the prior head's verdict intact; ADR 0058 rule 2 + ADR 0213, #4007)",
 	),
 );
 
