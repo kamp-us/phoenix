@@ -165,9 +165,11 @@ wrapper), never woven through a service method.
 > [!WARNING]
 > **A `readdirSync(…, {withFileTypes: true}) + entry.isDirectory()` → `fs.stat(abs).type === "Directory"`
 > migration is NOT semantics-preserving.** It silently *widens* a recursive walk to descend
-> symlinked directories. In a fail-closed CI guard that widening is directional — it can only
-> add files to the scanned corpus, so a RED becomes GREEN: the guard fails **open**. CI cannot
-> catch it, because a fresh checkout contains no stray symlinks.
+> symlinked directories. That widening only ever *adds* files to the scanned corpus, so for a
+> **negation-shaped** predicate — assert-nothing-is-missing (`!consumingConstants.has(…)`, "no
+> matching `@patch-pin:`"), the shape most of the guard stack has — a RED becomes GREEN and the
+> guard fails **open**. (A positively-shaped predicate only gains violations: GREEN→RED, noisy but
+> fail-closed.) CI cannot catch it, because a fresh checkout contains no stray symlinks.
 
 The three facts, at the pinned `effect@4.0.0-beta.92` / `@effect/platform-node-shared@4.0.0-beta.92`:
 
@@ -182,14 +184,16 @@ stat that *is* a link (`stat.isSymbolicLink()`), which `fs.stat` never returns �
 `type === "SymbolicLink"` is dead code on that path.
 
 Observed instances of the swap, for reviewers of the remaining
-[#3462](https://github.com/kamp-us/phoenix/issues/3462) migration waves:
+[#3462](https://github.com/kamp-us/phoenix/issues/3462) migration waves — all three are `readLink`-gated
+on `main` today; none is still latent:
 [#3472](https://github.com/kamp-us/phoenix/issues/3472) / PR
 [#3898](https://github.com/kamp-us/phoenix/pull/3898) (`patch-guard`) — **confirmed fail-open**, a
-`@patch-pin:` marker behind a symlinked dir flipped the gate RED→GREEN, now fixed;
+`@patch-pin:` marker behind a symlinked dir flipped the gate RED→GREEN;
 [#3470](https://github.com/kamp-us/phoenix/issues/3470) / PR
 [#3897](https://github.com/kamp-us/phoenix/pull/3897) (`design-token-guard`) and
 [#3471](https://github.com/kamp-us/phoenix/issues/3471) / PR
-[#3915](https://github.com/kamp-us/phoenix/pull/3915) (`reachability-guard`) — latent, same shape.
+[#3915](https://github.com/kamp-us/phoenix/pull/3915) (`reachability-guard`) — same shape, fixed in
+the migration PR rather than after it.
 
 ### The sanctioned idiom — gate the `Directory` arm on `readLink` failing
 
@@ -235,7 +239,9 @@ obligations below.
   `PlatformError` on the `E` channel, so one broken symlink anywhere under the walk root hard-fails
   the whole gate, where the `Dirent` walk classified the entry and moved on. If the walk stats every
   entry, make the per-entry stat skippable (`Effect.option` / `Effect.orElseSucceed`) rather than
-  letting a stray dangling link decide a gate's exit code.
+  letting a stray dangling link decide a gate's exit code. `reachability-guard`'s walk
+  (`packages/pipeline-cli/src/tools/reachability-guard/gate.ts`) buys this for free by testing
+  `readLink` **before** `stat` — it never `stat`s a link at all.
 
 ## Testing — substitute the `FileSystem` seam
 
