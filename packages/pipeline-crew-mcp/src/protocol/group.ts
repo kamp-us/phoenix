@@ -1,5 +1,5 @@
 /**
- * protocol/group — the 8 crew message kinds as one Effect `RpcGroup`.
+ * protocol/group — the crew message kinds as one Effect `RpcGroup`.
  *
  * Generic (crew-agnostic); see the boundary note in `../index.ts`. Each kind is an
  * `Rpc` carrying a Schema payload from `./schema.ts`. Kinds that expect an answer
@@ -43,6 +43,16 @@ export const EngineNudge = Rpc.make("EngineNudge", {
 	payload: Messages.EngineNudge,
 });
 
+/**
+ * Kind 8 — nudge ack: the typed answer to an `EngineNudge`, fire-and-forget like the nudge it
+ * answers. A reply is its own kind rather than a nudge sent backwards — that conflation, with the
+ * answer as prose in a field meant for something else, is the defect (#3956). Same advisory class:
+ * never command authority, a dropped ack is log-and-continue (ADR 0204).
+ */
+export const NudgeAck = Rpc.make("NudgeAck", {
+	payload: Messages.NudgeAck,
+});
+
 /** Kind 4a — role discovery/presence: announce (fire-and-forget). */
 export const AnnouncePresence = Rpc.make("AnnouncePresence", {
 	payload: Messages.PresenceAnnouncement,
@@ -71,13 +81,14 @@ export const LookupClaim = Rpc.make("LookupClaim", {
 	success: Messages.LookupClaimResult,
 });
 
-/** The full crew message catalog — one transport-agnostic `RpcGroup` over all 8 kinds. */
+/** The full crew message catalog — one transport-agnostic `RpcGroup` over every kind. */
 export const CrewProtocol = RpcGroup.make(
 	Claim,
 	Release,
 	DrainProgress,
 	IntakePing,
 	EngineNudge,
+	NudgeAck,
 	AnnouncePresence,
 	LookupRole,
 	Heartbeat,
@@ -90,7 +101,7 @@ export const crewMessageKinds: ReadonlyArray<string> = [...CrewProtocol.requests
 /**
  * Resolve a wire `kind` name to the Schema payload the catalog types it as — the seam that lets
  * a boundary decode a message's `body` against its kind instead of trusting `Schema.Unknown`,
- * so the 8-kind catalog is enforced at the wire rather than advisory (#3229). Derived straight
+ * so the catalog is enforced at the wire rather than advisory (#3229). Derived straight
  * from `CrewProtocol.requests` so it can never drift from the catalog above — the catalog *is*
  * the map. A kind outside the catalog resolves to `undefined`; the caller rejects it.
  *
@@ -106,7 +117,10 @@ export const payloadSchemaForKind = (kind: string): Schema.Codec<unknown> | unde
  * The claim-resource key a message routes by, or `undefined` when it names none — what the
  * claim-aware send path consults to decide single-seat vs broadcast delivery (#3886). Only
  * `EngineNudge` carries a claimable target today, mapped to the canonical `pr-N`/`issue-N` key
- * (`Messages.nudgeTargetResourceKey`, the single-source convention). Any other kind, or a body
+ * (`Messages.nudgeTargetResourceKey`, the single-source convention). `NudgeAck` names the same
+ * target but is deliberately NOT claim-routed: the answering peer is typically the claim holder,
+ * so routing an ack by its target would deliver it back to its own sender instead of to the peer
+ * that nudged. Any other kind, or a body
  * that does not decode as an `EngineNudge`, yields `undefined` ⇒ the send broadcasts, so a
  * malformed or non-nudge message degrades to the pre-claim-aware fan-out rather than throwing.
  * This is the one place the catalog declares "this kind routes by claim, on this key."

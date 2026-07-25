@@ -39,6 +39,24 @@ describe("protocol/describe — the discoverable kind→shape surface (#3622)", 
 			}),
 	);
 
+	it.effect(
+		"surfaces NudgeAck's closed outcome set + its required reply reference ahead of a send (#3956)",
+		() =>
+			Effect.gen(function* () {
+				const contract = yield* describeKind("NudgeAck");
+				assert.isDefined(contract);
+				// A peer answering a nudge resolves the disposition vocabulary here rather than inventing
+				// prose. Matched on the rendered document because the JSON-Schema *wrapper* for a literal
+				// union is the dependency's shape to choose; the enumerated values are ours.
+				const rendered = JSON.stringify(contract?.payload);
+				for (const outcome of ["already-done", "dispatched", "declined", "unknown"]) {
+					assert.include(rendered, outcome);
+				}
+				assert.include(rendered, "inReplyTo");
+				assert.isFalse(contract?.awaitsReply);
+			}),
+	);
+
 	it.effect("marks request-response kinds as awaiting a reply, fire-and-forget kinds as not", () =>
 		Effect.gen(function* () {
 			// Claim + LookupRole carry a typed reply; the rest default to Schema.Void (fire-and-forget).

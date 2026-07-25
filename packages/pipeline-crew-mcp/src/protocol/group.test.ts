@@ -22,7 +22,7 @@ import {stampFromMillis} from "./instant.ts";
 import * as Messages from "./schema.ts";
 
 describe("protocol/group catalog", () => {
-	it("covers all 8 message kinds (9 rpcs — presence is announce + lookup, claim is claim + release + holder-lookup)", () => {
+	it("covers every message kind (presence is announce + lookup, claim is claim + release + holder-lookup, the nudge is nudge + ack)", () => {
 		assert.deepStrictEqual([...CrewProtocol.requests.keys()].sort(), [
 			"AnnouncePresence",
 			"Claim",
@@ -32,6 +32,7 @@ describe("protocol/group catalog", () => {
 			"IntakePing",
 			"LookupClaim",
 			"LookupRole",
+			"NudgeAck",
 			"Release",
 		]);
 	});
@@ -114,6 +115,19 @@ describe("protocol/group catalog", () => {
 		assert.strictEqual(claimResourceKey("IntakePing", {issue: 3886}), undefined);
 		// a malformed nudge body does not decode ⇒ no key ⇒ the send broadcasts (never throws)
 		assert.strictEqual(claimResourceKey("EngineNudge", {not: "a nudge"}), undefined);
+	});
+
+	it("a NudgeAck is NOT claim-routed — an ack must reach the nudger, not the target's holder (#3956)", () => {
+		// The ack names the same pr-N/issue-N target, but the answering peer is usually the claim
+		// holder itself: keying the ack on it would route the reply straight back to its own sender.
+		assert.strictEqual(
+			claimResourceKey("NudgeAck", {
+				inReplyTo: {_tag: "ResolvedNudge", target: {pr: 3897}},
+				from: "engineering-manager",
+				outcome: "already-done",
+			}),
+			undefined,
+		);
 	});
 
 	it("no protocol source file imports from crew/ (the generic boundary holds)", () => {
