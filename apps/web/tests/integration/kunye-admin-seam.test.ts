@@ -17,25 +17,21 @@
  * user/tuple are cleaned up after each test.
  */
 
-import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {assignAdmin, makeGrantDb, revokeAdmin} from "@kampus/admin-grant";
 import {CurrentActor, type Grant, human, isGrant, platform} from "@kampus/authz";
-import {makeD1Rest} from "@kampus/d1-rest";
 import {Effect, Exit, Layer} from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {afterEach, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle, makeDrizzleLayer} from "../../worker/db/Drizzle.ts";
 import {AgentAuthorityV1} from "../../worker/features/kunye/AgentAuthorityV1.ts";
 import {Admin} from "../../worker/features/kunye/admin.ts";
 import type {Denied} from "../../worker/features/kunye/errors.ts";
 import {RelationStoreLive} from "../../worker/features/kunye/RelationStore.ts";
+import {makeIntegrationD1Rest} from "./_cf-rest-transport.ts";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
 const h = sharedStack();
 const NS = nsToken(import.meta.url);
-
-const restLayer = Layer.merge(CredentialsFromEnv, FetchHttpClient.layer);
 
 const ADMIN_USER = `${NS}-admin`;
 const RANDO = `${NS}-rando`;
@@ -62,7 +58,7 @@ const cleanup = () =>
 
 beforeAll(async () => {
 	const {accountId, databaseId} = await h.d1Target();
-	d1 = makeD1Rest({accountId, databaseId, layer: restLayer});
+	d1 = makeIntegrationD1Rest({accountId, databaseId});
 	const workerDb = createDrizzle(d1);
 	const layer = Layer.mergeAll(
 		RelationStoreLive.pipe(Layer.provide(makeDrizzleLayer(workerDb))),

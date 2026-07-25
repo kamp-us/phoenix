@@ -127,22 +127,80 @@ create/destroy surface every CF flake class scales with (#1010 / #1019 /
 
 ## CF API rate-limit discipline — two complementary halves
 
-The harness's setup-only Cloudflare REST path (`cloudflareApi` → `runD1Query` in
-`_harness.ts`; `setLastActivityAt` / `execD1` / `promoteToYazar`) hits ONE
-account's D1 control-plane, which trips the account-global rate limit (HTTP 429,
-code 971 "TooManyRequests") under concurrent-stage batch load. Two wrappers guard
-it, and a call funnels through both:
+Every integration-test Cloudflare REST call — the setup path (`cloudflareApi` →
+`runD1Query` in `_harness.ts`; `setLastActivityAt` / `execD1` / `promoteToYazar`)
+AND a test's data-plane `makeD1Rest` queries — hits ONE account's D1
+control-plane, which trips the account-global rate limit (HTTP 429, code 971
+"TooManyRequests") under concurrent-stage batch load. **All of them go through one
+transport, `_cf-rest-transport.ts`**, which composes two halves:
 
 - **Reactive per-call retry** — `cfFetchWithRateLimitRetry` (`_d1-rest-retry.ts`):
   after a 429 fires, replay the one call with full-jitter exponential backoff
-  (429 is a pre-execution reject, so replay is safe; #2915). Bounded — a
-  persistent 429 exhausts the budget and surfaces.
+  (429 is a pre-execution reject, so replay is safe; #2915), floored by a
+  CF-supplied `Retry-After`. The budget is a **deadline** (`D1_REST_BUDGET_MS`),
+  not an attempt count: with full jitter, "5 retries" is a budget with a
+  near-zero lower bound, which is why the shipped retry burned out against a
+  ~290s 429 plateau and red five bystander suites anyway (#3548). It never masks
+  a real failure — only a 429 is retried, and exhaustion surfaces the final 429
+  (raised by `cloudflareApi` as `CfRateLimitError`, naming the call, why it
+  stopped, and how its elapsed time split).
 - **Proactive shared throttle** — `cfApiThrottle` (`_cf-api-throttle.ts`, #3081):
-  a concurrency cap + jittered start-pacing every harness CF REST call funnels
-  through, so fewer 429s fire in the first place. `cloudflareApi` composes it
-  AROUND the retry (`throttle.run(() => cfFetchWithRateLimitRetry(send))`), so
-  each logical call — retries included — is one throttled unit. Both knobs are
-  env-tunable (`CF_API_MAX_CONCURRENT` / `CF_API_MIN_SPACING_MS`).
+  a concurrency cap + jittered start-pacing, so fewer 429s fire in the first
+  place. Both knobs are env-tunable (`CF_API_MAX_CONCURRENT` /
+  `CF_API_MIN_SPACING_MS`).
+
+**Composition order: retry AROUND throttle** (`retry(() => throttle.run(send))`),
+inverting #3081's original note. A call sleeping in backoff is not in flight, so
+it must not hold an in-flight slot — under the old order four backing-off calls
+held all four slots and head-of-line-blocked every other CF call in the fork.
+This order also start-paces the retries themselves.
+
+**The two halves must not bill each other (#3548, the PR #4033 merge-queue
+ejection).** Holding a slot per attempt means a logical call re-enters the
+harness's own queue on every retry — and a wall-clock deadline then charges that
+self-imposed queueing to the budget it meant to spend asking Cloudflare. The
+ejecting run gave up after "2 attempts over 45136ms", most of it queued rather
+than rate-limited — CF sent no usable `Retry-After` on this path (`retryAfter:
+Millis 0`, run `29665891972`), and on that premise one backoff at attempt 0 is
+capped at 500ms. The premise is load-bearing: a `Retry-After` is a *floor* and is
+not bounded by that ceiling, so a large one also produces "2 attempts over ~45s"
+and the elapsed numbers alone cannot separate the two. Both sinks are fixed and
+the attrition breakdown now records `retryAfterMs`, so the next occurrence is
+read off the log line rather than inferred. Either way the operative conclusion
+holds: **the budget was never spent, so raising it would have fixed nothing.**
+Three rules follow, and each is pinned by a unit test:
+
+- **A sleeping call is not in flight — including one asleep in start-pacing.**
+  `pace()` runs *before* the slot is acquired, not inside it. Pacing is a rate
+  limit, the semaphore is a concurrency limit; nesting them makes the rate limit
+  eat the concurrency limit.
+- **Throttle queueing is not retry attrition.** `throttle.run` reports what it
+  made a call wait (`onQueued`); the retry deducts it, so `budgetMs` means "up to
+  this much time with CF actually answering 429". Giving up reports the split
+  (`queuedMs` / `backoffMs` / budget spent) and a `reason`, so a repeat reads off
+  the log line instead of being re-derived from the job log.
+- **Deducting queueing costs a bound, so keep the other one.** Once queueing is
+  uncharged, `budgetMs` no longer limits the call in wall clock — only
+  `maxRetries` times however long the throttle queues does, which at 24 attempts
+  can outlive vitest's 120s `testTimeout` and hand back the opaque "Hook timed
+  out" the named 429 exists to replace. So a hard wall-clock ceiling
+  (`D1_REST_WALL_CLOCK_CEILING_MS`) is held alongside the CF-facing budget, and
+  the `reason` names which bound fired (`wall-clock-ceiling` vs
+  `budget-exhausted`) — a give-up is never ambiguous about what ended it. The
+  guarantee is per logical call: a test making several protected CF calls during
+  a sustained plateau can still exceed `testTimeout`.
+
+A `Retry-After` longer than the remaining budget ends the loop **immediately**
+(`retry-after-exceeds-budget`) rather than sleeping out the remainder to buy one
+attempt at the moment it expires — a fast, correctly-named red beats a slow one.
+
+**Build the client through the transport, never by hand.** Use
+`makeIntegrationD1Rest` / `integrationRestLayer`; a per-file
+`Layer.merge(CredentialsFromEnv, FetchHttpClient.layer)` or `makeD1RestFromEnv`
+is the BARE fetch with no retry and no throttle. That opt-in-ness is what red
+`pasaport-ban.test.ts` in run `29665891972` while its wrapped sibling survived
+the same 429 storm, so `_cf-rest-transport.unit.test.ts` now fails closed on any
+non-exempt file in the integration directory that re-introduces one.
 
 **Ceiling (why this isn't the whole 429 story):** the throttle is an in-process
 singleton — under `isolate:false` it is shared across files in the same fork, but
@@ -153,6 +211,15 @@ alchemy's OWN deploy path, which the harness can't wrap. Those need the
 out-of-harness levers named in #3081 (a CI `concurrency:` group; 429 backoff in
 alchemy's deploy path via `pnpm patch`, ADR 0038). This throttle is the
 run-agnostic backoff on the slice the harness owns.
+
+Read the transport's coverage honestly when diagnosing a 429 run: **stage
+create/destroy is the bulk of the CF traffic and none of it goes through this
+transport.** In the PR #4033 ejection the teardown 429s were
+`DELETE /accounts/{id}/flagship/apps/{appId}/flags/{flagKey}` raised inside
+`alchemy`/`@distilled.cloud`, warned as leaked stages — unthrottled, competing
+for the same account bucket the tests then can't get through. The harness
+throttle governs a minority of the calls; a 429 storm is not evidence that its
+knobs are mis-set.
 
 ## Teardown is best-effort — leaked stages are a known class
 

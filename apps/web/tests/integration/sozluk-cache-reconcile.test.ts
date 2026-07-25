@@ -35,7 +35,6 @@
  * `integrationStack`: this file owns its own worker + D1, so the direct-D1 reconcile and the
  * seeded rows see one isolated table (and `sozluk_stats` counts only this file's definitions).
  */
-import {makeD1RestFromEnv} from "@kampus/d1-rest";
 import {eq} from "drizzle-orm";
 import {type Context, Effect, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
@@ -45,6 +44,7 @@ import {PasaportIdentityStub} from "../../worker/features/pasaport/Pasaport.test
 import {ReactionStub} from "../../worker/features/reaction/Reaction.testing.ts";
 import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk.ts";
 import {Vote} from "../../worker/features/vote/Vote.ts";
+import {makeIntegrationD1Rest} from "./_cf-rest-transport.ts";
 import {integrationStack} from "./_integration.ts";
 
 const h = integrationStack(import.meta.url);
@@ -65,7 +65,7 @@ const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
  */
 async function realSozluk() {
 	const target = await h.d1Target();
-	const db = createDrizzle(makeD1RestFromEnv(target));
+	const db = createDrizzle(makeIntegrationD1Rest(target));
 	const access = orDieAccess(makeDrizzleAccess(db));
 	const sozlukLayer = SozlukLive.pipe(
 		Layer.provide(Layer.succeed(Drizzle, makeDrizzleAccess(db))),

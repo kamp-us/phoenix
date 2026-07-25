@@ -39,12 +39,12 @@
  * Per-file `integrationStack`: this file owns its own worker + D1, so the direct-D1
  * refresh and the feed reads see one isolated table.
  */
-import {makeD1RestFromEnv} from "@kampus/d1-rest";
 import {Effect} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle, makeDrizzleAccess, orDieAccess} from "../../worker/db/Drizzle.ts";
 import {computeHotScore} from "../../worker/db/hotScore.ts";
 import {makeRefreshHotScores} from "../../worker/features/pano/post-operations.ts";
+import {makeIntegrationD1Rest} from "./_cf-rest-transport.ts";
 import {integrationStack} from "./_integration.ts";
 
 const h = integrationStack(import.meta.url);
@@ -126,7 +126,7 @@ async function readPost(id: string): Promise<{score: number; commentCount: numbe
  */
 async function realRefreshHotScores() {
 	const target = await h.d1Target();
-	const db = createDrizzle(makeD1RestFromEnv(target));
+	const db = createDrizzle(makeIntegrationD1Rest(target));
 	const access = orDieAccess(makeDrizzleAccess(db));
 	return makeRefreshHotScores(access.run);
 }

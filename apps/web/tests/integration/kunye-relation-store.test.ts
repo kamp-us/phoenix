@@ -16,37 +16,20 @@
  * Runs on the run-scoped SHARED stage (ADR 0104 step 7), so every subject/object id is
  * prefixed with `NS` (this file's deterministic token) to keep its rows its own.
  */
-import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {type Relation, RelationStore, resource} from "@kampus/authz";
-import {makeD1Rest, readYourWrite} from "@kampus/d1-rest";
+import {readYourWrite} from "@kampus/d1-rest";
 import {and, eq} from "drizzle-orm";
 import {Effect, Layer} from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {afterEach, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle, type DrizzleDb, makeDrizzleLayer} from "../../worker/db/Drizzle.ts";
 import * as schema from "../../worker/db/drizzle/schema.ts";
 import {objectKey, RelationStoreLive} from "../../worker/features/kunye/RelationStore.ts";
-import {rateLimitRetryingFetch} from "./_d1-rest-retry.ts";
+import {makeIntegrationD1Rest} from "./_cf-rest-transport.ts";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
 const h = sharedStack();
 const NS = nsToken(import.meta.url);
-
-// Data-plane `has`/`mint`/`remove` cross this REST transport, so its `fetch` carries the same
-// 429-retry the setup path has (#3089): a transient CF 429 (code 971) under merge_group load is
-// re-sent with full-jitter backoff at the transport, not thrown into drizzle/`readYourWrite` (#3099).
-const restLayer = Layer.merge(
-	CredentialsFromEnv,
-	FetchHttpClient.layer.pipe(
-		Layer.provide(
-			Layer.succeed(
-				FetchHttpClient.Fetch,
-				rateLimitRetryingFetch((input, init) => fetch(input, init)),
-			),
-		),
-	),
-);
 
 const object = resource("platform", NS);
 const SUBJECT = `${NS}-alice`;
@@ -76,7 +59,7 @@ const remove = (subject: string) =>
 
 beforeAll(async () => {
 	const {accountId, databaseId} = await h.d1Target();
-	db = createDrizzle(makeD1Rest({accountId, databaseId, layer: restLayer}));
+	db = createDrizzle(makeIntegrationD1Rest({accountId, databaseId}));
 	const layer = RelationStoreLive.pipe(Layer.provide(makeDrizzleLayer(db)));
 	has = (tuple) =>
 		Effect.runPromise(
