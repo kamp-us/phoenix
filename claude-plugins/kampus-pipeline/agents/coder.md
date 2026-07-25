@@ -72,21 +72,20 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   never a `~/`, `/Users/…`, vault, or sibling-clone path.
 - **Every intermediate file you write lives under a per-run scratch namespace (§SP).** Never
   stash state in a fixed or work-item-keyed scratchpad path (`prref.txt`,
-  `/tmp/verdict-$PR.md`) — the pipeline runs several agents concurrently by design, so a
-  shared filename gets clobbered mid-run and reads back **another run's content with no
-  error**: silent, and it routed a reviewer's `git diff` to the wrong PR's files (#3718).
+  `/tmp/verdict-$PR.md`), and never in the harness-provided scratchpad directory — that one is
+  session-scoped and **shared across the concurrent runs of a session**, so a generic leaf name
+  gets clobbered mid-run and reads back **another run's content with no error**: silent, and it
+  routed a reviewer's `git diff` to the wrong PR's files, then wrote one reviewer's verdict body
+  over another's (#3718).
   Prefer passing the value in-process and writing no file at all; when a file is genuinely
-  needed, derive its path from a per-run namespace and name every leaf under it:
-  `RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?}/<skill>-<work-item>"`,
-  then `mkdir -p "$RUN_SCRATCH"` (fail closed — never fall back to a shared path).
-  **When the state must cross a Bash call, this recipe is the carrier: recompute the same line
-  in the later call.** Your shell state does not survive between Bash calls, so a
-  `RUN_SCRATCH` allocated by `mktemp -d` is unrecoverable afterwards — re-running `mktemp -d`
-  yields a *new empty directory*, silently turning a read of your own earlier state into a
-  read of nothing. Keying on `$CLAUDE_CODE_SESSION_ID` gives both properties at once: unique
-  per agent run, and recomputable by any later call of that same run. Never park the path
-  itself in another file to carry it across — that just moves the collision onto that file.
-  The rule, its fail-closed allocation, the single-Bash-call `mktemp` carve-out, and the
+  needed, allocate the namespace with the verb and name every leaf under it:
+  `RUN_SCRATCH="$(pipeline-cli scratchpad open --slug <skill>-<work-item>)" || exit 1`, and in
+  every LATER Bash call re-derive it with `pipeline-cli scratchpad path --slug <same-slug>` —
+  your shell state does not survive between Bash calls, so nothing you set carries over. The
+  verb is fail-closed: a missing session id, a namespace another run owns, and one this run
+  never opened are each a distinct non-zero exit, never a fallback to a shared path. Never park
+  the path in another file to carry it across — that just moves the collision onto that file.
+  The rule, the no-CLI fallback recipe, the single-Bash-call `mktemp` carve-out, and the
   never-leak-the-path corollary are single-sourced in the skills'
   `gh-issue-intake-formats.md` §SP.
 - **Work from the repo root**, not a nested app directory.
