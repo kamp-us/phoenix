@@ -2,8 +2,12 @@
  * Pins that `cfFetchWithRateLimitRetry` retries ONLY the transient CF 429 (the #2915
  * D1-429 batch flake) and never masks a real failure: a non-429 answer (success or a real
  * error) is returned at once, a persistent 429 exhausts the bounded budget and surfaces the
- * final 429, and the backoff stays within its full-jitter window. `sleep`/`random` are
+ * final 429, and the backoff stays within its full-jitter window. `sleep`/`random`/`now` are
  * injected so the whole suite runs offline and instantly.
+ *
+ * The #3548 additions are pinned at the bottom: the budget is WALL-CLOCK (an attempt-count
+ * budget with full jitter could burn out in milliseconds against a minutes-long 429 plateau),
+ * a CF-supplied `Retry-After` floors the backoff, and giving up is self-identifying.
  */
 
 import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
@@ -13,8 +17,11 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {describe, expect, it, vi} from "vitest";
 import {
 	CF_RATE_LIMIT_STATUS,
+	CfRateLimitError,
 	cfFetchWithRateLimitRetry,
 	D1_REST_BASE_DELAY_MS,
+	isCfRateLimit,
+	type RateLimitAttrition,
 	rateLimitRetryingFetch,
 } from "./_d1-rest-retry.ts";
 
@@ -30,6 +37,17 @@ const sequence = (statuses: number[]) => {
 };
 
 const noSleep = () => Promise.resolve();
+const noop = () => {};
+
+/** A clock that advances by `stepMs` on every read — makes the wall-clock budget assertable. */
+const tickingClock = (stepMs: number) => {
+	let t = 0;
+	return () => {
+		const at = t;
+		t += stepMs;
+		return at;
+	};
+};
 
 describe("cfFetchWithRateLimitRetry", () => {
 	it("returns the first non-429 response without retrying (no 429 → no sleep)", async () => {
@@ -62,7 +80,7 @@ describe("cfFetchWithRateLimitRetry", () => {
 	it("exhausts the bounded budget on a persistent 429 and returns the final 429", async () => {
 		const send = sequence([429]);
 		const sleep = vi.fn(noSleep);
-		const res = await cfFetchWithRateLimitRetry(send, {maxRetries: 5, sleep});
+		const res = await cfFetchWithRateLimitRetry(send, {maxRetries: 5, sleep, onGiveUp: noop});
 		expect(res.status).toBe(429);
 		expect(send).toHaveBeenCalledTimes(6); // initial + 5 retries, then it stops
 		expect(sleep).toHaveBeenCalledTimes(5);
@@ -79,6 +97,7 @@ describe("cfFetchWithRateLimitRetry", () => {
 			baseDelayMs: D1_REST_BASE_DELAY_MS,
 			sleep,
 			random: () => 0.999999,
+			onGiveUp: noop,
 		});
 		expect(delays).toHaveLength(3);
 		delays.forEach((ms, attempt) => {
@@ -86,6 +105,138 @@ describe("cfFetchWithRateLimitRetry", () => {
 			expect(ms).toBeGreaterThanOrEqual(0);
 			expect(ms).toBeLessThan(ceil);
 		});
+	});
+});
+
+// #3548: the budget that actually decides when to give up.
+describe("the retry budget is wall-clock, not an attempt count", () => {
+	// A clock the injected sleep advances — the honest model of "waiting spends the budget".
+	const clockedSleep = () => {
+		let clock = 0;
+		return {
+			now: () => clock,
+			sleep: vi.fn(async (ms: number) => {
+				clock += ms;
+			}),
+			elapsed: () => clock,
+		};
+	};
+
+	it("keeps retrying past the old 5-retry cap while budget remains, and stops exactly at it", async () => {
+		const {now, sleep, elapsed} = clockedSleep();
+		const send = sequence([429]);
+		const res = await cfFetchWithRateLimitRetry(send, {
+			budgetMs: 10_000,
+			baseDelayMs: 1000,
+			maxDelayMs: 2000,
+			random: () => 0.999999,
+			now,
+			sleep,
+			onGiveUp: noop,
+		});
+		expect(res.status).toBe(429);
+		// The old attempt-count budget stopped at 6 sends however little time it had spent; the
+		// deadline instead spends the whole 10s — the point of the #3548 change.
+		expect(send.mock.calls.length).toBeGreaterThan(6);
+		expect(elapsed()).toBe(10_000);
+	});
+
+	it("never waits past the deadline — the last wait is clamped to what remains", async () => {
+		const {now, sleep, elapsed} = clockedSleep();
+		await cfFetchWithRateLimitRetry(sequence([429]), {
+			budgetMs: 1500,
+			baseDelayMs: 1000,
+			maxDelayMs: 8000,
+			random: () => 0.999999,
+			now,
+			sleep,
+			onGiveUp: noop,
+		});
+		expect(elapsed()).toBeLessThanOrEqual(1500);
+	});
+
+	it("budgetMs: 0 disables retrying entirely (the first answer stands)", async () => {
+		const send = sequence([429]);
+		const sleep = vi.fn(noSleep);
+		const res = await cfFetchWithRateLimitRetry(send, {budgetMs: 0, sleep, onGiveUp: noop});
+		expect(res.status).toBe(429);
+		expect(send).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+	});
+});
+
+describe("a CF-supplied Retry-After floors the backoff", () => {
+	const with429 = (headers: Record<string, string>) =>
+		vi.fn(async () => new Response("429", {status: 429, headers}));
+
+	it("waits at least the delta-seconds CF asked for, not the (smaller) jittered backoff", async () => {
+		const delays: number[] = [];
+		await cfFetchWithRateLimitRetry(with429({"retry-after": "3"}), {
+			maxRetries: 1,
+			baseDelayMs: 100,
+			random: () => 0, // jitter alone would wait 0ms
+			sleep: async (ms) => {
+				delays.push(ms);
+			},
+			now: tickingClock(0),
+			onGiveUp: noop,
+		});
+		expect(delays).toEqual([3000]);
+	});
+
+	it("ignores an unparseable Retry-After and falls back to the jittered backoff", async () => {
+		const delays: number[] = [];
+		await cfFetchWithRateLimitRetry(with429({"retry-after": "soon"}), {
+			maxRetries: 1,
+			baseDelayMs: 100,
+			random: () => 0.999999,
+			sleep: async (ms) => {
+				delays.push(ms);
+			},
+			now: tickingClock(0),
+			onGiveUp: noop,
+		});
+		expect(delays).toEqual([99]);
+	});
+});
+
+describe("giving up is self-identifying, and never a silent pass", () => {
+	it("reports the label, attempt count and elapsed budget exactly once, only on exhaustion", async () => {
+		const seen: RateLimitAttrition[] = [];
+		await cfFetchWithRateLimitRetry(sequence([429]), {
+			label: "POST /accounts/a/d1/database/b/query",
+			maxRetries: 2,
+			sleep: noSleep,
+			now: tickingClock(10),
+			onGiveUp: (a) => seen.push(a),
+		});
+		expect(seen).toHaveLength(1);
+		expect(seen[0]?.label).toBe("POST /accounts/a/d1/database/b/query");
+		expect(seen[0]?.attempts).toBe(3);
+		expect(seen[0]?.elapsedMs).toBeGreaterThan(0);
+	});
+
+	it("does NOT fire when the 429 clears — a recovered call is not reported as rate-limited", async () => {
+		const onGiveUp = vi.fn();
+		const res = await cfFetchWithRateLimitRetry(sequence([429, 200]), {sleep: noSleep, onGiveUp});
+		expect(res.status).toBe(200);
+		expect(onGiveUp).not.toHaveBeenCalled();
+	});
+
+	it("CfRateLimitError names the call and its attrition (the #3548 diagnosability bar)", () => {
+		const err = new CfRateLimitError(
+			"POST",
+			"/accounts/a/d1/database/b/query",
+			{label: "POST /accounts/a/d1/database/b/query", attempts: 9, elapsedMs: 44_310},
+			'{"code":971}',
+		);
+		expect(isCfRateLimit(err)).toBe(true);
+		expect(err.message).toContain("POST /accounts/a/d1/database/b/query");
+		expect(err.message).toContain("9 attempts");
+		expect(err.message).toContain("44310ms");
+		expect(err.message).toContain("971");
+		// A non-429 failure must NEVER be classified as a rate-limit and retried into a fake pass.
+		expect(isCfRateLimit(new Error("D1_ERROR: no such table"))).toBe(false);
 	});
 });
 

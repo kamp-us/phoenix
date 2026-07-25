@@ -24,17 +24,13 @@
  * (this file's deterministic token) so its rows are its own, and each user's ban
  * events are cleaned up after the suite.
  */
-import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
-import {makeD1Rest} from "@kampus/d1-rest";
-import {Layer} from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {makeIntegrationD1Rest} from "./_cf-rest-transport.ts";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
 const h = sharedStack();
 const NS = nsToken(import.meta.url);
-const restLayer = Layer.merge(CredentialsFromEnv, FetchHttpClient.layer);
 
 let d1: D1Database;
 
@@ -101,7 +97,7 @@ const userIds: string[] = [];
 
 beforeAll(async () => {
 	const {accountId, databaseId} = await h.d1Target();
-	d1 = makeD1Rest({accountId, databaseId, layer: restLayer});
+	d1 = makeIntegrationD1Rest({accountId, databaseId});
 });
 
 afterAll(async () => {

@@ -35,8 +35,8 @@
  */
 
 import {randomBytes} from "node:crypto";
-import {cfApiThrottle} from "./_cf-api-throttle.ts";
-import {cfFetchWithRateLimitRetry} from "./_d1-rest-retry.ts";
+import {cfRestSend} from "./_cf-rest-transport.ts";
+import {CfRateLimitError, type RateLimitAttrition} from "./_d1-rest-retry.ts";
 import {
 	awaitEdgeReady,
 	CloudflarePlaceholder404Error,
@@ -281,14 +281,14 @@ const cloudflareApiToken = (): string => {
 
 // One authenticated request to the Cloudflare REST API; throws on a non-2xx with the
 // response body for diagnosis. Setup-only — never on a test's black-box assertion path.
-// A transient 429 (the shared-account D1 rate-limit that reds the batched ref, #2915) is
-// bounded-retried before the throw — see `_d1-rest-retry.ts` for why 429 is safe to replay.
-// The whole call funnels through the shared `cfApiThrottle` (proactive concurrency cap +
-// jittered start-pacing, #3081) so the harness's own aggregate CF-API burst stays gentler on
-// the account-global limit; the throttle composes AROUND the per-call retry, not over it.
+// Throttled + 429-retried through the one shared transport (`_cf-rest-transport.ts`); a 429
+// that outlives the whole retry budget raises `CfRateLimitError` rather than the generic
+// non-2xx throw, so the log names the rate-limited call and what it spent (#3548).
 async function cloudflareApi(path: string, init?: RequestInit): Promise<Response> {
-	const res = await cfApiThrottle.run(() =>
-		cfFetchWithRateLimitRetry(() =>
+	const method = init?.method ?? "GET";
+	let attrition: RateLimitAttrition | undefined;
+	const res = await cfRestSend(
+		() =>
 			fetch(`${CLOUDFLARE_API_BASE}${path}`, {
 				...init,
 				headers: {
@@ -297,12 +297,17 @@ async function cloudflareApi(path: string, init?: RequestInit): Promise<Response
 					...init?.headers,
 				},
 			}),
-		),
+		{
+			label: `${method} ${path}`,
+			onGiveUp: (spent) => {
+				attrition = spent;
+			},
+		},
 	);
 	if (!res.ok) {
-		throw new Error(
-			`Cloudflare API ${init?.method ?? "GET"} ${path} failed: ${res.status} ${await res.text()}`,
-		);
+		const body = await res.text();
+		if (attrition) throw new CfRateLimitError(method, path, attrition, body);
+		throw new Error(`Cloudflare API ${method} ${path} failed: ${res.status} ${body}`);
 	}
 	return res;
 }

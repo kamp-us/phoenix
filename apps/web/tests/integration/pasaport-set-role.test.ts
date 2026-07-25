@@ -17,12 +17,10 @@
  * mutation). Runs on the run-scoped SHARED stage (ADR 0104); every id is `NS`-prefixed
  * (this file's deterministic token) so its rows are its own and are cleaned up after.
  */
-import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import type {RelationStore} from "@kampus/authz";
-import {makeD1Rest, readYourWrite} from "@kampus/d1-rest";
+import {readYourWrite} from "@kampus/d1-rest";
 import {and, eq, inArray} from "drizzle-orm";
 import {Effect, Layer} from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle, type DrizzleDb, makeDrizzleLayer} from "../../worker/db/Drizzle.ts";
 import * as schema from "../../worker/db/drizzle/schema.ts";
@@ -37,27 +35,12 @@ import {
 	makePasaportLive,
 	Pasaport,
 } from "../../worker/features/pasaport/Pasaport.ts";
-import {rateLimitRetryingFetch} from "./_d1-rest-retry.ts";
+import {makeIntegrationD1Rest} from "./_cf-rest-transport.ts";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
 const h = sharedStack();
 const NS = nsToken(import.meta.url);
-
-// The data-plane writes/reads cross this REST transport, so its `fetch` carries the same
-// 429-retry the sibling integration tests use (#3089): a transient CF 429 under
-// merge_group load is re-sent with backoff at the transport, not thrown into drizzle.
-const restLayer = Layer.merge(
-	CredentialsFromEnv,
-	FetchHttpClient.layer.pipe(
-		Layer.provide(
-			Layer.succeed(
-				FetchHttpClient.Fetch,
-				rateLimitRetryingFetch((input, init) => fetch(input, init)),
-			),
-		),
-	),
-);
 
 // `setRole` never touches better-auth (no session/DB use on this path), so an inert
 // instance satisfies the type — the same shape the Pasaport unit tests use.
@@ -136,7 +119,7 @@ const auditRowsWhen = (
 
 beforeAll(async () => {
 	const {accountId, databaseId} = await h.d1Target();
-	db = createDrizzle(makeD1Rest({accountId, databaseId, layer: restLayer}));
+	db = createDrizzle(makeIntegrationD1Rest({accountId, databaseId}));
 	const drizzleLayer = makeDrizzleLayer(db);
 	layer = Layer.mergeAll(
 		makePasaportLive(inertAuth).pipe(Layer.provide(drizzleLayer)),
