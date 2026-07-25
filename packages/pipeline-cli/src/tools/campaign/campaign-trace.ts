@@ -25,18 +25,28 @@
  *                    artifact; the founder login is a parameter this core compares against).
  *
  * The marker is emphasis-tolerant (a leading `**`), case-insensitive on the keyword, and anchored
- * to line one — a comment that merely *quotes* the marker mid-body never counts (the same
- * line-one anchoring the `verdict` and `claim` markers use). This module never touches the
- * network or disk; the `gh api` boundary that gathers the cluster + its markers lives in `github.ts`.
+ * to line one — the grammar is matched against the comment's FIRST line only, so an approval may
+ * carry rationale prose on the lines below it, while a comment that merely *quotes* the marker
+ * further down never counts (the same line-one anchoring the `verdict` and `claim` markers use).
+ * This module never touches the network or disk; the `gh api` boundary that gathers the cluster +
+ * its markers lives in `github.ts`.
  */
 
 /** The ISO-8601 UTC instant grammar the approval timestamp must satisfy (a `Z` suffix ⇒ UTC). */
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
 /**
- * The approval-marker keyword prefix — "does this comment even attempt an approval?" Line-one
- * anchored (no `m` flag), emphasis-tolerant, case-insensitive. Separates an approval *attempt*
- * (which, if malformed, fails closed as `malformed`) from unrelated chatter (which is `absent`).
+ * The comment's first line — the only line the approval marker may occupy. Both marker regexes
+ * below are matched against *this*, never the whole body: that is what makes "anchored to line
+ * one" literal, and it is why an otherwise-conformant approval may carry rationale prose beneath
+ * the marker (matching the whole body made a trailing paragraph read as `malformed`, #3831).
+ */
+const firstLine = (body: string): string => body.split(/\r?\n/, 1)[0] ?? "";
+
+/**
+ * The approval-marker keyword prefix — "does this comment even attempt an approval?"
+ * Emphasis-tolerant, case-insensitive. Separates an approval *attempt* (which, if malformed,
+ * fails closed as `malformed`) from unrelated chatter (which is `absent`).
  */
 const APPROVE_PREFIX_RE = /^\s*\*{0,2}\s*campaign-approve:/i;
 
@@ -127,8 +137,9 @@ const classify = (
 	comment: ApprovalComment,
 	waveLabel: string,
 ): WellFormedApproval | "attempt" | null => {
-	if (!APPROVE_PREFIX_RE.test(comment.body)) return null;
-	const m = APPROVE_RE.exec(comment.body);
+	const line = firstLine(comment.body);
+	if (!APPROVE_PREFIX_RE.test(line)) return null;
+	const m = APPROVE_RE.exec(line);
 	const label = m?.groups?.label;
 	const ts = m?.groups?.ts;
 	if (label === undefined || ts === undefined) return "attempt";
@@ -218,7 +229,7 @@ export const verifyTrace = (input: VerifyTraceInput): TraceVerdict => {
 		return {
 			pass: false,
 			reason: "malformed",
-			detail: `a campaign-approve marker was found on the '${waveLabel}' cluster but it is malformed or bound to a different wave — the trace must read exactly 'campaign-approve: ${waveLabel} · <ISO-8601-UTC>'`,
+			detail: `a campaign-approve marker was found on the '${waveLabel}' cluster but it is malformed or bound to a different wave — the comment's FIRST line must read exactly 'campaign-approve: ${waveLabel} · <ISO-8601-UTC>' (rationale prose may follow on the lines below it)`,
 		};
 	}
 	return {

@@ -26,8 +26,11 @@ campaign-approve: <wave-label> · <ISO-8601-UTC>
   committed artifact and the trust anchor stays configurable.
 
 The marker is emphasis-tolerant (a leading `**`), case-insensitive on the keyword, and anchored to
-line one — a comment that merely *quotes* the marker mid-body never counts (the same line-one
-anchoring the `verdict` and `claim` markers use).
+line one: the grammar is matched against the comment's **first line only**, so an approval may
+carry rationale prose on the lines below the marker, while a comment that merely *quotes* the
+marker further down never counts (the same line-one anchoring the `verdict` and `claim` markers
+use). "First line" is literal — a marker preceded by a blank line is not on line one and does not
+count.
 
 The shape is grounded in the **gated-audit-wave play**, where audit findings are returned to the
 founder for approval *before* anything is filed; this verifier is the checkable seam that pins that
