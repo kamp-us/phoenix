@@ -34,6 +34,8 @@ const LandingPostView = view<Post>()({
 	id: true,
 	slug: true,
 	title: true,
+	url: true,
+	host: true,
 	score: true,
 	author: true,
 	createdAt: true,
@@ -215,6 +217,16 @@ function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 				<Link className="kp-landing-row__title" to={`/pano/${p.slug ?? p.id}`}>
 					{p.title}
 				</Link>
+				{p.url ? (
+					<a
+						className="kp-landing-row__site"
+						href={p.url}
+						target="_blank"
+						rel="noreferrer noopener"
+					>
+						{p.host ?? p.url} ↗
+					</a>
+				) : null}
 				<div className="kp-landing-row__meta">
 					<span>{p.score} oy</span>
 					<span className="dot">·</span>

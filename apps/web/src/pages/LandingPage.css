@@ -195,6 +195,18 @@
 	font-weight: 400;
 	color: var(--text-muted);
 }
+/* The outbound source link on a link post, in parity with the pano feed card's
+   domain label (#2437) — the title routes to the discussion, the domain to the URL. */
+.kp-landing-row__site {
+	display: block;
+	font: var(--t-meta);
+	color: var(--text-muted);
+	text-decoration: none;
+	margin-top: 1px;
+}
+.kp-landing-row__site:hover {
+	color: var(--link);
+}
 .kp-landing-row__meta {
 	font: var(--t-meta);
 	color: var(--text-muted);

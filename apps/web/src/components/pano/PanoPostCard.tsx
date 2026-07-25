@@ -133,13 +133,22 @@ export function PanoPostCard({
 							))}
 						</span>
 					) : null}
-					<a className="kp-pano-post__title kp-prose" href={data.url ?? href} title={data.title}>
+					{/* Title routes to the post detail EVERYWHERE — feed, saved, search — matching
+					    the landing row; the external URL lives on the domain label below + the
+					    detail hero. See the founder ruling on #2437 (discussion-first: the title
+					    lands people on the conversation, the domain label is the source link-out). */}
+					<Link className="kp-pano-post__title kp-prose" to={href} title={data.title}>
 						{data.title}
-					</a>
-					{data.host ? (
-						<Link className="kp-pano-post__site" to={`/pano/site/${data.host}`}>
-							{data.host}
-						</Link>
+					</Link>
+					{data.url ? (
+						<a
+							className="kp-pano-post__site"
+							href={data.url}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							{data.host ?? data.url} ↗
+						</a>
 					) : siteLabel ? (
 						<span className="kp-pano-post__site">{siteLabel}</span>
 					) : null}
