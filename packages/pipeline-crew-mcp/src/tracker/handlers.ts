@@ -7,7 +7,7 @@
  *
  * `lastSeen`/`since` cross the wire as a `StampedInstant`, but the registry reasons in epoch millis
  * against its own clock — the conversion happens here at the boundary, through `stampFromMillis`, so
- * an unusable clock reading crosses as a typed unknown rather than a fabricated time (ADR 0210).
+ * an unusable clock reading crosses as a typed unknown rather than a fabricated time (ADR 0211).
  * `Claim` is the only reply-carrying kind (granted/collision/owner); the rest are fire-and-forget.
  */
 import {Effect} from "effect";

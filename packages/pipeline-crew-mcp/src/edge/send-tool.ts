@@ -72,7 +72,7 @@ const expectedShapeHint = (kind: string, schema: Schema.Codec<unknown>): Effect.
 /**
  * Whether `body` carries a sender-composed `at`. No catalog payload has one any more: the sender is
  * a language model composing JSON, so a time it writes is authored prose that merely looks like a
- * reading (#3895, ADR 0210). A `Schema.Struct` decode would silently STRIP the excess key, which
+ * reading (#3895, ADR 0211). A `Schema.Struct` decode would silently STRIP the excess key, which
  * leaves the sender believing it sent a time — so the send path rejects it instead, and the reject's
  * shape hint shows the body to send. `body` may arrive JSON-stringified (the `Schema.Unknown`
  * impedance mismatch of #3486), so unwrap that form before looking.

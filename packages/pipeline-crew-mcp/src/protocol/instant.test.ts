@@ -1,5 +1,5 @@
 /**
- * The observed-instant core (#3895, ADR 0210): a clock reading becomes a typed instant or a typed
+ * The observed-instant core (#3895, ADR 0211): a clock reading becomes a typed instant or a typed
  * unknown — never a fabricated or defaulted time.
  */
 import {assert, describe, it} from "@effect/vitest";

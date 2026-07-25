@@ -58,7 +58,7 @@ export const PeerInbox = RpcGroup.make(Deliver);
  * A peer's inbox: the delivery handler that acks + the log of what landed. `deliver`
  * stamps the ack with this peer's own id (`by`) and echoes the envelope's `messageId`,
  * so the sender can correlate the ack to its send. The ack's `at` is read off this
- * receiver's clock at delivery — see ADR 0210.
+ * receiver's clock at delivery — see ADR 0211.
  */
 export class Inbox extends Context.Service<
 	Inbox,

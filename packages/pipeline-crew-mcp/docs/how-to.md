@@ -67,7 +67,7 @@ and the one-liveness-clock rule, or it reintroduces a failure those choices desi
 2. **Expose it on the service** in [`src/tracker/registry.ts`](../src/tracker/registry.ts): add a
    method to the `Registry` `Context.Service` and implement it in `RegistryLive`, drawing "now"
    from `Clock.currentTimeMillis` — **never** a client-supplied time, so a peer cannot extend its
-   own liveness by lying about the clock (no payload carries one; ADR 0210).
+   own liveness by lying about the clock (no payload carries one; ADR 0211).
 3. **Map the RPC** in [`src/tracker/handlers.ts`](../src/tracker/handlers.ts): wire the registry
    kind onto the new `Registry` method, converting epoch millis to a `StampedInstant` through
    `stampFromMillis` at the boundary, so an unusable reading crosses as a typed unknown. If the semantic is a new *wire* kind, it must also be in the protocol catalog (see

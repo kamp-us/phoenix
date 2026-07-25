@@ -161,7 +161,7 @@ export const make = Effect.fn("Peer.make")(function* (config: PeerConfig) {
 				: Option.none<string>();
 			const targets = selectDeliveryTargets(holders, claimOwner);
 			// The envelope's `at` is read off THIS transport's clock, here — the message body carries no
-			// time at all, because a sender-composed one is authored prose, not a reading (see ADR 0210).
+			// time at all, because a sender-composed one is authored prose, not a reading (see ADR 0211).
 			const at = yield* stampNow;
 			// One logical message, delivered to the selected target(s). A bridge has one holder (an ordinary
 			// point-to-point send); an engine pool has N, across which a per-item advisory reaches the seat

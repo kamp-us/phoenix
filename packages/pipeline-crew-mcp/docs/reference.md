@@ -44,7 +44,7 @@ fire-and-forget kind leaves `success` unset, so it defaults to `Schema.Void`.
 | `RoleId` | `Schema.NonEmptyString` — an opaque role identifier (a parameter, never a concrete crew-role noun). |
 | `PeerId` | `Schema.NonEmptyString` — an opaque participant (a peer / session) identifier. |
 | `MessageId` | `Schema.NonEmptyString` — an opaque message id, correlates an ack to its delivery. |
-| `StampedInstant` | A tagged union — `{_tag: "ObservedInstant", iso}` (a real clock reading, ISO-8601 UTC) or `{_tag: "UnknownInstant", reason}`. Produced only by `stampFromMillis`/`stampNow`, never composed by a sender (ADR 0210). |
+| `StampedInstant` | A tagged union — `{_tag: "ObservedInstant", iso}` (a real clock reading, ISO-8601 UTC) or `{_tag: "UnknownInstant", reason}`. Produced only by `stampFromMillis`/`stampNow`, never composed by a sender (ADR 0211). |
 
 ### Payload shapes
 
@@ -54,7 +54,7 @@ Each is a `Schema.Struct`; a field marked *optional* is `Schema.optionalKey` (ab
 composing JSON, so a time it supplies is authored prose rather than a reading — `channel_send`
 rejects a body carrying an `at`. The authoritative instants are the envelope's (stamped by the
 transport at send), the ack's (stamped by the receiver at delivery), and `since` / `lastSeen`
-(stamped by the tracker). See ADR 0210.
+(stamped by the tracker). See ADR 0211.
 
 **`ClaimRequest`** — a sender's request to claim a resource (answered by `ClaimReply`):
 

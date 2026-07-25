@@ -10,7 +10,7 @@
  * No payload here carries a sender-composed time. A sender on this substrate is a language model
  * composing JSON, so a time it supplies is authored prose, not a reading (#3895); the authoritative
  * instants are stamped by the transport (`peer/`'s envelope), the receiver (`peer/`'s inbox ack),
- * or the tracker (`since`/`lastSeen` below) as a `StampedInstant`. See ADR 0210.
+ * or the tracker (`since`/`lastSeen` below) as a `StampedInstant`. See ADR 0211.
  */
 import {Schema} from "effect";
 import {StampedInstant} from "./instant.ts";

@@ -147,7 +147,7 @@ session via `--channels server:@kampus/pipeline-crew-mcp`).
 - **Never write a time into `body`** — no kind's payload has one, and a body carrying an `at` is
   rejected. You are a model composing JSON, so a time you write is prose that looks like a reading,
   not a reading. The instant is stamped for you: the transport stamps the wake tag's `at`, the
-  receiver stamps the ack's. Read those; don't author one (ADR 0210).
+  receiver stamps the ack's. Read those; don't author one (ADR 0211).
 - **Inbound** — arrives to the recipient as a wake tag
   `<channel from="inbox://<role>" kind="…" at="…">…JSON…</channel>`. The `at` is the
   transport-stamped instant, or the literal `unknown (…)` when the clock could not be read.

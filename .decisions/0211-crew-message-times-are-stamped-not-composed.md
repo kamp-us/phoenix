@@ -1,12 +1,12 @@
 ---
-id: 0210
+id: 0211
 title: Crew message times are stamped by the substrate, never composed by the sender
 status: accepted
 date: 2026-07-25
 tags: [pipeline, pipeline-crew, crew-mcp, protocol]
 ---
 
-# 0210 — Crew message times are stamped by the substrate, never composed by the sender
+# 0211 — Crew message times are stamped by the substrate, never composed by the sender
 
 **What this decides:** No crew message payload carries a time the sender wrote. Every instant on the
 substrate is read off a clock by the transport, the receiver, or the tracker, and an unreadable
