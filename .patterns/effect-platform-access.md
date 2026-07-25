@@ -160,6 +160,83 @@ platform service, so the filesystem stays a swappable seam.**" When you keep a r
 `node:*` call, keep it at a boundary (a param default, a bin, an `Effect.try`
 wrapper), never woven through a service method.
 
+## Directory walks — `Dirent` is `lstat`, `FileSystem.stat` is `stat` (never a straight swap)
+
+> [!WARNING]
+> **A `readdirSync(…, {withFileTypes: true}) + entry.isDirectory()` → `fs.stat(abs).type === "Directory"`
+> migration is NOT semantics-preserving.** It silently *widens* a recursive walk to descend
+> symlinked directories. In a fail-closed CI guard that widening is directional — it can only
+> add files to the scanned corpus, so a RED becomes GREEN: the guard fails **open**. CI cannot
+> catch it, because a fresh checkout contains no stray symlinks.
+
+The three facts, at the pinned `effect@4.0.0-beta.92` / `@effect/platform-node-shared@4.0.0-beta.92`:
+
+| Before (`node:fs`) | After (v4 `FileSystem`) | What changed |
+|---|---|---|
+| `readdirSync(dir, {withFileTypes: true})` → `Dirent[]` | `fs.readDirectory(dir)` → `Array<string>`, options `{recursive?: boolean}` only (`effect/dist/FileSystem.d.ts:170`) | **No `withFileTypes`** — you get names, no per-entry type |
+| `entry.isDirectory()` / `entry.isFile()` — **`lstat`**-based, does **not** follow symlinks | `(yield* fs.stat(abs)).type === "Directory"` — `stat` is `effectify(NFS.stat, …)` (`@effect/platform-node-shared/dist/NodeFileSystem.js:311`), i.e. node `fs.stat`, which **follows** symlinks | A symlink-to-dir is `false` under `Dirent`, `"Directory"` under `stat` |
+| `lstatSync(abs)` | — | The v4 `FileSystem` interface has **no `lstat`** at all (absent from `effect/dist/FileSystem.d.ts`) |
+
+`File.Info.type` is not an escape hatch either: `makeFileInfo` reports `"SymbolicLink"` only for a
+stat that *is* a link (`stat.isSymbolicLink()`), which `fs.stat` never returns — so
+`type === "SymbolicLink"` is dead code on that path.
+
+Observed instances of the swap, for reviewers of the remaining
+[#3462](https://github.com/kamp-us/phoenix/issues/3462) migration waves:
+[#3472](https://github.com/kamp-us/phoenix/issues/3472) / PR
+[#3898](https://github.com/kamp-us/phoenix/pull/3898) (`patch-guard`) — **confirmed fail-open**, a
+`@patch-pin:` marker behind a symlinked dir flipped the gate RED→GREEN, now fixed;
+[#3470](https://github.com/kamp-us/phoenix/issues/3470) / PR
+[#3897](https://github.com/kamp-us/phoenix/pull/3897) (`design-token-guard`) and
+[#3471](https://github.com/kamp-us/phoenix/issues/3471) / PR
+[#3915](https://github.com/kamp-us/phoenix/pull/3915) (`reachability-guard`) — latent, same shape.
+
+### The sanctioned idiom — gate the `Directory` arm on `readLink` failing
+
+`readLink` is `effectify(NFS.readlink, …)` (`NodeFileSystem.js:280`) and POSIX `readlink(2)`
+succeeds **only** on a symbolic link (`EINVAL` on anything else) — so "`readLink` succeeded" is the
+`lstat`-free test for link-ness. Keep `stat` for the type, gate the recursion on it. Shipped shape,
+`packages/pipeline-cli/src/tools/patch-guard/gate.ts` (`gatherMarkers`), covered by two
+`gate.unit.test.ts` cases that plant a real symlinked dir and a real symlinked file:
+
+```ts
+const walk = (dir: string): Effect.Effect<void, PlatformError.PlatformError> =>
+	Effect.gen(function* () {
+		for (const name of yield* fs.readDirectory(dir)) {
+			const abs = path.join(dir, name);
+			const stat = yield* fs.stat(abs);
+			if (stat.type === "Directory") {
+				const isSymlink = yield* fs.readLink(abs).pipe(
+					Effect.as(true),
+					Effect.orElseSucceed(() => false),
+				);
+				if (!isSymlink && !IGNORE_DIRS.has(name)) yield* walk(abs);
+				continue;
+			}
+			// … the file arm: a symlinked FILE still stats as "File" and stays in scope,
+			// which matches the Dirent walk — hence the guard sits on the Directory arm only.
+		}
+	});
+```
+
+Reach for this **first** when migrating any walk. Following symlinked dirs is a deliberate
+behavior change, not a migration detail — if a tool genuinely wants it, say so and take on the two
+obligations below.
+
+### Two obligations that ride along with the swap
+
+- **Symlink-cycle guarding.** An ignore list that screens by directory *name*
+  (`node_modules`/`dist`) was cycle-immune under `Dirent`/`lstat` semantics — a link was never
+  recursed, so a cycle was unreachable. Once symlinked dirs are followed, `a/link → ..` is
+  unbounded recursion (stack overflow, not a typed failure). A walk that follows links **must**
+  carry a visited-set keyed on `fs.realPath(abs)`, or a depth cap. The `readLink` gate above sidesteps
+  this entirely, which is the second reason to prefer it.
+- **Broken-symlink tolerance.** `fs.stat` on a dangling link fails (`ENOENT`) — as a
+  `PlatformError` on the `E` channel, so one broken symlink anywhere under the walk root hard-fails
+  the whole gate, where the `Dirent` walk classified the entry and moved on. If the walk stats every
+  entry, make the per-entry stat skippable (`Effect.option` / `Effect.orElseSucceed`) rather than
+  letting a stray dangling link decide a gate's exit code.
+
 ## Testing — substitute the `FileSystem` seam
 
 The `FileSystem`/`Path` requirement is exactly what a `unit` test replaces
