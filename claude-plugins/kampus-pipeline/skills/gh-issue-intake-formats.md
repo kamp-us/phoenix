@@ -2746,15 +2746,82 @@ so closing it means claiming before any branch, build, or spawn:
   made at **Step 3** using the coder's own `CLAUDE_CODE_SESSION_ID` as the token, before it
   branches or builds. Either way the claim precedes the work.
 
+<a id="release-the-claim-ends-when-its-run-does"></a>
+### Release — the claim ends when its run does (affirmative, never inferred)
+
+A claim is **held for the duration of the work it protects, and given up when that work is
+done**. The owner performs that release itself:
+
+```bash
+pipeline-cli claim release --issue <N>            # retract our own marker; --session <token> to release a delegated claim
+```
+
+**Who calls it, and when.** The run that holds the claim, at its terminus: `write-code` Step 8
+(PR open, progress logged, epic handed off) and the end of repair Step R3 (fix pushed, PR handed
+back to the gate). Nothing else calls it.
+
+**What it does and refuses to do.** It DELETEs only the `CLAIM_RE` markers carrying the caller's
+own token, leaves every other claim standing (and names them), is idempotent (releasing twice
+retracts nothing and succeeds), and fails closed with a non-zero exit when there is no token to
+prove ownership under. It does **not** touch the **assignee**: the coarse availability gate stays
+set while the PR is open, so the Step-1 picker still skips the issue and no second lane picks up
+work already in review. What release frees is the *fine* resolver — so a **directed** re-dispatch
+(a repair, a follow-up round, a stalled lane re-driven) claims the lane cleanly instead of
+resolving `lost` against a marker whose run finished hours ago (#3780).
+
+**Release is affirmative — the claim's end is a recorded fact, not an inference from absence.**
+This is the load-bearing property, and it is what keeps release outside ADR 0115 §5's deferral:
+an owner giving its claim up cannot evict anybody, so none of the eviction risk that deferred
+automatic reclaim applies. The inverse must never be built in its place:
+
+- **Never key a release on age.** A TTL evicts a slow-but-live agent — §5's original hazard,
+  unchanged.
+- **Never key a release on session-id mismatch.** "The claiming session id is not the current
+  session id" does **not** mean the work is done: a live process can rotate its session id
+  mid-run (#4045), after which the marker names a token the still-working agent no longer
+  carries. A rule that evicted on mismatch would evict exactly that live lane. Release is keyed
+  on the token the caller **presents**, so a rotated run releases nothing by accident — and an
+  operator releasing a delegated or pre-rotation claim passes it explicitly with `--session
+  <the token the marker carries>`.
+- **Never treat an unreleased claim as released.** A run that crashed before its terminus leaves
+  its marker standing; that case is the crashed-agent residual below, not something release
+  infers.
+
 ### Staleness / reclaim — owner-defer (ADR 0115 §5)
 
-A claim whose agent crashed mid-run is **sticky until a human clears it** (un-assigns the
-issue / removes the claim, re-opening it to the picker) **unless its claimant is provably
-dead** (the next subsection). Automatic **age/TTL-based** reclaim remains an explicitly
+A claim whose agent **crashed** mid-run — dying before it could
+[release](#release-the-claim-ends-when-its-run-does) — is **sticky until a human clears it**
+(un-assigns the issue / removes the claim, re-opening it to the picker) **unless its claimant is
+provably dead** (the next subsection). Automatic **age/TTL-based** reclaim remains an explicitly
 deferred follow-up — GitHub exposes no TTL primitive, and an age-keyed reclaim risks evicting
 a slow-but-live agent, re-introducing the exact double-implement this design prevents. That
 hazard is about *time*, not *liveness*: a claim superseded on **proven claimant death** cannot
 evict a live agent, which is why supersession is permitted where a TTL is not.
+
+**Surfacing a stale claim — read it, then clear it by hand.** A claim nothing retracted used to
+be invisible; stranded lanes accumulated silently until a dispatch read `lost` and stalled. The
+read-only inventory is the surface:
+
+```bash
+pipeline-cli claim status --issue <N>   # every marker: author, authorization, liveness, and the resolved owner
+```
+
+Read it before concluding a lane is stuck. A row with `liveness: dead` is already superseded and
+needs nothing. A row with `liveness: unknown` is **indeterminate — it stands**, and clearing it is
+a **human's** decision on evidence outside this keyspace (the run's PR landed, the operator knows
+the session is gone), never a rule the pipeline applies for you. Clear it by deleting that claim
+comment and un-assigning the issue.
+
+**The two claim substrates differ, deliberately — don't read one's rule onto the other.** The
+crew tracker's **resource claim** (ADR
+[0191](https://github.com/kamp-us/phoenix/blob/main/.decisions/0191-crew-claim-lifecycle.md),
+`packages/pipeline-crew-mcp/src/tracker/registry-core.ts`) frees on explicit `releaseClaim` **or
+self-reaps** once its holder's presence lease lapses — a stale claim there reads as free. This
+**GitHub-marker claim** has no lease to lapse: it frees on an explicit `claim release`, or on
+proven claimant death, and otherwise **stands**. So the same lane can read free in the tracker and
+held here. That is not a bug to reconcile in passing; the cross-keyspace reconciliation is #3938 /
+epic #3766. Until then, the claim your coder actually consults is this one, and "ADR 0191
+self-reaping" does **not** govern it.
 
 <a id="dead-claimant-supersession-proven-death-only-adr-0191"></a>
 ### Dead-claimant supersession — proven death only (ADR 0191 presence liveness)

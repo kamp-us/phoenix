@@ -8,9 +8,10 @@
  * every infra failure a typed error in the `E` channel (`.patterns/effect-errors.md`)
  * — a non-zero `gh` exit is `GhCommandError`, malformed output is `GhParseError`, an
  * unresolvable repo is `RepoResolutionError` — and Schema-decoded untrusted REST JSON
- * at the boundary. Unlike epic-lock this verb only READS: it lists the issue's
- * comments, resolves the write+ authorized-author set (ADR 0055), and resolves the
- * earliest authorized claim against our session id. No label, no comment write.
+ * at the boundary. `isMine` and `status` only read; `release` is the one mutation, and
+ * it deletes **only** comment ids the pure `releasePlan` proved carry our own token.
+ * No label, no claim write — posting a claim stays `pipeline-cli tracker claim`'s job,
+ * so this tool never becomes a second claim writer.
  */
 import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
@@ -18,7 +19,10 @@ import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {livenessByComment} from "../epic-lock/claim-presence.ts";
 import type {ClaimComment} from "../epic-lock/claim-resolution.ts";
 import {localPresence} from "../epic-lock/presence-io.ts";
+import {deleteCommentArgs} from "../tracker/gh-io.ts";
 import {type ClaimVerdict, claimIsMine} from "./claim-is-mine.ts";
+import {type ReleasePlan, releasePlan} from "./claim-release.ts";
+import {type ClaimStatus, claimStatus} from "./claim-status.ts";
 
 /** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
 export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
@@ -217,10 +221,55 @@ const isMine = Effect.fn("Github.isMine")(function* (
 	return claimIsMine({comments, authorizedAuthors: authorized, sessionId, liveness});
 });
 
+/** A clean 404 — the only `gh` failure that means "the comment is already gone". */
+const is404 = (stderr: string): boolean => /404|not found/i.test(stderr);
+
 /**
- * `Github` — the read-only IO shell over `gh api` REST. `isMine` is the one verb the
- * `claim` tool exposes: it takes the issue number and the resolving session id and
- * returns the default-deny `ClaimVerdict`. Built by `GithubLive`, whose `R` is
+ * Retract our own claim on `issue` — the affirmative end of a run's claim (#3780). The pure
+ * `releasePlan` decides the set; this only executes the DELETEs, so the invariant that release
+ * never touches another session's marker is a property of the tested core, not of this loop.
+ * A DELETE that 404s is benign (already retracted, idempotent re-release); any other fault is
+ * LOUD — a silently-swallowed DELETE leaves the claim standing while the caller believes the
+ * lane is free, which is the stall this verb exists to end.
+ */
+const release = Effect.fn("Github.release")(function* (
+	repo: string,
+	issue: number,
+	sessionId: string,
+) {
+	const comments = yield* listClaimComments(repo, issue);
+	const plan = releasePlan(comments, sessionId);
+	yield* Effect.forEach(
+		plan.retract,
+		(id) =>
+			runGh(deleteCommentArgs(repo, id)).pipe(
+				Effect.catchTag("@kampus/claim/GhCommandError", (error) =>
+					is404(error.stderr) ? Effect.void : Effect.fail(error),
+				),
+			),
+		{concurrency: "unbounded", discard: true},
+	);
+	return plan;
+});
+
+/**
+ * The read-only claim inventory of `issue` — every marker, its authorization, its ADR-0191
+ * liveness, and which one owns the lane. The operational surface for a stale claim that no
+ * release ever retracted (a crashed run, a pre-release-era marker): it makes the claim visible
+ * so a human can clear it, and evicts nothing on its own.
+ */
+const status = Effect.fn("Github.status")(function* (repo: string, issue: number) {
+	const comments = yield* listClaimComments(repo, issue);
+	const authors = [...new Set(comments.map((c) => c.author).filter((a) => a.length > 0))];
+	const authorized = yield* authorizedAuthors(repo, authors);
+	const liveness = livenessByComment(comments, localPresence());
+	return claimStatus({comments, authorizedAuthors: authorized, liveness});
+});
+
+/**
+ * `Github` — the IO shell over `gh api` REST behind the three `claim` verbs: `isMine`
+ * (the default-deny `ClaimVerdict`), `release` (retract our own marker when the run is
+ * done), and `status` (the read-only claim inventory). Built by `GithubLive`, whose `R` is
  * `ChildProcessSpawner`: provide the platform spawner (`NodeServices.layer`) in
  * production; a test provides a mock spawner via `ChildProcessSpawner.make`.
  */
@@ -232,6 +281,19 @@ export class Github extends Context.Service<
 			sessionId: string | null,
 		) => Effect.Effect<
 			ClaimVerdict,
+			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
+		>;
+		readonly release: (
+			issue: number,
+			sessionId: string,
+		) => Effect.Effect<
+			ReleasePlan,
+			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
+		>;
+		readonly status: (
+			issue: number,
+		) => Effect.Effect<
+			ClaimStatus,
 			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
 		>;
 	}
@@ -255,6 +317,9 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 			return {
 				isMine: (issue: number, sessionId: string | null) =>
 					repo.pipe(Effect.flatMap((r) => withSpawner(isMine(r, issue, sessionId)))),
+				release: (issue: number, sessionId: string) =>
+					repo.pipe(Effect.flatMap((r) => withSpawner(release(r, issue, sessionId)))),
+				status: (issue: number) => repo.pipe(Effect.flatMap((r) => withSpawner(status(r, issue)))),
 			};
 		}),
 	);

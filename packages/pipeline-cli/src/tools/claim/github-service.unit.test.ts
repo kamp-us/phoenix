@@ -176,3 +176,101 @@ describe("Github.isMine — the issue-scoped default-deny resolver over a mock g
 		),
 	);
 });
+
+describe("Github.release — the affirmative end of our own claim (#3780)", () => {
+	// A DELETE the release must NOT issue is mapped to a hard 403: if the implementation ever
+	// reached for another session's marker, the fault would surface instead of passing silently.
+	const foreignDeleteIsForbidden = {
+		stdout: "",
+		exitCode: 1,
+		stderr: "HTTP 403: Must have admin rights",
+	};
+
+	it.effect("retracts our own claim comment and leaves another session's standing", () =>
+		Effect.gen(function* () {
+			const plan = yield* (yield* Github).release(ISSUE, SID_MINE);
+			assert.deepStrictEqual(plan.retract, [800]);
+			assert.deepStrictEqual(
+				plan.kept.map((claim) => claim.session),
+				[SID_OTHER],
+			);
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/issues/${ISSUE}/comments`]: JSON.stringify([
+					claimComment({id: 500, login: "usirin", session: SID_OTHER, at: "2026-07-08T00:00:01Z"}),
+					claimComment({id: 800, login: "usirin", session: SID_MINE, at: "2026-07-08T00:00:02Z"}),
+				]),
+				[`DELETE ${P}/issues/comments/800`]: "",
+				[`DELETE ${P}/issues/comments/500`]: foreignDeleteIsForbidden,
+			}),
+		),
+	);
+
+	it.effect("is 404-benign — an already-retracted claim releases cleanly", () =>
+		Effect.gen(function* () {
+			const plan = yield* (yield* Github).release(ISSUE, SID_MINE);
+			assert.deepStrictEqual(plan.retract, [800]);
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/issues/${ISSUE}/comments`]: JSON.stringify([
+					claimComment({id: 800, login: "usirin", session: SID_MINE}),
+				]),
+				[`DELETE ${P}/issues/comments/800`]: {
+					stdout: "",
+					exitCode: 1,
+					stderr: "HTTP 404: Not Found",
+				},
+			}),
+		),
+	);
+
+	it.effect(
+		"is LOUD on a non-404 DELETE fault — a swallowed failure would leave the claim held",
+		() =>
+			Effect.gen(function* () {
+				const error = yield* Effect.flip((yield* Github).release(ISSUE, SID_MINE));
+				assert.strictEqual(error._tag, "@kampus/claim/GhCommandError");
+			}).pipe((effect) =>
+				provide(effect, {
+					[`GET ${P}/issues/${ISSUE}/comments`]: JSON.stringify([
+						claimComment({id: 800, login: "usirin", session: SID_MINE}),
+					]),
+					[`DELETE ${P}/issues/comments/800`]: foreignDeleteIsForbidden,
+				}),
+			),
+	);
+});
+
+describe("Github.status — the read-only stale-claim inventory", () => {
+	it.effect("lists every marker with its authorization and the resolved owner", () =>
+		Effect.gen(function* () {
+			const report = yield* (yield* Github).status(ISSUE);
+			assert.strictEqual(report.owner?.session, SID_OTHER);
+			assert.deepStrictEqual(
+				report.claims.map((claim) => [claim.id, claim.authorized, claim.liveness]),
+				[
+					[500, true, "unknown"],
+					[10, false, "unknown"],
+				],
+			);
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/issues/${ISSUE}/comments`]: JSON.stringify([
+					claimComment({id: 500, login: "usirin", session: SID_OTHER, at: "2026-07-08T00:00:01Z"}),
+					claimComment({
+						id: 10,
+						login: "attacker",
+						session: SID_FORGED,
+						at: "2026-07-08T00:00:02Z",
+					}),
+				]),
+				[`GET ${P}/collaborators/usirin/permission`]: "write",
+				[`GET ${P}/collaborators/attacker/permission`]: {
+					stdout: "",
+					exitCode: 1,
+					stderr: "HTTP 404: Not Found",
+				},
+			}),
+		),
+	);
+});

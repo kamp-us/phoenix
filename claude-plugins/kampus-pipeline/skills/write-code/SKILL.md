@@ -1688,11 +1688,46 @@ A standalone (non-sub-issue) issue has no parent epic — skip this step.
 
 ---
 
-## Step 8 — Hard-stop at PR-open: hand the gate to a separate reviewer (never self-review)
+## Step 8 — Release your claim, then hard-stop: hand the gate to a separate reviewer
 
 This is the **terminus of initial-build mode**, and it is a hard stop. Once the PR is open
-(Step 5), progress is logged (Step 6), and any epic handoff is posted (Step 7), **you are
-done — full stop.** Do **not** continue into the review gate on the PR you just opened:
+(Step 5), progress is logged (Step 6), and any epic handoff is posted (Step 7), do one last
+thing and then stop.
+
+### Release the claim — the last act of the run that held it
+
+The claim you took in Step 3 protected *this* build. The build is over, so give it up:
+
+```bash
+# the last mutation of the run — retract OUR OWN claim marker on the issue we just built.
+# --session carries the token we owned the work under (the orchestrator's delegated token on the
+# orchestrated path), because that is the token the marker itself carries.
+pipeline-cli claim release --issue "<N>" --session "$MY_CLAIM"
+```
+
+**Why this is mandatory, not tidy-up.** A claim that outlives its run never expires, and the
+resolver returns the **earliest** authorized claim — so an unreleased marker owns the issue
+permanently and **every later dispatch on it reads `lost`**: a repair round, a follow-up, a
+stalled lane re-driven. That is not hypothetical — six lanes stalled at once behind claims whose
+work was already complete, five of them unstamped and therefore unsupersedable by liveness
+(#3780). Releasing here is what makes the re-dispatch of an already-worked issue a normal event
+again.
+
+**It frees the resolver, not the lane.** Release retracts the claim comment and **leaves the
+assignee set**, so Step 1's picker still skips the issue while your PR is in review — a
+re-dispatch can claim it, an idle picker cannot pick it up and re-implement it.
+
+**Never route around a claim you cannot release.** Release retracts only markers carrying the
+token you present; it cannot and must not evict another session's claim, whatever that claim's
+age or liveness. If you find yourself wanting to clear someone else's marker, that is a routed
+blocker for the operator (`pipeline-cli claim status --issue <N>` prints the inventory), never
+your call — the contract's
+[§7 Release / Staleness](../gh-issue-intake-formats.md#release-the-claim-ends-when-its-run-does)
+owns both halves.
+
+### Then stop — the gate is a separate reviewer's
+
+**You are done — full stop.** Do **not** continue into the review gate on the PR you just opened:
 
 - **Never run `review-code`/`review-doc`/`review-skill` on your own PR.** The gate is a
   **separate reviewer's** job by design (the split-role firewall in the intro). Running the
@@ -2081,6 +2116,14 @@ you changed (REST, on the same review-comment thread):
 # reply on the inline comment thread you addressed ($CID = the comment id from R2)
 gh api -X POST "repos/$REPO/pulls/$PR/comments/$CID/replies" \
   -f body="Addressed in <short-sha>: <one line on the fix>."
+```
+
+**Release the lane's claim before you stop**, exactly as Step 8 does for the initial build — the
+repair round is over, and a claim left held is what makes the *next* repair dispatch on this PR
+read `lost` (#3780; the observed stall was a repair refused by a claim whose run had finished):
+
+```bash
+pipeline-cli claim release --issue "$N" --session "$MY_CLAIM"   # retract OUR OWN marker; never another session's
 ```
 
 A reply is the acknowledgement this skill performs. **Resolving** the thread (collapsing it)
