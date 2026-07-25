@@ -59,6 +59,7 @@ import {resumePolicyCommand} from "./tools/resume-policy/command.ts";
 import {reviewHeadCommand} from "./tools/review-head/command.ts";
 import {roadmapCommand} from "./tools/roadmap/command.ts";
 import {roadmapGuardCommand} from "./tools/roadmap-guard/command.ts";
+import {runEvidenceCommand} from "./tools/run-evidence/command.ts";
 import {settingsEnvGuardCommand} from "./tools/settings-env-guard/command.ts";
 import {shipDigestCommand} from "./tools/ship-digest/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
@@ -208,4 +209,11 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// workspace: specifier, making the #3802 uninstallable-publish class unrepresentable.
 	// Scope derived from publish.yml's tag grammar; fail-closed on zero scope (ADR 0092).
 	publishIsolationGuardCommand,
+	// #3991 — the SHA-bound run-evidence bundle lookup as FOUR states: present / pending / absent /
+	// unknown. review-code's inline `gh api` chain collapsed every non-success path into the prose
+	// "absent for this head SHA", so a producer that had not run yet and a 5xx during the download
+	// both read as a missing bundle. Validates the archive (ZIP magic) and the manifest
+	// (schemaVersion, commit == head) before interpreting either, and carries the lookup evidence
+	// (queried SHA, run id, artifact id) so the claim is falsifiable from the verdict comment alone.
+	runEvidenceCommand,
 ];
