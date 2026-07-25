@@ -87,6 +87,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Flag Graduation | #39 | active |
 | pipeline-cli Glue Consolidation | #40 | active |
 | Lint-Gate Adoption | #41 | active |
+| Taste-Skill Library | #42 | active |
 | Pipeline Anywhere | #35 | active |
 | pipeline-cli @effect/platform migration | #32 | active |
 | Agentic design-system coverage | #33 | done |
