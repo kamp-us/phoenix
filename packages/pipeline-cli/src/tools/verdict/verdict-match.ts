@@ -224,6 +224,45 @@ export const outcomeReason = (outcome: VerdictOutcome, expect: Polarity): string
 };
 
 /**
+ * The run-identity trailer `post` stamps on every verdict body it writes, and matches on to find
+ * *its own* prior marker to upsert: an HTML comment (invisible in rendered markdown) carrying the
+ * posting run's id.
+ *
+ * This is the missing dimension of the upsert key (#4016). Every pipeline review agent posts under
+ * ONE shared GitHub identity, so "own-authored" does not distinguish reviewers — a concurrent
+ * sibling in the same namespace matched the other reviewer's comment and PATCHed its verdict away,
+ * server-side and silently. The run id (the agent's `CLAUDE_CODE_SESSION_ID`, the same
+ * agent-distinguishable token ADR 0115 claims work under) is what the shared login cannot provide.
+ *
+ * Anchored per line with `m` so the trailer is matched wherever it sits in the body, and never
+ * confused with prose that merely mentions one.
+ */
+const runTrailerRe =
+	/^[ \t]*<!--[ \t]*verdict-run:[ \t]*([0-9A-Za-z][0-9A-Za-z._-]{7,127})[ \t]*-->[ \t]*$/m;
+
+/**
+ * The run id a verdict body was posted under, or `null` when it carries no trailer — a pre-#4016
+ * marker, or one hand-rolled through raw `gh api`.
+ */
+export const runIdOf = (body: string): string | null =>
+	runTrailerRe.exec(body)?.[1]?.toLowerCase() ?? null;
+
+/**
+ * A usable run id, or `null` for an absent/malformed one (an unset `CLAUDE_CODE_SESSION_ID`, a
+ * value with whitespace or trailer-breaking characters). Every `null` here and in `runIdOf` is the
+ * fail-safe: a run that cannot prove which marker is its own appends instead of upserting — an
+ * extra comment, never a lost verdict.
+ */
+export const normalizeRunId = (raw: string | undefined | null): string | null => {
+	const value = (raw ?? "").trim().toLowerCase();
+	return /^[0-9a-z][0-9a-z._-]{7,127}$/.test(value) ? value : null;
+};
+
+/** Stamp `runId` onto a verdict body, replacing any trailer it already carries. */
+export const withRunId = (body: string, runId: string): string =>
+	`${body.replace(runTrailerRe, "").replace(/\s+$/, "")}\n\n<!-- verdict-run: ${runId} -->`;
+
+/**
  * The `post` namespace guard: does this body's first line open with the gate's marker? A
  * verdict body must carry its OWN gate's marker on line one — `post`-ing a `review-code`
  * marker on a doc PR is the cross-namespace emission bug this refuses fail-closed. Accepts

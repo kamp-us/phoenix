@@ -15,9 +15,11 @@
  *  - `read(pr, gate, expect, headOverride)` — resolve the PR's current head (REST), author-gate
  *    marker authors to write+ collaborators (ADR 0055), and run `resolveVerdict` to classify
  *    the namespace against that head. The consumer branches on the returned outcome.
- *  - `post(pr, gate, body)` — the ADR-0058 rule-2 UPSERT: guard the body's first line is *this*
- *    gate's marker (fail-closed on a cross-namespace body), then PATCH our own prior marker in
- *    the namespace if one exists, else POST a fresh one — exactly one verdict comment per (PR, gate).
+ *  - `post(pr, gate, body, runId)` — the ADR-0058 rule-2 UPSERT, scoped per posting RUN (ADR 0213):
+ *    guard the body's first line is *this* gate's marker (fail-closed on a cross-namespace body),
+ *    then PATCH the prior marker THIS RUN posted in the namespace if one exists, else POST a fresh
+ *    one — one verdict comment per (PR, gate, run), so a concurrent reviewer sharing our GitHub
+ *    login appends rather than overwriting our verdict (#4016).
  */
 import {Context, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
@@ -47,11 +49,14 @@ import {
 	emissionDefect,
 	headBindingDefect,
 	namespaceRe,
+	normalizeRunId,
 	type Polarity,
 	resolveVerdict,
+	runIdOf,
 	type VerdictComment,
 	type VerdictGate,
 	type VerdictOutcome,
+	withRunId,
 } from "./verdict-match.ts";
 
 // Re-export the shared IO seam's typed failures so callers/tests keep importing them from this
@@ -247,18 +252,29 @@ const gate = Effect.fn("Github.gate")(function* (
  * cross-check (#3801) fetches the target PR's live head and refuses if a bound SHA does not match it
  * — closing the verdict-integrity hole where a body composed for another PR (bound to a different
  * PR's SHA, e.g. via a clobbered shared scratch file) was postable and caught only on read-back.
- * Then scan our OWN prior marker in the namespace (newest by
- * `(created_at, id)`) and PATCH it if present else POST a fresh one. The own-authored scope means
- * two reviewers never stomp each other's records. Finally, `verifyLanded` re-fetches the upserted
- * comment and re-runs `emissionDefect` on its LANDED body — the defense-in-depth self-verify (#3019)
- * that fails the post if the marker didn't land clean, rather than reporting a false success.
+ * Then scan for THIS RUN's own prior marker in the namespace (same author AND the same
+ * `verdict-run:` trailer, newest by `(created_at, id)`) and PATCH it if present, else POST a fresh
+ * one. The run dimension is load-bearing and the author dimension alone is NOT sufficient (#4016):
+ * every pipeline review agent posts under one shared GitHub identity, so an author-keyed upsert let
+ * a concurrent sibling reviewer silently PATCH another reviewer's verdict body away — a PASS could
+ * replace a FAIL at the same head with no trace the FAIL existed. Keyed on the run, a sibling never
+ * matches: it appends its own comment, so both verdicts survive in the record and the unchanged
+ * latest-wins resolution (`resolveVerdict` / `decideGate`) picks between them by `(createdAt, id)`.
+ * A run that cannot identify itself (no run id) never
+ * PATCHes at all — it appends, which costs a comment and loses nothing. Finally, `verifyLanded`
+ * re-fetches the upserted comment and re-runs `emissionDefect` on its LANDED body — the
+ * defense-in-depth self-verify (#3019) that fails the post if the marker didn't land clean, rather
+ * than reporting a false success.
  */
 const post = Effect.fn("Github.post")(function* (
 	repo: string,
 	pr: number,
 	gate: VerdictGate,
-	body: string,
+	rawBody: string,
+	rawRunId: string | undefined,
 ) {
+	const runId = normalizeRunId(rawRunId);
+	const body = runId === null ? rawBody : withRunId(rawBody, runId);
 	const defect = emissionDefect(body, gate);
 	if (defect !== null) {
 		return yield* new VerdictInputError({message: `refusing to post: ${defect}`});
@@ -276,9 +292,14 @@ const post = Effect.fn("Github.post")(function* (
 	const me = (yield* runGh(whoAmIArgs)).trim();
 	const comments = yield* listComments(repo, pr);
 	const re = namespaceRe(gate);
-	const mine = comments
-		.filter((c) => c.author === me && re.test(c.body))
-		.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id));
+	const mine =
+		runId === null
+			? []
+			: comments
+					.filter((c) => c.author === me && re.test(c.body) && runIdOf(c.body) === runId)
+					.sort((a, b) =>
+						a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id,
+					);
 	const priorId = mine[mine.length - 1]?.id;
 	const result: PostResult = yield* Effect.gen(function* () {
 		if (priorId !== undefined) {
@@ -327,10 +348,12 @@ export class Github extends Context.Service<
 			GateDecision,
 			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
 		>;
+		/** `runId` is the posting run's identity — the upsert key's run dimension; see `post` (#4016). */
 		readonly post: (
 			pr: number,
 			gate: VerdictGate,
 			body: string,
+			runId?: string,
 		) => Effect.Effect<
 			PostResult,
 			| RepoResolutionError
@@ -367,8 +390,8 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 							withSpawner(gate(r, pr, requiredGates, controlPlane, headOverride)),
 						),
 					),
-				post: (pr, gate, body) =>
-					repo.pipe(Effect.flatMap((r) => withSpawner(post(r, pr, gate, body)))),
+				post: (pr, gate, body, runId) =>
+					repo.pipe(Effect.flatMap((r) => withSpawner(post(r, pr, gate, body, runId)))),
 			};
 		}),
 	);

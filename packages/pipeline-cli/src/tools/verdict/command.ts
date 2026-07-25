@@ -18,11 +18,15 @@
  * (`--cp`) the pass is the canonical SHA-less advisory bound by its body `Reviewed-head` line, never
  * a bindable first-line PASS (ADR 0111/0151).
  *
- * `post --pr N --gate <g> [--body-file <f>]` upserts a SHA-bound verdict comment (ADR 0058
- * rule 2): it reads the composed verdict body from `--body-file` (or stdin), refuses fail-closed
+ * `post --pr N --gate <g> [--body-file <f>] [--run-id <id>]` upserts a SHA-bound verdict comment
+ * (ADR 0058 rule 2 as refined by ADR 0213): it reads the composed verdict body from `--body-file`
+ * (or stdin), refuses fail-closed
  * on any `emissionDefect` (wrong namespace, unbindable `@ <sha>`, or a non-full-40-hex/path-glued
- * SHA field), then PATCHes our own prior marker in the namespace if one exists, else POSTs —
- * exactly one verdict comment per (PR, gate). It then re-fetches the landed comment and re-runs
+ * SHA field), then PATCHes the prior marker THIS RUN posted in the namespace if one exists, else
+ * POSTs — one verdict comment per (PR, gate, run). The run dimension (`--run-id`, defaulting to
+ * `$CLAUDE_CODE_SESSION_ID`) is what keeps a concurrent reviewer sharing our GitHub login from
+ * overwriting our verdict (#4016); with no run id the post appends rather than upserts. It then
+ * re-fetches the landed comment and re-runs
  * `emissionDefect` on its body (the folded-in self-verify, #3019), failing non-zero if the marker
  * didn't land clean rather than reporting a false success. It prints `patched <id>` / `posted <id>`.
  *
@@ -63,6 +67,13 @@ const headFlag = Flag.string("head").pipe(
 const expectFlag = Flag.string("expect").pipe(
 	Flag.optional,
 	Flag.withDescription("the polarity a `read` treats as satisfied: PASS (default) or FAIL"),
+);
+
+const runIdFlag = Flag.string("run-id").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"the posting run's identity, the upsert key's run dimension (default: $CLAUDE_CODE_SESSION_ID; absent ⇒ append, never overwrite another run's verdict)",
+	),
 );
 
 const bodyFileFlag = Flag.string("body-file").pipe(
@@ -207,8 +218,8 @@ const readBody = Effect.fn(function* (bodyFile: Option.Option<string>) {
 
 const post = Command.make(
 	"post",
-	{pr: prFlag, gate: gateFlag, bodyFile: bodyFileFlag},
-	Effect.fn(function* ({pr, gate, bodyFile}) {
+	{pr: prFlag, gate: gateFlag, bodyFile: bodyFileFlag, runId: runIdFlag},
+	Effect.fn(function* ({pr, gate, bodyFile, runId}) {
 		const g = yield* parseGate(gate);
 		const body = (yield* readBody(bodyFile)).replace(/\s+$/, "");
 		if (body.length === 0) {
@@ -216,7 +227,11 @@ const post = Command.make(
 				"empty verdict body — nothing to post (pass --body-file or pipe the body on stdin)",
 			);
 		}
-		const result = yield* (yield* Github).post(pr, g, body).pipe(
+		// The posting run's identity, defaulted from the agent runtime's per-run session id — the
+		// dimension the shared `usirin` login cannot supply (#4016, the same token ADR 0115 claims
+		// under). Absent ⇒ this post appends instead of upserting; it never overwrites blind.
+		const run = Option.getOrUndefined(runId) ?? process.env.CLAUDE_CODE_SESSION_ID;
+		const result = yield* (yield* Github).post(pr, g, body, run).pipe(
 			Effect.catchTag("@kampus/verdict/VerdictInputError", (error) => fail(error.message)),
 			// The post-time head cross-check (#3801): a well-formed body bound to a DIFFERENT PR's head
 			// (a cross-PR scratchpad clobber, or a stale/rebased binding) is refused before it lands.
@@ -229,7 +244,7 @@ const post = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Upsert a SHA-bound verdict comment for a PR gate (PATCH own prior marker, else POST — one per gate, ADR 0058 rule 2)",
+		"Upsert a SHA-bound verdict comment for a PR gate (PATCH this run's own prior marker, else POST — one per (gate, run), ADR 0058 rule 2 + ADR 0213)",
 	),
 );
 
