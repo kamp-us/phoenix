@@ -120,6 +120,15 @@
 .kp-pano-post__site::after {
 	content: ")";
 }
+/* The domain label is the outbound source link on a link post (#2437); the ↗ cue
+   carries the affordance, this hover confirms it's clickable (a plain span for a
+   text post's "yazı" label ignores it). */
+a.kp-pano-post__site {
+	text-decoration: none;
+}
+a.kp-pano-post__site:hover {
+	color: var(--link);
+}
 
 .kp-pano-post__tags {
 	display: inline-flex;
