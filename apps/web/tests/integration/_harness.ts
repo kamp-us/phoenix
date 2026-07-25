@@ -790,7 +790,7 @@ export function harness(
 		// vote writes share the slug's term_record row; concurrent writes would
 		// race the denormalized aggregates.
 		for (const def of input.definitions) {
-			const key = `${input.slug} ${def.body}`;
+			const key = `${input.slug} ${def.body}`;
 			if (seededBodies.has(key)) {
 				skippedDefinitions++;
 				continue;
