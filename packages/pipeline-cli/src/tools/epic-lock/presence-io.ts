@@ -7,6 +7,13 @@
  * Deliberately synchronous and outside the Effect `E` channel: every failure here is already
  * modelled as an absence (`unprobeable` / no stamp) that the pure classification treats
  * fail-closed, so lowering it into a typed error would add a channel no caller can act on.
+ *
+ * That absence-on-failure contract is why every subprocess probe below carries `timeout: 2000`:
+ * a wedged `ioreg`/`ps` would otherwise block the whole command indefinitely (fail-slow), and
+ * the kill raises like any other probe failure, routing to `null` ⇒ indeterminate ⇒ the claim
+ * stands. 2s is ~60x the measured cost. It must be node's own option, never a shell `timeout`
+ * wrapper — that binary is absent on macOS, so it would fail OPEN on the very platform the
+ * machine-identity probe matters most on.
  */
 import {execFileSync} from "node:child_process";
 import {readFileSync} from "node:fs";
@@ -57,7 +64,10 @@ export const readMachineId = (): string | null => {
 	try {
 		if (process.platform === "darwin") {
 			return parseIOPlatformUuid(
-				execFileSync("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], {encoding: "utf8"}),
+				execFileSync("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], {
+					encoding: "utf8",
+					timeout: 2000,
+				}),
 			);
 		}
 		if (process.platform === "linux") {
@@ -96,7 +106,7 @@ export const currentSessionPresence = (): ClaimPresence | null => {
 		const host = machineStampIdentity();
 		if (host === null) return null;
 		const table = parseProcessTable(
-			execFileSync("ps", ["-Ao", "pid=,ppid=,comm="], {encoding: "utf8"}),
+			execFileSync("ps", ["-Ao", "pid=,ppid=,comm="], {encoding: "utf8", timeout: 2000}),
 		);
 		const pid = resolveSessionPid(table, process.pid);
 		return pid === null ? null : {host, pid};

@@ -101,7 +101,7 @@ describe("claimLiveness — dead requires positive evidence, everything else is 
 	});
 
 	it("two machines that SHARE a hostname but not a machine id never match ⇒ unknown, never dead", () => {
-		const stampedOnMachineA = machineFingerprint("6553E4B9-1D64-5AFC-82F5-C0A5B666C380");
+		const stampedOnMachineA = machineFingerprint("0A1B2C3D-4E5F-5A6B-8C7D-9E0F1A2B3C4D");
 		const readerIsMachineB = machineFingerprint("1FA3D0C7-9E2B-5D11-B4A6-77C1E0F58322");
 		assert.notStrictEqual(stampedOnMachineA, readerIsMachineB);
 		assert.strictEqual(
@@ -116,15 +116,15 @@ describe("claimLiveness — dead requires positive evidence, everything else is 
 
 describe("machineFingerprint — a hashed MACHINE identity, or nothing", () => {
 	it("is stable for one id and distinct across machines (the only two properties asked of it)", () => {
-		const a = machineFingerprint("6553E4B9-1D64-5AFC-82F5-C0A5B666C380");
-		assert.strictEqual(a, machineFingerprint("6553e4b9-1d64-5afc-82f5-c0a5b666c380"));
+		const a = machineFingerprint("0A1B2C3D-4E5F-5A6B-8C7D-9E0F1A2B3C4D");
+		assert.strictEqual(a, machineFingerprint("0a1b2c3d-4e5f-5a6b-8c7d-9e0f1a2b3c4d"));
 		assert.notStrictEqual(a, machineFingerprint("1FA3D0C7-9E2B-5D11-B4A6-77C1E0F58322"));
 	});
 
 	it("never leaks the raw identity into the stamp", () => {
-		const fingerprint = machineFingerprint("6553E4B9-1D64-5AFC-82F5-C0A5B666C380");
+		const fingerprint = machineFingerprint("0A1B2C3D-4E5F-5A6B-8C7D-9E0F1A2B3C4D");
 		assert.strictEqual(fingerprint?.length, 12);
-		assert.isFalse((fingerprint ?? "").includes("6553e4b9"));
+		assert.isFalse((fingerprint ?? "").includes("0a1b2c3d"));
 	});
 
 	it("an absent or blank machine id ⇒ null (fail toward indeterminate, never a shared bucket)", () => {
@@ -140,10 +140,10 @@ describe("parseIOPlatformUuid — the darwin machine identity", () => {
 			parseIOPlatformUuid(
 				[
 					'    "IOPlatformSerialNumber" = "XXXXXXXXXXXX"',
-					'    "IOPlatformUUID" = "6553E4B9-1D64-5AFC-82F5-C0A5B666C380"',
+					'    "IOPlatformUUID" = "0A1B2C3D-4E5F-5A6B-8C7D-9E0F1A2B3C4D"',
 				].join("\n"),
 			),
-			"6553E4B9-1D64-5AFC-82F5-C0A5B666C380",
+			"0A1B2C3D-4E5F-5A6B-8C7D-9E0F1A2B3C4D",
 		);
 	});
 
