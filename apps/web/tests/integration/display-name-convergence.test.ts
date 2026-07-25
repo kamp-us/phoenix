@@ -54,6 +54,33 @@ const readByline = async (termSlug: string, definitionId: string): Promise<DefNo
 	return conn.items.find((e) => e.node.id === definitionId)?.node;
 };
 
+// The landed-probes for this test's two NON-idempotent setup mutations. A stalled round-trip
+// (real remote worker + D1) leaves it unknown whether the write committed, and neither op
+// tolerates a blind replay — `user.setUsername` rejects a re-set with ALREADY_SET,
+// `definition.add` mints a new id per call — so each declares how to tell, and a landed write
+// is adopted instead of hard-failing the whole test (#3942).
+const usernameLanded = async (cookie: string, value: string) => {
+	const me = await h.fate({kind: "query", name: "me", select: ["id", "username"]}, {cookie});
+	if (!me.ok) return undefined;
+	return (me.data as {username: string | null}).username === value ? me : undefined;
+};
+
+const definitionLanded = async (cookie: string, termSlug: string, body: string) => {
+	const result = await h.fate(
+		{
+			kind: "query",
+			name: "term",
+			args: {slug: termSlug, definitions: {first: 20}},
+			select: ["definitions.id", "definitions.body"],
+		},
+		{cookie},
+	);
+	if (!result.ok) return undefined;
+	const conn = (result.data as {definitions: Connection<{id: string; body: string}>}).definitions;
+	const hit = conn.items.find((e) => e.node.body === body);
+	return hit ? {ok: true as const, data: {id: hit.node.id}, id: "landed"} : undefined;
+};
+
 beforeAll(() => {
 	expect(typeof h.url()).toBe("string");
 });
@@ -71,19 +98,20 @@ describe("user.setDisplayName — a rename reaches the stamped author byline (#2
 					input: {value: authorUsername},
 					select: ["id"],
 				},
-				{cookie: author.cookie},
+				{cookie: author.cookie, converge: () => usernameLanded(author.cookie, authorUsername)},
 			)
 			.then((r) => expect(r.ok).toBe(true));
 
 		const termSlug = `${NS}-term`;
+		const body = "byline tracks the live name";
 		const added = await h.fate(
 			{
 				kind: "mutation",
 				name: "definition.add",
-				input: {termSlug, termTitle: "Convergence Term", body: "byline tracks the live name"},
+				input: {termSlug, termTitle: "Convergence Term", body},
 				select: ["id"],
 			},
-			{cookie: author.cookie},
+			{cookie: author.cookie, converge: () => definitionLanded(author.cookie, termSlug, body)},
 		);
 		expect(added.ok).toBe(true);
 		if (!added.ok) return;
@@ -126,7 +154,7 @@ describe("user.setDisplayName — a rename reaches the stamped author byline (#2
 					input: {value: authorUsername},
 					select: ["id"],
 				},
-				{cookie: author.cookie},
+				{cookie: author.cookie, converge: () => usernameLanded(author.cookie, authorUsername)},
 			)
 			.then((r) => expect(r.ok).toBe(true));
 
