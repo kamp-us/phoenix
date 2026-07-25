@@ -35,8 +35,9 @@ id. Reach for the service, not the `node:*` builtin:
 | `node:fs` (`readFileSync`, `writeFileSync`, `existsSync`, `mkdirSync`, `renameSync`, `rm`) | `FileSystem.FileSystem` (`readFileString`, `writeFileString`, `exists`, `makeDirectory`, `rename`, `remove`, `makeTempDirectory`, `stat`) | `NodeFileSystem.layer` |
 | `node:path` (`join`, `dirname`, `basename`, `resolve`, `sep`) | `Path.Path` (`join`, `dirname`, `basename`, `resolve`, `normalize`, `sep`) | `NodePath.layer` |
 | `node:crypto` (`randomUUID`) | `Crypto.Crypto` (`randomUUIDv4` / `randomUUIDv7`) | `NodeCrypto.layer` |
+| `node:fs` on **fd 0** (`readFileSync(0, "utf8")` — reading stdin) | `Stdio.stdin`, a chunked `Stream` — **considered and declined; fd 0 stays raw** ([the bright line](#the-bright-line--when-raw-node-is-still-correct)) | `NodeStdio.layer` |
 
-All three are members of the one `NodeServices.layer` (grounded in
+All of these are members of the one `NodeServices.layer` (grounded in
 `packages/platform-node/src/NodeServices.ts`), so a bin that already provides
 `NodeServices.layer` has the whole platform in scope for free — see
 [the after](#the-after--already-in-scope-just-yield-the-service). Every operation
@@ -154,6 +155,60 @@ sometimes the only option, in these grounded cases:
 - **Deliberate real-fs test code.** A test that means to touch the real filesystem
   (an `integration`-style fixture) may use `node:fs` directly — the point is the real
   disk, so there's nothing to substitute.
+- **Reading stdin (fd 0) at a CLI boundary.** A `readFileSync(0, "utf8")` stays raw —
+  but **not** for the first bullet's reason, which is the tempting and wrong
+  justification here. Effect v4 *does* ship a stdin seam: `Stdio.stdin` is a
+  `Stream.Stream<Uint8Array, PlatformError>` (`effect/dist/Stdio.d.ts` at the pinned
+  `effect@4.0.0-beta.92`), `Stdio` is a member of the same `NodeServices` union as
+  `FileSystem`/`Path` (`@effect/platform-node/dist/NodeServices.d.ts`), and
+  `packages/pipeline-cli/src/run.ts` already provides `NodeServices.layer` — so the
+  service exists and is in scope. What is genuinely absent is a **`FileSystem`** route:
+  every member of the v4 `FileSystem` interface is keyed by a `path: string`, and the only
+  `File.Descriptor` it hands out comes from `fs.open(path)`. The exported
+  `FileSystem.FileDescriptor` brands a bare number, but **no method on the interface
+  accepts a descriptor** and there is no `File` constructor that adopts an already-open fd
+  — so a fd-0 read has no route through the seam (`effect/dist/FileSystem.d.ts` contains
+  no `stdin` at all). So this is a **considered-and-declined** call on `Stdio.stdin`, on
+  two grounds:
+
+  - **A sync read-to-EOF and a chunked stream drain are not observably equivalent.**
+    They differ in buffering, in how a multi-byte character split across chunks decodes,
+    and in when a read fault surfaces. Swapping one for the other is a behavior change to
+    decide on its own merits, not a migration detail.
+  - **`Stdio` is outside the charter.** The migration sweep
+    ([#3462](https://github.com/kamp-us/phoenix/issues/3462)) is scoped to `node:fs` /
+    `node:path` / `node:crypto`; pulling a fourth service in mid-wave is how a
+    behavior-preserving refactor stops being one.
+
+  **The ruling, so it isn't re-derived per PR: fd 0 stays a raw `node:fs` read at the
+  boundary**, while the *sibling path branch* of the same helper routes the `FileSystem`
+  seam. `readBody` in `packages/pipeline-cli/src/tools/verdict/command.ts` is the shape
+  (`--body-file` → `fs.readFileString`, else `readFileSync(0, "utf8")`); `leak-guard`'s
+  `readCommentBody` and `redact-leaks`' `readBody` carry the same split. Routing fd 0 through
+  `Stdio.stdin` **eventually** is a live option, not a closed door — but it is its own
+  decision with its own behavior-preservation bar, and it must preserve whatever fd-0
+  failure semantics the raw read carries
+  ([#3924](https://github.com/kamp-us/phoenix/issues/3924) is hardening exactly those),
+  not merely typecheck.
+
+  **The reasoning generalizes to fd 1/2, and stops there.** Writing to stdout/stderr has
+  the same shape — `Stdio` exposes them as `Sink`s, so a raw `process.stdout.write` is
+  the same considered-and-declined call, not a missing service. Any *other* inherited
+  descriptor (an fd 3 handed down by a parent) has no equivalent in either `FileSystem`
+  or `Stdio`, and so falls under the first bullet instead.
+
+  **A failed `--body-file` read stays a hard defect — never a silent fall back to
+  stdin.** The two branches are not interchangeable: a `--body-file` naming a path that
+  cannot be read is a caller error, and degrading it to "read stdin instead" turns a
+  broken flag into an *empty body* that a gate then decides over — the zero-input
+  fail-open class ADR
+  [0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md) exists to stop. Keep the
+  path branch's failure hard (`verdict`'s `Effect.orDie`, or a typed failure that exits
+  non-zero) and let the stdin branch run only when no path was given at all. `class-probe`'s
+  `readFiles` is the counter-example on `main` today — an unreadable `--files-from` is
+  absorbed to `""`, i.e. to *no files* — which is the shape this paragraph rules against, not
+  a second sanctioned option; it is part of what
+  [#3924](https://github.com/kamp-us/phoenix/issues/3924) tightens.
 
 The rule is not "never write `node:`" — it's "**domain Effect code depends on the
 platform service, so the filesystem stays a swappable seam.**" When you keep a raw
