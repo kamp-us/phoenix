@@ -296,7 +296,11 @@ export const termsOf = (text: string): ReadonlySet<string> => {
 };
 
 const WHAT_DECIDES = /^[ \t]*\*\*What this decides:\*\*[ \t]*(.+)$/m;
-const DECISION_SECTION = /^##[ \t]+Decision[ \t]*\r?\n([\s\S]*?)(?=\r?\n##[ \t]|$)/m;
+// The terminal alternative is `(?![\s\S])` — end of INPUT — and must not be written `$`: the `m`
+// flag (needed so `^##` matches a mid-document heading) also makes `$` match before ANY newline,
+// which let the lazy body match the empty string at the blank line that follows the heading. That
+// silently emptied the capture on 207 of the 208 corpus ADRs carrying the section (#4030).
+const DECISION_SECTION = /^##[ \t]+Decision[ \t]*\r?\n([\s\S]*?)(?=\r?\n##[ \t]|(?![\s\S]))/m;
 
 /**
  * The decision-bearing passage of an ADR: its `title`, its `**What this decides:**` gloss, and
@@ -512,9 +516,11 @@ export const sweep = ({newAdr, corpus, limit = DEFAULT_LIMIT}: SweepInput): Swee
 };
 
 /**
- * The caveat printed on **every** run, pass or fail. A guard that reads as comprehensive while
- * missing the semantic case is worse than a narrow one that says what it covers — so the tool
- * states its own limit in its own output rather than leaving it to a doc nobody opens.
+ * The caveat printed on **every completed sweep**, pass or fail — the corpus-fault path throws
+ * before a report exists and carries its own fail-closed message instead. A guard that reads as
+ * comprehensive while missing the semantic case is worse than a narrow one that says what it
+ * covers — so the tool states its own limit in its own output rather than leaving it to a doc
+ * nobody opens.
  */
 export const CAVEAT =
 	"adr-sweep detects LEXICAL + TAG adjacency on decision-bearing text, minus the subject's own " +

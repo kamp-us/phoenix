@@ -51,9 +51,15 @@ const adr = ({
 		`**What this decides:** ${decides}`,
 		"",
 		"## Context",
+		"",
 		context,
 		"",
+		// The blank line after `## Decision` is load-bearing, not formatting: it is the shape the
+		// house ADR template emits (and 207 of the 208 corpus ADRs carry), and the shape the old
+		// per-line-anchored section regex captured as EMPTY. A fixture without it cannot reproduce
+		// the real input, which is how #4030's overclaim shipped green.
 		"## Decision",
+		"",
 		decision,
 		"",
 		"## Consequences",
@@ -306,9 +312,27 @@ describe("would-have-caught — the two live misses this tool exists for (#3980)
 			decides: "A dormant bet retires automatically once three weeks elapse.",
 			decision: "The scheduler retires a dormant bet; only a founder repitch revives it.",
 		});
-		const result = sweep({newAdr: clock, corpus: [clock, semantic, ...filler(10)]});
-		const ids =
-			result.outcome._tag === "shortlist" ? result.outcome.candidates.map((c) => c.id) : [];
+		// A lexically-adjacent ADR so the sweep demonstrably PRODUCES a shortlist here. Without it
+		// the corpus shares no vocabulary with the subject at all, the outcome is `no-overlap`, and
+		// the miss below is asserted against an empty list — vacuous.
+		const lexical = adr({
+			id: "0503",
+			title: "The nightly scheduler pass owns dormant-entry retirement",
+			tags: ["moderation"],
+			decides: "A dormant entry is retired by the nightly scheduler pass, never by hand.",
+			decision: "The scheduler retires dormant entries on its nightly pass; no manual retirement.",
+		});
+		const result = sweep({newAdr: clock, corpus: [clock, semantic, lexical, ...filler(10)]});
+		// Pin the outcome shape FIRST: on any non-shortlist tag the id list is empty, so a bare
+		// `not.toContain` would pass vacuously — satisfied by the sweep failing to run at all rather
+		// than by the miss it means to assert.
+		if (result.outcome._tag !== "shortlist") {
+			throw new Error(
+				`expected a shortlist to assert the miss against, got ${result.outcome._tag}`,
+			);
+		}
+		const ids = result.outcome.candidates.map((c) => c.id);
+		expect(ids).toContain("0503");
 		expect(ids).not.toContain("0501");
 	});
 });
