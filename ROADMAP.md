@@ -34,6 +34,8 @@ flowchart TD
 		camp_cp_verdict_integrity["§CP Verdict Integrity"]:::active
 		camp_flag_graduation["Flag Graduation"]:::active
 		camp_pipeline_cli_glue_consolidation["pipeline-cli Glue Consolidation"]:::active
+		camp_lint_gate_adoption["Lint-Gate Adoption"]:::active
+		camp_pipeline_anywhere["Pipeline Anywhere"]:::active
 		camp_pipeline_cli_effect_platform_migration["pipeline-cli @effect/platform migration"]:::active
 		camp_agentic_design_system_coverage["Agentic design-system coverage"]:::done
 		camp_flag_retirement_adr_0136["Flag Retirement (ADR 0136)"]:::active
@@ -41,11 +43,10 @@ flowchart TD
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
-	ext_pipeline_anywhere["Pipeline Anywhere"]:::external
 	ext_adr_0202["ADR 0202"]:::external
 	ext_triage_rubric["Triage rubric"]:::external
 	ext_3642 --> camp_flag_graduation
-	ext_3833 --> ext_pipeline_anywhere
+	ext_3833 --> camp_pipeline_anywhere
 	ext_adr_0202 --> ext_triage_rubric
 	classDef active fill:#1a7f37,stroke:#116329,color:#ffffff;
 	classDef queued fill:#9a6700,stroke:#7d4e00,color:#ffffff;
@@ -62,7 +63,7 @@ flowchart TD
 | Mecmua v2 | #25 | queued |
 | Atölye | #26 | done |
 
-**Four Pillars** — *done.* Frontend polish and the encoded design system: the four pillars — Performance, Cohesiveness, Usability, Accessibility — made real and enforced (ADR 0162, the design-system manifest). The surface of kamp.us becomes excellent and self-consistent. The nav-IA discipline is mid-flight here.
+**Four Pillars** — *done.* Frontend polish and the encoded design system: the four pillars — Performance, Cohesiveness, Usability, Accessibility — made real and enforced (ADR 0162, the design-system manifest). The surface of kamp.us becomes excellent and self-consistent. The nav-IA discipline landed here.
 
 **Geçit** — *active. The passage.* The membrane of the community: onboarding, künye (the reputation DO), and moderation. How a stranger becomes a çaylak, a çaylak becomes a yazar by vouch, and how the community governs itself. The çaylak→yazar journey — undefined today — gets designed here. (The earlier künye milestone folded in.)
 
@@ -97,7 +98,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 - **Columns** are `Campaign | Milestone | State`, in that order. `Campaign` is the founder-voice name; `Milestone` pins the campaign to its GitHub milestone **by number** (`#N`) — the same row→milestone-by-number binding the roadmap-guard already enforces on `## Arcs`, and that number is the one link to the operational projection. `State` is the lifecycle cell.
 - **`State ∈ {active, done}`** — the symmetric two-state lifecycle. A campaign is `active` while its milestone is draining, and flips to `done` once that milestone is fully drained (its GitHub milestone closed). There is no `queued` state: unlike an arc, a campaign is not sequenced ahead — it opens `active` when the founder starts it and ends `done`, running concurrently with whichever arc is active.
 
-**Mentor Audit** — a security & architecture audit wave (the staff-mentor findings: the karma double-bump race, per-actor rate limiting, ops runbooks, `SECURITY.md`, …). To be solved ASAP; drains via the platform lane alongside Four Pillars.
+**Mentor Audit** — a security & architecture audit wave (the staff-mentor findings: the karma double-bump race, per-actor rate limiting, ops runbooks, `SECURITY.md`, …). To be solved ASAP; drains via the platform lane alongside Geçit.
 
 ## Dependencies
 
