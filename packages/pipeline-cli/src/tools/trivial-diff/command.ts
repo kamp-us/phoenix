@@ -28,9 +28,9 @@
  * miss can only ever over-route to the full (correct) fan-out, never under-gate.
  */
 import {execFileSync} from "node:child_process";
-import {readFileSync} from "node:fs";
 import {Console, Effect, FileSystem, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {extractControlPlaneRe} from "../codeowners-cp/codeowners-cp.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
 import {parseGuardAdrRe} from "../guard-content-probe/guard-content-probe.ts";
@@ -68,22 +68,16 @@ const repoFlag = Flag.string("repo").pipe(
 );
 
 /**
- * Read the diff: from `--diff-file` over the `FileSystem` seam if given, else stdin (fd 0),
- * which has no `FileSystem` equivalent and so stays a raw `node:fs` read at this boundary
- * (`.patterns/effect-platform-access.md`). Any read failure ⇒ null (fail-closed: the core then
- * refuses).
+ * Read the diff: from `--diff-file` over the `FileSystem` seam if given, else stdin. An
+ * unreadable `--diff-file` ⇒ null (fail-closed: the core then refuses); an unreadable *stdin*
+ * exits non-zero through the shared reader rather than posing as an empty diff (#3924).
  */
 const readDiff = Effect.fn(function* (diffFile: Option.Option<string>) {
 	if (Option.isSome(diffFile)) {
 		const fs = yield* FileSystem.FileSystem;
 		return yield* Effect.orElseSucceed(fs.readFileString(diffFile.value), () => null);
 	}
-	// biome-ignore lint/plugin: best-effort read — an unreadable stdin is absorbed into null (fail-closed: the core then refuses), never the E channel; a total helper, not Effect-cosplay.
-	try {
-		return readFileSync(0, "utf8");
-	} catch {
-		return null;
-	}
+	return yield* readStdinTextOrExit();
 });
 
 /** Resolve owner/repo: `--repo`, else `CLAUDE_PIPELINE_REPO`, else `gh repo view`. null on failure. */

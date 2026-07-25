@@ -26,6 +26,7 @@
 import {readFileSync} from "node:fs";
 import {Console, Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {
 	type ClaimResult,
 	type CommentResult,
@@ -167,18 +168,12 @@ const stageFlag = Flag.string("stage").pipe(
 	Flag.withDescription("the lifecycle stage the new issue enters at (default: needs-triage)"),
 );
 
-/** The body from `--body`, else streamed from stdin (fd 0); an unreadable stream ⇒ empty. */
-const resolveBody = (body: Option.Option<string>): string => {
-	// biome-ignore lint/plugin: best-effort stdin read — a failed/absent stream is an empty body (the CLI's pre-verb input marshalling), never the E channel; a total helper, not Effect-cosplay. Mirrors trivial-diff's readDiff.
-	try {
-		return Option.match(body, {
-			onSome: (b) => b,
-			onNone: () => readFileSync(0, "utf8"),
-		});
-	} catch {
-		return "";
-	}
-};
+/** The body from `--body`, else stdin — where a failed read exits non-zero, never files an empty issue. */
+const resolveBody = (body: Option.Option<string>): Effect.Effect<string> =>
+	Option.match(body, {
+		onSome: (b) => Effect.succeed(b),
+		onNone: () => readStdinTextOrExit(),
+	});
 
 const reportCreated = (result: CreateIssueResult): Effect.Effect<void> =>
 	Console.log(`tracker: created #${result.target} — ${result.url}`);
@@ -189,7 +184,7 @@ const createIssue = Command.make(
 	Effect.fn(function* ({title, body, stage}) {
 		const result = yield* (yield* Tracker).createIssue({
 			title,
-			body: resolveBody(body),
+			body: yield* resolveBody(body),
 			stage: Option.getOrElse(stage, () => "needs-triage"),
 		});
 		yield* reportCreated(result);
@@ -211,7 +206,8 @@ const createComment = Command.make(
 	"create-comment",
 	{target: commentTargetArg, body: bodyFlag},
 	Effect.fn(function* ({target, body}) {
-		const result = yield* (yield* Tracker).createComment(target, {body: resolveBody(body)});
+		const resolved = yield* resolveBody(body);
+		const result = yield* (yield* Tracker).createComment(target, {body: resolved});
 		yield* reportCommented(target, result);
 	}),
 ).pipe(
@@ -246,13 +242,13 @@ const parsePassed = (raw: string): Effect.Effect<boolean, never> => {
 	return backOff(`invalid --result '${raw}' — expected PASS or FAIL`);
 };
 
-const readBody = (bodyFile: Option.Option<string>): Effect.Effect<string, never> =>
-	Effect.sync(() =>
-		Option.match(bodyFile, {
-			onNone: () => readFileSync(0, "utf8"),
-			onSome: (path) => readFileSync(path, "utf8"),
-		}),
-	);
+const readBody = (bodyFile: Option.Option<string>): Effect.Effect<string> =>
+	Option.match(bodyFile, {
+		// A failed stdin read exits non-zero rather than reaching the empty-body back-off below,
+		// which would report "nothing to post" for a verdict body that was never read (#3924).
+		onNone: () => readStdinTextOrExit(),
+		onSome: (path) => Effect.sync(() => readFileSync(path, "utf8")),
+	});
 
 const reportVerdict = (target: number, result: VerdictResult): Effect.Effect<void> =>
 	Console.log(

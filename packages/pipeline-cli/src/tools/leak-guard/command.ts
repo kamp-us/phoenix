@@ -24,11 +24,11 @@
  * is dropped: the `pipeline-cli` bin imports `@effect/platform-node` statically,
  * so by the time this command runs the runtime dep is always resolved.
  */
-import {readFileSync} from "node:fs";
 import {Console, Effect, FileSystem, Option, Path, type PlatformError} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {onCheckFailed} from "../../gate-fail.ts";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {CREW_DIR, sweepCrew} from "./crew-gate.ts";
 import {PrComments, PrCommentsLive, type UpstreamUnavailableError} from "./github.ts";
 import {findCommentLeaks, findLeaks, type Leak} from "./leak-guard.ts";
@@ -175,9 +175,9 @@ const readCommentBody = (
 	bodyFile: Option.Option<string>,
 ): Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem> =>
 	Option.match(bodyFile, {
-		// stdin (fd 0): a node-only boundary — FileSystem exposes no stdin reader, so kept raw
-		// (.patterns/effect-platform-access.md bright line). A `--body-file` path routes the fs seam.
-		onNone: () => Effect.sync(() => readFileSync(0, "utf8")),
+		// A body this gate could not read must not scan as clean: the shared reader exits non-zero
+		// on a failed stdin read instead (#3924). A `--body-file` path routes the fs seam.
+		onNone: () => readStdinTextOrExit(),
 		onSome: (path) =>
 			Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path, "utf8")),
 	});

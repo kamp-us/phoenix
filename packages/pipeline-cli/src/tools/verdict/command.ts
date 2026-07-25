@@ -33,9 +33,9 @@
  * `GithubLive` is baked in with `Command.provide(...)` so the registered command's residual
  * requirement is the Node platform union (the registry seam, epic #994).
  */
-import {readFileSync} from "node:fs";
 import {Console, Effect, FileSystem, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {Github, GithubLive} from "./github.ts";
 import {
 	emissionDefect,
@@ -195,12 +195,12 @@ const gate = Command.make(
 
 /**
  * Read the composed verdict body: from `--body-file` over the `FileSystem` seam, else from
- * stdin. Stdin (fd 0) has no `FileSystem` equivalent, so that read stays a raw `node:fs` call
- * at this boundary (`.patterns/effect-platform-access.md` bright line). An unreadable
- * `--body-file` stays a defect (`Effect.orDie`), preserving the pre-migration crash-out.
+ * stdin through the shared fail-closed reader, which exits non-zero on a failed read rather
+ * than reporting an unread body as the empty one below (#3924). An unreadable `--body-file`
+ * stays a defect (`Effect.orDie`), preserving the pre-migration crash-out.
  */
 const readBody = Effect.fn(function* (bodyFile: Option.Option<string>) {
-	if (Option.isNone(bodyFile)) return readFileSync(0, "utf8");
+	if (Option.isNone(bodyFile)) return yield* readStdinTextOrExit();
 	const fs = yield* FileSystem.FileSystem;
 	return yield* Effect.orDie(fs.readFileString(bodyFile.value));
 });

@@ -17,9 +17,9 @@
  * construction: any input the core does not positively recognize as TRANSIENT yields
  * `logic`, so a classifier miss can only ever over-surface, never over-resume.
  */
-import {readFileSync} from "node:fs";
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {type CrashSignal, classify} from "./failure-classifier.ts";
 
 const reasonFlag = Flag.string("reason").pipe(
@@ -40,16 +40,13 @@ const stageFlag = Flag.string("stage").pipe(
 /**
  * Read a `CrashSignal` from stdin when it is a JSON object with any of the known fields —
  * the orchestrator can pipe the whole crash payload in one shot. A non-JSON or empty stdin
- * yields an empty signal (the core then default-denies), so this never throws.
+ * yields an empty signal (the core then default-denies); a *failed* read exits non-zero through
+ * the shared reader rather than classifying a payload it never read (#3924).
  */
-const readStdinSignal = (): CrashSignal => {
-	let raw = "";
-	// biome-ignore lint/plugin: best-effort read — an unreadable stdin is absorbed into an empty signal (the core default-denies), never the E channel; a total helper, not Effect-cosplay.
-	try {
-		raw = readFileSync(0, "utf8");
-	} catch {
-		return {};
-	}
+const readStdinSignal = (): Effect.Effect<CrashSignal> =>
+	Effect.map(readStdinTextOrExit(), parseSignal);
+
+const parseSignal = (raw: string): CrashSignal => {
 	if (raw.trim() === "") return {};
 	// biome-ignore lint/plugin: best-effort parse — a non-JSON stdin is absorbed into a reason-only signal, never the E channel; a total helper, not Effect-cosplay.
 	try {
@@ -71,7 +68,7 @@ const classifyCmd = Command.make(
 	Effect.fn(function* ({reason, errorKind, stage}) {
 		// Flags win when present; otherwise fall back to a stdin JSON/text signal.
 		const anyFlag = Option.isSome(reason) || Option.isSome(errorKind) || Option.isSome(stage);
-		const base: CrashSignal = anyFlag ? {} : readStdinSignal();
+		const base: CrashSignal = anyFlag ? {} : yield* readStdinSignal();
 		const signal: CrashSignal = {
 			reason: Option.getOrUndefined(reason) ?? base.reason,
 			errorKind: Option.getOrUndefined(errorKind) ?? base.errorKind,

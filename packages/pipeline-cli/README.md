@@ -64,6 +64,25 @@ with the constructors in [`src/annotate.ts`](./src/annotate.ts) — `unlocated`,
 `atLine` — never by hand-formatting the command string, and wrap the build in
 `annotationsOrNone` so a throw while computing them can never swallow the report.
 
+## How a tool reads stdin
+
+Every tool that takes its input on a pipe reads it through `readStdinTextOrExit` in
+[`src/read-stdin.ts`](./src/read-stdin.ts) — never `readFileSync(0, …)` in a `try`/`catch`.
+
+`readFileSync(0, …)` throws `EAGAIN` when fd 0 is a non-blocking pipe, which depends on what
+is upstream and so happens intermittently. Wrapped in a swallow-to-empty, that throw made an
+*unread* pipe look exactly like an *empty* one: a gate then computed its verdict over no
+evidence and reported the vacuous green as a real zero scope. The shared reader retries
+`EAGAIN` until the pipe drains, and a pipe that stops making progress fails loud instead —
+it reports the stall on stderr and exits 4. An empty string now means an empty pipe and
+nothing else. A TTY with nothing piped in still returns immediately rather than blocking on
+a keystroke.
+
+Take `readStdinText` instead when the tool wants to handle the failed read itself: it carries
+the outcome as a typed `StdinReadFailed` in the error channel. The pure retry core, with its
+IO injected so the `EAGAIN` path is testable, lives in
+[`src/read-stdin-core.ts`](./src/read-stdin-core.ts).
+
 ## Development
 
 The source lives in the phoenix monorepo under

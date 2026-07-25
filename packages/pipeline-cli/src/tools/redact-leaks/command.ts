@@ -11,9 +11,9 @@
  * shell pipeline; each redaction is reported on stderr for observability. `process.stdout.write`
  * (not `Console.log`) so a leak-free body is emitted byte-for-byte, no appended newline (#3021 AC5).
  */
-import {readFileSync} from "node:fs";
 import {Console, Effect, FileSystem, Option, type PlatformError} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {findCommentLeaks} from "../leak-guard/leak-guard.ts";
 import {redactLeaks} from "./redact-leaks.ts";
 
@@ -26,9 +26,9 @@ const readBody = (
 	bodyFile: Option.Option<string>,
 ): Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem> =>
 	Option.match(bodyFile, {
-		// stdin (fd 0): a node-only boundary — FileSystem exposes no stdin reader, so kept raw
-		// (.patterns/effect-platform-access.md bright line). A `--body-file` path routes the fs seam.
-		onNone: () => Effect.sync(() => readFileSync(0, "utf8")),
+		// Emitting an empty body for a read that failed would silently truncate whatever the caller
+		// piped in; the shared reader exits non-zero instead (#3924).
+		onNone: () => readStdinTextOrExit(),
 		onSome: (path) =>
 			Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path, "utf8")),
 	});

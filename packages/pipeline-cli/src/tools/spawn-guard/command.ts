@@ -28,25 +28,11 @@
  * detecting the stale tree IS its whole job, and it must run before any dep is
  * imported, so the probe is `createRequire`-based (pure; imports nothing).
  */
-import {readFileSync} from "node:fs";
 import {createRequire} from "node:module";
 import {Console, Effect} from "effect";
 import {Command} from "effect/unstable/cli";
+import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {decideSpawn, formatSessionCost, type SessionCostInput} from "./spawn-guard.ts";
-
-/**
- * Read all of stdin as a UTF-8 string (the hook/statusline JSON envelope). The harness
- * pipes the envelope on fd 0; a synchronous read of fd 0 avoids a stream that hangs when run
- * on a TTY with no pipe. An empty/unreadable stdin yields `""` (the parser then degrades to
- * `{}`). This is a raw `node:fs` boundary by design: the Effect `FileSystem` seam is path-keyed
- * with no stdin reader, and `Stdio.stdin` is exactly the blocking Stream this avoids — the
- * platform doc's node-only case (.patterns/effect-platform-access.md).
- */
-const readStdin = (): Effect.Effect<string> =>
-	Effect.try({
-		try: () => readFileSync(0, "utf8"),
-		catch: () => "",
-	}).pipe(Effect.orElseSucceed(() => ""));
 
 const parseJson = (raw: string): Effect.Effect<Record<string, unknown>> =>
 	Effect.try({
@@ -63,7 +49,7 @@ const guard = Command.make(
 	"guard",
 	{},
 	Effect.fn(function* () {
-		const env = yield* readStdin().pipe(Effect.flatMap(parseJson));
+		const env = yield* readStdinTextOrExit().pipe(Effect.flatMap(parseJson));
 		const toolInput = asRecord(env.tool_input);
 		const requested = asString(toolInput.model);
 		const pin = asString(process.env.WORKFLOW_MODEL ?? null);
@@ -126,7 +112,7 @@ const statusline = Command.make(
 	"statusline",
 	{},
 	Effect.fn(function* () {
-		const payload = yield* readStdin().pipe(Effect.flatMap(parseJson));
+		const payload = yield* readStdinTextOrExit().pipe(Effect.flatMap(parseJson));
 		const cost = asRecord(payload.cost);
 		const input: SessionCostInput = {
 			totalCostUsd: asNumber(cost.total_cost_usd) ?? asNumber(payload.total_cost_usd),
