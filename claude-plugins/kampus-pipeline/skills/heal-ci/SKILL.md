@@ -235,11 +235,19 @@ re-deriving the resolver write-code once hand-copied, and keeps only the two thi
 # `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here (#3653; ADR 0062/0064).
 VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 
+# §CP-ness is an input to the resolution and must match what write-code R1 passes (#4049): on a
+# control-plane PR the newest artifact is the SHA-less advisory (ADR 0111/0151), and a body-only
+# repair leaves the head deliberately unmoved, so without `--cp` a SUPERSEDED same-head FAIL reads as
+# an active repair forever. Derive it from the canonical §CP path set (the single source).
+CP_FLAG=""
+gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
+  | grep -Eq "$(pipeline-cli control-plane-paths)" && CP_FLAG="--cp"
+
 # a namespace is an active-repair FAIL iff its latest authorized verdict is FAIL bound to the current
 # head — exit 0 from `verdict read … --expect FAIL`. A stale / SHA-less / PASS / none verdict exits
 # non-zero, so it is correctly NOT an active repair, matching write-code's no-op on it.
-CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code --expect FAIL 2>/dev/null)" && CODE_FAIL=1 || CODE_FAIL=0
-DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc  --expect FAIL 2>/dev/null)" && DOC_FAIL=1  || DOC_FAIL=0
+CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code --expect FAIL $CP_FLAG 2>/dev/null)" && CODE_FAIL=1 || CODE_FAIL=0
+DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc  --expect FAIL $CP_FLAG 2>/dev/null)" && DOC_FAIL=1  || DOC_FAIL=0
 
 # UNRESOLVED ≠ "no FAIL". The verb prints its outcome JSON on BOTH exit paths, so absent JSON means the
 # namespace never resolved (a transport/5xx failure). Reading that as "no repair in flight" would file

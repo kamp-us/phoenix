@@ -787,11 +787,20 @@ required set** (zero required gates would make the conjunction vacuously true �
 dressed as a pass, ADR 0092), and an unresolvable head.
 
 **`--cp` is load-bearing in both directions.** A §CP PR's only verdict is the SHA-less advisory, so
-`verdict read --gate code` legitimately resolves `_tag: none` on it — that `none` is the **expected**
-§CP shape, not an absent verdict, and a §CP PR must **never** be required to carry (nor be satisfied
-by) a bindable first-line `PASS @ <sha>` (that drops the §CP verdict into the auto-merge namespace,
-the ADR 0111 hazard). Pass `--cp` **only** for a PR Step 0 classified §CP whose control-plane
-approval gate already passed; without it the advisory is correctly not a pass.
+without `--cp` the advisory is not a candidate at all and the namespace resolves `_tag: none` — and a
+§CP PR must **never** be required to carry (nor be satisfied by) a bindable first-line `PASS @ <sha>`
+(that drops the §CP verdict into the auto-merge namespace, the ADR 0111 hazard). Pass `--cp` **only**
+for a PR Step 0 classified §CP whose control-plane approval gate already passed; without it the
+advisory is correctly not a pass.
+
+**Pass the same `$CP_FLAG` to `verdict read` and to `verdict gate` — they take the same input on
+purpose (#4049).** §CP-ness decides which artifacts are candidates for the in-force verdict, so
+handing it to one verb and not the other makes the two disagree about the *same* marker set. That
+divergence has teeth on exactly one shape: a **body-only repair**, which deliberately does not move
+the head (moving it would dismiss the control-plane approval and force a full re-review). Because
+the head never moves, ADR-0058 staleness-invalidation can never retire the FAIL the repair answered
+— only the newer advisory out-ranking it can. Read it `--cp`-blind and that superseded FAIL sets the
+veto forever, on a PR whose defect is fixed (the live PR #3988 wedge).
 
 **The one signal the verb does not read — apply it on top.** `verdict gate` reads marker/advisory
 *comments*, not GitHub's native reviews. So a green `verdict gate` is **necessary, not sufficient**:
@@ -837,11 +846,10 @@ author cannot widen it via a file in their own diff. The solo operator `usirin` 
 ADR 0048) holds `admin` and passes; any future operator or review-bot earns standing by being
 a `write+` collaborator, with no edit to this skill.
 
-For the **marker namespaces** that author-gate is applied *inside* `pipeline-cli verdict read`
-(Step 2) — it is the verb's own ADR-0055 trust root, not re-derived here. The set below is still
-resolved explicitly because the **§CP advisory** resolution (Step 2.§CP) needs it: an advisory is
-SHA-less in its first line by design (ADR 0111), so `verdict read` resolves that namespace to
-`none` and cannot author-gate it — the advisory's own latest-wins/author-gated pick is ship-it's.
+That author-gate is applied *inside* `pipeline-cli verdict read` and `verdict gate` (Step 2) — it is
+the verbs' own ADR-0055 trust root, not re-derived here, and under `--cp` its scope covers the §CP
+advisory exactly as it covers a marker. The set below is resolved explicitly only so the Step 2.§CP
+**reference explanation** can be read on its own terms; it is not a second trust root.
 
 Resolve the authorized-author set from the ACL — every distinct marker author whose repo
 permission is `write` / `maintain` / `admin`. This fails closed: a lookup error or a
@@ -895,22 +903,26 @@ REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
 # (#3653; ADR 0062/0064; epic #994)
 VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 
-# per present namespace (Step 0), resolve the marker verdict against the current head via the verb:
-# <g>_PASS=1 iff a current-head PASS marker in that gate; <g>_FAIL=1 iff a current-head FAIL (the
-# veto). A stale / SHA-less / none verdict exits non-zero on BOTH, so it is neither a PASS nor a FAIL
-# — Step 2b's `unverified (verdict not bound to current head)` refusal, now owned by the verb. (A §CP
-# advisory namespace is SHA-less by design and resolves `none` here — Step 2.§CP handles it from the
-# body's Reviewed-head instead.)
+# per present namespace (Step 0), resolve the verdict against the current head via the verb:
+# <g>_PASS=1 iff a current-head pass in that gate; <g>_FAIL=1 iff a current-head FAIL (the veto). A
+# stale / SHA-less / none verdict exits non-zero on BOTH, so it is neither a PASS nor a FAIL —
+# Step 2b's `unverified (verdict not bound to current head)` refusal, now owned by the verb.
+#
+# $CP_FLAG (resolved above for the gate verb) is passed HERE TOO, and it is load-bearing (#4049): it
+# is the same §CP-ness input, so the two verbs resolve the SAME in-force verdict. With it, a §CP
+# namespace's advisory is a candidate and Step 2.§CP's rule holds inside the verb; without it a
+# body-only repair — which deliberately does not move the head, so ADR-0058 staleness can never
+# retire what it answered — leaves the superseded FAIL resolvable forever and wedges the PR.
 # the code namespace keeps the verb's stdout JSON: it names the RESOLVING comment id, which the
 # newest-wins fold below turns into the marker's created_at (the verb's outcome carries no timestamp).
-CODE_JSON="$($VERDICT read --pr "$PR" --gate code --expect PASS 2>/dev/null)" && CODE_PASS=1 || CODE_PASS=0
-$VERDICT read --pr "$PR" --gate code   --expect FAIL >/dev/null 2>&1 && CODE_FAIL=1   || CODE_FAIL=0
-$VERDICT read --pr "$PR" --gate doc    --expect PASS >/dev/null 2>&1 && DOC_PASS=1    || DOC_PASS=0
-$VERDICT read --pr "$PR" --gate doc    --expect FAIL >/dev/null 2>&1 && DOC_FAIL=1    || DOC_FAIL=0
-$VERDICT read --pr "$PR" --gate skill  --expect PASS >/dev/null 2>&1 && SKILL_PASS=1  || SKILL_PASS=0
-$VERDICT read --pr "$PR" --gate skill  --expect FAIL >/dev/null 2>&1 && SKILL_FAIL=1  || SKILL_FAIL=0
-$VERDICT read --pr "$PR" --gate design --expect PASS >/dev/null 2>&1 && DESIGN_PASS=1 || DESIGN_PASS=0
-$VERDICT read --pr "$PR" --gate design --expect FAIL >/dev/null 2>&1 && DESIGN_FAIL=1 || DESIGN_FAIL=0
+CODE_JSON="$($VERDICT read --pr "$PR" --gate code --expect PASS $CP_FLAG 2>/dev/null)" && CODE_PASS=1 || CODE_PASS=0
+$VERDICT read --pr "$PR" --gate code   --expect FAIL $CP_FLAG >/dev/null 2>&1 && CODE_FAIL=1   || CODE_FAIL=0
+$VERDICT read --pr "$PR" --gate doc    --expect PASS $CP_FLAG >/dev/null 2>&1 && DOC_PASS=1    || DOC_PASS=0
+$VERDICT read --pr "$PR" --gate doc    --expect FAIL $CP_FLAG >/dev/null 2>&1 && DOC_FAIL=1    || DOC_FAIL=0
+$VERDICT read --pr "$PR" --gate skill  --expect PASS $CP_FLAG >/dev/null 2>&1 && SKILL_PASS=1  || SKILL_PASS=0
+$VERDICT read --pr "$PR" --gate skill  --expect FAIL $CP_FLAG >/dev/null 2>&1 && SKILL_FAIL=1  || SKILL_FAIL=0
+$VERDICT read --pr "$PR" --gate design --expect PASS $CP_FLAG >/dev/null 2>&1 && DESIGN_PASS=1 || DESIGN_PASS=0
+$VERDICT read --pr "$PR" --gate design --expect FAIL $CP_FLAG >/dev/null 2>&1 && DESIGN_FAIL=1 || DESIGN_FAIL=0
 
 # fold the native decisive review into the code namespace (the verb reads only marker comments). Only
 # a review bound to the current head counts (same ADR-0058 staleness as a marker's @ <sha>).

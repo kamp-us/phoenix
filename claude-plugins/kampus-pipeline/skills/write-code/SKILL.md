@@ -201,11 +201,17 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
          then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
      | .n' "$comments_file")
   [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
+  # §CP-ness is an input to the resolution (#4049) — on a control-plane PR the newest artifact is the
+  # SHA-less advisory, so without --cp a superseded same-head FAIL keeps pulling this scan into a
+  # phantom repair. Derive it from the canonical §CP path set, the same way R1 does.
+  CP_FLAG=""
+  gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
+    | grep -Eq "$(pipeline-cli control-plane-paths)" && CP_FLAG="--cp"
   # resolve each namespace's latest current-head verdict through the shared verb — exit 0 iff HEAD
   # carries a current FAIL in that gate (a stale / SHA-less / PASS / none verdict exits non-zero).
-  $VERDICT read --pr "$PR" --gate code  --expect FAIL >/dev/null 2>&1 && echo "#$PR review-code FAIL"
-  $VERDICT read --pr "$PR" --gate doc   --expect FAIL >/dev/null 2>&1 && echo "#$PR review-doc FAIL"
-  $VERDICT read --pr "$PR" --gate skill --expect FAIL >/dev/null 2>&1 && echo "#$PR review-skill FAIL"
+  $VERDICT read --pr "$PR" --gate code  --expect FAIL $CP_FLAG >/dev/null 2>&1 && echo "#$PR review-code FAIL"
+  $VERDICT read --pr "$PR" --gate doc   --expect FAIL $CP_FLAG >/dev/null 2>&1 && echo "#$PR review-doc FAIL"
+  $VERDICT read --pr "$PR" --gate skill --expect FAIL $CP_FLAG >/dev/null 2>&1 && echo "#$PR review-skill FAIL"
 done
 ```
 
@@ -1861,13 +1867,24 @@ while IFS= read -r a; do
   esac
 done <<<"$markerAuthors"
 
+# §CP-ness is an INPUT to the resolution, not a detail of it (#4049): on a control-plane PR the
+# newest artifact in a namespace is the SHA-less advisory (ADR 0111/0151), and a body-only repair
+# leaves the head deliberately unmoved — so without `--cp` the verb keeps resolving a SUPERSEDED
+# same-head FAIL as current and this seam sees a phantom repair forever. Derive it from the canonical
+# §CP path set (`pipeline-cli control-plane-paths`, the single source) and pass it to every read
+# below, exactly as ship-it passes it to `verdict gate`.
+CP_FLAG=""
+gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
+  | grep -Eq "$(pipeline-cli control-plane-paths)" && CP_FLAG="--cp"
+
 # a namespace is a repairable FAIL iff its latest authorized verdict is FAIL bound to the current head
 # — exit 0 from `verdict read … --expect FAIL`. The verb's JSON (stdout) carries the resolving comment
-# id, which Step R2 uses to read the FAIL body. A stale / SHA-less / PASS / none verdict exits non-zero,
-# so it is correctly NOT repaired (idempotent no-op), needing no separate staleness test here.
-CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code  --expect FAIL 2>/dev/null)"  && CODE_FAIL=1  || CODE_FAIL=0
-DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc   --expect FAIL 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
-SKILL_FAIL_JSON="$($VERDICT read --pr "$PR" --gate skill --expect FAIL 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
+# id, which Step R2 uses to read the FAIL body. A stale / SHA-less / PASS / none / superseded-by-a-
+# newer-advisory verdict exits non-zero, so it is correctly NOT repaired (idempotent no-op), needing
+# no separate staleness test here.
+CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code  --expect FAIL $CP_FLAG 2>/dev/null)"  && CODE_FAIL=1  || CODE_FAIL=0
+DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc   --expect FAIL $CP_FLAG 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
+SKILL_FAIL_JSON="$($VERDICT read --pr "$PR" --gate skill --expect FAIL $CP_FLAG 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
 
 # UNRESOLVED ≠ "no FAIL". `verdict read` prints its outcome JSON on BOTH exit paths, so absent JSON
 # means the namespace never resolved at all (a transport/5xx error, not a verdict). Under a flaky
@@ -1919,8 +1936,10 @@ review), `DOC_FAIL=1`, or `SKILL_FAIL=1`. `verdict read` already encapsulates la
 SHA-staleness refusal: a newer FAIL is acted on even if an older PASS exists, but a FAIL whose `@ <sha>`
 is not the current head (or carries no `@ <sha>` — a pre-0058 legacy marker) resolves `stale`/`sha-less`,
 exits non-zero, and is **not** repaired — report `nothing to repair (latest FAIL not bound to current
-head)` and stop. A `review-skill: advisory` line (a blocking-set skill PR) is not a FAIL — `verdict read`
-resolves it `none` (no PASS/FAIL polarity), a clean no-op like a PASS. This keeps repair mode
+head)` and stop. A `review-skill: advisory` line (a blocking-set skill PR) is not a FAIL — on a non-§CP
+PR `verdict read` resolves it `none`, and on a §CP PR (`--cp`) it is the namespace's in-force verdict
+and resolves to the ADR 0111/0151 PASS-equivalent when all-PASS; either way a clean no-op like a PASS,
+and either way it **supersedes** an older same-head FAIL it was posted to answer (#4049). This keeps repair mode
 **idempotent**: re-running it on an already-fixed/PASS PR, a no-FAIL PR, or a stale-FAIL PR is a clean
 no-op. If **more than one** namespace resolves FAIL (a mixed PR — e.g. code+doc, or skill+code), address
 **all** of them in this round.

@@ -28,6 +28,19 @@ const marker = (over: Partial<VerdictComment> & {readonly id: number}): VerdictC
 	...over,
 });
 
+const CODE_FAIL_AT_HEAD = `review-code: FAIL @ ${HEAD} — changes-requested`;
+
+/** The canonical §CP advisory shape: SHA-less first line, head bound in the body (ADR 0111/0151). */
+const allPassAdvisory = (reviewedHead: string): string =>
+	[
+		"review-code: advisory — blocking-set PR (manual merge)",
+		"",
+		`Reviewed-head: @ ${reviewedHead}`,
+		"",
+		"- [PASS] the linkage seam is armed",
+		"- [PASS] the diff matches the acceptance criteria",
+	].join("\n");
+
 describe("parseVerdict — polarity + bound SHA out of a first-line marker", () => {
 	const cases: ReadonlyArray<{
 		readonly name: string;
@@ -110,8 +123,12 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 		readonly authorized: ReadonlyArray<string>;
 		readonly gate: VerdictGate;
 		readonly head: string;
+		/** §CP-ness: omitted ⇒ a plain auto-merge PR, where the advisory is not a candidate at all. */
+		readonly controlPlane?: boolean;
 		readonly expected: VerdictOutcome;
 		readonly reviewedPass: boolean;
+		/** Does the outcome satisfy an `--expect FAIL` read (the write-code repair seam)? */
+		readonly reviewedFail?: boolean;
 	}> = [
 		{
 			name: "matching @sha PASS → current PASS (reviewed)",
@@ -119,7 +136,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "current", commentId: 1, polarity: "PASS", sha: HEAD},
+			expected: {_tag: "current", form: "marker", commentId: 1, polarity: "PASS", sha: HEAD},
 			reviewedPass: true,
 		},
 		{
@@ -128,7 +145,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "sha-less", commentId: 1, polarity: "PASS"},
+			expected: {_tag: "sha-less", form: "marker", commentId: 1, polarity: "PASS"},
 			reviewedPass: false,
 		},
 		{
@@ -137,7 +154,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "stale", commentId: 1, polarity: "PASS", sha: OLD},
+			expected: {_tag: "stale", form: "marker", commentId: 1, polarity: "PASS", sha: OLD},
 			reviewedPass: false,
 		},
 		{
@@ -157,7 +174,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "current", commentId: 2, polarity: "FAIL", sha: HEAD},
+			expected: {_tag: "current", form: "marker", commentId: 2, polarity: "FAIL", sha: HEAD},
 			reviewedPass: false,
 		},
 		{
@@ -177,7 +194,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "current", commentId: 2, polarity: "FAIL", sha: HEAD},
+			expected: {_tag: "current", form: "marker", commentId: 2, polarity: "FAIL", sha: HEAD},
 			reviewedPass: false,
 		},
 		{
@@ -197,7 +214,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "current", commentId: 20, polarity: "PASS", sha: HEAD},
+			expected: {_tag: "current", form: "marker", commentId: 20, polarity: "PASS", sha: HEAD},
 			reviewedPass: true,
 		},
 		// The run-scoped upsert (#4016) means two reviewer RUNS can now leave two verdict comments
@@ -221,7 +238,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "current", commentId: 2, polarity: "PASS", sha: HEAD},
+			expected: {_tag: "current", form: "marker", commentId: 2, polarity: "PASS", sha: HEAD},
 			reviewedPass: true,
 		},
 		{
@@ -243,7 +260,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "current", commentId: 2, polarity: "FAIL", sha: HEAD},
+			expected: {_tag: "current", form: "marker", commentId: 2, polarity: "FAIL", sha: HEAD},
 			reviewedPass: false,
 		},
 		{
@@ -252,7 +269,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: [],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "none"},
+			expected: {_tag: "none", form: "none"},
 			reviewedPass: false,
 		},
 		{
@@ -261,7 +278,7 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "none"},
+			expected: {_tag: "none", form: "none"},
 			reviewedPass: false,
 		},
 		{
@@ -270,20 +287,127 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
-			expected: {_tag: "none"},
+			expected: {_tag: "none", form: "none"},
 			reviewedPass: false,
 		},
+		// The #4049 body-only-repair sequence, the PR #3988 marker set: two FAILs and an all-PASS
+		// advisory, ALL bound to the one head the repair deliberately did not move. Recency across
+		// both forms is what retires the superseded FAILs — staleness-invalidation structurally
+		// cannot, since nothing moved.
+		{
+			name: "§CP body-only repair: the newer all-PASS advisory supersedes the same-head FAILs (#4049)",
+			comments: [
+				marker({id: 1, createdAt: "2026-07-24T06:51:00Z", body: CODE_FAIL_AT_HEAD}),
+				marker({id: 2, createdAt: "2026-07-24T19:16:00Z", body: CODE_FAIL_AT_HEAD}),
+				marker({id: 3, createdAt: "2026-07-24T19:22:00Z", body: allPassAdvisory(HEAD)}),
+			],
+			authorized: ["usirin"],
+			gate: "code",
+			head: HEAD,
+			controlPlane: true,
+			expected: {_tag: "current", form: "advisory", commentId: 3, polarity: "PASS", sha: HEAD},
+			reviewedPass: true,
+			reviewedFail: false,
+		},
+		{
+			name: "the same marker set on a NON-§CP PR: the advisory is no candidate, so the FAIL still stands",
+			comments: [
+				marker({id: 1, createdAt: "2026-07-24T06:51:00Z", body: CODE_FAIL_AT_HEAD}),
+				marker({id: 2, createdAt: "2026-07-24T19:16:00Z", body: CODE_FAIL_AT_HEAD}),
+				marker({id: 3, createdAt: "2026-07-24T19:22:00Z", body: allPassAdvisory(HEAD)}),
+			],
+			authorized: ["usirin"],
+			gate: "code",
+			head: HEAD,
+			expected: {_tag: "current", form: "marker", commentId: 2, polarity: "FAIL", sha: HEAD},
+			reviewedPass: false,
+			reviewedFail: true,
+		},
+		{
+			name: "§CP: a FAIL posted AFTER the advisory is the in-force verdict (recency, not form, decides)",
+			comments: [
+				marker({id: 1, createdAt: "2026-07-24T19:00:00Z", body: allPassAdvisory(HEAD)}),
+				marker({id: 2, createdAt: "2026-07-24T19:16:00Z", body: CODE_FAIL_AT_HEAD}),
+			],
+			authorized: ["usirin"],
+			gate: "code",
+			head: HEAD,
+			controlPlane: true,
+			expected: {_tag: "current", form: "marker", commentId: 2, polarity: "FAIL", sha: HEAD},
+			reviewedPass: false,
+			reviewedFail: true,
+		},
+		{
+			name: "§CP: a current-head advisory carrying a [FAIL] checkbox is neither a pass nor a marker FAIL",
+			comments: [
+				marker({id: 1, createdAt: "2026-07-24T06:51:00Z", body: CODE_FAIL_AT_HEAD}),
+				marker({
+					id: 2,
+					createdAt: "2026-07-24T19:22:00Z",
+					body: `${allPassAdvisory(HEAD)}\n- [FAIL] the linkage token still auto-closes`,
+				}),
+			],
+			authorized: ["usirin"],
+			gate: "code",
+			head: HEAD,
+			controlPlane: true,
+			expected: {_tag: "advisory-not-all-pass", form: "advisory", commentId: 2, sha: HEAD},
+			reviewedPass: false,
+			reviewedFail: false,
+		},
+		{
+			name: "§CP: an advisory with no Reviewed-head anchor binds nothing (ADR 0151) — unverified",
+			comments: [
+				marker({
+					id: 1,
+					createdAt: "2026-07-24T19:22:00Z",
+					body: "review-code: advisory — blocking-set PR (manual merge)\n\n- [PASS] every check",
+				}),
+			],
+			authorized: ["usirin"],
+			gate: "code",
+			head: HEAD,
+			controlPlane: true,
+			expected: {_tag: "sha-less", form: "advisory", commentId: 1, polarity: null},
+			reviewedPass: false,
+			reviewedFail: false,
+		},
+		{
+			name: "§CP: an advisory whose Reviewed-head is a superseded head is stale, never a pass",
+			comments: [marker({id: 1, createdAt: "2026-07-24T19:22:00Z", body: allPassAdvisory(OLD)})],
+			authorized: ["usirin"],
+			gate: "code",
+			head: HEAD,
+			controlPlane: true,
+			expected: {_tag: "stale", form: "advisory", commentId: 1, polarity: null, sha: OLD},
+			reviewedPass: false,
+			reviewedFail: false,
+		},
 	];
-	for (const {name, comments, authorized, gate, head, expected, reviewedPass} of cases) {
+	for (const {
+		name,
+		comments,
+		authorized,
+		gate,
+		head,
+		controlPlane,
+		expected,
+		reviewedPass,
+		reviewedFail,
+	} of cases) {
 		it(name, () => {
 			const outcome = resolveVerdict({
 				comments,
 				authorizedAuthors: authorized,
 				gate,
 				headSha: head,
+				controlPlane: controlPlane ?? false,
 			});
 			assert.deepStrictEqual(outcome, expected);
 			assert.strictEqual(isReviewed(outcome, "PASS"), reviewedPass);
+			if (reviewedFail !== undefined) {
+				assert.strictEqual(isReviewed(outcome, "FAIL"), reviewedFail);
+			}
 		});
 	}
 
@@ -293,28 +417,58 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 			marker({id: 2, body: `review-skill: FAIL @ ${HEAD} — changes-requested`}),
 		];
 		assert.deepStrictEqual(
-			resolveVerdict({comments, authorizedAuthors: ["usirin"], gate: "code", headSha: HEAD}),
-			{_tag: "current", commentId: 1, polarity: "PASS", sha: HEAD},
+			resolveVerdict({
+				comments,
+				authorizedAuthors: ["usirin"],
+				gate: "code",
+				headSha: HEAD,
+				controlPlane: false,
+			}),
+			{_tag: "current", form: "marker", commentId: 1, polarity: "PASS", sha: HEAD},
 		);
 		assert.deepStrictEqual(
-			resolveVerdict({comments, authorizedAuthors: ["usirin"], gate: "skill", headSha: HEAD}),
-			{_tag: "current", commentId: 2, polarity: "FAIL", sha: HEAD},
+			resolveVerdict({
+				comments,
+				authorizedAuthors: ["usirin"],
+				gate: "skill",
+				headSha: HEAD,
+				controlPlane: false,
+			}),
+			{_tag: "current", form: "marker", commentId: 2, polarity: "FAIL", sha: HEAD},
 		);
 		assert.deepStrictEqual(
-			resolveVerdict({comments, authorizedAuthors: ["usirin"], gate: "doc", headSha: HEAD}),
-			{_tag: "none"},
+			resolveVerdict({
+				comments,
+				authorizedAuthors: ["usirin"],
+				gate: "doc",
+				headSha: HEAD,
+				controlPlane: false,
+			}),
+			{_tag: "none", form: "none"},
 		);
 	});
 });
 
 describe("isReviewed — read-verb decision over expected polarity", () => {
 	it("current FAIL satisfies an expect-FAIL read (write-code repair seam)", () => {
-		const outcome: VerdictOutcome = {_tag: "current", commentId: 1, polarity: "FAIL", sha: HEAD};
+		const outcome: VerdictOutcome = {
+			_tag: "current",
+			form: "marker",
+			commentId: 1,
+			polarity: "FAIL",
+			sha: HEAD,
+		};
 		assert.isTrue(isReviewed(outcome, "FAIL"));
 		assert.isFalse(isReviewed(outcome, "PASS"));
 	});
 	it("a stale verdict never satisfies either polarity", () => {
-		const outcome: VerdictOutcome = {_tag: "stale", commentId: 1, polarity: "PASS", sha: OLD};
+		const outcome: VerdictOutcome = {
+			_tag: "stale",
+			form: "marker",
+			commentId: 1,
+			polarity: "PASS",
+			sha: OLD,
+		};
 		assert.isFalse(isReviewed(outcome, "PASS"));
 		assert.isFalse(isReviewed(outcome, "FAIL"));
 	});

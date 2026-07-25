@@ -1,6 +1,12 @@
 import {assert, describe, it} from "@effect/vitest";
 import {decideGate, type GateDecisionInput} from "./gate-decision.ts";
-import type {VerdictComment, VerdictGate} from "./verdict-match.ts";
+import {
+	isReviewed,
+	resolveVerdict,
+	type VerdictComment,
+	type VerdictGate,
+	verdictState,
+} from "./verdict-match.ts";
 
 const HEAD = "15ae9df658ce6225b8b71f22d214cfcabb6b1c9a";
 const OLD = "92c2cf4d0000000000000000000000000000abcd";
@@ -357,4 +363,87 @@ describe("decideGate — fail-closed on its own inputs (ADR 0092)", () => {
 		const result = decide({headSha: HEAD.slice(0, 8), comments: [comment({id: 1})]});
 		assert.isTrue(result.enqueueable);
 	});
+});
+
+/**
+ * The cross-consumer invariant (#4049): `read` and `gate` must name the SAME in-force verdict for
+ * the same (PR, gate, head, §CP-ness) inputs. They diverged because each computed its own — `read`
+ * by polarity-matching, `gate` by latest-wins across marker AND advisory — so on a §CP PR whose
+ * body-only repair left the head unmoved, `read` kept resolving a superseded FAIL as current while
+ * `gate` correctly saw the newer advisory. Both now project one resolution; this table is what
+ * fails if a second one is ever reintroduced.
+ */
+describe("read and gate agree on the in-force verdict (#4049)", () => {
+	const FAIL_AT_HEAD = `review-doc: FAIL @ ${HEAD} — changes-requested`;
+	const fixtures: ReadonlyArray<{
+		readonly name: string;
+		readonly comments: ReadonlyArray<VerdictComment>;
+		readonly controlPlane: boolean;
+	}> = [
+		{
+			name: "the PR #3988 body-only-repair set on a §CP PR: FAIL, FAIL, all-PASS advisory @ one head",
+			comments: [
+				comment({id: 1, createdAt: "2026-07-24T06:51:00Z", body: FAIL_AT_HEAD}),
+				comment({id: 2, createdAt: "2026-07-24T19:16:00Z", body: FAIL_AT_HEAD}),
+				comment({id: 3, createdAt: "2026-07-24T19:22:00Z", body: advisory("doc", HEAD)}),
+			],
+			controlPlane: true,
+		},
+		{
+			name: "the same set on a non-§CP PR",
+			comments: [
+				comment({id: 1, createdAt: "2026-07-24T06:51:00Z", body: FAIL_AT_HEAD}),
+				comment({id: 2, createdAt: "2026-07-24T19:16:00Z", body: FAIL_AT_HEAD}),
+				comment({id: 3, createdAt: "2026-07-24T19:22:00Z", body: advisory("doc", HEAD)}),
+			],
+			controlPlane: false,
+		},
+		{
+			name: "§CP, a FAIL posted after the advisory",
+			comments: [
+				comment({id: 1, createdAt: "2026-07-24T19:00:00Z", body: advisory("doc", HEAD)}),
+				comment({id: 2, createdAt: "2026-07-24T19:22:00Z", body: FAIL_AT_HEAD}),
+			],
+			controlPlane: true,
+		},
+		{
+			name: "§CP, the advisory is not all-PASS",
+			comments: [
+				comment({id: 1, createdAt: "2026-07-24T06:51:00Z", body: FAIL_AT_HEAD}),
+				comment({id: 2, createdAt: "2026-07-24T19:22:00Z", body: advisory("doc", HEAD, "[FAIL]")}),
+			],
+			controlPlane: true,
+		},
+		{
+			name: "§CP, the advisory's Reviewed-head is stale",
+			comments: [comment({id: 1, body: advisory("doc", OLD)})],
+			controlPlane: true,
+		},
+		{name: "an empty namespace", comments: [], controlPlane: true},
+	];
+
+	for (const {name, comments, controlPlane} of fixtures) {
+		it(name, () => {
+			const outcome = resolveVerdict({
+				comments,
+				authorizedAuthors: [REVIEWER],
+				gate: "doc",
+				headSha: HEAD,
+				controlPlane,
+			});
+			const decision = decideGate({
+				comments,
+				authorizedAuthors: [REVIEWER],
+				requiredGates: ["doc"],
+				headSha: HEAD,
+				controlPlane,
+			}).decisions[0];
+			assert.strictEqual(verdictState(outcome), decision?.state);
+			assert.strictEqual(outcome.form, decision?.form);
+			// The two exit codes a consumer branches on: ship-it's `--expect PASS` must agree with
+			// `enqueueable`, and write-code's repair seam `--expect FAIL` must agree with the veto.
+			assert.strictEqual(isReviewed(outcome, "PASS"), decision?.state === "pass");
+			assert.strictEqual(isReviewed(outcome, "FAIL"), decision?.state === "fail");
+		});
+	}
 });

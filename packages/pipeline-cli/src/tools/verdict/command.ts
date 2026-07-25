@@ -4,12 +4,17 @@
  * The ADR-0058 SHA-bound verdict read/post glue, extracted from the inline `jq` the
  * `review-*` / `ship-it` / `write-code`-repair / `heal-ci` skills each hand-rolled (#2102).
  *
- * `read --pr N --gate <g> [--expect PASS|FAIL] [--head <sha>]` resolves the (PR, gate)
+ * `read --pr N --gate <g> [--expect PASS|FAIL] [--head <sha>] [--cp]` resolves the (PR, gate)
  * verdict against the PR's current head (author-gated to write+ collaborators, ADR 0055) and
  * **exits 0 only when HEAD is reviewed with the expected polarity** (default PASS) — every
  * refusal (`none`/`sha-less`/`stale`, or a current verdict of the wrong polarity) prints its
  * reason on stderr and exits non-zero, so a caller branches on exit status. The resolved
  * outcome is printed as JSON on stdout for a caller that wants the detail (comment id, sha).
+ * `--cp` carries the same §CP-ness `gate` takes, and for the same reason: on a control-plane PR the
+ * newest artifact is the SHA-less advisory (ADR 0111/0151), and a body-only repair leaves the head
+ * deliberately unmoved — so without it a superseded same-head FAIL stays the in-force verdict
+ * forever, `read` and `gate` disagree, and the repair seam sees a phantom FAIL (#4049). Pass it for
+ * every §CP PR, exactly as you would to `gate`.
  *
  * `gate --pr N --require <namespaces> [--cp]` is the SET-level counterpart `read` cannot be: it
  * folds the same resolution over EVERY namespace the diff requires and exits 0 only when each one
@@ -103,13 +108,19 @@ const parseExpect = (raw: Option.Option<string>): Effect.Effect<Polarity, never>
 	return fail(`invalid --expect '${Option.getOrElse(raw, () => "")}' — expected PASS or FAIL`);
 };
 
+const cpFlag = Flag.boolean("cp").pipe(
+	Flag.withDescription(
+		"this is a §CP (control-plane / blocking-set) PR: let the canonical SHA-less advisory + body `Reviewed-head` be a candidate for the in-force verdict (ADR 0111/0151)",
+	),
+);
+
 const read = Command.make(
 	"read",
-	{pr: prFlag, gate: gateFlag, head: headFlag, expect: expectFlag},
-	Effect.fn(function* ({pr, gate, head, expect}) {
+	{pr: prFlag, gate: gateFlag, head: headFlag, expect: expectFlag, cp: cpFlag},
+	Effect.fn(function* ({pr, gate, head, expect, cp}) {
 		const g = yield* parseGate(gate);
 		const polarity = yield* parseExpect(expect);
-		const result = yield* (yield* Github).read(pr, g, polarity, Option.getOrUndefined(head));
+		const result = yield* (yield* Github).read(pr, g, polarity, Option.getOrUndefined(head), cp);
 		// The resolved detail goes to stdout as JSON (a caller may want the comment id / bound sha);
 		// the human-readable verdict + refusal reason goes to stderr, mirroring resume-policy.
 		yield* Console.log(JSON.stringify({...result.outcome, headSha: result.headSha, gate: g}));
@@ -134,12 +145,6 @@ const read = Command.make(
 const requireFlag = Flag.string("require").pipe(
 	Flag.withDescription(
 		"the required review namespaces, comma/space separated (`review-code,review-doc` or `code,doc`) — derive with `pipeline-cli class-probe classify --namespaces`",
-	),
-);
-
-const cpFlag = Flag.boolean("cp").pipe(
-	Flag.withDescription(
-		"this is a §CP (control-plane / blocking-set) PR: accept the canonical SHA-less advisory + body `Reviewed-head` as the pass (ADR 0111/0151)",
 	),
 );
 

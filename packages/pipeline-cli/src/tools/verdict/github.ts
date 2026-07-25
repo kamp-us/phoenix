@@ -12,9 +12,9 @@
  * Three verbs:
  *  - `gate(pr, requiredGates, controlPlane, headOverride)` — the SET-level enqueue decision: fold the
  *    same resolution over every namespace the diff requires, so an absent namespace refuses (#3982).
- *  - `read(pr, gate, expect, headOverride)` — resolve the PR's current head (REST), author-gate
- *    marker authors to write+ collaborators (ADR 0055), and run `resolveVerdict` to classify
- *    the namespace against that head. The consumer branches on the returned outcome.
+ *  - `read(pr, gate, expect, headOverride, controlPlane)` — resolve the PR's current head (REST),
+ *    author-gate marker authors to write+ collaborators (ADR 0055), and run `resolveVerdict` to
+ *    classify the namespace against that head. The consumer branches on the returned outcome.
  *  - `post(pr, gate, body, runId)` — the ADR-0058 rule-2 UPSERT, scoped per posting RUN (ADR 0213):
  *    guard the body's first line is *this* gate's marker (fail-closed on a cross-namespace body),
  *    then PATCH the prior marker THIS RUN posted in the namespace if one exists, else POST a fresh
@@ -48,6 +48,7 @@ import {
 	boundHeadShas,
 	emissionDefect,
 	headBindingDefect,
+	isReviewed,
 	namespaceRe,
 	normalizeRunId,
 	type Polarity,
@@ -108,6 +109,8 @@ export interface ReadResult {
 	/** Does the outcome satisfy the caller's expected polarity (a current-head match)? */
 	readonly satisfied: boolean;
 	readonly expect: Polarity;
+	/** Was the namespace resolved §CP-aware (the advisory a candidate for the in-force pick)? */
+	readonly controlPlane: boolean;
 }
 
 /** The `post` verdict — whether we upserted an existing marker or posted the first one, and the comment id. */
@@ -184,6 +187,7 @@ const read = Effect.fn("Github.read")(function* (
 	gate: VerdictGate,
 	expect: Polarity,
 	headOverride: string | undefined,
+	controlPlane: boolean,
 ) {
 	const headSha = headOverride?.trim() || (yield* currentHead(repo, pr));
 	const comments = yield* listComments(repo, pr);
@@ -197,9 +201,21 @@ const read = Effect.fn("Github.read")(function* (
 		),
 	];
 	const authorized = yield* authorizedAuthors(repo, markerAuthors);
-	const outcome = resolveVerdict({comments, authorizedAuthors: authorized, gate, headSha});
-	const satisfied = outcome._tag === "current" && outcome.polarity === expect;
-	return {outcome, headSha, gate, satisfied, expect} satisfies ReadResult;
+	const outcome = resolveVerdict({
+		comments,
+		authorizedAuthors: authorized,
+		gate,
+		headSha,
+		controlPlane,
+	});
+	return {
+		outcome,
+		headSha,
+		gate,
+		satisfied: isReviewed(outcome, expect),
+		expect,
+		controlPlane,
+	} satisfies ReadResult;
 });
 
 /**
@@ -209,8 +225,8 @@ const read = Effect.fn("Github.read")(function* (
  * set so an ABSENT namespace is a refusal rather than an unnoticed gap (#3982 / PR #3944).
  *
  * The author-gate scope is `namespaceRe` (which matches PASS / FAIL / advisory alike) across every
- * required gate, so a §CP advisory's author is ACL-checked exactly like a marker author — the one
- * thing single-namespace `read` structurally cannot do for the SHA-less advisory form (ADR 0111).
+ * required gate, so a §CP advisory's author is ACL-checked exactly like a marker author — the same
+ * scope single-namespace `read` applies, now that both resolve through `resolveVerdict` (#4049).
  */
 const gate = Effect.fn("Github.gate")(function* (
 	repo: string,
@@ -330,11 +346,16 @@ const post = Effect.fn("Github.post")(function* (
 export class Github extends Context.Service<
 	Github,
 	{
+		/**
+		 * `controlPlane` is REQUIRED, never defaulted: it is the same §CP-ness `gate` takes, and the
+		 * two verbs must be handed the same value to resolve the same in-force verdict (#4049).
+		 */
 		readonly read: (
 			pr: number,
 			gate: VerdictGate,
 			expect: Polarity,
-			headOverride?: string,
+			headOverride: string | undefined,
+			controlPlane: boolean,
 		) => Effect.Effect<
 			ReadResult,
 			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
@@ -382,8 +403,12 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 			) => effect.pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
 			const repo = yield* Effect.cached(withSpawner(resolveRepo()));
 			return {
-				read: (pr, gate, expect, headOverride) =>
-					repo.pipe(Effect.flatMap((r) => withSpawner(read(r, pr, gate, expect, headOverride)))),
+				read: (pr, gate, expect, headOverride, controlPlane) =>
+					repo.pipe(
+						Effect.flatMap((r) =>
+							withSpawner(read(r, pr, gate, expect, headOverride, controlPlane)),
+						),
+					),
 				gate: (pr, requiredGates, controlPlane, headOverride) =>
 					repo.pipe(
 						Effect.flatMap((r) =>

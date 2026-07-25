@@ -14,6 +14,13 @@
  * (ADR 0055 write+ trust root) is resolved by the shell and handed in as `authorizedAuthors`,
  * exactly as `epic-lock`'s claim core takes it — a forged marker from a non-collaborator
  * never enters the candidate set, and an empty authorized set resolves NO verdict (fail-closed).
+ *
+ * `resolveVerdict` is the ONE notion of "which verdict is in force" (#4049). It used to answer that
+ * by polarity-matching alone, while `gate-decision.ts` answered it by latest-wins across marker AND
+ * §CP advisory — so on a §CP PR whose body-only repair left the head deliberately unmoved, a
+ * superseded same-head FAIL stayed resolvable as current to `read` forever while `gate` correctly
+ * saw the newer advisory. Consumer-dependent divergence on the same marker set is the defect; the
+ * fix is that `gate` now projects THIS resolution rather than computing a second one.
  */
 import {findCommentLeaks} from "../leak-guard/leak-guard.ts";
 
@@ -66,6 +73,18 @@ export const verdictRe = (gate: VerdictGate): RegExp =>
 export const polarityRe = (gate: VerdictGate): RegExp =>
 	new RegExp(`^\\s*\\*{0,2}\\s*${GATE_KEYWORD[gate]}:\\s*(PASS|FAIL)`, "i");
 
+/**
+ * The §CP advisory first line: `review-<gate>: advisory — blocking-set PR (manual merge)`. Anchored
+ * to the first line like every other marker matcher, and deliberately NOT polarity-bearing — an
+ * advisory carries no PASS/FAIL, so `polarityRe` never matches it and the two candidate sets are
+ * disjoint.
+ */
+export const advisoryRe = (gate: VerdictGate): RegExp =>
+	new RegExp(`^\\s*\\*{0,2}\\s*${GATE_KEYWORD[gate]}:\\s*advisory\\b`, "i");
+
+/** A recorded `[FAIL]` checkbox anywhere in an advisory body — the not-all-PASS tell. */
+const failCheckboxRe = /^\s*[-*]?\s*\[\s*FAIL\s*\]/im;
+
 /** A PR/issue comment as the issues/comments REST endpoint surfaces it (only these fields matter). */
 export interface VerdictComment {
 	/** Server-assigned, strictly-monotonic, globally-unique comment id (the tiebreak sub-key). */
@@ -115,26 +134,66 @@ export const isBoundToHead = (sha: string | null | undefined, head: string): boo
 	return a.startsWith(b) || b.startsWith(a);
 };
 
-/** The resolved verdict for a (PR, gate) — exactly one of four states against the current head. */
+/**
+ * Which verdict FORM is in force — the ADR 0111/0151 distinction between a bindable first-line
+ * `PASS|FAIL @ <sha>` marker and the §CP advisory, whose head binding lives only in its body's
+ * `Reviewed-head:` anchor. `none` is the empty namespace.
+ */
+export type VerdictForm = "marker" | "advisory" | "none";
+
+/** The resolved verdict for a (PR, gate) against the current head — the in-force artifact's state. */
 export type VerdictOutcome =
-	/** No authorized PASS/FAIL marker exists in this namespace (or the authorized set was empty). */
-	| {readonly _tag: "none"}
-	/** The latest authorized marker carries no `@ <sha>` (a pre-0058 legacy marker) — refuse. */
-	| {readonly _tag: "sha-less"; readonly commentId: number; readonly polarity: Polarity}
-	/** The latest authorized marker is bound to a different (stale) head — refuse. */
+	/** No authorized verdict artifact in this namespace (or the authorized set was empty). */
+	| {readonly _tag: "none"; readonly form: "none"}
+	/**
+	 * Nothing binds the in-force artifact to a head: a pre-0058 marker with no `@ <sha>`, or a §CP
+	 * advisory with no `Reviewed-head:` anchor (an advisory is SHA-less in line 1 by design, so the
+	 * body anchor is its only binding — ADR 0151). `polarity` is null for the advisory form, which
+	 * carries no PASS/FAIL. Refuse either way.
+	 */
+	| {
+			readonly _tag: "sha-less";
+			readonly form: "marker" | "advisory";
+			readonly commentId: number;
+			readonly polarity: Polarity | null;
+	  }
+	/** The in-force artifact binds a different (stale) head — refuse. */
 	| {
 			readonly _tag: "stale";
+			readonly form: "marker" | "advisory";
+			readonly commentId: number;
+			readonly polarity: Polarity | null;
+			readonly sha: string;
+	  }
+	/**
+	 * The in-force artifact binds the current head and carries a polarity — a marker's own PASS/FAIL,
+	 * or a §CP all-PASS advisory read as the ADR 0111/0151 PASS-equivalent.
+	 */
+	| {
+			readonly _tag: "current";
+			readonly form: "marker" | "advisory";
 			readonly commentId: number;
 			readonly polarity: Polarity;
 			readonly sha: string;
 	  }
-	/** The latest authorized marker is bound to the current head — its polarity decides. */
+	/**
+	 * The in-force §CP advisory binds the current head but records a `[FAIL]` checkbox, so it is not
+	 * the all-PASS PASS-equivalent — and it is not a marker FAIL either (its remedy is a re-review,
+	 * not the author's repair round-trip). Its own terminal state, refused by both polarities.
+	 */
 	| {
-			readonly _tag: "current";
+			readonly _tag: "advisory-not-all-pass";
+			readonly form: "advisory";
 			readonly commentId: number;
-			readonly polarity: Polarity;
 			readonly sha: string;
 	  };
+
+/**
+ * The four states a namespace resolves to — the vocabulary `verdict gate` reports per required
+ * namespace, and the same projection `read`'s `--expect` matches against, so the two verbs cannot
+ * disagree about which verdict is in force (#4049).
+ */
+export type VerdictState = "pass" | "fail" | "absent" | "unverified";
 
 export interface ResolveVerdictInput {
 	readonly comments: ReadonlyArray<VerdictComment>;
@@ -143,7 +202,46 @@ export interface ResolveVerdictInput {
 	readonly gate: VerdictGate;
 	/** The PR's current head SHA every verdict must be bound to (ADR 0058 rule 3). */
 	readonly headSha: string;
+	/**
+	 * Is this a §CP (control-plane / blocking-set) PR, whose verdict form is the SHA-less advisory
+	 * (ADR 0111/0151)? Required, never defaulted: on a §CP PR the advisory is the newest artifact a
+	 * body-only repair leaves behind, and omitting it is exactly the #4049 divergence — a superseded
+	 * same-head FAIL resolving as the in-force verdict forever. A non-§CP PR's advisory is not a
+	 * candidate at all: it is not a PASS and binds no head in line one, so it must neither satisfy
+	 * the namespace nor shadow an older bindable marker.
+	 */
+	readonly controlPlane: boolean;
 }
+
+/** Newest of two optional candidates by `(createdAt, id)` — the same latest-wins key as the markers. */
+const newerOf = (
+	a: VerdictComment | undefined,
+	b: VerdictComment | undefined,
+): VerdictComment | undefined => {
+	if (a === undefined) return b;
+	if (b === undefined) return a;
+	if (a.createdAt !== b.createdAt) return a.createdAt > b.createdAt ? a : b;
+	return a.id > b.id ? a : b;
+};
+
+/**
+ * Classify a §CP advisory that won the latest-wins pick: its head binding is the body's
+ * `Reviewed-head:` anchor (ADR 0151), and it is the PASS-equivalent only when every recorded
+ * checkbox is `[PASS]`.
+ */
+const resolveAdvisory = (advisory: VerdictComment, headSha: string): VerdictOutcome => {
+	const sha = reviewedHeadSha(advisory.body);
+	if (sha === null) {
+		return {_tag: "sha-less", form: "advisory", commentId: advisory.id, polarity: null};
+	}
+	if (!isBoundToHead(sha, headSha)) {
+		return {_tag: "stale", form: "advisory", commentId: advisory.id, polarity: null, sha};
+	}
+	if (failCheckboxRe.test(advisory.body)) {
+		return {_tag: "advisory-not-all-pass", form: "advisory", commentId: advisory.id, sha};
+	}
+	return {_tag: "current", form: "advisory", commentId: advisory.id, polarity: "PASS", sha};
+};
 
 /**
  * The latest-wins pick, shared by `resolveVerdict` and the §CP advisory resolution: among the
@@ -167,42 +265,80 @@ export const pickLatestAuthorized = (
 };
 
 /**
- * Resolve the (PR, gate) verdict against the current head, re-encoding ADR 0058 rule 3
- * exactly: author-gate to write+ collaborators (a forged marker is invisible), keep only
- * PASS/FAIL markers in this namespace, take the **newest** by `(createdAt, id)` (latest-wins,
- * so a newer FAIL vetoes an older PASS and a re-review overwrites), then classify by the
- * SHA-staleness test — `current` iff its `@ <sha>` prefix-matches the head, else `stale`;
- * `sha-less` when the newest marker carries no `@ <sha>`; `none` when the authorized candidate
- * set is empty. Fail-closed everywhere: an empty authorized set is `none`, never a false win.
+ * Resolve which verdict is IN FORCE for a (PR, gate) against the current head — the single
+ * resolution `verdict read` and `verdict gate` both consume (#4049).
+ *
+ * Author-gate to write+ collaborators (a forged artifact is invisible, ADR 0055), take the
+ * **newest** authorized artifact by `(createdAt, id)` across the namespace's candidate forms — the
+ * PASS/FAIL markers always, plus the §CP advisory when `controlPlane` — then classify it by the
+ * ADR-0058 rule-3 staleness test against its own head binding (a marker's `@ <sha>`; an advisory's
+ * body `Reviewed-head:` anchor).
+ *
+ * Latest-wins across BOTH forms is the load-bearing part. A §CP body-only repair deliberately does
+ * not move the head — moving it would dismiss the control-plane approval and force a full
+ * re-review — so staleness-invalidation cannot retire the superseded FAIL markers it repaired, and
+ * a polarity-only candidate set (which an advisory, carrying no PASS/FAIL, can never enter) keeps
+ * resolving one of them as current forever (#4049). Recency across the whole namespace is what
+ * retires them; nothing here moves or needs the head to move.
+ *
+ * Fail-closed everywhere: an empty authorized set is `none`, never a false win.
  */
 export const resolveVerdict = (input: ResolveVerdictInput): VerdictOutcome => {
-	const latest = pickLatestAuthorized(
+	const marker = pickLatestAuthorized(
 		input.comments,
 		input.authorizedAuthors,
 		polarityRe(input.gate),
 	);
-	// `latest` is absent only for an empty candidate set, and `parseVerdict` is null only for a
-	// non-PASS/FAIL body — but polarityRe already filtered candidates to PASS/FAIL markers, so both
-	// guards collapse to the same fail-closed `none` (no consumable verdict in this namespace).
-	const parsed = latest ? parseVerdict(latest.body, input.gate) : null;
-	if (latest === undefined || parsed === null) return {_tag: "none"};
+	const advisory = input.controlPlane
+		? pickLatestAuthorized(input.comments, input.authorizedAuthors, advisoryRe(input.gate))
+		: undefined;
+	const latest = newerOf(marker, advisory);
+	if (latest === undefined) return {_tag: "none", form: "none"};
+	if (latest === advisory) return resolveAdvisory(latest, input.headSha);
+	// `parseVerdict` is null only for a non-PASS/FAIL body, which `polarityRe` already excluded —
+	// the unreachable branch collapses into the same fail-closed `none` rather than a non-null assert.
+	const parsed = parseVerdict(latest.body, input.gate);
+	if (parsed === null) return {_tag: "none", form: "none"};
 	if (parsed.sha === null) {
-		return {_tag: "sha-less", commentId: latest.id, polarity: parsed.polarity};
+		return {_tag: "sha-less", form: "marker", commentId: latest.id, polarity: parsed.polarity};
 	}
 	if (!isBoundToHead(parsed.sha, input.headSha)) {
-		return {_tag: "stale", commentId: latest.id, polarity: parsed.polarity, sha: parsed.sha};
+		return {
+			_tag: "stale",
+			form: "marker",
+			commentId: latest.id,
+			polarity: parsed.polarity,
+			sha: parsed.sha,
+		};
 	}
-	return {_tag: "current", commentId: latest.id, polarity: parsed.polarity, sha: parsed.sha};
+	return {
+		_tag: "current",
+		form: "marker",
+		commentId: latest.id,
+		polarity: parsed.polarity,
+		sha: parsed.sha,
+	};
 };
 
 /**
- * The `read` verb's decision: is HEAD reviewed with the expected polarity? True **only** for a
- * current-head-bound verdict whose polarity matches — a `sha-less`, `stale`, or `none` outcome
- * is never satisfied. `ship-it` expects `PASS`; `write-code`-repair expects `FAIL` (the seam it
- * consumes). This is the single boolean the inline `is_current`-then-polarity checks recomputed.
+ * Project a resolved outcome onto the four namespace states. This is the ONE place "is the in-force
+ * verdict a pass / a fail / absent / unverified" is decided, so `read`'s `--expect` match and
+ * `gate`'s per-namespace conjunction are the same question asked twice, not two rules (#4049).
+ */
+export const verdictState = (outcome: VerdictOutcome): VerdictState => {
+	if (outcome._tag === "none") return "absent";
+	if (outcome._tag === "current") return outcome.polarity === "PASS" ? "pass" : "fail";
+	return "unverified";
+};
+
+/**
+ * The `read` verb's decision: is HEAD reviewed with the expected polarity? True **only** when the
+ * in-force verdict's state matches — `ship-it` expects `PASS`, `write-code`-repair expects `FAIL`
+ * (the seam it consumes). Expressed through `verdictState` so a `read --expect PASS` is satisfied
+ * by exactly what `gate` calls a pass, and `--expect FAIL` by exactly what `gate` calls a fail.
  */
 export const isReviewed = (outcome: VerdictOutcome, expect: Polarity): boolean =>
-	outcome._tag === "current" && outcome.polarity === expect;
+	verdictState(outcome) === (expect === "PASS" ? "pass" : "fail");
 
 /**
  * A machine-readable reason for a non-satisfying `read` outcome — the named refusal `ship-it`
@@ -213,13 +349,22 @@ export const outcomeReason = (outcome: VerdictOutcome, expect: Polarity): string
 		case "none":
 			return "no authorized verdict in this namespace";
 		case "sha-less":
-			return "unverified (verdict not bound to current head): latest marker is SHA-less (pre-0058)";
+			return outcome.form === "advisory"
+				? "unverified (verdict not bound to current head): the §CP advisory carries no 'Reviewed-head: @ <sha>' body binding (ADR 0151)"
+				: "unverified (verdict not bound to current head): latest marker is SHA-less (pre-0058)";
 		case "stale":
-			return `unverified (verdict not bound to current head): latest marker bound to ${outcome.sha}, not the current head`;
+			return outcome.form === "advisory"
+				? `unverified (verdict not bound to current head): the §CP advisory's Reviewed-head is ${outcome.sha}, not the current head`
+				: `unverified (verdict not bound to current head): latest marker bound to ${outcome.sha}, not the current head`;
+		case "advisory-not-all-pass":
+			return `unverified (§CP advisory @ ${outcome.sha} is not all-PASS — a body checkbox is [FAIL])`;
 		case "current":
-			return outcome.polarity === expect
-				? `reviewed: current-head ${outcome.polarity} @ ${outcome.sha}`
-				: `current-head verdict is ${outcome.polarity}, expected ${expect}`;
+			if (outcome.polarity !== expect) {
+				return `current-head verdict is ${outcome.polarity}, expected ${expect}`;
+			}
+			return outcome.form === "advisory"
+				? `reviewed: current-head §CP all-PASS advisory @ ${outcome.sha} (the ADR 0111/0151 PASS-equivalent)`
+				: `reviewed: current-head ${outcome.polarity} @ ${outcome.sha}`;
 	}
 };
 
