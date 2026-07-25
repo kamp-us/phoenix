@@ -93,6 +93,16 @@ export {
 	SESSION_SERVER_NAME,
 } from "./session.ts";
 export {
+	CREW_INSTANCE_ENV,
+	CREW_PROJECT_ROOT_ENV,
+	CREW_ROLE_ENV,
+	resolveSessionInstance,
+	resolveSessionProjectRoot,
+	resolveSessionRole,
+	type SessionInputEnv,
+	SessionRoleUnresolvedError,
+} from "./session-inputs.ts";
+export {
 	type ClaimReply,
 	CrewTracker,
 	crewTrackerHostOrDialLayer,

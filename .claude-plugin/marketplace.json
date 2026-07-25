@@ -38,6 +38,23 @@
 				"issue-pipeline",
 				"repo-agnostic"
 			]
+		},
+		{
+			"name": "pipeline-crew-mcp",
+			"source": "./claude-plugins/pipeline-crew-mcp",
+			"description": "The pipeline-crew channel substrate packaged as a marketplace plugin channel: declares the in-repo @kampus/pipeline-crew-mcp stdio server as a claude/channel server so --channels allowlist/production mode binds it via plugin:pipeline-crew-mcp@kampus, instead of an inline server: dev channel. References the in-repo package (nothing bundled), clean dependency set. Governed by ADR 0201.",
+			"author": {
+				"name": "kamp-us",
+				"url": "https://github.com/kamp-us"
+			},
+			"license": "MIT",
+			"keywords": [
+				"channel-mcp",
+				"agent-crew",
+				"pipeline-orchestration",
+				"claude-channel",
+				"repo-agnostic"
+			]
 		}
 	]
 }

@@ -57,8 +57,12 @@ import {
 	collectLiveRegisteredForProject,
 	RoleUniquenessError,
 	renderCrewChannelHealth,
+	resolveSessionInstance,
+	resolveSessionProjectRoot,
+	resolveSessionRole,
 	runCrewChannelDoctor,
 	runCrewSession,
+	type SessionRoleUnresolvedError,
 } from "./crew/index.ts";
 import {
 	CREW_WINDOW,
@@ -72,38 +76,68 @@ import {
 import {isTrackerAddressInUse, launchTracker} from "./tracker/index.ts";
 import {VERSION} from "./version.ts";
 
-const roleFlag = Flag.choice("role", CREW_ROLES).pipe(
-	Flag.withDescription("the standing crew role this session serves (one of the five CREW_ROLES)"),
-);
 const projectRootFlag = Flag.string("project-root").pipe(
 	Flag.withDefault(process.cwd()),
 	Flag.withDescription(
 		"a directory inside the repo whose tracker this session joins; seeds git repo discovery only — the rendezvous is the repo's canonical one (ADR 0197)",
 	),
 );
+// The `session` command's own flags are all OPTIONAL because a marketplace plugin-channel launch
+// (#3366/ADR 0201) declares the crew server as ONE static `.mcp.json` entry that cannot carry a
+// per-pane `--role`, so a plugin-channel session takes its role/project-root/instance from the pane
+// environment (`CREW_ROLE`/`CREW_PROJECT_ROOT`/`CREW_INSTANCE`) instead. The dev-mode `server:`-ref
+// path still passes `--role`/`--project-root` on argv, and the flag WINS over the env in
+// crew/session-inputs, so both launch paths coexist. Role has no safe default — a session with
+// neither flag nor env fails closed (SessionRoleUnresolvedError); project-root falls back to cwd.
+const sessionRoleFlag = Flag.optional(Flag.choice("role", CREW_ROLES)).pipe(
+	Flag.withDescription(
+		"the standing crew role this session serves; falls back to $CREW_ROLE (plugin-channel launch)",
+	),
+);
+const sessionProjectRootFlag = Flag.optional(Flag.string("project-root")).pipe(
+	Flag.withDescription(
+		"the repo whose tracker this session joins; falls back to $CREW_PROJECT_ROOT then cwd (ADR 0197)",
+	),
+);
 // The launcher-assigned per-instance identity standup/bind.ts bakes into an engine's argv
 // (`CREW_SESSION_INSTANCE_FLAG`, #3297/#3354 seam 3). Optional: only engine roles carry it — a
 // bridge is a singleton and omits it, so the session mints its own (see `sessionInstance`). This is
 // the consumer the producer shipped without; without it Effect-CLI rejects `--instance` and every
-// engine session dies at parse (#3445).
+// engine session dies at parse (#3445). Falls back to $CREW_INSTANCE under a plugin-channel launch.
 const instanceFlag = Flag.optional(Flag.string("instance")).pipe(
 	Flag.withDescription("the launcher-assigned per-instance identity an engine session binds"),
 );
 
 const session = Command.make(
 	"session",
-	{projectRoot: projectRootFlag, role: roleFlag, instance: instanceFlag},
-	Effect.fn(function* ({projectRoot, role, instance}) {
+	{projectRoot: sessionProjectRootFlag, role: sessionRoleFlag, instance: instanceFlag},
+	Effect.fn(function* ({projectRoot: projectRootOpt, role: roleOpt, instance: instanceOpt}) {
+		// Resolve each launch input flag-or-env (crew/session-inputs): the flag wins (dev-mode argv),
+		// else the pane env (plugin-channel). Role fails closed with no safe default — neither
+		// `--role` nor a valid `$CREW_ROLE` is a session to refuse loudly, naming the valid roles.
+		const role = yield* resolveSessionRole(Option.getOrUndefined(roleOpt), process.env).pipe(
+			Effect.catch((error: SessionRoleUnresolvedError) =>
+				Console.error(
+					`refusing to start: no crew role — pass --role or set $CREW_ROLE (saw "${error.attempted}"; valid: ${error.validRoles.join(", ")})`,
+				).pipe(Effect.andThen(Effect.sync(() => process.exit(1) as never))),
+			),
+		);
+		const projectRoot = resolveSessionProjectRoot(
+			Option.getOrUndefined(projectRootOpt),
+			process.env,
+			process.cwd(),
+		);
+		const instance = resolveSessionInstance(Option.getOrUndefined(instanceOpt), process.env);
 		yield* Console.error(
 			`pipeline-crew-mcp ${VERSION} — crew session for role "${role}" (project ${projectRoot})`,
 		);
-		// Thread the flag through as an EXACT-optional key: include `instance` only when the launcher
-		// passed one (an engine), omit it entirely otherwise (a bridge/singleton, or a direct run) so
-		// `CrewSessionConfig.instance`'s absent case stays absent — `sessionInstance` then mints one.
+		// Thread the resolved instance through as an EXACT-optional key: include it only when a launcher
+		// (flag or env) assigned one (an engine), omit it otherwise (a bridge/singleton, or a direct run)
+		// so `CrewSessionConfig.instance`'s absent case stays absent — `sessionInstance` then mints one.
 		return yield* runCrewSession({
 			projectRoot,
 			role,
-			...(Option.isSome(instance) ? {instance: instance.value} : {}),
+			...(instance !== undefined ? {instance} : {}),
 		}).pipe(
 			Effect.catch((error: unknown) =>
 				Console.error(
