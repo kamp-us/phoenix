@@ -425,51 +425,54 @@ session id must equal the threaded token — then proceed straight to implementi
 When `write-code` is invoked directly (no threaded token), make the claim here, before you
 branch or build, using your own `CLAUDE_CODE_SESSION_ID` as the token:
 
+The whole claim-comment write — Rule-0 defer, the POST, the checkpoint-GET tiebreak, and
+retract-on-loss — is owned by **one verb**, `pipeline-cli tracker claim` (§7's write surface).
+Run it; never hand-roll a `claim:` body, which silently skips the ADR-0191 presence stamp and
+leaves this lane's claim permanently unprobeable (#3987):
+
 ```bash
 # 0. Fail-closed on a missing token: the claim comment is the ONLY agent-distinguishable signal
 #    under the shared `usirin` login — with no token a co-racer is unresolvable, so NEVER claim
 #    (and never fall back to the login-keyed assignee as ownership — that is the §7 degeneracy).
+#    The verb enforces this too (it backs off on an empty session), so this is a fast local exit.
 if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
   echo "no CLAUDE_CODE_SESSION_ID in env — cannot post an agent-distinguishable claim. BACK OFF, re-pick." >&2
   exit 0   # → re-run Step 1
 fi
-CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'   # the §7 single source — cited, not re-derived
 
-# 1. Rule-0 defer: if an AUTHORIZED claim from a DIFFERENT session already owns #N, back off
-#    WITHOUT posting (a fresh arrival never evicts a pre-existing owner; §7). Resolve the current
-#    earliest-authorized-claim session per §7 (CLAIM_RE + write+ ACL + min(created_at, id)); call it WINSID0.
-[ -n "$WINSID0" ] && [ "$WINSID0" != "$CLAUDE_CODE_SESSION_ID" ] && { echo "#$N already claimed by another agent — back off, re-pick."; exit 0; }
-
-# 2. Self-assign (the coarse availability gate), then POST the claim comment (the fine resolver).
-ME=$(gh api user --jq '.login')
-gh api -X POST repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null
-MYCLAIM=$(gh api repos/$REPO/issues/<N>/comments \
-  -f "body=claim: $CLAUDE_CODE_SESSION_ID · $(date -u +%Y-%m-%dT%H:%M:%SZ)" --jq .id)
-[ -n "$MYCLAIM" ] || { echo "failed to post claim on #$N — back off, re-pick." >&2; gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"; exit 0; }
-
-# 3. Checkpoint GET — resolve co-racers to ONE winner: the EARLIEST AUTHORIZED claim wins (§7).
-#    Re-run §7's canonical resolution against #N to get WINSID (its embedded session id).
-#    Proceed to implement IFF the earliest authorized claim is mine; else RETRACT my own claim
-#    comment AND self-unassign, then re-pick (never co-occupy, never delete another agent's claim).
-if [ "$WINSID" != "$CLAUDE_CODE_SESSION_ID" ]; then
-  gh api -X DELETE repos/$REPO/issues/comments/$MYCLAIM >/dev/null 2>&1
-  gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null 2>&1
-  echo "lost the claim tiebreak on #$N to an earlier authorized claim — back off, re-pick."
+# 1. Claim through the verb FIRST — layer two, the fine agent-distinguishable resolver. It defers
+#    to a pre-existing authorized owner WITHOUT posting, posts a PRESENCE-STAMPED marker under
+#    $CLAUDE_CODE_SESSION_ID, re-reads canonical state, and retracts its OWN claim if it lost.
+#    Exit 0 = the claim is mine; non-zero = backed off, having mutated nothing that is not ours.
+if ! pipeline-cli tracker claim <N>; then
+  echo "did not win the claim on #$N (held by another agent, or lost the tiebreak) — back off, re-pick."
   exit 0   # → re-run Step 1
 fi
+
+# 2. ONLY NOW self-assign — the coarse availability gate the Step-1 picker reads (§7 layer one).
+#    Defer-then-assign is load-bearing, not stylistic: every agent authenticates as the SAME login,
+#    so the assignee is ONE shared slot. Assigning first would make the back-off above a cleanup
+#    unassign that strips the LIVE incumbent's assignment — clearing the coarse gate on an issue
+#    someone else legitimately holds. Claiming first removes the cleanup entirely: we only ever
+#    assign on a won claim, so there is no assignment of ours to undo (#4015).
+ME=$(gh api user --jq '.login')
+gh api -X POST repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null
 # claim won and confirmed (earliest authorized claim is mine) — proceed to implement
 ```
 
 **The operating rule.** Posting the claim comment **detects** a race; the **checkpoint GET**
 (re-reading the issue's comments and resolving the earliest authorized claim per §7) **resolves**
-it — keep it, never prune it as "redundant" (without it both staggered co-racers proceed, a
-double-pick). The winner is the **earliest authorized claim** (min `created_at`, then min comment
-`id`), recognized because its embedded session id equals your `CLAUDE_CODE_SESSION_ID`; because
-earliest-claim-wins, Rule 0 (defer to a pre-existing owner) and the tiebreak are **the same
-fact**. Every loser retracts its **own** claim comment and self-unassigns, then re-picks — never
-co-occupy, and **never** delete another agent's claim or fall back to the login-keyed assignee as
-ownership. This is **detect-and-tiebreak, not a lock**; the residual transient 2-assignee /
-2-claim window is tolerated by Step 1's "skip on any non-null assignee."
+it — the verb does both, and neither leg is prunable as "redundant" (without the checkpoint both
+staggered co-racers proceed, a double-pick). The winner is the **earliest authorized claim** (min
+`created_at`, then min comment `id`) whose claimant is not provably dead, recognized because its
+embedded session id equals your `CLAUDE_CODE_SESSION_ID`; because earliest-claim-wins, Rule 0
+(defer to a pre-existing owner) and the tiebreak are **the same fact**. Every loser retracts its
+**own** claim comment (the verb's own last act) and, having claimed before assigning, has no
+assignment to undo — it just re-picks. Never co-occupy, and **never** delete another agent's claim,
+**never** unassign a slot you did not fill, and never fall back to the login-keyed assignee as
+ownership. This is **detect-and-tiebreak, not a lock**; the residual transient window — a claim
+already posted while the assignee is not yet set — is tolerated, because an agent that picks the
+still-unassigned issue in that window runs the verb and defers to the earlier claim.
 
 See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 for the canonical
 `CLAIM_RE`, the full write+-ACL resolution snippet, the staggered-co-racer / straggler / transient

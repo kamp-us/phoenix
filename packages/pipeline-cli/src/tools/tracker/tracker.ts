@@ -36,14 +36,10 @@
 import {Context, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcessSpawner} from "effect/unstable/process";
-import {formatClaimPresence, livenessByComment} from "../epic-lock/claim-presence.ts";
-import {
-	type ClaimComment,
-	type ClaimWinner,
-	claimCommentBody,
-	resolveWinner,
-} from "../epic-lock/claim-resolution.ts";
-import {currentSessionPresence, localPresence} from "../epic-lock/presence-io.ts";
+import {type ClaimPresence, livenessByComment} from "../epic-lock/claim-presence.ts";
+import {type ClaimComment, type ClaimWinner, resolveWinner} from "../epic-lock/claim-resolution.ts";
+import {stampedClaimBody} from "../epic-lock/claim-writer.ts";
+import {localPresence} from "../epic-lock/presence-io.ts";
 // The ADR-0058 verdict-marker grammar + emission guard is the SINGLE SOURCE — reused, never
 // re-derived, exactly as the claim decision reuses `epic-lock/claim-resolution.ts`. `postVerdict`
 // composes and self-verifies its comment through this pure core so the tool OWNS the decision the
@@ -127,6 +123,12 @@ export interface ClaimOwner {
 /** The agent-distinguishable claim decision (ADR 0115): who is claiming (the session id). */
 export interface ClaimJudgment {
 	readonly session: string;
+	/**
+	 * The presence stamp to put on the marker — the boundary fact, not a judgment: omitted, the
+	 * verb reads THIS run's session presence (`presence-io.ts`). Injectable so a test can prove
+	 * the writer stamps on a machine where no session process resolves (#3987).
+	 */
+	readonly presence?: ClaimPresence | null;
 }
 
 /** The `claim` verdict — we own it, a pre-existing owner holds it, or we lost a co-race. */
@@ -400,6 +402,7 @@ const claim = Effect.fn("Tracker.claim")(function* (
 	repo: string,
 	target: TargetId,
 	session: string,
+	presence?: ClaimPresence | null,
 ) {
 	const mine = session.toLowerCase();
 	const before = yield* resolveAuthorizedWinner(repo, yield* listClaimComments(repo, target));
@@ -412,13 +415,8 @@ const claim = Effect.fn("Tracker.claim")(function* (
 	// Stamp our own session's presence on the marker so a LATER reader can probe this claim's
 	// liveness instead of guessing (#3751); an unresolvable session stamps nothing, which reads
 	// indeterminate and preserves the pre-stamp behaviour exactly.
-	const presence = currentSessionPresence();
 	const posted = yield* json(
-		postCommentArgs(
-			repo,
-			target,
-			claimCommentBody(session, now, presence === null ? null : formatClaimPresence(presence)),
-		),
+		postCommentArgs(repo, target, stampedClaimBody(session, now, presence)),
 	);
 	const claimId = typeof posted === "number" ? posted : null;
 	const winner = yield* resolveAuthorizedWinner(repo, yield* listClaimComments(repo, target));
@@ -736,7 +734,9 @@ export const GithubTrackerLive: Layer.Layer<
 		const repo = yield* Effect.cached(withSpawner(resolveRepo()));
 		return {
 			claim: (target, judgment) =>
-				repo.pipe(Effect.flatMap((r) => withSpawner(claim(r, target, judgment.session)))),
+				repo.pipe(
+					Effect.flatMap((r) => withSpawner(claim(r, target, judgment.session, judgment.presence))),
+				),
 			readBack: (target) => repo.pipe(Effect.flatMap((r) => withSpawner(readBack(r, target)))),
 			applyTriage: (target, judgment) =>
 				repo.pipe(Effect.flatMap((r) => withSpawner(applyTriage(r, target, judgment)))),

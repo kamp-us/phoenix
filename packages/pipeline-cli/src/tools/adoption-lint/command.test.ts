@@ -4,6 +4,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -42,6 +43,14 @@ const RE_DERIVATION = [
 	"gh api repos/$REPO/collaborators/$a/permission",
 	"jq 'sort_by(.created_at) | last'",
 ].join("\n");
+
+// The closed set of claim-marker writer surfaces — the procedure texts that post a `claim:`
+// comment (#3987) and, on the self-assigning ones, order it against the assignee (#4015).
+const CLAIM_WRITERS = [
+	"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
+	"claude-plugins/kampus-pipeline/skills/write-code/SKILL.md",
+	".claude/workflows/drive-issue.js",
+];
 
 // The full live corpus the adoption-lint.yml job scans: every .md/.sh under the plugin
 // dir plus the orchestrator's drive-issue.js (the declared mirror).
@@ -97,6 +106,60 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", () => {
 		assert.strictEqual(code, 0, `adoption-lint red on the live corpus:\n${stdout}\n${stderr}`);
 		assert.include(stdout, "clean");
 	}, 60_000);
+
+	// #3987: the corpus-side half of "every claim writer stamps presence". A writer that composes a
+	// `claim:` body by hand skips the ADR-0191 stamp, and an unstamped marker is indeterminate
+	// forever ⇒ supersession goes inert on that lane while the mechanism looks fixed. The declared
+	// `tracker claim` decision reds a NEW such writer; this pins the three that already exist.
+	it("every claim-marker writer cites `pipeline-cli tracker claim` and hand-composes no body", () => {
+		for (const rel of CLAIM_WRITERS) {
+			const content = readFileSync(join(REPO_ROOT, rel), "utf8");
+			assert.match(
+				content,
+				/pipeline-cli\s+tracker\s+claim\b/,
+				`${rel} must cite the claim-write verb`,
+			);
+			assert.notMatch(
+				content,
+				/body=["'`]?claim:/,
+				`${rel} must not hand-compose a claim-marker body (it would skip the presence stamp)`,
+			);
+		}
+	});
+
+	// #4015: the occupied-lane scenario. An arriving agent that meets a LIVE incumbent must defer
+	// AND leave the incumbent's assignment intact — but every agent authenticates as the same
+	// login, so the assignee is ONE shared slot. Assign-then-claim gives the defer path no safe
+	// back-off: the self-assign is a no-op (the slot already shows that login), the verb defers,
+	// and the cleanup unassign then removes the INCUMBENT's assignment. Pin the only ordering that
+	// makes that unrepresentable — claim first, assign only on the verb's exit 0, never unassign.
+	it("claims before it self-assigns, so a defer cannot strip a live incumbent's assignment", () => {
+		// scope: the writers whose procedure actually issues the self-assign (a surface that only
+		// describes the claim has no ordering to pin). Fail closed on zero scope (ADR 0092).
+		const selfAssigning = CLAIM_WRITERS.map((rel) => ({
+			rel,
+			content: readFileSync(join(REPO_ROOT, rel), "utf8"),
+		})).filter(({content}) => /gh api -X POST[^\n]*\/assignees/.test(content));
+		assert.isAbove(selfAssigning.length, 0, "expected at least one self-assigning claim writer");
+
+		for (const {rel, content} of selfAssigning) {
+			// the verb INVOCATION (verb + its issue argument), not a prose mention of the verb —
+			// a citation earlier in the file must not satisfy an ordering claim about the procedure.
+			const claimAt = content.search(/pipeline-cli\s+tracker\s+claim\s+(?:<N>|\$\{issue\})/);
+			const assignAt = content.search(/gh api -X POST[^\n]*\/assignees/);
+			assert.isAbove(claimAt, -1, `${rel} must invoke the claim-write verb on the issue`);
+			assert.isBelow(
+				claimAt,
+				assignAt,
+				`${rel} must claim BEFORE it self-assigns — assign-then-claim makes the defer path unassign the live incumbent (#4015)`,
+			);
+			assert.notMatch(
+				content,
+				/gh api -X DELETE[^\n]*\/assignees/,
+				`${rel} must not unassign as claim cleanup — under the shared login that slot may be the incumbent's (#4015)`,
+			);
+		}
+	});
 
 	it("exits 3 (zero-scope FAIL) when every handed file is unreadable/missing", async () => {
 		const {code, stderr} = await run(["check", join(dir, "does-not-exist.md")]);

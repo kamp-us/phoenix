@@ -2651,14 +2651,23 @@ claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC> · presence <machine-fingerpri
   is not unique to one machine, and no machine identity belongs in a public timeline. It exists so
   a later reader can *probe* this claimant's liveness instead of guessing — see
   [Dead-claimant supersession](#dead-claimant-supersession-proven-death-only-adr-0191). It is
-  written by `pipeline-cli tracker claim` and is **optional**: an unresolvable session — or an
-  unresolvable machine identity — stamps nothing, and an unstamped marker reads as indeterminate
-  (⇒ still a valid owner), so legacy markers keep their exact old meaning.
+  **optional**: an unresolvable session — or an unresolvable machine identity — stamps nothing,
+  and an unstamped marker reads as indeterminate (⇒ still a valid owner), so legacy markers keep
+  their exact old meaning. Optional-per-marker is **not** optional-per-writer, though: a writer
+  that never stamps makes every claim it posts permanently indeterminate, which silently switches
+  supersession off for that whole lane while the mechanism looks fixed (#3987). So the stamp is
+  emitted by **one producer** and every writer routes through it — the write surface below.
 - **Token source:** the claiming process's `CLAUDE_CODE_SESSION_ID` environment variable
   (the orchestrator's when it claims pre-spawn; the coder's when `write-code` is invoked
   directly — see §The pre-spawn claim protocol).
-- **Write surface:** an issue comment, posted via `gh api repos/$REPO/issues/{N}/comments`
-  (REST, never GraphQL): `gh api repos/$REPO/issues/<N>/comments -f "body=claim: $CLAUDE_CODE_SESSION_ID · $(date -u +%Y-%m-%dT%H:%M:%SZ)"`.
+- **Write surface — the shared verb, never a hand-rolled `gh api`.** Post the claim with
+  `pipeline-cli tracker claim <N>` (`--session <token>` to claim under a threaded/delegated
+  token). The verb owns the whole write: Rule-0 defer to a pre-existing authorized owner, the
+  comment POST with the presence stamp composed by the single producer, the checkpoint-GET
+  tiebreak, and retract-our-own-claim-on-loss. **Exit 0 = the claim is ours, non-zero = backed
+  off, do not mutate.** Never compose a `claim:` body by hand — a hand-rolled marker skips the
+  stamp (see the bullet above), and `pipeline-cli adoption-lint check` reds a corpus file that
+  re-derives this write instead of citing the verb.
 - **Read surface — the canonical `CLAIM_RE`.** A claim comment is matched by this **one**
   anchored, case-insensitive, emphasis-tolerant regex; every consumer cites it and **none
   re-hard-codes the grammar** (it pairs with §5/§6's marker-matcher discipline):
@@ -2732,18 +2741,33 @@ old design used. The race-case derivation transfers and is *strengthened* (ADR 0
   straggler-evicts-owner tension the old `min(login)` needed a separate non-revocability
   argument to close — a lower login could belong to a later arrival; a lower comment id
   cannot.
-- **Transient window.** As before, the assignee field may transiently show two assignees and
-  the comments two claims before a loser retracts; the picker skips on **any non-null
-  assignee**, so a transiently double-claimed issue is passed over, never double-picked (safe
-  degradation).
+- **Transient window.** The comments may transiently carry two claims before a loser retracts,
+  and — because the assignment lands only *after* a won claim (below) — a won-but-not-yet-assigned
+  issue is briefly still unassigned. Both degrade safely: the picker skips on **any non-null
+  assignee**, so a transiently double-claimed issue is passed over rather than double-picked, and
+  an agent that picks the still-unassigned issue in the other window runs the claim verb and
+  defers to the earlier claim.
 
 This remains **detect-and-tiebreak, not a kernel mutex** (the epic's honest non-goal): the
 comment/assignee APIs offer no conditional write, so true single-writer exclusion is off the
 table. The guarantee is the one that matters — of any set of co-window racers, exactly one
-proceeds, deterministically, and every loser self-retracts its claim comment (and any
-self-assignee) and re-picks. Don't reintroduce the "it's the lock" framing, and **never fall
-back to the bare assignee login as an ownership signal** — that is the degeneracy ADR 0115
-removes.
+proceeds, deterministically, and every loser self-retracts its claim comment and re-picks.
+Don't reintroduce the "it's the lock" framing, and **never fall back to the bare assignee login
+as an ownership signal** — that is the degeneracy ADR 0115 removes.
+
+<a id="claim-before-you-assign-a-defer-must-not-strip-the-incumbent"></a>
+### Claim before you assign — a defer must not strip the incumbent
+
+The two layers are written in **one order: claim first, assign only on the verb's exit 0.** Every
+pipeline agent authenticates as the **same login**, so the assignee is not a per-agent slot — it is
+**one shared slot**. Assign-then-claim therefore has no safe back-off: the arriving agent's
+self-assign is a no-op on an already-held lane (the slot already shows that login), the verb
+correctly defers to the live incumbent, and the arriving agent's cleanup unassign then removes the
+**incumbent's** assignment while the incumbent is still working — silently clearing the coarse
+availability gate on an issue that is legitimately held (#4015). Claiming first makes that state
+unrepresentable rather than merely handled: a deferring agent never assigned, so it has nothing to
+undo and mutates nothing. The rule for every writer, stated once here: **never unassign a slot you
+did not fill.**
 
 ### Fail-closed on a missing token
 
@@ -2760,10 +2784,11 @@ so closing it means claiming before any branch, build, or spawn:
 
 - **Orchestrated path (the common case).** `.claude/workflows/drive-issue.js` acquires the
   claim in a pre-step **before** the `agent(coder, …)` dispatch (delegated to a thin
-  claim-only agent that runs this §7 primitive verbatim): self-assign, post the claim
-  comment, run the tiebreak, and **only on a win spawn the coder**, threading the winning
+  claim-only agent that runs this §7 primitive verbatim): `pipeline-cli tracker claim <N>`
+  (the write surface above — defer, post the stamped marker, tiebreak, retract on loss), then
+  **self-assign only on a win**, and **only on a win spawn the coder**, threading the winning
   claim **token** into the coder's prompt. On a lost claim it aborts the dispatch — no coder
-  spawns.
+  spawns, and it leaves the assignee untouched (see [Claim before you assign](#claim-before-you-assign-a-defer-must-not-strip-the-incumbent)).
 - **Delegated ownership.** The orchestrator and the coder are distinct sessions (the spawned
   coder carries `CLAUDE_CODE_CHILD_SESSION=1` and its own id), so the claim token is
   **whoever posted the claim** — the orchestrator. The orchestrator threads its token to the
@@ -2871,6 +2896,15 @@ against a *resolved* local machine fingerprint, and a pid the probe proves gone.
 is **indeterminate and counts as a live claim**: an unstamped/legacy marker, a claim stamped on
 another machine, a machine identity this reader cannot resolve, a pid that still resolves, and a
 reused pid all leave the claim standing, so the reader refuses. Doubt refuses; it never evicts.
+
+**Liveness is same-host by construction — the honest limit.** The probe is a local pid probe, so
+a claim stamped on another machine is unprobeable and stays indeterminate ⇒ it stands and the
+reader refuses. That is the correct fail-closed direction, but it means a multi-host crew gets no
+supersession at all: every claim it reads was stamped elsewhere. Closing *that* needs a
+host-independent liveness source — the crew tracker's own presence keyspace (ADR 0191 proper,
+#3938 / epic #3766), whose cross-keyspace reconciliation is where it belongs. Explicitly **out of
+scope** for this GitHub-claim keyspace: do not "fix" the multi-host case by treating an
+unprobeable claim as dead, which trades a stuck lane for live-claim eviction.
 
 Both the resolution and the probe live in the shared verb — `pipeline-cli claim is-mine`
 (default-deny) and `pipeline-cli tracker claim` (which also stops deferring to a dead claimant,

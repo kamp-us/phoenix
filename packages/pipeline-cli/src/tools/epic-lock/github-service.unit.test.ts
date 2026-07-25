@@ -1,6 +1,8 @@
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
 import {Effect, Layer, Sink, Stream} from "effect";
 import {ChildProcessSpawner} from "effect/unstable/process";
+import {parseClaimPresence} from "./claim-presence.ts";
+import {CLAIM_RE} from "./claim-resolution.ts";
 import {GhCommandError, Github, GithubLive, type RepoResolutionError} from "./github.ts";
 
 // The live layer resolves its repo lazily (ADR 0062 §1); pin the env override so the
@@ -39,6 +41,9 @@ const methodOf = (args: ReadonlyArray<string>): string => {
  */
 const mockSpawner = (
 	responses: Record<string, Response>,
+	// Every `-f body=…` sent, in order — what proves WHAT the lock posted, not just that it posted
+	// (an unstamped claim marker is a well-formed claim no reader can ever probe; #3987).
+	bodies?: Array<string>,
 ): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>
 	Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
 		ChildProcessSpawner.make(
@@ -49,6 +54,9 @@ const mockSpawner = (
 				const rawPath = args.find((a) => a.startsWith("repos/")) ?? "";
 				const path = rawPath.replace(/\?.*$/, "");
 				const key = `${methodOf(args)} ${path}`;
+				for (const arg of args) {
+					if (arg.startsWith("body=")) bodies?.push(arg.slice("body=".length));
+				}
 				// key on PRESENCE, not truthiness: a DELETE fixture maps to "" (empty stdout),
 				// which is falsy — a truthiness check would mis-route it to the not-found branch.
 				const canned =
@@ -196,6 +204,50 @@ describe("Github.acquire — the two-layer lock over a mock gh spawner", () => {
 				},
 			}),
 		),
+	);
+});
+
+// #3987: the planning lock's claim used to be the one writer that hand-concatenated its marker, so
+// it posted an unstampable claim. Assert the posted BODY now carries the stamp.
+describe("Github.acquire — the claim marker carries the presence stamp (#3987)", () => {
+	const cleanWin: Record<string, Response> = {
+		[`GET ${P}/issues/${EPIC}`]: JSON.stringify([]),
+		[`POST ${P}/issues/${EPIC}/labels`]: "[]",
+		[`POST ${P}/issues/${EPIC}/comments`]: "700",
+		[`GET ${P}/issues/${EPIC}/comments`]: JSON.stringify([
+			claimComment({id: 700, login: "usirin", session: SID_MINE}),
+		]),
+		[`GET ${P}/collaborators/usirin/permission`]: "write",
+	};
+
+	it.effect("stamps the injected session presence onto the marker it posts", () =>
+		Effect.gen(function* () {
+			const bodies: string[] = [];
+			yield* Effect.provide(
+				Effect.flatMap(Github, (github) =>
+					github.acquire(EPIC, SID_MINE, {host: "box-1", pid: 4242}),
+				),
+				GithubLive.pipe(Layer.provide(mockSpawner(cleanWin, bodies))),
+			);
+			const posted = bodies.at(0) ?? "";
+			assert.match(posted, CLAIM_RE, "the posted body must be a canonical claim marker");
+			assert.deepStrictEqual(parseClaimPresence(posted), {host: "box-1", pid: 4242});
+		}),
+	);
+
+	it.effect(
+		"an unresolvable session presence posts a legacy unstamped marker (no wrong stamp)",
+		() =>
+			Effect.gen(function* () {
+				const bodies: string[] = [];
+				yield* Effect.provide(
+					Effect.flatMap(Github, (github) => github.acquire(EPIC, SID_MINE, null)),
+					GithubLive.pipe(Layer.provide(mockSpawner(cleanWin, bodies))),
+				);
+				const posted = bodies.at(0) ?? "";
+				assert.match(posted, CLAIM_RE);
+				assert.strictEqual(parseClaimPresence(posted), null);
+			}),
 	);
 });
 

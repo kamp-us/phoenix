@@ -13,8 +13,9 @@
  * SHA-bound marker-resolution three skills hand-copy (#2102). `tracker apply-triage`
  * (#3263), `tracker post-verdict` (#3265), `tracker graduate` (#3266), and
  * `review-head materialize` (#3690, the §HEAD PR-head-checkout of #793 / #1807) have since
- * landed with their consumer migrations; the remaining envelope decision (claim) arrives
- * with its sibling child.
+ * landed with their consumer migrations. The claim keyspace is declared as **both** halves —
+ * `claim is-mine` for the resolution (#3687) and `tracker claim` for the write (#3987) — since a
+ * hand-rolled claim WRITE is what silently un-stamps a lane's marker.
  */
 import type {Exemption, OwnedDecision} from "./adoption-lint.ts";
 
@@ -177,6 +178,26 @@ export const DECISIONS: ReadonlyArray<OwnedDecision> = [
 		citation: /pipeline-cli\s+claim\b/,
 		reason:
 			"re-derives the ADR-0115 earliest-authorized-claim resolution that `pipeline-cli claim is-mine` owns (resolve one owner by earliest authorized claim, default-deny), instead of citing the verb (#3687 / #3254)",
+	},
+	{
+		// `tracker claim` owns the claim-marker WRITE (#3987) — the other half of the §7 primitive
+		// from `claim is-mine`'s resolution: defer, POST a PRESENCE-STAMPED `claim:` marker,
+		// checkpoint-GET, retract-own-on-loss. A hand-rolled body is not merely duplication here: it
+		// silently omits the ADR-0191 stamp, and an unstamped marker reads indeterminate ⇒ the claim
+		// stands ⇒ dead-claimant supersession is inert on that lane while looking fixed. The
+		// fingerprint is the co-occurrence of composing a marker with a LIVE token (`body=claim:`, or
+		// `claim: $CLAUDE_CODE_SESSION_ID` / `claim: <TOKEN>`) and the comments endpoint it is posted
+		// to — so §7's grammar block (`claim: <CLAUDE_CODE_SESSION_ID>`, a placeholder, no live token)
+		// and every prose mention of the marker are not false findings. A file that cites
+		// `pipeline-cli tracker claim` is compliant.
+		verb: "tracker claim",
+		signature: [
+			/body=["'`]?claim:|claim:\s*(?:\$CLAUDE_CODE_SESSION_ID|<TOKEN>|\$\{?(?:TOKEN|sessionId)\}?)/,
+			/\/comments/, // posted to the comments endpoint
+		],
+		citation: /pipeline-cli\s+tracker\s+claim\b/,
+		reason:
+			"hand-composes the ADR-0115 claim marker that `pipeline-cli tracker claim` owns (defer, POST the presence-stamped marker, checkpoint tiebreak, retract-own-on-loss), instead of citing the verb — a hand-rolled body skips the ADR-0191 presence stamp, so the claim reads indeterminate forever and dead-claimant supersession goes inert on that lane (#3987 / #3751)",
 	},
 	{
 		// `checks read` owns the head-CI rollup (#3762): read a SHA's check runs LATEST-PER-CONTEXT
