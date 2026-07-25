@@ -9,6 +9,7 @@ import {
 	VerdictInputError,
 	VerdictVerifyError,
 } from "./github.ts";
+import {withRunId} from "./verdict-match.ts";
 
 const PINNED_REPO = "kamp-us/phoenix";
 let savedEnv: string | undefined;
@@ -37,9 +38,14 @@ const methodOf = (args: ReadonlyArray<string>): string => {
 	return i >= 0 ? (args[i + 1] ?? "GET") : "GET";
 };
 
-/** A `ChildProcessSpawner` answering `gh api`/`gh repo`/`gh user` from a `${method} ${key}` fixture map. */
+/**
+ * A `ChildProcessSpawner` answering `gh api`/`gh repo`/`gh user` from a `${method} ${key}` fixture
+ * map, appending each spawned arg vector to `record` when one is supplied (so a test can assert
+ * what was actually sent, not only what came back).
+ */
 const mockSpawner = (
 	responses: Record<string, Response>,
+	record?: Array<ReadonlyArray<string>>,
 ): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>
 	Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
 		ChildProcessSpawner.make(
@@ -47,6 +53,7 @@ const mockSpawner = (
 				let cmd = command;
 				while (cmd._tag === "PipedCommand") cmd = cmd.left;
 				const args = cmd._tag === "StandardCommand" ? cmd.args : [];
+				record?.push(args);
 				// route on the REST path when present, else on the `gh <sub> <verb>` shape (user/repo)
 				const rawPath =
 					args.find((a) => a.startsWith("repos/")) ??
@@ -77,8 +84,9 @@ const mockSpawner = (
 const provide = <A, E>(
 	effect: Effect.Effect<A, E, Github>,
 	responses: Record<string, Response>,
+	record?: Array<ReadonlyArray<string>>,
 ): Effect.Effect<A, E | RepoResolutionError> =>
-	effect.pipe(Effect.provide(GithubLive.pipe(Layer.provide(mockSpawner(responses)))));
+	effect.pipe(Effect.provide(GithubLive.pipe(Layer.provide(mockSpawner(responses, record)))));
 
 const PR = 500;
 const P = `repos/kamp-us/phoenix`;
@@ -88,6 +96,10 @@ const OLD = "0000000aaaa1111";
 // emission guard (#2683) accepts on a POSTed body. `HEAD`/`OLD` stay short: they exercise the READ
 // side, whose {7,40} staleness matcher (ADR 0058 rule 3) is deliberately looser and left unchanged.
 const HEAD40 = `${"a1b2c3d4e5f6".repeat(3)}a1b2`; // 12*3 + 4 = 40 hex
+// Two reviewer runs under the SAME GitHub login — the #4016 shape. `RUN` is the single-run default.
+const RUN = "ddf8f459-b75f-4de2-9051-8df10da5b55c";
+const RUN_A = RUN;
+const RUN_B = "11111111-2222-3333-4444-555555555555";
 
 const comment = (over: {
 	readonly id: number;
@@ -194,19 +206,23 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 		),
 	);
 
-	it.effect("our own prior marker exists → PATCH it (upsert, not append)", () =>
+	it.effect("this run's own prior marker exists → PATCH it (upsert, not append)", () =>
 		Effect.gen(function* () {
-			const result = yield* (yield* Github).post(PR, "doc", BODY);
+			const result = yield* (yield* Github).post(PR, "doc", BODY, RUN);
 			assert.deepStrictEqual(result, {_tag: "patched", commentId: 42});
 		}).pipe((effect) =>
 			provide(effect, {
 				"GET user": "usirin",
 				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
-					comment({id: 42, login: "usirin", body: `review-doc: FAIL @ ${OLD} — changes-requested`}),
+					comment({
+						id: 42,
+						login: "usirin",
+						body: withRunId(`review-doc: FAIL @ ${OLD} — changes-requested`, RUN),
+					}),
 				]),
 				[`GET ${P}/pulls/${PR}`]: HEAD40 /* #3801: BODY binds HEAD40 */,
 				[`PATCH ${P}/issues/comments/42`]: "42",
-				[`GET ${P}/issues/comments/42`]: BODY,
+				[`GET ${P}/issues/comments/42`]: withRunId(BODY, RUN),
 			}),
 		),
 	);
@@ -363,6 +379,139 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 				[`GET ${P}/issues/comments/890`]: `review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${HEAD40}`,
 			}),
 		),
+	);
+});
+
+// The #4016 cross-reviewer clobber: every pipeline review agent posts under ONE shared GitHub login,
+// so the pre-fix author-keyed upsert let a concurrent sibling PATCH another reviewer's verdict body
+// away at the same head — a PASS could silently replace a FAIL. The upsert key now carries the
+// posting RUN, so a sibling never matches another run's marker. None of these cases supplies a PATCH
+// fixture: a regression that PATCHes anything 404s the write instead of passing quietly.
+describe("Github.post — the upsert is keyed on the posting RUN, not the shared author (#4016)", () => {
+	const MINE = `review-code: FAIL @ ${HEAD40} — not merge-ready`;
+	const SIBLING = `review-code: PASS @ ${HEAD40} — merge-ready`;
+
+	it.effect("a sibling RUN's marker at the same head is appended to, never PATCHed away", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).post(PR, "code", SIBLING, RUN_B);
+			assert.deepStrictEqual(result, {_tag: "posted", commentId: 901});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					// run A's verdict, landed at this same head under the SAME login
+					comment({id: 900, login: "usirin", body: withRunId(MINE, RUN_A)}),
+				]),
+				[`GET ${P}/pulls/${PR}`]: HEAD40,
+				[`POST ${P}/issues/${PR}/comments`]: "901",
+				[`GET ${P}/issues/comments/901`]: withRunId(SIBLING, RUN_B),
+			}),
+		),
+	);
+
+	// AC 4 end to end: two posts, one namespace, one head, one author, two runs — both bodies survive.
+	it.effect("two runs at one head leave BOTH verdict comments (no lost verdict)", () =>
+		Effect.gen(function* () {
+			const landed: Array<{readonly id: number; readonly login: string; readonly body: string}> =
+				[];
+			const first = yield* Effect.provide(
+				Effect.flatMap(Github, (gh) => gh.post(PR, "code", MINE, RUN_A)),
+				GithubLive.pipe(
+					Layer.provide(
+						mockSpawner({
+							"GET user": "usirin",
+							[`GET ${P}/issues/${PR}/comments`]: JSON.stringify(landed),
+							[`GET ${P}/pulls/${PR}`]: HEAD40,
+							[`POST ${P}/issues/${PR}/comments`]: "900",
+							[`GET ${P}/issues/comments/900`]: withRunId(MINE, RUN_A),
+						}),
+					),
+				),
+			);
+			landed.push({id: 900, login: "usirin", body: withRunId(MINE, RUN_A)});
+			const second = yield* Effect.provide(
+				Effect.flatMap(Github, (gh) => gh.post(PR, "code", SIBLING, RUN_B)),
+				GithubLive.pipe(
+					Layer.provide(
+						mockSpawner({
+							"GET user": "usirin",
+							[`GET ${P}/issues/${PR}/comments`]: JSON.stringify(
+								landed.map((c) => comment({id: c.id, login: c.login, body: c.body})),
+							),
+							[`GET ${P}/pulls/${PR}`]: HEAD40,
+							[`POST ${P}/issues/${PR}/comments`]: "901",
+							[`GET ${P}/issues/comments/901`]: withRunId(SIBLING, RUN_B),
+						}),
+					),
+				),
+			);
+			assert.deepStrictEqual(first, {_tag: "posted", commentId: 900});
+			assert.deepStrictEqual(second, {_tag: "posted", commentId: 901});
+			// run A's FAIL body was never touched — the record it wrote is still the record on the PR
+			assert.deepStrictEqual(landed, [{id: 900, login: "usirin", body: withRunId(MINE, RUN_A)}]);
+		}),
+	);
+
+	it.effect("a run-less legacy marker from our login is appended to, never PATCHed", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).post(PR, "code", SIBLING, RUN_B);
+			assert.strictEqual(result._tag, "posted");
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({id: 800, login: "usirin", body: MINE}),
+				]),
+				[`GET ${P}/pulls/${PR}`]: HEAD40,
+				[`POST ${P}/issues/${PR}/comments`]: "802",
+				[`GET ${P}/issues/comments/802`]: withRunId(SIBLING, RUN_B),
+			}),
+		),
+	);
+
+	it.effect("no run id at all → append, never a blind overwrite of our own prior marker", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).post(PR, "code", SIBLING);
+			assert.strictEqual(result._tag, "posted");
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({id: 810, login: "usirin", body: withRunId(MINE, RUN_A)}),
+				]),
+				[`GET ${P}/pulls/${PR}`]: HEAD40,
+				[`POST ${P}/issues/${PR}/comments`]: "811",
+				[`GET ${P}/issues/comments/811`]: SIBLING,
+			}),
+		),
+	);
+
+	it.effect(
+		"the POSTed body carries this run's trailer (what makes the key resolvable later)",
+		() =>
+			Effect.gen(function* () {
+				const calls: Array<ReadonlyArray<string>> = [];
+				yield* Effect.provide(
+					Effect.flatMap(Github, (gh) => gh.post(PR, "code", SIBLING, RUN_B)),
+					GithubLive.pipe(
+						Layer.provide(
+							mockSpawner(
+								{
+									"GET user": "usirin",
+									[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([]),
+									[`GET ${P}/pulls/${PR}`]: HEAD40,
+									[`POST ${P}/issues/${PR}/comments`]: "903",
+									[`GET ${P}/issues/comments/903`]: withRunId(SIBLING, RUN_B),
+								},
+								calls,
+							),
+						),
+					),
+				);
+				const posted = calls.find((args) => args.includes("-X") && args.includes("POST"));
+				assert.isDefined(posted);
+				assert.isTrue(posted?.some((arg) => arg.includes(`verdict-run: ${RUN_B}`)));
+			}),
 	);
 });
 

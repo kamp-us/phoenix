@@ -8,11 +8,14 @@ import {
 	isReviewed,
 	isUnboundPolarityMarker,
 	malformedEmittedSha,
+	normalizeRunId,
 	parseVerdict,
 	resolveVerdict,
+	runIdOf,
 	type VerdictComment,
 	type VerdictGate,
 	type VerdictOutcome,
+	withRunId,
 } from "./verdict-match.ts";
 
 const HEAD = "abc1234def5678";
@@ -183,18 +186,42 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 				marker({
 					id: 10,
 					createdAt: "2026-07-11T00:00:00Z",
-					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
+					body: `review-doc: PASS @ ${HEAD} — merge-ready`,
 				}),
 				marker({
 					id: 20,
 					createdAt: "2026-07-11T00:00:00Z",
-					body: `review-doc: PASS @ ${HEAD} — merge-ready`,
+					body: `review-doc: PASS @ ${HEAD} — merge-ready (round 2)`,
 				}),
 			],
 			authorized: ["usirin"],
 			gate: "doc",
 			head: HEAD,
 			expected: {_tag: "current", commentId: 20, polarity: "PASS", sha: HEAD},
+			reviewedPass: true,
+		},
+		// The run-scoped upsert (#4016) means two reviewer RUNS can now leave two verdict comments
+		// at ONE head, where the author-keyed upsert used to collapse them to one. Resolution is
+		// unchanged by that: latest-wins on `(createdAt, id)` still decides (ADR 0058) — the newer
+		// verdict supersedes the older, exactly as a re-review at the same head always did.
+		{
+			name: "two runs at one head: the newer verdict supersedes the older (latest-wins)",
+			comments: [
+				marker({
+					id: 1,
+					createdAt: "2026-07-11T00:00:00Z",
+					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
+				}),
+				marker({
+					id: 2,
+					createdAt: "2026-07-11T00:00:05Z",
+					body: `review-doc: PASS @ ${HEAD} — merge-ready`,
+				}),
+			],
+			authorized: ["usirin"],
+			gate: "doc",
+			head: HEAD,
+			expected: {_tag: "current", commentId: 2, polarity: "PASS", sha: HEAD},
 			reviewedPass: true,
 		},
 		{
@@ -478,4 +505,40 @@ describe("headBindingDefect — refuse a body bound to a head other than the tar
 
 	it("fail-closed exemption: an empty head still passes a bind-nothing advisory", () =>
 		assert.isNull(headBindingDefect("review-code: advisory — see thread", "code", "")));
+});
+
+describe("the run-identity trailer — the upsert key's run dimension (#4016)", () => {
+	const RUN = "ddf8f459-b75f-4de2-9051-8df10da5b55c";
+	const OTHER_RUN = "11111111-2222-3333-4444-555555555555";
+	const SHA40 = "a".repeat(40);
+	const BODY = `review-doc: PASS @ ${SHA40} — merge-ready`;
+
+	it("runIdOf reads back the id withRunId stamped", () =>
+		assert.strictEqual(runIdOf(withRunId(BODY, RUN)), RUN));
+
+	it("runIdOf is null for a pre-#4016 / hand-rolled marker (never provably ours)", () =>
+		assert.isNull(runIdOf(BODY)));
+
+	it("runIdOf does not read a trailer merely quoted mid-line", () =>
+		assert.isNull(runIdOf(`${BODY}\n\nprose <!-- verdict-run: ${RUN} --> prose`)));
+
+	it("withRunId replaces a foreign run's trailer rather than stacking a second", () => {
+		const restamped = withRunId(withRunId(BODY, OTHER_RUN), RUN);
+		assert.strictEqual(runIdOf(restamped), RUN);
+		assert.strictEqual(restamped.split("verdict-run:").length - 1, 1);
+	});
+
+	it("a stamped body still passes every emission guard (marker stays on line one)", () =>
+		assert.isNull(emissionDefect(withRunId(BODY, RUN), "doc")));
+
+	it("normalizeRunId keeps a session-id-shaped token, lowercased", () =>
+		assert.strictEqual(normalizeRunId(` ${RUN.toUpperCase()} `), RUN));
+
+	it("normalizeRunId is null for absent/malformed ids (⇒ append, never a blind overwrite)", () => {
+		assert.isNull(normalizeRunId(undefined));
+		assert.isNull(normalizeRunId(""));
+		assert.isNull(normalizeRunId("short"));
+		assert.isNull(normalizeRunId("has whitespace inside"));
+		assert.isNull(normalizeRunId("-->injected"));
+	});
 });

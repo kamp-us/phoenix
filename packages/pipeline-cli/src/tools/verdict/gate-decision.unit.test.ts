@@ -228,6 +228,49 @@ describe("decideGate — the §CP advisory is the pass, and only on a §CP PR (A
 		assert.strictEqual(result.decisions[0]?.state, "fail");
 	});
 
+	// The OPPOSITE direction of the case above, and the one that was left unpinned: a NEWER advisory
+	// out-ranking an OLDER same-head FAIL. This is not a nicety — it is the only exit from #4049. A
+	// body-only repair answers a finding without moving the head, so the old FAIL stays
+	// current-head-bound forever and head-keyed staleness (ADR 0058 rule 3) never fires. Latest-wins
+	// across the marker AND advisory candidate sets is what lets the superseding advisory clear it;
+	// any rule that makes a current-head FAIL an unconditional veto re-wedges every such PR (it is
+	// how PR #3988 got unstuck and how #3998 shipped). Pinned here because a veto reinstated in
+	// `decideGate`/`resolveVerdict` would otherwise pass the whole suite green — see ADR 0212
+	// §"Rejected: a current-head FAIL veto".
+	it("a NEWER §CP advisory out-ranks an OLDER same-head FAIL (the #4049 body-only-repair exit)", () => {
+		const result = decide({
+			comments: [
+				comment({
+					id: 1,
+					createdAt: "2026-07-25T05:00:00Z",
+					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
+				}),
+				comment({id: 2, createdAt: "2026-07-25T05:30:00Z", body: advisory("doc", HEAD)}),
+			],
+			controlPlane: true,
+		});
+		assert.isTrue(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.state, "pass");
+		assert.strictEqual(result.decisions[0]?.form, "advisory");
+		assert.strictEqual(result.decisions[0]?.commentId, 2);
+	});
+
+	it("same createdAt, advisory has the larger id ⇒ the advisory still supersedes the FAIL", () => {
+		const result = decide({
+			comments: [
+				comment({
+					id: 1,
+					createdAt: "2026-07-25T05:00:00Z",
+					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
+				}),
+				comment({id: 2, createdAt: "2026-07-25T05:00:00Z", body: advisory("doc", HEAD)}),
+			],
+			controlPlane: true,
+		});
+		assert.isTrue(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.form, "advisory");
+	});
+
 	it("on a NON-§CP PR an advisory is not a pass — it resolves absent", () => {
 		const result = decide({comments: [comment({id: 1, body: advisory("doc", HEAD)})]});
 		assert.isFalse(result.enqueueable);

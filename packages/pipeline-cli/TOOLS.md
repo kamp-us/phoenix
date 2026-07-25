@@ -121,10 +121,15 @@ semantics; it does **not** change what any gate verifies.
   is reviewed with the `--expect` polarity** (default `PASS`; `FAIL` is the `write-code`-repair
   seam), non-zero with a named refusal reason on stderr otherwise — so a caller branches on exit
   status.
-- **`verdict post --pr N --gate <g> [--body-file <f>]`** — the ADR-0058 rule-2 **upsert**: read
+- **`verdict post --pr N --gate <g> [--body-file <f>] [--run-id <id>]`** — the ADR-0058 rule-2
+  **upsert**, keyed on the posting **run** (ADR 0212): read
   the composed verdict body (from `--body-file` or stdin), refuse fail-closed if its first line is
-  not *this* gate's marker (the cross-namespace emission bug), then PATCH our own prior marker in
-  the namespace if one exists, else POST — exactly one verdict comment per (PR, gate). It then
+  not *this* gate's marker (the cross-namespace emission bug), then PATCH the prior marker **this
+  run** posted in the namespace if one exists, else POST — one verdict comment per (PR, gate, run).
+  The run id defaults to `$CLAUDE_CODE_SESSION_ID`; it is the dimension the shared GitHub login
+  cannot supply, and without it a concurrent reviewer silently PATCHed another reviewer's verdict
+  away (#4016). With no resolvable run id the post **appends** rather than upserting — an extra
+  comment, never a lost verdict. It then
   **re-fetches the landed comment and re-runs `emissionDefect` on its body** (the folded-in
   self-verify, #3019): a body that passed the input gate but did not land as a clean in-namespace,
   leak-free marker fails the post (non-zero) instead of reporting a false success — closing the
@@ -136,7 +141,7 @@ the REST-only `gh api` boundary (the `epic-lock` `github.ts` service pattern).
 ```bash
 # is PR 123's doc verdict a current-head PASS? (exit 0 = reviewed)
 node packages/pipeline-cli/src/bin.ts verdict read --pr 123 --gate doc && echo "merge-ready"
-# upsert a composed review-doc verdict (one comment per gate)
+# upsert a composed review-doc verdict (one comment per gate, per posting run)
 node packages/pipeline-cli/src/bin.ts verdict post --pr 123 --gate doc --body-file "$VERDICT_FILE"
 ```
 
