@@ -1962,8 +1962,8 @@ Allocation is owned by one tested verb, so a caller **cites it instead of hand-r
 (#3718). It prints the absolute directory on stdout and nothing else:
 
 ```bash
-# OPEN — the run's first write of scratch state. Allocates fresh (clearing an earlier run of the
-# same slug in this session) and stamps the namespace as ours.
+# OPEN — the run's first write of scratch state. Claims the namespace exclusively and stamps it
+# as ours, clearing whatever an unclaimed earlier occupant left behind.
 RUN_SCRATCH="$(pipeline-cli scratchpad open --slug review-doc-$PR)" || exit 1
 
 # RE-DERIVE — every LATER Bash call, where shell state is already gone. Asserts the namespace
@@ -1979,11 +1979,21 @@ opened it, `6` the filesystem refused — so a caller branches on status, not pr
 fallback to a shared or default location**: a fallback is precisely what reintroduces the silent
 clobber (ADR 0092, fail closed).
 
-The **owner stamp** is what makes the last case structural rather than polite. `open` writes the
-run's identity into the namespace, so if two runs ever share a session id *and* a slug, the
-second `open` is **refused loudly** instead of overwriting, and the first run's `path` refuses to
-hand back a namespace someone else took over. The silent-by-construction failure — a clobbered
-file that reads back successfully — has no path left to take.
+The **owner stamp** is what makes the last case structural rather than polite — and it is a
+**claim, not a check**. `open` creates the stamp with an exclusive create (`O_CREAT | O_EXCL`),
+so when two runs that share a session id *and* a slug open at the same instant, the kernel picks
+one winner and the loser's "already exists" **is** the refusal: exit `4`, nothing overwritten.
+The winner's `path` likewise refuses to hand back a namespace another run has taken over. Note
+what this is *not*: a stamp that is read, classified, and only then acted on leaves a real window
+between the check and the act — it was one, and eight concurrent opens on a single session and
+slug each concluded they owned it (#4028).
+
+The stamp separates runs by identity, and there is exactly one pair it cannot: two runs whose
+identity is **byte-identical** — same session id *and* same `$CLAUDE_PID`, or neither carrying
+one. Nothing in the environment tells those apart, so the loser **re-enters** the namespace
+instead of being refused. That re-entry is never destructive (`open` returns a namespace it
+re-enters exactly as it stands), so the worst case degrades to two writers who are, by every
+signal available, the same run — never one run silently reading another's state.
 
 The verb ships with `pipeline-cli`. Where it isn't installed (a foreign install, ADR 0062), the
 equivalent one-liner below is the fallback — deliberately inlined at each site rather than made a

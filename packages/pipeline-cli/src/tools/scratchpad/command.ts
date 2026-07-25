@@ -29,7 +29,9 @@ const slugFlag = Flag.string("slug").pipe(
 
 const sessionFlag = Flag.string("session").pipe(
 	Flag.optional,
-	Flag.withDescription("run identity to namespace under (default: $CLAUDE_CODE_SESSION_ID)"),
+	Flag.withDescription(
+		"TEST-ONLY override of the run identity to namespace under (default: $CLAUDE_CODE_SESSION_ID). Never pass it from a skill or agent: a fixed literal re-keys every caller onto one namespace, which is the shared surface this tool exists to remove",
+	),
 );
 
 const nameFlag = Flag.string("name").pipe(

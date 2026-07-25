@@ -45,11 +45,21 @@ describe("openNamespace", () => {
 		assert.isTrue(resolveOwnNamespace(input(REVIEWER_A, "review-doc-3951")).ok);
 	});
 
-	it("clears leftovers from an earlier run of the same slug in the same session", () => {
+	it("clears leftovers nobody claimed — an unstamped directory is a dead run's residue", () => {
+		const stale = join(root, "kampus-run", REVIEWER_A.session, "review-doc-3951");
+		mkdirSync(stale, {recursive: true});
+		writeFileSync(join(stale, "verdict-doc.md"), "stale body from a run that never stamped");
 		const path = pathOf(openNamespace(input(REVIEWER_A, "review-doc-3951")));
-		writeFileSync(join(path, "verdict-doc.md"), "stale round-1 body");
-		openNamespace(input(REVIEWER_A, "review-doc-3951"));
 		assert.isFalse(existsSync(join(path, "verdict-doc.md")));
+	});
+
+	it("re-opening this run's OWN namespace returns it as it stands, destroying nothing", () => {
+		// The claim is exclusive, so the loser of a race lands here — and a peer this run
+		// cannot tell apart from itself must not be able to delete the holder's state.
+		const path = pathOf(openNamespace(input(REVIEWER_A, "review-doc-3951")));
+		writeFileSync(join(path, "verdict-doc.md"), "PASS @ 167a195c");
+		assert.isTrue(openNamespace(input(REVIEWER_A, "review-doc-3951")).ok);
+		assert.strictEqual(readFileSync(join(path, "verdict-doc.md"), "utf8"), "PASS @ 167a195c");
 	});
 
 	it("refuses a namespace another run owns instead of clobbering it", () => {
@@ -59,6 +69,23 @@ describe("openNamespace", () => {
 		const second = openNamespace(input({...REVIEWER_A, pid: "9999"}, "review-doc-3951"));
 		assert.isFalse(second.ok);
 		if (!second.ok) assert.strictEqual(second.error._tag, "ForeignNamespace");
+	});
+
+	it("leaves the owner's namespace untouched when it refuses", () => {
+		const path = pathOf(openNamespace(input(REVIEWER_A, "review-doc-3951")));
+		writeFileSync(join(path, "verdict-doc.md"), "PASS @ 167a195c");
+		openNamespace(input({...REVIEWER_A, pid: "9999"}, "review-doc-3951"));
+		assert.strictEqual(readFileSync(join(path, "verdict-doc.md"), "utf8"), "PASS @ 167a195c");
+		assert.isTrue(resolveOwnNamespace(input(REVIEWER_A, "review-doc-3951")).ok);
+	});
+
+	it("refuses a claim whose stamp cannot be read rather than assuming it is ours", () => {
+		const claimed = join(root, "kampus-run", REVIEWER_A.session, "review-doc-3951");
+		mkdirSync(claimed, {recursive: true});
+		writeFileSync(join(claimed, ".kampus-run-owner"), "not json");
+		const resolved = openNamespace(input(REVIEWER_A, "review-doc-3951"));
+		assert.isFalse(resolved.ok);
+		if (!resolved.ok) assert.strictEqual(resolved.error._tag, "NamespaceUnavailable");
 	});
 
 	it("refuses with MissingSessionId rather than allocating a shared path", () => {

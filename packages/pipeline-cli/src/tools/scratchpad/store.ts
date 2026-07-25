@@ -7,7 +7,7 @@
  * Every function returns a `Resolved` — a refusal is a value here, never a throw and
  * never a fallback to a shared path.
  */
-import {existsSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {
 	classifyOwnership,
 	fail,
@@ -15,6 +15,7 @@ import {
 	formatOwner,
 	type Namespace,
 	type NamespaceInput,
+	OWNER_FILE,
 	ok,
 	parseOwner,
 	type Resolved,
@@ -32,14 +33,39 @@ const readOwner = (namespace: Namespace) => {
 	}
 };
 
+const isEexist = (cause: unknown): boolean =>
+	typeof cause === "object" && cause !== null && (cause as {code?: unknown}).code === "EEXIST";
+
+const unavailable = (namespace: Namespace, cause: unknown): Resolved<Namespace> =>
+	fail({
+		_tag: "NamespaceUnavailable",
+		path: namespace.path,
+		message: `could not allocate the per-run scratch namespace: ${String(cause)}`,
+	});
+
 /**
- * OPEN — the run's first write of scratch state. Allocates the namespace fresh (clearing
- * leftovers from an earlier run of the same slug in the same session, so a re-run never
- * reads its predecessor's files) and stamps it as ours.
+ * Clear what a previous, unclaimed occupant left behind — never the stamp, which is this
+ * run's live claim. Only reached by the run that WON the claim, so there is no concurrent
+ * peer whose files this could delete.
+ */
+const clearLeftovers = (namespace: Namespace): void => {
+	for (const entry of readdirSync(namespace.path)) {
+		if (entry === OWNER_FILE) continue;
+		rmSync(`${namespace.path}/${entry}`, {recursive: true, force: true});
+	}
+};
+
+/**
+ * OPEN — the run's first write of scratch state. Claims the namespace and stamps it as ours.
  *
- * An existing namespace owned by ANOTHER run is refused, not clobbered: that refusal is
- * the structural half of the fix — the silent cross-run overwrite (#3718) becomes a loud,
- * typed `ForeignNamespace`.
+ * The claim is ONE exclusive create: the stamp is written with `wx` (`O_CREAT | O_EXCL`), so
+ * the kernel — not a preceding existence check — picks the single winner among concurrent
+ * opens, and the `EEXIST` it raises IS the refusal. This is the shape Node's own `fs` docs
+ * prescribe (the "write (RECOMMENDED)" example), against the check-then-act they name as a
+ * race. The earlier `existsSync` → classify → `rmSync` + write sequence had a real window
+ * between the check and the act: eight concurrent opens on one session and slug each
+ * concluded they owned it, five reporting success, which put #3718's silent cross-run read
+ * back in reach on precisely the case the stamp was added to close.
  */
 export const openNamespace = (
 	input: NamespaceInput,
@@ -48,21 +74,37 @@ export const openNamespace = (
 	const resolved = resolveNamespace(input);
 	if (!resolved.ok) return resolved;
 	const namespace = resolved.value;
-	if (existsSync(namespace.path)) {
-		const owner = readOwner(namespace);
-		if (owner !== null && classifyOwnership(owner, namespace.identity) === "foreign")
-			return fail(foreignNamespaceError(namespace.path, owner, namespace.identity));
+	try {
+		mkdirSync(namespace.path, {recursive: true});
+	} catch (cause) {
+		return unavailable(namespace, cause);
 	}
 	try {
-		rmSync(namespace.path, {recursive: true, force: true});
-		mkdirSync(namespace.path, {recursive: true});
-		writeFileSync(namespace.ownerFile, formatOwner(namespace.identity, now().toISOString()));
-	} catch (cause) {
-		return fail({
-			_tag: "NamespaceUnavailable",
-			path: namespace.path,
-			message: `could not allocate the per-run scratch namespace: ${String(cause)}`,
+		writeFileSync(namespace.ownerFile, formatOwner(namespace.identity, now().toISOString()), {
+			flag: "wx",
 		});
+	} catch (cause) {
+		if (!isEexist(cause)) return unavailable(namespace, cause);
+		// The claim is already held. Whose?
+		const owner = readOwner(namespace);
+		if (owner === null)
+			return fail({
+				_tag: "NamespaceUnavailable",
+				path: namespace.path,
+				message:
+					"the namespace carries a claim whose owner stamp cannot be read — refusing rather than assuming it is ours.",
+			});
+		if (classifyOwnership(owner, namespace.identity) === "foreign")
+			return fail(foreignNamespaceError(namespace.path, owner, namespace.identity));
+		// Held by this same run: a re-open returns it AS IS. Clearing here would be the one
+		// destructive path left — a peer this run cannot distinguish from itself would delete
+		// state the claim holder had already written.
+		return ok(namespace);
+	}
+	try {
+		clearLeftovers(namespace);
+	} catch (cause) {
+		return unavailable(namespace, cause);
 	}
 	return ok(namespace);
 };

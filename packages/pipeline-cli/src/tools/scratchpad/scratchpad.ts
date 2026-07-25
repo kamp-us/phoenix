@@ -18,10 +18,15 @@
  *     bare `mktemp -d` destroys: re-running it yields a new empty directory).
  *
  * The path key delivers both: `<tmpdir>/kampus-run/<session-id>/<slug>`. The OWNER STAMP
- * (`.kampus-run-owner`) is what makes the remaining case structural rather than polite —
- * if two runs ever share a session id and a slug, the second one's open is REFUSED loudly
- * instead of clobbering, and the first one's re-derive refuses to read a namespace some
- * other run took over.
+ * (`.kampus-run-owner`) covers the remaining case — two runs that resolve the SAME path.
+ * The stamp is not a marker the store checks and then acts on: it is created exclusively
+ * (`store.ts`, `wx`), so among concurrent opens exactly one run wins and every run the
+ * stamp identifies as another is refused with `ForeignNamespace` rather than clobbering,
+ * and a re-derive refuses to read a namespace another run holds. The one pair the stamp
+ * cannot separate is two runs whose identity is byte-identical (same session id AND same
+ * `$CLAUDE_PID`, or neither carrying one) — nothing in the environment distinguishes them,
+ * so the loser re-enters instead of being refused. It is never destructive: a re-entered
+ * namespace is returned as it stands, never cleared.
  */
 
 /** The directory segment that marks a per-run namespace, under the system temp root. */
