@@ -52,6 +52,14 @@
  * dead**: `ownerLiveness` must be `"dead"`, resolved from holder presence per ADR 0191, never from
  * age. `"alive"` and `"unknown"` both KEEP — see `owner-liveness.ts` for the resolution and for why
  * "cannot prove dead" must never collapse into "dead".
+ *
+ * Launcher-vs-occupant (#4001): the identity a tree is stamped with is the session that SPAWNED it,
+ * never the ephemeral subagent occupying it, so a long-lived crew pane kept every tree it ever
+ * spawned `"alive"` for its whole multi-hour lifetime and the sweep went near-silent during exactly
+ * the runs that generate orphans. Such an owner now resolves `"launcher-alive"` — neither presence
+ * nor proof of death: the tree is held for a grace window and then decided by the ordinary
+ * age/merge/open-PR gates. `owner-liveness.ts` carries why launcher liveness is only an upper
+ * bound; `classifyWorktree` carries what protects a live occupant in the meantime.
  */
 
 import type {OwnerLiveness} from "./owner-liveness.ts";
@@ -122,10 +130,20 @@ export interface WorktreeRecord {
 	readonly hasOpenPr: boolean;
 	/**
 	 * Whether the agent session that OWNS this worktree is still running (#3943), resolved from
-	 * holder presence at the boundary (`owner-liveness.ts`). Only `"dead"` permits a removal:
-	 * `"alive"` is a live lane and `"unknown"` is an owner we could not prove dead — both KEEP.
+	 * holder presence at the boundary (`owner-liveness.ts`). Only `"dead"` permits a removal
+	 * outright: `"alive"` is a live lane and `"unknown"` is an owner we could not prove dead — both
+	 * KEEP. `"launcher-alive"` is the live-but-uninformative owner of #4001, gated by the grace
+	 * window below rather than by presence.
 	 */
 	readonly ownerLiveness: OwnerLiveness;
+	/**
+	 * The tree has been untouched for longer than the launcher grace window — a far longer idle
+	 * threshold than `recentlyActive`'s, consulted ONLY for a `"launcher-alive"` owner (#4001). It
+	 * is what lets an orphan spawned by a still-running pane eventually become sweep-eligible while
+	 * still giving a subagent the harness may have failed to lock a wide berth. Fail-safe toward
+	 * KEEP: an unresolvable mtime reads `false` (within grace).
+	 */
+	readonly idleBeyondLauncherGrace: boolean;
 }
 
 /** Why a worktree is KEPT — the audit trail, so the plan is never an opaque list. */
@@ -140,6 +158,12 @@ export type KeepReason =
 	| "live-session"
 	/** The owning session could not be proven dead (no stamp, or an untrustworthy registry) — kept (#3943). */
 	| "owner-unknown"
+	/**
+	 * The stamped owner is a still-running LAUNCHER, and the tree is still inside the grace window
+	 * (#4001). Distinct from `live-session` on purpose: this is not presence, it is a bounded
+	 * benefit of the doubt for an occupant that may have outlived the harness's occupancy lock.
+	 */
+	| "launcher-alive"
 	/** Touched within the idle threshold — presumed a live lane, never swept (#2240). */
 	| "recently-active"
 	/** The branch has an open PR — an in-flight lane, kept until it merges + goes idle (#2240). */
@@ -204,12 +228,20 @@ export interface WorktreeSweepPlan {
  *      tree with a LIVE directory are never candidates, regardless of their other facts.
  *   2. Dirty → KEEP (`dirty`). Wins over every other signal for BOTH classes: a worktree
  *      with working-tree changes is never removed, even when its branch has merged.
- *   3. Liveness gates — locked (#2240) / owner alive-or-unprovable (#3943) / recently-active
- *      (#2240) → KEEP, for BOTH classes. A clean tree may still belong to a LIVE lane (a build
- *      tree just committed+pushed; a review still running against its head). These run BEFORE any
- *      remove branch, so each is a necessary condition on REMOVE. The presence gate subsumes the
- *      mtime one it sits above — an idle-but-live shipper is exactly what mtime could not see —
- *      and `recently-active` is retained below it because it can only ever KEEP more.
+ *   3. Liveness gates — locked (#2240) / owner alive-or-unprovable (#3943) / launcher-alive within
+ *      grace (#4001) / recently-active (#2240) → KEEP, for BOTH classes. A clean tree may still
+ *      belong to a LIVE lane (a build tree just committed+pushed; a review still running against
+ *      its head). These run BEFORE any remove branch, so each is a necessary condition on REMOVE.
+ *      The presence gate subsumes the mtime one it sits above — an idle-but-live shipper is exactly
+ *      what mtime could not see — and `recently-active` is retained below it because it can only
+ *      ever KEEP more.
+ *
+ *      The `locked` gate is what makes step 3's launcher branch safe, and its position is load-
+ *      bearing: the harness holds a `git worktree lock` on an agent tree for its occupant's
+ *      lifetime and releases it when the occupant finishes, so a tree that gets PAST `locked` has
+ *      already had its occupancy released by the harness. That is the occupant-keyed presence
+ *      signal a launcher stamp cannot be (#4001) — hence a `"launcher-alive"` owner is held only
+ *      for the grace window, not forever. Never reorder `locked` below the owner gates.
  *   4. Review-head tree → REMOVE (`review-head-idle`). Past the dirty+locked+recently-active
  *      guards, a detached throwaway review checkout holds no branch and no unpushed work, so
  *      it is a pure leak — no merge/open-PR gate applies (see `review-head-idle`). Returns here
@@ -240,8 +272,11 @@ export const classifyWorktree = (wt: WorktreeRecord): SweepDecision => {
 	if (wt.ownerLiveness === "alive") {
 		return {kind: "keep", reason: "live-session"};
 	}
-	if (wt.ownerLiveness !== "dead") {
+	if (wt.ownerLiveness === "unknown") {
 		return {kind: "keep", reason: "owner-unknown"};
+	}
+	if (wt.ownerLiveness === "launcher-alive" && !wt.idleBeyondLauncherGrace) {
+		return {kind: "keep", reason: "launcher-alive"};
 	}
 	if (wt.recentlyActive) {
 		return {kind: "keep", reason: "recently-active"};

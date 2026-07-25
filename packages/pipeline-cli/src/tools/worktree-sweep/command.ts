@@ -38,6 +38,7 @@ import {Command, Flag} from "effect/unstable/cli";
 import {
 	liveSessionIds,
 	type OwnerLiveness,
+	type OwnerStamp,
 	parseOwnerStamp,
 	parseSessionRegistryEntry,
 	resolveOwnerLiveness,
@@ -118,6 +119,18 @@ const squashMergedToOriginMain = (head: string | null): boolean => {
 const IDLE_THRESHOLD_MS = 30 * 60 * 1000;
 
 /**
+ * How long a tree whose owner is a still-running LAUNCHER is held before the ordinary age/merge
+ * gates decide it (#4001). The launcher stamp names the spawning pane, not the occupant, so its
+ * liveness cannot be a permanent KEEP — but the harness's occupancy lock (checked first) is the
+ * only occupant-keyed signal there is, and an occupant it failed to lock would be protected by
+ * nothing else. This window is that backstop: two hours of *no file activity at all* — 4x the idle
+ * threshold above, and well past the longest a live lane plausibly goes without touching its tree
+ * (a shipper polling CI through `gh api` is the worst case, and it is bounded by the run itself) —
+ * so it only ever releases a tree whose occupant has long since finished.
+ */
+const LAUNCHER_GRACE_MS = 2 * 60 * 60 * 1000;
+
+/**
  * Newest mtime (ms) among the given paths, or `null` when none can be stat'd. Each stat goes
  * through the `FileSystem` seam and degrades to "skipped" on a fault, so an absent/unreadable
  * path is still passed over and a wholly unresolvable set still falls to the `null` fail-safe.
@@ -141,15 +154,21 @@ const newestMtimeMs = (
 	});
 
 /**
- * Is a managed worktree still LIVE by recency (#2240)? Probes the worktree dir + its
- * per-tree `HEAD` and `logs/HEAD` — a commit/checkout bumps HEAD and appends the reflog,
- * a new file bumps the dir; a still-editing lane is caught earlier as `dirty`. The index
- * is deliberately NOT probed: `git status` (the dirty check) can rewrite it, which would
- * mask idleness. Any unresolvable mtime ⇒ presumed active (fail-safe KEEP).
+ * How long a managed worktree has gone untouched, as the two idle facts the classifier reads
+ * (#2240, #4001). Probes the worktree dir + its per-tree `HEAD` and `logs/HEAD` — a commit/checkout
+ * bumps HEAD and appends the reflog, a new file bumps the dir; a still-editing lane is caught
+ * earlier as `dirty`. The index is deliberately NOT probed: `git status` (the dirty check) can
+ * rewrite it, which would mask idleness. Both facts derive from ONE mtime read so they can never
+ * disagree about the same tree, and any unresolvable mtime ⇒ presumed active AND within grace
+ * (fail-safe KEEP on both).
  */
-const worktreeRecentlyActive = (
+const worktreeIdleFacts = (
 	path: string,
-): Effect.Effect<boolean, never, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<
+	{recentlyActive: boolean; idleBeyondLauncherGrace: boolean},
+	never,
+	FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const pathSvc = yield* Path.Path;
 		const gitdir = runGit(["-C", path, "rev-parse", "--absolute-git-dir"]);
@@ -159,8 +178,12 @@ const worktreeRecentlyActive = (
 			probes.push(pathSvc.join(g, "HEAD"), pathSvc.join(g, "logs", "HEAD"));
 		}
 		const newest = yield* newestMtimeMs(probes);
-		if (newest === null) return true;
-		return Date.now() - newest < IDLE_THRESHOLD_MS;
+		if (newest === null) return {recentlyActive: true, idleBeyondLauncherGrace: false};
+		const idleFor = Date.now() - newest;
+		return {
+			recentlyActive: idleFor < IDLE_THRESHOLD_MS,
+			idleBeyondLauncherGrace: idleFor >= LAUNCHER_GRACE_MS,
+		};
 	});
 
 /**
@@ -225,11 +248,12 @@ const OWNER_STAMP_FILE = "kampus-owner.json";
  * The session that OWNS this worktree: the `WorktreeCreate` stamp in its git admin dir
  * (`hooks/create-worktree.sh`), else a bare session-UUID segment in its own path — the fallback for
  * a `$TMPDIR`-rooted review-head tree, which no hook provisions. `null` when neither resolves, so
- * an unstamped tree is never judged dead.
+ * an unstamped tree is never judged dead. The path fallback is a `"launcher"` identity: the UUID
+ * roots the spawning pane's scratchpad, not the review subagent inside it (#4001).
  */
-const ownerSessionIdOf = (
+const ownerOf = (
 	worktreePath: string,
-): Effect.Effect<string | null, never, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<OwnerStamp | null, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const gitdir = runGit(["-C", worktreePath, "rev-parse", "--absolute-git-dir"]);
 		if (gitdir.ok) {
@@ -241,7 +265,8 @@ const ownerSessionIdOf = (
 			const stamped = raw === null ? null : parseOwnerStamp(raw);
 			if (stamped !== null) return stamped;
 		}
-		return sessionIdFromPath(worktreePath);
+		const fromPath = sessionIdFromPath(worktreePath);
+		return fromPath === null ? null : {sessionId: fromPath, kind: "launcher"};
 	});
 
 const runGh = (args: ReadonlyArray<string>): GitResult => {
@@ -336,6 +361,7 @@ const worktreeSweep = Command.make(
 							// liveness gate, and a prune only clears admin metadata for a tree that is already
 							// gone from disk, so there is no live working surface to pull out from under an owner.
 							ownerLiveness: "unknown" as OwnerLiveness,
+							idleBeyondLauncherGrace: false,
 						};
 					}
 					const managed = isManagedWorktree(p.path);
@@ -347,15 +373,20 @@ const worktreeSweep = Command.make(
 					const reachable = reachableFromOriginMain(p.head);
 					// Only probe the costlier squash signal when ancestry already missed.
 					const squashMerged = reachable ? false : squashMergedToOriginMain(p.head);
-					const recentlyActive = swept ? yield* worktreeRecentlyActive(p.path) : false;
+					const {recentlyActive, idleBeyondLauncherGrace} = swept
+						? yield* worktreeIdleFacts(p.path)
+						: {recentlyActive: false, idleBeyondLauncherGrace: false};
 					// Presence beats recency (#3943): a live shipper lane is mtime-idle, so `recentlyActive`
 					// cannot see it. Probed only for a swept tree — an unswept one is already KEEP.
 					const ownerLiveness: OwnerLiveness = swept
-						? resolveOwnerLiveness({
-								ownerSessionId: yield* ownerSessionIdOf(p.path),
-								liveSessionIds: live,
-							})
+						? resolveOwnerLiveness({owner: yield* ownerOf(p.path), liveSessionIds: live})
 						: "unknown";
+					// Mirrors the classifier's owner gates so the probe below fires for exactly the trees
+					// that can reach the open-PR branch — including a launcher-owned one past its grace
+					// window (#4001), which would otherwise skip the probe and be reaped with a PR open.
+					const ownerPermitsRemoval =
+						ownerLiveness === "dead" ||
+						(ownerLiveness === "launcher-alive" && idleBeyondLauncherGrace);
 					// The network open-PR probe fires ONLY for a BUILD tree that would otherwise be swept —
 					// managed, clean, unlocked, idle, and content-merged — so SessionStart makes at most
 					// one gh call per reap candidate (usually zero), never one per worktree. A review-head
@@ -364,7 +395,7 @@ const worktreeSweep = Command.make(
 						managed &&
 						!isDirty &&
 						!p.locked &&
-						ownerLiveness === "dead" &&
+						ownerPermitsRemoval &&
 						!recentlyActive &&
 						(reachable || squashMerged);
 					const hasOpenPr = wouldRemove ? branchHasOpenPr(p.branch) : false;
@@ -379,6 +410,7 @@ const worktreeSweep = Command.make(
 						recentlyActive,
 						hasOpenPr,
 						ownerLiveness,
+						idleBeyondLauncherGrace,
 					};
 				}),
 			{concurrency: 1},
@@ -398,6 +430,15 @@ const worktreeSweep = Command.make(
 			`worktree-sweep: ${records.length} worktree(s) scanned — ${plan.toRemove.length} removable, ${plan.kept.length} kept${execute ? " (EXECUTE)" : " (dry-run)"}`,
 		);
 		if (plan.kept.length > 0) {
+			// The per-reason tally is what makes a near-silent run diagnosable at a glance (#4001):
+			// a wall of `live-session` means real occupants, a wall of `launcher-alive` means one
+			// long-lived pane's spawn history, and a wall of `owner-unknown` means an unresolved
+			// registry — three very different causes the bare "N kept" collapsed into one number.
+			const tally = new Map<string, number>();
+			for (const k of plan.kept) tally.set(k.reason, (tally.get(k.reason) ?? 0) + 1);
+			yield* Console.log(
+				`kept by reason: ${[...tally].map(([reason, n]) => `${reason}=${n}`).join(" ")}`,
+			);
 			yield* Console.log("kept:");
 			for (const k of plan.kept) yield* Console.log(reasonLine(k.worktree.path, k.reason));
 		}

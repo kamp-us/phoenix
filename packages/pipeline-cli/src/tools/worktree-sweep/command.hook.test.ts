@@ -69,21 +69,28 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 	const git = (cwd: string, ...args: string[]) =>
 		execFileSync("git", ["-C", cwd, ...args], {encoding: "utf8"});
 
-	/** Stamp an owning session into a worktree's git admin dir, as `create-worktree.sh` does. */
-	const stampOwner = (wtPath: string, sessionId: string) => {
+	/**
+	 * Stamp an owning session into a worktree's git admin dir, as `create-worktree.sh` does. The
+	 * kind defaults to `launcher` because that is what the hook writes and what a legacy stamp
+	 * means (#4001); pass `occupant` only for the case that models a stamp naming the holder itself.
+	 */
+	const stampOwner = (wtPath: string, sessionId: string, kind = "launcher") => {
 		const gitdir = git(mainRepo, "-C", wtPath, "rev-parse", "--absolute-git-dir").trim();
-		writeFileSync(join(gitdir, "kampus-owner.json"), JSON.stringify({sessionId}));
+		writeFileSync(join(gitdir, "kampus-owner.json"), JSON.stringify({sessionId, ownerKind: kind}));
 	};
 
-	// Push a managed worktree's dir + per-tree HEAD/logs mtimes ~2h into the past so it reads
-	// idle (well past the 30-min threshold) — simulating an orphaned tree a live lane would not be.
-	const backdate = (wtPath: string) => {
-		const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+	// Push a managed worktree's dir + per-tree HEAD/logs mtimes into the past. 1h reads IDLE (well
+	// past the 30-min threshold) while staying INSIDE the 2h launcher grace window; 3h is past both,
+	// which is what makes a launcher-owned orphan sweep-eligible (#4001).
+	const backdateBy = (wtPath: string, ms: number) => {
+		const old = new Date(Date.now() - ms);
 		const gitdir = git(mainRepo, "-C", wtPath, "rev-parse", "--absolute-git-dir").trim();
 		for (const p of [wtPath, join(gitdir, "HEAD"), join(gitdir, "logs", "HEAD")]) {
 			if (existsSync(p)) utimesSync(p, old, old);
 		}
 	};
+	const backdate = (wtPath: string) => backdateBy(wtPath, 60 * 60 * 1000);
+	const backdateBeyondGrace = (wtPath: string) => backdateBy(wtPath, 3 * 60 * 60 * 1000);
 
 	beforeAll(() => {
 		mainRepo = mkdtempSync(join(tmpdir(), "wts-main-"));
@@ -199,10 +206,10 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 	// — clean, content-merged, unlocked, and mtime-idle — must survive purely because its owning
 	// session is registered as running. The unstamped sibling pins the other half: an owner we cannot
 	// prove dead is KEPT, so a fix that reads "unprovable" as "orphan" turns this red.
-	it("KEEPS a live-session-owned tree AND an unstamped tree in the exact clean+merged+idle state that is otherwise reaped (#3943)", async () => {
+	it("KEEPS an occupant-owned tree AND an unstamped tree in the exact clean+merged+idle state that is otherwise reaped (#3943)", async () => {
 		const liveOwnedWt = join(mainRepo, ".claude", "worktrees", "wf_live_session");
 		git(mainRepo, "worktree", "add", "-q", "--detach", liveOwnedWt, "HEAD");
-		stampOwner(liveOwnedWt, LIVE_SID);
+		stampOwner(liveOwnedWt, LIVE_SID, "occupant");
 		backdate(liveOwnedWt);
 
 		const unstampedWt = join(mainRepo, ".claude", "worktrees", "wf_unstamped");
@@ -223,6 +230,37 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		assert.isFalse(existsSync(deadOwnedWt), "the dead-owner control must still be reclaimed");
 		assert.include(stdout, "live-session");
 		assert.include(stdout, "owner-unknown");
+	}, 30_000);
+
+	// The #4001 regression, end to end: LIVE_SID stands in for a crew pane that is STILL RUNNING and
+	// has spawned many trees. A tree it launched, whose occupant finished long ago, must become
+	// reclaimable on its own idle clock — the pane never exits, so waiting for it is waiting forever.
+	it("reclaims a LAUNCHER-owned orphan while its launcher is still registered as running (#4001)", async () => {
+		const staleWt = join(mainRepo, ".claude", "worktrees", "wf_launcher_stale");
+		git(mainRepo, "worktree", "add", "-q", "--detach", staleWt, "HEAD");
+		stampOwner(staleWt, LIVE_SID);
+		backdateBeyondGrace(staleWt);
+
+		// Same live launcher, same stamp — but touched recently enough to sit inside the grace
+		// window. It pins the fail-closed direction: the launcher branch reclaims on IDLE, and only
+		// past the window, so a tree whose occupant may still hold it is never pulled out from under.
+		const freshWt = join(mainRepo, ".claude", "worktrees", "wf_launcher_fresh");
+		git(mainRepo, "worktree", "add", "-q", "--detach", freshWt, "HEAD");
+		stampOwner(freshWt, LIVE_SID);
+		backdate(freshWt);
+
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"], sweepEnv);
+		assert.strictEqual(code, 0, stdout);
+		assert.isFalse(
+			existsSync(staleWt),
+			"a long-idle tree launched by a still-running pane must be reclaimed, not held for the pane's lifetime",
+		);
+		assert.isTrue(existsSync(freshWt), "inside the grace window the launcher-owned tree is KEPT");
+		// The near-silence was as much a diagnosability failure as a reaping one: the reason a tree
+		// was kept must name the launcher branch, not read as ordinary presence.
+		assert.include(stdout, "launcher-alive");
+
+		git(mainRepo, "worktree", "remove", freshWt);
 	}, 30_000);
 
 	// The fail-closed half of the presence gate: with no readable registry there is no way to prove

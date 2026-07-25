@@ -29,6 +29,7 @@ const reviewRecord = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	// The fixtures default to a PROVABLY-DEAD owner so each pre-#3943 case still exercises the
 	// branch it was written for. The live/unknown owners are the explicit guard cases below.
 	ownerLiveness: "dead",
+	idleBeyondLauncherGrace: false,
 	...over,
 });
 
@@ -43,6 +44,7 @@ const record = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	recentlyActive: false,
 	hasOpenPr: false,
 	ownerLiveness: "dead",
+	idleBeyondLauncherGrace: false,
 	...over,
 });
 
@@ -266,6 +268,99 @@ describe("classifyWorktree — owner-presence liveness (#3943, ADR 0191)", () =>
 		assert.deepStrictEqual(
 			plan.kept.map((k) => [k.worktree.path, k.reason]),
 			[[alive.path, "live-session"]],
+		);
+	});
+});
+
+// The inverse defect of #3943: UNDER-reaping. A long-lived crew pane spawns many short-lived
+// subagent trees and stays alive for hours, so a launcher-keyed owner resolves live for every tree
+// it ever created — during exactly the runs that generate orphans. These pin that such a tree
+// becomes sweep-eligible on its own idle clock, without waiting for the pane to exit, while a live
+// occupant still never reaches REMOVE.
+describe("classifyWorktree — launcher-keyed ownership (#4001)", () => {
+	// The case this issue exists for: launcher still running, occupant long finished.
+	it("REMOVES a launcher-owned orphan once it is idle past the grace window — no waiting on the pane", () => {
+		const d = classifyWorktree(
+			shipperShaped({ownerLiveness: "launcher-alive", idleBeyondLauncherGrace: true}),
+		);
+		assert.deepStrictEqual(d, {kind: "remove", reason: "squash-merged-clean"});
+	});
+
+	it("KEEPS the same tree inside the grace window, under a reason distinct from live-session", () => {
+		const d = classifyWorktree(
+			shipperShaped({ownerLiveness: "launcher-alive", idleBeyondLauncherGrace: false}),
+		);
+		assert.deepStrictEqual(d, {kind: "keep", reason: "launcher-alive"});
+	});
+
+	// The #3943 asymmetry, unweakened: every gate that protected a live occupant still outranks the
+	// launcher branch, so no path here can remove a tree someone is working in.
+	it("never removes a launcher-owned tree the harness still LOCKS — occupancy outranks the grace window", () => {
+		const d = classifyWorktree(
+			shipperShaped({locked: true, ownerLiveness: "launcher-alive", idleBeyondLauncherGrace: true}),
+		);
+		assert.deepStrictEqual(d, {kind: "keep", reason: "locked"});
+	});
+
+	it("never removes a launcher-owned tree that is dirty or has an open PR, past grace or not", () => {
+		assert.deepStrictEqual(
+			classifyWorktree(
+				shipperShaped({
+					isDirty: true,
+					ownerLiveness: "launcher-alive",
+					idleBeyondLauncherGrace: true,
+				}),
+			),
+			{kind: "keep", reason: "dirty"},
+		);
+		assert.deepStrictEqual(
+			classifyWorktree(
+				shipperShaped({
+					hasOpenPr: true,
+					ownerLiveness: "launcher-alive",
+					idleBeyondLauncherGrace: true,
+				}),
+			),
+			{kind: "keep", reason: "open-pr"},
+		);
+	});
+
+	it("keeps an UNKNOWN owner past the grace window — the grace window is not an escape from fail-closed", () => {
+		const d = classifyWorktree(
+			shipperShaped({ownerLiveness: "unknown", idleBeyondLauncherGrace: true}),
+		);
+		assert.deepStrictEqual(d, {kind: "keep", reason: "owner-unknown"});
+	});
+
+	it("reclaims a launcher-owned review-head tree past grace, keeping the live-owner one", () => {
+		const stale = reviewRecord({
+			path: reviewHeadPath("review-head-4001"),
+			ownerLiveness: "launcher-alive",
+			idleBeyondLauncherGrace: true,
+		});
+		const live = reviewRecord({path: reviewHeadPath("review-head-4002"), ownerLiveness: "alive"});
+		const plan = computeWorktreeSweepPlan([stale, live]);
+		assert.deepStrictEqual(
+			plan.toRemove.map((r) => [r.worktree.path, r.reason]),
+			[[stale.path, "review-head-idle"]],
+		);
+		assert.deepStrictEqual(
+			plan.kept.map((k) => [k.worktree.path, k.reason]),
+			[[live.path, "live-session"]],
+		);
+	});
+
+	// The near-silence this issue reports is a DIAGNOSABILITY failure as much as a reaping one: a
+	// run that keeps everything must say WHY, and the three causes must not collapse into one label.
+	it("labels the three keep-causes distinctly so a near-silent run is readable", () => {
+		const plan = computeWorktreeSweepPlan([
+			shipperShaped({path: wtPath("agent-occupied"), ownerLiveness: "alive"}),
+			shipperShaped({path: wtPath("agent-launcher"), ownerLiveness: "launcher-alive"}),
+			shipperShaped({path: wtPath("agent-unstamped"), ownerLiveness: "unknown"}),
+		]);
+		assert.deepStrictEqual(
+			plan.kept.map((k) => k.reason),
+			["live-session", "launcher-alive", "owner-unknown"],
 		);
 	});
 });
