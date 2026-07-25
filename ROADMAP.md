@@ -19,8 +19,8 @@ Generated top-down view of the roadmap: every **arc** and **campaign** is a node
 %% Nodes = every ## Arcs / ## Campaigns row (styled by state); edges = ## Dependencies rows (#3870).
 flowchart TD
 	subgraph arcs["Arcs"]
-		arc_four_pillars["Four Pillars"]:::active
-		arc_ge_it["Geçit"]:::queued
+		arc_four_pillars["Four Pillars"]:::done
+		arc_ge_it["Geçit"]:::active
 		arc_mecmua_v2["Mecmua v2"]:::queued
 		arc_at_lye["Atölye"]:::done
 	end
@@ -57,14 +57,14 @@ flowchart TD
 
 | Arc | Milestone | State |
 |-----|-----------|-------|
-| Four Pillars | #17 | active |
-| Geçit | #24 | queued |
+| Four Pillars | #17 | done |
+| Geçit | #24 | active |
 | Mecmua v2 | #25 | queued |
 | Atölye | #26 | done |
 
-**Four Pillars** — *active.* Frontend polish and the encoded design system: the four pillars — Performance, Cohesiveness, Usability, Accessibility — made real and enforced (ADR 0162, the design-system manifest). The surface of kamp.us becomes excellent and self-consistent. The nav-IA discipline is mid-flight here.
+**Four Pillars** — *done.* Frontend polish and the encoded design system: the four pillars — Performance, Cohesiveness, Usability, Accessibility — made real and enforced (ADR 0162, the design-system manifest). The surface of kamp.us becomes excellent and self-consistent. The nav-IA discipline is mid-flight here.
 
-**Geçit** — *the passage.* The membrane of the community: onboarding, künye (the reputation DO), and moderation. How a stranger becomes a çaylak, a çaylak becomes a yazar by vouch, and how the community governs itself. The çaylak→yazar journey — undefined today — gets designed here. (The earlier künye milestone folded in.)
+**Geçit** — *active. The passage.* The membrane of the community: onboarding, künye (the reputation DO), and moderation. How a stranger becomes a çaylak, a çaylak becomes a yazar by vouch, and how the community governs itself. The çaylak→yazar journey — undefined today — gets designed here. (The earlier künye milestone folded in.)
 
 **Mecmua v2** — The next chapter of long-form publishing: the Thinking-Machines 3-zone reading layout, and the reading/authoring experience maturing past v1.
 
@@ -85,6 +85,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | §CP Verdict Integrity | #38 | active |
 | Flag Graduation | #39 | active |
 | pipeline-cli Glue Consolidation | #40 | active |
+| Lint-Gate Adoption | #41 | active |
 | Pipeline Anywhere | #35 | active |
 | pipeline-cli @effect/platform migration | #32 | active |
 | Agentic design-system coverage | #33 | done |
