@@ -1,7 +1,7 @@
 ---
 id: 0072
 title: Milestones Encode Strategic Sequencing, Not Feature Breakdown
-status: accepted
+status: amended-in-part by [0208](0208-standing-lane-exemption-from-full-homing.md)
 date: 2026-06-15
 tags: [pipeline, roadmap, triage]
 ---
