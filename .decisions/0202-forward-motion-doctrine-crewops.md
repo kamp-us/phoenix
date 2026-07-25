@@ -1,7 +1,7 @@
 ---
 id: 0202
 title: Forward-motion doctrine — p0 freely minted for arc-homed ship-work; CrewOps state
-status: amended-in-part by [0214](0214-active-campaign-confers-p1.md)
+status: amended-in-part by [0210](0210-direction-binds-at-intake.md), [0214](0214-active-campaign-confers-p1.md)
 date: 2026-07-24
 tags: [process, prioritization, pipeline]
 ---
