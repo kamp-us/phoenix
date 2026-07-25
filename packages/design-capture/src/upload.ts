@@ -94,9 +94,53 @@ export const parseUploadResponse = (res: RawUploadResponse): UploadOutcome => {
 	return {hostedUrl, uploadError: null};
 };
 
-/** PURE: the upload endpoint URL for a target repo's numeric id. */
-export const uploadEndpoint = (repositoryId: number): string =>
-	`https://uploads.github.com/user-attachments/assets?repository_id=${repositoryId}`;
+/**
+ * The one content type this package ever uploads. The endpoint validates that
+ * `name`'s extension matches `content_type` (see {@link uploadEndpoint}), and
+ * every captured artifact is a `.png`, so pinning the pair here is what keeps
+ * the two from drifting apart.
+ */
+export const PNG_CONTENT_TYPE = "image/png";
+
+/**
+ * PURE: the upload endpoint URL for one asset.
+ *
+ * LOAD-BEARING — the endpoint's real parameter contract, probed against the live
+ * endpoint (#3738), since it is undocumented (ADR 0165) and cannot be grounded in
+ * any published source:
+ *
+ *   - `repository_id` — required; omitting it is a 404.
+ *   - `name` — required as a QUERY PARAM. Omitting it is the HTTP 400
+ *     `Invalid name for request` that left every `hostedUrl` null. The
+ *     `content-disposition: attachment; filename="…"` header does NOT supply it —
+ *     the endpoint ignores that header entirely, which is why the header-only
+ *     request always 400'd.
+ *   - `content_type` — the query param wins over the request's `content-type`
+ *     header. Absent it, GitHub derives the type from the header, so an
+ *     `application/octet-stream` body 422s twice over: the type is not in the
+ *     allowed list, AND `.png` does not match it.
+ *   - `size` — optional (a request without it is accepted), but sent because the
+ *     web composer sends it, so a future tightening finds it already there.
+ */
+export const uploadEndpoint = (params: UploadEndpointParams): string => {
+	const query = new URLSearchParams({
+		repository_id: String(params.repositoryId),
+		name: params.fileName,
+		size: String(params.size),
+		content_type: params.contentType,
+	});
+	return `https://uploads.github.com/user-attachments/assets?${query}`;
+};
+
+export interface UploadEndpointParams {
+	readonly repositoryId: number;
+	/** Attachment file name, e.g. `sozluk-home@desktop.png`. */
+	readonly fileName: string;
+	/** Byte length of the uploaded asset. */
+	readonly size: number;
+	/** Must agree with `fileName`'s extension or the endpoint 422s. */
+	readonly contentType: string;
+}
 
 export interface UploadAssetOptions {
 	readonly pngBytes: Uint8Array;
@@ -117,15 +161,18 @@ export interface UploadAssetOptions {
 export const uploadAsset = (
 	opts: UploadAssetOptions,
 ): Effect.Effect<UploadOutcome, never, HttpClient.HttpClient> => {
-	const request = HttpClientRequest.post(uploadEndpoint(opts.repositoryId)).pipe(
+	const endpoint = uploadEndpoint({
+		repositoryId: opts.repositoryId,
+		fileName: opts.fileName,
+		size: opts.pngBytes.length,
+		contentType: PNG_CONTENT_TYPE,
+	});
+	const request = HttpClientRequest.post(endpoint).pipe(
 		HttpClientRequest.setHeaders({
 			authorization: `token ${opts.token}`,
 			accept: "application/vnd.github+json",
-			"content-type": "application/octet-stream",
-			// The web-composer sends the file name so GitHub derives the asset name.
-			"content-disposition": `attachment; filename="${opts.fileName}"`,
 		}),
-		HttpClientRequest.bodyUint8Array(opts.pngBytes, "application/octet-stream"),
+		HttpClientRequest.bodyUint8Array(opts.pngBytes, PNG_CONTENT_TYPE),
 	);
 	return HttpClient.execute(request).pipe(
 		Effect.flatMap((response) =>

@@ -89,5 +89,10 @@ export {
 	substituteRouteParams,
 } from "./priority-surfaces.ts";
 export {resolvePreviewUrl} from "./resolve.ts";
-export type {RawUploadResponse, UploadAssetOptions, UploadOutcome} from "./upload.ts";
-export {parseUploadResponse, uploadAsset, uploadEndpoint} from "./upload.ts";
+export type {
+	RawUploadResponse,
+	UploadAssetOptions,
+	UploadEndpointParams,
+	UploadOutcome,
+} from "./upload.ts";
+export {PNG_CONTENT_TYPE, parseUploadResponse, uploadAsset, uploadEndpoint} from "./upload.ts";
