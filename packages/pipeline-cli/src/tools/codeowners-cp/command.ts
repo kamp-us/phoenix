@@ -17,7 +17,7 @@
  * caught inside the handler (not at the bin's run boundary) so the contract survives
  * folding into the shared `pipeline-cli` bin, which provides only `NodeServices.layer`.
  */
-import {Effect, Option} from "effect";
+import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {type CheckFailed, checkCodeownersCp, defaultRoot} from "./gate.ts";
 
@@ -30,8 +30,10 @@ const rootFlag = Flag.string("root").pipe(
 	),
 );
 
-const resolveRoot = (root: Option.Option<string>): string =>
-	Option.getOrElse(root, () => defaultRoot());
+const resolveRoot = (
+	root: Option.Option<string>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+	Option.match(root, {onNone: () => defaultRoot(), onSome: Effect.succeed});
 
 const onCheckFailed = (e: CheckFailed) =>
 	Effect.sync(() => {
@@ -43,9 +45,8 @@ const check = Command.make(
 	"check",
 	{root: rootFlag},
 	Effect.fn(function* ({root: rootOpt}) {
-		yield* checkCodeownersCp(resolveRoot(rootOpt)).pipe(
-			Effect.catchTag("CheckFailed", onCheckFailed),
-		);
+		const root = yield* resolveRoot(rootOpt);
+		yield* checkCodeownersCp(root).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
 	}),
 ).pipe(
 	Command.withDescription("Fail the build if a §CP control-plane path has no CODEOWNERS owner"),

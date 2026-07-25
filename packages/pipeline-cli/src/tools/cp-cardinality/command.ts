@@ -37,7 +37,13 @@ const selfApprovalFlag = Flag.boolean("self-approval-at-head").pipe(
 	),
 );
 
-/** Read the control-plane member logins from stdin; empty/failed read ⇒ N==0 (fail closed). */
+/**
+ * Read the control-plane member logins from stdin; empty/failed read ⇒ N==0 (fail closed).
+ *
+ * The fd-0 read stays raw `node:fs`: the Effect `FileSystem` seam is path-keyed and exposes no
+ * stdin reader, and `Stdio.stdin` is a Stream that blocks on a TTY with no pipe — so this is the
+ * platform doc's node-only boundary case (.patterns/effect-platform-access.md), not a miss.
+ */
 const readMembers = (): ReadonlyArray<string> => {
 	let raw: string;
 	// biome-ignore lint/plugin: best-effort read — an empty/failed stdin is absorbed into [] (⇒ N==0, fail closed), never the E channel; a total helper, not Effect-cosplay.

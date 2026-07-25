@@ -15,9 +15,7 @@
  * formats line that has drifted from the const, a CODEOWNERS with zero owned entries, OR a
  * const that resolves to ZERO §CP paths all FAIL — only a fully-covered, in-sync §CP set passes.
  */
-import {existsSync, readFileSync} from "node:fs";
-import {dirname, join, resolve} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {CONTROL_PLANE_RE} from "../control-plane-paths/control-plane-re.ts";
 import {
@@ -45,18 +43,31 @@ export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFa
 	reason: Schema.String,
 }) {}
 
-const readRepoFile = (root: string, rel: string): Effect.Effect<string, IoError> =>
-	Effect.try({
-		try: () => readFileSync(join(root, rel), "utf8"),
-		catch: (cause) => new IoError({path: rel, cause}),
-	});
+/**
+ * Read one repo-relative source through the Effect `FileSystem`/`Path` seam (over the
+ * bin's `NodeServices.layer`), so the gate is crossable against a substituted filesystem
+ * (.patterns/effect-platform-access.md); a fs fault folds `PlatformError` → the `IoError`
+ * this gate already carries. This is the file's one why-note for the platform seam —
+ * `defaultRoot` below probes its markers through the same services.
+ */
+const readRepoFile = (
+	root: string,
+	rel: string,
+): Effect.Effect<string, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		return yield* fs.readFileString(path.join(root, rel), "utf8");
+	}).pipe(Effect.mapError((cause) => new IoError({path: rel, cause})));
 
 /**
  * The CI gate: succeed only when the §CP regex resolves a non-empty path set AND
  * every one of those paths is covered by an owned CODEOWNERS entry. Each fail-closed
  * branch is a distinct `CheckFailed` reason so the run log says *why* it refused.
  */
-export const checkCodeownersCp = (root: string): Effect.Effect<void, IoError | CheckFailed> =>
+export const checkCodeownersCp = (
+	root: string,
+): Effect.Effect<void, IoError | CheckFailed, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const formatsText = yield* readRepoFile(root, FORMATS_PATH);
 		const codeownersText = yield* readRepoFile(root, CODEOWNERS_PATH);
@@ -115,15 +126,22 @@ export const checkCodeownersCp = (root: string): Effect.Effect<void, IoError | C
 /**
  * Resolve the repo root by walking UP from `from` for a workspace marker, so
  * `pnpm --filter <pkg> …` (cwd = package dir) still finds the repo root. Mirrors
- * the shared `find-root-dir` / decisions-index walk (#447).
+ * the shared `find-root-dir` / decisions-index walk (#447). Marker-existence faults
+ * fall through as false, matching the `existsSync` this replaced.
  */
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
-export const defaultRoot = (from: string = process.cwd()): string => {
-	let dir = resolve(from);
+export const defaultRoot = Effect.fn(function* (from: string = process.cwd()) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const start = path.resolve(from);
+	let dir = start;
 	for (;;) {
-		if (ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)))) return dir;
-		const parent = dirname(dir);
-		if (parent === dir) return resolve(from);
+		for (const marker of ROOT_MARKERS) {
+			if (yield* fs.exists(path.join(dir, marker)).pipe(Effect.orElseSucceed(() => false)))
+				return dir;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) return start;
 		dir = parent;
 	}
-};
+});

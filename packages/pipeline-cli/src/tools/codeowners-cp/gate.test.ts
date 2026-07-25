@@ -1,8 +1,9 @@
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Exit} from "effect";
+import {Effect, Exit, type FileSystem, type Path} from "effect";
 import {CONTROL_PLANE_RE} from "../control-plane-paths/control-plane-re.ts";
 import {type CheckFailed, CODEOWNERS_PATH, checkCodeownersCp, FORMATS_PATH} from "./gate.ts";
 
@@ -48,11 +49,21 @@ const makeRepo = (opts: {formats?: string; codeowners?: string}): string => {
 	return dir;
 };
 
+// The gate Effects require the `FileSystem | Path` seam (v4 platform migration, #3473);
+// provide the live Node layer — the same NodeServices.layer run.ts gives the bin — so these
+// real-temp-dir IO tests exercise the actual disk path they assert over.
+const provide = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
+	Effect.provide(effect, NodeServices.layer);
+
+const runExit = (dir: string) => Effect.runPromiseExit(provide(checkCodeownersCp(dir)));
+
 const reasonOf = (dir: string): Promise<string> =>
 	Effect.runPromise(
-		checkCodeownersCp(dir).pipe(
-			Effect.catchTag("CheckFailed", (e: CheckFailed) => Effect.succeed(e.reason)),
-			Effect.map((r) => (typeof r === "string" ? r : "")),
+		provide(
+			checkCodeownersCp(dir).pipe(
+				Effect.catchTag("CheckFailed", (e: CheckFailed) => Effect.succeed(e.reason)),
+				Effect.map((r) => (typeof r === "string" ? r : "")),
+			),
 		),
 	);
 
@@ -60,7 +71,7 @@ describe("checkCodeownersCp", () => {
 	it("succeeds when CODEOWNERS covers every §CP path", async () => {
 		const dir = makeRepo({formats: `CONTROL_PLANE_RE='${LIVE_RE}'`, codeowners: FULL_CODEOWNERS});
 		try {
-			const exit = await Effect.runPromiseExit(checkCodeownersCp(dir));
+			const exit = await runExit(dir);
 			assert.isTrue(Exit.isSuccess(exit));
 		} finally {
 			rmSync(dir, {recursive: true, force: true});
@@ -73,7 +84,7 @@ describe("checkCodeownersCp", () => {
 			.join("\n");
 		const dir = makeRepo({formats: `CONTROL_PLANE_RE='${LIVE_RE}'`, codeowners: stale});
 		try {
-			const exit = await Effect.runPromiseExit(checkCodeownersCp(dir));
+			const exit = await runExit(dir);
 			assert.isTrue(Exit.isFailure(exit));
 			assert.include(await reasonOf(dir), "packages/pipeline-cli/");
 		} finally {
@@ -117,7 +128,7 @@ describe("checkCodeownersCp", () => {
 	it("fails (IoError) when a source file is missing — refusing rather than passing", async () => {
 		const dir = makeRepo({codeowners: FULL_CODEOWNERS}); // no formats file
 		try {
-			const exit = await Effect.runPromiseExit(checkCodeownersCp(dir));
+			const exit = await runExit(dir);
 			assert.isTrue(Exit.isFailure(exit));
 		} finally {
 			rmSync(dir, {recursive: true, force: true});

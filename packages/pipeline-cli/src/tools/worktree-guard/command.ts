@@ -36,17 +36,17 @@
  * is dropped: the `pipeline-cli` bin imports `@effect/platform-node` statically, so
  * by the time a subcommand runs the runtime dep is always resolved.
  *
- * The sync git/fs probe helpers below are best-effort by contract: a hook must never
- * crash on a git/fs hiccup, so every probe degrades to a SAFE fallback (allow / keep /
- * dirty), absorbing the failure into a returned value rather than the `E` channel. That
- * is why each carries a per-line `biome-ignore lint/plugin` — lifting them into
- * `Effect.try` only to re-collapse the error to the same fallback is noise, not the
- * failure-modeling `no-raw-try-catch` targets (the design-capture/upload.ts precedent).
+ * The probe helpers below are best-effort by contract: a hook must never crash on a git/fs
+ * hiccup, so every probe degrades to a SAFE fallback (allow / keep / dirty), absorbing the
+ * failure into a returned value rather than the `E` channel. File/path IO crosses the Effect
+ * `FileSystem`/`Path` seam (.patterns/effect-platform-access.md, #3473) and degrades with
+ * `Effect.orElseSucceed`; the `git` shell-outs stay raw `execFileSync` (a subprocess boundary
+ * the platform services do not cover) and keep their per-line `biome-ignore lint/plugin` —
+ * lifting those into `Effect.try` only to re-collapse the error to the same fallback is noise,
+ * not the failure-modeling `no-raw-try-catch` targets (the design-capture/upload.ts precedent).
  */
 import {execFileSync} from "node:child_process";
-import {existsSync, readFileSync, statSync} from "node:fs";
-import {resolve} from "node:path";
-import {Console, Effect, Option} from "effect";
+import {Console, Effect, FileSystem, Option, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {Command, Flag} from "effect/unstable/cli";
 import {
@@ -59,7 +59,7 @@ import {isIsolationExpected, pinBash} from "./bash-pin.ts";
 import {decideCleanTree} from "./clean-tree.ts";
 import {guardEnterWorktree} from "./enter-guard.ts";
 import {type AgentSidecar, resolveIsolationIdentity, sidecarPathFor} from "./isolation-identity.ts";
-import {mainCheckoutPrefix, resolvePath} from "./path-resolve.ts";
+import {mainCheckoutPrefix, type PathDecision, resolvePath} from "./path-resolve.ts";
 import {decideReap} from "./reap.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;
@@ -84,50 +84,65 @@ type TreeKind =
 	| {readonly kind: "linked"; readonly toplevel: string}
 	| {readonly kind: "unknown"};
 
-const probeTree = (cwd: string): TreeKind => {
-	const base = cwd || process.cwd();
-	// biome-ignore lint/plugin: best-effort probe — an unknowable git dir degrades to "unknown", never E (see file header).
-	try {
-		const opts = {cwd: base, encoding: "utf8" as const};
-		const gitDir = resolve(
-			base,
-			execFileSync("git", ["rev-parse", "--absolute-git-dir"], opts).trim(),
-		);
-		const commonDir = resolve(
-			base,
-			execFileSync("git", ["rev-parse", "--git-common-dir"], opts).trim(),
-		);
-		if (gitDir === commonDir) return {kind: "primary"};
-		return {
-			kind: "linked",
-			toplevel: execFileSync("git", ["rev-parse", "--show-toplevel"], opts).trim(),
-		};
-	} catch {
-		return {kind: "unknown"};
-	}
-};
+const probeTree = (cwd: string): Effect.Effect<TreeKind, never, Path.Path> =>
+	Effect.gen(function* () {
+		const pathSvc = yield* Path.Path;
+		const base = cwd || process.cwd();
+		// biome-ignore lint/plugin: best-effort probe — an unknowable git dir degrades to "unknown", never E (see file header).
+		try {
+			const opts = {cwd: base, encoding: "utf8" as const};
+			const gitDir = pathSvc.resolve(
+				base,
+				execFileSync("git", ["rev-parse", "--absolute-git-dir"], opts).trim(),
+			);
+			const commonDir = pathSvc.resolve(
+				base,
+				execFileSync("git", ["rev-parse", "--git-common-dir"], opts).trim(),
+			);
+			if (gitDir === commonDir) return {kind: "primary"} as const;
+			return {
+				kind: "linked",
+				toplevel: execFileSync("git", ["rev-parse", "--show-toplevel"], opts).trim(),
+			} as const;
+		} catch {
+			return {kind: "unknown"} as const;
+		}
+	});
 
 // Unknowable ⇒ false (degrade to today's allow, never a spurious refusal).
-const onPrimaryCheckout = (cwd: string): boolean => probeTree(cwd).kind === "primary";
+const onPrimaryCheckout = (cwd: string): Effect.Effect<boolean, never, Path.Path> =>
+	Effect.map(probeTree(cwd), (tree) => tree.kind === "primary");
 
-/** The agent's OWN worktree + agent-type, from the harness sidecar named by the hook payload. */
-const readSidecar = (input: unknown): AgentSidecar | null => {
-	const path = sidecarPathFor({
-		transcriptPath: str(field(input, "transcript_path")),
-		agentId: str(field(input, "agent_id")),
+/**
+ * The agent's OWN worktree + agent-type, from the harness sidecar named by the hook payload.
+ * The former `existsSync` pre-check is folded into the read itself: an absent sidecar fails
+ * the read, which degrades to the same `null` an absent file always produced.
+ */
+const readSidecar = (
+	input: unknown,
+): Effect.Effect<AgentSidecar | null, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const sidecarPath = sidecarPathFor({
+			transcriptPath: str(field(input, "transcript_path")),
+			agentId: str(field(input, "agent_id")),
+		});
+		if (sidecarPath === null) return null;
+		const fs = yield* FileSystem.FileSystem;
+		const raw = yield* fs
+			.readFileString(sidecarPath, "utf8")
+			.pipe(Effect.orElseSucceed((): string | null => null));
+		if (raw === null) return null;
+		// biome-ignore lint/plugin: best-effort parse — a malformed sidecar degrades to null (fall down the evidence chain), never E (see file header).
+		try {
+			const parsed = JSON.parse(raw) as unknown;
+			return {
+				worktreePath: str(field(parsed, "worktreePath")),
+				agentType: str(field(parsed, "agentType")),
+			};
+		} catch {
+			return null;
+		}
 	});
-	if (path === null || !existsSync(path)) return null;
-	// biome-ignore lint/plugin: best-effort read — an unreadable/malformed sidecar degrades to null (fall down the evidence chain), never E (see file header).
-	try {
-		const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
-		return {
-			worktreePath: str(field(parsed, "worktreePath")),
-			agentType: str(field(parsed, "agentType")),
-		};
-	} catch {
-		return null;
-	}
-};
 
 /**
  * Run-time #2778 attribution (#2784, part 2): record — never block — a bulk-staging Bash command at
@@ -143,34 +158,40 @@ const readSidecar = (input: unknown): AgentSidecar | null => {
  * This is the record-only path on purpose; it emits no permission decision, so the resolved
  * identity cannot change what any hook allows or refuses.
  */
-const recordBashStaging = (command: string, cwd: string, input: unknown): void => {
-	// biome-ignore lint/plugin: best-effort attribution — any recording failure is swallowed so it can never perturb the pin decision, never E (see file header).
-	try {
-		const tree = probeTree(cwd);
-		const identity = resolveIsolationIdentity({
-			sidecar: readSidecar(input),
-			payloadAgentType: str(field(input, "agent_type")),
-			envWorktreeRoot: WORKTREE_ROOT,
-			envAgentType: process.env.CLAUDE_CODE_AGENT ?? "",
-			gitToplevel: tree.kind === "linked" ? tree.toplevel : "",
-			isLinkedWorktree: tree.kind === "linked",
-		});
-		const decision = decideBashStagingAttribution({
-			command,
-			cwd,
-			onPrimaryCheckout: tree.kind === "primary",
-			agentType: identity.agentType,
-			sessionId: process.env.CLAUDE_CODE_SESSION_ID ?? "",
-			worktreeRoot: identity.worktreeRoot,
-			at: new Date().toISOString(),
-		});
-		if (decision.kind !== "record") return;
-		appendRecord(defaultLogPath(), `${JSON.stringify(decision.record)}\n`);
-		process.stderr.write(`${renderBashStagingNote(decision.record)}\n`);
-	} catch {
-		// Attribution is best-effort; a recording failure must never affect the pin decision.
-	}
-};
+const recordBashStaging = (
+	command: string,
+	cwd: string,
+	input: unknown,
+): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const tree = yield* probeTree(cwd);
+		const sidecar = yield* readSidecar(input);
+		// biome-ignore lint/plugin: best-effort attribution — any recording failure is swallowed so it can never perturb the pin decision, never E (see file header).
+		try {
+			const identity = resolveIsolationIdentity({
+				sidecar,
+				payloadAgentType: str(field(input, "agent_type")),
+				envWorktreeRoot: WORKTREE_ROOT,
+				envAgentType: process.env.CLAUDE_CODE_AGENT ?? "",
+				gitToplevel: tree.kind === "linked" ? tree.toplevel : "",
+				isLinkedWorktree: tree.kind === "linked",
+			});
+			const decision = decideBashStagingAttribution({
+				command,
+				cwd,
+				onPrimaryCheckout: tree.kind === "primary",
+				agentType: identity.agentType,
+				sessionId: process.env.CLAUDE_CODE_SESSION_ID ?? "",
+				worktreeRoot: identity.worktreeRoot,
+				at: new Date().toISOString(),
+			});
+			if (decision.kind !== "record") return;
+			appendRecord(defaultLogPath(), `${JSON.stringify(decision.record)}\n`);
+			process.stderr.write(`${renderBashStagingNote(decision.record)}\n`);
+		} catch {
+			// Attribution is best-effort; a recording failure must never affect the pin decision.
+		}
+	});
 
 // A non-force `git worktree remove` that errors means git judged the tree unsafe to
 // remove — we KEEP it (never escalate to --force). Tagged so the error channel stays typed.
@@ -235,6 +256,35 @@ const deny = (reason: string) =>
 		}),
 	);
 
+/**
+ * Cross the pure `resolvePath` core with the async `FileSystem` seam. The core is IO-free by
+ * design and takes a SYNCHRONOUS existence predicate, which `fs.exists` (an Effect) cannot
+ * satisfy — so probe by capture instead of making the core Effect-ful: run it once with a
+ * predicate that records the path it asks about and answers `false`, and only when it *did*
+ * ask does the fs get touched, re-running the core with the answer. The core consults the
+ * predicate at most once (with the worktree copy of a main-checkout path), so this is exactly
+ * the former `existsSync` decision — an unstattable path still degrades to `false` (absent).
+ */
+const decideFilePath = (args: {
+	readonly worktreeRoot: string;
+	readonly cwd: string;
+	readonly candidatePath: string;
+}): Effect.Effect<PathDecision, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		let probed: string | null = null;
+		const absent = resolvePath({
+			...args,
+			existsInWorktree: (p) => {
+				probed = p;
+				return false;
+			},
+		});
+		if (probed === null) return absent;
+		const fs = yield* FileSystem.FileSystem;
+		const exists = yield* fs.exists(probed).pipe(Effect.orElseSucceed(() => false));
+		return exists ? resolvePath({...args, existsInWorktree: () => true}) : absent;
+	});
+
 const preFile = Command.make(
 	"pre-file",
 	{},
@@ -243,18 +293,10 @@ const preFile = Command.make(
 		const toolInput = (field(input, "tool_input") as Record<string, unknown>) ?? {};
 		const candidate = str(toolInput.file_path);
 		const cwd = str(field(input, "cwd"));
-		const decision = resolvePath({
+		const decision = yield* decideFilePath({
 			worktreeRoot: WORKTREE_ROOT,
 			cwd,
 			candidatePath: candidate,
-			existsInWorktree: (p) => {
-				// biome-ignore lint/plugin: best-effort probe — an unstattable path degrades to false (absent), never E (see file header).
-				try {
-					return existsSync(p);
-				} catch {
-					return false;
-				}
-			},
 		});
 		switch (decision.kind) {
 			case "allow":
@@ -280,13 +322,13 @@ const preBash = Command.make(
 		const cwd = str(field(input, "cwd"));
 		// Run-time #2778 attribution (#2784): record a bulk-staging op before deciding the pin. Purely
 		// additive and best-effort — it never changes the pin decision emitted below.
-		recordBashStaging(command, cwd, input);
+		yield* recordBashStaging(command, cwd, input);
 		const decision = pinBash({
 			worktreeRoot: WORKTREE_ROOT,
 			command,
 			isolationExpected: isIsolationExpected({
 				agentType: process.env.CLAUDE_CODE_AGENT ?? "",
-				onPrimaryCheckout: onPrimaryCheckout(cwd),
+				onPrimaryCheckout: yield* onPrimaryCheckout(cwd),
 			}),
 		});
 		if (decision.kind === "allow") return yield* allow();
@@ -324,18 +366,26 @@ const preEnter = Command.make(
  * distinguishes an owner-stop from a nested stop. Anything unreadable ⇒ "" ⇒ ownership unprovable ⇒
  * `decideReap` KEEPs (fail-closed: never reap a possibly-live parent tree).
  */
-const ownedWorktreeFromPayload = (input: unknown): string => {
-	const transcriptPath = str(field(input, "transcript_path"));
-	if (!transcriptPath) return "";
-	const metaPath = transcriptPath.replace(/\.jsonl$/, ".meta.json");
-	if (metaPath === transcriptPath || !existsSync(metaPath)) return "";
-	// biome-ignore lint/plugin: best-effort read — an unreadable/malformed sidecar degrades to "" (ownership unprovable ⇒ decideReap KEEPs), never E (see file header).
-	try {
-		return str(field(JSON.parse(readFileSync(metaPath, "utf8")) as unknown, "worktreePath"));
-	} catch {
-		return "";
-	}
-};
+const ownedWorktreeFromPayload = (
+	input: unknown,
+): Effect.Effect<string, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const transcriptPath = str(field(input, "transcript_path"));
+		if (!transcriptPath) return "";
+		const metaPath = transcriptPath.replace(/\.jsonl$/, ".meta.json");
+		if (metaPath === transcriptPath) return "";
+		const fs = yield* FileSystem.FileSystem;
+		const raw = yield* fs
+			.readFileString(metaPath, "utf8")
+			.pipe(Effect.orElseSucceed((): string | null => null));
+		if (raw === null) return "";
+		// biome-ignore lint/plugin: best-effort parse — a malformed sidecar degrades to "" (ownership unprovable ⇒ decideReap KEEPs), never E (see file header).
+		try {
+			return str(field(JSON.parse(raw) as unknown, "worktreePath"));
+		} catch {
+			return "";
+		}
+	});
 
 /** Is the worktree dirty? `git status --porcelain` non-empty ⇒ dirty (also dirty if we can't tell — fail-safe to KEEP). */
 const worktreeIsDirty = (root: string): boolean => {
@@ -356,22 +406,24 @@ const reap = Command.make(
 	{},
 	Effect.fn(function* () {
 		const input = yield* readStdin();
-		if (!WORKTREE_ROOT || !existsSync(WORKTREE_ROOT)) {
+		const fs = yield* FileSystem.FileSystem;
+		const rootExists =
+			WORKTREE_ROOT !== "" &&
+			(yield* fs.exists(WORKTREE_ROOT).pipe(Effect.orElseSucceed(() => false)));
+		if (!rootExists) {
 			return yield* Console.error("worktree-guard reap: no $WORKTREE_ROOT to reap (skip)");
 		}
-		let dir = true;
-		// biome-ignore lint/plugin: best-effort probe — an unstattable root degrades to not-a-directory (skip), never E (see file header).
-		try {
-			dir = statSync(WORKTREE_ROOT).isDirectory();
-		} catch {
-			dir = false;
-		}
+		// An unstattable root degrades to not-a-directory (skip) — the former `statSync` fallback.
+		const dir = yield* fs.stat(WORKTREE_ROOT).pipe(
+			Effect.map((info) => info.type === "Directory"),
+			Effect.orElseSucceed(() => false),
+		);
 		if (!dir) {
 			return yield* Console.error("worktree-guard reap: $WORKTREE_ROOT is not a directory (skip)");
 		}
 		const decision = decideReap({
 			worktreeRoot: WORKTREE_ROOT,
-			ownedWorktree: ownedWorktreeFromPayload(input),
+			ownedWorktree: yield* ownedWorktreeFromPayload(input),
 			isDirty: worktreeIsDirty(WORKTREE_ROOT),
 		});
 		switch (decision.kind) {
