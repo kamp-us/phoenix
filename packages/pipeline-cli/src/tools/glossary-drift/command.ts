@@ -25,12 +25,9 @@
  * (git/gh IO at the boundary, a total core behind it).
  */
 import {execFileSync} from "node:child_process";
-import {existsSync, readFileSync} from "node:fs";
-import {dirname, join, resolve} from "node:path";
-import {Console, Effect, Option} from "effect";
+import {Console, Effect, FileSystem, Option, Path} from "effect";
 import * as Schema from "effect/Schema";
 import {Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../../find-root-dir.ts";
 import {findDrift, parseKnownTerms, renderIssueBody, renderReport} from "./drift.ts";
 import {GIT_LOG_RECORD_SEP, parseGitLog} from "./gitlog.ts";
 
@@ -43,15 +40,26 @@ class SweepIoError extends Schema.TaggedErrorClass<SweepIoError>()("SweepIoError
 	cause: Schema.Unknown,
 }) {}
 
-const defaultRoot = (from: string = process.cwd()): string => {
-	const start = resolve(from);
-	const root = findRootDir(
-		start,
-		(dir) => ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
-		dirname,
-	);
-	return root ?? start;
-};
+// Walk up from cwd for the first ancestor bearing a repo-root marker, probing each
+// marker through the `FileSystem`/`Path` seam so the resolver is testable off real
+// disk (.patterns/effect-platform-access.md). A marker-existence fault falls through as
+// false, matching the old `existsSync`; the walk falls back to the start on no hit.
+// (`git`/`gh` stay raw `execFileSync` — the subprocess boundary is a separate seam.)
+const defaultRoot = Effect.fn(function* (from: string = process.cwd()) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const start = path.resolve(from);
+	let dir = start;
+	for (;;) {
+		for (const marker of ROOT_MARKERS) {
+			if (yield* fs.exists(path.join(dir, marker)).pipe(Effect.orElseSucceed(() => false)))
+				return dir;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) return start;
+		dir = parent;
+	}
+});
 
 const windowFlag = Flag.integer("window").pipe(
 	Flag.optional,
@@ -81,10 +89,12 @@ const gatherMergeLog = (window: number): Effect.Effect<string, SweepIoError> =>
 		catch: (cause) => new SweepIoError({step: "git log", cause}),
 	});
 
-const readTerms = (path: string): Effect.Effect<string, SweepIoError> =>
-	Effect.try({
-		try: () => readFileSync(path, "utf8"),
-		catch: (cause) => new SweepIoError({step: `read ${path}`, cause}),
+const readTerms = (termsPath: string): Effect.Effect<string, SweepIoError, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		return yield* fs
+			.readFileString(termsPath, "utf8")
+			.pipe(Effect.mapError((cause) => new SweepIoError({step: `read ${termsPath}`, cause})));
 	});
 
 /** File the drift as a status:needs-triage issue via `gh` (the report skill's intake path). */
@@ -110,9 +120,15 @@ const sweep = Command.make(
 	{window: windowFlag, terms: termsFlag, fileIssue: fileIssueFlag},
 	Effect.fn(function* ({window: windowOpt, terms: termsOpt, fileIssue}) {
 		const window = Option.getOrElse(windowOpt, () => DEFAULT_WINDOW);
-		const termsPath = Option.getOrElse(termsOpt, () =>
-			join(defaultRoot(), ".glossary", "TERMS.md"),
-		);
+		const termsPath = yield* Option.match(termsOpt, {
+			onNone: () =>
+				Effect.gen(function* () {
+					const path = yield* Path.Path;
+					const root = yield* defaultRoot();
+					return path.join(root, ".glossary", "TERMS.md");
+				}),
+			onSome: Effect.succeed,
+		});
 
 		yield* Effect.gen(function* () {
 			const [logBlob, termsMd] = yield* Effect.all([gatherMergeLog(window), readTerms(termsPath)], {

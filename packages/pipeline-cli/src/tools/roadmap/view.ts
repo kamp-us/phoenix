@@ -6,9 +6,7 @@
  * tree, and prints it to stdout. Read-only — no verdict, no `CheckFailed`; the only failure is a
  * genuine IO/`gh` crash (also non-zero, per the bin's contract). This is a render, not a guard.
  */
-import {existsSync, readFileSync} from "node:fs";
-import {join} from "node:path";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
 import type {GhCommandError, GhParseError, RepoResolutionError} from "./github.ts";
 import {Github} from "./github.ts";
@@ -22,16 +20,25 @@ export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
 
 const ROADMAP_FILE = "ROADMAP.md";
 
-const readRoadmap = (root: string): Effect.Effect<string, IoError> =>
-	Effect.try({
-		try: () => {
-			const path = join(root, ROADMAP_FILE);
-			if (!existsSync(path)) {
-				throw new Error(`${ROADMAP_FILE} not found at repo root`);
-			}
-			return readFileSync(path, "utf8");
-		},
-		catch: (cause) => new IoError({path: join(root, ROADMAP_FILE), cause}),
+// The file read goes through the `FileSystem`/`Path` seam (over the bin's
+// `NodeServices.layer`), so the wiring is crossable off real disk in a test — see
+// `.patterns/effect-platform-access.md`. A missing ROADMAP.md keeps its specific
+// "not found at repo root" diagnostic; a read fault folds `PlatformError` → `IoError`.
+const readRoadmap = (
+	root: string,
+): Effect.Effect<string, IoError, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const target = path.join(root, ROADMAP_FILE);
+		if (!(yield* fs.exists(target).pipe(Effect.orElseSucceed(() => false)))) {
+			return yield* Effect.fail(
+				new IoError({path: target, cause: new Error(`${ROADMAP_FILE} not found at repo root`)}),
+			);
+		}
+		return yield* fs
+			.readFileString(target, "utf8")
+			.pipe(Effect.mapError((cause) => new IoError({path: target, cause})));
 	});
 
 /**
@@ -43,7 +50,7 @@ export const renderRoadmap = (
 ): Effect.Effect<
 	void,
 	IoError | RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError,
-	Github
+	Github | FileSystem.FileSystem | Path.Path
 > =>
 	Effect.gen(function* () {
 		const md = yield* readRoadmap(root);

@@ -9,8 +9,9 @@
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {NodeServices} from "@effect/platform-node";
 import {afterEach, beforeEach, describe, expect, it} from "@effect/vitest";
-import {Cause, Effect, Exit} from "effect";
+import {Cause, Effect, Exit, type FileSystem, type Path} from "effect";
 import {CheckFailed, checkReadmes} from "./gate.ts";
 
 let root: string;
@@ -35,7 +36,11 @@ const mkPackage = (name: string, opts: {pkgJson?: boolean; readme?: boolean}) =>
 	if (opts.readme) writeFileSync(join(dir, "README.md"), `# ${name}\n`, "utf8");
 };
 
-const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromiseExit(effect);
+// The gate Effects require the `FileSystem | Path` seam (v4 platform migration, #3470);
+// provide the live Node layer — the same NodeServices.layer run.ts gives the bin — so these
+// real-temp-dir IO tests exercise the actual disk path they assert over.
+const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
+	Effect.runPromiseExit(Effect.provide(effect, NodeServices.layer));
 
 const isCheckFailed = (exit: Exit.Exit<unknown, unknown>): boolean =>
 	Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof CheckFailed;
