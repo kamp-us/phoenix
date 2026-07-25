@@ -578,12 +578,10 @@ from exactly that line. Every body also carries an **Evidence** section embeddin
 GitHub-hosted screenshot URLs so a human can see what you judged.
 
 ```bash
-# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
-else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
-fi
+# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
+# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here
+# (#3653; ADR 0062/0064; epic #994)
+VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 upsert() {   # $1 = path to the composed verdict body → prints the upserted comment id; fails loud on a malformed marker
   local out
   out="$($VERDICT post --pr "$PR" --gate design --body-file "$1")" || return 1   # namespace-anchored upsert (PATCH own prior marker, else POST), fail-closed on a bad @ <sha>

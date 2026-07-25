@@ -231,12 +231,9 @@ re-deriving the resolver write-code once hand-copied, and keeps only the two thi
 # is a write-code repair already in flight on this PR? (PR runs only) — resolve the verdict the
 # EXACT way write-code Step R1 does, by delegating each (PR, gate) FAIL-bound-to-head resolution to
 # `pipeline-cli verdict read` (ACL author-gate + latest-wins + SHA-staleness, ADR 0055/0058). Resolve
-# the CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994).
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
-else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
-fi
+# the CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin, else the pinned
+# `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here (#3653; ADR 0062/0064).
+VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 
 # a namespace is an active-repair FAIL iff its latest authorized verdict is FAIL bound to the current
 # head — exit 0 from `verdict read … --expect FAIL`. A stale / SHA-less / PASS / none verdict exits

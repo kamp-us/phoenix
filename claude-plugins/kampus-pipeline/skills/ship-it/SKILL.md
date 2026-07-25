@@ -829,12 +829,10 @@ REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
 
-# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994)
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
-else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
-fi
+# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
+# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here
+# (#3653; ADR 0062/0064; epic #994)
+VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 
 # per present namespace (Step 0), resolve the marker verdict against the current head via the verb:
 # <g>_PASS=1 iff a current-head PASS marker in that gate; <g>_FAIL=1 iff a current-head FAIL (the

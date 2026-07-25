@@ -172,12 +172,9 @@ spec under `apps/web/tests/e2e/`, and **fails closed** (non-zero exit) naming ex
 missing. Run it for the resolved key **before the dry-run flip**:
 
 ```bash
-# phoenix-local: the in-repo consolidated bin; foreign install: the published CLI
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  REACH="node packages/pipeline-cli/src/bin.ts reachability-guard check"
-else
-  REACH="pnpm dlx @kampus/pipeline-cli@0.2.0 reachability-guard check"
-fi
+# the `bin/pipeline-cli` shim resolves in-repo bin, else the installed bin, else the pinned
+# `pnpm dlx` fallback reading the ONE pin (hooks/pin.sh) — no version pinned here (#3653)
+REACH="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli reachability-guard check"
 
 # HARD-REFUSE the flip on a non-zero exit — the report (on stderr) names which assertion failed
 # (no consuming UI / no journey e2e for $FLAG_KEY, or an unknown/unclassified flag). The flag

@@ -124,12 +124,10 @@ re-implementing ~50 lines of `jq` inline. Resolve the tool the same way `$GATE` 
 in-repo first, published fallback (ADR 0064) — then branch on its exit status:
 
 ```bash
-# Resolve the epic-lock CLI once — in-repo first, published fallback (ADR 0064; epic #994).
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  LOCK="node packages/pipeline-cli/src/bin.ts epic-lock"   # phoenix-local: the in-repo consolidated bin
-else
-  LOCK="pnpm dlx @kampus/pipeline-cli@0.2.0 epic-lock"     # foreign install: the published CLI (same pin as $GATE)
-fi
+# The `bin/pipeline-cli` shim resolves the CLI (in-repo bin, else the installed bin, else the
+# pinned `pnpm dlx` fallback) — no version is pinned here; the one pin lives in hooks/pin.sh,
+# which the shim sources (#3653, per #3457).
+LOCK="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli epic-lock"
 
 # Acquire the two-layer lock. `epic-lock acquire` runs the WHOLE ADR-0115 protocol over $CLAUDE_CODE_SESSION_ID
 # and exits 0 ONLY when the lock is ours; every fail-closed back-off — a held label, a 422 missing label, a
@@ -214,20 +212,15 @@ no network, no published-artifact dependency on the daily pipeline), and otherwi
 once into a `$GATE` command and use it everywhere below, so there is exactly one resolution site:
 
 ```bash
-# resolve the gate command once — in-repo-first, published-fallback (ADR 0064; epic #994)
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  GATE="node packages/pipeline-cli/src/bin.ts epic-ledger"   # phoenix-local: run the in-repo consolidated bin
-else
-  # foreign install: run the PUBLISHED consolidated CLI. The pin is the single source-of-truth
-  # version (`install.sh`'s PIN + the other skills' published-fallback share it; epic #994 / #1003);
-  # bump all in lockstep when pipeline-cli releases. Pin a concrete `@<version>` to reproduce a verdict.
-  GATE="pnpm dlx @kampus/pipeline-cli@0.2.0 epic-ledger"
-fi
+# resolve the gate command once via the `bin/pipeline-cli` shim — it resolves in-repo bin,
+# else the installed bin, else the pinned `pnpm dlx` fallback, reading the ONE pin from
+# hooks/pin.sh; no version is pinned here (#3653; ADR 0064; epic #994).
+GATE="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli epic-ledger"
 ```
 
-Either branch yields a runnable `$GATE`, so a foreign install **runs** the gate rather than
-degrading — and no raw `ERR_MODULE_NOT_FOUND` can surface, because the in-repo branch is only
-taken when the bin is on disk and the fallback fetches the published package before running.
+The shim yields a runnable `$GATE`, so a foreign install **runs** the gate rather than
+degrading — and no raw `ERR_MODULE_NOT_FOUND` can surface, because the shim only runs the
+in-repo bin when it is on disk and otherwise fetches the pinned published package before running.
 Then run the gate through `$GATE`:
 
 ```bash

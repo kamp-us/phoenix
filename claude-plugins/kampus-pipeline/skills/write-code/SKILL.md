@@ -162,14 +162,12 @@ namespaces) is an unaddressed FAIL:
 
 ```bash
 ME=$(gh api user --jq '.login')
-# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994).
-# Each per-(PR, gate) FAIL-bound-to-head resolution below delegates to `pipeline-cli verdict read`
-# (ACL author-gate + latest-wins + SHA-staleness, ADR 0055/0058; its unit tests are the contract).
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
-else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
-fi
+# resolve the verdict CLI once via the `bin/pipeline-cli` shim — in-repo bin, else the installed
+# bin, else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned
+# here (#3653; ADR 0062/0064; epic #994). Each per-(PR, gate) FAIL-bound-to-head resolution below
+# delegates to `pipeline-cli verdict read` (ACL author-gate + latest-wins + SHA-staleness, ADR
+# 0055/0058; its unit tests are the contract).
+VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 # open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
 # UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
 gh api "repos/$REPO/pulls?state=open&per_page=100" \
@@ -1746,15 +1744,13 @@ standing forever.
 
 ```bash
 PR=<the PR number you were handed>
-# resolve the verdict CLI once — in-repo-first, published-fallback (ADR 0062/0064; epic #994).
-# The per-(PR, gate) FAIL-bound-to-head resolution delegates to `pipeline-cli verdict read`: the
-# ADR-0055 write+ author-gate, the latest-wins pick, and the ADR-0058 SHA-staleness test folded into
-# one exit code (its unit tests are the contract, #2102) — the same resolution ship-it Step 2 reads.
-if [ -f packages/pipeline-cli/src/bin.ts ]; then
-  VERDICT="node packages/pipeline-cli/src/bin.ts verdict"   # phoenix-local: the in-repo consolidated bin
-else
-  VERDICT="pnpm dlx @kampus/pipeline-cli@0.2.0 verdict"     # foreign install: the published CLI
-fi
+# resolve the verdict CLI once via the `bin/pipeline-cli` shim — in-repo bin, else the installed
+# bin, else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned
+# here (#3653; ADR 0062/0064; epic #994). The per-(PR, gate) FAIL-bound-to-head resolution
+# delegates to `pipeline-cli verdict read`: the ADR-0055 write+ author-gate, the latest-wins pick,
+# and the ADR-0058 SHA-staleness test folded into one exit code (its unit tests are the contract,
+# #2102) — the same resolution ship-it Step 2 reads.
+VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 
 # The write+ author-set (ADR 0055) — `verdict read` computes it internally for the marker resolution,
 # but two DOWNSTREAM steps that are genuinely more than a single (PR, gate) resolution reuse it: the

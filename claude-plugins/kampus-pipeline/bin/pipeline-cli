@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# The single-source `pipeline-cli` shim (#3653, per the #3457 founder ruling).
+#
+# One entry point for every pipeline skill's `pipeline-cli <tool>` call, so no skill ever
+# embeds a version. The version lives in exactly ONE home — hooks/pin.sh — which this shim
+# sources; a bump is a one-line edit there (the package's own package.json/src/version.ts copy
+# is test-locked to that pin by pin-dispatch.hook.test.ts, so it is the same value, not a
+# second source to hand-sync). This deletes the ~13 `pnpm dlx @kampus/pipeline-cli@<v>`
+# copies the skills used to carry, which is the duplication that let pin-skew ship (#3451).
+#
+# Resolution order — "use the installed bin when present, else read the single pin and dlx":
+#   1. in-repo dev source (the phoenix checkout): packages/pipeline-cli/src/bin.ts via node —
+#      identical to the resolver blocks this shim replaces, and always the fresh tree;
+#   2. the SessionStart-installed data-dir bin (a foreign consumer), trusted only when its
+#      attested marker == the pin (the #3742 readiness contract: never a stale/failed tree);
+#   3. self-contained fallback: `pnpm dlx @kampus/pipeline-cli@<pin>`. This fallback MUST
+#      survive (the #3457 ruling): dropping it (bare-PATH-only) fails a §CP guard OPEN when
+#      install.sh never ran this session — a regression, not a cleanup.
+#
+# No first-on-PATH delivery is built or assumed (ADR 0207 retired PATH-shadowing under Claude
+# Code's verbatim settings.json `env` semantics): skills invoke this shim by its resolvable
+# path, never a bare PATH name.
+set -u
+
+SHIM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SHIM_DIR/../hooks/pin.sh" # KAMPUS_PIPELINE_CLI_PIN / _PKG — the one pin home
+
+# 1. in-repo dev source. Located from the shim's OWN path (bin → kampus-pipeline →
+#    claude-plugins → repo root), so it resolves regardless of the caller's cwd; absent in a
+#    foreign consumer, where the `-f` test simply falls through.
+REPO_BIN="$SHIM_DIR/../../../packages/pipeline-cli/src/bin.ts"
+if [ -f "$REPO_BIN" ]; then
+	exec node "$REPO_BIN" "$@"
+fi
+
+# 2. the SessionStart-installed data-dir bin, resolved with the same resolver install.sh and
+#    guard.sh use. Trust it only when its marker == pin (mirrors guard.sh's #3742 readiness):
+#    a stale or failed-install tree is skipped so the pinned fallback below runs instead.
+if [ -f "$SHIM_DIR/../hooks/resolve-data-dir.sh" ]; then
+	. "$SHIM_DIR/../hooks/resolve-data-dir.sh"
+	DATA="$(resolve_pipeline_data_dir 2>/dev/null || true)"
+	if [ -n "${DATA:-}" ]; then
+		BIN="$DATA/node_modules/.bin/pipeline-cli"
+		INSTALLED="$(cat "$DATA/.pipeline-cli.version" 2>/dev/null || true)"
+		if [ -x "$BIN" ] && [ "$INSTALLED" = "$KAMPUS_PIPELINE_CLI_PIN" ]; then
+			exec "$BIN" "$@"
+		fi
+	fi
+fi
+
+# 3. self-contained fallback: fetch the exact pinned version, read from the one pin home.
+exec pnpm dlx "${KAMPUS_PIPELINE_CLI_PKG}@${KAMPUS_PIPELINE_CLI_PIN}" "$@"
