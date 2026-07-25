@@ -32,6 +32,13 @@
  * test of ADR 0187 — merging it unreviewed CAN weaken a gate. Same class of decision as
  * ADR 0187's enforcement-surface test; recorded in ADR 0193.
  *
+ * The marketplace-manifest clause (`^\.claude-plugin/`) needs its OWN branch because the
+ * `^(\.claude|\.github)/` branch requires a literal `/` after `.claude` — the character after
+ * `.claude` in `.claude-plugin/` is a hyphen, so that branch never matched it. Anchored to the
+ * ROOT dir on purpose: an un-anchored `(^|/)\.claude-plugin/` would also sweep in every nested
+ * plugin's own `plugin.json`, including `claude-plugins/pipeline-crew/`, whose corpus a live
+ * founder ruling deliberately keeps OUT of §CP (#3765). See ADR 0212.
+ *
  * Anti-self-authorization is preserved (#981): the live merge-deciding gates still
  * re-resolve the boundary from the formats doc on `origin/main` at run time, so a
  * boundary-editing PR is classified against MAIN's boundary, not its own edit. This
@@ -39,4 +46,4 @@
  * runtime resolution off the origin/main read.
  */
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\\.jsonc$|^biome-plugins/";
+	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\\.jsonc$|^biome-plugins/";

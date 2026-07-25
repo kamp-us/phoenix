@@ -36,6 +36,7 @@ describe("splitTopLevelBranches", () => {
 		const branches = splitTopLevelBranches(LIVE_RE);
 		expect(branches).toEqual([
 			"(\\.claude|\\.github)/",
+			"\\.claude-plugin/",
 			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/",
 			"claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$",
 			"claude-plugins/kampus-pipeline/agents/",
@@ -55,6 +56,10 @@ describe("expandBranch", () => {
 			{path: ".claude/", kind: "dir"},
 			{path: ".github/", kind: "dir"},
 		]);
+	});
+
+	it("expands the root marketplace-manifest branch as a dir (ADR 0212)", () => {
+		expect(expandBranch("\\.claude-plugin/")).toEqual([{path: ".claude-plugin/", kind: "dir"}]);
 	});
 
 	it("expands the eleven skill dirs", () => {
@@ -121,6 +126,7 @@ describe("cpPaths over the live regex", () => {
 		expect(cpPaths(LIVE_RE).map((p) => p.path)).toEqual([
 			".claude/",
 			".github/",
+			".claude-plugin/",
 			"claude-plugins/kampus-pipeline/skills/ship-it/",
 			"claude-plugins/kampus-pipeline/skills/review-code/",
 			"claude-plugins/kampus-pipeline/skills/review-doc/",
@@ -208,6 +214,7 @@ describe("findUncovered — the drift check", () => {
 		const codeowners = [
 			"/.claude/ @usirin",
 			"/.github/ @usirin",
+			"/.claude-plugin/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/ship-it/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-code/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-doc/ @usirin",
@@ -237,6 +244,7 @@ describe("findUncovered — the drift check", () => {
 		const stale = [
 			"/.claude/ @usirin",
 			"/.github/ @usirin",
+			"/.claude-plugin/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/ship-it/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-code/ @usirin",
 			"/claude-plugins/kampus-pipeline/skills/review-doc/ @usirin",
@@ -261,6 +269,12 @@ describe("findUncovered — the drift check", () => {
 			"claude-plugins/kampus-pipeline/hooks.json",
 			"packages/pipeline-cli/",
 		]);
+	});
+	it("flags a missing /.claude-plugin/ row — the /.claude/ row does NOT cover it (ADR 0212)", () => {
+		const owned = parseCodeownersPatterns(["/.claude/ @usirin", "/.github/ @usirin"].join("\n"));
+		const marketplace = paths.filter((p) => p.path === ".claude-plugin/");
+		expect(marketplace).toHaveLength(1);
+		expect(findUncovered(marketplace, owned).map((p) => p.path)).toEqual([".claude-plugin/"]);
 	});
 });
 
