@@ -27,9 +27,9 @@ import {dirname, join, resolve} from "node:path";
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {findRootDir} from "../../find-root-dir.ts";
-import {type CheckFailed, checkCrewFanout} from "./gate.ts";
+import {onCheckFailed} from "../../gate-fail.ts";
+import {checkCrewFanout} from "./gate.ts";
 
-const GATE_FAIL_EXIT_CODE = 1;
 // Repo-root markers, in priority order: a pnpm workspace, then a VCS dir.
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 
@@ -52,15 +52,6 @@ const rootFlag = Flag.string("root").pipe(
 
 const resolveRoot = (root: Option.Option<string>): string =>
 	Option.getOrElse(root, () => defaultRoot());
-
-// CheckFailed is the expected gate-fail signal — print its reason on stderr and exit
-// non-zero WITHOUT a stack trace; genuine crashes (IoError, etc.) still get the default
-// error report (also a non-zero exit — both are failures, undistinguished).
-const onCheckFailed = (e: CheckFailed) =>
-	Effect.sync(() => {
-		process.stderr.write(`${e.reason}\n`);
-		process.exit(GATE_FAIL_EXIT_CODE);
-	});
 
 const check = Command.make(
 	"check",

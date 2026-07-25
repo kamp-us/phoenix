@@ -17,6 +17,7 @@
  * misconfiguration (wrong root, a workspace reshape), NOT a silent pass — the
  * verdict is a failure, never a vacuous green.
  */
+import {type Annotation, atFile, unlocated} from "../../annotate.ts";
 
 /**
  * One immediate `packages/*` subdirectory reduced to the two facts the decision
@@ -85,6 +86,23 @@ export const renderReport = (verdict: ReadmeGuardVerdict): string => {
 		`(of ${verdict.members.length} scanned):\n${lines.join("\n")}\n\n` +
 		"Every packages/* workspace package must carry a README.md (what it is, why it\n" +
 		"exists, how to use it). Add one to each listed directory."
+	);
+};
+
+/**
+ * The CI annotations for a verdict — one per member missing its README, anchored on
+ * that member's `package.json` (the file that exists, so the annotation renders on the
+ * diff; the missing README has no file to hang on). Zero-scope annotates bare (#3868).
+ */
+export const verdictAnnotations = (verdict: ReadmeGuardVerdict): ReadonlyArray<Annotation> => {
+	if (verdict.pass) return [];
+	if (verdict.reason === "zero-scope") return [unlocated("error", renderReport(verdict))];
+	return verdict.missing.map((dir) =>
+		atFile(
+			"error",
+			`${dir}/package.json`,
+			`${dir} has no README.md — every packages/* workspace package must carry one (what it is, why it exists, how to use it). Fix: add ${dir}/README.md.`,
+		),
 	);
 };
 

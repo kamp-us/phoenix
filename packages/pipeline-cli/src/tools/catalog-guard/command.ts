@@ -29,9 +29,9 @@
  */
 import {Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {type CheckFailed, checkCatalog} from "./gate.ts";
+import {onCheckFailed} from "../../gate-fail.ts";
+import {checkCatalog} from "./gate.ts";
 
-const GATE_FAIL_EXIT_CODE = 1;
 // Repo-root markers, in priority order: a pnpm workspace, then a VCS dir.
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 
@@ -68,15 +68,6 @@ const resolveRoot = (
 	root: Option.Option<string>,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
 	Option.match(root, {onNone: () => defaultRoot(), onSome: Effect.succeed});
-
-// CheckFailed is the expected gate-fail signal — print its reason on stderr and exit
-// non-zero WITHOUT a stack trace; genuine crashes (IoError, etc.) still get the
-// default error report (also a non-zero exit — both are failures, undistinguished).
-const onCheckFailed = (e: CheckFailed) =>
-	Effect.sync(() => {
-		process.stderr.write(`${e.reason}\n`);
-		process.exit(GATE_FAIL_EXIT_CODE);
-	});
 
 const check = Command.make(
 	"check",

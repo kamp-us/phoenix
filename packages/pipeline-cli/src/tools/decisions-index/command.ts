@@ -34,10 +34,9 @@
  */
 import {Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import type {CheckFailed} from "./gate.ts";
+import {onCheckFailedWithPrefix} from "../../gate-fail.ts";
 import {checkIndex, compactIndex, generateIndex, nextIndex, validateAdrs} from "./gate.ts";
 
-const GATE_FAIL_EXIT_CODE = 1;
 const DECISIONS_DIR = ".decisions";
 // Repo-root markers, in priority order. `.decisions` itself is the strongest
 // signal (the dir we'll read); a workspace/VCS marker is the fallback.
@@ -89,16 +88,7 @@ const resolveDir = (
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
 	Option.match(dir, {onNone: () => defaultDecisionsDir(), onSome: Effect.succeed});
 
-// CheckFailed is the expected gate-fail signal — print its reason on stderr and exit
-// non-zero WITHOUT a stack trace; genuine crashes (IoError, etc.) still get the
-// default error report (also a non-zero exit — both are failures, undistinguished).
-// Caught per-handler (not at the bin's run boundary) so the contract survives the
-// fold into the shared `pipeline-cli` bin, which provides no per-tool catch.
-const onCheckFailed = (e: CheckFailed) =>
-	Effect.sync(() => {
-		process.stderr.write(`decisions-index: ${e.reason}\n`);
-		process.exit(GATE_FAIL_EXIT_CODE);
-	});
+const onCheckFailed = onCheckFailedWithPrefix("decisions-index: ");
 
 const compact = Command.make(
 	"compact",

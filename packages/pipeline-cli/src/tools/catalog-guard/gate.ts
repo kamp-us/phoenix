@@ -14,14 +14,18 @@
  */
 import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
+import {Annotation} from "../../annotate.ts";
+import {annotationsOrNone} from "../../gate-fail.ts";
 import {
 	type AllowlistEntry,
 	DEFAULT_ALLOWLIST,
+	findDepLine,
 	judge,
 	manifestDeps,
 	type PackageManifest,
 	parseWorkspacePackageGlobs,
 	renderReport,
+	verdictAnnotations,
 } from "./catalog-guard.ts";
 
 /** A directory/file IO failure: the run couldn't complete. */
@@ -30,9 +34,10 @@ export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
 	cause: Schema.Unknown,
 }) {}
 
-/** Carries the non-zero gate-fail exit (the report is already on stderr). */
+// See the `annotations` note on readme-guard's CheckFailed (#3868).
 export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFailed", {
 	reason: Schema.String,
+	annotations: Schema.optionalKey(Schema.Array(Annotation)),
 }) {}
 
 /**
@@ -74,11 +79,19 @@ const enumerateManifestPaths = (
 		return [...paths].sort();
 	}).pipe(Effect.mapError((cause) => new IoError({path: root, cause})));
 
-/** Read + parse each manifest path into the pure core's `PackageManifest` shape. */
+/**
+ * Read + parse each manifest path into the pure core's `PackageManifest` shape. The raw
+ * text rides along because the parsed manifest carries no positions, and the CI
+ * annotation wants the line the offending dep sits on (#3868).
+ */
 const readManifests = (
 	root: string,
 	paths: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyArray<PackageManifest>, IoError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<
+	ReadonlyArray<{readonly manifest: PackageManifest; readonly text: string}>,
+	IoError,
+	FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		const path = yield* Path.Path;
@@ -90,9 +103,12 @@ const readManifests = (
 					Effect.mapError((cause) => new IoError({path: abs, cause})),
 					Effect.flatMap((text) =>
 						Effect.try({
-							try: (): PackageManifest => ({
-								path: rel,
-								deps: manifestDeps(JSON.parse(text) as Record<string, unknown>),
+							try: () => ({
+								manifest: {
+									path: rel,
+									deps: manifestDeps(JSON.parse(text) as Record<string, unknown>),
+								},
+								text,
 							}),
 							catch: (cause) => new IoError({path: abs, cause}),
 						}),
@@ -131,11 +147,21 @@ export const checkCatalog = (
 	Effect.gen(function* () {
 		const globs = yield* readWorkspaceGlobs(root);
 		const paths = yield* enumerateManifestPaths(root, globs);
-		const manifests = yield* readManifests(root, paths);
-		const verdict = judge(manifests, allowlist);
+		const read = yield* readManifests(root, paths);
+		const verdict = judge(
+			read.map((r) => r.manifest),
+			allowlist,
+		);
 		if (verdict.pass) {
 			yield* Console.log(renderReport(verdict));
 			return;
 		}
-		return yield* Effect.fail(new CheckFailed({reason: renderReport(verdict)}));
+		const texts = new Map(read.map((r) => [r.manifest.path, r.text]));
+		const annotations = yield* annotationsOrNone(() =>
+			verdictAnnotations(verdict, (v) => {
+				const text = texts.get(v.path);
+				return text === undefined ? null : findDepLine(text, v.field, v.name);
+			}),
+		);
+		return yield* Effect.fail(new CheckFailed({reason: renderReport(verdict), annotations}));
 	});

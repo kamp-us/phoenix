@@ -84,4 +84,20 @@ describe("checkReadmes — the CI exit-code gate over a fake repo dir", () => {
 		const exit = await run(checkReadmes(root));
 		expect(isCheckFailed(exit)).toBe(true);
 	});
+
+	// The CI annotation rides on the failure itself, so a red run always has one to emit (#3868).
+	it("carries a located annotation on the failure so CI can annotate the diff", async () => {
+		writeWorkspace();
+		mkPackage("has", {pkgJson: true, readme: true});
+		mkPackage("missing", {pkgJson: true});
+		const exit = await run(checkReadmes(root));
+		const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null;
+		expect(error).toBeInstanceOf(CheckFailed);
+		expect((error as CheckFailed).annotations).toEqual([
+			expect.objectContaining({
+				level: "error",
+				location: {_tag: "File", file: "packages/missing/package.json"},
+			}),
+		]);
+	});
 });
