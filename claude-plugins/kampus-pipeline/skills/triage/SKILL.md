@@ -542,8 +542,7 @@ Before you price or home anything, ask what ADR
 makes the pricing question for all work: **what does this move forward?** The founder's
 litmus test, verbatim:
 
-> if the founder never learned this ticket existed, would anything visibly change? If no,
-> it does not get a home by default.
+> if the founder never learned this ticket existed, would anything visibly change? If no, it does not get a home by default.
 
 Apply it as written — it is a *default*, not a kill switch: a "no" means the issue does not
 get a milestone home for free, so it must then earn one of the other two outcomes below.
