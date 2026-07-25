@@ -26,34 +26,43 @@
  * bin's run boundary) so the contract survives folding into the shared `pipeline-cli`
  * bin, which provides only `NodeServices.layer` and no per-tool catch.
  */
-import {existsSync} from "node:fs";
-import {dirname, join, resolve} from "node:path";
-import {Effect, Option} from "effect";
+import {Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../../find-root-dir.ts";
 import {type CheckFailed, checkReadmes} from "./gate.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;
 // Repo-root markers, in priority order: a pnpm workspace, then a VCS dir.
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 
-const defaultRoot = (from: string = process.cwd()): string => {
-	const start = resolve(from);
-	const root = findRootDir(
-		start,
-		(dir) => ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
-		dirname,
-	);
-	return root ?? start;
-};
+// Walk up from cwd for the first ancestor bearing a repo-root marker, probing each
+// marker through the `FileSystem`/`Path` seam so the resolver is testable off real
+// disk (.patterns/effect-platform-access.md). A marker-existence fault falls through as
+// false, matching the old `existsSync`; the walk falls back to the start on no hit.
+const defaultRoot = Effect.fn(function* (from: string = process.cwd()) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const start = path.resolve(from);
+	let dir = start;
+	for (;;) {
+		for (const marker of ROOT_MARKERS) {
+			if (yield* fs.exists(path.join(dir, marker)).pipe(Effect.orElseSucceed(() => false)))
+				return dir;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) return start;
+		dir = parent;
+	}
+});
 
 const rootFlag = Flag.string("root").pipe(
 	Flag.optional,
 	Flag.withDescription("the repo root to scan packages/* under (default: walk up for one)"),
 );
 
-const resolveRoot = (root: Option.Option<string>): string =>
-	Option.getOrElse(root, () => defaultRoot());
+const resolveRoot = (
+	root: Option.Option<string>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+	Option.match(root, {onNone: () => defaultRoot(), onSome: Effect.succeed});
 
 // CheckFailed is the expected gate-fail signal — print its reason on stderr and exit
 // non-zero WITHOUT a stack trace; genuine crashes (IoError, etc.) still get the
@@ -68,7 +77,8 @@ const check = Command.make(
 	"check",
 	{root: rootFlag},
 	Effect.fn(function* ({root: rootOpt}) {
-		yield* checkReadmes(resolveRoot(rootOpt)).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
+		const root = yield* resolveRoot(rootOpt);
+		yield* checkReadmes(root).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
 	}),
 ).pipe(
 	Command.withDescription("Fail the build if any packages/* workspace member lacks a README.md"),

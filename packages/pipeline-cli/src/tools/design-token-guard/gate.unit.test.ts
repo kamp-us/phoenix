@@ -4,12 +4,13 @@
  * `design-token-guard.unit.test.ts`; this crosses the IO gate over a real temp tree,
  * asserting the exit-code contract from observable outcomes — never by spawning the bin.
  */
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {dirname, join} from "node:path";
+import {NodeServices} from "@effect/platform-node";
 import {afterEach, beforeEach, describe, expect, it} from "@effect/vitest";
-import {Cause, Effect, Exit} from "effect";
-import {CheckFailed, checkDesignTokens, writeBaseline} from "./gate.ts";
+import {Cause, Effect, Exit, type FileSystem, type Path} from "effect";
+import {CheckFailed, checkDesignTokens, IoError, writeBaseline} from "./gate.ts";
 
 let root: string;
 beforeEach(() => {
@@ -28,6 +29,13 @@ const write = (rel: string, contents: string) => {
 	writeFileSync(abs, contents, "utf8");
 };
 
+/** `root/<rel>` → `root/<target>` (target need not exist — that's the dangling case). */
+const link = (rel: string, target: string) => {
+	const abs = join(root, rel);
+	mkdirSync(dirname(abs), {recursive: true});
+	symlinkSync(join(root, target), abs);
+};
+
 const writeConfig = (over: Partial<Record<string, unknown>> = {}) =>
 	write(
 		CONFIG,
@@ -39,9 +47,15 @@ const writeConfig = (over: Partial<Record<string, unknown>> = {}) =>
 		}),
 	);
 
-const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromiseExit(effect);
+// The gate Effects require the `FileSystem | Path` seam (v4 platform migration, #3470);
+// provide the live Node layer — the same NodeServices.layer run.ts gives the bin — so these
+// real-temp-dir IO tests exercise the actual disk path they assert over.
+const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
+	Effect.runPromiseExit(Effect.provide(effect, NodeServices.layer));
 const isCheckFailed = (exit: Exit.Exit<unknown, unknown>): boolean =>
 	Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof CheckFailed;
+const isIoError = (exit: Exit.Exit<unknown, unknown>): boolean =>
+	Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof IoError;
 
 describe("checkDesignTokens — the CI exit-code gate over a fake tree", () => {
 	it("SUCCEEDS on a clean tree (role tokens only)", async () => {
@@ -95,6 +109,55 @@ describe("checkDesignTokens — the CI exit-code gate over a fake tree", () => {
 		write(join(CSS_DIR, "a.css"), `.a{ color: red; }`);
 		expect(isCheckFailed(await run(checkDesignTokens(root)))).toBe(true);
 	});
+});
+
+// The walk must keep the lstat semantics of the pre-v4 `Dirent` walk: symlinked DIRS are not
+// descended, symlinked `.css` FILES still are. The dir half is a fail-OPEN when it regresses —
+// `judge` builds `declaredUniverse` corpus-wide, so declarations behind a link silence a real
+// undefined-ref red on a fail-closed gate (ADR 0092) — hence these pin the behaviour directly.
+describe("walkCss symlink semantics", () => {
+	it("does NOT let a declaration behind a symlinked DIR into the corpus (stays RED)", async () => {
+		writeConfig();
+		write(join(CSS_DIR, "a.css"), `.a{ color: var(--foo); }`);
+		write(join("outside", "o.css"), `:root{ --foo: red; }`);
+		link(join(CSS_DIR, "linked"), "outside");
+		expect(isCheckFailed(await run(checkDesignTokens(root)))).toBe(true);
+	});
+
+	it("still scans a symlinked .css FILE (its violations are caught)", async () => {
+		writeConfig();
+		write(join(CSS_DIR, "a.css"), `.a{ color: red; }`);
+		write(join("outside", "ext.css"), `.x{ color: #60a5fa; }`);
+		link(join(CSS_DIR, "linked.css"), join("outside", "ext.css"));
+		expect(isCheckFailed(await run(checkDesignTokens(root)))).toBe(true);
+	});
+
+	it("ignores a dangling NON-.css symlink under the root (matches the dirent walk)", async () => {
+		writeConfig();
+		write(join(CSS_DIR, "tokens.css"), `:root{ --accent: #e54d2e; }`);
+		write(join(CSS_DIR, "a.css"), `.a{ color: var(--accent); }`);
+		link(join(CSS_DIR, "dangling-dir"), "gone-dir");
+		expect(Exit.isSuccess(await run(checkDesignTokens(root)))).toBe(true);
+	});
+
+	// The dirent walk pushed any non-directory entry named `*.css` and then `readFileSync`'d it,
+	// so a dangling one raised ENOENT and red'd the gate. That is a tree-corruption alarm: a real
+	// CSS file replaced by a dangling link must not silently leave scope.
+	it("HARD-FAILS (IoError) on a dangling .css symlink under the root", async () => {
+		writeConfig();
+		write(join(CSS_DIR, "tokens.css"), `:root{ --accent: #e54d2e; }`);
+		write(join(CSS_DIR, "a.css"), `.a{ color: var(--accent); }`);
+		link(join(CSS_DIR, "dangling.css"), join("outside", "gone.css"));
+		expect(isIoError(await run(checkDesignTokens(root)))).toBe(true);
+	});
+
+	it("terminates on a symlink cycle under the root", async () => {
+		writeConfig();
+		write(join(CSS_DIR, "tokens.css"), `:root{ --accent: #e54d2e; }`);
+		write(join(CSS_DIR, "a.css"), `.a{ color: var(--accent); }`);
+		link(join(CSS_DIR, "loop"), CSS_DIR);
+		expect(Exit.isSuccess(await run(checkDesignTokens(root)))).toBe(true);
+	}, 15_000);
 });
 
 describe("writeBaseline — regenerate the ceilings", () => {

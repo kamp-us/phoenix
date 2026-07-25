@@ -19,11 +19,8 @@
  * fetch in `view.ts`/`github.ts`. `GithubLive` is baked in with `Command.provide(...)` so the
  * registered command's residual requirement is the Node platform union (the registry seam, #994).
  */
-import {existsSync, readFileSync} from "node:fs";
-import {dirname, join, resolve} from "node:path";
-import {Console, Effect, Option} from "effect";
+import {Console, Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {findRootDir} from "../../find-root-dir.ts";
 import {generateDiagram, parseDependencies} from "./diagram.ts";
 import {GithubLive} from "./github.ts";
 import {parseRoadmap} from "./roadmap.ts";
@@ -32,29 +29,41 @@ import {renderRoadmap} from "./view.ts";
 // Repo-root markers, in priority order: a pnpm workspace, then a VCS dir.
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 
-const defaultRoot = (from: string = process.cwd()): string => {
-	const start = resolve(from);
-	const root = findRootDir(
-		start,
-		(dir) => ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
-		dirname,
-	);
-	return root ?? start;
-};
+// Walk up from cwd for the first ancestor bearing a repo-root marker, probing each
+// marker through the `FileSystem`/`Path` seam so the resolver is testable off real
+// disk (.patterns/effect-platform-access.md). A marker-existence fault falls through as
+// false, matching the old `existsSync`; the walk falls back to the start on no hit.
+const defaultRoot = Effect.fn(function* (from: string = process.cwd()) {
+	const fs = yield* FileSystem.FileSystem;
+	const path = yield* Path.Path;
+	const start = path.resolve(from);
+	let dir = start;
+	for (;;) {
+		for (const marker of ROOT_MARKERS) {
+			if (yield* fs.exists(path.join(dir, marker)).pipe(Effect.orElseSucceed(() => false)))
+				return dir;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) return start;
+		dir = parent;
+	}
+});
 
 const rootFlag = Flag.string("root").pipe(
 	Flag.optional,
 	Flag.withDescription("the repo root holding ROADMAP.md (default: walk up for one)"),
 );
 
-const resolveRoot = (root: Option.Option<string>): string =>
-	Option.getOrElse(root, () => defaultRoot());
+const resolveRoot = (
+	root: Option.Option<string>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+	Option.match(root, {onNone: () => defaultRoot(), onSome: Effect.succeed});
 
 const view = Command.make(
 	"view",
 	{root: rootFlag},
 	Effect.fn(function* ({root: rootOpt}) {
-		yield* renderRoadmap(resolveRoot(rootOpt));
+		yield* renderRoadmap(yield* resolveRoot(rootOpt));
 	}),
 ).pipe(
 	Command.withDescription(
@@ -70,8 +79,10 @@ const diagram = Command.make(
 	"diagram",
 	{root: rootFlag},
 	Effect.fn(function* ({root: rootOpt}) {
-		const root = resolveRoot(rootOpt);
-		const md = yield* Effect.try(() => readFileSync(join(root, "ROADMAP.md"), "utf8"));
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const root = yield* resolveRoot(rootOpt);
+		const md = yield* fs.readFileString(path.join(root, "ROADMAP.md"), "utf8");
 		const {arcs, campaigns} = parseRoadmap(md);
 		yield* Console.log(generateDiagram(arcs, campaigns, parseDependencies(md)));
 	}),
