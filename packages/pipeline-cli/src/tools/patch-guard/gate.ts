@@ -92,7 +92,19 @@ const gatherMarkers = (
 					const abs = path.join(dir, name);
 					const stat = yield* fs.stat(abs);
 					if (stat.type === "Directory") {
-						if (!IGNORE_DIRS.has(name)) yield* walk(abs);
+						// A symlinked dir is NEVER recursed: `fs.stat` follows links, but the
+						// pre-migration `Dirent.isDirectory()` was lstat-based, so a link-to-dir
+						// fell through and was skipped. v4's FileSystem exposes no `lstat`, and
+						// `readDirectory` takes no `withFileTypes` — but `readLink` succeeds only
+						// on a link, which is the equivalent test. Recursing one would both widen
+						// the pin scan (a guard failing OPEN) and admit a symlink cycle, since
+						// IGNORE_DIRS screens by name, not link-ness. Symlinked FILES stay in
+						// scope, as at base — hence the guard sits on this arm only.
+						const isSymlink = yield* fs.readLink(abs).pipe(
+							Effect.as(true),
+							Effect.orElseSucceed(() => false),
+						);
+						if (!isSymlink && !IGNORE_DIRS.has(name)) yield* walk(abs);
 						continue;
 					}
 					if (stat.type !== "File" || !isTestFile(name)) continue;
