@@ -595,11 +595,13 @@ citations.** The mechanical shortlist is one command — it ranks the live-accep
 decision domain the new one touches **and which it does not cite**:
 
 ```bash
-# Subject = the ADR file at the PR head (Step 2 already materialized it). Exit 0 means the
-# mechanical sweep found nothing left to open; non-zero means there is a shortlist to clear, or
-# that the sweep was INDETERMINATE and proved nothing.
+# Subject = the ADR file at the PR head. The sweep needs a real file on disk, so this is one of
+# the rare doc checks that wants Step 2's `--worktree` materialization: run it with `--worktree`
+# and `. "$WT_FILE"` to get $REVIEW_WT. Exit 0 means the mechanical sweep found nothing left to
+# open; non-zero means there is a shortlist to clear, or that the sweep was INDETERMINATE and
+# proved nothing.
 "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli" adr-sweep shortlist \
-  --new "$PR_WT/.decisions/NNNN-slug.md"
+  --new "$REVIEW_WT/.decisions/NNNN-slug.md"
 ```
 
 `pipeline-cli decisions-index compact` (the one-line `id · title · status` map) is the manual
