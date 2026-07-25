@@ -323,6 +323,19 @@ const readParsedConfig = (env: {
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		const configPath = resolveConfigPath(env);
+		// NOT-THERE and CANNOT-READ are different operator facts and get different messages. Collapsing
+		// them to one "cannot read" line sent an operator whose config existed but was unreadable off to
+		// re-run a setup step that would not have fixed anything. Probe first (a probe fault folds to
+		// "absent" so an fs error still fails the launch closed under a named reason, never a default).
+		const exists = yield* fs.exists(configPath).pipe(Effect.orElseSucceed(() => false));
+		if (!exists) {
+			return yield* Effect.fail(
+				new LaunchConfigError({
+					configPath,
+					reason: `no crew config at "${configPath}". Every operator-specific launch value resolves from this seam and there is no legitimate default to fall back on, so the launch stops here. Create it: copy claude-plugins/pipeline-crew/crew.config.template.jsonc to .claude/crew.config.jsonc, replace every <placeholder>, then re-run stand-up (or point $CREW_CONFIG at your own copy).`,
+				}),
+			);
+		}
 		// The `FileSystem` seam (over the bin's NodeServices.layer) reads the config, so a `unit` test
 		// substitutes it in place of the real disk (.patterns/effect-platform-access.md). A read fault is
 		// a typed `PlatformError` on E, folded to the dimension-naming LaunchConfigError this reader owns.
@@ -331,7 +344,7 @@ const readParsedConfig = (env: {
 				(cause) =>
 					new LaunchConfigError({
 						configPath,
-						reason: `cannot read crew config (run pipeline-crew stand-up first): ${String(cause)}`,
+						reason: `crew config "${configPath}" exists but could not be read — this is a permissions/IO fault on an EXISTING file, not a missing one, so re-running setup will not fix it; check the file's ownership and mode: ${String(cause)}`,
 					}),
 			),
 		);

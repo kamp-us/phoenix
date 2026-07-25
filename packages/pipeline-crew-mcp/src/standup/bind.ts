@@ -4,34 +4,43 @@
  * for ONE session — no process spawn here (the orchestration child #3299 spawns), pure derivation
  * over the already-resolved `LaunchConfig` channels dimension (#3293).
  *
- * It produces two coupled outputs the launcher wires per invocation:
- *   1. `serverConfig` — the crew channel MCP server's config value (`<node> <abs bin.ts> session
- *      --role <role> --project-root <root>`), which the launcher writes into a PERSISTED config scope:
- *      a per-pane project-scope leaf `.mcp.json` (`<pane cwd>/.mcp.json`, register-project-scope.ts).
- *      The old inline `--mcp-config` path is GONE: claude 2.1.212's channel-ref resolver validates a
- *      `server:<name>` ref against the four persisted scopes only (enterprise/user/project/local) and
- *      NEVER consults an inline `--mcp-config` server, so a server handed only inline is structurally
- *      invisible to the resolver and the channel comes up inert crew-wide (issue #3444). The command
- *      is the launcher's own node (`process.execPath`) + the ABSOLUTE `bin.ts` path — a bare unlinked
- *      package bin name never resolves on the launched session's PATH (#3425); this mirrors
- *      ensure-tracker.ts's detached-child spawn, the package's canonical bin.ts runner.
- *   2. the channel-registration flag NAMING that same server — `--channels <refs>` for the
- *      allowlist mode, `--dangerously-load-development-channels <refs>` for dev. A server present in a
- *      persisted scope alone is INERT: the CLI only activates a channel once its server is also named
- *      in this flag (verified against the 2.1.212 bundle: `--channels <servers...>`,
- *      `--dangerously-load-development-channels <servers...>`, and the `allowedChannelPlugins` gate).
+ * It produces two coupled outputs the launcher wires per invocation: the channel-registration flag
+ * (`--channels <refs>` for allowlist, `--dangerously-load-development-channels <refs>` for dev — a
+ * channel is INERT until its server is named there) and the `channelBinding` that says HOW the named
+ * server reaches the CLI's channel-ref resolver. Those two shapes are the two supported launch paths,
+ * and `ChannelBinding` makes the wrong pairing unrepresentable rather than a runtime branch:
+ *
+ *   - **allowlist / production ⇒ `plugin-channel`** (#3920). The crew server is declared ONCE, statically,
+ *     by the marketplace plugin `claude-plugins/pipeline-crew-mcp` (#3366 / ADR 0201), and the session
+ *     binds it by the `plugin:<name>@<marketplace>` ref the CLI's `--channels` grammar accepts. Nothing
+ *     is written to a persisted scope — the plugin IS the persisted declaration. Because that one static
+ *     declaration serves every role, the per-pane role/root/instance travel as pane ENV instead of argv
+ *     (`env` below), which `crew/session-inputs.ts` resolves flag-or-env.
+ *   - **development ⇒ `project-scope`** (#3444, unchanged). Dev mode's inline `server:<name>` ref resolves
+ *     only against the four PERSISTED config scopes (enterprise/user/project/local) — never an inline
+ *     `--mcp-config` — so the launcher writes the server's config value into a per-pane leaf `.mcp.json`
+ *     (register-project-scope.ts). The command is the launcher's own node (`process.execPath`) + the
+ *     ABSOLUTE `bin.ts` path, since a bare unlinked package bin name never resolves on the launched
+ *     session's PATH (#3425); role/root/instance are baked into that argv, so dev needs no pane env.
  *
  * The one non-obvious thing: this FAILS CLOSED, like the config reader it consumes. Three ways a
  * bind would come up inert are each a launch to refuse with a named error, never paper over: the
  * crew server's `bin.ts` not resolving on disk (`CrewSessionBinUnresolvableError`, #3425), the crew
- * server not named in the channel flag (`CrewServerNotRegisteredError`), and an allowlist-mode
- * `plugin:` channel whose plugin the operator never allowlisted (`ChannelPluginNotAllowedError`, the
- * exact rejection the CLI raises). The project-scope WRITE is a launcher side effect, so its own
- * fail-closed guard lives at that write (register-project-scope.ts / orchestrate.ts), not here.
+ * channel not named in the channel flag at all (`CrewServerNotRegisteredError` — the required ref
+ * differs per mode), and an allowlist-mode `plugin:` channel whose plugin the operator never
+ * allowlisted (`ChannelPluginNotAllowedError`, the exact rejection the CLI raises). The project-scope
+ * WRITE is a launcher side effect, so its own fail-closed guard lives at that write
+ * (register-project-scope.ts / orchestrate.ts), not here.
  */
 import {fileURLToPath} from "node:url";
 import {Effect, FileSystem, Path, Schema} from "effect";
-import {driveOf, isCrewRole} from "../crew/index.ts";
+import {
+	CREW_INSTANCE_ENV,
+	CREW_PROJECT_ROOT_ENV,
+	CREW_ROLE_ENV,
+	driveOf,
+	isCrewRole,
+} from "../crew/index.ts";
 import {type ChannelConfig, type Tier, tierModel} from "./config.ts";
 
 /**
@@ -102,6 +111,18 @@ export const ALLOWLIST_CHANNEL_FLAG = "--channels";
 /** Dev mode: load channel servers not on the approved allowlist — local development only. */
 export const DEV_CHANNEL_FLAG = "--dangerously-load-development-channels";
 
+/**
+ * The crew channel's DISTRIBUTION identity — the marketplace plugin that declares the crew MCP server
+ * (`claude-plugins/pipeline-crew-mcp/.claude-plugin/plugin.json`, registered in `.claude-plugin/marketplace.json`).
+ * These are the product's own published names, single-sourced here so the launcher, its allowlist gate,
+ * and the operator config template can never drift apart (#3366 / ADR 0201). They are NOT operator data:
+ * nothing here varies per install, so nothing here belongs in the personalization seam.
+ */
+export const CREW_CHANNEL_PLUGIN = "pipeline-crew-mcp";
+export const CREW_CHANNEL_MARKETPLACE = "kampus";
+/** The `plugin:<name>@<marketplace>` ref allowlist mode binds the crew channel through (`--channels`, #3920). */
+export const CREW_PLUGIN_CHANNEL_REF = `plugin:${CREW_CHANNEL_PLUGIN}@${CREW_CHANNEL_MARKETPLACE}`;
+
 /** The `server:<name>` channel ref that names the crew session server registered under `serverName`. */
 const crewServerRef = (serverName: string): string => `server:${serverName}`;
 
@@ -139,15 +160,38 @@ const sessionServerConfig = (
 	],
 });
 
-/** What one crew session binds at launch: the role, its root, the persisted-scope server, and the launch argv. */
+/**
+ * How the named crew channel reaches the CLI's channel-ref resolver — the two launch paths, as a union
+ * so "plugin channel AND a per-pane `.mcp.json` write" is unrepresentable rather than a runtime branch
+ * the launcher could get wrong. See the module docblock for why each path is shaped the way it is.
+ */
+export type ChannelBinding =
+	/** allowlist/production: the marketplace plugin's own static declaration; nothing for the launcher to write (#3920). */
+	| {readonly kind: "plugin-channel"; readonly ref: string}
+	/** development: the launcher writes this server config to the pane's project-scope leaf `.mcp.json` (#3444). */
+	| {
+			readonly kind: "project-scope";
+			/** The `mcpServers[…]` key the pane's persisted-scope entry uses. */
+			readonly serverName: string;
+			readonly serverConfig: CrewServerConfig;
+	  };
+
+/** What one crew session binds at launch: the role, its root, how its channel binds, the pane env, and the launch argv. */
 export interface SessionBind {
 	readonly role: string;
 	readonly projectRoot: string;
-	/** The channel-server name this session registers under — the `mcpServers[…]` key its persisted-scope entry uses. */
-	readonly serverName: string;
-	/** The crew server's persisted-scope config value the launcher writes to the pane's project-scope `.mcp.json` (#3444). */
-	readonly serverConfig: CrewServerConfig;
-	/** The channel-registration flag + its server refs, e.g. `["--channels", "server:pipeline-crew", …]`. */
+	/** How this session's crew channel binds — the plugin ref (allowlist) or the project-scope server (dev). */
+	readonly channelBinding: ChannelBinding;
+	/**
+	 * The pane environment this session must be spawned with (`CREW_ROLE`/`CREW_PROJECT_ROOT`/`CREW_INSTANCE`,
+	 * resolved by crew/session-inputs.ts). NON-EMPTY only on the `plugin-channel` path, where the plugin's one
+	 * static `.mcp.json` cannot carry a per-pane `--role` — the env is what makes the shared declaration resolve
+	 * per pane, and it is also what replaces #3444's per-pane filesystem isolation (see the module docblock).
+	 * EMPTY under dev mode, whose server argv already carries the role — so dev's spawn is byte-identical to
+	 * before this seam existed.
+	 */
+	readonly env: Readonly<Record<string, string>>;
+	/** The channel-registration flag + its server refs, e.g. `["--channels", "plugin:…@…", …]`. */
 	readonly channelArg: readonly string[];
 	/** `["--model", "<alias>"]` when the role has a configured tier (#3423), else `[]` (CLI default). */
 	readonly modelArg: readonly string[];
@@ -179,9 +223,9 @@ export interface SessionBind {
 	 * The complete argv
 	 * `[...modelArg, ...pluginDirArg, ...agentArg, ...channelArg, ...nameArg, ...bootPromptArg]` the
 	 * launcher passes to `claude`. It boots the role persona (`--plugin-dir` + `--agent`, #3447), then
-	 * gives the session its boot turn via the tail positional prompt (#3516), and no longer carries
-	 * `--mcp-config`: the crew server now registers via the pane's project-scope `.mcp.json`
-	 * (`serverConfig`), which is what the channel resolver actually reads (#3444).
+	 * gives the session its boot turn via the tail positional prompt (#3516). It carries no
+	 * `--mcp-config` and no role: the channel resolver reads `channelBinding` (a persisted scope in dev,
+	 * the plugin's own declaration in allowlist mode), and on the plugin path the role arrives as `env`.
 	 */
 	readonly argv: readonly string[];
 }
@@ -191,8 +235,10 @@ export interface SessionBindInput {
 	readonly projectRoot: string;
 	/**
 	 * The channel-ref name this session's own crew MCP server registers under (the persisted-scope
-	 * `mcpServers` map key). It MUST appear as `server:<serverName>` in `channels.servers`, else the
-	 * server is defined-but-inert — the fail-closed `CrewServerNotRegisteredError` below.
+	 * `mcpServers` map key) on the DEV path, where it MUST appear as `server:<serverName>` in
+	 * `channels.servers`, else the server is defined-but-inert — the fail-closed
+	 * `CrewServerNotRegisteredError` below. Unused on the plugin-channel path, whose required ref is
+	 * the fixed `CREW_PLUGIN_CHANNEL_REF`.
 	 */
 	readonly serverName: string;
 	/**
@@ -225,14 +271,15 @@ export class CrewSessionBinUnresolvableError extends Schema.TaggedErrorClass<Cre
 ) {}
 
 /**
- * The crew session's own server is not named in the channel flag, so it would come up INERT (a
- * persisted-scope entry alone is insufficient — the flag is what activates the channel). Refuse the
- * launch (AC2).
+ * The crew channel is not named in the channel flag, so it would come up INERT (a persisted-scope entry
+ * or a plugin declaration alone is insufficient — the flag is what activates the channel). Refuse the
+ * launch. `requiredRef` is the ref the configured mode needs — `plugin:<name>@<marketplace>` under
+ * allowlist, `server:<serverName>` under development — so the operator is told the exact missing line.
  */
 export class CrewServerNotRegisteredError extends Schema.TaggedErrorClass<CrewServerNotRegisteredError>()(
 	"@kampus/pipeline-crew-mcp/standup/CrewServerNotRegisteredError",
 	{
-		serverName: Schema.String,
+		requiredRef: Schema.String,
 		servers: Schema.Array(Schema.String),
 	},
 ) {}
@@ -251,15 +298,24 @@ export class ChannelPluginNotAllowedError extends Schema.TaggedErrorClass<Channe
 	},
 ) {}
 
-/** The plugin segment of a `plugin:<plugin>:<server>` ref (grammar-guaranteed present by `ChannelServerRef`). */
+/**
+ * The PLUGIN NAME of a `plugin:<name>@<marketplace>` channel ref — the key the allowlist is matched on.
+ *
+ * The `@<marketplace>` suffix must be stripped, and the old `split(":")[1]` did not strip it: it yielded
+ * `"<name>@<marketplace>"`, which no `allowedChannelPlugins` entry ever equals, so every plugin ref was
+ * spuriously rejected. Grounded on the installed bundle (2.1.220), whose allowlist gate parses the ref to
+ * `{name, marketplace}` and matches `entry.plugin === name && entry.marketplace === marketplace` — the
+ * name is the un-suffixed segment. (The distinct `plugin:<plugin>:<server>` colon grammar in the bundle
+ * is MCP-server identity WITHIN a plugin, a different surface from this `--channels` ref; #3328.)
+ */
 const pluginOf = (ref: string): string | undefined =>
-	ref.startsWith("plugin:") ? ref.split(":")[1] : undefined;
+	ref.startsWith("plugin:") ? ref.slice("plugin:".length).split("@")[0] : undefined;
 
 /**
- * Build one crew session's launch bind: the crew server's persisted-scope config value + the
- * channel-registration flag naming that same server. Fails closed if the crew server would be inert
- * (unnamed in the flag), or — under `--channels` only — if a plugin channel names a plugin outside
- * `allowedChannelPlugins`.
+ * Build one crew session's launch bind: the channel-registration flag, the mode-appropriate
+ * `channelBinding` it names, and the pane env that binding needs. Fails closed if the crew channel
+ * would be inert (its required ref unnamed in the flag), or — under `--channels` only — if a FOREIGN
+ * plugin channel names a plugin outside `allowedChannelPlugins`.
  */
 export const buildSessionBind = (
 	input: SessionBindInput,
@@ -291,16 +347,29 @@ export const buildSessionBind = (
 			);
 		}
 
-		if (!servers.includes(crewServerRef(serverName))) {
-			return yield* Effect.fail(new CrewServerNotRegisteredError({serverName, servers}));
+		// The required ref — and therefore the whole binding shape — forks on the mode. Allowlist mode
+		// CANNOT use `server:<name>`: config.ts's cross-field check already refuses a bare `server:` ref
+		// there (the CLI silently skips one under `--channels`), so demanding the plugin ref is the only
+		// registration that can actually come up (#3920).
+		const requiredRef =
+			channels.mode === "allowlist" ? CREW_PLUGIN_CHANNEL_REF : crewServerRef(serverName);
+		if (!servers.includes(requiredRef)) {
+			return yield* Effect.fail(new CrewServerNotRegisteredError({requiredRef, servers}));
 		}
 
 		// The allowlist gate applies to `--channels` only: dev mode's whole purpose is loading
-		// channels NOT on the approved allowlist, so it deliberately skips the plugin check.
+		// channels NOT on the approved allowlist, so it deliberately skips the plugin check. The crew's
+		// OWN plugin is auto-allowlisted — the launcher is the thing emitting that ref, so requiring the
+		// operator to also list it in `allowedChannelPlugins` would only add a way to mis-configure a
+		// launch that is otherwise fully determined. A FOREIGN plugin ref still fails closed.
 		if (channels.mode === "allowlist") {
 			for (const ref of servers) {
 				const plugin = pluginOf(ref);
-				if (plugin !== undefined && !channels.allowedChannelPlugins.includes(plugin)) {
+				if (
+					plugin !== undefined &&
+					plugin !== CREW_CHANNEL_PLUGIN &&
+					!channels.allowedChannelPlugins.includes(plugin)
+				) {
 					return yield* Effect.fail(
 						new ChannelPluginNotAllowedError({
 							plugin,
@@ -313,7 +382,25 @@ export const buildSessionBind = (
 		}
 
 		const channelFlag = channels.mode === "development" ? DEV_CHANNEL_FLAG : ALLOWLIST_CHANNEL_FLAG;
-		const serverConfig = sessionServerConfig(role, projectRoot, instance);
+		// Allowlist mode binds the plugin's ONE static declaration and writes nothing; dev mode binds the
+		// per-pane project-scope server whose argv carries the role. Symmetrically, the pane env is the
+		// plugin path's per-pane role carrier and is empty in dev, where argv already carries it.
+		const channelBinding: ChannelBinding =
+			channels.mode === "allowlist"
+				? {kind: "plugin-channel", ref: CREW_PLUGIN_CHANNEL_REF}
+				: {
+						kind: "project-scope",
+						serverName,
+						serverConfig: sessionServerConfig(role, projectRoot, instance),
+					};
+		const env: Readonly<Record<string, string>> =
+			channels.mode === "allowlist"
+				? {
+						[CREW_ROLE_ENV]: role,
+						[CREW_PROJECT_ROOT_ENV]: projectRoot,
+						...(instance !== undefined ? {[CREW_INSTANCE_ENV]: instance} : {}),
+					}
+				: {};
 		const channelArg: readonly string[] = [channelFlag, ...servers];
 		// The role's tier boots the session on its `--model` (#3423); a role with no tier emits none,
 		// keeping the CLI-default boot rather than guessing. `tierModel` is total over the `Tier` enum.
@@ -344,8 +431,8 @@ export const buildSessionBind = (
 		return {
 			role,
 			projectRoot,
-			serverName,
-			serverConfig,
+			channelBinding,
+			env,
 			channelArg,
 			modelArg,
 			nameArg,

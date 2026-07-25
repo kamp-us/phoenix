@@ -12,7 +12,7 @@ import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {CREW_ROLES, isAutobooted, kindOf} from "../crew/index.ts";
-import {CREW_SESSION_INSTANCE_FLAG} from "./bind.ts";
+import {CREW_PLUGIN_CHANNEL_REF, CREW_SESSION_INSTANCE_FLAG} from "./bind.ts";
 import {
 	DEFAULT_CONFIG_PATH,
 	decodeLaunchConfig,
@@ -89,6 +89,36 @@ const configAt = (
 	engineCount: number,
 ): Effect.Effect<LaunchConfig, LaunchConfigError> =>
 	decodeLaunchConfig(rawConfigAt(cliVersion, engineCount), DEFAULT_CONFIG_PATH);
+
+/**
+ * The same config in ALLOWLIST/production mode: the crew channel is the marketplace plugin ref, so no
+ * `server:` ref appears (config.ts's cross-field check refuses one there) and the launcher takes the
+ * plugin-channel path — pane env instead of a per-pane `.mcp.json` (#3920).
+ */
+const allowlistConfigAt = (engineCount: number): Effect.Effect<LaunchConfig, LaunchConfigError> =>
+	decodeLaunchConfig(
+		{
+			...(rawConfigAt(PINNED, engineCount) as Record<string, unknown>),
+			channels: {
+				mode: "allowlist",
+				servers: [CREW_PLUGIN_CHANNEL_REF],
+				allowedChannelPlugins: [],
+			},
+		},
+		DEFAULT_CONFIG_PATH,
+	);
+
+/**
+ * Narrow a plan's bind to its `project-scope` binding, failing the test if it took the plugin path —
+ * only the dev path persists a server config, so every assertion about one goes through here.
+ */
+const projectScopeOf = (plan: LaunchPlan) => {
+	const binding = plan.bind.channelBinding;
+	if (binding.kind !== "project-scope") {
+		throw new Error(`expected a project-scope binding, got "${binding.kind}"`);
+	}
+	return binding;
+};
 
 /** A deterministic engine instance-id generator so the derived set + windows are pinnable. */
 const counter = () => {
@@ -429,13 +459,17 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				assert.strictEqual(p.session.kind, "engine");
 				const instance = p.session.kind === "engine" ? p.session.instance : "";
 				// the instance-flag pair rides the persisted-scope server command (serverConfig.args).
-				const args = [...p.bind.serverConfig.args];
+				const args = [...projectScopeOf(p).serverConfig.args];
 				assert.include(args, CREW_SESSION_INSTANCE_FLAG);
 				assert.include(args, instance);
 			}
 			// a bridge is a singleton and carries no --instance in its server command.
 			const bridge = launched.find((p) => p.session.kind === "bridge");
-			assert.notInclude([...(bridge?.bind.serverConfig.args ?? [])], CREW_SESSION_INSTANCE_FLAG);
+			assert.isDefined(bridge);
+			assert.notInclude(
+				[...projectScopeOf(bridge as LaunchPlan).serverConfig.args],
+				CREW_SESSION_INSTANCE_FLAG,
+			);
 		}),
 	);
 
@@ -495,11 +529,94 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 					assert.isDefined(entry, `an entry exists for pane cwd ${plan.cwd}`);
 					assert.strictEqual(entry?.cwd, fakePaneCwd(RUN_ID, plan.placement.paneLabel));
 					assert.strictEqual(entry?.serverName, SERVER);
-					assert.deepStrictEqual(entry?.serverConfig, plan.bind.serverConfig);
+					assert.deepStrictEqual(entry?.serverConfig, projectScopeOf(plan).serverConfig);
 				}
 				// Every pane cwd is distinct — so a pane booting in its cwd sees ONLY its own leaf .mcp.json.
 				const cwds = entries.map((e) => e.cwd);
 				assert.strictEqual(new Set(cwds).size, cwds.length);
+			}),
+	);
+
+	it.effect(
+		"allowlist mode: the project-scope register is GATED OFF, and every pane carries its role env (#3920)",
+		() =>
+			Effect.gen(function* () {
+				const {input, launched, order, registered} = baseInput({
+					engineCount: 2,
+					config: allowlistConfigAt(2),
+				});
+				yield* standUp(input);
+
+				// Nothing is persisted: the plugin declares the crew server once, statically, so there is no
+				// per-pane `.mcp.json` to write — and therefore no shared-ancestor hazard to guard.
+				assert.strictEqual(registered.length, 0);
+				assert.notInclude(order, "register");
+				// The reap still runs: it clears a PRIOR dev-mode run's leftovers regardless of this run's mode.
+				assert.include(order, "reap");
+
+				// Isolation moves from filesystem ancestry to pane environment — each pane's env names its OWN
+				// role/root (and an engine its instance), which is what the one shared declaration resolves through.
+				assert.strictEqual(launched.length, 4);
+				for (const plan of launched) {
+					assert.strictEqual(plan.bind.channelBinding.kind, "plugin-channel");
+					assert.strictEqual(plan.bind.env.CREW_ROLE, plan.session.role);
+					assert.strictEqual(plan.bind.env.CREW_PROJECT_ROOT, "/repo");
+					if (plan.session.kind === "engine") {
+						assert.strictEqual(plan.bind.env.CREW_INSTANCE, plan.session.instance);
+					} else {
+						assert.notProperty(plan.bind.env, "CREW_INSTANCE");
+					}
+				}
+				// The two engine panes carry DISTINCT instance env — no pane can read a sibling's.
+				const engineInstances = launched
+					.filter((p) => p.session.kind === "engine")
+					.map((p) => p.bind.env.CREW_INSTANCE);
+				assert.strictEqual(new Set(engineInstances).size, engineInstances.length);
+			}),
+	);
+
+	it.effect(
+		"allowlist mode: the pane's role env is handed to tmux as -e pairs on new-window AND split-window (#3920)",
+		() =>
+			Effect.gen(function* () {
+				const {input, launched} = baseInput({engineCount: 1, config: allowlistConfigAt(1)});
+				yield* standUp(input);
+				const plan = launched[0];
+				assert.isDefined(plan);
+				const expectedEnv = Object.entries((plan as LaunchPlan).bind.env).flatMap(([k, v]) => [
+					"-e",
+					`${k}=${v}`,
+				]);
+				assert.isAbove(expectedEnv.length, 0);
+
+				const first = scriptedTmux([exited(0, {stdout: "@7\n"})]);
+				yield* launchSessionInTmux(plan as LaunchPlan, "operator-session", undefined, first.runner);
+				assert.deepStrictEqual(first.argvLog[0], [
+					"new-window",
+					"-t",
+					"operator-session",
+					"-n",
+					CREW_WINDOW,
+					"-c",
+					(plan as LaunchPlan).cwd,
+					...expectedEnv,
+					"-P",
+					"-F",
+					"#{window_id}",
+					...paneClaudeCommand((plan as LaunchPlan).bind.argv),
+				]);
+
+				const later = scriptedTmux([exited(0), exited(0)]);
+				yield* launchSessionInTmux(plan as LaunchPlan, "operator-session", "@7", later.runner);
+				assert.deepStrictEqual(later.argvLog[0], [
+					"split-window",
+					"-t",
+					"@7",
+					"-c",
+					(plan as LaunchPlan).cwd,
+					...expectedEnv,
+					...paneClaudeCommand((plan as LaunchPlan).bind.argv),
+				]);
 			}),
 	);
 

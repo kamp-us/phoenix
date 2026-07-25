@@ -85,9 +85,17 @@
 		// The channel servers each session registers, by ref. Grammar per ref:
 		//   "server:<name>"                — a top-level channel MCP server (development mode only)
 		//   "plugin:<name>@<marketplace>"  — a server contributed by an installed plugin
+		//
+		// In "allowlist" mode this list MUST contain the crew's own channel ref,
+		// "plugin:pipeline-crew-mcp@kampus", or stand-up refuses the launch (the crew channel would
+		// come up inert). That plugin must also be INSTALLED from the kampus marketplace — the CLI
+		// checks the installed plugin's marketplace against the ref before loading the channel.
+		// In "development" mode this list carries the crew's "server:<name>" ref instead.
 		"servers": ["<channel-server-ref>"],
-		// Plugins whose channel servers are allowed to load — the allowlist the "allowlist"
-		// mode enforces; each name matches a "plugin:<name>@<marketplace>" ref used in `servers`.
+		// Plugins whose channel servers are allowed to load — the allowlist "allowlist" mode
+		// enforces; each name is the BARE plugin name of a "plugin:<name>@<marketplace>" ref used in
+		// `servers` (no "@<marketplace>" suffix). List only THIRD-PARTY plugins here: the crew's own
+		// pipeline-crew-mcp is auto-allowlisted by the launcher, so it never needs an entry.
 		"allowedChannelPlugins": ["<allowed-channel-plugin>"]
 	}
 }

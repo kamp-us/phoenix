@@ -7,6 +7,10 @@
  * malformed yields a `LaunchConfigError` whose reason names that dimension. The engine count now
  * lives at `roles["engineering-manager"].count`, so its fail-closed cases exercise that path.
  */
+import {mkdtempSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
 import {
@@ -14,6 +18,7 @@ import {
 	decodeLaunchConfig,
 	LaunchConfigError,
 	parseJsonc,
+	readLaunchConfig,
 	resolveConfigPath,
 	stripJsonc,
 } from "./config.ts";
@@ -360,6 +365,46 @@ describe("standup/config — fails closed naming the offending dimension", () =>
 				},
 			});
 			assert.include(err.reason, "allowedChannelPlugins");
+		}),
+	);
+});
+
+describe("standup/config — an ABSENT config and an UNREADABLE one are different facts", () => {
+	const readErr = (configPath: string) =>
+		readLaunchConfig({CREW_CONFIG: configPath}).pipe(
+			Effect.flip,
+			Effect.provide(NodeServices.layer),
+		);
+
+	it.effect("absent: names the seam, says there is no default, and names what to run", () =>
+		Effect.gen(function* () {
+			const dir = mkdtempSync(join(tmpdir(), "crew-config-"));
+			const missing = join(dir, "does-not-exist.jsonc");
+			const err = yield* readErr(missing);
+
+			assert.instanceOf(err, LaunchConfigError);
+			assert.strictEqual(err.configPath, missing);
+			assert.include(err.reason, "no crew config");
+			// Actionable: the operator is told to create it from the template, not just that it failed.
+			assert.include(err.reason, "crew.config.template.jsonc");
+			assert.include(err.reason, "CREW_CONFIG");
+			// And explicitly told there is no fallback — the launch stops rather than guessing a default.
+			assert.include(err.reason, "no legitimate default");
+		}),
+	);
+
+	it.effect("unreadable: says the file EXISTS, so re-running setup is not the fix", () =>
+		Effect.gen(function* () {
+			// A DIRECTORY at the config path is a portable "exists but cannot be read": the probe sees it,
+			// the read faults (EISDIR). No chmod games, no root-dependent behavior.
+			const dir = mkdtempSync(join(tmpdir(), "crew-config-"));
+			const err = yield* readErr(dir);
+
+			assert.instanceOf(err, LaunchConfigError);
+			assert.strictEqual(err.configPath, dir);
+			assert.include(err.reason, "exists but could not be read");
+			// The two messages must not be confusable — an unreadable config never claims to be missing.
+			assert.notInclude(err.reason, "no crew config");
 		}),
 	);
 });

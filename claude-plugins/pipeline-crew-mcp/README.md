@@ -34,12 +34,17 @@ CLAUDE.md's "ground runtime claims in source"):
    already advertises the `claude/channel` capability at runtime (`CHANNEL_CAPABILITY`), so the CLI
    admits it as a channel.
 
-Once installed and allowlisted, the crew binds via:
+Once installed, the crew binds via:
 
 ```
 --channels plugin:pipeline-crew-mcp@kampus
-# with allowedChannelPlugins including "pipeline-crew-mcp"
 ```
+
+The stand-up launcher emits exactly that under `channels.mode: "allowlist"`, and **auto-allowlists this
+plugin** — the launcher is the thing emitting the ref, so the operator's `allowedChannelPlugins` only
+needs to list *third-party* plugins. What the operator does still owe is the **install**: the CLI
+compares the installed plugin's marketplace against the ref's `@kampus` before loading the channel, so
+`plugin install pipeline-crew-mcp@kampus` is a stand-up prerequisite in allowlist mode.
 
 ### Per-session role comes from the environment
 
@@ -67,14 +72,24 @@ paths coexist with no behavioral change to dev.
 The plugin carries **no `version`** — it is content-addressed by commit SHA (continuous-ship,
 [ADR 0110](../../.decisions/0110-plugin-carries-no-version-continuous-ship.md)).
 
-## Scope and follow-up
+## How per-pane isolation holds on this path
 
-This plugin is the **packaging + binding primitive**. Wiring the `pipeline-crew` **stand-up launcher**
-to emit the `plugin:pipeline-crew-mcp@kampus` ref (setting each pane's `CREW_ROLE` env and retiring the
-per-pane project-scope `.mcp.json` in favor of the plugin declaration) is a separate launcher change,
-tracked as a follow-up — it replaces the load-bearing per-pane isolation mechanism
-(`standup/register-project-scope.ts`) and is out of scope for this distribution unit. Dev-mode stays the
-supported dogfood path in the meantime.
+Dev mode isolates panes through the filesystem: each pane gets its own leaf `.mcp.json` carrying a
+server whose **argv bakes in that pane's role**, and sibling pane dirs are never on each other's
+ancestor chain, so no pane can see a sibling's server (issue #3444). Retiring that on the plugin path
+does **not** leave the isolation unreplaced — it moves it:
+
+- What #3444 actually protected was the **role baked into each pane's server argv**. A pane that could
+  see a sibling's entry would boot a second server on the sibling's cardinality-1 role lease.
+- The plugin's declaration carries **no role at all** — one static entry serves every pane. The role
+  arrives instead as the pane's `CREW_ROLE` env, set by the launcher at `tmux new-window`/`split-window`
+  time (`-e`), which tmux scopes to that pane and does not share with siblings.
+- So isolation moves from **filesystem ancestry** to **process environment**, and the shared-ancestor
+  hazard the dev path must guard against (`assertNoSharedAncestorMcpJson`) has no analogue here: there is
+  no per-pane file to leak, and the launcher writes nothing.
+
+Because the dev path still needs it, `standup/register-project-scope.ts` is **gated off on the plugin
+path**, not deleted.
 
 ## See also
 
