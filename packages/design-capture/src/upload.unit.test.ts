@@ -11,16 +11,43 @@ import {Effect, Layer} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
-import {parseUploadResponse, uploadAsset, uploadEndpoint} from "./upload.ts";
+import {DESKTOP_VIEWPORT, parseSurfaceSpec, surfaceFileName} from "./plan.ts";
+import {PNG_CONTENT_TYPE, parseUploadResponse, uploadAsset, uploadEndpoint} from "./upload.ts";
 
 const HOSTED = "https://github.com/user-attachments/assets/0a1b2c3d-4e5f-6789-abcd-ef0123456789";
 
 describe("uploadEndpoint", () => {
-	it("targets the undocumented endpoint with the repository_id query param", () => {
-		assert.strictEqual(
-			uploadEndpoint(1234177275),
-			"https://uploads.github.com/user-attachments/assets?repository_id=1234177275",
-		);
+	const params = {
+		repositoryId: 1234177275,
+		fileName: "sozluk@desktop.png",
+		size: 67,
+		contentType: PNG_CONTENT_TYPE,
+	};
+
+	it("carries every parameter the live endpoint requires (#3738)", () => {
+		const query = new URL(uploadEndpoint(params)).searchParams;
+		assert.strictEqual(query.get("repository_id"), "1234177275");
+		assert.strictEqual(query.get("name"), "sozluk@desktop.png");
+		assert.strictEqual(query.get("size"), "67");
+		assert.strictEqual(query.get("content_type"), "image/png");
+	});
+
+	it("targets the undocumented uploads host", () => {
+		const url = new URL(uploadEndpoint(params));
+		assert.strictEqual(url.origin, "https://uploads.github.com");
+		assert.strictEqual(url.pathname, "/user-attachments/assets");
+	});
+
+	// The regression itself: a request with no `name` query param is the HTTP 400
+	// `Invalid name for request` that nulled every hostedUrl.
+	it("never omits `name` — the parameter whose absence was the HTTP 400", () => {
+		assert.ok(new URL(uploadEndpoint(params)).searchParams.has("name"));
+	});
+
+	it("percent-encodes a name so `@` survives the query string", () => {
+		const raw = uploadEndpoint(params);
+		assert.ok(raw.includes("name=sozluk%40desktop.png"), raw);
+		assert.strictEqual(new URL(raw).searchParams.get("name"), "sozluk@desktop.png");
 	});
 });
 
@@ -121,4 +148,53 @@ describe("uploadAsset — over a stubbed transport (never fails the effect)", ()
 		assert.strictEqual(o.hostedUrl, null);
 		assert.match(o.uploadError ?? "", /request failed/);
 	});
+});
+
+/**
+ * A transport that records the URL it was handed and answers 201. It is what lets
+ * the request SHAPE — not just the response handling — be asserted, which is the
+ * only place the #3738 regression lived.
+ */
+const recordingTransport = (seen: {url?: string}): Layer.Layer<HttpClient.HttpClient> =>
+	Layer.succeed(HttpClient.HttpClient)(
+		HttpClient.make((request) => {
+			seen.url = request.url;
+			return Effect.succeed(
+				HttpClientResponse.fromWeb(
+					request,
+					new Response(JSON.stringify({url: HOSTED}), {status: 201}),
+				),
+			);
+		}),
+	);
+
+describe("uploadAsset — the request shape the live endpoint accepts (#3738)", () => {
+	// The two surfaces the reported failure covered: the rooted `/` and the nested
+	// `/admin`. Both went out with no `name` param and both came back HTTP 400.
+	for (const [token, expectedName] of [
+		["/", "root@desktop.png"],
+		["/admin", "admin@desktop.png"],
+	] as const) {
+		it(`yields a non-null hostedUrl for the ${token} surface, sending its name`, async () => {
+			const fileName = surfaceFileName(parseSurfaceSpec(token), DESKTOP_VIEWPORT);
+			assert.strictEqual(fileName, expectedName);
+
+			const seen: {url?: string} = {};
+			const outcome = await Effect.runPromise(
+				uploadAsset({
+					pngBytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+					repositoryId: 1234177275,
+					token: "unit-test-token",
+					fileName,
+				}).pipe(Effect.provide(recordingTransport(seen))),
+			);
+
+			assert.strictEqual(outcome.hostedUrl, HOSTED);
+			assert.strictEqual(outcome.uploadError, null);
+			const query = new URL(seen.url ?? "").searchParams;
+			assert.strictEqual(query.get("name"), expectedName);
+			assert.strictEqual(query.get("content_type"), "image/png");
+			assert.strictEqual(query.get("size"), "4");
+		});
+	}
 });
