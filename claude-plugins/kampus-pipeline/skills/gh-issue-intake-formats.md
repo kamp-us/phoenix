@@ -1988,12 +1988,61 @@ Two requirements are both real, and a namespace that satisfies only one is broke
 `$CLAUDE_CODE_SESSION_ID` delivers both. It is the per-agent-run UUID the environment already
 exports — the same token ADR 0115's claim protocol stamps — and it is **stable across Bash
 calls** while **distinct per agent run** (sibling subagents of one pane each get their own).
-So it is a run identity any later call can recompute without carrying anything:
+So it is a run identity any later call can recompute without carrying anything.
 
-The recipe is **one line, inlined at each site** — deliberately not a shell helper, because a
-helper is itself shell state that doesn't survive between Bash calls, so a later call could not
-call it. `<slug>` names the caller: the skill, plus the work item when one skill runs over
-several (`plan-epic-<EPIC>`, `write-code-<N>`, `review-skill-$PR`).
+**The harness-provided "scratchpad directory" is NOT this namespace.** A session-scoped
+scratchpad handed to an agent by the runtime is **shared across the concurrent runs of that
+session**, and generic leaf names under it (`verdict-doc.md`, `files-*.txt`) collide — which is
+exactly how, on 2026-07-24, one reviewer's `review-doc` verdict body was written over another
+reviewer's at the same path and only the ADR-0058 head-binding check (#3801) turned the
+cross-PR verdict swap into a refusal instead of a merge-gate lie. Run state that must survive a
+Bash call goes in the namespace below, never in that directory.
+
+`<slug>` names the caller: the skill, plus the work item when one skill runs over several
+(`plan-epic-<EPIC>`, `write-code-<N>`, `review-skill-$PR`).
+
+### `pipeline-cli scratchpad` — the allocator, not a naming convention
+
+Allocation is owned by one tested verb, so a caller **cites it instead of hand-rolling a path**
+(#3718). It prints the absolute directory on stdout and nothing else:
+
+```bash
+# OPEN — the run's first write of scratch state. Claims the namespace exclusively and stamps it
+# as ours, clearing whatever an unclaimed earlier occupant left behind.
+RUN_SCRATCH="$(pipeline-cli scratchpad open --slug review-doc-$PR)" || exit 1
+
+# RE-DERIVE — every LATER Bash call, where shell state is already gone. Asserts the namespace
+# exists AND is still ours; it never creates one, because answering "you never opened it" with a
+# fresh empty directory is how a read of your own state silently becomes a read of nothing.
+RUN_SCRATCH="$(pipeline-cli scratchpad path --slug review-doc-$PR)" || exit 1
+VERDICT="$(pipeline-cli scratchpad file --slug review-doc-$PR --name verdict.md)" || exit 1
+```
+
+Every failure is a **refusal with its own exit code** — `2` no session id, `3` a slug/leaf name
+that isn't a single path segment, `4` the namespace belongs to another run, `5` this run never
+opened it, `6` the filesystem refused — so a caller branches on status, not prose. There is **no
+fallback to a shared or default location**: a fallback is precisely what reintroduces the silent
+clobber (ADR 0092, fail closed).
+
+The **owner stamp** is what makes the last case structural rather than polite — and it is a
+**claim, not a check**. `open` creates the stamp with an exclusive create (`O_CREAT | O_EXCL`),
+so when two runs that share a session id *and* a slug open at the same instant, the kernel picks
+one winner and the loser's "already exists" **is** the refusal: exit `4`, nothing overwritten.
+The winner's `path` likewise refuses to hand back a namespace another run has taken over. Note
+what this is *not*: a stamp that is read, classified, and only then acted on leaves a real window
+between the check and the act — it was one, and eight concurrent opens on a single session and
+slug each concluded they owned it (#4028).
+
+The stamp separates runs by identity, and there is exactly one pair it cannot: two runs whose
+identity is **byte-identical** — same session id *and* same `$CLAUDE_PID`, or neither carrying
+one. Nothing in the environment tells those apart, so the loser **re-enters** the namespace
+instead of being refused. That re-entry is never destructive (`open` returns a namespace it
+re-enters exactly as it stands), so the worst case degrades to two writers who are, by every
+signal available, the same run — never one run silently reading another's state.
+
+The verb ships with `pipeline-cli`. Where it isn't installed (a foreign install, ADR 0062), the
+equivalent one-liner below is the fallback — deliberately inlined at each site rather than made a
+shell helper, since a helper is itself shell state that doesn't survive between Bash calls.
 
 **Open the run once, re-derive freely afterwards.** The distinction is load-bearing — getting
 it backwards re-creates the empty-directory bug it exists to prevent:
@@ -2029,7 +2078,8 @@ splice guard is the live instance), so absence fails loud instead of waving work
    live from the worktree instead of caching it (#2038) — both satisfy §SP outright, with no
    path to collide on and nothing to leak.
 2. **When a file is genuinely needed, derive its path from `$RUN_SCRATCH`.** Allocate it
-   fail-closed per the recipe above — never a bare `/tmp/<name>`, and never a path keyed only
+   through `pipeline-cli scratchpad open` (or, with no CLI, the fallback one-liner) — never a
+   bare `/tmp/<name>`, never the harness scratchpad, and never a path keyed only
    on a work-item id. Leaf names then stay plain and readable (`deps.md`, not
    `deps-$PR-$RANDOM.md`) because uniqueness lives in the **directory**, so a scratch write
    added later *inherits* the guarantee instead of reintroducing the bug.

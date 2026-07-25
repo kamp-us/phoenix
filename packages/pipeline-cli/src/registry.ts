@@ -62,6 +62,7 @@ import {reviewHeadCommand} from "./tools/review-head/command.ts";
 import {roadmapCommand} from "./tools/roadmap/command.ts";
 import {roadmapGuardCommand} from "./tools/roadmap-guard/command.ts";
 import {runEvidenceCommand} from "./tools/run-evidence/command.ts";
+import {scratchpadCommand} from "./tools/scratchpad/command.ts";
 import {settingsEnvGuardCommand} from "./tools/settings-env-guard/command.ts";
 import {shipDigestCommand} from "./tools/ship-digest/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
@@ -229,4 +230,9 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	// Fail-closed on an unreadable corpus / zero scope (ADR 0092); `indeterminate` is a distinct
 	// outcome from `no-overlap` by construction.
 	adrSweepCommand,
+	// #3718 — the per-run scratch namespace (§SP) as an allocator every agent calls instead
+	// of hand-rolling a path: unique per RUN, deterministically re-derivable across Bash
+	// calls, owner-stamped so a second run is refused rather than clobbering. Fail-closed —
+	// no fallback to a shared location, which is what made the collision silent.
+	scratchpadCommand,
 ];
