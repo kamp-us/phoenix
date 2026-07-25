@@ -13,8 +13,7 @@
  * note + a non-zero exit (this is an explicit, named report target, not a best-effort
  * scan — a bad path is an error, not a silent empty report).
  */
-import {readFileSync} from "node:fs";
-import {Console, Effect} from "effect";
+import {Console, Effect, FileSystem} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command} from "effect/unstable/cli";
 import {formatStageSpend, reconstructSpend} from "./token-spend.ts";
@@ -38,10 +37,11 @@ export const tokenSpendCommand = Command.make(
 	{transcript: transcriptArg},
 	Effect.fn(function* ({transcript}) {
 		const run = Effect.gen(function* () {
-			const text = yield* Effect.try({
-				try: () => readFileSync(transcript, "utf8"),
-				catch: () => new TranscriptUnreadable({path: transcript}),
-			});
+			const fs = yield* FileSystem.FileSystem;
+			const text = yield* Effect.mapError(
+				fs.readFileString(transcript),
+				() => new TranscriptUnreadable({path: transcript}),
+			);
 			const spend = reconstructSpend(text);
 			if (spend.assistantTurns === 0) {
 				yield* Console.error(

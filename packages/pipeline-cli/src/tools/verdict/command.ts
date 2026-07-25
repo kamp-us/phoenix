@@ -27,7 +27,7 @@
  * requirement is the Node platform union (the registry seam, epic #994).
  */
 import {readFileSync} from "node:fs";
-import {Console, Effect, Option} from "effect";
+import {Console, Effect, FileSystem, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {Github, GithubLive} from "./github.ts";
 import {
@@ -107,13 +107,17 @@ const read = Command.make(
 	),
 );
 
-const readBody = (bodyFile: Option.Option<string>): Effect.Effect<string, never> =>
-	Effect.sync(() =>
-		Option.match(bodyFile, {
-			onNone: () => readFileSync(0, "utf8"),
-			onSome: (path) => readFileSync(path, "utf8"),
-		}),
-	);
+/**
+ * Read the composed verdict body: from `--body-file` over the `FileSystem` seam, else from
+ * stdin. Stdin (fd 0) has no `FileSystem` equivalent, so that read stays a raw `node:fs` call
+ * at this boundary (`.patterns/effect-platform-access.md` bright line). An unreadable
+ * `--body-file` stays a defect (`Effect.orDie`), preserving the pre-migration crash-out.
+ */
+const readBody = Effect.fn(function* (bodyFile: Option.Option<string>) {
+	if (Option.isNone(bodyFile)) return readFileSync(0, "utf8");
+	const fs = yield* FileSystem.FileSystem;
+	return yield* Effect.orDie(fs.readFileString(bodyFile.value));
+});
 
 const post = Command.make(
 	"post",

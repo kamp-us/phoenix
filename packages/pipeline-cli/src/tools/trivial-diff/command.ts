@@ -29,7 +29,7 @@
  */
 import {execFileSync} from "node:child_process";
 import {readFileSync} from "node:fs";
-import {Console, Effect, Option} from "effect";
+import {Console, Effect, FileSystem, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {extractControlPlaneRe} from "../codeowners-cp/codeowners-cp.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
@@ -67,18 +67,24 @@ const repoFlag = Flag.string("repo").pipe(
 	),
 );
 
-/** Read the diff: from `--diff-file` if given, else stdin (fd 0). Any read failure ⇒ null (fail-closed). */
-const readDiff = (diffFile: Option.Option<string>): string | null => {
-	// biome-ignore lint/plugin: best-effort read — any read failure is absorbed into null (fail-closed: the core then refuses), never the E channel; a total helper, not Effect-cosplay.
+/**
+ * Read the diff: from `--diff-file` over the `FileSystem` seam if given, else stdin (fd 0),
+ * which has no `FileSystem` equivalent and so stays a raw `node:fs` read at this boundary
+ * (`.patterns/effect-platform-access.md`). Any read failure ⇒ null (fail-closed: the core then
+ * refuses).
+ */
+const readDiff = Effect.fn(function* (diffFile: Option.Option<string>) {
+	if (Option.isSome(diffFile)) {
+		const fs = yield* FileSystem.FileSystem;
+		return yield* Effect.orElseSucceed(fs.readFileString(diffFile.value), () => null);
+	}
+	// biome-ignore lint/plugin: best-effort read — an unreadable stdin is absorbed into null (fail-closed: the core then refuses), never the E channel; a total helper, not Effect-cosplay.
 	try {
-		return Option.match(diffFile, {
-			onSome: (path) => readFileSync(path, "utf8"),
-			onNone: () => readFileSync(0, "utf8"),
-		});
+		return readFileSync(0, "utf8");
 	} catch {
 		return null;
 	}
-};
+});
 
 /** Resolve owner/repo: `--repo`, else `CLAUDE_PIPELINE_REPO`, else `gh repo view`. null on failure. */
 const resolveRepo = (repo: Option.Option<string>): string | null => {
@@ -127,7 +133,7 @@ const classifyCmd = Command.make(
 		const formatsRaw = fetchFormatsRaw(resolveRepo(repo));
 		const controlPlaneRe = formatsRaw === null ? null : extractControlPlaneRe(formatsRaw);
 		const guardAdrRe = formatsRaw === null ? null : parseGuardAdrRe(formatsRaw);
-		const diff = readDiff(diffFile);
+		const diff = yield* readDiff(diffFile);
 		if (diff === null) {
 			// Unreadable diff is itself fail-closed: classify as non-trivial.
 			yield* Effect.sync(() =>
