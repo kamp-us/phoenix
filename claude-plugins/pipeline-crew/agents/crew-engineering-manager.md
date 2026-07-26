@@ -251,6 +251,8 @@ it adds no engine→engine and no human-facing edge.
   the approver set is assembled, inside that single-source discharge.
 
   ```bash
+  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
   # The non-firing exit that is NOT a definite answer: it names the read that could not execute.
   unknown() { echo "approval-watcher #$PR: $1 READ FAILED ($2) — UNKNOWN, re-arming; NOT 'no approval'"; }
   # `gh api --paginate` emits one JSON value per page, so slurp and assert EVERY page is an array —
@@ -286,7 +288,7 @@ it adds no engine→engine and no human-facing edge.
   #    red (#3999); 127 = a PATH gap and any other non-zero a crash, i.e. the read never ran.
   #    Branching on `rc == 2` alone lets 1/127/anything-else fall through to a fire — the fail-OPEN
   #    polarity of #3715, committed inside the fix for it. Enumerate; only a proven-green 0 continues.
-  pipeline-cli checks read --pr "$PR" --expect green >/dev/null 2>&1; rc=$?
+  "$PCLI" checks read --pr "$PR" --expect green >/dev/null 2>&1; rc=$?
   case "$rc" in
     0) : ;;                                                       # proven green — the only continuing branch
     1) echo "approval-watcher #$PR: machine gates not green (read OK, definite)"; return 0 ;;
