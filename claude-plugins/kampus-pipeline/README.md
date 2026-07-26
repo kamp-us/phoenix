@@ -98,7 +98,7 @@ handoff is a durable GitHub artifact, you can stop after any stage and resume la
 | `heal-ci` | Classify a red CI run into flake-vs-defect and emit one routed action — rerun a known transient once, or file a defect via `report`. |
 | `adr` | Record an architecture decision (Context / Decision / Consequences) into `.decisions/NNNN-slug.md` and the index, following supersede rules. |
 | `deslop-comments` | Ruthlessly cut comments that bury the code without earning their place — keeping load-bearing notes, collapsing duplicated "why" to ADR pointers. |
-| `doctor` | Preflight a repo against the pipeline prerequisites (gh auth + scope, the 15 required labels, repo resolution, a CI signal, the two [repo-admin merge prerequisites](#repo-admin-prerequisites), npm deps) and print a tiered pass/fail checklist with the exact fix command for each gap. |
+| `doctor` | Preflight a repo against the pipeline prerequisites (gh auth + scope, the required label vocabulary, repo resolution, a CI signal, the two [repo-admin merge prerequisites](#repo-admin-prerequisites), npm deps) and print a tiered pass/fail checklist with the exact fix command for each gap. |
 | `wayfinder` | The ideation-layer front door, upstream of the pipeline: chart a fuzzy destination into a living `wayfinder:map` issue, then work its open frontier of investigation/decision tickets — recording answers, graduating cleared fog, surfacing founder-decision-forks — until a concrete plan is ready for `triage` / `plan-epic` (epic #2421). |
 
 ## Install
@@ -208,12 +208,14 @@ the superseded file's status edit), never a regenerated index.
 
 **Start with `doctor`.** Before the first run in a freshly-adopted repo, run the `doctor`
 skill (`claude-plugins/kampus-pipeline/skills/doctor/doctor.sh`) — it asserts the prerequisites in one pass (gh
-auth + the `project` scope, the 15 required `status:*`/`type:*`/`p*` labels, repo
+auth + the `project` scope, the required `status:*`/`type:*`/`p*` label vocabulary plus the
+standing lanes and the platform discriminator `triage` homes into, repo
 resolution, a CI signal, the two [repo-admin merge prerequisites](#repo-admin-prerequisites),
 and the `@kampus/*` npm deps) and prints a tiered pass/fail
 checklist with the exact `gh label create …` / `gh auth refresh …` fix command for each
-gap. It turns "did I wire this up right?" into one checkable command instead of a first run
-that fails deep inside a `gh api` call.
+gap. It turns "did I wire this up right?" into one checkable command instead of a pipeline
+that runs green over a repo whose label scoping matches nothing (a missing label does not
+error the first write — `POST …/labels` auto-creates it; the damage lands on the read side).
 
 To re-prove a skill's gate runs outside phoenix (the repeatable procedure
 behind #368 / #432), exercise it in a throwaway non-phoenix git repo — **not** phoenix

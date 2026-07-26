@@ -5,12 +5,24 @@
 # `gh`/`npm` and writes nothing — every fix is a command it prints, never runs.
 #
 # Tiers (a foreign-repo adopter reads top-down):
-#   1  load-bearing   — gh auth + required labels. Without these the first
-#                       report/triage run fails deep inside a `gh api` call.
+#   1  load-bearing   — gh auth + the required label vocabulary.
 #   2  gating         — repo resolution, a CI signal ship-it can gate on, and the
 #                       merge-queue governance ship-it's enqueue silently depends on.
-#   3  optional       — `pnpm dlx` packages + the run-evidence producer; their
-#                       absence degrades a stage, it does not break the pipeline.
+#   3  optional       — `pnpm dlx` packages, the run-evidence producer, the
+#                       ideation-layer labels, and an open milestone; their absence
+#                       degrades a stage, it does not break the pipeline.
+#
+# Why the labels are Tier 1 is NOT "the first write errors" — that was measured and is
+# false. `POST /repos/{owner}/{repo}/issues/{n}/labels` AUTO-CREATES a missing label
+# (observed 2026-07-26: HTTP 200, label materialized repo-wide at GitHub's default grey
+# `ededed` with a null description). So `report` silently succeeds and mints an
+# off-taxonomy label; the damage lands on the READ side, where `?labels=status:triaged`
+# and every guard's label scoping then match nothing and the pipeline runs protecting
+# nothing — the silent no-op ADR 0092 exists to kill (#4300).
+#
+# Every check below reports THREE states, never two: present, absent, and UNDETERMINED
+# (the read itself did not succeed). A read that fails must never resolve to "fine" —
+# that collapse is what let a green doctor sit on top of an unusable repo.
 #
 # Exit 0 only when every Tier-1 and Tier-2 check passes; Tier-3 gaps WARN, never fail.
 set -uo pipefail
@@ -51,49 +63,134 @@ else
 	fix "gh auth refresh -s project"
 fi
 
-# 1c. required labels exist. The canonical set the intake skills key on (status:*
-#     spine, type:* class, p* priority), as NAME|HEX|DESCRIPTION rows fed to the
-#     loop from a heredoc (a `|`-delimited heredoc, not $(cat <<…) — the latter
-#     mis-parses under bash 3.2, the macOS default).
+# 1c. the label vocabulary exists in the target repo, as NAME|TIER|HEX|DESCRIPTION rows fed
+#     to the loop from a heredoc (a `|`-delimited heredoc, not $(cat <<…) — the latter
+#     mis-parses under bash 3.2, the macOS default). TIER 1 rows are required and fail the
+#     run; TIER 3 rows are ideation-layer and only ever WARN, reported down in Tier 3.
+#
+#     This table is a PRESENTATION mirror (it carries the colour + description the create
+#     commands need, which the source has no room for), NOT a second required-set: check 1d
+#     asserts it covers the shared vocabulary in `packages/pipeline-cli/src/tools/
+#     vocabulary-preflight/vocabulary.ts`, which assembles the set from the constants the
+#     guards themselves scope on. Add a Tier-1 row here only alongside that source (#4272);
+#     the homing labels it must cover are ruled in ../triage/SKILL.md Step 6.
+#
+#     Read the universe with the outcome SEPARATED from the content: a failed read leaves
+#     the same empty string a genuinely label-less repo does, and scoring absence off it
+#     would name every required label "missing" on what is really an auth or network fault.
 EXISTING=""
+labels_read=no-repo
 if [ -n "${REPO:-}" ]; then
-	EXISTING=$(gh api "repos/$REPO/labels?per_page=100" --jq '.[].name' 2>/dev/null)
+	if EXISTING=$(gh api "repos/$REPO/labels?per_page=100" --jq '.[].name' 2>/dev/null); then
+		labels_read=ok
+	else
+		labels_read=failed
+	fi
 fi
 
-missing=0
-while IFS='|' read -r name color desc; do
+required_total=0
+missing_required=0
+required_fixes=""
+REQUIRED_NAMES=""
+optional_missing=0
+optional_fixes=""
+while IFS='|' read -r name tier color desc; do
 	[ -z "$name" ] && continue
-	if printf '%s\n' "$EXISTING" | grep -Fxq "$name"; then
-		continue
+	if [ "$tier" = "1" ]; then
+		required_total=$((required_total + 1))
+		REQUIRED_NAMES="$REQUIRED_NAMES$name
+"
 	fi
-	missing=$((missing + 1))
-	fix "gh label create \"$name\" --repo \"$REPO\" --color \"$color\" --description \"$desc\""
+	[ "$labels_read" = "ok" ] || continue # UNDETERMINED: never score absence off a read that failed
+	printf '%s\n' "$EXISTING" | grep -Fxq "$name" && continue
+	CREATE="gh label create \"$name\" --repo \"$REPO\" --color \"$color\" --description \"$desc\""
+	if [ "$tier" = "1" ]; then
+		missing_required=$((missing_required + 1))
+		required_fixes="$required_fixes$CREATE
+"
+	else
+		optional_missing=$((optional_missing + 1))
+		optional_fixes="$optional_fixes$CREATE
+"
+	fi
 done <<'LABELS'
-status:needs-triage|fbca04|Filed, awaiting triage classification
-status:needs-info|fbca04|Human-filed; awaiting answers before triage
-status:planned|fbca04|plan-epic child: planned, not yet verified by review-plan, not pickable
-status:triaged|fbca04|Triage signed off; ready for write-code to pick
-status:planning|fbca04|Epic-lock held: a plan-epic/review-plan run is mutating this epic's children (ADR 0059)
-status:awaiting-release|5319e7|Post-merge release-queue marker: deployed dark, awaiting a human flag flip (ADR 0083).
-type:bug|1d76db|Behavior diverges from intent
-type:chore|1d76db|No behavior change
-type:decision|1d76db|One question; output is a recorded choice
-type:epic|1d76db|Too big for one PR; spawns children
-type:feature|1d76db|New capability, directly implementable
-type:investigation|1d76db|Unknown; output is knowledge
-p0|b60205|Highest priority
-p1|d93f0b|Medium priority
-p2|e99695|Lowest priority
+status:needs-triage|1|fbca04|Filed, awaiting triage classification
+status:needs-info|1|fbca04|Human-filed; awaiting answers before triage
+status:planned|1|fbca04|plan-epic child: planned, not yet verified by review-plan, not pickable
+status:triaged|1|fbca04|Triage signed off; ready for write-code to pick
+status:planning|1|fbca04|Epic-lock held: a plan-epic/review-plan run is mutating this epic's children (ADR 0059)
+status:awaiting-release|1|5319e7|Post-merge release-queue marker: deployed dark, awaiting a human flag flip (ADR 0083).
+type:bug|1|1d76db|Behavior diverges from intent
+type:chore|1|1d76db|No behavior change
+type:decision|1|1d76db|One question; output is a recorded choice
+type:epic|1|1d76db|Too big for one PR; spawns children
+type:feature|1|1d76db|New capability, directly implementable
+type:investigation|1|1d76db|Unknown; output is knowledge
+p0|1|b60205|Highest priority
+p1|1|d93f0b|Medium priority
+p2|1|e99695|Lowest priority
+wayfinder:backlog|1|8250df|Standing lane: a destination queued for a wayfinding chart (triage's standing-lane exemption)
+axis:pipeline-hardening|1|5319e7|Standing lane: the cross-cutting pipeline-hardening axis (triage's standing-lane exemption)
+area:infra|1|0e8a16|Platform/infra discriminator the lane tool scopes on
+wayfinder:map|3|8250df|Ideation-layer map issue — the wayfinder chart front door (issue-shape marker, not a type)
 LABELS
 
-if [ "$missing" -eq 0 ] && [ -n "$EXISTING" ]; then
-	say "$PASS" "all 15 required pipeline labels exist"
-elif [ -z "$EXISTING" ]; then
-	say "$FAIL" "could not read repo labels (repo unresolved or gh unauthenticated) — run the fixes above first"
+if [ "$labels_read" = "no-repo" ]; then
+	say "$FAIL" "required labels UNDETERMINED — the target repo never resolved, so the label universe was never read (unknown, NOT absent)"
+	fix "set CLAUDE_PIPELINE_REPO=owner/name, or run inside the target git repo, then re-run"
+	fails=$((fails + 1))
+elif [ "$labels_read" = "failed" ]; then
+	say "$FAIL" "required labels UNDETERMINED — the label read on $REPO FAILED (unknown, NOT absent; likely auth, permissions, or network)"
+	fix "gh auth status && gh api \"repos/$REPO/labels?per_page=100\"  # make the read succeed, then re-run"
+	fails=$((fails + 1))
+elif [ "$missing_required" -eq 0 ]; then
+	say "$PASS" "all $required_total required pipeline labels exist"
+else
+	say "$FAIL" "$missing_required of $required_total required pipeline label(s) absent"
+	printf '%s' "$required_fixes" | while IFS= read -r line; do
+		[ -n "$line" ] && fix "$line"
+	done
+	fails=$((fails + 1))
+fi
+
+# 1d. doctor's Tier-1 rows still cover the shared vocabulary. The set the guards scope on
+#     lives in ONE place and is assembled from their own constants; this asserts the table
+#     above has not fallen behind it — the drift that let doctor green a repo where triage
+#     had no non-kill home (#4300). Reads it through the CLI shim, the only seam a bash
+#     preflight has onto a TS constant.
+PCLI="$(cd "$(dirname "$0")/../../bin" 2>/dev/null && pwd)/pipeline-cli"
+SHARED=""
+shared_read=unresolved
+if [ -x "$PCLI" ]; then
+	if SHARED=$("$PCLI" vocabulary-preflight labels 2>/dev/null) && [ -n "$SHARED" ]; then
+		shared_read=ok
+	fi
+fi
+
+shared_total=0
+drifted=""
+if [ "$shared_read" = "ok" ]; then
+	while IFS= read -r want; do
+		[ -z "$want" ] && continue
+		shared_total=$((shared_total + 1))
+		printf '%s\n' "$REQUIRED_NAMES" | grep -Fxq "$want" && continue
+		drifted="$drifted $want"
+	done <<SHARED_SET
+$SHARED
+SHARED_SET
+fi
+
+if [ "$shared_read" != "ok" ]; then
+	# WARN, not FAIL: an adopter without the CLI resolved still gets every check above. What is
+	# lost is only the confirmation, and saying so beats claiming a verification that never ran.
+	say "$WARN" "doctor's required set is UNVERIFIED against the shared vocabulary — could not resolve it (unknown, NOT confirmed)"
+	fix "run from a checkout with packages/pipeline-cli, or make \`pipeline-cli vocabulary-preflight labels\` resolvable"
+elif [ -n "$drifted" ]; then
+	say "$FAIL" "doctor's required set has DRIFTED from the shared vocabulary — absent from the table above:$drifted"
+	fix "add each label above to the LABELS table in this file as a tier-1 row (name|1|hex|description)"
 	fails=$((fails + 1))
 else
-	say "$FAIL" "$missing required pipeline label(s) missing (create commands above)"
-	fails=$((fails + 1))
+	say "$PASS" "doctor's required set covers all $shared_total labels of the shared vocabulary"
 fi
 
 hdr "Tier 2 — gating (a stage fails deep without these)"
@@ -218,6 +315,41 @@ if [ "${RUNEV:-0}" -gt 0 ]; then
 else
 	say "$WARN" "no run-evidence producer — ship-it guard 2 degrades to checks-green (ADR 0086)"
 	fix "optional: ship .github/workflows/run-evidence.yml + packages/pipeline-cli/src/tools/crabbox-manifest for SHA-bound evidence"
+fi
+
+# 3c. the ideation-layer labels (the tier-3 rows of the table above). `wayfinder` keys its map
+#     issue on one; absent, that surface degrades — it does not block a first run.
+if [ "$labels_read" != "ok" ]; then
+	say "$WARN" "ideation-layer labels UNDETERMINED — the label read did not succeed (see Tier 1)"
+elif [ "$optional_missing" -eq 0 ]; then
+	say "$PASS" "ideation-layer labels present — the wayfinder map surface is usable"
+else
+	say "$WARN" "$optional_missing ideation-layer label(s) absent — the wayfinder map surface degrades"
+	printf '%s' "$optional_fixes" | while IFS= read -r line; do
+		[ -n "$line" ] && fix "$line"
+	done
+fi
+
+# 3d. an OPEN milestone exists — triage's arc/campaign home. Deliberately not Tier 1: a freshly
+#     adopted repo legitimately has none, and creating one is a human roadmap act triage is
+#     forbidden from doing for itself (ADR 0072 §3), so reddening here would fail the correct
+#     state of a brand-new adopter.
+MILESTONES=""
+ms_read=unknown
+if [ -n "${REPO:-}" ]; then
+	if MILESTONES=$(gh api "repos/$REPO/milestones?state=open&per_page=100" --jq 'length' 2>/dev/null); then
+		ms_read=ok
+	fi
+fi
+
+if [ "$ms_read" != "ok" ]; then
+	say "$WARN" "open-milestone existence UNDETERMINED — the read did not succeed (unknown, NOT 'no milestone')"
+	fix "gh api \"repos/$REPO/milestones?state=open\"  # make the read succeed, then re-run"
+elif [ "${MILESTONES:-0}" -gt 0 ]; then
+	say "$PASS" "$MILESTONES open milestone(s) — triage can home an issue into an arc/campaign"
+else
+	say "$WARN" "no open milestone — triage can exempt an issue to a standing lane, but cannot home one into an arc/campaign"
+	fix "a human creates the first arc/campaign milestone (triage never does): gh api -X POST \"repos/$REPO/milestones\" -f title=\"<arc name>\""
 fi
 
 hdr "Verdict"

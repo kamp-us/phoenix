@@ -49,6 +49,14 @@ export const REQUIRED_LABELS: ReadonlyArray<string> = [
 	...new Set(LABEL_GROUPS.flatMap((group) => group.labels)),
 ];
 
+/**
+ * The required set as a newline-delimited list — the machine-readable seam a non-Node consumer
+ * reads this module through. `doctor.sh` is the caller (#4300): a bash preflight cannot import a
+ * TS constant, so without this it would have to retype the set, which is precisely the parallel
+ * hand-written list that drifted.
+ */
+export const renderLabelList = (labels: ReadonlyArray<string>): string => labels.join("\n");
+
 /** `ROADMAP.md` as the preflight finds it: absent, or present with the rows it parsed. */
 export type RoadmapSurface =
 	| {readonly _tag: "absent"; readonly path: string}
