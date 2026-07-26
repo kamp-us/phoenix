@@ -287,7 +287,9 @@ Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam `wri
 writes). Cross-check via the timeline if it's not obvious:
 
 ```bash
-gh api "repos/$REPO/issues/$PR/timeline?per_page=100" \
+# --paginate + a STREAMING --jq: per_page caps at 100, so a link event past event 100 is
+# invisible without it on a long-lived PR's timeline (#4193)
+gh api --paginate "repos/$REPO/issues/$PR/timeline?per_page=100" \
   --jq '.[] | select(.event=="connected" or .event=="cross-referenced") | .source.issue.number // .issue.number' 2>/dev/null
 ```
 
@@ -521,6 +523,44 @@ SHA-bound `review-skill:` marker, the advisory-for-blocking-set behavior, and "n
 are **unchanged** — the append is the route's output, governed by §2's four fences
 (append-only · in-scope-only · ACL-gated/fail-closed · frozen-after-round-K). **Run this step
 before composing the Step 5 verdict** so the appended row appears in the table.
+
+---
+
+## Step 4c — Deviation-disclosure gate: an undisclosed departure is a blocking finding (§DEV)
+
+Every `write-code` PR body carries a `## Deviations` section stating what the implementation
+departed from — the issue, an acceptance criterion, a reviewer's guidance, or a governing ADR — or
+the literal `None.`. The section, the seven classes, the detection tiers, the canonical Tier-M scan,
+and the two-branch verdict rule live once in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §DEV; run them from there and don't
+re-derive them.
+
+**This gate owns the class the incident belongs to.** #3986 was a *skill* PR: it narrowed ADR 0115
+§5's reclaim invariant **in skill prose**, the author offered in review conversation to file the
+amending ADR, the body carried nothing, and the narrowing merged as debt an audit reconstructed
+(#3993 F1). §DEV class 2 — an ADR departure with no amending ADR — is therefore continuous with
+Step 4's check 4 (gate-invariant preservation): a quietly-narrowed invariant is *both* a weakened
+gate and an undisclosed deviation. Where check 4 asks *did this weaken a guardrail*, this step asks
+*did the author say what they changed about the governing decision*. A diff can fail either alone —
+a disclosed narrowing is still a check-4 FAIL if it weakens a gate, and an authorized, non-weakening
+change is still a §DEV FAIL if the body hid it.
+
+Fold **one** `deviation-disclosure` row into the conjunctive verdict by §DEV's rule
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]` **on a PR that owes it**, absent is
+not `None.`, and `[N/A]` on one that does not; disclosed ⇒ judged on authorized / needs-an-ADR /
+needs-a-follow-up; clean ⇒ PASS, phrased as *nothing undisclosed that this gate could see*, never as
+*no deviations exist*).
+
+```
+- [FAIL] deviation-disclosure — skills/write-code/SKILL.md:NNN narrows ADR 0115 §5's reclaim invariant (§DEV class 2) and the body's `## Deviations` says `None.`; disclose it and either cite the amending ADR or add one (the #3986/#3993 F1 remedy)
+```
+
+**Whether the PR owes the section at all is §DEV's call, not this step's** — read *Who owes the
+section* there. Concretely for this gate: a PR whose acceptance-criteria half is already N/A under
+the issueless carve-out (ADR 0184/0075 — the conversation-authored `.glossary/**` coining PR, which
+has no `write-code` author) carries the row N/A too —
+`- [N/A] deviation-disclosure — issueless carve-out, no write-code author obliged (§DEV)`. Do **not**
+re-derive that scoping here; a per-skill copy is what let two gates render opposite rows on one head.
 
 ---
 

@@ -870,10 +870,19 @@ while IFS= read -r a; do
 done <<<"$markerAuthors"
 ```
 
-Resolve the latest current-head marker verdict per namespace **through `pipeline-cli verdict read`**:
-the verb folds the ADR-0055 write+ author-gate (a forged newer marker from an unauthorized author
-can't shadow a real verdict), the latest-wins pick, and the ADR-0058 SHA-staleness refusal (Step 2b)
-into one exit code — its unit tests are the contract (#2102), the same resolution `write-code` reads.
+Resolve the **in-force** verdict per namespace **through `pipeline-cli verdict read`**: the verb folds
+the ADR-0055 write+ author-gate (a forged newer marker from an unauthorized author can't shadow a real
+verdict), the in-force pick, and the ADR-0058 SHA-staleness refusal (Step 2b) into one exit code — its
+unit tests are the contract (#2102), the same resolution `write-code` reads.
+
+**The in-force rule, stated once and used by every namespace below: filter candidates to the ones
+bound to the LIVE head first, then latest-wins only among those.** Never "the newest comment in the
+namespace, then check its head" — `verdict post` upserts a verdict in place (ADR 0213/#4016/#4050), so
+`created_at` is when a comment SLOT was opened, not when the verdict it now carries was written, and a
+stale-but-freshly-created verdict outranks an at-head one that was rewritten in place. That is a false
+**refusal** of a green PR, and it cost PR #3955 an hour (#4189). The same trap catches a human skimming
+the PR, since the GitHub UI orders by creation time too — read the `@ <sha>` / `Reviewed-head:` binding,
+never the position.
 The native decisive review folds into the code namespace separately (the verb reads marker comments,
 not reviews); Step 2b keeps `is_current` for it and for the §CP advisory body-SHA:
 
@@ -942,8 +951,10 @@ if [ -n "$RSHA" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
 Now resolve **per namespace** (the marker verdict from the verb above, the native review + §CP
 advisory folded in):
 
-- **review-code namespace** — the verdict is the **newest of {latest decisive review, latest
-  review-code marker comment}** by timestamp (review `submitted_at` vs comment `created_at`).
+- **review-code namespace** — the verdict is the **newest of {latest decisive review, in-force
+  review-code marker comment}**, compared by timestamp (review `submitted_at` vs comment
+  `created_at`) **only once both are current-head-bound** — the head-first rule above, which is
+  what the `case "$CURRENT_HEAD" in "$RSHA"*` guard and the `_tag == "current"` marker test encode.
   An `APPROVED` review or a `review-code: PASS … merge-ready` marker is PASS; a
   `CHANGES_REQUESTED` review or a `review-code: FAIL` marker is FAIL. The verdict's bound SHA
   is the marker's `@ <sha>` (or, for a native review, its `commit_id`). (The native
@@ -956,8 +967,8 @@ advisory folded in):
   (ADR 0111/0151), gated on Step 0's control-plane approval — **never** from a bindable first-line
   marker (that would drop the §CP verdict into the auto-merge namespace, the ADR 0111 hazard). This
   is the written resolution path a canonical review-code §CP advisory previously lacked (#2329).
-- **review-doc namespace** — the verdict is the **latest `review-doc` marker comment** by
-  `created_at`; its bound SHA is the marker's `@ <sha>`. `review-doc: PASS … merge-ready` is
+- **review-doc namespace** — the verdict is the **in-force `review-doc` marker comment** (the rule
+  above); its bound SHA is the marker's `@ <sha>`. `review-doc: PASS … merge-ready` is
   PASS; `review-doc: FAIL … changes-requested` is FAIL. (review-doc lands no native review —
   it is comment-only, ADR 0058 — so there is no review path to fold in, and no review-vs-comment
   comparison to make.) A §CP doc PR's verdict is likewise the SHA-less-first-line advisory
@@ -965,8 +976,8 @@ advisory folded in):
   `Reviewed-head` line via the same
   **[§CP advisory resolution](#step-2cp--cp-advisory-namespace-resolution-adr-01350151)** below
   (ADR 0111/0151) — never from a bindable first-line marker.
-- **review-skill namespace** — the verdict is the **latest `review-skill` marker comment** by
-  `created_at`; its bound SHA is the marker's `@ <sha>`. `review-skill: PASS … merge-ready` is
+- **review-skill namespace** — the verdict is the **in-force `review-skill` marker comment** (the
+  rule above); its bound SHA is the marker's `@ <sha>`. `review-skill: PASS … merge-ready` is
   PASS; `review-skill: FAIL … changes-requested` is FAIL. (review-skill is comment-only too,
   ADR 0058 — same single-record-type resolution as review-doc.) For a **non-§CP** skill PR an
   **advisory** line (`review-skill: advisory — blocking-set PR …`) carries no first-line `@ <sha>`
@@ -979,8 +990,8 @@ advisory folded in):
   advisory resolves — a §CP PR is **never** required to (nor satisfied by) a bindable first-line
   `review-skill: PASS @ <sha>` marker (that would drop it into the auto-merge namespace — the ADR 0111
   hazard #2022's forge-workaround must not take).
-- **review-design namespace** — the verdict is the **latest `review-design` marker comment** by
-  `created_at`; its bound SHA is the marker's `@ <sha>`. `review-design: PASS … merge-ready` is
+- **review-design namespace** — the verdict is the **in-force `review-design` marker comment** (the
+  rule above); its bound SHA is the marker's `@ <sha>`. `review-design: PASS … merge-ready` is
   PASS; `review-design: FAIL … changes-requested` is FAIL. (review-design is comment-only, ADR
   0058 — same single-record-type resolution as review-doc/review-skill; a newer FAIL in this
   namespace vetoes an older PASS, latest-wins, exactly like the other gates.) This namespace is
@@ -1071,8 +1082,10 @@ a canonical review-code §CP advisory had no written resolution path and read as
 on a legitimately-approved PR (#2329):
 
 ```bash
-# $ADV_BODY = the latest §CP advisory comment body for this namespace (review-code/skill/doc/design),
-# author-gated (write+, ADR 0055) and latest-wins exactly like the markers above.
+# $ADV_BODY = the IN-FORCE §CP advisory comment body for this namespace (review-code/skill/doc/design),
+# author-gated (write+, ADR 0055) and resolved head-first exactly like the markers above — an advisory
+# is upserted in place too, so its `created_at` does not order it (`pipeline-cli verdict gate --cp`
+# computes this; do not hand-roll a newest-comment read here).
 # (a) body's canonical Reviewed-head SHA (ADR 0151 §6.6) must prefix-match the PR's current head.
 #     Anchored to the `Reviewed-head:` line — a DISTINCT token from the first-line advisory marker,
 #     so this never mistakes a first-line marker for the body binding, and the advisory stays out of
@@ -1990,23 +2003,52 @@ The final merge is **async** (queue-owned), so the terminal state to verify is *
 not `merged=true` in this run. Under the merge queue a *successful* enqueue leaves `auto_merge`
 **`null`** — the queue, not an auto-merge request, owns the async merge — so the success signal
 is the **`already queued to merge`** message the enqueue prints and/or the PR's `QUEUED` state
-(read from `mergeStateStatus` + the `added_to_merge_queue` REST timeline event — **not** the
-`mergeQueueEntry` `--json` field, which gh 2.62.0 rejects, #1930). See ADR 0132 addendum §3.
+(resolved through `pipeline-cli merge-queue-classify` — **not** the `mergeQueueEntry` `--json`
+field, which gh 2.62.0 rejects, #1930). See ADR 0132 addendum §3.
 
 ```bash
 # The QUEUED signal is the success condition. `already queued to merge` from Step 4's --auto
 # and/or an `enqueued`/QUEUED mergeStateStatus confirm it — NOT a non-null auto_merge, which
 # under the queue stays null on a clean enqueue (ADR 0132 §3).
 gh api repos/$REPO/pulls/$PR --jq '{merged, auto_merge, mergeable_state}'
-# Derive QUEUED from `mergeStateStatus` PLUS the authoritative REST issue-timeline event
-# (`added_to_merge_queue`) — NOT the `mergeQueueEntry` --json field, which the pinned gh
-# 2.62.0 rejects, forcing an every-ship gh-api fallback (#1930). The last merge-queue timeline
-# event is the same gh-2.62.0-safe source Step 5.5's reconcile already reads; both steps use one
-# REST-timeline path for the QUEUED confirmation.
 gh pr view $PR --json mergeStateStatus --jq '{mergeStateStatus}'
-gh api "repos/$REPO/issues/$PR/timeline" \
-  --jq 'map(select(.event=="added_to_merge_queue" or .event=="removed_from_merge_queue")) | last | .event // "no-merge-queue-event"'
+# Confirm queue membership through the SAME verb Step 5.5's reconcile polls — never a second,
+# hand-rolled timeline read here (#4193). Prints exactly one of merged/queued/pending/ejected.
+QUEUE_STATE=$(pipeline-cli merge-queue-classify classify --pr "$PR" --repo "$REPO")
 ```
+
+**Why the verb and not a `gh api …/timeline` one-liner here.** This confirmation used to
+hand-roll its own timeline read, and that second copy diverged from the tool it duplicated in
+two ways, each of which misreports a healthy enqueue (#4193):
+
+- It read the timeline **un-paginated**, so it only ever saw the first 30 events. On PR #3955 —
+  a 122-event timeline whose `added_to_merge_queue` sits past event 30 — it printed
+  `no-merge-queue-event` while the PR was queued the whole time, and a shipper burned a run
+  chasing an enqueue failure that never happened. The verb reads `?per_page=100` **with**
+  `--paginate`. If you ever do need a raw timeline read, obey the contract's pagination rule
+  ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), the `CONTROL_PLANE_RE`
+  probe): `--paginate` composes only with a **streaming** `--jq` (`.[] | select(…)`), never an
+  aggregate one (`map(…) | last`, `length`, `add`) — gh runs the filter **per page** and emits
+  one result each, so an aggregate filter answers for page 1, then again for page 2, and a
+  caller capturing it in `$( … )` gets a multi-line value it will compare as a single word.
+- It printed the **last** merge-queue event raw, and `removed_from_merge_queue` is **not** an
+  ejection signal on its own — the queue also emits it on a *successful* merge, at a timestamp
+  matching `merged_at`. The verb ranks `merged` above that event, so a landed merge never reads
+  as a dequeue.
+
+Branch on `QUEUE_STATE`; **every** outcome has a defined response, so no value is a dead end:
+
+- **`queued`** — confirmed in the queue. Step 5's success shape; report `enqueued: yes`.
+- **`merged`** — the queue landed the batch inside this run. Terminal success.
+- **`pending`** — no merge-queue event yet. This is the enqueue-**settle** window, **not** proof
+  the enqueue failed, and never an ejection. Do **not** re-run Step 4 or re-arm auto-merge off a
+  single `pending` — a re-drive is the wrong action on a PR that may already be queued. Fall
+  through to Step 5.5, whose bounded reconcile polls this same verb; on a queue-governed base
+  branch (every PR in this repo) a PR still `pending` at the budget's end is the **parked-intent**
+  case guard 6 already owns — it clears the intent and the run reports `refused — the enqueue did
+  not take effect at this head`. That is the sanctioned way a genuinely absent enqueue is acted
+  on, and it is reached by waiting out the window, never by re-enqueuing here.
+- **`ejected`** — the queue dropped the PR. Step 5.5's `ejected` branch owns the response.
 
 A clean `--auto` under the queue leaves `auto_merge` **`null`** and reports `already queued to
 merge`; that `null` is the **expected** post-enqueue shape, **not** a failure — do not read it
@@ -2049,8 +2091,12 @@ async model (the actor does **not** block synchronously on the final merge), it 
 **bounded batch window** to classify the terminal state before it reports.
 
 Classify each poll off the **authoritative** merge-queue signal — GitHub's REST issue-timeline
-events (`added_to_merge_queue` on enqueue, `removed_from_merge_queue` on a genuine ejection;
-GitHub "Managing a merge queue") — **not** a momentary `mergeStateStatus`. The old discriminator
+events (`added_to_merge_queue` on enqueue, `removed_from_merge_queue` on a dequeue; GitHub
+"Managing a merge queue") — **not** a momentary `mergeStateStatus`. A trailing
+`removed_from_merge_queue` is an ejection **only when the PR is not merged**: the queue emits
+the same event on a *successful* merge, at a timestamp matching `merged_at`, so it must always
+be paired with `merged`/`merged_at` before concluding (the classifier does this by ranking
+`merged` above it — #4193). The old discriminator
 inferred `ejected` from `OPEN + mergeStateStatus != QUEUED`, but a freshly-enqueued PR reads
 `mergeStateStatus = CLEAN` for a few seconds *before* GitHub flips it CLEAN → QUEUED, so a
 genuinely-queued PR false-classified as `ejected` on the first poll (the #1906 live instance: an
@@ -2066,7 +2112,8 @@ reconcile shells out to it per poll and branches on the printed outcome word:
 # a PR still QUEUED at the budget's end is a well-formed pending, not a failure.
 # The classifier reads PR state (gh pr view — the sanctioned PR-state read ship-it Step 2 uses,
 # NOT a GraphQL intake query the org's Projects-classic integration breaks) + the last merge-queue
-# timeline event (gh api …/timeline, REST), cross-checks a non-merged read against the base branch
+# timeline event AND whether a `merged` event is present (gh api …/timeline, REST — the pairing
+# that tells a consumed queue entry from an ejection, #4155), cross-checks a non-merged read against the base branch
 # (gh api …/commits?sha=<base>, the read that stayed fresh while the other two lagged — #4057), and
 # prints merged/ejected/queued/pending. It is fail-closed away from a false ship: any unreadable
 # signal ⇒ pending (keep polling), never a false merged/ejected.
@@ -2098,6 +2145,34 @@ else
     echo "refused — the enqueue did not take effect at this head; the parked intent was cleared. Re-dispatch ship-it to re-assert the gates and enqueue (idempotent)."
 fi
 ```
+
+#### The loop is not the evidence — and a bare removal event is not an ejection (#4155)
+
+The block above shells out to the classifier on purpose. When you are tempted to hand-roll the
+poll instead — a `gh api` read piped into a `grep`, because the CLI was one step away — these three
+rules bind that loop too. The first two are the merge-path instance of §WL of
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) (the shared statement; read it
+there rather than re-deriving it here):
+
+- **A wait-loop's exit is never evidence that the merge landed.** The loop decides *when* to
+  re-read, never *what is true*. Merge evidence is **`merged_at` non-null PLUS a `merged` timeline
+  event**, re-asserted after the loop exits. On an **open** PR `merge_commit_sha` is GitHub's
+  throwaway test-merge commit and is evidence of nothing (the trap pinned below), and a null
+  `auto_merge` post-enqueue is **expected** under a merge queue — never read either as an outcome.
+- **Never `grep -qv` / `grep -vq` as the exit condition.** The live instance is this step: a
+  shipper's improvised `grep -qv null` poll over a multi-field read succeeded on poll 1 — every such
+  read emits lines without `null` — and the loop exited while PR #4076 was still queued (#4155).
+  Capture the inverted match and test emptiness instead.
+- **`removed_from_merge_queue` alone is not an ejection.** The queue emits that event as it
+  **consumes** the entry to land the batch, so on a successful merge it pairs with a `merged` event
+  ≤1s away — PR #4076 (removal `00:27:43Z`, merged `00:27:44Z`), #4143 (both `00:53:07Z`, with
+  `merged` returned *first* in the array), #4164 (`01:38:30Z` / `01:38:31Z`). Array order and
+  timestamp order discriminate nothing; the **presence of the `merged` event** does.
+  `merge-queue-classify` encodes exactly this — a removal paired with a `merged` event classifies
+  `queued`, never `ejected`, and does **not** promote to `merged` on that one signal (merge evidence
+  is still `merged_at` plus the event, so the reconcile keeps polling until the PR state or the
+  base-branch squash confirms). An ejection check keyed on the removal alone would report **every**
+  successful merge as an ejection.
 
 #### The timeline is authoritative but not timely — the freshness cross-check and the ejection window this reconcile accepts (#4057)
 
@@ -2152,7 +2227,8 @@ merge disposition:
   branch's regime, never this PR's own queue history: a first-attempt PR under a queue has no
   history either, so keying on history would leave exactly the #3700 arm parked.
 - **`ejected`** — the queue **dropped** the PR (still open, no longer queued, not merged) — keyed on
-  the authoritative `removed_from_merge_queue` timeline event, not on a momentary state. This is
+  the authoritative `removed_from_merge_queue` timeline event **unpaired with a `merged` event**
+  (#4155), not on a momentary state. This is
   the silent stall this step exists to catch. Do **not** report shipped. **Route it back to
   repair/re-queue** and **surface the ejection**: leave a legible comment on the PR naming the
   ejection and the likely cause (textual batch conflict vs combined-batch CI failure), so the

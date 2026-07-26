@@ -115,6 +115,19 @@ CONTROL_PLANE_RE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/
 - **A new surface, control-flow change, dep, schema/migration, or config key** is visible —
   the change adds executable behavior rather than correcting existing prose or a single trivial
   line. Any new surface needs the full gate.
+- **The body's `## Deviations` section is anything other than `None.`** — the author disclosed a
+  departure from the issue, an acceptance criterion, a reviewer's guidance, or a governing ADR
+  ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §DEV). A disclosed deviation is
+  **evidence the diff is not trivial**: it is a judgment call that needs the full gate's three
+  questions (authorized? needs an ADR? needs a follow-up issue?), and the reduced fan-out has no
+  slot for them. You do **not** grade the deviation here — the lighter path's premise is gone, so
+  you decline to be this PR's gate.
+- **The body carries no `## Deviations` heading at all** — with no section there is no `None.` claim,
+  so the triviality premise is unprovable and you route to the full path. Note what this bounce does
+  **not** decide: whether the absence is a defect is §DEV's *Who owes the section* question, and the
+  full gate answers it — `[FAIL]` on a PR that owed the section, `[N/A]` on one that never did (a
+  bot-opened bump, the ADR 0184/0075 issueless lane). So this stays **default-deny** — it costs a
+  not-owed PR a full review, never a dead-end, which is why it does not need the scoping itself.
 
 On any refusal, emit a `review-trivial: not-trivial — route to full path` note (a plain note,
 **not** a verdict marker — you are declining to be this PR's gate) and stop. The executor's
@@ -124,6 +137,27 @@ the worst case of a miss is paying the full (correct) cost, never an under-gated
 ```bash
 if printf '%s\n' "$FILES" | grep -Eq "${CONTROL_PLANE_RE:-.}"; then
   echo "review-trivial: not-trivial — control-plane file present; route to full path (ADR 0053/0065)"; exit 0
+fi
+
+# §DEV: the disclosure section decides triviality too — a disclosed deviation, or a missing heading,
+# routes to the full path. Read the section's body (heading → next heading or EOF) and compare.
+BODY="$(gh api repos/$REPO/pulls/$PR --jq '.body')"
+# `IGNORECASE` is a gawk extension BSD/macOS awk ignores SILENTLY, so a lowercase `## deviations`
+# heading yielded an empty DEV_BODY here while the case-insensitive `grep -i` below still saw the
+# heading — the two halves disagreed about case. Spell the case-insensitivity into the pattern
+# instead (POSIX, portable) so both halves read the same heading.
+DEV_BODY="$(printf '%s\n' "$BODY" \
+  | awk '/^[[:space:]]*###?[[:space:]]*[Dd][Ee][Vv][Ii][Aa][Tt][Ii][Oo][Nn][Ss][[:space:]]*$/{f=1;next} /^[[:space:]]*##?#?[[:space:]]/{f=0} f' \
+  | grep -Ev '^[[:space:]]*$')"
+if ! printf '%s\n' "$BODY" | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$'; then
+  echo "review-trivial: not-trivial — no ## Deviations section, so no None. claim to stand on (§DEV); route to full path, which decides owed-vs-not"; exit 0
+elif [ "$(printf '%s\n' "$DEV_BODY" | grep -c .)" = 1 ] && printf '%s\n' "$DEV_BODY" | grep -Eiqx '[[:space:]]*none\.?[[:space:]]*'; then
+  : # exactly one non-blank line, and it is `None.` — the triviality premise holds, continue Step 0
+else
+  # anything else — a disclosed deviation, OR an empty section (which is not the `None.` claim §DEV
+  # requires) — is outside the lighter gate's bound. Default-deny, exactly like the unreadable
+  # CONTROL_PLANE_RE above: you cannot prove the premise, so you must not treat the diff as trivial.
+  echo "review-trivial: not-trivial — the body discloses a deviation, or its ## Deviations section is empty (§DEV); route to full path"; exit 0
 fi
 ```
 

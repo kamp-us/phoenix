@@ -325,7 +325,9 @@ cross-check via the timeline if it's not obvious — for context on *what* the U
 surfaces it targets:
 
 ```bash
-gh api "repos/$REPO/issues/$PR/timeline?per_page=100" \
+# --paginate + a STREAMING --jq: per_page caps at 100, so a link event past event 100 is
+# invisible without it on a long-lived PR's timeline (#4193)
+gh api --paginate "repos/$REPO/issues/$PR/timeline?per_page=100" \
   --jq '.[] | select(.event=="connected" or .event=="cross-referenced") | .source.issue.number // .issue.number' 2>/dev/null
 ```
 
@@ -533,6 +535,47 @@ golden-deviation → the PR fails the gate. The golden-deviation class is **pure
 only add a FAIL, it removes none of the seven checks and promotes no taste note to blocking (ADR 0165
 unchanged). Advisory notes (taste + `console.error` + a trivial/explained golden diff) do not count
 against the verdict.
+
+---
+
+## Step 3b — Deviation-disclosure gate: an undisclosed departure is a blocking finding (§DEV)
+
+Every `write-code` PR body carries a `## Deviations` section stating what the implementation
+departed from — the issue, an acceptance criterion, a reviewer's guidance, or a governing ADR — or
+the literal `None.`. The section, the seven classes, the detection tiers, and the two-branch verdict
+rule live once in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §DEV; run them
+from there and don't re-derive them.
+
+**This is the generalization of the class you already run.** Step 3's golden-deviation check is
+exactly §DEV's shape on one surface: an **unexplained** deviation from a blessed baseline hard-FAILs,
+an **explained** one is judged. §DEV applies the same rule to what the PR departed from in *spec*
+rather than in *pixels* — the design law the PR is built against
+(`design-system-manifest.md`, ADR 0162), the issue's stated UI intent, and any reviewer guidance on
+the surface. On a design diff the concrete cases are: the PR reaches for a raw value where the law
+mandates a role token and the body never says why; it ships a surface the issue's UI intent did not
+ask for (class 7); it declines a prior `review-design` advisory note (class 4).
+
+**No double-FAIL.** A golden deviation the body **does** explain is already handled by Step 3's
+intentional-redesign branch — do not re-FAIL it here. This step covers the departures Step 3 has no
+baseline for.
+
+Fold **one** `deviation-disclosure` row into the conjunctive verdict by §DEV's rule
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]` **on a PR that owes it**, absent is
+not `None.`, and `[N/A]` on one that does not; disclosed ⇒ judged on authorized / needs-an-ADR /
+needs-a-follow-up; clean ⇒ PASS, phrased as *nothing undisclosed that this gate could see*, never as
+*no deviations exist*). Like the golden-deviation
+class it is **purely additive** — it can only add a FAIL, and it promotes no taste note to blocking
+(ADR 0165 unchanged).
+
+```
+- [FAIL] deviation-disclosure — the header ships a raw `#1a1a1a` where ADR 0162 mandates a role token (§DEV class 2) and the body's `## Deviations` says `None.`; disclose the departure with its reason, or use the token
+```
+
+**Whether the PR owes the section at all is §DEV's call, not this step's** — read *Who owes the
+section* there. A PR with no `write-code` author (the ADR 0184/0075 issueless carve-out; a bot- or
+hand-authored PR) owes nothing, so an absent section is `[N/A]`, not `[FAIL]` —
+`- [N/A] deviation-disclosure — no write-code author obliged (§DEV)`. Do **not** re-derive that
+scoping here; a per-skill copy is what let two gates render opposite rows on one head.
 
 ---
 

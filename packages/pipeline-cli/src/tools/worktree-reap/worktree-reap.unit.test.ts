@@ -3,19 +3,23 @@ import {
 	classifyCandidate,
 	computeWorktreeReapPlan,
 	isManagedAgentWorktree,
+	ownerPresence,
 	parseAgentLockOwner,
 	parseWorktreeList,
+	presenceFromOwnerLiveness,
 	type ReapCandidate,
 } from "./worktree-reap.ts";
 
 const MAIN = "/Users/dev/phoenix";
 const wtPath = (id: string) => `${MAIN}/.claude/worktrees/${id}`;
 
-/** A dead-session, clean, all-pushed candidate — the reapable shape. Override per case. */
+/** A dead-session (via the lock), clean, all-pushed candidate — the reapable shape. Override per case. */
 const candidate = (over: Partial<ReapCandidate> = {}): ReapCandidate => ({
 	path: wtPath("agent-dead"),
 	branch: "umut/1234-thing",
-	owner: {pid: 4242, alive: false},
+	lockOwner: {pid: 4242, alive: false},
+	foreignLock: false,
+	stampPresence: "unknown",
 	hasUncommitted: false,
 	hasUnpushed: false,
 	...over,
@@ -76,13 +80,13 @@ describe("classifyCandidate — the #3754 safety policy (dead+clean → reap; de
 	});
 
 	it("LIVE session → SPARED even when the tree is clean (the ADR 0191 presence gate)", () => {
-		const d = classifyCandidate(candidate({owner: {pid: 4242, alive: true}}));
+		const d = classifyCandidate(candidate({lockOwner: {pid: 4242, alive: true}}));
 		assert.deepStrictEqual(d, {kind: "spare", reason: "live-session"});
 	});
 
 	it("LIVE session with dirty work → still SPARED (liveness precedes the work checks)", () => {
 		const d = classifyCandidate(
-			candidate({owner: {pid: 4242, alive: true}, hasUncommitted: true, hasUnpushed: true}),
+			candidate({lockOwner: {pid: 4242, alive: true}, hasUncommitted: true, hasUnpushed: true}),
 		);
 		assert.deepStrictEqual(d, {kind: "spare", reason: "live-session"});
 	});
@@ -103,22 +107,138 @@ describe("classifyCandidate — the #3754 safety policy (dead+clean → reap; de
 	});
 
 	it("owner unprovable (null) → SPARED (owner-unknown), never reaped — can't prove orphaned", () => {
-		const d = classifyCandidate(candidate({owner: null}));
+		const d = classifyCandidate(candidate({lockOwner: null}));
 		assert.deepStrictEqual(d, {kind: "spare", reason: "owner-unknown"});
 	});
 
 	it("owner unprovable wins even on a clean tree — no age fallback, no reap without a dead-session proof", () => {
 		const d = classifyCandidate(
-			candidate({owner: null, hasUncommitted: false, hasUnpushed: false}),
+			candidate({lockOwner: null, hasUncommitted: false, hasUnpushed: false}),
 		);
 		assert.strictEqual(d.kind, "spare");
 	});
 
 	it("non-managed path → SPARED (not-managed), never touched — even with a dead owner + clean tree", () => {
 		const d = classifyCandidate(
-			candidate({path: "/Users/dev/some/bespoke/wt", owner: {pid: 4242, alive: false}}),
+			candidate({path: "/Users/dev/some/bespoke/wt", lockOwner: {pid: 4242, alive: false}}),
 		);
 		assert.deepStrictEqual(d, {kind: "spare", reason: "not-managed"});
+	});
+});
+
+describe("presenceFromOwnerLiveness — only `dead` licenses action, only `unknown` is no-signal", () => {
+	it("maps the sweep's four verdicts, reading a live LAUNCHER as alive (never a reap license)", () => {
+		assert.strictEqual(presenceFromOwnerLiveness("dead"), "dead");
+		assert.strictEqual(presenceFromOwnerLiveness("unknown"), "unknown");
+		assert.strictEqual(presenceFromOwnerLiveness("alive"), "alive");
+		// #4001's `launcher-alive` is uninformative about the OCCUPANT — but this verb only acts on
+		// proven death, so reading it as alive is the correct fail-safe here, not the #4001 over-KEEP.
+		assert.strictEqual(presenceFromOwnerLiveness("launcher-alive"), "alive");
+	});
+});
+
+describe("ownerPresence — two signals: any alive wins, death needs positive proof", () => {
+	const facts = (over: Partial<ReapCandidate> = {}) => {
+		const c = candidate(over);
+		return {lockOwner: c.lockOwner, foreignLock: c.foreignLock, stampPresence: c.stampPresence};
+	};
+
+	it("locked-only: the lock pid carries the verdict", () => {
+		assert.strictEqual(ownerPresence(facts({stampPresence: "unknown"})), "dead");
+		assert.strictEqual(
+			ownerPresence(facts({lockOwner: {pid: 1, alive: true}, stampPresence: "unknown"})),
+			"alive",
+		);
+	});
+
+	it("stamped-only (the unlocked majority): the stamp carries the verdict", () => {
+		assert.strictEqual(ownerPresence(facts({lockOwner: null, stampPresence: "dead"})), "dead");
+		assert.strictEqual(ownerPresence(facts({lockOwner: null, stampPresence: "alive"})), "alive");
+	});
+
+	it("neither signal → unknown, never dead", () => {
+		assert.strictEqual(
+			ownerPresence(facts({lockOwner: null, stampPresence: "unknown"})),
+			"unknown",
+		);
+	});
+
+	it("agreeing signals → that verdict", () => {
+		assert.strictEqual(ownerPresence(facts({stampPresence: "dead"})), "dead");
+		assert.strictEqual(
+			ownerPresence(facts({lockOwner: {pid: 1, alive: true}, stampPresence: "alive"})),
+			"alive",
+		);
+	});
+
+	it("CONFLICTING signals fail safe toward alive, in both directions", () => {
+		// dead lock + live stamp, and live lock + dead stamp: a live reading always wins, because
+		// being wrong about death destroys work while being wrong about life only leaks a tree.
+		assert.strictEqual(
+			ownerPresence(facts({lockOwner: {pid: 1, alive: false}, stampPresence: "alive"})),
+			"alive",
+		);
+		assert.strictEqual(
+			ownerPresence(facts({lockOwner: {pid: 1, alive: true}, stampPresence: "dead"})),
+			"alive",
+		);
+	});
+
+	it("a foreign (operator) lock suppresses both signals → unknown", () => {
+		assert.strictEqual(
+			ownerPresence(facts({foreignLock: true, lockOwner: null, stampPresence: "dead"})),
+			"unknown",
+		);
+	});
+});
+
+describe("classifyCandidate — the #3989 stamp signal (the unlocked majority is finally classifiable)", () => {
+	it("UNLOCKED but stamped, session provably dead, clean + pushed → REAP (the #3989 AC)", () => {
+		const d = classifyCandidate(candidate({lockOwner: null, stampPresence: "dead"}));
+		assert.deepStrictEqual(d, {kind: "reap", reason: "orphan-clean"});
+	});
+
+	it("unlocked + stamped-dead but DIRTY → KEEP-DIRTY, never reaped", () => {
+		const d = classifyCandidate(
+			candidate({lockOwner: null, stampPresence: "dead", hasUncommitted: true}),
+		);
+		assert.deepStrictEqual(d, {kind: "keep-dirty", reason: "uncommitted"});
+	});
+
+	it("unlocked + stamped-ALIVE → SPARED (live-session), clean tree or not", () => {
+		const d = classifyCandidate(candidate({lockOwner: null, stampPresence: "alive"}));
+		assert.deepStrictEqual(d, {kind: "spare", reason: "live-session"});
+	});
+
+	it("unlocked + UNSTAMPED (the pre-#3988 historical pile) → SPARED (owner-unknown)", () => {
+		const d = classifyCandidate(candidate({lockOwner: null, stampPresence: "unknown"}));
+		assert.deepStrictEqual(d, {kind: "spare", reason: "owner-unknown"});
+	});
+
+	it("harness-locked trees keep working: a dead lock pid still reaps with no stamp at all", () => {
+		const d = classifyCandidate(candidate({lockOwner: {pid: 4242, alive: false}}));
+		assert.deepStrictEqual(d, {kind: "reap", reason: "orphan-clean"});
+	});
+
+	it("live lock + dead stamp → SPARED (live-session): conflict never reaps", () => {
+		const d = classifyCandidate(
+			candidate({lockOwner: {pid: 7, alive: true}, stampPresence: "dead"}),
+		);
+		assert.deepStrictEqual(d, {kind: "spare", reason: "live-session"});
+	});
+
+	it("dead lock + live stamp → SPARED (live-session): conflict never reaps, other direction", () => {
+		const d = classifyCandidate(
+			candidate({lockOwner: {pid: 7, alive: false}, stampPresence: "alive"}),
+		);
+		assert.deepStrictEqual(d, {kind: "spare", reason: "live-session"});
+	});
+
+	it("an operator's foreign lock is SPARED even with a provably dead stamp — never unlocked", () => {
+		const d = classifyCandidate(
+			candidate({foreignLock: true, lockOwner: null, stampPresence: "dead"}),
+		);
+		assert.deepStrictEqual(d, {kind: "spare", reason: "foreign-lock"});
 	});
 });
 
@@ -127,8 +247,8 @@ describe("computeWorktreeReapPlan — partitions into reap / kept-dirty / spared
 		const reapable = candidate({path: wtPath("agent-reap")});
 		const dirty = candidate({path: wtPath("agent-dirty"), hasUncommitted: true});
 		const unpushed = candidate({path: wtPath("agent-unpushed"), hasUnpushed: true});
-		const live = candidate({path: wtPath("agent-live"), owner: {pid: 7, alive: true}});
-		const unknown = candidate({path: wtPath("agent-unknown"), owner: null});
+		const live = candidate({path: wtPath("agent-live"), lockOwner: {pid: 7, alive: true}});
+		const unknown = candidate({path: wtPath("agent-unknown"), lockOwner: null});
 		const foreign = candidate({path: "/Users/dev/other-wt"});
 
 		const plan = computeWorktreeReapPlan([reapable, dirty, unpushed, live, unknown, foreign]);
@@ -228,7 +348,9 @@ describe("parseWorktreeList — preserves the lock reason (the age-based sweep d
 		const d = classifyCandidate({
 			path: block.path,
 			branch: block.branch,
-			owner: owner === null ? null : {...owner, alive: false},
+			lockOwner: owner === null ? null : {...owner, alive: false},
+			foreignLock: false,
+			stampPresence: "unknown",
 			hasUncommitted: false,
 			hasUnpushed: false,
 		});

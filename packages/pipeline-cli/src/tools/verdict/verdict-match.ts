@@ -146,10 +146,13 @@ export interface ResolveVerdictInput {
 }
 
 /**
- * The latest-wins pick, shared by `resolveVerdict` and the §CP advisory resolution: among the
- * comments an authorized (write+, ADR 0055) author posted whose body matches `re`, the newest by
- * `(createdAt, id)`. `undefined` when the authorized candidate set is empty — the fail-closed
- * "nothing to consume in this namespace", never a false win.
+ * The latest-wins pick within an already-scoped candidate set: among the comments an authorized
+ * (write+, ADR 0055) author posted whose body matches `re`, the newest by `(createdAt, id)`.
+ * `undefined` when the authorized candidate set is empty — the fail-closed "nothing to consume in
+ * this namespace", never a false win.
+ *
+ * This is recency ALONE — it is not the in-force resolver. Scope the candidate set to the live head
+ * first (`pickInForce` below, #4189), then break ties here.
  */
 export const pickLatestAuthorized = (
 	comments: ReadonlyArray<VerdictComment>,
@@ -167,19 +170,69 @@ export const pickLatestAuthorized = (
 };
 
 /**
+ * The head a candidate binds itself to: its first-line marker's `@ <sha>`, else the §CP advisory's
+ * `Reviewed-head:` body anchor (ADR 0151). `null` when it binds none — a pre-0058 SHA-less marker,
+ * or an anchor-less advisory — which `isBoundToHead` then treats as never-current, fail-closed.
+ */
+export const boundHead = (body: string, gate: VerdictGate): string | null =>
+	boundHeadShas(body, gate)[0] ?? null;
+
+/**
+ * The in-force pick: **filter to the live-head binding FIRST, latest-wins only among those.**
+ *
+ * This ordering is the whole fix for #4189 and it is ADR 0058's own rule: a verdict attests the
+ * exact head it names, so the question "which verdict is in force" is first "which candidates
+ * attest the head I am gating" and only then "which of those is newest". Picking by `(createdAt,
+ * id)` and testing the head afterwards — on the winner alone — never consults the candidate that
+ * binds the live head, and under the in-place upsert (#4016/#4050) that is not an edge case: an
+ * at-head verdict keeps the `created_at` of the slot it was upserted into, so a stale,
+ * freshly-created verdict outranks it. Observed on PR #3955 — a green §CP PR that `verdict gate`
+ * refused for ~an hour because a dead-head pair created at 00:32 outranked the live-head PASSes
+ * upserted at 00:49 into 00:09 slots.
+ *
+ * The fallback to the unfiltered set when NOTHING binds the live head is load-bearing, not a
+ * loophole: it preserves the fail-closed classification downstream, which still reports the
+ * `stale` / `sha-less` refusal with the offending comment named, exactly as before.
+ *
+ * Within the live-head set this is unchanged latest-wins — the arbitration the run-keyed upsert
+ * (#4016) explicitly relies on to settle two surviving same-head verdicts. That leaves the
+ * same-head WRITE-RECENCY direction open (an in-place upsert of an older slot at the same head is
+ * still ordered by its creation time); closing it needs a write-recency signal the boundary does
+ * not decode today — tracked separately, see #4189's PR body.
+ */
+export const pickInForce = (
+	comments: ReadonlyArray<VerdictComment>,
+	authorizedAuthors: ReadonlyArray<string>,
+	re: RegExp,
+	gate: VerdictGate,
+	headSha: string,
+): VerdictComment | undefined => {
+	const atHead = comments.filter((comment) =>
+		isBoundToHead(boundHead(comment.body, gate), headSha),
+	);
+	return (
+		pickLatestAuthorized(atHead, authorizedAuthors, re) ??
+		pickLatestAuthorized(comments, authorizedAuthors, re)
+	);
+};
+
+/**
  * Resolve the (PR, gate) verdict against the current head, re-encoding ADR 0058 rule 3
  * exactly: author-gate to write+ collaborators (a forged marker is invisible), keep only
- * PASS/FAIL markers in this namespace, take the **newest** by `(createdAt, id)` (latest-wins,
- * so a newer FAIL vetoes an older PASS and a re-review overwrites), then classify by the
- * SHA-staleness test — `current` iff its `@ <sha>` prefix-matches the head, else `stale`;
- * `sha-less` when the newest marker carries no `@ <sha>`; `none` when the authorized candidate
- * set is empty. Fail-closed everywhere: an empty authorized set is `none`, never a false win.
+ * PASS/FAIL markers in this namespace, take the in-force one (`pickInForce` — live-head
+ * candidates first, latest-wins among them, so a newer FAIL vetoes an older PASS at the same
+ * head and a re-review overwrites), then classify by the SHA-staleness test — `current` iff its
+ * `@ <sha>` prefix-matches the head, else `stale`; `sha-less` when it carries no `@ <sha>`;
+ * `none` when the authorized candidate set is empty. Fail-closed everywhere: an empty authorized
+ * set is `none`, never a false win.
  */
 export const resolveVerdict = (input: ResolveVerdictInput): VerdictOutcome => {
-	const latest = pickLatestAuthorized(
+	const latest = pickInForce(
 		input.comments,
 		input.authorizedAuthors,
 		polarityRe(input.gate),
+		input.gate,
+		input.headSha,
 	);
 	// `latest` is absent only for an empty candidate set, and `parseVerdict` is null only for a
 	// non-PASS/FAIL body — but polarityRe already filtered candidates to PASS/FAIL markers, so both
@@ -369,8 +422,8 @@ export const boundHeadShas = (body: string, gate: VerdictGate): ReadonlyArray<st
  * bound body never matches an unbound one, so neither can overwrite the other.
  */
 export const bindsSameHead = (a: string, b: string, gate: VerdictGate): boolean => {
-	const headA = boundHeadShas(a, gate)[0] ?? null;
-	const headB = boundHeadShas(b, gate)[0] ?? null;
+	const headA = boundHead(a, gate);
+	const headB = boundHead(b, gate);
 	if (headA === null || headB === null) return headA === headB;
 	return isBoundToHead(headA, headB);
 };

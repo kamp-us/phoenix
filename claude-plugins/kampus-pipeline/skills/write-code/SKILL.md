@@ -314,14 +314,45 @@ default — most issues carry no milestone) per the contract's REST surface.
 ### Is it a sub-issue?
 
 An issue may be a child of an epic. Check before claiming — a sub-issue carries
-dependency constraints the bare issue doesn't show:
+dependency constraints the bare issue doesn't show.
+
+Resolve the parent through **`GET /repos/{owner}/{repo}/issues/<N>/parent`**, the dedicated
+sub-endpoint ADR
+[0131](https://github.com/kamp-us/phoenix/blob/main/.decisions/0131-epic-autoclose-on-all-children-closed.md)
+§3 already names the authoritative linkage — and read **three** outcomes off it, never two:
 
 ```bash
-gh api repos/$REPO/issues/<N> --jq '.parent // "no parent (standalone)"'
+# `-i` keeps the status line on stdout even when gh exits non-zero, which is the whole point:
+# it is what distinguishes a genuine 404 ("No parent issue found" ⇒ standalone) from an
+# UNREADABLE response (5xx, rate-limit, auth, network ⇒ UNKNOWN). Collapsing those two into
+# "no parent" is a silent no-op that skips Step 2 on a real epic child (#4171, #3715, #4108).
+PARENT_RESP="$(gh api "repos/$REPO/issues/<N>/parent" -i 2>/dev/null)"
+PARENT_STATUS="$(printf '%s\n' "$PARENT_RESP" | head -n1 | awk '{print $2}')"
+case "$PARENT_STATUS" in
+  200)
+    EPIC="$(printf '%s\n' "$PARENT_RESP" | awk 'body{print} /^\r?$/{body=1}' | jq -r '.number // empty')"
+    : "${EPIC:?parent read returned 200 with no .number — UNKNOWN, not standalone; refusing to claim <N>}"
+    echo "#<N> is a sub-issue of epic #$EPIC → Step 2 (derive eligibility BEFORE claiming)" ;;
+  404)
+    echo "#<N> is standalone (404 'No parent issue found') → Step 3 (claim it)" ;;
+  *)
+    echo "write-code FAILED (fail-closed): parent read on #<N> returned HTTP '${PARENT_STATUS:-none}' — UNKNOWN, which is NOT evidence of 'no parent'. Refusing to claim: retry, or re-pick per Step 1." >&2
+    exit 1 ;;
+esac
 ```
 
-If it has a `parent`, go to Step 2 to derive eligibility before claiming. If it's
-standalone, skip to Step 3.
+- **Parent resolved (200)** → go to **Step 2** and derive eligibility before claiming.
+- **Standalone (404)** → skip to **Step 3**.
+- **Anything else** → **stop, loudly.** An unreadable parent read is *unknown*, not *absent*;
+  proceeding would claim a child whose dependencies were never checked.
+
+> **Never read `.parent` off the plain issue payload.** The single-issue REST response carries
+> **no** `parent` key at all (the linkage surfaces there as `parent_issue_url`), so the read this
+> step used to carry — a `--jq` on `.parent` with a `"no parent (standalone)"` jq-alternative
+> default — fired its default unconditionally and answered "standalone" for *every* issue: a
+> well-formed, plausible, always-wrong answer that skipped the whole Step 2 derivation on every
+> epic child and left no trace (#4171). ADR 0131 §3 states the same thing from the other side:
+> the child's own `.parent` field is unreliable, the sub-endpoint is the source of truth.
 
 ---
 
@@ -333,7 +364,7 @@ when its dependencies are all closed. There is **no `status:blocked` label**;
 eligibility is computed fresh on every pick from the epic's `## Dependencies` section.
 
 ```bash
-EPIC=<parent number>
+EPIC=<the parent number Step 1's sub-endpoint read resolved — never a guessed or remembered one>
 # the epic body carries the plan + the ## Dependencies topology
 gh api repos/$REPO/issues/$EPIC --jq '.body'
 # the real child set + each child's state (the list endpoint is source of truth;
@@ -1476,6 +1507,27 @@ regression of #1257/#1271). In the graceful-absence case (no `product-developmen
 substrate, ADR 0062) Step 4b never fires, so there is no `FLAG_KEY` and no `Flag:` line — the PR
 ships normally.
 
+**Every PR body carries a `## Deviations` section — no exceptions, and `None.` only after you
+walked the list.** You made judgment calls the issue did not specify: you narrowed a suggested
+fix-shape, you left a sibling defect for a follow-up, you declined a reviewer's optional
+suggestion, you pushed past a hook, you changed a test that asserted the defect. Those calls are
+usually right, and until now nothing made you say them out loud — so they lived in your session
+and died there, and the pipeline only learned about the ones a forthcoming run happened to
+volunteer. The section, its four fields, the **seven classes** you check `None.` against, and the
+gates' verdict rule are defined once in the contract's
+[§DEV](../gh-issue-intake-formats.md) — read the classes there and compose against them; do not
+re-derive them here. Two operational points that are yours, not the contract's:
+
+- **Write it last, from the whole build, not from memory of the plan.** Re-read your own diff
+  against the issue's `### What to build` + `### Acceptance criteria` and against any ADR you
+  touched, then walk the seven classes. A deviation you noticed at hour one and forgot by PR-open
+  is exactly the one that ships undisclosed.
+- **`None.` is a claim you are accountable for.** A gate that finds a class-N deviation against a
+  `None.` blocks on two counts (§DEV) — the deviation, and the false disclosure. An honest entry
+  costs one sentence and is never itself a FAIL; the disposition line is where you say what you
+  did about it (`no action needed` / `ADR #NNNN amends it` / `follow-up #M filed` /
+  `for the reviewer to judge`).
+
 ```bash
 # RE-DERIVE the branch LIVE from the worktree — never a cached/shared-file value (see the
 # live-derivation rule in Step 4). $BRANCH from Step 4 is GONE across Bash calls; wt_preflight
@@ -1486,8 +1538,8 @@ git -C "$WT" push -u origin "$BRANCH"   # gate the push ([per-mutation preflight
 # The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
 # PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
 claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my claim (Step 3.5)"; exit 1; }
-# The body carries `Fixes #N` always; ADD the `Flag: <FLAG_KEY>` line BELOW it ONLY when Step 4b
-# fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it entirely for an ungated PR.
+# The body carries `Fixes #N` and `## Deviations` ALWAYS; ADD the `Flag: <FLAG_KEY>` line ONLY when
+# Step 4b fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it for an ungated PR.
 gh pr create \
   --base main \
   --title "<concise PR title>" \
@@ -1496,6 +1548,10 @@ gh pr create \
 
 Fixes #<N>
 Flag: <FLAG_KEY>
+
+## Deviations
+
+<one entry per departure — class, Said / Did / Why / Disposition (§DEV) — or the literal `None.`>
 EOF
 )"
 ```
@@ -1515,7 +1571,10 @@ itself**: read the PR body back and assert it matches a recognized closing keywo
 
 ```bash
 # (a) the cross-reference landed (a closing OR non-closing mention both show here — necessary, not sufficient)
-gh api repos/$REPO/issues/<N>/timeline \
+#     --paginate + a STREAMING --jq, per the contract's pagination rule: the timeline endpoint
+#     defaults to 30 events/page, so an un-paginated read calls a cross-reference past event 30
+#     absent — a false alarm on any issue with a bit of history (#4193).
+gh api --paginate "repos/$REPO/issues/<N>/timeline?per_page=100" \
   --jq '.[] | select(.event == "cross-referenced") | .event'
 # (b) the SUFFICIENT check, REST-only: the seam is armed iff the body carries EITHER a real
 #     CLOSING keyword for #N (full-close PR — the same set ship-it Step 1 resolves:
@@ -1547,6 +1606,14 @@ if [ -n "$FLAG_KEY" ]; then
     && echo "dark-ship Flag: line present and matches ship-it Step 5b — release queue will fire" \
     || echo "MISSING/MALFORMED Flag: line — Step 4b fired but the body has no matching plain 'Flag: <key>' line; patch it in before stopping (#1282)"
 fi
+# (e) DISCLOSURE PRESENCE, REST-only: the body carries a `## Deviations` heading. This is the
+#     PRESENCE floor only — it cannot tell an honest `None.` from a false one, and it sees none of
+#     the seven classes (§DEV's detection tiers). It exists so the one failure mode that is purely
+#     mechanical — forgetting the heading — never reaches a gate as a malformed body.
+gh api repos/$REPO/pulls/<PR> --jq '.body' \
+  | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
+  && echo "## Deviations section present" \
+  || echo "MISSING ## Deviations section — an ABSENT section is a gate FAIL (§DEV: absent is not None.); patch the body before stopping"
 ```
 
 If (b) reports a broken seam, the body links `#N` with **neither** a closing keyword **nor**
@@ -1563,7 +1630,9 @@ close directive, a sibling/related `#M` carries a closing keyword that will wron
 form (`addresses`/`relates to`/`see #M`) and re-run (c), since shipping it is exactly the
 #1259 silent-auto-close. If (d) reports a missing/malformed `Flag:` line on a Step-4b dark ship,
 patch the body via REST to add the plain `Flag: <FLAG_KEY>` line and re-run (d), since shipping it
-without the line silently drops the dark ship from ship-it's release queue (#1282).
+without the line silently drops the dark ship from ship-it's release queue (#1282). If (e) reports a
+missing `## Deviations` section, patch the body the same way and re-run (e) — an absent section is a
+gate FAIL by itself (§DEV), and the heading is the one part of the obligation a grep can hold you to.
 
 ### Attach before/after composition captures (UI diffs only) — the #2964 evidence-attach
 
@@ -2094,6 +2163,18 @@ not just that boxes were checked. The same note carries into the Step 7 epic han
 ("Affects siblings") for a sub-issue, since a reviewer-added criterion is exactly the kind of
 cross-task signal a sibling should know the gate now enforces. Pushing new commits is what
 makes the **stateless** gate re-run — you do **not** re-trigger or self-approve it:
+
+**A repair round that departed from anything APPENDS to `## Deviations` — it never rewrites it.**
+The repair round is where the undisclosed call is most likely to be made and least likely to be
+written down: you declined an optional reviewer suggestion, you fixed the finding a narrower way
+than the verdict prescribed, you changed a pre-existing test the fix now contradicts, you pushed
+past a hook. Walk the contract's seven classes ([§DEV](../gh-issue-intake-formats.md)) against
+*this round's* diff, and if any fired, patch the PR body to add the entries under the existing
+`## Deviations` heading, tagged `**(repair round K)**`, leaving every earlier entry standing — the
+section is the PR's whole-life log, and a round that overwrites it erases the trail. A round that
+departed from nothing adds nothing; it does **not** rewrite a prior round's entries to `None.`
+(patch via REST — `gh api -X PATCH repos/$REPO/pulls/$PR -f body="…"` — since `gh pr edit` is
+unreliable in this org).
 
 ```bash
 # re-assert the mis-attribution guard (Step 3.5) before the resubmit push — a between-calls cwd

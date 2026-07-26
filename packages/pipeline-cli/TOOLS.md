@@ -593,6 +593,50 @@ node packages/pipeline-cli/src/bin.ts reachability-guard check phoenix-reactions
 node packages/pipeline-cli/src/bin.ts reachability-guard check pano-feed-edge-cache --root /path/to/repo
 ```
 
+### `lane` — the active build-lane set, computed rather than self-reported (#3964)
+
+Answers "which build lanes are occupied, who holds each, and which of them are platform?" from
+artifacts a third party can re-read — so an engine's lane count is verifiable **without asking
+the engine**. A self-report is neither verifiable nor attributable, which is how a lane number
+that mixed build lanes with review-plan gates reached a capacity decision.
+
+```bash
+# the human table
+node packages/pipeline-cli/src/bin.ts lane status
+
+# the stable machine shape the #3948 cycle heartbeat consumes
+node packages/pipeline-cli/src/bin.ts lane status --json
+```
+
+**The lane-occupancy predicate**, defined once in `lane.ts`. A lane is one *unlanded* unit of
+build work, occupied by an open issue carrying a live authorized claim marker (ADR
+[0115](../../.decisions/0115-agent-distinguishable-claim-marker.md)) and/or an open PR that has
+not merged — a draft and a PR banked awaiting approval both hold their lane.
+
+Two properties follow from what the incident showed:
+
+- **A lane is unlanded work, not a running agent.** An engine can hold five unlanded lanes with
+  zero live coders. Nothing in GitHub observes a process, so the report counts unlanded work and
+  always breaks the total down by stage (`claimed` / `in-review`) rather than emitting one
+  ambiguous figure.
+- **A lane has two crew-tracker keys the tracker cannot link.** `issue-<N>` and `pr-<M>` are
+  independent free-form resource keys there (#3886, #4074), so one engine can hold the issue keys
+  while a sibling holds the PR keys for the same work. The PR's own `Closes #N` link is the edge
+  the tracker lacks: it folds the pair into **one** lane, and every lane publishes **both** keys
+  so an external reconciliation can see which belong together.
+
+Each lane is classified **platform** when its issue carries `area:infra` **or**
+`axis:pipeline-hardening` — the predicate lives in exactly one constant, and no new label or
+field is introduced. A lane whose issue cannot be read (a PR linking no issue) is
+`indeterminate`, kept distinct from `product` so an unreadable lane never silently under-counts
+platform spend. The founder-set capacity (6 lanes) and platform quota (2) are named once here and
+surfaced in both outputs; **enforcing** them is the sibling verb (#3965) — this one only reports.
+
+Read-only by construction: it resolves claims through the shared ADR-0115 resolver, and never
+writes or releases one. An empty scan (zero open issues *and* zero open PRs) is a broken read,
+not an idle factory, so it exits non-zero rather than printing a vacuous zero (ADR
+[0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+
 ## Building and testing
 
 ```bash

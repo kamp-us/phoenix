@@ -308,6 +308,94 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 	});
 });
 
+describe("resolveVerdict — live-head candidates first, latest-wins only among them (#4189)", () => {
+	// The fixture shape is PR #3955's, and its creation order is the INVERSE of its head-binding
+	// order: the live-head verdict was upserted in place (#4016/#4050) into a slot created at 00:09,
+	// while the dead-head verdict was created fresh at 00:32. A `(createdAt, id)` pick crowns the
+	// 00:32 comment, applies the head test to that winner alone, and refuses a green PR.
+	const atHead = (over: Partial<VerdictComment> & {readonly id: number}) =>
+		marker({
+			createdAt: "2026-07-26T00:09:45Z",
+			body: `review-doc: PASS @ ${HEAD} — merge-ready`,
+			...over,
+		});
+	const atDeadHead = (over: Partial<VerdictComment> & {readonly id: number}) =>
+		marker({
+			createdAt: "2026-07-26T00:32:02Z",
+			body: `review-doc: FAIL @ ${OLD} — changes-requested`,
+			...over,
+		});
+
+	const cases: ReadonlyArray<{
+		readonly name: string;
+		readonly comments: ReadonlyArray<VerdictComment>;
+		readonly authorized: ReadonlyArray<string>;
+		readonly expected: VerdictOutcome;
+	}> = [
+		{
+			name: "a newer-created dead-head FAIL does not shadow an older-created live-head PASS",
+			comments: [atHead({id: 1}), atDeadHead({id: 2})],
+			authorized: ["usirin"],
+			expected: {_tag: "current", commentId: 1, polarity: "PASS", sha: HEAD},
+		},
+		{
+			name: "the same reordering in the FAIL direction: a newer-created dead-head PASS never clears a live-head FAIL",
+			comments: [
+				atHead({id: 1, body: `review-doc: FAIL @ ${HEAD} — changes-requested`}),
+				atDeadHead({id: 2, body: `review-doc: PASS @ ${OLD} — merge-ready`}),
+			],
+			authorized: ["usirin"],
+			expected: {_tag: "current", commentId: 1, polarity: "FAIL", sha: HEAD},
+		},
+		{
+			name: "within the live-head set latest-wins still arbitrates (#4016's two surviving runs)",
+			comments: [
+				atHead({id: 1}),
+				atHead({
+					id: 2,
+					createdAt: "2026-07-26T00:10:00Z",
+					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
+				}),
+				atDeadHead({id: 3}),
+			],
+			authorized: ["usirin"],
+			expected: {_tag: "current", commentId: 2, polarity: "FAIL", sha: HEAD},
+		},
+		{
+			name: "NOTHING binds the live head ⇒ unchanged fail-closed stale refusal, naming the newest",
+			comments: [
+				atDeadHead({id: 1, createdAt: "2026-07-26T00:20:00Z"}),
+				atDeadHead({id: 2, body: `review-doc: PASS @ ${OLD} — merge-ready`}),
+			],
+			authorized: ["usirin"],
+			expected: {_tag: "stale", commentId: 2, polarity: "PASS", sha: OLD},
+		},
+		{
+			name: "a forged live-head PASS cannot win the head-first filter (ADR 0055 gate composes)",
+			comments: [atHead({id: 1, author: "attacker"}), atDeadHead({id: 2})],
+			authorized: ["usirin"],
+			expected: {_tag: "stale", commentId: 2, polarity: "FAIL", sha: OLD},
+		},
+		{
+			name: "a SHA-less legacy marker binds no head, so a live-head verdict outranks it however new",
+			comments: [
+				atHead({id: 1}),
+				marker({id: 2, createdAt: "2026-07-26T00:40:00Z", body: "review-doc: FAIL — legacy"}),
+			],
+			authorized: ["usirin"],
+			expected: {_tag: "current", commentId: 1, polarity: "PASS", sha: HEAD},
+		},
+	];
+	for (const {name, comments, authorized, expected} of cases) {
+		it(name, () =>
+			assert.deepStrictEqual(
+				resolveVerdict({comments, authorizedAuthors: authorized, gate: "doc", headSha: HEAD}),
+				expected,
+			),
+		);
+	}
+});
+
 describe("isReviewed — read-verb decision over expected polarity", () => {
 	it("current FAIL satisfies an expect-FAIL read (write-code repair seam)", () => {
 		const outcome: VerdictOutcome = {_tag: "current", commentId: 1, polarity: "FAIL", sha: HEAD};

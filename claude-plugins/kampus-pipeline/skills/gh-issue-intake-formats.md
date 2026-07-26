@@ -833,6 +833,116 @@ immutable; re-read it each round.
 
 ---
 
+## PITCH. The pitch — the direction carrier that binds at intake (founder ruling #3909)
+
+This is the **single source** of the pitch format and its founder-approval carrier. Every
+consumer — `triage` (drafts it), `write-code` (reads it as the bet it is building),
+`pitch-guard` (enforces it), and the cycle heartbeat — cites *this* section; none re-derives
+the field set or the approval rule.
+
+**Why it exists.** The factory runs AFK, so direction cannot be enforced by founder attention.
+It binds **structurally at intake**: lane-entering work enters the drain only carrying a
+founder-approved pitch. The founder ruling that fixes this also fixes its **inverse** — *no
+merge-blocking conformance gate on shipped work.* A finished PR **never** fails for direction
+(#3909). Anything that would red a PR for a missing or malformed pitch is out of contract.
+
+### The five fields
+
+The pitch is a body section headed `## Pitch`, carrying exactly five fields:
+
+```markdown
+## Pitch
+
+**Problem:** <who has it, and what breaks or stalls for them today — one or two sentences>
+**Arc:** <the arc-home this work belongs to — the milestone or standing lane the ADR 0202 rubric step already assigned>
+**Appetite:** <N> cycles
+**Rabbit-holes:** <the named traps — the specific ways this overspends if left unbounded>
+**No-gos:** <what this deliberately does not do>
+```
+
+- **Problem** — the *who* and the *what hurts*, not the solution. A pitch whose Problem is a
+  restatement of the proposed change has not found its problem yet.
+- **Arc** — **the arc-home outcome of the existing rubric step, restated as a field; it is not
+  a second check.** `triage`'s ADR-0202 home-or-exempt-or-kill step already resolved this issue
+  to a milestone or a standing lane; **Arc** carries that same answer into the pitch so the bet
+  is legible without a second read. There is exactly **one** arc question in the pipeline and
+  `homing-guard` is its teeth — never add a parallel arc check here.
+- **Appetite** — the **founder-set spend ceiling, denominated in 2-week cycles** (the cycle
+  length is founder-set, #3227). It is a *budget*, not an estimate: it says how much this is
+  worth, not how long it will take. A whole positive number of cycles; `1 cycle` / `2 cycles`
+  both read.
+- **Rabbit-holes** — the named traps, so the appetite is spendable. Generic caution ("don't
+  over-engineer") is not a rabbit-hole; a specific one is.
+- **No-gos** — the deliberately-excluded scope. This is the field that makes a bet finishable.
+
+Read it **tolerantly** per [§Reading stance](#reading-stance-convention-not-parser-spec) — bold
+markers optional, `Rabbit holes` reads as `Rabbit-holes`, field order is not load-bearing — but
+**write it canonically**, in the shape above.
+
+### The founder-approval carrier — a founder seat, never agent-satisfiable
+
+**Agents draft; only the founder approves.** The draft is agent work and the approval is a
+**human seat**, exactly like the betting-table verdict and the appetite number itself (#3927).
+Approval is carried by one comment on the issue:
+
+```
+pitch-approved: appetite <N> cycles · <ISO-8601-UTC>
+```
+
+A comment counts as an approval only when **all** of these hold — a miss on any one resolves
+to *not approved*, never to a warning:
+
+1. **`write+` authored.** The comment's author is a `write+` repo collaborator, resolved at the
+   GitHub ACL, fail-closed — the same [ADR 0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)
+   trust root every verdict marker uses. Never a checked-in allowlist.
+2. **Not agent-authored.** The comment carries **no agent-provenance stamp** — no
+   `Filed by an agent` footer, no `session <uuid>`, no bare session UUID. This is the
+   [§4.5](#45-the-filing-provenance-signal--the-report-footer-not-github-authorship-adr-0159)
+   signal applied to approval, and it is the load-bearing clause: **GitHub authorship cannot
+   distinguish founder from agent** (both write through the shared `usirin` token — the same
+   degeneracy [§7](#7-issue-claim-semantics--a-session-id-stamped-claim-comment-the-agent-distinguishable-claim-marker-adr-0115) / ADR 0115
+   removes for the claim marker), so the tell is the *stamp*, not the login. The complement is
+   an obligation on the write side: **every agent-posted pipeline comment is provenance-stamped,
+   and no agent ever posts a `pitch-approved:` marker at all.** A stamped marker is, by
+   construction, not an approval.
+3. **Bound to the appetite it approved.** The marker's `<N>` equals the body's **Appetite**
+   field. The founder approves a *specific* number, so re-writing the appetite after approval
+   silently un-approves the pitch rather than inheriting a ceiling he never set — the same
+   staleness-binding discipline [ADR 0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)
+   gives a verdict against a head SHA.
+
+**The honest residual.** Clause 2 is convention-carried, not cryptographic: an agent that
+suppressed its own provenance stamp could forge an approval. That is the same residual §4.5
+accepts for the never-auto-close signal, and it is named here rather than papered over. The
+structural half is that no agent-facing skill has a `pitch-approved:` write path — approval has
+no producer inside the pipeline.
+
+### Who writes it, who reads it
+
+| | |
+|---|---|
+| **Drafted by** | `triage`, into the issue body at the home-or-exempt-or-kill step (`triage/SKILL.md` Step 6) |
+| **Approved by** | the **founder only** — the `pitch-approved:` comment, per the three clauses above |
+| **Enforced by** | `pipeline-cli pitch-guard check [--issue <N>]` — fail-closed, ADR 0092 |
+| **Read by** | `write-code` (the bet it is building), the appetite circuit breaker (#3966), the cycle heartbeat (#3948) |
+
+### Scope — what "lane-entering work" means here
+
+The pitch requirement binds **lane-entering work**: an open `status:triaged` issue that is a
+**`type:epic`**, or a **`type:feature` with no parent** (a standalone build feature). A child of
+an epic **inherits its epic's pitch** and carries none of its own — the bet was placed at the
+epic. Every other type (`type:bug`, `type:chore`, `type:decision`, `type:investigation`) is
+**out of scope**: maintenance and questions are not bets.
+
+> **Park and expiry are NOT defined here — they are #3966's carrier.** A pitch that outspends
+> its appetite parks for a founder re-pitch, and parked-unpitched work expires; the park marker
+> and its semantics (including how they relate to ADR 0072 §4) are defined **once**, by the
+> appetite-circuit-breaker child [#3966](https://github.com/kamp-us/phoenix/issues/3966), and
+> that question is **open** at the time of writing. This section deliberately encodes **no**
+> answer to it and no consumer may infer one from the pitch fields.
+
+---
+
 ## The `wayfinder:map` issue shape
 
 A `wayfinder:map` issue (the [`wayfinder:map` label](#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)) is not a task and not an epic — it is a **living map**: the
@@ -2112,6 +2222,45 @@ never mention it in what you post.
 
 ---
 
+## WL. A loop exit is not evidence, and `grep -qv` is not a condition (#4155)
+
+Two shell-level rules the pipeline's agent-executed steps share. Both fail in the **same
+direction** — a condition meaning *not yet* / *not allowed* reads as *done* / *allowed*, and
+control flow proceeds — which is the silent direction: a loop that hangs is visible, a loop that
+exits early on a false condition is not. They are stated here once so every skill cites one
+definition.
+
+**1. A wait-loop's exit is never evidence of the awaited condition.** A loop controls *when* you
+re-read; it never substitutes for the read. On exit — whether the loop broke, timed out, or
+tripped a malformed condition — **re-assert the terminal state from ground truth** before
+reporting it. The live instance: a shipper improvised a `grep -qv null` poll while waiting on a
+merge queue; the condition succeeded on poll 1 and the loop exited on a state that meant "not
+merged yet" (#4155, on PR #4076). Nothing was misreported only because that shipper concluded
+from a direct `merged_at` + timeline read instead of from the loop — discipline, not a control.
+
+**2. Never use `grep -qv` / `grep -vq` as a loop or branch condition.** Two independent
+mechanisms break it, and both land on a false-true:
+
+- **Semantics.** `grep -v <pat>` succeeds when *any* line lacks the pattern, so over a
+  multi-line/multi-field read a `grep -qv` test is true almost unconditionally — it does **not**
+  mean "no line matches".
+- **Portability.** The `-q` + `-v` combination misbehaves under some grep variants (ugrep returns
+  non-zero even when non-matching lines exist), so `! grep -qv …` — the "every line matches the
+  allowed prefix" idiom — can read true for a set that contains disallowed entries.
+
+**The remedy — capture the inverted match and test emptiness, never the exit status.** This is the
+form [`lefthook.yml`](https://github.com/kamp-us/phoenix/blob/main/lefthook.yml)'s pre-push
+`typecheck` leg already uses and documents (#3130 → #3403); that comment is the anchor, and this
+section is its pipeline-side statement — don't restate the rationale at each call site, point here:
+
+```sh
+# "every changed path is under skills/ or agents/" — the empty-output form
+OFFCLASS=$(grep -vE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES")
+if [ -n "$FILES" ] && [ -z "$OFFCLASS" ]; then …
+```
+
+---
+
 ## HEAD. Review the PR head, never the launched checkout's working copy (#793)
 
 A review gate is frequently spawned with `isolation:worktree`, which lands it in a **fresh
@@ -3191,6 +3340,215 @@ nothing.
 
 ---
 
+## DEV. The `## Deviations` PR-body disclosure section — one canonical definition
+
+The single source of the deviation-disclosure obligation, for **both** halves: the **writer**
+(`write-code` Step 5 composes the section on every PR it opens; its repair round appends to it) and
+the **gates** (`review-code`, `review-doc`, `review-skill`, `review-design` each fold it into their
+verdict; `review-trivial` bounces any PR that discloses one). Each cites **this** section rather than
+re-deriving the classes or the verdict rule, so the five lanes can't drift — the same single-sourcing
+discipline §9 and §CP hold.
+
+**The gap it closes.** A departure from the plan, the issue, an acceptance criterion, or a governing
+ADR has no required home in the artifact today, so it lives in the coder's session and dies there.
+PR [#3986](https://github.com/kamp-us/phoenix/pull/3986) narrowed ADR 0115 §5's reclaim invariant in
+skill prose. The author knew — they offered *in review conversation* to file the amending ADR — but
+the PR body carried nothing, the offer evaporated, and the narrowing landed on `main` as post-merge
+debt that an audit had to reconstruct
+([#3993](https://github.com/kamp-us/phoenix/issues/3993) F1; F2 is the same class, a scope note that
+omitted a third issue and left half a fix inert). The information existed at authoring time — the
+cheapest moment to surface it — and had nowhere to go.
+
+### Shape
+
+```markdown
+## Deviations
+
+- **Scope narrowing** — **Said:** #4064's AC asks the gate teeth to cover §6.6's four gates plus
+  `review-trivial`. **Did:** `review-trivial` gets a Step-0 bounce, not a deviation verdict.
+  **Why:** it emits a trivial-path verdict, and a disclosed deviation is by construction evidence the
+  diff is not trivial. **Disposition:** stated in the PR body per the AC; no ADR needed.
+```
+
+An entry names four things and nothing more: what the **spec** said (the issue, an acceptance
+criterion, a plan, a reviewer's guidance, or the governing ADR — cite it), what the implementation
+**did** instead, **why**, and its **disposition** (`no action needed` / `ADR #NNNN amends it` /
+`follow-up #M filed` / `for the reviewer to judge`). Lead each entry with its class from the list
+below so the gate can match its own finding against your disclosure.
+
+The empty case is an explicit sentence, never an omitted heading:
+
+```markdown
+## Deviations
+
+None.
+```
+
+### The seven classes — the enumeration is what makes `None.` a claim
+
+A mandatory section that any run can satisfy with `None.` is ceremony. What makes it load-bearing is
+that `None.` is a **checked assertion against a closed list**, not a shrug: you wrote it because you
+walked these seven and none fired.
+
+1. **Scope narrowing** — the diff delivers less than, or a different shape from, what the issue's
+   `### What to build`, a suggested fix-shape, or an acceptance criterion asked. (A `Part of #N`
+   partial-split per §9 is a *disclosed* narrowing: name it here too, don't let the token stand in
+   for the reasoning.)
+2. **Governing-ADR departure** — the implementation contradicts, narrows, or widens an accepted ADR,
+   including narrowing an invariant that lives only in skill prose, with no amending ADR in the diff.
+   This is the #3986 class.
+3. **Known defect left unfixed** — an adjacent or sibling defect you saw and deliberately did not
+   fix, whether or not you filed a follow-up.
+4. **Declined guidance** — a reviewer suggestion, a reviewer-appended acceptance criterion (§2), or a
+   triage instruction you chose not to take.
+5. **Guard or gate bypassed** — a `--no-verify` push, a skipped or disabled hook, a suppressed lint
+   or type error (`biome-ignore`, `@ts-expect-error`), a skipped / `.only` test, a widened allowlist.
+6. **Pre-existing test or fixture changed** — an existing assertion modified, weakened, or deleted
+   rather than added to. "It asserted the defect" is a legitimate reason and a mandatory disclosure.
+7. **Out-of-scope change** — a file or surface touched that the issue does not imply.
+
+**The classes overlap; the label is a routing hint, not the disclosure.** A change can read as two
+classes at once — an addition triage explicitly declined is both class 4 and class 7 — and picking
+one is not a mistake to litigate. A gate matches its finding against the entry's **substance** (the
+Said / Did / Why), never against the class label, so a mis-labelled but honest entry is disclosed and
+a correctly-labelled but vague one is not.
+
+**A falsified `None.` is worse than an honest entry.** When a gate finds a class-N deviation in a
+diff whose body says `None.`, the disclosure is a false statement, and the finding is blocking on
+*two* counts: the undisclosed deviation, and the fact that the section can no longer be trusted on
+this PR. That asymmetry is the section's only real enforcement — disclosing costs a sentence, and a
+wrong `None.` costs a repair round.
+
+**Absent is not `None.`** On a PR that **owes** the section (below), a body with no `## Deviations`
+heading is malformed: the gate cannot tell "nothing to disclose" from "never considered it", so
+absence fails closed (§ZS's posture, applied to a body section). `None.` is a complete, valid
+disclosure; silence is not.
+
+### Who owes the section — the one `[N/A]` scoping, stated here and nowhere else
+
+The writer half binds **`write-code`**, so the gate half can only fail a body `write-code` was
+obliged to compose. A PR with **no `write-code` author** owes nothing, and its row is **`[N/A]`, not
+`[FAIL]`** — every gate that carries the row resolves it by *this* rule. Stated once here on purpose:
+carried as a per-skill fragment it diverged immediately, and two gates rendered opposite rows on the
+same head — `review-doc` `[N/A]`, `review-code` `[FAIL]` — which, because the verdicts are
+conjunctive and `write-code` is not the author, no repair round could ever clear.
+
+A gate resolves the row **`[N/A]` only on positively-established non-obligation**, in exactly two
+shapes:
+
+- **The gate's own issueless carve-out already fired.** The row inherits this gate's
+  **acceptance-criteria determination**: where the AC half renders N/A because the PR is a blessed
+  issueless lane — the conversation-authored `.glossary/**` coining PR of ADR
+  [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md) /
+  [0184](https://github.com/kamp-us/phoenix/blob/main/.decisions/0184-review-code-issueless-carve-out.md) —
+  the deviation row renders N/A with it. There is no spec to depart from and no `write-code` author
+  obliged. Tying the two together is what keeps them from drifting apart again: a gate cannot grade
+  ACs while N/A-ing deviations, or the reverse.
+- **The PR was not authored by `write-code`.** A bot-opened PR (a dependency bump) or a
+  hand-authored human PR never ran Step 5, so its body was never obliged to carry the heading.
+
+Everything else — including a pipeline PR that merely **lost** its `Fixes #N` — is **owed**, and an
+absent section is a `[FAIL]`. The exception is deliberately narrow in that direction: dropping the
+issue link buys no exemption (each gate already hard-stops that shape as a broken seam), so the only
+way to reach `[N/A]` is a carve-out the gate itself established.
+
+**Repair appends, never replaces.** Each repair round adds its entries under the same heading, tagged
+`**(repair round K)**`, and leaves the earlier ones standing. The section is a running log of what
+this PR departed from across its whole life — rewriting it to the latest round's truth destroys
+exactly the trail the incident above wanted.
+
+### Detection tiers — what a gate can actually catch
+
+A gate can only fail what it can observe. These tiers are stated so the obligation is not read as
+more enforcement than exists:
+
+- **Tier M — mechanically detectable from the diff.** Class 5's in-diff suppressions
+  (`biome-ignore`, `@ts-expect-error`, `test.skip`, `.only`) and class 6's removed assertions in test
+  files leave literal tokens in the added/removed lines; a grep over the head diff arms the check
+  deterministically. Class 7 is half-mechanical — the changed-path set is machine-readable, but
+  "out of scope" is a judgment against the issue's prose.
+- **Tier R — reader-detectable.** Classes 1, 2, and 4 need an LLM gate reading the diff against the
+  issue, the ADR, and the review threads. The gates already do all three reads (the per-criterion AC
+  table, `review-doc` Step 4a's ADR-contradiction sweep, `review-code` Step 3e's unresolved threads),
+  so this obligation **reuses** those reads rather than adding a scan.
+- **Tier D — disclosure-only, undetectable by any gate.** Class 3 lives entirely in the author's
+  head. So does the part of class 5 that leaves no artifact: a `--no-verify` push is invisible
+  afterwards — the hooks it skipped left no trace in the diff, the body, or the PR timeline. For
+  Tier D no gate can fail an omission. What the obligation buys there is that non-disclosure becomes
+  a **rule violation** rather than an oversight, and a later audit has a named place to point at.
+
+**So a `deviation-disclosure: PASS` row means "nothing undisclosed that this gate could see" — never
+"no deviations exist."** Gates state it that way in the verdict; a gate that phrases its row as the
+stronger claim is overstating its own teeth.
+
+**The canonical Tier-M scan — one snippet, run by every gate that carries the row.** It arms the
+check; it never decides it. Emit the scanned scope (§ZS #1) so a drift that silently stops matching
+shows in the run log instead of reading green:
+
+```bash
+# §DEV Tier M — presence of the section, plus the two diff-detectable classes.
+# The section-presence pattern below is the canonical copy; `write-code` Step 5 check (e) and
+# `review-trivial` Step 0 restate it mechanically, so a change here has to land in all three (the
+# rule is single-sourced, the pattern is not — a silent drift un-gates one lane).
+BODY="$(gh api repos/$REPO/pulls/$PR --jq '.body')"
+printf '%s' "$BODY" | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
+  && echo "deviation-disclosure: ## Deviations section present" \
+  || echo "deviation-disclosure: ## Deviations section ABSENT — malformed body if the PR OWES the section (absent is not None.); [N/A] if it does not (see 'Who owes the section')"
+# class 5, added suppressions/skips
+DEV_SUPPRESS="$(gh pr diff "$PR" | grep -E '^\+' \
+  | grep -nE 'biome-ignore|eslint-disable|@ts-(expect-error|ignore)|\.(skip|only)\(|xit\(|xdescribe\(' || true)"
+# class 6, removed assertion lines — scoped to TEST files, matching the prose. Walk the diff
+# file-by-file so a `--- a/src/assert.ts` header can never match as a removed assertion, and only
+# removals inside a test file count. A bare `grep '^-'` over the whole diff matched exactly that
+# header (the `-` of `---` plus the word `assert` in the path).
+# EVERY file header re-decides the flag, and a DELETED file (`+++ /dev/null`) takes its path from the
+# `--- a/<path>` side. Keying only on `+++ b/` left the flag STALE across a deletion, which broke the
+# scan in both directions: a deleted non-test file after a test file scored false positives, and a
+# deleted test file after a non-test file silently dropped its removed assertions — the exact class-6
+# case this scan exists to arm.
+DEV_TESTCUTS="$(gh pr diff "$PR" | awk '
+  /^--- / { p = $0; next }
+  /^\+\+\+ / { t = ((($0 ~ /^\+\+\+ b\//) ? $0 : p) ~ /(\.|\/)(test|spec)\.[a-z]+$|\/(__tests__|test|tests)\//) ; next }
+  t && /^-[^-]/ && /expect\(|assert|toBe|toEqual|toThrow/ { print }')"
+echo "deviation-disclosure: Tier-M scan — $(printf '%s' "$DEV_SUPPRESS" | grep -c .) suppression/skip line(s), $(printf '%s' "$DEV_TESTCUTS" | grep -c .) removed-assertion line(s)"
+```
+
+A hit is a **line to judge against the disclosure**, never a FAIL by itself — a `biome-ignore` the
+body discloses with a reason is a passing judgment item, and a legitimately-deleted obsolete test is
+not a deviation at all.
+
+### The gate's verdict rule — two branches, mirroring the golden-deviation shape
+
+- **Detected and *not* disclosed ⇒ `[FAIL]` row (blocking).** Name the class, the site, and what the
+  spec said, so a repair round can act on it cold. This branch is what makes the section more than
+  paperwork.
+- **Disclosed ⇒ a judgment item, not an automatic pass.** Verify it on three questions: is it
+  **authorized** (does the cited spec actually permit it, or did someone with standing approve it)?
+  does it **need an ADR** (a class-2 departure with no amending ADR in the diff is a `[FAIL]` — the
+  #3986 remedy)? does it **need a follow-up issue** (a class-3 defect with no filed issue is a
+  `[FAIL]`)? A disclosed deviation that answers all three is a PASS row, cited.
+- **Absent section ⇒ `[FAIL]` row on a PR that owes it**, per *Absent is not `None.`* above — and
+  **`[N/A]` on one that does not**, per *Who owes the section*. Resolve the owed/not-owed question
+  first; it is the only branch that decides between those two rows.
+
+This is deliberately the same escalate-to-judgment shape `review-design`'s golden-deviation class
+already runs (an *unexplained* deviation from a blessed golden hard-FAILs; an explained one is
+judged, [review-design/SKILL.md](review-design/SKILL.md) calibration B, #2945) — one reviewing idiom,
+two surfaces, so neither has to be learned separately.
+
+### Who writes vs reads
+
+| Half | Surface | Obligation |
+|---|---|---|
+| Writer | `write-code` Step 5 (open), repair Step R3 (append) | Emits the section on every PR; `None.` only after walking the seven classes |
+| Gate | `review-code` Step 3g, `review-doc` Step 4c, `review-skill` Step 4c, `review-design` Step 3b | Folds one `deviation-disclosure` row into its conjunctive table by the rule above — `[N/A]` where *Who owes the section* says the PR owes nothing |
+| Gate | `review-trivial` Step 0 | A non-`None.` section is evidence the diff is not trivial ⇒ route to the full path; an absent section is unprovable-premise ⇒ route to the full path, where the owed/not-owed branch resolves it |
+
+The rationale lives in ADR
+[0216](https://github.com/kamp-us/phoenix/blob/main/.decisions/0216-deviation-disclosure-is-a-pr-body-obligation.md).
+
+---
+
 ## Relationship between the formats
 
 | Format | Lives on | Written by | Read by |
@@ -3198,6 +3556,7 @@ nothing.
 | `## Dependencies` grammar | epic body | plan-epic | review-plan, write-code |
 | Sub-issue body | each sub-issue | plan-epic | review-plan, write-code, review-code |
 | Sub-issue AC — reviewer-append surface (§2) | each sub-issue's `### Acceptance criteria` | review-code, review-doc, review-skill, review-plan (append-only, ACL-gated, ADR 0079) | write-code (drains), review-* (verifies) |
+| Pitch (§PITCH) | lane-entering issue body + its `pitch-approved:` comment | triage (drafts the body section), the **founder** (the approval comment — never an agent) | write-code, pitch-guard, the appetite breaker (#3966), the cycle heartbeat (#3948) |
 | Progress comment | the worked issue | write-code | write-code (successor) |
 | Epic handoff note | parent epic | write-code | write-code (siblings) |
 | review-code PASS marker | the PR | review-code | ship-it |
@@ -3206,6 +3565,7 @@ nothing.
 | review-doc FAIL marker | the PR | review-doc | write-code (fix round-trip) |
 | review-skill PASS marker | the PR | review-skill | ship-it |
 | review-skill FAIL marker | the PR | review-skill | write-code (fix round-trip) |
+| `## Deviations` section (§DEV) | the PR body | write-code (Step 5 opens it, repair R3 appends) | review-code, review-doc, review-skill, review-design (verdict row), review-trivial (triviality bounce) |
 | issue-claim (assignee) | the issue's assignees | write-code (Step 3 claim), triage (Step 0 sweep-claim) | write-code (Step 1 pick), triage (Step 0 Rule-0 back-off) |
 
 The issue-claim row is the one entry that is a **protocol over the assignee field**, not a

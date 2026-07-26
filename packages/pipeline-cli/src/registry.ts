@@ -247,6 +247,14 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("homing-guard", () =>
 		import("./tools/homing-guard/command.ts").then((m) => m.homingGuardCommand),
 	),
+	// #3963 — the teeth behind the pitch requirement (founder ruling #3909, contract §PITCH):
+	// reds when lane-entering work is pickable without a well-formed, FOUNDER-approved pitch, so
+	// the format cannot land advisory-only. Approval is a founder seat — an agent-provenance-
+	// stamped marker never satisfies it. Fail-closed on zero scope (ADR 0092), and intake-only:
+	// the same ruling forbids any merge-blocking direction gate on shipped work.
+	tool("pitch-guard", () =>
+		import("./tools/pitch-guard/command.ts").then((m) => m.pitchGuardCommand),
+	),
 	// #3980 — the mechanical half of the ADR contradiction sweep: rank the live-accepted ADRs a
 	// new ADR touches the decision domain of but never cites, so a same-question conflict with an
 	// unsuperseded ADR (0208-vs-0072, 0210-vs-0202) is a list to clear rather than a memory test.
@@ -260,4 +268,10 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("scratchpad", () =>
 		import("./tools/scratchpad/command.ts").then((m) => m.scratchpadCommand),
 	),
+	// #3964 — lane accounting the factory never had: the unlanded build-lane set computed off
+	// GitHub (claim markers + open PRs) instead of self-reported by an engine, classified
+	// platform vs product against the founder-set 6-lane capacity / 2-lane quota. A self-report
+	// is neither verifiable nor attributable, which is how a wrong lane number reached a
+	// capacity decision. Read-only; the quota enforcement is #3965.
+	tool("lane", () => import("./tools/lane/command.ts").then((m) => m.laneCommand)),
 ];

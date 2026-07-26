@@ -104,7 +104,9 @@ timeline if it's not obvious:
 
 ```bash
 # timeline shows "connected"/"cross-referenced" events linking PR ↔ issue
-gh api "repos/$REPO/issues/$PR/timeline?per_page=100" \
+# --paginate + a STREAMING --jq: per_page caps at 100, so a link event past event 100 is
+# invisible without it on a long-lived PR's timeline (#4193)
+gh api --paginate "repos/$REPO/issues/$PR/timeline?per_page=100" \
   --jq '.[] | select(.event=="connected" or .event=="cross-referenced") | .source.issue.number // .issue.number' 2>/dev/null
 ```
 
@@ -125,10 +127,12 @@ Step-0 class):
 # Any path off those surfaces (`apps/**`, `packages/**`, `infra/**`, a code-root README, a root
 # script) is behavioral work with a missing `Fixes #N` ⇒ a broken seam ⇒ hard-stop. Same file set +
 # same path-prefix class Step 2's skills-only route uses — no second class mechanism.
+# "every path is conversation-authored" is the EMPTY-OUTPUT form, never `! grep -qv` (§WL, #4155).
 FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
+OFFSURFACE="$(grep -vE '^(\.glossary|\.decisions|\.patterns)/' <<<"$FILES")"
 if [ -n "$FILES" ] \
    && grep -qE '^\.glossary/' <<<"$FILES" \
-   && ! grep -qvE '^(\.glossary|\.decisions|\.patterns)/' <<<"$FILES"; then
+   && [ -z "$OFFSURFACE" ]; then
   echo "conversation-authored .glossary/** coining site, no Fixes #N — legitimate (ADR 0184/0075): ISSUE stays unset, AC half N/A"
 else
   echo "no linked issue on a PR carrying behavioral code — broken seam: hard-stop (dangling-code guard, ADR 0184)"
@@ -222,8 +226,11 @@ each gate hands a mis-classed PR to the gate that owns its class:
 # the file set drives the class decision (same list pulled above)
 FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
 # skills-only ⇒ every changed path is under skills/ or agents/ — review-skill's class, not yours
-# (agents/** are behavioral artifacts, review-skill-routed for the verdict — ADR 0150/#2003)
-if [ -n "$FILES" ] && ! grep -qvE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES"; then
+# (agents/** are behavioral artifacts, review-skill-routed for the verdict — ADR 0150/#2003).
+# Empty-output form, never `! grep -qv`: a false-true here `exit 0`s the code gate on a PR that
+# does carry code (§WL of ../gh-issue-intake-formats.md, #4155).
+OFFCLASS="$(grep -vE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES")"
+if [ -n "$FILES" ] && [ -z "$OFFCLASS" ]; then
   echo "not a code PR — route to review-skill"   # plain note, no review-code: marker; stop
   exit 0
 fi
@@ -1267,6 +1274,46 @@ Step 3b–3e:
 This row is governed by the conjunctive rule (Step 3): a `[FAIL]` fails the PR until both axes carry
 required test coverage. The firewall holds — you judge, `write-code` fixes, an independent re-review
 re-gates.
+
+### Step 3g — Deviation-disclosure gate: an undisclosed departure is a blocking finding (§DEV)
+
+Every PR body carries a `## Deviations` section stating what the implementation departed from — the
+issue, an acceptance criterion, a reviewer's guidance, or a governing ADR — or the literal `None.`.
+The section, its four fields, the **seven classes**, the detection tiers, and the two-branch verdict
+rule are defined once in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §DEV; read them there and don't
+re-derive them. This step is the `review-code` consumer.
+
+The gap it closes is on `main`: PR #3986 narrowed ADR 0115 §5's reclaim invariant in skill prose, the
+author offered *in review conversation* to file the amending ADR, the body carried nothing, and the
+narrowing merged as debt an audit reconstructed later (#3993 F1).
+
+**Run §DEV's canonical Tier-M scan** (the section-presence check plus the two diff-detectable
+classes) over the diff Step 2 already loaded — the snippet lives there; cite it, don't re-derive it.
+A hit is a line to judge against the disclosure, never a FAIL on its own.
+
+**The reader-detectable classes need no new read here.** §DEV Tier R (scope narrowing, ADR
+departure, declined guidance) is covered by reads this skill already performed: the per-criterion AC
+table above, and Step 3e's unresolved threads. Re-use those findings — an AC you graded as delivered
+in a **narrower shape** than the issue asked, or a suggestion in a thread the diff declined, is a
+deviation whether or not it earned a `[FAIL]` on its own row.
+
+Then fold **one** `deviation-disclosure` row into the conjunctive table by §DEV's verdict rule
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]` **on a PR that owes it**, `[N/A]` on
+one that does not; disclosed ⇒ judged on authorized / needs-an-ADR / needs-a-follow-up; clean ⇒ PASS
+phrased as *nothing undisclosed that this gate could see*, never as *no deviations exist*), exactly
+as Step 3b–3f fold theirs:
+
+```
+- [FAIL] deviation-disclosure — the diff narrows ADR 0115 §5's reclaim invariant in claim-protocol prose (§DEV class 2) and the body's `## Deviations` says `None.`; disclose it and either cite the amending ADR or add one (the #3986/#3993 F1 remedy)
+```
+
+**Whether the PR owes the section at all is §DEV's call, not this step's** — read *Who owes the
+section* there. Concretely for this gate: when Step 1's issueless carve-out fired (`ISSUE` unset on
+the conversation-authored `.glossary/**` coining PR, ADR 0184/0075) the AC half is already N/A, and
+this row renders N/A with it — `- [N/A] deviation-disclosure — issueless carve-out, no write-code
+author obliged (§DEV)`. Do **not** re-derive that scoping here; a per-skill copy is what made this
+gate FAIL a PR `review-doc` passed at the same head, with no repair round able to clear it.
 
 ---
 

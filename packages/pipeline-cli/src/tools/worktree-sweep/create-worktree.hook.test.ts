@@ -49,11 +49,28 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 	const git = (cwd: string, ...args: string[]) =>
 		execFileSync("git", ["-C", cwd, ...args], {encoding: "utf8"});
 
+	// Every run redirects the #4180 invocation trace to a suite-scoped file, so the tests never
+	// append to the shared default log the live forensic record lives in.
+	let traceLog: string;
+
+	// A private trace target, for any test that ASSERTS on trace content. The suite-scoped
+	// `traceLog` is append-only and shared, so an `assert.include` over it is satisfied by any
+	// earlier test's line — which made both #4180 trace assertions vacuous: `entry` was already
+	// there from the first provisioning test, and `unknown pid=` from the jq-less test, whose
+	// bindir carries no `date` and so already exercises the degradation. Own log ⇒ the assertion
+	// observes only its own run and actually fails when the behaviour breaks.
+	const freshTraceLog = (): string => join(mkdtempSync(join(tmpdir(), "wtc-trace-")), "trace.log");
+
 	// Run the hook script with `payload` on stdin, cwd inside the repo — exactly as
 	// Claude Code fires it. Never throws: a non-zero exit is captured, not raised.
-	const run = (cwd: string, payload: string): RunResult => {
+	const run = (cwd: string, payload: string, logPath?: string): RunResult => {
 		try {
-			const stdout = execFileSync("bash", [SCRIPT], {cwd, input: payload, encoding: "utf8"});
+			const stdout = execFileSync("bash", [SCRIPT], {
+				cwd,
+				input: payload,
+				encoding: "utf8",
+				env: {...process.env, KAMPUS_WORKTREE_HOOK_LOG: logPath ?? traceLog},
+			});
 			return {code: 0, stdout, stderr: ""};
 		} catch (e) {
 			const err = e as {status?: number; stdout?: string; stderr?: string};
@@ -72,6 +89,7 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 	};
 
 	beforeAll(() => {
+		traceLog = freshTraceLog();
 		mainRepo = mkdtempSync(join(tmpdir(), "wtc-main-"));
 		git(mainRepo, "init", "-q", "-b", "main");
 		git(mainRepo, "config", "user.email", "t@t.t");
@@ -157,7 +175,7 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 				// env -i: PATH=bindir ONLY (jq-free — no /usr/bin, which carries jq on Linux) so
 				// the parse deterministically takes the fallback; the script re-adds the standard
 				// toolchain dirs AFTER parsing, so git still resolves for `worktree add`.
-				env: {PATH: bindir, HOME: mainRepo},
+				env: {PATH: bindir, HOME: mainRepo, KAMPUS_WORKTREE_HOOK_LOG: traceLog},
 			});
 		} catch (e) {
 			const err = e as {status?: number; stdout?: string};
@@ -310,6 +328,76 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 		assert.strictEqual(stdout.trim(), expected);
 		const gitdir = git(expected, "rev-parse", "--absolute-git-dir").trim();
 		assert.isFalse(existsSync(join(gitdir, "kampus-owner.json")));
+	});
+
+	// The #4180 forensic seam. Every other artifact this hook produces lands only AFTER
+	// `git worktree add` succeeds, so "the harness never invoked the hook" and "it invoked the
+	// hook and the hook died at its first line" are byte-identical on disk — which is why 272
+	// registered worktrees with 0 stamps could not name their own cause. The entry line is
+	// written before any parsing, so it separates the two.
+	it("writes an entry trace BEFORE parsing — a payload it rejects still proves invocation (#4180)", () => {
+		// Private log: the only line that can satisfy this assertion is the one this rejected
+		// payload wrote. Relocate `trace "entry"` below the fail-closed exit and the log is empty.
+		const log = freshTraceLog();
+		const {code} = run(mainRepo, "{}", log);
+		assert.notStrictEqual(code, 0, "an empty payload still fail-closes");
+		assert.include(
+			readFileSync(log, "utf8"),
+			"entry",
+			"the entry trace must precede the fail-closed exit, or a hook that dies early is invisible",
+		);
+	});
+
+	// The trace's non-fatality is the whole reason it is safe to add: `git worktree add` execs
+	// hooks with a stripped PATH (#787–#789) against a `.git/hooks` shared by every lane, so a
+	// trace that hard-failed would abort worktree creation crew-wide. An unwritable log must
+	// degrade to "no trace", never to a failed spawn.
+	it("an unwritable trace log never changes the exit status — degrades to no trace (#787–#789)", () => {
+		const name = "agent-notrace01";
+		const expected = join(mainRepo, ".claude", "worktrees", name);
+		const stdout = execFileSync("bash", [SCRIPT], {
+			cwd: mainRepo,
+			input: goldenPayloadFor(mainRepo, name),
+			encoding: "utf8",
+			env: {
+				...process.env,
+				// a path under a directory that does not exist — every write to it fails
+				KAMPUS_WORKTREE_HOOK_LOG: join(mainRepo, "no", "such", "dir", "trace.log"),
+			},
+		});
+		assert.strictEqual(stdout.trim(), expected, "provisioning must succeed with no trace at all");
+		assert.isTrue(existsSync(expected));
+	});
+
+	// PATH-resilience, forced the same way the jq-less test forces its branch: with no PATH at
+	// all the timestamp helper is unreachable, and the line must still land (an `unknown`
+	// timestamp is a degraded field, not a lost proof of invocation).
+	it("still traces when `date` is unreachable — the timestamp degrades, the proof does not", () => {
+		// A PATH carrying ONLY bash — no `date`, the single external command the trace touches.
+		// This is the stripped-PATH exec env of #787–#789, reproduced deterministically.
+		const bindir = mkdtempSync(join(tmpdir(), "wtc-nodate-bin-"));
+		const bash = execFileSync("bash", ["-lc", "command -v bash"], {encoding: "utf8"}).trim();
+		symlinkSync(bash, join(bindir, "bash"));
+		// Private log — the shared one already carries `unknown pid=` from the jq-less test above,
+		// whose bindir has no `date` either, so asserting there would pass with the degradation
+		// removed entirely.
+		const log = freshTraceLog();
+		try {
+			execFileSync(bash, [SCRIPT], {
+				cwd: mainRepo,
+				input: "{}",
+				encoding: "utf8",
+				env: {PATH: bindir, HOME: mainRepo, KAMPUS_WORKTREE_HOOK_LOG: log},
+			});
+		} catch {
+			/* expected: an unparseable payload fail-closes — the trace is what's under test */
+		} finally {
+			rmSync(bindir, {recursive: true, force: true});
+		}
+		// Existence first: with the degradation removed the trace writes nothing at all, and a bare
+		// readFileSync would report that as ENOENT rather than as the property that broke.
+		assert.isTrue(existsSync(log), "a date-less run must still produce a trace file");
+		assert.include(readFileSync(log, "utf8"), "unknown pid=", "the line lands date-less");
 	});
 
 	// Guard the anti-fabrication invariant directly: the raw fixture bytes fed to the handler
