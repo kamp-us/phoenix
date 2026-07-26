@@ -35,13 +35,15 @@ const normalize = (response: Response): Canned =>
 	typeof response === "string" ? {stdout: response} : response;
 
 /**
- * A `ChildProcessSpawner` answering the two reads `signals` makes: `gh pr view … --json` from
- * `prState`, and `gh api …/timeline` from `timeline`; plus `gh repo view` from `repoView`. An
- * unprovided read exits 1 (the read-failure path the fail-closed posture recovers from).
+ * A `ChildProcessSpawner` answering the three reads `signals` makes: `gh pr view … --json` from
+ * `prState`, `gh api …/timeline` from `timeline`, and `gh api …/commits?sha=…` from `baseCommits`;
+ * plus `gh repo view` from `repoView`. An unprovided read exits 1 (the read-failure path the
+ * fail-closed posture recovers from).
  */
 const mockSpawner = (fixture: {
 	readonly prState?: Response;
 	readonly timeline?: Response;
+	readonly baseCommits?: Response;
 	readonly repoView?: Response;
 }): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>
 	Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
@@ -53,6 +55,7 @@ const mockSpawner = (fixture: {
 				const isPrView = args[0] === "pr" && args[1] === "view";
 				const isRepoView = args[0] === "repo" && args[1] === "view";
 				const isTimeline = args.some((a) => a.includes("/timeline"));
+				const isBaseCommits = args.some((a) => a.includes("/commits?sha="));
 				const pick = (): Response | undefined =>
 					isPrView
 						? fixture.prState
@@ -60,7 +63,9 @@ const mockSpawner = (fixture: {
 							? fixture.repoView
 							: isTimeline
 								? fixture.timeline
-								: undefined;
+								: isBaseCommits
+									? fixture.baseCommits
+									: undefined;
 				const found = pick();
 				const canned = found ? normalize(found) : {stdout: "", exitCode: 1, stderr: "not found"};
 				return ChildProcessSpawner.makeHandle({
@@ -86,8 +91,15 @@ const provide = <A, E>(
 ): Effect.Effect<A, E | RepoResolutionError> =>
 	effect.pipe(Effect.provide(GithubLive.pipe(Layer.provide(mockSpawner(fixture)))));
 
-const prView = (state: string, mergeStateStatus?: string): string =>
-	JSON.stringify({state, mergeStateStatus: mergeStateStatus ?? null});
+const prView = (state: string, mergeStateStatus?: string, baseRefName?: string): string =>
+	JSON.stringify({
+		state,
+		mergeStateStatus: mergeStateStatus ?? null,
+		baseRefName: baseRefName ?? null,
+	});
+
+const baseCommits = (...subjects: ReadonlyArray<string>): string =>
+	JSON.stringify(subjects.map((message) => ({message, parents: 1})));
 
 const timelineEvents = (...events: ReadonlyArray<string>): string =>
 	JSON.stringify(events.map((event, i) => ({event, created_at: `2026-01-01T00:0${i}:00Z`})));
@@ -153,6 +165,55 @@ describe("Github.signals — the ground-truth reads over a mock gh spawner (#273
 				assert.strictEqual(signals.lastMergeQueueEvent, null);
 				assert.strictEqual(classify(signals).outcome, "pending");
 			}).pipe((effect) => provide(effect, {prState: prView("OPEN", "CLEAN")})),
+	);
+
+	it.effect(
+		"the #4057 stale-timeline case: PR + timeline both lag, but the base branch carries the squash ⇒ merged",
+		() =>
+			Effect.gen(function* () {
+				const signals = yield* (yield* Github).signals(4011, REPO);
+				assert.strictEqual(signals.merged, false);
+				assert.strictEqual(signals.lastMergeQueueEvent, "added_to_merge_queue");
+				assert.strictEqual(signals.baseBranchSquash, "landed");
+				assert.strictEqual(classify(signals).outcome, "merged");
+			}).pipe((effect) =>
+				provide(effect, {
+					prState: prView("OPEN", "QUEUED", "main"),
+					timeline: timelineEvents("added_to_merge_queue"),
+					baseCommits: baseCommits("fix(ship-it): a thing (#4011)", "chore: another (#4012)"),
+				}),
+			),
+	);
+
+	it.effect(
+		"fail-closed: an unreadable base branch recovers to `unreadable`, leaving the timeline verdict",
+		() =>
+			Effect.gen(function* () {
+				// The base-commits read exits 1 (unprovided). No evidence must never promote a verdict.
+				const signals = yield* (yield* Github).signals(4011, REPO);
+				assert.strictEqual(signals.baseBranchSquash, "unreadable");
+				assert.strictEqual(classify(signals).outcome, "queued");
+			}).pipe((effect) =>
+				provide(effect, {
+					prState: prView("OPEN", "QUEUED", "main"),
+					timeline: timelineEvents("added_to_merge_queue"),
+				}),
+			),
+	);
+
+	it.effect("a merged PR skips the base-branch read entirely (nothing left to corroborate)", () =>
+		Effect.gen(function* () {
+			// No `baseCommits` fixture: had the read been made it would have exited 1, and the
+			// undefined field is what proves it was skipped rather than recovered.
+			const signals = yield* (yield* Github).signals(4011, REPO);
+			assert.strictEqual(signals.baseBranchSquash, undefined);
+			assert.strictEqual(classify(signals).outcome, "merged");
+		}).pipe((effect) =>
+			provide(effect, {
+				prState: prView("MERGED", undefined, "main"),
+				timeline: timelineEvents("added_to_merge_queue", "removed_from_merge_queue"),
+			}),
+		),
 	);
 
 	it.effect("an unreadable PR state fails GhCommandError (the command maps it to pending)", () =>

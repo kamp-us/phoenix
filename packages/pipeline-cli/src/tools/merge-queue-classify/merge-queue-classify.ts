@@ -22,6 +22,14 @@
  * `mergeStateStatus` is retained only as a *positive* still-queued hint (`QUEUED`),
  * never as the ejection discriminator.
  *
+ * Those two reads are authoritative but **not timely**: during the #4011 ship both lagged
+ * the true merge state by ~30–60 minutes, so the classifier printed `queued` on 15 polls
+ * after the PR had already merged. The base branch stayed current throughout, so a third
+ * signal corroborates a non-merged read — `baseBranchSquash`, whether the base branch
+ * already carries this PR's single-parent squash (#4057). It only ever promotes to
+ * `merged`; absence carries no evidence, which keeps the classifier fail-closed away from
+ * a false ship.
+ *
  * The IO lives in `command.ts` (the thin bin, which reads the PR state + timeline via
  * `gh`); this file is the pure predicate over already-resolved ground-truth signals so
  * the classification contract is unit-testable without a live queue (ADR 0082; the
@@ -30,6 +38,15 @@
 
 /** The last merge-queue timeline event observed for the PR, or `null` when none yet exists. */
 export type LastMergeQueueEvent = "added_to_merge_queue" | "removed_from_merge_queue" | null;
+
+/**
+ * Whether the base branch already carries this PR's squash (the freshness cross-check above):
+ *   - `landed`     — a single-parent base-branch commit carries this PR's squash subject.
+ *   - `absent`     — the scanned window carries no such commit. NOT an ejection signal — a
+ *                    healthy queued PR and an ejected one both read `absent`.
+ *   - `unreadable` — the read faulted or was not made. No evidence at all.
+ */
+export type BaseBranchSquash = "landed" | "absent" | "unreadable";
 
 /** The ground-truth signals the reconcile reads per poll — the classifier's whole input. */
 export interface MergeQueueSignals {
@@ -48,6 +65,11 @@ export interface MergeQueueSignals {
 	 * (`QUEUED`), never to infer ejection. Optional: absent ⇒ treated as unknown.
 	 */
 	readonly mergeStateStatus?: string | undefined;
+	/**
+	 * Whether the base branch carries this PR's squash. Optional: absent ⇒ the read was not
+	 * made ⇒ no evidence, exactly like `unreadable`.
+	 */
+	readonly baseBranchSquash?: BaseBranchSquash | undefined;
 }
 
 /**
@@ -57,6 +79,9 @@ export interface MergeQueueSignals {
  *                 `removed_from_merge_queue`. Route back to repair/re-queue.
  *   - `queued`  — still in the queue: NOT merged AND (last event is
  *                 `added_to_merge_queue` OR `mergeStateStatus == QUEUED`). Keep polling.
+ *                 It is not proof of health — an ejection that has not yet surfaced in the
+ *                 timeline reads identically (the residual window ship-it Step 5.5 accepts
+ *                 and bounds, #4057).
  *   - `pending` — the enqueue-settle window: NOT merged, OPEN, and NO merge-queue event
  *                 yet (incl. OPEN + CLEAN before the QUEUED flip). NEVER an ejection.
  */
@@ -78,6 +103,9 @@ const at = (outcome: MergeOutcome, reason: string): Classification => ({outcome,
  *      landed merge outranks any stale queue event (the final `removed_from_merge_queue`
  *      the queue emits *as* it merges must not read as an ejection — #1906 carried both
  *      events, but it merged).
+ *   1b. `merged` — the base branch already carries this PR's squash. Ranked with (1), above
+ *      the ejection check, for the same reason (1) is first: a landed merge outranks both a
+ *      stale not-merged read and the removal event the queue emits as it merges.
  *   2. `ejected` — NOT merged AND last merge-queue event is `removed_from_merge_queue`.
  *      This is the ONLY ejection signal: a genuine dequeue, not a momentary state read.
  *   3. `queued` — NOT merged AND (last event `added_to_merge_queue` OR
@@ -93,6 +121,12 @@ export const classify = (s: MergeQueueSignals): Classification => {
 		return at(
 			"merged",
 			"merged==true or state==MERGED — the queue landed the batch (terminal success)",
+		);
+	}
+	if (s.baseBranchSquash === "landed") {
+		return at(
+			"merged",
+			"the base branch carries this PR's single-parent squash — the merge landed, whatever the lagging PR-state and timeline reads say",
 		);
 	}
 	if (s.lastMergeQueueEvent === "removed_from_merge_queue") {
@@ -116,6 +150,39 @@ export const classify = (s: MergeQueueSignals): Classification => {
 		"pending",
 		"no merge-queue timeline event yet (enqueue-settle window) — still settling, not ejected",
 	);
+};
+
+/** One base-branch commit, projected to the two fields the squash predicate reads. */
+export interface BaseBranchCommit {
+	/** The full commit message; only its subject (first) line is matched. */
+	readonly message?: string | undefined;
+	/** How many parents the commit has. A squash has exactly one. */
+	readonly parents?: number | undefined;
+}
+
+/**
+ * Does the scanned base-branch window carry PR `pr`'s squash? Two conditions, both required:
+ * the commit's **subject line ends with `(#pr)`** — the squash title GitHub's merge queue
+ * writes — and it has **exactly one parent**, which is what makes it a squash rather than a
+ * merge commit that merely mentions the PR.
+ *
+ * Ending-anchored, never a substring match: a squash of a PR whose own title cites another
+ * issue reads `… (#3924) (#4010)`, so `contains "(#3924)"` would report #3924 as landed. Only
+ * the trailing `(#N)` is the PR this commit squashed.
+ *
+ * `absent` means "not in the scanned window" — never "ejected"; a healthy queued PR reads
+ * `absent` too (#4057).
+ */
+export const squashOnBaseBranch = (
+	commits: ReadonlyArray<BaseBranchCommit>,
+	pr: number,
+): BaseBranchSquash => {
+	const suffix = `(#${pr})`;
+	const landed = commits.some((commit) => {
+		const subject = (commit.message ?? "").split("\n")[0]?.trim() ?? "";
+		return subject.endsWith(suffix) && commit.parents === 1;
+	});
+	return landed ? "landed" : "absent";
 };
 
 /**
