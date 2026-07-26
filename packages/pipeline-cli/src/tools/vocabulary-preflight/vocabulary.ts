@@ -17,7 +17,7 @@
  * `github.ts`/`gate.ts`.
  */
 import {ISSUE_TYPE_LABELS} from "../drive-issue-flow/type-route.ts";
-import {EXEMPT_LABELS} from "../homing-guard/homing-guard.ts";
+import {EXEMPT_LABELS, TRIAGED_LABEL} from "../homing-guard/homing-guard.ts";
 import {PLATFORM_LABELS} from "../lane/lane.ts";
 import {PRIORITY_LABELS} from "../roadmap/roadmap.ts";
 import {SPINE_LABELS} from "../tracker/triage-labels.ts";
@@ -29,12 +29,15 @@ export interface LabelGroup {
 }
 
 /**
- * The required label universe, grouped by the concern each slice serves. `axis:pipeline-hardening`
- * is legitimately in two groups (a standing lane AND the platform discriminator); `REQUIRED_LABELS`
- * dedupes, the groups keep both readings visible in the report.
+ * The required label universe, grouped by the concern each slice serves. A label may legitimately
+ * sit in two groups — `axis:pipeline-hardening` is a standing lane AND the platform discriminator;
+ * `status:triaged` is a spine stage AND the label the guards scope on. `REQUIRED_LABELS` dedupes,
+ * the groups keep both readings visible in the report. Every group is imported from the tool that
+ * owns it, so no slice can be covered only incidentally by another.
  */
 export const LABEL_GROUPS: ReadonlyArray<LabelGroup> = [
 	{name: "pickability spine", labels: SPINE_LABELS},
+	{name: "guard scope", labels: [TRIAGED_LABEL]},
 	{name: "priority buckets", labels: PRIORITY_LABELS},
 	{name: "issue types", labels: ISSUE_TYPE_LABELS},
 	{name: "standing lanes", labels: EXEMPT_LABELS},
@@ -82,10 +85,9 @@ export type PreflightVerdict =
 	| {readonly pass: false; readonly unmet: ReadonlyArray<Prerequisite>};
 
 /**
- * The roadmap half, separately callable: `roadmap view` runs it too, so a repo whose `ROADMAP.md`
- * is absent or parses to no arcs gets the same named prerequisite from the view it gets from the
- * preflight, instead of rendering an empty tree as though the roadmap were simply quiet.
- * Returns `null` when the surface is fine.
+ * The roadmap half: a `ROADMAP.md` that is absent, or present but parsing to no arcs, is the same
+ * unmet prerequisite — an empty tree reads as a roadmap that is merely quiet. Returns `null` when
+ * the surface is fine.
  */
 export const judgeRoadmap = (surface: RoadmapSurface): RoadmapPrerequisite | null => {
 	if (surface._tag === "absent") {
