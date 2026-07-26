@@ -833,6 +833,116 @@ immutable; re-read it each round.
 
 ---
 
+## PITCH. The pitch — the direction carrier that binds at intake (founder ruling #3909)
+
+This is the **single source** of the pitch format and its founder-approval carrier. Every
+consumer — `triage` (drafts it), `write-code` (reads it as the bet it is building),
+`pitch-guard` (enforces it), and the cycle heartbeat — cites *this* section; none re-derives
+the field set or the approval rule.
+
+**Why it exists.** The factory runs AFK, so direction cannot be enforced by founder attention.
+It binds **structurally at intake**: lane-entering work enters the drain only carrying a
+founder-approved pitch. The founder ruling that fixes this also fixes its **inverse** — *no
+merge-blocking conformance gate on shipped work.* A finished PR **never** fails for direction
+(#3909). Anything that would red a PR for a missing or malformed pitch is out of contract.
+
+### The five fields
+
+The pitch is a body section headed `## Pitch`, carrying exactly five fields:
+
+```markdown
+## Pitch
+
+**Problem:** <who has it, and what breaks or stalls for them today — one or two sentences>
+**Arc:** <the arc-home this work belongs to — the milestone or standing lane the ADR 0202 rubric step already assigned>
+**Appetite:** <N> cycles
+**Rabbit-holes:** <the named traps — the specific ways this overspends if left unbounded>
+**No-gos:** <what this deliberately does not do>
+```
+
+- **Problem** — the *who* and the *what hurts*, not the solution. A pitch whose Problem is a
+  restatement of the proposed change has not found its problem yet.
+- **Arc** — **the arc-home outcome of the existing rubric step, restated as a field; it is not
+  a second check.** `triage`'s ADR-0202 home-or-exempt-or-kill step already resolved this issue
+  to a milestone or a standing lane; **Arc** carries that same answer into the pitch so the bet
+  is legible without a second read. There is exactly **one** arc question in the pipeline and
+  `homing-guard` is its teeth — never add a parallel arc check here.
+- **Appetite** — the **founder-set spend ceiling, denominated in 2-week cycles** (the cycle
+  length is founder-set, #3227). It is a *budget*, not an estimate: it says how much this is
+  worth, not how long it will take. A whole positive number of cycles; `1 cycle` / `2 cycles`
+  both read.
+- **Rabbit-holes** — the named traps, so the appetite is spendable. Generic caution ("don't
+  over-engineer") is not a rabbit-hole; a specific one is.
+- **No-gos** — the deliberately-excluded scope. This is the field that makes a bet finishable.
+
+Read it **tolerantly** per [§Reading stance](#reading-stance-convention-not-parser-spec) — bold
+markers optional, `Rabbit holes` reads as `Rabbit-holes`, field order is not load-bearing — but
+**write it canonically**, in the shape above.
+
+### The founder-approval carrier — a founder seat, never agent-satisfiable
+
+**Agents draft; only the founder approves.** The draft is agent work and the approval is a
+**human seat**, exactly like the betting-table verdict and the appetite number itself (#3927).
+Approval is carried by one comment on the issue:
+
+```
+pitch-approved: appetite <N> cycles · <ISO-8601-UTC>
+```
+
+A comment counts as an approval only when **all** of these hold — a miss on any one resolves
+to *not approved*, never to a warning:
+
+1. **`write+` authored.** The comment's author is a `write+` repo collaborator, resolved at the
+   GitHub ACL, fail-closed — the same [ADR 0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)
+   trust root every verdict marker uses. Never a checked-in allowlist.
+2. **Not agent-authored.** The comment carries **no agent-provenance stamp** — no
+   `Filed by an agent` footer, no `session <uuid>`, no bare session UUID. This is the
+   [§4.5](#45-the-filing-provenance-signal--the-report-footer-not-github-authorship-adr-0159)
+   signal applied to approval, and it is the load-bearing clause: **GitHub authorship cannot
+   distinguish founder from agent** (both write through the shared `usirin` token — the same
+   degeneracy [§7](#7-issue-claim-semantics--a-session-id-stamped-claim-comment-the-agent-distinguishable-claim-marker-adr-0115) / ADR 0115
+   removes for the claim marker), so the tell is the *stamp*, not the login. The complement is
+   an obligation on the write side: **every agent-posted pipeline comment is provenance-stamped,
+   and no agent ever posts a `pitch-approved:` marker at all.** A stamped marker is, by
+   construction, not an approval.
+3. **Bound to the appetite it approved.** The marker's `<N>` equals the body's **Appetite**
+   field. The founder approves a *specific* number, so re-writing the appetite after approval
+   silently un-approves the pitch rather than inheriting a ceiling he never set — the same
+   staleness-binding discipline [ADR 0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)
+   gives a verdict against a head SHA.
+
+**The honest residual.** Clause 2 is convention-carried, not cryptographic: an agent that
+suppressed its own provenance stamp could forge an approval. That is the same residual §4.5
+accepts for the never-auto-close signal, and it is named here rather than papered over. The
+structural half is that no agent-facing skill has a `pitch-approved:` write path — approval has
+no producer inside the pipeline.
+
+### Who writes it, who reads it
+
+| | |
+|---|---|
+| **Drafted by** | `triage`, into the issue body at the home-or-exempt-or-kill step (`triage/SKILL.md` Step 6) |
+| **Approved by** | the **founder only** — the `pitch-approved:` comment, per the three clauses above |
+| **Enforced by** | `pipeline-cli pitch-guard check [--issue <N>]` — fail-closed, ADR 0092 |
+| **Read by** | `write-code` (the bet it is building), the appetite circuit breaker (#3966), the cycle heartbeat (#3948) |
+
+### Scope — what "lane-entering work" means here
+
+The pitch requirement binds **lane-entering work**: an open `status:triaged` issue that is a
+**`type:epic`**, or a **`type:feature` with no parent** (a standalone build feature). A child of
+an epic **inherits its epic's pitch** and carries none of its own — the bet was placed at the
+epic. Every other type (`type:bug`, `type:chore`, `type:decision`, `type:investigation`) is
+**out of scope**: maintenance and questions are not bets.
+
+> **Park and expiry are NOT defined here — they are #3966's carrier.** A pitch that outspends
+> its appetite parks for a founder re-pitch, and parked-unpitched work expires; the park marker
+> and its semantics (including how they relate to ADR 0072 §4) are defined **once**, by the
+> appetite-circuit-breaker child [#3966](https://github.com/kamp-us/phoenix/issues/3966), and
+> that question is **open** at the time of writing. This section deliberately encodes **no**
+> answer to it and no consumer may infer one from the pitch fields.
+
+---
+
 ## The `wayfinder:map` issue shape
 
 A `wayfinder:map` issue (the [`wayfinder:map` label](#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)) is not a task and not an epic — it is a **living map**: the
@@ -3198,6 +3308,7 @@ nothing.
 | `## Dependencies` grammar | epic body | plan-epic | review-plan, write-code |
 | Sub-issue body | each sub-issue | plan-epic | review-plan, write-code, review-code |
 | Sub-issue AC — reviewer-append surface (§2) | each sub-issue's `### Acceptance criteria` | review-code, review-doc, review-skill, review-plan (append-only, ACL-gated, ADR 0079) | write-code (drains), review-* (verifies) |
+| Pitch (§PITCH) | lane-entering issue body + its `pitch-approved:` comment | triage (drafts the body section), the **founder** (the approval comment — never an agent) | write-code, pitch-guard, the appetite breaker (#3966), the cycle heartbeat (#3948) |
 | Progress comment | the worked issue | write-code | write-code (successor) |
 | Epic handoff note | parent epic | write-code | write-code (siblings) |
 | review-code PASS marker | the PR | review-code | ship-it |
