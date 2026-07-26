@@ -79,6 +79,49 @@ const readFlag = (argv: ReadonlyArray<string>, flag: string): string | null => {
 	return null;
 };
 
+/** A well-formed `owner/name` slug — the shape every REST rewrite path is built from. */
+export const isRepoSlug = (value: string): boolean => /^[^/\s]+\/[^/\s]+$/.test(value.trim());
+
+/**
+ * What the caller said about the target repository with `-R` / `--repo`. The three cases are
+ * distinguished because an unusable value must NOT degrade to the resolved repo: silently
+ * substituting a repository the caller did not name is the defect (#4301, #4270).
+ */
+type RepoFlag =
+	| {readonly kind: "absent"}
+	| {readonly kind: "named"; readonly flag: string; readonly repo: string}
+	| {readonly kind: "unusable"; readonly flag: string; readonly raw: string | null};
+
+/**
+ * Read `-R` / `--repo` off an argv slice, in every form real `gh` accepts: `--repo value`,
+ * `--repo=value`, `-R value`, `-R=value`, and the attached shorthand `-Rowner/name`. The
+ * attached form is covered on purpose — leaving one spelling unparsed would leave one
+ * spelling silently retargeted, which is the whole defect.
+ */
+const readRepoFlag = (argv: ReadonlyArray<string>): RepoFlag => {
+	for (let i = 0; i < argv.length; i++) {
+		const a = argv[i];
+		if (a === undefined) continue;
+		let flag: string | null = null;
+		let raw: string | null = null;
+		if (a === "-R" || a === "--repo") {
+			flag = a;
+			raw = argv[i + 1] ?? null;
+		} else if (a.startsWith("--repo=")) {
+			flag = "--repo";
+			raw = a.slice("--repo=".length);
+		} else if (a.startsWith("-R")) {
+			flag = "-R";
+			const attached = a.slice("-R".length);
+			raw = attached.startsWith("=") ? attached.slice(1) : attached;
+		}
+		if (flag === null) continue;
+		if (raw !== null && isRepoSlug(raw)) return {kind: "named", flag, repo: raw.trim()};
+		return {kind: "unusable", flag, raw};
+	}
+	return {kind: "absent"};
+};
+
 /** Split a comma-separated `--json` field list, trimming blanks. */
 const splitFields = (raw: string): ReadonlyArray<string> =>
 	raw
@@ -143,10 +186,24 @@ const routeEdit = (
 	repo: string | null,
 	bodyFileExists: (path: string) => boolean,
 ): GhRoute => {
+	// An explicit `-R`/`--repo` IS the target: this rewrite synthesizes a fresh argv, so a flag
+	// it does not read is a flag it drops — and the PATCH then lands on the resolved repo the
+	// caller never named (#4301). Honoring it also means an unusable value refuses rather than
+	// falling back, and a `-R` supplies a target even when resolution found none.
+	const flagged = readRepoFlag(rest);
+	if (flagged.kind === "unusable") {
+		return {
+			kind: "block",
+			reason: `\`gh ${verb} edit\` was given \`${flagged.flag}${flagged.raw === null ? "" : ` ${flagged.raw}`}\`, which is not an \`owner/name\` repository.`,
+			hint: `Pass \`${flagged.flag} <owner>/<name>\`. Refusing rather than PATCHing the repository this shim resolved, which you did not name.`,
+		};
+	}
+	const targetRepo = flagged.kind === "named" ? flagged.repo : repo;
+
 	// The rewrite target is `repos/<repo>/issues/<N>`, so an unresolved repo has no honest
 	// value to substitute — refuse. Defaulting to any slug aims the PATCH at a repository
 	// the caller never named (#4270).
-	if (repo === null) {
+	if (targetRepo === null) {
 		return {
 			kind: "block",
 			reason: `\`gh ${verb} edit\` needs a target repository and none resolved — $CLAUDE_PIPELINE_REPO and $GITHUB_REPOSITORY are unset (or malformed) and \`gh repo view\` did not answer.`,
@@ -159,13 +216,13 @@ const routeEdit = (
 		return {
 			kind: "block",
 			reason: `\`gh ${verb} edit\` without a numeric #N target can't be rewritten to a REST PATCH.`,
-			hint: `Pass the issue/PR number, e.g. \`gh api -X PATCH repos/${repo}/${verb === "pr" ? "pulls" : "issues"}/<N> -f ...\`.`,
+			hint: `Pass the issue/PR number, e.g. \`gh api -X PATCH repos/${targetRepo}/${verb === "pr" ? "pulls" : "issues"}/<N> -f ...\`.`,
 		};
 	}
 
 	// pulls and issues share the issues PATCH surface for body/title/milestone (a PR is an
 	// issue in REST); milestone/labels live on the issues resource for both.
-	const apiArgv: string[] = ["api", "-X", "PATCH", `repos/${repo}/issues/${target}`];
+	const apiArgv: string[] = ["api", "-X", "PATCH", `repos/${targetRepo}/issues/${target}`];
 	const stripped: string[] = [];
 
 	const bodyFile = readFlag(rest, "--body-file");
@@ -210,14 +267,17 @@ const routeEdit = (
 		return {
 			kind: "block",
 			reason: `\`gh ${verb} edit\` carried no rewritable field (body/title/milestone).`,
-			hint: `Use \`gh api -X PATCH repos/${repo}/issues/${target} -f <field>=<value>\` directly.`,
+			hint: `Use \`gh api -X PATCH repos/${targetRepo}/issues/${target} -f <field>=<value>\` directly.`,
 		};
 	}
 
 	return {
 		kind: "rewrite",
 		argv: apiArgv,
-		reason: `\`gh ${verb} edit\` routed to REST PATCH (GraphQL edit path breaks on Projects-classic).`,
+		reason:
+			`\`gh ${verb} edit\` routed to REST PATCH (GraphQL edit path breaks on Projects-classic)` +
+			(flagged.kind === "named" ? `, targeting \`${flagged.flag} ${targetRepo}\`` : "") +
+			".",
 		stripped,
 	};
 };

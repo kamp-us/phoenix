@@ -135,6 +135,117 @@ describe("route — an unresolved repo refuses the rewrite, not the whole shim (
 	});
 });
 
+describe("route — an explicit -R/--repo names the PATCH target (#4301)", () => {
+	const OTHER = "other-owner/other-repo";
+
+	it("PATCHes the -R repo, not the resolved one, for `pr edit`", () => {
+		const out = r(["pr", "edit", "-R", OTHER, "5", "--title", "x"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") {
+			assert.include(out.argv, `repos/${OTHER}/issues/5`);
+			assert.notInclude(out.argv.join(" "), REPO);
+			assert.include(out.reason, OTHER);
+		}
+	});
+
+	it("PATCHes the --repo=value repo, not the resolved one, for `pr edit`", () => {
+		const out = r(["pr", "edit", "5", `--repo=${OTHER}`, "--body", "b"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") {
+			assert.include(out.argv, `repos/${OTHER}/issues/5`);
+			assert.notInclude(out.argv.join(" "), REPO);
+		}
+	});
+
+	it("PATCHes the --repo repo, not the resolved one, for `issue edit`", () => {
+		const out = r(["issue", "edit", "--repo", OTHER, "7", "--title", "Renamed"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") {
+			assert.include(out.argv, `repos/${OTHER}/issues/7`);
+			assert.notInclude(out.argv.join(" "), REPO);
+		}
+	});
+
+	it("PATCHes the -R=value repo, not the resolved one, for `issue edit`", () => {
+		const out = r(["issue", "edit", "7", `-R=${OTHER}`, "--body", "b"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") {
+			assert.include(out.argv, `repos/${OTHER}/issues/7`);
+			assert.notInclude(out.argv.join(" "), REPO);
+		}
+	});
+
+	it("honors the attached shorthand `-Rowner/name`", () => {
+		const out = r(["pr", "edit", "5", `-R${OTHER}`, "--title", "x"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") assert.include(out.argv, `repos/${OTHER}/issues/5`);
+	});
+
+	it("supplies a target even when the shim resolved no repo", () => {
+		const out = route(["pr", "edit", "-R", OTHER, "5", "--title", "x"], {repo: null});
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") assert.include(out.argv, `repos/${OTHER}/issues/5`);
+	});
+
+	it("blocks a -R value that is not an owner/name slug, naming the flag and value", () => {
+		const out = r(["pr", "edit", "5", "-R", "not-a-slug", "--title", "x"]);
+		assert.strictEqual(out.kind, "block");
+		if (out.kind === "block") {
+			assert.include(out.reason, "-R");
+			assert.include(out.reason, "not-a-slug");
+			assert.notInclude(`${out.reason} ${out.hint}`, REPO);
+		}
+	});
+
+	it("blocks a trailing --repo with no value rather than falling back to the resolved repo", () => {
+		const out = r(["pr", "edit", "5", "--title", "x", "--repo"]);
+		assert.strictEqual(out.kind, "block");
+		if (out.kind === "block") assert.include(out.reason, "--repo");
+	});
+
+	it("leaves every other edit flag's handling unchanged alongside -R", () => {
+		const out = r([
+			"issue",
+			"edit",
+			"-R",
+			OTHER,
+			"7",
+			"--title",
+			"x",
+			"--milestone",
+			"3",
+			"--add-project",
+			"Roadmap",
+		]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") {
+			assert.include(out.argv, "title=x");
+			assert.include(out.argv, "milestone=3");
+			assert.include(out.stripped, "--add-project Roadmap");
+		}
+	});
+});
+
+describe("route — -R still reaches real `gh` untouched on the non-edit routes (#4301 regression)", () => {
+	const OTHER = "other-owner/other-repo";
+
+	it("passes -R through verbatim on a passthrough route", () => {
+		const argv = ["pr", "list", "-R", OTHER, "--state", "open"];
+		const out = r(argv);
+		assert.strictEqual(out.kind, "passthrough");
+		if (out.kind === "passthrough") assert.deepStrictEqual([...out.argv], argv);
+	});
+
+	it("keeps -R in the rebuilt argv of a `view --json` rewrite", () => {
+		const out = r(["pr", "view", "9", "-R", OTHER, "--json", "number,closingIssuesReferences"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") {
+			assert.include(out.argv, "-R");
+			assert.include(out.argv, OTHER);
+		}
+	});
+});
+
 describe("isMilestoneTitle", () => {
 	it("treats a bare integer as a number (not a title)", () => {
 		assert.isFalse(isMilestoneTitle("12"));
