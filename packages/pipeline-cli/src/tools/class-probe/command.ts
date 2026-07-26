@@ -17,8 +17,8 @@
  * instead, appending `review-design`). Folding has-ui in here is the #2485/#2483 fix: the
  * reviewer fan dispatches review-design deterministically off this output instead of eyeballing
  * a non-visual `apps/web/src/*.ts` away and deadlocking ship-it on an empty review-design
- * namespace. A human summary goes to **stderr**; `classify` always exits 0 — it classifies, it
- * does not gate.
+ * namespace. A human summary goes to **stderr**; `classify` exits 0 on every *classification* — it
+ * classifies, it does not gate; a refusal to read the input is not a classification (below).
  *
  * The sibling `doc-vocab-surface-only` subcommand answers a **different** question on the same
  * file set — is a missing `Fixes #N` legitimate here (ADR 0075/0184, #3953) — and *does* carry
