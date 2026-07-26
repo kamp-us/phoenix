@@ -44,7 +44,7 @@ the firewall checkable rather than aspirational:
 **Where the law is silent, say so and surface the gap — never fill it.** This is the manifest's
 own closing rule, inherited. A taste skill that finds no law for a decision says *"the design law
 is silent here; this is a CRAFT default"* and, when the gap is load-bearing, tells the agent to
-file it via the [`report`](../report/SKILL.md) skill. It never promotes its own default into a
+file it via the [`report`](report/SKILL.md) skill. It never promotes its own default into a
 prohibition, and it never edits `design-system-manifest.md`.
 
 **Taste skills lag the law, never lead it.** When an ADR ratifies new law and it is transcribed
