@@ -125,10 +125,12 @@ Step-0 class):
 # Any path off those surfaces (`apps/**`, `packages/**`, `infra/**`, a code-root README, a root
 # script) is behavioral work with a missing `Fixes #N` ⇒ a broken seam ⇒ hard-stop. Same file set +
 # same path-prefix class Step 2's skills-only route uses — no second class mechanism.
+# "every path is conversation-authored" is the EMPTY-OUTPUT form, never `! grep -qv` (§WL, #4155).
 FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
+OFFSURFACE="$(grep -vE '^(\.glossary|\.decisions|\.patterns)/' <<<"$FILES")"
 if [ -n "$FILES" ] \
    && grep -qE '^\.glossary/' <<<"$FILES" \
-   && ! grep -qvE '^(\.glossary|\.decisions|\.patterns)/' <<<"$FILES"; then
+   && [ -z "$OFFSURFACE" ]; then
   echo "conversation-authored .glossary/** coining site, no Fixes #N — legitimate (ADR 0184/0075): ISSUE stays unset, AC half N/A"
 else
   echo "no linked issue on a PR carrying behavioral code — broken seam: hard-stop (dangling-code guard, ADR 0184)"
@@ -222,8 +224,11 @@ each gate hands a mis-classed PR to the gate that owns its class:
 # the file set drives the class decision (same list pulled above)
 FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
 # skills-only ⇒ every changed path is under skills/ or agents/ — review-skill's class, not yours
-# (agents/** are behavioral artifacts, review-skill-routed for the verdict — ADR 0150/#2003)
-if [ -n "$FILES" ] && ! grep -qvE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES"; then
+# (agents/** are behavioral artifacts, review-skill-routed for the verdict — ADR 0150/#2003).
+# Empty-output form, never `! grep -qv`: a false-true here `exit 0`s the code gate on a PR that
+# does carry code (§WL of ../gh-issue-intake-formats.md, #4155).
+OFFCLASS="$(grep -vE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES")"
+if [ -n "$FILES" ] && [ -z "$OFFCLASS" ]; then
   echo "not a code PR — route to review-skill"   # plain note, no review-code: marker; stop
   exit 0
 fi

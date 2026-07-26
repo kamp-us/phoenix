@@ -2112,6 +2112,45 @@ never mention it in what you post.
 
 ---
 
+## WL. A loop exit is not evidence, and `grep -qv` is not a condition (#4155)
+
+Two shell-level rules the pipeline's agent-executed steps share. Both fail in the **same
+direction** — a condition meaning *not yet* / *not allowed* reads as *done* / *allowed*, and
+control flow proceeds — which is the silent direction: a loop that hangs is visible, a loop that
+exits early on a false condition is not. They are stated here once so every skill cites one
+definition.
+
+**1. A wait-loop's exit is never evidence of the awaited condition.** A loop controls *when* you
+re-read; it never substitutes for the read. On exit — whether the loop broke, timed out, or
+tripped a malformed condition — **re-assert the terminal state from ground truth** before
+reporting it. The live instance: a shipper improvised a `grep -qv null` poll while waiting on a
+merge queue; the condition succeeded on poll 1 and the loop exited on a state that meant "not
+merged yet" (#4155, on PR #4076). Nothing was misreported only because that shipper concluded
+from a direct `merged_at` + timeline read instead of from the loop — discipline, not a control.
+
+**2. Never use `grep -qv` / `grep -vq` as a loop or branch condition.** Two independent
+mechanisms break it, and both land on a false-true:
+
+- **Semantics.** `grep -v <pat>` succeeds when *any* line lacks the pattern, so over a
+  multi-line/multi-field read a `grep -qv` test is true almost unconditionally — it does **not**
+  mean "no line matches".
+- **Portability.** The `-q` + `-v` combination misbehaves under some grep variants (ugrep returns
+  non-zero even when non-matching lines exist), so `! grep -qv …` — the "every line matches the
+  allowed prefix" idiom — can read true for a set that contains disallowed entries.
+
+**The remedy — capture the inverted match and test emptiness, never the exit status.** This is the
+form [`lefthook.yml`](https://github.com/kamp-us/phoenix/blob/main/lefthook.yml)'s pre-push
+`typecheck` leg already uses and documents (#3130 → #3403); that comment is the anchor, and this
+section is its pipeline-side statement — don't restate the rationale at each call site, point here:
+
+```sh
+# "every changed path is under skills/ or agents/" — the empty-output form
+OFFCLASS=$(grep -vE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES")
+if [ -n "$FILES" ] && [ -z "$OFFCLASS" ]; then …
+```
+
+---
+
 ## HEAD. Review the PR head, never the launched checkout's working copy (#793)
 
 A review gate is frequently spawned with `isolation:worktree`, which lands it in a **fresh

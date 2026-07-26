@@ -216,6 +216,34 @@ describe("Github.signals — the ground-truth reads over a mock gh spawner (#273
 		),
 	);
 
+	it.effect(
+		"the #4155 consumed-entry case: removal + a `merged` event on a lagging PR read ⇒ not ejected",
+		() =>
+			Effect.gen(function* () {
+				// The live #4164 timeline shape, read while `pulls/4164` still returned merged:false.
+				const signals = yield* (yield* Github).signals(4164, REPO);
+				assert.strictEqual(signals.lastMergeQueueEvent, "removed_from_merge_queue");
+				assert.strictEqual(signals.mergedTimelineEvent, true);
+				assert.notStrictEqual(classify(signals).outcome, "ejected");
+			}).pipe((effect) =>
+				provide(effect, {
+					prState: prView("OPEN", "CLEAN", "main"),
+					timeline: timelineEvents("added_to_merge_queue", "removed_from_merge_queue", "merged"),
+					baseCommits: baseCommits("chore: someone else's squash (#4165)"),
+				}),
+			),
+	);
+
+	it.effect("fail-closed: an unreadable timeline carries NO merge evidence either", () =>
+		Effect.gen(function* () {
+			// The timeline read exits 1 (unprovided): a fault must not fabricate a `merged` event
+			// any more than it fabricates an ejection.
+			const signals = yield* (yield* Github).signals(1906, REPO);
+			assert.strictEqual(signals.mergedTimelineEvent, false);
+			assert.strictEqual(classify(signals).outcome, "pending");
+		}).pipe((effect) => provide(effect, {prState: prView("OPEN", "CLEAN")})),
+	);
+
 	it.effect("an unreadable PR state fails GhCommandError (the command maps it to pending)", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip((yield* Github).signals(1906, REPO));

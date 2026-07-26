@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	classify,
+	hasMergedEvent,
 	lastMergeQueueEvent,
 	type MergeQueueSignals,
 	squashOnBaseBranch,
@@ -128,6 +129,97 @@ describe("classify — the #4057 stale-timeline cases (the base-branch freshness
 			).outcome,
 		).toBe("ejected");
 		expect(classify(sig({lastMergeQueueEvent: "added_to_merge_queue"})).outcome).toBe("queued");
+	});
+});
+
+describe("classify — the #4155 consumed-entry cases (removal paired with a `merged` event)", () => {
+	it("the #4164 shape: removal at 01:38:30Z, merged at 01:38:31Z, PR state still lagging ⇒ NOT ejected", () => {
+		// Every signal is the live 2026-07-26 payload for PR #4164 read while `pulls/4164` still
+		// returned merged:false. Under the pre-#4155 logic the removal alone classified `ejected`
+		// on a PR that had just landed.
+		const c = classify(
+			sig({
+				merged: false,
+				state: "OPEN",
+				lastMergeQueueEvent: "removed_from_merge_queue",
+				mergedTimelineEvent: true,
+			}),
+		);
+		expect(c.outcome).not.toBe("ejected");
+		expect(c.outcome).toBe("queued");
+	});
+
+	it("a `merged` timeline event alone never promotes to merged — merge evidence is merged_at PLUS the event", () => {
+		// One signal is not evidence: the reconcile keeps polling until the PR state (or the
+		// base-branch squash) confirms. Fail-closed in BOTH directions — no false ship, no false eject.
+		const c = classify(
+			sig({
+				merged: false,
+				lastMergeQueueEvent: "removed_from_merge_queue",
+				mergedTimelineEvent: true,
+			}),
+		);
+		expect(c.outcome).not.toBe("merged");
+	});
+
+	it("a removal with NO merged event is still a genuine ejection (the discriminator, not a blanket amnesty)", () => {
+		expect(
+			classify(sig({lastMergeQueueEvent: "removed_from_merge_queue", mergedTimelineEvent: false}))
+				.outcome,
+		).toBe("ejected");
+		// absent field ⇒ the event was not read ⇒ no evidence ⇒ the pre-#4155 verdict stands
+		expect(classify(sig({lastMergeQueueEvent: "removed_from_merge_queue"})).outcome).toBe(
+			"ejected",
+		);
+	});
+
+	it("the merged-PR path is untouched: state==MERGED still wins outright", () => {
+		expect(
+			classify(
+				sig({
+					merged: true,
+					state: "MERGED",
+					lastMergeQueueEvent: "removed_from_merge_queue",
+					mergedTimelineEvent: true,
+				}),
+			).outcome,
+		).toBe("merged");
+	});
+});
+
+describe("hasMergedEvent — is a `merged` event present in the timeline?", () => {
+	it("the #4164 order: removal then merged one second later", () => {
+		expect(
+			hasMergedEvent([
+				{event: "added_to_merge_queue", created_at: "2026-07-26T01:33:36Z"},
+				{event: "removed_from_merge_queue", created_at: "2026-07-26T01:38:30Z"},
+				{event: "merged", created_at: "2026-07-26T01:38:31Z"},
+			]),
+		).toBe(true);
+	});
+
+	it("the #4143 order: merged BEFORE the removal, same second — presence, never position", () => {
+		// The live #4143 timeline returns `merged` first at 00:53:07Z with the removal at the same
+		// timestamp. Any order-sensitive read would miss the merge here.
+		expect(
+			hasMergedEvent([
+				{event: "added_to_merge_queue", created_at: "2026-07-26T00:40:22Z"},
+				{event: "merged", created_at: "2026-07-26T00:53:07Z"},
+				{event: "removed_from_merge_queue", created_at: "2026-07-26T00:53:07Z"},
+			]),
+		).toBe(true);
+	});
+
+	it("false on a timeline with no merged event (an ejection, and the empty settle window)", () => {
+		expect(
+			hasMergedEvent([
+				{event: "added_to_merge_queue"},
+				{event: "removed_from_merge_queue"},
+				{event: "labeled"},
+			]),
+		).toBe(false);
+		expect(hasMergedEvent([])).toBe(false);
+		expect(hasMergedEvent([{}])).toBe(false);
 	});
 });
 
