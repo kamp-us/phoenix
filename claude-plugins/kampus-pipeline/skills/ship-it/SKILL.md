@@ -1990,23 +1990,52 @@ The final merge is **async** (queue-owned), so the terminal state to verify is *
 not `merged=true` in this run. Under the merge queue a *successful* enqueue leaves `auto_merge`
 **`null`** — the queue, not an auto-merge request, owns the async merge — so the success signal
 is the **`already queued to merge`** message the enqueue prints and/or the PR's `QUEUED` state
-(read from `mergeStateStatus` + the `added_to_merge_queue` REST timeline event — **not** the
-`mergeQueueEntry` `--json` field, which gh 2.62.0 rejects, #1930). See ADR 0132 addendum §3.
+(resolved through `pipeline-cli merge-queue-classify` — **not** the `mergeQueueEntry` `--json`
+field, which gh 2.62.0 rejects, #1930). See ADR 0132 addendum §3.
 
 ```bash
 # The QUEUED signal is the success condition. `already queued to merge` from Step 4's --auto
 # and/or an `enqueued`/QUEUED mergeStateStatus confirm it — NOT a non-null auto_merge, which
 # under the queue stays null on a clean enqueue (ADR 0132 §3).
 gh api repos/$REPO/pulls/$PR --jq '{merged, auto_merge, mergeable_state}'
-# Derive QUEUED from `mergeStateStatus` PLUS the authoritative REST issue-timeline event
-# (`added_to_merge_queue`) — NOT the `mergeQueueEntry` --json field, which the pinned gh
-# 2.62.0 rejects, forcing an every-ship gh-api fallback (#1930). The last merge-queue timeline
-# event is the same gh-2.62.0-safe source Step 5.5's reconcile already reads; both steps use one
-# REST-timeline path for the QUEUED confirmation.
 gh pr view $PR --json mergeStateStatus --jq '{mergeStateStatus}'
-gh api "repos/$REPO/issues/$PR/timeline" \
-  --jq 'map(select(.event=="added_to_merge_queue" or .event=="removed_from_merge_queue")) | last | .event // "no-merge-queue-event"'
+# Confirm queue membership through the SAME verb Step 5.5's reconcile polls — never a second,
+# hand-rolled timeline read here (#4193). Prints exactly one of merged/queued/pending/ejected.
+QUEUE_STATE=$(pipeline-cli merge-queue-classify classify --pr "$PR" --repo "$REPO")
 ```
+
+**Why the verb and not a `gh api …/timeline` one-liner here.** This confirmation used to
+hand-roll its own timeline read, and that second copy diverged from the tool it duplicated in
+two ways, each of which misreports a healthy enqueue (#4193):
+
+- It read the timeline **un-paginated**, so it only ever saw the first 30 events. On PR #3955 —
+  a 122-event timeline whose `added_to_merge_queue` sits past event 30 — it printed
+  `no-merge-queue-event` while the PR was queued the whole time, and a shipper burned a run
+  chasing an enqueue failure that never happened. The verb reads `?per_page=100` **with**
+  `--paginate`. If you ever do need a raw timeline read, obey the contract's pagination rule
+  ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), the `CONTROL_PLANE_RE`
+  probe): `--paginate` composes only with a **streaming** `--jq` (`.[] | select(…)`), never an
+  aggregate one (`map(…) | last`, `length`, `add`) — gh runs the filter **per page** and emits
+  one result each, so an aggregate filter answers for page 1, then again for page 2, and a
+  caller capturing it in `$( … )` gets a multi-line value it will compare as a single word.
+- It printed the **last** merge-queue event raw, and `removed_from_merge_queue` is **not** an
+  ejection signal on its own — the queue also emits it on a *successful* merge, at a timestamp
+  matching `merged_at`. The verb ranks `merged` above that event, so a landed merge never reads
+  as a dequeue.
+
+Branch on `QUEUE_STATE`; **every** outcome has a defined response, so no value is a dead end:
+
+- **`queued`** — confirmed in the queue. Step 5's success shape; report `enqueued: yes`.
+- **`merged`** — the queue landed the batch inside this run. Terminal success.
+- **`pending`** — no merge-queue event yet. This is the enqueue-**settle** window, **not** proof
+  the enqueue failed, and never an ejection. Do **not** re-run Step 4 or re-arm auto-merge off a
+  single `pending` — a re-drive is the wrong action on a PR that may already be queued. Fall
+  through to Step 5.5, whose bounded reconcile polls this same verb; on a queue-governed base
+  branch (every PR in this repo) a PR still `pending` at the budget's end is the **parked-intent**
+  case guard 6 already owns — it clears the intent and the run reports `refused — the enqueue did
+  not take effect at this head`. That is the sanctioned way a genuinely absent enqueue is acted
+  on, and it is reached by waiting out the window, never by re-enqueuing here.
+- **`ejected`** — the queue dropped the PR. Step 5.5's `ejected` branch owns the response.
 
 A clean `--auto` under the queue leaves `auto_merge` **`null`** and reports `already queued to
 merge`; that `null` is the **expected** post-enqueue shape, **not** a failure — do not read it
@@ -2049,8 +2078,12 @@ async model (the actor does **not** block synchronously on the final merge), it 
 **bounded batch window** to classify the terminal state before it reports.
 
 Classify each poll off the **authoritative** merge-queue signal — GitHub's REST issue-timeline
-events (`added_to_merge_queue` on enqueue, `removed_from_merge_queue` on a genuine ejection;
-GitHub "Managing a merge queue") — **not** a momentary `mergeStateStatus`. The old discriminator
+events (`added_to_merge_queue` on enqueue, `removed_from_merge_queue` on a dequeue; GitHub
+"Managing a merge queue") — **not** a momentary `mergeStateStatus`. A trailing
+`removed_from_merge_queue` is an ejection **only when the PR is not merged**: the queue emits
+the same event on a *successful* merge, at a timestamp matching `merged_at`, so it must always
+be paired with `merged`/`merged_at` before concluding (the classifier does this by ranking
+`merged` above it — #4193). The old discriminator
 inferred `ejected` from `OPEN + mergeStateStatus != QUEUED`, but a freshly-enqueued PR reads
 `mergeStateStatus = CLEAN` for a few seconds *before* GitHub flips it CLEAN → QUEUED, so a
 genuinely-queued PR false-classified as `ejected` on the first poll (the #1906 live instance: an
