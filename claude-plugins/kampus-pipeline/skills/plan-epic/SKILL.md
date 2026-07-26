@@ -507,6 +507,8 @@ caught only by `review-plan`'s non-blocking advisor (#754, the same silent-clobb
 even within a single run:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
 mkdir -p "$RUN_SCRATCH" || exit 1
 # write this child's spec into a per-run temp file, never a shared fixed path (#754)
@@ -521,7 +523,7 @@ cat > "$CHILD_SPEC_FILE" <<'EOF'
 EOF
 # The verb composes the format-2 body per the contract and emits it BY VALUE to stdout — no
 # hand-re-derived `### What to build` / `### Acceptance criteria`, no `-f body=@file` leak.
-BODY="$(pipeline-cli intake-compose sub-issue --spec "$CHILD_SPEC_FILE")"
+BODY="$("$PCLI" intake-compose sub-issue --spec "$CHILD_SPEC_FILE")"
 # ATOMIC create — body AND its type/priority/status:planned labels in ONE REST write. `POST /issues`
 # accepts `labels` inline, so an interrupted run can never leave a label-less child: the create
 # either lands the issue WITH its labels or creates nothing. (Values chosen per the paragraph below.)
@@ -997,6 +999,8 @@ Scan the **brief** (the top section you read in Step 1) for the graduation-prove
 close each source it names — but only a genuine `type:investigation` source, idempotently:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
 [ -s "$RUN_SCRATCH/current.md" ] || { echo "plan-epic: §SP — Step 1's current.md did not survive; re-run Step 1 in THIS session." >&2; exit 1; }
 # Extract every source the brief graduated from — tolerant of phrasing ("Emitted from resolved
@@ -1019,7 +1023,7 @@ for SRC in $SOURCES; do
   # then closes the source as completed (the work graduated, it wasn't abandoned — distinct from
   # triage's not_planned). Don't hand-roll the comment + `state_reason=completed` PATCH; that inline
   # re-derivation is what the adoption lint (#3254) flags.
-  pipeline-cli tracker graduate "$SRC" \
+  "$PCLI" tracker graduate "$SRC" \
     --artifact "epic #<EPIC> (planned by plan-epic)" \
     --note "closing this investigation as the durable \`graduated into #<EPIC>\` record. Its diagnosis is carried forward by the epic and its planned children." >/dev/null
   echo "plan-epic: closed graduated source investigation #$SRC → epic #<EPIC>."

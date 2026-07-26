@@ -90,6 +90,8 @@ path, so a path-only test here would ride it straight onto the lighter gate (#41
 don't re-hard-code the list:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 PR=<pr number>
 FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # --paginate + streaming --jq: full set past file #100 (#725)
 NFILES=$(printf '%s\n' "$FILES" | grep -c . || true)
@@ -97,7 +99,7 @@ ADD=$(gh api repos/$REPO/pulls/$PR --jq '.additions'); DEL=$(gh api repos/$REPO/
 
 # Four states on stdout: control-plane / content-undetermined / not-control-plane / unknown.
 # Only `not-control-plane` is a proven-ordinary answer; every other state is a HOLD.
-CP_STATE="$(printf '%s\n' "$FILES" | pipeline-cli cp-classify classify --repo "$REPO")"
+CP_STATE="$(printf '%s\n' "$FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
 ```
 
 **Refuse the lighter gate (FAIL → full path) on any of:**
@@ -141,6 +143,8 @@ fail-closed fallback (#1559) re-routes it to the full `review-code` / `review-do
 the worst case of a miss is paying the full (correct) cost, never an under-gated merge.
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Fail-closed on EVERY value but the proven-ordinary one. The test is a positive match on the
 # STATE WORD, not on the exit status: the exit code discriminates the four states only once the
 # verb has RUN, so a bad flag (exit 1) or a missing binary (exit 127) would fail OPEN through
@@ -151,7 +155,7 @@ if [ "$CP_STATE" != "not-control-plane" ]; then
     HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
     GUARD_TOUCHING="$(printf '%s\n' "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
         gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
-          | pipeline-cli guard-content-probe classify --path "$adr" >/dev/null && echo "$adr"
+          | "$PCLI" guard-content-probe classify --path "$adr" >/dev/null && echo "$adr"
       done)"
     if [ -z "$GUARD_TOUCHING" ]; then
       : # every touched ADR probed not-guard-touching ⇒ the content axis is resolved, carry on

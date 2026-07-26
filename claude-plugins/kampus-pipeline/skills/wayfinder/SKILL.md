@@ -483,6 +483,8 @@ correctly (§the report footer in the formats contract). Stream the composed bri
 create over stdin (no shared temp file to collide on, per the report skill's filing rule):
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 # One emitted epic per coherent buildable unit. The brief is composed from map #$MAP's
 # ## Destination + the relevant ## Decisions-so-far slice (read via the wayfinder CLI, never
@@ -500,7 +502,7 @@ Charted and cleared on wayfinder:map #<MAP>. Downstream is the existing pipeline
 EOF
   echo   # blank line before the footer block
   claude-plugins/kampus-pipeline/skills/report/footer.sh   # emits its own `---` + <sub>… line
-} | pipeline-cli tracker create-issue --title "<the epic, as one concrete deliverable>"
+} | "$PCLI" tracker create-issue --title "<the epic, as one concrete deliverable>"
 ```
 
 The `tracker create-issue` verb owns this intake-create envelope (ADR 0190;
@@ -537,13 +539,15 @@ Make the ideation→execution handoff traceable from both ends, then close:
   stay as they are.
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Name every artifact the map graduated into (epics and/or ADR and/or roadmap), then close it
 # IFF the destination is FULLY graduated. A partial graduation is annotated but stays open.
 # The `tracker graduate` verb owns this graduation-close envelope (ADR 0190, #3266): it posts
 # the `Graduated into <artifact>` source → artifact provenance record and closes the source as
 # completed. Don't hand-roll the comment + `state_reason=completed` PATCH — that inline
 # re-derivation is what the adoption lint (#3254) flags.
-pipeline-cli tracker graduate "$MAP" \
+"$PCLI" tracker graduate "$MAP" \
   --artifact "#$E1, #$E2 → triage → plan-epic → write-code; ADR 0176; ROADMAP.md v1" \
   --note "Frontier cleared — closing this map as the durable record of how the plan was discovered."
 # fully-graduated only; a partial graduation is annotated (a plain comment) but stays open.

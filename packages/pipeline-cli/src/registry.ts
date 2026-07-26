@@ -210,6 +210,12 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("adoption-lint", () =>
 		import("./tools/adoption-lint/command.ts").then((m) => m.adoptionLintCommand),
 	),
+	// #3314 — reds on a bare `pipeline-cli <verb>` in a runnable fence. The CLI is not on PATH
+	// where agents spawn and won't be (ADR 0207), so a bare call dies `command not found` inside a
+	// fail-closed gate wrapper, which launders the miss into a wrong verdict. Enforces §CLI.
+	tool("cli-invocation-guard", () =>
+		import("./tools/cli-invocation-guard/command.ts").then((m) => m.cliInvocationGuardCommand),
+	),
 	// #3606 — inverts the crew read-only-fanout per-bridge spawn denylist into an ENFORCED
 	// allowlist: reds when a mutating roster agent-type is neither allowlisted nor denied by a
 	// crew bridge (chief-of-staff/cartographer/intake-desk), closing the future-agent hole ADR

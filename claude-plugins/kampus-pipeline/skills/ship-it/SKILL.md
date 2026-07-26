@@ -152,6 +152,8 @@ rule with **four mandated sites** — run start, every stop/refusal, an ejection
 bounded reconcile:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # `merge-intent` owns the branch (ADR 0198): a live merge-queue entry is NEVER disturbed; the
 # pre-queue regime — read off the BASE BRANCH's ruleset, not this PR's queue history — is exempt at
 # `post-enqueue` only; and both reads fail closed toward a clear. It verifies by re-reading
@@ -160,7 +162,7 @@ bounded reconcile:
 # was armed. Exit 1 = the intent may STILL be armed: surface it, never report a clean stop over it.
 INTENT_UNCLEARED=0   # set by any failed disarm; the run's outcome line MUST carry it (see Running it)
 disarm_intent() {   # $1 = preflight | refuse | post-enqueue | ejected
-  pipeline-cli merge-intent disarm --pr "$PR" --repo "$REPO" --site "$1" || {
+  "$PCLI" merge-intent disarm --pr "$PR" --repo "$REPO" --site "$1" || {
     echo "ship-it: FAILED to clear the merge intent on #$PR (site $1) — a later approval could enqueue it ungated (ADR 0198). Disable auto-merge by hand before this PR is approved again." >&2
     return 1
   }
@@ -491,6 +493,8 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
   precedent). Resolve the roster + the two signals over REST, never GraphQL, then decide:
 
   ```bash
+  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
   # ADR 0175: DETERMINISTIC §CP discharge keyed on control-plane team cardinality, not judgment.
   ORG="${REPO%%/*}"                                            # owner half of owner/repo
   # N = present, active, human control-plane members (REST, never GraphQL — ADR 0135/0175)
@@ -530,7 +534,11 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
   # The DETERMINISTIC decision — the whole ADR-0175 `case "$N"` branch lives in the tested pure core.
   # discharge → carry on to the machine gates; stop → STOP (fail closed). Pass a signal flag only when
   # that signal is present at head; cp-cardinality selects which signal the branch actually requires.
-  if printf '%s\n' "$MEMBERS" | pipeline-cli cp-cardinality decide \
+  # The §CP discharge branches on this exit status, so an unresolved CLI would read as "stop" or
+  # "discharge" depending on the pipe's last status — a resolution gap deciding a merge gate.
+  # Refuse first (§CLI: could-not-run is UNKNOWN, never a discharge; #3314).
+  [ -x "$PCLI" ] || { echo "ship-it: cp-cardinality is UNRESOLVED at '$PCLI' — the §CP discharge is UNKNOWN, NOT discharged. STOP." >&2; exit 1; }
+  if printf '%s\n' "$MEMBERS" | "$PCLI" cp-cardinality decide \
        --author "$AUTHOR" \
        $([ "$NON_AUTHOR_APPROVAL_AT_HEAD" = true ] && printf -- '--non-author-approval-at-head') \
        $([ "$SELF_APPROVAL_AT_HEAD" = true ] && printf -- '--self-approval-at-head'); then
@@ -754,17 +762,19 @@ The required set is **derived, never eyeballed** — the same `class-probe` outp
 dispatches off, so `dispatched-gate == required-gate` holds by construction:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # the required namespaces for THIS diff — one per artifact class present, plus review-design when
 # the diff is UI-affecting. `.glossary/**` rides has-code, so an ADR + a glossary row requires BOTH
 # review-doc AND review-code; satisfying one is not enough.
 REQUIRED="$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
-  | pipeline-cli class-probe classify --namespaces | paste -sd, -)"
+  | "$PCLI" class-probe classify --namespaces | paste -sd, -)"
 # A control-plane PR's pass path is the canonical SHA-less ADVISORY, bound in the body's
 # `Reviewed-head` line (ADR 0111/0151) — pass --cp so that form counts, and ONLY then. Set this from
 # Step 0's own classification (it printed `BLOCKING (…)` for a §CP path/content hit) AND only after
 # Step 0's approval gate discharged; leave it empty for every non-§CP PR.
 CP_FLAG=""   # → "--cp" iff Step 0 classified this PR §CP and its control-plane approval discharged
-pipeline-cli verdict gate --pr "$PR" --require "$REQUIRED" $CP_FLAG || {
+"$PCLI" verdict gate --pr "$PR" --require "$REQUIRED" $CP_FLAG || {
   disarm_intent refuse || INTENT_UNCLEARED=1
   echo "ship-it: refused at guard 1 — see the named reason above; NOT enqueued."; exit 1; }
 ```
@@ -1934,13 +1944,22 @@ boundary. Reuse the shared `findCommentLeaks` detector via the pipeline-cli verb
 matcher `redact-leaks` and `verdict post` already consume — one detector, not a re-invented one):
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+# …and prove it resolved BEFORE the guard runs. Without this the `||` below fires on a 127 too,
+# and reports "a landed comment carries a machine-local path" for a CLI that never ran (#3314).
+[ -x "$PCLI" ] || {
+  disarm_intent refuse || INTENT_UNCLEARED=1
+  echo "ship-it: REFUSING to enqueue #$PR — leak-guard is UNRESOLVED at '$PCLI', so the leak scan has NO result (§CLI: could-not-run is UNKNOWN, never clean)." >&2
+  exit 1
+}
 # guard 4 — refuse the enqueue on ANY live leak in a landed comment (exit 2 = a leak; ADR 0092 fail-closed)
-pipeline-cli leak-guard scan-pr "$PR" || {
+"$PCLI" leak-guard scan-pr "$PR" || {
   disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: a refusal parks nothing (ADR 0198)
   echo "ship-it: REFUSING to enqueue #$PR — a landed comment carries a machine-local path (issue #3019)." >&2
   echo "  Remediate, then re-run ship-it:" >&2
-  echo "  1. redact each flagged comment body — pipeline-cli redact-leaks (the merged #3021 tool) preserves evidential shape;" >&2
-  echo "  2. re-post the redacted body (a verdict via 'pipeline-cli verdict post', which now self-verifies the landed comment, #3019);" >&2
+  echo '  1. redact each flagged comment body — `$PCLI redact-leaks` (the merged #3021 tool) preserves evidential shape;' >&2
+  echo '  2. re-post the redacted body (a verdict via `$PCLI verdict post`, which now self-verifies the landed comment, #3019);' >&2
   echo "  3. the underlying issue is a bypassed emit path — route the PR back to repair so the leaking comment is re-emitted through the mandated choke point." >&2
   exit 1
 }
@@ -2007,6 +2026,8 @@ is the **`already queued to merge`** message the enqueue prints and/or the PR's 
 field, which gh 2.62.0 rejects, #1930). See ADR 0132 addendum §3.
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # The QUEUED signal is the success condition. `already queued to merge` from Step 4's --auto
 # and/or an `enqueued`/QUEUED mergeStateStatus confirm it — NOT a non-null auto_merge, which
 # under the queue stays null on a clean enqueue (ADR 0132 §3).
@@ -2014,7 +2035,10 @@ gh api repos/$REPO/pulls/$PR --jq '{merged, auto_merge, mergeable_state}'
 gh pr view $PR --json mergeStateStatus --jq '{mergeStateStatus}'
 # Confirm queue membership through the SAME verb Step 5.5's reconcile polls — never a second,
 # hand-rolled timeline read here (#4193). Prints exactly one of merged/queued/pending/ejected.
-QUEUE_STATE=$(pipeline-cli merge-queue-classify classify --pr "$PR" --repo "$REPO")
+# An unresolved CLI prints nothing, and an empty QUEUE_STATE is not a state — refuse rather than
+# branch on it (§CLI: could-not-run is UNKNOWN, never a queue outcome; #3314).
+[ -x "$PCLI" ] || { echo "ship-it: merge-queue-classify is UNRESOLVED at '$PCLI' — queue membership is UNKNOWN, not confirmed." >&2; exit 1; }
+QUEUE_STATE=$("$PCLI" merge-queue-classify classify --pr "$PR" --repo "$REPO")
 ```
 
 **Why the verb and not a `gh api …/timeline` one-liner here.** This confirmation used to
@@ -2107,6 +2131,16 @@ yet), which is **never** an ejection. The classification is a **pure, unit-teste
 reconcile shells out to it per poll and branches on the printed outcome word:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+# …and prove it resolved before polling. An unresolved CLI prints nothing, so every poll would
+# read as neither `merged` nor `ejected`, the budget would exhaust, and the run would report a
+# well-formed `pending` for a classifier that never ran — a could-not-run posing as an answer
+# (§CLI / §WL; #3314). UNKNOWN is the only honest outcome here.
+[ -x "$PCLI" ] || {
+  echo "ship-it: merge-queue-classify is UNRESOLVED at '$PCLI' — the reconcile outcome is UNKNOWN, NOT pending. Re-resolve the CLI and re-poll; do not report a merge outcome." >&2
+  exit 1
+}
 # Bounded reconcile: poll the authoritative merge-queue state within a batch window, then classify.
 # BOUNDED, not synchronous-to-merge (ADR 0132): a fixed budget of polls, then STOP and report —
 # a PR still QUEUED at the budget's end is a well-formed pending, not a failure.
@@ -2121,7 +2155,7 @@ RECONCILE_TRIES=${SHIP_RECONCILE_TRIES:-10}   # ~10 polls
 RECONCILE_SLEEP=${SHIP_RECONCILE_SLEEP:-30}   # ~30s apart ⇒ ~5 min batch window
 MERGE_OUTCOME=pending
 for i in $(seq 1 "$RECONCILE_TRIES"); do
-  MERGE_OUTCOME=$(pipeline-cli merge-queue-classify classify --pr "$PR" --repo "$REPO")
+  MERGE_OUTCOME=$("$PCLI" merge-queue-classify classify --pr "$PR" --repo "$REPO")
   [ "$MERGE_OUTCOME" = merged ] && break   # terminal success
   [ "$MERGE_OUTCOME" = ejected ] && break  # a genuine dequeue (removed_from_merge_queue) — act below
   # queued (still in the queue) or pending (enqueue-settle window) ⇒ keep polling within the budget
@@ -2140,7 +2174,7 @@ done
 if [ "$MERGE_OUTCOME" = ejected ]; then
   disarm_intent ejected || INTENT_UNCLEARED=1
 else
-  INTENT_ACTION=$(pipeline-cli merge-intent disarm --pr "$PR" --repo "$REPO" --site post-enqueue) || INTENT_UNCLEARED=1
+  INTENT_ACTION=$("$PCLI" merge-intent disarm --pr "$PR" --repo "$REPO" --site post-enqueue) || INTENT_UNCLEARED=1
   [ "$INTENT_ACTION" = disarmed ] && \
     echo "refused — the enqueue did not take effect at this head; the parked intent was cleared. Re-dispatch ship-it to re-assert the gates and enqueue (idempotent)."
 fi

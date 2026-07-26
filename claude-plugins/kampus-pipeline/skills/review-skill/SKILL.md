@@ -67,6 +67,8 @@ reviewing (below), read all skill text from the head, and re-check the live head
 (§HEAD #4); the verdict (§5) binds to the SHA whose files you actually read and asserts it.
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main — your trusted config
 git fetch origin "$BASE_REF"
 
@@ -91,7 +93,7 @@ git fetch origin "$BASE_REF"
 RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/review-skill-$PR"
 mkdir -p "$RUN_SCRATCH" || { echo "review-skill: §SP could not create a per-run scratch dir (#3718)." >&2; exit 1; }
 WT_FILE="$RUN_SCRATCH/wt.env"
-pipeline-cli review-head materialize --pr "$PR" --worktree \
+"$PCLI" review-head materialize --pr "$PR" --worktree \
   | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
 . "$WT_FILE"
 [ -n "${REVIEW_WT:-}" ] && [ -n "${PR_REF:-}" ] && [ -n "${HEAD_SHA:-}" ] || {
@@ -203,6 +205,8 @@ on-disk file is current, so a pre-amendment snapshot once mis-flagged a now-cont
 path as control-plane → advisory not-auto-mergeable) if that read can't be made.
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 PR=<pr number>
 # The shared §CP classification entry point — one verb all the gates cite (#4161, formats §CP). It
 # re-resolves CONTROL_PLANE_RE from origin/main itself (§CP travels in the INJECTED skill snapshot,
@@ -215,7 +219,7 @@ PR=<pr number>
 # only once the verb has RUN, so `… || ordinary` fail-opens on a usage error (1) or a missing
 # binary (127). The `else` below is the catch-all that makes that safe (formats §CP; #4161).
 CP_STATE="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-  | pipeline-cli cp-classify classify --repo "$REPO")"
+  | "$PCLI" cp-classify classify --repo "$REPO")"
 # `content-undetermined` is an OBLIGATION, not an answer: probe each touched ADR at head with the
 # SAME ADR-0164 verb ship-it Step 0 and review-code/review-doc run. Any BLOCKING line ⇒ §CP.
 if [ "$CP_STATE" = "content-undetermined" ]; then
@@ -223,7 +227,7 @@ if [ "$CP_STATE" = "content-undetermined" ]; then
   gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
     | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
         gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
-          | pipeline-cli guard-content-probe classify --path "$adr" >/dev/null \
+          | "$PCLI" guard-content-probe classify --path "$adr" >/dev/null \
           && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
       done
 elif [ "$CP_STATE" != "not-control-plane" ]; then

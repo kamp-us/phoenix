@@ -287,11 +287,13 @@ with zero path matches, so a path-only test here would classify it non-blocking 
 this verb removes (#4161, formats §CP):
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Four states on stdout. Assert on the STATE WORD, never on the exit status — the exit code
 # discriminates the four states only once the verb has RUN, so `… || ordinary` fail-opens on a
 # usage error (1) or a missing binary (127). The `else` below is the catch-all (formats §CP; #4161).
 CP_STATE="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-  | pipeline-cli cp-classify classify --repo "$REPO")"
+  | "$PCLI" cp-classify classify --repo "$REPO")"
 # `content-undetermined` is an OBLIGATION, not an answer: probe each listed ADR at head before
 # calling this PR non-blocking (the same ADR-0164 verb ship-it Step 0 and review-code/doc run).
 if [ "$CP_STATE" = "content-undetermined" ]; then
@@ -299,7 +301,7 @@ if [ "$CP_STATE" = "content-undetermined" ]; then
   gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
     | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
         gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
-          | pipeline-cli guard-content-probe classify --path "$adr" >/dev/null \
+          | "$PCLI" guard-content-probe classify --path "$adr" >/dev/null \
           && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
       done
 elif [ "$CP_STATE" != "not-control-plane" ]; then
@@ -326,12 +328,14 @@ fi
 ## Step 1 — Resolve the PR, its head SHA, the preview URL, and the changed surfaces
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 gh api repos/$REPO/pulls/$PR \
   --jq '{number, state, draft, merged, head: .head.ref, base: .base.ref, body}'
 # Resolve the current head SHA the verdict binds to (ADR 0058) via the shared
 # `pipeline-cli review-head` verb (#3690 / #793 / #1807) — `resolve` is REST-only (this gate
 # reviews the preview URL, not a checked-out tree), fail-safe on a missing/closed/partial head:
-HEAD_SHA="$(pipeline-cli review-head resolve --pr "$PR" | jq -r .headSha)"
+HEAD_SHA="$("$PCLI" review-head resolve --pr "$PR" | jq -r .headSha)"
 ```
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam `write-code` writes) —

@@ -462,6 +462,8 @@ Run it; never hand-roll a `claim:` body, which silently skips the ADR-0191 prese
 leaves this lane's claim permanently unprobeable (#3987):
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # 0. Fail-closed on a missing token: the claim comment is the ONLY agent-distinguishable signal
 #    under the shared `usirin` login — with no token a co-racer is unresolvable, so NEVER claim
 #    (and never fall back to the login-keyed assignee as ownership — that is the §7 degeneracy).
@@ -475,7 +477,7 @@ fi
 #    to a pre-existing authorized owner WITHOUT posting, posts a PRESENCE-STAMPED marker under
 #    $CLAUDE_CODE_SESSION_ID, re-reads canonical state, and retracts its OWN claim if it lost.
 #    Exit 0 = the claim is mine; non-zero = backed off, having mutated nothing that is not ours.
-if ! pipeline-cli tracker claim <N>; then
+if ! "$PCLI" tracker claim <N>; then
   echo "did not win the claim on #$N (held by another agent, or lost the tiebreak) — back off, re-pick."
   exit 0   # → re-run Step 1
 fi
@@ -564,6 +566,8 @@ Define the guard once and gate **every** number-targeting mutation on it, exactl
 is the **only** sanctioned path to a mutation that names `<N>`, no bypass:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # claim_is_mine <N>: resolve the EARLIEST AUTHORIZED claim marker on #N (issue or PR) and assert
 # its embedded session id == MY_CLAIM. Returns 0 only on a proven-own claim; non-zero (REFUSE) on
 # an absent OR a foreign claim. The ADR-0115 §2 resolution — CLAIM_RE + the write+ ACL trust root
@@ -573,7 +577,7 @@ is the **only** sanctioned path to a mutation that names `<N>`, no bypass:
 # unauthorized-only claim, a foreign owner, and a missing session all resolve NOT-mine (exit
 # non-zero) — exactly this guard's fail-closed refusal, so the exit-status contract is preserved.
 claim_is_mine() {
-  pipeline-cli claim is-mine --issue "$1" --session "$MY_CLAIM"   # exit 0 = mine; non-zero = REFUSE (default-deny)
+  "$PCLI" claim is-mine --issue "$1" --session "$MY_CLAIM"   # exit 0 = mine; non-zero = REFUSE (default-deny)
 }
 
 claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="…"   # the guard gates the mutation; never run it ungated
@@ -1559,6 +1563,8 @@ re-derive them here. Two operational points that are yours, not the contract's:
   `for the reviewer to judge`).
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # RE-DERIVE the branch LIVE from the worktree — never a cached/shared-file value (see the
 # live-derivation rule in Step 4). $BRANCH from Step 4 is GONE across Bash calls; wt_preflight
 # just re-cd'd to $WT, so the checked-out branch IS the work branch. Read it, never guess it.
@@ -1568,7 +1574,7 @@ wt_preflight && BRANCH="$(git -C "$WT" branch --show-current)"
 # AND independently confirms the remote ref, printing its verdict LAST on stdout. Exit 0 = MOVED,
 # 1 = NOT-MOVED, 3 = UNKNOWN; STOP on either non-zero — never open a PR against a branch you
 # cannot prove exists (an UNKNOWN is not a success).
-wt_preflight && pipeline-cli verified-push --cwd "$WT" --remote origin --branch "$BRANCH" --set-upstream \
+wt_preflight && "$PCLI" verified-push --cwd "$WT" --remote origin --branch "$BRANCH" --set-upstream \
   || { echo "write-code: the push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — refusing to open a PR against an unproven branch." >&2; exit 1; }
 # The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
 # PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
@@ -1806,10 +1812,12 @@ thing and then stop.
 The claim you took in Step 3 protected *this* build. The build is over, so give it up:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # the last mutation of the run — retract OUR OWN claim marker on the issue we just built.
 # --session carries the token we owned the work under (the orchestrator's delegated token on the
 # orchestrated path), because that is the token the marker itself carries.
-pipeline-cli claim release --issue "<N>" --session "$MY_CLAIM"
+"$PCLI" claim release --issue "<N>" --session "$MY_CLAIM"
 ```
 
 **Why this is mandatory, not tidy-up.** A claim that outlives its run never expires, and the
@@ -2213,6 +2221,8 @@ departed from nothing adds nothing; it does **not** rewrite a prior round's entr
 unreliable in this org).
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # re-assert the mis-attribution guard (Step 3.5) before the resubmit push — a between-calls cwd
 # reset can't move the claim, but the guard is MANDATED before every number-targeting mutation,
 # exactly as wt_preflight is before every git op; gate both the push and the progress comment.
@@ -2221,7 +2231,7 @@ claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue 
 # because the R2 rebase onto origin/main moved the head. It confirms the remote ref carries the
 # rebased head before you claim the resubmit landed; exit 0 = MOVED, 1 = NOT-MOVED, 3 = UNKNOWN.
 # STOP on either non-zero: a reviewer waiting on a moved head would otherwise re-gate the STALE one.
-wt_preflight && pipeline-cli verified-push --cwd "$WT" --remote origin --force-with-lease \
+wt_preflight && "$PCLI" verified-push --cwd "$WT" --remote origin --force-with-lease \
   || { echo "write-code: the repair push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — the gate would re-run against the STALE head. Do not report the resubmit as landed." >&2; exit 1; }
 # compose the repair note under the §SP per-run scratch namespace, never a fixed /tmp leaf:
 # concurrent repair lanes clobber a shared name and this posts THEIR note onto your issue (#3718).
@@ -2248,7 +2258,9 @@ repair round is over, and a claim left held is what makes the *next* repair disp
 read `lost` (#3780; the observed stall was a repair refused by a claim whose run had finished):
 
 ```bash
-pipeline-cli claim release --issue "$N" --session "$MY_CLAIM"   # retract OUR OWN marker; never another session's
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" claim release --issue "$N" --session "$MY_CLAIM"   # retract OUR OWN marker; never another session's
 ```
 
 A reply is the acknowledgement this skill performs. **Resolving** the thread (collapsing it)

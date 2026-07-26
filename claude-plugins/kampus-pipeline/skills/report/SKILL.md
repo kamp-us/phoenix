@@ -121,6 +121,8 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
 Stream the composed body **straight into the create call over stdin** — there is no named temp file to collide on and no shell variable to reuse stale, so two concurrent `report` runs cannot interleave bodies (the cross-filing hazard is structurally unrepresentable, not merely warned against — #2002). The `tracker create-issue` verb reads its `--body` from stdin when the flag is absent, so the **quoted** heredoc (`<<'EOF'`) passes the markdown through untouched — multi-line markdown, backticks, and nested fences survive intact, the "backticks survive the shell" guarantee with no round-trip through a variable. Don't hand-roll the `gh api repos/$REPO/issues` create — that inline envelope is exactly what the adoption lint (#3254) flags; the verb owns it (ADR 0190; `packages/pipeline-cli/src/tools/tracker/`) and enters the needs-triage queue by default:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # The five sections + a blank line + the footer.sh block, piped straight into the
 # create verb over stdin. No mktemp, no $BODY_FILE, no `$(cat …)` — nothing shared to
 # collide on. `create-issue` consumes the whole stream as the body; the quoted `<<'EOF'`
@@ -149,7 +151,7 @@ Stream the composed body **straight into the create call over stdin** — there 
 EOF
   echo   # blank line before the footer block
   claude-plugins/kampus-pipeline/skills/report/footer.sh   # emits its own `---` + <sub>… line
-} | pipeline-cli tracker create-issue --title "<title>"
+} | "$PCLI" tracker create-issue --title "<title>"
 ```
 
 The body never lands on disk under a shared name and never round-trips through a variable, so the two named failure paths this hardening closes — "simplify" to a fixed `/tmp/report-body.md`, or reuse one `$BODY_FILE` across two creates — have no surface to occur on: there is no file path to fix and no variable to reuse. This is the
