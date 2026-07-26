@@ -7,15 +7,31 @@
  * `command.ts`; this module never runs a command and never removes anything.
  *
  * Eligibility is SESSION-PRESENCE-based, never age-based (issue #3754 AC; ADR 0191 —
- * a resource claim's liveness rides its holder's presence). The presence signal is
- * grounded in an observable git fact: the harness locks each agent worktree with a
- * reason that embeds the owning session's process — `claude agent <id> (pid <N>
- * start <date>)` (git worktree list --porcelain surfaces it as the `locked <reason>`
- * line). That pid is the top-level crew SESSION process shared by all worktrees it
- * provisioned; when it dies the session is gone and its worktrees are orphaned. A
- * worktree is reap-eligible ONLY when that owning pid is provably not running — the
- * presence-derived liveness ADR 0191 mandates, not an mtime idle window (the
- * distinction from the age-based `worktree-sweep`, #2240).
+ * a resource claim's liveness rides its holder's presence), and presence is read from
+ * TWO independent owner signals (#3989):
+ *
+ *   1. **the git lock reason** — `claude agent <id> (pid <N> start <date>)`, surfaced by
+ *      `git worktree list --porcelain` as the `locked <reason>` line, with that pid probed
+ *      for liveness at the boundary.
+ *   2. **the `kampus-owner.json` owner stamp** — the session id `hooks/create-worktree.sh`
+ *      writes into the tree's git admin dir, resolved against the harness's live-session
+ *      registry by `worktree-sweep`'s `owner-liveness.ts` (the shared resolution, #3943).
+ *
+ * The second signal is why this verb stopped being inert over the population it was shipped
+ * for: only a small minority of managed trees carry a lock at any moment (9 of 252 on the
+ * crew host at the time of writing), so a lock-only gate spared essentially everything as
+ * `owner-unknown` — indistinguishable from correct fail-closed behaviour, the silent-no-op
+ * class (#3989, #3887).
+ *
+ * BOTH signals name the LAUNCHER — the crew pane that provisioned the tree — never the
+ * subagent occupying it: the lock pid is the pane's, the stamp is written by the hook before
+ * the subagent exists, and a subagent has no session identity of its own on this platform
+ * (#4001). That makes launcher death sound in exactly one direction, which is the only
+ * direction this verb uses: a subagent runs inside its launcher's process, so a DEAD launcher
+ * proves every tree it spawned is unoccupied. A live launcher proves nothing about occupancy
+ * — and needs to prove nothing here, because this verb only ever acts on proven death (the
+ * distinction from the age-based `worktree-sweep`, #2240, which must reclaim under a live
+ * launcher and therefore carries the `launcher-alive` grace window this verb does not need).
  *
  * The safety property is the whole point (issue #3754 AC; MEMORY "Safe worktree
  * prune"): a worktree is reaped ONLY when its owning session is DEAD *and* the tree
@@ -23,10 +39,13 @@
  * or unpushed tree is KEPT (surfaced in the report as kept-dirty), never `--force`d.
  * Every fact fails safe toward KEEP: an unprovable owner reads SPARE (never reaped), an
  * indeterminate status reads uncommitted, an unresolvable ancestry reads unpushed, a
- * pid that still resolves (incl. a reused pid) reads alive → spared. `git worktree
- * remove` *without* `--force` is the second enforcement line in `command.ts`; this
- * core only chooses WHETHER to attempt the remove, and never escalates to a forced one.
+ * pid that still resolves (incl. a reused pid) reads alive → spared. With two signals the
+ * fail-safe becomes a two-key rule: ANY alive signal spares, and death must be POSITIVELY
+ * proven by at least one — so conflicting signals (one alive, one dead) resolve to spare.
+ * `git worktree remove` *without* `--force` is the second enforcement line in `command.ts`;
+ * this core only chooses WHETHER to attempt the remove, and never escalates to a forced one.
  */
+import type {OwnerLiveness} from "../worktree-sweep/owner-liveness.ts";
 
 /** The segment that marks a harness-managed agent worktree: `<main>/.claude/worktrees/<id>`. */
 const MANAGED_SEGMENT = "/.claude/worktrees/";
@@ -62,36 +81,73 @@ export const parseAgentLockOwner = (lockReason: string | null): AgentLockOwner |
 	return Number.isFinite(pid) && pid > 0 ? {pid} : null;
 };
 
+/** What one owner signal says about the owning session, three-state and fail-safe toward `alive`. */
+export type OwnerPresence = "alive" | "dead" | "unknown";
+
 /**
- * One worktree reduced to exactly the facts the decision needs. `owner` is the parsed
- * session with its liveness already probed at the boundary (`null` when no crew-agent
- * owner is provable). `hasUncommitted` (git status dirty) and `hasUnpushed` (commits not
- * yet landed on `origin/main`) are gathered at the git boundary, both fail-safe toward
- * KEEP: an indeterminate status reads uncommitted, an unresolvable ancestry reads unpushed.
+ * Read `worktree-sweep`'s stamp+registry verdict as a reap presence. Only `"dead"` licenses a
+ * removal and only `"unknown"` is genuinely no-signal; EVERY other verdict — `"alive"`,
+ * `"launcher-alive"`, and any variant added later — collapses to `"alive"` ⇒ SPARE. Naming the
+ * two act-permitting verdicts positively (rather than switching exhaustively over the union) is
+ * what makes a future verdict fail safe by default instead of by remembering to handle it.
+ */
+export const presenceFromOwnerLiveness = (liveness: OwnerLiveness): OwnerPresence =>
+	liveness === "dead" ? "dead" : liveness === "unknown" ? "unknown" : "alive";
+
+/**
+ * One worktree reduced to exactly the facts the decision needs. `hasUncommitted` (git status
+ * dirty) and `hasUnpushed` (commits not yet landed on `origin/main`) are gathered at the git
+ * boundary, both fail-safe toward KEEP: an indeterminate status reads uncommitted, an
+ * unresolvable ancestry reads unpushed.
  */
 export interface ReapCandidate {
 	readonly path: string;
 	/** Short branch name, or `null` for a detached HEAD. Reported as the freed branch on a reap. */
 	readonly branch: string | null;
 	/**
-	 * The parsed owning session AND its probed liveness, or `null` when no crew-agent owner is
-	 * provable from the lock (unlocked, operator-locked, or unparseable). `alive` is the boundary's
-	 * `pid`-presence probe: it reads TRUE unless the pid is provably gone (a still-resolving or
-	 * reused pid fails safe toward alive → SPARE).
+	 * Signal 1 — the owning session parsed off the git lock reason AND its probed liveness, or
+	 * `null` when no crew-agent owner is provable from the lock (unlocked, operator-locked, or
+	 * unparseable). `alive` is the boundary's `pid`-presence probe: it reads TRUE unless the pid is
+	 * provably gone (a still-resolving or reused pid fails safe toward alive → SPARE).
 	 */
-	readonly owner: (AgentLockOwner & {readonly alive: boolean}) | null;
+	readonly lockOwner: (AgentLockOwner & {readonly alive: boolean}) | null;
+	/**
+	 * The tree carries a lock this reaper did NOT author (an operator's `git worktree lock`). Such
+	 * a pin is honored unconditionally: reclaiming requires `git worktree unlock`, and unlocking a
+	 * tree a human deliberately pinned is exactly the intent this verb must not override — so it is
+	 * spared even when the other signal proves its session dead.
+	 */
+	readonly foreignLock: boolean;
+	/** Signal 2 — the `kampus-owner.json` stamp resolved against the live-session registry (#3989). */
+	readonly stampPresence: OwnerPresence;
 	readonly hasUncommitted: boolean;
 	readonly hasUnpushed: boolean;
 }
+
+/**
+ * The two owner signals folded into one presence. ANY alive signal wins (a live lane is never
+ * touched), death requires POSITIVE proof from at least one signal, and everything else is
+ * `"unknown"` — so a tree with one alive and one dead signal reads alive, never dead.
+ */
+export const ownerPresence = (
+	c: Pick<ReapCandidate, "lockOwner" | "foreignLock" | "stampPresence">,
+): OwnerPresence => {
+	if (c.foreignLock) return "unknown";
+	if (c.lockOwner?.alive === true || c.stampPresence === "alive") return "alive";
+	if (c.lockOwner?.alive === false || c.stampPresence === "dead") return "dead";
+	return "unknown";
+};
 
 /** Why a worktree is SPARED — never a candidate this run, or its session is still live. */
 export type SpareReason =
 	/** Not under `.claude/worktrees/` — the primary checkout or a foreign tree; never touched. */
 	| "not-managed"
-	/** No crew-agent owner is provable from the lock (unlocked, operator-locked, unparseable) — can't prove orphaned. */
+	/** Neither signal proves an owner (unlocked+unstamped, or an untrustworthy registry) — can't prove orphaned. */
 	| "owner-unknown"
-	/** The owning session's process is still running — a LIVE lane; spared (the ADR 0191 presence gate). */
-	| "live-session";
+	/** The owning session is still running per some signal — a LIVE lane; spared (the ADR 0191 presence gate). */
+	| "live-session"
+	/** Locked by someone other than this reaper (an operator pin) — never unlocked, never reaped. */
+	| "foreign-lock";
 
 /** Why an orphan is KEPT despite a dead session — it holds recoverable work; never destroyed. */
 export type KeepDirtyReason =
@@ -110,25 +166,30 @@ export type ReapDecision =
  *
  *   1. Not a managed agent worktree → SPARE (`not-managed`). The primary checkout and any
  *      foreign tree are never candidates, regardless of their other facts.
- *   2. No provable crew-agent owner → SPARE (`owner-unknown`). Without a parseable owning
- *      pid the session's liveness cannot be established, so orphanhood is unprovable — never
- *      reap what we cannot prove dead.
- *   3. Owning session ALIVE → SPARE (`live-session`). The ADR 0191 presence gate: a running
- *      owner pid means a live lane; spared even when the tree is clean.
- *   4. (Dead session) uncommitted → KEEP-DIRTY (`uncommitted`). Recoverable working-tree work.
- *   5. (Dead session) unpushed → KEEP-DIRTY (`unpushed`). Committed work not on `origin/main`.
- *   6. Otherwise → REAP (`orphan-clean`). Dead session, clean tree, all commits landed —
+ *   2. Locked by someone else → SPARE (`foreign-lock`). An operator pin outranks both owner
+ *      signals, because reclaiming would mean unlocking what a human deliberately locked.
+ *   3. Some signal says ALIVE → SPARE (`live-session`). The ADR 0191 presence gate, and the
+ *      reason conflicting signals are safe: any alive reading beats any dead one.
+ *   4. No signal proves DEATH → SPARE (`owner-unknown`). Orphanhood unprovable — never reap
+ *      what we cannot prove dead. This is where the unstamped, unlocked historical pile sits.
+ *   5. (Dead session) uncommitted → KEEP-DIRTY (`uncommitted`). Recoverable working-tree work.
+ *   6. (Dead session) unpushed → KEEP-DIRTY (`unpushed`). Committed work not on `origin/main`.
+ *   7. Otherwise → REAP (`orphan-clean`). Dead session, clean tree, all commits landed —
  *      nothing recoverable to strand.
  */
 export const classifyCandidate = (c: ReapCandidate): ReapDecision => {
 	if (!isManagedAgentWorktree(c.path)) {
 		return {kind: "spare", reason: "not-managed"};
 	}
-	if (c.owner === null) {
-		return {kind: "spare", reason: "owner-unknown"};
+	if (c.foreignLock) {
+		return {kind: "spare", reason: "foreign-lock"};
 	}
-	if (c.owner.alive) {
+	const presence = ownerPresence(c);
+	if (presence === "alive") {
 		return {kind: "spare", reason: "live-session"};
+	}
+	if (presence === "unknown") {
+		return {kind: "spare", reason: "owner-unknown"};
 	}
 	if (c.hasUncommitted) {
 		return {kind: "keep-dirty", reason: "uncommitted"};
