@@ -50,13 +50,13 @@ import {homedir} from "node:os";
 import {join} from "node:path";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {runRefReclaim} from "../worktree-sweep/ref-reclaim-io.ts";
 import {
 	liveSessionIds,
 	parseOwnerStamp,
 	parseSessionRegistryEntry,
 	resolveOwnerLiveness,
 } from "../worktree-sweep/owner-liveness.ts";
+import {runRefReclaim} from "../worktree-sweep/ref-reclaim-io.ts";
 import {
 	computeWorktreeReapPlan,
 	isManagedAgentWorktree,
