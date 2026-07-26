@@ -111,22 +111,43 @@ Grounds:
   `liveness=LIVE` while the crew tracker reported the same lane held by a different engine. The two
   systems disagreed, and on that instance the mechanism this ADR promotes was the wrong one.
 
-  **The mechanism is not settled, and this ADR does not pick one.** Two readings survive the evidence.
-  Either the ADR 0191 presence probe reads a dead session as live; or — the competing reading — a
-  compaction does not kill the process but rotates the conversation, so with the session id rotating
-  under the *same* live process the pid is genuinely alive and the probe is **correct**, and what is
-  stale is the identity stamped on the marker. Under the second reading the marker reads live-and-true
-  while `claim is-mine` returns `lost` for the very session that holds the lane — the ADR
-  [0215](0215-claim-identity-continuity-proof.md) / #4045 identity-rotation class. #4177 (`type:investigation`,
-  p1) tracks the discrimination; its triage narrows the real exposure to the **identity-supply** path
-  rather than the tiebreak compare, since the pure resolver core is already unit-tested while a delegated
-  `--session` token hands the same identity to two engines by construction. #4045 (closed p0) is the
-  observed half: a live process locked out of its own claims, six lanes stranded.
+  **The mechanism is settled, and it is not a liveness defect.** ADR
+  [0215](0215-claim-identity-continuity-proof.md) already decided this: `CLAUDE_CODE_SESSION_ID` is "**not
+  stable for a process's lifetime** — compaction or a restart rotates it while the process keeps running,"
+  and the false-live reading is foreclosed there by name — a stamped claim whose pid probes `running` is
+  `live`, an unstamped claim is `unknown`, and "**both branches correctly conclude the claim stands** —
+  because the holder genuinely is alive." So the probe is behaving correctly; what is stale is the
+  *identity* stamped on the marker. This is the identity-rotation class (ADR 0215 / #4045), already
+  decided, with implementation tracked as #4118. #4177 (`type:investigation`, p1) narrows the residual
+  exposure to the **identity-supply** path rather than the tiebreak compare, since the pure resolver core
+  is already unit-tested while a delegated `--session` token hands the same identity to two engines by
+  construction. #4045 (closed p0) is the observed half: a live process locked out of its own claims, six
+  lanes stranded. The pid probe is authorized by **ADR 0215 §5** (amending ADR 0115 §5), *not* by ADR
+  0191 — 0191 governs the crew-MCP tracker keyspace, whose liveness is presence-lease/TTL-derived with no
+  pid probe at all, as 0215's own scope note says. That miscitation is a tracked class, corrected under
+  **#4120**; the other ADR 0191 citations in this record are about the tracker keyspace and stand.
 
-  **What holds under both readings**, and is therefore how this ADR must be read: *a pre-rotation
-  session's claim can read live while the identity that holds it can no longer assert ownership — so
-  `liveness=live` is not proof that the claiming identity is still actively working the lane.* This ADR
-  carries **no liveness guarantee**. It decides only which mechanism is authoritative when the two
+  **The residual, at full strength.** A `live` verdict proves a process exists at the stamped
+  `<host>/<pid>`; it does not prove the session identity named as owner still exists, nor that anyone is
+  still working the lane — the presence witness identifies a long-lived session process that outlives its
+  session ids and hosts many lanes concurrently, so it is a necessary condition for continuity and never a
+  sufficient one (ADR 0215 §2). The witness is therefore coarser than the owner key by **two independent
+  factors** — one process outlives its session ids, and one process concurrently hosts many lanes — so
+  `live` cannot distinguish (a) the original session still driving the lane, (b) a rotated successor on
+  the same process, (c) a sibling lane's agent sharing the ancestor process, or (d) an idle process that
+  abandoned the lane hours ago.
+
+  The #3955 observation above grounds both factors. Its `liveness=live` witness was pid 23523 — a real
+  live process whose start time *predates the claim it minted by ~11 hours*, which rules out pid reuse —
+  while an older marker's pid 58975 was genuinely gone and correctly read dead-and-superseded. The
+  mechanism works in both directions; what fails is identity, not liveness. And at that moment one session
+  held five open lanes (#3955, #4074, #4171, #4064, #4168) stamped with the identical witness — factor
+  two, observed directly.
+
+  **How this ADR must therefore be read:** *a claim can read live while the identity that holds it can no
+  longer assert ownership, and a live witness says nothing about which of its many lanes anyone is
+  actually working — so `liveness=live` is not proof that the claiming identity is still actively working
+  the lane.* This ADR carries **no liveness guarantee**. It decides only which mechanism is authoritative when the two
   disagree about a lane; that authority is not a warrant that the authoritative answer is current. The
   stronger gate is ADR 0215's continuity proof rather than a bare pid check, which is a further reason
   #4118 sits on the critical path. None of this reverses the ruling — #3938 records the tracker failing
