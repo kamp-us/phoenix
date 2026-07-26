@@ -21,10 +21,11 @@
  * make, refusing every §CP enqueue.
  */
 import {
+	boundHead,
 	GATE_KEYWORD,
 	isBoundToHead,
 	parseVerdict,
-	pickLatestAuthorized,
+	pickInForce,
 	polarityRe,
 	reviewedHeadSha,
 	type VerdictComment,
@@ -101,17 +102,41 @@ const newerOf = (
 	return a.id > b.id ? a : b;
 };
 
+/**
+ * The in-force one of the two forms — the same live-head-first rule `pickInForce` applies WITHIN a
+ * form, applied ACROSS them (#4189): a candidate bound to the live head strictly outranks one that
+ * is not, and recency decides only when both bind it (or neither does, where the fallback keeps the
+ * existing stale/SHA-less refusal intact). See `pickInForce` for why recency alone is not the key.
+ */
+const inForceOf = (
+	a: VerdictComment | undefined,
+	b: VerdictComment | undefined,
+	gate: VerdictGate,
+	headSha: string,
+): VerdictComment | undefined => {
+	const aAtHead = a !== undefined && isBoundToHead(boundHead(a.body, gate), headSha);
+	const bAtHead = b !== undefined && isBoundToHead(boundHead(b.body, gate), headSha);
+	if (aAtHead !== bAtHead) return aAtHead ? a : b;
+	return newerOf(a, b);
+};
+
 const decideNamespace = (gate: VerdictGate, input: GateDecisionInput): NamespaceDecision => {
 	const namespace = GATE_KEYWORD[gate];
 	const base = {gate, namespace} as const;
-	const marker = pickLatestAuthorized(input.comments, input.authorizedAuthors, polarityRe(gate));
+	const marker = pickInForce(
+		input.comments,
+		input.authorizedAuthors,
+		polarityRe(gate),
+		gate,
+		input.headSha,
+	);
 	// A non-§CP PR's advisory is NOT a candidate at all: it carries no bindable head and is not a
 	// PASS, so it must neither satisfy the namespace nor shadow an older bindable marker — exactly
 	// what `verdict read` already does by matching on `polarityRe` only.
 	const advisory = input.controlPlane
-		? pickLatestAuthorized(input.comments, input.authorizedAuthors, advisoryRe(gate))
+		? pickInForce(input.comments, input.authorizedAuthors, advisoryRe(gate), gate, input.headSha)
 		: undefined;
-	const latest = newerOf(marker, advisory);
+	const latest = inForceOf(marker, advisory, gate, input.headSha);
 
 	if (latest === undefined) {
 		return {
