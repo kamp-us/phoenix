@@ -2171,7 +2171,8 @@ fixes. Two outcomes:
   incoming `main` change and your branch's intent), `git add` the resolved files, `git rebase
   --continue`, and only then apply the review findings on top. Do **not** `git rebase --abort`
   and push the stale base — that just re-buries the conflict until merge. Because a rebase moves
-  the head, the eventual R3 push is a force-push (`git push --force-with-lease origin HEAD`), and
+  the head, the eventual R3 push needs `--force-with-lease` (pass that flag to the R3
+  `pipeline-cli verified-push` — never a bare push, which the corpus lint rejects), and
   the fresh re-review re-binds the verdict to the new head (the [rebase → re-review → ship is
   atomic](#a-rebase-invalidates-the-pass--rebase--re-review--ship-is-atomic) rule already covers
   this — the R3 push *is* that head-move, and the independent gate re-reviews it).

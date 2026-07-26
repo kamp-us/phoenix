@@ -176,8 +176,23 @@ export const checkFrontmatter = (file: string, content: string): FrontmatterFind
  * A `git push` invocation, allowing the option forms that appear at real push sites —
  * `git -C "$WT" push`, `git --git-dir=… push`, `git -c foo=bar push`. Anchored on the `git`
  * verb so prose that merely says "push" is never matched.
+ *
+ * The two alternatives inside the `*` are deliberately DISJOINT, and keeping them so is a
+ * security property of this line, not a style choice: this is the enforcement mechanism the
+ * whole check rests on, `skill-gh-lint.yml` runs it on every `pull_request`, and a hung job
+ * presents as *running* rather than failed — so a backtrackable pattern here is a wedge any
+ * crafted corpus line can pull. Two alternatives that can both consume the same token give
+ * k ways to split each of n tokens, i.e. exponential backtracking on input that never reaches
+ * `push` (CodeQL `js/redos`, #4217). Concretely, both of these were exponential and are gone:
+ *   - `--\S+=\S+\s+` alongside `-\S+\s+` — subsumed, and `\S+=\S+` re-split at every `=`
+ *     (165 chars → 75 s);
+ *   - `-[cC]\s+\S+\s+` alongside `-\S+\s+` with an unconstrained value token, which let a
+ *     `-c` run be consumed one token or two ways (140 chars → 64 s).
+ * The surviving disambiguator is `[^-\s]`: a `-c`/`-C` VALUE may not itself start with `-`,
+ * so exactly one alternative can ever consume a given token. 40 KB of the worst shapes now
+ * matches in under a millisecond, and `lint.unit.test.ts` pins that with a wall-clock bound.
  */
-const BARE_GIT_PUSH = /\bgit\s+(?:-[cC]\s+\S+\s+|--\S+=\S+\s+|-\S+\s+)*push\b/g;
+const BARE_GIT_PUSH = /\bgit\s+(?:-[cC]\s+[^-\s]\S*\s+|-\S+\s+)*push\b/g;
 
 /** Every file the bare-push check looks at: the whole handed-in corpus (`.md` + `.sh`). */
 export const isBarePushScoped = (path: string): boolean => {

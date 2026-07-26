@@ -251,6 +251,59 @@ describe("scanBarePush — executable `git push` only (#4213)", () => {
 	it("is out of scope for a non-.md/.sh file", () => {
 		assert.strictEqual(scanBarePush("src/thing.ts", "git push origin main").length, 0);
 	});
+
+	// #4217 — the pattern itself must not be wedgeable. This gate runs on every
+	// `pull_request` over a corpus anyone can add a line to, and a hung job presents as
+	// *running*, not failed, so a crafted line that never reaches `push` must still return.
+	// Both shapes below hung for 60+ SECONDS on real, shipped-at-the-time patterns; the 1 s
+	// bound is a ~60x margin over the fixed pattern's sub-millisecond time, so it pins the
+	// linearity without flaking on a loaded CI box. Deleting these is how the ambiguity
+	// silently comes back.
+	describe("is not exponentially backtrackable (#4217)", () => {
+		const boundedScan = (line: string) => {
+			const t0 = performance.now();
+			const findings = scanBarePush("skills/x/SKILL.md", fenced(line));
+			return {ms: performance.now() - t0, findings};
+		};
+
+		it("returns fast on a long `--a=b=c` run that never reaches `push`", () => {
+			// `--\S+=\S+\s+` overlapping `-\S+\s+`, re-split at every `=`: 165 chars → 74.8 s.
+			const {ms, findings} = boundedScan(`git ${"--a=b=c ".repeat(400)}x`);
+			assert.strictEqual(findings.length, 0);
+			assert.isBelow(ms, 1000);
+		});
+
+		it("returns fast on a long `-c` run that never reaches `push`", () => {
+			// `-[cC]\s+\S+\s+` overlapping `-\S+\s+` on a bare `-c` token: 140 chars → 64.0 s.
+			const {ms, findings} = boundedScan(`git ${"-c ".repeat(400)}x`);
+			assert.strictEqual(findings.length, 0);
+			assert.isBelow(ms, 1000);
+		});
+
+		it("returns fast on a mixed option flood that never reaches `push`", () => {
+			const {ms, findings} = boundedScan(`git ${"-c a=b --x=y -C /d ".repeat(200)}x`);
+			assert.strictEqual(findings.length, 0);
+			assert.isBelow(ms, 1000);
+		});
+
+		// The disambiguator (`[^-\s]` on the `-c` VALUE) must not have narrowed what matches.
+		it("still flags every real option form the push sites use", () => {
+			for (const line of [
+				"git -c a=b push",
+				"git -c user.name=x -C /d push origin main",
+				"git --git-dir=/x/.git push",
+				"git --no-pager push",
+				"git -c core.hooksPath=/dev/null push --force-with-lease origin HEAD",
+				"git -C /d -c a=b --git-dir=/x/.git push",
+			]) {
+				assert.strictEqual(
+					scanBarePush("skills/x/SKILL.md", fenced(line)).length,
+					1,
+					`expected a finding for: ${line}`,
+				);
+			}
+		});
+	});
 });
 
 describe("lintCorpus — bare-push findings + scope (ADR 0092)", () => {

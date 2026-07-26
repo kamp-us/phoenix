@@ -145,7 +145,7 @@ const remoteFlag = Flag.string("remote").pipe(
 const branchFlag = Flag.string("branch").pipe(
 	Flag.withDefault(""),
 	Flag.withDescription(
-		"the branch to push (default: the branch currently checked out in --cwd, re-derived live). A detached HEAD resolves to UNKNOWN and pushes nothing.",
+		"the branch to push (default: the branch currently checked out in --cwd, re-derived live). A detached HEAD resolves to UNKNOWN and pushes nothing. Naming a branch OTHER than the one checked out in --cwd yields NOT-MOVED, since the expected sha is always --cwd's HEAD.",
 	),
 );
 
