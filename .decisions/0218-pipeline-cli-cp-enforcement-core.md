@@ -161,13 +161,26 @@ addressed by name rather than by "the guards are green."
 **(a) Transitive imports of the retained core.** Computed mechanically, not asserted — see
 [`core-import-closure.unit.test.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/core-import-closure.unit.test.ts).
 
-> **The walk needs one non-obvious rule to mean anything: `registry.ts` is a SINK.** It imports all
-> 68 tools' `command.ts` to build `registeredTools[]`, so seeding through it reaches 246 modules and
-> the check degenerates to "everything is core" — vacuously true, proving nothing. The registration
-> fan-out is a *listing* edge, not a behavioral one: a gate does not run through its siblings'
-> commands. Any future closure check must cut it the same way.
+> **The walk needs two non-obvious rules to mean anything.**
+>
+> **It must see DYNAMIC `import()`.** `registry.ts` wires all 72 tool `command.ts` modules lazily
+> (`tool("verdict", () => import("./tools/verdict/command.ts"))`, #4008), and a static-only
+> `(?:from|import)\s+"…"` matcher cannot match `import(` at all — it saw two edges there and the
+> walk was blind to every dynamic import in the package. A core module that later adds
+> `import("./tools/<non-core>/x.ts")` would then be a **silent escape** with the check still green.
+> A closure walker blind to the mechanism the codebase uses to wire tools is not evidence, so the
+> matcher covers static `from`/`import`, dynamic `import(`/`require(`, and both quote styles, with
+> extension and `index.ts` resolution and a **fail-loud** throw on an unresolvable specifier.
+>
+> **`registry.ts`'s registration fan-out is cut as an EDGE, not as a node.** Following it reaches
+> 250 modules (211 escapes) and the check degenerates to "everything is core" — vacuously true,
+> proving nothing. The fan-out is a *listing* edge, not a behavioral one: a gate does not run
+> through its siblings' commands. Cutting only that one edge — while still following every other
+> edge out of `registry.ts` — is what keeps the walk tractable without over-pruning; the
+> node-scoped and edge-scoped walks give the same answer, which is how we know it does not
+> over-prune. Any future closure check must cut it the same way.
 
-With the `src/` root retained, the escapes measured on the naive-minus-registry graph collapse from
+With the `src/` root retained, the escapes measured on the fan-out-pruned graph collapse from
 eleven to four; **promoting `tracker/gh-io.ts` into the core takes it to three.** `gh-io.ts` has no
 relative imports of its own (only `effect`), so retaining it pulled nothing new into the closure —
 re-derived mechanically, not assumed. The remaining three are **retained as a recorded residue, not
