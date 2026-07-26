@@ -22,6 +22,12 @@
  *     (never `git worktree remove`, whose path is missing). This is the bulk of a cross-session
  *     pile: trees that outlived the sessions whose temp roots were cleaned from under them.
  *
+ * The surviving branch ref is what makes that unconditional prune safe — and it is also why a
+ * ref is NOT reclaimed by the same decision as its tree. Ref deletion is a separate pass with a
+ * separate, stricter predicate (`ref-reclaim.ts`, #4190): a tree is a replaceable container, but
+ * a ref is the only thing keeping unpushed commits reachable, so a ref is deleted only on
+ * positive proof its content is already on `origin/main`. Nothing in THIS module deletes a ref.
+ *
  * The safety property is the whole point (MEMORY "Safe worktree prune", #1243 AC):
  * a worktree is removable ONLY when it is clean AND its branch's content has already
  * landed on `origin/main` — either ancestor-reachable (`reachableFromOriginMain`: a

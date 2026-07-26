@@ -33,6 +33,12 @@
  *      is caught and reported as KEPT, never escalated to `--force`. The unlock is scoped to
  *      trees the classifier already proved dead+clean, so it never frees a live lane's lock.
  *
+ * Removing a tree does not delete the branch it was on — `git worktree remove` only un-checks-it-out
+ * — so a reaped tree's ref is handed to the shared ref-reclaim pass (`../worktree-sweep/ref-reclaim.ts`),
+ * which deletes it only on positive proof its content already lives on `origin/main` (#4190). That is a
+ * STRICTER predicate than reaping the tree, and deliberately so: the tree is replaceable, the ref is the
+ * only thing keeping unpushed commits reachable.
+ *
  * DRY-RUN by default: with no flag it prints what it WOULD reap / keep-dirty / spare and
  * exits 0 without touching anything. The git IO uses `execFileSync` directly (mirrors
  * `worktree-sweep`), so the tool's requirement stays at the Node platform ceiling the
@@ -50,6 +56,7 @@ import {
 	parseSessionRegistryEntry,
 	resolveOwnerLiveness,
 } from "../worktree-sweep/owner-liveness.ts";
+import {runRefReclaim} from "../worktree-sweep/ref-reclaim-io.ts";
 import {
 	computeWorktreeReapPlan,
 	isManagedAgentWorktree,
@@ -312,14 +319,25 @@ const worktreeReap = Command.make(
 				yield* Console.log(reasonLine(r.worktree.path, deadOwnerLabel(r.worktree)));
 		}
 
+		// The branches the reapable trees sit on. Each is re-decided by the ref predicate on its own
+		// (#4190) — reaping a tree does not by itself make its ref safe to drop.
+		const branchesOfReapable = plan.toReap.flatMap((r) =>
+			r.worktree.branch === null ? [] : [r.worktree.branch],
+		);
+
 		if (!execute) {
 			yield* Console.log("  (dry-run — pass --execute to reap; nothing touched)");
+			yield* runRefReclaim({
+				label: "worktree-reap refs",
+				scope: {kind: "named", names: branchesOfReapable},
+				execute: false,
+			});
 			return;
 		}
 
 		let reaped = 0;
 		let refused = 0;
-		const freedBranches: Array<string> = [];
+		const reclaimableBranches: Array<string> = [];
 		for (const r of plan.toReap) {
 			const path = r.worktree.path;
 			// If the tree still holds a lock it is OUR OWN stale pid-lock (its session is proven dead,
@@ -338,9 +356,12 @@ const worktreeReap = Command.make(
 			const removed = runGit(["worktree", "remove", path]);
 			if (removed.ok) {
 				reaped += 1;
-				if (r.worktree.branch !== null) freedBranches.push(r.worktree.branch);
+				if (r.worktree.branch !== null) reclaimableBranches.push(r.worktree.branch);
+				// "checked out nowhere", NOT "deleted": `git worktree remove` never deletes a branch. The
+				// old wording claimed a reclaim that had not happened, which is plausibly why six weeks of
+				// ref growth went unnoticed (#4190). The ref pass below is what may actually delete it.
 				yield* Console.log(
-					`  reaped ${path}${r.worktree.branch !== null ? ` (freed branch ${r.worktree.branch})` : ""}`,
+					`  reaped ${path}${r.worktree.branch !== null ? ` (branch ${r.worktree.branch} no longer checked out)` : ""}`,
 				);
 			} else {
 				refused += 1;
@@ -349,10 +370,15 @@ const worktreeReap = Command.make(
 				);
 			}
 		}
+		// After the removals, so a just-freed ref is no longer checked out by a registered worktree.
+		const refs = yield* runRefReclaim({
+			label: "worktree-reap refs",
+			scope: {kind: "named", names: reclaimableBranches},
+			execute: true,
+		});
 		yield* Console.log(
-			`worktree-reap: reaped ${reaped}, kept ${plan.keptDirty.length + refused}, spared ${plan.spared.length}` +
-				(refused > 0 ? ` (${refused} reapable but refused by git → kept)` : "") +
-				(freedBranches.length > 0 ? ` — freed branches: ${freedBranches.join(", ")}` : ""),
+			`worktree-reap: reaped ${reaped}, refs deleted ${refs.deleted}, kept ${plan.keptDirty.length + refused}, spared ${plan.spared.length}` +
+				(refused > 0 ? ` (${refused} reapable but refused by git → kept)` : ""),
 		);
 	}),
 ).pipe(
