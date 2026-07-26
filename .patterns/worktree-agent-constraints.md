@@ -264,6 +264,15 @@ per running session).
 could not execute leaks an orphan rather than destroying a live tree. A sweep that removes nothing
 and reports `registry UNRESOLVED` is the gate working, not a no-op.
 
+**The stamp has no live producer right now ([#4180](https://github.com/kamp-us/phoenix/issues/4180)).**
+The paragraph above describes the code contract, not the runtime: the harness provisions agent
+worktrees on its own internal path — every registered tree sits on a harness-made
+`worktree-<name>` branch, which `create-worktree.sh`'s `git worktree add --detach` never produces —
+so the `WorktreeCreate` hook does not run and no tree is stamped (272 registered, 0 stamped). Read
+"the sweep resolves the owner from the stamp" as what the code *would* do; in the field it resolves
+`owner-unknown` every time and KEEPs. Safe direction, but the sweep is effectively lock-only today,
+so `0 reapable` is partly an absence of evidence.
+
 **Expect near-silence, and not only from legacy trees.** The stamp carries the **launcher's**
 session id, and a crew pane is long-lived — so every tree that pane provisioned reads `alive` for the
 pane's entire lifetime, not just for as long as the subagent that used it ran. Combined with the

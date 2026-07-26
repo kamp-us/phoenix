@@ -14,15 +14,51 @@
 #      fields and fail-closed on EVERY worktree spawn crew-wide (the golden fixture +
 #      create-worktree.hook.test.ts now assert the captured shape so that can't recur).
 #  * stdout — ON SUCCESS, ONLY the resulting worktree path (Claude Code adopts it).
-#  * exit   — 0 on success; NON-ZERO on ANY failure. A non-zero WorktreeCreate blocks
-#             creation, so the coder fail-closes on the Step-4 preflight — no worse than
-#             today's fall-back-to-primary, and never a silently dep-less worktree.
+#  * exit   — 0 on success; NON-ZERO on ANY failure. A non-zero WorktreeCreate ABORTS the
+#             spawn — the harness rethrows and never falls back to its own provisioning
+#             (verified against the harness's agent-worktree creator, see #4180 below), so
+#             the coder never lands in a silently dep-less or primary-checkout tree.
 #
 # `git worktree add` fires the existing lefthook post-checkout `bootstrap-deps` install
 # (ADR 0109) — we REUSE it, never reimplement it, so 0109's provision-not-share
 # correctness is preserved unchanged.
+#
+# RUNTIME REALITY (#4180): on the harness path that provisions `isolation:worktree` agent
+# trees, this hook is NOT being invoked at all. The harness's creator takes the hook only
+# when its `hasWorktreeCreateHook()` predicate is true and otherwise provisions internally,
+# on a `worktree-<name>` branch; every registered agent tree on this checkout carries that
+# branch and none carries this hook's `--detach` head or its owner stamp. So everything this
+# hook carries — the #3621 fresh-base fetch, the ADR 0178 600s install budget, the #3943
+# owner stamp — is currently inert on that path. The trace below is what makes that
+# falsifiable instead of inferred.
 
 set -u
+
+# Unconditional invocation trace — the ONE artifact that separates "the harness never invoked
+# this hook" from "it invoked it and the hook died early" (#4180). Everything else this script
+# writes happens only AFTER `git worktree add` succeeds, so those two cases leave byte-identical
+# on-disk evidence and the question is unanswerable from artifacts alone. This line is written
+# before any parsing, any PATH manipulation, and any git call: its presence proves invocation,
+# its absence proves non-invocation.
+#
+# PATH-resilient and non-fatal BY CONSTRUCTION, and both properties are load-bearing rather than
+# polish: `git worktree add` execs hooks with a stripped PATH (#787–#789) and `.git/hooks` is
+# shared across every lane, so a trace that hard-failed here would abort worktree creation for
+# the whole crew. Hence no jq, no unguarded external command, and a failed write degrades to
+# "no trace" and never to a non-zero exit. The log lives outside any repo so it can never dirty
+# a worktree (a dirty tree is KEPT forever by the sweep).
+KAMPUS_WORKTREE_HOOK_LOG="${KAMPUS_WORKTREE_HOOK_LOG:-/tmp/kampus-worktree-create.log}"
+trace() {
+	# `date` may be unreachable under a stripped PATH; an unknown timestamp is still proof of
+	# invocation, so degrade the field rather than lose the line.
+	local ts
+	ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" || ts=""
+	[ -n "$ts" ] || ts="unknown"
+	# The whole redirect is wrapped so a FAILED redirect is silenced too: `cmd >>log 2>/dev/null`
+	# applies the append first, and the shell reports its failure on the still-open stderr.
+	{ printf '%s pid=%s %s\n' "$ts" "$$" "$*" >>"$KAMPUS_WORKTREE_HOOK_LOG"; } 2>/dev/null || true
+}
+trace "entry"
 
 # Parse the payload FIRST, under the inherited PATH — before the defensive toolchain PATH
 # below. Parsing needs only jq-or-coreutils, and keeping it ahead of the toolchain prepend
@@ -52,11 +88,13 @@ session_id="$(extract session_id)"
 # cwd + name are both mandatory — the path is CONSTRUCTED from them, so either missing
 # means there is nothing safe to create. Fail-closed (never a silent no-op).
 if [ -z "$cwd" ] || [ -z "$name" ]; then
+	trace "fail: payload missing cwd/name"
 	echo "create-worktree: WorktreeCreate payload missing cwd/name — cannot provision (fail-closed)." >&2
 	exit 1
 fi
 
 worktree_path="$cwd/.claude/worktrees/$name"
+trace "payload: name=$name session=${session_id:-none} cwd=$cwd"
 
 # NOW ensure a full PATH for git + the post-checkout `pnpm install` it fires. The hook exec
 # env's PATH handling is UNDOCUMENTED (the sibling harness `git worktree add` strips PATH to
@@ -69,6 +107,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/bin:/usr/bin:${HOME:-}/.local/bin
 # Operate on the repo the payload names, not merely the process cwd, so the constructed path
 # and the git op agree even if the hook exec cwd ever drifts from the payload's `cwd`.
 if ! cd "$cwd" 2>/dev/null; then
+	trace "fail: cwd not accessible"
 	echo "create-worktree: payload cwd '$cwd' is not accessible — refusing (fail-closed)." >&2
 	exit 1
 fi
@@ -84,6 +123,7 @@ fi
 # here because the base is the freshly-fetched remote tip, never local `main`. Fail LOUD if the
 # fetch fails rather than silently branching from a possibly-stale base.
 if ! git fetch --quiet origin main >&2; then
+	trace "fail: git fetch origin main"
 	echo "create-worktree: git fetch origin main failed — refusing to branch from a possibly-stale base (fail-closed, #3621)." >&2
 	exit 1
 fi
@@ -95,6 +135,7 @@ fi
 # already checked out'), and the coder re-branches in its Step-4 preflight regardless, so the base
 # HEAD is throwaway. A detached checkout at FETCH_HEAD still fires post-checkout (ADR 0109).
 if ! git worktree add --detach "$worktree_path" FETCH_HEAD >&2; then
+	trace "fail: git worktree add --detach $worktree_path"
 	echo "create-worktree: git worktree add --detach '$worktree_path' FETCH_HEAD failed — refusing (fail-closed)." >&2
 	exit 1
 fi
@@ -118,11 +159,17 @@ if [ -n "$session_id" ]; then
 		printf '{"sessionId":"%s","ownerKind":"launcher","worktreeName":"%s","stampedAt":"%s"}\n' \
 			"$session_id" "$name" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 			>"$gitdir/kampus-owner.json" 2>/dev/null \
-			|| echo "create-worktree: could not stamp owner session (tree reads owner-unknown → never reaped)." >&2
+			&& trace "stamped: $gitdir/kampus-owner.json" \
+			|| { trace "fail: stamp write"; echo "create-worktree: could not stamp owner session (tree reads owner-unknown → never reaped)." >&2; }
+	else
+		trace "fail: stamp gitdir unresolved"
 	fi
 else
+	trace "unstamped: payload carried no session_id"
 	echo "create-worktree: payload carried no session_id — tree reads owner-unknown (never reaped, #3943)." >&2
 fi
+
+trace "ok: $worktree_path"
 
 # Success: emit ONLY the path on stdout (all git/install chatter went to stderr above).
 printf '%s\n' "$worktree_path"
