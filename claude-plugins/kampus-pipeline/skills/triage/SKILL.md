@@ -17,7 +17,10 @@ an unclear issue before you judge it, and never close a human's issue at all.
 You are also where the **forward-motion question** binds. Every issue is priced against
 "what does this move forward?", and every triaged issue leaves with a **home** — an
 arc/campaign milestone, or a standing lane, or a kill (ADR 0202, Step 6). That is the
-doctrine's enforcement seam: teeth at intake, not in a later hand-run sweep.
+doctrine's enforcement seam: teeth at intake, not in a later hand-run sweep. On
+**lane-entering** work that same step also **drafts the pitch** — the founder-approved bet
+(Problem / Arc / Appetite / Rabbit-holes / No-gos) whose `Arc` field *is* the home you just
+assigned, never a second arc check (Step 6, #3909).
 
 ## The mandate, per issue
 
@@ -672,9 +675,58 @@ it reads as un-triaged. The *signal* isn't retired, it just became greppable: th
 standing-lane labels **are** freeze-by-absence made legible. Untouched: 0072 §1–§3 (what a
 milestone encodes, the two kinds, never create one).
 
+**On lane-entering work, the home you just assigned becomes the pitch's `Arc`.** The same
+outcome, carried forward — not a second question. Continue into the pitch draft below before
+you label; on everything else, skip straight to
+[Apply the labels](#apply-the-labels-triaged-path).
+
+#### Draft the pitch (lane-entering work only) — the `Arc` field IS the home you just assigned
+
+Work enters a build lane only carrying a **founder-approved pitch**: direction binds
+structurally at intake, because an AFK factory cannot enforce it by founder attention (founder
+ruling, [#3909](https://github.com/kamp-us/phoenix/issues/3909)). You **draft** it; only the
+**founder approves** it. Drafting an unapproved pitch is correct and expected — the issue simply
+isn't a bet yet.
+
+**Who needs one.** Exactly the **lane-entering** set: a `type:epic`, or a `type:feature` with
+**no parent**. An epic's child **inherits its epic's pitch** — never draft a second one on a
+child. `type:bug` / `type:chore` / `type:decision` / `type:investigation` are **out of scope**;
+maintenance and questions are not bets. This is the same scope
+[`pipeline-cli pitch-guard`](../../../../packages/pipeline-cli/) enforces — cite it, don't
+re-derive it.
+
+**How to draft one.** Append the `## Pitch` section to the issue body in the canonical
+five-field shape — **Problem / Arc / Appetite / Rabbit-holes / No-gos** — defined once in the
+formats contract's [§PITCH](../gh-issue-intake-formats.md) (read it there for the field
+semantics, the approval carrier, and the scope rule; this step is the *drafting* half only).
+Two fields are where triage gets it wrong, so state them explicitly:
+
+- **`Arc` is the outcome you just produced**, restated: the milestone you homed it in, or the
+  standing lane you exempted it with. **Do not re-ask the arc question** — there is exactly one
+  arc question in the pipeline, it is the one above, and `homing-guard` is its teeth. A second,
+  parallel arc check here would be two sources for one answer.
+- **`Appetite` is a founder number, not yours.** Denominated in 2-week cycles. Draft your
+  honest read of the ceiling, but it binds **only** once the founder's `pitch-approved:` comment
+  names that same number; an appetite you set is a proposal.
+
+**Never post the approval yourself.** The `pitch-approved:` marker is a **founder seat** — the
+one call that is not agent-satisfiable. Triage has **no** write path to it: draft the pitch,
+stamp the labels, and leave the bet unplaced until the founder places it. Do not comment an
+approval "on his behalf," and do not treat your own draft as approved.
+
+**Verify the draft at the seam.** Same shape as the homing check — run the guard on the one
+issue you just drafted, so a red names *this* issue rather than the whole backlog:
+
+```bash
+pipeline-cli pitch-guard check --issue <N>   # out-of-scope issues pass; a red is this draft
+```
+
+An **unapproved** pitch is a legitimate, expected state for a freshly-triaged issue — the guard
+reports it as awaiting the founder, not as your defect to fix.
+
 This step is still **out of scope** for: creating milestones, the inherit logic (that is
-`plan-epic`'s job for an epic's children), and pick-order (`write-code` consumes milestone,
-it doesn't assign it).
+`plan-epic`'s job for an epic's children), pick-order (`write-code` consumes milestone,
+it doesn't assign it), and **approving** any pitch you draft.
 
 ### Apply the labels (triaged path)
 
