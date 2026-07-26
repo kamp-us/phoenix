@@ -1,5 +1,5 @@
 /**
- * The `claim` tool — `pipeline-cli claim is-mine|release|status --issue <N> [--session <sid>]`.
+ * The `claim` tool — `pipeline-cli claim is-mine|release|status|audit`.
  *
  * The issue-scoped "is this claim mine?" resolver (#3687): resolve the earliest
  * authorized claim on an arbitrary issue (ADR 0115 §2 / gh-issue-intake-formats.md
@@ -24,6 +24,13 @@
  * surface that makes a claim no release ever retracted visible instead of silently stranding a
  * lane. Neither verb evicts a claim it cannot prove is ours.
  *
+ * `audit` closes the one lifetime hole neither can reach (#4031): a marker written before every
+ * writer stamped presence (#3987) carries nothing for ADR 0191 liveness to evaluate, so it holds
+ * its lane forever and re-claiming cannot help. It names that bounded population across the open
+ * issues and, under `--execute`, retires each member through `release` under the marker's own
+ * token — reusing the one retraction mechanism rather than growing a second. The resolution rule
+ * is untouched: a stamped claim is never a candidate, whatever its age (`claim-audit.ts`).
+ *
  * The session id defaults to `$CLAUDE_CODE_SESSION_ID` (the only agent-distinguishable
  * signal under the shared `usirin` login); `--session` overrides it for the
  * orchestrated/delegated-token path (`MY_CLAIM`) and for tests. An absent session id
@@ -34,6 +41,7 @@
  */
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {DEFAULT_MIN_AGE_HOURS, type LockedLane, STAMPING_CUTOFF} from "./claim-audit.ts";
 import type {ClaimVerdict} from "./claim-is-mine.ts";
 import {Github, GithubLive} from "./github.ts";
 
@@ -151,10 +159,80 @@ const status = Command.make(
 	),
 );
 
-export const claimCommand = Command.make("claim").pipe(
-	Command.withSubcommands([isMine, release, status]),
+const auditIssueFlag = Flag.integer("issue").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"audit this one lane instead of scanning every open issue (the cheap path when a stall is already known)",
+	),
+);
+
+const executeFlag = Flag.boolean("execute").pipe(
+	Flag.withDescription(
+		"retire the retirable markers through `claim release` (default: dry-run, report only)",
+	),
+);
+
+const minAgeFlag = Flag.integer("min-age-hours").pipe(
+	Flag.withDefault(DEFAULT_MIN_AGE_HOURS),
+	Flag.withDescription(
+		"how old a pre-cutoff marker must be before retirement will touch it — lower it for a claimant you have confirmed is gone, never to widen a bulk sweep",
+	),
+);
+
+const cutoffFlag = Flag.string("cutoff").pipe(
+	Flag.withDefault(STAMPING_CUTOFF),
+	Flag.withDescription(
+		"ISO-8601 UTC instant after which every claim writer stamps presence (default: this repo's stamping era)",
+	),
+);
+
+/** One report row: the lane, the marker holding it, its disposition, and what it is shadowing. */
+const laneLine = (lane: LockedLane): string =>
+	`  #${lane.issue}\t${lane.disposition === "retire" ? "RETIRE" : "hold  "}\t${lane.reason}\t` +
+	`marker ${lane.owner.id} (${lane.owner.session}, ${lane.owner.createdAt})` +
+	(lane.shadowed.length === 0 ? "" : `\tshadowing ${lane.shadowed.length} later claim(s)`);
+
+const audit = Command.make(
+	"audit",
+	{issue: auditIssueFlag, execute: executeFlag, minAgeHours: minAgeFlag, cutoff: cutoffFlag},
+	Effect.fn(function* ({issue, execute, minAgeHours, cutoff}) {
+		const scoped = Option.getOrNull(issue);
+		const {report, retired} = yield* (yield* Github).audit({
+			issues: scoped === null ? null : [scoped],
+			policy: {cutoff, minAgeMs: minAgeHours * 60 * 60 * 1000, now: new Date().toISOString()},
+			execute,
+		});
+		yield* Console.log(
+			JSON.stringify({cutoff, minAgeHours, executed: execute, ...report, retired}),
+		);
+		if (report.scanned === 0) {
+			// Fail closed on an empty scan (ADR 0092): "no lane is locked" and "the scan read nothing"
+			// are the same output otherwise, and the second is a broken read reported as a clean bill.
+			process.stderr.write(
+				"claim: audit scanned ZERO lanes — refusing to report a clean audit off an empty scan. Check `gh` auth and the resolved repo.\n",
+			);
+			process.exit(REFUSE_EXIT_CODE);
+			return;
+		}
+		for (const lane of report.locked) process.stderr.write(`${laneLine(lane)}\n`);
+		process.stderr.write(
+			`claim: audit scanned ${report.scanned} lane(s): ${report.locked.length} held by an unstamped marker, ` +
+				`${report.retirable.length} retirable (pre-stamping, aged past ${minAgeHours}h). ` +
+				(execute
+					? `Retired ${retired.length} through \`claim release\`.\n`
+					: "Dry run — re-run with --execute to retire them.\n"),
+		);
+	}),
+).pipe(
 	Command.withDescription(
-		"Resolve, release, and inspect issue claims (ADR 0115 earliest-authorized-claim): default-deny 'is this mine', affirmative self-release, and the stale-claim inventory",
+		"Audit open lanes for pre-stamping claim markers no liveness can supersede, and retire the bounded legacy population through `claim release`",
+	),
+);
+
+export const claimCommand = Command.make("claim").pipe(
+	Command.withSubcommands([isMine, release, status, audit]),
+	Command.withDescription(
+		"Resolve, release, and inspect issue claims (ADR 0115 earliest-authorized-claim): default-deny 'is this mine', affirmative self-release, the stale-claim inventory, and the pre-stamping legacy audit",
 	),
 	Command.provide(GithubLive),
 );

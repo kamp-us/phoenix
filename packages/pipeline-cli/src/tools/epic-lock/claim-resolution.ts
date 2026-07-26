@@ -87,8 +87,13 @@ export type ClaimOutcome =
 	| {readonly _tag: "won"; readonly winner: ClaimWinner}
 	| {readonly _tag: "lost"; readonly winner: ClaimWinner};
 
-/** Every authorized claim on the target, ordered earliest-first by `(createdAt, id)`. */
-const authorizedClaims = (
+/**
+ * Every authorized claim on the target, ordered earliest-first by `(createdAt, id)`. Exported
+ * so a consumer that needs the whole ordered set — the legacy audit, which reports what an
+ * unstamped holder is shadowing — reads it here rather than re-deriving the ADR 0055 filter and
+ * the ADR 0115 §2 ordering a second time.
+ */
+export const authorizedClaims = (
 	comments: ReadonlyArray<ClaimComment>,
 	authorizedAuthors: ReadonlyArray<string>,
 ): ReadonlyArray<ClaimWinner> => {
