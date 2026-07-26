@@ -31,6 +31,14 @@
 # hook carries — the #3621 fresh-base fetch, the ADR 0178 600s install budget, the #3943
 # owner stamp — is currently inert on that path. The trace below is what makes that
 # falsifiable instead of inferred.
+#
+# The harness's own provisioning is NOT an equivalent substitute for the two inert fixes:
+#   * freshness (#3621) — the harness does fetch, but THROTTLED on `FETCH_HEAD` mtime and
+#     falling back to the local `HEAD` with only a warning when the fetch fails. This hook
+#     fails closed instead, so #3621's guarantee is strictly WEAKER in practice, not equal.
+#   * the 600s budget (ADR 0178) — that is a hook-config `timeout`; it governs this hook's
+#     invocation and nothing at all about the harness's internal provisioning.
+# Neither is visibly broken today, but neither is in effect by our doing.
 
 set -u
 

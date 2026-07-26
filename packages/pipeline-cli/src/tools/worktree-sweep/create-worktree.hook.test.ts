@@ -53,15 +53,23 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 	// append to the shared default log the live forensic record lives in.
 	let traceLog: string;
 
+	// A private trace target, for any test that ASSERTS on trace content. The suite-scoped
+	// `traceLog` is append-only and shared, so an `assert.include` over it is satisfied by any
+	// earlier test's line — which made both #4180 trace assertions vacuous: `entry` was already
+	// there from the first provisioning test, and `unknown pid=` from the jq-less test, whose
+	// bindir carries no `date` and so already exercises the degradation. Own log ⇒ the assertion
+	// observes only its own run and actually fails when the behaviour breaks.
+	const freshTraceLog = (): string => join(mkdtempSync(join(tmpdir(), "wtc-trace-")), "trace.log");
+
 	// Run the hook script with `payload` on stdin, cwd inside the repo — exactly as
 	// Claude Code fires it. Never throws: a non-zero exit is captured, not raised.
-	const run = (cwd: string, payload: string): RunResult => {
+	const run = (cwd: string, payload: string, logPath?: string): RunResult => {
 		try {
 			const stdout = execFileSync("bash", [SCRIPT], {
 				cwd,
 				input: payload,
 				encoding: "utf8",
-				env: {...process.env, KAMPUS_WORKTREE_HOOK_LOG: traceLog},
+				env: {...process.env, KAMPUS_WORKTREE_HOOK_LOG: logPath ?? traceLog},
 			});
 			return {code: 0, stdout, stderr: ""};
 		} catch (e) {
@@ -81,7 +89,7 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 	};
 
 	beforeAll(() => {
-		traceLog = join(mkdtempSync(join(tmpdir(), "wtc-trace-")), "trace.log");
+		traceLog = freshTraceLog();
 		mainRepo = mkdtempSync(join(tmpdir(), "wtc-main-"));
 		git(mainRepo, "init", "-q", "-b", "main");
 		git(mainRepo, "config", "user.email", "t@t.t");
@@ -328,10 +336,13 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 	// registered worktrees with 0 stamps could not name their own cause. The entry line is
 	// written before any parsing, so it separates the two.
 	it("writes an entry trace BEFORE parsing — a payload it rejects still proves invocation (#4180)", () => {
-		const {code} = run(mainRepo, "{}");
+		// Private log: the only line that can satisfy this assertion is the one this rejected
+		// payload wrote. Relocate `trace "entry"` below the fail-closed exit and the log is empty.
+		const log = freshTraceLog();
+		const {code} = run(mainRepo, "{}", log);
 		assert.notStrictEqual(code, 0, "an empty payload still fail-closes");
 		assert.include(
-			readFileSync(traceLog, "utf8"),
+			readFileSync(log, "utf8"),
 			"entry",
 			"the entry trace must precede the fail-closed exit, or a hook that dies early is invisible",
 		);
@@ -367,19 +378,26 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 		const bindir = mkdtempSync(join(tmpdir(), "wtc-nodate-bin-"));
 		const bash = execFileSync("bash", ["-lc", "command -v bash"], {encoding: "utf8"}).trim();
 		symlinkSync(bash, join(bindir, "bash"));
+		// Private log — the shared one already carries `unknown pid=` from the jq-less test above,
+		// whose bindir has no `date` either, so asserting there would pass with the degradation
+		// removed entirely.
+		const log = freshTraceLog();
 		try {
 			execFileSync(bash, [SCRIPT], {
 				cwd: mainRepo,
 				input: "{}",
 				encoding: "utf8",
-				env: {PATH: bindir, HOME: mainRepo, KAMPUS_WORKTREE_HOOK_LOG: traceLog},
+				env: {PATH: bindir, HOME: mainRepo, KAMPUS_WORKTREE_HOOK_LOG: log},
 			});
 		} catch {
 			/* expected: an unparseable payload fail-closes — the trace is what's under test */
 		} finally {
 			rmSync(bindir, {recursive: true, force: true});
 		}
-		assert.include(readFileSync(traceLog, "utf8"), "unknown pid=", "the line lands date-less");
+		// Existence first: with the degradation removed the trace writes nothing at all, and a bare
+		// readFileSync would report that as ENOENT rather than as the property that broke.
+		assert.isTrue(existsSync(log), "a date-less run must still produce a trace file");
+		assert.include(readFileSync(log, "utf8"), "unknown pid=", "the line lands date-less");
 	});
 
 	// Guard the anti-fabrication invariant directly: the raw fixture bytes fed to the handler

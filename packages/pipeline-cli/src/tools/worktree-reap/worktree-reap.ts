@@ -17,11 +17,17 @@
  *      writes into the tree's git admin dir, resolved against the harness's live-session
  *      registry by `worktree-sweep`'s `owner-liveness.ts` (the shared resolution, #3943).
  *
- * The second signal is why this verb stopped being inert over the population it was shipped
- * for: only a small minority of managed trees carry a lock at any moment (9 of 252 on the
- * crew host at the time of writing), so a lock-only gate spared essentially everything as
- * `owner-unknown` — indistinguishable from correct fail-closed behaviour, the silent-no-op
- * class (#3989, #3887).
+ * **Signal 2 has NO live producer today (#4180) — two signals is what this verb IMPLEMENTS,
+ * not what it OBSERVES.** The harness provisions agent worktrees on its own internal path
+ * instead of invoking the `WorktreeCreate` hook that writes the stamp, so no registered tree
+ * carries one (274 registered, 0 stamped at the time of writing). The consumer side below is
+ * correct and covered by tests, and starts working the moment a producer fires — what is false
+ * is that the second signal is *available*. So in the field this is still the one-signal,
+ * lock-only gate #3989 set out to fix: only a small minority of managed trees carry a lock at
+ * any moment (9 of 252 when #3989 landed), so essentially everything resolves `owner-unknown`
+ * and is spared — indistinguishable from correct fail-closed behaviour, the silent-no-op class
+ * (#3989, #3887). Read a `0 reapable` report as partly an absence of evidence, and do not treat
+ * that inertness as fixed until #4180 lands a producer that actually fires.
  *
  * BOTH signals name the LAUNCHER — the crew pane that provisioned the tree — never the
  * subagent occupying it: the lock pid is the pane's, the stamp is written by the hook before
