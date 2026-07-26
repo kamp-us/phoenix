@@ -66,6 +66,7 @@ import {
 } from "./crew/index.ts";
 import {
 	CREW_WINDOW,
+	renderChannelAllowlistOutcome,
 	renderStandUpError,
 	renderTaggedError,
 	retireRole,
@@ -182,10 +183,13 @@ const standUp = Command.make(
 		// operator crew config itself (config.ts's typed reader, #3354 seam 1); nothing to inject here.
 		return yield* runStandUp({projectRoot}).pipe(
 			Effect.flatMap((result) =>
+				// The headline states the channel verdict, not just the pane count (#4297): a crew whose
+				// channel could not be verified must not read as a plain success at a glance, because a
+				// dead channel presents downstream as four unrelated-looking bugs and never as this one.
 				Console.error(
-					`crew up: tracker pid ${result.tracker.pid ?? "?"} on ${result.tracker.socketPath}; ${result.launched.length} panes launched in the ${CREW_WINDOW} window (${result.launched
+					`crew up${result.channelAllowlist.status === "unknown" ? " — CHANNEL UNVERIFIED" : ""}: tracker pid ${result.tracker.pid ?? "?"} on ${result.tracker.socketPath}; ${result.launched.length} panes launched in the ${CREW_WINDOW} window (${result.launched
 						.map((s) => `${s.role}→${s.pane}`)
-						.join(", ")})`,
+						.join(", ")})\n  ${renderChannelAllowlistOutcome(result.channelAllowlist)}`,
 				),
 			),
 			// Fail-loud, no partial crew: a bad config, a version drift, an unstartable tracker, an inert

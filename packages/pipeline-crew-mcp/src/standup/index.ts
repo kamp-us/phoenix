@@ -26,6 +26,26 @@ export {
 	type SessionBindInput,
 } from "./bind.ts";
 export {
+	assertChannelAllowlist,
+	ChannelAllowlistBlockedError,
+	type ChannelAllowlistOutcome,
+	type ChannelAllowlistProbe,
+	type ChannelAllowlistProbeInput,
+	type ChannelAllowlistStatus,
+	MANAGED_SETTINGS_DROPIN_DIR,
+	MANAGED_SETTINGS_FILE,
+	MANAGED_SETTINGS_REMEDY,
+	managedSettingsDir,
+	opaquePolicySurfaces,
+	type PolicySurfaces,
+	policySurfacesFor,
+	probeChannelAllowlist,
+	productionChannelAllowlistProbe,
+	renderChannelAllowlistOutcome,
+	undeterminablePolicySurfaces,
+	WINDOWS_POLICY_REGISTRY_KEYS,
+} from "./channel-allowlist.ts";
+export {
 	CHANNEL_PLUGIN_REF_RE,
 	CHANNEL_SERVER_REF_RE,
 	ChannelConfig,
