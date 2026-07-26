@@ -28,6 +28,17 @@
  *      `$TMPDIR`-rooted `review-head-*` tree, which no hook provisions, the fallback is a bare
  *      session-UUID segment in its own path (the harness roots a session's `$TMPDIR` scratchpad
  *      at `…/<session-uuid>/scratchpad/`).
+ *
+ *      **This source has NO live producer today (#4180) — read every claim about it as a code
+ *      contract, not a runtime fact.** The harness is not invoking the `WorktreeCreate` hook on
+ *      the path that provisions agent worktrees, so the stamp is never written: 272 registered
+ *      worktrees, 0 stamped. Everything below is correct about what the rules *do* with a stamp;
+ *      what they never do in practice is see one. The direction of that gap is safe — an
+ *      unstamped tree resolves `"unknown"`, which the classifier KEEPs, so a stamp-less runtime
+ *      can only leak orphans, never remove a live tree — but it means the sweep is a one-signal
+ *      (lock-derived) design in the field, and `0 reapable` is partly an absence of evidence
+ *      rather than a considered spare. Do not build a decision on stamp coverage until #4180
+ *      lands a producer that actually fires.
  *   2. **liveness** — the harness's session registry: one `<config>/sessions/<pid>.json` per
  *      RUNNING session, carrying `{pid, sessionId}` and deleted when the session exits.
  *
