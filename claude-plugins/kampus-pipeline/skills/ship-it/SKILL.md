@@ -382,6 +382,12 @@ echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plan
 # The ref is a fallible read too — `cp_head_sha` is §CPREAD's companion to `cp_changed_files` (copy
 # it verbatim from there). It DISCARDS gh's payload on failure, which is what makes the emptiness
 # test below a live guard: with a bare `|| true` the error document lands in HEAD_SHA, non-empty.
+# Assert on the probe's STATE WORD, never on its exit status — the exit code discriminates the two
+# verdicts only once the verb has RUN, so the old `>/dev/null && echo BLOCKING` shape emitted NOTHING
+# when it never ran (bad flag / nested-cwd module-not-found / missing shim) and recorded an unprobed
+# ADR as ordinary. The `*)` arm holds could-not-determine, exactly as an unreadable body is (#4219).
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
 if [ -z "$HEAD_SHA" ]; then
   echo "BLOCKING (head SHA unreadable ⇒ no ref to probe ADR content at ⇒ §CP UNKNOWN, held)"   # fail closed: an unprobeable content clause is not an absent one
@@ -392,8 +398,13 @@ else
     adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
     if [ -z "$adr_body" ]; then
       echo "BLOCKING ($adr — ADR body unreadable ⇒ §CP UNKNOWN, held)"
-    elif printf '%s' "$adr_body" | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null; then
-      echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
+    else
+      GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
+      case "$GC_STATE" in
+        not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the §CP hold
+        guard-touching) echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)" ;;
+        *) echo "BLOCKING ($adr — probe UNDETERMINED (state '$GC_STATE') ⇒ §CP, fail-closed)" ;;
+      esac
     fi
   done
 fi

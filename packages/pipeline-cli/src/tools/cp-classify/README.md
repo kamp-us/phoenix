@@ -100,10 +100,17 @@ Run the existing ADR-0164 probe over each listed ADR at the PR head; nothing abo
 changes here, so this verb widens no over-match (#2617):
 
 ```bash
-HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
-gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' \
-  | pipeline-cli guard-content-probe classify --path "$adr" >/dev/null && echo "BLOCKING ($adr)"
+cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"   # §CPREAD: EMPTY on a failed read, payload discarded
+# Capture and CHECK the body, never a straight pipe — `gh` writes its error document to stdout (#4216).
+adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
+GC_STATE="$([ -n "$adr_body" ] && printf '%s' "$adr_body" | pipeline-cli guard-content-probe classify --path "$adr" 2>/dev/null)"
+[ "$GC_STATE" = "not-guard-touching" ] || echo "BLOCKING ($adr — state '$GC_STATE')"
 ```
+
+That probe's exit contract is this one's: proven-ordinary owns
+[`PROVEN_ORDINARY_EXIT_CODE`](../../exit-codes.ts), so the state-word assertion above is what
+keeps a failure to invoke out of the ordinary branch — see
+[`../guard-content-probe/README.md`](../guard-content-probe/README.md#how-to-call-this-safely).
 
 ## Shape
 

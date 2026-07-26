@@ -52,19 +52,47 @@ Every ambiguity resolves to `guard-touching` (§CP): an unreadable §CP boundary
 merely-guard-*citing* ADR to a cheap human approval rather than risk missing a
 guard-*relaxer* that would auto-ship a weakened gate.
 
-## Usage
+## How to call this safely
+
+The decision word (`guard-touching` | `not-guard-touching`) goes to **stdout**; a human
+reason goes to **stderr**. Exit is **0 on `guard-touching`** and
+**3 on `not-guard-touching`** (`PROVEN_ORDINARY_EXIT_CODE`, the shared rule in
+[`../../exit-codes.ts`](../../exit-codes.ts) — the same code `cp-classify` seats its
+proven-ordinary verdict on).
+
+**Assert on the stdout state word, never on the exit status.** The exit code discriminates
+the two verdicts only *once the verb has run*; it says nothing about whether it ran. Three
+outcomes must stay distinguishable — proven-ordinary, proven-guard, and could-not-determine —
+and only the first may skip the §CP hold:
 
 ```bash
 # ship-it Step 0 / review gate: read each touched .decisions/** ADR's body at head, probe it.
-HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
-echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+# `cp_head_sha` is §CPREAD of the skills' gh-issue-intake-formats.md: it DISCARDS gh's payload on a
+# failed read, so an empty HEAD_SHA is a live guard rather than 120 chars of error JSON (#4216).
+cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
+[ -n "$HEAD_SHA" ] || echo "BLOCKING (head SHA unreadable ⇒ no ref to probe at ⇒ §CP, fail-closed)"
+[ -z "$HEAD_SHA" ] || echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
   [ -z "$adr" ] && continue
-  gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
-    | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" \
-    && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
+  # Capture and CHECK the body before probing, never a straight pipe — `gh` writes its error document
+  # to STDOUT, so a pipe hands the probe an ERROR BODY to classify as the ADR (§CPREAD #2, #4216).
+  adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
+  if [ -z "$adr_body" ]; then
+    echo "BLOCKING ($adr — ADR body unreadable ⇒ §CP UNKNOWN, held)"
+  else
+    GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
+    case "$GC_STATE" in
+      not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the hold
+      guard-touching) echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)" ;;
+      *) echo "BLOCKING ($adr — probe UNDETERMINED (state '$GC_STATE') ⇒ §CP, fail-closed)" ;;
+    esac
+  fi
 done
 ```
 
-The decision word (`guard-touching` | `not-guard-touching`) goes to **stdout**; a human
-reason goes to **stderr**. Exit is **0 on `guard-touching`, 1 on `not-guard-touching`**, so
-the gate bash fails closed with `… && echo BLOCKING`.
+**`… && echo BLOCKING` is UNSAFE and must not be reintroduced.** It emits nothing when the
+verb never ran — a bad flag (exit 1), a typo'd subcommand (1), a module-not-found from a
+nested cwd (1), a missing shim (127) — so an unprobed ADR is recorded as ordinary. That
+fail-open shape was published here and copied by every gate until
+[#4219](https://github.com/kamp-us/phoenix/issues/4219); `command.test.ts` pins both the
+verdict codes and the invocation failures so it cannot come back.

@@ -238,8 +238,16 @@ if [ "$CP_STATE" = "content-undetermined" ]; then
         # pipe hands the probe an ERROR BODY as the ADR body (§CPREAD #2).
         adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
         if [ -z "$adr_body" ]; then echo "BLOCKING ($adr — body unreadable at head ⇒ §CP, fail-closed)"
-        elif printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" >/dev/null; then
-          echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
+        else
+          # Same rule as the cp-classify call above: assert on the probe's STATE WORD, never on its
+          # exit status — an invocation that never ran would otherwise read as proven ordinary (#4219).
+          GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
+          case "$GC_STATE" in
+            not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the §CP hold
+            guard-touching) echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)" ;;
+            *) echo "BLOCKING ($adr — probe UNDETERMINED (state '$GC_STATE') ⇒ §CP, fail-closed)" ;;
+          esac
+        fi
       done
 elif [ "$CP_STATE" != "not-control-plane" ]; then
   # The catch-all: control-plane, unknown, AND anything unenumerated — the empty string a failed

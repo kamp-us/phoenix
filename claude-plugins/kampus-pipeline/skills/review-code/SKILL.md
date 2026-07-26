@@ -623,6 +623,12 @@ else
   # (copy it verbatim from there). It leaves HEAD_SHA EMPTY on failure by DISCARDING gh's payload,
   # which is what makes the `[ -n ]` test below a live guard rather than a dead one.
   cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
+  # Assert on the probe's STATE WORD, never on its exit status — the exit code discriminates the two
+  # verdicts only once the verb has RUN, so the old `>/dev/null && …` shape accumulated NOTHING when it
+  # never ran (bad flag / nested-cwd module-not-found / missing shim) and read an unprobed ADR as
+  # ordinary. The `*)` arm keeps could-not-determine a HOLD, exactly as an unreadable body is (#4219).
+  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
   GUARD_TOUCHING=""
   [ -n "$HEAD_SHA" ] || GUARD_TOUCHING="<head SHA unreadable — ADR content unprobeable, held as control-plane>"   # fail closed: no ref ⇒ no probe ⇒ UNKNOWN
   ADR_N=0
@@ -634,8 +640,13 @@ else
     adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
     if [ -z "$adr_body" ]; then
       GUARD_TOUCHING="$GUARD_TOUCHING $adr(body-unreadable⇒§CP)"   # fail closed: never auto-ship an ADR that could not be read and proven guard-free
-    elif printf '%s' "$adr_body" | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null; then
-      GUARD_TOUCHING="$GUARD_TOUCHING $adr"
+    else
+      GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
+      case "$GC_STATE" in
+        not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the §CP hold
+        guard-touching) GUARD_TOUCHING="$GUARD_TOUCHING $adr" ;;
+        *) GUARD_TOUCHING="$GUARD_TOUCHING $adr(undetermined:'$GC_STATE')" ;;
+      esac
     fi
   done < <(printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' || true)
   echo "§CP scope: $CP_FILES_N file(s) scanned, $ADR_N .decisions/** ADR(s) content-probed"   # §ZS #1 (ADR 0092): a §CP classification always states its scope

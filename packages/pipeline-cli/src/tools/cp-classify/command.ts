@@ -26,19 +26,14 @@
 import {execFileSync} from "node:child_process";
 import {Console, Effect, FileSystem, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {PROVEN_ORDINARY_EXIT_CODE} from "../../exit-codes.ts";
 import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {extractControlPlaneRe} from "../codeowners-cp/codeowners-cp.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
 import {type CpClassification, classifyControlPlane, isHold} from "./cp-classify.ts";
 
-/**
- * The proven-ordinary verdict's own exit code — deliberately NOT 1, which effect-cli already
- * returns for a usage error (a bad flag), and not 127, which the shell returns for a missing
- * binary. Same spirit as `STDIN_READ_FAILED_EXIT_CODE` (#3924): a code that means "the tool never
- * ran" must be separable from a code that means "the tool ran and proved it ordinary" — otherwise
- * `[ $? -ne 0 ]` reads a failure to invoke as a verdict, the fail-open this verb exists to remove.
- */
-export const NOT_CONTROL_PLANE_EXIT_CODE = 3;
+/** The proven-ordinary verdict's own exit code — the shared rule, not a per-tool choice. */
+export const NOT_CONTROL_PLANE_EXIT_CODE = PROVEN_ORDINARY_EXIT_CODE;
 
 const filesFileFlag = Flag.string("files-file").pipe(
 	Flag.optional,

@@ -162,17 +162,27 @@ if [ "$CP_STATE" != "not-control-plane" ]; then
     if [ -z "$HEAD_SHA" ]; then
       echo "review-trivial: not-trivial — head SHA unreadable, ADR content unprobeable (§CP UNKNOWN); route to full path"; exit 0
     fi
+    # Assert on the probe's STATE WORD, never on its exit status: the exit code discriminates the
+    # two verdicts only once the verb has RUN, so `>/dev/null && echo "$adr"` collected NOTHING when
+    # it never ran and read an unprobed ADR as ordinary. Only `not-guard-touching` clears (#4219).
     GUARD_TOUCHING="$(printf '%s\n' "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
         # Capture and CHECK, never a straight pipe: gh writes its error document to STDOUT, so a pipe
         # hands the probe an ERROR BODY as the ADR body (§CPREAD #2). Unreadable ⇒ §CP, fail-closed.
         adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
         if [ -z "$adr_body" ]; then echo "$adr(body-unreadable⇒§CP)"
-        elif printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" >/dev/null; then echo "$adr"; fi
+        else
+          GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
+          case "$GC_STATE" in
+            not-guard-touching) : ;;
+            guard-touching) echo "$adr" ;;
+            *) echo "$adr(undetermined:'$GC_STATE')" ;;
+          esac
+        fi
       done)"
     if [ -z "$GUARD_TOUCHING" ]; then
       : # every touched ADR probed not-guard-touching ⇒ the content axis is resolved, carry on
     else
-      echo "review-trivial: not-trivial — guard-touching ADR (§CP by content, ADR 0164): $GUARD_TOUCHING; route to full path"; exit 0
+      echo "review-trivial: not-trivial — ADR not proven ordinary by content (guard-touching, or the probe could not determine; ADR 0164): $GUARD_TOUCHING; route to full path"; exit 0
     fi
   else
     echo "review-trivial: not-trivial — §CP state '$CP_STATE'; route to full path (ADR 0053/0065; #4161)"; exit 0
