@@ -122,10 +122,16 @@ semantics; it does **not** change what any gate verifies.
   seam), non-zero with a named refusal reason on stderr otherwise — so a caller branches on exit
   status.
 - **`verdict post --pr N --gate <g> [--body-file <f>] [--run-id <id>]`** — the ADR-0058 rule-2
-  **upsert**, keyed on the posting **run** (ADR 0213): read
+  **upsert**, keyed on the posting **run** (ADR 0213) and the **head the body attests** (#4007): read
   the composed verdict body (from `--body-file` or stdin), refuse fail-closed if its first line is
   not *this* gate's marker (the cross-namespace emission bug), then PATCH the prior marker **this
-  run** posted in the namespace if one exists, else POST — one verdict comment per (PR, gate, run).
+  run** posted in the namespace **at this head** if one exists, else POST — one verdict comment per
+  (PR, gate, run, head). **A re-post at the same head upserts; anything else appends.** So re-gating
+  a PR at a new head leaves the prior head's verdict comment intact instead of editing it in place: a
+  verdict is SHA-bound, so a new head's verdict is a different fact, not a revision, and the per-head
+  record stays reconstructible from the PR surface (the edit-in-place mechanism behind #3982, where
+  one comment went FAIL → PASS → FAIL and the PR merged carrying a FAIL). There is no force-post
+  flag to remember — the audit-preserving path is the default one.
   The run id defaults to `$CLAUDE_CODE_SESSION_ID`; it is the dimension the shared GitHub login
   cannot supply, and without it a concurrent reviewer silently PATCHed another reviewer's verdict
   away (#4016). With no resolvable run id the post **appends** rather than upserting — an extra
@@ -141,7 +147,7 @@ the REST-only `gh api` boundary (the `epic-lock` `github.ts` service pattern).
 ```bash
 # is PR 123's doc verdict a current-head PASS? (exit 0 = reviewed)
 node packages/pipeline-cli/src/bin.ts verdict read --pr 123 --gate doc && echo "merge-ready"
-# upsert a composed review-doc verdict (one comment per gate, per posting run)
+# upsert a composed review-doc verdict (one comment per gate, per posting run, per attested head)
 node packages/pipeline-cli/src/bin.ts verdict post --pr 123 --gate doc --body-file "$VERDICT_FILE"
 ```
 

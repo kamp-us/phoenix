@@ -96,6 +96,8 @@ const OLD = "0000000aaaa1111";
 // emission guard (#2683) accepts on a POSTed body. `HEAD`/`OLD` stay short: they exercise the READ
 // side, whose {7,40} staleness matcher (ADR 0058 rule 3) is deliberately looser and left unchanged.
 const HEAD40 = `${"a1b2c3d4e5f6".repeat(3)}a1b2`; // 12*3 + 4 = 40 hex
+// The head a PRIOR round's verdict attested, before the PR was re-gated at HEAD40 — the #4007 shape.
+const OLD40 = `${"9f8e7d6c5b4a".repeat(3)}9f8e`;
 // Two reviewer runs under the SAME GitHub login — the #4016 shape. `RUN` is the single-run default.
 const RUN = "ddf8f459-b75f-4de2-9051-8df10da5b55c";
 const RUN_A = RUN;
@@ -206,7 +208,7 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 		),
 	);
 
-	it.effect("this run's own prior marker exists → PATCH it (upsert, not append)", () =>
+	it.effect("this run's own prior marker AT THIS HEAD exists → PATCH it (upsert, not append)", () =>
 		Effect.gen(function* () {
 			const result = yield* (yield* Github).post(PR, "doc", BODY, RUN);
 			assert.deepStrictEqual(result, {_tag: "patched", commentId: 42});
@@ -217,7 +219,7 @@ describe("Github.post — the ADR-0058 rule-2 upsert over a mock gh spawner", ()
 					comment({
 						id: 42,
 						login: "usirin",
-						body: withRunId(`review-doc: FAIL @ ${OLD} — changes-requested`, RUN),
+						body: withRunId(`review-doc: FAIL @ ${HEAD40} — changes-requested`, RUN),
 					}),
 				]),
 				[`GET ${P}/pulls/${PR}`]: HEAD40 /* #3801: BODY binds HEAD40 */,
@@ -512,6 +514,148 @@ describe("Github.post — the upsert is keyed on the posting RUN, not the shared
 				assert.isDefined(posted);
 				assert.isTrue(posted?.some((arg) => arg.includes(`verdict-run: ${RUN_B}`)));
 			}),
+	);
+});
+
+// The #4007 re-gate clobber: the upsert also carries the HEAD the body attests, so a verdict bound to
+// a NEW head appends beside the prior head's verdict instead of editing it in place — the per-head
+// record stays on the PR (the mechanism behind #3982: one comment went FAIL → PASS → FAIL). The
+// append cases supply no PATCH fixture: a regression that PATCHes 404s the write instead of passing
+// quietly.
+describe("Github.post — the upsert also carries the attested HEAD (#4007)", () => {
+	const PRIOR_ROUND = `review-code: FAIL @ ${OLD40} — not merge-ready`;
+	const RE_GATE = `review-code: PASS @ ${HEAD40} — merge-ready`;
+
+	it.effect("a re-gate at a NEW head appends — the prior head's verdict is never PATCHed", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).post(PR, "code", RE_GATE, RUN);
+			assert.deepStrictEqual(result, {_tag: "posted", commentId: 921});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					// THIS run's own round-1 verdict, bound to the head the PR carried before the re-push
+					comment({id: 920, login: "usirin", body: withRunId(PRIOR_ROUND, RUN)}),
+				]),
+				[`GET ${P}/pulls/${PR}`]: HEAD40,
+				[`POST ${P}/issues/${PR}/comments`]: "921",
+				[`GET ${P}/issues/comments/921`]: withRunId(RE_GATE, RUN),
+			}),
+		),
+	);
+
+	it.effect("a re-post at the SAME head still upserts (a correction, not comment spam)", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).post(PR, "code", RE_GATE, RUN);
+			assert.deepStrictEqual(result, {_tag: "patched", commentId: 930});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({
+						id: 930,
+						login: "usirin",
+						body: withRunId(`review-code: FAIL @ ${HEAD40} — not merge-ready`, RUN),
+					}),
+				]),
+				[`GET ${P}/pulls/${PR}`]: HEAD40,
+				[`PATCH ${P}/issues/comments/930`]: "930",
+				[`GET ${P}/issues/comments/930`]: withRunId(RE_GATE, RUN),
+			}),
+		),
+	);
+
+	// AC 1 end to end: one run, one namespace, two heads — the round-1 body is still on the PR.
+	it.effect("two heads leave BOTH verdict comments (the per-head record survives)", () =>
+		Effect.gen(function* () {
+			const landed: Array<{readonly id: number; readonly login: string; readonly body: string}> =
+				[];
+			const round1 = yield* Effect.provide(
+				Effect.flatMap(Github, (gh) => gh.post(PR, "code", PRIOR_ROUND, RUN)),
+				GithubLive.pipe(
+					Layer.provide(
+						mockSpawner({
+							"GET user": "usirin",
+							[`GET ${P}/issues/${PR}/comments`]: JSON.stringify(landed),
+							[`GET ${P}/pulls/${PR}`]: OLD40,
+							[`POST ${P}/issues/${PR}/comments`]: "920",
+							[`GET ${P}/issues/comments/920`]: withRunId(PRIOR_ROUND, RUN),
+						}),
+					),
+				),
+			);
+			landed.push({id: 920, login: "usirin", body: withRunId(PRIOR_ROUND, RUN)});
+			// …the author pushes a fix, the PR's head moves to HEAD40, the SAME run re-gates it
+			const round2 = yield* Effect.provide(
+				Effect.flatMap(Github, (gh) => gh.post(PR, "code", RE_GATE, RUN)),
+				GithubLive.pipe(
+					Layer.provide(
+						mockSpawner({
+							"GET user": "usirin",
+							[`GET ${P}/issues/${PR}/comments`]: JSON.stringify(
+								landed.map((c) => comment({id: c.id, login: c.login, body: c.body})),
+							),
+							[`GET ${P}/pulls/${PR}`]: HEAD40,
+							[`POST ${P}/issues/${PR}/comments`]: "921",
+							[`GET ${P}/issues/comments/921`]: withRunId(RE_GATE, RUN),
+						}),
+					),
+				),
+			);
+			assert.deepStrictEqual(round1, {_tag: "posted", commentId: 920});
+			assert.deepStrictEqual(round2, {_tag: "posted", commentId: 921});
+			// round 1's FAIL @ OLD40 is untouched — the head it attests is still reconstructible
+			assert.deepStrictEqual(landed, [
+				{id: 920, login: "usirin", body: withRunId(PRIOR_ROUND, RUN)},
+			]);
+		}),
+	);
+
+	it.effect("a §CP advisory re-anchored to a NEW head appends beside the prior one", () =>
+		Effect.gen(function* () {
+			const body = `review-code: advisory — round 2, see thread\n\nReviewed-head: @ ${HEAD40}`;
+			const result = yield* (yield* Github).post(PR, "code", body, RUN);
+			assert.deepStrictEqual(result, {_tag: "posted", commentId: 941});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({
+						id: 940,
+						login: "usirin",
+						body: withRunId(
+							`review-code: advisory — round 1, see thread\n\nReviewed-head: @ ${OLD40}`,
+							RUN,
+						),
+					}),
+				]),
+				[`GET ${P}/pulls/${PR}`]: HEAD40,
+				[`POST ${P}/issues/${PR}/comments`]: "941",
+				[`GET ${P}/issues/comments/941`]: `review-code: advisory — round 2, see thread\n\nReviewed-head: @ ${HEAD40}`,
+			}),
+		),
+	);
+
+	it.effect("two bind-nothing advisories still upsert (nothing per-head to preserve)", () =>
+		Effect.gen(function* () {
+			const body = "review-code: advisory — see thread";
+			const result = yield* (yield* Github).post(PR, "code", body, RUN);
+			assert.deepStrictEqual(result, {_tag: "patched", commentId: 950});
+		}).pipe((effect) =>
+			provide(effect, {
+				"GET user": "usirin",
+				// no pulls fixture: a SHA-less advisory binds nothing, so no live-head lookup happens
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({
+						id: 950,
+						login: "usirin",
+						body: withRunId("review-code: advisory — an earlier note", RUN),
+					}),
+				]),
+				[`PATCH ${P}/issues/comments/950`]: "950",
+				[`GET ${P}/issues/comments/950`]: "review-code: advisory — see thread",
+			}),
+		),
 	);
 });
 

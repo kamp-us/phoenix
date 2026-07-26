@@ -15,11 +15,12 @@
  *  - `read(pr, gate, expect, headOverride)` — resolve the PR's current head (REST), author-gate
  *    marker authors to write+ collaborators (ADR 0055), and run `resolveVerdict` to classify
  *    the namespace against that head. The consumer branches on the returned outcome.
- *  - `post(pr, gate, body, runId)` — the ADR-0058 rule-2 UPSERT, scoped per posting RUN (ADR 0213):
- *    guard the body's first line is *this* gate's marker (fail-closed on a cross-namespace body),
- *    then PATCH the prior marker THIS RUN posted in the namespace if one exists, else POST a fresh
- *    one — one verdict comment per (PR, gate, run), so a concurrent reviewer sharing our GitHub
- *    login appends rather than overwriting our verdict (#4016).
+ *  - `post(pr, gate, body, runId)` — the ADR-0058 rule-2 UPSERT, scoped per posting RUN (ADR 0213)
+ *    and per attested HEAD (#4007): guard the body's first line is *this* gate's marker (fail-closed
+ *    on a cross-namespace body), then PATCH the prior marker THIS RUN posted in the namespace AT THIS
+ *    HEAD if one exists, else POST a fresh one — one verdict comment per (PR, gate, run, head), so a
+ *    concurrent reviewer sharing our GitHub login (#4016) and a re-gate at a new head (#4007) both
+ *    append rather than overwriting a verdict.
  */
 import {Context, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
@@ -45,6 +46,7 @@ import {
 } from "../tracker/gh-io.ts";
 import {decideGate, type GateDecision} from "./gate-decision.ts";
 import {
+	bindsSameHead,
 	boundHeadShas,
 	emissionDefect,
 	headBindingDefect,
@@ -110,7 +112,7 @@ export interface ReadResult {
 	readonly expect: Polarity;
 }
 
-/** The `post` verdict — whether we upserted an existing marker or posted the first one, and the comment id. */
+/** The `post` verdict — whether we upserted this run's same-head marker or appended a fresh comment, and its id. */
 export interface PostResult {
 	readonly _tag: "patched" | "posted";
 	readonly commentId: number;
@@ -252,9 +254,15 @@ const gate = Effect.fn("Github.gate")(function* (
  * cross-check (#3801) fetches the target PR's live head and refuses if a bound SHA does not match it
  * — closing the verdict-integrity hole where a body composed for another PR (bound to a different
  * PR's SHA, e.g. via a clobbered shared scratch file) was postable and caught only on read-back.
- * Then scan for THIS RUN's own prior marker in the namespace (same author AND the same
- * `verdict-run:` trailer, newest by `(created_at, id)`) and PATCH it if present, else POST a fresh
- * one. The run dimension is load-bearing and the author dimension alone is NOT sufficient (#4016):
+ * Then scan for THIS RUN's own prior marker attesting THIS HEAD (same author, the same
+ * `verdict-run:` trailer, and the same bound head, newest by `(created_at, id)`) and PATCH it if
+ * present, else POST a fresh one.
+ *
+ * The head dimension makes a re-gate at a new head APPEND, leaving the prior head's verdict intact,
+ * while a re-post at the SAME head still upserts (a correction of the same fact, no comment spam) —
+ * the why is at `bindsSameHead` (#4007).
+ *
+ * The run dimension is load-bearing and the author dimension alone is NOT sufficient (#4016):
  * every pipeline review agent posts under one shared GitHub identity, so an author-keyed upsert let
  * a concurrent sibling reviewer silently PATCH another reviewer's verdict body away — a PASS could
  * replace a FAIL at the same head with no trace the FAIL existed. Keyed on the run, a sibling never
@@ -296,7 +304,13 @@ const post = Effect.fn("Github.post")(function* (
 		runId === null
 			? []
 			: comments
-					.filter((c) => c.author === me && re.test(c.body) && runIdOf(c.body) === runId)
+					.filter(
+						(c) =>
+							c.author === me &&
+							re.test(c.body) &&
+							runIdOf(c.body) === runId &&
+							bindsSameHead(c.body, body, gate),
+					)
 					.sort((a, b) =>
 						a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id,
 					);
