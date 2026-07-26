@@ -43,7 +43,8 @@ describe("splitTopLevelBranches", () => {
 			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$",
 			"claude-plugins/kampus-pipeline/hooks(/|\\.json$)",
 			"packages/ci-required/",
-			"packages/pipeline-cli/",
+			"packages/pipeline-cli/src/[^/]+$",
+			"packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/",
 			"biome\\.jsonc$",
 			"biome-plugins/",
 		]);
@@ -144,7 +145,15 @@ describe("cpPaths over the live regex", () => {
 			"claude-plugins/kampus-pipeline/hooks/",
 			"claude-plugins/kampus-pipeline/hooks.json",
 			"packages/ci-required/",
-			"packages/pipeline-cli/",
+			"packages/pipeline-cli/src/*",
+			"packages/pipeline-cli/src/tools/ci-required/",
+			"packages/pipeline-cli/src/tools/codeowners-cp/",
+			"packages/pipeline-cli/src/tools/control-plane-paths/",
+			"packages/pipeline-cli/src/tools/cp-cardinality/",
+			"packages/pipeline-cli/src/tools/cp-classify/",
+			"packages/pipeline-cli/src/tools/review-head/",
+			"packages/pipeline-cli/src/tools/trivial-diff/",
+			"packages/pipeline-cli/src/tools/verdict/",
 			"biome.jsonc",
 			"biome-plugins/",
 		]);
@@ -210,6 +219,46 @@ describe("covers", () => {
 describe("findUncovered — the drift check", () => {
 	const paths = cpPaths(LIVE_RE);
 
+	const NARROWED_CODEOWNERS = [
+		"/.claude/ @usirin",
+		"/.github/ @usirin",
+		"/.claude-plugin/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/ship-it/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/review-code/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/review-doc/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/review-skill/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/review-design/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/review-plan/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/**/*.sh @usirin",
+		"/claude-plugins/kampus-pipeline/agents/ @usirin",
+		"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
+		"/claude-plugins/kampus-pipeline/hooks/ @usirin",
+		"/claude-plugins/kampus-pipeline/hooks.json @usirin",
+		"/packages/ci-required/ @usirin",
+		"/packages/pipeline-cli/src/* @usirin",
+		"/packages/pipeline-cli/src/tools/ci-required/ @usirin",
+		"/packages/pipeline-cli/src/tools/codeowners-cp/ @usirin",
+		"/packages/pipeline-cli/src/tools/control-plane-paths/ @usirin",
+		"/packages/pipeline-cli/src/tools/cp-cardinality/ @usirin",
+		"/packages/pipeline-cli/src/tools/cp-classify/ @usirin",
+		"/packages/pipeline-cli/src/tools/review-head/ @usirin",
+		"/packages/pipeline-cli/src/tools/trivial-diff/ @usirin",
+		"/packages/pipeline-cli/src/tools/verdict/ @usirin",
+		"/biome.jsonc @usirin",
+		"/biome-plugins/ @usirin",
+	].join("\n");
+
+	// The ADR-0218 narrowed rows cover every §CP path exactly — in particular the `src/*` glob row
+	// covers the `src/[^/]+$` root branch, which is the translation the narrowing relies on.
+	it("passes (zero uncovered) under the ADR-0218 narrowed pipeline-cli rows", () => {
+		expect(findUncovered(paths, parseCodeownersPatterns(NARROWED_CODEOWNERS))).toEqual([]);
+	});
+
 	it("passes (zero uncovered) when CODEOWNERS enumerates every §CP path", () => {
 		const codeowners = [
 			"/.claude/ @usirin",
@@ -267,8 +316,25 @@ describe("findUncovered — the drift check", () => {
 		expect(uncovered).toEqual([
 			"claude-plugins/kampus-pipeline/hooks/",
 			"claude-plugins/kampus-pipeline/hooks.json",
-			"packages/pipeline-cli/",
+			"packages/pipeline-cli/src/*",
+			"packages/pipeline-cli/src/tools/ci-required/",
+			"packages/pipeline-cli/src/tools/codeowners-cp/",
+			"packages/pipeline-cli/src/tools/control-plane-paths/",
+			"packages/pipeline-cli/src/tools/cp-cardinality/",
+			"packages/pipeline-cli/src/tools/cp-classify/",
+			"packages/pipeline-cli/src/tools/review-head/",
+			"packages/pipeline-cli/src/tools/trivial-diff/",
+			"packages/pipeline-cli/src/tools/verdict/",
 		]);
+	});
+
+	// The stale-over-broad direction, stated as a test because it is the one thing this gate does
+	// NOT catch (ADR 0218): a CODEOWNERS row broader than the regex leaves paths over-protected,
+	// and findUncovered — which only looks for §CP paths with no covering row — reports nothing.
+	// The ADR-0218 lockstep narrowing is therefore an author obligation, not a gate-enforced one.
+	it("does NOT flag an over-broad CODEOWNERS row (it detects under-protection only)", () => {
+		const overBroad = `${NARROWED_CODEOWNERS}\n/packages/pipeline-cli/ @usirin`;
+		expect(findUncovered(paths, parseCodeownersPatterns(overBroad))).toEqual([]);
 	});
 	it("flags a missing /.claude-plugin/ row — the /.claude/ row does NOT cover it (ADR 0212)", () => {
 		const owned = parseCodeownersPatterns(["/.claude/ @usirin", "/.github/ @usirin"].join("\n"));

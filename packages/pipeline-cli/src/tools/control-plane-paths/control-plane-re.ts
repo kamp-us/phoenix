@@ -39,6 +39,25 @@
  * plugin's own `plugin.json`, including `claude-plugins/pipeline-crew/`, whose corpus a live
  * founder ruling deliberately keeps OUT of §CP (#3765). See ADR 0212.
  *
+ * The pipeline-cli clauses cover an **enforcement core**, not the whole package (ADR 0218,
+ * amending ADR 0100). Two branches:
+ *
+ *   - `^packages/pipeline-cli/src/[^/]+$` — the package's `src/` ROOT, non-recursive. This is the
+ *     shared dispatch + process plumbing every tool including every gate runs through
+ *     (`registry.ts`, `router.ts`, `bin.ts`, `gate-fail.ts`, `read-stdin*.ts`, `run.ts`,
+ *     `tool-registration.ts`, `module-load-guard.ts`, `annotate.ts`, `find-root-dir.ts`,
+ *     `version.ts`). Expressed as a non-recursive pattern rather than a file list so it cannot rot
+ *     as root modules are added — the four-file list this replaced already lagged reality.
+ *   - `^packages/pipeline-cli/src/tools/(…)/` — the eight tools that ARE the enforcement surface:
+ *     `ci-required` (a branch-protection-required check), `verdict` (the enqueue gate),
+ *     `cp-cardinality` (§CP approval discharge), `control-plane-paths` (this boundary),
+ *     `cp-classify` (the §CP verdict), `codeowners-cp` (the regex↔CODEOWNERS drift gate),
+ *     `trivial-diff` (routes to the lighter gate), `review-head` (the head every verdict binds to).
+ *
+ * Everything else under the package — coordination and read tooling — gates nothing and leaves §CP
+ * per ADR 0187's enforcement-surface test. The trade is recorded in ADR 0218, including the three
+ * modules the core imports without retaining, which `core-import-closure.unit.test.ts` pins.
+ *
  * Anti-self-authorization is preserved (#981): the live merge-deciding gates still
  * re-resolve the boundary from the formats doc on `origin/main` at run time, so a
  * boundary-editing PR is classified against MAIN's boundary, not its own edit. This
@@ -46,4 +65,4 @@
  * runtime resolution off the origin/main read.
  */
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\\.jsonc$|^biome-plugins/";
+	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^biome\\.jsonc$|^biome-plugins/";
