@@ -1,7 +1,7 @@
 ---
 id: 0115
 title: The agent-distinguishable claim marker — a session-id-stamped claim comment (tiebreak on earliest authorized claim, recognized by `CLAUDE_CODE_SESSION_ID`) claimed pre-spawn, the one contract three lock surfaces adopt
-status: accepted
+status: amended-in-part by [0215](0215-claim-identity-continuity-proof.md)
 date: 2026-06-27
 tags: [pipeline, skills, concurrency, agents, claim, decisions]
 ---
