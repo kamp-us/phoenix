@@ -83,6 +83,37 @@ the outcome as a typed `StdinReadFailed` in the error channel. The pure retry co
 IO injected so the `EAGAIN` path is testable, lives in
 [`src/read-stdin-core.ts`](./src/read-stdin-core.ts).
 
+## How a tool is loaded
+
+Running `pipeline-cli <tool>` loads that tool's module and no other. The registry
+([`src/registry.ts`](./src/registry.ts)) holds one row per tool — the selector name, and
+the module import as a thunk — so the name is known without linking anything and the
+module is linked only once that verb is dispatched. Only a listing (`--help`,
+`commands compact`) resolves every row, because only a listing is about every tool.
+
+That containment is the point. When the registry imported every tool's module up front,
+one unresolvable row failed *every* invocation, including tools that had nothing to do
+with it — and the pipeline runs many agents against one checkout, so a tool being written
+right now is a normal state, not an exceptional one. A row that will not resolve now
+fails just the verb that asked for it.
+
+A load fault reports the registration by name:
+
+```
+pipeline-cli: registered tool `example` failed to load — its command module did not resolve (…)
+  The registration is in packages/pipeline-cli/src/registry.ts. A tool that is mid-write in the
+  working tree this CLI runs from looks exactly like this; every OTHER tool still works.
+```
+
+Two rules apply when adding a row. Write the `import()` with a **string-literal**
+specifier — the build rewrites those extensions, and cannot rewrite a computed one. And
+register the tool under the **same name** its `Command.make("<name>")` declares; the
+loader asserts the two match, because the router selects on the registered name and the
+CLI runtime dispatches on the declared one.
+
+One case is deliberately not wrapped: an unlinked dependency still propagates untouched,
+so the bin's install self-heal and its remediation message keep working.
+
 ## Development
 
 The source lives in the phoenix monorepo under

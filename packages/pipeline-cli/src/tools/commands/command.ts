@@ -11,10 +11,11 @@
  * fail-closed backstop: a newly-registered tool can't silently ship without a one-line
  * purpose (AC #4), and a zero-length registry reds (fail-closed on zero scope, ADR 0092).
  *
- * The `registeredTools` import closes a registry ⇄ tool cycle (this tool is itself in the
- * registry), but it is read **only inside the handler closures** — never at module-eval
- * time — so the ESM live binding is fully initialized by the time a handler runs. Do not
- * hoist `registeredTools` to a top-level reference here, or the cycle becomes a TDZ read.
+ * The index needs every tool's `description`, so this is the one tool that resolves the
+ * whole registry — the lazy rows have to be loaded to be described (#4008). A row that
+ * won't load is omitted from `compact` with a note on stderr (a discovery surface that
+ * dies on one broken sibling is worse than a short one) and reds `check`, which is the
+ * gate and so stays fail-closed.
  *
  * Exit-code contract (shared with the other gate tools): 0 = clean; a gate fail prints its
  * reason on stderr and exits non-zero *without* a stack trace, caught inside the handler so
@@ -23,7 +24,10 @@
 import {Console, Effect} from "effect";
 import {Command} from "effect/unstable/cli";
 import {registeredTools} from "../../registry.ts";
+import {type LoadedRegistry, loadRegistry} from "../../tool-registration.ts";
 import {renderCompact, undocumentedTools} from "./commands.ts";
+
+const loadAll = Effect.promise<LoadedRegistry>(() => loadRegistry(registeredTools));
 
 const GATE_FAIL_EXIT_CODE = 1;
 
@@ -31,7 +35,11 @@ const compact = Command.make(
 	"compact",
 	{},
 	Effect.fn(function* () {
-		yield* Console.log(renderCompact(registeredTools));
+		const {tools, failures} = yield* loadAll;
+		for (const failure of failures) {
+			yield* Console.error(`commands: omitting \`${failure.name}\` — ${failure.error.message}`);
+		}
+		yield* Console.log(renderCompact(tools));
 	}),
 ).pipe(
 	Command.withDescription(
@@ -43,19 +51,28 @@ const check = Command.make(
 	"check",
 	{},
 	Effect.fn(function* () {
+		const {tools, failures} = yield* loadAll;
 		// Fail-closed on zero scope: an empty registry is a wiring/load fault, not a pass (ADR 0092).
 		if (registeredTools.length === 0) {
 			yield* fail("no registered tools in scope — refusing to pass on an empty registry");
 			return;
 		}
-		const missing = undocumentedTools(registeredTools);
+		if (failures.length > 0) {
+			yield* fail(
+				`registration(s) that failed to load: ${failures.map((f) => f.name).join(", ")}\n${failures
+					.map((f) => f.error.message)
+					.join("\n")}`,
+			);
+			return;
+		}
+		const missing = undocumentedTools(tools);
 		if (missing.length > 0) {
 			yield* fail(
 				`registered tool(s) missing a one-line description (add Command.withDescription): ${missing.join(", ")}`,
 			);
 			return;
 		}
-		yield* Console.log(`commands: ${registeredTools.length} registered tools, all documented`);
+		yield* Console.log(`commands: ${tools.length} registered tools, all documented`);
 	}),
 ).pipe(
 	Command.withDescription(

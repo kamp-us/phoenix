@@ -6,7 +6,8 @@
  *   node src/bin.ts version       # the Phase-1 tracer tool
  *   node src/bin.ts <tool> …      # dispatch to a registered tool (Phase-2 children)
  *
- * The router itself lives in `run.ts` (`Command.withSubcommands(registeredTools)`);
+ * The router itself lives in `run.ts` (it resolves this invocation's subcommands out of
+ * the registry, loading only the tool that was actually selected — #4008);
  * this file is a thin bootstrap that loads it via a **dynamic** `import()` so an
  * unlinked `catalog:` dep — the in-repo-first path hit before `pnpm install` has
  * settled on a fresh/partial checkout — is a *catchable* `ERR_MODULE_NOT_FOUND`

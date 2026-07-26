@@ -10,10 +10,13 @@
  * clear typed error for an unknown one — is unit-testable without spawning a CLI
  * (ADR 0082). The router is closed for modification: new tools arrive only
  * via `registry.ts`, never by editing this file.
+ *
+ * It resolves on `name` alone, so it dispatches a lazy `ToolRegistration` — the row
+ * `run.ts` must select *before* loading any module (#4008) — as readily as a loaded
+ * `Command`; both carry the selector.
  */
 import {Result} from "effect";
 import * as Schema from "effect/Schema";
-import type {RegisteredTool} from "./registry.ts";
 
 /** The first argv token named no registered tool. Carries the offender + the known set. */
 export class UnknownToolError extends Schema.TaggedErrorClass<UnknownToolError>()(
@@ -37,8 +40,13 @@ export class NoToolError extends Schema.TaggedErrorClass<NoToolError>()("NoToolE
 	}
 }
 
+/** All the router needs of a registry row: the selector it dispatches on. */
+export interface NamedTool {
+	readonly name: string;
+}
+
 /** The names of every registered tool, in registry order. */
-export const toolNames = (registry: ReadonlyArray<RegisteredTool>): ReadonlyArray<string> =>
+export const toolNames = (registry: ReadonlyArray<NamedTool>): ReadonlyArray<string> =>
 	registry.map((tool) => tool.name);
 
 /**
@@ -50,11 +58,11 @@ export const toolNames = (registry: ReadonlyArray<RegisteredTool>): ReadonlyArra
  *   non-zero-exit-worthy failure — AC #2)
  * - empty argv ⇒ `Err(NoToolError)` (the help/usage case)
  */
-export const dispatch = (
-	registry: ReadonlyArray<RegisteredTool>,
+export const dispatch = <T extends NamedTool>(
+	registry: ReadonlyArray<T>,
 	argv: ReadonlyArray<string>,
 ): Result.Result<
-	{readonly tool: RegisteredTool; readonly rest: ReadonlyArray<string>},
+	{readonly tool: T; readonly rest: ReadonlyArray<string>},
 	UnknownToolError | NoToolError
 > => {
 	const [head, ...rest] = argv;
