@@ -12,6 +12,12 @@
  *     pre-flight`) reparses as a nested mapping and breaks GitHub's renderer
  *     (#1281 shipper.md ×2, #1769 release/SKILL.md) — the tolerant harness loader
  *     accepts it, strict parsers reject it, so it shipped uncaught ≥3×.
+ *  3. Bare `git push` in an executable block (issue #4213) — flags any `git … push`
+ *     inside a runnable shell block in the corpus, because a bare push cannot report
+ *     whether the ref landed: `| tail` eats its exit status (`pipefail` is off here)
+ *     and a detached run's output file carries no status at all, so a dead push reads
+ *     as a clean one. `pipeline-cli verified-push` is the sanctioned path; this check
+ *     is what makes that mechanical rather than attention-based (ADR 0202).
  *
  * Fails CLOSED on zero scope (ADR 0092): `lintCorpus` returns the set of files
  * scanned alongside the findings, and `isZeroScope` reports when nothing was
@@ -51,10 +57,14 @@ export interface LintResult {
 	readonly findings: ReadonlyArray<Finding>;
 	/** Files whose frontmatter block failed to parse as strict YAML (#1766). */
 	readonly frontmatterFindings: ReadonlyArray<FrontmatterFinding>;
+	/** Executable `git push` invocations in the corpus (#4213). */
+	readonly barePushFindings: ReadonlyArray<Finding>;
 	/** Every file path the gh-call scan looked at — its scope (ADR 0092). */
 	readonly scanned: ReadonlyArray<string>;
 	/** Every file path the frontmatter check looked at — its scope (ADR 0092). */
 	readonly frontmatterScanned: ReadonlyArray<string>;
+	/** Every file path the bare-push scan looked at — its scope (ADR 0092). */
+	readonly barePushScanned: ReadonlyArray<string>;
 }
 
 interface LintPattern {
@@ -163,6 +173,81 @@ export const checkFrontmatter = (file: string, content: string): FrontmatterFind
 };
 
 /**
+ * A `git push` invocation, allowing the option forms that appear at real push sites —
+ * `git -C "$WT" push`, `git --git-dir=… push`, `git -c foo=bar push`. Anchored on the `git`
+ * verb so prose that merely says "push" is never matched.
+ *
+ * The two alternatives inside the `*` are deliberately DISJOINT, and keeping them so is a
+ * security property of this line, not a style choice: this is the enforcement mechanism the
+ * whole check rests on, `skill-gh-lint.yml` runs it on every `pull_request`, and a hung job
+ * presents as *running* rather than failed — so a backtrackable pattern here is a wedge any
+ * crafted corpus line can pull. Two alternatives that can both consume the same token give
+ * k ways to split each of n tokens, i.e. exponential backtracking on input that never reaches
+ * `push` (CodeQL `js/redos`, #4217). Concretely, both of these were exponential and are gone:
+ *   - `--\S+=\S+\s+` alongside `-\S+\s+` — subsumed, and `\S+=\S+` re-split at every `=`
+ *     (165 chars → 75 s);
+ *   - `-[cC]\s+\S+\s+` alongside `-\S+\s+` with an unconstrained value token, which let a
+ *     `-c` run be consumed one token or two ways (140 chars → 64 s).
+ * The surviving disambiguator is `[^-\s]`: a `-c`/`-C` VALUE may not itself start with `-`,
+ * so exactly one alternative can ever consume a given token. 40 KB of the worst shapes now
+ * matches in under a millisecond, and `lint.unit.test.ts` pins that with a wall-clock bound.
+ */
+const BARE_GIT_PUSH = /\bgit\s+(?:-[cC]\s+[^-\s]\S*\s+|-\S+\s+)*push\b/g;
+
+/** Every file the bare-push check looks at: the whole handed-in corpus (`.md` + `.sh`). */
+export const isBarePushScoped = (path: string): boolean => {
+	const p = normalize(path).toLowerCase();
+	return p.endsWith(".md") || p.endsWith(".sh");
+};
+
+/**
+ * A fence delimiter — ``` or ~~~ — after any blockquote prefix is stripped. The corpus nests
+ * runnable blocks inside blockquotes (`> ```bash`), so the prefix strip is what keeps those
+ * blocks in scope; without it the most safety-critical blocks in write-code would be invisible
+ * to this check.
+ */
+const stripQuotePrefix = (line: string): string => line.replace(/^\s*(?:>\s?)+/, "");
+
+const FENCE = /^\s*(?:```|~~~)/;
+
+/**
+ * `git push` inside an EXECUTABLE region — a fenced code block in markdown, or the whole file
+ * for a `.sh`. Scoping to code blocks is what lets the skills keep *writing about* a bare
+ * `git push` in prose (they must, to explain why it is forbidden) while making the runnable
+ * form impossible to ship. There is deliberately no per-line pragma and no self-exempt list:
+ * an escape hatch that an agent can reach for is the attention-based enforcement ADR 0202
+ * rules out, and today the corpus needs none — `pipeline-cli verified-push` covers every
+ * sanctioned push site.
+ */
+export const scanBarePush = (file: string, content: string): ReadonlyArray<Finding> => {
+	if (!isBarePushScoped(file)) return [];
+	const isShell = normalize(file).toLowerCase().endsWith(".sh");
+	const findings: Finding[] = [];
+	const lines = content.split("\n");
+	let inFence = isShell;
+	for (let i = 0; i < lines.length; i++) {
+		const raw = lines[i] ?? "";
+		const text = isShell ? raw : stripQuotePrefix(raw);
+		if (!isShell && FENCE.test(text)) {
+			inFence = !inFence;
+			continue;
+		}
+		if (!inFence) continue;
+		BARE_GIT_PUSH.lastIndex = 0;
+		for (const match of text.matchAll(BARE_GIT_PUSH)) {
+			findings.push({
+				file,
+				line: i + 1,
+				matched: match[0].trim(),
+				reason:
+					"a bare `git push` cannot report whether the ref landed (`| tail` eats its exit status, a detached run's output file carries none) — use `pipeline-cli verified-push`, which confirms the remote ref and emits a PUSH-VERDICT terminal line on stdout (#4213)",
+			});
+		}
+	}
+	return findings;
+};
+
+/**
  * Scan the whole handed-in corpus. Runs BOTH checks and returns their findings
  * and their (independent) scopes. The caller pairs this with `isZeroScope` to
  * fail closed when EITHER scope is empty (ADR 0092).
@@ -172,25 +257,43 @@ export const lintCorpus = (files: ReadonlyArray<ScanFile>): LintResult => {
 	const findings: Finding[] = [];
 	const frontmatterScanned: string[] = [];
 	const frontmatterFindings: FrontmatterFinding[] = [];
+	const barePushScanned: string[] = [];
+	const barePushFindings: Finding[] = [];
 	for (const {file, content} of files) {
 		if (isFrontmatterScoped(file)) {
 			frontmatterScanned.push(file);
 			const fm = checkFrontmatter(file, content);
 			if (fm !== null) frontmatterFindings.push(fm);
 		}
+		// Deliberately NOT narrowed by `isSelfExempt`: write-code is the file that owns both
+		// push sites, so exempting it would exempt the only thing this check protects.
+		if (isBarePushScoped(file)) {
+			barePushScanned.push(file);
+			barePushFindings.push(...scanBarePush(file, content));
+		}
 		if (isSelfExempt(file)) continue;
 		scanned.push(file);
 		findings.push(...scanFile(file, content));
 	}
-	return {findings, frontmatterFindings, scanned, frontmatterScanned};
+	return {
+		findings,
+		frontmatterFindings,
+		barePushFindings,
+		scanned,
+		frontmatterScanned,
+		barePushScanned,
+	};
 };
 
 /**
- * Zero-scope test (ADR 0092): true when EITHER check scanned NO files. A
- * zero-scope run is a FAIL, never a silent PASS — a lint that looked at nothing
- * protects nothing. The caller maps `true` → non-zero exit. Both scopes must be
- * non-empty: a corpus with no frontmatter-bearing file is as broken a scope for
- * the frontmatter gate as an empty gh-call scope is for the grep.
+ * Zero-scope test (ADR 0092): true when ANY check scanned NO files. A zero-scope run
+ * is a FAIL, never a silent PASS — a lint that looked at nothing protects nothing. The
+ * caller maps `true` → non-zero exit. Every scope must be non-empty: a corpus with no
+ * frontmatter-bearing file is as broken a scope for the frontmatter gate as an empty
+ * gh-call scope is for the grep, and an empty push scope would silently stop enforcing
+ * the sanctioned push path.
  */
 export const isZeroScope = (result: LintResult): boolean =>
-	result.scanned.length === 0 || result.frontmatterScanned.length === 0;
+	result.scanned.length === 0 ||
+	result.frontmatterScanned.length === 0 ||
+	result.barePushScanned.length === 0;

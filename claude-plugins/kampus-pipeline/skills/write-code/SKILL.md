@@ -844,6 +844,36 @@ is intentionally left untouched here so the two changes can't double-implement o
 > `$WT`; for every edit, confirm the path begins with `$WT`. Treat a primary-checkout absolute path
 > in your context as **stale** (cwd-reset + Read-cache), not as your worktree.
 
+<a id="pushing-the-verdict-is-the-ref-not-the-exit-code"></a>
+> **Pushing: the verdict is the ref, not the exit code — always `pipeline-cli verified-push` (#4213).**
+> A push is the one mutation whose failure is **invisible by default**, and not because of git.
+> Two observation-layer defects destroy the signal independently: piping a push through `tail`
+> reports `tail`'s status (`pipefail` is **off** on this platform, measured — so the pipeline
+> returns 0 however git died), and a **detached** run's output file carries **no exit status at
+> all**, so success gets inferred from the absence of an `error:` line — which is exactly what a
+> SIGPIPE'd git, printing nothing, looks like. Both fired on one lane (#4042 / PR #4142): the
+> branch simply was not there, and every downstream stage — reviewer checkout, SHA-bound verdict,
+> shipper merge — assumed a branch that did not exist.
+>
+> So **never invoke git's push porcelain directly from this skill.** Use `pipeline-cli
+> verified-push`, which pushes and then reads the remote ref back independently, and emits its
+> verdict as a single grep-able line **last on stdout** — `PUSH-VERDICT: MOVED`, `NOT-MOVED`, or
+> `UNKNOWN` — *in addition to* the exit code (0 / 1 / 3). stdout is the one channel that survives
+> **both** masking layers, so `… | tail -1` now yields *exactly* the verdict instead of erasing
+> it, and a detached run's output file ends with it.
+>
+> **Three outcomes, and the third is not a success.** `MOVED` means the remote ref was confirmed
+> at your local head. `NOT-MOVED` means it was confirmed *not* to be. `UNKNOWN` means the probe
+> could not determine it — a dead transport, an unresolvable head, a ref that matches while the
+> push itself misbehaved. Treat `UNKNOWN` exactly like a failure: **stop and surface it.** Do not
+> re-run the push hoping it takes (the verb deliberately does not retry — a blind retry hides the
+> contention it exists to expose, #4136), and do not proceed to open a PR, request a re-review, or
+> report the work landed.
+>
+> This is enforced mechanically, not by attention (ADR 0202): `pipeline-cli gh-phoenix lint-skills`
+> reds on a git push invocation in any runnable block of the skill corpus and fails closed on zero
+> scope, so a bare push cannot re-enter this file.
+
 This constrains how you branch: `main`
 is already checked out in the primary tree, so `git checkout main` **fails** inside an
 isolated worktree (`fatal: 'main' is already checked out at <primary>`). Branch from
@@ -1534,7 +1564,12 @@ re-derive them here. Two operational points that are yours, not the contract's:
 # just re-cd'd to $WT, so the checked-out branch IS the work branch. Read it, never guess it.
 wt_preflight && BRANCH="$(git -C "$WT" branch --show-current)"
 : "${BRANCH:?could not re-derive branch from worktree $WT — refusing to push to a guessed/cached ref}"
-git -C "$WT" push -u origin "$BRANCH"   # gate the push ([per-mutation preflight]); branch re-derived live, never cross-lane-cached
+# The SANCTIONED push path — see [Pushing: the verdict is the ref, not the exit code]. It pushes
+# AND independently confirms the remote ref, printing its verdict LAST on stdout. Exit 0 = MOVED,
+# 1 = NOT-MOVED, 3 = UNKNOWN; STOP on either non-zero — never open a PR against a branch you
+# cannot prove exists (an UNKNOWN is not a success).
+wt_preflight && pipeline-cli verified-push --cwd "$WT" --remote origin --branch "$BRANCH" --set-upstream \
+  || { echo "write-code: the push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — refusing to open a PR against an unproven branch." >&2; exit 1; }
 # The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
 # PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
 claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my claim (Step 3.5)"; exit 1; }
@@ -2139,7 +2174,8 @@ fixes. Two outcomes:
   incoming `main` change and your branch's intent), `git add` the resolved files, `git rebase
   --continue`, and only then apply the review findings on top. Do **not** `git rebase --abort`
   and push the stale base — that just re-buries the conflict until merge. Because a rebase moves
-  the head, the eventual R3 push is a force-push (`git push --force-with-lease origin HEAD`), and
+  the head, the eventual R3 push needs `--force-with-lease` (pass that flag to the R3
+  `pipeline-cli verified-push` — never a bare push, which the corpus lint rejects), and
   the fresh re-review re-binds the verdict to the new head (the [rebase → re-review → ship is
   atomic](#a-rebase-invalidates-the-pass--rebase--re-review--ship-is-atomic) rule already covers
   this — the R3 push *is* that head-move, and the independent gate re-reviews it).
@@ -2181,7 +2217,12 @@ unreliable in this org).
 # reset can't move the claim, but the guard is MANDATED before every number-targeting mutation,
 # exactly as wt_preflight is before every git op; gate both the push and the progress comment.
 claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue #$N not my claim (Step 3.5)"; exit 1; }
-wt_preflight && git push --force-with-lease origin HEAD   # gate the push ([per-mutation preflight]); --force-with-lease because the R2 rebase onto origin/main moved the head
+# The SANCTIONED push path ([Pushing: the verdict is the ref, not the exit code]) — force-with-lease
+# because the R2 rebase onto origin/main moved the head. It confirms the remote ref carries the
+# rebased head before you claim the resubmit landed; exit 0 = MOVED, 1 = NOT-MOVED, 3 = UNKNOWN.
+# STOP on either non-zero: a reviewer waiting on a moved head would otherwise re-gate the STALE one.
+wt_preflight && pipeline-cli verified-push --cwd "$WT" --remote origin --force-with-lease \
+  || { echo "write-code: the repair push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — the gate would re-run against the STALE head. Do not report the resubmit as landed." >&2; exit 1; }
 # compose the repair note under the §SP per-run scratch namespace, never a fixed /tmp leaf:
 # concurrent repair lanes clobber a shared name and this posts THEIR note onto your issue (#3718).
 # Session-keyed and deterministic, so the note you wrote in an earlier Bash call is still here.

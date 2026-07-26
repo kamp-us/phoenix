@@ -6,6 +6,7 @@ import {
 	isZeroScope,
 	lintCorpus,
 	type ScanFile,
+	scanBarePush,
 	scanFile,
 } from "./lint.ts";
 
@@ -189,6 +190,135 @@ describe("lintCorpus — frontmatter findings + scope (ADR 0092)", () => {
 		// A corpus of only non-frontmatter files: gh-scan has scope, frontmatter check has none.
 		const result = lintCorpus([{file: "skills/foo/helper.sh", content: "echo hi"}]);
 		assert.strictEqual(result.frontmatterScanned.length, 0);
+		assert.isTrue(isZeroScope(result));
+	});
+});
+
+// #4213 — the bare-`git push` check. The corpus must be able to *talk about* a bare push
+// (it has to, to explain why it is forbidden) while the runnable form is impossible to ship.
+const fenced = (...body: ReadonlyArray<string>) => ["```bash", ...body, "```"].join("\n");
+
+describe("scanBarePush — executable `git push` only (#4213)", () => {
+	it("flags a bare `git push` inside a fenced shell block", () => {
+		const f = scanBarePush("skills/x/SKILL.md", fenced('git push -u origin "$BRANCH"'));
+		assert.strictEqual(f.length, 1);
+		assert.strictEqual(f[0]?.line, 2);
+		assert.include(f[0]?.reason ?? "", "verified-push");
+	});
+
+	it('flags the `git -C "$WT" push` form (the write-code Step-5 shape)', () => {
+		const f = scanBarePush("skills/x/SKILL.md", fenced('git -C "$WT" push -u origin "$BRANCH"'));
+		assert.strictEqual(f.length, 1);
+	});
+
+	it("flags a force-push (the write-code Step-R3 shape)", () => {
+		const f = scanBarePush(
+			"skills/x/SKILL.md",
+			fenced("wt_preflight && git push --force-with-lease origin HEAD"),
+		);
+		assert.strictEqual(f.length, 1);
+	});
+
+	it("flags a push inside a BLOCKQUOTED fence — the corpus nests its most critical blocks that way", () => {
+		const content = ["> ```bash", "> git push origin HEAD", "> ```"].join("\n");
+		assert.strictEqual(scanBarePush("skills/x/SKILL.md", content).length, 1);
+	});
+
+	it("does NOT flag prose mentioning `git push` outside any fence", () => {
+		const content = "A `git push`/`git commit` op after a cwd reset runs in the primary tree.";
+		assert.strictEqual(scanBarePush("skills/x/SKILL.md", content).length, 0);
+	});
+
+	it("does NOT flag the sanctioned verb, which contains no `git push` at all", () => {
+		const f = scanBarePush(
+			"skills/x/SKILL.md",
+			fenced('pipeline-cli verified-push --cwd "$WT" --branch "$BRANCH" --set-upstream'),
+		);
+		assert.strictEqual(f.length, 0);
+	});
+
+	it("does NOT flag a placeholder like `git <commit|push|switch …>`", () => {
+		assert.strictEqual(
+			scanBarePush("skills/x/SKILL.md", fenced("git <commit|push|switch …>")).length,
+			0,
+		);
+	});
+
+	it("treats a .sh file as executable throughout (no fence needed)", () => {
+		assert.strictEqual(scanBarePush("hooks/deploy.sh", "git push origin main\n").length, 1);
+	});
+
+	it("is out of scope for a non-.md/.sh file", () => {
+		assert.strictEqual(scanBarePush("src/thing.ts", "git push origin main").length, 0);
+	});
+
+	// #4217 — the pattern itself must not be wedgeable. This gate runs on every
+	// `pull_request` over a corpus anyone can add a line to, and a hung job presents as
+	// *running*, not failed, so a crafted line that never reaches `push` must still return.
+	// Both shapes below hung for 60+ SECONDS on real, shipped-at-the-time patterns; the 1 s
+	// bound is a ~60x margin over the fixed pattern's sub-millisecond time, so it pins the
+	// linearity without flaking on a loaded CI box. Deleting these is how the ambiguity
+	// silently comes back.
+	describe("is not exponentially backtrackable (#4217)", () => {
+		const boundedScan = (line: string) => {
+			const t0 = performance.now();
+			const findings = scanBarePush("skills/x/SKILL.md", fenced(line));
+			return {ms: performance.now() - t0, findings};
+		};
+
+		it("returns fast on a long `--a=b=c` run that never reaches `push`", () => {
+			// `--\S+=\S+\s+` overlapping `-\S+\s+`, re-split at every `=`: 165 chars → 74.8 s.
+			const {ms, findings} = boundedScan(`git ${"--a=b=c ".repeat(400)}x`);
+			assert.strictEqual(findings.length, 0);
+			assert.isBelow(ms, 1000);
+		});
+
+		it("returns fast on a long `-c` run that never reaches `push`", () => {
+			// `-[cC]\s+\S+\s+` overlapping `-\S+\s+` on a bare `-c` token: 140 chars → 64.0 s.
+			const {ms, findings} = boundedScan(`git ${"-c ".repeat(400)}x`);
+			assert.strictEqual(findings.length, 0);
+			assert.isBelow(ms, 1000);
+		});
+
+		it("returns fast on a mixed option flood that never reaches `push`", () => {
+			const {ms, findings} = boundedScan(`git ${"-c a=b --x=y -C /d ".repeat(200)}x`);
+			assert.strictEqual(findings.length, 0);
+			assert.isBelow(ms, 1000);
+		});
+
+		// The disambiguator (`[^-\s]` on the `-c` VALUE) must not have narrowed what matches.
+		it("still flags every real option form the push sites use", () => {
+			for (const line of [
+				"git -c a=b push",
+				"git -c user.name=x -C /d push origin main",
+				"git --git-dir=/x/.git push",
+				"git --no-pager push",
+				"git -c core.hooksPath=/dev/null push --force-with-lease origin HEAD",
+				"git -C /d -c a=b --git-dir=/x/.git push",
+			]) {
+				assert.strictEqual(
+					scanBarePush("skills/x/SKILL.md", fenced(line)).length,
+					1,
+					`expected a finding for: ${line}`,
+				);
+			}
+		});
+	});
+});
+
+describe("lintCorpus — bare-push findings + scope (ADR 0092)", () => {
+	it("does NOT exempt write-code, the very file that owns both push sites", () => {
+		const result = lintCorpus([
+			{file: "skills/write-code/SKILL.md", content: fenced('git push -u origin "$BRANCH"')},
+		]);
+		assert.strictEqual(result.findings.length, 0); // gh-grep self-exempt
+		assert.strictEqual(result.barePushFindings.length, 1); // push check is NOT
+		assert.deepStrictEqual([...result.barePushScanned], ["skills/write-code/SKILL.md"]);
+	});
+
+	it("is zero scope — a FAIL — when the push check was handed nothing to scan", () => {
+		const result = lintCorpus([{file: "agents/coder.txt", content: "git push origin main"}]);
+		assert.strictEqual(result.barePushScanned.length, 0);
 		assert.isTrue(isZeroScope(result));
 	});
 });

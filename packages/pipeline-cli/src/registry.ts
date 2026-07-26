@@ -155,6 +155,9 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	),
 	tool("main-sync", () => import("./tools/main-sync/command.ts").then((m) => m.mainSyncCommand)),
 	tool("ref-guard", () => import("./tools/ref-guard/command.ts").then((m) => m.refGuardCommand)),
+	tool("verified-push", () =>
+		import("./tools/verified-push/command.ts").then((m) => m.verifiedPushCommand),
+	),
 	tool("primary-index-guard", () =>
 		import("./tools/primary-index-guard/command.ts").then((m) => m.primaryIndexGuardCommand),
 	),
