@@ -26,11 +26,13 @@
  *
  * IO here (the thin bin), classification in `class-probe.ts` (the pure core). An
  * unreadable §CLASS falls back to the fail-closed probes (`FAILCLOSED_PROBES`), which
- * over-dispatch every gate rather than skip one.
+ * over-dispatch every gate rather than skip one. An unreadable *input* is different in kind and
+ * is never absorbed into a value: both branches of the changed-file read refuse non-zero rather
+ * than classify over an input they could not read (stdin #3924, `--files-from` #4061).
  */
 import {Console, Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {readStdinTextOrExit} from "../../read-stdin.ts";
+import {readStdinTextOrExit, STDIN_READ_FAILED_EXIT_CODE} from "../../read-stdin.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
 import {
 	classify,
@@ -87,25 +89,48 @@ const namespacesFlag = Flag.boolean("namespaces").pipe(
 	Flag.withDescription("print the required review-* namespaces instead of the has-* classes"),
 );
 
-/** Read the changed-file list from `--files-from` or stdin; empty/failed read ⇒ no files. */
-const readFiles = (
+/**
+ * Read the changed-file list from `--files-from` or stdin. An unreadable `--files-from` resolves
+ * to **`null`**, never to zero files: "I could not read the input" and "the input was legitimately
+ * empty" must stay two different values at this boundary (#4061). A readable-but-empty file still
+ * yields `[]`, which the callers route through their own fail-closed no-input path.
+ */
+export const readFiles = (
 	filesFrom: Option.Option<string>,
-): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem> =>
+): Effect.Effect<ReadonlyArray<string> | null, never, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const raw = yield* Option.match(filesFrom, {
 			onSome: (path) =>
 				Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path, "utf8")).pipe(
-					Effect.orElseSucceed(() => ""),
+					Effect.orElseSucceed((): string | null => null),
 				),
 			// stdin: a failed read exits non-zero through the shared reader — probing "no files
 			// changed" over a pipe that was never read is the defect (#3924).
 			onNone: () => readStdinTextOrExit(),
 		});
+		if (raw === null) return null;
 		return raw
 			.split("\n")
 			.map((line) => line.trim())
 			.filter((line) => line.length > 0);
 	});
+
+/**
+ * The refusal both subcommands take on an unreadable `--files-from` — the path branch's failure
+ * stays hard, exactly as `.patterns/effect-platform-access.md` rules (#4061). Distinct from every
+ * classification outcome: a readable-but-empty list still classifies (exit 0 / the doc-vocab
+ * verdict), an unreadable one never does.
+ */
+const exitUnreadableFilesFrom = (filesFrom: Option.Option<string>): Effect.Effect<never> =>
+	Effect.sync(() => {
+		const path = Option.getOrElse(filesFrom, () => "(unset)");
+		process.stderr.write(
+			`class-probe: could not read --files-from ${path} — refusing to classify over an input that was never read. This is NOT an empty change set: a readable-but-empty file still classifies, an unreadable path does not (#4061).\n`,
+		);
+		// The same non-zero code the stdin branch exits with (read-stdin.ts) — one code for "the
+		// input was never read", whichever branch was reading it.
+		process.exit(STDIN_READ_FAILED_EXIT_CODE);
+	}).pipe(Effect.andThen(Effect.never));
 
 /** Read local §CLASS text; null (⇒ fail-closed probes) if the file is unreadable. */
 const readFormats = (
@@ -145,6 +170,7 @@ const classifyCmd = Command.make(
 		const uiRe = parseUiProbe(shipIt ?? "");
 		const uiExclude = parseUiExclude(shipIt ?? "");
 		const files = yield* readFiles(filesFrom);
+		if (files === null) return yield* exitUnreadableFilesFrom(filesFrom);
 		// Fail closed on zero input (#3786): this probe is only ever piped a PR's changed-file
 		// list, which is never legitimately empty — an empty read is a dropped/undelivered stdin,
 		// indistinguishable at the pure core from a gate-free PR. Route it through the same has-code
@@ -209,6 +235,7 @@ const docVocabCmd = Command.make(
 		const formats = yield* readFormats(rootDir);
 		const probe = parseDocVocabProbe(formats ?? "");
 		const files = yield* readFiles(filesFrom);
+		if (files === null) return yield* exitUnreadableFilesFrom(filesFrom);
 		const surfaceOnly = isDocVocabSurfaceOnly(files, probe);
 
 		if (formats === null) {

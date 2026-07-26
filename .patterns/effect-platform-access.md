@@ -205,10 +205,12 @@ sometimes the only option, in these grounded cases:
   [0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md) exists to stop. Keep the
   path branch's failure hard (`verdict`'s `Effect.orDie`, or a typed failure that exits
   non-zero) and let the stdin branch run only when no path was given at all. `class-probe`'s
-  `readFiles` is the counter-example on `main` today — an unreadable `--files-from` is
-  absorbed to `""`, i.e. to *no files* — which is the shape this paragraph rules against, not
-  a second sanctioned option; it is part of what
-  [#3924](https://github.com/kamp-us/phoenix/issues/3924) tightens.
+  `readFiles` used to be the counter-example — an unreadable `--files-from` was absorbed to
+  `""`, i.e. to *no files*, so an unread input and an empty one were one value. It now resolves
+  an unreadable path to `null` and refuses non-zero on it, while a readable-but-empty file still
+  classifies through the tool's own fail-closed no-input path — the two outcomes stay distinct
+  in both value and exit code ([#4061](https://github.com/kamp-us/phoenix/issues/4061); the
+  stdin half was [#3924](https://github.com/kamp-us/phoenix/issues/3924)).
 
 The rule is not "never write `node:`" — it's "**domain Effect code depends on the
 platform service, so the filesystem stays a swappable seam.**" When you keep a raw
