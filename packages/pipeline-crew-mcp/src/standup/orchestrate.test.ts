@@ -11,7 +11,13 @@
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {CREW_ROLES, isAutobooted, kindOf} from "../crew/index.ts";
+import {
+	CREW_ROLES,
+	crewMcpToolToken,
+	isAutobooted,
+	kindOf,
+	REQUIRED_SEAT_CHANNEL_TOOLS,
+} from "../crew/index.ts";
 import {CREW_PLUGIN_CHANNEL_REF, CREW_SESSION_INSTANCE_FLAG} from "./bind.ts";
 import {
 	DEFAULT_CONFIG_PATH,
@@ -54,7 +60,11 @@ const SERVER = "@kampus/pipeline-crew-mcp";
  * fake path with no `claude-plugins/` under it.
  */
 const WELL_DECLARED_SEAT: SeatToolsetReader = () =>
-	Effect.succeed({_tag: "allowlist", tools: ["Read", "Bash", "Task"], disallowedTools: []});
+	Effect.succeed({
+		_tag: "allowlist",
+		tools: ["Read", "Bash", "Task", ...REQUIRED_SEAT_CHANNEL_TOOLS.map(crewMcpToolToken)],
+		disallowedTools: [],
+	});
 
 // The per-session bind reaches the platform through the FileSystem/Path seam; provide the real Node
 // platform (the bin's NodeServices.layer) so runStandUp discharges it in-test. These tests inject

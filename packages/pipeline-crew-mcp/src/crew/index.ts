@@ -84,6 +84,15 @@ export {
 	kindOf,
 } from "./roles.ts";
 export {
+	CREW_MCP_TOOL_PREFIX,
+	CREW_SERVED_TOOL_NAMES,
+	CREW_SESSION_TOOLKITS,
+	crewMcpToolName,
+	crewMcpToolToken,
+	REQUIRED_SEAT_CHANNEL_TOOLS,
+	sanitizeMcpServerName,
+} from "./served-toolset.ts";
+export {
 	type CrewSessionConfig,
 	channelSendFromPeer,
 	crewSessionLayer,

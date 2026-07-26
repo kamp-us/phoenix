@@ -22,6 +22,16 @@
  *      `Glob` are not tools a top-level session is granted on this CLI at all, so declaring them is a
  *      no-op that reads like a grant.
  *
+ * Two further rules close the MCP hole those two left open (#4002 — a seat declaring `channel_kinds`
+ * that ran a whole drain without it, discovered by two rejected sends). Post-connect a seat's granted
+ * set is exactly `declared ∩ served`, and BOTH operands are known before launch, so the runtime outcome
+ * is decidable here rather than mid-drain:
+ *
+ *   3. UNSERVED CREW TOOL — a token for the crew's own MCP server naming a tool that server does not
+ *      serve. No connect window can produce it, so it is a declaration error, not boot timing.
+ *   4. MISSING CHANNEL TOOL — a served channel tool the declaration omits, leaving it present-but-
+ *      uncallable from the seat (the #3483 shape). Which tools are mandatory is `REQUIRED_SEAT_CHANNEL_TOOLS`.
+ *
  * The one non-obvious thing: this FAILS CLOSED like every other launcher precondition (version-assert,
  * bind's three refusals) — a declaration that would not resolve intact refuses the launch with a named
  * error carrying the role, the dropped names, and which rule dropped them, rather than booting a
@@ -31,6 +41,12 @@
  */
 import {Effect, FileSystem, Path, Schema} from "effect";
 import type {CrewRole} from "../crew/index.ts";
+import {
+	CREW_SERVED_TOOL_NAMES,
+	crewMcpToolName,
+	crewMcpToolToken,
+	REQUIRED_SEAT_CHANNEL_TOOLS,
+} from "../crew/served-toolset.ts";
 import {CREW_PLUGIN_SUBDIR} from "./bind.ts";
 
 /**
@@ -74,9 +90,13 @@ export const GRANTABLE_SESSION_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * An MCP tool token (`mcp__<sanitized server>__<tool>`) is exempt from the grantable check: it is
+ * An MCP tool token (`mcp__<sanitized server>__<tool>`) is exempt from the GRANTABLE check: it is
  * served by a connected MCP server rather than the CLI's own registry, so its absence at boot is the
  * channel's connect window (CHANNEL-TOOL.md), not a declaration error.
+ *
+ * It once exempted an `mcp__*` entry from EVERY refusal bucket, which is why a declared-vs-actual MCP
+ * gap could stay silent for a seat's whole life. The invariant now: this exemption covers
+ * PRESENCE-AT-BOOT only, and rules 3/4 (module docblock, #4002) decide the rest statically.
  */
 export const isMcpToolToken = (entry: string): boolean => entry.startsWith("mcp__");
 
@@ -102,22 +122,47 @@ export interface ToolsetResolution {
 	readonly ungrantable: readonly string[];
 	/** Declared names subtracted by the def's own `disallowedTools` base-name match (rule 1). */
 	readonly selfDenied: readonly string[];
+	/** Declared crew-server MCP tokens naming a tool that server does not serve (rule 3). */
+	readonly unservedMcp: readonly string[];
 }
 
-/** Resolve a declaration through both silent-drop rules — the pure core the assert and its tests share. */
+/** Resolve a declaration through every silent-drop rule — the pure core the assert and its tests share. */
 export const resolveDeclaredToolset = (declared: DeclaredToolset): ToolsetResolution => {
-	if (declared._tag === "inherit") return {granted: [], ungrantable: [], selfDenied: []};
+	if (declared._tag === "inherit")
+		return {granted: [], ungrantable: [], selfDenied: [], unservedMcp: []};
 	const denied = new Set(declared.disallowedTools.map(baseToolName));
 	const granted: string[] = [];
 	const ungrantable: string[] = [];
 	const selfDenied: string[] = [];
+	const unservedMcp: string[] = [];
 	for (const entry of declared.tools) {
 		const base = baseToolName(entry);
-		if (!isMcpToolToken(entry) && !GRANTABLE_SESSION_TOOLS.has(base)) ungrantable.push(entry);
+		const crewTool = crewMcpToolName(entry);
+		// Rule 3 is checked FIRST and only for the crew's OWN server: a foreign server's toolset is
+		// unknowable here, so its token keeps the blanket connect-window exemption.
+		if (crewTool !== null && !CREW_SERVED_TOOL_NAMES.has(crewTool)) unservedMcp.push(entry);
+		else if (!isMcpToolToken(entry) && !GRANTABLE_SESSION_TOOLS.has(base)) ungrantable.push(entry);
 		else if (denied.has(base)) selfDenied.push(entry);
 		else granted.push(entry);
 	}
-	return {granted, ungrantable, selfDenied};
+	return {granted, ungrantable, selfDenied, unservedMcp};
+};
+
+/**
+ * RULE 4 — the channel tools a seat must declare to be a functioning crew member, missing from this
+ * declaration. The complement of rule 3: rule 3 catches a token naming nothing, this catches a served
+ * tool no token names — the shape #4002 reports, where a seat coordinates over the channel yet cannot
+ * call `channel_kinds` and rediscovers every payload shape by rejected send.
+ *
+ * This is a LAUNCH-time assert, not the repo's own def test: stand-up reads the defs under the launched
+ * `projectRoot`, which may be an older install than the checkout whose unit tests pass — the very skew
+ * that lets a seat boot missing a tool its (current) def declares.
+ */
+export const missingSeatChannelTools = (declared: DeclaredToolset): readonly string[] => {
+	// An `inherit` def has no allowlist to narrow: the CLI grants its default toolset, MCP tools included.
+	if (declared._tag === "inherit") return [];
+	const granted = new Set(resolveDeclaredToolset(declared).granted);
+	return REQUIRED_SEAT_CHANNEL_TOOLS.map(crewMcpToolToken).filter((token) => !granted.has(token));
 };
 
 /**
@@ -131,6 +176,8 @@ export class CrewSeatToolsetMismatchError extends Schema.TaggedErrorClass<CrewSe
 		defPath: Schema.String,
 		ungrantable: Schema.Array(Schema.String),
 		selfDenied: Schema.Array(Schema.String),
+		unservedMcp: Schema.Array(Schema.String),
+		missingChannelTools: Schema.Array(Schema.String),
 		reason: Schema.String,
 	},
 ) {}
@@ -248,14 +295,27 @@ export const assertSeatToolset = (
 	defPath: string,
 	declared: DeclaredToolset,
 ): Effect.Effect<void, CrewSeatToolsetMismatchError> => {
-	const {ungrantable, selfDenied} = resolveDeclaredToolset(declared);
-	if (ungrantable.length === 0 && selfDenied.length === 0) return Effect.void;
+	const {ungrantable, selfDenied, unservedMcp} = resolveDeclaredToolset(declared);
+	const missingChannelTools = missingSeatChannelTools(declared);
+	if (
+		ungrantable.length === 0 &&
+		selfDenied.length === 0 &&
+		unservedMcp.length === 0 &&
+		missingChannelTools.length === 0
+	)
+		return Effect.void;
 	const parts = [
 		ungrantable.length > 0
 			? `${JSON.stringify(ungrantable)} name no tool this CLI grants a top-level session, so they are silently dropped`
 			: undefined,
 		selfDenied.length > 0
 			? `${JSON.stringify(selfDenied)} are subtracted by this def's own \`disallowedTools\` (an entry matches by BASE tool name — the \`(specifier)\` is ignored and the WHOLE tool goes)`
+			: undefined,
+		unservedMcp.length > 0
+			? `${JSON.stringify(unservedMcp)} name no tool the crew MCP server serves (it serves ${JSON.stringify([...CREW_SERVED_TOOL_NAMES])}), so the connect window can never resolve them — the seat would boot declaring a tool it can never call`
+			: undefined,
+		missingChannelTools.length > 0
+			? `${JSON.stringify(missingChannelTools)} are absent from the declaration, so those channel tools are served-but-uncallable from this seat — every crew seat must carry them (CHANNEL-TOOL.md)`
 			: undefined,
 	].filter((part) => part !== undefined);
 	return Effect.fail(
@@ -264,7 +324,9 @@ export const assertSeatToolset = (
 			defPath,
 			ungrantable,
 			selfDenied,
-			reason: `the "${role}" seat would boot without tools its def declares: ${parts.join("; ")} — fix the def rather than boot a silently degraded seat`,
+			unservedMcp,
+			missingChannelTools,
+			reason: `the "${role}" seat would boot with a toolset its def does not describe: ${parts.join("; ")} — fix the def rather than boot a silently degraded seat`,
 		}),
 	);
 };

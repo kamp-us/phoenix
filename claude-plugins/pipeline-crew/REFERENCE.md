@@ -38,12 +38,16 @@ sanitized (`[^a-zA-Z0-9_-]` → `_`, so `@`/`/` become `_`, hyphens preserved) +
 `channel_send`. The leading `_` of the sanitized name makes the join a **triple** underscore.
 A wrong string fails closed (present-but-uncallable). Single source: [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md).
 
-The **engineering-manager** (the one engine) carries a **second** channel token on top of
-`channel_send` — `mcp___kampus_pipeline-crew-mcp__channel_claim` — which claims a tracker
-resource before it opens a lane (cross-engine deconfliction, a real lock rather than a relayed
-message). Only the engine lists it; the three bridges list `channel_send` alone. So when
-reconstructing the engine def from the roster table below, note its `tools:` array is five
-entries, not four. Why it needs its own tool: [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md).
+Every def carries the discovery token `mcp___kampus_pipeline-crew-mcp__channel_kinds` alongside it,
+derived the same way — a seat that can send but cannot resolve a kind's shape rediscovers every
+payload by rejected send. The pair is **mandatory** and the launcher refuses a stand-up whose seat
+def drops either one (see [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md)).
+
+The **engineering-manager** (the one engine) carries a **third** channel token on top of that pair —
+`mcp___kampus_pipeline-crew-mcp__channel_claim` — which claims a tracker resource before it opens a
+lane (cross-engine deconfliction, a real lock rather than a relayed message). Only the engine lists
+it; the three bridges carry the mandatory pair alone. Why it needs its own tool:
+[`CHANNEL-TOOL.md`](CHANNEL-TOOL.md).
 
 ### Per-def frontmatter values
 
@@ -51,16 +55,15 @@ The exact shipped values, matching each def head:
 
 | Def file | `name` | `color` | `tools` |
 |---|---|---|---|
-| [`agents/crew-cartographer.md`](agents/crew-cartographer.md) | `crew-cartographer` | `green` | `Read`, `Bash`, `Task`, `channel_send` |
-| [`agents/crew-intake-desk.md`](agents/crew-intake-desk.md) | `crew-intake-desk` | `yellow` | `Read`, `Bash`, `Task`, `channel_send` |
-| [`agents/crew-engineering-manager.md`](agents/crew-engineering-manager.md) | `crew-engineering-manager` | `cyan` | `Task`, `Bash`, `Read`, `channel_send`, `channel_claim` |
-| [`agents/crew-chief-of-staff.md`](agents/crew-chief-of-staff.md) | `crew-chief-of-staff` | `magenta` | `Read`, `Bash`, `Task`, `channel_send` |
+| [`agents/crew-cartographer.md`](agents/crew-cartographer.md) | `crew-cartographer` | `green` | `Read`, `Bash`, `Task`, `channel_send`, `channel_kinds` |
+| [`agents/crew-intake-desk.md`](agents/crew-intake-desk.md) | `crew-intake-desk` | `yellow` | `Read`, `Bash`, `Task`, `channel_send`, `channel_kinds` |
+| [`agents/crew-engineering-manager.md`](agents/crew-engineering-manager.md) | `crew-engineering-manager` | `cyan` | `Task`, `Bash`, `Read`, `channel_send`, `channel_claim`, `channel_kinds` |
+| [`agents/crew-chief-of-staff.md`](agents/crew-chief-of-staff.md) | `crew-chief-of-staff` | `magenta` | `Read`, `Bash`, `Task`, `channel_send`, `channel_kinds` |
 
-`channel_send` above is the full `mcp___kampus_pipeline-crew-mcp__channel_send` token,
-abbreviated in this table for width; `channel_claim` on the engineering-manager row is
-likewise the full `mcp___kampus_pipeline-crew-mcp__channel_claim` token. Only the
-engineering-manager (the one engine) carries `channel_claim` — the three bridges list
-`channel_send` alone (see the channel-token subsection above). `model` is `inherit` for all four.
+Each `channel_*` above is the full `mcp___kampus_pipeline-crew-mcp__<tool>` token, abbreviated in
+this table for width. All four carry the mandatory `channel_send` + `channel_kinds` pair; only the
+engineering-manager (the one engine) adds `channel_claim` (see the channel-token subsection above).
+`model` is `inherit` for all four.
 
 The `Task` tool marks a role that **spawns subagents**: the three spawning roles
 (cartographer, intake-desk, engineering-manager) carry it; the chief-of-staff, which only

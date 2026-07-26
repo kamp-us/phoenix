@@ -13,7 +13,7 @@
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {inboxAddressFor} from "../crew/index.ts";
+import {crewMcpToolToken, inboxAddressFor, REQUIRED_SEAT_CHANNEL_TOOLS} from "../crew/index.ts";
 import {
 	DEFAULT_CONFIG_PATH,
 	decodeLaunchConfig,
@@ -171,7 +171,7 @@ const baseSpawn = (
 			readSeatToolset: (() =>
 				Effect.succeed({
 					_tag: "allowlist" as const,
-					tools: ["Read", "Bash", "Task"],
+					tools: ["Read", "Bash", "Task", ...REQUIRED_SEAT_CHANNEL_TOOLS.map(crewMcpToolToken)],
 					disallowedTools: [],
 				})) satisfies SeatToolsetReader,
 			instanceId: (() => {

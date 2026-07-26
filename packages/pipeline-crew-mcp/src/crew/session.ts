@@ -68,10 +68,10 @@ import {resolveChannelContract} from "./contract.ts";
 import type {RoleUniquenessError} from "./errors.ts";
 import {crewHeartbeatLayer} from "./heartbeat.ts";
 import {type CrewRole, kindOf} from "./roles.ts";
+import {CREW_SESSION_TOOLKITS, SESSION_SERVER_NAME} from "./served-toolset.ts";
 import {type CrewTracker, crewTrackerHostOrDialLayer, peerTrackerLayer} from "./tracker.ts";
 
-/** The MCP server identity a crew session advertises over stdio when none is configured. */
-export const SESSION_SERVER_NAME = "@kampus/pipeline-crew-mcp" as const;
+export {SESSION_SERVER_NAME};
 
 export interface CrewSessionConfig {
 	readonly role: CrewRole;
@@ -215,7 +215,7 @@ export const assembleCrewSession = <RIn, RSub = never>(
 			// Startup invariant (#3753): every tool this session will register must generate a spec-valid
 			// top-level `{"type":"object"}` inputSchema. A client rejects the WHOLE tools/list response on
 			// one bad schema, so the failure mode without this fence is a silently tool-less session.
-			yield* assertToolSchemas([ChannelToolkit, ClaimToolkit, ReleaseToolkit, KindsToolkit]);
+			yield* assertToolSchemas(CREW_SESSION_TOOLKITS);
 			const channel = yield* makeCrewChannel({role: config.role, address});
 			// Startup invariant (#3622): resolve the full discoverable channel contract BEFORE serving.
 			// A shared kind set that can't be fully resolved to a shape fails the build HERE (on the boot
