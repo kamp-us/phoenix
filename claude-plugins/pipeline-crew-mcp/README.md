@@ -88,6 +88,14 @@ before anyone looks. Its text is the gate's own reason string, and it names whic
 **So: a stand-up that reports success but whose panes never talk to each other is this check, not the
 launcher.** Verify (2) before spending any time on launcher-side diagnosis.
 
+Since #4297 the launcher no longer leaves that entirely to the toast. Before it launches anything it
+reads the org managed-settings sources it can reach and reports one of three verdicts — **verified**,
+**blocked** (a read surface that excludes the plugin: stand-up aborts, naming the remedy), or
+**unverified/unknown** (the effective allowlist could not be resolved — most often because no managed
+settings exist at all and the CLI falls back to the vendor ledger). An `unverified` stand-up still
+launches, but its headline says `CHANNEL UNVERIFIED`, so a dead channel is no longer indistinguishable
+from a healthy one at the launcher. See `claude-plugins/pipeline-crew/commands/stand-up.md`.
+
 ### Per-session role comes from the environment
 
 The crew runs one session **per role**, but a plugin channel is **one static declaration** — it cannot

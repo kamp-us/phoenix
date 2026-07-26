@@ -27,6 +27,9 @@ import {
 } from "./config.ts";
 import {type TrackerHandle, TrackerNotServingError} from "./ensure-tracker.ts";
 import {
+	ChannelAllowlistBlockedError,
+	type ChannelAllowlistProbe,
+	type ChannelAllowlistStatus,
 	CliVersionAssertError,
 	CREW_WINDOW,
 	type CrewMcpEntry,
@@ -226,6 +229,15 @@ const recordingProjectScope = (order: string[]) => {
 	return {registrar, reaped, registered, registeredCtx, cwdCalls};
 };
 
+/** A channel-allowlist probe pinned to one verdict, so the composition tests never touch a real policy file. */
+const stubbedAllowlistProbe = (status: ChannelAllowlistStatus): ChannelAllowlistProbe =>
+	Effect.succeed({
+		status,
+		ref: CREW_PLUGIN_CHANNEL_REF,
+		reason: `stubbed ${status}`,
+		consulted: [],
+	});
+
 const trackerHandle: TrackerHandle = {pid: 4242, socketPath: "/tmp/crew.sock"};
 
 /** A recording tracker-ensurer: counts calls so "was the tracker reached before the abort?" is checkable. */
@@ -295,6 +307,9 @@ const baseInput = (
 			instanceId: counter(),
 			runId: () => RUN_ID,
 			localScope: registrar,
+			// Stub the CLI-side channel-allowlist probe (#4297) so these composition tests never read the
+			// host's real org managed settings — a machine-dependent read would make them non-deterministic.
+			probeChannelAllowlist: stubbedAllowlistProbe("allowed"),
 			ensureTracker,
 			resolveTargetSession,
 			launch,
@@ -544,6 +559,58 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				// Every pane cwd is distinct — so a pane booting in its cwd sees ONLY its own leaf .mcp.json.
 				const cwds = entries.map((e) => e.cwd);
 				assert.strictEqual(new Set(cwds).size, cwds.length);
+			}),
+	);
+
+	it.effect(
+		"allowlist mode: a BLOCKED CLI-side channel allowlist aborts with zero panes launched (#4297)",
+		() =>
+			Effect.gen(function* () {
+				const {input, launched, order, trackerCalls} = baseInput({
+					engineCount: 2,
+					config: allowlistConfigAt(2),
+					probeChannelAllowlist: stubbedAllowlistProbe("blocked"),
+				});
+				const error = yield* Effect.flip(standUp(input));
+				assert.instanceOf(error, ChannelAllowlistBlockedError);
+				// The abort names the remedy, and names it as a managed-settings KEY the operator can act on.
+				assert.include(error.remedy, "allowedChannelPlugins");
+				assert.include(renderStandUpError(error), CREW_PLUGIN_CHANNEL_REF);
+				// No partial crew, and the abort lands before the tracker is even started.
+				assert.strictEqual(launched.length, 0);
+				assert.strictEqual(trackerCalls(), 0);
+				assert.notInclude(order, "reap");
+			}),
+	);
+
+	it.effect(
+		"allowlist mode: an UNKNOWN channel allowlist launches but the result reports the unverified verdict (#4297)",
+		() =>
+			Effect.gen(function* () {
+				const {input, launched} = baseInput({
+					engineCount: 1,
+					config: allowlistConfigAt(1),
+					probeChannelAllowlist: stubbedAllowlistProbe("unknown"),
+				});
+				const result = yield* standUp(input);
+				// PROBES.md: a check that could not run never gates — the crew still comes up.
+				assert.strictEqual(result.launched.length, launched.length);
+				assert.isAbove(result.launched.length, 0);
+				// …but the verdict rides out on the result, so "could not verify" is not "verified".
+				assert.strictEqual(result.channelAllowlist.status, "unknown");
+			}),
+	);
+
+	it.effect(
+		"development mode: the CLI-side allowlist gate is not applicable and is never probed (#4297)",
+		() =>
+			Effect.gen(function* () {
+				// A probe that would fail proves it is never run: dev mode bypasses the CLI's `!dev`-guarded
+				// allowlist check outright, so there is no policy surface to read.
+				const probeNeverRuns = Effect.die("the allowlist probe must not run in development mode");
+				const {input} = baseInput({engineCount: 1, probeChannelAllowlist: probeNeverRuns});
+				const result = yield* standUp(input);
+				assert.strictEqual(result.channelAllowlist.status, "not-applicable");
 			}),
 	);
 
