@@ -314,14 +314,45 @@ default — most issues carry no milestone) per the contract's REST surface.
 ### Is it a sub-issue?
 
 An issue may be a child of an epic. Check before claiming — a sub-issue carries
-dependency constraints the bare issue doesn't show:
+dependency constraints the bare issue doesn't show.
+
+Resolve the parent through **`GET /repos/{owner}/{repo}/issues/<N>/parent`**, the dedicated
+sub-endpoint ADR
+[0131](https://github.com/kamp-us/phoenix/blob/main/.decisions/0131-epic-autoclose-on-all-children-closed.md)
+§3 already names the authoritative linkage — and read **three** outcomes off it, never two:
 
 ```bash
-gh api repos/$REPO/issues/<N> --jq '.parent // "no parent (standalone)"'
+# `-i` keeps the status line on stdout even when gh exits non-zero, which is the whole point:
+# it is what distinguishes a genuine 404 ("No parent issue found" ⇒ standalone) from an
+# UNREADABLE response (5xx, rate-limit, auth, network ⇒ UNKNOWN). Collapsing those two into
+# "no parent" is a silent no-op that skips Step 2 on a real epic child (#4171, #3715, #4108).
+PARENT_RESP="$(gh api "repos/$REPO/issues/<N>/parent" -i 2>/dev/null)"
+PARENT_STATUS="$(printf '%s\n' "$PARENT_RESP" | head -n1 | awk '{print $2}')"
+case "$PARENT_STATUS" in
+  200)
+    EPIC="$(printf '%s\n' "$PARENT_RESP" | awk 'body{print} /^\r?$/{body=1}' | jq -r '.number // empty')"
+    : "${EPIC:?parent read returned 200 with no .number — UNKNOWN, not standalone; refusing to claim <N>}"
+    echo "#<N> is a sub-issue of epic #$EPIC → Step 2 (derive eligibility BEFORE claiming)" ;;
+  404)
+    echo "#<N> is standalone (404 'No parent issue found') → Step 3 (claim it)" ;;
+  *)
+    echo "write-code FAILED (fail-closed): parent read on #<N> returned HTTP '${PARENT_STATUS:-none}' — UNKNOWN, which is NOT evidence of 'no parent'. Refusing to claim: retry, or re-pick per Step 1." >&2
+    exit 1 ;;
+esac
 ```
 
-If it has a `parent`, go to Step 2 to derive eligibility before claiming. If it's
-standalone, skip to Step 3.
+- **Parent resolved (200)** → go to **Step 2** and derive eligibility before claiming.
+- **Standalone (404)** → skip to **Step 3**.
+- **Anything else** → **stop, loudly.** An unreadable parent read is *unknown*, not *absent*;
+  proceeding would claim a child whose dependencies were never checked.
+
+> **Never read `.parent` off the plain issue payload.** The single-issue REST response carries
+> **no** `parent` key at all (the linkage surfaces there as `parent_issue_url`), so the read this
+> step used to carry — a `--jq` on `.parent` with a `"no parent (standalone)"` jq-alternative
+> default — fired its default unconditionally and answered "standalone" for *every* issue: a
+> well-formed, plausible, always-wrong answer that skipped the whole Step 2 derivation on every
+> epic child and left no trace (#4171). ADR 0131 §3 states the same thing from the other side:
+> the child's own `.parent` field is unreliable, the sub-endpoint is the source of truth.
 
 ---
 
@@ -333,7 +364,7 @@ when its dependencies are all closed. There is **no `status:blocked` label**;
 eligibility is computed fresh on every pick from the epic's `## Dependencies` section.
 
 ```bash
-EPIC=<parent number>
+EPIC=<the parent number Step 1's sub-endpoint read resolved — never a guessed or remembered one>
 # the epic body carries the plan + the ## Dependencies topology
 gh api repos/$REPO/issues/$EPIC --jq '.body'
 # the real child set + each child's state (the list endpoint is source of truth;
