@@ -1,3 +1,6 @@
+import {readFileSync} from "node:fs";
+import {dirname, join} from "node:path";
+import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {
 	type CheckRun,
@@ -7,6 +10,7 @@ import {
 	latestPerContext,
 	rollupChecks,
 } from "./checks.ts";
+import {FAILCLOSED_STEP3_ENTRY_TEST, parseStep3EntryTest} from "./step3-contract.ts";
 
 let nextId = 1;
 const run = (over: Partial<CheckRun> & {readonly name: string}): CheckRun => ({
@@ -326,24 +330,73 @@ describe("rollupChecks — a check suite with zero attached runs is not pending"
 	});
 });
 
+// The live skill — the single source for Step 3's branch order. Read repo-relative off this
+// file's own location so it resolves identically in CI and in a worktree.
+const SHIP_IT_PATH = join(
+	dirname(fileURLToPath(import.meta.url)),
+	"../../../../..",
+	"claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md",
+);
+const SHIP_IT_TEXT = readFileSync(SHIP_IT_PATH, "utf8");
+const LIVE_STEP3_ENTRY = parseStep3EntryTest(SHIP_IT_TEXT);
+
 /**
  * A test-local mirror of ship-it Step 3's classification order, so the branch the shipper takes on
- * a given rollup is executable rather than only prose. Keep it in step with the skill's branch list
+ * a given rollup is executable rather than only prose
  * (`claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md`, Step 3).
+ *
+ * Branch 2 is not hand-copied: its predicate is the field set the skill's own entry test reads,
+ * parsed off that file. Editing the skill's entry test back to the rollup colour resolves those
+ * fields away, and the two regression cases below stop settle-polling — the drift goes red instead
+ * of passing over the defect the mirror exists to guard (#4054).
  */
 type Step3Branch = "heal-ci" | "empty-set" | "settle-poll" | "proceed";
 
 const isInformational = (name: string): boolean =>
 	name === "deploy (web)" || name.startsWith("cleanup (web,");
 
+// The rollup's array-valued fields, by the name a jq binding in the skill would use. A field the
+// skill names that is NOT one of these (`conclusion`, the colour) resolves to no set at all.
+const ROLLUP_SETS: Readonly<
+	Record<string, (rollup: ReturnType<typeof rollupChecks>) => ReadonlyArray<CheckRun>>
+> = {
+	failing: (rollup) => rollup.failing,
+	latest: (rollup) => rollup.latest,
+	running: (rollup) => rollup.running,
+	wedged: (rollup) => rollup.wedged,
+};
+
+const skillSaysPending = (rollup: ReturnType<typeof rollupChecks>): boolean =>
+	LIVE_STEP3_ENTRY.fields.some((field) => (ROLLUP_SETS[field]?.(rollup).length ?? 0) > 0);
+
 const step3Branch = (rollup: ReturnType<typeof rollupChecks>): Step3Branch => {
 	if (rollup.failing.some((c) => !isInformational(c.name))) return "heal-ci"; // 1: gating red
 	if (rollup.latest.length === 0) return "empty-set"; // 1b: zero contexts
-	// 2: the pending SETS. Reading `rollup.conclusion` here instead is the #3999 fail-open — red
-	// wins over pending in the colour, so an informational red hides an unfinished gating check.
-	if (rollup.running.length > 0 || rollup.wedged.length > 0) return "settle-poll";
+	if (skillSaysPending(rollup)) return "settle-poll"; // 2: the pending SETS, per the skill
 	return "proceed"; // 4: every gating check is green
 };
+
+describe("ship-it Step 3's branch-2 entry test, read off the live SKILL.md", () => {
+	it("reads the pending sets — the rollup's running/wedged arrays", () => {
+		assert.deepStrictEqual(LIVE_STEP3_ENTRY.fields, ["running", "wedged"]);
+	});
+
+	it("binds no rollup colour: `.conclusion` is an aggregate in which red wins over pending", () => {
+		assert.notInclude(LIVE_STEP3_ENTRY.condition, "conclusion");
+		assert.notInclude(LIVE_STEP3_ENTRY.fields, "conclusion");
+	});
+
+	it("the #3999 drift is caught: an entry test rewritten to the colour resolves no pending set", () => {
+		const drifted = SHIP_IT_TEXT.replace(LIVE_STEP3_ENTRY.condition, '[ "$CI_STATE" = pending ]');
+		assert.notStrictEqual(drifted, SHIP_IT_TEXT);
+		assert.deepStrictEqual(parseStep3EntryTest(drifted).fields, []);
+	});
+
+	it("fails closed on a Step 3 it cannot read, rather than resolving a green-looking empty", () => {
+		assert.deepStrictEqual(parseStep3EntryTest(""), FAILCLOSED_STEP3_ENTRY_TEST);
+		assert.deepStrictEqual(FAILCLOSED_STEP3_ENTRY_TEST.fields, []);
+	});
+});
 
 describe("ship-it Step 3 branch 2 — an informational red never masks an unfinished check", () => {
 	const informationalRedPlus = (unfinished: CheckRun, informationalRed: string) =>
