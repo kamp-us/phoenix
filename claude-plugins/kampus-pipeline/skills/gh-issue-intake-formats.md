@@ -1624,13 +1624,16 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\.jsonc$|^biome-plugins/'
-# --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
-# concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
-# API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a
-# >100-file PR — hiding a control-plane file in the tail. Never pair --paginate with an AGGREGATE
-# --jq (`[ … ]` / `length` / `add`): gh runs the filter PER PAGE and emits one result each (#725).
-gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-  | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING — control plane (manual merge)"
+# The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
+# `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
+# pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP
+# path touched" — fail-open at the definition of the boundary itself (#4216). §CPREAD owns the
+# --paginate / streaming-jq / shape-assert rationale; read it there once, don't re-derive it here.
+if ! cp_changed_files "$REPO" "$PR"; then
+  echo "BLOCKING — §CP UNKNOWN (changed-file list unreadable; never 'no control-plane path')"
+elif printf '%s\n' "$CP_FILES" | grep -Eq "$CONTROL_PLANE_RE"; then
+  echo "BLOCKING — control plane (manual merge)"
+fi
 ```
 
 **The §CP-deciding consumers resolve this line from `origin/main` at run time, not from the
@@ -1689,10 +1692,17 @@ GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|contai
 GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'
 GA_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^GUARD_ADR_RE=' | head -n1 || true)"
 if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched ADR is §CP
-HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
-echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+# The ref and the file list are fallible reads too — both come from §CPREAD (below), so an
+# unreadable head SHA leaves HEAD_SHA EMPTY (payload discarded) rather than holding gh's error body.
+cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
+[ -n "$HEAD_SHA" ] || echo "BLOCKING (head SHA unreadable — ADR content unprobeable ⇒ §CP, fail-closed)"
+printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
   [ -z "$adr" ] && continue
-  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
+  [ -n "$HEAD_SHA" ] || break
+  # Capture and CHECK, never `|| true`: gh writes its error document to STDOUT, so `|| true` would
+  # leave that JSON in $body, skip the fail-closed branch below, and grep an ERROR DOC for guard
+  # vocabulary (§CPREAD property 2).
+  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || body=""
   if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
   elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
 done
@@ -1703,6 +1713,99 @@ A guard-touching ADR classifies **§CP for merge-authority** exactly like a path
 approval is present (per POLICY, the founder's; ADR 0135). Its **verdict routing is unchanged** —
 it is still doc-class, `review-doc`-verified (this set governs *who merges*, not *which gate
 verifies*); the content clause adds only the merge-authority hold.
+
+<a id="cpread"></a>
+### §CPREAD. The changed-file list is a fallible READ — an unread list is UNKNOWN, never "no §CP path" (#4216)
+
+Both clauses above match against **one input**: the PR's changed-file list. That input arrives over
+the network, so it can fail to arrive — and the shape every §CP site reached for
+(`gh api --paginate … --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true`) resolved a failed
+read to the **empty string**, which the surrounding control flow read as *"no control-plane path
+touched"*. That is fail-**open** on the repo's only human-judgment gate (ADR 0135): a genuinely-§CP
+PR classifies ordinary and skips the control-plane approval. It is the recurring
+read-failed-collapsed-into-a-definite-answer class (#3715, #4108, #4171, #4189, #4191, #4204).
+
+**The rule: a read that could not execute resolves to UNKNOWN and holds as §CP.** Three properties
+make that true, each verified against the live API rather than assumed (#4216):
+
+1. **The exit status is the discriminator — capture, check, *then* pipe.** `pipefail` is off in the
+   agent shell, so `gh … | grep … || true` reports `grep`'s status and **discards `gh`'s**. The
+   `|| true` was reasoned about one producer of an empty result (no match is `grep` exit 1, #725)
+   and was blind to the other (the read itself dying). Observed: the 404 pipeline exits **0** with
+   an empty capture.
+2. **The error body arrives on STDOUT.** A failed `gh api --paginate … --jq` writes
+   `{"message":"Not Found",…}` to **stdout** (exit 1), so an unchecked capture hands the §CP regex —
+   or `cp-classify` — an *error document* to classify as if it were a file list. Under a live
+   boundary regex that document matches nothing and the PR reads ordinary. The failure branch must
+   therefore **discard the payload**, not just test it.
+3. **Shape first, then interpret.** The jq guard asserts the page is an **array** before reading
+   `.filename`, so a 200-with-an-unexpected-body cannot be iterated as though it were a file list —
+   the bare non-empty test that once declared two unapproved §CP PRs approved (#3715).
+
+Plus §ZS (ADR [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)):
+**emit the scanned scope**, and treat **zero scope as a failed read** — a PR always changes ≥1 file,
+so a zero-length list is never a valid "clean" state. "Read failed" and "read fine, matched nothing"
+are logged **distinctly**: same outcome, different facts, and collapsing them makes an outage look
+like a clean negative.
+
+This is the **one** hardened read, and it binds **every** §CP site — *including the two blocks
+**above*** (the canonical matcher and the ADR content clause), which is why each of them reads
+`$CP_FILES` rather than piping `gh` straight into `grep`. A contract that exempts its own definition
+block is exactly how byte-identical defective copies spread from it, so the scope here is *every*
+site in this file and in every skill that cites it — not merely the ones below.
+
+```bash
+# §CPREAD — the ONE hardened read of a PR's changed-file list, the input to BOTH §CP clauses.
+# Sets CP_FILES (the list) + CP_FILES_N (the scanned count); returns NON-ZERO on a read that could
+# not execute. A non-zero return is UNKNOWN — hold as §CP — never "no control-plane path touched".
+# --paginate + a STREAMING --jq (one line per file) is load-bearing: gh concatenates the per-page
+# element streams, so a consumer's grep aggregates matches across ALL pages. The API caps per_page at
+# 100 whatever you ask for, so a single non-paginated call truncates a >100-file PR — hiding a §CP
+# file in the tail. Never pair --paginate with an AGGREGATE --jq (`[ … ]` / `length` / `add`): gh runs
+# the filter PER PAGE and emits one result each (#725).
+cp_changed_files() {   # $1 = REPO, $2 = PR
+  CP_FILES="$(gh api --paginate "repos/$1/pulls/$2/files?per_page=100" \
+    --jq 'if type=="array" then .[].filename else ("payload is not a file-list array"|halt_error(1)) end' 2>/dev/null)" || {
+      CP_FILES=""; CP_FILES_N=0
+      echo "§CP scope: PR #$2 changed-file list READ FAILED (gh exited non-zero; payload discarded) — 0 file(s) scanned" >&2
+      return 1; }
+  CP_FILES_N="$(printf '%s\n' "$CP_FILES" | grep -c . || true)"
+  if [ "$CP_FILES_N" -eq 0 ]; then
+    CP_FILES=""
+    echo "§CP scope: PR #$2 changed-file list read returned ZERO files — a PR always changes >=1 file, so this is a FAILED READ, not a clean 'no §CP path'" >&2
+    return 1
+  fi
+  echo "§CP scope: PR #$2 changed-file list read OK — $CP_FILES_N file(s) scanned"   # §ZS #1: state the scope the classification rests on
+}
+
+# The PR head SHA is the SECOND fallible read every §CP site makes — the ref the ADR-0164 content
+# probe reads each ADR body at. It gets the same three properties, and for a reason worth stating
+# once: `HEAD_SHA="$(gh api … --jq .head.sha || true)"` followed by `[ -n "$HEAD_SHA" ]` is a DEAD
+# guard. On failure gh does not apply --jq at all — it writes its error document to STDOUT
+# (property 2) — so the variable is NON-EMPTY and the emptiness test can never fire. Capture, check
+# the exit status, DISCARD the payload, then shape-assert: a ref is 40 bare lowercase hex digits, so
+# an error body (or any other unexpected 200) cannot pass for one.
+cp_head_sha() {   # $1 = REPO, $2 = PR; sets CP_HEAD_SHA (EMPTY on failure), returns NON-ZERO ⇒ UNKNOWN
+  CP_HEAD_SHA="$(gh api "repos/$1/pulls/$2" \
+    --jq 'if type=="object" and (.head.sha|type)=="string" then .head.sha else ("payload is not a PR object"|halt_error(1)) end' 2>/dev/null)" || {
+      CP_HEAD_SHA=""
+      echo "§CP scope: PR #$2 head SHA READ FAILED (gh exited non-zero; payload discarded) — ADR content unprobeable" >&2
+      return 1; }
+  case "$CP_HEAD_SHA" in
+    *[!0-9a-f]*|"") CP_HEAD_SHA=""; echo "§CP scope: PR #$2 head SHA is not bare hex — discarded" >&2; return 1 ;;
+  esac
+  [ "${#CP_HEAD_SHA}" -eq 40 ] || {
+    CP_HEAD_SHA=""; echo "§CP scope: PR #$2 head SHA is not a 40-char ref — discarded" >&2; return 1; }
+}
+```
+
+Consumers branch on its **return status**, and on failure resolve toward §CP:
+
+```bash
+if ! cp_changed_files "$REPO" "$PR"; then
+  CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
+fi
+```
 
 ### A path-only §CP answer is NEVER authoritative — use `cp-classify` (#4161)
 
@@ -1722,8 +1825,15 @@ PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-
 # The §CP classification entry point — four states on stdout (#4161). Re-resolves the live
 # CONTROL_PLANE_RE from origin/main itself (#981); pass --control-plane-re to reuse one you
 # already resolved. ASSERT ON THE STATE WORD, never on the exit status alone — see below.
-CP_STATE="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-  | "$PCLI" cp-classify classify --repo "$REPO")"
+# The INPUT comes from §CPREAD, never from a bare `gh api … |` pipe: with pipefail off, a failed
+# read pipes its stdout ERROR BODY into the verb, which sees one non-`.decisions/` "path", matches
+# no §CP clause, and answers `not-control-plane` — a fail-open at the very entry point that exists
+# to prevent one (#4216).
+if ! cp_changed_files "$REPO" "$PR"; then
+  CP_STATE=unknown   # §CPREAD: the input never arrived ⇒ UNKNOWN ⇒ hold as §CP
+else
+  CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
+fi
 if [ "$CP_STATE" = "not-control-plane" ]; then
   : # proven ordinary — the ONLY branch that may skip the §CP hold
 else
@@ -1775,6 +1885,12 @@ table or it does not ship.
 The boundary stays single-sourced on both axes: `CONTROL_PLANE_RE` in the pipeline-cli const
 (#2761), `GUARD_ADR_RE` in this file, and the content clause's **scope** (`.decisions/**`) once in
 `cp-classify`'s core. No consumer re-declares any of the three.
+
+**Every row's *input* is §CPREAD** — the register says which *sources* a site consults; §CPREAD is
+how it obtains the file list those sources are evaluated against. A site that hardens one clause but
+reads its input unchecked is still fail-open, because a failed read blinds **both** clauses at once
+(#4216). `codeowners-cp` is the one exception on this axis too: it runs over the boundary regex, not
+over a PR's changed files, so it has no such read.
 
 ---
 

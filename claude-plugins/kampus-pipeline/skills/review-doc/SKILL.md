@@ -186,11 +186,20 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   else
     CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ flag EVERY path control-plane (advisory not-auto-mergeable), never trust the possibly-stale snapshot
   fi
-  # --paginate streams filenames (the API caps per_page at 100); grep aggregates the §CP matches
-  # ACROSS pages — a jq `[ … ]` aggregate would emit one array PER PAGE. `|| true`: no match is
-  # grep exit 1, an empty (non-control-plane) result, not a failure (#725).
-  CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-    --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
+  # The changed-file list is a fallible READ, and a failed one used to resolve to "no control-plane
+  # path touched" (#4216). `cp_changed_files` (and `cp_head_sha`, used by the content clause below)
+  # is §CPREAD of ../gh-issue-intake-formats.md — copy them verbatim from there (single source), and
+  # read the why there, not here.
+  CP_READ_FAILED=
+  if ! cp_changed_files "$REPO" "$PR"; then
+    CP_READ_FAILED=1   # carried into the CONTENT clause below — one read, both clauses
+    CONTROL_PLANE_TOUCHED="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"   # FAIL CLOSED
+  else
+    # grep aggregates the §CP matches ACROSS pages — a jq `[ … ]` aggregate would emit one array PER
+    # PAGE. `|| true` now means ONLY what it says: no match is grep exit 1 over a list PROVEN to
+    # arrive, not a swallowed read failure (#725 + #4216).
+    CONTROL_PLANE_TOUCHED="$(printf '%s\n' "$CP_FILES" | grep -E "$CONTROL_PLANE_RE" || true)"
+  fi
   # non-empty → blocking: advisory only; a control-plane approval @head → ship-it enqueues (ADR 0135; §CP set 0053/0065/0073)
   ```
 - **Any guard-touching `.decisions/**` ADR (§CP by CONTENT, ADR 0164)** — a `.decisions/**` ADR is
@@ -208,15 +217,33 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
 
   ```bash
   # Probe each touched .decisions/** ADR's CONTENT at head with the shared verb (single source of the
-  # ADR-0164 guard vocabulary; #3645). Exit 0 ⇒ guard-touching ⇒ §CP-advisory. Fail-closed inside the verb.
-  HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+  # ADR-0164 guard vocabulary; #3645). Exit 0 ⇒ guard-touching ⇒ §CP-advisory.
+  # Same §CPREAD input as the path clause above — a blinded file-list read blinds the CONTENT clause
+  # too, and for a `.decisions/**`-only PR the content clause is the ONLY §CP signal there is (#4216).
   GUARD_TOUCHING=""
-  while IFS= read -r adr; do
-    [ -z "$adr" ] && continue
-    gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
-      | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null \
-      && GUARD_TOUCHING="$GUARD_TOUCHING $adr"
-  done < <(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' | grep -E '^\.decisions/.*\.md$' || true)
+  if [ -n "$CP_READ_FAILED" ]; then
+    GUARD_TOUCHING="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
+  else
+    # The ref is a fallible read too — `cp_head_sha` is §CPREAD's companion to `cp_changed_files`
+    # (copy it verbatim from there). It DISCARDS gh's payload on failure, which is what makes the
+    # `[ -n ]` test below a live guard rather than a dead one.
+    cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
+    [ -n "$HEAD_SHA" ] || GUARD_TOUCHING="<head SHA unreadable — ADR content unprobeable, held as control-plane>"
+    ADR_N=0
+    while IFS= read -r adr; do
+      [ -z "$adr" ] && continue
+      [ -n "$HEAD_SHA" ] || break
+      ADR_N=$((ADR_N + 1))
+      # Capture and CHECK before classifying, never a straight pipe — §CPREAD #2.
+      adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
+      if [ -z "$adr_body" ]; then
+        GUARD_TOUCHING="$GUARD_TOUCHING $adr(body-unreadable⇒§CP)"   # never auto-ship an ADR that couldn't be read and proven guard-free
+      elif printf '%s' "$adr_body" | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null; then
+        GUARD_TOUCHING="$GUARD_TOUCHING $adr"
+      fi
+    done < <(printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' || true)
+    echo "§CP scope: $CP_FILES_N file(s) scanned, $ADR_N .decisions/** ADR(s) content-probed"   # §ZS #1 (ADR 0092)
+  fi
   # non-empty $GUARD_TOUCHING → blocking: §CP-advisory, same as a control-plane path above (ADR 0164/0135)
   ```
 - **Otherwise** → **non-blocking**, and the doc class — *which* `*.md`/knowledge files are
