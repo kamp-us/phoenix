@@ -260,4 +260,10 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("scratchpad", () =>
 		import("./tools/scratchpad/command.ts").then((m) => m.scratchpadCommand),
 	),
+	// #3964 — lane accounting the factory never had: the unlanded build-lane set computed off
+	// GitHub (claim markers + open PRs) instead of self-reported by an engine, classified
+	// platform vs product against the founder-set 6-lane capacity / 2-lane quota. A self-report
+	// is neither verifiable nor attributable, which is how a wrong lane number reached a
+	// capacity decision. Read-only; the quota enforcement is #3965.
+	tool("lane", () => import("./tools/lane/command.ts").then((m) => m.laneCommand)),
 ];
