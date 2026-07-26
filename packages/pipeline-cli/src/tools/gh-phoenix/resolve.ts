@@ -26,6 +26,7 @@
 import {execFileSync} from "node:child_process";
 import {accessSync, constants, realpathSync} from "node:fs";
 import {delimiter, join} from "node:path";
+import {isRepoSlug} from "./router.ts";
 
 /** This binary's own resolved path, so PATH resolution can skip it (no self-recursion). */
 export const selfPath = (() => {
@@ -77,9 +78,6 @@ export const resolveRealGh = (self: string = selfPath): string | null => {
 	return null;
 };
 
-/** A well-formed `owner/name` slug — the shape every REST rewrite path is built from. */
-const REPO_RE = /^[^/\s]+\/[^/\s]+$/;
-
 /**
  * Resolve the repo the REST rewrites target, per ADR 0062 §1: `$CLAUDE_PIPELINE_REPO`,
  * else `$GITHUB_REPOSITORY` (the CI tier every sibling resolver in this package carries),
@@ -90,7 +88,7 @@ const REPO_RE = /^[^/\s]+\/[^/\s]+$/;
  */
 export const resolveRepo = (realGh: string | null): string | null => {
 	const fromEnv = process.env.CLAUDE_PIPELINE_REPO ?? process.env.GITHUB_REPOSITORY;
-	if (fromEnv && REPO_RE.test(fromEnv.trim())) return fromEnv.trim();
+	if (fromEnv && isRepoSlug(fromEnv)) return fromEnv.trim();
 	if (realGh) {
 		try {
 			const viewed = execFileSync(
@@ -98,7 +96,7 @@ export const resolveRepo = (realGh: string | null): string | null => {
 				["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
 				{encoding: "utf8"},
 			).trim();
-			if (REPO_RE.test(viewed)) return viewed;
+			if (isRepoSlug(viewed)) return viewed;
 		} catch {
 			/* unresolved — fall through */
 		}
