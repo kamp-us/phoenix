@@ -1,0 +1,82 @@
+/**
+ * The `Comment` owner-scoped in-review flag on the wire (#4282) — the third leg of
+ * #2200, which threaded `sandboxed` onto `Post` and `Definition` and left `Comment`
+ * out. Without it a çaylak's own comment renders identically to a published one and
+ * they quietly believe they contributed.
+ *
+ * Three things are pinned here, in the order a value travels:
+ *   1. the derivation is the SHARED `ownSandboxed` helper — owner-only by
+ *      construction, so no other viewer (member, anonymous, moderator) ever reads
+ *      `true` off someone else's comment;
+ *   2. the field is in the closed `commentViewFields` literal, so the fate view
+ *      actually carries it (the `satisfies Record<keyof CommentRow, true>` pin means
+ *      an omission is a compile error, but a *present* field is worth asserting —
+ *      that literal is what `CommentView` derives from);
+ *   3. the wire shaper defaults an unstamped row to `false`, matching `toPost`.
+ *
+ * The stamping call sites are compile-locked rather than tested here: `rowToCommentRow`
+ * takes `viewerId` as a REQUIRED parameter, so a read path cannot forget to state whose
+ * view it is shaping.
+ */
+import {assert, describe, it} from "@effect/vitest";
+import {ownSandboxed} from "../lifecycle/SandboxVisibility.ts";
+import {commentViewFields} from "./comment-fields.ts";
+import {toComment} from "./shapers.ts";
+
+const AUTHOR = "user-author";
+const OTHER = "user-other";
+
+const commentFields = (over: {sandboxed?: boolean} = {}) => ({
+	id: "comm-1",
+	parentId: null,
+	author: "umut",
+	authorId: AUTHOR,
+	body: "merhaba",
+	score: 0,
+	createdAt: new Date(1000),
+	...over,
+});
+
+describe("ownSandboxed over a comment record — owner-only by construction", () => {
+	const sandboxedRecord = {sandboxedAt: new Date(1000), authorId: AUTHOR};
+	const liveRecord = {sandboxedAt: null, authorId: AUTHOR};
+
+	it("the author of a still-sandboxed comment reads true", () => {
+		assert.strictEqual(ownSandboxed(sandboxedRecord, AUTHOR), true);
+	});
+
+	it("another signed-in member reads false, never the author's review state", () => {
+		assert.strictEqual(ownSandboxed(sandboxedRecord, OTHER), false);
+	});
+
+	// A moderator IS a viewer with an id, and the sandbox read filter admits them to the
+	// row — so the flag must stay keyed on authorship, not on visibility, or the mod queue
+	// would render every pending comment as the moderator's own in-review content.
+	it("a moderator reading someone else's pending comment reads false", () => {
+		assert.strictEqual(ownSandboxed(sandboxedRecord, "user-moderator"), false);
+	});
+
+	it("an anonymous viewer reads false", () => {
+		assert.strictEqual(ownSandboxed(sandboxedRecord, null), false);
+	});
+
+	it("a live comment reads false even for its own author", () => {
+		assert.strictEqual(ownSandboxed(liveRecord, AUTHOR), false);
+	});
+});
+
+describe("the Comment wire shape carries sandboxed", () => {
+	it("commentViewFields selects it, so CommentView exposes it to the client", () => {
+		assert.strictEqual(commentViewFields.sandboxed, true);
+	});
+
+	it("toComment passes a stamped flag through", () => {
+		assert.strictEqual(toComment(commentFields({sandboxed: true})).sandboxed, true);
+	});
+
+	// The safe default, matching `toPost`: a read path that doesn't stamp the flag yields
+	// a published-looking node, never an accidental `incelemede` on live content.
+	it("toComment defaults an unstamped row to false", () => {
+		assert.strictEqual(toComment(commentFields()).sandboxed, false);
+	});
+});

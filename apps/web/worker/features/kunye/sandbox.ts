@@ -24,6 +24,7 @@ import {Brand, Effect} from "effect";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Kunye} from "./Kunye.ts";
 import {requireModeration} from "./moderate.ts";
+import {sandboxesNewContent} from "./standing.ts";
 
 /**
  * The `sandboxed_at` timestamp a new piece of content by `authorId` is created
@@ -37,7 +38,7 @@ export const sandboxedAtForAuthor = (
 	Effect.gen(function* () {
 		const kunye = yield* Kunye;
 		const tier = yield* kunye.tierOf(authorId);
-		return tier === "çaylak" ? now : null;
+		return sandboxesNewContent(tier) ? now : null;
 	});
 
 /**

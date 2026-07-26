@@ -115,5 +115,6 @@ export const toComment = (r: CommentFields): Comment => ({
 	updatedAt: r.updatedAt ?? r.createdAt,
 	deletedAt: r.deletedAt ?? null,
 	myVote: r.myVote ?? null,
+	sandboxed: r.sandboxed ?? false,
 	reactions: r.reactions ?? EMPTY_REACTION_AGGREGATE,
 });
