@@ -572,7 +572,14 @@ So the verdict's not-auto-mergeable flag matches the **canonical §CP set** (the
 not from the copy embedded in this skill body.** The embedded copy travels in the *injected
 snapshot*, which can lag `origin/main` even when the on-disk file is current, so a pre-amendment
 snapshot once mis-classified a now-control-plane PR (#981); reading §CP freshly from `origin/main`
-(and **failing closed** if that read can't be made) keeps the flag tracking `main`, not snapshot age:
+(and **failing closed** if that read can't be made) keeps the flag tracking `main`, not snapshot age.
+
+The *boundary* is only half of it: the **changed-file list** the boundary is matched against is a
+fallible network read too, and a failed read used to resolve to "no control-plane path touched"
+(#4216). **Define `cp_changed_files` from
+[§CPREAD](../gh-issue-intake-formats.md#cpread) — copy it verbatim, it is the single source — before
+running the block below**, which consumes its `$CP_FILES` / `$CP_FILES_N` and holds §CP on a
+non-zero return:
 
 ```bash
 # §CP travels in the INJECTED skill snapshot, which can lag origin/main even when the on-disk file
@@ -590,25 +597,46 @@ if [ -n "$CP_LIVE" ]; then
 else
   CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ flag EVERY path control-plane (not-auto-mergeable), never trust the possibly-stale snapshot
 fi
-# --paginate streams filenames (the API caps per_page at 100); grep aggregates the §CP matches
-# ACROSS the concatenated pages — a jq `[ … ]` aggregate would instead emit one array PER PAGE.
-# `|| true`: no §CP match is grep exit 1, an empty (non-control-plane) result, not a failure (#725).
-CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-  --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
-# non-empty → control-plane: emit the advisory line in the verdict (Step 4a) per ADR 0053/0065/0073
-# §CP by CONTENT (ADR 0164): a touched .decisions/** ADR is not path-§CP, but a guard-RELAXING one is
-# control-plane by nature. Probe each ADR's content at head with the SHARED `guard-content-probe` verb
-# — the SAME probe ship-it Step 0, review-doc, and the driver (via trivial-diff) call, so a guard-touching
-# ADR reads §CP consistently everywhere (issue #3645, founder ruling #3416). A mixed code+guard-ADR PR
-# fans BOTH gates; either flagging the ADR carries the §CP merge-authority hold. Fail-closed inside the verb.
-HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
-GUARD_TOUCHING=""
-while IFS= read -r adr; do
-  [ -z "$adr" ] && continue
-  gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
-    | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null \
-    && GUARD_TOUCHING="$GUARD_TOUCHING $adr"
-done < <(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' | grep -E '^\.decisions/.*\.md$' || true)
+# ONE hardened read of the changed-file list, feeding BOTH §CP clauses below. `cp_changed_files` is
+# §CPREAD of ../gh-issue-intake-formats.md — exit-status-checked, shape-asserted, scope-emitting; a
+# non-zero return means the read COULD NOT EXECUTE, which is UNKNOWN, not "no §CP path touched". Read
+# the why there once; do not re-derive it here. It also removes the second read this step used to make
+# (the GUARD_TOUCHING loop re-fetched the same list), so both clauses now see the same scanned scope.
+if ! cp_changed_files "$REPO" "$PR"; then
+  # FAIL CLOSED (#4216): a blinded read blinds BOTH clauses at once — the path regex AND the ADR-0164
+  # content probe, which is the only §CP signal a `.decisions/**`-only PR can produce. So resolve BOTH
+  # toward §CP; the sentinel is non-empty, which is exactly what Step 4a branches on.
+  CONTROL_PLANE_TOUCHED="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
+  GUARD_TOUCHING="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
+else
+  # grep aggregates the §CP matches ACROSS the concatenated pages — a jq `[ … ]` aggregate would
+  # instead emit one array PER PAGE. `|| true` here is now safe and means ONLY what it says: no §CP
+  # match is grep exit 1 over a list that was PROVEN to arrive (#725 + #4216).
+  CONTROL_PLANE_TOUCHED="$(printf '%s\n' "$CP_FILES" | grep -E "$CONTROL_PLANE_RE" || true)"
+  # non-empty → control-plane: emit the advisory line in the verdict (Step 4a) per ADR 0053/0065/0073
+  # §CP by CONTENT (ADR 0164): a touched .decisions/** ADR is not path-§CP, but a guard-RELAXING one is
+  # control-plane by nature. Probe each ADR's content at head with the SHARED `guard-content-probe` verb
+  # — the SAME probe ship-it Step 0, review-doc, and the driver (via trivial-diff) call, so a guard-touching
+  # ADR reads §CP consistently everywhere (issue #3645, founder ruling #3416). A mixed code+guard-ADR PR
+  # fans BOTH gates; either flagging the ADR carries the §CP merge-authority hold.
+  HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha' 2>/dev/null || true)"
+  GUARD_TOUCHING=""
+  [ -n "$HEAD_SHA" ] || GUARD_TOUCHING="<head SHA unreadable — ADR content unprobeable, held as control-plane>"   # fail closed: no ref ⇒ no probe ⇒ UNKNOWN
+  ADR_N=0
+  while IFS= read -r adr; do
+    [ -z "$adr" ] && continue
+    [ -n "$HEAD_SHA" ] || break
+    ADR_N=$((ADR_N + 1))
+    # Capture and CHECK before classifying, never a straight pipe — §CPREAD #2.
+    adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
+    if [ -z "$adr_body" ]; then
+      GUARD_TOUCHING="$GUARD_TOUCHING $adr(body-unreadable⇒§CP)"   # fail closed: never auto-ship an ADR that could not be read and proven guard-free
+    elif printf '%s' "$adr_body" | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null; then
+      GUARD_TOUCHING="$GUARD_TOUCHING $adr"
+    fi
+  done < <(printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' || true)
+  echo "§CP scope: $CP_FILES_N file(s) scanned, $ADR_N .decisions/** ADR(s) content-probed"   # §ZS #1 (ADR 0092): a §CP classification always states its scope
+fi
 # non-empty $GUARD_TOUCHING → §CP-advisory, same as CONTROL_PLANE_TOUCHED above (Step 4a; ADR 0164/0135)
 ```
 

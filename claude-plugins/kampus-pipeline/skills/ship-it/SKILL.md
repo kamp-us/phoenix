@@ -334,7 +334,23 @@ and **fails closed** (treats every path as control-plane → refuses) if that re
   scope-consistency note after the routing.
 
 ```bash
-FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; the grep probes below aggregate the concatenated lines) (#725)
+# The changed-file list is a fallible network READ, and EVERY probe in this step — §CP, the ADR
+# content clause, has-code/has-docs/has-skills, has-ui — is a `grep` over it. So a failed read used
+# to answer "no §CP path, no classes present" in one stroke: the capture's exit status was never
+# checked, and an empty $FILES made every `grep -q … && echo …` silent (#4216). `cp_changed_files` is
+# §CPREAD of ../gh-issue-intake-formats.md — copy it verbatim from there (single source; the why
+# lives there, not here). --paginate + streaming --jq inside it gets the full set past file #100 (the
+# API caps per_page at 100; the grep probes below aggregate the concatenated lines) (#725).
+if ! cp_changed_files "$REPO" "$PR"; then
+  # FAIL CLOSED, and STOP — with no file list there is no classification to make: not §CP, not the
+  # class set, not has-ui. Emitting BLOCKING is the safe resolution of the §CP axis (this step's
+  # output is what the Routing below refuses on), but the class axis is UNRESOLVED, not empty, so
+  # ship-it must not proceed to require zero gates.
+  echo "BLOCKING (changed-file list unreadable ⇒ §CP UNKNOWN, held — ADR 0092 §ZS, #4216)"
+  echo "STOP: classification unresolved — refuse to enqueue and report the failed read; do NOT read this as 'no gates required'."
+  exit 1
+fi
+FILES="$CP_FILES"   # proven-arrived, scope already emitted ($CP_FILES_N files) per §ZS #1
 # §CP travels in the INJECTED skill snapshot, which can lag origin/main even when the on-disk file
 # is current — a pre-amendment snapshot once auto-merged a now-control-plane PR (#981).
 # §CP boundary is single-sourced in pipeline-cli (control-plane-paths/control-plane-re.ts, #2761);
@@ -360,14 +376,24 @@ echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plan
 # only here. The GUARD_ADR_RE vocabulary stays single-sourced in gh-issue-intake-formats.md §CP; the
 # verb reads it from the local checkout (immune to the #981 injected-snapshot staleness — it reads
 # disk, not this skill's prompt copy). FAIL CLOSED: an unreadable ADR body (delete/404) ⇒ §CP —
-# never auto-ship an ADR that couldn't be read and proven guard-free (the verb resolves this itself).
-HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
-echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
-  [ -z "$adr" ] && continue
-  gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
-    | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null \
-    && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
-done
+# never auto-ship an ADR that couldn't be read and proven guard-free. That resolution is made HERE,
+# in the shell: the verb never sees a failed read, because a straight pipe would hand it `gh`'s error
+# document as the ADR body and it would classify THAT (§CPREAD #2, #4216).
+HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha' 2>/dev/null || true)"
+if [ -z "$HEAD_SHA" ]; then
+  echo "BLOCKING (head SHA unreadable ⇒ no ref to probe ADR content at ⇒ §CP UNKNOWN, held)"   # fail closed: an unprobeable content clause is not an absent one
+else
+  echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+    [ -z "$adr" ] && continue
+    # Capture and CHECK before classifying, never a straight pipe — §CPREAD #2.
+    adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
+    if [ -z "$adr_body" ]; then
+      echo "BLOCKING ($adr — ADR body unreadable ⇒ §CP UNKNOWN, held)"
+    elif printf '%s' "$adr_body" | node packages/pipeline-cli/src/bin.ts guard-content-probe classify --path "$adr" >/dev/null; then
+      echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
+    fi
+  done
+fi
 # The has-code/has-docs/has-skills probes are single-sourced as canonical HAS_*_RE= lines in
 # gh-issue-intake-formats.md §CLASS and re-resolved from origin/main here (like CONTROL_PLANE_RE/
 # UI_RE, #981) so this snapshot can't mis-classify — and so the reviewer (which consumes the SAME
