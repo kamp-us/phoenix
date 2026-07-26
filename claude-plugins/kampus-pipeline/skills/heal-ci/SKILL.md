@@ -277,10 +277,12 @@ re-deriving the resolver write-code once hand-copied, and keeps only the two thi
 
 - **The native decisive review that folds into the code namespace.** The verb reads marker comments;
   a native review is a *different* record type. GitHub author-attributes reviews, so this path needs
-  **no** ACL gate — `commit_id` IS its bound SHA. The fold is **newest-wins by timestamp** (as in
+  **no** ACL gate — `commit_id` IS its bound SHA. The fold is **newest-WRITTEN wins** (as in
   `ship-it` Step 2 / write-code R1): the code verdict is the newest of {latest decisive review,
-  latest `review-code` marker}, so a current-head `CHANGES_REQUESTED` is a code FAIL *unless* a newer
-  current-head marker already PASS'd.
+  in-force `review-code` marker}, so a current-head `CHANGES_REQUESTED` is a code FAIL *unless* a
+  more recently written current-head marker already PASS'd. Compare the review's `submitted_at`
+  against the verb's `writtenAt`, never the marker comment's `created_at` — an upsert leaves
+  `created_at` at the slot's open time, which systematically under-ranks the marker (#4200).
 - **The N=3 FAIL-round count.** `verdict read` resolves the latest verdict; it does not count
   rounds. A PR already at 3 FAIL rounds is escalated to a human, **not** an active repair, so the
   guard counts the rounds itself (author-gated to write+ collaborators, clustered by >120s gap —
@@ -307,20 +309,22 @@ VERDICT_UNKNOWN=0
 for J in "$CODE_FAIL_JSON" "$DOC_FAIL_JSON"; do jq -e . >/dev/null 2>&1 <<<"$J" || VERDICT_UNKNOWN=1; done
 
 # the native decisive review folds into the code namespace (the verb reads only marker comments), by
-# NEWEST-WINS timestamp — the same fold ship-it Step 2 / write-code R1 run. `at: .submitted_at` is what
-# the compare reads; a bare "CHANGES_REQUESTED ⇒ CODE_FAIL=1" would report a repair in flight on a PR
-# whose newer marker already PASS'd at the same head, suppressing a defect that should be filed.
+# NEWEST-WRITTEN wins — the same fold ship-it Step 2 / write-code R1 run. `at: .submitted_at` is what
+# the compare reads (a review is never upserted, so it IS the review's write time); a bare
+# "CHANGES_REQUESTED ⇒ CODE_FAIL=1" would report a repair in flight on a PR whose newer marker already
+# PASS'd at the same head, suppressing a defect that should be filed.
 CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
 RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
 RAT=$(jq -r '.at // ""' <<<"$REVIEW")
-# `_tag == "current"` is exactly "a current-head marker verdict stands"; its comment id yields the
-# created_at the compare needs (the verb's outcome carries no timestamp).
+# `_tag == "current"` is exactly "a current-head marker verdict stands"; the verb's `writtenAt` is the
+# WRITE time the compare needs — never the comment's created_at, which an in-place upsert leaves at the
+# slot's open time and which would let a review wrongly out-rank a later-written marker (#4200).
 MARKER_AT=""
 [ "$(jq -r '._tag // ""' <<<"$CODE_FAIL_JSON" 2>/dev/null)" = "current" ] &&
-  MARKER_AT=$(gh api "repos/$REPO/issues/comments/$(jq -r .commentId <<<"$CODE_FAIL_JSON")" --jq .created_at 2>/dev/null)
+  MARKER_AT=$(jq -r '.writtenAt // empty' <<<"$CODE_FAIL_JSON" 2>/dev/null)
 if [ -n "$RSHA" ] && [ -n "$RAT" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
   # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare.
   if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then

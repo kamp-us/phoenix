@@ -72,7 +72,7 @@ export interface VerdictComment {
 	readonly id: number;
 	/** The comment author's login (checked against the authorized set). */
 	readonly author: string;
-	/** ISO-8601 UTC creation time (the latest-wins primary key). */
+	/** ISO-8601 UTC time the comment SLOT was opened — the write-recency FLOOR, not the ordering key. */
 	readonly createdAt: string;
 	/** The raw comment body (matched against the namespace/verdict matchers). */
 	readonly body: string;
@@ -146,10 +146,84 @@ export interface ResolveVerdictInput {
 }
 
 /**
+ * The write-recency stamp `post` writes into every verdict body it emits, and the ONE key every
+ * recency comparison in this module orders by (#4200).
+ *
+ * `created_at` is when a comment SLOT was opened, not when the verdict it now carries was written:
+ * `post` upserts in place at the same head (ADR 0213/#4007), so an in-place correction keeps the
+ * `created_at` of the slot it was PATCHed into and reads as OLDER than a sibling run's comment that
+ * was merely created later. #4198 removed the cross-head half of that defect by filtering candidates
+ * to the live head first; this closes the residual, where BOTH candidates bind the live head and the
+ * tiebreak among them decides alone — with no staleness backstop, so a live FAIL upserted into an old
+ * slot silently loses to a stale PASS (the fail-OPEN direction).
+ *
+ * Deliberately a body-carried stamp rather than the REST `updated_at` (the rejected alternative, ADR
+ * 0058): `updated_at` moves on any byte edit — a typo fix, a leak redaction, a human reformatting a
+ * table — so a cosmetic edit to the older-AUTHORED verdict would re-crown it over the genuinely newer
+ * one, and invisibly, since `updated_at` is not rendered. The stamp moves only when a verdict is
+ * authored, is legible in the rendered comment, survives any storage/schema change, and sits inside
+ * the ADR-0055 authorized-author trust boundary, where a hand-forged stamp is at least a VISIBLE
+ * forgery. See the PR body for the full argument.
+ *
+ * Second-precision ISO-8601 UTC, matching GitHub's `created_at` shape exactly so the two are lexically
+ * comparable — the whole point, since one falls back to the other.
+ */
+const writtenAtRe = /^[ \t]*Verdict-written:[ \t]*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)[ \t]*$/gim;
+
+/**
+ * The write time a verdict body stamps on itself, or `null` for an unstamped body (a pre-#4200
+ * marker, or one hand-rolled through raw `gh api`). Takes the LAST match: `post` appends the stamp,
+ * so a body that also quotes an earlier stamp in its prose still resolves to the real one.
+ */
+export const writtenAtOf = (body: string): string | null => {
+	let last: string | null = null;
+	for (const match of body.matchAll(writtenAtRe)) last = match[1] ?? last;
+	return last;
+};
+
+/** Stamp `iso` onto a verdict body, replacing any stamp it already carries. */
+export const withWrittenAt = (body: string, iso: string): string =>
+	`${body.replace(writtenAtRe, "").replace(/\s+$/, "")}\n\nVerdict-written: ${iso}`;
+
+/**
+ * Normalize an epoch-millis instant to the stamp's second-precision ISO-8601 UTC shape. Dropping the
+ * milliseconds is load-bearing, not cosmetic: `2026-07-26T00:49:26.123Z` sorts BELOW
+ * `2026-07-26T00:49:26Z` lexically (`.` < `Z`), so a sub-second-precision stamp would read as older
+ * than a `created_at` in the same second — an inversion in exactly the tight race this key exists to
+ * order.
+ */
+export const toStampIso = (epochMillis: number): string =>
+	new Date(epochMillis).toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/**
+ * When a comment's verdict was WRITTEN — its body stamp, floored at the comment's `created_at`.
+ *
+ * The floor is the fail-safe: a comment cannot have been written before its slot existed, so an
+ * absent stamp (every pre-#4200 comment) and a backdated one both degrade to today's `created_at`
+ * ordering — never to something worse. Forward forgery stays possible and stays visible; ADR 0055
+ * already confines it to write+ collaborators.
+ */
+export const writeRecencyOf = (comment: VerdictComment): string => {
+	const stamped = writtenAtOf(comment.body);
+	return stamped !== null && stamped > comment.createdAt ? stamped : comment.createdAt;
+};
+
+/**
+ * The single recency ordering over verdict comments: write-recency, then the server-assigned comment
+ * id. Every "which of these is newer" question in this module and in `gate-decision.ts` answers
+ * through this one comparator, so the marker set and the marker-vs-advisory fold cannot drift apart.
+ */
+export const compareWriteRecency = (a: VerdictComment, b: VerdictComment): number => {
+	const ra = writeRecencyOf(a);
+	const rb = writeRecencyOf(b);
+	return ra < rb ? -1 : ra > rb ? 1 : a.id - b.id;
+};
+
+/**
  * The latest-wins pick within an already-scoped candidate set: among the comments an authorized
- * (write+, ADR 0055) author posted whose body matches `re`, the newest by `(createdAt, id)`.
- * `undefined` when the authorized candidate set is empty — the fail-closed "nothing to consume in
- * this namespace", never a false win.
+ * (write+, ADR 0055) author posted whose body matches `re`, the newest by write-recency
+ * (`compareWriteRecency`). `undefined` when the authorized candidate set is empty — the fail-closed
+ * "nothing to consume in this namespace", never a false win.
  *
  * This is recency ALONE — it is not the in-force resolver. Scope the candidate set to the live head
  * first (`pickInForce` below, #4189), then break ties here.
@@ -163,9 +237,7 @@ export const pickLatestAuthorized = (
 	const candidates = comments.filter(
 		(comment) => authorized.has(comment.author) && re.test(comment.body),
 	);
-	candidates.sort((a, b) =>
-		a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id,
-	);
+	candidates.sort(compareWriteRecency);
 	return candidates[candidates.length - 1];
 };
 
@@ -182,23 +254,20 @@ export const boundHead = (body: string, gate: VerdictGate): string | null =>
  *
  * This ordering is the whole fix for #4189 and it is ADR 0058's own rule: a verdict attests the
  * exact head it names, so the question "which verdict is in force" is first "which candidates
- * attest the head I am gating" and only then "which of those is newest". Picking by `(createdAt,
- * id)` and testing the head afterwards — on the winner alone — never consults the candidate that
- * binds the live head, and under the in-place upsert (#4016/#4050) that is not an edge case: an
- * at-head verdict keeps the `created_at` of the slot it was upserted into, so a stale,
- * freshly-created verdict outranks it. Observed on PR #3955 — a green §CP PR that `verdict gate`
- * refused for ~an hour because a dead-head pair created at 00:32 outranked the live-head PASSes
- * upserted at 00:49 into 00:09 slots.
+ * attest the head I am gating" and only then "which of those is newest". Picking by recency and
+ * testing the head afterwards — on the winner alone — never consults the candidate that binds the
+ * live head. Observed on PR #3955 — a green §CP PR that `verdict gate` refused for ~an hour because
+ * a dead-head pair created at 00:32 outranked the live-head PASSes upserted at 00:49 into 00:09 slots.
  *
  * The fallback to the unfiltered set when NOTHING binds the live head is load-bearing, not a
  * loophole: it preserves the fail-closed classification downstream, which still reports the
  * `stale` / `sha-less` refusal with the offending comment named, exactly as before.
  *
- * Within the live-head set this is unchanged latest-wins — the arbitration the run-keyed upsert
- * (#4016) explicitly relies on to settle two surviving same-head verdicts. That leaves the
- * same-head WRITE-RECENCY direction open (an in-place upsert of an older slot at the same head is
- * still ordered by its creation time); closing it needs a write-recency signal the boundary does
- * not decode today — tracked separately, see #4189's PR body.
+ * Within the live-head set, latest-wins arbitrates — the arbitration the run-keyed upsert (#4016)
+ * explicitly relies on to settle two surviving same-head verdicts — and it orders by WRITE recency,
+ * not slot-creation time (`compareWriteRecency`, #4200). That distinction only bites here: when both
+ * candidates bind the live head there is no staleness backstop, so a mis-pick is consumed at full
+ * strength in either polarity.
  */
 export const pickInForce = (
 	comments: ReadonlyArray<VerdictComment>,

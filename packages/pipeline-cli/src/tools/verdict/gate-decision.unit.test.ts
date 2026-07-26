@@ -417,6 +417,115 @@ describe("decideGate — PR #3955's exact situation: the in-force verdict was cr
 	});
 });
 
+describe("decideGate — two LIVE-HEAD verdicts order by write time, not slot-open time (#4200)", () => {
+	// #4198's head-first filter admits BOTH candidates here (both bind the live head), so the tiebreak
+	// among them is the whole decision — and unlike #4189's cross-head case there is no staleness test
+	// downstream to convert a mis-pick into a refusal: whichever candidate wins is consumed at full
+	// strength. `post` upserts in place, so the corrected verdict keeps its slot's `created_at` and
+	// creation order runs INVERSE to write order.
+	const SLOT_OPENED = "2026-07-26T00:09:58Z";
+	const UPSERTED_AT = "2026-07-26T00:49:26Z";
+	const SIBLING_CREATED = "2026-07-26T00:32:02Z";
+
+	const written = (body: string, at: string) => `${body}\n\nVerdict-written: ${at}`;
+
+	it("FAIL-OPEN closed: an older slot upserted to FAIL is not cleared by a newer-created same-head PASS", () => {
+		const result = decide({
+			comments: [
+				comment({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: written(`review-doc: FAIL @ ${HEAD} — changes-requested`, UPSERTED_AT),
+				}),
+				comment({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: written(`review-doc: PASS @ ${HEAD} — merge-ready`, SIBLING_CREATED),
+				}),
+			],
+		});
+		assert.isFalse(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.state, "fail");
+		assert.strictEqual(result.decisions[0]?.commentId, 1);
+	});
+
+	it("the §CP advisory form carries the same rule: a [FAIL] row upserted into an older slot still blocks", () => {
+		const result = decide({
+			controlPlane: true,
+			comments: [
+				comment({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: written(advisory("doc", HEAD, "[FAIL]"), UPSERTED_AT),
+				}),
+				comment({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: written(advisory("doc", HEAD), SIBLING_CREATED),
+				}),
+			],
+		});
+		assert.isFalse(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.state, "unverified");
+		assert.strictEqual(result.decisions[0]?.commentId, 1);
+	});
+
+	it("the marker-vs-advisory fold uses the same key: an upserted marker outranks a newer-created advisory", () => {
+		const result = decide({
+			controlPlane: true,
+			comments: [
+				comment({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: written(`review-doc: FAIL @ ${HEAD} — changes-requested`, UPSERTED_AT),
+				}),
+				comment({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: written(advisory("doc", HEAD), SIBLING_CREATED),
+				}),
+			],
+		});
+		assert.isFalse(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.state, "fail");
+		assert.strictEqual(result.decisions[0]?.commentId, 1);
+	});
+
+	it("write order agreeing with creation order is unchanged latest-wins (#4016/#4050 preserved)", () => {
+		const result = decide({
+			comments: [
+				comment({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: written(`review-doc: FAIL @ ${HEAD} — changes-requested`, SLOT_OPENED),
+				}),
+				comment({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: written(`review-doc: PASS @ ${HEAD} — merge-ready`, SIBLING_CREATED),
+				}),
+			],
+		});
+		assert.isTrue(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.commentId, 2);
+	});
+
+	it("unstamped pre-#4200 comments are unaffected — they order by created_at exactly as before", () => {
+		const result = decide({
+			comments: [
+				comment({id: 1, createdAt: SLOT_OPENED}),
+				comment({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
+				}),
+			],
+		});
+		assert.isFalse(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.commentId, 2);
+	});
+});
+
 describe("decideGate — fail-closed on its own inputs (ADR 0092)", () => {
 	it("an EMPTY required set refuses rather than passing vacuously", () => {
 		const result = decide({requiredGates: [], comments: [comment({id: 1})]});

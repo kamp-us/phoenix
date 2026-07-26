@@ -886,13 +886,23 @@ verdict), the in-force pick, and the ADR-0058 SHA-staleness refusal (Step 2b) in
 unit tests are the contract (#2102), the same resolution `write-code` reads.
 
 **The in-force rule, stated once and used by every namespace below: filter candidates to the ones
-bound to the LIVE head first, then latest-wins only among those.** Never "the newest comment in the
-namespace, then check its head" — `verdict post` upserts a verdict in place (ADR 0213/#4016/#4050), so
-`created_at` is when a comment SLOT was opened, not when the verdict it now carries was written, and a
-stale-but-freshly-created verdict outranks an at-head one that was rewritten in place. That is a false
-**refusal** of a green PR, and it cost PR #3955 an hour (#4189). The same trap catches a human skimming
-the PR, since the GitHub UI orders by creation time too — read the `@ <sha>` / `Reviewed-head:` binding,
-never the position.
+bound to the LIVE head first, then take the most recently WRITTEN of those.** Two things follow from
+`verdict post` upserting a verdict in place (ADR 0213/#4016/#4050), and `created_at` — when the comment
+SLOT was opened, not when the verdict it now carries was written — gets both wrong:
+
+- Never "the newest comment in the namespace, then check its head": a stale-but-freshly-created verdict
+  then outranks an at-head one that was rewritten in place. That is a false **refusal** of a green PR,
+  and it cost PR #3955 an hour (#4189).
+- Never order two LIVE-HEAD verdicts by `created_at` either: an in-place correction keeps its slot's
+  creation time, so it loses to a sibling run's merely-newer comment. Here the head filter admits both
+  candidates and there is no staleness test left to catch the mis-pick, so it also runs **fail-open** —
+  a FAIL upserted after a PASS is silently cleared (#4200). The ordering key is the `Verdict-written:`
+  stamp `verdict post` writes into every body (floored at `created_at`, so an unstamped legacy comment
+  is unaffected); `verdict read` reports it as `writtenAt`, which is the ONLY timestamp a fold below
+  may compare against.
+
+The same trap catches a human skimming the PR, since the GitHub UI orders by creation time too — read
+the `@ <sha>` / `Reviewed-head:` binding and the `Verdict-written:` stamp, never the position.
 The native decisive review folds into the code namespace separately (the verb reads marker comments,
 not reviews); Step 2b keeps `is_current` for it and for the §CP advisory body-SHA:
 
@@ -904,7 +914,8 @@ CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 # GitHub author-attributes reviews, so this path is unforgeable and needs no ACL check. commit_id IS
 # the SHA the reviewer approved, so the same staleness test applies to it as to a marker's @ <sha>.
 # `at: .submitted_at` is load-bearing, not decoration: it is the timestamp the newest-wins fold below
-# compares against the marker's created_at. Drop it and the fold degenerates to a precedence rule.
+# compares against the marker's write time. A review is never upserted, so `submitted_at` IS its write
+# time — the two sides are like for like. Drop it and the fold degenerates to a precedence rule.
 REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
@@ -920,8 +931,8 @@ VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli 
 # — Step 2b's `unverified (verdict not bound to current head)` refusal, now owned by the verb. (A §CP
 # advisory namespace is SHA-less by design and resolves `none` here — Step 2.§CP handles it from the
 # body's Reviewed-head instead.)
-# the code namespace keeps the verb's stdout JSON: it names the RESOLVING comment id, which the
-# newest-wins fold below turns into the marker's created_at (the verb's outcome carries no timestamp).
+# the code namespace keeps the verb's stdout JSON: it carries `writtenAt`, the resolving verdict's
+# WRITE time, which is what the newest-wins fold below compares (#4200).
 CODE_JSON="$($VERDICT read --pr "$PR" --gate code --expect PASS 2>/dev/null)" && CODE_PASS=1 || CODE_PASS=0
 $VERDICT read --pr "$PR" --gate code   --expect FAIL >/dev/null 2>&1 && CODE_FAIL=1   || CODE_FAIL=0
 $VERDICT read --pr "$PR" --gate doc    --expect PASS >/dev/null 2>&1 && DOC_PASS=1    || DOC_PASS=0
@@ -941,13 +952,12 @@ $VERDICT read --pr "$PR" --gate design --expect FAIL >/dev/null 2>&1 && DESIGN_F
 RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
 RAT=$(jq -r '.at // ""' <<<"$REVIEW")
 if [ -n "$RSHA" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
-  # the marker's created_at: the verb's outcome carries no timestamp, so resolve it from the comment
-  # id its JSON names. An empty MARKER_AT means no current-head marker verdict stands (`verdict read`
-  # already dropped a none/sha-less/stale one) ⇒ the review is the only event ⇒ it decides alone.
+  # the marker's WRITE time, straight off the verb's JSON — never the comment's created_at, which an
+  # in-place upsert leaves behind (#4200). An empty MARKER_AT means no current-head marker verdict
+  # stands (`verdict read` already dropped a none/sha-less/stale one) ⇒ the review decides alone.
   MARKER_AT=""
-  MARKER_ID=$(jq -r '.commentId // empty' <<<"$CODE_JSON" 2>/dev/null)
-  [ -n "$MARKER_ID" ] && [ "$((CODE_PASS + CODE_FAIL))" -gt 0 ] &&
-    MARKER_AT=$(gh api "repos/$REPO/issues/comments/$MARKER_ID" --jq .created_at 2>/dev/null)
+  [ "$((CODE_PASS + CODE_FAIL))" -gt 0 ] &&
+    MARKER_AT=$(jq -r '.writtenAt // empty' <<<"$CODE_JSON" 2>/dev/null)
   # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare.
   if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
     case "$RSTATE" in
@@ -962,8 +972,8 @@ Now resolve **per namespace** (the marker verdict from the verb above, the nativ
 advisory folded in):
 
 - **review-code namespace** — the verdict is the **newest of {latest decisive review, in-force
-  review-code marker comment}**, compared by timestamp (review `submitted_at` vs comment
-  `created_at`) **only once both are current-head-bound** — the head-first rule above, which is
+  review-code marker comment}**, compared by WRITE time (review `submitted_at` vs the verdict's
+  `writtenAt`) **only once both are current-head-bound** — the head-first rule above, which is
   what the `case "$CURRENT_HEAD" in "$RSHA"*` guard and the `_tag == "current"` marker test encode.
   An `APPROVED` review or a `review-code: PASS … merge-ready` marker is PASS; a
   `CHANGES_REQUESTED` review or a `review-code: FAIL` marker is FAIL. The verdict's bound SHA
@@ -1094,8 +1104,8 @@ on a legitimately-approved PR (#2329):
 ```bash
 # $ADV_BODY = the IN-FORCE §CP advisory comment body for this namespace (review-code/skill/doc/design),
 # author-gated (write+, ADR 0055) and resolved head-first exactly like the markers above — an advisory
-# is upserted in place too, so its `created_at` does not order it (`pipeline-cli verdict gate --cp`
-# computes this; do not hand-roll a newest-comment read here).
+# is upserted in place too, so its `created_at` does not order it; its `Verdict-written:` stamp does
+# (`pipeline-cli verdict gate --cp` computes this; do not hand-roll a newest-comment read here).
 # (a) body's canonical Reviewed-head SHA (ADR 0151 §6.6) must prefix-match the PR's current head.
 #     Anchored to the `Reviewed-head:` line — a DISTINCT token from the first-line advisory marker,
 #     so this never mistakes a first-line marker for the body binding, and the advisory stays out of

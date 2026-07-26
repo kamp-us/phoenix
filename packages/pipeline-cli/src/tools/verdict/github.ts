@@ -48,6 +48,7 @@ import {decideGate, type GateDecision} from "./gate-decision.ts";
 import {
 	bindsSameHead,
 	boundHeadShas,
+	compareWriteRecency,
 	emissionDefect,
 	headBindingDefect,
 	namespaceRe,
@@ -55,10 +56,13 @@ import {
 	type Polarity,
 	resolveVerdict,
 	runIdOf,
+	toStampIso,
 	type VerdictComment,
 	type VerdictGate,
 	type VerdictOutcome,
 	withRunId,
+	withWrittenAt,
+	writeRecencyOf,
 } from "./verdict-match.ts";
 
 // Re-export the shared IO seam's typed failures so callers/tests keep importing them from this
@@ -110,6 +114,15 @@ export interface ReadResult {
 	/** Does the outcome satisfy the caller's expected polarity (a current-head match)? */
 	readonly satisfied: boolean;
 	readonly expect: Polarity;
+	/**
+	 * When the resolving verdict was WRITTEN (`writeRecencyOf`), or `null` when nothing resolved.
+	 *
+	 * Reported because the shell folds that weigh a verdict against a native review's `submitted_at`
+	 * (ship-it Step 2, heal-ci's in-flight-repair probe, write-code repair R1) need this exact value:
+	 * left to fetch a timestamp themselves they read `created_at`, which is slot-open time and
+	 * re-opens #4200 outside the resolver. One rule, computed once, handed out.
+	 */
+	readonly writtenAt: string | null;
 }
 
 /** The `post` verdict — whether we upserted this run's same-head marker or appended a fresh comment, and its id. */
@@ -201,7 +214,10 @@ const read = Effect.fn("Github.read")(function* (
 	const authorized = yield* authorizedAuthors(repo, markerAuthors);
 	const outcome = resolveVerdict({comments, authorizedAuthors: authorized, gate, headSha});
 	const satisfied = outcome._tag === "current" && outcome.polarity === expect;
-	return {outcome, headSha, gate, satisfied, expect} satisfies ReadResult;
+	const resolving =
+		outcome._tag === "none" ? undefined : comments.find((c) => c.id === outcome.commentId);
+	const writtenAt = resolving === undefined ? null : writeRecencyOf(resolving);
+	return {outcome, headSha, gate, satisfied, expect, writtenAt} satisfies ReadResult;
 });
 
 /**
@@ -255,7 +271,7 @@ const gate = Effect.fn("Github.gate")(function* (
  * — closing the verdict-integrity hole where a body composed for another PR (bound to a different
  * PR's SHA, e.g. via a clobbered shared scratch file) was postable and caught only on read-back.
  * Then scan for THIS RUN's own prior marker attesting THIS HEAD (same author, the same
- * `verdict-run:` trailer, and the same bound head, newest by `(created_at, id)`) and PATCH it if
+ * `verdict-run:` trailer, and the same bound head, newest by write-recency) and PATCH it if
  * present, else POST a fresh one.
  *
  * The head dimension makes a re-gate at a new head APPEND, leaving the prior head's verdict intact,
@@ -266,9 +282,11 @@ const gate = Effect.fn("Github.gate")(function* (
  * every pipeline review agent posts under one shared GitHub identity, so an author-keyed upsert let
  * a concurrent sibling reviewer silently PATCH another reviewer's verdict body away — a PASS could
  * replace a FAIL at the same head with no trace the FAIL existed. Keyed on the run, a sibling never
- * matches: it appends its own comment, so both verdicts survive in the record and the unchanged
- * latest-wins resolution (`resolveVerdict` / `decideGate`) picks between them by `(createdAt, id)`.
- * A run that cannot identify itself (no run id) never
+ * matches: it appends its own comment, so both verdicts survive in the record and the latest-wins
+ * resolution (`resolveVerdict` / `decideGate`) picks between them. That arbitration is why every
+ * emitted body carries a `Verdict-written:` stamp: two surviving same-head verdicts both pass the
+ * head filter, so their write order is the ONLY thing left to separate them, and an in-place PATCH
+ * does not move `created_at` (#4200). A run that cannot identify itself (no run id) never
  * PATCHes at all — it appends, which costs a comment and loses nothing. Finally, `verifyLanded`
  * re-fetches the upserted comment and re-runs `emissionDefect` on its LANDED body — the
  * defense-in-depth self-verify (#3019) that fails the post if the marker didn't land clean, rather
@@ -282,7 +300,12 @@ const post = Effect.fn("Github.post")(function* (
 	rawRunId: string | undefined,
 ) {
 	const runId = normalizeRunId(rawRunId);
-	const body = runId === null ? rawBody : withRunId(rawBody, runId);
+	// The write-recency stamp goes on unconditionally and BEFORE the run trailer, so the visible line
+	// sits above the invisible one. It is what makes an in-place PATCH orderable at all: the PATCH
+	// leaves `created_at` at the slot's open time, and this is the only field that moves with the
+	// verdict (#4200). A re-post replaces the prior stamp rather than stacking one.
+	const stamped = withWrittenAt(rawBody, toStampIso(Date.now()));
+	const body = runId === null ? stamped : withRunId(stamped, runId);
 	const defect = emissionDefect(body, gate);
 	if (defect !== null) {
 		return yield* new VerdictInputError({message: `refusing to post: ${defect}`});
@@ -311,9 +334,7 @@ const post = Effect.fn("Github.post")(function* (
 							runIdOf(c.body) === runId &&
 							bindsSameHead(c.body, body, gate),
 					)
-					.sort((a, b) =>
-						a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id,
-					);
+					.sort(compareWriteRecency);
 	const priorId = mine[mine.length - 1]?.id;
 	const result: PostResult = yield* Effect.gen(function* () {
 		if (priorId !== undefined) {
