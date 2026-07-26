@@ -1594,6 +1594,61 @@ approval is present (per POLICY, the founder's; ADR 0135). Its **verdict routing
 it is still doc-class, `review-doc`-verified (this set governs *who merges*, not *which gate
 verifies*); the content clause adds only the merge-authority hold.
 
+### A path-only §CP answer is NEVER authoritative — use `cp-classify` (#4161)
+
+The two clauses above are **independent sources** of §CP membership, and `CONTROL_PLANE_RE` has
+**no `.decisions/` clause** — so a path-only test classifies *every* ADR non-§CP. A guard-touching
+ADR is therefore §CP with **zero path matches** (live: PR #4134, both files `.decisions/**`; the
+shipper caught it only by running the content probe). The failure is **silent and fail-open**: the
+guard-relaxing change reads as ordinary product work and escapes the human §CP approval entirely,
+rather than erroring.
+
+**The rule: a bare "no path matched" is not a verdict.** Every consumer that needs "is this §CP?"
+runs the shared entry point, which cannot hand back a fail-open no:
+
+```bash
+# The §CP classification entry point — four states on stdout, fail-closed exit code (#4161).
+# Re-resolves the live CONTROL_PLANE_RE from origin/main itself (#981); pass --control-plane-re
+# to reuse one you already resolved.
+gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+  | pipeline-cli cp-classify classify --repo "$REPO"
+```
+
+| stdout | meaning | exit |
+| --- | --- | --- |
+| `control-plane` | a path matched — authoritative §CP, BLOCKING | 0 |
+| `content-undetermined` | no path matched, but `.decisions/**` files are present — **an obligation, not a verdict**: probe each with `guard-content-probe` at the PR head before claiming ordinary | 0 |
+| `not-control-plane` | path clear **and** no `.decisions/**` file, so the content clause has nothing left to decide — the one proven-ordinary verdict | 1 |
+| `unknown` | the classification could not be made (unresolvable / uncompilable boundary, empty file set) — treat as §CP and hold | 0 |
+
+`unknown` is its own state on purpose: a read that **failed** and a change that is **genuinely
+non-§CP** are different facts, and collapsing them is the recurring fail-open defect class here
+(#3715, #4108, #4171, #4191). The exit code is 0 on every hold state and 1 **only** on
+`not-control-plane`, so both naive bash shapes — `… && echo BLOCKING` and `… || ordinary` — are
+fail-closed; the ordinary branch is reachable only on positive proof. `content-undetermined`
+resolves through the **existing** ADR-0164 probe unchanged, so this widens no over-match (#2617).
+
+#### The classification-site register
+
+Every site that decides §CP membership, and which sources it consults. A new consumer joins this
+table or it does not ship.
+
+| site | sources | note |
+| --- | --- | --- |
+| `ship-it` Step 0 | path + content | the merge-deciding gate; both re-resolved from `origin/main` |
+| `review-code` Step 2 | path + content | |
+| `review-doc` Step 0 | path + content | |
+| `review-design` | `cp-classify` (path + content) | was path-only |
+| `review-skill` Step 0 | `cp-classify` (path + content) | was path-only |
+| `review-trivial` | `cp-classify` (path + content) | was path-only; routes to the lighter gate, so a fail-open here under-gates |
+| `trivial-diff` | path + content | bound 3; shares the content-clause scope with `cp-classify` |
+| `codeowners-cp` | **path only — deliberate, not a defect** | it generates `.github/CODEOWNERS`, and GitHub matches CODEOWNERS on **paths**; the format structurally cannot express a content predicate. The content clause is enforced at the gates above instead, which is where a merge is actually decided. |
+| the crew driver (EM) | *classifies §CP nowhere today* | when it does, it uses `cp-classify` — tracked by #3416, which must not be built twice |
+
+The boundary stays single-sourced on both axes: `CONTROL_PLANE_RE` in the pipeline-cli const
+(#2761), `GUARD_ADR_RE` in this file, and the content clause's **scope** (`.decisions/**`) once in
+`cp-classify`'s core. No consumer re-declares any of the three.
+
 ---
 
 ## DOC. The doc-class / review-doc surface — one canonical definition

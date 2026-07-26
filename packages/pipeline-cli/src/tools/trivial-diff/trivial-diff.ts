@@ -41,6 +41,7 @@ export interface ChangedFile {
 	readonly addedLines: ReadonlyArray<string>;
 }
 
+import {isContentClassifiedPath} from "../cp-classify/cp-classify.ts";
 import {probeGuardContent} from "../guard-content-probe/guard-content-probe.ts";
 
 /** The terminal verdict — two states only, never an "unknown" a caller could read as trivial. */
@@ -106,9 +107,6 @@ const isSurfacePath = (path: string): boolean => {
 	if (path.endsWith(".sql")) return true;
 	return /(^|\/)(migrations|drizzle)\//.test(path);
 };
-
-/** True for a `.decisions/**` ADR — the class the guard-touching content bound (ADR 0164) scopes to. */
-const isAdrPath = (path: string): boolean => path.startsWith(".decisions/");
 
 /** True for a doc/comment-only file: a doc extension or a path under a docs dir. */
 const isDocPath = (path: string): boolean => {
@@ -235,7 +233,7 @@ export const classify = (diff: string, opts: ClassifyOptions): Classification =>
 	// its added content with the SAME shared verb ship-it Step 0 / the review gate call; fail-closed
 	// (null boundary ⇒ match-everything, empty added lines ⇒ guard-touching). Order is deliberate:
 	// this runs BEFORE the isDocPath trivial return, so a guard-relaxing ADR can't be masked as a doc.
-	if (isAdrPath(f.path)) {
+	if (isContentClassifiedPath(f.path)) {
 		const probe = probeGuardContent(f.addedLines.join("\n"), opts.guardAdrRe ?? ".");
 		if (probe.guardTouching) {
 			return nonTrivial(

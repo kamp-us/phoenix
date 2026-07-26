@@ -95,6 +95,9 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("control-plane-paths", () =>
 		import("./tools/control-plane-paths/command.ts").then((m) => m.controlPlanePathsCommand),
 	),
+	tool("cp-classify", () =>
+		import("./tools/cp-classify/command.ts").then((m) => m.cpClassifyCommand),
+	),
 	tool("cp-cardinality", () =>
 		import("./tools/cp-cardinality/command.ts").then((m) => m.cpCardinalityCommand),
 	),
