@@ -61,6 +61,15 @@ export interface MergeQueueSignals {
 	 */
 	readonly lastMergeQueueEvent: LastMergeQueueEvent;
 	/**
+	 * Does the timeline carry a `merged` event? The queue emits `removed_from_merge_queue` as it
+	 * CONSUMES the entry to land the batch, so on a successful merge that removal pairs with a
+	 * `merged` event ≤1s away — #4143 both at 00:53:07Z, #4164 removal 01:38:30Z / merged
+	 * 01:38:31Z, #4076 00:27:43Z / 00:27:44Z (#4155). Either order appears in the array, so
+	 * ordering discriminates nothing; the presence of the `merged` event does. Optional: absent ⇒
+	 * no such event was read ⇒ no evidence (#4155).
+	 */
+	readonly mergedTimelineEvent?: boolean | undefined;
+	/**
 	 * `mergeStateStatus` from `gh pr view` — used only as a *positive* still-queued hint
 	 * (`QUEUED`), never to infer ejection. Optional: absent ⇒ treated as unknown.
 	 */
@@ -76,7 +85,8 @@ export interface MergeQueueSignals {
  * The terminal reconcile outcome:
  *   - `merged`  — the queue landed the batch. Terminal success.
  *   - `ejected` — a genuine dequeue: NOT merged AND the last merge-queue event is
- *                 `removed_from_merge_queue`. Route back to repair/re-queue.
+ *                 `removed_from_merge_queue` AND the timeline carries NO `merged` event.
+ *                 Route back to repair/re-queue.
  *   - `queued`  — still in the queue: NOT merged AND (last event is
  *                 `added_to_merge_queue` OR `mergeStateStatus == QUEUED`). Keep polling.
  *                 It is not proof of health — an ejection that has not yet surfaced in the
@@ -106,8 +116,13 @@ const at = (outcome: MergeOutcome, reason: string): Classification => ({outcome,
  *   1b. `merged` — the base branch already carries this PR's squash. Ranked with (1), above
  *      the ejection check, for the same reason (1) is first: a landed merge outranks both a
  *      stale not-merged read and the removal event the queue emits as it merges.
- *   2. `ejected` — NOT merged AND last merge-queue event is `removed_from_merge_queue`.
- *      This is the ONLY ejection signal: a genuine dequeue, not a momentary state read.
+ *   2. `ejected` — NOT merged AND last merge-queue event is `removed_from_merge_queue` AND the
+ *      timeline carries no `merged` event. This is the ONLY ejection signal: a genuine dequeue,
+ *      not a momentary state read, and not the removal the queue emits as it lands the batch.
+ *   2b. `queued` — the removal IS paired with a `merged` event: the queue consumed the entry to
+ *      land it. Not an ejection, and not yet `merged` either — a `merged` timeline event alone is
+ *      one signal, and merge evidence is `merged_at` non-null PLUS that event, so the reconcile
+ *      keeps polling until the PR state (or the base-branch squash) confirms (#4155).
  *   3. `queued` — NOT merged AND (last event `added_to_merge_queue` OR
  *      mergeStateStatus==QUEUED). A well-formed pending in the queue; keep polling.
  *   4. `pending` — NOT merged AND no merge-queue event yet (the settle window, incl.
@@ -130,6 +145,12 @@ export const classify = (s: MergeQueueSignals): Classification => {
 		);
 	}
 	if (s.lastMergeQueueEvent === "removed_from_merge_queue") {
+		if (s.mergedTimelineEvent === true) {
+			return at(
+				"queued",
+				"removed_from_merge_queue paired with a merged timeline event — the queue consumed the entry to land the batch, not an ejection; holding for merged_at to confirm",
+			);
+		}
 		return at(
 			"ejected",
 			"not merged and the last merge-queue event is removed_from_merge_queue — a genuine dequeue",
@@ -215,3 +236,13 @@ export const lastMergeQueueEvent = (
 	);
 	return last.event;
 };
+
+/**
+ * Does the REST issue-timeline carry a `merged` event? Presence-only, deliberately order-free: the
+ * queue emits `removed_from_merge_queue` and `merged` within a second of each other as it lands the
+ * batch, in either array order (#4143 carries `merged` BEFORE the removal at the same second),
+ * so "did the merge land" is answered by the event existing, never by its position (#4155).
+ */
+export const hasMergedEvent = (
+	timeline: ReadonlyArray<{readonly event?: string; readonly created_at?: string}>,
+): boolean => timeline.some((entry) => entry.event === "merged");

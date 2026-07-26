@@ -2066,7 +2066,8 @@ reconcile shells out to it per poll and branches on the printed outcome word:
 # a PR still QUEUED at the budget's end is a well-formed pending, not a failure.
 # The classifier reads PR state (gh pr view — the sanctioned PR-state read ship-it Step 2 uses,
 # NOT a GraphQL intake query the org's Projects-classic integration breaks) + the last merge-queue
-# timeline event (gh api …/timeline, REST), cross-checks a non-merged read against the base branch
+# timeline event AND whether a `merged` event is present (gh api …/timeline, REST — the pairing
+# that tells a consumed queue entry from an ejection, #4155), cross-checks a non-merged read against the base branch
 # (gh api …/commits?sha=<base>, the read that stayed fresh while the other two lagged — #4057), and
 # prints merged/ejected/queued/pending. It is fail-closed away from a false ship: any unreadable
 # signal ⇒ pending (keep polling), never a false merged/ejected.
@@ -2098,6 +2099,34 @@ else
     echo "refused — the enqueue did not take effect at this head; the parked intent was cleared. Re-dispatch ship-it to re-assert the gates and enqueue (idempotent)."
 fi
 ```
+
+#### The loop is not the evidence — and a bare removal event is not an ejection (#4155)
+
+The block above shells out to the classifier on purpose. When you are tempted to hand-roll the
+poll instead — a `gh api` read piped into a `grep`, because the CLI was one step away — these three
+rules bind that loop too. The first two are the merge-path instance of §WL of
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) (the shared statement; read it
+there rather than re-deriving it here):
+
+- **A wait-loop's exit is never evidence that the merge landed.** The loop decides *when* to
+  re-read, never *what is true*. Merge evidence is **`merged_at` non-null PLUS a `merged` timeline
+  event**, re-asserted after the loop exits. On an **open** PR `merge_commit_sha` is GitHub's
+  throwaway test-merge commit and is evidence of nothing (the trap pinned below), and a null
+  `auto_merge` post-enqueue is **expected** under a merge queue — never read either as an outcome.
+- **Never `grep -qv` / `grep -vq` as the exit condition.** The live instance is this step: a
+  shipper's improvised `grep -qv null` poll over a multi-field read succeeded on poll 1 — every such
+  read emits lines without `null` — and the loop exited while PR #4076 was still queued (#4155).
+  Capture the inverted match and test emptiness instead.
+- **`removed_from_merge_queue` alone is not an ejection.** The queue emits that event as it
+  **consumes** the entry to land the batch, so on a successful merge it pairs with a `merged` event
+  ≤1s away — PR #4076 (removal `00:27:43Z`, merged `00:27:44Z`), #4143 (both `00:53:07Z`, with
+  `merged` returned *first* in the array), #4164 (`01:38:30Z` / `01:38:31Z`). Array order and
+  timestamp order discriminate nothing; the **presence of the `merged` event** does.
+  `merge-queue-classify` encodes exactly this — a removal paired with a `merged` event classifies
+  `queued`, never `ejected`, and does **not** promote to `merged` on that one signal (merge evidence
+  is still `merged_at` plus the event, so the reconcile keeps polling until the PR state or the
+  base-branch squash confirms). An ejection check keyed on the removal alone would report **every**
+  successful merge as an ejection.
 
 #### The timeline is authoritative but not timely — the freshness cross-check and the ejection window this reconcile accepts (#4057)
 
@@ -2152,7 +2181,8 @@ merge disposition:
   branch's regime, never this PR's own queue history: a first-attempt PR under a queue has no
   history either, so keying on history would leave exactly the #3700 arm parked.
 - **`ejected`** — the queue **dropped** the PR (still open, no longer queued, not merged) — keyed on
-  the authoritative `removed_from_merge_queue` timeline event, not on a momentary state. This is
+  the authoritative `removed_from_merge_queue` timeline event **unpaired with a `merged` event**
+  (#4155), not on a momentary state. This is
   the silent stall this step exists to catch. Do **not** report shipped. **Route it back to
   repair/re-queue** and **surface the ejection**: leave a legible comment on the PR naming the
   ejection and the likely cause (textual batch conflict vs combined-batch CI failure), so the

@@ -13,8 +13,9 @@
  * as a typed `E` the command handles rather than an invisible defect.
  *
  * One verb, `signals(pr)`, resolves the whole `MergeQueueSignals` input: the PR `state` +
- * `mergeStateStatus` + `baseRefName` from `gh pr view`, the LAST merge-queue timeline event from
- * `gh api .../timeline`, and — when the PR does not already read merged — whether the base branch
+ * `mergeStateStatus` + `baseRefName` from `gh pr view`, the LAST merge-queue timeline event **and
+ * whether a `merged` event is present** (#4155) from `gh api .../timeline` — one read, two facts —
+ * and — when the PR does not already read merged — whether the base branch
  * carries the PR's squash, from `gh api .../commits?sha=<base>` (#4057). The
  * fail-closed-away-from-a-false-ship posture is preserved exactly: an unreadable repo or PR state
  * propagates as a typed error the command maps to `pending`; an unreadable timeline is deliberately
@@ -32,6 +33,7 @@ import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {
 	type BaseBranchSquash,
+	hasMergedEvent,
 	type LastMergeQueueEvent,
 	lastMergeQueueEvent,
 	type MergeQueueSignals,
@@ -239,40 +241,52 @@ const readPrState = Effect.fn("Github.readPrState")(function* (repo: string, pr:
 	return toPrState(yield* decodePrState(yield* parseJson(args, yield* runGh(args))));
 });
 
+/** The two facts one timeline read resolves: the last merge-queue event + a `merged` event. */
+interface TimelineFacts {
+	readonly lastMergeQueueEvent: LastMergeQueueEvent;
+	readonly mergedTimelineEvent: boolean;
+}
+
+/** The no-evidence recovery value — the settle window, with no merge evidence. */
+const NO_TIMELINE_FACTS: TimelineFacts = {lastMergeQueueEvent: null, mergedTimelineEvent: false};
+
 /**
- * The LAST merge-queue timeline event, or `null` when the timeline carries none yet. An
- * unreadable timeline is DELIBERATELY recovered to `null` here — the fail-closed-away-from-a-
- * false-ship posture (#1921): a missing event reads as the enqueue-settle window (`pending`),
- * so a `gh`/parse/shape fault on the timeline can only keep polling, never trigger a false
- * ejection. The recovered errors are the typed `E` this read raises (not an untyped swallow):
- * the recovery is scoped to exactly `GhCommandError`/`GhParseError`/`SchemaError` at this one site.
+ * The LAST merge-queue timeline event plus whether a `merged` event is present (#4155) — both from
+ * ONE timeline read. An unreadable timeline is DELIBERATELY recovered to "no event, no merge" here —
+ * the fail-closed-away-from-a-false-ship posture (#1921): a missing event reads as the
+ * enqueue-settle window (`pending`), so a `gh`/parse/shape fault on the timeline can only keep
+ * polling, never trigger a false ejection and never a false merge. The recovered errors are the
+ * typed `E` this read raises (not an untyped swallow): the recovery is scoped to exactly
+ * `GhCommandError`/`GhParseError`/`SchemaError` at this one site.
  */
-const readLastMergeQueueEvent = Effect.fn("Github.readLastMergeQueueEvent")(
+const readTimelineFacts = Effect.fn("Github.readTimelineFacts")(
 	function* (repo: string, pr: number) {
 		const args = timelineArgs(repo, pr);
 		const raw = yield* runGh(args);
 		// `--paginate` concatenates JSON arrays; normalize `][` joins into one array before parsing.
 		const merged = raw.replace(/\]\s*\[/g, ",");
-		const entries = yield* decodeTimeline(yield* parseJson(args, merged));
+		const decoded = yield* decodeTimeline(yield* parseJson(args, merged));
 		// The core reads only `event` + `created_at`; project to its exact-optional shape, dropping
 		// a null/absent field to an omitted key rather than an explicit `undefined`.
-		return lastMergeQueueEvent(
-			entries.map((e) => {
-				const entry: {event?: string; created_at?: string} = {};
-				if (e.event != null) entry.event = e.event;
-				if (e.created_at != null) entry.created_at = e.created_at;
-				return entry;
-			}),
-		);
+		const entries = decoded.map((e) => {
+			const entry: {event?: string; created_at?: string} = {};
+			if (e.event != null) entry.event = e.event;
+			if (e.created_at != null) entry.created_at = e.created_at;
+			return entry;
+		});
+		return {
+			lastMergeQueueEvent: lastMergeQueueEvent(entries),
+			mergedTimelineEvent: hasMergedEvent(entries),
+		} satisfies TimelineFacts;
 	},
 	(effect) =>
 		effect.pipe(
 			Effect.catchTags({
 				"@kampus/merge-queue-classify/GhCommandError": () =>
-					Effect.succeed<LastMergeQueueEvent>(null),
+					Effect.succeed<TimelineFacts>(NO_TIMELINE_FACTS),
 				"@kampus/merge-queue-classify/GhParseError": () =>
-					Effect.succeed<LastMergeQueueEvent>(null),
-				SchemaError: () => Effect.succeed<LastMergeQueueEvent>(null),
+					Effect.succeed<TimelineFacts>(NO_TIMELINE_FACTS),
+				SchemaError: () => Effect.succeed<TimelineFacts>(NO_TIMELINE_FACTS),
 			}),
 		),
 );
@@ -306,7 +320,7 @@ const readBaseBranchSquash = Effect.fn("Github.readBaseBranchSquash")(
 
 const readSignals = Effect.fn("Github.signals")(function* (repo: string, pr: number) {
 	const prState = yield* readPrState(repo, pr);
-	const lastEvent = yield* readLastMergeQueueEvent(repo, pr);
+	const timeline = yield* readTimelineFacts(repo, pr);
 	// Not read once the PR itself reads merged: the cross-check exists to correct a stale
 	// not-merged read, so there is nothing left for it to corroborate.
 	const baseBranchSquash = prState.merged
@@ -315,7 +329,8 @@ const readSignals = Effect.fn("Github.signals")(function* (repo: string, pr: num
 	return {
 		merged: prState.merged,
 		state: prState.state,
-		lastMergeQueueEvent: lastEvent,
+		lastMergeQueueEvent: timeline.lastMergeQueueEvent,
+		mergedTimelineEvent: timeline.mergedTimelineEvent,
 		mergeStateStatus: prState.mergeStateStatus,
 		baseBranchSquash,
 	} satisfies MergeQueueSignals;
