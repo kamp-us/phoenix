@@ -6,6 +6,7 @@
  * `gate.ts`/`github.ts`.
  */
 import {describe, expect, it} from "@effect/vitest";
+import {PRESENT, type VocabularyPresence} from "../vocabulary-preflight/presence.ts";
 import {
 	type Candidate,
 	type Comment,
@@ -50,6 +51,14 @@ const candidate = (over: Partial<Candidate> = {}): Candidate => ({
 });
 
 const BACKLOG: Scope = {_tag: "backlog"};
+
+// Issue scope defaults to a repo that HAS the scoping labels — the ordinary case. The absent
+// reading is spelled out where it is the subject (#4272).
+const issueScope = (number: number, vocabulary: VocabularyPresence = PRESENT): Scope => ({
+	_tag: "issue",
+	number,
+	vocabulary,
+});
 
 describe("the frozen contract literals", () => {
 	it("lane-entering types are EXACTLY epic + feature — widening is a founder call", () => {
@@ -259,13 +268,27 @@ describe("judge", () => {
 	});
 
 	it("a single out-of-scope ISSUE passes — that is the ordinary answer, not a broken read", () => {
-		const scope: Scope = {_tag: "issue", number: 7};
+		const scope: Scope = issueScope(7);
 		expect(judge([candidate({number: 7, hasParent: true})], scope)).toEqual({
 			pass: true,
 			scope,
 			scanned: 0,
 			pitched: 0,
 		});
+	});
+
+	// The two readings of the SAME empty per-issue result. The pass above is the first; this is the
+	// second, which used to be indistinguishable from it and reported clean forever (#4272).
+	it("FAILS the same empty scan when the scoping labels are absent from the REPO", () => {
+		const scope: Scope = issueScope(7, {
+			_tag: "absent",
+			missing: ["status:triaged", ...LANE_ENTERING_TYPES],
+		});
+		const verdict = judge([candidate({number: 7, hasParent: true})], scope);
+		expect(verdict.pass).toBe(false);
+		if (!verdict.pass && verdict.reason === "vocabulary-absent") {
+			expect(verdict.missing).toContain("status:triaged");
+		}
 	});
 
 	it("reds on an unpitched bet and counts only in-scope work", () => {
@@ -302,9 +325,16 @@ describe("renderReport", () => {
 	});
 
 	it("an out-of-scope single issue reports out-of-scope, not clean-pitched", () => {
-		const scope: Scope = {_tag: "issue", number: 7};
+		const scope: Scope = issueScope(7);
 		expect(renderReport(judge([candidate({number: 7, hasParent: true})], scope))).toContain(
 			"not lane-entering work",
 		);
+	});
+
+	it("an absent label universe reports the unmet prerequisite, naming the missing labels", () => {
+		const scope: Scope = issueScope(7, {_tag: "absent", missing: ["status:triaged"]});
+		const report = renderReport(judge([candidate({number: 7, hasParent: true})], scope));
+		expect(report).toContain("do not exist in this repo at all: status:triaged");
+		expect(report).toContain("vocabulary-preflight");
 	});
 });

@@ -7,9 +7,11 @@
  */
 import {Console, Effect, Option} from "effect";
 import * as Schema from "effect/Schema";
+import type {RepoLabelsError} from "../vocabulary-preflight/github.ts";
+import {RepoLabels} from "../vocabulary-preflight/github.ts";
 import type {GhCommandError, GhParseError, RepoResolutionError} from "./github.ts";
 import {TriagedIssues} from "./github.ts";
-import {judge, renderReport, type Scope} from "./homing-guard.ts";
+import {judge, renderReport, type Scope, TRIAGED_LABEL} from "./homing-guard.ts";
 
 /** Carries the non-zero gate-fail exit (the report is already on stderr). */
 export class CheckFailed extends Schema.TaggedErrorClass<CheckFailed>()("CheckFailed", {
@@ -26,16 +28,30 @@ export const checkHoming = (
 	issue: Option.Option<number>,
 ): Effect.Effect<
 	void,
-	CheckFailed | RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError,
-	TriagedIssues
+	| CheckFailed
+	| RepoResolutionError
+	| GhCommandError
+	| GhParseError
+	| Schema.SchemaError
+	| RepoLabelsError,
+	TriagedIssues | RepoLabels
 > =>
 	Effect.gen(function* () {
 		const triaged = yield* TriagedIssues;
+		const labels = yield* RepoLabels;
 		const [issues, scope] = yield* Option.match(issue, {
 			onNone: () =>
 				triaged.list().pipe(Effect.map((is) => [is, {_tag: "backlog"} as Scope] as const)),
+			// The issue fork reads the label universe too: without it an empty result cannot be told
+			// from a repo that never had `status:triaged`, and the core would pass vacuously (#4272).
 			onSome: (n) =>
-				triaged.get(n).pipe(Effect.map((is) => [is, {_tag: "issue", number: n} as Scope] as const)),
+				Effect.all([triaged.get(n), labels.presence([TRIAGED_LABEL])], {
+					concurrency: "unbounded",
+				}).pipe(
+					Effect.map(
+						([is, vocabulary]) => [is, {_tag: "issue", number: n, vocabulary} as Scope] as const,
+					),
+				),
 		});
 		const verdict = judge(issues, scope);
 		if (verdict.pass) {

@@ -112,6 +112,11 @@ const SPINE_STAGES: ReadonlySet<string> = new Set([
 	"triaged",
 ]);
 
+/** The spine as whole label names — what `vocabulary-preflight` asserts the repo actually has. */
+export const SPINE_LABELS: ReadonlyArray<string> = [...SPINE_STAGES].map(
+	(stage) => `${STATUS_PREFIX}${stage}`,
+);
+
 /**
  * The single-valued label families. `owns` decides membership from the label name alone (so a
  * label the tracker never applied is still reconciled), `desired` names the one member the

@@ -12,6 +12,7 @@
  * park carrier is defined once by the appetite-circuit-breaker child #3966, and that question
  * is open — a pitch field never implies an answer to it.
  */
+import type {VocabularyPresence} from "../vocabulary-preflight/presence.ts";
 
 /** The label that puts an issue in scope: the requirement binds when triage makes it pickable. */
 export const TRIAGED_LABEL = "status:triaged";
@@ -48,7 +49,18 @@ export interface Candidate {
 	readonly comments: ReadonlyArray<Comment>;
 }
 
-export type Scope = {readonly _tag: "backlog"} | {readonly _tag: "issue"; readonly number: number};
+/**
+ * Issue scope carries the label universe's `vocabulary` for the same reason `homing-guard`'s
+ * does: an empty issue scope reads either "not lane-entering work" or "this repo has none of the
+ * scoping labels", and only the label universe separates them (#4272).
+ */
+export type Scope =
+	| {readonly _tag: "backlog"}
+	| {
+			readonly _tag: "issue";
+			readonly number: number;
+			readonly vocabulary: VocabularyPresence;
+	  };
 
 const heading = /^\s{0,3}#{2,6}\s*pitch\s*$/i;
 const anyHeading = /^\s{0,3}#{1,6}\s/;
@@ -266,6 +278,13 @@ export type PitchGuardVerdict =
 	  }
 	/** No lane-entering work in scope — fail closed, never a vacuous pass (ADR 0092). */
 	| {readonly pass: false; readonly reason: "zero-scope"; readonly scope: Scope}
+	/** The labels that define scope do not exist in the repo at all — unmet prerequisite (#4272). */
+	| {
+			readonly pass: false;
+			readonly reason: "vocabulary-absent";
+			readonly scope: Scope;
+			readonly missing: ReadonlyArray<string>;
+	  }
 	| {
 			readonly pass: false;
 			readonly reason: "unpitched";
@@ -282,7 +301,9 @@ export type PitchGuardVerdict =
  * **backlog** an empty lane-entering set is indistinguishable from a broken query (a renamed
  * label, a lost token, a wrong repo) — the silent no-op ADR 0092 makes fail closed. Over a
  * single **issue** empty is the ordinary answer "that issue is not lane-entering work", so it
- * passes; the caller hands an out-of-scope issue through as an empty set.
+ * passes; the caller hands an out-of-scope issue through as an empty set — but only when the
+ * scoping labels exist. Where they do not, every issue takes that fork and the guard reports
+ * clean forever, having checked nothing (#4272).
  */
 export const judge = (
 	candidates: ReadonlyArray<Candidate>,
@@ -290,8 +311,9 @@ export const judge = (
 ): PitchGuardVerdict => {
 	const inScope = candidates.filter((c) => isLaneEntering(c));
 	if (inScope.length === 0) {
-		return scope._tag === "backlog"
-			? {pass: false, reason: "zero-scope", scope}
+		if (scope._tag === "backlog") return {pass: false, reason: "zero-scope", scope};
+		return scope.vocabulary._tag === "absent"
+			? {pass: false, reason: "vocabulary-absent", scope, missing: scope.vocabulary.missing}
 			: {pass: true, scope, scanned: 0, pitched: 0};
 	}
 
@@ -342,6 +364,14 @@ export const renderReport = (verdict: PitchGuardVerdict): string => {
 			`pitch-guard: scanned ${scopeLabel(verdict.scope)} and found ZERO lane-entering issues — ` +
 			"fail-closed (ADR 0092). An empty set is indistinguishable from a broken read " +
 			"(renamed label, missing token, wrong repo), and a vacuous pass would hide every unpitched bet."
+		);
+	}
+	if (verdict.reason === "vocabulary-absent") {
+		return (
+			`pitch-guard: ${scopeLabel(verdict.scope)} is not lane-entering work, but the label(s) that ` +
+			`define scope do not exist in this repo at all: ${verdict.missing.join(", ")} — unmet ` +
+			"prerequisite (#4272), not an out-of-scope issue. Run `pipeline-cli vocabulary-preflight " +
+			"check` and create the missing labels; adopting the pipeline means adopting its taxonomy."
 		);
 	}
 	const lines = verdict.unpitched.map((i) => `  #${i.number} ${i.title}\n      ${i.detail}`);

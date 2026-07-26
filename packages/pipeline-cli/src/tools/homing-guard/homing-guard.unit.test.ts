@@ -5,6 +5,7 @@
  * out-of-scope), and the report. No IO — the `gh api` seam is crossed in `gate.ts`/`github.ts`.
  */
 import {describe, expect, it} from "@effect/vitest";
+import {PRESENT, type VocabularyPresence} from "../vocabulary-preflight/presence.ts";
 import {
 	disposition,
 	EXEMPT_LABELS,
@@ -27,6 +28,14 @@ const issue = (
 });
 
 const BACKLOG: Scope = {_tag: "backlog"};
+
+// Issue scope defaults to a repo that HAS the label — the ordinary case. The absent reading is
+// spelled out where it is the subject (#4272).
+const issueScope = (number: number, vocabulary: VocabularyPresence = PRESENT): Scope => ({
+	_tag: "issue",
+	number,
+	vocabulary,
+});
 
 describe("EXEMPT_LABELS", () => {
 	it("is EXACTLY the two ADR-0208 standing lanes — a third needs a founder ruling", () => {
@@ -104,7 +113,7 @@ describe("judge — violations", () => {
 	});
 
 	it("FAILS a single-issue scan of an un-homed issue", () => {
-		const v = judge([issue(9, null)], {_tag: "issue", number: 9});
+		const v = judge([issue(9, null)], issueScope(9));
 		expect(v.pass).toBe(false);
 		if (!v.pass && v.reason === "violations") {
 			expect(v.violations).toEqual([{kind: "unhomed", number: 9, title: "issue 9"}]);
@@ -131,7 +140,7 @@ describe("judge — violations", () => {
 	});
 
 	it("FAILS a single-issue scan of a double-marked issue — the --issue seam reds too", () => {
-		const v = judge([issue(9, 17, ["wayfinder:backlog"])], {_tag: "issue", number: 9});
+		const v = judge([issue(9, 17, ["wayfinder:backlog"])], issueScope(9));
 		expect(v.pass).toBe(false);
 		if (!v.pass && v.reason === "violations") {
 			expect(v.violations.map((x) => x.kind)).toEqual(["double-marked"]);
@@ -164,9 +173,19 @@ describe("judge — zero scope (ADR 0092)", () => {
 	});
 
 	it("PASSES an empty SINGLE-ISSUE scan — that issue is simply not status:triaged", () => {
-		const v = judge([], {_tag: "issue", number: 9});
+		const v = judge([], issueScope(9));
 		expect(v.pass).toBe(true);
 		if (v.pass) expect(v.scanned).toBe(0);
+	});
+
+	// The two readings of the SAME empty per-issue result, which the tool cannot tell apart from
+	// the issue alone — the vacuous pass #4272 closes. The pass above is the first reading.
+	it("FAILS the same empty scan when the label is absent from the REPO — not out of scope", () => {
+		const v = judge([], issueScope(9, {_tag: "absent", missing: ["status:triaged"]}));
+		expect(v.pass).toBe(false);
+		if (!v.pass && v.reason === "vocabulary-absent") {
+			expect(v.missing).toEqual(["status:triaged"]);
+		}
 	});
 });
 
@@ -179,8 +198,17 @@ describe("renderReport", () => {
 	});
 
 	it("names the out-of-scope issue on an empty single-issue scan", () => {
-		const report = renderReport(judge([], {_tag: "issue", number: 9}));
+		const report = renderReport(judge([], issueScope(9)));
 		expect(report).toContain("issue #9 is not status:triaged");
+	});
+
+	it("distinguishes an absent label universe from an out-of-scope issue, naming what is missing", () => {
+		const report = renderReport(
+			judge([], issueScope(9, {_tag: "absent", missing: ["status:triaged"]})),
+		);
+		expect(report).toContain("do not exist in this repo at all: status:triaged");
+		expect(report).toContain("vocabulary-preflight");
+		expect(report).not.toContain("out of scope, nothing to check");
 	});
 
 	it("explains the zero-scope refusal rather than just failing", () => {

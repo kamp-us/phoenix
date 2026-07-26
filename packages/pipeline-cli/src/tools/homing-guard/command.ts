@@ -17,9 +17,10 @@
  * Exit-code contract: 0 = clean, any non-zero = failure — an un-homed issue, the zero-scope
  * fail-closed (ADR 0092), and a `gh`/repo failure all exit non-zero, undistinguished.
  */
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {onCheckFailed} from "../../gate-fail.ts";
+import {RepoLabelsLive} from "../vocabulary-preflight/github.ts";
 import {checkHoming} from "./gate.ts";
 import {TriagedIssuesLive} from "./github.ts";
 
@@ -45,5 +46,5 @@ export const homingGuardCommand = Command.make("homing-guard").pipe(
 	Command.withDescription(
 		"Fail-closed gate: every triaged issue is milestone-homed or standing-lane exempt (ADR 0202/0208, #3939)",
 	),
-	Command.provide(TriagedIssuesLive),
+	Command.provide(Layer.merge(TriagedIssuesLive, RepoLabelsLive)),
 );

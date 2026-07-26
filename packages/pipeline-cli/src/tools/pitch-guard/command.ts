@@ -18,9 +18,10 @@
  * Exit-code contract: 0 = clean, any non-zero = failure — an unpitched bet, the zero-scope
  * fail-closed (ADR 0092), and a `gh`/repo failure all exit non-zero, undistinguished.
  */
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {onCheckFailed} from "../../gate-fail.ts";
+import {RepoLabelsLive} from "../vocabulary-preflight/github.ts";
 import {checkPitches} from "./gate.ts";
 import {PitchCandidatesLive} from "./github.ts";
 
@@ -46,5 +47,5 @@ export const pitchGuardCommand = Command.make("pitch-guard").pipe(
 	Command.withDescription(
 		"Fail-closed intake gate: every pickable bet carries a founder-approved pitch (§PITCH, #3909/#3963)",
 	),
-	Command.provide(PitchCandidatesLive),
+	Command.provide(Layer.merge(PitchCandidatesLive, RepoLabelsLive)),
 );
