@@ -26,6 +26,7 @@ const SURFACES: PolicySurfaces = {
 	settingsFile: "/policy/managed-settings.json",
 	dropInDir: "/policy/managed-settings.d",
 	opaque: [],
+	undeterminable: [],
 };
 
 /** A whole filesystem backed by one in-memory path→content map; anything unlisted is absent. */
@@ -48,7 +49,11 @@ const fakeFs = (
 				: Effect.succeed(content);
 		},
 		readDirectory: (path) => {
-			const prefix = `${String(path)}/`;
+			const key = String(path);
+			// A directory in `unreadable` EXISTS but cannot be enumerated (EACCES) — distinct from one
+			// that is simply absent, which is the distinction the drop-in read has to preserve.
+			if (unreadable.has(key)) return Effect.fail(new Error("EACCES") as never);
+			const prefix = `${key}/`;
 			const names = Object.keys(files)
 				.filter((f) => f.startsWith(prefix))
 				.map((f) => f.slice(prefix.length));
@@ -88,9 +93,25 @@ describe("standup/channel-allowlist — policy surface resolution", () => {
 		assert.strictEqual(surfaces.dropInDir, "/etc/claude-code/managed-settings.d");
 	});
 
-	it("treats macOS MDM preferences as an opaque surface, and nothing on other platforms", () => {
-		assert.isAbove(opaquePolicySurfaces("darwin").length, 0);
+	it("lists BOTH macOS MDM plists, per-user first — the order the CLI resolves them in", () => {
+		// The CLI builds per-user then device-level and takes the first that exists and parses, so a
+		// device-level-only guard misses the surface it actually consulted on a per-user managed host.
+		assert.deepStrictEqual(opaquePolicySurfaces("darwin", "someone"), [
+			"/Library/Managed Preferences/someone/com.anthropic.claudecode.plist",
+			"/Library/Managed Preferences/com.anthropic.claudecode.plist",
+		]);
+		assert.deepStrictEqual(opaquePolicySurfaces("darwin", null), [
+			"/Library/Managed Preferences/com.anthropic.claudecode.plist",
+		]);
 		assert.deepStrictEqual(opaquePolicySurfaces("linux"), []);
+	});
+
+	it("names the Windows registry keys as UNDETERMINABLE, not as existence-checkable paths", () => {
+		// A registry key is not a filesystem path: `fs.exists` on one answers "absent" for a key that
+		// is in fact set. Claiming coverage the code did not have was the docblock's overclaim.
+		assert.deepStrictEqual(policySurfacesFor("win32").opaque, []);
+		assert.isAbove(policySurfacesFor("win32").undeterminable.length, 0);
+		assert.deepStrictEqual(policySurfacesFor("linux").undeterminable, []);
 	});
 });
 
@@ -184,6 +205,52 @@ describe("standup/channel-allowlist — probeChannelAllowlist", () => {
 				[SURFACES.settingsFile]: JSON.stringify({allowedChannelPlugins: [CREW_CHANNEL_PLUGIN]}),
 			});
 			assert.strictEqual(outcome.status, "unknown");
+		}),
+	);
+
+	it.effect(
+		"UNKNOWN — never blocked — when the drop-in directory exists but cannot be enumerated",
+		() =>
+			Effect.gen(function* () {
+				// The regression this test exists for: a root-only drop-in dir beside a world-readable
+				// settings file that sets the list without the crew plugin. Collapsing the failed
+				// enumeration to "no drop-in files" turns an unread surface into a launch-aborting
+				// `blocked` — a definite answer drawn from a partial read.
+				const outcome = yield* probe(
+					{[SURFACES.settingsFile]: settingsListing([{marketplace: "acme", plugin: "acme-chat"}])},
+					{unreadable: [SURFACES.dropInDir]},
+				);
+				assert.strictEqual(outcome.status, "unknown");
+				assert.include(outcome.reason, SURFACES.dropInDir);
+			}),
+	);
+
+	it.effect("consults the drop-in directory by name even when it is simply absent", () =>
+		Effect.gen(function* () {
+			// An absent dir still resolves normally — but the operator log must show it was attempted,
+			// otherwise "what did the probe look at" is unanswerable for the surface most likely to
+			// hold the missing entry.
+			const outcome = yield* probe({
+				[SURFACES.settingsFile]: settingsListing([{marketplace: "acme", plugin: "acme-chat"}]),
+			});
+			assert.strictEqual(outcome.status, "blocked");
+			assert.include(outcome.consulted, SURFACES.dropInDir);
+		}),
+	);
+
+	it.effect("UNKNOWN — never blocked — when an undeterminable policy surface is in scope", () =>
+		Effect.gen(function* () {
+			const withRegistry: PolicySurfaces = {
+				...SURFACES,
+				undeterminable: ["HKLM\\SOFTWARE\\Policies\\ClaudeCode"],
+			};
+			const outcome = yield* probe(
+				{[SURFACES.settingsFile]: settingsListing([{marketplace: "acme", plugin: "acme-chat"}])},
+				{},
+				withRegistry,
+			);
+			assert.strictEqual(outcome.status, "unknown");
+			assert.include(outcome.consulted, "HKLM\\SOFTWARE\\Policies\\ClaudeCode");
 		}),
 	);
 

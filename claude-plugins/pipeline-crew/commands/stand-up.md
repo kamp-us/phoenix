@@ -60,13 +60,16 @@ The launcher can only *read* that second gate, so it reports **three** outcomes 
 distinct (the rule is [PROBES.md](../PROBES.md)'s: a check that could not run resolves to
 "unknown", never to "down"):
 
-- **verified** — a managed-settings source was read and lists the crew plugin. The channel binds.
+- **verified** — a managed-settings source was read and lists the crew plugin. **This gate is
+  satisfied** — not a promise the channel binds: the CLI runs other skip checks after it.
 - **blocked** — a managed-settings source was read, sets `allowedChannelPlugins`, and the crew
   plugin is not on it. This is a proven inert channel: stand-up **aborts before any session
   launches** and names the managed-settings remedy.
 - **unverified (unknown)** — the effective allowlist could not be resolved: no managed-settings
   source exists (the CLI then falls back to a vendor-controlled ledger the launcher cannot read),
-  a source is present but unreadable or malformed, or an MDM-managed policy surface is in play.
+  a source is present but unreadable or malformed, the drop-in directory exists but could not be
+  enumerated, an MDM-managed policy surface is in play, or the platform carries a policy surface
+  (the Windows registry) the launcher cannot interrogate at all.
   This **never** aborts — refusing on a surface nobody could read is the fail-closed probe
   PROBES.md exists to forbid — but it is **never reported as success either**: the stand-up
   headline says `CHANNEL UNVERIFIED` and prints what it consulted plus the remedy.

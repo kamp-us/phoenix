@@ -42,6 +42,8 @@ export {
 	probeChannelAllowlist,
 	productionChannelAllowlistProbe,
 	renderChannelAllowlistOutcome,
+	undeterminablePolicySurfaces,
+	WINDOWS_POLICY_REGISTRY_KEYS,
 } from "./channel-allowlist.ts";
 export {
 	CHANNEL_PLUGIN_REF_RE,
