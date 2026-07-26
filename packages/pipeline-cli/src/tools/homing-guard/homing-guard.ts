@@ -14,6 +14,7 @@
  * read as full coverage downstream while double-marked issues landed in the `homed` count —
  * the milestone-counts-lie failure ADR 0202/0208 exist to prevent.
  */
+import type {VocabularyPresence} from "../vocabulary-preflight/presence.ts";
 
 /**
  * The two standing-lane labels, exactly (ADR 0208). A standing lane is milestone-less BY
@@ -42,8 +43,20 @@ export interface TriagedIssue {
  * What the guard scanned. `backlog` is the whole open `status:triaged` set (the CI/sweep
  * surface); `issue` is one named issue (the per-issue seam check a triage sweep runs right
  * after it labels). The two differ only in how an empty scope resolves — see `judge`.
+ *
+ * Issue scope carries the label universe's `vocabulary` because an empty issue scope has TWO
+ * readings and the tool cannot tell them apart from the issue alone: "this issue is not
+ * triaged" (ordinary, a pass) and "this repo has no such label" (an unmet prerequisite). The
+ * fact is resolved at the IO boundary and arrives here, so a required field makes the
+ * un-disambiguated pass unrepresentable rather than merely unchecked (#4272).
  */
-export type Scope = {readonly _tag: "backlog"} | {readonly _tag: "issue"; readonly number: number};
+export type Scope =
+	| {readonly _tag: "backlog"}
+	| {
+			readonly _tag: "issue";
+			readonly number: number;
+			readonly vocabulary: VocabularyPresence;
+	  };
 
 /** How one triaged issue resolves against home-xor-exempt. The two right-hand cases are defects. */
 export type Disposition = "homed" | "exempt" | "unhomed" | "double-marked";
@@ -83,6 +96,13 @@ export type HomingGuardVerdict =
 			readonly pass: false;
 			readonly reason: "zero-scope";
 			readonly scope: Scope;
+	  }
+	/** The scoping label does not exist in the repo at all — an unmet prerequisite (#4272). */
+	| {
+			readonly pass: false;
+			readonly reason: "vocabulary-absent";
+			readonly scope: Scope;
+			readonly missing: ReadonlyArray<string>;
 	  }
 	| {
 			readonly pass: false;
@@ -131,14 +151,19 @@ export const disposition = (issue: TriagedIssue): Disposition => resolve(issue).
  * exact silent-no-op ADR 0092 makes fail closed. Over a single **issue**, empty is the
  * ordinary answer "that issue is not `status:triaged`", so it passes; the caller filters the
  * fetched issue by label, so an out-of-scope issue arrives here as an empty set.
+ *
+ * The issue fork passes ONLY when the scoping label exists in the repo. Where it does not,
+ * every issue takes that fork and the seam guard reports clean forever, having checked nothing
+ * — the vacuous pass #4272 closes.
  */
 export const judge = (
 	issues: ReadonlyArray<TriagedIssue>,
 	scope: Scope = {_tag: "backlog"},
 ): HomingGuardVerdict => {
 	if (issues.length === 0) {
-		return scope._tag === "backlog"
-			? {pass: false, reason: "zero-scope", scope}
+		if (scope._tag === "backlog") return {pass: false, reason: "zero-scope", scope};
+		return scope.vocabulary._tag === "absent"
+			? {pass: false, reason: "vocabulary-absent", scope, missing: scope.vocabulary.missing}
 			: {pass: true, scope, scanned: 0, homed: 0, exempt: 0};
 	}
 
@@ -222,6 +247,15 @@ export const renderReport = (verdict: HomingGuardVerdict): string => {
 			`homing-guard: scanned ${scopeLabel(verdict.scope)} and found ZERO status:triaged issues — ` +
 			"fail-closed (ADR 0092). An empty triaged set is indistinguishable from a broken read " +
 			"(renamed label, missing token, wrong repo), and a vacuous pass would hide every floater."
+		);
+	}
+	if (verdict.reason === "vocabulary-absent") {
+		return (
+			`homing-guard: ${scopeLabel(verdict.scope)} is not in scope, but the label(s) that define ` +
+			`scope do not exist in this repo at all: ${verdict.missing.join(", ")} — unmet prerequisite ` +
+			"(#4272), not an out-of-scope issue. Every issue would take this fork, so the seam guard " +
+			"would report clean forever having checked nothing. Run `pipeline-cli vocabulary-preflight " +
+			"check` and create the missing labels; adopting the pipeline means adopting its taxonomy."
 		);
 	}
 	const unhomed = violationLines(verdict.violations, "unhomed");

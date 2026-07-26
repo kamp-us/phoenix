@@ -63,7 +63,7 @@ export interface RoadmapFacts {
 }
 
 const EPIC_LABEL = "type:epic";
-const PRIORITY_LABELS: ReadonlyArray<Priority> = ["p0", "p1", "p2"];
+export const PRIORITY_LABELS: ReadonlyArray<Priority> = ["p0", "p1", "p2"];
 
 /** True when the label set marks this issue as an epic (`type:epic`). */
 export const isEpic = (labels: ReadonlyArray<string>): boolean => labels.includes(EPIC_LABEL);

@@ -267,6 +267,13 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("pitch-guard", () =>
 		import("./tools/pitch-guard/command.ts").then((m) => m.pitchGuardCommand),
 	),
+	// #4272 — the adopting-repo prerequisite check: the label taxonomy and ROADMAP.md are hard
+	// dependencies of every tool above, not defaults, and a repo without them got no error because
+	// every scan simply matched nothing. Names each missing label instead. Deliberately an
+	// assertion, not a config seam — the vocabulary is governance, and widening it is a founder call.
+	tool("vocabulary-preflight", () =>
+		import("./tools/vocabulary-preflight/command.ts").then((m) => m.vocabularyPreflightCommand),
+	),
 	// #3980 — the mechanical half of the ADR contradiction sweep: rank the live-accepted ADRs a
 	// new ADR touches the decision domain of but never cites, so a same-question conflict with an
 	// unsuperseded ADR (0208-vs-0072, 0210-vs-0202) is a list to clear rather than a memory test.

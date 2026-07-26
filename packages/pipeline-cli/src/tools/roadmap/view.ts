@@ -8,6 +8,7 @@
  */
 import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
+import {judgeRoadmap} from "../vocabulary-preflight/vocabulary.ts";
 import type {GhCommandError, GhParseError, RepoResolutionError} from "./github.ts";
 import {Github} from "./github.ts";
 import {buildView, parseRoadmap, renderView} from "./roadmap.ts";
@@ -17,6 +18,15 @@ export class IoError extends Schema.TaggedErrorClass<IoError>()("IoError", {
 	path: Schema.String,
 	cause: Schema.Unknown,
 }) {}
+
+/** `ROADMAP.md` was readable but carries no arc table — an unmet prerequisite, not a quiet roadmap. */
+export class PrerequisiteUnmet extends Schema.TaggedErrorClass<PrerequisiteUnmet>()(
+	"PrerequisiteUnmet",
+	{
+		path: Schema.String,
+		detail: Schema.String,
+	},
+) {}
 
 const ROADMAP_FILE = "ROADMAP.md";
 
@@ -49,12 +59,31 @@ export const renderRoadmap = (
 	root: string,
 ): Effect.Effect<
 	void,
-	IoError | RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError,
+	| IoError
+	| PrerequisiteUnmet
+	| RepoResolutionError
+	| GhCommandError
+	| GhParseError
+	| Schema.SchemaError,
 	Github | FileSystem.FileSystem | Path.Path
 > =>
 	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const target = path.join(root, ROADMAP_FILE);
 		const md = yield* readRoadmap(root);
 		const {arcs, campaigns} = parseRoadmap(md);
+		// A ROADMAP.md whose table is absent or shaped differently parses to zero rows, which used
+		// to render as an empty tree — a roadmap that merely looks quiet. It is the same unmet
+		// prerequisite the preflight names, so it reds the same way here (#4272).
+		const unmet = judgeRoadmap({
+			_tag: "present",
+			path: target,
+			arcs: arcs.length,
+			campaigns: campaigns.length,
+		});
+		if (unmet !== null) {
+			return yield* Effect.fail(new PrerequisiteUnmet({path: unmet.path, detail: unmet.detail}));
+		}
 		const facts = yield* (yield* Github).gather();
 		yield* Console.log(renderView(buildView(arcs, campaigns, facts)));
 	});

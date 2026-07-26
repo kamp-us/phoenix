@@ -59,6 +59,11 @@ const LANE_BY_TYPE = {
 /** One of the six canonical types, bare (no `type:` prefix). */
 export type KnownIssueType = keyof typeof LANE_BY_TYPE;
 
+/** The same six as whole label names — what `vocabulary-preflight` asserts the repo actually has. */
+export const ISSUE_TYPE_LABELS: ReadonlyArray<string> = Object.keys(LANE_BY_TYPE).map(
+	(type) => `type:${type}`,
+);
+
 const REASON_BY_TYPE: Record<KnownIssueType, string> = {
 	epic: "an epic's deliverable is a planned child ledger, not a diff",
 	decision:
