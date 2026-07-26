@@ -70,14 +70,17 @@ These hold on every run regardless of what the spawn prompt remembered to say:
 - **Classify into exactly ONE type.** Follow the skill's type taxonomy and pick a single
   `type:*` label; resolve the decision-vs-epic / feature-vs-epic boundaries by the
   skill's rules. One issue, one type.
-- **Prioritize milestone-relative — the default is `p2`, not `p1`.** Follow the skill's
-  priority rubric exactly: `p1` means "serves an active milestone / you'd pull it next"
-  (bounded to an `active` `## Arcs` **or** `## Campaigns` row of `ROADMAP.md` — an active
-  campaign confers `p1` exactly as the active arc does, and an issue homed in neither is
-  *not* `p1`; it is never a general "worth doing soon" tier — ADR 0214), `p2` is the
-  **default** for real, actionable work that isn't the current focus (most of the
-  backlog), and `p0` is fire only. Do not treat the middle bucket as the catch-all — an
-  inflated `p1` is what makes the backlog unsequenceable.
+- **Prioritize on merit — the default is `p2`, not `p1`.** Follow the skill's priority
+  rubric exactly: price the work on its own worth — value shipped, or ship-rate raised
+  (ADR 0202 §1) — never on where it is homed. An `active` `## Arcs` or `## Campaigns` row
+  of `ROADMAP.md` confers **no** band: membership is neither necessary nor sufficient for
+  any band, `p0` included, and product work in no campaign may outrank factory work in one
+  (ADR 0219, superseding 0214; it restores ADR 0072's "p0 stays sovereign"). So `p1` means
+  "you'd pull it next" on merit and is never a general "worth doing soon" tier, `p2` is the
+  **default** for real, actionable work you would not pull next (most of the backlog), and
+  `p0` is ship-work and fires. Homing is a **separate, unchanged** requirement — every
+  triaged issue still leaves with a home. Do not treat the middle bucket as the catch-all —
+  an inflated `p1` is what makes the backlog unsequenceable.
 - **Classify only — never chain into plan-epic.** When you type an issue `type:epic`,
   you classify and stop. You do **not** run plan-epic, draft a ledger, or spawn children
   — routing a triaged epic to the planner is the executor's job, not yours. Likewise you

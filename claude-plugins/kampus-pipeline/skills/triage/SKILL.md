@@ -572,31 +572,37 @@ one of them** — home, exempt, or kill:
 Every triaged issue gets exactly one of `p0` / `p1` / `p2`. Priority is *your*
 judgment, deliberately coarse — it sets write-code's pick order (highest bucket first,
 oldest first within a bucket), so it only has to be *directionally* right, not a precise
-ranking. Priority is **milestone-relative**, not an absolute urgency score: `p1` means
-"serves an active milestone / you'd pull it next," so it stays naturally bounded by the
-active arc and campaigns instead of becoming the catch-all. The **default is `p2`** — most
-real work isn't the current focus.
+ranking. Priority is assigned **on the work's own merit** — what the work is worth
+against everything else on the board: value shipped, or ship-rate raised (ADR
+[0202](https://github.com/kamp-us/phoenix/blob/main/.decisions/0202-forward-motion-doctrine-crewops.md) §1).
+The **default is `p2`** — most real work isn't worth pulling ahead of what's already in
+flight.
 
-The **active milestone is not a judgment call**: it is any row marked `active` in
-[`ROADMAP.md`](../../../../ROADMAP.md)'s `## Arcs` **or** `## Campaigns` table — the
-founder-voice roadmap that projects each arc/campaign onto a GitHub milestone (ADR
-[0078](https://github.com/kamp-us/phoenix/blob/main/.decisions/0078-product-driven-decisions-by-default.md);
-exactly one arc is `active` at a time, alongside any number of active campaigns). An active
-campaign confers a `p1` band exactly as the active arc does — campaigns are milestone-backed
-pushes that run *concurrently* with the arc, so both are `p1` homes (ADR
-[0214](https://github.com/kamp-us/phoenix/blob/main/.decisions/0214-active-campaign-confers-p1.md)).
-Read those rows to know what `p1` is bounded to. A `done` or `queued` row confers nothing.
-If no row in either table is marked `active`, there is no active milestone and the
-fallbacks below apply.
+**A roadmap row confers no band, in either direction.** An `active` row of
+[`ROADMAP.md`](../../../../ROADMAP.md)'s `## Arcs` or `## Campaigns` table says where work
+*lives*, not what it is *worth*: campaign membership is neither necessary nor sufficient
+for any band, `p0` included, and product work homed in no campaign may outrank factory
+work homed in one (ADR
+[0219](https://github.com/kamp-us/phoenix/blob/main/.decisions/0219-priority-decoupled-from-campaign-membership.md),
+superseding 0214). So never argue a band from a roadmap row, never cap campaign-homed work
+at `p1`, and never floor-gate a band on membership. This restores ADR
+[0072](https://github.com/kamp-us/phoenix/blob/main/.decisions/0072-milestones-encode-strategic-sequencing.md)'s
+**p0 stays sovereign**: campaign bias is a within-bucket tiebreaker for write-code's
+*picker*, never a re-ordering of the bands themselves.
+
+**Homing is a separate requirement and is unchanged.** Every issue you mark
+`status:triaged` still leaves with a home —
+[Assign a home](#assign-a-home--milestone-standing-lane-or-kill-required), next section.
+ADR 0219 changes what priority *means*; it changes nothing about what needs a home.
 
 | Priority | Use when… |
 |---|---|
-| **`p0`** | **Ship-work and fires — and it is never homeless.** Mint `p0` **freely** for work that moves us forward: shipped user/revenue value, or work that directly raises ship-rate (ADR 0202 §1). Fires still qualify — actively breaking something people rely on, a data-loss or security risk, a release gate. The one hard bound is homing: **a `p0` belongs to the active arc's documented structure, so an orphan (un-homed) `p0` is invalid** (ADR 0202 §2). If you can't home it below, it isn't `p0`. |
-| **`p1`** | **Serves an active milestone** — an `active` row of `ROADMAP.md`'s `## Arcs` **or** `## Campaigns` table (defined just above). Real, actionable work that belongs to that active arc or campaign — you'd pull it next. Milestone-bounded on purpose: p1 is *not* a general "worth doing soon" tier, so a solid issue homed in neither an active arc nor an active campaign is **not** p1. If no row in either table is marked `active`, keep p1 for the small set of things you'd genuinely pick up next; everything else is p2. |
-| **`p2`** | **The default.** Real, actionable work that isn't the current focus — most of the backlog. Also nice-to-have, cleanup, "don't forget to reconsider" trackers, low-impact refactors, deferred investigations. Real work, no time pressure to pull it ahead of the active arc or campaigns. |
+| **`p0`** | **Ship-work and fires — and it is never homeless.** Mint `p0` **freely** for work that moves us forward: shipped user/revenue value, or work that directly raises ship-rate (ADR 0202 §1). Fires still qualify — actively breaking something people rely on, a data-loss or security risk, a release gate. The one hard bound is homing: **an orphan (un-homed) `p0` is invalid** (ADR 0202 §2, as amended in part by ADR 0219 — any milestone or standing lane satisfies it, not only the active arc's structure). If you can't home it below, it isn't `p0`. |
+| **`p1`** | **You'd pull it next.** Real, actionable work whose value you would argue for ahead of the rest of the backlog — that judgment *is* the test, not a proxy for one. `p1` is a claim about worth, not a general "worth doing soon" tier and not a restatement of the milestone column: an issue in no active milestone can be `p1`, and an issue in an active campaign is not `p1` by that fact. Keep the set small enough that "next" still means something. |
+| **`p2`** | **The default.** Real, actionable work you would not pull next — most of the backlog. Also nice-to-have, cleanup, "don't forget to reconsider" trackers, low-impact refactors, deferred investigations. Real work, no case for jumping the queue. |
 
-Most of a healthy backlog is `p2`, with a bounded `p1` set tracking the active
-milestones. When unsure between `p1` and `p2`, pick the lower one — over-escalation erodes
+Most of a healthy backlog is `p2`, with a small `p1` set you could genuinely pick up
+next. When unsure between `p1` and `p2`, pick the lower one — over-escalation erodes
 the signal faster than under-escalation, and an inflated `p1` is exactly what makes the
 backlog unsequenceable.
 
