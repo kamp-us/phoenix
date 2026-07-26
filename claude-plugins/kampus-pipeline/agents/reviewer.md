@@ -148,8 +148,22 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   ```bash
   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-  gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-    | "$PCLI" class-probe classify --namespaces   # → review-code / review-doc / review-skill (+ review-design when has-ui), one per present gate
+  # <a id="probe-status-note"></a>READ THE PROBE'S EXIT STATUS — an empty set is UNKNOWN, never "no gates"
+  # (#4231). class-probe's stdin branch REFUSES with exit 4 on a failed read (#4010) and prints NOTHING,
+  # so stdout alone cannot tell a refusal from a legitimate result — capture the probe as the LAST stage
+  # of its own statement, keep its status, and fail closed on BOTH a non-zero exit and a zero-length set
+  # (§ZS / ADR 0092). NEVER pipe the probe onward (`| paste`, `| sort`, `| tr`): `pipefail` is OFF here
+  # (#4146), so the trailing stage's 0 becomes the pipeline's status and the refusal is unobservable.
+  REQUIRED_NS="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+    | "$PCLI" class-probe classify --namespaces)"; PROBE_RC=$?
+  NS_COUNT="$(printf '%s\n' "$REQUIRED_NS" | grep -c '[^[:space:]]' || true)"
+  if [ "$PROBE_RC" -ne 0 ]; then
+    echo "reviewer fan FAILED (fail-closed): class-probe REFUSED (exit $PROBE_RC) — the required-namespace set is UNKNOWN, not empty. Fan NOTHING and stop; re-run once the read succeeds." >&2; exit 1
+  fi
+  if [ "$NS_COUNT" -eq 0 ]; then
+    echo "reviewer fan FAILED (fail-closed, zero scope): class-probe exited 0 but named ZERO namespaces — its no-class fail-closed rule makes that unreachable for a non-empty diff, so this is a probe regression, not 'nothing to review'." >&2; exit 1
+  fi
+  echo "reviewer fan: PR $PR requires $NS_COUNT namespace(s) → ${REQUIRED_NS//$'\n'/ }"   # → review-code / review-doc / review-skill (+ review-design when has-ui), one per present gate
   ```
   The probe **also folds in the additive `review-design`** (`ui_reresolve`, below): it reads the
   live `UI_RE` from its single source (`ship-it/SKILL.md`) and appends `review-design` to
@@ -235,10 +249,21 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
   HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
-  # the required set — same class-probe output the fan dispatches on (folds in review-design when has-ui)
+  # the required set — same class-probe output the fan dispatches on (folds in review-design when has-ui),
+  # read under the same status contract (see the fan invariant's [probe-status note](#probe-status-note)):
+  # a refusal and a zero-length set are both UNKNOWN, and an UNKNOWN set makes the loop below vacuous.
   REQUIRED_NS="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-    | "$PCLI" class-probe classify --namespaces)"   # e.g. review-code / review-skill for a mixed diff
-  echo "reviewer dispatch: PR $PR @ $HEAD_SHA requires namespaces → ${REQUIRED_NS//$'\n'/ }"
+    | "$PCLI" class-probe classify --namespaces)"; PROBE_RC=$?   # e.g. review-code / review-skill for a mixed diff
+  NS_COUNT="$(printf '%s\n' "$REQUIRED_NS" | grep -c '[^[:space:]]' || true)"
+  if [ "$PROBE_RC" -ne 0 ]; then
+    echo "reviewer coverage self-check FAILED (fail-closed): class-probe REFUSED (exit $PROBE_RC) — the required-namespace set is UNKNOWN. An unchecked refusal here would loop over zero namespaces and report coverage complete having verified NOTHING (#4231). Do NOT return clean." >&2; exit 1
+  fi
+  if [ "$NS_COUNT" -eq 0 ]; then
+    echo "reviewer coverage self-check FAILED (fail-closed, zero scope): class-probe exited 0 but named ZERO namespaces — a zero-length required set makes the per-namespace check vacuously true (§ZS / ADR 0092). Do NOT return clean." >&2; exit 1
+  fi
+  # the COUNT is emitted, not just the set: a zero-scope read is then visible in the transcript at the
+  # point it happens, instead of surfacing later as an empty-looking but green coverage line.
+  echo "reviewer dispatch: PR $PR @ $HEAD_SHA requires $NS_COUNT namespace(s) → ${REQUIRED_NS//$'\n'/ }"
   # … fan + post one SHA-bound marker per required namespace (the invariants above) …
   # COVERAGE SELF-CHECK — a required namespace uncovered at HEAD_SHA cannot pass silently. A namespace
   # counts as COVERED by EITHER contract form bound to the current head: the auto-merge lane's
@@ -262,7 +287,7 @@ These hold on every run regardless of what the spawn prompt remembered to say:
     echo "reviewer coverage self-check FAILED (fail-loud): required namespace(s) UNCOVERED at $HEAD_SHA →$missing — dispatch the missing gate before returning; do NOT return with a required namespace empty." >&2
     exit 1
   fi
-  echo "reviewer coverage self-check: every required namespace (${REQUIRED_NS//$'\n'/ }) has a SHA-bound marker @ $HEAD_SHA — coverage complete."
+  echo "reviewer coverage self-check: all $NS_COUNT required namespace(s) (${REQUIRED_NS//$'\n'/ }) have a SHA-bound marker @ $HEAD_SHA — coverage complete."
   ```
 - **All GitHub ops via `gh api` REST — never GraphQL.** The target org runs a legacy
   Projects-classic integration that breaks GraphQL issue/PR queries; every read and write
