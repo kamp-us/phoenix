@@ -664,6 +664,71 @@ describe("Github.post — the upsert also carries the attested HEAD (#4007)", ()
 // hole — a body composed for PR B (bound to B's head) that gets POSTed to PR A. `emissionDefect`
 // passes it (it's well-formed), but A's live head is not B's SHA, so the head cross-check refuses it
 // before any write. No POST/PATCH fixture is supplied on the refusal cases: a write would 404.
+describe("the write-recency stamp at the boundary — post writes it, read reports it (#4200)", () => {
+	const BODY = `review-doc: PASS @ ${HEAD40} — merge-ready`;
+
+	it.effect("post stamps `Verdict-written:` into the body it sends", () => {
+		const sent: Array<ReadonlyArray<string>> = [];
+		const before = Date.now();
+		return Effect.gen(function* () {
+			yield* (yield* Github).post(PR, "doc", BODY, RUN);
+			const posted = sent.find((args) => args.some((a) => a.startsWith("body=")));
+			const stamp = posted
+				?.join("\n")
+				.match(/Verdict-written: (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)/)?.[1];
+			assert.isDefined(stamp);
+			// the stamp is THIS post's wall clock, not a value carried in from the composed body
+			assert.isAtLeast(Date.parse(stamp as string), Math.floor(before / 1000) * 1000);
+		}).pipe((effect) =>
+			provide(
+				effect,
+				{
+					[`GET ${P}/pulls/${PR}`]: HEAD40,
+					"GET user": "usirin",
+					[`GET ${P}/issues/${PR}/comments`]: "[]",
+					[`POST ${P}/issues/${PR}/comments`]: "77",
+					[`GET ${P}/issues/comments/77`]: BODY,
+				},
+				sent,
+			),
+		);
+	});
+
+	it.effect("read reports the resolving verdict's writtenAt, not its created_at", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).read(PR, "doc", "PASS");
+			assert.strictEqual(result.outcome._tag, "current");
+			assert.strictEqual(result.writtenAt, "2026-07-26T00:49:26Z");
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: JSON.stringify([
+					comment({
+						id: 1,
+						login: "usirin",
+						at: "2026-07-26T00:09:58Z",
+						body: `review-doc: PASS @ ${HEAD} — merge-ready\n\nVerdict-written: 2026-07-26T00:49:26Z`,
+					}),
+				]),
+				[`GET ${P}/collaborators/usirin/permission`]: "admin",
+			}),
+		),
+	);
+
+	it.effect("read's writtenAt is null when no verdict resolved", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).read(PR, "doc", "PASS");
+			assert.strictEqual(result.outcome._tag, "none");
+			assert.isNull(result.writtenAt);
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/pulls/${PR}`]: HEAD,
+				[`GET ${P}/issues/${PR}/comments`]: "[]",
+			}),
+		),
+	);
+});
+
 describe("Github.post — the post-time head cross-check (#3801, no cross-PR contamination)", () => {
 	// A's live head. FOREIGN is a DIFFERENT PR's head SHA — the value a clobbered shared-scratch body
 	// would carry. Both are full 40-hex (the emission shape), and they share no common prefix.

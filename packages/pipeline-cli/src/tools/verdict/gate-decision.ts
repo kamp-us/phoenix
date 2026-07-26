@@ -22,6 +22,7 @@
  */
 import {
 	boundHead,
+	compareWriteRecency,
 	GATE_KEYWORD,
 	isBoundToHead,
 	parseVerdict,
@@ -91,15 +92,14 @@ export interface GateDecision {
 	readonly reason: string;
 }
 
-/** Newest of two optional candidates by `(createdAt, id)` — the same latest-wins key as the markers. */
+/** Newest of two optional candidates — the same write-recency key `pickLatestAuthorized` orders by. */
 const newerOf = (
 	a: VerdictComment | undefined,
 	b: VerdictComment | undefined,
 ): VerdictComment | undefined => {
 	if (a === undefined) return b;
 	if (b === undefined) return a;
-	if (a.createdAt !== b.createdAt) return a.createdAt > b.createdAt ? a : b;
-	return a.id > b.id ? a : b;
+	return compareWriteRecency(a, b) > 0 ? a : b;
 };
 
 /**

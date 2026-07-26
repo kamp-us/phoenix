@@ -13,10 +13,14 @@ import {
 	parseVerdict,
 	resolveVerdict,
 	runIdOf,
+	toStampIso,
 	type VerdictComment,
 	type VerdictGate,
 	type VerdictOutcome,
 	withRunId,
+	withWrittenAt,
+	writeRecencyOf,
+	writtenAtOf,
 } from "./verdict-match.ts";
 
 const HEAD = "abc1234def5678";
@@ -203,8 +207,9 @@ describe("resolveVerdict — the SHA-bound verdict decision (table-driven, ADR 0
 		},
 		// The run-scoped upsert (#4016) means two reviewer RUNS can now leave two verdict comments
 		// at ONE head, where the author-keyed upsert used to collapse them to one. Resolution is
-		// unchanged by that: latest-wins on `(createdAt, id)` still decides (ADR 0058) — the newer
-		// verdict supersedes the older, exactly as a re-review at the same head always did.
+		// unchanged by that: latest-wins still decides (ADR 0058) — the newer verdict supersedes the
+		// older, exactly as a re-review at the same head always did. (Unstamped bodies like these fall
+		// back to `createdAt`; #4200 covers the case where an upsert makes the two diverge.)
 		{
 			name: "two runs at one head: the newer verdict supersedes the older (latest-wins)",
 			comments: [
@@ -394,6 +399,193 @@ describe("resolveVerdict — live-head candidates first, latest-wins only among 
 			),
 		);
 	}
+});
+
+describe("resolveVerdict — two LIVE-HEAD verdicts order by write time, not slot-open time (#4200)", () => {
+	// The residual #4198's head-first filter structurally cannot close: BOTH candidates bind the live
+	// head, so both survive the filter and the tiebreak among them decides alone — with no staleness
+	// backstop to convert a mis-pick into a refusal. `post` upserts in place at the same head, so the
+	// corrected verdict keeps the `created_at` of the slot it was PATCHed into: creation order is the
+	// INVERSE of write order here.
+	const SLOT_OPENED = "2026-07-26T00:09:58Z"; // the upserted slot, opened first
+	const UPSERTED_AT = "2026-07-26T00:49:26Z"; // …but rewritten LAST
+	const SIBLING_CREATED = "2026-07-26T00:32:02Z"; // a sibling run's fresh comment, in between
+
+	const stamped = (first: string, writtenAt: string) => `${first}\n\nVerdict-written: ${writtenAt}`;
+
+	const cases: ReadonlyArray<{
+		readonly name: string;
+		readonly comments: ReadonlyArray<VerdictComment>;
+		readonly expected: VerdictOutcome;
+	}> = [
+		{
+			// The direction with NO backstop: a live FAIL upserted after a live PASS. Ordering by
+			// `created_at` reports `pass` and clears the merge gate over a standing FAIL.
+			name: "FALSE CLEARANCE: an older slot upserted to FAIL beats a newer-created same-head PASS",
+			comments: [
+				marker({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: stamped(`review-doc: FAIL @ ${HEAD} — changes-requested`, UPSERTED_AT),
+				}),
+				marker({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: stamped(`review-doc: PASS @ ${HEAD} — merge-ready`, SIBLING_CREATED),
+				}),
+			],
+			expected: {_tag: "current", commentId: 1, polarity: "FAIL", sha: HEAD},
+		},
+		{
+			name: "FALSE REFUSAL: an older slot upserted to PASS beats a newer-created same-head FAIL",
+			comments: [
+				marker({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: stamped(`review-doc: PASS @ ${HEAD} — merge-ready`, UPSERTED_AT),
+				}),
+				marker({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: stamped(`review-doc: FAIL @ ${HEAD} — changes-requested`, SIBLING_CREATED),
+				}),
+			],
+			expected: {_tag: "current", commentId: 1, polarity: "PASS", sha: HEAD},
+		},
+		{
+			// Write order AGREEING with creation order must not regress: #4016/#4050's run-keyed upsert
+			// leaves two same-head verdicts to arbitrate, and the ordinary case is still latest-wins.
+			name: "write order agreeing with creation order is unchanged latest-wins (#4016 preserved)",
+			comments: [
+				marker({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: stamped(`review-doc: PASS @ ${HEAD} — merge-ready`, SLOT_OPENED),
+				}),
+				marker({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: stamped(`review-doc: FAIL @ ${HEAD} — changes-requested`, SIBLING_CREATED),
+				}),
+			],
+			expected: {_tag: "current", commentId: 2, polarity: "FAIL", sha: HEAD},
+		},
+		{
+			// The floor: a stamp can never pull a verdict BELOW its own slot-open time, so a backdated
+			// (or absent) stamp degrades to today's `created_at` ordering rather than to something worse.
+			name: "a backdated stamp is floored at created_at — it cannot demote a genuinely newer comment",
+			comments: [
+				marker({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: stamped(`review-doc: PASS @ ${HEAD} — merge-ready`, "2020-01-01T00:00:00Z"),
+				}),
+				marker({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
+				}),
+			],
+			expected: {_tag: "current", commentId: 2, polarity: "FAIL", sha: HEAD},
+		},
+		{
+			name: "a stamped verdict still loses to an unstamped one created later (mixed pre/post-#4200)",
+			comments: [
+				marker({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: stamped(`review-doc: PASS @ ${HEAD} — merge-ready`, "2026-07-26T00:20:00Z"),
+				}),
+				marker({
+					id: 2,
+					createdAt: "2026-07-26T00:40:00Z",
+					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
+				}),
+			],
+			expected: {_tag: "current", commentId: 2, polarity: "FAIL", sha: HEAD},
+		},
+		{
+			// The head-first filter still runs FIRST: write recency only ever orders WITHIN the live-head
+			// set, so a freshly-written stale verdict cannot climb back over a live-head one (#4189).
+			name: "a newly-written DEAD-head verdict still loses to the live-head one (#4189 preserved)",
+			comments: [
+				marker({
+					id: 1,
+					createdAt: SLOT_OPENED,
+					body: stamped(`review-doc: PASS @ ${HEAD} — merge-ready`, SLOT_OPENED),
+				}),
+				marker({
+					id: 2,
+					createdAt: SIBLING_CREATED,
+					body: stamped(`review-doc: FAIL @ ${OLD} — changes-requested`, "2026-07-26T23:00:00Z"),
+				}),
+			],
+			expected: {_tag: "current", commentId: 1, polarity: "PASS", sha: HEAD},
+		},
+	];
+	for (const {name, comments, expected} of cases) {
+		it(name, () =>
+			assert.deepStrictEqual(
+				resolveVerdict({comments, authorizedAuthors: ["usirin"], gate: "doc", headSha: HEAD}),
+				expected,
+			),
+		);
+	}
+});
+
+describe("the write-recency stamp — the ordering key an in-place upsert can move (#4200)", () => {
+	const SHA40 = "a".repeat(40);
+	const BODY = `review-doc: PASS @ ${SHA40} — merge-ready`;
+	const T1 = "2026-07-26T00:09:58Z";
+	const T2 = "2026-07-26T00:49:26Z";
+
+	it("writtenAtOf reads back the stamp withWrittenAt wrote", () =>
+		assert.strictEqual(writtenAtOf(withWrittenAt(BODY, T1)), T1));
+
+	it("writtenAtOf is null for an unstamped (pre-#4200 / hand-rolled) body", () =>
+		assert.isNull(writtenAtOf(BODY)));
+
+	it("withWrittenAt replaces the prior stamp rather than stacking a second", () => {
+		const restamped = withWrittenAt(withWrittenAt(BODY, T1), T2);
+		assert.strictEqual(writtenAtOf(restamped), T2);
+		assert.strictEqual(restamped.split("Verdict-written:").length - 1, 1);
+	});
+
+	it("a stamp quoted in the body's PROSE never outranks the real appended one", () =>
+		assert.strictEqual(
+			writtenAtOf(withWrittenAt(`${BODY}\n\nthe prior run stamped Verdict-written: ${T1}`, T2)),
+			T2,
+		));
+
+	it("a stamped body still passes every emission guard (marker stays on line one)", () =>
+		assert.isNull(emissionDefect(withWrittenAt(BODY, T1), "doc")));
+
+	it("the stamp composes with the run trailer, both readable", () => {
+		const both = withRunId(withWrittenAt(BODY, T1), "ddf8f459-b75f-4de2-9051-8df10da5b55c");
+		assert.strictEqual(writtenAtOf(both), T1);
+		assert.strictEqual(runIdOf(both), "ddf8f459-b75f-4de2-9051-8df10da5b55c");
+		assert.isNull(emissionDefect(both, "doc"));
+	});
+
+	it("writeRecencyOf floors the stamp at created_at (an absent/backdated stamp never demotes)", () => {
+		assert.strictEqual(writeRecencyOf(marker({id: 1, createdAt: T1, body: BODY})), T1);
+		assert.strictEqual(
+			writeRecencyOf(marker({id: 1, createdAt: T1, body: withWrittenAt(BODY, T2)})),
+			T2,
+		);
+		assert.strictEqual(
+			writeRecencyOf(marker({id: 1, createdAt: T2, body: withWrittenAt(BODY, T1)})),
+			T2,
+		);
+	});
+
+	it("toStampIso drops milliseconds so a stamp is lexically comparable with a created_at", () => {
+		const iso = toStampIso(Date.parse("2026-07-26T00:49:26.123Z"));
+		assert.strictEqual(iso, "2026-07-26T00:49:26Z");
+		// the inversion the truncation exists to prevent: `.` sorts BELOW `Z`
+		assert.isTrue("2026-07-26T00:49:26.123Z" < "2026-07-26T00:49:26Z");
+		assert.isFalse(iso < "2026-07-26T00:49:26Z");
+	});
 });
 
 describe("isReviewed — read-verb decision over expected polarity", () => {

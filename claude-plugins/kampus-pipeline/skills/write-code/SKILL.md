@@ -1933,10 +1933,12 @@ latest-wins pick, and the ADR-0058 SHA-staleness refusal) is owned by `pipeline-
 so R1 delegates to the verb rather than re-deriving it (#2102) — its unit tests are the contract.
 The native decisive review that folds into the code namespace is the one thing the verb does not
 resolve (it reads only marker comments); it needs no ACL gate — GitHub author-attributes reviews, so
-that path is unforgeable — so R1 keeps just that fold inline. The fold is **newest-wins by
-timestamp**, matching `ship-it` Step 2: the code verdict is the newest of {latest decisive review,
-latest `review-code` marker}, so a newer `APPROVED` clears an older FAIL rather than the FAIL
-standing forever.
+that path is unforgeable — so R1 keeps just that fold inline. The fold is **newest-WRITTEN wins**,
+matching `ship-it` Step 2: the code verdict is the newest of {latest decisive review, in-force
+`review-code` marker}, so a more recently written `APPROVED` clears an older FAIL rather than the FAIL
+standing forever. Compare the review's `submitted_at` against the verb's `writtenAt`, never the marker
+comment's `created_at` — an in-place upsert leaves `created_at` at the slot's open time, so a review is
+systematically over-ranked against a marker rewritten after it (#4200).
 
 ```bash
 PR=<the PR number you were handed>
@@ -1986,8 +1988,10 @@ done
 # GitHub author-attributes reviews, so this path needs no ACL gate — commit_id IS its bound SHA, and
 # only a review prefix-matching the current head participates (ADR 0058).
 #
-# The fold is NEWEST-WINS by timestamp — the resolution ship-it Step 2 states and this step mirrors.
-# `at: .submitted_at` is load-bearing, not decoration: it is what the compare reads. A bare
+# The fold is NEWEST-WRITTEN wins — the resolution ship-it Step 2 states and this step mirrors.
+# `at: .submitted_at` is load-bearing, not decoration: it is what the compare reads, and a review is
+# never upserted, so `submitted_at` IS the review's write time — like for like against the marker's
+# `writtenAt` below. A bare
 # "CHANGES_REQUESTED ⇒ CODE_FAIL=1" would be FAIL-precedence, re-entering repair on a PR whose newer
 # marker already PASS'd at the same head — a spurious repair loop, not a safe default.
 CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
@@ -1997,10 +2001,11 @@ REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
 RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
 RAT=$(jq -r '.at // ""' <<<"$REVIEW")
 # marker side: `_tag == "current"` is exactly "a current-head marker verdict stands" (a none/sha-less/
-# stale one does not participate); its comment id yields the created_at newest-wins compares against.
+# stale one does not participate); the verb's `writtenAt` is the WRITE time newest-wins compares
+# against — never the comment's created_at, which an in-place upsert leaves behind (#4200).
 MARKER_AT=""
 [ "$(jq -r '._tag // ""' <<<"$CODE_FAIL_JSON" 2>/dev/null)" = "current" ] &&
-  MARKER_AT=$(gh api "repos/$REPO/issues/comments/$(jq -r .commentId <<<"$CODE_FAIL_JSON")" --jq .created_at 2>/dev/null)
+  MARKER_AT=$(jq -r '.writtenAt // empty' <<<"$CODE_FAIL_JSON" 2>/dev/null)
 if [ -n "$RSHA" ] && [ -n "$RAT" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
   # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare. Empty MARKER_AT ⇒ the review is
   # the only current-head event ⇒ it decides alone. A newer APPROVED clears an older FAIL — that is the

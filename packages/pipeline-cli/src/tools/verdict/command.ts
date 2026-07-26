@@ -9,7 +9,9 @@
  * **exits 0 only when HEAD is reviewed with the expected polarity** (default PASS) — every
  * refusal (`none`/`sha-less`/`stale`, or a current verdict of the wrong polarity) prints its
  * reason on stderr and exits non-zero, so a caller branches on exit status. The resolved
- * outcome is printed as JSON on stdout for a caller that wants the detail (comment id, sha).
+ * outcome is printed as JSON on stdout for a caller that wants the detail (comment id, sha, and
+ * `writtenAt` — when the resolving verdict was WRITTEN, which is what a skill's review-vs-marker
+ * fold must compare against a review's `submitted_at`, never the comment's `created_at`, #4200).
  *
  * `gate --pr N --require <namespaces> [--cp]` is the SET-level counterpart `read` cannot be: it
  * folds the same resolution over EVERY namespace the diff requires and exits 0 only when each one
@@ -114,9 +116,16 @@ const read = Command.make(
 		const g = yield* parseGate(gate);
 		const polarity = yield* parseExpect(expect);
 		const result = yield* (yield* Github).read(pr, g, polarity, Option.getOrUndefined(head));
-		// The resolved detail goes to stdout as JSON (a caller may want the comment id / bound sha);
-		// the human-readable verdict + refusal reason goes to stderr, mirroring resume-policy.
-		yield* Console.log(JSON.stringify({...result.outcome, headSha: result.headSha, gate: g}));
+		// The resolved detail goes to stdout as JSON (a caller may want the comment id / bound sha /
+		// write time); the human-readable verdict + refusal reason goes to stderr, mirroring resume-policy.
+		yield* Console.log(
+			JSON.stringify({
+				...result.outcome,
+				headSha: result.headSha,
+				gate: g,
+				writtenAt: result.writtenAt,
+			}),
+		);
 		if (result.satisfied) {
 			process.stderr.write(`verdict: ${outcomeReason(result.outcome, polarity)}\n`);
 			return;
