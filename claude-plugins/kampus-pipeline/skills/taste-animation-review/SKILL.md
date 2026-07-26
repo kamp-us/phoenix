@@ -70,9 +70,11 @@ Every animation in the diff is measured against these. A violation is a finding.
    only. Layout properties force layout and paint on every frame.
    *Counterexample: `transition: height 200ms` on an expanding comment thread.*
 9. **Accessibility.** (LAW — Pillar 4 and the design-sync behavioral spine) Reduced motion is
-   handled by the global reset in `global.css`, not per component; hover motion is gated behind
-   `@media (hover: hover) and (pointer: fine)`; a transform never shrinks a hit area below
-   `--tap-min`; state is never carried by motion alone.
+   handled by the global reset in `global.css`, not per component; a transform never shrinks a hit
+   area below `--tap-min`; state is never carried by motion alone. Gating hover motion behind
+   `@media (hover: hover) and (pointer: fine)` belongs to the same area but is **(CRAFT)** — the
+   design law names no such gate, so it is an advisory default (`STANDARDS.md`, Accessibility),
+   never a prohibition.
    *Counterexample: a component that re-enables its own transition inside a `prefers-reduced-motion` block.*
 10. **Cohesion.** (CRAFT) Motion matches the component's personality and the rest of the product.
     When unsure whether motion feels right, the strongest move is usually to delete it.

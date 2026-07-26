@@ -89,9 +89,23 @@ git diff --name-only origin/main... | node packages/pipeline-cli/src/bin.ts cp-c
 - **`SKILL.md` carries rules, procedure, and output shape.** Decision tables, flowcharts, the
   gate a candidate must pass, the format the skill must emit. It states *what to do and why*.
 - **`STANDARDS.md` carries values only.** Durations, easings, thresholds, spring configs, token
-  names — the exact figures a skill cites *instead of approximating*. No prose rules, no
-  procedure, no verdict language. Each value carries its provenance tag (LAW + section, or CRAFT)
-  and nothing more.
+  names — the exact figures a skill cites *instead of approximating*, one per table row, each
+  carrying its provenance tag (LAW + section, or CRAFT). No procedure, no verdict language, and no
+  rule that the table above it does not already state.
+
+  **Two prose forms are permitted, and only these two.** Both attach to a table and neither
+  introduces a rule:
+
+  - **A provenance gloss** — a sentence or two under a table stating the boundary its tag already
+    implies: what a LAW row actually binds, or which law a block of CRAFT rows serves. *"A
+    press-feedback scale shrinks the painted glyph, never the hit area: `--tap-min` is a
+    density-invariant floor."* The test is subtractive — delete the gloss and no value in the table
+    changes meaning.
+  - **A `Known divergence (surface, do not resolve locally)` note** — §2's mandated disclosure when
+    an adopted craft value conflicts with the value the repo ships. The firewall *requires* the
+    conflict be stated and not resolved, so this note is not optional prose.
+
+  Anything longer than that is a rule, and a rule lives in `SKILL.md`.
 
 **One `STANDARDS.md` per aspect, owned by the aspect's primary skill.** Sibling modes link to it;
 they never copy values into their own file. A duplicated value is a value that drifts.
@@ -108,6 +122,22 @@ specifically enough that an agent recognizes its own output in it.
 > **Never animate a keyboard-initiated action.** (CRAFT) Command palettes, shortcuts, and
 > focus jumps fire hundreds of times a day; motion makes a fast action feel slow.
 > *Counterexample: a 200ms scale-in on the `⌘K` palette.*
+
+**A rule that spans both tiers — the compound tag `(CRAFT, serving LAW — <section>)`.** §2's two
+tiers are binary per *rule*, and a real rule sometimes sits in both: a craft default whose whole
+purpose is to serve a law. Tag it compound — craft-tiered (it yields on conflict, and it is written
+as a default, never a prohibition), with the law it serves named so an author can see what is
+actually at stake behind the default:
+
+> **Animate `transform` and `opacity` only.** (CRAFT, serving LAW — Pillar 1) Layout properties
+> force layout and paint on every frame.
+> *Counterexample: `transition: height 200ms` on an expanding comment thread.*
+
+**Never flatten a mixed bundle to one tag.** A numbered standard that bundles several clauses tags
+each clause it holds — inline, where the clause sits — whenever they are not all the same tier. A
+CRAFT clause riding under a `(LAW)` heading reads as binding, which is the single failure the
+two-tier rule exists to prevent, and it is invisible at authoring time. When inline tagging gets
+crowded, that is the signal to split the bundle into two rules.
 
 Rules that admit a threshold go in a **decision table** with hard boundaries — no "usually",
 "consider", or "as appropriate":
@@ -164,8 +194,10 @@ Before you open the PR:
       routing surface, not a summary.
 - [ ] The SKILL.md opens with a **Grounding and firewall** section naming all three artifacts
       (§1) and stating the advise-never-author rule (§2).
-- [ ] Every rule is tagged **LAW** (with its manifest section) or **CRAFT**, and no CRAFT rule is
-      written as a prohibition.
+- [ ] Every rule is tagged **LAW** (with its manifest section), **CRAFT**, or the compound
+      **CRAFT, serving LAW — `<section>`** (§5); a standard bundling clauses of different tiers
+      tags each clause inline rather than flattening to one; no CRAFT rule is written as a
+      prohibition.
 - [ ] Rules follow the four-part shape (§5); thresholds live in decision tables.
 - [ ] Values live in `STANDARDS.md` if the aspect has one, and are cited, not copied.
 - [ ] Adopted material carries the Attribution block (§7) with promotional links stripped.

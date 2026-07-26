@@ -1,7 +1,9 @@
 # Animation standards — values only
 
 The exact figures the `taste-animation-*` skills cite instead of approximating. Values only: no
-procedure, no verdict language, no prose rules — those live in the SKILL.md files.
+procedure, no verdict language, no rules — those live in the SKILL.md files. The only prose here is
+the two forms §4 of [`taste-library-conventions.md`](../taste-library-conventions.md) permits — a
+provenance gloss under a table, and a firewall-mandated `Known divergence` note.
 
 Every row carries a **provenance** tag, per §2 of
 [`taste-library-conventions.md`](../taste-library-conventions.md):
@@ -24,9 +26,10 @@ Defined in [`apps/web/src/styles/tokens.css`](https://github.com/kamp-us/phoenix
 | `--ease-standard` | `ease-out` | LAW — tokens.css motion block |
 | `--ease-emphasized` | `cubic-bezier(0.32, 0.72, 0, 1)` | LAW — tokens.css motion block |
 
-Components consume these tokens; they do not hardcode a duration or a curve, and they do not
-introduce a parallel easing/duration scale. (LAW — the manifest's role-layer rule, Pillar 2:
-components reference the role layer only.)
+These tokens are motion's **role layer**, which is what the LAW tag on each row binds: under the
+manifest's Pillar 2 role-layer rule a component references them rather than restating their values,
+so a hardcoded duration or a parallel easing scale is a law violation, not a style choice. (The rule
+itself is standard 5 in [`SKILL.md`](SKILL.md).)
 
 ## Duration budget
 
