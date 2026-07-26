@@ -3139,6 +3139,18 @@ it fits: a PR that closes nothing on its target carries `Part of #N` instead of 
   treats a literal `Part of #N` as a legitimate intentional partial-split — merge the PR, leave
   `#N` open — instead of refusing it (the #1342 consumer, landed in PR #1347).
 
+**The prescribing side — a `review-*` verdict's remedy.** The gates are the third party to this
+marker: a verdict whose finding is "this PR must stop auto-closing `#N`" prescribes **`Part of #N`**
+and nothing else. `Refs #N`, `Re: #N`, `See #N`, and a bare `#N` arm no seam, so a PR that adopts
+one hits `ship-it` Step 1's `no linked issue` refusal and becomes unmergeable — the gate's own
+advice bricks the lane it gates, silently, since nothing surfaces the refusal until merge time
+(#4047, where a `review-code` verdict prescribed `Refs #3943` on PR #3988). The remedy also
+**replaces** the closing keyword rather than joining it: a body carrying both `Fixes #N` and
+`Part of #N` still auto-closes on the closing keyword. `review-code` carries the operational
+statement of this rule ([its Step 4b](review-code/SKILL.md#prescribing-a-linkage-remedy)) and the
+other PR gates point at this subsection; the fix for a jammed lane belongs on the advice, never on
+Step 1's grammar.
+
 **Single-sourced — producer + consumer + contract, no re-definition.** This marker mirrors the
 closing-keyword seam's own single-sourcing: `write-code` Step 5 (the **producer** — emits
 `Part of #N` when the PR is an intentional partial-split, the issue staying open for a sibling lane)

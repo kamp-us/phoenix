@@ -750,6 +750,12 @@ tolerantly by shape (`review-skill: FAIL @ <sha>`), not exact dashes; token orde
 issue's labels, assignee, or state on a fail — a failed gate is a no-op on the work state plus
 a comment.
 
+**Prescribing a linkage remedy.** A finding that the PR must stop auto-closing its `Fixes #N`
+target has exactly one sanctioned remedy: **replace** the closing keyword with `Part of #N`. Never
+prescribe `Refs #N` / `Re: #N` / `See #N` / a bare `#N` — they arm no seam, jam `ship-it` Step 1,
+and brick the lane the verdict was gating (#4047). Rule and rationale:
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §9 (`Part of #N`).
+
 ---
 
 ## Step 5b — Confirm the verdict landed clean (the shared read-back guard, #2148)
