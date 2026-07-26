@@ -138,11 +138,11 @@ Grounds:
   abandoned the lane hours ago.
 
   The #3955 observation above grounds both factors. Its `liveness=live` witness was pid 23523 — a real
-  live process whose start time *predates the claim it minted by ~11 hours*, which rules out pid reuse —
-  while an older marker's pid 58975 was genuinely gone and correctly read dead-and-superseded. The
-  mechanism works in both directions; what fails is identity, not liveness. And at that moment one session
-  held five open lanes (#3955, #4074, #4171, #4064, #4168) stamped with the identical witness — factor
-  two, observed directly.
+  live process whose start (`2026-07-25T23:09:51Z`) *predates by ~2h14m the claim it minted*
+  (`2026-07-26T01:23:26Z`), which rules out pid reuse — while an older marker's pid 58975 was genuinely
+  gone and correctly read dead-and-superseded. The mechanism works in both directions; what fails is
+  identity, not liveness. And at that moment one session held five open lanes (#3955, #4074, #4171,
+  #4064, #4168) stamped with the identical witness — factor two, observed directly.
 
   **How this ADR must therefore be read:** *a claim can read live while the identity that holds it can no
   longer assert ownership, and a live witness says nothing about which of its many lanes anyone is
