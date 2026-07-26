@@ -385,6 +385,19 @@ the hunk alone — and read it **read-only**, without ever switching the checkou
 **Read-only on git working state** below). Fetch the head into a ref and read off that ref:
 
 ```bash
+# §SP FIRST — allocate this run's scratch namespace, and land the head handles in a file inside it.
+# $PR_REF / $HEAD_SHA (and $REVIEW_WT below) are needed by LATER Bash calls — Step 4a's ADR sweep
+# reads `git show "$PR_REF:…"` — and a shell variable does not survive the harness's between-call
+# reset. So they go in `head.env` under the per-run namespace, whose path is a deterministic
+# function of this run's session id and is therefore RE-DERIVABLE in any later call. A `mktemp`
+# path is not: by the next call the handle itself is a lost shell variable with no way back to it
+# (#4041). §SP rules 2+3 apply here, NOT the rule-4 carve-out — that one is for a temp allocated
+# AND consumed inside one call, like `VERDICT_FILE` below. `scratchpad` is the allocator (§SP rule
+# 2 of ../gh-issue-intake-formats.md); it refuses with a reason on stderr rather than falling back
+# to a shared path, and §SP's one-liner is the same namespace for a run with no CLI on PATH.
+pipeline-cli scratchpad open --slug "review-doc-$PR" >/dev/null || exit 1   # ONCE, at the start of the run
+HEAD_ENV="$(pipeline-cli scratchpad file --slug "review-doc-$PR" --name head.env)" || exit 1
+
 # Land the head in a per-run ref via the shared `pipeline-cli review-head materialize` verb
 # (#3690 / #793 / #1807) — cite it, don't re-derive it. Ref-only mode (no `--worktree`): it
 # resolves the live head SHA (REST), fetches `pull/<pr>/head` into a nonce-uniqued per-run ref
@@ -392,8 +405,9 @@ the hunk alone — and read it **read-only**, without ever switching the checkou
 # `gh pr checkout` / `git checkout` / `git switch` (which would land the head in the shared PRIMARY
 # the harness resets this cwd to and detach the human's `main` — #2270/#1103; §RO). It emits the
 # head + ref as JSON:
-eval "$(pipeline-cli review-head materialize --pr "$PR" \
-  | jq -r '"PR_REF=\(.prRef); HEAD_SHA=\(.headSha)"')"
+pipeline-cli review-head materialize --pr "$PR" \
+  | jq -r '"PR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$HEAD_ENV"
+. "$HEAD_ENV"
 
 # Read the head's files off the ref — read-only, no checkout:
 git show "$PR_REF:<path>"            # the file's content at the PR head
@@ -402,22 +416,29 @@ git grep -n "<pattern>" "$PR_REF"    # search the head tree without checking it 
 git update-ref -d "$PR_REF"          # drop the throwaway ref when done
 ```
 
-If a check genuinely needs a materialized tree (rare for a doc PR), pass `--worktree` to the
-same verb — it adds a throwaway DETACHED head worktree (named `review-head-<pr>-*`) and emits
-its path. **Persist that path to a per-run `mktemp` handle** so a later step recovers the exact
-own tree rather than re-deriving it from a shared, PR-namespaced leaf (which would match a
-sibling reviewer's tree under a parallel fan-out and pin the wrong head — the #1807 collision;
-mirror the `VERDICT_FILE` (#1465) / report `BODY_FILE` `mktemp` discipline):
+**Every later Bash call re-derives `$HEAD_ENV`; it never inherits it.** Re-run the same
+`scratchpad file` line — same session, same slug, same path — then re-source. `scratchpad file`
+**refuses** when the namespace was never opened in this run, so a lost handle fails loud instead
+of silently reading an empty directory:
 
 ```bash
-WT_FILE="$(mktemp /tmp/review-doc-wt.XXXXXX)"          # run-unique handle, never a fixed/PR-only path
+HEAD_ENV="$(pipeline-cli scratchpad file --slug "review-doc-$PR" --name head.env)" || exit 1
+[ -s "$HEAD_ENV" ] || { echo "review-doc: §SP — head.env absent/empty; re-run the materialize step in THIS session." >&2; exit 1; }
+. "$HEAD_ENV"                        # $PR_REF / $HEAD_SHA (and $REVIEW_WT, if --worktree was used)
+```
+
+If a check genuinely needs a materialized tree (rare for a doc PR), pass `--worktree` to the
+same verb — it adds a throwaway DETACHED head worktree (named `review-head-<pr>-*`) and emits
+its path. It goes into the **same** `head.env`, for the same reason: a later step must recover
+*this* run's own tree, never re-derive it from a shared, PR-namespaced leaf — under a parallel
+fan-out that leaf matches a sibling reviewer's tree and pins the wrong head (the #1807 collision):
+
+```bash
 pipeline-cli review-head materialize --pr "$PR" --worktree \
-  | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)"' > "$WT_FILE"
-. "$WT_FILE"
+  | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$HEAD_ENV"
+. "$HEAD_ENV"
 # Register teardown as a trap so a mid-block error still tears the throwaway tree down:
 trap 'rm -rf "$REVIEW_WT"; git worktree prune' EXIT
-# … later steps: `. "$WT_FILE"` re-sources $REVIEW_WT/$PR_REF after a between-call reset,
-# never re-deriving from the shared leaf name.
 rm -rf "$REVIEW_WT" && git worktree prune   # tear it down on EVERY exit path — PASS or FAIL
 ```
 
@@ -619,7 +640,9 @@ decision domain the new one touches **and which it does not cite**:
 # Runs on Step 2's DEFAULT ref-only path — no `--worktree`, no materialized tree. `--new` takes
 # "a path to the ADR file" (any real file, anywhere), so a `git show` off $PR_REF is all the
 # "real file on disk" the sweep needs. $PR_REF is bound by Step 2's `review-head materialize`;
-# re-run that in THIS call if it was bound in an earlier one (the between-call shell reset).
+# if that ran in an EARLIER Bash call the variable is gone, so re-source Step 2's `head.env` here
+# (`pipeline-cli scratchpad file --slug "review-doc-$PR" --name head.env`) — never re-run the
+# materialize just to rebind it, and never carry the path in a variable across the reset.
 # CORPUS: `--dir` is deliberately unset, so the sweep reads the repo-root `.decisions/` of the
 # checkout you are running in — the BASE (pre-PR) corpus. That is the set you want: it carries
 # every live ADR the new one could contradict, and it excludes the new ADR itself, so the subject
@@ -767,8 +790,10 @@ reference from the summary line (there is no issue to auto-close on merge).
 **Resolve the head SHA you reviewed** and write the verdict to a per-run temp file
 (`VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"`) so multi-line markdown + backticks
 survive the shell, then post it. Allocate it with `mktemp`, never a fixed or `${PR}`-keyed
-path — the per-run scratchpad namespace, §SP of
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). The PR number alone isn't
+path. This is §SP's **rule-4 carve-out** — the verdict file is allocated *and* consumed inside
+one Bash call, so the kernel's uniqueness is enough and no re-derivable namespace is needed;
+Step 2's `head.env`, which must survive into a later call, is the other form (rules 2+3). See §SP
+of [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). The PR number alone isn't
 unique (two reviews of the *same* PR running concurrently collide on it), and a clobbered temp
 reads back **successfully with the other run's content**, so there is no error to catch
 (#3718). The SHA goes into the marker's first line
