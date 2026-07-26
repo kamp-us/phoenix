@@ -1,8 +1,12 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
 	changedPathsForceDepRefresh,
+	classifyPathPnpm,
+	decidePnpmResolution,
 	decidePnpmVersionGuard,
 	depPathsForcingRefresh,
+	describePnpmResolutionFailure,
+	type PnpmProbeResult,
 	type PnpmVersion,
 	parsePackageManagerPnpm,
 	parsePnpmVersionOutput,
@@ -136,5 +140,165 @@ describe("decidePnpmVersionGuard — candidate 3, folded into the install path",
 			ok: false,
 			reason: "unresolved-required",
 		});
+	});
+});
+
+const v = (version: string, major: number): PnpmVersion => ({version, major});
+const PIN = v("10.27.0", 10);
+const ran = (version: PnpmVersion): PnpmProbeResult => ({ran: true, version});
+const failed: PnpmProbeResult = {ran: false, cause: "probe-failed"};
+const unparseable: PnpmProbeResult = {ran: false, cause: "unparseable-output"};
+
+describe("classifyPathPnpm — three outcomes, and 'could not run' is never 'wrong version'", () => {
+	it("PATH pnpm exactly equal to the pin → exact-match", () => {
+		assert.deepStrictEqual(classifyPathPnpm(PIN, ran(v("10.27.0", 10))), {
+			kind: "exact-match",
+			version: v("10.27.0", 10),
+		});
+	});
+
+	it("same major, different patch → version-mismatch (exact equality, NOT the corepack leg's major rule)", () => {
+		assert.deepStrictEqual(classifyPathPnpm(PIN, ran(v("10.28.1", 10))), {
+			kind: "version-mismatch",
+			required: PIN,
+			found: v("10.28.1", 10),
+		});
+	});
+
+	it("wrong major → version-mismatch (the #3498 hazard stays closed)", () => {
+		const verdict = classifyPathPnpm(PIN, ran(v("8.15.6", 8)));
+		assert.strictEqual(verdict.kind, "version-mismatch");
+	});
+
+	it("an unrunnable probe is UNDETERMINED, not a mismatch (absent binary / stripped PATH / timeout)", () => {
+		assert.deepStrictEqual(classifyPathPnpm(PIN, failed), {
+			kind: "undetermined",
+			cause: "probe-failed",
+		});
+	});
+
+	it("output that parsed to nothing is undetermined too — it observed no version", () => {
+		assert.deepStrictEqual(classifyPathPnpm(PIN, unparseable), {
+			kind: "undetermined",
+			cause: "unparseable-output",
+		});
+	});
+
+	it("no pin → undetermined; a PATH pnpm can't be checked against nothing", () => {
+		assert.deepStrictEqual(classifyPathPnpm(null, ran(v("10.27.0", 10))), {
+			kind: "undetermined",
+			cause: "no-required-version",
+		});
+	});
+});
+
+describe("decidePnpmResolution — PATH-exact, else corepack, else fail closed", () => {
+	const neverProbed = (): PnpmProbeResult => {
+		throw new Error("corepack must not be probed");
+	};
+
+	it("an exactly-pinned PATH pnpm authorizes the install and corepack is never probed", () => {
+		assert.deepStrictEqual(decidePnpmResolution(PIN, ran(v("10.27.0", 10)), neverProbed), {
+			ok: true,
+			resolver: "path",
+			resolved: v("10.27.0", 10),
+		});
+	});
+
+	it("corepack-less machine + exactly-pinned PATH pnpm → ok (the #4063 volta case)", () => {
+		const r = decidePnpmResolution(PIN, ran(v("10.27.0", 10)), () => failed);
+		assert.deepStrictEqual(r, {ok: true, resolver: "path", resolved: v("10.27.0", 10)});
+	});
+
+	it("no PATH pnpm → falls back to corepack, which authorizes on a matching major", () => {
+		assert.deepStrictEqual(
+			decidePnpmResolution(PIN, failed, () => ran(v("10.28.1", 10))),
+			{
+				ok: true,
+				resolver: "corepack",
+				resolved: v("10.28.1", 10),
+			},
+		);
+	});
+
+	it("a NON-exact PATH pnpm is never used for the install — the fallback still runs", () => {
+		const r = decidePnpmResolution(PIN, ran(v("8.15.6", 8)), () => ran(v("10.27.0", 10)));
+		assert.deepStrictEqual(r, {ok: true, resolver: "corepack", resolved: v("10.27.0", 10)});
+	});
+
+	it("a wrong-version PATH pnpm with no corepack → fail closed, carrying BOTH legs' reasons", () => {
+		const r = decidePnpmResolution(PIN, ran(v("8.15.6", 8)), () => failed);
+		assert.deepStrictEqual(r, {
+			ok: false,
+			required: PIN,
+			path: {kind: "version-mismatch", required: PIN, found: v("8.15.6", 8)},
+			corepack: {ok: false, reason: "unresolved-pnpm"},
+		});
+	});
+
+	it("neither resolver runs → fail closed, with the PATH leg reported as UNDETERMINED", () => {
+		const r = decidePnpmResolution(PIN, failed, () => failed);
+		assert.deepStrictEqual(r, {
+			ok: false,
+			required: PIN,
+			path: {kind: "undetermined", cause: "probe-failed"},
+			corepack: {ok: false, reason: "unresolved-pnpm"},
+		});
+	});
+
+	it("corepack resolves the wrong major → fail closed on major-mismatch", () => {
+		const r = decidePnpmResolution(PIN, failed, () => ran(v("8.15.6", 8)));
+		assert.isFalse(r.ok);
+		assert.deepStrictEqual(r.ok === false && r.corepack, {
+			ok: false,
+			reason: "major-mismatch",
+			required: PIN,
+			resolved: v("8.15.6", 8),
+		});
+	});
+
+	it("no pin → fail closed without probing corepack at all", () => {
+		assert.deepStrictEqual(decidePnpmResolution(null, ran(v("10.27.0", 10)), neverProbed), {
+			ok: false,
+			required: null,
+			path: {kind: "undetermined", cause: "no-required-version"},
+			corepack: {ok: false, reason: "unresolved-required"},
+		});
+	});
+});
+
+describe("describePnpmResolutionFailure — a remedy the machine can actually run", () => {
+	const failureOf = (path: PnpmProbeResult, corepack: () => PnpmProbeResult) => {
+		const r = decidePnpmResolution(PIN, path, corepack);
+		assert.isFalse(r.ok);
+		if (r.ok) throw new Error("unreachable");
+		return describePnpmResolutionFailure(r);
+	};
+
+	it("no corepack anywhere → the remedy never tells the operator to run corepack", () => {
+		const {detail, remedy} = failureOf(failed, () => failed);
+		assert.notInclude(remedy, "corepack pnpm@");
+		assert.include(remedy, "install pnpm@10.27.0");
+		assert.include(detail, "UNKNOWN");
+	});
+
+	it("a verified-wrong PATH pnpm is reported as wrong, and its remedy uses the pnpm that exists", () => {
+		const {detail, remedy} = failureOf(ran(v("8.15.6", 8)), () => failed);
+		assert.include(detail, "8.15.6");
+		assert.include(detail, "NOT the pinned 10.27.0");
+		assert.include(remedy, "pnpm dlx pnpm@10.27.0 install --frozen-lockfile");
+	});
+
+	it("an undetermined PATH is never described as a wrong version", () => {
+		const {detail} = failureOf(failed, () => failed);
+		assert.notInclude(detail, "NOT the pinned");
+		assert.include(detail, "not wrong");
+	});
+
+	it("an unparseable pin routes to the fix-the-pin remedy", () => {
+		const r = decidePnpmResolution(null, failed, () => failed);
+		assert.isFalse(r.ok);
+		if (r.ok) throw new Error("unreachable");
+		assert.include(describePnpmResolutionFailure(r).remedy, "packageManager");
 	});
 });

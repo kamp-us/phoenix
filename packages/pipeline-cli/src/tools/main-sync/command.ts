@@ -44,9 +44,10 @@ import {Command, Flag} from "effect/unstable/cli";
 import {isControlPlaneDeletion, parseNameStatus} from "../primary-index-guard/index.ts";
 import {
 	changedPathsForceDepRefresh,
-	decidePnpmVersionGuard,
+	decidePnpmResolution,
 	depPathsForcingRefresh,
-	type PnpmVersion,
+	describePnpmResolutionFailure,
+	type PnpmProbeResult,
 	parsePackageManagerPnpm,
 	parsePnpmVersionOutput,
 } from "./dep-refresh.ts";
@@ -60,10 +61,19 @@ interface GitResult {
 
 // A best-effort captured-output runner: a non-zero exit is fully absorbed into a {ok:false}
 // GitResult the caller branches on, never the E channel — a total helper, not Effect-cosplay.
-const runCaptured = (cmd: string, args: ReadonlyArray<string>, cwd?: string): GitResult => {
+const runCaptured = (
+	cmd: string,
+	args: ReadonlyArray<string>,
+	cwd?: string,
+	timeoutMs?: number,
+): GitResult => {
 	// biome-ignore lint/plugin: see the note above — total by construction, the E channel is never used.
 	try {
-		const stdout = execFileSync(cmd, [...args], {encoding: "utf8", ...(cwd ? {cwd} : {})});
+		const stdout = execFileSync(cmd, [...args], {
+			encoding: "utf8",
+			...(cwd ? {cwd} : {}),
+			...(timeoutMs ? {timeout: timeoutMs} : {}),
+		});
 		return {ok: true, stdout, stderr: ""};
 	} catch (cause) {
 		const e = cause as {stdout?: Buffer | string; stderr?: Buffer | string};
@@ -125,6 +135,29 @@ const repoRoot = (): string | null => {
 	return r.ok && r.stdout.trim() !== "" ? r.stdout.trim() : null;
 };
 
+// `execFileSync`'s own `timeout` option — a portable Node bound, NOT the `timeout(1)` binary,
+// which some crew shells don't have. Only the PATH leg gets it: a corepack first run may DOWNLOAD
+// the pinned pnpm, and killing that would turn a slow network into a false refusal.
+const PATH_PROBE_TIMEOUT_MS = 15_000;
+
+/**
+ * The IO half of the ordered pnpm resolution (#4063): run one `--version` probe and report what
+ * it OBSERVED. A missing binary, a stripped PATH, a non-zero exit, and a timeout all land here as
+ * `probe-failed` — "unknown", never "wrong version"; only a probe that ran and printed a parseable
+ * version reports a version at all.
+ */
+const probePnpmVersion = (
+	cmd: string,
+	args: ReadonlyArray<string>,
+	cwd: string,
+	timeoutMs?: number,
+): PnpmProbeResult => {
+	const r = runCaptured(cmd, args, cwd, timeoutMs);
+	if (!r.ok) return {ran: false, cause: "probe-failed"};
+	const version = parsePnpmVersionOutput(r.stdout);
+	return version === null ? {ran: false, cause: "unparseable-output"} : {ran: true, version};
+};
+
 /** The `packageManager` pin from the root package.json, or `undefined` if unreadable/absent. */
 const readPackageManagerPin = (root: string): string | undefined => {
 	// biome-ignore lint/plugin: total pre-runtime helper — a missing file / bad JSON maps to `undefined`, which the guard treats as unresolved-required (fail-closed); no E channel to model.
@@ -142,11 +175,11 @@ const readPackageManagerPin = (root: string): string | undefined => {
  * Re-install deps after a ff merge IFF the merge pulled a `patches/**`/`pnpm-lock.yaml`
  * change — the #3498 fix. Without it the ff advances the SOURCE patch/lockfile but not the
  * installed `.pnpm/…/patched` copy the runtime executes, so a re-booted crew silently runs
- * the PRE-merge patched dep (a merged fix reads as "still broken"). Resolves pnpm via corepack
- * against the repo's `packageManager` pin — NEVER a bare-PATH pnpm, whose wrong major silently
- * leaves a stale patched dir — and FAILS LOUD (exit 1) if it can't resolve the pinned pnpm, the
- * resolved major mismatches the repo requirement, or the frozen install fails. `preSha` is HEAD
- * captured immediately before the merge, so `preSha..HEAD` is exactly what the ff pulled.
+ * the PRE-merge patched dep (a merged fix reads as "still broken"). Resolves pnpm against the
+ * repo's `packageManager` pin through the ordered strategy in `dep-refresh.ts` — a PATH pnpm at
+ * EXACTLY the pin, else corepack — and FAILS LOUD (exit 1) if neither resolves it or the frozen
+ * install fails. `preSha` is HEAD captured immediately before the merge, so `preSha..HEAD` is
+ * exactly what the ff pulled.
  */
 const refreshDepsAfterMerge = Effect.fn(function* (preSha: string) {
 	const diff = runGit(["diff", "--name-only", preSha, "HEAD"]);
@@ -177,41 +210,31 @@ const refreshDepsAfterMerge = Effect.fn(function* (preSha: string) {
 	}
 
 	const required = parsePackageManagerPnpm(readPackageManagerPin(root));
-	// Resolve pnpm via corepack AGAINST THE PIN (`corepack pnpm@<version> …`), never the bare-PATH
-	// pnpm — the wrong-major hazard #3498 exists to close. A failed probe ⇒ unresolved ⇒ fail-closed.
-	let resolved: PnpmVersion | null = null;
-	if (required !== null) {
-		const ver = runCaptured("corepack", [`pnpm@${required.version}`, "--version"], root);
-		resolved = ver.ok ? parsePnpmVersionOutput(ver.stdout) : null;
-	}
-	const guard = decidePnpmVersionGuard(required, resolved);
-	if (!guard.ok) {
-		const detail =
-			guard.reason === "unresolved-required"
-				? "the root package.json `packageManager` pin is absent or unparseable — cannot determine the required pnpm major"
-				: guard.reason === "unresolved-pnpm"
-					? "could not resolve the repo-pinned pnpm via corepack (corepack absent or errored) — refusing to fall back to a bare-PATH pnpm, whose wrong major silently leaves a stale patched dir"
-					: `resolved pnpm ${guard.resolved.version} (major ${guard.resolved.major}) does NOT match the repo-required major ${guard.required.major} (${guard.required.version}) — a wrong-major install silently leaves a stale patched dir`;
-		const provision = required
-			? `corepack pnpm@${required.version} install --frozen-lockfile`
-			: "corepack pnpm install --frozen-lockfile";
+	const resolution = decidePnpmResolution(
+		required,
+		probePnpmVersion("pnpm", ["--version"], root, PATH_PROBE_TIMEOUT_MS),
+		(pin) => probePnpmVersion("corepack", [`pnpm@${pin.version}`, "--version"], root),
+	);
+	if (!resolution.ok) {
+		const {detail, remedy} = describePnpmResolutionFailure(resolution);
 		yield* Console.error(
-			`main-sync dep refresh FAILED (fail-closed): the merge changed ${forcing.join(", ")} but ${detail}. node_modules is STALE and a re-booted crew would run the PRE-merge patched dep (#3498). Provision with the pinned pnpm (\`${provision}\`) and re-run.`,
+			`main-sync dep refresh FAILED (fail-closed): the merge changed ${forcing.join(", ")} but the repo-pinned pnpm did not resolve — ${detail}. node_modules is STALE and a re-booted crew would run the PRE-merge patched dep (#3498). To recover: ${remedy}.`,
 		);
 		return yield* Effect.sync(() => process.exit(1));
 	}
 
+	const install: readonly [string, ReadonlyArray<string>] =
+		resolution.resolver === "path"
+			? ["pnpm", ["install", "--frozen-lockfile"]]
+			: ["corepack", [`pnpm@${resolution.resolved.version}`, "install", "--frozen-lockfile"]];
+	const shown = `${install[0]} ${install[1].join(" ")}`;
 	yield* Console.log(
-		`  dep refresh: resolved pnpm ${guard.resolved.version} via corepack (matches the pinned major ${guard.resolved.major}) — running the frozen-lockfile install.`,
+		`  dep refresh: resolved pnpm ${resolution.resolved.version} via ${resolution.resolver === "path" ? "the PATH pnpm (exactly the pinned version)" : "corepack (matches the pinned major)"} — running \`${shown}\`.`,
 	);
-	const installed = runCaptured(
-		"corepack",
-		[`pnpm@${guard.resolved.version}`, "install", "--frozen-lockfile"],
-		root,
-	);
+	const installed = runCaptured(install[0], install[1], root);
 	if (!installed.ok) {
 		yield* Console.error(
-			`main-sync dep refresh FAILED (fail-closed): \`corepack pnpm@${guard.resolved.version} install --frozen-lockfile\` exited non-zero — ${installed.stderr.trim() || "install error"}. node_modules may be STALE (#3498). Resolve the install by hand before booting the crew.`,
+			`main-sync dep refresh FAILED (fail-closed): \`${shown}\` exited non-zero — ${installed.stderr.trim() || "install error"}. node_modules may be STALE (#3498). Resolve the install by hand before booting the crew.`,
 		);
 		return yield* Effect.sync(() => process.exit(1));
 	}
