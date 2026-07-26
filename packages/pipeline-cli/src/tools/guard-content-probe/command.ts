@@ -12,9 +12,15 @@
  * from stdin (or `--body-file`), reads the canonical `GUARD_ADR_RE` from the local
  * `gh-issue-intake-formats.md` §CP (the single source — never a second inline copy), and prints
  * `guard-touching` / `not-guard-touching` to **stdout** — the word the caller branches on. A
- * human reason goes to **stderr**. Exit code mirrors the decision: **0 on `guard-touching`, 1 on
- * `not-guard-touching`**, so the gate bash can `… guard-content-probe classify && echo BLOCKING`
- * and fail closed.
+ * human reason goes to **stderr**.
+ *
+ * **Exit code:** 0 on `guard-touching` (the hold), and {@link NOT_GUARD_TOUCHING_EXIT_CODE} (3) — a
+ * code no failure-to-run produces — on the one proven-ordinary verdict. The exit code discriminates
+ * the two verdicts ONLY ONCE THE VERB HAS RUN; it says nothing about whether it ran, so a caller
+ * must assert on the stdout state word (`[ "$GC_STATE" = "not-guard-touching" ]`), never on mere
+ * non-zero. `… && echo BLOCKING` is UNSAFE — it emits nothing on a usage error (1), a
+ * module-not-found from a nested cwd (1), or a missing binary (127), so a probe that never ran
+ * reads as an ordinary ADR (#4219). See the README's "How to call this safely".
  *
  * IO here (the thin bin); the whole ADR-0164 predicate lives in `guard-content-probe.ts` (the
  * pure, unit-tested core), the same split `class-probe` / `cp-cardinality` use. The caller owns
@@ -27,6 +33,7 @@ import {existsSync, readFileSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {PROVEN_ORDINARY_EXIT_CODE} from "../../exit-codes.ts";
 import {findRootDir} from "../../find-root-dir.ts";
 import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
@@ -35,6 +42,9 @@ import {
 	parseGuardAdrRe,
 	probeGuardContent,
 } from "./guard-content-probe.ts";
+
+/** The proven-ordinary verdict's own exit code — the shared rule, not a per-tool choice. */
+export const NOT_GUARD_TOUCHING_EXIT_CODE = PROVEN_ORDINARY_EXIT_CODE;
 
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
 
@@ -111,8 +121,8 @@ const classifyCmd = Command.make(
 			),
 		);
 		yield* Console.log(result.guardTouching ? "guard-touching" : "not-guard-touching");
-		// Exit code mirrors the decision so the gate bash fails closed: 0 ⇒ §CP, 1 ⇒ ordinary.
-		if (!result.guardTouching) return yield* Effect.sync(() => process.exit(1));
+		if (!result.guardTouching)
+			return yield* Effect.sync(() => process.exit(NOT_GUARD_TOUCHING_EXIT_CODE));
 	}),
 ).pipe(
 	Command.withDescription(

@@ -83,6 +83,21 @@ the outcome as a typed `StdinReadFailed` in the error channel. The pure retry co
 IO injected so the `EAGAIN` path is testable, lives in
 [`src/read-stdin-core.ts`](./src/read-stdin-core.ts).
 
+## How a tool seats a verdict on an exit code
+
+A classifier verb that can clear a hold — `cp-classify`, `guard-content-probe` — seats its
+**proven-ordinary** verdict on `PROVEN_ORDINARY_EXIT_CODE` from
+[`src/exit-codes.ts`](./src/exit-codes.ts), never on `1`. `1` is what effect-cli returns for a
+usage error and what a module-load failure surfaces as; `127` is the shell's missing-binary code.
+A verdict sharing either is unreadable as proof — `[ $? -ne 0 ]` then reads "the tool never ran"
+as "the tool ran and proved it ordinary". This is the verdict-side twin of the stdin rule above
+(#4208, #4219).
+
+The exit code discriminates verdicts **only once the verb has run**, so a caller asserts on the
+**stdout state word** and treats every other value, including the empty string a failure to
+invoke leaves, as a hold. Three outcomes stay distinguishable: proven-ordinary, proven-hold, and
+could-not-determine.
+
 ## How a tool is loaded
 
 Running `pipeline-cli <tool>` loads that tool's module and no other. The registry
