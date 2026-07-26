@@ -68,7 +68,7 @@ Deviation disclosure is a **required section of every `write-code` PR body**, de
 4. **Repair appends, never replaces.** The section is a running log across the PR's whole life,
    round-tagged. Rewriting it to the latest round's truth destroys the trail.
 
-5. **Gate teeth, scoped deliberately.** All four PR-verdict gates (ADR 0073 §5's set: `review-code`,
+5. **Gate teeth, scoped deliberately.** All four PR-verdict gates (§6.6's set: `review-code`,
    `review-doc`, `review-skill`, `review-design`) carry one `deviation-disclosure` row in their
    conjunctive table: a deviation the gate **detects and the body does not disclose** is a blocking
    finding; a **disclosed** one is a judgment item verified on three questions (authorized? needs an

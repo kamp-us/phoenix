@@ -3338,6 +3338,9 @@ shows in the run log instead of reading green:
 
 ```bash
 # §DEV Tier M — presence of the section, plus the two diff-detectable classes.
+# The section-presence pattern below is the canonical copy; `write-code` Step 5 check (e) and
+# `review-trivial` Step 0 restate it mechanically, so a change here has to land in all three (the
+# rule is single-sourced, the pattern is not — a silent drift un-gates one lane).
 BODY="$(gh api repos/$REPO/pulls/$PR --jq '.body')"
 printf '%s' "$BODY" | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
   && echo "deviation-disclosure: ## Deviations section present" \
@@ -3346,11 +3349,17 @@ printf '%s' "$BODY" | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:spa
 DEV_SUPPRESS="$(gh pr diff "$PR" | grep -E '^\+' \
   | grep -nE 'biome-ignore|eslint-disable|@ts-(expect-error|ignore)|\.(skip|only)\(|xit\(|xdescribe\(' || true)"
 # class 6, removed assertion lines — scoped to TEST files, matching the prose. Walk the diff
-# file-by-file (`+++ b/<path>` starts a file) so a `--- a/src/assert.ts` header can never match as a
-# removed assertion, and only removals inside a test file count. A bare `grep '^-'` over the whole
-# diff matched exactly that header (the `-` of `---` plus the word `assert` in the path).
+# file-by-file so a `--- a/src/assert.ts` header can never match as a removed assertion, and only
+# removals inside a test file count. A bare `grep '^-'` over the whole diff matched exactly that
+# header (the `-` of `---` plus the word `assert` in the path).
+# EVERY file header re-decides the flag, and a DELETED file (`+++ /dev/null`) takes its path from the
+# `--- a/<path>` side. Keying only on `+++ b/` left the flag STALE across a deletion, which broke the
+# scan in both directions: a deleted non-test file after a test file scored false positives, and a
+# deleted test file after a non-test file silently dropped its removed assertions — the exact class-6
+# case this scan exists to arm.
 DEV_TESTCUTS="$(gh pr diff "$PR" | awk '
-  /^\+\+\+ b\// { t = ($0 ~ /(\.|\/)(test|spec)\.[a-z]+$|\/(__tests__|test|tests)\//) ; next }
+  /^--- / { p = $0; next }
+  /^\+\+\+ / { t = ((($0 ~ /^\+\+\+ b\//) ? $0 : p) ~ /(\.|\/)(test|spec)\.[a-z]+$|\/(__tests__|test|tests)\//) ; next }
   t && /^-[^-]/ && /expect\(|assert|toBe|toEqual|toThrow/ { print }')"
 echo "deviation-disclosure: Tier-M scan — $(printf '%s' "$DEV_SUPPRESS" | grep -c .) suppression/skip line(s), $(printf '%s' "$DEV_TESTCUTS" | grep -c .) removed-assertion line(s)"
 ```
