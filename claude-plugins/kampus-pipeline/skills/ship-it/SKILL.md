@@ -870,10 +870,19 @@ while IFS= read -r a; do
 done <<<"$markerAuthors"
 ```
 
-Resolve the latest current-head marker verdict per namespace **through `pipeline-cli verdict read`**:
-the verb folds the ADR-0055 write+ author-gate (a forged newer marker from an unauthorized author
-can't shadow a real verdict), the latest-wins pick, and the ADR-0058 SHA-staleness refusal (Step 2b)
-into one exit code — its unit tests are the contract (#2102), the same resolution `write-code` reads.
+Resolve the **in-force** verdict per namespace **through `pipeline-cli verdict read`**: the verb folds
+the ADR-0055 write+ author-gate (a forged newer marker from an unauthorized author can't shadow a real
+verdict), the in-force pick, and the ADR-0058 SHA-staleness refusal (Step 2b) into one exit code — its
+unit tests are the contract (#2102), the same resolution `write-code` reads.
+
+**The in-force rule, stated once and used by every namespace below: filter candidates to the ones
+bound to the LIVE head first, then latest-wins only among those.** Never "the newest comment in the
+namespace, then check its head" — `verdict post` upserts a verdict in place (ADR 0213/#4016/#4050), so
+`created_at` is when a comment SLOT was opened, not when the verdict it now carries was written, and a
+stale-but-freshly-created verdict outranks an at-head one that was rewritten in place. That is a false
+**refusal** of a green PR, and it cost PR #3955 an hour (#4189). The same trap catches a human skimming
+the PR, since the GitHub UI orders by creation time too — read the `@ <sha>` / `Reviewed-head:` binding,
+never the position.
 The native decisive review folds into the code namespace separately (the verb reads marker comments,
 not reviews); Step 2b keeps `is_current` for it and for the §CP advisory body-SHA:
 
@@ -942,8 +951,10 @@ if [ -n "$RSHA" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
 Now resolve **per namespace** (the marker verdict from the verb above, the native review + §CP
 advisory folded in):
 
-- **review-code namespace** — the verdict is the **newest of {latest decisive review, latest
-  review-code marker comment}** by timestamp (review `submitted_at` vs comment `created_at`).
+- **review-code namespace** — the verdict is the **newest of {latest decisive review, in-force
+  review-code marker comment}**, compared by timestamp (review `submitted_at` vs comment
+  `created_at`) **only once both are current-head-bound** — the head-first rule above, which is
+  what the `case "$CURRENT_HEAD" in "$RSHA"*` guard and the `_tag == "current"` marker test encode.
   An `APPROVED` review or a `review-code: PASS … merge-ready` marker is PASS; a
   `CHANGES_REQUESTED` review or a `review-code: FAIL` marker is FAIL. The verdict's bound SHA
   is the marker's `@ <sha>` (or, for a native review, its `commit_id`). (The native
@@ -956,8 +967,8 @@ advisory folded in):
   (ADR 0111/0151), gated on Step 0's control-plane approval — **never** from a bindable first-line
   marker (that would drop the §CP verdict into the auto-merge namespace, the ADR 0111 hazard). This
   is the written resolution path a canonical review-code §CP advisory previously lacked (#2329).
-- **review-doc namespace** — the verdict is the **latest `review-doc` marker comment** by
-  `created_at`; its bound SHA is the marker's `@ <sha>`. `review-doc: PASS … merge-ready` is
+- **review-doc namespace** — the verdict is the **in-force `review-doc` marker comment** (the rule
+  above); its bound SHA is the marker's `@ <sha>`. `review-doc: PASS … merge-ready` is
   PASS; `review-doc: FAIL … changes-requested` is FAIL. (review-doc lands no native review —
   it is comment-only, ADR 0058 — so there is no review path to fold in, and no review-vs-comment
   comparison to make.) A §CP doc PR's verdict is likewise the SHA-less-first-line advisory
@@ -965,8 +976,8 @@ advisory folded in):
   `Reviewed-head` line via the same
   **[§CP advisory resolution](#step-2cp--cp-advisory-namespace-resolution-adr-01350151)** below
   (ADR 0111/0151) — never from a bindable first-line marker.
-- **review-skill namespace** — the verdict is the **latest `review-skill` marker comment** by
-  `created_at`; its bound SHA is the marker's `@ <sha>`. `review-skill: PASS … merge-ready` is
+- **review-skill namespace** — the verdict is the **in-force `review-skill` marker comment** (the
+  rule above); its bound SHA is the marker's `@ <sha>`. `review-skill: PASS … merge-ready` is
   PASS; `review-skill: FAIL … changes-requested` is FAIL. (review-skill is comment-only too,
   ADR 0058 — same single-record-type resolution as review-doc.) For a **non-§CP** skill PR an
   **advisory** line (`review-skill: advisory — blocking-set PR …`) carries no first-line `@ <sha>`
@@ -979,8 +990,8 @@ advisory folded in):
   advisory resolves — a §CP PR is **never** required to (nor satisfied by) a bindable first-line
   `review-skill: PASS @ <sha>` marker (that would drop it into the auto-merge namespace — the ADR 0111
   hazard #2022's forge-workaround must not take).
-- **review-design namespace** — the verdict is the **latest `review-design` marker comment** by
-  `created_at`; its bound SHA is the marker's `@ <sha>`. `review-design: PASS … merge-ready` is
+- **review-design namespace** — the verdict is the **in-force `review-design` marker comment** (the
+  rule above); its bound SHA is the marker's `@ <sha>`. `review-design: PASS … merge-ready` is
   PASS; `review-design: FAIL … changes-requested` is FAIL. (review-design is comment-only, ADR
   0058 — same single-record-type resolution as review-doc/review-skill; a newer FAIL in this
   namespace vetoes an older PASS, latest-wins, exactly like the other gates.) This namespace is
@@ -1071,8 +1082,10 @@ a canonical review-code §CP advisory had no written resolution path and read as
 on a legitimately-approved PR (#2329):
 
 ```bash
-# $ADV_BODY = the latest §CP advisory comment body for this namespace (review-code/skill/doc/design),
-# author-gated (write+, ADR 0055) and latest-wins exactly like the markers above.
+# $ADV_BODY = the IN-FORCE §CP advisory comment body for this namespace (review-code/skill/doc/design),
+# author-gated (write+, ADR 0055) and resolved head-first exactly like the markers above — an advisory
+# is upserted in place too, so its `created_at` does not order it (`pipeline-cli verdict gate --cp`
+# computes this; do not hand-roll a newest-comment read here).
 # (a) body's canonical Reviewed-head SHA (ADR 0151 §6.6) must prefix-match the PR's current head.
 #     Anchored to the `Reviewed-head:` line — a DISTINCT token from the first-line advisory marker,
 #     so this never mistakes a first-line marker for the body binding, and the advisory stays out of

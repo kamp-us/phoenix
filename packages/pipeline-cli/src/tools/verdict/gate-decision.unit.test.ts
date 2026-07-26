@@ -340,6 +340,83 @@ describe("decideGate — EVERY required namespace must pass, not just one", () =
 	});
 });
 
+describe("decideGate — PR #3955's exact situation: the in-force verdict was created FIRST (#4189)", () => {
+	// The incident: `verdict post` upserts a verdict in place (#4016/#4050), so the live-head
+	// advisories kept the `created_at` of the 00:09 slots they were rewritten into at 00:49, while a
+	// superseded-head pair was created fresh at 00:32. Selecting by `(createdAt, id)` and testing the
+	// head afterwards crowned the 00:32 pair, classified it `stale` — correctly — and refused a §CP PR
+	// that was green on every required namespace, for ~an hour, with no surfaced reason.
+	const UPSERTED_AT_HEAD = "2026-07-26T00:09:45Z";
+	const CREATED_STALE = "2026-07-26T00:32:02Z";
+
+	it("the live-head all-PASS advisories are selected over the newer-created dead-head pair", () => {
+		const result = decide({
+			requiredGates: ["code", "doc"],
+			controlPlane: true,
+			comments: [
+				comment({id: 5081148335, createdAt: UPSERTED_AT_HEAD, body: advisory("doc", HEAD)}),
+				comment({id: 5081149091, createdAt: UPSERTED_AT_HEAD, body: advisory("code", HEAD)}),
+				comment({id: 5081217674, createdAt: CREATED_STALE, body: advisory("doc", OLD, "[FAIL]")}),
+				comment({id: 5081217899, createdAt: CREATED_STALE, body: advisory("code", OLD)}),
+			],
+		});
+		assert.isTrue(result.enqueueable);
+		assert.deepStrictEqual(
+			result.decisions.map((d) => d.commentId),
+			[5081149091, 5081148335],
+		);
+	});
+
+	it("a dead-head marker created later never shadows a live-head marker (non-§CP)", () => {
+		const result = decide({
+			comments: [
+				comment({id: 1, createdAt: UPSERTED_AT_HEAD}),
+				comment({
+					id: 2,
+					createdAt: CREATED_STALE,
+					body: `review-doc: FAIL @ ${OLD} — changes-requested`,
+				}),
+			],
+		});
+		assert.isTrue(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.commentId, 1);
+	});
+
+	it("the head-first preference holds ACROSS the two forms: a live-head marker beats a newer dead-head advisory", () => {
+		const result = decide({
+			controlPlane: true,
+			comments: [
+				comment({
+					id: 1,
+					createdAt: UPSERTED_AT_HEAD,
+					body: `review-doc: FAIL @ ${HEAD} — changes-requested`,
+				}),
+				comment({id: 2, createdAt: CREATED_STALE, body: advisory("doc", OLD)}),
+			],
+		});
+		assert.isFalse(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.state, "fail");
+		assert.strictEqual(result.decisions[0]?.commentId, 1);
+	});
+
+	it("with NOTHING bound to the live head the refusal is unchanged — still the stale newest", () => {
+		const result = decide({
+			controlPlane: true,
+			comments: [
+				comment({id: 1, createdAt: UPSERTED_AT_HEAD, body: advisory("doc", OLD)}),
+				comment({
+					id: 2,
+					createdAt: CREATED_STALE,
+					body: `review-doc: PASS @ ${OLD} — merge-ready`,
+				}),
+			],
+		});
+		assert.isFalse(result.enqueueable);
+		assert.strictEqual(result.decisions[0]?.state, "unverified");
+		assert.strictEqual(result.decisions[0]?.commentId, 2);
+	});
+});
+
 describe("decideGate — fail-closed on its own inputs (ADR 0092)", () => {
 	it("an EMPTY required set refuses rather than passing vacuously", () => {
 		const result = decide({requiredGates: [], comments: [comment({id: 1})]});
