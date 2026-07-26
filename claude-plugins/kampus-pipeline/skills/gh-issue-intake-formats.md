@@ -1833,6 +1833,92 @@ if ! cp_changed_files "$REPO" "$PR"; then
 fi
 ```
 
+#### §CPREAD-APPROVAL. The three reads the ADR-0175 discharge makes — UNKNOWN is not a cardinality (#4223)
+
+Classifying a PR as §CP is only half the boundary; **discharging** it (the ADR-0175 approval gate in
+[`ship-it`](ship-it/SKILL.md)) makes three more network reads — the `control-plane` team roster, the
+PR author, and a per-approver team-membership probe. They take the same three properties, plus a
+fourth that the file-list read does not need:
+
+4. **A failed read and a genuinely-empty answer are different FACTS with the same non-firing
+   outcome — never collapse them.** For the roster they are distinguishable by **content**: a failed
+   read is a one-line JSON error document, an empty team is an empty stream. So the discriminator is
+   a **shape check**, not a bare `|| exit`. Measured (#4223): an unreadable roster leaves a ~120-byte
+   error blob on **one** line, so a line-counting cardinality computes **N=1 on a phantom member
+   whose login is an error body** — `cp-cardinality`'s `n === 0` "the team is empty" branch is never
+   reached, and anyone hardening *that* branch hardens a branch this failure cannot enter. An
+   unresolved roster must therefore resolve to **UNKNOWN and stop under its own reason line**, never
+   to a cardinality and never to "the team is empty".
+
+```bash
+# cp_team_roster — the control-plane roster read. Sets CP_MEMBERS (logins, one per line) +
+# CP_MEMBERS_N; returns NON-ZERO ⇒ UNKNOWN (never a cardinality). A read that SUCCEEDS and returns
+# zero members is a DIFFERENT, honest state — the ADR-0175 N==0 STOP — and returns zero here, so the
+# §ZS zero-scope rule does NOT apply: unlike a PR's file list, an empty team is a real answer.
+cp_team_roster() {   # $1 = ORG
+  CP_MEMBERS="$(gh api --paginate "orgs/$1/teams/control-plane/members?per_page=100" \
+    --jq 'if type=="array" then .[].login else ("payload is not a member array"|halt_error(1)) end' 2>/dev/null)" || {
+      CP_MEMBERS=""; CP_MEMBERS_N=0
+      echo "§CP roster: @$1/control-plane member list READ FAILED (gh exited non-zero; payload discarded) — roster UNKNOWN, NOT empty" >&2
+      return 1; }
+  # Shape, then interpret. A status check alone still admits a 200 carrying something that is not a
+  # roster; a bare non-empty test admits the error blob outright. Only the login charset rejects both.
+  if printf '%s\n' "$CP_MEMBERS" | grep -qvE '^[A-Za-z0-9-]*$'; then
+    CP_MEMBERS=""; CP_MEMBERS_N=0
+    echo "§CP roster: @$1/control-plane member list carries a non-login entry — payload discarded, roster UNKNOWN, NOT empty" >&2
+    return 1
+  fi
+  CP_MEMBERS_N="$(printf '%s\n' "$CP_MEMBERS" | grep -c . || true)"
+  echo "§CP roster: @$1/control-plane read OK — $CP_MEMBERS_N member(s) scanned"   # §ZS #1: emit the scope
+}
+
+# cp_pr_author — the PR author login. An unresolved author is UNKNOWN: it un-skips the author in the
+# approver walk (a self-approval would count as a non-author approval) and mis-keys the cardinality
+# branch. Same dead-guard reason as cp_head_sha: on failure gh writes its error document to STDOUT,
+# so `[ -n "$AUTHOR" ]` can never fire — check the status, discard the payload, then shape-assert.
+cp_pr_author() {   # $1 = REPO, $2 = PR; sets CP_PR_AUTHOR (EMPTY on failure), NON-ZERO ⇒ UNKNOWN
+  CP_PR_AUTHOR="$(gh api "repos/$1/pulls/$2" \
+    --jq 'if type=="object" and (.user.login|type)=="string" then .user.login else ("payload is not a PR object"|halt_error(1)) end' 2>/dev/null)" || {
+      CP_PR_AUTHOR=""
+      echo "§CP author: PR #$2 author READ FAILED (gh exited non-zero; payload discarded) — author UNKNOWN" >&2
+      return 1; }
+  case "$CP_PR_AUTHOR" in
+    ""|*[!A-Za-z0-9-]*) CP_PR_AUTHOR=""
+      echo "§CP author: PR #$2 author is not a bare login — discarded, author UNKNOWN" >&2; return 1 ;;
+  esac
+}
+
+# cp_team_membership — is login $2 on @$1/control-plane? THREE outcomes, not two: `-i` keeps the
+# status line on stdout even when gh exits non-zero, which is the whole point — a 404 is a DEFINITE
+# non-member, anything else is UNKNOWN. The bare `--jq '.state' 2>/dev/null` this replaces made a
+# 5xx indistinguishable from a definite non-member, silently under-counting an approver.
+# Composition, measured: an ABSENT team namespace 404s here too, so this endpoint alone cannot tell
+# "not a member of a team that exists" from "no such team". It does not have to — call it only after
+# cp_team_roster has proven the team readable, which is what makes a 404 here definite.
+cp_team_membership() {   # $1 = ORG, $2 = login; sets CP_MEMBERSHIP = <state>|absent; NON-ZERO ⇒ UNKNOWN
+  _resp="$(gh api "orgs/$1/teams/control-plane/memberships/$2" -i 2>/dev/null)"; _rc=$?
+  _status="$(printf '%s\n' "$_resp" | head -n1 | awk '{print $2}')"   # $? already stashed above
+  case "$_status" in
+    200)
+      CP_MEMBERSHIP="$(printf '%s\n' "$_resp" | awk 'b{print} /^\r?$/{b=1}' \
+        | jq -r 'if type=="object" and (.state|type)=="string" then .state else ("payload is not a membership object"|halt_error(1)) end' 2>/dev/null)" || {
+          CP_MEMBERSHIP=""
+          echo "§CP membership: '$2' returned 200 with a non-membership payload — discarded, membership UNKNOWN" >&2
+          return 1; }
+      return 0 ;;
+    404) CP_MEMBERSHIP=absent; return 0 ;;
+    *)   CP_MEMBERSHIP=""
+      echo "§CP membership: '$2' on @$1/control-plane READ FAILED (HTTP ${_status:-none}, gh exit $_rc) — UNKNOWN, NOT a definite non-member" >&2
+      return 1 ;;
+  esac
+}
+```
+
+Consumers of these three resolve a failure to **UNKNOWN and stop under a reason line that names the
+read that failed** — never under `awaiting control-plane approval`, which asserts a fact about a
+human that no one established. Same outcome as a genuine wait, different fact; reporting the first as
+the second sends an operator to debug a person instead of an outage.
+
 ### A path-only §CP answer is NEVER authoritative — use `cp-classify` (#4161)
 
 The two clauses above are **independent sources** of §CP membership, and `CONTROL_PLANE_RE` has

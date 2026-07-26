@@ -48,10 +48,12 @@ marker); this tool owns the branch. It never calls the network.
 ## Usage
 
 ```bash
-# ship-it's §CP gate resolves the roster + signals over REST, then decides deterministically:
+# ship-it's §CP gate resolves the roster + signals over REST, then decides deterministically.
+# The roster is a GUARDED read — `cp_team_roster` from §CPREAD-APPROVAL of
+# claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md, never a bare capture.
 ORG="${REPO%%/*}"
-MEMBERS="$(gh api --paginate "orgs/$ORG/teams/control-plane/members?per_page=100" --jq '.[].login')"
-printf '%s\n' "$MEMBERS" | pipeline-cli cp-cardinality decide \
+cp_team_roster "$ORG" || { echo "roster UNKNOWN (read failed) — STOP, do not decide" >&2; exit 1; }
+printf '%s\n' "$CP_MEMBERS" | pipeline-cli cp-cardinality decide \
   --author "$AUTHOR" \
   --non-author-approval-at-head \   # pass iff a current-head APPROVED review by a member != author exists
   --self-approval-at-head           # pass iff a current-head self-approval marker by the sole owner exists
@@ -60,3 +62,10 @@ printf '%s\n' "$MEMBERS" | pipeline-cli cp-cardinality decide \
 The decision word (`discharge` | `stop`) goes to **stdout**; a human reason goes to
 **stderr**. Exit is **0 on `discharge`, 1 on `stop`**, so the gate bash fails closed with
 `… && carry-on || STOP`.
+
+**The caller owns roster validity — this core cannot recover it.** A bare
+`MEMBERS="$(gh api … --jq …)"` does not fail loudly: `gh` skips `--jq` on an error response and
+writes the error body to **stdout**, so the capture is a one-line JSON blob and this tool is handed
+`N = 1` on a phantom member. `n === 0`'s "the team is empty" branch is never reached, and the
+reason line then reports an outage as a finding about team shape (#4223). Feed it a roster resolved
+by `cp_team_roster`, or the decision is about a payload rather than a team.
