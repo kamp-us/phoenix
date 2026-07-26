@@ -374,6 +374,63 @@ This is a **control-plane** surface (it guards the shared primary checkout's `ma
 [`.patterns/worktree-agent-constraints.md`](../../.patterns/worktree-agent-constraints.md)
 for the surrounding primary-checkout discipline it completes.
 
+### `verified-push` — push and confirm the ref moved, with a verdict that survives a pipe (#4213)
+
+The **sanctioned push path** for the pipeline skills. It runs the push, then reads the remote
+ref back with an independent `git ls-remote`, and reports one of **three** outcomes — never two:
+
+| verdict line (last on stdout) | exit | meaning |
+| --- | --- | --- |
+| `PUSH-VERDICT: MOVED …` | 0 | the remote ref is confirmed at your local head |
+| `PUSH-VERDICT: NOT-MOVED …` | 1 | the ref is confirmed *not* to carry it (absent, or at another commit) |
+| `PUSH-VERDICT: UNKNOWN …` | 3 | it could not be determined — **never a success** |
+
+**Why a verb at all, when `git push` already returns a status.** Two observation-layer
+defects — neither of them git's — destroyed that status in practice (#4146, the remedy half of
+which this is):
+
+1. `git push … | tail -N` reports `tail`'s status. `pipefail` is **off** on this platform
+   (measured), so the pipeline returns 0 however git died. It is the *dominant* idiom, because
+   the `pre-push` hook's output is long enough that agents reach for `tail` by reflex.
+2. A **detached** run's output file carries **no exit status at all**, so success gets inferred
+   from the absence of an `error:` line — and a SIGPIPE'd git prints nothing, which is exactly
+   what that absence looks like.
+
+Both layers destroy the *exit code*, so an exit-code-only verdict defeats neither. The one
+channel that survives a pipe **and** a detached output-file read is **stdout**, so the verdict
+is a single grep-able terminal line emitted **last on stdout**, in addition to the exit code —
+`… | tail -1` now yields *exactly* the verdict instead of erasing it. The whole report goes to
+one stream on purpose: splitting it across stdout and stderr would let a stderr line land after
+the verdict under `2>&1 | tail`.
+
+And even an unmasked exit status answers *"did the process fail"*, not *"did the ref move"* —
+the ref is the fact every downstream stage assumes (reviewer checkout, SHA-bound verdict,
+shipper merge), so the verdict is decided by the independent ref read, never by the push's own
+self-report. `MOVED` requires positive evidence on both: the ref resolved at the expected sha
+**and** the push itself ran cleanly.
+
+**No retry, deliberately.** A blind re-push would have "worked" for the #4042 lane and would
+have buried #4136's transport mechanism — the contention this verb exists to expose. It is also
+unsound on its own terms: the verb cannot tell a transient transport death from a rejected
+non-fast-forward, so a retry loop would hammer a legitimately refused push. The caller decides.
+
+The probe is bounded by `execFileSync`'s own `timeout` option — a portable Node bound, **never**
+the `timeout(1)` binary, which is absent on this platform (#3411), where a bare `timeout …`
+would exit command-not-found and, under masking layer 1, read as success.
+
+```bash
+# initial branch push (write-code Step 5)
+node packages/pipeline-cli/src/bin.ts verified-push --cwd "$WT" --remote origin --branch "$BRANCH" --set-upstream
+# repair resubmit after a rebase moved the head (write-code Step R3); branch re-derived live
+node packages/pipeline-cli/src/bin.ts verified-push --cwd "$WT" --remote origin --force-with-lease
+# exit 0 = MOVED · 1 = NOT-MOVED · 3 = UNKNOWN. Treat 3 exactly like a failure.
+```
+
+This is a **control-plane** surface: `gh-phoenix lint-skills` reds on a git push invocation in
+any runnable block of the skill corpus (fails closed on zero scope, ADR 0092), which is what
+makes this verb the *only* sanctioned path rather than merely the available one — mechanical
+enforcement, not attention-based (ADR 0202).
+
 ### `ship-digest` — the merged-since founder projection (#1595)
 
 Renders a **founder-facing** ship digest for a `--since` window from a pre-gathered

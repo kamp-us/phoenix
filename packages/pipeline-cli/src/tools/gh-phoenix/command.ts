@@ -4,13 +4,14 @@
  * The skill grep-lint for issue #743 (the pure `lintCorpus` core), moved into the
  * pipeline-cli registry (epic #994, Phase 2 / #1002). Lints the handed skill-corpus
  * files for GraphQL-path `gh` invocations (Projects-classic-only on the kamp-us org)
- * AND for invalid YAML frontmatter (#1766 — the durable gate for the unquoted-scalar
- * colon-space defect), emits both checks' scanned scope, and FAILS CLOSED on zero
- * scope per ADR 0092:
+ * for invalid YAML frontmatter (#1766 — the durable gate for the unquoted-scalar
+ * colon-space defect), AND for a bare `git push` in an executable block (#4213 — the
+ * sanctioned path is `pipeline-cli verified-push`), emits each check's scanned scope, and
+ * FAILS CLOSED on zero scope per ADR 0092:
  *
- *   exit 0 — clean (no GraphQL-path gh calls, all frontmatter parses as strict YAML)
- *   exit 2 — one or more findings (a gh-call finding OR an invalid-frontmatter finding)
- *   exit 3 — zero scope in EITHER check (ADR 0092: zero scope is a FAIL, never a silent PASS)
+ *   exit 0 — clean (no GraphQL-path gh calls, no bare push, frontmatter parses)
+ *   exit 2 — one or more findings from any check
+ *   exit 3 — zero scope in ANY check (ADR 0092: zero scope is a FAIL, never a silent PASS)
  *
  * The `lint-skills` surface + its exit-code/stdout contract is preserved byte-for-byte
  * from the former package's `bin.ts`. The exit-3/exit-2 mapping, formerly done at the
@@ -69,10 +70,11 @@ const judge = (result: LintResult): Effect.Effect<void, ZeroScope | FindingsFoun
 			return yield* Effect.fail(new ZeroScope());
 		}
 
-		const total = result.findings.length + result.frontmatterFindings.length;
+		const total =
+			result.findings.length + result.frontmatterFindings.length + result.barePushFindings.length;
 		if (total === 0) {
 			yield* Console.log(
-				"gh-phoenix lint-skills: clean — no GraphQL-path gh calls and all frontmatter parses as strict YAML.",
+				"gh-phoenix lint-skills: clean — no GraphQL-path gh calls, no bare `git push` in an executable block, and all frontmatter parses as strict YAML.",
 			);
 			return;
 		}
@@ -92,6 +94,15 @@ const judge = (result: LintResult): Effect.Effect<void, ZeroScope | FindingsFoun
 			);
 			for (const f of result.frontmatterFindings) {
 				yield* Console.error(`  ${f.file}: ${f.reason}`);
+			}
+		}
+
+		if (result.barePushFindings.length > 0) {
+			yield* Console.error(
+				`gh-phoenix lint-skills: FAIL — ${result.barePushFindings.length} bare \`git push\` invocation(s) in an executable block (the sanctioned path is \`pipeline-cli verified-push\`, #4213):`,
+			);
+			for (const f of result.barePushFindings) {
+				yield* Console.error(`  ${f.file}:${f.line}: ${f.matched} — ${f.reason}`);
 			}
 		}
 
@@ -127,6 +138,11 @@ const lintSkills = Command.make(
 				(result.frontmatterScanned.length > 0 ? `:` : ` (zero scope)`),
 		);
 		for (const f of result.frontmatterScanned) yield* Console.log(`  frontmatter-scanned: ${f}`);
+		yield* Console.log(
+			`gh-phoenix lint-skills: bare-push scan scanned ${result.barePushScanned.length} file(s)` +
+				(result.barePushScanned.length > 0 ? `:` : ` (zero scope)`),
+		);
+		for (const f of result.barePushScanned) yield* Console.log(`  push-scanned: ${f}`);
 
 		yield* judge(result).pipe(
 			Effect.catchTag("ZeroScope", onZeroScope),

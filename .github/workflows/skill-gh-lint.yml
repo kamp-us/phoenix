@@ -1,12 +1,16 @@
 name: skill-gh-lint
 
-# Two mechanical gates over the skill+agent corpus, both in pipeline-cli's
+# Three mechanical gates over the skill+agent corpus, all in pipeline-cli's
 # `gh-phoenix lint-skills` mode (match logic lives once in lint.ts, never re-grepped here):
 #   1. REST-only-on-this-org (#743): FAIL on any GraphQL-path `gh` invocation
 #      (`gh project`, GraphQL `gh pr/issue edit`, `gh api graphql`).
 #   2. Frontmatter YAML validity (#1766): FAIL on any SKILL.md / agents/*.md whose
 #      `---`-fenced frontmatter does not parse as strict YAML (the recurring
 #      unquoted-`description:`-with-a-colon-space defect that breaks GitHub's renderer).
+#   3. Sanctioned push path (#4213): FAIL on a git push invocation in any RUNNABLE block
+#      (a fenced shell block, or a whole .sh) — a bare push cannot report whether the ref
+#      landed, so `pipeline-cli verified-push` is the only sanctioned path. Prose ABOUT a
+#      bare push is untouched; the skills have to explain why it is forbidden.
 #
 # Scans the FULL corpus (not just changed files) so a bad call/frontmatter anywhere
 # is caught regardless of which PR introduced it, and FAILS CLOSED on zero scope per
@@ -27,7 +31,7 @@ permissions:
 
 jobs:
   lint:
-    name: lint skill corpus for GraphQL-path gh calls + invalid YAML frontmatter
+    name: lint skill corpus for GraphQL-path gh calls + invalid YAML frontmatter + bare git push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -46,8 +50,8 @@ jobs:
       # subagent definitions, also frontmatter-bearing #1766). Root the walk at the
       # plugin dir so both are covered; hand the CLI every .md/.sh file. The tool
       # self-scopes (gh-grep drops self-exempt files; the frontmatter check scopes to
-      # SKILL.md / agents/*.md) and fails closed (exit 3) if either scope is empty
-      # (ADR 0092).
+      # SKILL.md / agents/*.md; the push check takes every .md/.sh) and fails closed
+      # (exit 3) if ANY scope is empty (ADR 0092).
       - name: Lint skill + agent corpus
         run: |
           set -euo pipefail

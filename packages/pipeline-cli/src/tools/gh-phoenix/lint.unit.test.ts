@@ -6,6 +6,7 @@ import {
 	isZeroScope,
 	lintCorpus,
 	type ScanFile,
+	scanBarePush,
 	scanFile,
 } from "./lint.ts";
 
@@ -189,6 +190,82 @@ describe("lintCorpus — frontmatter findings + scope (ADR 0092)", () => {
 		// A corpus of only non-frontmatter files: gh-scan has scope, frontmatter check has none.
 		const result = lintCorpus([{file: "skills/foo/helper.sh", content: "echo hi"}]);
 		assert.strictEqual(result.frontmatterScanned.length, 0);
+		assert.isTrue(isZeroScope(result));
+	});
+});
+
+// #4213 — the bare-`git push` check. The corpus must be able to *talk about* a bare push
+// (it has to, to explain why it is forbidden) while the runnable form is impossible to ship.
+const fenced = (...body: ReadonlyArray<string>) => ["```bash", ...body, "```"].join("\n");
+
+describe("scanBarePush — executable `git push` only (#4213)", () => {
+	it("flags a bare `git push` inside a fenced shell block", () => {
+		const f = scanBarePush("skills/x/SKILL.md", fenced('git push -u origin "$BRANCH"'));
+		assert.strictEqual(f.length, 1);
+		assert.strictEqual(f[0]?.line, 2);
+		assert.include(f[0]?.reason ?? "", "verified-push");
+	});
+
+	it('flags the `git -C "$WT" push` form (the write-code Step-5 shape)', () => {
+		const f = scanBarePush("skills/x/SKILL.md", fenced('git -C "$WT" push -u origin "$BRANCH"'));
+		assert.strictEqual(f.length, 1);
+	});
+
+	it("flags a force-push (the write-code Step-R3 shape)", () => {
+		const f = scanBarePush(
+			"skills/x/SKILL.md",
+			fenced("wt_preflight && git push --force-with-lease origin HEAD"),
+		);
+		assert.strictEqual(f.length, 1);
+	});
+
+	it("flags a push inside a BLOCKQUOTED fence — the corpus nests its most critical blocks that way", () => {
+		const content = ["> ```bash", "> git push origin HEAD", "> ```"].join("\n");
+		assert.strictEqual(scanBarePush("skills/x/SKILL.md", content).length, 1);
+	});
+
+	it("does NOT flag prose mentioning `git push` outside any fence", () => {
+		const content = "A `git push`/`git commit` op after a cwd reset runs in the primary tree.";
+		assert.strictEqual(scanBarePush("skills/x/SKILL.md", content).length, 0);
+	});
+
+	it("does NOT flag the sanctioned verb, which contains no `git push` at all", () => {
+		const f = scanBarePush(
+			"skills/x/SKILL.md",
+			fenced('pipeline-cli verified-push --cwd "$WT" --branch "$BRANCH" --set-upstream'),
+		);
+		assert.strictEqual(f.length, 0);
+	});
+
+	it("does NOT flag a placeholder like `git <commit|push|switch …>`", () => {
+		assert.strictEqual(
+			scanBarePush("skills/x/SKILL.md", fenced("git <commit|push|switch …>")).length,
+			0,
+		);
+	});
+
+	it("treats a .sh file as executable throughout (no fence needed)", () => {
+		assert.strictEqual(scanBarePush("hooks/deploy.sh", "git push origin main\n").length, 1);
+	});
+
+	it("is out of scope for a non-.md/.sh file", () => {
+		assert.strictEqual(scanBarePush("src/thing.ts", "git push origin main").length, 0);
+	});
+});
+
+describe("lintCorpus — bare-push findings + scope (ADR 0092)", () => {
+	it("does NOT exempt write-code, the very file that owns both push sites", () => {
+		const result = lintCorpus([
+			{file: "skills/write-code/SKILL.md", content: fenced('git push -u origin "$BRANCH"')},
+		]);
+		assert.strictEqual(result.findings.length, 0); // gh-grep self-exempt
+		assert.strictEqual(result.barePushFindings.length, 1); // push check is NOT
+		assert.deepStrictEqual([...result.barePushScanned], ["skills/write-code/SKILL.md"]);
+	});
+
+	it("is zero scope — a FAIL — when the push check was handed nothing to scan", () => {
+		const result = lintCorpus([{file: "agents/coder.txt", content: "git push origin main"}]);
+		assert.strictEqual(result.barePushScanned.length, 0);
 		assert.isTrue(isZeroScope(result));
 	});
 });
