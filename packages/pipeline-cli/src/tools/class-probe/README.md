@@ -48,9 +48,16 @@ pipeline-cli class-probe classify --root <dir>     # read §CLASS under a specif
 ```
 
 Present classes go to **stdout** (one per line); a human summary goes to **stderr**.
-`classify` always exits 0 — it classifies, it does not gate. `review-design` (the
-UI-affecting class) is resolved separately from ship-it's `UI_RE` (`ui_reresolve`) and is
-out of this tool's scope.
+`classify` exits 0 on every *classification* — it classifies, it does not gate.
+`review-design` (the UI-affecting class) is resolved separately from ship-it's `UI_RE`
+(`ui_reresolve`) and is out of this tool's scope.
+
+The one non-zero exit is **not** a verdict: an input this tool could never read (an
+unreadable `--files-from`, or a failed stdin read) exits `4` with a reason on stderr and
+prints nothing, rather than classifying over an input it does not have (#3924 / #4061). A
+`--files-from` that exists and is genuinely **empty** is a different outcome and keeps the
+exit-0 path: it reads as zero files and fails closed to `has-code` / `review-code` (#3786),
+so "unreadable" and "empty" never collapse into the same answer.
 
 ## `doc-vocab-surface-only` — the issueless allowance's axis (#3953)
 
@@ -67,6 +74,7 @@ link). Keying the allowance on the class is what false-refused that shape at `re
 Step 1 (#3953), so the gates key it here instead.
 
 The `DOC_VOCAB_EXCLUDE_RE` / `DOC_VOCAB_SURFACE_RE` pair is parsed from the same §CLASS
-single source, and every failure mode resolves **not** surface-only — unreadable §CLASS,
-dropped stdin, uncompilable regex. This probe can only ever *refuse* the allowance, the
-mirror of `classify`'s over-dispatch (ADR 0092).
+single source, and every failure mode is non-zero, i.e. the allowance is refused — unreadable
+§CLASS, dropped stdin, uncompilable regex all resolve **not** surface-only (exit 1), and an
+unreadable input exits `4` without a verdict at all. This probe can only ever *refuse* the
+allowance, the mirror of `classify`'s over-dispatch (ADR 0092).

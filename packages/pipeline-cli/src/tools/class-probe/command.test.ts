@@ -57,3 +57,32 @@ describe("class-probe classify — empty stdin fails closed to review-code, neve
 		expect(stdout.trim().split("\n").filter(Boolean)).toEqual(["has-code"]);
 	});
 });
+
+describe("class-probe --files-from — an unreadable path refuses; an empty one still classifies (#4061)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
+	it("an UNREADABLE --files-from exits non-zero with its own reason, never as a change set", () => {
+		const {code, stdout, stderr} = runSh(`${INNER} --files-from /nonexistent/changed.txt`);
+		expect(code).toBe(4);
+		expect(stdout.trim()).toBe("");
+		expect(stderr).toContain("could not read --files-from");
+		expect(stderr).toContain("#4061");
+	});
+
+	it("a readable-but-EMPTY --files-from still classifies, fail-closed to review-code", () => {
+		const {code, stdout, stderr} = runSh(`${INNER} --files-from /dev/null`);
+		// The non-collapse, asserted on the observable pair: same "zero files" shape as above,
+		// opposite exit and opposite output.
+		expect(code).toBe(0);
+		expect(stdout.trim().split("\n").filter(Boolean)).toEqual(["review-code"]);
+		expect(stderr).toContain("read 0 files");
+	});
+
+	it("doc-vocab-surface-only refuses on an unreadable --files-from too (exit 4, not its exit-1 verdict)", () => {
+		const {code, stdout} = runSh(
+			`node "${BIN}" class-probe doc-vocab-surface-only --files-from /nonexistent/changed.txt`,
+		);
+		expect(code).toBe(4);
+		expect(stdout.trim()).toBe("");
+	});
+});
