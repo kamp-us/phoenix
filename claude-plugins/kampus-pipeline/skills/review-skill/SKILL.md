@@ -204,31 +204,39 @@ path as control-plane → advisory not-auto-mergeable) if that read can't be mad
 
 ```bash
 PR=<pr number>
-# the canonical §CP probe — one definition all four gates cite. §CP travels in the INJECTED skill
-# snapshot, which can lag origin/main even when the on-disk file is current — a pre-amendment snapshot
-# once mis-flagged a now-control-plane PR as auto-mergeable (#981).
-# §CP boundary is single-sourced in pipeline-cli (control-plane-paths/control-plane-re.ts, #2761);
-# run `pipeline-cli control-plane-paths` to print it. It is re-resolved from origin/main right below
-# (the #981 anti-self-authorization read), so this is only a fail-closed sentinel, never the live source.
-CONTROL_PLANE_RE='.'   # fail-closed default: every path is control-plane until origin/main resolves
-# Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-flag a now-control-plane
-# PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
-# freshly via REST raw (never GraphQL). origin/main's line wins over the snapshot; fail closed on read failure.
-CP_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^CONTROL_PLANE_RE=' | head -n1 || true)"
-if [ -n "$CP_LIVE" ]; then
-  CONTROL_PLANE_RE="$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")"   # the advisory flag tracks origin/main, not the snapshot's age (AC1/AC2)
-else
-  CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ flag EVERY path control-plane (advisory not-auto-mergeable), never trust the possibly-stale snapshot
+# The shared §CP classification entry point — one verb all the gates cite (#4161, formats §CP). It
+# re-resolves CONTROL_PLANE_RE from origin/main itself (§CP travels in the INJECTED skill snapshot,
+# which can lag origin/main even when the on-disk file is current — a pre-amendment snapshot once
+# mis-flagged a now-control-plane PR as auto-mergeable, #981) AND covers the second §CP source: a
+# guard-touching `.decisions/**` ADR is §CP BY CONTENT (ADR 0164) with zero path matches, so the old
+# path-only grep here flagged it non-blocking — the fail-open this verb removes.
+# Four states on stdout: control-plane / content-undetermined / not-control-plane / unknown.
+# Assert on the STATE WORD, never on the exit status — the exit code discriminates the four states
+# only once the verb has RUN, so `… || ordinary` fail-opens on a usage error (1) or a missing
+# binary (127). The `else` below is the catch-all that makes that safe (formats §CP; #4161).
+CP_STATE="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+  | pipeline-cli cp-classify classify --repo "$REPO")"
+# `content-undetermined` is an OBLIGATION, not an answer: probe each touched ADR at head with the
+# SAME ADR-0164 verb ship-it Step 0 and review-code/review-doc run. Any BLOCKING line ⇒ §CP.
+if [ "$CP_STATE" = "content-undetermined" ]; then
+  HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+  gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+    | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+        gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
+          | pipeline-cli guard-content-probe classify --path "$adr" >/dev/null \
+          && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
+      done
+elif [ "$CP_STATE" != "not-control-plane" ]; then
+  # The catch-all: control-plane, unknown, AND anything unenumerated — the empty string a failed
+  # invocation yields included. Only a positive `not-control-plane` may skip the hold.
+  echo "BLOCKING (§CP state '$CP_STATE')"
 fi
-# --paginate streams filenames (the API caps per_page at 100, NOT 300); grep aggregates the §CP
-# matches ACROSS pages — a jq `[ … ]` aggregate would emit one array PER PAGE. `|| true`: no match
-# is grep exit 1, an empty (non-control-plane) result, not a failure (#725).
-CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-  --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
-# non-empty → blocking: advisory only; a control-plane approval @head → ship-it enqueues (ADR 0135; §CP set 0053/0065/0073)
+# blocking → advisory only; a control-plane approval @head → ship-it enqueues (ADR 0135; §CP set 0053/0065/0073)
 ```
 
-- **Non-empty** (the PR touches a `.claude`/`.github` path or a **gate-critical skill** —
+- **`control-plane`**, **`unknown`** (the classification could not be made — fail closed), or a
+  `content-undetermined` the ADR probe resolved to BLOCKING (a guard-touching ADR, ADR 0164) — as
+  well as the path cases below (the PR touches a `.claude`/`.github` path or a **gate-critical skill** —
   `claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`, `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`,
   `claude-plugins/kampus-pipeline/skills/review-plan/**`, `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`) → the PR is in the **blocking
   set** (§CP). You review it and post your findings, but **advisory only** — your verdict does
@@ -237,9 +245,13 @@ CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page
   in the verdict (Step 5, advisory path). **This is the common case for a skill PR that edits a gate** —
   every gate skill is gate-critical, so a PR to `review-code`/`review-doc`/`review-skill`/
   `ship-it`/`review-plan`/this-formats-file lands here and your verdict is advisory.
-- **Empty** (only non-gate-critical `skills/**` — `triage`, `plan-epic`, `write-code`,
-  `heal-ci`, `report`, … — possibly alongside other non-blocking paths) → **non-blocking**.
-  Your PASS marker binds `ship-it`.
+- **Any other value** — including the **empty string** a failed invocation leaves in `CP_STATE`
+  (a bad flag, or a `pipeline-cli` that is not on `PATH` and exits 127) — is **blocking** too. The
+  test is a positive match on `not-control-plane`, never "the verb exited non-zero".
+- **`not-control-plane`** — the one proven-ordinary state (only non-gate-critical `skills/**` —
+  `triage`, `plan-epic`, `write-code`, `heal-ci`, `report`, … — possibly alongside other
+  non-blocking paths, and no `.decisions/**` file left unprobed) → **non-blocking**. Your PASS
+  marker binds `ship-it`.
 
 Your class is `claude-plugins/kampus-pipeline/skills/**` **and** the pipeline agent
 definitions `claude-plugins/kampus-pipeline/agents/**` — agent defs are behavioral artifacts

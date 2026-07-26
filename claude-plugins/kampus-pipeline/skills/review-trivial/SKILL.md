@@ -81,10 +81,13 @@ own eyes, the lighter gate is the wrong gate: **FAIL and route to the full path*
 under-gate a non-trivial change (ADR 0120 §3, default-deny). This is the safety hinge — never
 relax it.
 
-Pull the file set and confirm the bound. **Re-resolve the live `CONTROL_PLANE_RE` from
-`origin/main` at run time** — never a stale snapshot (the #981 mis-classification class) — per
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CP, the single source; cite
-it, don't re-hard-code the list:
+Pull the file set and confirm the bound. **Classify §CP through the shared `cp-classify` verb**,
+which re-resolves the live boundary from `origin/main` at run time — never a stale snapshot (the
+#981 mis-classification class) — *and* covers the second §CP source: a guard-touching
+`.decisions/**` ADR is §CP **by content** (ADR 0164) with zero path matches, and an ADR is a doc by
+path, so a path-only test here would ride it straight onto the lighter gate (#4161). See
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CP, the single source; cite it,
+don't re-hard-code the list:
 
 ```bash
 PR=<pr number>
@@ -92,23 +95,26 @@ FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].
 NFILES=$(printf '%s\n' "$FILES" | grep -c . || true)
 ADD=$(gh api repos/$REPO/pulls/$PR --jq '.additions'); DEL=$(gh api repos/$REPO/pulls/$PR --jq '.deletions')
 
-# the live control-plane boundary, read from origin/main (raw, ?ref=main) — never the head, never a local snapshot
-CONTROL_PLANE_RE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" \
-  -H 'Accept: application/vnd.github.raw' \
-  | sed -n "s/^CONTROL_PLANE_RE='\(.*\)'$/\1/p" | head -n1)"
-[ -n "$CONTROL_PLANE_RE" ] || { echo "review-trivial: cannot read live CONTROL_PLANE_RE — fail-closed, route to full path"; }   # unreadable boundary ⇒ not trivial
+# Four states on stdout: control-plane / content-undetermined / not-control-plane / unknown.
+# Only `not-control-plane` is a proven-ordinary answer; every other state is a HOLD.
+CP_STATE="$(printf '%s\n' "$FILES" | pipeline-cli cp-classify classify --repo "$REPO")"
 ```
 
 **Refuse the lighter gate (FAIL → full path) on any of:**
 
-- **A control-plane file is present** — any path matching the live `CONTROL_PLANE_RE`
-  (`.claude/**`, `.github/**`, a gate-critical skill, the enforcement-guard packages). A
-  control-plane diff is **never** trivial; it takes the full path **and the §CP approve-then-enqueue
-  gate** — a `@kamp-us/control-plane` approval at head before `ship-it` enqueues it (ADR 0135; ADR
-  0053 / 0065 / 0100). It must never have routed here.
-- **The boundary could not be read** — an empty/unresolvable `CONTROL_PLANE_RE`. With no
-  boundary you cannot prove the diff is non-control-plane, so you must not treat it as trivial
-  (mirrors the gates' `CONTROL_PLANE_RE='.'` flag-everything posture).
+- **`control-plane`** — a path matched the live boundary (`.claude/**`, `.github/**`, a
+  gate-critical skill, the enforcement-guard packages). A control-plane diff is **never** trivial;
+  it takes the full path **and the §CP approve-then-enqueue gate** — a `@kamp-us/control-plane`
+  approval at head before `ship-it` enqueues it (ADR 0135; ADR 0053 / 0065 / 0100). It must never
+  have routed here.
+- **`content-undetermined` whose ADR probe comes back guard-touching** — a `.decisions/**` ADR
+  that is §CP by content (ADR 0164). Probe each touched ADR at head with the shared
+  `guard-content-probe` verb before you may treat the diff as ordinary; any `guard-touching` ⇒
+  route to the full path.
+- **`unknown`** — the classification could not be made (an unresolvable or uncompilable
+  boundary, an empty file set). With no classification you cannot prove the diff is
+  non-control-plane, so you must not treat it as trivial (mirrors the gates'
+  `CONTROL_PLANE_RE='.'` flag-everything posture). An unreadable answer is **not** a "no".
 - **The diff is not actually small / single-concern** — many files, a large hunk count, or
   visibly more than one logical concern. "Trivial" is a tiny, reviewable change; if it isn't,
   the bound that licenses the lighter checklist is gone.
@@ -135,8 +141,26 @@ fail-closed fallback (#1559) re-routes it to the full `review-code` / `review-do
 the worst case of a miss is paying the full (correct) cost, never an under-gated merge.
 
 ```bash
-if printf '%s\n' "$FILES" | grep -Eq "${CONTROL_PLANE_RE:-.}"; then
-  echo "review-trivial: not-trivial — control-plane file present; route to full path (ADR 0053/0065)"; exit 0
+# Fail-closed on EVERY value but the proven-ordinary one. The test is a positive match on the
+# STATE WORD, not on the exit status: the exit code discriminates the four states only once the
+# verb has RUN, so a bad flag (exit 1) or a missing binary (exit 127) would fail OPEN through
+# `… || ordinary`. Here they leave CP_STATE empty, which this test routes to the full path (#4161).
+if [ "$CP_STATE" != "not-control-plane" ]; then
+  # Resolve the one state that is an obligation rather than a verdict (ADR 0164, #4161).
+  if [ "$CP_STATE" = "content-undetermined" ]; then
+    HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+    GUARD_TOUCHING="$(printf '%s\n' "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+        gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
+          | pipeline-cli guard-content-probe classify --path "$adr" >/dev/null && echo "$adr"
+      done)"
+    if [ -z "$GUARD_TOUCHING" ]; then
+      : # every touched ADR probed not-guard-touching ⇒ the content axis is resolved, carry on
+    else
+      echo "review-trivial: not-trivial — guard-touching ADR (§CP by content, ADR 0164): $GUARD_TOUCHING; route to full path"; exit 0
+    fi
+  else
+    echo "review-trivial: not-trivial — §CP state '$CP_STATE'; route to full path (ADR 0053/0065; #4161)"; exit 0
+  fi
 fi
 
 # §DEV: the disclosure section decides triviality too — a disclosed deviation, or a missing heading,
@@ -321,7 +345,7 @@ review-code: PASS @ <HEAD_SHA> — merge-ready
 
 Lighter gate (ADR 0120 §2) — trivial diff verified against #<ISSUE> with the scoped checklist:
 
-- [PASS] Triviality re-affirmed — <N> file(s), +<add>/-<del>, no control-plane (live CONTROL_PLANE_RE from origin/main), no new surface
+- [PASS] Triviality re-affirmed — <N> file(s), +<add>/-<del>, §CP `not-control-plane` (cp-classify: path + ADR-0164 content, live from origin/main), no new surface
 - [PASS] Right one-liner — diff satisfies the AC: <criterion> — <evidence: file:line>
 - [PASS] No leaked secret — added lines scanned, clean
 - [PASS] No leaked local/home/absolute/sibling-repo path — added lines scanned, clean

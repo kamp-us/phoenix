@@ -280,30 +280,44 @@ UI_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   `review-doc` verdict their classes. `ship-it` requires the latest PASS in **each** namespace
   present before it merges.)
 
-**Then classify blocking vs non-blocking via the canonical §CP set** — the same probe the sibling
-gates run, read **freshly from `origin/main`** (the embedded literal is the fail-closed reference +
-drift-lockstep target, not the live decision source; a stale injected snapshot once mis-flagged a
-now-control-plane PR, #981):
+**Then classify blocking vs non-blocking via the canonical §CP set** — through the shared
+`cp-classify` verb, which re-resolves the boundary **freshly from `origin/main`** (#981) *and*
+covers the second §CP source: a guard-touching `.decisions/**` ADR is §CP **by content** (ADR 0164)
+with zero path matches, so a path-only test here would classify it non-blocking — the fail-open
+this verb removes (#4161, formats §CP):
 
 ```bash
-# §CP boundary is single-sourced in pipeline-cli (control-plane-paths/control-plane-re.ts, #2761);
-# run `pipeline-cli control-plane-paths` to print it. It is re-resolved from origin/main right below
-# (the #981 anti-self-authorization read), so this is only a fail-closed sentinel, never the live source.
-CONTROL_PLANE_RE='.'   # fail-closed default: every path is control-plane until origin/main resolves
-CP_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^CONTROL_PLANE_RE=' | head -n1 || true)"
-if [ -n "$CP_LIVE" ]; then
-  CONTROL_PLANE_RE="$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")"
-else
-  CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ treat as blocking (advisory)
+# Four states on stdout. Assert on the STATE WORD, never on the exit status — the exit code
+# discriminates the four states only once the verb has RUN, so `… || ordinary` fail-opens on a
+# usage error (1) or a missing binary (127). The `else` below is the catch-all (formats §CP; #4161).
+CP_STATE="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+  | pipeline-cli cp-classify classify --repo "$REPO")"
+# `content-undetermined` is an OBLIGATION, not an answer: probe each listed ADR at head before
+# calling this PR non-blocking (the same ADR-0164 verb ship-it Step 0 and review-code/doc run).
+if [ "$CP_STATE" = "content-undetermined" ]; then
+  HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+  gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+    | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+        gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
+          | pipeline-cli guard-content-probe classify --path "$adr" >/dev/null \
+          && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
+      done
+elif [ "$CP_STATE" != "not-control-plane" ]; then
+  # The catch-all: control-plane, unknown, AND anything unenumerated — the empty string a failed
+  # invocation yields included. Only a positive `not-control-plane` may skip the hold.
+  echo "BLOCKING (§CP state '$CP_STATE')"
 fi
-CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-  --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
 ```
 
-- **Empty** (an ordinary product-UI PR — the common case for this gate) → **non-blocking**: your
-  PASS marker binds `ship-it`.
-- **Non-empty** (the UI PR also touches a `.claude`/`.github` path or a gate-critical skill) →
-  **blocking** (§CP): you review it and post your findings, but **advisory only** — a
+- **`not-control-plane`** (an ordinary product-UI PR — the common case for this gate) →
+  **non-blocking**: your PASS marker binds `ship-it`.
+- **Any other value** — including the **empty string** a failed invocation leaves in `CP_STATE`
+  (a bad flag, or a `pipeline-cli` that is not on `PATH` and exits 127) — is **blocking**. The test
+  is a positive match on `not-control-plane`, never "the verb exited non-zero".
+- **`control-plane`**, **`unknown`**, or a `content-undetermined` that the ADR probe resolved to
+  BLOCKING (the UI PR also touches a `.claude`/`.github` path, a gate-critical skill, or a
+  guard-touching ADR; or the classification could not be made) → **blocking** (§CP): you review it
+  and post your findings, but **advisory only** — a
   `@kamp-us/control-plane` approval at head gates the merge and `ship-it` then enqueues it (ADR 0135
   approve-then-enqueue; ADR 0048 single merge authority). Say so in the verdict (Step 5, advisory path).
 

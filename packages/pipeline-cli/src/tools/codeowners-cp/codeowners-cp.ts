@@ -13,6 +13,14 @@
  * `require_code_owner_review` (under-protected; bit on #934/#953). This core reads
  * the §CP set FROM the regex (never a re-hardcoded copy — that's the whole point)
  * and checks every §CP path branch has a covering CODEOWNERS entry.
+ *
+ * **This is the one §CP site that is deliberately PATH-ONLY, and it is not a defect** (#4161).
+ * Everywhere else a bare path answer is non-authoritative — §CP has a second, content-inferred
+ * source (a guard-touching `.decisions/**` ADR, ADR 0164) that `cp-classify` forces callers to
+ * resolve. CODEOWNERS structurally cannot express a content predicate: GitHub matches it on
+ * paths. So the content clause is enforced at the merge-deciding gates instead, which is where a
+ * merge is actually decided. See the classification-site register in `gh-issue-intake-formats.md`
+ * §CP.
  */
 
 /**
