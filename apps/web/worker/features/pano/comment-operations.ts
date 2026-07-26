@@ -28,6 +28,7 @@ import {applyRemovalTransition} from "../lifecycle/apply-removal-transition.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
+	ownSandboxed,
 	resolveSandboxViewer,
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
@@ -303,18 +304,27 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 	// wire-facing `CommentRow` is the removal timestamp (presentation contract).
 	// The live shape comes from the `comment-fields.ts` column→field map; the
 	// tombstone overrides the four presentation fields it elides.
-	const rowToCommentRow = (row: typeof schema.commentRecord.$inferSelect): CommentRow => {
+	// `viewerId` is a REQUIRED parameter, not an optional with a default: `sandboxed` is
+	// owner-scoped, so every call site must state whose view it is shaping. A viewer-blind
+	// call site (the moderator queue, a broadcast payload) passes `null` deliberately and
+	// gets `false` — the one safe answer for a row that may reach a non-author (#4282).
+	const rowToCommentRow = (
+		row: typeof schema.commentRecord.$inferSelect,
+		viewerId: string | null,
+	): CommentRow => {
+		const sandboxed = ownSandboxed(row, viewerId);
 		const lifecycle = Removal.fromColumns(row);
 		if (Removal.isRemoved(lifecycle)) {
 			return {
 				...toCommentRow(row),
+				sandboxed,
 				author: "",
 				authorId: "",
 				body: SILINDI_PLACEHOLDER,
 				deletedAt: lifecycle.removedAt,
 			};
 		}
-		return toCommentRow(row);
+		return {...toCommentRow(row), sandboxed};
 	};
 
 	const listCommentsKeyset = Effect.fn("Pano.listCommentsKeyset")(function* (
@@ -404,7 +414,12 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				.limit(first + 1),
 		);
 
-		const page = forwardPage(fetched, first, (r: CommentRow) => r.id, rowToCommentRow);
+		const page = forwardPage(
+			fetched,
+			first,
+			(r: CommentRow) => r.id,
+			(row) => rowToCommentRow(row, viewerId),
+		);
 		const rows = yield* stampComments(page.rows, viewerId, opts.parallelStamps ?? false);
 
 		return {...page, rows, totalCount} satisfies CommentConnectionPage;
@@ -442,7 +457,7 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				),
 		);
 		return yield* stampComments(
-			fetched.map(rowToCommentRow),
+			fetched.map((row) => rowToCommentRow(row, viewerId)),
 			viewerId,
 			opts.parallelStamps ?? false,
 		);
@@ -471,7 +486,9 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				)
 				.orderBy(desc(schema.commentRecord.createdAt)),
 		);
-		return fetched.map(rowToCommentRow);
+		// The moderator queue is viewer-blind by construction — it reads OTHER people's
+		// pending comments, so the owner-scoped flag is `false` for every row here.
+		return fetched.map((row) => rowToCommentRow(row, null));
 	});
 
 	const lookupCommentPostId = Effect.fn("Pano.lookupCommentPostId")(function* (commentId: string) {
@@ -642,7 +659,9 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				commentId: input.commentId,
 				deleted: false,
 				hasReplies: true,
-				placeholder: rowToCommentRow(row),
+				// Viewer-blind: the placeholder is published to the whole thread topic
+				// (`live.comment.update`), so it must never carry an owner-scoped flag.
+				placeholder: rowToCommentRow(row, null),
 			} satisfies DeleteCommentResult;
 		}
 

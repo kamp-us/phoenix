@@ -104,6 +104,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 			body: "merhaba",
 			author: "umut",
 			authorId: "user_1",
+			sandboxed: false,
 			now,
 		});
 		const tempId = toEntityId("Comment", record.id);
@@ -127,6 +128,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 			body: "merhaba",
 			author: "umut",
 			authorId: "user_1",
+			sandboxed: false,
 			now,
 		});
 		const tempId = toEntityId("Comment", record.id);
@@ -155,6 +157,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 			body: "merhaba",
 			author: "umut",
 			authorId: "user_1",
+			sandboxed: false,
 			now,
 		});
 		const tempId = toEntityId("Comment", record.id);
@@ -191,6 +194,7 @@ describe("optimistic comment.add — real-store reconciliation (#1714)", () => {
 			body: "merhaba",
 			author: "umut",
 			authorId: "user_1",
+			sandboxed: false,
 			now,
 		});
 		// The pre-fix id: the bare record id, NOT toEntityId-qualified.

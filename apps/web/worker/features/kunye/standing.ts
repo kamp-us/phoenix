@@ -26,6 +26,15 @@ export const STORED_TIERS = ["çaylak", "yazar"] as const;
 export type StoredTier = (typeof STORED_TIERS)[number];
 
 /**
+ * Whether content authored at this tier lands in the mod-only sandbox (#1205): a
+ * çaylak's does, a yazar's is live. Pure and dependency-free so the SAME rule serves
+ * both sides of the create — the server's `sandboxedAtForAuthor` (`kunye/sandbox.ts`)
+ * and the client's optimistic comment node, which must predict the server's answer or
+ * the çaylak's own comment flashes as published before reconciliation (#4282).
+ */
+export const sandboxesNewContent = (tier: Tier | undefined): boolean => tier === "çaylak";
+
+/**
  * The `visitor < çaylak < yazar` ladder (ADR 0107 §4) — the canonical kamp.us
  * `Scale` the `Authorship` `Capability.Level` instances (#1235) floor against
  * (`AddEntry` = çaylak, `OpenTerm` = yazar).

@@ -44,6 +44,13 @@ export interface OptimisticCommentInput {
 	readonly author: string;
 	/** The author's user id — drives the edit/delete affordance gate on the node. */
 	readonly authorId: string;
+	/**
+	 * Whether this author's new comment lands sandboxed — `sandboxesNewContent(me.tier)`,
+	 * the SAME rule the server's `sandboxedAtForAuthor` applies. Required, not optional:
+	 * a forgotten flag renders a çaylak's comment as published for the whole optimistic
+	 * window, which is the false-publish this exists to prevent (#4282).
+	 */
+	readonly sandboxed: boolean;
 	/** The submit instant — seeds the temp id and `createdAt`/`updatedAt`. */
 	readonly now: Date;
 }
@@ -54,7 +61,8 @@ export interface OptimisticCommentInput {
  * the HTTP result arrives. `score`/`myVote` mirror the server's initial comment row
  * (score 0, no self-vote — `comment-operations.ts` `addComment`), else the reconciled
  * row flashes a phantom self-upvote (the #707 class); `deletedAt: null` renders the
- * node live (not a `[silindi]` tombstone).
+ * node live (not a `[silindi]` tombstone). `sandboxed` mirrors the server's create-time
+ * tier rule so a çaylak's node shows `incelemede` from the instant of submit (#4282).
  */
 export function optimisticCommentRecord(input: OptimisticCommentInput) {
 	return {
@@ -65,6 +73,7 @@ export function optimisticCommentRecord(input: OptimisticCommentInput) {
 		authorId: input.authorId,
 		score: 0,
 		myVote: null,
+		sandboxed: input.sandboxed,
 		createdAt: input.now,
 		updatedAt: input.now,
 		deletedAt: null,

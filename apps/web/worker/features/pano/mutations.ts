@@ -27,6 +27,7 @@ import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {InsufficientKarma} from "../kunye/errors.ts";
 import {gateContentOnKarma} from "../kunye/privilege.ts";
 import {decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {ownSandboxed} from "../lifecycle/SandboxVisibility.ts";
 import {authorDisplayLabel} from "../pasaport/author-label.ts";
 import {SelfVoteNotAllowed, VoterNotEligible} from "../vote/errors.ts";
 import {Bookmark} from "./Bookmark.ts";
@@ -158,6 +159,10 @@ const shapePost = (r: {
 		tags: r.tags,
 	});
 
+// `sandboxed` is REQUIRED here, never optional-with-a-default: it is owner-scoped
+// (#4282), and every one of these results is either returned to a specific viewer or
+// broadcast to the viewer-blind thread topic. Forcing each call site to state the value
+// is what keeps a broadcast payload from silently inheriting an author's review state.
 const shapeComment = (r: {
 	commentId: string;
 	parentId: string | null;
@@ -168,6 +173,7 @@ const shapeComment = (r: {
 	createdAt: Date;
 	updatedAt?: Date;
 	myVote?: boolean | null;
+	sandboxed: boolean;
 }): Comment =>
 	toComment({
 		id: r.commentId,
@@ -179,6 +185,7 @@ const shapeComment = (r: {
 		createdAt: r.createdAt,
 		updatedAt: r.updatedAt ?? null,
 		myVote: r.myVote ?? null,
+		sandboxed: r.sandboxed,
 	});
 
 export const mutations = {
@@ -544,7 +551,14 @@ export const mutations = {
 					sandboxedAt,
 					...(input.parentId ? {parentId: input.parentId} : {}),
 				});
-				const comment = shapeComment({...r, myVote: null});
+				// Safe to stamp the owner-scoped flag on this value even though it is also the
+				// broadcast node (#4282): the append below is `decidePublish`-gated, so a node
+				// whose flag is `true` is exactly the node that is never broadcast.
+				const comment = shapeComment({
+					...r,
+					myVote: null,
+					sandboxed: ownSandboxed({sandboxedAt, authorId: r.authorId}, user.id),
+				});
 				// Append to the `Post.comments` topic keyed by the parent post id — but
 				// only when the comment is live: the thread topic is viewer-blind, so a
 				// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
@@ -585,7 +599,9 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher, yield* PanoFeedCache);
 			const r = yield* pano.voteOnComment({commentId: input.id, voterId: UserId.make(user.id)});
-			const comment = shapeComment(r);
+			// Viewer-blind broadcast payload: a self-vote is rejected, so the voter is never the
+			// author and the owner-scoped flag is `false` for them regardless (#4282).
+			const comment = shapeComment({...r, sandboxed: false});
 			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
 			// Aggregated vote notification (#1698): see `post.vote` — a landed upvote
 			// notifies the comment author, rolled up per item, on a real state change only.
@@ -614,7 +630,8 @@ export const mutations = {
 				commentId: input.id,
 				voterId: UserId.make(user.id),
 			});
-			const comment = shapeComment(r);
+			// Viewer-blind broadcast payload — see `comment.vote`.
+			const comment = shapeComment({...r, sandboxed: false});
 			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
 			return comment;
 		}),
@@ -689,8 +706,18 @@ export const mutations = {
 				body: input.body,
 			});
 			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
-			const comment = shapeComment({...r, myVote: fresh?.myVote ?? null});
-			yield* live.comment.update(comment.id, {changed: ["body"], data: comment});
+			const comment = shapeComment({
+				...r,
+				myVote: fresh?.myVote ?? null,
+				sandboxed: fresh?.sandboxed ?? false,
+			});
+			// The thread topic is viewer-blind (#1205), so the broadcast payload is stripped of
+			// the owner-scoped flag while the author's own returned node keeps it — an edit must
+			// not fan a çaylak's review state out to subscribers (#4282).
+			yield* live.comment.update(comment.id, {
+				changed: ["body"],
+				data: {...comment, sandboxed: false},
+			});
 			return comment;
 		}),
 	),

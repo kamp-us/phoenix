@@ -62,6 +62,17 @@ test.describe("Pano addComment", () => {
 			timeout: 10_000,
 		});
 
+		// The owner-scoped in-review signal (#4282). This author signed up in this test and
+		// was never promoted, so they are a çaylak by default and their comment really is
+		// sandboxed — the flag is derived from live server state, not a fixture. Scoped to
+		// the comment's own `<article id="comment-…">` because the çaylak's POST is
+		// sandboxed too and renders its own badge in the header.
+		const ownComment = page
+			.locator('article[id^="comment-"]')
+			.filter({hasText: topLevelBody})
+			.first();
+		await expect(ownComment.getByTestId("incelemede-badge")).toBeVisible({timeout: 10_000});
+
 		// Click "yanıtla" on the top-level comment. Pick the first reply trigger
 		// — there's only one comment so this is unambiguous.
 		const replyTrigger = page.locator('[data-testid^="pano-comment-reply-trigger-"]').first();

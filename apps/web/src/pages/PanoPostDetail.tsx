@@ -14,7 +14,9 @@ import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useLocation, useNavigate, useParams} from "react-router";
 import type {Post, ReportReceipt} from "../../worker/features/fate/views";
+import {sandboxesNewContent} from "../../worker/features/kunye/standing";
 import {useSession} from "../auth/client";
+import {useMe} from "../auth/useMe";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
@@ -626,6 +628,10 @@ function Comments(props: CommentsProps) {
 	// into the SAME nested `Post.comments` connection). Null unless the author identity
 	// is known — the temp node mirrors the author, so a missing name/id degrades cleanly
 	// to the non-optimistic round-trip.
+	// `sandboxed` comes from the trusted account tier on the fate `me` view (#1297), the
+	// same signal `FirstContributionOnramp` gates on — so the temp node predicts the
+	// server's create-time answer instead of flashing as published (#4282).
+	const {me} = useMe();
 	const optimisticComment = React.useMemo(
 		() =>
 			props.currentUserId != null && props.currentUserName != null
@@ -633,9 +639,10 @@ function Comments(props: CommentsProps) {
 						connection: post.comments,
 						author: props.currentUserName,
 						authorId: props.currentUserId,
+						sandboxed: sandboxesNewContent(me?.tier),
 					}
 				: null,
-		[post.comments, props.currentUserId, props.currentUserName],
+		[post.comments, props.currentUserId, props.currentUserName, me?.tier],
 	);
 
 	const composerFor = React.useCallback(
@@ -795,6 +802,8 @@ function CommentComposer({
 		connection: unknown;
 		author: string;
 		authorId: string;
+		/** Whether this author's comment lands in the çaylak sandbox (#4282). */
+		sandboxed: boolean;
 	} | null;
 	autoFocus?: boolean;
 }) {
@@ -819,6 +828,7 @@ function CommentComposer({
 						body: value,
 						author: optimistic.author,
 						authorId: optimistic.authorId,
+						sandboxed: optimistic.sandboxed,
 						now: new Date(),
 					})
 				: undefined;

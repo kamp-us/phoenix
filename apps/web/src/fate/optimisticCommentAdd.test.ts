@@ -28,6 +28,7 @@ describe("optimisticCommentRecord — the temp node payload", () => {
 			body: "merhaba",
 			author: "umut",
 			authorId: "user_1",
+			sandboxed: false,
 			now: fixedNow,
 		});
 		expect(record).toEqual({
@@ -39,11 +40,29 @@ describe("optimisticCommentRecord — the temp node payload", () => {
 			// server initial: score 0, no self-vote (else a phantom self-upvote flash, #707)
 			score: 0,
 			myVote: null,
+			// a yazar's comment is live on arrival — no `incelemede` badge
+			sandboxed: false,
 			createdAt: fixedNow,
 			updatedAt: fixedNow,
 			// live node, not a [silindi] tombstone
 			deletedAt: null,
 		});
+	});
+
+	// The false-publish this whole change exists to close (#4282): without the flag the
+	// çaylak's own node renders identically to a published one for the entire optimistic
+	// window, and the reconciled server row then flips it — a visible lie, then a flicker.
+	it("carries sandboxed for a çaylak author so the temp node never poses as published", () => {
+		const record = optimisticCommentRecord({
+			postId: "post_1",
+			parentId: null,
+			body: "ilk yorumum",
+			author: "umut",
+			authorId: "user_1",
+			sandboxed: true,
+			now: fixedNow,
+		});
+		expect(record.sandboxed).toBe(true);
 	});
 
 	it("carries the parentId for a reply (same nested connection as top-level)", () => {
@@ -53,6 +72,7 @@ describe("optimisticCommentRecord — the temp node payload", () => {
 			body: "yanıt",
 			author: "umut",
 			authorId: "user_1",
+			sandboxed: false,
 			now: fixedNow,
 		});
 		expect(record.parentId).toBe("comm_parent");

@@ -51,6 +51,13 @@ type IntrinsicRow = {[K in keyof typeof intrinsicFields]: ReturnType<(typeof int
 export interface CommentRow extends IntrinsicRow {
 	myVote?: boolean | null;
 	/**
+	 * The owner-scoped in-review flag (#4282, the `Comment` leg of #2200) — the twin of
+	 * `PostSummaryRow.sandboxed`: stamped by the read paths via `ownSandboxed`, so it is
+	 * `true` only for the author's own still-sandboxed comment. `undefined` when a read
+	 * doesn't stamp it; the shaper then defaults `false`.
+	 */
+	sandboxed?: boolean;
+	/**
 	 * The author's LIVE handle (`user_profile.username` / `.displayName`), stamped by
 	 * `stampAuthorIdentity` after the batched `getProfileIdentitiesByIds` read (#2139)
 	 * so the client renders the CURRENT display name via `actorLabel`, not the write-time
@@ -81,6 +88,7 @@ export type CommentFields = Omit<IntrinsicRow, "updatedAt" | "deletedAt"> & {
 	updatedAt?: Date | null;
 	deletedAt?: Date | null;
 	myVote?: boolean | null;
+	sandboxed?: boolean;
 	authorUsername?: string | null;
 	authorDisplayName?: string | null;
 	reactions?: ReactionAggregate;
@@ -112,6 +120,7 @@ export const commentViewFields = {
 	updatedAt: true,
 	deletedAt: true,
 	myVote: true,
+	sandboxed: true,
 	authorUsername: true,
 	authorDisplayName: true,
 	reactions: true,
