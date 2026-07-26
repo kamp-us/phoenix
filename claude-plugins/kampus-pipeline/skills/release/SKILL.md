@@ -135,7 +135,9 @@ for ISSUE in $(gh api "repos/$REPO/issues?state=all&labels=status:awaiting-relea
     --jq '.[] | select(.pull_request | not) | .number'); do
   # find the PR(s) that closed this issue and check each body for a `Flag: <key>` line naming THIS key
   # (the grammar write-code Step 5 writes and ship-it Step 5b reads)
-  for PR in $(gh api "repos/$REPO/issues/$ISSUE/timeline?per_page=100" \
+  # --paginate + a STREAMING --jq: per_page caps at 100, so the closing PR of an issue with a
+  # long timeline would otherwise fall off the read and drop the flag from the release queue (#4193)
+  for PR in $(gh api --paginate "repos/$REPO/issues/$ISSUE/timeline?per_page=100" \
       --jq '.[] | select(.event=="cross-referenced" or .event=="closed")
                 | .source.issue.number? // empty' 2>/dev/null | sort -u); do
     body=$(gh api "repos/$REPO/pulls/$PR" --jq '.body // ""' 2>/dev/null)

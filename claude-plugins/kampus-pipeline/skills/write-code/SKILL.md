@@ -1571,7 +1571,10 @@ itself**: read the PR body back and assert it matches a recognized closing keywo
 
 ```bash
 # (a) the cross-reference landed (a closing OR non-closing mention both show here — necessary, not sufficient)
-gh api repos/$REPO/issues/<N>/timeline \
+#     --paginate + a STREAMING --jq, per the contract's pagination rule: the timeline endpoint
+#     defaults to 30 events/page, so an un-paginated read calls a cross-reference past event 30
+#     absent — a false alarm on any issue with a bit of history (#4193).
+gh api --paginate "repos/$REPO/issues/<N>/timeline?per_page=100" \
   --jq '.[] | select(.event == "cross-referenced") | .event'
 # (b) the SUFFICIENT check, REST-only: the seam is armed iff the body carries EITHER a real
 #     CLOSING keyword for #N (full-close PR — the same set ship-it Step 1 resolves:
