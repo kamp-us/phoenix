@@ -223,30 +223,102 @@ it adds no engine→engine and no human-facing edge.
   green. The §CP unblock logic lives once — in ship-it / `cp-cardinality` — and both the watcher and
   the shipper read that single source, so the trigger fires exactly when the enqueue would discharge
   and no second copy of the §CP discharge forks into this def.
-- **An unreadable review query resolves to UNKNOWN — never to an approval (fail closed).** The poll
-  reads live GitHub, so it must assume the response may not be review data at all. **Validate the
-  payload's shape before interpreting it**, and treat every non-conforming response — a 503/error
-  body, a non-array payload, a parse failure, a non-zero `gh` exit — as **UNKNOWN → do not fire,
-  re-arm**, never as a definite answer. A bare non-empty test on the response is the defect: during a
-  live GitHub partial outage an error body read as an approver's login and declared two unapproved §CP
-  PRs approved (#3715). Three rules make the positive branch fail closed:
+- **Every live input the discharge predicate consumes resolves to UNKNOWN when its read could not
+  execute — never to a definite answer (fail closed).** This is a rule over the *predicate*, not a
+  list of the reads that have failed historically: a tick may interpret an input only after proving
+  it has the shape the predicate expects — an array where an array is expected, a 40-hex SHA where a
+  SHA is expected, an interpretable CI state where a state is expected. Anything else — a 503/error
+  body, a non-array payload, a parse failure, a non-zero `gh` exit, an empty or short SHA — is
+  **UNKNOWN → do not fire, re-arm**. Guarding only the input that failed last time just moves the
+  defect one read over, twice over now: a bare non-empty test on the reviews payload let an error
+  body read as an approver's login and declared two unapproved §CP PRs approved (#3715), and then the
+  unvalidated head SHA compared as `.commit_id == ""`, matched nothing, and printed a confident "no
+  approval" while the reviews guard still passed (#4108).
+
+  Each guard has the same three-part shape — **SHAPE FIRST** (prove the payload before interpreting
+  it), **EXACT MEMBERSHIP** (an approver counts only on an exact login match against an *active*
+  control-plane member, never a substring or non-empty test; each candidate's membership read is
+  itself three-way — `404` is a definite non-member, `200` carries the state, **anything else is
+  UNKNOWN** — because collapsing the last two into "not a member" is the same false-definite one read
+  further out), **VERIFIED HEAD** (`.commit_id == $HEAD`, ADR 0058) — and the same disposition on
+  failure. Only the assertion differs.
+
+  **The block below is the tick's guards, and only its guards** — it ends where the discharge begins.
+  Proving the inputs is this def's job; *deciding* on them is not, because the decision is ship-it's
+  §CP gate via `cp-cardinality` (the bullet above) and no second copy of it may fork into this def.
+  So the block assembles no approver set, derives no signal flags, and fires nothing — the
+  per-approver membership read above is stated as a rule rather than copied here, since it runs where
+  the approver set is assembled, inside that single-source discharge.
 
   ```bash
-  # 1. SHAPE FIRST: interpret nothing until the payload is proven to be the expected JSON array.
-  #    `jq -e 'type=="array"'` is the assertion — a 503 body is an object, so it exits non-zero.
+  # The non-firing exit that is NOT a definite answer: it names the read that could not execute.
+  unknown() { echo "approval-watcher #$PR: $1 READ FAILED ($2) — UNKNOWN, re-arming; NOT 'no approval'"; }
+  # `gh api --paginate` emits one JSON value per page, so slurp and assert EVERY page is an array —
+  # a per-page `jq -e` reports only the last page's type and waves an early error body through.
+  all_pages_are_arrays() { jq -e -s 'length > 0 and all(.[]; type == "array")' >/dev/null 2>&1; }
+
+  # 1. HEAD — resolve it explicitly and prove it is a 40-hex SHA BEFORE any `.commit_id == $HEAD`
+  #    comparison is interpreted. An empty $HEAD matches no commit_id, so an unvalidated head read
+  #    lands on the definite "no approval" branch with every other guard still green (#4108).
+  HEAD="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha' 2>/dev/null)"
+  printf '%s' "$HEAD" | grep -Eq '^[0-9a-f]{40}$' || { unknown head "no 40-hex SHA"; return 0; }
+
+  # 2. AUTHOR — cp-cardinality's single-owner branch keys on it, and an empty author would let a
+  #    self-approval pass as a non-author approval.
+  AUTHOR="$(gh api "repos/$REPO/pulls/$PR" --jq '.user.login' 2>/dev/null)"
+  [ -n "$AUTHOR" ] || { unknown author "empty login"; return 0; }
+
+  # 3. TEAM ROSTER — an unread roster reaching the discharge as empty is N==0, a shape it decides on.
+  MEMBERS_JSON="$(gh api --paginate "orgs/${REPO%%/*}/teams/control-plane/members?per_page=100" 2>/dev/null)" \
+    && printf '%s' "$MEMBERS_JSON" | all_pages_are_arrays \
+    || { unknown roster "unreadable payload"; return 0; }
+
+  # 4. REVIEWS — the original guard, unchanged in substance: a 503 body is an object, not an array.
   REVIEWS="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" 2>/dev/null)" \
-    && printf '%s' "$REVIEWS" | jq -e 'type == "array"' >/dev/null 2>&1 \
-    || { echo "approval-watcher #$PR: reviews READ FAILED (unreadable payload) — UNKNOWN, re-arming; NOT 'no approval'"; return 0; }
-  # 2. EXACT MEMBERSHIP: an approver counts only if their login matches an actual control-plane
-  #    team member exactly (`--jq '.state'` == active), never a substring or non-empty test.
-  # 3. VERIFIED HEAD: require `.commit_id == $HEAD` on this proven-array read (ADR 0058).
+    && printf '%s' "$REVIEWS" | all_pages_are_arrays \
+    || { unknown reviews "unreadable payload"; return 0; }
+
+  # 5. MACHINE GATES — green is a PRECONDITION of firing, so this guard must PROVE it, not merely
+  #    survive it. `pipeline-cli checks read --expect green` has more than two outcomes (read them
+  #    from packages/pipeline-cli/src/tools/checks/command.ts, never guess): 0 = proven green; 1 =
+  #    the head was read and is NOT green (red/pending) — and also its bad-input exit, so treat 1 as
+  #    the fail-CLOSED definite; 2 = its typed unknown, an unreadable head that is neither green nor
+  #    red (#3999); 127 = a PATH gap and any other non-zero a crash, i.e. the read never ran.
+  #    Branching on `rc == 2` alone lets 1/127/anything-else fall through to a fire — the fail-OPEN
+  #    polarity of #3715, committed inside the fix for it. Enumerate; only a proven-green 0 continues.
+  pipeline-cli checks read --pr "$PR" --expect green >/dev/null 2>&1; rc=$?
+  case "$rc" in
+    0) : ;;                                                       # proven green — the only continuing branch
+    1) echo "approval-watcher #$PR: machine gates not green (read OK, definite)"; return 0 ;;
+    *) unknown "machine gates" "checks exit $rc"; return 0 ;;     # 2, 127, crash — the read never ran
+  esac
+
+  # → GUARDS END HERE. Every input is proven readable and the gates are proven green, so hand the
+  #   tick to the single-source discharge (the bullet above): ship-it's §CP gate, run through
+  #   `pipeline-cli cp-cardinality decide` on the proven $HEAD / $AUTHOR / $MEMBERS_JSON / $REVIEWS.
+  #   That call resolves the active approver set and the SHA-bound signal flags itself — do NOT
+  #   re-derive either here, which is what forks a second copy of the discharge into this def.
+  #   Read its verdict off its OWN codes: 0 discharges (fire the shipper), 1 is the definite stop;
+  #   every other non-zero means the decision never ran (e.g. exit 4, the unread-stdin code) and is
+  #   this tick's UNKNOWN — never read a stop off "non-zero" (the collision #4204 fixed in
+  #   cp-classify).
   ```
 
-  **Log "read failed" distinctly from "no approval."** They are different facts with the same
-  non-firing outcome, and collapsing them makes a GitHub outage look like a human who simply hasn't
-  approved yet — a silent stall nobody can see. The watcher's non-firing line must name which one it
-  was. The durable authority is still `cp-cardinality` and the shipper's own re-check at enqueue; this
-  rule is defense in depth on the trigger, so a hiccup can never *start* a §CP enqueue.
+  The exit-code idiom is the shipped one, not a new invention: `STDIN_READ_FAILED_EXIT_CODE = 4`
+  in [`packages/pipeline-cli/src/read-stdin.ts`](../../../packages/pipeline-cli/src/read-stdin.ts) —
+  "distinct from a gate's own verdict codes: the input was never read." So a tool's verdict codes are
+  the only codes you read a verdict off; any other non-zero is a read that never happened.
+
+  **Log "read failed" distinctly from a definite non-firing answer, and name which read failed.**
+  They are different facts with the same non-firing outcome, and collapsing them makes a GitHub
+  outage look like a human who simply hasn't approved yet — a silent stall nobody can see. So a tick
+  ends on exactly one line, and every branch above reaches one: the discharge; a **definite**
+  non-firing line that says which condition held — `machine gates not green (read OK, definite)` from
+  the guard, `no approval at current head (read OK, definite)` from the discharge's stop; or the
+  `unknown` line naming the input that could not be read. The durable authority is still
+  `cp-cardinality` and the shipper's own re-check at enqueue; this rule is defense in depth on the
+  trigger, so a hiccup can never *start* a §CP enqueue — nor hide a stall behind a
+  confident-sounding non-firing line.
 - **Approved at the current head + green → wake and spawn the shipper.** When the predicate discharges
   — a non-author control-plane approval bound to the PR's *current* head, machine gates green — the
   watcher wakes you to spawn the approval-aware `shipper` on that head. The shipper re-runs the same
