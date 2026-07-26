@@ -126,10 +126,8 @@ export const classifyControlPlane = (
 /**
  * Is this state a HOLD — anything other than the one proven-ordinary verdict?
  *
- * This is the predicate the CLI's exit code mirrors, and it is why BOTH naive bash shapes are
- * fail-closed: `cp-classify … && BLOCKING` holds on §CP, on an unresolved content axis, and on
- * an unresolvable classification, while `cp-classify … || ordinary` takes the ordinary branch
- * only on positive proof. The exit code can never say "ordinary" without that proof; the
- * stdout state word is the refinement a caller reads to avoid over-blocking.
+ * This is the predicate the CLI's exit code mirrors, over the four states the classifier can
+ * reach. It does NOT extend to whether the classifier ran at all — a caller asserts ordinariness
+ * on the stdout state word, never on a bare non-zero exit (see the tool README).
  */
 export const isHold = (state: CpState): boolean => state !== "not-control-plane";

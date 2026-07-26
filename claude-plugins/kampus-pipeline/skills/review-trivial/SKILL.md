@@ -141,8 +141,10 @@ fail-closed fallback (#1559) re-routes it to the full `review-code` / `review-do
 the worst case of a miss is paying the full (correct) cost, never an under-gated merge.
 
 ```bash
-# Fail-closed on EVERY state but the proven-ordinary one — `cp-classify` exits 0 on
-# control-plane / content-undetermined / unknown alike, so this single test cannot fail open.
+# Fail-closed on EVERY value but the proven-ordinary one. The test is a positive match on the
+# STATE WORD, not on the exit status: the exit code discriminates the four states only once the
+# verb has RUN, so a bad flag (exit 1) or a missing binary (exit 127) would fail OPEN through
+# `… || ordinary`. Here they leave CP_STATE empty, which this test routes to the full path (#4161).
 if [ "$CP_STATE" != "not-control-plane" ]; then
   # Resolve the one state that is an obligation rather than a verdict (ADR 0164, #4161).
   if [ "$CP_STATE" = "content-undetermined" ]; then

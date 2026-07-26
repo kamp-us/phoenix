@@ -287,7 +287,9 @@ with zero path matches, so a path-only test here would classify it non-blocking 
 this verb removes (#4161, formats §CP):
 
 ```bash
-# Four states on stdout; exit 0 on every hold state, 1 ONLY on a proven `not-control-plane`.
+# Four states on stdout. Assert on the STATE WORD, never on the exit status — the exit code
+# discriminates the four states only once the verb has RUN, so `… || ordinary` fail-opens on a
+# usage error (1) or a missing binary (127). The `else` below is the catch-all (formats §CP; #4161).
 CP_STATE="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
   | pipeline-cli cp-classify classify --repo "$REPO")"
 # `content-undetermined` is an OBLIGATION, not an answer: probe each listed ADR at head before
@@ -300,11 +302,18 @@ if [ "$CP_STATE" = "content-undetermined" ]; then
           | pipeline-cli guard-content-probe classify --path "$adr" >/dev/null \
           && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
       done
+elif [ "$CP_STATE" != "not-control-plane" ]; then
+  # The catch-all: control-plane, unknown, AND anything unenumerated — the empty string a failed
+  # invocation yields included. Only a positive `not-control-plane` may skip the hold.
+  echo "BLOCKING (§CP state '$CP_STATE')"
 fi
 ```
 
 - **`not-control-plane`** (an ordinary product-UI PR — the common case for this gate) →
   **non-blocking**: your PASS marker binds `ship-it`.
+- **Any other value** — including the **empty string** a failed invocation leaves in `CP_STATE`
+  (a bad flag, or a `pipeline-cli` that is not on `PATH` and exits 127) — is **blocking**. The test
+  is a positive match on `not-control-plane`, never "the verb exited non-zero".
 - **`control-plane`**, **`unknown`**, or a `content-undetermined` that the ADR probe resolved to
   BLOCKING (the UI PR also touches a `.claude`/`.github` path, a gate-critical skill, or a
   guard-touching ADR; or the classification could not be made) → **blocking** (§CP): you review it

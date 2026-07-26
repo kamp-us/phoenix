@@ -12,12 +12,12 @@
  * human reason (and, for `content-undetermined`, the ADRs still owed a content probe) goes to
  * **stderr**. The predicate itself is the pure core in `cp-classify.ts`.
  *
- * **Exit code = the hold decision, and it is fail-closed in both directions:** 0 on every state
- * EXCEPT `not-control-plane`, which exits 1. So `cp-classify … && echo BLOCKING` holds on §CP, on
- * an unresolved content axis, and on an unresolvable classification; and `cp-classify … || ordinary`
- * takes the ordinary branch only on positive proof. Neither naive shape can silently fail open —
- * which is the whole point, since the path-only sites that motivated this verb reached for exactly
- * those shapes.
+ * **Exit code:** 0 on every hold state, and {@link NOT_CONTROL_PLANE_EXIT_CODE} (3) — a code no
+ * failure-to-run produces — on the one proven-ordinary verdict. The exit code discriminates the
+ * four states ONLY ONCE THE VERB HAS RUN; it says nothing about whether it ran, so a caller must
+ * assert on the stdout state word (`[ "$CP_STATE" = "not-control-plane" ]`), never on mere
+ * non-zero. `… || ordinary` is UNSAFE: it fires on a usage error (1) and a missing binary (127)
+ * alike. See the README's "How to call this safely" for the observed failure modes.
  *
  * `content-undetermined` is an OBLIGATION, not a verdict: resolve it by running the existing
  * `guard-content-probe` verb over each listed `.decisions/**` file at the PR head (ADR 0164). It is
@@ -30,6 +30,15 @@ import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {extractControlPlaneRe} from "../codeowners-cp/codeowners-cp.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
 import {type CpClassification, classifyControlPlane, isHold} from "./cp-classify.ts";
+
+/**
+ * The proven-ordinary verdict's own exit code — deliberately NOT 1, which effect-cli already
+ * returns for a usage error (a bad flag), and not 127, which the shell returns for a missing
+ * binary. Same spirit as `STDIN_READ_FAILED_EXIT_CODE` (#3924): a code that means "the tool never
+ * ran" must be separable from a code that means "the tool ran and proved it ordinary" — otherwise
+ * `[ $? -ne 0 ]` reads a failure to invoke as a verdict, the fail-open this verb exists to remove.
+ */
+export const NOT_CONTROL_PLANE_EXIT_CODE = 3;
 
 const filesFileFlag = Flag.string("files-file").pipe(
 	Flag.optional,
@@ -127,7 +136,8 @@ const classifyCmd = Command.make(
 
 		yield* Effect.sync(() => process.stderr.write(reasonLine(result)));
 		yield* Console.log(result.state);
-		if (!isHold(result.state)) return yield* Effect.sync(() => process.exit(1));
+		if (!isHold(result.state))
+			return yield* Effect.sync(() => process.exit(NOT_CONTROL_PLANE_EXIT_CODE));
 	}),
 ).pipe(
 	Command.withDescription(

@@ -211,7 +211,9 @@ PR=<pr number>
 # guard-touching `.decisions/**` ADR is §CP BY CONTENT (ADR 0164) with zero path matches, so the old
 # path-only grep here flagged it non-blocking — the fail-open this verb removes.
 # Four states on stdout: control-plane / content-undetermined / not-control-plane / unknown.
-# Exit 0 on every hold state, 1 ONLY on a proven `not-control-plane` — fail-closed in both idioms.
+# Assert on the STATE WORD, never on the exit status — the exit code discriminates the four states
+# only once the verb has RUN, so `… || ordinary` fail-opens on a usage error (1) or a missing
+# binary (127). The `else` below is the catch-all that makes that safe (formats §CP; #4161).
 CP_STATE="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
   | pipeline-cli cp-classify classify --repo "$REPO")"
 # `content-undetermined` is an OBLIGATION, not an answer: probe each touched ADR at head with the
@@ -224,6 +226,10 @@ if [ "$CP_STATE" = "content-undetermined" ]; then
           | pipeline-cli guard-content-probe classify --path "$adr" >/dev/null \
           && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
       done
+elif [ "$CP_STATE" != "not-control-plane" ]; then
+  # The catch-all: control-plane, unknown, AND anything unenumerated — the empty string a failed
+  # invocation yields included. Only a positive `not-control-plane` may skip the hold.
+  echo "BLOCKING (§CP state '$CP_STATE')"
 fi
 # blocking → advisory only; a control-plane approval @head → ship-it enqueues (ADR 0135; §CP set 0053/0065/0073)
 ```
@@ -239,6 +245,9 @@ fi
   in the verdict (Step 5, advisory path). **This is the common case for a skill PR that edits a gate** —
   every gate skill is gate-critical, so a PR to `review-code`/`review-doc`/`review-skill`/
   `ship-it`/`review-plan`/this-formats-file lands here and your verdict is advisory.
+- **Any other value** — including the **empty string** a failed invocation leaves in `CP_STATE`
+  (a bad flag, or a `pipeline-cli` that is not on `PATH` and exits 127) — is **blocking** too. The
+  test is a positive match on `not-control-plane`, never "the verb exited non-zero".
 - **`not-control-plane`** — the one proven-ordinary state (only non-gate-critical `skills/**` —
   `triage`, `plan-epic`, `write-code`, `heal-ci`, `report`, … — possibly alongside other
   non-blocking paths, and no `.decisions/**` file left unprobed) → **non-blocking**. Your PASS

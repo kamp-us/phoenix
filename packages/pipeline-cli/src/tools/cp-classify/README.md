@@ -27,23 +27,56 @@ This verb makes the path-only answer **unrepresentable as a verdict**.
 | --- | --- | --- |
 | `control-plane` | a path matched the live boundary — authoritative §CP | 0 |
 | `content-undetermined` | no path matched, but `.decisions/**` files are present — **an obligation, not a verdict**: probe each with `guard-content-probe` before claiming ordinary | 0 |
-| `not-control-plane` | path clear **and** no `.decisions/**` file, so the content clause has nothing to decide — the one proven-ordinary verdict | 1 |
+| `not-control-plane` | path clear **and** no `.decisions/**` file, so the content clause has nothing to decide — the one proven-ordinary verdict | 3 |
 | `unknown` | the classification could not be made (unresolvable/uncompilable boundary, empty file set) — treat as §CP and hold | 0 |
 
 `unknown` is deliberately its own state. A read that failed and a change that is genuinely
 non-§CP are **different facts**; collapsing them is the recurring fail-open defect class in this
 repo (#3715, #4108, #4171, #4191).
 
-**The exit code is fail-closed in both bash idioms.** It is 0 on every hold state and 1 only on
-`not-control-plane`, so:
+## How to call this safely — assert on the state word, never on a bare non-zero
+
+The exit code discriminates the four states **only once the verb has run.** It cannot tell you
+*whether* it ran, and the verb not running is not hypothetical here — a bare `pipeline-cli` exits
+**127** when the shim is off `PATH`. Observed, at this head:
+
+| invocation | exit | stdout |
+| --- | --- | --- |
+| a hold state (`control-plane` / `content-undetermined` / `unknown`) | 0 | the state word |
+| `not-control-plane` | 3 | `not-control-plane` |
+| unread stdin (`STDIN_READ_FAILED_EXIT_CODE`, #3924) | 4 | *(empty)* |
+| a bad flag (effect-cli usage error) | 1 | the help text — **no state word** |
+| a missing binary | 127 | *(empty)* |
+
+**The sanctioned idiom is a positive match on the stdout state word** — what all three rewired
+gates (`review-design`, `review-skill`, `review-trivial`) already do. Only that shape is proof:
 
 ```bash
-… | pipeline-cli cp-classify classify --repo "$REPO" && echo "BLOCKING"    # holds on §CP, undetermined, unknown
-… | pipeline-cli cp-classify classify --repo "$REPO" || echo "ordinary"    # ordinary only on positive proof
+CP_STATE="$(… | pipeline-cli cp-classify classify --repo "$REPO")"
+if [ "$CP_STATE" = "not-control-plane" ]; then
+  : # proven ordinary — the ONLY branch that may skip the §CP hold
+else
+  echo "BLOCKING (§CP state '$CP_STATE')"   # every other value, INCLUDING the empty string a failed invocation yields
+fi
 ```
 
-Neither shape can silently fail open — which matters, because those are exactly the shapes the
-path-only sites reached for.
+**Both naive exit-status shapes are UNSAFE. Do not use them:**
+
+```bash
+… | pipeline-cli cp-classify classify --repo "$REPO" || echo "ordinary"   # UNSAFE — fires on 1 and 127 too
+… | pipeline-cli cp-classify classify --repo "$REPO" && echo "BLOCKING"   # UNSAFE — emits nothing when the verb never ran
+```
+
+`||` treats *every* non-zero as the ordinary verdict, so a bad flag or a missing binary routes a
+§CP change to the ordinary branch; `&&` simply stays silent, so the BLOCKING line the caller was
+relying on never appears. Both fail **open**.
+
+`not-control-plane` therefore carries its own exit code, **3** — one that neither effect-cli's
+usage error (1) nor a missing binary (127) nor an unread stdin (4) produces. An exact
+`[ "$rc" -eq 3 ]` test is positive proof; `[ "$rc" -ne 0 ]` is not. This is the
+`STDIN_READ_FAILED_EXIT_CODE` convention (`../../read-stdin.ts`, #3924) applied to the verdict
+itself: *"the tool never ran"* must never be readable as an answer. Note that a pipe hides the
+verb's status entirely unless `set -o pipefail` is on — capture stdout, as above, and test that.
 
 ## Usage
 
