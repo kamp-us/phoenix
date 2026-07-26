@@ -524,6 +524,36 @@ before composing the Step 5 verdict** so the appended row appears in the table.
 
 ---
 
+## Step 4c — Deviation-disclosure gate: an undisclosed departure is a blocking finding (§DEV)
+
+Every `write-code` PR body carries a `## Deviations` section stating what the implementation
+departed from — the issue, an acceptance criterion, a reviewer's guidance, or a governing ADR — or
+the literal `None.`. The section, the seven classes, the detection tiers, the canonical Tier-M scan,
+and the two-branch verdict rule live once in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §DEV; run them from there and don't
+re-derive them.
+
+**This gate owns the class the incident belongs to.** #3986 was a *skill* PR: it narrowed ADR 0115
+§5's reclaim invariant **in skill prose**, the author offered in review conversation to file the
+amending ADR, the body carried nothing, and the narrowing merged as debt an audit reconstructed
+(#3993 F1). §DEV class 2 — an ADR departure with no amending ADR — is therefore continuous with
+Step 4's check 4 (gate-invariant preservation): a quietly-narrowed invariant is *both* a weakened
+gate and an undisclosed deviation. Where check 4 asks *did this weaken a guardrail*, this step asks
+*did the author say what they changed about the governing decision*. A diff can fail either alone —
+a disclosed narrowing is still a check-4 FAIL if it weakens a gate, and an authorized, non-weakening
+change is still a §DEV FAIL if the body hid it.
+
+Fold **one** `deviation-disclosure` row into the conjunctive verdict by §DEV's rule
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]`, absent is not `None.`; disclosed ⇒
+judged on authorized / needs-an-ADR / needs-a-follow-up; clean ⇒ PASS, phrased as *nothing
+undisclosed that this gate could see*, never as *no deviations exist*).
+
+```
+- [FAIL] deviation-disclosure — skills/write-code/SKILL.md:NNN narrows ADR 0115 §5's reclaim invariant (§DEV class 2) and the body's `## Deviations` says `None.`; disclose it and either cite the amending ADR or add one (the #3986/#3993 F1 remedy)
+```
+
+---
+
 ## Step 5 — Land the verdict
 
 **Run the specialist fan-out + route step (Step 4b) before composing the verdict** so any

@@ -1476,6 +1476,27 @@ regression of #1257/#1271). In the graceful-absence case (no `product-developmen
 substrate, ADR 0062) Step 4b never fires, so there is no `FLAG_KEY` and no `Flag:` line — the PR
 ships normally.
 
+**Every PR body carries a `## Deviations` section — no exceptions, and `None.` only after you
+walked the list.** You made judgment calls the issue did not specify: you narrowed a suggested
+fix-shape, you left a sibling defect for a follow-up, you declined a reviewer's optional
+suggestion, you pushed past a hook, you changed a test that asserted the defect. Those calls are
+usually right, and until now nothing made you say them out loud — so they lived in your session
+and died there, and the pipeline only learned about the ones a forthcoming run happened to
+volunteer. The section, its four fields, the **seven classes** you check `None.` against, and the
+gates' verdict rule are defined once in the contract's
+[§DEV](../gh-issue-intake-formats.md) — read the classes there and compose against them; do not
+re-derive them here. Two operational points that are yours, not the contract's:
+
+- **Write it last, from the whole build, not from memory of the plan.** Re-read your own diff
+  against the issue's `### What to build` + `### Acceptance criteria` and against any ADR you
+  touched, then walk the seven classes. A deviation you noticed at hour one and forgot by PR-open
+  is exactly the one that ships undisclosed.
+- **`None.` is a claim you are accountable for.** A gate that finds a class-N deviation against a
+  `None.` blocks on two counts (§DEV) — the deviation, and the false disclosure. An honest entry
+  costs one sentence and is never itself a FAIL; the disposition line is where you say what you
+  did about it (`no action needed` / `ADR #NNNN amends it` / `follow-up #M filed` /
+  `for the reviewer to judge`).
+
 ```bash
 # RE-DERIVE the branch LIVE from the worktree — never a cached/shared-file value (see the
 # live-derivation rule in Step 4). $BRANCH from Step 4 is GONE across Bash calls; wt_preflight
@@ -1486,8 +1507,8 @@ git -C "$WT" push -u origin "$BRANCH"   # gate the push ([per-mutation preflight
 # The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
 # PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
 claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my claim (Step 3.5)"; exit 1; }
-# The body carries `Fixes #N` always; ADD the `Flag: <FLAG_KEY>` line BELOW it ONLY when Step 4b
-# fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it entirely for an ungated PR.
+# The body carries `Fixes #N` and `## Deviations` ALWAYS; ADD the `Flag: <FLAG_KEY>` line ONLY when
+# Step 4b fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it for an ungated PR.
 gh pr create \
   --base main \
   --title "<concise PR title>" \
@@ -1496,6 +1517,10 @@ gh pr create \
 
 Fixes #<N>
 Flag: <FLAG_KEY>
+
+## Deviations
+
+<one entry per departure — class, Said / Did / Why / Disposition (§DEV) — or the literal `None.`>
 EOF
 )"
 ```
@@ -1547,6 +1572,14 @@ if [ -n "$FLAG_KEY" ]; then
     && echo "dark-ship Flag: line present and matches ship-it Step 5b — release queue will fire" \
     || echo "MISSING/MALFORMED Flag: line — Step 4b fired but the body has no matching plain 'Flag: <key>' line; patch it in before stopping (#1282)"
 fi
+# (e) DISCLOSURE PRESENCE, REST-only: the body carries a `## Deviations` heading. This is the
+#     PRESENCE floor only — it cannot tell an honest `None.` from a false one, and it sees none of
+#     the seven classes (§DEV's detection tiers). It exists so the one failure mode that is purely
+#     mechanical — forgetting the heading — never reaches a gate as a malformed body.
+gh api repos/$REPO/pulls/<PR> --jq '.body' \
+  | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
+  && echo "## Deviations section present" \
+  || echo "MISSING ## Deviations section — an ABSENT section is a gate FAIL (§DEV: absent is not None.); patch the body before stopping"
 ```
 
 If (b) reports a broken seam, the body links `#N` with **neither** a closing keyword **nor**
@@ -1563,7 +1596,9 @@ close directive, a sibling/related `#M` carries a closing keyword that will wron
 form (`addresses`/`relates to`/`see #M`) and re-run (c), since shipping it is exactly the
 #1259 silent-auto-close. If (d) reports a missing/malformed `Flag:` line on a Step-4b dark ship,
 patch the body via REST to add the plain `Flag: <FLAG_KEY>` line and re-run (d), since shipping it
-without the line silently drops the dark ship from ship-it's release queue (#1282).
+without the line silently drops the dark ship from ship-it's release queue (#1282). If (e) reports a
+missing `## Deviations` section, patch the body the same way and re-run (e) — an absent section is a
+gate FAIL by itself (§DEV), and the heading is the one part of the obligation a grep can hold you to.
 
 ### Attach before/after composition captures (UI diffs only) — the #2964 evidence-attach
 
@@ -2094,6 +2129,18 @@ not just that boxes were checked. The same note carries into the Step 7 epic han
 ("Affects siblings") for a sub-issue, since a reviewer-added criterion is exactly the kind of
 cross-task signal a sibling should know the gate now enforces. Pushing new commits is what
 makes the **stateless** gate re-run — you do **not** re-trigger or self-approve it:
+
+**A repair round that departed from anything APPENDS to `## Deviations` — it never rewrites it.**
+The repair round is where the undisclosed call is most likely to be made and least likely to be
+written down: you declined an optional reviewer suggestion, you fixed the finding a narrower way
+than the verdict prescribed, you changed a pre-existing test the fix now contradicts, you pushed
+past a hook. Walk the contract's seven classes ([§DEV](../gh-issue-intake-formats.md)) against
+*this round's* diff, and if any fired, patch the PR body to add the entries under the existing
+`## Deviations` heading, tagged `**(repair round K)**`, leaving every earlier entry standing — the
+section is the PR's whole-life log, and a round that overwrites it erases the trail. A round that
+departed from nothing adds nothing; it does **not** rewrite a prior round's entries to `None.`
+(patch via REST — `gh api -X PATCH repos/$REPO/pulls/$PR -f body="…"` — since `gh pr edit` is
+unreliable in this org).
 
 ```bash
 # re-assert the mis-attribution guard (Step 3.5) before the resubmit push — a between-calls cwd

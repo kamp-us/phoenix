@@ -3191,6 +3191,164 @@ nothing.
 
 ---
 
+## DEV. The `## Deviations` PR-body disclosure section — one canonical definition
+
+The single source of the deviation-disclosure obligation, for **both** halves: the **writer**
+(`write-code` Step 5 composes the section on every PR it opens; its repair round appends to it) and
+the **gates** (`review-code`, `review-doc`, `review-skill`, `review-design` each fold it into their
+verdict; `review-trivial` bounces any PR that discloses one). Each cites **this** section rather than
+re-deriving the classes or the verdict rule, so the five lanes can't drift — the same single-sourcing
+discipline §9 and §CP hold.
+
+**The gap it closes.** A departure from the plan, the issue, an acceptance criterion, or a governing
+ADR has no required home in the artifact today, so it lives in the coder's session and dies there.
+PR [#3986](https://github.com/kamp-us/phoenix/pull/3986) narrowed ADR 0115 §5's reclaim invariant in
+skill prose. The author knew — they offered *in review conversation* to file the amending ADR — but
+the PR body carried nothing, the offer evaporated, and the narrowing landed on `main` as post-merge
+debt that an audit had to reconstruct
+([#3993](https://github.com/kamp-us/phoenix/issues/3993) F1; F2 is the same class, a scope note that
+omitted a third issue and left half a fix inert). The information existed at authoring time — the
+cheapest moment to surface it — and had nowhere to go.
+
+### Shape
+
+```markdown
+## Deviations
+
+- **Scope narrowing** — **Said:** #4064's AC asks the gate teeth to cover §6.6's four gates plus
+  `review-trivial`. **Did:** `review-trivial` gets a Step-0 bounce, not a deviation verdict.
+  **Why:** it emits a trivial-path verdict, and a disclosed deviation is by construction evidence the
+  diff is not trivial. **Disposition:** stated in the PR body per the AC; no ADR needed.
+```
+
+An entry names four things and nothing more: what the **spec** said (the issue, an acceptance
+criterion, a plan, a reviewer's guidance, or the governing ADR — cite it), what the implementation
+**did** instead, **why**, and its **disposition** (`no action needed` / `ADR #NNNN amends it` /
+`follow-up #M filed` / `for the reviewer to judge`). Lead each entry with its class from the list
+below so the gate can match its own finding against your disclosure.
+
+The empty case is an explicit sentence, never an omitted heading:
+
+```markdown
+## Deviations
+
+None.
+```
+
+### The seven classes — the enumeration is what makes `None.` a claim
+
+A mandatory section that any run can satisfy with `None.` is ceremony. What makes it load-bearing is
+that `None.` is a **checked assertion against a closed list**, not a shrug: you wrote it because you
+walked these seven and none fired.
+
+1. **Scope narrowing** — the diff delivers less than, or a different shape from, what the issue's
+   `### What to build`, a suggested fix-shape, or an acceptance criterion asked. (A `Part of #N`
+   partial-split per §9 is a *disclosed* narrowing: name it here too, don't let the token stand in
+   for the reasoning.)
+2. **Governing-ADR departure** — the implementation contradicts, narrows, or widens an accepted ADR,
+   including narrowing an invariant that lives only in skill prose, with no amending ADR in the diff.
+   This is the #3986 class.
+3. **Known defect left unfixed** — an adjacent or sibling defect you saw and deliberately did not
+   fix, whether or not you filed a follow-up.
+4. **Declined guidance** — a reviewer suggestion, a reviewer-appended acceptance criterion (§2), or a
+   triage instruction you chose not to take.
+5. **Guard or gate bypassed** — a `--no-verify` push, a skipped or disabled hook, a suppressed lint
+   or type error (`biome-ignore`, `@ts-expect-error`), a skipped / `.only` test, a widened allowlist.
+6. **Pre-existing test or fixture changed** — an existing assertion modified, weakened, or deleted
+   rather than added to. "It asserted the defect" is a legitimate reason and a mandatory disclosure.
+7. **Out-of-scope change** — a file or surface touched that the issue does not imply.
+
+**A falsified `None.` is worse than an honest entry.** When a gate finds a class-N deviation in a
+diff whose body says `None.`, the disclosure is a false statement, and the finding is blocking on
+*two* counts: the undisclosed deviation, and the fact that the section can no longer be trusted on
+this PR. That asymmetry is the section's only real enforcement — disclosing costs a sentence, and a
+wrong `None.` costs a repair round.
+
+**Absent is not `None.`** A body with no `## Deviations` heading is malformed: the gate cannot tell
+"nothing to disclose" from "never considered it", so absence fails closed (§ZS's posture, applied to
+a body section). `None.` is a complete, valid disclosure; silence is not.
+
+**Repair appends, never replaces.** Each repair round adds its entries under the same heading, tagged
+`**(repair round K)**`, and leaves the earlier ones standing. The section is a running log of what
+this PR departed from across its whole life — rewriting it to the latest round's truth destroys
+exactly the trail the incident above wanted.
+
+### Detection tiers — what a gate can actually catch
+
+A gate can only fail what it can observe. These tiers are stated so the obligation is not read as
+more enforcement than exists:
+
+- **Tier M — mechanically detectable from the diff.** Class 5's in-diff suppressions
+  (`biome-ignore`, `@ts-expect-error`, `test.skip`, `.only`) and class 6's removed assertions in test
+  files leave literal tokens in the added/removed lines; a grep over the head diff arms the check
+  deterministically. Class 7 is half-mechanical — the changed-path set is machine-readable, but
+  "out of scope" is a judgment against the issue's prose.
+- **Tier R — reader-detectable.** Classes 1, 2, and 4 need an LLM gate reading the diff against the
+  issue, the ADR, and the review threads. The gates already do all three reads (the per-criterion AC
+  table, `review-doc` Step 4a's ADR-contradiction sweep, `review-code` Step 3e's unresolved threads),
+  so this obligation **reuses** those reads rather than adding a scan.
+- **Tier D — disclosure-only, undetectable by any gate.** Class 3 lives entirely in the author's
+  head. So does the part of class 5 that leaves no artifact: a `--no-verify` push is invisible
+  afterwards — the hooks it skipped left no trace in the diff, the body, or the PR timeline. For
+  Tier D no gate can fail an omission. What the obligation buys there is that non-disclosure becomes
+  a **rule violation** rather than an oversight, and a later audit has a named place to point at.
+
+**So a `deviation-disclosure: PASS` row means "nothing undisclosed that this gate could see" — never
+"no deviations exist."** Gates state it that way in the verdict; a gate that phrases its row as the
+stronger claim is overstating its own teeth.
+
+**The canonical Tier-M scan — one snippet, run by every gate that carries the row.** It arms the
+check; it never decides it. Emit the scanned scope (§ZS #1) so a drift that silently stops matching
+shows in the run log instead of reading green:
+
+```bash
+# §DEV Tier M — presence of the section, plus the two diff-detectable classes.
+BODY="$(gh api repos/$REPO/pulls/$PR --jq '.body')"
+printf '%s' "$BODY" | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
+  && echo "deviation-disclosure: ## Deviations section present" \
+  || echo "deviation-disclosure: ## Deviations section ABSENT — malformed body (absent is not None.)"
+# class 5, added suppressions/skips
+DEV_SUPPRESS="$(gh pr diff "$PR" | grep -E '^\+' \
+  | grep -nE 'biome-ignore|eslint-disable|@ts-(expect-error|ignore)|\.(skip|only)\(|xit\(|xdescribe\(' || true)"
+# class 6, removed assertion lines
+DEV_TESTCUTS="$(gh pr diff "$PR" | grep -nE '^-.*(expect\(|assert|toBe|toEqual|toThrow)' || true)"
+echo "deviation-disclosure: Tier-M scan — $(printf '%s\n' "$DEV_SUPPRESS" | grep -c . || echo 0) suppression/skip line(s), $(printf '%s\n' "$DEV_TESTCUTS" | grep -c . || echo 0) removed-assertion line(s)"
+```
+
+A hit is a **line to judge against the disclosure**, never a FAIL by itself — a `biome-ignore` the
+body discloses with a reason is a passing judgment item, and a legitimately-deleted obsolete test is
+not a deviation at all.
+
+### The gate's verdict rule — two branches, mirroring the golden-deviation shape
+
+- **Detected and *not* disclosed ⇒ `[FAIL]` row (blocking).** Name the class, the site, and what the
+  spec said, so a repair round can act on it cold. This branch is what makes the section more than
+  paperwork.
+- **Disclosed ⇒ a judgment item, not an automatic pass.** Verify it on three questions: is it
+  **authorized** (does the cited spec actually permit it, or did someone with standing approve it)?
+  does it **need an ADR** (a class-2 departure with no amending ADR in the diff is a `[FAIL]` — the
+  #3986 remedy)? does it **need a follow-up issue** (a class-3 defect with no filed issue is a
+  `[FAIL]`)? A disclosed deviation that answers all three is a PASS row, cited.
+- **Absent section ⇒ `[FAIL]` row**, per *Absent is not `None.`* above.
+
+This is deliberately the same escalate-to-judgment shape `review-design`'s golden-deviation class
+already runs (an *unexplained* deviation from a blessed golden hard-FAILs; an explained one is
+judged, [review-design/SKILL.md](review-design/SKILL.md) calibration B, #2945) — one reviewing idiom,
+two surfaces, so neither has to be learned separately.
+
+### Who writes vs reads
+
+| Half | Surface | Obligation |
+|---|---|---|
+| Writer | `write-code` Step 5 (open), repair Step R3 (append) | Emits the section on every PR; `None.` only after walking the seven classes |
+| Gate | `review-code` Step 3g, `review-doc` Step 4c, `review-skill` Step 4c, `review-design` Step 3b | Folds one `deviation-disclosure` row into its conjunctive table by the rule above |
+| Gate | `review-trivial` Step 0 | A non-`None.` section is evidence the diff is not trivial ⇒ route to the full path; an absent section is a malformed body ⇒ route to the full path |
+
+The rationale lives in ADR
+[0216](https://github.com/kamp-us/phoenix/blob/main/.decisions/0216-deviation-disclosure-is-a-pr-body-obligation.md).
+
+---
+
 ## Relationship between the formats
 
 | Format | Lives on | Written by | Read by |
@@ -3206,6 +3364,7 @@ nothing.
 | review-doc FAIL marker | the PR | review-doc | write-code (fix round-trip) |
 | review-skill PASS marker | the PR | review-skill | ship-it |
 | review-skill FAIL marker | the PR | review-skill | write-code (fix round-trip) |
+| `## Deviations` section (§DEV) | the PR body | write-code (Step 5 opens it, repair R3 appends) | review-code, review-doc, review-skill, review-design (verdict row), review-trivial (triviality bounce) |
 | issue-claim (assignee) | the issue's assignees | write-code (Step 3 claim), triage (Step 0 sweep-claim) | write-code (Step 1 pick), triage (Step 0 Rule-0 back-off) |
 
 The issue-claim row is the one entry that is a **protocol over the assignee field**, not a
