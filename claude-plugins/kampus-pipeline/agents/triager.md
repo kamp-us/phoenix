@@ -71,8 +71,10 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   `type:*` label; resolve the decision-vs-epic / feature-vs-epic boundaries by the
   skill's rules. One issue, one type.
 - **Prioritize milestone-relative — the default is `p2`, not `p1`.** Follow the skill's
-  priority rubric exactly: `p1` means "serves the active milestone / you'd pull it next"
-  (bounded by the current arc, *not* a general "worth doing soon" tier), `p2` is the
+  priority rubric exactly: `p1` means "serves an active milestone / you'd pull it next"
+  (bounded to an `active` `## Arcs` **or** `## Campaigns` row of `ROADMAP.md` — an active
+  campaign confers `p1` exactly as the active arc does, and an issue homed in neither is
+  *not* `p1`; it is never a general "worth doing soon" tier — ADR 0214), `p2` is the
   **default** for real, actionable work that isn't the current focus (most of the
   backlog), and `p0` is fire only. Do not treat the middle bucket as the catch-all — an
   inflated `p1` is what makes the backlog unsequenceable.
