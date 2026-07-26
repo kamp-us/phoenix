@@ -1,7 +1,7 @@
 ---
 id: 0214
 title: An active campaign confers `p1` exactly as the active arc does (amends 0202 in part)
-status: accepted
+status: superseded by [0219](0219-priority-decoupled-from-campaign-membership.md)
 date: 2026-07-25
 tags: [process, prioritization, triage, pipeline]
 ---
@@ -11,6 +11,8 @@ tags: [process, prioritization, triage, pipeline]
 **What this decides:** `p1` is not reserved for the one active product arc — work homed in any *active campaign* earns `p1` too. The triage rubric only ever named arcs, which accidentally made every `p1` on the board invalid; this fixes the bound, and `p1` stays milestone-relative rather than becoming a general "worth doing soon" tier.
 
 ## Context
+
+Superseded by [0219](0219-priority-decoupled-from-campaign-membership.md).
 
 Founder ruling, 2026-07-25, in conversation — recorded on the conversation-authored path (ADR 0075). It resolves a fork escalated from the intake-desk retro sweep on issue #3939.
 
