@@ -146,8 +146,10 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   unit-tested probe (it parses the **same** §CLASS `HAS_*_RE` lines `ship-it` Step 0 reads — no
   third copy) and dispatch a gate for **exactly** each namespace it prints:
   ```bash
+  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
   gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-    | pipeline-cli class-probe classify --namespaces   # → review-code / review-doc / review-skill (+ review-design when has-ui), one per present gate
+    | "$PCLI" class-probe classify --namespaces   # → review-code / review-doc / review-skill (+ review-design when has-ui), one per present gate
   ```
   The probe **also folds in the additive `review-design`** (`ui_reresolve`, below): it reads the
   live `UI_RE` from its single source (`ship-it/SKILL.md`) and appends `review-design` to
@@ -230,10 +232,12 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   required namespace empty" unrepresentable from the reviewer's side; it does **not** touch ship-it's
   fail-closed per-namespace PASS gate (the merge authority), which stays the terminal check, untouched.
   ```bash
+  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
   HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
   # the required set — same class-probe output the fan dispatches on (folds in review-design when has-ui)
   REQUIRED_NS="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-    | pipeline-cli class-probe classify --namespaces)"   # e.g. review-code / review-skill for a mixed diff
+    | "$PCLI" class-probe classify --namespaces)"   # e.g. review-code / review-skill for a mixed diff
   echo "reviewer dispatch: PR $PR @ $HEAD_SHA requires namespaces → ${REQUIRED_NS//$'\n'/ }"
   # … fan + post one SHA-bound marker per required namespace (the invariants above) …
   # COVERAGE SELF-CHECK — a required namespace uncovered at HEAD_SHA cannot pass silently. A namespace

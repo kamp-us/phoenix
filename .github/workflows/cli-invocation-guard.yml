@@ -1,0 +1,47 @@
+name: cli-invocation-guard
+
+# §CLI enforcement (#3314): reds on any bare `pipeline-cli <verb>` inside a runnable
+# bash/sh fence in the plugin corpus. `pipeline-cli` is not on PATH where pipeline agents
+# spawn and won't be (ADR 0207 retired PATH-shadowing under Claude Code's verbatim
+# settings.json `env` semantics), so a bare call dies `command not found` at a gate step —
+# and the surrounding fail-closed wrapper converts that miss into a wrong verdict rather
+# than a clean error.
+#
+# Scans the FULL corpus (not just changed files), so a bare call anywhere is caught
+# regardless of which PR introduced it, and FAILS CLOSED on zero scope per ADR 0092:
+# no file scanned, or no runnable fence found, is a broken lint, exit 3.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: no bare pipeline-cli invocation in a runnable fence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Scan the plugin corpus for bare pipeline-cli invocations
+        run: |
+          set -euo pipefail
+          find claude-plugins -type f -name '*.md' -print0 \
+            | sort -z \
+            | xargs -0 node packages/pipeline-cli/src/bin.ts cli-invocation-guard check

@@ -148,7 +148,11 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 		for (const {rel, content} of selfAssigning) {
 			// the verb INVOCATION (verb + its issue argument), not a prose mention of the verb —
 			// a citation earlier in the file must not satisfy an ordering claim about the procedure.
-			const claimAt = content.search(/pipeline-cli\s+tracker\s+claim\s+(?:<N>|\$\{issue\})/);
+			// The invocation resolves the shim through §CLI's `$PCLI`; the bare `pipeline-cli` form
+			// stays matchable so this pin survives a corpus that has not yet been migrated (#3314).
+			const claimAt = content.search(
+				/(?:pipeline-cli|"\$PCLI")\s+tracker\s+claim\s+(?:<N>|\$\{issue\})/,
+			);
 			const assignAt = content.search(/gh api -X POST[^\n]*\/assignees/);
 			assert.isAbove(claimAt, -1, `${rel} must invoke the claim-write verb on the issue`);
 			assert.isBelow(

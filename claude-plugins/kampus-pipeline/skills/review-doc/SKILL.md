@@ -312,11 +312,13 @@ extended to the code lane by ADR
 Resolve it **mechanically, never by eye**:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # doc/vocab-surface-only? exit 0 = yes (issueless is legitimate), non-zero = no (hard-stop below).
 # Predicate single-sourced in §CLASS (DOC_VOCAB_EXCLUDE_RE / DOC_VOCAB_SURFACE_RE); fails closed to
 # "no" on an unreadable source or zero input (ADR 0092) — it can only ever REFUSE the allowance.
 gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-  | pipeline-cli class-probe doc-vocab-surface-only
+  | "$PCLI" class-probe doc-vocab-surface-only
 ```
 
 - **Not doc/vocab-surface-only** — any changed path under `apps/**`, `packages/**`, `infra/**`, or
@@ -387,6 +389,8 @@ the hunk alone — and read it **read-only**, without ever switching the checkou
 **Read-only on git working state** below). Fetch the head into a ref and read off that ref:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # §SP FIRST — allocate this run's scratch namespace, and land the head handles in a file inside it.
 # $PR_REF / $HEAD_SHA (and $REVIEW_WT below) are needed by LATER Bash calls — Step 4a's ADR sweep
 # reads `git show "$PR_REF:…"` — and a shell variable does not survive the harness's between-call
@@ -397,8 +401,8 @@ the hunk alone — and read it **read-only**, without ever switching the checkou
 # AND consumed inside one call, like `VERDICT_FILE` below. `scratchpad` is the allocator (§SP rule
 # 2 of ../gh-issue-intake-formats.md); it refuses with a reason on stderr rather than falling back
 # to a shared path, and §SP's one-liner is the same namespace for a run with no CLI on PATH.
-pipeline-cli scratchpad open --slug "review-doc-$PR" >/dev/null || exit 1   # ONCE, at the start of the run
-HEAD_ENV="$(pipeline-cli scratchpad file --slug "review-doc-$PR" --name head.env)" || exit 1
+"$PCLI" scratchpad open --slug "review-doc-$PR" >/dev/null || exit 1   # ONCE, at the start of the run
+HEAD_ENV="$("$PCLI" scratchpad file --slug "review-doc-$PR" --name head.env)" || exit 1
 
 # Land the head in a per-run ref via the shared `pipeline-cli review-head materialize` verb
 # (#3690 / #793 / #1807) — cite it, don't re-derive it. Ref-only mode (no `--worktree`): it
@@ -407,7 +411,7 @@ HEAD_ENV="$(pipeline-cli scratchpad file --slug "review-doc-$PR" --name head.env
 # `gh pr checkout` / `git checkout` / `git switch` (which would land the head in the shared PRIMARY
 # the harness resets this cwd to and detach the human's `main` — #2270/#1103; §RO). It emits the
 # head + ref as JSON:
-pipeline-cli review-head materialize --pr "$PR" \
+"$PCLI" review-head materialize --pr "$PR" \
   | jq -r '"PR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$HEAD_ENV"
 . "$HEAD_ENV"
 
@@ -424,7 +428,9 @@ git update-ref -d "$PR_REF"          # drop the throwaway ref when done
 of silently reading an empty directory:
 
 ```bash
-HEAD_ENV="$(pipeline-cli scratchpad file --slug "review-doc-$PR" --name head.env)" || exit 1
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+HEAD_ENV="$("$PCLI" scratchpad file --slug "review-doc-$PR" --name head.env)" || exit 1
 [ -s "$HEAD_ENV" ] || { echo "review-doc: §SP — head.env absent/empty; re-run the materialize step in THIS session." >&2; exit 1; }
 . "$HEAD_ENV"                        # $PR_REF / $HEAD_SHA (and $REVIEW_WT, if --worktree was used)
 ```
@@ -436,7 +442,9 @@ its path. It goes into the **same** `head.env`, for the same reason: a later ste
 fan-out that leaf matches a sibling reviewer's tree and pins the wrong head (the #1807 collision):
 
 ```bash
-pipeline-cli review-head materialize --pr "$PR" --worktree \
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" review-head materialize --pr "$PR" --worktree \
   | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$HEAD_ENV"
 . "$HEAD_ENV"
 # Register teardown as a trap so a mid-block error still tears the throwaway tree down:

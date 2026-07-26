@@ -309,6 +309,8 @@ make the isolation hold *by construction*, not by your remembering to behave:
 Your own session stays in *this* worktree (the trusted base config you were launched under).
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Isolation preflight FIRST, before any head fetch / `git worktree add` below. If this
 # review-code spawn expected worktree isolation (reviewer agent-type) but the #2440 harness no-op
 # dropped it onto the shared PRIMARY checkout ($WORKTREE_ROOT unset), materializing the head here
@@ -346,7 +348,7 @@ git fetch origin "$BASE_REF"
 # whole. A full checkout also lands the head's root CLAUDE.md + .claude/.decisions/.patterns — that
 # leak is closed by the explicit denylist removal + absence-assert below, NOT by any pattern set.
 WT_FILE="$(mktemp /tmp/review-code-wt.XXXXXX)"
-pipeline-cli review-head materialize --pr "$PR" --worktree \
+"$PCLI" review-head materialize --pr "$PR" --worktree \
   | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
 . "$WT_FILE"
 [ -n "${REVIEW_WT:-}" ] && [ -n "${PR_REF:-}" ] && [ -n "${HEAD_SHA:-}" ] || {
@@ -457,10 +459,12 @@ you received an archive and not a 503 error body; `schemaVersion` and
 load-bearing**: a bundle from a stale earlier push is not evidence for this commit.
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')"
 # Exit 0 means `present` — a validated, head-bound bundle. Every other state comes back on stdout
 # as JSON, so read the state rather than branching on the exit alone.
-BUNDLE="$(pipeline-cli run-evidence read --pr "$PR")" || true
+BUNDLE="$("$PCLI" run-evidence read --pr "$PR")" || true
 BUNDLE_STATE="$(jq -r '.state' <<<"$BUNDLE")"     # present | pending | absent | unknown
 BUNDLE_LINE="$(jq -r '.reportLine' <<<"$BUNDLE")" # the verdict line, evidence already in it
 ```

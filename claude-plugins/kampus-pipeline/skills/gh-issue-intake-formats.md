@@ -1717,11 +1717,13 @@ rather than erroring.
 runs the shared entry point, which cannot hand back a fail-open no:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # The §CP classification entry point — four states on stdout (#4161). Re-resolves the live
 # CONTROL_PLANE_RE from origin/main itself (#981); pass --control-plane-re to reuse one you
 # already resolved. ASSERT ON THE STATE WORD, never on the exit status alone — see below.
 CP_STATE="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-  | pipeline-cli cp-classify classify --repo "$REPO")"
+  | "$PCLI" cp-classify classify --repo "$REPO")"
 if [ "$CP_STATE" = "not-control-plane" ]; then
   : # proven ordinary — the ONLY branch that may skip the §CP hold
 else
@@ -2134,6 +2136,78 @@ documented specialization of this same contract, not a fourth drifting copy.
 
 ---
 
+## CLI. Invoking `pipeline-cli` — one canonical resolution, one exit-code taxonomy (#3314)
+
+`pipeline-cli` is **not on PATH** where pipeline agents spawn, and nothing will put it there:
+ADR [0207](https://github.com/kamp-us/phoenix/blob/main/.decisions/0207-gh-path-shim-retired.md)
+retired PATH-shadowing after grounding that Claude Code applies `settings.json` `env` values
+verbatim, so a `${CLAUDE_PROJECT_DIR}` PATH prepend never expands. Every invocation therefore
+goes through the shim **by a resolvable path**: `claude-plugins/kampus-pipeline/bin/pipeline-cli`,
+whose own three-tier ladder (in-repo dev source → SessionStart-installed data-dir bin → the pinned
+`pnpm dlx`) is the single home for *which* build runs.
+
+**Never write a bare `pipeline-cli <verb>` in a runnable command.** A bare name resolves against
+PATH, is not there, and dies `command not found` — at a gate step, inside a fail-closed wrapper
+that converts the miss into a *wrong verdict* rather than a clean error.
+
+### The canonical preamble — paste it once per bash block that invokes the CLI
+
+```bash
+# §CLI — resolve the shim. `$CLAUDE_PLUGIN_ROOT` covers a foreign consumer install; the
+# git-toplevel fallback covers this repo from ANY cwd, in the primary checkout AND in an
+# agent worktree (both trees carry the shim, and a worktree's toplevel is its own root).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+```
+
+Then call it as `"$PCLI" <verb> …`. That is the **one** documented form; do not re-derive a
+second. `$PCLI` is a shell variable, so — like `$BRANCH` and `$WT` — it does **not** survive
+between an agent's separate Bash calls: re-run the preamble in each block, never cache the path
+to a file (§SP).
+
+### The exit-code taxonomy — "could not run" is never a verdict
+
+The whole reason bare invocation is banned is that its failure is **indistinguishable from a
+verb result** at the call site. Read the two apart this way, and never collapse them:
+
+| Signal | Meaning | How a caller must resolve it |
+|---|---|---|
+| `"$PCLI" …` exits **127**, or the message names a *path* that does not exist | The CLI **never ran** — resolution failure | **UNKNOWN.** Never clean, never a negative verdict. Re-resolve or route the blocker up. |
+| Any other non-zero exit | The verb **ran** and returned its own documented contract (e.g. `2` findings / `3` zero scope) | Read it as that verb's result. |
+| Exit 0 | The verb ran and passed | Read it as that verb's result. |
+
+**A 127 is a PATH/resolution gap. It is NOT worktree teardown.** Teardown is progressive and has
+its own two signatures, in sequence: **exit 1 with `ENOENT` on a file that provably exists on
+`main`** (the earliest signal), then **exit 126 `Volta error: Could not determine current
+directory`**. Treating 127 as "my tree was torn down" is a live misdiagnosis that has already
+cost real time — three agents reported 127 with fully intact worktrees. Invoking by path is what
+makes the distinction legible without prior knowledge: the shell's own error names the missing
+**path**, not a bare command name.
+
+For a **gate-critical** call — one whose surrounding wrapper turns any non-zero into a block or a
+classification — make the refusal explicit, so an unresolved CLI can never be laundered into a
+verdict:
+
+```bash
+[ -x "$PCLI" ] || {
+  echo "pipeline-cli: UNRESOLVED at '$PCLI' — the CLI never ran, so this gate has NO result." >&2
+  echo "  Resolve to UNKNOWN, never to clean/negative (§WL: a read that could not run is not an answer)." >&2
+  echo "  This is a resolution gap, NOT worktree teardown (teardown = exit 1 ENOENT on a tracked file, then exit 126)." >&2
+  exit 127
+}
+```
+
+This section owns the **call-site resolution** half only. Two adjacent seams own the rest and
+must not be re-derived here: **#4178** owns legibility when the shim's *own tree* vanishes
+mid-run, and **#4185** owns legibility when the shim resolved but the CLI's module-load self-heal
+failed. Both reserve the same "could not run ⇒ UNKNOWN" contract this taxonomy states, so a fix
+there extends this table rather than forking it.
+
+`pipeline-cli cli-invocation-guard check` enforces the ban mechanically over the plugin corpus —
+it reds on any bare `pipeline-cli` invocation inside a runnable `bash`/`sh` fence, and fails
+closed on zero scope (§ZS / ADR 0092).
+
+---
+
 ## SP. The per-run scratchpad namespace — one canonical definition (#3718)
 
 The pipeline runs several agents concurrently by design (the WIP cap is the whole point), and
@@ -2187,15 +2261,17 @@ Allocation is owned by one tested verb, so a caller **cites it instead of hand-r
 (#3718). It prints the absolute directory on stdout and nothing else:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # OPEN — the run's first write of scratch state. Claims the namespace exclusively and stamps it
 # as ours, clearing whatever an unclaimed earlier occupant left behind.
-RUN_SCRATCH="$(pipeline-cli scratchpad open --slug review-doc-$PR)" || exit 1
+RUN_SCRATCH="$("$PCLI" scratchpad open --slug review-doc-$PR)" || exit 1
 
 # RE-DERIVE — every LATER Bash call, where shell state is already gone. Asserts the namespace
 # exists AND is still ours; it never creates one, because answering "you never opened it" with a
 # fresh empty directory is how a read of your own state silently becomes a read of nothing.
-RUN_SCRATCH="$(pipeline-cli scratchpad path --slug review-doc-$PR)" || exit 1
-VERDICT="$(pipeline-cli scratchpad file --slug review-doc-$PR --name verdict.md)" || exit 1
+RUN_SCRATCH="$("$PCLI" scratchpad path --slug review-doc-$PR)" || exit 1
+VERDICT="$("$PCLI" scratchpad file --slug review-doc-$PR --name verdict.md)" || exit 1
 ```
 
 Every failure is a **refusal with its own exit code** — `2` no session id, `3` a slug/leaf name
@@ -2359,10 +2435,12 @@ assert it did:**
    **asserts the fetched ref resolves to exactly that SHA before you review** — aborting on a moved
    head rather than binding a stale verdict. Two modes, same core:
    ```bash
+   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
    # ref-only (review-doc reads via `git show "$PR_REF:<path>"`):
-   eval "$(pipeline-cli review-head materialize --pr "$PR" | jq -r '"PR_REF=\(.prRef); HEAD_SHA=\(.headSha)"')"
+   eval "$("$PCLI" review-head materialize --pr "$PR" | jq -r '"PR_REF=\(.prRef); HEAD_SHA=\(.headSha)"')"
    # full detached head worktree (review-code / review-skill), emitted as `.worktreeDir`:
-   pipeline-cli review-head materialize --pr "$PR" --worktree | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
+   "$PCLI" review-head materialize --pr "$PR" --worktree | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
    ```
    `pull/<pr>/head` resolves same-repo AND cross-fork, and the checkout is always DETACHED onto the
    per-run ref — never `gh pr checkout` / `git checkout` / `git switch`, which would land the head in
@@ -3120,7 +3198,9 @@ A claim is **held for the duration of the work it protects, and given up when th
 done**. The owner performs that release itself:
 
 ```bash
-pipeline-cli claim release --issue <N>            # retract our own marker; --session <token> to release a delegated claim
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" claim release --issue <N>            # retract our own marker; --session <token> to release a delegated claim
 ```
 
 **Who calls it, and when.** The run that holds the claim, at its terminus: `write-code` Step 8
@@ -3170,7 +3250,9 @@ be invisible; stranded lanes accumulated silently until a dispatch read `lost` a
 read-only inventory is the surface:
 
 ```bash
-pipeline-cli claim status --issue <N>   # every marker: author, authorization, liveness, and the resolved owner
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" claim status --issue <N>   # every marker: author, authorization, liveness, and the resolved owner
 ```
 
 Read it before concluding a lane is stuck. A row with `liveness: dead` is already superseded and
@@ -3239,9 +3321,11 @@ by an audited cleanup, not by a resolution rule — the rules above are untouche
 claim is never a candidate whatever its age:
 
 ```bash
-pipeline-cli claim audit                 # every open lane held by an unstamped marker, and which are retirable
-pipeline-cli claim audit --issue <N>     # the cheap single-lane read when a stall is already known
-pipeline-cli claim audit --execute       # retire the retirable ones through `claim release`
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" claim audit                 # every open lane held by an unstamped marker, and which are retirable
+"$PCLI" claim audit --issue <N>     # the cheap single-lane read when a stall is already known
+"$PCLI" claim audit --execute       # retire the retirable ones through `claim release`
 ```
 
 Retirement runs through **`claim release` under the marker's own token** — the one retraction

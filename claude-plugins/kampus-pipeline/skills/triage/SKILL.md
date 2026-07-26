@@ -300,6 +300,8 @@ How to split:
    empty husk open.
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # 1. Create-once guard: skip the POST if a child already covers this (parent, title) unit (#3464).
 EXISTING=$(node packages/pipeline-cli/src/bin.ts split-guard check \
   --parent "$N" --title "<single-unit title>")
@@ -310,7 +312,7 @@ else
   #    The `tracker create-issue` verb owns this intake-create envelope (ADR 0190;
   #    `packages/pipeline-cli/src/tools/tracker/`), filing a status:needs-triage issue — don't
   #    hand-roll the `gh api repos/$REPO/issues` create (the adoption lint (#3254) flags it).
-  pipeline-cli tracker create-issue --title "<single-unit title>" --body "$BODY"
+  "$PCLI" tracker create-issue --title "<single-unit title>" --body "$BODY"
   # then cross-link via a comment on the original (Step 6 shows the comment call)
 fi
 ```
@@ -395,6 +397,8 @@ in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §SP. An iss
 body**, so triage would silently preserve the wrong original inside `<details>` (#3718):
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
 # Keyed on the session id (not a bare `mktemp -d`) because the PATCH block below runs in a LATER
 # Bash call, where every shell variable is gone: it re-derives this same path to read body.md back.
@@ -407,7 +411,7 @@ rm -rf "$RUN_SCRATCH" && mkdir -p "$RUN_SCRATCH" || {
 gh api "repos/$REPO/issues/<N>" --jq '.body' > "$RUN_SCRATCH/original.md"
 # redact any machine-local path leak in the ORIGINAL before it goes into <details>; leak-free
 # originals pass through byte-for-byte. Reuses the shared leak matcher — no divergent patterns.
-pipeline-cli redact-leaks --body-file "$RUN_SCRATCH/original.md" > "$RUN_SCRATCH/original.redacted.md"
+"$PCLI" redact-leaks --body-file "$RUN_SCRATCH/original.md" > "$RUN_SCRATCH/original.redacted.md"
 # assemble the <details> block from the REDACTED original, never the raw one
 ```
 
@@ -718,7 +722,9 @@ approval "on his behalf," and do not treat your own draft as approved.
 issue you just drafted, so a red names *this* issue rather than the whole backlog:
 
 ```bash
-pipeline-cli pitch-guard check --issue <N>   # out-of-scope issues pass; a red is this draft
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" pitch-guard check --issue <N>   # out-of-scope issues pass; a red is this draft
 ```
 
 An **unapproved** pitch is a legitimate, expected state for a freshly-triaged issue — the guard
@@ -740,7 +746,9 @@ queue (its `status:needs-triage` removed). Apply the whole transition with the `
 verb — the classification is the parameter, the label plumbing is the verb's:
 
 ```bash
-pipeline-cli tracker apply-triage <N> --type <type> --p <priority>
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" tracker apply-triage <N> --type <type> --p <priority>
 ```
 
 The verb adds the `type:` / priority / `status:triaged` labels and drops the queue label
@@ -762,8 +770,10 @@ this confirms the pair landed rather than racing it; the invariant is enforced a
 not re-swept by hand later:
 
 ```bash
-pipeline-cli homing-guard check --issue <N>   # the issue you just triaged
-pipeline-cli homing-guard check               # the whole open triaged backlog
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" homing-guard check --issue <N>   # the issue you just triaged
+"$PCLI" homing-guard check               # the whole open triaged backlog
 ```
 
 ### Close not-planned (kill, agent issues only)
