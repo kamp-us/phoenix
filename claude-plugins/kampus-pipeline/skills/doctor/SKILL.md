@@ -42,12 +42,21 @@ Do not run the fix commands yourself.
 | | the 15 required labels exist (`status:*` spine, `type:*` class, `p*` priority) | the intake skills key on them — `report` applies `status:needs-triage`, `write-code` picks `status:triaged`, etc. A missing one fails a run mid-`gh api`. |
 | **2 — gating** | target repo resolves | a skill can't target a repo it can't name |
 | | at least one CI workflow exists | `ship-it` Step 3 gates on checks-green; with zero checks that gate passes vacuously |
+| | repo-level `allow_auto_merge` is enabled | `ship-it`'s `gh pr merge --auto` cannot arm without it — the enqueue fails with `Auto merge is not allowed for this repository (enablePullRequestAutoMerge)` (ADR [0132](https://github.com/kamp-us/phoenix/blob/main/.decisions/0132-merge-queue-for-base-freshness.md) §Addendum §1) |
+| | a `merge_queue` rule applies to the **resolved** default branch | `ship-it` deliberately passes no merge-method flag because the queue owns it (ADR 0132 §Consequences); with no queue there is no method and the merge never lands |
 | **3 — optional** | `@kampus/pipeline-cli` resolves on npm | `adr` / `review-plan` reach for its `decisions-index` / `epic-ledger` tools via `pnpm dlx` as the published fallback (epic #994); absent → those stages degrade |
 | | a `run-evidence` producer is defined | `ship-it` guard 2 runs strict when present, and **degrades to checks-green when absent** (ADR [0086](https://github.com/kamp-us/phoenix/blob/main/.decisions/0086-ship-it-foreign-repo-degradation.md)) — so this is informational, not a failure |
 
 The load-bearing pair is **auth + labels** (Tier 1): get those wrong and the very
-first `report` → `triage` round trips into a raw GitHub API error. The Tier-2 pair
-keeps `ship-it` honest; Tier-3 only ever downgrades a single stage.
+first `report` → `triage` round trips into a raw GitHub API error. The Tier-2 checks
+keep `ship-it` honest; Tier-3 only ever downgrades a single stage.
+
+The last two Tier-2 checks are the **repo-admin governance pair**, and they are the one
+prerequisite class this checklist can only *report*: `allow_auto_merge` and the
+default-branch merge-queue ruleset are GitHub-side repo settings that **no repo-scoped
+script can create** — not doctor, not any stand-up script. They also fail *last*, at the
+enqueue, after an adopter has already built, reviewed, approved, and armed a PR. Reading
+them up front is what turns that finish-line halt into a first-run checklist line.
 
 ## Conventions
 
@@ -56,6 +65,11 @@ keeps `ship-it` honest; Tier-3 only ever downgrades a single stage.
   human to run; surfacing them is the whole job.
 - One run, one checklist. This is a preflight, not a repair loop — it does not
   re-check after a fix; the operator re-runs it.
+- **An unreadable state is UNKNOWN, never the negative answer.** A 403/404/5xx/empty body
+  reds with a reason that says *the read failed* — never "auto-merge is disabled", which is
+  a different fact. `gh api` prints its error body to stdout **without** applying `--jq`, so
+  every read keeps gh's exit status and admits only the literal values it expects (§ZS /
+  ADR [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md); the defect class of #4223).
 - The required-label set in `doctor.sh` is the canonical one (name + color +
   description). If the pipeline's label dimensions change (see
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §Pipeline labels), update the `REQUIRED_LABELS`

@@ -7,7 +7,8 @@
 # Tiers (a foreign-repo adopter reads top-down):
 #   1  load-bearing   — gh auth + required labels. Without these the first
 #                       report/triage run fails deep inside a `gh api` call.
-#   2  gating         — repo resolution + a CI signal ship-it can gate on.
+#   2  gating         — repo resolution, a CI signal ship-it can gate on, and the
+#                       merge-queue governance ship-it's enqueue silently depends on.
 #   3  optional       — `pnpm dlx` packages + the run-evidence producer; their
 #                       absence degrades a stage, it does not break the pipeline.
 #
@@ -18,6 +19,10 @@ PASS="✓"; FAIL="✗"; WARN="⚠"
 fails=0
 
 say()  { printf '  %s %s\n' "$1" "$2"; }
+# One-line, length-clamped echo of whatever a read actually returned. A failed `gh api` prints its
+# error BODY to stdout, so quoting it back verbatim would smear a multi-line JSON blob across the
+# checklist — but dropping it entirely would leave "the read failed" unattributable. Clamp, don't cut.
+brief() { printf '%s' "$1" | tr '\n\t' '  ' | cut -c1-120; }
 fix()  { printf '      ↳ fix: %s\n' "$1"; }
 hdr()  { printf '\n%s\n' "$1"; }
 
@@ -113,6 +118,77 @@ else
 	say "$FAIL" "no CI workflows defined — ship-it's checks-green gate (Step 3) passes vacuously"
 	fix "add at least one GitHub Actions workflow that produces a required check (lint/test/typecheck)"
 	fails=$((fails + 1))
+fi
+
+# 2c/2d. the merge-queue governance regime ship-it's enqueue depends on. `gh pr merge $PR --auto`
+#        passes NO merge-method flag because the queue owns the method (ADR 0132), so it works only
+#        when the repo carries BOTH `allow_auto_merge` AND a default-branch ruleset with a
+#        `merge_queue` rule. Neither is expressible in-repo and neither can be created by a
+#        repo-scoped script — and both fail at the LAST step of a first run: an adopter builds,
+#        reviews, approves, enqueues, and the merge never lands (#4303). Read them here so the gap
+#        surfaces before the work, not after it.
+#
+#        Read discipline for both (§ZS, ADR 0092): an unreadable response is UNKNOWN — never a pass,
+#        and never reported as the negative answer. `gh api` writes its error body to stdout WITHOUT
+#        applying `--jq`, so an unguarded capture reads the error as data (#4223); each read below
+#        therefore keeps gh's exit status and admits only the literal values it expects.
+ADR0132="https://github.com/kamp-us/phoenix/blob/main/.decisions/0132-merge-queue-for-base-freshness.md"
+
+# `allow_auto_merge` is an ADMIN-VISIBLE field: on a repo the token lacks admin on, GitHub
+# omits the key entirely and `gh api --jq` then exits 0 printing NOTHING (measured against a
+# public repo). "Absent" is therefore indistinguishable from "false" if you only look at the
+# value — which is why the pass arm below demands the literal `true` and everything that is
+# not literally `true`/`false` resolves UNKNOWN rather than borrowing the negative answer.
+AUTO_MERGE=""
+AM_RC=1
+if [ -n "${REPO:-}" ]; then
+	AUTO_MERGE=$(gh api "repos/$REPO" --jq '.allow_auto_merge' 2>/dev/null)
+	AM_RC=$?
+fi
+if [ "$AM_RC" -eq 0 ] && [ "$AUTO_MERGE" = "true" ]; then
+	say "$PASS" "repo-level auto-merge enabled (allow_auto_merge) — ship-it's --auto enqueue can arm"
+elif [ "$AM_RC" -eq 0 ] && [ "$AUTO_MERGE" = "false" ]; then
+	say "$FAIL" "MISSING PRECONDITION: repo-level auto-merge is disabled (allow_auto_merge=false) — ship-it's enqueue fails with 'Auto merge is not allowed for this repository (enablePullRequestAutoMerge)'. Why: ADR 0132 §Addendum §1"
+	fix "gh api -X PATCH \"repos/$REPO\" -F allow_auto_merge=true    # repo-admin only, or Settings → General → Pull Requests → Allow auto-merge — $ADR0132"
+	fails=$((fails + 1))
+else
+	say "$FAIL" "READ FAILED: could not read allow_auto_merge on ${REPO:-<unresolved repo>} (gh exit $AM_RC, returned: $(brief "${AUTO_MERGE:-<empty>}")) — UNKNOWN, which is neither a pass nor 'disabled'"
+	fix "re-run with a token holding ADMIN on ${REPO:-the target repo} — GitHub omits allow_auto_merge for non-admins, so its state cannot be read (let alone asserted) from here. Why it matters: ADR 0132 §Addendum §1 — $ADR0132"
+	fails=$((fails + 1))
+fi
+
+# The queue rule is read for the repo's RESOLVED default branch — never a hardcoded `main`: an
+# adopter's default branch is theirs to name, and asserting the rule on a branch they don't have
+# would red for the wrong reason. Endpoint + rule shape reused from the merge-intent reader
+# (packages/pipeline-cli/src/tools/merge-intent/github.ts): a ruleset-governed repo 404s on
+# `branches/<b>/protection`, so `rules/branches/<b>` is what answers this.
+DEFAULT_BRANCH=""
+DB_RC=1
+if [ -n "${REPO:-}" ]; then
+	DEFAULT_BRANCH=$(gh api "repos/$REPO" --jq '.default_branch' 2>/dev/null)
+	DB_RC=$?
+fi
+if [ "$DB_RC" -ne 0 ] || [ -z "$DEFAULT_BRANCH" ] || [ "$DEFAULT_BRANCH" = "null" ]; then
+	say "$FAIL" "READ FAILED: could not resolve the default branch of ${REPO:-<unresolved repo>} (gh exit $DB_RC, returned: $(brief "${DEFAULT_BRANCH:-<empty>}")) — the merge-queue rule check has no branch to ask about, so its state is UNKNOWN, not a pass"
+	fix "re-run once the repo resolves and \`gh auth status\` shows a token that can read it — then re-read ADR 0132 §Consequences: $ADR0132"
+	fails=$((fails + 1))
+else
+	# A default branch may legitimately contain '/' (e.g. `release/main`); percent-encode it so it
+	# stays ONE path segment instead of splitting the REST route.
+	BRANCH_PATH=$(printf '%s' "$DEFAULT_BRANCH" | sed 's|/|%2F|g')
+	MQ=$(gh api "repos/$REPO/rules/branches/$BRANCH_PATH" --jq '[.[] | select(.type == "merge_queue")] | length' 2>/dev/null)
+	MQ_RC=$?
+	if [ "$MQ_RC" -ne 0 ] || ! printf '%s' "$MQ" | grep -Eq '^[0-9]+$'; then
+		say "$FAIL" "READ FAILED: could not read the rules applying to default branch '$DEFAULT_BRANCH' (gh exit $MQ_RC, returned: $(brief "${MQ:-<empty>}")) — UNKNOWN, which is neither a pass nor 'no merge queue'"
+		fix "re-run once \`gh api \"repos/$REPO/rules/branches/$BRANCH_PATH\"\` reads cleanly — then re-read ADR 0132 §Consequences: $ADR0132"
+		fails=$((fails + 1))
+	elif [ "$MQ" -gt 0 ]; then
+		say "$PASS" "default branch '$DEFAULT_BRANCH' is merge-queue governed (a merge_queue rule applies) — the queue supplies ship-it's merge method"
+	else
+		say "$FAIL" "MISSING PRECONDITION: no merge_queue rule applies to default branch '$DEFAULT_BRANCH' — ship-it enqueues with no merge method and the merge never lands. Why: ADR 0132 §Consequences"
+		fix "repo-admin, human-only: Settings → Rules → Rulesets → a ruleset targeting '$DEFAULT_BRANCH' → enable 'Require merge queue' (merge method SQUASH). ADR 0132 §Consequences calls this the separate, last, human-only administrative step — $ADR0132"
+		fails=$((fails + 1))
+	fi
 fi
 
 hdr "Tier 3 — optional (degrades a stage; pipeline still runs)"
