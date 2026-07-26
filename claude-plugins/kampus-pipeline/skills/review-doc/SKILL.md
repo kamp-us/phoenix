@@ -187,8 +187,9 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
     CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ flag EVERY path control-plane (advisory not-auto-mergeable), never trust the possibly-stale snapshot
   fi
   # The changed-file list is a fallible READ, and a failed one used to resolve to "no control-plane
-  # path touched" (#4216). `cp_changed_files` is §CPREAD of ../gh-issue-intake-formats.md — copy it
-  # verbatim from there (single source), and read the why there, not here.
+  # path touched" (#4216). `cp_changed_files` (and `cp_head_sha`, used by the content clause below)
+  # is §CPREAD of ../gh-issue-intake-formats.md — copy them verbatim from there (single source), and
+  # read the why there, not here.
   CP_READ_FAILED=
   if ! cp_changed_files "$REPO" "$PR"; then
     CP_READ_FAILED=1   # carried into the CONTENT clause below — one read, both clauses
@@ -223,7 +224,10 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   if [ -n "$CP_READ_FAILED" ]; then
     GUARD_TOUCHING="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
   else
-    HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha' 2>/dev/null || true)"
+    # The ref is a fallible read too — `cp_head_sha` is §CPREAD's companion to `cp_changed_files`
+    # (copy it verbatim from there). It DISCARDS gh's payload on failure, which is what makes the
+    # `[ -n ]` test below a live guard rather than a dead one.
+    cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
     [ -n "$HEAD_SHA" ] || GUARD_TOUCHING="<head SHA unreadable — ADR content unprobeable, held as control-plane>"
     ADR_N=0
     while IFS= read -r adr; do

@@ -93,8 +93,14 @@ don't re-hard-code the list:
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 PR=<pr number>
-FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # --paginate + streaming --jq: full set past file #100 (#725)
-NFILES=$(printf '%s\n' "$FILES" | grep -c . || true)
+# The changed-file list is a fallible READ, and an unchecked capture resolved a failed one to "no §CP
+# path touched" (#4216) — at the gate that routes to the LIGHTER path, so a fail-open here UNDER-gates.
+# `cp_changed_files` / `cp_head_sha` are §CPREAD of ../gh-issue-intake-formats.md — copy them verbatim
+# from there (single source; the why lives there, not here).
+if ! cp_changed_files "$REPO" "$PR"; then
+  echo "review-trivial: not-trivial — changed-file list unreadable (§CP UNKNOWN, never 'no §CP path'); route to full path"; exit 0
+fi
+FILES="$CP_FILES"; NFILES="$CP_FILES_N"   # proven-arrived; scope already emitted per §ZS #1 (ADR 0092)
 ADD=$(gh api repos/$REPO/pulls/$PR --jq '.additions'); DEL=$(gh api repos/$REPO/pulls/$PR --jq '.deletions')
 
 # Four states on stdout: control-plane / content-undetermined / not-control-plane / unknown.
@@ -152,10 +158,16 @@ PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-
 if [ "$CP_STATE" != "not-control-plane" ]; then
   # Resolve the one state that is an obligation rather than a verdict (ADR 0164, #4161).
   if [ "$CP_STATE" = "content-undetermined" ]; then
-    HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+    cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"   # EMPTY on failure (payload discarded) — §CPREAD
+    if [ -z "$HEAD_SHA" ]; then
+      echo "review-trivial: not-trivial — head SHA unreadable, ADR content unprobeable (§CP UNKNOWN); route to full path"; exit 0
+    fi
     GUARD_TOUCHING="$(printf '%s\n' "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
-        gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
-          | "$PCLI" guard-content-probe classify --path "$adr" >/dev/null && echo "$adr"
+        # Capture and CHECK, never a straight pipe: gh writes its error document to STDOUT, so a pipe
+        # hands the probe an ERROR BODY as the ADR body (§CPREAD #2). Unreadable ⇒ §CP, fail-closed.
+        adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
+        if [ -z "$adr_body" ]; then echo "$adr(body-unreadable⇒§CP)"
+        elif printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" >/dev/null; then echo "$adr"; fi
       done)"
     if [ -z "$GUARD_TOUCHING" ]; then
       : # every touched ADR probed not-guard-touching ⇒ the content axis is resolved, carry on

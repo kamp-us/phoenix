@@ -338,8 +338,8 @@ and **fails closed** (treats every path as control-plane → refuses) if that re
 # content clause, has-code/has-docs/has-skills, has-ui — is a `grep` over it. So a failed read used
 # to answer "no §CP path, no classes present" in one stroke: the capture's exit status was never
 # checked, and an empty $FILES made every `grep -q … && echo …` silent (#4216). `cp_changed_files` is
-# §CPREAD of ../gh-issue-intake-formats.md — copy it verbatim from there (single source; the why
-# lives there, not here). --paginate + streaming --jq inside it gets the full set past file #100 (the
+# §CPREAD of ../gh-issue-intake-formats.md — copy it (and its `cp_head_sha` companion, used by the
+# content clause below) verbatim from there (single source; the why lives there, not here). --paginate + streaming --jq inside it gets the full set past file #100 (the
 # API caps per_page at 100; the grep probes below aggregate the concatenated lines) (#725).
 if ! cp_changed_files "$REPO" "$PR"; then
   # FAIL CLOSED, and STOP — with no file list there is no classification to make: not §CP, not the
@@ -379,7 +379,10 @@ echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plan
 # never auto-ship an ADR that couldn't be read and proven guard-free. That resolution is made HERE,
 # in the shell: the verb never sees a failed read, because a straight pipe would hand it `gh`'s error
 # document as the ADR body and it would classify THAT (§CPREAD #2, #4216).
-HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha' 2>/dev/null || true)"
+# The ref is a fallible read too — `cp_head_sha` is §CPREAD's companion to `cp_changed_files` (copy
+# it verbatim from there). It DISCARDS gh's payload on failure, which is what makes the emptiness
+# test below a live guard: with a bare `|| true` the error document lands in HEAD_SHA, non-empty.
+cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
 if [ -z "$HEAD_SHA" ]; then
   echo "BLOCKING (head SHA unreadable ⇒ no ref to probe ADR content at ⇒ §CP UNKNOWN, held)"   # fail closed: an unprobeable content clause is not an absent one
 else

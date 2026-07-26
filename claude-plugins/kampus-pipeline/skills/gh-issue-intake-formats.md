@@ -1624,13 +1624,16 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\.jsonc$|^biome-plugins/'
-# --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
-# concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
-# API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a
-# >100-file PR — hiding a control-plane file in the tail. Never pair --paginate with an AGGREGATE
-# --jq (`[ … ]` / `length` / `add`): gh runs the filter PER PAGE and emits one result each (#725).
-gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-  | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING — control plane (manual merge)"
+# The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
+# `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
+# pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP
+# path touched" — fail-open at the definition of the boundary itself (#4216). §CPREAD owns the
+# --paginate / streaming-jq / shape-assert rationale; read it there once, don't re-derive it here.
+if ! cp_changed_files "$REPO" "$PR"; then
+  echo "BLOCKING — §CP UNKNOWN (changed-file list unreadable; never 'no control-plane path')"
+elif printf '%s\n' "$CP_FILES" | grep -Eq "$CONTROL_PLANE_RE"; then
+  echo "BLOCKING — control plane (manual merge)"
+fi
 ```
 
 **The §CP-deciding consumers resolve this line from `origin/main` at run time, not from the
@@ -1689,10 +1692,17 @@ GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|contai
 GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'
 GA_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^GUARD_ADR_RE=' | head -n1 || true)"
 if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched ADR is §CP
-HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
-echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+# The ref and the file list are fallible reads too — both come from §CPREAD (below), so an
+# unreadable head SHA leaves HEAD_SHA EMPTY (payload discarded) rather than holding gh's error body.
+cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
+[ -n "$HEAD_SHA" ] || echo "BLOCKING (head SHA unreadable — ADR content unprobeable ⇒ §CP, fail-closed)"
+printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
   [ -z "$adr" ] && continue
-  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
+  [ -n "$HEAD_SHA" ] || break
+  # Capture and CHECK, never `|| true`: gh writes its error document to STDOUT, so `|| true` would
+  # leave that JSON in $body, skip the fail-closed branch below, and grep an ERROR DOC for guard
+  # vocabulary (§CPREAD property 2).
+  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || body=""
   if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
   elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
 done
@@ -1738,12 +1748,21 @@ so a zero-length list is never a valid "clean" state. "Read failed" and "read fi
 are logged **distinctly**: same outcome, different facts, and collapsing them makes an outage look
 like a clean negative.
 
-This is the **one** hardened read; every §CP site below calls it rather than re-deriving it:
+This is the **one** hardened read, and it binds **every** §CP site — *including the two blocks
+**above*** (the canonical matcher and the ADR content clause), which is why each of them reads
+`$CP_FILES` rather than piping `gh` straight into `grep`. A contract that exempts its own definition
+block is exactly how byte-identical defective copies spread from it, so the scope here is *every*
+site in this file and in every skill that cites it — not merely the ones below.
 
 ```bash
 # §CPREAD — the ONE hardened read of a PR's changed-file list, the input to BOTH §CP clauses.
 # Sets CP_FILES (the list) + CP_FILES_N (the scanned count); returns NON-ZERO on a read that could
 # not execute. A non-zero return is UNKNOWN — hold as §CP — never "no control-plane path touched".
+# --paginate + a STREAMING --jq (one line per file) is load-bearing: gh concatenates the per-page
+# element streams, so a consumer's grep aggregates matches across ALL pages. The API caps per_page at
+# 100 whatever you ask for, so a single non-paginated call truncates a >100-file PR — hiding a §CP
+# file in the tail. Never pair --paginate with an AGGREGATE --jq (`[ … ]` / `length` / `add`): gh runs
+# the filter PER PAGE and emits one result each (#725).
 cp_changed_files() {   # $1 = REPO, $2 = PR
   CP_FILES="$(gh api --paginate "repos/$1/pulls/$2/files?per_page=100" \
     --jq 'if type=="array" then .[].filename else ("payload is not a file-list array"|halt_error(1)) end' 2>/dev/null)" || {
@@ -1757,6 +1776,26 @@ cp_changed_files() {   # $1 = REPO, $2 = PR
     return 1
   fi
   echo "§CP scope: PR #$2 changed-file list read OK — $CP_FILES_N file(s) scanned"   # §ZS #1: state the scope the classification rests on
+}
+
+# The PR head SHA is the SECOND fallible read every §CP site makes — the ref the ADR-0164 content
+# probe reads each ADR body at. It gets the same three properties, and for a reason worth stating
+# once: `HEAD_SHA="$(gh api … --jq .head.sha || true)"` followed by `[ -n "$HEAD_SHA" ]` is a DEAD
+# guard. On failure gh does not apply --jq at all — it writes its error document to STDOUT
+# (property 2) — so the variable is NON-EMPTY and the emptiness test can never fire. Capture, check
+# the exit status, DISCARD the payload, then shape-assert: a ref is 40 bare lowercase hex digits, so
+# an error body (or any other unexpected 200) cannot pass for one.
+cp_head_sha() {   # $1 = REPO, $2 = PR; sets CP_HEAD_SHA (EMPTY on failure), returns NON-ZERO ⇒ UNKNOWN
+  CP_HEAD_SHA="$(gh api "repos/$1/pulls/$2" \
+    --jq 'if type=="object" and (.head.sha|type)=="string" then .head.sha else ("payload is not a PR object"|halt_error(1)) end' 2>/dev/null)" || {
+      CP_HEAD_SHA=""
+      echo "§CP scope: PR #$2 head SHA READ FAILED (gh exited non-zero; payload discarded) — ADR content unprobeable" >&2
+      return 1; }
+  case "$CP_HEAD_SHA" in
+    *[!0-9a-f]*|"") CP_HEAD_SHA=""; echo "§CP scope: PR #$2 head SHA is not bare hex — discarded" >&2; return 1 ;;
+  esac
+  [ "${#CP_HEAD_SHA}" -eq 40 ] || {
+    CP_HEAD_SHA=""; echo "§CP scope: PR #$2 head SHA is not a 40-char ref — discarded" >&2; return 1; }
 }
 ```
 

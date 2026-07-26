@@ -576,10 +576,10 @@ snapshot once mis-classified a now-control-plane PR (#981); reading §CP freshly
 
 The *boundary* is only half of it: the **changed-file list** the boundary is matched against is a
 fallible network read too, and a failed read used to resolve to "no control-plane path touched"
-(#4216). **Define `cp_changed_files` from
-[§CPREAD](../gh-issue-intake-formats.md#cpread) — copy it verbatim, it is the single source — before
-running the block below**, which consumes its `$CP_FILES` / `$CP_FILES_N` and holds §CP on a
-non-zero return:
+(#4216). **Define `cp_changed_files` and `cp_head_sha` from
+[§CPREAD](../gh-issue-intake-formats.md#cpread) — copy them verbatim, it is the single source — before
+running the block below**, which consumes their `$CP_FILES` / `$CP_FILES_N` / `$CP_HEAD_SHA` and holds
+§CP on a non-zero return:
 
 ```bash
 # §CP travels in the INJECTED skill snapshot, which can lag origin/main even when the on-disk file
@@ -619,7 +619,10 @@ else
   # — the SAME probe ship-it Step 0, review-doc, and the driver (via trivial-diff) call, so a guard-touching
   # ADR reads §CP consistently everywhere (issue #3645, founder ruling #3416). A mixed code+guard-ADR PR
   # fans BOTH gates; either flagging the ADR carries the §CP merge-authority hold.
-  HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha' 2>/dev/null || true)"
+  # The ref is a fallible read too — `cp_head_sha` is §CPREAD's companion to `cp_changed_files`
+  # (copy it verbatim from there). It leaves HEAD_SHA EMPTY on failure by DISCARDING gh's payload,
+  # which is what makes the `[ -n ]` test below a live guard rather than a dead one.
+  cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
   GUARD_TOUCHING=""
   [ -n "$HEAD_SHA" ] || GUARD_TOUCHING="<head SHA unreadable — ADR content unprobeable, held as control-plane>"   # fail closed: no ref ⇒ no probe ⇒ UNKNOWN
   ADR_N=0

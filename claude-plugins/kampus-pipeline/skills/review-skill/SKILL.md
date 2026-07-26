@@ -218,17 +218,28 @@ PR=<pr number>
 # Assert on the STATE WORD, never on the exit status — the exit code discriminates the four states
 # only once the verb has RUN, so `… || ordinary` fail-opens on a usage error (1) or a missing
 # binary (127). The `else` below is the catch-all that makes that safe (formats §CP; #4161).
-CP_STATE="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
-  | "$PCLI" cp-classify classify --repo "$REPO")"
+# The verb's INPUT is a fallible read, so it comes from §CPREAD's `cp_changed_files` (copy it and
+# `cp_head_sha` verbatim from ../gh-issue-intake-formats.md) — never a bare `gh api … |` pipe: with
+# pipefail off, a failed read pipes gh's stdout ERROR BODY into the verb, which matches no §CP clause
+# and answers `not-control-plane` (#4216).
+if ! cp_changed_files "$REPO" "$PR"; then
+  CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ held as §CP by the catch-all below
+else
+  CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
+fi
 # `content-undetermined` is an OBLIGATION, not an answer: probe each touched ADR at head with the
 # SAME ADR-0164 verb ship-it Step 0 and review-code/review-doc run. Any BLOCKING line ⇒ §CP.
 if [ "$CP_STATE" = "content-undetermined" ]; then
-  HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
-  gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
+  cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"   # EMPTY on failure (payload discarded) — §CPREAD
+  [ -n "$HEAD_SHA" ] || echo "BLOCKING (head SHA unreadable — ADR content unprobeable ⇒ §CP, fail-closed)"
+  [ -z "$HEAD_SHA" ] || printf '%s\n' "$CP_FILES" \
     | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
-        gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null \
-          | "$PCLI" guard-content-probe classify --path "$adr" >/dev/null \
-          && echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"
+        # Capture and CHECK, never a straight pipe — gh writes its error document to STDOUT, so a
+        # pipe hands the probe an ERROR BODY as the ADR body (§CPREAD #2).
+        adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
+        if [ -z "$adr_body" ]; then echo "BLOCKING ($adr — body unreadable at head ⇒ §CP, fail-closed)"
+        elif printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" >/dev/null; then
+          echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
       done
 elif [ "$CP_STATE" != "not-control-plane" ]; then
   # The catch-all: control-plane, unknown, AND anything unenumerated — the empty string a failed
