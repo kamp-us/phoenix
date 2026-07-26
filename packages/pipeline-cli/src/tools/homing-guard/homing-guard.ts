@@ -1,17 +1,18 @@
 /**
  * `homing-guard` pure core — decide whether every `status:triaged` issue left triage with
- * a home. The invariant is the triage rubric's home-or-exempt-or-kill outcome (ADR 0202
- * forward-motion doctrine, ADR 0208 standing-lane exemption): a triaged issue carries an
- * arc/campaign milestone, or one of exactly two standing-lane labels, or it was killed and
- * is no longer open. IO-free and total — the `gh api` read lives in `github.ts`/`gate.ts`.
+ * exactly one home. Home and exemption are MUTUALLY EXCLUSIVE (ADR 0202 forward-motion
+ * doctrine, ADR 0208 standing-lane exemption): a triaged issue carries an arc/campaign
+ * milestone, or one of exactly two standing-lane labels, or it was killed and is no longer
+ * open — never both marks at once, which ADR 0208 bans outright. IO-free and total — the
+ * `gh api` read lives in `github.ts`/`gate.ts`.
  *
  * The guard is the teeth behind the rubric: without it the rubric lands advisory-only and
  * floaters regrow at the seam, which is the "teeth in a sweep, not at the seam" anti-pattern
  * ADR 0202 bans (#3939).
  *
- * Deliberately NOT enforced here: ADR 0208's inverse ban (a milestone on an exempt lane).
- * That is a different invariant with a different remediation, and folding it in would red a
- * backlog for a defect this guard's report cannot explain (#3939 scope).
+ * Both directions of the invariant red here (#4069). Enforcing only the neither-marked half
+ * read as full coverage downstream while double-marked issues landed in the `homed` count —
+ * the milestone-counts-lie failure ADR 0202/0208 exist to prevent.
  */
 
 /**
@@ -44,17 +45,29 @@ export interface TriagedIssue {
  */
 export type Scope = {readonly _tag: "backlog"} | {readonly _tag: "issue"; readonly number: number};
 
-/** How one triaged issue resolves against home-or-exempt. */
-export type Disposition = "homed" | "exempt" | "unhomed";
+/** How one triaged issue resolves against home-xor-exempt. The two right-hand cases are defects. */
+export type Disposition = "homed" | "exempt" | "unhomed" | "double-marked";
 
-export interface Unhomed {
-	readonly number: number;
-	readonly title: string;
-}
+/**
+ * One issue that violates the invariant, tagged by which half it broke. One list of tagged
+ * offenders rather than two parallel arrays keeps "a failing verdict names at least one
+ * offender" the single non-empty check `judge` already made, with no both-empty state to
+ * represent — and the report renders each kind under its own remedy.
+ */
+export type Violation =
+	| {readonly kind: "unhomed"; readonly number: number; readonly title: string}
+	| {
+			readonly kind: "double-marked";
+			readonly number: number;
+			readonly title: string;
+			readonly milestone: number;
+			/** The standing-lane labels it carries alongside the milestone — the mark to drop, or keep. */
+			readonly lanes: ReadonlyArray<string>;
+	  };
 
 /**
  * The verdict. A discriminated union so an invalid state is unrepresentable: a pass carries
- * only counts, the zero-scope fail carries the scope it found empty, and the unhomed fail
+ * only counts, the zero-scope fail carries the scope it found empty, and the violation fail
  * carries its non-empty offender list.
  */
 export type HomingGuardVerdict =
@@ -73,23 +86,42 @@ export type HomingGuardVerdict =
 	  }
 	| {
 			readonly pass: false;
-			readonly reason: "unhomed";
+			readonly reason: "violations";
 			readonly scope: Scope;
 			readonly scanned: number;
 			readonly homed: number;
 			readonly exempt: number;
-			readonly unhomed: ReadonlyArray<Unhomed>;
+			readonly violations: ReadonlyArray<Violation>;
 	  };
 
 /**
- * Resolve one issue. A milestone homes it; failing that, either standing-lane label exempts
- * it. An issue carrying both is `homed` — that combination is ADR 0208's inverse ban, which
- * this guard does not enforce (see the module docblock).
+ * How one issue resolved: a clean outcome, or the `Violation` it is — one shape, so a defect
+ * always arrives carrying the detail its remedy needs, and the rule is stated in one place.
  */
-export const disposition = (issue: TriagedIssue): Disposition => {
-	if (issue.milestone !== null) return "homed";
-	return issue.labels.some((l) => EXEMPT_LABELS.includes(l)) ? "exempt" : "unhomed";
+export type Resolution = {readonly kind: "homed"} | {readonly kind: "exempt"} | Violation;
+
+/** The standing-lane labels this issue carries (ADR 0208's exact two, no prefix matching). */
+export const standingLanes = (issue: TriagedIssue): ReadonlyArray<string> =>
+	issue.labels.filter((l) => EXEMPT_LABELS.includes(l));
+
+/**
+ * Resolve one issue against home-xor-exempt. A milestone homes it and a standing-lane label
+ * exempts it, but carrying both is `double-marked` — ADR 0208 bans that combination in its
+ * Banned list, and it never counts as homed.
+ */
+export const resolve = (issue: TriagedIssue): Resolution => {
+	const lanes = standingLanes(issue);
+	const {number, title} = issue;
+	if (issue.milestone !== null) {
+		return lanes.length > 0
+			? {kind: "double-marked", number, title, milestone: issue.milestone, lanes}
+			: {kind: "homed"};
+	}
+	return lanes.length > 0 ? {kind: "exempt"} : {kind: "unhomed", number, title};
 };
+
+/** The bare outcome of `resolve` — the four-way answer, without the offender detail. */
+export const disposition = (issue: TriagedIssue): Disposition => resolve(issue).kind;
 
 /**
  * Judge the scanned set.
@@ -110,32 +142,33 @@ export const judge = (
 			: {pass: true, scope, scanned: 0, homed: 0, exempt: 0};
 	}
 
-	const unhomed: Array<Unhomed> = [];
+	const violations: Array<Violation> = [];
 	let homed = 0;
 	let exempt = 0;
 	for (const issue of issues) {
-		switch (disposition(issue)) {
+		const resolution = resolve(issue);
+		switch (resolution.kind) {
 			case "homed":
 				homed++;
 				break;
 			case "exempt":
 				exempt++;
 				break;
-			case "unhomed":
-				unhomed.push({number: issue.number, title: issue.title});
+			default:
+				violations.push(resolution);
 				break;
 		}
 	}
 
-	if (unhomed.length > 0) {
+	if (violations.length > 0) {
 		return {
 			pass: false,
-			reason: "unhomed",
+			reason: "violations",
 			scope,
 			scanned: issues.length,
 			homed,
 			exempt,
-			unhomed,
+			violations,
 		};
 	}
 	return {pass: true, scope, scanned: issues.length, homed, exempt};
@@ -144,14 +177,34 @@ export const judge = (
 const scopeLabel = (scope: Scope): string =>
 	scope._tag === "backlog" ? "the open status:triaged backlog" : `issue #${scope.number}`;
 
-/** The remediation, stated once — the three outcomes the triage rubric allows. */
-const REMEDY =
+/** The un-homed remediation, stated once — the three outcomes the triage rubric allows. */
+const UNHOMED_REMEDY =
 	"Each issue above left triage un-homed. Give it one of the three home-or-exempt-or-kill outcomes\n" +
 	"(claude-plugins/kampus-pipeline/skills/triage/SKILL.md, ADR 0202/0208):\n" +
 	"  1. home it in an EXISTING open arc/campaign milestone from ROADMAP.md (triage never creates one);\n" +
 	`  2. label it a standing lane — ${EXEMPT_LABELS.join(" or ")} — when it is milestone-less by design;\n` +
 	"  3. kill it (close not-planned) when it does not move anything forward — agent-filed issues only,\n" +
 	"     a human-filed issue is never auto-closed.";
+
+/** The double-marked remediation: home and exemption are exclusive, so exactly one mark goes. */
+const DOUBLE_MARKED_REMEDY =
+	"Each issue above claims BOTH a home and a standing-lane exemption, which ADR 0208 bans outright\n" +
+	'(Banned: "Milestones on wayfinder:backlog fog … or on axis:pipeline-hardening items"). A standing\n' +
+	"lane is milestone-less BY DESIGN, so the two marks cannot both be true. Drop exactly one:\n" +
+	"  1. drop the MILESTONE when the issue really is a standing lane — fog homes when it gets charted\n" +
+	"     (ADR 0203), and pipeline hardening never completes into an arc;\n" +
+	"  2. drop the STANDING-LANE LABEL when the issue is genuinely homed in that arc/campaign.\n" +
+	"Leaving both makes the milestone burndown count an issue that also claims exemption from it.";
+
+const violationLines = (violations: ReadonlyArray<Violation>, kind: Violation["kind"]): string =>
+	violations
+		.filter((v) => v.kind === kind)
+		.map((v) =>
+			v.kind === "double-marked"
+				? `  #${v.number} ${v.title} — milestone ${v.milestone} + ${v.lanes.join(", ")}`
+				: `  #${v.number} ${v.title}`,
+		)
+		.join("\n");
 
 /** Render the report for a verdict (ADR 0092 §1 — "emit what you scanned"). */
 export const renderReport = (verdict: HomingGuardVerdict): string => {
@@ -161,7 +214,7 @@ export const renderReport = (verdict: HomingGuardVerdict): string => {
 		}
 		return (
 			`homing-guard: ${scopeLabel(verdict.scope)} is fully homed — scanned ${verdict.scanned} triaged issue(s): ` +
-			`${verdict.homed} milestone-homed, ${verdict.exempt} standing-lane exempt, 0 un-homed.`
+			`${verdict.homed} milestone-homed, ${verdict.exempt} standing-lane exempt, 0 un-homed, 0 double-marked.`
 		);
 	}
 	if (verdict.reason === "zero-scope") {
@@ -171,10 +224,20 @@ export const renderReport = (verdict: HomingGuardVerdict): string => {
 			"(renamed label, missing token, wrong repo), and a vacuous pass would hide every floater."
 		);
 	}
-	const lines = verdict.unhomed.map((i) => `  #${i.number} ${i.title}`);
+	const unhomed = violationLines(verdict.violations, "unhomed");
+	const doubleMarked = violationLines(verdict.violations, "double-marked");
+	// Each defect class prints only when present, immediately above its own remedy, so a red is
+	// self-explanatory without reading this source (#4069).
+	const sections = [
+		unhomed === ""
+			? ""
+			: `Left triage with NEITHER a milestone nor a standing-lane label:\n${unhomed}\n\n${UNHOMED_REMEDY}`,
+		doubleMarked === ""
+			? ""
+			: `Carry BOTH a milestone and a standing-lane label:\n${doubleMarked}\n\n${DOUBLE_MARKED_REMEDY}`,
+	].filter((s) => s !== "");
 	return (
-		`homing-guard: ${verdict.unhomed.length} of ${verdict.scanned} triaged issue(s) in ${scopeLabel(verdict.scope)} ` +
-		`left triage with neither a milestone nor a standing-lane label ` +
-		`(${verdict.homed} homed, ${verdict.exempt} exempt):\n${lines.join("\n")}\n\n${REMEDY}`
+		`homing-guard: ${verdict.violations.length} of ${verdict.scanned} triaged issue(s) in ${scopeLabel(verdict.scope)} ` +
+		`break home-xor-exempt (${verdict.homed} homed, ${verdict.exempt} exempt):\n\n${sections.join("\n\n")}`
 	);
 };

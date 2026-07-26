@@ -1,8 +1,8 @@
 /**
- * Pure-core tests for `homing-guard` (#3939): the home-or-exempt disposition, the verdict
- * over a scanned set, the two zero-scope forks (backlog fails closed per ADR 0092, a single
- * non-triaged issue passes as out-of-scope), and the report. No IO — the `gh api` seam is
- * crossed in `gate.ts`/`github.ts`.
+ * Pure-core tests for `homing-guard` (#3939, extended to both directions in #4069): the
+ * four-way home-xor-exempt disposition, the verdict over a scanned set, the two zero-scope
+ * forks (backlog fails closed per ADR 0092, a single non-triaged issue passes as
+ * out-of-scope), and the report. No IO — the `gh api` seam is crossed in `gate.ts`/`github.ts`.
  */
 import {describe, expect, it} from "@effect/vitest";
 import {
@@ -10,6 +10,7 @@ import {
 	EXEMPT_LABELS,
 	judge,
 	renderReport,
+	resolve,
 	type Scope,
 	type TriagedIssue,
 } from "./homing-guard.ts";
@@ -52,8 +53,24 @@ describe("disposition", () => {
 		);
 	});
 
-	it("milestone WINS over a standing-lane label (ADR 0208's inverse ban is out of scope)", () => {
-		expect(disposition(issue(1, 17, ["wayfinder:backlog"]))).toBe("homed");
+	it.each([
+		...EXEMPT_LABELS,
+	])("a milestone AND %s is double-marked — ADR 0208 bans it, and it is never homed", (label) => {
+		expect(disposition(issue(1, 17, [label]))).toBe("double-marked");
+	});
+
+	it("a double-marked resolution carries the milestone and the lanes its remedy names", () => {
+		expect(resolve(issue(42, 17, ["wayfinder:backlog", "p2"]))).toEqual({
+			kind: "double-marked",
+			number: 42,
+			title: "issue 42",
+			milestone: 17,
+			lanes: ["wayfinder:backlog"],
+		});
+	});
+
+	it("a milestone plus a look-alike label is plain homed (the exempt set is exact)", () => {
+		expect(disposition(issue(1, 17, ["axis:pipeline-hardening-ish"]))).toBe("homed");
 	});
 });
 
@@ -74,12 +91,12 @@ describe("judge — pass", () => {
 	});
 });
 
-describe("judge — un-homed", () => {
+describe("judge — violations", () => {
 	it("FAILS and names every un-homed issue, not just the first", () => {
 		const v = judge([issue(1, 17), issue(2, null), issue(3, null, ["p0"])]);
 		expect(v.pass).toBe(false);
-		if (!v.pass && v.reason === "unhomed") {
-			expect(v.unhomed.map((u) => u.number)).toEqual([2, 3]);
+		if (!v.pass && v.reason === "violations") {
+			expect(v.violations.map((u) => u.number)).toEqual([2, 3]);
 			expect(v.scanned).toBe(3);
 			expect(v.homed).toBe(1);
 			expect(v.exempt).toBe(0);
@@ -89,8 +106,47 @@ describe("judge — un-homed", () => {
 	it("FAILS a single-issue scan of an un-homed issue", () => {
 		const v = judge([issue(9, null)], {_tag: "issue", number: 9});
 		expect(v.pass).toBe(false);
-		if (!v.pass && v.reason === "unhomed") {
-			expect(v.unhomed).toEqual([{number: 9, title: "issue 9"}]);
+		if (!v.pass && v.reason === "violations") {
+			expect(v.violations).toEqual([{kind: "unhomed", number: 9, title: "issue 9"}]);
+		}
+	});
+
+	it("FAILS on a double-marked issue and keeps it OUT of the homed count", () => {
+		const v = judge([issue(1, 17), issue(2, 24, ["axis:pipeline-hardening"])]);
+		expect(v.pass).toBe(false);
+		if (!v.pass && v.reason === "violations") {
+			expect(v.homed).toBe(1);
+			expect(v.exempt).toBe(0);
+			expect(v.scanned).toBe(2);
+			expect(v.violations).toEqual([
+				{
+					kind: "double-marked",
+					number: 2,
+					title: "issue 2",
+					milestone: 24,
+					lanes: ["axis:pipeline-hardening"],
+				},
+			]);
+		}
+	});
+
+	it("FAILS a single-issue scan of a double-marked issue — the --issue seam reds too", () => {
+		const v = judge([issue(9, 17, ["wayfinder:backlog"])], {_tag: "issue", number: 9});
+		expect(v.pass).toBe(false);
+		if (!v.pass && v.reason === "violations") {
+			expect(v.violations.map((x) => x.kind)).toEqual(["double-marked"]);
+		}
+	});
+
+	it("carries BOTH defect classes in one verdict — neither hides the other", () => {
+		const v = judge([issue(1, null), issue(2, 24, ["wayfinder:backlog"]), issue(3, 17)]);
+		expect(v.pass).toBe(false);
+		if (!v.pass && v.reason === "violations") {
+			expect(v.violations.map((x) => [x.kind, x.number])).toEqual([
+				["unhomed", 1],
+				["double-marked", 2],
+			]);
+			expect(v.homed).toBe(1);
 		}
 	});
 });
@@ -140,5 +196,28 @@ describe("renderReport", () => {
 		expect(report).toContain("home it in an EXISTING open arc/campaign milestone");
 		expect(report).toContain("wayfinder:backlog or axis:pipeline-hardening");
 		expect(report).toContain("kill it (close not-planned)");
+	});
+
+	it("names a double-marked issue with the two marks it carries, and its own remedy", () => {
+		const report = renderReport(judge([issue(1, 17), issue(2, 24, ["wayfinder:backlog"])]));
+		expect(report).toContain("Carry BOTH a milestone and a standing-lane label");
+		expect(report).toContain("#2 issue 2 — milestone 24 + wayfinder:backlog");
+		expect(report).toContain("ADR 0208");
+		expect(report).toContain("drop the MILESTONE");
+		expect(report).toContain("drop the STANDING-LANE LABEL");
+	});
+
+	it("separates the two defect classes, each under its own remedy", () => {
+		const report = renderReport(judge([issue(1, null), issue(2, 24, ["wayfinder:backlog"])]));
+		expect(report).toContain("2 of 2 triaged issue(s)");
+		expect(report).toContain("Left triage with NEITHER a milestone nor a standing-lane label");
+		expect(report).toContain("Carry BOTH a milestone and a standing-lane label");
+		expect(report.indexOf("#1 issue 1")).toBeLessThan(report.indexOf("#2 issue 2"));
+	});
+
+	it("prints ONLY the class that fired — no empty section for the other", () => {
+		const report = renderReport(judge([issue(1, null)]));
+		expect(report).toContain("Left triage with NEITHER");
+		expect(report).not.toContain("Carry BOTH");
 	});
 });

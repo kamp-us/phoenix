@@ -75,14 +75,14 @@ jobs:
           # filed issue body, not command substitution — nothing in it may expand.
           # shellcheck disable=SC2016
           gh issue create --repo "$GITHUB_REPOSITORY" \
-            --title "homing-guard: triaged issues left without a home" \
+            --title "homing-guard: triaged issues break home-xor-exempt" \
             --label "status:needs-triage" \
-            --body "$(printf 'The weekly homing-guard sweep found triaged issues carrying neither a milestone nor a standing-lane label. Home, exempt, or kill each one per the triage rubric (ADR 0202/0208).\n\nGuard output:\n\n```\n%s\n```\n' "$(cat guard-output.txt)")"
+            --body "$(printf 'The weekly homing-guard sweep found triaged issues that carry neither a milestone nor a standing-lane label, or that carry both. Give each one exactly one home per the triage rubric (ADR 0202/0208) — the guard output below names the remedy for each class.\n\nGuard output:\n\n```\n%s\n```\n' "$(cat guard-output.txt)")"
 
       # Red the run for the blocking triggers (an issue event, a manual dispatch). On a
       # schedule run the drift was already reported as an issue above.
-      - name: Fail the job on an un-homed issue (blocking triggers)
+      - name: Fail the job on a homing violation (blocking triggers)
         if: ${{ github.event_name != 'schedule' && steps.guard.outputs.code != '0' }}
         run: |
-          echo "homing-guard: a triaged issue has no home — see the check step output above." >&2
+          echo "homing-guard: a triaged issue has no home, or claims two — see the check step output above." >&2
           exit 1
