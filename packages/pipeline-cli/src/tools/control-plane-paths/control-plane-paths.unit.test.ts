@@ -111,6 +111,96 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 	});
 });
 
+// ADR 0218 — the pipeline-cli boundary is an enforcement CORE, not the whole package. Both
+// directions are asserted: every one of these cases flips under the pre-0218 blanket
+// `^packages/pipeline-cli/` branch, which classified all of them control-plane.
+describe("CONTROL_PLANE_RE narrows packages/pipeline-cli to its enforcement core (ADR 0218)", () => {
+	it("keeps the src/ ROOT — every shared-dispatch + plumbing module, not just the four listed", () => {
+		for (const path of [
+			"packages/pipeline-cli/src/registry.ts",
+			"packages/pipeline-cli/src/router.ts",
+			"packages/pipeline-cli/src/bin.ts",
+			"packages/pipeline-cli/src/gate-fail.ts",
+			// the modules a hand-maintained four-file list would have missed — the rot the
+			// non-recursive `src/[^/]+$` pattern closes by construction
+			"packages/pipeline-cli/src/read-stdin.ts",
+			"packages/pipeline-cli/src/read-stdin-core.ts",
+			"packages/pipeline-cli/src/tool-registration.ts",
+			"packages/pipeline-cli/src/run.ts",
+			"packages/pipeline-cli/src/module-load-guard.ts",
+			"packages/pipeline-cli/src/annotate.ts",
+			"packages/pipeline-cli/src/find-root-dir.ts",
+			"packages/pipeline-cli/src/version.ts",
+			"packages/pipeline-cli/src/some-module-added-tomorrow.ts",
+		]) {
+			expect(isControlPlane(path)).toBe(true);
+		}
+	});
+
+	it("keeps all EIGHT enforcement-core tools, including the three the 9-path list omitted", () => {
+		for (const path of [
+			"packages/pipeline-cli/src/tools/ci-required/bin.ts",
+			"packages/pipeline-cli/src/tools/verdict/verdict-match.ts",
+			"packages/pipeline-cli/src/tools/cp-cardinality/command.ts",
+			"packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts",
+			"packages/pipeline-cli/src/tools/codeowners-cp/gate.ts",
+			// the three retained by the founder ruling on top of the issue's original nine
+			"packages/pipeline-cli/src/tools/cp-classify/cp-classify.ts",
+			"packages/pipeline-cli/src/tools/trivial-diff/route.ts",
+			"packages/pipeline-cli/src/tools/review-head/resolve-head.ts",
+		]) {
+			expect(isControlPlane(path)).toBe(true);
+		}
+	});
+
+	it("keeps tracker/gh-io.ts — the ADR-0055 write+ ACL `verdict` resolves authority against", () => {
+		// One FILE inside an otherwise non-core directory: `authorizedAuthors` feeds
+		// `resolveVerdict`, so an unreviewed widening would let a forged verdict count as a PASS.
+		expect(isControlPlane("packages/pipeline-cli/src/tools/tracker/gh-io.ts")).toBe(true);
+		// …and the anchor really is file-level — its siblings and the directory stay out.
+		for (const path of [
+			"packages/pipeline-cli/src/tools/tracker/command.ts",
+			"packages/pipeline-cli/src/tools/tracker/claim.ts",
+			"packages/pipeline-cli/src/tools/tracker/gh-io.unit.test.ts",
+			"packages/pipeline-cli/src/tools/tracker/nested/gh-io.ts",
+		]) {
+			expect(isControlPlane(path)).toBe(false);
+		}
+	});
+
+	it("releases the non-gating tools — coordination + read tooling, and the Tier-3 guards", () => {
+		for (const path of [
+			"packages/pipeline-cli/src/tools/checks/command.ts",
+			"packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts",
+			"packages/pipeline-cli/src/tools/spawn-guard/command.ts",
+			"packages/pipeline-cli/src/tools/worktree-guard/command.ts",
+			"packages/pipeline-cli/src/tools/structured-output-guard/command.ts",
+			"packages/pipeline-cli/src/tools/guard-content-probe/command.ts",
+			"packages/pipeline-cli/src/tools/merge-intent/command.ts",
+			"packages/pipeline-cli/src/tools/roadmap/command.ts",
+		]) {
+			expect(isControlPlane(path)).toBe(false);
+		}
+	});
+
+	it("releases the package-root non-src surfaces (package.json, build + test config)", () => {
+		for (const path of [
+			"packages/pipeline-cli/package.json",
+			"packages/pipeline-cli/tsconfig.json",
+			"packages/pipeline-cli/vitest.config.ts",
+			"packages/pipeline-cli/TOOLS.md",
+			"packages/pipeline-cli/README.md",
+		]) {
+			expect(isControlPlane(path)).toBe(false);
+		}
+	});
+
+	it("leaves the independent ^packages/ci-required/ branch byte-unchanged in effect", () => {
+		expect(isControlPlane("packages/ci-required/src/bin.ts")).toBe(true);
+		expect(CONTROL_PLANE_RE).toContain("^packages/ci-required/");
+	});
+});
+
 // Drift guard: the const IS the single source, and the un-importable formats-doc copy the live
 // gates read from origin/main (#981) must stay byte-equal to it. This is the cheap in-test twin
 // of the codeowners-cp + validate-gate-path-drift.sh guards that run unconditionally in CI (#2761).

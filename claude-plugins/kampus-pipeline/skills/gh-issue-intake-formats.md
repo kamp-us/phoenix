@@ -1554,19 +1554,43 @@ closing the #375 drift class).
   - `packages/ci-required/**` — the zero-dep aggregator of the gating CI checks. Its sources were
     inlined into pipeline-cli at `packages/pipeline-cli/src/tools/ci-required/` (#3802), and its CI
     job now runs `node packages/pipeline-cli/src/tools/ci-required/bin.ts`; the aggregator's
-    CP coverage now flows through the `^packages/pipeline-cli/` clause. The `^packages/ci-required/`
+    CP coverage now flows through the pipeline-cli enforcement-core clauses below (its sources sit
+    at `src/tools/ci-required/`, a retained core path). The `^packages/ci-required/`
     clause below is retained deliberately (ADR 0100) as defense-in-depth against a re-created package
     at that path, even though it no longer carries tracked sources.
-  - `packages/pipeline-cli/**` — the consolidated guard machinery (ADR
-    [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)),
-    now the single home for every guard the standalone `*-guard` packages used to carry
-    (`spawn-guard`, `worktree-guard`, `structured-output-guard`, `leak-guard`),
-    those packages deleted by Phase-4 (#1003). The whole package matches (`^packages/pipeline-cli/`),
-    not a `src/guards/` sub-prefix: the shared guard-dispatch infra — `registry.ts` (the
-    `registeredTools[]` array that wires every guard in), `router.ts`/`bin.ts` — lives at the
-    **package root**, so an edit there could disable or bypass every guard. The whole package is
-    a self-weakening surface. The legacy `^packages/[^/]*-guard/` clause is now retired with those
-    packages; guard coverage flows through `^packages/pipeline-cli/`.
+  - `packages/pipeline-cli/` — **an enforcement core, not the whole package** (ADR
+    [0218](https://github.com/kamp-us/phoenix/blob/main/.decisions/0218-pipeline-cli-cp-enforcement-core.md),
+    amending ADR 0100, which had rejected exactly this sub-path split). The package is the
+    consolidated home for every guard the standalone `*-guard` packages used to carry (ADR
+    [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md),
+    #1003), but ~68 tools live there and most gate nothing — so ADR
+    [0187](https://github.com/kamp-us/phoenix/blob/main/.decisions/0187-crew-mcp-is-not-control-plane.md)'s
+    enforcement-surface test is applied **per path** rather than to the package as a whole. Three
+    clauses carry it:
+    - `^packages/pipeline-cli/src/[^/]+$` — the `src/` **root, non-recursive**: the shared
+      dispatch + process plumbing every tool including every gate runs through (`registry.ts`'s
+      `registeredTools[]` can disable any guard without touching that guard's own directory;
+      plus `router.ts`/`bin.ts`/`gate-fail.ts`/`read-stdin*.ts`/`run.ts`/`tool-registration.ts`/…).
+      A non-recursive pattern, not a file list, so it cannot rot as root modules are added.
+    - `^packages/pipeline-cli/src/tools/(…)/` — the **eight** tools that are themselves the
+      enforcement surface: `ci-required` (a branch-protection-required check), `verdict` (the
+      enqueue gate, ADR 0058), `cp-cardinality` (§CP approval discharge, ADR 0175),
+      `control-plane-paths` (this boundary), `cp-classify` (the §CP verdict, #4161),
+      `codeowners-cp` (the regex↔CODEOWNERS drift gate), `trivial-diff` (routes a PR to the
+      lighter gate, ADR 0120), `review-head` (resolves the head every verdict binds to).
+    - `^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$` — **one file, not its directory.**
+      `gh-io.ts` exports `authorizedAuthors`, the ADR 0055 write+ ACL, and `verdict/github.ts`
+      feeds its result straight into `resolveVerdict`: widening it to return every author would
+      let a **forged verdict from a non-collaborator count as a PASS**. Retaining `verdict` while
+      leaving its authorization source ungated is an incoherent line. The rest of `tools/tracker/`
+      is claim/coordination tooling and stays out — hence the file-level anchor.
+
+    The legacy `^packages/[^/]*-guard/` clause is retired with those packages. Note what the
+    narrowing means concretely: the Tier-3 guards ADR 0100 named **by name** (`leak-guard`,
+    `spawn-guard`, `structured-output-guard`, `worktree-guard`, `read-guard`) are **no longer
+    §CP** — they are CI-enforced, not human-approval-enforced. ADR 0218 records that trade, the
+    three modules the core imports without retaining, and why `codeowners-cp` cannot catch a
+    stale over-broad CODEOWNERS row.
 
 A PR touching **any** path in this set is **control plane**: `ship-it` refuses to auto-merge
 it and a human merges it by hand (ADR
@@ -1577,9 +1601,11 @@ widened to the gate-critical skills by ADR
 [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), since the gate
 that reviews the gates is itself a gate; the enforcement-guard packages added by ADR
 [0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md),
-since a guard is a self-weakening surface wherever it lives; that coverage now also flows
-through the consolidated `^packages/pipeline-cli/` package per ADR
-[0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md);
+since a guard is a self-weakening surface wherever it lives; that coverage flowed
+through the consolidated `packages/pipeline-cli/` package per ADR
+[0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)
+and is now scoped to that package's **enforcement core** per ADR
+[0218](https://github.com/kamp-us/phoenix/blob/main/.decisions/0218-pipeline-cli-cp-enforcement-core.md);
 the **pipeline agent definitions** (`claude-plugins/kampus-pipeline/agents/**`) added by ADR
 [0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
 since a gate/merge agent's own instructions are a self-weakening surface; the **bare gate-critical
@@ -1623,7 +1649,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/|^biome\.jsonc$|^biome-plugins/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/'
 # The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
 # `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
 # pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP
