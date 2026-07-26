@@ -1,7 +1,7 @@
 ---
 id: 0203
 title: Triage relabels fog reports to `wayfinder:backlog`; no new intake skill
-status: accepted
+status: amended-in-part by [0210](0210-direction-binds-at-intake.md)
 date: 2026-07-19
 tags: [pipeline, triage, wayfinder, intake]
 ---
