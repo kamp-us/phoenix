@@ -153,10 +153,24 @@ describe("CONTROL_PLANE_RE narrows packages/pipeline-cli to its enforcement core
 		}
 	});
 
+	it("keeps tracker/gh-io.ts — the ADR-0055 write+ ACL `verdict` resolves authority against", () => {
+		// One FILE inside an otherwise non-core directory: `authorizedAuthors` feeds
+		// `resolveVerdict`, so an unreviewed widening would let a forged verdict count as a PASS.
+		expect(isControlPlane("packages/pipeline-cli/src/tools/tracker/gh-io.ts")).toBe(true);
+		// …and the anchor really is file-level — its siblings and the directory stay out.
+		for (const path of [
+			"packages/pipeline-cli/src/tools/tracker/command.ts",
+			"packages/pipeline-cli/src/tools/tracker/claim.ts",
+			"packages/pipeline-cli/src/tools/tracker/gh-io.unit.test.ts",
+			"packages/pipeline-cli/src/tools/tracker/nested/gh-io.ts",
+		]) {
+			expect(isControlPlane(path)).toBe(false);
+		}
+	});
+
 	it("releases the non-gating tools — coordination + read tooling, and the Tier-3 guards", () => {
 		for (const path of [
 			"packages/pipeline-cli/src/tools/checks/command.ts",
-			"packages/pipeline-cli/src/tools/tracker/gh-io.ts",
 			"packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts",
 			"packages/pipeline-cli/src/tools/spawn-guard/command.ts",
 			"packages/pipeline-cli/src/tools/worktree-guard/command.ts",

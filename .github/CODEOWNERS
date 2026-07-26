@@ -47,7 +47,7 @@
 # stays standalone (ADR 0092) and keeps its own owner line.
 /packages/ci-required/          @kamp-us/control-plane
 # Control-plane: pipeline-cli's ENFORCEMENT CORE only, not the whole package (ADR 0218, amending
-# ADR 0100). Must stay in lockstep with the two §CP `packages/pipeline-cli/` regex branches —
+# ADR 0100). Must stay in lockstep with the three §CP `packages/pipeline-cli/` regex branches —
 # `codeowners-cp` detects UNDER-protection only, so an over-broad row here would NOT red the gate.
 # `src/*` is within-segment (like the `**/*.sh` row above, which needs `**` precisely because `*`
 # does not cross `/`), so it owns the shared-dispatch root and no deeper.
@@ -62,6 +62,9 @@
 /packages/pipeline-cli/src/tools/cp-cardinality/       @kamp-us/control-plane
 /packages/pipeline-cli/src/tools/cp-classify/          @kamp-us/control-plane
 /packages/pipeline-cli/src/tools/review-head/          @kamp-us/control-plane
+# One FILE, not its directory: `gh-io.ts` exports `authorizedAuthors`, the ADR 0055 write+ ACL
+# `verdict` resolves a marker's authority against. The rest of `tools/tracker/` stays ungated.
+/packages/pipeline-cli/src/tools/tracker/gh-io.ts      @kamp-us/control-plane
 /packages/pipeline-cli/src/tools/trivial-diff/         @kamp-us/control-plane
 /packages/pipeline-cli/src/tools/verdict/              @kamp-us/control-plane
 # Control-plane: lint/GritQL governance config — the biome config + GritQL plugin rules. An

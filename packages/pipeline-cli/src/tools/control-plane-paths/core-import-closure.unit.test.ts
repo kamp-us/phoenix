@@ -76,14 +76,15 @@ const escapingModules = (): ReadonlyArray<string> => {
 };
 
 /**
- * The ruled residue: modules the retained core imports that the ruled twelve-path core does not
+ * The ruled residue: modules the retained core imports that the ruled thirteen-path core does not
  * retain. Each is recorded in ADR 0218 with its reachability — this is a pin, not an absolution.
+ * `tracker/gh-io.ts` left this list when it was promoted INTO the core; it has no relative imports
+ * of its own, so promoting it pulled nothing new in.
  */
 const ALLOWED_ESCAPES = [
 	"packages/pipeline-cli/src/tools/guard-content-probe/guard-content-probe.ts",
 	"packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts",
 	"packages/pipeline-cli/src/tools/leak-guard/path-matcher.ts",
-	"packages/pipeline-cli/src/tools/tracker/gh-io.ts",
 ];
 
 describe("the §CP enforcement core's import closure (ADR 0218)", () => {
@@ -99,5 +100,9 @@ describe("the §CP enforcement core's import closure (ADR 0218)", () => {
 		for (const m of ["read-stdin.ts", "read-stdin-core.ts", "annotate.ts", "find-root-dir.ts"]) {
 			expect(escapingModules()).not.toContain(`packages/pipeline-cli/src/${m}`);
 		}
+	});
+
+	it("no longer escapes through tracker/gh-io.ts — the ADR-0055 ACL is IN the core", () => {
+		expect(escapingModules()).not.toContain("packages/pipeline-cli/src/tools/tracker/gh-io.ts");
 	});
 });

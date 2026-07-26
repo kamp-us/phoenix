@@ -1565,7 +1565,7 @@ closing the #375 drift class).
     [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md),
     #1003), but ~68 tools live there and most gate nothing — so ADR
     [0187](https://github.com/kamp-us/phoenix/blob/main/.decisions/0187-crew-mcp-is-not-control-plane.md)'s
-    enforcement-surface test is applied **per path** rather than to the package as a whole. Two
+    enforcement-surface test is applied **per path** rather than to the package as a whole. Three
     clauses carry it:
     - `^packages/pipeline-cli/src/[^/]+$` — the `src/` **root, non-recursive**: the shared
       dispatch + process plumbing every tool including every gate runs through (`registry.ts`'s
@@ -1578,6 +1578,12 @@ closing the #375 drift class).
       `control-plane-paths` (this boundary), `cp-classify` (the §CP verdict, #4161),
       `codeowners-cp` (the regex↔CODEOWNERS drift gate), `trivial-diff` (routes a PR to the
       lighter gate, ADR 0120), `review-head` (resolves the head every verdict binds to).
+    - `^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$` — **one file, not its directory.**
+      `gh-io.ts` exports `authorizedAuthors`, the ADR 0055 write+ ACL, and `verdict/github.ts`
+      feeds its result straight into `resolveVerdict`: widening it to return every author would
+      let a **forged verdict from a non-collaborator count as a PASS**. Retaining `verdict` while
+      leaving its authorization source ungated is an incoherent line. The rest of `tools/tracker/`
+      is claim/coordination tooling and stays out — hence the file-level anchor.
 
     The legacy `^packages/[^/]*-guard/` clause is retired with those packages. Note what the
     narrowing means concretely: the Tier-3 guards ADR 0100 named **by name** (`leak-guard`,
@@ -1643,7 +1649,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^biome\.jsonc$|^biome-plugins/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/'
 # The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
 # `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
 # pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP

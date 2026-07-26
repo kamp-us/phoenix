@@ -79,12 +79,20 @@ ways.** This is not incidental bookkeeping; 0100 as written contradicts this cha
 
 ## Decision
 
-The blanket `^packages/pipeline-cli/` branch is replaced by **two** anchored branches:
+The blanket `^packages/pipeline-cli/` branch is replaced by **three** anchored branches:
 
 ```
 ^packages/pipeline-cli/src/[^/]+$
 ^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/
+^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$
 ```
+
+In the founder's enumeration the core is **thirteen paths**: the four shared-dispatch root modules
+(`registry.ts`, `router.ts`, `bin.ts`, `gate-fail.ts` — carried here by the *broader* non-recursive
+`src/[^/]+$` branch, which covers them and every other root module), the eight enforcement tool
+**directories**, and `tracker/gh-io.ts`. The thirteenth is the only entry that gates a **single
+file inside a directory that is otherwise not core**, which is why it needs its own `$`-anchored
+branch and its own literal CODEOWNERS row (§3).
 
 ### 1. The `src/` root, non-recursive — the shared dispatch and plumbing
 
@@ -123,6 +131,24 @@ proposed nine-path list. They were added by founder ruling after measurement sho
 security-boundary narrowing, a free widening that closes three independently-verified fail-open
 vectors is the obvious trade.
 
+### 3. One file: `src/tools/tracker/gh-io.ts`
+
+`gh-io.ts` exports `authorizedAuthors` (`gh-io.ts:209`) — the **ADR 0055 write+ ACL**, the trust
+root that decides whose `review-*` marker counts at all. `verdict/github.ts:214-215` feeds its
+result straight into `resolveVerdict`. An unreviewed edit widening it to return every author would
+let a **forged verdict from a non-collaborator count as a PASS**: the enqueue gate would still
+behave exactly as written while authorizing anyone. Retaining `verdict` — the tool that consumes
+the decision — while leaving the source of the decision ungated is an incoherent line, and it
+clears ADR 0187's burden of proof on its own terms.
+
+It is anchored at the **file**, not at `tools/tracker/`. The rest of that directory is claim and
+coordination tooling (`tracker claim`, presence stamping) that gates nothing, and sweeping it into
+§CP would re-import exactly the rubber-stamp cost this ADR removes. `codeowners-cp`'s
+`expandBranch` normalizes a `$`-anchored, `\.`-escaped leaf to a `kind: "file"` path, so the branch
+resolves to the §CP path `packages/pipeline-cli/src/tools/tracker/gh-io.ts` and is owned by a
+literal CODEOWNERS row of the same name — placed **after** the owner-less
+`/packages/pipeline-cli/src/tools/` row, so last-match-wins re-owns it.
+
 `^packages/ci-required/` is a **separate, independent** branch and is byte-unchanged, as are its
 CODEOWNERS row and everything else in the regex.
 
@@ -142,20 +168,27 @@ addressed by name rather than by "the guards are green."
 > commands. Any future closure check must cut it the same way.
 
 With the `src/` root retained, the escapes measured on the naive-minus-registry graph collapse from
-eleven to **four**. All four are **retained as a recorded residue, not argued unreachable**:
+eleven to four; **promoting `tracker/gh-io.ts` into the core takes it to three.** `gh-io.ts` has no
+relative imports of its own (only `effect`), so retaining it pulled nothing new into the closure —
+re-derived mechanically, not assumed. The remaining three are **retained as a recorded residue, not
+argued unreachable**:
 
 | Escaping module | Reached from | Honest reachability |
 |---|---|---|
-| `tools/tracker/gh-io.ts` | `verdict/github.ts`, `review-head/materialize.ts` | **The sharpest one.** It exports `authorizedAuthors` — the ADR-0055 write+ ACL trust root — which `verdict/github.ts:214` feeds straight into `resolveVerdict`. Widening it to return all authors would let a **forged verdict from a non-collaborator** count. This clears 0187's burden of proof on its own terms. |
 | `tools/guard-content-probe/guard-content-probe.ts` | `trivial-diff/trivial-diff.ts` (`probeGuardContent`), `trivial-diff/command.ts` (`parseGuardAdrRe`) | Implements the **ADR-0164 §CP-by-content predicate** — the second §CP boundary definition. Weakening it makes a guard-relaxing ADR read as non-§CP to `trivial-diff`, routing it to the lighter gate. Surfaced by the mechanical check, *not* by the hand analysis, which had it as a second-order surface. |
-| `tools/leak-guard/leak-guard.ts` | `verdict/verdict-match.ts` (`findCommentLeaks`) | Feeds `emissionDefect`, the verdict-emission path-leak check (#2796/#2822). Weakening it admits a leaking verdict body; it does not flip a PASS/FAIL. Lower stakes than the two above, but ADR 0100 named `leak-guard` §CP by name. |
+| `tools/leak-guard/leak-guard.ts` | `verdict/verdict-match.ts` (`findCommentLeaks`) | Feeds `emissionDefect`, the verdict-emission path-leak check (#2796/#2822). Weakening it admits a leaking verdict body; it does not flip a PASS/FAIL. Lower stakes, but ADR 0100 named `leak-guard` §CP by name. |
 | `tools/leak-guard/path-matcher.ts` | `leak-guard.ts` | Same surface, one hop further. |
 
-**These four are the boundary's known cost, recorded rather than papered over.** The allowlist in
+`tools/tracker/gh-io.ts` was the fourth and **sharpest** of the measured escapes — it was the one
+that could flip a PASS/FAIL rather than merely degrade a report — which is why it is now in the
+core (§3 above) instead of on this list. That promotion is the answer to the question this section
+asks; the three left are the ones the founder ruled stay CI-enforced.
+
+**These three are the boundary's known cost, recorded rather than papered over.** The allowlist in
 the test exists so the set **cannot grow silently**: a new unclosed import from the core reds the
-check and forces a fresh decision. The first two in particular are live candidates for a follow-up
-widening; nothing here argues they are safe, only that the ruled boundary is where the founder set
-it and the residue is now visible instead of implicit.
+check and forces a fresh decision. `guard-content-probe` in particular remains a live candidate for
+a follow-up widening; nothing here argues it is safe, only that the ruled boundary is where the
+founder set it and the residue is now visible instead of implicit.
 
 **(b) Shared root modules beyond the four originally listed** — `tool-registration.ts`, `run.ts`,
 `index.ts`, `module-load-guard.ts`, `version.ts`, `read-stdin.ts`, `read-stdin-core.ts`,

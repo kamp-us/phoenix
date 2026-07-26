@@ -45,6 +45,7 @@ describe("splitTopLevelBranches", () => {
 			"packages/ci-required/",
 			"packages/pipeline-cli/src/[^/]+$",
 			"packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/",
+			"packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$",
 			"biome\\.jsonc$",
 			"biome-plugins/",
 		]);
@@ -116,6 +117,12 @@ describe("expandBranch", () => {
 		]);
 	});
 
+	it("expands the file-level tracker/gh-io.ts branch to an exact file, not a dir (ADR 0218)", () => {
+		expect(expandBranch("packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$")).toEqual([
+			{path: "packages/pipeline-cli/src/tools/tracker/gh-io.ts", kind: "file"},
+		]);
+	});
+
 	it("expands the biome-governance branches: an exact file + a dir prefix (ADR 0193)", () => {
 		expect(expandBranch("biome\\.jsonc$")).toEqual([{path: "biome.jsonc", kind: "file"}]);
 		expect(expandBranch("biome-plugins/")).toEqual([{path: "biome-plugins/", kind: "dir"}]);
@@ -154,6 +161,7 @@ describe("cpPaths over the live regex", () => {
 			"packages/pipeline-cli/src/tools/review-head/",
 			"packages/pipeline-cli/src/tools/trivial-diff/",
 			"packages/pipeline-cli/src/tools/verdict/",
+			"packages/pipeline-cli/src/tools/tracker/gh-io.ts",
 			"biome.jsonc",
 			"biome-plugins/",
 		]);
@@ -249,6 +257,7 @@ describe("findUncovered — the drift check", () => {
 		"/packages/pipeline-cli/src/tools/review-head/ @usirin",
 		"/packages/pipeline-cli/src/tools/trivial-diff/ @usirin",
 		"/packages/pipeline-cli/src/tools/verdict/ @usirin",
+		"/packages/pipeline-cli/src/tools/tracker/gh-io.ts @usirin",
 		"/biome.jsonc @usirin",
 		"/biome-plugins/ @usirin",
 	].join("\n");
@@ -325,6 +334,18 @@ describe("findUncovered — the drift check", () => {
 			"packages/pipeline-cli/src/tools/review-head/",
 			"packages/pipeline-cli/src/tools/trivial-diff/",
 			"packages/pipeline-cli/src/tools/verdict/",
+			"packages/pipeline-cli/src/tools/tracker/gh-io.ts",
+		]);
+	});
+
+	// The file-level branch is the one §CP path a directory row cannot be assumed to carry: the
+	// enclosing `tools/tracker/` is deliberately UNOWNED, so gh-io.ts needs its own literal row.
+	it("flags tracker/gh-io.ts when its own row is missing (ADR 0218's file-level branch)", () => {
+		const withoutGhIo = NARROWED_CODEOWNERS.split("\n")
+			.filter((l) => !l.includes("gh-io.ts"))
+			.join("\n");
+		expect(findUncovered(paths, parseCodeownersPatterns(withoutGhIo)).map((p) => p.path)).toEqual([
+			"packages/pipeline-cli/src/tools/tracker/gh-io.ts",
 		]);
 	});
 
