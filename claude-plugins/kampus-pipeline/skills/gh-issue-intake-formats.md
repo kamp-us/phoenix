@@ -1850,6 +1850,13 @@ fourth that the file-list read does not need:
    unresolved roster must therefore resolve to **UNKNOWN and stop under its own reason line**, never
    to a cardinality and never to "the team is empty".
 
+   **Read that at its measured size: a correctness and observability defect, not a privilege
+   escalation.** The phantom-member `N=1` lands on `single-owner-other`, which discharges on the
+   **identical** `nonAuthorApprovalAtHead` signal as the `multi-member` branch it displaces — so it
+   cannot lower an approval bar, and a 30-day audit of 1194 merged PRs (356 of them §CP) found no
+   case where it did. What it costs is a true answer: the gate reports an outage as a finding about
+   the team's shape.
+
 ```bash
 # cp_team_roster — the control-plane roster read. Sets CP_MEMBERS (logins, one per line) +
 # CP_MEMBERS_N; returns NON-ZERO ⇒ UNKNOWN (never a cardinality). A read that SUCCEEDS and returns
