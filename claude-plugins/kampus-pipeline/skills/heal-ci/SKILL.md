@@ -18,8 +18,14 @@ verdict over the failed logs, not a repair session.
 ## All GitHub ops via `gh api` REST / `gh run` — never GraphQL
 
 The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL queries.
-Run/check reads go through `gh run`; issue writes go through `gh api` REST (or, better,
-the `report` skill). This is not a style preference — GraphQL errors out on this org.
+Run reads go through `gh run`, a PR head's **check state** through `pipeline-cli checks read`
+(REST check-runs), and issue writes through `gh api` REST (or, better, the `report` skill).
+This is not a style preference — GraphQL errors out on this org.
+
+**Never `gh pr checks`.** It is GraphQL-backed: on PR #3988 it reported 29 of 33 checks
+`IN_PROGRESS` across three consecutive reads while REST had shown the same checks
+`completed`/`success` 15+ minutes earlier ([#3999](https://github.com/kamp-us/phoenix/issues/3999)).
+A healer that follows it is sent at the wrong run, or told nothing is failing at all.
 
 **Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api`
 call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared
@@ -56,7 +62,8 @@ These are the hard guardrails. heal-ci classifies **one** red run per invocation
 
 ## Step 1 — Get the failed logs
 
-You're given a run id, or a PR (resolve its latest run). Pin the identifiers you'll reuse
+You're given a run id, or a PR (resolve its failing run first — [Entering from a
+PR](#entering-from-a-pr--resolve-the-failing-run-over-rest)). Pin the identifiers you'll reuse
 once, up front, then use the vars in every command below:
 
 ```bash
@@ -79,7 +86,59 @@ JOB=<failed job databaseId from the rollup above>
 gh api repos/$REPO/actions/jobs/$JOB/logs
 ```
 
-If you only have a PR: `gh pr checks $PR` → the red check's run id (set `RUN`), then the above.
+### Entering from a PR — resolve the failing run over REST
+
+If you only have a `PR`, resolve `RUN` before anything above. Read the head's CI state through
+`pipeline-cli checks read` — REST check-runs, rolled up latest-per-context, so a superseded red
+from an earlier attempt can't send you at a run that has since gone green (#3762). Exit 0 means
+the head is genuinely red; exit 2 means it was **unreadable**, which is not "nothing is failing":
+
+```bash
+CHECKS="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli checks"
+CI_JSON="$($CHECKS read --pr "$PR" --expect red 2>/dev/null)"; rc=$?
+CONCLUSION="$(printf '%s' "$CI_JSON" | jq -r '.conclusion? // empty' 2>/dev/null)"
+case "$rc:$CONCLUSION" in
+  0:red)     ;;   # genuinely red — resolve the failing check's run below
+  1:green)   echo "heal-ci: head is green — nothing to classify"; exit 0 ;;
+  1:pending) ;;   # not red yet — take the running/wedged branch below
+  *)         echo "heal-ci: head CI unreadable — re-dispatch once the API answers; an unreadable head is not a green one (#3999)" >&2; exit 1 ;;
+esac
+```
+
+**A pending head is two different facts, and only one of them is yours.** `.running` is genuinely
+in flight and settles on its own — there is no failure to classify yet, so stop and say so.
+`.wedged` is stranded in the queue (`status: queued`, `started_at` still null): a run that never
+starts, so it has produced **no log body** to match the taxonomy against, and rerunning it is not
+the lever. Report the stranded contexts by name and stop — an operator, not a rerun, unwedges it.
+Collapsing the two is the defect #3999 removed from the merge gate; don't reintroduce it here.
+
+```bash
+jq -r '.running | join(", ")' <<<"$CI_JSON"   # still in flight — wait, don't classify
+jq -r '.wedged  | join(", ")' <<<"$CI_JSON"   # queued, never started — report, don't rerun
+```
+
+On a red head, take one failing context (one routed action per invocation) and resolve its run
+id. **For a GitHub Actions check run, the check-run `id` IS the Actions job id** — verified live
+on this repo: check run `89736644366` reads back at `actions/jobs/89736644366` with
+`run_id: 30180715802`, the same pair its `details_url` spells out. So one REST hop yields both
+`JOB` (what the log fallback above needs) and `RUN`:
+
+```bash
+FAILING="$(jq -r '.failing[0] // empty' <<<"$CI_JSON")"
+HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
+# The check-runs endpoint returns an object per page, so --slurp is what makes a busy head (>100
+# runs) parseable at all. Pick the latest run for the named context — later `started_at` wins,
+# ties fall back to the id — the same recency order the rollup used to name it.
+JOB="$(gh api --paginate --slurp "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" \
+  | jq -r --arg name "$FAILING" '[.[].check_runs[]
+      | select(.name == $name and .app.slug == "github-actions")]
+      | sort_by(.started_at // "", .id) | last | .id // empty')"
+RUN="$(gh api "repos/$REPO/actions/jobs/$JOB" --jq '.run_id')"
+```
+
+An empty `JOB` means the failing context is **not** a GitHub Actions check (a third-party app's
+check run has no Actions job and no log to read). Don't guess at it: file it via `report` as an
+unknown, naming the context, and stop.
 
 **Then detect whether this run was already rerun** — this is the stateless guard that makes
 the one-rerun rule hold across invocations (this skill is per-invocation memoryless; nothing
@@ -364,6 +423,11 @@ report-unknown (Step 3). Report back one line:
 ```
 run <id> (<branch>): <flake|defect|unknown>: <signature> → <rerun queued | report #N filed>
 ```
+
+A PR entry that never reaches a red run has no classification to report — say which state
+stopped it instead, naming the contexts: `pr <n>: head green — nothing to classify`,
+`pr <n>: still running (<contexts>) — no failure yet`, `pr <n>: wedged (<contexts>) — queued,
+never started; needs an operator lever, not a rerun`, or `pr <n>: head CI unreadable`.
 
 Merge is explicitly out of scope — `ship-it` owns that, and `ship-it` routed the red check
 to you precisely because you, not it, decide flake-vs-defect.
