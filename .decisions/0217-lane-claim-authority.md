@@ -13,8 +13,9 @@ tags: [pipeline, crew, claims]
 ## Context
 
 Two claim systems exist and cannot see each other. The `pipeline-cli` comment claim (ADR
-[0115](0115-agent-distinguishable-claim-marker.md) §7) writes a `claim: <session> · <ts> · presence
-<host>/<pid>` marker as a GitHub comment; the crew MCP's `channel_claim` reserves a `resource` key in
+[0115](0115-agent-distinguishable-claim-marker.md); the marker grammar itself is §7 of
+`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`) writes a `claim: <session> · <ts> ·
+presence <host>/<pid>` marker as a GitHub comment; the crew MCP's `channel_claim` reserves a `resource` key in
 the tracker's in-memory registry (ADR [0191](0191-crew-claim-lifecycle.md)). Neither reads the other,
 so a lane held under one reads as free under the other. #4074 reported exactly that: `granted: true`
 from `channel_claim` on a lane already held by a comment claim.
@@ -34,7 +35,7 @@ Consequences below.
 
 ## Decision
 
-**The `pipeline-cli` comment claim (ADR 0115 §7) is authoritative for lane and resource exclusion; the
+**The `pipeline-cli` comment claim (ADR 0115) is authoritative for lane and resource exclusion; the
 crew-MCP tracker claim (`channel_claim`) is advisory for that purpose.**
 
 The demotion is scoped to lane/resource exclusion and to nothing else. The tracker retains, unchanged
@@ -101,10 +102,36 @@ Grounds:
   0215 now governs the authoritative mechanism.
 - **The tracker's founding rationale cuts the other way; that tension is accepted, not hidden.** The
   docblock in `packages/pipeline-crew-mcp/src/edge/claim-tool.ts` justifies the tracker claim precisely
-  because the GitHub marker is degenerate under a shared login (incident #3509 → duplicate PRs #3503 /
-  #3508). The answer relied on here is ADR 0115's session-id tiebreak. **This decision rests on that
+  because the GitHub marker is degenerate under a shared login (incident #3498 → duplicate PRs #3503 /
+  #3508; that docblock names #3509 as the *missing seam*, not as the incident). The answer relied on here is ADR 0115's session-id tiebreak. **This decision rests on that
   tiebreak holding, and it was not empirically re-verified when the decision was taken.** If the
   shared-login tiebreak proves insufficient, this ADR is expected to be cheap to amend.
+- **That dependency has since been observed failing — the disclosure above, made concrete.** While this
+  ADR was in flight, `pipeline-cli claim status --issue 3955` reported owner `fcd74bd3` with
+  `liveness=LIVE` while the crew tracker reported the same lane held by a different engine. The two
+  systems disagreed, and on that instance the mechanism this ADR promotes was the wrong one.
+
+  **The mechanism is not settled, and this ADR does not pick one.** Two readings survive the evidence.
+  Either the ADR 0191 presence probe reads a dead session as live; or — the competing reading — a
+  compaction does not kill the process but rotates the conversation, so with the session id rotating
+  under the *same* live process the pid is genuinely alive and the probe is **correct**, and what is
+  stale is the identity stamped on the marker. Under the second reading the marker reads live-and-true
+  while `claim is-mine` returns `lost` for the very session that holds the lane — the ADR
+  [0215](0215-claim-identity-continuity-proof.md) / #4045 identity-rotation class. #4177 (`type:investigation`,
+  p1) tracks the discrimination; its triage narrows the real exposure to the **identity-supply** path
+  rather than the tiebreak compare, since the pure resolver core is already unit-tested while a delegated
+  `--session` token hands the same identity to two engines by construction. #4045 (closed p0) is the
+  observed half: a live process locked out of its own claims, six lanes stranded.
+
+  **What holds under both readings**, and is therefore how this ADR must be read: *a pre-rotation
+  session's claim can read live while the identity that holds it can no longer assert ownership — so
+  `liveness=live` is not proof that the claiming identity is still actively working the lane.* This ADR
+  carries **no liveness guarantee**. It decides only which mechanism is authoritative when the two
+  disagree about a lane; that authority is not a warrant that the authoritative answer is current. The
+  stronger gate is ADR 0215's continuity proof rather than a bare pid check, which is a further reason
+  #4118 sits on the critical path. None of this reverses the ruling — #3938 records the tracker failing
+  in the *other* direction (a false all-clear), so neither mechanism is un-failing; this was a disclosure
+  defect in this ADR's body, repaired here, not grounds to re-decide.
 - **Lane-key unification is out of scope.** `issue-<N>` vs `pr-<N>` as two unlinked keys is already
   tracked under epic #3766.
 
