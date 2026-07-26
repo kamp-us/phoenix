@@ -103,6 +103,38 @@ describe("route — safe REST verbs pass through unchanged", () => {
 	});
 });
 
+describe("route — an unresolved repo refuses the rewrite, not the whole shim (#4270)", () => {
+	const unresolved = (argv: ReadonlyArray<string>) => route(argv, {repo: null});
+
+	it("blocks `gh pr edit` and names $CLAUDE_PIPELINE_REPO instead of PATCHing a default repo", () => {
+		const out = unresolved(["pr", "edit", "42", "--body", "new body"]);
+		assert.strictEqual(out.kind, "block");
+		if (out.kind === "block") {
+			assert.include(out.hint, "CLAUDE_PIPELINE_REPO");
+			// the refusal must not smuggle a repo slug into the argv it declined to build
+			assert.notInclude(`${out.reason} ${out.hint}`, "repos/");
+		}
+	});
+
+	it("blocks `gh issue edit` on an unresolved repo too", () => {
+		const out = unresolved(["issue", "edit", "7", "--title", "Renamed"]);
+		assert.strictEqual(out.kind, "block");
+	});
+
+	it("leaves a passthrough that needs no repo unaffected", () => {
+		const argv = ["api", "repos/other-owner/other-repo/issues/1", "--jq", ".title"];
+		const out = unresolved(argv);
+		assert.strictEqual(out.kind, "passthrough");
+		if (out.kind === "passthrough") assert.deepStrictEqual([...out.argv], argv);
+	});
+
+	it("still strips GraphQL-only view fields, which need no repo", () => {
+		const out = unresolved(["pr", "view", "9", "--json", "number,closingIssuesReferences"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") assert.include(out.stripped, "closingIssuesReferences");
+	});
+});
+
 describe("isMilestoneTitle", () => {
 	it("treats a bare integer as a number (not a title)", () => {
 		assert.isFalse(isMilestoneTitle("12"));

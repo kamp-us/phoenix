@@ -42,6 +42,9 @@ const ZERO_SCOPE_EXIT_CODE = 3;
  */
 const runShim = (argv: ReadonlyArray<string>): never => {
 	const realGh = resolveRealGh();
+	// An unresolved repo (null) is carried into the router rather than refused here: only the
+	// REST-rewrite paths need a repo, so the router refuses exactly those (as a `block`, printed
+	// and exited non-zero below) and leaves a repo-less passthrough working (#4270).
 	const repo = resolveRepo(realGh);
 	const decision = route(argv, {repo, bodyFileExists: fileExists});
 

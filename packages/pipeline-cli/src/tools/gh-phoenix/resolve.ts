@@ -9,7 +9,8 @@
  * self-recursion guard that keeps the shim from execing itself. `self` is
  * injectable (default `selfPath`) so the self-skip is testable independent of the
  * runtime's `argv[1]`. `resolveRepo` resolves the repo the REST rewrites target:
- * `$CLAUDE_PIPELINE_REPO`, else `gh repo view`, else the phoenix default.
+ * `$CLAUDE_PIPELINE_REPO`, else `$GITHUB_REPOSITORY`, else `gh repo view` — and
+ * `null` when none of them resolves.
  *
  * **Exempt from the epic #3462 `@effect/platform` sweep, adjudicated in #3934.** The raw
  * `node:fs` / `node:path` here is the bin-boundary case of
@@ -76,20 +77,31 @@ export const resolveRealGh = (self: string = selfPath): string | null => {
 	return null;
 };
 
-/** Resolve `$CLAUDE_PIPELINE_REPO` or `gh repo view` — the repo the REST rewrites target. */
-export const resolveRepo = (realGh: string | null): string => {
-	const fromEnv = process.env.CLAUDE_PIPELINE_REPO;
-	if (fromEnv && fromEnv.length > 0) return fromEnv;
+/** A well-formed `owner/name` slug — the shape every REST rewrite path is built from. */
+const REPO_RE = /^[^/\s]+\/[^/\s]+$/;
+
+/**
+ * Resolve the repo the REST rewrites target, per ADR 0062 §1: `$CLAUDE_PIPELINE_REPO`,
+ * else `$GITHUB_REPOSITORY` (the CI tier every sibling resolver in this package carries),
+ * else `gh repo view`. **Returns `null` when none of them resolves** — an unresolved repo
+ * is a value the caller must handle, never a default. A repo literal here turned a
+ * resolution failure into a confident wrong target: a foreign repo's `gh pr edit <N>`
+ * became a `PATCH` against whatever issue held that number in *this* repo (#4270).
+ */
+export const resolveRepo = (realGh: string | null): string | null => {
+	const fromEnv = process.env.CLAUDE_PIPELINE_REPO ?? process.env.GITHUB_REPOSITORY;
+	if (fromEnv && REPO_RE.test(fromEnv.trim())) return fromEnv.trim();
 	if (realGh) {
 		try {
-			return execFileSync(
+			const viewed = execFileSync(
 				realGh,
 				["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
 				{encoding: "utf8"},
 			).trim();
+			if (REPO_RE.test(viewed)) return viewed;
 		} catch {
-			/* fall through */
+			/* unresolved — fall through */
 		}
 	}
-	return "kamp-us/phoenix";
+	return null;
 };

@@ -97,13 +97,15 @@ export const isMilestoneTitle = (value: string): boolean => !/^\d+$/.test(value.
 /**
  * The pure routing decision over a `gh` argv (the vector AFTER the `gh` binary
  * name — i.e. `process.argv.slice(2)` for the shim). `repo` is the resolved
- * `owner/name` the REST rewrites target; `bodyFileExists` reports whether a
+ * `owner/name` the REST rewrites target, or `null` when resolution failed — only the
+ * rewrite paths that must name a repo refuse on `null`, so an unresolved repo never
+ * costs a passthrough that needs none. `bodyFileExists` reports whether a
  * `--body-file <path>` argument names an existing readable file (the IO is done
  * by the caller and handed in, keeping this core pure).
  */
 export const route = (
 	argv: ReadonlyArray<string>,
-	opts: {readonly repo: string; readonly bodyFileExists?: (path: string) => boolean},
+	opts: {readonly repo: string | null; readonly bodyFileExists?: (path: string) => boolean},
 ): GhRoute => {
 	const bodyFileExists = opts.bodyFileExists ?? (() => true);
 	const [verb, sub, ...rest] = argv;
@@ -138,9 +140,20 @@ export const route = (
 const routeEdit = (
 	verb: string,
 	rest: ReadonlyArray<string>,
-	repo: string,
+	repo: string | null,
 	bodyFileExists: (path: string) => boolean,
 ): GhRoute => {
+	// The rewrite target is `repos/<repo>/issues/<N>`, so an unresolved repo has no honest
+	// value to substitute — refuse. Defaulting to any slug aims the PATCH at a repository
+	// the caller never named (#4270).
+	if (repo === null) {
+		return {
+			kind: "block",
+			reason: `\`gh ${verb} edit\` needs a target repository and none resolved — $CLAUDE_PIPELINE_REPO and $GITHUB_REPOSITORY are unset (or malformed) and \`gh repo view\` did not answer.`,
+			hint: "Set CLAUDE_PIPELINE_REPO=<owner>/<name>, or run inside a git repo whose origin `gh repo view` can read. Refusing rather than PATCHing a repository you did not name.",
+		};
+	}
+
 	const target = rest.find((a) => /^\d+$/.test(a));
 	if (target === undefined) {
 		return {
