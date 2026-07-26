@@ -1268,6 +1268,46 @@ This row is governed by the conjunctive rule (Step 3): a `[FAIL]` fails the PR u
 required test coverage. The firewall holds — you judge, `write-code` fixes, an independent re-review
 re-gates.
 
+### Step 3g — Deviation-disclosure gate: an undisclosed departure is a blocking finding (§DEV)
+
+Every PR body carries a `## Deviations` section stating what the implementation departed from — the
+issue, an acceptance criterion, a reviewer's guidance, or a governing ADR — or the literal `None.`.
+The section, its four fields, the **seven classes**, the detection tiers, and the two-branch verdict
+rule are defined once in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §DEV; read them there and don't
+re-derive them. This step is the `review-code` consumer.
+
+The gap it closes is on `main`: PR #3986 narrowed ADR 0115 §5's reclaim invariant in skill prose, the
+author offered *in review conversation* to file the amending ADR, the body carried nothing, and the
+narrowing merged as debt an audit reconstructed later (#3993 F1).
+
+**Run §DEV's canonical Tier-M scan** (the section-presence check plus the two diff-detectable
+classes) over the diff Step 2 already loaded — the snippet lives there; cite it, don't re-derive it.
+A hit is a line to judge against the disclosure, never a FAIL on its own.
+
+**The reader-detectable classes need no new read here.** §DEV Tier R (scope narrowing, ADR
+departure, declined guidance) is covered by reads this skill already performed: the per-criterion AC
+table above, and Step 3e's unresolved threads. Re-use those findings — an AC you graded as delivered
+in a **narrower shape** than the issue asked, or a suggestion in a thread the diff declined, is a
+deviation whether or not it earned a `[FAIL]` on its own row.
+
+Then fold **one** `deviation-disclosure` row into the conjunctive table by §DEV's verdict rule
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]` **on a PR that owes it**, `[N/A]` on
+one that does not; disclosed ⇒ judged on authorized / needs-an-ADR / needs-a-follow-up; clean ⇒ PASS
+phrased as *nothing undisclosed that this gate could see*, never as *no deviations exist*), exactly
+as Step 3b–3f fold theirs:
+
+```
+- [FAIL] deviation-disclosure — the diff narrows ADR 0115 §5's reclaim invariant in claim-protocol prose (§DEV class 2) and the body's `## Deviations` says `None.`; disclose it and either cite the amending ADR or add one (the #3986/#3993 F1 remedy)
+```
+
+**Whether the PR owes the section at all is §DEV's call, not this step's** — read *Who owes the
+section* there. Concretely for this gate: when Step 1's issueless carve-out fired (`ISSUE` unset on
+the conversation-authored `.glossary/**` coining PR, ADR 0184/0075) the AC half is already N/A, and
+this row renders N/A with it — `- [N/A] deviation-disclosure — issueless carve-out, no write-code
+author obliged (§DEV)`. Do **not** re-derive that scoping here; a per-skill copy is what made this
+gate FAIL a PR `review-doc` passed at the same head, with no repair round able to clear it.
+
 ---
 
 ## Step 4a — Pass path: signal merge-ready (do NOT merge)

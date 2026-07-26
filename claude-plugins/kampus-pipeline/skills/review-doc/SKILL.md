@@ -770,6 +770,43 @@ changes).
 
 ---
 
+## Step 4c — Deviation-disclosure gate: an undisclosed departure is a blocking finding (§DEV)
+
+Every `write-code` PR body carries a `## Deviations` section stating what the implementation
+departed from — the issue, an acceptance criterion, a reviewer's guidance, or a governing ADR — or
+the literal `None.`. The section, the seven classes, the detection tiers, the canonical Tier-M scan,
+and the two-branch verdict rule live once in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §DEV; run them from there and don't
+re-derive them. The gap it closes is on `main`: PR #3986 narrowed ADR 0115 §5's reclaim invariant in
+skill prose, the author offered *in review conversation* to file the amending ADR, the body carried
+nothing, and the narrowing merged as debt an audit reconstructed later (#3993 F1).
+
+**The doc-class read that feeds it is already done.** §DEV's most consequential class on a doc diff
+is class 2 — a departure from a governing ADR — and Step 4a's contradiction sweep is exactly that
+read. A contradiction the sweep found is a deviation; check whether the body discloses it, and
+whether the diff carries the amending ADR the disclosure claims. Step 4's hygiene checklist feeds
+class 7 (a doc surface touched that the issue does not imply) the same way.
+
+Fold **one** `deviation-disclosure` row into the conjunctive verdict by §DEV's rule
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]` **on a PR that owes it**, absent is
+not `None.`, and `[N/A]` on one that does not; disclosed ⇒ judged on authorized / needs-an-ADR /
+needs-a-follow-up; clean ⇒ PASS, phrased as *nothing undisclosed that this gate could see*, never as
+*no deviations exist*).
+
+```
+- [FAIL] deviation-disclosure — the ADR sweep (Step 4a) shows this diff narrows ADR 0115 §5's reclaim invariant (§DEV class 2) and the body's `## Deviations` says `None.`; disclose it and either cite the amending ADR or add one (the #3986/#3993 F1 remedy)
+```
+
+**Whether the PR owes the section at all is §DEV's call, not this step's** — read *Who owes the
+section* there. Concretely for this gate: the issueless doc PR (ADR 0075) whose acceptance-criteria
+table Step 5 already renders N/A carries the row N/A too —
+`- [N/A] deviation-disclosure — issueless carve-out, no write-code author obliged (§DEV)`. This step
+used to carry that exception as its own private paragraph, which is exactly why `review-code` and
+`review-design` rendered `[FAIL]` on the same head; the rule now lives in one place and every gate
+cites it.
+
+---
+
 ## Step 5 — Land the verdict
 
 **Run the specialist fan-out + route step (Step 4b) before composing the verdict** so any
