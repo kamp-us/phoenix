@@ -1292,13 +1292,21 @@ in a **narrower shape** than the issue asked, or a suggestion in a thread the di
 deviation whether or not it earned a `[FAIL]` on its own row.
 
 Then fold **one** `deviation-disclosure` row into the conjunctive table by §DEV's verdict rule
-(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]`; disclosed ⇒ judged on authorized /
-needs-an-ADR / needs-a-follow-up; clean ⇒ PASS phrased as *nothing undisclosed that this gate could
-see*), exactly as Step 3b–3f fold theirs:
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]` **on a PR that owes it**, `[N/A]` on
+one that does not; disclosed ⇒ judged on authorized / needs-an-ADR / needs-a-follow-up; clean ⇒ PASS
+phrased as *nothing undisclosed that this gate could see*, never as *no deviations exist*), exactly
+as Step 3b–3f fold theirs:
 
 ```
 - [FAIL] deviation-disclosure — the diff narrows ADR 0115 §5's reclaim invariant in claim-protocol prose (§DEV class 2) and the body's `## Deviations` says `None.`; disclose it and either cite the amending ADR or add one (the #3986/#3993 F1 remedy)
 ```
+
+**Whether the PR owes the section at all is §DEV's call, not this step's** — read *Who owes the
+section* there. Concretely for this gate: when Step 1's issueless carve-out fired (`ISSUE` unset on
+the conversation-authored `.glossary/**` coining PR, ADR 0184/0075) the AC half is already N/A, and
+this row renders N/A with it — `- [N/A] deviation-disclosure — issueless carve-out, no write-code
+author obliged (§DEV)`. Do **not** re-derive that scoping here; a per-skill copy is what made this
+gate FAIL a PR `review-doc` passed at the same head, with no repair round able to clear it.
 
 ---
 

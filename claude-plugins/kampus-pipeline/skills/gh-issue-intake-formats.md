@@ -3258,15 +3258,50 @@ walked these seven and none fired.
    rather than added to. "It asserted the defect" is a legitimate reason and a mandatory disclosure.
 7. **Out-of-scope change** — a file or surface touched that the issue does not imply.
 
+**The classes overlap; the label is a routing hint, not the disclosure.** A change can read as two
+classes at once — an addition triage explicitly declined is both class 4 and class 7 — and picking
+one is not a mistake to litigate. A gate matches its finding against the entry's **substance** (the
+Said / Did / Why), never against the class label, so a mis-labelled but honest entry is disclosed and
+a correctly-labelled but vague one is not.
+
 **A falsified `None.` is worse than an honest entry.** When a gate finds a class-N deviation in a
 diff whose body says `None.`, the disclosure is a false statement, and the finding is blocking on
 *two* counts: the undisclosed deviation, and the fact that the section can no longer be trusted on
 this PR. That asymmetry is the section's only real enforcement — disclosing costs a sentence, and a
 wrong `None.` costs a repair round.
 
-**Absent is not `None.`** A body with no `## Deviations` heading is malformed: the gate cannot tell
-"nothing to disclose" from "never considered it", so absence fails closed (§ZS's posture, applied to
-a body section). `None.` is a complete, valid disclosure; silence is not.
+**Absent is not `None.`** On a PR that **owes** the section (below), a body with no `## Deviations`
+heading is malformed: the gate cannot tell "nothing to disclose" from "never considered it", so
+absence fails closed (§ZS's posture, applied to a body section). `None.` is a complete, valid
+disclosure; silence is not.
+
+### Who owes the section — the one `[N/A]` scoping, stated here and nowhere else
+
+The writer half binds **`write-code`**, so the gate half can only fail a body `write-code` was
+obliged to compose. A PR with **no `write-code` author** owes nothing, and its row is **`[N/A]`, not
+`[FAIL]`** — every gate that carries the row resolves it by *this* rule. Stated once here on purpose:
+carried as a per-skill fragment it diverged immediately, and two gates rendered opposite rows on the
+same head — `review-doc` `[N/A]`, `review-code` `[FAIL]` — which, because the verdicts are
+conjunctive and `write-code` is not the author, no repair round could ever clear.
+
+A gate resolves the row **`[N/A]` only on positively-established non-obligation**, in exactly two
+shapes:
+
+- **The gate's own issueless carve-out already fired.** The row inherits this gate's
+  **acceptance-criteria determination**: where the AC half renders N/A because the PR is a blessed
+  issueless lane — the conversation-authored `.glossary/**` coining PR of ADR
+  [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md) /
+  [0184](https://github.com/kamp-us/phoenix/blob/main/.decisions/0184-review-code-issueless-carve-out.md) —
+  the deviation row renders N/A with it. There is no spec to depart from and no `write-code` author
+  obliged. Tying the two together is what keeps them from drifting apart again: a gate cannot grade
+  ACs while N/A-ing deviations, or the reverse.
+- **The PR was not authored by `write-code`.** A bot-opened PR (a dependency bump) or a
+  hand-authored human PR never ran Step 5, so its body was never obliged to carry the heading.
+
+Everything else — including a pipeline PR that merely **lost** its `Fixes #N` — is **owed**, and an
+absent section is a `[FAIL]`. The exception is deliberately narrow in that direction: dropping the
+issue link buys no exemption (each gate already hard-stops that shape as a broken seam), so the only
+way to reach `[N/A]` is a carve-out the gate itself established.
 
 **Repair appends, never replaces.** Each repair round adds its entries under the same heading, tagged
 `**(repair round K)**`, and leaves the earlier ones standing. The section is a running log of what
@@ -3306,13 +3341,18 @@ shows in the run log instead of reading green:
 BODY="$(gh api repos/$REPO/pulls/$PR --jq '.body')"
 printf '%s' "$BODY" | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
   && echo "deviation-disclosure: ## Deviations section present" \
-  || echo "deviation-disclosure: ## Deviations section ABSENT — malformed body (absent is not None.)"
+  || echo "deviation-disclosure: ## Deviations section ABSENT — malformed body if the PR OWES the section (absent is not None.); [N/A] if it does not (see 'Who owes the section')"
 # class 5, added suppressions/skips
 DEV_SUPPRESS="$(gh pr diff "$PR" | grep -E '^\+' \
   | grep -nE 'biome-ignore|eslint-disable|@ts-(expect-error|ignore)|\.(skip|only)\(|xit\(|xdescribe\(' || true)"
-# class 6, removed assertion lines
-DEV_TESTCUTS="$(gh pr diff "$PR" | grep -nE '^-.*(expect\(|assert|toBe|toEqual|toThrow)' || true)"
-echo "deviation-disclosure: Tier-M scan — $(printf '%s\n' "$DEV_SUPPRESS" | grep -c . || echo 0) suppression/skip line(s), $(printf '%s\n' "$DEV_TESTCUTS" | grep -c . || echo 0) removed-assertion line(s)"
+# class 6, removed assertion lines — scoped to TEST files, matching the prose. Walk the diff
+# file-by-file (`+++ b/<path>` starts a file) so a `--- a/src/assert.ts` header can never match as a
+# removed assertion, and only removals inside a test file count. A bare `grep '^-'` over the whole
+# diff matched exactly that header (the `-` of `---` plus the word `assert` in the path).
+DEV_TESTCUTS="$(gh pr diff "$PR" | awk '
+  /^\+\+\+ b\// { t = ($0 ~ /(\.|\/)(test|spec)\.[a-z]+$|\/(__tests__|test|tests)\//) ; next }
+  t && /^-[^-]/ && /expect\(|assert|toBe|toEqual|toThrow/ { print }')"
+echo "deviation-disclosure: Tier-M scan — $(printf '%s' "$DEV_SUPPRESS" | grep -c .) suppression/skip line(s), $(printf '%s' "$DEV_TESTCUTS" | grep -c .) removed-assertion line(s)"
 ```
 
 A hit is a **line to judge against the disclosure**, never a FAIL by itself — a `biome-ignore` the
@@ -3329,7 +3369,9 @@ not a deviation at all.
   does it **need an ADR** (a class-2 departure with no amending ADR in the diff is a `[FAIL]` — the
   #3986 remedy)? does it **need a follow-up issue** (a class-3 defect with no filed issue is a
   `[FAIL]`)? A disclosed deviation that answers all three is a PASS row, cited.
-- **Absent section ⇒ `[FAIL]` row**, per *Absent is not `None.`* above.
+- **Absent section ⇒ `[FAIL]` row on a PR that owes it**, per *Absent is not `None.`* above — and
+  **`[N/A]` on one that does not**, per *Who owes the section*. Resolve the owed/not-owed question
+  first; it is the only branch that decides between those two rows.
 
 This is deliberately the same escalate-to-judgment shape `review-design`'s golden-deviation class
 already runs (an *unexplained* deviation from a blessed golden hard-FAILs; an explained one is
@@ -3341,8 +3383,8 @@ two surfaces, so neither has to be learned separately.
 | Half | Surface | Obligation |
 |---|---|---|
 | Writer | `write-code` Step 5 (open), repair Step R3 (append) | Emits the section on every PR; `None.` only after walking the seven classes |
-| Gate | `review-code` Step 3g, `review-doc` Step 4c, `review-skill` Step 4c, `review-design` Step 3b | Folds one `deviation-disclosure` row into its conjunctive table by the rule above |
-| Gate | `review-trivial` Step 0 | A non-`None.` section is evidence the diff is not trivial ⇒ route to the full path; an absent section is a malformed body ⇒ route to the full path |
+| Gate | `review-code` Step 3g, `review-doc` Step 4c, `review-skill` Step 4c, `review-design` Step 3b | Folds one `deviation-disclosure` row into its conjunctive table by the rule above — `[N/A]` where *Who owes the section* says the PR owes nothing |
+| Gate | `review-trivial` Step 0 | A non-`None.` section is evidence the diff is not trivial ⇒ route to the full path; an absent section is unprovable-premise ⇒ route to the full path, where the owed/not-owed branch resolves it |
 
 The rationale lives in ADR
 [0216](https://github.com/kamp-us/phoenix/blob/main/.decisions/0216-deviation-disclosure-is-a-pr-body-obligation.md).

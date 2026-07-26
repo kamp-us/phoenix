@@ -52,9 +52,18 @@ Deviation disclosure is a **required section of every `write-code` PR body**, de
    the deviation, and the now-untrustworthy disclosure. Disclosing costs a sentence; a wrong `None.`
    costs a repair round. That asymmetry is the enforcement.
 
-3. **Absent is not `None.`** A body with no section is malformed, because a gate cannot distinguish
-   "nothing to disclose" from "never considered it". Absence fails closed (ADR 0092's posture applied
-   to a body section).
+3. **Absent is not `None.` — on a PR that owes the section.** A body with no section is malformed,
+   because a gate cannot distinguish "nothing to disclose" from "never considered it". Absence fails
+   closed (ADR 0092's posture applied to a body section). The obligation is a **writer** obligation,
+   so it can only bind a body `write-code` composed; a PR with no `write-code` author — the
+   conversation-authored issueless lanes of ADR 0075 / 0184, a bot-opened bump, a hand-authored human
+   PR — owes nothing, and its row is `[N/A]`. **That scoping lives in §DEV alone**, and every gate
+   resolves the row by citing it. Carried as a per-skill fragment it diverged on contact: `review-doc`
+   held the exception privately while `review-code` and `review-design` did not, so an ADR-0184
+   issueless PR drew `[N/A]` from one gate and `[FAIL]` from another at the same head — and because
+   the verdicts are conjunctive and `write-code` is not the author, no repair round could clear it.
+   The N/A is deliberately narrow in the other direction too: only a carve-out the gate itself
+   established reaches it, so a pipeline PR that merely lost its `Fixes #N` buys no exemption.
 
 4. **Repair appends, never replaces.** The section is a running log across the PR's whole life,
    round-tagged. Rewriting it to the latest round's truth destroys the trail.
@@ -65,7 +74,11 @@ Deviation disclosure is a **required section of every `write-code` PR body**, de
    finding; a **disclosed** one is a judgment item verified on three questions (authorized? needs an
    ADR? needs a follow-up issue?). `review-trivial` gets a different, narrower role — a disclosed
    deviation is by construction evidence the diff is not trivial, so it is a Step-0 bounce to the
-   full path, not a verdict row.
+   full path, not a verdict row. That bounce is a **narrowing inside** ADR
+   [0120](0120-stage-right-sizing-trivial-diff-lighter-gate.md) §3's default-deny posture — "any ambiguity
+   routes to the full fan-out" — not a new routing rule: it names one more shape of ambiguity the
+   lighter path cannot resolve, and the direction of error is unchanged (pay the full gate's cost,
+   never under-gate).
 
 6. **The teeth are stated honestly, in tiers.** §DEV names which classes a gate can mechanically
    detect (in-diff suppressions, removed test assertions), which need a reader (scope narrowing, ADR

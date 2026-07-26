@@ -788,18 +788,22 @@ whether the diff carries the amending ADR the disclosure claims. Step 4's hygien
 class 7 (a doc surface touched that the issue does not imply) the same way.
 
 Fold **one** `deviation-disclosure` row into the conjunctive verdict by §DEV's rule
-(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]`, absent is not `None.`; disclosed ⇒
-judged on authorized / needs-an-ADR / needs-a-follow-up; clean ⇒ PASS, phrased as *nothing
-undisclosed that this gate could see*, never as *no deviations exist*).
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]` **on a PR that owes it**, absent is
+not `None.`, and `[N/A]` on one that does not; disclosed ⇒ judged on authorized / needs-an-ADR /
+needs-a-follow-up; clean ⇒ PASS, phrased as *nothing undisclosed that this gate could see*, never as
+*no deviations exist*).
 
 ```
 - [FAIL] deviation-disclosure — the ADR sweep (Step 4a) shows this diff narrows ADR 0115 §5's reclaim invariant (§DEV class 2) and the body's `## Deviations` says `None.`; disclose it and either cite the amending ADR or add one (the #3986/#3993 F1 remedy)
 ```
 
-**The issueless doc PR (ADR 0075) is the one N/A.** With no linked issue there is no spec to depart
-from and no `write-code` author obliged by §DEV, so render this as
-`- [N/A] deviation-disclosure — no linked issue (docs-only, ADR 0075)` and omit the check, exactly as
-the acceptance-criteria table is rendered N/A in Step 5.
+**Whether the PR owes the section at all is §DEV's call, not this step's** — read *Who owes the
+section* there. Concretely for this gate: the issueless doc PR (ADR 0075) whose acceptance-criteria
+table Step 5 already renders N/A carries the row N/A too —
+`- [N/A] deviation-disclosure — issueless carve-out, no write-code author obliged (§DEV)`. This step
+used to carry that exception as its own private paragraph, which is exactly why `review-code` and
+`review-design` rendered `[FAIL]` on the same head; the rule now lives in one place and every gate
+cites it.
 
 ---
 

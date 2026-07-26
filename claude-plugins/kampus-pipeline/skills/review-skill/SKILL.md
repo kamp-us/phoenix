@@ -544,13 +544,21 @@ a disclosed narrowing is still a check-4 FAIL if it weakens a gate, and an autho
 change is still a §DEV FAIL if the body hid it.
 
 Fold **one** `deviation-disclosure` row into the conjunctive verdict by §DEV's rule
-(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]`, absent is not `None.`; disclosed ⇒
-judged on authorized / needs-an-ADR / needs-a-follow-up; clean ⇒ PASS, phrased as *nothing
-undisclosed that this gate could see*, never as *no deviations exist*).
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]` **on a PR that owes it**, absent is
+not `None.`, and `[N/A]` on one that does not; disclosed ⇒ judged on authorized / needs-an-ADR /
+needs-a-follow-up; clean ⇒ PASS, phrased as *nothing undisclosed that this gate could see*, never as
+*no deviations exist*).
 
 ```
 - [FAIL] deviation-disclosure — skills/write-code/SKILL.md:NNN narrows ADR 0115 §5's reclaim invariant (§DEV class 2) and the body's `## Deviations` says `None.`; disclose it and either cite the amending ADR or add one (the #3986/#3993 F1 remedy)
 ```
+
+**Whether the PR owes the section at all is §DEV's call, not this step's** — read *Who owes the
+section* there. Concretely for this gate: a PR whose acceptance-criteria half is already N/A under
+the issueless carve-out (ADR 0184/0075 — the conversation-authored `.glossary/**` coining PR, which
+has no `write-code` author) carries the row N/A too —
+`- [N/A] deviation-disclosure — issueless carve-out, no write-code author obliged (§DEV)`. Do **not**
+re-derive that scoping here; a per-skill copy is what let two gates render opposite rows on one head.
 
 ---
 

@@ -558,15 +558,22 @@ intentional-redesign branch — do not re-FAIL it here. This step covers the dep
 baseline for.
 
 Fold **one** `deviation-disclosure` row into the conjunctive verdict by §DEV's rule
-(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]`, absent is not `None.`; disclosed ⇒
-judged on authorized / needs-an-ADR / needs-a-follow-up; clean ⇒ PASS, phrased as *nothing
-undisclosed that this gate could see*, never as *no deviations exist*). Like the golden-deviation
+(undisclosed-and-detected ⇒ `[FAIL]`; absent section ⇒ `[FAIL]` **on a PR that owes it**, absent is
+not `None.`, and `[N/A]` on one that does not; disclosed ⇒ judged on authorized / needs-an-ADR /
+needs-a-follow-up; clean ⇒ PASS, phrased as *nothing undisclosed that this gate could see*, never as
+*no deviations exist*). Like the golden-deviation
 class it is **purely additive** — it can only add a FAIL, and it promotes no taste note to blocking
 (ADR 0165 unchanged).
 
 ```
 - [FAIL] deviation-disclosure — the header ships a raw `#1a1a1a` where ADR 0162 mandates a role token (§DEV class 2) and the body's `## Deviations` says `None.`; disclose the departure with its reason, or use the token
 ```
+
+**Whether the PR owes the section at all is §DEV's call, not this step's** — read *Who owes the
+section* there. A PR with no `write-code` author (the ADR 0184/0075 issueless carve-out; a bot- or
+hand-authored PR) owes nothing, so an absent section is `[N/A]`, not `[FAIL]` —
+`- [N/A] deviation-disclosure — no write-code author obliged (§DEV)`. Do **not** re-derive that
+scoping here; a per-skill copy is what let two gates render opposite rows on one head.
 
 ---
 
