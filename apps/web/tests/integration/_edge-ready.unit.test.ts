@@ -36,6 +36,29 @@ import {awaitAuthRouteReady, awaitWorkerReady, WarmNotSettledError} from "./_int
 // A tiny budget so the tests drive the readiness logic in milliseconds, not the real 60s.
 const BUDGET = {deadlineMs: 120, pollMs: 5} as const;
 
+/**
+ * Runs a poll on FAKE timers and drains its sleeps, then returns its settled value.
+ *
+ * `vi.useFakeTimers()` mocks `setTimeout` AND `Date` (vitest 4's default `toFake` set is every
+ * sinon timer key except `nextTick`/`queueMicrotask`), so BOTH halves of the poll's clock —
+ * `sleep(pollMs)` and the `Date.now() < deadline` test — read the mock clock, which only advances
+ * when this helper advances it. A case that asserts "goes ready after N sends" then asserts LOGIC:
+ * it cannot lose a race against `BUDGET.deadlineMs` of REAL wall clock when the host is loaded and
+ * a nominal 5ms `setTimeout` lands tens of ms late, which reds the pre-push/CI unit gate on a diff
+ * that cannot affect it (#4128). Use it ONLY for the eventual-SUCCESS cases — the
+ * budget-EXHAUSTION cases must keep real timers, because elapsed wall clock is their assertion.
+ */
+const onFakeTimers = async <T>(start: () => Promise<T>): Promise<T> => {
+	vi.useFakeTimers();
+	try {
+		const pending = start();
+		await vi.runAllTimersAsync();
+		return await pending;
+	} finally {
+		vi.useRealTimers();
+	}
+};
+
 const okStream = () =>
 	new Response("", {status: 200, headers: {"content-type": "text/event-stream"}});
 // The `/fate/live` SSE-open readiness predicate (200 + event-stream), used across the poll tests.
@@ -52,7 +75,7 @@ describe("awaitEdgeReady — the shared cold-start readiness primitive (ADR 0127
 			return okStream();
 		});
 
-		const res = await awaitEdgeReady(send, sseReady, BUDGET);
+		const res = await onFakeTimers(() => awaitEdgeReady(send, sseReady, BUDGET));
 
 		expect(res.status).toBe(200);
 		expect(res.headers.get("content-type")).toContain("text/event-stream");
@@ -122,7 +145,7 @@ describe("awaitEdgeReady — the shared cold-start readiness primitive (ADR 0127
 			return new Response(JSON.stringify({status: "ok"}), {status: 200});
 		});
 
-		const res = await awaitEdgeReady(send, healthReady, BUDGET);
+		const res = await onFakeTimers(() => awaitEdgeReady(send, healthReady, BUDGET));
 
 		expect(await healthReady(res)).toBe(true);
 		expect(send).toHaveBeenCalledTimes(3);
