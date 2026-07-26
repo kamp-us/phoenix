@@ -15,6 +15,7 @@ import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view}
 import {Link, useLocation, useNavigate, useParams} from "react-router";
 import type {Post, ReportReceipt} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
+import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
 import {buildCommentTree, type CommentNode} from "../components/pano/commentTree";
@@ -677,6 +678,10 @@ function Comments(props: CommentsProps) {
 
 	return (
 		<>
+			{/* Top-level composer only, deliberately: the reply composer is the same component
+			    rendered inline in a thread node, so mounting there would repeat the block at every
+			    open reply box. One statement at the head of the thread frames both (#4283). */}
+			<FirstContributionOnramp surface="pano-comment" />
 			<CommentComposer
 				postId={props.postId}
 				parentId={null}

@@ -1,9 +1,10 @@
 /**
  * `FirstContributionOnramp` — the çaylak-only nudge on a write surface (#1210,
  * epic #1202). Turns "I just joined" into "I wrote my first thing" with **honest
- * framing**: a freshly-registered çaylak's first entry lands in the mod-only
- * sandbox (#1205) pending promotion to yazar (#1206), so the copy says exactly
- * that — it never promises instant publication.
+ * framing**: a freshly-registered çaylak's first contribution — an entry or a
+ * comment (#4283) — lands in the mod-only sandbox (#1205) pending promotion to
+ * yazar (#1206), so the copy says exactly that: it never promises instant
+ * publication.
  *
  * The gate (see {@link shouldShowOnramp}): the trusted account tier read off
  * `useMe().me.tier` (#1297) being `çaylak`. A yazar (whose entries aren't sandboxed)
@@ -28,7 +29,7 @@ import {useMe} from "../../auth/useMe";
 import "./FirstContributionOnramp.css";
 
 /** The write surface the on-ramp sits on — selects the per-surface copy noun. */
-export type OnrampSurface = "sozluk" | "pano";
+export type OnrampSurface = "sozluk" | "pano" | "pano-comment";
 
 /**
  * The on-ramp's gating decision, factored DOM-free so the contract — show iff the
@@ -40,11 +41,20 @@ export function shouldShowOnramp(tier: Tier | undefined): boolean {
 	return tier === "çaylak";
 }
 
-/** Per-surface lowercase-Turkish heading. The body copy is shared. */
+/**
+ * Per-surface lowercase-Turkish heading; the body copy is shared, and stays true on
+ * the comment surface because the worker sandboxes a çaylak's comment exactly as it
+ * sandboxes an entry. Total `Record`, not a ternary chain: a surface added to the
+ * union without its copy is a compile error, never another surface's noun.
+ */
+const ONRAMP_HEADINGS: Record<OnrampSurface, string> = {
+	sozluk: "ilk tanımını yazmaya hazırsın",
+	pano: "ilk gönderini paylaşmaya hazırsın",
+	"pano-comment": "ilk yorumunu yazmaya hazırsın",
+};
+
 export function onrampCopy(surface: OnrampSurface): {heading: string} {
-	return surface === "sozluk"
-		? {heading: "ilk tanımını yazmaya hazırsın"}
-		: {heading: "ilk gönderini paylaşmaya hazırsın"};
+	return {heading: ONRAMP_HEADINGS[surface]};
 }
 
 export interface FirstContributionOnrampProps {
