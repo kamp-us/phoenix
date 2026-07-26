@@ -21,7 +21,12 @@ import {afterAll, afterEach, assert, beforeAll, describe, it} from "@effect/vite
 import {resolveRealGh, resolveRepo} from "./resolve.ts";
 
 let root: string;
-const ENV_KEYS = ["PATH", "GH_PHOENIX_REAL_GH", "CLAUDE_PIPELINE_REPO"] as const;
+const ENV_KEYS = [
+	"PATH",
+	"GH_PHOENIX_REAL_GH",
+	"CLAUDE_PIPELINE_REPO",
+	"GITHUB_REPOSITORY",
+] as const;
 let saved: Record<(typeof ENV_KEYS)[number], string | undefined>;
 
 const mkExecutable = (dir: string, name = "gh"): string => {
@@ -46,7 +51,12 @@ afterEach(() => {
 });
 
 const setEnv = (env: Partial<Record<(typeof ENV_KEYS)[number], string>>) => {
-	saved = {PATH: undefined, GH_PHOENIX_REAL_GH: undefined, CLAUDE_PIPELINE_REPO: undefined};
+	saved = {
+		PATH: undefined,
+		GH_PHOENIX_REAL_GH: undefined,
+		CLAUDE_PIPELINE_REPO: undefined,
+		GITHUB_REPOSITORY: undefined,
+	};
 	for (const key of ENV_KEYS) {
 		saved[key] = process.env[key];
 		delete process.env[key];
@@ -120,14 +130,38 @@ describe("resolveRealGh — self-recursion guard + PATH fallbacks over a fake FS
 	});
 });
 
-describe("resolveRepo — env override + no-real-`gh` fallback", () => {
+describe("resolveRepo — tiered resolution, unresolved is null (never a repo literal, #4270)", () => {
 	it("$CLAUDE_PIPELINE_REPO wins, never shelling `gh repo view`", () => {
 		setEnv({CLAUDE_PIPELINE_REPO: "owner/repo"});
 		assert.strictEqual(resolveRepo(null), "owner/repo");
 	});
 
-	it("falls back to the phoenix default when no env and no real `gh`", () => {
+	it("$CLAUDE_PIPELINE_REPO outranks the $GITHUB_REPOSITORY CI tier", () => {
+		setEnv({CLAUDE_PIPELINE_REPO: "owner/override", GITHUB_REPOSITORY: "ci/repo"});
+		assert.strictEqual(resolveRepo(null), "owner/override");
+	});
+
+	it("$GITHUB_REPOSITORY resolves when the explicit override is unset (the CI tier)", () => {
+		setEnv({GITHUB_REPOSITORY: "ci/repo"});
+		assert.strictEqual(resolveRepo(null), "ci/repo");
+	});
+
+	it("returns null when no env and no real `gh` — the refusal path", () => {
 		setEnv({});
-		assert.strictEqual(resolveRepo(null), "kamp-us/phoenix");
+		assert.strictEqual(resolveRepo(null), null);
+	});
+
+	it("returns null when a real `gh` answers with something that is not `owner/name`", () => {
+		// the fake `gh` echoes "fake", which no REST path can be built from — unresolved, not a
+		// default, so the caller refuses instead of PATCHing a repo nobody named.
+		const dir = mkdtempSync(join(root, "case-bad-view-"));
+		const gh = mkExecutable(join(dir, "bin"));
+		setEnv({});
+		assert.strictEqual(resolveRepo(gh), null);
+	});
+
+	it("returns null on a malformed env value rather than building a bogus REST path", () => {
+		setEnv({CLAUDE_PIPELINE_REPO: "not-a-slug"});
+		assert.strictEqual(resolveRepo(null), null);
 	});
 });

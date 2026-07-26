@@ -14,9 +14,18 @@ interface RunResult {
 	readonly stderr: string;
 }
 
+// An explicit `undefined` UNSETS the key for the child (rather than passing the string
+// "undefined") — the only way to test the repo-resolution refusal on a machine or CI runner
+// that already exports CLAUDE_PIPELINE_REPO / GITHUB_REPOSITORY.
+const childEnv = (env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
+	const merged: NodeJS.ProcessEnv = {...process.env, ...env};
+	for (const key of Object.keys(merged)) if (merged[key] === undefined) delete merged[key];
+	return merged;
+};
+
 const run = (args: ReadonlyArray<string>, env?: NodeJS.ProcessEnv): Promise<RunResult> =>
 	new Promise((resolve) => {
-		execFile("node", [BIN, ...args], {env: {...process.env, ...env}}, (error, stdout, stderr) => {
+		execFile("node", [BIN, ...args], {env: childEnv(env)}, (error, stdout, stderr) => {
 			const code =
 				error && typeof (error as {code?: unknown}).code === "number"
 					? (error as {code: number}).code
@@ -119,5 +128,33 @@ describe("gh shim — routes via the real gh stub", {timeout: SUBPROCESS_TEST_TI
 		assert.strictEqual(code, 1);
 		assert.include(stderr, "blocked");
 		assert.include(stderr, "REST");
+	});
+
+	// #4270: with every repo tier unset, the fake `gh repo view` answers "FAKE_GH repo view …",
+	// which is not an `owner/name` slug — so resolution genuinely fails.
+	const unresolvedRepoEnv = () => ({
+		...shimEnv(),
+		CLAUDE_PIPELINE_REPO: undefined,
+		GITHUB_REPOSITORY: undefined,
+	});
+
+	it("refuses `gh pr edit` when no repo resolves — never PATCHes a defaulted repo", async () => {
+		const {code, stdout, stderr} = await run(
+			["pr", "edit", "42", "--body", "hello"],
+			unresolvedRepoEnv(),
+		);
+		assert.strictEqual(code, 1);
+		assert.include(stderr, "CLAUDE_PIPELINE_REPO");
+		// the real `gh` was never reached, so no PATCH was forwarded anywhere
+		assert.notInclude(stdout, "FAKE_GH");
+	});
+
+	it("still passes a repo-less `gh api` call through when no repo resolves", async () => {
+		const {code, stdout} = await run(
+			["api", "repos/other-owner/other-repo/issues/1"],
+			unresolvedRepoEnv(),
+		);
+		assert.strictEqual(code, 0);
+		assert.include(stdout, "FAKE_GH api repos/other-owner/other-repo/issues/1");
 	});
 });
