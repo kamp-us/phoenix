@@ -1115,7 +1115,12 @@ the skip's clothes:
   the honest graceful-absence skip below), or make surface detection declarable.
 
 ```bash
-if [ -n "$(printf '%s' "$NEW_SURFACE" | tr -d ' ')" ]; then
+# The graceful-absence probe LEADS the chain, EXECUTED — never asserted in prose. Every branch below
+# claims the glossary is on base, so a repo that never adopted it must be excluded by a real test or
+# the final `else` states a fact it never checked — the gate's own sin, one branch over (#4299).
+if ! git cat-file -e "origin/$BASE_REF:.glossary/TERMS.md" 2>/dev/null; then
+  echo "glossary-freshness: not applicable — no .glossary/TERMS.md on base"   # graceful absence: no row
+elif [ -n "$(printf '%s' "$NEW_SURFACE" | tr -d ' ')" ]; then
   echo "glossary-freshness: scanned new surfaces ⇒$NEW_SURFACE"   # §ZS #1: emit what it scanned
   if [ -n "$GLOSSARY_TOUCHED" ]; then
     echo "glossary-freshness: PASS — new surface ships with a .glossary/TERMS.md touch"
@@ -1158,9 +1163,10 @@ reading green.
 > is the same portability / graceful-absence contract the cycle-doc probe (Step 3b, formats §1) and
 > the milestone default follow — absence is a first-class state, not a defect.
 >
-> **This probe runs FIRST and short-circuits the step** — including the detector-blind
-> `UNVERIFIABLE` above, which is conditioned on the glossary being *present*. A repo that never
-> adopted the glossary has nothing to enforce and gets this honest skip; only a repo that adopted the
+> **This probe is the executed guard that LEADS the verdict chain above** — it is the chain's first
+> `if`, so the detector-blind `UNVERIFIABLE` branch is structurally unreachable when the glossary is
+> absent, rather than merely documented as coming second. A repo that never adopted the glossary has
+> nothing to enforce and gets this honest skip; only a repo that adopted the
 > vocabulary while keeping a layout the detector cannot express reaches the `UNVERIFIABLE` branch.
 > That intersection is the whole defect surface (#4299) — the two states are separate outcomes with
 > separate lines, never one line covering both.
