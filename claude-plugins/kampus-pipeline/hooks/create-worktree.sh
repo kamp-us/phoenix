@@ -106,9 +106,16 @@ fi
 # KEPT forever) and it must vanish with the worktree, which git's own admin dir gives for free.
 # Best-effort by design — a missing stamp reads as owner-unknown, which the sweep KEEPS, so a failure
 # here can only ever leak a tree, never destroy a live one. Never fail the spawn over it.
+#
+# `ownerKind` is LAUNCHER and cannot be otherwise (#4001): this hook runs in the SPAWNING session,
+# before the subagent that will occupy the tree exists, so `session_id` is the launcher's — and for
+# a long-lived crew pane that id stays alive for hours after the occupant finishes. Recording WHICH
+# identity this is keeps the consumer from reading launcher liveness as occupancy; see
+# `packages/pipeline-cli/src/tools/worktree-sweep/owner-liveness.ts` for what each kind licenses.
+# Do NOT stamp `occupant` here — there is no occupant yet to name.
 if [ -n "$session_id" ]; then
 	if gitdir="$(git -C "$worktree_path" rev-parse --absolute-git-dir 2>/dev/null)"; then
-		printf '{"sessionId":"%s","worktreeName":"%s","stampedAt":"%s"}\n' \
+		printf '{"sessionId":"%s","ownerKind":"launcher","worktreeName":"%s","stampedAt":"%s"}\n' \
 			"$session_id" "$name" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 			>"$gitdir/kampus-owner.json" 2>/dev/null \
 			|| echo "create-worktree: could not stamp owner session (tree reads owner-unknown → never reaped)." >&2

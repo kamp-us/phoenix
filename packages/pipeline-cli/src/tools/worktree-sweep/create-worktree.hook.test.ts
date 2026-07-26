@@ -283,6 +283,14 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 			"the stamp must carry the owning session",
 		);
 		assert.strictEqual(stamp.worktreeName, name);
+		// #4001: the hook runs in the SPAWNING session, before the occupying subagent exists, so the
+		// only honest kind it can record is `launcher`. A stamp that claimed `occupant` here would
+		// hand a long-lived pane's liveness the authority to keep every tree it ever spawned.
+		assert.strictEqual(
+			stamp.ownerKind,
+			"launcher",
+			"a creation-time stamp names the launcher, never the occupant",
+		);
 		assert.strictEqual(
 			git(expected, "status", "--porcelain").trim(),
 			"",

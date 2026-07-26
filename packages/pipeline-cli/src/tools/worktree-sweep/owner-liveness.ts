@@ -31,6 +31,25 @@
  *   2. **liveness** — the harness's session registry: one `<config>/sessions/<pid>.json` per
  *      RUNNING session, carrying `{pid, sessionId}` and deleted when the session exits.
  *
+ * **The owner is the LAUNCHER, never the occupant (#4001).** Both owner sources above resolve the
+ * session that *spawned* the tree, not the ephemeral subagent that *occupies* it: the hook runs in
+ * the spawning session before the subagent exists, and the `$TMPDIR` scratchpad root is that same
+ * spawning session's. A subagent has no registry entry of its own — it runs inside its pane's
+ * process — so an occupant-keyed session id is not resolvable on this platform at all. That makes
+ * launcher liveness a strict **upper bound**, sound in one direction only:
+ *
+ *   - launcher DEAD ⇒ the occupant it spawned is necessarily gone too ⇒ `"dead"`.
+ *   - launcher ALIVE ⇒ says **nothing** about the occupant. A crew pane runs for hours and spawns
+ *     many short-lived subagent trees, so reading this as `"alive"` KEPT every tree such a pane
+ *     ever created for the pane's whole lifetime — the sweep went near-silent during exactly the
+ *     runs that generate orphans (#4001). That case is `"launcher-alive"`, a distinct verdict.
+ *
+ * Occupancy itself is carried by a separate, real signal the classifier checks *above* this one:
+ * the harness's own `git worktree lock`, held for the occupying agent's lifetime and released when
+ * it finishes. So a tree that reaches this gate is already unlocked, i.e. the harness has released
+ * its occupancy — which is why `"launcher-alive"` may fall through to the age/merge gates instead
+ * of KEEPing forever. See `classifyWorktree` for the grace window that bounds the residual risk.
+ *
  * IO-free by design: the caller reads the files and probes the pids, so every rule below is
  * unit-testable without a filesystem or a spawned agent.
  *
@@ -41,10 +60,28 @@
  */
 
 /**
- * `"dead"` is the ONLY verdict that lets a removal proceed. `"unknown"` is a distinct third
+ * `"dead"` is the only verdict that lets a removal proceed outright. `"unknown"` is a distinct
  * state on purpose — collapsing it into `"dead"` is the over-reaping defect (#3943).
+ * `"launcher-alive"` is the fourth: a live owner whose liveness proves nothing about the occupant,
+ * so it neither removes (it is not `"dead"`) nor KEEPs forever (#4001).
  */
-export type OwnerLiveness = "alive" | "dead" | "unknown";
+export type OwnerLiveness = "alive" | "launcher-alive" | "dead" | "unknown";
+
+/**
+ * Whose identity the owner record carries — the axis the #4001 defect turned on. Every owner
+ * resolvable today is a `"launcher"`: NO producer writes an `"occupant"` stamp, deliberately, since
+ * a subagent has no session identity of its own to stamp and choosing an occupant-keyed mechanism
+ * is an open design call (#3892). The variant exists so that when one arrives it must SAY it names
+ * the occupant to be granted occupant authority, instead of inheriting the launcher's over-broad
+ * authority by silence — which is exactly how the launcher stamp came to mean presence.
+ */
+export type OwnerKind = "launcher" | "occupant";
+
+/** A resolved worktree owner: whose session id it is, and what that identity actually names. */
+export interface OwnerStamp {
+	readonly sessionId: string;
+	readonly kind: OwnerKind;
+}
 
 /** A bare session-UUID path segment (the shape both the registry and the sidecar layout use). */
 const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,14 +100,21 @@ const objectField = (v: unknown, key: string): unknown =>
 	typeof v === "object" && v !== null ? (v as Record<string, unknown>)[key] : undefined;
 
 /**
- * The owning session id read off a worktree's `kampus-owner.json` stamp, or `null` when the file
- * is absent, malformed, or carries no session-UUID-shaped `sessionId`. Requiring the UUID shape
- * (not merely a non-empty string) keeps a truncated or placeholder stamp from resolving to an id
- * that can never match a registry entry — which would read as `"dead"` rather than `"unknown"`.
+ * The owner read off a worktree's `kampus-owner.json` stamp, or `null` when the file is absent,
+ * malformed, or carries no session-UUID-shaped `sessionId`. Requiring the UUID shape (not merely a
+ * non-empty string) keeps a truncated or placeholder stamp from resolving to an id that can never
+ * match a registry entry — which would read as `"dead"` rather than `"unknown"`.
+ *
+ * An absent or unrecognized `ownerKind` reads `"launcher"`: every stamp the hook has ever written
+ * carries the spawning session, so that is what a legacy (pre-#4001) stamp means — the permissive
+ * reading would be to assume the narrower `"occupant"`, which is precisely the over-claim to avoid.
  */
-export const parseOwnerStamp = (raw: string): string | null => {
-	const id = asString(objectField(parseJson(raw), "sessionId"));
-	return SESSION_UUID.test(id) ? id : null;
+export const parseOwnerStamp = (raw: string): OwnerStamp | null => {
+	const parsed = parseJson(raw);
+	const sessionId = asString(objectField(parsed, "sessionId"));
+	if (!SESSION_UUID.test(sessionId)) return null;
+	const kind = asString(objectField(parsed, "ownerKind"));
+	return {sessionId, kind: kind === "occupant" ? "occupant" : "launcher"};
 };
 
 /** One `<config>/sessions/<pid>.json` entry — a session the harness records as running. */
@@ -90,7 +134,9 @@ export const parseSessionRegistryEntry = (raw: string): SessionRegistryEntry | n
 
 /**
  * The owning session id recovered from a worktree's own path — the fallback for a `$TMPDIR`-rooted
- * `review-head-*` tree, which no hook provisions and so carries no stamp. Matches only a segment
+ * `review-head-*` tree, which no hook provisions and so carries no stamp. This is a `"launcher"`
+ * identity like the stamp is: the UUID roots the *pane's* scratchpad, not the review subagent that
+ * materialized the head inside it. Matches only a segment
  * that is a bare session UUID, and returns `null` on **ambiguity** (two different UUID segments)
  * as well as absence: guessing which of two ids owns the tree could name a dead session for a live
  * tree, and the fail-closed `null` (⇒ `"unknown"` ⇒ KEEP) is the only safe answer.
@@ -139,11 +185,16 @@ export const liveSessionIds = (probe: SessionRegistryProbe): ReadonlySet<string>
 /**
  * Resolve one worktree's owner liveness. `null` for either input is the unprovable case:
  * an unresolvable owner (no stamp, no session segment in the path) or an untrustworthy registry.
+ *
+ * A live owner splits on WHOSE identity the stamp carries (#4001): an `"occupant"` stamp names the
+ * agent holding the tree, so its liveness is real presence (`"alive"`, KEEP); a `"launcher"` stamp
+ * names the spawning session, whose liveness is not evidence about the occupant (`"launcher-alive"`).
  */
 export const resolveOwnerLiveness = (args: {
-	readonly ownerSessionId: string | null;
+	readonly owner: OwnerStamp | null;
 	readonly liveSessionIds: ReadonlySet<string> | null;
 }): OwnerLiveness => {
-	if (args.liveSessionIds === null || args.ownerSessionId === null) return "unknown";
-	return args.liveSessionIds.has(args.ownerSessionId.toLowerCase()) ? "alive" : "dead";
+	if (args.liveSessionIds === null || args.owner === null) return "unknown";
+	if (!args.liveSessionIds.has(args.owner.sessionId.toLowerCase())) return "dead";
+	return args.owner.kind === "occupant" ? "alive" : "launcher-alive";
 };
