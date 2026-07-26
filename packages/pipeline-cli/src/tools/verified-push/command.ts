@@ -39,6 +39,7 @@ import {
 	type PushFacts,
 	type PushVerdict,
 	parseLsRemote,
+	quoteTail,
 	type RefProbe,
 } from "./verified-push.ts";
 
@@ -48,6 +49,22 @@ import {
  * verdict, while being too eager would manufacture UNKNOWNs out of an ordinary slow network.
  */
 const PROBE_TIMEOUT_MS = 60_000;
+
+/**
+ * Well above `execFileSync`'s 1 MB default, because exceeding `maxBuffer` **kills the child**
+ * — and the `pre-push` hook runs the whole test suite, whose output blew 1 MB on the very
+ * first live run of this verb. A push killed by the buffer limit is a manufactured failure of
+ * exactly the kind this verb exists to eliminate, so the limit must never be the thing that
+ * decides the verdict.
+ */
+const MAX_BUFFER_BYTES = 256 * 1024 * 1024;
+
+/**
+ * How many trailing lines of each captured stream to quote. The hook's output is thousands of
+ * lines; quoting it whole would bury the verdict under a wall the reader must scroll past, and
+ * the interesting part of a push (`* [new branch]`, a rejection) is always at the end.
+ */
+const QUOTED_TAIL_LINES = 40;
 
 interface RunResult {
 	readonly ok: boolean;
@@ -73,6 +90,7 @@ const runGit = (args: ReadonlyArray<string>, timeoutMs?: number): RunResult => {
 			// every git error twice). stdin stays inherited so an interactive credential/SSH
 			// prompt behaves as it does under a bare push.
 			stdio: ["inherit", "pipe", "pipe"],
+			maxBuffer: MAX_BUFFER_BYTES,
 			...(timeoutMs === undefined ? {} : {timeout: timeoutMs}),
 		});
 		return {ok: true, stdout, stderr: "", exitCode: 0, signal: null};
@@ -149,12 +167,8 @@ const report = (lines: ReadonlyArray<string>, verdict: PushVerdict) =>
 		return yield* Effect.sync(() => process.exit(verdict.exitCode));
 	});
 
-/** Indent captured git output so it can never be mistaken for one of this verb's own lines. */
-const quote = (label: string, text: string): ReadonlyArray<string> => {
-	const body = text.trimEnd();
-	if (body === "") return [`  ${label}: (no output)`];
-	return [`  ${label}:`, ...body.split("\n").map((l) => `    | ${l}`)];
-};
+const quote = (label: string, text: string): ReadonlyArray<string> =>
+	quoteTail(label, text, QUOTED_TAIL_LINES);
 
 const verifiedPush = Command.make(
 	"verified-push",

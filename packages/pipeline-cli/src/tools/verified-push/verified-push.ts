@@ -111,6 +111,24 @@ export interface PushVerdict {
 /** Collapse to a single line: the terminal line must be greppable as ONE line, always. */
 const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
 
+/**
+ * Quote the TAIL of a captured stream into the report, indented so it can never be mistaken
+ * for one of the verb's own lines. Only the trailing `maxLines` are kept: the `pre-push` hook
+ * emits thousands of lines, and the part of a push that carries meaning (` * [new branch]`, a
+ * rejection) is always at the end — quoting it whole would bury the verdict under a wall.
+ */
+export const quoteTail = (label: string, text: string, maxLines: number): ReadonlyArray<string> => {
+	const body = text.trimEnd();
+	if (body === "") return [`  ${label}: (no output)`];
+	const all = body.split("\n");
+	const kept = all.slice(Math.max(0, all.length - maxLines));
+	const elided = all.length - kept.length;
+	return [
+		`  ${label}:${elided > 0 ? ` (last ${kept.length} of ${all.length} lines; ${elided} elided)` : ""}`,
+		...kept.map((l) => `    | ${l}`),
+	];
+};
+
 /** `git ls-remote` prints `<sha>\t<ref>` per matching ref; `""` means the ref does not exist. */
 export const parseLsRemote = (stdout: string, ref: string): string | null => {
 	for (const line of stdout.split("\n")) {

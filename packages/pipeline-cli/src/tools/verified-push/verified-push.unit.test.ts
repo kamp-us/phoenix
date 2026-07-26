@@ -5,6 +5,7 @@ import {
 	type PushAttempt,
 	type PushFacts,
 	parseLsRemote,
+	quoteTail,
 	type RefProbe,
 	VERDICT_PREFIX,
 } from "./verified-push.ts";
@@ -118,6 +119,29 @@ describe("the terminal line — the channel that survives a pipe and a detached 
 		const notMoved = decidePush(attempted({kind: "absent"})).terminalLine;
 		expect(notMoved.includes(`${VERDICT_PREFIX} MOVED`)).toBe(false);
 		expect(moved.includes(`${VERDICT_PREFIX} MOVED`)).toBe(true);
+	});
+});
+
+describe("quoteTail — the pre-push hook's output must not bury the verdict", () => {
+	// Found live on this verb's own first push: the hook runs the whole test suite, so the
+	// captured stream is thousands of lines. Quoting it whole made `| tail -30` show hook
+	// noise instead of the verdict.
+	it("keeps only the trailing lines and says how many it elided", () => {
+		const text = Array.from({length: 500}, (_, i) => `line ${i}`).join("\n");
+		const out = quoteTail("push stdout", text, 5);
+		expect(out).toHaveLength(6);
+		expect(out[0]).toContain("last 5 of 500 lines; 495 elided");
+		expect(out.at(-1)).toBe("    | line 499");
+	});
+
+	it("adds no elision note when everything fits", () => {
+		const out = quoteTail("push stderr", "a\nb", 40);
+		expect(out[0]).toBe("  push stderr:");
+		expect(out).toEqual(["  push stderr:", "    | a", "    | b"]);
+	});
+
+	it("reports an empty stream explicitly rather than silently omitting it", () => {
+		expect(quoteTail("push stdout", "   \n", 40)).toEqual(["  push stdout: (no output)"]);
 	});
 });
 
