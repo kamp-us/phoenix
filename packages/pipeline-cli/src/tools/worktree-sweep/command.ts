@@ -25,6 +25,13 @@
  *      (git does NOT refuse a clean tree a *sibling* holds as CWD — #2240) — the
  *      classifier's liveness gate is what covers the concurrent-sibling case.
  *
+ * Reclaiming a tree does NOT reclaim its branch ref — neither `git worktree remove` nor `git
+ * worktree prune` deletes a branch — so a second pass runs after the removals and deletes the
+ * refs of the trees this run reclaimed, under its own stricter predicate (`ref-reclaim.ts`:
+ * delete only on positive proof the content is already on `origin/main`). `--reclaim-refs`
+ * widens that pass to the whole accumulated `refs/heads/worktree-*` namespace — the one-time
+ * retro cleanup, sharing the exact same predicate rather than a hand-run `git branch -D` (#4190).
+ *
  * DRY-RUN by default: with no flag it prints what it WOULD remove and exits 0
  * without touching anything. The git/gh IO uses `execFileSync` directly (mirrors the
  * `worktree-guard` reaper) — a subprocess boundary the platform services do not cover;
@@ -44,6 +51,7 @@ import {
 	resolveOwnerLiveness,
 	sessionIdFromPath,
 } from "./owner-liveness.ts";
+import {runRefReclaim} from "./ref-reclaim-io.ts";
 import {
 	computeWorktreeSweepPlan,
 	isManagedWorktree,
@@ -317,12 +325,26 @@ const executeFlag = Flag.boolean("execute").pipe(
 	Flag.withDescription("actually remove the removable worktrees (default: dry-run, print only)"),
 );
 
+/**
+ * Widen the ref pass from "the trees this run reclaimed" to the WHOLE accumulated
+ * `refs/heads/worktree-*` namespace — the one-time retro cleanup of refs whose trees are long
+ * gone (#4190). Opt-in on purpose: this command runs unattended as a `SessionStart` hook with
+ * `--execute`, and a namespace-wide deletion is a deliberate operator act, not a background one.
+ * The per-run teardown below needs no flag because it only ever touches the refs of trees this
+ * very run removed.
+ */
+const reclaimRefsFlag = Flag.boolean("reclaim-refs").pipe(
+	Flag.withDescription(
+		"widen the ref pass to every accumulated refs/heads/worktree-* ref, not just this run's reclaimed trees (still dry-run without --execute)",
+	),
+);
+
 const reasonLine = (path: string, reason: string): string => `  ${reason.padEnd(20)} ${path}`;
 
 const worktreeSweep = Command.make(
 	"worktree-sweep",
-	{execute: executeFlag},
-	Effect.fn(function* ({execute}) {
+	{execute: executeFlag, reclaimRefs: reclaimRefsFlag},
+	Effect.fn(function* ({execute, reclaimRefs}) {
 		const listed = runGit(["worktree", "list", "--porcelain"]);
 		if (!listed.ok) {
 			yield* Console.error(
@@ -447,8 +469,21 @@ const worktreeSweep = Command.make(
 			for (const r of plan.toRemove) yield* Console.log(reasonLine(r.worktree.path, r.reason));
 		}
 
+		// The refs a full run would reclaim: those of the trees it would remove/prune (#4190). Each
+		// still has to clear the ref predicate on its own — a `gone-dir` tree is pruned regardless of
+		// containment precisely BECAUSE its ref keeps any committed work reachable, so pruning it and
+		// deleting its ref are not the same decision.
+		const branchesOfReclaimedTrees = (
+			trees: ReadonlyArray<{readonly worktree: {readonly branch: string | null}}>,
+		): ReadonlyArray<string> =>
+			trees.flatMap((t) => (t.worktree.branch === null ? [] : [t.worktree.branch]));
+		const refScope = reclaimRefs
+			? ({kind: "namespace"} as const)
+			: ({kind: "named", names: branchesOfReclaimedTrees(plan.toRemove)} as const);
+
 		if (!execute) {
 			yield* Console.log("  (dry-run — pass --execute to remove; nothing touched)");
+			yield* runRefReclaim({label: "worktree-sweep refs", scope: refScope, execute: false});
 			return;
 		}
 
@@ -459,12 +494,16 @@ const worktreeSweep = Command.make(
 		const toRemovePaths = plan.toRemove.filter((r) => r.reason !== "gone-dir");
 
 		let pruned = 0;
+		/** Branches whose tree this run actually reclaimed — the ref pass's default scope (#4190). */
+		const reclaimedBranches: Array<string> = [];
 		if (goneDir.length > 0) {
 			const res = runGit(["worktree", "prune", "--verbose"]);
 			if (res.ok) {
 				pruned = goneDir.length;
-				for (const r of goneDir)
+				for (const r of goneDir) {
 					yield* Console.log(`  pruned (gone-dir metadata) ${r.worktree.path}`);
+					if (r.worktree.branch !== null) reclaimedBranches.push(r.worktree.branch);
+				}
 			} else {
 				yield* Console.error(`  gone-dir prune failed — ${res.stderr.trim()}`);
 			}
@@ -477,6 +516,7 @@ const worktreeSweep = Command.make(
 			const res = runGit(["worktree", "remove", r.worktree.path]);
 			if (res.ok) {
 				removed += 1;
+				if (r.worktree.branch !== null) reclaimedBranches.push(r.worktree.branch);
 				yield* Console.log(`  removed ${r.worktree.path}`);
 			} else {
 				refused += 1;
@@ -485,8 +525,15 @@ const worktreeSweep = Command.make(
 				);
 			}
 		}
+		// Runs AFTER the removals so the freshly-freed refs are no longer checked out by a registered
+		// worktree — the same run that reclaims a tree closes the loop on its ref (#4190).
+		const refs = yield* runRefReclaim({
+			label: "worktree-sweep refs",
+			scope: reclaimRefs ? {kind: "namespace"} : {kind: "named", names: reclaimedBranches},
+			execute: true,
+		});
 		yield* Console.log(
-			`worktree-sweep: removed ${removed}, pruned ${pruned}, kept ${plan.kept.length + refused}` +
+			`worktree-sweep: removed ${removed}, pruned ${pruned}, refs deleted ${refs.deleted}, kept ${plan.kept.length + refused}` +
 				(refused > 0 ? ` (${refused} removable but refused by git → kept)` : ""),
 		);
 	}),

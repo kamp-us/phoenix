@@ -280,6 +280,35 @@ force-discards unpushed work. The pure classifier
 (`packages/pipeline-cli/src/tools/worktree-sweep/worktree-sweep.ts`) is unit-tested branch-by-branch,
 and `command.hook.test.ts` proves both classes through the real-git command boundary.
 
+### Reclaiming the branch REF is a separate, stricter decision than reclaiming the tree
+
+Neither `git worktree remove` nor `git worktree prune` deletes the branch a tree was on — it is only
+un-checked-out — so before #4190 every reclaimed worktree leaked its ref forever (2059 `worktree-*`
+refs against 263 registered trees on the crew host, 54% of all local branches). Both reclaimers now
+run a **ref pass** over the shared predicate in
+`packages/pipeline-cli/src/tools/worktree-sweep/ref-reclaim.ts`:
+
+```bash
+pnpm pipeline-cli worktree-sweep                        # dry-run: tree plan + the refs it would delete
+pnpm pipeline-cli worktree-sweep --reclaim-refs         # dry-run over the WHOLE refs/heads/worktree-* pile
+pnpm pipeline-cli worktree-sweep --reclaim-refs --execute   # the deliberate one-time retro cleanup
+```
+
+Without `--reclaim-refs` the pass is scoped to the refs of the trees **that run** reclaimed, so the
+unattended `SessionStart --execute` hook closes the lifecycle going forward without ever touching the
+historical pile — clearing that pile stays an explicit operator act.
+
+**The predicate is inverted relative to a tree's**, and that asymmetry is the whole point: a worktree
+is a replaceable container, but a ref is the *only* thing keeping unpushed commits reachable, and a
+ref is cheap to delete and impossible to un-delete. So a ref is deleted **only on positive proof its
+content already lives on `origin/main`** (ancestor-reachable, or squash-merged by patch-id — #1328);
+every uncertain fact is KEEP, with the reason named (`checked-out`, `unmerged`,
+`containment-unknown`, `tip-unresolved`, `out-of-scope`). In particular, **"the worktree is gone" is
+not evidence and is not part of the predicate** — a live agent's tree can be torn down underneath it
+(#4178/#4162), so tree-absence never implies work-is-done. Deletion is `git update-ref -d <ref>
+<expected-tip>`, a compare-and-swap: a ref that moved since the probe fails the update instead of
+silently taking the new commits.
+
 ## Why these constraints exist (and where the real fix lives)
 
 The self-mod classifier exists to keep an autonomous agent from rewriting the
