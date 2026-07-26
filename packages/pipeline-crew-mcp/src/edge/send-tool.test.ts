@@ -14,9 +14,9 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {RpcSerialization} from "effect/unstable/rpc";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import {type InboxAck, PeerUnreachableError} from "../peer/index.ts";
-import {stampFromMillis} from "../protocol/index.ts";
+import {payloadSchemaForKind, stampFromMillis} from "../protocol/index.ts";
 import {CHANNEL_CAPABILITY, channelExperimentalCapability} from "./mcp-channel.ts";
-import {ChannelSend, ChannelToolkit, channelToolHandlers} from "./send-tool.ts";
+import {ChannelSend, ChannelToolkit, channelToolHandlers, expectedShapeHint} from "./send-tool.ts";
 
 class DisposeError extends Schema.TaggedErrorClass<DisposeError>()(
 	"@kampus/pipeline-crew-mcp/DisposeError",
@@ -302,6 +302,76 @@ describe("edge/send-tool — the channel edge server (ACs 1, 3)", () => {
 			assert.include(rendered, "from");
 			// …and the discovery tool is named as the resolve-first path out of the reject.
 			assert.include(rendered, "channel_kinds");
+		}),
+	);
+});
+
+/**
+ * #4038: a seat's granted MCP toolset is per-seat and the server cannot read it, so a reject that
+ * names `channel_kinds` as THE remediation is unfollowable for a seat that lacks the tool (observed
+ * live at a seat holding only `channel_send`/`channel_claim`). Every tier of the hint must therefore
+ * carry shape the caller can act on alone, with the tool pointer appended as a conditional extra.
+ */
+describe("edge/send-tool — the shape hint degrades without assuming channel_kinds (#4038)", () => {
+	// A struct whose SYMBOL key the JSON-Schema render refuses ("Unsupported property signature
+	// name") while `Schema.toRepresentation` — the earlier step — still resolves its keys. This is
+	// the real fixture for the fallback branch: the catalog schemas all render, so the branch is
+	// otherwise unreachable from a `channel_send` call.
+	const symbolKeyed = Schema.Struct({
+		from: Schema.String,
+		[Symbol.for("@kampus/pipeline-crew-mcp/test/unrenderable")]: Schema.String,
+	});
+	// A tuple with post-rest elements: the JSON-Schema render refuses it AND its representation is
+	// not an object, so neither the schema nor the key outline resolves — the last-resort tier.
+	const postRest = Schema.TupleWithRest(Schema.Tuple([Schema.String]), [
+		Schema.Number,
+		Schema.Boolean,
+	]);
+	// resolved through the catalog seam the send path itself uses, so the primary tier is exercised
+	// against a real payload schema rather than a stand-in
+	const intakePing =
+		payloadSchemaForKind("IntakePing") ?? assert.fail("IntakePing is a catalog kind");
+
+	it.effect("the primary tier inlines the shape and phrases the tool pointer conditionally", () =>
+		Effect.gen(function* () {
+			const hint = yield* expectedShapeHint("IntakePing", intakePing);
+			assert.include(hint, "expected shape (JSON Schema)");
+			assert.include(hint, "if your toolset includes the `channel_kinds` tool");
+		}),
+	);
+
+	it.effect(
+		"the fallback tier outlines the payload keys instead of folding to a tool pointer",
+		() =>
+			Effect.gen(function* () {
+				const hint = yield* expectedShapeHint("Unrenderable", symbolKeyed);
+				assert.include(hint, 'expected "Unrenderable" body keys');
+				// the key outline is the actionable content the old fallback branch had none of
+				assert.include(hint, "from: String");
+			}),
+	);
+
+	it.effect("the last-resort tier points at the decode error, not at a tool call", () =>
+		Effect.gen(function* () {
+			const hint = yield* expectedShapeHint("PostRest", postRest);
+			assert.include(hint, "the decode error in this message names what did not match");
+		}),
+	);
+
+	it.effect("no tier tells a caller to call channel_kinds as the way out of the reject", () =>
+		Effect.gen(function* () {
+			const tiers: ReadonlyArray<readonly [string, Schema.Constraint]> = [
+				["IntakePing", intakePing],
+				["Unrenderable", symbolKeyed],
+				["PostRest", postRest],
+			];
+			for (const [kind, schema] of tiers) {
+				const hint = yield* expectedShapeHint(kind, schema);
+				// the exact imperative the pre-#4038 hint used, in both of its branches
+				assert.notInclude(hint, "call the `channel_kinds` tool");
+				// and the pointer, where it survives, is conditional on the caller HAVING the tool
+				assert.include(hint, "if your toolset includes the `channel_kinds` tool");
+			}
 		}),
 	);
 });

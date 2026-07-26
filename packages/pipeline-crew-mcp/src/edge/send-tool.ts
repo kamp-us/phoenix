@@ -50,23 +50,64 @@ export class ChannelSend extends Context.Service<
 >()("@kampus/pipeline-crew-mcp/edge/ChannelSend") {}
 
 /**
+ * The `channel_kinds` pointer, phrased as the CONDITIONAL extra it is. A seat's granted toolset is
+ * per-seat and the server cannot read it, so an unconditional "call `channel_kinds`" is unfollowable
+ * for a seat that was never granted the tool — the reject then names a remediation the caller cannot
+ * take (#4038, observed live at a seat holding only `channel_send`/`channel_claim`). It is appended
+ * AFTER the shape tiers below, never instead of them, so it is a bonus for seats that have the tool
+ * and inert for seats that don't.
+ */
+const kindsToolPointer =
+	" — if your toolset includes the `channel_kinds` tool, it serves every kind's full shape";
+
+/**
+ * The last-resort shape line: the payload could not be rendered here at all. It still hands the
+ * caller something followable with no further tool call — the decode error, which sits in the same
+ * `reason` string and names the keys that mismatched.
+ */
+const unrenderableShape = (kind: string): string =>
+	`the "${kind}" payload shape could not be rendered here — the decode error in this message names what did not match`;
+
+/**
+ * A best-effort key outline of a payload: each top-level key, its representation, and whether it is
+ * optional. This is the DEGRADED tier of `expectedShapeHint`, derived from `Schema.toRepresentation`
+ * — the step `toJsonSchemaDocument` runs BEFORE its JSON-Schema render, so it still resolves for a
+ * schema whose semantics JSON Schema cannot express. A payload that isn't an object shape has no
+ * keys to outline, which is the honest unrenderable case rather than an empty list.
+ */
+const payloadKeyOutline = (kind: string, schema: Schema.Constraint): string => {
+	const {representation} = Schema.toRepresentation(schema);
+	if (representation._tag !== "Objects" || representation.propertySignatures.length === 0) {
+		return unrenderableShape(kind);
+	}
+	const keys = representation.propertySignatures.map(
+		(property) =>
+			`${String(property.name)}: ${property.type._tag}${property.isOptional ? " (optional)" : ""}`,
+	);
+	return `expected "${kind}" body keys: ${keys.join(", ")}`;
+};
+
+/**
  * The self-healing hint appended to a schema-mismatch reject: the kind's expected payload rendered
  * as a JSON Schema document, so the reject SHOWS the shape to match rather than leaving the sender to
  * guess it one failed send at a time. This is the same one-step recovery the unknown-kind branch
  * already gives by enumerating the catalog kinds — the schema branch lacked its equivalent, so a
  * seat that booted with no inbound example to copy blind-guessed the body shape (#3761). The value is
  * already resolved beside us: `toJsonSchemaDocument` renders the very shape `channel_kinds` serves.
+ *
  * The render is the one fallible step (it throws on an unrepresentable schema — the same step
- * `protocol/describe` guards), folded here to the `channel_kinds` pointer rather than a native throw.
+ * `protocol/describe` guards), so it degrades through shapes the caller can act on ALONE rather than
+ * folding to a tool pointer: full JSON Schema → the key outline → naming the decode error. Every tier
+ * is followable with no further tool call, because the seat that hits the reject may not hold
+ * `channel_kinds` at all (#4038).
  */
-const expectedShapeHint = (kind: string, schema: Schema.Codec<unknown>): Effect.Effect<string> =>
+export const expectedShapeHint = (kind: string, schema: Schema.Constraint): Effect.Effect<string> =>
 	Effect.try(
-		() =>
-			`expected shape (JSON Schema): ${JSON.stringify(Schema.toJsonSchemaDocument(schema))} — or call the \`channel_kinds\` tool to resolve every kind's shape before sending`,
+		() => `expected shape (JSON Schema): ${JSON.stringify(Schema.toJsonSchemaDocument(schema))}`,
 	).pipe(
-		Effect.orElseSucceed(
-			() => `call the \`channel_kinds\` tool to resolve the "${kind}" payload shape before sending`,
-		),
+		Effect.catch(() => Effect.try(() => payloadKeyOutline(kind, schema))),
+		Effect.orElseSucceed(() => unrenderableShape(kind)),
+		Effect.map((shape) => `${shape}${kindsToolPointer}`),
 	);
 
 /**
