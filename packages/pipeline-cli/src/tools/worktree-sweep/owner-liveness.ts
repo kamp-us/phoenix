@@ -42,7 +42,9 @@
  *      rather than a considered spare. Do not build a decision on stamp coverage until #4180
  *      lands a producer that actually fires.
  *   2. **liveness** — the harness's session registry: one `<config>/sessions/<pid>.json` per
- *      RUNNING session, carrying `{pid, sessionId}` and deleted when the session exits.
+ *      RUNNING session, carrying `{pid, sessionId}` and deleted when the session exits. Where those
+ *      files live and how one is read is `../../session-registry.ts` — shared with the lock-writer
+ *      on the other side of the §CP boundary, owned by neither (ADR 0218).
  *
  * **The owner is the LAUNCHER, never the occupant (#4001).** Both owner sources above resolve the
  * session that *spawned* the tree, not the ephemeral subagent that *occupies* it: the hook runs in
@@ -71,6 +73,7 @@
  * work. So "cannot prove dead" and "dead" must never collapse into one verdict — a missing stamp,
  * an unreadable registry, or a probe that could not execute is not evidence of death.
  */
+import {SESSION_UUID} from "../../session-registry.ts";
 
 /**
  * `"dead"` is the only verdict that lets a removal proceed outright. `"unknown"` is a distinct
@@ -95,9 +98,6 @@ export interface OwnerStamp {
 	readonly sessionId: string;
 	readonly kind: OwnerKind;
 }
-
-/** A bare session-UUID path segment (the shape both the registry and the sidecar layout use). */
-const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const asString = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
@@ -128,34 +128,6 @@ export const parseOwnerStamp = (raw: string): OwnerStamp | null => {
 	if (!SESSION_UUID.test(sessionId)) return null;
 	const kind = asString(objectField(parsed, "ownerKind"));
 	return {sessionId, kind: kind === "occupant" ? "occupant" : "launcher"};
-};
-
-/**
- * The harness's live-session registry directory — one `<pid>.json` per RUNNING session, deleted
- * when the session exits. `$CLAUDE_CONFIG_DIR` is the harness's own override for the config root;
- * absent it, the tool's default config home under the user's home dir. The joiner is a parameter so
- * each caller keeps its own path seam (the Effect `Path` service in the sweep, `node:path` in
- * `review-head materialize`) while the LOCATION rule lives here once.
- */
-export const sessionRegistryDir = (args: {
-	readonly configDir: string | undefined;
-	readonly home: string;
-	readonly join: (...segments: Array<string>) => string;
-}): string => args.join(args.configDir?.trim() || args.join(args.home, ".claude"), "sessions");
-
-/** One `<config>/sessions/<pid>.json` entry — a session the harness records as running. */
-export interface SessionRegistryEntry {
-	readonly pid: number;
-	readonly sessionId: string;
-}
-
-/** Parse one registry file; `null` unless it yields BOTH a positive pid and a session id. */
-export const parseSessionRegistryEntry = (raw: string): SessionRegistryEntry | null => {
-	const parsed = parseJson(raw);
-	const pid = objectField(parsed, "pid");
-	const sessionId = asString(objectField(parsed, "sessionId"));
-	if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return null;
-	return SESSION_UUID.test(sessionId) ? {pid, sessionId} : null;
 };
 
 /**

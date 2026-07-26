@@ -42,16 +42,15 @@ import {execFileSync} from "node:child_process";
 import {homedir} from "node:os";
 import {Console, Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {parseSessionRegistryEntry, sessionRegistryDir} from "../../session-registry.ts";
 import {parseAgentLockOwner} from "../worktree-reap/worktree-reap.ts";
 import {
 	liveSessionIds,
 	type OwnerLiveness,
 	type OwnerStamp,
 	parseOwnerStamp,
-	parseSessionRegistryEntry,
 	resolveOwnerLiveness,
 	sessionIdFromPath,
-	sessionRegistryDir,
 } from "./owner-liveness.ts";
 import {runRefReclaim} from "./ref-reclaim-io.ts";
 import {

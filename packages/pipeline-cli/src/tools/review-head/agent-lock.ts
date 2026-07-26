@@ -11,7 +11,7 @@
  * keeps working in it — never this CLI process's, which exits seconds after `git worktree add` and
  * would mark a live tree orphaned immediately.
  */
-import type {SessionRegistryEntry} from "../worktree-sweep/owner-liveness.ts";
+import type {SessionRegistryEntry} from "../../session-registry.ts";
 
 /**
  * The lock reason, in the exact grammar `parseAgentLockOwner` accepts (`claude agent <id> (pid <N>

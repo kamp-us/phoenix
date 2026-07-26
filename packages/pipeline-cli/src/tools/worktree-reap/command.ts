@@ -52,12 +52,11 @@ import {homedir} from "node:os";
 import {join} from "node:path";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {parseSessionRegistryEntry, sessionRegistryDir} from "../../session-registry.ts";
 import {
 	liveSessionIds,
 	parseOwnerStamp,
-	parseSessionRegistryEntry,
 	resolveOwnerLiveness,
-	sessionRegistryDir,
 } from "../worktree-sweep/owner-liveness.ts";
 import {runRefReclaim} from "../worktree-sweep/ref-reclaim-io.ts";
 import {isReviewHeadWorktree} from "../worktree-sweep/worktree-sweep.ts";
@@ -114,7 +113,7 @@ const pidAlive = (pid: number): boolean => {
 	}
 };
 
-/** This verb's `node:path` binding of the shared registry-location rule (`owner-liveness.ts`). */
+/** This verb's `node:path` binding of the shared registry-location rule (`session-registry.ts`). */
 const registryDir = (): string =>
 	sessionRegistryDir({configDir: process.env.CLAUDE_CONFIG_DIR, home: homedir(), join});
 

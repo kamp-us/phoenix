@@ -25,17 +25,17 @@ import {Context, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcessSpawner} from "effect/unstable/process";
 import {
+	parseSessionRegistryEntry,
+	type SessionRegistryEntry,
+	sessionRegistryDir,
+} from "../../session-registry.ts";
+import {
 	type GhCommandError,
 	type GhParseError,
 	json,
 	type RepoResolutionError,
 	resolveRepo,
 } from "../tracker/gh-io.ts";
-import {
-	parseSessionRegistryEntry,
-	type SessionRegistryEntry,
-	sessionRegistryDir,
-} from "../worktree-sweep/owner-liveness.ts";
 import {formatAgentLockReason, sessionPid} from "./agent-lock.ts";
 import {type GitCommandError, runGit} from "./git-io.ts";
 import {
