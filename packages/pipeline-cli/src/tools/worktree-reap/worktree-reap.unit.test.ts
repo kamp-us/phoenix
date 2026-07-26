@@ -242,6 +242,59 @@ describe("classifyCandidate — the #3989 stamp signal (the unlocked majority is
 	});
 });
 
+describe("classifyCandidate — review-head trees join the presence system (#4004)", () => {
+	/** A $TMPDIR-rooted throwaway review checkout, as `review-head materialize` creates it. */
+	const reviewHead = (over: Partial<ReapCandidate> = {}): ReapCandidate =>
+		candidate({
+			path: "/var/folders/8f/tmp.aBcD1234/review-head-4004-xY9",
+			branch: null,
+			// A detached PR head is normally NOT reachable from origin/main while the PR is open —
+			// the state that used to read as unpushed work.
+			hasUnpushed: true,
+			...over,
+		});
+
+	it("DEAD owner + clean → REAP, even though its detached head is not on origin/main", () => {
+		// The head came off `pull/<pr>/head`, so it is on the remote by construction: the build-tree
+		// unpushed gate does not apply, and without this the orphan would be kept forever.
+		assert.deepStrictEqual(classifyCandidate(reviewHead()), {kind: "reap", reason: "orphan-clean"});
+	});
+
+	it("LIVE owner → SPARED by PRESENCE (never owner-unknown) — a reviewer is working in it", () => {
+		const d = classifyCandidate(reviewHead({lockOwner: {pid: 4242, alive: true}}));
+		assert.deepStrictEqual(d, {kind: "spare", reason: "live-session"});
+	});
+
+	it("UNLOCKED (no provable owner) → still SPARED owner-unknown — the lock is its only owner proof", () => {
+		// No hook stamps a `$TMPDIR` tree, so signal 2 is permanently `unknown` for this class and an
+		// unlocked one has NO signal at all (#3989's stamp never reaches it).
+		const d = classifyCandidate(reviewHead({lockOwner: null, stampPresence: "unknown"}));
+		assert.deepStrictEqual(d, {kind: "spare", reason: "owner-unknown"});
+	});
+
+	it("an operator's foreign lock on one is SPARED even with a dead pid — the #4169 pin still outranks", () => {
+		const d = classifyCandidate(reviewHead({foreignLock: true, lockOwner: null}));
+		assert.deepStrictEqual(d, {kind: "spare", reason: "foreign-lock"});
+	});
+
+	it("DEAD owner + UNCOMMITTED changes → KEEP-DIRTY: the recoverable-work guard still applies", () => {
+		const d = classifyCandidate(reviewHead({hasUncommitted: true}));
+		assert.deepStrictEqual(d, {kind: "keep-dirty", reason: "uncommitted"});
+	});
+
+	it("the unpushed exemption is scoped to the class — a BUILD tree is still kept as unpushed", () => {
+		const d = classifyCandidate(candidate({hasUnpushed: true}));
+		assert.deepStrictEqual(d, {kind: "keep-dirty", reason: "unpushed"});
+	});
+
+	it("a review-head-named path is scoped by BASENAME — a nested tree is not the class", () => {
+		const d = classifyCandidate(
+			reviewHead({path: "/var/folders/8f/tmp.aBcD1234/review-head-4004-xY9/nested"}),
+		);
+		assert.deepStrictEqual(d, {kind: "spare", reason: "not-managed"});
+	});
+});
+
 describe("computeWorktreeReapPlan — partitions into reap / kept-dirty / spared", () => {
 	it("routes each candidate to exactly one bucket", () => {
 		const reapable = candidate({path: wtPath("agent-reap")});

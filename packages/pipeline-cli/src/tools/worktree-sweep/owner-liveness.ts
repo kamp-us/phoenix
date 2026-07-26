@@ -13,11 +13,13 @@
  * pid-bearing reason (`claude agent <id> (pid <N> start <date>)`) that `worktree-reap` already parses
  * as a presence signal. So the lock gate is real and does protect some live lanes. What it is not is
  * *reliable*: coverage is partial (most registered trees carry no lock at a given moment, and a lock
- * can outlive its session), and the `$TMPDIR`-rooted `review-head-*` class is never locked at all —
- * `review-head materialize` runs `git worktree add --detach` with no `--lock` — so the
- * `review-head-idle` removal path had no lock protection for a live reviewer's tree. The root cause
- * of the two observed agent-tree removals is NOT established; this gate is justified as the missing
- * *presence* signal, not as a replacement for a defeated lock.
+ * can outlive its session). The `$TMPDIR`-rooted `review-head-*` class was not locked at all when
+ * this gate was written, leaving the `review-head-idle` removal path with no lock protection for a
+ * live reviewer's tree; `review-head materialize` now locks its tree with the owning session's pid
+ * (#4004), which adds a fence but does not make this gate redundant — the lock is one owner signal,
+ * this module is the other, and both fail toward KEEP. The root cause of the two observed agent-tree
+ * removals is NOT established; this gate is justified as the missing *presence* signal, not as a
+ * replacement for a defeated lock.
  *
  * ADR 0191 is the rule the sweep was missing: a resource claim's liveness rides its HOLDER's
  * presence, never an age window.
@@ -127,6 +129,19 @@ export const parseOwnerStamp = (raw: string): OwnerStamp | null => {
 	const kind = asString(objectField(parsed, "ownerKind"));
 	return {sessionId, kind: kind === "occupant" ? "occupant" : "launcher"};
 };
+
+/**
+ * The harness's live-session registry directory — one `<pid>.json` per RUNNING session, deleted
+ * when the session exits. `$CLAUDE_CONFIG_DIR` is the harness's own override for the config root;
+ * absent it, the tool's default config home under the user's home dir. The joiner is a parameter so
+ * each caller keeps its own path seam (the Effect `Path` service in the sweep, `node:path` in
+ * `review-head materialize`) while the LOCATION rule lives here once.
+ */
+export const sessionRegistryDir = (args: {
+	readonly configDir: string | undefined;
+	readonly home: string;
+	readonly join: (...segments: Array<string>) => string;
+}): string => args.join(args.configDir?.trim() || args.join(args.home, ".claude"), "sessions");
 
 /** One `<config>/sessions/<pid>.json` entry — a session the harness records as running. */
 export interface SessionRegistryEntry {
