@@ -353,33 +353,36 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					</ReactionBarSlot>
 				) : null}
 				{isAuthor ? (
-					<Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>
-						<Dialog.Popup>
-							<Dialog.Head
-								title="tanımı sil"
-								description="bu tanımı silmek istediğine emin misin? geri alınamaz."
-							/>
-							<Dialog.Body>
-								{deleteError ? (
-									<p className="kp-sozluk-composer__error" role="alert">
-										{deleteError}
-									</p>
-								) : null}
-							</Dialog.Body>
-							<Dialog.Foot>
-								<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
+					<Dialog
+						open={confirmDelete}
+						onOpenChange={setConfirmDelete}
+						role="alertdialog"
+						title="tanımı sil"
+						description="bu tanımı silmek istediğine emin misin? geri alınamaz."
+						footer={({close}) => (
+							<>
+								<Button variant="tertiary" onClick={close}>
+									vazgeç
+								</Button>
 								<Button
 									variant="primary"
 									type="button"
 									disabled={deleteInFlight}
+									loading={deleteInFlight}
 									data-testid={`definition-delete-confirm-${definition.id}`}
 									onClick={onDeleteConfirm}
 								>
 									{deleteInFlight ? "siliniyor…" : "sil"}
 								</Button>
-							</Dialog.Foot>
-						</Dialog.Popup>
-					</Dialog.Root>
+							</>
+						)}
+					>
+						{deleteError ? (
+							<p className="kp-sozluk-composer__error" role="alert">
+								{deleteError}
+							</p>
+						) : null}
+					</Dialog>
 				) : null}
 			</div>
 		</article>

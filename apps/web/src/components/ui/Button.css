@@ -1,99 +1,76 @@
-/* Button — atom. Base UI Button only adds focusableWhenDisabled + render-as,
-   so we wrap it for the variants. */
-
-.kp-btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 6px;
-	/* Tap-target floor (ADR 0162 pillar 4): the primitive owns the ≥36px hit area in
-	   both axes, so every consumer clears it without opting in — call sites no longer
-	   re-declare a per-instance --tap-min floor. min-height decouples the hit area from
-	   the glyph: the smaller --sm font shrinks the type, not the target, and the
-	   flex-centering above fills the box. This is the single floor. */
-	min-height: var(--tap-min);
+/* Phoenix visual contract over Manti's public Button anatomy. */
+.kp-btn[data-scope="button"][data-part="root"] {
+	--manti-button-radius: var(--r-sm);
+	--manti-button-gap: 6px;
+	--manti-button-height: var(--tap-min);
+	--manti-button-padding-x: var(--s-3);
 	min-width: var(--tap-min);
-	padding: 5px var(--s-3);
 	font: var(--t-body-sm);
 	font-weight: 500;
-	border-radius: var(--r-sm);
-	border: 1px solid transparent;
 	cursor: pointer;
-	user-select: none;
-	white-space: nowrap;
 	transition:
 		background 80ms,
 		color 80ms,
 		border-color 80ms;
 }
-/* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
-.kp-btn:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
 
-.kp-btn--primary {
+.kp-btn[data-variant="primary"] {
 	background: var(--accent-9);
 	color: var(--accent-fg);
 	border-color: var(--accent-9);
 	font-weight: 600;
 }
-.kp-btn--primary:hover:not(:disabled) {
+.kp-btn[data-variant="primary"]:hover:not(:disabled) {
 	filter: brightness(1.06);
 }
 
-.kp-btn--secondary {
+.kp-btn[data-variant="secondary"] {
 	background: var(--surface-raised);
 	color: var(--text-primary);
 	border-color: var(--border);
 }
-.kp-btn--secondary:hover:not(:disabled) {
+.kp-btn[data-variant="secondary"]:hover:not(:disabled) {
 	background: var(--accent-faint);
 	border-color: var(--accent-soft);
 }
 
-.kp-btn--tertiary {
+.kp-btn[data-variant="tertiary"] {
 	background: transparent;
 	color: var(--text-secondary);
 }
-.kp-btn--tertiary:hover:not(:disabled) {
+.kp-btn[data-variant="tertiary"]:hover:not(:disabled) {
 	background: var(--surface-raised);
 	color: var(--text-primary);
 }
 
-.kp-btn--danger {
+.kp-btn[data-variant="danger"] {
 	background: transparent;
 	color: var(--danger);
+	border-color: transparent;
+	box-shadow: none;
 }
-.kp-btn--danger:hover:not(:disabled) {
-	background: var(--accent-9);
+.kp-btn[data-variant="danger"]:hover:not(:disabled) {
+	background: var(--danger);
 	color: var(--accent-fg);
 }
 
-.kp-btn--sm {
-	padding: 3px var(--s-2);
+.kp-btn[data-size="sm"] {
+	--manti-button-padding-x: var(--s-2);
 	font: var(--t-meta);
 	font-weight: 500;
 }
-.kp-btn--lg {
-	padding: 8px var(--s-4);
+.kp-btn[data-size="lg"] {
+	--manti-button-padding-x: var(--s-4);
 	font: var(--t-body);
 	font-weight: 600;
 }
 
-.kp-btn--block {
-	width: 100%;
-}
-
-/* Pressed/toggle — the accent-tinted active state, carried on top of
-   [aria-pressed] so it is never color-alone (#2163). */
-.kp-btn--pressed {
+.kp-btn[aria-pressed="true"] {
 	border-color: var(--accent);
 	background: var(--accent-faint);
 	color: var(--accent);
 }
 
-/* Leading icon slot — sizes the glyph to the text box. */
 .kp-btn__icon {
 	display: inline-flex;
 	align-items: center;
@@ -103,24 +80,7 @@
 	height: 1em;
 }
 
-/* Loading — the in-flight spinner replaces the leading icon; the label stays,
-   the control disables. The disabled dim is overridden so a busy button reads
-   as active-but-waiting, not unavailable. */
-.kp-btn--loading:disabled {
+.kp-btn[data-loading="true"]:disabled {
 	opacity: 1;
 	cursor: progress;
-}
-.kp-btn__spinner {
-	width: 0.85em;
-	height: 0.85em;
-	border: 2px solid currentColor;
-	border-right-color: transparent;
-	border-radius: var(--r-pill);
-	/* Neutralized by the global prefers-reduced-motion reset (global.css). */
-	animation: kp-btn-spin var(--motion-slow) linear infinite;
-}
-@keyframes kp-btn-spin {
-	to {
-		transform: rotate(360deg);
-	}
 }

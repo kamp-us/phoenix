@@ -10,7 +10,7 @@ import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
 import {Avatar} from "../ui/Avatar";
 import {Menu} from "../ui/Menu";
-import {ThemeChoicePicker} from "./ThemeChoicePicker";
+import {THEME_LABELS, ThemeChoicePicker} from "./ThemeChoicePicker";
 import "./Topbar.css";
 
 export type NavItem = {to: string; label: string};
@@ -195,36 +195,75 @@ export function Topbar({
 			<BildirimPopover to={bildirim.to} unread={bildirim.unread} />
 		) : null;
 	const userMenu = user ? (
-		<Menu.Root>
-			<Menu.Trigger className="kp-topbar__user">
-				<Avatar name={user.name} src={user.src} />
-				<span>{user.name}</span>
-				{/* No unread badge on the trigger: the count lives on the status-zone bell
-				    (`bildirimSignal`), its one lawful zone (#2613). */}
-			</Menu.Trigger>
-			<Menu.Popup align="end">
-				<Menu.Item
-					data-testid="topbar-profile-link"
-					onClick={() => navigate(user.username ? `/u/${user.username}` : "/profile")}
-				>
-					profil
-				</Menu.Item>
-				{bildirim ? (
-					<Menu.Item data-testid="topbar-bildirim-link" onClick={() => navigate(bildirim.to)}>
-						bildirimler
-					</Menu.Item>
-				) : null}
-				<Menu.Item onClick={() => navigate("/profile")}>ayarlar</Menu.Item>
-				{themePicker ? (
-					<div className="kp-topbar__theme-row" data-testid="topbar-theme-row">
-						<span className="kp-topbar__theme-label">tema</span>
-						{themePicker}
-					</div>
-				) : null}
-				<Menu.Separator />
-				<Menu.Item onClick={onLogout}>çıkış</Menu.Item>
-			</Menu.Popup>
-		</Menu.Root>
+		<Menu
+			placement="bottom-end"
+			trigger={
+				<button type="button" className="kp-topbar__user">
+					<Avatar name={user.name} src={user.src} />
+					<span>{user.name}</span>
+					{/* No unread badge on the trigger: the count lives on the status-zone bell
+					    (`bildirimSignal`), its one lawful zone (#2613). */}
+				</button>
+			}
+			items={[
+				{
+					value: "profile",
+					label: <span data-testid="topbar-profile-link">profil</span>,
+				},
+				...(bildirim
+					? [
+							{
+								value: "notifications",
+								label: <span data-testid="topbar-bildirim-link">bildirimler</span>,
+							},
+						]
+					: []),
+				{value: "settings", label: "ayarlar"},
+				...(themeChoice && onThemeChange
+					? [
+							{
+								type: "group" as const,
+								label: (
+									<span data-testid="topbar-theme-row">
+										tema
+										<span className="kp-visually-hidden" data-testid="topbar-theme-picker">
+											{themeChoice}
+										</span>
+									</span>
+								),
+								items: (Object.keys(THEME_LABELS) as ThemeChoice[]).map((choice) => ({
+									value: `theme:${choice}`,
+									label: (
+										<span
+											className={
+												choice === themeChoice ? "kp-topbar__theme-choice--active" : undefined
+											}
+										>
+											<span aria-hidden="true">{choice === themeChoice ? "✓ " : ""}</span>
+											{THEME_LABELS[choice]}
+										</span>
+									),
+								})),
+							},
+						]
+					: []),
+				{type: "separator" as const},
+				{value: "logout", label: "çıkış"},
+			]}
+			onSelect={(value) => {
+				if (value === "profile") {
+					navigate(user.username ? `/u/${user.username}` : "/profile");
+				} else if (value === "notifications" && bildirim) {
+					navigate(bildirim.to);
+				} else if (value === "settings") {
+					navigate("/profile");
+				} else if (value === "logout") {
+					onLogout?.();
+				} else if (value.startsWith("theme:") && onThemeChange) {
+					onThemeChange(value.slice("theme:".length) as ThemeChoice);
+				}
+			}}
+		/>
 	) : null;
 	// The account slot: the real user menu once fate publishes it, else — when `__BOOT__`
 	// reserved a signed-in first paint — a fixed-geometry placeholder that holds the slot open

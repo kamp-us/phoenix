@@ -6,7 +6,7 @@
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import {fireEvent, render, screen, within} from "@testing-library/react";
+import {fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it, vi} from "vitest";
 import {Topbar} from "./Topbar";
@@ -225,7 +225,7 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
 	});
 
-	it("signed in: the theme picker lives in the user menu next to ayarlar", () => {
+	it("signed in: the theme commands live in the user menu next to ayarlar", async () => {
 		const onThemeChange = vi.fn();
 		render(
 			<MemoryRouter>
@@ -237,22 +237,30 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 				/>
 			</MemoryRouter>,
 		);
-		// The picker is portaled inside the account menu — open it, then it appears.
+		// The Manti menu is portaled — open it, then the theme command group appears.
 		fireEvent.click(screen.getByText("Elif"));
-		// `ayarlar` (the settings item) sits directly above the theme row — the picker is
-		// the next control in the account menu, not the topbar utility zone.
-		expect(screen.getByText("ayarlar")).toBeTruthy();
-		const row = screen.getByTestId("topbar-theme-row");
-		expect(within(row).getByText("tema")).toBeTruthy();
-		const picker = within(row).getByTestId("topbar-theme-picker");
-		expect(within(picker).getByRole("button", {name: "koyu"}).getAttribute("aria-pressed")).toBe(
-			"true",
-		);
-		fireEvent.click(within(picker).getByRole("button", {name: "otomatik"}));
-		expect(onThemeChange).toHaveBeenLastCalledWith("auto");
+		// `ayarlar` sits directly above the theme group. Manti Menu does not expose
+		// menuitemradio, so the visually marked choice is mirrored in a hidden value.
+		expect(await screen.findByRole("menuitem", {name: "ayarlar"})).toBeTruthy();
+		const row = await screen.findByTestId("topbar-theme-row");
+		expect(row.textContent).toContain("tema");
+		expect(within(row).getByTestId("topbar-theme-picker").textContent).toBe("dark");
+		expect(
+			screen
+				.getByRole("menuitem", {name: "koyu"})
+				.querySelector(".kp-topbar__theme-choice--active"),
+		).not.toBeNull();
+		const autoCommand = screen.getByRole("menuitem", {name: "otomatik"});
+		// Gerçek mouse etkileşimi hover/pointerdown ile aktif öğeyi belirler,
+		// ardından click seçimi gönderir.
+		fireEvent.pointerMove(autoCommand, {pointerType: "mouse"});
+		await waitFor(() => expect(autoCommand.hasAttribute("data-highlighted")).toBe(true));
+		fireEvent.pointerDown(autoCommand, {pointerType: "mouse"});
+		fireEvent.click(autoCommand);
+		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("auto"));
 	});
 
-	it("signed out: the same light/dark/auto picker is reachable in the topbar utility zone", () => {
+	it("signed out: the same light/dark/auto picker is reachable in the topbar utility zone", async () => {
 		const onThemeChange = vi.fn();
 		render(
 			<MemoryRouter>
@@ -262,10 +270,13 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		const utility = screen.getByTestId("topbar-zone-utility");
 		const picker = within(utility).getByTestId("topbar-theme-picker");
 		for (const label of ["açık", "koyu", "otomatik"]) {
-			expect(within(picker).getByRole("button", {name: label})).toBeTruthy();
+			expect(within(picker).getByRole("radio", {name: label})).toBeTruthy();
 		}
-		fireEvent.click(within(picker).getByRole("button", {name: "koyu"}));
-		expect(onThemeChange).toHaveBeenLastCalledWith("dark");
+		expect(within(picker).getByRole("radio", {name: "açık"}).getAttribute("aria-checked")).toBe(
+			"true",
+		);
+		fireEvent.click(within(picker).getByRole("radio", {name: "koyu"}));
+		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("dark"));
 	});
 });
 

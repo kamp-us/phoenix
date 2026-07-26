@@ -233,3 +233,47 @@
 	font: var(--t-body-sm);
 	color: var(--text-secondary);
 }
+.kp-topbar__theme-choice--active {
+	font-weight: var(--font-weight-semibold);
+}
+
+/* The desktop row cannot preserve nav, search, the three-way Manti theme control and
+   account affordance inside a narrow viewport. On mobile, keep every control reachable
+   and move only search to a full-width second row instead of overflowing the document. */
+@media (max-width: 640px) {
+	.kp-topbar {
+		height: auto;
+		min-height: var(--topbar-h);
+		flex-wrap: wrap;
+		gap: var(--s-1);
+		padding: var(--s-1) var(--s-2);
+	}
+
+	.kp-topbar__sep {
+		display: none;
+	}
+
+	.kp-topbar__spacer {
+		display: none;
+	}
+
+	.kp-topbar__nav a,
+	.kp-topbar__signal-link {
+		min-width: 0;
+		padding-inline: var(--s-2);
+	}
+
+	.kp-topbar .kp-theme-picker {
+		flex-shrink: 0;
+	}
+
+	.kp-topbar__search {
+		order: 1;
+		flex: 1 0 100%;
+		width: auto;
+	}
+
+	.kp-topbar__search kbd {
+		display: none;
+	}
+}

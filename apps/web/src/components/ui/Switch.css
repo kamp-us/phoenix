@@ -1,33 +1,19 @@
-/* Switch — Base UI primitive wrapper. Used for binary toggles. */
+/* Phoenix's compact switch dimensions mapped onto Manti anatomy. */
+.kp-switch[data-scope="switch"][data-part="root"] {
+	--manti-switch-track-width: 28px;
+	--manti-switch-track-height: 16px;
+	--manti-switch-track-padding: 1px;
+}
 
-.kp-switch {
-	position: relative;
-	width: 28px;
-	height: 16px;
-	border-radius: var(--r-pill);
+.kp-switch [data-part="control"] {
 	background: var(--surface-raised);
 	border: 1px solid var(--border);
-	cursor: pointer;
-	transition:
-		background 120ms,
-		border-color 120ms;
 }
-.kp-switch[data-checked] {
+.kp-switch [data-part="control"][data-state="checked"] {
 	background: var(--accent-9);
 	border-color: var(--accent-9);
 }
-/* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
-
-.kp-switch__thumb {
-	position: absolute;
-	top: 1px;
-	left: 1px;
-	width: 12px;
-	height: 12px;
-	border-radius: 50%;
+.kp-switch [data-part="thumb"] {
 	background: var(--accent-fg);
-	transition: transform 120ms;
-}
-.kp-switch[data-checked] .kp-switch__thumb {
-	transform: translateX(12px);
+	box-shadow: none;
 }

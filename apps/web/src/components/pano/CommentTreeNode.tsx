@@ -184,31 +184,43 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 								/>
 							) : null}
 							{isOwner ? (
-								<Menu.Root>
-									<Menu.Trigger
-										className="kp-comment__menu-trigger"
-										aria-label="Daha fazla"
-										data-testid={`pano-comment-menu-${localId}`}
-									>
-										⋯
-									</Menu.Trigger>
-									<Menu.Popup align="start">
-										<Menu.Item
-											onClick={() => props.onEdit?.(data.id)}
-											data-testid={`pano-comment-edit-trigger-${localId}`}
+								<Menu
+									placement="bottom-start"
+									trigger={
+										<button
+											type="button"
+											className="kp-comment__menu-trigger"
+											aria-label="Daha fazla"
+											data-testid={`pano-comment-menu-${localId}`}
 										>
-											düzenle
-										</Menu.Item>
-										<Menu.Separator />
-										<Menu.Item
-											danger
-											onClick={() => props.onDelete?.(data.id)}
-											data-testid={`pano-comment-delete-trigger-${localId}`}
-										>
-											sil
-										</Menu.Item>
-									</Menu.Popup>
-								</Menu.Root>
+											⋯
+										</button>
+									}
+									items={[
+										{
+											value: "edit",
+											label: (
+												<span data-testid={`pano-comment-edit-trigger-${localId}`}>düzenle</span>
+											),
+										},
+										{type: "separator"},
+										{
+											value: "delete",
+											label: (
+												<span
+													className="kp-menu-danger"
+													data-testid={`pano-comment-delete-trigger-${localId}`}
+												>
+													sil
+												</span>
+											),
+										},
+									]}
+									onSelect={(value) => {
+										if (value === "edit") props.onEdit?.(data.id);
+										if (value === "delete") props.onDelete?.(data.id);
+									}}
+								/>
 							) : null}
 						</footer>
 					) : null}

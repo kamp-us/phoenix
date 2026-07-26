@@ -1,6 +1,7 @@
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
 import {BrowserRouter} from "react-router";
+import "@manti-ui/styles/index.css";
 import {App} from "./App";
 import {initSentry} from "./lib/sentry";
 import "./styles/global.css";

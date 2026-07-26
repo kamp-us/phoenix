@@ -388,21 +388,17 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 			</header>
 
 			{isAuthor ? (
-				<Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>
-					<Dialog.Popup>
-						<Dialog.Head
-							title="başlığı sil"
-							description="bu başlığı silmek istediğine emin misin? geri alınamaz."
-						/>
-						<Dialog.Body>
-							{deleteError ? (
-								<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
-									{deleteError}
-								</p>
-							) : null}
-						</Dialog.Body>
-						<Dialog.Foot>
-							<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
+				<Dialog
+					open={confirmDelete}
+					onOpenChange={setConfirmDelete}
+					role="alertdialog"
+					title="başlığı sil"
+					description="bu başlığı silmek istediğine emin misin? geri alınamaz."
+					footer={({close}) => (
+						<>
+							<Button variant="tertiary" onClick={close}>
+								vazgeç
+							</Button>
 							<Button
 								variant="primary"
 								type="button"
@@ -411,9 +407,15 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 							>
 								sil
 							</Button>
-						</Dialog.Foot>
-					</Dialog.Popup>
-				</Dialog.Root>
+						</>
+					)}
+				>
+					{deleteError ? (
+						<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
+							{deleteError}
+						</p>
+					) : null}
+				</Dialog>
 			) : null}
 
 			<Comments
@@ -730,41 +732,41 @@ function Comments(props: CommentsProps) {
 					<LoadMoreButton loadNext={loadNext} />
 				</div>
 			) : null}
-			<Dialog.Root
+			<Dialog
 				open={confirmDeleteId != null}
+				role="alertdialog"
+				title="yorumu sil"
+				description="bu yorumu silmek istediğine emin misin? geri alınamaz."
 				onOpenChange={(open) => {
 					if (!open) {
 						setConfirmDeleteId(null);
 						setDeleteError(null);
 					}
 				}}
-			>
-				<Dialog.Popup>
-					<Dialog.Head
-						title="yorumu sil"
-						description="bu yorumu silmek istediğine emin misin? geri alınamaz."
-					/>
-					<Dialog.Body>
-						{deleteError ? (
-							<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
-								{deleteError}
-							</p>
-						) : null}
-					</Dialog.Body>
-					<Dialog.Foot>
-						<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
+				footer={({close}) => (
+					<>
+						<Button variant="tertiary" onClick={close}>
+							vazgeç
+						</Button>
 						<Button
 							variant="primary"
 							type="button"
 							disabled={deleteInFlight}
+							loading={deleteInFlight}
 							data-testid="pano-comment-delete-confirm"
 							onClick={onDeleteConfirm}
 						>
 							{deleteInFlight ? "siliniyor…" : "sil"}
 						</Button>
-					</Dialog.Foot>
-				</Dialog.Popup>
-			</Dialog.Root>
+					</>
+				)}
+			>
+				{deleteError ? (
+					<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
+						{deleteError}
+					</p>
+				) : null}
+			</Dialog>
 		</>
 	);
 }

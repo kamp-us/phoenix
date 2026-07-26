@@ -1,66 +1,36 @@
-/* Menu — Base UI primitive wrapper.
-   Used by: comment owner ⋯, topbar user dropdown. */
-
-/* The Positioner carries the stacking rank — it is the `position: fixed` element,
-   so z-index here builds a stacking context that outranks the sticky Subnav (#2041). */
-.kp-menu__positioner {
-	z-index: 70;
-}
-
-.kp-menu__popup {
-	min-width: 160px;
+/* Phoenix dropdown styling over Manti Menu's public anatomy. */
+[data-scope="menu"][data-part="content"] {
+	--manti-menu-min-width: 160px;
 	background: var(--surface-raised);
 	border: 1px solid var(--border);
 	border-radius: var(--r-md);
 	box-shadow: var(--shadow-dropdown);
 	padding: var(--s-1) 0;
-	animation: kp-menu-pop var(--motion-fast) var(--ease-standard);
+	backdrop-filter: none;
 }
 
-.kp-menu__item {
-	display: flex;
-	align-items: center;
+[data-scope="menu"][data-part="item"] {
 	gap: var(--s-2);
 	padding: 6px var(--s-3);
+	border-radius: 0;
 	font: var(--t-body-sm);
 	color: var(--text-primary);
-	cursor: pointer;
-	user-select: none;
-	outline: none;
 }
-.kp-menu__item[data-highlighted] {
+[data-scope="menu"][data-part="item"][data-highlighted] {
 	background: var(--accent-faint);
 	color: var(--text-primary);
 }
-.kp-menu__item[data-disabled] {
-	color: var(--text-faint);
-	cursor: not-allowed;
-}
-
-.kp-menu__item--danger[data-highlighted] {
-	background: var(--accent-9);
+[data-scope="menu"][data-part="item"]:has(.kp-menu-danger)[data-highlighted] {
+	background: var(--danger);
 	color: var(--accent-fg);
 }
 
-.kp-menu__separator {
-	height: 1px;
+[data-scope="menu"][data-part="separator"] {
 	background: var(--border-faint);
 	margin: var(--s-1) 0;
 }
 
-.kp-menu__shortcut {
-	margin-left: auto;
+[data-scope="menu"][data-part="item-shortcut"] {
 	font: var(--t-micro);
 	color: var(--text-faint);
-}
-
-@keyframes kp-menu-pop {
-	from {
-		opacity: 0;
-		transform: translateY(-2px) scale(0.98);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0) scale(1);
-	}
 }

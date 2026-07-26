@@ -8,20 +8,19 @@ describe("Button — the widened primitive (#2163)", () => {
 		const btn = container.querySelector("button")!;
 		expect(btn.getAttribute("type")).toBe("button");
 		expect(btn.classList.contains("kp-btn")).toBe(true);
-		expect(btn.classList.contains("kp-btn--primary")).toBe(true);
+		expect(btn.getAttribute("data-variant")).toBe("primary");
 		// unset toggle/busy/icon add nothing
 		expect(btn.hasAttribute("aria-pressed")).toBe(false);
 		expect(btn.hasAttribute("aria-busy")).toBe(false);
 		expect(btn.hasAttribute("disabled")).toBe(false);
 		expect(container.querySelector(".kp-btn__icon")).toBeNull();
-		expect(container.querySelector(".kp-btn__spinner")).toBeNull();
+		expect(container.querySelector('[data-part="spinner"]')).toBeNull();
 	});
 
-	it("pressed sets aria-pressed and the pressed class", () => {
+	it("pressed sets aria-pressed", () => {
 		const {container} = render(<Button pressed>x</Button>);
 		const btn = container.querySelector("button")!;
 		expect(btn.getAttribute("aria-pressed")).toBe("true");
-		expect(btn.classList.contains("kp-btn--pressed")).toBe(true);
 	});
 
 	it("icon renders in a leading decorative slot", () => {
@@ -39,7 +38,7 @@ describe("Button — the widened primitive (#2163)", () => {
 		const btn = container.querySelector("button")!;
 		expect(btn.getAttribute("aria-busy")).toBe("true");
 		expect(btn.hasAttribute("disabled")).toBe(true);
-		expect(container.querySelector(".kp-btn__spinner")).not.toBeNull();
+		expect(container.querySelector('[data-part="spinner"]')).not.toBeNull();
 		expect(container.querySelector(".kp-btn__icon")).toBeNull(); // spinner replaces the icon
 		expect(btn.textContent).toContain("kaydet");
 	});

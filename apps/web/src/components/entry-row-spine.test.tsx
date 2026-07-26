@@ -20,7 +20,7 @@
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import {fireEvent, render} from "@testing-library/react";
+import {fireEvent, render, waitFor} from "@testing-library/react";
 import {describe, expect, it, vi} from "vitest";
 import {ReactionBar} from "./reaction/ReactionBar";
 import {Button} from "./ui/Button";
@@ -63,10 +63,13 @@ describe("entry-row spine — focus-ring presence", () => {
 
 	it("ToggleGroup items render native <button>s the shared ring paints", () => {
 		const {container} = render(
-			<ToggleGroup.Root value={["a"]}>
-				<ToggleGroup.Item value="a">A</ToggleGroup.Item>
-				<ToggleGroup.Item value="b">B</ToggleGroup.Item>
-			</ToggleGroup.Root>,
+			<ToggleGroup
+				value={["a"]}
+				items={[
+					{value: "a", label: "A"},
+					{value: "b", label: "B"},
+				]}
+			/>,
 		);
 		const items = container.querySelectorAll("button");
 		expect(items.length).toBe(2);
@@ -113,17 +116,20 @@ describe("entry-row spine — aria roles/labels/state", () => {
 		expect(container.querySelector(".kp-meta-row__dot")!.getAttribute("aria-hidden")).toBe("true");
 	});
 
-	it("ToggleGroup exposes role=group and per-item aria-pressed reflecting the value", () => {
+	it("ToggleGroup exposes radio semantics and per-item aria-checked reflecting the value", () => {
 		const {container} = render(
-			<ToggleGroup.Root value={["a"]} aria-label="Seçenek">
-				<ToggleGroup.Item value="a">A</ToggleGroup.Item>
-				<ToggleGroup.Item value="b">B</ToggleGroup.Item>
-			</ToggleGroup.Root>,
+			<ToggleGroup
+				value={["a"]}
+				items={[
+					{value: "a", label: "A"},
+					{value: "b", label: "B"},
+				]}
+			/>,
 		);
-		expect(container.querySelector('[role="group"]')).not.toBeNull();
+		expect(container.querySelector('[role="radiogroup"]')).not.toBeNull();
 		const [a, b] = Array.from(container.querySelectorAll("button"));
-		expect(a!.getAttribute("aria-pressed")).toBe("true");
-		expect(b!.getAttribute("aria-pressed")).toBe("false");
+		expect(a!.getAttribute("aria-checked")).toBe("true");
+		expect(b!.getAttribute("aria-checked")).toBe("false");
 	});
 
 	it("ReactionBar names each button by its gloss and marks the glyph decorative", () => {
@@ -170,32 +176,38 @@ describe("entry-row spine — keyboard order & operability", () => {
 		expect(onToggle).toHaveBeenCalledOnce();
 	});
 
-	it("ToggleGroup uses composite roving tabindex — exactly one item is tabbable", () => {
+	it("ToggleGroup uses a single root tab stop before roving focus enters its items", () => {
 		const {container} = render(
-			<ToggleGroup.Root value={["b"]}>
-				<ToggleGroup.Item value="a">A</ToggleGroup.Item>
-				<ToggleGroup.Item value="b">B</ToggleGroup.Item>
-				<ToggleGroup.Item value="c">C</ToggleGroup.Item>
-			</ToggleGroup.Root>,
+			<ToggleGroup
+				value={["b"]}
+				items={[
+					{value: "a", label: "A"},
+					{value: "b", label: "B"},
+					{value: "c", label: "C"},
+				]}
+			/>,
 		);
-		const tabbable = Array.from(container.querySelectorAll("button")).filter(
-			(b) => b.tabIndex === 0,
-		);
-		// The composite (base-ui roving focus) keeps the group a single tab stop and
-		// moves between items with arrow keys — exactly one item tabbable at a time.
-		expect(tabbable.length).toBe(1);
+		const group = container.querySelector<HTMLElement>('[role="radiogroup"]');
+		expect(group?.tabIndex).toBe(0);
+		expect(
+			Array.from(container.querySelectorAll("button")).every((button) => button.tabIndex === -1),
+		).toBe(true);
 	});
 
-	it("ToggleGroup routes a click to onValueChange (operable)", () => {
+	it("ToggleGroup routes a click to onValueChange (operable)", async () => {
 		const onValueChange = vi.fn();
 		const {getByText} = render(
-			<ToggleGroup.Root value={["a"]} onValueChange={onValueChange}>
-				<ToggleGroup.Item value="a">A</ToggleGroup.Item>
-				<ToggleGroup.Item value="b">B</ToggleGroup.Item>
-			</ToggleGroup.Root>,
+			<ToggleGroup
+				value={["a"]}
+				onValueChange={onValueChange}
+				items={[
+					{value: "a", label: "A"},
+					{value: "b", label: "B"},
+				]}
+			/>,
 		);
 		fireEvent.click(getByText("B"));
-		expect(onValueChange).toHaveBeenCalled();
+		await waitFor(() => expect(onValueChange).toHaveBeenCalled());
 	});
 });
 
@@ -213,10 +225,7 @@ describe("entry-row spine — prefers-reduced-motion respect", () => {
 		expect(reset![0]).toMatch(/transition-duration:/);
 	});
 
-	it("Button's spinner animation rides the neutralizable --motion-* token seam", () => {
-		// The one entry-row primitive with an animation drives its duration through a
-		// `--motion-*` custom property (the design system's motion scale), keeping it
-		// on the seam the global reset governs rather than a hardcoded literal.
-		expect(BUTTON_CSS).toMatch(/animation:[^;]*var\(--motion-/);
+	it("Button's loading state delegates animation to Manti's reduced-motion-aware spinner", () => {
+		expect(BUTTON_CSS).toMatch(/\.kp-btn\[data-loading="true"\]/);
 	});
 });
