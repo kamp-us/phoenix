@@ -23,10 +23,13 @@ name: pitch-guard
 # already has teeth. (2) Today every one of the 44 in-scope issues on the board is unpitched
 # (0 of 245 open `status:triaged` issues carries a `## Pitch` section — the format only exists
 # in this PR), so a periodic board-wide run would red and file every week: a signal that fires
-# on everything is a signal nobody reads. Whether the existing backlog gets backfilled at all
-# is an OPEN founder question (#4174 clauses 3 and 4, parked `status:needs-info`), so this
-# workflow neither backfills nor pressures a backfill — it simply never looks at an issue that
-# is not moving through the seam. Arming a periodic sweep is a separate, later decision.
+# on everything is a signal nobody reads. That a backfill happens is RULED, not open: a bounded
+# retro-pitch of all 44 in one pass — the 16 triaged epics plus the 28 standalone features, with
+# an epic's children inheriting its bet, founder-approved only (#4174 clauses 3 and 4, both ruled
+# 2026-07-26). Still open is only the ORDER in which that backfill and this wiring land (#4174,
+# now `type:decision`/`p1`), and the per-issue trigger is what makes that order cheap: this
+# workflow neither backfills nor pressures a backfill — it simply never looks at an issue that is
+# not moving through the seam. Arming a periodic sweep is a separate, later decision.
 on:
   # The seam: an issue being stamped `status:triaged` is the moment it enters the lane. The
   # job scopes to THAT issue, so a red names the bet that just became pickable unpitched —
