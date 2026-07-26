@@ -10,6 +10,12 @@
 // owns both. Saved workflows are not plugin-distributable, so this lives repo-local in
 // `.claude/workflows/`, not in the kampus-pipeline plugin.
 //
+// Type routing (#4113): the Classify stage's `type:*` label IS the router. Every one of the six
+// canonical types names its lane explicitly — epic -> planner, decision -> adr, and
+// feature/chore/bug/investigation -> coder — and anything else aborts the dispatch. The guard sits
+// at LANE ENTRY, never at merge: a merge-path check on the linked issue's type would be a
+// direction gate on finished work (founder no-go #3909, restated by #3947).
+//
 // Pre-spawn claim (ADR 0115 §3, orchestrated path): the Implement branch acquires the
 // agent-distinguishable claim BEFORE the coder dispatch and spawns the coder only on a
 // win, threading the winning claim token through so the coder treats it as its delegated
@@ -20,8 +26,8 @@
 export const meta = {
 	name: "drive-issue",
 	description:
-		"Drive one triaged issue through the kampus pipeline: epics route planner -> reviewer(review-plan); everything else atomically claims the issue pre-spawn (ADR 0115) and only on a win runs coder -> reviewer -> repair(freeze-after-2) -> shipper. A control-plane PR is approval-gated (ADR 0135): the shipper enqueues it once a @kamp-us/control-plane team member approves at the current head, else halts at `awaiting control-plane approval`; a lost claim skips before any work starts.",
-	phases: ["Classify", "Plan", "Implement", "Review", "Repair", "Ship"],
+		"Drive one triaged issue through the kampus pipeline, routed by its `type:*` label: epics route planner -> reviewer(review-plan); decisions route the adr agent (never a coder); feature/chore/bug/investigation atomically claim the issue pre-spawn (ADR 0115) and only on a win run coder -> reviewer -> repair(freeze-after-2) -> shipper; an unknown or missing type aborts the dispatch fail-closed. A control-plane PR is approval-gated (ADR 0135): the shipper enqueues it once a @kamp-us/control-plane team member approves at the current head, else halts at `awaiting control-plane approval`; a lost claim skips before any work starts.",
+	phases: ["Classify", "Plan", "Decide", "Implement", "Review", "Repair", "Ship"],
 };
 
 // args carries the target issue number: accept `{ issue }` or a bare value.
@@ -69,6 +75,44 @@ function stageResult(stage, result, pr) {
 		throw new StageAborted(stage, pr);
 	}
 	return result;
+}
+
+// Type routing (#4113) — the lane each canonical `type:*` dispatches into. No default arm: a type
+// this table does not name is UNROUTABLE and aborts the dispatch, because the coder is the lane
+// with side effects (a branch, a PR, a shipped position), so defaulting into it turns every
+// classification failure into shipped work. `decision -> adr` is the fix for the #4045 mis-route (a
+// coder handed a decision implements an answer to the question the issue exists to settle);
+// `investigation -> coder` is a NAMED choice, not a fall-through — write-code owns both an
+// investigation's outcomes, its residue path and its bounded collapse to one PR (ADR 0070).
+// Inline mirror of the unit-tested pure core `routeIssueType` in
+// packages/pipeline-cli/src/tools/drive-issue-flow/type-route.ts (not importable from a workflow
+// script — top-level return + injected globals; the post-build.ts / resume-cap.ts sibling shape).
+const LANE_BY_TYPE = {
+	epic: "planner",
+	decision: "adr",
+	investigation: "coder",
+	feature: "coder",
+	chore: "coder",
+	bug: "coder",
+};
+function normalizeIssueType(raw) {
+	if (typeof raw !== "string") return "";
+	return raw
+		.trim()
+		.toLowerCase()
+		.replace(/^[`'"\s]+|[`'"\s]+$/g, "")
+		.replace(/^type:\s*/, "")
+		.trim();
+}
+function routeIssueType(raw) {
+	const type = normalizeIssueType(raw);
+	if (type === "") {
+		return { routed: false, type: "", reason: "no readable `type:*` label on the issue — fail-closed: an unclassifiable issue is not a licence to dispatch a coder" };
+	}
+	if (!Object.hasOwn(LANE_BY_TYPE, type)) {
+		return { routed: false, type, reason: `unroutable issue type \`type:${type}\` — not one of the six canonical types (bug, feature, chore, decision, investigation, epic); fail-closed rather than defaulting to a coder lane` };
+	}
+	return { routed: true, type, lane: LANE_BY_TYPE[type] };
 }
 
 // Trivial-diff tier (ADR 0120 §2-§4). The right-sized fan-out routes a trivially-classified
@@ -137,7 +181,9 @@ log(`drive-issue #${issue}`);
 async function drive() {
 	// 1. Classify — a lightweight READ of the already-triaged `type:` label to route.
 	// Deliberately NOT the triager agent: triager is needs-triage INTAKE and would
-	// mutate; the executor only reads the label to route it (epic -> planner).
+	// mutate; the executor only reads the label, and that label is the ROUTER (#4113).
+	// The stage returns the type ALONE: an `isEpic` boolean alongside it would be a second
+	// source of truth for the same fact, free to disagree with the label that decides the lane.
 	phase("Classify");
 	log(`Classifying issue #${issue} by its type: label`);
 	const klass = stageResult("classify", await agent(
@@ -145,23 +191,34 @@ async function drive() {
 			`resolve the repo as \${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}, ` +
 			`then \`gh api repos/$REPO/issues/${issue} --jq '[.labels[].name]'\`. ` +
 			`Find the single \`type:*\` label. Do NOT modify the issue, add labels, or comment — this is a read-only classification. ` +
-			`Return { isEpic: true|false, type: "<the type: label, e.g. type:epic / type:feature / type:chore>" }.`,
+			`FAIL-CLOSED: if the issue carries NO \`type:*\` label, more than one, or you cannot read the labels for any ` +
+			`reason, return { type: "" } — do NOT guess a type and do NOT infer one from the title or body. An empty type ` +
+			`aborts the dispatch, which is the correct outcome; a guessed one silently opens the wrong lane. ` +
+			`Return { type: "<the exact type: label, e.g. type:epic / type:decision / type:feature>" }.`,
 		{
 			schema: {
 				type: "object",
 				properties: {
-					isEpic: { type: "boolean" },
 					type: { type: "string" },
 				},
-				required: ["isEpic", "type"],
+				required: ["type"],
 				additionalProperties: false,
 			},
 		},
 	));
-	log(`Issue #${issue} classified as ${klass.type} (isEpic=${klass.isEpic})`);
 
-	// 2. Epic branch — plan the epic, then gate the plan with review-plan. No coder/shipper.
-	if (klass.isEpic) {
+	// 2. Route on the type. An unroutable type (absent, unknown, ambiguous) STOPS here with a
+	// structured, resumable result and spawns nothing — the fail-closed direction is "refuse to
+	// dispatch", never "dispatch the coder anyway" (#4113).
+	const route = routeIssueType(klass.type);
+	if (!route.routed) {
+		log(`Issue #${issue} is UNROUTABLE (${route.reason}) — aborting the dispatch; no planner, no adr, no coder spawns. Fix the issue's \`type:*\` label and re-run.`);
+		return { unroutable: true, issue, type: route.type, reason: route.reason };
+	}
+	log(`Issue #${issue} classified as type:${route.type} -> ${route.lane} lane`);
+
+	// 2a. Epic branch — plan the epic, then gate the plan with review-plan. No coder/shipper.
+	if (route.lane === "planner") {
 		phase("Plan");
 		log(`Planning epic #${issue} with the planner agent`);
 		const plan = stageResult("plan", await agent(
@@ -211,7 +268,53 @@ async function drive() {
 		return { epic: true, planVerdict };
 	}
 
-	// 3. Implement branch — pre-spawn claim -> coder -> reviewer -> repair(freeze-after-2) -> shipper.
+	// 2b. Decision branch — record the ruling as an ADR. A `type:decision` issue's deliverable is
+	// a settled, recorded choice; there is no feature branch to merge, so the closing artifact is
+	// `.decisions/NNNN-slug.md`, not a diff. Dispatching a coder here is the #4045 mis-route: it
+	// would implement an answer to the question the issue exists to settle, and whatever it
+	// invented would become the de-facto ruling with no ADR authorizing it.
+	//
+	// Terminal, like the planner branch, and for the same reason: the lane's deliverable is not a
+	// PR this flow gates. The `adr` agent adds exactly one ADR file and explicitly does not open a
+	// PR, review, or merge; landing that file's PR is a separate seam this routing fix deliberately
+	// does not invent (#4113 scope). No pre-spawn claim either — same as the planner branch; the
+	// ADR 0115 claim is the coder lane's contract.
+	if (route.lane === "adr") {
+		phase("Decide");
+		log(`Recording the decision for #${issue} with the adr agent (the decision seam, NOT a coder lane)`);
+		const decided = stageResult("decide", await agent(
+			`Record the decision asked for by issue #${issue} as an ADR. You are the adr agent — load and follow the ` +
+				`adr skill: claim the next number under the in-flight reservation lock (ADR 0074), run the contradiction ` +
+				`sweep, write one \`.decisions/NNNN-slug.md\` from the house template, and resolve the vocabulary-impact ` +
+				`outcome explicitly. Add ONLY that file (plus the status-line edit on a file it supersedes or amends in ` +
+				`part) — there is no committed index. Do NOT implement anything, do NOT review, do NOT merge. ` +
+				`Return { adr: "<the repo-relative .decisions/NNNN-slug.md path you wrote>", recorded: true|false, ` +
+				`reason: "<why, if you recorded nothing>" }.`,
+			{
+				agentType: "adr",
+				isolation: "worktree",
+				schema: {
+					type: "object",
+					properties: {
+						adr: { type: "string" },
+						recorded: { type: "boolean" },
+						reason: { type: "string" },
+					},
+					required: ["recorded"],
+					additionalProperties: false,
+				},
+			},
+		));
+		log(
+			decided.recorded
+				? `Decision for #${issue} recorded at ${decided.adr}`
+				: `Decision for #${issue} NOT recorded: ${decided.reason ?? "see adr agent output"}`,
+		);
+		return { decision: true, issue, recorded: !!decided.recorded, adr: decided.adr, reason: decided.reason };
+	}
+
+	// 3. Implement branch (the `coder` lane: type:feature / type:chore / type:bug /
+	// type:investigation) — pre-spawn claim -> coder -> reviewer -> repair(freeze-after-2) -> shipper.
 	phase("Implement");
 
 	// 3a. Pre-spawn atomic claim (ADR 0115 §3, orchestrated path). Acquire the
