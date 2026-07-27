@@ -118,14 +118,18 @@ pointless.
    entirely over `gh api` / `gh pr merge` (the merge happens **server-side**), so you have **no
    reason to touch the local working tree at all** — read PR state read-only over `gh api`; you
    never need a checkout to ship.
-5. **An unresolved inline review thread (human or bot) blocks the merge — and the default is
-   route-back, never auto-dismiss.** Before you enqueue, read the PR's unresolved inline threads
-   (Step 3.6): a **substantive** one refuses the ship like a FAIL (routed back to `write-code`); a
-   **genuine nit** may be resolved **only with an explicit written rationale**; **in doubt, treat
-   it as substantive and route back** (ADR
+5. **An unresolved inline review thread (human or bot) blocks the merge — and only a BOT's may
+   ever be resolved.** Before you enqueue, read the PR's unresolved inline threads (Step 3.6) and
+   branch on **author class first**: a **human-authored** thread — or one whose class you cannot
+   positively derive as a bot — **always** refuses the ship like a FAIL, routed back to
+   `write-code`, with no nit exception and no override; a **bot-authored** one keeps the ADR 0158
+   judgment (substantive → refuse; genuine nit → resolvable **only with an explicit written
+   rationale**; in doubt → substantive) (ADR
+   [0224](https://github.com/kamp-us/phoenix/blob/main/.decisions/0224-ship-it-resolves-bot-threads-never-human-threads.md),
+   amending ADR
    [0158](https://github.com/kamp-us/phoenix/blob/main/.decisions/0158-unresolved-review-thread-is-a-merge-gate.md)).
-   A shipper that "resolves" a real objection just re-creates the throw-away one layer down —
-   never blanket-resolve threads to clear the gate.
+   A shipper that "resolves" a real objection just re-creates the throw-away one layer down — never
+   blanket-resolve threads to clear the gate.
 6. **You never leave a merge intent armed.** `gh pr merge --auto` is a durable *request*: an arm
    that outlives the run that made it enqueues the PR the moment the last requirement lands — on a
    §CP PR, the instant a human approval arrives — with no ship-it run asserting guards 1–5 in
@@ -185,7 +189,8 @@ enqueue without it. The refusal strings enumerated in [Running it](#running-it) 
 step order they are Step 0's `awaiting control-plane approval`, Step 1's `draft` /
 `closed (unmerged)` / `no linked issue`, Step 2 guard 1's `latest verdict is FAIL (<gate>)`, Step
 2/2b's `unverified …`, Step 3's gating red, the CI-settle refusals, Step 3z's dropped-trigger
-nudge, Step 3.5's run-evidence refusals, Step 3.6's substantive thread, and Step 3.7's leak. Read
+nudge, Step 3.5's run-evidence refusals, Step 3.6's human-authored / underivable / substantive-bot
+thread and its unreadable-read refusal, and Step 3.7's leak. Read
 the rule, not the list: a stop path this list forgot is still a Site-2 path, and Site 1 is the
 backstop that clears whatever any exit missed on the *next* run. Sites 3 and 4 (`ejected`,
 `post-enqueue`) live in Step 5.5, where the terminal state is known.
@@ -1976,7 +1981,7 @@ node ../../bin.ts crabbox-manifest --run-summary <(node -e 'console.log(JSON.str
 
 ---
 
-## Step 3.6 — Unresolved inline review threads gate: read them, route back by default (ADR 0158, guard 3)
+## Step 3.6 — Unresolved inline review threads gate: a bot's may be resolved, a human's never (ADR 0224, guard 3)
 
 An inline review thread — human **or** bot — whose resolution state is **unresolved** is a
 merge-blocking signal, on the same footing as a `review-*: FAIL` verdict. Before you enqueue,
@@ -1985,17 +1990,44 @@ green CI (Step 3), and the run-evidence bundle (Step 3.5) attest the diff agains
 acceptance criteria — they do **not** see an inline "fix this" a human (or the code-quality bot)
 left on a line. That objection was silently discarded before merge (#2123, the broadened
 root-cause parent of #2121: the bot's unused-import thread shipped past every gate on PR #2113).
-This step closes that hole in the pipeline-native path, independent of whether the ruleset's
-`required_review_thread_resolution` flag is enabled (that server-side lever is founder-gated and
-NOT flipped by this skill — ADR 0158 Consequences).
 
-**The load-bearing crux (ADR 0158 §Decision 3): the default errs toward routing-back, NEVER
-auto-dismiss.** A shipper that "resolves" a human's real objection just re-creates the throw-away
-one layer down. So a **substantive** unresolved thread refuses the ship exactly like a FAIL; a
-**genuine nit** may be resolved **only with an explicit written rationale**; and **when in doubt,
-treat the thread as substantive and route back**. Never blanket-resolve threads to clear the gate.
+**The ruleset flag is LIVE, so this step is defense-in-depth — and the only unparker.** The
+`pull_request` rule on ruleset `17377992` (`main protection`, enforcement `active`) carries
+`required_review_thread_resolution: true` — read live 2026-07-27, correcting ADR 0158's
+`false (OFF)` + "founder-gated and NOT flipped by this skill". GitHub blocks enqueue on any
+unresolved thread server-side; that platform gate is now **primary** and this step is the second
+layer (ADR 0224 trusts the flag on the founder's judgment that the 2022 `gh pr merge --auto`
+bypass is an edge case — the "definitive live test" ADR 0158 made a precondition for that trust
+was **not** run). The corollary is why the resolve path below cannot simply be deleted: with the
+flag on, a resolve here is the **only** mechanism in the pipeline that can clear a thread and let
+a PR enqueue at all.
 
-### Reading thread resolution — the one sanctioned GraphQL read (ADR 0158 §Decision 2)
+**The load-bearing crux (ADR
+[0224](https://github.com/kamp-us/phoenix/blob/main/.decisions/0224-ship-it-resolves-bot-threads-never-human-threads.md),
+amending ADR
+[0158](https://github.com/kamp-us/phoenix/blob/main/.decisions/0158-unresolved-review-thread-is-a-merge-gate.md)
+§Decision 3): author class is evaluated FIRST, and only a positive `Bot` derivation unlocks a
+resolve.** A shipper that "resolves" a human's real objection just re-creates the throw-away one
+layer down, so the substantive-vs-nit judgment is now **subordinate** to the class:
+
+1. **Bot-authored** → ADR 0158 §Decision 3 applies unchanged: **substantive** refuses the ship
+   like a FAIL; a **genuine nit** may be resolved **only with an explicit written rationale**;
+   **in doubt, treat it as substantive**. This is where the lint-nit deadlock pressure is, and
+   where the relief stays.
+2. **Human-authored** → **always** refuse and route back. No nit exception, no in-doubt branch,
+   no override: the class decides, and no flag, prompt, operator instruction, or judgment call
+   moves a thread out of this branch.
+3. **Class not derivable → the human branch.** Unknown is human.
+
+This is a **whitelist, and reading it as anything else defeats it**: a positive `Bot` is
+*sufficient* to unlock the resolve, and nothing is *necessary* to land in the refuse branch. A
+GitHub App's review comments can surface as `Bot` **or** as `User` depending on the integration,
+so never infer "human" from the absence of a signal — and never infer "bot" from a login suffix,
+a name pattern, or an allowlist of known bots (ADR 0224 Banned). Rule 3 settles `Mannequin` /
+`Organization` / a null author on a ghosted account **by construction rather than by
+enumeration**.
+
+### Reading resolution + author class — the one sanctioned GraphQL read (ADR 0158 §Decision 2)
 
 Thread **resolution** state (`isResolved`) is a **GraphQL** field
 (`repository.pullRequest.reviewThreads[].isResolved`); the REST inline-comments endpoint
@@ -2006,61 +2038,107 @@ rule — verified working on this org (the Projects-classic breakage is scoped t
 not `reviewThreads`; grounded live on PRs #2113/#2122/#2107, ADR 0158). Every other read/write in
 this skill stays REST.
 
+`author` is GitHub's `Actor` interface, so `__typename` — its concrete class — is the ADR-0224
+discriminator, and it rides on the `author` selection this same read **already makes**. That is
+**not** a second GraphQL call, and no other GraphQL is sanctioned anywhere in this skill.
+Discrimination is live-verified on this org: `github-advanced-security` and
+`copilot-pull-request-reviewer` return `Bot`, a human login returns `User` (#4408).
+
 ```bash
 ORG="${REPO%%/*}"; NAME="${REPO#*/}"
-# The ONE GraphQL read in ship-it (ADR 0158): REST exposes no isResolved. Read every review thread's
-# resolution state + its first author, so a substantive-vs-nit judgment has the thread text.
-gh api graphql -f query='
+# The ONE GraphQL read in ship-it (ADR 0158): REST exposes no isResolved. Read every thread's
+# resolution state, its first author's login AND __typename (the ADR-0224 class), and the text the
+# substantive-vs-nit judgment needs. Capture the body UNPIPED — `pipefail` is off on this platform,
+# so a piped read reports the last stage's status and a dead query would pose as an empty result.
+RAW="$(gh api graphql -f query='
   query($o:String!,$n:String!,$pr:Int!) {
     repository(owner:$o, name:$n) {
       pullRequest(number:$pr) {
         reviewThreads(first:100) {
           nodes {
+            id
             isResolved
             isOutdated
             path
             line
-            comments(first:1) { nodes { author { login } body } }
+            comments(first:1) { nodes { author { login __typename } body } }
           }
         }
       }
     }
-  }' -F o="$ORG" -F n="$NAME" -F pr="$PR" \
-  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)
-        | {path, line, author: .comments.nodes[0].author.login, body: (.comments.nodes[0].body[0:200])}'
+  }' -F o="$ORG" -F n="$NAME" -F pr="$PR")" || RAW=""
+
+# Validate the payload SHAPE before interpreting it. An unreadable or non-conforming response — a
+# 403/503 body, a missing `data`, a present `errors`, a parse failure, a non-zero exit, an EMPTY
+# body — is UNKNOWN, and UNKNOWN is neither "no threads" nor "not a bot" (rule 3). `-s` is what
+# makes the empty case fail closed: without it an empty stdin yields no output and jq exits 0, so a
+# dead read reads back as a PR with zero threads and the gate silently passes.
+THREADS="$(printf '%s' "$RAW" | jq -e -s '
+    (.[0] // error("empty")) as $r
+    | if ($r | has("errors")) and ($r.errors | length) > 0 then error("errors")
+      elif ($r.data.repository.pullRequest.reviewThreads.nodes? | type) != "array" then error("shape")
+      else $r.data.repository.pullRequest.reviewThreads.nodes end' 2>/dev/null)"
+if [ $? -ne 0 ] || [ -z "$THREADS" ]; then
+  disarm_intent refuse || INTENT_UNCLEARED=1
+  echo "STOP: review-thread read UNREADABLE or non-conforming — author class is UNKNOWN for every thread, and UNKNOWN is human (ADR 0224 rule 3)."
+  echo "unresolved review threads unreadable (author class UNKNOWN ⇒ human) — refusing to enqueue"
+  exit 1
+fi
+
+# Derive the class per unresolved thread. `Bot` is the ONLY value that unlocks the resolve branch;
+# every other outcome — `User`, an unrecognised Actor type, a null author, an absent field — is
+# `human`, by construction.
+printf '%s' "$THREADS" | jq -c '.[] | select(.isResolved==false)
+  | {id, path, line,
+     author: (.comments.nodes[0].author.login // "<null>"),
+     class: (if (.comments.nodes[0].author.__typename? // "") == "Bot" then "bot" else "human" end),
+     body: ((.comments.nodes[0].body // "")[0:200])}'
 ```
 
-### Disposition — classify each unresolved thread, then branch
+### Disposition — class first, then (bot only) substantive-vs-nit
 
-For **each** unresolved thread the query returns:
+For **each** unresolved thread the derivation returns:
 
-- **Substantive** — a real objection: a requested change ("fix this", "handle this case", "this
-  is wrong", "don't do X"), a bot finding that names a real defect (an unused import, a missing
-  guard), or anything you cannot confidently call trivial. → **REFUSE to enqueue.** Run
-  `disarm_intent refuse || INTENT_UNCLEARED=1` (guard 6), then report
-  `unresolved substantive review thread (<path>:<line>, @<author>)` and stop — this is a FAIL-class
-  refusal, routed back to `write-code` to address the thread on the branch. Do **not** resolve it.
-- **Genuine nit** — a trivial, already-satisfied, or obsolete note (a style preference already
-  followed, a question already answered in the diff, a finding a later commit made moot). → you
-  **may** resolve it, but **only with an explicit written rationale**: reply on the thread stating
-  *why* it is a nit, then resolve it. Never a silent or blanket resolve.
+- **`class == "human"` — REFUSE, unconditionally.** Run `disarm_intent refuse || INTENT_UNCLEARED=1`
+  (guard 6), then report `unresolved human-authored review thread (<path>:<line>, @<author>)` and
+  stop — a FAIL-class refusal routed back to `write-code` to address the thread on the branch. Do
+  **not** read the body, do **not** weigh substantive-vs-nit, do **not** resolve it. You have no
+  authority to dismiss a person's objection, and an underivable class arrives here too — reported
+  as `unresolved review thread, author class UNKNOWN (<path>:<line>)`.
+- **`class == "bot"` and substantive** — a real objection: a finding that names a real defect (an
+  unused import, a missing guard), or anything you cannot confidently call trivial. → **REFUSE**
+  the same way, reporting `unresolved substantive review thread (<path>:<line>, @<author>)`.
+- **`class == "bot"` and a genuine nit** — a trivial, already-satisfied, or obsolete note (a style
+  preference already followed, a question already answered in the diff, a finding a later commit
+  made moot). → you **may** resolve it, but **only with an explicit written rationale**: reply on
+  the thread stating *why* it is a nit, then resolve it. Never a silent or blanket resolve — the
+  rationale reply is the whole post-hoc audit trail.
 
-If **any** unresolved thread is substantive (or in-doubt), you refuse — the whole PR does not
-enqueue. Only when **every** unresolved thread has been either addressed on the branch (so it no
-longer shows unresolved) or resolved-with-rationale as a nit do you proceed to Step 4.
+If **any** unresolved thread is human-authored, underivable, or a substantive bot finding (or
+in-doubt), you refuse — the whole PR does not enqueue. Only when **every** unresolved thread has
+been either addressed on the branch (so it no longer shows unresolved) or resolved-with-rationale
+as a bot nit do you proceed to Step 4.
 
 ```bash
-# Resolve a NIT thread — ONLY after posting the rationale reply. Requires the thread's node id
-# (from the same GraphQL read, add `id` to the reviewThreads.nodes selection). REST cannot resolve
-# a thread, so the resolve mutation is part of the same sanctioned GraphQL exception (ADR 0158).
+# Resolve a NIT thread — ONLY on a thread whose class derived as `bot`, and ONLY after posting the
+# rationale reply. Takes the thread's node id from the same read. REST cannot resolve a thread, so
+# the resolve mutation is part of the same sanctioned GraphQL exception (ADR 0158).
 # gh api graphql -f query='mutation($t:ID!){ resolveReviewThread(input:{threadId:$t}){ thread { isResolved } } }' -F t="$THREAD_ID"
 ```
 
 **Refuse in doubt.** A false route-back costs one cycle; a false auto-resolve silently discards a
-real objection — the exact failure ADR 0158 closes. The conservative bias is the point, not a
-rough edge. This guard is **additive**: it layers a new pre-enqueue refusal on the existing
-sequence (Step 0 §CP approval, Step 2/2b current-head PASS, Step 3 green CI, Step 3.5
-run-evidence) and weakens none of them.
+real objection — the exact failure ADR 0158 closes, and narrowing by class is what makes the
+misjudgment unable to reach a person's objection at all. Every underivable author becomes a
+route-back, deliberately: the cost is round-trips, and that is the intended direction of the
+error. This guard is **additive**: it layers a new pre-enqueue refusal on the existing sequence
+(Step 0 §CP approval, Step 2/2b current-head PASS, Step 3 green CI, Step 3.5 run-evidence) and
+weakens none of them.
+
+> **`review-code`'s surfacing stays author-blind — decided, not overlooked.** ADR 0158 §Decision 4
+> has `review-code` list every unresolved thread in its verdict table as a `[FAIL]` row, and ADR
+> 0224 leaves that unchanged for both classes: surfacing is not dismissing, so making an objection
+> *visible at the gate* is safe whoever wrote it, and splitting it by class would hide bot threads a
+> human reviewer may well want to see.
 
 ---
 
@@ -2106,7 +2184,7 @@ Refuse **fail-closed**, exactly like the other pre-enqueue guards: a non-zero `s
 STOPS the ship — you do not enqueue, you route to remediation (redact via `redact-leaks`, re-post
 through `verdict post`, and repair the bypass). This guard is **additive**: it layers a new
 pre-enqueue refusal on the existing sequence (Step 0 §CP approval, Step 2/2b current-head PASS, Step 3
-green CI, Step 3.5 run-evidence, Step 3.6 inline threads) and weakens none of them. It catches a
+green CI, Step 3.5 run-evidence, Step 3.6 inline threads by author class) and weakens none of them. It catches a
 leaked comment **regardless of how it was emitted** — the property no emit-side guard can offer.
 
 ---
@@ -2115,8 +2193,8 @@ leaked comment **regardless of how it was emitted** — the property no emit-sid
 
 Every guard cleared: not a control-plane PR without a current-head team approval (Step 0), the
 required gates' latest verdicts are a current-head PASS (Step 2/2b), checks are green (Step 3),
-the run-evidence bundle is present, commit-bound, and all-`pass` (Step 3.5), **no unresolved
-inline review thread is substantive** (Step 3.6, ADR 0158), and **no landed comment carries a
+the run-evidence bundle is present, commit-bound, and all-`pass` (Step 3.5), **every unresolved
+inline review thread was a bot's and a nit** (Step 3.6, ADR 0224), and **no landed comment carries a
 machine-local path** (Step 3.7, issue #3019). **Enqueue** it for a squash merge — the
 merge queue owns the final merge, testing the prospective batched merge result against a fresh
 base before it lands (ADR
